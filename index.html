@@ -775,7 +775,38 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   margin-top: 8px;
 }
 .add-row-btn:hover { border-color: var(--ink); color: var(--ink); border-style: solid; }
+/* ========== Auth UI ========== */
+.auth-bar { padding: 12px 20px; border-bottom: 1px solid var(--line-2); background: var(--paper); }
+.auth-logged-out .btn-auth { width: 100%; padding: 8px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
+.auth-logged-out .btn-auth:hover { background: var(--ink-2); }
+.auth-sub { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; font-style: italic; }
+.auth-logged-in .auth-email { font-size: 12px; font-weight: 600; color: var(--ink); word-break: break-all; margin-bottom: 4px; }
+.auth-logged-in .auth-sync { font-size: 11px; color: var(--ok); margin-bottom: 8px; }
+.auth-logged-in .auth-sync.saving { color: var(--accent-dark); }
+.auth-logged-in .auth-sync.error { color: var(--alert); }
+.btn-auth-sm { padding: 4px 10px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.btn-auth-sm:hover { border-color: var(--ink); color: var(--ink); }
+.hidden { display: none !important; }
+.modal-auth { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-auth.hidden { display: none !important; }
+.modal-auth .box { background: var(--paper); padding: 28px; border-radius: 4px; width: 360px; max-width: 90vw; box-shadow: var(--shadow); }
+.modal-auth .title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.modal-auth .sub { font-size: 13px; color: var(--ink-3); margin-bottom: 20px; line-height: 1.4; }
+.modal-auth .tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+.modal-auth .tab { flex: 1; padding: 8px; background: transparent; border: none; cursor: pointer; font-family: inherit; font-size: 13px; color: var(--ink-3); border-bottom: 2px solid transparent; }
+.modal-auth .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.modal-auth label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; margin-top: 12px; }
+.modal-auth input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; font-family: inherit; font-size: 13px; }
+.modal-auth input:focus { border-color: var(--ink); outline: none; }
+.modal-auth .err { color: var(--alert); font-size: 12px; margin-top: 10px; min-height: 14px; }
+.modal-auth .actions-auth { display: flex; gap: 8px; margin-top: 16px; }
+.modal-auth .btn-primary { flex: 1; padding: 10px; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
+.modal-auth .btn-primary:hover { background: var(--ink-2); }
+.modal-auth .btn-primary:disabled { opacity: .5; cursor: wait; }
+.modal-auth .btn-skip { padding: 10px 14px; background: transparent; color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.modal-auth .btn-skip:hover { color: var(--ink); border-color: var(--ink-3); }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -784,6 +815,18 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
     <div class="brand">
       <div class="logo">OS · GEN</div>
       <div class="sub">Gerador de Ordem de Serviço</div>
+    </div>
+
+    <div class="auth-bar">
+      <div class="auth-logged-out" id="authLoggedOut">
+        <button class="btn-auth" onclick="abrirLogin()">Entrar / Criar conta</button>
+        <div class="auth-sub">Dados só neste navegador</div>
+      </div>
+      <div class="auth-logged-in hidden" id="authLoggedIn">
+        <div class="auth-email" id="authEmail">—</div>
+        <div class="auth-sync" id="authSync">☁ Sincronizado</div>
+        <button class="btn-auth-sm" onclick="sairConta()">Sair</button>
+      </div>
     </div>
 
     <div class="nav-group">
@@ -1302,36 +1345,288 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-auth hidden" id="modalAuth" data-mode="login">
+  <div class="box">
+    <div class="title">Acesso restrito</div>
+    <div class="sub">Faça login ou crie uma conta para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.</div>
+    <div class="tabs">
+      <button class="tab active" id="tabLogin" onclick="trocarAbaAuth('login')">Entrar</button>
+      <button class="tab" id="tabSignup" onclick="trocarAbaAuth('signup')">Criar conta</button>
+    </div>
+    <label for="authEmailInput">E-mail</label>
+    <input type="email" id="authEmailInput" autocomplete="email" placeholder="seu@email.com">
+    <label for="authSenhaInput">Senha</label>
+    <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+    <div class="err" id="authErro"></div>
+    <div class="actions-auth">
+      <button class="btn-primary" id="authActionBtn" onclick="submeterAuth()">Entrar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ========================================================= */
 /*                  ESTADO E PERSISTÊNCIA                    */
 /* ========================================================= */
-// Camada de armazenamento universal:
-// - Dentro da Claude.ai: usa window.storage (assíncrono, persistente na nuvem)
-// - Hospedado em qualquer outro lugar (Render, Netlify, GitHub Pages): usa localStorage
-const DB = (typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function')
-  ? window.storage
-  : {
-      async get(key) {
-        try {
-          const v = localStorage.getItem(key);
-          return v !== null ? { key, value: v } : null;
-        } catch (e) { return null; }
-      },
-      async set(key, value) {
-        try {
-          localStorage.setItem(key, value);
-          return { key, value };
-        } catch (e) {
-          console.error('localStorage cheio ou indisponível', e);
-          return null;
-        }
-      },
-      async delete(key) {
-        localStorage.removeItem(key);
-        return { key, deleted: true };
+const SUPA_URL = 'https://ckkqrjkhorvaahyazqsr.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNra3Fyamtob3J2YWFoeWF6cXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MTY2MjMsImV4cCI6MjA5MjM5MjYyM30.yT3Tb6KKx4sDNJXetwIoA77WudWUqQ2gCgT7JLi0iT8';
+const supa = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPA_URL, SUPA_KEY)
+  : null;
+
+let cloudCache = null;
+let currentUser = null;
+let saveTimer = null;
+
+async function cloudLoad() {
+  if (!supa || !currentUser) return;
+  const { data, error } = await supa
+    .from('shared_data')
+    .select('data')
+    .eq('id', 'main')
+    .maybeSingle();
+  if (error) { console.error('cloudLoad', error); cloudCache = {}; return; }
+  cloudCache = (data && data.data) || {};
+}
+
+async function cloudFlush() {
+  if (!supa || !currentUser || !cloudCache) return;
+  setSyncStatus('saving');
+  try {
+    const { error } = await supa.from('shared_data').upsert({
+      id: 'main',
+      data: cloudCache,
+      updated_at: new Date().toISOString(),
+      updated_by: currentUser.id
+    }, { onConflict: 'id' });
+    if (error) throw error;
+    setSyncStatus('ok');
+  } catch (e) {
+    console.error('cloudFlush', e);
+    setSyncStatus('error');
+  }
+}
+
+let realtimeChannel = null;
+
+function iniciarRealtime() {
+  if (!supa || !currentUser || realtimeChannel) return;
+  realtimeChannel = supa
+    .channel('shared_data_main')
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'shared_data', filter: 'id=eq.main' },
+      async (payload) => {
+        if (!payload.new) return;
+        if (payload.new.updated_by === currentUser.id) return;
+        cloudCache = payload.new.data || {};
+        await loadState();
+        const activeBtn = document.querySelector('.nav-btn.active');
+        const pagina = activeBtn && activeBtn.dataset.page ? activeBtn.dataset.page : 'home';
+        goto(pagina);
+        toast('Dados atualizados por outro usuário', 'ok');
+      })
+    .subscribe();
+}
+
+function pararRealtime() {
+  if (supa && realtimeChannel) {
+    supa.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+function scheduleCloudSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; cloudFlush(); }, 800);
+}
+
+function setSyncStatus(status) {
+  const el = document.getElementById('authSync');
+  if (!el) return;
+  el.classList.remove('saving', 'error');
+  if (status === 'saving') { el.textContent = '☁ Salvando...'; el.classList.add('saving'); }
+  else if (status === 'error') { el.textContent = '☁ Erro ao salvar'; el.classList.add('error'); }
+  else { el.textContent = '☁ Sincronizado'; }
+}
+
+const DB = {
+  async get(key) {
+    if (cloudCache) {
+      const v = cloudCache[key];
+      return (v !== undefined && v !== null) ? { key, value: v } : null;
+    }
+    try {
+      const v = localStorage.getItem(key);
+      return v !== null ? { key, value: v } : null;
+    } catch (e) { return null; }
+  },
+  async set(key, value) {
+    if (cloudCache) {
+      cloudCache[key] = value;
+      scheduleCloudSave();
+      return { key, value };
+    }
+    try {
+      localStorage.setItem(key, value);
+      return { key, value };
+    } catch (e) {
+      console.error('localStorage cheio ou indisponível', e);
+      return null;
+    }
+  },
+  async delete(key) {
+    if (cloudCache) {
+      delete cloudCache[key];
+      scheduleCloudSave();
+      return { key, deleted: true };
+    }
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  }
+};
+
+/* ========================================================= */
+/*                     AUTENTICAÇÃO                          */
+/* ========================================================= */
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','ordens','osCounter'];
+
+async function inicializarAuth() {
+  if (!supa) return;
+  const { data: { session } } = await supa.auth.getSession();
+  if (session && session.user) {
+    currentUser = session.user;
+    await cloudLoad();
+    iniciarRealtime();
+  }
+  atualizarUIAuth();
+  supa.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      currentUser = session.user;
+      await cloudLoad();
+      iniciarRealtime();
+    } else if (event === 'SIGNED_OUT') {
+      pararRealtime();
+      currentUser = null;
+      cloudCache = null;
+    }
+    atualizarUIAuth();
+  });
+}
+
+function atualizarUIAuth() {
+  const out = document.getElementById('authLoggedOut');
+  const inn = document.getElementById('authLoggedIn');
+  const emailEl = document.getElementById('authEmail');
+  const appEl = document.querySelector('.app');
+  const modal = document.getElementById('modalAuth');
+  if (!out || !inn || !appEl || !modal) return;
+  if (currentUser) {
+    out.classList.add('hidden');
+    inn.classList.remove('hidden');
+    if (emailEl) emailEl.textContent = currentUser.email || currentUser.id;
+    appEl.classList.remove('hidden');
+    modal.classList.add('hidden');
+  } else {
+    out.classList.remove('hidden');
+    inn.classList.add('hidden');
+    appEl.classList.add('hidden');
+    modal.classList.remove('hidden');
+    const erroEl = document.getElementById('authErro');
+    if (erroEl) erroEl.textContent = '';
+  }
+}
+
+function abrirLogin() {
+  document.getElementById('modalAuth').classList.remove('hidden');
+  document.getElementById('authErro').textContent = '';
+  document.getElementById('authEmailInput').focus();
+}
+
+function fecharLogin() {
+  document.getElementById('modalAuth').classList.add('hidden');
+}
+
+function trocarAbaAuth(aba) {
+  document.querySelectorAll('.modal-auth .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(aba === 'login' ? 'tabLogin' : 'tabSignup').classList.add('active');
+  document.getElementById('authActionBtn').textContent = aba === 'login' ? 'Entrar' : 'Criar conta';
+  document.getElementById('modalAuth').dataset.mode = aba;
+  document.getElementById('authErro').textContent = '';
+}
+
+function traduzirErroAuth(msg) {
+  if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos';
+  if (/user already registered/i.test(msg)) return 'Este e-mail já está cadastrado — use Entrar';
+  if (/password should be at least/i.test(msg)) return 'Senha muito curta';
+  if (/rate limit/i.test(msg)) return 'Muitas tentativas — aguarde um minuto';
+  if (/email.*invalid/i.test(msg)) return 'E-mail inválido';
+  return msg;
+}
+
+async function submeterAuth() {
+  if (!supa) { toast('Supabase não carregado — verifique conexão', 'err'); return; }
+  const modo = document.getElementById('modalAuth').dataset.mode || 'login';
+  const email = document.getElementById('authEmailInput').value.trim();
+  const senha = document.getElementById('authSenhaInput').value;
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!email || !senha) { erroEl.textContent = 'Informe e-mail e senha'; return; }
+  if (senha.length < 6) { erroEl.textContent = 'Senha precisa ter ao menos 6 caracteres'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const resp = modo === 'signup'
+      ? await supa.auth.signUp({ email, password: senha })
+      : await supa.auth.signInWithPassword({ email, password: senha });
+    if (resp.error) { erroEl.textContent = traduzirErroAuth(resp.error.message); return; }
+    if (!resp.data || !resp.data.session) {
+      erroEl.textContent = 'Conta criada — confirme seu e-mail ou tente entrar';
+      return;
+    }
+    currentUser = resp.data.session.user;
+    await cloudLoad();
+    iniciarRealtime();
+    const temLocal = CAD_KEYS.some(k => localStorage.getItem(k) !== null);
+    const cloudVazio = !cloudCache || Object.keys(cloudCache).length === 0;
+    if (temLocal && cloudVazio) {
+      if (confirm('Você tem cadastros salvos neste navegador. Enviar para a nuvem agora? (ficarão visíveis pra toda equipe)')) {
+        await migrarLocalParaNuvem();
       }
-    };
+    }
+    fecharLogin();
+    atualizarUIAuth();
+    await loadState();
+    goto('home');
+    toast('Conectado — cadastros sincronizados na nuvem', 'ok');
+  } catch (e) {
+    erroEl.textContent = e.message || 'Erro inesperado';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function migrarLocalParaNuvem() {
+  let n = 0;
+  for (const k of CAD_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) { cloudCache[k] = v; n++; }
+  }
+  if (n > 0) { await cloudFlush(); toast(`${n} item(ns) enviado(s) para a nuvem`, 'ok'); }
+}
+
+async function sairConta() {
+  if (!supa) return;
+  if (!confirm('Sair da conta? Seus dados continuam salvos na nuvem.')) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await cloudFlush(); }
+  pararRealtime();
+  await supa.auth.signOut();
+  currentUser = null;
+  cloudCache = null;
+  CAD_KEYS.forEach(k => { if (Array.isArray(STATE[k])) STATE[k] = []; });
+  STATE.osCounter = 0;
+  atualizarUIAuth();
+  toast('Desconectado.', 'ok');
+}
 
 const STATE = {
   tecidos: [],
@@ -2775,8 +3070,11 @@ async function popularExemplo() {
 /*                   INICIALIZAÇÃO                           */
 /* ========================================================= */
 (async function init() {
-  await loadState();
-  goto('home');
+  await inicializarAuth();
+  if (currentUser) {
+    await loadState();
+    goto('home');
+  }
 })();
 
 // Deixar disponível globalmente
@@ -2806,6 +3104,11 @@ window.exportarDados = exportarDados;
 window.importarDados = importarDados;
 window.limparTudo = limparTudo;
 window.popularExemplo = popularExemplo;
+window.abrirLogin = abrirLogin;
+window.fecharLogin = fecharLogin;
+window.trocarAbaAuth = trocarAbaAuth;
+window.submeterAuth = submeterAuth;
+window.sairConta = sairConta;
 </script>
 </body>
 </html>
