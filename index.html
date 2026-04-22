@@ -712,7 +712,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 @media print {
   @page {
     size: A4;
-    margin: 6mm;
+    margin: 5mm;
   }
   body, html {
     background: #fff;
@@ -723,11 +723,16 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   main.content { padding: 0; }
   .print-area { padding: 0; background: #fff; }
   .sheet {
-    width: 100%;
-    min-height: auto;
+    width: 200mm;
+    max-height: 287mm;
+    overflow: hidden;
     box-shadow: none;
     padding: 0;
+    transform-origin: top left;
+    page-break-inside: avoid;
+    page-break-after: avoid;
   }
+  .sheet > * { page-break-inside: avoid; }
 }
 
 /* ============ RESPONSIVO ============ */
@@ -1354,7 +1359,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <div class="actions">
           <button class="btn" onclick="goto('lista-os')">Voltar</button>
           <button class="btn" onclick="editarOsAtual()">Editar</button>
-          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+          <button class="btn accent" onclick="ajustarImpressaoParaA4(); setTimeout(() => window.print(), 50);">🖨 Imprimir / Salvar PDF</button>
         </div>
       </div>
       <div class="print-area">
@@ -3213,6 +3218,28 @@ async function salvarEImprimir() {
   goto('print');
 }
 
+function ajustarImpressaoParaA4() {
+  const sheet = document.querySelector('.sheet');
+  if (!sheet) return;
+  sheet.style.transform = '';
+  sheet.style.width = '';
+  // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
+  const pxPerMm = 3.7795275591;
+  const maxHpx = 287 * pxPerMm;
+  const natH = sheet.scrollHeight;
+  if (natH > maxHpx) {
+    const scale = Math.max(0.4, maxHpx / natH);
+    sheet.style.transform = 'scale(' + scale + ')';
+    sheet.style.width = (100 / scale) + '%';
+  }
+}
+
+window.addEventListener('beforeprint', ajustarImpressaoParaA4);
+window.addEventListener('afterprint', function() {
+  const sheet = document.querySelector('.sheet');
+  if (sheet) { sheet.style.transform = ''; sheet.style.width = ''; }
+});
+
 /* ========================================================= */
 /*                    LISTA DE OS                            */
 /* ========================================================= */
@@ -3747,6 +3774,7 @@ window.reindexTecidos = reindexTecidos;
 window.reindexVariantes = reindexVariantes;
 window.salvarOS = salvarOS;
 window.salvarEImprimir = salvarEImprimir;
+window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
 window.verOS = verOS;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
