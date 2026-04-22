@@ -410,8 +410,10 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   background: var(--paper);
   border-radius: 4px;
   padding: 24px;
-  max-width: 500px;
+  max-width: 560px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0,0,0,.25);
 }
 .modal h2 {
@@ -1973,7 +1975,6 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe, 'nome', item.designerId, equipeLabel)}</select></div>
           <div class="field"><label>Ficha técnica</label><select id="m-vinc-ftec">${optNada(STATE.equipe, 'nome', item.ftecId, equipeLabel)}</select></div>
           <div class="field"><label>Coordenador</label><select id="m-vinc-coord">${optNada(STATE.equipe, 'nome', item.coordId, equipeLabel)}</select></div>
-          <div class="field"><label>Grade padrão</label><select id="m-vinc-grade">${optNada(STATE.grades, 'nome', item.gradeId)}</select></div>
         </div>
         <div class="field-hint">Vínculos do desenho (quando houver) têm prioridade sobre os do modelo.</div>
       </div>`;
@@ -2169,7 +2170,6 @@ async function salvarCadastro() {
     item.designerId = v('m-vinc-designer');
     item.ftecId = v('m-vinc-ftec');
     item.coordId = v('m-vinc-coord');
-    item.gradeId = v('m-vinc-grade');
   }
   else if (tipo === 'colecao') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -2699,8 +2699,7 @@ function aplicarVinculosModelo() {
   if (!m) return;
   const mapa = {
     baseId: 'f-base', marcaId: 'f-griffe',
-    designerId: 'f-designer', ftecId: 'f-ftec', coordId: 'f-coordenado',
-    gradeId: 'f-grade-preset'
+    designerId: 'f-designer', ftecId: 'f-ftec', coordId: 'f-coordenado'
   };
   let aplicou = false;
   Object.entries(mapa).forEach(([campo, selId]) => {
@@ -2708,7 +2707,6 @@ function aplicarVinculosModelo() {
     if (!el) return;
     if (m[campo]) { el.value = m[campo]; aplicou = true; }
   });
-  if (m.gradeId) aplicarGradePreset();
   if (aplicou) {
     atualizarResponsabilidadesOS();
     if (!aplicandoVinculosDesenho) toast('Vínculos do modelo aplicados', 'ok');
