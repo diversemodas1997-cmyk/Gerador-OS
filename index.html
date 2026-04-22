@@ -1146,7 +1146,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
             <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" list="codigos-datalist" placeholder="Digite ou selecione" oninput="sincCodigoDesenho('codigo')"><datalist id="codigos-datalist"></datalist><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar novo desenho</a></div>
             <div class="field"><label>Data</label><input type="date" id="f-data"></div>
-            <div class="field"><label>Coordenado (outro desenho)</label><select id="f-coordenado"></select><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar desenho</a></div>
+            <div class="field"><label>Coordenador</label><select id="f-coordenado"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
 
             <div class="field"><label>Coleção</label><select id="f-colecao"></select><a href="#" class="field-add-link" onclick="openCadastroModal('colecao', null, 'os-form'); return false;">+ Cadastrar coleção</a></div>
             <div class="field"><label>Modelo</label><select id="f-modelo"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
@@ -2125,7 +2125,7 @@ function refreshOSFormDropdowns() {
   fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
   fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
   fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
-  fillSelect('f-coordenado', STATE.desenhos, 'codigo', '— nenhum —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-coordenado', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
   atualizarDatalistCodigos();
   Object.entries(saved).forEach(([id, val]) => { const el = document.getElementById(id); if (el && val) el.value = val; });
 }
@@ -2307,8 +2307,8 @@ function initOSForm() {
   fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
   fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
   fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
-  // coordenado puxa da lista de desenhos técnicos
-  fillSelect('f-coordenado', STATE.desenhos, 'codigo', '— nenhum —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  // coordenador puxa da equipe (pessoa que coordena)
+  fillSelect('f-coordenado', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
 
   // se não estiver editando e os campos principais estão vazios, limpar e inicializar linhas
   if (!osEditId) {
@@ -3034,7 +3034,7 @@ function renderPrintSheet(o) {
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">OS Nº</strong><br>${esc(o.os||'—')}</div>
       <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
-      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenado</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
     </div>
 
     <!-- CORPO -->
