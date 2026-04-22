@@ -1277,29 +1277,6 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
           <button type="button" class="add-row-btn" onclick="addAviamentoRow()">+ Adicionar aviamento</button>
         </div>
 
-        <!-- CUSTOS -->
-        <div class="card">
-          <div class="card-title">Custos da ficha (R$)</div>
-          <div class="form-grid cols-3">
-            <div class="field"><label>Tecido</label><input type="number" step="0.01" id="c-tecido" placeholder="0,00"></div>
-            <div class="field"><label>Estampa</label><input type="number" step="0.01" id="c-estampa"></div>
-            <div class="field"><label>Bordado</label><input type="number" step="0.01" id="c-bordado"></div>
-            <div class="field"><label>Frequência</label><input type="number" step="0.01" id="c-freq"></div>
-            <div class="field"><label>Lavanderia</label><input type="number" step="0.01" id="c-lav"></div>
-            <div class="field"><label>Termocolante</label><input type="number" step="0.01" id="c-termo"></div>
-            <div class="field"><label>Transfer batida</label><input type="number" step="0.01" id="c-transfer"></div>
-            <div class="field"><label>Costura</label><input type="number" step="0.01" id="c-costura"></div>
-            <div class="field"><label>Caseado</label><input type="number" step="0.01" id="c-caseado"></div>
-            <div class="field"><label>Travete</label><input type="number" step="0.01" id="c-travete"></div>
-            <div class="field"><label>Acabamento</label><input type="number" step="0.01" id="c-acab"></div>
-            <div class="field"><label>Demais custos</label><input type="number" step="0.01" id="c-demais"></div>
-          </div>
-          <div style="margin-top:14px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; justify-content: space-between;">
-            <strong>Total calculado:</strong>
-            <strong id="custo-total" style="font-family: 'IBM Plex Mono', monospace; color: var(--accent-dark);">R$ 0,00</strong>
-          </div>
-        </div>
-
         <!-- OBSERVAÇÕES -->
         <div class="card">
           <div class="card-title">Observações</div>
@@ -2448,15 +2425,8 @@ function initOSForm() {
   }
 
   renderEtapas();
-  calcTotal();
   atualizarCalculosEnfesto();
   atualizarResponsabilidadesOS();
-  // listeners para total
-  ['c-tecido','c-estampa','c-bordado','c-freq','c-lav','c-termo','c-transfer','c-costura','c-caseado','c-travete','c-acab','c-demais']
-    .forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.oninput = calcTotal;
-    });
 }
 
 function fillSelect(id, items, labelField, placeholder, custom = null) {
@@ -2757,11 +2727,6 @@ function previewDesenhoSelecionado() {
   pv.innerHTML = d?.img ? `<img src="${d.img}">` : '<span>Sem imagem</span>';
 }
 
-function calcTotal() {
-  const ids = ['c-tecido','c-estampa','c-bordado','c-freq','c-lav','c-termo','c-transfer','c-costura','c-caseado','c-travete','c-acab','c-demais'];
-  const total = ids.reduce((s, id) => s + (parseFloat(document.getElementById(id)?.value) || 0), 0);
-  document.getElementById('custo-total').textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
-}
 
 /* ========================================================= */
 /*                      SALVAR OS                            */
@@ -2826,16 +2791,6 @@ function coletaOS() {
   };
   enfesto.totalPecas = grade.total * enfesto.camadas;
 
-  const custos = {
-    tecido: parseFloat(v('c-tecido'))||0, estampa: parseFloat(v('c-estampa'))||0,
-    bordado: parseFloat(v('c-bordado'))||0, frequencia: parseFloat(v('c-freq'))||0,
-    lavanderia: parseFloat(v('c-lav'))||0, termocolante: parseFloat(v('c-termo'))||0,
-    transfer: parseFloat(v('c-transfer'))||0, costura: parseFloat(v('c-costura'))||0,
-    caseado: parseFloat(v('c-caseado'))||0, travete: parseFloat(v('c-travete'))||0,
-    acabamento: parseFloat(v('c-acab'))||0, demais: parseFloat(v('c-demais'))||0
-  };
-  custos.total = Object.values(custos).reduce((a,b)=>a+b,0);
-
   // helper: retorna {id, nome} a partir de um select
   const getSelect = id => {
     const el = document.getElementById(id);
@@ -2871,7 +2826,7 @@ function coletaOS() {
     designerId: designer.id, designerNome: designer.nome,
     ftecId: ftec.id,        ftecNome: ftec.nome,
     desenhoId: v('f-desenho'),
-    tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos, custos,
+    tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
     obs: v('f-obs'),
     criadoEm: new Date().toISOString()
   };
@@ -2995,12 +2950,6 @@ function editarOS(id) {
     document.getElementById('f-enf-larg').value = o.enfesto?.largura || '';
     document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
     document.getElementById('f-obs').value = o.obs || '';
-    // custos
-    const m = {tecido:'c-tecido',estampa:'c-estampa',bordado:'c-bordado',frequencia:'c-freq',
-      lavanderia:'c-lav',termocolante:'c-termo',transfer:'c-transfer',costura:'c-costura',
-      caseado:'c-caseado',travete:'c-travete',acabamento:'c-acab',demais:'c-demais'};
-    Object.keys(m).forEach(k => { if (o.custos?.[k]) document.getElementById(m[k]).value = o.custos[k]; });
-    calcTotal();
     // tecidos
     document.getElementById('tecidos-rows').innerHTML = '';
     (o.tecidos||[]).forEach(t => addTecidoRow(t));
@@ -3108,8 +3057,6 @@ function renderPrintSheet(o) {
   const vars_ = o.variantes || [];
   const comps = o.componentes || [];
   const avs = o.aviamentos || [];
-  const cus = o.custos || {};
-
   // Tabela de tecidos (até 5 linhas)
   let tecidoRows = '';
   for (let i = 0; i < 5; i++) {
@@ -3140,18 +3087,6 @@ function renderPrintSheet(o) {
     </tr>`;
   }
 
-  // Custos
-  const custosPairs = [
-    ['Tecido', cus.tecido], ['Estampa', cus.estampa],
-    ['Bordado', cus.bordado], ['Frequência', cus.frequencia],
-    ['Lavanderia', cus.lavanderia], ['Termocolante', cus.termocolante],
-    ['Transfer bat.', cus.transfer], ['Costura', cus.costura],
-    ['Caseado', cus.caseado], ['Travete', cus.travete],
-    ['Acabamento', cus.acabamento], ['Demais', cus.demais]
-  ];
-  const custosHtml = custosPairs.map(([l,v]) =>
-    `<tr><td>${l}</td><td style="font-family:'IBM Plex Mono',monospace;text-align:right;">${v ? 'R$ '+Number(v).toFixed(2).replace('.',',') : '—'}</td></tr>`
-  ).join('');
 
   // Aviamentos
   const aviamentosHtml = avs.length
@@ -3251,15 +3186,6 @@ function renderPrintSheet(o) {
             <tr><th style="width:40px;">Var</th><th>Cor 1 (principal)</th><th>Cor 2 (cordão/linha)</th></tr>
           </thead>
           <tbody>${variantesHtml}</tbody>
-        </table>
-
-        <!-- CUSTOS -->
-        <table class="side-table custos-tab" style="border-top:none;">
-          <thead><tr><th colspan="2" class="subhead">Custos da Ficha (R$)</th></tr></thead>
-          <tbody>
-            ${custosHtml}
-            <tr style="background:#1a1a1a;color:#fff;font-weight:700;"><td>TOTAL</td><td style="font-family:'IBM Plex Mono',monospace;text-align:right;">R$ ${(cus.total||0).toFixed(2).replace('.',',')}</td></tr>
-          </tbody>
         </table>
 
         <!-- AVIAMENTOS -->
