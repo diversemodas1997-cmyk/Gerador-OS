@@ -1217,9 +1217,9 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="f-enf-comp" placeholder="Ex.: 6,50"></div>
             <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="f-enf-larg" placeholder="Ex.: 1,80"></div>
             <div class="field">
-              <label>Peças-alvo</label>
-              <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 200" oninput="calcularCamadasParaProducao()">
-              <div class="field-hint">Calcula camadas automaticamente</div>
+              <label>Peças-alvo por tamanho</label>
+              <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()">
+              <div class="field-hint">Quantidade desejada de cada tamanho — calcula camadas automaticamente</div>
             </div>
             <div class="field">
               <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
@@ -2632,14 +2632,18 @@ function atualizarCalculosEnfesto() {
 function calcularCamadasParaProducao() {
   const target = parseInt(document.getElementById('f-enf-target')?.value) || 0;
   if (target <= 0) { atualizarCalculosEnfesto(); return; }
-  const gradeTotal = ['pp','p','m','g','gg','g1','g2','g3']
-    .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
-  if (gradeTotal === 0) {
+  const qtdsPorTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+    .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
+    .filter(q => q > 0);
+  if (qtdsPorTamanho.length === 0) {
     toast('Preencha a grade antes', 'err');
     return;
   }
   const multiplier = multiplicadorDominante();
-  const camadas = Math.ceil(target / (gradeTotal * multiplier));
+  // Camadas necessárias = max (por tamanho) de ceil(target / (qtd × multiplier))
+  // Isso garante que o tamanho menos representado na grade também atinja o target.
+  const minQtd = Math.min(...qtdsPorTamanho);
+  const camadas = Math.ceil(target / (minQtd * multiplier));
   document.getElementById('f-enf-camadas').value = camadas;
   atualizarCalculosEnfesto();
 }
