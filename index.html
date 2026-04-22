@@ -795,11 +795,16 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
     <div class="nav-group">
       <div class="nav-label">Cadastros</div>
+      <button class="nav-btn" data-page="cad-marcas">Marcas</button>
+      <button class="nav-btn" data-page="cad-colecoes">Coleções</button>
+      <button class="nav-btn" data-page="cad-modelos">Modelos</button>
+      <button class="nav-btn" data-page="cad-linhas">Linhas</button>
+      <button class="nav-btn" data-page="cad-bases">Bases</button>
+      <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
+      <button class="nav-btn" data-page="cad-equipe">Equipe</button>
       <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
       <button class="nav-btn" data-page="cad-cores">Cores</button>
       <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
-      <button class="nav-btn" data-page="cad-modelos">Modelos</button>
-      <button class="nav-btn" data-page="cad-colecoes">Coleções</button>
       <button class="nav-btn" data-page="cad-grades">Grades</button>
       <button class="nav-btn" data-page="cad-desenhos">Desenhos técnicos</button>
     </div>
@@ -873,6 +878,31 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
           <div class="label">Cadastro</div>
           <div class="title">Desenhos técnicos</div>
         </div>
+        <div class="home-card" onclick="goto('cad-marcas')">
+          <div class="num" id="stat-marcas">0</div>
+          <div class="label">Cadastro</div>
+          <div class="title">Marcas</div>
+        </div>
+        <div class="home-card" onclick="goto('cad-linhas')">
+          <div class="num" id="stat-linhas">0</div>
+          <div class="label">Cadastro</div>
+          <div class="title">Linhas</div>
+        </div>
+        <div class="home-card" onclick="goto('cad-bases')">
+          <div class="num" id="stat-bases">0</div>
+          <div class="label">Cadastro</div>
+          <div class="title">Bases</div>
+        </div>
+        <div class="home-card" onclick="goto('cad-blocos')">
+          <div class="num" id="stat-blocos">0</div>
+          <div class="label">Cadastro</div>
+          <div class="title">Blocos / Revisões</div>
+        </div>
+        <div class="home-card" onclick="goto('cad-equipe')">
+          <div class="num" id="stat-equipe">0</div>
+          <div class="label">Cadastro</div>
+          <div class="title">Equipe</div>
+        </div>
       </div>
     </section>
 
@@ -880,12 +910,12 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
     <!-- TECIDOS -->
     <section class="page hidden" data-page="cad-tecidos">
       <div class="page-header">
-        <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk</div></div>
+        <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk. A categoria define o limite de camadas no enfesto.</div></div>
         <div class="actions"><button class="btn primary" onclick="openCadastroModal('tecido')">+ Novo tecido</button></div>
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th>Nome</th><th>Composição / Obs.</th><th class="col-actions">Ações</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Composição / Obs.</th><th>Categoria</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-tecidos"></tbody>
         </table>
       </div>
@@ -975,6 +1005,76 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
       </div>
     </section>
 
+    <!-- MARCAS / GRIFFES -->
+    <section class="page hidden" data-page="cad-marcas">
+      <div class="page-header">
+        <div><h1>Marcas / Griffes</h1><div class="desc">Ex.: Dixie, Diverse, outras marcas da empresa</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('marca')">+ Nova marca</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-marcas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- LINHAS -->
+    <section class="page hidden" data-page="cad-linhas">
+      <div class="page-header">
+        <div><h1>Linhas</h1><div class="desc">Ex.: Adulto, Infantil, Juvenil, Plus Size</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('linha')">+ Nova linha</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-linhas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BASES -->
+    <section class="page hidden" data-page="cad-bases">
+      <div class="page-header">
+        <div><h1>Bases</h1><div class="desc">Moldes base usados como referência (ex.: BASE M, BASE P, BASE MOLETOM)</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('base')">+ Nova base</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-bases"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BLOCOS / REVISÕES -->
+    <section class="page hidden" data-page="cad-blocos">
+      <div class="page-header">
+        <div><h1>Blocos / Revisões</h1><div class="desc">Ex.: R1 BLOCO 1, R1 BLOCO 2, R2 BLOCO 1</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('bloco')">+ Novo bloco</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-blocos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- EQUIPE -->
+    <section class="page hidden" data-page="cad-equipe">
+      <div class="page-header">
+        <div><h1>Equipe</h1><div class="desc">Pessoas que aparecem como Designer ou responsável pela Ficha Técnica</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('equipe')">+ Nova pessoa</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Função principal</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-equipe"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ================= NOVA OS ================= -->
     <section class="page hidden" data-page="nova-os">
       <div class="page-header">
@@ -994,17 +1094,17 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
             <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" placeholder="Ex.: Dx7282"></div>
             <div class="field"><label>Data</label><input type="date" id="f-data"></div>
-            <div class="field"><label>Coordenado</label><input type="text" id="f-coordenado" placeholder="Ex.: Dx7418"></div>
+            <div class="field"><label>Coordenado (outro desenho)</label><select id="f-coordenado"></select></div>
 
             <div class="field"><label>Coleção</label><select id="f-colecao"></select></div>
             <div class="field"><label>Modelo</label><select id="f-modelo"></select></div>
-            <div class="field"><label>Bloco / Revisão</label><input type="text" id="f-bloco" placeholder="Ex.: R1 BLOCO 2"></div>
-            <div class="field"><label>Linha</label><input type="text" id="f-linha" placeholder="Ex.: Adulto, Infantil"></div>
+            <div class="field"><label>Bloco / Revisão</label><select id="f-bloco"></select></div>
+            <div class="field"><label>Linha</label><select id="f-linha"></select></div>
 
-            <div class="field"><label>Griffe / Marca</label><input type="text" id="f-griffe" placeholder="Ex.: DIXIE"></div>
-            <div class="field"><label>Base</label><input type="text" id="f-base" placeholder="Ex.: BASE M"></div>
-            <div class="field"><label>Designer</label><input type="text" id="f-designer" placeholder="Ex.: Marcelo"></div>
-            <div class="field"><label>Ficha técnica</label><input type="text" id="f-ftec" placeholder="Ex.: Marcelo"></div>
+            <div class="field"><label>Griffe / Marca</label><select id="f-griffe"></select></div>
+            <div class="field"><label>Base</label><select id="f-base"></select></div>
+            <div class="field"><label>Designer</label><select id="f-designer"></select></div>
+            <div class="field"><label>Ficha técnica</label><select id="f-ftec"></select></div>
           </div>
         </div>
 
@@ -1032,14 +1132,31 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
           </div>
           <div class="grade-inputs">
-            <div class="field"><label>PP</label><input type="number" id="f-gr-pp" min="0" value="0"></div>
-            <div class="field"><label>P</label><input type="number" id="f-gr-p" min="0" value="0"></div>
-            <div class="field"><label>M</label><input type="number" id="f-gr-m" min="0" value="0"></div>
-            <div class="field"><label>G</label><input type="number" id="f-gr-g" min="0" value="0"></div>
-            <div class="field"><label>GG</label><input type="number" id="f-gr-gg" min="0" value="0"></div>
-            <div class="field"><label>G1</label><input type="number" id="f-gr-g1" min="0" value="0"></div>
-            <div class="field"><label>G2</label><input type="number" id="f-gr-g2" min="0" value="0"></div>
-            <div class="field"><label>G3</label><input type="number" id="f-gr-g3" min="0" value="0"></div>
+            <div class="field"><label>PP</label><input type="number" id="f-gr-pp" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>P</label><input type="number" id="f-gr-p" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>M</label><input type="number" id="f-gr-m" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G</label><input type="number" id="f-gr-g" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>GG</label><input type="number" id="f-gr-gg" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G1</label><input type="number" id="f-gr-g1" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G2</label><input type="number" id="f-gr-g2" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G3</label><input type="number" id="f-gr-g3" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+          </div>
+        </div>
+
+        <!-- ENFESTO -->
+        <div class="card">
+          <div class="card-title">Enfesto</div>
+          <div class="form-grid cols-3">
+            <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="f-enf-comp" placeholder="Ex.: 6,50"></div>
+            <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="f-enf-larg" placeholder="Ex.: 1,80"></div>
+            <div class="field">
+              <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
+              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="atualizarCalculosEnfesto()">
+            </div>
+          </div>
+          <div id="f-enf-alerta" class="hidden" style="margin-top:10px; padding: 8px 12px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 12px; border-radius: 2px;"></div>
+          <div id="f-enf-calculo" style="margin-top:12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2);">
+            <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
           </div>
         </div>
 
@@ -1224,7 +1341,13 @@ const STATE = {
   colecoes: [],
   grades: [],
   desenhos: [],
+  marcas: [],
+  linhas: [],
+  bases: [],
+  blocos: [],
+  equipe: [],
   ordens: [],
+  osCounter: 0,
   etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
   componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
 };
@@ -1239,7 +1362,7 @@ async function saveState(key) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','ordens'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1248,6 +1371,11 @@ async function loadState() {
       }
     } catch (e) { /* chave não existe ainda, ok */ }
   }
+  // Carrega o contador de OS (não é array, é número)
+  try {
+    const c = await DB.get('osCounter');
+    if (c && c.value) STATE.osCounter = parseInt(c.value) || 0;
+  } catch (e) { /* ok */ }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
@@ -1273,6 +1401,11 @@ function goto(page) {
   if (page === 'cad-colecoes') renderColecoes();
   if (page === 'cad-grades') renderGrades();
   if (page === 'cad-desenhos') renderDesenhos();
+  if (page === 'cad-marcas') renderMarcas();
+  if (page === 'cad-linhas') renderLinhas();
+  if (page === 'cad-bases') renderBases();
+  if (page === 'cad-blocos') renderBlocos();
+  if (page === 'cad-equipe') renderEquipe();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
 }
@@ -1305,7 +1438,9 @@ function openCadastroModal(tipo, editId = null) {
   const titles = {
     tecido: 'Tecido', cor: 'Cor', material: 'Material / Aviamento',
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
-    desenho: 'Desenho técnico'
+    desenho: 'Desenho técnico',
+    marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
+    equipe: 'Membro da equipe'
   };
   title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
 
@@ -1319,7 +1454,15 @@ function openCadastroModal(tipo, editId = null) {
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"></div>
-        <div class="field full"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
+        <div class="field"><label>Categoria (define limite de enfesto)</label>
+          <select id="m-categoria">
+            <option value="">— selecione —</option>
+            <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
+            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 30 camadas)</option>
+            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
+          </select>
+        </div>
+        <div class="field"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
       </div>`;
   }
   else if (tipo === 'cor') {
@@ -1379,6 +1522,50 @@ function openCadastroModal(tipo, editId = null) {
         </div>
       </div>`;
   }
+  else if (tipo === 'marca') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Dixie"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: marca principal"></div>
+      </div>`;
+  }
+  else if (tipo === 'linha') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Adulto"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: linha principal"></div>
+      </div>`;
+  }
+  else if (tipo === 'base') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: BASE M MOLETOM"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: molde base nº 12"></div>
+      </div>`;
+  }
+  else if (tipo === 'bloco') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: R1 BLOCO 2"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: segunda revisão do bloco"></div>
+      </div>`;
+  }
+  else if (tipo === 'equipe') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Marcelo"></div>
+        <div class="field"><label>Função principal</label>
+          <select id="m-funcao">
+            <option value="">— qualquer —</option>
+            <option value="Designer" ${item.funcao==='Designer'?'selected':''}>Designer</option>
+            <option value="Ficha Técnica" ${item.funcao==='Ficha Técnica'?'selected':''}>Ficha Técnica</option>
+            <option value="Ambos" ${item.funcao==='Ambos'?'selected':''}>Ambos</option>
+            <option value="Modelista" ${item.funcao==='Modelista'?'selected':''}>Modelista</option>
+            <option value="Outro" ${item.funcao==='Outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
+      </div>`;
+  }
 
   openModal('modal-cad');
 }
@@ -1396,7 +1583,8 @@ function previewUploadImg(e) {
 
 function pluralize(tipo) {
   return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
-           colecao:'colecoes', grade:'grades', desenho:'desenhos' }[tipo];
+           colecao:'colecoes', grade:'grades', desenho:'desenhos',
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe' }[tipo];
 }
 
 async function salvarCadastro() {
@@ -1410,6 +1598,7 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.desc = v('m-desc');
+    item.categoria = v('m-categoria');
   }
   else if (tipo === 'cor') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1448,6 +1637,16 @@ async function salvarCadastro() {
     item.desc = v('m-desc');
     item.img = v('m-img-data');
   }
+  else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+  }
+  else if (tipo === 'equipe') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.funcao = v('m-funcao');
+  }
 
   if (!editId) STATE[list].push(item);
   await saveState(list);
@@ -1483,9 +1682,15 @@ function acoesCell(tipo, id) {
 
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
-  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 30', outro: 'Outro' };
   tb.innerHTML = STATE.tecidos.map(t => `
-    <tr><td><strong>${esc(t.nome)}</strong></td><td>${esc(t.desc)}</td>${acoesCell('tecido', t.id)}</tr>`).join('');
+    <tr>
+      <td><strong>${esc(t.nome)}</strong></td>
+      <td>${esc(t.desc)}</td>
+      <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
+      ${acoesCell('tecido', t.id)}
+    </tr>`).join('');
 }
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
@@ -1534,9 +1739,39 @@ function renderDesenhos() {
         ${d.img ? `<img src="${d.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
       <td><strong>${esc(d.codigo)}</strong></td><td>${esc(d.desc)||'—'}</td>${acoesCell('desenho', d.id)}</tr>`).join('');
 }
+function renderMarcas() {
+  const tb = document.getElementById('tbl-marcas');
+  if (!STATE.marcas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma marca cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.marcas.map(m => `
+    <tr><td><strong>${esc(m.nome)}</strong></td><td>${esc(m.desc)||'—'}</td>${acoesCell('marca', m.id)}</tr>`).join('');
+}
+function renderLinhas() {
+  const tb = document.getElementById('tbl-linhas');
+  if (!STATE.linhas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma linha cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.linhas.map(l => `
+    <tr><td><strong>${esc(l.nome)}</strong></td><td>${esc(l.desc)||'—'}</td>${acoesCell('linha', l.id)}</tr>`).join('');
+}
+function renderBases() {
+  const tb = document.getElementById('tbl-bases');
+  if (!STATE.bases.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma base cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.bases.map(b => `
+    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('base', b.id)}</tr>`).join('');
+}
+function renderBlocos() {
+  const tb = document.getElementById('tbl-blocos');
+  if (!STATE.blocos.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum bloco cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.blocos.map(b => `
+    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('bloco', b.id)}</tr>`).join('');
+}
+function renderEquipe() {
+  const tb = document.getElementById('tbl-equipe');
+  if (!STATE.equipe.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.equipe.map(p => `
+    <tr><td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td>${acoesCell('equipe', p.id)}</tr>`).join('');
+}
 
 function renderHome() {
-  const set = (id, v) => document.getElementById(id).textContent = v;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('stat-os', STATE.ordens.length);
   set('stat-tecidos', STATE.tecidos.length);
   set('stat-cores', STATE.cores.length);
@@ -1545,6 +1780,11 @@ function renderHome() {
   set('stat-colecoes', STATE.colecoes.length);
   set('stat-grades', STATE.grades.length);
   set('stat-desenhos', STATE.desenhos.length);
+  set('stat-marcas', STATE.marcas.length);
+  set('stat-linhas', STATE.linhas.length);
+  set('stat-bases', STATE.bases.length);
+  set('stat-blocos', STATE.blocos.length);
+  set('stat-equipe', STATE.equipe.length);
 }
 
 /* ========================================================= */
@@ -1559,12 +1799,24 @@ function initOSForm() {
   fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
   fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
 
+  // novos selects do cabeçalho
+  fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
+  fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
+  fillSelect('f-base', STATE.bases, 'nome', '— selecione —');
+  fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
+  fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  // coordenado puxa da lista de desenhos técnicos
+  fillSelect('f-coordenado', STATE.desenhos, 'codigo', '— nenhum —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+
   // se não estiver editando e os campos principais estão vazios, limpar e inicializar linhas
   if (!osEditId) {
     document.getElementById('os-form').reset();
     document.getElementById('f-id').value = '';
     document.getElementById('f-data').value = new Date().toISOString().slice(0,10);
     document.getElementById('os-form-title').textContent = 'Nova Ordem de Serviço';
+    // número OS automático sequencial
+    document.getElementById('f-os').value = proximoNumeroOS();
     // linhas iniciais
     document.getElementById('tecidos-rows').innerHTML = '';
     document.getElementById('variantes-rows').innerHTML = '';
@@ -1578,6 +1830,7 @@ function initOSForm() {
 
   renderEtapas();
   calcTotal();
+  atualizarCalculosEnfesto();
   // listeners para total
   ['c-tecido','c-estampa','c-bordado','c-freq','c-lav','c-termo','c-transfer','c-costura','c-caseado','c-travete','c-acab','c-demais']
     .forEach(id => {
@@ -1593,6 +1846,20 @@ function fillSelect(id, items, labelField, placeholder, custom = null) {
   el.innerHTML = `<option value="">${placeholder}</option>` +
     items.map(it => `<option value="${esc(it.id)}">${esc(custom ? custom(it) : it[labelField])}</option>`).join('');
   if (curVal) el.value = curVal;
+}
+
+// Define o valor de um select — primeiro tenta pelo ID direto; se não achar, tenta casar por nome (fallback para OS antigas)
+function setSelectByIdOrName(selectId, itemId, nameFallback, list) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  if (itemId) {
+    const hasOpt = Array.from(el.options).some(o => o.value === itemId);
+    if (hasOpt) { el.value = itemId; return; }
+  }
+  if (nameFallback && list?.length) {
+    const match = list.find(x => (x.nome || '').toLowerCase() === nameFallback.toLowerCase());
+    if (match) el.value = match.id;
+  }
 }
 
 function renderEtapas() {
@@ -1620,7 +1887,7 @@ function addTecidoRow(data = {}) {
   row.className = 'tecido-row';
   row.innerHTML = `
     <div class="field"><label>Nº</label><input type="text" value="${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
-    <div class="field"><label>Tecido</label><select class="tec-sel">${tecOptions(data.tecidoId)}</select></div>
+    <div class="field"><label>Tecido</label><select class="tec-sel" onchange="atualizarCalculosEnfesto()">${tecOptions(data.tecidoId)}</select></div>
     <div class="field"><label>Consumo C.1</label><input type="text" class="tec-c1" value="${esc(data.c1||'')}" placeholder="0,000 kg"></div>
     <div class="field"><label>Consumo C.2</label><input type="text" class="tec-c2" value="${esc(data.c2||'')}" placeholder="0,000 kg"></div>
     <div class="field">
@@ -1719,7 +1986,110 @@ function aplicarGradePreset() {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
   });
   document.getElementById('f-grade-desc').value = g.nome;
+  atualizarCalculosEnfesto();
   toast('Grade aplicada', 'ok');
+}
+
+/* ========================================================= */
+/*              ENFESTO — limites e cálculos                 */
+/* ========================================================= */
+const LIMITE_CAMADAS = { malha: 80, moletom: 30, outro: Infinity };
+
+// Calcula o limite máximo de camadas baseado nos tecidos selecionados no formulário.
+// Pega o menor limite entre todos — se há moletom e malha, vence moletom (30).
+function calcularLimiteCamadas() {
+  const rows = document.querySelectorAll('#tecidos-rows .tecido-row');
+  let limite = Infinity;
+  let categoriaRestritiva = null;
+  rows.forEach(r => {
+    const sel = r.querySelector('.tec-sel');
+    if (!sel || !sel.value) return;
+    const tec = STATE.tecidos.find(t => t.id === sel.value);
+    if (!tec || !tec.categoria) return;
+    const lim = LIMITE_CAMADAS[tec.categoria];
+    if (lim < limite) { limite = lim; categoriaRestritiva = tec.categoria; }
+  });
+  return { limite, categoriaRestritiva };
+}
+
+function atualizarCalculosEnfesto() {
+  const gradeTotal = ['pp','p','m','g','gg','g1','g2','g3']
+    .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
+  const camadas = parseInt(document.getElementById('f-enf-camadas')?.value) || 0;
+  const { limite, categoriaRestritiva } = calcularLimiteCamadas();
+
+  // Atualiza a dica ao lado do campo de camadas
+  const info = document.getElementById('f-enf-limite-info');
+  if (info) {
+    if (limite === Infinity) {
+      info.textContent = '';
+    } else {
+      const label = categoriaRestritiva === 'moletom' ? 'Moletom' : 'Malha algodão';
+      info.textContent = `· máx ${limite} (${label})`;
+    }
+  }
+
+  // Validação visual
+  const alerta = document.getElementById('f-enf-alerta');
+  const campoCamadas = document.getElementById('f-enf-camadas');
+  if (camadas > limite) {
+    alerta.textContent = `⚠ Você informou ${camadas} camadas, mas o limite para ${categoriaRestritiva === 'moletom' ? 'moletom' : 'malha algodão'} é ${limite}. Ajuste o valor ou separe em mais de um enfesto.`;
+    alerta.classList.remove('hidden');
+    campoCamadas.style.borderColor = 'var(--alert)';
+    campoCamadas.style.background = '#fff5f5';
+  } else {
+    alerta.classList.add('hidden');
+    campoCamadas.style.borderColor = '';
+    campoCamadas.style.background = '';
+  }
+
+  // Área de cálculo
+  const calcBox = document.getElementById('f-enf-calculo');
+  if (camadas > 0 && gradeTotal > 0) {
+    const totalPecas = gradeTotal * camadas;
+    const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+      .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
+      .filter(x => x.qtd > 0)
+      .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas} = ${x.qtd * camadas}`)
+      .join(' · ');
+    calcBox.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span>Total de peças do enfesto:</span>
+        <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
+      </div>
+      <div style="font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>
+    `;
+  } else {
+    calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>';
+  }
+}
+
+/* ========================================================= */
+/*           NÚMERO DA OS — sequencial automático            */
+/* ========================================================= */
+function formatarNumeroOS(n) {
+  return String(n).padStart(4, '0');
+}
+
+function proximoNumeroOS() {
+  // Pega o maior número já usado em OS existentes + o counter salvo
+  const counterAtual = parseInt(STATE.osCounter) || 0;
+  const numeros = STATE.ordens
+    .map(o => parseInt(o.os))
+    .filter(n => !isNaN(n));
+  const maxExistente = numeros.length ? Math.max(...numeros) : 0;
+  const prox = Math.max(counterAtual, maxExistente) + 1;
+  return formatarNumeroOS(prox);
+}
+
+async function atualizarCounterOS(numeroUsado) {
+  const n = parseInt(numeroUsado);
+  if (isNaN(n)) return;
+  const counterAtual = parseInt(STATE.osCounter) || 0;
+  if (n > counterAtual) {
+    STATE.osCounter = n;
+    await DB.set('osCounter', String(n));
+  }
 }
 
 function previewDesenhoSelecionado() {
@@ -1792,6 +2162,13 @@ function coletaOS() {
   };
   grade.total = grade.pp+grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
 
+  const enfesto = {
+    comprimento: parseFloat(v('f-enf-comp')) || 0,
+    largura: parseFloat(v('f-enf-larg')) || 0,
+    camadas: parseInt(v('f-enf-camadas')) || 0
+  };
+  enfesto.totalPecas = grade.total * enfesto.camadas;
+
   const custos = {
     tecido: parseFloat(v('c-tecido'))||0, estampa: parseFloat(v('c-estampa'))||0,
     bordado: parseFloat(v('c-bordado'))||0, frequencia: parseFloat(v('c-freq'))||0,
@@ -1802,27 +2179,57 @@ function coletaOS() {
   };
   custos.total = Object.values(custos).reduce((a,b)=>a+b,0);
 
+  // helper: retorna {id, nome} a partir de um select
+  const getSelect = id => {
+    const el = document.getElementById(id);
+    if (!el) return { id: '', nome: '' };
+    const selIdx = el.selectedIndex;
+    const txt = selIdx >= 0 ? el.options[selIdx]?.text || '' : '';
+    return { id: el.value, nome: txt.startsWith('—') ? '' : txt };
+  };
+
+  const griffe = getSelect('f-griffe');
+  const linha = getSelect('f-linha');
+  const base = getSelect('f-base');
+  const bloco = getSelect('f-bloco');
+  const designer = getSelect('f-designer');
+  const ftec = getSelect('f-ftec');
+  const coord = getSelect('f-coordenado');
+
   return {
     id: v('f-id') || uid(),
     os: v('f-os'),
     codigo: v('f-codigo'),
     data: v('f-data'),
-    coordenado: v('f-coordenado'),
+    coordenadoId: coord.id,
+    coordenadoNome: coord.nome,
     colecaoId: v('f-colecao'),
     colecaoNome: document.getElementById('f-colecao').options[document.getElementById('f-colecao').selectedIndex]?.text || '',
     modeloId: v('f-modelo'),
     modeloNome: document.getElementById('f-modelo').options[document.getElementById('f-modelo').selectedIndex]?.text || '',
-    bloco: v('f-bloco'),
-    linha: v('f-linha'),
-    griffe: v('f-griffe'),
-    base: v('f-base'),
-    designer: v('f-designer'),
-    ftec: v('f-ftec'),
+    blocoId: bloco.id,      blocoNome: bloco.nome,
+    linhaId: linha.id,      linhaNome: linha.nome,
+    griffeId: griffe.id,    griffeNome: griffe.nome,
+    baseId: base.id,        baseNome: base.nome,
+    designerId: designer.id, designerNome: designer.nome,
+    ftecId: ftec.id,        ftecNome: ftec.nome,
     desenhoId: v('f-desenho'),
-    tecidos, grade, etapas, variantes, componentes, aviamentos, custos,
+    tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos, custos,
     obs: v('f-obs'),
     criadoEm: new Date().toISOString()
   };
+}
+
+// Validação antes de salvar: limite de camadas.
+// Retorna true se pode prosseguir, false se o usuário cancelou.
+function validarAntesDeSalvar(data) {
+  const { limite, categoriaRestritiva } = calcularLimiteCamadas();
+  const camadas = data.enfesto?.camadas || 0;
+  if (camadas > 0 && camadas > limite) {
+    const catLabel = categoriaRestritiva === 'moletom' ? 'moletom (máx 30)' : 'malha algodão (máx 80)';
+    return confirm(`⚠ Atenção: você informou ${camadas} camadas, mas o limite para ${catLabel} é ${limite}.\n\nDeseja salvar mesmo assim?`);
+  }
+  return true;
 }
 
 async function salvarOS() {
@@ -1830,11 +2237,13 @@ async function salvarOS() {
   if (!data.os && !data.codigo) {
     return toast('Preencha ao menos número da OS ou código do desenho', 'err');
   }
+  if (!validarAntesDeSalvar(data)) return;
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
+  await atualizarCounterOS(data.os);
   osEditId = null;
-  toast('OS salva', 'ok');
+  toast('OS ' + data.os + ' salva', 'ok');
   goto('lista-os');
 }
 
@@ -1843,9 +2252,11 @@ async function salvarEImprimir() {
   if (!data.os && !data.codigo) {
     return toast('Preencha ao menos número da OS ou código do desenho', 'err');
   }
+  if (!validarAntesDeSalvar(data)) return;
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
+  await atualizarCounterOS(data.os);
   osEditId = null;
   renderPrintSheet(data);
   goto('print');
@@ -1905,21 +2316,27 @@ function editarOS(id) {
     document.getElementById('f-os').value = o.os || '';
     document.getElementById('f-codigo').value = o.codigo || '';
     document.getElementById('f-data').value = o.data || '';
-    document.getElementById('f-coordenado').value = o.coordenado || '';
+    // coordenado agora é select de desenho
+    document.getElementById('f-coordenado').value = o.coordenadoId || '';
     document.getElementById('f-colecao').value = o.colecaoId || '';
     document.getElementById('f-modelo').value = o.modeloId || '';
-    document.getElementById('f-bloco').value = o.bloco || '';
-    document.getElementById('f-linha').value = o.linha || '';
-    document.getElementById('f-griffe').value = o.griffe || '';
-    document.getElementById('f-base').value = o.base || '';
-    document.getElementById('f-designer').value = o.designer || '';
-    document.getElementById('f-ftec').value = o.ftec || '';
+    // novos selects do cabeçalho — tenta por ID; se vier de uma OS antiga (texto livre), tenta casar por nome
+    setSelectByIdOrName('f-bloco', o.blocoId, o.bloco || o.blocoNome, STATE.blocos);
+    setSelectByIdOrName('f-linha', o.linhaId, o.linha || o.linhaNome, STATE.linhas);
+    setSelectByIdOrName('f-griffe', o.griffeId, o.griffe || o.griffeNome, STATE.marcas);
+    setSelectByIdOrName('f-base', o.baseId, o.base || o.baseNome, STATE.bases);
+    setSelectByIdOrName('f-designer', o.designerId, o.designer || o.designerNome, STATE.equipe);
+    setSelectByIdOrName('f-ftec', o.ftecId, o.ftec || o.ftecNome, STATE.equipe);
     document.getElementById('f-desenho').value = o.desenhoId || '';
     previewDesenhoSelecionado();
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
     });
+    // enfesto
+    document.getElementById('f-enf-comp').value = o.enfesto?.comprimento || '';
+    document.getElementById('f-enf-larg').value = o.enfesto?.largura || '';
+    document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
     document.getElementById('f-obs').value = o.obs || '';
     // custos
     const m = {tecido:'c-tecido',estampa:'c-estampa',bordado:'c-bordado',frequencia:'c-freq',
@@ -1949,6 +2366,7 @@ function editarOS(id) {
       input.checked = on;
       lbl.classList.toggle('checked', on);
     });
+    atualizarCalculosEnfesto();
     osEditId = null; // reset para permitir nova edição após salvar
   }, 60);
 }
@@ -1964,6 +2382,63 @@ async function excluirOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
+function renderEnfestoBox(o) {
+  const e = o.enfesto || {};
+  const g = o.grade || {};
+  const temEnfesto = e.comprimento || e.largura || e.camadas;
+  if (!temEnfesto) return '';
+
+  const camadas = e.camadas || 0;
+  const totalPecas = (g.total || 0) * camadas;
+  const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
+
+  // linhas por tamanho com multiplicação
+  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const linhasPorTam = tamanhos
+    .filter(t => (g[t]||0) > 0)
+    .map(t => `<tr><td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td><td style="text-align:center;">${g[t]}</td><td style="text-align:center;">×${camadas}</td><td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td></tr>`)
+    .join('');
+
+  return `
+    <table class="side-table" style="border-top:none;">
+      <thead>
+        <tr><th colspan="4" class="subhead" style="background:#c9e8d0;">Enfesto</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="2" style="padding:3px 5px;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Comprimento</strong><br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.comprimento)} m</span>
+          </td>
+          <td colspan="2" style="padding:3px 5px;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Largura</strong><br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.largura)} m</span>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="4" style="padding:3px 5px;background:#f4f4f4;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Camadas</strong>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:9pt;margin-left:6px;">${camadas || '—'}</span>
+          </td>
+        </tr>
+        ${linhasPorTam ? `
+          <tr>
+            <th style="font-size:6.5pt;">Tam.</th>
+            <th style="font-size:6.5pt;">Grade</th>
+            <th style="font-size:6.5pt;">×Cam.</th>
+            <th style="font-size:6.5pt;">Peças</th>
+          </tr>
+          ${linhasPorTam}
+        ` : ''}
+        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
+          <td colspan="3" style="padding:3px 5px;">TOTAL ENFESTO</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${totalPecas} pç</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
 function renderPrintSheet(o) {
   printOsAtual = o;
   const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
@@ -2041,24 +2516,24 @@ function renderPrintSheet(o) {
   document.getElementById('print-sheet').innerHTML = `
     <!-- CABEÇALHO -->
     <div class="sheet-header">
-      <div class="cell brand-cell">${esc(o.griffe || 'MARCA')}</div>
+      <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>
       <div class="cell"><span class="mini">Desenho Técnico</span></div>
       <div class="cell"><span class="mini">Coleção</span>${esc(o.colecaoNome || '—')}</div>
-      <div class="cell"><span class="mini">${esc(o.bloco||'R1 BLOCO 1')}</span></div>
+      <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
       <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
         <span class="mini" style="color:#ccc">DES.:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.codigo || '—')}</span>
       </div>
-      <div class="cell adult-cell">${esc((o.linha||'ADULTO').toUpperCase())}</div>
+      <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
     </div>
 
     <!-- LINHA SECUNDÁRIA: descrição -->
     <div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">OS Nº</strong><br>${esc(o.os||'—')}</div>
       <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
-      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.base||'—')}</div>
-      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenado</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenado||'—')}</span></div>
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenado</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
     </div>
 
     <!-- CORPO -->
@@ -2070,8 +2545,8 @@ function renderPrintSheet(o) {
           <ul style="list-style:none;padding:0;columns:2;column-gap:12px;">${compsHtml}</ul>
         </div>`: ''}
         <div class="desenho-footer">
-          <div><strong>Designer</strong>${esc(o.designer||'—')}</div>
-          <div><strong>Ficha Técnica</strong>${esc(o.ftec||'—')}</div>
+          <div><strong>Designer</strong>${esc(o.designerNome || o.designer || '—')}</div>
+          <div><strong>Ficha Técnica</strong>${esc(o.ftecNome || o.ftec || '—')}</div>
         </div>
       </div>
 
@@ -2102,6 +2577,9 @@ function renderPrintSheet(o) {
             </tr>
           </tbody>
         </table>
+
+        <!-- ENFESTO -->
+        ${renderEnfestoBox(o)}
 
         <!-- ETAPAS -->
         <div class="etapas-list">
@@ -2147,13 +2625,13 @@ function renderPrintSheet(o) {
 /* ========================================================= */
 /*              EXPORT / IMPORT / LIMPAR                     */
 /* ========================================================= */
+// Lista canônica de todos os arrays persistidos
+const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
+                  'marcas','linhas','bases','blocos','equipe','ordens'];
+
 function exportarDados() {
-  const data = {
-    tecidos: STATE.tecidos, cores: STATE.cores, materiais: STATE.materiais,
-    modelos: STATE.modelos, colecoes: STATE.colecoes, grades: STATE.grades,
-    desenhos: STATE.desenhos, ordens: STATE.ordens,
-    exportadoEm: new Date().toISOString()
-  };
+  const data = { exportadoEm: new Date().toISOString() };
+  ALL_KEYS.forEach(k => { data[k] = STATE[k]; });
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2170,10 +2648,10 @@ async function importarDados(e) {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','ordens'].forEach(k => {
+    ALL_KEYS.forEach(k => {
       if (Array.isArray(data[k])) STATE[k] = data[k];
     });
-    for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','ordens']) {
+    for (const k of ALL_KEYS) {
       await saveState(k);
     }
     toast('Dados importados', 'ok');
@@ -2186,8 +2664,8 @@ async function importarDados(e) {
 async function limparTudo() {
   if (!confirm('Isso vai apagar TODOS os cadastros e OS. Continuar?')) return;
   if (!confirm('Tem certeza? Esta ação não pode ser desfeita.')) return;
-  ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','ordens'].forEach(k => STATE[k] = []);
-  for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','ordens']) {
+  ALL_KEYS.forEach(k => STATE[k] = []);
+  for (const k of ALL_KEYS) {
     await saveState(k);
   }
   toast('Tudo apagado', 'ok');
@@ -2200,26 +2678,59 @@ async function limparTudo() {
 async function popularExemplo() {
   if (!confirm('Isso vai adicionar dados de exemplo aos cadastros. Continuar?')) return;
 
+  // Marcas
+  STATE.marcas.push(
+    { id: uid(), nome: 'Dixie', desc: 'Marca principal' },
+    { id: uid(), nome: 'Diverse', desc: 'Segunda marca' }
+  );
+
+  // Linhas
+  STATE.linhas.push(
+    { id: uid(), nome: 'Adulto', desc: '' },
+    { id: uid(), nome: 'Infantil', desc: '' },
+    { id: uid(), nome: 'Juvenil', desc: '' },
+    { id: uid(), nome: 'Plus Size', desc: '' }
+  );
+
+  // Bases
+  STATE.bases.push(
+    { id: uid(), nome: 'BASE M MOLETOM', desc: 'molde padrão para moletons tam. M' },
+    { id: uid(), nome: 'BASE M CAMISETA', desc: 'molde padrão para camisetas tam. M' },
+    { id: uid(), nome: 'BASE P CALÇA', desc: 'molde base calça tam. P' }
+  );
+
+  // Blocos / revisões
+  STATE.blocos.push(
+    { id: uid(), nome: 'R1 BLOCO 1', desc: 'primeira revisão, primeiro bloco' },
+    { id: uid(), nome: 'R1 BLOCO 2', desc: 'primeira revisão, segundo bloco' },
+    { id: uid(), nome: 'R2 BLOCO 1', desc: 'segunda revisão' }
+  );
+
+  // Equipe
+  STATE.equipe.push(
+    { id: uid(), nome: 'Marcelo', funcao: 'Ambos' },
+    { id: uid(), nome: 'Ana',     funcao: 'Designer' },
+    { id: uid(), nome: 'Paula',   funcao: 'Ficha Técnica' }
+  );
+
   // Tecidos
-  const tecs = [
-    { id: uid(), nome: 'Moletom Bulk', desc: '65% algodão 35% poliéster' },
-    { id: uid(), nome: '1/2 Malha', desc: 'Malha meia-felpa' },
-    { id: uid(), nome: 'Ribana Bulk', desc: 'Ribana para punho/barra' },
-    { id: uid(), nome: 'Moletom Peluciado', desc: 'Interior peluciado' },
-    { id: uid(), nome: 'Tricoline', desc: 'Algodão fio tinto' }
-  ];
-  STATE.tecidos.push(...tecs);
+  STATE.tecidos.push(
+    { id: uid(), nome: 'Moletom Bulk', desc: '65% algodão 35% poliéster', categoria: 'moletom' },
+    { id: uid(), nome: '1/2 Malha', desc: 'Malha meia-felpa', categoria: 'malha' },
+    { id: uid(), nome: 'Ribana Bulk', desc: 'Ribana para punho/barra', categoria: 'malha' },
+    { id: uid(), nome: 'Moletom Peluciado', desc: 'Interior peluciado', categoria: 'moletom' },
+    { id: uid(), nome: 'Tricoline', desc: 'Algodão fio tinto', categoria: 'outro' }
+  );
 
   // Cores
-  const cores = [
+  STATE.cores.push(
     { id: uid(), nome: 'Camel', hex: '#c9a961', codigo: 'AV.CO.129' },
     { id: uid(), nome: 'Palha', hex: '#e4d9b0', codigo: 'AV.IN.848' },
     { id: uid(), nome: 'Nut', hex: '#6b4423', codigo: 'AV.IL.35' },
     { id: uid(), nome: 'Preto', hex: '#1a1a1a', codigo: '' },
     { id: uid(), nome: 'Off-white', hex: '#f5f2ea', codigo: '' },
     { id: uid(), nome: 'Cinza Mescla', hex: '#9aa0a6', codigo: '' }
-  ];
-  STATE.cores.push(...cores);
+  );
 
   // Materiais
   STATE.materiais.push(
@@ -2252,7 +2763,8 @@ async function popularExemplo() {
     { id: uid(), nome: 'Grade plus 4 peças',     tamanhos: { pp:0, p:0, m:0, g:0, gg:1, g1:1, g2:1, g3:1 } }
   );
 
-  for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades']) {
+  for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades',
+                   'marcas','linhas','bases','blocos','equipe']) {
     await saveState(k);
   }
   toast('Exemplos carregados — cadastre o desenho técnico em "Desenhos" enviando uma imagem', 'ok');
@@ -2279,6 +2791,7 @@ window.addComponenteRow = addComponenteRow;
 window.addAviamentoRow = addAviamentoRow;
 window.addEtapaCustomizada = addEtapaCustomizada;
 window.aplicarGradePreset = aplicarGradePreset;
+window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
