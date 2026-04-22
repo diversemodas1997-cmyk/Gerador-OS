@@ -637,7 +637,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 .etapas-list ul { list-style: none; padding: 0; }
 .etapas-list li { padding: 1px 0; }
-.etapas-list li::before { content: '— '; font-weight: 700; }
+.etapas-list ul li.etapa-antigo::before { content: '— '; font-weight: 700; }
 
 /* Cores do modelo */
 .cores-tab .var-head { background: #1a1a1a; color: #fff; font-size: 7pt; padding: 2px 5px; }
@@ -3350,10 +3350,15 @@ function renderPrintSheet(o) {
             const ordenadas = cadastradas.length
               ? cadastradas.filter(e => o.etapas.includes(e.nome)).map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
               : o.etapas.map(nome => ({ nome, funcs: [] }));
-            return `<table style="width:100%;border-collapse:collapse;font-size:9pt;">
-              <thead><tr style="background:#f5f2ea;"><th style="text-align:left;padding:3px 6px;border:1px solid #d4d0c5;width:55%;">Etapa</th><th style="text-align:left;padding:3px 6px;border:1px solid #d4d0c5;">Funções responsáveis</th></tr></thead>
-              <tbody>${ordenadas.map(e => `<tr><td style="padding:3px 6px;border:1px solid #d4d0c5;">${esc(e.nome)}</td><td style="padding:3px 6px;border:1px solid #d4d0c5;">${e.funcs.length ? esc(e.funcs.join(', ')) : '—'}</td></tr>`).join('')}</tbody>
-            </table>`;
+            const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
+            return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
+              ${ordenadas.map(e => `
+                <li style="display:flex;align-items:center;padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
+                  ${checkbox}
+                  <strong style="min-width:130px;">${esc(e.nome)}</strong>
+                  <span style="color:#555;flex:1;">${e.funcs.length ? esc(e.funcs.join(', ')) : '<em style="color:#999;">sem função definida</em>'}</span>
+                </li>`).join('')}
+            </ul>`;
           })()}
         </div>
 
