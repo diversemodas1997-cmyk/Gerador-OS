@@ -1010,7 +1010,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th>Descrição</th><th>Linha</th><th class="col-actions">Ações</th></tr></thead>
+          <thead><tr><th>Descrição</th><th>Tipo</th><th>Linha</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-modelos"></tbody>
         </table>
       </div>
@@ -1164,7 +1164,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Coordenador</label><select id="f-coordenado" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-coordenador" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
 
             <div class="field"><label>Coleção</label><select id="f-colecao"></select><a href="#" class="field-add-link" onclick="openCadastroModal('colecao', null, 'os-form'); return false;">+ Cadastrar coleção</a></div>
-            <div class="field"><label>Modelo</label><select id="f-modelo"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
+            <div class="field"><label>Modelo</label><select id="f-modelo" onchange="onModeloChange()"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
             <div class="field"><label>Bloco / Revisão</label><select id="f-bloco"></select><a href="#" class="field-add-link" onclick="openCadastroModal('bloco', null, 'os-form'); return false;">+ Cadastrar bloco</a></div>
             <div class="field"><label>Linha</label><select id="f-linha"></select><a href="#" class="field-add-link" onclick="openCadastroModal('linha', null, 'os-form'); return false;">+ Cadastrar linha</a></div>
 
@@ -1923,8 +1923,17 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'modelo') {
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field full"><label>Descrição *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom fechado básico"></div>
-        <div class="field full"><label>Linha</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
+        <div class="field full"><label>Descrição *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camiseta básica, Moletom canguru"></div>
+        <div class="field"><label>Tipo *</label>
+          <select id="m-categoria">
+            <option value="">— selecione —</option>
+            <option value="malha" ${item.categoria==='malha'?'selected':''}>Camiseta (malha algodão)</option>
+            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom</option>
+            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro</option>
+          </select>
+          <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
+        </div>
+        <div class="field"><label>Linha</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
       </div>`;
   }
   else if (tipo === 'colecao') {
@@ -2079,6 +2088,7 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.linha = v('m-linha');
+    item.categoria = v('m-categoria');
   }
   else if (tipo === 'colecao') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -2221,9 +2231,10 @@ function renderMateriais() {
 }
 function renderModelos() {
   const tb = document.getElementById('tbl-modelos');
-  if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
+  if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
+  const catLabel = { malha: 'Camiseta', moletom: 'Moletom', outro: 'Outro' };
   tb.innerHTML = STATE.modelos.map(m => `
-    <tr><td><strong>${esc(m.nome)}</strong></td><td>${esc(m.linha)||'—'}</td>${acoesCell('modelo', m.id)}</tr>`).join('');
+    <tr><td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${catLabel[m.categoria]||'—'}</span></td><td>${esc(m.linha)||'—'}</td>${acoesCell('modelo', m.id)}</tr>`).join('');
 }
 function renderColecoes() {
   const tb = document.getElementById('tbl-colecoes');
@@ -2489,9 +2500,32 @@ function addTecidoRow(data = {}) {
     </div>`;
   cont.appendChild(row);
 }
+function modeloCategoriaAtual() {
+  const modeloId = document.getElementById('f-modelo')?.value;
+  if (!modeloId) return null;
+  const m = STATE.modelos.find(x => x.id === modeloId);
+  return m?.categoria || null;
+}
+
 function tecOptions(selId) {
-  return '<option value="">—</option>' + STATE.tecidos.map(t =>
+  const cat = modeloCategoriaAtual();
+  const tecs = STATE.tecidos.filter(t => {
+    if (!cat) return true;
+    if (!t.categoria) return true;
+    if (t.categoria === cat) return true;
+    if (t.id === selId) return true;
+    return false;
+  });
+  return '<option value="">—</option>' + tecs.map(t =>
     `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
+}
+
+function onModeloChange() {
+  document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
+    const currentVal = sel.value;
+    sel.innerHTML = tecOptions(currentVal);
+  });
+  atualizarCalculosEnfesto();
 }
 function reindexTecidos() {
   document.querySelectorAll('#tecidos-rows .tecido-row').forEach((r, i) => {
@@ -3381,6 +3415,7 @@ window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.calcularCamadasParaProducao = calcularCamadasParaProducao;
 window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
+window.onModeloChange = onModeloChange;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
