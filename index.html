@@ -724,11 +724,8 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   .print-area { padding: 0; background: #fff; }
   .sheet {
     width: 200mm;
-    max-height: 287mm;
-    overflow: hidden;
     box-shadow: none;
     padding: 0;
-    transform-origin: top left;
     page-break-inside: avoid;
     page-break-after: avoid;
   }
@@ -3221,23 +3218,21 @@ async function salvarEImprimir() {
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
-  sheet.style.transform = '';
-  sheet.style.width = '';
+  sheet.style.zoom = '';
   // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
   const pxPerMm = 3.7795275591;
   const maxHpx = 287 * pxPerMm;
   const natH = sheet.scrollHeight;
   if (natH > maxHpx) {
-    const scale = Math.max(0.4, maxHpx / natH);
-    sheet.style.transform = 'scale(' + scale + ')';
-    sheet.style.width = (100 / scale) + '%';
+    const scale = Math.max(0.5, maxHpx / natH);
+    sheet.style.zoom = scale;
   }
 }
 
 window.addEventListener('beforeprint', ajustarImpressaoParaA4);
 window.addEventListener('afterprint', function() {
   const sheet = document.querySelector('.sheet');
-  if (sheet) { sheet.style.transform = ''; sheet.style.width = ''; }
+  if (sheet) sheet.style.zoom = '';
 });
 
 /* ========================================================= */
