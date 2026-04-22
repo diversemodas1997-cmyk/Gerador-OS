@@ -192,7 +192,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 .form-grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .form-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-.form-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.form-grid.cols-4 { grid-template-columns: repeat(4, minmax(160px, 220px)); justify-content: start; }
 .form-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
