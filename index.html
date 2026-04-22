@@ -1815,7 +1815,7 @@ async function saveState(key) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','ordens'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
