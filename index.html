@@ -775,6 +775,12 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   margin-top: 8px;
 }
 .add-row-btn:hover { border-color: var(--ink); color: var(--ink); border-style: solid; }
+/* ========== Quick cadastro link ========== */
+.field-hint { font-size: 10px; color: var(--ink-3); margin-top: 3px; font-style: italic; }
+.field-hint a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+.field-hint a:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.field-add-link { display: inline-block; font-size: 11px; color: var(--ink-3); text-decoration: none; margin-top: 4px; border-bottom: 1px dotted var(--ink-3); }
+.field-add-link:hover { color: var(--accent-dark); border-bottom-color: var(--accent-dark); }
 /* ========== Auth UI ========== */
 .auth-bar { padding: 12px 20px; border-bottom: 1px solid var(--line-2); background: var(--paper); }
 .auth-logged-out .btn-auth { width: 100%; padding: 8px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
@@ -1138,19 +1144,19 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
           <div class="card-title">Cabeçalho da ficha</div>
           <div class="form-grid cols-4">
             <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
-            <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" placeholder="Ex.: Dx7282"></div>
+            <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" list="codigos-datalist" placeholder="Digite ou selecione" oninput="sincCodigoDesenho('codigo')"><datalist id="codigos-datalist"></datalist><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar novo desenho</a></div>
             <div class="field"><label>Data</label><input type="date" id="f-data"></div>
-            <div class="field"><label>Coordenado (outro desenho)</label><select id="f-coordenado"></select></div>
+            <div class="field"><label>Coordenado (outro desenho)</label><select id="f-coordenado"></select><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar desenho</a></div>
 
-            <div class="field"><label>Coleção</label><select id="f-colecao"></select></div>
-            <div class="field"><label>Modelo</label><select id="f-modelo"></select></div>
-            <div class="field"><label>Bloco / Revisão</label><select id="f-bloco"></select></div>
-            <div class="field"><label>Linha</label><select id="f-linha"></select></div>
+            <div class="field"><label>Coleção</label><select id="f-colecao"></select><a href="#" class="field-add-link" onclick="openCadastroModal('colecao', null, 'os-form'); return false;">+ Cadastrar coleção</a></div>
+            <div class="field"><label>Modelo</label><select id="f-modelo"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
+            <div class="field"><label>Bloco / Revisão</label><select id="f-bloco"></select><a href="#" class="field-add-link" onclick="openCadastroModal('bloco', null, 'os-form'); return false;">+ Cadastrar bloco</a></div>
+            <div class="field"><label>Linha</label><select id="f-linha"></select><a href="#" class="field-add-link" onclick="openCadastroModal('linha', null, 'os-form'); return false;">+ Cadastrar linha</a></div>
 
-            <div class="field"><label>Griffe / Marca</label><select id="f-griffe"></select></div>
-            <div class="field"><label>Base</label><select id="f-base"></select></div>
-            <div class="field"><label>Designer</label><select id="f-designer"></select></div>
-            <div class="field"><label>Ficha técnica</label><select id="f-ftec"></select></div>
+            <div class="field"><label>Griffe / Marca</label><select id="f-griffe"></select><a href="#" class="field-add-link" onclick="openCadastroModal('marca', null, 'os-form'); return false;">+ Cadastrar marca</a></div>
+            <div class="field"><label>Base</label><select id="f-base"></select><a href="#" class="field-add-link" onclick="openCadastroModal('base', null, 'os-form'); return false;">+ Cadastrar base</a></div>
+            <div class="field"><label>Designer</label><select id="f-designer"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+            <div class="field"><label>Ficha técnica</label><select id="f-ftec"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
           </div>
         </div>
 
@@ -1158,7 +1164,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <div class="card">
           <div class="card-title">Desenho técnico</div>
           <div class="form-grid cols-2">
-            <div class="field"><label>Selecionar desenho cadastrado</label><select id="f-desenho" onchange="previewDesenhoSelecionado()"></select></div>
+            <div class="field"><label>Selecionar desenho cadastrado</label><select id="f-desenho" onchange="previewDesenhoSelecionado(); sincCodigoDesenho('desenho')"></select></div>
             <div class="field"><label>Preview</label><div class="desenho-preview" id="f-desenho-preview"><span>Nenhum desenho selecionado</span></div></div>
           </div>
         </div>
@@ -1856,8 +1862,8 @@ let cadastroContext = null;
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-function openCadastroModal(tipo, editId = null) {
-  cadastroContext = { tipo, editId };
+function openCadastroModal(tipo, editId = null, origin = null) {
+  cadastroContext = { tipo, editId, origin };
   const title = document.getElementById('modal-cad-title');
   const box = document.getElementById('modal-cad-fields');
 
@@ -2079,7 +2085,49 @@ async function salvarCadastro() {
 
   closeModal('modal-cad');
   toast('Salvo com sucesso', 'ok');
-  goto('cad-' + list);
+
+  if (cadastroContext.origin === 'os-form') {
+    refreshOSFormDropdowns();
+    if (!editId) {
+      const autoMap = {
+        marca: { id: 'f-griffe', field: 'nome' },
+        colecao: { id: 'f-colecao', field: 'nome' },
+        modelo: { id: 'f-modelo', field: 'nome' },
+        linha: { id: 'f-linha', field: 'nome' },
+        base: { id: 'f-base', field: 'nome' },
+        bloco: { id: 'f-bloco', field: 'nome' },
+        grade: { id: 'f-grade-preset', field: 'nome' },
+        desenho: { id: 'f-desenho', field: 'codigo' }
+      };
+      const t = autoMap[tipo];
+      if (t) {
+        const el = document.getElementById(t.id);
+        if (el) el.value = item[t.field] || '';
+        if (tipo === 'desenho') sincCodigoDesenho('desenho');
+      }
+    }
+  } else {
+    goto('cad-' + list);
+  }
+}
+
+function refreshOSFormDropdowns() {
+  const IDS = ['f-colecao','f-modelo','f-desenho','f-grade-preset','f-griffe','f-linha','f-base','f-bloco','f-designer','f-ftec','f-coordenado'];
+  const saved = {};
+  IDS.forEach(id => { const el = document.getElementById(id); if (el) saved[id] = el.value; });
+  fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
+  fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
+  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
+  fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
+  fillSelect('f-base', STATE.bases, 'nome', '— selecione —');
+  fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
+  fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-coordenado', STATE.desenhos, 'codigo', '— nenhum —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  atualizarDatalistCodigos();
+  Object.entries(saved).forEach(([id, val]) => { const el = document.getElementById(id); if (el && val) el.value = val; });
 }
 
 async function excluirCadastro(tipo, id) {
@@ -2218,12 +2266,39 @@ function renderHome() {
 /* ========================================================= */
 let osEditId = null;
 
+function atualizarDatalistCodigos() {
+  const dl = document.getElementById('codigos-datalist');
+  if (!dl) return;
+  dl.innerHTML = STATE.desenhos.map(d =>
+    `<option value="${esc(d.codigo)}">${esc(d.desc||'')}</option>`
+  ).join('');
+}
+
+function sincCodigoDesenho(origem) {
+  const codigoEl = document.getElementById('f-codigo');
+  const desenhoEl = document.getElementById('f-desenho');
+  if (!codigoEl || !desenhoEl) return;
+  if (origem === 'desenho') {
+    const sel = desenhoEl.value;
+    if (sel) codigoEl.value = sel;
+  } else {
+    const typed = codigoEl.value.trim();
+    if (!typed) { desenhoEl.value = ''; previewDesenhoSelecionado(); return; }
+    const d = STATE.desenhos.find(x => x.codigo.toLowerCase() === typed.toLowerCase());
+    if (d && desenhoEl.value !== d.codigo) {
+      desenhoEl.value = d.codigo;
+      previewDesenhoSelecionado();
+    }
+  }
+}
+
 function initOSForm() {
   // popula dropdowns
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
   fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
   fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  atualizarDatalistCodigos();
 
   // novos selects do cabeçalho
   fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
@@ -3243,6 +3318,8 @@ window.sairConta = sairConta;
 window.abrirRecuperacaoSenha = abrirRecuperacaoSenha;
 window.enviarEmailRecuperacao = enviarEmailRecuperacao;
 window.definirNovaSenha = definirNovaSenha;
+window.sincCodigoDesenho = sincCodigoDesenho;
+window.atualizarDatalistCodigos = atualizarDatalistCodigos;
 </script>
 </body>
 </html>
