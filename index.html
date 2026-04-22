@@ -2061,6 +2061,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field"><label>Linha</label><select id="m-vinc-linha">${optSel(STATE.linhas, 'nome', item.linhaId)}</select></div>
           <div class="field"><label>Bloco / Revisão</label><select id="m-vinc-bloco">${optNada(STATE.blocos, 'nome', item.blocoId)}</select></div>
           <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe, 'nome', item.designerId, equipeLabel)}</select></div>
+          <div class="field"><label>Tecido principal</label><select id="m-vinc-tecido">${optNada(STATE.tecidos, 'nome', item.tecidoPadraoId)}</select><div class="field-hint">Aplicado aos componentes</div></div>
+          <div class="field"><label>Cor principal</label><select id="m-vinc-cor">${optNada(STATE.cores, 'nome', item.corPrincipalId)}</select><div class="field-hint">Aplicada aos componentes e à Variante 1</div></div>
         </div>
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Componentes padrão deste desenho</label>
@@ -2248,6 +2250,8 @@ async function salvarCadastro() {
     item.linhaId = v('m-vinc-linha');
     item.blocoId = v('m-vinc-bloco');
     item.designerId = v('m-vinc-designer');
+    item.tecidoPadraoId = v('m-vinc-tecido');
+    item.corPrincipalId = v('m-vinc-cor');
     item.componentesIds = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(c => c.value);
   }
   else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
@@ -2611,15 +2615,40 @@ function aplicarVinculosDesenho() {
     aplicarFiltroTecidosPorModelo();
     atualizarResponsabilidadesOS();
     atualizarCalculosEnfesto();
-    // Aplica componentes padrão do desenho
+    // Aplica componentes padrão do desenho (com tecido + cor principal)
     if (d.componentesIds && d.componentesIds.length) {
       const cont = document.getElementById('componentes-rows');
       if (cont) {
         cont.innerHTML = '';
+        const materialDefault = d.tecidoPadraoId ? 'T:' + d.tecidoPadraoId : '';
         d.componentesIds.forEach(id => {
           const comp = STATE.componentes.find(x => x.id === id);
-          if (comp) addComponenteRow({ nome: comp.nome });
+          if (comp) addComponenteRow({
+            nome: comp.nome,
+            material: materialDefault,
+            cor: d.corPrincipalId || ''
+          });
         });
+        aplicou = true;
+      }
+    }
+    // Aplica cor principal na Variante 1 (cria a row se não existir)
+    if (d.corPrincipalId) {
+      const varCont = document.getElementById('variantes-rows');
+      if (varCont) {
+        if (!varCont.querySelector('.variante-row')) addVarianteRow();
+        const primeiraVar = varCont.querySelector('.variante-row .var-c1');
+        if (primeiraVar) primeiraVar.value = d.corPrincipalId;
+        aplicou = true;
+      }
+    }
+    // Aplica tecido principal na primeira linha de Tecidos (cria se não existir)
+    if (d.tecidoPadraoId) {
+      const tecCont = document.getElementById('tecidos-rows');
+      if (tecCont) {
+        if (!tecCont.querySelector('.tecido-row')) addTecidoRow();
+        const primeiroTec = tecCont.querySelector('.tecido-row .tec-sel');
+        if (primeiroTec) primeiroTec.value = d.tecidoPadraoId;
         aplicou = true;
       }
     }
