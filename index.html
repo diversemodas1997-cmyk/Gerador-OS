@@ -2481,15 +2481,20 @@ function sincCodigoDesenho(origem) {
   const desenhoEl = document.getElementById('f-desenho');
   if (!codigoEl || !desenhoEl) return;
   if (origem === 'desenho') {
-    const sel = desenhoEl.value;
-    if (sel) codigoEl.value = sel;
+    const id = desenhoEl.value;
+    if (id) {
+      const d = STATE.desenhos.find(x => x.id === id);
+      if (d) codigoEl.value = d.codigo;
+    } else {
+      codigoEl.value = '';
+    }
     aplicarVinculosDesenho();
   } else {
     const typed = codigoEl.value.trim();
     if (!typed) { desenhoEl.value = ''; previewDesenhoSelecionado(); return; }
     const d = STATE.desenhos.find(x => x.codigo.toLowerCase() === typed.toLowerCase());
-    if (d && desenhoEl.value !== d.codigo) {
-      desenhoEl.value = d.codigo;
+    if (d && desenhoEl.value !== d.id) {
+      desenhoEl.value = d.id;
       previewDesenhoSelecionado();
       aplicarVinculosDesenho();
     }
@@ -2497,9 +2502,9 @@ function sincCodigoDesenho(origem) {
 }
 
 function aplicarVinculosDesenho() {
-  const codigo = document.getElementById('f-desenho')?.value;
-  if (!codigo) return;
-  const d = STATE.desenhos.find(x => x.codigo === codigo);
+  const desenhoId = document.getElementById('f-desenho')?.value;
+  if (!desenhoId) return;
+  const d = STATE.desenhos.find(x => x.id === desenhoId);
   if (!d) return;
   const mapa = {
     modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
