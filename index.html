@@ -1315,7 +1315,15 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <div class="card">
           <div class="card-title">Observações</div>
           <div class="field">
-            <textarea id="f-obs" rows="3" placeholder="Anotações manuais, atenção estamparia, cuidados especiais…"></textarea>
+            <textarea id="f-obs" rows="3" placeholder="Anotações manuais, cuidados especiais…"></textarea>
+          </div>
+        </div>
+
+        <!-- ATENÇÃO -->
+        <div class="card">
+          <div class="card-title">Atenção</div>
+          <div class="field">
+            <textarea id="f-atencao" rows="2" placeholder="Alertas específicos da produção (aparece no rodapé da folha impressa). Em branco por padrão."></textarea>
           </div>
         </div>
 
@@ -3158,6 +3166,7 @@ function coletaOS() {
     desenhoId: v('f-desenho'),
     tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
     obs: v('f-obs'),
+    atencao: v('f-atencao'),
     criadoEm: new Date().toISOString()
   };
 }
@@ -3280,6 +3289,7 @@ function editarOS(id) {
     document.getElementById('f-enf-larg').value = o.enfesto?.largura || '';
     document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
     document.getElementById('f-obs').value = o.obs || '';
+    document.getElementById('f-atencao').value = o.atencao || '';
     // tecidos
     document.getElementById('tecidos-rows').innerHTML = '';
     (o.tecidos||[]).forEach(t => addTecidoRow(t));
@@ -3545,7 +3555,7 @@ function renderPrintSheet(o) {
     <div class="sheet-foot">
       <div><strong>Gerado em</strong> ${esc(formatDate(new Date().toISOString().slice(0,10)))}</div>
       <div><strong>Qtd total</strong> ${g.total||0} peças</div>
-      <div><strong>Atenção</strong> Recortes rebatidos na cor do tecido · Estampa conforme gabarito</div>
+      ${o.atencao ? `<div><strong>Atenção</strong> ${esc(o.atencao)}</div>` : ''}
     </div>
   `;
 }
