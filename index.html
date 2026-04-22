@@ -2033,8 +2033,6 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field"><label>Linha</label><select id="m-vinc-linha">${optSel(STATE.linhas, 'nome', item.linhaId)}</select></div>
           <div class="field"><label>Bloco / Revisão</label><select id="m-vinc-bloco">${optNada(STATE.blocos, 'nome', item.blocoId)}</select></div>
           <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe, 'nome', item.designerId, equipeLabel)}</select></div>
-          <div class="field"><label>Ficha técnica</label><select id="m-vinc-ftec">${optNada(STATE.equipe, 'nome', item.ftecId, equipeLabel)}</select></div>
-          <div class="field"><label>Coordenador</label><select id="m-vinc-coord">${optNada(STATE.equipe, 'nome', item.coordId, equipeLabel)}</select></div>
         </div>
       </div>`;
   }
@@ -2202,8 +2200,6 @@ async function salvarCadastro() {
     item.linhaId = v('m-vinc-linha');
     item.blocoId = v('m-vinc-bloco');
     item.designerId = v('m-vinc-designer');
-    item.ftecId = v('m-vinc-ftec');
-    item.coordId = v('m-vinc-coord');
   }
   else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -2543,7 +2539,7 @@ function aplicarVinculosDesenho() {
     const mapa = {
       modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
       marcaId: 'f-griffe', linhaId: 'f-linha', blocoId: 'f-bloco',
-      designerId: 'f-designer', ftecId: 'f-ftec', coordId: 'f-coordenado'
+      designerId: 'f-designer'
     };
     let aplicou = false;
     Object.entries(mapa).forEach(([campo, selId]) => {
