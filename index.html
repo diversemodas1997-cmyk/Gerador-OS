@@ -855,6 +855,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
       <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
       <button class="nav-btn" data-page="cad-equipe">Equipe</button>
       <button class="nav-btn" data-page="cad-funcoes">Funções</button>
+      <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
       <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
       <button class="nav-btn" data-page="cad-cores">Cores</button>
       <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
@@ -1110,6 +1111,20 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <table class="table">
           <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-blocos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ETAPAS DE PRODUÇÃO -->
+    <section class="page hidden" data-page="cad-etapas">
+      <div class="page-header">
+        <div><h1>Etapas de produção</h1><div class="desc">Corte, Costura, Acabamento, etc. A ordem aqui define a ordem na folha de OS impressa.</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('etapa')">+ Nova etapa</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Ordem</th><th>Nome</th><th>Funções que executam</th><th class="col-actions">Gerenciar</th></tr></thead>
+          <tbody id="tbl-etapas"></tbody>
         </table>
       </div>
     </section>
@@ -1515,7 +1530,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','ordens','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -1784,6 +1799,7 @@ const STATE = {
   blocos: [],
   equipe: [],
   funcoes: [],
+  etapas: [],
   ordens: [],
   osCounter: 0,
   etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
@@ -1800,7 +1816,7 @@ async function saveState(key) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1814,6 +1830,16 @@ async function loadState() {
     const c = await DB.get('osCounter');
     if (c && c.value) STATE.osCounter = parseInt(c.value) || 0;
   } catch (e) { /* ok */ }
+  // Seed default etapas se vazio (primeira execução)
+  if (!STATE.etapas || !STATE.etapas.length) {
+    STATE.etapas = (STATE.etapasPadrao || []).map((nome, i) => ({
+      id: 'id_' + Date.now() + '_' + i,
+      nome,
+      ordem: (i + 1) * 10,
+      funcoesIds: []
+    }));
+    if (STATE.etapas.length) { try { await saveState('etapas'); } catch (e) {} }
+  }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
@@ -1845,6 +1871,7 @@ function goto(page) {
   if (page === 'cad-blocos') renderBlocos();
   if (page === 'cad-equipe') renderEquipe();
   if (page === 'cad-funcoes') renderFuncoes();
+  if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
 }
@@ -1879,7 +1906,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
-    equipe: 'Membro da equipe', funcao: 'Função'
+    equipe: 'Membro da equipe', funcao: 'Função', etapa: 'Etapa de produção'
   };
   title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
 
@@ -2038,6 +2065,25 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
       </div>`;
   }
+  else if (tipo === 'etapa') {
+    const funcoesIds = item.funcoesIds || [];
+    const ordemSugerida = item.ordem ?? ((STATE.etapas.length + 1) * 10);
+    const funcoesCheckboxes = STATE.funcoes.length
+      ? STATE.funcoes.map(f => `
+          <label style="display:inline-flex;align-items:center;gap:6px;margin:2px 8px 2px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;cursor:pointer;">
+            <input type="checkbox" class="m-funcao-chk" value="${esc(f.id)}" ${funcoesIds.includes(f.id)?'checked':''}>
+            <span>${esc(f.nome)}</span>
+          </label>`).join('')
+      : '<em style="color:var(--ink-3);font-size:12px;">Nenhuma função cadastrada — cadastre primeiro em Funções.</em>';
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Corte, Costura, Acabamento"></div>
+        <div class="field"><label>Ordem</label><input type="number" id="m-ordem" value="${ordemSugerida}" placeholder="Ex.: 10"><div class="field-hint">Menor primeiro na folha impressa</div></div>
+        <div class="field full"><label>Funções que executam esta etapa</label>
+          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">${funcoesCheckboxes}</div>
+        </div>
+      </div>`;
+  }
 
   openModal('modal-cad');
 }
@@ -2056,7 +2102,7 @@ function previewUploadImg(e) {
 function pluralize(tipo) {
   return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
            colecao:'colecoes', grade:'grades', desenho:'desenhos',
-           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes' }[tipo];
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', etapa:'etapas' }[tipo];
 }
 
 async function salvarCadastro() {
@@ -2128,6 +2174,12 @@ async function salvarCadastro() {
     item.desc = v('m-desc');
     item.acoes = v('m-acoes');
   }
+  else if (tipo === 'etapa') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.ordem = parseInt(v('m-ordem')) || 0;
+    item.funcoesIds = Array.from(document.querySelectorAll('.m-funcao-chk:checked')).map(c => c.value);
+  }
 
   if (!editId) STATE[list].push(item);
   await saveState(list);
@@ -2137,6 +2189,7 @@ async function salvarCadastro() {
 
   if (cadastroContext.origin === 'os-form') {
     refreshOSFormDropdowns();
+    if (tipo === 'etapa') renderEtapas();
     if (!editId) {
       const autoMap = {
         marca: { id: 'f-griffe', field: 'nome' },
@@ -2293,6 +2346,28 @@ function renderEquipe() {
   tb.innerHTML = STATE.equipe.map(p => `
     <tr><td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td>${acoesCell('equipe', p.id)}</tr>`).join('');
 }
+function etapasOrdenadas() {
+  return [...STATE.etapas].sort((a,b) => (a.ordem||0) - (b.ordem||0));
+}
+
+function nomesFuncoesPorIds(ids) {
+  if (!ids || !ids.length) return [];
+  return ids
+    .map(id => STATE.funcoes.find(f => f.id === id))
+    .filter(Boolean)
+    .map(f => f.nome);
+}
+
+function renderEtapasCad() {
+  const tb = document.getElementById('tbl-etapas');
+  if (!STATE.etapas.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma etapa cadastrada.</td></tr>`; return; }
+  tb.innerHTML = etapasOrdenadas().map(e => {
+    const funcsNomes = nomesFuncoesPorIds(e.funcoesIds);
+    const badges = funcsNomes.length ? funcsNomes.map(n => `<span class="badge" style="margin-right:4px">${esc(n)}</span>`).join('') : '—';
+    return `<tr><td>${e.ordem||0}</td><td><strong>${esc(e.nome)}</strong></td><td>${badges}</td>${acoesCell('etapa', e.id)}</tr>`;
+  }).join('');
+}
+
 function renderFuncoes() {
   const tb = document.getElementById('tbl-funcoes');
   if (!STATE.funcoes.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma função cadastrada.</td></tr>`; return; }
@@ -2465,19 +2540,24 @@ function setSelectByIdOrName(selectId, itemId, nameFallback, list) {
 
 function renderEtapas() {
   const cont = document.getElementById('etapas-container');
+  if (!cont) return;
   const checked = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
-  cont.innerHTML = STATE.etapasPadrao.map((e, i) => `
-    <label class="etapa-check ${checked.includes(e)?'checked':''}">
-      <input type="checkbox" value="${esc(e)}" ${checked.includes(e)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
-      <span>${esc(e)}</span>
-    </label>`).join('');
+  const fonte = STATE.etapas.length
+    ? etapasOrdenadas().map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
+    : STATE.etapasPadrao.map(nome => ({ nome, funcs: [] }));
+  cont.innerHTML = fonte.map(e => {
+    const funcsBadges = e.funcs.length
+      ? `<div style="font-size:10px;color:var(--ink-3);margin-top:3px;">${e.funcs.map(f => `<span class="badge" style="margin-right:3px;font-size:10px;padding:1px 5px;">${esc(f)}</span>`).join('')}</div>`
+      : '';
+    return `<label class="etapa-check ${checked.includes(e.nome)?'checked':''}">
+      <input type="checkbox" value="${esc(e.nome)}" ${checked.includes(e.nome)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
+      <span>${esc(e.nome)}${funcsBadges}</span>
+    </label>`;
+  }).join('');
 }
 
 function addEtapaCustomizada() {
-  const nova = prompt('Nome da nova etapa:');
-  if (!nova || !nova.trim()) return;
-  STATE.etapasPadrao.push(nova.trim());
-  renderEtapas();
+  openCadastroModal('etapa', null, 'os-form');
 }
 
 function addTecidoRow(data = {}) {
@@ -3210,7 +3290,17 @@ function renderPrintSheet(o) {
         <!-- ETAPAS -->
         <div class="etapas-list">
           <div class="titulo">Etapas de Produção</div>
-          ${o.etapas?.length ? `<ul>${o.etapas.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>` : `<em style="color:#999;">—</em>`}
+          ${(() => {
+            if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
+            const cadastradas = etapasOrdenadas();
+            const ordenadas = cadastradas.length
+              ? cadastradas.filter(e => o.etapas.includes(e.nome)).map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
+              : o.etapas.map(nome => ({ nome, funcs: [] }));
+            return `<table style="width:100%;border-collapse:collapse;font-size:9pt;">
+              <thead><tr style="background:#f5f2ea;"><th style="text-align:left;padding:3px 6px;border:1px solid #d4d0c5;width:55%;">Etapa</th><th style="text-align:left;padding:3px 6px;border:1px solid #d4d0c5;">Funções responsáveis</th></tr></thead>
+              <tbody>${ordenadas.map(e => `<tr><td style="padding:3px 6px;border:1px solid #d4d0c5;">${esc(e.nome)}</td><td style="padding:3px 6px;border:1px solid #d4d0c5;">${e.funcs.length ? esc(e.funcs.join(', ')) : '—'}</td></tr>`).join('')}</tbody>
+            </table>`;
+          })()}
         </div>
 
         <!-- CORES -->
@@ -3244,7 +3334,7 @@ function renderPrintSheet(o) {
 /* ========================================================= */
 // Lista canônica de todos os arrays persistidos
 const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
-                  'marcas','linhas','bases','blocos','equipe','funcoes','ordens'];
+                  'marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens'];
 
 function exportarDados() {
   const data = { exportadoEm: new Date().toISOString() };
@@ -3416,6 +3506,7 @@ window.calcularCamadasParaProducao = calcularCamadasParaProducao;
 window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
+window.renderEtapasCad = renderEtapasCad;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
