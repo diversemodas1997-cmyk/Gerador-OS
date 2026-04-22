@@ -805,6 +805,9 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 .modal-auth .btn-primary:disabled { opacity: .5; cursor: wait; }
 .modal-auth .btn-skip { padding: 10px 14px; background: transparent; color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
 .modal-auth .btn-skip:hover { color: var(--ink); border-color: var(--ink-3); }
+.modal-auth .auth-extras { margin-top: 14px; text-align: center; font-size: 12px; }
+.modal-auth .auth-extras a { color: var(--ink-3); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+.modal-auth .auth-extras a:hover { color: var(--ink); border-bottom-color: var(--ink); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1347,19 +1350,31 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
   <div class="box">
-    <div class="title">Acesso restrito</div>
-    <div class="sub">Faça login ou crie uma conta para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.</div>
-    <div class="tabs">
+    <div class="title" id="authTitle">Acesso restrito</div>
+    <div class="sub" id="authSub">Faça login para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.</div>
+    <div class="tabs" id="authTabs">
       <button class="tab active" id="tabLogin" onclick="trocarAbaAuth('login')">Entrar</button>
       <button class="tab" id="tabSignup" onclick="trocarAbaAuth('signup')">Criar conta</button>
     </div>
-    <label for="authEmailInput">E-mail</label>
-    <input type="email" id="authEmailInput" autocomplete="email" placeholder="seu@email.com">
-    <label for="authSenhaInput">Senha</label>
-    <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+    <div id="authEmailGroup">
+      <label for="authEmailInput">E-mail</label>
+      <input type="email" id="authEmailInput" autocomplete="email" placeholder="seu@email.com">
+    </div>
+    <div id="authSenhaGroup">
+      <label for="authSenhaInput">Senha</label>
+      <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+    </div>
+    <div id="authSenha2Group" class="hidden">
+      <label for="authSenha2Input">Confirmar nova senha</label>
+      <input type="password" id="authSenha2Input" autocomplete="new-password" placeholder="repita a nova senha">
+    </div>
     <div class="err" id="authErro"></div>
     <div class="actions-auth">
       <button class="btn-primary" id="authActionBtn" onclick="submeterAuth()">Entrar</button>
+    </div>
+    <div class="auth-extras">
+      <a href="#" id="linkEsqueci" onclick="abrirRecuperacaoSenha(); return false;">Esqueci a senha</a>
+      <a href="#" id="linkVoltar" class="hidden" onclick="trocarAbaAuth('login'); return false;">← Voltar ao login</a>
     </div>
   </div>
 </div>
@@ -1377,6 +1392,7 @@ const supa = (window.supabase && typeof window.supabase.createClient === 'functi
 let cloudCache = null;
 let currentUser = null;
 let saveTimer = null;
+let inRecoveryFlow = false;
 
 async function cloudLoad() {
   if (!supa || !currentUser) return;
@@ -1500,7 +1516,14 @@ async function inicializarAuth() {
   }
   atualizarUIAuth();
   supa.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
+    if (event === 'PASSWORD_RECOVERY' && session) {
+      inRecoveryFlow = true;
+      currentUser = session.user;
+      document.getElementById('modalAuth').classList.remove('hidden');
+      trocarAbaAuth('reset_confirm');
+      return;
+    }
+    if (event === 'SIGNED_IN' && session && !inRecoveryFlow) {
       currentUser = session.user;
       await cloudLoad();
       iniciarRealtime();
@@ -1508,6 +1531,7 @@ async function inicializarAuth() {
       pararRealtime();
       currentUser = null;
       cloudCache = null;
+      inRecoveryFlow = false;
     }
     atualizarUIAuth();
   });
@@ -1546,12 +1570,115 @@ function fecharLogin() {
   document.getElementById('modalAuth').classList.add('hidden');
 }
 
-function trocarAbaAuth(aba) {
-  document.querySelectorAll('.modal-auth .tab').forEach(t => t.classList.remove('active'));
-  document.getElementById(aba === 'login' ? 'tabLogin' : 'tabSignup').classList.add('active');
-  document.getElementById('authActionBtn').textContent = aba === 'login' ? 'Entrar' : 'Criar conta';
-  document.getElementById('modalAuth').dataset.mode = aba;
+function trocarAbaAuth(modo) {
+  const modal = document.getElementById('modalAuth');
+  const tabs = document.getElementById('authTabs');
+  const emailGroup = document.getElementById('authEmailGroup');
+  const senhaGroup = document.getElementById('authSenhaGroup');
+  const senha2Group = document.getElementById('authSenha2Group');
+  const actionBtn = document.getElementById('authActionBtn');
+  const linkEsqueci = document.getElementById('linkEsqueci');
+  const linkVoltar = document.getElementById('linkVoltar');
+  const titulo = document.getElementById('authTitle');
+  const sub = document.getElementById('authSub');
+  modal.dataset.mode = modo;
   document.getElementById('authErro').textContent = '';
+  document.querySelectorAll('.modal-auth .tab').forEach(t => t.classList.remove('active'));
+
+  if (modo === 'login' || modo === 'signup') {
+    tabs.classList.remove('hidden');
+    emailGroup.classList.remove('hidden');
+    senhaGroup.classList.remove('hidden');
+    senha2Group.classList.add('hidden');
+    linkEsqueci.classList.remove('hidden');
+    linkVoltar.classList.add('hidden');
+    titulo.textContent = 'Acesso restrito';
+    sub.textContent = 'Faça login para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.';
+    document.getElementById(modo === 'login' ? 'tabLogin' : 'tabSignup').classList.add('active');
+    actionBtn.textContent = modo === 'login' ? 'Entrar' : 'Criar conta';
+    actionBtn.setAttribute('onclick', 'submeterAuth()');
+  } else if (modo === 'reset_request') {
+    tabs.classList.add('hidden');
+    emailGroup.classList.remove('hidden');
+    senhaGroup.classList.add('hidden');
+    senha2Group.classList.add('hidden');
+    linkEsqueci.classList.add('hidden');
+    linkVoltar.classList.remove('hidden');
+    titulo.textContent = 'Recuperar senha';
+    sub.textContent = 'Informe seu e-mail. Vamos enviar um link para você criar uma nova senha.';
+    actionBtn.textContent = 'Enviar link de recuperação';
+    actionBtn.setAttribute('onclick', 'enviarEmailRecuperacao()');
+  } else if (modo === 'reset_confirm') {
+    tabs.classList.add('hidden');
+    emailGroup.classList.add('hidden');
+    senhaGroup.classList.remove('hidden');
+    senha2Group.classList.remove('hidden');
+    linkEsqueci.classList.add('hidden');
+    linkVoltar.classList.add('hidden');
+    titulo.textContent = 'Definir nova senha';
+    sub.textContent = 'Digite e confirme sua nova senha. Ela precisa ter pelo menos 6 caracteres.';
+    document.getElementById('authSenhaInput').value = '';
+    document.getElementById('authSenha2Input').value = '';
+    document.getElementById('authSenhaInput').setAttribute('autocomplete', 'new-password');
+    document.getElementById('authSenhaInput').setAttribute('placeholder', 'nova senha');
+    actionBtn.textContent = 'Atualizar senha';
+    actionBtn.setAttribute('onclick', 'definirNovaSenha()');
+  }
+}
+
+function abrirRecuperacaoSenha() {
+  trocarAbaAuth('reset_request');
+  document.getElementById('authEmailInput').focus();
+}
+
+async function enviarEmailRecuperacao() {
+  if (!supa) { toast('Supabase não carregado', 'err'); return; }
+  const email = document.getElementById('authEmailInput').value.trim();
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!email) { erroEl.textContent = 'Informe seu e-mail'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.href.split('#')[0]
+    });
+    if (error) { erroEl.textContent = traduzirErroAuth(error.message); return; }
+    toast('E-mail enviado. Verifique sua caixa de entrada (e spam).', 'ok');
+    trocarAbaAuth('login');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function definirNovaSenha() {
+  if (!supa) { toast('Supabase não carregado', 'err'); return; }
+  const senha = document.getElementById('authSenhaInput').value;
+  const senha2 = document.getElementById('authSenha2Input').value;
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!senha || !senha2) { erroEl.textContent = 'Preencha os dois campos'; return; }
+  if (senha.length < 6) { erroEl.textContent = 'Senha precisa ter ao menos 6 caracteres'; return; }
+  if (senha !== senha2) { erroEl.textContent = 'As senhas não conferem'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const { data, error } = await supa.auth.updateUser({ password: senha });
+    if (error) { erroEl.textContent = traduzirErroAuth(error.message); return; }
+    inRecoveryFlow = false;
+    currentUser = data.user;
+    await cloudLoad();
+    iniciarRealtime();
+    fecharLogin();
+    await loadState();
+    atualizarUIAuth();
+    goto('home');
+    toast('Senha atualizada. Bem-vindo(a)!', 'ok');
+  } catch (e) {
+    erroEl.textContent = e.message || 'Erro inesperado';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function traduzirErroAuth(msg) {
@@ -1560,6 +1687,10 @@ function traduzirErroAuth(msg) {
   if (/password should be at least/i.test(msg)) return 'Senha muito curta';
   if (/rate limit/i.test(msg)) return 'Muitas tentativas — aguarde um minuto';
   if (/email.*invalid/i.test(msg)) return 'E-mail inválido';
+  if (/signup.*disabled|signups are disabled/i.test(msg)) return 'Cadastro público desabilitado. Peça acesso ao administrador.';
+  if (/for security purposes.*seconds/i.test(msg)) return 'Muitas tentativas. Aguarde alguns segundos.';
+  if (/user not found/i.test(msg)) return 'E-mail não cadastrado';
+  if (/new password should be different/i.test(msg)) return 'A nova senha precisa ser diferente da atual';
   return msg;
 }
 
@@ -3109,6 +3240,9 @@ window.fecharLogin = fecharLogin;
 window.trocarAbaAuth = trocarAbaAuth;
 window.submeterAuth = submeterAuth;
 window.sairConta = sairConta;
+window.abrirRecuperacaoSenha = abrirRecuperacaoSenha;
+window.enviarEmailRecuperacao = enviarEmailRecuperacao;
+window.definirNovaSenha = definirNovaSenha;
 </script>
 </body>
 </html>
