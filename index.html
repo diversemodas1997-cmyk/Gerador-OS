@@ -858,6 +858,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
       <button class="nav-btn" data-page="cad-equipe">Equipe</button>
       <button class="nav-btn" data-page="cad-funcoes">Funções</button>
       <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
+      <button class="nav-btn" data-page="cad-componentes">Componentes</button>
       <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
       <button class="nav-btn" data-page="cad-cores">Cores</button>
       <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
@@ -1113,6 +1114,20 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <table class="table">
           <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-blocos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- COMPONENTES -->
+    <section class="page hidden" data-page="cad-componentes">
+      <div class="page-header">
+        <div><h1>Componentes</h1><div class="desc">Partes do produto (Frente, Costas, Capuz, Mangas, etc.). Aparecem no select de "Componentes do produto" na Nova OS.</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('componente')">+ Novo componente</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Gerenciar</th></tr></thead>
+          <tbody id="tbl-componentes"></tbody>
         </table>
       </div>
     </section>
@@ -1532,7 +1547,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -1802,6 +1817,7 @@ const STATE = {
   equipe: [],
   funcoes: [],
   etapas: [],
+  componentes: [],
   ordens: [],
   osCounter: 0,
   etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
@@ -1818,7 +1834,7 @@ async function saveState(key) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1841,6 +1857,15 @@ async function loadState() {
       funcoesIds: []
     }));
     if (STATE.etapas.length) { try { await saveState('etapas'); } catch (e) {} }
+  }
+  // Seed default componentes se vazio (primeira execução)
+  if (!STATE.componentes || !STATE.componentes.length) {
+    STATE.componentes = (STATE.componentesPadrao || []).map((nome, i) => ({
+      id: 'id_' + (Date.now() + 1000) + '_' + i,
+      nome,
+      desc: ''
+    }));
+    if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
 }
 
@@ -1874,6 +1899,7 @@ function goto(page) {
   if (page === 'cad-equipe') renderEquipe();
   if (page === 'cad-funcoes') renderFuncoes();
   if (page === 'cad-etapas') renderEtapasCad();
+  if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
 }
@@ -1908,7 +1934,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
-    equipe: 'Membro da equipe', funcao: 'Função', etapa: 'Etapa de produção'
+    equipe: 'Membro da equipe', funcao: 'Função', etapa: 'Etapa de produção', componente: 'Componente'
   };
   title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
 
@@ -2096,6 +2122,13 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
       </div>`;
   }
+  else if (tipo === 'componente') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Capuz"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+      </div>`;
+  }
   else if (tipo === 'etapa') {
     const funcoesIds = item.funcoesIds || [];
     const ordemSugerida = item.ordem ?? ((STATE.etapas.length + 1) * 10);
@@ -2133,7 +2166,7 @@ function previewUploadImg(e) {
 function pluralize(tipo) {
   return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
            colecao:'colecoes', grade:'grades', desenho:'desenhos',
-           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', etapa:'etapas' }[tipo];
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', etapa:'etapas', componente:'componentes' }[tipo];
 }
 
 async function salvarCadastro() {
@@ -2222,6 +2255,11 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.ordem = parseInt(v('m-ordem')) || 0;
     item.funcoesIds = Array.from(document.querySelectorAll('.m-funcao-chk:checked')).map(c => c.value);
+  }
+  else if (tipo === 'componente') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
   }
 
   if (!editId) STATE[list].push(item);
@@ -2399,6 +2437,13 @@ function nomesFuncoesPorIds(ids) {
     .map(id => STATE.funcoes.find(f => f.id === id))
     .filter(Boolean)
     .map(f => f.nome);
+}
+
+function renderComponentesCad() {
+  const tb = document.getElementById('tbl-componentes');
+  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.componentes.map(c => `
+    <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.desc)||'—'}</td>${acoesCell('componente', c.id)}</tr>`).join('');
 }
 
 function renderEtapasCad() {
@@ -2754,7 +2799,10 @@ function addComponenteRow(data = {}) {
   const cont = document.getElementById('componentes-rows');
   const row = document.createElement('div');
   row.className = 'componente-row';
-  const compOpts = STATE.componentesPadrao.map(c =>
+  const fonteComponentes = STATE.componentes.length
+    ? STATE.componentes.map(c => c.nome)
+    : STATE.componentesPadrao;
+  const compOpts = fonteComponentes.map(c =>
     `<option value="${esc(c)}" ${data.nome===c?'selected':''}>${esc(c)}</option>`).join('');
   const todosTecidos = [...STATE.tecidos.map(t=>({id:'T:'+t.id, nome:t.nome})),
                        ...STATE.materiais.map(m=>({id:'M:'+m.id, nome:m.codigo+' · '+m.desc}))];
@@ -3450,7 +3498,7 @@ function renderPrintSheet(o) {
 /* ========================================================= */
 // Lista canônica de todos os arrays persistidos
 const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
-                  'marcas','linhas','bases','blocos','equipe','funcoes','etapas','ordens'];
+                  'marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
 
 function exportarDados() {
   const data = { exportadoEm: new Date().toISOString() };
@@ -3623,6 +3671,7 @@ window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
+window.renderComponentesCad = renderComponentesCad;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
 window.aplicarVinculosModelo = aplicarVinculosModelo;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
