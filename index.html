@@ -2508,22 +2508,18 @@ function aplicarVinculosDesenho() {
   };
   let aplicou = false;
   Object.entries(mapa).forEach(([campo, selId]) => {
-    if (!d[campo]) return;
     const el = document.getElementById(selId);
     if (!el) return;
-    // Só preenche se estiver vazio (não sobrescreve escolha do usuário)
-    if (!el.value) { el.value = d[campo]; aplicou = true; }
-  });
-  if (d.gradeId) {
-    const g = STATE.grades.find(x => x.id === d.gradeId);
-    if (g && !document.getElementById('f-grade-desc').value) {
-      aplicarGradePreset();
+    if (d[campo]) {
+      el.value = d[campo];
+      aplicou = true;
     }
-  }
+  });
+  if (d.gradeId) aplicarGradePreset();
   if (aplicou) {
     onModeloChange();
     atualizarResponsabilidadesOS();
-    toast('Campos preenchidos a partir dos vínculos do desenho', 'ok');
+    toast('Campos vinculados preenchidos automaticamente', 'ok');
   }
 }
 
