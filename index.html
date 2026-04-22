@@ -1161,7 +1161,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
             <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
             <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" list="codigos-datalist" placeholder="Digite ou selecione" oninput="sincCodigoDesenho('codigo')"><datalist id="codigos-datalist"></datalist><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar novo desenho</a></div>
             <div class="field"><label>Data</label><input type="date" id="f-data"></div>
-            <div class="field"><label>Coordenador</label><select id="f-coordenado"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+            <div class="field"><label>Coordenador</label><select id="f-coordenado" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-coordenador" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
 
             <div class="field"><label>Coleção</label><select id="f-colecao"></select><a href="#" class="field-add-link" onclick="openCadastroModal('colecao', null, 'os-form'); return false;">+ Cadastrar coleção</a></div>
             <div class="field"><label>Modelo</label><select id="f-modelo"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
@@ -1170,8 +1170,8 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
             <div class="field"><label>Griffe / Marca</label><select id="f-griffe"></select><a href="#" class="field-add-link" onclick="openCadastroModal('marca', null, 'os-form'); return false;">+ Cadastrar marca</a></div>
             <div class="field"><label>Base</label><select id="f-base"></select><a href="#" class="field-add-link" onclick="openCadastroModal('base', null, 'os-form'); return false;">+ Cadastrar base</a></div>
-            <div class="field"><label>Designer</label><select id="f-designer"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
-            <div class="field"><label>Ficha técnica</label><select id="f-ftec"></select><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+            <div class="field"><label>Designer</label><select id="f-designer" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-designer" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+            <div class="field"><label>Ficha técnica</label><select id="f-ftec" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-ftec" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
           </div>
         </div>
 
@@ -1229,6 +1229,14 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
           <div id="f-enf-alerta" class="hidden" style="margin-top:10px; padding: 8px 12px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 12px; border-radius: 2px;"></div>
           <div id="f-enf-calculo" style="margin-top:12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2);">
             <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
+          </div>
+        </div>
+
+        <!-- RESPONSABILIDADES DA EQUIPE -->
+        <div class="card">
+          <div class="card-title">Responsabilidades da equipe nesta OS</div>
+          <div id="resp-resumo" style="font-size:12px; color: var(--ink-2);">
+            <em style="color:var(--ink-3);">Selecione Designer, Ficha técnica ou Coordenador acima para ver responsabilidades da equipe.</em>
           </div>
         </div>
 
@@ -2013,16 +2021,26 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'equipe') {
-    const funcoesOpts = STATE.funcoes.map(f => `<option value="${esc(f.nome)}">${esc(f.desc||'')}</option>`).join('');
+    const curVal = item.funcao || '';
+    const nomesCadastrados = STATE.funcoes.map(f => f.nome);
+    const todosNomes = [...new Set([curVal, ...nomesCadastrados].filter(Boolean))];
+    const funcoesOpts = todosNomes.map(nome => {
+      const inCad = nomesCadastrados.includes(nome);
+      return `<option value="${esc(nome)}" ${curVal===nome?'selected':''}>${esc(nome)}${inCad?'':' (não cadastrada)'}</option>`;
+    }).join('');
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Marcelo"></div>
         <div class="field"><label>Função principal</label>
-          <input type="text" id="m-funcao" list="m-funcao-list" value="${esc(item.funcao||'')}" placeholder="Digite ou selecione">
-          <datalist id="m-funcao-list">${funcoesOpts}</datalist>
+          <select id="m-funcao" onchange="mostrarResponsabilidadesFuncao()">
+            <option value="">— sem função —</option>
+            ${funcoesOpts}
+          </select>
+          <div id="m-funcao-resp" class="field-hint" style="min-height:16px;"></div>
           <div class="field-hint">Cadastre funções em <a href="#" onclick="closeModal('modal-cad'); goto('cad-funcoes'); return false;">Funções</a></div>
         </div>
       </div>`;
+    setTimeout(mostrarResponsabilidadesFuncao, 0);
   }
   else if (tipo === 'funcao') {
     box.innerHTML = `
@@ -2319,6 +2337,53 @@ function renderHome() {
 /* ========================================================= */
 let osEditId = null;
 
+function funcaoPorNome(nome) {
+  if (!nome) return null;
+  return STATE.funcoes.find(f => f.nome === nome) || null;
+}
+
+function renderResponsabilidadesBadges(f) {
+  if (!f || !f.acoes) return '';
+  const linhas = (f.acoes || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!linhas.length) return '';
+  return linhas.map(a => `<span class="badge" style="margin:2px 3px 0 0;display:inline-block;">${esc(a)}</span>`).join('');
+}
+
+function mostrarResponsabilidadesFuncao() {
+  const sel = document.getElementById('m-funcao');
+  const resp = document.getElementById('m-funcao-resp');
+  if (!sel || !resp) return;
+  const f = funcaoPorNome(sel.value);
+  const html = renderResponsabilidadesBadges(f);
+  resp.innerHTML = html ? `Responsabilidades: ${html}` : '';
+}
+
+function atualizarResponsabilidadesOS() {
+  const mapa = { 'f-designer': 'resp-designer', 'f-ftec': 'resp-ftec', 'f-coordenado': 'resp-coordenador' };
+  const resumoItens = [];
+  Object.entries(mapa).forEach(([selId, respId]) => {
+    const sel = document.getElementById(selId);
+    const respEl = document.getElementById(respId);
+    if (!sel || !respEl) return;
+    const pessoaNome = sel.value;
+    const pessoa = STATE.equipe.find(p => p.nome === pessoaNome);
+    if (!pessoa) { respEl.innerHTML = ''; return; }
+    const f = funcaoPorNome(pessoa.funcao);
+    const badges = renderResponsabilidadesBadges(f);
+    respEl.innerHTML = badges ? badges : '';
+    if (badges) {
+      const rotulo = { 'f-designer': 'Designer', 'f-ftec': 'Ficha técnica', 'f-coordenado': 'Coordenador' }[selId];
+      resumoItens.push(`<div style="margin-bottom:6px;"><strong>${rotulo}: ${esc(pessoaNome)}</strong> <span style="color:var(--ink-3);font-weight:normal;">(${esc(pessoa.funcao||'—')})</span><br>${badges}</div>`);
+    }
+  });
+  const resumo = document.getElementById('resp-resumo');
+  if (resumo) {
+    resumo.innerHTML = resumoItens.length
+      ? resumoItens.join('')
+      : '<em style="color:var(--ink-3);">Selecione Designer, Ficha técnica ou Coordenador acima para ver responsabilidades da equipe.</em>';
+  }
+}
+
 function atualizarDatalistCodigos() {
   const dl = document.getElementById('codigos-datalist');
   if (!dl) return;
@@ -2385,6 +2450,7 @@ function initOSForm() {
   renderEtapas();
   calcTotal();
   atualizarCalculosEnfesto();
+  atualizarResponsabilidadesOS();
   // listeners para total
   ['c-tecido','c-estampa','c-bordado','c-freq','c-lav','c-termo','c-transfer','c-costura','c-caseado','c-travete','c-acab','c-demais']
     .forEach(id => {
@@ -3387,6 +3453,8 @@ window.addEtapaCustomizada = addEtapaCustomizada;
 window.aplicarGradePreset = aplicarGradePreset;
 window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.calcularCamadasParaProducao = calcularCamadasParaProducao;
+window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
+window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
