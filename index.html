@@ -1213,9 +1213,14 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <!-- ENFESTO -->
         <div class="card">
           <div class="card-title">Enfesto</div>
-          <div class="form-grid cols-3">
+          <div class="form-grid cols-4">
             <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="f-enf-comp" placeholder="Ex.: 6,50"></div>
             <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="f-enf-larg" placeholder="Ex.: 1,80"></div>
+            <div class="field">
+              <label>Peças-alvo</label>
+              <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 200" oninput="calcularCamadasParaProducao()">
+              <div class="field-hint">Calcula camadas automaticamente</div>
+            </div>
             <div class="field">
               <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
               <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="atualizarCalculosEnfesto()">
@@ -1948,12 +1953,20 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     box.innerHTML = `
       <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
       <div style="margin-top:10px;">
-        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição</label>
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
         <div class="grade-inputs" style="margin-top:6px;">
           ${['pp','p','m','g','gg','g1','g2','g3'].map(t => `
             <div class="field"><label>${t.toUpperCase()}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
           `).join('')}
         </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Enfesto padrão (opcional)</label>
+        <div class="form-grid cols-2" style="margin-top:6px;">
+          <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-grade-comp" value="${esc(item.enfestoComprimento||'')}" placeholder="Ex.: 6,50"></div>
+          <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-grade-larg" value="${esc(item.enfestoLargura||'')}" placeholder="Ex.: 1,80"></div>
+        </div>
+        <div class="field-hint">Preenchidos automaticamente ao selecionar esta grade em Nova OS. Podem ser ajustados caso a caso.</div>
       </div>`;
   }
   else if (tipo === 'desenho') {
@@ -2081,6 +2094,8 @@ async function salvarCadastro() {
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
+    item.enfestoComprimento = v('m-grade-comp');
+    item.enfestoLargura = v('m-grade-larg');
   }
   else if (tipo === 'desenho') {
     if (!v('m-codigo')) return toast('Código obrigatório', 'err');
@@ -2518,14 +2533,30 @@ function aplicarGradePreset() {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
   });
   document.getElementById('f-grade-desc').value = g.nome;
+  if (g.enfestoComprimento) document.getElementById('f-enf-comp').value = g.enfestoComprimento;
+  if (g.enfestoLargura) document.getElementById('f-enf-larg').value = g.enfestoLargura;
   atualizarCalculosEnfesto();
-  toast('Grade aplicada', 'ok');
+  toast('Grade aplicada (inclui comprimento/largura)', 'ok');
 }
 
 /* ========================================================= */
 /*              ENFESTO — limites e cálculos                 */
 /* ========================================================= */
 const LIMITE_CAMADAS = { malha: 80, moletom: 30, outro: Infinity };
+const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, outro: 1 };
+
+function multiplicadorDominante() {
+  const rows = document.querySelectorAll('#tecidos-rows .tec-sel');
+  let mult = 1;
+  rows.forEach(sel => {
+    if (!sel.value) return;
+    const tec = STATE.tecidos.find(t => t.id === sel.value);
+    if (!tec || !tec.categoria) return;
+    const m = MULTIPLICADOR_PECAS[tec.categoria] || 1;
+    if (m > mult) mult = m;
+  });
+  return mult;
+}
 
 // Calcula o limite máximo de camadas baseado nos tecidos selecionados no formulário.
 // Pega o menor limite entre todos — se há moletom e malha, vence moletom (30).
@@ -2577,23 +2608,40 @@ function atualizarCalculosEnfesto() {
 
   // Área de cálculo
   const calcBox = document.getElementById('f-enf-calculo');
+  const multiplier = multiplicadorDominante();
   if (camadas > 0 && gradeTotal > 0) {
-    const totalPecas = gradeTotal * camadas;
+    const totalPecas = gradeTotal * camadas * multiplier;
+    const multText = multiplier > 1 ? ` · ×${multiplier} (malha algodão: 2 peças/camada)` : '';
     const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
       .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
       .filter(x => x.qtd > 0)
-      .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas} = ${x.qtd * camadas}`)
+      .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}${multiplier>1?'×'+multiplier:''} = ${x.qtd * camadas * multiplier}`)
       .join(' · ');
     calcBox.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span>Total de peças do enfesto:</span>
+        <span>Total de peças produzidas:${multText}</span>
         <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
       </div>
       <div style="font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>
     `;
   } else {
-    calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>';
+    calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
   }
+}
+
+function calcularCamadasParaProducao() {
+  const target = parseInt(document.getElementById('f-enf-target')?.value) || 0;
+  if (target <= 0) { atualizarCalculosEnfesto(); return; }
+  const gradeTotal = ['pp','p','m','g','gg','g1','g2','g3']
+    .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
+  if (gradeTotal === 0) {
+    toast('Preencha a grade antes', 'err');
+    return;
+  }
+  const multiplier = multiplicadorDominante();
+  const camadas = Math.ceil(target / (gradeTotal * multiplier));
+  document.getElementById('f-enf-camadas').value = camadas;
+  atualizarCalculosEnfesto();
 }
 
 /* ========================================================= */
@@ -3327,6 +3375,7 @@ window.addAviamentoRow = addAviamentoRow;
 window.addEtapaCustomizada = addEtapaCustomizada;
 window.aplicarGradePreset = aplicarGradePreset;
 window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
+window.calcularCamadasParaProducao = calcularCamadasParaProducao;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
