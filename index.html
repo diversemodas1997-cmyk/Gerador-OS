@@ -1948,6 +1948,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'modelo') {
+    const optSel = (list, fld, id) => '<option value="">— selecione —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(x[fld])}</option>`).join('');
+    const optNada = (list, fld, id, labelFn) => '<option value="">— nenhum —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(labelFn ? labelFn(x) : x[fld])}</option>`).join('');
+    const equipeLabel = p => p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Descrição *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camiseta básica, Moletom canguru"></div>
@@ -1960,7 +1963,19 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </select>
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
-        <div class="field"><label>Linha</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
+        <div class="field"><label>Linha (texto)</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Vínculos padrão (preenchem a OS ao selecionar este modelo)</label>
+        <div class="form-grid cols-2" style="margin-top:6px;">
+          <div class="field"><label>Base</label><select id="m-vinc-base">${optSel(STATE.bases, 'nome', item.baseId)}</select></div>
+          <div class="field"><label>Marca / Griffe</label><select id="m-vinc-marca">${optSel(STATE.marcas, 'nome', item.marcaId)}</select></div>
+          <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe, 'nome', item.designerId, equipeLabel)}</select></div>
+          <div class="field"><label>Ficha técnica</label><select id="m-vinc-ftec">${optNada(STATE.equipe, 'nome', item.ftecId, equipeLabel)}</select></div>
+          <div class="field"><label>Coordenador</label><select id="m-vinc-coord">${optNada(STATE.equipe, 'nome', item.coordId, equipeLabel)}</select></div>
+          <div class="field"><label>Grade padrão</label><select id="m-vinc-grade">${optNada(STATE.grades, 'nome', item.gradeId)}</select></div>
+        </div>
+        <div class="field-hint">Vínculos do desenho (quando houver) têm prioridade sobre os do modelo.</div>
       </div>`;
   }
   else if (tipo === 'colecao') {
@@ -2149,6 +2164,12 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.linha = v('m-linha');
     item.categoria = v('m-categoria');
+    item.baseId = v('m-vinc-base');
+    item.marcaId = v('m-vinc-marca');
+    item.designerId = v('m-vinc-designer');
+    item.ftecId = v('m-vinc-ftec');
+    item.coordId = v('m-vinc-coord');
+    item.gradeId = v('m-vinc-grade');
   }
   else if (tipo === 'colecao') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -2506,25 +2527,32 @@ function aplicarVinculosDesenho() {
   if (!desenhoId) return;
   const d = STATE.desenhos.find(x => x.id === desenhoId);
   if (!d) return;
-  const mapa = {
-    modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
-    marcaId: 'f-griffe', linhaId: 'f-linha', blocoId: 'f-bloco',
-    gradeId: 'f-grade-preset'
-  };
-  let aplicou = false;
-  Object.entries(mapa).forEach(([campo, selId]) => {
-    const el = document.getElementById(selId);
-    if (!el) return;
-    if (d[campo]) {
-      el.value = d[campo];
-      aplicou = true;
+  aplicandoVinculosDesenho = true;
+  try {
+    // 1º aplica vínculos do modelo (base/designer/ftec/coord/marca/grade padrões)
+    if (d.modeloId) {
+      document.getElementById('f-modelo').value = d.modeloId;
+      aplicarVinculosModelo();
     }
-  });
-  if (d.gradeId) aplicarGradePreset();
-  if (aplicou) {
-    onModeloChange();
+    // 2º sobrescreve com vínculos específicos do desenho (têm prioridade)
+    const mapa = {
+      modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
+      marcaId: 'f-griffe', linhaId: 'f-linha', blocoId: 'f-bloco',
+      gradeId: 'f-grade-preset'
+    };
+    let aplicou = false;
+    Object.entries(mapa).forEach(([campo, selId]) => {
+      const el = document.getElementById(selId);
+      if (!el) return;
+      if (d[campo]) { el.value = d[campo]; aplicou = true; }
+    });
+    if (d.gradeId) aplicarGradePreset();
+    aplicarFiltroTecidosPorModelo();
     atualizarResponsabilidadesOS();
-    toast('Campos vinculados preenchidos automaticamente', 'ok');
+    atualizarCalculosEnfesto();
+    if (aplicou) toast('Campos vinculados preenchidos automaticamente', 'ok');
+  } finally {
+    aplicandoVinculosDesenho = false;
   }
 }
 
@@ -2655,11 +2683,41 @@ function tecOptions(selId) {
     `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
 }
 
-function onModeloChange() {
+let aplicandoVinculosDesenho = false;
+
+function aplicarFiltroTecidosPorModelo() {
   document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
     const currentVal = sel.value;
     sel.innerHTML = tecOptions(currentVal);
   });
+}
+
+function aplicarVinculosModelo() {
+  const modeloId = document.getElementById('f-modelo')?.value;
+  if (!modeloId) return;
+  const m = STATE.modelos.find(x => x.id === modeloId);
+  if (!m) return;
+  const mapa = {
+    baseId: 'f-base', marcaId: 'f-griffe',
+    designerId: 'f-designer', ftecId: 'f-ftec', coordId: 'f-coordenado',
+    gradeId: 'f-grade-preset'
+  };
+  let aplicou = false;
+  Object.entries(mapa).forEach(([campo, selId]) => {
+    const el = document.getElementById(selId);
+    if (!el) return;
+    if (m[campo]) { el.value = m[campo]; aplicou = true; }
+  });
+  if (m.gradeId) aplicarGradePreset();
+  if (aplicou) {
+    atualizarResponsabilidadesOS();
+    if (!aplicandoVinculosDesenho) toast('Vínculos do modelo aplicados', 'ok');
+  }
+}
+
+function onModeloChange() {
+  aplicarFiltroTecidosPorModelo();
+  if (!aplicandoVinculosDesenho) aplicarVinculosModelo();
   atualizarCalculosEnfesto();
 }
 function reindexTecidos() {
@@ -3568,6 +3626,7 @@ window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
+window.aplicarVinculosModelo = aplicarVinculosModelo;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
 window.previewUploadImg = previewUploadImg;
 window.reindexTecidos = reindexTecidos;
