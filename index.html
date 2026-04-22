@@ -854,6 +854,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
       <button class="nav-btn" data-page="cad-bases">Bases</button>
       <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
       <button class="nav-btn" data-page="cad-equipe">Equipe</button>
+      <button class="nav-btn" data-page="cad-funcoes">Funções</button>
       <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
       <button class="nav-btn" data-page="cad-cores">Cores</button>
       <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
@@ -1109,6 +1110,20 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
         <table class="table">
           <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-blocos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FUNÇÕES -->
+    <section class="page hidden" data-page="cad-funcoes">
+      <div class="page-header">
+        <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe (Designer, Modelista, Costureiro, etc.)</div></div>
+        <div class="actions"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Ações</th></tr></thead>
+          <tbody id="tbl-funcoes"></tbody>
         </table>
       </div>
     </section>
@@ -1510,7 +1525,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','ordens','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','ordens','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -1778,6 +1793,7 @@ const STATE = {
   bases: [],
   blocos: [],
   equipe: [],
+  funcoes: [],
   ordens: [],
   osCounter: 0,
   etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
@@ -1838,6 +1854,7 @@ function goto(page) {
   if (page === 'cad-bases') renderBases();
   if (page === 'cad-blocos') renderBlocos();
   if (page === 'cad-equipe') renderEquipe();
+  if (page === 'cad-funcoes') renderFuncoes();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
 }
@@ -1872,7 +1889,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
-    equipe: 'Membro da equipe'
+    equipe: 'Membro da equipe', funcao: 'Função'
   };
   title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
 
@@ -1983,19 +2000,22 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'equipe') {
+    const funcoesOpts = STATE.funcoes.map(f => `<option value="${esc(f.nome)}">${esc(f.desc||'')}</option>`).join('');
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Marcelo"></div>
         <div class="field"><label>Função principal</label>
-          <select id="m-funcao">
-            <option value="">— qualquer —</option>
-            <option value="Designer" ${item.funcao==='Designer'?'selected':''}>Designer</option>
-            <option value="Ficha Técnica" ${item.funcao==='Ficha Técnica'?'selected':''}>Ficha Técnica</option>
-            <option value="Ambos" ${item.funcao==='Ambos'?'selected':''}>Ambos</option>
-            <option value="Modelista" ${item.funcao==='Modelista'?'selected':''}>Modelista</option>
-            <option value="Outro" ${item.funcao==='Outro'?'selected':''}>Outro</option>
-          </select>
+          <input type="text" id="m-funcao" list="m-funcao-list" value="${esc(item.funcao||'')}" placeholder="Digite ou selecione">
+          <datalist id="m-funcao-list">${funcoesOpts}</datalist>
+          <div class="field-hint">Cadastre funções em <a href="#" onclick="closeModal('modal-cad'); goto('cad-funcoes'); return false;">Funções</a></div>
         </div>
+      </div>`;
+  }
+  else if (tipo === 'funcao') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
       </div>`;
   }
 
@@ -2016,7 +2036,7 @@ function previewUploadImg(e) {
 function pluralize(tipo) {
   return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
            colecao:'colecoes', grade:'grades', desenho:'desenhos',
-           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe' }[tipo];
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes' }[tipo];
 }
 
 async function salvarCadastro() {
@@ -2078,6 +2098,11 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.funcao = v('m-funcao');
+  }
+  else if (tipo === 'funcao') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
   }
 
   if (!editId) STATE[list].push(item);
@@ -2242,6 +2267,12 @@ function renderEquipe() {
   if (!STATE.equipe.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.equipe.map(p => `
     <tr><td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td>${acoesCell('equipe', p.id)}</tr>`).join('');
+}
+function renderFuncoes() {
+  const tb = document.getElementById('tbl-funcoes');
+  if (!STATE.funcoes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma função cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.funcoes.map(f => `
+    <tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td>${acoesCell('funcao', f.id)}</tr>`).join('');
 }
 
 function renderHome() {
@@ -3128,7 +3159,7 @@ function renderPrintSheet(o) {
 /* ========================================================= */
 // Lista canônica de todos os arrays persistidos
 const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
-                  'marcas','linhas','bases','blocos','equipe','ordens'];
+                  'marcas','linhas','bases','blocos','equipe','funcoes','ordens'];
 
 function exportarDados() {
   const data = { exportadoEm: new Date().toISOString() };
@@ -3320,6 +3351,7 @@ window.enviarEmailRecuperacao = enviarEmailRecuperacao;
 window.definirNovaSenha = definirNovaSenha;
 window.sincCodigoDesenho = sincCodigoDesenho;
 window.atualizarDatalistCodigos = atualizarDatalistCodigos;
+window.renderFuncoes = renderFuncoes;
 </script>
 </body>
 </html>
