@@ -192,7 +192,9 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 .form-grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .form-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-.form-grid.cols-4 { grid-template-columns: repeat(4, minmax(160px, 220px)); justify-content: start; }
+.form-grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(140px, max-content)); justify-content: start; gap: 10px 14px; }
+.form-grid.cols-4 .field { min-width: 140px; max-width: 200px; }
+.form-grid.cols-4 .field select, .form-grid.cols-4 .field input { width: 100%; min-width: 0; }
 .form-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
