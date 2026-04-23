@@ -1269,8 +1269,29 @@ function esc(s) {
 function acoesCell(tipo, id) {
   return `<td class="col-actions row-actions">
     <button class="edit" onclick="openCadastroModal('${tipo}','${id}')">editar</button>
+    <button class="edit" onclick="duplicarCadastro('${tipo}','${id}')">duplicar</button>
     <button class="del" onclick="excluirCadastro('${tipo}','${id}')">excluir</button>
   </td>`;
+}
+
+async function duplicarCadastro(tipo, id) {
+  if (!exigirAdmin('duplicar cadastros')) return;
+  const list = pluralize(tipo);
+  const original = STATE[list].find(x => x.id === id);
+  if (!original) return toast('Cadastro não encontrado', 'err');
+  const copia = JSON.parse(JSON.stringify(original));
+  copia.id = uid();
+  // Marca algum campo identificador com "(cópia)" para distinguir
+  if (copia.nome)   copia.nome   = copia.nome + ' (cópia)';
+  else if (copia.codigo) copia.codigo = copia.codigo + ' (cópia)';
+  else if (copia.desc)   copia.desc   = copia.desc + ' (cópia)';
+  STATE[list].push(copia);
+  await saveState(list);
+  toast('Cadastro duplicado', 'ok');
+  // Re-renderiza a página atual
+  const activeBtn = document.querySelector('.nav-btn.active');
+  const pagina = activeBtn?.dataset.page || ('cad-' + list);
+  goto(pagina);
 }
 
 function renderTecidos() {
@@ -2832,3 +2853,4 @@ window.listarSnapshots = listarSnapshots;
 window.restaurarSnapshot = restaurarSnapshot;
 window.setUserRole = setUserRole;
 window.listarUsuariosComPapel = listarUsuariosComPapel;
+window.duplicarCadastro = duplicarCadastro;
