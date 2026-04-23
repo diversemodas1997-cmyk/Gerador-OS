@@ -894,13 +894,16 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   color: var(--ink);
 }
 .grade-folder-sub td {
-  background: var(--line-2);
-  color: var(--ink-2);
-  padding-left: 28px;
-}
-.grade-folder-sub:hover td {
   background: var(--ink);
   color: var(--paper);
+  padding-left: 28px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.grade-folder-sub:hover td {
+  background: var(--paper);
+  color: var(--ink);
 }
 .folder-count {
   font-size: 10px;
