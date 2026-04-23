@@ -2138,6 +2138,22 @@ function coletaOS() {
     designerId: designer.id, designerNome: designer.nome,
     ftecId: ftec.id,        ftecNome: ftec.nome,
     desenhoId: v('f-desenho'),
+    gradeId: v('f-grade-preset'),
+    fases: (() => {
+      const gId = v('f-grade-preset');
+      if (!gId) return [];
+      const gFull = STATE.grades.find(x => x.id === gId);
+      if (!gFull || !Array.isArray(gFull.fases)) return [];
+      return gFull.fases.map(f => ({
+        ordem: f.ordem,
+        tecidoId: f.tecidoId || '',
+        tecidoNome: (STATE.tecidos.find(t => t.id === f.tecidoId) || {}).nome || '',
+        corId: f.corId || '',
+        corNome: (STATE.cores.find(c => c.id === f.corId) || {}).nome || '',
+        comp: f.comp || '',
+        larg: f.larg || ''
+      }));
+    })(),
     tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
     obs: v('f-obs'),
     atencao: v('f-atencao'),
@@ -2322,6 +2338,35 @@ async function excluirOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
+function renderFasesBox(o) {
+  const fases = (o.fases || []).filter(f => f && (f.tecidoNome || f.corNome || f.comp || f.larg));
+  if (!fases.length) return '';
+  const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
+  return `
+    <table class="side-table" style="border-top:none;">
+      <thead>
+        <tr><th colspan="5" class="subhead" style="background:#ffe0b2;">Fases do enfesto</th></tr>
+        <tr>
+          <th style="width:30px;font-size:6.5pt;">Fase</th>
+          <th style="font-size:6.5pt;">Tecido</th>
+          <th style="font-size:6.5pt;">Cor</th>
+          <th style="font-size:6.5pt;">Compr.</th>
+          <th style="font-size:6.5pt;">Largura</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${fases.map(f => `<tr>
+          <td style="text-align:center;font-weight:700;">${esc(String(f.ordem || '—'))}</td>
+          <td>${esc(f.tecidoNome) || '—'}</td>
+          <td>${esc(f.corNome) || '—'}</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${f.comp ? fmt(f.comp)+' m' : '—'}</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${f.larg ? fmt(f.larg)+' m' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
   const g = o.grade || {};
@@ -2504,6 +2549,9 @@ function renderPrintSheet(o) {
             </tr>
           </tbody>
         </table>
+
+        <!-- FASES DO ENFESTO (bicolor/tricolor) -->
+        ${renderFasesBox(o)}
 
         <!-- ENFESTO -->
         ${renderEnfestoBox(o)}
