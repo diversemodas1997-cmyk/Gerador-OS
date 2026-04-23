@@ -816,12 +816,22 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
       </div>
       <div style="margin-top:14px;">
-        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Enfesto padrão (opcional)</label>
-        <div class="form-grid cols-2" style="margin-top:6px;">
-          <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-grade-comp" value="${esc(item.enfestoComprimento||'')}" placeholder="Ex.: 6,50"></div>
-          <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-grade-larg" value="${esc(item.enfestoLargura||'')}" placeholder="Ex.: 1,80"></div>
-        </div>
-        <div class="field-hint">Preenchidos automaticamente ao selecionar esta grade em Nova OS. Podem ser ajustados caso a caso.</div>
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Enfesto por tipo de tecido (opcional)</label>
+        <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">Na Nova OS, os valores são preenchidos automaticamente conforme a categoria do tecido principal. Todos opcionais — deixe em branco o que não usar.</div>
+        ${['malha','moletom','outro'].map(cat => {
+          const label = { malha: 'Malha (camiseta)', moletom: 'Moletom', outro: 'Outro / Padrão' }[cat];
+          const atual = (item.enfestos && item.enfestos[cat]) || {};
+          const legadoComp = cat === 'outro' ? (item.enfestoComprimento || '') : '';
+          const legadoLarg = cat === 'outro' ? (item.enfestoLargura || '') : '';
+          return `
+          <div style="margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px;">${label}</div>
+            <div class="form-grid cols-2">
+              <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-grade-comp-${cat}" value="${esc(atual.comp || legadoComp || '')}" placeholder="Ex.: 6,50"></div>
+              <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-grade-larg-${cat}" value="${esc(atual.larg || legadoLarg || '')}" placeholder="Ex.: 1,80"></div>
+            </div>
+          </div>`;
+        }).join('')}
       </div>`;
   }
   else if (tipo === 'desenho') {
@@ -1087,8 +1097,20 @@ async function salvarCadastro() {
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
-    item.enfestoComprimento = v('m-grade-comp');
-    item.enfestoLargura = v('m-grade-larg');
+    item.enfestos = {};
+    ['malha','moletom','outro'].forEach(cat => {
+      item.enfestos[cat] = {
+        comp: v('m-grade-comp-' + cat),
+        larg: v('m-grade-larg-' + cat)
+      };
+    });
+    // Compatibilidade com código antigo — usa o "outro" como fallback, ou o primeiro preenchido
+    const fallback = item.enfestos.outro.comp ? item.enfestos.outro
+                  : item.enfestos.malha.comp ? item.enfestos.malha
+                  : item.enfestos.moletom.comp ? item.enfestos.moletom
+                  : { comp: '', larg: '' };
+    item.enfestoComprimento = fallback.comp;
+    item.enfestoLargura = fallback.larg;
   }
   else if (tipo === 'desenho') {
     if (!v('m-codigo')) return toast('Código obrigatório', 'err');
@@ -1800,10 +1822,24 @@ function aplicarGradePreset() {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
   });
   document.getElementById('f-grade-desc').value = g.nome;
-  if (g.enfestoComprimento) document.getElementById('f-enf-comp').value = g.enfestoComprimento;
-  if (g.enfestoLargura) document.getElementById('f-enf-larg').value = g.enfestoLargura;
+
+  // Descobre a categoria do primeiro tecido selecionado (se houver)
+  const primeiroTecSel = document.querySelector('#tecidos-rows .tec-sel');
+  const tecId = primeiroTecSel?.value || '';
+  const tec = tecId ? STATE.tecidos.find(x => x.id === tecId) : null;
+  const cat = tec?.categoria || 'outro';
+
+  // Cascata: categoria escolhida → outro → legado (grades antigas)
+  const e = g.enfestos || {};
+  const par = (e[cat] && (e[cat].comp || e[cat].larg)) ? e[cat]
+            : (e.outro && (e.outro.comp || e.outro.larg)) ? e.outro
+            : { comp: g.enfestoComprimento || '', larg: g.enfestoLargura || '' };
+
+  if (par.comp) document.getElementById('f-enf-comp').value = par.comp;
+  if (par.larg) document.getElementById('f-enf-larg').value = par.larg;
   atualizarCalculosEnfesto();
-  toast('Grade aplicada (inclui comprimento/largura)', 'ok');
+  const rotulo = { malha: 'malha', moletom: 'moletom', outro: 'padrão' }[cat];
+  toast(`Grade aplicada (enfesto ${rotulo})`, 'ok');
 }
 
 /* ========================================================= */
