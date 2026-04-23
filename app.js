@@ -1260,7 +1260,10 @@ function renderGrades() {
 function renderDesenhos() {
   const tb = document.getElementById('tbl-desenhos');
   if (!STATE.desenhos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum desenho cadastrado.</td></tr>`; return; }
-  tb.innerHTML = STATE.desenhos.map(d => `
+  const ordenados = [...STATE.desenhos].sort((a, b) =>
+    (a.codigo || '').localeCompare(b.codigo || '', 'pt-BR', { numeric: true, sensitivity: 'base' })
+  );
+  tb.innerHTML = ordenados.map(d => `
     <tr>
       <td><div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">
         ${d.img ? `<img src="${d.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
