@@ -1780,10 +1780,42 @@ function renderEtapas() {
       ? `<div style="font-size:10px;color:var(--ink-3);margin-top:3px;">${e.funcs.map(f => `<span class="badge" style="margin-right:3px;font-size:10px;padding:1px 5px;">${esc(f)}</span>`).join('')}</div>`
       : '';
     return `<label class="etapa-check ${checked.includes(e.nome)?'checked':''}">
+      <span class="etapa-reorder">
+        <button type="button" class="etapa-move" onclick="event.preventDefault(); event.stopPropagation(); moverEtapaForm(this, -1)" title="Mover para cima">▲</button>
+        <button type="button" class="etapa-move" onclick="event.preventDefault(); event.stopPropagation(); moverEtapaForm(this, 1)" title="Mover para baixo">▼</button>
+      </span>
       <input type="checkbox" value="${esc(e.nome)}" ${checked.includes(e.nome)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
       <span>${esc(e.nome)}${funcsBadges}</span>
     </label>`;
   }).join('');
+}
+
+function moverEtapaForm(btn, dir) {
+  const label = btn.closest('.etapa-check');
+  if (!label) return;
+  if (dir < 0) {
+    const prev = label.previousElementSibling;
+    if (prev && prev.classList.contains('etapa-check')) label.parentNode.insertBefore(label, prev);
+  } else {
+    const next = label.nextElementSibling;
+    if (next && next.classList.contains('etapa-check')) label.parentNode.insertBefore(next, label);
+  }
+}
+
+function aplicarOrdemEtapas(ordemNomes) {
+  const cont = document.getElementById('etapas-container');
+  if (!cont || !Array.isArray(ordemNomes) || !ordemNomes.length) return;
+  const labels = Array.from(cont.querySelectorAll('.etapa-check'));
+  const porNome = new Map(labels.map(l => [l.querySelector('input').value, l]));
+  const usadas = new Set();
+  ordemNomes.forEach(nome => {
+    const l = porNome.get(nome);
+    if (l) { cont.appendChild(l); usadas.add(nome); }
+  });
+  labels.forEach(l => {
+    const nome = l.querySelector('input').value;
+    if (!usadas.has(nome)) cont.appendChild(l);
+  });
 }
 
 function addEtapaCustomizada() {
@@ -2416,13 +2448,14 @@ function editarOS(id) {
     // aviamentos
     document.getElementById('aviamentos-rows').innerHTML = '';
     (o.aviamentos||[]).forEach(a => addAviamentoRow(a));
-    // etapas — marca as que estão em o.etapas
+    // etapas — marca as que estão em o.etapas e aplica a ordem salva
     document.querySelectorAll('#etapas-container .etapa-check').forEach(lbl => {
       const input = lbl.querySelector('input');
       const on = (o.etapas||[]).includes(input.value);
       input.checked = on;
       lbl.classList.toggle('checked', on);
     });
+    aplicarOrdemEtapas(o.etapas || []);
     atualizarCalculosEnfesto();
     osEditId = null; // reset para permitir nova edição após salvar
   }, 60);
@@ -2662,10 +2695,11 @@ function renderPrintSheet(o) {
           <div class="titulo">Etapas de Produção</div>
           ${(() => {
             if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
-            const cadastradas = etapasOrdenadas();
-            const ordenadas = cadastradas.length
-              ? cadastradas.filter(e => o.etapas.includes(e.nome)).map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
-              : o.etapas.map(nome => ({ nome, funcs: [] }));
+            // Mantém a ordem salva na OS; busca as funções em STATE.etapas se existirem
+            const ordenadas = o.etapas.map(nome => {
+              const cad = STATE.etapas.find(e => e.nome === nome);
+              return { nome, funcs: cad ? nomesFuncoesPorIds(cad.funcoesIds) : [] };
+            });
             const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
               ${ordenadas.map(e => `
@@ -2935,3 +2969,4 @@ window.setUserRole = setUserRole;
 window.listarUsuariosComPapel = listarUsuariosComPapel;
 window.duplicarCadastro = duplicarCadastro;
 window.toggleFolderGrade = toggleFolderGrade;
+window.moverEtapaForm = moverEtapaForm;

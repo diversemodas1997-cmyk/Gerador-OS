@@ -381,6 +381,20 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 .etapa-check input { margin: 0; }
 .etapa-check.checked { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .etapa-check.checked label { color: var(--paper); }
+.etapa-reorder { display: inline-flex; flex-direction: column; gap: 1px; margin-right: 2px; }
+.etapa-move {
+  width: 18px; height: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-size: 8px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.etapa-move:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.etapa-check.checked .etapa-move { background: var(--paper); color: var(--ink); }
 
 /* ============ IMAGEM DESENHO ============ */
 .desenho-preview {
