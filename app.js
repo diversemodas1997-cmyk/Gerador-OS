@@ -1,0 +1,2655 @@
+/* ========================================================= */
+/*                  ESTADO E PERSISTÊNCIA                    */
+/* ========================================================= */
+const SUPA_URL = 'https://ckkqrjkhorvaahyazqsr.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNra3Fyamtob3J2YWFoeWF6cXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MTY2MjMsImV4cCI6MjA5MjM5MjYyM30.yT3Tb6KKx4sDNJXetwIoA77WudWUqQ2gCgT7JLi0iT8';
+const supa = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPA_URL, SUPA_KEY)
+  : null;
+
+let cloudCache = null;
+let currentUser = null;
+let currentRole = null; // 'admin' | 'usuario' | null
+let saveTimer = null;
+let inRecoveryFlow = false;
+
+async function cloudLoad() {
+  if (!supa || !currentUser) return;
+  const { data, error } = await supa
+    .from('shared_data')
+    .select('data')
+    .eq('id', 'main')
+    .maybeSingle();
+  if (error) { console.error('cloudLoad', error); cloudCache = {}; return; }
+  cloudCache = (data && data.data) || {};
+}
+
+async function cloudFlush() {
+  if (!supa || !currentUser || !cloudCache) return;
+  setSyncStatus('saving');
+  try {
+    const { error } = await supa.from('shared_data').upsert({
+      id: 'main',
+      data: cloudCache,
+      updated_at: new Date().toISOString(),
+      updated_by: currentUser.id
+    }, { onConflict: 'id' });
+    if (error) throw error;
+    setSyncStatus('ok');
+  } catch (e) {
+    console.error('cloudFlush', e);
+    setSyncStatus('error');
+  }
+}
+
+let realtimeChannel = null;
+
+function iniciarRealtime() {
+  if (!supa || !currentUser || realtimeChannel) return;
+  realtimeChannel = supa
+    .channel('shared_data_main')
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'shared_data', filter: 'id=eq.main' },
+      async (payload) => {
+        if (!payload.new) return;
+        if (payload.new.updated_by === currentUser.id) return;
+        cloudCache = payload.new.data || {};
+        await loadState();
+        const activeBtn = document.querySelector('.nav-btn.active');
+        const pagina = activeBtn && activeBtn.dataset.page ? activeBtn.dataset.page : 'home';
+        goto(pagina);
+        toast('Dados atualizados por outro usuário', 'ok');
+      })
+    .subscribe();
+}
+
+function pararRealtime() {
+  if (supa && realtimeChannel) {
+    supa.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+function scheduleCloudSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; cloudFlush(); }, 800);
+}
+
+function setSyncStatus(status) {
+  const el = document.getElementById('authSync');
+  if (!el) return;
+  el.classList.remove('saving', 'error');
+  if (status === 'saving') { el.textContent = '☁ Salvando...'; el.classList.add('saving'); }
+  else if (status === 'error') { el.textContent = '☁ Erro ao salvar'; el.classList.add('error'); }
+  else { el.textContent = '☁ Sincronizado'; }
+}
+
+/* Snapshot diário: grava cópia do blob atual em shared_data_backups uma vez por dia. */
+async function snapshotDiario() {
+  if (!supa || !currentUser || !cloudCache) return;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const { data: existente } = await supa
+    .from('shared_data_backups')
+    .select('id')
+    .eq('snapshot_date', hoje)
+    .maybeSingle();
+  if (existente) return;
+  const { error } = await supa.from('shared_data_backups').insert({
+    snapshot_date: hoje,
+    data: cloudCache,
+    created_by: currentUser.id
+  });
+  if (error) { console.warn('snapshot falhou', error); return; }
+  // Retenção: 30 dias
+  const corte = new Date();
+  corte.setDate(corte.getDate() - 30);
+  const corteStr = corte.toISOString().slice(0, 10);
+  await supa.from('shared_data_backups').delete().lt('snapshot_date', corteStr);
+}
+
+async function listarSnapshots() {
+  if (!supa) return;
+  const container = document.getElementById('snapshotsList');
+  if (!container) return;
+  container.innerHTML = '<div class="empty" style="padding:20px;">Carregando...</div>';
+  const { data, error } = await supa
+    .from('shared_data_backups')
+    .select('id, snapshot_date, created_at')
+    .order('snapshot_date', { ascending: false });
+  if (error) { container.innerHTML = `<div class="empty" style="padding:20px;">Erro: ${esc(error.message)}</div>`; return; }
+  if (!data || !data.length) { container.innerHTML = '<div class="empty" style="padding:20px;">Nenhum snapshot ainda — o primeiro é criado ao carregar o app.</div>'; return; }
+  container.innerHTML = `<table class="table">
+    <thead><tr><th>Data</th><th>Criado em</th><th class="col-actions">Ação</th></tr></thead>
+    <tbody>${data.map(s => `
+      <tr>
+        <td><strong>${esc(s.snapshot_date)}</strong></td>
+        <td>${esc(new Date(s.created_at).toLocaleString('pt-BR'))}</td>
+        <td class="col-actions"><button class="btn small danger" onclick="restaurarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Restaurar</button></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+/* ========================================================= */
+/*                        PRESENCE                           */
+/* ========================================================= */
+let presenceChannel = null;
+let presenceOsId = null;
+
+function iniciarPresenceOS(osKey) {
+  if (!supa || !currentUser) return;
+  if (presenceChannel && presenceOsId === osKey) return;
+  pararPresenceOS();
+  presenceOsId = osKey;
+  const channelName = 'os_edit:' + osKey;
+  presenceChannel = supa.channel(channelName, {
+    config: { presence: { key: currentUser.id } }
+  });
+  presenceChannel
+    .on('presence', { event: 'sync' }, () => renderizarPresence())
+    .on('presence', { event: 'join' }, () => renderizarPresence())
+    .on('presence', { event: 'leave' }, () => renderizarPresence())
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await presenceChannel.track({
+          email: currentUser.email || 'sem e-mail',
+          at: Date.now()
+        });
+      }
+    });
+}
+
+function pararPresenceOS() {
+  if (supa && presenceChannel) {
+    try { presenceChannel.untrack(); } catch (e) {}
+    supa.removeChannel(presenceChannel);
+  }
+  presenceChannel = null;
+  presenceOsId = null;
+  const bar = document.getElementById('presenceBar');
+  if (bar) bar.classList.add('hidden');
+}
+
+function renderizarPresence() {
+  if (!presenceChannel) return;
+  const state = presenceChannel.presenceState();
+  const bar = document.getElementById('presenceBar');
+  const usersEl = document.getElementById('presenceUsers');
+  const countEl = document.getElementById('presenceCount');
+  if (!bar || !usersEl || !countEl) return;
+  const outros = [];
+  for (const key in state) {
+    if (key === (currentUser && currentUser.id)) continue;
+    const meta = state[key][0];
+    if (meta && meta.email) outros.push(meta.email);
+  }
+  if (!outros.length) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  countEl.textContent = outros.length;
+  usersEl.innerHTML = outros.map(e => `<span class="user-chip">${esc(e)}</span>`).join(' ');
+}
+
+/* ========================================================= */
+/*                  PAPÉIS / PERMISSÕES                      */
+/* ========================================================= */
+async function carregarPapel() {
+  if (!supa || !currentUser) { currentRole = null; return; }
+  const { data, error } = await supa
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+  if (error) { console.warn('carregarPapel', error); currentRole = 'usuario'; return; }
+  currentRole = (data && data.role) || 'usuario';
+}
+
+function aplicarPermissoesUI() {
+  const body = document.body;
+  body.classList.remove('is-admin', 'is-usuario');
+  if (currentRole === 'admin') body.classList.add('is-admin');
+  else if (currentRole === 'usuario') body.classList.add('is-usuario');
+}
+
+function exigirAdmin(acao) {
+  if (currentRole !== 'admin') {
+    toast(`Apenas admin pode ${acao}`, 'err');
+    return false;
+  }
+  return true;
+}
+
+async function setUserRole(novoPapel) {
+  if (!supa) return;
+  if (!exigirAdmin('gerenciar usuários')) return;
+  const email = (document.getElementById('roleEmail').value || '').trim().toLowerCase();
+  if (!email) { toast('Informe o e-mail do usuário', 'err'); return; }
+  const { error } = await supa.rpc('set_user_role', { user_email: email, new_role: novoPapel });
+  if (error) { toast('Erro: ' + error.message, 'err'); return; }
+  toast(`${email} agora é ${novoPapel}`, 'ok');
+  document.getElementById('roleEmail').value = '';
+  listarUsuariosComPapel();
+}
+
+async function listarUsuariosComPapel() {
+  if (!supa) return;
+  const container = document.getElementById('usersList');
+  if (!container) return;
+  const { data, error } = await supa
+    .from('user_roles')
+    .select('user_id, role, created_at')
+    .order('created_at', { ascending: true });
+  if (error) { container.innerHTML = `<div class="empty" style="padding:20px;">Erro: ${esc(error.message)}</div>`; return; }
+  if (!data || !data.length) { container.innerHTML = '<div class="empty" style="padding:20px;">Nenhum papel atribuído ainda.</div>'; return; }
+  container.innerHTML = `<table class="table">
+    <thead><tr><th>User ID</th><th>Papel</th><th>Desde</th></tr></thead>
+    <tbody>${data.map(u => `
+      <tr>
+        <td style="font-family:'IBM Plex Mono',monospace; font-size:11px;">${esc(u.user_id)}</td>
+        <td><span class="badge">${esc(u.role)}</span></td>
+        <td>${esc(new Date(u.created_at).toLocaleDateString('pt-BR'))}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function restaurarSnapshot(id, dataStr) {
+  if (!exigirAdmin('restaurar snapshots')) return;
+  if (!supa) return;
+  const confirmTxt = prompt(
+    `Restaurar o snapshot de ${dataStr}?\n\n` +
+    `Isso vai SOBRESCREVER todos os cadastros e OS atuais com a versão daquele dia.\n\n` +
+    `Para confirmar, digite RESTAURAR:`
+  );
+  if (confirmTxt === null) return;
+  if ((confirmTxt || '').trim().toUpperCase() !== 'RESTAURAR') {
+    toast('Palavra não conferiu — nada foi restaurado.', 'err');
+    return;
+  }
+  const { data, error } = await supa
+    .from('shared_data_backups')
+    .select('data')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) { toast('Snapshot não encontrado', 'err'); return; }
+  cloudCache = data.data || {};
+  const { error: upErr } = await supa.from('shared_data').upsert({
+    id: 'main', data: cloudCache,
+    updated_at: new Date().toISOString(),
+    updated_by: currentUser.id
+  }, { onConflict: 'id' });
+  if (upErr) { toast('Erro ao gravar: ' + upErr.message, 'err'); return; }
+  await loadState();
+  goto('home');
+  toast(`Snapshot de ${dataStr} restaurado`, 'ok');
+}
+
+const DB = {
+  async get(key) {
+    if (cloudCache) {
+      const v = cloudCache[key];
+      return (v !== undefined && v !== null) ? { key, value: v } : null;
+    }
+    try {
+      const v = localStorage.getItem(key);
+      return v !== null ? { key, value: v } : null;
+    } catch (e) { return null; }
+  },
+  async set(key, value) {
+    if (cloudCache) {
+      cloudCache[key] = value;
+      scheduleCloudSave();
+      return { key, value };
+    }
+    try {
+      localStorage.setItem(key, value);
+      return { key, value };
+    } catch (e) {
+      console.error('localStorage cheio ou indisponível', e);
+      return null;
+    }
+  },
+  async delete(key) {
+    if (cloudCache) {
+      delete cloudCache[key];
+      scheduleCloudSave();
+      return { key, deleted: true };
+    }
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  }
+};
+
+/* ========================================================= */
+/*                     AUTENTICAÇÃO                          */
+/* ========================================================= */
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens','osCounter'];
+
+async function inicializarAuth() {
+  if (!supa) return;
+  const { data: { session } } = await supa.auth.getSession();
+  if (session && session.user) {
+    currentUser = session.user;
+    await cloudLoad();
+    iniciarRealtime();
+  }
+  atualizarUIAuth();
+  supa.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'PASSWORD_RECOVERY' && session) {
+      inRecoveryFlow = true;
+      currentUser = session.user;
+      document.getElementById('modalAuth').classList.remove('hidden');
+      trocarAbaAuth('reset_confirm');
+      return;
+    }
+    if (event === 'SIGNED_IN' && session && !inRecoveryFlow) {
+      currentUser = session.user;
+      await cloudLoad();
+      await carregarPapel();
+      iniciarRealtime();
+    } else if (event === 'SIGNED_OUT') {
+      pararRealtime();
+      pararPresenceOS();
+      currentUser = null;
+      cloudCache = null;
+      currentRole = null;
+      inRecoveryFlow = false;
+    }
+    aplicarPermissoesUI();
+    atualizarUIAuth();
+  });
+}
+
+function atualizarUIAuth() {
+  const out = document.getElementById('authLoggedOut');
+  const inn = document.getElementById('authLoggedIn');
+  const emailEl = document.getElementById('authEmail');
+  const appEl = document.querySelector('.app');
+  const modal = document.getElementById('modalAuth');
+  if (!out || !inn || !appEl || !modal) return;
+  if (currentUser) {
+    out.classList.add('hidden');
+    inn.classList.remove('hidden');
+    if (emailEl) emailEl.textContent = currentUser.email || currentUser.id;
+    appEl.classList.remove('hidden');
+    modal.classList.add('hidden');
+  } else {
+    out.classList.remove('hidden');
+    inn.classList.add('hidden');
+    appEl.classList.add('hidden');
+    modal.classList.remove('hidden');
+    const erroEl = document.getElementById('authErro');
+    if (erroEl) erroEl.textContent = '';
+  }
+}
+
+function abrirLogin() {
+  document.getElementById('modalAuth').classList.remove('hidden');
+  document.getElementById('authErro').textContent = '';
+  document.getElementById('authEmailInput').focus();
+}
+
+function fecharLogin() {
+  document.getElementById('modalAuth').classList.add('hidden');
+}
+
+function trocarAbaAuth(modo) {
+  const modal = document.getElementById('modalAuth');
+  const tabs = document.getElementById('authTabs');
+  const emailGroup = document.getElementById('authEmailGroup');
+  const senhaGroup = document.getElementById('authSenhaGroup');
+  const senha2Group = document.getElementById('authSenha2Group');
+  const actionBtn = document.getElementById('authActionBtn');
+  const linkEsqueci = document.getElementById('linkEsqueci');
+  const linkVoltar = document.getElementById('linkVoltar');
+  const titulo = document.getElementById('authTitle');
+  const sub = document.getElementById('authSub');
+  modal.dataset.mode = modo;
+  document.getElementById('authErro').textContent = '';
+  document.querySelectorAll('.modal-auth .tab').forEach(t => t.classList.remove('active'));
+
+  if (modo === 'login' || modo === 'signup') {
+    tabs.classList.remove('hidden');
+    emailGroup.classList.remove('hidden');
+    senhaGroup.classList.remove('hidden');
+    senha2Group.classList.add('hidden');
+    linkEsqueci.classList.remove('hidden');
+    linkVoltar.classList.add('hidden');
+    titulo.textContent = 'Acesso restrito';
+    sub.textContent = 'Faça login para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.';
+    document.getElementById(modo === 'login' ? 'tabLogin' : 'tabSignup').classList.add('active');
+    actionBtn.textContent = modo === 'login' ? 'Entrar' : 'Criar conta';
+    actionBtn.setAttribute('onclick', 'submeterAuth()');
+  } else if (modo === 'reset_request') {
+    tabs.classList.add('hidden');
+    emailGroup.classList.remove('hidden');
+    senhaGroup.classList.add('hidden');
+    senha2Group.classList.add('hidden');
+    linkEsqueci.classList.add('hidden');
+    linkVoltar.classList.remove('hidden');
+    titulo.textContent = 'Recuperar senha';
+    sub.textContent = 'Informe seu e-mail. Vamos enviar um link para você criar uma nova senha.';
+    actionBtn.textContent = 'Enviar link de recuperação';
+    actionBtn.setAttribute('onclick', 'enviarEmailRecuperacao()');
+  } else if (modo === 'reset_confirm') {
+    tabs.classList.add('hidden');
+    emailGroup.classList.add('hidden');
+    senhaGroup.classList.remove('hidden');
+    senha2Group.classList.remove('hidden');
+    linkEsqueci.classList.add('hidden');
+    linkVoltar.classList.add('hidden');
+    titulo.textContent = 'Definir nova senha';
+    sub.textContent = 'Digite e confirme sua nova senha. Ela precisa ter pelo menos 6 caracteres.';
+    document.getElementById('authSenhaInput').value = '';
+    document.getElementById('authSenha2Input').value = '';
+    document.getElementById('authSenhaInput').setAttribute('autocomplete', 'new-password');
+    document.getElementById('authSenhaInput').setAttribute('placeholder', 'nova senha');
+    actionBtn.textContent = 'Atualizar senha';
+    actionBtn.setAttribute('onclick', 'definirNovaSenha()');
+  }
+}
+
+function abrirRecuperacaoSenha() {
+  trocarAbaAuth('reset_request');
+  document.getElementById('authEmailInput').focus();
+}
+
+async function enviarEmailRecuperacao() {
+  if (!supa) { toast('Supabase não carregado', 'err'); return; }
+  const email = document.getElementById('authEmailInput').value.trim();
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!email) { erroEl.textContent = 'Informe seu e-mail'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.href.split('#')[0]
+    });
+    if (error) { erroEl.textContent = traduzirErroAuth(error.message); return; }
+    toast('E-mail enviado. Verifique sua caixa de entrada (e spam).', 'ok');
+    trocarAbaAuth('login');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function definirNovaSenha() {
+  if (!supa) { toast('Supabase não carregado', 'err'); return; }
+  const senha = document.getElementById('authSenhaInput').value;
+  const senha2 = document.getElementById('authSenha2Input').value;
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!senha || !senha2) { erroEl.textContent = 'Preencha os dois campos'; return; }
+  if (senha.length < 6) { erroEl.textContent = 'Senha precisa ter ao menos 6 caracteres'; return; }
+  if (senha !== senha2) { erroEl.textContent = 'As senhas não conferem'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const { data, error } = await supa.auth.updateUser({ password: senha });
+    if (error) { erroEl.textContent = traduzirErroAuth(error.message); return; }
+    inRecoveryFlow = false;
+    currentUser = data.user;
+    await cloudLoad();
+    await carregarPapel();
+    aplicarPermissoesUI();
+    iniciarRealtime();
+    fecharLogin();
+    await loadState();
+    atualizarUIAuth();
+    goto('home');
+    toast('Senha atualizada. Bem-vindo(a)!', 'ok');
+  } catch (e) {
+    erroEl.textContent = e.message || 'Erro inesperado';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function traduzirErroAuth(msg) {
+  if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos';
+  if (/user already registered/i.test(msg)) return 'Este e-mail já está cadastrado — use Entrar';
+  if (/password should be at least/i.test(msg)) return 'Senha muito curta';
+  if (/rate limit/i.test(msg)) return 'Muitas tentativas — aguarde um minuto';
+  if (/email.*invalid/i.test(msg)) return 'E-mail inválido';
+  if (/signup.*disabled|signups are disabled/i.test(msg)) return 'Cadastro público desabilitado. Peça acesso ao administrador.';
+  if (/for security purposes.*seconds/i.test(msg)) return 'Muitas tentativas. Aguarde alguns segundos.';
+  if (/user not found/i.test(msg)) return 'E-mail não cadastrado';
+  if (/new password should be different/i.test(msg)) return 'A nova senha precisa ser diferente da atual';
+  return msg;
+}
+
+async function submeterAuth() {
+  if (!supa) { toast('Supabase não carregado — verifique conexão', 'err'); return; }
+  const modo = document.getElementById('modalAuth').dataset.mode || 'login';
+  const email = document.getElementById('authEmailInput').value.trim();
+  const senha = document.getElementById('authSenhaInput').value;
+  const erroEl = document.getElementById('authErro');
+  const btn = document.getElementById('authActionBtn');
+  if (!email || !senha) { erroEl.textContent = 'Informe e-mail e senha'; return; }
+  if (senha.length < 6) { erroEl.textContent = 'Senha precisa ter ao menos 6 caracteres'; return; }
+  btn.disabled = true;
+  erroEl.textContent = '';
+  try {
+    const resp = modo === 'signup'
+      ? await supa.auth.signUp({ email, password: senha })
+      : await supa.auth.signInWithPassword({ email, password: senha });
+    if (resp.error) { erroEl.textContent = traduzirErroAuth(resp.error.message); return; }
+    if (!resp.data || !resp.data.session) {
+      erroEl.textContent = 'Conta criada — confirme seu e-mail ou tente entrar';
+      return;
+    }
+    currentUser = resp.data.session.user;
+    await cloudLoad();
+    await carregarPapel();
+    aplicarPermissoesUI();
+    iniciarRealtime();
+    const temLocal = CAD_KEYS.some(k => localStorage.getItem(k) !== null);
+    const cloudVazio = !cloudCache || Object.keys(cloudCache).length === 0;
+    if (temLocal && cloudVazio) {
+      if (confirm('Você tem cadastros salvos neste navegador. Enviar para a nuvem agora? (ficarão visíveis pra toda equipe)')) {
+        await migrarLocalParaNuvem();
+      }
+    }
+    fecharLogin();
+    atualizarUIAuth();
+    await loadState();
+    goto('home');
+    toast('Conectado — cadastros sincronizados na nuvem', 'ok');
+  } catch (e) {
+    erroEl.textContent = e.message || 'Erro inesperado';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function migrarLocalParaNuvem() {
+  let n = 0;
+  for (const k of CAD_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) { cloudCache[k] = v; n++; }
+  }
+  if (n > 0) { await cloudFlush(); toast(`${n} item(ns) enviado(s) para a nuvem`, 'ok'); }
+}
+
+async function sairConta() {
+  if (!supa) return;
+  if (!confirm('Sair da conta? Seus dados continuam salvos na nuvem.')) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await cloudFlush(); }
+  pararRealtime();
+  pararPresenceOS();
+  await supa.auth.signOut();
+  currentUser = null;
+  cloudCache = null;
+  currentRole = null;
+  CAD_KEYS.forEach(k => { if (Array.isArray(STATE[k])) STATE[k] = []; });
+  STATE.osCounter = 0;
+  aplicarPermissoesUI();
+  atualizarUIAuth();
+  toast('Desconectado.', 'ok');
+}
+
+const STATE = {
+  tecidos: [],
+  cores: [],
+  materiais: [],
+  modelos: [],
+  colecoes: [],
+  grades: [],
+  desenhos: [],
+  marcas: [],
+  linhas: [],
+  bases: [],
+  blocos: [],
+  equipe: [],
+  funcoes: [],
+  etapas: [],
+  componentes: [],
+  ordens: [],
+  osCounter: 0,
+  etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
+  componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
+};
+
+async function saveState(key) {
+  try {
+    await DB.set(key, JSON.stringify(STATE[key]));
+  } catch (e) {
+    console.error('Erro ao salvar', key, e);
+    toast('Erro ao salvar no armazenamento', 'err');
+  }
+}
+
+async function loadState() {
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
+  for (const k of keys) {
+    try {
+      const r = await DB.get(k);
+      if (r && r.value) {
+        try { STATE[k] = JSON.parse(r.value); } catch { STATE[k] = []; }
+      }
+    } catch (e) { /* chave não existe ainda, ok */ }
+  }
+  // Carrega o contador de OS (não é array, é número)
+  try {
+    const c = await DB.get('osCounter');
+    if (c && c.value) STATE.osCounter = parseInt(c.value) || 0;
+  } catch (e) { /* ok */ }
+  // Seed default etapas se vazio (primeira execução)
+  if (!STATE.etapas || !STATE.etapas.length) {
+    STATE.etapas = (STATE.etapasPadrao || []).map((nome, i) => ({
+      id: 'id_' + Date.now() + '_' + i,
+      nome,
+      ordem: (i + 1) * 10,
+      funcoesIds: []
+    }));
+    if (STATE.etapas.length) { try { await saveState('etapas'); } catch (e) {} }
+  }
+  // Seed default componentes se vazio (primeira execução)
+  if (!STATE.componentes || !STATE.componentes.length) {
+    STATE.componentes = (STATE.componentesPadrao || []).map((nome, i) => ({
+      id: 'id_' + (Date.now() + 1000) + '_' + i,
+      nome,
+      desc: ''
+    }));
+    if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
+  }
+}
+
+function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
+
+/* ========================================================= */
+/*                      NAVEGAÇÃO                            */
+/* ========================================================= */
+function goto(page) {
+  // Bloqueia navegação a páginas de cadastro para usuários não-admin
+  if (page && page.startsWith('cad-') && currentRole && currentRole !== 'admin') {
+    toast('Apenas admin pode acessar cadastros', 'err');
+    page = 'home';
+  }
+  document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
+  const target = document.querySelector(`section.page[data-page="${page}"]`);
+  if (target) target.classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+  if (btn) btn.classList.add('active');
+  window.scrollTo(0, 0);
+
+  // Presence: só ativa quando está editando OS
+  if (page !== 'nova-os') pararPresenceOS();
+
+  // renderiza listas
+  if (page === 'home') renderHome();
+  if (page === 'cad-tecidos') renderTecidos();
+  if (page === 'cad-cores') renderCores();
+  if (page === 'cad-materiais') renderMateriais();
+  if (page === 'cad-modelos') renderModelos();
+  if (page === 'cad-colecoes') renderColecoes();
+  if (page === 'cad-grades') renderGrades();
+  if (page === 'cad-desenhos') renderDesenhos();
+  if (page === 'cad-marcas') renderMarcas();
+  if (page === 'cad-linhas') renderLinhas();
+  if (page === 'cad-bases') renderBases();
+  if (page === 'cad-blocos') renderBlocos();
+  if (page === 'cad-equipe') renderEquipe();
+  if (page === 'cad-funcoes') renderFuncoes();
+  if (page === 'cad-etapas') renderEtapasCad();
+  if (page === 'cad-componentes') renderComponentesCad();
+  if (page === 'lista-os') renderListaOS();
+  if (page === 'nova-os') initOSForm();
+}
+
+document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
+
+/* ========================================================= */
+/*                      TOAST                                */
+/* ========================================================= */
+function toast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+/* ========================================================= */
+/*                    MODAL DE CADASTRO                      */
+/* ========================================================= */
+let cadastroContext = null;
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function openCadastroModal(tipo, editId = null, origin = null) {
+  cadastroContext = { tipo, editId, origin };
+  const title = document.getElementById('modal-cad-title');
+  const box = document.getElementById('modal-cad-fields');
+
+  const titles = {
+    tecido: 'Tecido', cor: 'Cor', material: 'Material / Aviamento',
+    modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
+    desenho: 'Desenho técnico',
+    marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
+    equipe: 'Membro da equipe', funcao: 'Função', etapa: 'Etapa de produção', componente: 'Componente'
+  };
+  title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
+
+  let item = {};
+  if (editId) {
+    const list = pluralize(tipo);
+    item = STATE[list].find(x => x.id === editId) || {};
+  }
+
+  if (tipo === 'tecido') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"></div>
+        <div class="field"><label>Categoria (define limite de enfesto)</label>
+          <select id="m-categoria">
+            <option value="">— selecione —</option>
+            <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
+            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 30 camadas)</option>
+            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
+          </select>
+        </div>
+        <div class="field"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
+      </div>`;
+  }
+  else if (tipo === 'cor') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camel"></div>
+        <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
+        <div class="field full"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
+      </div>`;
+  }
+  else if (tipo === 'material') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.IN.848"></div>
+        <div class="field"><label>Tipo</label><input type="text" id="m-tipo" value="${esc(item.tipo||'')}" placeholder="Ex.: Cordão, Ilhós, Tag"></div>
+        <div class="field full"><label>Descrição *</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Cordão 1,30m palha"></div>
+      </div>`;
+  }
+  else if (tipo === 'modelo') {
+    const optSel = (list, fld, id) => '<option value="">— selecione —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(x[fld])}</option>`).join('');
+    const optNada = (list, fld, id, labelFn) => '<option value="">— nenhum —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(labelFn ? labelFn(x) : x[fld])}</option>`).join('');
+    const equipeLabel = p => p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Descrição *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camiseta básica, Moletom canguru"></div>
+        <div class="field"><label>Tipo *</label>
+          <select id="m-categoria">
+            <option value="">— selecione —</option>
+            <option value="malha" ${item.categoria==='malha'?'selected':''}>Camiseta (malha algodão)</option>
+            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom</option>
+            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro</option>
+          </select>
+          <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
+        </div>
+        <div class="field"><label>Linha (texto)</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Vínculos padrão (preenchem a OS ao selecionar este modelo)</label>
+        <div class="form-grid cols-2" style="margin-top:6px;">
+          <div class="field"><label>Base</label><select id="m-vinc-base">${optSel(STATE.bases, 'nome', item.baseId)}</select></div>
+          <div class="field"><label>Marca / Griffe</label><select id="m-vinc-marca">${optSel(STATE.marcas, 'nome', item.marcaId)}</select></div>
+          <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe.filter(p => (p.funcao||'').toLowerCase().includes('designer')), 'nome', item.designerId, equipeLabel)}</select></div>
+          <div class="field"><label>Ficha técnica</label><select id="m-vinc-ftec">${optNada(STATE.equipe, 'nome', item.ftecId, equipeLabel)}</select></div>
+          <div class="field"><label>Coordenador</label><select id="m-vinc-coord">${optNada(STATE.equipe, 'nome', item.coordId, equipeLabel)}</select></div>
+        </div>
+        <div class="field-hint">Vínculos do desenho (quando houver) têm prioridade sobre os do modelo.</div>
+      </div>`;
+  }
+  else if (tipo === 'colecao') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Inverno 2024"></div>
+        <div class="field"><label>Temporada</label><input type="text" id="m-temp" value="${esc(item.temporada||'')}" placeholder="Ex.: Outono-Inverno"></div>
+      </div>`;
+  }
+  else if (tipo === 'grade') {
+    box.innerHTML = `
+      <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
+      <div style="margin-top:10px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
+        <div class="grade-inputs" style="margin-top:6px;">
+          ${['pp','p','m','g','gg','g1','g2','g3'].map(t => `
+            <div class="field"><label>${t.toUpperCase()}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
+          `).join('')}
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Enfesto padrão (opcional)</label>
+        <div class="form-grid cols-2" style="margin-top:6px;">
+          <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-grade-comp" value="${esc(item.enfestoComprimento||'')}" placeholder="Ex.: 6,50"></div>
+          <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-grade-larg" value="${esc(item.enfestoLargura||'')}" placeholder="Ex.: 1,80"></div>
+        </div>
+        <div class="field-hint">Preenchidos automaticamente ao selecionar esta grade em Nova OS. Podem ser ajustados caso a caso.</div>
+      </div>`;
+  }
+  else if (tipo === 'desenho') {
+    const optSel = (list, fld, id) => '<option value="">— selecione —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(x[fld])}</option>`).join('');
+    const optNada = (list, fld, id, labelFn) => '<option value="">— nenhum —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(labelFn ? labelFn(x) : x[fld])}</option>`).join('');
+    const equipeLabel = p => p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: Dx7282"></div>
+        <div class="field"><label>Descrição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Camiseta básica preta"></div>
+        <div class="field full">
+          <label>Imagem (PNG/JPG) *</label>
+          <label class="file-label">Escolher arquivo <input type="file" id="m-img" accept="image/*" onchange="previewUploadImg(event)"></label>
+          <div class="desenho-preview" id="m-img-preview" style="margin-top:8px;">
+            ${item.img ? `<img src="${item.img}">` : '<span>Sem imagem</span>'}
+          </div>
+          <input type="hidden" id="m-img-data" value="${item.img||''}">
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Vínculos (preenchem automaticamente a OS quando este desenho for selecionado)</label>
+        <div class="form-grid fit-cols" style="margin-top:6px;">
+          <div class="field"><label>Modelo</label><select id="m-vinc-modelo">${optSel(STATE.modelos, 'nome', item.modeloId)}</select></div>
+          <div class="field"><label>Base</label><select id="m-vinc-base">${optSel(STATE.bases, 'nome', item.baseId)}</select></div>
+          <div class="field"><label>Coleção</label><select id="m-vinc-colecao">${optSel(STATE.colecoes, 'nome', item.colecaoId)}</select></div>
+          <div class="field"><label>Marca / Griffe</label><select id="m-vinc-marca">${optSel(STATE.marcas, 'nome', item.marcaId)}</select></div>
+          <div class="field"><label>Linha</label><select id="m-vinc-linha">${optSel(STATE.linhas, 'nome', item.linhaId)}</select></div>
+          <div class="field"><label>Bloco / Revisão</label><select id="m-vinc-bloco">${optNada(STATE.blocos, 'nome', item.blocoId)}</select></div>
+          <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe.filter(p => (p.funcao||'').toLowerCase().includes('designer')), 'nome', item.designerId, equipeLabel)}</select></div>
+          <div class="field"><label>Tecido principal</label><select id="m-vinc-tecido">${optNada(STATE.tecidos, 'nome', item.tecidoPadraoId)}</select><div class="field-hint">Aplicado aos componentes</div></div>
+          <div class="field"><label>Cor principal</label><select id="m-vinc-cor">${optNada(STATE.cores, 'nome', item.corPrincipalId)}</select><div class="field-hint">Aplicada aos componentes e à Variante 1</div></div>
+        </div>
+        <div style="margin-top:14px;">
+          <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Componentes padrão deste desenho</label>
+          <div style="margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${STATE.componentes.length
+              ? STATE.componentes.map(c => `
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 8px 3px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;background:var(--paper);cursor:pointer;">
+                  <input type="checkbox" class="m-componente-chk" value="${esc(c.id)}" ${(item.componentesIds||[]).includes(c.id)?'checked':''}>
+                  <span>${esc(c.nome)}</span>
+                </label>`).join('')
+              : '<em style="color:var(--ink-3);font-size:12px;">Cadastre componentes primeiro em Componentes.</em>'}
+          </div>
+          <div class="field-hint">Ao selecionar este desenho na OS, esses componentes serão inseridos automaticamente nas linhas de "Componentes do produto".</div>
+        </div>
+      </div>`;
+  }
+  else if (tipo === 'marca') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Dixie"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: marca principal"></div>
+      </div>`;
+  }
+  else if (tipo === 'linha') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Adulto"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: linha principal"></div>
+      </div>`;
+  }
+  else if (tipo === 'base') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: BASE M MOLETOM"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: molde base nº 12"></div>
+      </div>`;
+  }
+  else if (tipo === 'bloco') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: R1 BLOCO 2"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: segunda revisão do bloco"></div>
+      </div>`;
+  }
+  else if (tipo === 'equipe') {
+    const curVal = item.funcao || '';
+    const nomesCadastrados = STATE.funcoes.map(f => f.nome);
+    const todosNomes = [...new Set([curVal, ...nomesCadastrados].filter(Boolean))];
+    const funcoesOpts = todosNomes.map(nome => {
+      const inCad = nomesCadastrados.includes(nome);
+      return `<option value="${esc(nome)}" ${curVal===nome?'selected':''}>${esc(nome)}${inCad?'':' (não cadastrada)'}</option>`;
+    }).join('');
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Marcelo"></div>
+        <div class="field"><label>Função principal</label>
+          <select id="m-funcao" onchange="mostrarResponsabilidadesFuncao()">
+            <option value="">— sem função —</option>
+            ${funcoesOpts}
+          </select>
+          <div id="m-funcao-resp" class="field-hint" style="min-height:16px;"></div>
+          <div class="field-hint">Cadastre funções em <a href="#" onclick="closeModal('modal-cad'); goto('cad-funcoes'); return false;">Funções</a></div>
+        </div>
+      </div>`;
+    setTimeout(mostrarResponsabilidadesFuncao, 0);
+  }
+  else if (tipo === 'funcao') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+        <div class="field full"><label>Responsabilidades / ações</label>
+          <textarea id="m-acoes" rows="3" placeholder="Ex.: Costurar peças, fazer travete, acabamento. Uma por linha.">${esc(item.acoes||'')}</textarea>
+        </div>
+      </div>`;
+  }
+  else if (tipo === 'componente') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Capuz"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+      </div>`;
+  }
+  else if (tipo === 'etapa') {
+    const funcoesIds = item.funcoesIds || [];
+    const ordemSugerida = item.ordem ?? ((STATE.etapas.length + 1) * 10);
+    const funcoesCheckboxes = STATE.funcoes.length
+      ? STATE.funcoes.map(f => `
+          <label style="display:inline-flex;align-items:center;gap:6px;margin:2px 8px 2px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;cursor:pointer;">
+            <input type="checkbox" class="m-funcao-chk" value="${esc(f.id)}" ${funcoesIds.includes(f.id)?'checked':''}>
+            <span>${esc(f.nome)}</span>
+          </label>`).join('')
+      : '<em style="color:var(--ink-3);font-size:12px;">Nenhuma função cadastrada — cadastre primeiro em Funções.</em>';
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Corte, Costura, Acabamento"></div>
+        <div class="field"><label>Ordem</label><input type="number" id="m-ordem" value="${ordemSugerida}" placeholder="Ex.: 10"><div class="field-hint">Menor primeiro na folha impressa</div></div>
+        <div class="field full"><label>Funções que executam esta etapa</label>
+          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">${funcoesCheckboxes}</div>
+        </div>
+      </div>`;
+  }
+
+  openModal('modal-cad');
+}
+
+function previewUploadImg(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    document.getElementById('m-img-preview').innerHTML = `<img src="${evt.target.result}">`;
+    document.getElementById('m-img-data').value = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* Converte uma dataURL base64 em Blob (para upload binário ao Storage). */
+function dataUrlParaBlob(dataUrl) {
+  const [meta, b64] = dataUrl.split(',');
+  const mime = (meta.match(/data:([^;]+)/) || [null, 'image/png'])[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return { blob: new Blob([arr], { type: mime }), mime };
+}
+
+/* Faz upload de uma imagem de desenho para o bucket 'desenhos' e retorna URL pública. */
+async function uploadDesenhoImagem(dataUrl) {
+  if (!supa) throw new Error('Supabase não carregado');
+  const { blob, mime } = dataUrlParaBlob(dataUrl);
+  const ext = mime.split('/')[1] || 'png';
+  const nome = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supa.storage.from('desenhos').upload(nome, blob, {
+    contentType: mime,
+    upsert: false
+  });
+  if (error) throw error;
+  const { data } = supa.storage.from('desenhos').getPublicUrl(nome);
+  return data.publicUrl;
+}
+
+/* Migra imagens base64 legadas para o Storage (roda uma vez, só para admin). */
+async function migrarImagensBase64() {
+  if (!supa || !currentUser) return;
+  const pendentes = (STATE.desenhos || []).filter(d => typeof d.img === 'string' && d.img.startsWith('data:image/'));
+  if (!pendentes.length) return;
+  toast(`Migrando ${pendentes.length} imagem(ns) para o Storage...`, 'ok');
+  let migradas = 0;
+  for (const d of pendentes) {
+    try {
+      const url = await uploadDesenhoImagem(d.img);
+      d.img = url;
+      migradas++;
+    } catch (e) {
+      console.error('Falha ao migrar imagem do desenho', d.codigo, e);
+    }
+  }
+  if (migradas > 0) {
+    await saveState('desenhos');
+    toast(`${migradas} imagem(ns) migrada(s) para Storage`, 'ok');
+  }
+}
+
+function pluralize(tipo) {
+  return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
+           colecao:'colecoes', grade:'grades', desenho:'desenhos',
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', etapa:'etapas', componente:'componentes' }[tipo];
+}
+
+async function salvarCadastro() {
+  if (!exigirAdmin('criar ou editar cadastros')) return;
+  const { tipo, editId } = cadastroContext;
+  const list = pluralize(tipo);
+  const v = id => document.getElementById(id)?.value || '';
+  let item = editId ? STATE[list].find(x => x.id === editId) : { id: uid() };
+  if (!item) item = { id: uid() };
+
+  if (tipo === 'tecido') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+    item.categoria = v('m-categoria');
+  }
+  else if (tipo === 'cor') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.hex = v('m-hex');
+    item.codigo = v('m-codigo');
+  }
+  else if (tipo === 'material') {
+    if (!v('m-codigo') || !v('m-desc')) return toast('Código e descrição obrigatórios', 'err');
+    item.codigo = v('m-codigo');
+    item.tipo = v('m-tipo');
+    item.desc = v('m-desc');
+  }
+  else if (tipo === 'modelo') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.linha = v('m-linha');
+    item.categoria = v('m-categoria');
+    item.baseId = v('m-vinc-base');
+    item.marcaId = v('m-vinc-marca');
+    item.designerId = v('m-vinc-designer');
+    item.ftecId = v('m-vinc-ftec');
+    item.coordId = v('m-vinc-coord');
+  }
+  else if (tipo === 'colecao') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.temporada = v('m-temp');
+  }
+  else if (tipo === 'grade') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.tamanhos = {};
+    ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
+      item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
+    });
+    item.enfestoComprimento = v('m-grade-comp');
+    item.enfestoLargura = v('m-grade-larg');
+  }
+  else if (tipo === 'desenho') {
+    if (!v('m-codigo')) return toast('Código obrigatório', 'err');
+    if (!v('m-img-data')) return toast('Imagem obrigatória', 'err');
+    item.codigo = v('m-codigo');
+    item.desc = v('m-desc');
+    const imgInput = v('m-img-data');
+    if (imgInput.startsWith('data:image/')) {
+      try {
+        item.img = await uploadDesenhoImagem(imgInput);
+      } catch (e) {
+        console.error('Upload falhou', e);
+        return toast('Falha ao enviar imagem para Storage — tente novamente', 'err');
+      }
+    } else {
+      item.img = imgInput;
+    }
+    item.modeloId = v('m-vinc-modelo');
+    item.baseId = v('m-vinc-base');
+    item.colecaoId = v('m-vinc-colecao');
+    item.marcaId = v('m-vinc-marca');
+    item.linhaId = v('m-vinc-linha');
+    item.blocoId = v('m-vinc-bloco');
+    item.designerId = v('m-vinc-designer');
+    item.tecidoPadraoId = v('m-vinc-tecido');
+    item.corPrincipalId = v('m-vinc-cor');
+    item.componentesIds = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(c => c.value);
+  }
+  else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+  }
+  else if (tipo === 'equipe') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.funcao = v('m-funcao');
+  }
+  else if (tipo === 'funcao') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+    item.acoes = v('m-acoes');
+  }
+  else if (tipo === 'etapa') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.ordem = parseInt(v('m-ordem')) || 0;
+    item.funcoesIds = Array.from(document.querySelectorAll('.m-funcao-chk:checked')).map(c => c.value);
+  }
+  else if (tipo === 'componente') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+  }
+
+  if (!editId) STATE[list].push(item);
+  await saveState(list);
+
+  closeModal('modal-cad');
+  toast('Salvo com sucesso', 'ok');
+
+  if (cadastroContext.origin === 'os-form') {
+    refreshOSFormDropdowns();
+    if (tipo === 'etapa') renderEtapas();
+    if (!editId) {
+      const autoMap = {
+        marca: { id: 'f-griffe', field: 'nome' },
+        colecao: { id: 'f-colecao', field: 'nome' },
+        modelo: { id: 'f-modelo', field: 'nome' },
+        linha: { id: 'f-linha', field: 'nome' },
+        base: { id: 'f-base', field: 'nome' },
+        bloco: { id: 'f-bloco', field: 'nome' },
+        grade: { id: 'f-grade-preset', field: 'nome' },
+        desenho: { id: 'f-desenho', field: 'codigo' }
+      };
+      const t = autoMap[tipo];
+      if (t) {
+        const el = document.getElementById(t.id);
+        if (el) el.value = item[t.field] || '';
+        if (tipo === 'desenho') sincCodigoDesenho('desenho');
+      }
+    }
+  } else {
+    goto('cad-' + list);
+  }
+}
+
+function refreshOSFormDropdowns() {
+  const IDS = ['f-colecao','f-modelo','f-desenho','f-grade-preset','f-griffe','f-linha','f-base','f-bloco','f-designer','f-ftec','f-coordenado'];
+  const saved = {};
+  IDS.forEach(id => { const el = document.getElementById(id); if (el) saved[id] = el.value; });
+  fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
+  fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
+  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
+  fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
+  fillSelect('f-base', STATE.bases, 'nome', '— selecione —');
+  fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
+  fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-coordenado', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  atualizarDatalistCodigos();
+  Object.entries(saved).forEach(([id, val]) => { const el = document.getElementById(id); if (el && val) el.value = val; });
+}
+
+async function excluirCadastro(tipo, id) {
+  if (!exigirAdmin('excluir cadastros')) return;
+  if (!confirm('Excluir este registro?')) return;
+  const list = pluralize(tipo);
+  STATE[list] = STATE[list].filter(x => x.id !== id);
+  await saveState(list);
+  toast('Excluído', 'ok');
+  goto('cad-' + list);
+}
+
+/* ========================================================= */
+/*                       RENDER TABELAS                      */
+/* ========================================================= */
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function acoesCell(tipo, id) {
+  return `<td class="col-actions row-actions">
+    <button class="edit" onclick="openCadastroModal('${tipo}','${id}')">editar</button>
+    <button class="del" onclick="excluirCadastro('${tipo}','${id}')">excluir</button>
+  </td>`;
+}
+
+function renderTecidos() {
+  const tb = document.getElementById('tbl-tecidos');
+  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 30', outro: 'Outro' };
+  tb.innerHTML = STATE.tecidos.map(t => `
+    <tr>
+      <td><strong>${esc(t.nome)}</strong></td>
+      <td>${esc(t.desc)}</td>
+      <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
+      ${acoesCell('tecido', t.id)}
+    </tr>`).join('');
+}
+function renderCores() {
+  const tb = document.getElementById('tbl-cores');
+  if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.cores.map(c => `
+    <tr><td><span class="color-swatch" style="background:${esc(c.hex)}"></span><strong>${esc(c.nome)}</strong></td>
+    <td><span class="badge">${esc(c.codigo)||'—'}</span></td>${acoesCell('cor', c.id)}</tr>`).join('');
+}
+function renderMateriais() {
+  const tb = document.getElementById('tbl-materiais');
+  if (!STATE.materiais.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum material cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.materiais.map(m => `
+    <tr><td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
+    <td>${esc(m.tipo)||'—'}</td>${acoesCell('material', m.id)}</tr>`).join('');
+}
+function renderModelos() {
+  const tb = document.getElementById('tbl-modelos');
+  if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
+  const catLabel = { malha: 'Camiseta', moletom: 'Moletom', outro: 'Outro' };
+  tb.innerHTML = STATE.modelos.map(m => `
+    <tr><td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${catLabel[m.categoria]||'—'}</span></td><td>${esc(m.linha)||'—'}</td>${acoesCell('modelo', m.id)}</tr>`).join('');
+}
+function renderColecoes() {
+  const tb = document.getElementById('tbl-colecoes');
+  if (!STATE.colecoes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma coleção cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.colecoes.map(c => `
+    <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.temporada)||'—'}</td>${acoesCell('colecao', c.id)}</tr>`).join('');
+}
+function renderGrades() {
+  const tb = document.getElementById('tbl-grades');
+  if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.grades.map(g => {
+    const t = g.tamanhos || {};
+    const dist = ['pp','p','m','g','gg','g1','g2','g3']
+      .filter(x => t[x] > 0).map(x => `${x.toUpperCase()}:${t[x]}`).join(' · ');
+    const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
+    return `<tr><td><strong>${esc(g.nome)}</strong></td><td><code style="font-size:11px">${dist||'—'}</code></td>
+      <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
+  }).join('');
+}
+function renderDesenhos() {
+  const tb = document.getElementById('tbl-desenhos');
+  if (!STATE.desenhos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum desenho cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.desenhos.map(d => `
+    <tr>
+      <td><div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">
+        ${d.img ? `<img src="${d.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
+      <td><strong>${esc(d.codigo)}</strong></td><td>${esc(d.desc)||'—'}</td>${acoesCell('desenho', d.id)}</tr>`).join('');
+}
+function renderMarcas() {
+  const tb = document.getElementById('tbl-marcas');
+  if (!STATE.marcas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma marca cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.marcas.map(m => `
+    <tr><td><strong>${esc(m.nome)}</strong></td><td>${esc(m.desc)||'—'}</td>${acoesCell('marca', m.id)}</tr>`).join('');
+}
+function renderLinhas() {
+  const tb = document.getElementById('tbl-linhas');
+  if (!STATE.linhas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma linha cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.linhas.map(l => `
+    <tr><td><strong>${esc(l.nome)}</strong></td><td>${esc(l.desc)||'—'}</td>${acoesCell('linha', l.id)}</tr>`).join('');
+}
+function renderBases() {
+  const tb = document.getElementById('tbl-bases');
+  if (!STATE.bases.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma base cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.bases.map(b => `
+    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('base', b.id)}</tr>`).join('');
+}
+function renderBlocos() {
+  const tb = document.getElementById('tbl-blocos');
+  if (!STATE.blocos.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum bloco cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.blocos.map(b => `
+    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('bloco', b.id)}</tr>`).join('');
+}
+function renderEquipe() {
+  const tb = document.getElementById('tbl-equipe');
+  if (!STATE.equipe.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.equipe.map(p => `
+    <tr><td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td>${acoesCell('equipe', p.id)}</tr>`).join('');
+}
+function etapasOrdenadas() {
+  return [...STATE.etapas].sort((a,b) => (a.ordem||0) - (b.ordem||0));
+}
+
+function nomesFuncoesPorIds(ids) {
+  if (!ids || !ids.length) return [];
+  return ids
+    .map(id => STATE.funcoes.find(f => f.id === id))
+    .filter(Boolean)
+    .map(f => f.nome);
+}
+
+function renderComponentesCad() {
+  const tb = document.getElementById('tbl-componentes');
+  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
+  tb.innerHTML = STATE.componentes.map(c => `
+    <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.desc)||'—'}</td>${acoesCell('componente', c.id)}</tr>`).join('');
+}
+
+function renderEtapasCad() {
+  const tb = document.getElementById('tbl-etapas');
+  if (!STATE.etapas.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma etapa cadastrada.</td></tr>`; return; }
+  tb.innerHTML = etapasOrdenadas().map(e => {
+    const funcsNomes = nomesFuncoesPorIds(e.funcoesIds);
+    const badges = funcsNomes.length ? funcsNomes.map(n => `<span class="badge" style="margin-right:4px">${esc(n)}</span>`).join('') : '—';
+    return `<tr><td>${e.ordem||0}</td><td><strong>${esc(e.nome)}</strong></td><td>${badges}</td>${acoesCell('etapa', e.id)}</tr>`;
+  }).join('');
+}
+
+function renderFuncoes() {
+  const tb = document.getElementById('tbl-funcoes');
+  if (!STATE.funcoes.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma função cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.funcoes.map(f => {
+    const acoes = (f.acoes||'').trim();
+    const acoesHtml = acoes ? acoes.split(/\r?\n/).filter(x=>x.trim()).map(a => `<span class="badge" style="margin-right:4px">${esc(a)}</span>`).join('') : '—';
+    return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${acoesHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
+  }).join('');
+}
+
+function renderHome() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('stat-os', STATE.ordens.length);
+  set('stat-tecidos', STATE.tecidos.length);
+  set('stat-cores', STATE.cores.length);
+  set('stat-materiais', STATE.materiais.length);
+  set('stat-modelos', STATE.modelos.length);
+  set('stat-colecoes', STATE.colecoes.length);
+  set('stat-grades', STATE.grades.length);
+  set('stat-desenhos', STATE.desenhos.length);
+  set('stat-marcas', STATE.marcas.length);
+  set('stat-linhas', STATE.linhas.length);
+  set('stat-bases', STATE.bases.length);
+  set('stat-blocos', STATE.blocos.length);
+  set('stat-equipe', STATE.equipe.length);
+}
+
+/* ========================================================= */
+/*                   FORMULÁRIO DA OS                        */
+/* ========================================================= */
+let osEditId = null;
+
+function funcaoPorNome(nome) {
+  if (!nome) return null;
+  return STATE.funcoes.find(f => f.nome === nome) || null;
+}
+
+function renderResponsabilidadesBadges(f) {
+  if (!f || !f.acoes) return '';
+  const linhas = (f.acoes || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!linhas.length) return '';
+  return linhas.map(a => `<span class="badge" style="margin:2px 3px 0 0;display:inline-block;">${esc(a)}</span>`).join('');
+}
+
+function mostrarResponsabilidadesFuncao() {
+  const sel = document.getElementById('m-funcao');
+  const resp = document.getElementById('m-funcao-resp');
+  if (!sel || !resp) return;
+  const f = funcaoPorNome(sel.value);
+  const html = renderResponsabilidadesBadges(f);
+  resp.innerHTML = html ? `Responsabilidades: ${html}` : '';
+}
+
+function atualizarResponsabilidadesOS() {
+  const mapa = { 'f-designer': 'resp-designer', 'f-ftec': 'resp-ftec', 'f-coordenado': 'resp-coordenador' };
+  const resumoItens = [];
+  Object.entries(mapa).forEach(([selId, respId]) => {
+    const sel = document.getElementById(selId);
+    const respEl = document.getElementById(respId);
+    if (!sel || !respEl) return;
+    const pessoaNome = sel.value;
+    const pessoa = STATE.equipe.find(p => p.nome === pessoaNome);
+    if (!pessoa) { respEl.innerHTML = ''; return; }
+    const f = funcaoPorNome(pessoa.funcao);
+    const badges = renderResponsabilidadesBadges(f);
+    respEl.innerHTML = badges ? badges : '';
+    if (badges) {
+      const rotulo = { 'f-designer': 'Designer', 'f-ftec': 'Ficha técnica', 'f-coordenado': 'Coordenador' }[selId];
+      resumoItens.push(`<div style="margin-bottom:6px;"><strong>${rotulo}: ${esc(pessoaNome)}</strong> <span style="color:var(--ink-3);font-weight:normal;">(${esc(pessoa.funcao||'—')})</span><br>${badges}</div>`);
+    }
+  });
+  const resumo = document.getElementById('resp-resumo');
+  if (resumo) {
+    resumo.innerHTML = resumoItens.length
+      ? resumoItens.join('')
+      : '<em style="color:var(--ink-3);">Selecione Designer, Ficha técnica ou Coordenador acima para ver responsabilidades da equipe.</em>';
+  }
+}
+
+function atualizarDatalistCodigos() {
+  const dl = document.getElementById('codigos-datalist');
+  if (!dl) return;
+  dl.innerHTML = STATE.desenhos.map(d =>
+    `<option value="${esc(d.codigo)}">${esc(d.desc||'')}</option>`
+  ).join('');
+}
+
+function sincCodigoDesenho(origem) {
+  const codigoEl = document.getElementById('f-codigo');
+  const desenhoEl = document.getElementById('f-desenho');
+  if (!codigoEl || !desenhoEl) return;
+  if (origem === 'desenho') {
+    const id = desenhoEl.value;
+    if (id) {
+      const d = STATE.desenhos.find(x => x.id === id);
+      if (d) codigoEl.value = d.codigo;
+    } else {
+      codigoEl.value = '';
+    }
+    aplicarVinculosDesenho();
+  } else {
+    const typed = codigoEl.value.trim();
+    if (!typed) { desenhoEl.value = ''; previewDesenhoSelecionado(); return; }
+    const d = STATE.desenhos.find(x => x.codigo.toLowerCase() === typed.toLowerCase());
+    if (d && desenhoEl.value !== d.id) {
+      desenhoEl.value = d.id;
+      previewDesenhoSelecionado();
+      aplicarVinculosDesenho();
+    }
+  }
+}
+
+function aplicarVinculosDesenho() {
+  const desenhoId = document.getElementById('f-desenho')?.value;
+  if (!desenhoId) return;
+  const d = STATE.desenhos.find(x => x.id === desenhoId);
+  if (!d) return;
+  aplicandoVinculosDesenho = true;
+  try {
+    // 1º aplica vínculos do modelo (base/designer/ftec/coord/marca/grade padrões)
+    if (d.modeloId) {
+      document.getElementById('f-modelo').value = d.modeloId;
+      aplicarVinculosModelo();
+    }
+    // 2º sobrescreve com vínculos específicos do desenho (têm prioridade)
+    const mapa = {
+      modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
+      marcaId: 'f-griffe', linhaId: 'f-linha', blocoId: 'f-bloco',
+      designerId: 'f-designer'
+    };
+    let aplicou = false;
+    Object.entries(mapa).forEach(([campo, selId]) => {
+      const el = document.getElementById(selId);
+      if (!el) return;
+      if (d[campo]) { el.value = d[campo]; aplicou = true; }
+    });
+    aplicarFiltroTecidosPorModelo();
+    atualizarResponsabilidadesOS();
+    atualizarCalculosEnfesto();
+    // Aplica componentes padrão do desenho (com tecido + cor principal)
+    if (d.componentesIds && d.componentesIds.length) {
+      const cont = document.getElementById('componentes-rows');
+      if (cont) {
+        cont.innerHTML = '';
+        const materialDefault = d.tecidoPadraoId ? 'T:' + d.tecidoPadraoId : '';
+        d.componentesIds.forEach(id => {
+          const comp = STATE.componentes.find(x => x.id === id);
+          if (comp) addComponenteRow({
+            nome: comp.nome,
+            material: materialDefault,
+            cor: d.corPrincipalId || ''
+          });
+        });
+        aplicou = true;
+      }
+    }
+    // Aplica cor principal na Variante 1 (cria a row se não existir)
+    if (d.corPrincipalId) {
+      const varCont = document.getElementById('variantes-rows');
+      if (varCont) {
+        if (!varCont.querySelector('.variante-row')) addVarianteRow();
+        const primeiraVar = varCont.querySelector('.variante-row .var-c1');
+        if (primeiraVar) primeiraVar.value = d.corPrincipalId;
+        aplicou = true;
+      }
+    }
+    // Aplica tecido principal na primeira linha de Tecidos (cria se não existir)
+    if (d.tecidoPadraoId) {
+      const tecCont = document.getElementById('tecidos-rows');
+      if (tecCont) {
+        if (!tecCont.querySelector('.tecido-row')) addTecidoRow();
+        const primeiroTec = tecCont.querySelector('.tecido-row .tec-sel');
+        if (primeiroTec) primeiroTec.value = d.tecidoPadraoId;
+        aplicou = true;
+      }
+    }
+    if (aplicou) toast('Campos vinculados preenchidos automaticamente', 'ok');
+  } finally {
+    aplicandoVinculosDesenho = false;
+  }
+}
+
+function initOSForm() {
+  // presence: marca o canal da OS sendo editada
+  iniciarPresenceOS(osEditId || 'nova');
+
+  // popula dropdowns
+  fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
+  fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
+  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  atualizarDatalistCodigos();
+
+  // novos selects do cabeçalho
+  fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
+  fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
+  fillSelect('f-base', STATE.bases, 'nome', '— selecione —');
+  fillSelect('f-bloco', STATE.blocos, 'nome', '— selecione —');
+  fillSelect('f-designer', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  fillSelect('f-ftec', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+  // coordenador puxa da equipe (pessoa que coordena)
+  fillSelect('f-coordenado', STATE.equipe, 'nome', '— selecione —', p => p.nome + (p.funcao ? ' ('+p.funcao+')' : ''));
+
+  // se não estiver editando e os campos principais estão vazios, limpar e inicializar linhas
+  if (!osEditId) {
+    document.getElementById('os-form').reset();
+    document.getElementById('f-id').value = '';
+    document.getElementById('f-data').value = new Date().toISOString().slice(0,10);
+    document.getElementById('os-form-title').textContent = 'Nova Ordem de Serviço';
+    // número OS automático sequencial
+    document.getElementById('f-os').value = proximoNumeroOS();
+    // linhas iniciais
+    document.getElementById('tecidos-rows').innerHTML = '';
+    document.getElementById('variantes-rows').innerHTML = '';
+    document.getElementById('componentes-rows').innerHTML = '';
+    document.getElementById('aviamentos-rows').innerHTML = '';
+    addTecidoRow(); addTecidoRow();
+    addVarianteRow();
+    addComponenteRow(); addComponenteRow();
+    document.getElementById('f-desenho-preview').innerHTML = '<span>Nenhum desenho selecionado</span>';
+  }
+
+  renderEtapas();
+  atualizarCalculosEnfesto();
+  atualizarResponsabilidadesOS();
+}
+
+function fillSelect(id, items, labelField, placeholder, custom = null) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const curVal = el.value;
+  el.innerHTML = `<option value="">${placeholder}</option>` +
+    items.map(it => `<option value="${esc(it.id)}">${esc(custom ? custom(it) : it[labelField])}</option>`).join('');
+  if (curVal) el.value = curVal;
+}
+
+// Define o valor de um select — primeiro tenta pelo ID direto; se não achar, tenta casar por nome (fallback para OS antigas)
+function setSelectByIdOrName(selectId, itemId, nameFallback, list) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  if (itemId) {
+    const hasOpt = Array.from(el.options).some(o => o.value === itemId);
+    if (hasOpt) { el.value = itemId; return; }
+  }
+  if (nameFallback && list?.length) {
+    const match = list.find(x => (x.nome || '').toLowerCase() === nameFallback.toLowerCase());
+    if (match) el.value = match.id;
+  }
+}
+
+function renderEtapas() {
+  const cont = document.getElementById('etapas-container');
+  if (!cont) return;
+  const checked = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
+  const fonte = STATE.etapas.length
+    ? etapasOrdenadas().map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
+    : STATE.etapasPadrao.map(nome => ({ nome, funcs: [] }));
+  cont.innerHTML = fonte.map(e => {
+    const funcsBadges = e.funcs.length
+      ? `<div style="font-size:10px;color:var(--ink-3);margin-top:3px;">${e.funcs.map(f => `<span class="badge" style="margin-right:3px;font-size:10px;padding:1px 5px;">${esc(f)}</span>`).join('')}</div>`
+      : '';
+    return `<label class="etapa-check ${checked.includes(e.nome)?'checked':''}">
+      <input type="checkbox" value="${esc(e.nome)}" ${checked.includes(e.nome)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
+      <span>${esc(e.nome)}${funcsBadges}</span>
+    </label>`;
+  }).join('');
+}
+
+function addEtapaCustomizada() {
+  openCadastroModal('etapa', null, 'os-form');
+}
+
+function addTecidoRow(data = {}) {
+  const cont = document.getElementById('tecidos-rows');
+  const idx = cont.children.length + 1;
+  if (idx > 5) { toast('Máximo 5 tecidos', 'err'); return; }
+  const row = document.createElement('div');
+  row.className = 'tecido-row';
+  row.innerHTML = `
+    <div class="field"><label>Nº</label><input type="text" value="${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
+    <div class="field"><label>Tecido</label><select class="tec-sel" onchange="atualizarCalculosEnfesto()">${tecOptions(data.tecidoId)}</select></div>
+    <div class="field"><label>Consumo C.1</label><input type="text" class="tec-c1" value="${esc(data.c1||'')}" placeholder="0,000 kg"></div>
+    <div class="field"><label>Consumo C.2</label><input type="text" class="tec-c2" value="${esc(data.c2||'')}" placeholder="0,000 kg"></div>
+    <div class="field">
+      <label>C.3 / remover</label>
+      <div style="display:flex; gap:4px;">
+        <input type="text" class="tec-c3" value="${esc(data.c3||'')}" placeholder="C.3" style="flex:1">
+        <button type="button" class="btn small danger" onclick="this.closest('.tecido-row').remove(); reindexTecidos()">✕</button>
+      </div>
+    </div>`;
+  cont.appendChild(row);
+}
+function modeloCategoriaAtual() {
+  const modeloId = document.getElementById('f-modelo')?.value;
+  if (!modeloId) return null;
+  const m = STATE.modelos.find(x => x.id === modeloId);
+  return m?.categoria || null;
+}
+
+function tecOptions(selId) {
+  const cat = modeloCategoriaAtual();
+  const tecs = STATE.tecidos.filter(t => {
+    if (!cat) return true;
+    if (!t.categoria) return true;
+    if (t.categoria === cat) return true;
+    if (t.id === selId) return true;
+    return false;
+  });
+  return '<option value="">—</option>' + tecs.map(t =>
+    `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
+}
+
+let aplicandoVinculosDesenho = false;
+
+function aplicarFiltroTecidosPorModelo() {
+  document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
+    const currentVal = sel.value;
+    sel.innerHTML = tecOptions(currentVal);
+  });
+}
+
+function aplicarVinculosModelo() {
+  const modeloId = document.getElementById('f-modelo')?.value;
+  if (!modeloId) return;
+  const m = STATE.modelos.find(x => x.id === modeloId);
+  if (!m) return;
+  const mapa = {
+    baseId: 'f-base', marcaId: 'f-griffe',
+    designerId: 'f-designer', ftecId: 'f-ftec', coordId: 'f-coordenado'
+  };
+  let aplicou = false;
+  Object.entries(mapa).forEach(([campo, selId]) => {
+    const el = document.getElementById(selId);
+    if (!el) return;
+    if (m[campo]) { el.value = m[campo]; aplicou = true; }
+  });
+  if (aplicou) {
+    atualizarResponsabilidadesOS();
+    if (!aplicandoVinculosDesenho) toast('Vínculos do modelo aplicados', 'ok');
+  }
+}
+
+function onModeloChange() {
+  aplicarFiltroTecidosPorModelo();
+  if (!aplicandoVinculosDesenho) aplicarVinculosModelo();
+  atualizarCalculosEnfesto();
+}
+function reindexTecidos() {
+  document.querySelectorAll('#tecidos-rows .tecido-row').forEach((r, i) => {
+    r.querySelector('input[readonly]').value = i + 1;
+  });
+}
+
+function addVarianteRow(data = {}) {
+  const cont = document.getElementById('variantes-rows');
+  const idx = cont.children.length + 1;
+  if (idx > 4) { toast('Máximo 4 variantes', 'err'); return; }
+  const row = document.createElement('div');
+  row.className = 'variante-row';
+  row.innerHTML = `
+    <div class="field"><input type="text" value="Var ${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
+    <div class="field"><select class="var-c1">${corOptions(data.cor1)}</select></div>
+    <div class="field"><select class="var-c2">${corOptions(data.cor2)}</select></div>
+    <div class="field" style="display:flex;gap:4px;">
+      <input type="text" class="var-obs" value="${esc(data.obs||'')}" placeholder="observação">
+      <button type="button" class="btn small danger" onclick="this.closest('.variante-row').remove(); reindexVariantes()">✕</button>
+    </div>`;
+  cont.appendChild(row);
+}
+function corOptions(selId) {
+  return '<option value="">—</option>' + STATE.cores.map(c =>
+    `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+}
+function reindexVariantes() {
+  document.querySelectorAll('#variantes-rows .variante-row').forEach((r, i) => {
+    r.querySelector('input[readonly]').value = 'Var ' + (i + 1);
+  });
+}
+
+function addComponenteRow(data = {}) {
+  const cont = document.getElementById('componentes-rows');
+  const row = document.createElement('div');
+  row.className = 'componente-row';
+  const fonteComponentes = STATE.componentes.length
+    ? STATE.componentes.map(c => c.nome)
+    : STATE.componentesPadrao;
+  const compOpts = fonteComponentes.map(c =>
+    `<option value="${esc(c)}" ${data.nome===c?'selected':''}>${esc(c)}</option>`).join('');
+  const todosTecidos = [...STATE.tecidos.map(t=>({id:'T:'+t.id, nome:t.nome})),
+                       ...STATE.materiais.map(m=>({id:'M:'+m.id, nome:m.codigo+' · '+m.desc}))];
+  const matOpts = '<option value="">—</option>' + todosTecidos.map(t =>
+    `<option value="${esc(t.id)}" ${data.material===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
+  const corOpts = '<option value="">—</option>' + STATE.cores.map(c =>
+    `<option value="${esc(c.id)}" ${data.cor===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  row.innerHTML = `
+    <div class="field">
+      <input list="compList" class="comp-nome" value="${esc(data.nome||'')}" placeholder="Componente">
+      <datalist id="compList">${compOpts}</datalist>
+    </div>
+    <div class="field"><select class="comp-mat">${matOpts}</select></div>
+    <div class="field" style="display:flex;gap:4px;">
+      <select class="comp-cor" style="flex:1">${corOpts}</select>
+      <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
+    </div>`;
+  cont.appendChild(row);
+}
+
+function addAviamentoRow(data = {}) {
+  const cont = document.getElementById('aviamentos-rows');
+  const row = document.createElement('div');
+  row.className = 'componente-row';
+  const matOpts = '<option value="">—</option>' + STATE.materiais.map(m =>
+    `<option value="${esc(m.id)}" ${data.material===m.id?'selected':''}>${esc(m.codigo)} · ${esc(m.desc)}</option>`).join('');
+  row.innerHTML = `
+    <div class="field"><select class="av-mat">${matOpts}</select></div>
+    <div class="field"><input type="text" class="av-app" value="${esc(data.app||'')}" placeholder="Ex.: V1: Camel / V2: Preto"></div>
+    <div class="field" style="display:flex;gap:4px;">
+      <input type="text" class="av-qtd" value="${esc(data.qtd||'')}" placeholder="Qtd" style="flex:1">
+      <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
+    </div>`;
+  cont.appendChild(row);
+}
+
+function aplicarGradePreset() {
+  const id = document.getElementById('f-grade-preset').value;
+  if (!id) return;
+  const g = STATE.grades.find(x => x.id === id);
+  if (!g) return;
+  const t = g.tamanhos || {};
+  ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
+    document.getElementById('f-gr-'+k).value = t[k] || 0;
+  });
+  document.getElementById('f-grade-desc').value = g.nome;
+  if (g.enfestoComprimento) document.getElementById('f-enf-comp').value = g.enfestoComprimento;
+  if (g.enfestoLargura) document.getElementById('f-enf-larg').value = g.enfestoLargura;
+  atualizarCalculosEnfesto();
+  toast('Grade aplicada (inclui comprimento/largura)', 'ok');
+}
+
+/* ========================================================= */
+/*              ENFESTO — limites e cálculos                 */
+/* ========================================================= */
+const LIMITE_CAMADAS = { malha: 80, moletom: 30, outro: Infinity };
+const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, outro: 1 };
+
+function multiplicadorDominante() {
+  const rows = document.querySelectorAll('#tecidos-rows .tec-sel');
+  let mult = 1;
+  rows.forEach(sel => {
+    if (!sel.value) return;
+    const tec = STATE.tecidos.find(t => t.id === sel.value);
+    if (!tec || !tec.categoria) return;
+    const m = MULTIPLICADOR_PECAS[tec.categoria] || 1;
+    if (m > mult) mult = m;
+  });
+  return mult;
+}
+
+// Calcula o limite máximo de camadas baseado nos tecidos selecionados no formulário.
+// Pega o menor limite entre todos — se há moletom e malha, vence moletom (30).
+function calcularLimiteCamadas() {
+  const rows = document.querySelectorAll('#tecidos-rows .tecido-row');
+  let limite = Infinity;
+  let categoriaRestritiva = null;
+  rows.forEach(r => {
+    const sel = r.querySelector('.tec-sel');
+    if (!sel || !sel.value) return;
+    const tec = STATE.tecidos.find(t => t.id === sel.value);
+    if (!tec || !tec.categoria) return;
+    const lim = LIMITE_CAMADAS[tec.categoria];
+    if (lim < limite) { limite = lim; categoriaRestritiva = tec.categoria; }
+  });
+  return { limite, categoriaRestritiva };
+}
+
+function atualizarCalculosEnfesto() {
+  const gradeTotal = ['pp','p','m','g','gg','g1','g2','g3']
+    .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
+  const camadas = parseInt(document.getElementById('f-enf-camadas')?.value) || 0;
+  const { limite, categoriaRestritiva } = calcularLimiteCamadas();
+
+  // Atualiza a dica ao lado do campo de camadas
+  const info = document.getElementById('f-enf-limite-info');
+  if (info) {
+    if (limite === Infinity) {
+      info.textContent = '';
+    } else {
+      const label = categoriaRestritiva === 'moletom' ? 'Moletom' : 'Malha algodão';
+      info.textContent = `· máx ${limite} (${label})`;
+    }
+  }
+
+  // Validação visual
+  const alerta = document.getElementById('f-enf-alerta');
+  const campoCamadas = document.getElementById('f-enf-camadas');
+  if (camadas > limite) {
+    alerta.textContent = `⚠ Você informou ${camadas} camadas, mas o limite para ${categoriaRestritiva === 'moletom' ? 'moletom' : 'malha algodão'} é ${limite}. Ajuste o valor ou separe em mais de um enfesto.`;
+    alerta.classList.remove('hidden');
+    campoCamadas.style.borderColor = 'var(--alert)';
+    campoCamadas.style.background = '#fff5f5';
+  } else {
+    alerta.classList.add('hidden');
+    campoCamadas.style.borderColor = '';
+    campoCamadas.style.background = '';
+  }
+
+  // Área de cálculo
+  const calcBox = document.getElementById('f-enf-calculo');
+  const multiplier = multiplicadorDominante();
+  if (camadas > 0 && gradeTotal > 0) {
+    const totalPecas = gradeTotal * camadas * multiplier;
+    const multText = multiplier > 1 ? ` · ×${multiplier} (malha algodão: 2 peças/camada)` : '';
+    const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+      .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
+      .filter(x => x.qtd > 0)
+      .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}${multiplier>1?'×'+multiplier:''} = ${x.qtd * camadas * multiplier}`)
+      .join(' · ');
+    calcBox.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span>Total de peças produzidas:${multText}</span>
+        <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
+      </div>
+      <div style="font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>
+    `;
+  } else {
+    calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
+  }
+}
+
+function calcularCamadasParaProducao() {
+  const target = parseInt(document.getElementById('f-enf-target')?.value) || 0;
+  if (target <= 0) { atualizarCalculosEnfesto(); return; }
+  const qtdsPorTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+    .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
+    .filter(q => q > 0);
+  if (qtdsPorTamanho.length === 0) {
+    toast('Preencha a grade antes', 'err');
+    return;
+  }
+  const multiplier = multiplicadorDominante();
+  // Camadas necessárias = max (por tamanho) de ceil(target / (qtd × multiplier))
+  // Isso garante que o tamanho menos representado na grade também atinja o target.
+  const minQtd = Math.min(...qtdsPorTamanho);
+  const camadas = Math.ceil(target / (minQtd * multiplier));
+  document.getElementById('f-enf-camadas').value = camadas;
+  atualizarCalculosEnfesto();
+}
+
+/* ========================================================= */
+/*           NÚMERO DA OS — sequencial automático            */
+/* ========================================================= */
+function formatarNumeroOS(n) {
+  return String(n).padStart(4, '0');
+}
+
+function proximoNumeroOS() {
+  // Pega o maior número já usado em OS existentes + o counter salvo
+  const counterAtual = parseInt(STATE.osCounter) || 0;
+  const numeros = STATE.ordens
+    .map(o => parseInt(o.os))
+    .filter(n => !isNaN(n));
+  const maxExistente = numeros.length ? Math.max(...numeros) : 0;
+  const prox = Math.max(counterAtual, maxExistente) + 1;
+  return formatarNumeroOS(prox);
+}
+
+async function atualizarCounterOS(numeroUsado) {
+  const n = parseInt(numeroUsado);
+  if (isNaN(n)) return;
+  const counterAtual = parseInt(STATE.osCounter) || 0;
+  if (n > counterAtual) {
+    STATE.osCounter = n;
+    await DB.set('osCounter', String(n));
+  }
+}
+
+function previewDesenhoSelecionado() {
+  const id = document.getElementById('f-desenho').value;
+  const pv = document.getElementById('f-desenho-preview');
+  if (!id) { pv.innerHTML = '<span>Nenhum desenho selecionado</span>'; return; }
+  const d = STATE.desenhos.find(x => x.id === id);
+  pv.innerHTML = d?.img ? `<img src="${d.img}">` : '<span>Sem imagem</span>';
+}
+
+
+/* ========================================================= */
+/*                      SALVAR OS                            */
+/* ========================================================= */
+function coletaOS() {
+  const v = id => document.getElementById(id)?.value || '';
+  const getSel = el => ({ id: el.value, text: el.options[el.selectedIndex]?.text || '' });
+
+  const tecidos = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row')).map(r => ({
+    tecidoId: r.querySelector('.tec-sel').value,
+    tecidoNome: r.querySelector('.tec-sel').options[r.querySelector('.tec-sel').selectedIndex]?.text || '',
+    c1: r.querySelector('.tec-c1').value,
+    c2: r.querySelector('.tec-c2').value,
+    c3: r.querySelector('.tec-c3').value
+  })).filter(t => t.tecidoId);
+
+  const variantes = Array.from(document.querySelectorAll('#variantes-rows .variante-row')).map((r, i) => {
+    const c1 = r.querySelector('.var-c1');
+    const c2 = r.querySelector('.var-c2');
+    return {
+      num: i + 1,
+      cor1: c1.value, cor1Nome: c1.options[c1.selectedIndex]?.text || '',
+      cor2: c2.value, cor2Nome: c2.options[c2.selectedIndex]?.text || '',
+      obs: r.querySelector('.var-obs').value
+    };
+  }).filter(v => v.cor1 || v.cor2);
+
+  const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
+    const mat = r.querySelector('.comp-mat');
+    const cor = r.querySelector('.comp-cor');
+    return {
+      nome: r.querySelector('.comp-nome').value,
+      material: mat.value, materialNome: mat.options[mat.selectedIndex]?.text || '',
+      cor: cor.value, corNome: cor.options[cor.selectedIndex]?.text || ''
+    };
+  }).filter(c => c.nome);
+
+  const aviamentos = Array.from(document.querySelectorAll('#aviamentos-rows .componente-row')).map(r => {
+    const mat = r.querySelector('.av-mat');
+    return {
+      material: mat.value,
+      materialNome: mat.options[mat.selectedIndex]?.text || '',
+      app: r.querySelector('.av-app').value,
+      qtd: r.querySelector('.av-qtd').value
+    };
+  }).filter(a => a.material);
+
+  const etapas = Array.from(document.querySelectorAll('#etapas-container input:checked')).map(c => c.value);
+
+  const grade = {
+    descricao: v('f-grade-desc'),
+    pp: parseInt(v('f-gr-pp'))||0, p: parseInt(v('f-gr-p'))||0, m: parseInt(v('f-gr-m'))||0,
+    g: parseInt(v('f-gr-g'))||0, gg: parseInt(v('f-gr-gg'))||0, g1: parseInt(v('f-gr-g1'))||0,
+    g2: parseInt(v('f-gr-g2'))||0, g3: parseInt(v('f-gr-g3'))||0
+  };
+  grade.total = grade.pp+grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
+
+  const enfesto = {
+    comprimento: parseFloat(v('f-enf-comp')) || 0,
+    largura: parseFloat(v('f-enf-larg')) || 0,
+    camadas: parseInt(v('f-enf-camadas')) || 0
+  };
+  enfesto.totalPecas = grade.total * enfesto.camadas;
+
+  // helper: retorna {id, nome} a partir de um select
+  const getSelect = id => {
+    const el = document.getElementById(id);
+    if (!el) return { id: '', nome: '' };
+    const selIdx = el.selectedIndex;
+    const txt = selIdx >= 0 ? el.options[selIdx]?.text || '' : '';
+    return { id: el.value, nome: txt.startsWith('—') ? '' : txt };
+  };
+
+  const griffe = getSelect('f-griffe');
+  const linha = getSelect('f-linha');
+  const base = getSelect('f-base');
+  const bloco = getSelect('f-bloco');
+  const designer = getSelect('f-designer');
+  const ftec = getSelect('f-ftec');
+  const coord = getSelect('f-coordenado');
+
+  return {
+    id: v('f-id') || uid(),
+    os: v('f-os'),
+    codigo: v('f-codigo'),
+    data: v('f-data'),
+    coordenadoId: coord.id,
+    coordenadoNome: coord.nome,
+    colecaoId: v('f-colecao'),
+    colecaoNome: document.getElementById('f-colecao').options[document.getElementById('f-colecao').selectedIndex]?.text || '',
+    modeloId: v('f-modelo'),
+    modeloNome: document.getElementById('f-modelo').options[document.getElementById('f-modelo').selectedIndex]?.text || '',
+    blocoId: bloco.id,      blocoNome: bloco.nome,
+    linhaId: linha.id,      linhaNome: linha.nome,
+    griffeId: griffe.id,    griffeNome: griffe.nome,
+    baseId: base.id,        baseNome: base.nome,
+    designerId: designer.id, designerNome: designer.nome,
+    ftecId: ftec.id,        ftecNome: ftec.nome,
+    desenhoId: v('f-desenho'),
+    tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
+    obs: v('f-obs'),
+    atencao: v('f-atencao'),
+    criadoEm: new Date().toISOString()
+  };
+}
+
+// Validação antes de salvar: limite de camadas.
+// Retorna true se pode prosseguir, false se o usuário cancelou.
+function validarAntesDeSalvar(data) {
+  const { limite, categoriaRestritiva } = calcularLimiteCamadas();
+  const camadas = data.enfesto?.camadas || 0;
+  if (camadas > 0 && camadas > limite) {
+    const catLabel = categoriaRestritiva === 'moletom' ? 'moletom (máx 30)' : 'malha algodão (máx 80)';
+    return confirm(`⚠ Atenção: você informou ${camadas} camadas, mas o limite para ${catLabel} é ${limite}.\n\nDeseja salvar mesmo assim?`);
+  }
+  return true;
+}
+
+async function salvarOS() {
+  const data = coletaOS();
+  if (!data.os && !data.codigo) {
+    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
+  }
+  if (!validarAntesDeSalvar(data)) return;
+  const idx = STATE.ordens.findIndex(o => o.id === data.id);
+  if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
+  await saveState('ordens');
+  await atualizarCounterOS(data.os);
+  osEditId = null;
+  toast('OS ' + data.os + ' salva', 'ok');
+  goto('lista-os');
+}
+
+async function salvarEImprimir() {
+  const data = coletaOS();
+  if (!data.os && !data.codigo) {
+    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
+  }
+  if (!validarAntesDeSalvar(data)) return;
+  const idx = STATE.ordens.findIndex(o => o.id === data.id);
+  if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
+  await saveState('ordens');
+  await atualizarCounterOS(data.os);
+  osEditId = null;
+  renderPrintSheet(data);
+  goto('print');
+}
+
+function ajustarImpressaoParaA4() {
+  const sheet = document.querySelector('.sheet');
+  if (!sheet) return;
+  sheet.style.zoom = '';
+  // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
+  const pxPerMm = 3.7795275591;
+  const maxHpx = 287 * pxPerMm;
+  const natH = sheet.scrollHeight;
+  if (natH > maxHpx) {
+    const scale = Math.max(0.5, maxHpx / natH);
+    sheet.style.zoom = scale;
+  }
+}
+
+window.addEventListener('beforeprint', ajustarImpressaoParaA4);
+window.addEventListener('afterprint', function() {
+  const sheet = document.querySelector('.sheet');
+  if (sheet) sheet.style.zoom = '';
+});
+
+/* ========================================================= */
+/*                    LISTA DE OS                            */
+/* ========================================================= */
+function renderListaOS() {
+  const tb = document.getElementById('tbl-os');
+  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
+  tb.innerHTML = STATE.ordens.slice().reverse().map(o => `
+    <tr>
+      <td><strong>${esc(o.os)||'—'}</strong></td>
+      <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
+      <td>${esc(o.modeloNome)||'—'}</td>
+      <td>${esc(o.colecaoNome)||'—'}</td>
+      <td>${esc(formatDate(o.data))}</td>
+      <td>${o.grade?.total||0} pç</td>
+      <td class="col-actions row-actions">
+        <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
+        <button class="edit" onclick="editarOS('${o.id}')">editar</button>
+        <button class="del" onclick="excluirOS('${o.id}')">excluir</button>
+      </td>
+    </tr>`).join('');
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+let printOsAtual = null;
+
+function verOS(id) {
+  const o = STATE.ordens.find(x => x.id === id);
+  if (!o) return;
+  printOsAtual = o;
+  renderPrintSheet(o);
+  goto('print');
+}
+
+function editarOsAtual() {
+  if (printOsAtual) editarOS(printOsAtual.id);
+}
+
+function editarOS(id) {
+  const o = STATE.ordens.find(x => x.id === id);
+  if (!o) return;
+  osEditId = id;
+  goto('nova-os');
+  // precisa de timeout curto pra select options já estarem renderizadas
+  setTimeout(() => {
+    document.getElementById('os-form-title').textContent = 'Editar OS ' + (o.os || o.codigo || '');
+    document.getElementById('f-id').value = o.id;
+    document.getElementById('f-os').value = o.os || '';
+    document.getElementById('f-codigo').value = o.codigo || '';
+    document.getElementById('f-data').value = o.data || '';
+    // coordenado agora é select de desenho
+    document.getElementById('f-coordenado').value = o.coordenadoId || '';
+    document.getElementById('f-colecao').value = o.colecaoId || '';
+    document.getElementById('f-modelo').value = o.modeloId || '';
+    // novos selects do cabeçalho — tenta por ID; se vier de uma OS antiga (texto livre), tenta casar por nome
+    setSelectByIdOrName('f-bloco', o.blocoId, o.bloco || o.blocoNome, STATE.blocos);
+    setSelectByIdOrName('f-linha', o.linhaId, o.linha || o.linhaNome, STATE.linhas);
+    setSelectByIdOrName('f-griffe', o.griffeId, o.griffe || o.griffeNome, STATE.marcas);
+    setSelectByIdOrName('f-base', o.baseId, o.base || o.baseNome, STATE.bases);
+    setSelectByIdOrName('f-designer', o.designerId, o.designer || o.designerNome, STATE.equipe);
+    setSelectByIdOrName('f-ftec', o.ftecId, o.ftec || o.ftecNome, STATE.equipe);
+    document.getElementById('f-desenho').value = o.desenhoId || '';
+    previewDesenhoSelecionado();
+    document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
+    ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
+      document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
+    });
+    // enfesto
+    document.getElementById('f-enf-comp').value = o.enfesto?.comprimento || '';
+    document.getElementById('f-enf-larg').value = o.enfesto?.largura || '';
+    document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
+    document.getElementById('f-obs').value = o.obs || '';
+    document.getElementById('f-atencao').value = o.atencao || '';
+    // tecidos
+    document.getElementById('tecidos-rows').innerHTML = '';
+    (o.tecidos||[]).forEach(t => addTecidoRow(t));
+    if (!o.tecidos?.length) { addTecidoRow(); addTecidoRow(); }
+    // variantes
+    document.getElementById('variantes-rows').innerHTML = '';
+    (o.variantes||[]).forEach(vv => addVarianteRow(vv));
+    if (!o.variantes?.length) addVarianteRow();
+    // componentes
+    document.getElementById('componentes-rows').innerHTML = '';
+    (o.componentes||[]).forEach(c => addComponenteRow(c));
+    if (!o.componentes?.length) { addComponenteRow(); addComponenteRow(); }
+    // aviamentos
+    document.getElementById('aviamentos-rows').innerHTML = '';
+    (o.aviamentos||[]).forEach(a => addAviamentoRow(a));
+    // etapas — marca as que estão em o.etapas
+    document.querySelectorAll('#etapas-container .etapa-check').forEach(lbl => {
+      const input = lbl.querySelector('input');
+      const on = (o.etapas||[]).includes(input.value);
+      input.checked = on;
+      lbl.classList.toggle('checked', on);
+    });
+    atualizarCalculosEnfesto();
+    osEditId = null; // reset para permitir nova edição após salvar
+  }, 60);
+}
+
+async function excluirOS(id) {
+  if (!confirm('Excluir esta OS?')) return;
+  STATE.ordens = STATE.ordens.filter(x => x.id !== id);
+  await saveState('ordens');
+  toast('OS excluída', 'ok');
+  renderListaOS();
+}
+
+/* ========================================================= */
+/*               RENDER DA FOLHA PARA IMPRESSÃO              */
+/* ========================================================= */
+function renderEnfestoBox(o) {
+  const e = o.enfesto || {};
+  const g = o.grade || {};
+  const temEnfesto = e.comprimento || e.largura || e.camadas;
+  if (!temEnfesto) return '';
+
+  const camadas = e.camadas || 0;
+  const totalPecas = (g.total || 0) * camadas;
+  const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
+
+  // linhas por tamanho com multiplicação
+  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const linhasPorTam = tamanhos
+    .filter(t => (g[t]||0) > 0)
+    .map(t => `<tr><td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td><td style="text-align:center;">${g[t]}</td><td style="text-align:center;">×${camadas}</td><td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td></tr>`)
+    .join('');
+
+  return `
+    <table class="side-table" style="border-top:none;">
+      <thead>
+        <tr><th colspan="4" class="subhead" style="background:#c9e8d0;">Enfesto</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="2" style="padding:3px 5px;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Comprimento</strong><br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.comprimento)} m</span>
+          </td>
+          <td colspan="2" style="padding:3px 5px;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Largura</strong><br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.largura)} m</span>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="4" style="padding:3px 5px;background:#f4f4f4;">
+            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Camadas</strong>
+            <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:9pt;margin-left:6px;">${camadas || '—'}</span>
+          </td>
+        </tr>
+        ${linhasPorTam ? `
+          <tr>
+            <th style="font-size:6.5pt;">Tam.</th>
+            <th style="font-size:6.5pt;">Grade</th>
+            <th style="font-size:6.5pt;">×Cam.</th>
+            <th style="font-size:6.5pt;">Peças</th>
+          </tr>
+          ${linhasPorTam}
+        ` : ''}
+        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
+          <td colspan="3" style="padding:3px 5px;">TOTAL ENFESTO</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${totalPecas} pç</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function renderPrintSheet(o) {
+  printOsAtual = o;
+  const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
+  const imgHtml = desenho?.img
+    ? `<img src="${desenho.img}" alt="Desenho técnico">`
+    : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
+
+  const g = o.grade || {};
+  const tecs = o.tecidos || [];
+  const vars_ = o.variantes || [];
+  const comps = o.componentes || [];
+  const avs = o.aviamentos || [];
+  // Tabela de tecidos (até 5 linhas)
+  let tecidoRows = '';
+  for (let i = 0; i < 5; i++) {
+    const t = tecs[i];
+    if (t) {
+      tecidoRows += `<tr>
+        <td style="text-align:center;font-weight:700;width:18px;">${i+1}</td>
+        <td class="tecido-cell">${esc(t.tecidoNome)}</td>
+        <td>C.1: ${esc(t.c1)||''}<br>C.2: ${esc(t.c2)||''}<br>${t.c3?`C.3: ${esc(t.c3)}`:''}</td>
+      </tr>`;
+    } else {
+      tecidoRows += `<tr>
+        <td style="text-align:center;color:#ccc;">${i+1}</td>
+        <td style="color:#ccc;">—</td>
+        <td style="color:#ccc;">—</td>
+      </tr>`;
+    }
+  }
+
+  // Variantes
+  let variantesHtml = '';
+  for (let i = 0; i < 4; i++) {
+    const v = vars_[i];
+    variantesHtml += `<tr>
+      <td class="var-head" style="text-align:center;width:36px;">VAR ${i+1}</td>
+      <td class="cor-cell">${v?.cor1Nome && v.cor1Nome !== '—' ? esc(v.cor1Nome) : '—'}</td>
+      <td class="cor-cell">${v?.cor2Nome && v.cor2Nome !== '—' ? esc(v.cor2Nome) : '—'}</td>
+    </tr>`;
+  }
+
+
+  // Aviamentos
+  const aviamentosHtml = avs.length
+    ? avs.map(a => {
+        const mat = STATE.materiais.find(m => m.id === a.material);
+        return `<div>
+          <span class="code">${esc(mat?.codigo||'—')}</span><br>
+          <span style="font-size:6.5pt;color:#444;">${esc(mat?.desc||'')}</span>
+          ${a.app?`<br><em style="font-size:6.5pt;">${esc(a.app)}</em>`:''}
+        </div>`;
+      }).join('')
+    : `<div style="grid-column: 1/-1; color:#999; padding:4px 6px; font-style:italic;">Nenhum aviamento cadastrado</div>`;
+
+  // Componentes (aparecem como lista no final do box de desenho)
+  const compsHtml = comps.length
+    ? comps.map(c => `<li><strong>${esc(c.nome)}:</strong> ${esc(c.materialNome.replace(/^—\s*/,''))}${c.corNome && c.corNome!=='—'?' · '+esc(c.corNome):''}</li>`).join('')
+    : '';
+
+  document.getElementById('print-sheet').innerHTML = `
+    <!-- CABEÇALHO -->
+    <div class="sheet-header">
+      <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>
+      <div class="cell"><span class="mini">Desenho Técnico</span></div>
+      <div class="cell"><span class="mini">Coleção</span>${esc(o.colecaoNome || '—')}</div>
+      <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
+      <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
+      <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
+        <span class="mini" style="color:#ccc">DES.:</span>
+        <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.codigo || '—')}</span>
+      </div>
+      <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
+    </div>
+
+    <!-- LINHA SECUNDÁRIA: descrição -->
+    <div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">OS Nº</strong><br>${esc(o.os||'—')}</div>
+      <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
+    </div>
+
+    <!-- CORPO -->
+    <div class="sheet-body">
+      <div class="sheet-left">
+        <div class="desenho-area">${imgHtml}</div>
+        ${compsHtml ? `<div style="padding:4px 8px;border-top:1px solid #000;font-size:7pt;">
+          <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.06em;display:block;margin-bottom:2px;">Componentes</strong>
+          <ul style="list-style:none;padding:0;columns:2;column-gap:12px;">${compsHtml}</ul>
+        </div>`: ''}
+        <div class="desenho-footer">
+          <div><strong>Designer</strong>${esc(o.designerNome || o.designer || '—')}</div>
+          <div><strong>Ficha Técnica</strong>${esc(o.ftecNome || o.ftec || '—')}</div>
+        </div>
+      </div>
+
+      <div class="sheet-right">
+        <!-- BASE -->
+        <div class="base-box">BASE: ${esc(o.modeloNome || '—').toUpperCase()}</div>
+
+        <!-- TECIDOS -->
+        <table class="side-table tab-tecidos">
+          <thead><tr><th colspan="3" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
+          <tr><th style="width:18px;">#</th><th>Tecido</th><th style="width:90px;">Consumo</th></tr></thead>
+          <tbody>${tecidoRows}</tbody>
+        </table>
+
+        <!-- GRADE -->
+        <table class="side-table" style="border-top:none;">
+          <thead>
+            <tr><th colspan="9" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
+            <tr>
+              <th>PP</th><th>P</th><th>M</th><th>G</th><th>GG</th><th>G1</th><th>G2</th><th>G3</th><th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;">
+              <td>${g.pp||0}</td><td>${g.p||0}</td><td>${g.m||0}</td><td>${g.g||0}</td>
+              <td>${g.gg||0}</td><td>${g.g1||0}</td><td>${g.g2||0}</td><td>${g.g3||0}</td>
+              <td style="background:#fff59d;">${g.total||0}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- ENFESTO -->
+        ${renderEnfestoBox(o)}
+
+        <!-- ETAPAS -->
+        <div class="etapas-list">
+          <div class="titulo">Etapas de Produção</div>
+          ${(() => {
+            if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
+            const cadastradas = etapasOrdenadas();
+            const ordenadas = cadastradas.length
+              ? cadastradas.filter(e => o.etapas.includes(e.nome)).map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
+              : o.etapas.map(nome => ({ nome, funcs: [] }));
+            const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
+            return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
+              ${ordenadas.map(e => `
+                <li style="display:flex;align-items:center;padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
+                  ${checkbox}
+                  <strong style="min-width:130px;">${esc(e.nome)}</strong>
+                  <span style="color:#555;flex:1;">${e.funcs.length ? esc(e.funcs.join(', ')) : '<em style="color:#999;">sem função definida</em>'}</span>
+                </li>`).join('')}
+            </ul>`;
+          })()}
+        </div>
+
+        <!-- CORES -->
+        <table class="side-table cores-tab" style="border-top:none;">
+          <thead>
+            <tr><th colspan="3" class="subhead">Cores do modelo</th></tr>
+            <tr><th style="width:40px;">Var</th><th>Cor 1 (principal)</th><th>Cor 2 (cordão/linha)</th></tr>
+          </thead>
+          <tbody>${variantesHtml}</tbody>
+        </table>
+
+        <!-- AVIAMENTOS -->
+        <div style="background:#1a1a1a;color:#fff;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
+        <div class="aviamentos-grid">${aviamentosHtml}</div>
+
+        ${o.obs ? `<div class="obs-box"><strong>Observações</strong>${esc(o.obs)}</div>` : ''}
+      </div>
+    </div>
+
+    <!-- RODAPÉ -->
+    <div class="sheet-foot">
+      <div><strong>Gerado em</strong> ${esc(formatDate(new Date().toISOString().slice(0,10)))}</div>
+      <div><strong>Qtd total</strong> ${g.total||0} peças</div>
+      ${o.atencao ? `<div><strong>Atenção</strong> ${esc(o.atencao)}</div>` : ''}
+    </div>
+  `;
+}
+
+/* ========================================================= */
+/*              EXPORT / IMPORT / LIMPAR                     */
+/* ========================================================= */
+// Lista canônica de todos os arrays persistidos
+const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
+                  'marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
+
+function exportarDados() {
+  const data = { exportadoEm: new Date().toISOString() };
+  ALL_KEYS.forEach(k => { data[k] = STATE[k]; });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `os-gen-backup-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Backup exportado', 'ok');
+}
+
+async function importarDados(e) {
+  if (!exigirAdmin('importar dados')) { e.target.value = ''; return; }
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    ALL_KEYS.forEach(k => {
+      if (Array.isArray(data[k])) STATE[k] = data[k];
+    });
+    for (const k of ALL_KEYS) {
+      await saveState(k);
+    }
+    toast('Dados importados', 'ok');
+    goto('home');
+  } catch (err) {
+    toast('Arquivo inválido', 'err');
+  }
+}
+
+async function limparTudo() {
+  if (!exigirAdmin('apagar todos os dados')) return;
+  const resp = prompt(
+    'Isso vai APAGAR todos os cadastros e OS de TODOS os usuários da equipe.\n\n' +
+    'Esta ação é IRREVERSÍVEL — o último snapshot diário pode não ter tudo.\n\n' +
+    'Para confirmar, digite exatamente a palavra APAGAR abaixo:'
+  );
+  if (resp === null) return;
+  if ((resp || '').trim().toUpperCase() !== 'APAGAR') {
+    toast('Palavra não conferiu — nada foi apagado.', 'err');
+    return;
+  }
+  ALL_KEYS.forEach(k => STATE[k] = []);
+  for (const k of ALL_KEYS) {
+    await saveState(k);
+  }
+  toast('Tudo apagado', 'ok');
+  goto('home');
+}
+
+/* ========================================================= */
+/*              DADOS DE EXEMPLO (Dx7282)                    */
+/* ========================================================= */
+async function popularExemplo() {
+  if (!exigirAdmin('popular dados de exemplo')) return;
+  if (!confirm('Isso vai adicionar dados de exemplo aos cadastros. Continuar?')) return;
+
+  // Marcas
+  STATE.marcas.push(
+    { id: uid(), nome: 'Dixie', desc: 'Marca principal' },
+    { id: uid(), nome: 'Diverse', desc: 'Segunda marca' }
+  );
+
+  // Linhas
+  STATE.linhas.push(
+    { id: uid(), nome: 'Adulto', desc: '' },
+    { id: uid(), nome: 'Infantil', desc: '' },
+    { id: uid(), nome: 'Juvenil', desc: '' },
+    { id: uid(), nome: 'Plus Size', desc: '' }
+  );
+
+  // Bases
+  STATE.bases.push(
+    { id: uid(), nome: 'BASE M MOLETOM', desc: 'molde padrão para moletons tam. M' },
+    { id: uid(), nome: 'BASE M CAMISETA', desc: 'molde padrão para camisetas tam. M' },
+    { id: uid(), nome: 'BASE P CALÇA', desc: 'molde base calça tam. P' }
+  );
+
+  // Blocos / revisões
+  STATE.blocos.push(
+    { id: uid(), nome: 'R1 BLOCO 1', desc: 'primeira revisão, primeiro bloco' },
+    { id: uid(), nome: 'R1 BLOCO 2', desc: 'primeira revisão, segundo bloco' },
+    { id: uid(), nome: 'R2 BLOCO 1', desc: 'segunda revisão' }
+  );
+
+  // Equipe
+  STATE.equipe.push(
+    { id: uid(), nome: 'Marcelo', funcao: 'Ambos' },
+    { id: uid(), nome: 'Ana',     funcao: 'Designer' },
+    { id: uid(), nome: 'Paula',   funcao: 'Ficha Técnica' }
+  );
+
+  // Tecidos
+  STATE.tecidos.push(
+    { id: uid(), nome: 'Moletom Bulk', desc: '65% algodão 35% poliéster', categoria: 'moletom' },
+    { id: uid(), nome: '1/2 Malha', desc: 'Malha meia-felpa', categoria: 'malha' },
+    { id: uid(), nome: 'Ribana Bulk', desc: 'Ribana para punho/barra', categoria: 'malha' },
+    { id: uid(), nome: 'Moletom Peluciado', desc: 'Interior peluciado', categoria: 'moletom' },
+    { id: uid(), nome: 'Tricoline', desc: 'Algodão fio tinto', categoria: 'outro' }
+  );
+
+  // Cores
+  STATE.cores.push(
+    { id: uid(), nome: 'Camel', hex: '#c9a961', codigo: 'AV.CO.129' },
+    { id: uid(), nome: 'Palha', hex: '#e4d9b0', codigo: 'AV.IN.848' },
+    { id: uid(), nome: 'Nut', hex: '#6b4423', codigo: 'AV.IL.35' },
+    { id: uid(), nome: 'Preto', hex: '#1a1a1a', codigo: '' },
+    { id: uid(), nome: 'Off-white', hex: '#f5f2ea', codigo: '' },
+    { id: uid(), nome: 'Cinza Mescla', hex: '#9aa0a6', codigo: '' }
+  );
+
+  // Materiais
+  STATE.materiais.push(
+    { id: uid(), codigo: 'AV.IN.848', tipo: 'Cordão', desc: 'Cordão 1,30m palha' },
+    { id: uid(), codigo: 'AV.CO.129', tipo: 'Trançador', desc: 'Trançador camel' },
+    { id: uid(), codigo: 'AV.IL.35', tipo: 'Ilhós', desc: 'Ilhós metal nut' },
+    { id: uid(), codigo: 'AV.EB.182', tipo: 'Etiqueta', desc: 'Etiqueta bordada' },
+    { id: uid(), codigo: 'AV.TG.889', tipo: 'Tag', desc: 'Tag papel Dixie' }
+  );
+
+  // Modelos
+  STATE.modelos.push(
+    { id: uid(), nome: 'Moletom fechado básico', linha: 'Adulto' },
+    { id: uid(), nome: 'Moletom aberto com zíper', linha: 'Adulto' },
+    { id: uid(), nome: 'Calça jogger', linha: 'Adulto' },
+    { id: uid(), nome: 'Camiseta regata', linha: 'Adulto' }
+  );
+
+  // Coleções
+  STATE.colecoes.push(
+    { id: uid(), nome: 'Inverno 2024', temporada: 'Outono-Inverno' },
+    { id: uid(), nome: 'Verão 2024', temporada: 'Primavera-Verão' },
+    { id: uid(), nome: 'Inverno 2025', temporada: 'Outono-Inverno' }
+  );
+
+  // Grades
+  STATE.grades.push(
+    { id: uid(), nome: 'Grade padrão 6 peças', tamanhos: { pp:0, p:1, m:2, g:2, gg:1, g1:0, g2:0, g3:0 } },
+    { id: uid(), nome: 'Grade ampliada 8 peças', tamanhos: { pp:1, p:1, m:2, g:2, gg:1, g1:1, g2:0, g3:0 } },
+    { id: uid(), nome: 'Grade plus 4 peças',     tamanhos: { pp:0, p:0, m:0, g:0, gg:1, g1:1, g2:1, g3:1 } }
+  );
+
+  for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades',
+                   'marcas','linhas','bases','blocos','equipe']) {
+    await saveState(k);
+  }
+  toast('Exemplos carregados — cadastre o desenho técnico em "Desenhos" enviando uma imagem', 'ok');
+  goto('home');
+}
+
+/* ========================================================= */
+/*                   INICIALIZAÇÃO                           */
+/* ========================================================= */
+(async function init() {
+  await inicializarAuth();
+  if (currentUser) {
+    await loadState();
+    await carregarPapel();
+    aplicarPermissoesUI();
+    goto('home');
+    // Tarefas em background — não bloqueiam a navegação
+    snapshotDiario().catch(e => console.warn('snapshotDiario', e));
+    if (currentRole === 'admin') {
+      migrarImagensBase64().catch(e => console.warn('migrarImagensBase64', e));
+    }
+  }
+})();
+
+// Deixar disponível globalmente
+window.goto = goto;
+window.openCadastroModal = openCadastroModal;
+window.closeModal = closeModal;
+window.salvarCadastro = salvarCadastro;
+window.excluirCadastro = excluirCadastro;
+window.addTecidoRow = addTecidoRow;
+window.addVarianteRow = addVarianteRow;
+window.addComponenteRow = addComponenteRow;
+window.addAviamentoRow = addAviamentoRow;
+window.addEtapaCustomizada = addEtapaCustomizada;
+window.aplicarGradePreset = aplicarGradePreset;
+window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
+window.calcularCamadasParaProducao = calcularCamadasParaProducao;
+window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
+window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
+window.onModeloChange = onModeloChange;
+window.renderEtapasCad = renderEtapasCad;
+window.renderComponentesCad = renderComponentesCad;
+window.aplicarVinculosDesenho = aplicarVinculosDesenho;
+window.aplicarVinculosModelo = aplicarVinculosModelo;
+window.previewDesenhoSelecionado = previewDesenhoSelecionado;
+window.previewUploadImg = previewUploadImg;
+window.reindexTecidos = reindexTecidos;
+window.reindexVariantes = reindexVariantes;
+window.salvarOS = salvarOS;
+window.salvarEImprimir = salvarEImprimir;
+window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
+window.verOS = verOS;
+window.editarOS = editarOS;
+window.editarOsAtual = editarOsAtual;
+window.excluirOS = excluirOS;
+window.exportarDados = exportarDados;
+window.importarDados = importarDados;
+window.limparTudo = limparTudo;
+window.popularExemplo = popularExemplo;
+window.abrirLogin = abrirLogin;
+window.fecharLogin = fecharLogin;
+window.trocarAbaAuth = trocarAbaAuth;
+window.submeterAuth = submeterAuth;
+window.sairConta = sairConta;
+window.abrirRecuperacaoSenha = abrirRecuperacaoSenha;
+window.enviarEmailRecuperacao = enviarEmailRecuperacao;
+window.definirNovaSenha = definirNovaSenha;
+window.sincCodigoDesenho = sincCodigoDesenho;
+window.atualizarDatalistCodigos = atualizarDatalistCodigos;
+window.renderFuncoes = renderFuncoes;
+window.listarSnapshots = listarSnapshots;
+window.restaurarSnapshot = restaurarSnapshot;
+window.setUserRole = setUserRole;
+window.listarUsuariosComPapel = listarUsuariosComPapel;
