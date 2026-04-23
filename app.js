@@ -920,29 +920,109 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Componentes padrão deste desenho</label>
-          <div style="margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
-            ${STATE.componentes.length
-              ? STATE.componentes.map(c => `
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 8px 3px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;background:var(--paper);cursor:pointer;">
-                  <input type="checkbox" class="m-componente-chk" value="${esc(c.id)}" ${(item.componentesIds||[]).includes(c.id)?'checked':''}>
-                  <span>${esc(c.nome)}</span>
-                </label>`).join('')
-              : '<em style="color:var(--ink-3);font-size:12px;">Cadastre componentes primeiro em Componentes.</em>'}
+          <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
+            Marque os componentes usados e preencha tecido, cor e quantidade por peça.
+            O total por tamanho é calculado automaticamente na OS.
           </div>
-          <div class="field-hint">Ao selecionar este desenho na OS, esses componentes serão inseridos automaticamente nas linhas de "Componentes do produto".</div>
+          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${STATE.componentes.length ? (() => {
+              const tecOpts = (selId) => '<option value="">—</option>' + STATE.tecidos.map(t =>
+                `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
+              const corOpts = (selId) => '<option value="">—</option>' + STATE.cores.map(c =>
+                `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+              // Retrocompat: se tem componentesIds mas não tem componentes (nova estrutura), mapeia
+              const compsAtuais = Array.isArray(item.componentes) && item.componentes.length
+                ? item.componentes
+                : (item.componentesIds || []).map(id => ({
+                    componenteId: id, tecidoId: item.tecidoPadraoId || '', corId: item.corPrincipalId || '', qtdPorPeca: 1
+                  }));
+              const porId = new Map(compsAtuais.map(c => [c.componenteId, c]));
+              return `<table class="desenho-comp-table">
+                <thead><tr>
+                  <th style="width:24px;"></th>
+                  <th>Componente</th>
+                  <th>Tecido</th>
+                  <th>Cor</th>
+                  <th style="width:72px;">Qtd/peça</th>
+                </tr></thead>
+                <tbody>
+                ${STATE.componentes.map(c => {
+                  const atual = porId.get(c.id) || {};
+                  const marcado = porId.has(c.id);
+                  return `<tr class="desenho-comp-row">
+                    <td style="text-align:center;"><input type="checkbox" class="m-componente-chk" value="${esc(c.id)}" ${marcado?'checked':''}></td>
+                    <td>${esc(c.nome)}</td>
+                    <td><select class="m-comp-tec" data-comp="${esc(c.id)}">${tecOpts(atual.tecidoId)}</select></td>
+                    <td><select class="m-comp-cor" data-comp="${esc(c.id)}">${corOpts(atual.corId)}</select></td>
+                    <td><input type="number" class="m-comp-qtd" data-comp="${esc(c.id)}" min="0" step="0.5" value="${esc(atual.qtdPorPeca || '')}" placeholder="1"></td>
+                  </tr>`;
+                }).join('')}
+                </tbody>
+              </table>`;
+            })() : '<em style="color:var(--ink-3);font-size:12px;">Cadastre componentes primeiro em Componentes.</em>'}
+          </div>
         </div>
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Aviamentos padrão deste desenho</label>
-          <div style="margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
-            ${STATE.materiais.length
-              ? STATE.materiais.map(m => `
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 8px 3px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;background:var(--paper);cursor:pointer;">
-                  <input type="checkbox" class="m-aviamento-chk" value="${esc(m.id)}" ${(item.aviamentosIds||[]).includes(m.id)?'checked':''}>
-                  <span><strong>${esc(m.codigo)}</strong> · ${esc(m.desc)}${m.tipo ? ' ('+esc(m.tipo)+')' : ''}</span>
-                </label>`).join('')
-              : '<em style="color:var(--ink-3);font-size:12px;">Cadastre aviamentos primeiro em Materiais / Aviamentos.</em>'}
+          <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
+            Marque os aviamentos usados e preencha quantidade por peça e aplicação (unidade sempre "un").
           </div>
-          <div class="field-hint">Especialmente útil para moletom (cordão, ilhós, etiqueta, tag). Ao selecionar este desenho na OS, os aviamentos vão preencher automaticamente a seção "Aviamentos aplicados".</div>
+          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${STATE.materiais.length ? (() => {
+              const avsAtuais = Array.isArray(item.aviamentos) && item.aviamentos.length
+                ? item.aviamentos
+                : (item.aviamentosIds || []).map(id => ({ materialId: id, qtdPorPeca: 1, aplicacao: '' }));
+              const porId = new Map(avsAtuais.map(a => [a.materialId, a]));
+              return `<table class="desenho-comp-table">
+                <thead><tr>
+                  <th style="width:24px;"></th>
+                  <th>Aviamento</th>
+                  <th style="width:72px;">Qtd/peça</th>
+                  <th>Aplicação</th>
+                </tr></thead>
+                <tbody>
+                ${STATE.materiais.map(m => {
+                  const atual = porId.get(m.id) || {};
+                  const marcado = porId.has(m.id);
+                  return `<tr class="desenho-comp-row">
+                    <td style="text-align:center;"><input type="checkbox" class="m-aviamento-chk" value="${esc(m.id)}" ${marcado?'checked':''}></td>
+                    <td><strong>${esc(m.codigo)}</strong> · ${esc(m.desc)}${m.tipo ? ' ('+esc(m.tipo)+')' : ''}</td>
+                    <td><input type="number" class="m-av-qtd" data-av="${esc(m.id)}" min="0" step="0.5" value="${esc(atual.qtdPorPeca != null ? atual.qtdPorPeca : '')}" placeholder="1"></td>
+                    <td><input type="text" class="m-av-app" data-av="${esc(m.id)}" value="${esc(atual.aplicacao || '')}" placeholder="Ex.: V1 camel / V2 preto"></td>
+                  </tr>`;
+                }).join('')}
+                </tbody>
+              </table>`;
+            })() : '<em style="color:var(--ink-3);font-size:12px;">Cadastre aviamentos primeiro em Materiais / Aviamentos.</em>'}
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Etapas padrão deste desenho (na ordem de execução)</label>
+          <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
+            Marque as etapas que este desenho usa e use ▲▼ pra ordená-las. Ao selecionar o desenho na OS, as etapas já vêm marcadas e na ordem certa.
+          </div>
+          <div id="m-desenho-etapas" style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${(() => {
+              const cadastradas = etapasOrdenadas();
+              if (!cadastradas.length) return '<em style="color:var(--ink-3);font-size:12px;">Cadastre etapas primeiro em Etapas de produção.</em>';
+              const salvas = Array.isArray(item.etapasNomes) && item.etapasNomes.length ? item.etapasNomes : [];
+              // Primeiro as salvas na ordem, depois as não-marcadas na ordem cadastrada
+              const resto = cadastradas.filter(e => !salvas.includes(e.nome));
+              const ordem = [
+                ...salvas.map(n => cadastradas.find(e => e.nome === n)).filter(Boolean),
+                ...resto
+              ];
+              return ordem.map(e => `
+                <label class="etapa-check ${salvas.includes(e.nome)?'checked':''}" style="margin-bottom:4px;">
+                  <span class="etapa-reorder">
+                    <button type="button" class="etapa-move" onclick="event.preventDefault(); event.stopPropagation(); moverEtapaDesenho(this, -1)" title="Mover para cima">▲</button>
+                    <button type="button" class="etapa-move" onclick="event.preventDefault(); event.stopPropagation(); moverEtapaDesenho(this, 1)" title="Mover para baixo">▼</button>
+                  </span>
+                  <input type="checkbox" class="m-etapa-chk" value="${esc(e.nome)}" ${salvas.includes(e.nome)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
+                  <span>${esc(e.nome)}</span>
+                </label>`).join('');
+            })()}
+          </div>
         </div>
       </div>`;
   }
@@ -1192,8 +1272,41 @@ async function salvarCadastro() {
     item.corPrincipalId = v('m-vinc-cor');
     item.corSecundariaId = v('m-vinc-cor2');
     item.corTerciariaId = v('m-vinc-cor3');
-    item.componentesIds = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(c => c.value);
-    item.aviamentosIds = Array.from(document.querySelectorAll('.m-aviamento-chk:checked')).map(c => c.value);
+    // Componentes com tecido + cor + qtd/peça (estrutura nova)
+    item.componentes = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(chk => {
+      const compId = chk.value;
+      const cad = STATE.componentes.find(x => x.id === compId);
+      const tecEl = document.querySelector(`.m-comp-tec[data-comp="${compId}"]`);
+      const corEl = document.querySelector(`.m-comp-cor[data-comp="${compId}"]`);
+      const qtdEl = document.querySelector(`.m-comp-qtd[data-comp="${compId}"]`);
+      return {
+        componenteId: compId,
+        nome: cad?.nome || '',
+        tecidoId: tecEl?.value || '',
+        corId: corEl?.value || '',
+        qtdPorPeca: parseFloat(qtdEl?.value) || 1
+      };
+    });
+    // Retrocompat: mantém componentesIds sincronizado
+    item.componentesIds = item.componentes.map(c => c.componenteId);
+
+    // Aviamentos com qtd/peça + aplicação (estrutura nova)
+    item.aviamentos = Array.from(document.querySelectorAll('.m-aviamento-chk:checked')).map(chk => {
+      const mId = chk.value;
+      const qtdEl = document.querySelector(`.m-av-qtd[data-av="${mId}"]`);
+      const appEl = document.querySelector(`.m-av-app[data-av="${mId}"]`);
+      return {
+        materialId: mId,
+        qtdPorPeca: parseFloat(qtdEl?.value) || 1,
+        aplicacao: appEl?.value || ''
+      };
+    });
+    item.aviamentosIds = item.aviamentos.map(a => a.materialId);
+
+    // Etapas padrão do desenho (na ordem visual das marcadas)
+    item.etapasNomes = Array.from(document.querySelectorAll('#m-desenho-etapas .etapa-check'))
+      .filter(l => l.querySelector('input:checked'))
+      .map(l => l.querySelector('input').value);
   }
   else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1637,31 +1750,58 @@ function aplicarVinculosDesenho() {
     aplicarFiltroTecidosPorModelo();
     atualizarResponsabilidadesOS();
     atualizarCalculosEnfesto();
-    // Aplica componentes padrão do desenho (com tecido + cor principal)
-    if (d.componentesIds && d.componentesIds.length) {
+    // Aplica componentes padrão do desenho — nova estrutura com tecido+cor+qtd por componente
+    const compsDesenho = Array.isArray(d.componentes) && d.componentes.length
+      ? d.componentes
+      : (d.componentesIds || []).map(id => ({
+          componenteId: id,
+          nome: (STATE.componentes.find(x => x.id === id) || {}).nome || '',
+          tecidoId: d.tecidoPadraoId || '',
+          corId: d.corPrincipalId || '',
+          qtdPorPeca: 1
+        }));
+    if (compsDesenho.length) {
       const cont = document.getElementById('componentes-rows');
       if (cont) {
         cont.innerHTML = '';
-        const materialDefault = d.tecidoPadraoId ? 'T:' + d.tecidoPadraoId : '';
-        d.componentesIds.forEach(id => {
-          const comp = STATE.componentes.find(x => x.id === id);
-          if (comp) addComponenteRow({
-            nome: comp.nome,
-            material: materialDefault,
-            cor: d.corPrincipalId || ''
+        compsDesenho.forEach(c => {
+          addComponenteRow({
+            nome: c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || '',
+            material: c.tecidoId ? 'T:' + c.tecidoId : '',
+            cor: c.corId || '',
+            qtdPorPeca: c.qtdPorPeca != null ? c.qtdPorPeca : 1
           });
         });
         aplicou = true;
       }
     }
-    // Aplica aviamentos padrão do desenho
-    if (d.aviamentosIds && d.aviamentosIds.length) {
+    // Aplica etapas padrão do desenho (marca + ordena)
+    if (Array.isArray(d.etapasNomes) && d.etapasNomes.length) {
+      document.querySelectorAll('#etapas-container .etapa-check').forEach(lbl => {
+        const input = lbl.querySelector('input');
+        const on = d.etapasNomes.includes(input.value);
+        input.checked = on;
+        lbl.classList.toggle('checked', on);
+      });
+      aplicarOrdemEtapas(d.etapasNomes);
+      aplicou = true;
+    }
+
+    // Aplica aviamentos padrão do desenho — estrutura nova com qtd/peça + aplicação
+    const avsDesenho = Array.isArray(d.aviamentos) && d.aviamentos.length
+      ? d.aviamentos
+      : (d.aviamentosIds || []).map(id => ({ materialId: id, qtdPorPeca: 1, aplicacao: '' }));
+    if (avsDesenho.length) {
       const avCont = document.getElementById('aviamentos-rows');
       if (avCont) {
         avCont.innerHTML = '';
-        d.aviamentosIds.forEach(id => {
-          if (STATE.materiais.find(x => x.id === id)) {
-            addAviamentoRow({ material: id });
+        avsDesenho.forEach(av => {
+          if (STATE.materiais.find(x => x.id === av.materialId)) {
+            addAviamentoRow({
+              material: av.materialId,
+              qtd: av.qtdPorPeca,
+              app: av.aplicacao || ''
+            });
           }
         });
         aplicou = true;
@@ -1788,6 +1928,18 @@ function renderEtapas() {
       <span>${esc(e.nome)}${funcsBadges}</span>
     </label>`;
   }).join('');
+}
+
+function moverEtapaDesenho(btn, dir) {
+  const label = btn.closest('.etapa-check');
+  if (!label) return;
+  if (dir < 0) {
+    const prev = label.previousElementSibling;
+    if (prev && prev.classList.contains('etapa-check')) label.parentNode.insertBefore(label, prev);
+  } else {
+    const next = label.nextElementSibling;
+    if (next && next.classList.contains('etapa-check')) label.parentNode.insertBefore(next, label);
+  }
 }
 
 function moverEtapaForm(btn, dir) {
@@ -1951,8 +2103,9 @@ function addComponenteRow(data = {}) {
       <datalist id="compList">${compOpts}</datalist>
     </div>
     <div class="field"><select class="comp-mat">${matOpts}</select></div>
+    <div class="field"><select class="comp-cor">${corOpts}</select></div>
     <div class="field" style="display:flex;gap:4px;">
-      <select class="comp-cor" style="flex:1">${corOpts}</select>
+      <input type="number" class="comp-qtd" min="0" step="0.5" value="${esc(data.qtdPorPeca!=null?data.qtdPorPeca:'')}" placeholder="1" style="flex:1">
       <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
     </div>`;
   cont.appendChild(row);
@@ -1967,8 +2120,9 @@ function addAviamentoRow(data = {}) {
   row.innerHTML = `
     <div class="field"><select class="av-mat">${matOpts}</select></div>
     <div class="field"><input type="text" class="av-app" value="${esc(data.app||'')}" placeholder="Ex.: V1: Camel / V2: Preto"></div>
+    <div class="field"><input type="number" class="av-qtd" min="0" step="0.5" value="${esc(data.qtd!=null?data.qtd:'')}" placeholder="Qtd/peça"></div>
     <div class="field" style="display:flex;gap:4px;">
-      <input type="text" class="av-qtd" value="${esc(data.qtd||'')}" placeholder="Qtd" style="flex:1">
+      <span style="padding:7px 6px;font-size:12px;color:var(--ink-3);flex:1;">un</span>
       <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
     </div>`;
   cont.appendChild(row);
@@ -2199,25 +2353,54 @@ function coletaOS() {
     };
   }).filter(v => v.cor1 || v.cor2 || v.cor3);
 
+  // Lê grade/camadas primeiro para calcular quantidades de componentes por tamanho
+  const gPP = parseInt(v('f-gr-pp'))||0, gP = parseInt(v('f-gr-p'))||0, gM = parseInt(v('f-gr-m'))||0;
+  const gG = parseInt(v('f-gr-g'))||0, gGG = parseInt(v('f-gr-gg'))||0, gG1 = parseInt(v('f-gr-g1'))||0;
+  const gG2 = parseInt(v('f-gr-g2'))||0, gG3 = parseInt(v('f-gr-g3'))||0;
+  const camadasN = parseInt(v('f-enf-camadas'))||0;
+  const pecasPorTamanho = { pp: gPP*camadasN, p: gP*camadasN, m: gM*camadasN, g: gG*camadasN, gg: gGG*camadasN, g1: gG1*camadasN, g2: gG2*camadasN, g3: gG3*camadasN };
+
   const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
+    const nomeEl = r.querySelector('.comp-nome');
+    if (!nomeEl) return null;
     const mat = r.querySelector('.comp-mat');
     const cor = r.querySelector('.comp-cor');
+    const qtdEl = r.querySelector('.comp-qtd');
+    const qtdPorPeca = parseFloat(qtdEl?.value) || 0;
+    const qtdPorTamanho = {};
+    let qtdTotal = 0;
+    for (const t of ['pp','p','m','g','gg','g1','g2','g3']) {
+      const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
+      qtdPorTamanho[t] = v;
+      qtdTotal += v;
+    }
     return {
-      nome: r.querySelector('.comp-nome').value,
+      nome: nomeEl.value,
       material: mat.value, materialNome: mat.options[mat.selectedIndex]?.text || '',
-      cor: cor.value, corNome: cor.options[cor.selectedIndex]?.text || ''
+      cor: cor.value, corNome: cor.options[cor.selectedIndex]?.text || '',
+      qtdPorPeca, qtdPorTamanho, qtdTotal
     };
-  }).filter(c => c.nome);
+  }).filter(c => c && c.nome);
 
   const aviamentos = Array.from(document.querySelectorAll('#aviamentos-rows .componente-row')).map(r => {
     const mat = r.querySelector('.av-mat');
+    if (!mat) return null;
+    const qtdPorPeca = parseFloat(r.querySelector('.av-qtd')?.value) || 0;
+    const qtdPorTamanho = {};
+    let qtdTotal = 0;
+    for (const t of ['pp','p','m','g','gg','g1','g2','g3']) {
+      const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
+      qtdPorTamanho[t] = v;
+      qtdTotal += v;
+    }
     return {
       material: mat.value,
       materialNome: mat.options[mat.selectedIndex]?.text || '',
-      app: r.querySelector('.av-app').value,
-      qtd: r.querySelector('.av-qtd').value
+      app: r.querySelector('.av-app')?.value || '',
+      qtd: qtdPorPeca,        // retrocompat: texto antigo de qtd virou número
+      qtdPorPeca, qtdPorTamanho, qtdTotal
     };
-  }).filter(a => a.material);
+  }).filter(a => a && a.material);
 
   const etapas = Array.from(document.querySelectorAll('#etapas-container input:checked')).map(c => c.value);
 
@@ -2472,6 +2655,101 @@ async function excluirOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
+function renderComponentesDetalheBox(o) {
+  const comps = o.componentes || [];
+  if (!comps.length) return '';
+  // Quais tamanhos mostrar? Só os que têm peças > 0 em alguma linha (ou que estão na grade)
+  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const grade = o.grade || {};
+  const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
+  const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg']; // default
+  const fmt = n => Number(n || 0).toLocaleString('pt-BR');
+
+  let totalGeral = 0;
+  const linhas = comps.map(c => {
+    const totalLinha = c.qtdTotal || 0;
+    totalGeral += totalLinha;
+    return `<tr>
+      <td><strong>${esc(c.nome || '—')}</strong></td>
+      <td>${esc((c.materialNome || '').replace(/^—\s*/,'')) || '—'}</td>
+      <td>${esc(c.corNome || '') || '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(c.qtdPorPeca)}</td>
+      ${colsTam.map(t => `<td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(c.qtdPorTamanho?.[t])}</td>`).join('')}
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${fmt(totalLinha)}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <table class="side-table" style="border-top:none;width:100%;">
+      <thead>
+        <tr><th colspan="${4 + colsTam.length + 1}" class="subhead" style="background:#c9e8d0;">Componentes — totais por tamanho</th></tr>
+        <tr>
+          <th>Componente</th>
+          <th>Tecido / Material</th>
+          <th>Cor</th>
+          <th style="width:36px;">/pç</th>
+          ${colsTam.map(t => `<th style="width:36px;">${t.toUpperCase()}</th>`).join('')}
+          <th style="width:48px;background:#fff59d;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhas}
+        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
+          <td colspan="${3 + colsTam.length + 1}" style="padding:3px 5px;">TOTAL GERAL COMPONENTES</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(totalGeral)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function renderAviamentosDetalheBox(o) {
+  const avs = o.aviamentos || [];
+  if (!avs.length) return '';
+  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const grade = o.grade || {};
+  const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
+  const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg'];
+  const fmt = n => Number(n || 0).toLocaleString('pt-BR');
+
+  let totalGeral = 0;
+  const linhas = avs.map(a => {
+    const mat = STATE.materiais.find(m => m.id === a.material);
+    const nome = mat ? `${mat.codigo} · ${mat.desc}` : (a.materialNome || '—');
+    const totalLinha = a.qtdTotal || 0;
+    totalGeral += totalLinha;
+    return `<tr>
+      <td><strong>${esc(nome)}</strong></td>
+      <td>${esc(a.app || '—')}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(a.qtdPorPeca)}</td>
+      ${colsTam.map(t => `<td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(a.qtdPorTamanho?.[t])}</td>`).join('')}
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${fmt(totalLinha)} un</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <table class="side-table" style="border-top:none;width:100%;">
+      <thead>
+        <tr><th colspan="${3 + colsTam.length + 1}" class="subhead" style="background:#ffe0b2;">Aviamentos — totais por tamanho</th></tr>
+        <tr>
+          <th>Aviamento</th>
+          <th>Aplicação</th>
+          <th style="width:36px;">/pç</th>
+          ${colsTam.map(t => `<th style="width:36px;">${t.toUpperCase()}</th>`).join('')}
+          <th style="width:60px;background:#fff59d;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${linhas}
+        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
+          <td colspan="${2 + colsTam.length + 1}" style="padding:3px 5px;">TOTAL GERAL AVIAMENTOS</td>
+          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(totalGeral)} un</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
 function renderFasesBox(o) {
   const fases = (o.fases || []).filter(f => f && (f.tecidoNome || f.corNome || f.comp || f.larg));
   if (!fases.length) return '';
@@ -2729,6 +3007,10 @@ function renderPrintSheet(o) {
       </div>
     </div>
 
+    <!-- COMPONENTES E AVIAMENTOS — totais por tamanho -->
+    ${renderComponentesDetalheBox(o) || ''}
+    ${renderAviamentosDetalheBox(o) || ''}
+
     <!-- RODAPÉ -->
     <div class="sheet-foot">
       <div><strong>Gerado em</strong> ${esc(formatDate(new Date().toISOString().slice(0,10)))}</div>
@@ -2970,3 +3252,4 @@ window.listarUsuariosComPapel = listarUsuariosComPapel;
 window.duplicarCadastro = duplicarCadastro;
 window.toggleFolderGrade = toggleFolderGrade;
 window.moverEtapaForm = moverEtapaForm;
+window.moverEtapaDesenho = moverEtapaDesenho;
