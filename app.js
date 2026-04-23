@@ -1359,6 +1359,14 @@ function renderColecoes() {
   tb.innerHTML = STATE.colecoes.map(c => `
     <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.temporada)||'—'}</td>${acoesCell('colecao', c.id)}</tr>`).join('');
 }
+let pastasGradeExpandidas = new Set();
+
+function toggleFolderGrade(path) {
+  if (pastasGradeExpandidas.has(path)) pastasGradeExpandidas.delete(path);
+  else pastasGradeExpandidas.add(path);
+  renderGrades();
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
@@ -1385,7 +1393,7 @@ function renderGrades() {
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
     const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
-    return `<tr><td style="padding-left:28px;"><strong>${esc(g.nome)}</strong>${fasesBadge}</td>
+    return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   };
@@ -1393,12 +1401,27 @@ function renderGrades() {
   let html = '';
   for (const tp of ordemTipoPeca) {
     if (!grupos[tp]) continue;
+    const tpPath = 'tp:' + tp;
+    const tpOpen = pastasGradeExpandidas.has(tpPath);
+    const chevTop = tpOpen ? '▼' : '▶';
     const totalNoGrupo = Object.values(grupos[tp]).reduce((a, v) => a + v.length, 0);
-    html += `<tr class="grade-folder grade-folder-top"><td colspan="4">📁 ${esc(labelsTipoPeca[tp] || tp)} <span class="folder-count">(${totalNoGrupo})</span></td></tr>`;
+    html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${tpPath}')"><td colspan="4">
+      <span class="folder-chev">${chevTop}</span> 📁 ${esc(labelsTipoPeca[tp] || tp)}
+      <span class="folder-count">(${totalNoGrupo})</span>
+    </td></tr>`;
+    if (!tpOpen) continue;
+
     for (const vr of ordemVariacao) {
       const gs = grupos[tp][vr];
       if (!gs || !gs.length) continue;
-      html += `<tr class="grade-folder grade-folder-sub"><td colspan="4">↳ ${esc(labelsVariacao[vr] || vr)} <span class="folder-count">(${gs.length})</span></td></tr>`;
+      const vrPath = tpPath + '|var:' + vr;
+      const vrOpen = pastasGradeExpandidas.has(vrPath);
+      const chevSub = vrOpen ? '▼' : '▶';
+      html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${vrPath}')"><td colspan="4">
+        <span class="folder-chev">${chevSub}</span> ↳ ${esc(labelsVariacao[vr] || vr)}
+        <span class="folder-count">(${gs.length})</span>
+      </td></tr>`;
+      if (!vrOpen) continue;
       html += gs.map(renderGradeRow).join('');
     }
   }
@@ -2911,3 +2934,4 @@ window.restaurarSnapshot = restaurarSnapshot;
 window.setUserRole = setUserRole;
 window.listarUsuariosComPapel = listarUsuariosComPapel;
 window.duplicarCadastro = duplicarCadastro;
+window.toggleFolderGrade = toggleFolderGrade;
