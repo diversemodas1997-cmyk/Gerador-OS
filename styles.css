@@ -872,14 +872,14 @@ body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
 
 /* ============ PASTAS DO CADASTRO DE GRADES ============ */
-.grade-folder { cursor: pointer; user-select: none; }
-.grade-folder:hover td { filter: brightness(1.08); }
+.grade-folder { cursor: pointer; user-select: none; transition: background .15s, color .15s; }
 .grade-folder td {
   font-family: 'IBM Plex Mono', monospace;
   font-weight: 600;
   padding: 10px 14px;
   font-size: 12px;
   letter-spacing: .04em;
+  transition: background .15s, color .15s;
 }
 .folder-chev { display: inline-block; width: 12px; font-size: 10px; margin-right: 4px; }
 .grade-folder-top td {
@@ -889,10 +889,18 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   letter-spacing: .1em;
   font-weight: 700;
 }
+.grade-folder-top:hover td {
+  background: var(--paper);
+  color: var(--ink);
+}
 .grade-folder-sub td {
   background: var(--line-2);
   color: var(--ink-2);
   padding-left: 28px;
+}
+.grade-folder-sub:hover td {
+  background: var(--ink);
+  color: var(--paper);
 }
 .folder-count {
   font-size: 10px;
