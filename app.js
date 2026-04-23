@@ -867,6 +867,19 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </div>
           <div class="field-hint">Ao selecionar este desenho na OS, esses componentes serão inseridos automaticamente nas linhas de "Componentes do produto".</div>
         </div>
+        <div style="margin-top:14px;">
+          <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Aviamentos padrão deste desenho</label>
+          <div style="margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${STATE.materiais.length
+              ? STATE.materiais.map(m => `
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:3px 8px 3px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;background:var(--paper);cursor:pointer;">
+                  <input type="checkbox" class="m-aviamento-chk" value="${esc(m.id)}" ${(item.aviamentosIds||[]).includes(m.id)?'checked':''}>
+                  <span><strong>${esc(m.codigo)}</strong> · ${esc(m.desc)}${m.tipo ? ' ('+esc(m.tipo)+')' : ''}</span>
+                </label>`).join('')
+              : '<em style="color:var(--ink-3);font-size:12px;">Cadastre aviamentos primeiro em Materiais / Aviamentos.</em>'}
+          </div>
+          <div class="field-hint">Especialmente útil para moletom (cordão, ilhós, etiqueta, tag). Ao selecionar este desenho na OS, os aviamentos vão preencher automaticamente a seção "Aviamentos aplicados".</div>
+        </div>
       </div>`;
   }
   else if (tipo === 'marca') {
@@ -1101,6 +1114,7 @@ async function salvarCadastro() {
     item.tecidoPadraoId = v('m-vinc-tecido');
     item.corPrincipalId = v('m-vinc-cor');
     item.componentesIds = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(c => c.value);
+    item.aviamentosIds = Array.from(document.querySelectorAll('.m-aviamento-chk:checked')).map(c => c.value);
   }
   else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1480,6 +1494,19 @@ function aplicarVinculosDesenho() {
             material: materialDefault,
             cor: d.corPrincipalId || ''
           });
+        });
+        aplicou = true;
+      }
+    }
+    // Aplica aviamentos padrão do desenho
+    if (d.aviamentosIds && d.aviamentosIds.length) {
+      const avCont = document.getElementById('aviamentos-rows');
+      if (avCont) {
+        avCont.innerHTML = '';
+        d.aviamentosIds.forEach(id => {
+          if (STATE.materiais.find(x => x.id === id)) {
+            addAviamentoRow({ material: id });
+          }
         });
         aplicou = true;
       }
