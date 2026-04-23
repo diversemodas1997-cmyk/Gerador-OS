@@ -870,3 +870,30 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
+
+/* ============ PASTAS DO CADASTRO DE GRADES ============ */
+.grade-folder td {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  padding: 10px 14px;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+.grade-folder-top td {
+  background: var(--ink);
+  color: var(--paper);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.grade-folder-sub td {
+  background: var(--line-2);
+  color: var(--ink-2);
+  padding-left: 28px;
+}
+.folder-count {
+  font-size: 10px;
+  opacity: .7;
+  margin-left: 6px;
+}
+.table tr.grade-folder:hover td { background: inherit; }

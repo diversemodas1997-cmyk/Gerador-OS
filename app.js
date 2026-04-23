@@ -805,8 +805,32 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'grade') {
+    const tiposPeca = [
+      { v: '', lbl: '— sem categoria —' },
+      { v: 'camiseta', lbl: 'Camiseta' },
+      { v: 'blusa_moletom', lbl: 'Blusa Moletom' },
+      { v: 'outro', lbl: 'Outro' }
+    ];
+    const variacoes = [
+      { v: '', lbl: '— sem variação —' },
+      { v: 'basica', lbl: 'Básica' },
+      { v: 'bicolor', lbl: 'Bicolor' },
+      { v: 'tricolor', lbl: 'Tricolor' }
+    ];
     box.innerHTML = `
-      <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
+        <div class="field"><label>Tipo de peça</label>
+          <select id="m-grade-tipopeca">
+            ${tiposPeca.map(t => `<option value="${t.v}" ${item.tipoPeca===t.v?'selected':''}>${t.lbl}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Variação</label>
+          <select id="m-grade-variacao">
+            ${variacoes.map(x => `<option value="${x.v}" ${item.variacao===x.v?'selected':''}>${x.lbl}</option>`).join('')}
+          </select>
+        </div>
+      </div>
       <div style="margin-top:10px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
         <div class="grade-inputs" style="margin-top:6px;">
@@ -1121,6 +1145,8 @@ async function salvarCadastro() {
   else if (tipo === 'grade') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
+    item.tipoPeca = v('m-grade-tipopeca');
+    item.variacao = v('m-grade-variacao');
     item.tamanhos = {};
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
@@ -1336,16 +1362,47 @@ function renderColecoes() {
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
-  tb.innerHTML = STATE.grades.map(g => {
+
+  const labelsTipoPeca = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro', '': 'Sem categoria' };
+  const labelsVariacao = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor', '': 'Sem variação' };
+  const ordemTipoPeca = ['camiseta', 'blusa_moletom', 'outro', ''];
+  const ordemVariacao = ['basica', 'bicolor', 'tricolor', ''];
+
+  // Agrupa por tipoPeca → variacao
+  const grupos = {};
+  for (const g of STATE.grades) {
+    const tp = g.tipoPeca || '';
+    const vr = g.variacao || '';
+    grupos[tp] = grupos[tp] || {};
+    grupos[tp][vr] = grupos[tp][vr] || [];
+    grupos[tp][vr].push(g);
+  }
+
+  const renderGradeRow = (g) => {
     const t = g.tamanhos || {};
     const dist = ['pp','p','m','g','gg','g1','g2','g3']
       .filter(x => t[x] > 0).map(x => `${x.toUpperCase()}:${t[x]}`).join(' · ');
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
     const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
-    return `<tr><td><strong>${esc(g.nome)}</strong>${fasesBadge}</td><td><code style="font-size:11px">${dist||'—'}</code></td>
+    return `<tr><td style="padding-left:28px;"><strong>${esc(g.nome)}</strong>${fasesBadge}</td>
+      <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
-  }).join('');
+  };
+
+  let html = '';
+  for (const tp of ordemTipoPeca) {
+    if (!grupos[tp]) continue;
+    const totalNoGrupo = Object.values(grupos[tp]).reduce((a, v) => a + v.length, 0);
+    html += `<tr class="grade-folder grade-folder-top"><td colspan="4">📁 ${esc(labelsTipoPeca[tp] || tp)} <span class="folder-count">(${totalNoGrupo})</span></td></tr>`;
+    for (const vr of ordemVariacao) {
+      const gs = grupos[tp][vr];
+      if (!gs || !gs.length) continue;
+      html += `<tr class="grade-folder grade-folder-sub"><td colspan="4">↳ ${esc(labelsVariacao[vr] || vr)} <span class="folder-count">(${gs.length})</span></td></tr>`;
+      html += gs.map(renderGradeRow).join('');
+    }
+  }
+  tb.innerHTML = html;
 }
 function renderDesenhos() {
   const tb = document.getElementById('tbl-desenhos');
