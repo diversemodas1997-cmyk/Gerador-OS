@@ -852,7 +852,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field"><label>Bloco / Revisão</label><select id="m-vinc-bloco">${optNada(STATE.blocos, 'nome', item.blocoId)}</select></div>
           <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe.filter(p => (p.funcao||'').toLowerCase().includes('designer')), 'nome', item.designerId, equipeLabel)}</select></div>
           <div class="field"><label>Tecido principal</label><select id="m-vinc-tecido">${optNada(STATE.tecidos, 'nome', item.tecidoPadraoId)}</select><div class="field-hint">Aplicado aos componentes</div></div>
-          <div class="field"><label>Cor principal</label><select id="m-vinc-cor">${optNada(STATE.cores, 'nome', item.corPrincipalId)}</select><div class="field-hint">Aplicada aos componentes e à Variante 1</div></div>
+          <div class="field"><label>Cor principal</label><select id="m-vinc-cor">${optNada(STATE.cores, 'nome', item.corPrincipalId)}</select><div class="field-hint">Aplicada aos componentes e à Cor 1 da Variante 1</div></div>
+          <div class="field"><label>Cor secundária (bicolor)</label><select id="m-vinc-cor2">${optNada(STATE.cores, 'nome', item.corSecundariaId)}</select><div class="field-hint">Opcional — aplicada à Cor 2 da Variante 1</div></div>
+          <div class="field"><label>Cor terciária (tricolor)</label><select id="m-vinc-cor3">${optNada(STATE.cores, 'nome', item.corTerciariaId)}</select><div class="field-hint">Opcional — aplicada à Cor 3 da Variante 1</div></div>
         </div>
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Componentes padrão deste desenho</label>
@@ -1113,6 +1115,8 @@ async function salvarCadastro() {
     item.designerId = v('m-vinc-designer');
     item.tecidoPadraoId = v('m-vinc-tecido');
     item.corPrincipalId = v('m-vinc-cor');
+    item.corSecundariaId = v('m-vinc-cor2');
+    item.corTerciariaId = v('m-vinc-cor3');
     item.componentesIds = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(c => c.value);
     item.aviamentosIds = Array.from(document.querySelectorAll('.m-aviamento-chk:checked')).map(c => c.value);
   }
@@ -1511,14 +1515,21 @@ function aplicarVinculosDesenho() {
         aplicou = true;
       }
     }
-    // Aplica cor principal na Variante 1 (cria a row se não existir)
-    if (d.corPrincipalId) {
+    // Aplica cor principal + secundária + terciária na Variante 1 (cria a row se não existir)
+    if (d.corPrincipalId || d.corSecundariaId || d.corTerciariaId) {
       const varCont = document.getElementById('variantes-rows');
       if (varCont) {
         if (!varCont.querySelector('.variante-row')) addVarianteRow();
-        const primeiraVar = varCont.querySelector('.variante-row .var-c1');
-        if (primeiraVar) primeiraVar.value = d.corPrincipalId;
-        aplicou = true;
+        const primeira = varCont.querySelector('.variante-row');
+        if (primeira) {
+          const c1 = primeira.querySelector('.var-c1');
+          const c2 = primeira.querySelector('.var-c2');
+          const c3 = primeira.querySelector('.var-c3');
+          if (c1 && d.corPrincipalId)   c1.value = d.corPrincipalId;
+          if (c2 && d.corSecundariaId)  c2.value = d.corSecundariaId;
+          if (c3 && d.corTerciariaId)   c3.value = d.corTerciariaId;
+          aplicou = true;
+        }
       }
     }
     // Aplica tecido principal na primeira linha de Tecidos (cria se não existir)
@@ -1718,6 +1729,7 @@ function addVarianteRow(data = {}) {
     <div class="field"><input type="text" value="Var ${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
     <div class="field"><select class="var-c1">${corOptions(data.cor1)}</select></div>
     <div class="field"><select class="var-c2">${corOptions(data.cor2)}</select></div>
+    <div class="field"><select class="var-c3">${corOptions(data.cor3)}</select></div>
     <div class="field" style="display:flex;gap:4px;">
       <input type="text" class="var-obs" value="${esc(data.obs||'')}" placeholder="observação">
       <button type="button" class="btn small danger" onclick="this.closest('.variante-row').remove(); reindexVariantes()">✕</button>
@@ -1958,13 +1970,15 @@ function coletaOS() {
   const variantes = Array.from(document.querySelectorAll('#variantes-rows .variante-row')).map((r, i) => {
     const c1 = r.querySelector('.var-c1');
     const c2 = r.querySelector('.var-c2');
+    const c3 = r.querySelector('.var-c3');
     return {
       num: i + 1,
       cor1: c1.value, cor1Nome: c1.options[c1.selectedIndex]?.text || '',
       cor2: c2.value, cor2Nome: c2.options[c2.selectedIndex]?.text || '',
+      cor3: c3 ? c3.value : '', cor3Nome: c3 ? (c3.options[c3.selectedIndex]?.text || '') : '',
       obs: r.querySelector('.var-obs').value
     };
-  }).filter(v => v.cor1 || v.cor2);
+  }).filter(v => v.cor1 || v.cor2 || v.cor3);
 
   const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
     const mat = r.querySelector('.comp-mat');
@@ -2318,6 +2332,7 @@ function renderPrintSheet(o) {
       <td class="var-head" style="text-align:center;width:36px;">VAR ${i+1}</td>
       <td class="cor-cell">${v?.cor1Nome && v.cor1Nome !== '—' ? esc(v.cor1Nome) : '—'}</td>
       <td class="cor-cell">${v?.cor2Nome && v.cor2Nome !== '—' ? esc(v.cor2Nome) : '—'}</td>
+      <td class="cor-cell">${v?.cor3Nome && v.cor3Nome !== '—' ? esc(v.cor3Nome) : '—'}</td>
     </tr>`;
   }
 
@@ -2431,8 +2446,8 @@ function renderPrintSheet(o) {
         <!-- CORES -->
         <table class="side-table cores-tab" style="border-top:none;">
           <thead>
-            <tr><th colspan="3" class="subhead">Cores do modelo</th></tr>
-            <tr><th style="width:40px;">Var</th><th>Cor 1 (principal)</th><th>Cor 2 (cordão/linha)</th></tr>
+            <tr><th colspan="4" class="subhead">Cores do modelo</th></tr>
+            <tr><th style="width:40px;">Var</th><th>Cor 1 (principal)</th><th>Cor 2</th><th>Cor 3</th></tr>
           </thead>
           <tbody>${variantesHtml}</tbody>
         </table>

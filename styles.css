@@ -359,7 +359,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   align-items: end;
 }
 .tecido-row { grid-template-columns: 40px 1fr 90px 90px 90px; }
-.variante-row { grid-template-columns: 60px 1fr 1fr 1fr; }
+.variante-row { grid-template-columns: 60px 1fr 1fr 1fr 1fr; }
 .componente-row { grid-template-columns: 140px 1fr 1fr; }
 .custo-row { grid-template-columns: 1fr 120px; }
 
