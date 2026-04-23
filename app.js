@@ -816,22 +816,50 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
       </div>
       <div style="margin-top:14px;">
-        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Enfesto por tipo de tecido (opcional)</label>
-        <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">Na Nova OS, os valores são preenchidos automaticamente conforme a categoria do tecido principal. Todos opcionais — deixe em branco o que não usar.</div>
-        ${['malha','moletom','outro'].map(cat => {
-          const label = { malha: 'Malha (camiseta)', moletom: 'Moletom', outro: 'Outro / Padrão' }[cat];
-          const atual = (item.enfestos && item.enfestos[cat]) || {};
-          const legadoComp = cat === 'outro' ? (item.enfestoComprimento || '') : '';
-          const legadoLarg = cat === 'outro' ? (item.enfestoLargura || '') : '';
-          return `
-          <div style="margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
-            <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px;">${label}</div>
-            <div class="form-grid cols-2">
-              <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-grade-comp-${cat}" value="${esc(atual.comp || legadoComp || '')}" placeholder="Ex.: 6,50"></div>
-              <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-grade-larg-${cat}" value="${esc(atual.larg || legadoLarg || '')}" placeholder="Ex.: 1,80"></div>
-            </div>
-          </div>`;
-        }).join('')}
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Fases do enfesto</label>
+        <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
+          Peças básicas/unicolor usam só a Fase 1. Bicolor → Fase 1 e 2. Tricolor → Fase 1, 2 e 3.
+          Cada fase tem seu próprio tecido, cor e dimensões.
+        </div>
+        ${(() => {
+          const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
+            `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
+          const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
+            `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+          // Retrocompat: se não houver fases ainda, herdar valores antigos na Fase 1
+          const fasesSalvas = Array.isArray(item.fases) && item.fases.length ? item.fases : null;
+          const legacy = fasesSalvas ? null : {
+            comp: item.enfestoComprimento
+                   || item.enfestos?.outro?.comp
+                   || item.enfestos?.malha?.comp
+                   || item.enfestos?.moletom?.comp
+                   || '',
+            larg: item.enfestoLargura
+                   || item.enfestos?.outro?.larg
+                   || item.enfestos?.malha?.larg
+                   || item.enfestos?.moletom?.larg
+                   || ''
+          };
+          return [1, 2, 3].map(n => {
+            const f = fasesSalvas ? (fasesSalvas[n-1] || {}) : (n === 1 ? (legacy || {}) : {});
+            const badge = n === 1 ? 'obrigatória (peças unicolor usam só esta)'
+                       : n === 2 ? 'opcional (bicolor)'
+                       : 'opcional (tricolor)';
+            return `
+            <div style="margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+                <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">FASE ${n}</span>
+                <span style="font-size:11px;color:var(--ink-3);font-style:italic;">${badge}</span>
+              </div>
+              <div class="form-grid cols-2">
+                <div class="field"><label>Tecido</label><select id="m-fase-tec-${n}">${tecOpts(f.tecidoId)}</select></div>
+                <div class="field"><label>Cor</label><select id="m-fase-cor-${n}">${corOpts(f.corId)}</select></div>
+                <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-fase-comp-${n}" value="${esc(f.comp || '')}" placeholder="Ex.: 6,50"></div>
+                <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-fase-larg-${n}" value="${esc(f.larg || '')}" placeholder="Ex.: 1,80"></div>
+              </div>
+            </div>`;
+          }).join('');
+        })()}
       </div>`;
   }
   else if (tipo === 'desenho') {
@@ -1097,20 +1125,19 @@ async function salvarCadastro() {
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
-    item.enfestos = {};
-    ['malha','moletom','outro'].forEach(cat => {
-      item.enfestos[cat] = {
-        comp: v('m-grade-comp-' + cat),
-        larg: v('m-grade-larg-' + cat)
-      };
-    });
-    // Compatibilidade com código antigo — usa o "outro" como fallback, ou o primeiro preenchido
-    const fallback = item.enfestos.outro.comp ? item.enfestos.outro
-                  : item.enfestos.malha.comp ? item.enfestos.malha
-                  : item.enfestos.moletom.comp ? item.enfestos.moletom
-                  : { comp: '', larg: '' };
-    item.enfestoComprimento = fallback.comp;
-    item.enfestoLargura = fallback.larg;
+    item.fases = [1, 2, 3].map(n => ({
+      ordem: n,
+      tecidoId: v('m-fase-tec-'+n),
+      corId: v('m-fase-cor-'+n),
+      comp: v('m-fase-comp-'+n),
+      larg: v('m-fase-larg-'+n)
+    })).filter(f => f.tecidoId || f.corId || f.comp || f.larg);
+    // Retrocompatibilidade: usa a primeira fase para os campos legados
+    const f1 = item.fases[0] || {};
+    item.enfestoComprimento = f1.comp || '';
+    item.enfestoLargura = f1.larg || '';
+    // Remove a estrutura antiga "enfestos" (por categoria) que foi substituída pelas fases
+    delete item.enfestos;
   }
   else if (tipo === 'desenho') {
     if (!v('m-codigo')) return toast('Código obrigatório', 'err');
@@ -1293,7 +1320,9 @@ function renderGrades() {
     const dist = ['pp','p','m','g','gg','g1','g2','g3']
       .filter(x => t[x] > 0).map(x => `${x.toUpperCase()}:${t[x]}`).join(' · ');
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
-    return `<tr><td><strong>${esc(g.nome)}</strong></td><td><code style="font-size:11px">${dist||'—'}</code></td>
+    const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
+    const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
+    return `<tr><td><strong>${esc(g.nome)}</strong>${fasesBadge}</td><td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   }).join('');
 }
@@ -1823,23 +1852,44 @@ function aplicarGradePreset() {
   });
   document.getElementById('f-grade-desc').value = g.nome;
 
-  // Descobre a categoria do primeiro tecido selecionado (se houver)
-  const primeiroTecSel = document.querySelector('#tecidos-rows .tec-sel');
-  const tecId = primeiroTecSel?.value || '';
-  const tec = tecId ? STATE.tecidos.find(x => x.id === tecId) : null;
-  const cat = tec?.categoria || 'outro';
+  const fases = Array.isArray(g.fases) ? g.fases : [];
 
-  // Cascata: categoria escolhida → outro → legado (grades antigas)
-  const e = g.enfestos || {};
-  const par = (e[cat] && (e[cat].comp || e[cat].larg)) ? e[cat]
-            : (e.outro && (e.outro.comp || e.outro.larg)) ? e.outro
-            : { comp: g.enfestoComprimento || '', larg: g.enfestoLargura || '' };
+  // Aplica Fase 1 no Enfesto (primeiro par comp/larg)
+  const f1 = fases[0] || { comp: g.enfestoComprimento || '', larg: g.enfestoLargura || '' };
+  if (f1.comp) document.getElementById('f-enf-comp').value = f1.comp;
+  if (f1.larg) document.getElementById('f-enf-larg').value = f1.larg;
 
-  if (par.comp) document.getElementById('f-enf-comp').value = par.comp;
-  if (par.larg) document.getElementById('f-enf-larg').value = par.larg;
+  // Popula linhas de Tecido com os tecidos das fases (se houver)
+  if (fases.length && fases.some(f => f.tecidoId)) {
+    const tecCont = document.getElementById('tecidos-rows');
+    if (tecCont) {
+      tecCont.innerHTML = '';
+      fases.forEach(f => {
+        if (f.tecidoId) addTecidoRow({ tecidoId: f.tecidoId });
+      });
+    }
+  }
+
+  // Popula Variante 1 com cores das fases (Cor 1 = Fase 1, Cor 2 = Fase 2, Cor 3 = Fase 3)
+  if (fases.length && fases.some(f => f.corId)) {
+    const varCont = document.getElementById('variantes-rows');
+    if (varCont) {
+      if (!varCont.querySelector('.variante-row')) addVarianteRow();
+      const primeira = varCont.querySelector('.variante-row');
+      if (primeira) {
+        const slots = ['.var-c1', '.var-c2', '.var-c3'];
+        fases.slice(0, 3).forEach((f, i) => {
+          const sel = primeira.querySelector(slots[i]);
+          if (sel && f.corId) sel.value = f.corId;
+        });
+      }
+    }
+  }
+
   atualizarCalculosEnfesto();
-  const rotulo = { malha: 'malha', moletom: 'moletom', outro: 'padrão' }[cat];
-  toast(`Grade aplicada (enfesto ${rotulo})`, 'ok');
+  const n = fases.length;
+  const msg = n <= 1 ? 'Grade aplicada' : `Grade aplicada — Fase 1 no enfesto, ${n} fases no total`;
+  toast(msg, 'ok');
 }
 
 /* ========================================================= */
