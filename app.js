@@ -3227,8 +3227,31 @@ async function excluirOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
+function ordenarComponentesPorFase(comps) {
+  // Ordem canônica: moletom (0) → forro malha (1) → punhos ribana (2) → barra ribana (3) → outros
+  const prioridade = (c) => {
+    const material = c.material || '';
+    if (!material.startsWith('T:')) return 90;
+    const tec = STATE.tecidos.find(t => t.id === material.slice(2));
+    if (!tec) return 91;
+    const cat = categoriaEfetivaTecido(tec);
+    if (cat === 'moletom') return 0;
+    if (cat === 'malha') return 1;
+    if (cat === 'ribana') {
+      const nome = (c.nome || '').toLowerCase();
+      if (nome.includes('punho')) return 2;
+      if (nome.includes('barra')) return 3;
+      return 4;
+    }
+    return 50;
+  };
+  return [...comps].map((c, i) => ({ c, i, p: prioridade(c) }))
+    .sort((a, b) => a.p - b.p || a.i - b.i)
+    .map(x => x.c);
+}
+
 function renderComponentesDetalheBox(o) {
-  const comps = o.componentes || [];
+  const comps = ordenarComponentesPorFase(o.componentes || []);
   if (!comps.length) return '';
   // Quais tamanhos mostrar? Só os que têm peças > 0 em alguma linha (ou que estão na grade)
   const tamanhos = ['p','m','g','gg','g1','g2','g3'];
@@ -3422,7 +3445,7 @@ function renderPrintSheet(o) {
   const g = o.grade || {};
   const tecs = o.tecidos || [];
   const vars_ = o.variantes || [];
-  const comps = o.componentes || [];
+  const comps = ordenarComponentesPorFase(o.componentes || []);
   const avs = o.aviamentos || [];
   // Tabela de tecidos (até 5 linhas)
   let tecidoRows = '';
