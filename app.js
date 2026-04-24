@@ -2704,9 +2704,27 @@ function calcularCamadasParaProducao() {
     toast('Preencha a grade antes', 'err');
     return;
   }
-  const multiplier = multiplicadorDominante();
-  // Camadas necessárias = max (por tamanho) de ceil(target / (qtd × multiplier))
-  // Isso garante que o tamanho menos representado na grade também atinja o target.
+  // Usa multiplicador da categoria PRINCIPAL (moletom/malha), não da ribana.
+  // Peças-alvo refere-se a blusas/camisetas prontas; ribana é aviamento.
+  const gradeId = document.getElementById('f-grade-preset')?.value;
+  const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
+  const fases = grade?.fases || [];
+  const temMoletom = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom');
+  const temMalha = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha');
+  let multiplier = 1;
+  if (temMoletom) multiplier = MULTIPLICADOR_PECAS.moletom || 1;
+  else if (temMalha) multiplier = MULTIPLICADOR_PECAS.malha || 1;
+  else {
+    // Fallback: categoria dos tecidos-rows, excluindo ribana
+    document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
+      if (!sel.value) return;
+      const tec = STATE.tecidos.find(t => t.id === sel.value);
+      const cat = categoriaEfetivaTecido(tec);
+      if (cat === 'ribana') return;
+      const m = MULTIPLICADOR_PECAS[cat] || 1;
+      if (m > multiplier) multiplier = m;
+    });
+  }
   const minQtd = Math.min(...qtdsPorTamanho);
   const camadas = Math.ceil(target / (minQtd * multiplier));
   document.getElementById('f-enf-camadas').value = camadas;
