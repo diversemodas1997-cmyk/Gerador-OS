@@ -1405,9 +1405,25 @@ async function salvarCadastro() {
   }
   else if (tipo === 'funcao') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
-    item.nome = v('m-nome');
+    const nomeAntigo = editId ? (item.nome || '') : '';
+    const nomeNovo = v('m-nome');
+    item.nome = nomeNovo;
     item.desc = v('m-desc');
     item.acoes = v('m-acoes');
+    // Se o nome mudou, propaga pra todas as pessoas da equipe que usavam o nome antigo
+    if (editId && nomeAntigo && nomeAntigo !== nomeNovo) {
+      let migradas = 0;
+      (STATE.equipe || []).forEach(p => {
+        if ((p.funcao || '').trim().toLowerCase() === nomeAntigo.trim().toLowerCase()) {
+          p.funcao = nomeNovo;
+          migradas++;
+        }
+      });
+      if (migradas > 0) {
+        await saveState('equipe');
+        toast(`${migradas} pessoa(s) da equipe atualizada(s)`, 'ok');
+      }
+    }
   }
   else if (tipo === 'etapa') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
