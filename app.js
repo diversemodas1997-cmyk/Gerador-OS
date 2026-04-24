@@ -2555,8 +2555,11 @@ function atualizarCalculosEnfesto() {
           detalhes.push(`${c.nome||'?'} ×${qty}`);
         });
         const totalRibana = totalPrincipal * sumQty;
+        // 1 camada de ribana por tamanho produz material pra 2 blusas (multRib).
+        // Camadas ribana sugeridas = blusas totais / (grade × 2)
+        // Ex: 360 blusas / (6 × 2) = 30 camadas.
         const multRib = MULTIPLICADOR_PECAS.ribana || 2;
-        const camadasRib = gradeTotal > 0 ? Math.ceil(totalRibana / (gradeTotal * multRib)) : 0;
+        const camadasRib = gradeTotal > 0 ? Math.ceil(totalPrincipal / (gradeTotal * multRib)) : 0;
         ribanaInfo = { total: totalRibana, camadas: camadasRib, sumQty, detalhes };
       }
 
@@ -2578,7 +2581,7 @@ function atualizarCalculosEnfesto() {
                 </div>
                 <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
                   Camadas de ribana sugeridas: <strong>${ribanaInfo.camadas}</strong>
-                  (grade ${gradeTotal} × 2 peças/camada)
+                  (1 camada ribana = 2 blusas por tamanho; ${totalPrincipal} blusas ÷ ${gradeTotal*2})
                 </div>
               </div>`;
           }
