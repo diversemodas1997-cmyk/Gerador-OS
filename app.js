@@ -3621,7 +3621,6 @@ function renderPrintSheet(o) {
     <!-- CABEÇALHO -->
     <div class="sheet-header">
       <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>
-      <div class="cell"><span class="mini">Desenho Técnico</span></div>
       <div class="cell"><span class="mini">Coleção</span>${esc(o.colecaoNome || '—')}</div>
       <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
       <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
@@ -3649,7 +3648,10 @@ function renderPrintSheet(o) {
     <!-- CORPO -->
     <div class="sheet-body">
       <div class="sheet-left">
-        <div class="desenho-area">${imgHtml}</div>
+        <div class="desenho-area">
+          <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
+          ${imgHtml}
+        </div>
       </div>
 
       <div class="sheet-right">
