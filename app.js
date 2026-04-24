@@ -2374,14 +2374,18 @@ function aplicarGradePreset() {
 
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
+    // Monta array de fases (1..maxOrd) pra calcular papéis
+    const fasesOrd = [];
+    for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
+    const papeis = calcularPapeisFases(fasesOrd);
     const prefills = [];
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
-      const tec = f.tecidoId ? STATE.tecidos.find(t => t.id === f.tecidoId) : null;
+      const papel = papeis[n-1] || { label: '' };
       const corIdEfetiva = f.corId || corFallbackPorOrdem(n);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
-      // Monta nome: "Tecido · Cor" / "Tecido" / "Cor" / vazio
-      const partes = [tec?.nome, cor?.nome].filter(Boolean);
+      // Label: papel (Moletom / Forro de capuz / Punhos / Barra) · Cor
+      const partes = [papel.label, cor?.nome].filter(Boolean);
       prefills.push({
         comp: f.comp || '',
         larg: f.larg || '',
@@ -2436,6 +2440,32 @@ function aplicarGradePreset() {
 const LIMITE_CAMADAS = { malha: 80, moletom: 30, ribana: 80, outro: Infinity };
 const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
+
+/**
+ * Determina papel/nome de cada fase em função do tecido e da posição na grade.
+ * - Fase com moletom → "Moletom"
+ * - Fase com malha, SE a grade também tem moletom → "Forro de capuz"
+ * - Fase com ribana → 1ª = "Punhos", 2ª = "Barra", demais = "Ribana N"
+ * - Fallback: nome da categoria
+ * Retorna array paralelo a `fases` com { papel, label, categoria }.
+ */
+function calcularPapeisFases(fases) {
+  const tecidosMap = new Map(STATE.tecidos.map(t => [t.id, t]));
+  const temMoletom = fases.some(f => tecidosMap.get(f.tecidoId)?.categoria === 'moletom');
+  let contRib = 0;
+  return fases.map(f => {
+    const t = tecidosMap.get(f.tecidoId);
+    const cat = t?.categoria || '';
+    if (cat === 'moletom') return { papel: 'moletom', label: 'Moletom', categoria: cat };
+    if (cat === 'malha' && temMoletom) return { papel: 'forro_capuz', label: 'Forro de capuz', categoria: cat };
+    if (cat === 'ribana') {
+      contRib++;
+      const label = contRib === 1 ? 'Punhos' : contRib === 2 ? 'Barra' : `Ribana ${contRib}`;
+      return { papel: 'ribana_'+contRib, label, categoria: cat };
+    }
+    return { papel: cat || 'outro', label: LABEL_CATEGORIA[cat] || (t?.nome || ''), categoria: cat };
+  });
+}
 
 function multiplicadorDominante() {
   const rows = document.querySelectorAll('#tecidos-rows .tec-sel');
@@ -2518,7 +2548,13 @@ function atualizarCalculosEnfesto() {
         if (tec?.categoria) categoriasUsadas.add(tec.categoria);
       });
     }
-    // Se ainda não identificou categoria, mostra um único total genérico
+    // Coletar fases da grade selecionada (se houver) pra calcular papéis
+    const gradeIdSel = document.getElementById('f-grade-preset')?.value;
+    const gradeSel = gradeIdSel ? STATE.grades.find(g => g.id === gradeIdSel) : null;
+    const fasesGrade = gradeSel?.fases || [];
+    const papeis = calcularPapeisFases(fasesGrade);
+
+    // Se nem fases nem tecidos, mostra total genérico
     if (!categoriasUsadas.size) {
       const mult = multiplicadorDominante();
       const totalPecas = gradeTotal * camadas * mult;
@@ -2528,79 +2564,102 @@ function atualizarCalculosEnfesto() {
           <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
         </div>`;
     } else {
-      // Categoria principal (corpo da peça): moletom OU malha
-      const catPrincipal = categoriasUsadas.has('moletom') ? 'moletom'
-                         : categoriasUsadas.has('malha') ? 'malha' : null;
-      const totalPrincipal = catPrincipal
-        ? gradeTotal * camadas * (MULTIPLICADOR_PECAS[catPrincipal] || 1)
-        : 0;
+      // Agrupa fases por "grupo de total": moletom / forro_capuz / ribana (combina punhos+barras)
+      const temMoletom = papeis.some(p => p.papel === 'moletom');
+      const temForro = papeis.some(p => p.papel === 'forro_capuz');
+      const temRibana = papeis.some(p => (p.papel || '').startsWith('ribana_'));
 
-      // Calcula total ribana via componentes do desenho, se aplicável
-      let ribanaInfo = null;
-      if (categoriasUsadas.has('ribana') && catPrincipal) {
-        const desenhoId = document.getElementById('f-desenho')?.value;
-        const desenho = desenhoId ? STATE.desenhos.find(x => x.id === desenhoId) : null;
-        const comps = Array.isArray(desenho?.componentes) ? desenho.componentes : [];
-        const ribanaComps = comps.filter(c => {
-          if (!c.tecidoId) return false;
-          const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
-          return tec?.categoria === 'ribana';
-        });
-        let sumQty = 0;
-        const detalhes = [];
-        ribanaComps.forEach(c => {
-          const nome = (c.nome || '').toLowerCase();
-          const qty = (nome.includes('manga') || nome.includes('punho')) ? 2 : 1;
-          sumQty += qty;
-          detalhes.push(`${c.nome||'?'} ×${qty}`);
-        });
-        const totalRibana = totalPrincipal * sumQty;
-        // 1 camada de ribana por tamanho produz material pra 2 blusas (multRib).
-        // Camadas ribana sugeridas = blusas totais / (grade × 2)
-        // Ex: 360 blusas / (6 × 2) = 30 camadas.
-        const multRib = MULTIPLICADOR_PECAS.ribana || 2;
-        const camadasRib = gradeTotal > 0 ? Math.ceil(totalPrincipal / (gradeTotal * multRib)) : 0;
-        ribanaInfo = { total: totalRibana, camadas: camadasRib, sumQty, detalhes };
-      }
-
-      // Um total por categoria — ordem: malha, moletom, ribana, outro
-      const ordem = ['malha', 'moletom', 'ribana', 'outro'];
-      const linhas = ordem
-        .filter(cat => categoriasUsadas.has(cat))
-        .map(cat => {
-          const label = LABEL_CATEGORIA[cat] || cat;
-          if (cat === 'ribana' && ribanaInfo) {
-            const hint = ribanaInfo.detalhes.length
-              ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(ribanaInfo.detalhes.join(' + '))})</span>`
-              : '';
-            return `
-              <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                  <span>Total ${label}:${hint}</span>
-                  <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${ribanaInfo.total} peças</strong>
-                </div>
-                <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
-                  Camadas de ribana sugeridas: <strong>${ribanaInfo.camadas}</strong>
-                  (1 camada ribana = 2 blusas por tamanho; ${totalPrincipal} blusas ÷ ${gradeTotal*2})
-                </div>
-              </div>`;
-          }
+      // Fallback pras categorias encontradas nos tecidos-rows (sem grade)
+      if (!papeis.length) {
+        const grupos = [];
+        if (categoriasUsadas.has('moletom')) grupos.push({ papel: 'moletom', label: 'Moletom' });
+        if (categoriasUsadas.has('malha')) grupos.push({ papel: 'forro_capuz', label: 'Forro de capuz' });
+        if (categoriasUsadas.has('ribana')) grupos.push({ papel: 'ribana', label: 'Punhos e Barras' });
+        if (!grupos.length) grupos.push({ papel: 'outro', label: 'Total' });
+        // Renderização básica
+        const linhas = grupos.map(gr => {
+          const cat = gr.papel === 'forro_capuz' ? 'malha' : gr.papel === 'ribana' ? 'ribana' : gr.papel;
           const mult = MULTIPLICADOR_PECAS[cat] || 1;
           const total = gradeTotal * camadas * mult;
-          const multText = mult > 1 ? ` <span style="font-size:11px;color:var(--ink-3);">(×${mult} · 1 camada = ${mult} peças)</span>` : '';
-          return `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
-              <span>Total ${label}:${multText}</span>
-              <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${total} peças</strong>
-            </div>`;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
+            <span>Total ${gr.label}:</span>
+            <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${total} peças</strong>
+          </div>`;
         }).join('');
-      const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
-        .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
-        .filter(x => x.qtd > 0)
-        .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}`)
-        .join(' · ');
-      calcBox.innerHTML = `${linhas}
-        <div style="margin-top:8px;font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>`;
+        calcBox.innerHTML = linhas;
+      } else {
+        // Total moletom: soma fases com papel moletom (mesma grade × camadas)
+        const totalMoletom = temMoletom ? (gradeTotal * camadas * (MULTIPLICADOR_PECAS.moletom || 1)) : 0;
+        // Total forro de capuz: fases de malha na grade que tem moletom (mult×1 porque é forro direto)
+        const totalForro = temForro ? (gradeTotal * camadas * 1) : 0;
+
+        // Ribana (punhos+barras) — total via componentes do desenho
+        let ribanaInfo = null;
+        if (temRibana) {
+          const referencia = totalMoletom || totalForro;
+          const desenhoId = document.getElementById('f-desenho')?.value;
+          const desenho = desenhoId ? STATE.desenhos.find(x => x.id === desenhoId) : null;
+          const comps = Array.isArray(desenho?.componentes) ? desenho.componentes : [];
+          const ribanaComps = comps.filter(c => {
+            if (!c.tecidoId) return false;
+            const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
+            return tec?.categoria === 'ribana';
+          });
+          let sumQty = 0;
+          const detalhes = [];
+          ribanaComps.forEach(c => {
+            const nome = (c.nome || '').toLowerCase();
+            const qty = (nome.includes('manga') || nome.includes('punho')) ? 2 : 1;
+            sumQty += qty;
+            detalhes.push(`${c.nome||'?'} ×${qty}`);
+          });
+          const totalRibana = referencia * sumQty;
+          const multRib = MULTIPLICADOR_PECAS.ribana || 2;
+          const camadasRib = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * multRib)) : 0;
+          ribanaInfo = { total: totalRibana, camadas: camadasRib, sumQty, detalhes };
+        }
+
+        const blocos = [];
+        if (temMoletom) {
+          blocos.push(`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
+              <span>Total Moletom: <span style="font-size:11px;color:var(--ink-3);">(1 camada = 1 blusa/tamanho)</span></span>
+              <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalMoletom} peças</strong>
+            </div>`);
+        }
+        if (temForro) {
+          blocos.push(`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
+              <span>Total Forro de capuz: <span style="font-size:11px;color:var(--ink-3);">(malha algodão)</span></span>
+              <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalForro} peças</strong>
+            </div>`);
+        }
+        if (temRibana && ribanaInfo) {
+          const hint = ribanaInfo.detalhes.length
+            ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(ribanaInfo.detalhes.join(' + '))})</span>`
+            : '';
+          const refBlusas = totalMoletom || totalForro;
+          blocos.push(`
+            <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Total Punhos e Barras:${hint}</span>
+                <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${ribanaInfo.total} peças</strong>
+              </div>
+              <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
+                Camadas de ribana sugeridas (por enfesto): <strong>${ribanaInfo.camadas}</strong>
+                (1 camada = 2 blusas/tamanho; ${refBlusas} blusas ÷ ${gradeTotal*2})
+              </div>
+            </div>`);
+        }
+
+        const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+          .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
+          .filter(x => x.qtd > 0)
+          .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}`)
+          .join(' · ');
+        calcBox.innerHTML = `${blocos.join('')}
+          <div style="margin-top:8px;font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>`;
+      }
     }
   } else {
     calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
