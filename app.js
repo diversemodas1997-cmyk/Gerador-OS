@@ -2628,19 +2628,23 @@ function atualizarCalculosEnfesto() {
         const desenhoCalc = desenhoIdCalc ? STATE.desenhos.find(x => x.id === desenhoIdCalc) : null;
         const compsCalc = Array.isArray(desenhoCalc?.componentes) ? desenhoCalc.componentes : [];
 
-        // Total forro de capuz: mesma regra da ribana (baseado em componentes do desenho)
+        // Total forro de capuz: só componentes cujo NOME contém a palavra-chave do label da fase
+        // (ex.: label "Forro de capuz" → palavra "forro" → só "Forro do capuz" entra, Viés fica de fora)
         let forroInfo = null;
         if (temForro) {
+          const labelForroFase = papeis.find(p => p.papel === 'forro_capuz')?.label || 'Forro';
+          const keyForro = (labelForroFase || '').toLowerCase().split(/\s+/)[0].replace(/s$/, '');
           const forroComps = compsCalc.filter(c => {
             const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
-            return tec && categoriaEfetivaTecido(tec) === 'malha';
+            if (!tec || categoriaEfetivaTecido(tec) !== 'malha') return false;
+            const nome = (c.nome || '').toLowerCase();
+            return keyForro && nome.includes(keyForro);
           });
           let qtyForro = 0;
           const detalhesF = [];
           forroComps.forEach(c => {
             const v = parseFloat(c.qtdPorPeca);
-            const n = (c.nome || '').toLowerCase();
-            const qty = v > 0 ? v : ((n.includes('manga') || n.includes('punho')) ? 2 : 1);
+            const qty = v > 0 ? v : 1;
             qtyForro += qty;
             detalhesF.push(`${c.nome || '?'} ×${qty}`);
           });
@@ -2831,13 +2835,17 @@ function calcularCamadasParaProducao() {
     if (lbl) qtyPorLabelRibana[lbl] += qtd;
   });
 
-  // qty por blusa de componentes de forro (malha quando tem moletom)
+  // qty por blusa de componentes de forro — só os que combinam com a palavra-chave do label da fase forro
   let qtyForro = 0;
   if (temMoletom) {
+    const labelForroFase = papeis.find(p => p.papel === 'forro_capuz')?.label || 'Forro';
+    const keyForro = (labelForroFase || '').toLowerCase().split(/\s+/)[0].replace(/s$/, '');
     qtyForro = comps
       .filter(c => {
         const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
-        return tec && categoriaEfetivaTecido(tec) === 'malha';
+        if (!tec || categoriaEfetivaTecido(tec) !== 'malha') return false;
+        const nome = (c.nome || '').toLowerCase();
+        return keyForro && nome.includes(keyForro);
       })
       .reduce((s, c) => s + qtdDoComp(c), 0);
   }
