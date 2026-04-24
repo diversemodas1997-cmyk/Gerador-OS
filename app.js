@@ -3534,14 +3534,16 @@ function renderPrintSheet(o) {
       <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
     </div>
 
+    <!-- LINHA TERCIÁRIA: designer + ficha técnica -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Designer</strong><br>${esc(o.designerNome || o.designer || '—')}</div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Ficha Técnica</strong><br>${esc(o.ftecNome || o.ftec || '—')}</div>
+    </div>
+
     <!-- CORPO -->
     <div class="sheet-body">
       <div class="sheet-left">
         <div class="desenho-area">${imgHtml}</div>
-        <div class="desenho-footer">
-          <div><strong>Designer</strong>${esc(o.designerNome || o.designer || '—')}</div>
-          <div><strong>Ficha Técnica</strong>${esc(o.ftecNome || o.ftec || '—')}</div>
-        </div>
       </div>
 
       <div class="sheet-right">
