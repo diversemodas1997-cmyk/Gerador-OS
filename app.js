@@ -3213,34 +3213,8 @@ function renderAviamentosDetalheBox(o) {
   `;
 }
 
-function renderFasesBox(o) {
-  const fases = (o.fases || []).filter(f => f && (f.tecidoNome || f.corNome || f.comp || f.larg));
-  if (!fases.length) return '';
-  const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
-  return `
-    <table class="side-table" style="border-top:none;">
-      <thead>
-        <tr><th colspan="5" class="subhead" style="background:#ffe0b2;">Fases do enfesto</th></tr>
-        <tr>
-          <th style="width:30px;font-size:6.5pt;">Fase</th>
-          <th style="font-size:6.5pt;">Tecido</th>
-          <th style="font-size:6.5pt;">Cor</th>
-          <th style="font-size:6.5pt;">Compr.</th>
-          <th style="font-size:6.5pt;">Largura</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${fases.map(f => `<tr>
-          <td style="text-align:center;font-weight:700;">${esc(String(f.ordem || '—'))}</td>
-          <td>${esc(f.tecidoNome) || '—'}</td>
-          <td>${esc(f.corNome) || '—'}</td>
-          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${f.comp ? fmt(f.comp)+' m' : '—'}</td>
-          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${f.larg ? fmt(f.larg)+' m' : '—'}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  `;
-}
+// Desabilitada: info mesclada em renderEnfestoBox (tabela única de Enfestos com Fase/Nome/Cor/Comp/Larg).
+function renderFasesBox(o) { return ''; }
 
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
@@ -3256,32 +3230,51 @@ function renderEnfestoBox(o) {
   const totalPecas = (g.total || 0) * camadas;
   const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
 
-  // linhas por tamanho com multiplicação
+  // Cor de cada fase: vem de o.fases por ordem (fallback '')
+  const fasesPorOrdem = {};
+  (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
+
+  // Linhas por enfesto — Fase / Nome / Cor / Comp / Larg
+  const linhasEnfestos = blocos.map((b, i) => {
+    const ord = b.ordem || (i+1);
+    const nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '—';
+    const cor = fasesPorOrdem[ord]?.corNome || '—';
+    return `<tr>
+      <td style="text-align:center;font-weight:700;">${ord}</td>
+      <td>${esc(nomeEnf)}</td>
+      <td>${esc(cor)}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // Linhas por tamanho (Tam / Grade / ×Cam / Peças)
   const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
   const linhasPorTam = tamanhos
     .filter(t => (g[t]||0) > 0)
-    .map(t => `<tr><td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td><td style="text-align:center;">${g[t]}</td><td style="text-align:center;">×${camadas}</td><td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td></tr>`)
-    .join('');
-
-  const blocosRows = blocos.map((b, i) => {
-    const rotulo = `ENF ${b.ordem || (i+1)}${b.nomeTecido ? ' · '+esc(b.nomeTecido) : ''}`;
-    return `
-    <tr>
-      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">${rotulo}</td>
-      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Comp: <strong>${fmt(b.comp)} m</strong></td>
-      <td colspan="2" style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Larg: <strong>${fmt(b.larg)} m</strong></td>
-    </tr>`;
-  }).join('');
+    .map(t => `<tr>
+      <td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td>
+      <td style="text-align:center;">${g[t]}</td>
+      <td style="text-align:center;">×${camadas}</td>
+      <td colspan="2" style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td>
+    </tr>`).join('');
 
   return `
     <table class="side-table" style="border-top:none;">
       <thead>
-        <tr><th colspan="4" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr><th colspan="5" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr>
+          <th style="width:30px;font-size:6.5pt;">Fase</th>
+          <th style="font-size:6.5pt;">Enfesto</th>
+          <th style="font-size:6.5pt;">Cor</th>
+          <th style="font-size:6.5pt;">Compr.</th>
+          <th style="font-size:6.5pt;">Largura</th>
+        </tr>
       </thead>
       <tbody>
-        ${blocosRows}
+        ${linhasEnfestos}
         <tr>
-          <td colspan="4" style="padding:3px 5px;background:#f4f4f4;">
+          <td colspan="5" style="padding:3px 5px;background:#f4f4f4;">
             <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Camadas</strong>
             <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:9pt;margin-left:6px;">${camadas || '—'}</span>
           </td>
@@ -3291,12 +3284,12 @@ function renderEnfestoBox(o) {
             <th style="font-size:6.5pt;">Tam.</th>
             <th style="font-size:6.5pt;">Grade</th>
             <th style="font-size:6.5pt;">×Cam.</th>
-            <th style="font-size:6.5pt;">Peças</th>
+            <th colspan="2" style="font-size:6.5pt;">Peças</th>
           </tr>
           ${linhasPorTam}
         ` : ''}
         <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
-          <td colspan="3" style="padding:3px 5px;">TOTAL ENFESTO</td>
+          <td colspan="4" style="padding:3px 5px;">TOTAL ENFESTO</td>
           <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${totalPecas} pç</td>
         </tr>
       </tbody>
