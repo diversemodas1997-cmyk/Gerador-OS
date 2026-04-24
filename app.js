@@ -1852,8 +1852,11 @@ function aplicarVinculosDesenho() {
       const cont = document.getElementById('componentes-rows');
       if (cont) {
         cont.innerHTML = '';
+        let totalRowsExtras = 0;
         compsDesenho.forEach(c => {
-          const cad = STATE.componentes.find(x => x.id === c.componenteId);
+          // Lookup robusto: por ID e, se falhar, por nome (caso os IDs tenham dessincronizado)
+          const cad = STATE.componentes.find(x => x.id === c.componenteId)
+                   || (c.nome ? STATE.componentes.find(x => x.nome === c.nome) : null);
           const coresCad = cad ? [cad.cor1Id, cad.cor2Id, cad.cor3Id].filter(Boolean) : [];
           const base = {
             nome: c.nome || cad?.nome || '',
@@ -1863,12 +1866,16 @@ function aplicarVinculosDesenho() {
           if (coresCad.length) {
             // Componente com cores cadastradas (basica/bicolor/tricolor): 1 row por cor
             coresCad.forEach(corId => addComponenteRow({ ...base, cor: corId }));
+            if (coresCad.length > 1) totalRowsExtras += coresCad.length - 1;
           } else {
             // Sem cores no cadastro — usa a cor salva no desenho como fallback
             addComponenteRow({ ...base, cor: c.corId || '' });
           }
         });
         aplicou = true;
+        if (totalRowsExtras > 0) {
+          toast(`${totalRowsExtras} linha(s) extra(s) criada(s) pelas cores dos componentes`, 'ok');
+        }
       }
     }
     // Aplica etapas padrão do desenho (marca + ordena)
