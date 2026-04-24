@@ -1087,9 +1087,33 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'componente') {
+    const tiposPeca = [
+      { v: '', lbl: '— sem categoria —' },
+      { v: 'camiseta', lbl: 'Camiseta' },
+      { v: 'blusa_moletom', lbl: 'Blusa Moletom' },
+      { v: 'outro', lbl: 'Outro' }
+    ];
+    const variacoes = [
+      { v: '', lbl: '— sem variação —' },
+      { v: 'basica', lbl: 'Básica' },
+      { v: 'bicolor', lbl: 'Bicolor' },
+      { v: 'tricolor', lbl: 'Tricolor' }
+    ];
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Capuz"></div>
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Mangas"></div>
+        <div class="field"><label>Tipo de peça</label>
+          <select id="m-comp-tipopeca">
+            ${tiposPeca.map(t => `<option value="${t.v}" ${item.tipoPeca===t.v?'selected':''}>${t.lbl}</option>`).join('')}
+          </select>
+          <div class="field-hint">Ajuda a separar componentes de camiseta e moletom</div>
+        </div>
+        <div class="field"><label>Variação</label>
+          <select id="m-comp-variacao">
+            ${variacoes.map(x => `<option value="${x.v}" ${item.variacao===x.v?'selected':''}>${x.lbl}</option>`).join('')}
+          </select>
+          <div class="field-hint">Básica = 1 cor · Bicolor = 2 cores · Tricolor = 3 cores</div>
+        </div>
         <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
       </div>`;
   }
@@ -1334,6 +1358,8 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.desc = v('m-desc');
+    item.tipoPeca = v('m-comp-tipopeca');
+    item.variacao = v('m-comp-variacao');
   }
 
   if (!editId) STATE[list].push(item);
@@ -1596,9 +1622,17 @@ function nomesFuncoesPorIds(ids) {
 
 function renderComponentesCad() {
   const tb = document.getElementById('tbl-componentes');
-  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
+  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
+  const labelTipo = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro' };
+  const labelVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
   tb.innerHTML = STATE.componentes.map(c => `
-    <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.desc)||'—'}</td>${acoesCell('componente', c.id)}</tr>`).join('');
+    <tr>
+      <td><strong>${esc(c.nome)}</strong></td>
+      <td>${c.tipoPeca ? `<span class="badge">${esc(labelTipo[c.tipoPeca]||c.tipoPeca)}</span>` : '—'}</td>
+      <td>${c.variacao ? `<span class="badge">${esc(labelVar[c.variacao]||c.variacao)}</span>` : '—'}</td>
+      <td>${esc(c.desc)||'—'}</td>
+      ${acoesCell('componente', c.id)}
+    </tr>`).join('');
 }
 
 function renderEtapasCad() {
