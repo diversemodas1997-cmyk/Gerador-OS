@@ -3336,10 +3336,6 @@ function renderAviamentosDetalheBox(o) {
       </thead>
       <tbody>
         ${linhas}
-        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
-          <td colspan="${2 + colsTam.length + 1}" style="padding:3px 5px;">TOTAL GERAL AVIAMENTOS</td>
-          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(totalGeral)} un</td>
-        </tr>
       </tbody>
     </table>
   `;
