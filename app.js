@@ -1853,12 +1853,20 @@ function aplicarVinculosDesenho() {
       if (cont) {
         cont.innerHTML = '';
         compsDesenho.forEach(c => {
-          addComponenteRow({
-            nome: c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || '',
+          const cad = STATE.componentes.find(x => x.id === c.componenteId);
+          const coresCad = cad ? [cad.cor1Id, cad.cor2Id, cad.cor3Id].filter(Boolean) : [];
+          const base = {
+            nome: c.nome || cad?.nome || '',
             material: c.tecidoId ? 'T:' + c.tecidoId : '',
-            cor: c.corId || '',
             qtdPorPeca: c.qtdPorPeca != null ? c.qtdPorPeca : 1
-          });
+          };
+          if (coresCad.length) {
+            // Componente com cores cadastradas (basica/bicolor/tricolor): 1 row por cor
+            coresCad.forEach(corId => addComponenteRow({ ...base, cor: corId }));
+          } else {
+            // Sem cores no cadastro — usa a cor salva no desenho como fallback
+            addComponenteRow({ ...base, cor: c.corId || '' });
+          }
         });
         aplicou = true;
       }
