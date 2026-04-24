@@ -835,7 +835,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div style="margin-top:10px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
         <div class="grade-inputs" style="margin-top:6px;">
-          ${['pp','p','m','g','gg','g1','g2','g3'].map(t => `
+          ${['p','m','g','gg','g1','g2','g3'].map(t => `
             <div class="field"><label>${t.toUpperCase()}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
           `).join('')}
         </div>
@@ -1312,7 +1312,7 @@ async function salvarCadastro() {
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
     item.tamanhos = {};
-    ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
+    ['p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
     item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => ({
@@ -1592,7 +1592,7 @@ function renderGrades() {
 
   const renderGradeRow = (g) => {
     const t = g.tamanhos || {};
-    const dist = ['pp','p','m','g','gg','g1','g2','g3']
+    const dist = ['p','m','g','gg','g1','g2','g3']
       .filter(x => t[x] > 0).map(x => `${x.toUpperCase()}:${t[x]}`).join(' · ');
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
@@ -2359,7 +2359,7 @@ function aplicarGradePreset() {
   const g = STATE.grades.find(x => x.id === id);
   if (!g) return;
   const t = g.tamanhos || {};
-  ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
+  ['p','m','g','gg','g1','g2','g3'].forEach(k => {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
   });
   document.getElementById('f-grade-desc').value = g.nome;
@@ -2530,7 +2530,7 @@ function calcularLimiteCamadas() {
 }
 
 function atualizarCalculosEnfesto() {
-  const gradeTotal = ['pp','p','m','g','gg','g1','g2','g3']
+  const gradeTotal = ['p','m','g','gg','g1','g2','g3']
     .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
   const camadas = parseInt(document.getElementById('f-enf-camadas')?.value) || 0;
   const { limite, categoriaRestritiva } = calcularLimiteCamadas();
@@ -2719,7 +2719,7 @@ function atualizarCalculosEnfesto() {
           });
         }
 
-        const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+        const porTamanho = ['p','m','g','gg','g1','g2','g3']
           .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
           .filter(x => x.qtd > 0)
           .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}`)
@@ -2736,7 +2736,7 @@ function atualizarCalculosEnfesto() {
 function calcularCamadasParaProducao() {
   const target = parseInt(document.getElementById('f-enf-target')?.value) || 0;
   if (target <= 0) { atualizarCalculosEnfesto(); return; }
-  const qtdsPorTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3']
     .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
     .filter(q => q > 0);
   if (qtdsPorTamanho.length === 0) {
@@ -2910,11 +2910,11 @@ function coletaOS() {
   }).filter(v => v.cor1 || v.cor2 || v.cor3);
 
   // Lê grade/camadas primeiro para calcular quantidades de componentes por tamanho
-  const gPP = parseInt(v('f-gr-pp'))||0, gP = parseInt(v('f-gr-p'))||0, gM = parseInt(v('f-gr-m'))||0;
+  const gP = parseInt(v('f-gr-p'))||0, gM = parseInt(v('f-gr-m'))||0;
   const gG = parseInt(v('f-gr-g'))||0, gGG = parseInt(v('f-gr-gg'))||0, gG1 = parseInt(v('f-gr-g1'))||0;
   const gG2 = parseInt(v('f-gr-g2'))||0, gG3 = parseInt(v('f-gr-g3'))||0;
   const camadasN = parseInt(v('f-enf-camadas'))||0;
-  const pecasPorTamanho = { pp: gPP*camadasN, p: gP*camadasN, m: gM*camadasN, g: gG*camadasN, gg: gGG*camadasN, g1: gG1*camadasN, g2: gG2*camadasN, g3: gG3*camadasN };
+  const pecasPorTamanho = { p: gP*camadasN, m: gM*camadasN, g: gG*camadasN, gg: gGG*camadasN, g1: gG1*camadasN, g2: gG2*camadasN, g3: gG3*camadasN };
 
   const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
     const nomeEl = r.querySelector('.comp-nome');
@@ -2925,7 +2925,7 @@ function coletaOS() {
     const qtdPorPeca = parseFloat(qtdEl?.value) || 0;
     const qtdPorTamanho = {};
     let qtdTotal = 0;
-    for (const t of ['pp','p','m','g','gg','g1','g2','g3']) {
+    for (const t of ['p','m','g','gg','g1','g2','g3']) {
       const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
       qtdPorTamanho[t] = v;
       qtdTotal += v;
@@ -2944,7 +2944,7 @@ function coletaOS() {
     const qtdPorPeca = parseFloat(r.querySelector('.av-qtd')?.value) || 0;
     const qtdPorTamanho = {};
     let qtdTotal = 0;
-    for (const t of ['pp','p','m','g','gg','g1','g2','g3']) {
+    for (const t of ['p','m','g','gg','g1','g2','g3']) {
       const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
       qtdPorTamanho[t] = v;
       qtdTotal += v;
@@ -2962,11 +2962,11 @@ function coletaOS() {
 
   const grade = {
     descricao: v('f-grade-desc'),
-    pp: parseInt(v('f-gr-pp'))||0, p: parseInt(v('f-gr-p'))||0, m: parseInt(v('f-gr-m'))||0,
+    p: parseInt(v('f-gr-p'))||0, m: parseInt(v('f-gr-m'))||0,
     g: parseInt(v('f-gr-g'))||0, gg: parseInt(v('f-gr-gg'))||0, g1: parseInt(v('f-gr-g1'))||0,
     g2: parseInt(v('f-gr-g2'))||0, g3: parseInt(v('f-gr-g3'))||0
   };
-  grade.total = grade.pp+grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
+  grade.total = grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
 
   const blocosEnfesto = lerEnfestoBlocos();
   const primeiroBloco = blocosEnfesto[0] || { comp: 0, larg: 0 };
@@ -3166,7 +3166,7 @@ function editarOS(id) {
     document.getElementById('f-desenho').value = o.desenhoId || '';
     previewDesenhoSelecionado();
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
-    ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
+    ['p','m','g','gg','g1','g2','g3'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
     });
     // enfesto — blocos (novo) ou legado (comprimento/largura único)
@@ -3231,7 +3231,7 @@ function renderComponentesDetalheBox(o) {
   const comps = o.componentes || [];
   if (!comps.length) return '';
   // Quais tamanhos mostrar? Só os que têm peças > 0 em alguma linha (ou que estão na grade)
-  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
   const grade = o.grade || {};
   const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
   const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg']; // default
@@ -3278,7 +3278,7 @@ function renderComponentesDetalheBox(o) {
 function renderAviamentosDetalheBox(o) {
   const avs = o.aviamentos || [];
   if (!avs.length) return '';
-  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
   const grade = o.grade || {};
   const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
   const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg'];
@@ -3344,7 +3344,7 @@ function renderEnfestoBox(o) {
   (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
 
   // Tamanhos presentes na grade (> 0)
-  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
   const tamsAtivos = tamanhos.filter(t => (g[t]||0) > 0);
   const nCols = 6 + tamsAtivos.length + 1; // 6 básicas + tams + Total
 
@@ -3526,14 +3526,14 @@ function renderPrintSheet(o) {
         <!-- GRADE -->
         <table class="side-table" style="border-top:none;">
           <thead>
-            <tr><th colspan="9" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
+            <tr><th colspan="8" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
             <tr>
-              <th>PP</th><th>P</th><th>M</th><th>G</th><th>GG</th><th>G1</th><th>G2</th><th>G3</th><th>Total</th>
+              <th>P</th><th>M</th><th>G</th><th>GG</th><th>G1</th><th>G2</th><th>G3</th><th>Total</th>
             </tr>
           </thead>
           <tbody>
             <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;">
-              <td>${g.pp||0}</td><td>${g.p||0}</td><td>${g.m||0}</td><td>${g.g||0}</td>
+              <td>${g.p||0}</td><td>${g.m||0}</td><td>${g.g||0}</td>
               <td>${g.gg||0}</td><td>${g.g1||0}</td><td>${g.g2||0}</td><td>${g.g3||0}</td>
               <td style="background:#fff59d;">${g.total||0}</td>
             </tr>
@@ -3736,9 +3736,9 @@ async function popularExemplo() {
 
   // Grades
   STATE.grades.push(
-    { id: uid(), nome: 'Grade padrão 6 peças', tamanhos: { pp:0, p:1, m:2, g:2, gg:1, g1:0, g2:0, g3:0 } },
-    { id: uid(), nome: 'Grade ampliada 8 peças', tamanhos: { pp:1, p:1, m:2, g:2, gg:1, g1:1, g2:0, g3:0 } },
-    { id: uid(), nome: 'Grade plus 4 peças',     tamanhos: { pp:0, p:0, m:0, g:0, gg:1, g1:1, g2:1, g3:1 } }
+    { id: uid(), nome: 'Grade padrão 6 peças', tamanhos: { p:1, m:2, g:2, gg:1, g1:0, g2:0, g3:0 } },
+    { id: uid(), nome: 'Grade ampliada 8 peças', tamanhos: { p:2, m:2, g:2, gg:1, g1:1, g2:0, g3:0 } },
+    { id: uid(), nome: 'Grade plus 4 peças',     tamanhos: { p:0, m:0, g:0, gg:1, g1:1, g2:1, g3:1 } }
   );
 
   for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades',
