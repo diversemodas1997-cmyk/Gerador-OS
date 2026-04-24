@@ -2326,25 +2326,37 @@ function aplicarGradePreset() {
 
   const fases = Array.isArray(g.fases) ? g.fases : [];
 
-  // Renderiza blocos de Enfesto — um por fase (ou 1 com comp/larg legados)
-  if (fases.length) {
-    renderEnfestoBlocos(fases.length, fases.map(f => ({ comp: f.comp, larg: f.larg })));
+  // Monta dicionário por ordem pra preservar posicionamento (fase 2 → bloco 2)
+  const porOrdem = {};
+  fases.forEach(f => { if (f.ordem) porOrdem[f.ordem] = f; });
+  const ordens = Object.keys(porOrdem).map(Number);
+  const maxOrd = ordens.length ? Math.max(...ordens) : 0;
+
+  // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
+  if (maxOrd > 0) {
+    const prefills = [];
+    for (let n = 1; n <= maxOrd; n++) {
+      const f = porOrdem[n] || {};
+      prefills.push({ comp: f.comp || '', larg: f.larg || '' });
+    }
+    renderEnfestoBlocos(maxOrd, prefills);
   } else if (g.enfestoComprimento || g.enfestoLargura) {
     renderEnfestoBlocos(1, [{ comp: g.enfestoComprimento, larg: g.enfestoLargura }]);
   }
 
-  // Popula linhas de Tecido com tecido + cor de cada fase (se houver)
+  // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
       tecCont.innerHTML = '';
-      fases.forEach(f => {
+      for (let n = 1; n <= maxOrd; n++) {
+        const f = porOrdem[n] || {};
         if (f.tecidoId || f.corId) addTecidoRow({ tecidoId: f.tecidoId || '', corId: f.corId || '' });
-      });
+      }
     }
   }
 
-  // Popula Variante 1 com cores das fases (Cor 1 = Fase 1, Cor 2 = Fase 2, Cor 3 = Fase 3)
+  // Popula Variante 1 com cores — fase ordem=1 → var-c1, ordem=2 → var-c2, ordem=3 → var-c3
   if (fases.length && fases.some(f => f.corId)) {
     const varCont = document.getElementById('variantes-rows');
     if (varCont) {
@@ -2352,9 +2364,12 @@ function aplicarGradePreset() {
       const primeira = varCont.querySelector('.variante-row');
       if (primeira) {
         const slots = ['.var-c1', '.var-c2', '.var-c3'];
-        fases.slice(0, 3).forEach((f, i) => {
-          const sel = primeira.querySelector(slots[i]);
-          if (sel && f.corId) sel.value = f.corId;
+        fases.forEach(f => {
+          const n = f.ordem;
+          if (n >= 1 && n <= 3 && f.corId) {
+            const sel = primeira.querySelector(slots[n-1]);
+            if (sel) sel.value = f.corId;
+          }
         });
       }
     }
@@ -3009,7 +3024,7 @@ function renderEnfestoBox(o) {
 
   const blocosRows = blocos.map((b, i) => `
     <tr>
-      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">ENF ${i+1}</td>
+      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">ENF ${b.ordem || (i+1)}</td>
       <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Comp: <strong>${fmt(b.comp)} m</strong></td>
       <td colspan="2" style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Larg: <strong>${fmt(b.larg)} m</strong></td>
     </tr>`).join('');
