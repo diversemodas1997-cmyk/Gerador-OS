@@ -2625,8 +2625,9 @@ function atualizarCalculosEnfesto() {
         // Total forro de capuz: fases de malha na grade que tem moletom (mult×1 porque é forro direto)
         const totalForro = temForro ? (gradeTotal * camadas * 1) : 0;
 
-        // Ribana (punhos+barras) — total via componentes do desenho
-        let ribanaInfo = null;
+        // Ribana: um total POR FASE ribana (Punhos, Barra, etc.)
+        // Componentes ribana do desenho são agrupados por palavra-chave no nome.
+        let ribanaPorFase = [];
         if (temRibana) {
           const referencia = totalMoletom || totalForro;
           const desenhoId = document.getElementById('f-desenho')?.value;
@@ -2635,29 +2636,54 @@ function atualizarCalculosEnfesto() {
           const ribanaComps = comps.filter(c => {
             if (!c.tecidoId) return false;
             const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
-            return tec?.categoria === 'ribana';
+            return tec && categoriaEfetivaTecido(tec) === 'ribana';
           });
-          let sumQty = 0;
-          const detalhes = [];
+          // Labels das fases ribana na ordem cadastrada na grade
+          const labelsFasesRib = papeis.filter(p => (p.papel || '').startsWith('ribana_')).map(p => p.label);
+          // Inicializa grupos
+          const grupos = labelsFasesRib.map(lbl => ({ label: lbl, qty: 0, detalhes: [] }));
+          const sobra = [];
+          // Classifica cada componente no grupo cujo label combine com o nome
           ribanaComps.forEach(c => {
-            const nome = (c.nome || '').toLowerCase();
-            const qty = (nome.includes('manga') || nome.includes('punho')) ? 2 : 1;
-            sumQty += qty;
-            detalhes.push(`${c.nome||'?'} ×${qty}`);
+            const nomeLow = (c.nome || '').toLowerCase();
+            const qty = (nomeLow.includes('manga') || nomeLow.includes('punho')) ? 2 : 1;
+            let grupo = grupos.find(g => {
+              const key = (g.label || '').toLowerCase().replace(/s$/, '');
+              return key && nomeLow.includes(key);
+            });
+            if (!grupo && grupos.length === 1) grupo = grupos[0]; // única fase ribana pega tudo
+            if (grupo) {
+              grupo.qty += qty;
+              grupo.detalhes.push(`${c.nome || '?'} ×${qty}`);
+            } else {
+              sobra.push({ nome: c.nome || '?', qty });
+            }
           });
-          const totalRibana = referencia * sumQty;
           const multRib = MULTIPLICADOR_PECAS.ribana || 2;
           const camadasRib = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * multRib)) : 0;
-          ribanaInfo = { total: totalRibana, camadas: camadasRib, sumQty, detalhes };
+          ribanaPorFase = grupos
+            .filter(g => g.qty > 0)
+            .map(g => ({
+              label: g.label,
+              total: referencia * g.qty,
+              detalhes: g.detalhes,
+              camadas: camadasRib
+            }));
+          // Se tiver componentes sem match, agrupa num fallback "Ribana (outros)"
+          if (sobra.length) {
+            const qtyTot = sobra.reduce((s, x) => s + x.qty, 0);
+            ribanaPorFase.push({
+              label: 'Ribana (outros)',
+              total: referencia * qtyTot,
+              detalhes: sobra.map(x => `${x.nome} ×${x.qty}`),
+              camadas: camadasRib
+            });
+          }
         }
 
         const blocos = [];
-        // Labels pegos das fases (respeitam nome cadastrado pelo user)
         const labelMoletom = papeis.find(p => p.papel === 'moletom')?.label || 'Moletom';
         const labelForro = papeis.find(p => p.papel === 'forro_capuz')?.label || 'Forro de capuz';
-        // Ribana: junta todos labels de fases ribana (ex.: "Punhos / Barra" ou nomes customizados)
-        const labelsRibana = papeis.filter(p => (p.papel || '').startsWith('ribana_')).map(p => p.label).filter(Boolean);
-        const labelRibana = labelsRibana.length ? labelsRibana.join(' e ') : 'Ribana';
 
         if (temMoletom) {
           blocos.push(`
@@ -2673,22 +2699,24 @@ function atualizarCalculosEnfesto() {
               <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalForro} peças</strong>
             </div>`);
         }
-        if (temRibana && ribanaInfo) {
-          const hint = ribanaInfo.detalhes.length
-            ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(ribanaInfo.detalhes.join(' + '))})</span>`
-            : '';
+        if (ribanaPorFase.length) {
           const refBlusas = totalMoletom || totalForro;
-          blocos.push(`
-            <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span>Total ${esc(labelRibana)}:${hint}</span>
-                <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${ribanaInfo.total} peças</strong>
-              </div>
-              <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
-                Camadas de ribana sugeridas (por enfesto): <strong>${ribanaInfo.camadas}</strong>
-                (1 camada = 2 peças/tamanho; ${refBlusas} peças ÷ ${gradeTotal*2})
-              </div>
-            </div>`);
+          ribanaPorFase.forEach(rf => {
+            const hint = rf.detalhes.length
+              ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(rf.detalhes.join(' + '))})</span>`
+              : '';
+            blocos.push(`
+              <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span>Total ${esc(rf.label)}:${hint}</span>
+                  <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${rf.total} peças</strong>
+                </div>
+                <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
+                  Camadas sugeridas: <strong>${rf.camadas}</strong>
+                  (1 camada = 2 peças/tamanho; ${refBlusas} peças ÷ ${gradeTotal*2})
+                </div>
+              </div>`);
+          });
         }
 
         const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
