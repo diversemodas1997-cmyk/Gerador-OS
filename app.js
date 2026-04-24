@@ -2138,14 +2138,23 @@ function renderEnfestoBlocos(n, prefills = []) {
   cont.innerHTML = '';
   for (let i = 0; i < qtd; i++) {
     const p = prefills[i] || {};
-    const nomeTecido = p.nomeTecido || '';
+    // Retrocompat: se tinha "Tecido · Cor" salvo em nomeTecido sem nomeCor, separa
+    let nomeTecido = p.nomeTecido || '';
+    let nomeCor = p.nomeCor || '';
+    if (!nomeCor && nomeTecido.includes(' · ')) {
+      const [t, ...rest] = nomeTecido.split(' · ');
+      nomeTecido = t;
+      nomeCor = rest.join(' · ');
+    }
     const bloco = document.createElement('div');
     bloco.className = 'enfesto-bloco';
     bloco.dataset.nomeTecido = nomeTecido;
+    bloco.dataset.nomeCor = nomeCor;
     bloco.style.cssText = 'margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+    const labelDisplay = [nomeTecido, nomeCor].filter(Boolean).join(' · ');
     bloco.innerHTML = `
       <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">
-        ENFESTO ${i+1}${nomeTecido ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(nomeTecido)}</span>` : ''}
+        ENFESTO ${i+1}${labelDisplay ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(labelDisplay)}</span>` : ''}
       </div>
       <div class="form-grid cols-2">
         <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
@@ -2161,6 +2170,7 @@ function lerEnfestoBlocos() {
   return Array.from(cont.querySelectorAll('.enfesto-bloco')).map((b, i) => ({
     ordem: i + 1,
     nomeTecido: b.dataset.nomeTecido || '',
+    nomeCor: b.dataset.nomeCor || '',
     comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
     larg: parseFloat(b.querySelector('.enf-larg').value) || 0
   }));
@@ -2386,12 +2396,11 @@ function aplicarGradePreset() {
       const papel = papeis[n-1] || { label: '' };
       const corIdEfetiva = f.corId || corFallbackPorOrdem(n);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
-      // Label: papel (Moletom / Forro de capuz / Punhos / Barra) · Cor
-      const partes = [papel.label, cor?.nome].filter(Boolean);
       prefills.push({
         comp: f.comp || '',
         larg: f.larg || '',
-        nomeTecido: partes.join(' · ')
+        nomeTecido: papel.label || '',
+        nomeCor: cor?.nome || ''
       });
     }
     renderEnfestoBlocos(maxOrd, prefills);
@@ -3237,12 +3246,18 @@ function renderEnfestoBox(o) {
   // Linhas por enfesto — Fase / Nome / Cor / Comp / Larg
   const linhasEnfestos = blocos.map((b, i) => {
     const ord = b.ordem || (i+1);
-    const nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '—';
-    const cor = fasesPorOrdem[ord]?.corNome || '—';
+    // Retrocompat: se nomeTecido ainda está no formato antigo "Tecido · Cor", separa
+    let nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '';
+    let cor = b.nomeCor || fasesPorOrdem[ord]?.corNome || '';
+    if (!cor && nomeEnf.includes(' · ')) {
+      const parts = nomeEnf.split(' · ');
+      nomeEnf = parts[0];
+      cor = parts.slice(1).join(' · ');
+    }
     return `<tr>
       <td style="text-align:center;font-weight:700;">${ord}</td>
-      <td>${esc(nomeEnf)}</td>
-      <td>${esc(cor)}</td>
+      <td>${esc(nomeEnf) || '—'}</td>
+      <td>${esc(cor) || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
     </tr>`;
