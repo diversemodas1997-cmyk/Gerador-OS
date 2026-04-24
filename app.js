@@ -2622,17 +2622,42 @@ function atualizarCalculosEnfesto() {
       } else {
         // Total moletom: soma fases com papel moletom (mesma grade × camadas)
         const totalMoletom = temMoletom ? (gradeTotal * camadas * (MULTIPLICADOR_PECAS.moletom || 1)) : 0;
-        // Total forro de capuz: fases de malha na grade que tem moletom (mult×2, igual ribana)
-        const totalForro = temForro ? (gradeTotal * camadas * 2) : 0;
+
+        // Busca desenho selecionado pra analisar componentes
+        const desenhoIdCalc = document.getElementById('f-desenho')?.value;
+        const desenhoCalc = desenhoIdCalc ? STATE.desenhos.find(x => x.id === desenhoIdCalc) : null;
+        const compsCalc = Array.isArray(desenhoCalc?.componentes) ? desenhoCalc.componentes : [];
+
+        // Total forro de capuz: mesma regra da ribana (baseado em componentes do desenho)
+        let forroInfo = null;
+        if (temForro) {
+          const forroComps = compsCalc.filter(c => {
+            const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
+            return tec && categoriaEfetivaTecido(tec) === 'malha';
+          });
+          let qtyForro = 0;
+          const detalhesF = [];
+          forroComps.forEach(c => {
+            const v = parseFloat(c.qtdPorPeca);
+            const n = (c.nome || '').toLowerCase();
+            const qty = v > 0 ? v : ((n.includes('manga') || n.includes('punho')) ? 2 : 1);
+            qtyForro += qty;
+            detalhesF.push(`${c.nome || '?'} ×${qty}`);
+          });
+          if (qtyForro === 0) qtyForro = 1; // fallback
+          const multF = 2;
+          const refF = totalMoletom;
+          const camadasF = gradeTotal > 0 ? Math.ceil(refF / (gradeTotal * multF)) : 0;
+          forroInfo = { total: refF * qtyForro, camadas: camadasF, detalhes: detalhesF };
+        }
+        const totalForro = forroInfo ? forroInfo.total : 0;
 
         // Ribana: um total POR FASE ribana (Punhos, Barra, etc.)
         // Componentes ribana do desenho são agrupados por palavra-chave no nome.
         let ribanaPorFase = [];
         if (temRibana) {
           const referencia = totalMoletom || totalForro;
-          const desenhoId = document.getElementById('f-desenho')?.value;
-          const desenho = desenhoId ? STATE.desenhos.find(x => x.id === desenhoId) : null;
-          const comps = Array.isArray(desenho?.componentes) ? desenho.componentes : [];
+          const comps = compsCalc;
           const ribanaComps = comps.filter(c => {
             if (!c.tecidoId) return false;
             const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
@@ -2692,11 +2717,20 @@ function atualizarCalculosEnfesto() {
               <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalMoletom} peças</strong>
             </div>`);
         }
-        if (temForro) {
+        if (temForro && forroInfo) {
+          const hintF = forroInfo.detalhes.length
+            ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(forroInfo.detalhes.join(' + '))})</span>`
+            : '';
           blocos.push(`
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
-              <span>Total ${esc(labelForro)}: <span style="font-size:11px;color:var(--ink-3);">(1 camada = 2 peças/tamanho)</span></span>
-              <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalForro} peças</strong>
+            <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Total ${esc(labelForro)}:${hintF}</span>
+                <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${forroInfo.total} peças</strong>
+              </div>
+              <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
+                Camadas sugeridas: <strong>${forroInfo.camadas}</strong>
+                (1 camada = 2 peças/tamanho; ${totalMoletom} peças ÷ ${gradeTotal*2})
+              </div>
             </div>`);
         }
         if (ribanaPorFase.length) {
