@@ -1916,7 +1916,7 @@ function aplicarVinculosDesenho() {
     const coresDoDesenho = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean);
     if (d.tecidoPadraoId || coresDoDesenho.length) {
       const tecCont = document.getElementById('tecidos-rows');
-      if (tecCont && !tecCont.querySelector('.tec-sel[value]:not([value=""])')) {
+      if (tecCont) {
         // Só preenche se ainda não houver tecido escolhido (grade preset tem prioridade)
         const jaTemPreenchido = Array.from(tecCont.querySelectorAll('.tec-sel')).some(s => s.value);
         if (!jaTemPreenchido) {
@@ -1927,6 +1927,19 @@ function aplicarVinculosDesenho() {
           }
           aplicou = true;
         }
+      }
+    }
+
+    // Ajusta quantidade de blocos de enfesto pela quantidade de cores do desenho
+    // (se ainda não foram preenchidos pela grade)
+    const enfestoCont = document.getElementById('f-enfestos-blocos');
+    if (enfestoCont && coresDoDesenho.length) {
+      const blocosAtuais = enfestoCont.querySelectorAll('.enfesto-bloco');
+      const algumPreenchido = Array.from(blocosAtuais).some(b =>
+        b.querySelector('.enf-comp').value || b.querySelector('.enf-larg').value);
+      if (!algumPreenchido) {
+        renderEnfestoBlocos(coresDoDesenho.length);
+        aplicou = true;
       }
     }
     if (aplicou) toast('Campos vinculados preenchidos automaticamente', 'ok');
@@ -1972,6 +1985,7 @@ function initOSForm() {
     addTecidoRow(); addTecidoRow();
     addVarianteRow();
     addComponenteRow(); addComponenteRow();
+    renderEnfestoBlocos(1);
     document.getElementById('f-desenho-preview').innerHTML = '<span>Nenhum desenho selecionado</span>';
   }
 
@@ -2067,6 +2081,36 @@ function aplicarOrdemEtapas(ordemNomes) {
 
 function addEtapaCustomizada() {
   openCadastroModal('etapa', null, 'os-form');
+}
+
+function renderEnfestoBlocos(n, prefills = []) {
+  const cont = document.getElementById('f-enfestos-blocos');
+  if (!cont) return;
+  const qtd = Math.max(1, Math.min(3, n || 1));
+  cont.innerHTML = '';
+  for (let i = 0; i < qtd; i++) {
+    const p = prefills[i] || {};
+    const bloco = document.createElement('div');
+    bloco.className = 'enfesto-bloco';
+    bloco.style.cssText = 'margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+    bloco.innerHTML = `
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">ENFESTO ${i+1}</div>
+      <div class="form-grid cols-2">
+        <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
+        <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="Ex.: 1,80"></div>
+      </div>`;
+    cont.appendChild(bloco);
+  }
+}
+
+function lerEnfestoBlocos() {
+  const cont = document.getElementById('f-enfestos-blocos');
+  if (!cont) return [];
+  return Array.from(cont.querySelectorAll('.enfesto-bloco')).map((b, i) => ({
+    ordem: i + 1,
+    comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
+    larg: parseFloat(b.querySelector('.enf-larg').value) || 0
+  }));
 }
 
 function addTecidoRow(data = {}) {
@@ -2237,10 +2281,12 @@ function aplicarGradePreset() {
 
   const fases = Array.isArray(g.fases) ? g.fases : [];
 
-  // Aplica Fase 1 no Enfesto (primeiro par comp/larg)
-  const f1 = fases[0] || { comp: g.enfestoComprimento || '', larg: g.enfestoLargura || '' };
-  if (f1.comp) document.getElementById('f-enf-comp').value = f1.comp;
-  if (f1.larg) document.getElementById('f-enf-larg').value = f1.larg;
+  // Renderiza blocos de Enfesto — um por fase (ou 1 com comp/larg legados)
+  if (fases.length) {
+    renderEnfestoBlocos(fases.length, fases.map(f => ({ comp: f.comp, larg: f.larg })));
+  } else if (g.enfestoComprimento || g.enfestoLargura) {
+    renderEnfestoBlocos(1, [{ comp: g.enfestoComprimento, larg: g.enfestoLargura }]);
+  }
 
   // Popula linhas de Tecido com tecido + cor de cada fase (se houver)
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
@@ -2512,10 +2558,13 @@ function coletaOS() {
   };
   grade.total = grade.pp+grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
 
+  const blocosEnfesto = lerEnfestoBlocos();
+  const primeiroBloco = blocosEnfesto[0] || { comp: 0, larg: 0 };
   const enfesto = {
-    comprimento: parseFloat(v('f-enf-comp')) || 0,
-    largura: parseFloat(v('f-enf-larg')) || 0,
-    camadas: parseInt(v('f-enf-camadas')) || 0
+    comprimento: primeiroBloco.comp || 0,
+    largura: primeiroBloco.larg || 0,
+    camadas: parseInt(v('f-enf-camadas')) || 0,
+    blocos: blocosEnfesto
   };
   enfesto.totalPecas = grade.total * enfesto.camadas;
 
@@ -2710,9 +2759,13 @@ function editarOS(id) {
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
     });
-    // enfesto
-    document.getElementById('f-enf-comp').value = o.enfesto?.comprimento || '';
-    document.getElementById('f-enf-larg').value = o.enfesto?.largura || '';
+    // enfesto — blocos (novo) ou legado (comprimento/largura único)
+    const blocosSalvos = Array.isArray(o.enfesto?.blocos) && o.enfesto.blocos.length
+      ? o.enfesto.blocos
+      : (o.enfesto?.comprimento || o.enfesto?.largura)
+        ? [{ comp: o.enfesto.comprimento, larg: o.enfesto.largura }]
+        : [{}];
+    renderEnfestoBlocos(blocosSalvos.length, blocosSalvos);
     document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
     document.getElementById('f-obs').value = o.obs || '';
     document.getElementById('f-atencao').value = o.atencao || '';
@@ -2882,7 +2935,11 @@ function renderFasesBox(o) {
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
   const g = o.grade || {};
-  const temEnfesto = e.comprimento || e.largura || e.camadas;
+  // Blocos: usa e.blocos (novo) ou reconstrói um bloco único a partir dos campos legados
+  const blocos = Array.isArray(e.blocos) && e.blocos.length
+    ? e.blocos
+    : (e.comprimento || e.largura ? [{ ordem: 1, comp: e.comprimento, larg: e.largura }] : []);
+  const temEnfesto = blocos.length || e.camadas;
   if (!temEnfesto) return '';
 
   const camadas = e.camadas || 0;
@@ -2896,22 +2953,20 @@ function renderEnfestoBox(o) {
     .map(t => `<tr><td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td><td style="text-align:center;">${g[t]}</td><td style="text-align:center;">×${camadas}</td><td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td></tr>`)
     .join('');
 
+  const blocosRows = blocos.map((b, i) => `
+    <tr>
+      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">ENF ${i+1}</td>
+      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Comp: <strong>${fmt(b.comp)} m</strong></td>
+      <td colspan="2" style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Larg: <strong>${fmt(b.larg)} m</strong></td>
+    </tr>`).join('');
+
   return `
     <table class="side-table" style="border-top:none;">
       <thead>
-        <tr><th colspan="4" class="subhead" style="background:#c9e8d0;">Enfesto</th></tr>
+        <tr><th colspan="4" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td colspan="2" style="padding:3px 5px;">
-            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Comprimento</strong><br>
-            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.comprimento)} m</span>
-          </td>
-          <td colspan="2" style="padding:3px 5px;">
-            <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Largura</strong><br>
-            <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(e.largura)} m</span>
-          </td>
-        </tr>
+        ${blocosRows}
         <tr>
           <td colspan="4" style="padding:3px 5px;background:#f4f4f4;">
             <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.04em;">Camadas</strong>
@@ -3307,6 +3362,7 @@ window.closeModal = closeModal;
 window.salvarCadastro = salvarCadastro;
 window.excluirCadastro = excluirCadastro;
 window.addTecidoRow = addTecidoRow;
+window.renderEnfestoBlocos = renderEnfestoBlocos;
 window.addVarianteRow = addVarianteRow;
 window.addComponenteRow = addComponenteRow;
 window.addAviamentoRow = addAviamentoRow;
