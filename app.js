@@ -2749,33 +2749,86 @@ function calcularCamadasParaProducao() {
   const temMoletom = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom');
   const temMalha = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha');
 
-  // Multiplicador da peça principal:
-  // - moletom: 1 (1 camada = 1 blusa/tamanho)
-  // - malha sem moletom: 2 (camiseta: 1 camada = 2 peças/tamanho)
-  // - malha com moletom (forro de capuz): 1 (forro direto 1:1)
+  // Multiplicador da peça principal
   let multPrincipal = 1;
   if (!temMoletom && temMalha) multPrincipal = MULTIPLICADOR_PECAS.malha || 2;
 
   const minQtd = Math.min(...qtdsPorTamanho);
+  const gradeTotal = qtdsPorTamanho.reduce((s, x) => s + x, 0);
   const camadasPrincipal = Math.ceil(target / (minQtd * multPrincipal));
-  const camadasRibana = Math.max(1, Math.ceil(camadasPrincipal / (MULTIPLICADOR_PECAS.ribana || 2)));
+  const blusas = gradeTotal * camadasPrincipal * multPrincipal;
 
-  // Campo global: reflete as camadas da peça principal
+  // Campo global reflete a peça principal
   const inputGlobal = document.getElementById('f-enf-camadas');
   if (inputGlobal) inputGlobal.value = camadasPrincipal;
 
-  // Preenche cada bloco de enfesto conforme o papel da fase correspondente
+  // Componentes do desenho selecionado
+  const desenhoId = document.getElementById('f-desenho')?.value;
+  const desenho = desenhoId ? STATE.desenhos.find(x => x.id === desenhoId) : null;
+  const comps = Array.isArray(desenho?.componentes) ? desenho.componentes : [];
+
+  // Retorna qty/blusa de um componente — usa qtdPorPeca cadastrado ou fallback por nome
+  const qtdDoComp = c => {
+    const v = parseFloat(c.qtdPorPeca);
+    if (v > 0) return v;
+    const n = (c.nome || '').toLowerCase();
+    return (n.includes('manga') || n.includes('punho')) ? 2 : 1;
+  };
+
+  // Papéis das fases
   const papeis = calcularPapeisFases(fases);
+
+  // qty total por blusa de componentes ribana, agrupado pelo label da fase ribana
+  const ribanaLabels = papeis.filter(p => (p.papel || '').startsWith('ribana_')).map(p => p.label);
+  const qtyPorLabelRibana = {};
+  ribanaLabels.forEach(l => { qtyPorLabelRibana[l] = 0; });
+  const compsRibana = comps.filter(c => {
+    const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
+    return tec && categoriaEfetivaTecido(tec) === 'ribana';
+  });
+  compsRibana.forEach(c => {
+    const nome = (c.nome || '').toLowerCase();
+    const qtd = qtdDoComp(c);
+    let lbl = ribanaLabels.find(l => {
+      const key = (l || '').toLowerCase().replace(/s$/, '');
+      return key && nome.includes(key);
+    });
+    if (!lbl && ribanaLabels.length === 1) lbl = ribanaLabels[0];
+    if (lbl) qtyPorLabelRibana[lbl] += qtd;
+  });
+
+  // qty por blusa de componentes de forro (malha quando tem moletom)
+  let qtyForro = 0;
+  if (temMoletom) {
+    qtyForro = comps
+      .filter(c => {
+        const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
+        return tec && categoriaEfetivaTecido(tec) === 'malha';
+      })
+      .reduce((s, c) => s + qtdDoComp(c), 0);
+  }
+
+  // Preenche cada bloco conforme papel + qtd dos componentes
+  const multRib = MULTIPLICADOR_PECAS.ribana || 2;
   const blocosDom = document.querySelectorAll('#f-enfestos-blocos .enfesto-bloco');
   blocosDom.forEach((bloco, i) => {
     const input = bloco.querySelector('.enf-camadas');
     if (!input) return;
     const papel = papeis[i] || {};
     let val;
-    if (papel.papel === 'moletom' || papel.papel === 'forro_capuz') {
+    if (papel.papel === 'moletom') {
+      // Enfesto moletom: todos componentes moletom na mesma camada → 1 camada = 1 blusa
       val = camadasPrincipal;
+    } else if (papel.papel === 'forro_capuz') {
+      // Enfesto forro: camadas = blusas × qty_forro_por_blusa / (grade × mult)
+      const q = qtyForro > 0 ? qtyForro : 1;
+      val = Math.max(1, Math.ceil(blusas * q / (gradeTotal * 1)));
     } else if ((papel.papel || '').startsWith('ribana_')) {
-      val = camadasRibana;
+      // Enfesto ribana: camadas específicas baseadas em qty_por_blusa dos componentes agrupados
+      const q = qtyPorLabelRibana[papel.label] || 0;
+      val = q > 0
+        ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multRib)))
+        : Math.max(1, Math.ceil(camadasPrincipal / multRib));
     } else {
       const cat = papel.categoria || '';
       const mult = MULTIPLICADOR_PECAS[cat] || 1;
