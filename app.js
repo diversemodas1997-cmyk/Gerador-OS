@@ -2743,30 +2743,47 @@ function calcularCamadasParaProducao() {
     toast('Preencha a grade antes', 'err');
     return;
   }
-  // Usa multiplicador da categoria PRINCIPAL (moletom/malha), não da ribana.
-  // Peças-alvo refere-se a blusas/camisetas prontas; ribana é aviamento.
   const gradeId = document.getElementById('f-grade-preset')?.value;
   const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
   const fases = grade?.fases || [];
   const temMoletom = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom');
   const temMalha = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha');
-  let multiplier = 1;
-  if (temMoletom) multiplier = MULTIPLICADOR_PECAS.moletom || 1;
-  else if (temMalha) multiplier = MULTIPLICADOR_PECAS.malha || 1;
-  else {
-    // Fallback: categoria dos tecidos-rows, excluindo ribana
-    document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
-      if (!sel.value) return;
-      const tec = STATE.tecidos.find(t => t.id === sel.value);
-      const cat = categoriaEfetivaTecido(tec);
-      if (cat === 'ribana') return;
-      const m = MULTIPLICADOR_PECAS[cat] || 1;
-      if (m > multiplier) multiplier = m;
-    });
-  }
+
+  // Multiplicador da peça principal:
+  // - moletom: 1 (1 camada = 1 blusa/tamanho)
+  // - malha sem moletom: 2 (camiseta: 1 camada = 2 peças/tamanho)
+  // - malha com moletom (forro de capuz): 1 (forro direto 1:1)
+  let multPrincipal = 1;
+  if (!temMoletom && temMalha) multPrincipal = MULTIPLICADOR_PECAS.malha || 2;
+
   const minQtd = Math.min(...qtdsPorTamanho);
-  const camadas = Math.ceil(target / (minQtd * multiplier));
-  document.getElementById('f-enf-camadas').value = camadas;
+  const camadasPrincipal = Math.ceil(target / (minQtd * multPrincipal));
+  const camadasRibana = Math.max(1, Math.ceil(camadasPrincipal / (MULTIPLICADOR_PECAS.ribana || 2)));
+
+  // Campo global: reflete as camadas da peça principal
+  const inputGlobal = document.getElementById('f-enf-camadas');
+  if (inputGlobal) inputGlobal.value = camadasPrincipal;
+
+  // Preenche cada bloco de enfesto conforme o papel da fase correspondente
+  const papeis = calcularPapeisFases(fases);
+  const blocosDom = document.querySelectorAll('#f-enfestos-blocos .enfesto-bloco');
+  blocosDom.forEach((bloco, i) => {
+    const input = bloco.querySelector('.enf-camadas');
+    if (!input) return;
+    const papel = papeis[i] || {};
+    let val;
+    if (papel.papel === 'moletom' || papel.papel === 'forro_capuz') {
+      val = camadasPrincipal;
+    } else if ((papel.papel || '').startsWith('ribana_')) {
+      val = camadasRibana;
+    } else {
+      const cat = papel.categoria || '';
+      const mult = MULTIPLICADOR_PECAS[cat] || 1;
+      val = Math.ceil(target / (minQtd * mult));
+    }
+    input.value = val;
+  });
+
   atualizarCalculosEnfesto();
 }
 
