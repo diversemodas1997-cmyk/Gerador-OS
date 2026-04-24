@@ -3268,14 +3268,45 @@ async function excluirOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
-function ordenarComponentesPorFase(comps) {
-  // Ordem canônica: moletom (0) → forro malha (1) → punhos ribana (2) → barra ribana (3) → outros
+function ordenarComponentesPorFase(comps, o) {
+  // Usa as fases cadastradas na grade como ordem (se houver). Fallback: ordem canônica.
+  const fases = (o?.fases || []).slice().sort((a,b) => (a.ordem||0) - (b.ordem||0));
+  const papeis = fases.length ? calcularPapeisFases(fases) : [];
+  const prioridadePorPapel = {};
+  papeis.forEach((p, i) => {
+    if (prioridadePorPapel[p.papel] == null) prioridadePorPapel[p.papel] = i;
+  });
+
   const prioridade = (c) => {
     const material = c.material || '';
     if (!material.startsWith('T:')) return 90;
     const tec = STATE.tecidos.find(t => t.id === material.slice(2));
     if (!tec) return 91;
     const cat = categoriaEfetivaTecido(tec);
+
+    // Determina o papel do componente
+    let papelComp;
+    if (cat === 'moletom') papelComp = 'moletom';
+    else if (cat === 'malha' && prioridadePorPapel['forro_capuz'] != null) papelComp = 'forro_capuz';
+    else if (cat === 'ribana') {
+      const nomeComp = (c.nome || '').toLowerCase();
+      // Encontra a fase ribana cujo label bate com o nome do componente
+      for (const p of papeis) {
+        if (!(p.papel||'').startsWith('ribana_')) continue;
+        const key = (p.label || '').toLowerCase().split(/\s+/)[0].replace(/s$/, '');
+        if (key && nomeComp.includes(key)) { papelComp = p.papel; break; }
+      }
+      if (!papelComp) {
+        // Fallback: primeira fase ribana cadastrada
+        const primeiraRib = papeis.find(p => (p.papel||'').startsWith('ribana_'));
+        papelComp = primeiraRib?.papel || 'ribana_1';
+      }
+    } else {
+      papelComp = cat || 'outro';
+    }
+
+    if (prioridadePorPapel[papelComp] != null) return prioridadePorPapel[papelComp];
+    // Fallback (sem grade/fases): ordem canônica
     if (cat === 'moletom') return 0;
     if (cat === 'malha') return 1;
     if (cat === 'ribana') {
@@ -3286,13 +3317,14 @@ function ordenarComponentesPorFase(comps) {
     }
     return 50;
   };
+
   return [...comps].map((c, i) => ({ c, i, p: prioridade(c) }))
     .sort((a, b) => a.p - b.p || a.i - b.i)
     .map(x => x.c);
 }
 
 function renderComponentesDetalheBox(o) {
-  const comps = ordenarComponentesPorFase(o.componentes || []);
+  const comps = ordenarComponentesPorFase(o.componentes || [], o);
   if (!comps.length) return '';
   // Quais tamanhos mostrar? Só os que têm peças > 0 em alguma linha (ou que estão na grade)
   const tamanhos = ['p','m','g','gg','g1','g2','g3'];
@@ -3461,7 +3493,7 @@ function renderPrintSheet(o) {
   const g = o.grade || {};
   const tecs = o.tecidos || [];
   const vars_ = o.variantes || [];
-  const comps = ordenarComponentesPorFase(o.componentes || []);
+  const comps = ordenarComponentesPorFase(o.componentes || [], o);
   const avs = o.aviamentos || [];
   // Tabela de tecidos (até 5 linhas)
   let tecidoRows = '';
