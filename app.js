@@ -3509,10 +3509,7 @@ function renderPrintSheet(o) {
       }).join('')
     : `<div style="grid-column: 1/-1; color:#999; padding:4px 6px; font-style:italic;">Nenhum aviamento cadastrado</div>`;
 
-  // Componentes (aparecem como lista no final do box de desenho)
-  const compsHtml = comps.length
-    ? comps.map(c => `<li><strong>${esc(c.nome)}:</strong> ${esc(c.materialNome.replace(/^—\s*/,''))}${c.corNome && c.corNome!=='—'?' · '+esc(c.corNome):''}</li>`).join('')
-    : '';
+  // Lista curta de componentes removida — info já aparece em "Componentes — totais por tamanho"
 
   document.getElementById('print-sheet').innerHTML = `
     <!-- CABEÇALHO -->
@@ -3541,10 +3538,6 @@ function renderPrintSheet(o) {
     <div class="sheet-body">
       <div class="sheet-left">
         <div class="desenho-area">${imgHtml}</div>
-        ${compsHtml ? `<div style="padding:4px 8px;border-top:1px solid #000;font-size:7pt;">
-          <strong style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;text-transform:uppercase;color:#555;letter-spacing:.06em;display:block;margin-bottom:2px;">Componentes</strong>
-          <ul style="list-style:none;padding:0;columns:2;column-gap:12px;">${compsHtml}</ul>
-        </div>`: ''}
         <div class="desenho-footer">
           <div><strong>Designer</strong>${esc(o.designerNome || o.designer || '—')}</div>
           <div><strong>Ficha Técnica</strong>${esc(o.ftecNome || o.ftec || '—')}</div>
