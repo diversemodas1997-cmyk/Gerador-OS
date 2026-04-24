@@ -651,6 +651,17 @@ async function loadState() {
     }));
     if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
+  // Migração: vincula equipe.funcao → funcaoId (uma vez, quando ausente)
+  if (Array.isArray(STATE.equipe) && Array.isArray(STATE.funcoes)) {
+    let migrou = 0;
+    STATE.equipe.forEach(p => {
+      if (p.funcaoId) return;
+      if (!p.funcao) return;
+      const f = STATE.funcoes.find(x => (x.nome || '').trim().toLowerCase() === (p.funcao || '').trim().toLowerCase());
+      if (f) { p.funcaoId = f.id; migrou++; }
+    });
+    if (migrou > 0) { try { await saveState('equipe'); } catch (e) {} }
+  }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
@@ -1402,6 +1413,9 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.funcao = v('m-funcao');
+    // Vincula a função por ID também — assim se o nome da função for renomeado, reflete aqui
+    const funcaoMatch = (STATE.funcoes || []).find(f => (f.nome || '').trim().toLowerCase() === (item.funcao || '').trim().toLowerCase());
+    item.funcaoId = funcaoMatch?.id || '';
   }
   else if (tipo === 'funcao') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -3586,7 +3600,18 @@ function renderPrintSheet(o) {
     if (!id) return fallback || '—';
     const p = STATE.equipe.find(x => x.id === id);
     if (!p) return fallback || '—';
-    return p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
+    // Prioriza função via ID (se existir) — pega o nome atual mesmo se a função foi renomeada
+    let funcaoNome = '';
+    if (p.funcaoId) {
+      const f = STATE.funcoes.find(x => x.id === p.funcaoId);
+      if (f) funcaoNome = f.nome || '';
+    }
+    if (!funcaoNome && p.funcao) {
+      // Fallback: tenta achar função por nome (match case-insensitive); se achar, usa nome atual
+      const f = STATE.funcoes.find(x => (x.nome || '').trim().toLowerCase() === (p.funcao || '').trim().toLowerCase());
+      funcaoNome = f?.nome || p.funcao || '';
+    }
+    return p.nome + (funcaoNome ? ' ('+funcaoNome+')' : '');
   };
   const nomeDesigner = nomeEquipeAtual(o.designerId, o.designerNome || o.designer);
   const nomeFtec = nomeEquipeAtual(o.ftecId, o.ftecNome || o.ftec);
