@@ -1087,12 +1087,6 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'componente') {
-    const tiposPeca = [
-      { v: '', lbl: '— sem categoria —' },
-      { v: 'camiseta', lbl: 'Camiseta' },
-      { v: 'blusa_moletom', lbl: 'Blusa Moletom' },
-      { v: 'outro', lbl: 'Outro' }
-    ];
     const variacoes = [
       { v: '', lbl: '— sem variação —' },
       { v: 'basica', lbl: 'Básica' },
@@ -1102,14 +1096,19 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
       `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
     const semCores = !STATE.cores.length;
+    const semModelos = !STATE.modelos.length;
+    // Retrocompat: se o valor antigo era slug (camiseta/blusa_moletom/outro), tenta achar um modelo equivalente pelo nome/categoria
+    const tipoSalvo = item.tipoPeca || '';
+    const modeloOpts = '<option value="">— selecione —</option>' + STATE.modelos.map(m =>
+      `<option value="${esc(m.id)}" ${tipoSalvo===m.id?'selected':''}>${esc(m.nome)}${m.linha?' ('+esc(m.linha)+')':''}</option>`).join('');
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Mangas"></div>
-        <div class="field"><label>Tipo de peça</label>
-          <select id="m-comp-tipopeca">
-            ${tiposPeca.map(t => `<option value="${t.v}" ${item.tipoPeca===t.v?'selected':''}>${t.lbl}</option>`).join('')}
+        <div class="field"><label>Tipo (modelo)</label>
+          <select id="m-comp-tipopeca" ${semModelos?'disabled':''}>
+            ${semModelos ? '<option value="">— cadastre modelos primeiro —</option>' : modeloOpts}
           </select>
-          <div class="field-hint">Ajuda a separar componentes de camiseta e moletom</div>
+          <div class="field-hint">${semModelos ? 'Cadastre em <strong>Modelos</strong> para liberar este campo.' : 'Lista vem de Modelos cadastrados.'}</div>
         </div>
         <div class="field"><label>Variação</label>
           <select id="m-comp-variacao" onchange="atualizarCoresComponente()">
@@ -1657,8 +1656,9 @@ function nomesFuncoesPorIds(ids) {
 function renderComponentesCad() {
   const tb = document.getElementById('tbl-componentes');
   if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
-  const labelTipo = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro' };
+  const labelTipoLegacy = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro' };
   const labelVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
+  const modeloById = new Map(STATE.modelos.map(m => [m.id, m]));
   const corById = new Map(STATE.cores.map(x => [x.id, x]));
   const corSwatch = (id) => {
     const c = corById.get(id);
@@ -1668,12 +1668,19 @@ function renderComponentesCad() {
       ${esc(c.nome)}
     </span>`;
   };
+  const tipoLabel = (v) => {
+    if (!v) return '—';
+    const m = modeloById.get(v);
+    if (m) return `<span class="badge">${esc(m.nome)}</span>`;
+    if (labelTipoLegacy[v]) return `<span class="badge">${esc(labelTipoLegacy[v])}</span>`;
+    return `<span class="badge">${esc(v)}</span>`;
+  };
   tb.innerHTML = STATE.componentes.map(c => {
     const cores = [c.cor1Id, c.cor2Id, c.cor3Id].filter(Boolean).map(corSwatch).join('') || '—';
     return `
     <tr>
       <td><strong>${esc(c.nome)}</strong></td>
-      <td>${c.tipoPeca ? `<span class="badge">${esc(labelTipo[c.tipoPeca]||c.tipoPeca)}</span>` : '—'}</td>
+      <td>${tipoLabel(c.tipoPeca)}</td>
       <td>${c.variacao ? `<span class="badge">${esc(labelVar[c.variacao]||c.variacao)}</span>` : '—'}</td>
       <td>${cores}</td>
       <td>${esc(c.desc)||'—'}</td>
