@@ -2135,11 +2135,15 @@ function renderEnfestoBlocos(n, prefills = []) {
   cont.innerHTML = '';
   for (let i = 0; i < qtd; i++) {
     const p = prefills[i] || {};
+    const nomeTecido = p.nomeTecido || '';
     const bloco = document.createElement('div');
     bloco.className = 'enfesto-bloco';
+    bloco.dataset.nomeTecido = nomeTecido;
     bloco.style.cssText = 'margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
     bloco.innerHTML = `
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">ENFESTO ${i+1}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">
+        ENFESTO ${i+1}${nomeTecido ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(nomeTecido)}</span>` : ''}
+      </div>
       <div class="form-grid cols-2">
         <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
         <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="Ex.: 1,80"></div>
@@ -2153,6 +2157,7 @@ function lerEnfestoBlocos() {
   if (!cont) return [];
   return Array.from(cont.querySelectorAll('.enfesto-bloco')).map((b, i) => ({
     ordem: i + 1,
+    nomeTecido: b.dataset.nomeTecido || '',
     comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
     larg: parseFloat(b.querySelector('.enf-larg').value) || 0
   }));
@@ -2352,12 +2357,35 @@ function aplicarGradePreset() {
   const ordens = Object.keys(porOrdem).map(Number);
   const maxOrd = ordens.length ? Math.max(...ordens) : 0;
 
+  // Desenho atualmente selecionado na OS (fornece cor quando a fase não tem)
+  const desenhoAtual = (() => {
+    const id = document.getElementById('f-desenho')?.value;
+    return id ? STATE.desenhos.find(x => x.id === id) : null;
+  })();
+  const corFallbackPorOrdem = n => {
+    if (!desenhoAtual) return null;
+    const corId = n === 1 ? desenhoAtual.corPrincipalId
+                : n === 2 ? desenhoAtual.corSecundariaId
+                : n === 3 ? desenhoAtual.corTerciariaId
+                : null;
+    return corId || null;
+  };
+
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
     const prefills = [];
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
-      prefills.push({ comp: f.comp || '', larg: f.larg || '' });
+      const tec = f.tecidoId ? STATE.tecidos.find(t => t.id === f.tecidoId) : null;
+      const corIdEfetiva = f.corId || corFallbackPorOrdem(n);
+      const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
+      // Monta nome: "Tecido · Cor" / "Tecido" / "Cor" / vazio
+      const partes = [tec?.nome, cor?.nome].filter(Boolean);
+      prefills.push({
+        comp: f.comp || '',
+        larg: f.larg || '',
+        nomeTecido: partes.join(' · ')
+      });
     }
     renderEnfestoBlocos(maxOrd, prefills);
   } else if (g.enfestoComprimento || g.enfestoLargura) {
@@ -2845,7 +2873,16 @@ function editarOS(id) {
       : (o.enfesto?.comprimento || o.enfesto?.largura)
         ? [{ comp: o.enfesto.comprimento, larg: o.enfesto.largura }]
         : [{}];
-    renderEnfestoBlocos(blocosSalvos.length, blocosSalvos);
+    // Recupera nomeTecido correspondente a cada bloco — via nomeTecido salvo, ou lookup nas fases da OS
+    const blocosComNomes = blocosSalvos.map((b, i) => {
+      let nomeTecido = b.nomeTecido || '';
+      if (!nomeTecido && Array.isArray(o.fases)) {
+        const fase = o.fases.find(f => (f.ordem || 0) === (i+1));
+        if (fase) nomeTecido = fase.tecidoNome || '';
+      }
+      return { ...b, nomeTecido };
+    });
+    renderEnfestoBlocos(blocosComNomes.length, blocosComNomes);
     document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
     document.getElementById('f-obs').value = o.obs || '';
     document.getElementById('f-atencao').value = o.atencao || '';
@@ -3033,12 +3070,15 @@ function renderEnfestoBox(o) {
     .map(t => `<tr><td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td><td style="text-align:center;">${g[t]}</td><td style="text-align:center;">×${camadas}</td><td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td></tr>`)
     .join('');
 
-  const blocosRows = blocos.map((b, i) => `
+  const blocosRows = blocos.map((b, i) => {
+    const rotulo = `ENF ${b.ordem || (i+1)}${b.nomeTecido ? ' · '+esc(b.nomeTecido) : ''}`;
+    return `
     <tr>
-      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">ENF ${b.ordem || (i+1)}</td>
+      <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;background:#f4f4f4;">${rotulo}</td>
       <td style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Comp: <strong>${fmt(b.comp)} m</strong></td>
       <td colspan="2" style="padding:3px 5px;font-family:'IBM Plex Mono',monospace;">Larg: <strong>${fmt(b.larg)} m</strong></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   return `
     <table class="side-table" style="border-top:none;">
