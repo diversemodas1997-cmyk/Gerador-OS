@@ -3515,13 +3515,14 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
+      <td style="text-align:center;"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #000;vertical-align:middle;"></span></td>
     </tr>`;
   }).join('');
 
   return `
     <table class="side-table" style="border-top:none;">
       <thead>
-        <tr><th colspan="7" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr><th colspan="8" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
         <tr>
           <th style="width:30px;font-size:6.5pt;">Fase</th>
           <th style="font-size:6.5pt;">Enfesto</th>
@@ -3530,6 +3531,7 @@ function renderEnfestoBox(o) {
           <th style="font-size:6.5pt;">Compr.</th>
           <th style="font-size:6.5pt;">Largura</th>
           <th style="font-size:6.5pt;">Camadas</th>
+          <th style="width:22px;font-size:6.5pt;">✓</th>
         </tr>
       </thead>
       <tbody>
