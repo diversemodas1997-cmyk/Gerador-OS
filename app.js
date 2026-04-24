@@ -2131,7 +2131,7 @@ function addEtapaCustomizada() {
 function renderEnfestoBlocos(n, prefills = []) {
   const cont = document.getElementById('f-enfestos-blocos');
   if (!cont) return;
-  const qtd = Math.max(1, Math.min(3, n || 1));
+  const qtd = Math.max(1, n || 1);
   cont.innerHTML = '';
   for (let i = 0; i < qtd; i++) {
     const p = prefills[i] || {};
