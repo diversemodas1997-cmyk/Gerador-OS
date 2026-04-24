@@ -3622,7 +3622,6 @@ function renderPrintSheet(o) {
     <!-- RODAPÉ -->
     <div class="sheet-foot">
       <div><strong>Gerado em</strong> ${esc(formatDate(new Date().toISOString().slice(0,10)))}</div>
-      <div><strong>Qtd total</strong> ${g.total||0} peças</div>
       ${o.atencao ? `<div><strong>Atenção</strong> ${esc(o.atencao)}</div>` : ''}
     </div>
   `;
