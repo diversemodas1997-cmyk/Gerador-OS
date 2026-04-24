@@ -740,11 +740,12 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"></div>
-        <div class="field"><label>Categoria (define limite de enfesto)</label>
+        <div class="field"><label>Categoria (define limite de enfesto e multiplicador)</label>
           <select id="m-categoria">
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 30 camadas)</option>
+            <option value="ribana" ${item.categoria==='ribana'?'selected':''}>Ribana (1 camada = 2 peças)</option>
             <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
           </select>
         </div>
@@ -2432,8 +2433,9 @@ function aplicarGradePreset() {
 /* ========================================================= */
 /*              ENFESTO — limites e cálculos                 */
 /* ========================================================= */
-const LIMITE_CAMADAS = { malha: 80, moletom: 30, outro: Infinity };
-const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, outro: 1 };
+const LIMITE_CAMADAS = { malha: 80, moletom: 30, ribana: 80, outro: Infinity };
+const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
+const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
 function multiplicadorDominante() {
   const rows = document.querySelectorAll('#tecidos-rows .tec-sel');
@@ -2496,24 +2498,59 @@ function atualizarCalculosEnfesto() {
     campoCamadas.style.background = '';
   }
 
-  // Área de cálculo
+  // Área de cálculo — separado por categoria de tecido
   const calcBox = document.getElementById('f-enf-calculo');
-  const multiplier = multiplicadorDominante();
   if (camadas > 0 && gradeTotal > 0) {
-    const totalPecas = gradeTotal * camadas * multiplier;
-    const multText = multiplier > 1 ? ` · ×${multiplier} (malha algodão: 2 peças/camada)` : '';
-    const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
-      .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
-      .filter(x => x.qtd > 0)
-      .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}${multiplier>1?'×'+multiplier:''} = ${x.qtd * camadas * multiplier}`)
-      .join(' · ');
-    calcBox.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span>Total de peças produzidas:${multText}</span>
-        <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
-      </div>
-      <div style="font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>
-    `;
+    // Coleta categorias das fases da grade atual; fallback: linhas de Tecidos do form
+    const categoriasUsadas = new Set();
+    const gradeId = document.getElementById('f-grade-preset')?.value;
+    const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
+    const fases = grade?.fases || [];
+    fases.forEach(f => {
+      if (!f.tecidoId) return;
+      const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+      if (t?.categoria) categoriasUsadas.add(t.categoria);
+    });
+    if (!categoriasUsadas.size) {
+      document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
+        if (!sel.value) return;
+        const tec = STATE.tecidos.find(t => t.id === sel.value);
+        if (tec?.categoria) categoriasUsadas.add(tec.categoria);
+      });
+    }
+    // Se ainda não identificou categoria, mostra um único total genérico
+    if (!categoriasUsadas.size) {
+      const mult = multiplicadorDominante();
+      const totalPecas = gradeTotal * camadas * mult;
+      calcBox.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span>Total de peças produzidas:</span>
+          <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
+        </div>`;
+    } else {
+      // Um total por categoria — ordem: malha, moletom, ribana, outro
+      const ordem = ['malha', 'moletom', 'ribana', 'outro'];
+      const linhas = ordem
+        .filter(cat => categoriasUsadas.has(cat))
+        .map(cat => {
+          const mult = MULTIPLICADOR_PECAS[cat] || 1;
+          const total = gradeTotal * camadas * mult;
+          const label = LABEL_CATEGORIA[cat] || cat;
+          const multText = mult > 1 ? ` <span style="font-size:11px;color:var(--ink-3);">(×${mult} · 1 camada = ${mult} peças)</span>` : '';
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
+              <span>Total ${label}:${multText}</span>
+              <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${total} peças</strong>
+            </div>`;
+        }).join('');
+      const porTamanho = ['pp','p','m','g','gg','g1','g2','g3']
+        .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
+        .filter(x => x.qtd > 0)
+        .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}`)
+        .join(' · ');
+      calcBox.innerHTML = `${linhas}
+        <div style="margin-top:8px;font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>`;
+    }
   } else {
     calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
   }
