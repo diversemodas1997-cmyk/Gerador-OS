@@ -2528,14 +2528,62 @@ function atualizarCalculosEnfesto() {
           <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalPecas} peças</strong>
         </div>`;
     } else {
+      // Categoria principal (corpo da peça): moletom OU malha
+      const catPrincipal = categoriasUsadas.has('moletom') ? 'moletom'
+                         : categoriasUsadas.has('malha') ? 'malha' : null;
+      const totalPrincipal = catPrincipal
+        ? gradeTotal * camadas * (MULTIPLICADOR_PECAS[catPrincipal] || 1)
+        : 0;
+
+      // Calcula total ribana via componentes do desenho, se aplicável
+      let ribanaInfo = null;
+      if (categoriasUsadas.has('ribana') && catPrincipal) {
+        const desenhoId = document.getElementById('f-desenho')?.value;
+        const desenho = desenhoId ? STATE.desenhos.find(x => x.id === desenhoId) : null;
+        const comps = Array.isArray(desenho?.componentes) ? desenho.componentes : [];
+        const ribanaComps = comps.filter(c => {
+          if (!c.tecidoId) return false;
+          const tec = STATE.tecidos.find(t => t.id === c.tecidoId);
+          return tec?.categoria === 'ribana';
+        });
+        let sumQty = 0;
+        const detalhes = [];
+        ribanaComps.forEach(c => {
+          const nome = (c.nome || '').toLowerCase();
+          const qty = (nome.includes('manga') || nome.includes('punho')) ? 2 : 1;
+          sumQty += qty;
+          detalhes.push(`${c.nome||'?'} ×${qty}`);
+        });
+        const totalRibana = totalPrincipal * sumQty;
+        const multRib = MULTIPLICADOR_PECAS.ribana || 2;
+        const camadasRib = gradeTotal > 0 ? Math.ceil(totalRibana / (gradeTotal * multRib)) : 0;
+        ribanaInfo = { total: totalRibana, camadas: camadasRib, sumQty, detalhes };
+      }
+
       // Um total por categoria — ordem: malha, moletom, ribana, outro
       const ordem = ['malha', 'moletom', 'ribana', 'outro'];
       const linhas = ordem
         .filter(cat => categoriasUsadas.has(cat))
         .map(cat => {
+          const label = LABEL_CATEGORIA[cat] || cat;
+          if (cat === 'ribana' && ribanaInfo) {
+            const hint = ribanaInfo.detalhes.length
+              ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(ribanaInfo.detalhes.join(' + '))})</span>`
+              : '';
+            return `
+              <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span>Total ${label}:${hint}</span>
+                  <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${ribanaInfo.total} peças</strong>
+                </div>
+                <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
+                  Camadas de ribana sugeridas: <strong>${ribanaInfo.camadas}</strong>
+                  (grade ${gradeTotal} × 2 peças/camada)
+                </div>
+              </div>`;
+          }
           const mult = MULTIPLICADOR_PECAS[cat] || 1;
           const total = gradeTotal * camadas * mult;
-          const label = LABEL_CATEGORIA[cat] || cat;
           const multText = mult > 1 ? ` <span style="font-size:11px;color:var(--ink-3);">(×${mult} · 1 camada = ${mult} peças)</span>` : '';
           return `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
