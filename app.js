@@ -1162,6 +1162,7 @@ function addFaseGradeRow(fase = {}) {
       <button type="button" class="btn small danger" onclick="removerFaseGrade(this)">✕ Remover</button>
     </div>
     <div class="form-grid cols-2">
+      <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
       <div class="field"><label>Tecido</label><select class="fase-tec">${tecOpts(fase.tecidoId)}</select></div>
       <div class="field"><label>Cor</label><select class="fase-cor">${corOpts(fase.corId)}</select></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
@@ -1316,6 +1317,7 @@ async function salvarCadastro() {
     });
     item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => ({
       ordem: i + 1,
+      nome: b.querySelector('.fase-nome')?.value || '',
       tecidoId: b.querySelector('.fase-tec')?.value || '',
       corId: b.querySelector('.fase-cor')?.value || '',
       comp: b.querySelector('.fase-comp')?.value || '',
@@ -2442,6 +2444,18 @@ const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
 /**
+ * Categoria efetiva de um tecido: respeita a categoria cadastrada, mas
+ * se o nome contém "ribana" (case-insensitive), força 'ribana'. Isso cobre
+ * tecidos cadastrados antes da categoria "ribana" existir (ex.: "Ribana moletom"
+ * salvo como categoria=moletom).
+ */
+function categoriaEfetivaTecido(t) {
+  if (!t) return '';
+  if ((t.nome || '').toLowerCase().includes('ribana')) return 'ribana';
+  return t.categoria || '';
+}
+
+/**
  * Determina papel/nome de cada fase em função do tecido e da posição na grade.
  * - Fase com moletom → "Moletom"
  * - Fase com malha, SE a grade também tem moletom → "Forro de capuz"
@@ -2451,19 +2465,26 @@ const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: '
  */
 function calcularPapeisFases(fases) {
   const tecidosMap = new Map(STATE.tecidos.map(t => [t.id, t]));
-  const temMoletom = fases.some(f => tecidosMap.get(f.tecidoId)?.categoria === 'moletom');
+  const temMoletom = fases.some(f => categoriaEfetivaTecido(tecidosMap.get(f.tecidoId)) === 'moletom');
   let contRib = 0;
   return fases.map(f => {
     const t = tecidosMap.get(f.tecidoId);
-    const cat = t?.categoria || '';
-    if (cat === 'moletom') return { papel: 'moletom', label: 'Moletom', categoria: cat };
-    if (cat === 'malha' && temMoletom) return { papel: 'forro_capuz', label: 'Forro de capuz', categoria: cat };
-    if (cat === 'ribana') {
+    const cat = categoriaEfetivaTecido(t);
+    // Papel é sempre calculado pela categoria/posição (usado pra agrupar totais)
+    let papel, labelAuto;
+    if (cat === 'moletom') { papel = 'moletom'; labelAuto = 'Moletom'; }
+    else if (cat === 'malha' && temMoletom) { papel = 'forro_capuz'; labelAuto = 'Forro de capuz'; }
+    else if (cat === 'ribana') {
       contRib++;
-      const label = contRib === 1 ? 'Punhos' : contRib === 2 ? 'Barra' : `Ribana ${contRib}`;
-      return { papel: 'ribana_'+contRib, label, categoria: cat };
+      papel = 'ribana_'+contRib;
+      labelAuto = contRib === 1 ? 'Punhos' : contRib === 2 ? 'Barra' : `Ribana ${contRib}`;
+    } else {
+      papel = cat || 'outro';
+      labelAuto = LABEL_CATEGORIA[cat] || (t?.nome || '');
     }
-    return { papel: cat || 'outro', label: LABEL_CATEGORIA[cat] || (t?.nome || ''), categoria: cat };
+    // Nome cadastrado pelo user na fase tem prioridade sobre o label automático
+    const label = (f?.nome && f.nome.trim()) ? f.nome.trim() : labelAuto;
+    return { papel, label, categoria: cat };
   });
 }
 
@@ -2620,17 +2641,24 @@ function atualizarCalculosEnfesto() {
         }
 
         const blocos = [];
+        // Labels pegos das fases (respeitam nome cadastrado pelo user)
+        const labelMoletom = papeis.find(p => p.papel === 'moletom')?.label || 'Moletom';
+        const labelForro = papeis.find(p => p.papel === 'forro_capuz')?.label || 'Forro de capuz';
+        // Ribana: junta todos labels de fases ribana (ex.: "Punhos / Barra" ou nomes customizados)
+        const labelsRibana = papeis.filter(p => (p.papel || '').startsWith('ribana_')).map(p => p.label).filter(Boolean);
+        const labelRibana = labelsRibana.length ? labelsRibana.join(' e ') : 'Ribana';
+
         if (temMoletom) {
           blocos.push(`
             <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
-              <span>Total Moletom: <span style="font-size:11px;color:var(--ink-3);">(1 camada = 1 blusa/tamanho)</span></span>
+              <span>Total ${esc(labelMoletom)}: <span style="font-size:11px;color:var(--ink-3);">(1 camada = 1 peça/tamanho)</span></span>
               <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalMoletom} peças</strong>
             </div>`);
         }
         if (temForro) {
           blocos.push(`
             <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
-              <span>Total Forro de capuz: <span style="font-size:11px;color:var(--ink-3);">(malha algodão)</span></span>
+              <span>Total ${esc(labelForro)}: <span style="font-size:11px;color:var(--ink-3);">(malha algodão)</span></span>
               <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${totalForro} peças</strong>
             </div>`);
         }
@@ -2642,12 +2670,12 @@ function atualizarCalculosEnfesto() {
           blocos.push(`
             <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
               <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span>Total Punhos e Barras:${hint}</span>
+                <span>Total ${esc(labelRibana)}:${hint}</span>
                 <strong style="font-family:'IBM Plex Mono', monospace; font-size: 15px; color: var(--accent-dark);">${ribanaInfo.total} peças</strong>
               </div>
               <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
                 Camadas de ribana sugeridas (por enfesto): <strong>${ribanaInfo.camadas}</strong>
-                (1 camada = 2 blusas/tamanho; ${refBlusas} blusas ÷ ${gradeTotal*2})
+                (1 camada = 2 peças/tamanho; ${refBlusas} peças ÷ ${gradeTotal*2})
               </div>
             </div>`);
         }
