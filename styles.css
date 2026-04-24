@@ -732,10 +732,6 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   margin-right: 6px;
 }
 .sheet-atencao .atencao-text {
-  display: inline-block;
-  width: calc(100% - 65px);
-  text-align: justify;
-  text-align-last: justify;
   vertical-align: top;
 }
 
