@@ -3557,6 +3557,40 @@ function renderEnfestoBox(o) {
 
 function renderPrintSheet(o) {
   printOsAtual = o;
+  // Se a OS aponta para uma grade cadastrada, usa os dados ATUAIS da grade
+  // (fases, distribuição de tamanhos e descrição). Só o enfesto local (comp/larg/camadas
+  // digitados na OS) permanece salvo. Isso faz alterações posteriores na grade refletirem
+  // automaticamente na impressão.
+  if (o.gradeId) {
+    const gViva = STATE.grades.find(g => g.id === o.gradeId);
+    if (gViva) {
+      const fasesAtualizadas = Array.isArray(gViva.fases) ? gViva.fases.map(f => ({
+        ordem: f.ordem,
+        nome: f.nome || '',
+        tecidoId: f.tecidoId || '',
+        tecidoNome: (STATE.tecidos.find(t => t.id === f.tecidoId) || {}).nome || '',
+        corId: f.corId || '',
+        corNome: (STATE.cores.find(c => c.id === f.corId) || {}).nome || '',
+        comp: f.comp || '',
+        larg: f.larg || ''
+      })) : [];
+      const tamanhos = (gViva.tamanhos || {});
+      const gradeAtualizada = {
+        ...(o.grade || {}),
+        descricao: gViva.nome || o.grade?.descricao || '',
+        p: tamanhos.p != null ? tamanhos.p : (o.grade?.p || 0),
+        m: tamanhos.m != null ? tamanhos.m : (o.grade?.m || 0),
+        g: tamanhos.g != null ? tamanhos.g : (o.grade?.g || 0),
+        gg: tamanhos.gg != null ? tamanhos.gg : (o.grade?.gg || 0),
+        g1: tamanhos.g1 != null ? tamanhos.g1 : (o.grade?.g1 || 0),
+        g2: tamanhos.g2 != null ? tamanhos.g2 : (o.grade?.g2 || 0),
+        g3: tamanhos.g3 != null ? tamanhos.g3 : (o.grade?.g3 || 0)
+      };
+      gradeAtualizada.total = gradeAtualizada.p + gradeAtualizada.m + gradeAtualizada.g
+        + gradeAtualizada.gg + gradeAtualizada.g1 + gradeAtualizada.g2 + gradeAtualizada.g3;
+      o = { ...o, fases: fasesAtualizadas, grade: gradeAtualizada };
+    }
+  }
   const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
   const imgHtml = desenho?.img
     ? `<img src="${desenho.img}" alt="Desenho técnico">`
