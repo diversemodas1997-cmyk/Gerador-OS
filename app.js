@@ -3513,25 +3513,25 @@ function renderEnfestoBox(o) {
       <td>${esc(nomeEnf) || '—'}</td>
       <td>${esc(tecidoReal) || '—'}</td>
       <td>${esc(cor) || '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
     </tr>`;
   }).join('');
 
   return `
-    <table class="side-table" style="border-top:none;">
+    <table class="side-table" style="border-top:none;table-layout:auto;">
       <thead>
         <tr><th colspan="8" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
         <tr>
-          <th style="width:22px;font-size:6.5pt;">✓</th>
-          <th style="width:30px;font-size:6.5pt;">Fase</th>
+          <th style="width:18px;font-size:6.5pt;">✓</th>
+          <th style="width:24px;font-size:6.5pt;">Fase</th>
           <th style="font-size:6.5pt;">Enfesto</th>
           <th style="font-size:6.5pt;">Tecido</th>
           <th style="font-size:6.5pt;">Cor</th>
-          <th style="font-size:6.5pt;">Compr.</th>
-          <th style="font-size:6.5pt;">Largura</th>
-          <th style="font-size:6.5pt;">Camadas</th>
+          <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Compr.</th>
+          <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Largura</th>
+          <th style="width:36px;font-size:6.5pt;">Camadas</th>
         </tr>
       </thead>
       <tbody>
