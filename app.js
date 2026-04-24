@@ -1912,14 +1912,21 @@ function aplicarVinculosDesenho() {
         }
       }
     }
-    // Aplica tecido principal na primeira linha de Tecidos (cria se não existir)
-    if (d.tecidoPadraoId) {
+    // Aplica tecido/cores do desenho nas linhas de Tecidos (1 linha por cor)
+    const coresDoDesenho = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean);
+    if (d.tecidoPadraoId || coresDoDesenho.length) {
       const tecCont = document.getElementById('tecidos-rows');
-      if (tecCont) {
-        if (!tecCont.querySelector('.tecido-row')) addTecidoRow();
-        const primeiroTec = tecCont.querySelector('.tecido-row .tec-sel');
-        if (primeiroTec) primeiroTec.value = d.tecidoPadraoId;
-        aplicou = true;
+      if (tecCont && !tecCont.querySelector('.tec-sel[value]:not([value=""])')) {
+        // Só preenche se ainda não houver tecido escolhido (grade preset tem prioridade)
+        const jaTemPreenchido = Array.from(tecCont.querySelectorAll('.tec-sel')).some(s => s.value);
+        if (!jaTemPreenchido) {
+          tecCont.innerHTML = '';
+          const n = Math.max(coresDoDesenho.length, 1);
+          for (let i = 0; i < n; i++) {
+            addTecidoRow({ tecidoId: d.tecidoPadraoId || '', corId: coresDoDesenho[i] || '' });
+          }
+          aplicou = true;
+        }
       }
     }
     if (aplicou) toast('Campos vinculados preenchidos automaticamente', 'ok');
@@ -2066,17 +2073,18 @@ function addTecidoRow(data = {}) {
   const cont = document.getElementById('tecidos-rows');
   const idx = cont.children.length + 1;
   if (idx > 5) { toast('Máximo 5 tecidos', 'err'); return; }
+  const corOpts = '<option value="">—</option>' + STATE.cores.map(c =>
+    `<option value="${esc(c.id)}" ${data.corId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
   const row = document.createElement('div');
   row.className = 'tecido-row';
   row.innerHTML = `
     <div class="field"><label>Nº</label><input type="text" value="${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
     <div class="field"><label>Tecido</label><select class="tec-sel" onchange="atualizarCalculosEnfesto()">${tecOptions(data.tecidoId)}</select></div>
-    <div class="field"><label>Consumo C.1</label><input type="text" class="tec-c1" value="${esc(data.c1||'')}" placeholder="0,000 kg"></div>
-    <div class="field"><label>Consumo C.2</label><input type="text" class="tec-c2" value="${esc(data.c2||'')}" placeholder="0,000 kg"></div>
+    <div class="field"><label>Cor</label><select class="tec-cor">${corOpts}</select></div>
     <div class="field">
-      <label>C.3 / remover</label>
+      <label>Consumo C.1</label>
       <div style="display:flex; gap:4px;">
-        <input type="text" class="tec-c3" value="${esc(data.c3||'')}" placeholder="C.3" style="flex:1">
+        <input type="text" class="tec-c1" value="${esc(data.c1||'')}" placeholder="0,000 kg" style="flex:1">
         <button type="button" class="btn small danger" onclick="this.closest('.tecido-row').remove(); reindexTecidos()">✕</button>
       </div>
     </div>`;
@@ -2234,13 +2242,13 @@ function aplicarGradePreset() {
   if (f1.comp) document.getElementById('f-enf-comp').value = f1.comp;
   if (f1.larg) document.getElementById('f-enf-larg').value = f1.larg;
 
-  // Popula linhas de Tecido com os tecidos das fases (se houver)
-  if (fases.length && fases.some(f => f.tecidoId)) {
+  // Popula linhas de Tecido com tecido + cor de cada fase (se houver)
+  if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
       tecCont.innerHTML = '';
       fases.forEach(f => {
-        if (f.tecidoId) addTecidoRow({ tecidoId: f.tecidoId });
+        if (f.tecidoId || f.corId) addTecidoRow({ tecidoId: f.tecidoId || '', corId: f.corId || '' });
       });
     }
   }
@@ -2420,13 +2428,17 @@ function coletaOS() {
   const v = id => document.getElementById(id)?.value || '';
   const getSel = el => ({ id: el.value, text: el.options[el.selectedIndex]?.text || '' });
 
-  const tecidos = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row')).map(r => ({
-    tecidoId: r.querySelector('.tec-sel').value,
-    tecidoNome: r.querySelector('.tec-sel').options[r.querySelector('.tec-sel').selectedIndex]?.text || '',
-    c1: r.querySelector('.tec-c1').value,
-    c2: r.querySelector('.tec-c2').value,
-    c3: r.querySelector('.tec-c3').value
-  })).filter(t => t.tecidoId);
+  const tecidos = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row')).map(r => {
+    const tecSel = r.querySelector('.tec-sel');
+    const corSel = r.querySelector('.tec-cor');
+    return {
+      tecidoId: tecSel.value,
+      tecidoNome: tecSel.options[tecSel.selectedIndex]?.text || '',
+      corId: corSel?.value || '',
+      corNome: corSel?.options[corSel.selectedIndex]?.text || '',
+      c1: r.querySelector('.tec-c1').value
+    };
+  }).filter(t => t.tecidoId);
 
   const variantes = Array.from(document.querySelectorAll('#variantes-rows .variante-row')).map((r, i) => {
     const c1 = r.querySelector('.var-c1');
@@ -2944,11 +2956,13 @@ function renderPrintSheet(o) {
       tecidoRows += `<tr>
         <td style="text-align:center;font-weight:700;width:18px;">${i+1}</td>
         <td class="tecido-cell">${esc(t.tecidoNome)}</td>
-        <td>C.1: ${esc(t.c1)||''}<br>C.2: ${esc(t.c2)||''}<br>${t.c3?`C.3: ${esc(t.c3)}`:''}</td>
+        <td>${esc(t.corNome)||'—'}</td>
+        <td>C.1: ${esc(t.c1)||''}</td>
       </tr>`;
     } else {
       tecidoRows += `<tr>
         <td style="text-align:center;color:#ccc;">${i+1}</td>
+        <td style="color:#ccc;">—</td>
         <td style="color:#ccc;">—</td>
         <td style="color:#ccc;">—</td>
       </tr>`;
@@ -3028,8 +3042,8 @@ function renderPrintSheet(o) {
 
         <!-- TECIDOS -->
         <table class="side-table tab-tecidos">
-          <thead><tr><th colspan="3" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
-          <tr><th style="width:18px;">#</th><th>Tecido</th><th style="width:90px;">Consumo</th></tr></thead>
+          <thead><tr><th colspan="4" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
+          <tr><th style="width:18px;">#</th><th>Tecido</th><th>Cor</th><th style="width:90px;">Consumo</th></tr></thead>
           <tbody>${tecidoRows}</tbody>
         </table>
 
