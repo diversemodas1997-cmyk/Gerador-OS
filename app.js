@@ -1896,8 +1896,8 @@ function aplicarVinculosDesenho() {
           // Lookup robusto: por ID e, se falhar, por nome
           const cad = STATE.componentes.find(x => x.id === c.componenteId)
                    || (c.nome ? STATE.componentes.find(x => x.nome === c.nome) : null);
-          // Prioriza primeira cor cadastrada no componente; senão usa a cor do desenho
-          const corPrincipal = cad?.cor1Id || c.corId || '';
+          // Prioriza a cor escolhida NO DESENHO pra este componente; cor1Id do cadastro é fallback
+          const corPrincipal = c.corId || cad?.cor1Id || '';
           addComponenteRow({
             nome: c.nome || cad?.nome || '',
             material: c.tecidoId ? 'T:' + c.tecidoId : '',
@@ -2310,9 +2310,9 @@ function expandirCoresComponente(inputEl) {
   if (!row) return;
   const corSel = row.querySelector('.comp-cor');
   if (!corSel) return;
-  // Se já tem uma cor que bate com uma das cadastradas, mantém (evita sobrescrever edição manual)
-  if (corSel.value && coresCad.includes(corSel.value)) return;
-  // Preenche com a primeira cor cadastrada
+  // Se já há uma cor escolhida, mantém (respeita escolha manual e cor vinda do desenho)
+  if (corSel.value) return;
+  // Preenche com a primeira cor cadastrada no componente
   corSel.value = coresCad[0];
 }
 
