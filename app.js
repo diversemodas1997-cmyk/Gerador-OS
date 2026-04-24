@@ -3444,70 +3444,6 @@ function renderEnfestoBox(o) {
   `;
 }
 
-function renderPecasPorTamanhoBox(o) {
-  const e = o.enfesto || {};
-  const g = o.grade || {};
-  const blocos = Array.isArray(e.blocos) && e.blocos.length
-    ? e.blocos
-    : (e.comprimento || e.largura ? [{ ordem: 1, comp: e.comprimento, larg: e.largura, camadas: e.camadas }] : []);
-  if (!blocos.length) return '';
-  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
-  const tamsAtivos = tamanhos.filter(t => (g[t]||0) > 0);
-  if (!tamsAtivos.length) return '';
-  const camadasGlob = e.camadas || 0;
-
-  // Cor de cada fase via ordem
-  const fasesPorOrdem = {};
-  (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
-
-  const multBloco = (b) => {
-    const n = (b.nomeTecido || '').toLowerCase();
-    if (n.includes('moletom')) return 1;
-    return 2;
-  };
-
-  const linhas = blocos.map((b, i) => {
-    const ord = b.ordem || (i+1);
-    let nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '';
-    if (!nomeEnf && fasesPorOrdem[ord]?.corNome) nomeEnf = '';
-    if (nomeEnf.includes(' · ')) nomeEnf = nomeEnf.split(' · ')[0];
-    const camBloco = b.camadas || camadasGlob || 0;
-    const mult = multBloco(b);
-    let totalLinha = 0;
-    const celulas = tamsAtivos.map(t => {
-      const val = (g[t]||0) * camBloco * mult;
-      totalLinha += val;
-      return `<td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${val || '—'}</td>`;
-    }).join('');
-    return `<tr>
-      <td style="text-align:center;font-weight:700;">${ord}</td>
-      <td>${esc(nomeEnf) || '—'}</td>
-      ${celulas}
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${totalLinha || '—'}</td>
-    </tr>`;
-  }).join('');
-
-  const cabTams = tamsAtivos.map(t => `<th style="font-size:6.5pt;">${t.toUpperCase()}</th>`).join('');
-  const nCols = 2 + tamsAtivos.length + 1;
-
-  return `
-    <table class="side-table" style="border-top:none;">
-      <thead>
-        <tr><th colspan="${nCols}" class="subhead" style="background:#fde68a;">Peças por tamanho</th></tr>
-        <tr>
-          <th style="width:30px;font-size:6.5pt;">Fase</th>
-          <th style="font-size:6.5pt;">Enfesto</th>
-          ${cabTams}
-          <th style="font-size:6.5pt;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${linhas}
-      </tbody>
-    </table>
-  `;
-}
-
 function renderPrintSheet(o) {
   printOsAtual = o;
   const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
@@ -3641,9 +3577,6 @@ function renderPrintSheet(o) {
 
         <!-- ENFESTO -->
         ${renderEnfestoBox(o)}
-
-        <!-- PEÇAS POR TAMANHO (por fase) -->
-        ${renderPecasPorTamanhoBox(o)}
 
         <!-- ETAPAS -->
         <div class="etapas-list">
