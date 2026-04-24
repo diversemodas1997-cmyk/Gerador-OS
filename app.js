@@ -1852,30 +1852,28 @@ function aplicarVinculosDesenho() {
       const cont = document.getElementById('componentes-rows');
       if (cont) {
         cont.innerHTML = '';
-        let totalRowsExtras = 0;
         compsDesenho.forEach(c => {
           // Lookup robusto: por ID e, se falhar, por nome (caso os IDs tenham dessincronizado)
           const cad = STATE.componentes.find(x => x.id === c.componenteId)
                    || (c.nome ? STATE.componentes.find(x => x.nome === c.nome) : null);
           const coresCad = cad ? [cad.cor1Id, cad.cor2Id, cad.cor3Id].filter(Boolean) : [];
-          const base = {
+          const data = {
             nome: c.nome || cad?.nome || '',
             material: c.tecidoId ? 'T:' + c.tecidoId : '',
             qtdPorPeca: c.qtdPorPeca != null ? c.qtdPorPeca : 1
           };
           if (coresCad.length) {
-            // Componente com cores cadastradas (basica/bicolor/tricolor): 1 row por cor
-            coresCad.forEach(corId => addComponenteRow({ ...base, cor: corId }));
-            if (coresCad.length > 1) totalRowsExtras += coresCad.length - 1;
+            // Componente com cores cadastradas: preenche cor1/cor2/cor3 da mesma row
+            data.cor1 = coresCad[0] || '';
+            data.cor2 = coresCad[1] || '';
+            data.cor3 = coresCad[2] || '';
           } else {
-            // Sem cores no cadastro — usa a cor salva no desenho como fallback
-            addComponenteRow({ ...base, cor: c.corId || '' });
+            // Fallback: usa a cor salva no desenho como cor1
+            data.cor1 = c.corId || '';
           }
+          addComponenteRow(data);
         });
         aplicou = true;
-        if (totalRowsExtras > 0) {
-          toast(`${totalRowsExtras} linha(s) extra(s) criada(s) pelas cores dos componentes`, 'ok');
-        }
       }
     }
     // Aplica etapas padrão do desenho (marca + ordena)
@@ -2250,15 +2248,23 @@ function addComponenteRow(data = {}) {
                        ...STATE.materiais.map(m=>({id:'M:'+m.id, nome:m.codigo+' · '+m.desc}))];
   const matOpts = '<option value="">—</option>' + todosTecidos.map(t =>
     `<option value="${esc(t.id)}" ${data.material===t.id?'selected':''}>${esc(t.nome)}</option>`).join('');
-  const corOpts = '<option value="">—</option>' + STATE.cores.map(c =>
-    `<option value="${esc(c.id)}" ${data.cor===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  // Retrocompat: se OS antiga tem só `data.cor`, usa como cor1
+  const cor1 = data.cor1 || data.cor || '';
+  const cor2 = data.cor2 || '';
+  const cor3 = data.cor3 || '';
+  const corOpts = (selId) => '<option value="">—</option>' + STATE.cores.map(c =>
+    `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
   row.innerHTML = `
     <div class="field">
       <input list="compList" class="comp-nome" value="${esc(data.nome||'')}" placeholder="Componente" onchange="expandirCoresComponente(this)">
       <datalist id="compList">${compOpts}</datalist>
     </div>
     <div class="field"><select class="comp-mat">${matOpts}</select></div>
-    <div class="field"><select class="comp-cor">${corOpts}</select></div>
+    <div class="field" style="display:flex;flex-direction:column;gap:3px;">
+      <select class="comp-cor comp-cor-1">${corOpts(cor1)}</select>
+      <select class="comp-cor comp-cor-2" style="${cor2?'':'display:none;'}">${corOpts(cor2)}</select>
+      <select class="comp-cor comp-cor-3" style="${cor3?'':'display:none;'}">${corOpts(cor3)}</select>
+    </div>
     <div class="field" style="display:flex;gap:4px;">
       <input type="number" class="comp-qtd" min="0" step="0.5" value="${esc(data.qtdPorPeca!=null?data.qtdPorPeca:'')}" placeholder="1" style="flex:1">
       <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
@@ -2276,30 +2282,18 @@ function expandirCoresComponente(inputEl) {
   if (!coresCad.length) return;
   const row = inputEl.closest('.componente-row');
   if (!row) return;
-  const corSel = row.querySelector('.comp-cor');
-  // Se a row já tem uma cor que bate com uma das cadastradas, não expande (evita duplicar ao editar)
-  if (corSel && corSel.value && coresCad.includes(corSel.value)) return;
-  // Preenche a cor da row atual com a primeira cor cadastrada
-  if (corSel) corSel.value = coresCad[0];
-  // Cria rows adicionais pras cores restantes (mesmo nome, mesmo tecido, mesma qtd)
-  const matSel = row.querySelector('.comp-mat');
-  const qtdInp = row.querySelector('.comp-qtd');
-  const baseData = {
-    nome,
-    material: matSel?.value || '',
-    qtdPorPeca: qtdInp?.value || 1
-  };
-  const extras = coresCad.slice(1);
-  extras.forEach(corId => {
-    addComponenteRow({ ...baseData, cor: corId });
-    // Move a row recém-criada pra logo depois da row atual
-    const cont = document.getElementById('componentes-rows');
-    const novaRow = cont.lastElementChild;
-    if (novaRow && novaRow !== row.nextSibling) {
-      row.parentNode.insertBefore(novaRow, row.nextSibling);
+  const slots = [row.querySelector('.comp-cor-1'), row.querySelector('.comp-cor-2'), row.querySelector('.comp-cor-3')];
+  slots.forEach((sel, i) => {
+    if (!sel) return;
+    if (i < coresCad.length) {
+      sel.value = coresCad[i];
+      sel.style.display = '';
+    } else {
+      sel.value = '';
+      sel.style.display = 'none';
     }
   });
-  if (extras.length) toast(`${extras.length} cor(es) adicionada(s) de ${cad.nome}`, 'ok');
+  toast(`${coresCad.length} cor(es) aplicada(s) de ${cad.nome}`, 'ok');
 }
 
 function addAviamentoRow(data = {}) {
@@ -2561,7 +2555,9 @@ function coletaOS() {
     const nomeEl = r.querySelector('.comp-nome');
     if (!nomeEl) return null;
     const mat = r.querySelector('.comp-mat');
-    const cor = r.querySelector('.comp-cor');
+    const cor1 = r.querySelector('.comp-cor-1');
+    const cor2 = r.querySelector('.comp-cor-2');
+    const cor3 = r.querySelector('.comp-cor-3');
     const qtdEl = r.querySelector('.comp-qtd');
     const qtdPorPeca = parseFloat(qtdEl?.value) || 0;
     const qtdPorTamanho = {};
@@ -2571,10 +2567,15 @@ function coletaOS() {
       qtdPorTamanho[t] = v;
       qtdTotal += v;
     }
+    const nomeCor = sel => sel?.value ? (sel.options[sel.selectedIndex]?.text || '') : '';
     return {
       nome: nomeEl.value,
       material: mat.value, materialNome: mat.options[mat.selectedIndex]?.text || '',
-      cor: cor.value, corNome: cor.options[cor.selectedIndex]?.text || '',
+      // Compat: mantém `cor`/`corNome` apontando pra primeira cor; `cores` é a lista completa
+      cor1: cor1?.value || '', cor1Nome: nomeCor(cor1),
+      cor2: cor2?.value || '', cor2Nome: nomeCor(cor2),
+      cor3: cor3?.value || '', cor3Nome: nomeCor(cor3),
+      cor: cor1?.value || '', corNome: nomeCor(cor1),
       qtdPorPeca, qtdPorTamanho, qtdTotal
     };
   }).filter(c => c && c.nome);
@@ -2873,10 +2874,12 @@ function renderComponentesDetalheBox(o) {
   const linhas = comps.map(c => {
     const totalLinha = c.qtdTotal || 0;
     totalGeral += totalLinha;
+    const coresCompNomes = [c.cor1Nome, c.cor2Nome, c.cor3Nome].filter(x => x && x !== '—');
+    const coresTxt = coresCompNomes.length ? coresCompNomes.map(n => esc(n)).join('<br>') : (esc(c.corNome || '') || '—');
     return `<tr>
       <td><strong>${esc(c.nome || '—')}</strong></td>
       <td>${esc((c.materialNome || '').replace(/^—\s*/,'')) || '—'}</td>
-      <td>${esc(c.corNome || '') || '—'}</td>
+      <td>${coresTxt}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(c.qtdPorPeca)}</td>
       ${colsTam.map(t => `<td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(c.qtdPorTamanho?.[t])}</td>`).join('')}
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${fmt(totalLinha)}</td>
@@ -3102,7 +3105,11 @@ function renderPrintSheet(o) {
 
   // Componentes (aparecem como lista no final do box de desenho)
   const compsHtml = comps.length
-    ? comps.map(c => `<li><strong>${esc(c.nome)}:</strong> ${esc(c.materialNome.replace(/^—\s*/,''))}${c.corNome && c.corNome!=='—'?' · '+esc(c.corNome):''}</li>`).join('')
+    ? comps.map(c => {
+        const coresNomes = [c.cor1Nome, c.cor2Nome, c.cor3Nome].filter(x => x && x !== '—');
+        const coresTxt = coresNomes.length ? coresNomes.join(' / ') : (c.corNome && c.corNome !== '—' ? c.corNome : '');
+        return `<li><strong>${esc(c.nome)}:</strong> ${esc(c.materialNome.replace(/^—\s*/,''))}${coresTxt?' · '+esc(coresTxt):''}</li>`;
+      }).join('')
     : '';
 
   document.getElementById('print-sheet').innerHTML = `
