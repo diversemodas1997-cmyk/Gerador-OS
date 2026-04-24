@@ -3062,6 +3062,7 @@ function coletaOS() {
       if (!gFull || !Array.isArray(gFull.fases)) return [];
       return gFull.fases.map(f => ({
         ordem: f.ordem,
+        nome: f.nome || '',
         tecidoId: f.tecidoId || '',
         tecidoNome: (STATE.tecidos.find(t => t.id === f.tecidoId) || {}).nome || '',
         corId: f.corId || '',
@@ -3269,53 +3270,74 @@ async function excluirOS(id) {
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
 function ordenarComponentesPorFase(comps, o) {
-  // Usa as fases cadastradas na grade como ordem (se houver). Fallback: ordem canônica.
   const fases = (o?.fases || []).slice().sort((a,b) => (a.ordem||0) - (b.ordem||0));
-  const papeis = fases.length ? calcularPapeisFases(fases) : [];
-  const prioridadePorPapel = {};
-  papeis.forEach((p, i) => {
-    if (prioridadePorPapel[p.papel] == null) prioridadePorPapel[p.papel] = i;
+
+  // Sem fases (OS sem grade): usa ordem canônica
+  if (!fases.length) {
+    const canon = (c) => {
+      const material = c.material || '';
+      if (!material.startsWith('T:')) return 90;
+      const tec = STATE.tecidos.find(t => t.id === material.slice(2));
+      if (!tec) return 91;
+      const cat = categoriaEfetivaTecido(tec);
+      if (cat === 'moletom') return 0;
+      if (cat === 'malha') return 1;
+      if (cat === 'ribana') {
+        const n = (c.nome || '').toLowerCase();
+        if (n.includes('punho')) return 2;
+        if (n.includes('barra')) return 3;
+        return 4;
+      }
+      return 50;
+    };
+    return [...comps].map((c,i)=>({c,i,p:canon(c)})).sort((a,b)=>a.p-b.p||a.i-b.i).map(x=>x.c);
+  }
+
+  // Determina a posição de cada fase pelo índice no array ordenado
+  const temMoletomGrade = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom');
+  const posPorTecidoId = new Map();
+  const posPorCategoria = new Map();
+  const fasesRibana = []; // {pos, label}
+  let contRib = 0;
+  fases.forEach((f, pos) => {
+    const tec = STATE.tecidos.find(t => t.id === f.tecidoId);
+    if (!tec) return;
+    const cat = categoriaEfetivaTecido(tec);
+    if (!posPorTecidoId.has(f.tecidoId)) posPorTecidoId.set(f.tecidoId, pos);
+    if (cat && !posPorCategoria.has(cat)) posPorCategoria.set(cat, pos);
+    if (cat === 'ribana') {
+      contRib++;
+      const autoLbl = contRib === 1 ? 'Punhos' : contRib === 2 ? 'Barra' : `Ribana ${contRib}`;
+      fasesRibana.push({ pos, label: (f.nome && f.nome.trim()) || autoLbl });
+    }
   });
 
   const prioridade = (c) => {
     const material = c.material || '';
-    if (!material.startsWith('T:')) return 90;
-    const tec = STATE.tecidos.find(t => t.id === material.slice(2));
-    if (!tec) return 91;
+    if (!material.startsWith('T:')) return 100;
+    const tecId = material.slice(2);
+    const tec = STATE.tecidos.find(t => t.id === tecId);
+    if (!tec) return 101;
     const cat = categoriaEfetivaTecido(tec);
 
-    // Determina o papel do componente
-    let papelComp;
-    if (cat === 'moletom') papelComp = 'moletom';
-    else if (cat === 'malha' && prioridadePorPapel['forro_capuz'] != null) papelComp = 'forro_capuz';
-    else if (cat === 'ribana') {
-      const nomeComp = (c.nome || '').toLowerCase();
-      // Encontra a fase ribana cujo label bate com o nome do componente
-      for (const p of papeis) {
-        if (!(p.papel||'').startsWith('ribana_')) continue;
-        const key = (p.label || '').toLowerCase().split(/\s+/)[0].replace(/s$/, '');
-        if (key && nomeComp.includes(key)) { papelComp = p.papel; break; }
-      }
-      if (!papelComp) {
-        // Fallback: primeira fase ribana cadastrada
-        const primeiraRib = papeis.find(p => (p.papel||'').startsWith('ribana_'));
-        papelComp = primeiraRib?.papel || 'ribana_1';
-      }
-    } else {
-      papelComp = cat || 'outro';
-    }
-
-    if (prioridadePorPapel[papelComp] != null) return prioridadePorPapel[papelComp];
-    // Fallback (sem grade/fases): ordem canônica
-    if (cat === 'moletom') return 0;
-    if (cat === 'malha') return 1;
-    if (cat === 'ribana') {
+    // Ribana: desempata entre fases ribana pelo nome do componente
+    if (cat === 'ribana' && fasesRibana.length) {
       const nome = (c.nome || '').toLowerCase();
-      if (nome.includes('punho')) return 2;
-      if (nome.includes('barra')) return 3;
-      return 4;
+      for (const r of fasesRibana) {
+        const key = (r.label || '').toLowerCase().split(/\s+/)[0].replace(/s$/, '');
+        if (key && nome.includes(key)) return r.pos;
+      }
+      return fasesRibana[0].pos;
     }
-    return 50;
+    // Moletom: primeira fase moletom
+    if (cat === 'moletom' && posPorCategoria.has('moletom')) return posPorCategoria.get('moletom');
+    // Forro de capuz (malha com moletom na grade)
+    if (cat === 'malha' && temMoletomGrade && posPorCategoria.has('malha')) return posPorCategoria.get('malha');
+    // Match por tecidoId exato
+    if (posPorTecidoId.has(tecId)) return posPorTecidoId.get(tecId);
+    // Match por categoria
+    if (posPorCategoria.has(cat)) return posPorCategoria.get(cat);
+    return 100;
   };
 
   return [...comps].map((c, i) => ({ c, i, p: prioridade(c) }))
