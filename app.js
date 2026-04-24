@@ -1099,6 +1099,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       { v: 'bicolor', lbl: 'Bicolor' },
       { v: 'tricolor', lbl: 'Tricolor' }
     ];
+    const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
+      `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+    const semCores = !STATE.cores.length;
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Frente, Costas, Mangas"></div>
@@ -1109,13 +1112,27 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field-hint">Ajuda a separar componentes de camiseta e moletom</div>
         </div>
         <div class="field"><label>Variação</label>
-          <select id="m-comp-variacao">
+          <select id="m-comp-variacao" onchange="atualizarCoresComponente()">
             ${variacoes.map(x => `<option value="${x.v}" ${item.variacao===x.v?'selected':''}>${x.lbl}</option>`).join('')}
           </select>
           <div class="field-hint">Básica = 1 cor · Bicolor = 2 cores · Tricolor = 3 cores</div>
         </div>
         <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+      </div>
+      <div id="m-comp-cores-wrap" style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Cores deste componente</label>
+        <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
+          ${semCores
+            ? 'Cadastre cores primeiro em <strong>Cores</strong> para poder selecioná-las aqui.'
+            : 'Selecione as cores na ordem de aplicação (Cor 1, Cor 2, Cor 3).'}
+        </div>
+        <div class="form-grid cols-3">
+          <div class="field" id="m-comp-cor1-wrap"><label>Cor 1</label><select id="m-comp-cor1" ${semCores?'disabled':''}>${corOpts(item.cor1Id)}</select></div>
+          <div class="field" id="m-comp-cor2-wrap"><label>Cor 2</label><select id="m-comp-cor2" ${semCores?'disabled':''}>${corOpts(item.cor2Id)}</select></div>
+          <div class="field" id="m-comp-cor3-wrap"><label>Cor 3</label><select id="m-comp-cor3" ${semCores?'disabled':''}>${corOpts(item.cor3Id)}</select></div>
+        </div>
       </div>`;
+    setTimeout(atualizarCoresComponente, 0);
   }
   else if (tipo === 'etapa') {
     const funcoesIds = item.funcoesIds || [];
@@ -1138,6 +1155,19 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   }
 
   openModal('modal-cad');
+}
+
+function atualizarCoresComponente() {
+  const sel = document.getElementById('m-comp-variacao');
+  const wrap = document.getElementById('m-comp-cores-wrap');
+  if (!sel || !wrap) return;
+  const v = sel.value;
+  const nCores = v === 'tricolor' ? 3 : v === 'bicolor' ? 2 : v === 'basica' ? 1 : 0;
+  wrap.style.display = nCores === 0 ? 'none' : '';
+  [1, 2, 3].forEach(i => {
+    const w = document.getElementById('m-comp-cor'+i+'-wrap');
+    if (w) w.style.display = i <= nCores ? '' : 'none';
+  });
 }
 
 function previewUploadImg(e) {
@@ -1360,6 +1390,10 @@ async function salvarCadastro() {
     item.desc = v('m-desc');
     item.tipoPeca = v('m-comp-tipopeca');
     item.variacao = v('m-comp-variacao');
+    const nCores = item.variacao === 'tricolor' ? 3 : item.variacao === 'bicolor' ? 2 : item.variacao === 'basica' ? 1 : 0;
+    item.cor1Id = nCores >= 1 ? v('m-comp-cor1') : '';
+    item.cor2Id = nCores >= 2 ? v('m-comp-cor2') : '';
+    item.cor3Id = nCores >= 3 ? v('m-comp-cor3') : '';
   }
 
   if (!editId) STATE[list].push(item);
@@ -1622,17 +1656,30 @@ function nomesFuncoesPorIds(ids) {
 
 function renderComponentesCad() {
   const tb = document.getElementById('tbl-componentes');
-  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
+  if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
   const labelTipo = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro' };
   const labelVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
-  tb.innerHTML = STATE.componentes.map(c => `
+  const corById = new Map(STATE.cores.map(x => [x.id, x]));
+  const corSwatch = (id) => {
+    const c = corById.get(id);
+    if (!c) return '';
+    return `<span class="badge" style="display:inline-flex;align-items:center;gap:4px;margin-right:4px;">
+      <span style="display:inline-block;width:10px;height:10px;border:1px solid var(--line);background:${esc(c.hex||'#fff')};"></span>
+      ${esc(c.nome)}
+    </span>`;
+  };
+  tb.innerHTML = STATE.componentes.map(c => {
+    const cores = [c.cor1Id, c.cor2Id, c.cor3Id].filter(Boolean).map(corSwatch).join('') || '—';
+    return `
     <tr>
       <td><strong>${esc(c.nome)}</strong></td>
       <td>${c.tipoPeca ? `<span class="badge">${esc(labelTipo[c.tipoPeca]||c.tipoPeca)}</span>` : '—'}</td>
       <td>${c.variacao ? `<span class="badge">${esc(labelVar[c.variacao]||c.variacao)}</span>` : '—'}</td>
+      <td>${cores}</td>
       <td>${esc(c.desc)||'—'}</td>
       ${acoesCell('componente', c.id)}
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function renderEtapasCad() {
@@ -3247,6 +3294,7 @@ window.aplicarGradePreset = aplicarGradePreset;
 window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.calcularCamadasParaProducao = calcularCamadasParaProducao;
 window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
+window.atualizarCoresComponente = atualizarCoresComponente;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
