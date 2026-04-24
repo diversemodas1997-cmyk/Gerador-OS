@@ -3585,15 +3585,15 @@ function renderPrintSheet(o) {
       <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
       <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
-        <span class="mini" style="color:#ccc">DES.:</span>
-        <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.codigo || '—')}</span>
+        <span class="mini" style="color:#ccc">OS Nº:</span>
+        <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
       </div>
       <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
     </div>
 
     <!-- LINHA SECUNDÁRIA: descrição -->
     <div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
-      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">OS Nº</strong><br>${esc(o.os||'—')}</div>
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Desenho</strong><br>${esc(o.codigo||'—')}</div>
       <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
       <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(nomeCoord)}</span></div>
