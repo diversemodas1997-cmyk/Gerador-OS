@@ -3472,7 +3472,7 @@ function renderPrintSheet(o) {
         <td style="text-align:center;font-weight:700;width:18px;">${i+1}</td>
         <td class="tecido-cell">${esc(t.tecidoNome)}</td>
         <td>${esc(t.corNome)||'—'}</td>
-        <td>C.1: ${esc(t.c1)||''}</td>
+        <td>${esc(t.c1)||''}</td>
       </tr>`;
     } else {
       tecidoRows += `<tr>
