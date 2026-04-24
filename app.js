@@ -3187,15 +3187,6 @@ function renderPrintSheet(o) {
           })()}
         </div>
 
-        <!-- CORES -->
-        <table class="side-table cores-tab" style="border-top:none;">
-          <thead>
-            <tr><th colspan="4" class="subhead">Cores do modelo</th></tr>
-            <tr><th style="width:40px;">Var</th><th>Cor 1 (principal)</th><th>Cor 2</th><th>Cor 3</th></tr>
-          </thead>
-          <tbody>${variantesHtml}</tbody>
-        </table>
-
         <!-- AVIAMENTOS -->
         <div style="background:#1a1a1a;color:#fff;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
         <div class="aviamentos-grid">${aviamentosHtml}</div>
