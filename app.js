@@ -2854,9 +2854,8 @@ function calcularCamadasParaProducao() {
       // Enfesto moletom: todos componentes moletom na mesma camada → 1 camada = 1 blusa
       val = camadasPrincipal;
     } else if (papel.papel === 'forro_capuz') {
-      // Enfesto forro: mesma regra da ribana — 1 camada = 2 peças/tamanho (mult 2)
-      const q = qtyForro > 0 ? qtyForro : 1;
-      val = Math.max(1, Math.ceil(blusas * q / (gradeTotal * 2)));
+      // Enfesto forro: camadas = metade das camadas de moletom
+      val = Math.max(1, Math.ceil(camadasPrincipal / 2));
     } else if ((papel.papel || '').startsWith('ribana_')) {
       // Enfesto ribana: camadas específicas baseadas em qty_por_blusa dos componentes agrupados
       const q = qtyPorLabelRibana[papel.label] || 0;
