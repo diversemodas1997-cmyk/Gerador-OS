@@ -1660,6 +1660,14 @@ function renderComponentesCad() {
   const labelVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
   const modeloById = new Map(STATE.modelos.map(m => [m.id, m]));
   const corById = new Map(STATE.cores.map(x => [x.id, x]));
+  // Detecta nomes duplicados (case-insensitive, trim)
+  const contagemNomes = new Map();
+  STATE.componentes.forEach(c => {
+    const k = (c.nome || '').trim().toLowerCase();
+    if (!k) return;
+    contagemNomes.set(k, (contagemNomes.get(k) || 0) + 1);
+  });
+  const duplicado = nome => contagemNomes.get((nome || '').trim().toLowerCase()) > 1;
   const corSwatch = (id) => {
     const c = corById.get(id);
     if (!c) return '';
@@ -1677,9 +1685,12 @@ function renderComponentesCad() {
   };
   tb.innerHTML = STATE.componentes.map(c => {
     const cores = [c.cor1Id, c.cor2Id, c.cor3Id].filter(Boolean).map(corSwatch).join('') || '—';
+    const dupBadge = duplicado(c.nome)
+      ? ' <span class="badge" style="background:#fff3cd;color:#856404;border:1px solid #ffc107;" title="Existem múltiplos componentes com este nome — o auto-preenchimento de cor pode pegar o errado">⚠ Nome duplicado</span>'
+      : '';
     return `
     <tr>
-      <td><strong>${esc(c.nome)}</strong></td>
+      <td><strong>${esc(c.nome)}</strong>${dupBadge}</td>
       <td>${tipoLabel(c.tipoPeca)}</td>
       <td>${c.variacao ? `<span class="badge">${esc(labelVar[c.variacao]||c.variacao)}</span>` : '—'}</td>
       <td>${cores}</td>
