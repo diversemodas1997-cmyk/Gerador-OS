@@ -3343,10 +3343,24 @@ function renderEnfestoBox(o) {
   const fasesPorOrdem = {};
   (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
 
-  // Linhas por enfesto — Fase / Nome / Cor / Comp / Larg / Camadas
+  // Tamanhos presentes na grade (> 0)
+  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
+  const tamsAtivos = tamanhos.filter(t => (g[t]||0) > 0);
+  const nCols = 6 + tamsAtivos.length + 1; // 6 básicas + tams + Total
+
+  // Descobre multiplicador por bloco pelo nomeTecido salvo (Moletom → 1, demais → 2)
+  const multBloco = (b) => {
+    const n = (b.nomeTecido || '').toLowerCase();
+    if (n.includes('moletom') || n.includes('malha')) {
+      // Moletom: 1 camada = 1 peça; outras malhas: depende, mas default 1 quando for "moletom"
+      if (n.includes('moletom')) return 1;
+    }
+    return 2;
+  };
+
+  // Linhas por enfesto — Fase / Nome / Cor / Comp / Larg / Camadas / [tamanhos] / Total
   const linhasEnfestos = blocos.map((b, i) => {
     const ord = b.ordem || (i+1);
-    // Retrocompat: se nomeTecido ainda está no formato antigo "Tecido · Cor", separa
     let nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '';
     let cor = b.nomeCor || fasesPorOrdem[ord]?.corNome || '';
     if (!cor && nomeEnf.includes(' · ')) {
@@ -3355,6 +3369,13 @@ function renderEnfestoBox(o) {
       cor = parts.slice(1).join(' · ');
     }
     const camBloco = b.camadas || camadas || 0;
+    const mult = multBloco(b);
+    let totalLinha = 0;
+    const celulasTams = tamsAtivos.map(t => {
+      const val = (g[t]||0) * camBloco * mult;
+      totalLinha += val;
+      return `<td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${val || '—'}</td>`;
+    }).join('');
     return `<tr>
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(nomeEnf) || '—'}</td>
@@ -3362,24 +3383,17 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
+      ${celulasTams}
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${totalLinha || '—'}</td>
     </tr>`;
   }).join('');
 
-  // Linhas por tamanho (Tam / Grade / ×Cam / Peças)
-  const tamanhos = ['pp','p','m','g','gg','g1','g2','g3'];
-  const linhasPorTam = tamanhos
-    .filter(t => (g[t]||0) > 0)
-    .map(t => `<tr>
-      <td style="text-align:center;font-weight:600;">${t.toUpperCase()}</td>
-      <td style="text-align:center;">${g[t]}</td>
-      <td style="text-align:center;">×${camadas}</td>
-      <td colspan="2" style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${g[t]*camadas}</td>
-    </tr>`).join('');
+  const cabTams = tamsAtivos.map(t => `<th style="font-size:6.5pt;">${t.toUpperCase()}</th>`).join('');
 
   return `
     <table class="side-table" style="border-top:none;">
       <thead>
-        <tr><th colspan="6" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr><th colspan="${nCols}" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
         <tr>
           <th style="width:30px;font-size:6.5pt;">Fase</th>
           <th style="font-size:6.5pt;">Enfesto</th>
@@ -3387,23 +3401,12 @@ function renderEnfestoBox(o) {
           <th style="font-size:6.5pt;">Compr.</th>
           <th style="font-size:6.5pt;">Largura</th>
           <th style="font-size:6.5pt;">Camadas</th>
+          ${cabTams}
+          <th style="font-size:6.5pt;">Total</th>
         </tr>
       </thead>
       <tbody>
         ${linhasEnfestos}
-        ${linhasPorTam ? `
-          <tr>
-            <th style="font-size:6.5pt;">Tam.</th>
-            <th style="font-size:6.5pt;">Grade</th>
-            <th style="font-size:6.5pt;">×Cam.</th>
-            <th colspan="3" style="font-size:6.5pt;">Peças</th>
-          </tr>
-          ${linhasPorTam}
-        ` : ''}
-        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
-          <td colspan="5" style="padding:3px 5px;">TOTAL ENFESTO</td>
-          <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${totalPecas} pç</td>
-        </tr>
       </tbody>
     </table>
   `;
