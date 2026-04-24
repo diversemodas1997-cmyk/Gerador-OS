@@ -2254,7 +2254,7 @@ function addComponenteRow(data = {}) {
     `<option value="${esc(c.id)}" ${data.cor===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
   row.innerHTML = `
     <div class="field">
-      <input list="compList" class="comp-nome" value="${esc(data.nome||'')}" placeholder="Componente">
+      <input list="compList" class="comp-nome" value="${esc(data.nome||'')}" placeholder="Componente" onchange="expandirCoresComponente(this)">
       <datalist id="compList">${compOpts}</datalist>
     </div>
     <div class="field"><select class="comp-mat">${matOpts}</select></div>
@@ -2264,6 +2264,42 @@ function addComponenteRow(data = {}) {
       <button type="button" class="btn small danger" onclick="this.closest('.componente-row').remove()">✕</button>
     </div>`;
   cont.appendChild(row);
+}
+
+function expandirCoresComponente(inputEl) {
+  if (!inputEl) return;
+  const nome = (inputEl.value || '').trim();
+  if (!nome) return;
+  const cad = STATE.componentes.find(x => (x.nome || '').toLowerCase() === nome.toLowerCase());
+  if (!cad) return;
+  const coresCad = [cad.cor1Id, cad.cor2Id, cad.cor3Id].filter(Boolean);
+  if (!coresCad.length) return;
+  const row = inputEl.closest('.componente-row');
+  if (!row) return;
+  const corSel = row.querySelector('.comp-cor');
+  // Se a row já tem uma cor que bate com uma das cadastradas, não expande (evita duplicar ao editar)
+  if (corSel && corSel.value && coresCad.includes(corSel.value)) return;
+  // Preenche a cor da row atual com a primeira cor cadastrada
+  if (corSel) corSel.value = coresCad[0];
+  // Cria rows adicionais pras cores restantes (mesmo nome, mesmo tecido, mesma qtd)
+  const matSel = row.querySelector('.comp-mat');
+  const qtdInp = row.querySelector('.comp-qtd');
+  const baseData = {
+    nome,
+    material: matSel?.value || '',
+    qtdPorPeca: qtdInp?.value || 1
+  };
+  const extras = coresCad.slice(1);
+  extras.forEach(corId => {
+    addComponenteRow({ ...baseData, cor: corId });
+    // Move a row recém-criada pra logo depois da row atual
+    const cont = document.getElementById('componentes-rows');
+    const novaRow = cont.lastElementChild;
+    if (novaRow && novaRow !== row.nextSibling) {
+      row.parentNode.insertBefore(novaRow, row.nextSibling);
+    }
+  });
+  if (extras.length) toast(`${extras.length} cor(es) adicionada(s) de ${cad.nome}`, 'ok');
 }
 
 function addAviamentoRow(data = {}) {
@@ -3380,6 +3416,7 @@ window.addTecidoRow = addTecidoRow;
 window.renderEnfestoBlocos = renderEnfestoBlocos;
 window.addVarianteRow = addVarianteRow;
 window.addComponenteRow = addComponenteRow;
+window.expandirCoresComponente = expandirCoresComponente;
 window.addAviamentoRow = addAviamentoRow;
 window.addEtapaCustomizada = addEtapaCustomizada;
 window.aplicarGradePreset = aplicarGradePreset;
