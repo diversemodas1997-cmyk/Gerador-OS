@@ -651,16 +651,30 @@ async function loadState() {
     }));
     if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
-  // Migração: vincula equipe.funcao → funcaoId (uma vez, quando ausente)
+  // Sincronização: garante que equipe.funcao reflete o nome atual da função vinculada
   if (Array.isArray(STATE.equipe) && Array.isArray(STATE.funcoes)) {
-    let migrou = 0;
+    let mudou = 0;
     STATE.equipe.forEach(p => {
-      if (p.funcaoId) return;
-      if (!p.funcao) return;
-      const f = STATE.funcoes.find(x => (x.nome || '').trim().toLowerCase() === (p.funcao || '').trim().toLowerCase());
-      if (f) { p.funcaoId = f.id; migrou++; }
+      // Caso 1: pessoa tem funcaoId → sincroniza p.funcao com o nome atual da função
+      if (p.funcaoId) {
+        const f = STATE.funcoes.find(x => x.id === p.funcaoId);
+        if (f && f.nome && f.nome !== p.funcao) {
+          p.funcao = f.nome;
+          mudou++;
+        }
+        return;
+      }
+      // Caso 2: pessoa sem funcaoId mas com p.funcao → tenta vincular
+      if (p.funcao) {
+        const f = STATE.funcoes.find(x => (x.nome || '').trim().toLowerCase() === (p.funcao || '').trim().toLowerCase());
+        if (f) {
+          p.funcaoId = f.id;
+          p.funcao = f.nome;
+          mudou++;
+        }
+      }
     });
-    if (migrou > 0) { try { await saveState('equipe'); } catch (e) {} }
+    if (mudou > 0) { try { await saveState('equipe'); } catch (e) {} }
   }
 }
 
