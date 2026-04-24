@@ -3543,6 +3543,17 @@ function renderPrintSheet(o) {
 
   // Lista curta de componentes removida — info já aparece em "Componentes — totais por tamanho"
 
+  // Resolve nome atual de equipe pelo ID (pega nome + função vigentes, não o snapshot salvo)
+  const nomeEquipeAtual = (id, fallback) => {
+    if (!id) return fallback || '—';
+    const p = STATE.equipe.find(x => x.id === id);
+    if (!p) return fallback || '—';
+    return p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
+  };
+  const nomeDesigner = nomeEquipeAtual(o.designerId, o.designerNome || o.designer);
+  const nomeFtec = nomeEquipeAtual(o.ftecId, o.ftecNome || o.ftec);
+  const nomeCoord = nomeEquipeAtual(o.coordenadoId, o.coordenadoNome || o.coordenado);
+
   document.getElementById('print-sheet').innerHTML = `
     <!-- CABEÇALHO -->
     <div class="sheet-header">
@@ -3563,13 +3574,13 @@ function renderPrintSheet(o) {
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">OS Nº</strong><br>${esc(o.os||'—')}</div>
       <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
-      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(o.coordenadoNome || o.coordenado || '—')}</span></div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Coordenador</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(nomeCoord)}</span></div>
     </div>
 
     <!-- LINHA TERCIÁRIA: designer + ficha técnica -->
     <div style="display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
-      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Designer</strong><br>${esc(o.designerNome || o.designer || '—')}</div>
-      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Ficha Técnica</strong><br>${esc(o.ftecNome || o.ftec || '—')}</div>
+      <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Designer</strong><br>${esc(nomeDesigner)}</div>
+      <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Ficha Técnica</strong><br>${esc(nomeFtec)}</div>
     </div>
 
     <!-- CORPO -->
