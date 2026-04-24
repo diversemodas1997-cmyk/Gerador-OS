@@ -3494,7 +3494,7 @@ function renderEnfestoBox(o) {
     return 2;
   };
 
-  // Linhas por enfesto — Fase / Nome / Cor / Comp / Larg / Camadas
+  // Linhas por enfesto — Fase / Nome / Tecido / Cor / Comp / Larg / Camadas
   const linhasEnfestos = blocos.map((b, i) => {
     const ord = b.ordem || (i+1);
     let nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '';
@@ -3504,10 +3504,13 @@ function renderEnfestoBox(o) {
       nomeEnf = parts[0];
       cor = parts.slice(1).join(' · ');
     }
+    // Nome do tecido real cadastrado (Moletom Bulk, Ribana Bulk, etc.) — da fase da grade
+    const tecidoReal = fasesPorOrdem[ord]?.tecidoNome || '';
     const camBloco = b.camadas || camadas || 0;
     return `<tr>
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(nomeEnf) || '—'}</td>
+      <td>${esc(tecidoReal) || '—'}</td>
       <td>${esc(cor) || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
@@ -3518,10 +3521,11 @@ function renderEnfestoBox(o) {
   return `
     <table class="side-table" style="border-top:none;">
       <thead>
-        <tr><th colspan="6" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr><th colspan="7" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
         <tr>
           <th style="width:30px;font-size:6.5pt;">Fase</th>
           <th style="font-size:6.5pt;">Enfesto</th>
+          <th style="font-size:6.5pt;">Tecido</th>
           <th style="font-size:6.5pt;">Cor</th>
           <th style="font-size:6.5pt;">Compr.</th>
           <th style="font-size:6.5pt;">Largura</th>
