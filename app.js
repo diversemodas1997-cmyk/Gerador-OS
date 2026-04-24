@@ -3682,8 +3682,8 @@ function renderPrintSheet(o) {
     <!-- RODAPÉ -->
     <div class="sheet-foot">
       <div><strong>Gerado em</strong> ${esc(formatDate(new Date().toISOString().slice(0,10)))}</div>
-      ${o.atencao ? `<div><strong>Atenção</strong> ${esc(o.atencao)}</div>` : ''}
     </div>
+    ${o.atencao ? `<div class="sheet-atencao"><strong>Atenção</strong> <span class="atencao-text">${esc(o.atencao)}</span></div>` : ''}
   `;
 }
 

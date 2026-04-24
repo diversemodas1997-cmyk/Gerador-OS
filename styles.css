@@ -708,17 +708,36 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 /* Rodapé da ficha */
 .sheet-foot {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.5fr;
+  grid-template-columns: 1fr;
   border: 1.5px solid #000;
   border-top: none;
   font-size: 7pt;
 }
 .sheet-foot > div {
   padding: 2px 5px;
-  border-right: 1px solid #000;
 }
-.sheet-foot > div:last-child { border-right: none; }
 .sheet-foot strong { text-transform: uppercase; letter-spacing: .05em; }
+
+/* Campo de Atenção na folha impressa — texto justificado em largura cheia */
+.sheet-atencao {
+  padding: 3px 6px;
+  border: 1.5px solid #000;
+  border-top: none;
+  font-size: 7.5pt;
+  background: #fff3cd;
+}
+.sheet-atencao strong {
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-right: 6px;
+}
+.sheet-atencao .atencao-text {
+  display: inline-block;
+  width: calc(100% - 65px);
+  text-align: justify;
+  text-align-last: justify;
+  vertical-align: top;
+}
 
 /* Observações */
 .obs-box {
