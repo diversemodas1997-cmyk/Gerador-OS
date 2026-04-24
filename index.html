@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-04-24d">
+<link rel="stylesheet" href="styles.css?v=2026-04-24e">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -474,15 +474,8 @@
           <button type="button" class="add-row-btn" onclick="addEtapaCustomizada()">+ Adicionar etapa customizada</button>
         </div>
 
-        <!-- VARIANTES DE CORES -->
-        <div class="card">
-          <div class="card-title">Cores do modelo (variantes)</div>
-          <div class="variante-row" style="font-weight:600; font-size: 11px; color: var(--ink-3); border:none;">
-            <div>Variante</div><div>Cor 1 (principal)</div><div>Cor 2</div><div>Cor 3 (tricolor)</div><div>Observação</div>
-          </div>
-          <div id="variantes-rows"></div>
-          <button type="button" class="add-row-btn" onclick="addVarianteRow()">+ Adicionar variante</button>
-        </div>
+        <!-- VARIANTES DE CORES — removido (informação redundante com Tecidos/Componentes) -->
+        <div id="variantes-rows" style="display:none;"></div>
 
         <!-- COMPONENTES -->
         <div class="card">
@@ -649,6 +642,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-04-24d"></script>
+<script src="app.js?v=2026-04-24e"></script>
 </body>
 </html>
