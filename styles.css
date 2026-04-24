@@ -537,7 +537,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 /* Corpo principal em 2 colunas */
 .sheet-body {
   display: grid;
-  grid-template-columns: 1.55fr 1fr;
+  grid-template-columns: 1fr 1fr;
   border: 1.5px solid #000;
   border-top: none;
   flex: 1;
