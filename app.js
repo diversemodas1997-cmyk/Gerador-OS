@@ -842,49 +842,37 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div style="margin-top:14px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Fases do enfesto</label>
         <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
-          Peças básicas/unicolor usam só a Fase 1. Bicolor → Fase 1 e 2. Tricolor → Fase 1, 2 e 3.
+          Peças básicas/unicolor usam 1 fase. Bicolor → 2 fases. Tricolor → 3 fases. Pode adicionar mais conforme precisar.
           Cada fase tem seu próprio tecido, cor e dimensões.
         </div>
-        ${(() => {
-          const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
-            `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
-          const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
-            `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
-          // Retrocompat: se não houver fases ainda, herdar valores antigos na Fase 1
-          const fasesSalvas = Array.isArray(item.fases) && item.fases.length ? item.fases : null;
-          const legacy = fasesSalvas ? null : {
-            comp: item.enfestoComprimento
-                   || item.enfestos?.outro?.comp
-                   || item.enfestos?.malha?.comp
-                   || item.enfestos?.moletom?.comp
-                   || '',
-            larg: item.enfestoLargura
-                   || item.enfestos?.outro?.larg
-                   || item.enfestos?.malha?.larg
-                   || item.enfestos?.moletom?.larg
-                   || ''
-          };
-          return [1, 2, 3].map(n => {
-            const f = fasesSalvas ? (fasesSalvas[n-1] || {}) : (n === 1 ? (legacy || {}) : {});
-            const badge = n === 1 ? 'obrigatória (peças unicolor usam só esta)'
-                       : n === 2 ? 'opcional (bicolor)'
-                       : 'opcional (tricolor)';
-            return `
-            <div style="margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
-              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
-                <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">FASE ${n}</span>
-                <span style="font-size:11px;color:var(--ink-3);font-style:italic;">${badge}</span>
-              </div>
-              <div class="form-grid cols-2">
-                <div class="field"><label>Tecido</label><select id="m-fase-tec-${n}">${tecOpts(f.tecidoId)}</select></div>
-                <div class="field"><label>Cor</label><select id="m-fase-cor-${n}">${corOpts(f.corId)}</select></div>
-                <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" id="m-fase-comp-${n}" value="${esc(f.comp || '')}" placeholder="Ex.: 6,50"></div>
-                <div class="field"><label>Largura (m)</label><input type="number" step="0.01" id="m-fase-larg-${n}" value="${esc(f.larg || '')}" placeholder="Ex.: 1,80"></div>
-              </div>
-            </div>`;
-          }).join('');
-        })()}
+        <div id="m-fases-container"></div>
+        <button type="button" class="add-row-btn" onclick="addFaseGradeRow()" style="margin-top:8px;">+ Adicionar fase</button>
       </div>`;
+    // Popula o container com as fases existentes (ou uma fase vazia em "Novo")
+    setTimeout(() => {
+      const fasesSalvas = Array.isArray(item.fases) && item.fases.length ? item.fases : null;
+      const legacy = fasesSalvas ? null : {
+        comp: item.enfestoComprimento
+               || item.enfestos?.outro?.comp
+               || item.enfestos?.malha?.comp
+               || item.enfestos?.moletom?.comp
+               || '',
+        larg: item.enfestoLargura
+               || item.enfestos?.outro?.larg
+               || item.enfestos?.malha?.larg
+               || item.enfestos?.moletom?.larg
+               || ''
+      };
+      if (fasesSalvas) {
+        // Preserva ordem: cria buracos se houver (ordem 2 e 3 sem ordem 1)
+        const porOrdem = {};
+        fasesSalvas.forEach(f => { if (f.ordem) porOrdem[f.ordem] = f; });
+        const maxOrd = Math.max(...fasesSalvas.map(f => f.ordem || 1), 1);
+        for (let n = 1; n <= maxOrd; n++) addFaseGradeRow(porOrdem[n] || {});
+      } else {
+        addFaseGradeRow(legacy || {});
+      }
+    }, 0);
   }
   else if (tipo === 'desenho') {
     const optSel = (list, fld, id) => '<option value="">— selecione —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(x[fld])}</option>`).join('');
@@ -1156,6 +1144,47 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   openModal('modal-cad');
 }
 
+function addFaseGradeRow(fase = {}) {
+  const cont = document.getElementById('m-fases-container');
+  if (!cont) return;
+  const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
+    `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
+  const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
+    `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'fase-grade-bloco';
+  div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+  div.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+      <span class="fase-label" style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">FASE ?</span>
+      <span style="flex:1;"></span>
+      <button type="button" class="btn small danger" onclick="removerFaseGrade(this)">✕ Remover</button>
+    </div>
+    <div class="form-grid cols-2">
+      <div class="field"><label>Tecido</label><select class="fase-tec">${tecOpts(fase.tecidoId)}</select></div>
+      <div class="field"><label>Cor</label><select class="fase-cor">${corOpts(fase.corId)}</select></div>
+      <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
+      <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
+    </div>`;
+  cont.appendChild(div);
+  renumerarFasesGrade();
+}
+
+function removerFaseGrade(btn) {
+  const bloco = btn.closest('.fase-grade-bloco');
+  if (bloco) bloco.remove();
+  renumerarFasesGrade();
+}
+
+function renumerarFasesGrade() {
+  const cont = document.getElementById('m-fases-container');
+  if (!cont) return;
+  Array.from(cont.querySelectorAll('.fase-grade-bloco')).forEach((b, i) => {
+    const lbl = b.querySelector('.fase-label');
+    if (lbl) lbl.textContent = `FASE ${i+1}`;
+  });
+}
+
 function atualizarCoresComponente() {
   const sel = document.getElementById('m-comp-variacao');
   const wrap = document.getElementById('m-comp-cores-wrap');
@@ -1284,13 +1313,13 @@ async function salvarCadastro() {
     ['pp','p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
-    item.fases = [1, 2, 3].map(n => ({
-      ordem: n,
-      tecidoId: v('m-fase-tec-'+n),
-      corId: v('m-fase-cor-'+n),
-      comp: v('m-fase-comp-'+n),
-      larg: v('m-fase-larg-'+n)
-    })).filter(f => f.tecidoId || f.corId || f.comp || f.larg);
+    item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => ({
+      ordem: i + 1,
+      tecidoId: b.querySelector('.fase-tec')?.value || '',
+      corId: b.querySelector('.fase-cor')?.value || '',
+      comp: b.querySelector('.fase-comp')?.value || '',
+      larg: b.querySelector('.fase-larg')?.value || ''
+    }));
     // Retrocompatibilidade: usa a primeira fase para os campos legados
     const f1 = item.fases[0] || {};
     item.enfestoComprimento = f1.comp || '';
@@ -3415,6 +3444,8 @@ window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.calcularCamadasParaProducao = calcularCamadasParaProducao;
 window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarCoresComponente = atualizarCoresComponente;
+window.addFaseGradeRow = addFaseGradeRow;
+window.removerFaseGrade = removerFaseGrade;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
