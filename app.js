@@ -968,7 +968,12 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                     <td>${esc(c.nome)}</td>
                     <td><select class="m-comp-tec" data-comp="${esc(c.id)}">${tecOpts(atual.tecidoId)}</select></td>
                     <td><select class="m-comp-cor" data-comp="${esc(c.id)}">${corOpts(atual.corId)}</select></td>
-                    <td><input type="number" class="m-comp-qtd" data-comp="${esc(c.id)}" min="0" step="0.5" value="${esc(atual.qtdPorPeca || '')}" placeholder="1"></td>
+                    <td>${(()=>{
+                      const sel = Math.round(Number(atual.qtdPorPeca)) || 1;
+                      const opts = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+                        .map(n => `<option value="${n}" ${sel===n?'selected':''}>${n}</option>`).join('');
+                      return `<select class="m-comp-qtd" data-comp="${esc(c.id)}">${opts}</select>`;
+                    })()}</td>
                   </tr>`;
                 }).join('')}
                 </tbody>
@@ -1001,7 +1006,12 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                   return `<tr class="desenho-comp-row">
                     <td style="text-align:center;"><input type="checkbox" class="m-aviamento-chk" value="${esc(m.id)}" ${marcado?'checked':''}></td>
                     <td><strong>${esc(m.codigo)}</strong> · ${esc(m.desc)}${m.tipo ? ' ('+esc(m.tipo)+')' : ''}</td>
-                    <td><input type="number" class="m-av-qtd" data-av="${esc(m.id)}" min="0" step="0.5" value="${esc(atual.qtdPorPeca != null ? atual.qtdPorPeca : '')}" placeholder="1"></td>
+                    <td>${(()=>{
+                      const sel = Math.round(Number(atual.qtdPorPeca)) || 1;
+                      const opts = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+                        .map(n => `<option value="${n}" ${sel===n?'selected':''}>${n}</option>`).join('');
+                      return `<select class="m-av-qtd" data-av="${esc(m.id)}">${opts}</select>`;
+                    })()}</td>
                     <td><input type="text" class="m-av-app" data-av="${esc(m.id)}" value="${esc(atual.aplicacao || '')}" placeholder="Ex.: V1 camel / V2 preto"></td>
                   </tr>`;
                 }).join('')}
