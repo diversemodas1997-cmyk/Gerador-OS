@@ -927,6 +927,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field"><label>Linha</label><select id="m-vinc-linha">${optSel(STATE.linhas, 'nome', item.linhaId)}</select></div>
           <div class="field"><label>Bloco / Revisão</label><select id="m-vinc-bloco">${optNada(STATE.blocos, 'nome', item.blocoId)}</select></div>
           <div class="field"><label>Designer</label><select id="m-vinc-designer">${optNada(STATE.equipe.filter(p => (p.funcao||'').toLowerCase().includes('designer')), 'nome', item.designerId, equipeLabel)}</select></div>
+          <div class="field"><label>Coordenador</label><select id="m-vinc-coord">${optNada(STATE.equipe.filter(p => (p.funcao||'').toLowerCase().includes('coordenador')), 'nome', item.coordId, equipeLabel)}</select><div class="field-hint">Auto-preenche o Coordenador na OS</div></div>
           <div class="field"><label>Tecido principal</label><select id="m-vinc-tecido">${optNada(STATE.tecidos, 'nome', item.tecidoPadraoId)}</select><div class="field-hint">Aplicado aos componentes</div></div>
           <div class="field"><label>Cor principal</label><select id="m-vinc-cor">${optNada(STATE.cores, 'nome', item.corPrincipalId)}</select><div class="field-hint">Aplicada aos componentes e à Cor 1 da Variante 1</div></div>
           <div class="field"><label>Cor secundária (bicolor)</label><select id="m-vinc-cor2">${optNada(STATE.cores, 'nome', item.corSecundariaId)}</select><div class="field-hint">Opcional — aplicada à Cor 2 da Variante 1</div></div>
@@ -1388,6 +1389,7 @@ async function salvarCadastro() {
     item.linhaId = v('m-vinc-linha');
     item.blocoId = v('m-vinc-bloco');
     item.designerId = v('m-vinc-designer');
+    item.coordId = v('m-vinc-coord');
     item.tecidoPadraoId = v('m-vinc-tecido');
     item.corPrincipalId = v('m-vinc-cor');
     item.corSecundariaId = v('m-vinc-cor2');
@@ -1931,7 +1933,7 @@ function aplicarVinculosDesenho() {
     const mapa = {
       modeloId: 'f-modelo', baseId: 'f-base', colecaoId: 'f-colecao',
       marcaId: 'f-griffe', linhaId: 'f-linha', blocoId: 'f-bloco',
-      designerId: 'f-designer'
+      designerId: 'f-designer', coordId: 'f-coordenado'
     };
     let aplicou = false;
     Object.entries(mapa).forEach(([campo, selId]) => {
