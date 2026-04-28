@@ -1520,7 +1520,7 @@ function refreshOSFormDropdowns() {
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
   fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
-  fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  preencherDropdownGradesOS();
   fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
   fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
   fillSelect('f-base', STATE.bases, 'nome', '— selecione —');
@@ -1895,14 +1895,21 @@ function sincCodigoDesenho(origem) {
     } else {
       codigoEl.value = '';
     }
+    preencherDropdownGradesOS();
     aplicarVinculosDesenho();
   } else {
     const typed = codigoEl.value.trim();
-    if (!typed) { desenhoEl.value = ''; previewDesenhoSelecionado(); return; }
+    if (!typed) {
+      desenhoEl.value = '';
+      previewDesenhoSelecionado();
+      preencherDropdownGradesOS();
+      return;
+    }
     const d = STATE.desenhos.find(x => x.codigo.toLowerCase() === typed.toLowerCase());
     if (d && desenhoEl.value !== d.id) {
       desenhoEl.value = d.id;
       previewDesenhoSelecionado();
+      preencherDropdownGradesOS();
       aplicarVinculosDesenho();
     }
   }
@@ -2058,7 +2065,7 @@ function initOSForm() {
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
   fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
-  fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+  preencherDropdownGradesOS();
   atualizarDatalistCodigos();
 
   // novos selects do cabeçalho
@@ -2518,6 +2525,48 @@ function categoriaEfetivaTecido(t) {
   if (!t) return '';
   if ((t.nome || '').toLowerCase().includes('ribana')) return 'ribana';
   return t.categoria || '';
+}
+
+// Categoria principal de uma grade — categoria do tecido da fase de menor `ordem`.
+// Usada pra filtrar o dropdown de grades pelo tecido do desenho selecionado.
+function categoriaPrincipalGrade(g) {
+  const fases = Array.isArray(g?.fases) ? g.fases : [];
+  if (!fases.length) return '';
+  const ordenadas = [...fases].sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  for (const f of ordenadas) {
+    const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+    const cat = categoriaEfetivaTecido(t);
+    if (cat) return cat;
+  }
+  return '';
+}
+
+// Categoria do tecido principal do desenho selecionado no form da OS.
+function categoriaDesenhoOS() {
+  const id = document.getElementById('f-desenho')?.value;
+  if (!id) return '';
+  const d = STATE.desenhos.find(x => x.id === id);
+  if (!d?.tecidoPadraoId) return '';
+  const t = STATE.tecidos.find(x => x.id === d.tecidoPadraoId);
+  return categoriaEfetivaTecido(t);
+}
+
+// Grades que devem aparecer no dropdown de "Carregar grade pré-cadastrada" da OS,
+// filtradas pela categoria do tecido do desenho. `extraIds` mantém grades específicas
+// (geralmente a já selecionada) mesmo fora do filtro.
+function gradesParaDropdownOS(extraIds = []) {
+  const cat = categoriaDesenhoOS();
+  if (!cat) return STATE.grades;
+  const keep = new Set(extraIds.filter(Boolean));
+  return STATE.grades.filter(g => keep.has(g.id) || categoriaPrincipalGrade(g) === cat);
+}
+
+function preencherDropdownGradesOS() {
+  const el = document.getElementById('f-grade-preset');
+  if (!el) return;
+  const cur = el.value || '';
+  fillSelect('f-grade-preset', gradesParaDropdownOS([cur]), 'nome', '— nenhuma —');
+  if (cur) el.value = cur;
 }
 
 /**
@@ -3261,6 +3310,7 @@ function editarOS(id) {
     setSelectByIdOrName('f-ftec', o.ftecId, o.ftec || o.ftecNome, STATE.equipe);
     document.getElementById('f-desenho').value = o.desenhoId || '';
     previewDesenhoSelecionado();
+    preencherDropdownGradesOS();
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
     ['p','m','g','gg','g1','g2','g3'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
