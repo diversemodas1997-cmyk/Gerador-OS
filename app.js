@@ -2469,14 +2469,20 @@ function aplicarGradePreset() {
     renderEnfestoBlocos(1, [{ comp: g.enfestoComprimento, larg: g.enfestoLargura }]);
   }
 
-  // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada
+  // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada.
+  // Se a fase não tem corId, usa a cor da mesma ordem cadastrada no desenho
+  // (principal/secundária/terciária) — assim o auto-preenchimento da cor do
+  // desenho não é perdido ao trocar pra uma grade.
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
       tecCont.innerHTML = '';
       for (let n = 1; n <= maxOrd; n++) {
         const f = porOrdem[n] || {};
-        if (f.tecidoId || f.corId) addTecidoRow({ tecidoId: f.tecidoId || '', corId: f.corId || '' });
+        const corIdEfetiva = f.corId || corFallbackPorOrdem(n) || '';
+        if (f.tecidoId || corIdEfetiva) {
+          addTecidoRow({ tecidoId: f.tecidoId || '', corId: corIdEfetiva });
+        }
       }
     }
   }
