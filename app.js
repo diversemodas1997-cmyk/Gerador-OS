@@ -2471,13 +2471,19 @@ function aplicarGradePreset() {
     return corId || null;
   };
 
+  // Prioridade de cor: COR DO DESENHO TÉCNICO (mapeada pelo papel da fase) tem
+  // precedência sobre a cor cadastrada na fase da grade. A grade é estrutura
+  // (tamanhos, fases, categorias de tecido); o desenho é específico do produto
+  // — então a cor do desenho deve mandar. A cor da fase só é fallback.
+  const corPorFase = (n, f, papel) => corFallbackParaFase(n, papel) || f.corId || '';
+
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
     const prefills = [];
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
       const papel = papeisFases[n-1] || { label: '' };
-      const corIdEfetiva = f.corId || corFallbackParaFase(n, papel);
+      const corIdEfetiva = corPorFase(n, f, papel);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
       prefills.push({
         comp: f.comp || '',
@@ -2492,7 +2498,7 @@ function aplicarGradePreset() {
   }
 
   // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada.
-  // Cor da fase tem prioridade; senão, cor do desenho mapeada pelo papel da fase.
+  // Cor do desenho (por papel da fase) tem prioridade; cor da fase é fallback.
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
@@ -2500,7 +2506,7 @@ function aplicarGradePreset() {
       for (let n = 1; n <= maxOrd; n++) {
         const f = porOrdem[n] || {};
         const papel = papeisFases[n-1] || { label: '' };
-        const corIdEfetiva = f.corId || corFallbackParaFase(n, papel) || '';
+        const corIdEfetiva = corPorFase(n, f, papel);
         if (f.tecidoId || corIdEfetiva) {
           addTecidoRow({ tecidoId: f.tecidoId || '', corId: corIdEfetiva });
         }
