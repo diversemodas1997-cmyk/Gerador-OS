@@ -651,6 +651,34 @@ async function loadState() {
     }));
     if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
+  // Migração: remove em definitivo a função "Coordenador de produção
+  // Enfestadeira/Esteira de corte" (decisão do admin). Se algum membro da
+  // equipe apontar pra ela, limpa o vínculo (funcaoId/funcao).
+  if (Array.isArray(STATE.funcoes)) {
+    const NOME_REMOVER = 'coordenador de produção enfestadeira/esteira de corte';
+    const idsRemover = STATE.funcoes
+      .filter(f => (f?.nome || '').trim().toLowerCase() === NOME_REMOVER)
+      .map(f => f.id);
+    if (idsRemover.length) {
+      STATE.funcoes = STATE.funcoes.filter(f => !idsRemover.includes(f.id));
+      try { await saveState('funcoes'); } catch (e) {}
+      if (Array.isArray(STATE.equipe)) {
+        let limpou = 0;
+        STATE.equipe.forEach(p => {
+          if (p.funcaoId && idsRemover.includes(p.funcaoId)) {
+            p.funcaoId = '';
+            p.funcao = '';
+            limpou++;
+          } else if ((p.funcao || '').trim().toLowerCase() === NOME_REMOVER) {
+            p.funcao = '';
+            limpou++;
+          }
+        });
+        if (limpou) { try { await saveState('equipe'); } catch (e) {} }
+      }
+    }
+  }
+
   // Sincronização: garante que equipe.funcao reflete o nome atual da função vinculada
   if (Array.isArray(STATE.equipe) && Array.isArray(STATE.funcoes)) {
     let mudou = 0;
@@ -1447,6 +1475,11 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     const nomeAntigo = editId ? (item.nome || '') : '';
     const nomeNovo = v('m-nome');
+    // Bloqueia em definitivo o cadastro de "Coordenador de produção
+    // Enfestadeira/Esteira de corte" (decisão do admin).
+    if (nomeNovo.trim().toLowerCase() === 'coordenador de produção enfestadeira/esteira de corte') {
+      return toast('Esta função foi removida em definitivo. Use outro nome.', 'err');
+    }
     item.nome = nomeNovo;
     item.desc = v('m-desc');
     item.acoes = v('m-acoes');
