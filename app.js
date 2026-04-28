@@ -2313,6 +2313,7 @@ function aplicarVinculosModelo() {
 function onModeloChange() {
   aplicarFiltroTecidosPorModelo();
   if (!aplicandoVinculosDesenho) aplicarVinculosModelo();
+  preencherDropdownGradesOS();
   atualizarCalculosEnfesto();
 }
 function reindexTecidos() {
@@ -2582,14 +2583,36 @@ function categoriaDesenhoOS() {
   return categoriaEfetivaTecido(t);
 }
 
+// tipoPeca esperado para a grade, conforme o modelo selecionado na OS.
+// Mapeia modelo.categoria → grade.tipoPeca:
+//   camiseta → camiseta
+//   moletom  → blusa_moletom
+//   outro    → outro
+function tipoPecaModeloOS() {
+  const id = document.getElementById('f-modelo')?.value;
+  if (!id) return '';
+  const m = STATE.modelos.find(x => x.id === id);
+  const cat = m?.categoria || '';
+  if (cat === 'moletom') return 'blusa_moletom';
+  return cat; // 'camiseta' / 'outro' / ''
+}
+
 // Grades que devem aparecer no dropdown de "Carregar grade pré-cadastrada" da OS,
-// filtradas pela categoria do tecido do desenho. `extraIds` mantém grades específicas
-// (geralmente a já selecionada) mesmo fora do filtro.
+// filtradas pela categoria do tecido do desenho E pelo tipoPeca casado com o
+// modelo. `extraIds` mantém grades específicas (geralmente a já selecionada)
+// mesmo fora do filtro. Grades sem tipoPeca cadastrado passam pelo filtro de
+// modelo (não tem como avaliar) — mas continuam sujeitas ao filtro de tecido.
 function gradesParaDropdownOS(extraIds = []) {
   const cat = categoriaDesenhoOS();
-  if (!cat) return STATE.grades;
+  const tipoModelo = tipoPecaModeloOS();
+  if (!cat && !tipoModelo) return STATE.grades;
   const keep = new Set(extraIds.filter(Boolean));
-  return STATE.grades.filter(g => keep.has(g.id) || categoriaPrincipalGrade(g) === cat);
+  return STATE.grades.filter(g => {
+    if (keep.has(g.id)) return true;
+    if (cat && categoriaPrincipalGrade(g) !== cat) return false;
+    if (tipoModelo && g.tipoPeca && g.tipoPeca !== tipoModelo) return false;
+    return true;
+  });
 }
 
 function preencherDropdownGradesOS() {
