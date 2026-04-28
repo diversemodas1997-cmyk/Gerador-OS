@@ -2025,17 +2025,15 @@ function aplicarVinculosDesenho() {
     const coresDoDesenho = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean);
     if (d.tecidoPadraoId || coresDoDesenho.length) {
       const tecCont = document.getElementById('tecidos-rows');
-      if (tecCont) {
-        // Só preenche se ainda não houver tecido escolhido (grade preset tem prioridade)
-        const jaTemPreenchido = Array.from(tecCont.querySelectorAll('.tec-sel')).some(s => s.value);
-        if (!jaTemPreenchido) {
-          tecCont.innerHTML = '';
-          const n = Math.max(coresDoDesenho.length, 1);
-          for (let i = 0; i < n; i++) {
-            addTecidoRow({ tecidoId: d.tecidoPadraoId || '', corId: coresDoDesenho[i] || '' });
-          }
-          aplicou = true;
+      // Grade preset selecionado tem prioridade — ela preenche tecidos pelas fases.
+      const gradePresetAtivo = !!document.getElementById('f-grade-preset')?.value;
+      if (tecCont && !gradePresetAtivo) {
+        tecCont.innerHTML = '';
+        const n = Math.max(coresDoDesenho.length, 1);
+        for (let i = 0; i < n; i++) {
+          addTecidoRow({ tecidoId: d.tecidoPadraoId || '', corId: coresDoDesenho[i] || '' });
         }
+        aplicou = true;
       }
     }
 
