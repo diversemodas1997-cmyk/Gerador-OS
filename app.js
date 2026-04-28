@@ -3811,9 +3811,9 @@ function renderPrintSheet(o) {
           </thead>
           <tbody>
             <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;">
-              <td>${g.p||0}</td><td>${g.m||0}</td><td>${g.g||0}</td>
-              <td>${g.gg||0}</td><td>${g.g1||0}</td><td>${g.g2||0}</td><td>${g.g3||0}</td>
-              <td style="background:#fff59d;">${g.total||0}</td>
+              <td>${g.p>0?g.p:''}</td><td>${g.m>0?g.m:''}</td><td>${g.g>0?g.g:''}</td>
+              <td>${g.gg>0?g.gg:''}</td><td>${g.g1>0?g.g1:''}</td><td>${g.g2>0?g.g2:''}</td><td>${g.g3>0?g.g3:''}</td>
+              <td style="background:#fff59d;">${g.total>0?g.total:''}</td>
             </tr>
           </tbody>
         </table>
