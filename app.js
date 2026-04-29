@@ -2645,20 +2645,36 @@ function tipoPecaModeloOS() {
   return cat; // 'camiseta' / 'outro' / ''
 }
 
+// Variacao implícita do desenho (não há campo dedicado): se tem cor terciária
+// → tricolor; cor secundária → bicolor; só principal → basica.
+function variacaoDesenhoOS() {
+  const id = document.getElementById('f-desenho')?.value;
+  if (!id) return '';
+  const d = STATE.desenhos.find(x => x.id === id);
+  if (!d) return '';
+  if (d.corTerciariaId) return 'tricolor';
+  if (d.corSecundariaId) return 'bicolor';
+  if (d.corPrincipalId) return 'basica';
+  return '';
+}
+
 // Grades que devem aparecer no dropdown de "Carregar grade pré-cadastrada" da OS,
-// filtradas pela categoria do tecido do desenho E pelo tipoPeca casado com o
-// modelo. `extraIds` mantém grades específicas (geralmente a já selecionada)
-// mesmo fora do filtro. Grades sem tipoPeca cadastrado passam pelo filtro de
-// modelo (não tem como avaliar) — mas continuam sujeitas ao filtro de tecido.
+// filtradas pela categoria do tecido do desenho, tipoPeca casado com o modelo
+// e variação (basica/bicolor/tricolor) casada com o número de cores do desenho.
+// `extraIds` mantém grades específicas (geralmente a já selecionada) mesmo fora
+// do filtro. Grades sem tipoPeca/variacao cadastrados passam pelos respectivos
+// filtros (não tem como avaliar) — mas continuam sujeitas aos demais.
 function gradesParaDropdownOS(extraIds = []) {
   const cat = categoriaDesenhoOS();
   const tipoModelo = tipoPecaModeloOS();
-  if (!cat && !tipoModelo) return STATE.grades;
+  const variacao = variacaoDesenhoOS();
+  if (!cat && !tipoModelo && !variacao) return STATE.grades;
   const keep = new Set(extraIds.filter(Boolean));
   return STATE.grades.filter(g => {
     if (keep.has(g.id)) return true;
     if (cat && categoriaPrincipalGrade(g) !== cat) return false;
     if (tipoModelo && g.tipoPeca && g.tipoPeca !== tipoModelo) return false;
+    if (variacao && g.variacao && g.variacao !== variacao) return false;
     return true;
   });
 }
