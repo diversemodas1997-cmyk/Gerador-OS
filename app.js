@@ -3605,7 +3605,7 @@ function renderComponentesDetalheBox(o) {
       </thead>
       <tbody>
         ${linhas}
-        <tr style="background:#1a1a1a;color:#fff;font-weight:700;">
+        <tr style="background:#c9e8d0;font-weight:700;">
           <td colspan="${3 + colsTam.length + 1}" style="padding:3px 5px;">TOTAL GERAL COMPONENTES</td>
           <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fmt(totalGeral)}</td>
         </tr>
@@ -3925,7 +3925,7 @@ function renderPrintSheet(o) {
         </div>
 
         <!-- AVIAMENTOS -->
-        <div style="background:#1a1a1a;color:#fff;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
+        <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
         <div class="aviamentos-grid">${aviamentosHtml}</div>
 
         ${o.obs ? `<div class="obs-box"><strong>Observações</strong>${esc(o.obs)}</div>` : ''}
