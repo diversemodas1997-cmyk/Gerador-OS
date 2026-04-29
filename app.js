@@ -3441,6 +3441,7 @@ function renderListaOS() {
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="editarOS('${o.id}')">editar</button>
+        <button class="edit" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
       </td>
     </tr>`).join('');
@@ -3491,7 +3492,15 @@ function editarOS(id) {
     setSelectByIdOrName('f-ftec', o.ftecId, o.ftec || o.ftecNome, STATE.equipe);
     document.getElementById('f-desenho').value = o.desenhoId || '';
     previewDesenhoSelecionado();
-    preencherDropdownGradesOS();
+    // Repovoa dropdown de grade incluindo a gradeId salva nos extraIds —
+    // garante que a grade atual da OS aparece como opcao mesmo se o
+    // filtro por desenho/modelo/variacao a excluiria. Em seguida, restaura
+    // o gradeId selecionado (que antes ficava sempre vazio em edicao).
+    const gradeEl = document.getElementById('f-grade-preset');
+    if (gradeEl) {
+      fillSelect('f-grade-preset', gradesParaDropdownOS([o.gradeId].filter(Boolean)), 'nome', '— nenhuma —');
+      gradeEl.value = o.gradeId || '';
+    }
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
     ['p','m','g','gg','g1','g2','g3'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
@@ -3549,6 +3558,21 @@ async function excluirOS(id) {
   STATE.ordens = STATE.ordens.filter(x => x.id !== id);
   await saveState('ordens');
   toast('OS excluída', 'ok');
+  renderListaOS();
+}
+
+async function duplicarOS(id) {
+  const o = STATE.ordens.find(x => x.id === id);
+  if (!o) return toast('OS não encontrada', 'err');
+  // Deep clone — id, numero da OS e data sao regerados; resto e copia exata
+  const copia = JSON.parse(JSON.stringify(o));
+  copia.id = uid();
+  copia.os = proximoNumeroOS();
+  copia.data = new Date().toISOString().slice(0, 10);
+  STATE.ordens.push(copia);
+  await saveState('ordens');
+  await atualizarCounterOS(copia.os);
+  toast(`OS ${copia.os} duplicada a partir de ${o.os}`, 'ok');
   renderListaOS();
 }
 
@@ -4267,6 +4291,7 @@ window.verOS = verOS;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;
+window.duplicarOS = duplicarOS;
 window.exportarDados = exportarDados;
 window.importarDados = importarDados;
 window.limparTudo = limparTudo;
