@@ -3700,13 +3700,13 @@ function renderEnfestoBox(o) {
       <colgroup>
         <col style="width:14px;">
         <col style="width:20px;">
-        <col style="width:58px;">
-        <col style="width:58px;">
-        <col style="width:48px;">
+        <col style="width:50px;">
+        <col style="width:52px;">
+        <col style="width:38px;">
         <col style="width:42px;">
-        <col style="width:42px;">
-        <col style="width:26px;">
-        <col style="width:42px;">
+        <col style="width:54px;">
+        <col style="width:24px;">
+        <col style="width:56px;">
       </colgroup>
       <thead>
         <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>
