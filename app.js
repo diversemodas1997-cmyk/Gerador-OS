@@ -3941,7 +3941,7 @@ function renderPrintSheet(o) {
               const t = (q) => (q > 0 && cam > 0) ? q * cam : '';
               const totalGeral = (g.total || 0) * cam;
               return `
-                <tr><th colspan="8" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total a produzir (× ${cam || '—'} camadas)</th></tr>
+                <tr><th colspan="8" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td>${t(g.p)}</td><td>${t(g.m)}</td><td>${t(g.g)}</td>
                   <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
