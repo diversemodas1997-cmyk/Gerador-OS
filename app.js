@@ -617,6 +617,22 @@ async function saveState(key) {
   }
 }
 
+// Normaliza nome de função pra comparar (remove acentos, baixa caixa, colapsa
+// qualquer pontuação/espaço múltiplo) — assim "Produção", "producao",
+// "Enfestadeira / Esteira" etc. caem todos no mesmo canônico.
+function _normFuncaoNome(s) {
+  return (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+const _FUNCAO_COORD_ENFEST_NORM = _normFuncaoNome('Coordenador de produção Enfestadeira/Esteira de corte');
+function ehFuncaoCoordEnfestEsteira(nome) {
+  return _normFuncaoNome(nome) === _FUNCAO_COORD_ENFEST_NORM;
+}
+
 async function loadState() {
   const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
   for (const k of keys) {
@@ -655,9 +671,8 @@ async function loadState() {
   // Enfestadeira/Esteira de corte" (decisão do admin). Se algum membro da
   // equipe apontar pra ela, limpa o vínculo (funcaoId/funcao).
   if (Array.isArray(STATE.funcoes)) {
-    const NOME_REMOVER = 'coordenador de produção enfestadeira/esteira de corte';
     const idsRemover = STATE.funcoes
-      .filter(f => (f?.nome || '').trim().toLowerCase() === NOME_REMOVER)
+      .filter(f => ehFuncaoCoordEnfestEsteira(f?.nome))
       .map(f => f.id);
     if (idsRemover.length) {
       STATE.funcoes = STATE.funcoes.filter(f => !idsRemover.includes(f.id));
@@ -669,7 +684,7 @@ async function loadState() {
             p.funcaoId = '';
             p.funcao = '';
             limpou++;
-          } else if ((p.funcao || '').trim().toLowerCase() === NOME_REMOVER) {
+          } else if (ehFuncaoCoordEnfestEsteira(p.funcao)) {
             p.funcao = '';
             limpou++;
           }
@@ -1477,7 +1492,7 @@ async function salvarCadastro() {
     const nomeNovo = v('m-nome');
     // Bloqueia em definitivo o cadastro de "Coordenador de produção
     // Enfestadeira/Esteira de corte" (decisão do admin).
-    if (nomeNovo.trim().toLowerCase() === 'coordenador de produção enfestadeira/esteira de corte') {
+    if (ehFuncaoCoordEnfestEsteira(nomeNovo)) {
       return toast('Esta função foi removida em definitivo. Use outro nome.', 'err');
     }
     item.nome = nomeNovo;
