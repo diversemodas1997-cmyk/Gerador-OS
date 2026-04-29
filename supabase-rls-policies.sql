@@ -70,6 +70,36 @@ CREATE POLICY "user_roles: authenticated select"
   USING (true);
 
 -- =====================================================================
+-- REALTIME: habilita push automatico de UPDATEs da tabela shared_data
+-- pra todos os clientes conectados — sem isso, os usuarios so veem
+-- alteracoes apos F5. O app ja faz subscribe nesses eventos no JS.
+-- =====================================================================
+
+-- Em alguns projetos a publication 'supabase_realtime' ja existe e a
+-- tabela so precisa ser adicionada. Se a publication nao existir,
+-- cria-se. Se ja existe, ALTER...ADD apenas registra a tabela.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+  ) THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $$;
+
+-- Adiciona shared_data a publication. ALTER...ADD TABLE da erro se ja
+-- estiver listada — checamos antes pra ser idempotente.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime' AND tablename = 'shared_data'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE shared_data;
+  END IF;
+END $$;
+
+-- =====================================================================
 -- Verificacao: depois de rodar, rode esta query pra conferir que as
 -- politicas estao em vigor. Deve listar 7 linhas (3 shared_data,
 -- 3 backups, 1 user_roles).
@@ -78,3 +108,6 @@ CREATE POLICY "user_roles: authenticated select"
 --   FROM pg_policies
 --  WHERE tablename IN ('shared_data','shared_data_backups','user_roles')
 --  ORDER BY tablename, policyname;
+--
+-- E pra conferir o realtime:
+-- SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime';

@@ -67,12 +67,20 @@ function iniciarRealtime() {
         if (payload.new.updated_by === currentUser.id) return;
         cloudCache = payload.new.data || {};
         await loadState();
+        // Atualiza o marcador do polling pra evitar reload duplo
+        if (payload.new.updated_at) lastSeenUpdatedAt = payload.new.updated_at;
+        // Nao re-renderiza nova-os em edicao pra preservar o que o usuario
+        // estava digitando. cloudCache ja foi atualizado — proxima
+        // navegacao ja le valores frescos.
         const activeBtn = document.querySelector('.nav-btn.active');
         const pagina = activeBtn && activeBtn.dataset.page ? activeBtn.dataset.page : 'home';
-        goto(pagina);
+        if (pagina !== 'nova-os') goto(pagina);
         toast('Dados atualizados por outro usuário', 'ok');
       })
     .subscribe();
+  // Polling tambem e iniciado — se Realtime nao funcionar (publication
+  // nao habilitada, rede bloqueia WebSocket, etc.), o polling cobre.
+  iniciarPolling();
 }
 
 function pararRealtime() {
@@ -80,6 +88,57 @@ function pararRealtime() {
     supa.removeChannel(realtimeChannel);
     realtimeChannel = null;
   }
+  pararPolling();
+}
+
+// Polling fallback: a cada 15s consulta shared_data.updated_at. Se mudou
+// desde a ultima vez vista (e nao foi este usuario que escreveu), recarrega.
+// Garante sync mesmo se o canal Realtime falhar (rede instavel, publication
+// nao habilitada, etc.). 15s e curto o suficiente pra parecer 'tempo real'
+// sem pesar nas API calls.
+let pollIntervalId = null;
+let lastSeenUpdatedAt = null;
+
+function iniciarPolling() {
+  if (!supa || !currentUser || pollIntervalId) return;
+  pollIntervalId = setInterval(async () => {
+    if (!supa || !currentUser) return;
+    try {
+      const { data, error } = await supa.from('shared_data')
+        .select('updated_at, updated_by, data')
+        .eq('id', 'main')
+        .maybeSingle();
+      if (error || !data) return;
+      // Inicializa o marcador na primeira leitura sem disparar reload
+      if (lastSeenUpdatedAt === null) {
+        lastSeenUpdatedAt = data.updated_at;
+        return;
+      }
+      // Sem mudanca ou mudanca propria: ignora
+      if (data.updated_at === lastSeenUpdatedAt) return;
+      if (data.updated_by === currentUser.id) {
+        lastSeenUpdatedAt = data.updated_at;
+        return;
+      }
+      // Mudanca de outro usuario: aplica
+      cloudCache = data.data || {};
+      await loadState();
+      // Evita resetar formulario em edicao — so re-renderiza paginas seguras
+      const activeBtn = document.querySelector('.nav-btn.active');
+      const pagina = activeBtn?.dataset?.page || 'home';
+      if (pagina !== 'nova-os') goto(pagina);
+      lastSeenUpdatedAt = data.updated_at;
+      toast('Dados atualizados por outro usuário', 'ok');
+    } catch (e) {
+      console.warn('polling shared_data', e);
+    }
+  }, 15000);
+}
+
+function pararPolling() {
+  if (pollIntervalId) clearInterval(pollIntervalId);
+  pollIntervalId = null;
+  lastSeenUpdatedAt = null;
 }
 
 function scheduleCloudSave() {
