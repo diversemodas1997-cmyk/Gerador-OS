@@ -769,6 +769,11 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
     width: 200mm;
     box-shadow: none;
     padding: 0;
+    /* Anula o zoom: 1.20 do base — esse zoom existe SO pra leitura na
+       tela. Em impressao, ele faria a folha renderizar em ~252mm de
+       largura e estourar A4 (200mm uteis com margem 5mm), forcando
+       quebra pra 2a pagina. */
+    zoom: 1;
     page-break-inside: avoid;
     page-break-after: avoid;
   }

@@ -3384,14 +3384,19 @@ async function salvarEImprimir() {
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
+  // Limpa zoom inline pra que @media print { .sheet { zoom: 1 } } valha.
   sheet.style.zoom = '';
+  // Forca um reflow pra medir a altura ja com o zoom de print aplicado.
+  void sheet.offsetHeight;
   // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
   const pxPerMm = 3.7795275591;
   const maxHpx = 287 * pxPerMm;
   const natH = sheet.scrollHeight;
+  // Se o conteudo (a 1.0x apos o zoom: 1 do print) ainda estoura 287mm,
+  // reduz proporcional pra caber. Sem teto inferior — pode ir abaixo de
+  // 0.5x se necessario, melhor folha pequena que duas folhas.
   if (natH > maxHpx) {
-    const scale = Math.max(0.5, maxHpx / natH);
-    sheet.style.zoom = scale;
+    sheet.style.zoom = maxHpx / natH;
   }
 }
 
