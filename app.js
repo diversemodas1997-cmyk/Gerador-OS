@@ -2493,25 +2493,12 @@ function aplicarGradePreset() {
   for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
   const papeisFases = maxOrd > 0 ? calcularPapeisFases(fasesOrd) : [];
 
-  // Cor do desenho aplicável a uma fase (quando a fase não tem corId).
-  // Mapeamento por papel — não por ordem — pra acertar casos como blusa moletom
-  // (forro de capuz herda a cor do moletom; ribanas usam secundária/terciária):
-  //  - moletom / forro_capuz   → corPrincipal
-  //  - ribana_1 (Punhos)       → corSecundaria  (fallback corPrincipal)
-  //  - ribana_2 (Barra) e além → corTerciaria  (fallback corSecundaria, depois corPrincipal)
-  //  - demais (malha, outro)   → ordem-based (corPrincipal/Secundaria/Terciaria por posição)
-  const corFallbackParaFase = (n, papelInfo) => {
+  // Cor do desenho aplicável a uma fase: mapeamento direto pela ORDEM da fase
+  // (fase 1 → corPrincipal, fase 2 → corSecundaria, fase 3 → corTerciaria,
+  // fase 4+ → null). Espelha o contrato do cadastro do desenho técnico, onde
+  // os campos são rotulados "Cor 1 / Cor 2 / Cor 3 da Variante 1".
+  const corFallbackParaFase = (n) => {
     if (!desenhoAtual) return null;
-    const papel = papelInfo?.papel || '';
-    if (papel === 'moletom' || papel === 'forro_capuz') {
-      return desenhoAtual.corPrincipalId || null;
-    }
-    if (papel === 'ribana_1') {
-      return desenhoAtual.corSecundariaId || desenhoAtual.corPrincipalId || null;
-    }
-    if (papel.startsWith('ribana_')) {
-      return desenhoAtual.corTerciariaId || desenhoAtual.corSecundariaId || desenhoAtual.corPrincipalId || null;
-    }
     const corId = n === 1 ? desenhoAtual.corPrincipalId
                 : n === 2 ? desenhoAtual.corSecundariaId
                 : n === 3 ? desenhoAtual.corTerciariaId
@@ -2519,11 +2506,12 @@ function aplicarGradePreset() {
     return corId || null;
   };
 
-  // Prioridade de cor: COR DO DESENHO TÉCNICO (mapeada pelo papel da fase) tem
-  // precedência sobre a cor cadastrada na fase da grade. A grade é estrutura
-  // (tamanhos, fases, categorias de tecido); o desenho é específico do produto
-  // — então a cor do desenho deve mandar. A cor da fase só é fallback.
-  const corPorFase = (n, f, papel) => corFallbackParaFase(n, papel) || f.corId || '';
+  // Prioridade de cor: COR DO DESENHO TÉCNICO (mapeada por ORDEM) tem precedência
+  // sobre a cor cadastrada na fase da grade. A grade é estrutura (tamanhos,
+  // fases, categorias de tecido); o desenho é específico do produto — então a
+  // cor do desenho deve mandar. A cor da fase é fallback quando o desenho não
+  // tem cor naquela posição (ex.: fase 4+ ou desenho com menos cores).
+  const corPorFase = (n, f) => corFallbackParaFase(n) || f.corId || '';
 
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
@@ -2531,7 +2519,7 @@ function aplicarGradePreset() {
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
       const papel = papeisFases[n-1] || { label: '' };
-      const corIdEfetiva = corPorFase(n, f, papel);
+      const corIdEfetiva = corPorFase(n, f);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
       prefills.push({
         comp: f.comp || '',
@@ -2546,15 +2534,14 @@ function aplicarGradePreset() {
   }
 
   // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada.
-  // Cor do desenho (por papel da fase) tem prioridade; cor da fase é fallback.
+  // Cor do desenho (por ordem) tem prioridade; cor da fase é fallback.
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
       tecCont.innerHTML = '';
       for (let n = 1; n <= maxOrd; n++) {
         const f = porOrdem[n] || {};
-        const papel = papeisFases[n-1] || { label: '' };
-        const corIdEfetiva = corPorFase(n, f, papel);
+        const corIdEfetiva = corPorFase(n, f);
         if (f.tecidoId || corIdEfetiva) {
           addTecidoRow({ tecidoId: f.tecidoId || '', corId: corIdEfetiva });
         }
