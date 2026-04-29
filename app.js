@@ -3698,15 +3698,15 @@ function renderEnfestoBox(o) {
   return `
     <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
       <colgroup>
-        <col style="width:14px;">
         <col style="width:22px;">
+        <col style="width:32px;">
         <col style="width:52px;">
         <col style="width:54px;">
-        <col style="width:38px;">
+        <col style="width:58px;">
         <col style="width:42px;">
-        <col style="width:60px;">
+        <col style="width:56px;">
         <col style="width:26px;">
-        <col style="width:62px;">
+        <col style="width:58px;">
       </colgroup>
       <thead>
         <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>

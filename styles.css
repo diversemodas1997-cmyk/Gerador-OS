@@ -535,12 +535,13 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   font-weight: 700; letter-spacing: .1em; font-size: 9pt;
 }
 
-/* Corpo principal em 2 colunas — lado direito ligeiramente maior pra
-   acomodar a tabela Enfesto (9 colunas com headers em 1 linha unica).
-   Razao 0.93/1 → desenho ~48%, lado direito ~52% da folha. */
+/* Corpo principal em 2 colunas — lado direito maior pra acomodar a
+   tabela Enfesto (9 colunas com headers em 1 linha + checkbox/Fase/Cor
+   com largura suficiente pro conteudo). Razao 0.8/1 → desenho ~44%,
+   lado direito ~56% da folha. */
 .sheet-body {
   display: grid;
-  grid-template-columns: minmax(0, 0.93fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
   border: 1.5px solid #000;
   border-top: none;
   flex: 1;
