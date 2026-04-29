@@ -20,7 +20,19 @@ async function cloudLoad() {
     .select('data')
     .eq('id', 'main')
     .maybeSingle();
-  if (error) { console.error('cloudLoad', error); cloudCache = {}; return; }
+  if (error) {
+    console.error('cloudLoad', error);
+    cloudCache = {};
+    // Visibilidade do problema: a causa quase sempre e RLS bloqueando o
+    // SELECT pra esse usuario. Sem o toast, falha silenciosa esconde
+    // o motivo de "OS de outro computador nao aparecem".
+    setTimeout(() => toast(
+      `Falha ao ler dados compartilhados (${error.code || 'erro'}). ` +
+      `Verifique as politicas RLS da tabela shared_data no Supabase.`,
+      'err'
+    ), 50);
+    return;
+  }
   cloudCache = (data && data.data) || {};
 }
 
