@@ -3709,19 +3709,30 @@ function renderEnfestoBox(o) {
   }).join('');
 
   return `
-    <table class="side-table tab-tecidos" style="table-layout:auto;">
+    <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
+      <colgroup>
+        <col style="width:14px;">
+        <col style="width:20px;">
+        <col style="width:58px;">
+        <col style="width:58px;">
+        <col style="width:48px;">
+        <col style="width:42px;">
+        <col style="width:42px;">
+        <col style="width:26px;">
+        <col style="width:42px;">
+      </colgroup>
       <thead>
         <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>
         <tr>
-          <th style="width:18px;font-size:6.5pt;">✓</th>
-          <th style="width:24px;font-size:6.5pt;">Fase</th>
+          <th style="font-size:6.5pt;">✓</th>
+          <th style="font-size:6.5pt;">Fase</th>
           <th style="font-size:6.5pt;">Enfesto</th>
           <th style="font-size:6.5pt;">Tecido</th>
           <th style="font-size:6.5pt;">Cor</th>
-          <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Compr.</th>
-          <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Largura</th>
-          <th style="width:36px;font-size:6.5pt;">CAM</th>
-          <th style="width:60px;font-size:6.5pt;">Consumo</th>
+          <th style="font-size:6.5pt;">Compr.</th>
+          <th style="font-size:6.5pt;">Largura</th>
+          <th style="font-size:6.5pt;">CAM</th>
+          <th style="font-size:6.5pt;">Consumo</th>
         </tr>
       </thead>
       <tbody>
