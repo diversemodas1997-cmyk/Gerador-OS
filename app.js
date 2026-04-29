@@ -2494,12 +2494,13 @@ function aplicarGradePreset() {
   const papeisFases = maxOrd > 0 ? calcularPapeisFases(fasesOrd) : [];
 
   // Cor de um componente específico do desenho (matching por papel + nome).
-  // Usada para fase 4+ no Enfesto.
-  //   forro_capuz  → componente com "forro" no nome
-  //   ribana_1     → componente com "punho" no nome
-  //   ribana_2     → componente com "barra" no nome
-  //   ribana_3+    → cobre gola / outras ribanas
-  //   moletom      → Frente / Costas / Capuz / Mangas (1º que casar)
+  // Em camiseta (sem moletom no grade) ribana_1 não é Punhos, é Gola — então
+  // o matcher tenta 'punho' primeiro e, se não casar, cai pra 'gola'.
+  //   forro_capuz  → "forro"
+  //   ribana_1     → "punho" → "gola"
+  //   ribana_2     → "barra" → "gola"
+  //   ribana_3+    → "cobre" / "gola" / "ribana"
+  //   moletom/malha (corpo) → frente / costas / capuz / manga
   //   sem papel    → 1º componente com mesmo tecidoId da fase
   const corDeComponente = (papel, f) => {
     if (!desenhoAtual) return null;
@@ -2512,28 +2513,43 @@ function aplicarGradePreset() {
     const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const pickByName = (kws) => comps.find(c => kws.some(k => norm(c.nome).includes(k)))?.corId || null;
     if (papel === 'forro_capuz')  return pickByName(['forro']);
-    if (papel === 'ribana_1')     return pickByName(['punho']);
-    if (papel === 'ribana_2')     return pickByName(['barra']);
+    if (papel === 'ribana_1')     return pickByName(['punho']) || pickByName(['gola']);
+    if (papel === 'ribana_2')     return pickByName(['barra']) || pickByName(['gola']);
     if (papel?.startsWith('ribana_')) return pickByName(['cobre', 'gola', 'ribana']);
-    if (papel === 'moletom')      return pickByName(['frente', 'costas', 'capuz', 'manga']);
+    if (papel === 'moletom' || papel === 'malha') return pickByName(['frente', 'costas', 'capuz', 'manga']);
     if (f?.tecidoId) {
       return comps.find(c => c.tecidoId === f.tecidoId)?.corId || null;
     }
     return null;
   };
 
+  // Lista de ordens das fases de CORPO (moletom ou malha sem moletom).
+  // Usada para mapear cor primária/secundária/terciária às 1ª/2ª/3ª body fases,
+  // independente da posição absoluta (assim acessórios entre as body fases
+  // não consomem cor topo-nível).
+  const bodyOrdems = [];
+  for (let n = 1; n <= maxOrd; n++) {
+    const p = papeisFases[n-1]?.papel || '';
+    if (p === 'moletom' || p === 'malha') bodyOrdems.push(n);
+  }
+
   // Cor por fase no Enfesto:
-  //   - Fase 1 → cor PRIMÁRIA do desenho
-  //   - Fase 2 → cor SECUNDÁRIA
-  //   - Fase 3 → cor TERCIÁRIA
-  //   - Fase 4+ → cor cadastrada no COMPONENTE correspondente do desenho
-  // (forro de capuz/punhos/barra/etc.)
-  // Se a posição esperada (cor topo-nível ou componente) estiver vazia,
-  // cai pra cor cadastrada na própria fase da grade; senão, vazio.
+  //   - Body fase (moletom/malha-corpo): 1ª body → corPrimária, 2ª → corSecund.,
+  //     3ª → corTerciária. Se a posição não tiver cor cadastrada, cai pra
+  //     componente correspondente.
+  //   - Acessório (forro_capuz, ribana_*): SEMPRE cor do componente
+  //     correspondente do desenho (gola, forro, punho, barra, etc.).
+  //   - Sem componente correspondente → f.corId da fase da grade → vazio.
   const corPorFase = (n, papel, f) => {
-    if (n === 1 && desenhoAtual?.corPrincipalId)  return desenhoAtual.corPrincipalId;
-    if (n === 2 && desenhoAtual?.corSecundariaId) return desenhoAtual.corSecundariaId;
-    if (n === 3 && desenhoAtual?.corTerciariaId)  return desenhoAtual.corTerciariaId;
+    if (papel === 'moletom' || papel === 'malha') {
+      const idx = bodyOrdems.indexOf(n);
+      const cores = [
+        desenhoAtual?.corPrincipalId,
+        desenhoAtual?.corSecundariaId,
+        desenhoAtual?.corTerciariaId
+      ];
+      if (idx >= 0 && idx < cores.length && cores[idx]) return cores[idx];
+    }
     return corDeComponente(papel, f) || f.corId || '';
   };
 
