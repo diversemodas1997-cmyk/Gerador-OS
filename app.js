@@ -3927,7 +3927,7 @@ function renderPrintSheet(o) {
       <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
       <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
-        <span class="mini" style="color:#ccc">OS Nº:</span>
+        <span class="mini">OS Nº:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
       </div>
       <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
