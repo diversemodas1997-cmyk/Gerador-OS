@@ -3763,20 +3763,54 @@ function renderPrintSheet(o) {
   const vars_ = o.variantes || [];
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
   const avs = o.aviamentos || [];
+  // Mapa tecidoId+corId → nome do Enfesto (mesma logica usada em renderEnfestoBox).
+  // Permite mostrar a coluna Enfesto na tabela Tecidos/Consumo, entre Tecido e Cor.
+  const enfestoNomePorChave = (() => {
+    const e = o.enfesto || {};
+    const blocos = Array.isArray(e.blocos) ? e.blocos : [];
+    const fasesPorOrdem = {};
+    (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
+    const mapa = new Map();
+    blocos.forEach((b, i) => {
+      const ord = b.ordem || (i + 1);
+      const fase = fasesPorOrdem[ord] || {};
+      let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
+      const cor = b.nomeCor || fase.corNome || '';
+      if (!cor && nomeEnf.includes(' · ')) nomeEnf = nomeEnf.split(' · ')[0];
+      const chave = (fase.tecidoId || '') + '|' + (fase.corId || '');
+      if (chave !== '|' && nomeEnf) mapa.set(chave, nomeEnf);
+    });
+    return mapa;
+  })();
+  const enfestoNomeDoTecido = (t, idx) => {
+    const v = enfestoNomePorChave.get((t.tecidoId || '') + '|' + (t.corId || ''));
+    if (v) return v;
+    // Fallback por posicao: linha i ↔ bloco i
+    const b = (o.enfesto?.blocos || [])[idx];
+    if (b) {
+      let n = b.nomeTecido || '';
+      if (!b.nomeCor && n.includes(' · ')) n = n.split(' · ')[0];
+      return n;
+    }
+    return '';
+  };
   // Tabela de tecidos (até 5 linhas)
   let tecidoRows = '';
   for (let i = 0; i < 5; i++) {
     const t = tecs[i];
     if (t) {
+      const enfNome = enfestoNomeDoTecido(t, i);
       tecidoRows += `<tr>
         <td style="text-align:center;font-weight:700;width:18px;">${i+1}</td>
         <td class="tecido-cell">${esc(t.tecidoNome)}</td>
+        <td>${esc(enfNome)||'—'}</td>
         <td>${esc(t.corNome)||'—'}</td>
         <td>${esc(t.c1)||''}</td>
       </tr>`;
     } else {
       tecidoRows += `<tr>
         <td style="text-align:center;color:#ccc;">${i+1}</td>
+        <td style="color:#ccc;">—</td>
         <td style="color:#ccc;">—</td>
         <td style="color:#ccc;">—</td>
         <td style="color:#ccc;">—</td>
@@ -3894,8 +3928,8 @@ function renderPrintSheet(o) {
 
         <!-- TECIDOS -->
         <table class="side-table tab-tecidos">
-          <thead><tr><th colspan="4" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
-          <tr><th style="width:18px;">#</th><th>Tecido</th><th>Cor</th><th style="width:90px;">Consumo</th></tr></thead>
+          <thead><tr><th colspan="5" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
+          <tr><th style="width:18px;">#</th><th>Tecido</th><th>Enfesto</th><th>Cor</th><th style="width:90px;">Consumo</th></tr></thead>
           <tbody>${tecidoRows}</tbody>
         </table>
 
