@@ -3973,8 +3973,32 @@ function renderPrintSheet(o) {
             </tr>
             ${(() => {
               const cam = o.enfesto?.camadas || 0;
-              const t = (q) => (q > 0 && cam > 0) ? q * cam : '';
-              const totalGeral = (g.total || 0) * cam;
+              // multPrincipal: 1 camada produz quantas unidades por slot
+              // de grade. Moletom = 1 (1 camada = 1 blusa). Malha sem
+              // moletom (camiseta) = 2. Sem isso, o total por tamanho
+              // sai pela metade pra camiseta e o usuario ve 'peças-alvo'
+              // entrar como total geral.
+              const fasesP = o.fases || [];
+              const tecsP = o.tecidos || [];
+              const temMoletom = fasesP.some(f => {
+                const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+                return t && categoriaEfetivaTecido(t) === 'moletom';
+              }) || tecsP.some(t => {
+                const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+                return tec && categoriaEfetivaTecido(tec) === 'moletom';
+              });
+              const temMalha = !temMoletom && (
+                fasesP.some(f => {
+                  const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+                  return t && categoriaEfetivaTecido(t) === 'malha';
+                }) || tecsP.some(t => {
+                  const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+                  return tec && categoriaEfetivaTecido(tec) === 'malha';
+                })
+              );
+              const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
+              const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
+              const totalGeral = (g.total || 0) * cam * multPrincipal;
               return `
                 <tr><th colspan="8" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
