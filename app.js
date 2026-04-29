@@ -3699,27 +3699,27 @@ function renderEnfestoBox(o) {
     <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
       <colgroup>
         <col style="width:14px;">
-        <col style="width:20px;">
-        <col style="width:50px;">
+        <col style="width:22px;">
         <col style="width:52px;">
+        <col style="width:54px;">
         <col style="width:38px;">
         <col style="width:42px;">
-        <col style="width:54px;">
-        <col style="width:24px;">
-        <col style="width:56px;">
+        <col style="width:60px;">
+        <col style="width:26px;">
+        <col style="width:62px;">
       </colgroup>
       <thead>
         <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>
         <tr>
-          <th style="font-size:6.5pt;">✓</th>
-          <th style="font-size:6.5pt;">Fase</th>
-          <th style="font-size:6.5pt;">Enfesto</th>
-          <th style="font-size:6.5pt;">Tecido</th>
-          <th style="font-size:6.5pt;">Cor</th>
-          <th style="font-size:6.5pt;">Compr.</th>
-          <th style="font-size:6.5pt;">Largura</th>
-          <th style="font-size:6.5pt;">CAM</th>
-          <th style="font-size:6.5pt;">Consumo</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">✓</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Fase</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Enfesto</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Tecido</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Cor</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Compr.</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Largura</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">CAM</th>
+          <th style="font-size:6.5pt;white-space:nowrap;">Consumo</th>
         </tr>
       </thead>
       <tbody>
