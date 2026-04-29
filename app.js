@@ -2493,17 +2493,26 @@ function aplicarGradePreset() {
   for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
   const papeisFases = maxOrd > 0 ? calcularPapeisFases(fasesOrd) : [];
 
-  // Cor do desenho aplicável a uma fase: mapeamento direto pela ORDEM da fase
-  // (fase 1 → corPrincipal, fase 2 → corSecundaria, fase 3 → corTerciaria,
-  // fase 4+ → null). Espelha o contrato do cadastro do desenho técnico, onde
-  // os campos são rotulados "Cor 1 / Cor 2 / Cor 3 da Variante 1".
+  // Cor do desenho aplicável a uma fase: mapeamento por ORDEM com CASCATA.
+  // Tenta a cor na exata posição da fase (1→principal, 2→secundária, 3→terciária)
+  // e, se aquela posição estiver vazia no desenho, cai pra cor anterior — assim
+  // desenhos com menos cores cadastradas ainda preenchem todas as fases:
+  //   - basica  (só principal)        → todas as fases recebem corPrincipal
+  //   - bicolor (principal+secundária)→ fase 1 principal, fases 2+ secundária
+  //   - tricolor (3 cores)            → fase 1/2/3 direto; fase 4+ herda terciária
   const corFallbackParaFase = (n) => {
     if (!desenhoAtual) return null;
-    const corId = n === 1 ? desenhoAtual.corPrincipalId
-                : n === 2 ? desenhoAtual.corSecundariaId
-                : n === 3 ? desenhoAtual.corTerciariaId
-                : null;
-    return corId || null;
+    const cores = [
+      desenhoAtual.corPrincipalId,
+      desenhoAtual.corSecundariaId,
+      desenhoAtual.corTerciariaId
+    ];
+    // Indice alvo: fase 1→0, fase 2→1, fase 3→2, fase 4+→2 (limita à última posição)
+    const idx = Math.min(n, cores.length) - 1;
+    for (let i = idx; i >= 0; i--) {
+      if (cores[i]) return cores[i];
+    }
+    return null;
   };
 
   // Prioridade de cor: COR DO DESENHO TÉCNICO (mapeada por ORDEM) tem precedência
