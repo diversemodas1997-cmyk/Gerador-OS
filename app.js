@@ -3660,13 +3660,6 @@ function renderEnfestoBox(o) {
   const fasesPorOrdem = {};
   (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
 
-  // Mapa tecidoId+corId → c1 (Consumo) p/ casar coluna Consumo com a fase certa
-  const consumoPorChave = new Map();
-  tecs.forEach(t => {
-    const k = (t.tecidoId || '') + '|' + (t.corId || '');
-    if (k !== '|') consumoPorChave.set(k, t.c1 || '');
-  });
-
   // Linhas: blocos do enfesto se houver, ou pseudo-blocos derivados de tecidos
   // (OS sem fases/enfesto cadastrado mas com tecidos preenchidos manualmente)
   const linhas = blocos.length
@@ -3687,12 +3680,6 @@ function renderEnfestoBox(o) {
     const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
     const corReal = cor || tecs[i]?.corNome || '';
     const camBloco = b.camadas || camadas || 0;
-    // Consumo: 1) por tecidoId+corId da fase, 2) por posicao no array de tecidos
-    let consumo = '';
-    if (fase.tecidoId || fase.corId) {
-      consumo = consumoPorChave.get((fase.tecidoId || '') + '|' + (fase.corId || '')) || '';
-    }
-    if (!consumo) consumo = tecs[i]?.c1 || '';
     return `<tr>
       <td style="text-align:center;"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #000;vertical-align:middle;"></span></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
@@ -3702,7 +3689,7 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${esc(consumo) || '—'}</td>
+      <td>&nbsp;</td>
     </tr>`;
   }).join('');
 
