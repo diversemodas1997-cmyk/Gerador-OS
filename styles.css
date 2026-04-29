@@ -773,6 +773,12 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
        tela. Em impressao, ele faria a folha renderizar em ~252mm de
        largura e estourar A4 (200mm uteis com margem 5mm). */
     zoom: 1;
+    /* CRITICO: anula o min-height: 297mm do base. Em impressao, a
+       area util do A4 e 287mm (apos margem 5mm de cada lado) — manter
+       297mm forca a folha a sempre estourar pra 2a pagina, mesmo
+       quando o conteudo cabe. min-height: auto permite que ela tenha
+       a altura exata do conteudo. */
+    min-height: auto;
     page-break-inside: avoid;
     page-break-after: avoid;
   }
