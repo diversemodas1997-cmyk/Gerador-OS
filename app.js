@@ -2493,42 +2493,55 @@ function aplicarGradePreset() {
   for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
   const papeisFases = maxOrd > 0 ? calcularPapeisFases(fasesOrd) : [];
 
-  // Cor do desenho aplicável a uma fase: mapeamento por ORDEM com CASCATA.
-  // Tenta a cor na exata posição da fase (1→principal, 2→secundária, 3→terciária)
-  // e, se aquela posição estiver vazia no desenho, cai pra cor anterior — assim
-  // desenhos com menos cores cadastradas ainda preenchem todas as fases:
-  //   - basica  (só principal)        → todas as fases recebem corPrincipal
-  //   - bicolor (principal+secundária)→ fase 1 principal, fases 2+ secundária
-  //   - tricolor (3 cores)            → fase 1/2/3 direto; fase 4+ herda terciária
-  const corFallbackParaFase = (n) => {
+  // Cor da fase no Enfesto vem dos COMPONENTES do desenho (cor cadastrada
+  // por componente em Cadastro Desenho — Frente/Costas/Forro do capuz/Punho/
+  // Barra/etc.), NÃO das cores principal/secundária/terciária. Essas três
+  // cores topo-nível só servem para preencher Variante 1 (cor 1/2/3 = corpo
+  // 1/2/3) e não são usadas aqui.
+  //
+  // Match por papel da fase + nome do componente:
+  //   moletom      → Frente / Costas / Capuz / Mangas (1º que casar)
+  //   forro_capuz  → componente com "forro" no nome
+  //   ribana_1     → componente com "punho" no nome
+  //   ribana_2     → componente com "barra" no nome
+  //   ribana_3+    → próximo componente ribana/gola/cobre
+  //   demais       → 1º componente com mesmo tecidoId da fase
+  const corDeComponente = (papel, f) => {
     if (!desenhoAtual) return null;
-    const cores = [
-      desenhoAtual.corPrincipalId,
-      desenhoAtual.corSecundariaId,
-      desenhoAtual.corTerciariaId
-    ];
-    // Indice alvo: fase 1→0, fase 2→1, fase 3→2, fase 4+→2 (limita à última posição)
-    const idx = Math.min(n, cores.length) - 1;
-    for (let i = idx; i >= 0; i--) {
-      if (cores[i]) return cores[i];
+    const componentes = Array.isArray(desenhoAtual.componentes) ? desenhoAtual.componentes : [];
+    if (!componentes.length) return null;
+    // Resolve nome via cadastro quando o componente do desenho não tem nome inline
+    const comps = componentes.map(c => ({
+      ...c,
+      nome: c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || ''
+    }));
+    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const pickByName = (kws) => comps.find(c => kws.some(k => norm(c.nome).includes(k)))?.corId || null;
+    if (papel === 'moletom')      return pickByName(['frente', 'costas', 'capuz', 'manga']);
+    if (papel === 'forro_capuz')  return pickByName(['forro']);
+    if (papel === 'ribana_1')     return pickByName(['punho']);
+    if (papel === 'ribana_2')     return pickByName(['barra']);
+    if (papel?.startsWith('ribana_')) return pickByName(['cobre', 'gola', 'ribana']);
+    // Sem papel mapeado: cai pra match por tecidoId
+    if (f?.tecidoId) {
+      return comps.find(c => c.tecidoId === f.tecidoId)?.corId || null;
     }
     return null;
   };
 
-  // Prioridade de cor: COR DO DESENHO TÉCNICO (mapeada por ORDEM) tem precedência
-  // sobre a cor cadastrada na fase da grade. A grade é estrutura (tamanhos,
-  // fases, categorias de tecido); o desenho é específico do produto — então a
-  // cor do desenho deve mandar. A cor da fase é fallback quando o desenho não
-  // tem cor naquela posição (ex.: fase 4+ ou desenho com menos cores).
-  const corPorFase = (n, f) => corFallbackParaFase(n) || f.corId || '';
+  // Prioridade de cor da fase no Enfesto:
+  //   1) cor do componente correspondente do desenho técnico
+  //   2) cor cadastrada na própria fase da grade
+  //   3) vazio (a célula renderiza '—')
+  const corPorFase = (papel, f) => corDeComponente(papel, f) || f.corId || '';
 
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
     const prefills = [];
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
-      const papel = papeisFases[n-1] || { label: '' };
-      const corIdEfetiva = corPorFase(n, f);
+      const papel = papeisFases[n-1] || { label: '', papel: '' };
+      const corIdEfetiva = corPorFase(papel.papel, f);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
       prefills.push({
         comp: f.comp || '',
@@ -2543,14 +2556,15 @@ function aplicarGradePreset() {
   }
 
   // Popula linhas de Tecido com tecido + cor de cada fase, na ordem cadastrada.
-  // Cor do desenho (por ordem) tem prioridade; cor da fase é fallback.
+  // Cor do componente do desenho tem prioridade; cor da fase é fallback.
   if (fases.length && fases.some(f => f.tecidoId || f.corId)) {
     const tecCont = document.getElementById('tecidos-rows');
     if (tecCont) {
       tecCont.innerHTML = '';
       for (let n = 1; n <= maxOrd; n++) {
         const f = porOrdem[n] || {};
-        const corIdEfetiva = corPorFase(n, f);
+        const papel = papeisFases[n-1] || { papel: '' };
+        const corIdEfetiva = corPorFase(papel.papel, f);
         if (f.tecidoId || corIdEfetiva) {
           addTecidoRow({ tecidoId: f.tecidoId || '', corId: corIdEfetiva });
         }
