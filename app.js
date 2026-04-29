@@ -3441,7 +3441,7 @@ function renderListaOS() {
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="editarOS('${o.id}')">editar</button>
-        <button class="del" onclick="excluirOS('${o.id}')">excluir</button>
+        <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
       </td>
     </tr>`).join('');
 }
@@ -3544,6 +3544,7 @@ function editarOS(id) {
 }
 
 async function excluirOS(id) {
+  if (!exigirAdmin('excluir OS')) return;
   if (!confirm('Excluir esta OS?')) return;
   STATE.ordens = STATE.ordens.filter(x => x.id !== id);
   await saveState('ordens');
