@@ -3642,63 +3642,74 @@ function renderAviamentosDetalheBox(o) {
   `;
 }
 
-// Desabilitada: info mesclada em renderEnfestoBox (tabela única de Enfestos com Fase/Nome/Cor/Comp/Larg).
-function renderFasesBox(o) { return ''; }
-
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
-  const g = o.grade || {};
+  const tecs = o.tecidos || [];
   // Blocos: usa e.blocos (novo) ou reconstrói um bloco único a partir dos campos legados
   const blocos = Array.isArray(e.blocos) && e.blocos.length
     ? e.blocos
     : (e.comprimento || e.largura ? [{ ordem: 1, comp: e.comprimento, larg: e.largura }] : []);
-  const temEnfesto = blocos.length || e.camadas;
-  if (!temEnfesto) return '';
+  // Renderiza se houver enfesto OU tecidos — campo unico mescla as duas infos
+  const temAlgo = blocos.length || e.camadas || tecs.length;
+  if (!temAlgo) return '';
 
   const camadas = e.camadas || 0;
-  const totalPecas = (g.total || 0) * camadas;
   const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
 
-  // Cor de cada fase: vem de o.fases por ordem (fallback '')
+  // Cor/tecido de cada fase: vem de o.fases por ordem
   const fasesPorOrdem = {};
   (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
 
-  // Descobre multiplicador por bloco pelo nomeTecido salvo (Moletom → 1, demais → 2)
-  const multBloco = (b) => {
-    const n = (b.nomeTecido || '').toLowerCase();
-    if (n.includes('moletom')) return 1;
-    return 2;
-  };
+  // Mapa tecidoId+corId → c1 (Consumo) p/ casar coluna Consumo com a fase certa
+  const consumoPorChave = new Map();
+  tecs.forEach(t => {
+    const k = (t.tecidoId || '') + '|' + (t.corId || '');
+    if (k !== '|') consumoPorChave.set(k, t.c1 || '');
+  });
 
-  // Linhas por enfesto — Fase / Nome / Tecido / Cor / Comp / Larg / Camadas
-  const linhasEnfestos = blocos.map((b, i) => {
+  // Linhas: blocos do enfesto se houver, ou pseudo-blocos derivados de tecidos
+  // (OS sem fases/enfesto cadastrado mas com tecidos preenchidos manualmente)
+  const linhas = blocos.length
+    ? blocos.map((b, i) => ({ b, i }))
+    : tecs.map((t, i) => ({ b: { ordem: i+1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
+
+  const linhasEnfestos = linhas.map(({ b, i }) => {
     const ord = b.ordem || (i+1);
-    let nomeEnf = b.nomeTecido || fasesPorOrdem[ord]?.tecidoNome || '';
-    let cor = b.nomeCor || fasesPorOrdem[ord]?.corNome || '';
+    const fase = fasesPorOrdem[ord] || {};
+    let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
+    let cor = b.nomeCor || fase.corNome || '';
     if (!cor && nomeEnf.includes(' · ')) {
       const parts = nomeEnf.split(' · ');
       nomeEnf = parts[0];
       cor = parts.slice(1).join(' · ');
     }
-    // Nome do tecido real cadastrado (Moletom Bulk, Ribana Bulk, etc.) — da fase da grade
-    const tecidoReal = fasesPorOrdem[ord]?.tecidoNome || '';
+    // Tecido real cadastrado (Moletom Bulk, Ribana Bulk, etc.) — fallback p/ tecido da OS
+    const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
+    const corReal = cor || tecs[i]?.corNome || '';
     const camBloco = b.camadas || camadas || 0;
+    // Consumo: 1) por tecidoId+corId da fase, 2) por posicao no array de tecidos
+    let consumo = '';
+    if (fase.tecidoId || fase.corId) {
+      consumo = consumoPorChave.get((fase.tecidoId || '') + '|' + (fase.corId || '')) || '';
+    }
+    if (!consumo) consumo = tecs[i]?.c1 || '';
     return `<tr>
       <td style="text-align:center;"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #000;vertical-align:middle;"></span></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(nomeEnf) || '—'}</td>
       <td>${esc(tecidoReal) || '—'}</td>
-      <td>${esc(cor) || '—'}</td>
+      <td>${esc(corReal) || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${esc(consumo) || '—'}</td>
     </tr>`;
   }).join('');
 
   return `
-    <table class="side-table" style="border-top:none;table-layout:auto;">
+    <table class="side-table tab-tecidos" style="table-layout:auto;">
       <thead>
-        <tr><th colspan="8" class="subhead" style="background:#c9e8d0;">Enfesto${blocos.length>1?'s':''}</th></tr>
+        <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>
         <tr>
           <th style="width:18px;font-size:6.5pt;">✓</th>
           <th style="width:24px;font-size:6.5pt;">Fase</th>
@@ -3708,6 +3719,7 @@ function renderEnfestoBox(o) {
           <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Compr.</th>
           <th style="width:52px;font-size:6.5pt;white-space:nowrap;">Largura</th>
           <th style="width:36px;font-size:6.5pt;">Camadas</th>
+          <th style="width:60px;font-size:6.5pt;">Consumo</th>
         </tr>
       </thead>
       <tbody>
@@ -3759,64 +3771,9 @@ function renderPrintSheet(o) {
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
 
   const g = o.grade || {};
-  const tecs = o.tecidos || [];
   const vars_ = o.variantes || [];
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
   const avs = o.aviamentos || [];
-  // Mapa tecidoId+corId → nome do Enfesto (mesma logica usada em renderEnfestoBox).
-  // Permite mostrar a coluna Enfesto na tabela Tecidos/Consumo, entre Tecido e Cor.
-  const enfestoNomePorChave = (() => {
-    const e = o.enfesto || {};
-    const blocos = Array.isArray(e.blocos) ? e.blocos : [];
-    const fasesPorOrdem = {};
-    (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
-    const mapa = new Map();
-    blocos.forEach((b, i) => {
-      const ord = b.ordem || (i + 1);
-      const fase = fasesPorOrdem[ord] || {};
-      let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
-      const cor = b.nomeCor || fase.corNome || '';
-      if (!cor && nomeEnf.includes(' · ')) nomeEnf = nomeEnf.split(' · ')[0];
-      const chave = (fase.tecidoId || '') + '|' + (fase.corId || '');
-      if (chave !== '|' && nomeEnf) mapa.set(chave, nomeEnf);
-    });
-    return mapa;
-  })();
-  const enfestoNomeDoTecido = (t, idx) => {
-    const v = enfestoNomePorChave.get((t.tecidoId || '') + '|' + (t.corId || ''));
-    if (v) return v;
-    // Fallback por posicao: linha i ↔ bloco i
-    const b = (o.enfesto?.blocos || [])[idx];
-    if (b) {
-      let n = b.nomeTecido || '';
-      if (!b.nomeCor && n.includes(' · ')) n = n.split(' · ')[0];
-      return n;
-    }
-    return '';
-  };
-  // Tabela de tecidos (até 5 linhas)
-  let tecidoRows = '';
-  for (let i = 0; i < 5; i++) {
-    const t = tecs[i];
-    if (t) {
-      const enfNome = enfestoNomeDoTecido(t, i);
-      tecidoRows += `<tr>
-        <td style="text-align:center;font-weight:700;width:18px;">${i+1}</td>
-        <td class="tecido-cell">${esc(t.tecidoNome)}</td>
-        <td>${esc(enfNome)||'—'}</td>
-        <td>${esc(t.corNome)||'—'}</td>
-        <td>${esc(t.c1)||''}</td>
-      </tr>`;
-    } else {
-      tecidoRows += `<tr>
-        <td style="text-align:center;color:#ccc;">${i+1}</td>
-        <td style="color:#ccc;">—</td>
-        <td style="color:#ccc;">—</td>
-        <td style="color:#ccc;">—</td>
-        <td style="color:#ccc;">—</td>
-      </tr>`;
-    }
-  }
 
   // Variantes
   let variantesHtml = '';
@@ -3923,18 +3880,8 @@ function renderPrintSheet(o) {
       </div>
 
       <div class="sheet-right">
-        <!-- BASE -->
-        <div class="base-box">BASE: ${esc(o.modeloNome || '—').toUpperCase()}</div>
-
-        <!-- TECIDOS -->
-        <table class="side-table tab-tecidos">
-          <thead><tr><th colspan="5" style="background:#f4d03f;text-align:center;">Tecidos / Consumo</th></tr>
-          <tr><th style="width:18px;">#</th><th>Tecido</th><th>Enfesto</th><th>Cor</th><th style="width:90px;">Consumo</th></tr></thead>
-          <tbody>${tecidoRows}</tbody>
-        </table>
-
         <!-- GRADE -->
-        <table class="side-table" style="border-top:none;">
+        <table class="side-table tab-tecidos">
           <thead>
             <tr><th colspan="8" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
             <tr>
@@ -3950,10 +3897,7 @@ function renderPrintSheet(o) {
           </tbody>
         </table>
 
-        <!-- FASES DO ENFESTO (bicolor/tricolor) -->
-        ${renderFasesBox(o)}
-
-        <!-- ENFESTO -->
+        <!-- ENFESTO (mescla campo Base com tecidos/consumo + dados de enfesto) -->
         ${renderEnfestoBox(o)}
 
         <!-- ETAPAS -->
