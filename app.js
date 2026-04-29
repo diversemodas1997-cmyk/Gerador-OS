@@ -823,7 +823,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <select id="m-categoria">
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
-            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 30 camadas)</option>
+            <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 36 camadas)</option>
             <option value="ribana" ${item.categoria==='ribana'?'selected':''}>Ribana (1 camada = 2 peças)</option>
             <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
           </select>
@@ -1642,7 +1642,7 @@ async function duplicarCadastro(tipo, id) {
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
   if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
-  const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 30', outro: 'Outro' };
+  const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 36', outro: 'Outro' };
   tb.innerHTML = STATE.tecidos.map(t => `
     <tr>
       <td><strong>${esc(t.nome)}</strong></td>
@@ -2631,7 +2631,7 @@ function aplicarGradePreset() {
 /* ========================================================= */
 /*              ENFESTO — limites e cálculos                 */
 /* ========================================================= */
-const LIMITE_CAMADAS = { malha: 80, moletom: 30, ribana: 80, outro: Infinity };
+const LIMITE_CAMADAS = { malha: 80, moletom: 36, ribana: 80, outro: Infinity };
 const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
@@ -2774,7 +2774,7 @@ function multiplicadorDominante() {
 }
 
 // Calcula o limite máximo de camadas baseado nos tecidos selecionados no formulário.
-// Pega o menor limite entre todos — se há moletom e malha, vence moletom (30).
+// Pega o menor limite entre todos — se há moletom e malha, vence moletom (36).
 function calcularLimiteCamadas() {
   const rows = document.querySelectorAll('#tecidos-rows .tecido-row');
   let limite = Infinity;
@@ -3345,7 +3345,7 @@ function validarAntesDeSalvar(data) {
   const { limite, categoriaRestritiva } = calcularLimiteCamadas();
   const camadas = data.enfesto?.camadas || 0;
   if (camadas > 0 && camadas > limite) {
-    const catLabel = categoriaRestritiva === 'moletom' ? 'moletom (máx 30)' : 'malha algodão (máx 80)';
+    const catLabel = categoriaRestritiva === 'moletom' ? 'moletom (máx 36)' : 'malha algodão (máx 80)';
     return confirm(`⚠ Atenção: você informou ${camadas} camadas, mas o limite para ${catLabel} é ${limite}.\n\nDeseja salvar mesmo assim?`);
   }
   return true;
