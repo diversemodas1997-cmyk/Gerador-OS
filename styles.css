@@ -771,13 +771,17 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
     padding: 0;
     /* Anula o zoom: 1.20 do base — esse zoom existe SO pra leitura na
        tela. Em impressao, ele faria a folha renderizar em ~252mm de
-       largura e estourar A4 (200mm uteis com margem 5mm), forcando
-       quebra pra 2a pagina. */
+       largura e estourar A4 (200mm uteis com margem 5mm). */
     zoom: 1;
     page-break-inside: avoid;
     page-break-after: avoid;
   }
   .sheet > * { page-break-inside: avoid; }
+  /* Reduz o min-height da area do desenho em impressao — 180mm na tela
+     da bom enquadramento, mas em impressao com header + grade + enfesto
+     + componentes + aviamentos, isso joga o total acima de 297mm e
+     forca quebra. 130mm continua acomodando o desenho com folga. */
+  .desenho-area { min-height: 130mm; }
 }
 
 /* ============ RESPONSIVO ============ */

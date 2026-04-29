@@ -3384,26 +3384,44 @@ async function salvarEImprimir() {
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
-  // Limpa zoom inline pra que @media print { .sheet { zoom: 1 } } valha.
+  // Limpa qualquer scale/zoom/dimensao inline pra medir o tamanho cru.
   sheet.style.zoom = '';
-  // Forca um reflow pra medir a altura ja com o zoom de print aplicado.
+  sheet.style.transform = '';
+  sheet.style.transformOrigin = '';
+  sheet.style.width = '';
+  sheet.style.height = '';
   void sheet.offsetHeight;
   // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
   const pxPerMm = 3.7795275591;
   const maxHpx = 287 * pxPerMm;
+  const maxWpx = 200 * pxPerMm;
   const natH = sheet.scrollHeight;
-  // Se o conteudo (a 1.0x apos o zoom: 1 do print) ainda estoura 287mm,
-  // reduz proporcional pra caber. Sem teto inferior — pode ir abaixo de
-  // 0.5x se necessario, melhor folha pequena que duas folhas.
-  if (natH > maxHpx) {
-    sheet.style.zoom = maxHpx / natH;
+  const natW = sheet.scrollWidth;
+  const scaleH = natH > maxHpx ? maxHpx / natH : 1;
+  const scaleW = natW > maxWpx ? maxWpx / natW : 1;
+  const scale = Math.min(scaleH, scaleW);
+  if (scale < 1) {
+    // transform: scale e mais confiavel que zoom em impressao (zoom e nao-
+    // standard e alguns engines de print ignoram). transformOrigin no
+    // canto + width/height ajustadas garantem que a caixa logica reflita
+    // o tamanho visual escalado, evitando que o restante seja jogado pra
+    // 2a pagina.
+    sheet.style.transformOrigin = 'top left';
+    sheet.style.transform = `scale(${scale})`;
+    sheet.style.width = (natW * scale) + 'px';
+    sheet.style.height = (natH * scale) + 'px';
   }
 }
 
 window.addEventListener('beforeprint', ajustarImpressaoParaA4);
 window.addEventListener('afterprint', function() {
   const sheet = document.querySelector('.sheet');
-  if (sheet) sheet.style.zoom = '';
+  if (!sheet) return;
+  sheet.style.zoom = '';
+  sheet.style.transform = '';
+  sheet.style.transformOrigin = '';
+  sheet.style.width = '';
+  sheet.style.height = '';
 });
 
 /* ========================================================= */
