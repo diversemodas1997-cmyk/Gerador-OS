@@ -3855,14 +3855,21 @@ function renderEnfestoBox(o) {
     const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
     const corReal = cor || tecs[i]?.corNome || '';
     const camBloco = b.camadas || camadas || 0;
+    // Comp/Larg priorizam o valor da fase ao vivo da grade (gViva já
+    // foi remontado em renderPrintSheet a partir de STATE.grades). Cai pro
+    // valor salvo no bloco do enfesto so como fallback — assim alteracoes
+    // posteriores na grade refletem na impressao da OS sem precisar
+    // re-aplicar a grade dentro de cada OS antiga.
+    const compEf = (parseFloat(fase.comp) > 0 ? fase.comp : b.comp) || '';
+    const largEf = (parseFloat(fase.larg) > 0 ? fase.larg : b.larg) || '';
     return `<tr>
       <td style="text-align:center;"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #000;vertical-align:middle;"></span></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(nomeEnf) || '—'}</td>
       <td>${esc(tecidoReal) || '—'}</td>
       <td>${esc(corReal) || '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.comp ? fmt(b.comp)+' m' : '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${b.larg ? fmt(b.larg)+' m' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${compEf ? fmt(compEf)+' m' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
       <td>&nbsp;</td>
     </tr>`;
