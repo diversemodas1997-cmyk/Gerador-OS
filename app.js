@@ -3150,24 +3150,27 @@ function formatarNumeroOS(n) {
 }
 
 function proximoNumeroOS() {
-  // Pega o maior número já usado em OS existentes + o counter salvo
+  // Usa estritamente o counter salvo + 1 — assim o proximo numero segue
+  // o ULTIMO numero gerado/usado, mesmo se o usuario digitou um numero
+  // manual menor que valores antigos. Fallback: se counter ainda nao
+  // existir (primeira execucao), inicia pelo maior numero ja salvo.
   const counterAtual = parseInt(STATE.osCounter) || 0;
+  if (counterAtual > 0) return formatarNumeroOS(counterAtual + 1);
   const numeros = STATE.ordens
     .map(o => parseInt(o.os))
     .filter(n => !isNaN(n));
   const maxExistente = numeros.length ? Math.max(...numeros) : 0;
-  const prox = Math.max(counterAtual, maxExistente) + 1;
-  return formatarNumeroOS(prox);
+  return formatarNumeroOS(maxExistente + 1);
 }
 
 async function atualizarCounterOS(numeroUsado) {
+  // Sempre atualiza o counter pro numero usado — inclusive se for menor
+  // que o counter atual. Assim numeros manuais redirecionam a sequencia
+  // a partir deles, e duplicadas seguem 'ultimo gerado + 1' sempre.
   const n = parseInt(numeroUsado);
   if (isNaN(n)) return;
-  const counterAtual = parseInt(STATE.osCounter) || 0;
-  if (n > counterAtual) {
-    STATE.osCounter = n;
-    await DB.set('osCounter', String(n));
-  }
+  STATE.osCounter = n;
+  await DB.set('osCounter', String(n));
 }
 
 function previewDesenhoSelecionado() {
