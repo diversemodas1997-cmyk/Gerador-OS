@@ -535,10 +535,11 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   font-weight: 700; letter-spacing: .1em; font-size: 9pt;
 }
 
-/* Corpo principal em 2 colunas */
+/* Corpo principal em 2 colunas — 50/50 exato (minmax 0 evita que conteudo
+   largo no lado direito empurre o desenho pra menos da metade) */
 .sheet-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   border: 1.5px solid #000;
   border-top: none;
   flex: 1;
