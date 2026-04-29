@@ -668,30 +668,29 @@ async function loadState() {
     if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
   // Migração: remove em definitivo a função "Coordenador de produção
-  // Enfestadeira/Esteira de corte" (decisão do admin). Se algum membro da
-  // equipe apontar pra ela, limpa o vínculo (funcaoId/funcao).
+  // Enfestadeira/Esteira de corte" (decisão do admin).
   if (Array.isArray(STATE.funcoes)) {
-    const idsRemover = STATE.funcoes
-      .filter(f => ehFuncaoCoordEnfestEsteira(f?.nome))
-      .map(f => f.id);
-    if (idsRemover.length) {
-      STATE.funcoes = STATE.funcoes.filter(f => !idsRemover.includes(f.id));
+    const antes = STATE.funcoes.length;
+    STATE.funcoes = STATE.funcoes.filter(f => !ehFuncaoCoordEnfestEsteira(f?.nome));
+    if (STATE.funcoes.length !== antes) {
       try { await saveState('funcoes'); } catch (e) {}
-      if (Array.isArray(STATE.equipe)) {
-        let limpou = 0;
-        STATE.equipe.forEach(p => {
-          if (p.funcaoId && idsRemover.includes(p.funcaoId)) {
-            p.funcaoId = '';
-            p.funcao = '';
-            limpou++;
-          } else if (ehFuncaoCoordEnfestEsteira(p.funcao)) {
-            p.funcao = '';
-            limpou++;
-          }
-        });
-        if (limpou) { try { await saveState('equipe'); } catch (e) {} }
-      }
     }
+  }
+
+  // Limpa equipe SEMPRE — mesmo após STATE.funcoes já ter sido purgada numa
+  // execução anterior, p.funcao pode estar stale (ex.: alguém salvou um membro
+  // escolhendo a opção "(não cadastrada)" no dropdown depois da migração ter
+  // rodado). Sem isso, o nome volta a aparecer como opção no select de função.
+  if (Array.isArray(STATE.equipe)) {
+    let limpou = 0;
+    STATE.equipe.forEach(p => {
+      if (ehFuncaoCoordEnfestEsteira(p.funcao)) {
+        p.funcao = '';
+        p.funcaoId = '';
+        limpou++;
+      }
+    });
+    if (limpou) { try { await saveState('equipe'); } catch (e) {} }
   }
 
   // Sincronização: garante que equipe.funcao reflete o nome atual da função vinculada
