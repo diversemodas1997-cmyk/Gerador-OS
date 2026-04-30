@@ -3355,6 +3355,7 @@ function coletaOS() {
     comprimento: primeiroBloco.comp || 0,
     largura: primeiroBloco.larg || 0,
     camadas: parseInt(v('f-enf-camadas')) || 0,
+    target: parseInt(v('f-enf-target')) || 0,
     blocos: blocosEnfesto
   };
   enfesto.totalPecas = grade.total * enfesto.camadas;
@@ -3430,6 +3431,188 @@ function validarAntesDeSalvar(data) {
   return true;
 }
 
+/* ========================================================= */
+/*   REGRA: CAMISETA BICOLOR -> auto-gera CAMISETA BÁSICA    */
+/* ========================================================= */
+// Quando uma OS e salva com desenho "Camiseta Bicolor" e a grade
+// "P-M-G-G1-G2-G3 (CONJUGADO COM BÁSICA) | CM.BICOLOR", gera
+// automaticamente uma OS conjugada com desenho "Camiseta Básica | Branco"
+// e grade "M-G (CONJUGADO COM BICOLOR) | CM.BÁSICA", reaproveitando o
+// peças-alvo (target) da bicolor pra calcular as camadas da básica.
+
+const REGRA_BICOLOR_BASICA = {
+  gradeBicolorNome: 'P-M-G-G1-G2-G3 (CONJUGADO COM BÁSICA) | CM.BICOLOR',
+  desenhoBasicaNome: 'Camiseta Básica | Branco',
+  gradeBasicaNome: 'M-G (CONJUGADO COM BICOLOR) | CM.BÁSICA'
+};
+
+function _normNome(s) {
+  return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function _desenhoEhCamisetaBicolor(d) {
+  if (!d) return false;
+  const desc = _normNome(d.desc);
+  const cod = _normNome(d.codigo);
+  return (desc.includes('camiseta') && desc.includes('bicolor'))
+      || (cod.includes('camiseta') && cod.includes('bicolor'));
+}
+
+function deveGerarConjugadaBasica(osBicolor) {
+  // Evita loop: se a propria OS ja e uma conjugada, nao gera outra
+  if (osBicolor.conjugadaPaiId) return false;
+  // Se ja existe a conjugada e ela ainda esta na lista, nao duplica
+  if (osBicolor.conjugadaId && STATE.ordens.find(o => o.id === osBicolor.conjugadaId)) return false;
+  const desenho = STATE.desenhos.find(d => d.id === osBicolor.desenhoId);
+  if (!_desenhoEhCamisetaBicolor(desenho)) return false;
+  const grade = STATE.grades.find(g => g.id === osBicolor.gradeId);
+  if (!grade) return false;
+  if (_normNome(grade.nome) !== _normNome(REGRA_BICOLOR_BASICA.gradeBicolorNome)) return false;
+  return true;
+}
+
+async function gerarConjugadaBasica(osBicolor) {
+  const desBasica = STATE.desenhos.find(d => _normNome(d.desc) === _normNome(REGRA_BICOLOR_BASICA.desenhoBasicaNome));
+  if (!desBasica) {
+    toast(`Desenho "${REGRA_BICOLOR_BASICA.desenhoBasicaNome}" não cadastrado — OS conjugada não foi gerada`, 'err');
+    return null;
+  }
+  const grBasica = STATE.grades.find(g => _normNome(g.nome) === _normNome(REGRA_BICOLOR_BASICA.gradeBasicaNome));
+  if (!grBasica) {
+    toast(`Grade "${REGRA_BICOLOR_BASICA.gradeBasicaNome}" não cadastrada — OS conjugada não foi gerada`, 'err');
+    return null;
+  }
+
+  const target = parseInt(osBicolor.enfesto?.target) || 0;
+  const tamanhos = grBasica.tamanhos || {};
+  const qtdsValidos = ['p','m','g','gg','g1','g2','g3']
+    .map(k => parseInt(tamanhos[k]) || 0)
+    .filter(q => q > 0);
+  const minQtd = qtdsValidos.length ? Math.min(...qtdsValidos) : 0;
+  const camadas = (target > 0 && minQtd > 0)
+    ? Math.ceil(target / minQtd)
+    : (parseInt(osBicolor.enfesto?.camadas) || 1);
+
+  // Clona o contexto do bicolor (data, equipe, colecao, marca, etc.) e ajusta
+  const novaOs = JSON.parse(JSON.stringify(osBicolor));
+  novaOs.id = uid();
+  novaOs.os = proximoNumeroOS();
+  novaOs.codigo = desBasica.codigo || '';
+  novaOs.desenhoId = desBasica.id;
+  novaOs.gradeId = grBasica.id;
+  novaOs.conjugadaPaiId = osBicolor.id;
+  delete novaOs.conjugadaId;
+
+  // Grade nova (a partir do cadastro da basica)
+  novaOs.grade = {
+    descricao: grBasica.nome,
+    p: parseInt(tamanhos.p) || 0,
+    m: parseInt(tamanhos.m) || 0,
+    g: parseInt(tamanhos.g) || 0,
+    gg: parseInt(tamanhos.gg) || 0,
+    g1: parseInt(tamanhos.g1) || 0,
+    g2: parseInt(tamanhos.g2) || 0,
+    g3: parseInt(tamanhos.g3) || 0
+  };
+  novaOs.grade.total = novaOs.grade.p + novaOs.grade.m + novaOs.grade.g
+                     + novaOs.grade.gg + novaOs.grade.g1 + novaOs.grade.g2 + novaOs.grade.g3;
+
+  // Fases do enfesto a partir da grade nova
+  novaOs.fases = Array.isArray(grBasica.fases) ? grBasica.fases.map(f => ({
+    ordem: f.ordem,
+    nome: f.nome || '',
+    tecidoId: f.tecidoId || '',
+    tecidoNome: (STATE.tecidos.find(t => t.id === f.tecidoId) || {}).nome || '',
+    corId: f.corId || '',
+    corNome: (STATE.cores.find(c => c.id === f.corId) || {}).nome || '',
+    comp: f.comp || '',
+    larg: f.larg || ''
+  })) : [];
+
+  novaOs.enfesto = {
+    comprimento: parseFloat(novaOs.fases[0]?.comp) || 0,
+    largura: parseFloat(novaOs.fases[0]?.larg) || 0,
+    camadas,
+    target,
+    blocos: novaOs.fases.length
+      ? novaOs.fases.map(f => ({ comp: parseFloat(f.comp) || 0, larg: parseFloat(f.larg) || 0 }))
+      : [{ comp: 0, larg: 0 }],
+    totalPecas: novaOs.grade.total * camadas
+  };
+
+  // Componentes do desenho da basica (se houver)
+  const compsDes = Array.isArray(desBasica.componentes) ? desBasica.componentes : [];
+  if (compsDes.length) {
+    const pecasPorTamanho = {
+      p: novaOs.grade.p * camadas,
+      m: novaOs.grade.m * camadas,
+      g: novaOs.grade.g * camadas,
+      gg: novaOs.grade.gg * camadas,
+      g1: novaOs.grade.g1 * camadas,
+      g2: novaOs.grade.g2 * camadas,
+      g3: novaOs.grade.g3 * camadas
+    };
+    novaOs.componentes = compsDes.map(c => {
+      const cad = STATE.componentes.find(x => x.id === c.componenteId);
+      const qtdPorPeca = c.qtdPorPeca != null ? c.qtdPorPeca : 1;
+      const qtdPorTamanho = {};
+      let qtdTotal = 0;
+      for (const t of ['p','m','g','gg','g1','g2','g3']) {
+        const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
+        qtdPorTamanho[t] = v;
+        qtdTotal += v;
+      }
+      return {
+        nome: c.nome || cad?.nome || '',
+        material: c.tecidoId ? 'T:' + c.tecidoId : '',
+        materialNome: (STATE.tecidos.find(t => t.id === c.tecidoId) || {}).nome || '',
+        cor: c.corId || '',
+        corNome: (STATE.cores.find(co => co.id === c.corId) || {}).nome || '',
+        qtdPorPeca, qtdPorTamanho, qtdTotal
+      };
+    });
+  }
+
+  // Aviamentos do desenho da basica (se houver)
+  const avsDes = Array.isArray(desBasica.aviamentos) ? desBasica.aviamentos : [];
+  if (avsDes.length) {
+    const pecasTot = novaOs.grade.total * camadas;
+    novaOs.aviamentos = avsDes.map(av => {
+      const qtdPorPeca = parseFloat(av.qtdPorPeca) || 1;
+      return {
+        material: av.materialId,
+        materialNome: (STATE.materiais.find(m => m.id === av.materialId) || {}).desc || '',
+        app: av.aplicacao || '',
+        qtd: qtdPorPeca,
+        qtdPorPeca,
+        qtdPorTamanho: {},
+        qtdTotal: pecasTot * qtdPorPeca
+      };
+    });
+  }
+
+  // Marca o vinculo na bicolor (sera persistido no proximo saveState)
+  const idxBicolor = STATE.ordens.findIndex(o => o.id === osBicolor.id);
+  if (idxBicolor >= 0) {
+    STATE.ordens[idxBicolor].conjugadaId = novaOs.id;
+    osBicolor.conjugadaId = novaOs.id;
+  }
+
+  STATE.ordens.push(novaOs);
+  await saveState('ordens');
+  await atualizarCounterOS(novaOs.os);
+  return novaOs;
+}
+
+async function aplicarRegraConjugadaSeAplicavel(osBicolor) {
+  if (!deveGerarConjugadaBasica(osBicolor)) return null;
+  const conjugada = await gerarConjugadaBasica(osBicolor);
+  if (conjugada) {
+    toast(`OS conjugada gerada: OS ${conjugada.os} (Camiseta Básica)`, 'ok');
+  }
+  return conjugada;
+}
+
 async function salvarOS() {
   const data = coletaOS();
   if (!data.os && !data.codigo) {
@@ -3441,6 +3624,7 @@ async function salvarOS() {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  await aplicarRegraConjugadaSeAplicavel(data);
   toast('OS ' + data.os + ' salva', 'ok');
   goto('lista-os');
 }
@@ -3794,6 +3978,8 @@ async function salvarEImprimir() {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  // Aplica regra de conjugada (camiseta bicolor -> camiseta basica)
+  const conjugada = await aplicarRegraConjugadaSeAplicavel(data);
   // Renderiza e navega pra print page pra que o .sheet tenha layout
   // computado (html2canvas precisa do elemento visivel com dimensoes).
   // Apos salvar o PDF, vai pra lista — sem dialogo de impressao.
@@ -3807,6 +3993,20 @@ async function salvarEImprimir() {
     const saved = await savePdfToFolder(blob, filename);
     if (saved) {
       toast(`PDF salvo: ${filename}`, 'ok');
+      // Se gerou conjugada, gera o PDF dela tambem
+      if (conjugada) {
+        await new Promise(r => setTimeout(r, 400));
+        renderPrintSheet(conjugada);
+        await new Promise(r => setTimeout(r, 250));
+        try {
+          const blobC = await gerarPdfDaSheet();
+          const fnC = pdfFilenameForOS(conjugada);
+          const okC = await savePdfToFolder(blobC, fnC);
+          if (okC) toast(`PDF conjugada salvo: ${fnC}`, 'ok');
+        } catch (e) {
+          console.warn('PDF conjugada', e);
+        }
+      }
       setTimeout(() => goto('lista-os'), 700);
     } else {
       // Sem pasta ou erro: continua na print page pra o usuario poder
@@ -3985,6 +4185,7 @@ function editarOS(id) {
     });
     renderEnfestoBlocos(blocosComNomes.length, blocosComNomes);
     document.getElementById('f-enf-camadas').value = o.enfesto?.camadas || '';
+    document.getElementById('f-enf-target').value = o.enfesto?.target || '';
     document.getElementById('f-obs').value = o.obs || '';
     document.getElementById('f-atencao').value = o.atencao || '';
     // tecidos
