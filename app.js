@@ -3565,8 +3565,7 @@ function sanitizeForFilename(s) {
 
 function pdfFilenameForOS(o) {
   const numero = sanitizeForFilename(o.os) || 'sem-numero';
-  const codigo = sanitizeForFilename(o.codigo) || 'sem-codigo';
-  return `OS-${numero}-${codigo}.pdf`;
+  return `OS-${numero}.pdf`;
 }
 
 async function gerarPdfDaSheet() {
