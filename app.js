@@ -3441,9 +3441,9 @@ function validarAntesDeSalvar(data) {
 // peças-alvo (target) da bicolor pra calcular as camadas da básica.
 
 const REGRA_BICOLOR_BASICA = {
-  gradeBicolorNome: 'P-M-G-G1-G2-G3 (CONJUGADO COM BÁSICA) | CM.BICOLOR',
+  gradeBicolorNome: 'P-M-G-G1-G2-G3 | CM.BICOLOR',
   desenhoBasicaNome: 'Camiseta Básica | Branco',
-  gradeBasicaNome: 'M-G (CONJUGADO COM BICOLOR) | CM.BÁSICA'
+  gradeBasicaNome: 'M-G (CONJUGADO) | CM.BÁSICA'
 };
 
 function _normNome(s) {
