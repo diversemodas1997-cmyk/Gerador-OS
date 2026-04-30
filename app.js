@@ -48,6 +48,11 @@ async function cloudFlush() {
     }, { onConflict: 'id' });
     if (error) throw error;
     setSyncStatus('ok');
+    // Backup local automatico (silencioso; falha nao bloqueia o save).
+    // Funcao definida mais abaixo, perto da pasta de PDFs.
+    if (typeof escreverBackupJson === 'function') {
+      escreverBackupJson().catch(e => console.warn('backup local', e));
+    }
   } catch (e) {
     console.error('cloudFlush', e);
     setSyncStatus('error');
@@ -832,7 +837,10 @@ function goto(page) {
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
-  if (page === 'config') atualizarPdfFolderStatus();
+  if (page === 'config') {
+    atualizarPdfFolderStatus();
+    atualizarBackupFolderStatus();
+  }
 }
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
@@ -3538,6 +3546,142 @@ async function desconectarPastaPdf() {
   atualizarPdfFolderStatus();
 }
 
+/* ----- Pasta de backup automatico (JSON) ----- */
+// Mesma abordagem da pasta de PDF (File System Access + IndexedDB).
+// Reusa o mesmo DB/store, com chave diferente.
+const BACKUP_DB_KEY = 'backup-folder';
+let backupFolderHandle = null;
+
+async function saveBackupFolderHandle(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).put(handle, BACKUP_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function loadBackupFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(BACKUP_DB_KEY);
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) {
+    console.warn('loadBackupFolderHandle', e);
+    return null;
+  }
+}
+
+async function clearBackupFolderHandle() {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).delete(BACKUP_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function pickBackupFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return null;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await saveBackupFolderHandle(handle);
+    backupFolderHandle = handle;
+    return handle;
+  } catch (e) {
+    if (e.name === 'AbortError') return null;
+    console.error('pickBackupFolder', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+    return null;
+  }
+}
+
+async function conectarPastaBackup() {
+  const handle = await pickBackupFolder();
+  if (handle) {
+    toast(`Pasta de backup conectada: ${handle.name}`, 'ok');
+    atualizarBackupFolderStatus();
+    // Faz um backup imediato com o estado atual
+    const ok = await escreverBackupJson();
+    if (ok) toast('Backup inicial gravado', 'ok');
+  }
+}
+
+async function desconectarPastaBackup() {
+  await clearBackupFolderHandle();
+  backupFolderHandle = null;
+  toast('Pasta de backup desconectada', '');
+  atualizarBackupFolderStatus();
+}
+
+async function escreverBackupJsonAgora() {
+  const ok = await escreverBackupJson();
+  if (ok) toast('Backup JSON salvo na pasta', 'ok');
+  else toast('Falha ao salvar backup. Conecte a pasta primeiro.', 'err');
+}
+
+async function escreverBackupJson() {
+  const handle = backupFolderHandle || (await loadBackupFolderHandle());
+  if (!handle) return false;
+  const ok = await ensureFolderPermission(handle, 'readwrite');
+  if (!ok) return false;
+  backupFolderHandle = handle;
+  try {
+    const dados = cloudCache || {};
+    const payload = {
+      __meta: {
+        gerado_em: new Date().toISOString(),
+        gerado_por: (currentUser && currentUser.email) || null,
+        formato: 'gerador-os-snapshot-v1'
+      },
+      ...dados
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const fileHandle = await handle.getFileHandle('gerador-os-dados.json', { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(json);
+    await writable.close();
+    return true;
+  } catch (e) {
+    console.warn('escreverBackupJson', e);
+    return false;
+  }
+}
+
+async function atualizarBackupFolderStatus() {
+  const el = document.getElementById('backupFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = backupFolderHandle || (await loadBackupFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada. O backup automático não está ativo.</span>';
+    return;
+  }
+  backupFolderHandle = handle;
+  let permLabel = 'pronta — backup gravado a cada mudança';
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (_) {}
+  el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
+}
+
 async function atualizarPdfFolderStatus() {
   const el = document.getElementById('pdfFolderStatus');
   if (!el) return;
@@ -4615,6 +4759,9 @@ window.salvarEImprimir = salvarEImprimir;
 window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
 window.conectarPastaPdf = conectarPastaPdf;
 window.desconectarPastaPdf = desconectarPastaPdf;
+window.conectarPastaBackup = conectarPastaBackup;
+window.desconectarPastaBackup = desconectarPastaBackup;
+window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;

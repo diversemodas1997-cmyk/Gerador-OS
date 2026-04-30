@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-04-30d">
+<link rel="stylesheet" href="styles.css?v=2026-04-30e">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -557,6 +557,16 @@
         <div><h1>Configurações</h1><div class="desc">Exportar, importar e limpar dados</div></div>
       </div>
       <div class="card">
+        <div class="card-title">Pasta de backup automático (JSON)</div>
+        <div class="info-box">A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div>
+        <div id="backupFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="conectarPastaBackup()">Conectar pasta</button>
+          <button class="btn" onclick="escreverBackupJsonAgora()">Salvar backup agora</button>
+          <button class="btn" onclick="desconectarPastaBackup()">Desconectar</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title">Pasta de PDFs gerados</div>
         <div class="info-box">Cada OS gerada salva o PDF nesta pasta automaticamente. Funciona apenas no Chrome ou Edge no desktop. Conecte uma vez — o navegador lembra entre sessões. Em outro computador, navegador ou no celular, é preciso conectar de novo (ou nada será salvo).</div>
         <div id="pdfFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
@@ -652,6 +662,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-04-30d"></script>
+<script src="app.js?v=2026-04-30e"></script>
 </body>
 </html>
