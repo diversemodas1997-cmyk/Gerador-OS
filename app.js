@@ -832,6 +832,7 @@ function goto(page) {
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'nova-os') initOSForm();
+  if (page === 'config') atualizarPdfFolderStatus();
 }
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
@@ -3436,6 +3437,194 @@ async function salvarOS() {
   goto('lista-os');
 }
 
+/* ========================================================= */
+/*           PASTA DE PDFs (File System Access API)          */
+/* ========================================================= */
+// Salva o DirectoryHandle no IndexedDB para persistir entre sessoes
+// (handles nao sao serializaveis pra localStorage). O Chrome/Edge
+// preserva a permissao concedida; se o usuario revogar, queryPermission
+// volta a 'prompt' e pedimos de novo via requestPermission.
+const PDF_DB_NAME = 'gerador-os-pdf';
+const PDF_DB_STORE = 'handles';
+const PDF_DB_KEY = 'output-folder';
+let pdfFolderHandle = null;
+
+function _openPdfDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PDF_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(PDF_DB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savePdfFolderHandle(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).put(handle, PDF_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function loadPdfFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(PDF_DB_KEY);
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) {
+    console.warn('loadPdfFolderHandle', e);
+    return null;
+  }
+}
+
+async function clearPdfFolderHandle() {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).delete(PDF_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function ensureFolderPermission(handle, mode = 'readwrite') {
+  if (!handle || typeof handle.queryPermission !== 'function') return false;
+  const opts = { mode };
+  if ((await handle.queryPermission(opts)) === 'granted') return true;
+  if ((await handle.requestPermission(opts)) === 'granted') return true;
+  return false;
+}
+
+async function pickPdfFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return null;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await savePdfFolderHandle(handle);
+    pdfFolderHandle = handle;
+    return handle;
+  } catch (e) {
+    if (e.name === 'AbortError') return null;
+    console.error('pickPdfFolder', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+    return null;
+  }
+}
+
+async function conectarPastaPdf() {
+  const handle = await pickPdfFolder();
+  if (handle) {
+    toast(`Pasta conectada: ${handle.name}`, 'ok');
+    atualizarPdfFolderStatus();
+  }
+}
+
+async function desconectarPastaPdf() {
+  await clearPdfFolderHandle();
+  pdfFolderHandle = null;
+  toast('Pasta desconectada', '');
+  atualizarPdfFolderStatus();
+}
+
+async function atualizarPdfFolderStatus() {
+  const el = document.getElementById('pdfFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = pdfFolderHandle || (await loadPdfFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada. Os PDFs não serão salvos automaticamente até você conectar uma pasta.</span>';
+    return;
+  }
+  pdfFolderHandle = handle;
+  let permLabel = 'pronta';
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (_) {}
+  el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
+}
+
+function sanitizeForFilename(s) {
+  return String(s || '').replace(/[\\/:*?"<>|\x00-\x1F]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function pdfFilenameForOS(o) {
+  const numero = sanitizeForFilename(o.os) || 'sem-numero';
+  const codigo = sanitizeForFilename(o.codigo) || 'sem-codigo';
+  return `OS-${numero}-${codigo}.pdf`;
+}
+
+async function gerarPdfDaSheet() {
+  if (typeof html2pdf !== 'function') {
+    throw new Error('Lib html2pdf não carregada');
+  }
+  const sheet = document.getElementById('print-sheet');
+  if (!sheet) throw new Error('Print sheet não encontrada');
+  // html2canvas nao lida bem com CSS zoom — limpa antes de capturar e
+  // restaura depois, similar ao ajustarImpressaoParaA4 do fluxo de print.
+  const prevZoom = sheet.style.zoom;
+  const prevTransform = sheet.style.transform;
+  const prevOrigin = sheet.style.transformOrigin;
+  sheet.style.zoom = '';
+  sheet.style.transform = '';
+  sheet.style.transformOrigin = '';
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try {
+    const opts = {
+      margin: 0,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+    };
+    return await html2pdf().set(opts).from(sheet).outputPdf('blob');
+  } finally {
+    sheet.style.zoom = prevZoom;
+    sheet.style.transform = prevTransform;
+    sheet.style.transformOrigin = prevOrigin;
+  }
+}
+
+async function savePdfToFolder(blob, filename) {
+  let handle = pdfFolderHandle || (await loadPdfFolderHandle());
+  if (!handle) {
+    toast('Conectando pasta pra salvar PDFs...', '');
+    handle = await pickPdfFolder();
+    if (!handle) return false;
+  }
+  const ok = await ensureFolderPermission(handle, 'readwrite');
+  if (!ok) {
+    toast('Permissão da pasta negada', 'err');
+    return false;
+  }
+  pdfFolderHandle = handle;
+  try {
+    const fileHandle = await handle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (e) {
+    console.error('savePdfToFolder', e);
+    toast('Falha ao salvar PDF: ' + (e.message || e), 'err');
+    return false;
+  }
+}
+
 async function salvarEImprimir() {
   const data = coletaOS();
   if (!data.os && !data.codigo) {
@@ -3447,8 +3636,28 @@ async function salvarEImprimir() {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  // Renderiza e navega pra print page pra que o .sheet tenha layout
+  // computado (html2canvas precisa do elemento visivel com dimensoes).
+  // Apos salvar o PDF, vai pra lista — sem dialogo de impressao.
   renderPrintSheet(data);
   goto('print');
+  await new Promise(r => setTimeout(r, 250));
+  toast('Gerando PDF...', '');
+  try {
+    const blob = await gerarPdfDaSheet();
+    const filename = pdfFilenameForOS(data);
+    const saved = await savePdfToFolder(blob, filename);
+    if (saved) {
+      toast(`PDF salvo: ${filename}`, 'ok');
+      setTimeout(() => goto('lista-os'), 700);
+    } else {
+      // Sem pasta ou erro: continua na print page pra o usuario poder
+      // ao menos imprimir manualmente ou tentar conectar a pasta.
+    }
+  } catch (e) {
+    console.error('salvarEImprimir/PDF', e);
+    toast('Falha ao gerar PDF: ' + (e.message || e), 'err');
+  }
 }
 
 function ajustarImpressaoParaA4() {
@@ -4365,6 +4574,8 @@ window.reindexVariantes = reindexVariantes;
 window.salvarOS = salvarOS;
 window.salvarEImprimir = salvarEImprimir;
 window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
+window.conectarPastaPdf = conectarPastaPdf;
+window.desconectarPastaPdf = desconectarPastaPdf;
 window.verOS = verOS;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
