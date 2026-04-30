@@ -3755,6 +3755,31 @@ function verOS(id) {
   printOsAtual = o;
   renderPrintSheet(o);
   goto('print');
+  // Auto-save em segundo plano: gera o PDF e salva na pasta conectada
+  // (se houver). Nao bloqueia o usuario — ele ja pode imprimir fisico
+  // imediatamente. Sem pasta conectada, nao faz nada (silencioso).
+  autoSalvarPdfPrintAtual(o);
+}
+
+async function autoSalvarPdfPrintAtual(o) {
+  const handle = pdfFolderHandle || (await loadPdfFolderHandle());
+  if (!handle) return;
+  const ok = await ensureFolderPermission(handle, 'readwrite');
+  if (!ok) return;
+  pdfFolderHandle = handle;
+  // Da tempo do .sheet ficar com layout calculado apos o goto('print')
+  await new Promise(r => setTimeout(r, 250));
+  try {
+    const blob = await gerarPdfDaSheet();
+    const filename = pdfFilenameForOS(o);
+    const fileHandle = await handle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    toast(`PDF salvo: ${filename}`, 'ok');
+  } catch (e) {
+    console.warn('autoSalvarPdfPrintAtual', e);
+  }
 }
 
 function editarOsAtual() {
