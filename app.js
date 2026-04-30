@@ -4735,7 +4735,7 @@ function renderPrintSheet(o) {
         <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
         <div class="aviamentos-grid">${aviamentosHtml}</div>
 
-        ${o.obs ? `<div class="obs-box"><strong>Observações</strong>${esc(o.obs)}</div>` : ''}
+        <div class="obs-box"><strong>Observações</strong>${esc(o.obs || '')}</div>
       </div>
     </div>
 
@@ -4743,7 +4743,7 @@ function renderPrintSheet(o) {
     ${renderComponentesDetalheBox(o) || ''}
     ${renderAviamentosDetalheBox(o) || ''}
 
-    ${o.atencao ? `<div class="sheet-atencao"><strong>Atenção</strong> <span class="atencao-text">${esc(o.atencao)}</span></div>` : ''}
+    <div class="sheet-atencao"><strong>Atenção</strong> <span class="atencao-text">${esc(o.atencao || '')}</span></div>
   `;
 }
 
