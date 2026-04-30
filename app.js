@@ -3570,13 +3570,15 @@ function pdfFilenameForOS(o) {
 }
 
 async function gerarPdfDaSheet() {
-  if (typeof html2pdf !== 'function') {
-    throw new Error('Lib html2pdf não carregada');
-  }
+  // Usa html2canvas + jsPDF direto (sem o wrapper html2pdf, que em algumas
+  // versoes dispara um download alem de retornar o blob, causando o
+  // dialogo "Salvar como" do Windows).
+  const _html2canvas = window.html2canvas;
+  const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof _html2canvas !== 'function') throw new Error('html2canvas não carregada');
+  if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
   const sheet = document.getElementById('print-sheet');
   if (!sheet) throw new Error('Print sheet não encontrada');
-  // html2canvas nao lida bem com CSS zoom — limpa antes de capturar e
-  // restaura depois, similar ao ajustarImpressaoParaA4 do fluxo de print.
   const prevZoom = sheet.style.zoom;
   const prevTransform = sheet.style.transform;
   const prevOrigin = sheet.style.transformOrigin;
@@ -3585,13 +3587,26 @@ async function gerarPdfDaSheet() {
   sheet.style.transformOrigin = '';
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    const opts = {
-      margin: 0,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
-    };
-    return await html2pdf().set(opts).from(sheet).outputPdf('blob');
+    const canvas = await _html2canvas(sheet, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pageW = 210, pageH = 297;
+    const ratio = canvas.height / canvas.width;
+    let imgW = pageW;
+    let imgH = pageW * ratio;
+    // Se altura excede A4, reduz pra caber centralizada na pagina
+    if (imgH > pageH) {
+      imgH = pageH;
+      imgW = pageH / ratio;
+    }
+    const x = (pageW - imgW) / 2;
+    pdf.addImage(imgData, 'JPEG', x, 0, imgW, imgH, undefined, 'FAST');
+    return pdf.output('blob');
   } finally {
     sheet.style.zoom = prevZoom;
     sheet.style.transform = prevTransform;
