@@ -4043,32 +4043,46 @@ async function salvarEImprimir() {
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
-  // Limpa qualquer scale/zoom/dimensao inline pra medir o tamanho cru.
-  sheet.style.zoom = '';
+  // Limpa ajustes inline anteriores (incluindo styles de medição que
+  // possam ter sobrado de uma chamada interrompida).
+  sheet.style.removeProperty('zoom');
   sheet.style.transform = '';
   sheet.style.transformOrigin = '';
   sheet.style.width = '';
   sheet.style.height = '';
-  void sheet.offsetHeight;
-  // A4 útil com margem de 5mm: 200mm x 287mm. 1mm ≈ 3.7795 px @ 96dpi.
+  sheet.style.padding = '';
+  sheet.style.minHeight = '';
+
+  // Mede o conteudo SIMULANDO o estado de impressao — zoom: 1 (anula o
+  // 1.20 da tela), width: 200mm fixo, padding: 0, min-height: auto.
+  // Sem isso, scrollHeight reflete o layout de tela (zoom amplificado +
+  // padding) e o scale calculado nao bate com o que o print engine usa,
+  // o que faz conteudo extrapolar mesmo apos o ajuste.
+  sheet.style.setProperty('zoom', '1');
+  sheet.style.width = '200mm';
+  sheet.style.padding = '0';
+  sheet.style.minHeight = 'auto';
+  void sheet.offsetHeight; // forca reflow pra leitura correta
+
   const pxPerMm = 3.7795275591;
-  const maxHpx = 287 * pxPerMm;
-  const maxWpx = 200 * pxPerMm;
+  const maxHpx = 287 * pxPerMm; // A4 util com margem 5mm
   const natH = sheet.scrollHeight;
-  const natW = sheet.scrollWidth;
-  const scaleH = natH > maxHpx ? maxHpx / natH : 1;
-  const scaleW = natW > maxWpx ? maxWpx / natW : 1;
-  const scale = Math.min(scaleH, scaleW);
-  if (scale < 1) {
-    // transform: scale e mais confiavel que zoom em impressao (zoom e nao-
-    // standard e alguns engines de print ignoram). transformOrigin no
-    // canto + width/height ajustadas garantem que a caixa logica reflita
-    // o tamanho visual escalado, evitando que o restante seja jogado pra
-    // 2a pagina.
-    sheet.style.transformOrigin = 'top left';
-    sheet.style.transform = `scale(${scale})`;
-    sheet.style.width = (natW * scale) + 'px';
-    sheet.style.height = (natH * scale) + 'px';
+
+  // Restaura estado screen (estilos voltam pras regras CSS base).
+  sheet.style.padding = '';
+  sheet.style.minHeight = '';
+  sheet.style.width = '';
+  sheet.style.removeProperty('zoom');
+
+  // Se o conteudo (a 200mm de largura) ultrapassa 287mm de altura, aplica
+  // zoom < 1 inline com !important pra sobrepor o zoom: 1 do @media print.
+  // zoom afeta LAYOUT (diferente de transform: scale, que e so visual e
+  // mantem o layout box no tamanho original), entao tabelas, fontes e
+  // quebras de linha encolhem proporcionalmente — o conteudo cabe sem
+  // reflow imprevisivel. 1% de margem de seguranca evita borderline.
+  if (natH > maxHpx) {
+    const scale = (maxHpx / natH) * 0.99;
+    sheet.style.setProperty('zoom', scale.toFixed(4), 'important');
   }
 }
 
@@ -4076,11 +4090,13 @@ window.addEventListener('beforeprint', ajustarImpressaoParaA4);
 window.addEventListener('afterprint', function() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
-  sheet.style.zoom = '';
+  sheet.style.removeProperty('zoom');
   sheet.style.transform = '';
   sheet.style.transformOrigin = '';
   sheet.style.width = '';
   sheet.style.height = '';
+  sheet.style.padding = '';
+  sheet.style.minHeight = '';
 });
 
 /* ========================================================= */
