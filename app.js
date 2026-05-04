@@ -3295,7 +3295,29 @@ function coletaOS() {
   const gG = parseInt(v('f-gr-g'))||0, gGG = parseInt(v('f-gr-gg'))||0, gG1 = parseInt(v('f-gr-g1'))||0;
   const gG2 = parseInt(v('f-gr-g2'))||0, gG3 = parseInt(v('f-gr-g3'))||0;
   const camadasN = parseInt(v('f-enf-camadas'))||0;
-  const pecasPorTamanho = { p: gP*camadasN, m: gM*camadasN, g: gG*camadasN, gg: gGG*camadasN, g1: gG1*camadasN, g2: gG2*camadasN, g3: gG3*camadasN };
+  // multPrincipal: 1 camada produz quantas peças por slot da grade.
+  // Moletom = 1, Malha algodão (camiseta) = 2 (tubo/dobrado corta em camada dupla).
+  // Sem isso, qtdPorTamanho dos componentes sai pela metade em camisetas.
+  // Mesma lógica usada em calcularCamadasParaProducao e na linha "Total por tamanho" da impressão.
+  const _gradeIdSel = v('f-grade-preset');
+  const _gradeSel = _gradeIdSel ? STATE.grades.find(g => g.id === _gradeIdSel) : null;
+  const _fasesSel = _gradeSel?.fases || [];
+  const _temMoletom = _fasesSel.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom')
+    || tecidos.some(t => categoriaEfetivaTecido(STATE.tecidos.find(x => x.id === t.tecidoId)) === 'moletom');
+  const _temMalha = !_temMoletom && (
+    _fasesSel.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha')
+    || tecidos.some(t => categoriaEfetivaTecido(STATE.tecidos.find(x => x.id === t.tecidoId)) === 'malha')
+  );
+  const multPrincipal = _temMoletom ? 1 : (_temMalha ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
+  const pecasPorTamanho = {
+    p:  gP  * camadasN * multPrincipal,
+    m:  gM  * camadasN * multPrincipal,
+    g:  gG  * camadasN * multPrincipal,
+    gg: gGG * camadasN * multPrincipal,
+    g1: gG1 * camadasN * multPrincipal,
+    g2: gG2 * camadasN * multPrincipal,
+    g3: gG3 * camadasN * multPrincipal
+  };
 
   const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
     const nomeEl = r.querySelector('.comp-nome');
