@@ -1409,6 +1409,25 @@ function renumerarTarefasEtapa() {
   });
 }
 
+// Handler do botao de Configuracoes: le o codigo digitado, confirma e dispara a copia.
+async function rodarCopiarEtapasParaTodos() {
+  const input = document.getElementById('copyEtapasOrigem');
+  const codigo = (input?.value || '').trim();
+  if (!codigo) { toast('Informe o codigo do desenho de origem', 'err'); return; }
+  const origem = STATE.desenhos.find(d => (d.codigo || '').trim() === codigo);
+  if (!origem) { toast(`Desenho "${codigo}" nao encontrado`, 'err'); return; }
+  const etapas = Array.isArray(origem.etapasNomes) ? origem.etapasNomes : [];
+  if (!etapas.length) { toast(`Desenho "${codigo}" nao tem etapas configuradas`, 'err'); return; }
+  const total = STATE.desenhos.length - 1;
+  const ok = confirm(
+    `Copiar as ${etapas.length} etapas do desenho "${codigo}" para os outros ${total} desenhos?\n\n`
+    + `Etapas: ${etapas.join(', ')}\n\n`
+    + `Apenas o campo "etapas" sera sobrescrito nos demais desenhos. Esta acao nao pode ser desfeita automaticamente.`
+  );
+  if (!ok) return;
+  await copiarEtapasEntreDesenhos(codigo);
+}
+
 // Utilitario admin: copia as etapasNomes (e a ordem) de um desenho de origem
 // para todos os demais desenhos cadastrados. Uso: copiarEtapasEntreDesenhos('001').
 async function copiarEtapasEntreDesenhos(codigoOrigem) {
@@ -5200,6 +5219,7 @@ window.renderEtapasCad = renderEtapasCad;
 window.addTarefaEtapaRow = addTarefaEtapaRow;
 window.removerTarefaEtapa = removerTarefaEtapa;
 window.copiarEtapasEntreDesenhos = copiarEtapasEntreDesenhos;
+window.rodarCopiarEtapasParaTodos = rodarCopiarEtapasParaTodos;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;

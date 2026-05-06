@@ -585,6 +585,17 @@
         <button class="btn accent" onclick="popularExemplo()">Carregar dados de exemplo</button>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Operações em massa nos desenhos</div>
+        <div class="info-box">Copia as etapas (e a ordem) configuradas no desenho de origem para todos os demais desenhos cadastrados. Apenas o campo de etapas é alterado — imagem, vínculos, componentes e demais campos ficam intactos.</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap; align-items: end;">
+          <div class="field" style="flex:0 0 200px;">
+            <label for="copyEtapasOrigem">Código do desenho de origem</label>
+            <input type="text" id="copyEtapasOrigem" value="001" placeholder="Ex.: 001">
+          </div>
+          <button class="btn primary" onclick="rodarCopiarEtapasParaTodos()">Copiar etapas para todos</button>
+        </div>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Snapshots automáticos (últimos 30 dias)</div>
         <div class="info-box">Uma cópia completa dos dados é gravada automaticamente uma vez por dia. Se algo der errado, você pode restaurar um dia anterior.</div>
         <div style="display:flex; gap:8px; margin-bottom: 10px;">
