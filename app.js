@@ -4997,9 +4997,9 @@ function renderPrintSheet(o) {
             });
             const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
             const subCheckbox = `<span style="display:inline-block;width:8px;height:8px;border:1px solid #000;margin-right:5px;vertical-align:middle;flex-shrink:0;"></span>`;
-            return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
+            return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;column-count:2;column-gap:16px;">
               ${ordenadas.map(e => `
-                <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
+                <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;">
                   <div style="display:flex;align-items:center;">
                     ${checkbox}
                     <strong>${esc(e.nome)}</strong>
