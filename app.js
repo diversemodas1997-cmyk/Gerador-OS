@@ -1308,8 +1308,9 @@ function addFaseGradeRow(fase = {}) {
   if (!cont) return;
   const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
     `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
-  const corOpts = (selId) => '<option value="">— selecione —</option>' + STATE.cores.map(c =>
-    `<option value="${esc(c.id)}" ${selId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const unidadesAtual = parseInt(fase.unidades) || 2;
+  const unidadesOpts = [1, 2, 4, 6, 8].map(n =>
+    `<option value="${n}" ${unidadesAtual === n ? 'selected' : ''}>${n}x</option>`).join('');
   const div = document.createElement('div');
   div.className = 'fase-grade-bloco';
   div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
@@ -1321,13 +1322,23 @@ function addFaseGradeRow(fase = {}) {
     </div>
     <div class="form-grid cols-2">
       <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
-      <div class="field"><label>Tecido</label><select class="fase-tec">${tecOpts(fase.tecidoId)}</select></div>
-      <div class="field"><label>Cor</label><select class="fase-cor">${corOpts(fase.corId)}</select></div>
+      <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this)">${tecOpts(fase.tecidoId)}</select></div>
+      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana moletom)</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
     </div>`;
   cont.appendChild(div);
+  toggleUnidadesGrade(div.querySelector('.fase-tec'));
   renumerarFasesGrade();
+}
+
+function toggleUnidadesGrade(selectEl) {
+  const bloco = selectEl?.closest?.('.fase-grade-bloco');
+  if (!bloco) return;
+  const wrap = bloco.querySelector('.fase-unid-wrap');
+  if (!wrap) return;
+  const tec = STATE.tecidos.find(t => t.id === selectEl.value);
+  wrap.style.display = isTecidoRibanaMoletom(tec) ? '' : 'none';
 }
 
 function removerFaseGrade(btn) {
@@ -1477,7 +1488,7 @@ async function salvarCadastro() {
       ordem: i + 1,
       nome: b.querySelector('.fase-nome')?.value || '',
       tecidoId: b.querySelector('.fase-tec')?.value || '',
-      corId: b.querySelector('.fase-cor')?.value || '',
+      unidades: parseInt(b.querySelector('.fase-unid')?.value) || 2,
       comp: b.querySelector('.fase-comp')?.value || '',
       larg: b.querySelector('.fase-larg')?.value || ''
     }));
@@ -2715,6 +2726,14 @@ function categoriaEfetivaTecido(t) {
   return t.categoria || '';
 }
 
+// Ribana moletom: tecido cuja categoria efetiva é ribana E o nome contém "moletom".
+// Usa o multiplicador "unidades da grade" cadastrado por fase em vez do MULTIPLICADOR_PECAS.ribana.
+function isTecidoRibanaMoletom(t) {
+  if (!t) return false;
+  if (categoriaEfetivaTecido(t) !== 'ribana') return false;
+  return (t.nome || '').toLowerCase().includes('moletom');
+}
+
 // Categoria principal de uma grade — categoria do tecido da fase de menor `ordem`.
 // Usada pra filtrar o dropdown de grades pelo tecido do desenho selecionado.
 function categoriaPrincipalGrade(g) {
@@ -3018,23 +3037,40 @@ function atualizarCalculosEnfesto() {
             }
           });
           const multRib = MULTIPLICADOR_PECAS.ribana || 2;
-          const camadasRib = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * multRib)) : 0;
+          // Multiplicador por label de fase ribana: ribana moletom usa "unidades" da fase;
+          // demais ribanas usam o multiplicador padrão (2).
+          const multPorLabelRib = {};
+          papeis.forEach((p, idx) => {
+            if (!(p.papel || '').startsWith('ribana_')) return;
+            const fase = fasesGrade[idx];
+            const tec = STATE.tecidos.find(t => t.id === fase?.tecidoId);
+            multPorLabelRib[p.label] = isTecidoRibanaMoletom(tec)
+              ? (parseInt(fase?.unidades) || multRib)
+              : multRib;
+          });
           ribanaPorFase = grupos
             .filter(g => g.qty > 0)
-            .map(g => ({
-              label: g.label,
-              total: referencia * g.qty,
-              detalhes: g.detalhes,
-              camadas: camadasRib
-            }));
+            .map(g => {
+              const mult = multPorLabelRib[g.label] || multRib;
+              const camadas = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * mult)) : 0;
+              return {
+                label: g.label,
+                total: referencia * g.qty,
+                detalhes: g.detalhes,
+                camadas,
+                mult
+              };
+            });
           // Se tiver componentes sem match, agrupa num fallback "Ribana (outros)"
           if (sobra.length) {
             const qtyTot = sobra.reduce((s, x) => s + x.qty, 0);
+            const camadasOutros = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * multRib)) : 0;
             ribanaPorFase.push({
               label: 'Ribana (outros)',
               total: referencia * qtyTot,
               detalhes: sobra.map(x => `${x.nome} ×${x.qty}`),
-              camadas: camadasRib
+              camadas: camadasOutros,
+              mult: multRib
             });
           }
         }
@@ -3072,6 +3108,7 @@ function atualizarCalculosEnfesto() {
             const hint = rf.detalhes.length
               ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(rf.detalhes.join(' + '))})</span>`
               : '';
+            const m = rf.mult || (MULTIPLICADOR_PECAS.ribana || 2);
             blocos.push(`
               <div style="padding:4px 0;border-bottom:1px dashed var(--line);">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -3080,7 +3117,7 @@ function atualizarCalculosEnfesto() {
                 </div>
                 <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
                   Camadas sugeridas: <strong>${rf.camadas}</strong>
-                  (1 camada = 2 peças/tamanho; ${refBlusas} peças ÷ ${gradeTotal*2})
+                  (1 camada = ${m} peça${m===1?'':'s'}/tamanho; ${refBlusas} peças ÷ ${gradeTotal*m})
                 </div>
               </div>`);
           });
@@ -3194,11 +3231,17 @@ function calcularCamadasParaProducao() {
       // Enfesto forro: camadas = metade das camadas de moletom
       val = Math.max(1, Math.ceil(camadasPrincipal / 2));
     } else if ((papel.papel || '').startsWith('ribana_')) {
-      // Enfesto ribana: camadas específicas baseadas em qty_por_blusa dos componentes agrupados
+      // Enfesto ribana: camadas específicas baseadas em qty_por_blusa dos componentes agrupados.
+      // Ribana moletom usa o multiplicador "unidades" cadastrado na fase; demais ribanas usam padrão (2).
+      const fase = fases[i] || {};
+      const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
+      const multUsado = isTecidoRibanaMoletom(tecFase)
+        ? (parseInt(fase.unidades) || multRib)
+        : multRib;
       const q = qtyPorLabelRibana[papel.label] || 0;
       val = q > 0
-        ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multRib)))
-        : Math.max(1, Math.ceil(camadasPrincipal / multRib));
+        ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multUsado)))
+        : Math.max(1, Math.ceil(camadasPrincipal / multUsado));
     } else {
       const cat = papel.categoria || '';
       const mult = MULTIPLICADOR_PECAS[cat] || 1;
