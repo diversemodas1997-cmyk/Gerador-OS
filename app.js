@@ -1327,7 +1327,7 @@ function addFaseGradeRow(fase = {}) {
   const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
     `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
   const unidadesAtual = parseInt(fase.unidades) || 2;
-  const unidadesOpts = [1, 2, 4, 6, 8].map(n =>
+  const unidadesOpts = [1, 2, 4, 6, 8, 10, 20].map(n =>
     `<option value="${n}" ${unidadesAtual === n ? 'selected' : ''}>${n}x</option>`).join('');
   const div = document.createElement('div');
   div.className = 'fase-grade-bloco';
@@ -1341,7 +1341,7 @@ function addFaseGradeRow(fase = {}) {
     <div class="form-grid cols-2">
       <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
       <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this)">${tecOpts(fase.tecidoId)}</select></div>
-      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana moletom)</div></div>
+      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
     </div>`;
@@ -1356,7 +1356,7 @@ function toggleUnidadesGrade(selectEl) {
   const wrap = bloco.querySelector('.fase-unid-wrap');
   if (!wrap) return;
   const tec = STATE.tecidos.find(t => t.id === selectEl.value);
-  wrap.style.display = isTecidoRibanaMoletom(tec) ? '' : 'none';
+  wrap.style.display = isTecidoRibana(tec) ? '' : 'none';
 }
 
 function removerFaseGrade(btn) {
@@ -2917,12 +2917,13 @@ function categoriaEfetivaTecido(t) {
   return t.categoria || '';
 }
 
-// Ribana moletom: tecido cuja categoria efetiva é ribana E o nome contém "moletom".
-// Usa o multiplicador "unidades da grade" cadastrado por fase em vez do MULTIPLICADOR_PECAS.ribana.
-function isTecidoRibanaMoletom(t) {
-  if (!t) return false;
-  if (categoriaEfetivaTecido(t) !== 'ribana') return false;
-  return (t.nome || '').toLowerCase().includes('moletom');
+// Qualquer tecido cuja categoria efetiva seja "ribana" (Ribana Moletom, Ribana
+// Malha Algodao, Ribana Gola Polo, etc.). Quando a fase do enfesto usa um
+// tecido ribana, o campo "Unidades da grade" e habilitado e o calculo de
+// camadas usa a regra simples camadasMoletom / unidades em vez de
+// MULTIPLICADOR_PECAS.ribana.
+function isTecidoRibana(t) {
+  return !!t && categoriaEfetivaTecido(t) === 'ribana';
 }
 
 // Categoria principal de uma grade — categoria do tecido da fase de menor `ordem`.
@@ -3235,7 +3236,7 @@ function atualizarCalculosEnfesto() {
             if (!(p.papel || '').startsWith('ribana_')) return;
             const fase = fasesGrade[idx];
             const tec = STATE.tecidos.find(t => t.id === fase?.tecidoId);
-            multPorLabelRib[p.label] = isTecidoRibanaMoletom(tec)
+            multPorLabelRib[p.label] = isTecidoRibana(tec)
               ? (parseInt(fase?.unidades) || multRib)
               : multRib;
           });
@@ -3429,7 +3430,7 @@ function calcularCamadasParaProducao() {
       //  - Ribana padrao: usa qtdPorBlusa do componente, multiplicador fixo (2).
       const fase = fases[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
-      if (isTecidoRibanaMoletom(tecFase)) {
+      if (isTecidoRibana(tecFase)) {
         const unidades = parseInt(fase.unidades) || multRib;
         val = Math.max(1, Math.ceil(camadasPrincipal / unidades));
       } else {
