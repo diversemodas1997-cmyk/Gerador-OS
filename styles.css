@@ -515,6 +515,13 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   display: flex;
   flex-direction: column;
   zoom: 1.20;
+  box-sizing: border-box;
+}
+/* Garante que padding/border de tabelas e celulas internas sejam contados
+   dentro da largura definida — evita que o Enfesto/Grade estourem o
+   container principalmente em telas pequenas. */
+.sheet *, .sheet *::before, .sheet *::after {
+  box-sizing: border-box;
 }
 
 /* Cabeçalho da ficha */
