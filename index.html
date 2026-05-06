@@ -33,35 +33,41 @@
       </div>
     </div>
 
-    <div class="nav-group">
-      <div class="nav-label">Principal</div>
-      <button class="nav-btn" data-page="home">Início</button>
-      <button class="nav-btn" data-page="nova-os">Nova OS</button>
-      <button class="nav-btn" data-page="lista-os">OS Salvas</button>
+    <div class="nav-group" data-group="principal">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
+      <div class="nav-items">
+        <button class="nav-btn" data-page="home">Início</button>
+        <button class="nav-btn" data-page="nova-os">Nova OS</button>
+        <button class="nav-btn" data-page="lista-os">OS Salvas</button>
+      </div>
     </div>
 
-    <div class="nav-group admin-only">
-      <div class="nav-label">Cadastros</div>
-      <button class="nav-btn" data-page="cad-marcas">Marcas</button>
-      <button class="nav-btn" data-page="cad-colecoes">Coleções</button>
-      <button class="nav-btn" data-page="cad-modelos">Modelos</button>
-      <button class="nav-btn" data-page="cad-linhas">Linhas</button>
-      <button class="nav-btn" data-page="cad-bases">Bases</button>
-      <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
-      <button class="nav-btn" data-page="cad-equipe">Equipe</button>
-      <button class="nav-btn" data-page="cad-funcoes">Funções</button>
-      <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
-      <button class="nav-btn" data-page="cad-componentes">Componentes</button>
-      <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
-      <button class="nav-btn" data-page="cad-cores">Cores</button>
-      <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
-      <button class="nav-btn" data-page="cad-grades">Grades</button>
-      <button class="nav-btn" data-page="cad-desenhos">Desenhos técnicos</button>
+    <div class="nav-group admin-only" data-group="cadastros">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
+      <div class="nav-items">
+        <button class="nav-btn" data-page="cad-marcas">Marcas</button>
+        <button class="nav-btn" data-page="cad-colecoes">Coleções</button>
+        <button class="nav-btn" data-page="cad-modelos">Modelos</button>
+        <button class="nav-btn" data-page="cad-linhas">Linhas</button>
+        <button class="nav-btn" data-page="cad-bases">Bases</button>
+        <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
+        <button class="nav-btn" data-page="cad-equipe">Equipe</button>
+        <button class="nav-btn" data-page="cad-funcoes">Funções</button>
+        <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
+        <button class="nav-btn" data-page="cad-componentes">Componentes</button>
+        <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
+        <button class="nav-btn" data-page="cad-cores">Cores</button>
+        <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
+        <button class="nav-btn" data-page="cad-grades">Grades</button>
+        <button class="nav-btn" data-page="cad-desenhos">Desenhos técnicos</button>
+      </div>
     </div>
 
-    <div class="nav-group">
-      <div class="nav-label">Sistema</div>
-      <button class="nav-btn" data-page="config">Configurações</button>
+    <div class="nav-group" data-group="sistema">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Sistema</button>
+      <div class="nav-items">
+        <button class="nav-btn" data-page="config">Configurações</button>
+      </div>
     </div>
   </aside>
 

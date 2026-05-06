@@ -70,12 +70,35 @@ aside.sidebar {
   padding: 8px 0;
 }
 .nav-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   letter-spacing: .14em;
   text-transform: uppercase;
   color: rgba(255,255,255,.4);
   padding: 8px 20px;
+  cursor: pointer;
+  text-align: left;
+  transition: color .15s;
+}
+.nav-label:hover { color: rgba(255,255,255,.7); }
+.nav-toggle {
+  display: inline-block;
+  font-size: 9px;
+  color: rgba(255,255,255,.5);
+  transition: transform .2s;
+  width: 10px;
+}
+.nav-group.collapsed .nav-toggle {
+  transform: rotate(-90deg);
+}
+.nav-group.collapsed .nav-items {
+  display: none;
 }
 .nav-btn {
   display: block;

@@ -867,6 +867,34 @@ function goto(page) {
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
 
+// Recolhe/expande grupos do menu lateral. Estado persiste em localStorage.
+function toggleNavGroup(labelEl) {
+  const group = labelEl?.closest?.('.nav-group');
+  if (!group) return;
+  const key = group.dataset.group;
+  group.classList.toggle('collapsed');
+  if (key) {
+    try {
+      const colapsadas = JSON.parse(localStorage.getItem('navGroupsCollapsed') || '{}');
+      colapsadas[key] = group.classList.contains('collapsed');
+      localStorage.setItem('navGroupsCollapsed', JSON.stringify(colapsadas));
+    } catch (e) { /* ignora */ }
+  }
+}
+window.toggleNavGroup = toggleNavGroup;
+
+// Restaura estado dos grupos ao carregar
+(function restaurarNavGroups() {
+  try {
+    const colapsadas = JSON.parse(localStorage.getItem('navGroupsCollapsed') || '{}');
+    Object.keys(colapsadas).forEach(key => {
+      if (!colapsadas[key]) return;
+      const g = document.querySelector(`.nav-group[data-group="${key}"]`);
+      if (g) g.classList.add('collapsed');
+    });
+  } catch (e) { /* ignora */ }
+})();
+
 /* ========================================================= */
 /*                      TOAST                                */
 /* ========================================================= */
