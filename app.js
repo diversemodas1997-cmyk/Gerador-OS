@@ -2960,8 +2960,11 @@ function tipoPecaModeloOS() {
   if (!id) return '';
   const m = STATE.modelos.find(x => x.id === id);
   const cat = m?.categoria || '';
+  // modelo.categoria usa 'malha'/'moletom'/'outro'; grade.tipoPeca usa
+  // 'camiseta'/'blusa_moletom'/'outro'. Mapeia entre os dois.
   if (cat === 'moletom') return 'blusa_moletom';
-  return cat; // 'camiseta' / 'outro' / ''
+  if (cat === 'malha') return 'camiseta';
+  return cat; // 'outro' / ''
 }
 
 // Variacao implícita do desenho (não há campo dedicado): se tem cor terciária
@@ -3241,18 +3244,26 @@ function atualizarCalculosEnfesto() {
               ? (parseInt(fase?.unidades) || multRib)
               : multRib;
           });
-          // Para a regra simples de ribana:
-          //   camadas_ribana = camadas_principal × multPrincipal × (gradeTotal/n_tamanhos) / unidades
-          // multPrincipal é 1 quando ha moletom (totalMoletom = gradeTotal × camadas × 1).
-          // Para camiseta sem moletom, multPrincipal = 2 (1 camada de malha = 2 pecas/slot).
+          // Regra de ribana:
+          // - Ribana moletom: escala com unidade media da grade (2 cam moletom = 1 cam ribana).
+          // - Outras ribanas (malha algodao, gola polo): so camadasPrincipal × multPrincipal / unidades.
           const nTamanhos = ['p','m','g','gg','g1','g2','g3']
             .filter(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0).length;
           const unidadePorTamMedia = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
           const multPrincipalEnf = temMoletom
             ? 1
             : (categoriasUsadas.has('malha') ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
-          const calcCamadasRibana = (mult) => Math.max(1,
-            Math.ceil(camadas * multPrincipalEnf * unidadePorTamMedia / mult));
+          // Mapa label → escalaComGrade (para diferenciar moletom de outras ribanas no calculo)
+          const escalaPorLabel = {};
+          papeis.forEach((p, idx) => {
+            if (!(p.papel || '').startsWith('ribana_')) return;
+            const tec = STATE.tecidos.find(t => t.id === fasesGrade[idx]?.tecidoId);
+            escalaPorLabel[p.label] = (tec?.nome || '').toLowerCase().includes('moletom');
+          });
+          const calcCamadasRibana = (mult, label) => {
+            const fator = escalaPorLabel[label] ? unidadePorTamMedia : 1;
+            return Math.max(1, Math.ceil(camadas * multPrincipalEnf * fator / mult));
+          };
           // Para o "Total" em pecas, usa referencia (totalMoletom ou totalForro).
           // Se nao tiver, calcula como total de blusas.
           const referenciaTotal = referencia || (gradeTotal * camadas * multPrincipalEnf);
@@ -3264,7 +3275,7 @@ function atualizarCalculosEnfesto() {
                 label: g.label,
                 total: referenciaTotal * g.qty,
                 detalhes: g.detalhes,
-                camadas: calcCamadasRibana(mult),
+                camadas: calcCamadasRibana(mult, g.label),
                 mult
               };
             });
@@ -3275,7 +3286,7 @@ function atualizarCalculosEnfesto() {
               label: 'Ribana (outros)',
               total: referenciaTotal * qtyTot,
               detalhes: sobra.map(x => `${x.nome} ×${x.qty}`),
-              camadas: calcCamadasRibana(multRib),
+              camadas: calcCamadasRibana(multRib, 'Ribana (outros)'),
               mult: multRib
             });
           }
@@ -3439,20 +3450,25 @@ function calcularCamadasParaProducao() {
       val = Math.max(1, Math.ceil(camadasPrincipal / 2));
     } else if ((papel.papel || '').startsWith('ribana_')) {
       // Enfesto ribana com unidades cadastradas:
-      //   "unidades" = peças produzidas por TAMANHO por camada de ribana.
-      //   Ex.: 2x para Barra+Punhos moletom (2 barras + 4 punhos por tamanho);
-      //        10x para Gola (10 golas/tamanho); 20x quando a grade tem 2/tam.
-      //   total_pecas_ribana = blusas × q_componente
-      //   pecas_por_camada   = unidades × n_tamanhos × q_componente (q cancela)
-      //   camadas_ribana     = total_blusas / (unidades × n_tamanhos)
-      //                      = camadasPrincipal × multPrincipal × (gradeTotal/n_tamanhos) / unidades
+      // - Ribana moletom: o tecido escala com a unidade da grade (2 barras +
+      //   4 punhos por tamanho cobre 2 blusas/tam quando a grade tem 2/tam).
+      //   Formula: camadasPrincipal × multPrincipal × (gradeTotal/n_tamanhos) / unidades.
+      // - Outras ribanas (malha algodao, gola polo): o multiplicador da fase
+      //   ja cobre toda a grade — "10x" significa "10 unidades de cada slot
+      //   da grade por camada", entao o gradeTotal nao precisa de ajuste.
+      //   Formula: camadasPrincipal × multPrincipal / unidades.
       const fase = fases[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
       if (isTecidoRibana(tecFase)) {
         const unidades = parseInt(fase.unidades) || multRib;
-        const nTamanhos = qtdsPorTamanho.length;
-        const unidadePorTamMedia = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
-        val = Math.max(1, Math.ceil(camadasPrincipal * multPrincipal * unidadePorTamMedia / unidades));
+        const nomeFase = (tecFase?.nome || '').toLowerCase();
+        const escalaComGrade = nomeFase.includes('moletom');
+        let fator = 1;
+        if (escalaComGrade) {
+          const nTamanhos = qtdsPorTamanho.length;
+          fator = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
+        }
+        val = Math.max(1, Math.ceil(camadasPrincipal * multPrincipal * fator / unidades));
       } else {
         // Ribana padrao (sem unidades cadastradas): usa qtdPorBlusa + mult fixo
         const q = qtyPorLabelRibana[papel.label] || 0;
