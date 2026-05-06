@@ -4831,12 +4831,23 @@ function renderPrintSheet(o) {
               return { nome, tarefas: cad ? nomesTarefasPorIds(cad.tarefasIds) : [] };
             });
             const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
+            const subCheckbox = `<span style="display:inline-block;width:8px;height:8px;border:1px solid #000;margin-right:5px;vertical-align:middle;flex-shrink:0;"></span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
               ${ordenadas.map(e => `
-                <li style="display:flex;align-items:center;padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
-                  ${checkbox}
-                  <strong style="min-width:130px;">${esc(e.nome)}</strong>
-                  <span style="color:#555;flex:1;">${e.tarefas.length ? esc(e.tarefas.join(', ')) : '<em style="color:#999;">sem tarefa definida</em>'}</span>
+                <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
+                  <div style="display:flex;align-items:center;">
+                    ${checkbox}
+                    <strong>${esc(e.nome)}</strong>
+                  </div>
+                  ${e.tarefas.length ? `
+                    <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
+                      ${e.tarefas.map(t => `
+                        <li style="display:flex;align-items:center;padding:1px 0;">
+                          ${subCheckbox}
+                          <span>${esc(t)}</span>
+                        </li>`).join('')}
+                    </ul>` : `
+                    <div style="padding-left:24px;font-size:8.5pt;color:#999;font-style:italic;">sem tarefa definida</div>`}
                 </li>`).join('')}
             </ul>`;
           })()}
