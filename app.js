@@ -5011,8 +5011,7 @@ function renderPrintSheet(o) {
                           ${subCheckbox}
                           <span>${esc(t)}</span>
                         </li>`).join('')}
-                    </ul>` : `
-                    <div style="padding-left:24px;font-size:8.5pt;color:#999;font-style:italic;">sem tarefa definida</div>`}
+                    </ul>` : ''}
                 </li>`).join('')}
             </ul>`;
           })()}
