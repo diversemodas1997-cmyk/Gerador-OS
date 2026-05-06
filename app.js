@@ -834,7 +834,6 @@ function goto(page) {
   if (page === 'cad-blocos') renderBlocos();
   if (page === 'cad-equipe') renderEquipe();
   if (page === 'cad-funcoes') renderFuncoes();
-  if (page === 'cad-tarefas') renderTarefas();
   if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
@@ -1662,6 +1661,17 @@ async function salvarCadastro() {
         if (tipo === 'desenho') sincCodigoDesenho('desenho');
       }
     }
+  } else if (typeof cadastroContext.origin === 'string' && cadastroContext.origin.startsWith('etapa:') && tipo === 'tarefa' && !editId) {
+    // Tarefa criada a partir da arvore de uma etapa: vincula automaticamente.
+    const etapaId = cadastroContext.origin.slice('etapa:'.length);
+    const etapa = STATE.etapas.find(e => e.id === etapaId);
+    if (etapa) {
+      etapa.tarefasIds = Array.isArray(etapa.tarefasIds) ? etapa.tarefasIds : [];
+      etapa.tarefasIds.push(item.id);
+      etapasExpandidas.add(etapaId);
+      await saveState('etapas');
+    }
+    renderEtapasCad();
   } else {
     goto('cad-' + list);
   }
@@ -1692,8 +1702,20 @@ async function excluirCadastro(tipo, id) {
   const list = pluralize(tipo);
   STATE[list] = STATE[list].filter(x => x.id !== id);
   await saveState(list);
+  // Tarefa excluida: limpa referencias em etapas.tarefasIds
+  if (tipo === 'tarefa') {
+    let mexeu = false;
+    (STATE.etapas || []).forEach(e => {
+      if (Array.isArray(e.tarefasIds) && e.tarefasIds.includes(id)) {
+        e.tarefasIds = e.tarefasIds.filter(x => x !== id);
+        mexeu = true;
+      }
+    });
+    if (mexeu) await saveState('etapas');
+  }
   toast('Excluído', 'ok');
-  goto('cad-' + list);
+  // Tarefa nao tem mais pagina propria — volta para cad-etapas (arvore).
+  goto(tipo === 'tarefa' ? 'cad-etapas' : 'cad-' + list);
 }
 
 /* ========================================================= */
@@ -1948,14 +1970,61 @@ function renderComponentesCad() {
   }).join('');
 }
 
+// Estado de UI: quais etapas estao expandidas na tabela de cadastro.
+const etapasExpandidas = new Set();
+
+function toggleEtapaPasta(id, ev) {
+  // Ignora cliques em botoes de acao para nao colidir com editar/excluir.
+  if (ev && ev.target && ev.target.closest && ev.target.closest('.row-actions')) return;
+  if (etapasExpandidas.has(id)) etapasExpandidas.delete(id);
+  else etapasExpandidas.add(id);
+  renderEtapasCad();
+}
+
 function renderEtapasCad() {
   const tb = document.getElementById('tbl-etapas');
   if (!STATE.etapas.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma etapa cadastrada.</td></tr>`; return; }
-  tb.innerHTML = etapasOrdenadas().map(e => {
-    const tarefasNomes = nomesTarefasPorIds(e.tarefasIds);
-    const badges = tarefasNomes.length ? tarefasNomes.map(n => `<span class="badge" style="margin-right:4px">${esc(n)}</span>`).join('') : '—';
-    return `<tr><td>${e.ordem||0}</td><td><strong>${esc(e.nome)}</strong></td><td>${badges}</td>${acoesCell('etapa', e.id)}</tr>`;
-  }).join('');
+  const linhas = [];
+  etapasOrdenadas().forEach(e => {
+    const tarefas = (e.tarefasIds || [])
+      .map(id => STATE.tarefas.find(t => t.id === id))
+      .filter(Boolean);
+    const aberta = etapasExpandidas.has(e.id);
+    const seta = `<span style="display:inline-block;width:12px;color:var(--ink-3);">${aberta ? '▼' : '▶'}</span>`;
+    const cont = tarefas.length
+      ? `<span style="color:var(--ink-3);font-weight:400;font-size:11px;margin-left:8px;">${tarefas.length} tarefa${tarefas.length>1?'s':''}</span>`
+      : `<span style="color:var(--ink-3);font-weight:400;font-size:11px;margin-left:8px;font-style:italic;">sem tarefas</span>`;
+    linhas.push(`
+      <tr class="etapa-pasta-row" onclick="toggleEtapaPasta('${esc(e.id)}', event)" style="cursor:pointer;">
+        <td>${e.ordem||0}</td>
+        <td>${seta} 📁 <strong>${esc(e.nome)}</strong>${cont}</td>
+        <td></td>
+        ${acoesCell('etapa', e.id)}
+      </tr>`);
+    if (aberta) {
+      if (tarefas.length) {
+        tarefas.forEach(t => {
+          linhas.push(`
+            <tr class="tarefa-sub-row" style="background:var(--line-2);">
+              <td></td>
+              <td style="padding-left:42px;color:var(--ink-2);">↳ ${esc(t.nome)}</td>
+              <td style="color:var(--ink-3);font-size:12px;">${esc(t.desc) || '—'}</td>
+              ${acoesCell('tarefa', t.id)}
+            </tr>`);
+        });
+      }
+      // Linha "+ Nova tarefa" sempre aparece quando expandido
+      linhas.push(`
+        <tr class="tarefa-sub-row" style="background:var(--line-2);">
+          <td></td>
+          <td colspan="3" style="padding-left:42px;">
+            <button class="btn small" onclick="event.stopPropagation(); openCadastroModal('tarefa', null, 'etapa:${esc(e.id)}')">+ Nova tarefa nesta etapa</button>
+            ${!tarefas.length ? '<span style="color:var(--ink-3);font-style:italic;font-size:12px;margin-left:8px;">Nenhuma tarefa cadastrada nesta etapa ainda.</span>' : ''}
+          </td>
+        </tr>`);
+    }
+  });
+  tb.innerHTML = linhas.join('');
 }
 
 function renderFuncoes() {
@@ -1968,13 +2037,6 @@ function renderFuncoes() {
   }).join('');
 }
 
-function renderTarefas() {
-  const tb = document.getElementById('tbl-tarefas');
-  if (!tb) return;
-  if (!STATE.tarefas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma tarefa cadastrada.</td></tr>`; return; }
-  tb.innerHTML = STATE.tarefas.map(t => `
-    <tr><td><strong>${esc(t.nome)}</strong></td><td>${esc(t.desc)||'—'}</td>${acoesCell('tarefa', t.id)}</tr>`).join('');
-}
 
 function renderHome() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -5075,7 +5137,7 @@ window.removerFaseGrade = removerFaseGrade;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
-window.renderTarefas = renderTarefas;
+window.toggleEtapaPasta = toggleEtapaPasta;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;

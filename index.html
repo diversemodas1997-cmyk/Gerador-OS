@@ -50,7 +50,6 @@
       <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
       <button class="nav-btn" data-page="cad-equipe">Equipe</button>
       <button class="nav-btn" data-page="cad-funcoes">Funções</button>
-      <button class="nav-btn" data-page="cad-tarefas">Tarefas</button>
       <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
       <button class="nav-btn" data-page="cad-componentes">Componentes</button>
       <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
@@ -334,22 +333,8 @@
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th>Ordem</th><th>Nome</th><th>Tarefas</th><th class="col-actions">Gerenciar</th></tr></thead>
+          <thead><tr><th>Ordem</th><th>Etapa / Tarefa</th><th>Observação</th><th class="col-actions">Gerenciar</th></tr></thead>
           <tbody id="tbl-etapas"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- TAREFAS -->
-    <section class="page hidden" data-page="cad-tarefas">
-      <div class="page-header">
-        <div><h1>Tarefas</h1><div class="desc">Atividades específicas vinculáveis às Etapas de produção (ex.: Costurar manga, Pregar etiqueta).</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('tarefa')">+ Nova tarefa</button></div>
-      </div>
-      <div class="card">
-        <table class="table">
-          <thead><tr><th>Nome</th><th>Observação</th><th class="col-actions">Gerenciar</th></tr></thead>
-          <tbody id="tbl-tarefas"></tbody>
         </table>
       </div>
     </section>
