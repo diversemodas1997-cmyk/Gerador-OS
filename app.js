@@ -77,10 +77,22 @@ function iniciarRealtime() {
         // Nao re-renderiza nova-os em edicao pra preservar o que o usuario
         // estava digitando. cloudCache ja foi atualizado — proxima
         // navegacao ja le valores frescos.
-        const activeBtn = document.querySelector('.nav-btn.active');
-        const pagina = activeBtn && activeBtn.dataset.page ? activeBtn.dataset.page : 'home';
-        if (pagina !== 'nova-os') goto(pagina);
-        toast('Dados atualizados por outro usuário', 'ok');
+        // Detecta pagina ativa via .page:not(.hidden) (mais confiavel que
+        // .nav-btn.active, que nao cobre 'print' — ela nao tem botao de menu).
+        const ativa = document.querySelector('section.page:not(.hidden)');
+        const pagina = ativa?.dataset?.page || 'home';
+        if (pagina === 'print' && printOsAtual) {
+          // OS pronta aberta: atualiza os checkboxes inline em vez de re-render
+          // total — preserva scroll e nao pisca. Outros campos eventualmente
+          // alterados ficam pra proxima visita.
+          const fresh = STATE.ordens.find(x => x.id === printOsAtual.id);
+          if (fresh) {
+            printOsAtual = fresh;
+            aplicarProgressoCheckboxes(fresh);
+          }
+        } else if (pagina !== 'nova-os') {
+          goto(pagina);
+        }
       })
     .subscribe();
   // Polling tambem e iniciado — se Realtime nao funcionar (publication
@@ -128,10 +140,19 @@ function iniciarPolling() {
       // Mudanca de outro usuario: aplica
       cloudCache = data.data || {};
       await loadState();
-      // Evita resetar formulario em edicao — so re-renderiza paginas seguras
-      const activeBtn = document.querySelector('.nav-btn.active');
-      const pagina = activeBtn?.dataset?.page || 'home';
-      if (pagina !== 'nova-os') goto(pagina);
+      // Mesma logica do realtime: print pronta atualiza so checkboxes;
+      // demais paginas re-renderizam normalmente.
+      const ativa = document.querySelector('section.page:not(.hidden)');
+      const pagina = ativa?.dataset?.page || 'home';
+      if (pagina === 'print' && printOsAtual) {
+        const fresh = STATE.ordens.find(x => x.id === printOsAtual.id);
+        if (fresh) {
+          printOsAtual = fresh;
+          aplicarProgressoCheckboxes(fresh);
+        }
+      } else if (pagina !== 'nova-os') {
+        goto(pagina);
+      }
       lastSeenUpdatedAt = data.updated_at;
       toast('Dados atualizados por outro usuário', 'ok');
     } catch (e) {
@@ -4435,6 +4456,22 @@ async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
   if (checked) os.progresso.tarefasCheck[etapaNome][tarefaNome] = true;
   else delete os.progresso.tarefasCheck[etapaNome][tarefaNome];
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistTarefa', e); }
+}
+
+// Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
+// re-renderizar a sheet inteira. Usado pelo realtime/polling para refletir
+// mudancas de outros usuarios sem piscar a tela nem perder o scroll.
+function aplicarProgressoCheckboxes(os) {
+  if (!os) return;
+  const prog = os.progresso || {};
+  document.querySelectorAll('.os-check[data-etapa]').forEach(inp => {
+    const etapaNome = inp.dataset.etapa;
+    const tarefaNome = inp.dataset.tarefa;
+    const desejado = tarefaNome
+      ? !!prog.tarefasCheck?.[etapaNome]?.[tarefaNome]
+      : !!prog.etapasCheck?.[etapaNome];
+    if (inp.checked !== desejado) inp.checked = desejado;
+  });
 }
 
 function verOS(id) {
