@@ -1289,23 +1289,33 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     setTimeout(atualizarCoresComponente, 0);
   }
   else if (tipo === 'etapa') {
-    const tarefasIds = item.tarefasIds || [];
     const ordemSugerida = item.ordem ?? ((STATE.etapas.length + 1) * 10);
-    const tarefasCheckboxes = STATE.tarefas.length
-      ? STATE.tarefas.map(t => `
-          <label style="display:inline-flex;align-items:center;gap:6px;margin:2px 8px 2px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;cursor:pointer;">
-            <input type="checkbox" class="m-tarefa-chk" value="${esc(t.id)}" ${tarefasIds.includes(t.id)?'checked':''}>
-            <span>${esc(t.nome)}</span>
-          </label>`).join('')
-      : '<em style="color:var(--ink-3);font-size:12px;">Nenhuma tarefa cadastrada — cadastre primeiro em Tarefas.</em>';
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Corte, Costura, Acabamento"></div>
         <div class="field"><label>Ordem</label><input type="number" id="m-ordem" value="${ordemSugerida}" placeholder="Ex.: 10"><div class="field-hint">Menor primeiro na folha impressa</div></div>
-        <div class="field full"><label>Tarefas desta etapa</label>
-          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">${tarefasCheckboxes}</div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Tarefas desta etapa</label>
+        <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
+          Adicione as tarefas que compõem esta etapa (subitens). Cada tarefa tem nome e observação opcional.
         </div>
+        <div id="m-tarefas-container"></div>
+        <button type="button" class="add-row-btn" onclick="addTarefaEtapaRow()" style="margin-top:8px;">+ Adicionar tarefa</button>
       </div>`;
+    // Popula tarefas existentes (ou uma vazia em "Novo")
+    setTimeout(() => {
+      let tarefasSalvas = Array.isArray(item.tarefas) && item.tarefas.length ? item.tarefas : null;
+      // Retrocompat: migra de tarefasIds (modelo antigo) buscando em STATE.tarefas
+      if (!tarefasSalvas && Array.isArray(item.tarefasIds) && item.tarefasIds.length) {
+        tarefasSalvas = item.tarefasIds
+          .map(tid => (STATE.tarefas || []).find(t => t.id === tid))
+          .filter(Boolean)
+          .map(t => ({ nome: t.nome || '', desc: t.desc || '' }));
+      }
+      if (tarefasSalvas && tarefasSalvas.length) tarefasSalvas.forEach(t => addTarefaEtapaRow(t));
+      else addTarefaEtapaRow();
+    }, 0);
   }
 
   openModal('modal-cad');
@@ -1361,6 +1371,41 @@ function renumerarFasesGrade() {
   Array.from(cont.querySelectorAll('.fase-grade-bloco')).forEach((b, i) => {
     const lbl = b.querySelector('.fase-label');
     if (lbl) lbl.textContent = `FASE ${i+1}`;
+  });
+}
+
+function addTarefaEtapaRow(tarefa = {}) {
+  const cont = document.getElementById('m-tarefas-container');
+  if (!cont) return;
+  const div = document.createElement('div');
+  div.className = 'tarefa-etapa-bloco';
+  div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+  div.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+      <span class="tarefa-label" style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">TAREFA ?</span>
+      <span style="flex:1;"></span>
+      <button type="button" class="btn small danger" onclick="removerTarefaEtapa(this)">✕ Remover</button>
+    </div>
+    <div class="form-grid cols-2">
+      <div class="field full"><label>Nome *</label><input type="text" class="tarefa-nome" value="${esc(tarefa.nome || '')}" placeholder="Ex.: Costurar manga, Pregar etiqueta"></div>
+      <div class="field full"><label>Observação</label><input type="text" class="tarefa-desc" value="${esc(tarefa.desc || '')}" placeholder="Opcional"></div>
+    </div>`;
+  cont.appendChild(div);
+  renumerarTarefasEtapa();
+}
+
+function removerTarefaEtapa(btn) {
+  const bloco = btn.closest('.tarefa-etapa-bloco');
+  if (bloco) bloco.remove();
+  renumerarTarefasEtapa();
+}
+
+function renumerarTarefasEtapa() {
+  const cont = document.getElementById('m-tarefas-container');
+  if (!cont) return;
+  Array.from(cont.querySelectorAll('.tarefa-etapa-bloco')).forEach((b, i) => {
+    const lbl = b.querySelector('.tarefa-label');
+    if (lbl) lbl.textContent = `TAREFA ${i+1}`;
   });
 }
 
@@ -1611,16 +1656,20 @@ async function salvarCadastro() {
       }
     }
   }
-  else if (tipo === 'tarefa') {
-    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
-    item.nome = v('m-nome');
-    item.desc = v('m-desc');
-  }
   else if (tipo === 'etapa') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.ordem = parseInt(v('m-ordem')) || 0;
-    item.tarefasIds = Array.from(document.querySelectorAll('.m-tarefa-chk:checked')).map(c => c.value);
+    item.tarefas = Array.from(document.querySelectorAll('#m-tarefas-container .tarefa-etapa-bloco'))
+      .map((b, i) => ({
+        id: b.dataset.id || uid(),
+        ordem: i + 1,
+        nome: (b.querySelector('.tarefa-nome')?.value || '').trim(),
+        desc: b.querySelector('.tarefa-desc')?.value || ''
+      }))
+      .filter(t => t.nome);
+    // Limpa estrutura antiga (tarefasIds + STATE.tarefas) — agora tarefa vive dentro da etapa.
+    delete item.tarefasIds;
   }
   else if (tipo === 'componente') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1661,17 +1710,6 @@ async function salvarCadastro() {
         if (tipo === 'desenho') sincCodigoDesenho('desenho');
       }
     }
-  } else if (typeof cadastroContext.origin === 'string' && cadastroContext.origin.startsWith('etapa:') && tipo === 'tarefa' && !editId) {
-    // Tarefa criada a partir da arvore de uma etapa: vincula automaticamente.
-    const etapaId = cadastroContext.origin.slice('etapa:'.length);
-    const etapa = STATE.etapas.find(e => e.id === etapaId);
-    if (etapa) {
-      etapa.tarefasIds = Array.isArray(etapa.tarefasIds) ? etapa.tarefasIds : [];
-      etapa.tarefasIds.push(item.id);
-      etapasExpandidas.add(etapaId);
-      await saveState('etapas');
-    }
-    renderEtapasCad();
   } else {
     goto('cad-' + list);
   }
@@ -1970,61 +2008,57 @@ function renderComponentesCad() {
   }).join('');
 }
 
-// Estado de UI: quais etapas estao expandidas na tabela de cadastro.
-const etapasExpandidas = new Set();
-
-function toggleEtapaPasta(id, ev) {
-  // Ignora cliques em botoes de acao para nao colidir com editar/excluir.
-  if (ev && ev.target && ev.target.closest && ev.target.closest('.row-actions')) return;
-  if (etapasExpandidas.has(id)) etapasExpandidas.delete(id);
-  else etapasExpandidas.add(id);
-  renderEtapasCad();
+// Tarefas de uma etapa: prioriza item.tarefas (estrutura nova, embutida na etapa);
+// fallback p/ tarefasIds + STATE.tarefas (modelo antigo).
+function tarefasDaEtapa(etapa) {
+  if (Array.isArray(etapa?.tarefas) && etapa.tarefas.length) return etapa.tarefas;
+  if (Array.isArray(etapa?.tarefasIds) && etapa.tarefasIds.length) {
+    return etapa.tarefasIds
+      .map(tid => (STATE.tarefas || []).find(t => t.id === tid))
+      .filter(Boolean);
+  }
+  return [];
 }
 
 function renderEtapasCad() {
-  const tb = document.getElementById('tbl-etapas');
-  if (!STATE.etapas.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma etapa cadastrada.</td></tr>`; return; }
-  const linhas = [];
-  etapasOrdenadas().forEach(e => {
-    const tarefas = (e.tarefasIds || [])
-      .map(id => STATE.tarefas.find(t => t.id === id))
-      .filter(Boolean);
-    const aberta = etapasExpandidas.has(e.id);
-    const seta = `<span style="display:inline-block;width:12px;color:var(--ink-3);">${aberta ? '▼' : '▶'}</span>`;
-    const cont = tarefas.length
-      ? `<span style="color:var(--ink-3);font-weight:400;font-size:11px;margin-left:8px;">${tarefas.length} tarefa${tarefas.length>1?'s':''}</span>`
-      : `<span style="color:var(--ink-3);font-weight:400;font-size:11px;margin-left:8px;font-style:italic;">sem tarefas</span>`;
-    linhas.push(`
-      <tr class="etapa-pasta-row" onclick="toggleEtapaPasta('${esc(e.id)}', event)" style="cursor:pointer;">
-        <td>${e.ordem||0}</td>
-        <td>${seta} 📁 <strong>${esc(e.nome)}</strong>${cont}</td>
-        <td></td>
-        ${acoesCell('etapa', e.id)}
-      </tr>`);
-    if (aberta) {
-      if (tarefas.length) {
-        tarefas.forEach(t => {
-          linhas.push(`
-            <tr class="tarefa-sub-row" style="background:var(--line-2);">
-              <td></td>
-              <td style="padding-left:42px;color:var(--ink-2);">↳ ${esc(t.nome)}</td>
-              <td style="color:var(--ink-3);font-size:12px;">${esc(t.desc) || '—'}</td>
-              ${acoesCell('tarefa', t.id)}
-            </tr>`);
-        });
-      }
-      // Linha "+ Nova tarefa" sempre aparece quando expandido
-      linhas.push(`
-        <tr class="tarefa-sub-row" style="background:var(--line-2);">
-          <td></td>
-          <td colspan="3" style="padding-left:42px;">
-            <button class="btn small" onclick="event.stopPropagation(); openCadastroModal('tarefa', null, 'etapa:${esc(e.id)}')">+ Nova tarefa nesta etapa</button>
-            ${!tarefas.length ? '<span style="color:var(--ink-3);font-style:italic;font-size:12px;margin-left:8px;">Nenhuma tarefa cadastrada nesta etapa ainda.</span>' : ''}
-          </td>
-        </tr>`);
-    }
-  });
-  tb.innerHTML = linhas.join('');
+  const cont = document.getElementById('etapas-pastas');
+  if (!cont) return;
+  if (!STATE.etapas.length) {
+    cont.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--ink-3);">Nenhuma etapa cadastrada. Use <strong>+ Nova etapa</strong> para começar.</div>`;
+    return;
+  }
+  const acoesEtapa = (id) => `
+    <span class="row-actions" style="display:inline-flex;gap:4px;">
+      <button class="edit" onclick="openCadastroModal('etapa','${esc(id)}')">editar</button>
+      <button class="edit" onclick="duplicarCadastro('etapa','${esc(id)}')">duplicar</button>
+      <button class="del" onclick="excluirCadastro('etapa','${esc(id)}')">excluir</button>
+    </span>`;
+
+  const html = etapasOrdenadas().map(e => {
+    const tarefas = tarefasDaEtapa(e);
+    const sub = tarefas.length
+      ? tarefas.map(t => `
+          <li style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-bottom:1px dotted var(--line);">
+            <span style="font-size:14px;">📄</span>
+            <strong style="flex:0 0 auto;">${esc(t.nome)}</strong>
+            <span style="color:var(--ink-3);font-size:12px;flex:1;">${esc(t.desc) || ''}</span>
+          </li>`).join('')
+      : `<li style="padding:8px;color:var(--ink-3);font-style:italic;font-size:12px;">Nenhuma tarefa nesta etapa ainda — clique em <strong>editar</strong> para adicionar.</li>`;
+    return `
+      <div class="card etapa-pasta" style="margin-bottom:10px;padding:0;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--line-2);border-bottom:1px solid var(--line);">
+          <span style="font-size:18px;">📁</span>
+          <span class="badge" title="Ordem">${e.ordem || 0}</span>
+          <strong style="flex:1;font-size:14px;">${esc(e.nome)}</strong>
+          <span style="color:var(--ink-3);font-size:11px;">${tarefas.length} tarefa${tarefas.length===1?'':'s'}</span>
+          ${acoesEtapa(e.id)}
+        </div>
+        <ul style="list-style:none;margin:0;padding:6px 12px 10px 28px;">
+          ${sub}
+        </ul>
+      </div>`;
+  }).join('');
+  cont.innerHTML = html;
 }
 
 function renderFuncoes() {
@@ -2361,7 +2395,7 @@ function renderEtapas() {
   if (!cont) return;
   const checked = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
   const fonte = STATE.etapas.length
-    ? etapasOrdenadas().map(e => ({ nome: e.nome, tarefas: nomesTarefasPorIds(e.tarefasIds) }))
+    ? etapasOrdenadas().map(e => ({ nome: e.nome, tarefas: tarefasDaEtapa(e).map(t => t.nome) }))
     : STATE.etapasPadrao.map(nome => ({ nome, tarefas: [] }));
   cont.innerHTML = fonte.map(e => {
     const tarefasBadges = e.tarefas.length
@@ -4892,10 +4926,10 @@ function renderPrintSheet(o) {
           <div class="titulo">Etapas de Produção</div>
           ${(() => {
             if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
-            // Mantém a ordem salva na OS; busca as tarefas em STATE.etapas se existirem
+            // Mantém a ordem salva na OS; busca as tarefas embutidas na etapa cadastrada
             const ordenadas = o.etapas.map(nome => {
               const cad = STATE.etapas.find(e => e.nome === nome);
-              return { nome, tarefas: cad ? nomesTarefasPorIds(cad.tarefasIds) : [] };
+              return { nome, tarefas: cad ? tarefasDaEtapa(cad).map(t => t.nome) : [] };
             });
             const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
             const subCheckbox = `<span style="display:inline-block;width:8px;height:8px;border:1px solid #000;margin-right:5px;vertical-align:middle;flex-shrink:0;"></span>`;
@@ -5137,7 +5171,8 @@ window.removerFaseGrade = removerFaseGrade;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
-window.toggleEtapaPasta = toggleEtapaPasta;
+window.addTarefaEtapaRow = addTarefaEtapaRow;
+window.removerTarefaEtapa = removerTarefaEtapa;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;

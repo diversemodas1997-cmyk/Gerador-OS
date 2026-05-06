@@ -328,15 +328,10 @@
     <!-- ETAPAS DE PRODUÇÃO -->
     <section class="page hidden" data-page="cad-etapas">
       <div class="page-header">
-        <div><h1>Etapas de produção</h1><div class="desc">Corte, Costura, Acabamento, etc. A ordem aqui define a ordem na folha de OS impressa.</div></div>
+        <div><h1>Etapas de produção</h1><div class="desc">Cada etapa é uma pasta. As tarefas vinculadas aparecem como subitens. A ordem define a ordem na folha de OS impressa.</div></div>
         <div class="actions"><button class="btn primary" onclick="openCadastroModal('etapa')">+ Nova etapa</button></div>
       </div>
-      <div class="card">
-        <table class="table">
-          <thead><tr><th>Ordem</th><th>Etapa / Tarefa</th><th>Observação</th><th class="col-actions">Gerenciar</th></tr></thead>
-          <tbody id="tbl-etapas"></tbody>
-        </table>
-      </div>
+      <div id="etapas-pastas"></div>
     </section>
 
     <!-- FUNÇÕES -->
