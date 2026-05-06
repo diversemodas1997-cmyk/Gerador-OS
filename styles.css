@@ -817,8 +817,13 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   aside.sidebar { position: relative; height: auto; }
-  main.content { padding: 20px; }
-  .sheet { width: 100%; }
+  /* No mobile: permite scroll horizontal nas paginas (especialmente a OS
+     pronta com 210mm) e zoom pinch nativo do navegador. Antes
+     overflow-x:hidden bloqueava ver o conteudo todo. */
+  main.content { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Folha mantem largura natural A4 (210mm) — usuario rola lateral e da
+     pinch-zoom para enxergar detalhes. */
+  .sheet { width: 210mm; max-width: none; zoom: 1; }
 }
 
 /* ============ MISC ============ */
