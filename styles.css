@@ -1015,10 +1015,15 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   margin-right: 5px;
 }
 .os-check:checked {
-  background: #000;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2.5 8.5 L6.5 12.5 L13.5 3.5' stroke='%2316a34a' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 130% 130% no-repeat;
+  border-color: #16a34a;
 }
 @media print {
   .os-check {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .os-check:checked {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
