@@ -3261,17 +3261,22 @@ function calcularCamadasParaProducao() {
       // Enfesto forro: camadas = metade das camadas de moletom
       val = Math.max(1, Math.ceil(camadasPrincipal / 2));
     } else if ((papel.papel || '').startsWith('ribana_')) {
-      // Enfesto ribana: camadas específicas baseadas em qty_por_blusa dos componentes agrupados.
-      // Ribana moletom usa o multiplicador "unidades" cadastrado na fase; demais ribanas usam padrão (2).
+      // Enfesto ribana:
+      //  - Ribana moletom: regra simples — camadas = camadasMoletom / unidades.
+      //    Ignora qtdPorBlusa do componente (a relacao com moletom e direta:
+      //    1x=igual, 2x=metade, 4x=um quarto, etc.).
+      //  - Ribana padrao: usa qtdPorBlusa do componente, multiplicador fixo (2).
       const fase = fases[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
-      const multUsado = isTecidoRibanaMoletom(tecFase)
-        ? (parseInt(fase.unidades) || multRib)
-        : multRib;
-      const q = qtyPorLabelRibana[papel.label] || 0;
-      val = q > 0
-        ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multUsado)))
-        : Math.max(1, Math.ceil(camadasPrincipal / multUsado));
+      if (isTecidoRibanaMoletom(tecFase)) {
+        const unidades = parseInt(fase.unidades) || multRib;
+        val = Math.max(1, Math.ceil(camadasPrincipal / unidades));
+      } else {
+        const q = qtyPorLabelRibana[papel.label] || 0;
+        val = q > 0
+          ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multRib)))
+          : Math.max(1, Math.ceil(camadasPrincipal / multRib));
+      }
     } else {
       const cat = papel.categoria || '';
       const mult = MULTIPLICADOR_PECAS[cat] || 1;
