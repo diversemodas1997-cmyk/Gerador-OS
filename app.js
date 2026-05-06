@@ -4411,14 +4411,13 @@ function editarOS(id) {
     setSelectByIdOrName('f-ftec', o.ftecId, o.ftec || o.ftecNome, STATE.equipe);
     document.getElementById('f-desenho').value = o.desenhoId || '';
     previewDesenhoSelecionado();
-    // Em modo de edicao, lista TODAS as grades cadastradas — nao filtra por
-    // desenho/modelo/variacao. Motivo: o usuario pode estar editando pra
-    // trocar tipo da grade (ex.: bicolor -> tricolor) e o filtro estrito
-    // esconderia justamente as opcoes que ele quer ver. Tambem restaura
-    // gradeId salvo (antes ficava sempre vazio na edicao).
+    // Em edicao, aplica o mesmo filtro de "Nova OS" (categoria do desenho +
+    // tipoPeca do modelo + variacao). A grade ja selecionada e preservada
+    // via extraIds, mesmo que nao case com o filtro atual — isso garante que
+    // o usuario continua vendo a opcao salva.
     const gradeEl = document.getElementById('f-grade-preset');
     if (gradeEl) {
-      fillSelect('f-grade-preset', STATE.grades, 'nome', '— nenhuma —');
+      fillSelect('f-grade-preset', gradesParaDropdownOS([o.gradeId]), 'nome', '— nenhuma —');
       gradeEl.value = o.gradeId || '';
     }
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
