@@ -396,7 +396,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -676,6 +676,7 @@ const STATE = {
   blocos: [],
   equipe: [],
   funcoes: [],
+  tarefas: [],
   etapas: [],
   componentes: [],
   ordens: [],
@@ -710,7 +711,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -833,6 +834,7 @@ function goto(page) {
   if (page === 'cad-blocos') renderBlocos();
   if (page === 'cad-equipe') renderEquipe();
   if (page === 'cad-funcoes') renderFuncoes();
+  if (page === 'cad-tarefas') renderTarefas();
   if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
@@ -873,7 +875,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
-    equipe: 'Membro da equipe', funcao: 'Função', etapa: 'Etapa de produção', componente: 'Componente'
+    equipe: 'Membro da equipe', funcao: 'Função', tarefa: 'Tarefa', etapa: 'Etapa de produção', componente: 'Componente'
   };
   title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
 
@@ -1233,6 +1235,13 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
       </div>`;
   }
+  else if (tipo === 'tarefa') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costurar manga, Pregar etiqueta"></div>
+        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+      </div>`;
+  }
   else if (tipo === 'componente') {
     const variacoes = [
       { v: '', lbl: '— sem variação —' },
@@ -1281,21 +1290,21 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     setTimeout(atualizarCoresComponente, 0);
   }
   else if (tipo === 'etapa') {
-    const funcoesIds = item.funcoesIds || [];
+    const tarefasIds = item.tarefasIds || [];
     const ordemSugerida = item.ordem ?? ((STATE.etapas.length + 1) * 10);
-    const funcoesCheckboxes = STATE.funcoes.length
-      ? STATE.funcoes.map(f => `
+    const tarefasCheckboxes = STATE.tarefas.length
+      ? STATE.tarefas.map(t => `
           <label style="display:inline-flex;align-items:center;gap:6px;margin:2px 8px 2px 0;padding:4px 8px;border:1px solid var(--line);border-radius:2px;cursor:pointer;">
-            <input type="checkbox" class="m-funcao-chk" value="${esc(f.id)}" ${funcoesIds.includes(f.id)?'checked':''}>
-            <span>${esc(f.nome)}</span>
+            <input type="checkbox" class="m-tarefa-chk" value="${esc(t.id)}" ${tarefasIds.includes(t.id)?'checked':''}>
+            <span>${esc(t.nome)}</span>
           </label>`).join('')
-      : '<em style="color:var(--ink-3);font-size:12px;">Nenhuma função cadastrada — cadastre primeiro em Funções.</em>';
+      : '<em style="color:var(--ink-3);font-size:12px;">Nenhuma tarefa cadastrada — cadastre primeiro em Tarefas.</em>';
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Corte, Costura, Acabamento"></div>
         <div class="field"><label>Ordem</label><input type="number" id="m-ordem" value="${ordemSugerida}" placeholder="Ex.: 10"><div class="field-hint">Menor primeiro na folha impressa</div></div>
-        <div class="field full"><label>Funções que executam esta etapa</label>
-          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">${funcoesCheckboxes}</div>
+        <div class="field full"><label>Tarefas desta etapa</label>
+          <div style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">${tarefasCheckboxes}</div>
         </div>
       </div>`;
   }
@@ -1430,7 +1439,7 @@ async function migrarImagensBase64() {
 function pluralize(tipo) {
   return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
            colecao:'colecoes', grade:'grades', desenho:'desenhos',
-           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', etapa:'etapas', componente:'componentes' }[tipo];
+           marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', tarefa:'tarefas', etapa:'etapas', componente:'componentes' }[tipo];
 }
 
 async function salvarCadastro() {
@@ -1603,11 +1612,16 @@ async function salvarCadastro() {
       }
     }
   }
+  else if (tipo === 'tarefa') {
+    if (!v('m-nome')) return toast('Nome obrigatório', 'err');
+    item.nome = v('m-nome');
+    item.desc = v('m-desc');
+  }
   else if (tipo === 'etapa') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.ordem = parseInt(v('m-ordem')) || 0;
-    item.funcoesIds = Array.from(document.querySelectorAll('.m-funcao-chk:checked')).map(c => c.value);
+    item.tarefasIds = Array.from(document.querySelectorAll('.m-tarefa-chk:checked')).map(c => c.value);
   }
   else if (tipo === 'componente') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1879,6 +1893,14 @@ function nomesFuncoesPorIds(ids) {
     .map(f => f.nome);
 }
 
+function nomesTarefasPorIds(ids) {
+  if (!ids || !ids.length) return [];
+  return ids
+    .map(id => STATE.tarefas.find(t => t.id === id))
+    .filter(Boolean)
+    .map(t => t.nome);
+}
+
 function renderComponentesCad() {
   const tb = document.getElementById('tbl-componentes');
   if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
@@ -1930,8 +1952,8 @@ function renderEtapasCad() {
   const tb = document.getElementById('tbl-etapas');
   if (!STATE.etapas.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma etapa cadastrada.</td></tr>`; return; }
   tb.innerHTML = etapasOrdenadas().map(e => {
-    const funcsNomes = nomesFuncoesPorIds(e.funcoesIds);
-    const badges = funcsNomes.length ? funcsNomes.map(n => `<span class="badge" style="margin-right:4px">${esc(n)}</span>`).join('') : '—';
+    const tarefasNomes = nomesTarefasPorIds(e.tarefasIds);
+    const badges = tarefasNomes.length ? tarefasNomes.map(n => `<span class="badge" style="margin-right:4px">${esc(n)}</span>`).join('') : '—';
     return `<tr><td>${e.ordem||0}</td><td><strong>${esc(e.nome)}</strong></td><td>${badges}</td>${acoesCell('etapa', e.id)}</tr>`;
   }).join('');
 }
@@ -1944,6 +1966,14 @@ function renderFuncoes() {
     const acoesHtml = acoes ? acoes.split(/\r?\n/).filter(x=>x.trim()).map(a => `<span class="badge" style="margin-right:4px">${esc(a)}</span>`).join('') : '—';
     return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${acoesHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
   }).join('');
+}
+
+function renderTarefas() {
+  const tb = document.getElementById('tbl-tarefas');
+  if (!tb) return;
+  if (!STATE.tarefas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma tarefa cadastrada.</td></tr>`; return; }
+  tb.innerHTML = STATE.tarefas.map(t => `
+    <tr><td><strong>${esc(t.nome)}</strong></td><td>${esc(t.desc)||'—'}</td>${acoesCell('tarefa', t.id)}</tr>`).join('');
 }
 
 function renderHome() {
@@ -2269,11 +2299,11 @@ function renderEtapas() {
   if (!cont) return;
   const checked = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
   const fonte = STATE.etapas.length
-    ? etapasOrdenadas().map(e => ({ nome: e.nome, funcs: nomesFuncoesPorIds(e.funcoesIds) }))
-    : STATE.etapasPadrao.map(nome => ({ nome, funcs: [] }));
+    ? etapasOrdenadas().map(e => ({ nome: e.nome, tarefas: nomesTarefasPorIds(e.tarefasIds) }))
+    : STATE.etapasPadrao.map(nome => ({ nome, tarefas: [] }));
   cont.innerHTML = fonte.map(e => {
-    const funcsBadges = e.funcs.length
-      ? `<div style="font-size:10px;color:var(--ink-3);margin-top:3px;">${e.funcs.map(f => `<span class="badge" style="margin-right:3px;font-size:10px;padding:1px 5px;">${esc(f)}</span>`).join('')}</div>`
+    const tarefasBadges = e.tarefas.length
+      ? `<div style="font-size:10px;color:var(--ink-3);margin-top:3px;">${e.tarefas.map(t => `<span class="badge" style="margin-right:3px;font-size:10px;padding:1px 5px;">${esc(t)}</span>`).join('')}</div>`
       : '';
     return `<label class="etapa-check ${checked.includes(e.nome)?'checked':''}">
       <span class="etapa-reorder">
@@ -2281,7 +2311,7 @@ function renderEtapas() {
         <button type="button" class="etapa-move" onclick="event.preventDefault(); event.stopPropagation(); moverEtapaForm(this, 1)" title="Mover para baixo">▼</button>
       </span>
       <input type="checkbox" value="${esc(e.nome)}" ${checked.includes(e.nome)?'checked':''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
-      <span>${esc(e.nome)}${funcsBadges}</span>
+      <span>${esc(e.nome)}${tarefasBadges}</span>
     </label>`;
   }).join('');
 }
@@ -4795,10 +4825,10 @@ function renderPrintSheet(o) {
           <div class="titulo">Etapas de Produção</div>
           ${(() => {
             if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
-            // Mantém a ordem salva na OS; busca as funções em STATE.etapas se existirem
+            // Mantém a ordem salva na OS; busca as tarefas em STATE.etapas se existirem
             const ordenadas = o.etapas.map(nome => {
               const cad = STATE.etapas.find(e => e.nome === nome);
-              return { nome, funcs: cad ? nomesFuncoesPorIds(cad.funcoesIds) : [] };
+              return { nome, tarefas: cad ? nomesTarefasPorIds(cad.tarefasIds) : [] };
             });
             const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;">
@@ -4806,7 +4836,7 @@ function renderPrintSheet(o) {
                 <li style="display:flex;align-items:center;padding:4px 6px;border-bottom:1px dotted #d4d0c5;">
                   ${checkbox}
                   <strong style="min-width:130px;">${esc(e.nome)}</strong>
-                  <span style="color:#555;flex:1;">${e.funcs.length ? esc(e.funcs.join(', ')) : '<em style="color:#999;">sem função definida</em>'}</span>
+                  <span style="color:#555;flex:1;">${e.tarefas.length ? esc(e.tarefas.join(', ')) : '<em style="color:#999;">sem tarefa definida</em>'}</span>
                 </li>`).join('')}
             </ul>`;
           })()}
@@ -4833,7 +4863,7 @@ function renderPrintSheet(o) {
 /* ========================================================= */
 // Lista canônica de todos os arrays persistidos
 const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
-                  'marcas','linhas','bases','blocos','equipe','funcoes','etapas','componentes','ordens'];
+                  'marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
 
 function exportarDados() {
   const data = { exportadoEm: new Date().toISOString() };
@@ -5029,7 +5059,9 @@ window.removerFaseGrade = removerFaseGrade;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
+window.renderTarefas = renderTarefas;
 window.renderComponentesCad = renderComponentesCad;
+window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
 window.aplicarVinculosModelo = aplicarVinculosModelo;
 window.previewDesenhoSelecionado = previewDesenhoSelecionado;
