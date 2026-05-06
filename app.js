@@ -3229,8 +3229,9 @@ function atualizarCalculosEnfesto() {
             }
           });
           const multRib = MULTIPLICADOR_PECAS.ribana || 2;
-          // Multiplicador por label de fase ribana: ribana moletom usa "unidades" da fase;
-          // demais ribanas usam o multiplicador padrão (2).
+          // Multiplicador por label de fase ribana: ribana com unidades cadastradas
+          // (qualquer ribana — moletom, malha algodao, gola polo) usa "unidades" da fase;
+          // ribanas sem unidades cadastradas usam o multiplicador padrão (2).
           const multPorLabelRib = {};
           papeis.forEach((p, idx) => {
             if (!(p.papel || '').startsWith('ribana_')) return;
@@ -3240,28 +3241,41 @@ function atualizarCalculosEnfesto() {
               ? (parseInt(fase?.unidades) || multRib)
               : multRib;
           });
+          // Para a regra simples de ribana:
+          //   camadas_ribana = camadas_principal × multPrincipal × (gradeTotal/n_tamanhos) / unidades
+          // multPrincipal é 1 quando ha moletom (totalMoletom = gradeTotal × camadas × 1).
+          // Para camiseta sem moletom, multPrincipal = 2 (1 camada de malha = 2 pecas/slot).
+          const nTamanhos = ['p','m','g','gg','g1','g2','g3']
+            .filter(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0).length;
+          const unidadePorTamMedia = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
+          const multPrincipalEnf = temMoletom
+            ? 1
+            : (categoriasUsadas.has('malha') ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
+          const calcCamadasRibana = (mult) => Math.max(1,
+            Math.ceil(camadas * multPrincipalEnf * unidadePorTamMedia / mult));
+          // Para o "Total" em pecas, usa referencia (totalMoletom ou totalForro).
+          // Se nao tiver, calcula como total de blusas.
+          const referenciaTotal = referencia || (gradeTotal * camadas * multPrincipalEnf);
           ribanaPorFase = grupos
             .filter(g => g.qty > 0)
             .map(g => {
               const mult = multPorLabelRib[g.label] || multRib;
-              const camadas = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * mult)) : 0;
               return {
                 label: g.label,
-                total: referencia * g.qty,
+                total: referenciaTotal * g.qty,
                 detalhes: g.detalhes,
-                camadas,
+                camadas: calcCamadasRibana(mult),
                 mult
               };
             });
           // Se tiver componentes sem match, agrupa num fallback "Ribana (outros)"
           if (sobra.length) {
             const qtyTot = sobra.reduce((s, x) => s + x.qty, 0);
-            const camadasOutros = gradeTotal > 0 ? Math.ceil(referencia / (gradeTotal * multRib)) : 0;
             ribanaPorFase.push({
               label: 'Ribana (outros)',
-              total: referencia * qtyTot,
+              total: referenciaTotal * qtyTot,
               detalhes: sobra.map(x => `${x.nome} ×${x.qty}`),
-              camadas: camadasOutros,
+              camadas: calcCamadasRibana(multRib),
               mult: multRib
             });
           }
@@ -3295,7 +3309,8 @@ function atualizarCalculosEnfesto() {
             </div>`);
         }
         if (ribanaPorFase.length) {
-          const refBlusas = totalMoletom || totalForro;
+          const nTamHint = ['p','m','g','gg','g1','g2','g3']
+            .filter(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0).length;
           ribanaPorFase.forEach(rf => {
             const hint = rf.detalhes.length
               ? ` <span style="font-size:11px;color:var(--ink-3);">(${esc(rf.detalhes.join(' + '))})</span>`
@@ -3309,7 +3324,7 @@ function atualizarCalculosEnfesto() {
                 </div>
                 <div style="font-size:11px;color:var(--ink-3);margin-top:2px;">
                   Camadas sugeridas: <strong>${rf.camadas}</strong>
-                  (1 camada = ${m} peça${m===1?'':'s'}/tamanho; ${refBlusas} peças ÷ ${gradeTotal*m})
+                  (1 camada = ${m} peça${m===1?'':'s'}/tamanho × ${nTamHint} tamanho${nTamHint===1?'':'s'} = ${m * nTamHint} peças/camada)
                 </div>
               </div>`);
           });
@@ -3423,17 +3438,23 @@ function calcularCamadasParaProducao() {
       // Enfesto forro: camadas = metade das camadas de moletom
       val = Math.max(1, Math.ceil(camadasPrincipal / 2));
     } else if ((papel.papel || '').startsWith('ribana_')) {
-      // Enfesto ribana:
-      //  - Ribana moletom: regra simples — camadas = camadasMoletom / unidades.
-      //    Ignora qtdPorBlusa do componente (a relacao com moletom e direta:
-      //    1x=igual, 2x=metade, 4x=um quarto, etc.).
-      //  - Ribana padrao: usa qtdPorBlusa do componente, multiplicador fixo (2).
+      // Enfesto ribana com unidades cadastradas:
+      //   "unidades" = peças produzidas por TAMANHO por camada de ribana.
+      //   Ex.: 2x para Barra+Punhos moletom (2 barras + 4 punhos por tamanho);
+      //        10x para Gola (10 golas/tamanho); 20x quando a grade tem 2/tam.
+      //   total_pecas_ribana = blusas × q_componente
+      //   pecas_por_camada   = unidades × n_tamanhos × q_componente (q cancela)
+      //   camadas_ribana     = total_blusas / (unidades × n_tamanhos)
+      //                      = camadasPrincipal × multPrincipal × (gradeTotal/n_tamanhos) / unidades
       const fase = fases[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
       if (isTecidoRibana(tecFase)) {
         const unidades = parseInt(fase.unidades) || multRib;
-        val = Math.max(1, Math.ceil(camadasPrincipal / unidades));
+        const nTamanhos = qtdsPorTamanho.length;
+        const unidadePorTamMedia = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
+        val = Math.max(1, Math.ceil(camadasPrincipal * multPrincipal * unidadePorTamMedia / unidades));
       } else {
+        // Ribana padrao (sem unidades cadastradas): usa qtdPorBlusa + mult fixo
         const q = qtyPorLabelRibana[papel.label] || 0;
         val = q > 0
           ? Math.max(1, Math.ceil(blusas * q / (gradeTotal * multRib)))
