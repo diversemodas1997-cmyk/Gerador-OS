@@ -681,7 +681,7 @@ const STATE = {
   componentes: [],
   ordens: [],
   osCounter: 0,
-  etapasPadrao: ['Corte', 'Termo (Frente)', 'Costura', 'Travetes (Bolso)', 'Acabamento', 'Estampa', 'Retirada de fios', 'Lavanderia'],
+  etapasPadrao: ['Corte', 'Acabamento de mangas', 'Costura', 'Retirada de fios', 'Estampa', 'Lavanderia', 'Ensaque', 'Expedição'],
   componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
 };
 
@@ -1407,6 +1407,26 @@ function renumerarTarefasEtapa() {
     const lbl = b.querySelector('.tarefa-label');
     if (lbl) lbl.textContent = `TAREFA ${i+1}`;
   });
+}
+
+// Forca um reload completo dos dados do Supabase para o STATE em memoria.
+// Util quando o cache local diverge do servidor (ex.: cadastros feitos em
+// outra sessao/aba que ainda nao chegaram nesta).
+async function recarregarDadosDoServidor() {
+  if (!exigirAdmin('recarregar dados do servidor')) return;
+  if (!supa) { toast('Supabase nao carregado', 'err'); return; }
+  toast('Recarregando do servidor...', '');
+  try {
+    await loadState();
+    // Re-renderiza a pagina atual
+    const ativa = document.querySelector('.page:not(.hidden)');
+    const pagina = ativa?.dataset?.page || 'home';
+    goto(pagina);
+    toast('Dados atualizados do servidor', 'ok');
+  } catch (e) {
+    console.error('Falha ao recarregar:', e);
+    toast('Erro ao recarregar dados', 'err');
+  }
 }
 
 // Handler do botao de Configuracoes: le o codigo digitado, confirma e dispara a copia.
@@ -5219,6 +5239,7 @@ window.addTarefaEtapaRow = addTarefaEtapaRow;
 window.removerTarefaEtapa = removerTarefaEtapa;
 window.copiarEtapasEntreDesenhos = copiarEtapasEntreDesenhos;
 window.rodarCopiarEtapasParaTodos = rodarCopiarEtapasParaTodos;
+window.recarregarDadosDoServidor = recarregarDadosDoServidor;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
