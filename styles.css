@@ -992,3 +992,34 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   margin-left: 6px;
 }
 .table tr.grade-folder:hover td { background: inherit; }
+
+/* Checkboxes interativos da folha de impressao (etapas/tarefas) */
+.os-check {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #000;
+  margin: 0 8px 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+  background: #fff;
+  flex-shrink: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.os-check.sub {
+  width: 8px;
+  height: 8px;
+  border-width: 1px;
+  margin-right: 5px;
+}
+.os-check:checked {
+  background: #000;
+}
+@media print {
+  .os-check {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

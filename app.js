@@ -4414,6 +4414,29 @@ function formatDate(iso) {
 
 let printOsAtual = null;
 
+// Marca/desmarca etapa do checklist da OS pronta. Persiste em o.progresso e
+// salva STATE.ordens — outros usuarios veem a evolucao ao reabrir a OS.
+async function togglarChecklistEtapa(osId, etapaNome, checked) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.etapasCheck = os.progresso.etapasCheck || {};
+  if (checked) os.progresso.etapasCheck[etapaNome] = true;
+  else delete os.progresso.etapasCheck[etapaNome];
+  try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
+}
+
+async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.tarefasCheck = os.progresso.tarefasCheck || {};
+  os.progresso.tarefasCheck[etapaNome] = os.progresso.tarefasCheck[etapaNome] || {};
+  if (checked) os.progresso.tarefasCheck[etapaNome][tarefaNome] = true;
+  else delete os.progresso.tarefasCheck[etapaNome][tarefaNome];
+  try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistTarefa', e); }
+}
+
 function verOS(id) {
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
@@ -5040,20 +5063,31 @@ function renderPrintSheet(o) {
               const cad = STATE.etapas.find(e => e.nome === nome);
               return { nome, tarefas: cad ? tarefasDaEtapa(cad).map(t => t.nome) : [] };
             });
-            const checkbox = `<span style="display:inline-block;width:10px;height:10px;border:1.5px solid #000;margin-right:8px;vertical-align:middle;flex-shrink:0;"></span>`;
-            const subCheckbox = `<span style="display:inline-block;width:8px;height:8px;border:1px solid #000;margin-right:5px;vertical-align:middle;flex-shrink:0;"></span>`;
+            const prog = o.progresso || {};
+            const etapaCk = (nomeEtapa) => {
+              const checked = !!prog.etapasCheck?.[nomeEtapa];
+              return `<input type="checkbox" class="os-check" ${checked?'checked':''}
+                onchange="togglarChecklistEtapa('${esc(o.id)}', this.dataset.etapa, this.checked)"
+                data-etapa="${esc(nomeEtapa)}">`;
+            };
+            const tarefaCk = (nomeEtapa, nomeTarefa) => {
+              const checked = !!prog.tarefasCheck?.[nomeEtapa]?.[nomeTarefa];
+              return `<input type="checkbox" class="os-check sub" ${checked?'checked':''}
+                onchange="togglarChecklistTarefa('${esc(o.id)}', this.dataset.etapa, this.dataset.tarefa, this.checked)"
+                data-etapa="${esc(nomeEtapa)}" data-tarefa="${esc(nomeTarefa)}">`;
+            };
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;column-count:2;column-gap:16px;">
               ${ordenadas.map(e => `
                 <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;">
                   <div style="display:flex;align-items:center;">
-                    ${checkbox}
+                    ${etapaCk(e.nome)}
                     <strong>${esc(e.nome)}</strong>
                   </div>
                   ${e.tarefas.length ? `
                     <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
                       ${e.tarefas.map(t => `
                         <li style="display:flex;align-items:center;padding:1px 0;">
-                          ${subCheckbox}
+                          ${tarefaCk(e.nome, t)}
                           <span>${esc(t)}</span>
                         </li>`).join('')}
                     </ul>` : ''}
@@ -5284,6 +5318,8 @@ window.removerTarefaEtapa = removerTarefaEtapa;
 window.copiarEtapasEntreDesenhos = copiarEtapasEntreDesenhos;
 window.rodarCopiarEtapasParaTodos = rodarCopiarEtapasParaTodos;
 window.recarregarDadosDoServidor = recarregarDadosDoServidor;
+window.togglarChecklistEtapa = togglarChecklistEtapa;
+window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
