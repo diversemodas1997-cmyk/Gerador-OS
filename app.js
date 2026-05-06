@@ -1409,6 +1409,32 @@ function renumerarTarefasEtapa() {
   });
 }
 
+// Utilitario admin: copia as etapasNomes (e a ordem) de um desenho de origem
+// para todos os demais desenhos cadastrados. Uso: copiarEtapasEntreDesenhos('001').
+async function copiarEtapasEntreDesenhos(codigoOrigem) {
+  if (!exigirAdmin('copiar etapas entre desenhos')) return;
+  const origem = STATE.desenhos.find(d => (d.codigo || '').trim() === String(codigoOrigem).trim());
+  if (!origem) {
+    toast(`Desenho "${codigoOrigem}" nao encontrado`, 'err');
+    return;
+  }
+  const etapasNomes = Array.isArray(origem.etapasNomes) ? [...origem.etapasNomes] : [];
+  if (!etapasNomes.length) {
+    toast(`Desenho "${codigoOrigem}" nao tem etapas configuradas`, 'err');
+    return;
+  }
+  let alteradas = 0;
+  STATE.desenhos.forEach(d => {
+    if (d.id === origem.id) return;
+    d.etapasNomes = [...etapasNomes];
+    alteradas++;
+  });
+  await saveState('desenhos');
+  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenhos`, 'ok');
+  if (typeof renderDesenhos === 'function') renderDesenhos();
+  return { origem: codigoOrigem, etapas: etapasNomes, alteradas };
+}
+
 function atualizarCoresComponente() {
   const sel = document.getElementById('m-comp-variacao');
   const wrap = document.getElementById('m-comp-cores-wrap');
@@ -5173,6 +5199,7 @@ window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
 window.addTarefaEtapaRow = addTarefaEtapaRow;
 window.removerTarefaEtapa = removerTarefaEtapa;
+window.copiarEtapasEntreDesenhos = copiarEtapasEntreDesenhos;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
