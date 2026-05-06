@@ -2990,10 +2990,17 @@ function gradesParaDropdownOS(extraIds = []) {
   const cat = categoriaDesenhoOS();
   const tipoModelo = tipoPecaModeloOS();
   const variacao = variacaoDesenhoOS();
-  if (!cat && !tipoModelo && !variacao) return STATE.grades;
   const keep = new Set(extraIds.filter(Boolean));
+  // Grades conjugadas ficam ocultas do dropdown — usadas internamente pelo
+  // fluxo de auto-geracao (Camiseta Bicolor → Basica conjugada). Continua
+  // visivel se for a grade ja salva da OS em edicao (via extraIds).
+  const ocultaConjugada = (g) => /conjug/i.test(g.nome || '');
+  if (!cat && !tipoModelo && !variacao) {
+    return STATE.grades.filter(g => keep.has(g.id) || !ocultaConjugada(g));
+  }
   return STATE.grades.filter(g => {
     if (keep.has(g.id)) return true;
+    if (ocultaConjugada(g)) return false;
     if (cat && categoriaPrincipalGrade(g) !== cat) return false;
     if (tipoModelo && g.tipoPeca && g.tipoPeca !== tipoModelo) return false;
     if (variacao && g.variacao && g.variacao !== variacao) return false;
