@@ -4486,6 +4486,16 @@ async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistTarefa', e); }
 }
 
+async function togglarChecklistEnfesto(osId, ordem, checked) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.enfestosCheck = os.progresso.enfestosCheck || {};
+  if (checked) os.progresso.enfestosCheck[ordem] = true;
+  else delete os.progresso.enfestosCheck[ordem];
+  try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
+}
+
 // Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
 // re-renderizar a sheet inteira. Usado pelo realtime/polling para refletir
 // mudancas de outros usuarios sem piscar a tela nem perder o scroll.
@@ -4498,6 +4508,10 @@ function aplicarProgressoCheckboxes(os) {
     const desejado = tarefaNome
       ? !!prog.tarefasCheck?.[etapaNome]?.[tarefaNome]
       : !!prog.etapasCheck?.[etapaNome];
+    if (inp.checked !== desejado) inp.checked = desejado;
+  });
+  document.querySelectorAll('.os-check[data-enfesto]').forEach(inp => {
+    const desejado = !!prog.enfestosCheck?.[inp.dataset.enfesto];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
 }
@@ -4843,6 +4857,7 @@ function renderEnfestoBox(o) {
     ? blocos.map((b, i) => ({ b, i }))
     : tecs.map((t, i) => ({ b: { ordem: i+1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
 
+  const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const linhasEnfestos = linhas.map(({ b, i }) => {
     const ord = b.ordem || (i+1);
     const fase = fasesPorOrdem[ord] || {};
@@ -4864,8 +4879,9 @@ function renderEnfestoBox(o) {
     // re-aplicar a grade dentro de cada OS antiga.
     const compEf = (parseFloat(fase.comp) > 0 ? fase.comp : b.comp) || '';
     const largEf = (parseFloat(fase.larg) > 0 ? fase.larg : b.larg) || '';
+    const ckEnf = !!enfestosCheck[ord];
     return `<tr>
-      <td style="text-align:center;"><span style="display:inline-block;width:11px;height:11px;border:1.5px solid #000;vertical-align:middle;"></span></td>
+      <td style="text-align:center;"><input type="checkbox" class="os-check" ${ckEnf?'checked':''} data-enfesto="${esc(String(ord))}" onchange="togglarChecklistEnfesto('${esc(o.id)}', this.dataset.enfesto, this.checked)" style="margin:0;"></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(nomeEnf) || '—'}</td>
       <td>${esc(tecidoReal) || '—'}</td>
@@ -5385,6 +5401,7 @@ window.rodarCopiarEtapasParaTodos = rodarCopiarEtapasParaTodos;
 window.recarregarDadosDoServidor = recarregarDadosDoServidor;
 window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
+window.togglarChecklistEnfesto = togglarChecklistEnfesto;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
