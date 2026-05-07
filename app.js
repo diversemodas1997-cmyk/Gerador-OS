@@ -2429,6 +2429,11 @@ function aplicarVinculosDesenho() {
         aplicou = true;
       }
     }
+    // Se já há grade preset ativa, re-aplica pra recalcular as cores das fases
+    // com base no NOVO desenho (corPorFase usa desenhoAtual). Sem isso, cores
+    // antigas do desenho anterior ficam congeladas em tecidos/enfesto.
+    const gradePresetAtivo = !!document.getElementById('f-grade-preset')?.value;
+    if (gradePresetAtivo) aplicarGradePreset();
     if (aplicou) toast('Campos vinculados preenchidos automaticamente', 'ok');
   } finally {
     aplicandoVinculosDesenho = false;
