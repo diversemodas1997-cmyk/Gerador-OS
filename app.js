@@ -4501,15 +4501,15 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
 }
 
-async function togglarChecklistEnfestoTom(osId, ordem, tom, checked) {
+async function togglarTotalTamanhoTom(osId, tom, size, checked) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
-  os.progresso.enfestoTons = os.progresso.enfestoTons || {};
-  os.progresso.enfestoTons[ordem] = os.progresso.enfestoTons[ordem] || {};
-  if (checked) os.progresso.enfestoTons[ordem][tom] = true;
-  else delete os.progresso.enfestoTons[ordem][tom];
-  try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfestoTom', e); }
+  os.progresso.totalTamanhoTons = os.progresso.totalTamanhoTons || {};
+  os.progresso.totalTamanhoTons[tom] = os.progresso.totalTamanhoTons[tom] || {};
+  if (checked) os.progresso.totalTamanhoTons[tom][size] = true;
+  else delete os.progresso.totalTamanhoTons[tom][size];
+  try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
 }
 
 // Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
@@ -4530,10 +4530,10 @@ function aplicarProgressoCheckboxes(os) {
     const desejado = !!prog.enfestosCheck?.[inp.dataset.enfesto];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
-  document.querySelectorAll('.os-check[data-enfesto-tom]').forEach(inp => {
-    const ord = inp.dataset.enfestoTomOrd;
-    const tom = inp.dataset.enfestoTom;
-    const desejado = !!prog.enfestoTons?.[ord]?.[tom];
+  document.querySelectorAll('.os-check[data-tt-tom]').forEach(inp => {
+    const tom = inp.dataset.ttTom;
+    const sz = inp.dataset.ttSize;
+    const desejado = !!prog.totalTamanhoTons?.[tom]?.[sz];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
 }
@@ -4880,8 +4880,6 @@ function renderEnfestoBox(o) {
     : tecs.map((t, i) => ({ b: { ordem: i+1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
-  const enfestoTons = (o.progresso && o.progresso.enfestoTons) || {};
-  const isViesNome = s => /vi[eé]s/i.test(String(s || ''));
   const linhasEnfestos = linhas.map(({ b, i }) => {
     const ord = b.ordem || (i+1);
     const fase = fasesPorOrdem[ord] || {};
@@ -4904,22 +4902,6 @@ function renderEnfestoBox(o) {
     const compEf = (parseFloat(fase.comp) > 0 ? fase.comp : b.comp) || '';
     const largEf = (parseFloat(fase.larg) > 0 ? fase.larg : b.larg) || '';
     const ckEnf = !!enfestosCheck[ord];
-    // Viés não recebe sub-checklist de tons
-    const ehVies = isViesNome(fase.nome) || isViesNome(b.nomeTecido) || isViesNome(nomeEnf);
-    const tonsRow = ehVies ? '' : (() => {
-      const tonsOrd = enfestoTons[ord] || {};
-      const cb = (tom) => {
-        const ck = !!tonsOrd[tom] ? 'checked' : '';
-        return `<label style="display:flex;align-items:center;gap:4px;font-size:7pt;font-weight:600;line-height:1.4;">
-          <input type="checkbox" class="os-check" ${ck} data-enfesto-tom-ord="${esc(String(ord))}" data-enfesto-tom="${tom}" onchange="togglarChecklistEnfestoTom('${esc(o.id)}', this.dataset.enfestoTomOrd, this.dataset.enfestoTom, this.checked)" style="margin:0;">
-          Tom ${tom}
-        </label>`;
-      };
-      return `<tr class="enfesto-tons-row">
-        <td></td>
-        <td colspan="8" style="padding:2px 4px;background:#f4faf5;">${cb(1)}${cb(2)}${cb(3)}</td>
-      </tr>`;
-    })();
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" class="os-check" ${ckEnf?'checked':''} data-enfesto="${esc(String(ord))}" onchange="togglarChecklistEnfesto('${esc(o.id)}', this.dataset.enfesto, this.checked)" style="margin:0;"></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
@@ -4930,7 +4912,7 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
       <td>&nbsp;</td>
-    </tr>${tonsRow}`;
+    </tr>`;
   }).join('');
 
   return `
@@ -5121,13 +5103,15 @@ function renderPrintSheet(o) {
         <!-- GRADE -->
         <table class="side-table tab-tecidos">
           <thead>
-            <tr><th colspan="8" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
+            <tr><th colspan="9" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
             <tr>
+              <th></th>
               <th>P</th><th>M</th><th>G</th><th>GG</th><th>G1</th><th>G2</th><th>G3</th><th>Total</th>
             </tr>
           </thead>
           <tbody>
             <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;">
+              <td></td>
               <td>${g.p>0?g.p:''}</td><td>${g.m>0?g.m:''}</td><td>${g.g>0?g.g:''}</td>
               <td>${g.gg>0?g.gg:''}</td><td>${g.g1>0?g.g1:''}</td><td>${g.g2>0?g.g2:''}</td><td>${g.g3>0?g.g3:''}</td>
               <td style="background:#fff59d;">${g.total>0?g.total:''}</td>
@@ -5160,13 +5144,33 @@ function renderPrintSheet(o) {
               const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = (g.total || 0) * cam * multPrincipal;
+              const sizes = ['p','m','g','gg','g1','g2','g3'];
+              const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
+              const tomRow = (tom) => {
+                const cellsSize = sizes.map(sz => {
+                  if ((g[sz] || 0) <= 0) return '<td></td>';
+                  const ck = !!ttTons[tom]?.[sz] ? 'checked' : '';
+                  return `<td style="text-align:center;"><input type="checkbox" class="os-check" ${ck} data-tt-tom="${tom}" data-tt-size="${sz}" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.dataset.ttSize, this.checked)" style="margin:0;"></td>`;
+                }).join('');
+                const ckT = !!ttTons[tom]?.['total'] ? 'checked' : '';
+                const totalCell = (g.total||0) > 0
+                  ? `<td style="text-align:center;background:#c9e8d0;"><input type="checkbox" class="os-check" ${ckT} data-tt-tom="${tom}" data-tt-size="total" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.dataset.ttSize, this.checked)" style="margin:0;"></td>`
+                  : '<td style="background:#c9e8d0;"></td>';
+                return `<tr style="background:#f4faf5;">
+                  <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;white-space:nowrap;padding:0 4px;">Tom ${tom}</td>
+                  ${cellsSize}
+                  ${totalCell}
+                </tr>`;
+              };
               return `
-                <tr><th colspan="8" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
+                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
+                  <td></td>
                   <td>${t(g.p)}</td><td>${t(g.m)}</td><td>${t(g.g)}</td>
                   <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
-                </tr>`;
+                </tr>
+                ${tomRow(1)}${tomRow(2)}${tomRow(3)}`;
             })()}
           </tbody>
         </table>
@@ -5442,7 +5446,7 @@ window.recarregarDadosDoServidor = recarregarDadosDoServidor;
 window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
-window.togglarChecklistEnfestoTom = togglarChecklistEnfestoTom;
+window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
