@@ -4391,6 +4391,169 @@ async function salvarEImprimir() {
   }
 }
 
+/* ========================================================= */
+/*           ETIQUETAS ADESIVAS (3 por A4)                   */
+/* ========================================================= */
+// Monta os campos da etiqueta a partir da OS, abre popup com N paginas
+// (3 etiquetas iguais por pagina) e dispara window.print(). VOL fica
+// sempre vazio — preenchido a mao na expedicao.
+function imprimirEtiquetas(osId) {
+  const o = STATE.ordens.find(x => x.id === osId);
+  if (!o) { toast('OS não encontrada', 'err'); return; }
+
+  const op = o.os || o.codigo || '—';
+  const qtde = o.grade?.total || 0;
+  const sizesAtivos = ['p','m','g','gg','g1','g2','g3']
+    .filter(k => (o.grade?.[k] || 0) > 0)
+    .map(s => s.toUpperCase());
+  const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
+
+  const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
+  const corDesenho = desenho?.corPrincipalId
+    ? (STATE.cores.find(c => c.id === desenho.corPrincipalId)?.nome || '')
+    : '';
+  const cor = o.fases?.[0]?.corNome
+           || o.tecidos?.[0]?.corNome
+           || corDesenho
+           || '—';
+
+  const paginasStr = window.prompt('Quantas páginas de etiquetas deseja imprimir?\n(cada página tem 3 etiquetas)', '1');
+  if (paginasStr === null) return;
+  const paginas = Math.max(1, parseInt(paginasStr) || 1);
+
+  const escEt = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const etiqueta = `
+    <div class="label">
+      <div class="head">DIVERSE ESTILOS</div>
+      <div class="row">OP: ${escEt(op)}</div>
+      <div class="row">QTDE: ${escEt(qtde)}</div>
+      <div class="row">TAM: ${escEt(tam)}</div>
+      <div class="row">COR: ${escEt(cor)}</div>
+      <div class="row">VOL:</div>
+    </div>`;
+  const pagina = `<div class="page">${etiqueta}${etiqueta}${etiqueta}</div>`;
+  const corpo = Array.from({ length: paginas }, () => pagina).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiquetas — OP ${escEt(op)}</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body { font-family: 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Arial, sans-serif; }
+  .toolbar {
+    padding: 12px;
+    background: #f4f4f4;
+    border-bottom: 1px solid #ccc;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .toolbar button {
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+    margin: 0 4px;
+    border: 1px solid #888;
+    background: #fff;
+    border-radius: 3px;
+  }
+  .toolbar button.primary {
+    background: #16a34a;
+    color: #fff;
+    border-color: #15803d;
+    font-weight: 600;
+  }
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 6mm;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    gap: 4mm;
+    margin: 0 auto;
+    background: #fff;
+  }
+  .page:last-child { page-break-after: auto; }
+  .label {
+    flex: 1 1 0;
+    min-height: 0;
+    border: 1px solid #000;
+    padding: 12mm 14mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3mm;
+  }
+  .label .head {
+    text-align: center;
+    font-weight: 800;
+    font-size: 30pt;
+    letter-spacing: .04em;
+    margin: 0 0 4mm 0;
+  }
+  .label .row {
+    font-size: 20pt;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-align: left;
+  }
+  @media print {
+    .toolbar { display: none !important; }
+    .page { margin: 0; }
+    body { background: #fff; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="primary" onclick="window.print()">🖨 Imprimir</button>
+    <button onclick="window.close()">Fechar</button>
+    <span style="margin-left:12px;color:#555;font-size:13px;">${paginas} página${paginas>1?'s':''} · ${paginas*3} etiqueta${paginas*3>1?'s':''}</span>
+  </div>
+  ${corpo}
+  <script>
+    window.addEventListener('load', () => { setTimeout(() => window.print(), 350); });
+  </script>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=1100');
+  if (!w) {
+    toast('Popup bloqueado pelo navegador. Permita popups deste site.', 'err');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+function imprimirEtiquetasAtual() {
+  if (!printOsAtual) { toast('Abra uma OS antes', 'err'); return; }
+  imprimirEtiquetas(printOsAtual.id);
+}
+
+async function salvarEImprimirEtiquetas() {
+  const data = coletaOS();
+  if (!data.os && !data.codigo) {
+    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
+  }
+  if (!validarAntesDeSalvar(data)) return;
+  const idx = STATE.ordens.findIndex(o => o.id === data.id);
+  if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
+  await saveState('ordens');
+  await atualizarCounterOS(data.os);
+  osEditId = null;
+  imprimirEtiquetas(data.id);
+}
+
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   if (!sheet) return;
@@ -4466,6 +4629,7 @@ function renderListaOS() {
       <td>${o.grade?.total||0} pç</td>
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
+        <button class="edit" onclick="imprimirEtiquetas('${o.id}')">etiquetas</button>
         <button class="edit" onclick="editarOS('${o.id}')">editar</button>
         <button class="edit" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
@@ -5466,6 +5630,9 @@ window.reindexTecidos = reindexTecidos;
 window.reindexVariantes = reindexVariantes;
 window.salvarOS = salvarOS;
 window.salvarEImprimir = salvarEImprimir;
+window.imprimirEtiquetas = imprimirEtiquetas;
+window.imprimirEtiquetasAtual = imprimirEtiquetasAtual;
+window.salvarEImprimirEtiquetas = salvarEImprimirEtiquetas;
 window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
 window.conectarPastaPdf = conectarPastaPdf;
 window.desconectarPastaPdf = desconectarPastaPdf;
