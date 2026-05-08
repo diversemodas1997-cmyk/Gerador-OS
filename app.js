@@ -4501,14 +4501,13 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
 }
 
-async function togglarTotalTamanhoTom(osId, tom, size, checked) {
+async function togglarTotalTamanhoTom(osId, tom, checked) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
   os.progresso.totalTamanhoTons = os.progresso.totalTamanhoTons || {};
-  os.progresso.totalTamanhoTons[tom] = os.progresso.totalTamanhoTons[tom] || {};
-  if (checked) os.progresso.totalTamanhoTons[tom][size] = true;
-  else delete os.progresso.totalTamanhoTons[tom][size];
+  if (checked) os.progresso.totalTamanhoTons[tom] = true;
+  else delete os.progresso.totalTamanhoTons[tom];
   try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
 }
 
@@ -4532,8 +4531,7 @@ function aplicarProgressoCheckboxes(os) {
   });
   document.querySelectorAll('.os-check[data-tt-tom]').forEach(inp => {
     const tom = inp.dataset.ttTom;
-    const sz = inp.dataset.ttSize;
-    const desejado = !!prog.totalTamanhoTons?.[tom]?.[sz];
+    const desejado = !!prog.totalTamanhoTons?.[tom];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
 }
@@ -5144,22 +5142,18 @@ function renderPrintSheet(o) {
               const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = (g.total || 0) * cam * multPrincipal;
-              const sizes = ['p','m','g','gg','g1','g2','g3'];
               const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
               const tomRow = (tom) => {
-                const cellsSize = sizes.map(sz => {
-                  if ((g[sz] || 0) <= 0) return '<td></td>';
-                  const ck = !!ttTons[tom]?.[sz] ? 'checked' : '';
-                  return `<td style="text-align:center;"><input type="checkbox" class="os-check" ${ck} data-tt-tom="${tom}" data-tt-size="${sz}" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.dataset.ttSize, this.checked)" style="margin:0;"></td>`;
-                }).join('');
-                const ckT = !!ttTons[tom]?.['total'] ? 'checked' : '';
-                const totalCell = (g.total||0) > 0
-                  ? `<td style="text-align:center;background:#c9e8d0;"><input type="checkbox" class="os-check" ${ckT} data-tt-tom="${tom}" data-tt-size="total" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.dataset.ttSize, this.checked)" style="margin:0;"></td>`
-                  : '<td style="background:#c9e8d0;"></td>';
+                const ck = !!ttTons[tom] ? 'checked' : '';
                 return `<tr style="background:#f4faf5;">
-                  <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;white-space:nowrap;padding:0 4px;">Tom ${tom}</td>
-                  ${cellsSize}
-                  ${totalCell}
+                  <td style="white-space:nowrap;padding:1px 4px;">
+                    <label style="display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;">
+                      <input type="checkbox" class="os-check" ${ck} data-tt-tom="${tom}" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.checked)" style="margin:0;">
+                      Tom ${tom}
+                    </label>
+                  </td>
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                  <td style="background:#c9e8d0;"></td>
                 </tr>`;
               };
               return `
