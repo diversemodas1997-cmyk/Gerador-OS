@@ -4501,6 +4501,17 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
 }
 
+async function togglarChecklistEnfestoTom(osId, ordem, tom, checked) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.enfestoTons = os.progresso.enfestoTons || {};
+  os.progresso.enfestoTons[ordem] = os.progresso.enfestoTons[ordem] || {};
+  if (checked) os.progresso.enfestoTons[ordem][tom] = true;
+  else delete os.progresso.enfestoTons[ordem][tom];
+  try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfestoTom', e); }
+}
+
 // Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
 // re-renderizar a sheet inteira. Usado pelo realtime/polling para refletir
 // mudancas de outros usuarios sem piscar a tela nem perder o scroll.
@@ -4517,6 +4528,12 @@ function aplicarProgressoCheckboxes(os) {
   });
   document.querySelectorAll('.os-check[data-enfesto]').forEach(inp => {
     const desejado = !!prog.enfestosCheck?.[inp.dataset.enfesto];
+    if (inp.checked !== desejado) inp.checked = desejado;
+  });
+  document.querySelectorAll('.os-check[data-enfesto-tom]').forEach(inp => {
+    const ord = inp.dataset.enfestoTomOrd;
+    const tom = inp.dataset.enfestoTom;
+    const desejado = !!prog.enfestoTons?.[ord]?.[tom];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
 }
@@ -4863,6 +4880,8 @@ function renderEnfestoBox(o) {
     : tecs.map((t, i) => ({ b: { ordem: i+1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
+  const enfestoTons = (o.progresso && o.progresso.enfestoTons) || {};
+  const isViesNome = s => /vi[eé]s/i.test(String(s || ''));
   const linhasEnfestos = linhas.map(({ b, i }) => {
     const ord = b.ordem || (i+1);
     const fase = fasesPorOrdem[ord] || {};
@@ -4885,6 +4904,22 @@ function renderEnfestoBox(o) {
     const compEf = (parseFloat(fase.comp) > 0 ? fase.comp : b.comp) || '';
     const largEf = (parseFloat(fase.larg) > 0 ? fase.larg : b.larg) || '';
     const ckEnf = !!enfestosCheck[ord];
+    // Viés não recebe sub-checklist de tons
+    const ehVies = isViesNome(fase.nome) || isViesNome(b.nomeTecido) || isViesNome(nomeEnf);
+    const tonsRow = ehVies ? '' : (() => {
+      const tonsOrd = enfestoTons[ord] || {};
+      const cb = (tom) => {
+        const ck = !!tonsOrd[tom] ? 'checked' : '';
+        return `<label style="display:inline-flex;align-items:center;gap:3px;margin-right:10px;font-size:7pt;font-weight:600;">
+          <input type="checkbox" class="os-check" ${ck} data-enfesto-tom-ord="${esc(String(ord))}" data-enfesto-tom="${tom}" onchange="togglarChecklistEnfestoTom('${esc(o.id)}', this.dataset.enfestoTomOrd, this.dataset.enfestoTom, this.checked)" style="margin:0;">
+          Tom ${tom}
+        </label>`;
+      };
+      return `<tr class="enfesto-tons-row">
+        <td></td>
+        <td colspan="8" style="padding:2px 4px;background:#f4faf5;">${cb(1)}${cb(2)}${cb(3)}</td>
+      </tr>`;
+    })();
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" class="os-check" ${ckEnf?'checked':''} data-enfesto="${esc(String(ord))}" onchange="togglarChecklistEnfesto('${esc(o.id)}', this.dataset.enfesto, this.checked)" style="margin:0;"></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
@@ -4895,7 +4930,7 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
       <td>&nbsp;</td>
-    </tr>`;
+    </tr>${tonsRow}`;
   }).join('');
 
   return `
@@ -5407,6 +5442,7 @@ window.recarregarDadosDoServidor = recarregarDadosDoServidor;
 window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
+window.togglarChecklistEnfestoTom = togglarChecklistEnfestoTom;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
