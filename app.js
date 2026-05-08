@@ -4910,7 +4910,7 @@ function renderEnfestoBox(o) {
       const tonsOrd = enfestoTons[ord] || {};
       const cb = (tom) => {
         const ck = !!tonsOrd[tom] ? 'checked' : '';
-        return `<label style="display:inline-flex;align-items:center;gap:3px;margin-right:10px;font-size:7pt;font-weight:600;">
+        return `<label style="display:flex;align-items:center;gap:4px;font-size:7pt;font-weight:600;line-height:1.4;">
           <input type="checkbox" class="os-check" ${ck} data-enfesto-tom-ord="${esc(String(ord))}" data-enfesto-tom="${tom}" onchange="togglarChecklistEnfestoTom('${esc(o.id)}', this.dataset.enfestoTomOrd, this.dataset.enfestoTom, this.checked)" style="margin:0;">
           Tom ${tom}
         </label>`;
