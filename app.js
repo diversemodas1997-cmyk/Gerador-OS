@@ -4402,7 +4402,30 @@ function imprimirEtiquetas(osId) {
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
   const op = o.os || o.codigo || '—';
-  const qtde = o.grade?.total || 0;
+  // QTDE = total de unidades produzidas (grade × camadas × multPrincipal),
+  // mesma logica da celula "Total" no Total por tamanho da folha pronta.
+  const camadas = o.enfesto?.camadas || 0;
+  const fasesP = o.fases || [];
+  const tecsP = o.tecidos || [];
+  const temMoletom = fasesP.some(f => {
+    const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+    return t && categoriaEfetivaTecido(t) === 'moletom';
+  }) || tecsP.some(t => {
+    const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+    return tec && categoriaEfetivaTecido(tec) === 'moletom';
+  });
+  const temMalha = !temMoletom && (
+    fasesP.some(f => {
+      const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+      return t && categoriaEfetivaTecido(t) === 'malha';
+    }) || tecsP.some(t => {
+      const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+      return tec && categoriaEfetivaTecido(tec) === 'malha';
+    })
+  );
+  const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
+  const totalGrade = o.grade?.total || 0;
+  const qtde = (totalGrade > 0 && camadas > 0) ? (totalGrade * camadas * multPrincipal) : totalGrade;
   const sizesAtivos = ['p','m','g','gg','g1','g2','g3']
     .filter(k => (o.grade?.[k] || 0) > 0)
     .map(s => s.toUpperCase());
