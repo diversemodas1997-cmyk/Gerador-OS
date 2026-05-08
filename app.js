@@ -2596,6 +2596,10 @@ function renderEnfestoBlocos(n, prefills = []) {
     bloco.dataset.nomeCor = nomeCor;
     bloco.style.cssText = 'margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
     const labelDisplay = [nomeTecido, nomeCor].filter(Boolean).join(' · ');
+    // Regra: fase Viés sempre tem 1 camada
+    const ehVies = /vi[eé]s/i.test(nomeTecido);
+    const camadasValue = ehVies ? '1' : (p.camadas || '');
+    const camadasAttrs = ehVies ? 'readonly title="Fase Viés sempre tem 1 camada"' : '';
     bloco.innerHTML = `
       <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">
         ENFESTO ${i+1}${labelDisplay ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(labelDisplay)}</span>` : ''}
@@ -2603,7 +2607,7 @@ function renderEnfestoBlocos(n, prefills = []) {
       <div class="form-grid cols-3">
         <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
         <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="Ex.: 1,80"></div>
-        <div class="field"><label>Camadas</label><input type="number" min="0" step="1" class="enf-camadas" data-idx="${i}" value="${esc(p.camadas||'')}" placeholder="—" oninput="atualizarCalculosEnfesto()"></div>
+        <div class="field"><label>Camadas</label><input type="number" min="0" step="1" class="enf-camadas" data-idx="${i}" value="${esc(camadasValue)}" ${camadasAttrs} placeholder="—" oninput="atualizarCalculosEnfesto()"></div>
       </div>`;
     cont.appendChild(bloco);
   }
@@ -2612,14 +2616,19 @@ function renderEnfestoBlocos(n, prefills = []) {
 function lerEnfestoBlocos() {
   const cont = document.getElementById('f-enfestos-blocos');
   if (!cont) return [];
-  return Array.from(cont.querySelectorAll('.enfesto-bloco')).map((b, i) => ({
-    ordem: i + 1,
-    nomeTecido: b.dataset.nomeTecido || '',
-    nomeCor: b.dataset.nomeCor || '',
-    comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
-    larg: parseFloat(b.querySelector('.enf-larg').value) || 0,
-    camadas: parseInt(b.querySelector('.enf-camadas')?.value) || 0
-  }));
+  return Array.from(cont.querySelectorAll('.enfesto-bloco')).map((b, i) => {
+    const nomeTecido = b.dataset.nomeTecido || '';
+    const ehVies = /vi[eé]s/i.test(nomeTecido);
+    const camadasInput = parseInt(b.querySelector('.enf-camadas')?.value) || 0;
+    return {
+      ordem: i + 1,
+      nomeTecido,
+      nomeCor: b.dataset.nomeCor || '',
+      comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
+      larg: parseFloat(b.querySelector('.enf-larg').value) || 0,
+      camadas: ehVies ? 1 : camadasInput
+    };
+  });
 }
 
 function addTecidoRow(data = {}) {
@@ -3502,8 +3511,12 @@ function calcularCamadasParaProducao() {
     const input = bloco.querySelector('.enf-camadas');
     if (!input) return;
     const papel = papeis[i] || {};
+    const fase = fases[i] || {};
+    const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(papel.label || '') || /vi[eé]s/i.test(bloco.dataset.nomeTecido || '');
     let val;
-    if (papel.papel === 'moletom') {
+    if (ehVies) {
+      val = 1;
+    } else if (papel.papel === 'moletom') {
       // Enfesto moletom: todos componentes moletom na mesma camada → 1 camada = 1 blusa
       val = camadasPrincipal;
     } else if (papel.papel === 'forro_capuz') {
@@ -4622,7 +4635,7 @@ function editarOS(id) {
       let nomeTecido = b.nomeTecido || '';
       if (!nomeTecido && Array.isArray(o.fases)) {
         const fase = o.fases.find(f => (f.ordem || 0) === (i+1));
-        if (fase) nomeTecido = fase.tecidoNome || '';
+        if (fase) nomeTecido = fase.nome || fase.tecidoNome || '';
       }
       return { ...b, nomeTecido };
     });
@@ -4891,7 +4904,9 @@ function renderEnfestoBox(o) {
     // Tecido real cadastrado (Moletom Bulk, Ribana Bulk, etc.) — fallback p/ tecido da OS
     const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
     const corReal = cor || tecs[i]?.corNome || '';
-    const camBloco = b.camadas || camadas || 0;
+    // Regra: fase Viés sempre 1 camada (override mesmo em OS antigas)
+    const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
+    const camBloco = ehVies ? 1 : (b.camadas || camadas || 0);
     // Comp/Larg priorizam o valor da fase ao vivo da grade (gViva já
     // foi remontado em renderPrintSheet a partir de STATE.grades). Cai pro
     // valor salvo no bloco do enfesto so como fallback — assim alteracoes
