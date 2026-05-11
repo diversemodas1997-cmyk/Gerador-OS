@@ -4448,13 +4448,22 @@ function imprimirEtiquetas(osId) {
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // Se a OS tem tons marcados no "Total por tamanho", mostra uma linha
-  // OS: <numero>.<tom> pra cada tom (1, 1+2 ou 1+2+3). Sem tons marcados,
-  // mantem a linha OS unica.
+  // Se a OS tem 2+ tons marcados no "Total por tamanho", o rotulo "OS:"
+  // aparece uma vez so e as variacoes <numero>.<tom> ficam empilhadas ao
+  // lado (mesma OS, varias cores). 0 ou 1 tom = linha unica.
   const tomsEtiq = tonsEfetivos(o.progresso?.totalTamanhoTons || {});
-  const osLinhas = tomsEtiq.length > 0
-    ? tomsEtiq.map(t => `<div class="row">OS: ${escEt(os)}.${t}</div>`).join('')
-    : `<div class="row">OS: ${escEt(os)}</div>`;
+  let osLinhas;
+  if (tomsEtiq.length >= 2) {
+    const variacoes = tomsEtiq.map(t => `<span>${escEt(os)}.${t}</span>`).join('');
+    osLinhas = `<div class="row" style="display:flex;align-items:flex-start;gap:0.35em;line-height:1.05;">
+      <span>OS:</span>
+      <span style="display:flex;flex-direction:column;">${variacoes}</span>
+    </div>`;
+  } else if (tomsEtiq.length === 1) {
+    osLinhas = `<div class="row">OS: ${escEt(os)}.${tomsEtiq[0]}</div>`;
+  } else {
+    osLinhas = `<div class="row">OS: ${escEt(os)}</div>`;
+  }
 
   const etiqueta = `
     <div class="label">
