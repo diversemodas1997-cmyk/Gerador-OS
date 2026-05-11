@@ -4448,10 +4448,18 @@ function imprimirEtiquetas(osId) {
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+  // Se a OS tem tons marcados no "Total por tamanho", mostra uma linha
+  // OS: <numero>.<tom> pra cada tom (1, 1+2 ou 1+2+3). Sem tons marcados,
+  // mantem a linha OS unica.
+  const tomsEtiq = tonsEfetivos(o.progresso?.totalTamanhoTons || {});
+  const osLinhas = tomsEtiq.length > 0
+    ? tomsEtiq.map(t => `<div class="row">OS: ${escEt(os)}.${t}</div>`).join('')
+    : `<div class="row">OS: ${escEt(os)}</div>`;
+
   const etiqueta = `
     <div class="label">
       <div class="head">${escEt(marca)}</div>
-      <div class="row">OS: ${escEt(os)}</div>
+      ${osLinhas}
       <div class="row">QTDE: ${escEt(qtde)}</div>
       <div class="row">TAM: ${escEt(tam)}</div>
       <div class="row">COR: ${escEt(cor)}</div>
