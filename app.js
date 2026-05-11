@@ -4469,7 +4469,9 @@ function imprimirEtiquetas(osId) {
 <meta charset="utf-8">
 <title>Etiquetas — OS ${escEt(os)}</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
+  /* Pagina 10x15cm (100mm x 150mm portrait) com 3 etiquetas empilhadas, */
+  /* dimensionadas pra caber dentro da area util do papel/impressora. */
+  @page { size: 100mm 150mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #000; }
   body { font-family: 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Arial, sans-serif; }
@@ -4498,13 +4500,13 @@ function imprimirEtiquetas(osId) {
     font-weight: 600;
   }
   .page {
-    width: 210mm;
-    height: 297mm;
-    padding: 6mm;
+    width: 100mm;
+    height: 150mm;
+    padding: 3mm;
     page-break-after: always;
     display: flex;
     flex-direction: column;
-    gap: 4mm;
+    gap: 2mm;
     margin: 0 auto;
     background: #fff;
   }
@@ -4513,21 +4515,21 @@ function imprimirEtiquetas(osId) {
     flex: 1 1 0;
     min-height: 0;
     border: 1px solid #000;
-    padding: 12mm 14mm;
+    padding: 3mm 5mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 3mm;
+    gap: 1mm;
   }
   .label .head {
     text-align: center;
     font-weight: 800;
-    font-size: 30pt;
+    font-size: 14pt;
     letter-spacing: .04em;
-    margin: 0 0 4mm 0;
+    margin: 0 0 1.5mm 0;
   }
   .label .row {
-    font-size: 20pt;
+    font-size: 10pt;
     font-weight: 600;
     letter-spacing: .03em;
     text-align: left;
