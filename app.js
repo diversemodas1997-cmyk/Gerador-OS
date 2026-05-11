@@ -4401,7 +4401,8 @@ function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
-  const op = o.os || o.codigo || '—';
+  const os = o.os || o.codigo || '—';
+  const marca = (o.griffeNome || o.griffe || 'MARCA').toUpperCase();
   // QTDE = total de unidades produzidas (grade × camadas × multPrincipal),
   // mesma logica da celula "Total" no Total por tamanho da folha pronta.
   const camadas = o.enfesto?.camadas || 0;
@@ -4449,8 +4450,8 @@ function imprimirEtiquetas(osId) {
 
   const etiqueta = `
     <div class="label">
-      <div class="head">DIVERSE ESTILOS</div>
-      <div class="row">OP: ${escEt(op)}</div>
+      <div class="head">${escEt(marca)}</div>
+      <div class="row">OS: ${escEt(os)}</div>
       <div class="row">QTDE: ${escEt(qtde)}</div>
       <div class="row">TAM: ${escEt(tam)}</div>
       <div class="row">COR: ${escEt(cor)}</div>
@@ -4463,7 +4464,7 @@ function imprimirEtiquetas(osId) {
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Etiquetas — OP ${escEt(op)}</title>
+<title>Etiquetas — OS ${escEt(os)}</title>
 <style>
   @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; }
@@ -4740,36 +4741,37 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
 }
 
-async function salvarValorTotalTamanhoTom(osId, tom, valor) {
+// Salva o valor digitado pelo usuario em UMA celula (tom x tamanho) do
+// "Total por tamanho". Clampa o valor pra que a soma da coluna (com os
+// outros tons editaveis ja salvos) nao passe do total daquela coluna —
+// assim o balanceador (ultimo tom marcado) nunca fica negativo e a soma
+// das colunas continua exatamente igual ao total geral por tamanho.
+async function salvarCelulaTomTamanho(osId, tom, size, valor) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
-  os.progresso.totalTamanhoTomValor = os.progresso.totalTamanhoTomValor || {};
+  os.progresso.totalTamanhoTomCells = os.progresso.totalTamanhoTomCells || {};
+  os.progresso.totalTamanhoTomCells[tom] = os.progresso.totalTamanhoTomCells[tom] || {};
   const tNum = Number(tom);
-  const totalGeral = calcularTotalGeralAlvoImpressao(os);
+  const colTotal = calcularColTotalAlvoImpressao(os, size);
   const tomsSel = tonsEfetivos(os.progresso.totalTamanhoTons || {});
   const balancerTom = tomsSel.length ? tomsSel[tomsSel.length - 1] : null;
-  // Clampa: a soma dos tons editaveis (nao-balancer) + este valor nao pode
-  // passar de X — assim o balanceador (ultimo tom) nunca fica negativo e o
-  // somatorio das linhas marcadas continua sempre igual a X.
   let somaOutros = 0;
   tomsSel.forEach(tt => {
     if (tt === balancerTom || tt === tNum) return;
-    somaOutros += Math.max(0, Number(os.progresso.totalTamanhoTomValor[tt]) || 0);
+    const cells = os.progresso.totalTamanhoTomCells[tt] || {};
+    somaOutros += Math.max(0, Number(cells[size]) || 0);
   });
-  const max = Math.max(0, totalGeral - somaOutros);
+  const max = Math.max(0, colTotal - somaOutros);
   const n = Math.max(0, Math.min(max, Math.floor(Number(valor) || 0)));
-  os.progresso.totalTamanhoTomValor[tNum] = n;
-  try { await saveState('ordens'); } catch (e) { console.warn('salvarValorTotalTamanhoTom', e); }
+  os.progresso.totalTamanhoTomCells[tNum][size] = n;
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarCelulaTomTamanho', e); }
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
 }
 
-// Recalcula o "Total geral por tamanho" (X) usado na folha de impressao.
-// Mesma logica do renderPrintSheet — extraida para que o save dos inputs
-// de tom possa fazer clamping consistente com o que e mostrado.
-function calcularTotalGeralAlvoImpressao(o) {
-  const g = o.grade || {};
-  const cam = o.enfesto?.camadas || 0;
+// Recalcula multiplicador principal (moletom=1, malha=2, outro=1) usado na
+// folha de impressao — mesma logica usada pra montar a linha "Total geral".
+function calcularMultPrincipalImpressao(o) {
   const fasesP = o.fases || [];
   const tecsP = o.tecidos || [];
   const temMoletom = fasesP.some(f => {
@@ -4788,8 +4790,19 @@ function calcularTotalGeralAlvoImpressao(o) {
       return tec && categoriaEfetivaTecido(tec) === 'malha';
     })
   );
-  const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
-  return (g.total || 0) * cam * multPrincipal;
+  return temMoletom ? 1 : (temMalha ? 2 : 1);
+}
+
+function calcularTotalGeralAlvoImpressao(o) {
+  const g = o.grade || {};
+  const cam = o.enfesto?.camadas || 0;
+  return (g.total || 0) * cam * calcularMultPrincipalImpressao(o);
+}
+
+function calcularColTotalAlvoImpressao(o, size) {
+  const g = o.grade || {};
+  const cam = o.enfesto?.camadas || 0;
+  return (g[size] || 0) * cam * calcularMultPrincipalImpressao(o);
 }
 
 // Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
@@ -5426,46 +5439,37 @@ function renderPrintSheet(o) {
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = (g.total || 0) * cam * multPrincipal;
               const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
-              const ttTonValores = (o.progresso && o.progresso.totalTamanhoTomValor) || {};
+              const ttCells = (o.progresso && o.progresso.totalTamanhoTomCells) || {};
               const sizeKeys = ['p','m','g','gg','g1','g2','g3'];
               // Tons marcados em ordem (so vale como prefixo: 1, 1+2 ou 1+2+3).
-              // O ultimo da lista vira o "balanceador": seu input fica read-only e
-              // recebe X menos a soma dos editaveis, garantindo Y+Z+N = X.
+              // O ultimo marcado vira o "balanceador": cada celula dele recebe
+              // o total da coluna menos a soma dos outros tons na mesma coluna,
+              // garantindo que a soma das colunas continue exatamente igual a
+              // linha "Total geral" — e que a soma de todas as linhas seja X.
               const tomsSel = tonsEfetivos(ttTons);
               const balancerTom = tomsSel.length ? tomsSel[tomsSel.length - 1] : null;
-              // Valor total por tom (Y, Z, N): nao-balancer = input do usuario;
-              // balancer = X - soma dos demais (clampado em 0).
-              const totalPorTom = {};
-              let somaNaoBal = 0;
-              tomsSel.forEach(tt => {
-                if (tt === balancerTom) return;
-                totalPorTom[tt] = Math.max(0, Number(ttTonValores[tt]) || 0);
-                somaNaoBal += totalPorTom[tt];
-              });
-              if (balancerTom != null) totalPorTom[balancerTom] = Math.max(0, totalGeral - somaNaoBal);
-              // Distribui o total de cada coluna (P, M, G...) entre os tons
-              // proporcionalmente aos totais Y/Z/N. O balancer absorve o resto
-              // pra fechar a soma da coluna exata. Resultados sempre inteiros.
-              const celulas = {1:{},2:{},3:{}};
-              sizeKeys.forEach(k => {
-                const colTotal = (g[k] || 0) * cam * multPrincipal;
-                if (colTotal <= 0 || tomsSel.length === 0 || totalGeral <= 0) {
-                  tomsSel.forEach(tt => { celulas[tt][k] = 0; });
-                  return;
+              // Valor por celula: nao-balancer = input do usuario (default 0);
+              // balancer = colTotal - soma dos outros tons na mesma coluna.
+              const cellValor = (tom, k) => {
+                if (!tomsSel.includes(tom)) return 0;
+                if (tom !== balancerTom) {
+                  return Math.max(0, Number(ttCells[tom]?.[k]) || 0);
                 }
-                let somaCol = 0;
+                const colTotal = (g[k] || 0) * cam * multPrincipal;
+                let somaOutros = 0;
                 tomsSel.forEach(tt => {
                   if (tt === balancerTom) return;
-                  const v = Math.round(colTotal * totalPorTom[tt] / totalGeral);
-                  celulas[tt][k] = v;
-                  somaCol += v;
+                  somaOutros += Math.max(0, Number(ttCells[tt]?.[k]) || 0);
                 });
-                celulas[balancerTom][k] = Math.max(0, colTotal - somaCol);
-              });
+                return Math.max(0, colTotal - somaOutros);
+              };
+              const rowTotalTom = (tom) => sizeKeys.reduce((acc, k) => {
+                if ((g[k] || 0) <= 0) return acc;
+                return acc + cellValor(tom, k);
+              }, 0);
               const tomRow = (tom) => {
                 const isChecked = tomsSel.includes(tom);
                 const ck = isChecked ? 'checked' : '';
-                // Bloqueia checkbox quando o prereq nao esta cumprido
                 let bloqueado = false;
                 if (tom === 2 && !ttTons[1]) bloqueado = true;
                 if (tom === 3 && (!ttTons[1] || !ttTons[2])) bloqueado = true;
@@ -5474,23 +5478,20 @@ function renderPrintSheet(o) {
                   ? "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;color:#aaa;"
                   : "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
                 const isBalancer = isChecked && tom === balancerTom;
-                const yTom = isChecked ? (totalPorTom[tom] || 0) : 0;
                 const cells = sizeKeys.map(k => {
                   const has = (g[k] || 0) > 0;
                   if (!isChecked || !has) return `<td></td>`;
-                  const cv = celulas[tom][k] || 0;
-                  return `<td>${cv > 0 ? cv : ''}</td>`;
+                  const v = cellValor(tom, k);
+                  if (isBalancer) {
+                    return `<td>${v > 0 ? v : ''}</td>`;
+                  }
+                  const colTotal = (g[k] || 0) * cam * multPrincipal;
+                  return `<td style="padding:0;"><input type="number" min="0" max="${colTotal}" value="${v > 0 ? v : ''}" onchange="salvarCelulaTomTamanho('${esc(o.id)}', ${tom}, '${k}', this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
                 }).join('');
-                let totalCell;
-                if (!isChecked) {
-                  totalCell = `<td style="background:#c9e8d0;"></td>`;
-                } else if (isBalancer) {
-                  // Balanceador: read-only, X - soma dos editaveis
-                  totalCell = `<td style="background:#c9e8d0;">${yTom > 0 ? yTom : ''}</td>`;
-                } else {
-                  // Editavel: input de quantidade total (Y/Z) — propaga proporcionalmente
-                  totalCell = `<td style="background:#c9e8d0;padding:0;"><input type="number" min="0" max="${totalGeral}" value="${yTom > 0 ? yTom : ''}" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
-                }
+                const rt = isChecked ? rowTotalTom(tom) : 0;
+                const totalCell = !isChecked
+                  ? `<td style="background:#c9e8d0;"></td>`
+                  : `<td style="background:#c9e8d0;">${rt > 0 ? rt : ''}</td>`;
                 return `<tr style="background:#f4faf5;">
                   <td style="white-space:nowrap;padding:1px 4px;">
                     <label style="${labelStyle}">
@@ -5787,7 +5788,7 @@ window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
 window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
-window.salvarValorTotalTamanhoTom = salvarValorTotalTamanhoTom;
+window.salvarCelulaTomTamanho = salvarCelulaTomTamanho;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
