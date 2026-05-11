@@ -4709,6 +4709,110 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
   if (checked) os.progresso.totalTamanhoTons[tom] = true;
   else delete os.progresso.totalTamanhoTons[tom];
   try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
+  // Re-renderiza a folha: o balanceador (tom de maior numero marcado) muda,
+  // os inputs editaveis aparecem/somem e as celulas P..G3 dos tons
+  // marcados precisam mostrar o valor sincronizado.
+  if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
+}
+
+// Sincroniza visualmente o valor entre todos os <input> da mesma linha de tom
+// enquanto o usuario digita E atualiza as celulas do tom balanceador (read-only,
+// recebe X menos a soma dos editaveis). Sem re-render pra manter o foco do
+// input durante Tab entre celulas. O save em STATE acontece no onchange (blur).
+function propagarValorTomTamanho(input, tom) {
+  const v = input.value;
+  document.querySelectorAll(`input[data-tt-tom-input="${tom}"]`).forEach(i => {
+    if (i !== input) i.value = v;
+  });
+  // Espelha o valor na coluna "Total" da propria linha (cor de fundo verde)
+  const totalCell = document.querySelector(`[data-tt-tom-total="${tom}"]`);
+  if (totalCell) totalCell.textContent = (Number(v) > 0) ? v : '';
+  atualizarBalancerNoDOM();
+}
+
+function atualizarBalancerNoDOM() {
+  const os = printOsAtual;
+  if (!os) return;
+  const balancerCells = document.querySelectorAll('[data-tt-balancer-cell]');
+  const balancerTotalCell = document.querySelector('[data-tt-balancer-total]');
+  if (!balancerCells.length && !balancerTotalCell) return;
+  const balancerTom = Number(
+    (balancerCells[0] && balancerCells[0].dataset.ttBalancerCell) ||
+    (balancerTotalCell && balancerTotalCell.dataset.ttBalancerTotal)
+  );
+  if (!balancerTom) return;
+  const totalGeral = calcularTotalGeralAlvoImpressao(os);
+  let somaEditaveis = 0;
+  [1,2,3].forEach(tt => {
+    if (tt === balancerTom) return;
+    const first = document.querySelector(`input[data-tt-tom-input="${tt}"]`);
+    if (first) somaEditaveis += Math.max(0, Number(first.value) || 0);
+  });
+  const v = Math.max(0, totalGeral - somaEditaveis);
+  const texto = v > 0 ? String(v) : '';
+  balancerCells.forEach(c => { c.textContent = texto; });
+  if (balancerTotalCell) balancerTotalCell.textContent = texto;
+}
+
+async function salvarValorTotalTamanhoTom(osId, tom, valor) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.totalTamanhoTomValor = os.progresso.totalTamanhoTomValor || {};
+  const tNum = Number(tom);
+  // Clampa o valor para que a soma das linhas marcadas nunca ultrapasse X
+  // (totalGeral). Ex.: com Tom 1+2+3 e X=100, se Tom 1=70 ja existir, ao
+  // digitar 50 em Tom 2 o valor e cortado em 30 — entao Tom 3 (balanceador)
+  // fica em 0 e a soma volta a bater com X.
+  const totalGeral = calcularTotalGeralAlvoImpressao(os);
+  const ttTons = os.progresso.totalTamanhoTons || {};
+  const tomsSel = [1,2,3].filter(tt => !!ttTons[tt]);
+  const balancerTom = tomsSel.length ? Math.max(...tomsSel) : null;
+  let somaOutros = 0;
+  tomsSel.forEach(tt => {
+    if (tt === balancerTom || tt === tNum) return;
+    somaOutros += Math.max(0, Number(os.progresso.totalTamanhoTomValor[tt]) || 0);
+  });
+  const max = Math.max(0, totalGeral - somaOutros);
+  const n = Math.max(0, Math.min(max, Number(valor) || 0));
+  os.progresso.totalTamanhoTomValor[tNum] = n;
+  // Se o usuario digitou > max, ajusta o input no DOM e re-sincroniza
+  // as outras celulas do mesmo tom + a coluna "Total" da linha + o balanceador.
+  const inputs = document.querySelectorAll(`input[data-tt-tom-input="${tNum}"]`);
+  const texto = n > 0 ? String(n) : '';
+  inputs.forEach(i => { i.value = texto; });
+  const totalCell = document.querySelector(`[data-tt-tom-total="${tNum}"]`);
+  if (totalCell) totalCell.textContent = texto;
+  atualizarBalancerNoDOM();
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarValorTotalTamanhoTom', e); }
+}
+
+// Recalcula o "Total geral por tamanho" (X) usado na folha de impressao.
+// Mesma logica do renderPrintSheet — extraida para que o save dos inputs
+// de tom possa fazer clamping consistente com o que e mostrado.
+function calcularTotalGeralAlvoImpressao(o) {
+  const g = o.grade || {};
+  const cam = o.enfesto?.camadas || 0;
+  const fasesP = o.fases || [];
+  const tecsP = o.tecidos || [];
+  const temMoletom = fasesP.some(f => {
+    const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+    return t && categoriaEfetivaTecido(t) === 'moletom';
+  }) || tecsP.some(t => {
+    const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+    return tec && categoriaEfetivaTecido(tec) === 'moletom';
+  });
+  const temMalha = !temMoletom && (
+    fasesP.some(f => {
+      const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+      return t && categoriaEfetivaTecido(t) === 'malha';
+    }) || tecsP.some(t => {
+      const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
+      return tec && categoriaEfetivaTecido(tec) === 'malha';
+    })
+  );
+  const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
+  return (g.total || 0) * cam * multPrincipal;
 }
 
 // Sincroniza o estado dos <input.os-check> da folha com o.progresso, sem
@@ -5345,8 +5449,39 @@ function renderPrintSheet(o) {
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = (g.total || 0) * cam * multPrincipal;
               const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
+              const ttTonValores = (o.progresso && o.progresso.totalTamanhoTomValor) || {};
+              const sizeKeys = ['p','m','g','gg','g1','g2','g3'];
+              // Toms selecionados em ordem; o de maior numero vira balanceador
+              // (read-only, recebe x menos a soma dos demais editaveis para
+              // garantir que a soma das linhas marcadas sempre seja igual a x).
+              const tomsSel = [1,2,3].filter(tt => !!ttTons[tt]);
+              const balancerTom = tomsSel.length ? Math.max(...tomsSel) : null;
+              let somaEditaveis = 0;
+              tomsSel.forEach(tt => {
+                if (tt !== balancerTom) {
+                  somaEditaveis += Math.max(0, Number(ttTonValores[tt]) || 0);
+                }
+              });
+              const valorTom = (tt) => {
+                if (!ttTons[tt]) return 0;
+                if (tt === balancerTom) return Math.max(0, totalGeral - somaEditaveis);
+                return Math.max(0, Number(ttTonValores[tt]) || 0);
+              };
               const tomRow = (tom) => {
-                const ck = !!ttTons[tom] ? 'checked' : '';
+                const isChecked = !!ttTons[tom];
+                const ck = isChecked ? 'checked' : '';
+                const isBalancer = isChecked && tom === balancerTom;
+                const v = valorTom(tom);
+                const cells = sizeKeys.map(k => {
+                  const has = (g[k] || 0) > 0;
+                  if (!isChecked || !has) return `<td></td>`;
+                  if (isBalancer) return `<td data-tt-balancer-cell="${tom}">${v > 0 ? v : ''}</td>`;
+                  return `<td style="padding:0;"><input type="number" min="0" value="${v > 0 ? v : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
+                }).join('');
+                let totalCell;
+                if (!isChecked) totalCell = `<td style="background:#c9e8d0;"></td>`;
+                else if (isBalancer) totalCell = `<td style="background:#c9e8d0;" data-tt-balancer-total="${tom}">${v > 0 ? v : ''}</td>`;
+                else totalCell = `<td style="background:#c9e8d0;" data-tt-tom-total="${tom}">${v > 0 ? v : ''}</td>`;
                 return `<tr style="background:#f4faf5;">
                   <td style="white-space:nowrap;padding:1px 4px;">
                     <label style="display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;">
@@ -5354,8 +5489,8 @@ function renderPrintSheet(o) {
                       Tom ${tom}
                     </label>
                   </td>
-                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-                  <td style="background:#c9e8d0;"></td>
+                  ${cells}
+                  ${totalCell}
                 </tr>`;
               };
               return `
@@ -5643,6 +5778,8 @@ window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
 window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
+window.propagarValorTomTamanho = propagarValorTomTamanho;
+window.salvarValorTotalTamanhoTom = salvarValorTotalTamanhoTom;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
