@@ -4741,32 +4741,97 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
 }
 
-// Salva o valor digitado pelo usuario em UMA celula (tom x tamanho) do
-// "Total por tamanho". Clampa o valor pra que a soma da coluna (com os
-// outros tons editaveis ja salvos) nao passe do total daquela coluna —
-// assim o balanceador (ultimo tom marcado) nunca fica negativo e a soma
-// das colunas continua exatamente igual ao total geral por tamanho.
-async function salvarCelulaTomTamanho(osId, tom, size, valor) {
+// Salva o valor uniforme V do tom (mesmo numero em todas as celulas visiveis
+// da linha) e atualiza o DOM dos demais inputs sincronizados, das celulas
+// do balanceador e das colunas "Total". O re-render completo nao acontece
+// aqui pra preservar o foco do input quando o usuario tabula entre celulas.
+async function salvarValorTotalTamanhoTom(osId, tom, valor) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
-  os.progresso.totalTamanhoTomCells = os.progresso.totalTamanhoTomCells || {};
-  os.progresso.totalTamanhoTomCells[tom] = os.progresso.totalTamanhoTomCells[tom] || {};
+  os.progresso.totalTamanhoTomValor = os.progresso.totalTamanhoTomValor || {};
   const tNum = Number(tom);
-  const colTotal = calcularColTotalAlvoImpressao(os, size);
+  // Clampa V: a soma dos V dos tons editaveis em cada coluna nao pode passar
+  // de colTotal daquela coluna — assim o balanceador (ultimo tom marcado)
+  // nunca fica negativo em nenhuma coluna. Como V e uniforme por linha, o
+  // gargalo e a menor colTotal entre as colunas visiveis.
   const tomsSel = tonsEfetivos(os.progresso.totalTamanhoTons || {});
   const balancerTom = tomsSel.length ? tomsSel[tomsSel.length - 1] : null;
   let somaOutros = 0;
   tomsSel.forEach(tt => {
     if (tt === balancerTom || tt === tNum) return;
-    const cells = os.progresso.totalTamanhoTomCells[tt] || {};
-    somaOutros += Math.max(0, Number(cells[size]) || 0);
+    somaOutros += Math.max(0, Number(os.progresso.totalTamanhoTomValor[tt]) || 0);
   });
-  const max = Math.max(0, colTotal - somaOutros);
+  const g = os.grade || {};
+  const cam = os.enfesto?.camadas || 0;
+  const mult = calcularMultPrincipalImpressao(os);
+  let minCol = Infinity;
+  ['p','m','g','gg','g1','g2','g3'].forEach(k => {
+    if ((g[k] || 0) > 0) {
+      const colTotal = g[k] * cam * mult;
+      if (colTotal < minCol) minCol = colTotal;
+    }
+  });
+  const max = minCol === Infinity ? 0 : Math.max(0, minCol - somaOutros);
   const n = Math.max(0, Math.min(max, Math.floor(Number(valor) || 0)));
-  os.progresso.totalTamanhoTomCells[tNum][size] = n;
-  try { await saveState('ordens'); } catch (e) { console.warn('salvarCelulaTomTamanho', e); }
-  if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
+  os.progresso.totalTamanhoTomValor[tNum] = n;
+  // Ajusta o DOM se o valor digitado foi clampado pra menos
+  const txt = n > 0 ? String(n) : '';
+  document.querySelectorAll(`input[data-tt-tom-input="${tNum}"]`).forEach(i => {
+    if (i.value !== txt) i.value = txt;
+  });
+  atualizarLinhasTomNoDOM();
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarValorTotalTamanhoTom', e); }
+}
+
+// Sincroniza visualmente o valor V entre todos os inputs da mesma linha de
+// tom (digitar em uma celula preenche as outras com o mesmo numero) e
+// recalcula no DOM as celulas do balanceador e as colunas "Total" das
+// linhas — sem re-render pra preservar o foco do input.
+function propagarValorTomTamanho(input, tom) {
+  const v = input.value;
+  document.querySelectorAll(`input[data-tt-tom-input="${tom}"]`).forEach(i => {
+    if (i !== input) i.value = v;
+  });
+  atualizarLinhasTomNoDOM();
+}
+
+function atualizarLinhasTomNoDOM() {
+  const os = printOsAtual;
+  if (!os) return;
+  const balancerCells = document.querySelectorAll('[data-tt-balancer-cell]');
+  if (!balancerCells.length && !document.querySelector('[data-tt-row-total]')) return;
+  // Toms editaveis = aqueles que tem input renderizado (um por linha basta)
+  const vPorTom = {};
+  [1,2,3].forEach(tt => {
+    const first = document.querySelector(`input[data-tt-tom-input="${tt}"]`);
+    if (first) vPorTom[tt] = Math.max(0, Number(first.value) || 0);
+  });
+  // Atualiza cada celula do balanceador: colTotal(k) - soma dos V editaveis
+  balancerCells.forEach(c => {
+    const size = c.dataset.ttBalancerSize;
+    const colTotal = calcularColTotalAlvoImpressao(os, size);
+    let somaEditaveis = 0;
+    Object.values(vPorTom).forEach(v => { somaEditaveis += v; });
+    const v = Math.max(0, colTotal - somaEditaveis);
+    c.textContent = v > 0 ? String(v) : '';
+  });
+  // Atualiza as colunas "Total" de cada linha de tom (soma da linha)
+  document.querySelectorAll('[data-tt-row-total]').forEach(c => {
+    const tt = Number(c.dataset.ttRowTotal);
+    let sum = 0;
+    if (vPorTom[tt] != null) {
+      // Tom editavel: V × numero de celulas visiveis (inputs)
+      const inputs = document.querySelectorAll(`input[data-tt-tom-input="${tt}"]`);
+      sum = vPorTom[tt] * inputs.length;
+    } else {
+      // Tom balanceador: soma das celulas balanceadoras
+      document.querySelectorAll(`[data-tt-balancer-cell][data-tt-balancer-tom="${tt}"]`).forEach(bc => {
+        sum += Math.max(0, Number(bc.textContent) || 0);
+      });
+    }
+    c.textContent = sum > 0 ? String(sum) : '';
+  });
 }
 
 // Recalcula multiplicador principal (moletom=1, malha=2, outro=1) usado na
@@ -5439,34 +5504,23 @@ function renderPrintSheet(o) {
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = (g.total || 0) * cam * multPrincipal;
               const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
-              const ttCells = (o.progresso && o.progresso.totalTamanhoTomCells) || {};
+              const ttTonValores = (o.progresso && o.progresso.totalTamanhoTomValor) || {};
               const sizeKeys = ['p','m','g','gg','g1','g2','g3'];
-              // Tons marcados em ordem (so vale como prefixo: 1, 1+2 ou 1+2+3).
-              // O ultimo marcado vira o "balanceador": cada celula dele recebe
-              // o total da coluna menos a soma dos outros tons na mesma coluna,
-              // garantindo que a soma das colunas continue exatamente igual a
-              // linha "Total geral" — e que a soma de todas as linhas seja X.
+              // Tons marcados em ordem (prefixo: 1, 1+2 ou 1+2+3). O ultimo
+              // vira o "balanceador": cada celula dele recebe colTotal menos a
+              // soma dos V dos editaveis, mantendo as somas das colunas iguais
+              // a linha "Total geral" e a soma total = X.
               const tomsSel = tonsEfetivos(ttTons);
               const balancerTom = tomsSel.length ? tomsSel[tomsSel.length - 1] : null;
-              // Valor por celula: nao-balancer = input do usuario (default 0);
-              // balancer = colTotal - soma dos outros tons na mesma coluna.
-              const cellValor = (tom, k) => {
-                if (!tomsSel.includes(tom)) return 0;
-                if (tom !== balancerTom) {
-                  return Math.max(0, Number(ttCells[tom]?.[k]) || 0);
-                }
+              // V uniforme por linha (mesmo numero em todas as celulas
+              // visiveis). Digitar em uma celula propaga pra todas via DOM.
+              const vTom = (tom) => Math.max(0, Number(ttTonValores[tom]) || 0);
+              let somaEditaveis = 0;
+              tomsSel.forEach(tt => { if (tt !== balancerTom) somaEditaveis += vTom(tt); });
+              const balancerCellVal = (k) => {
                 const colTotal = (g[k] || 0) * cam * multPrincipal;
-                let somaOutros = 0;
-                tomsSel.forEach(tt => {
-                  if (tt === balancerTom) return;
-                  somaOutros += Math.max(0, Number(ttCells[tt]?.[k]) || 0);
-                });
-                return Math.max(0, colTotal - somaOutros);
+                return Math.max(0, colTotal - somaEditaveis);
               };
-              const rowTotalTom = (tom) => sizeKeys.reduce((acc, k) => {
-                if ((g[k] || 0) <= 0) return acc;
-                return acc + cellValor(tom, k);
-              }, 0);
               const tomRow = (tom) => {
                 const isChecked = tomsSel.includes(tom);
                 const ck = isChecked ? 'checked' : '';
@@ -5478,20 +5532,22 @@ function renderPrintSheet(o) {
                   ? "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;color:#aaa;"
                   : "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
                 const isBalancer = isChecked && tom === balancerTom;
+                const v = isChecked ? vTom(tom) : 0;
+                let rowSum = 0;
                 const cells = sizeKeys.map(k => {
                   const has = (g[k] || 0) > 0;
                   if (!isChecked || !has) return `<td></td>`;
-                  const v = cellValor(tom, k);
                   if (isBalancer) {
-                    return `<td>${v > 0 ? v : ''}</td>`;
+                    const bv = balancerCellVal(k);
+                    rowSum += bv;
+                    return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}">${bv > 0 ? bv : ''}</td>`;
                   }
-                  const colTotal = (g[k] || 0) * cam * multPrincipal;
-                  return `<td style="padding:0;"><input type="number" min="0" max="${colTotal}" value="${v > 0 ? v : ''}" onchange="salvarCelulaTomTamanho('${esc(o.id)}', ${tom}, '${k}', this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
+                  rowSum += v;
+                  return `<td style="padding:0;"><input type="number" min="0" value="${v > 0 ? v : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
                 }).join('');
-                const rt = isChecked ? rowTotalTom(tom) : 0;
                 const totalCell = !isChecked
                   ? `<td style="background:#c9e8d0;"></td>`
-                  : `<td style="background:#c9e8d0;">${rt > 0 ? rt : ''}</td>`;
+                  : `<td style="background:#c9e8d0;" data-tt-row-total="${tom}">${rowSum > 0 ? rowSum : ''}</td>`;
                 return `<tr style="background:#f4faf5;">
                   <td style="white-space:nowrap;padding:1px 4px;">
                     <label style="${labelStyle}">
@@ -5788,7 +5844,8 @@ window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
 window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
-window.salvarCelulaTomTamanho = salvarCelulaTomTamanho;
+window.salvarValorTotalTamanhoTom = salvarValorTotalTamanhoTom;
+window.propagarValorTomTamanho = propagarValorTomTamanho;
 window.renderComponentesCad = renderComponentesCad;
 window.toggleUnidadesGrade = toggleUnidadesGrade;
 window.aplicarVinculosDesenho = aplicarVinculosDesenho;
