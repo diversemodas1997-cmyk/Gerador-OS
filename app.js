@@ -4521,9 +4521,10 @@ async function salvarEImprimir() {
 /* ========================================================= */
 /*    ETIQUETAS ADESIVAS (1 por pagina, 10x5cm, LOTE 1..N)   */
 /* ========================================================= */
-// Uma etiqueta por pagina (100mm x 50mm), uma pagina por unidade da grade
-// (grade.total). Cada etiqueta e identica, com LOTE numerado em sequencia
-// de 1 ate o total da grade.
+// Uma etiqueta por pagina (100mm x 50mm). Total de paginas = quantidade
+// de TAMANHOS ATIVOS na grade (P, M, G, GG, G1, G2, G3). Ex.: grade
+// completa P..G3 = 7 etiquetas; grade M-G-GG-G3 = 4 etiquetas. Todas as
+// etiquetas sao identicas; so o numero do LOTE muda em sequencia 1..N.
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
@@ -4587,9 +4588,11 @@ function imprimirEtiquetas(osId) {
     .trim()
     .toUpperCase();
 
-  // 1 etiqueta por unidade da grade. Se a grade estiver vazia, gera 1
-  // etiqueta unica em vez de bloquear a impressao.
-  const numEtiquetas = Math.max(1, totalGrade);
+  // 1 etiqueta por TAMANHO ATIVO da grade (P, M, G, GG, G1, G2, G3).
+  // Ex.: grade P..G3 = 7 etiquetas; grade M-G-GG-G3 = 4 etiquetas.
+  // Se nenhum tamanho estiver preenchido, gera 1 etiqueta unica em vez
+  // de bloquear a impressao.
+  const numEtiquetas = Math.max(1, sizesAtivos.length);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -4615,7 +4618,7 @@ function imprimirEtiquetas(osId) {
 <title>Etiquetas — OS ${escEt(os)}</title>
 <style>
   /* Pagina 10x5cm (100mm x 50mm landscape), 1 etiqueta por pagina. */
-  /* Total de paginas = total de unidades da grade da OS. */
+  /* Total de paginas = quantidade de tamanhos ativos na grade da OS. */
   @page { size: 100mm 50mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #000; }
