@@ -4457,7 +4457,7 @@ function imprimirEtiquetas(osId) {
       <div class="label">
         <div class="head">${escEt(marca)}</div>
         <div class="row">OS: ${escEt(os)}</div>
-        <div class="row">DESENHO: ${escEt(desenhoNome)}</div>
+        <div class="row">MODELO: ${escEt(desenhoNome)}</div>
         <div class="row">QTDE: ${escEt(qtde)}</div>
         <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
