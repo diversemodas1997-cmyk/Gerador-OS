@@ -4392,11 +4392,11 @@ async function salvarEImprimir() {
 }
 
 /* ========================================================= */
-/*           ETIQUETAS ADESIVAS (3 por A4)                   */
+/*    ETIQUETAS ADESIVAS (1 por pagina, 10x5cm, LOTE 1..N)   */
 /* ========================================================= */
-// Monta os campos da etiqueta a partir da OS, abre popup com N paginas
-// (3 etiquetas iguais por pagina) e dispara window.print(). VOL fica
-// sempre vazio — preenchido a mao na expedicao.
+// Uma etiqueta por pagina (100mm x 50mm), uma pagina por unidade da grade
+// (grade.total). Cada etiqueta e identica, com LOTE numerado em sequencia
+// de 1 ate o total da grade.
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
@@ -4441,27 +4441,25 @@ function imprimirEtiquetas(osId) {
            || corDesenho
            || '—';
 
-  const paginasStr = window.prompt('Quantas páginas de etiquetas deseja imprimir?\n(cada página tem 3 etiquetas)', '1');
-  if (paginasStr === null) return;
-  const paginas = Math.max(1, parseInt(paginasStr) || 1);
+  // 1 etiqueta por unidade da grade. Se a grade estiver vazia, gera 1
+  // etiqueta unica em vez de bloquear a impressao.
+  const numEtiquetas = Math.max(1, totalGrade);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // Linha "OS:" mostra apenas o numero da OS, sem variacoes de tom.
-  // O operador anota .1/.2/.3 a mao depois de imprimir (3 etiquetas por
-  // pagina, uma pra cada tom da producao).
-  const etiqueta = `
-    <div class="label">
-      <div class="head">${escEt(marca)}</div>
-      <div class="row">OS: ${escEt(os)}</div>
-      <div class="row">QTDE: ${escEt(qtde)}</div>
-      <div class="row">TAM: ${escEt(tam)}</div>
-      <div class="row">COR: ${escEt(cor)}</div>
-      <div class="row">VOL:</div>
-    </div>`;
-  const pagina = `<div class="page">${etiqueta}${etiqueta}${etiqueta}</div>`;
-  const corpo = Array.from({ length: paginas }, () => pagina).join('');
+  // Todas as etiquetas sao identicas; so o numero do LOTE muda (1..N).
+  const corpo = Array.from({ length: numEtiquetas }, (_, i) => `
+    <div class="page">
+      <div class="label">
+        <div class="head">${escEt(marca)}</div>
+        <div class="row">OS: ${escEt(os)}</div>
+        <div class="row">QTDE: ${escEt(qtde)}</div>
+        <div class="row">TAM: ${escEt(tam)}</div>
+        <div class="row">COR: ${escEt(cor)}</div>
+        <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
+      </div>
+    </div>`).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -4469,9 +4467,9 @@ function imprimirEtiquetas(osId) {
 <meta charset="utf-8">
 <title>Etiquetas — OS ${escEt(os)}</title>
 <style>
-  /* Pagina 10x15cm (100mm x 150mm portrait) com 3 etiquetas empilhadas, */
-  /* dimensionadas pra caber dentro da area util do papel/impressora. */
-  @page { size: 100mm 150mm; margin: 0; }
+  /* Pagina 10x5cm (100mm x 50mm landscape), 1 etiqueta por pagina. */
+  /* Total de paginas = total de unidades da grade da OS. */
+  @page { size: 100mm 50mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #000; }
   body { font-family: 'IBM Plex Sans', system-ui, -apple-system, Segoe UI, Arial, sans-serif; }
@@ -4501,38 +4499,41 @@ function imprimirEtiquetas(osId) {
   }
   .page {
     width: 100mm;
-    height: 150mm;
-    padding: 3mm;
+    height: 50mm;
+    padding: 2mm;
     page-break-after: always;
-    display: flex;
-    flex-direction: column;
-    gap: 2mm;
-    margin: 0 auto;
+    margin: 0 auto 6px auto;
     background: #fff;
   }
   .page:last-child { page-break-after: auto; }
   .label {
-    flex: 1 1 0;
-    min-height: 0;
+    width: 100%;
+    height: 100%;
     border: 1px solid #000;
-    padding: 3mm 5mm;
+    padding: 2mm 4mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 1mm;
+    gap: 0.8mm;
   }
   .label .head {
     text-align: center;
     font-weight: 800;
-    font-size: 14pt;
+    font-size: 12pt;
     letter-spacing: .04em;
-    margin: 0 0 1.5mm 0;
+    border-bottom: 1px solid #000;
+    padding-bottom: 1mm;
+    margin-bottom: 0.5mm;
   }
   .label .row {
-    font-size: 10pt;
+    font-size: 9pt;
     font-weight: 600;
     letter-spacing: .03em;
     text-align: left;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   @media print {
     .toolbar { display: none !important; }
@@ -4545,7 +4546,7 @@ function imprimirEtiquetas(osId) {
   <div class="toolbar">
     <button class="primary" onclick="window.print()">🖨 Imprimir</button>
     <button onclick="window.close()">Fechar</button>
-    <span style="margin-left:12px;color:#555;font-size:13px;">${paginas} página${paginas>1?'s':''} · ${paginas*3} etiqueta${paginas*3>1?'s':''}</span>
+    <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''} · LOTE 1${numEtiquetas>1?'..'+numEtiquetas:''} · 10×5cm</span>
   </div>
   ${corpo}
   <script>
