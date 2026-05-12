@@ -4560,16 +4560,32 @@ function imprimirEtiquetas(osId) {
   const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
 
   const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
-  const corDesenho = desenho?.corPrincipalId
-    ? (STATE.cores.find(c => c.id === desenho.corPrincipalId)?.nome || '')
-    : '';
-  const cor = o.fases?.[0]?.corNome
-           || o.tecidos?.[0]?.corNome
-           || corDesenho
-           || '—';
+  // Cores do desenho: principal/secundaria/terciaria, na ordem cadastrada.
+  // Para desenhos bicolor/tricolor, a etiqueta mostra a combinacao completa
+  // (ex.: PRETO/CAQUI/OFF-WHITE), evitando que apenas a cor principal
+  // apareca. Para basica/sem desenho, cai pro fase/tecido como antes.
+  const _corNome = id => id ? (STATE.cores.find(c => c.id === id)?.nome || '') : '';
+  const coresDesenho = [
+    _corNome(desenho?.corPrincipalId),
+    _corNome(desenho?.corSecundariaId),
+    _corNome(desenho?.corTerciariaId)
+  ].filter(Boolean);
+  const cor = (coresDesenho.length > 1
+    ? coresDesenho.join('/')
+    : (o.fases?.[0]?.corNome
+       || o.tecidos?.[0]?.corNome
+       || coresDesenho[0]
+       || '—')).toString().toUpperCase();
+
   // Nome do desenho tecnico: prefere o "desc" (nome descritivo), cai pro
-  // codigo do desenho e por fim o codigo manual digitado na OS.
-  const desenhoNome = (desenho?.desc || desenho?.codigo || o.codigo || '—').toString().toUpperCase();
+  // codigo do desenho e por fim o codigo manual digitado na OS. Strip
+  // qualquer sufixo de cores apos '|' (convencao usada no cadastro pra
+  // anotar a combinacao de cores junto do nome, ex.: "CAMISETA TRICOLOR
+  // | PRETO/CAQUI/OFF-WHITE") — a cor sai na linha COR, nao na MODELO.
+  const desenhoNome = String(desenho?.desc || desenho?.codigo || o.codigo || '—')
+    .split('|')[0]
+    .trim()
+    .toUpperCase();
 
   // 1 etiqueta por unidade da grade. Se a grade estiver vazia, gera 1
   // etiqueta unica em vez de bloquear a impressao.
