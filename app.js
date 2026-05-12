@@ -4269,6 +4269,92 @@ function pdfFilenameForOS(o) {
   return `OS-${numero}.pdf`;
 }
 
+function etiquetaFilenameForOS(o) {
+  const numero = sanitizeForFilename(o.os) || 'sem-numero';
+  return `etiqueta-${numero}.pdf`;
+}
+
+// Gera PDF das etiquetas direto com jsPDF (sem html2canvas, pois o conteudo
+// e so texto). Cada etiqueta vira uma pagina de 100mm x 50mm. `dados`
+// precisa ter { marca, os, qtde, tam, cor, modelo, numEtiquetas }.
+function gerarPdfEtiquetas(dados) {
+  const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
+
+  const pdf = new _jsPDF({
+    unit: 'mm',
+    format: [100, 50],
+    orientation: 'landscape',
+    compress: true
+  });
+
+  const total = Math.max(1, dados.numEtiquetas);
+  for (let i = 0; i < total; i++) {
+    if (i > 0) pdf.addPage([100, 50], 'landscape');
+
+    // Borda
+    pdf.setLineWidth(0.3);
+    pdf.rect(2, 2, 96, 46);
+
+    // Cabecalho (MARCA) centralizado
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(13);
+    pdf.text(String(dados.marca || ''), 50, 8.5, { align: 'center' });
+
+    // Linha separadora abaixo do cabecalho
+    pdf.setLineWidth(0.25);
+    pdf.line(4, 11, 96, 11);
+
+    // Linhas de dados
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    const x = 5;
+    let y = 16;
+    const lh = 5.2;
+    const rows = [
+      `OS: ${dados.os}`,
+      `MODELO: ${dados.modelo}`,
+      `QTDE: ${dados.qtde}`,
+      `TAM: ${dados.tam}`,
+      `COR: ${dados.cor}`,
+      `LOTE: ${i + 1}/${total}`
+    ];
+    rows.forEach(txt => {
+      // Trunca pra evitar estouro horizontal (~88mm uteis a 9pt ~ 60 chars)
+      const t = String(txt).length > 60 ? String(txt).slice(0, 59) + '…' : String(txt);
+      pdf.text(t, x, y);
+      y += lh;
+    });
+  }
+
+  return pdf.output('blob');
+}
+
+// Salva o PDF de etiquetas na subpasta "etiquetas" dentro da pasta de PDFs
+// configurada. Silencioso quando nao ha pasta conectada — nao bloqueia o
+// fluxo de impressao. Retorna true/false.
+async function salvarPdfEtiquetasAuto(o, dados) {
+  let handle = pdfFolderHandle || (await loadPdfFolderHandle());
+  if (!handle) return false;
+  const ok = await ensureFolderPermission(handle, 'readwrite');
+  if (!ok) return false;
+  pdfFolderHandle = handle;
+  try {
+    const blob = gerarPdfEtiquetas(dados);
+    const filename = etiquetaFilenameForOS(o);
+    const subfolder = await handle.getDirectoryHandle('etiquetas', { create: true });
+    const fileHandle = await subfolder.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    toast(`PDF etiquetas salvo: etiquetas/${filename}`, 'ok');
+    return true;
+  } catch (e) {
+    console.warn('salvarPdfEtiquetasAuto', e);
+    return false;
+  }
+}
+
 async function gerarPdfDaSheet() {
   // Usa html2canvas + jsPDF direto (sem o wrapper html2pdf, que em algumas
   // versoes dispara um download alem de retornar o blob, causando o
@@ -4567,6 +4653,13 @@ function imprimirEtiquetas(osId) {
   w.document.open();
   w.document.write(html);
   w.document.close();
+
+  // Auto-save em segundo plano: gera o PDF e salva em <pasta-pdf>/etiquetas/
+  // (subpasta criada se nao existir). Silencioso se a pasta nao estiver
+  // conectada — nao bloqueia o popup de impressao.
+  salvarPdfEtiquetasAuto(o, {
+    marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas
+  });
 }
 
 function imprimirEtiquetasAtual() {
