@@ -4440,6 +4440,9 @@ function imprimirEtiquetas(osId) {
            || o.tecidos?.[0]?.corNome
            || corDesenho
            || '—';
+  // Nome do desenho tecnico: prefere o "desc" (nome descritivo), cai pro
+  // codigo do desenho e por fim o codigo manual digitado na OS.
+  const desenhoNome = (desenho?.desc || desenho?.codigo || o.codigo || '—').toString().toUpperCase();
 
   // 1 etiqueta por unidade da grade. Se a grade estiver vazia, gera 1
   // etiqueta unica em vez de bloquear a impressao.
@@ -4454,6 +4457,7 @@ function imprimirEtiquetas(osId) {
       <div class="label">
         <div class="head">${escEt(marca)}</div>
         <div class="row">OS: ${escEt(os)}</div>
+        <div class="row">DESENHO: ${escEt(desenhoNome)}</div>
         <div class="row">QTDE: ${escEt(qtde)}</div>
         <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
