@@ -4288,6 +4288,25 @@ function gerarPdfEtiquetas(dados) {
     compress: true
   });
 
+  // Trunca o texto com '…' ate caber em maxWidth (mm), usando a largura
+  // real medida pelo jsPDF na fonte/tamanho correntes.
+  const fitText = (s, maxWidth) => {
+    const str = String(s == null ? '' : s);
+    if (pdf.getTextWidth(str) <= maxWidth) return str;
+    let cut = str;
+    while (cut.length > 0 && pdf.getTextWidth(cut + '…') > maxWidth) {
+      cut = cut.slice(0, -1);
+    }
+    return cut + '…';
+  };
+
+  // Geometria da etiqueta:
+  //   Borda: rect(2, 2, 96, 46) -> x de 2 a 98, y de 2 a 48
+  //   Texto util: x de 5 a 95 (90mm de largura, com 3mm de respiro a direita)
+  const xLeft = 5;
+  const xRight = 95;
+  const innerWidth = xRight - xLeft; // 90mm
+
   const total = Math.max(1, dados.numEtiquetas);
   for (let i = 0; i < total; i++) {
     if (i > 0) pdf.addPage([100, 50], 'landscape');
@@ -4296,19 +4315,19 @@ function gerarPdfEtiquetas(dados) {
     pdf.setLineWidth(0.3);
     pdf.rect(2, 2, 96, 46);
 
-    // Cabecalho (MARCA) centralizado
+    // Cabecalho (MARCA) centralizado, truncado se exceder a largura util
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(13);
-    pdf.text(String(dados.marca || ''), 50, 8.5, { align: 'center' });
+    const marcaTxt = fitText(dados.marca, innerWidth);
+    pdf.text(marcaTxt, 50, 8.5, { align: 'center' });
 
     // Linha separadora abaixo do cabecalho
     pdf.setLineWidth(0.25);
     pdf.line(4, 11, 96, 11);
 
-    // Linhas de dados
+    // Linhas de dados, truncadas individualmente pela largura real
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
-    const x = 5;
     let y = 16;
     const lh = 5.2;
     const rows = [
@@ -4320,9 +4339,7 @@ function gerarPdfEtiquetas(dados) {
       `LOTE: ${i + 1}/${total}`
     ];
     rows.forEach(txt => {
-      // Trunca pra evitar estouro horizontal (~88mm uteis a 9pt ~ 60 chars)
-      const t = String(txt).length > 60 ? String(txt).slice(0, 59) + '…' : String(txt);
-      pdf.text(t, x, y);
+      pdf.text(fitText(txt, innerWidth), xLeft, y);
       y += lh;
     });
   }
