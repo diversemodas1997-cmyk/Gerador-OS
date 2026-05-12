@@ -4277,6 +4277,10 @@ function etiquetaFilenameForOS(o) {
 // Gera PDF das etiquetas direto com jsPDF (sem html2canvas, pois o conteudo
 // e so texto). Cada etiqueta vira uma pagina de 100mm x 50mm. `dados`
 // precisa ter { marca, os, qtde, tam, cor, modelo, numEtiquetas }.
+//
+// Todos os textos (marca + 6 linhas) sao desenhados no mesmo tamanho, e
+// esse tamanho e maximizado automaticamente pra ocupar a area da etiqueta
+// sem estourar a borda — medindo a largura real via pdf.getTextWidth.
 function gerarPdfEtiquetas(dados) {
   const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
@@ -4288,8 +4292,21 @@ function gerarPdfEtiquetas(dados) {
     compress: true
   });
 
-  // Trunca o texto com '…' ate caber em maxWidth (mm), usando a largura
-  // real medida pelo jsPDF na fonte/tamanho correntes.
+  // Geometria:
+  //   Borda: rect(2, 2, 96, 46) -> de (2,2) a (98,48)
+  //   Area util de texto: x 3.5..96.5 (93mm), y 3..47 (44mm)
+  const xLeft = 3.5;
+  const xCenter = 50;
+  const innerWidth = 93;
+  const boxTop = 2;
+  const boxHeight = 46;
+  const verticalPad = 1.5;
+  const innerHeight = boxHeight - 2 * verticalPad; // 43mm
+  const nLines = 7;          // marca + 6 linhas
+  const lineFactor = 1.18;   // espacamento entre linhas (relativo ao fontSize)
+  const ptToMm = 0.3527778;
+
+  // Trunca com '…' ate caber em maxWidth (mm), na fonte/tamanho correntes.
   const fitText = (s, maxWidth) => {
     const str = String(s == null ? '' : s);
     if (pdf.getTextWidth(str) <= maxWidth) return str;
@@ -4300,12 +4317,7 @@ function gerarPdfEtiquetas(dados) {
     return cut + '…';
   };
 
-  // Geometria da etiqueta:
-  //   Borda: rect(2, 2, 96, 46) -> x de 2 a 98, y de 2 a 48
-  //   Texto util: x de 5 a 95 (90mm de largura, com 3mm de respiro a direita)
-  const xLeft = 5;
-  const xRight = 95;
-  const innerWidth = xRight - xLeft; // 90mm
+  pdf.setFont('helvetica', 'bold');
 
   const total = Math.max(1, dados.numEtiquetas);
   for (let i = 0; i < total; i++) {
@@ -4315,22 +4327,9 @@ function gerarPdfEtiquetas(dados) {
     pdf.setLineWidth(0.3);
     pdf.rect(2, 2, 96, 46);
 
-    // Cabecalho (MARCA) centralizado, truncado se exceder a largura util
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(13);
-    const marcaTxt = fitText(dados.marca, innerWidth);
-    pdf.text(marcaTxt, 50, 8.5, { align: 'center' });
-
-    // Linha separadora abaixo do cabecalho
-    pdf.setLineWidth(0.25);
-    pdf.line(4, 11, 96, 11);
-
-    // Linhas de dados, truncadas individualmente pela largura real
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    let y = 16;
-    const lh = 5.2;
-    const rows = [
+    // Linhas dessa etiqueta (LOTE varia por pagina)
+    const linhas = [
+      String(dados.marca || ''),
       `OS: ${dados.os}`,
       `MODELO: ${dados.modelo}`,
       `QTDE: ${dados.qtde}`,
@@ -4338,10 +4337,35 @@ function gerarPdfEtiquetas(dados) {
       `COR: ${dados.cor}`,
       `LOTE: ${i + 1}/${total}`
     ];
-    rows.forEach(txt => {
-      pdf.text(fitText(txt, innerWidth), xLeft, y);
-      y += lh;
+
+    // Mede no tamanho de referencia (10pt) e escala linearmente pra achar
+    // o maior fontSize que cabe simultaneamente em largura e altura.
+    pdf.setFontSize(10);
+    const maxWAt10 = Math.max(...linhas.map(t => pdf.getTextWidth(t)));
+    const sizeByWidth  = (10 * innerWidth) / Math.max(maxWAt10, 0.1);
+    const sizeByHeight = innerHeight / (nLines * ptToMm * lineFactor);
+    const fontSize = Math.min(sizeByWidth, sizeByHeight, 18);
+
+    pdf.setFontSize(fontSize);
+    const lineHeight = fontSize * ptToMm * lineFactor; // mm
+    const blockH = nLines * lineHeight;
+    const topY = boxTop + (boxHeight - blockH) / 2;    // centraliza vertical
+
+    // 1a linha = MARCA, centralizada
+    pdf.text(fitText(linhas[0], innerWidth), xCenter, topY, {
+      align: 'center', baseline: 'top'
     });
+
+    // Separador fininho entre MARCA e demais linhas
+    const sepY = topY + lineHeight - lineHeight * 0.12;
+    pdf.setLineWidth(0.18);
+    pdf.line(4, sepY, 96, sepY);
+
+    // Linhas 2..7 alinhadas a esquerda
+    for (let r = 1; r < linhas.length; r++) {
+      const y = topY + r * lineHeight;
+      pdf.text(fitText(linhas[r], innerWidth), xLeft, y, { baseline: 'top' });
+    }
   }
 
   return pdf.output('blob');
@@ -4617,31 +4641,30 @@ function imprimirEtiquetas(osId) {
     width: 100%;
     height: 100%;
     border: 1px solid #000;
-    padding: 2mm 4mm;
+    padding: 1.5mm 3.5mm;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 0.8mm;
+    justify-content: space-between;
   }
-  .label .head {
-    text-align: center;
-    font-weight: 800;
-    font-size: 12pt;
-    letter-spacing: .04em;
-    border-bottom: 1px solid #000;
-    padding-bottom: 1mm;
-    margin-bottom: 0.5mm;
-  }
+  /* Mesma fonte/peso pra marca e linhas — visual uniforme; o que muda */
+  /* e so alinhamento (marca centralizada) e o separador fino abaixo.  */
+  .label .head,
   .label .row {
-    font-size: 9pt;
-    font-weight: 600;
+    font-size: 11pt;
+    font-weight: 800;
     letter-spacing: .03em;
-    text-align: left;
-    line-height: 1.15;
+    line-height: 1.05;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .label .head {
+    text-align: center;
+    border-bottom: 1px solid #000;
+    padding-bottom: 0.6mm;
+    margin-bottom: 0.4mm;
+  }
+  .label .row { text-align: left; }
   @media print {
     .toolbar { display: none !important; }
     .page { margin: 0; }
