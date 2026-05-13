@@ -3998,10 +3998,10 @@ async function salvarOS() {
   await atualizarCounterOS(data.os);
   osEditId = null;
   await aplicarRegraConjugadaSeAplicavel(data);
-  // Mantem etiquetas/etiqueta-<numero>.pdf em sincronia com a grade/qtde atual.
-  // Silencioso: o toast 'OS salva' ja sinaliza; o arquivo em disco e efeito colateral.
-  salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data), { silent: true });
   toast('OS ' + data.os + ' salva', 'ok');
+  // Mantem etiquetas/etiqueta-<numero>.pdf em sincronia com a grade/qtde atual.
+  // Sem silent: o toast 'PDF etiquetas salvo: ...' confirma a regravacao em disco.
+  salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
   goto('lista-os');
 }
 
@@ -4498,7 +4498,7 @@ async function salvarEImprimir() {
       toast(`PDF salvo: ${filename}`, 'ok');
       // Regrava a etiqueta junto: quem clica em "Salvar e Gerar PDF" espera
       // que TUDO que sai dessa OS pra disco fique atualizado.
-      salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data), { silent: true });
+      salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
       // Se gerou conjugada, gera o PDF dela tambem
       if (conjugada) {
         await new Promise(r => setTimeout(r, 400));
@@ -4509,7 +4509,7 @@ async function salvarEImprimir() {
           const fnC = pdfFilenameForOS(conjugada);
           const okC = await savePdfToFolder(blobC, fnC);
           if (okC) toast(`PDF conjugada salvo: ${fnC}`, 'ok');
-          salvarPdfEtiquetasAuto(conjugada, dadosEtiquetaParaOS(conjugada), { silent: true });
+          salvarPdfEtiquetasAuto(conjugada, dadosEtiquetaParaOS(conjugada));
         } catch (e) {
           console.warn('PDF conjugada', e);
         }
