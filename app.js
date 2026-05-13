@@ -3998,6 +3998,9 @@ async function salvarOS() {
   await atualizarCounterOS(data.os);
   osEditId = null;
   await aplicarRegraConjugadaSeAplicavel(data);
+  // Mantem etiquetas/etiqueta-<numero>.pdf em sincronia com a grade/qtde atual.
+  // Silencioso: o toast 'OS salva' ja sinaliza; o arquivo em disco e efeito colateral.
+  salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data), { silent: true });
   toast('OS ' + data.os + ' salva', 'ok');
   goto('lista-os');
 }
@@ -4374,7 +4377,7 @@ function gerarPdfEtiquetas(dados) {
 // Salva o PDF de etiquetas na subpasta "etiquetas" dentro da pasta de PDFs
 // configurada. Silencioso quando nao ha pasta conectada — nao bloqueia o
 // fluxo de impressao. Retorna true/false.
-async function salvarPdfEtiquetasAuto(o, dados) {
+async function salvarPdfEtiquetasAuto(o, dados, { silent = false } = {}) {
   let handle = pdfFolderHandle || (await loadPdfFolderHandle());
   if (!handle) return false;
   const ok = await ensureFolderPermission(handle, 'readwrite');
@@ -4388,7 +4391,7 @@ async function salvarPdfEtiquetasAuto(o, dados) {
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
-    toast(`PDF etiquetas salvo: etiquetas/${filename}`, 'ok');
+    if (!silent) toast(`PDF etiquetas salvo: etiquetas/${filename}`, 'ok');
     return true;
   } catch (e) {
     console.warn('salvarPdfEtiquetasAuto', e);
@@ -4493,6 +4496,9 @@ async function salvarEImprimir() {
     const saved = await savePdfToFolder(blob, filename);
     if (saved) {
       toast(`PDF salvo: ${filename}`, 'ok');
+      // Regrava a etiqueta junto: quem clica em "Salvar e Gerar PDF" espera
+      // que TUDO que sai dessa OS pra disco fique atualizado.
+      salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data), { silent: true });
       // Se gerou conjugada, gera o PDF dela tambem
       if (conjugada) {
         await new Promise(r => setTimeout(r, 400));
@@ -4503,6 +4509,7 @@ async function salvarEImprimir() {
           const fnC = pdfFilenameForOS(conjugada);
           const okC = await savePdfToFolder(blobC, fnC);
           if (okC) toast(`PDF conjugada salvo: ${fnC}`, 'ok');
+          salvarPdfEtiquetasAuto(conjugada, dadosEtiquetaParaOS(conjugada), { silent: true });
         } catch (e) {
           console.warn('PDF conjugada', e);
         }
@@ -4525,14 +4532,12 @@ async function salvarEImprimir() {
 // de TAMANHOS ATIVOS na grade (P, M, G, GG, G1, G2, G3). Ex.: grade
 // completa P..G3 = 7 etiquetas; grade M-G-GG-G3 = 4 etiquetas. Todas as
 // etiquetas sao identicas; so o numero do LOTE muda em sequencia 1..N.
-function imprimirEtiquetas(osId) {
-  const o = STATE.ordens.find(x => x.id === osId);
-  if (!o) { toast('OS não encontrada', 'err'); return; }
-
+// Calcula os dados que vao para cada etiqueta a partir de uma OS. Centralizado
+// num helper porque tambem e usado pelos auto-saves silenciosos de
+// salvarOS/salvarEImprimir, fora do fluxo de impressao.
+function dadosEtiquetaParaOS(o) {
   const os = o.os || o.codigo || '—';
   const marca = (o.griffeNome || o.griffe || 'MARCA').toUpperCase();
-  // QTDE = total de unidades produzidas (grade × camadas × multPrincipal),
-  // mesma logica da celula "Total" no Total por tamanho da folha pronta.
   const camadas = o.enfesto?.camadas || 0;
   const fasesP = o.fases || [];
   const tecsP = o.tecidos || [];
@@ -4561,10 +4566,6 @@ function imprimirEtiquetas(osId) {
   const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
 
   const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
-  // Cores do desenho: principal/secundaria/terciaria, na ordem cadastrada.
-  // Para desenhos bicolor/tricolor, a etiqueta mostra a combinacao completa
-  // (ex.: PRETO/CAQUI/OFF-WHITE), evitando que apenas a cor principal
-  // apareca. Para basica/sem desenho, cai pro fase/tecido como antes.
   const _corNome = id => id ? (STATE.cores.find(c => c.id === id)?.nome || '') : '';
   const coresDesenho = [
     _corNome(desenho?.corPrincipalId),
@@ -4578,21 +4579,22 @@ function imprimirEtiquetas(osId) {
        || coresDesenho[0]
        || '—')).toString().toUpperCase();
 
-  // Nome do desenho tecnico: prefere o "desc" (nome descritivo), cai pro
-  // codigo do desenho e por fim o codigo manual digitado na OS. Strip
-  // qualquer sufixo de cores apos '|' (convencao usada no cadastro pra
-  // anotar a combinacao de cores junto do nome, ex.: "CAMISETA TRICOLOR
-  // | PRETO/CAQUI/OFF-WHITE") — a cor sai na linha COR, nao na MODELO.
   const desenhoNome = String(desenho?.desc || desenho?.codigo || o.codigo || '—')
     .split('|')[0]
     .trim()
     .toUpperCase();
 
-  // 1 etiqueta por TAMANHO ATIVO da grade (P, M, G, GG, G1, G2, G3).
-  // Ex.: grade P..G3 = 7 etiquetas; grade M-G-GG-G3 = 4 etiquetas.
-  // Se nenhum tamanho estiver preenchido, gera 1 etiqueta unica em vez
-  // de bloquear a impressao.
+  // 1 etiqueta por TAMANHO ATIVO da grade; minimo 1 pra nao bloquear impressao.
   const numEtiquetas = Math.max(1, sizesAtivos.length);
+
+  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas };
+}
+
+function imprimirEtiquetas(osId) {
+  const o = STATE.ordens.find(x => x.id === osId);
+  if (!o) { toast('OS não encontrada', 'err'); return; }
+
+  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas } = dadosEtiquetaParaOS(o);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -4716,9 +4718,7 @@ function imprimirEtiquetas(osId) {
   // Auto-save em segundo plano: gera o PDF e salva em <pasta-pdf>/etiquetas/
   // (subpasta criada se nao existir). Silencioso se a pasta nao estiver
   // conectada — nao bloqueia o popup de impressao.
-  salvarPdfEtiquetasAuto(o, {
-    marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas
-  });
+  salvarPdfEtiquetasAuto(o, { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas });
 }
 
 function imprimirEtiquetasAtual() {
