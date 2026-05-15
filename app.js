@@ -1015,17 +1015,34 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       { v: 'bicolor', lbl: 'Bicolor' },
       { v: 'tricolor', lbl: 'Tricolor' }
     ];
+    const fixosTp = new Set(tiposPeca.map(t => t.v));
+    const fixosVr = new Set(variacoes.map(t => t.v));
+    const tiposPecaCustom = [...new Set(STATE.grades.map(g => g.tipoPeca || '').filter(x => x && !fixosTp.has(x)))]
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const variacoesCustom = [...new Set(STATE.grades.map(g => g.variacao || '').filter(x => x && !fixosVr.has(x)))]
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    // garante que o valor atual do item apareça mesmo se ainda não estiver em STATE.grades
+    if (item.tipoPeca && !fixosTp.has(item.tipoPeca) && !tiposPecaCustom.includes(item.tipoPeca)) tiposPecaCustom.push(item.tipoPeca);
+    if (item.variacao && !fixosVr.has(item.variacao) && !variacoesCustom.includes(item.variacao)) variacoesCustom.push(item.variacao);
+
+    const optsTp = tiposPeca.map(t => `<option value="${esc(t.v)}" ${item.tipoPeca===t.v?'selected':''}>${esc(t.lbl)}</option>`).join('')
+      + (tiposPecaCustom.length ? `<optgroup label="Pastas adicionais">${tiposPecaCustom.map(v => `<option value="${esc(v)}" ${item.tipoPeca===v?'selected':''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
+      + `<option value="__nova__">+ Nova pasta…</option>`;
+    const optsVr = variacoes.map(t => `<option value="${esc(t.v)}" ${item.variacao===t.v?'selected':''}>${esc(t.lbl)}</option>`).join('')
+      + (variacoesCustom.length ? `<optgroup label="Subpastas adicionais">${variacoesCustom.map(v => `<option value="${esc(v)}" ${item.variacao===v?'selected':''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
+      + `<option value="__nova__">+ Nova subpasta…</option>`;
+
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
-        <div class="field"><label>Tipo de peça</label>
-          <select id="m-grade-tipopeca">
-            ${tiposPeca.map(t => `<option value="${t.v}" ${item.tipoPeca===t.v?'selected':''}>${t.lbl}</option>`).join('')}
+        <div class="field"><label>Tipo de peça (pasta)</label>
+          <select id="m-grade-tipopeca" data-prev="${esc(item.tipoPeca||'')}" onchange="onSelectGradeFolder(this,'pasta')">
+            ${optsTp}
           </select>
         </div>
-        <div class="field"><label>Variação</label>
-          <select id="m-grade-variacao">
-            ${variacoes.map(x => `<option value="${x.v}" ${item.variacao===x.v?'selected':''}>${x.lbl}</option>`).join('')}
+        <div class="field"><label>Variação (subpasta)</label>
+          <select id="m-grade-variacao" data-prev="${esc(item.variacao||'')}" onchange="onSelectGradeFolder(this,'subpasta')">
+            ${optsVr}
           </select>
         </div>
       </div>
@@ -1953,14 +1970,44 @@ function toggleFolderGrade(path) {
   renderGrades();
 }
 
+function onSelectGradeFolder(sel, kind) {
+  if (sel.value !== '__nova__') {
+    sel.dataset.prev = sel.value;
+    return;
+  }
+  const label = kind === 'pasta' ? 'Nome da nova pasta' : 'Nome da nova subpasta';
+  const nome = (prompt(label + ':') || '').trim();
+  if (!nome) { sel.value = sel.dataset.prev || ''; return; }
+  const existente = Array.from(sel.options).find(o => o.value !== '__nova__' && o.value.toLowerCase() === nome.toLowerCase());
+  if (existente) {
+    sel.value = existente.value;
+  } else {
+    const opt = document.createElement('option');
+    opt.value = nome;
+    opt.textContent = nome;
+    let grupo = Array.from(sel.querySelectorAll('optgroup')).find(g => g.label.startsWith(kind === 'pasta' ? 'Pastas' : 'Subpastas'));
+    if (!grupo) {
+      grupo = document.createElement('optgroup');
+      grupo.label = kind === 'pasta' ? 'Pastas adicionais' : 'Subpastas adicionais';
+      const novaOpt = Array.from(sel.options).find(o => o.value === '__nova__');
+      sel.insertBefore(grupo, novaOpt);
+    }
+    grupo.appendChild(opt);
+    sel.value = nome;
+  }
+  sel.dataset.prev = sel.value;
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
 
   const labelsTipoPeca = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro', '': 'Sem categoria' };
   const labelsVariacao = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor', '': 'Sem variação' };
-  const ordemTipoPeca = ['camiseta', 'blusa_moletom', 'outro', ''];
-  const ordemVariacao = ['basica', 'bicolor', 'tricolor', ''];
+  const ordemTipoPecaFixa = ['camiseta', 'blusa_moletom', 'outro', ''];
+  const ordemVariacaoFixa = ['basica', 'bicolor', 'tricolor', ''];
+  const tpFixosSet = new Set(ordemTipoPecaFixa);
+  const vrFixosSet = new Set(ordemVariacaoFixa);
 
   // Agrupa por tipoPeca → variacao
   const grupos = {};
@@ -1971,6 +2018,10 @@ function renderGrades() {
     grupos[tp][vr] = grupos[tp][vr] || [];
     grupos[tp][vr].push(g);
   }
+
+  // Pastas customizadas (criadas pelo usuário) entram após as fixas, em ordem alfabética
+  const tpCustom = Object.keys(grupos).filter(tp => !tpFixosSet.has(tp)).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const ordemTipoPeca = [...ordemTipoPecaFixa, ...tpCustom];
 
   const renderGradeRow = (g) => {
     const t = g.tamanhos || {};
@@ -1991,20 +2042,24 @@ function renderGrades() {
     const tpOpen = pastasGradeExpandidas.has(tpPath);
     const chevTop = tpOpen ? '▼' : '▶';
     const totalNoGrupo = Object.values(grupos[tp]).reduce((a, v) => a + v.length, 0);
-    html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${tpPath}')"><td colspan="4">
-      <span class="folder-chev">${chevTop}</span> 📁 ${esc(labelsTipoPeca[tp] || tp)}
+    const tpLabel = labelsTipoPeca[tp] !== undefined ? labelsTipoPeca[tp] : tp;
+    html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="4">
+      <span class="folder-chev">${chevTop}</span> 📁 ${esc(tpLabel)}
       <span class="folder-count">(${totalNoGrupo})</span>
     </td></tr>`;
     if (!tpOpen) continue;
 
+    const vrCustom = Object.keys(grupos[tp]).filter(vr => !vrFixosSet.has(vr)).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const ordemVariacao = [...ordemVariacaoFixa, ...vrCustom];
     for (const vr of ordemVariacao) {
       const gs = grupos[tp][vr];
       if (!gs || !gs.length) continue;
       const vrPath = tpPath + '|var:' + vr;
       const vrOpen = pastasGradeExpandidas.has(vrPath);
       const chevSub = vrOpen ? '▼' : '▶';
-      html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${vrPath}')"><td colspan="4">
-        <span class="folder-chev">${chevSub}</span> ↳ ${esc(labelsVariacao[vr] || vr)}
+      const vrLabel = labelsVariacao[vr] !== undefined ? labelsVariacao[vr] : vr;
+      html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="4">
+        <span class="folder-chev">${chevSub}</span> ↳ ${esc(vrLabel)}
         <span class="folder-count">(${gs.length})</span>
       </td></tr>`;
       if (!vrOpen) continue;
