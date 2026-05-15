@@ -702,6 +702,11 @@ const STATE = {
   componentes: [],
   ordens: [],
   osCounter: 0,
+  // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
+  // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
+  // texto exibido muda. tpOrder/vrOrder definem ordem manual; chaves ausentes
+  // caem no fim, com fixas antes das customizadas alfabéticas.
+  gradeFolderLabels: { tp: {}, vr: {}, tpOrder: [], vrOrder: [] },
   etapasPadrao: ['Corte', 'Acabamento de mangas', 'Costura', 'Retirada de fios', 'Estampa', 'Lavanderia', 'Ensaque', 'Expedição'],
   componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
 };
@@ -741,6 +746,21 @@ async function loadState() {
       }
     } catch (e) { /* chave não existe ainda, ok */ }
   }
+  // Carrega overrides de rótulos das pastas de grades (objeto, não array)
+  try {
+    const r = await DB.get('gradeFolderLabels');
+    if (r && r.value) {
+      try {
+        const parsed = JSON.parse(r.value);
+        STATE.gradeFolderLabels = {
+          tp: parsed?.tp || {},
+          vr: parsed?.vr || {},
+          tpOrder: Array.isArray(parsed?.tpOrder) ? parsed.tpOrder : [],
+          vrOrder: Array.isArray(parsed?.vrOrder) ? parsed.vrOrder : []
+        };
+      } catch { STATE.gradeFolderLabels = { tp: {}, vr: {}, tpOrder: [], vrOrder: [] }; }
+    }
+  } catch (e) { /* ok */ }
   // Carrega o contador de OS (não é array, é número)
   try {
     const c = await DB.get('osCounter');
@@ -1003,17 +1023,18 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'grade') {
+    // Aplica overrides de label (se a pasta fixa foi renomeada)
     const tiposPeca = [
-      { v: '', lbl: '— sem categoria —' },
-      { v: 'camiseta', lbl: 'Camiseta' },
-      { v: 'blusa_moletom', lbl: 'Blusa Moletom' },
-      { v: 'outro', lbl: 'Outro' }
+      { v: '', lbl: labelTp('') === 'Sem categoria' ? '— sem categoria —' : labelTp('') },
+      { v: 'camiseta', lbl: labelTp('camiseta') },
+      { v: 'blusa_moletom', lbl: labelTp('blusa_moletom') },
+      { v: 'outro', lbl: labelTp('outro') }
     ];
     const variacoes = [
-      { v: '', lbl: '— sem variação —' },
-      { v: 'basica', lbl: 'Básica' },
-      { v: 'bicolor', lbl: 'Bicolor' },
-      { v: 'tricolor', lbl: 'Tricolor' }
+      { v: '', lbl: labelVr('') === 'Sem variação' ? '— sem variação —' : labelVr('') },
+      { v: 'basica', lbl: labelVr('basica') },
+      { v: 'bicolor', lbl: labelVr('bicolor') },
+      { v: 'tricolor', lbl: labelVr('tricolor') }
     ];
     const fixosTp = new Set(tiposPeca.map(t => t.v));
     const fixosVr = new Set(variacoes.map(t => t.v));
@@ -1970,59 +1991,139 @@ function toggleFolderGrade(path) {
   renderGrades();
 }
 
+const TP_FIXOS = new Set(['camiseta', 'blusa_moletom', 'outro', '']);
+const VR_FIXOS = new Set(['basica', 'bicolor', 'tricolor', '']);
+const LABELS_TP_PADRAO = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro', '': 'Sem categoria' };
+const LABELS_VR_PADRAO = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor', '': 'Sem variação' };
+
+function _gfl() {
+  STATE.gradeFolderLabels = STATE.gradeFolderLabels || { tp: {}, vr: {}, tpOrder: [], vrOrder: [] };
+  STATE.gradeFolderLabels.tp = STATE.gradeFolderLabels.tp || {};
+  STATE.gradeFolderLabels.vr = STATE.gradeFolderLabels.vr || {};
+  STATE.gradeFolderLabels.tpOrder = STATE.gradeFolderLabels.tpOrder || [];
+  STATE.gradeFolderLabels.vrOrder = STATE.gradeFolderLabels.vrOrder || [];
+  return STATE.gradeFolderLabels;
+}
+function labelTp(tp) {
+  const ov = _gfl().tp[tp];
+  if (ov) return ov;
+  return LABELS_TP_PADRAO[tp] !== undefined ? LABELS_TP_PADRAO[tp] : tp;
+}
+function labelVr(vr) {
+  const ov = _gfl().vr[vr];
+  if (ov) return ov;
+  return LABELS_VR_PADRAO[vr] !== undefined ? LABELS_VR_PADRAO[vr] : vr;
+}
+
 async function renameGradeFolder(tpAtual) {
-  const fixos = new Set(['camiseta', 'blusa_moletom', 'outro', '']);
-  if (fixos.has(tpAtual)) { toast('Pastas fixas não podem ser renomeadas', 'err'); return; }
-  const novo = (prompt('Novo nome da pasta:', tpAtual) || '').trim();
-  if (!novo || novo === tpAtual) return;
-  // Bloqueia colidir com nome fixo
-  if (fixos.has(novo.toLowerCase())) { toast('Esse nome conflita com uma pasta fixa', 'err'); return; }
-  let mexeu = 0;
-  STATE.grades.forEach(g => { if ((g.tipoPeca || '') === tpAtual) { g.tipoPeca = novo; mexeu++; } });
-  if (!mexeu) return;
-  // Mantém a pasta expandida sob o novo nome
-  const oldKey = 'tp:' + tpAtual;
-  const newKey = 'tp:' + novo;
-  if (pastasGradeExpandidas.has(oldKey)) {
-    pastasGradeExpandidas.delete(oldKey);
-    pastasGradeExpandidas.add(newKey);
-  }
-  // Subpastas expandidas dentro dessa pasta também migram
-  const prefixOld = oldKey + '|var:';
-  const prefixNew = newKey + '|var:';
-  for (const k of [...pastasGradeExpandidas]) {
-    if (k.startsWith(prefixOld)) {
-      pastasGradeExpandidas.delete(k);
-      pastasGradeExpandidas.add(prefixNew + k.slice(prefixOld.length));
+  const ehFixa = TP_FIXOS.has(tpAtual);
+  const labelAtual = labelTp(tpAtual);
+  const novo = (prompt('Novo nome da pasta:', labelAtual) || '').trim();
+  if (!novo || novo === labelAtual) return;
+  if (ehFixa) {
+    // Renomeia só visualmente — a chave técnica continua sendo usada nos filtros da OS
+    const gfl = _gfl();
+    if (LABELS_TP_PADRAO[tpAtual] === novo) delete gfl.tp[tpAtual];
+    else gfl.tp[tpAtual] = novo;
+    await saveState('gradeFolderLabels');
+  } else {
+    if (TP_FIXOS.has(novo.toLowerCase())) { toast('Esse nome conflita com uma pasta fixa', 'err'); return; }
+    let mexeu = 0;
+    STATE.grades.forEach(g => { if ((g.tipoPeca || '') === tpAtual) { g.tipoPeca = novo; mexeu++; } });
+    if (!mexeu) return;
+    // Atualiza chaves de expansão e ordem
+    const oldKey = 'tp:' + tpAtual;
+    const newKey = 'tp:' + novo;
+    if (pastasGradeExpandidas.has(oldKey)) { pastasGradeExpandidas.delete(oldKey); pastasGradeExpandidas.add(newKey); }
+    const prefixOld = oldKey + '|var:';
+    const prefixNew = newKey + '|var:';
+    for (const k of [...pastasGradeExpandidas]) {
+      if (k.startsWith(prefixOld)) {
+        pastasGradeExpandidas.delete(k);
+        pastasGradeExpandidas.add(prefixNew + k.slice(prefixOld.length));
+      }
     }
+    const gfl = _gfl();
+    const idx = gfl.tpOrder.indexOf(tpAtual);
+    if (idx >= 0) gfl.tpOrder[idx] = novo;
+    await saveState('grades');
+    await saveState('gradeFolderLabels');
   }
-  await saveState('grades');
   renderGrades();
   toast('Pasta renomeada', 'ok');
 }
 
 async function renameGradeSubfolder(tp, vrAtual) {
-  const fixos = new Set(['basica', 'bicolor', 'tricolor', '']);
-  if (fixos.has(vrAtual)) { toast('Subpastas fixas não podem ser renomeadas', 'err'); return; }
-  const novo = (prompt('Novo nome da subpasta:', vrAtual) || '').trim();
-  if (!novo || novo === vrAtual) return;
-  if (fixos.has(novo.toLowerCase())) { toast('Esse nome conflita com uma subpasta fixa', 'err'); return; }
-  let mexeu = 0;
-  STATE.grades.forEach(g => {
-    if ((g.tipoPeca || '') === tp && (g.variacao || '') === vrAtual) {
-      g.variacao = novo; mexeu++;
-    }
-  });
-  if (!mexeu) return;
-  const oldKey = 'tp:' + tp + '|var:' + vrAtual;
-  const newKey = 'tp:' + tp + '|var:' + novo;
-  if (pastasGradeExpandidas.has(oldKey)) {
-    pastasGradeExpandidas.delete(oldKey);
-    pastasGradeExpandidas.add(newKey);
+  const ehFixa = VR_FIXOS.has(vrAtual);
+  const labelAtual = labelVr(vrAtual);
+  const novo = (prompt('Novo nome da subpasta:', labelAtual) || '').trim();
+  if (!novo || novo === labelAtual) return;
+  if (ehFixa) {
+    const gfl = _gfl();
+    if (LABELS_VR_PADRAO[vrAtual] === novo) delete gfl.vr[vrAtual];
+    else gfl.vr[vrAtual] = novo;
+    await saveState('gradeFolderLabels');
+  } else {
+    if (VR_FIXOS.has(novo.toLowerCase())) { toast('Esse nome conflita com uma subpasta fixa', 'err'); return; }
+    let mexeu = 0;
+    STATE.grades.forEach(g => {
+      if ((g.tipoPeca || '') === tp && (g.variacao || '') === vrAtual) { g.variacao = novo; mexeu++; }
+    });
+    if (!mexeu) return;
+    const oldKey = 'tp:' + tp + '|var:' + vrAtual;
+    const newKey = 'tp:' + tp + '|var:' + novo;
+    if (pastasGradeExpandidas.has(oldKey)) { pastasGradeExpandidas.delete(oldKey); pastasGradeExpandidas.add(newKey); }
+    const gfl = _gfl();
+    const idx = gfl.vrOrder.indexOf(vrAtual);
+    if (idx >= 0) gfl.vrOrder[idx] = novo;
+    await saveState('grades');
+    await saveState('gradeFolderLabels');
   }
-  await saveState('grades');
   renderGrades();
   toast('Subpasta renomeada', 'ok');
+}
+
+// Aplica ordem manual + fallback (fixos primeiro, depois custom alfabético)
+function _ordenarPastas(chaves, ordemManual, fixosSet) {
+  const presente = new Set(chaves);
+  const naOrdem = ordemManual.filter(k => presente.has(k));
+  const restantes = chaves.filter(k => !naOrdem.includes(k));
+  const fixosOrdem = ['camiseta', 'blusa_moletom', 'outro', 'basica', 'bicolor', 'tricolor', ''];
+  const fixosRest = restantes.filter(k => fixosSet.has(k)).sort((a,b) => fixosOrdem.indexOf(a) - fixosOrdem.indexOf(b));
+  const customsRest = restantes.filter(k => !fixosSet.has(k)).sort((a,b) => labelTp(a).localeCompare(labelTp(b),'pt-BR'));
+  return [...naOrdem, ...fixosRest, ...customsRest];
+}
+
+async function moveGradeFolder(tp, dir) {
+  const gfl = _gfl();
+  // Constrói a ordem corrente como aparece na tela e move o item
+  const presentes = [...new Set(STATE.grades.map(g => g.tipoPeca || ''))];
+  const ordem = _ordenarPastas(presentes, gfl.tpOrder, TP_FIXOS);
+  const i = ordem.indexOf(tp);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= ordem.length) return;
+  [ordem[i], ordem[j]] = [ordem[j], ordem[i]];
+  gfl.tpOrder = ordem;
+  await saveState('gradeFolderLabels');
+  renderGrades();
+}
+
+async function moveGradeSubfolder(tp, vr, dir) {
+  const gfl = _gfl();
+  const presentes = [...new Set(STATE.grades.filter(g => (g.tipoPeca || '') === tp).map(g => g.variacao || ''))];
+  const ordem = _ordenarPastas(presentes, gfl.vrOrder, VR_FIXOS);
+  const i = ordem.indexOf(vr);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= ordem.length) return;
+  [ordem[i], ordem[j]] = [ordem[j], ordem[i]];
+  // vrOrder é compartilhado entre todas as pastas — é uma ordem geral de subpastas
+  // (ex.: 'basica' antes de 'bicolor' globalmente). Atualiza só preservando outras chaves.
+  const outros = gfl.vrOrder.filter(k => !ordem.includes(k));
+  gfl.vrOrder = [...ordem, ...outros];
+  await saveState('gradeFolderLabels');
+  renderGrades();
 }
 
 function onSelectGradeFolder(sel, kind) {
@@ -2057,12 +2158,7 @@ function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
 
-  const labelsTipoPeca = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro', '': 'Sem categoria' };
-  const labelsVariacao = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor', '': 'Sem variação' };
-  const ordemTipoPecaFixa = ['camiseta', 'blusa_moletom', 'outro', ''];
-  const ordemVariacaoFixa = ['basica', 'bicolor', 'tricolor', ''];
-  const tpFixosSet = new Set(ordemTipoPecaFixa);
-  const vrFixosSet = new Set(ordemVariacaoFixa);
+  const gfl = _gfl();
 
   // Agrupa por tipoPeca → variacao
   const grupos = {};
@@ -2074,9 +2170,7 @@ function renderGrades() {
     grupos[tp][vr].push(g);
   }
 
-  // Pastas customizadas (criadas pelo usuário) entram após as fixas, em ordem alfabética
-  const tpCustom = Object.keys(grupos).filter(tp => !tpFixosSet.has(tp)).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const ordemTipoPeca = [...ordemTipoPecaFixa, ...tpCustom];
+  const ordemTipoPeca = _ordenarPastas(Object.keys(grupos), gfl.tpOrder, TP_FIXOS);
 
   const renderGradeRow = (g) => {
     const t = g.tamanhos || {};
@@ -2090,42 +2184,51 @@ function renderGrades() {
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   };
 
+  const folderActions = (clickAttrs) => `<span class="folder-actions" onclick="event.stopPropagation()">${clickAttrs}</span>`;
+
   let html = '';
-  for (const tp of ordemTipoPeca) {
+  for (let i = 0; i < ordemTipoPeca.length; i++) {
+    const tp = ordemTipoPeca[i];
     if (!grupos[tp]) continue;
     const tpPath = 'tp:' + tp;
     const tpOpen = pastasGradeExpandidas.has(tpPath);
     const chevTop = tpOpen ? '▼' : '▶';
     const totalNoGrupo = Object.values(grupos[tp]).reduce((a, v) => a + v.length, 0);
-    const tpLabel = labelsTipoPeca[tp] !== undefined ? labelsTipoPeca[tp] : tp;
-    const tpEhCustom = !tpFixosSet.has(tp);
-    const btnEditarTp = tpEhCustom
-      ? `<button type="button" class="folder-edit" title="Renomear pasta" onclick="event.stopPropagation(); renameGradeFolder(${esc(JSON.stringify(tp))})">✎</button>`
-      : '';
+    const tpJson = esc(JSON.stringify(tp));
+    const upDis = i === 0 ? 'disabled' : '';
+    const downDis = i === ordemTipoPeca.length - 1 ? 'disabled' : '';
+    const acoesTp = folderActions(
+      `<button type="button" class="folder-btn" title="Mover para cima" ${upDis} onclick="moveGradeFolder(${tpJson}, -1)">↑</button>`
+      + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDis} onclick="moveGradeFolder(${tpJson}, 1)">↓</button>`
+      + `<button type="button" class="folder-btn" title="Renomear pasta" onclick="renameGradeFolder(${tpJson})">✎</button>`
+    );
     html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="4">
-      <span class="folder-chev">${chevTop}</span> 📁 ${esc(tpLabel)}
+      <span class="folder-chev">${chevTop}</span> 📁 ${esc(labelTp(tp))}
       <span class="folder-count">(${totalNoGrupo})</span>
-      ${btnEditarTp}
+      ${acoesTp}
     </td></tr>`;
     if (!tpOpen) continue;
 
-    const vrCustom = Object.keys(grupos[tp]).filter(vr => !vrFixosSet.has(vr)).sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    const ordemVariacao = [...ordemVariacaoFixa, ...vrCustom];
-    for (const vr of ordemVariacao) {
+    const ordemVariacao = _ordenarPastas(Object.keys(grupos[tp]), gfl.vrOrder, VR_FIXOS);
+    for (let j = 0; j < ordemVariacao.length; j++) {
+      const vr = ordemVariacao[j];
       const gs = grupos[tp][vr];
       if (!gs || !gs.length) continue;
       const vrPath = tpPath + '|var:' + vr;
       const vrOpen = pastasGradeExpandidas.has(vrPath);
       const chevSub = vrOpen ? '▼' : '▶';
-      const vrLabel = labelsVariacao[vr] !== undefined ? labelsVariacao[vr] : vr;
-      const vrEhCustom = !vrFixosSet.has(vr);
-      const btnEditarVr = vrEhCustom
-        ? `<button type="button" class="folder-edit" title="Renomear subpasta" onclick="event.stopPropagation(); renameGradeSubfolder(${esc(JSON.stringify(tp))}, ${esc(JSON.stringify(vr))})">✎</button>`
-        : '';
+      const vrJson = esc(JSON.stringify(vr));
+      const upDisV = j === 0 ? 'disabled' : '';
+      const downDisV = j === ordemVariacao.length - 1 ? 'disabled' : '';
+      const acoesVr = folderActions(
+        `<button type="button" class="folder-btn" title="Mover para cima" ${upDisV} onclick="moveGradeSubfolder(${tpJson}, ${vrJson}, -1)">↑</button>`
+        + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDisV} onclick="moveGradeSubfolder(${tpJson}, ${vrJson}, 1)">↓</button>`
+        + `<button type="button" class="folder-btn" title="Renomear subpasta" onclick="renameGradeSubfolder(${tpJson}, ${vrJson})">✎</button>`
+      );
       html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="4">
-        <span class="folder-chev">${chevSub}</span> ↳ ${esc(vrLabel)}
+        <span class="folder-chev">${chevSub}</span> ↳ ${esc(labelVr(vr))}
         <span class="folder-count">(${gs.length})</span>
-        ${btnEditarVr}
+        ${acoesVr}
       </td></tr>`;
       if (!vrOpen) continue;
       html += gs.map(renderGradeRow).join('');

@@ -1027,21 +1027,22 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   margin-left: 6px;
 }
 .table tr.grade-folder:hover td { background: inherit; }
-.folder-edit {
-  float: right;
+.folder-actions { float: right; display: inline-flex; gap: 4px; }
+.folder-btn {
   background: transparent;
   color: inherit;
   border: 1px solid currentColor;
   border-radius: 3px;
   font-size: 11px;
   line-height: 1;
+  min-width: 22px;
   padding: 2px 6px;
   cursor: pointer;
   opacity: .55;
   transition: opacity .15s, background .15s;
 }
-.folder-edit:hover { opacity: 1; background: rgba(255,255,255,.12); }
-.grade-folder:hover .folder-edit { background: rgba(0,0,0,.06); }
+.folder-btn:hover:not(:disabled) { opacity: 1; background: rgba(255,255,255,.12); }
+.folder-btn:disabled { opacity: .2; cursor: not-allowed; }
 
 /* Checkboxes interativos da folha de impressao (etapas/tarefas) */
 .os-check {
