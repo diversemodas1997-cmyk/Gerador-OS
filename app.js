@@ -1970,6 +1970,61 @@ function toggleFolderGrade(path) {
   renderGrades();
 }
 
+async function renameGradeFolder(tpAtual) {
+  const fixos = new Set(['camiseta', 'blusa_moletom', 'outro', '']);
+  if (fixos.has(tpAtual)) { toast('Pastas fixas não podem ser renomeadas', 'err'); return; }
+  const novo = (prompt('Novo nome da pasta:', tpAtual) || '').trim();
+  if (!novo || novo === tpAtual) return;
+  // Bloqueia colidir com nome fixo
+  if (fixos.has(novo.toLowerCase())) { toast('Esse nome conflita com uma pasta fixa', 'err'); return; }
+  let mexeu = 0;
+  STATE.grades.forEach(g => { if ((g.tipoPeca || '') === tpAtual) { g.tipoPeca = novo; mexeu++; } });
+  if (!mexeu) return;
+  // Mantém a pasta expandida sob o novo nome
+  const oldKey = 'tp:' + tpAtual;
+  const newKey = 'tp:' + novo;
+  if (pastasGradeExpandidas.has(oldKey)) {
+    pastasGradeExpandidas.delete(oldKey);
+    pastasGradeExpandidas.add(newKey);
+  }
+  // Subpastas expandidas dentro dessa pasta também migram
+  const prefixOld = oldKey + '|var:';
+  const prefixNew = newKey + '|var:';
+  for (const k of [...pastasGradeExpandidas]) {
+    if (k.startsWith(prefixOld)) {
+      pastasGradeExpandidas.delete(k);
+      pastasGradeExpandidas.add(prefixNew + k.slice(prefixOld.length));
+    }
+  }
+  await saveState('grades');
+  renderGrades();
+  toast('Pasta renomeada', 'ok');
+}
+
+async function renameGradeSubfolder(tp, vrAtual) {
+  const fixos = new Set(['basica', 'bicolor', 'tricolor', '']);
+  if (fixos.has(vrAtual)) { toast('Subpastas fixas não podem ser renomeadas', 'err'); return; }
+  const novo = (prompt('Novo nome da subpasta:', vrAtual) || '').trim();
+  if (!novo || novo === vrAtual) return;
+  if (fixos.has(novo.toLowerCase())) { toast('Esse nome conflita com uma subpasta fixa', 'err'); return; }
+  let mexeu = 0;
+  STATE.grades.forEach(g => {
+    if ((g.tipoPeca || '') === tp && (g.variacao || '') === vrAtual) {
+      g.variacao = novo; mexeu++;
+    }
+  });
+  if (!mexeu) return;
+  const oldKey = 'tp:' + tp + '|var:' + vrAtual;
+  const newKey = 'tp:' + tp + '|var:' + novo;
+  if (pastasGradeExpandidas.has(oldKey)) {
+    pastasGradeExpandidas.delete(oldKey);
+    pastasGradeExpandidas.add(newKey);
+  }
+  await saveState('grades');
+  renderGrades();
+  toast('Subpasta renomeada', 'ok');
+}
+
 function onSelectGradeFolder(sel, kind) {
   if (sel.value !== '__nova__') {
     sel.dataset.prev = sel.value;
@@ -2043,9 +2098,14 @@ function renderGrades() {
     const chevTop = tpOpen ? '▼' : '▶';
     const totalNoGrupo = Object.values(grupos[tp]).reduce((a, v) => a + v.length, 0);
     const tpLabel = labelsTipoPeca[tp] !== undefined ? labelsTipoPeca[tp] : tp;
+    const tpEhCustom = !tpFixosSet.has(tp);
+    const btnEditarTp = tpEhCustom
+      ? `<button type="button" class="folder-edit" title="Renomear pasta" onclick="event.stopPropagation(); renameGradeFolder(${esc(JSON.stringify(tp))})">✎</button>`
+      : '';
     html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="4">
       <span class="folder-chev">${chevTop}</span> 📁 ${esc(tpLabel)}
       <span class="folder-count">(${totalNoGrupo})</span>
+      ${btnEditarTp}
     </td></tr>`;
     if (!tpOpen) continue;
 
@@ -2058,9 +2118,14 @@ function renderGrades() {
       const vrOpen = pastasGradeExpandidas.has(vrPath);
       const chevSub = vrOpen ? '▼' : '▶';
       const vrLabel = labelsVariacao[vr] !== undefined ? labelsVariacao[vr] : vr;
+      const vrEhCustom = !vrFixosSet.has(vr);
+      const btnEditarVr = vrEhCustom
+        ? `<button type="button" class="folder-edit" title="Renomear subpasta" onclick="event.stopPropagation(); renameGradeSubfolder(${esc(JSON.stringify(tp))}, ${esc(JSON.stringify(vr))})">✎</button>`
+        : '';
       html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="4">
         <span class="folder-chev">${chevSub}</span> ↳ ${esc(vrLabel)}
         <span class="folder-count">(${gs.length})</span>
+        ${btnEditarVr}
       </td></tr>`;
       if (!vrOpen) continue;
       html += gs.map(renderGradeRow).join('');
