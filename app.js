@@ -417,7 +417,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -701,6 +701,10 @@ const STATE = {
   etapas: [],
   componentes: [],
   ordens: [],
+  // Movimentações de estoque de tecidos (entradas manuais e saídas automáticas
+  // por OS). Cada item: { id, tipo:'entrada'|'saida', tecidoNome, corNome, kg,
+  // data, origem:'manual'|'os', osId, osNumero, obs }.
+  estoqueMov: [],
   osCounter: 0,
   // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
   // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
@@ -737,7 +741,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -878,6 +882,7 @@ function goto(page) {
   if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
+  if (page === 'estoque') renderEstoque();
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
@@ -966,6 +971,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
           </select>
         </div>
+        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"></div>
         <div class="field"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
       </div>`;
   }
@@ -1651,6 +1657,7 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.desc = v('m-desc');
     item.categoria = v('m-categoria');
+    item.peso = parseFloat(String(v('m-peso')).replace(',', '.')) || 0;
   }
   else if (tipo === 'cor') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -1946,13 +1953,14 @@ async function duplicarCadastro(tipo, id) {
 
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
-  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
   const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 36', outro: 'Outro' };
   tb.innerHTML = STATE.tecidos.map(t => `
     <tr>
       <td><strong>${esc(t.nome)}</strong></td>
       <td>${esc(t.desc)}</td>
       <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}</td>
       ${acoesCell('tecido', t.id)}
     </tr>`).join('');
 }
@@ -1970,6 +1978,189 @@ function renderMateriais() {
     <tr><td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
     <td>${esc(m.tipo)||'—'}</td>${acoesCell('material', m.id)}</tr>`).join('');
 }
+/* ========================================================= */
+/*                ESTOQUE DE TECIDOS (kg)                     */
+/* ========================================================= */
+// Calcula saldos a partir de STATE.estoqueMov. Saldo = entradas − saídas.
+// Os resumos "por tecido" e "por cor" começam de TODOS os cadastrados (saldo 0)
+// e somam os movimentos, para que itens cadastrados sem movimento também apareçam.
+function calcularSaldosEstoque() {
+  const key = (t, c) => _normNome(t) + '||' + _normNome(c);
+  const detMap = new Map();
+  (STATE.estoqueMov || []).forEach(m => {
+    const tNome = m.tecidoNome || '', cNome = m.corNome || '';
+    const k = key(tNome, cNome);
+    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0 };
+    const kg = parseFloat(m.kg) || 0;
+    if (m.tipo === 'entrada') cur.entrada += kg; else cur.saida += kg;
+    if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
+    if (!cur.corNome && cNome) cur.corNome = cNome;
+    detMap.set(k, cur);
+  });
+  const detalhe = Array.from(detMap.values()).map(c => ({ ...c, saldo: c.entrada - c.saida }));
+
+  const porTec = new Map();
+  (STATE.tecidos || []).forEach(t => { if (t.nome) porTec.set(_normNome(t.nome), { nome: t.nome, entrada: 0, saida: 0 }); });
+  detalhe.forEach(c => {
+    const k = _normNome(c.tecidoNome);
+    const cur = porTec.get(k) || { nome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0 };
+    cur.entrada += c.entrada; cur.saida += c.saida; porTec.set(k, cur);
+  });
+
+  const porCor = new Map();
+  (STATE.cores || []).forEach(c => { if (c.nome) porCor.set(_normNome(c.nome), { nome: c.nome, entrada: 0, saida: 0 }); });
+  detalhe.forEach(c => {
+    const k = _normNome(c.corNome);
+    const nome = c.corNome || '(sem cor)';
+    const cur = porCor.get(k) || { nome, entrada: 0, saida: 0 };
+    cur.entrada += c.entrada; cur.saida += c.saida; porCor.set(k, cur);
+  });
+
+  const fin = arr => arr.map(c => ({ ...c, saldo: c.entrada - c.saida }));
+  return {
+    detalhe: detalhe.sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || '')),
+    porTecido: fin(Array.from(porTec.values())).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')),
+    porCor: fin(Array.from(porCor.values())).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+  };
+}
+
+function renderEstoque() {
+  const cont = document.getElementById('estoque-painel');
+  if (!cont) return;
+  const { detalhe, porTecido, porCor } = calcularSaldosEstoque();
+  const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const saldoCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
+  const semNada = !(STATE.estoqueMov || []).length;
+
+  const tabResumo = (titulo, linhas, rotulo) => `
+    <div class="card" style="margin:0;">
+      <h2 style="margin:0 0 8px;font-size:14px;">${titulo}</h2>
+      <table class="table">
+        <thead><tr><th>${rotulo}</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
+        <tbody>
+          ${linhas.length ? linhas.map(c => `
+            <tr>
+              <td><strong>${esc(c.nome)}</strong></td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.entrada)}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.saida)}</td>
+              ${saldoCell(c.saldo)}
+            </tr>`).join('') : `<tr><td colspan="4" class="empty">Nada cadastrado.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+
+  const detalheHtml = `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Detalhado · tecido × cor</h2>
+      <table class="table">
+        <thead><tr><th>Tecido</th><th>Cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
+        <tbody>
+          ${detalhe.length ? detalhe.map(c => `
+            <tr>
+              <td><strong>${esc(c.tecidoNome) || '—'}</strong></td>
+              <td>${esc(c.corNome) || '<span style="color:var(--ink-2)">(sem cor)</span>'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.entrada)}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.saida)}</td>
+              ${saldoCell(c.saldo)}
+            </tr>`).join('') : `<tr><td colspan="5" class="empty">Sem movimentações ainda.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+
+  const movs = (STATE.estoqueMov || []).slice()
+    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
+    .slice(0, 40);
+  const movHtml = `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
+      <table class="table">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>
+          ${movs.length ? movs.map(m => `
+            <tr>
+              <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
+              <td>${m.tipo === 'entrada' ? '<span class="badge" style="background:#d6f0db;">Entrada</span>' : '<span class="badge" style="background:#f6dcda;">Saída</span>'}</td>
+              <td>${esc(m.tecidoNome) || '—'}</td>
+              <td>${esc(m.corNome) || '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
+              <td>${m.origem === 'os' ? `OS ${esc(m.osNumero || '')}` : 'Manual'}</td>
+              <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
+            </tr>`).join('') : `<tr><td colspan="7" class="empty">Nenhuma movimentação.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+
+  cont.innerHTML = `
+    ${semNada ? `<div class="info-box">Ainda não há movimentações. Registre uma <b>Entrada</b> (compra) para começar — as <b>saídas</b> entram sozinhas quando você salva uma OS com enfesto e o tecido tiver o peso (g/m²) cadastrado.</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      ${tabResumo('Por tipo de tecido', porTecido, 'Tecido')}
+      ${tabResumo('Por cor', porCor, 'Cor')}
+    </div>
+    ${detalheHtml}
+    ${movHtml}
+  `;
+}
+
+let movEstoqueTipo = 'entrada';
+function abrirMovEstoque(tipo) {
+  if (!exigirAdmin('movimentar estoque')) return;
+  movEstoqueTipo = tipo === 'saida' ? 'saida' : 'entrada';
+  const title = document.getElementById('modal-estoque-title');
+  const box = document.getElementById('modal-estoque-fields');
+  title.textContent = movEstoqueTipo === 'entrada' ? 'Entrada de estoque (compra)' : 'Saída / ajuste manual';
+  const tecOpts = '<option value="">— selecione —</option>' + (STATE.tecidos || []).map(t => `<option value="${esc(t.nome)}">${esc(t.nome)}</option>`).join('');
+  const corOpts = '<option value="">— sem cor —</option>' + (STATE.cores || []).map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}</option>`).join('');
+  const hoje = new Date().toISOString().slice(0, 10);
+  box.innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Tecido *</label><select id="me-tecido">${tecOpts}</select></div>
+      <div class="field"><label>Cor</label><select id="me-cor">${corOpts}</select></div>
+      <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000"></div>
+      <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="me-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
+    </div>
+    ${movEstoqueTipo === 'saida' ? '<div class="info-box" style="margin-top:8px;">Use para corrigir o estoque (perdas, sobras, inventário). O consumo de produção já é lançado sozinho ao salvar a OS.</div>' : ''}`;
+  openModal('modal-estoque');
+}
+
+async function salvarMovEstoque() {
+  if (!exigirAdmin('movimentar estoque')) return;
+  const v = id => document.getElementById(id)?.value || '';
+  const tecidoNome = v('me-tecido');
+  if (!tecidoNome) return toast('Selecione o tecido', 'err');
+  const kg = parseFloat(String(v('me-kg')).replace(',', '.')) || 0;
+  if (!(kg > 0)) return toast('Informe a quantidade em kg', 'err');
+  if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
+  STATE.estoqueMov.push({
+    id: uid(),
+    tipo: movEstoqueTipo,
+    tecidoNome,
+    corNome: v('me-cor'),
+    kg: Math.round(kg * 1000) / 1000,
+    data: v('me-data') || new Date().toISOString().slice(0, 10),
+    origem: 'manual',
+    osId: '',
+    osNumero: '',
+    obs: v('me-obs')
+  });
+  await saveState('estoqueMov');
+  closeModal('modal-estoque');
+  toast(movEstoqueTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  renderEstoque();
+}
+
+async function excluirMovEstoque(id) {
+  if (!exigirAdmin('excluir movimentação')) return;
+  const m = (STATE.estoqueMov || []).find(x => x.id === id);
+  if (!m) return;
+  if (m.origem !== 'manual') return toast('Saídas automáticas de OS são removidas ao excluir a própria OS', 'err');
+  if (!confirm('Excluir esta movimentação?')) return;
+  STATE.estoqueMov = STATE.estoqueMov.filter(x => x.id !== id);
+  await saveState('estoqueMov');
+  toast('Movimentação excluída', 'ok');
+  renderEstoque();
+}
+
 function renderModelos() {
   const tb = document.getElementById('tbl-modelos');
   if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
@@ -4220,6 +4411,7 @@ async function salvarOS() {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  await aplicarBaixaEstoqueOS(data);
   await aplicarRegraConjugadaSeAplicavel(data);
   toast('OS ' + data.os + ' salva', 'ok');
   // Mantem etiquetas/etiqueta-<numero>.pdf em sincronia com a grade/qtde atual.
@@ -4704,6 +4896,7 @@ async function salvarEImprimir() {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  await aplicarBaixaEstoqueOS(data);
   // Aplica regra de conjugada (camiseta bicolor -> camiseta basica)
   const conjugada = await aplicarRegraConjugadaSeAplicavel(data);
   // Renderiza e navega pra print page pra que o .sheet tenha layout
@@ -5408,6 +5601,7 @@ async function excluirOS(id) {
   if (!confirm('Excluir esta OS?')) return;
   STATE.ordens = STATE.ordens.filter(x => x.id !== id);
   await saveState('ordens');
+  await estornarBaixaEstoqueOS(id);
   toast('OS excluída', 'ok');
   renderListaOS();
 }
@@ -5597,6 +5791,112 @@ function renderAviamentosDetalheBox(o) {
   `;
 }
 
+// Peso/gramatura (g/m²) de um tecido cadastrado, buscado pelo NOME (as fases
+// guardam tecido por nome). Retorna 0 se não cadastrado ou sem peso.
+function gramaturaTecidoPorNome(nome) {
+  if (!nome) return 0;
+  const alvo = _normNome(nome);
+  const t = (STATE.tecidos || []).find(x => _normNome(x.nome) === alvo);
+  return t ? (parseFloat(t.peso) || 0) : 0;
+}
+
+// Resolve cada fase do enfesto de uma OS e calcula o consumo em kg.
+// Fórmula (confirmada): kg = comprimento(m) × largura(m) × camadas × peso(g/m²) / 1000.
+// É a fonte única usada tanto na folha de impressão (coluna Consumo) quanto
+// na baixa automática de estoque. Espelha exatamente a resolução de comp/larg/
+// camadas/tecido que a impressão usa, para que os números batam.
+function consumoEnfestoOS(o) {
+  const e = o.enfesto || {};
+  const tecs = o.tecidos || [];
+  const blocos = Array.isArray(e.blocos) && e.blocos.length
+    ? e.blocos
+    : (e.comprimento || e.largura ? [{ ordem: 1, comp: e.comprimento, larg: e.largura }] : []);
+  const camadasGlobal = e.camadas || 0;
+  const fasesPorOrdem = {};
+  (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
+  const linhas = blocos.length
+    ? blocos.map((b, i) => ({ b, i }))
+    : tecs.map((t, i) => ({ b: { ordem: i + 1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
+  return linhas.map(({ b, i }) => {
+    const ord = b.ordem || (i + 1);
+    const fase = fasesPorOrdem[ord] || {};
+    let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
+    let cor = b.nomeCor || fase.corNome || '';
+    if (!cor && nomeEnf.includes(' · ')) {
+      const parts = nomeEnf.split(' · ');
+      nomeEnf = parts[0];
+      cor = parts.slice(1).join(' · ');
+    }
+    const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
+    const corReal = cor || tecs[i]?.corNome || '';
+    const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
+    const camadas = ehVies ? 1 : (b.camadas || camadasGlobal || 0);
+    const comp = (parseFloat(fase.comp) > 0 ? parseFloat(fase.comp) : parseFloat(b.comp)) || 0;
+    const larg = (parseFloat(fase.larg) > 0 ? parseFloat(fase.larg) : parseFloat(b.larg)) || 0;
+    // Gramatura do tecido REAL cadastrado; se a fase não aponta um, tenta pelo nome do enfesto.
+    const peso = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
+    const kg = (comp * larg * camadas * peso) / 1000;
+    return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg, ehVies };
+  });
+}
+
+// Consumo agregado por (tecido, cor) de uma OS — usado na baixa de estoque.
+// Soma os kg de todas as fases que usam o mesmo tecido+cor; ignora fases sem kg.
+function consumoAgregadoPorTecidoCor(o) {
+  const mapa = new Map();
+  consumoEnfestoOS(o).forEach(L => {
+    if (!(L.kg > 0)) return;
+    const tecidoNome = L.tecidoReal || L.nomeEnf || '';
+    const corNome = L.corReal || '';
+    const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
+    const cur = mapa.get(k) || { tecidoNome, corNome, kg: 0 };
+    cur.kg += L.kg;
+    mapa.set(k, cur);
+  });
+  return Array.from(mapa.values());
+}
+
+// Baixa automática de estoque ao salvar a OS (saída).
+// Idempotente por osId: remove as saídas anteriores desta OS e recria a partir
+// do consumo atual — assim reeditar/re-salvar a OS recalcula sem duplicar.
+async function aplicarBaixaEstoqueOS(data) {
+  if (!data || !data.id) return;
+  if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
+  // Remove saídas automáticas anteriores desta mesma OS
+  const antes = STATE.estoqueMov.length;
+  STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
+  // Recria do consumo atual
+  const itens = consumoAgregadoPorTecidoCor(data);
+  const hoje = new Date().toISOString().slice(0, 10);
+  itens.forEach(it => {
+    STATE.estoqueMov.push({
+      id: uid(),
+      tipo: 'saida',
+      tecidoNome: it.tecidoNome,
+      corNome: it.corNome,
+      kg: Math.round(it.kg * 1000) / 1000,
+      data: hoje,
+      origem: 'os',
+      osId: data.id,
+      osNumero: data.os || '',
+      obs: ''
+    });
+  });
+  if (STATE.estoqueMov.length !== antes || itens.length) {
+    try { await saveState('estoqueMov'); } catch (e) { console.warn('baixa estoque', e); }
+  }
+}
+
+// Estorna (remove) as saídas automáticas de uma OS — usado ao excluir a OS.
+async function estornarBaixaEstoqueOS(osId) {
+  if (!Array.isArray(STATE.estoqueMov)) return;
+  const antes = STATE.estoqueMov.length;
+  STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === osId));
+  if (STATE.estoqueMov.length !== antes) {
+    try { await saveState('estoqueMov'); } catch (e) { console.warn('estorno estoque', e); }
+  }
+}
+
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
   const tecs = o.tecidos || [];
@@ -5608,56 +5908,39 @@ function renderEnfestoBox(o) {
   const temAlgo = blocos.length || e.camadas || tecs.length;
   if (!temAlgo) return '';
 
-  const camadas = e.camadas || 0;
   const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
+  const fmtKg = n => Number(n).toFixed(3).replace('.',',');
 
-  // Cor/tecido de cada fase: vem de o.fases por ordem
-  const fasesPorOrdem = {};
-  (o.fases || []).forEach(f => { if (f?.ordem) fasesPorOrdem[f.ordem] = f; });
-
-  // Linhas: blocos do enfesto se houver, ou pseudo-blocos derivados de tecidos
-  // (OS sem fases/enfesto cadastrado mas com tecidos preenchidos manualmente)
-  const linhas = blocos.length
-    ? blocos.map((b, i) => ({ b, i }))
-    : tecs.map((t, i) => ({ b: { ordem: i+1, nomeTecido: t.tecidoNome, nomeCor: t.corNome }, i }));
+  // Consumo por fase (fonte única — mesma usada na baixa de estoque)
+  const consumo = consumoEnfestoOS(o);
+  let totalKg = 0;
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
-  const linhasEnfestos = linhas.map(({ b, i }) => {
-    const ord = b.ordem || (i+1);
-    const fase = fasesPorOrdem[ord] || {};
-    let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
-    let cor = b.nomeCor || fase.corNome || '';
-    if (!cor && nomeEnf.includes(' · ')) {
-      const parts = nomeEnf.split(' · ');
-      nomeEnf = parts[0];
-      cor = parts.slice(1).join(' · ');
-    }
-    // Tecido real cadastrado (Moletom Bulk, Ribana Bulk, etc.) — fallback p/ tecido da OS
-    const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
-    const corReal = cor || tecs[i]?.corNome || '';
-    // Regra: fase Viés sempre 1 camada (override mesmo em OS antigas)
-    const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
-    const camBloco = ehVies ? 1 : (b.camadas || camadas || 0);
-    // Comp/Larg priorizam o valor da fase ao vivo da grade (gViva já
-    // foi remontado em renderPrintSheet a partir de STATE.grades). Cai pro
-    // valor salvo no bloco do enfesto so como fallback — assim alteracoes
-    // posteriores na grade refletem na impressao da OS sem precisar
-    // re-aplicar a grade dentro de cada OS antiga.
-    const compEf = (parseFloat(fase.comp) > 0 ? fase.comp : b.comp) || '';
-    const largEf = (parseFloat(fase.larg) > 0 ? fase.larg : b.larg) || '';
+  const linhasEnfestos = consumo.map(L => {
+    const ord = L.ordem;
+    const camBloco = L.ehVies ? 1 : (L.camadas || 0);
+    const compEf = L.comp || '';
+    const largEf = L.larg || '';
+    totalKg += L.kg;
     const ckEnf = !!enfestosCheck[ord];
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" class="os-check" ${ckEnf?'checked':''} data-enfesto="${esc(String(ord))}" onchange="togglarChecklistEnfesto('${esc(o.id)}', this.dataset.enfesto, this.checked)" style="margin:0;"></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
-      <td>${esc(nomeEnf) || '—'}</td>
-      <td>${esc(tecidoReal) || '—'}</td>
-      <td>${esc(corReal) || '—'}</td>
+      <td>${esc(L.nomeEnf) || '—'}</td>
+      <td>${esc(L.tecidoReal) || '—'}</td>
+      <td>${esc(L.corReal) || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${compEf ? fmt(compEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
-      <td>&nbsp;</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${L.kg > 0 ? fmtKg(L.kg)+' kg' : '—'}</td>
     </tr>`;
   }).join('');
+  const linhaTotal = totalKg > 0
+    ? `<tr>
+        <td colspan="8" style="text-align:right;font-weight:700;background:#eef6f0;">Total consumo</td>
+        <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;white-space:nowrap;">${fmtKg(totalKg)} kg</td>
+      </tr>`
+    : '';
 
   return `
     <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
@@ -5673,7 +5956,7 @@ function renderEnfestoBox(o) {
         <col style="width:58px;">
       </colgroup>
       <thead>
-        <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${linhas.length>1?'s':''}</th></tr>
+        <tr><th colspan="9" class="subhead" style="background:#c9e8d0;">Enfesto${consumo.length>1?'s':''}</th></tr>
         <tr>
           <th style="font-size:6.5pt;white-space:nowrap;">✓</th>
           <th style="font-size:6.5pt;white-space:nowrap;">Fase</th>
@@ -5688,6 +5971,7 @@ function renderEnfestoBox(o) {
       </thead>
       <tbody>
         ${linhasEnfestos}
+        ${linhaTotal}
       </tbody>
     </table>
   `;
@@ -6255,6 +6539,9 @@ window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;
 window.duplicarOS = duplicarOS;
+window.abrirMovEstoque = abrirMovEstoque;
+window.salvarMovEstoque = salvarMovEstoque;
+window.excluirMovEstoque = excluirMovEstoque;
 window.exportarDados = exportarDados;
 window.importarDados = importarDados;
 window.limparTudo = limparTudo;

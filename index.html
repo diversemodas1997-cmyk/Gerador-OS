@@ -39,6 +39,7 @@
         <button class="nav-btn" data-page="home">Início</button>
         <button class="nav-btn" data-page="nova-os">Nova OS</button>
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
+        <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
       </div>
     </div>
 
@@ -164,14 +165,29 @@
 
     <!-- ================= CADASTROS GENÉRICOS ================= -->
     <!-- TECIDOS -->
+    <!-- ================= ESTOQUE DE TECIDOS ================= -->
+    <section class="page hidden" data-page="estoque">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de tecidos</h1>
+          <div class="desc">Saldo em kg por tecido e por cor. As saídas são lançadas automaticamente quando você salva uma OS (consumo do enfesto). Use os botões para registrar entradas (compras) e ajustes manuais.</div>
+        </div>
+        <div class="actions admin-only">
+          <button class="btn primary" onclick="abrirMovEstoque('entrada')">+ Entrada (compra)</button>
+          <button class="btn" onclick="abrirMovEstoque('saida')">− Saída / ajuste</button>
+        </div>
+      </div>
+      <div id="estoque-painel"></div>
+    </section>
+
     <section class="page hidden" data-page="cad-tecidos">
       <div class="page-header">
-        <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk. A categoria define o limite de camadas no enfesto.</div></div>
+        <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk. A categoria define o limite de camadas no enfesto. O peso (g/m²) é usado para calcular o consumo em kg e baixar o estoque.</div></div>
         <div class="actions"><button class="btn primary" onclick="openCadastroModal('tecido')">+ Novo tecido</button></div>
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th>Nome</th><th>Composição / Obs.</th><th>Categoria</th><th class="col-actions">Ações</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Composição / Obs.</th><th>Categoria</th><th>Peso (g/m²)</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-tecidos"></tbody>
         </table>
       </div>
@@ -648,6 +664,18 @@
   </div>
 </div>
 
+<!-- ================= MODAL MOVIMENTAÇÃO DE ESTOQUE ================= -->
+<div class="modal-backdrop" id="modal-estoque">
+  <div class="modal">
+    <h2 id="modal-estoque-title">Entrada de estoque</h2>
+    <div id="modal-estoque-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-estoque')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovEstoque()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
@@ -681,6 +709,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-05-15c"></script>
+<script src="app.js?v=2026-05-22a"></script>
 </body>
 </html>
