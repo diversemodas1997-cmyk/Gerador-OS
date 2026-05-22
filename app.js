@@ -2053,28 +2053,45 @@ function movimentacoesEstoque() {
 
 // Calcula, por tecido+cor:
 //   entrada   = compras (NF) + entradas manuais
-//   reservado = consumo das OSs salvas (saída origem 'os') — comprometido p/ produção
-//   ajuste    = saídas manuais (perdas/correções)
-//   disponivel (REAL) = entrada − reservado − ajuste
+//   reservado = consumo de OSs salvas mas AINDA NÃO baixadas (status reservado)
+//   saida     = baixa definitiva: OSs apontadas como produzidas + saídas manuais
+//   disponivel (livre) = entrada − reservado − saida
 function calcularSaldosEstoque() {
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const detMap = new Map();
   movimentacoesEstoque().forEach(m => {
     const tNome = m.tecidoNome || '', cNome = m.corNome || '';
     const k = key(tNome, cNome);
-    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, reservado: 0, ajuste: 0 };
+    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, reservado: 0, saida: 0 };
     const kg = parseFloat(m.kg) || 0;
     if (m.tipo === 'entrada') cur.entrada += kg;
-    else if (m.origem === 'os') cur.reservado += kg;
-    else cur.ajuste += kg;
+    else if (m.origem === 'os' && m.status !== 'consumido') cur.reservado += kg;
+    else cur.saida += kg;  // OS já baixada (consumido) + saídas manuais
     if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
     if (!cur.corNome && cNome) cur.corNome = cNome;
     detMap.set(k, cur);
   });
   const detalhe = Array.from(detMap.values())
-    .map(c => ({ ...c, disponivel: c.entrada - c.reservado - c.ajuste }))
+    .map(c => ({ ...c, disponivel: c.entrada - c.reservado - c.saida }))
     .sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || ''));
   return { detalhe };
+}
+
+// Agrupa os movimentos de OS por OS (para a seção "apontar OS"): total kg e status.
+function osComMaterialReservado() {
+  const map = new Map();
+  (STATE.estoqueMov || []).forEach(m => {
+    if (m.origem !== 'os') return;
+    const cur = map.get(m.osId) || { osId: m.osId, osNumero: m.osNumero || '', kg: 0, consumido: true };
+    cur.kg += parseFloat(m.kg) || 0;
+    // OS é "consumida" só se TODOS os movimentos dela estiverem consumidos.
+    if (m.status !== 'consumido') cur.consumido = false;
+    map.set(m.osId, cur);
+  });
+  return Array.from(map.values()).map(o => {
+    const os = (STATE.ordens || []).find(x => x.id === o.osId);
+    return { ...o, modelo: os?.modeloNome || '', data: os?.data || '' };
+  }).sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
 }
 
 function renderEstoque() {
@@ -2084,17 +2101,13 @@ function renderEstoque() {
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const dispCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
   const semNada = !movimentacoesEstoque().length;
-  // Coluna "Ajustes" só aparece se houver saída manual em algum item.
-  const temAjuste = detalhe.some(c => Math.abs(c.ajuste) > 1e-9);
-
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
-  // ficam agrupadas e ordenadas juntas (ex.: Malha Algodão · Preto, Malha Algodão
-  // · Branco, Moletom · Bege...), com subtotal por tipo de tecido.
+  // ficam agrupadas e ordenadas juntas, com subtotal por tipo de tecido.
   const grupos = new Map();
   detalhe.forEach(c => {
     const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, reservado: 0, ajuste: 0, linhas: [] };
-    g.entrada += c.entrada; g.reservado += c.reservado; g.ajuste += c.ajuste; g.linhas.push(c);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, reservado: 0, saida: 0, linhas: [] };
+    g.entrada += c.entrada; g.reservado += c.reservado; g.saida += c.saida; g.linhas.push(c);
     grupos.set(k, g);
   });
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
@@ -2102,11 +2115,10 @@ function renderEstoque() {
 
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
-  // Células de valor de uma linha: Entradas, Reservado, (Ajustes), Disponível real.
+  // Entradas | Reservado | Saídas | Disponível (= entrada − reservado − saída)
   const cellsVals = (o, bold) =>
-    numCell(o.entrada, bold) + numCell(o.reservado, bold) +
-    (temAjuste ? numCell(o.ajuste, bold) : '') +
-    dispCell(o.entrada - o.reservado - o.ajuste);
+    numCell(o.entrada, bold) + numCell(o.reservado, bold) + numCell(o.saida, bold) +
+    dispCell(o.entrada - o.reservado - o.saida);
   const linhasEstoque = gruposArr.map(g => {
     const cores = g.linhas.map(c => `
       <tr>
@@ -2122,22 +2134,52 @@ function renderEstoque() {
     return cores + subtotal;
   }).join('');
 
-  const thAjuste = temAjuste ? '<th style="text-align:right;">Ajustes</th>' : '';
-  const colsCount = temAjuste ? 5 : 4;
   const estoqueHtml = `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Estoque por tecido + cor</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        <b>Disponível</b> = Entradas − Reservado (consumo das OSs salvas)${temAjuste ? ' − Ajustes' : ''}.
-        O "Reservado" é o total de material já comprometido para cumprir as OSs geradas.
+        <b>Reservado</b> = comprometido com OSs geradas ainda não produzidas ·
+        <b>Saídas</b> = baixa definitiva (OSs apontadas como produzidas + ajustes) ·
+        <b>Disponível</b> = Entradas − Reservado − Saídas.
       </div>
       <table class="table">
-        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado (OS)</th>${thAjuste}<th style="text-align:right;">Disponível</th></tr></thead>
+        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th></tr></thead>
         <tbody>
-          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="${colsCount}" class="empty">Sem movimentações ainda.</td></tr>`}
+          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="5" class="empty">Sem movimentações ainda.</td></tr>`}
         </tbody>
       </table>
     </div>`;
+
+  // Apontar OS produzida → converte a RESERVA em SAÍDA definitiva.
+  const osMat = osComMaterialReservado().filter(o => o.kg > 0);
+  const reservadas = osMat.filter(o => !o.consumido);
+  const baixadas = osMat.filter(o => o.consumido);
+  const linhaOS = (o, baixada) => `
+    <tr>
+      <td><strong>${esc(o.osNumero) || '—'}</strong></td>
+      <td>${esc(o.modelo) || '—'}</td>
+      <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</td>
+      <td>${baixada ? '<span class="badge" style="background:#f6dcda;">Baixado</span>' : '<span class="badge" style="background:#fde9c8;">Reservado</span>'}</td>
+      <td class="col-actions row-actions">${baixada
+        ? `<button onclick="estornarBaixaMaterialOS('${esc(o.osId)}')">estornar</button>`
+        : `<button onclick="darBaixaMaterialOS('${esc(o.osId)}')">dar baixa</button>`}</td>
+    </tr>`;
+  const apontarHtml = osMat.length ? `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs · baixa de material</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        Aponte a OS como <b>produzida</b> ("dar baixa") para converter a reserva em
+        <b>saída definitiva</b> do estoque. Use "estornar" para desfazer.
+      </div>
+      <table class="table">
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Material</th><th>Situação</th><th class="col-actions">Ação</th></tr></thead>
+        <tbody>
+          ${reservadas.map(o => linhaOS(o, false)).join('')}
+          ${baixadas.map(o => linhaOS(o, true)).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
 
   const movs = movimentacoesEstoque().slice()
     .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
@@ -2154,7 +2196,13 @@ function renderEstoque() {
           ${movs.length ? movs.map(m => `
             <tr>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
-              <td>${m.tipo === 'entrada' ? '<span class="badge" style="background:#d6f0db;">Entrada</span>' : (m.origem === 'os' ? '<span class="badge" style="background:#fde9c8;">Reserva</span>' : '<span class="badge" style="background:#f6dcda;">Saída</span>')}</td>
+              <td>${m.tipo === 'entrada'
+                ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
+                : (m.origem === 'os'
+                    ? (m.status === 'consumido'
+                        ? '<span class="badge" style="background:#f6dcda;">Saída (OS)</span>'
+                        : '<span class="badge" style="background:#fde9c8;">Reserva</span>')
+                    : '<span class="badge" style="background:#f6dcda;">Saída</span>')}</td>
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
@@ -2168,6 +2216,7 @@ function renderEstoque() {
   cont.innerHTML = `
     ${semNada ? `<div class="info-box">Ainda não há movimentações. As <b>entradas</b> vêm das compras lançadas no programa de Contabilidade (por NF) ou de um lançamento manual aqui; as <b>saídas</b> entram sozinhas ao salvar uma OS com enfesto e o tecido com peso (g/m²) cadastrado.</div>` : ''}
     ${estoqueHtml}
+    ${apontarHtml}
     ${movHtml}
   `;
 }
@@ -5942,16 +5991,20 @@ function consumoAgregadoPorTecidoCor(o) {
   return Array.from(mapa.values());
 }
 
-// Baixa automática de estoque ao salvar a OS (saída).
-// Idempotente por osId: remove as saídas anteriores desta OS e recria a partir
-// do consumo atual — assim reeditar/re-salvar a OS recalcula sem duplicar.
+// Reserva de estoque ao salvar a OS. Ao gerar a OS o material fica como
+// RESERVADO (comprometido, mas ainda em estoque). A baixa definitiva (saída)
+// só acontece quando o usuário aponta a OS como produzida (darBaixaMaterialOS).
+// Idempotente por osId: remove os movimentos anteriores desta OS e recria do
+// consumo atual — preservando o status 'consumido' se a OS já tinha sido baixada.
 async function aplicarBaixaEstoqueOS(data) {
   if (!data || !data.id) return;
   if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
-  // Remove saídas automáticas anteriores desta mesma OS
+  // Se a OS já estava baixada (produzida), mantém o status ao recalcular.
+  const jaConsumida = STATE.estoqueMov.some(
+    m => m.origem === 'os' && m.osId === data.id && m.status === 'consumido');
+  const status = jaConsumida ? 'consumido' : 'reservado';
   const antes = STATE.estoqueMov.length;
   STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
-  // Recria do consumo atual
   const itens = consumoAgregadoPorTecidoCor(data);
   const hoje = new Date().toISOString().slice(0, 10);
   itens.forEach(it => {
@@ -5965,12 +6018,45 @@ async function aplicarBaixaEstoqueOS(data) {
       origem: 'os',
       osId: data.id,
       osNumero: data.os || '',
+      status,
+      consumidoEm: jaConsumida ? hoje : '',
       obs: ''
     });
   });
   if (STATE.estoqueMov.length !== antes || itens.length) {
-    try { await saveState('estoqueMov'); } catch (e) { console.warn('baixa estoque', e); }
+    try { await saveState('estoqueMov'); } catch (e) { console.warn('reserva estoque', e); }
   }
+}
+
+// Aponta a OS como produzida → converte a RESERVA em SAÍDA definitiva (baixa real).
+async function darBaixaMaterialOS(osId) {
+  if (!exigirAdmin('dar baixa de material')) return;
+  const hoje = new Date().toISOString().slice(0, 10);
+  let mudou = false;
+  (STATE.estoqueMov || []).forEach(m => {
+    if (m.origem === 'os' && m.osId === osId && m.status !== 'consumido') {
+      m.status = 'consumido'; m.consumidoEm = hoje; mudou = true;
+    }
+  });
+  if (!mudou) return;
+  try { await saveState('estoqueMov'); } catch (e) { console.warn('baixa material', e); }
+  toast('Baixa de material registrada', 'ok');
+  renderEstoque();
+}
+
+// Desfaz a baixa: volta a OS para RESERVADO.
+async function estornarBaixaMaterialOS(osId) {
+  if (!exigirAdmin('estornar baixa de material')) return;
+  let mudou = false;
+  (STATE.estoqueMov || []).forEach(m => {
+    if (m.origem === 'os' && m.osId === osId && m.status === 'consumido') {
+      m.status = 'reservado'; m.consumidoEm = ''; mudou = true;
+    }
+  });
+  if (!mudou) return;
+  try { await saveState('estoqueMov'); } catch (e) { console.warn('estorno baixa', e); }
+  toast('Baixa estornada — voltou para reservado', 'ok');
+  renderEstoque();
 }
 
 // Estorna (remove) as saídas automáticas de uma OS — usado ao excluir a OS.
@@ -6628,6 +6714,8 @@ window.duplicarOS = duplicarOS;
 window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
 window.excluirMovEstoque = excluirMovEstoque;
+window.darBaixaMaterialOS = darBaixaMaterialOS;
+window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
 window.importarDados = importarDados;
 window.limparTudo = limparTudo;
