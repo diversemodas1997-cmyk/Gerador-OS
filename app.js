@@ -5228,9 +5228,14 @@ function numeroOSordenacao(o) {
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
   if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
-  // Ordem crescente pelo número da OS (menor primeiro).
-  const ordenadas = STATE.ordens.slice().sort((a, b) =>
-    numeroOSordenacao(a) - numeroOSordenacao(b) || String(a.os || '').localeCompare(String(b.os || '')));
+  // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
+  const ordenadas = STATE.ordens.slice().sort((a, b) => {
+    const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
+    if (na === Infinity && nb === Infinity) return String(a.os || '').localeCompare(String(b.os || ''));
+    if (na === Infinity) return 1;
+    if (nb === Infinity) return -1;
+    return nb - na || String(b.os || '').localeCompare(String(a.os || ''));
+  });
   tb.innerHTML = ordenadas.map(o => `
     <tr>
       <td><strong>${esc(o.os)||'—'}</strong></td>
