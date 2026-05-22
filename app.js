@@ -12,6 +12,11 @@ let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
 let inRecoveryFlow = false;
+// Compras de materiais vindas do programa de Contabilidade (tabela própria
+// compras_materiais no Supabase). O Gerador-OS só LÊ — entram como ENTRADAS
+// no estoque. Não fazem parte do blob shared_data (fonte separada).
+let comprasCache = [];
+let comprasChannel = null;
 
 async function cloudLoad() {
   if (!supa || !currentUser) return;
@@ -105,7 +110,44 @@ function pararRealtime() {
     supa.removeChannel(realtimeChannel);
     realtimeChannel = null;
   }
+  if (supa && comprasChannel) {
+    supa.removeChannel(comprasChannel);
+    comprasChannel = null;
+  }
   pararPolling();
+}
+
+// Lê as compras de materiais lançadas pela Contabilidade. Falha silenciosa se
+// a tabela ainda não existe (integração não configurada) — o estoque segue
+// funcionando só com entradas manuais + saídas de OS.
+async function carregarComprasMateriais() {
+  if (!supa || !currentUser) { comprasCache = []; return; }
+  try {
+    const { data, error } = await supa
+      .from('compras_materiais')
+      .select('*')
+      .order('data', { ascending: false });
+    if (error) { comprasCache = []; return; }
+    comprasCache = Array.isArray(data) ? data : [];
+  } catch (e) {
+    comprasCache = [];
+  }
+}
+
+// Realtime das compras: quando a Contabilidade insere/atualiza uma compra,
+// recarrega e re-renderiza o painel de estoque se ele estiver aberto.
+function iniciarRealtimeCompras() {
+  if (!supa || !currentUser || comprasChannel) return;
+  comprasChannel = supa
+    .channel('compras_materiais_all')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'compras_materiais' },
+      async () => {
+        await carregarComprasMateriais();
+        const ativa = document.querySelector('section.page:not(.hidden)');
+        if ((ativa?.dataset?.page || '') === 'estoque') renderEstoque();
+      })
+    .subscribe();
 }
 
 // Polling fallback: a cada 15s consulta shared_data.updated_at. Se mudou
@@ -425,7 +467,9 @@ async function inicializarAuth() {
   if (session && session.user) {
     currentUser = session.user;
     await cloudLoad();
+    await carregarComprasMateriais();
     iniciarRealtime();
+    iniciarRealtimeCompras();
   }
   atualizarUIAuth();
   supa.auth.onAuthStateChange(async (event, session) => {
@@ -440,13 +484,16 @@ async function inicializarAuth() {
       currentUser = session.user;
       await cloudLoad();
       await carregarPapel();
+      await carregarComprasMateriais();
       iniciarRealtime();
+      iniciarRealtimeCompras();
     } else if (event === 'SIGNED_OUT') {
       pararRealtime();
       pararPresenceOS();
       currentUser = null;
       cloudCache = null;
       currentRole = null;
+      comprasCache = [];
       inRecoveryFlow = false;
     }
     aplicarPermissoesUI();
@@ -1981,13 +2028,36 @@ function renderMateriais() {
 /* ========================================================= */
 /*                ESTOQUE DE TECIDOS (kg)                     */
 /* ========================================================= */
-// Calcula saldos a partir de STATE.estoqueMov. Saldo = entradas − saídas.
+// Converte as compras vindas da Contabilidade (compras_materiais) em
+// movimentos de ENTRADA, no mesmo formato de STATE.estoqueMov.
+function comprasComoMovimentos() {
+  return (comprasCache || []).map(c => ({
+    id: 'nf_' + c.id,
+    tipo: 'entrada',
+    tecidoNome: c.tecido_nome || '',
+    corNome: c.cor_nome || '',
+    kg: parseFloat(c.quantidade_kg) || 0,
+    data: (c.data || '').slice(0, 10),
+    origem: 'nf',
+    osId: '',
+    osNumero: c.nota_fiscal || '',
+    obs: c.fornecedor || ''
+  }));
+}
+
+// Todos os movimentos do estoque: entradas/saídas locais (estoqueMov) +
+// compras da Contabilidade (entradas via NF). Fonte única para saldo e histórico.
+function movimentacoesEstoque() {
+  return [...(STATE.estoqueMov || []), ...comprasComoMovimentos()];
+}
+
+// Calcula saldos. Saldo = entradas (manuais + compras por NF) − saídas (OS/ajuste).
 // Os resumos "por tecido" e "por cor" começam de TODOS os cadastrados (saldo 0)
 // e somam os movimentos, para que itens cadastrados sem movimento também apareçam.
 function calcularSaldosEstoque() {
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const detMap = new Map();
-  (STATE.estoqueMov || []).forEach(m => {
+  movimentacoesEstoque().forEach(m => {
     const tNome = m.tecidoNome || '', cNome = m.corNome || '';
     const k = key(tNome, cNome);
     const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0 };
@@ -2030,7 +2100,7 @@ function renderEstoque() {
   const { detalhe } = calcularSaldosEstoque();
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const saldoCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
-  const semNada = !(STATE.estoqueMov || []).length;
+  const semNada = !movimentacoesEstoque().length;
 
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
   // ficam agrupadas e ordenadas juntas (ex.: Malha Algodão · Preto, Malha Algodão
@@ -2078,9 +2148,12 @@ function renderEstoque() {
       </table>
     </div>`;
 
-  const movs = (STATE.estoqueMov || []).slice()
+  const movs = movimentacoesEstoque().slice()
     .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
-    .slice(0, 40);
+    .slice(0, 60);
+  const origemLabel = m => m.origem === 'os' ? `OS ${esc(m.osNumero || '')}`
+    : m.origem === 'nf' ? `NF ${esc(m.osNumero || '')}${m.obs ? ' · ' + esc(m.obs) : ''}`
+    : 'Manual';
   const movHtml = `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
@@ -2094,7 +2167,7 @@ function renderEstoque() {
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
-              <td>${m.origem === 'os' ? `OS ${esc(m.osNumero || '')}` : 'Manual'}</td>
+              <td>${origemLabel(m)}</td>
               <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
             </tr>`).join('') : `<tr><td colspan="7" class="empty">Nenhuma movimentação.</td></tr>`}
         </tbody>
@@ -2102,7 +2175,7 @@ function renderEstoque() {
     </div>`;
 
   cont.innerHTML = `
-    ${semNada ? `<div class="info-box">Ainda não há movimentações. Registre uma <b>Entrada</b> (compra) para começar — as <b>saídas</b> entram sozinhas quando você salva uma OS com enfesto e o tecido tiver o peso (g/m²) cadastrado.</div>` : ''}
+    ${semNada ? `<div class="info-box">Ainda não há movimentações. As <b>entradas</b> vêm das compras lançadas no programa de Contabilidade (por NF) ou de um lançamento manual aqui; as <b>saídas</b> entram sozinhas ao salvar uma OS com enfesto e o tecido com peso (g/m²) cadastrado.</div>` : ''}
     ${estoqueHtml}
     ${movHtml}
   `;
