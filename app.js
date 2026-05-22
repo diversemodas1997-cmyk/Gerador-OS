@@ -2062,11 +2062,16 @@ function calcularSaldosEstoque() {
   movimentacoesEstoque().forEach(m => {
     const tNome = m.tecidoNome || '', cNome = m.corNome || '';
     const k = key(tNome, cNome);
-    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, reservado: 0, saida: 0 };
+    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, reservado: 0, saida: 0, fechados: 0, abertos: 0 };
     const kg = parseFloat(m.kg) || 0;
     if (m.tipo === 'entrada') cur.entrada += kg;
     else if (m.origem === 'os' && m.status !== 'consumido') cur.reservado += kg;
     else cur.saida += kg;  // OS já baixada (consumido) + saídas manuais
+    // Unidades (contagem física do lançamento manual): entrada soma, saída subtrai.
+    const fch = parseInt(m.fechados) || 0, abr = parseInt(m.abertos) || 0;
+    const sinal = m.tipo === 'entrada' ? 1 : -1;
+    cur.fechados += sinal * fch;
+    cur.abertos += sinal * abr;
     if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
     if (!cur.corNome && cNome) cur.corNome = cNome;
     detMap.set(k, cur);
@@ -2106,8 +2111,9 @@ function renderEstoque() {
   const grupos = new Map();
   detalhe.forEach(c => {
     const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, reservado: 0, saida: 0, linhas: [] };
-    g.entrada += c.entrada; g.reservado += c.reservado; g.saida += c.saida; g.linhas.push(c);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, reservado: 0, saida: 0, fechados: 0, abertos: 0, linhas: [] };
+    g.entrada += c.entrada; g.reservado += c.reservado; g.saida += c.saida;
+    g.fechados += c.fechados || 0; g.abertos += c.abertos || 0; g.linhas.push(c);
     grupos.set(k, g);
   });
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
@@ -2115,10 +2121,13 @@ function renderEstoque() {
 
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
-  // Entradas | Reservado | Saídas | Disponível (= entrada − reservado − saída)
+  // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
+  const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
+  // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
   const cellsVals = (o, bold) =>
     numCell(o.entrada, bold) + numCell(o.reservado, bold) + numCell(o.saida, bold) +
-    dispCell(o.entrada - o.reservado - o.saida);
+    dispCell(o.entrada - o.reservado - o.saida) +
+    uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
   const linhasEstoque = gruposArr.map(g => {
     const cores = g.linhas.map(c => `
       <tr>
@@ -2138,14 +2147,20 @@ function renderEstoque() {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Estoque por tecido + cor</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        <b>Reservado</b> = comprometido com OSs geradas ainda não produzidas ·
-        <b>Saídas</b> = baixa definitiva (OSs apontadas como produzidas + ajustes) ·
-        <b>Disponível</b> = Entradas − Reservado − Saídas.
+        Colunas em <b>kg</b>: Entradas, Reservado (OSs não produzidas), Saídas (baixa definitiva),
+        Disponível (= Entradas − Reservado − Saídas). Colunas em <b>unidades</b> (lançamento manual):
+        <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso).
       </div>
       <table class="table">
-        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th></tr></thead>
+        <thead><tr>
+          <th>Tecido + cor</th>
+          <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
+          <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
+          <th style="text-align:right;background:#f4f1fb;">Fechados (un)</th>
+          <th style="text-align:right;background:#f4f1fb;">Abertos (un)</th>
+        </tr></thead>
         <tbody>
-          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="5" class="empty">Sem movimentações ainda.</td></tr>`}
+          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="7" class="empty">Sem movimentações ainda.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -2191,7 +2206,7 @@ function renderEstoque() {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;background:#f4f1fb;">Fech.</th><th style="text-align:right;background:#f4f1fb;">Abertos</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
           ${movs.length ? movs.map(m => `
             <tr>
@@ -2206,9 +2221,11 @@ function renderEstoque() {
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;">${m.fechados ? Number(m.fechados) : '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;">${m.abertos ? Number(m.abertos) : '—'}</td>
               <td>${origemLabel(m)}</td>
               <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
-            </tr>`).join('') : `<tr><td colspan="7" class="empty">Nenhuma movimentação.</td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="9" class="empty">Nenhuma movimentação.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -2237,8 +2254,11 @@ function abrirMovEstoque(tipo) {
       <div class="field"><label>Cor</label><select id="me-cor">${corOpts}</select></div>
       <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000"></div>
       <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
+      <div class="field"><label>Itens fechados (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0"></div>
+      <div class="field"><label>Itens abertos em uso (un)</label><input type="number" min="0" step="1" id="me-abertos" placeholder="0"></div>
       <div class="field full"><label>Observação</label><input type="text" id="me-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
     </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">O kg é o equivalente em peso. As unidades (fechados = rolos/peças lacrados; abertos = em uso) são contagem física e aparecem em colunas próprias no painel.</div>
     ${movEstoqueTipo === 'saida' ? '<div class="info-box" style="margin-top:8px;">Use para corrigir o estoque (perdas, sobras, inventário). O consumo de produção já é lançado sozinho ao salvar a OS.</div>' : ''}`;
   openModal('modal-estoque');
 }
@@ -2250,6 +2270,8 @@ async function salvarMovEstoque() {
   if (!tecidoNome) return toast('Selecione o tecido', 'err');
   const kg = parseFloat(String(v('me-kg')).replace(',', '.')) || 0;
   if (!(kg > 0)) return toast('Informe a quantidade em kg', 'err');
+  const fechados = parseInt(v('me-fechados')) || 0;
+  const abertos = parseInt(v('me-abertos')) || 0;
   if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
   STATE.estoqueMov.push({
     id: uid(),
@@ -2257,6 +2279,8 @@ async function salvarMovEstoque() {
     tecidoNome,
     corNome: v('me-cor'),
     kg: Math.round(kg * 1000) / 1000,
+    fechados,
+    abertos,
     data: v('me-data') || new Date().toISOString().slice(0, 10),
     origem: 'manual',
     osId: '',
