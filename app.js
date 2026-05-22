@@ -5218,10 +5218,20 @@ window.addEventListener('afterprint', function() {
 /* ========================================================= */
 /*                    LISTA DE OS                            */
 /* ========================================================= */
+// Número da OS como inteiro p/ ordenação (ex.: "0282" -> 282). OS sem número
+// (salva só com código) vai pro fim da lista.
+function numeroOSordenacao(o) {
+  const n = parseInt(String(o?.os || '').replace(/\D/g, ''), 10);
+  return Number.isNaN(n) ? Infinity : n;
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
   if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
-  tb.innerHTML = STATE.ordens.slice().reverse().map(o => `
+  // Ordem crescente pelo número da OS (menor primeiro).
+  const ordenadas = STATE.ordens.slice().sort((a, b) =>
+    numeroOSordenacao(a) - numeroOSordenacao(b) || String(a.os || '').localeCompare(String(b.os || '')));
+  tb.innerHTML = ordenadas.map(o => `
     <tr>
       <td><strong>${esc(o.os)||'—'}</strong></td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
