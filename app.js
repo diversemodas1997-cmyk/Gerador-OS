@@ -2027,42 +2027,53 @@ function calcularSaldosEstoque() {
 function renderEstoque() {
   const cont = document.getElementById('estoque-painel');
   if (!cont) return;
-  const { detalhe, porTecido, porCor } = calcularSaldosEstoque();
+  const { detalhe } = calcularSaldosEstoque();
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const saldoCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
   const semNada = !(STATE.estoqueMov || []).length;
 
-  const tabResumo = (titulo, linhas, rotulo) => `
-    <div class="card" style="margin:0;">
-      <h2 style="margin:0 0 8px;font-size:14px;">${titulo}</h2>
-      <table class="table">
-        <thead><tr><th>${rotulo}</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
-        <tbody>
-          ${linhas.length ? linhas.map(c => `
-            <tr>
-              <td><strong>${esc(c.nome)}</strong></td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.entrada)}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.saida)}</td>
-              ${saldoCell(c.saldo)}
-            </tr>`).join('') : `<tr><td colspan="4" class="empty">Nada cadastrado.</td></tr>`}
-        </tbody>
-      </table>
-    </div>`;
+  // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
+  // ficam agrupadas e ordenadas juntas (ex.: Malha Algodão · Preto, Malha Algodão
+  // · Branco, Moletom · Bege...), com subtotal por tipo de tecido.
+  const grupos = new Map();
+  detalhe.forEach(c => {
+    const k = _normNome(c.tecidoNome);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, linhas: [] };
+    g.entrada += c.entrada; g.saida += c.saida; g.linhas.push(c);
+    grupos.set(k, g);
+  });
+  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+  gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
 
-  const detalheHtml = `
+  const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
+  const numCell = n => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(n)}</td>`;
+  const numCellB = n => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${fmt(n)}</td>`;
+  const linhasEstoque = gruposArr.map(g => {
+    const cores = g.linhas.map(c => `
+      <tr>
+        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>
+        ${numCell(c.entrada)}
+        ${numCell(c.saida)}
+        ${saldoCell(c.saldo)}
+      </tr>`).join('');
+    // Subtotal do tipo de tecido (só quando há mais de uma cor no grupo).
+    const subtotal = g.linhas.length > 1 ? `
+      <tr style="background:#eef6f0;">
+        <td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>
+        ${numCellB(g.entrada)}
+        ${numCellB(g.saida)}
+        ${saldoCell(g.entrada - g.saida)}
+      </tr>` : '';
+    return cores + subtotal;
+  }).join('');
+
+  const estoqueHtml = `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">Detalhado · tecido × cor</h2>
+      <h2 style="margin:0 0 8px;font-size:14px;">Estoque por tecido + cor</h2>
       <table class="table">
-        <thead><tr><th>Tecido</th><th>Cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
+        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
         <tbody>
-          ${detalhe.length ? detalhe.map(c => `
-            <tr>
-              <td><strong>${esc(c.tecidoNome) || '—'}</strong></td>
-              <td>${esc(c.corNome) || '<span style="color:var(--ink-2)">(sem cor)</span>'}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.entrada)}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(c.saida)}</td>
-              ${saldoCell(c.saldo)}
-            </tr>`).join('') : `<tr><td colspan="5" class="empty">Sem movimentações ainda.</td></tr>`}
+          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="4" class="empty">Sem movimentações ainda.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -2092,11 +2103,7 @@ function renderEstoque() {
 
   cont.innerHTML = `
     ${semNada ? `<div class="info-box">Ainda não há movimentações. Registre uma <b>Entrada</b> (compra) para começar — as <b>saídas</b> entram sozinhas quando você salva uma OS com enfesto e o tecido tiver o peso (g/m²) cadastrado.</div>` : ''}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-      ${tabResumo('Por tipo de tecido', porTecido, 'Tecido')}
-      ${tabResumo('Por cor', porCor, 'Cor')}
-    </div>
-    ${detalheHtml}
+    ${estoqueHtml}
     ${movHtml}
   `;
 }
