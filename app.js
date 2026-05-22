@@ -2051,47 +2051,30 @@ function movimentacoesEstoque() {
   return [...(STATE.estoqueMov || []), ...comprasComoMovimentos()];
 }
 
-// Calcula saldos. Saldo = entradas (manuais + compras por NF) − saídas (OS/ajuste).
-// Os resumos "por tecido" e "por cor" começam de TODOS os cadastrados (saldo 0)
-// e somam os movimentos, para que itens cadastrados sem movimento também apareçam.
+// Calcula, por tecido+cor:
+//   entrada   = compras (NF) + entradas manuais
+//   reservado = consumo das OSs salvas (saída origem 'os') — comprometido p/ produção
+//   ajuste    = saídas manuais (perdas/correções)
+//   disponivel (REAL) = entrada − reservado − ajuste
 function calcularSaldosEstoque() {
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const detMap = new Map();
   movimentacoesEstoque().forEach(m => {
     const tNome = m.tecidoNome || '', cNome = m.corNome || '';
     const k = key(tNome, cNome);
-    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0 };
+    const cur = detMap.get(k) || { tecidoNome: tNome, corNome: cNome, entrada: 0, reservado: 0, ajuste: 0 };
     const kg = parseFloat(m.kg) || 0;
-    if (m.tipo === 'entrada') cur.entrada += kg; else cur.saida += kg;
+    if (m.tipo === 'entrada') cur.entrada += kg;
+    else if (m.origem === 'os') cur.reservado += kg;
+    else cur.ajuste += kg;
     if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
     if (!cur.corNome && cNome) cur.corNome = cNome;
     detMap.set(k, cur);
   });
-  const detalhe = Array.from(detMap.values()).map(c => ({ ...c, saldo: c.entrada - c.saida }));
-
-  const porTec = new Map();
-  (STATE.tecidos || []).forEach(t => { if (t.nome) porTec.set(_normNome(t.nome), { nome: t.nome, entrada: 0, saida: 0 }); });
-  detalhe.forEach(c => {
-    const k = _normNome(c.tecidoNome);
-    const cur = porTec.get(k) || { nome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0 };
-    cur.entrada += c.entrada; cur.saida += c.saida; porTec.set(k, cur);
-  });
-
-  const porCor = new Map();
-  (STATE.cores || []).forEach(c => { if (c.nome) porCor.set(_normNome(c.nome), { nome: c.nome, entrada: 0, saida: 0 }); });
-  detalhe.forEach(c => {
-    const k = _normNome(c.corNome);
-    const nome = c.corNome || '(sem cor)';
-    const cur = porCor.get(k) || { nome, entrada: 0, saida: 0 };
-    cur.entrada += c.entrada; cur.saida += c.saida; porCor.set(k, cur);
-  });
-
-  const fin = arr => arr.map(c => ({ ...c, saldo: c.entrada - c.saida }));
-  return {
-    detalhe: detalhe.sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || '')),
-    porTecido: fin(Array.from(porTec.values())).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')),
-    porCor: fin(Array.from(porCor.values())).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
-  };
+  const detalhe = Array.from(detMap.values())
+    .map(c => ({ ...c, disponivel: c.entrada - c.reservado - c.ajuste }))
+    .sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || ''));
+  return { detalhe };
 }
 
 function renderEstoque() {
@@ -2099,8 +2082,10 @@ function renderEstoque() {
   if (!cont) return;
   const { detalhe } = calcularSaldosEstoque();
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
-  const saldoCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
+  const dispCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
   const semNada = !movimentacoesEstoque().length;
+  // Coluna "Ajustes" só aparece se houver saída manual em algum item.
+  const temAjuste = detalhe.some(c => Math.abs(c.ajuste) > 1e-9);
 
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
   // ficam agrupadas e ordenadas juntas (ex.: Malha Algodão · Preto, Malha Algodão
@@ -2108,42 +2093,48 @@ function renderEstoque() {
   const grupos = new Map();
   detalhe.forEach(c => {
     const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, linhas: [] };
-    g.entrada += c.entrada; g.saida += c.saida; g.linhas.push(c);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, reservado: 0, ajuste: 0, linhas: [] };
+    g.entrada += c.entrada; g.reservado += c.reservado; g.ajuste += c.ajuste; g.linhas.push(c);
     grupos.set(k, g);
   });
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
   gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
 
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
-  const numCell = n => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(n)}</td>`;
-  const numCellB = n => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${fmt(n)}</td>`;
+  const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
+  // Células de valor de uma linha: Entradas, Reservado, (Ajustes), Disponível real.
+  const cellsVals = (o, bold) =>
+    numCell(o.entrada, bold) + numCell(o.reservado, bold) +
+    (temAjuste ? numCell(o.ajuste, bold) : '') +
+    dispCell(o.entrada - o.reservado - o.ajuste);
   const linhasEstoque = gruposArr.map(g => {
     const cores = g.linhas.map(c => `
       <tr>
         <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>
-        ${numCell(c.entrada)}
-        ${numCell(c.saida)}
-        ${saldoCell(c.saldo)}
+        ${cellsVals(c, false)}
       </tr>`).join('');
     // Subtotal do tipo de tecido (só quando há mais de uma cor no grupo).
     const subtotal = g.linhas.length > 1 ? `
       <tr style="background:#eef6f0;">
         <td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>
-        ${numCellB(g.entrada)}
-        ${numCellB(g.saida)}
-        ${saldoCell(g.entrada - g.saida)}
+        ${cellsVals(g, true)}
       </tr>` : '';
     return cores + subtotal;
   }).join('');
 
+  const thAjuste = temAjuste ? '<th style="text-align:right;">Ajustes</th>' : '';
+  const colsCount = temAjuste ? 5 : 4;
   const estoqueHtml = `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Estoque por tecido + cor</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        <b>Disponível</b> = Entradas − Reservado (consumo das OSs salvas)${temAjuste ? ' − Ajustes' : ''}.
+        O "Reservado" é o total de material já comprometido para cumprir as OSs geradas.
+      </div>
       <table class="table">
-        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Saldo</th></tr></thead>
+        <thead><tr><th>Tecido + cor</th><th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado (OS)</th>${thAjuste}<th style="text-align:right;">Disponível</th></tr></thead>
         <tbody>
-          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="4" class="empty">Sem movimentações ainda.</td></tr>`}
+          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="${colsCount}" class="empty">Sem movimentações ainda.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -2163,7 +2154,7 @@ function renderEstoque() {
           ${movs.length ? movs.map(m => `
             <tr>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
-              <td>${m.tipo === 'entrada' ? '<span class="badge" style="background:#d6f0db;">Entrada</span>' : '<span class="badge" style="background:#f6dcda;">Saída</span>'}</td>
+              <td>${m.tipo === 'entrada' ? '<span class="badge" style="background:#d6f0db;">Entrada</span>' : (m.origem === 'os' ? '<span class="badge" style="background:#fde9c8;">Reserva</span>' : '<span class="badge" style="background:#f6dcda;">Saída</span>')}</td>
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
