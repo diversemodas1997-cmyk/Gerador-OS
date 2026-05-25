@@ -7302,6 +7302,13 @@ async function popularExemplo() {
     await loadState();
     await carregarPapel();
     aplicarPermissoesUI();
+    // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
+    // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
+    // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
+    // isto, recarregar a página deixava o snapshot antigo (SKUs vazios) no ar.
+    if (currentRole === 'admin' && typeof atualizarContabSnapshot === 'function') {
+      atualizarContabSnapshot();
+    }
     goto('home');
     // Tarefas em background — não bloqueiam a navegação
     snapshotDiario().catch(e => console.warn('snapshotDiario', e));
