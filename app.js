@@ -5454,6 +5454,19 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoEnfesto', e); }
 }
 
+// Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
+// Etapas de Produção. Um par único por OS. campo ∈ {ini, fim}.
+async function salvarTempoCorte(osId, campo, valor) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.corteTempo = os.progresso.corteTempo || {};
+  const v = (valor || '').trim();
+  if (v) os.progresso.corteTempo[campo] = v;
+  else delete os.progresso.corteTempo[campo];
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoCorte', e); }
+}
+
 // Calcula os tons efetivamente marcados como prefixo consecutivo: Tom 2 so
 // vale se Tom 1 estiver marcado; Tom 3 so vale se Tom 1 e Tom 2 estiverem.
 // Sanitiza dados antigos ou estado inconsistente sem precisar limpar.
@@ -5645,13 +5658,18 @@ function aplicarProgressoCheckboxes(os) {
     const desejado = !!prog.totalTamanhoTons?.[tom];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
-  // Tempos de enfesto/corte (texto). Não mexe no campo em foco pra não
-  // atropelar quem está digitando.
+  // Tempos de enfesto (texto, por fase) e de corte (par único da etapa Corte).
+  // Não mexe no campo em foco pra não atropelar quem está digitando.
   document.querySelectorAll('input[data-enf-tempo]').forEach(inp => {
     if (inp === document.activeElement) return;
     const ord = inp.dataset.enfTempo;
     const campo = inp.dataset.enfCampo;
     const desejado = prog.enfestosTempos?.[ord]?.[campo] || '';
+    if (inp.value !== desejado) inp.value = desejado;
+  });
+  document.querySelectorAll('input[data-corte-tempo]').forEach(inp => {
+    if (inp === document.activeElement) return;
+    const desejado = prog.corteTempo?.[inp.dataset.corteTempo] || '';
     if (inp.value !== desejado) inp.value = desejado;
   });
 }
@@ -6175,7 +6193,6 @@ function renderEnfestoBox(o) {
       <td style="background:#f7faf8;"></td>
       <td colspan="8" style="padding:2px 5px;background:#f7faf8;">
         ${linhaTempo('Enfesto', ord, 'enfIni', 'enfFim', t)}
-        ${linhaTempo('Corte', ord, 'corIni', 'corFim', t)}
       </td>
     </tr>`;
   }).join('');
@@ -6511,12 +6528,25 @@ function renderPrintSheet(o) {
                 onchange="togglarChecklistTarefa('${esc(o.id)}', this.dataset.etapa, this.dataset.tarefa, this.checked)"
                 data-etapa="${esc(nomeEtapa)}" data-tarefa="${esc(nomeTarefa)}">`;
             };
+            // Campo Início/Fim de corte, exibido só na etapa "Corte". Par único
+            // por OS em progresso.corteTempo. Texto livre (imprime como linha de
+            // preencher e aceita digitação na tela).
+            const ct = prog.corteTempo || {};
+            const campoCorte = (campo) =>
+              `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(ct[campo] || '')}" `
+              + `data-corte-tempo="${campo}" `
+              + `onchange="salvarTempoCorte('${esc(o.id)}', '${campo}', this.value)" `
+              + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
+              + `font-family:'IBM Plex Mono',monospace;font-size:8pt;padding:0 1px;">`;
+            const temposCorte = `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:7pt;color:#555;font-weight:400;">
+                <span>Início</span>${campoCorte('ini')}<span>Fim</span>${campoCorte('fim')}
+              </span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;column-count:2;column-gap:16px;">
               ${ordenadas.map(e => `
                 <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;">
-                  <div style="display:flex;align-items:center;">
+                  <div style="display:flex;align-items:center;flex-wrap:wrap;">
                     ${etapaCk(e.nome)}
-                    <strong>${esc(e.nome)}</strong>
+                    <strong>${esc(e.nome)}</strong>${/corte/i.test(e.nome) ? temposCorte : ''}
                   </div>
                   ${e.tarefas.length ? `
                     <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
