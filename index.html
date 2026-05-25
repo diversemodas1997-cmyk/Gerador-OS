@@ -41,6 +41,8 @@
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
         <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
         <button class="nav-btn" data-page="corte">Estoque de corte</button>
+        <button class="nav-btn" data-page="costurando">Costurando</button>
+        <button class="nav-btn" data-page="fios">Limpeza de fios</button>
       </div>
     </div>
 
@@ -185,10 +187,30 @@
       <div class="page-header">
         <div>
           <h1>Estoque de corte</h1>
-          <div class="desc">Fluxo de peças por fase (em peças, por tecido e cor): <b>Estoque de corte</b> → <b>Costurando</b> → <b>Limpeza de fios</b>. O volume passa de uma fase para a seguinte automaticamente quando a etapa correspondente é marcada no checklist da OS. Cada fase tem botões para contagem física e ajustes manuais.</div>
+          <div class="desc">Peças cortadas estocadas, esperando a costura (em peças, por tecido e cor). 1ª fase do fluxo <b>Estoque de corte</b> → <b>Costurando</b> → <b>Limpeza de fios</b>: o volume sai daqui sozinho quando a etapa <b>Costura</b> é marcada na OS. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="corte-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="costurando">
+      <div class="page-header">
+        <div>
+          <h1>Costurando</h1>
+          <div class="desc">Peças em costura (em peças, por tecido e cor). Recebe sozinho as OSs com a etapa <b>Costura</b> marcada e baixa quando a etapa <b>Limpeza de fios</b> é marcada (vai p/ Limpeza de fios). Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+      </div>
+      <div id="costurando-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="fios">
+      <div class="page-header">
+        <div>
+          <h1>Limpeza de fios</h1>
+          <div class="desc">Peças em limpeza de fios / acabamento (em peças, por tecido e cor). Recebe sozinho as OSs com a etapa <b>Limpeza de fios</b> marcada (última fase do fluxo). Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+      </div>
+      <div id="fios-painel"></div>
     </section>
 
     <section class="page hidden" data-page="cad-tecidos">
@@ -732,6 +754,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-05-25t"></script>
+<script src="app.js?v=2026-05-25u"></script>
 </body>
 </html>

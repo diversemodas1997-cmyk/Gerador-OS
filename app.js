@@ -1046,7 +1046,9 @@ function goto(page) {
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'estoque') renderEstoque();
-  if (page === 'corte') renderEstoqueCorte();
+  if (page === 'corte') renderFasePainel(0);
+  if (page === 'costurando') renderFasePainel(1);
+  if (page === 'fios') renderFasePainel(2);
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
@@ -2491,11 +2493,11 @@ function componentesPorTecidoCorOS(o) {
 //   entrada.tipo 'oscriada' = peças cortadas ao gerar a OS (1ª fase);
 //   entrada.tipo 'etapa'   = OS com a etapa (re/label) marcada no checklist.
 const FASES_ESTOQUE = [
-  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',
+  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel',
     entrada: { tipo: 'oscriada', label: 'corte' } },
-  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov',
+  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',
+  { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',       painelId: 'fios-painel',
     entrada: { tipo: 'etapa', re: /fios/i, label: 'Limpeza de fios' } },
 ];
 
@@ -2551,83 +2553,83 @@ function faseAtualOS(o) {
   return idx;
 }
 
-function renderEstoqueCorte() {
-  const cont = document.getElementById('corte-painel');
+// Cada fase do fluxo é um CAMPO próprio no menu (Estoque de corte, Costurando,
+// Limpeza de fios). Renderiza UMA fase no seu painel: saldo por tecido+cor, OSs
+// atualmente nessa fase e os lançamentos manuais da fase.
+function renderFasePainel(faseIdx) {
+  const fase = FASES_ESTOQUE[faseIdx];
+  if (!fase) return;
+  const cont = document.getElementById(fase.painelId);
   if (!cont) return;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
-  const estCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
-  const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque, bold);
+  const estCell = (n) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
+  const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque);
 
-  // Um card por fase do fluxo (Estoque de corte → Costurando → Limpeza de fios → ...).
-  let temAlgo = false;
-  const cards = FASES_ESTOQUE.map((fase, idx) => {
-    const prox = FASES_ESTOQUE[idx + 1];
-    const { detalhe } = calcularSaldosFase(idx);
-    if (detalhe.length) temAlgo = true;
-    const grupos = new Map();
-    detalhe.forEach(c => {
-      const k = _normNome(c.tecidoNome);
-      const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
-      g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
-      g.linhas.push(c); grupos.set(k, g);
-    });
-    const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
-    gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
-    const linhas = gruposArr.map(g => {
-      const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}</tr>`).join('');
-      const sub = g.linhas.length > 1
-        ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}</tr>`
-        : '';
-      return cores + sub;
-    }).join('');
-    const entradaDesc = fase.entrada.tipo === 'oscriada'
-      ? 'peças cortadas de todas as OS'
-      : `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
-    const saidaDesc = prox
-      ? `OS com a etapa <b>${esc(prox.entrada.label)}</b> marcada (vai p/ ${esc(prox.titulo)})`
-      : 'apenas lançamento manual (não há fase seguinte)';
-    return `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-          <h2 style="margin:0;font-size:14px;">${esc(fase.titulo)} — por tecido + cor</h2>
-          <div class="admin-only" style="display:flex;gap:6px;">
-            <button class="btn primary" onclick="abrirMovFase('${fase.id}','entrada')">+ Entrada</button>
-            <button class="btn" onclick="abrirMovFase('${fase.id}','saida')">− Saída / ajuste</button>
-          </div>
-        </div>
-        <div class="muted" style="font-size:12px;margin-bottom:8px;">
-          Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
-          <b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
-        </div>
-        <table class="table">
-          <thead><tr>
-            <th>Tecido + cor</th>
-            <th style="text-align:right;">Entradas</th>
-            <th style="text-align:right;">Saídas</th>
-            <th style="text-align:right;">Contagem de estoque</th>
-            <th style="text-align:right;">Estoque</th>
-          </tr></thead>
-          <tbody>${gruposArr.length ? linhas : `<tr><td colspan="5" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
-        </table>
-      </div>`;
+  const prox = FASES_ESTOQUE[faseIdx + 1];
+  const { detalhe } = calcularSaldosFase(faseIdx);
+  const grupos = new Map();
+  detalhe.forEach(c => {
+    const k = _normNome(c.tecidoNome);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
+    g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+    g.linhas.push(c); grupos.set(k, g);
+  });
+  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+  gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
+  const linhas = gruposArr.map(g => {
+    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}</tr>`).join('');
+    const sub = g.linhas.length > 1
+      ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}</tr>`
+      : '';
+    return cores + sub;
   }).join('');
+  const entradaDesc = fase.entrada.tipo === 'oscriada'
+    ? 'peças cortadas de todas as OS'
+    : `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
+  const saidaDesc = prox
+    ? `OS com a etapa <b>${esc(prox.entrada.label)}</b> marcada (vai p/ ${esc(prox.titulo)})`
+    : 'apenas lançamento manual (não há fase seguinte)';
+  const card = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">${esc(fase.titulo)} — por tecido + cor</h2>
+        <div class="admin-only" style="display:flex;gap:6px;">
+          <button class="btn primary" onclick="abrirMovFase('${fase.id}','entrada')">+ Entrada</button>
+          <button class="btn" onclick="abrirMovFase('${fase.id}','saida')">− Saída / ajuste</button>
+        </div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
+        <b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th>Tecido + cor</th>
+          <th style="text-align:right;">Entradas</th>
+          <th style="text-align:right;">Saídas</th>
+          <th style="text-align:right;">Contagem de estoque</th>
+          <th style="text-align:right;">Estoque</th>
+        </tr></thead>
+        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="5" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+      </table>
+    </div>`;
 
-  // Pacotes por OS — em qual fase do fluxo cada OS está agora.
+  // OSs atualmente NESTA fase.
   const pacotes = (STATE.ordens || []).map(o => {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
     return { osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '', total, faseIdx: faseAtualOS(o) };
-  }).filter(p => p.total > 0)
+  }).filter(p => p.total > 0 && p.faseIdx === faseIdx)
     .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
   const pacotesHtml = pacotes.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">Pacotes por OS — fase atual</h2>
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas.</div>
       <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th>Fase atual</th><th class="col-actions">Ação</th></tr></thead>
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ação</th></tr></thead>
         <tbody>
           ${pacotes.map(p => `
             <tr>
@@ -2635,28 +2637,25 @@ function renderEstoqueCorte() {
               <td>${esc(p.modelo) || '—'}</td>
               <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.total)} pç</td>
-              <td><span class="badge" style="background:#e6eef7;">${esc(FASES_ESTOQUE[p.faseIdx].titulo)}</span></td>
               <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
-  // Lançamentos manuais recentes (de todas as fases, com a coluna "Campo").
-  const movsAll = [];
-  FASES_ESTOQUE.forEach(f => (STATE[f.movKey] || []).forEach(m => movsAll.push({ ...m, _fase: f.titulo, _faseId: f.id })));
-  movsAll.sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)));
-  const movsTop = movsAll.slice(0, 60);
-  const movHtml = movsTop.length ? `
+  // Lançamentos manuais DESTA fase.
+  const movs = (STATE[fase.movKey] || []).slice()
+    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
+    .slice(0, 60);
+  const movHtml = movs.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes</h2>
+      <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes — ${esc(fase.titulo)}</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Campo</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
-          ${movsTop.map(m => `
+          ${movs.map(m => `
             <tr>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
-              <td>${esc(m._fase)}</td>
               <td>${m.tipo === 'entrada'
                 ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
                 : '<span class="badge" style="background:#f6dcda;">Saída</span>'}</td>
@@ -2664,19 +2663,29 @@ function renderEstoqueCorte() {
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.qtd)}</td>
               <td>${esc(m.obs) || '—'}</td>
-              <td class="col-actions row-actions"><button onclick="excluirMovFase('${esc(m._faseId)}', '${esc(m.id)}')">excluir</button></td>
+              <td class="col-actions row-actions"><button onclick="excluirMovFase('${esc(fase.id)}', '${esc(m.id)}')">excluir</button></td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
+  const vazio = !gruposArr.length && !movs.length && !pacotes.length;
   cont.innerHTML = `
-    ${(!temAlgo && !movsAll.length) ? `<div class="info-box">Ainda não há peças cortadas. As fases recebem volume sozinhas conforme as etapas do checklist são marcadas na OS (Costura, Limpeza de fios…). Use os botões de cada fase para contagem física e ajustes manuais.</div>` : ''}
-    ${cards}
+    ${vazio ? `<div class="info-box">Sem peças nesta fase ainda. O volume entra sozinho conforme a etapa correspondente é marcada no checklist da OS. Use os botões para contagem física e ajustes manuais.</div>` : ''}
+    ${card}
     ${pacotesHtml}
     ${movHtml}
   `;
 }
+
+// Re-renderiza o painel de uma fase pelo id (após salvar/excluir lançamento).
+function renderFasePorId(faseId) {
+  const idx = FASES_ESTOQUE.findIndex(f => f.id === faseId);
+  if (idx >= 0) renderFasePainel(idx);
+}
+
+// Compat: "Estoque de corte" = primeira fase.
+function renderEstoqueCorte() { renderFasePainel(0); }
 
 // Lançamento manual genérico de qualquer fase do fluxo (entra na coluna
 // "Contagem de estoque" daquela fase).
@@ -2727,7 +2736,7 @@ async function salvarMovFase() {
   await saveState(fase.movKey);
   closeModal('modal-corte');
   toast(movFaseTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
-  renderEstoqueCorte();
+  renderFasePorId(fase.id);
 }
 
 async function excluirMovFase(faseId, id) {
@@ -2738,7 +2747,7 @@ async function excluirMovFase(faseId, id) {
   STATE[fase.movKey] = (STATE[fase.movKey] || []).filter(x => x.id !== id);
   await saveState(fase.movKey);
   toast('Lançamento excluído', 'ok');
-  renderEstoqueCorte();
+  renderFasePorId(faseId);
 }
 
 // SKU(s) do produto acabado de uma OS = Linha de SKU do modelo + Sigla SKU de
@@ -7380,6 +7389,7 @@ window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
 window.excluirMovEstoque = excluirMovEstoque;
 window.renderEstoqueCorte = renderEstoqueCorte;
+window.renderFasePainel = renderFasePainel;
 window.abrirMovFase = abrirMovFase;
 window.salvarMovFase = salvarMovFase;
 window.excluirMovFase = excluirMovFase;
