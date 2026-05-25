@@ -17,6 +17,9 @@ let inRecoveryFlow = false;
 // no estoque. Não fazem parte do blob shared_data (fonte separada).
 let comprasCache = [];
 let comprasChannel = null;
+// Catálogo de SKUs publicado pelo Estoque-Confeccao (tabela skus_catalogo).
+// O Gerador-OS só LÊ — usado no dropdown de SKU dos cadastros de Desenho/Modelo.
+let catalogoSkus = [];
 
 async function cloudLoad() {
   if (!supa || !currentUser) return;
@@ -132,6 +135,20 @@ async function carregarComprasMateriais() {
   } catch (e) {
     comprasCache = [];
   }
+}
+
+// Lê o catálogo de SKUs (skus_catalogo, linha id='main') publicado pelo
+// Estoque-Confeccao. Falha silenciosa se a tabela não existir ainda.
+async function carregarCatalogoSkus() {
+  if (!supa || !currentUser) { catalogoSkus = []; return; }
+  try {
+    const { data, error } = await supa
+      .from('skus_catalogo').select('data').eq('id', 'main').maybeSingle();
+    if (error || !data) { return; }
+    let d = data.data || {};
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+    catalogoSkus = Array.isArray(d.skus) ? d.skus : [];
+  } catch (e) { /* tabela ausente / sem permissão — ignora */ }
 }
 
 // Realtime das compras: quando a Contabilidade insere/atualiza uma compra,
@@ -468,6 +485,7 @@ async function inicializarAuth() {
     currentUser = session.user;
     await cloudLoad();
     await carregarComprasMateriais();
+    await carregarCatalogoSkus();
     iniciarRealtime();
     iniciarRealtimeCompras();
   }
@@ -485,6 +503,7 @@ async function inicializarAuth() {
       await cloudLoad();
       await carregarPapel();
       await carregarComprasMateriais();
+      await carregarCatalogoSkus();
       iniciarRealtime();
       iniciarRealtimeCompras();
     } else if (event === 'SIGNED_OUT') {
@@ -1117,7 +1136,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
         <div class="field"><label>Linha (texto)</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
-        <div class="field"><label>Linha de SKU</label><input type="text" id="m-skulinha" value="${esc(item.skuLinha||'')}" placeholder="Ex.: CM.LISA, BM.TRI"><div class="field-hint">Linha (tipo) do SKU no Estoque de produtos acabados. SKU da OS = Linha + cor (ex.: <b>CM.LISA</b>-PRE)</div></div>
+        <div class="field"><label>SKU</label><input type="text" id="m-skulinha" list="dl-skus" value="${esc(item.skuLinha||'')}" placeholder="Ex.: CM.LISA (linha) ou CM.LISA-PRE">${datalistSkusHtml()}<div class="field-hint">Escolha o <b>SKU completo</b> ou a <b>linha</b> (SKU da OS = linha + cor). Padrão do modelo; o desenho pode sobrescrever.</div></div>
       </div>
       <div style="margin-top:14px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Vínculos padrão (preenchem a OS ao selecionar este modelo)</label>
@@ -1234,7 +1253,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div class="form-grid cols-2">
         <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: Dx7282"></div>
         <div class="field"><label>Descrição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Camiseta básica preta"></div>
-        <div class="field"><label>SKU (linha)</label><input type="text" id="m-desenho-sku" value="${esc(item.skuLinha||'')}" placeholder="Ex.: CM.LISA, BM.TRI"><div class="field-hint">SKU do produto acabado = esta linha + sigla da cor. Tem prioridade sobre a Linha de SKU do modelo.</div></div>
+        <div class="field"><label>SKU</label><input type="text" id="m-desenho-sku" list="dl-skus" value="${esc(item.skuLinha||'')}" placeholder="Escolha o SKU (ex.: CM.LISA-PRE)">${datalistSkusHtml()}<div class="field-hint">Escolha o <b>SKU completo</b> (ex.: CM.LISA-PRE) ou só a <b>linha</b> (ex.: CM.LISA — a cor resolve pela OS). Tem prioridade sobre o modelo.</div></div>
         <div class="field full">
           <label>Imagem (PNG/JPG) *</label>
           <label class="file-label">Escolher arquivo <input type="file" id="m-img" accept="image/*" onchange="previewUploadImg(event)"></label>
@@ -2673,21 +2692,31 @@ async function excluirMovFase(faseId, id) {
 // cada cor (variante). Override em o.skuOverride tem prioridade. Usado no
 // cabeçalho da folha impressa e no snapshot para a Contabilidade/Estoque.
 function skusDaOS(o) {
-  const ov = (o.skuOverride || '').trim().toUpperCase();
-  if (ov) return [ov];
-  // Linha do SKU: o desenho técnico tem prioridade; cai no modelo se vazio.
+  // Valor base: override da OS > SKU do desenho técnico > SKU do modelo.
   const desenhoObj = (STATE.desenhos || []).find(d => d.id === o.desenhoId);
   const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
-  const linha = (((desenhoObj && desenhoObj.skuLinha) || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
-  if (!linha) return [];
+  const base = ((o.skuOverride || (desenhoObj && desenhoObj.skuLinha) || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
+  if (!base) return [];
+  // Regra do traço: SKU COMPLETO (ex.: CM.LISA-PRE) tem "-" → usa direto.
+  // LINHA (ex.: CM.LISA) não tem "-" → compõe com a Sigla da cor de cada variante.
+  if (base.includes('-')) return [base];
   const cores = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
   const out = [];
   cores.forEach(corNome => {
     const corObj = (STATE.cores || []).find(c => _normNome(c.nome) === _normNome(corNome));
     const sigla = ((corObj && corObj.siglaSku) || '').trim().toUpperCase();
-    if (sigla) out.push(linha + '-' + sigla);
+    if (sigla) out.push(base + '-' + sigla);
   });
   return [...new Set(out)];
+}
+
+// Datalist com os SKUs COMPLETOS do catálogo do Estoque-Confeccao, para o
+// dropdown dos campos de SKU nos cadastros de Desenho e Modelo.
+function datalistSkusHtml() {
+  const opts = (catalogoSkus || [])
+    .map(s => `<option value="${esc(s.item)}">${esc(s.descricao || s.item)}</option>`)
+    .join('');
+  return `<datalist id="dl-skus">${opts}</datalist>`;
 }
 
 /* ========================================================= */
@@ -2741,9 +2770,10 @@ function construirContabSnapshot() {
     // fica sem cor (vai para "a identificar" no Estoque-Confeccao).
     const coresV = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
     const corPrincipal = coresV.length === 1 ? coresV[0] : '';
-    // SKU para a entrada (cor única ou override). Multicor sem override fica vazio.
+    // SKU para a entrada: único quando skusDaOS resolve exatamente 1 (cor única,
+    // SKU completo definido, ou override). Multicor (vários) fica vazio → manual.
     const _skus = skusDaOS(o);
-    const sku = (o.skuOverride || coresV.length === 1) ? (_skus[0] || '') : '';
+    const sku = _skus.length === 1 ? _skus[0] : '';
     return {
       os: o.os || '',
       data: (o.data || '').slice(0, 10),
