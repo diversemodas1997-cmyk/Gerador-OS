@@ -5439,6 +5439,21 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
 }
 
+// Salva o tempo de Início/Fim digitado em cada fase de enfesto na folha
+// impressa. campo ∈ {enfIni, enfFim, corIni, corFim} (enfesto e corte).
+// Valor vazio remove a chave. Persiste em progresso.enfestosTempos[ordem].
+async function salvarTempoEnfesto(osId, ordem, campo, valor) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.enfestosTempos = os.progresso.enfestosTempos || {};
+  os.progresso.enfestosTempos[ordem] = os.progresso.enfestosTempos[ordem] || {};
+  const v = (valor || '').trim();
+  if (v) os.progresso.enfestosTempos[ordem][campo] = v;
+  else delete os.progresso.enfestosTempos[ordem][campo];
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoEnfesto', e); }
+}
+
 // Calcula os tons efetivamente marcados como prefixo consecutivo: Tom 2 so
 // vale se Tom 1 estiver marcado; Tom 3 so vale se Tom 1 e Tom 2 estiverem.
 // Sanitiza dados antigos ou estado inconsistente sem precisar limpar.
@@ -5629,6 +5644,15 @@ function aplicarProgressoCheckboxes(os) {
     const tom = inp.dataset.ttTom;
     const desejado = !!prog.totalTamanhoTons?.[tom];
     if (inp.checked !== desejado) inp.checked = desejado;
+  });
+  // Tempos de enfesto/corte (texto). Não mexe no campo em foco pra não
+  // atropelar quem está digitando.
+  document.querySelectorAll('input[data-enf-tempo]').forEach(inp => {
+    if (inp === document.activeElement) return;
+    const ord = inp.dataset.enfTempo;
+    const campo = inp.dataset.enfCampo;
+    const desejado = prog.enfestosTempos?.[ord]?.[campo] || '';
+    if (inp.value !== desejado) inp.value = desejado;
   });
 }
 
@@ -6112,6 +6136,22 @@ function renderEnfestoBox(o) {
   let totalKg = 0;
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
+  const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
+  // Campo de tempo preenchível (Início/Fim) — persiste em progresso.enfestosTempos[ord].
+  // Texto livre (não type="time") pra imprimir como linha limpa de preencher à mão
+  // e também aceitar digitação na tela. Sincroniza entre usuários via realtime.
+  const campoTempo = (ord, campo, val) =>
+    `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(val || '')}" `
+    + `data-enf-tempo="${esc(String(ord))}" data-enf-campo="${campo}" `
+    + `onchange="salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${campo}', this.value)" `
+    + `style="width:44px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
+    + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
+  const linhaTempo = (lbl, ord, campoIni, campoFim, t) =>
+    `<div style="display:flex;align-items:center;gap:5px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
+      <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">${lbl}</span>
+      <span style="color:#555;">Início</span>${campoTempo(ord, campoIni, t[campoIni])}
+      <span style="color:#555;">Fim</span>${campoTempo(ord, campoFim, t[campoFim])}
+    </div>`;
   const linhasEnfestos = consumo.map(L => {
     const ord = L.ordem;
     const camBloco = L.ehVies ? 1 : (L.camadas || 0);
@@ -6119,6 +6159,7 @@ function renderEnfestoBox(o) {
     const largEf = L.larg || '';
     totalKg += L.kg;
     const ckEnf = !!enfestosCheck[ord];
+    const t = enfestosTempos[ord] || {};
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" class="os-check" ${ckEnf?'checked':''} data-enfesto="${esc(String(ord))}" onchange="togglarChecklistEnfesto('${esc(o.id)}', this.dataset.enfesto, this.checked)" style="margin:0;"></td>
       <td style="text-align:center;font-weight:700;">${ord}</td>
@@ -6129,6 +6170,13 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${L.kg > 0 ? fmtKg(L.kg)+' kg' : '—'}</td>
+    </tr>
+    <tr class="enfesto-tempos">
+      <td style="background:#f7faf8;"></td>
+      <td colspan="8" style="padding:2px 5px;background:#f7faf8;">
+        ${linhaTempo('Enfesto', ord, 'enfIni', 'enfFim', t)}
+        ${linhaTempo('Corte', ord, 'corIni', 'corFim', t)}
+      </td>
     </tr>`;
   }).join('');
   const linhaTotal = totalKg > 0
