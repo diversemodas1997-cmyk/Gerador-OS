@@ -2128,7 +2128,7 @@ function renderEstoque() {
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
-  const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
+  const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
   // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
   const cellsVals = (o, bold) =>
     numCell(o.entrada, bold) + numCell(o.reservado, bold) + numCell(o.saida, bold) +
@@ -2162,8 +2162,8 @@ function renderEstoque() {
           <th>Tecido + cor</th>
           <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
           <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
-          <th style="text-align:right;background:#f4f1fb;">Fechados (un)</th>
-          <th style="text-align:right;background:#f4f1fb;">Abertos (un)</th>
+          <th style="text-align:right;">Fechados (un)</th>
+          <th style="text-align:right;">Abertos (un)</th>
         </tr></thead>
         <tbody>
           ${gruposArr.length ? linhasEstoque : `<tr><td colspan="7" class="empty">Sem movimentações ainda.</td></tr>`}
@@ -2212,7 +2212,7 @@ function renderEstoque() {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;background:#f4f1fb;">Fech.</th><th style="text-align:right;background:#f4f1fb;">Abertos</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;">Abertos</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
           ${movs.length ? movs.map(m => `
             <tr>
@@ -2227,8 +2227,8 @@ function renderEstoque() {
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;">${m.fechados ? Number(m.fechados) : '—'}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;">${m.abertos ? Number(m.abertos) : '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.abertos ? Number(m.abertos) : '—'}</td>
               <td>${origemLabel(m)}</td>
               <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
             </tr>`).join('') : `<tr><td colspan="9" class="empty">Nenhuma movimentação.</td></tr>`}
@@ -2413,7 +2413,7 @@ function renderEstoqueCorte() {
 
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
-  const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
+  const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
   const estCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
   const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque, bold);
   const linhasEstoque = gruposArr.map(g => {
@@ -2443,7 +2443,7 @@ function renderEstoqueCorte() {
           <th>Tecido + cor</th>
           <th style="text-align:right;">Entradas</th>
           <th style="text-align:right;">Saídas</th>
-          <th style="text-align:right;background:#f4f1fb;">Contagem de estoque</th>
+          <th style="text-align:right;">Contagem de estoque</th>
           <th style="text-align:right;">Estoque</th>
         </tr></thead>
         <tbody>
