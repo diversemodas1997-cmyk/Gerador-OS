@@ -974,6 +974,12 @@ async function loadState() {
   // O auto-preenchimento do SKU dos DESENHOS roda em revalidarSkusDesenhos(),
   // após o catálogo (skus_catalogo) carregar — para VALIDAR contra a relação de
   // SKUs (só usa SKU que existe; nunca inventa SKU fora do catálogo).
+  // Republica o snapshot p/ a Contabilidade/Estoque-Confeccao SEMPRE que o admin
+  // carrega o estado (login OU reload). Garante SKUs frescos mesmo sem nenhuma
+  // edição na sessão — sem isso, um reload deixava o snapshot antigo no ar.
+  if (currentRole === 'admin' && typeof atualizarContabSnapshot === 'function') {
+    atualizarContabSnapshot();
+  }
 }
 
 // Preenche o SKU dos desenhos técnicos VAZIOS, validando contra o catálogo de
