@@ -2663,17 +2663,32 @@ function construirContabSnapshot() {
     .filter(w => w.pecas > 0 || w.kg > 1e-9)
     .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
 
-  // Por OS: camisetas produzidas + material consumido (para o rateio de custo).
-  const ordens = (STATE.ordens || []).map(o => ({
-    os: o.os || '',
-    data: (o.data || '').slice(0, 10),
-    camisetas: Math.round(calcularTotalGeralAlvoImpressao(o) || 0),
-    componentes: Math.round((componentesPorTecidoCorOS(o) || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0)),
-    costura: osCosturaMarcada(o),
-    material: (consumoAgregadoPorTecidoCor(o) || [])
-      .filter(x => (Number(x.kg) || 0) > 1e-9)
-      .map(x => ({ tecido: x.tecidoNome || '', cor: x.corNome || '', kg: r3(x.kg) })),
-  })).filter(x => x.camisetas > 0 || x.componentes > 0 || x.material.length);
+  // Por OS: produção (camisetas + por tamanho), material, modelo/cor e fase.
+  // O Estoque-Confeccao usa `fios` (Limpeza de fios marcada) como gatilho para
+  // lançar a entrada de produtos acabados, casando modelo+cor com o SKU.
+  const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const ordens = (STATE.ordens || []).map(o => {
+    const tamanhos = {};
+    TAMS.forEach(t => { const q = Math.round(calcularColTotalAlvoImpressao(o, t) || 0); if (q > 0) tamanhos[t] = q; });
+    // Cor: só casa direto quando a OS tem uma única cor (variante). Multicor
+    // fica sem cor (vai para "a identificar" no Estoque-Confeccao).
+    const coresV = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+    return {
+      os: o.os || '',
+      data: (o.data || '').slice(0, 10),
+      modelo: o.modeloNome || '',
+      cor: coresV.length === 1 ? coresV[0] : '',
+      multicor: coresV.length > 1,
+      camisetas: Math.round(calcularTotalGeralAlvoImpressao(o) || 0),
+      tamanhos,
+      componentes: Math.round((componentesPorTecidoCorOS(o) || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0)),
+      costura: osCosturaMarcada(o),
+      fios: osFiosMarcada(o),
+      material: (consumoAgregadoPorTecidoCor(o) || [])
+        .filter(x => (Number(x.kg) || 0) > 1e-9)
+        .map(x => ({ tecido: x.tecidoNome || '', cor: x.corNome || '', kg: r3(x.kg) })),
+    };
+  }).filter(x => x.camisetas > 0 || x.componentes > 0 || x.material.length);
 
   return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao, ordens };
 }
