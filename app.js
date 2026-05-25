@@ -929,6 +929,24 @@ async function loadState() {
     });
     if (mudou) { try { await saveState('modelos'); } catch (e) {} }
   }
+
+  // Auto-preenche a "Sigla SKU" das cores cuja sigla é inequívoca no catálogo de
+  // SKUs. Fora: Grafite (catálogo tem GRA e GRAF — ambíguo) e Off-White (sem SKU).
+  // Admin, só quando vazio (não sobrescreve).
+  if (currentRole === 'admin' && Array.isArray(STATE.cores)) {
+    const siglas = {
+      'preto': 'PRE', 'branco': 'BRA', 'verde': 'VERDE', 'vermelho': 'VERM',
+      'azul': 'AZUL', 'bege': 'BEGE', 'roxo': 'ROXO', 'marrom': 'MARROM',
+      'caqui': 'CAQUI', 'mostarda': 'MOSTARDA',
+    };
+    let mudou = 0;
+    STATE.cores.forEach(c => {
+      if (c.siglaSku) return;
+      const s = siglas[_normNome(c.nome || '')];
+      if (s) { c.siglaSku = s; mudou++; }
+    });
+    if (mudou) { try { await saveState('cores'); } catch (e) {} }
+  }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
