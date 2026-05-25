@@ -795,8 +795,11 @@ const STATE = {
   componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
 };
 
-// Chaves cujo conteúdo afeta o snapshot de estoque lido pela Contabilidade.
-const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov'];
+// Chaves cujo conteúdo afeta o snapshot de estoque lido pela Contabilidade /
+// Estoque-Confeccao. Inclui desenhos/modelos/cores porque o SKU de cada OS é
+// resolvido a partir deles (skusDaOS) — editar o SKU de um desenho precisa
+// republicar o snapshot, senão o Estoque continua com o SKU antigo.
+const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos', 'modelos', 'cores'];
 
 async function saveState(key) {
   try {
