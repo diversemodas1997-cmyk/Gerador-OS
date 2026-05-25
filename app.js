@@ -2567,22 +2567,34 @@ function calcularSaldosFase(idx) {
   return { detalhe };
 }
 
+// Etapa TERMINAL: ao marcar "Estoque", a OS sai do fluxo em processo (foi para o
+// estoque de produtos acabados) — some de todos os campos (corte..expedição).
+const TERMINAL_ETAPA_RE = /estoque/i;
+
 // Fase atual de uma OS = o campo da etapa marcada por ÚLTIMO (modelo sobreposto).
 // Usa etapasSeq (carimbo de quando cada etapa foi marcada): vence o maior seq
-// entre as fases marcadas. Sem seq (OS antiga), cai no canônico = última fase na
-// ordem do fluxo que está marcada. Etapas sem campo não entram (não são fases).
+// entre as etapas com campo + a terminal. Sem seq (OS antiga), cai no canônico =
+// última (na ordem do fluxo, terminal por último) que está marcada. Etapas sem
+// campo (Acabamento de mangas, Ensaque…) não contam. Retorna o índice da fase, ou
+// -1 quando a OS está FORA do fluxo (terminal "Estoque", ou nenhuma etapa de fase).
 function faseAtualOS(o) {
   const seqs = (o.progresso && o.progresso.etapasSeq) || {};
-  let idxSeq = -1, melhorSeq = -Infinity;   // por ordem de marcação (etapasSeq)
-  let idxOrd = -1;                           // fallback canônico (ordem das fases)
+  let achouSeq = false, idxSeq = -1, melhorSeq = -Infinity; // por etapasSeq
+  let idxOrd = -1, melhorOrd = -1;                           // fallback canônico
+  const considerar = (idx, ord, nome) => {
+    const s = (nome && seqs[nome] != null) ? Number(seqs[nome]) : null;
+    if (s != null && (!achouSeq || s > melhorSeq)) { achouSeq = true; melhorSeq = s; idxSeq = idx; }
+    if (ord > melhorOrd) { melhorOrd = ord; idxOrd = idx; }
+  };
   FASES_ESTOQUE.forEach((f, i) => {
     if (!_faseEntrouOS(o, f.entrada)) return;
-    idxOrd = i;
-    const nome = _nomeEtapaDaFase(o, f);
-    const s = (nome && seqs[nome] != null) ? Number(seqs[nome]) : null;
-    if (s != null && (idxSeq < 0 || s > melhorSeq)) { melhorSeq = s; idxSeq = i; }
+    considerar(i, i, _nomeEtapaDaFase(o, f));
   });
-  return idxSeq >= 0 ? idxSeq : (idxOrd >= 0 ? idxOrd : 0);
+  if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) {
+    const nomeT = (o.etapas || []).find(n => TERMINAL_ETAPA_RE.test(n));
+    considerar(-1, FASES_ESTOQUE.length, nomeT); // -1 = terminal; canônico = depois de todas
+  }
+  return achouSeq ? idxSeq : idxOrd;
 }
 
 // Cada fase do fluxo é um CAMPO próprio no menu (Estoque de corte, Costurando,
@@ -2855,8 +2867,8 @@ function construirContabSnapshot() {
     .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
 
   // Por OS: produção (camisetas + por tamanho), material, modelo/cor e fase.
-  // O Estoque-Confeccao usa `fios` (Retirada de fios marcada) como gatilho para
-  // lançar a entrada de produtos acabados, casando modelo+cor com o SKU.
+  // O Estoque-Confeccao usa `estoque` (etapa terminal "Estoque" marcada) como
+  // gatilho para lançar a entrada de produtos acabados, casando pelo SKU da OS.
   const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
   const ordens = (STATE.ordens || []).map(o => {
     const tamanhos = {};
@@ -2881,6 +2893,9 @@ function construirContabSnapshot() {
       componentes: Math.round((componentesPorTecidoCorOS(o) || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0)),
       costura: osCosturaMarcada(o),
       fios: osFiosMarcada(o),
+      // Etapa terminal "Estoque" marcada = OS virou produto acabado. É o gatilho
+      // (no Estoque-Confeccao) da entrada automática de produtos acabados por SKU.
+      estoque: osEtapaMarcada(o, TERMINAL_ETAPA_RE),
       material: (consumoAgregadoPorTecidoCor(o) || [])
         .filter(x => (Number(x.kg) || 0) > 1e-9)
         .map(x => ({ tecido: x.tecidoNome || '', cor: x.corNome || '', kg: r3(x.kg) })),
