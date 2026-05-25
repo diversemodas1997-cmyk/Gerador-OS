@@ -1048,7 +1048,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camel"></div>
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
-        <div class="field full"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
+        <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
+        <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
       </div>`;
   }
   else if (tipo === 'material') {
@@ -1076,6 +1077,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
         <div class="field"><label>Linha (texto)</label><input type="text" id="m-linha" value="${esc(item.linha||'')}" placeholder="Ex.: Adulto, Infantil"></div>
+        <div class="field"><label>Linha de SKU</label><input type="text" id="m-skulinha" value="${esc(item.skuLinha||'')}" placeholder="Ex.: CM.LISA, BM.TRI"><div class="field-hint">Linha (tipo) do SKU no Estoque de produtos acabados. SKU da OS = Linha + cor (ex.: <b>CM.LISA</b>-PRE)</div></div>
       </div>
       <div style="margin-top:14px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Vínculos padrão (preenchem a OS ao selecionar este modelo)</label>
@@ -1732,6 +1734,7 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.hex = v('m-hex');
     item.codigo = v('m-codigo');
+    item.siglaSku = (v('m-siglasku') || '').trim().toUpperCase();
   }
   else if (tipo === 'material') {
     if (!v('m-codigo') || !v('m-desc')) return toast('Código e descrição obrigatórios', 'err');
@@ -1743,6 +1746,7 @@ async function salvarCadastro() {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
     item.linha = v('m-linha');
+    item.skuLinha = (v('m-skulinha') || '').trim().toUpperCase();
     item.categoria = v('m-categoria');
     item.baseId = v('m-vinc-base');
     item.marcaId = v('m-vinc-marca');
@@ -2673,11 +2677,23 @@ function construirContabSnapshot() {
     // Cor: só casa direto quando a OS tem uma única cor (variante). Multicor
     // fica sem cor (vai para "a identificar" no Estoque-Confeccao).
     const coresV = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+    const corPrincipal = coresV.length === 1 ? coresV[0] : '';
+    // SKU do produto acabado, resolvido na própria OS: override > Linha do
+    // modelo + Sigla SKU da cor principal. Vazio se faltar cadastro.
+    let sku = (o.skuOverride || '').trim().toUpperCase();
+    if (!sku && corPrincipal) {
+      const modeloObj = STATE.modelos.find(m => m.id === o.modeloId);
+      const linha = ((modeloObj && modeloObj.skuLinha) || '').trim().toUpperCase();
+      const corObj = STATE.cores.find(c => _normNome(c.nome) === _normNome(corPrincipal));
+      const sigla = ((corObj && corObj.siglaSku) || '').trim().toUpperCase();
+      if (linha && sigla) sku = linha + '-' + sigla;
+    }
     return {
       os: o.os || '',
       data: (o.data || '').slice(0, 10),
       modelo: o.modeloNome || '',
-      cor: coresV.length === 1 ? coresV[0] : '',
+      cor: corPrincipal,
+      sku,
       multicor: coresV.length > 1,
       camisetas: Math.round(calcularTotalGeralAlvoImpressao(o) || 0),
       tamanhos,
