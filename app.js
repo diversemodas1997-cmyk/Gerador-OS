@@ -966,6 +966,24 @@ async function loadState() {
     });
     if (mudou) { try { await saveState('cores'); } catch (e) {} }
   }
+
+  // Auto-preenche o SKU dos desenhos técnicos existentes (SKU COMPLETO = Linha
+  // de SKU do modelo + Sigla SKU da cor principal do desenho). Roda após os
+  // dois acima (que preenchem linha/sigla). Admin, só quando vazio. Seguro: os
+  // desenhos são de uma cor só (corPrincipalId). Se a combinação não existir no
+  // catálogo, aparece como "a cadastrar" no Estoque-Confeccao.
+  if (currentRole === 'admin' && Array.isArray(STATE.desenhos)) {
+    let mudou = 0;
+    STATE.desenhos.forEach(d => {
+      if (d.skuLinha) return;
+      const m = (STATE.modelos || []).find(x => x.id === d.modeloId);
+      const linha = ((m && m.skuLinha) || '').trim().toUpperCase();
+      const c = (STATE.cores || []).find(x => x.id === d.corPrincipalId);
+      const sigla = ((c && c.siglaSku) || '').trim().toUpperCase();
+      if (linha && sigla) { d.skuLinha = linha + '-' + sigla; mudou++; }
+    });
+    if (mudou) { try { await saveState('desenhos'); } catch (e) {} }
+  }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
