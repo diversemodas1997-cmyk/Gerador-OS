@@ -907,6 +907,28 @@ async function loadState() {
     });
     if (mudou > 0) { try { await saveState('equipe'); } catch (e) {} }
   }
+
+  // Auto-preenche a "Linha de SKU" dos modelos cujo SKU é dedutível pelo nome.
+  // Roda só p/ admin, só quando o campo está VAZIO (nunca sobrescreve edição
+  // manual) — então roda no máximo uma vez por modelo. Camiseta Bicolor fica de
+  // fora (não há linha clara no catálogo de SKUs).
+  if (currentRole === 'admin' && Array.isArray(STATE.modelos)) {
+    const padroes = [
+      { re: /blusa\s+moletom\s+tricolor/, linha: 'BM.TRI' },
+      { re: /blusa\s+moletom\s+basica/,   linha: 'BM.LISA' },
+      { re: /camiseta\s+tricolor/,        linha: 'CM.TRI.LISA' },
+      { re: /camiseta\s+polo/,            linha: 'PM.LISA' },
+      { re: /camiseta\s+basica/,          linha: 'CM.LISA' },
+    ];
+    let mudou = 0;
+    STATE.modelos.forEach(m => {
+      if (m.skuLinha) return;
+      const nome = _normNome(m.nome || '');
+      const p = padroes.find(x => x.re.test(nome));
+      if (p) { m.skuLinha = p.linha; mudou++; }
+    });
+    if (mudou) { try { await saveState('modelos'); } catch (e) {} }
+  }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
@@ -1194,6 +1216,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div class="form-grid cols-2">
         <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: Dx7282"></div>
         <div class="field"><label>Descrição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Camiseta básica preta"></div>
+        <div class="field"><label>SKU (linha)</label><input type="text" id="m-desenho-sku" value="${esc(item.skuLinha||'')}" placeholder="Ex.: CM.LISA, BM.TRI"><div class="field-hint">SKU do produto acabado = esta linha + sigla da cor. Tem prioridade sobre a Linha de SKU do modelo.</div></div>
         <div class="field full">
           <label>Imagem (PNG/JPG) *</label>
           <label class="file-label">Escolher arquivo <input type="file" id="m-img" accept="image/*" onchange="previewUploadImg(event)"></label>
@@ -1788,6 +1811,7 @@ async function salvarCadastro() {
     if (!v('m-img-data')) return toast('Imagem obrigatória', 'err');
     item.codigo = v('m-codigo');
     item.desc = v('m-desc');
+    item.skuLinha = (v('m-desenho-sku') || '').trim().toUpperCase();
     const imgInput = v('m-img-data');
     if (imgInput.startsWith('data:image/')) {
       try {
@@ -2633,8 +2657,10 @@ async function excluirMovFase(faseId, id) {
 function skusDaOS(o) {
   const ov = (o.skuOverride || '').trim().toUpperCase();
   if (ov) return [ov];
+  // Linha do SKU: o desenho técnico tem prioridade; cai no modelo se vazio.
+  const desenhoObj = (STATE.desenhos || []).find(d => d.id === o.desenhoId);
   const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
-  const linha = ((modeloObj && modeloObj.skuLinha) || '').trim().toUpperCase();
+  const linha = (((desenhoObj && desenhoObj.skuLinha) || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
   if (!linha) return [];
   const cores = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
   const out = [];
