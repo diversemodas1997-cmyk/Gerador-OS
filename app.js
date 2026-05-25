@@ -695,6 +695,9 @@ async function submeterAuth() {
     fecharLogin();
     atualizarUIAuth();
     await loadState();
+    // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
+    // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
+    if (currentRole === 'admin') atualizarContabSnapshot();
     goto('home');
     toast('Conectado — cadastros sincronizados na nuvem', 'ok');
   } catch (e) {
@@ -767,9 +770,17 @@ const STATE = {
   componentesPadrao: ['Frente', 'Costas', 'Capuz', 'Forro do capuz', 'Mangas', 'Bolso canguru', 'Punho', 'Barra', 'Ribana', 'Cobre gola', 'Recorte lateral', 'Cordão', 'Ilhós', 'Etiqueta interna', 'Tag']
 };
 
+// Chaves cujo conteúdo afeta o snapshot de estoque lido pela Contabilidade.
+const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov'];
+
 async function saveState(key) {
   try {
     await DB.set(key, JSON.stringify(STATE[key]));
+    // Republica o snapshot de estoque p/ a Contabilidade quando muda algo
+    // que altera os saldos. Best-effort; não bloqueia nem quebra o save.
+    if (_CHAVES_CONTAB_SNAPSHOT.includes(key) && typeof construirContabSnapshot === 'function') {
+      atualizarContabSnapshot();
+    }
   } catch (e) {
     console.error('Erro ao salvar', key, e);
     toast('Erro ao salvar no armazenamento', 'err');
@@ -2570,6 +2581,53 @@ async function excluirMovCorte(id) {
   await saveState('corteMov');
   toast('Lançamento excluído', 'ok');
   renderEstoqueCorte();
+}
+
+/* ========================================================= */
+/*   SNAPSHOT PARA A CONTABILIDADE (quantidades p/ valorar)   */
+/* ========================================================= */
+// O programa de Contabilidade-Tributação declara os estoques lendo este
+// snapshot do Supabase (chave 'contabSnapshot' no shared_data). Aqui só
+// publicamos QUANTIDADES (a Contabilidade aplica os valores em R$: custo/kg
+// das compras + R$/peça da mão de obra). Divisão: Gerador-OS = quantidades;
+// Contabilidade = valores. Reescreve a chave a cada save relevante.
+//   materiaPrima       = tecido disponível (entrada − reservado − saída), em kg.
+//   produtosElaboracao = OSs cortadas e NÃO costuradas (work-in-progress):
+//                        kg de tecido consumido + nº de peças, por tecido+cor.
+function construirContabSnapshot() {
+  const r3 = n => Math.round((Number(n) || 0) * 1000) / 1000;
+  const materiaPrima = (calcularSaldosEstoque().detalhe || [])
+    .filter(d => Math.abs(d.disponivel) > 1e-9)
+    .map(d => ({ tecido: d.tecidoNome || '', cor: d.corNome || '', kg: r3(d.disponivel) }));
+
+  // WIP: agrega por tecido+cor as OSs cortadas que ainda não foram costuradas.
+  const wip = new Map();
+  (STATE.ordens || []).forEach(o => {
+    if (osCosturaMarcada(o)) return;
+    const peca = (componentesPorTecidoCorOS(o) || []);
+    const kgs = (consumoAgregadoPorTecidoCor(o) || []);
+    const pegar = (tNome, cNome) => {
+      const k = _normNome(tNome) + '||' + _normNome(cNome);
+      let cur = wip.get(k);
+      if (!cur) { cur = { tecido: tNome || '', cor: cNome || '', kg: 0, pecas: 0 }; wip.set(k, cur); }
+      return cur;
+    };
+    peca.forEach(it => { pegar(it.tecidoNome, it.corNome).pecas += (Number(it.qtd) || 0); });
+    kgs.forEach(it => { pegar(it.tecidoNome, it.corNome).kg += (Number(it.kg) || 0); });
+  });
+  const produtosElaboracao = Array.from(wip.values())
+    .filter(w => w.pecas > 0 || w.kg > 1e-9)
+    .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
+
+  return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao };
+}
+
+// Recalcula e grava o snapshot no blob (sem entrar no STATE/loadState — é só
+// para consumo externo da Contabilidade). Best-effort: nunca quebra o save.
+async function atualizarContabSnapshot() {
+  try {
+    await DB.set('contabSnapshot', JSON.stringify(construirContabSnapshot()));
+  } catch (e) { console.warn('atualizarContabSnapshot', e); }
 }
 
 function renderModelos() {
