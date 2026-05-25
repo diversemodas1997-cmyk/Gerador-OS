@@ -476,7 +476,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','osCounter','meta'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -716,6 +716,7 @@ async function submeterAuth() {
     fecharLogin();
     atualizarUIAuth();
     await loadState();
+    await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -787,6 +788,8 @@ const STATE = {
   fiosMov: [],
   expedicaoMov: [],
   osCounter: 0,
+  // Flags/metadados internos persistidos (ex.: migrações já executadas).
+  meta: {},
   // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
   // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
   // texto exibido muda. tpOrder/vrOrder definem ordem manual; chaves ausentes
@@ -833,7 +836,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1004,6 +1007,47 @@ async function revalidarSkusDesenhos() {
     if (ded && validos.has(ded)) { d.skuLinha = ded; mudou++; }  // só preenche se EXISTIR no catálogo
   });
   if (mudou) { try { await saveState('desenhos'); } catch (e) {} }
+}
+
+// Template de etapas "mais atual" por tipo de produto (confirmado pelo Junior).
+// Camiseta usa Acabamento de mangas; Blusa Moletom usa Fechamento de punhos/barra.
+// A etapa terminal "Estoque" dispara a entrada de produtos acabados.
+const ETAPAS_TEMPLATE_OS = {
+  camiseta: ['Corte', 'Acabamento de mangas', 'Ensaque', 'Expedição', 'Costura', 'Retirada de fios', 'Estoque'],
+  moletom:  ['Corte', 'Fechamento de punhos', 'Fechamento de barra', 'Ensaque', 'Expedição', 'Costura', 'Retirada de fios', 'Estoque'],
+};
+
+// Migração ÚNICA (admin): padroniza as etapas das OSs pelo template do tipo
+// (camiseta x blusa moletom), só copiando a lista. Preserva os checks/seq das
+// etapas que continuam; descarta os das que saíram. Roda 1× (flag em STATE.meta).
+async function migrarEtapasOS() {
+  if (currentRole !== 'admin' || !Array.isArray(STATE.ordens)) return;
+  STATE.meta = STATE.meta || {};
+  if (STATE.meta.etapasPadronizadasV1) return;        // já rodou — não mexe mais
+  let mudou = 0;
+  STATE.ordens.forEach(o => {
+    const tipo = /moletom|blusa/i.test(o.modeloNome || '') ? 'moletom' : 'camiseta';
+    const tmpl = ETAPAS_TEMPLATE_OS[tipo];
+    const atual = o.etapas || [];
+    const igual = atual.length === tmpl.length && atual.every((n, i) => n === tmpl[i]);
+    if (igual) return;
+    o.etapas = tmpl.slice();
+    // Preserva check/seq só das etapas que continuam no template.
+    if (o.progresso) {
+      const manter = new Set(tmpl);
+      ['etapasCheck', 'etapasSeq'].forEach(k => {
+        const obj = o.progresso[k];
+        if (obj) Object.keys(obj).forEach(nome => { if (!manter.has(nome)) delete obj[nome]; });
+      });
+    }
+    mudou++;
+  });
+  STATE.meta.etapasPadronizadasV1 = true;
+  try {
+    if (mudou) await saveState('ordens');
+    await saveState('meta');
+    if (mudou) toast(`Etapas padronizadas em ${mudou} OS`, 'ok');
+  } catch (e) { console.warn('migrarEtapasOS', e); }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
@@ -7367,6 +7411,7 @@ async function popularExemplo() {
     await loadState();
     await carregarPapel();
     aplicarPermissoesUI();
+    await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
     // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
