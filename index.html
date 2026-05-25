@@ -40,6 +40,7 @@
         <button class="nav-btn" data-page="nova-os">Nova OS</button>
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
         <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
+        <button class="nav-btn" data-page="corte">Estoque de corte</button>
       </div>
     </div>
 
@@ -178,6 +179,20 @@
         </div>
       </div>
       <div id="estoque-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="corte">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de corte</h1>
+          <div class="desc">Peças já cortadas, em estoque esperando a costura — contadas por tecido e cor. As <b>entradas</b> entram sozinhas a cada OS (todos os componentes, como um pacote por OS); a <b>saída</b> sai sozinha quando a etapa <b>Costura</b> é marcada na OS. Use os botões para lançar contagem física e ajustes manuais.</div>
+        </div>
+        <div class="actions admin-only">
+          <button class="btn primary" onclick="abrirMovCorte('entrada')">+ Entrada (contagem)</button>
+          <button class="btn" onclick="abrirMovCorte('saida')">− Saída / ajuste</button>
+        </div>
+      </div>
+      <div id="corte-painel"></div>
     </section>
 
     <section class="page hidden" data-page="cad-tecidos">
@@ -676,6 +691,18 @@
   </div>
 </div>
 
+<!-- ============= MODAL MOVIMENTAÇÃO DE ESTOQUE DE CORTE ============= -->
+<div class="modal-backdrop" id="modal-corte">
+  <div class="modal">
+    <h2 id="modal-corte-title">Entrada de corte</h2>
+    <div id="modal-corte-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-corte')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovCorte()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
@@ -709,6 +736,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-05-25b"></script>
+<script src="app.js?v=2026-05-25c"></script>
 </body>
 </html>

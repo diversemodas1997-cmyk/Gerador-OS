@@ -459,7 +459,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -752,6 +752,11 @@ const STATE = {
   // por OS). Cada item: { id, tipo:'entrada'|'saida', tecidoNome, corNome, kg,
   // data, origem:'manual'|'os', osId, osNumero, obs }.
   estoqueMov: [],
+  // Movimentações MANUAIS do estoque de corte (contagem física e ajustes).
+  // As entradas (OS) e saídas (etapa Costura marcada) são DERIVADAS das OS em
+  // tempo de render — não persistem aqui. Cada item manual:
+  // { id, tipo:'entrada'|'saida', tecidoNome, corNome, qtd, data, obs }.
+  corteMov: [],
   osCounter: 0,
   // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
   // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
@@ -788,7 +793,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -930,6 +935,7 @@ function goto(page) {
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'estoque') renderEstoque();
+  if (page === 'corte') renderEstoqueCorte();
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
@@ -2303,6 +2309,267 @@ async function excluirMovEstoque(id) {
   await saveState('estoqueMov');
   toast('Movimentação excluída', 'ok');
   renderEstoque();
+}
+
+/* ========================================================= */
+/*           ESTOQUE DE CORTE (peças cortadas)               */
+/* ========================================================= */
+// Peças já cortadas, em estoque esperando a costura. Diferente do estoque de
+// tecidos (kg), aqui a unidade é PEÇA (componente cortado). Entradas e saídas
+// são DERIVADAS das OS em tempo de render; só os ajustes manuais persistem em
+// STATE.corteMov. Saldo por tecido+cor:
+//   entrada  = soma dos componentes de TODAS as OS (cada OS = um pacote)
+//   saida    = idem, mas só das OS com a etapa "Costura" marcada
+//   contagem = líquido dos lançamentos manuais (entrada − saída)
+//   estoque  = entrada − saida + contagem
+
+// A OS teve a etapa "Costura" marcada? (gatilho automático da saída do corte.)
+function osCosturaMarcada(o) {
+  const checks = (o.progresso && o.progresso.etapasCheck) || {};
+  const nome = (o.etapas || []).find(n => /costura/i.test(n));
+  return nome ? !!checks[nome] : false;
+}
+
+// Componentes de uma OS agregados por tecido(material)+cor → unidades cortadas.
+function componentesPorTecidoCorOS(o) {
+  const mapa = new Map();
+  (o.componentes || []).forEach(c => {
+    const qtd = Number(c.qtdTotal) || 0;
+    if (!(qtd > 0)) return;
+    const tecidoNome = c.materialNome || '';
+    const corNome = c.corNome || '';
+    const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
+    const cur = mapa.get(k) || { tecidoNome, corNome, qtd: 0 };
+    cur.qtd += qtd;
+    mapa.set(k, cur);
+  });
+  return Array.from(mapa.values());
+}
+
+function calcularSaldosCorte() {
+  const key = (t, c) => _normNome(t) + '||' + _normNome(c);
+  const map = new Map();
+  const pegar = (tNome, cNome) => {
+    const k = key(tNome, cNome);
+    let cur = map.get(k);
+    if (!cur) { cur = { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0, contagem: 0 }; map.set(k, cur); }
+    if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
+    if (!cur.corNome && cNome) cur.corNome = cNome;
+    return cur;
+  };
+  (STATE.ordens || []).forEach(o => {
+    const saiu = osCosturaMarcada(o);
+    componentesPorTecidoCorOS(o).forEach(it => {
+      const cur = pegar(it.tecidoNome, it.corNome);
+      cur.entrada += it.qtd;
+      if (saiu) cur.saida += it.qtd;
+    });
+  });
+  (STATE.corteMov || []).forEach(m => {
+    const cur = pegar(m.tecidoNome || '', m.corNome || '');
+    const q = Number(m.qtd) || 0;
+    cur.contagem += (m.tipo === 'entrada' ? q : -q);
+  });
+  const detalhe = Array.from(map.values())
+    .map(c => ({ ...c, estoque: c.entrada - c.saida + c.contagem }))
+    .sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || ''));
+  return { detalhe };
+}
+
+// Cada OS vira um "pacote" no estoque de corte: total de peças e situação
+// (em estoque vs. já enviado à costura).
+function pacotesCorteOS() {
+  return (STATE.ordens || []).map(o => {
+    const itens = componentesPorTecidoCorOS(o);
+    const total = itens.reduce((s, it) => s + it.qtd, 0);
+    return {
+      osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '',
+      data: o.data || '', total, enviado: osCosturaMarcada(o)
+    };
+  }).filter(p => p.total > 0)
+    .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
+}
+
+function renderEstoqueCorte() {
+  const cont = document.getElementById('corte-painel');
+  if (!cont) return;
+  const { detalhe } = calcularSaldosCorte();
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
+  const semNada = !detalhe.length && !(STATE.corteMov || []).length;
+
+  // Agrupa por tecido (tecido + cor = uma categoria combinada), igual ao
+  // estoque de tecidos, com subtotal por tipo de tecido.
+  const grupos = new Map();
+  detalhe.forEach(c => {
+    const k = _normNome(c.tecidoNome);
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
+    g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+    g.linhas.push(c);
+    grupos.set(k, g);
+  });
+  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+  gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
+
+  const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
+  const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
+  const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:#f4f1fb;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
+  const estCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
+  const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque, bold);
+  const linhasEstoque = gruposArr.map(g => {
+    const cores = g.linhas.map(c => `
+      <tr>
+        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>
+        ${cellsVals(c, false)}
+      </tr>`).join('');
+    const subtotal = g.linhas.length > 1 ? `
+      <tr style="background:#eef6f0;">
+        <td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>
+        ${cellsVals(g, true)}
+      </tr>` : '';
+    return cores + subtotal;
+  }).join('');
+
+  const estoqueHtml = `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Estoque de corte por tecido + cor</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        Colunas em <b>peças</b>: <b>Entradas</b> (peças cortadas de todas as OS), <b>Saídas</b>
+        (OS com a etapa Costura marcada), <b>Contagem de estoque</b> (lançamentos manuais:
+        entradas − saídas) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th>Tecido + cor</th>
+          <th style="text-align:right;">Entradas</th>
+          <th style="text-align:right;">Saídas</th>
+          <th style="text-align:right;background:#f4f1fb;">Contagem de estoque</th>
+          <th style="text-align:right;">Estoque</th>
+        </tr></thead>
+        <tbody>
+          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="5" class="empty">Sem peças cortadas ainda.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+
+  // Pacotes (1 por OS).
+  const pacotes = pacotesCorteOS();
+  const emEstoque = pacotes.filter(p => !p.enviado);
+  const enviados = pacotes.filter(p => p.enviado);
+  const linhaPac = p => `
+    <tr>
+      <td><strong>${esc(p.osNumero) || '—'}</strong></td>
+      <td>${esc(p.modelo) || '—'}</td>
+      <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.total)} pç</td>
+      <td>${p.enviado
+        ? '<span class="badge" style="background:#f6dcda;">Foi p/ costura</span>'
+        : '<span class="badge" style="background:#fde9c8;">Em estoque</span>'}</td>
+      <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
+    </tr>`;
+  const pacotesHtml = pacotes.length ? `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Pacotes por OS</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        Cada OS é um pacote de peças cortadas. Ele sai do estoque automaticamente quando a
+        etapa <b>Costura</b> é marcada na OS.
+      </div>
+      <table class="table">
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th>Situação</th><th class="col-actions">Ação</th></tr></thead>
+        <tbody>
+          ${emEstoque.map(linhaPac).join('')}
+          ${enviados.map(linhaPac).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  // Movimentações manuais recentes (corteMov).
+  const movs = (STATE.corteMov || []).slice()
+    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
+    .slice(0, 60);
+  const movHtml = movs.length ? `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes</h2>
+      <table class="table">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>
+          ${movs.map(m => `
+            <tr>
+              <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
+              <td>${m.tipo === 'entrada'
+                ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
+                : '<span class="badge" style="background:#f6dcda;">Saída</span>'}</td>
+              <td>${esc(m.tecidoNome) || '—'}</td>
+              <td>${esc(m.corNome) || '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.qtd)}</td>
+              <td>${esc(m.obs) || '—'}</td>
+              <td class="col-actions row-actions"><button onclick="excluirMovCorte('${esc(m.id)}')">excluir</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  cont.innerHTML = `
+    ${semNada ? `<div class="info-box">Ainda não há peças cortadas. As <b>entradas</b> entram sozinhas quando você salva uma OS com componentes; a <b>saída</b> ocorre quando a etapa <b>Costura</b> é marcada na OS. Use os botões acima para contagem física e ajustes manuais.</div>` : ''}
+    ${estoqueHtml}
+    ${pacotesHtml}
+    ${movHtml}
+  `;
+}
+
+let movCorteTipo = 'entrada';
+function abrirMovCorte(tipo) {
+  if (!exigirAdmin('movimentar estoque de corte')) return;
+  movCorteTipo = tipo === 'saida' ? 'saida' : 'entrada';
+  document.getElementById('modal-corte-title').textContent =
+    movCorteTipo === 'entrada' ? 'Entrada manual (contagem)' : 'Saída / ajuste manual';
+  const tecOpts = '<option value="">— selecione —</option>' + (STATE.tecidos || []).map(t => `<option value="${esc(t.nome)}">${esc(t.nome)}</option>`).join('');
+  const corOpts = '<option value="">— sem cor —</option>' + (STATE.cores || []).map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}</option>`).join('');
+  const hoje = new Date().toISOString().slice(0, 10);
+  document.getElementById('modal-corte-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Tecido *</label><select id="mc-tecido">${tecOpts}</select></div>
+      <div class="field"><label>Cor</label><select id="mc-cor">${corOpts}</select></div>
+      <div class="field"><label>Quantidade (peças) *</label><input type="number" min="0" step="1" id="mc-qtd" placeholder="Ex.: 50"></div>
+      <div class="field"><label>Data</label><input type="date" id="mc-data" value="${hoje}"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="mc-obs" placeholder="Ex.: contagem de inventário / sobra"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Entram na coluna <b>Contagem de estoque</b> e ajustam o saldo. As entradas das OS e as saídas pela etapa Costura são automáticas — use isto só para contagem física e correções.</div>`;
+  openModal('modal-corte');
+}
+
+async function salvarMovCorte() {
+  if (!exigirAdmin('movimentar estoque de corte')) return;
+  const v = id => document.getElementById(id)?.value || '';
+  const tecidoNome = v('mc-tecido');
+  if (!tecidoNome) return toast('Selecione o tecido', 'err');
+  const qtd = parseInt(String(v('mc-qtd')).replace(',', '.')) || 0;
+  if (!(qtd > 0)) return toast('Informe a quantidade em peças', 'err');
+  if (!Array.isArray(STATE.corteMov)) STATE.corteMov = [];
+  STATE.corteMov.push({
+    id: uid(),
+    tipo: movCorteTipo,
+    tecidoNome,
+    corNome: v('mc-cor'),
+    qtd,
+    data: v('mc-data') || new Date().toISOString().slice(0, 10),
+    obs: v('mc-obs')
+  });
+  await saveState('corteMov');
+  closeModal('modal-corte');
+  toast(movCorteTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  renderEstoqueCorte();
+}
+
+async function excluirMovCorte(id) {
+  if (!exigirAdmin('excluir lançamento de corte')) return;
+  const m = (STATE.corteMov || []).find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('Excluir este lançamento manual?')) return;
+  STATE.corteMov = STATE.corteMov.filter(x => x.id !== id);
+  await saveState('corteMov');
+  toast('Lançamento excluído', 'ok');
+  renderEstoqueCorte();
 }
 
 function renderModelos() {
@@ -6816,6 +7083,10 @@ window.duplicarOS = duplicarOS;
 window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
 window.excluirMovEstoque = excluirMovEstoque;
+window.renderEstoqueCorte = renderEstoqueCorte;
+window.abrirMovCorte = abrirMovCorte;
+window.salvarMovCorte = salvarMovCorte;
+window.excluirMovCorte = excluirMovCorte;
 window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
