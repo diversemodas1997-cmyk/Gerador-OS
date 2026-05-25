@@ -459,7 +459,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -760,6 +760,10 @@ const STATE = {
   // tempo de render — não persistem aqui. Cada item manual:
   // { id, tipo:'entrada'|'saida', tecidoNome, corNome, qtd, data, obs }.
   corteMov: [],
+  // Contagem manual das fases seguintes do fluxo (mesmo formato de corteMov):
+  // Costurando (após Costura) e Limpeza de fios (após Limpeza de fios).
+  costurandoMov: [],
+  fiosMov: [],
   osCounter: 0,
   // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
   // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
@@ -804,7 +808,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -2334,12 +2338,17 @@ async function excluirMovEstoque(id) {
 //   contagem = líquido dos lançamentos manuais (entrada − saída)
 //   estoque  = entrada − saida + contagem
 
-// A OS teve a etapa "Costura" marcada? (gatilho automático da saída do corte.)
-function osCosturaMarcada(o) {
+// A OS tem uma etapa (casada por regex) marcada no checklist? Genérico — usado
+// pelos gatilhos automáticos de saída entre os campos de estoque.
+function osEtapaMarcada(o, re) {
   const checks = (o.progresso && o.progresso.etapasCheck) || {};
-  const nome = (o.etapas || []).find(n => /costura/i.test(n));
+  const nome = (o.etapas || []).find(n => re.test(n));
   return nome ? !!checks[nome] : false;
 }
+// "Costura" marcada → gatilho da saída do Estoque de corte (entra em Costurando).
+function osCosturaMarcada(o) { return osEtapaMarcada(o, /costura/i); }
+// "Limpeza de fios" (ou "Retirada de fios") marcada → gatilho da saída de Costurando.
+function osFiosMarcada(o) { return osEtapaMarcada(o, /fios/i); }
 
 // Componentes de uma OS agregados por tecido(material)+cor → unidades cortadas.
 function componentesPorTecidoCorOS(o) {
@@ -2357,7 +2366,36 @@ function componentesPorTecidoCorOS(o) {
   return Array.from(mapa.values());
 }
 
-function calcularSaldosCorte() {
+// Pipeline de estoques em processo, na ORDEM do fluxo de produção. A SAÍDA de
+// cada fase é a ENTRADA da próxima (o volume passa de uma fase para a seguinte
+// quando o check correspondente é marcado na OS). Para adicionar uma fase nova,
+// basta inserir uma linha aqui (e a chave do array manual em STATE/keys).
+//   entrada.tipo 'oscriada' = peças cortadas ao gerar a OS (1ª fase);
+//   entrada.tipo 'etapa'   = OS com a etapa (re/label) marcada no checklist.
+const FASES_ESTOQUE = [
+  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',
+    entrada: { tipo: 'oscriada', label: 'corte' } },
+  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov',
+    entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
+  { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',
+    entrada: { tipo: 'etapa', re: /fios/i, label: 'Limpeza de fios' } },
+];
+
+// A OS entrou nesta fase? 1ª fase = toda OS cortada; demais = etapa marcada.
+function _faseEntrouOS(o, entrada) {
+  if (!entrada) return false;
+  if (entrada.tipo === 'oscriada') return true;
+  return osEtapaMarcada(o, entrada.re);
+}
+
+// Saldo de uma fase por tecido+cor:
+//   entrada  = OSs que entraram na fase (× componentes)
+//   saida    = OSs que já entraram na PRÓXIMA fase
+//   contagem = líquido dos lançamentos manuais da fase (STATE[movKey])
+//   estoque  = entrada − saida + contagem
+function calcularSaldosFase(idx) {
+  const fase = FASES_ESTOQUE[idx];
+  const prox = FASES_ESTOQUE[idx + 1];
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const map = new Map();
   const pegar = (tNome, cNome) => {
@@ -2369,14 +2407,15 @@ function calcularSaldosCorte() {
     return cur;
   };
   (STATE.ordens || []).forEach(o => {
-    const saiu = osCosturaMarcada(o);
+    if (!_faseEntrouOS(o, fase.entrada)) return;
+    const saiu = prox ? _faseEntrouOS(o, prox.entrada) : false;
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
       cur.entrada += it.qtd;
       if (saiu) cur.saida += it.qtd;
     });
   });
-  (STATE.corteMov || []).forEach(m => {
+  (STATE[fase.movKey] || []).forEach(m => {
     const cur = pegar(m.tecidoNome || '', m.corNome || '');
     const q = Number(m.qtd) || 0;
     cur.contagem += (m.tipo === 'entrada' ? q : -q);
@@ -2387,126 +2426,119 @@ function calcularSaldosCorte() {
   return { detalhe };
 }
 
-// Cada OS vira um "pacote" no estoque de corte: total de peças e situação
-// (em estoque vs. já enviado à costura).
-function pacotesCorteOS() {
-  return (STATE.ordens || []).map(o => {
-    const itens = componentesPorTecidoCorOS(o);
-    const total = itens.reduce((s, it) => s + it.qtd, 0);
-    return {
-      osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '',
-      data: o.data || '', total, enviado: osCosturaMarcada(o)
-    };
-  }).filter(p => p.total > 0)
-    .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
+// Fase atual de uma OS no fluxo = a última fase em que ela entrou.
+function faseAtualOS(o) {
+  let idx = 0;
+  FASES_ESTOQUE.forEach((f, i) => { if (_faseEntrouOS(o, f.entrada)) idx = i; });
+  return idx;
 }
 
 function renderEstoqueCorte() {
   const cont = document.getElementById('corte-painel');
   if (!cont) return;
-  const { detalhe } = calcularSaldosCorte();
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
-  const semNada = !detalhe.length && !(STATE.corteMov || []).length;
-
-  // Agrupa por tecido (tecido + cor = uma categoria combinada), igual ao
-  // estoque de tecidos, com subtotal por tipo de tecido.
-  const grupos = new Map();
-  detalhe.forEach(c => {
-    const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
-    g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
-    g.linhas.push(c);
-    grupos.set(k, g);
-  });
-  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
-  gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
-
   const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
   const estCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
   const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque, bold);
-  const linhasEstoque = gruposArr.map(g => {
-    const cores = g.linhas.map(c => `
-      <tr>
-        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>
-        ${cellsVals(c, false)}
-      </tr>`).join('');
-    const subtotal = g.linhas.length > 1 ? `
-      <tr style="background:#eef6f0;">
-        <td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>
-        ${cellsVals(g, true)}
-      </tr>` : '';
-    return cores + subtotal;
+
+  // Um card por fase do fluxo (Estoque de corte → Costurando → Limpeza de fios → ...).
+  let temAlgo = false;
+  const cards = FASES_ESTOQUE.map((fase, idx) => {
+    const prox = FASES_ESTOQUE[idx + 1];
+    const { detalhe } = calcularSaldosFase(idx);
+    if (detalhe.length) temAlgo = true;
+    const grupos = new Map();
+    detalhe.forEach(c => {
+      const k = _normNome(c.tecidoNome);
+      const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
+      g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+      g.linhas.push(c); grupos.set(k, g);
+    });
+    const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+    gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
+    const linhas = gruposArr.map(g => {
+      const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}</tr>`).join('');
+      const sub = g.linhas.length > 1
+        ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}</tr>`
+        : '';
+      return cores + sub;
+    }).join('');
+    const entradaDesc = fase.entrada.tipo === 'oscriada'
+      ? 'peças cortadas de todas as OS'
+      : `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
+    const saidaDesc = prox
+      ? `OS com a etapa <b>${esc(prox.entrada.label)}</b> marcada (vai p/ ${esc(prox.titulo)})`
+      : 'apenas lançamento manual (não há fase seguinte)';
+    return `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <h2 style="margin:0;font-size:14px;">${esc(fase.titulo)} — por tecido + cor</h2>
+          <div class="admin-only" style="display:flex;gap:6px;">
+            <button class="btn primary" onclick="abrirMovFase('${fase.id}','entrada')">+ Entrada</button>
+            <button class="btn" onclick="abrirMovFase('${fase.id}','saida')">− Saída / ajuste</button>
+          </div>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px;">
+          Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
+          <b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
+        </div>
+        <table class="table">
+          <thead><tr>
+            <th>Tecido + cor</th>
+            <th style="text-align:right;">Entradas</th>
+            <th style="text-align:right;">Saídas</th>
+            <th style="text-align:right;">Contagem de estoque</th>
+            <th style="text-align:right;">Estoque</th>
+          </tr></thead>
+          <tbody>${gruposArr.length ? linhas : `<tr><td colspan="5" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+        </table>
+      </div>`;
   }).join('');
 
-  const estoqueHtml = `
-    <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">Estoque de corte por tecido + cor</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        Colunas em <b>peças</b>: <b>Entradas</b> (peças cortadas de todas as OS), <b>Saídas</b>
-        (OS com a etapa Costura marcada), <b>Contagem de estoque</b> (lançamentos manuais:
-        entradas − saídas) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
-      </div>
-      <table class="table">
-        <thead><tr>
-          <th>Tecido + cor</th>
-          <th style="text-align:right;">Entradas</th>
-          <th style="text-align:right;">Saídas</th>
-          <th style="text-align:right;">Contagem de estoque</th>
-          <th style="text-align:right;">Estoque</th>
-        </tr></thead>
-        <tbody>
-          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="5" class="empty">Sem peças cortadas ainda.</td></tr>`}
-        </tbody>
-      </table>
-    </div>`;
-
-  // Pacotes (1 por OS).
-  const pacotes = pacotesCorteOS();
-  const emEstoque = pacotes.filter(p => !p.enviado);
-  const enviados = pacotes.filter(p => p.enviado);
-  const linhaPac = p => `
-    <tr>
-      <td><strong>${esc(p.osNumero) || '—'}</strong></td>
-      <td>${esc(p.modelo) || '—'}</td>
-      <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.total)} pç</td>
-      <td>${p.enviado
-        ? '<span class="badge" style="background:#f6dcda;">Foi p/ costura</span>'
-        : '<span class="badge" style="background:#fde9c8;">Em estoque</span>'}</td>
-      <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
-    </tr>`;
+  // Pacotes por OS — em qual fase do fluxo cada OS está agora.
+  const pacotes = (STATE.ordens || []).map(o => {
+    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    return { osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '', total, faseIdx: faseAtualOS(o) };
+  }).filter(p => p.total > 0)
+    .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
   const pacotesHtml = pacotes.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">Pacotes por OS</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        Cada OS é um pacote de peças cortadas. Ele sai do estoque automaticamente quando a
-        etapa <b>Costura</b> é marcada na OS.
-      </div>
+      <h2 style="margin:0 0 8px;font-size:14px;">Pacotes por OS — fase atual</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas.</div>
       <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th>Situação</th><th class="col-actions">Ação</th></tr></thead>
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th>Fase atual</th><th class="col-actions">Ação</th></tr></thead>
         <tbody>
-          ${emEstoque.map(linhaPac).join('')}
-          ${enviados.map(linhaPac).join('')}
+          ${pacotes.map(p => `
+            <tr>
+              <td><strong>${esc(p.osNumero) || '—'}</strong></td>
+              <td>${esc(p.modelo) || '—'}</td>
+              <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.total)} pç</td>
+              <td><span class="badge" style="background:#e6eef7;">${esc(FASES_ESTOQUE[p.faseIdx].titulo)}</span></td>
+              <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
+            </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
-  // Movimentações manuais recentes (corteMov).
-  const movs = (STATE.corteMov || []).slice()
-    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
-    .slice(0, 60);
-  const movHtml = movs.length ? `
+  // Lançamentos manuais recentes (de todas as fases, com a coluna "Campo").
+  const movsAll = [];
+  FASES_ESTOQUE.forEach(f => (STATE[f.movKey] || []).forEach(m => movsAll.push({ ...m, _fase: f.titulo, _faseId: f.id })));
+  movsAll.sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)));
+  const movsTop = movsAll.slice(0, 60);
+  const movHtml = movsTop.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th>Campo</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
-          ${movs.map(m => `
+          ${movsTop.map(m => `
             <tr>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
+              <td>${esc(m._fase)}</td>
               <td>${m.tipo === 'entrada'
                 ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
                 : '<span class="badge" style="background:#f6dcda;">Saída</span>'}</td>
@@ -2514,26 +2546,32 @@ function renderEstoqueCorte() {
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.qtd)}</td>
               <td>${esc(m.obs) || '—'}</td>
-              <td class="col-actions row-actions"><button onclick="excluirMovCorte('${esc(m.id)}')">excluir</button></td>
+              <td class="col-actions row-actions"><button onclick="excluirMovFase('${esc(m._faseId)}', '${esc(m.id)}')">excluir</button></td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>` : '';
 
   cont.innerHTML = `
-    ${semNada ? `<div class="info-box">Ainda não há peças cortadas. As <b>entradas</b> entram sozinhas quando você salva uma OS com componentes; a <b>saída</b> ocorre quando a etapa <b>Costura</b> é marcada na OS. Use os botões acima para contagem física e ajustes manuais.</div>` : ''}
-    ${estoqueHtml}
+    ${(!temAlgo && !movsAll.length) ? `<div class="info-box">Ainda não há peças cortadas. As fases recebem volume sozinhas conforme as etapas do checklist são marcadas na OS (Costura, Limpeza de fios…). Use os botões de cada fase para contagem física e ajustes manuais.</div>` : ''}
+    ${cards}
     ${pacotesHtml}
     ${movHtml}
   `;
 }
 
-let movCorteTipo = 'entrada';
-function abrirMovCorte(tipo) {
-  if (!exigirAdmin('movimentar estoque de corte')) return;
-  movCorteTipo = tipo === 'saida' ? 'saida' : 'entrada';
+// Lançamento manual genérico de qualquer fase do fluxo (entra na coluna
+// "Contagem de estoque" daquela fase).
+let movFaseTipo = 'entrada';
+let movFaseId = 'corte';
+function abrirMovFase(faseId, tipo) {
+  if (!exigirAdmin('movimentar estoque')) return;
+  const fase = FASES_ESTOQUE.find(f => f.id === faseId);
+  if (!fase) return;
+  movFaseId = faseId;
+  movFaseTipo = tipo === 'saida' ? 'saida' : 'entrada';
   document.getElementById('modal-corte-title').textContent =
-    movCorteTipo === 'entrada' ? 'Entrada manual (contagem)' : 'Saída / ajuste manual';
+    (movFaseTipo === 'entrada' ? 'Entrada manual' : 'Saída / ajuste') + ' — ' + fase.titulo;
   const tecOpts = '<option value="">— selecione —</option>' + (STATE.tecidos || []).map(t => `<option value="${esc(t.nome)}">${esc(t.nome)}</option>`).join('');
   const corOpts = '<option value="">— sem cor —</option>' + (STATE.cores || []).map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}</option>`).join('');
   const hoje = new Date().toISOString().slice(0, 10);
@@ -2545,40 +2583,42 @@ function abrirMovCorte(tipo) {
       <div class="field"><label>Data</label><input type="date" id="mc-data" value="${hoje}"></div>
       <div class="field full"><label>Observação</label><input type="text" id="mc-obs" placeholder="Ex.: contagem de inventário / sobra"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">Entram na coluna <b>Contagem de estoque</b> e ajustam o saldo. As entradas das OS e as saídas pela etapa Costura são automáticas — use isto só para contagem física e correções.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Entra na coluna <b>Contagem de estoque</b> de <b>${esc(fase.titulo)}</b> e ajusta o saldo. As entradas/saídas automáticas vêm das etapas do checklist — use isto só para contagem física e correções.</div>`;
   openModal('modal-corte');
 }
 
-async function salvarMovCorte() {
-  if (!exigirAdmin('movimentar estoque de corte')) return;
+async function salvarMovFase() {
+  if (!exigirAdmin('movimentar estoque')) return;
+  const fase = FASES_ESTOQUE.find(f => f.id === movFaseId);
+  if (!fase) return;
   const v = id => document.getElementById(id)?.value || '';
   const tecidoNome = v('mc-tecido');
   if (!tecidoNome) return toast('Selecione o tecido', 'err');
   const qtd = parseInt(String(v('mc-qtd')).replace(',', '.')) || 0;
   if (!(qtd > 0)) return toast('Informe a quantidade em peças', 'err');
-  if (!Array.isArray(STATE.corteMov)) STATE.corteMov = [];
-  STATE.corteMov.push({
+  if (!Array.isArray(STATE[fase.movKey])) STATE[fase.movKey] = [];
+  STATE[fase.movKey].push({
     id: uid(),
-    tipo: movCorteTipo,
+    tipo: movFaseTipo,
     tecidoNome,
     corNome: v('mc-cor'),
     qtd,
     data: v('mc-data') || new Date().toISOString().slice(0, 10),
     obs: v('mc-obs')
   });
-  await saveState('corteMov');
+  await saveState(fase.movKey);
   closeModal('modal-corte');
-  toast(movCorteTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  toast(movFaseTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
   renderEstoqueCorte();
 }
 
-async function excluirMovCorte(id) {
-  if (!exigirAdmin('excluir lançamento de corte')) return;
-  const m = (STATE.corteMov || []).find(x => x.id === id);
-  if (!m) return;
+async function excluirMovFase(faseId, id) {
+  if (!exigirAdmin('excluir lançamento')) return;
+  const fase = FASES_ESTOQUE.find(f => f.id === faseId);
+  if (!fase) return;
   if (!confirm('Excluir este lançamento manual?')) return;
-  STATE.corteMov = STATE.corteMov.filter(x => x.id !== id);
-  await saveState('corteMov');
+  STATE[fase.movKey] = (STATE[fase.movKey] || []).filter(x => x.id !== id);
+  await saveState(fase.movKey);
   toast('Lançamento excluído', 'ok');
   renderEstoqueCorte();
 }
@@ -7158,9 +7198,9 @@ window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
 window.excluirMovEstoque = excluirMovEstoque;
 window.renderEstoqueCorte = renderEstoqueCorte;
-window.abrirMovCorte = abrirMovCorte;
-window.salvarMovCorte = salvarMovCorte;
-window.excluirMovCorte = excluirMovCorte;
+window.abrirMovFase = abrirMovFase;
+window.salvarMovFase = salvarMovFase;
+window.excluirMovFase = excluirMovFase;
 window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
