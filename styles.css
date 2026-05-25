@@ -527,7 +527,10 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 /* Cabeçalho da ficha */
 .sheet-header {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 2fr .6fr .9fr 1.3fr 1fr;
+  /* 6 células (marca, coleção, bloco, data, OS Nº+SKU, linha). Antes havia uma
+     7ª coluna fantasma (1fr) sem célula, sobrando espaço à direita. Removida e
+     o espaço redistribuído — a célula do OS Nº/SKU ganhou mais largura. */
+  grid-template-columns: 1.3fr 1fr 1.7fr .6fr 1.6fr 1.2fr;
   border: 1.5px solid #000;
 }
 .sheet-header > div {
