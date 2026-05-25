@@ -6879,7 +6879,7 @@ function renderPrintSheet(o) {
         <span class="mini">OS Nº:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
         <span class="mini" style="margin-top:2px;">SKU</span>
-        <span style="font-size:8.5pt;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:.02em;line-height:1.1;text-align:center;">${esc(skuStr)}</span>
+        <span style="font-size:8pt;font-weight:700;font-family:'IBM Plex Mono',monospace;white-space:nowrap;line-height:1.1;text-align:center;">${esc(skuStr)}</span>
       </div>
       <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
     </div>
