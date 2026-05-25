@@ -2521,7 +2521,7 @@ function calcularSaldosFase(idx) {
   const pegar = (tNome, cNome) => {
     const k = key(tNome, cNome);
     let cur = map.get(k);
-    if (!cur) { cur = { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0, contagem: 0 }; map.set(k, cur); }
+    if (!cur) { cur = { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0, contagem: 0, osNums: new Set() }; map.set(k, cur); }
     if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
     if (!cur.corNome && cNome) cur.corNome = cNome;
     return cur;
@@ -2529,10 +2529,15 @@ function calcularSaldosFase(idx) {
   (STATE.ordens || []).forEach(o => {
     if (!_faseEntrouOS(o, fase.entrada)) return;
     const saiu = prox ? _faseEntrouOS(o, prox.entrada) : false;
+    // Lista a OS na linha só se ela está ATUALMENTE nesta fase (entrou e ainda
+    // não avançou) — são as peças que de fato compõem o saldo desta fase.
+    const aquiAgora = faseAtualOS(o) === idx;
+    const numOS = (o.os || '').toString().trim();
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
       cur.entrada += it.qtd;
       if (saiu) cur.saida += it.qtd;
+      if (aquiAgora && numOS) cur.osNums.add(numOS);
     });
   });
   (STATE[fase.movKey] || []).forEach(m => {
@@ -2540,8 +2545,9 @@ function calcularSaldosFase(idx) {
     const q = Number(m.qtd) || 0;
     cur.contagem += (m.tipo === 'entrada' ? q : -q);
   });
+  const ordOS = arr => arr.slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const detalhe = Array.from(map.values())
-    .map(c => ({ ...c, estoque: c.entrada - c.saida + c.contagem }))
+    .map(c => ({ ...c, estoque: c.entrada - c.saida + c.contagem, osList: ordOS(Array.from(c.osNums)) }))
     .sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '') || (a.corNome || '').localeCompare(b.corNome || ''));
   return { detalhe };
 }
@@ -2568,22 +2574,25 @@ function renderFasePainel(faseIdx) {
   const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
   const estCell = (n) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
   const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque);
+  const ordOS = arr => (arr || []).slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  const osCell = arr => `<td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${(arr && arr.length) ? ordOS(arr).map(esc).join(', ') : '—'}</td>`;
 
   const prox = FASES_ESTOQUE[faseIdx + 1];
   const { detalhe } = calcularSaldosFase(faseIdx);
   const grupos = new Map();
   detalhe.forEach(c => {
     const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [] };
+    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [], osSet: new Set() };
     g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+    (c.osList || []).forEach(n => g.osSet.add(n));
     g.linhas.push(c); grupos.set(k, g);
   });
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
   gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
   const linhas = gruposArr.map(g => {
-    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}</tr>`).join('');
+    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}${osCell(c.osList)}</tr>`).join('');
     const sub = g.linhas.length > 1
-      ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}</tr>`
+      ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}${osCell(Array.from(g.osSet))}</tr>`
       : '';
     return cores + sub;
   }).join('');
@@ -2605,6 +2614,7 @@ function renderFasePainel(faseIdx) {
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
         <b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
+        <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).
       </div>
       <table class="table">
         <thead><tr>
@@ -2613,8 +2623,9 @@ function renderFasePainel(faseIdx) {
           <th style="text-align:right;">Saídas</th>
           <th style="text-align:right;">Contagem de estoque</th>
           <th style="text-align:right;">Estoque</th>
+          <th>OS</th>
         </tr></thead>
-        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="5" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="6" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
       </table>
     </div>`;
 
