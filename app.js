@@ -1542,6 +1542,22 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   }
 
   openModal('modal-cad');
+  // Recarrega o catálogo de SKUs na hora ao abrir Desenho/Modelo, pra o dropdown
+  // não depender do que foi lido no login (auto-cura se o catálogo subiu depois).
+  if (tipo === 'desenho' || tipo === 'modelo') refreshDatalistSkus();
+}
+
+// Recarrega o catálogo do Supabase e reinjeta as opções no <datalist id="dl-skus">.
+async function refreshDatalistSkus() {
+  try {
+    await carregarCatalogoSkus();
+    const dl = document.getElementById('dl-skus');
+    if (dl) {
+      dl.innerHTML = (catalogoSkus || [])
+        .map(s => `<option value="${esc(s.item)}">${esc(s.descricao || s.item)}</option>`)
+        .join('');
+    }
+  } catch (e) { /* silencioso */ }
 }
 
 function addFaseGradeRow(fase = {}) {
