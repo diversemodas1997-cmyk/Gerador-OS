@@ -2493,9 +2493,9 @@ function componentesPorTecidoCorOS(o) {
 //   entrada.tipo 'oscriada' = peças cortadas ao gerar a OS (1ª fase);
 //   entrada.tipo 'etapa'   = OS com a etapa (re/label) marcada no checklist.
 const FASES_ESTOQUE = [
-  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel',
+  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true,
     entrada: { tipo: 'oscriada', label: 'corte' } },
-  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel',
+  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true,
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
   { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',       painelId: 'fios-painel',
     entrada: { tipo: 'etapa', re: /fios/i, label: 'Limpeza de fios' } },
@@ -2573,7 +2573,8 @@ function renderFasePainel(faseIdx) {
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
   const estCell = (n) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
-  const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + contCell(o.contagem, bold) + estCell(o.estoque);
+  const mostrarCont = !fase.semContagem;
+  const cellsVals = (o, bold) => numCell(o.entrada, bold) + numCell(o.saida, bold) + (mostrarCont ? contCell(o.contagem, bold) : '') + estCell(o.estoque);
   const ordOS = arr => (arr || []).slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const osCell = arr => `<td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${(arr && arr.length) ? ordOS(arr).map(esc).join(', ') : '—'}</td>`;
 
@@ -2613,7 +2614,7 @@ function renderFasePainel(faseIdx) {
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
-        <b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).
+        ${mostrarCont ? '<b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).' : 'e <b>Estoque</b> (= Entradas − Saídas, ajustado por lançamentos manuais).'}
         <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).
       </div>
       <table class="table">
@@ -2621,11 +2622,11 @@ function renderFasePainel(faseIdx) {
           <th>Tecido + cor</th>
           <th style="text-align:right;">Entradas</th>
           <th style="text-align:right;">Saídas</th>
-          <th style="text-align:right;">Contagem de estoque</th>
+          ${mostrarCont ? '<th style="text-align:right;">Contagem de estoque</th>' : ''}
           <th style="text-align:right;">Estoque</th>
           <th>OS</th>
         </tr></thead>
-        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="6" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="${mostrarCont ? 6 : 5}" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
       </table>
     </div>`;
 
