@@ -2627,6 +2627,25 @@ async function excluirMovFase(faseId, id) {
   renderEstoqueCorte();
 }
 
+// SKU(s) do produto acabado de uma OS = Linha de SKU do modelo + Sigla SKU de
+// cada cor (variante). Override em o.skuOverride tem prioridade. Usado no
+// cabeçalho da folha impressa e no snapshot para a Contabilidade/Estoque.
+function skusDaOS(o) {
+  const ov = (o.skuOverride || '').trim().toUpperCase();
+  if (ov) return [ov];
+  const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
+  const linha = ((modeloObj && modeloObj.skuLinha) || '').trim().toUpperCase();
+  if (!linha) return [];
+  const cores = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+  const out = [];
+  cores.forEach(corNome => {
+    const corObj = (STATE.cores || []).find(c => _normNome(c.nome) === _normNome(corNome));
+    const sigla = ((corObj && corObj.siglaSku) || '').trim().toUpperCase();
+    if (sigla) out.push(linha + '-' + sigla);
+  });
+  return [...new Set(out)];
+}
+
 /* ========================================================= */
 /*   SNAPSHOT PARA A CONTABILIDADE (quantidades p/ valorar)   */
 /* ========================================================= */
@@ -2678,16 +2697,9 @@ function construirContabSnapshot() {
     // fica sem cor (vai para "a identificar" no Estoque-Confeccao).
     const coresV = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
     const corPrincipal = coresV.length === 1 ? coresV[0] : '';
-    // SKU do produto acabado, resolvido na própria OS: override > Linha do
-    // modelo + Sigla SKU da cor principal. Vazio se faltar cadastro.
-    let sku = (o.skuOverride || '').trim().toUpperCase();
-    if (!sku && corPrincipal) {
-      const modeloObj = STATE.modelos.find(m => m.id === o.modeloId);
-      const linha = ((modeloObj && modeloObj.skuLinha) || '').trim().toUpperCase();
-      const corObj = STATE.cores.find(c => _normNome(c.nome) === _normNome(corPrincipal));
-      const sigla = ((corObj && corObj.siglaSku) || '').trim().toUpperCase();
-      if (linha && sigla) sku = linha + '-' + sigla;
-    }
+    // SKU para a entrada (cor única ou override). Multicor sem override fica vazio.
+    const _skus = skusDaOS(o);
+    const sku = (o.skuOverride || coresV.length === 1) ? (_skus[0] || '') : '';
     return {
       os: o.os || '',
       data: (o.data || '').slice(0, 10),
@@ -6763,6 +6775,9 @@ function renderPrintSheet(o) {
   // Valor: só o nome da pessoa (a função já está no label)
   const nomeCoordPessoa = pCoord?.nome || o.coordenadoNome || o.coordenado || '—';
 
+  // SKU(s) do produto acabado para o cabeçalho.
+  const skuStr = skusDaOS(o).join(' / ') || '—';
+
   document.getElementById('print-sheet').innerHTML = `
     <!-- CABEÇALHO -->
     <div class="sheet-header">
@@ -6773,6 +6788,8 @@ function renderPrintSheet(o) {
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
         <span class="mini">OS Nº:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
+        <span class="mini" style="margin-top:2px;">SKU</span>
+        <span style="font-size:8.5pt;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:.02em;line-height:1.1;text-align:center;">${esc(skuStr)}</span>
       </div>
       <div class="cell adult-cell">${esc((o.linhaNome || o.linha || 'ADULTO').toUpperCase())}</div>
     </div>
