@@ -2500,9 +2500,9 @@ const FASES_ESTOQUE = [
     entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
   { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true, osTodasEntradas: true,
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  { id: 'fios',       titulo: 'Retirada de fios', movKey: 'fiosMov',       painelId: 'fios-painel',
+  { id: 'fios',       titulo: 'Retirada de fios', movKey: 'fiosMov',       painelId: 'fios-painel', semContagem: true,
     entrada: { tipo: 'etapa', re: /fios/i, label: 'Retirada de fios' } },
-  { id: 'expedicao',  titulo: 'Expedição',        movKey: 'expedicaoMov',  painelId: 'expedicao-painel',
+  { id: 'expedicao',  titulo: 'Expedição',        movKey: 'expedicaoMov',  painelId: 'expedicao-painel', semContagem: true,
     entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
 ];
 
