@@ -2594,6 +2594,10 @@ async function excluirMovCorte(id) {
 //   materiaPrima       = tecido disponível (entrada − reservado − saída), em kg.
 //   produtosElaboracao = OSs cortadas e NÃO costuradas (work-in-progress):
 //                        kg de tecido consumido + nº de peças, por tecido+cor.
+//   ordens             = uma linha por OS com produção: data, camisetas produzidas
+//                        (total da grade × camadas × multiplicador), se já costurada
+//                        e o consumo de tecido por tecido+cor. A Contabilidade usa
+//                        isto para ratear as despesas operacionais por peça/OS.
 function construirContabSnapshot() {
   const r3 = n => Math.round((Number(n) || 0) * 1000) / 1000;
   const materiaPrima = (calcularSaldosEstoque().detalhe || [])
@@ -2619,7 +2623,19 @@ function construirContabSnapshot() {
     .filter(w => w.pecas > 0 || w.kg > 1e-9)
     .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
 
-  return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao };
+  // Por OS: camisetas produzidas + material consumido (para o rateio de custo).
+  const ordens = (STATE.ordens || []).map(o => ({
+    os: o.os || '',
+    data: (o.data || '').slice(0, 10),
+    camisetas: Math.round(calcularTotalGeralAlvoImpressao(o) || 0),
+    componentes: Math.round((componentesPorTecidoCorOS(o) || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0)),
+    costura: osCosturaMarcada(o),
+    material: (consumoAgregadoPorTecidoCor(o) || [])
+      .filter(x => (Number(x.kg) || 0) > 1e-9)
+      .map(x => ({ tecido: x.tecidoNome || '', cor: x.corNome || '', kg: r3(x.kg) })),
+  })).filter(x => x.camisetas > 0 || x.componentes > 0 || x.material.length);
+
+  return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao, ordens };
 }
 
 // Recalcula e grava o snapshot no blob (sem entrar no STATE/loadState — é só
