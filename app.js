@@ -486,6 +486,7 @@ async function inicializarAuth() {
     await cloudLoad();
     await carregarComprasMateriais();
     await carregarCatalogoSkus();
+    await revalidarSkusDesenhos();
     iniciarRealtime();
     iniciarRealtimeCompras();
   }
@@ -504,6 +505,7 @@ async function inicializarAuth() {
       await carregarPapel();
       await carregarComprasMateriais();
       await carregarCatalogoSkus();
+      await revalidarSkusDesenhos();
       iniciarRealtime();
       iniciarRealtimeCompras();
     } else if (event === 'SIGNED_OUT') {
@@ -966,24 +968,32 @@ async function loadState() {
     });
     if (mudou) { try { await saveState('cores'); } catch (e) {} }
   }
+  // O auto-preenchimento do SKU dos DESENHOS roda em revalidarSkusDesenhos(),
+  // após o catálogo (skus_catalogo) carregar — para VALIDAR contra a relação de
+  // SKUs (só usa SKU que existe; nunca inventa SKU fora do catálogo).
+}
 
-  // Auto-preenche o SKU dos desenhos técnicos existentes (SKU COMPLETO = Linha
-  // de SKU do modelo + Sigla SKU da cor principal do desenho). Roda após os
-  // dois acima (que preenchem linha/sigla). Admin, só quando vazio. Seguro: os
-  // desenhos são de uma cor só (corPrincipalId). Se a combinação não existir no
-  // catálogo, aparece como "a cadastrar" no Estoque-Confeccao.
-  if (currentRole === 'admin' && Array.isArray(STATE.desenhos)) {
-    let mudou = 0;
-    STATE.desenhos.forEach(d => {
-      if (d.skuLinha) return;
-      const m = (STATE.modelos || []).find(x => x.id === d.modeloId);
-      const linha = ((m && m.skuLinha) || '').trim().toUpperCase();
-      const c = (STATE.cores || []).find(x => x.id === d.corPrincipalId);
-      const sigla = ((c && c.siglaSku) || '').trim().toUpperCase();
-      if (linha && sigla) { d.skuLinha = linha + '-' + sigla; mudou++; }
-    });
-    if (mudou) { try { await saveState('desenhos'); } catch (e) {} }
-  }
+// Preenche o SKU dos desenhos técnicos VAZIOS, validando contra o catálogo de
+// SKUs (regra: só SKUs que constam na relação de referência). Roda após
+// carregarCatalogoSkus. NUNCA toca em desenho que já tem SKU — mapeamentos
+// manuais (ex.: moletom tricolor preto → BM.TRI-BEGE) ficam intactos. Se o SKU
+// deduzido (linha do modelo + sigla da cor) não existir no catálogo, deixa em
+// branco para escolha manual no dropdown. Guard por catálogo carregado.
+async function revalidarSkusDesenhos() {
+  if (currentRole !== 'admin' || !Array.isArray(STATE.desenhos)) return;
+  if (!Array.isArray(catalogoSkus) || !catalogoSkus.length) return;
+  const validos = new Set(catalogoSkus.map(s => (s.item || '').trim().toUpperCase()).filter(Boolean));
+  let mudou = 0;
+  STATE.desenhos.forEach(d => {
+    if (d.skuLinha) return;                        // já definido (manual/anterior) → não mexe
+    const m = (STATE.modelos || []).find(x => x.id === d.modeloId);
+    const linha = ((m && m.skuLinha) || '').trim().toUpperCase();
+    const c = (STATE.cores || []).find(x => x.id === d.corPrincipalId);
+    const sigla = ((c && c.siglaSku) || '').trim().toUpperCase();
+    const ded = (linha && sigla) ? (linha + '-' + sigla) : '';
+    if (ded && validos.has(ded)) { d.skuLinha = ded; mudou++; }  // só preenche se EXISTIR no catálogo
+  });
+  if (mudou) { try { await saveState('desenhos'); } catch (e) {} }
 }
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
