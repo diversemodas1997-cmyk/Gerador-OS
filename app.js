@@ -2495,7 +2495,7 @@ function componentesPorTecidoCorOS(o) {
 const FASES_ESTOQUE = [
   { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true,
     entrada: { tipo: 'oscriada', label: 'corte' } },
-  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true,
+  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true, osTodasEntradas: true,
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
   { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',       painelId: 'fios-painel',
     entrada: { tipo: 'etapa', re: /fios/i, label: 'Limpeza de fios' } },
@@ -2529,15 +2529,18 @@ function calcularSaldosFase(idx) {
   (STATE.ordens || []).forEach(o => {
     if (!_faseEntrouOS(o, fase.entrada)) return;
     const saiu = prox ? _faseEntrouOS(o, prox.entrada) : false;
-    // Lista a OS na linha só se ela está ATUALMENTE nesta fase (entrou e ainda
-    // não avançou) — são as peças que de fato compõem o saldo desta fase.
-    const aquiAgora = faseAtualOS(o) === idx;
+    // Quais OSs listar na coluna OS desta linha:
+    //  - padrão: só as que estão ATUALMENTE nesta fase (entrou e não avançou)
+    //    — são as peças que de fato compõem o saldo da fase.
+    //  - fase.osTodasEntradas: TODAS as que entraram na fase (etapa marcada),
+    //    mesmo que já tenham avançado (ex.: Costurando lista toda OS com Costura).
+    const listarOS = fase.osTodasEntradas ? true : (faseAtualOS(o) === idx);
     const numOS = (o.os || '').toString().trim();
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
       cur.entrada += it.qtd;
       if (saiu) cur.saida += it.qtd;
-      if (aquiAgora && numOS) cur.osNums.add(numOS);
+      if (listarOS && numOS) cur.osNums.add(numOS);
     });
   });
   (STATE[fase.movKey] || []).forEach(m => {
