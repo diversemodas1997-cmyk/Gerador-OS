@@ -42,7 +42,8 @@
         <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
         <button class="nav-btn" data-page="corte">Estoque de corte</button>
         <button class="nav-btn" data-page="costurando">Costurando</button>
-        <button class="nav-btn" data-page="fios">Limpeza de fios</button>
+        <button class="nav-btn" data-page="fios">Retirada de fios</button>
+        <button class="nav-btn" data-page="expedicao">Expedição</button>
       </div>
     </div>
 
@@ -187,7 +188,7 @@
       <div class="page-header">
         <div>
           <h1>Estoque de corte</h1>
-          <div class="desc">Peças cortadas estocadas, esperando a costura (em peças, por tecido e cor). 1ª fase do fluxo <b>Estoque de corte</b> → <b>Costurando</b> → <b>Limpeza de fios</b>: o volume sai daqui sozinho quando a etapa <b>Costura</b> é marcada na OS. Use os botões para contagem física e ajustes manuais.</div>
+          <div class="desc">Peças cortadas, em peças por tecido e cor. As etapas são <b>sobrepostas</b>: o volume da OS fica sempre no campo da <b>última etapa marcada</b>. Aqui ficam as OSs cuja última etapa marcada é <b>Corte</b>; ao marcar outra etapa (Costura, Retirada de fios, Expedição…) o volume sai daqui e vai para o campo dela. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="corte-painel"></div>
@@ -197,7 +198,7 @@
       <div class="page-header">
         <div>
           <h1>Costurando</h1>
-          <div class="desc">Peças em costura (em peças, por tecido e cor). Recebe sozinho as OSs com a etapa <b>Costura</b> marcada e baixa quando a etapa <b>Limpeza de fios</b> é marcada (vai p/ Limpeza de fios). Use os botões para contagem física e ajustes manuais.</div>
+          <div class="desc">Peças em costura, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada; sai quando outra etapa vira a última marcada. A coluna <b>OS</b> aqui mostra todas as OSs que já passaram pela Costura. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="costurando-painel"></div>
@@ -206,11 +207,21 @@
     <section class="page hidden" data-page="fios">
       <div class="page-header">
         <div>
-          <h1>Limpeza de fios</h1>
-          <div class="desc">Peças em limpeza de fios / acabamento (em peças, por tecido e cor). Recebe sozinho as OSs com a etapa <b>Limpeza de fios</b> marcada (última fase do fluxo). Use os botões para contagem física e ajustes manuais.</div>
+          <h1>Retirada de fios</h1>
+          <div class="desc">Peças na retirada de fios, em peças por tecido e cor. Recebe a OS quando a etapa <b>Retirada de fios</b> é a última marcada; sai quando outra etapa vira a última marcada. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="fios-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="expedicao">
+      <div class="page-header">
+        <div>
+          <h1>Expedição</h1>
+          <div class="desc">Peças em expedição, em peças por tecido e cor. Recebe a OS quando a etapa <b>Expedição</b> é a última marcada (o volume sai do campo anterior). Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+      </div>
+      <div id="expedicao-painel"></div>
     </section>
 
     <section class="page hidden" data-page="cad-tecidos">
@@ -754,6 +765,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-05-25x"></script>
+<script src="app.js?v=2026-05-25y"></script>
 </body>
 </html>

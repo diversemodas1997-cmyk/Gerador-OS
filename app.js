@@ -476,7 +476,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','osCounter'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','osCounter'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -782,9 +782,10 @@ const STATE = {
   // { id, tipo:'entrada'|'saida', tecidoNome, corNome, qtd, data, obs }.
   corteMov: [],
   // Contagem manual das fases seguintes do fluxo (mesmo formato de corteMov):
-  // Costurando (após Costura) e Limpeza de fios (após Limpeza de fios).
+  // Costurando (Costura), Retirada de fios e Expedição.
   costurandoMov: [],
   fiosMov: [],
+  expedicaoMov: [],
   osCounter: 0,
   // Overrides de rótulo das pastas/subpastas (fixas ou customizadas). A chave
   // técnica (ex.: 'camiseta', 'basica') segue inalterada nas grades — só o
@@ -832,7 +833,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1049,6 +1050,7 @@ function goto(page) {
   if (page === 'corte') renderFasePainel(0);
   if (page === 'costurando') renderFasePainel(1);
   if (page === 'fios') renderFasePainel(2);
+  if (page === 'expedicao') renderFasePainel(3);
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
@@ -2486,26 +2488,35 @@ function componentesPorTecidoCorOS(o) {
   return Array.from(mapa.values());
 }
 
-// Pipeline de estoques em processo, na ORDEM do fluxo de produção. A SAÍDA de
-// cada fase é a ENTRADA da próxima (o volume passa de uma fase para a seguinte
-// quando o check correspondente é marcado na OS). Para adicionar uma fase nova,
-// basta inserir uma linha aqui (e a chave do array manual em STATE/keys).
-//   entrada.tipo 'oscriada' = peças cortadas ao gerar a OS (1ª fase);
-//   entrada.tipo 'etapa'   = OS com a etapa (re/label) marcada no checklist.
+// Campos de estoque em processo, um por ETAPA de produção que tem campo. Modelo
+// SOBREPOSTO (cumulativo): o volume de cada OS fica SEMPRE no campo da etapa
+// marcada por ÚLTIMO (faseAtualOS = maior etapasSeq). Marcar uma nova etapa move
+// o volume para o campo dela; etapas SEM campo (Acabamento de mangas, Ensaque,
+// Estampa, Lavanderia…) NÃO movem o volume. Para adicionar uma fase nova, inserir
+// uma linha aqui (+ a chave do array manual em STATE/keys + nav/section/rota).
+//   entrada.tipo 'etapa' = OS com a etapa (re/label) marcada no checklist.
 const FASES_ESTOQUE = [
   { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true,
-    entrada: { tipo: 'oscriada', label: 'corte' } },
+    entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
   { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true, osTodasEntradas: true,
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  { id: 'fios',       titulo: 'Limpeza de fios',  movKey: 'fiosMov',       painelId: 'fios-painel',
-    entrada: { tipo: 'etapa', re: /fios/i, label: 'Limpeza de fios' } },
+  { id: 'fios',       titulo: 'Retirada de fios', movKey: 'fiosMov',       painelId: 'fios-painel',
+    entrada: { tipo: 'etapa', re: /fios/i, label: 'Retirada de fios' } },
+  { id: 'expedicao',  titulo: 'Expedição',        movKey: 'expedicaoMov',  painelId: 'expedicao-painel',
+    entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
 ];
 
-// A OS entrou nesta fase? 1ª fase = toda OS cortada; demais = etapa marcada.
+// A OS entrou nesta fase? (etapa da fase marcada no checklist).
 function _faseEntrouOS(o, entrada) {
   if (!entrada) return false;
   if (entrada.tipo === 'oscriada') return true;
   return osEtapaMarcada(o, entrada.re);
+}
+
+// Nome (no checklist da OS) da etapa que dispara esta fase, p/ ler o etapasSeq.
+function _nomeEtapaDaFase(o, fase) {
+  if (!fase || !fase.entrada || fase.entrada.tipo === 'oscriada') return null;
+  return (o.etapas || []).find(n => fase.entrada.re.test(n)) || null;
 }
 
 // Saldo de uma fase por tecido+cor:
@@ -2515,7 +2526,6 @@ function _faseEntrouOS(o, entrada) {
 //   estoque  = entrada − saida + contagem
 function calcularSaldosFase(idx) {
   const fase = FASES_ESTOQUE[idx];
-  const prox = FASES_ESTOQUE[idx + 1];
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const map = new Map();
   const pegar = (tNome, cNome) => {
@@ -2528,13 +2538,15 @@ function calcularSaldosFase(idx) {
   };
   (STATE.ordens || []).forEach(o => {
     if (!_faseEntrouOS(o, fase.entrada)) return;
-    const saiu = prox ? _faseEntrouOS(o, prox.entrada) : false;
+    // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
+    // agora (a última etapa marcada não é a desta fase).
+    const atual = faseAtualOS(o);
+    const saiu = atual !== idx;
     // Quais OSs listar na coluna OS desta linha:
-    //  - padrão: só as que estão ATUALMENTE nesta fase (entrou e não avançou)
-    //    — são as peças que de fato compõem o saldo da fase.
+    //  - padrão: só as que estão ATUALMENTE nesta fase (compõem o saldo).
     //  - fase.osTodasEntradas: TODAS as que entraram na fase (etapa marcada),
     //    mesmo que já tenham avançado (ex.: Costurando lista toda OS com Costura).
-    const listarOS = fase.osTodasEntradas ? true : (faseAtualOS(o) === idx);
+    const listarOS = fase.osTodasEntradas ? true : (atual === idx);
     const numOS = (o.os || '').toString().trim();
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
@@ -2555,15 +2567,26 @@ function calcularSaldosFase(idx) {
   return { detalhe };
 }
 
-// Fase atual de uma OS no fluxo = a última fase em que ela entrou.
+// Fase atual de uma OS = o campo da etapa marcada por ÚLTIMO (modelo sobreposto).
+// Usa etapasSeq (carimbo de quando cada etapa foi marcada): vence o maior seq
+// entre as fases marcadas. Sem seq (OS antiga), cai no canônico = última fase na
+// ordem do fluxo que está marcada. Etapas sem campo não entram (não são fases).
 function faseAtualOS(o) {
-  let idx = 0;
-  FASES_ESTOQUE.forEach((f, i) => { if (_faseEntrouOS(o, f.entrada)) idx = i; });
-  return idx;
+  const seqs = (o.progresso && o.progresso.etapasSeq) || {};
+  let idxSeq = -1, melhorSeq = -Infinity;   // por ordem de marcação (etapasSeq)
+  let idxOrd = -1;                           // fallback canônico (ordem das fases)
+  FASES_ESTOQUE.forEach((f, i) => {
+    if (!_faseEntrouOS(o, f.entrada)) return;
+    idxOrd = i;
+    const nome = _nomeEtapaDaFase(o, f);
+    const s = (nome && seqs[nome] != null) ? Number(seqs[nome]) : null;
+    if (s != null && (idxSeq < 0 || s > melhorSeq)) { melhorSeq = s; idxSeq = i; }
+  });
+  return idxSeq >= 0 ? idxSeq : (idxOrd >= 0 ? idxOrd : 0);
 }
 
 // Cada fase do fluxo é um CAMPO próprio no menu (Estoque de corte, Costurando,
-// Limpeza de fios). Renderiza UMA fase no seu painel: saldo por tecido+cor, OSs
+// Retirada de fios, Expedição). Renderiza UMA fase no seu painel: saldo tec+cor, OSs
 // atualmente nessa fase e os lançamentos manuais da fase.
 function renderFasePainel(faseIdx) {
   const fase = FASES_ESTOQUE[faseIdx];
@@ -2581,7 +2604,6 @@ function renderFasePainel(faseIdx) {
   const ordOS = arr => (arr || []).slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const osCell = arr => `<td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${(arr && arr.length) ? ordOS(arr).map(esc).join(', ') : '—'}</td>`;
 
-  const prox = FASES_ESTOQUE[faseIdx + 1];
   const { detalhe } = calcularSaldosFase(faseIdx);
   const grupos = new Map();
   detalhe.forEach(c => {
@@ -2600,12 +2622,8 @@ function renderFasePainel(faseIdx) {
       : '';
     return cores + sub;
   }).join('');
-  const entradaDesc = fase.entrada.tipo === 'oscriada'
-    ? 'peças cortadas de todas as OS'
-    : `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
-  const saidaDesc = prox
-    ? `OS com a etapa <b>${esc(prox.entrada.label)}</b> marcada (vai p/ ${esc(prox.titulo)})`
-    : 'apenas lançamento manual (não há fase seguinte)';
+  const entradaDesc = `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
+  const saidaDesc = 'OS cujo volume já foi para outro campo (uma etapa posterior virou a última marcada)';
   const card = `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -2837,7 +2855,7 @@ function construirContabSnapshot() {
     .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
 
   // Por OS: produção (camisetas + por tamanho), material, modelo/cor e fase.
-  // O Estoque-Confeccao usa `fios` (Limpeza de fios marcada) como gatilho para
+  // O Estoque-Confeccao usa `fios` (Retirada de fios marcada) como gatilho para
   // lançar a entrada de produtos acabados, casando modelo+cor com o SKU.
   const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
   const ordens = (STATE.ordens || []).map(o => {
@@ -5988,8 +6006,16 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
   if (!os) return;
   os.progresso = os.progresso || {};
   os.progresso.etapasCheck = os.progresso.etapasCheck || {};
-  if (checked) os.progresso.etapasCheck[etapaNome] = true;
-  else delete os.progresso.etapasCheck[etapaNome];
+  os.progresso.etapasSeq = os.progresso.etapasSeq || {};
+  if (checked) {
+    os.progresso.etapasCheck[etapaNome] = true;
+    // Carimbo de ordem de marcação: o volume da OS fica no campo da etapa marcada
+    // por ÚLTIMO (faseAtualOS usa o maior seq). Date.now() = "mais recente".
+    os.progresso.etapasSeq[etapaNome] = Date.now();
+  } else {
+    delete os.progresso.etapasCheck[etapaNome];
+    delete os.progresso.etapasSeq[etapaNome];
+  }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
 }
 
