@@ -824,9 +824,56 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 
 /* ============ RESPONSIVO ============ */
+/* Botao "≡ Menu" no header de cada pagina: invisivel no desktop, aparece
+   no mobile como gatilho para abrir o drawer da sidebar. */
+.btn-menu-mobile { display: none; }
+
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
-  aside.sidebar { position: relative; height: auto; }
+  /* Drawer master/detail: o menu lateral vira overlay fixed que ocupa a tela
+     toda. Por default fica oculto; aparece quando body tem .mobile-menu-open
+     (alternado via abrirMenuMobile() / fecharMenuMobile() ou clicando em
+     uma opcao do menu, que ja chama goto -> fecharMenuMobile). Isso resolve
+     a navegacao ruim em que era necessario arrastar a pagina para alcancar
+     o menu lateral. */
+  aside.sidebar {
+    position: fixed;
+    inset: 0;
+    height: 100vh;
+    z-index: 9000;
+    display: none;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  }
+  body.mobile-menu-open aside.sidebar { display: block; }
+  body.mobile-menu-open { overflow: hidden; }
+  /* Botao "≡ Menu" no topo de cada pagina (injetado por app.js). */
+  .btn-menu-mobile {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    cursor: pointer;
+    margin-bottom: 12px;
+    align-self: flex-start;
+  }
+  .btn-menu-mobile:active { opacity: .85; }
+  /* Page header: empilha verticalmente no mobile (titulo, acoes) e poe o
+     botao Menu em primeiro lugar. */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .page-header .actions { flex-wrap: wrap; }
   /* No mobile: permite scroll horizontal nas paginas (especialmente a OS
      pronta com 210mm) e zoom pinch nativo do navegador. Antes
      overflow-x:hidden bloqueava ver o conteudo todo. */

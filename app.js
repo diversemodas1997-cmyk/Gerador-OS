@@ -1055,19 +1055,55 @@ function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000
 /* ========================================================= */
 /*                      NAVEGAÇÃO                            */
 /* ========================================================= */
+// Preservacao de scroll por pagina: ao trocar de pagina, guarda o scrollY
+// atual no sessionStorage e restaura ao voltar. Isso evita o reset ao topo
+// que aborrecia ao navegar OS -> editar -> voltar.
+function _scrollKey(page) { return 'gos:scroll:' + page; }
+
+function _salvarScrollPaginaAtual() {
+  try {
+    const atual = document.querySelector('section.page:not(.hidden)');
+    if (atual && atual.dataset && atual.dataset.page) {
+      sessionStorage.setItem(_scrollKey(atual.dataset.page), String(window.scrollY || 0));
+    }
+  } catch (e) { /* sessionStorage pode estar indisponivel — segue sem ele */ }
+}
+
+function _restaurarScrollPagina(page) {
+  let y = 0;
+  try { y = parseFloat(sessionStorage.getItem(_scrollKey(page)) || '0') || 0; }
+  catch (e) { y = 0; }
+  // rAF para esperar o layout estabilizar (sections viraram hidden/visible).
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
+// Drawer mobile: no celular o menu lateral vira overlay full-screen. Aberto =
+// usuario ve so o menu; fechado = usuario ve so a pagina + um botao "Menu" no
+// topo. Ao escolher uma opcao do menu, fecha automaticamente.
+function abrirMenuMobile() {
+  document.body.classList.add('mobile-menu-open');
+}
+function fecharMenuMobile() {
+  document.body.classList.remove('mobile-menu-open');
+}
+window.abrirMenuMobile = abrirMenuMobile;
+window.fecharMenuMobile = fecharMenuMobile;
+
 function goto(page) {
   // Bloqueia navegação a páginas de cadastro para usuários não-admin
   if (page && page.startsWith('cad-') && currentRole && currentRole !== 'admin') {
     toast('Apenas admin pode acessar cadastros', 'err');
     page = 'home';
   }
+  _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
   document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`section.page[data-page="${page}"]`);
   if (target) target.classList.remove('hidden');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
   if (btn) btn.classList.add('active');
-  window.scrollTo(0, 0);
+  _restaurarScrollPagina(page);  // restaura o scroll salvo desta pagina (ou 0 na 1a visita)
+  fecharMenuMobile();  // mobile: fecha o overlay do menu quando entra na pagina
 
   // Presence: só ativa quando está editando OS
   if (page !== 'nova-os') pararPresenceOS();
@@ -1103,6 +1139,22 @@ function goto(page) {
 }
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
+
+// Injeta o botao "≡ Menu" no topo de cada .page-header. Visivel apenas no
+// mobile via CSS — desktop nunca o ve. Idempotente: se rodar de novo, nao
+// duplica (checa pela classe).
+(function injetarBotaoMenuMobile() {
+  document.querySelectorAll('section.page .page-header').forEach(header => {
+    if (header.querySelector('.btn-menu-mobile')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-menu-mobile';
+    btn.setAttribute('aria-label', 'Abrir menu');
+    btn.innerHTML = '<span aria-hidden="true">≡</span> Menu';
+    btn.addEventListener('click', abrirMenuMobile);
+    header.insertBefore(btn, header.firstChild);
+  });
+})();
 
 // Recolhe/expande grupos do menu lateral. Estado persiste em localStorage.
 function toggleNavGroup(labelEl) {
