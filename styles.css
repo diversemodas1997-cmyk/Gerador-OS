@@ -603,7 +603,9 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   min-height: 180mm;
   position: relative;
 }
-/* Texto da cor do desenho técnico — logo acima do desenho, em caixa alta */
+/* Texto da cor do desenho técnico — logo acima do desenho, em caixa alta.
+   Fica no fluxo (não absoluto) pra empurrar o desenho pra baixo sem sobrepô-lo;
+   flex-shrink:0 garante que nunca some. */
 .desenho-area .desenho-cor {
   flex: 0 0 auto;
   width: 100%;
@@ -616,14 +618,6 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   line-height: 1.05;
   word-break: break-word;
   color: #000;
-}
-.desenho-area .desenho-img-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 .desenho-area .desenho-label {
   position: absolute;
@@ -641,6 +635,7 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 .desenho-area img {
   max-width: 100%; max-height: 100%;
+  min-height: 0;
   object-fit: contain;
 }
 .desenho-area .no-img {

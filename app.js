@@ -7116,7 +7116,7 @@ function renderPrintSheet(o) {
         <div class="desenho-area">
           <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
           ${corBannerHtml}
-          <div class="desenho-img-wrap">${imgHtml}</div>
+          ${imgHtml}
         </div>
       </div>
 
