@@ -7001,8 +7001,12 @@ function renderPrintSheet(o) {
   const corFont = corTexto
     ? Math.max(20, Math.min(30, Math.floor(230 / (corTexto.length * 0.62))))
     : 0;
+  // Estilos INLINE (não só via classe) pra funcionar mesmo se o navegador/host
+  // servir um styles.css desatualizado — senão o banner ficaria sem estilo e,
+  // em flex-row, empurraria o desenho pra fora. Idem o flex-direction:column
+  // aplicado inline na .desenho-area abaixo.
   const corBannerHtml = corTexto
-    ? `<div class="desenho-cor" style="font-size:${corFont}pt;">${esc(corTexto)}</div>`
+    ? `<div class="desenho-cor" style="flex:0 0 auto;width:100%;margin:14px 0 6px;text-align:center;font-weight:800;text-transform:uppercase;letter-spacing:.04em;line-height:1.05;word-break:break-word;color:#000;font-size:${corFont}pt;">${esc(corTexto)}</div>`
     : '';
 
   const g = o.grade || {};
@@ -7113,7 +7117,7 @@ function renderPrintSheet(o) {
     <!-- CORPO -->
     <div class="sheet-body">
       <div class="sheet-left">
-        <div class="desenho-area">
+        <div class="desenho-area"${corBannerHtml ? ' style="flex-direction:column;"' : ''}>
           <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
           ${corBannerHtml}
           ${imgHtml}
