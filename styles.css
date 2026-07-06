@@ -602,6 +602,23 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   min-height: 180mm;
   position: relative;
 }
+/* Barra da cor do desenho técnico — irmã acima da .desenho-area, na .sheet-left.
+   CAIXA ALTA, centralizada. Os estilos essenciais também vão inline no HTML
+   (app.js) pra sobreviver a um styles.css antigo em cache. */
+.sheet-left > .desenho-cor {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  text-align: center;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.05;
+  word-break: break-word;
+  color: #000;
+  border-bottom: 1.5px solid #000;
+  background: #fff;
+}
 .desenho-area .desenho-label {
   position: absolute;
   top: 6px;

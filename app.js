@@ -6991,6 +6991,23 @@ function renderPrintSheet(o) {
     ? `<img src="${desenho.img}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
 
+  // Texto informativo da COR do desenho técnico — barra em CAIXA ALTA logo acima
+  // do desenho. A cor da peça é a Cor 1 das variantes (mesma lógica de corPrincipal);
+  // junta cores distintas quando houver mais de uma.
+  const coresDesenho = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+  const corTexto = coresDesenho.join(' / ').toUpperCase();
+  // Fonte auto-ajustada pra caber na largura do desenho (~230pt úteis) sem
+  // extrapolar: quanto maior o texto, menor a fonte. Nunca abaixo de 20pt.
+  const corFont = corTexto
+    ? Math.max(20, Math.min(30, Math.floor(230 / (corTexto.length * 0.62))))
+    : 0;
+  // Banner é IRMÃO acima da .desenho-area (não filho) — assim a área do desenho e
+  // a imagem ficam idênticas ao original e nada pode escondê-las. Estilos INLINE
+  // de propósito, pra funcionar mesmo com um styles.css antigo em cache.
+  const corBannerHtml = corTexto
+    ? `<div class="desenho-cor" style="width:100%;box-sizing:border-box;padding:6px 8px;text-align:center;font-weight:800;text-transform:uppercase;letter-spacing:.04em;line-height:1.05;word-break:break-word;color:#000;font-size:${corFont}pt;border-bottom:1.5px solid #000;background:#fff;">${esc(corTexto)}</div>`
+    : '';
+
   const g = o.grade || {};
   const vars_ = o.variantes || [];
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
@@ -7099,6 +7116,7 @@ function renderPrintSheet(o) {
     <!-- CORPO -->
     <div class="sheet-body">
       <div class="sheet-left">
+        ${corBannerHtml}
         <div class="desenho-area">
           <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
           ${imgHtml}
