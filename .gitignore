@@ -1,1 +1,4 @@
 .claude/settings.local.json
+
+# Backup local automatico gravado pelo app a cada save (regenerado; nao versionar)
+gerador-os-dados.json
