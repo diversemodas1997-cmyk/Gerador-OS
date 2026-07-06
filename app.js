@@ -6991,6 +6991,20 @@ function renderPrintSheet(o) {
     ? `<img src="${desenho.img}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
 
+  // Texto informativo da COR do desenho técnico, logo acima do desenho.
+  // A cor da peça é a Cor 1 das variantes (mesma lógica de corPrincipal). Junta
+  // cores distintas quando houver mais de uma. Em CAIXA ALTA.
+  const coresDesenho = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+  const corTexto = coresDesenho.join(' / ').toUpperCase();
+  // Fonte auto-ajustada pra caber na largura do desenho (~230pt úteis) sem
+  // extrapolar: quanto maior o texto, menor a fonte. Nunca abaixo de 20pt.
+  const corFont = corTexto
+    ? Math.max(20, Math.min(30, Math.floor(230 / (corTexto.length * 0.62))))
+    : 0;
+  const corBannerHtml = corTexto
+    ? `<div class="desenho-cor" style="font-size:${corFont}pt;">${esc(corTexto)}</div>`
+    : '';
+
   const g = o.grade || {};
   const vars_ = o.variantes || [];
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
@@ -7101,7 +7115,8 @@ function renderPrintSheet(o) {
       <div class="sheet-left">
         <div class="desenho-area">
           <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
-          ${imgHtml}
+          ${corBannerHtml}
+          <div class="desenho-img-wrap">${imgHtml}</div>
         </div>
       </div>
 
@@ -7303,7 +7318,9 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
 
 function exportarDados() {
   const data = { exportadoEm: new Date().toISOString() };
-  ALL_KEYS.forEach(k => { data[k] = STATE[k]; });
+  // Exporta TUDO (CAD_KEYS), inclusive estoqueMov (estoque de tecido) e os
+  // movimentos de fase + osCounter — ALL_KEYS sozinho deixava o estoque de fora.
+  CAD_KEYS.forEach(k => { data[k] = STATE[k]; });
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

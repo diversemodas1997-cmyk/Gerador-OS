@@ -597,10 +597,33 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   flex: 1;
   padding: 6px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 180mm;
   position: relative;
+}
+/* Texto da cor do desenho técnico — logo acima do desenho, em caixa alta */
+.desenho-area .desenho-cor {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 20px;
+  margin-bottom: 6px;
+  text-align: center;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.05;
+  word-break: break-word;
+  color: #000;
+}
+.desenho-area .desenho-img-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .desenho-area .desenho-label {
   position: absolute;
