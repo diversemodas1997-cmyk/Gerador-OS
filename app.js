@@ -6992,9 +6992,14 @@ function renderPrintSheet(o) {
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
 
   // Texto informativo da COR do desenho técnico — barra em CAIXA ALTA logo acima
-  // do desenho. A cor da peça é a Cor 1 das variantes (mesma lógica de corPrincipal);
-  // junta cores distintas quando houver mais de uma.
-  const coresDesenho = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
+  // do desenho. Junta TODAS as cores usadas nas variantes (Cor 1, Cor 2 e Cor 3),
+  // preservando a ordem e sem repetir — assim um modelo tricolor mostra as três
+  // cores (ex.: "PRETO / MOSTARDA / OFF-WHITE"), não só a primeira.
+  const coresDesenho = [...new Set(
+    (o.variantes || [])
+      .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome])
+      .filter(c => c && c !== '—')
+  )];
   const corTexto = coresDesenho.join(' / ').toUpperCase();
   // Fonte auto-ajustada pra caber na largura do desenho (~230pt úteis) sem
   // extrapolar: quanto maior o texto, menor a fonte. Nunca abaixo de 20pt.
