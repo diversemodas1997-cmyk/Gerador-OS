@@ -1850,6 +1850,28 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
   return { origem: codigoOrigem, etapas: etapasNomes, alteradas };
 }
 
+// Ordem CANÔNICA das cores de um desenho = a sequência escrita no desc, após o
+// último "|". Ex.: "Blusa Moletom Tricolor | Verde/Preto/Bege" -> ['verde','preto','bege'].
+// É a ordem que o usuário mantém no cadastro. As variantes de OS JÁ SALVAS podem ter
+// herdado uma ordem antiga/errada (ex.: cadastro embaralhado numa restauração), então
+// o banner impresso reordena os nomes por esta sequência pra sair sempre certo, mesmo
+// em OS antigas. Cadastros novos já trazem os campos na ordem correta.
+function ordemCoresPorDesc(desenho) {
+  const tail = ((desenho && desenho.desc) || '').split('|').pop() || '';
+  return tail.split('/').map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+// Reordena uma lista de NOMES de cor pela ordem canônica do desc (sem depender de
+// STATE.cores — usada no banner impresso, que já tem os nomes).
+function ordenarCoresNomesPorDesc(nomes, desenho) {
+  const ordem = ordemCoresPorDesc(desenho);
+  if (!ordem.length) return nomes;
+  return nomes
+    .map((n, i) => ({ n, i, pos: ordem.indexOf((n || '').trim().toLowerCase()) }))
+    .sort((a, b) => (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos) || a.i - b.i)
+    .map(x => x.n);
+}
+
 function atualizarCoresComponente() {
   const sel = document.getElementById('m-comp-variacao');
   const wrap = document.getElementById('m-comp-cores-wrap');
@@ -6993,13 +7015,14 @@ function renderPrintSheet(o) {
 
   // Texto informativo da COR do desenho técnico — barra em CAIXA ALTA logo acima
   // do desenho. Junta TODAS as cores usadas nas variantes (Cor 1, Cor 2 e Cor 3),
-  // preservando a ordem e sem repetir — assim um modelo tricolor mostra as três
-  // cores (ex.: "PRETO / MOSTARDA / OFF-WHITE"), não só a primeira.
-  const coresDesenho = [...new Set(
+  // sem repetir, e ORDENADAS pela sequência canônica do desc do desenho — assim um
+  // tricolor mostra as três cores na ordem certa (ex.: "VERDE / PRETO / BEGE"),
+  // mesmo quando a variante da OS herdou uma ordem trocada dos campos de cor.
+  const coresDesenho = ordenarCoresNomesPorDesc([...new Set(
     (o.variantes || [])
       .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome])
       .filter(c => c && c !== '—')
-  )];
+  )], desenho);
   const corTexto = coresDesenho.join(' / ').toUpperCase();
   // Fonte auto-ajustada pra caber na largura do desenho (~230pt úteis) sem
   // extrapolar: quanto maior o texto, menor a fonte. Nunca abaixo de 20pt.
