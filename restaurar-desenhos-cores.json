@@ -1,0 +1,2395 @@
+{
+  "_restauracao": "Restaura cores dos componentes dos desenhos (fonte: backup local 11:06) + corrige ordem corPrincipal do desenho 0024. NAO altera OS/cadastros. Importar via Importar dados.",
+  "_gerado_em": "2026-07-07",
+  "desenhos": [
+    {
+      "id": "id_1776865389812_879",
+      "codigo": "001",
+      "desc": "Camiseta Básica | Preto",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290341246_1bsz6o.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "componentesIds": [],
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776863082146_119",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentes": [],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-PRE"
+    },
+    {
+      "id": "id_1776881280265_139",
+      "codigo": "0018",
+      "desc": "Blusa Moletom Básica | Preto",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776963878080_456oo9.png",
+      "modeloId": "id_1776868779650_694",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776863082146_119",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777030090427_5",
+        "id_1777030258771_382",
+        "id_1777030283515_335"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030090427_5",
+          "nome": "Frente Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030258771_382",
+          "nome": "Mangas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777030283515_335",
+          "nome": "Costas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.LISA-PRE"
+    },
+    {
+      "id": "id_1776881609105_619",
+      "codigo": "0010",
+      "desc": "Camiseta Bicolor | Preto/Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777572382385_yttqbw.png",
+      "modeloId": "id_1776868735267_328",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776863082146_119",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777029615578_38",
+        "id_1777288857200_228"
+      ],
+      "corSecundariaId": "id_1776864153192_643",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777029615578_38",
+          "nome": "Frente Parte 1 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777288857200_228",
+          "nome": "Frente Parte 2 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.REC.LISA-PRE"
+    },
+    {
+      "id": "id_1776882334182_443",
+      "codigo": "002",
+      "desc": "Camiseta Básica | Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290355533_v553st.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776864153192_643",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-BRA"
+    },
+    {
+      "id": "id_1776883999314_632",
+      "codigo": "003",
+      "desc": "Camiseta Básica | Verde",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290370725_axkurv.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885156463_351",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-VERDE"
+    },
+    {
+      "id": "id_1776884077426_671",
+      "codigo": "004",
+      "desc": "Camiseta Básica | Vermelha",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290383616_6xvtjx.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885174527_866",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-VERM"
+    },
+    {
+      "id": "id_1776884120553_832",
+      "codigo": "005",
+      "desc": "Camiseta Básica | Azul",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290801269_209i2k.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885211095_288",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885211095_288",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885211095_288",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885211095_288",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885211095_288",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885211095_288",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-MARINHO"
+    },
+    {
+      "id": "id_1776884158497_755",
+      "codigo": "006",
+      "desc": "Camiseta Básica | Marrom",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290820158_p6vn1q.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885346606_867",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-MARROM"
+    },
+    {
+      "id": "id_1776884212425_319",
+      "codigo": "007",
+      "desc": "Camiseta Básica | Roxo",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290833144_00cue4.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "gradeId": "",
+      "designerId": "id_1776879229847_908",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885284406_477",
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-ROXO"
+    },
+    {
+      "id": "id_1776951816304_754",
+      "codigo": "008",
+      "desc": "Camiseta Básica | Bege",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290847438_iadex4.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885262694_96",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-BEGE"
+    },
+    {
+      "id": "id_1776951972215_508",
+      "codigo": "009",
+      "desc": "Camiseta Básica | Grafite",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777290863088_4zm1cd.png",
+      "modeloId": "id_1776865547236_64",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776952087975_359",
+      "componentesIds": [
+        "id_1776886169996_0",
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_0",
+          "nome": "Frente Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.LISA-GRAF"
+    },
+    {
+      "id": "id_1776952405936_539",
+      "codigo": "0011",
+      "desc": "Camiseta Bicolor | Roxo/Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777572994403_gp6hy8.png",
+      "modeloId": "id_1776868735267_328",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885284406_477",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777029615578_38",
+        "id_1777288857200_228"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "id_1776864153192_643",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777029615578_38",
+          "nome": "Frente Parte 1 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885284406_477",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777288857200_228",
+          "nome": "Frente Parte 2 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.REC.LISA-ROXO"
+    },
+    {
+      "id": "id_1776952451888_733",
+      "codigo": "0012",
+      "desc": "Camiseta Bicolor | Vermelho/Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777573036139_pp127a.png",
+      "modeloId": "id_1776868735267_328",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885174527_866",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777029615578_38",
+        "id_1777288857200_228"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "id_1776864153192_643",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777029615578_38",
+          "nome": "Frente Parte 1 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885174527_866",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777288857200_228",
+          "nome": "Frente Parte 2 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.REC.LISA-VERM"
+    },
+    {
+      "id": "id_1776952497616_752",
+      "codigo": "0013",
+      "desc": "Camiseta Bicolor | Verde/Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777573079409_0azoed.png",
+      "modeloId": "id_1776868735267_328",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885156463_351",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777029615578_38",
+        "id_1777288857200_228"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "id_1776864153192_643",
+      "corTerciariaId": "",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777029615578_38",
+          "nome": "Frente Parte 1 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777288857200_228",
+          "nome": "Frente Parte 2 | Camiseta Bicolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250"
+    },
+    {
+      "id": "id_1776952816560_62",
+      "codigo": "0014",
+      "desc": "Camiseta Tricolor | Preto/Caqui/Off-White",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777894849476_5lsmlc.png",
+      "modeloId": "id_1776868757363_555",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776863082146_119",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777289503871_99",
+        "id_1777289530104_833",
+        "id_1777289571408_917"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "id_1776952133647_509",
+      "corTerciariaId": "id_1776952218144_555",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289503871_99",
+          "nome": "Frente Parte 1 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289530104_833",
+          "nome": "Frente Parte 2 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952133647_509",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289571408_917",
+          "nome": "Frente Parte 3 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "CM.TRI.LISA-CAQUI"
+    },
+    {
+      "id": "id_1776953075088_717",
+      "codigo": "0015",
+      "desc": "Camiseta Tricolor | Preto/Grafite/Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777894867989_93le1l.png",
+      "modeloId": "id_1776868757363_555",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776863082146_119",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777289503871_99",
+        "id_1777289530104_833",
+        "id_1777289571408_917"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "corSecundariaId": "id_1776952087975_359",
+      "corTerciariaId": "id_1776864153192_643",
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289503871_99",
+          "nome": "Frente Parte 1 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289530104_833",
+          "nome": "Frente Parte 2 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289571408_917",
+          "nome": "Frente Parte 3 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": ""
+    },
+    {
+      "id": "id_1776953501536_355",
+      "codigo": "0016",
+      "desc": "Camiseta Tricolor | Branco/Grafite/Preto",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777894888315_zc1lwl.png",
+      "modeloId": "id_1776868757363_555",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "id_1776867078800_288",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776864153192_643",
+      "corSecundariaId": "id_1776952087975_359",
+      "corTerciariaId": "id_1776863082146_119",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777289503871_99",
+        "id_1777289530104_833",
+        "id_1777289571408_917"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289503871_99",
+          "nome": "Frente Parte 1 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289530104_833",
+          "nome": "Frente Parte 2 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776952087975_359",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289571408_917",
+          "nome": "Frente Parte 3 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250"
+    },
+    {
+      "id": "id_1776953616840_456",
+      "codigo": "0017",
+      "desc": "Camiseta Tricolor | Verde/Preto/Bege",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1777890298913_6mbkph.png",
+      "modeloId": "id_1776868757363_555",
+      "baseId": "id_1776867176111_207",
+      "colecaoId": "id_1776867111471_717",
+      "marcaId": "id_1776867078800_288",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868282324_73",
+      "corPrincipalId": "id_1776885156463_351",
+      "corSecundariaId": "id_1776863082146_119",
+      "corTerciariaId": "id_1776885262694_96",
+      "componentesIds": [
+        "id_1776886169996_1",
+        "id_1776886169996_4",
+        "id_1776886169996_8",
+        "id_1776886169996_9",
+        "id_1777289503871_99",
+        "id_1777289530104_833",
+        "id_1777289571408_917"
+      ],
+      "aviamentosIds": [
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_1",
+          "nome": "Costas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_4",
+          "nome": "Mangas Camiseta",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_8",
+          "nome": "Gola",
+          "tecidoId": "id_1777039139210_737",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289503871_99",
+          "nome": "Frente Parte 1 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289530104_833",
+          "nome": "Frente Parte 2 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777289571408_917",
+          "nome": "Frente Parte 3 | Camiseta Tricolor",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250"
+    },
+    {
+      "id": "id_1776953927553_118",
+      "codigo": "0019",
+      "desc": "Blusa Moletom Básica | Branco",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776963686392_jlvrc3.png",
+      "modeloId": "id_1776868779650_694",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776864153192_643",
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777030090427_5",
+        "id_1777030258771_382",
+        "id_1777030283515_335"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030090427_5",
+          "nome": "Frente Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030258771_382",
+          "nome": "Mangas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777030283515_335",
+          "nome": "Costas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776864153192_643",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.LISA-BRA"
+    },
+    {
+      "id": "id_1776954388273_341",
+      "codigo": "0020",
+      "desc": "Blusa Moletom Básica | Mostarda",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776963777025_wwprnf.png",
+      "modeloId": "id_1776868779650_694",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776954494553_934",
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777030090427_5",
+        "id_1777030258771_382",
+        "id_1777030283515_335"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030090427_5",
+          "nome": "Frente Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030258771_382",
+          "nome": "Mangas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777030283515_335",
+          "nome": "Costas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.LISA-MOSTARDA"
+    },
+    {
+      "id": "id_1776954823249_397",
+      "codigo": "0021",
+      "desc": "Blusa Moletom Básica | Bege",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776963807784_exjz80.png",
+      "modeloId": "id_1776868779650_694",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776885262694_96",
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777030090427_5",
+        "id_1777030258771_382",
+        "id_1777030283515_335"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030090427_5",
+          "nome": "Frente Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030258771_382",
+          "nome": "Mangas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777030283515_335",
+          "nome": "Costas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.LISA-BEGE"
+    },
+    {
+      "id": "id_1776954983210_470",
+      "codigo": "0022",
+      "desc": "Blusa Moletom Básica | Marrom",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776963829565_d92wbw.png",
+      "modeloId": "id_1776868779650_694",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776885346606_867",
+      "corSecundariaId": "",
+      "corTerciariaId": "",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777030090427_5",
+        "id_1777030258771_382",
+        "id_1777030283515_335"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030090427_5",
+          "nome": "Frente Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777030258771_382",
+          "nome": "Mangas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777030283515_335",
+          "nome": "Costas Blusa Moletom Básica",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885346606_867",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.LISA-MARROM"
+    },
+    {
+      "id": "id_1776955198418_953",
+      "codigo": "0023",
+      "desc": "Blusa Moletom Tricolor | Preto/Mostarda/Off-White",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776965392925_ufqhhp.png",
+      "modeloId": "id_1776868800371_302",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776863082146_119",
+      "corSecundariaId": "id_1776954494553_934",
+      "corTerciariaId": "id_1776952218144_555",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777036987296_167",
+        "id_1777036997520_57",
+        "id_1777037021472_880",
+        "id_1777037077928_344",
+        "id_1777037105104_937",
+        "id_1777037122272_197",
+        "id_1777037153097_945",
+        "id_1777037177272_837",
+        "id_1777037192632_334"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777036987296_167",
+          "nome": "Mangas PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777036997520_57",
+          "nome": "Mangas PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777037021472_880",
+          "nome": "Mangas PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777037077928_344",
+          "nome": "Frente PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037105104_937",
+          "nome": "Frente PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037122272_197",
+          "nome": "Frente PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037153097_945",
+          "nome": "Costa PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037177272_837",
+          "nome": "Costa PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776954494553_934",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037192632_334",
+          "nome": "Costa PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776952218144_555",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.TRI-BEGE"
+    },
+    {
+      "id": "id_1776955642746_658",
+      "codigo": "0024",
+      "desc": "Blusa Moletom Tricolor | Verde/Preto/Bege",
+      "img": "https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/1776965407214_9nw186.png",
+      "modeloId": "id_1776868800371_302",
+      "baseId": "id_1776868882250_695",
+      "colecaoId": "id_1776881307761_608",
+      "marcaId": "",
+      "linhaId": "id_1776867134831_49",
+      "blocoId": "id_1776880520987_480",
+      "designerId": "id_1776879229847_908",
+      "tecidoPadraoId": "id_1776868289700_662",
+      "corPrincipalId": "id_1776885156463_351",
+      "corSecundariaId": "id_1776863082146_119",
+      "corTerciariaId": "id_1776885262694_96",
+      "componentesIds": [
+        "id_1776886169996_2",
+        "id_1776886169996_3",
+        "id_1776886169996_5",
+        "id_1776886169996_6",
+        "id_1776886169996_7",
+        "id_1776886169996_9",
+        "id_1777036987296_167",
+        "id_1777036997520_57",
+        "id_1777037021472_880",
+        "id_1777037077928_344",
+        "id_1777037105104_937",
+        "id_1777037122272_197",
+        "id_1777037153097_945",
+        "id_1777037177272_837",
+        "id_1777037192632_334"
+      ],
+      "aviamentosIds": [
+        "id_1776867438783_553",
+        "id_1776953951345_190"
+      ],
+      "componentes": [
+        {
+          "componenteId": "id_1776886169996_2",
+          "nome": "Capuz",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_3",
+          "nome": "Forro do capuz",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_5",
+          "nome": "Bolso canguru",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_6",
+          "nome": "Punho",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1776886169996_7",
+          "nome": "Barra",
+          "tecidoId": "id_1776887703744_254",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1776886169996_9",
+          "nome": "Viés",
+          "tecidoId": "id_1776868282324_73",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777036987296_167",
+          "nome": "Mangas PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777036997520_57",
+          "nome": "Mangas PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777037021472_880",
+          "nome": "Mangas PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 2
+        },
+        {
+          "componenteId": "id_1777037077928_344",
+          "nome": "Frente PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037105104_937",
+          "nome": "Frente PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037122272_197",
+          "nome": "Frente PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037153097_945",
+          "nome": "Costa PARTE 1 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885156463_351",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037177272_837",
+          "nome": "Costa PARTE 2 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776863082146_119",
+          "qtdPorPeca": 1
+        },
+        {
+          "componenteId": "id_1777037192632_334",
+          "nome": "Costa PARTE 3 Blusa Moletom Tricolor",
+          "tecidoId": "id_1776868289700_662",
+          "corId": "id_1776885262694_96",
+          "qtdPorPeca": 1
+        }
+      ],
+      "aviamentos": [
+        {
+          "materialId": "id_1776867438783_553",
+          "qtdPorPeca": 1,
+          "aplicacao": "Capuz"
+        },
+        {
+          "materialId": "id_1776953951345_190",
+          "qtdPorPeca": 1,
+          "aplicacao": "Interna"
+        }
+      ],
+      "etapasNomes": [
+        "Preparo Matéria-prima",
+        "Corte",
+        "Acabamento de mangas",
+        "Ensaque",
+        "Expedição",
+        "Costura",
+        "Retirada de fios"
+      ],
+      "coordId": "id_1777379257750_250",
+      "skuLinha": "BM.TRI-VERDE"
+    }
+  ]
+}
