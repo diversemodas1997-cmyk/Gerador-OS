@@ -1435,6 +1435,14 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                     componenteId: id, tecidoId: item.tecidoPadraoId || '', corId: item.corPrincipalId || '', qtdPorPeca: 1
                   }));
               const porId = new Map(compsAtuais.map(c => [c.componenteId, c]));
+              // Fallback por NOME: após a perda/restauração, os componentes salvos no
+              // desenho podem referenciar IDs antigos que não existem mais no cadastro
+              // global (recriado com IDs novos). Sem casar por nome, as linhas apareciam
+              // desmarcadas e sem cor — e como o save só grava as linhas MARCADAS, as
+              // cores de forro/punho/barra eram apagadas a cada gravação. Casando por
+              // nome, elas reaparecem marcadas e o save migra o componenteId pro novo.
+              const porNome = new Map();
+              compsAtuais.forEach(c => { const k = _normNome(c.nome); if (k && !porNome.has(k)) porNome.set(k, c); });
               return `<table class="desenho-comp-table">
                 <thead><tr>
                   <th style="width:24px;"></th>
@@ -1445,8 +1453,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                 </tr></thead>
                 <tbody>
                 ${STATE.componentes.map(c => {
-                  const atual = porId.get(c.id) || {};
-                  const marcado = porId.has(c.id);
+                  const atual = porId.get(c.id) || porNome.get(_normNome(c.nome)) || {};
+                  const marcado = porId.has(c.id) || porNome.has(_normNome(c.nome));
                   return `<tr class="desenho-comp-row">
                     <td style="text-align:center;"><input type="checkbox" class="m-componente-chk" value="${esc(c.id)}" ${marcado?'checked':''}></td>
                     <td>${esc(c.nome)}</td>
@@ -2066,7 +2074,8 @@ async function salvarCadastro() {
     item.corSecundariaId = v('m-vinc-cor2');
     item.corTerciariaId = v('m-vinc-cor3');
     // Componentes com tecido + cor + qtd/peça (estrutura nova)
-    item.componentes = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(chk => {
+    const componentesAntigos = Array.isArray(item.componentes) ? item.componentes : [];
+    const componentesMarcados = Array.from(document.querySelectorAll('.m-componente-chk:checked')).map(chk => {
       const compId = chk.value;
       const cad = STATE.componentes.find(x => x.id === compId);
       const tecEl = document.querySelector(`.m-comp-tec[data-comp="${compId}"]`);
@@ -2080,6 +2089,19 @@ async function salvarCadastro() {
         qtdPorPeca: parseFloat(qtdEl?.value) || 1
       };
     });
+    // Preserva componentes do desenho que NÃO existem no cadastro global (ex.: as
+    // variantes "Frente/Costa/Mangas PARTE 1/2/3" e "Viés" que se perderam quando o
+    // cadastro global foi recriado com 15 itens). Sem isso, como o editor só lista os
+    // componentes globais, o save apagaria silenciosamente esses componentes e suas
+    // cores. Descarta os que já foram capturados por nome nas linhas marcadas.
+    const idsGlobais = new Set(STATE.componentes.map(c => c.id));
+    const nomesGlobais = new Set(STATE.componentes.map(c => _normNome(c.nome)));
+    const nomesMarcados = new Set(componentesMarcados.map(c => _normNome(c.nome)));
+    const componentesOrfaos = componentesAntigos.filter(c =>
+      !idsGlobais.has(c.componenteId)
+      && !nomesGlobais.has(_normNome(c.nome))
+      && !nomesMarcados.has(_normNome(c.nome)));
+    item.componentes = componentesMarcados.concat(componentesOrfaos);
     // Retrocompat: mantém componentesIds sincronizado
     item.componentesIds = item.componentes.map(c => c.componenteId);
 
