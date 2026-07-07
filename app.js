@@ -1852,13 +1852,31 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
 
 // Ordem CANÔNICA das cores de um desenho = a sequência escrita no desc, após o
 // último "|". Ex.: "Blusa Moletom Tricolor | Verde/Preto/Bege" -> ['verde','preto','bege'].
-// É a ordem que o usuário mantém no cadastro. As variantes de OS JÁ SALVAS podem ter
-// herdado uma ordem antiga/errada (ex.: cadastro embaralhado numa restauração), então
-// o banner impresso reordena os nomes por esta sequência pra sair sempre certo, mesmo
-// em OS antigas. Cadastros novos já trazem os campos na ordem correta.
+// É a ordem que o usuário mantém no cadastro (e que aparece no banner). Os campos
+// corPrincipalId/Sec/Ter do desenho podem estar numa ordem DIVERGENTE do desc — ex.:
+// desenho 0024 tem desc "Verde/Preto/Bege" mas campos "Preto/Verde/Bege" (efeito de
+// restauração de dados). Como o enfesto/tecidos mapeiam a 1ª/2ª/3ª fase de corpo à
+// cor primária/secundária/terciária POR ÍNDICE, essa divergência trocava as cores das
+// fases. Este é o ponto único de verdade: banner, enfesto, tecidos e variante ordenam
+// as cores por esta sequência, então tudo sai consistente mesmo com os campos trocados.
 function ordemCoresPorDesc(desenho) {
   const tail = ((desenho && desenho.desc) || '').split('|').pop() || '';
   return tail.split('/').map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+// Reordena uma lista de IDs de cor pela ordem canônica do desc. Resolve cada id ao
+// nome via STATE.cores; cores sem correspondência no desc vão pro fim mantendo a
+// ordem relativa. Se o desc não tiver cores ou os nomes não resolverem, devolve a
+// lista original — fallback seguro. Usada no enfesto/tecidos/variante, onde os
+// campos corPrincipal/Sec/Ter podem estar numa ordem divergente do desc.
+function ordenarCoresIdsPorDesc(ids, desenho) {
+  const ordem = ordemCoresPorDesc(desenho);
+  if (!ordem.length) return ids;
+  const nome = id => (((STATE.cores || []).find(c => c.id === id) || {}).nome || '').trim().toLowerCase();
+  return ids
+    .map((id, i) => ({ id, i, pos: ordem.indexOf(nome(id)) }))
+    .sort((a, b) => (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos) || a.i - b.i)
+    .map(x => x.id);
 }
 
 // Reordena uma lista de NOMES de cor pela ordem canônica do desc (sem depender de
@@ -3678,15 +3696,21 @@ function aplicarVinculosDesenho() {
           const c1 = primeira.querySelector('.var-c1');
           const c2 = primeira.querySelector('.var-c2');
           const c3 = primeira.querySelector('.var-c3');
-          if (c1 && d.corPrincipalId)   c1.value = d.corPrincipalId;
-          if (c2 && d.corSecundariaId)  c2.value = d.corSecundariaId;
-          if (c3 && d.corTerciariaId)   c3.value = d.corTerciariaId;
+          // Ordena pela sequência canônica do desenho (desc) pra a variante nascer
+          // já na ordem certa — igual ao banner e às fases de enfesto.
+          const coresOrd = ordenarCoresIdsPorDesc(
+            [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean), d);
+          if (c1 && coresOrd[0]) c1.value = coresOrd[0];
+          if (c2 && coresOrd[1]) c2.value = coresOrd[1];
+          if (c3 && coresOrd[2]) c3.value = coresOrd[2];
           aplicou = true;
         }
       }
     }
-    // Aplica tecido/cores do desenho nas linhas de Tecidos (1 linha por cor)
-    const coresDoDesenho = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean);
+    // Aplica tecido/cores do desenho nas linhas de Tecidos (1 linha por cor).
+    // Na sequência canônica do desenho (desc) — mesma ordem do banner/enfesto.
+    const coresDoDesenho = ordenarCoresIdsPorDesc(
+      [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId].filter(Boolean), d);
     if (d.tecidoPadraoId || coresDoDesenho.length) {
       const tecCont = document.getElementById('tecidos-rows');
       // Grade preset selecionado tem prioridade — ela preenche tecidos pelas fases.
@@ -4172,11 +4196,14 @@ function aplicarGradePreset() {
   const corPorFase = (n, papel, f) => {
     if (papel === 'moletom' || papel === 'malha') {
       const idx = bodyOrdems.indexOf(n);
-      const cores = [
+      // 1ª fase de corpo → 1ª cor do desenho, 2ª → 2ª, 3ª → 3ª. As cores seguem a
+      // sequência canônica do desenho (desc), então a fase acompanha a cor certa
+      // mesmo que os campos corPrincipal/Sec/Ter estejam numa ordem divergente.
+      const cores = ordenarCoresIdsPorDesc([
         desenhoAtual?.corPrincipalId,
         desenhoAtual?.corSecundariaId,
         desenhoAtual?.corTerciariaId
-      ];
+      ].filter(Boolean), desenhoAtual);
       if (idx >= 0 && idx < cores.length && cores[idx]) return cores[idx];
     }
     return corDeComponente(papel, f) || f.corId || '';
