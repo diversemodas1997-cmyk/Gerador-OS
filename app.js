@@ -6181,7 +6181,7 @@ function numeroOSordenacao(o) {
 
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
-  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
+  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
   const ordenadas = STATE.ordens.slice().sort((a, b) => {
     const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
@@ -6190,8 +6190,16 @@ function renderListaOS() {
     if (nb === Infinity) return -1;
     return nb - na || String(b.os || '').localeCompare(String(a.os || ''));
   });
-  tb.innerHTML = ordenadas.map(o => `
+  tb.innerHTML = ordenadas.map(o => {
+    // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
+    // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
+    const des = (o.desenhoId && STATE.desenhos.find(d => d.id === o.desenhoId))
+      || (o.codigo && STATE.desenhos.find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
+      || null;
+    const thumb = `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">${des && des.img ? `<img src="${des.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div>`;
+    return `
     <tr>
+      <td>${thumb}</td>
       <td><strong>${esc(o.os)||'—'}</strong></td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
@@ -6205,7 +6213,8 @@ function renderListaOS() {
         <button class="edit" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function formatDate(iso) {
