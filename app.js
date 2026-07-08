@@ -7348,9 +7348,10 @@ function renderPrintSheet(o) {
                 if (tom === 2 && !ttTons[1]) bloqueado = true;
                 if (tom === 3 && (!ttTons[1] || !ttTons[2])) bloqueado = true;
                 const disabledAttr = bloqueado ? 'disabled' : '';
-                const labelStyle = bloqueado
-                  ? "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;color:#aaa;"
-                  : "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
+                // Todos os tons com a MESMA cor do Tom 1 (sem desbotar): mesmo
+                // bloqueado, o texto fica na cor normal — só o checkbox continua
+                // desabilitado pra manter a sequência (Tom 2 exige Tom 1 etc.).
+                const labelStyle = "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
                 const isBalancer = isChecked && tom === balancerTom;
                 const v = isChecked ? vTom(tom) : 0;
                 let rowSum = 0;
