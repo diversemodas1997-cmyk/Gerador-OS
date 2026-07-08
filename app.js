@@ -6281,6 +6281,22 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoEnfesto', e); }
 }
 
+// Salva o valor digitado (à mão) de cada TOM em cada fase de enfesto na folha.
+// As tonalidades podem variar em qualquer fase, então cada fase tem seus campos
+// de Tom 1/2/3 (os mesmos tons ativos no "Total por tamanho"). Texto livre —
+// persiste em progresso.enfestosTons[ordem][tom]; vazio remove a chave.
+async function salvarTomEnfesto(osId, ordem, tom, valor) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.progresso = os.progresso || {};
+  os.progresso.enfestosTons = os.progresso.enfestosTons || {};
+  os.progresso.enfestosTons[ordem] = os.progresso.enfestosTons[ordem] || {};
+  const v = (valor || '').trim();
+  if (v) os.progresso.enfestosTons[ordem][tom] = v;
+  else delete os.progresso.enfestosTons[ordem][tom];
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarTomEnfesto', e); }
+}
+
 // Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
 // Etapas de Produção. Um par único por OS. campo ∈ {ini, fim}.
 async function salvarTempoCorte(osId, campo, valor) {
@@ -6982,6 +6998,23 @@ function renderEnfestoBox(o) {
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
+  // Tons ATIVOS no "Total por tamanho" (Tom 1, 1+2 ou 1+2+3). As tonalidades
+  // podem aparecer em qualquer fase, então cada fase ganha campos em branco
+  // pros mesmos tons — preenchíveis à mão e persistidos por fase.
+  const enfestosTons = (o.progresso && o.progresso.enfestosTons) || {};
+  const tomsSelEnf = tonsEfetivos((o.progresso && o.progresso.totalTamanhoTons) || {});
+  const campoTom = (ord, tom, val) =>
+    `<input type="text" value="${esc(val || '')}" `
+    + `data-enf-tom="${esc(String(ord))}" data-enf-tomnum="${tom}" `
+    + `onchange="salvarTomEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${tom}', this.value)" `
+    + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
+    + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
+  const linhaTons = (ord, tv) => tomsSelEnf.length
+    ? `<div style="display:flex;align-items:center;gap:6px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
+        <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">Tons</span>
+        ${tomsSelEnf.map(tom => `<span style="color:#555;">Tom ${tom}</span>${campoTom(ord, tom, tv[tom])}`).join('')}
+      </div>`
+    : '';
   // Campo de tempo preenchível (Início/Fim) — persiste em progresso.enfestosTempos[ord].
   // Texto livre (não type="time") pra imprimir como linha limpa de preencher à mão
   // e também aceitar digitação na tela. Sincroniza entre usuários via realtime.
@@ -7020,6 +7053,7 @@ function renderEnfestoBox(o) {
       <td style="background:#f7faf8;"></td>
       <td colspan="8" style="padding:2px 5px;background:#f7faf8;">
         ${linhaTempo('Enfesto', ord, 'enfIni', 'enfFim', t)}
+        ${linhaTons(ord, enfestosTons[ord] || {})}
       </td>
     </tr>`;
   }).join('');
@@ -7652,6 +7686,7 @@ window.recarregarDadosDoServidor = recarregarDadosDoServidor;
 window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
+window.salvarTomEnfesto = salvarTomEnfesto;
 window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
 window.salvarValorTotalTamanhoTom = salvarValorTotalTamanhoTom;
 window.propagarValorTomTamanho = propagarValorTomTamanho;
