@@ -6998,11 +6998,11 @@ function renderEnfestoBox(o) {
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
-  // Tons ATIVOS no "Total por tamanho" (Tom 1, 1+2 ou 1+2+3). As tonalidades
-  // podem aparecer em qualquer fase, então cada fase ganha campos em branco
-  // pros mesmos tons — preenchíveis à mão e persistidos por fase.
+  // As tonalidades podem aparecer em qualquer fase, então cada fase SEMPRE
+  // ganha campos em branco pros três tons (Tom 1/2/3), independente do que está
+  // marcado no "Total por tamanho" — preenchíveis à mão e persistidos por fase.
   const enfestosTons = (o.progresso && o.progresso.enfestosTons) || {};
-  const tomsSelEnf = tonsEfetivos((o.progresso && o.progresso.totalTamanhoTons) || {});
+  const tomsSelEnf = [1, 2, 3];
   const campoTom = (ord, tom, val) =>
     `<input type="text" value="${esc(val || '')}" `
     + `data-enf-tom="${esc(String(ord))}" data-enf-tomnum="${tom}" `
