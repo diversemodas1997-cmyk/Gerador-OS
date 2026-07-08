@@ -7048,14 +7048,14 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${L.kg > 0 ? fmtKg(L.kg)+' kg' : '—'}</td>
-    </tr>
+    </tr>` + (L.ehVies ? '' : `
     <tr class="enfesto-tempos">
       <td style="background:#f7faf8;"></td>
       <td colspan="8" style="padding:2px 5px;background:#f7faf8;">
         ${linhaTempo('Enfesto', ord, 'enfIni', 'enfFim', t)}
         ${linhaTons(ord, enfestosTons[ord] || {})}
       </td>
-    </tr>`;
+    </tr>`);
   }).join('');
   const linhaTotal = totalKg > 0
     ? `<tr>
