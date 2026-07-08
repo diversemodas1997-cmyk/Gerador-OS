@@ -1814,6 +1814,31 @@ async function recarregarDadosDoServidor() {
 }
 
 // Handler do botao de Configuracoes: le o codigo digitado, confirma e dispara a copia.
+// Chave do MODELO de um desenho, usada nas operações em massa para só copiar
+// entre desenhos do MESMO modelo E mesma variação. O modeloId já distingue
+// "Camiseta Básica" de "Camiseta Bicolor"/"Camiseta Tricolor" e "Blusa Moletom
+// Básica" de "Blusa Moletom Tricolor" — então camiseta básica NÃO copia para
+// bicolor/tricolor, e moletom básico NÃO copia para moletom tricolor. Se o
+// desenho não tiver modeloId (legado), cai para a parte do desc antes do "|"
+// (ex.: "Camiseta Básica | Preto" -> "camiseta básica").
+function chaveModeloDesenho(d) {
+  if (!d) return '';
+  const id = (d.modeloId || '').trim();
+  if (id) return 'm:' + id;
+  const nomeDesc = ((d.desc || '').split('|')[0] || '').trim().toLowerCase();
+  return nomeDesc ? 'd:' + nomeDesc : '';
+}
+
+// Rótulo amigável do modelo de um desenho (parte do desc antes do "|"), para
+// mensagens. Fallback para o nome do modelo vinculado, senão o modeloId.
+function rotuloModeloDesenho(d) {
+  if (!d) return 'mesmo modelo';
+  const nomeDesc = ((d.desc || '').split('|')[0] || '').trim();
+  if (nomeDesc) return nomeDesc;
+  const m = (STATE.modelos || []).find(x => x.id === d.modeloId);
+  return (m && m.nome) || d.modeloId || 'mesmo modelo';
+}
+
 async function rodarCopiarEtapasParaTodos() {
   const input = document.getElementById('copyEtapasOrigem');
   const codigo = (input?.value || '').trim();
@@ -1822,18 +1847,25 @@ async function rodarCopiarEtapasParaTodos() {
   if (!origem) { toast(`Desenho "${codigo}" nao encontrado`, 'err'); return; }
   const etapas = Array.isArray(origem.etapasNomes) ? origem.etapasNomes : [];
   if (!etapas.length) { toast(`Desenho "${codigo}" nao tem etapas configuradas`, 'err'); return; }
-  const total = STATE.desenhos.length - 1;
+  const chaveOrigem = chaveModeloDesenho(origem);
+  const modeloLabel = rotuloModeloDesenho(origem);
+  const alvos = STATE.desenhos.filter(d => d.id !== origem.id && chaveModeloDesenho(d) === chaveOrigem);
+  if (!alvos.length) {
+    toast(`Nenhum outro desenho do modelo "${modeloLabel}" para receber as etapas`, 'err');
+    return;
+  }
   const ok = confirm(
-    `Copiar as ${etapas.length} etapas do desenho "${codigo}" para os outros ${total} desenhos?\n\n`
+    `Copiar as ${etapas.length} etapas do desenho "${codigo}" para os outros ${alvos.length} desenhos do modelo "${modeloLabel}"?\n\n`
     + `Etapas: ${etapas.join(', ')}\n\n`
-    + `Apenas o campo "etapas" sera sobrescrito nos demais desenhos. Esta acao nao pode ser desfeita automaticamente.`
+    + `Só desenhos do MESMO modelo/variação (${modeloLabel}) são afetados — outros modelos, e as variações bicolor/tricolor, ficam intactos. Apenas o campo "etapas" será sobrescrito. Esta ação não pode ser desfeita automaticamente.`
   );
   if (!ok) return;
   await copiarEtapasEntreDesenhos(codigo);
 }
 
 // Utilitario admin: copia as etapasNomes (e a ordem) de um desenho de origem
-// para todos os demais desenhos cadastrados. Uso: copiarEtapasEntreDesenhos('001').
+// para os demais desenhos DO MESMO MODELO/variação (mesmo modeloId). Uso:
+// copiarEtapasEntreDesenhos('001'). Outros modelos ficam intactos.
 async function copiarEtapasEntreDesenhos(codigoOrigem) {
   if (!exigirAdmin('copiar etapas entre desenhos')) return;
   const origem = STATE.desenhos.find(d => (d.codigo || '').trim() === String(codigoOrigem).trim());
@@ -1846,16 +1878,19 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
     toast(`Desenho "${codigoOrigem}" nao tem etapas configuradas`, 'err');
     return;
   }
+  const chaveOrigem = chaveModeloDesenho(origem);
+  const modeloLabel = rotuloModeloDesenho(origem);
   let alteradas = 0;
   STATE.desenhos.forEach(d => {
     if (d.id === origem.id) return;
+    if (chaveModeloDesenho(d) !== chaveOrigem) return;   // só mesmo modelo/variação
     d.etapasNomes = [...etapasNomes];
     alteradas++;
   });
   await saveState('desenhos');
-  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenhos`, 'ok');
+  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenho(s) do modelo "${modeloLabel}"`, 'ok');
   if (typeof renderDesenhos === 'function') renderDesenhos();
-  return { origem: codigoOrigem, etapas: etapasNomes, alteradas };
+  return { origem: codigoOrigem, modelo: modeloLabel, etapas: etapasNomes, alteradas };
 }
 
 // Ordem CANÔNICA das cores de um desenho = a sequência escrita no desc, após o
