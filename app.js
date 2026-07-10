@@ -6190,7 +6190,14 @@ function renderListaOS() {
     if (nb === Infinity) return -1;
     return nb - na || String(b.os || '').localeCompare(String(a.os || ''));
   });
-  tb.innerHTML = ordenadas.map(o => {
+  // Filtro por número da OS (busca livre; ignora espaços).
+  const buscaEl = document.getElementById('busca-os');
+  const termo = (buscaEl ? buscaEl.value : '').trim().toLowerCase();
+  const filtradas = termo
+    ? ordenadas.filter(o => String(o.os || '').toLowerCase().includes(termo))
+    : ordenadas;
+  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
+  tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
     // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
     const des = (o.desenhoId && STATE.desenhos.find(d => d.id === o.desenhoId))
