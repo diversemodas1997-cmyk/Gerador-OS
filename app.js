@@ -6317,6 +6317,15 @@ async function salvarTempoCorte(osId, campo, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoCorte', e); }
 }
 
+// Salva as observações digitadas direto na folha de OS (caixa "Observações").
+// Grava no mesmo campo o.obs usado pelo formulário de cadastro (f-obs).
+async function salvarObsOS(osId, valor) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  os.obs = (valor || '').trim();
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarObsOS', e); }
+}
+
 // Calcula os tons efetivamente marcados como prefixo consecutivo: Tom 2 so
 // vale se Tom 1 estiver marcado; Tom 3 so vale se Tom 1 e Tom 2 estiverem.
 // Sanitiza dados antigos ou estado inconsistente sem precisar limpar.
@@ -7463,7 +7472,7 @@ function renderPrintSheet(o) {
         <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
         <div class="aviamentos-grid">${aviamentosHtml}</div>
 
-        <div class="obs-box"><strong>Observações</strong>${esc(o.obs || '')}</div>
+        <div class="obs-box"><strong>Observações</strong><textarea class="obs-input" placeholder="Digite as observações..." onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
       </div>
     </div>
 
