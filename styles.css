@@ -796,14 +796,14 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   font-size: 8pt;
   border: 1px solid #000;
   border-top: none;
-  min-height: 30px;
+  min-height: 120px;
   background: #fafafa;
 }
 .obs-box strong { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 2px; letter-spacing: .05em; }
 .obs-input {
   display: block;
   width: 100%;
-  min-height: 48px;
+  min-height: 112px;
   border: none;
   background: transparent;
   resize: vertical;

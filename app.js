@@ -7182,7 +7182,6 @@ function renderPrintSheet(o) {
   const g = o.grade || {};
   const vars_ = o.variantes || [];
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
-  const avs = o.aviamentos || [];
 
   // Variantes
   let variantesHtml = '';
@@ -7197,19 +7196,8 @@ function renderPrintSheet(o) {
   }
 
 
-  // Aviamentos
-  const aviamentosHtml = avs.length
-    ? avs.map(a => {
-        const mat = STATE.materiais.find(m => m.id === a.material);
-        return `<div>
-          <span class="code">${esc(mat?.codigo||'—')}</span><br>
-          <span style="font-size:6.5pt;color:#444;">${esc(mat?.desc||'')}</span>
-          ${a.app?`<br><em style="font-size:6.5pt;">${esc(a.app)}</em>`:''}
-        </div>`;
-      }).join('')
-    : `<div style="grid-column: 1/-1; color:#999; padding:4px 6px; font-style:italic;">Nenhum aviamento cadastrado</div>`;
-
-  // Lista curta de componentes removida — info já aparece em "Componentes — totais por tamanho"
+  // Lista curta de aviamentos/componentes removida — info já aparece em
+  // "Componentes — totais por tamanho" e "Aviamentos — totais por tamanho"
 
   // Resolve nome atual de equipe pelo ID (pega nome + função vigentes, não o snapshot salvo)
   const nomeEquipeAtual = (id, fallback) => {
@@ -7468,11 +7456,9 @@ function renderPrintSheet(o) {
           })()}
         </div>
 
-        <!-- AVIAMENTOS -->
-        <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Aviamentos</div>
-        <div class="aviamentos-grid">${aviamentosHtml}</div>
-
-        <div class="obs-box"><strong>Observações</strong><textarea class="obs-input" placeholder="Digite as observações..." onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
+        <!-- OBSERVAÇÕES -->
+        <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Observações</div>
+        <div class="obs-box"><textarea class="obs-input" placeholder="Digite as observações..." onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
       </div>
     </div>
 
