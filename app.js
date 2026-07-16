@@ -7156,16 +7156,33 @@ function renderPrintSheet(o) {
       .filter(c => c && c !== '—')
   )], desenho);
   const corTexto = coresDesenho.join(' / ').toUpperCase();
-  // Fonte auto-ajustada pra caber na largura do desenho (~230pt úteis) sem
-  // extrapolar: quanto maior o texto, menor a fonte. Nunca abaixo de 20pt.
+  // Fonte auto-ajustada pra caber SEMPRE em uma linha so, inclusive com tres
+  // cores (o CSS poe white-space: nowrap, entao encolher aqui e o que impede
+  // o texto de vazar da caixa).
+  //
+  // Duas coisas foram medidas no Chrome com a fonte real (IBM Plex Sans 800,
+  // letter-spacing .04em) contra os 324px uteis do banner, varrendo os 298
+  // combos possiveis das 12 cores cadastradas (12 de 1 cor + 66 de 2 + 220
+  // de 3):
+  //
+  // - O piso e 8pt, NAO 20pt. O piso de 20 era o bug que quebrava o texto em
+  //   duas linhas: com tres cores a conta pede 11-16pt e o Math.max devolvia
+  //   20 assim mesmo. Hoje o pior caso ("VERMELHO / OFF-WHITE / MOSTARDA")
+  //   sai em 11pt e cabe.
+  //
+  // - A constante e 214, nao 230. Com 230, quatro combos vazavam por 1-4px,
+  //   todos com "MARROM": a conta assume 0.62em por caractere na media, e
+  //   MARROM e quase so glifo largo (M, R, O). 220 foi o maior valor sem
+  //   nenhum estouro; 214 deixa margem pra cores novas com letras largas.
+  //   Se cadastrarem nomes bem mais longos, vale remedir.
   const corFont = corTexto
-    ? Math.max(20, Math.min(30, Math.floor(230 / (corTexto.length * 0.62))))
+    ? Math.max(8, Math.min(30, Math.floor(214 / (corTexto.length * 0.62))))
     : 0;
   // Banner é IRMÃO acima da .desenho-area (não filho) — assim a área do desenho e
   // a imagem ficam idênticas ao original e nada pode escondê-las. Estilos INLINE
   // de propósito, pra funcionar mesmo com um styles.css antigo em cache.
   const corBannerHtml = corTexto
-    ? `<div class="desenho-cor" style="width:100%;box-sizing:border-box;padding:6px 8px;text-align:center;font-weight:800;text-transform:uppercase;letter-spacing:.04em;line-height:1.05;word-break:break-word;color:#000;font-size:${corFont}pt;border-bottom:1.5px solid #000;background:#fff;">${esc(corTexto)}</div>`
+    ? `<div class="desenho-cor" style="width:100%;box-sizing:border-box;padding:6px 8px;text-align:center;font-weight:800;text-transform:uppercase;letter-spacing:.04em;line-height:1.05;white-space:nowrap;color:#000;font-size:${corFont}pt;border-bottom:1.5px solid #000;background:#fff;">${esc(corTexto)}</div>`
     : '';
 
   const g = o.grade || {};

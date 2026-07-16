@@ -643,7 +643,11 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
   text-transform: uppercase;
   letter-spacing: .04em;
   line-height: 1.05;
-  word-break: break-word;
+  /* nowrap: o texto das cores tem que sair numa linha so, mesmo com tres
+     cores. Quem garante que cabe e a fonte auto-ajustada do app.js (ver
+     corFont). Aqui era word-break: break-word, que deixava quebrar em duas
+     linhas em vez de exigir que a fonte encolhesse. */
+  white-space: nowrap;
   color: #000;
   border-bottom: 1.5px solid #000;
   background: #fff;
