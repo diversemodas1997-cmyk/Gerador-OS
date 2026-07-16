@@ -628,18 +628,21 @@ body.pdf-capture .no-print { display: none !important; }
 }
 
 /* Área do desenho técnico */
-/* O flex: 1 aqui e o "para-choque" da coluna: ele absorve o que sobra
-   depois que banner e Observacoes (20mm fixos) pegam a parte deles.
-   A imagem NAO cresce com isso — a altura dela e travada pela LARGURA da
-   coluna (retrato L/A ~0.599 em 82.5mm => ~138mm fixos). O que o flex faz
-   e centralizar a imagem na folga em vez de deixar um buraco embaixo da
-   caixa de Observacoes. Medido nas OS reais: sobra ~14mm, ou seja ~7mm
-   acima e abaixo — discreto.
-   Cuidado: se Observacoes voltar a ter flex: 1, os dois brigam pela folga
-   e a caixa volta a inchar pra 26-29mm.
+/* SEM flex: 1 de proposito — quem absorve a sobra da coluna e a .obs-box.
+   A altura da imagem e travada pela LARGURA da coluna (retrato L/A ~0.599
+   em 82.5mm => ~137mm), entao dar a sobra pra ca e dar espaco a quem nao
+   consegue usar: a area cresce, a imagem fica parada no mesmo tamanho e o
+   resto vira branco — metade acima, metade abaixo, porque o align-items e
+   center.
+   Ja aconteceu duas vezes. Enquanto a sobra era ~11mm (folha com
+   Componentes/Aviamentos impressos) o estrago era 5.5mm de cada lado e
+   passava batido. Quando esses dois blocos sairam da folha impressa, a
+   sobra virou 51.2mm: a area foi de 147.6mm pra 198.8mm, a imagem
+   continuou em 137mm e o vao acima do desenho pulou de 5.5mm pra 31.1mm
+   (medido em 8 OS reais, renderizadas com o app.js e os desenhos de
+   verdade). Se o branco em volta do desenho voltar, e este flex.
    O min-height e so PISO, pro caso de OS sem imagem. */
 .desenho-area {
-  flex: 1;
   padding: 6px;
   display: flex;
   align-items: center;
@@ -856,18 +859,26 @@ body.pdf-capture .no-print { display: none !important; }
 }
 .obs-box strong { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 2px; letter-spacing: .05em; }
 
-/* Observacoes na coluna do desenho: e ela quem absorve a sobra vertical.
-   O desenho nao consegue (altura travada pela largura da coluna), entao
-   sem isso a sobra viraria faixa branca. Aqui ela vira area de escrita.
-   NAO usar min-height: 0 junto com flex: 1 aqui — essa dupla ja colapsou
-   o desenho pra 0 no PDF uma vez (html2canvas tem bug com flexbox). */
-/* flex: none de proposito — com flex: 1 a caixa esticava pra absorver a
-   folga da coluna e saia com 26-29mm nas OS que cabem na A4. Fixa em 20mm
-   (metade dos 40mm de antes) ela para de crescer. Quem absorve a folga
-   agora e a .desenho-area, que centraliza a imagem em vez de deixar buraco
-   embaixo da caixa. */
+/* Observacoes fica na coluna do desenho porque e aqui que sobra espaco, e e
+   ela quem absorve essa sobra: o desenho nao consegue (altura travada pela
+   largura da coluna), entao sem isso a sobra vira faixa branca.
+
+   flex: 1 + min-height: 20mm — os 20mm sao PISO, nao teto. A caixa e a unica
+   coisa da coluna que sabe o que fazer com espaco sobrando (vira area de
+   escrita a mao), entao e ela quem estica.
+   Ja foi flex: none com 20mm fixos, quando Componentes/Aviamentos ainda
+   imprimiam e a sobra era ~11mm: naquele cenario a folga ia pra .desenho-area
+   e custava so ~5.5mm de branco. Com os dois blocos fora da folha impressa a
+   sobra virou 51.2mm e aquele arranjo pos 31.1mm de branco acima do desenho
+   (e outro tanto abaixo). Por isso o flex voltou pra ca.
+   Efeito: no papel a caixa sai com ~71mm; na tela, onde os dois blocos ainda
+   aparecem, ela fica no piso de ~20mm.
+   O valor tambem vai INLINE no app.js e inline VENCE esta folha — mexeu aqui,
+   mexe la (ver o comentario do bloco Observacoes no renderPrintSheet).
+   NAO usar min-height: 0 junto com flex: 1 — essa dupla ja colapsou o desenho
+   pra 0 no PDF (html2canvas 1.4.1 tem bug com flexbox). */
 .sheet-left > .obs-box {
-  flex: none;
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 20mm;
