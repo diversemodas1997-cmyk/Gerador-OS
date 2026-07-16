@@ -520,6 +520,19 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 body.pdf-capture .sheet-scaler { zoom: 1; }
 
+/* .no-print some do papel E do PDF. Precisam existir as DUAS regras: a do
+   @media print (mais abaixo) cobre o Ctrl+P, mas o PDF NAO passa por @media
+   print — ele e uma foto html2canvas dos estilos de tela, tirada com
+   body.pdf-capture ligado. Só a regra do @media print deixaria o bloco no PDF.
+
+   Efeito medido no Chrome (folha com "Componentes — totais por tamanho" de 60
+   linhas): a .sheet e flex column presa em 297mm e NAO estoura — quem cede
+   espaco pro bloco e o .sheet-body (flex: 1), que cai de 995px pra 35px. Com o
+   bloco escondido na captura o .sheet-body volta a 1011px, ou seja, o espaco
+   devolvido vai todo pro desenho e pro enfesto: no PDF a folha sai igual a de
+   uma OS sem componentes. */
+body.pdf-capture .no-print { display: none !important; }
+
 /* GEOMETRIA A4 — fonte unica da verdade.
    210x297mm com padding 8mm E a folha A4, margem inclusa. Isso nao e
    redefinido em @media print nem na captura: e exatamente esse acordo que

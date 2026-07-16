@@ -6773,10 +6773,13 @@ function renderComponentesDetalheBox(o) {
     </tr>`;
   }).join('');
 
+  // no-print: o bloco fica na tela (os numeros alimentam contabilidade e
+  // faturamento do custo da OS) e nao sai no papel nem no PDF. O dado em si
+  // vive em o.componentes, salvo na OS — esconder a tabela nao apaga nada.
   return `
-    <table class="side-table" style="border-top:none;width:100%;">
+    <table class="side-table no-print" style="border-top:none;width:100%;">
       <thead>
-        <tr><th colspan="${4 + colsTam.length + 1}" class="subhead" style="background:#c9e8d0;">Componentes — totais por tamanho</th></tr>
+        <tr><th colspan="${4 + colsTam.length + 1}" class="subhead" style="background:#c9e8d0;">Componentes — totais por tamanho <span style="font-weight:400;font-size:6.5pt;color:#555;text-transform:none;letter-spacing:0;">(só na tela — não sai na impressão)</span></th></tr>
         <tr>
           <th>Componente</th>
           <th>Tecido / Material</th>
