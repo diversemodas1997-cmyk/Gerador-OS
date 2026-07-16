@@ -615,15 +615,15 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
 }
 
 /* Área do desenho técnico */
-/* min-height aqui e PISO, nao tamanho: o flex: 1 faz a area crescer pra
-   preencher a coluna esquerda ate os 297mm da folha, entao na pratica o
-   desenho continua grande quando ha espaco. O piso e 130mm (nao 180mm)
-   porque 180mm somado a header + enfesto + componentes + obs estoura os
-   297mm e empurra pra 2a pagina; 130mm acomoda o desenho com folga sem
-   forcar a folha a crescer. Valor unico pra tela e papel — era essa
-   diferenca (180 na tela / 130 no papel) que mudava o desenho impresso. */
+/* SEM flex: 1 de proposito. A altura do desenho e travada pela LARGURA da
+   coluna: as imagens sao retrato (L/A ~0.599) e ja preenchem 100% dos
+   82.5mm disponiveis, entao a altura fica presa em ~138mm por mais alta
+   que a folha fique. Com flex: 1 a area recebia toda a sobra vertical da
+   coluna (chegava a 215mm) e nao tinha o que fazer com ela — o desenho
+   continuava com 138mm e o resto virava faixa branca. Quem estica agora e
+   a .obs-box logo abaixo, que usa o espaco como area de escrita.
+   O min-height e so PISO, pro caso de OS sem imagem. */
 .desenho-area {
-  flex: 1;
   padding: 6px;
   display: flex;
   align-items: center;
@@ -734,6 +734,12 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
   border: 1px solid #000;
   border-top: none;
 }
+/* Etapas e o ultimo bloco da coluna direita: estica pra fechar o vao ate o
+   pe da folha. Sem isso a coluna terminava no meio e sobrava branco solto
+   embaixo — ainda mais depois que Observacoes saiu daqui pra coluna do
+   desenho. O espaco extra fica DENTRO da caixa com borda (serve pra riscar
+   as etapas), em vez de virar buraco entre blocos. */
+.sheet-right > .etapas-list { flex: 1; }
 .etapas-list .titulo {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 7pt;
@@ -829,6 +835,19 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
   background: #fafafa;
 }
 .obs-box strong { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 2px; letter-spacing: .05em; }
+
+/* Observacoes na coluna do desenho: e ela quem absorve a sobra vertical.
+   O desenho nao consegue (altura travada pela largura da coluna), entao
+   sem isso a sobra viraria faixa branca. Aqui ela vira area de escrita.
+   NAO usar min-height: 0 junto com flex: 1 aqui — essa dupla ja colapsou
+   o desenho pra 0 no PDF uma vez (html2canvas tem bug com flexbox). */
+.sheet-left > .obs-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 40mm;
+}
+.sheet-left > .obs-box .obs-input { flex: 1; }
 .obs-input {
   display: block;
   width: 100%;

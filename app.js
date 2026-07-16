@@ -7269,6 +7269,15 @@ function renderPrintSheet(o) {
           <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
           ${imgHtml}
         </div>
+        <!-- OBSERVAÇÕES — fica aqui, embaixo do desenho, porque e esta coluna
+             que sobra espaco: o desenho tem a altura travada pela largura
+             (~138mm) e nao cresce mais que isso. A .obs-box tem flex: 1 e
+             estica ate o pe da folha, virando area de escrita. Antes ficava
+             na coluna direita e a sobra daqui era so faixa branca.
+             Estilos essenciais tambem inline, pra sobreviver a um
+             styles.css antigo em cache (ver o banner de cor). -->
+        <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-left:none;border-right:none;">Observações</div>
+        <div class="obs-box" style="flex:1;display:flex;flex-direction:column;border-left:none;border-right:none;"><textarea class="obs-input" placeholder="Digite as observações..." style="flex:1;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
       </div>
 
       <div class="sheet-right">
@@ -7445,9 +7454,6 @@ function renderPrintSheet(o) {
           })()}
         </div>
 
-        <!-- OBSERVAÇÕES -->
-        <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-top:none;">Observações</div>
-        <div class="obs-box"><textarea class="obs-input" placeholder="Digite as observações..." onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
       </div>
     </div>
 
