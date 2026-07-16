@@ -615,15 +615,18 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
 }
 
 /* Área do desenho técnico */
-/* SEM flex: 1 de proposito. A altura do desenho e travada pela LARGURA da
-   coluna: as imagens sao retrato (L/A ~0.599) e ja preenchem 100% dos
-   82.5mm disponiveis, entao a altura fica presa em ~138mm por mais alta
-   que a folha fique. Com flex: 1 a area recebia toda a sobra vertical da
-   coluna (chegava a 215mm) e nao tinha o que fazer com ela — o desenho
-   continuava com 138mm e o resto virava faixa branca. Quem estica agora e
-   a .obs-box logo abaixo, que usa o espaco como area de escrita.
+/* O flex: 1 aqui e o "para-choque" da coluna: ele absorve o que sobra
+   depois que banner e Observacoes (20mm fixos) pegam a parte deles.
+   A imagem NAO cresce com isso — a altura dela e travada pela LARGURA da
+   coluna (retrato L/A ~0.599 em 82.5mm => ~138mm fixos). O que o flex faz
+   e centralizar a imagem na folga em vez de deixar um buraco embaixo da
+   caixa de Observacoes. Medido nas OS reais: sobra ~14mm, ou seja ~7mm
+   acima e abaixo — discreto.
+   Cuidado: se Observacoes voltar a ter flex: 1, os dois brigam pela folga
+   e a caixa volta a inchar pra 26-29mm.
    O min-height e so PISO, pro caso de OS sem imagem. */
 .desenho-area {
+  flex: 1;
   padding: 6px;
   display: flex;
   align-items: center;
@@ -845,13 +848,23 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
    sem isso a sobra viraria faixa branca. Aqui ela vira area de escrita.
    NAO usar min-height: 0 junto com flex: 1 aqui — essa dupla ja colapsou
    o desenho pra 0 no PDF uma vez (html2canvas tem bug com flexbox). */
+/* flex: none de proposito — com flex: 1 a caixa esticava pra absorver a
+   folga da coluna e saia com 26-29mm nas OS que cabem na A4. Fixa em 20mm
+   (metade dos 40mm de antes) ela para de crescer. Quem absorve a folga
+   agora e a .desenho-area, que centraliza a imagem em vez de deixar buraco
+   embaixo da caixa. */
 .sheet-left > .obs-box {
-  flex: 1;
+  flex: none;
   display: flex;
   flex-direction: column;
-  min-height: 40mm;
+  min-height: 20mm;
 }
-.sheet-left > .obs-box .obs-input { flex: 1; }
+/* O textarea precisa de piso proprio menor que o da caixa, senao ele e quem
+   manda: o .obs-input base tem min-height: 112px (~29.6mm) e seguraria a
+   caixa em ~32mm por mais que o min-height dela dissesse 20mm.
+   Nao usar min-height: 0 aqui — flex: 1 + min-height: 0 ja colapsou o
+   desenho pra 0 no PDF (bug do html2canvas com flexbox). */
+.sheet-left > .obs-box .obs-input { flex: 1; min-height: 14mm; }
 .obs-input {
   display: block;
   width: 100%;

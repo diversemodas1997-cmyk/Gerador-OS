@@ -7288,13 +7288,16 @@ function renderPrintSheet(o) {
         </div>
         <!-- OBSERVAÇÕES — fica aqui, embaixo do desenho, porque e esta coluna
              que sobra espaco: o desenho tem a altura travada pela largura
-             (~138mm) e nao cresce mais que isso. A .obs-box tem flex: 1 e
-             estica ate o pe da folha, virando area de escrita. Antes ficava
-             na coluna direita e a sobra daqui era so faixa branca.
-             Estilos essenciais tambem inline, pra sobreviver a um
-             styles.css antigo em cache (ver o banner de cor). -->
+             (~138mm) e nao cresce mais que isso. Antes ficava na coluna
+             direita e a sobra daqui era so faixa branca.
+             flex:none + 20mm: com flex:1 a caixa inchava pra 26-38mm comendo
+             toda a folga da coluna. Quem absorve a folga e a .desenho-area.
+             Os valores vao INLINE de proposito (pra sobreviver a um
+             styles.css antigo em cache, ver o banner de cor) — mas atencao:
+             inline vence a folha de estilo, entao mudar so o styles.css nao
+             tem efeito nenhum aqui. Mexeu num, mexe no outro. -->
         <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-left:none;border-right:none;">Observações</div>
-        <div class="obs-box" style="flex:1;display:flex;flex-direction:column;border-left:none;border-right:none;"><textarea class="obs-input" placeholder="Digite as observações..." style="flex:1;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
+        <div class="obs-box" style="flex:none;min-height:20mm;display:flex;flex-direction:column;border-left:none;border-right:none;"><textarea class="obs-input" placeholder="Digite as observações..." style="flex:1;min-height:14mm;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
       </div>
 
       <div class="sheet-right">
