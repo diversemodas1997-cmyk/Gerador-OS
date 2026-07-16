@@ -6824,10 +6824,13 @@ function renderAviamentosDetalheBox(o) {
     </tr>`;
   }).join('');
 
+  // no-print pelo mesmo motivo do bloco de Componentes acima: fica na tela pra
+  // contabilidade/custo da OS e sai do papel e do PDF. Os dados continuam em
+  // o.aviamentos, salvos na OS.
   return `
-    <table class="side-table" style="border-top:none;width:100%;">
+    <table class="side-table no-print" style="border-top:none;width:100%;">
       <thead>
-        <tr><th colspan="${3 + colsTam.length + 1}" class="subhead" style="background:#ffe0b2;">Aviamentos — totais por tamanho</th></tr>
+        <tr><th colspan="${3 + colsTam.length + 1}" class="subhead" style="background:#ffe0b2;">Aviamentos — totais por tamanho <span style="font-weight:400;font-size:6.5pt;color:#555;text-transform:none;letter-spacing:0;">(só na tela — não sai na impressão)</span></th></tr>
         <tr>
           <th>Aviamento</th>
           <th>Aplicação</th>
