@@ -500,8 +500,28 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   padding: 20px 0;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
+/* Ampliacao de leitura da tela. Fica AQUI, no wrapper — nunca na .sheet.
+   A .sheet precisa manter a geometria A4 real (210x297mm), porque e ela
+   que o html2canvas fotografa pra virar o PDF: qualquer zoom nela vaza
+   pra captura. Como o zoom escala o subtree inteiro por igual, as
+   proporcoes e as quebras de linha da folha nao mudam — muda so o tamanho
+   aparente na tela. Durante a captura o body ganha .pdf-capture, isso
+   volta pra 1 e o PDF sai 1:1 com o que esta na tela.
+   Pra ver a folha no tamanho fisico real, e so trocar por 1. */
+.sheet-scaler {
+  zoom: 1.20;
+  flex: none;
+}
+body.pdf-capture .sheet-scaler { zoom: 1; }
+
+/* GEOMETRIA A4 — fonte unica da verdade.
+   210x297mm com padding 8mm E a folha A4, margem inclusa. Isso nao e
+   redefinido em @media print nem na captura: e exatamente esse acordo que
+   faz tela == PDF == papel. Nao sobrescrever width/padding/min-height
+   daqui pra frente. */
 .sheet {
   width: 210mm;
   min-height: 297mm;
@@ -514,7 +534,6 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   line-height: 1.25;
   display: flex;
   flex-direction: column;
-  zoom: 1.20;
   box-sizing: border-box;
 }
 /* Garante que padding/border de tabelas e celulas internas sejam contados
@@ -593,13 +612,20 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 
 /* Área do desenho técnico */
+/* min-height aqui e PISO, nao tamanho: o flex: 1 faz a area crescer pra
+   preencher a coluna esquerda ate os 297mm da folha, entao na pratica o
+   desenho continua grande quando ha espaco. O piso e 130mm (nao 180mm)
+   porque 180mm somado a header + enfesto + componentes + obs estoura os
+   297mm e empurra pra 2a pagina; 130mm acomoda o desenho com folga sem
+   forcar a folha a crescer. Valor unico pra tela e papel — era essa
+   diferenca (180 na tela / 130 no papel) que mudava o desenho impresso. */
 .desenho-area {
   flex: 1;
   padding: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 180mm;
+  min-height: 130mm;
   position: relative;
 }
 /* Barra da cor do desenho técnico — irmã acima da .desenho-area, na .sheet-left.
@@ -819,9 +845,12 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
 /* ============ IMPRESSÃO ============ */
 @media print {
+  /* margem 0: a propria .sheet ja tem padding 8mm, ou seja, ela E a A4
+     com a margem dentro. Uma margem de @page aqui seria margem em cima
+     de margem e encolheria a folha. */
   @page {
     size: A4;
-    margin: 5mm;
+    margin: 0;
   }
   body, html {
     background: #fff;
@@ -830,30 +859,18 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   .app { display: block; }
   aside.sidebar, .page-header, .no-print { display: none !important; }
   main.content { padding: 0; }
-  .print-area { padding: 0; background: #fff; }
+  .print-area { padding: 0; background: #fff; display: block; }
+  /* Anula so a ampliacao de leitura da tela. */
+  .sheet-scaler { zoom: 1; }
+  /* A geometria da .sheet NAO e redefinida aqui de proposito. 210x297mm
+     com padding 8mm ja e a A4 exata — reescrever width/padding/min-height
+     era justamente o que fazia o papel sair diferente da tela. */
   .sheet {
-    width: 200mm;
     box-shadow: none;
-    padding: 0;
-    /* Anula o zoom: 1.20 do base — esse zoom existe SO pra leitura na
-       tela. Em impressao, ele faria a folha renderizar em ~252mm de
-       largura e estourar A4 (200mm uteis com margem 5mm). */
-    zoom: 1;
-    /* CRITICO: anula o min-height: 297mm do base. Em impressao, a
-       area util do A4 e 287mm (apos margem 5mm de cada lado) — manter
-       297mm forca a folha a sempre estourar pra 2a pagina, mesmo
-       quando o conteudo cabe. min-height: auto permite que ela tenha
-       a altura exata do conteudo. */
-    min-height: auto;
     page-break-inside: avoid;
     page-break-after: avoid;
   }
   .sheet > * { page-break-inside: avoid; }
-  /* Reduz o min-height da area do desenho em impressao — 180mm na tela
-     da bom enquadramento, mas em impressao com header + grade + enfesto
-     + componentes + aviamentos, isso joga o total acima de 297mm e
-     forca quebra. 130mm continua acomodando o desenho com folga. */
-  .desenho-area { min-height: 130mm; }
 }
 
 /* ============ RESPONSIVO ============ */
@@ -912,8 +929,10 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
      overflow-x:hidden bloqueava ver o conteudo todo. */
   main.content { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   /* Folha mantem largura natural A4 (210mm) — usuario rola lateral e da
-     pinch-zoom para enxergar detalhes. */
-  .sheet { width: 210mm; max-width: none; zoom: 1; }
+     pinch-zoom para enxergar detalhes. A ampliacao de leitura do desktop
+     sai de cena: no celular quem amplia e o pinch nativo. A geometria da
+     .sheet nao e tocada aqui — ela e a A4 e continua igual em todo lugar. */
+  .sheet-scaler { zoom: 1; }
 }
 
 /* ============ MISC ============ */

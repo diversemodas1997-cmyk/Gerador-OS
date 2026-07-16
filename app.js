@@ -5784,6 +5784,12 @@ async function gerarPdfDaSheet() {
   sheet.style.zoom = '';
   sheet.style.transform = '';
   sheet.style.transformOrigin = '';
+  // Anula a ampliacao de leitura da tela (.sheet-scaler) durante a foto.
+  // Precisa ser via classe: o zoom vem do styles.css, entao limpar o
+  // style inline acima nao alcanca ele. Sem isso o html2canvas 1.4.1 —
+  // que nao implementa CSS zoom, mas mede o elemento ja ampliado —
+  // fotografa a folha em escala errada, e o PDF sai diferente da tela.
+  document.body.classList.add('pdf-capture');
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const canvas = await _html2canvas(sheet, {
@@ -5807,6 +5813,7 @@ async function gerarPdfDaSheet() {
     pdf.addImage(imgData, 'JPEG', x, 0, imgW, imgH, undefined, 'FAST');
     return pdf.output('blob');
   } finally {
+    document.body.classList.remove('pdf-capture');
     sheet.style.zoom = prevZoom;
     sheet.style.transform = prevTransform;
     sheet.style.transformOrigin = prevOrigin;
@@ -6110,63 +6117,45 @@ async function salvarEImprimirEtiquetas() {
   imprimirEtiquetas(data.id);
 }
 
+// Usado so pelo botao "Imprimir / Salvar PDF" (window.print()). O caminho
+// principal — "Salvar e Gerar PDF" — nao passa por aqui: la o jsPDF ja
+// encaixa a foto na A4 sozinho.
+//
+// Esta funcao NAO mexe mais na geometria da .sheet (largura/padding/altura).
+// Ela ja E a A4; reescrever isso era o que fazia o papel sair diferente da
+// tela. O unico ajuste possivel e encolher a folha inteira pelo wrapper.
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
-  if (!sheet) return;
-  // Limpa ajustes inline anteriores (incluindo styles de medição que
-  // possam ter sobrado de uma chamada interrompida).
-  sheet.style.removeProperty('zoom');
-  sheet.style.transform = '';
-  sheet.style.transformOrigin = '';
-  sheet.style.width = '';
-  sheet.style.height = '';
-  sheet.style.padding = '';
-  sheet.style.minHeight = '';
+  const scaler = document.querySelector('.sheet-scaler');
+  if (!sheet || !scaler) return;
 
-  // Mede o conteudo SIMULANDO o estado de impressao — zoom: 1 (anula o
-  // 1.20 da tela), width: 200mm fixo, padding: 0, min-height: auto.
-  // Sem isso, scrollHeight reflete o layout de tela (zoom amplificado +
-  // padding) e o scale calculado nao bate com o que o print engine usa,
-  // o que faz conteudo extrapolar mesmo apos o ajuste.
-  sheet.style.setProperty('zoom', '1');
-  sheet.style.width = '200mm';
-  sheet.style.padding = '0';
-  sheet.style.minHeight = 'auto';
+  // Mede a folha na geometria de saida: .pdf-capture zera a ampliacao de
+  // leitura, entao scrollHeight vem em mm reais de A4.
+  scaler.style.removeProperty('zoom');
+  document.body.classList.add('pdf-capture');
   void sheet.offsetHeight; // forca reflow pra leitura correta
 
   const pxPerMm = 3.7795275591;
-  const maxHpx = 287 * pxPerMm; // A4 util com margem 5mm
+  const maxHpx = 297 * pxPerMm; // A4 cheia — a margem ja esta no padding
   const natH = sheet.scrollHeight;
 
-  // Restaura estado screen (estilos voltam pras regras CSS base).
-  sheet.style.padding = '';
-  sheet.style.minHeight = '';
-  sheet.style.width = '';
-  sheet.style.removeProperty('zoom');
+  document.body.classList.remove('pdf-capture');
 
-  // Se o conteudo (a 200mm de largura) ultrapassa 287mm de altura, aplica
-  // zoom < 1 inline com !important pra sobrepor o zoom: 1 do @media print.
-  // zoom afeta LAYOUT (diferente de transform: scale, que e so visual e
-  // mantem o layout box no tamanho original), entao tabelas, fontes e
-  // quebras de linha encolhem proporcionalmente — o conteudo cabe sem
-  // reflow imprevisivel. 1% de margem de seguranca evita borderline.
-  if (natH > maxHpx) {
-    const scale = (maxHpx / natH) * 0.99;
-    sheet.style.setProperty('zoom', scale.toFixed(4), 'important');
-  }
+  // A .sheet tem min-height 297mm, entao so passa disso quando o conteudo
+  // realmente estourou a pagina. Ai encolhe tudo por igual pra caber em 1
+  // folha (1% de folga evita o caso borderline por arredondamento).
+  // zoom afeta LAYOUT, entao tabelas, fontes e quebras encolhem juntas.
+  const scale = natH > maxHpx ? (maxHpx / natH) * 0.99 : 1;
+  scaler.style.setProperty('zoom', scale.toFixed(4), 'important');
 }
 
 window.addEventListener('beforeprint', ajustarImpressaoParaA4);
 window.addEventListener('afterprint', function() {
-  const sheet = document.querySelector('.sheet');
-  if (!sheet) return;
-  sheet.style.removeProperty('zoom');
-  sheet.style.transform = '';
-  sheet.style.transformOrigin = '';
-  sheet.style.width = '';
-  sheet.style.height = '';
-  sheet.style.padding = '';
-  sheet.style.minHeight = '';
+  const scaler = document.querySelector('.sheet-scaler');
+  if (!scaler) return;
+  // Devolve a ampliacao de leitura da tela (volta pra regra do styles.css).
+  scaler.style.removeProperty('zoom');
+  document.body.classList.remove('pdf-capture');
 });
 
 /* ========================================================= */

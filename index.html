@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-07-15b">
+<link rel="stylesheet" href="styles.css?v=2026-07-16a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -611,8 +611,12 @@
         </div>
       </div>
       <div class="print-area">
-        <div class="sheet" id="print-sheet">
-          <!-- conteúdo gerado por JS -->
+        <!-- .sheet-scaler carrega a ampliação de leitura da tela; a .sheet
+             fica com a geometria A4 real, que é o que vira PDF. -->
+        <div class="sheet-scaler">
+          <div class="sheet" id="print-sheet">
+            <!-- conteúdo gerado por JS -->
+          </div>
         </div>
       </div>
     </section>
@@ -768,6 +772,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-15b"></script>
+<script src="app.js?v=2026-07-16a"></script>
 </body>
 </html>
