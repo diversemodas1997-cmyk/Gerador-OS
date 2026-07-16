@@ -503,16 +503,19 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   align-items: flex-start;
 }
 
-/* Ampliacao de leitura da tela. Fica AQUI, no wrapper — nunca na .sheet.
-   A .sheet precisa manter a geometria A4 real (210x297mm), porque e ela
-   que o html2canvas fotografa pra virar o PDF: qualquer zoom nela vaza
-   pra captura. Como o zoom escala o subtree inteiro por igual, as
-   proporcoes e as quebras de linha da folha nao mudam — muda so o tamanho
-   aparente na tela. Durante a captura o body ganha .pdf-capture, isso
-   volta pra 1 e o PDF sai 1:1 com o que esta na tela.
-   Pra ver a folha no tamanho fisico real, e so trocar por 1. */
+/* zoom: 1 — a folha aparece na tela no tamanho A4 real (210x297mm), igual
+   ao PDF e ao papel. NAO por ampliacao de leitura aqui: um zoom de 1.20
+   fazia a folha ser exibida em 252x356mm, 20% maior que a A4 em cada lado.
+   Quem precisa enxergar detalhe usa o zoom do navegador (Ctrl + / Ctrl -),
+   que amplia sem mentir sobre o tamanho da folha.
+
+   O wrapper continua existindo porque e o unico ponto onde se pode escalar
+   a folha: a .sheet nao pode receber zoom (ela E a geometria A4 que o
+   html2canvas fotografa — zoom nela vaza pra captura). Quem usa isso e o
+   ajustarImpressaoParaA4, que encolhe o wrapper quando o conteudo estoura
+   297mm. E o .pdf-capture zera qualquer escala residual antes da foto. */
 .sheet-scaler {
-  zoom: 1.20;
+  zoom: 1;
   flex: none;
 }
 body.pdf-capture .sheet-scaler { zoom: 1; }
@@ -928,11 +931,8 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
      pronta com 210mm) e zoom pinch nativo do navegador. Antes
      overflow-x:hidden bloqueava ver o conteudo todo. */
   main.content { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  /* Folha mantem largura natural A4 (210mm) — usuario rola lateral e da
-     pinch-zoom para enxergar detalhes. A ampliacao de leitura do desktop
-     sai de cena: no celular quem amplia e o pinch nativo. A geometria da
-     .sheet nao e tocada aqui — ela e a A4 e continua igual em todo lugar. */
-  .sheet-scaler { zoom: 1; }
+  /* A folha nao precisa de regra propria aqui: ela ja e A4 (210mm) em
+     tamanho real em toda tela, e no celular quem amplia e o pinch nativo. */
 }
 
 /* ============ MISC ============ */
