@@ -3226,11 +3226,19 @@ function _expSugestaoVolumes(o) {
 }
 
 /* ------- seleção da OS pelo checklist da folha de OS ------- */
-// Marcar "Expedição" no checklist da folha de OS é o que seleciona a OS pra
-// ser expedida — ela cai sozinha na próxima janela. Trocar a janela é depois,
-// no planejamento (moverCargaExp).
+// Marcar "Ensaque" no checklist da folha de OS é o que seleciona a OS pra ser
+// expedida: ensacada = pacote pronto pra embarcar. Ela cai sozinha na próxima
+// janela; trocar a janela é depois, no planejamento (moverCargaExp).
+//
+// Ensaque não tem campo de estoque próprio (não está em FASES_ESTOQUE), então
+// a detecção é pela caixinha marcada — não por faseAtualOS, que só enxerga
+// etapas com campo. O volume de peças da OS é o mesmo do Estoque de corte
+// (ambos = soma dos componentes, via _expPecasOS).
 
-const EXP_ETAPA_RE = /expedi/i;
+const ENSAQUE_ETAPA_RE = /ensaque/i;
+
+// A OS está ensacada? (caixinha "Ensaque" marcada no checklist da folha.)
+function osEnsacada(o) { return osEtapaMarcada(o, ENSAQUE_ETAPA_RE); }
 
 // A carga guarda a data ORIGINAL da ocorrência; se ela foi remarcada, a data
 // em que a expedição de fato acontece é outra.
@@ -3247,7 +3255,7 @@ function _expProximaOcorrencia() {
 }
 
 async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
-  if (!os || !EXP_ETAPA_RE.test(etapaNome || '')) return;
+  if (!os || !ENSAQUE_ETAPA_RE.test(etapaNome || '')) return;
   if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
   const num = (os.os || '').toString().trim();
 
@@ -3377,7 +3385,7 @@ function renderExpedicaoPlano() {
 
   const comoFunciona = `
     <div class="info-box no-print" style="font-size:12px;">
-      As OSs entram aqui sozinhas: marcar <b>Expedição</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai.
+      As OSs entram aqui sozinhas: marcar <b>Ensaque</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai.
     </div>`;
 
   const resumo = `
@@ -3462,18 +3470,18 @@ function renderExpedicaoPlano() {
       </div>
     </div>`;
 
-  // OSs que chegaram na Expedição e ninguém colocou em carga nenhuma. É a
-  // lista que evita esquecer OS pronta parada no campo.
+  // OSs ensacadas (prontas) que ninguém colocou em carga nenhuma. É a lista
+  // que evita esquecer OS pronta parada no campo.
   const alocadasSempre = new Set((STATE.expedicaoCargas || []).map(c => c.osId));
   const pendentes = (STATE.ordens || [])
-    .filter(o => faseAtualOS(o) === 3 && !alocadasSempre.has(o.id))
+    .filter(o => osEnsacada(o) && !alocadasSempre.has(o.id))
     .map(o => ({ o, pecas: _expPecasOS(o) }))
     .filter(x => x.pecas > 0)
     .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
   const pendentesHtml = pendentes.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">OSs em expedição sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Expedição</b> marcada mas não entraram em nenhuma expedição — nem passada, nem planejada. Acontece com OS marcada antes de existir janela cadastrada. Use <b>alocar</b> para pô-las numa expedição.</div>
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs ensacadas sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Ensaque</b> marcada mas não entraram em nenhuma expedição — nem passada, nem planejada. Acontece com OS ensacada antes de existir janela cadastrada. Use <b>alocar</b> para pô-las numa expedição.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
@@ -3604,14 +3612,14 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     return `<option value="${esc(val)}" ${val === selecionada ? 'selected' : ''}>${esc(label)}</option>`;
   }).join('')).join('');
 
-  // OSs: as que estão na Expedição primeiro (o caso normal); as demais ficam
+  // OSs: as ensacadas (prontas pra embarcar) primeiro; as demais ficam
   // disponíveis porque adiantar carga de OS que ainda vai chegar é legítimo.
-  const naExpedicao = [], outras = [];
+  const ensacadas = [], outras = [];
   (STATE.ordens || []).forEach(o => {
     const pecas = _expPecasOS(o);
     if (!(pecas > 0)) return;
     const label = `${o.os || '(sem nº)'} · ${o.modeloNome || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
-    (faseAtualOS(o) === 3 ? naExpedicao : outras).push({ id: o.id, label });
+    (osEnsacada(o) ? ensacadas : outras).push({ id: o.id, label });
   });
   const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
   const optOS = arr => ordena(arr).map(x => `<option value="${esc(x.id)}" ${x.id === osIdPre ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
@@ -3630,7 +3638,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         ${cargaEdit ? '' : `<input type="search" id="ec-os-busca" oninput="_expFiltrarOS()" placeholder="Buscar pelo número da OS ou modelo…" style="margin-bottom:6px;" autocomplete="off">`}
         <select id="ec-os" onchange="_expAtualizarSugestaoVolumes()">
           <option value="">— selecione —</option>
-          ${naExpedicao.length ? `<optgroup label="Em expedição agora">${optOS(naExpedicao)}</optgroup>` : ''}
+          ${ensacadas.length ? `<optgroup label="Ensacadas (prontas)">${optOS(ensacadas)}</optgroup>` : ''}
           ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
         </select>
         ${cargaEdit ? '' : '<div class="field-hint" id="ec-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>'}
