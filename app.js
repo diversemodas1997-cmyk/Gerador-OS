@@ -1358,6 +1358,10 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             ${optsVr}
           </select>
         </div>
+        <div class="field"><label>Volume de pacotes — peças por pacote</label>
+          <input type="number" min="0" step="1" id="m-grade-ppp" value="${esc(item.pecasPorPacote || '')}" placeholder="Ex.: 12">
+          <div class="field-hint">Quantas peças cabem num pacote desta grade. É o que sugere os volumes quando a OS entra na expedição. Em branco usa o padrão de <b>Unidades e carga</b> (hoje: ${_expNum(expCfg().pecasPorVolume, 0) || 'nenhum'}).</div>
+        </div>
       </div>
       <div style="margin-top:10px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
@@ -2080,6 +2084,9 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
+    // Peças por pacote desta grade. 0/vazio = herda o padrão global da
+    // expedição (peças por pacote 0 não significaria nada).
+    item.pecasPorPacote = parseInt(v('m-grade-ppp')) || 0;
     item.tamanhos = {};
     ['p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
@@ -3197,9 +3204,23 @@ function _expRotaTexto(perna) {
   return perna === 'ida' ? `${cfg.unidadeA} → ${cfg.unidadeB}` : `${cfg.unidadeB} → ${cfg.unidadeA}`;
 }
 
+// Peças por pacote que valem pra esta OS: o valor da GRADE dela manda; em
+// branco (ou 0) cai no padrão global de Unidades e carga. Lê a grade viva por
+// gradeId — editar a grade passa a valer pras próximas sugestões, igual ao
+// resto do programa.
+// Retorna { ppv, origem: 'grade'|'padrao'|'nenhum' }.
+function _expPecasPorPacoteDaOS(o) {
+  const g = (o && o.gradeId) ? (STATE.grades || []).find(x => x.id === o.gradeId) : null;
+  const daGrade = parseInt(g && g.pecasPorPacote) || 0;
+  if (daGrade > 0) return { ppv: daGrade, origem: 'grade' };
+  const global = Number(expCfg().pecasPorVolume) || 0;
+  return global > 0 ? { ppv: global, origem: 'padrao' } : { ppv: 0, origem: 'nenhum' };
+}
+
 function _expSugestaoVolumes(o) {
-  const ppv = Number(expCfg().pecasPorVolume) || 0;
-  if (!o || ppv <= 0) return '';
+  if (!o) return '';
+  const { ppv } = _expPecasPorPacoteDaOS(o);
+  if (ppv <= 0) return '';
   const pecas = _expPecasOS(o);
   return pecas > 0 ? String(Math.ceil(pecas / ppv)) : '';
 }
@@ -3631,12 +3652,17 @@ function _expAtualizarSugestaoVolumes() {
   const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
   if (!o) { if (info) info.textContent = 'Selecione a OS para ver as peças.'; return; }
   const pecas = _expPecasOS(o);
-  const ppv = Number(expCfg().pecasPorVolume) || 0;
+  const { ppv, origem } = _expPecasPorPacoteDaOS(o);
   const sug = _expSugestaoVolumes(o);
   if (campo && !campo.value && sug) campo.value = sug;
   if (info) {
+    const fonte = origem === 'grade'
+      ? `${ppv} peças por pacote da grade`
+      : `${ppv} peças por pacote (padrão)`;
     info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
-      + (ppv > 0 ? ` Sugestão de <b>${esc(sug)} volume(s)</b> a ${ppv} peças por volume.` : ' Configure "peças por volume" em <b>Unidades e carga</b> para sugerir os volumes.');
+      + (ppv > 0
+        ? ` Sugestão de <b>${esc(sug)} volume(s)</b> a ${esc(fonte)}.`
+        : ' Preencha <b>peças por pacote</b> no cadastro da grade (ou o padrão em <b>Unidades e carga</b>) para sugerir os volumes.');
   }
 }
 
@@ -3651,7 +3677,7 @@ function abrirModalExpConfig() {
       <div class="field"><label>Unidade B (destino da ida) *</label><input type="text" id="ex-uni-b" value="${esc(cfg.unidadeB)}" placeholder="Ex.: Loja / Depósito"></div>
       ${_expCampoNum('ex-vol-min', 'Volume mínimo padrão', _expNum(cfg.volMin, 0) || '', 'Carga planejada abaixo disso é sinalizada. 0 ou vazio = sem mínimo.')}
       ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
-      ${_expCampoNum('ex-ppv', 'Peças por volume (sugestão)', _expNum(cfg.pecasPorVolume, 0) || '', 'Só sugere os volumes ao alocar uma OS. 0 ou vazio = não sugere.')}
+      ${_expCampoNum('ex-ppv', 'Peças por pacote (padrão)', _expNum(cfg.pecasPorVolume, 0) || '', 'Vale para grades sem "peças por pacote" próprio. Só sugere os volumes. 0 ou vazio = não sugere.')}
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">Os limites valem por <b>perna</b> (ida e volta contam separado) e podem ser sobrescritos em cada janela. A expedição é sempre interna, entre estas duas unidades.</div>`;
   openModal('modal-exp');
@@ -4251,7 +4277,9 @@ function renderGrades() {
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
     const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
-    return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}</td>
+    const ppp = parseInt(g.pecasPorPacote) || 0;
+    const pppBadge = ppp > 0 ? ` <span class="badge" title="Peças por pacote — sugere os volumes na expedição">${ppp} pç/pacote</span>` : '';
+    return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${pppBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   };
