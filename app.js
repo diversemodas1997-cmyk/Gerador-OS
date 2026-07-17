@@ -7010,8 +7010,13 @@ function dadosEtiquetaParaOS(o) {
     .trim()
     .toUpperCase();
 
-  // 1 etiqueta por TAMANHO ATIVO da grade; minimo 1 pra nao bloquear impressao.
-  const numEtiquetas = Math.max(1, sizesAtivos.length);
+  // Uma etiqueta por PACOTE — mesma regra do volume de expedição: 1 pacote por
+  // vaga de tamanho da grade (tamanho repetido conta as vezes que aparece) + 1
+  // pacote de reposição. Reusa _expTotalTamanhosGrade pra etiqueta e volume
+  // nunca divergirem. Mínimo 1 pra não bloquear impressão de OS sem grade.
+  // Ex.: P-G1-G2 (3 tamanhos) = 4 etiquetas; P ao G3 (7) = 8; 2M-4G-2GG = 9.
+  const nTamGrade = _expTotalTamanhosGrade(o);
+  const numEtiquetas = nTamGrade > 0 ? nTamGrade + 1 : 1;
 
   return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas };
 }
