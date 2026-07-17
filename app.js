@@ -6763,6 +6763,10 @@ function gerarPdfEtiquetas(dados) {
       { t: `LOTE: ${i + 1}/${total}`, s: 1 },
       destaque
     ];
+    // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
+    if (!ehReposicao && dados.composicao) {
+      dados.composicao.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
+    }
 
     // Mede a 10pt e escala linearmente pra achar o maior fontSize base que cabe
     // em largura (cada linha ocupa largura × sua escala) e altura (soma das
@@ -6957,6 +6961,14 @@ async function salvarEImprimir() {
 // Conteúdo do pacote de reposição (a última etiqueta). Texto do usuário.
 const ETIQUETA_CONTEUDO_REPOSICAO = 'Viés/Reposição/Ribana';
 
+// Composição de um pacote de blusa de MOLETOM (360 peças = 36 blusas). Sai em
+// cada etiqueta de pacote de moletom (não na de reposição). Duas linhas,
+// agrupadas por quantidade (as de 36 e as de 72). Camiseta não recebe lista.
+const ETIQUETA_COMPOSICAO_MOLETOM = [
+  'Frente 36 · Costa 36 · Bolso 36 · Barra 36',
+  'Mangas 72 · Capuz 72 · Punhos 72'
+];
+
 // Tamanhos da grade expandidos em PACOTES: um item por vaga de tamanho, na
 // ordem P..G3, repetindo o tamanho conforme a quantidade da grade. Cada pacote
 // leva um só tamanho; quantidade 2 num tamanho vira dois pacotes dele.
@@ -7045,25 +7057,30 @@ function dadosEtiquetaParaOS(o) {
   const temReposicao = tamanhosPacotes.length > 0;
   const numEtiquetas = temReposicao ? tamanhosPacotes.length + 1 : 1;
 
-  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao };
+  // Moletom: cada etiqueta de pacote (de tamanho) recebe a lista de composição.
+  const composicao = temMoletom ? ETIQUETA_COMPOSICAO_MOLETOM : null;
+
+  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao, composicao };
 }
 
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
-  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao } = dadosEtiquetaParaOS(o);
+  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao, composicao } = dadosEtiquetaParaOS(o);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   // Cada etiqueta é um pacote: as de tamanho mostram o SEU tamanho em destaque
-  // (fonte dobrada); a última é o pacote de reposição, com o conteúdo.
+  // (fonte dobrada); a última é o pacote de reposição, com o conteúdo. Moletom:
+  // as etiquetas de tamanho recebem a lista de composição do pacote.
+  const compHtml = composicao ? composicao.map(c => `<div class="comp">${escEt(c)}</div>`).join('') : '';
   const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
     const ehRep = temReposicao && i === numEtiquetas - 1;
     const destaque = ehRep
       ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
-      : `<div class="big">TAM: ${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>`;
+      : `<div class="big">TAM: ${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>${compHtml}`;
     return `
     <div class="page">
       <div class="label">
@@ -7164,6 +7181,16 @@ function imprimirEtiquetas(osId) {
     margin-top: 0.4mm;
   }
   .label .big.rep { font-size: 15pt; }  /* conteúdo é texto mais longo */
+  /* Composição do pacote de moletom — linhas pequenas abaixo do tamanho. */
+  .label .comp {
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   @media print {
     .toolbar { display: none !important; }
     .page { margin: 0; }
