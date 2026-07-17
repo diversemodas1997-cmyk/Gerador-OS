@@ -6767,12 +6767,13 @@ function gerarPdfEtiquetas(dados) {
     const ehReposicao = dados.temReposicao && i === total - 1;
     const destaque = ehReposicao
       ? { t: ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
-      : { t: `TAM: ${tams[i] || dados.tam}`, s: 2, c: true }; // tamanho do pacote, dobro
+      : { t: tams[i] || dados.tam, s: 2, c: true };           // SÓ o tamanho do pacote, dobro
     const linhas = [
       { t: String(dados.marca || ''), s: 1, c: true },
       { t: `OS: ${dados.os}`, s: 1 },
       { t: `MODELO: ${dados.modelo}`, s: 1 },
       { t: `QTDE: ${dados.qtde}`, s: 1 },
+      { t: `TAM: ${dados.tam}`, s: 1 },                       // TODOS os tamanhos da grade, normal
       { t: `COR: ${dados.cor}`, s: 1 },
       { t: `LOTE: ${i + 1}/${total}`, s: 1 },
       destaque
@@ -7099,7 +7100,7 @@ function imprimirEtiquetas(osId) {
     const ehRep = temReposicao && i === numEtiquetas - 1;
     const destaque = ehRep
       ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
-      : `<div class="big">TAM: ${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>${compHtml}`;
+      : `<div class="big">${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>${compHtml}`;
     return `
     <div class="page">
       <div class="label">
@@ -7107,6 +7108,7 @@ function imprimirEtiquetas(osId) {
         <div class="row">OS: ${escEt(os)}</div>
         <div class="row">MODELO: ${escEt(desenhoNome)}</div>
         <div class="row">QTDE: ${escEt(qtde)}</div>
+        <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
         <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
         ${destaque}
