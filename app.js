@@ -4684,33 +4684,14 @@ function aplicarVinculosDesenho() {
     aplicarFiltroTecidosPorModelo();
     atualizarResponsabilidadesOS();
     atualizarCalculosEnfesto();
-    // Aplica componentes padrão do desenho — nova estrutura com tecido+cor+qtd por componente
-    const compsDesenho = Array.isArray(d.componentes) && d.componentes.length
-      ? d.componentes
-      : (d.componentesIds || []).map(id => ({
-          componenteId: id,
-          nome: (STATE.componentes.find(x => x.id === id) || {}).nome || '',
-          tecidoId: d.tecidoPadraoId || '',
-          corId: d.corPrincipalId || '',
-          qtdPorPeca: 1
-        }));
+    // Aplica componentes padrão do desenho — mesma fonte que o botão "Repor
+    // componentes do desenho" usa (_componentesDoDesenho), pra não divergirem.
+    const compsDesenho = _componentesDoDesenho(d);
     if (compsDesenho.length) {
       const cont = document.getElementById('componentes-rows');
       if (cont) {
         cont.innerHTML = '';
-        compsDesenho.forEach(c => {
-          // Lookup robusto: por ID e, se falhar, por nome
-          const cad = STATE.componentes.find(x => x.id === c.componenteId)
-                   || (c.nome ? STATE.componentes.find(x => x.nome === c.nome) : null);
-          // Prioriza a cor escolhida NO DESENHO pra este componente; cor1Id do cadastro é fallback
-          const corPrincipal = c.corId || cad?.cor1Id || '';
-          addComponenteRow({
-            nome: c.nome || cad?.nome || '',
-            material: c.tecidoId ? 'T:' + c.tecidoId : '',
-            cor: corPrincipal,
-            qtdPorPeca: c.qtdPorPeca != null ? c.qtdPorPeca : 1
-          });
-        });
+        compsDesenho.forEach(c => addComponenteRow(c));
         aplicou = true;
       }
     }
@@ -5978,6 +5959,52 @@ function previewDesenhoSelecionado() {
   const d = STATE.desenhos.find(x => x.id === id);
   pv.innerHTML = d?.img ? `<img src="${d.img}">` : '<span>Sem imagem</span>';
 }
+
+// Componentes de um desenho, normalizados: a estrutura nova (d.componentes, com
+// tecido+cor+qtd) tem prioridade; a antiga (só d.componentesIds) é convertida.
+// Fonte única usada tanto ao aplicar o desenho quanto ao repor manualmente.
+function _componentesDoDesenho(d) {
+  if (!d) return [];
+  const brutos = Array.isArray(d.componentes) && d.componentes.length
+    ? d.componentes
+    : (d.componentesIds || []).map(id => ({
+        componenteId: id,
+        nome: (STATE.componentes.find(x => x.id === id) || {}).nome || '',
+        tecidoId: d.tecidoPadraoId || '',
+        corId: d.corPrincipalId || '',
+        qtdPorPeca: 1
+      }));
+  return brutos.map(c => {
+    const cad = STATE.componentes.find(x => x.id === c.componenteId)
+             || (c.nome ? STATE.componentes.find(x => x.nome === c.nome) : null);
+    return {
+      nome: c.nome || cad?.nome || '',
+      material: c.tecidoId ? 'T:' + c.tecidoId : '',
+      cor: c.corId || cad?.cor1Id || '',
+      qtdPorPeca: c.qtdPorPeca != null ? c.qtdPorPeca : 1
+    };
+  });
+}
+
+// Repõe as linhas de Componentes a partir do desenho técnico já selecionado na
+// OS. Serve para quando o desenho ganhou componentes DEPOIS de a OS ter sido
+// salva: editar o desenho não altera OSs gravadas, então elas ficam com a
+// seção vazia (e, por consequência, com 0 peças — somem da expedição e do
+// Estoque de corte). Um clique aqui puxa os componentes do desenho vivo.
+function reporComponentesDoDesenho() {
+  const id = document.getElementById('f-desenho')?.value;
+  if (!id) return toast('Selecione um desenho técnico primeiro', 'err');
+  const d = STATE.desenhos.find(x => x.id === id);
+  if (!d) return toast('Desenho não encontrado', 'err');
+  const comps = _componentesDoDesenho(d);
+  if (!comps.length) return toast('O desenho selecionado não tem componentes cadastrados', 'err');
+  const cont = document.getElementById('componentes-rows');
+  if (!cont) return;
+  cont.innerHTML = '';
+  comps.forEach(c => addComponenteRow(c));
+  toast(`${comps.length} componente(s) repostos do desenho ${d.codigo || ''}`.trim() + '. Confira e salve a OS.', 'ok');
+}
+window.reporComponentesDoDesenho = reporComponentesDoDesenho;
 
 
 /* ========================================================= */
