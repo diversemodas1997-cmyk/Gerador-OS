@@ -3196,29 +3196,43 @@ function _expRotaTexto(perna) {
   return perna === 'ida' ? `${cfg.unidadeA} → ${cfg.unidadeB}` : `${cfg.unidadeB} → ${cfg.unidadeA}`;
 }
 
-// Nº de "vagas" de tamanho da grade = soma das quantidades por tamanho
-// (P, M, G…; um tamanho com quantidade 2 conta 2 — vira 2 pacotes). É a base
-// do volume de expedição. Prefere a grade viva (como a folha impressa),
-// caindo no snapshot salvo na OS.
-function _expTotalTamanhosGrade(o) {
-  const somar = obj => ['p','m','g','gg','g1','g2','g3']
-    .reduce((s, k) => s + (parseInt(obj && obj[k]) || 0), 0);
-  if (o && o.gradeId) {
-    const g = (STATE.grades || []).find(x => x.id === o.gradeId);
-    if (g && g.tamanhos) return somar(g.tamanhos);
-  }
-  if (o && o.grade) {
-    return (o.grade.total != null) ? (parseInt(o.grade.total) || 0) : somar(o.grade);
-  }
-  return 0;
+// A OS é de blusa de moletom? (algum tecido da OS é categoria 'moletom'.)
+// Muda a regra de pacotes: moletom conta 1 por tamanho distinto; camiseta
+// conta 1 por unidade (soma das quantidades).
+function _osEhMoletom(o) {
+  if (!o) return false;
+  const ehMol = tecId => {
+    const t = (STATE.tecidos || []).find(x => x.id === tecId);
+    return !!t && categoriaEfetivaTecido(t) === 'moletom';
+  };
+  return (o.fases || []).some(f => ehMol(f.tecidoId))
+      || (o.tecidos || []).some(t => ehMol(t.tecidoId));
 }
 
-// Volume (pacotes) de uma OS: um pacote por vaga de tamanho da grade + 1 pacote
-// de tecido para reposição de peças com defeito. Regra do usuário, igual para
-// camiseta e moletom (a diferença de "quantas peças cabem por pacote" já está
-// embutida em como a grade é montada — cada vaga = 1 pacote).
-// Ex.: P ao G3 (7 tamanhos) → 7 + 1 = 8;  grade 2M-4G-2GG (soma 8) → 8 + 1 = 9;
-//      P-G1-G2 (3 tamanhos) → 3 + 1 = 4.  Não depende de peças nem de camadas.
+// Nº de "vagas" de tamanho da grade = base do volume de expedição (e das
+// etiquetas). Duas regras por tipo de produto:
+//   • Camiseta: 1 pacote por UNIDADE de tamanho (soma das quantidades; 2M = 2).
+//   • Moletom : 1 pacote por TAMANHO distinto (a quantidade/multiplicador não
+//     multiplica os pacotes — ex.: "2X P ao G3" = 7, não 14).
+// Prefere a grade viva (como a folha impressa), caindo no snapshot salvo na OS.
+function _expTotalTamanhosGrade(o) {
+  const keys = ['p','m','g','gg','g1','g2','g3'];
+  let tam = null;
+  if (o && o.gradeId) {
+    const g = (STATE.grades || []).find(x => x.id === o.gradeId);
+    if (g && g.tamanhos) tam = g.tamanhos;
+  }
+  if (!tam && o && o.grade) tam = o.grade;
+  if (!tam) return 0;
+  if (_osEhMoletom(o)) return keys.filter(k => (parseInt(tam[k]) || 0) > 0).length;
+  return keys.reduce((s, k) => s + (parseInt(tam[k]) || 0), 0);
+}
+
+// Volume (pacotes) de uma OS: nº de vagas de tamanho (_expTotalTamanhosGrade,
+// que já aplica a regra por tipo) + 1 pacote de reposição. Não depende de peças
+// nem de camadas.
+// Ex. camiseta: P-G1-G2 → 3+1=4; 2M-4G-2GG → 8+1=9.
+// Ex. moletom : P ao G3 → 7+1=8; 2X P ao G3 → 7+1=8; 2M-4G-2GG → 3+1=4.
 function _expSugestaoVolumes(o) {
   const nTam = _expTotalTamanhosGrade(o);
   return nTam > 0 ? String(nTam + 1) : '';
@@ -6970,9 +6984,11 @@ const ETIQUETA_COMPOSICAO_MOLETOM = [
 ];
 
 // Tamanhos da grade expandidos em PACOTES: um item por vaga de tamanho, na
-// ordem P..G3, repetindo o tamanho conforme a quantidade da grade. Cada pacote
-// leva um só tamanho; quantidade 2 num tamanho vira dois pacotes dele.
-// Ex.: P-G1-G2 → ['P','G1','G2'];  2M-4G-2GG → ['M','M','G','G','G','G','GG','GG'].
+// ordem P..G3. Segue a mesma regra por tipo de _expTotalTamanhosGrade:
+//   • Camiseta: repete o tamanho conforme a quantidade (2M → 'M','M').
+//   • Moletom : 1 item por tamanho distinto (multiplicador não repete pacote).
+// Ex. camiseta: 2M-4G-2GG → ['M','M','G','G','G','G','GG','GG'].
+// Ex. moletom : 2X P ao G3 → ['P','M','G','GG','G1','G2','G3'].
 // Prefere a grade viva (como a folha e o volume), caindo no snapshot da OS.
 function _tamanhosDaGradeExpandido(o) {
   const ordem = ['p','m','g','gg','g1','g2','g3'];
@@ -6983,10 +6999,13 @@ function _tamanhosDaGradeExpandido(o) {
     if (g && g.tamanhos) tam = g.tamanhos;
   }
   if (!tam && o && o.grade) tam = o.grade;
+  const umPorTamanho = _osEhMoletom(o);
   const out = [];
   if (tam) ordem.forEach(k => {
     const q = parseInt(tam[k]) || 0;
-    for (let i = 0; i < q; i++) out.push(rotulo[k]);
+    if (q <= 0) return;
+    if (umPorTamanho) out.push(rotulo[k]);
+    else for (let i = 0; i < q; i++) out.push(rotulo[k]);
   });
   return out;
 }
