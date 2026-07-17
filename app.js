@@ -3817,7 +3817,7 @@ function renderPrintPlanoExpedicao() {
   sheet.innerHTML = `
     <div class="exp-print-head">
       <div>
-        <div class="tit">PLANO DE EXPEDIÇÃO</div>
+        <div class="tit">ORDEM DE EXPEDIÇÃO OE</div>
         <div class="sub">Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · expedição interna, ida e volta</div>
       </div>
       <div class="meta">
