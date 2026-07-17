@@ -3172,11 +3172,14 @@ function resumoPernaExpedicao(oc, perna) {
   }).sort((a, b) => String(a.osNumero).localeCompare(String(b.osNumero), undefined, { numeric: true }));
   const volumes = itens.reduce((s, i) => s + i.volumes, 0);
   const pecas = itens.reduce((s, i) => s + i.pecas, 0);
+  // OS que entrou no plano pelo checklist sem "peças por volume" configurado
+  // chega com 0 volumes: conta como carga, mas ninguém disse quanto ocupa.
+  const semVolumes = itens.filter(i => !(i.volumes > 0)).length;
   let situacao = 'ok';
   if (!itens.length) situacao = 'vazio';
   else if (volMax > 0 && volumes > volMax) situacao = 'alto';
   else if (volMin > 0 && volumes < volMin) situacao = 'baixo';
-  return { itens, volumes, pecas, volMin, volMax, situacao };
+  return { itens, volumes, pecas, volMin, volMax, situacao, semVolumes };
 }
 
 const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
@@ -3199,6 +3202,68 @@ function _expSugestaoVolumes(o) {
   if (!o || ppv <= 0) return '';
   const pecas = _expPecasOS(o);
   return pecas > 0 ? String(Math.ceil(pecas / ppv)) : '';
+}
+
+/* ------- seleção da OS pelo checklist da folha de OS ------- */
+// Marcar "Expedição" no checklist da folha de OS é o que seleciona a OS pra
+// ser expedida — ela cai sozinha na próxima janela. Trocar a janela é depois,
+// no planejamento (moverCargaExp).
+
+const EXP_ETAPA_RE = /expedi/i;
+
+// A carga guarda a data ORIGINAL da ocorrência; se ela foi remarcada, a data
+// em que a expedição de fato acontece é outra.
+function _expDataEfetivaCarga(c) {
+  const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === c.janelaId && e.data === c.data);
+  if (exc && exc.tipo === 'remarcada' && exc.novaData) return exc.novaData;
+  return c.data;
+}
+
+// Primeira expedição de hoje em diante. É onde a OS marcada aterrissa.
+function _expProximaOcorrencia() {
+  const hoje = _expHoje();
+  return ocorrenciasExpedicao(hoje, _expAddDias(hoje, 180)).find(o => !o.cancelada) || null;
+}
+
+async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
+  if (!os || !EXP_ETAPA_RE.test(etapaNome || '')) return;
+  if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
+  const num = (os.os || '').toString().trim();
+
+  if (checked) {
+    // Já planejada em algum lugar: respeita onde o usuário a pôs.
+    if (STATE.expedicaoCargas.some(c => c.osId === os.id)) return;
+    const oc = _expProximaOcorrencia();
+    if (!oc) {
+      toast('OS marcada para expedir, mas não há janela de expedição cadastrada', 'err');
+      return;
+    }
+    STATE.expedicaoCargas.push({
+      id: uid(), janelaId: oc.janela.id, data: oc.dataOrig, perna: 'ida',
+      osId: os.id, volumes: Number(_expSugestaoVolumes(os)) || 0, obs: ''
+    });
+    await saveState('expedicaoCargas');
+    toast(`OS ${num} entrou na expedição de ${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)}${oc.horaIda ? ' ' + oc.horaIda : ''}`, 'ok');
+  } else {
+    // Desmarcar tira do que ainda vai acontecer. Expedição já passada é
+    // histórico do que saiu no caminhão — não se reescreve por um clique.
+    const hoje = _expHoje();
+    const antes = STATE.expedicaoCargas.length;
+    STATE.expedicaoCargas = STATE.expedicaoCargas.filter(c =>
+      c.osId !== os.id || _expDataEfetivaCarga(c) < hoje);
+    const tiradas = antes - STATE.expedicaoCargas.length;
+    if (tiradas) {
+      await saveState('expedicaoCargas');
+      toast(`OS ${num} saiu do plano de expedição`, 'ok');
+    }
+  }
+  if (expAbaAtiva === 'plano' && document.getElementById('expedicao-plano')) renderExpedicaoPlano();
+}
+
+function moverCargaExp(cargaId) {
+  const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
+  if (!c) return;
+  abrirModalExpCarga(c.janelaId, c.data, c.perna, c.osId, cargaId);
 }
 
 /* ---------------- estado da tela ---------------- */
@@ -3289,6 +3354,11 @@ function renderExpedicaoPlano() {
     });
   });
 
+  const comoFunciona = `
+    <div class="info-box no-print" style="font-size:12px;">
+      As OSs entram aqui sozinhas: marcar <b>Expedição</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai.
+    </div>`;
+
   const resumo = `
     <div class="exp-resumo">
       <div class="item"><div class="num">${fmt(ativas)}</div><div class="lbl">Expedições no período</div></div>
@@ -3308,8 +3378,8 @@ function renderExpedicaoPlano() {
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${fmt(i.volumes)} vol</span>
-        <span class="admin-only"><button title="Remover desta carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}</span>
+        <span class="admin-only"><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>`).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
       <div class="exp-perna">
@@ -3325,6 +3395,7 @@ function renderExpedicaoPlano() {
           <span>
             <span class="vol">${fmt(r.volumes)}</span> vol
             <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} pç · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
+            ${r.semVolumes ? `<br><span style="color:var(--accent-dark);font-size:11px;">${r.semVolumes} OS sem volumes definidos — o total está incompleto</span>` : ''}
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
@@ -3381,7 +3452,7 @@ function renderExpedicaoPlano() {
   const pendentesHtml = pendentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs em expedição sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Expedição</b> como última marcada e não entraram em nenhuma expedição — nem passada, nem planejada.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Expedição</b> marcada mas não entraram em nenhuma expedição — nem passada, nem planejada. Acontece com OS marcada antes de existir janela cadastrada. Use <b>alocar</b> para pô-las numa expedição.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
@@ -3430,7 +3501,7 @@ function renderExpedicaoPlano() {
       </table>
     </div>`;
 
-  cont.innerHTML = toolbar + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + comoFunciona + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */
@@ -3491,12 +3562,13 @@ function _expToggleTipoJanela() {
 // Alocar uma OS. Aberto de dentro de uma perna (ocorrência já escolhida) ou da
 // lista de pendentes (OS já escolhida) — os dois campos ficam editáveis nos
 // dois casos.
-function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '') {
+function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '') {
   if (!exigirAdmin('alocar OS na expedição')) return;
   if (!(STATE.expedicaoJanelas || []).some(j => j.ativo !== false)) {
     return toast('Cadastre uma janela de expedição antes de alocar OS', 'err');
   }
-  _expModalCtx = { tipo: 'carga' };
+  const cargaEdit = cargaId ? (STATE.expedicaoCargas || []).find(c => c.id === cargaId) : null;
+  _expModalCtx = { tipo: 'carga', editId: cargaEdit ? cargaId : '' };
 
   // Ocorrências oferecidas: do começo do período (ou de hoje, o que vier antes)
   // até 90 dias após o fim dele — cobre a que foi clicada e as próximas.
@@ -3524,13 +3596,13 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '') {
   const optOS = arr => ordena(arr).map(x => `<option value="${esc(x.id)}" ${x.id === osIdPre ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
   const osPre = osIdPre ? (STATE.ordens || []).find(o => o.id === osIdPre) : null;
 
-  document.getElementById('modal-exp-title').textContent = 'Alocar OS na expedição';
+  document.getElementById('modal-exp-title').textContent = cargaEdit ? 'Mudar a expedição desta OS' : 'Alocar OS na expedição';
   document.getElementById('modal-exp-fields').innerHTML = `
     <div class="form-grid cols-2">
       <div class="field full">
         <label>Expedição (data · hora · perna) *</label>
         <select id="ec-ocorrencia">${opts || '<option value="">— nenhuma expedição planejada —</option>'}</select>
-        <div class="field-hint">A perna define o trajeto: IDA é ${esc(expCfg().unidadeA)} → ${esc(expCfg().unidadeB)}; VOLTA é o caminho inverso.</div>
+        <div class="field-hint">${cargaEdit ? 'Escolha o dia e o horário em que esta OS será expedida. ' : ''}A perna define o trajeto: IDA é ${esc(expCfg().unidadeA)} → ${esc(expCfg().unidadeB)}; VOLTA é o caminho inverso.</div>
       </div>
       <div class="field full">
         <label>OS *</label>
@@ -3540,8 +3612,10 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '') {
           ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
         </select>
       </div>
-      ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *', osPre ? _expSugestaoVolumes(osPre) : '', 'É este número que conta contra o mínimo e o máximo da carga.')}
-      <div class="field"><label>Observação</label><input type="text" id="ec-obs" placeholder="Ex.: vai junto com a grade de mostruário"></div>
+      ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *',
+        cargaEdit ? (cargaEdit.volumes || '') : (osPre ? _expSugestaoVolumes(osPre) : ''),
+        'É este número que conta contra o mínimo e o máximo da carga.')}
+      <div class="field"><label>Observação</label><input type="text" id="ec-obs" value="${esc(cargaEdit ? (cargaEdit.obs || '') : '')}" placeholder="Ex.: vai junto com a grade de mostruário"></div>
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver as peças.</div>`;
   _expAtualizarSugestaoVolumes();
@@ -3671,11 +3745,19 @@ async function salvarModalExpedicao() {
     const volumes = parseInt(v('ec-volumes')) || 0;
     if (!(volumes > 0)) return toast('Informe quantos volumes esta OS ocupa', 'err');
     if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
-    const jaTem = STATE.expedicaoCargas.some(c => c.janelaId === janelaId && c.data === data && c.perna === perna && c.osId === osId);
+    // Ao mover, a propria carga nao conta como duplicata dela mesma.
+    const jaTem = STATE.expedicaoCargas.some(c => c.id !== ctx.editId
+      && c.janelaId === janelaId && c.data === data && c.perna === perna && c.osId === osId);
     if (jaTem) return toast('Esta OS já está nesta carga', 'err');
-    STATE.expedicaoCargas.push({ id: uid(), janelaId, data, perna, osId, volumes, obs: v('ec-obs').trim() });
+    const campos = { janelaId, data, perna, osId, volumes, obs: v('ec-obs').trim() };
+    if (ctx.editId) {
+      const i = STATE.expedicaoCargas.findIndex(c => c.id === ctx.editId);
+      if (i >= 0) STATE.expedicaoCargas[i] = { ...STATE.expedicaoCargas[i], ...campos };
+    } else {
+      STATE.expedicaoCargas.push({ id: uid(), ...campos });
+    }
     await saveState('expedicaoCargas');
-    toast('OS alocada na expedição', 'ok');
+    toast(ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição', 'ok');
 
   } else if (ctx.tipo === 'config') {
     if (!exigirAdmin('configurar a expedição')) return;
@@ -3778,7 +3860,7 @@ function renderPrintPlanoExpedicao() {
             <td class="n">${esc(i.osNumero)}</td>
             <td>${esc(i.modelo)}</td>
             <td class="q">${fmt(i.pecas)} pç</td>
-            <td class="v">${fmt(i.volumes)} vol</td>
+            <td class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</td>
           </tr>`).join('')}
       </table>` : '<div class="vazia">Sem OS alocada.</div>';
     return `
@@ -7093,6 +7175,11 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
     delete os.progresso.etapasSeq[etapaNome];
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
+  // Marcar "Expedição" aqui É o ato de selecionar a OS pra ser expedida: ela
+  // entra sozinha no plano, na próxima janela. Trocar a janela é depois, no
+  // planejamento.
+  try { await sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked); }
+  catch (e) { console.warn('sincronizarPlanoExpedicaoDaOS', e); }
 }
 
 async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
