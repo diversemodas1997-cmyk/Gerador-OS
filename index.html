@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-07-16g">
+<link rel="stylesheet" href="styles.css?v=2026-07-17a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -218,10 +218,20 @@
       <div class="page-header">
         <div>
           <h1>Expedição</h1>
-          <div class="desc">Peças em expedição, em peças por tecido e cor. Recebe a OS quando a etapa <b>Expedição</b> é a última marcada (o volume sai do campo anterior). Use os botões para contagem física e ajustes manuais.</div>
+          <div class="desc">O estoque em expedição (peças por tecido e cor) e o planejamento das cargas que saem nas janelas cadastradas.</div>
         </div>
       </div>
-      <div id="expedicao-painel"></div>
+      <div class="exp-tabs no-print">
+        <button type="button" class="exp-tab active" data-exptab="estoque" onclick="trocarAbaExpedicao('estoque')">Estoque em expedição</button>
+        <button type="button" class="exp-tab" data-exptab="plano" onclick="trocarAbaExpedicao('plano')">Planejamento de expedição</button>
+      </div>
+      <div id="expedicao-aba-estoque">
+        <div class="info-box">Peças em expedição, em peças por tecido e cor. Recebe a OS quando a etapa <b>Expedição</b> é a última marcada (o volume sai do campo anterior). Use os botões para contagem física e ajustes manuais.</div>
+        <div id="expedicao-painel"></div>
+      </div>
+      <div id="expedicao-aba-plano" class="hidden">
+        <div id="expedicao-plano"></div>
+      </div>
     </section>
 
     <section class="page hidden" data-page="cad-tecidos">
@@ -621,6 +631,26 @@
       </div>
     </section>
 
+    <!-- ============ FOLHA DO PLANO DE EXPEDIÇÃO (IMPRESSÃO) ============ -->
+    <!-- Segunda folha do programa, além da folha de OS. Diferente dela, esta
+         pode ocupar mais de uma A4 (um mês de janelas não cabe em uma) — daí
+         a classe .sheet-exp, que libera a quebra de página, e a ausência do
+         .sheet-scaler (não há encolhimento pra caber em uma folha só). -->
+    <section class="page hidden" data-page="print-expedicao">
+      <div class="page-header no-print">
+        <div><h1>Folha do plano de expedição</h1><div class="desc">Revise o plano e clique em Imprimir. A folha acompanha o período aberto no planejamento.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('expedicao'); trocarAbaExpedicao('plano');">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-exp">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
     <!-- ================= CONFIGURAÇÕES ================= -->
     <section class="page hidden" data-page="config">
       <div class="page-header">
@@ -739,6 +769,21 @@
   </div>
 </div>
 
+<!-- ============= MODAL DO PLANEJAMENTO DE EXPEDIÇÃO ============= -->
+<!-- Modal único para todas as ações do planejamento (janela, carga, unidades,
+     cancelar/remarcar). Quem monta os campos e decide o que salvar é o
+     contexto guardado em _expModalCtx (app.js). -->
+<div class="modal-backdrop" id="modal-exp">
+  <div class="modal">
+    <h2 id="modal-exp-title">Expedição</h2>
+    <div id="modal-exp-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-exp')">Cancelar</button>
+      <button class="btn primary" onclick="salvarModalExpedicao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
@@ -772,6 +817,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-16g"></script>
+<script src="app.js?v=2026-07-17a"></script>
 </body>
 </html>

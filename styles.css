@@ -1241,3 +1241,306 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
     print-color-adjust: exact;
   }
 }
+
+/* ============ EXPEDIÇÃO — ABAS E PLANEJAMENTO ============ */
+.exp-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.exp-tab {
+  padding: 9px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.exp-tab:hover { color: var(--ink); }
+.exp-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+.exp-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.exp-seg { display: flex; border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+.exp-seg button {
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--paper);
+  color: var(--ink);
+  border: none;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+.exp-seg button:last-child { border-right: none; }
+.exp-seg button:hover { background: var(--line-2); }
+.exp-seg button.active { background: var(--ink); color: var(--paper); }
+
+.exp-periodo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 220px;
+  text-align: center;
+}
+
+/* Faixa de totais do período: expedições, volumes de ida, de volta e alertas. */
+.exp-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.exp-resumo .item { background: var(--paper); padding: 10px 14px; }
+.exp-resumo .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.exp-resumo .lbl {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+.exp-resumo .item.alerta .num { color: var(--alert); }
+
+/* Um card por ocorrência (uma data/janela). Dentro dele, as duas pernas. */
+.exp-ocor { margin-bottom: 14px; }
+.exp-ocor.cancelada { opacity: .55; }
+.exp-ocor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.exp-ocor-data {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+}
+.exp-ocor-nome { font-size: 12px; color: var(--ink-3); }
+
+.exp-pernas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { .exp-pernas { grid-template-columns: 1fr; } }
+.exp-perna { border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; }
+.exp-perna-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.exp-perna-tit {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.exp-perna-rota { font-size: 11px; color: var(--ink-3); }
+.exp-perna-hora { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; }
+.exp-perna-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line-2);
+  font-size: 12px;
+}
+.exp-perna-total .vol { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; }
+
+/* Situação da carga contra os limites mín/máx da janela. */
+.exp-badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.exp-badge.ok { background: var(--ok-bg); color: var(--ok); }
+.exp-badge.baixo { background: #fdf3d8; color: var(--accent-dark); }
+.exp-badge.alto { background: var(--alert-bg); color: var(--alert); }
+.exp-badge.vazio { background: var(--line-2); color: var(--ink-3); }
+.exp-badge.info { background: var(--line-2); color: var(--ink-2); }
+
+.exp-os-list { display: flex; flex-direction: column; gap: 4px; }
+.exp-os-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--line-2);
+}
+.exp-os-row .num { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.exp-os-row .mod { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-os-row .qtd { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
+.exp-os-row .vol { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
+.exp-os-row button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.exp-os-row button:hover { color: var(--alert); }
+.exp-vazio { font-size: 12px; color: var(--ink-3); font-style: italic; padding: 6px 0; }
+
+/* ============ FOLHA DO PLANO DE EXPEDIÇÃO ============ */
+/* A .sheet da OS é flex e presa em uma A4. Esta é block e cresce: um plano
+   mensal ocupa várias folhas, e o que não pode partir no meio é cada bloco
+   de ocorrência — não a folha inteira.
+
+   Página nomeada: a folha de OS depende de @page { margin: 0 } (a margem dela
+   é o padding de 8mm da propria .sheet). Esse acordo NAO serve aqui — padding
+   so protege a borda da primeira e da ultima pagina, entao da segunda em
+   diante o conteudo encostaria no papel. Com um nome de pagina proprio, a
+   margem vem da @page e vale em TODAS as folhas, sem tocar na regra da OS. */
+.sheet-exp {
+  display: block;
+  height: auto;
+  padding: 10mm;  /* na tela; na impressao quem manda e a margem da @page */
+  page: plano-exp;
+}
+.exp-print-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid #000;
+}
+.exp-print-head .tit { font-family: 'IBM Plex Mono', monospace; font-size: 14pt; font-weight: 700; letter-spacing: .04em; }
+.exp-print-head .sub { font-size: 8pt; margin-top: 2px; }
+.exp-print-head .meta { font-size: 7.5pt; text-align: right; line-height: 1.5; }
+.exp-print-resumo {
+  display: flex;
+  gap: 0;
+  border: 1px solid #000;
+  margin-bottom: 8px;
+}
+.exp-print-resumo .item {
+  flex: 1;
+  padding: 4px 8px;
+  border-right: 1px solid #000;
+}
+.exp-print-resumo .item:last-child { border-right: none; }
+.exp-print-resumo .n { font-family: 'IBM Plex Mono', monospace; font-size: 12pt; font-weight: 700; line-height: 1.1; }
+.exp-print-resumo .l { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .06em; }
+.exp-print-bloco {
+  border: 1px solid #000;
+  margin-bottom: 6px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.exp-print-bloco > .cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  background: #eee;
+  border-bottom: 1px solid #000;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.exp-print-bloco > .cab .d { font-family: 'IBM Plex Mono', monospace; font-size: 9.5pt; font-weight: 700; }
+.exp-print-bloco > .cab .j { font-size: 7.5pt; }
+.exp-print-pernas { display: flex; }
+.exp-print-perna { flex: 1; padding: 4px 6px; border-right: 1px solid #000; }
+.exp-print-perna:last-child { border-right: none; }
+.exp-print-perna .ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: 1px solid #999;
+  padding-bottom: 2px;
+  margin-bottom: 3px;
+}
+.exp-print-perna .ph .t { font-family: 'IBM Plex Mono', monospace; font-size: 8pt; font-weight: 700; letter-spacing: .06em; }
+.exp-print-perna .ph .r { font-size: 6.5pt; }
+.exp-print-perna .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 9pt; font-weight: 700; }
+.exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+.exp-print-perna td { padding: 1px 2px; vertical-align: top; }
+.exp-print-perna td.n { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
+.exp-print-perna td.q,
+.exp-print-perna td.v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
+.exp-print-perna .tot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  border-top: 1px solid #999;
+  margin-top: 3px;
+  padding-top: 2px;
+  font-size: 7.5pt;
+  font-weight: 700;
+}
+.exp-print-perna .vazia { font-size: 7pt; font-style: italic; color: #555; padding: 2px 0; }
+.exp-print-box {
+  display: inline-block;
+  width: 7pt;
+  height: 7pt;
+  border: 1px solid #000;
+  vertical-align: -1px;
+}
+.exp-print-rodape {
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #000;
+  font-size: 7pt;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+@media print {
+  /* A margem de toda folha do plano — inclusive as de continuação. */
+  @page plano-exp {
+    size: A4;
+    margin: 10mm;
+  }
+  /* Anula, só pra esta folha, o "cabe tudo numa página" da folha de OS. */
+  .sheet-exp {
+    /* A @page plano-exp já reserva a margem: manter o padding de tela aqui
+       somaria margem com margem, e a largura fixa de 210mm estouraria a
+       área útil (190mm) da página. */
+    width: auto;
+    padding: 0;
+    min-height: 0;
+    page-break-inside: auto;
+    page-break-after: auto;
+  }
+  .sheet-exp > * { page-break-inside: auto; }
+  /* O bloco de uma expedição é o que não pode partir no meio. */
+  .sheet-exp .exp-print-bloco { page-break-inside: avoid; }
+}

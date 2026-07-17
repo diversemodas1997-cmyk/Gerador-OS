@@ -476,7 +476,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','osCounter','meta'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -787,6 +787,25 @@ const STATE = {
   costurandoMov: [],
   fiosMov: [],
   expedicaoMov: [],
+  // ---------- Planejamento de expedição ----------
+  // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
+  // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
+  // uma vez só. Toda expedição é interna, ida e volta entre as 2 unidades —
+  // daí duas horas por janela.
+  // { id, nome, tipo:'semanal'|'data', diasSemana:[0..6], data, horaIda,
+  //   horaVolta, volMin, volMax, ativo, obs }
+  // volMin/volMax em '' herdam o padrão de meta.expedicao.
+  expedicaoJanelas: [],
+  // OS alocada numa ocorrência (janela + data de origem) e perna do trajeto.
+  // A data guardada é sempre a ORIGINAL da ocorrência, não a remarcada: assim
+  // remarcar leva a carga junto em vez de órfã-la.
+  // { id, janelaId, data, perna:'ida'|'volta', osId, volumes, obs }
+  expedicaoCargas: [],
+  // Ocorrência cancelada ou remarcada pontualmente (só janelas semanais
+  // precisam disso — uma janela de data avulsa se edita direto).
+  // { id, janelaId, data, tipo:'cancelada'|'remarcada', novaData, horaIda,
+  //   horaVolta, motivo }
+  expedicaoExcecoes: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -836,7 +855,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','meta'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1130,7 +1149,8 @@ function goto(page) {
   if (page === 'corte') renderFasePainel(0);
   if (page === 'costurando') renderFasePainel(1);
   if (page === 'fios') renderFasePainel(2);
-  if (page === 'expedicao') renderFasePainel(3);
+  if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
+  if (page === 'print-expedicao') renderPrintPlanoExpedicao();
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
@@ -2986,6 +3006,840 @@ async function excluirMovFase(faseId, id) {
   await saveState(fase.movKey);
   toast('Lançamento excluído', 'ok');
   renderFasePorId(faseId);
+}
+
+/* ========================================================= */
+/*              PLANEJAMENTO DE EXPEDIÇÃO                    */
+/* ========================================================= */
+// Segunda folha impressa do programa (a primeira é a folha de OS). Toda
+// expedição aqui é INTERNA: ida e volta entre duas unidades. Por isso cada
+// ocorrência tem DUAS pernas contabilizadas em separado — a carga que sai na
+// ida não é a que volta, e cada uma tem seu próprio mínimo/máximo a respeitar.
+//
+// Vocabulário:
+//   janela     = a regra cadastrada ("toda terça e quinta, ida 8h volta 17h")
+//   ocorrência = a janela num dia concreto (janela + data)
+//   perna      = ida (unidade A -> B) ou volta (B -> A)
+//   carga      = uma OS alocada numa perna de uma ocorrência, com seus volumes
+
+const EXP_CFG_PADRAO = {
+  unidadeA: 'Unidade 1',
+  unidadeB: 'Unidade 2',
+  volMin: 0,
+  volMax: 0,
+  pecasPorVolume: 0
+};
+
+function expCfg() {
+  return { ...EXP_CFG_PADRAO, ...((STATE.meta && STATE.meta.expedicao) || {}) };
+}
+
+// Número com fallback: '' e null caem no padrão em vez de virar 0 — é o que
+// deixa uma janela dizer "sem limite próprio, usa o da configuração".
+function _expNum(v, fallback) {
+  if (v === '' || v == null) return fallback;
+  const n = Number(v);
+  return isNaN(n) ? fallback : n;
+}
+
+const _EXP_DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const _EXP_DIAS_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+const _EXP_MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+// Datas sempre como 'YYYY-MM-DD' em horário LOCAL. new Date('2026-07-17')
+// seria UTC e viraria dia 16 à noite no Brasil — daí o parse manual.
+function _expIso(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _expData(iso) {
+  const [y, m, d] = String(iso || '').split('-').map(Number);
+  return new Date(y || 1970, (m || 1) - 1, d || 1);
+}
+function _expHoje() { return _expIso(new Date()); }
+function _expAddDias(iso, n) {
+  const d = _expData(iso);
+  d.setDate(d.getDate() + n);
+  return _expIso(d);
+}
+
+// Período visível a partir do modo e da data-âncora.
+function _expRange(modo, ancora) {
+  if (modo === 'dia') return { ini: ancora, fim: ancora };
+  if (modo === 'semana') {
+    const ini = _expAddDias(ancora, -_expData(ancora).getDay()); // semana começa no domingo
+    return { ini, fim: _expAddDias(ini, 6) };
+  }
+  const d = _expData(ancora);
+  return {
+    ini: _expIso(new Date(d.getFullYear(), d.getMonth(), 1)),
+    fim: _expIso(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+  };
+}
+
+function _expNavegar(modo, ancora, dir) {
+  if (modo === 'dia') return _expAddDias(ancora, dir);
+  if (modo === 'semana') return _expAddDias(ancora, dir * 7);
+  const d = _expData(ancora);
+  return _expIso(new Date(d.getFullYear(), d.getMonth() + dir, 1));
+}
+
+function _expLabelPeriodo(modo, ancora) {
+  const { ini, fim } = _expRange(modo, ancora);
+  if (modo === 'dia') return _EXP_DIAS[_expData(ini).getDay()] + ', ' + formatDate(ini);
+  if (modo === 'semana') return formatDate(ini) + ' — ' + formatDate(fim);
+  const d = _expData(ini);
+  return _EXP_MESES[d.getMonth()] + ' de ' + d.getFullYear();
+}
+
+function _expNomeModo(modo) {
+  return modo === 'dia' ? 'diário' : (modo === 'semana' ? 'semanal' : 'mensal');
+}
+
+// Ocorrências das janelas ativas dentro de [ini, fim].
+// Uma cancelada continua aparecendo (riscada) no período dela: o usuário
+// precisa ver que a expedição foi suspensa, não que sumiu por engano.
+function ocorrenciasExpedicao(ini, fim) {
+  const out = [];
+  const excecoes = STATE.expedicaoExcecoes || [];
+  // Range folgado: uma ocorrência remarcada PARA dentro do período nasceu
+  // fora dele, então precisa ser gerada antes de ser filtrada.
+  const iniG = _expAddDias(ini, -60), fimG = _expAddDias(fim, 60);
+  (STATE.expedicaoJanelas || []).forEach(j => {
+    if (j.ativo === false) return;
+    const datas = [];
+    if (j.tipo === 'data') {
+      if (j.data && j.data >= iniG && j.data <= fimG) datas.push(j.data);
+    } else {
+      const dias = (Array.isArray(j.diasSemana) ? j.diasSemana : []).map(Number);
+      if (!dias.length) return;
+      for (let d = iniG; d <= fimG; d = _expAddDias(d, 1)) {
+        if (dias.includes(_expData(d).getDay())) datas.push(d);
+      }
+    }
+    datas.forEach(data => {
+      const exc = excecoes.find(e => e.janelaId === j.id && e.data === data);
+      const base = { janela: j, dataOrig: data, chave: j.id + '|' + data };
+      if (exc && exc.tipo === 'cancelada') {
+        if (data >= ini && data <= fim) {
+          out.push({ ...base, data, horaIda: j.horaIda || '', horaVolta: j.horaVolta || '', cancelada: true, remarcada: false, motivo: exc.motivo || '' });
+        }
+        return;
+      }
+      const dataFinal = (exc && exc.tipo === 'remarcada' && exc.novaData) ? exc.novaData : data;
+      if (dataFinal < ini || dataFinal > fim) return;
+      out.push({
+        ...base,
+        data: dataFinal,
+        horaIda: (exc && exc.horaIda) || j.horaIda || '',
+        horaVolta: (exc && exc.horaVolta) || j.horaVolta || '',
+        cancelada: false,
+        remarcada: !!(exc && exc.tipo === 'remarcada'),
+        motivo: (exc && exc.motivo) || ''
+      });
+    });
+  });
+  return out.sort((a, b) =>
+    a.data.localeCompare(b.data) ||
+    String(a.horaIda || '').localeCompare(String(b.horaIda || '')) ||
+    String(a.janela.nome || '').localeCompare(String(b.janela.nome || ''))
+  );
+}
+
+function _expPecasOS(o) {
+  return componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+}
+
+function _expCargasDa(janelaId, dataOrig, perna) {
+  return (STATE.expedicaoCargas || []).filter(c => c.janelaId === janelaId && c.data === dataOrig && c.perna === perna);
+}
+
+// Carga de uma perna: as OSs alocadas, os totais e a situação contra os
+// limites da janela (que herdam da configuração quando em branco).
+function resumoPernaExpedicao(oc, perna) {
+  const cfg = expCfg();
+  const volMin = _expNum(oc.janela.volMin, _expNum(cfg.volMin, 0));
+  const volMax = _expNum(oc.janela.volMax, _expNum(cfg.volMax, 0));
+  const itens = _expCargasDa(oc.janela.id, oc.dataOrig, perna).map(c => {
+    const o = (STATE.ordens || []).find(x => x.id === c.osId);
+    return {
+      carga: c,
+      os: o,
+      osNumero: o ? (o.os || '—') : '(OS excluída)',
+      modelo: o ? (o.modeloNome || '') : '',
+      pecas: o ? _expPecasOS(o) : 0,
+      volumes: Number(c.volumes) || 0
+    };
+  }).sort((a, b) => String(a.osNumero).localeCompare(String(b.osNumero), undefined, { numeric: true }));
+  const volumes = itens.reduce((s, i) => s + i.volumes, 0);
+  const pecas = itens.reduce((s, i) => s + i.pecas, 0);
+  let situacao = 'ok';
+  if (!itens.length) situacao = 'vazio';
+  else if (volMax > 0 && volumes > volMax) situacao = 'alto';
+  else if (volMin > 0 && volumes < volMin) situacao = 'baixo';
+  return { itens, volumes, pecas, volMin, volMax, situacao };
+}
+
+const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
+
+// Texto dos limites da perna, pra não repetir a regra em 4 lugares.
+function _expLimitesTexto(volMin, volMax) {
+  if (volMin > 0 && volMax > 0) return `mín ${volMin} / máx ${volMax}`;
+  if (volMin > 0) return `mín ${volMin}`;
+  if (volMax > 0) return `máx ${volMax}`;
+  return 'sem limite';
+}
+
+function _expRotaTexto(perna) {
+  const cfg = expCfg();
+  return perna === 'ida' ? `${cfg.unidadeA} → ${cfg.unidadeB}` : `${cfg.unidadeB} → ${cfg.unidadeA}`;
+}
+
+function _expSugestaoVolumes(o) {
+  const ppv = Number(expCfg().pecasPorVolume) || 0;
+  if (!o || ppv <= 0) return '';
+  const pecas = _expPecasOS(o);
+  return pecas > 0 ? String(Math.ceil(pecas / ppv)) : '';
+}
+
+/* ---------------- estado da tela ---------------- */
+
+let expPlanoModo = 'semana';
+let expPlanoAncora = _expHoje();
+let expAbaAtiva = 'estoque';
+try {
+  expPlanoModo = sessionStorage.getItem('gos:exp:modo') || expPlanoModo;
+  expPlanoAncora = sessionStorage.getItem('gos:exp:ancora') || expPlanoAncora;
+  expAbaAtiva = sessionStorage.getItem('gos:exp:aba') || expAbaAtiva;
+} catch (e) { /* sessionStorage indisponível, segue no padrão */ }
+
+function trocarAbaExpedicao(aba) {
+  expAbaAtiva = (aba === 'plano') ? 'plano' : 'estoque';
+  try { sessionStorage.setItem('gos:exp:aba', expAbaAtiva); } catch (e) {}
+  document.querySelectorAll('.exp-tab').forEach(b => b.classList.toggle('active', b.dataset.exptab === expAbaAtiva));
+  const est = document.getElementById('expedicao-aba-estoque');
+  const plano = document.getElementById('expedicao-aba-plano');
+  if (est) est.classList.toggle('hidden', expAbaAtiva !== 'estoque');
+  if (plano) plano.classList.toggle('hidden', expAbaAtiva !== 'plano');
+  if (expAbaAtiva === 'plano') renderExpedicaoPlano();
+}
+
+function expSetModo(modo) {
+  expPlanoModo = modo;
+  try { sessionStorage.setItem('gos:exp:modo', modo); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
+function expNav(dir) {
+  expPlanoAncora = _expNavegar(expPlanoModo, expPlanoAncora, dir);
+  try { sessionStorage.setItem('gos:exp:ancora', expPlanoAncora); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
+function expHoje() {
+  expPlanoAncora = _expHoje();
+  try { sessionStorage.setItem('gos:exp:ancora', expPlanoAncora); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
+/* ---------------- render do planejamento ---------------- */
+
+function renderExpedicaoPlano() {
+  const cont = document.getElementById('expedicao-plano');
+  if (!cont) return;
+  const cfg = expCfg();
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const ocs = ocorrenciasExpedicao(ini, fim);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  const toolbar = `
+    <div class="exp-toolbar no-print">
+      <div class="exp-seg">
+        <button class="${expPlanoModo === 'dia' ? 'active' : ''}" onclick="expSetModo('dia')">Diário</button>
+        <button class="${expPlanoModo === 'semana' ? 'active' : ''}" onclick="expSetModo('semana')">Semanal</button>
+        <button class="${expPlanoModo === 'mes' ? 'active' : ''}" onclick="expSetModo('mes')">Mensal</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn" onclick="expNav(-1)" title="Período anterior">‹</button>
+        <div class="exp-periodo">${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</div>
+        <button class="btn" onclick="expNav(1)" title="Próximo período">›</button>
+        <button class="btn" onclick="expHoje()">Hoje</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn accent" onclick="goto('print-expedicao')">🖨 Folha do plano</button>
+        <div class="admin-only" style="display:flex;gap:6px;">
+          <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
+          <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Totais do período. Ida e volta somam separado: é essa distinção que
+  // torna a expedição interna diferente de uma saída simples.
+  let volIda = 0, volVolta = 0, pecasIda = 0, pecasVolta = 0, alertas = 0, ativas = 0;
+  const osAlocadas = new Set();
+  ocs.forEach(oc => {
+    if (oc.cancelada) return;
+    ativas++;
+    ['ida', 'volta'].forEach(perna => {
+      const r = resumoPernaExpedicao(oc, perna);
+      if (perna === 'ida') { volIda += r.volumes; pecasIda += r.pecas; }
+      else { volVolta += r.volumes; pecasVolta += r.pecas; }
+      if (r.situacao === 'baixo' || r.situacao === 'alto') alertas++;
+      r.itens.forEach(i => { if (i.os) osAlocadas.add(i.os.id); });
+    });
+  });
+
+  const resumo = `
+    <div class="exp-resumo">
+      <div class="item"><div class="num">${fmt(ativas)}</div><div class="lbl">Expedições no período</div></div>
+      <div class="item"><div class="num">${fmt(volIda)}</div><div class="lbl">Volumes na ida</div></div>
+      <div class="item"><div class="num">${fmt(volVolta)}</div><div class="lbl">Volumes na volta</div></div>
+      <div class="item"><div class="num">${fmt(volIda + volVolta)}</div><div class="lbl">Volumes no total</div></div>
+      <div class="item"><div class="num">${fmt(pecasIda + pecasVolta)}</div><div class="lbl">Peças movimentadas</div></div>
+      <div class="item"><div class="num">${fmt(osAlocadas.size)}</div><div class="lbl">OS alocadas</div></div>
+      <div class="item ${alertas ? 'alerta' : ''}"><div class="num">${fmt(alertas)}</div><div class="lbl">Cargas fora do limite</div></div>
+    </div>`;
+
+  const pernaHtml = (oc, perna) => {
+    const r = resumoPernaExpedicao(oc, perna);
+    const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
+    const linhas = r.itens.length ? r.itens.map(i => `
+      <div class="exp-os-row">
+        <span class="num">${esc(i.osNumero)}</span>
+        <span class="mod">${esc(i.modelo) || '—'}</span>
+        <span class="qtd">${fmt(i.pecas)} pç</span>
+        <span class="vol">${fmt(i.volumes)} vol</span>
+        <span class="admin-only"><button title="Remover desta carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
+      </div>`).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
+    return `
+      <div class="exp-perna">
+        <div class="exp-perna-head">
+          <div>
+            <div class="exp-perna-tit">${perna === 'ida' ? 'Ida' : 'Volta'}</div>
+            <div class="exp-perna-rota">${esc(_expRotaTexto(perna))}</div>
+          </div>
+          <div class="exp-perna-hora">${esc(hora) || '—'}</div>
+        </div>
+        <div class="exp-os-list">${linhas}</div>
+        <div class="exp-perna-total">
+          <span>
+            <span class="vol">${fmt(r.volumes)}</span> vol
+            <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} pç · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
+          </span>
+          <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
+        </div>
+        ${oc.cancelada ? '' : `<div class="admin-only" style="margin-top:8px;">
+          <button class="btn" style="width:100%;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
+        </div>`}
+      </div>`;
+  };
+
+  const cards = ocs.map(oc => `
+    <div class="card exp-ocor ${oc.cancelada ? 'cancelada' : ''}">
+      <div class="exp-ocor-head">
+        <div>
+          <div class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">
+            ${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}
+          </div>
+          <div class="exp-ocor-nome">
+            ${esc(oc.janela.nome) || 'Janela sem nome'}
+            ${oc.janela.tipo === 'data' ? ' · <span class="exp-badge info">data fixa</span>' : ''}
+            ${oc.remarcada ? ` · <span class="exp-badge baixo">remarcada de ${esc(formatDate(oc.dataOrig))}</span>` : ''}
+            ${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}
+            ${oc.motivo ? ' · ' + esc(oc.motivo) : ''}
+          </div>
+        </div>
+        <div class="admin-only" style="display:flex;gap:6px;">
+          <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">Cancelar / remarcar</button>
+          <button class="btn" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')">Editar janela</button>
+        </div>
+      </div>
+      <div class="exp-pernas">
+        ${pernaHtml(oc, 'ida')}
+        ${pernaHtml(oc, 'volta')}
+      </div>
+    </div>`).join('');
+
+  const semJanelas = !(STATE.expedicaoJanelas || []).length;
+  const vazio = `
+    <div class="card">
+      <div class="empty" style="padding:24px 0;text-align:center;">
+        ${semJanelas
+          ? 'Nenhuma janela de expedição cadastrada. Clique em <b>+ Janela</b> para definir os dias e horários em que a expedição acontece.'
+          : 'Nenhuma expedição neste período. Navegue entre os períodos ou cadastre uma janela para estes dias.'}
+      </div>
+    </div>`;
+
+  // OSs que chegaram na Expedição e ninguém colocou em carga nenhuma. É a
+  // lista que evita esquecer OS pronta parada no campo.
+  const alocadasSempre = new Set((STATE.expedicaoCargas || []).map(c => c.osId));
+  const pendentes = (STATE.ordens || [])
+    .filter(o => faseAtualOS(o) === 3 && !alocadasSempre.has(o.id))
+    .map(o => ({ o, pecas: _expPecasOS(o) }))
+    .filter(x => x.pecas > 0)
+    .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
+  const pendentesHtml = pendentes.length ? `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs em expedição sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Expedição</b> como última marcada e não entraram em nenhuma expedição — nem passada, nem planejada.</div>
+      <table class="table">
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>
+          ${pendentes.map(({ o, pecas }) => `
+            <tr>
+              <td><strong>${esc(o.os) || '—'}</strong></td>
+              <td>${esc(o.modeloNome) || '—'}</td>
+              <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
+              <td class="col-actions row-actions">
+                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
+                <button class="edit admin-only" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  // Janelas cadastradas: o "de onde vêm" das ocorrências acima.
+  const janelas = (STATE.expedicaoJanelas || []).slice().sort((a, b) =>
+    String(a.tipo).localeCompare(String(b.tipo)) || String(a.horaIda || '').localeCompare(String(b.horaIda || ''))
+  );
+  const janelasHtml = `
+    <div class="card admin-only">
+      <div class="card-title">Janelas de expedição cadastradas</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Uma janela <b>semanal</b> se repete nos dias marcados; uma de <b>data fixa</b> acontece uma vez só. Mín/máx em branco herdam a configuração de <b>Unidades e carga</b> (hoje: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}).</div>
+      <table class="table">
+        <thead><tr><th>Nome</th><th>Quando</th><th>Ida</th><th>Volta</th><th>Volumes</th><th>Situação</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>
+          ${janelas.length ? janelas.map(j => `
+            <tr>
+              <td><strong>${esc(j.nome) || '—'}</strong></td>
+              <td>${j.tipo === 'data'
+                ? esc(formatDate(j.data))
+                : ((j.diasSemana || []).length ? (j.diasSemana || []).slice().sort((a, b) => a - b).map(d => _EXP_DIAS_CURTO[d]).join(', ') : '<span class="exp-badge alto">sem dias</span>')}</td>
+              <td style="font-family:'IBM Plex Mono',monospace;">${esc(j.horaIda) || '—'}</td>
+              <td style="font-family:'IBM Plex Mono',monospace;">${esc(j.horaVolta) || '—'}</td>
+              <td>${esc(_expLimitesTexto(_expNum(j.volMin, _expNum(cfg.volMin, 0)), _expNum(j.volMax, _expNum(cfg.volMax, 0))))}</td>
+              <td>${j.ativo === false ? '<span class="exp-badge vazio">inativa</span>' : '<span class="exp-badge ok">ativa</span>'}</td>
+              <td class="col-actions row-actions">
+                <button class="edit" onclick="abrirModalExpJanela('${esc(j.id)}')">editar</button>
+                <button class="del" onclick="excluirJanelaExp('${esc(j.id)}')">excluir</button>
+              </td>
+            </tr>`).join('') : '<tr><td colspan="7" class="empty">Nenhuma janela cadastrada.</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+
+  cont.innerHTML = toolbar + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
+}
+
+/* ---------------- modais ---------------- */
+
+let _expModalCtx = null;
+
+function _expCampoNum(id, label, valor, hint) {
+  return `<div class="field"><label>${label}</label><input type="number" min="0" step="1" id="${id}" value="${valor === '' || valor == null ? '' : esc(valor)}">${hint ? `<div class="field-hint">${hint}</div>` : ''}</div>`;
+}
+
+function abrirModalExpJanela(editId = null) {
+  if (!exigirAdmin('cadastrar janelas de expedição')) return;
+  const j = editId ? (STATE.expedicaoJanelas || []).find(x => x.id === editId) : null;
+  if (editId && !j) return;
+  _expModalCtx = { tipo: 'janela', editId };
+  const cfg = expCfg();
+  const tipo = j ? (j.tipo || 'semanal') : 'semanal';
+  const dias = (j && Array.isArray(j.diasSemana)) ? j.diasSemana.map(Number) : [];
+  document.getElementById('modal-exp-title').textContent = editId ? 'Editar janela de expedição' : 'Nova janela de expedição';
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Nome *</label><input type="text" id="ej-nome" value="${esc(j ? j.nome : '')}" placeholder="Ex.: Expedição da manhã"></div>
+      <div class="field">
+        <label>Tipo *</label>
+        <select id="ej-tipo" onchange="_expToggleTipoJanela()">
+          <option value="semanal" ${tipo === 'semanal' ? 'selected' : ''}>Semanal (repete nos dias marcados)</option>
+          <option value="data" ${tipo === 'data' ? 'selected' : ''}>Data fixa (acontece uma vez)</option>
+        </select>
+      </div>
+      <div class="field full" id="ej-wrap-dias">
+        <label>Dias da semana *</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0;">
+          ${_EXP_DIAS.map((nome, i) => `
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+              <input type="checkbox" class="ej-dia" value="${i}" ${dias.includes(i) ? 'checked' : ''}> ${_EXP_DIAS_CURTO[i]}
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="field" id="ej-wrap-data"><label>Data *</label><input type="date" id="ej-data" value="${esc(j ? (j.data || '') : _expHoje())}"></div>
+      <div class="field"><label>Hora da ida *</label><input type="time" id="ej-hora-ida" value="${esc(j ? (j.horaIda || '') : '08:00')}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
+      <div class="field"><label>Hora da volta *</label><input type="time" id="ej-hora-volta" value="${esc(j ? (j.horaVolta || '') : '17:00')}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
+      ${_expCampoNum('ej-vol-min', 'Volume mínimo', j ? j.volMin : '', `Em branco usa o padrão (${_expNum(cfg.volMin, 0) || 'sem mínimo'}). Vale por perna.`)}
+      ${_expCampoNum('ej-vol-max', 'Volume máximo', j ? j.volMax : '', `Em branco usa o padrão (${_expNum(cfg.volMax, 0) || 'sem máximo'}). Vale por perna.`)}
+      <div class="field"><label>Situação</label><select id="ej-ativo"><option value="1" ${!j || j.ativo !== false ? 'selected' : ''}>Ativa</option><option value="0" ${j && j.ativo === false ? 'selected' : ''}>Inativa (não gera expedições)</option></select></div>
+      <div class="field full"><label>Observação</label><input type="text" id="ej-obs" value="${esc(j ? (j.obs || '') : '')}" placeholder="Ex.: motorista da tarde"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Toda expedição é interna, de <b>ida e volta</b> entre ${esc(cfg.unidadeA)} e ${esc(cfg.unidadeB)}. Os limites de volume valem para cada perna separadamente.</div>`;
+  _expToggleTipoJanela();
+  openModal('modal-exp');
+}
+
+function _expToggleTipoJanela() {
+  const tipo = document.getElementById('ej-tipo')?.value || 'semanal';
+  document.getElementById('ej-wrap-dias')?.classList.toggle('hidden', tipo !== 'semanal');
+  document.getElementById('ej-wrap-data')?.classList.toggle('hidden', tipo !== 'data');
+}
+
+// Alocar uma OS. Aberto de dentro de uma perna (ocorrência já escolhida) ou da
+// lista de pendentes (OS já escolhida) — os dois campos ficam editáveis nos
+// dois casos.
+function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '') {
+  if (!exigirAdmin('alocar OS na expedição')) return;
+  if (!(STATE.expedicaoJanelas || []).some(j => j.ativo !== false)) {
+    return toast('Cadastre uma janela de expedição antes de alocar OS', 'err');
+  }
+  _expModalCtx = { tipo: 'carga' };
+
+  // Ocorrências oferecidas: do começo do período (ou de hoje, o que vier antes)
+  // até 90 dias após o fim dele — cobre a que foi clicada e as próximas.
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const hoje = _expHoje();
+  const ocs = ocorrenciasExpedicao(ini < hoje ? ini : hoje, _expAddDias(fim, 90)).filter(o => !o.cancelada);
+  const selecionada = janelaId ? `${janelaId}|${dataOrig}|${perna}` : '';
+  const opts = ocs.map(oc => ['ida', 'volta'].map(p => {
+    const val = `${oc.janela.id}|${oc.dataOrig}|${p}`;
+    const hora = p === 'ida' ? oc.horaIda : oc.horaVolta;
+    const label = `${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)} · ${hora || '—'} · ${p === 'ida' ? 'IDA' : 'VOLTA'} · ${oc.janela.nome || 'sem nome'}`;
+    return `<option value="${esc(val)}" ${val === selecionada ? 'selected' : ''}>${esc(label)}</option>`;
+  }).join('')).join('');
+
+  // OSs: as que estão na Expedição primeiro (o caso normal); as demais ficam
+  // disponíveis porque adiantar carga de OS que ainda vai chegar é legítimo.
+  const naExpedicao = [], outras = [];
+  (STATE.ordens || []).forEach(o => {
+    const pecas = _expPecasOS(o);
+    if (!(pecas > 0)) return;
+    const label = `${o.os || '(sem nº)'} · ${o.modeloNome || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
+    (faseAtualOS(o) === 3 ? naExpedicao : outras).push({ id: o.id, label });
+  });
+  const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
+  const optOS = arr => ordena(arr).map(x => `<option value="${esc(x.id)}" ${x.id === osIdPre ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+  const osPre = osIdPre ? (STATE.ordens || []).find(o => o.id === osIdPre) : null;
+
+  document.getElementById('modal-exp-title').textContent = 'Alocar OS na expedição';
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field full">
+        <label>Expedição (data · hora · perna) *</label>
+        <select id="ec-ocorrencia">${opts || '<option value="">— nenhuma expedição planejada —</option>'}</select>
+        <div class="field-hint">A perna define o trajeto: IDA é ${esc(expCfg().unidadeA)} → ${esc(expCfg().unidadeB)}; VOLTA é o caminho inverso.</div>
+      </div>
+      <div class="field full">
+        <label>OS *</label>
+        <select id="ec-os" onchange="_expAtualizarSugestaoVolumes()">
+          <option value="">— selecione —</option>
+          ${naExpedicao.length ? `<optgroup label="Em expedição agora">${optOS(naExpedicao)}</optgroup>` : ''}
+          ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
+        </select>
+      </div>
+      ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *', osPre ? _expSugestaoVolumes(osPre) : '', 'É este número que conta contra o mínimo e o máximo da carga.')}
+      <div class="field"><label>Observação</label><input type="text" id="ec-obs" placeholder="Ex.: vai junto com a grade de mostruário"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver as peças.</div>`;
+  _expAtualizarSugestaoVolumes();
+  openModal('modal-exp');
+}
+
+// Mostra as peças da OS e, se houver peças por volume configurado, sugere o
+// número de volumes — mas só preenche campo vazio, nunca sobrescreve digitação.
+function _expAtualizarSugestaoVolumes() {
+  const osId = document.getElementById('ec-os')?.value || '';
+  const info = document.getElementById('ec-info');
+  const campo = document.getElementById('ec-volumes');
+  const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
+  if (!o) { if (info) info.textContent = 'Selecione a OS para ver as peças.'; return; }
+  const pecas = _expPecasOS(o);
+  const ppv = Number(expCfg().pecasPorVolume) || 0;
+  const sug = _expSugestaoVolumes(o);
+  if (campo && !campo.value && sug) campo.value = sug;
+  if (info) {
+    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
+      + (ppv > 0 ? ` Sugestão de <b>${esc(sug)} volume(s)</b> a ${ppv} peças por volume.` : ' Configure "peças por volume" em <b>Unidades e carga</b> para sugerir os volumes.');
+  }
+}
+
+function abrirModalExpConfig() {
+  if (!exigirAdmin('configurar a expedição')) return;
+  _expModalCtx = { tipo: 'config' };
+  const cfg = expCfg();
+  document.getElementById('modal-exp-title').textContent = 'Unidades e carga de transporte';
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Unidade A (origem da ida) *</label><input type="text" id="ex-uni-a" value="${esc(cfg.unidadeA)}" placeholder="Ex.: Fábrica"></div>
+      <div class="field"><label>Unidade B (destino da ida) *</label><input type="text" id="ex-uni-b" value="${esc(cfg.unidadeB)}" placeholder="Ex.: Loja / Depósito"></div>
+      ${_expCampoNum('ex-vol-min', 'Volume mínimo padrão', _expNum(cfg.volMin, 0) || '', 'Carga planejada abaixo disso é sinalizada. 0 ou vazio = sem mínimo.')}
+      ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
+      ${_expCampoNum('ex-ppv', 'Peças por volume (sugestão)', _expNum(cfg.pecasPorVolume, 0) || '', 'Só sugere os volumes ao alocar uma OS. 0 ou vazio = não sugere.')}
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Os limites valem por <b>perna</b> (ida e volta contam separado) e podem ser sobrescritos em cada janela. A expedição é sempre interna, entre estas duas unidades.</div>`;
+  openModal('modal-exp');
+}
+
+function abrirModalExpOcorrencia(janelaId, dataOrig) {
+  if (!exigirAdmin('cancelar ou remarcar expedições')) return;
+  const j = (STATE.expedicaoJanelas || []).find(x => x.id === janelaId);
+  if (!j) return;
+  _expModalCtx = { tipo: 'ocorrencia', janelaId, dataOrig };
+  const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === janelaId && e.data === dataOrig);
+  const situacao = exc ? exc.tipo : 'ativa';
+  document.getElementById('modal-exp-title').textContent = 'Expedição de ' + formatDate(dataOrig);
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field full">
+        <label>Situação desta expedição</label>
+        <select id="eo-situacao" onchange="_expToggleSituacaoOcorrencia()">
+          <option value="ativa" ${situacao === 'ativa' ? 'selected' : ''}>Acontece normalmente</option>
+          <option value="cancelada" ${situacao === 'cancelada' ? 'selected' : ''}>Cancelada (não acontece neste dia)</option>
+          <option value="remarcada" ${situacao === 'remarcada' ? 'selected' : ''}>Remarcada (muda a data e/ou os horários)</option>
+        </select>
+      </div>
+      <div class="field" id="eo-wrap-data"><label>Nova data *</label><input type="date" id="eo-data" value="${esc((exc && exc.novaData) || dataOrig)}"></div>
+      <div class="field" id="eo-wrap-horas">
+        <label>Novos horários</label>
+        <div style="display:flex;gap:6px;">
+          <input type="time" id="eo-hora-ida" value="${esc((exc && exc.horaIda) || j.horaIda || '')}" title="Ida">
+          <input type="time" id="eo-hora-volta" value="${esc((exc && exc.horaVolta) || j.horaVolta || '')}" title="Volta">
+        </div>
+        <div class="field-hint">Ida e volta. Em branco mantém o horário da janela.</div>
+      </div>
+      <div class="field full"><label>Motivo</label><input type="text" id="eo-motivo" value="${esc((exc && exc.motivo) || '')}" placeholder="Ex.: feriado / veículo em manutenção"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Muda só <b>este dia</b> — a janela <b>${esc(j.nome) || 'sem nome'}</b> continua valendo nos demais. As OSs já alocadas acompanham a remarcação.</div>`;
+  _expToggleSituacaoOcorrencia();
+  openModal('modal-exp');
+}
+
+function _expToggleSituacaoOcorrencia() {
+  const s = document.getElementById('eo-situacao')?.value || 'ativa';
+  const remarcada = s === 'remarcada';
+  document.getElementById('eo-wrap-data')?.classList.toggle('hidden', !remarcada);
+  document.getElementById('eo-wrap-horas')?.classList.toggle('hidden', !remarcada);
+}
+
+async function salvarModalExpedicao() {
+  if (!_expModalCtx) return;
+  const v = id => document.getElementById(id)?.value || '';
+  const ctx = _expModalCtx;
+
+  if (ctx.tipo === 'janela') {
+    if (!exigirAdmin('cadastrar janelas de expedição')) return;
+    const nome = v('ej-nome').trim();
+    if (!nome) return toast('Informe o nome da janela', 'err');
+    const tipo = v('ej-tipo') === 'data' ? 'data' : 'semanal';
+    const diasSemana = Array.from(document.querySelectorAll('.ej-dia:checked')).map(el => Number(el.value));
+    if (tipo === 'semanal' && !diasSemana.length) return toast('Marque ao menos um dia da semana', 'err');
+    const data = v('ej-data');
+    if (tipo === 'data' && !data) return toast('Informe a data da expedição', 'err');
+    const horaIda = v('ej-hora-ida'), horaVolta = v('ej-hora-volta');
+    if (!horaIda || !horaVolta) return toast('Informe os horários de ida e de volta', 'err');
+    const volMin = v('ej-vol-min') === '' ? '' : (parseInt(v('ej-vol-min')) || 0);
+    const volMax = v('ej-vol-max') === '' ? '' : (parseInt(v('ej-vol-max')) || 0);
+    if (volMin !== '' && volMax !== '' && volMax > 0 && volMin > volMax) {
+      return toast('O volume mínimo não pode ser maior que o máximo', 'err');
+    }
+    const reg = {
+      nome, tipo, diasSemana: tipo === 'semanal' ? diasSemana : [],
+      data: tipo === 'data' ? data : '',
+      horaIda, horaVolta, volMin, volMax,
+      ativo: v('ej-ativo') !== '0',
+      obs: v('ej-obs').trim()
+    };
+    if (!Array.isArray(STATE.expedicaoJanelas)) STATE.expedicaoJanelas = [];
+    if (ctx.editId) {
+      const i = STATE.expedicaoJanelas.findIndex(x => x.id === ctx.editId);
+      if (i >= 0) STATE.expedicaoJanelas[i] = { ...STATE.expedicaoJanelas[i], ...reg };
+    } else {
+      STATE.expedicaoJanelas.push({ id: uid(), ...reg });
+    }
+    await saveState('expedicaoJanelas');
+    toast(ctx.editId ? 'Janela atualizada' : 'Janela cadastrada', 'ok');
+
+  } else if (ctx.tipo === 'carga') {
+    if (!exigirAdmin('alocar OS na expedição')) return;
+    const [janelaId, data, perna] = v('ec-ocorrencia').split('|');
+    if (!janelaId || !data || !perna) return toast('Selecione a expedição', 'err');
+    const osId = v('ec-os');
+    if (!osId) return toast('Selecione a OS', 'err');
+    const volumes = parseInt(v('ec-volumes')) || 0;
+    if (!(volumes > 0)) return toast('Informe quantos volumes esta OS ocupa', 'err');
+    if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
+    const jaTem = STATE.expedicaoCargas.some(c => c.janelaId === janelaId && c.data === data && c.perna === perna && c.osId === osId);
+    if (jaTem) return toast('Esta OS já está nesta carga', 'err');
+    STATE.expedicaoCargas.push({ id: uid(), janelaId, data, perna, osId, volumes, obs: v('ec-obs').trim() });
+    await saveState('expedicaoCargas');
+    toast('OS alocada na expedição', 'ok');
+
+  } else if (ctx.tipo === 'config') {
+    if (!exigirAdmin('configurar a expedição')) return;
+    const unidadeA = v('ex-uni-a').trim(), unidadeB = v('ex-uni-b').trim();
+    if (!unidadeA || !unidadeB) return toast('Informe o nome das duas unidades', 'err');
+    const volMin = parseInt(v('ex-vol-min')) || 0;
+    const volMax = parseInt(v('ex-vol-max')) || 0;
+    if (volMax > 0 && volMin > volMax) return toast('O volume mínimo não pode ser maior que o máximo', 'err');
+    if (!STATE.meta || typeof STATE.meta !== 'object') STATE.meta = {};
+    STATE.meta.expedicao = { unidadeA, unidadeB, volMin, volMax, pecasPorVolume: parseInt(v('ex-ppv')) || 0 };
+    await saveState('meta');
+    toast('Configuração salva', 'ok');
+
+  } else if (ctx.tipo === 'ocorrencia') {
+    if (!exigirAdmin('cancelar ou remarcar expedições')) return;
+    const situacao = v('eo-situacao');
+    if (!Array.isArray(STATE.expedicaoExcecoes)) STATE.expedicaoExcecoes = [];
+    STATE.expedicaoExcecoes = STATE.expedicaoExcecoes.filter(e => !(e.janelaId === ctx.janelaId && e.data === ctx.dataOrig));
+    if (situacao === 'cancelada') {
+      STATE.expedicaoExcecoes.push({ id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, tipo: 'cancelada', motivo: v('eo-motivo').trim() });
+    } else if (situacao === 'remarcada') {
+      const novaData = v('eo-data');
+      if (!novaData) return toast('Informe a nova data', 'err');
+      STATE.expedicaoExcecoes.push({
+        id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, tipo: 'remarcada',
+        novaData, horaIda: v('eo-hora-ida'), horaVolta: v('eo-hora-volta'), motivo: v('eo-motivo').trim()
+      });
+    }
+    await saveState('expedicaoExcecoes');
+    toast(situacao === 'ativa' ? 'Expedição restabelecida' : (situacao === 'cancelada' ? 'Expedição cancelada' : 'Expedição remarcada'), 'ok');
+  }
+
+  closeModal('modal-exp');
+  _expModalCtx = null;
+  renderExpedicaoPlano();
+}
+
+async function excluirCargaExp(id) {
+  if (!exigirAdmin('remover OS da expedição')) return;
+  if (!confirm('Tirar esta OS da carga?')) return;
+  STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => c.id !== id);
+  await saveState('expedicaoCargas');
+  toast('OS removida da carga', 'ok');
+  renderExpedicaoPlano();
+}
+
+async function excluirJanelaExp(id) {
+  if (!exigirAdmin('excluir janelas de expedição')) return;
+  const j = (STATE.expedicaoJanelas || []).find(x => x.id === id);
+  if (!j) return;
+  const cargas = (STATE.expedicaoCargas || []).filter(c => c.janelaId === id).length;
+  const aviso = cargas
+    ? `Excluir a janela "${j.nome || 'sem nome'}"?\n\n${cargas} alocação(ões) de OS serão perdidas junto — inclusive as de expedições já realizadas.`
+    : `Excluir a janela "${j.nome || 'sem nome'}"?`;
+  if (!confirm(aviso)) return;
+  STATE.expedicaoJanelas = (STATE.expedicaoJanelas || []).filter(x => x.id !== id);
+  STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => c.janelaId !== id);
+  STATE.expedicaoExcecoes = (STATE.expedicaoExcecoes || []).filter(e => e.janelaId !== id);
+  await saveState('expedicaoJanelas');
+  await saveState('expedicaoCargas');
+  await saveState('expedicaoExcecoes');
+  toast('Janela excluída', 'ok');
+  renderExpedicaoPlano();
+}
+
+/* ---------------- folha impressa do plano ---------------- */
+
+// Segunda folha do programa. Ao contrário da folha de OS, esta pode ocupar
+// várias A4 (um mês de janelas não cabe em uma) — o que não pode partir no
+// meio é o bloco de cada expedição, garantido no CSS.
+function renderPrintPlanoExpedicao() {
+  const sheet = document.getElementById('print-sheet-exp');
+  if (!sheet) return;
+  const cfg = expCfg();
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const ocs = ocorrenciasExpedicao(ini, fim);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
+  const osTot = new Set();
+  ocs.forEach(oc => {
+    if (oc.cancelada) return;
+    ativas++;
+    ['ida', 'volta'].forEach(p => {
+      const r = resumoPernaExpedicao(oc, p);
+      if (p === 'ida') volIda += r.volumes; else volVolta += r.volumes;
+      pecasTot += r.pecas;
+      r.itens.forEach(i => { if (i.os) osTot.add(i.os.id); });
+    });
+  });
+
+  const pernaPrint = (oc, perna) => {
+    const r = resumoPernaExpedicao(oc, perna);
+    const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
+    const linhas = r.itens.length ? `
+      <table>
+        ${r.itens.map(i => `
+          <tr>
+            <td style="width:9pt;"><span class="exp-print-box"></span></td>
+            <td class="n">${esc(i.osNumero)}</td>
+            <td>${esc(i.modelo)}</td>
+            <td class="q">${fmt(i.pecas)} pç</td>
+            <td class="v">${fmt(i.volumes)} vol</td>
+          </tr>`).join('')}
+      </table>` : '<div class="vazia">Sem OS alocada.</div>';
+    return `
+      <div class="exp-print-perna">
+        <div class="ph">
+          <div>
+            <span class="t">${perna === 'ida' ? 'IDA' : 'VOLTA'}</span>
+            <span class="r"> ${esc(_expRotaTexto(perna))}</span>
+          </div>
+          <span class="h">${esc(hora) || '—'}</span>
+        </div>
+        ${linhas}
+        <div class="tot">
+          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} pç</span>
+          <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
+        </div>
+      </div>`;
+  };
+
+  const blocos = ocs.map(oc => `
+    <div class="exp-print-bloco">
+      <div class="cab">
+        <span class="d" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
+        <span class="j">
+          ${esc(oc.janela.nome) || 'Janela sem nome'}
+          ${oc.remarcada ? ` · remarcada de ${esc(formatDate(oc.dataOrig))}` : ''}
+          ${oc.cancelada ? ' · CANCELADA' + (oc.motivo ? ` (${esc(oc.motivo)})` : '') : ''}
+        </span>
+      </div>
+      ${oc.cancelada ? '' : `<div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>`}
+    </div>`).join('');
+
+  const emissao = new Date();
+  const emissaoTxt = formatDate(_expIso(emissao)) + ' ' + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
+
+  sheet.innerHTML = `
+    <div class="exp-print-head">
+      <div>
+        <div class="tit">PLANO DE EXPEDIÇÃO</div>
+        <div class="sub">Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · expedição interna, ida e volta</div>
+      </div>
+      <div class="meta">
+        <div><b>${esc(cfg.unidadeA)}</b> ⇄ <b>${esc(cfg.unidadeB)}</b></div>
+        <div>Limite por perna: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</div>
+        <div>Emitido em ${esc(emissaoTxt)}</div>
+      </div>
+    </div>
+    <div class="exp-print-resumo">
+      <div class="item"><div class="n">${fmt(ativas)}</div><div class="l">Expedições</div></div>
+      <div class="item"><div class="n">${fmt(volIda)}</div><div class="l">Volumes ida</div></div>
+      <div class="item"><div class="n">${fmt(volVolta)}</div><div class="l">Volumes volta</div></div>
+      <div class="item"><div class="n">${fmt(volIda + volVolta)}</div><div class="l">Volumes total</div></div>
+      <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Peças</div></div>
+      <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
+    </div>
+    ${ocs.length ? blocos : '<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma expedição planejada neste período.</div>'}
+    <div class="exp-print-rodape">
+      <span>Conferente: ____________________________</span>
+      <span>Motorista: ____________________________</span>
+      <span>Visto: ____________________</span>
+    </div>`;
 }
 
 // SKU(s) do produto acabado de uma OS = Linha de SKU do modelo + Sigla SKU de
