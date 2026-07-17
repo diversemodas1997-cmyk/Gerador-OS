@@ -3627,11 +3627,13 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
       </div>
       <div class="field full">
         <label>OS *</label>
+        ${cargaEdit ? '' : `<input type="search" id="ec-os-busca" oninput="_expFiltrarOS()" placeholder="Buscar pelo número da OS ou modelo…" style="margin-bottom:6px;" autocomplete="off">`}
         <select id="ec-os" onchange="_expAtualizarSugestaoVolumes()">
           <option value="">— selecione —</option>
           ${naExpedicao.length ? `<optgroup label="Em expedição agora">${optOS(naExpedicao)}</optgroup>` : ''}
           ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
         </select>
+        ${cargaEdit ? '' : '<div class="field-hint" id="ec-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>'}
       </div>
       ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *',
         cargaEdit ? (cargaEdit.volumes || '') : (osPre ? _expSugestaoVolumes(osPre) : ''),
@@ -3641,6 +3643,35 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver as peças.</div>`;
   _expAtualizarSugestaoVolumes();
   openModal('modal-exp');
+}
+
+// Filtra o select de OS pela busca (número ou modelo). Esconde as options que
+// não batem e os optgroups que ficaram sem nenhuma visível. Se sobrar exatamente
+// uma, já a seleciona — o caso comum de digitar o número inteiro da OS.
+function _expFiltrarOS() {
+  const sel = document.getElementById('ec-os');
+  const busca = document.getElementById('ec-os-busca');
+  if (!sel || !busca) return;
+  const q = _normNome(busca.value);
+  let visiveis = 0, unica = null;
+  sel.querySelectorAll('option').forEach(opt => {
+    if (!opt.value) return; // "— selecione —" sempre fica
+    const bate = !q || _normNome(opt.textContent).includes(q);
+    opt.hidden = !bate;
+    if (bate) { visiveis++; unica = opt; }
+  });
+  // Some o rótulo do grupo que ficou vazio.
+  sel.querySelectorAll('optgroup').forEach(g => {
+    const temVisivel = Array.from(g.querySelectorAll('option')).some(o => !o.hidden);
+    g.hidden = !temVisivel;
+  });
+  // Se a OS escolhida sumiu do filtro, limpa a seleção pra não salvar às cegas.
+  if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
+  // Uma OS só sobrando: seleciona direto.
+  if (q && visiveis === 1 && unica) sel.value = unica.value;
+  const aviso = document.getElementById('ec-os-vazio');
+  if (aviso) aviso.style.display = (q && visiveis === 0) ? 'block' : 'none';
+  _expAtualizarSugestaoVolumes();
 }
 
 // Mostra as peças da OS e, se houver peças por volume configurado, sugere o
