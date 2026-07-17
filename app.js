@@ -6723,7 +6723,6 @@ function gerarPdfEtiquetas(dados) {
   const boxHeight = 46;
   const verticalPad = 1.5;
   const innerHeight = boxHeight - 2 * verticalPad; // 43mm
-  const nLines = 7;          // marca + 6 linhas
   const lineFactor = 1.18;   // espacamento entre linhas (relativo ao fontSize)
   const ptToMm = 0.3527778;
 
@@ -6741,6 +6740,7 @@ function gerarPdfEtiquetas(dados) {
   pdf.setFont('helvetica', 'bold');
 
   const total = Math.max(1, dados.numEtiquetas);
+  const tams = dados.tamanhosPacotes || [];
   for (let i = 0; i < total; i++) {
     if (i > 0) pdf.addPage([100, 50], 'landscape');
 
@@ -6748,45 +6748,45 @@ function gerarPdfEtiquetas(dados) {
     pdf.setLineWidth(0.3);
     pdf.rect(2, 2, 96, 46);
 
-    // Linhas dessa etiqueta (LOTE varia por pagina)
+    // Cada linha tem uma escala (s): 1 = normal, 2 = dobro (o tamanho / o
+    // conteúdo do pacote saem em destaque). c = centralizada.
+    const ehReposicao = dados.temReposicao && i === total - 1;
+    const destaque = ehReposicao
+      ? { t: ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
+      : { t: `TAM: ${tams[i] || dados.tam}`, s: 2, c: true }; // tamanho do pacote, dobro
     const linhas = [
-      String(dados.marca || ''),
-      `OS: ${dados.os}`,
-      `MODELO: ${dados.modelo}`,
-      `QTDE: ${dados.qtde}`,
-      `TAM: ${dados.tam}`,
-      `COR: ${dados.cor}`,
-      `LOTE: ${i + 1}/${total}`
+      { t: String(dados.marca || ''), s: 1, c: true },
+      { t: `OS: ${dados.os}`, s: 1 },
+      { t: `MODELO: ${dados.modelo}`, s: 1 },
+      { t: `QTDE: ${dados.qtde}`, s: 1 },
+      { t: `COR: ${dados.cor}`, s: 1 },
+      { t: `LOTE: ${i + 1}/${total}`, s: 1 },
+      destaque
     ];
 
-    // Mede no tamanho de referencia (10pt) e escala linearmente pra achar
-    // o maior fontSize que cabe simultaneamente em largura e altura.
+    // Mede a 10pt e escala linearmente pra achar o maior fontSize base que cabe
+    // em largura (cada linha ocupa largura × sua escala) e altura (soma das
+    // escalas × altura de linha).
     pdf.setFontSize(10);
-    const maxWAt10 = Math.max(...linhas.map(t => pdf.getTextWidth(t)));
-    const sizeByWidth  = (10 * innerWidth) / Math.max(maxWAt10, 0.1);
-    const sizeByHeight = innerHeight / (nLines * ptToMm * lineFactor);
-    const fontSize = Math.min(sizeByWidth, sizeByHeight, 18);
+    const maxWAt10 = Math.max(...linhas.map(L => pdf.getTextWidth(L.t) * L.s), 0.1);
+    const sumEscala = linhas.reduce((a, L) => a + L.s, 0);
+    const sizeByWidth  = (10 * innerWidth) / maxWAt10;
+    const sizeByHeight = innerHeight / (sumEscala * ptToMm * lineFactor);
+    const fontSize = Math.min(sizeByWidth, sizeByHeight, 22);
+    const lh = fontSize * ptToMm * lineFactor; // mm (altura de 1 linha na escala 1)
 
-    pdf.setFontSize(fontSize);
-    const lineHeight = fontSize * ptToMm * lineFactor; // mm
-    const blockH = nLines * lineHeight;
-    const topY = boxTop + (boxHeight - blockH) / 2;    // centraliza vertical
-
-    // 1a linha = MARCA, centralizada
-    pdf.text(fitText(linhas[0], innerWidth), xCenter, topY, {
-      align: 'center', baseline: 'top'
+    let y = boxTop + (boxHeight - sumEscala * lh) / 2; // centraliza vertical
+    linhas.forEach((L, idx) => {
+      pdf.setFontSize(fontSize * L.s);
+      const x = L.c ? xCenter : xLeft;
+      pdf.text(fitText(L.t, innerWidth), x, y, { align: L.c ? 'center' : 'left', baseline: 'top' });
+      y += L.s * lh;
+      // Separador fino logo abaixo da MARCA (1a linha).
+      if (idx === 0) {
+        pdf.setLineWidth(0.18);
+        pdf.line(4, y - lh * 0.12, 96, y - lh * 0.12);
+      }
     });
-
-    // Separador fininho entre MARCA e demais linhas
-    const sepY = topY + lineHeight - lineHeight * 0.12;
-    pdf.setLineWidth(0.18);
-    pdf.line(4, sepY, 96, sepY);
-
-    // Linhas 2..7 alinhadas a esquerda
-    for (let r = 1; r < linhas.length; r++) {
-      const y = topY + r * lineHeight;
-      pdf.text(fitText(linhas[r], innerWidth), xLeft, y, { baseline: 'top' });
-    }
   }
 
   return pdf.output('blob');
@@ -6954,10 +6954,36 @@ async function salvarEImprimir() {
 /* ========================================================= */
 /*    ETIQUETAS ADESIVAS (1 por pagina, 10x5cm, LOTE 1..N)   */
 /* ========================================================= */
-// Uma etiqueta por pagina (100mm x 50mm). Total de paginas = quantidade
-// de TAMANHOS ATIVOS na grade (P, M, G, GG, G1, G2, G3). Ex.: grade
-// completa P..G3 = 7 etiquetas; grade M-G-GG-G3 = 4 etiquetas. Todas as
-// etiquetas sao identicas; so o numero do LOTE muda em sequencia 1..N.
+// Conteúdo do pacote de reposição (a última etiqueta). Texto do usuário.
+const ETIQUETA_CONTEUDO_REPOSICAO = 'Viés/Reposição/Ribana';
+
+// Tamanhos da grade expandidos em PACOTES: um item por vaga de tamanho, na
+// ordem P..G3, repetindo o tamanho conforme a quantidade da grade. Cada pacote
+// leva um só tamanho; quantidade 2 num tamanho vira dois pacotes dele.
+// Ex.: P-G1-G2 → ['P','G1','G2'];  2M-4G-2GG → ['M','M','G','G','G','G','GG','GG'].
+// Prefere a grade viva (como a folha e o volume), caindo no snapshot da OS.
+function _tamanhosDaGradeExpandido(o) {
+  const ordem = ['p','m','g','gg','g1','g2','g3'];
+  const rotulo = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
+  let tam = null;
+  if (o && o.gradeId) {
+    const g = (STATE.grades || []).find(x => x.id === o.gradeId);
+    if (g && g.tamanhos) tam = g.tamanhos;
+  }
+  if (!tam && o && o.grade) tam = o.grade;
+  const out = [];
+  if (tam) ordem.forEach(k => {
+    const q = parseInt(tam[k]) || 0;
+    for (let i = 0; i < q; i++) out.push(rotulo[k]);
+  });
+  return out;
+}
+
+// Uma etiqueta por pagina (100mm x 50mm), uma por PACOTE — mesma regra do
+// volume de expedição: 1 por vaga de tamanho da grade + 1 de reposição. As
+// etiquetas de tamanho sao iguais (só o LOTE muda); a ÚLTIMA é o pacote de
+// reposição e mostra o conteúdo (${ETIQUETA_CONTEUDO_REPOSICAO}) no lugar de
+// tamanho/qtde.
 // Calcula os dados que vao para cada etiqueta a partir de uma OS. Centralizado
 // num helper porque tambem e usado pelos auto-saves silenciosos de
 // salvarOS/salvarEImprimir, fora do fluxo de impressao.
@@ -7010,39 +7036,47 @@ function dadosEtiquetaParaOS(o) {
     .trim()
     .toUpperCase();
 
-  // Uma etiqueta por PACOTE — mesma regra do volume de expedição: 1 pacote por
-  // vaga de tamanho da grade (tamanho repetido conta as vezes que aparece) + 1
-  // pacote de reposição. Reusa _expTotalTamanhosGrade pra etiqueta e volume
-  // nunca divergirem. Mínimo 1 pra não bloquear impressão de OS sem grade.
-  // Ex.: P-G1-G2 (3 tamanhos) = 4 etiquetas; P ao G3 (7) = 8; 2M-4G-2GG = 9.
-  const nTamGrade = _expTotalTamanhosGrade(o);
-  const numEtiquetas = nTamGrade > 0 ? nTamGrade + 1 : 1;
+  // Uma etiqueta por PACOTE — mesma regra do volume de expedição. Cada pacote
+  // de tamanho leva o SEU tamanho (P, M, G…); a última etiqueta é o pacote de
+  // reposição (conteúdo = ETIQUETA_CONTEUDO_REPOSICAO). Total = nº de vagas de
+  // tamanho + 1. Mínimo 1 pra não bloquear OS sem grade.
+  // Ex.: P-G1-G2 = 4 etiquetas (P, G1, G2, Reposição); 2M-4G-2GG = 9.
+  const tamanhosPacotes = _tamanhosDaGradeExpandido(o);
+  const temReposicao = tamanhosPacotes.length > 0;
+  const numEtiquetas = temReposicao ? tamanhosPacotes.length + 1 : 1;
 
-  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas };
+  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao };
 }
 
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
-  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas } = dadosEtiquetaParaOS(o);
+  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao } = dadosEtiquetaParaOS(o);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // Todas as etiquetas sao identicas; so o numero do LOTE muda (1..N).
-  const corpo = Array.from({ length: numEtiquetas }, (_, i) => `
+  // Cada etiqueta é um pacote: as de tamanho mostram o SEU tamanho em destaque
+  // (fonte dobrada); a última é o pacote de reposição, com o conteúdo.
+  const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
+    const ehRep = temReposicao && i === numEtiquetas - 1;
+    const destaque = ehRep
+      ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
+      : `<div class="big">TAM: ${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>`;
+    return `
     <div class="page">
       <div class="label">
         <div class="head">${escEt(marca)}</div>
         <div class="row">OS: ${escEt(os)}</div>
         <div class="row">MODELO: ${escEt(desenhoNome)}</div>
         <div class="row">QTDE: ${escEt(qtde)}</div>
-        <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
         <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
+        ${destaque}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -7117,6 +7151,19 @@ function imprimirEtiquetas(osId) {
     margin-bottom: 0.4mm;
   }
   .label .row { text-align: left; }
+  /* Tamanho do pacote (ou conteúdo da reposição) em destaque: fonte dobrada. */
+  .label .big {
+    font-size: 22pt;         /* dobro das linhas (11pt) */
+    font-weight: 800;
+    text-align: center;
+    line-height: 1.0;
+    letter-spacing: .02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0.4mm;
+  }
+  .label .big.rep { font-size: 15pt; }  /* conteúdo é texto mais longo */
   @media print {
     .toolbar { display: none !important; }
     .page { margin: 0; }
