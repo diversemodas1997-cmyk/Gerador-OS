@@ -7275,13 +7275,30 @@ async function gerarPdfDaSheetExp() {
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const canvas = await _html2canvas(sheet, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    // Pontos de corte "seguros" = fim de cada bloco de expedição (em px do
+    // canvas). Assim a virada de página nunca parte um bloco no meio.
+    const sheetRect = sheet.getBoundingClientRect();
+    const ratio = canvas.width / sheetRect.width; // CSS px -> canvas px
+    const cortesSeguros = Array.from(sheet.querySelectorAll('.exp-print-bloco'))
+      .map(b => (b.getBoundingClientRect().bottom - sheetRect.top) * ratio)
+      .filter(v => v > 0 && v <= canvas.height)
+      .sort((a, b) => a - b);
     const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const pageWmm = 210, pageHmm = 297;
     const pxPorMm = canvas.width / pageWmm;      // px do canvas por mm de largura A4
     const pageHpx = Math.floor(pageHmm * pxPorMm); // px que cabem numa A4 de altura
     let y = 0, pagina = 0;
-    while (y < canvas.height) {
-      const sliceH = Math.min(pageHpx, canvas.height - y);
+    while (y < canvas.height - 1) {
+      const maxY = y + pageHpx;
+      let cut;
+      if (maxY >= canvas.height) {
+        cut = canvas.height;
+      } else {
+        // maior fim-de-bloco que cabe inteiro nesta página
+        const cand = cortesSeguros.filter(v => v > y + 1 && v <= maxY);
+        cut = cand.length ? Math.max(...cand) : maxY; // bloco > 1 página: corte duro
+      }
+      const sliceH = Math.max(1, Math.round(cut - y));
       const tmp = document.createElement('canvas');
       tmp.width = canvas.width; tmp.height = sliceH;
       const ctx = tmp.getContext('2d');
