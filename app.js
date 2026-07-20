@@ -46,6 +46,28 @@ async function cloudLoad() {
 
 async function cloudFlush() {
   if (!supa || !currentUser || !cloudCache) return;
+  // TRAVA ANTI-APAGAMENTO (causa raiz dos incidentes de perda de dados):
+  // se estamos prestes a gravar um blob VAZIO (sem OS e sem desenhos),
+  // isso é quase sempre um cloudCache zerado por uma leitura que falhou.
+  // Antes de gravar vazio, confere o SERVIDOR: se ele ainda tem dados,
+  // bloqueia o flush pra não sobrescrever o bom com vazio. Cobre inclusive
+  // o caso da leitura ter falhado no carregamento (não dependemos de ter
+  // visto dados nesta sessão). Ações intencionais liberam via _permitirFlushVazio.
+  if (!_permitirFlushVazio && _blobEstaVazio(cloudCache)) {
+    let servidorTemDados = false;
+    try {
+      const { data } = await supa.from('shared_data').select('data').eq('id', 'main').maybeSingle();
+      const d = (data && data.data) || {};
+      servidorTemDados = _contarItens(d, 'ordens') > 0 || _contarItens(d, 'desenhos') > 0;
+    } catch (e) { console.warn('checagem anti-apagamento', e); }
+    if (servidorTemDados) {
+      console.error('cloudFlush BLOQUEADO: tentativa de gravar dados vazios sobre servidor com dados.');
+      setSyncStatus('error');
+      toast('⛔ Gravação bloqueada: a tela está sem dados, mas o servidor tem dados. '
+        + 'Recarregue a página (Ctrl+F5) — nada foi sobrescrito.', 'err');
+      return;
+    }
+  }
   setSyncStatus('saving');
   try {
     const { error } = await supa.from('shared_data').upsert({
@@ -56,6 +78,9 @@ async function cloudFlush() {
     }, { onConflict: 'id' });
     if (error) throw error;
     setSyncStatus('ok');
+    if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
+    // Snapshot de contingência (local + pasta) do estado recém-salvo.
+    salvarSnapshotContingencia();
     // Backup local automatico (silencioso; falha nao bloqueia o save).
     // Funcao definida mais abaixo, perto da pasta de PDFs.
     if (typeof escreverBackupJson === 'function') {
@@ -863,6 +888,11 @@ async function loadState() {
         try { STATE[k] = JSON.parse(r.value); } catch { STATE[k] = []; }
       }
     } catch (e) { /* chave não existe ainda, ok */ }
+  }
+  // Marca que o app já viu dados reais — arma a trava anti-apagamento e
+  // libera o snapshot de contingência (que só grava blobs não-vazios).
+  if ((STATE.ordens && STATE.ordens.length) || (STATE.desenhos && STATE.desenhos.length)) {
+    _appJaTeveDados = true;
   }
   // Carrega overrides de rótulos das pastas de grades (objeto, não array)
   try {
@@ -6583,6 +6613,188 @@ async function clearBackupFolderHandle() {
   db.close();
 }
 
+/* ========================================================= */
+/*        SNAPSHOTS DE CONTINGÊNCIA (LOCAL + PASTA)          */
+/* ========================================================= */
+// A cada alteração persistida, guardamos uma cópia do blob inteiro:
+//  - LOCAL: IndexedDB próprio (ring dos últimos N), sobrevive a apagamento
+//    do servidor e não depende de rede/pasta;
+//  - PASTA: arquivo versionado snapshots/snap-<ts>.json na pasta conectada
+//    (sincroniza pro Drive), ring de M arquivos.
+// Objetivo: qualquer perda vira rollback de 1 clique em Configurações.
+const SNAP_DB_NAME = 'gerador-os-snapshots';
+const SNAP_DB_STORE = 'snaps';
+const SNAP_MAX_LOCAL = 30;          // quantos snapshots locais manter
+const SNAP_MAX_PASTA = 15;          // quantos arquivos na pasta manter
+const SNAP_MIN_INTERVALO_MS = 20000; // no máximo 1 snapshot a cada 20s
+let _ultimoSnapTs = 0;
+// Marca se o app já viu dados de verdade nesta sessão. Serve à trava
+// anti-apagamento: se já tivemos dados, um flush "vazio" é bloqueado.
+let _appJaTeveDados = false;
+let _permitirFlushVazio = false; // liberado só em ações intencionais (limpar/restaurar)
+
+function _openSnapDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SNAP_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const s = req.result.createObjectStore(SNAP_DB_STORE, { keyPath: 'id', autoIncrement: true });
+      s.createIndex('ts', 'ts');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Conta itens de uma chave do blob (que no cloudCache é string JSON).
+function _contarItens(cache, k) {
+  try {
+    const v = cache && cache[k];
+    const a = typeof v === 'string' ? JSON.parse(v) : v;
+    return Array.isArray(a) ? a.length : 0;
+  } catch (e) { return 0; }
+}
+
+// Um blob "vazio" = sem nenhuma OS E sem nenhum desenho. É o formato
+// de um apagamento acidental (cloudCache zerado sendo gravado por cima).
+function _blobEstaVazio(cache) {
+  return _contarItens(cache, 'ordens') === 0 && _contarItens(cache, 'desenhos') === 0;
+}
+
+async function salvarSnapshotContingencia({ forcar = false } = {}) {
+  try {
+    if (!cloudCache || _blobEstaVazio(cloudCache)) return; // nunca snapshota lixo
+    const agora = Date.now();
+    if (!forcar && (agora - _ultimoSnapTs) < SNAP_MIN_INTERVALO_MS) return;
+    _ultimoSnapTs = agora;
+    const registro = {
+      ts: agora,
+      iso: new Date(agora).toISOString(),
+      by: (currentUser && currentUser.email) || null,
+      resumo: { ordens: _contarItens(cloudCache, 'ordens'), desenhos: _contarItens(cloudCache, 'desenhos') },
+      data: JSON.parse(JSON.stringify(cloudCache))
+    };
+    // 1) LOCAL (IndexedDB) + poda
+    try {
+      const db = await _openSnapDb();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(SNAP_DB_STORE, 'readwrite');
+        tx.objectStore(SNAP_DB_STORE).add(registro);
+        tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+      });
+      // poda: mantém os SNAP_MAX_LOCAL mais recentes
+      const ids = await new Promise((res, rej) => {
+        const tx = db.transaction(SNAP_DB_STORE, 'readonly');
+        const req = tx.objectStore(SNAP_DB_STORE).getAllKeys();
+        req.onsuccess = () => res(req.result || []); req.onerror = () => rej(req.error);
+      });
+      if (ids.length > SNAP_MAX_LOCAL) {
+        const excluir = ids.slice(0, ids.length - SNAP_MAX_LOCAL);
+        await new Promise((res, rej) => {
+          const tx = db.transaction(SNAP_DB_STORE, 'readwrite');
+          const st = tx.objectStore(SNAP_DB_STORE);
+          excluir.forEach(id => st.delete(id));
+          tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+        });
+      }
+      db.close();
+    } catch (e) { console.warn('snapshot local', e); }
+    // 2) PASTA (arquivo versionado) + poda — best-effort
+    escreverSnapshotNaPasta(registro).catch(e => console.warn('snapshot pasta', e));
+  } catch (e) {
+    console.warn('salvarSnapshotContingencia', e);
+  }
+}
+
+async function escreverSnapshotNaPasta(registro) {
+  const raiz = backupFolderHandle || (await loadBackupFolderHandle()) || pdfFolderHandle || (await loadPdfFolderHandle());
+  if (!raiz) return;
+  if (!(await ensureFolderPermission(raiz, 'readwrite'))) return;
+  const dir = await raiz.getDirectoryHandle('snapshots', { create: true });
+  const nome = 'snap-' + registro.iso.replace(/[:.]/g, '-') + '.json';
+  const fh = await dir.getFileHandle(nome, { create: true });
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify({ __meta: { iso: registro.iso, by: registro.by, resumo: registro.resumo }, ...registro.data }));
+  await w.close();
+  // poda: mantém os SNAP_MAX_PASTA arquivos mais recentes
+  try {
+    const nomes = [];
+    for await (const [n, h] of dir.entries()) {
+      if (h.kind === 'file' && /^snap-.*\.json$/.test(n)) nomes.push(n);
+    }
+    nomes.sort();
+    for (const n of nomes.slice(0, Math.max(0, nomes.length - SNAP_MAX_PASTA))) {
+      try { await dir.removeEntry(n); } catch (e) { /* ok */ }
+    }
+  } catch (e) { /* diretório sem iterador — ignora poda */ }
+}
+
+async function listarSnapshotsLocais() {
+  const cont = document.getElementById('snapshotsLocaisList');
+  if (!cont) return;
+  cont.innerHTML = '<div class="empty" style="padding:20px;">Carregando...</div>';
+  let regs = [];
+  try {
+    const db = await _openSnapDb();
+    regs = await new Promise((res, rej) => {
+      const tx = db.transaction(SNAP_DB_STORE, 'readonly');
+      const req = tx.objectStore(SNAP_DB_STORE).getAll();
+      req.onsuccess = () => res(req.result || []); req.onerror = () => rej(req.error);
+    });
+    db.close();
+  } catch (e) {
+    cont.innerHTML = `<div class="empty" style="padding:20px;">Erro ao ler snapshots: ${esc(e.message || e)}</div>`;
+    return;
+  }
+  if (!regs.length) { cont.innerHTML = '<div class="empty" style="padding:20px;">Nenhum snapshot ainda — é criado automaticamente a cada alteração.</div>'; return; }
+  regs.sort((a, b) => b.ts - a.ts);
+  cont.innerHTML = `<table class="table">
+    <thead><tr><th>Quando</th><th>Conteúdo</th><th class="col-actions">Ação</th></tr></thead>
+    <tbody>${regs.map(r => `
+      <tr>
+        <td>${esc(new Date(r.ts).toLocaleString('pt-BR'))}</td>
+        <td>${r.resumo ? `${r.resumo.ordens} OS · ${r.resumo.desenhos} desenhos` : '—'}</td>
+        <td class="col-actions"><button class="btn small danger" onclick="restaurarSnapshotLocal(${r.id})">Restaurar</button></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function restaurarSnapshotLocal(id) {
+  if (!exigirAdmin('restaurar snapshots')) return;
+  let reg = null;
+  try {
+    const db = await _openSnapDb();
+    reg = await new Promise((res, rej) => {
+      const tx = db.transaction(SNAP_DB_STORE, 'readonly');
+      const req = tx.objectStore(SNAP_DB_STORE).get(id);
+      req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+    });
+    db.close();
+  } catch (e) { toast('Erro ao ler snapshot', 'err'); return; }
+  if (!reg || !reg.data) { toast('Snapshot não encontrado', 'err'); return; }
+  const quando = new Date(reg.ts).toLocaleString('pt-BR');
+  const conf = prompt(
+    `Restaurar o snapshot de ${quando} (${reg.resumo ? reg.resumo.ordens + ' OS' : ''})?\n\n` +
+    `Isso vai SOBRESCREVER os dados atuais (de todos) com essa versão.\n\n` +
+    `Para confirmar, digite RESTAURAR:`
+  );
+  if (conf === null) return;
+  if ((conf || '').trim().toUpperCase() !== 'RESTAURAR') { toast('Palavra não conferiu — nada foi restaurado.', 'err'); return; }
+  cloudCache = JSON.parse(JSON.stringify(reg.data));
+  if (supa && currentUser) {
+    setSyncStatus('saving');
+    try {
+      const { error } = await supa.from('shared_data').upsert({
+        id: 'main', data: cloudCache, updated_at: new Date().toISOString(), updated_by: currentUser.id
+      }, { onConflict: 'id' });
+      if (error) throw error;
+      setSyncStatus('ok');
+    } catch (e) { setSyncStatus('error'); toast('Erro ao gravar no servidor: ' + (e.message || e), 'err'); return; }
+  }
+  await loadState();
+  goto('home');
+  toast(`Snapshot de ${quando} restaurado`, 'ok');
+}
+
 async function pickBackupFolder() {
   if (!('showDirectoryPicker' in window)) {
     toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
@@ -8703,9 +8915,18 @@ async function limparTudo() {
     toast('Palavra não conferiu — nada foi apagado.', 'err');
     return;
   }
-  ALL_KEYS.forEach(k => STATE[k] = []);
-  for (const k of ALL_KEYS) {
-    await saveState(k);
+  // Ação intencional: libera a trava anti-apagamento para este flush.
+  _permitirFlushVazio = true;
+  try {
+    ALL_KEYS.forEach(k => STATE[k] = []);
+    for (const k of ALL_KEYS) {
+      await saveState(k);
+    }
+    // Garante que o flush pendente saia antes de rearmar a trava.
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    await cloudFlush();
+  } finally {
+    _permitirFlushVazio = false;
   }
   toast('Tudo apagado', 'ok');
   goto('home');
@@ -8831,6 +9052,8 @@ async function popularExemplo() {
     goto('home');
     // Tarefas em background — não bloqueiam a navegação
     snapshotDiario().catch(e => console.warn('snapshotDiario', e));
+    // Snapshot de contingência base ao abrir (estado carregado, não-vazio).
+    salvarSnapshotContingencia({ forcar: true }).catch(e => console.warn('snapshot base', e));
     if (currentRole === 'admin') {
       migrarImagensBase64().catch(e => console.warn('migrarImagensBase64', e));
     }
@@ -8923,6 +9146,8 @@ window.atualizarDatalistCodigos = atualizarDatalistCodigos;
 window.renderFuncoes = renderFuncoes;
 window.listarSnapshots = listarSnapshots;
 window.restaurarSnapshot = restaurarSnapshot;
+window.listarSnapshotsLocais = listarSnapshotsLocais;
+window.restaurarSnapshotLocal = restaurarSnapshotLocal;
 window.setUserRole = setUserRole;
 window.listarUsuariosComPapel = listarUsuariosComPapel;
 window.duplicarCadastro = duplicarCadastro;

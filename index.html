@@ -715,6 +715,14 @@
         <div id="snapshotsList"><div class="empty" style="padding:20px;">Clique em "Atualizar lista" para carregar.</div></div>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Snapshots de contingência (automáticos)</div>
+        <div class="info-box">A cada alteração no programa, uma cópia completa dos dados é guardada automaticamente — no navegador (últimos 30) e, se houver pasta de backup conectada, também em arquivos na pasta (Google Drive). Se algo apagar os dados, restaure aqui o estado logo antes — nada se perde. Uma trava também impede o programa de gravar dados vazios por cima dos bons.</div>
+        <div style="display:flex; gap:8px; margin-bottom: 10px;">
+          <button class="btn small" onclick="listarSnapshotsLocais()">Atualizar lista</button>
+        </div>
+        <div id="snapshotsLocaisList"><div class="empty" style="padding:20px;">Clique em "Atualizar lista" para carregar.</div></div>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Usuários e permissões</div>
         <div class="info-box">Somente admin pode gerenciar papéis. Usuário comum só pode criar/editar OS — não mexe em cadastros nem apaga dados.</div>
         <div class="form-grid cols-3" style="margin-bottom: 12px;">
@@ -818,6 +826,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-17m"></script>
+<script src="app.js?v=2026-07-20a"></script>
 </body>
 </html>
