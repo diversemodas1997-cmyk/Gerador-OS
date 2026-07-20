@@ -1321,7 +1321,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
           </select>
         </div>
-        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"></div>
+        <div class="field"><label>Peso / gramatura padrão (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">Fallback: a gramatura principal agora é cadastrada por <b>cor</b>. Este valor só é usado quando a cor não tem gramatura própria.</div></div>
         <div class="field"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
       </div>`;
   }
@@ -1332,6 +1332,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
         <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
         <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
+        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-cor-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">A gramatura agora é por COR (varia conforme a cor). Usada no consumo de matéria-prima. Se vazia, cai no peso do tecido.</div></div>
       </div>`;
   }
   else if (tipo === 'material') {
@@ -2131,6 +2132,7 @@ async function salvarCadastro() {
     item.hex = v('m-hex');
     item.codigo = v('m-codigo');
     item.siglaSku = (v('m-siglasku') || '').trim().toUpperCase();
+    item.peso = parseFloat(String(v('m-cor-peso')).replace(',', '.')) || 0;
   }
   else if (tipo === 'material') {
     if (!v('m-codigo') || !v('m-desc')) return toast('Código e descrição obrigatórios', 'err');
@@ -2453,10 +2455,11 @@ function renderTecidos() {
 }
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
-  if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
+  if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.cores.map(c => `
     <tr><td><span class="color-swatch" style="background:${esc(c.hex)}"></span><strong>${esc(c.nome)}</strong></td>
-    <td><span class="badge">${esc(c.codigo)||'—'}</span></td>${acoesCell('cor', c.id)}</tr>`).join('');
+    <td><span class="badge">${esc(c.codigo)||'—'}</span></td>
+    <td style="font-family:'IBM Plex Mono',monospace;">${c.peso ? esc(c.peso)+' g/m²' : '—'}</td>${acoesCell('cor', c.id)}</tr>`).join('');
 }
 function renderMateriais() {
   const tb = document.getElementById('tbl-materiais');
@@ -8474,6 +8477,16 @@ function gramaturaTecidoPorNome(nome) {
   return t ? (parseFloat(t.peso) || 0) : 0;
 }
 
+// Peso/gramatura (g/m²) de uma COR cadastrada, buscada pelo NOME. A gramatura
+// passou a ser cadastrada por cor (varia conforme a cor); tem prioridade sobre
+// a do tecido. Retorna 0 se não cadastrada ou sem peso (aí cai no tecido).
+function gramaturaCorPorNome(nome) {
+  if (!nome) return 0;
+  const alvo = _normNome(nome);
+  const c = (STATE.cores || []).find(x => _normNome(x.nome) === alvo);
+  return c ? (parseFloat(c.peso) || 0) : 0;
+}
+
 // Resolve cada fase do enfesto de uma OS e calcula o consumo em kg.
 // Fórmula (confirmada): kg = comprimento(m) × largura(m) × camadas × peso(g/m²) / 1000.
 // É a fonte única usada tanto na folha de impressão (coluna Consumo) quanto
@@ -8507,8 +8520,12 @@ function consumoEnfestoOS(o) {
     const camadas = ehVies ? 1 : (b.camadas || camadasGlobal || 0);
     const comp = (parseFloat(fase.comp) > 0 ? parseFloat(fase.comp) : parseFloat(b.comp)) || 0;
     const larg = (parseFloat(fase.larg) > 0 ? parseFloat(fase.larg) : parseFloat(b.larg)) || 0;
-    // Gramatura do tecido REAL cadastrado; se a fase não aponta um, tenta pelo nome do enfesto.
-    const peso = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
+    // Gramatura: prioridade para a COR (varia conforme a cor); se a cor não
+    // tem peso cadastrado, cai no peso do TECIDO (compatibilidade). Por fim
+    // tenta pelo nome do enfesto.
+    const peso = gramaturaCorPorNome(corReal)
+      || gramaturaTecidoPorNome(tecidoReal)
+      || gramaturaTecidoPorNome(nomeEnf);
     const kg = (comp * larg * camadas * peso) / 1000;
     return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg, ehVies };
   });
