@@ -1791,6 +1791,19 @@ async function refreshDatalistSkus() {
   } catch (e) { /* silencioso */ }
 }
 
+// Interpreta o campo "bobinas previstas": aceita inteiro (14), fração (1/2),
+// decimal com vírgula (0,5) e zero. Retorna número, ou null se não informado.
+function parseBobinas(str) {
+  const s = String(str == null ? '' : str).trim().replace(',', '.');
+  if (s === '') return null;
+  if (s.includes('/')) {
+    const [a, b] = s.split('/').map(x => parseFloat(x));
+    return (isFinite(a) && isFinite(b) && b > 0 && a >= 0) ? a / b : null;
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
 function addFaseGradeRow(fase = {}) {
   const cont = document.getElementById('m-fases-container');
   if (!cont) return;
@@ -1814,6 +1827,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
+      <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.</div></div>
     </div>`;
   cont.appendChild(div);
   toggleUnidadesGrade(div.querySelector('.fase-tec'));
@@ -2150,14 +2164,18 @@ async function salvarCadastro() {
     ['p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
-    item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => ({
-      ordem: i + 1,
-      nome: b.querySelector('.fase-nome')?.value || '',
-      tecidoId: b.querySelector('.fase-tec')?.value || '',
-      unidades: parseInt(b.querySelector('.fase-unid')?.value) || 2,
-      comp: b.querySelector('.fase-comp')?.value || '',
-      larg: b.querySelector('.fase-larg')?.value || ''
-    }));
+    item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => {
+      const pb = parseBobinas(b.querySelector('.fase-bobinas')?.value);
+      return {
+        ordem: i + 1,
+        nome: b.querySelector('.fase-nome')?.value || '',
+        tecidoId: b.querySelector('.fase-tec')?.value || '',
+        unidades: parseInt(b.querySelector('.fase-unid')?.value) || 2,
+        comp: b.querySelector('.fase-comp')?.value || '',
+        larg: b.querySelector('.fase-larg')?.value || '',
+        bobinas: pb == null ? '' : pb
+      };
+    });
     // Retrocompatibilidade: usa a primeira fase para os campos legados
     const f1 = item.fases[0] || {};
     item.enfestoComprimento = f1.comp || '';
@@ -8595,6 +8613,24 @@ function renderEnfestoBox(o) {
 
   const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
   const fmtKg = n => Number(n).toFixed(3).replace('.',',');
+  const fmtBob = n => {
+    if (n === 0) return '0';
+    if (Number.isInteger(n)) return String(n);
+    if (Math.abs(n - 0.5) < 1e-9) return '½';
+    return Number(n).toFixed(2).replace(/0+$/, '').replace(/[.]$/, '').replace('.', ',');
+  };
+  // Previsão de consumo (bobinas) por fase — vem do cadastro da grade viva
+  // (previsão de demanda). Se a grade não tem previsão, a coluna Consumo segue
+  // mostrando o kg calculado do enfesto (comportamento antigo).
+  const gradeVivaPrev = o.gradeId ? STATE.grades.find(g => g.id === o.gradeId) : null;
+  const bobPorOrdem = {};
+  let gradeTemPrevisao = false;
+  if (gradeVivaPrev && Array.isArray(gradeVivaPrev.fases)) {
+    gradeVivaPrev.fases.forEach(f => {
+      const b = parseBobinas(f.bobinas);
+      if (b != null) { bobPorOrdem[f.ordem] = b; if (b > 0) gradeTemPrevisao = true; }
+    });
+  }
 
   // Consumo por fase (fonte única — mesma usada na baixa de estoque)
   const consumo = consumoEnfestoOS(o);
@@ -8651,7 +8687,12 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${compEf ? fmt(compEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${L.kg > 0 ? fmtKg(L.kg)+' kg' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${
+        gradeTemPrevisao
+          ? `<div style="font-weight:700;">${fmtBob(bobPorOrdem[ord] != null ? bobPorOrdem[ord] : 0)} bob</div>`
+            + (L.kg > 0 ? `<div style="font-size:5.5pt;color:#666;font-weight:400;">${fmtKg(L.kg)} kg</div>` : '')
+          : (L.kg > 0 ? fmtKg(L.kg)+' kg' : '—')
+      }</td>
     </tr>` + (L.ehVies ? '' : `
     <tr class="enfesto-tempos">
       <td style="background:#f7faf8;"></td>
