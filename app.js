@@ -8712,12 +8712,10 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${compEf ? fmt(compEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${
-        gradeTemPrevisao
-          ? `<div style="font-weight:700;">${fmtBob(bobPorOrdem[ord] != null ? bobPorOrdem[ord] : 0)} bob</div>`
-            + (L.kg > 0 ? `<div style="font-size:5.5pt;color:#666;font-weight:400;">${fmtKg(L.kg)} kg</div>` : '')
-          : (L.kg > 0 ? fmtKg(L.kg)+' kg' : '—')
-      }</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;padding:0;">
+        <div style="border-bottom:1px solid #cfcfcf;padding:2px 3px;font-weight:700;" title="Bobinas previstas (cadastro da grade)">${gradeTemPrevisao && bobPorOrdem[ord] != null ? fmtBob(bobPorOrdem[ord]) : '—'}</div>
+        <div style="padding:2px 3px;font-weight:400;font-size:6pt;color:#444;" title="Estimativa por gramatura × comprimento">${L.kg > 0 ? fmtKg(L.kg)+' kg' : '—'}</div>
+      </td>
     </tr>` + (L.ehVies ? '' : `
     <tr class="enfesto-tempos">
       <td style="background:#f7faf8;"></td>
@@ -8758,7 +8756,7 @@ function renderEnfestoBox(o) {
           <th style="font-size:6.5pt;white-space:nowrap;">Compr.</th>
           <th style="font-size:6.5pt;white-space:nowrap;">Largura</th>
           <th style="font-size:6.5pt;white-space:nowrap;">CAM</th>
-          <th style="font-size:6.5pt;white-space:nowrap;">Consumo</th>
+          <th style="font-size:6.5pt;white-space:nowrap;line-height:1.1;">Consumo<div style="font-size:4.8pt;font-weight:400;color:#666;">bobinas<br>estim. (g×c)</div></th>
         </tr>
       </thead>
       <tbody>
