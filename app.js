@@ -63,8 +63,11 @@ async function cloudFlush() {
     if (servidorTemDados) {
       console.error('cloudFlush BLOQUEADO: tentativa de gravar dados vazios sobre servidor com dados.');
       setSyncStatus('error');
-      toast('⛔ Gravação bloqueada: a tela está sem dados, mas o servidor tem dados. '
-        + 'Recarregue a página (Ctrl+F5) — nada foi sobrescrito.', 'err');
+      mostrarAlertaSalvamento('bloqueio',
+        'A tela está sem dados (OS e desenhos), mas o servidor ainda tem seus dados. '
+        + 'Para evitar um apagamento, a gravação foi bloqueada e NADA foi sobrescrito. '
+        + 'Não continue editando — clique em "Recarregar agora" para trazer os dados de volta.');
+      toast('⛔ Gravação bloqueada — nada foi sobrescrito. Recarregue a página.', 'err');
       return;
     }
   }
@@ -89,6 +92,10 @@ async function cloudFlush() {
   } catch (e) {
     console.error('cloudFlush', e);
     setSyncStatus('error');
+    mostrarAlertaSalvamento('erro',
+      'Suas últimas alterações podem NÃO ter sido salvas no servidor (' + ((e && e.message) || 'erro de conexão') + '). '
+      + 'Verifique a internet. Antes de recarregar, evite fechar a página para não perder o que digitou. '
+      + 'Se o problema persistir, avise o suporte.');
   }
 }
 
@@ -262,7 +269,30 @@ function setSyncStatus(status) {
   el.classList.remove('saving', 'error');
   if (status === 'saving') { el.textContent = '☁ Salvando...'; el.classList.add('saving'); }
   else if (status === 'error') { el.textContent = '☁ Erro ao salvar'; el.classList.add('error'); }
-  else { el.textContent = '☁ Sincronizado'; }
+  else { el.textContent = '☁ Sincronizado'; esconderAlertaSalvamento(); }
+}
+
+// Banner de aviso no topo do conteúdo. tipo 'bloqueio' (grave, trava
+// anti-apagamento) ou 'erro' (falha de gravação por qualquer motivo).
+function mostrarAlertaSalvamento(tipo, msg) {
+  const box = document.getElementById('alertaSalvamento');
+  if (!box) return;
+  const ic = document.getElementById('alertaSalvamentoIcone');
+  const tit = document.getElementById('alertaSalvamentoTitulo');
+  const m = document.getElementById('alertaSalvamentoMsg');
+  box.classList.remove('erro', 'bloqueio');
+  box.classList.add(tipo === 'bloqueio' ? 'bloqueio' : 'erro');
+  if (ic) ic.textContent = tipo === 'bloqueio' ? '⛔' : '⚠';
+  if (tit) tit.textContent = tipo === 'bloqueio'
+    ? 'Gravação bloqueada — seus dados no servidor estão protegidos'
+    : 'Falha ao salvar no servidor';
+  if (m) m.textContent = msg || '';
+  box.classList.remove('hidden');
+}
+
+function esconderAlertaSalvamento() {
+  const box = document.getElementById('alertaSalvamento');
+  if (box) box.classList.add('hidden');
 }
 
 /* Snapshot diário: grava cópia do blob atual em shared_data_backups uma vez por dia. */
@@ -9148,6 +9178,7 @@ window.listarSnapshots = listarSnapshots;
 window.restaurarSnapshot = restaurarSnapshot;
 window.listarSnapshotsLocais = listarSnapshotsLocais;
 window.restaurarSnapshotLocal = restaurarSnapshotLocal;
+window.esconderAlertaSalvamento = esconderAlertaSalvamento;
 window.setUserRole = setUserRole;
 window.listarUsuariosComPapel = listarUsuariosComPapel;
 window.duplicarCadastro = duplicarCadastro;

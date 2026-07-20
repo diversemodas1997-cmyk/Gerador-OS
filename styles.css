@@ -1544,3 +1544,38 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   /* O bloco de uma expedição é o que não pode partir no meio. */
   .sheet-exp .exp-print-bloco { page-break-inside: avoid; }
 }
+
+/* ===== Banner de aviso de salvamento (bloqueio / erro) ===== */
+.alerta-salvamento {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--alert);
+  background: var(--alert-bg);
+  color: #7a1414;
+  box-shadow: 0 6px 20px rgba(200, 30, 30, .18);
+}
+.alerta-salvamento.erro {
+  border-color: #b9791a;
+  background: #fdf3e3;
+  color: #7a4d0e;
+  box-shadow: 0 6px 20px rgba(185, 121, 26, .16);
+}
+.alerta-salvamento.hidden { display: none; }
+.alerta-salvamento .alerta-icone { font-size: 26px; line-height: 1; }
+.alerta-salvamento .alerta-texto { flex: 1; font-size: 13.5px; line-height: 1.4; }
+.alerta-salvamento .alerta-texto strong { display: block; font-size: 15px; margin-bottom: 2px; }
+.alerta-salvamento .alerta-acoes { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.alerta-salvamento .btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+  font-weight: 700;
+}
+.alerta-salvamento .btn.ghost:hover { background: rgba(0, 0, 0, .06); }
