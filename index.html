@@ -655,6 +655,7 @@
         <div><h1>Folha do plano de expedição</h1><div class="desc">Revise o plano e clique em Imprimir. A folha acompanha o período aberto no planejamento.</div></div>
         <div class="actions">
           <button class="btn" onclick="goto('expedicao'); trocarAbaExpedicao('plano');">Voltar</button>
+          <button class="btn" onclick="salvarPdfOeNaPasta()">💾 Salvar OE na pasta</button>
           <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
         </div>
       </div>
@@ -687,6 +688,15 @@
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
           <button class="btn primary" onclick="conectarPastaPdf()">Conectar pasta</button>
           <button class="btn" onclick="desconectarPastaPdf()">Desconectar</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pasta das Ordens de Expedição (OE)</div>
+        <div class="info-box">A folha do plano de expedição é salva em PDF nesta pasta automaticamente quando você a abre (menu Expedição → "Folha do plano"). O arquivo é nomeado pelo período do plano (ex.: <code>OE-2026-07-19_a_2026-07-25.pdf</code>) — reabrir o mesmo período reescreve o mesmo arquivo. Funciona no Chrome/Edge no desktop. Conecte uma vez; para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
+        <div id="oeFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="conectarPastaOe()">Conectar pasta</button>
+          <button class="btn" onclick="desconectarPastaOe()">Desconectar</button>
         </div>
       </div>
       <div class="card admin-only">
@@ -839,6 +849,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-20b"></script>
+<script src="app.js?v=2026-07-20c"></script>
 </body>
 </html>

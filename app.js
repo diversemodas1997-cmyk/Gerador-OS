@@ -1210,11 +1210,17 @@ function goto(page) {
   if (page === 'costurando') renderFasePainel(1);
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
-  if (page === 'print-expedicao') renderPrintPlanoExpedicao();
+  if (page === 'print-expedicao') {
+    renderPrintPlanoExpedicao();
+    // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
+    // PDF das OS. Silencioso e sem pasta conectada não faz nada.
+    salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE', e));
+  }
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
     atualizarPdfFolderStatus();
     atualizarBackupFolderStatus();
+    atualizarOeFolderStatus();
   }
 }
 
@@ -7156,6 +7162,180 @@ async function savePdfToFolder(blob, filename) {
   }
 }
 
+/* ========================================================= */
+/*     PASTA E PDF DAS ORDENS DE EXPEDIÇÃO (OE)              */
+/* ========================================================= */
+// Mesma abordagem da pasta de PDF das OS (File System Access + IndexedDB),
+// porém com pasta de destino PRÓPRIA — as OE (folha do plano de expedição)
+// são salvas separadas das OS. Reusa o mesmo DB/store, chave diferente.
+const OE_DB_KEY = 'oe-folder';
+let oeFolderHandle = null;
+let _oeSalvando = false;
+
+async function saveOeFolderHandle(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).put(handle, OE_DB_KEY);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+async function loadOeFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(OE_DB_KEY);
+      req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) { console.warn('loadOeFolderHandle', e); return null; }
+}
+async function clearOeFolderHandle() {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).delete(OE_DB_KEY);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function pickOeFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return null;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await saveOeFolderHandle(handle);
+    oeFolderHandle = handle;
+    return handle;
+  } catch (e) {
+    if (e.name === 'AbortError') return null;
+    console.error('pickOeFolder', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+    return null;
+  }
+}
+async function conectarPastaOe() {
+  const handle = await pickOeFolder();
+  if (handle) {
+    toast(`Pasta das OE conectada: ${handle.name}`, 'ok');
+    atualizarOeFolderStatus();
+  }
+}
+async function desconectarPastaOe() {
+  await clearOeFolderHandle();
+  oeFolderHandle = null;
+  toast('Pasta das OE desconectada', '');
+  atualizarOeFolderStatus();
+}
+async function atualizarOeFolderStatus() {
+  const el = document.getElementById('oeFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = oeFolderHandle || (await loadOeFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada. As OE não serão salvas automaticamente até você conectar uma pasta.</span>';
+    return;
+  }
+  oeFolderHandle = handle;
+  let permLabel = 'pronta — a folha do plano é salva ao abrir/gerar';
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (_) {}
+  el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
+}
+
+// Nome do arquivo da OE = período coberto pelo plano (estável: regerar o
+// mesmo período reescreve o mesmo arquivo, igual às OS pelo número).
+function oeFilenameForPlano() {
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const base = (ini === fim) ? `OE-${ini}` : `OE-${ini}_a_${fim}`;
+  return sanitizeForFilename(base) + '.pdf';
+}
+
+// Gera PDF multi-página da folha do plano de expedição (#print-sheet-exp),
+// que pode ocupar várias A4. Fatiamos o canvas alto em páginas A4.
+async function gerarPdfDaSheetExp() {
+  const _html2canvas = window.html2canvas;
+  const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof _html2canvas !== 'function') throw new Error('html2canvas não carregada');
+  if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
+  const sheet = document.getElementById('print-sheet-exp');
+  if (!sheet) throw new Error('Folha do plano não encontrada');
+  document.body.classList.add('pdf-capture');
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try {
+    const canvas = await _html2canvas(sheet, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pageWmm = 210, pageHmm = 297;
+    const pxPorMm = canvas.width / pageWmm;      // px do canvas por mm de largura A4
+    const pageHpx = Math.floor(pageHmm * pxPorMm); // px que cabem numa A4 de altura
+    let y = 0, pagina = 0;
+    while (y < canvas.height) {
+      const sliceH = Math.min(pageHpx, canvas.height - y);
+      const tmp = document.createElement('canvas');
+      tmp.width = canvas.width; tmp.height = sliceH;
+      const ctx = tmp.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      const imgData = tmp.toDataURL('image/jpeg', 0.95);
+      if (pagina > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWmm, sliceH / pxPorMm, undefined, 'FAST');
+      y += sliceH; pagina++;
+    }
+    return pdf.output('blob');
+  } finally {
+    document.body.classList.remove('pdf-capture');
+  }
+}
+
+// Salva a folha do plano atual como PDF na pasta das OE. Idempotente por
+// período (reescreve o arquivo do mesmo período). silent = sem toasts de
+// progresso (usado no auto-save ao abrir a folha).
+async function salvarPdfOeNaPasta({ silent = false } = {}) {
+  if (_oeSalvando) return false;
+  let handle = oeFolderHandle || (await loadOeFolderHandle());
+  if (!handle) {
+    if (silent) return false;
+    toast('Conecte a pasta das OE em Configurações primeiro.', 'err');
+    return false;
+  }
+  if (!(await ensureFolderPermission(handle, 'readwrite'))) {
+    if (!silent) toast('Permissão da pasta das OE negada', 'err');
+    return false;
+  }
+  oeFolderHandle = handle;
+  _oeSalvando = true;
+  try {
+    renderPrintPlanoExpedicao();
+    await new Promise(r => setTimeout(r, 150));
+    if (!silent) toast('Gerando PDF da OE...', '');
+    const blob = await gerarPdfDaSheetExp();
+    const filename = oeFilenameForPlano();
+    const fh = await handle.getFileHandle(filename, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+    if (!silent) toast(`OE salva: ${filename}`, 'ok');
+    return true;
+  } catch (e) {
+    console.error('salvarPdfOeNaPasta', e);
+    if (!silent) toast('Falha ao salvar OE: ' + (e.message || e), 'err');
+    return false;
+  } finally {
+    _oeSalvando = false;
+  }
+}
+
 async function salvarEImprimir() {
   const data = coletaOS();
   if (!data.os && !data.codigo) {
@@ -9141,6 +9321,9 @@ window.salvarEImprimirEtiquetas = salvarEImprimirEtiquetas;
 window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
 window.conectarPastaPdf = conectarPastaPdf;
 window.desconectarPastaPdf = desconectarPastaPdf;
+window.conectarPastaOe = conectarPastaOe;
+window.desconectarPastaOe = desconectarPastaOe;
+window.salvarPdfOeNaPasta = salvarPdfOeNaPasta;
 window.conectarPastaBackup = conectarPastaBackup;
 window.desconectarPastaBackup = desconectarPastaBackup;
 window.escreverBackupJsonAgora = escreverBackupJsonAgora;
