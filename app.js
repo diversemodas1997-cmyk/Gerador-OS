@@ -4015,7 +4015,15 @@ function renderPrintPlanoExpedicao() {
   if (!sheet) return;
   const cfg = expCfg();
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
-  const ocs = ocorrenciasExpedicao(ini, fim);
+  let ocs = ocorrenciasExpedicao(ini, fim);
+  // No modo MENSAL, a folha mostra só as datas com OE produzida — ou seja,
+  // com carga/OS alocada em ida ou volta. Dias agendados mas vazios (sem
+  // produção) não aparecem. A tela de planejamento segue mostrando vazios.
+  if (expPlanoModo === 'mes') {
+    ocs = ocs.filter(oc =>
+      resumoPernaExpedicao(oc, 'ida').itens.length +
+      resumoPernaExpedicao(oc, 'volta').itens.length > 0);
+  }
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
@@ -4098,7 +4106,7 @@ function renderPrintPlanoExpedicao() {
       <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Peças</div></div>
       <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
     </div>
-    ${ocs.length ? blocos : '<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma expedição planejada neste período.</div>'}
+    ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">${expPlanoModo === 'mes' ? 'Nenhuma Ordem de Expedição produzida neste mês.' : 'Nenhuma expedição planejada neste período.'}</div>`}
     <div class="exp-print-rodape">
       <span>Conferente: ____________________________</span>
       <span>Motorista: ____________________________</span>
