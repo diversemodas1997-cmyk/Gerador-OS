@@ -6368,19 +6368,41 @@ function _normNome(s) {
 // essa nomenclatura com as partes do app que continuam raciocinando na cor PURA
 // (sigla do SKU, ordem de cores do desc) ou que já mostram o tecido ao lado.
 
-// Nome "base" da cor, sem o tecido no fim: "Preto Malha Algodão" → "preto".
-// Corta o MAIOR nome de tecido cadastrado que casar como sufixo; se nenhum casar,
-// devolve o nome normalizado inteiro ("Preto" → "preto", comportamento antigo).
-function corBaseNome(nome) {
-  const n = _normNome(nome);
-  if (!n) return '';
+// Maior nome de tecido cadastrado que casa como sufixo do nome normalizado `n`
+// ('' se nenhum casar). "Maior" importa porque há tecidos aninhados: "Preto
+// Ribana Malha Algodão" casa tanto "Malha Algodão" quanto "Ribana Malha
+// Algodão", e o certo é o segundo.
+function _sufixoTecidoNorm(n) {
   let sufixo = '';
   (STATE.tecidos || []).forEach(t => {
     const tn = _normNome(t.nome);
     if (!tn || tn.length <= sufixo.length) return;
     if (n.endsWith(' ' + tn)) sufixo = tn;
   });
-  return sufixo ? n.slice(0, n.length - sufixo.length - 1).trim() : n;
+  return sufixo;
+}
+
+// Nome "base" da cor, normalizado e sem o tecido: "Preto Malha Algodão" → "preto".
+// Para COMPARAR (sigla do SKU, ordem do desc). Se nenhum tecido casar, devolve o
+// nome normalizado inteiro ("Preto" → "preto", comportamento antigo).
+function corBaseNome(nome) {
+  const n = _normNome(nome);
+  if (!n) return '';
+  const s = _sufixoTecidoNorm(n);
+  return s ? n.slice(0, n.length - s.length - 1).trim() : n;
+}
+
+// Nome da cor sem o tecido, PRESERVANDO acento e caixa do cadastro — para EXIBIR
+// a cor da peça (banner impresso, etiqueta), onde o tecido não interessa e o nome
+// composto estouraria a caixa. "Café Ribana Moletom" → "Café". Diferente do
+// corBaseNome, que normaliza e serve para comparação, não para imprimir.
+function corNomeCurto(nome) {
+  const c = (nome == null ? '' : String(nome)).trim();
+  if (!c) return '';
+  const s = _sufixoTecidoNorm(_normNome(c));
+  if (!s) return c;
+  const palavras = c.split(/\s+/);
+  return palavras.slice(0, Math.max(1, palavras.length - s.split(' ').length)).join(' ');
 }
 
 // Rótulo curto da cor para linhas que JÁ mostram o tecido numa coluna ao lado —
@@ -7593,16 +7615,17 @@ function dadosEtiquetaParaOS(o) {
   const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
 
   const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
-  const _corNome = id => id ? (STATE.cores.find(c => c.id === id)?.nome || '') : '';
-  const coresDesenho = [
+  // Cor da PEÇA: corNomeCurto tira o tecido do nome da cor e o Set colapsa as
+  // repetições — preto na malha + preto na ribana é "PRETO", não "PRETO/PRETO".
+  const _corNome = id => id ? corNomeCurto(STATE.cores.find(c => c.id === id)?.nome || '') : '';
+  const coresDesenho = [...new Set([
     _corNome(desenho?.corPrincipalId),
     _corNome(desenho?.corSecundariaId),
     _corNome(desenho?.corTerciariaId)
-  ].filter(Boolean);
+  ].filter(Boolean))];
   const cor = (coresDesenho.length > 1
     ? coresDesenho.join('/')
-    : (o.fases?.[0]?.corNome
-       || o.tecidos?.[0]?.corNome
+    : (corNomeCurto(o.fases?.[0]?.corNome || o.tecidos?.[0]?.corNome || '')
        || coresDesenho[0]
        || '—')).toString().toUpperCase();
 
@@ -8590,7 +8613,12 @@ function consumoEnfestoOS(o) {
       cor = parts.slice(1).join(' · ');
     }
     const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
-    const corReal = cor || tecs[i]?.corNome || '';
+    // OSs salvas ANTES do rename das cores gravaram a cor pura ("Preto"), que
+    // não existe mais no cadastro — sem canonicalizar, gramaturaCorPorNome falha,
+    // o kg dessas OSs zera ao reimprimir/re-salvar e a chave tecido||cor do
+    // estoque diverge das OSs novas. Resolve "Preto"+"Ribana Moletom" para
+    // "Preto Ribana Moletom"; se não achar cadastro que case, devolve como veio.
+    const corReal = corCanonicaPorTecido(cor || tecs[i]?.corNome || '', tecidoReal);
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
     const camadas = ehVies ? 1 : (b.camadas || camadasGlobal || 0);
     const comp = (parseFloat(fase.comp) > 0 ? parseFloat(fase.comp) : parseFloat(b.comp)) || 0;
@@ -8906,10 +8934,16 @@ function renderPrintSheet(o) {
   // sem repetir, e ORDENADAS pela sequência canônica do desc do desenho — assim um
   // tricolor mostra as três cores na ordem certa (ex.: "VERDE / PRETO / BEGE"),
   // mesmo quando a variante da OS herdou uma ordem trocada dos campos de cor.
+  // corNomeCurto tira o tecido ANTES do Set: o banner é a cor da PEÇA, não do
+  // rolo. Um tricolor que usa preto na malha e preto na ribana tem duas cores
+  // cadastradas distintas, mas o banner deve dizer "PRETO" uma vez só — sem o
+  // corte, sairia "PRETO MALHA ALGODÃO / PRETO RIBANA MALHA ALGODÃO" e estouraria
+  // a caixa de 324px que o auto-ajuste de fonte abaixo assume.
   const coresDesenho = ordenarCoresNomesPorDesc([...new Set(
     (o.variantes || [])
       .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome])
       .filter(c => c && c !== '—')
+      .map(corNomeCurto)
   )], desenho);
   const corTexto = coresDesenho.join(' / ').toUpperCase();
   // Fonte auto-ajustada pra caber SEMPRE em uma linha so, inclusive com tres
