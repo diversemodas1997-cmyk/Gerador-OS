@@ -1049,7 +1049,10 @@ async function loadState() {
     let mudou = 0;
     STATE.cores.forEach(c => {
       if (c.siglaSku) return;
-      const s = siglas[_normNome(c.nome || '')];
+      // corBaseNome tira o tecido do fim ("Preto Moletom" → "preto"): sem isto as
+      // cores no formato novo nunca casariam no mapa e ficariam sem sigla, e aí
+      // revalidarSkusDesenhos() não deduziria o SKU dos desenhos.
+      const s = siglas[corBaseNome(c.nome)];
       if (s) { c.siglaSku = s; mudou++; }
     });
     if (mudou) { try { await saveState('cores'); } catch (e) {} }
@@ -1328,11 +1331,11 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'cor') {
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Camel"></div>
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Preto Malha Algodão"><div class="field-hint">Inclua o <b>tecido</b> no nome (ex.: <i>Preto Malha Algodão</i>, <i>Preto Moletom</i>). A mesma cor pesa diferente em cada tecido, e é o nome que amarra a gramatura certa.</div></div>
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
         <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
         <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
-        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-cor-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">A gramatura agora é por COR (varia conforme a cor). Usada no consumo de matéria-prima. Se vazia, cai no peso do tecido.</div></div>
+        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-cor-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">A gramatura é por COR+TECIDO (o nome da cor traz o tecido). Base da estimativa em kg da folha de OS: comp × larg × camadas × gramatura ÷ 1000. Se vazia, cai no peso do tecido.</div></div>
       </div>`;
   }
   else if (tipo === 'material') {
@@ -2014,9 +2017,12 @@ function ordemCoresPorDesc(desenho) {
 // lista original — fallback seguro. Usada no enfesto/tecidos/variante, onde os
 // campos corPrincipal/Sec/Ter podem estar numa ordem divergente do desc.
 function ordenarCoresIdsPorDesc(ids, desenho) {
-  const ordem = ordemCoresPorDesc(desenho);
+  const ordem = ordemCoresPorDesc(desenho).map(corBaseNome);
   if (!ordem.length) return ids;
-  const nome = id => (((STATE.cores || []).find(c => c.id === id) || {}).nome || '').trim().toLowerCase();
+  // Compara pela cor BASE dos dois lados: o desc escreve "Verde/Preto/Bege" e o
+  // cadastro agora guarda "Verde Malha Algodão". Sem isso o indexOf nunca casaria
+  // e a ordem cairia no fallback, trocando as cores das fases do enfesto.
+  const nome = id => corBaseNome(((STATE.cores || []).find(c => c.id === id) || {}).nome);
   return ids
     .map((id, i) => ({ id, i, pos: ordem.indexOf(nome(id)) }))
     .sort((a, b) => (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos) || a.i - b.i)
@@ -2026,10 +2032,10 @@ function ordenarCoresIdsPorDesc(ids, desenho) {
 // Reordena uma lista de NOMES de cor pela ordem canônica do desc (sem depender de
 // STATE.cores — usada no banner impresso, que já tem os nomes).
 function ordenarCoresNomesPorDesc(nomes, desenho) {
-  const ordem = ordemCoresPorDesc(desenho);
+  const ordem = ordemCoresPorDesc(desenho).map(corBaseNome);
   if (!ordem.length) return nomes;
   return nomes
-    .map((n, i) => ({ n, i, pos: ordem.indexOf((n || '').trim().toLowerCase()) }))
+    .map((n, i) => ({ n, i, pos: ordem.indexOf(corBaseNome(n)) }))
     .sort((a, b) => (a.pos < 0 ? 99 : a.pos) - (b.pos < 0 ? 99 : b.pos) || a.i - b.i)
     .map(x => x.n);
 }
@@ -2473,12 +2479,15 @@ function renderMateriais() {
 /* ========================================================= */
 // Converte as compras vindas da Contabilidade (compras_materiais) em
 // movimentos de ENTRADA, no mesmo formato de STATE.estoqueMov.
+// A cor passa por corCanonicaPorTecido porque o de-para da Contabilidade ainda
+// manda a cor pura ("Preto") enquanto as OSs baixam pelo nome cadastrado
+// ("Preto Malha Algodão") — sem isso o saldo do tecido rachava em duas linhas.
 function comprasComoMovimentos() {
   return (comprasCache || []).map(c => ({
     id: 'nf_' + c.id,
     tipo: 'entrada',
     tecidoNome: c.tecido_nome || '',
-    corNome: c.cor_nome || '',
+    corNome: corCanonicaPorTecido(c.cor_nome || '', c.tecido_nome || ''),
     kg: parseFloat(c.quantidade_kg) || 0,
     data: (c.data || '').slice(0, 10),
     origem: 'nf',
@@ -2562,7 +2571,9 @@ function renderEstoque() {
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
   gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
 
-  const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
+  // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
+  // cor ("Preto Malha Algodão") sai — evita "Malha Algodão · Preto Malha Algodão".
+  const corLabel = (nome, tecido) => esc(corSemTecido(nome, tecido)) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
   const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
@@ -2574,7 +2585,7 @@ function renderEstoque() {
   const linhasEstoque = gruposArr.map(g => {
     const cores = g.linhas.map(c => `
       <tr>
-        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>
+        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
         ${cellsVals(c, false)}
       </tr>`).join('');
     // Subtotal do tipo de tecido (só quando há mais de uma cor no grupo).
@@ -2907,7 +2918,9 @@ function renderFasePainel(faseIdx) {
   if (!cont) return;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
-  const corLabel = nome => esc(nome) || '<span style="color:var(--ink-2)">(sem cor)</span>';
+  // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
+  // cor ("Preto Malha Algodão") sai — evita "Malha Algodão · Preto Malha Algodão".
+  const corLabel = (nome, tecido) => esc(corSemTecido(nome, tecido)) || '<span style="color:var(--ink-2)">(sem cor)</span>';
   const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
   const contCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${n ? fmtSinal(n) : '—'}</td>`;
   const estCell = (n) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${n < 0 ? '#c0392b' : 'inherit'};">${fmt(n)}</td>`;
@@ -2928,7 +2941,7 @@ function renderFasePainel(faseIdx) {
   const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
   gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
   const linhas = gruposArr.map(g => {
-    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome)}</strong></td>${cellsVals(c, false)}${osCell(c.osList)}</tr>`).join('');
+    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>${cellsVals(c, false)}${osCell(c.osList)}</tr>`).join('');
     const sub = g.linhas.length > 1
       ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}${osCell(Array.from(g.osSet))}</tr>`
       : '';
@@ -6349,6 +6362,68 @@ function _normNome(s) {
   return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// As cores passaram a ser cadastradas COM O TECIDO NO NOME ("Preto Malha Algodão",
+// "Preto Moletom") para que a gramatura (g/m²) seja única por tecido+cor — o mesmo
+// "Preto" pesa diferente em malha e em moletom. Os três helpers abaixo conciliam
+// essa nomenclatura com as partes do app que continuam raciocinando na cor PURA
+// (sigla do SKU, ordem de cores do desc) ou que já mostram o tecido ao lado.
+
+// Nome "base" da cor, sem o tecido no fim: "Preto Malha Algodão" → "preto".
+// Corta o MAIOR nome de tecido cadastrado que casar como sufixo; se nenhum casar,
+// devolve o nome normalizado inteiro ("Preto" → "preto", comportamento antigo).
+function corBaseNome(nome) {
+  const n = _normNome(nome);
+  if (!n) return '';
+  let sufixo = '';
+  (STATE.tecidos || []).forEach(t => {
+    const tn = _normNome(t.nome);
+    if (!tn || tn.length <= sufixo.length) return;
+    if (n.endsWith(' ' + tn)) sufixo = tn;
+  });
+  return sufixo ? n.slice(0, n.length - sufixo.length - 1).trim() : n;
+}
+
+// Rótulo curto da cor para linhas que JÁ mostram o tecido numa coluna ao lado —
+// evita "Malha Algodão · Preto Malha Algodão" e o estouro de largura na folha.
+// Só corta quando o sufixo é exatamente o tecido DAQUELA linha. Corta por
+// palavras (não por índice) para não depender do tamanho após tirar acentos.
+function corSemTecido(corNome, tecidoNome) {
+  const c = (corNome == null ? '' : String(corNome)).trim();
+  const tn = _normNome(tecidoNome);
+  if (!c || !tn) return c;
+  const n = _normNome(c);
+  // Exige que o tecido seja EXATAMENTE o sufixo resolvido pelo corBaseNome, e não
+  // um endsWith solto: existem tecidos aninhados ("Ribana Malha Algodão" termina
+  // em "Malha Algodão"), e um endsWith cortaria "Preto Ribana Malha Algodão" para
+  // "Preto Ribana" numa linha de Malha Algodão.
+  if (n === tn || n !== corBaseNome(c) + ' ' + tn) return c;
+  const palavras = c.split(/\s+/);
+  const corta = tn.split(' ').length;
+  return palavras.slice(0, Math.max(1, palavras.length - corta)).join(' ');
+}
+
+// Canonicaliza (cor, tecido) para o nome COMPOSTO cadastrado. A Contabilidade
+// ainda manda a cor pura ("Preto") nas compras por NF, enquanto as OSs baixam
+// pelo nome cadastrado ("Preto Malha Algodão"). Como a chave do estoque é
+// tecido||cor, sem isto a entrada e a saída caem em linhas diferentes e o saldo
+// do tecido racha em duas. Se não achar cor cadastrada que case tecido+cor,
+// devolve o nome recebido — nunca inventa nem descarta movimento.
+function corCanonicaPorTecido(corNome, tecidoNome) {
+  const cn = _normNome(corNome);
+  const tn = _normNome(tecidoNome);
+  if (!cn) return corNome || '';
+  // Já veio no formato composto de uma cor cadastrada → nada a fazer.
+  const jaComposta = (STATE.cores || []).some(
+    c => _normNome(c.nome) === cn && corBaseNome(c.nome) !== cn);
+  if (jaComposta || !tn) return corNome || '';
+  // Casamento EXATO de "cor base + tecido": com tecidos aninhados ("Ribana Malha
+  // Algodão" termina em "Malha Algodão"), um endsWith faria a compra de Malha
+  // Algodão cair na cor da Ribana e baixar do saldo errado.
+  const alvo = (STATE.cores || []).find(
+    c => corBaseNome(c.nome) === cn && _normNome(c.nome) === cn + ' ' + tn);
+  return alvo ? alvo.nome : (corNome || '');
+}
+
 function _desenhoEhCamisetaBicolor(d) {
   if (!d) return false;
   const desc = _normNome(d.desc);
@@ -8660,6 +8735,10 @@ function renderEnfestoBox(o) {
   // Consumo por fase (fonte única — mesma usada na baixa de estoque)
   const consumo = consumoEnfestoOS(o);
   let totalKg = 0;
+  // Total de bobinas previstas agrupado por TECIDO: malha, ribana e moletom não
+  // somam num número único (são bobinas de coisas diferentes). Cada tecido leva
+  // seu próprio total na linha de rodapé.
+  const bobPorTecido = new Map();
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
@@ -8701,6 +8780,10 @@ function renderEnfestoBox(o) {
     const compEf = L.comp || '';
     const largEf = L.larg || '';
     totalKg += L.kg;
+    if (gradeTemPrevisao && bobPorOrdem[ord] != null) {
+      const tk = L.tecidoReal || L.nomeEnf || '—';
+      bobPorTecido.set(tk, (bobPorTecido.get(tk) || 0) + bobPorOrdem[ord]);
+    }
     const ckEnf = !!enfestosCheck[ord];
     const t = enfestosTempos[ord] || {};
     return `<tr>
@@ -8708,7 +8791,7 @@ function renderEnfestoBox(o) {
       <td style="text-align:center;font-weight:700;">${ord}</td>
       <td>${esc(L.nomeEnf) || '—'}</td>
       <td>${esc(L.tecidoReal) || '—'}</td>
-      <td>${esc(L.corReal) || '—'}</td>
+      <td>${esc(corSemTecido(L.corReal, L.tecidoReal)) || '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${compEf ? fmt(compEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${largEf ? fmt(largEf)+' m' : '—'}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;">${camBloco || '—'}</td>
@@ -8725,10 +8808,20 @@ function renderEnfestoBox(o) {
       </td>
     </tr>`);
   }).join('');
-  const linhaTotal = totalKg > 0
+  // Resumo de bobinas do rodapé: "Malha Algodão 12 · Ribana ½". Fica ao lado do
+  // rótulo "Total consumo"; o total em kg segue na coluna Consumo, alinhado com
+  // as estimativas por fase.
+  const resumoBob = Array.from(bobPorTecido.entries())
+    .filter(([, v]) => v > 0)
+    .map(([t, v]) => `${esc(t)} ${fmtBob(v)}`)
+    .join(' · ');
+  const linhaTotal = (totalKg > 0 || resumoBob)
     ? `<tr>
-        <td colspan="8" style="text-align:right;font-weight:700;background:#eef6f0;">Total consumo</td>
-        <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;white-space:nowrap;">${fmtKg(totalKg)} kg</td>
+        <td colspan="8" style="text-align:right;font-weight:700;background:#eef6f0;">
+          ${resumoBob ? `<span style="float:left;font-weight:400;font-size:6pt;color:#333;padding-left:3px;" title="Bobinas previstas (cadastro da grade), por tecido">Bobinas: ${resumoBob}</span>` : ''}
+          Total consumo
+        </td>
+        <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;white-space:nowrap;">${totalKg > 0 ? fmtKg(totalKg)+' kg' : '—'}</td>
       </tr>`
     : '';
 
