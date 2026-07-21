@@ -1279,7 +1279,11 @@ window.toggleNavGroup = toggleNavGroup;
 function toast(msg, type = '') {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className = 'toast show ' + type;
+  // 'no-print' precisa ser reescrito aqui: esta linha SUBSTITUI o className, então
+  // a classe posta no index.html se perderia no primeiro aviso. Sem ela o toast
+  // (position:fixed) entra na foto do html2canvas — salvar uma OS dispara várias
+  // capturas em sequência e o aviso de um passo caía sobreposto à folha seguinte.
+  t.className = 'toast no-print show ' + type;
   setTimeout(() => t.classList.remove('show'), 2400);
 }
 

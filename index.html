@@ -816,7 +816,11 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- no-print: o toast é position:fixed e o html2canvas 1.4.1 o inclui na foto se
+     ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
+     etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
+     sobreposto à folha do passo seguinte. -->
+<div class="toast no-print" id="toast"></div>
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
   <div class="box">
@@ -849,6 +853,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-21j"></script>
+<script src="app.js?v=2026-07-21k"></script>
 </body>
 </html>
