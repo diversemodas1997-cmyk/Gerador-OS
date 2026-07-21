@@ -3370,6 +3370,43 @@ function _expSugestaoVolumes(o) {
   return String(nTam * nTons + 1);
 }
 
+// Aviso na tela quando o volume GRAVADO na carga não bate com a regra
+// (tamanhos × tonalidades + 1). A propagação cobre as cargas futuras a partir do
+// momento em que a tonalidade muda, mas não alcança as que já estavam gravadas
+// com número velho antes disso — nem um ajuste manual que ficou defasado. Aqui
+// elas ficam visíveis, em vez de irem caladas para a OE.
+// Só avisa: quem decide é o usuário, que pode ter posto o número à mão de propósito.
+function _expBadgeVolumeDivergente(item) {
+  if (!item || !item.os || !(item.volumes > 0)) return '';
+  const esperado = Number(_expSugestaoVolumes(item.os)) || 0;
+  if (!(esperado > 0) || esperado === item.volumes) return '';
+  const nTons = Math.max(1, tonsEfetivos((item.os.progresso || {}).totalTamanhoTons || {}).length);
+  return ` <span class="exp-badge baixo" title="A grade em ${nTons} tonalidade(s) dá ${esperado} volumes, mas esta carga está com ${item.volumes}. Use ↻ Recalcular volumes, ou deixe como está se o ajuste foi proposital.">≠ ${esperado}</span>`;
+}
+
+// Reescreve o volume das cargas AINDA NÃO REALIZADAS desta OS pela regra.
+// Sem isto o número fica congelado no instante em que a OS entrou no plano: se
+// a tonalidade for marcada depois — o caminho normal, já que o Tom 2 costuma ser
+// marcado durante o enfesto — a OE seguiria imprimindo o volume antigo.
+// Expedição já realizada é histórico do que saiu no caminhão: não se reescreve.
+// Devolve quantas cargas mudaram.
+async function propagarVolumesExpedicaoOS(os) {
+  if (!os || !Array.isArray(STATE.expedicaoCargas)) return 0;
+  const sug = Number(_expSugestaoVolumes(os)) || 0;
+  if (!(sug > 0)) return 0;
+  const hoje = _expHoje();
+  let n = 0;
+  STATE.expedicaoCargas.forEach(c => {
+    if (c.osId !== os.id) return;
+    if (_expDataEfetivaCarga(c) < hoje) return;
+    if ((Number(c.volumes) || 0) === sug) return;
+    c.volumes = sug;
+    n++;
+  });
+  if (n) { try { await saveState('expedicaoCargas'); } catch (e) { console.warn('propagarVolumesExpedicaoOS', e); } }
+  return n;
+}
+
 /* ------- seleção da OS pelo checklist da folha de OS ------- */
 // Marcar "Ensaque" no checklist da folha de OS é o que seleciona a OS pra ser
 // expedida: ensacada = pacote pronto pra embarcar. Ela cai sozinha na próxima
@@ -3553,7 +3590,7 @@ function renderExpedicaoPlano() {
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}</span>
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}</span>
         <span class="admin-only"><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>`).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
@@ -8234,6 +8271,15 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
     else if (tNum === 2) { delete t[3]; }
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
+  // Mudou o nº de tonalidades → mudou o volume: cada tom é ensacado separado.
+  // Propaga para as expedições futuras desta OS, senão a OE seguiria com o
+  // número congelado de quando a OS entrou no plano.
+  const nCargas = await propagarVolumesExpedicaoOS(os);
+  if (nCargas) {
+    toast(`Volume da expedição atualizado para ${_expSugestaoVolumes(os)} — ${nCargas} carga(s)`, 'ok');
+    const secExp = document.querySelector('section.page[data-page="expedicao"]');
+    if (secExp && !secExp.classList.contains('hidden')) renderExpedicaoPlano();
+  }
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
 }
 
