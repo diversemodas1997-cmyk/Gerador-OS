@@ -750,6 +750,27 @@ body.pdf-capture .no-print { display: none !important; }
   border: 1.5px solid #000;
 }
 
+/* FOLHA DENSA — só para blusa moletom TRICOLOR (classe posta em renderPrintSheet).
+   É a única grade que não cabe em 297mm: 6 fases de enfesto contra 2 de uma
+   camiseta. O excedente fazia o PDF reduzir a folha INTEIRA para caber na altura,
+   encolhendo a largura junto e deixando ~23mm de branco de cada lado — o que
+   parecia erro de margem e não era.
+
+   Aqui só se mexe em ESPAÇAMENTO: nenhum campo sai, nenhuma informação some.
+   Medido com a OS 0435 renderizada de verdade (Chrome headless): 334,7mm -> 297mm,
+   com folga. Camiseta não recebe a classe e continua idêntica.
+
+   Se a folha voltar a estourar, medir antes de chutar: ver
+   memory/project_fila_margem_folha_os.md, que tem o harness e o método. */
+.sheet-densa .tarefas-etapa {
+  font-size: 7pt;
+  line-height: 1.15;
+}
+.sheet-densa .tab-tecidos td,
+.sheet-densa .tab-tecidos th {
+  padding: 0 2px;
+}
+
 /* Etapas de produção */
 .etapas-list {
   padding: 4px 6px;
@@ -757,6 +778,10 @@ body.pdf-capture .no-print { display: none !important; }
   border: 1px solid #000;
   border-top: none;
 }
+/* Sublista de tarefas de cada etapa. O tamanho estava inline no template e por
+   isso nenhuma regra de folha conseguia sobrepor — veio pra cá para a versão
+   densa (blusa moletom tricolor) poder reduzi-lo. Valor idêntico ao de antes. */
+.tarefas-etapa { font-size: 8.5pt; }
 /* Etapas e o ultimo bloco da coluna direita: estica pra fechar o vao ate o
    pe da folha. Sem isso a coluna terminava no meio e sobrava branco solto
    embaixo — ainda mais depois que Observacoes saiu daqui pra coluna do

@@ -1094,6 +1094,11 @@ async function revalidarSkusDesenhos() {
 // Template de etapas "mais atual" por tipo de produto (confirmado pelo Junior).
 // Camiseta usa Acabamento de mangas; Blusa Moletom usa Fechamento de punhos/barra.
 // A etapa terminal "Estoque" dispara a entrada de produtos acabados.
+// Peças-alvo por tamanho que toda OS NOVA já traz preenchido, junto do número
+// sequencial e da data. É o padrão da casa; o campo segue editável, e editar uma
+// OS existente carrega o valor salvo dela. Mudou o padrão? Troca aqui.
+const PECAS_ALVO_PADRAO = 160;
+
 const ETAPAS_TEMPLATE_OS = {
   camiseta: ['Corte', 'Acabamento de mangas', 'Ensaque', 'Expedição', 'Costura', 'Retirada de fios', 'Estoque'],
   moletom:  ['Corte', 'Fechamento de punhos', 'Fechamento de barra', 'Ensaque', 'Expedição', 'Costura', 'Retirada de fios', 'Estoque'],
@@ -4101,7 +4106,9 @@ function renderPrintPlanoExpedicao() {
     const td = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
     const cabec = TT.tamanhos.map(k => `<th style="${th}text-align:center;">${TAM_LABEL[k]}</th>`).join('');
     const linhaTotalTam = TT.tamanhos.map(k => `<td style="${td}font-weight:700;">${fmt(TT.colTotal(k))}</td>`).join('');
-    const linhasTom = TT.linhas.map(L => `
+    // Só entram as tonalidades que têm quantidade repartida — igual à folha de
+    // OS, onde a linha de tom fica vazia até alguém digitar.
+    const linhasTom = TT.linhas.filter(L => L.total > 0).map(L => `
       <tr>
         <td style="${td}text-align:left;white-space:nowrap;">Tom ${L.tom}</td>
         ${TT.tamanhos.map(k => `<td style="${td}">${L.cels[k] > 0 ? fmt(L.cels[k]) : ''}</td>`).join('')}
@@ -5044,6 +5051,10 @@ function initOSForm() {
     document.getElementById('os-form-title').textContent = 'Nova Ordem de Serviço';
     // número OS automático sequencial
     document.getElementById('f-os').value = proximoNumeroOS();
+    // Peças-alvo já nasce em 160 (padrão da casa), como o número da OS e a data.
+    // Só no formulário NOVO: editar uma OS existente carrega o valor salvo dela,
+    // mais abaixo. Continua editável — é só o ponto de partida.
+    document.getElementById('f-enf-target').value = PECAS_ALVO_PADRAO;
     // linhas iniciais
     document.getElementById('tecidos-rows').innerHTML = '';
     document.getElementById('variantes-rows').innerHTML = '';
@@ -8164,33 +8175,30 @@ function totaisPorTamanhoTomOS(o) {
   const tamanhos = keys.filter(k => (g[k] || 0) > 0);
   const tons = tonsEfetivos(prog.totalTamanhoTons || {});
   const valores = prog.totalTamanhoTomValor || {};
-  // Sem nenhum tom marcado a peça ainda é de UMA tonalidade — o Tom 1 aparece
-  // implícito, com a quantidade cheia, em vez de a tabela ficar vazia.
-  const tonsVisiveis = tons.length ? tons : [1];
-  const implicito = !tons.length;
-  const balancer = tonsVisiveis[tonsVisiveis.length - 1];
+  const balancer = tons.length ? tons[tons.length - 1] : null;
   const vTom = tom => Math.max(0, Number(valores[tom]) || 0);
   let somaEditaveis = 0;
-  tonsVisiveis.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
-  // Estado inicial: enquanto NADA foi digitado nos tons editáveis, a quantidade
-  // cheia fica no TOM 1 e os demais saem em branco. A diferença só se reparte
-  // quando o Tom 1 recebe um número — antes disso não há divisão a mostrar.
+  tons.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
+  // Enquanto NADA foi digitado, as linhas de tom saem VAZIAS: a quantidade por
+  // tamanho fica só na linha "Total por tamanho", logo acima. Repetir o mesmo
+  // número numa linha de tom (fosse o Tom 1 ou o balanceador) duplicava a linha
+  // de cima e confundia quem lê. A divisão só aparece quando alguém digita.
   const semDigitacao = somaEditaveis === 0;
-  const linhas = tonsVisiveis.map(tom => {
+  const linhas = tons.map(tom => {
     const cels = {};
     let total = 0;
     tamanhos.forEach(k => {
       let v;
-      if (semDigitacao) v = (tom === 1) ? colTotal(k) : 0;
+      if (semDigitacao) v = 0;
       else if (tom === balancer) v = Math.max(0, colTotal(k) - somaEditaveis);
       else v = vTom(tom);
       cels[k] = v;
       total += v;
     });
-    return { tom, cels, total, balanceador: tom === balancer, editavel: !implicito && tom !== balancer };
+    return { tom, cels, total, balanceador: tom === balancer, editavel: tom !== balancer };
   });
   return {
-    keys, tamanhos, tons, tonsVisiveis, implicito, linhas, colTotal, vTom,
+    keys, tamanhos, tons, linhas, colTotal, vTom,
     balancer, somaEditaveis, semDigitacao,
     totalGeral: (g.total || 0) * cam * mult,
   };
@@ -9165,7 +9173,21 @@ function renderPrintSheet(o) {
   // SKU(s) do produto acabado para o cabeçalho.
   const skuStr = skusDaOS(o).join(' / ') || '—';
 
-  document.getElementById('print-sheet').innerHTML = `
+  // Blusa moletom TRICOLOR é a única grade que não cabe em 297mm: são 6 fases de
+  // enfesto contra 2 de uma camiseta, e o excedente fazia a folha ser reduzida
+  // por inteiro na hora de virar PDF — encolhendo a LARGURA junto e deixando
+  // ~23mm de branco de cada lado. A classe liga uma versão mais densa (só
+  // espaçamento, nenhum campo a menos) que traz a folha de volta a 297mm.
+  // Medido com a OS 0435: 334,7mm -> 297mm. Escopo restrito de propósito, para
+  // as camisetas — que já cabem — continuarem exatamente como estão.
+  const gradeDaOS = o.gradeId ? (STATE.grades || []).find(g => g.id === o.gradeId) : null;
+  const ehMoletomTricolor = !!gradeDaOS
+    && gradeDaOS.tipoPeca === 'blusa_moletom'
+    && gradeDaOS.variacao === 'tricolor';
+  const folhaEl = document.getElementById('print-sheet');
+  folhaEl.classList.toggle('sheet-densa', ehMoletomTricolor);
+
+  folhaEl.innerHTML = `
     <!-- CABEÇALHO -->
     <div class="sheet-header">
       <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>
@@ -9413,7 +9435,9 @@ function renderPrintSheet(o) {
                     <strong>${esc(e.nome)}</strong>${/corte/i.test(e.nome) ? temposCorte : ''}
                   </div>
                   ${e.tarefas.length ? `
-                    <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
+                    <!-- font-size vive no styles.css (.etapas-list ul ul): inline
+                         venceria a regra da folha densa da blusa moletom tricolor. -->
+                    <ul class="tarefas-etapa" style="list-style:none;padding-left:24px;margin:3px 0 0 0;color:#555;">
                       ${e.tarefas.map(t => `
                         <li style="display:flex;align-items:center;padding:1px 0;">
                           ${tarefaCk(e.nome, t.nome)}
