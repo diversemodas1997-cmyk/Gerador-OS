@@ -9245,7 +9245,18 @@ function renderPrintSheet(o) {
 
       <div class="sheet-right">
         <!-- GRADE -->
-        <table class="side-table tab-tecidos">
+        <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
+          <!-- A 1ª coluna só carrega os rótulos "Tom 1/2/3" e ficava vazia nas
+               linhas de grade e de totais, ocupando ~96px enquanto os tamanhos se
+               espremiam em ~31px e o Total sobrava estreito. Larguras explícitas
+               devolvem esse espaço: rótulo no tamanho do texto, tamanhos iguais
+               entre si e Total com folga para "504" e para o cabeçalho. -->
+          <colgroup>
+            <col style="width:48px;">
+            <col style="width:40px;"><col style="width:40px;"><col style="width:40px;"><col style="width:40px;">
+            <col style="width:40px;"><col style="width:40px;"><col style="width:40px;">
+            <col style="width:78px;">
+          </colgroup>
           <thead>
             <tr><th colspan="9" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
             <tr>
@@ -9308,8 +9319,11 @@ function renderPrintSheet(o) {
                   const val = linhaTT.cels[k] || 0;
                   rowSum += val;
                   if (!editavel) {
-                    // Célula calculada (balanceador, ou Tom 1 no estado inicial).
-                    return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}">${val > 0 ? val : ''}</td>`;
+                    // Célula calculada (balanceador). Precisa da MESMA aparência das
+                    // digitáveis — mono, negrito, 8pt, centralizada: sem isso ela
+                    // herdava o estilo base da tabela e o número automático saía
+                    // apagado e à esquerda, parecendo menos válido que os digitados.
+                    return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}" style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;">${val > 0 ? val : ''}</td>`;
                   }
                   return `<td style="padding:0;"><input type="number" min="0" value="${val > 0 ? val : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
                 }).join('');
