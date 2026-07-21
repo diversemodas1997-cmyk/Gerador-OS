@@ -9389,8 +9389,11 @@ function renderPrintSheet(o) {
                 + `style="width:40px;border:none;border-bottom:1px solid #999;background:transparent;text-align:center;`
                 + `font-family:'IBM Plex Mono',monospace;font-size:7.5pt;padding:0 1px;">`;
             };
+            // flex:none — quem cede largura quando aperta é o texto da fase (que
+            // reflui em duas linhas), não os campos de horário, que ficariam
+            // espremidos e impossíveis de preencher à mão.
             const tempoFase = (ordem) =>
-              `<span style="display:inline-flex;align-items:center;gap:3px;margin-left:auto;padding-left:6px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;color:#666;">
+              `<span style="display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:auto;padding-left:4px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;color:#666;white-space:nowrap;">
                 <span>Ini</span>${campoTempoFase(ordem, 'corteIni')}<span>Fim</span>${campoTempoFase(ordem, 'corteFim')}
               </span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;column-count:2;column-gap:16px;">
@@ -9403,9 +9406,9 @@ function renderPrintSheet(o) {
                   ${e.tarefas.length ? `
                     <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
                       ${e.tarefas.map(t => `
-                        <li style="display:flex;align-items:center;flex-wrap:wrap;padding:1px 0;">
+                        <li style="display:flex;align-items:center;padding:1px 0;">
                           ${tarefaCk(e.nome, t.nome)}
-                          <span>${esc(t.nome)}</span>${t.hint ? `<span style="color:#8a8a8a;margin-left:5px;">· ${esc(t.hint)}</span>` : ''}${t.ordem != null ? tempoFase(t.ordem) : ''}
+                          <span style="flex:1;min-width:0;">${esc(t.nome)}${t.hint ? `<span style="color:#8a8a8a;"> · ${esc(t.hint)}</span>` : ''}</span>${t.ordem != null ? tempoFase(t.ordem) : ''}
                         </li>`).join('')}
                     </ul>` : ''}
                 </li>`).join('')}
