@@ -3308,6 +3308,9 @@ function resumoPernaExpedicao(oc, perna) {
 
 const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
 
+// Como a folha impressa se refere ao período quando não há nenhuma OE produzida.
+const _EXP_VAZIO_PERIODO = { dia: 'neste dia', semana: 'nesta semana', mes: 'neste mês' };
+
 // Texto dos limites da perna, pra não repetir a regra em 4 lugares.
 function _expLimitesTexto(volMin, volMax) {
   if (volMin > 0 && volMax > 0) return `mín ${volMin} / máx ${volMax}`;
@@ -4060,21 +4063,23 @@ function renderPrintPlanoExpedicao() {
   if (!sheet) return;
   const cfg = expCfg();
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
-  let ocs = ocorrenciasExpedicao(ini, fim);
-  // No modo MENSAL, a folha mostra só as datas com OE produzida — ou seja,
-  // com carga/OS alocada em ida ou volta. Dias agendados mas vazios (sem
-  // produção) não aparecem. A tela de planejamento segue mostrando vazios.
-  if (expPlanoModo === 'mes') {
-    ocs = ocs.filter(oc =>
-      resumoPernaExpedicao(oc, 'ida').itens.length +
-      resumoPernaExpedicao(oc, 'volta').itens.length > 0);
-  }
+  // A folha impressa só traz data com OE PRODUZIDA: precisa ter carga/OS alocada
+  // em alguma das pernas. Dia agendado e vazio não vira papel. Cancelada também
+  // sai, mesmo que tenha carga alocada antes do cancelamento — sem as pernas
+  // (que o bloco não imprime) ela seria só um cabeçalho com a data, ocupando
+  // espaço sem dizer nada.
+  // Vale nos TRÊS modos (diário, semanal, mensal); antes era só no mensal, então
+  // o semanal — que é o modo padrão — continuava imprimindo dia vazio.
+  // A tela de planejamento segue mostrando vazios e cancelados: lá eles servem.
+  const ocs = ocorrenciasExpedicao(ini, fim).filter(oc =>
+    !oc.cancelada &&
+    resumoPernaExpedicao(oc, 'ida').itens.length +
+    resumoPernaExpedicao(oc, 'volta').itens.length > 0);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
   const osTot = new Set();
   ocs.forEach(oc => {
-    if (oc.cancelada) return;
     ativas++;
     ['ida', 'volta'].forEach(p => {
       const r = resumoPernaExpedicao(oc, p);
@@ -4176,17 +4181,17 @@ function renderPrintPlanoExpedicao() {
       </div>`;
   };
 
+  // Sem tratamento de cancelada aqui: o filtro acima já as tirou da folha.
   const blocos = ocs.map(oc => `
     <div class="exp-print-bloco">
       <div class="cab">
-        <span class="d" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
+        <span class="d">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
         <span class="j">
           ${esc(oc.janela.nome) || 'Janela sem nome'}
           ${oc.remarcada ? ` · remarcada de ${esc(formatDate(oc.dataOrig))}` : ''}
-          ${oc.cancelada ? ' · CANCELADA' + (oc.motivo ? ` (${esc(oc.motivo)})` : '') : ''}
         </span>
       </div>
-      ${oc.cancelada ? '' : `<div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>`}
+      <div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>
     </div>`).join('');
 
   const emissao = new Date();
@@ -4212,7 +4217,7 @@ function renderPrintPlanoExpedicao() {
       <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Peças</div></div>
       <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
     </div>
-    ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">${expPlanoModo === 'mes' ? 'Nenhuma Ordem de Expedição produzida neste mês.' : 'Nenhuma expedição planejada neste período.'}</div>`}
+    ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma Ordem de Expedição produzida ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`}
     <div class="exp-print-rodape">
       <span>Conferente: ____________________________</span>
       <span>Motorista: ____________________________</span>
