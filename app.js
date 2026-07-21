@@ -2479,15 +2479,15 @@ function renderMateriais() {
 /* ========================================================= */
 // Converte as compras vindas da Contabilidade (compras_materiais) em
 // movimentos de ENTRADA, no mesmo formato de STATE.estoqueMov.
-// A cor passa por corCanonicaPorTecido porque o de-para da Contabilidade ainda
-// manda a cor pura ("Preto") enquanto as OSs baixam pelo nome cadastrado
-// ("Preto Malha Algodão") — sem isso o saldo do tecido rachava em duas linhas.
+// A cor sai crua daqui (o de-para da Contabilidade manda a cor pura, "Preto");
+// quem canonicaliza para o nome desdobrado por tecido é movimentacoesEstoque,
+// num ponto só, junto com o resto do razão.
 function comprasComoMovimentos() {
   return (comprasCache || []).map(c => ({
     id: 'nf_' + c.id,
     tipo: 'entrada',
     tecidoNome: c.tecido_nome || '',
-    corNome: corCanonicaPorTecido(c.cor_nome || '', c.tecido_nome || ''),
+    corNome: c.cor_nome || '',
     kg: parseFloat(c.quantidade_kg) || 0,
     data: (c.data || '').slice(0, 10),
     origem: 'nf',
@@ -2499,8 +2499,21 @@ function comprasComoMovimentos() {
 
 // Todos os movimentos do estoque: entradas/saídas locais (estoqueMov) +
 // compras da Contabilidade (entradas via NF). Fonte única para saldo e histórico.
+//
+// A cor de TODO movimento passa por corCanonicaPorTecido antes de sair daqui.
+// Motivo: as cores foram desdobradas por tecido ("Preto" virou "Preto Malha
+// Algodão", "Preto Ribana Moletom", …), mas o razão já gravado — entradas
+// manuais, baixas de OSs antigas, compras por NF — guarda a cor pura "Preto".
+// Como a chave do saldo é tecido||cor, sem converter aqui o mesmo tecido
+// apareceria em DUAS linhas: uma com o histórico e outra com os lançamentos
+// novos. A conversão é em tempo de leitura: não reescreve nada no banco, e
+// desfazer é só reverter o código.
 function movimentacoesEstoque() {
-  return [...(STATE.estoqueMov || []), ...comprasComoMovimentos()];
+  return [...(STATE.estoqueMov || []), ...comprasComoMovimentos()]
+    .map(m => {
+      const canon = corCanonicaPorTecido(m.corNome || '', m.tecidoNome || '');
+      return canon === (m.corNome || '') ? m : { ...m, corNome: canon };
+    });
 }
 
 // Calcula, por tecido+cor:
@@ -2790,7 +2803,10 @@ function componentesPorTecidoCorOS(o) {
     const qtd = Number(c.qtdTotal) || 0;
     if (!(qtd > 0)) return;
     const tecidoNome = c.materialNome || '';
-    const corNome = c.corNome || '';
+    // Mesma convergência do razão de kg: OSs antigas gravaram a cor pura
+    // ("Preto") nos componentes, as novas gravam a desdobrada por tecido. Sem
+    // canonicalizar, o Estoque de corte mostraria o mesmo tecido em duas linhas.
+    const corNome = corCanonicaPorTecido(c.corNome || '', tecidoNome);
     const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
     const cur = mapa.get(k) || { tecidoNome, corNome, qtd: 0 };
     cur.qtd += qtd;
