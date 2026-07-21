@@ -9331,9 +9331,14 @@ function renderPrintSheet(o) {
             const RE_FASE_TAREFA = /^fase\s*\d+/i;
             // Fase de viés fica de fora: não é enfesto de corte com camadas —
             // é tira cortada em diagonal, não entra no checklist de Corte.
+            // Sem o nome do tecido: a coluna do checklist tem ~metade da coluna
+            // direita, e "Fase 4 · Malha Algodão" mais os campos de horário
+            // quebravam em TRÊS linhas (15,5mm contra 4mm de uma linha), o que
+            // sozinho estourava a folha. O tecido de cada fase já está na tabela
+            // de Enfestos logo acima.
             const fasesCorte = consumoEnfestoOS(o).filter(L => !L.ehVies).map(L => ({
               nome: 'Fase ' + L.ordem,                       // chave do check: não muda
-              hint: L.tecidoReal || L.nomeEnf || '',         // só complemento visual
+              hint: '',
               ordem: L.ordem                                 // liga os campos de horário
             }));
             // Mantém a ordem salva na OS; busca as tarefas embutidas na etapa cadastrada
@@ -9408,7 +9413,7 @@ function renderPrintSheet(o) {
                       ${e.tarefas.map(t => `
                         <li style="display:flex;align-items:center;padding:1px 0;">
                           ${tarefaCk(e.nome, t.nome)}
-                          <span style="flex:1;min-width:0;">${esc(t.nome)}${t.hint ? `<span style="color:#8a8a8a;"> · ${esc(t.hint)}</span>` : ''}</span>${t.ordem != null ? tempoFase(t.ordem) : ''}
+                          <span style="flex:1;min-width:0;${t.ordem != null ? 'white-space:nowrap;' : ''}">${esc(t.nome)}${t.hint ? `<span style="color:#8a8a8a;"> · ${esc(t.hint)}</span>` : ''}</span>${t.ordem != null ? tempoFase(t.ordem) : ''}
                         </li>`).join('')}
                     </ul>` : ''}
                 </li>`).join('')}
