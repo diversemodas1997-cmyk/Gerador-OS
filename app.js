@@ -3345,13 +3345,17 @@ function _expTotalTamanhosGrade(o) {
 }
 
 // Volume (pacotes) de uma OS: nº de vagas de tamanho (_expTotalTamanhosGrade,
-// que já aplica a regra por tipo) + 1 pacote de reposição. Não depende de peças
-// nem de camadas.
-// Ex. camiseta: P-G1-G2 → 3+1=4; 2M-4G-2GG → 8+1=9.
-// Ex. moletom : P ao G3 → 7+1=8; 2X P ao G3 → 7+1=8; 2M-4G-2GG → 3+1=4.
+// que já aplica a regra por tipo) × nº de TONALIDADES + 1 pacote de reposição.
+// Cada tonalidade é ensacada separada, então uma grade em dois tons dobra os
+// pacotes. Não depende de peças nem de camadas.
+// Ex. moletom P ao G3: 1 tom → 7×1+1=8; 2 tons → 7×2+1=15; 3 tons → 7×3+1=22.
+// Ex. camiseta P-G1-G2: 1 tom → 3×1+1=4; 2 tons → 3×2+1=7.
+// OS sem tonalidade marcada conta como 1 tom (comportamento antigo preservado).
 function _expSugestaoVolumes(o) {
   const nTam = _expTotalTamanhosGrade(o);
-  return nTam > 0 ? String(nTam + 1) : '';
+  if (!(nTam > 0)) return '';
+  const nTons = Math.max(1, tonsEfetivos(((o || {}).progresso || {}).totalTamanhoTons || {}).length);
+  return String(nTam * nTons + 1);
 }
 
 /* ------- seleção da OS pelo checklist da folha de OS ------- */
@@ -3492,7 +3496,7 @@ function renderExpedicaoPlano() {
         <div class="admin-only" style="display:flex;gap:6px;">
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
-          <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
+          <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho, por tonalidade, + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
         </div>
       </div>
     </div>`;
@@ -3827,7 +3831,7 @@ function _expAtualizarSugestaoVolumes() {
   if (info) {
     info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
       + (nTam > 0
-        ? ` Grade com <b>${nTam} tamanho(s)</b> → sugestão de <b>${esc(sug)} volumes</b> (1 pacote por tamanho + 1 de reposição).`
+        ? ` Grade com <b>${nTam} tamanho(s)</b> → sugestão de <b>${esc(sug)} volumes</b> (1 pacote por tamanho, por tonalidade, + 1 de reposição).`
         : ' Sem grade com tamanhos definidos — não dá pra sugerir os volumes.');
   }
 }
@@ -3844,7 +3848,7 @@ function abrirModalExpConfig() {
       ${_expCampoNum('ex-vol-min', 'Volume mínimo padrão', _expNum(cfg.volMin, 0) || '', 'Carga planejada abaixo disso é sinalizada. 0 ou vazio = sem mínimo.')}
       ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">O <b>volume</b> de cada OS é calculado pela grade: <b>1 pacote por tamanho + 1 de reposição</b> (ex.: grade de 7 tamanhos = 8 volumes).</div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">O <b>volume</b> de cada OS é calculado pela grade: <b>1 pacote por tamanho, por tonalidade, + 1 de reposição</b> — cada tonalidade é ensacada separada. Ex.: grade de 7 tamanhos em 1 tom = 8 volumes; a mesma grade em 2 tons = 15.</div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">Os limites valem por <b>perna</b> (ida e volta contam separado) e podem ser sobrescritos em cada janela. A expedição é sempre interna, entre estas duas unidades.</div>`;
   openModal('modal-exp');
 }
@@ -4071,6 +4075,64 @@ function renderPrintPlanoExpedicao() {
     });
   });
 
+  // Bloco de detalhe sob cada OS da folha de OE: cor predominante, pacotes e a
+  // MESMA tabela "Total por tamanho" da folha de OS — quantidade por tamanho,
+  // uma linha por tonalidade com seu total, e o total geral. Os números saem de
+  // totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
+  const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
+  const detalheOsPrint = (i) => {
+    const o = i.os;
+    if (!o) return '';
+    const TT = totaisPorTamanhoTomOS(o);
+    if (!TT.tamanhos.length) return '';
+    // Cor predominante = Cor 1 da 1ª variante (a mesma do banner da folha de OS),
+    // caindo na cor da 1ª fase do enfesto. Sem o tecido no nome.
+    const corPred = corNomeCurto(
+      (o.variantes || []).map(v => v.cor1Nome).find(c => c && c !== '—')
+      || (o.fases || [])[0]?.corNome
+      || (o.tecidos || [])[0]?.corNome
+      || ''
+    );
+    const th = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
+    const td = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
+    const cabec = TT.tamanhos.map(k => `<th style="${th}text-align:center;">${TAM_LABEL[k]}</th>`).join('');
+    const linhaTotalTam = TT.tamanhos.map(k => `<td style="${td}font-weight:700;">${fmt(TT.colTotal(k))}</td>`).join('');
+    const linhasTom = TT.linhas.map(L => `
+      <tr>
+        <td style="${td}text-align:left;white-space:nowrap;">Tom ${L.tom}</td>
+        ${TT.tamanhos.map(k => `<td style="${td}">${L.cels[k] > 0 ? fmt(L.cels[k]) : ''}</td>`).join('')}
+        <td style="${td}font-weight:700;background:#eef3ee;">${L.total > 0 ? fmt(L.total) : ''}</td>
+      </tr>`).join('');
+    return `
+      <tr class="exp-print-det">
+        <td></td>
+        <td colspan="4" style="padding:1pt 0 4pt 0;">
+          <div style="font-size:6pt;color:#333;margin-bottom:1pt;">
+            <b>${esc(corPred) || '—'}</b>
+            · ${fmt(i.volumes)} pacote${i.volumes === 1 ? '' : 's'}
+            · ${TT.tons.length ? TT.tons.length + (TT.tons.length === 1 ? ' tonalidade' : ' tonalidades') : 'sem tonalidade'}
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:6pt;line-height:1.25;">
+            <thead>
+              <tr>
+                <th style="${th}text-align:left;width:22pt;"></th>
+                ${cabec}
+                <th style="${th}text-align:center;background:#eef3ee;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="${td}text-align:left;white-space:nowrap;font-weight:700;">Total</td>
+                ${linhaTotalTam}
+                <td style="${td}font-weight:700;background:#eef3ee;">${TT.totalGeral > 0 ? fmt(TT.totalGeral) : ''}</td>
+              </tr>
+              ${linhasTom}
+            </tbody>
+          </table>
+        </td>
+      </tr>`;
+  };
+
   const pernaPrint = (oc, perna) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
@@ -4083,7 +4145,8 @@ function renderPrintPlanoExpedicao() {
             <td>${esc(i.modelo)}</td>
             <td class="q">${fmt(i.pecas)} pç</td>
             <td class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</td>
-          </tr>`).join('')}
+          </tr>
+          ${detalheOsPrint(i)}`).join('')}
       </table>` : '<div class="vazia">Sem OS alocada.</div>';
     return `
       <div class="exp-print-perna">
@@ -4473,8 +4536,10 @@ function renderGrades() {
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
     const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
-    // Volume de expedição desta grade = 1 pacote por tamanho + 1 de reposição.
-    const volBadge = total > 0 ? ` <span class="badge" title="Volume na expedição: 1 pacote por tamanho + 1 de reposição">${total + 1} vol</span>` : '';
+    // Volume de expedição da grade, para UMA tonalidade: 1 pacote por tamanho
+    // + 1 de reposição. Na OS o número é multiplicado pelo nº de tonalidades
+    // marcadas (ver _expSugestaoVolumes) — aqui ainda não se sabe quantas são.
+    const volBadge = total > 0 ? ` <span class="badge" title="Volume na expedição com 1 tonalidade: 1 pacote por tamanho + 1 de reposição. Com 2 tons dobra (${total * 2 + 1}), com 3 triplica (${total * 3 + 1}).">${total + 1} vol</span>` : '';
     return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${volBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
@@ -8062,6 +8127,59 @@ function tonsEfetivos(ttTons) {
   return out;
 }
 
+// Multiplicador de peças por camada: quantas unidades cada camada rende em cada
+// vaga da grade. Moletom = 1 (1 camada = 1 blusa); malha sem moletom (camiseta)
+// = 2. Sem isso o total por tamanho sai pela metade na camiseta.
+function multiplicadorPecaOS(o) {
+  const cat = tecId => {
+    const t = (STATE.tecidos || []).find(x => x.id === tecId);
+    return t ? categoriaEfetivaTecido(t) : null;
+  };
+  const fases = (o && o.fases) || [];
+  const tecs = (o && o.tecidos) || [];
+  const tem = c => fases.some(f => cat(f.tecidoId) === c) || tecs.some(t => cat(t.tecidoId) === c);
+  if (tem('moletom')) return 1;
+  return tem('malha') ? 2 : 1;
+}
+
+// Fonte ÚNICA dos números do "Total por tamanho": quantidade por tamanho, por
+// tonalidade, total de cada tom e total geral. A folha de OS e a folha de OE
+// (plano de expedição) leem daqui, então não têm como mostrar números diferentes.
+//
+// Regra do balanceador (confirmada com o Junior): o V é uniforme por linha de tom
+// (o mesmo número em todas as células visíveis daquele tom); o ÚLTIMO tom marcado
+// é o balanceador e recebe, em cada tamanho, o total da coluna menos a soma dos V
+// dos tons editáveis — assim a soma das colunas bate com a linha "Total geral".
+function totaisPorTamanhoTomOS(o) {
+  const keys = ['p','m','g','gg','g1','g2','g3'];
+  const g = (o && o.grade) || {};
+  const cam = (o && o.enfesto && o.enfesto.camadas) || 0;
+  const mult = multiplicadorPecaOS(o);
+  const prog = (o && o.progresso) || {};
+  const colTotal = k => (g[k] || 0) * cam * mult;
+  const tamanhos = keys.filter(k => (g[k] || 0) > 0);
+  const tons = tonsEfetivos(prog.totalTamanhoTons || {});
+  const valores = prog.totalTamanhoTomValor || {};
+  const balancer = tons.length ? tons[tons.length - 1] : null;
+  const vTom = tom => Math.max(0, Number(valores[tom]) || 0);
+  let somaEditaveis = 0;
+  tons.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
+  const linhas = tons.map(tom => {
+    const cels = {};
+    let total = 0;
+    tamanhos.forEach(k => {
+      const v = (tom === balancer) ? Math.max(0, colTotal(k) - somaEditaveis) : vTom(tom);
+      cels[k] = v;
+      total += v;
+    });
+    return { tom, cels, total, balanceador: tom === balancer };
+  });
+  return {
+    keys, tamanhos, tons, linhas, colTotal, vTom, balancer, somaEditaveis,
+    totalGeral: (g.total || 0) * cam * mult,
+  };
+}
+
 async function togglarTotalTamanhoTom(osId, tom, checked) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
@@ -9106,50 +9224,24 @@ function renderPrintSheet(o) {
             </tr>
             ${(() => {
               const cam = o.enfesto?.camadas || 0;
-              // multPrincipal: 1 camada produz quantas unidades por slot
-              // de grade. Moletom = 1 (1 camada = 1 blusa). Malha sem
-              // moletom (camiseta) = 2. Sem isso, o total por tamanho
-              // sai pela metade pra camiseta e o usuario ve 'peças-alvo'
-              // entrar como total geral.
-              const fasesP = o.fases || [];
-              const tecsP = o.tecidos || [];
-              const temMoletom = fasesP.some(f => {
-                const t = STATE.tecidos.find(x => x.id === f.tecidoId);
-                return t && categoriaEfetivaTecido(t) === 'moletom';
-              }) || tecsP.some(t => {
-                const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
-                return tec && categoriaEfetivaTecido(tec) === 'moletom';
-              });
-              const temMalha = !temMoletom && (
-                fasesP.some(f => {
-                  const t = STATE.tecidos.find(x => x.id === f.tecidoId);
-                  return t && categoriaEfetivaTecido(t) === 'malha';
-                }) || tecsP.some(t => {
-                  const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
-                  return tec && categoriaEfetivaTecido(tec) === 'malha';
-                })
-              );
-              const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
+              // Todos os números vêm de totaisPorTamanhoTomOS — a mesma função
+              // que a folha de OE usa, pra as duas folhas não divergirem.
+              const TT = totaisPorTamanhoTomOS(o);
+              const multPrincipal = multiplicadorPecaOS(o);
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
-              const totalGeral = (g.total || 0) * cam * multPrincipal;
+              const totalGeral = TT.totalGeral;
               const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
-              const ttTonValores = (o.progresso && o.progresso.totalTamanhoTomValor) || {};
-              const sizeKeys = ['p','m','g','gg','g1','g2','g3'];
+              const sizeKeys = TT.keys;
               // Tons marcados em ordem (prefixo: 1, 1+2 ou 1+2+3). O ultimo
               // vira o "balanceador": cada celula dele recebe colTotal menos a
               // soma dos V dos editaveis, mantendo as somas das colunas iguais
               // a linha "Total geral" e a soma total = X.
-              const tomsSel = tonsEfetivos(ttTons);
-              const balancerTom = tomsSel.length ? tomsSel[tomsSel.length - 1] : null;
+              const tomsSel = TT.tons;
+              const balancerTom = TT.balancer;
               // V uniforme por linha (mesmo numero em todas as celulas
               // visiveis). Digitar em uma celula propaga pra todas via DOM.
-              const vTom = (tom) => Math.max(0, Number(ttTonValores[tom]) || 0);
-              let somaEditaveis = 0;
-              tomsSel.forEach(tt => { if (tt !== balancerTom) somaEditaveis += vTom(tt); });
-              const balancerCellVal = (k) => {
-                const colTotal = (g[k] || 0) * cam * multPrincipal;
-                return Math.max(0, colTotal - somaEditaveis);
-              };
+              const vTom = TT.vTom;
+              const balancerCellVal = (k) => Math.max(0, TT.colTotal(k) - TT.somaEditaveis);
               const tomRow = (tom) => {
                 const isChecked = tomsSel.includes(tom);
                 const ck = isChecked ? 'checked' : '';
