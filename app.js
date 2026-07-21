@@ -9329,7 +9329,9 @@ function renderPrintSheet(o) {
             // Usando consumoEnfestoOS — a mesma fonte da tabela de Enfestos —
             // o checklist fica 1:1 com as linhas do enfesto, sempre.
             const RE_FASE_TAREFA = /^fase\s*\d+/i;
-            const fasesCorte = consumoEnfestoOS(o).map(L => ({
+            // Fase de viés fica de fora: não é enfesto de corte com camadas —
+            // é tira cortada em diagonal, não entra no checklist de Corte.
+            const fasesCorte = consumoEnfestoOS(o).filter(L => !L.ehVies).map(L => ({
               nome: 'Fase ' + L.ordem,                       // chave do check: não muda
               hint: L.tecidoReal || L.nomeEnf || '',         // só complemento visual
               ordem: L.ordem                                 // liga os campos de horário
