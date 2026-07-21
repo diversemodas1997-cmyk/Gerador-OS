@@ -8778,11 +8778,10 @@ function renderEnfestoBox(o) {
 
   // Consumo por fase (fonte única — mesma usada na baixa de estoque)
   const consumo = consumoEnfestoOS(o);
-  let totalKg = 0;
-  // Total de bobinas previstas agrupado por TECIDO: malha, ribana e moletom não
-  // somam num número único (são bobinas de coisas diferentes). Cada tecido leva
-  // seu próprio total na linha de rodapé.
-  const bobPorTecido = new Map();
+  // Sem linha de total: cada fase é um enfesto de um tecido e uma cor próprios,
+  // então somar as fases produz um número que não serve pra comprar nem separar
+  // material. O consumo fica só onde tem significado — na linha da própria fase,
+  // com as bobinas previstas em cima e a estimativa em kg embaixo.
 
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
@@ -8823,11 +8822,6 @@ function renderEnfestoBox(o) {
     const camBloco = L.ehVies ? 1 : (L.camadas || 0);
     const compEf = L.comp || '';
     const largEf = L.larg || '';
-    totalKg += L.kg;
-    if (gradeTemPrevisao && bobPorOrdem[ord] != null) {
-      const tk = L.tecidoReal || L.nomeEnf || '—';
-      bobPorTecido.set(tk, (bobPorTecido.get(tk) || 0) + bobPorOrdem[ord]);
-    }
     const ckEnf = !!enfestosCheck[ord];
     const t = enfestosTempos[ord] || {};
     return `<tr>
@@ -8852,22 +8846,6 @@ function renderEnfestoBox(o) {
       </td>
     </tr>`);
   }).join('');
-  // Resumo de bobinas do rodapé: "Malha Algodão 12 · Ribana ½". Fica ao lado do
-  // rótulo "Total consumo"; o total em kg segue na coluna Consumo, alinhado com
-  // as estimativas por fase.
-  const resumoBob = Array.from(bobPorTecido.entries())
-    .filter(([, v]) => v > 0)
-    .map(([t, v]) => `${esc(t)} ${fmtBob(v)}`)
-    .join(' · ');
-  const linhaTotal = (totalKg > 0 || resumoBob)
-    ? `<tr>
-        <td colspan="8" style="text-align:right;font-weight:700;background:#eef6f0;">
-          ${resumoBob ? `<span style="float:left;font-weight:400;font-size:6pt;color:#333;padding-left:3px;" title="Bobinas previstas (cadastro da grade), por tecido">Bobinas: ${resumoBob}</span>` : ''}
-          Total consumo
-        </td>
-        <td style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;white-space:nowrap;">${totalKg > 0 ? fmtKg(totalKg)+' kg' : '—'}</td>
-      </tr>`
-    : '';
 
   return `
     <table class="side-table tab-tecidos" style="table-layout:fixed;width:100%;">
@@ -8898,7 +8876,6 @@ function renderEnfestoBox(o) {
       </thead>
       <tbody>
         ${linhasEnfestos}
-        ${linhaTotal}
       </tbody>
     </table>
   `;
