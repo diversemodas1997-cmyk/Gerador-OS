@@ -9210,10 +9210,30 @@ function renderPrintSheet(o) {
           <div class="titulo">Etapas de Produção</div>
           ${(() => {
             if (!o.etapas?.length) return `<em style="color:#999;">—</em>`;
+            // Tarefas da etapa CORTE saem do enfesto DESTA OS, não do cadastro.
+            // O cadastro de etapas é global (tinha "Fase 1|Fase 2|Fase 3" fixo),
+            // então não conseguia acompanhar a grade: camiseta com 2 fases
+            // imprimia uma "Fase 3" fantasma e moletom com 4 perdia a última.
+            // Usando consumoEnfestoOS — a mesma fonte da tabela de Enfestos —
+            // o checklist fica 1:1 com as linhas do enfesto, sempre.
+            const RE_FASE_TAREFA = /^fase\s*\d+/i;
+            const fasesCorte = consumoEnfestoOS(o).map(L => ({
+              nome: 'Fase ' + L.ordem,                       // chave do check: não muda
+              hint: L.tecidoReal || L.nomeEnf || '',         // só complemento visual
+              ordem: L.ordem                                 // liga os campos de horário
+            }));
             // Mantém a ordem salva na OS; busca as tarefas embutidas na etapa cadastrada
             const ordenadas = o.etapas.map(nome => {
               const cad = STATE.etapas.find(e => e.nome === nome);
-              return { nome, tarefas: cad ? tarefasDaEtapa(cad).map(t => t.nome) : [] };
+              const cadTarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome) : [];
+              // Só a etapa de Corte é derivada, e só quando a OS tem enfesto.
+              // As tarefas do cadastro que NÃO são "Fase N" (ex.: "Conferir
+              // molde") continuam aparecendo, depois das fases.
+              if (/corte/i.test(nome) && fasesCorte.length) {
+                const extras = cadTarefas.filter(t => !RE_FASE_TAREFA.test(t));
+                return { nome, tarefas: [...fasesCorte, ...extras.map(t => ({ nome: t, hint: '' }))] };
+              }
+              return { nome, tarefas: cadTarefas.map(t => ({ nome: t, hint: '' })) };
             });
             const prog = o.progresso || {};
             const etapaCk = (nomeEtapa) => {
@@ -9241,6 +9261,24 @@ function renderPrintSheet(o) {
             const temposCorte = `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:7pt;color:#555;font-weight:400;">
                 <span>Início</span>${campoCorte('ini')}<span>Fim</span>${campoCorte('fim')}
               </span>`;
+            // Início/Fim de corte POR FASE, na própria linha do checklist. Grava
+            // em progresso.enfestosTempos[ordem] com chaves PRÓPRIAS (corteIni/
+            // corteFim), sem colidir com o Início/Fim de ENFESTO da tabela de
+            // enfestos (enfIni/enfFim) — são operações diferentes na mesma fase.
+            // Reaproveita salvarTempoEnfesto e o data-enf-tempo, que já é
+            // sincronizado entre usuários em atualizarChecksFolha.
+            const campoTempoFase = (ordem, campo) => {
+              const tv = (prog.enfestosTempos || {})[ordem] || {};
+              return `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(tv[campo] || '')}" `
+                + `data-enf-tempo="${esc(String(ordem))}" data-enf-campo="${campo}" `
+                + `onchange="salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ordem))}', '${campo}', this.value)" `
+                + `style="width:40px;border:none;border-bottom:1px solid #999;background:transparent;text-align:center;`
+                + `font-family:'IBM Plex Mono',monospace;font-size:7.5pt;padding:0 1px;">`;
+            };
+            const tempoFase = (ordem) =>
+              `<span style="display:inline-flex;align-items:center;gap:3px;margin-left:auto;padding-left:6px;font-family:'IBM Plex Mono',monospace;font-size:6.5pt;color:#666;">
+                <span>Ini</span>${campoTempoFase(ordem, 'corteIni')}<span>Fim</span>${campoTempoFase(ordem, 'corteFim')}
+              </span>`;
             return `<ul style="list-style:none;padding-left:0;margin:0;font-size:9pt;column-count:2;column-gap:16px;">
               ${ordenadas.map(e => `
                 <li style="padding:4px 6px;border-bottom:1px dotted #d4d0c5;break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;">
@@ -9251,9 +9289,9 @@ function renderPrintSheet(o) {
                   ${e.tarefas.length ? `
                     <ul style="list-style:none;padding-left:24px;margin:3px 0 0 0;font-size:8.5pt;color:#555;">
                       ${e.tarefas.map(t => `
-                        <li style="display:flex;align-items:center;padding:1px 0;">
-                          ${tarefaCk(e.nome, t)}
-                          <span>${esc(t)}</span>
+                        <li style="display:flex;align-items:center;flex-wrap:wrap;padding:1px 0;">
+                          ${tarefaCk(e.nome, t.nome)}
+                          <span>${esc(t.nome)}</span>${t.hint ? `<span style="color:#8a8a8a;margin-left:5px;">· ${esc(t.hint)}</span>` : ''}${t.ordem != null ? tempoFase(t.ordem) : ''}
                         </li>`).join('')}
                     </ul>` : ''}
                 </li>`).join('')}
