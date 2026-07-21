@@ -4110,7 +4110,7 @@ function renderPrintPlanoExpedicao() {
           <div style="font-size:6pt;color:#333;margin-bottom:1pt;">
             <b>${esc(corPred) || '—'}</b>
             · ${fmt(i.volumes)} pacote${i.volumes === 1 ? '' : 's'}
-            · ${TT.tons.length ? TT.tons.length + (TT.tons.length === 1 ? ' tonalidade' : ' tonalidades') : 'sem tonalidade'}
+            · ${Math.max(1, TT.tons.length)}${Math.max(1, TT.tons.length) === 1 ? ' tonalidade' : ' tonalidades'}
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:6pt;line-height:1.25;">
             <thead>
@@ -8160,22 +8160,34 @@ function totaisPorTamanhoTomOS(o) {
   const tamanhos = keys.filter(k => (g[k] || 0) > 0);
   const tons = tonsEfetivos(prog.totalTamanhoTons || {});
   const valores = prog.totalTamanhoTomValor || {};
-  const balancer = tons.length ? tons[tons.length - 1] : null;
+  // Sem nenhum tom marcado a peça ainda é de UMA tonalidade — o Tom 1 aparece
+  // implícito, com a quantidade cheia, em vez de a tabela ficar vazia.
+  const tonsVisiveis = tons.length ? tons : [1];
+  const implicito = !tons.length;
+  const balancer = tonsVisiveis[tonsVisiveis.length - 1];
   const vTom = tom => Math.max(0, Number(valores[tom]) || 0);
   let somaEditaveis = 0;
-  tons.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
-  const linhas = tons.map(tom => {
+  tonsVisiveis.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
+  // Estado inicial: enquanto NADA foi digitado nos tons editáveis, a quantidade
+  // cheia fica no TOM 1 e os demais saem em branco. A diferença só se reparte
+  // quando o Tom 1 recebe um número — antes disso não há divisão a mostrar.
+  const semDigitacao = somaEditaveis === 0;
+  const linhas = tonsVisiveis.map(tom => {
     const cels = {};
     let total = 0;
     tamanhos.forEach(k => {
-      const v = (tom === balancer) ? Math.max(0, colTotal(k) - somaEditaveis) : vTom(tom);
+      let v;
+      if (semDigitacao) v = (tom === 1) ? colTotal(k) : 0;
+      else if (tom === balancer) v = Math.max(0, colTotal(k) - somaEditaveis);
+      else v = vTom(tom);
       cels[k] = v;
       total += v;
     });
-    return { tom, cels, total, balanceador: tom === balancer };
+    return { tom, cels, total, balanceador: tom === balancer, editavel: !implicito && tom !== balancer };
   });
   return {
-    keys, tamanhos, tons, linhas, colTotal, vTom, balancer, somaEditaveis,
+    keys, tamanhos, tons, tonsVisiveis, implicito, linhas, colTotal, vTom,
+    balancer, somaEditaveis, semDigitacao,
     totalGeral: (g.total || 0) * cam * mult,
   };
 }
@@ -9253,21 +9265,29 @@ function renderPrintSheet(o) {
                 // bloqueado, o texto fica na cor normal — só o checkbox continua
                 // desabilitado pra manter a sequência (Tom 2 exige Tom 1 etc.).
                 const labelStyle = "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
-                const isBalancer = isChecked && tom === balancerTom;
-                const v = isChecked ? vTom(tom) : 0;
+                // A linha sai de TT.linhas — a mesma estrutura que a folha de OE
+                // usa. O Tom 1 aparece mesmo sem checkbox marcado (tonalidade
+                // implícita) e, enquanto nada foi digitado, carrega a quantidade
+                // cheia; nesse estado ele é só leitura, como o balanceador.
+                const linhaTT = TT.linhas.find(L => L.tom === tom);
+                const mostra = !!linhaTT;
+                // O Tom 1 continua DIGITÁVEL no estado inicial — é digitar nele
+                // que reparte a diferença pro balanceador. Só o balanceador e o
+                // Tom 1 implícito (sem checkbox) são célula calculada.
+                const editavel = !!linhaTT && linhaTT.editavel;
                 let rowSum = 0;
                 const cells = sizeKeys.map(k => {
                   const has = (g[k] || 0) > 0;
-                  if (!isChecked || !has) return `<td></td>`;
-                  if (isBalancer) {
-                    const bv = balancerCellVal(k);
-                    rowSum += bv;
-                    return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}">${bv > 0 ? bv : ''}</td>`;
+                  if (!mostra || !has) return `<td></td>`;
+                  const val = linhaTT.cels[k] || 0;
+                  rowSum += val;
+                  if (!editavel) {
+                    // Célula calculada (balanceador, ou Tom 1 no estado inicial).
+                    return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}">${val > 0 ? val : ''}</td>`;
                   }
-                  rowSum += v;
-                  return `<td style="padding:0;"><input type="number" min="0" value="${v > 0 ? v : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
+                  return `<td style="padding:0;"><input type="number" min="0" value="${val > 0 ? val : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
                 }).join('');
-                const totalCell = !isChecked
+                const totalCell = !mostra
                   ? `<td style="background:#c9e8d0;"></td>`
                   : `<td style="background:#c9e8d0;" data-tt-row-total="${tom}">${rowSum > 0 ? rowSum : ''}</td>`;
                 return `<tr style="background:#f4faf5;">
