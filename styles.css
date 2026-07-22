@@ -1802,12 +1802,64 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   letter-spacing: .04em;
 }
 
+/* ===== FOLHA DO PLANEJAMENTO DE OPERAÇÕES =====
+   Reaproveita a moldura da folha de OE (.exp-print-head/-resumo/-bloco/-rodape).
+   O que é próprio daqui é o bloco de cada posto e a tabela de operações — na
+   tela o plano é interativo (setas, status clicável, faixas de tempo); no papel
+   o que serve é a jornada em texto, com um quadrinho para dar baixa à caneta. */
+.op-print-posto { margin-bottom: 5px; }
+.op-print-posto:last-child { margin-bottom: 0; }
+.op-print-posto > .ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid #999;
+  padding: 2px 4px 1px;
+  background: #f2f2f2;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-posto > .ph .t {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.op-print-posto > .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 7.5pt; }
+.op-print-posto table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+.op-print-posto td { padding: 1.5px 4px; vertical-align: top; border-bottom: 1px dotted #ccc; }
+.op-print-posto tr:last-child td { border-bottom: none; }
+.op-print-posto td.bx { width: 12pt; }
+.op-print-posto td.jan { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; width: 96pt; }
+.op-print-posto td.ope { }
+.op-print-posto td.res { width: 78pt; }
+.op-print-posto td.ref { width: 72pt; color: #444; font-size: 7pt; }
+.op-print-posto .obs { font-size: 6.5pt; color: #555; font-style: italic; }
+.op-print-posto .tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border: .5pt solid #666;
+  border-radius: 2px;
+  padding: 0 3px;
+  white-space: nowrap;
+}
+.op-print-posto .tag.urgente { border-color: #9a7c3a; color: #7a5f1e; font-weight: 700; }
+.op-print-posto .tag.emergente,
+.op-print-posto .tag.alto { border-color: #c81e1e; color: #c81e1e; font-weight: 700; }
+
 @media print {
   /* A margem de toda folha do plano — inclusive as de continuação. */
   @page plano-exp {
     size: A4;
     margin: 10mm;
   }
+  /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
+     lida inteira, senão o operador recebe metade da jornada dele. */
+  .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
   /* NÃO usar position:fixed para repetir o cabeçalho aqui. Foi tentado: em mídia
      paginada o elemento sai do fluxo e o navegador o reposiciona fora da faixa
      reservada — o título ia parar no RODAPÉ da folha. Repetição de cabeçalho em

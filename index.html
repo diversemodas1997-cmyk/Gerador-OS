@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-07-22v">
+<link rel="stylesheet" href="styles.css?v=2026-07-22w">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -677,6 +677,24 @@
       </div>
     </section>
 
+    <!-- ============ FOLHA DO PLANO DE OPERAÇÕES (IMPRESSÃO) ============ -->
+    <!-- Mesma natureza da folha de expedição: pode ocupar mais de uma A4, então
+         usa .sheet-exp (quebra de página liberada) e não tem .sheet-scaler. -->
+    <section class="page hidden" data-page="print-operacoes">
+      <div class="page-header no-print">
+        <div><h1>Folha do planejamento de operações</h1><div class="desc">Revise e clique em Imprimir. A folha acompanha o período aberto em Operações.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('operacoes')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-op">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
     <!-- ================= CONFIGURAÇÕES ================= -->
     <section class="page hidden" data-page="config">
       <div class="page-header">
@@ -878,6 +896,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-22u"></script>
+<script src="app.js?v=2026-07-22w"></script>
 </body>
 </html>

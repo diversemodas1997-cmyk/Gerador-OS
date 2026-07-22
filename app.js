@@ -1309,6 +1309,7 @@ function goto(page) {
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
+  if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
@@ -4634,7 +4635,11 @@ function _opConflitos(lista) {
   const porFuncao = new Map();
   lista.forEach(op => {
     if (_opInicioMin(op) == null || !_opDuracao(op)) return;
-    const k = op.funcaoId || _opFuncaoNome(op);
+    // A chave inclui a DATA: o horário é sempre dentro do dia, então comparar
+    // operações de dias diferentes acusava sobreposição onde não há — bastava
+    // um posto ter uma jornada longa na segunda e outra na terça para as duas
+    // saírem marcadas nos modos semanal e mensal.
+    const k = op.data + '|' + (op.funcaoId || _opFuncaoNome(op));
     if (!porFuncao.has(k)) porFuncao.set(k, []);
     porFuncao.get(k).push(op);
   });
@@ -4687,6 +4692,9 @@ function renderOperacoes() {
         <div class="exp-periodo">${esc(_expLabelPeriodo(opPlanoModo, opPlanoAncora))}</div>
         <button class="btn" onclick="opNav(1)" title="Próximo período">›</button>
         <button class="btn" onclick="opHoje()">Hoje</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn accent" onclick="goto('print-operacoes')">🖨 Folha do plano</button>
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn primary" onclick="abrirModalOperacao()">+ Nova operação</button>
@@ -5175,6 +5183,108 @@ async function copiarOperacoesDoDiaAnterior() {
   await saveState('operacoes');
   toast(`${novas.length} operação(ões) copiada(s) de ${formatDate(origem)}`, 'ok');
   renderOperacoes();
+}
+
+/* ---------------- folha impressa do plano de operações ---------------- */
+
+// A folha que vai para o chão de fábrica. Na tela o plano é interativo (setas,
+// status clicável, faixas de tempo desenhadas); no papel isso não serve — o que
+// serve é a jornada de cada posto em texto, com um quadrinho para dar baixa à
+// caneta. Só entram dias COM operação: dia vazio no papel é linha em branco que
+// ninguém sabe se é folga ou esquecimento.
+function renderPrintPlanoOperacoes() {
+  const sheet = document.getElementById('print-sheet-op');
+  if (!sheet) return;
+  const { ini, fim } = _expRange(opPlanoModo, opPlanoAncora);
+  const ops = operacoesNoPeriodo(ini, fim);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  const porDia = new Map();
+  ops.forEach(op => {
+    if (!porDia.has(op.data)) porDia.set(op.data, []);
+    porDia.get(op.data).push(op);
+  });
+
+  const conflitos = _opConflitos(ops);
+  const minutos = ops.reduce((s, o) => s + _opDuracao(o), 0);
+  const postos = new Set(ops.map(_opFuncaoNome));
+  const prioritarias = ops.filter(o => _opPrioridade(o) !== 'eletiva').length;
+
+  const linha = op => {
+    const pr = _opPrioridade(op);
+    const resp = _opResponsavelNome(op);
+    return `
+      <tr>
+        <td class="bx"><span class="exp-print-box"></span></td>
+        <td class="jan">${esc(_opJanelaTexto(op))}</td>
+        <td class="ope">${esc(op.operacao) || '—'}${
+          op.escopo === 'etapa' ? ' <span class="tag">etapa</span>' : ''}${
+          pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
+          conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
+          op.obs ? `<div class="obs">${esc(op.obs)}</div>` : ''}</td>
+        <td class="res">${esc(resp) || '—'}</td>
+        <td class="ref">${esc(op.referencia) || ''}</td>
+      </tr>`;
+  };
+
+  const blocos = Array.from(porDia.keys()).sort().map(data => {
+    const doDia = porDia.get(data);
+    const grupos = _opBlocosDoDia(data);
+    const comHora = doDia.filter(o => _opInicioMin(o) != null);
+    const abre = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
+    const fecha = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
+    const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
+    const postosHtml = grupos.map(g => {
+      const gMin = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
+      const gCom = g.itens.filter(o => _opInicioMin(o) != null);
+      const gIni = gCom.length ? Math.min(...gCom.map(_opInicioMin)) : null;
+      const gFim = gCom.length ? Math.max(...gCom.map(_opFimMin)) : null;
+      return `
+        <div class="op-print-posto">
+          <div class="ph">
+            <span class="t">${esc(g.nome)}</span>
+            <span class="h">${gIni != null ? esc(_opHHMM(gIni)) + ' → ' + esc(_opHHMM(gFim)) : 'sem horário'} · ${esc(_opDurTexto(gMin))}</span>
+          </div>
+          <table>${g.itens.map(linha).join('')}</table>
+        </div>`;
+    }).join('');
+    return `
+      <div class="exp-print-bloco">
+        <div class="cab">
+          <span class="d">${_EXP_DIAS_CURTO[_expData(data).getDay()]} ${esc(formatDate(data))}</span>
+          <span class="j">${grupos.length} ${grupos.length === 1 ? 'posto' : 'postos'} · ${esc(_opDurTexto(totMin))}${
+            abre != null ? ` · jornada ${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}` : ''}</span>
+        </div>
+        ${postosHtml}
+      </div>`;
+  }).join('');
+
+  const emissao = new Date();
+  const emissaoTxt = formatDate(_expIso(emissao)) + ' '
+    + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
+
+  sheet.innerHTML = `
+    <div class="exp-print-head">
+      <div>
+        <div class="tit">PLANEJAMENTO DE OPERAÇÕES</div>
+        <div class="sub">Plano ${esc(_expNomeModo(opPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · jornada por posto de trabalho</div>
+      </div>
+      <div class="meta">
+        <div>Emitido em ${esc(emissaoTxt)}</div>
+      </div>
+    </div>
+    <div class="exp-print-resumo">
+      <div class="item"><div class="n">${fmt(ops.length)}</div><div class="l">Operações</div></div>
+      <div class="item"><div class="n">${fmt(postos.size)}</div><div class="l">Postos</div></div>
+      <div class="item"><div class="n">${esc(_opDurTexto(minutos))}</div><div class="l">Tempo planejado</div></div>
+      <div class="item"><div class="n">${fmt(prioritarias)}</div><div class="l">Urgentes / emerg.</div></div>
+      <div class="item"><div class="n">${fmt(porDia.size)}</div><div class="l">Dias com operação</div></div>
+    </div>
+    ${blocos || `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma operação planejada ${esc(_EXP_VAZIO_PERIODO[opPlanoModo] || 'neste período')}.</div>`}
+    <div class="exp-print-rodape">
+      <div class="ass"><div class="linha"></div><div class="lbl">Encarregado de produção</div></div>
+      <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
+    </div>`;
 }
 
 // Operações gravadas no primeiro desenho do campo (uma linha por OS, com peças
