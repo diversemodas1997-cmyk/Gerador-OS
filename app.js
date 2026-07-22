@@ -5118,20 +5118,23 @@ function renderPrintPlanoExpedicao() {
       ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição`
       : `${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}`;
 
-    // Linhas por tonalidade. Sempre sai pelo menos uma: com uma tonalidade só
-    // (ou nenhuma marcada na OS) ela leva a coluna inteira, que é justamente o
-    // detalhe por tamanho e tom que a folha precisa mostrar. Com duas ou mais
-    // tonalidades e nada repartido na OS, a divisão é declarada indefinida em
-    // vez de inventada.
-    const indef = TT.semDigitacao && TT.tons.length > 1;
-    const tomInteiro = TT.semDigitacao && TT.tons.length <= 1;
-    const linhas = TT.tons.length
-      ? TT.linhas.map(L => ({
-          rot: 'Tom ' + L.tom,
-          cels: TT.tamanhos.map(k => (tomInteiro ? TT.colTotal(k) : L.cels[k])),
-          total: tomInteiro ? TT.totalGeral : L.total
-        }))
-      : [{ rot: 'Tom único', cels: TT.tamanhos.map(k => TT.colTotal(k)), total: TT.totalGeral }];
+    // Linhas por tonalidade. Com DUAS OU MAIS tonalidades a repartição é o
+    // detalhe que interessa; com uma tonalidade só (ou nenhuma marcada) ela
+    // levaria a coluna inteira e a linha sairia idêntica à do total — repetir o
+    // mesmo número duas vezes só faz o conferente procurar uma diferença que não
+    // existe. Nesse caso a tonalidade é dita no cabeçalho e a tabela fica com uma
+    // linha só. Com duas ou mais e nada repartido na OS, a divisão é declarada
+    // indefinida em vez de inventada.
+    const umTomSo = TT.tons.length <= 1;
+    const indef = TT.semDigitacao && !umTomSo;
+    const linhas = umTomSo ? [] : TT.linhas.map(L => ({
+      rot: 'Tom ' + L.tom,
+      cels: TT.tamanhos.map(k => L.cels[k]),
+      total: L.total
+    }));
+    // Com uma tonalidade só, a linha única é a do total e é ela que carrega o
+    // nome do tom — assim a folha continua dizendo por tamanho E por tom.
+    const rotTotal = umTomSo ? (TT.tons.length ? 'Tom ' + TT.tons[0] : 'Tom único') : 'Total';
 
     const th = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
     const td = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
@@ -5160,7 +5163,7 @@ function renderPrintPlanoExpedicao() {
           </thead>
           <tbody>
             <tr>
-              <td style="${td}text-align:left;white-space:nowrap;font-weight:700;">Total</td>
+              <td style="${td}text-align:left;white-space:nowrap;font-weight:700;">${esc(rotTotal)}</td>
               ${linhaTotalTam}
               <td style="${td}font-weight:700;background:#eef3ee;">${TT.totalGeral > 0 ? fmt(TT.totalGeral) : ''}</td>
             </tr>
