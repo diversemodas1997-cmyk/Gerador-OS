@@ -1859,11 +1859,17 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .op-print-posto .tag.alto { border-color: #c81e1e; color: #c81e1e; font-weight: 700; }
 
 @media print {
-  /* A margem de toda folha do plano — inclusive as de continuação. */
+  /* A margem de toda folha do plano — inclusive as de continuação.
+     A superior é maior: o cabeçalho se repete no alto de TODA folha e, encostado
+     nos 10mm, caía dentro da faixa que a impressora não imprime — o título saía
+     cortado. */
   @page plano-exp {
     size: A4;
-    margin: 10mm;
+    margin: 14mm 10mm 10mm;
   }
+  /* Respiro entre a borda do papel e o título, em cada folha. Vive no <thead>
+     para acompanhar a repetição do cabeçalho. */
+  .sheet-exp .exp-print-folha > thead > tr > td { padding-top: 3mm; }
   /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
      lida inteira, senão o operador recebe metade da jornada dele. */
   .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
