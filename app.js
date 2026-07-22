@@ -7402,8 +7402,25 @@ function calcularCamadasParaProducao() {
   const gradeId = document.getElementById('f-grade-preset')?.value;
   const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
   const fases = grade?.fases || [];
-  const temMoletom = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom');
-  const temMalha = fases.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha');
+
+  // O multiplicador da peça principal (malha: 1 camada = 2 peças) sai dos
+  // TECIDOS ESCOLHIDOS NA OS, não das fases da grade cadastrada. A grade é um
+  // molde de tamanhos e pode perfeitamente não ter fases, ou tê-las sem tecido;
+  // quando isso acontecia o multiplicador caía para 1 em silêncio e as camadas
+  // DOBRAVAM — 160 no lugar de 80, produzindo o dobro do alvo pedido.
+  // Os tecidos da OS já são a fonte do limite de camadas (calcularLimiteCamadas)
+  // e da contagem de peças (multiplicadorPecaOS): agora as três concordam.
+  // Só cai nas fases da grade se a OS ainda não tem tecido escolhido.
+  const catsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
+    .map(r => r.querySelector('.tec-sel')?.value)
+    .filter(Boolean)
+    .map(id => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === id)))
+    .filter(Boolean);
+  const cats = catsForm.length
+    ? catsForm
+    : fases.map(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId))).filter(Boolean);
+  const temMoletom = cats.includes('moletom');
+  const temMalha = cats.includes('malha');
 
   // Multiplicador da peça principal
   let multPrincipal = 1;
