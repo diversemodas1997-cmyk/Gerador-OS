@@ -1802,10 +1802,24 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 }
 
 @media print {
-  /* A margem de toda folha do plano — inclusive as de continuação. */
+  /* A margem de toda folha do plano — inclusive as de continuação.
+     A margem SUPERIOR é maior que as outras porque reserva a faixa do
+     cabeçalho fixo (~14mm + respiro), que é repintado em toda página. */
   @page plano-exp {
     size: A4;
-    margin: 10mm;
+    margin: 26mm 10mm 10mm;
+  }
+  /* CABEÇALHO FIXO: position:fixed em mídia paginada é repetido pelo navegador
+     em cada folha. Fica ancorado dentro da margem superior reservada acima, para
+     não cobrir o conteúdo. Sem ele, da segunda folha em diante o papel não dizia
+     que OE era aquela nem de que período — e uma OE mensal tem várias folhas. */
+  .sheet-exp .exp-print-head {
+    position: fixed;
+    top: -16mm;
+    left: 0;
+    right: 0;
+    margin-bottom: 0;
+    background: #fff;
   }
   /* Anula, só pra esta folha, o "cabe tudo numa página" da folha de OS. */
   .sheet-exp {

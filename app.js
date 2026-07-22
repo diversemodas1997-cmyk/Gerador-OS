@@ -8766,13 +8766,26 @@ async function gerarPdfDaSheetExp() {
     // o corte cai no fim de um QUADRO. O dia continua na folha seguinte, mas
     // nenhuma OS sai picada.
     const cortesCaixa = _bottomsDe('.exp-print-os');
+    // CABEÇALHO FIXO: a faixa do topo (título, período, unidades, emissão) é
+    // redesenhada no alto de cada página. Sem isso, da segunda folha em diante o
+    // papel chegava à mão de quem confere sem dizer que OE é aquela nem de que
+    // período — e uma OE mensal tem várias folhas.
+    const headEl = sheet.querySelector('.exp-print-head');
+    const cabAlturaPx = headEl
+      ? Math.round((headEl.getBoundingClientRect().bottom - sheetRect.top) * ratio)
+      : 0;
     const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const pageWmm = 210, pageHmm = 297;
     const pxPorMm = canvas.width / pageWmm;      // px do canvas por mm de largura A4
     const pageHpx = Math.floor(pageHmm * pxPorMm); // px que cabem numa A4 de altura
     let y = 0, pagina = 0;
     while (y < canvas.height - 1) {
-      const maxY = y + pageHpx;
+      // Na 1ª página o cabeçalho já vem no próprio fluxo; nas demais ele é
+      // repetido e consome altura útil da folha.
+      const repetirCab = pagina > 0 && cabAlturaPx > 0;
+      const alturaCab = repetirCab ? cabAlturaPx : 0;
+      const disponivel = pageHpx - alturaCab;
+      const maxY = y + disponivel;
       let cut;
       if (maxY >= canvas.height) {
         cut = canvas.height;
@@ -8787,13 +8800,16 @@ async function gerarPdfDaSheetExp() {
       }
       const sliceH = Math.max(1, Math.round(cut - y));
       const tmp = document.createElement('canvas');
-      tmp.width = canvas.width; tmp.height = sliceH;
+      tmp.width = canvas.width; tmp.height = alturaCab + sliceH;
       const ctx = tmp.getContext('2d');
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height);
-      ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      if (repetirCab) {
+        ctx.drawImage(canvas, 0, 0, canvas.width, cabAlturaPx, 0, 0, canvas.width, cabAlturaPx);
+      }
+      ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, alturaCab, canvas.width, sliceH);
       const imgData = tmp.toDataURL('image/jpeg', 0.95);
       if (pagina > 0) pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, 0, pageWmm, sliceH / pxPorMm, undefined, 'FAST');
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWmm, tmp.height / pxPorMm, undefined, 'FAST');
       y += sliceH; pagina++;
     }
     return pdf.output('blob');
