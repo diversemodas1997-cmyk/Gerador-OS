@@ -5263,16 +5263,24 @@ function renderPrintPlanoOperacoes() {
   const emissaoTxt = formatDate(_expIso(emissao)) + ' '
     + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
 
+  // Mesma tabela de uma coluna da folha de OE: o <thead> é o que faz o navegador
+  // repetir o título no alto de cada folha impressa.
   sheet.innerHTML = `
-    <div class="exp-print-head">
-      <div>
-        <div class="tit">PLANEJAMENTO DE OPERAÇÕES</div>
-        <div class="sub">Plano ${esc(_expNomeModo(opPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · jornada por posto de trabalho</div>
-      </div>
-      <div class="meta">
-        <div>Emitido em ${esc(emissaoTxt)}</div>
-      </div>
-    </div>
+    <table class="exp-print-folha">
+      <thead>
+        <tr><td>
+          <div class="exp-print-head">
+            <div>
+              <div class="tit">PLANEJAMENTO DE OPERAÇÕES</div>
+              <div class="sub">Plano ${esc(_expNomeModo(opPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · jornada por posto de trabalho</div>
+            </div>
+            <div class="meta">
+              <div>Emitido em ${esc(emissaoTxt)}</div>
+            </div>
+          </div>
+        </td></tr>
+      </thead>
+      <tbody><tr><td>
     <div class="exp-print-resumo">
       <div class="item"><div class="n">${fmt(ops.length)}</div><div class="l">Operações</div></div>
       <div class="item"><div class="n">${fmt(postos.size)}</div><div class="l">Postos</div></div>
@@ -5281,10 +5289,12 @@ function renderPrintPlanoOperacoes() {
       <div class="item"><div class="n">${fmt(porDia.size)}</div><div class="l">Dias com operação</div></div>
     </div>
     ${blocos || `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma operação planejada ${esc(_EXP_VAZIO_PERIODO[opPlanoModo] || 'neste período')}.</div>`}
-    <div class="exp-print-rodape">
-      <div class="ass"><div class="linha"></div><div class="lbl">Encarregado de produção</div></div>
-      <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
-    </div>`;
+        <div class="exp-print-rodape">
+          <div class="ass"><div class="linha"></div><div class="lbl">Encarregado de produção</div></div>
+          <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
+        </div>
+      </td></tr></tbody>
+    </table>`;
 }
 
 // Operações gravadas no primeiro desenho do campo (uma linha por OS, com peças
@@ -5538,18 +5548,29 @@ function renderPrintPlanoExpedicao() {
   const emissao = new Date();
   const emissaoTxt = formatDate(_expIso(emissao)) + ' ' + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
 
+  // A folha inteira vive dentro de uma TABELA de uma coluna só, com o cabeçalho
+  // no <thead>. É o único mecanismo especificado que faz o navegador repetir um
+  // trecho no alto de CADA folha impressa — tentar com position:fixed já foi
+  // feito e o título acabou no rodapé. Visualmente nada muda: a tabela não tem
+  // bordas nem espaçamento próprio.
   sheet.innerHTML = `
-    <div class="exp-print-head">
-      <div>
-        <div class="tit">ORDEM DE EXPEDIÇÃO OE</div>
-        <div class="sub">Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · expedição interna, ida e volta</div>
-      </div>
-      <div class="meta">
-        <div><b>${esc(cfg.unidadeA)}</b> ⇄ <b>${esc(cfg.unidadeB)}</b></div>
-        <div>Limite por perna: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</div>
-        <div>Emitido em ${esc(emissaoTxt)}</div>
-      </div>
-    </div>
+    <table class="exp-print-folha">
+      <thead>
+        <tr><td>
+          <div class="exp-print-head">
+            <div>
+              <div class="tit">ORDEM DE EXPEDIÇÃO OE</div>
+              <div class="sub">Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · expedição interna, ida e volta</div>
+            </div>
+            <div class="meta">
+              <div><b>${esc(cfg.unidadeA)}</b> ⇄ <b>${esc(cfg.unidadeB)}</b></div>
+              <div>Limite por perna: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</div>
+              <div>Emitido em ${esc(emissaoTxt)}</div>
+            </div>
+          </div>
+        </td></tr>
+      </thead>
+      <tbody><tr><td>
     <div class="exp-print-resumo">
       <div class="item"><div class="n">${fmt(ativas)}</div><div class="l">Expedições</div></div>
       <div class="item"><div class="n">${fmt(volIda)}</div><div class="l">Volumes ida</div></div>
@@ -5559,9 +5580,11 @@ function renderPrintPlanoExpedicao() {
       <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
     </div>
     ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma Ordem de Expedição produzida ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`}
-    <div class="exp-print-rodape">
-      ${_EXP_ASSINATURAS.map(f => `<div class="ass"><div class="linha"></div><div class="lbl">${esc(f)}</div></div>`).join('')}
-    </div>`;
+        <div class="exp-print-rodape">
+          ${_EXP_ASSINATURAS.map(f => `<div class="ass"><div class="linha"></div><div class="lbl">${esc(f)}</div></div>`).join('')}
+        </div>
+      </td></tr></tbody>
+    </table>`;
 }
 
 // SKU(s) do produto acabado de uma OS = Linha de SKU do modelo + Sigla SKU de

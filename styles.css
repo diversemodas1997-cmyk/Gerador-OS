@@ -1638,6 +1638,13 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   padding: 10mm;  /* na tela; na impressao quem manda e a margem da @page */
   page: plano-exp;
 }
+/* A folha da OE é uma tabela de UMA coluna cujo <thead> carrega o cabeçalho:
+   é assim que o navegador repete o título em toda folha impressa. A tabela não
+   pode introduzir espaçamento nenhum, senão o desenho da folha muda. */
+.exp-print-folha { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.exp-print-folha > thead > tr > td,
+.exp-print-folha > tbody > tr > td { padding: 0; vertical-align: top; }
+
 .exp-print-head {
   display: flex;
   justify-content: space-between;
@@ -1860,12 +1867,13 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
      lida inteira, senão o operador recebe metade da jornada dele. */
   .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
-  /* NÃO usar position:fixed para repetir o cabeçalho aqui. Foi tentado: em mídia
-     paginada o elemento sai do fluxo e o navegador o reposiciona fora da faixa
-     reservada — o título ia parar no RODAPÉ da folha. Repetição de cabeçalho em
-     página só é confiável via <thead> de tabela, que exigiria remontar a folha.
-     No PDF salvo o cabeçalho JÁ é repetido, por composição em gerarPdfDaSheetExp
-     — e é o PDF que é arquivado e circula. */
+  /* CABEÇALHO REPETIDO: o <thead> da tabela da folha é redesenhado no alto de
+     cada página impressa — mecanismo especificado, ao contrário do
+     position:fixed, que foi tentado antes e jogava o título no RODAPÉ.
+     display explícito porque alguns navegadores perdem o table-header-group
+     quando a tabela recebe outras regras de impressão. */
+  .sheet-exp .exp-print-folha > thead { display: table-header-group; }
+  .sheet-exp .exp-print-folha > tbody { display: table-row-group; }
   /* Anula, só pra esta folha, o "cabe tudo numa página" da folha de OS. */
   .sheet-exp {
     /* A @page plano-exp já reserva a margem: manter o padding de tela aqui
