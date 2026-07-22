@@ -4329,6 +4329,13 @@ async function salvarModalExpedicao() {
     if (!STATE.meta || typeof STATE.meta !== 'object') STATE.meta = {};
     STATE.meta.expedicao = { ...(STATE.meta.expedicao || {}), unidadeA, unidadeB, volMin, volMax };
     await saveState('meta');
+    // Estes valores aparecem na folha (limite por perna, nomes das unidades),
+    // mas moram em `meta` — que não está em _CHAVES_OE, a lista que dispara a
+    // regravação da OE. Sem esta chamada, mudar o limite mínimo/máximo atualizava
+    // a TELA (que lê expCfg ao vivo) e deixava o PDF da pasta com o valor antigo.
+    // A chamada é explícita em vez de pôr 'meta' na lista: `meta` é gravada por
+    // muitas outras razões (migrações, flags) que não mudam nada na folha.
+    if (typeof agendarAutoSaveOE === 'function') agendarAutoSaveOE();
     toast('Configuração salva', 'ok');
 
   } else if (ctx.tipo === 'ocorrencia') {
