@@ -5102,9 +5102,14 @@ function renderPrintPlanoExpedicao() {
     if (!nomeEtapa) return '';
     const prog = o.progresso || {};
     const cad = (STATE.etapas || []).find(e => e.nome === nomeEtapa);
-    const tarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome).filter(Boolean) : [];
     const feitaEtapa = !!(prog.etapasCheck || {})[nomeEtapa];
     const marcadas = (prog.tarefasCheck || {})[nomeEtapa] || {};
+    const tarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome).filter(Boolean) : [];
+    // Mesmo resgate da folha de OS: marca gravada por nome de tarefa que saiu do
+    // cadastro continua na OS, e some da folha se a lista vier só do cadastro.
+    Object.keys(marcadas).forEach(t => {
+      if (marcadas[t] && t && !tarefas.includes(t)) tarefas.push(t);
+    });
     const feitas = tarefas.filter(t => !!marcadas[t]).length;
     const cx = ok => `<span class="exp-print-box${ok ? ' ok' : ''}"></span>`;
     return `
@@ -10445,18 +10450,35 @@ function renderPrintSheet(o) {
               hint: '',
               ordem: L.ordem                                 // liga os campos de horário
             }));
+            // RESGATE DAS MARCAÇÕES ÓRFÃS. O check de tarefa é gravado pelo NOME
+            // (progresso.tarefasCheck[etapa][tarefa]) mas a LISTA exibida vem do
+            // cadastro global. Renomear ou excluir uma tarefa no cadastro não
+            // apaga nada da OS — só tira da folha a linha que mostrava a marca,
+            // e quem preencheu lê isso como "o checklist que eu marquei sumiu".
+            // Aqui toda tarefa com marca NESTA OS volta para a lista, mesmo que
+            // não exista mais no cadastro, sinalizada como fora dele.
+            const marcadasDaEtapa = (nomeEtapa) =>
+              Object.entries(((o.progresso || {}).tarefasCheck || {})[nomeEtapa] || {})
+                .filter(([, v]) => !!v).map(([t]) => t);
             // Mantém a ordem salva na OS; busca as tarefas embutidas na etapa cadastrada
             const ordenadas = o.etapas.map(nome => {
               const cad = STATE.etapas.find(e => e.nome === nome);
               const cadTarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome) : [];
+              let tarefas;
               // Só a etapa de Corte é derivada, e só quando a OS tem enfesto.
               // As tarefas do cadastro que NÃO são "Fase N" (ex.: "Conferir
               // molde") continuam aparecendo, depois das fases.
               if (/corte/i.test(nome) && fasesCorte.length) {
                 const extras = cadTarefas.filter(t => !RE_FASE_TAREFA.test(t));
-                return { nome, tarefas: [...fasesCorte, ...extras.map(t => ({ nome: t, hint: '' }))] };
+                tarefas = [...fasesCorte, ...extras.map(t => ({ nome: t, hint: '' }))];
+              } else {
+                tarefas = cadTarefas.map(t => ({ nome: t, hint: '' }));
               }
-              return { nome, tarefas: cadTarefas.map(t => ({ nome: t, hint: '' })) };
+              const naLista = new Set(tarefas.map(t => t.nome));
+              marcadasDaEtapa(nome).forEach(t => {
+                if (!naLista.has(t)) tarefas.push({ nome: t, hint: 'fora do cadastro', orfa: true });
+              });
+              return { nome, tarefas };
             });
             const prog = o.progresso || {};
             const etapaCk = (nomeEtapa) => {
