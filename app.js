@@ -869,8 +869,11 @@ const STATE = {
   // acontecer e em que horário.
   // { id, data:'YYYY-MM-DD', funcaoId, funcaoNome, operacao,
   //   escopo:'completa'|'etapa', etapa, inicio:'HH:MM', duracaoMin,
-  //   responsavelId, responsavelNome, referencia,
+  //   responsavelId, responsavelNome, referencia, ordem,
+  //   prioridade:'urgente'|'emergente'|'eletiva',
   //   status:'pendente'|'andamento'|'feita', obs }
+  // ordem = posição manual dentro do dia (gravada ao mover); sem ela a operação
+  // se ordena pelo horário de início.
   // escopo 'completa' (padrão) = todas as etapas da função embutidas;
   // 'etapa' = o posto foi planejado por partes e esta linha é só a etapa nomeada.
   // funcaoNome/responsavelNome são cópias de exibição: se o cadastro for
@@ -4137,6 +4140,16 @@ const _OP_STATUS = {
 // Clicar no status roda o ciclo pendente → andamento → feita → pendente.
 const _OP_CICLO = { pendente: 'andamento', andamento: 'feita', feita: 'pendente' };
 
+// Classificação da operação. "Eletiva" é o padrão — a operação programada, que
+// é a maioria — e por isso não ganha selo na linha: poluir a agenda inteira com
+// o rótulo do caso comum esconderia justamente o que precisa saltar aos olhos.
+const _OP_PRIORIDADE = {
+  urgente:   { lbl: 'Urgente' },
+  emergente: { lbl: 'Emergente' },
+  eletiva:   { lbl: 'Eletiva' }
+};
+function _opPrioridade(op) { return _OP_PRIORIDADE[op.prioridade] ? op.prioridade : 'eletiva'; }
+
 let opPlanoModo = 'dia';           // o planejamento é DIÁRIO por natureza
 let opPlanoAncora = _expHoje();
 try {
@@ -4243,20 +4256,85 @@ function _opSugestoesOperacao(funcaoId) {
 
 function _opStatus(op) { return _OP_STATUS[op.status] ? op.status : 'pendente'; }
 
-// Operações do período, ordenadas por data, início (sem horário por último),
-// depois função.
+// Ordem de exibição DENTRO de um dia. A ordem manual (campo `ordem`, gravado
+// quando o usuário move a operação) manda; quem nunca foi movido cai no
+// horário de início e, sem horário, no nome da função. Assim o dia recém-criado
+// já sai numa ordem sensata e continua reordenável à mão depois.
+function _opCompararNoDia(a, b) {
+  const oa = Number.isFinite(Number(a.ordem)) ? Number(a.ordem) : null;
+  const ob = Number.isFinite(Number(b.ordem)) ? Number(b.ordem) : null;
+  if (oa != null && ob != null && oa !== ob) return oa - ob;
+  if (oa != null && ob == null) return -1;
+  if (ob != null && oa == null) return 1;
+  const ia = _opInicioMin(a), ib = _opInicioMin(b);
+  if (ia == null && ib != null) return 1;
+  if (ib == null && ia != null) return -1;
+  if (ia != null && ib != null && ia !== ib) return ia - ib;
+  return _opFuncaoNome(a).localeCompare(_opFuncaoNome(b));
+}
+
+// Operações do período, ordenadas por data e, dentro do dia, pela ordem de
+// exibição acima.
 function operacoesNoPeriodo(ini, fim) {
   return (STATE.operacoes || [])
     .filter(o => o.data && o.data >= ini && o.data <= fim)
-    .sort((a, b) => {
-      const c = String(a.data).localeCompare(String(b.data));
-      if (c) return c;
-      const ia = _opInicioMin(a), ib = _opInicioMin(b);
-      if (ia == null && ib != null) return 1;
-      if (ib == null && ia != null) return -1;
-      if (ia != null && ib != null && ia !== ib) return ia - ib;
-      return _opFuncaoNome(a).localeCompare(_opFuncaoNome(b));
-    });
+    .sort((a, b) => String(a.data).localeCompare(String(b.data)) || _opCompararNoDia(a, b));
+}
+
+/* ---------------- ordem manual ---------------- */
+
+// O dia visto como uma sequência de BLOCOS (um por função), cada um com os seus
+// itens já na ordem de exibição. É a estrutura que a tela desenha e também a que
+// as setas de mover manipulam — as duas leem o mesmo arranjo, então o que se vê
+// é exatamente o que se move.
+function _opBlocosDoDia(data) {
+  const doDia = (STATE.operacoes || []).filter(o => o.data === data).sort(_opCompararNoDia);
+  const blocos = [];
+  const idx = new Map();
+  doDia.forEach(op => {
+    const nome = _opFuncaoNome(op);
+    if (!idx.has(nome)) { idx.set(nome, blocos.length); blocos.push({ nome, itens: [] }); }
+    blocos[idx.get(nome)].itens.push(op);
+  });
+  return blocos;
+}
+
+// Grava `ordem` 0..n na sequência dada (blocos achatados). Renumerar tudo a cada
+// movimento mantém os blocos contíguos na numeração, que é o que permite mover
+// um posto inteiro trocando dois trechos vizinhos.
+function _opGravarOrdem(blocos) {
+  let n = 0;
+  blocos.forEach(b => b.itens.forEach(op => { op.ordem = n++; }));
+}
+
+// Move uma operação para cima/baixo DENTRO do seu posto.
+async function moverOperacao(id, dir) {
+  if (!exigirAdmin('reordenar operações')) return;
+  const op = (STATE.operacoes || []).find(x => x.id === id);
+  if (!op) return;
+  const blocos = _opBlocosDoDia(op.data);
+  const bloco = blocos.find(b => b.itens.some(x => x.id === id));
+  if (!bloco) return;
+  const i = bloco.itens.findIndex(x => x.id === id);
+  const j = i + dir;
+  if (j < 0 || j >= bloco.itens.length) return;
+  [bloco.itens[i], bloco.itens[j]] = [bloco.itens[j], bloco.itens[i]];
+  _opGravarOrdem(blocos);
+  await saveState('operacoes');
+  renderOperacoes();
+}
+
+// Move um POSTO inteiro para cima/baixo no dia, levando junto as operações dele.
+async function moverPostoOperacoes(data, funcaoNome, dir) {
+  if (!exigirAdmin('reordenar operações')) return;
+  const blocos = _opBlocosDoDia(data);
+  const i = blocos.findIndex(b => b.nome === funcaoNome);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= blocos.length) return;
+  [blocos[i], blocos[j]] = [blocos[j], blocos[i]];
+  _opGravarOrdem(blocos);
+  await saveState('operacoes');
+  renderOperacoes();
 }
 
 // Operações da MESMA função que se sobrepõem no tempo. O posto é um só: duas
@@ -4328,11 +4406,12 @@ function renderOperacoes() {
     </div>`;
 
   const conflitos = _opConflitos(ops);
-  let minutos = 0, pendentes = 0, feitas = 0;
+  let minutos = 0, pendentes = 0, feitas = 0, prioritarias = 0;
   const funcoesSet = new Set();
   ops.forEach(o => {
     minutos += _opDuracao(o);
     if (_opStatus(o) === 'feita') feitas++; else pendentes++;
+    if (_opPrioridade(o) !== 'eletiva') prioritarias++;
     funcoesSet.add(_opFuncaoNome(o));
   });
 
@@ -4342,6 +4421,7 @@ function renderOperacoes() {
       <div class="item"><div class="num">${fmt(funcoesSet.size)}</div><div class="lbl">Postos / funções</div></div>
       <div class="item"><div class="num">${esc(_opDurTexto(minutos))}</div><div class="lbl">Tempo planejado</div></div>
       <div class="item ${pendentes ? 'alerta' : ''}"><div class="num">${fmt(pendentes)}</div><div class="lbl">A executar</div></div>
+      <div class="item ${prioritarias ? 'alerta' : ''}"><div class="num">${fmt(prioritarias)}</div><div class="lbl">Urgentes / emergentes</div></div>
       <div class="item"><div class="num">${fmt(feitas)}</div><div class="lbl">Concluídas</div></div>
       <div class="item ${conflitos.size ? 'alerta' : ''}"><div class="num">${fmt(conflitos.size)}</div><div class="lbl">Em sobreposição</div></div>
     </div>`;
@@ -4377,8 +4457,9 @@ function renderOperacoes() {
       title="${esc(op.operacao)} · ${esc(_opJanelaTexto(op))}"><span>${esc(op.operacao)}</span></div>`;
   };
 
-  const linhaHtml = op => {
+  const linhaHtml = (op, pos, qtd) => {
     const st = _opStatus(op);
+    const pr = _opPrioridade(op);
     const resp = _opResponsavelNome(op);
     const conflito = conflitos.has(op.id);
     // O selo distingue as duas naturezas: processo inteiro do posto (o padrão,
@@ -4386,10 +4467,15 @@ function renderOperacoes() {
     const selo = op.escopo === 'etapa'
       ? ` <span class="exp-badge info" title="Planejada como etapa isolada da função${op.etapa && op.etapa !== op.operacao ? ': ' + op.etapa : ''}">etapa</span>`
       : '';
+    const selopr = pr === 'eletiva' ? '' : ` <span class="op-prio ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>`;
     return `
-      <div class="op-row ${st === 'feita' ? 'feita' : ''}">
+      <div class="op-row prio-${pr} ${st === 'feita' ? 'feita' : ''}">
+        <span class="admin-only op-mover">
+          <button title="Subir esta operação no posto" onclick="moverOperacao('${esc(op.id)}',-1)" ${pos === 0 ? 'disabled' : ''}>▲</button>
+          <button title="Descer esta operação no posto" onclick="moverOperacao('${esc(op.id)}',1)" ${pos === qtd - 1 ? 'disabled' : ''}>▼</button>
+        </span>
         <span class="janela">${esc(_opJanelaTexto(op))}</span>
-        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
+        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
         <span class="ref">${esc(op.referencia) || ''}</span>
         <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
@@ -4404,53 +4490,52 @@ function renderOperacoes() {
   // cada uma tem a sua faixa própria no mesmo eixo de horas.
   const diaHtml = (data, doDia) => {
     const jan = _opJanelaDoDia(doDia);
-    const grupos = new Map();
-    doDia.forEach(op => {
-      const nome = _opFuncaoNome(op);
-      const g = grupos.get(nome) || { nome, itens: [], minutos: 0, pend: 0 };
-      g.itens.push(op);
-      g.minutos += _opDuracao(op);
-      if (_opStatus(op) !== 'feita') g.pend++;
-      grupos.set(nome, g);
-    });
+    // A mesma estrutura que as setas de mover manipulam — desenhar a partir dela
+    // garante que a ordem vista é a ordem gravada.
+    const grupos = _opBlocosDoDia(data);
 
-    const blocos = Array.from(grupos.values())
-      .sort((a, b) => {
-        // Ordena as faixas por quem começa antes — a leitura natural do dia.
-        const ia = Math.min(...a.itens.map(o => _opInicioMin(o) ?? 99999));
-        const ib = Math.min(...b.itens.map(o => _opInicioMin(o) ?? 99999));
-        return ia - ib || a.nome.localeCompare(b.nome);
-      })
-      .map(g => {
-        const comHora = g.itens.filter(o => _opInicioMin(o) != null);
-        const jIni = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
-        const jFim = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
-        return `
+    const blocos = grupos.map((g, gi) => {
+      const minutos = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
+      const pend = g.itens.filter(o => _opStatus(o) !== 'feita').length;
+      const comHora = g.itens.filter(o => _opInicioMin(o) != null);
+      const jIni = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
+      const jFim = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
+      return `
         <div class="op-func">
           <div class="op-func-head">
-            <div class="op-func-nome">${esc(g.nome)}</div>
+            <div class="op-func-nome">
+              <span class="admin-only op-mover">
+                <button title="Subir este posto no dia" onclick="moverPostoOperacoes('${esc(data)}','${esc(g.nome).replace(/'/g, '&#39;')}',-1)" ${gi === 0 ? 'disabled' : ''}>▲</button>
+                <button title="Descer este posto no dia" onclick="moverPostoOperacoes('${esc(data)}','${esc(g.nome).replace(/'/g, '&#39;')}',1)" ${gi === grupos.length - 1 ? 'disabled' : ''}>▼</button>
+              </span>
+              ${esc(g.nome)}
+            </div>
             <div class="op-func-tot">
-              ${jIni != null ? `<b>${esc(_opHHMM(jIni))} → ${esc(_opHHMM(jFim))}</b> · ` : ''}${esc(_opDurTexto(g.minutos))} de operação
+              ${jIni != null ? `<b>${esc(_opHHMM(jIni))} → ${esc(_opHHMM(jFim))}</b> · ` : ''}${esc(_opDurTexto(minutos))} de operação
               ${g.itens.length > 1 ? ` · ${g.itens.length} blocos` : ''}
-              ${g.pend ? ` · <span class="exp-badge baixo">${g.pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
+              ${pend ? ` · <span class="exp-badge baixo">${pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
             </div>
           </div>
           ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${g.itens.map(op => barraHtml(op, jan)).join('')}</div></div>` : ''}
-          ${g.itens.map(linhaHtml).join('')}
+          ${g.itens.map((op, i) => linhaHtml(op, i, g.itens.length)).join('')}
         </div>`;
-      }).join('');
+    }).join('');
 
     const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
     const comHora = doDia.filter(o => _opInicioMin(o) != null);
     const abre = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
     const fecha = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
+    const prioridades = ['emergente', 'urgente']
+      .map(p => ({ p, n: doDia.filter(o => _opPrioridade(o) === p).length }))
+      .filter(x => x.n)
+      .map(x => ` · <span class="op-prio ${x.p}">${x.n} ${esc(_OP_PRIORIDADE[x.p].lbl.toLowerCase())}${x.n > 1 ? 's' : ''}</span>`).join('');
     return `
       <div class="card exp-ocor">
         <div class="exp-ocor-head">
           <div>
             <div class="exp-ocor-data">${_EXP_DIAS_CURTO[_expData(data).getDay()]} · ${esc(formatDate(data))}${data === _expHoje() ? ' <span class="exp-badge info">hoje</span>' : ''}</div>
             <div class="exp-ocor-nome">
-              ${abre != null ? `Jornada <b>${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}</b> · ` : ''}${grupos.size} ${grupos.size === 1 ? 'posto' : 'postos'} em paralelo · ${esc(_opDurTexto(totMin))} de operação somados
+              ${abre != null ? `Jornada <b>${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}</b> · ` : ''}${grupos.length} ${grupos.length === 1 ? 'posto' : 'postos'} em paralelo · ${esc(_opDurTexto(totMin))} de operação somados${prioridades}
             </div>
           </div>
           <div class="admin-only">
@@ -4515,6 +4600,9 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
 
   const statusOpts = Object.entries(_OP_STATUS).map(([k, v]) =>
     `<option value="${k}" ${op && _opStatus(op) === k ? 'selected' : ''}>${esc(v.lbl)}</option>`).join('');
+  const prioAtual = op ? _opPrioridade(op) : 'eletiva';
+  const prioridadeOpts = Object.entries(_OP_PRIORIDADE).map(([k, v]) =>
+    `<option value="${k}" ${prioAtual === k ? 'selected' : ''}>${esc(v.lbl)}</option>`).join('');
 
   // Sugestões de referência: números das OS que estão no fluxo. É só atalho de
   // digitação — o campo é livre e aceita lote, coleção, o que o dia pedir.
@@ -4580,6 +4668,11 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
         <input type="text" id="op-referencia" list="op-refs" value="${esc(op ? (op.referencia || '') : '')}" placeholder="Ex.: lote inverno, OS 1042/1051" autocomplete="off">
         <datalist id="op-refs">${refs.map(r => `<option value="${esc(r)}"></option>`).join('')}</datalist>
         <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Só para situar, não amarra o plano.</div>
+      </div>
+      <div class="field">
+        <label>Classificação *</label>
+        <select id="op-prioridade">${prioridadeOpts}</select>
+        <div class="field-hint"><b>Eletiva</b> é a operação programada — o caso comum, sem selo na agenda. <b>Urgente</b> e <b>Emergente</b> ganham destaque na linha e são contadas no cabeçalho do dia.</div>
       </div>
       <div class="field"><label>Status</label><select id="op-status">${statusOpts}</select></div>
       <div class="field full"><label>Observação</label><input type="text" id="op-obs" value="${esc(op ? (op.obs || '') : '')}" placeholder="Ex.: depende da entrega do tecido"></div>
@@ -4716,6 +4809,7 @@ async function salvarModalOperacao() {
   const responsavelId = v('op-responsavel');
   const pessoa = (STATE.equipe || []).find(p => p.id === responsavelId);
   const status = _OP_STATUS[v('op-status')] ? v('op-status') : 'pendente';
+  const prioridade = _OP_PRIORIDADE[v('op-prioridade')] ? v('op-prioridade') : 'eletiva';
 
   const campos = {
     data,
@@ -4725,7 +4819,7 @@ async function salvarModalOperacao() {
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
     referencia: v('op-referencia').trim(),
-    status,
+    status, prioridade,
     obs: v('op-obs').trim()
   };
 
@@ -4802,6 +4896,7 @@ function migrarOperacoesParaJornada() {
   if (!Array.isArray(lista) || !lista.length) return false;
   let mudou = false;
   lista.forEach(op => {
+    if (op.prioridade == null) { op.prioridade = 'eletiva'; mudou = true; }
     if (op.escopo == null) { op.escopo = 'completa'; op.etapa = ''; mudou = true; }
     if (op.duracaoMin == null) { op.duracaoMin = 0; mudou = true; }
     if (op.inicio == null) { op.inicio = op.hora || ''; mudou = true; }

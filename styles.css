@@ -1523,12 +1523,46 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   border-bottom: 1px solid var(--line-2);
 }
 .op-func-nome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 12px;
   letter-spacing: .08em;
   text-transform: uppercase;
   font-weight: 600;
 }
+
+/* Setas de reordenar: discretas até a linha/bloco receber o cursor. Reordenar é
+   ação ocasional — não pode competir com a leitura da agenda. */
+.op-mover { display: inline-flex; gap: 1px; flex: 0 0 auto; }
+.op-mover button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 2px;
+}
+.op-mover button:hover:not(:disabled) { background: var(--line-2); color: var(--ink); }
+.op-mover button:disabled { opacity: .25; cursor: default; }
+
+/* Classificação. Eletiva não tem selo (é o padrão); as outras duas precisam
+   saltar da linha, e a faixa colorida à esquerda marca a linha inteira. */
+.op-prio {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.op-prio.urgente { background: #fdf3d8; color: var(--accent-dark); font-weight: 600; }
+.op-prio.emergente { background: var(--alert-bg); color: var(--alert); font-weight: 700; }
 .op-func-tot { font-size: 11px; color: var(--ink-3); }
 
 .op-row {
@@ -1540,6 +1574,8 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   border-bottom: 1px dotted var(--line-2);
 }
 .op-row:last-child { border-bottom: none; }
+.op-row.prio-urgente { box-shadow: inset 3px 0 0 -1px var(--accent-dark); padding-left: 6px; }
+.op-row.prio-emergente { box-shadow: inset 3px 0 0 -1px var(--alert); padding-left: 6px; }
 .op-row.feita { opacity: .6; }
 .op-row.feita .oper { text-decoration: line-through; }
 .op-row .janela { font-family: 'IBM Plex Mono', monospace; font-weight: 600; width: 168px; flex: 0 0 auto; white-space: nowrap; }
