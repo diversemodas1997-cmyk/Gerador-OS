@@ -8310,6 +8310,12 @@ function gerarPdfEtiquetas(dados) {
       { t: `LOTE: ${i + 1}/${total}`, s: 1 },
       destaque
     ];
+    // Com mais de uma tonalidade, cada pacote precisa dizer de qual tom é —
+    // senão duas etiquetas do mesmo tamanho ficam indistinguíveis no ensaque.
+    const tomDoPacote = (dados.tonsPacotes || [])[i];
+    if (!ehReposicao && (dados.nTons || 1) > 1 && tomDoPacote != null) {
+      linhas.splice(6, 0, { t: `TOM: ${tomDoPacote}`, s: 1 });
+    }
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     if (!ehReposicao && dados.composicao) {
       dados.composicao.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
@@ -8792,26 +8798,41 @@ function dadosEtiquetaParaOS(o) {
     .trim()
     .toUpperCase();
 
-  // Uma etiqueta por PACOTE — mesma regra do volume de expedição. Cada pacote
-  // de tamanho leva o SEU tamanho (P, M, G…); a última etiqueta é o pacote de
-  // reposição (conteúdo = ETIQUETA_CONTEUDO_REPOSICAO). Total = nº de vagas de
-  // tamanho + 1. Mínimo 1 pra não bloquear OS sem grade.
-  // Ex.: P-G1-G2 = 4 etiquetas (P, G1, G2, Reposição); 2M-4G-2GG = 9.
-  const tamanhosPacotes = _tamanhosDaGradeExpandido(o);
+  // Uma etiqueta por PACOTE — a MESMA regra do volume de expedição:
+  // tamanhos × TONALIDADES + 1 (reposição/ribana). Cada tonalidade é ensacada
+  // separada, então cada tamanho rende um pacote por tom.
+  // Antes o cálculo parava em "tamanhos + 1" e ignorava a tonalidade: uma OS de
+  // 7 tamanhos em 2 tons saía com 8 etiquetas para 15 pacotes reais — 7 pacotes
+  // iam para a expedição sem etiqueta nenhuma.
+  // Ex.: P-G1-G2 em 1 tom = 4 etiquetas; os mesmos 3 tamanhos em 2 tons = 7.
+  // Mínimo 1 pra não bloquear OS sem grade.
+  const tamanhosBase = _tamanhosDaGradeExpandido(o);
+  const tonsAtivos = tonsEfetivos((o.progresso || {}).totalTamanhoTons || {});
+  const nTons = Math.max(1, tonsAtivos.length);
+  const tamanhosPacotes = [];
+  const tonsPacotes = [];
+  for (let ti = 0; ti < nTons; ti++) {
+    tamanhosBase.forEach(t => {
+      tamanhosPacotes.push(t);
+      tonsPacotes.push(tonsAtivos[ti] != null ? tonsAtivos[ti] : null);
+    });
+  }
   const temReposicao = tamanhosPacotes.length > 0;
   const numEtiquetas = temReposicao ? tamanhosPacotes.length + 1 : 1;
 
   // Moletom: cada etiqueta de pacote (de tamanho) recebe a lista de composição.
   const composicao = temMoletom ? ETIQUETA_COMPOSICAO_MOLETOM : null;
 
-  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao, composicao };
+  return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
+           tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao };
 }
 
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
-  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas, tamanhosPacotes, temReposicao, composicao } = dadosEtiquetaParaOS(o);
+  const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
+          tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao } = dadosEtiquetaParaOS(o);
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -8834,6 +8855,7 @@ function imprimirEtiquetas(osId) {
         <div class="row">QTDE: ${escEt(qtde)}</div>
         <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
+        ${(nTons > 1 && !ehRep && tonsPacotes[i] != null) ? `<div class="row">TOM: ${escEt(tonsPacotes[i])}</div>` : ''}
         <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
         ${destaque}
       </div>
