@@ -3636,8 +3636,9 @@ function renderExpedicaoPlano() {
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
-        ${oc.cancelada ? '' : `<div class="admin-only" style="margin-top:8px;">
-          <button class="btn" style="width:100%;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
+        ${oc.cancelada ? '' : `<div class="admin-only" style="margin-top:8px;display:flex;gap:6px;">
+          <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
+          ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou as peças." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
       </div>`;
   };
@@ -3910,6 +3911,101 @@ function _expAtualizarSugestaoVolumes() {
   }
 }
 
+// Preencher a VOLTA a partir de uma OE já montada. A volta quase nunca é uma
+// carga nova: é o retorno do que uma ida levou. Montá-la OS por OS repetia à mão
+// uma lista que já existe — e qualquer esquecimento vira peça largada na outra
+// unidade. Aqui se escolhe a expedição de origem e as OSs dela vêm junto, com os
+// mesmos volumes.
+function abrirModalExpVolta(janelaId, dataOrig) {
+  if (!exigirAdmin('alocar OS na expedição')) return;
+  _expModalCtx = { tipo: 'volta', janelaId, dataOrig };
+
+  // Candidatas: qualquer perna de qualquer ocorrência que TENHA carga, exceto a
+  // própria volta que está sendo preenchida. Olha 180 dias para trás e 90 para
+  // frente — a ida que se quer trazer costuma ser a da véspera ou a da manhã.
+  const hoje = _expHoje();
+  const ocs = ocorrenciasExpedicao(_expAddDias(hoje, -180), _expAddDias(hoje, 90));
+  const origens = [];
+  ocs.forEach(oc => {
+    ['ida', 'volta'].forEach(p => {
+      if (oc.janela.id === janelaId && oc.dataOrig === dataOrig && p === 'volta') return;
+      const r = resumoPernaExpedicao(oc, p);
+      if (!r.itens.length) return;
+      origens.push({
+        val: `${oc.janela.id}|${oc.dataOrig}|${p}`,
+        data: oc.data,
+        label: `${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)} · ${p === 'ida' ? 'IDA' : 'VOLTA'} · ${oc.janela.nome || 'sem nome'} — ${r.itens.length} OS · ${r.volumes} vol`
+      });
+    });
+  });
+  // Mais recente primeiro: a ida a trazer de volta é quase sempre a última.
+  origens.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+
+  document.getElementById('modal-exp-title').textContent = 'Preencher a volta a partir de uma OE';
+  if (!origens.length) {
+    document.getElementById('modal-exp-fields').innerHTML =
+      '<div class="info-box">Nenhuma outra expedição com OS alocada para trazer. Monte uma ida primeiro, ou use <b>+ Alocar OS</b> para preencher esta volta manualmente.</div>';
+    openModal('modal-exp');
+    return;
+  }
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field full">
+        <label>Expedição de origem *</label>
+        <select id="ev-origem" onchange="_expVoltaListarOS()">
+          ${origens.map((o, i) => `<option value="${esc(o.val)}" ${i === 0 ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>
+        <div class="field-hint">Traz as OSs desta expedição para a volta em edição, com os mesmos volumes.</div>
+      </div>
+      <div class="field full">
+        <label>OSs a trazer</label>
+        <div id="ev-lista" class="ev-lista"></div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="ev-info"></div>`;
+  _expVoltaListarOS();
+  openModal('modal-exp');
+}
+
+// Lista as OSs da origem escolhida com caixinha de seleção. As que já estão na
+// volta de destino vêm desmarcadas e marcadas como repetidas — trazer de novo
+// só duplicaria a linha.
+function _expVoltaListarOS() {
+  const ctx = _expModalCtx;
+  const box = document.getElementById('ev-lista');
+  const info = document.getElementById('ev-info');
+  if (!ctx || !box) return;
+  const [jId, dOrig, perna] = (document.getElementById('ev-origem')?.value || '').split('|');
+  // Janela folgada e busca pela data de ORIGEM: uma ocorrência remarcada acontece
+  // em outra data, e procurar só pelo dia original a deixaria de fora.
+  const oc = ocorrenciasExpedicao(_expAddDias(dOrig, -90), _expAddDias(dOrig, 90))
+    .find(o => o.janela.id === jId && o.dataOrig === dOrig);
+  const r = oc ? resumoPernaExpedicao(oc, perna) : { itens: [] };
+  const destino = (STATE.expedicaoCargas || []).filter(c =>
+    c.janelaId === ctx.janelaId && c.data === ctx.dataOrig && c.perna === 'volta');
+  const jaLa = new Set(destino.map(c => c.osId));
+
+  box.innerHTML = r.itens.length ? r.itens.map(i => {
+    const rep = jaLa.has(i.carga.osId);
+    return `
+      <label class="ev-item ${rep ? 'rep' : ''}">
+        <input type="checkbox" class="ev-os" value="${esc(i.carga.osId)}" data-vol="${i.volumes}" ${rep ? '' : 'checked'}>
+        <span class="n">${esc(i.osNumero)}</span>
+        <span class="m">${esc(i.modelo) || '—'}</span>
+        <span class="v">${i.volumes > 0 ? i.volumes + ' vol' : '— vol'}</span>
+        ${rep ? '<span class="exp-badge vazio">já está na volta</span>' : ''}
+      </label>`;
+  }).join('') : '<div class="exp-vazio">Esta expedição não tem OS alocada.</div>';
+
+  if (info) {
+    const novas = r.itens.filter(i => !jaLa.has(i.carga.osId));
+    const vol = novas.reduce((s, i) => s + (Number(i.volumes) || 0), 0);
+    info.innerHTML = novas.length
+      ? `Serão criadas <b>${novas.length}</b> alocação(ões) na volta, somando <b>${vol}</b> volume(s). Desmarque o que não voltar nesta viagem.`
+      : 'Todas as OSs desta expedição já estão na volta em edição.';
+  }
+}
+
 function abrirModalExpConfig() {
   if (!exigirAdmin('configurar a expedição')) return;
   _expModalCtx = { tipo: 'config' };
@@ -4028,6 +4124,29 @@ async function salvarModalExpedicao() {
     }
     await saveState('expedicaoCargas');
     toast(ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição', 'ok');
+
+  } else if (ctx.tipo === 'volta') {
+    if (!exigirAdmin('alocar OS na expedição')) return;
+    const marcadas = Array.from(document.querySelectorAll('.ev-os:checked'));
+    if (!marcadas.length) return toast('Marque ao menos uma OS para trazer', 'err');
+    if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
+    const jaLa = new Set(STATE.expedicaoCargas
+      .filter(c => c.janelaId === ctx.janelaId && c.data === ctx.dataOrig && c.perna === 'volta')
+      .map(c => c.osId));
+    let n = 0;
+    marcadas.forEach(el => {
+      const osId = el.value;
+      if (!osId || jaLa.has(osId)) return;   // repetida: a checagem no salvar também vale
+      jaLa.add(osId);
+      STATE.expedicaoCargas.push({
+        id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, perna: 'volta',
+        osId, volumes: parseInt(el.dataset.vol, 10) || 0, obs: ''
+      });
+      n++;
+    });
+    if (!n) return toast('Essas OSs já estão na volta', 'err');
+    await saveState('expedicaoCargas');
+    toast(`${n} OS trazida(s) para a volta`, 'ok');
 
   } else if (ctx.tipo === 'config') {
     if (!exigirAdmin('configurar a expedição')) return;

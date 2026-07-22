@@ -1439,6 +1439,25 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .exp-os-row button:hover { color: var(--alert); }
 .exp-vazio { font-size: 12px; color: var(--ink-3); font-style: italic; padding: 6px 0; }
 
+/* Lista de OSs ao trazer uma OE para a volta. */
+.ev-lista { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 2px; }
+.ev-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-bottom: 1px dotted var(--line-2);
+  cursor: pointer;
+}
+.ev-item:last-child { border-bottom: none; }
+.ev-item:hover { background: var(--line-2); }
+.ev-item.rep { opacity: .6; }
+.ev-item input { flex: 0 0 auto; }
+.ev-item .n { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.ev-item .m { flex: 1 1 auto; min-width: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-item .v { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
+
 /* ============ PLANEJAMENTO DIÁRIO DE OPERAÇÕES ============ */
 /* Reaproveita a moldura do plano de expedição (.exp-toolbar, .exp-resumo,
    .exp-ocor, .exp-badge). O que é próprio daqui: a régua de horas do dia, a
