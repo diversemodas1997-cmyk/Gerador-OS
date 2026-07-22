@@ -335,9 +335,47 @@ async function listarSnapshots() {
       <tr>
         <td><strong>${esc(s.snapshot_date)}</strong></td>
         <td>${esc(new Date(s.created_at).toLocaleString('pt-BR'))}</td>
-        <td class="col-actions"><button class="btn small danger" onclick="restaurarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Restaurar</button></td>
+        <td class="col-actions">
+          <button class="btn small" onclick="baixarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Baixar</button>
+          <button class="btn small danger" onclick="restaurarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Restaurar</button>
+        </td>
       </tr>`).join('')}
     </tbody></table>`;
+}
+
+// Baixa um snapshot diário como arquivo, SEM aplicá-lo. "Restaurar" é
+// tudo-ou-nada: sobrescreve o estado atual inteiro com o do dia escolhido, o que
+// joga fora todo o trabalho feito depois daquele ponto. Quando o que se perdeu é
+// só uma parte (o progresso de algumas OSs, por exemplo), o caminho seguro é
+// abrir o snapshot, comparar e reimportar apenas o que falta — e para isso é
+// preciso poder LER o snapshot sem detonar o presente.
+// O arquivo sai no mesmo formato do "Importar JSON" (chaves com arrays reais).
+async function baixarSnapshot(id, dataStr) {
+  if (!supa) return;
+  if (!exigirAdmin('baixar snapshots')) return;
+  toast('Baixando snapshot...', '');
+  const { data, error } = await supa
+    .from('shared_data_backups')
+    .select('data, snapshot_date, created_at')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) { toast('Erro ao ler o snapshot: ' + ((error && error.message) || 'não encontrado'), 'err'); return; }
+  // No blob cada chave é uma STRING JSON; o import espera arrays reais.
+  const bruto = data.data || {};
+  const saida = { __snapshot: { data: data.snapshot_date, criadoEm: data.created_at } };
+  Object.keys(bruto).forEach(k => {
+    const v = bruto[k];
+    if (typeof v === 'string') { try { saida[k] = JSON.parse(v); } catch { saida[k] = v; } }
+    else saida[k] = v;
+  });
+  const blob = new Blob([JSON.stringify(saida, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `snapshot-${dataStr}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Snapshot de ${dataStr} baixado`, 'ok');
 }
 
 /* ========================================================= */
@@ -11068,6 +11106,7 @@ window.atualizarDatalistCodigos = atualizarDatalistCodigos;
 window.renderFuncoes = renderFuncoes;
 window.listarSnapshots = listarSnapshots;
 window.restaurarSnapshot = restaurarSnapshot;
+window.baixarSnapshot = baixarSnapshot;
 window.listarSnapshotsLocais = listarSnapshotsLocais;
 window.restaurarSnapshotLocal = restaurarSnapshotLocal;
 window.esconderAlertaSalvamento = esconderAlertaSalvamento;
