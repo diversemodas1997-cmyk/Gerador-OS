@@ -8648,6 +8648,10 @@ async function savePdfToFolder(blob, filename) {
 const OE_DB_KEY = 'oe-folder';
 let oeFolderHandle = null;
 let _oeSalvando = false;
+// Instante em que a gravação em curso começou. Se uma captura travar (html2canvas
+// já travou em ambiente sem layout), a trava de reentrada ficaria ligada para
+// sempre e nenhuma OE seria salva pelo resto da sessão — sem nenhum aviso.
+let _oeSalvandoDesde = 0;
 
 async function saveOeFolderHandle(handle) {
   const db = await _openPdfDb();
@@ -8861,20 +8865,51 @@ function agendarAutoSaveOE() {
   }, 1500);
 }
 
+// O auto-save roda de um timer, sem clique do usuário. Nessa situação o
+// navegador NÃO permite abrir a caixa de permissão da pasta (requestPermission
+// exige gesto do usuário), então a gravação falhava calada e parecia que o
+// recurso simplesmente não funcionava. Aqui o motivo é dito uma vez por sessão,
+// com a instrução do que fazer — e sem repetir a cada gravação.
+let _oeAvisoDado = '';
+function _avisarOeUmaVez(chave, msg) {
+  if (_oeAvisoDado === chave) return;
+  _oeAvisoDado = chave;
+  console.warn('auto-save OE:', msg);
+  toast(msg, 'err');
+}
+
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
-  if (_oeSalvando) return false;
+  // Trava de reentrada com validade: uma captura travada não pode calar o
+  // auto-save para sempre.
+  if (_oeSalvando && (Date.now() - _oeSalvandoDesde) < 60000) return false;
   let handle = oeFolderHandle || (await loadOeFolderHandle());
   if (!handle) {
-    if (silent) return false;
+    if (silent) {
+      _avisarOeUmaVez('sem-pasta', 'A OE não está sendo salva sozinha: nenhuma pasta conectada. Configurações → Pasta das OE.');
+      return false;
+    }
     toast('Conecte a pasta das OE em Configurações primeiro.', 'err');
     return false;
   }
-  if (!(await ensureFolderPermission(handle, 'readwrite'))) {
-    if (!silent) toast('Permissão da pasta das OE negada', 'err');
-    return false;
+  // No modo silencioso só CONSULTA a permissão: pedir exigiria um gesto do
+  // usuário que um timer não tem, e a chamada falharia de qualquer jeito.
+  let permOk;
+  if (silent) {
+    try { permOk = (await handle.queryPermission({ mode: 'readwrite' })) === 'granted'; }
+    catch (e) { permOk = false; }
+    if (!permOk) {
+      _avisarOeUmaVez('sem-permissao',
+        'A OE não pôde ser salva sozinha: a pasta precisa de permissão renovada. Abra a folha do plano e clique em "Salvar OE na pasta" uma vez.');
+      return false;
+    }
+  } else {
+    permOk = await ensureFolderPermission(handle, 'readwrite');
+    if (!permOk) { toast('Permissão da pasta das OE negada', 'err'); return false; }
+    _oeAvisoDado = '';   // permissão renovada: volta a avisar se falhar de novo
   }
   oeFolderHandle = handle;
   _oeSalvando = true;
+  _oeSalvandoDesde = Date.now();
   try {
     if (!silent) toast('Gerando PDF da OE...', '');
     const blob = await _comFolhaOeRenderizavel(async () => {
