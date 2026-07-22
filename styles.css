@@ -533,6 +533,13 @@ body.pdf-capture .sheet-scaler { zoom: 1; }
    uma OS sem componentes. */
 body.pdf-capture .no-print { display: none !important; }
 
+/* O PDF da OE é composto no código: a faixa do topo do canvas é redesenhada em
+   cada página e colada na QUINA do papel (0,0). O respiro entre a borda e o
+   título vem, portanto, do padding capturado — não da @page, que este caminho
+   nem enxerga. Com os 10mm de tela o cabeçalho ficava na faixa que muitas
+   impressoras não imprimem e o título saía cortado. */
+body.pdf-capture .sheet-exp { padding-top: 16mm; }
+
 /* GEOMETRIA A4 — fonte unica da verdade.
    210x297mm com padding 8mm E a folha A4, margem inclusa. Isso nao e
    redefinido em @media print nem na captura: e exatamente esse acordo que
