@@ -84,6 +84,13 @@ async function cloudFlush() {
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
+    // Snapshot DIÁRIO no servidor. Ele rodava só ao ABRIR o app: uma aba deixada
+    // aberta desde ontem, ou um dia inteiro sem recarregar, passava sem nenhuma
+    // cópia no servidor — enquanto o backup de contingência acima seguia
+    // gravando a cada save e dava a impressão de que tudo estava coberto.
+    // Agora a primeira gravação de cada dia também garante o snapshot; o guarda
+    // _snapDiarioDiaOk impede consulta ao servidor nos saves seguintes.
+    snapshotDiario().catch(e => console.warn('snapshotDiario', e));
     // Backup local automatico (silencioso; falha nao bloqueia o save).
     // Funcao definida mais abaixo, perto da pasta de PDFs.
     if (typeof escreverBackupJson === 'function') {
@@ -296,26 +303,35 @@ function esconderAlertaSalvamento() {
 }
 
 /* Snapshot diário: grava cópia do blob atual em shared_data_backups uma vez por dia. */
+// Dia (LOCAL) cujo snapshot já foi resolvido nesta sessão — evita consultar o
+// servidor a cada gravação.
+let _snapDiarioDiaOk = null;
+
 async function snapshotDiario() {
   if (!supa || !currentUser || !cloudCache) return;
-  const hoje = new Date().toISOString().slice(0, 10);
+  // Data LOCAL, não UTC. Com toISOString() qualquer sessão depois das 21h em
+  // Brasília gravava a data de AMANHÃ: o slot do dia seguinte era consumido com
+  // os dados da véspera e, no dia seguinte, o "já existe" fazia o app pular —
+  // o dia inteiro acabava sem cópia nenhuma no servidor.
+  const hoje = _expIso(new Date());
+  if (_snapDiarioDiaOk === hoje) return;
   const { data: existente } = await supa
     .from('shared_data_backups')
     .select('id')
     .eq('snapshot_date', hoje)
     .maybeSingle();
-  if (existente) return;
+  if (existente) { _snapDiarioDiaOk = hoje; return; }
   const { error } = await supa.from('shared_data_backups').insert({
     snapshot_date: hoje,
     data: cloudCache,
     created_by: currentUser.id
   });
   if (error) { console.warn('snapshot falhou', error); return; }
-  // Retenção: 30 dias
+  _snapDiarioDiaOk = hoje;
+  // Retenção: 30 dias (também em data local, para casar com o que foi gravado)
   const corte = new Date();
   corte.setDate(corte.getDate() - 30);
-  const corteStr = corte.toISOString().slice(0, 10);
-  await supa.from('shared_data_backups').delete().lt('snapshot_date', corteStr);
+  await supa.from('shared_data_backups').delete().lt('snapshot_date', _expIso(corte));
 }
 
 async function listarSnapshots() {
