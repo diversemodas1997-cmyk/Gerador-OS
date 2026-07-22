@@ -2058,10 +2058,25 @@ async function rodarCopiarEtapasParaTodos() {
     toast(`Nenhum outro desenho do modelo "${modeloLabel}" para receber as etapas`, 'err');
     return;
   }
+  // Quantas OSs já emitidas mudam junto — o desenho não muda sozinho, ele leva
+  // as OSs dele. Dizer isso ANTES é a diferença entre uma cópia consentida e uma
+  // surpresa em 60 ordens de serviço.
+  let osAfetadas = 0;
+  alvos.forEach(d => {
+    osAfetadas += _osDoDesenho(d).filter(o => {
+      const final = _etapasFinaisOS(o, etapas);
+      const atual = o.etapas || [];
+      return !(atual.length === final.length && atual.every((e, i) => e === final[i]));
+    }).length;
+  });
+
   const ok = confirm(
     `Copiar as ${etapas.length} etapas do desenho "${codigo}" para os outros ${alvos.length} desenhos do modelo "${modeloLabel}"?\n\n`
     + `Etapas: ${etapas.join(', ')}\n\n`
-    + `Só desenhos do MESMO modelo/variação (${modeloLabel}) são afetados — outros modelos, e as variações bicolor/tricolor, ficam intactos. Apenas o campo "etapas" será sobrescrito. Esta ação não pode ser desfeita automaticamente.`
+    + (osAfetadas
+      ? `Junto com os desenhos, ${osAfetadas} OS já emitida(s) recebem essa lista de etapas. Nenhuma marcação é removida: etapa já marcada que não estiver na lista continua na OS, no fim.\n\n`
+      : `Nenhuma OS já emitida muda com isso.\n\n`)
+    + `Só desenhos do MESMO modelo/variação (${modeloLabel}) são afetados — outros modelos, e as variações bicolor/tricolor, ficam intactos. As OSs do próprio desenho de origem não mudam, já que ele não é alterado. Esta ação não pode ser desfeita automaticamente.`
   );
   if (!ok) return;
   await copiarEtapasEntreDesenhos(codigo);
