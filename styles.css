@@ -1439,6 +1439,68 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .exp-os-row button:hover { color: var(--alert); }
 .exp-vazio { font-size: 12px; color: var(--ink-3); font-style: italic; padding: 6px 0; }
 
+/* ============ PLANEJAMENTO DIÁRIO DE OPERAÇÕES ============ */
+/* Reaproveita a moldura do plano de expedição (.exp-toolbar, .exp-resumo,
+   .exp-ocor, .exp-badge). O que é próprio daqui: o bloco de cada função dentro
+   do dia e a linha da operação. */
+.op-func { border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; margin-bottom: 10px; }
+.op-func:last-child { margin-bottom: 0; }
+.op-func-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line-2);
+}
+.op-func-nome {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.op-func-tot { font-size: 11px; color: var(--ink-3); }
+
+.op-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dotted var(--line-2);
+}
+.op-row:last-child { border-bottom: none; }
+.op-row.feita { opacity: .6; }
+.op-row.feita .oper { text-decoration: line-through; }
+.op-row .hora { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); width: 42px; flex: 0 0 auto; }
+.op-row .os { font-family: 'IBM Plex Mono', monospace; font-weight: 600; width: 62px; flex: 0 0 auto; }
+.op-row .oper { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-row .obs { color: var(--ink-3); font-style: italic; }
+.op-row .resp { color: var(--ink-2); width: 130px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-row .qtd { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); width: 62px; flex: 0 0 auto; text-align: right; }
+.op-row .op-status { border: none; cursor: pointer; font-family: 'IBM Plex Mono', monospace; flex: 0 0 auto; }
+.op-row .op-acoes { flex: 0 0 auto; display: inline-flex; gap: 2px; }
+.op-row .op-acoes button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 3px;
+}
+.op-row .op-acoes button:hover { color: var(--alert); }
+
+/* No celular a linha vira duas: identificação em cima, execução embaixo. */
+@media (max-width: 700px) {
+  .op-row { flex-wrap: wrap; gap: 6px 8px; }
+  .op-row .oper { flex: 1 1 100%; white-space: normal; }
+  .op-row .resp { width: auto; flex: 1 1 auto; }
+}
+
 /* ============ FOLHA DO PLANO DE EXPEDIÇÃO ============ */
 /* A .sheet da OS é flex e presa em uma A4. Esta é block e cresce: um plano
    mensal ocupa várias folhas, e o que não pode partir no meio é cada bloco

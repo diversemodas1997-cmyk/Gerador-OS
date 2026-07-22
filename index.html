@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-07-21a">
+<link rel="stylesheet" href="styles.css?v=2026-07-22a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -44,6 +44,7 @@
         <button class="nav-btn" data-page="expedicao">Expedição</button>
         <button class="nav-btn" data-page="costurando">Costurando</button>
         <button class="nav-btn" data-page="fios">Retirada de fios</button>
+        <button class="nav-btn" data-page="operacoes">Operações</button>
       </div>
     </div>
 
@@ -225,6 +226,16 @@
         </div>
       </div>
       <div id="fios-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="operacoes">
+      <div class="page-header">
+        <div>
+          <h1>Operações</h1>
+          <div class="desc">Planejamento diário do que vai ser executado, organizado pelas <b>funções</b> cadastradas. Cada linha é uma operação de uma OS: a função que executa, a pessoa responsável, as peças e o status do dia.</div>
+        </div>
+      </div>
+      <div id="operacoes-painel"></div>
     </section>
 
     <section class="page hidden" data-page="expedicao">
@@ -816,6 +827,20 @@
   </div>
 </div>
 
+<!-- ============= MODAL DO PLANEJAMENTO DE OPERAÇÕES ============= -->
+<!-- Uma operação do dia: data, função, o que será feito, quem executa, a OS e
+     as peças. Os campos são montados em app.js (abrirModalOperacao). -->
+<div class="modal-backdrop" id="modal-op">
+  <div class="modal">
+    <h2 id="modal-op-title">Operação do dia</h2>
+    <div id="modal-op-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-op')">Cancelar</button>
+      <button class="btn primary" onclick="salvarModalOperacao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- no-print: o toast é position:fixed e o html2canvas 1.4.1 o inclui na foto se
      ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
      etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
@@ -853,6 +878,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-21o"></script>
+<script src="app.js?v=2026-07-22a"></script>
 </body>
 </html>

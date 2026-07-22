@@ -531,7 +531,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','osCounter','meta'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -861,6 +861,16 @@ const STATE = {
   // { id, janelaId, data, tipo:'cancelada'|'remarcada', novaData, horaIda,
   //   horaVolta, motivo }
   expedicaoExcecoes: [],
+  // ---------- Planejamento diário de operações ----------
+  // O que cada FUNÇÃO cadastrada vai executar em cada dia. Diferente das etapas
+  // do checklist da OS (que registram o que já aconteceu), aqui é planejamento:
+  // marca-se de véspera quem faz o quê, em qual OS e quantas peças.
+  // { id, data:'YYYY-MM-DD', hora, funcaoId, funcaoNome, operacao,
+  //   responsavelId, responsavelNome, osId, osNumero, pecas,
+  //   status:'pendente'|'andamento'|'feita', obs }
+  // funcaoNome/responsavelNome/osNumero são cópias de exibição: se o cadastro
+  // for renomeado ou excluído, o histórico do dia continua legível.
+  operacoes: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -910,7 +920,7 @@ function ehFuncaoCoordEnfestEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','meta'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -1218,6 +1228,7 @@ function goto(page) {
   if (page === 'costurando') renderFasePainel(1);
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
+  if (page === 'operacoes') renderOperacoes();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
@@ -4088,6 +4099,484 @@ async function excluirJanelaExp(id) {
   await saveState('expedicaoExcecoes');
   toast('Janela excluída', 'ok');
   renderExpedicaoPlano();
+}
+
+/* ========================================================= */
+/*         PLANEJAMENTO DIÁRIO DE OPERAÇÕES (por função)     */
+/* ========================================================= */
+// O campo "Operações" responde a uma pergunta que o checklist da OS não
+// responde: o que CADA FUNÇÃO vai fazer amanhã. O checklist é retrato do que já
+// aconteceu; aqui é a agenda do que vai acontecer. Por isso a chave de
+// organização é a FUNÇÃO cadastrada (Costureira, Cortador…) e não a etapa — é
+// por função que o trabalho do dia é distribuído no chão de fábrica.
+// Reaproveita os helpers de data do planejamento de expedição (_expIso,
+// _expData, _expHoje, _expAddDias, _expRange, _expLabelPeriodo).
+
+const _OP_STATUS = {
+  pendente:  { lbl: 'Pendente',     cls: 'baixo' },
+  andamento: { lbl: 'Em andamento', cls: 'info' },
+  feita:     { lbl: 'Feita',        cls: 'ok' }
+};
+// Clicar no status roda o ciclo pendente → andamento → feita → pendente.
+const _OP_CICLO = { pendente: 'andamento', andamento: 'feita', feita: 'pendente' };
+
+let opPlanoModo = 'dia';           // o planejamento é DIÁRIO por natureza
+let opPlanoAncora = _expHoje();
+try {
+  opPlanoModo = sessionStorage.getItem('gos:op:modo') || opPlanoModo;
+  opPlanoAncora = sessionStorage.getItem('gos:op:ancora') || opPlanoAncora;
+} catch (e) { /* sessionStorage indisponível, segue no padrão */ }
+
+function opSetModo(modo) {
+  opPlanoModo = modo;
+  try { sessionStorage.setItem('gos:op:modo', modo); } catch (e) {}
+  renderOperacoes();
+}
+function opNav(dir) {
+  const passo = opPlanoModo === 'dia' ? 1 : (opPlanoModo === 'semana' ? 7 : 0);
+  if (passo) opPlanoAncora = _expAddDias(opPlanoAncora, dir * passo);
+  else {
+    const d = _expData(opPlanoAncora);
+    opPlanoAncora = _expIso(new Date(d.getFullYear(), d.getMonth() + dir, 1));
+  }
+  try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
+  renderOperacoes();
+}
+function opHoje() {
+  opPlanoAncora = _expHoje();
+  try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
+  renderOperacoes();
+}
+
+// Função cadastrada de uma operação. Cai no nome copiado no registro quando a
+// função foi excluída do cadastro — o dia planejado não pode virar linha órfã.
+function _opFuncaoNome(op) {
+  const f = (STATE.funcoes || []).find(x => x.id === op.funcaoId);
+  return f ? f.nome : (op.funcaoNome || '(função excluída)');
+}
+function _opResponsavelNome(op) {
+  const p = (STATE.equipe || []).find(x => x.id === op.responsavelId);
+  return p ? p.nome : (op.responsavelNome || '');
+}
+// Pessoas da equipe cuja função principal é esta. É o que faz o select de
+// responsável mostrar só quem realmente faz aquele trabalho.
+function _opPessoasDaFuncao(funcaoNome) {
+  const alvo = _normFuncaoNome(funcaoNome);
+  const dentro = [], fora = [];
+  (STATE.equipe || []).forEach(p => {
+    (alvo && _normFuncaoNome(p.funcao) === alvo ? dentro : fora).push(p);
+  });
+  const ord = arr => arr.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
+  return { dentro: ord(dentro), fora: ord(fora) };
+}
+// Sugestões de operação para uma função: as responsabilidades/ações cadastradas
+// nela (uma por linha em Funções) + as etapas de produção. Assim o dia a dia é
+// digitado a partir do que já está cadastrado, sem inventar nome novo a cada vez.
+function _opSugestoesOperacao(funcaoId) {
+  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+  const acoes = String(f && f.acoes || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const etapas = etapasOrdenadas().map(e => e.nome).filter(Boolean);
+  return [...new Set([...acoes, ...etapas])];
+}
+
+function _opStatus(op) { return _OP_STATUS[op.status] ? op.status : 'pendente'; }
+
+// Operações do período, já ordenadas: data, depois hora (sem hora vai por
+// último no dia), depois função e OS.
+function operacoesNoPeriodo(ini, fim) {
+  return (STATE.operacoes || [])
+    .filter(o => o.data && o.data >= ini && o.data <= fim)
+    .sort((a, b) =>
+      String(a.data).localeCompare(String(b.data)) ||
+      String(a.hora || '~').localeCompare(String(b.hora || '~')) ||
+      _opFuncaoNome(a).localeCompare(_opFuncaoNome(b)) ||
+      String(a.osNumero || '').localeCompare(String(b.osNumero || ''), undefined, { numeric: true })
+    );
+}
+
+/* ---------------- render da agenda ---------------- */
+
+function renderOperacoes() {
+  const cont = document.getElementById('operacoes-painel');
+  if (!cont) return;
+  const { ini, fim } = _expRange(opPlanoModo, opPlanoAncora);
+  const ops = operacoesNoPeriodo(ini, fim);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  const toolbar = `
+    <div class="exp-toolbar no-print">
+      <div class="exp-seg">
+        <button class="${opPlanoModo === 'dia' ? 'active' : ''}" onclick="opSetModo('dia')">Diário</button>
+        <button class="${opPlanoModo === 'semana' ? 'active' : ''}" onclick="opSetModo('semana')">Semanal</button>
+        <button class="${opPlanoModo === 'mes' ? 'active' : ''}" onclick="opSetModo('mes')">Mensal</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn" onclick="opNav(-1)" title="Período anterior">‹</button>
+        <div class="exp-periodo">${esc(_expLabelPeriodo(opPlanoModo, opPlanoAncora))}</div>
+        <button class="btn" onclick="opNav(1)" title="Próximo período">›</button>
+        <button class="btn" onclick="opHoje()">Hoje</button>
+      </div>
+      <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn primary" onclick="abrirModalOperacao()">+ Nova operação</button>
+        ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado as operações do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
+      </div>
+    </div>`;
+
+  let pecas = 0, pendentes = 0, feitas = 0;
+  const funcoesSet = new Set(), osSet = new Set();
+  ops.forEach(o => {
+    pecas += Number(o.pecas) || 0;
+    const st = _opStatus(o);
+    if (st === 'feita') feitas++; else pendentes++;
+    funcoesSet.add(_opFuncaoNome(o));
+    if (o.osNumero) osSet.add(o.osNumero);
+  });
+
+  const resumo = `
+    <div class="exp-resumo">
+      <div class="item"><div class="num">${fmt(ops.length)}</div><div class="lbl">Operações no período</div></div>
+      <div class="item ${pendentes ? 'alerta' : ''}"><div class="num">${fmt(pendentes)}</div><div class="lbl">A executar</div></div>
+      <div class="item"><div class="num">${fmt(feitas)}</div><div class="lbl">Concluídas</div></div>
+      <div class="item"><div class="num">${fmt(pecas)}</div><div class="lbl">Peças planejadas</div></div>
+      <div class="item"><div class="num">${fmt(funcoesSet.size)}</div><div class="lbl">Funções envolvidas</div></div>
+      <div class="item"><div class="num">${fmt(osSet.size)}</div><div class="lbl">OS envolvidas</div></div>
+    </div>`;
+
+  // Uma linha = uma operação. O status é o próprio botão: clicar avança o ciclo,
+  // que é como o encarregado usa isso ao longo do dia.
+  const linhaHtml = op => {
+    const st = _opStatus(op);
+    const resp = _opResponsavelNome(op);
+    return `
+      <div class="op-row ${st === 'feita' ? 'feita' : ''}">
+        <span class="hora">${esc(op.hora) || '—'}</span>
+        <span class="os">${esc(op.osNumero) || '—'}</span>
+        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
+        <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
+        <span class="qtd">${op.pecas ? fmt(op.pecas) + ' pç' : '—'}</span>
+        <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
+        <span class="admin-only op-acoes">
+          <button title="Editar esta operação" onclick="abrirModalOperacao('${esc(op.id)}')">✎</button>
+          <button title="Excluir esta operação" onclick="excluirOperacao('${esc(op.id)}')">×</button>
+        </span>
+      </div>`;
+  };
+
+  // Dentro do dia, agrupa por FUNÇÃO: é assim que a folha do dia é lida — cada
+  // função olha o seu bloco.
+  const diaHtml = (data, doDia) => {
+    const grupos = new Map();
+    doDia.forEach(op => {
+      const nome = _opFuncaoNome(op);
+      const g = grupos.get(nome) || { nome, itens: [], pecas: 0, pend: 0 };
+      g.itens.push(op);
+      g.pecas += Number(op.pecas) || 0;
+      if (_opStatus(op) !== 'feita') g.pend++;
+      grupos.set(nome, g);
+    });
+    const blocos = Array.from(grupos.values())
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map(g => `
+        <div class="op-func">
+          <div class="op-func-head">
+            <div class="op-func-nome">${esc(g.nome)}</div>
+            <div class="op-func-tot">
+              ${g.itens.length} ${g.itens.length === 1 ? 'operação' : 'operações'}
+              ${g.pecas ? ` · ${fmt(g.pecas)} pç` : ''}
+              ${g.pend ? ` · <span class="exp-badge baixo">${g.pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
+            </div>
+          </div>
+          ${g.itens.map(linhaHtml).join('')}
+        </div>`).join('');
+    const totPecas = doDia.reduce((s, o) => s + (Number(o.pecas) || 0), 0);
+    return `
+      <div class="card exp-ocor">
+        <div class="exp-ocor-head">
+          <div>
+            <div class="exp-ocor-data">${_EXP_DIAS_CURTO[_expData(data).getDay()]} · ${esc(formatDate(data))}${data === _expHoje() ? ' <span class="exp-badge info">hoje</span>' : ''}</div>
+            <div class="exp-ocor-nome">${doDia.length} ${doDia.length === 1 ? 'operação planejada' : 'operações planejadas'}${totPecas ? ` · ${fmt(totPecas)} peças` : ''} · ${grupos.size} ${grupos.size === 1 ? 'função' : 'funções'}</div>
+          </div>
+          <div class="admin-only">
+            <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
+          </div>
+        </div>
+        ${blocos}
+      </div>`;
+  };
+
+  const porDia = new Map();
+  ops.forEach(op => {
+    if (!porDia.has(op.data)) porDia.set(op.data, []);
+    porDia.get(op.data).push(op);
+  });
+  const cards = Array.from(porDia.keys()).sort().map(d => diaHtml(d, porDia.get(d))).join('');
+
+  const semFuncoes = !(STATE.funcoes || []).length;
+  const vazio = `
+    <div class="card">
+      <div class="empty" style="padding:24px 0;text-align:center;">
+        ${semFuncoes
+          ? 'Nenhuma <b>função</b> cadastrada ainda. O planejamento das operações é organizado por função — cadastre-as em <a href="#" onclick="goto(\'cad-funcoes\'); return false;">Funções</a> antes de começar.'
+          : 'Nenhuma operação planejada neste período. Use <b>+ Nova operação</b> para montar o dia.'}
+      </div>
+    </div>`;
+
+  const comoFunciona = `
+    <div class="info-box no-print" style="font-size:12px;">
+      Planeje aqui o que cada <b>função</b> executa em cada dia. As opções de operação vêm das
+      <b>responsabilidades cadastradas na função</b> e das etapas de produção; o responsável sai da
+      <b>Equipe</b>, filtrado pela função escolhida. Clique no status da linha para ir de
+      <b>pendente</b> a <b>em andamento</b> e a <b>feita</b>.
+    </div>`;
+
+  cont.innerHTML = toolbar + comoFunciona + resumo + (cards || vazio);
+}
+
+/* ---------------- modal da operação ---------------- */
+
+let _opModalCtx = null;
+
+function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
+  if (!exigirAdmin('planejar operações')) return;
+  if (!(STATE.funcoes || []).length) {
+    return toast('Cadastre ao menos uma função antes de planejar operações', 'err');
+  }
+  const op = opId ? (STATE.operacoes || []).find(x => x.id === opId) : null;
+  _opModalCtx = { editId: op ? opId : '' };
+
+  const data = op ? (op.data || '') : (dataPre || opPlanoAncora || _expHoje());
+  const funcaoSel = op ? (op.funcaoId || '') : funcaoIdPre;
+  const funcoesOpts = (STATE.funcoes || [])
+    .slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')))
+    .map(f => `<option value="${esc(f.id)}" ${f.id === funcaoSel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+
+  // OSs com peças: as em produção primeiro (ainda no fluxo, é onde o trabalho do
+  // dia acontece), as demais depois — planejar sobre OS já finalizada é raro,
+  // mas retrabalho existe.
+  const emFluxo = [], outras = [];
+  (STATE.ordens || []).forEach(o => {
+    const pecas = _expPecasOS(o);
+    if (!(pecas > 0)) return;
+    const label = `${o.os || '(sem nº)'} · ${o.modeloNome || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
+    (faseAtualOS(o) >= 0 ? emFluxo : outras).push({ id: o.id, label });
+  });
+  const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
+  const optOS = arr => ordena(arr).map(x =>
+    `<option value="${esc(x.id)}" ${op && x.id === op.osId ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+
+  const statusOpts = Object.entries(_OP_STATUS).map(([k, v]) =>
+    `<option value="${k}" ${op && _opStatus(op) === k ? 'selected' : ''}>${esc(v.lbl)}</option>`).join('');
+
+  document.getElementById('modal-op-title').textContent = op ? 'Editar operação do dia' : 'Nova operação do dia';
+  document.getElementById('modal-op-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Data *</label><input type="date" id="op-data" value="${esc(data)}"></div>
+      <div class="field"><label>Hora (opcional)</label><input type="time" id="op-hora" value="${esc(op ? (op.hora || '') : '')}"><div class="field-hint">Só ordena as operações dentro do dia.</div></div>
+      <div class="field">
+        <label>Função *</label>
+        <select id="op-funcao" onchange="_opTrocouFuncao()">
+          <option value="">— selecione —</option>
+          ${funcoesOpts}
+        </select>
+        <div class="field-hint">Cadastre em <a href="#" onclick="closeModal('modal-op'); goto('cad-funcoes'); return false;">Funções</a>. As responsabilidades da função viram sugestões de operação.</div>
+      </div>
+      <div class="field">
+        <label>Responsável</label>
+        <select id="op-responsavel"></select>
+        <div class="field-hint">Pessoas da <b>Equipe</b> com esta função aparecem primeiro.</div>
+      </div>
+      <div class="field full">
+        <label>Operação *</label>
+        <input type="text" id="op-operacao" list="op-sugestoes" value="${esc(op ? (op.operacao || '') : '')}" placeholder="Ex.: Costurar mangas" autocomplete="off">
+        <datalist id="op-sugestoes"></datalist>
+        <div class="field-hint" id="op-sug-hint">Escolha uma sugestão da função ou digite livremente.</div>
+      </div>
+      <div class="field full">
+        <label>OS *</label>
+        <input type="search" id="op-os-busca" oninput="_opFiltrarOS()" placeholder="Buscar pelo número da OS ou modelo…" style="margin-bottom:6px;" autocomplete="off">
+        <select id="op-os" onchange="_opAtualizarInfoOS()">
+          <option value="">— selecione —</option>
+          ${emFluxo.length ? `<optgroup label="Em produção">${optOS(emFluxo)}</optgroup>` : ''}
+          ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
+        </select>
+        <div class="field-hint" id="op-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>
+      </div>
+      <div class="field"><label>Peças</label><input type="number" min="0" step="1" id="op-pecas" value="${esc(op ? (op.pecas || '') : '')}" placeholder="Ex.: 160"><div class="field-hint">Em branco puxa o total de peças da OS.</div></div>
+      <div class="field"><label>Status</label><select id="op-status">${statusOpts}</select></div>
+      <div class="field full"><label>Observação</label><input type="text" id="op-obs" value="${esc(op ? (op.obs || '') : '')}" placeholder="Ex.: prioridade, sai na expedição da tarde"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="op-info">Selecione a OS para ver as peças.</div>`;
+
+  _opTrocouFuncao(op ? (op.responsavelId || '') : '');
+  _opAtualizarInfoOS();
+  openModal('modal-op');
+}
+
+// Função escolhida muda duas coisas: as sugestões de operação e a lista de
+// responsáveis. Mantém a pessoa já selecionada quando ela continua válida.
+function _opTrocouFuncao(responsavelPre = null) {
+  const selF = document.getElementById('op-funcao');
+  const selR = document.getElementById('op-responsavel');
+  const dl = document.getElementById('op-sugestoes');
+  const hint = document.getElementById('op-sug-hint');
+  if (!selF || !selR || !dl) return;
+  const funcaoId = selF.value;
+  const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
+  const manter = responsavelPre != null ? responsavelPre : selR.value;
+
+  const sugs = _opSugestoesOperacao(funcaoId);
+  dl.innerHTML = sugs.map(s => `<option value="${esc(s)}"></option>`).join('');
+  if (hint) {
+    const nAcoes = String(funcao && funcao.acoes || '').split('\n').filter(s => s.trim()).length;
+    hint.innerHTML = !funcaoId
+      ? 'Escolha a função para ver as sugestões cadastradas nela.'
+      : (nAcoes
+        ? `${nAcoes} responsabilidade(s) cadastrada(s) em <b>${esc(funcao.nome)}</b> + as etapas de produção. Digite para ver as sugestões — texto livre também vale.`
+        : `A função <b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são só as etapas de produção. Você pode digitar livremente.`);
+  }
+
+  const { dentro, fora } = _opPessoasDaFuncao(funcao ? funcao.nome : '');
+  const opt = p => `<option value="${esc(p.id)}" ${p.id === manter ? 'selected' : ''}>${esc(p.nome)}</option>`;
+  selR.innerHTML = '<option value="">— a definir —</option>'
+    + (dentro.length ? `<optgroup label="${esc(funcao ? funcao.nome : 'Da função')}">${dentro.map(opt).join('')}</optgroup>` : '')
+    + (fora.length ? `<optgroup label="Outras pessoas">${fora.map(opt).join('')}</optgroup>` : '');
+}
+
+// Mesma busca do select de OS do planejamento de expedição: esconde as options
+// que não batem, some com grupo vazio e seleciona quando sobra uma só.
+function _opFiltrarOS() {
+  const sel = document.getElementById('op-os');
+  const busca = document.getElementById('op-os-busca');
+  if (!sel || !busca) return;
+  const q = _normNome(busca.value);
+  let visiveis = 0, unica = null;
+  sel.querySelectorAll('option').forEach(o => {
+    if (!o.value) return;
+    const bate = !q || _normNome(o.textContent).includes(q);
+    o.hidden = !bate;
+    if (bate) { visiveis++; unica = o; }
+  });
+  sel.querySelectorAll('optgroup').forEach(g => {
+    g.hidden = !Array.from(g.querySelectorAll('option')).some(o => !o.hidden);
+  });
+  if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
+  if (q && visiveis === 1 && unica) sel.value = unica.value;
+  const aviso = document.getElementById('op-os-vazio');
+  if (aviso) aviso.style.display = (q && visiveis === 0) ? 'block' : 'none';
+  _opAtualizarInfoOS();
+}
+
+function _opAtualizarInfoOS() {
+  const osId = document.getElementById('op-os')?.value || '';
+  const info = document.getElementById('op-info');
+  const campo = document.getElementById('op-pecas');
+  const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
+  if (!o) { if (info) info.textContent = 'Selecione a OS para ver as peças.'; return; }
+  const pecas = _expPecasOS(o);
+  const idx = faseAtualOS(o);
+  const fase = idx >= 0 ? FASES_ESTOQUE[idx] : null;
+  if (campo && !campo.value && pecas) campo.value = pecas;   // sugere, nunca sobrescreve
+  if (info) {
+    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
+      + (fase ? ` Hoje o volume está em <b>${esc(fase.titulo)}</b>.` : ' Fora do fluxo em processo (finalizada ou sem etapa marcada).');
+  }
+}
+
+async function salvarModalOperacao() {
+  if (!_opModalCtx) return;
+  if (!exigirAdmin('planejar operações')) return;
+  const v = id => document.getElementById(id)?.value || '';
+
+  const data = v('op-data');
+  if (!data) return toast('Informe a data da operação', 'err');
+  const funcaoId = v('op-funcao');
+  const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
+  if (!funcao) return toast('Escolha a função que vai executar', 'err');
+  const operacao = v('op-operacao').trim();
+  if (!operacao) return toast('Descreva a operação', 'err');
+  const osId = v('op-os');
+  const os = (STATE.ordens || []).find(o => o.id === osId);
+  if (!os) return toast('Escolha a OS da operação', 'err');
+
+  const responsavelId = v('op-responsavel');
+  const pessoa = (STATE.equipe || []).find(p => p.id === responsavelId);
+  const status = _OP_STATUS[v('op-status')] ? v('op-status') : 'pendente';
+
+  const campos = {
+    data,
+    hora: v('op-hora'),
+    funcaoId, funcaoNome: funcao.nome,
+    operacao,
+    responsavelId: pessoa ? pessoa.id : '',
+    responsavelNome: pessoa ? pessoa.nome : '',
+    osId: os.id, osNumero: (os.os || '').toString().trim(),
+    pecas: Math.max(0, parseInt(v('op-pecas'), 10) || 0),
+    status,
+    obs: v('op-obs').trim()
+  };
+
+  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  if (_opModalCtx.editId) {
+    const i = STATE.operacoes.findIndex(x => x.id === _opModalCtx.editId);
+    if (i >= 0) STATE.operacoes[i] = { ...STATE.operacoes[i], ...campos };
+  } else {
+    STATE.operacoes.push({ id: uid(), ...campos });
+  }
+  await saveState('operacoes');
+  closeModal('modal-op');
+  toast(_opModalCtx.editId ? 'Operação atualizada' : 'Operação planejada', 'ok');
+  _opModalCtx = null;
+  // O dia salvo pode estar fora do período visível — leva a agenda até ele.
+  const { ini, fim } = _expRange(opPlanoModo, opPlanoAncora);
+  if (data < ini || data > fim) {
+    opPlanoAncora = data;
+    try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
+  }
+  renderOperacoes();
+}
+
+async function alternarStatusOperacao(id) {
+  if (!exigirAdmin('mudar o status das operações')) return;
+  const op = (STATE.operacoes || []).find(x => x.id === id);
+  if (!op) return;
+  op.status = _OP_CICLO[_opStatus(op)];
+  await saveState('operacoes');
+  renderOperacoes();
+}
+
+async function excluirOperacao(id) {
+  if (!exigirAdmin('excluir operações')) return;
+  const op = (STATE.operacoes || []).find(x => x.id === id);
+  if (!op) return;
+  if (!confirm(`Excluir a operação "${op.operacao || 'sem descrição'}" de ${formatDate(op.data)}?`)) return;
+  STATE.operacoes = (STATE.operacoes || []).filter(x => x.id !== id);
+  await saveState('operacoes');
+  toast('Operação excluída', 'ok');
+  renderOperacoes();
+}
+
+// Repete no dia mostrado o que estava planejado no último dia com operações
+// antes dele. Copia sempre como PENDENTE (é plano novo, não histórico) e pula o
+// que já existe no destino — clicar duas vezes não duplica a agenda.
+async function copiarOperacoesDoDiaAnterior() {
+  if (!exigirAdmin('planejar operações')) return;
+  if (opPlanoModo !== 'dia') return toast('Mude para o modo Diário para repetir um dia', 'err');
+  const destino = opPlanoAncora;
+  const anteriores = (STATE.operacoes || []).filter(o => o.data && o.data < destino).map(o => o.data).sort();
+  const origem = anteriores.length ? anteriores[anteriores.length - 1] : '';
+  if (!origem) return toast('Não há dia anterior com operações planejadas', 'err');
+
+  const chave = o => [o.funcaoId, o.osId, _normNome(o.operacao), o.responsavelId || ''].join('|');
+  const jaTem = new Set((STATE.operacoes || []).filter(o => o.data === destino).map(chave));
+  const novas = (STATE.operacoes || [])
+    .filter(o => o.data === origem && !jaTem.has(chave(o)))
+    .map(o => ({ ...o, id: uid(), data: destino, status: 'pendente' }));
+  if (!novas.length) return toast(`Nada novo a copiar de ${formatDate(origem)}`, 'err');
+
+  STATE.operacoes.push(...novas);
+  await saveState('operacoes');
+  toast(`${novas.length} operação(ões) copiada(s) de ${formatDate(origem)}`, 'ok');
+  renderOperacoes();
 }
 
 /* ---------------- folha impressa do plano ---------------- */
