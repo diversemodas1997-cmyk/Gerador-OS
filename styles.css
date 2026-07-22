@@ -1736,12 +1736,47 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 }
 .exp-print-perna .vazia { font-size: 7pt; font-style: italic; color: #555; padding: 2px 0; }
 .exp-print-box {
+  position: relative;
   display: inline-block;
   width: 7pt;
   height: 7pt;
   border: 1px solid #000;
   vertical-align: -1px;
 }
+/* Quadrinho já marcado no checklist da OS. O ✓ é desenhado (não é caractere)
+   para não depender de fonte na impressão. */
+.exp-print-box.ok::after {
+  content: '';
+  position: absolute;
+  left: 1.6pt;
+  top: -0.4pt;
+  width: 2pt;
+  height: 4.4pt;
+  border: solid #000;
+  border-width: 0 1.1pt 1.1pt 0;
+  transform: rotate(40deg);
+}
+
+/* Checklist de costura da OS, dentro do quadro dela na folha de OE. */
+.exp-print-os > .cost { margin-top: 2pt; padding-top: 1.5pt; border-top: .5pt dotted #999; }
+.exp-print-os > .cost .ct {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.exp-print-os > .cost .cn { font-weight: 400; color: #555; margin-left: 3pt; }
+.exp-print-os > .cost .cok { font-weight: 400; color: #2d7d46; margin-left: 3pt; text-transform: none; }
+.exp-print-os > .cost .ci {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1pt 10pt;
+  font-size: 6pt;
+  margin-top: 1pt;
+}
+.exp-print-os > .cost .it { display: inline-flex; align-items: center; gap: 3pt; }
+.exp-print-os > .cost .cv { color: #555; font-style: italic; }
 /* Rodapé de assinaturas da OE: um campo por função que a carga atravessa.
    A linha fica ACIMA do rótulo — é onde a pessoa assina, e o nome da função
    embaixo diz quem é. As três dividem a largura em partes iguais. */
