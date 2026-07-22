@@ -2001,6 +2001,55 @@ async function rodarCopiarEtapasParaTodos() {
   await copiarEtapasEntreDesenhos(codigo);
 }
 
+// Etapas de uma OS que NÃO podem sair da lista: as que já têm marca — a própria
+// etapa marcada, ou qualquer tarefa dela. Tirar da lista uma etapa marcada
+// apagaria da folha um trabalho que já foi registrado; é exatamente assim que os
+// checklists "sumiam" antes.
+function _etapasComMarcaOS(o) {
+  const prog = (o && o.progresso) || {};
+  const marcadas = new Set();
+  Object.entries(prog.etapasCheck || {}).forEach(([n, v]) => { if (v) marcadas.add(n); });
+  Object.entries(prog.tarefasCheck || {}).forEach(([n, obj]) => {
+    if (obj && typeof obj === 'object' && Object.values(obj).some(Boolean)) marcadas.add(n);
+  });
+  return marcadas;
+}
+
+// Propaga as etapas de produção do desenho técnico para as OSs já emitidas com
+// ele. Antes isso era manual — reabrir cada OS e reselecionar o desenho — e na
+// prática ninguém fazia: mudava-se a etapa no desenho e as OSs em andamento
+// seguiam imprimindo a lista velha.
+// Etapa que já tem marca nunca é removida: vai para o fim da lista, preservando
+// o que foi feito. Devolve quantas OSs mudaram.
+async function propagarEtapasDesenhoParaOS(desenho, etapasAntes) {
+  if (!desenho) return 0;
+  const novas = (Array.isArray(desenho.etapasNomes) ? desenho.etapasNomes : []).filter(Boolean);
+  if (!novas.length) return 0;
+  // Sem mudança na lista do desenho, nenhuma OS é tocada.
+  if (Array.isArray(etapasAntes)
+      && etapasAntes.length === novas.length
+      && etapasAntes.every((n, i) => n === novas[i])) return 0;
+
+  const cod = (desenho.codigo || '').trim();
+  // OS antiga pode não ter desenhoId — aí casa pelo código, como na lista de OS.
+  const alvos = (STATE.ordens || []).filter(o =>
+    (o.desenhoId && o.desenhoId === desenho.id)
+    || (!o.desenhoId && cod && (o.codigo || '').trim() === cod));
+
+  let n = 0;
+  alvos.forEach(o => {
+    const marcadas = _etapasComMarcaOS(o);
+    const preservar = (o.etapas || []).filter(e => marcadas.has(e) && !novas.includes(e));
+    const final = [...novas, ...preservar];
+    const atual = o.etapas || [];
+    if (atual.length === final.length && atual.every((e, i) => e === final[i])) return;
+    o.etapas = final;
+    n++;
+  });
+  if (n) await saveState('ordens');
+  return n;
+}
+
 // Utilitario admin: copia as etapasNomes (e a ordem) de um desenho de origem
 // para os demais desenhos DO MESMO MODELO/variação (mesmo modeloId). Uso:
 // copiarEtapasEntreDesenhos('001'). Outros modelos ficam intactos.
@@ -2019,14 +2068,25 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
   const chaveOrigem = chaveModeloDesenho(origem);
   const modeloLabel = rotuloModeloDesenho(origem);
   let alteradas = 0;
+  const mudados = [];
   STATE.desenhos.forEach(d => {
     if (d.id === origem.id) return;
     if (chaveModeloDesenho(d) !== chaveOrigem) return;   // só mesmo modelo/variação
+    const antes = Array.isArray(d.etapasNomes) ? [...d.etapasNomes] : null;
     d.etapasNomes = [...etapasNomes];
+    mudados.push({ desenho: d, antes });
     alteradas++;
   });
   await saveState('desenhos');
-  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenho(s) do modelo "${modeloLabel}"`, 'ok');
+  // Cada desenho que mudou leva junto as OSs já emitidas com ele — mesma regra
+  // da edição avulsa do desenho.
+  let osTocadas = 0;
+  for (const m of mudados) {
+    try { osTocadas += await propagarEtapasDesenhoParaOS(m.desenho, m.antes); }
+    catch (e) { console.warn('propagarEtapasDesenhoParaOS', e); }
+  }
+  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenho(s) do modelo "${modeloLabel}"`
+        + (osTocadas ? ` e a ${osTocadas} OS já emitida(s)` : ''), 'ok');
   if (typeof renderDesenhos === 'function') renderDesenhos();
   return { origem: codigoOrigem, modelo: modeloLabel, etapas: etapasNomes, alteradas };
 }
@@ -2158,6 +2218,11 @@ async function salvarCadastro() {
   const v = id => document.getElementById(id)?.value || '';
   let item = editId ? STATE[list].find(x => x.id === editId) : { id: uid() };
   if (!item) item = { id: uid() };
+  // `item` É o objeto guardado no STATE — os blocos abaixo o alteram no lugar.
+  // Por isso a foto das etapas do desenho tem que ser tirada AGORA: é ela que
+  // diz, no fim, se a lista mudou e se as OSs já emitidas precisam acompanhar.
+  const etapasAntes = (tipo === 'desenho' && editId && Array.isArray(item.etapasNomes))
+    ? [...item.etapasNomes] : null;
 
   if (tipo === 'tecido') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -2376,6 +2441,15 @@ async function salvarCadastro() {
 
   closeModal('modal-cad');
   toast('Salvo com sucesso', 'ok');
+
+  // Mudou a lista de etapas do desenho técnico? As OSs já emitidas com ele
+  // acompanham sozinhas — era o passo manual que ninguém lembrava de fazer.
+  if (tipo === 'desenho' && editId) {
+    try {
+      const n = await propagarEtapasDesenhoParaOS(item, etapasAntes);
+      if (n) toast(`Etapas atualizadas em ${n} OS já emitida(s)`, 'ok');
+    } catch (e) { console.warn('propagarEtapasDesenhoParaOS', e); }
+  }
 
   if (cadastroContext.origin === 'os-form') {
     refreshOSFormDropdowns();
