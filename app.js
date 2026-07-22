@@ -2050,9 +2050,7 @@ async function propagarEtapasDesenhoParaOS(desenho, etapasAntes) {
 
   let n = 0;
   alvos.forEach(o => {
-    const marcadas = _etapasComMarcaOS(o);
-    const preservar = (o.etapas || []).filter(e => marcadas.has(e) && !novas.includes(e));
-    const final = [...novas, ...preservar];
+    const final = _etapasFinaisOS(o, novas);
     const atual = o.etapas || [];
     if (atual.length === final.length && atual.every((e, i) => e === final[i])) return;
     o.etapas = final;
@@ -2060,6 +2058,23 @@ async function propagarEtapasDesenhoParaOS(desenho, etapasAntes) {
   });
   if (n) await saveState('ordens');
   return n;
+}
+
+// Lista final de etapas de uma OS ao receber as do desenho: as do desenho, mais
+// as que já têm marca e sumiram de lá — estas vão para o fim, nunca somem.
+function _etapasFinaisOS(o, novas) {
+  const marcadas = _etapasComMarcaOS(o);
+  const preservar = (o.etapas || []).filter(e => marcadas.has(e) && !novas.includes(e));
+  return [...novas, ...preservar];
+}
+
+// OSs que um desenho alcança: pelo vínculo direto e, nas OSs antigas sem ele,
+// pelo código do desenho.
+function _osDoDesenho(desenho) {
+  const cod = (desenho.codigo || '').trim();
+  return (STATE.ordens || []).filter(o =>
+    (o.desenhoId && o.desenhoId === desenho.id)
+    || (!o.desenhoId && cod && (o.codigo || '').trim() === cod));
 }
 
 // Utilitario admin: copia as etapasNomes (e a ordem) de um desenho de origem
@@ -7856,8 +7871,22 @@ async function aplicarRegraConjugadaSeAplicavel(osBicolor) {
   return conjugada;
 }
 
+// A OS montada pelo formulário só contém os campos DO FORMULÁRIO. Tudo o que é
+// preenchido depois, na folha da OS pronta, mora em `progresso` e não tem campo
+// no form: checklist de etapas e tarefas, Início/Fim de corte e de cada fase de
+// enfesto, os tons por fase, as tonalidades do "Total por tamanho" e o carimbo
+// etapasSeq. Trocar a OS inteira pelo objeto do formulário apagava tudo isso a
+// cada edição — o checklist voltava do zero, a OS sumia dos painéis de estoque
+// (sem etapasSeq não há fase atual) e o volume da OE e a contagem de etiquetas
+// caíam junto com as tonalidades.
+// Mesclando, o que o formulário controla é sobrescrito e o resto sobrevive.
+function _mesclarComOSExistente(data) {
+  const ant = (STATE.ordens || []).find(o => o.id === data.id);
+  return ant ? { ...ant, ...data } : data;
+}
+
 async function salvarOS() {
-  const data = coletaOS();
+  const data = _mesclarComOSExistente(coletaOS());
   if (!data.os && !data.codigo) {
     return toast('Preencha ao menos número da OS ou código do desenho', 'err');
   }
@@ -8785,7 +8814,7 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
 }
 
 async function salvarEImprimir() {
-  const data = coletaOS();
+  const data = _mesclarComOSExistente(coletaOS());
   if (!data.os && !data.codigo) {
     return toast('Preencha ao menos número da OS ou código do desenho', 'err');
   }
@@ -9140,7 +9169,7 @@ function imprimirEtiquetasAtual() {
 }
 
 async function salvarEImprimirEtiquetas() {
-  const data = coletaOS();
+  const data = _mesclarComOSExistente(coletaOS());
   if (!data.os && !data.codigo) {
     return toast('Preencha ao menos número da OS ou código do desenho', 'err');
   }
