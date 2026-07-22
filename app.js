@@ -5309,8 +5309,11 @@ function renderPrintPlanoExpedicao() {
     const linhas = r.itens.length
       ? r.itens.map(osPrint).join('')
       : '<div class="vazia">Sem OS alocada.</div>';
+    // Perna sem OS não precisa de metade da folha: encolhe e devolve a largura
+    // para o lado que tem carga, onde os quadros das OSs ficam maiores e mais
+    // legíveis. Com as duas cheias, a divisão segue meio a meio.
     return `
-      <div class="exp-print-perna">
+      <div class="exp-print-perna${r.itens.length ? '' : ' sem-os'}">
         <div class="ph">
           <div>
             <span class="t">${perna === 'ida' ? 'IDA' : 'VOLTA'}</span>
@@ -8655,10 +8658,16 @@ async function gerarPdfDaSheetExp() {
     // canvas). Assim a virada de página nunca parte um bloco no meio.
     const sheetRect = sheet.getBoundingClientRect();
     const ratio = canvas.width / sheetRect.width; // CSS px -> canvas px
-    const cortesSeguros = Array.from(sheet.querySelectorAll('.exp-print-bloco'))
-      .map(b => (b.getBoundingClientRect().bottom - sheetRect.top) * ratio)
+    const _bottomsDe = sel => Array.from(sheet.querySelectorAll(sel))
+      .map(el => (el.getBoundingClientRect().bottom - sheetRect.top) * ratio)
       .filter(v => v > 0 && v <= canvas.height)
       .sort((a, b) => a - b);
+    const cortesSeguros = _bottomsDe('.exp-print-bloco');
+    // Rede de segurança para o dia que sozinho é mais alto que uma página: em
+    // vez do corte duro no meio da folha — que partia um quadro de OS ao meio —
+    // o corte cai no fim de um QUADRO. O dia continua na folha seguinte, mas
+    // nenhuma OS sai picada.
+    const cortesCaixa = _bottomsDe('.exp-print-os');
     const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const pageWmm = 210, pageHmm = 297;
     const pxPorMm = canvas.width / pageWmm;      // px do canvas por mm de largura A4
@@ -8672,7 +8681,11 @@ async function gerarPdfDaSheetExp() {
       } else {
         // maior fim-de-bloco que cabe inteiro nesta página
         const cand = cortesSeguros.filter(v => v > y + 1 && v <= maxY);
-        cut = cand.length ? Math.max(...cand) : maxY; // bloco > 1 página: corte duro
+        if (cand.length) cut = Math.max(...cand);
+        else {
+          const candCaixa = cortesCaixa.filter(v => v > y + 1 && v <= maxY);
+          cut = candCaixa.length ? Math.max(...candCaixa) : maxY; // só então, corte duro
+        }
       }
       const sliceH = Math.max(1, Math.round(cut - y));
       const tmp = document.createElement('canvas');
