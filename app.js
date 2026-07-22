@@ -5154,8 +5154,10 @@ function renderPrintPlanoExpedicao() {
     const nTons = Math.max(1, TT.tons.length);
     const volCalc = nTam > 0 ? nTam * nTons + 1 : 0;
     const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes;
+    // O volume extra não é só reposição: é o pacote que leva junto a ribana.
+    // Escrito por extenso porque quem confere precisa saber o que procurar nele.
     const contaVol = volCalc > 0
-      ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição`
+      ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição e ribana`
       : `${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}`;
 
     // Linhas por tonalidade. Com DUAS OU MAIS tonalidades a repartição é o
@@ -9138,6 +9140,32 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
 }
 
+// Normaliza para HH:MM o que foi digitado nos campos de horário da folha (os
+// Início/Fim de enfesto e de corte). Eram texto livre: quem digitava "730" no
+// ritmo do chão de fábrica via "730" na folha, e cada pessoa gravava de um jeito
+// ("7h30", "7:3", "0730"), o que impedia comparar tempos entre fases e OSs.
+// Aceita o jeito rápido de digitar e devolve sempre o mesmo formato:
+//   "7" → 07:00 · "19" → 19:00 · "730" → 07:30 · "0730" → 07:30 · "7:5" → 07:05
+// Texto que não vira hora válida (ex.: "2575") volta como veio — reformatar
+// destruiria o que a pessoa escreveu sem ela perceber.
+function _horaFmt(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  let h, m;
+  if (s.includes(':')) {
+    const [a, b] = s.split(':');
+    h = parseInt(String(a).replace(/\D/g, ''), 10);
+    m = parseInt(String(b).replace(/\D/g, ''), 10) || 0;
+  } else {
+    const d = s.replace(/\D/g, '');
+    if (!d) return s;
+    if (d.length <= 2) { h = parseInt(d, 10); m = 0; }
+    else { m = parseInt(d.slice(-2), 10); h = parseInt(d.slice(0, -2), 10); }
+  }
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h > 23 || m > 59) return s;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
 // Salva o tempo de Início/Fim digitado em cada fase de enfesto na folha
 // impressa. campo ∈ {enfIni, enfFim, corIni, corFim} (enfesto e corte).
 // Valor vazio remove a chave. Persiste em progresso.enfestosTempos[ordem].
@@ -10019,7 +10047,7 @@ function renderEnfestoBox(o) {
   const campoTempo = (ord, campo, val) =>
     `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(val || '')}" `
     + `data-enf-tempo="${esc(String(ord))}" data-enf-campo="${campo}" `
-    + `onchange="salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${campo}', this.value)" `
+    + `onchange="this.value=_horaFmt(this.value); salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${campo}', this.value)" `
     + `style="width:44px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
     + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
   const linhaTempo = (lbl, ord, campoIni, campoFim, t) =>
@@ -10500,7 +10528,7 @@ function renderPrintSheet(o) {
             const campoCorte = (campo) =>
               `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(ct[campo] || '')}" `
               + `data-corte-tempo="${campo}" `
-              + `onchange="salvarTempoCorte('${esc(o.id)}', '${campo}', this.value)" `
+              + `onchange="this.value=_horaFmt(this.value); salvarTempoCorte('${esc(o.id)}', '${campo}', this.value)" `
               + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
               + `font-family:'IBM Plex Mono',monospace;font-size:8pt;padding:0 1px;">`;
             const temposCorte = `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:7pt;color:#555;font-weight:400;">
@@ -10516,7 +10544,7 @@ function renderPrintSheet(o) {
               const tv = (prog.enfestosTempos || {})[ordem] || {};
               return `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(tv[campo] || '')}" `
                 + `data-enf-tempo="${esc(String(ordem))}" data-enf-campo="${campo}" `
-                + `onchange="salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ordem))}', '${campo}', this.value)" `
+                + `onchange="this.value=_horaFmt(this.value); salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ordem))}', '${campo}', this.value)" `
                 + `style="width:40px;border:none;border-bottom:1px solid #999;background:transparent;text-align:center;`
                 + `font-family:'IBM Plex Mono',monospace;font-size:7.5pt;padding:0 1px;">`;
             };
