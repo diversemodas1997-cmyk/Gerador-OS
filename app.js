@@ -5376,44 +5376,6 @@ function renderPrintPlanoExpedicao() {
   // Os números saem de totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
   const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
 
-  // O checklist de COSTURA da própria OS, repetido no quadro dela na OE. Quem
-  // recebe a carga do outro lado precisa saber o que da costura já foi feito e o
-  // que falta naquela OS — sem isso a folha diz o que chegou, mas não em que pé
-  // o trabalho está.
-  //
-  // O desenho é o MESMO da folha de OS: a etapa com a caixa dela e o nome em
-  // negrito, e abaixo, indentadas, uma linha por etapa interna — as marcadas com
-  // ✓, as vazias com o quadrinho em branco. Duas folhas do mesmo trabalho com
-  // layouts diferentes obrigam a reaprender a leitura em cada uma, e a caixa
-  // vazia também é onde se dá baixa à caneta na conferência.
-  const costuraPrint = (o) => {
-    if (!o) return '';
-    const nomeEtapa = (o.etapas || []).find(n => /costura/i.test(n));
-    if (!nomeEtapa) return '';
-    const prog = o.progresso || {};
-    const cad = (STATE.etapas || []).find(e => e.nome === nomeEtapa);
-    const feitaEtapa = !!(prog.etapasCheck || {})[nomeEtapa];
-    const marcadas = (prog.tarefasCheck || {})[nomeEtapa] || {};
-    const tarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome).filter(Boolean) : [];
-    // Mesmo resgate da folha de OS: marca gravada por nome de tarefa que saiu do
-    // cadastro continua na OS, e some da folha se a lista vier só do cadastro.
-    Object.keys(marcadas).forEach(t => {
-      if (marcadas[t] && t && !tarefas.includes(t)) tarefas.push(t);
-    });
-    const feitas = tarefas.filter(t => !!marcadas[t]).length;
-    const cx = ok => `<span class="exp-print-box${ok ? ' ok' : ''}"></span>`;
-    return `
-      <div class="cost">
-        <ul class="cl">
-          <li class="et">${cx(feitaEtapa)}<strong>${esc(nomeEtapa)}</strong>${
-            tarefas.length ? `<span class="cn">${feitas}/${tarefas.length}</span>` : ''}</li>
-          ${tarefas.length
-            ? tarefas.map(t => `<li class="tf">${cx(!!marcadas[t])}<span>${esc(t)}</span></li>`).join('')
-            : '<li class="tf cv">sem etapas cadastradas nesta costura</li>'}
-        </ul>
-      </div>`;
-  };
-
   const osPrint = (i) => {
     const o = i.os;
     const cab = `
@@ -5424,9 +5386,8 @@ function renderPrintPlanoExpedicao() {
         <span class="q">${fmt(i.pecas)} pç</span>
         <span class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</span>
       </div>`;
-    const costura = costuraPrint(o);
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}${costura}</div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}</div>`;
 
     // Cor predominante = Cor 1 da 1ª variante (a mesma do banner da folha de OS),
     // caindo na cor da 1ª fase do enfesto. Sem o tecido no nome.
@@ -5503,7 +5464,6 @@ function renderPrintPlanoExpedicao() {
           </tbody>
         </table>
         <div class="pe">Cada célula é um pacote: peças daquele tamanho, naquela tonalidade.${indef ? ' A divisão entre as tonalidades ainda não foi repartida na OS.' : ''}</div>
-        ${costura}
       </div>`;
   };
 
