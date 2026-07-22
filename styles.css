@@ -1687,11 +1687,12 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
    altura da outra, e uma volta com 1 OS ficava com um trecho enorme de coluna
    riscada e vazia ao lado de 4 quadros da ida. */
 .exp-print-pernas { display: flex; align-items: flex-start; }
-.exp-print-perna { flex: 1 1 0; min-width: 0; padding: 4px 6px; border-right: 1px solid #000; }
+/* Metade da folha para cada perna, sempre — inclusive quando uma delas está
+   vazia. A largura fixa mantém o quadro da ida no mesmo lugar em todas as
+   folhas: quem confere a carga lê sempre na mesma metade, sem ter que
+   reencontrar a coluna a cada página. */
+.exp-print-perna { flex: 0 0 50%; max-width: 50%; min-width: 0; padding: 4px 6px; border-right: 1px solid #000; }
 .exp-print-perna:last-child { border-right: none; }
-/* Perna sem nenhuma OS não fica com metade da folha: a largura vai para o lado
-   que tem carga, onde os quadros das OSs cabem maiores. */
-.exp-print-perna.sem-os { flex: 0 0 24%; }
 .exp-print-perna .ph {
   display: flex;
   justify-content: space-between;

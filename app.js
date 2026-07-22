@@ -5393,11 +5393,10 @@ function renderPrintPlanoExpedicao() {
     const linhas = r.itens.length
       ? r.itens.map(osPrint).join('')
       : '<div class="vazia">Sem OS alocada.</div>';
-    // Perna sem OS não precisa de metade da folha: encolhe e devolve a largura
-    // para o lado que tem carga, onde os quadros das OSs ficam maiores e mais
-    // legíveis. Com as duas cheias, a divisão segue meio a meio.
+    // Cada perna ocupa metade da folha, cheia ou vazia — a largura fixa é o que
+    // mantém a ida sempre na mesma metade, folha após folha.
     return `
-      <div class="exp-print-perna${r.itens.length ? '' : ' sem-os'}">
+      <div class="exp-print-perna">
         <div class="ph">
           <div>
             <span class="t">${perna === 'ida' ? 'IDA' : 'VOLTA'}</span>
