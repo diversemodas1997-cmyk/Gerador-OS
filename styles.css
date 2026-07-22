@@ -1757,26 +1757,23 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   transform: rotate(40deg);
 }
 
-/* Checklist de costura da OS, dentro do quadro dela na folha de OE. */
+/* Checklist de costura da OS, dentro do quadro dela na folha de OE. Mesmo
+   desenho do checklist da folha de OS — etapa com a caixa e o nome em negrito,
+   etapas internas indentadas abaixo — em corpo menor, porque aqui o bloco divide
+   o quadro com a tabela de pacotes. */
 .exp-print-os > .cost { margin-top: 2pt; padding-top: 1.5pt; border-top: .5pt dotted #999; }
-.exp-print-os > .cost .ct {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 6pt;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.exp-print-os > .cost .cn { font-weight: 400; color: #555; margin-left: 3pt; }
-.exp-print-os > .cost .cok { font-weight: 400; color: #2d7d46; margin-left: 3pt; text-transform: none; }
-.exp-print-os > .cost .ci {
+.exp-print-os > .cost .cl { list-style: none; margin: 0; padding: 0; font-size: 6.5pt; }
+.exp-print-os > .cost .et { display: flex; align-items: center; gap: 3pt; }
+.exp-print-os > .cost .tf {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1pt 10pt;
-  font-size: 6pt;
-  margin-top: 1pt;
+  align-items: center;
+  gap: 3pt;
+  padding-left: 12pt;
+  color: #555;
+  line-height: 1.35;
 }
-.exp-print-os > .cost .it { display: inline-flex; align-items: center; gap: 3pt; }
-.exp-print-os > .cost .cv { color: #555; font-style: italic; }
+.exp-print-os > .cost .cn { font-family: 'IBM Plex Mono', monospace; color: #555; }
+.exp-print-os > .cost .cv { font-style: italic; }
 /* Rodapé de assinaturas da OE: um campo por função que a carga atravessa.
    A linha fica ACIMA do rótulo — é onde a pessoa assina, e o nome da função
    embaixo diz quem é. As três dividem a largura em partes iguais. */

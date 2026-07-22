@@ -5089,8 +5089,13 @@ function renderPrintPlanoExpedicao() {
   // O checklist de COSTURA da própria OS, repetido no quadro dela na OE. Quem
   // recebe a carga do outro lado precisa saber o que da costura já foi feito e o
   // que falta naquela OS — sem isso a folha diz o que chegou, mas não em que pé
-  // o trabalho está. Marcado sai com ✓; o que falta fica como quadrinho vazio,
-  // que também serve para dar baixa à caneta na hora da conferência.
+  // o trabalho está.
+  //
+  // O desenho é o MESMO da folha de OS: a etapa com a caixa dela e o nome em
+  // negrito, e abaixo, indentadas, uma linha por etapa interna — as marcadas com
+  // ✓, as vazias com o quadrinho em branco. Duas folhas do mesmo trabalho com
+  // layouts diferentes obrigam a reaprender a leitura em cada uma, e a caixa
+  // vazia também é onde se dá baixa à caneta na conferência.
   const costuraPrint = (o) => {
     if (!o) return '';
     const nomeEtapa = (o.etapas || []).find(n => /costura/i.test(n));
@@ -5100,21 +5105,17 @@ function renderPrintPlanoExpedicao() {
     const tarefas = cad ? tarefasDaEtapa(cad).map(t => t.nome).filter(Boolean) : [];
     const feitaEtapa = !!(prog.etapasCheck || {})[nomeEtapa];
     const marcadas = (prog.tarefasCheck || {})[nomeEtapa] || {};
-    const item = (nome, ok) =>
-      `<span class="it"><span class="exp-print-box${ok ? ' ok' : ''}"></span>${esc(nome)}</span>`;
     const feitas = tarefas.filter(t => !!marcadas[t]).length;
+    const cx = ok => `<span class="exp-print-box${ok ? ' ok' : ''}"></span>`;
     return `
       <div class="cost">
-        <div class="ct">
-          ${esc(nomeEtapa)}
-          ${tarefas.length ? `<span class="cn">${feitas}/${tarefas.length}</span>` : ''}
-          ${feitaEtapa ? '<span class="cok">etapa concluída</span>' : ''}
-        </div>
-        <div class="ci">
+        <ul class="cl">
+          <li class="et">${cx(feitaEtapa)}<strong>${esc(nomeEtapa)}</strong>${
+            tarefas.length ? `<span class="cn">${feitas}/${tarefas.length}</span>` : ''}</li>
           ${tarefas.length
-            ? tarefas.map(t => item(t, !!marcadas[t])).join('')
-            : item(nomeEtapa, feitaEtapa) + '<span class="cv">sem etapas cadastradas nesta costura</span>'}
-        </div>
+            ? tarefas.map(t => `<li class="tf">${cx(!!marcadas[t])}<span>${esc(t)}</span></li>`).join('')
+            : '<li class="tf cv">sem etapas cadastradas nesta costura</li>'}
+        </ul>
       </div>`;
   };
 
