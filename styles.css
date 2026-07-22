@@ -1643,11 +1643,32 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .exp-print-perna .ph .t { font-family: 'IBM Plex Mono', monospace; font-size: 8pt; font-weight: 700; letter-spacing: .06em; }
 .exp-print-perna .ph .r { font-size: 6.5pt; }
 .exp-print-perna .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 9pt; font-weight: 700; }
+/* Cada OS da perna é um quadro fechado — a moldura é o que separa uma OS da
+   seguinte quando as duas trazem tabela de pacotes embaixo. */
+.exp-print-os {
+  border: .75pt solid #000;
+  padding: 2pt 3pt;
+  margin-bottom: 3pt;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.exp-print-os:last-child { margin-bottom: 0; }
+.exp-print-os > .cab {
+  display: flex;
+  align-items: baseline;
+  gap: 4pt;
+  font-size: 7.5pt;
+}
+.exp-print-os > .cab .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; white-space: nowrap; }
+.exp-print-os > .cab .m { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-print-os > .cab .q,
+.exp-print-os > .cab .v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
+.exp-print-os > .sub { font-size: 6pt; color: #333; margin: 1.5pt 0 1pt; }
+.exp-print-os > .pe { font-size: 5.5pt; color: #555; font-style: italic; margin-top: 1pt; }
+.exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 6pt; line-height: 1.25; }
+
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
 .exp-print-perna td { padding: 1px 2px; vertical-align: top; }
-.exp-print-perna td.n { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
-.exp-print-perna td.q,
-.exp-print-perna td.v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
 .exp-print-perna .tot {
   display: flex;
   justify-content: space-between;

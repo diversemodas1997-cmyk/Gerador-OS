@@ -4861,16 +4861,29 @@ function renderPrintPlanoExpedicao() {
     });
   });
 
-  // Bloco de detalhe sob cada OS da folha de OE: cor predominante, pacotes e a
-  // MESMA tabela "Total por tamanho" da folha de OS — quantidade por tamanho,
-  // uma linha por tonalidade com seu total, e o total geral. Os números saem de
-  // totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
+  // Cada OS da folha de OE é um QUADRO fechado: cabeçalho (nº, modelo, peças,
+  // volumes), a conta dos volumes e a tabela de quantidades. Sem a moldura, a
+  // tabela de uma OS encostava na linha da OS seguinte e as duas se liam como
+  // um bloco só — quem confere a carga não achava onde uma acaba e a outra começa.
+  //
+  // Os VOLUMES são mostrados como o "Total por tamanho" da OS os define: um
+  // pacote por tamanho de cada tonalidade, mais um de reposição. A tabela
+  // detalha quantas peças vão em cada pacote — é o que a pessoa que ensaca lê.
+  // Os números saem de totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
   const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
-  const detalheOsPrint = (i) => {
+  const osPrint = (i) => {
     const o = i.os;
-    if (!o) return '';
-    const TT = totaisPorTamanhoTomOS(o);
-    if (!TT.tamanhos.length) return '';
+    const cab = `
+      <div class="cab">
+        <span class="exp-print-box"></span>
+        <span class="n">${esc(i.osNumero)}</span>
+        <span class="m">${esc(i.modelo)}</span>
+        <span class="q">${fmt(i.pecas)} pç</span>
+        <span class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</span>
+      </div>`;
+    const TT = o ? totaisPorTamanhoTomOS(o) : null;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}</div>`;
+
     // Cor predominante = Cor 1 da 1ª variante (a mesma do banner da folha de OS),
     // caindo na cor da 1ª fase do enfesto. Sem o tecido no nome.
     const corPred = corNomeCurto(
@@ -4879,63 +4892,77 @@ function renderPrintPlanoExpedicao() {
       || (o.tecidos || [])[0]?.corNome
       || ''
     );
+
+    // A conta do volume, escrita por extenso: é a mesma regra do planejamento
+    // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
+    // está alocado na carga fica à vista em vez de virar surpresa na doca.
+    const nTam = _expTotalTamanhosGrade(o);
+    const nTons = Math.max(1, TT.tons.length);
+    const volCalc = nTam > 0 ? nTam * nTons + 1 : 0;
+    const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes;
+    const contaVol = volCalc > 0
+      ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição`
+      : `${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}`;
+
+    // Linhas por tonalidade. Sempre sai pelo menos uma: com uma tonalidade só
+    // (ou nenhuma marcada na OS) ela leva a coluna inteira, que é justamente o
+    // detalhe por tamanho e tom que a folha precisa mostrar. Com duas ou mais
+    // tonalidades e nada repartido na OS, a divisão é declarada indefinida em
+    // vez de inventada.
+    const indef = TT.semDigitacao && TT.tons.length > 1;
+    const tomInteiro = TT.semDigitacao && TT.tons.length <= 1;
+    const linhas = TT.tons.length
+      ? TT.linhas.map(L => ({
+          rot: 'Tom ' + L.tom,
+          cels: TT.tamanhos.map(k => (tomInteiro ? TT.colTotal(k) : L.cels[k])),
+          total: tomInteiro ? TT.totalGeral : L.total
+        }))
+      : [{ rot: 'Tom único', cels: TT.tamanhos.map(k => TT.colTotal(k)), total: TT.totalGeral }];
+
     const th = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
     const td = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
     const cabec = TT.tamanhos.map(k => `<th style="${th}text-align:center;">${TAM_LABEL[k]}</th>`).join('');
     const linhaTotalTam = TT.tamanhos.map(k => `<td style="${td}font-weight:700;">${fmt(TT.colTotal(k))}</td>`).join('');
-    // Só entram as tonalidades que têm quantidade repartida — igual à folha de
-    // OS, onde a linha de tom fica vazia até alguém digitar.
-    const linhasTom = TT.linhas.filter(L => L.total > 0).map(L => `
+    const linhasTom = linhas.map(L => `
       <tr>
-        <td style="${td}text-align:left;white-space:nowrap;">Tom ${L.tom}</td>
-        ${TT.tamanhos.map(k => `<td style="${td}">${L.cels[k] > 0 ? fmt(L.cels[k]) : ''}</td>`).join('')}
-        <td style="${td}font-weight:700;background:#eef3ee;">${L.total > 0 ? fmt(L.total) : ''}</td>
+        <td style="${td}text-align:left;white-space:nowrap;">${esc(L.rot)}</td>
+        ${L.cels.map(v => `<td style="${td}">${indef ? '—' : (v > 0 ? fmt(v) : '')}</td>`).join('')}
+        <td style="${td}font-weight:700;background:#eef3ee;">${indef ? '—' : (L.total > 0 ? fmt(L.total) : '')}</td>
       </tr>`).join('');
+
     return `
-      <tr class="exp-print-det">
-        <td></td>
-        <td colspan="4" style="padding:1pt 0 4pt 0;">
-          <div style="font-size:6pt;color:#333;margin-bottom:1pt;">
-            <b>${esc(corPred) || '—'}</b>
-            · ${fmt(i.volumes)} pacote${i.volumes === 1 ? '' : 's'}
-            · ${Math.max(1, TT.tons.length)}${Math.max(1, TT.tons.length) === 1 ? ' tonalidade' : ' tonalidades'}
-          </div>
-          <table style="width:100%;border-collapse:collapse;font-size:6pt;line-height:1.25;">
-            <thead>
-              <tr>
-                <th style="${th}text-align:left;width:22pt;"></th>
-                ${cabec}
-                <th style="${th}text-align:center;background:#eef3ee;">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style="${td}text-align:left;white-space:nowrap;font-weight:700;">Total</td>
-                ${linhaTotalTam}
-                <td style="${td}font-weight:700;background:#eef3ee;">${TT.totalGeral > 0 ? fmt(TT.totalGeral) : ''}</td>
-              </tr>
-              ${linhasTom}
-            </tbody>
-          </table>
-        </td>
-      </tr>`;
+      <div class="exp-print-os">
+        ${cab}
+        <div class="sub">
+          <b>${esc(corPred) || '—'}</b> · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)}</b>` : ''}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="${th}text-align:left;width:26pt;">Pacotes</th>
+              ${cabec}
+              <th style="${th}text-align:center;background:#eef3ee;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="${td}text-align:left;white-space:nowrap;font-weight:700;">Total</td>
+              ${linhaTotalTam}
+              <td style="${td}font-weight:700;background:#eef3ee;">${TT.totalGeral > 0 ? fmt(TT.totalGeral) : ''}</td>
+            </tr>
+            ${linhasTom}
+          </tbody>
+        </table>
+        <div class="pe">Cada célula é um pacote: peças daquele tamanho, naquela tonalidade.${indef ? ' A divisão entre as tonalidades ainda não foi repartida na OS.' : ''}</div>
+      </div>`;
   };
 
   const pernaPrint = (oc, perna) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
-    const linhas = r.itens.length ? `
-      <table>
-        ${r.itens.map(i => `
-          <tr>
-            <td style="width:9pt;"><span class="exp-print-box"></span></td>
-            <td class="n">${esc(i.osNumero)}</td>
-            <td>${esc(i.modelo)}</td>
-            <td class="q">${fmt(i.pecas)} pç</td>
-            <td class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</td>
-          </tr>
-          ${detalheOsPrint(i)}`).join('')}
-      </table>` : '<div class="vazia">Sem OS alocada.</div>';
+    const linhas = r.itens.length
+      ? r.itens.map(osPrint).join('')
+      : '<div class="vazia">Sem OS alocada.</div>';
     return `
       <div class="exp-print-perna">
         <div class="ph">
