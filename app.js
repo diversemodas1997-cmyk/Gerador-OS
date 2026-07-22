@@ -862,14 +862,20 @@ const STATE = {
   //   horaVolta, motivo }
   expedicaoExcecoes: [],
   // ---------- Planejamento diário de operações ----------
-  // O que cada FUNÇÃO cadastrada vai executar em cada dia. Diferente das etapas
-  // do checklist da OS (que registram o que já aconteceu), aqui é planejamento:
-  // marca-se de véspera quem faz o quê, em qual OS e quantas peças.
-  // { id, data:'YYYY-MM-DD', hora, funcaoId, funcaoNome, operacao,
-  //   responsavelId, responsavelNome, osId, osNumero, pecas,
+  // A jornada planejada de cada POSTO (função cadastrada) em cada dia. Uma
+  // operação aqui é o processo completo do posto — início + duração total, com
+  // todas as etapas internas subentendidas — e não uma tarefa por OS. Diferente
+  // do checklist da OS, que registra o que já aconteceu, aqui é o que vai
+  // acontecer e em que horário.
+  // { id, data:'YYYY-MM-DD', funcaoId, funcaoNome, operacao,
+  //   escopo:'completa'|'etapa', etapa, inicio:'HH:MM', duracaoMin,
+  //   responsavelId, responsavelNome, referencia,
   //   status:'pendente'|'andamento'|'feita', obs }
-  // funcaoNome/responsavelNome/osNumero são cópias de exibição: se o cadastro
-  // for renomeado ou excluído, o histórico do dia continua legível.
+  // escopo 'completa' (padrão) = todas as etapas da função embutidas;
+  // 'etapa' = o posto foi planejado por partes e esta linha é só a etapa nomeada.
+  // funcaoNome/responsavelNome são cópias de exibição: se o cadastro for
+  // renomeado ou excluído, o histórico do dia continua legível. referencia é
+  // texto livre (lote, coleção, OSs) — o plano não fica preso a um pedido.
   operacoes: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
@@ -973,6 +979,11 @@ async function loadState() {
     }));
     if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
   }
+  // Migração: operações planejadas no formato antigo (uma linha por OS, com
+  // peças e sem duração) viram jornada de posto.
+  try {
+    if (migrarOperacoesParaJornada()) await saveState('operacoes');
+  } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
   // Migração: remove em definitivo a função "Coordenador de produção
   // Enfestadeira/Esteira de corte" (decisão do admin).
   if (Array.isArray(STATE.funcoes)) {
@@ -4102,13 +4113,19 @@ async function excluirJanelaExp(id) {
 }
 
 /* ========================================================= */
-/*         PLANEJAMENTO DIÁRIO DE OPERAÇÕES (por função)     */
+/*      PLANEJAMENTO DIÁRIO DE OPERAÇÕES (por função)        */
 /* ========================================================= */
-// O campo "Operações" responde a uma pergunta que o checklist da OS não
-// responde: o que CADA FUNÇÃO vai fazer amanhã. O checklist é retrato do que já
-// aconteceu; aqui é a agenda do que vai acontecer. Por isso a chave de
-// organização é a FUNÇÃO cadastrada (Costureira, Cortador…) e não a etapa — é
-// por função que o trabalho do dia é distribuído no chão de fábrica.
+// O campo "Operações" planeja a JORNADA de cada posto de trabalho, não tarefa
+// por tarefa. Uma operação aqui é o processo COMPLETO de uma função no dia —
+// "o operador de enfestadeira começa 07:12 e leva 3h20" já engloba todas as
+// etapas internas dele e o tempo total até concluir. Por isso não há vínculo
+// obrigatório com OS: o que se planeja é o tempo do posto, e o pedido/lote
+// entra só como referência em texto quando faz sentido.
+//
+// As funções correm em PARALELO: cada uma tem a sua faixa no dia, e a barra de
+// tempo desenhada na janela comum do dia é o que deixa ver quem começa quando e
+// onde os postos se cruzam.
+//
 // Reaproveita os helpers de data do planejamento de expedição (_expIso,
 // _expData, _expHoje, _expAddDias, _expRange, _expLabelPeriodo).
 
@@ -4148,6 +4165,51 @@ function opHoje() {
   renderOperacoes();
 }
 
+/* ---------------- tempo ---------------- */
+
+// 'HH:MM' → minutos desde a meia-noite. Vazio/inválido vira null (a operação
+// existe mesmo sem horário definido — fica listada como "sem horário").
+function _opMin(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+// Minutos → 'HH:MM'. Passando da meia-noite marca o dia seguinte: uma jornada
+// que atravessa a virada é real (turno da noite) e não pode virar '01:00' seco.
+function _opHHMM(min) {
+  const v = Math.max(0, Math.round(Number(min) || 0));
+  const dias = Math.floor(v / 1440);
+  const t = v % 1440;
+  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0')
+    + (dias ? ` (+${dias}d)` : '');
+}
+// Minutos → '3h20', '2h', '45min'. É a leitura de duração do chão de fábrica.
+function _opDurTexto(min) {
+  const v = Math.max(0, Math.round(Number(min) || 0));
+  if (!v) return '—';
+  const h = Math.floor(v / 60), m = v % 60;
+  if (!h) return m + 'min';
+  return h + 'h' + (m ? String(m).padStart(2, '0') : '');
+}
+function _opDuracao(op) { return Math.max(0, Math.round(Number(op.duracaoMin) || 0)); }
+function _opInicioMin(op) { return _opMin(op.inicio); }
+// Término = início + duração. null quando a operação não tem horário.
+function _opFimMin(op) {
+  const ini = _opInicioMin(op);
+  return ini == null ? null : ini + _opDuracao(op);
+}
+// Janela da operação em texto: '07:12 → 10:32 · 3h20'.
+function _opJanelaTexto(op) {
+  const ini = _opInicioMin(op);
+  const dur = _opDuracao(op);
+  if (ini == null) return dur ? `sem horário · ${_opDurTexto(dur)}` : 'sem horário';
+  return `${_opHHMM(ini)} → ${_opHHMM(ini + dur)}` + (dur ? ` · ${_opDurTexto(dur)}` : '');
+}
+
+/* ---------------- cadastros ligados ---------------- */
+
 // Função cadastrada de uma operação. Cai no nome copiado no registro quando a
 // função foi excluída do cadastro — o dia planejado não pode virar linha órfã.
 function _opFuncaoNome(op) {
@@ -4159,7 +4221,7 @@ function _opResponsavelNome(op) {
   return p ? p.nome : (op.responsavelNome || '');
 }
 // Pessoas da equipe cuja função principal é esta. É o que faz o select de
-// responsável mostrar só quem realmente faz aquele trabalho.
+// responsável mostrar antes quem realmente ocupa aquele posto.
 function _opPessoasDaFuncao(funcaoNome) {
   const alvo = _normFuncaoNome(funcaoNome);
   const dentro = [], fora = [];
@@ -4169,9 +4231,9 @@ function _opPessoasDaFuncao(funcaoNome) {
   const ord = arr => arr.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
   return { dentro: ord(dentro), fora: ord(fora) };
 }
-// Sugestões de operação para uma função: as responsabilidades/ações cadastradas
-// nela (uma por linha em Funções) + as etapas de produção. Assim o dia a dia é
-// digitado a partir do que já está cadastrado, sem inventar nome novo a cada vez.
+// Sugestões de operação para uma função: as responsabilidades cadastradas nela
+// (uma por linha em Funções) + as etapas de produção. O nome da operação é o do
+// processo inteiro do posto — as sugestões só evitam redigitar tudo todo dia.
 function _opSugestoesOperacao(funcaoId) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
   const acoes = String(f && f.acoes || '').split('\n').map(s => s.trim()).filter(Boolean);
@@ -4181,20 +4243,63 @@ function _opSugestoesOperacao(funcaoId) {
 
 function _opStatus(op) { return _OP_STATUS[op.status] ? op.status : 'pendente'; }
 
-// Operações do período, já ordenadas: data, depois hora (sem hora vai por
-// último no dia), depois função e OS.
+// Operações do período, ordenadas por data, início (sem horário por último),
+// depois função.
 function operacoesNoPeriodo(ini, fim) {
   return (STATE.operacoes || [])
     .filter(o => o.data && o.data >= ini && o.data <= fim)
-    .sort((a, b) =>
-      String(a.data).localeCompare(String(b.data)) ||
-      String(a.hora || '~').localeCompare(String(b.hora || '~')) ||
-      _opFuncaoNome(a).localeCompare(_opFuncaoNome(b)) ||
-      String(a.osNumero || '').localeCompare(String(b.osNumero || ''), undefined, { numeric: true })
-    );
+    .sort((a, b) => {
+      const c = String(a.data).localeCompare(String(b.data));
+      if (c) return c;
+      const ia = _opInicioMin(a), ib = _opInicioMin(b);
+      if (ia == null && ib != null) return 1;
+      if (ib == null && ia != null) return -1;
+      if (ia != null && ib != null && ia !== ib) return ia - ib;
+      return _opFuncaoNome(a).localeCompare(_opFuncaoNome(b));
+    });
+}
+
+// Operações da MESMA função que se sobrepõem no tempo. O posto é um só: duas
+// jornadas cruzadas no mesmo operador é erro de planejamento, e é o aviso que
+// mais importa numa agenda de tempo.
+function _opConflitos(lista) {
+  const ids = new Set();
+  const porFuncao = new Map();
+  lista.forEach(op => {
+    if (_opInicioMin(op) == null || !_opDuracao(op)) return;
+    const k = op.funcaoId || _opFuncaoNome(op);
+    if (!porFuncao.has(k)) porFuncao.set(k, []);
+    porFuncao.get(k).push(op);
+  });
+  porFuncao.forEach(arr => {
+    arr.sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
+    for (let i = 1; i < arr.length; i++) {
+      if (_opInicioMin(arr[i]) < _opFimMin(arr[i - 1])) { ids.add(arr[i].id); ids.add(arr[i - 1].id); }
+    }
+  });
+  return ids;
 }
 
 /* ---------------- render da agenda ---------------- */
+
+// Janela de tempo comum do dia (minutos), arredondada para horas cheias. É o
+// eixo em que TODAS as faixas são desenhadas — é a base comum que deixa comparar
+// os postos entre si.
+function _opJanelaDoDia(ops) {
+  let ini = null, fim = null;
+  ops.forEach(op => {
+    const i = _opInicioMin(op);
+    if (i == null) return;
+    const f = i + _opDuracao(op);
+    if (ini == null || i < ini) ini = i;
+    if (fim == null || f > fim) fim = f;
+  });
+  if (ini == null) return null;
+  ini = Math.floor(ini / 60) * 60;
+  fim = Math.ceil(fim / 60) * 60;
+  if (fim - ini < 240) fim = ini + 240;   // no mínimo 4h de eixo, senão as barras ficam sem escala
+  return { ini, fim };
+}
 
 function renderOperacoes() {
   const cont = document.getElementById('operacoes-painel');
@@ -4218,42 +4323,75 @@ function renderOperacoes() {
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn primary" onclick="abrirModalOperacao()">+ Nova operação</button>
-        ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado as operações do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
+        ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado a jornada do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
       </div>
     </div>`;
 
-  let pecas = 0, pendentes = 0, feitas = 0;
-  const funcoesSet = new Set(), osSet = new Set();
+  const conflitos = _opConflitos(ops);
+  let minutos = 0, pendentes = 0, feitas = 0;
+  const funcoesSet = new Set();
   ops.forEach(o => {
-    pecas += Number(o.pecas) || 0;
-    const st = _opStatus(o);
-    if (st === 'feita') feitas++; else pendentes++;
+    minutos += _opDuracao(o);
+    if (_opStatus(o) === 'feita') feitas++; else pendentes++;
     funcoesSet.add(_opFuncaoNome(o));
-    if (o.osNumero) osSet.add(o.osNumero);
   });
 
   const resumo = `
     <div class="exp-resumo">
       <div class="item"><div class="num">${fmt(ops.length)}</div><div class="lbl">Operações no período</div></div>
+      <div class="item"><div class="num">${fmt(funcoesSet.size)}</div><div class="lbl">Postos / funções</div></div>
+      <div class="item"><div class="num">${esc(_opDurTexto(minutos))}</div><div class="lbl">Tempo planejado</div></div>
       <div class="item ${pendentes ? 'alerta' : ''}"><div class="num">${fmt(pendentes)}</div><div class="lbl">A executar</div></div>
       <div class="item"><div class="num">${fmt(feitas)}</div><div class="lbl">Concluídas</div></div>
-      <div class="item"><div class="num">${fmt(pecas)}</div><div class="lbl">Peças planejadas</div></div>
-      <div class="item"><div class="num">${fmt(funcoesSet.size)}</div><div class="lbl">Funções envolvidas</div></div>
-      <div class="item"><div class="num">${fmt(osSet.size)}</div><div class="lbl">OS envolvidas</div></div>
+      <div class="item ${conflitos.size ? 'alerta' : ''}"><div class="num">${fmt(conflitos.size)}</div><div class="lbl">Em sobreposição</div></div>
     </div>`;
 
-  // Uma linha = uma operação. O status é o próprio botão: clicar avança o ciclo,
-  // que é como o encarregado usa isso ao longo do dia.
+  // Régua de horas do dia: o eixo em que as barras são lidas. O passo cresce
+  // junto com a janela para os rótulos nunca se encavalarem.
+  const reguaHtml = jan => {
+    const larg = jan.fim - jan.ini;
+    const passo = larg <= 480 ? 60 : (larg <= 960 ? 120 : 180);
+    const ticks = [];
+    for (let m = jan.ini; m <= jan.fim; m += passo) {
+      const pos = (m - jan.ini) / larg * 100;
+      // Os rótulos das pontas encostam na borda: centralizá-los cortaria metade
+      // do texto para fora da faixa.
+      const ponta = pos < 1 ? 'ini' : (pos > 99 ? 'fim' : '');
+      const anc = ponta === 'ini' ? 'translateX(0)' : (ponta === 'fim' ? 'translateX(-100%)' : 'translateX(-50%)');
+      const mk = ponta === 'ini' ? '0' : (ponta === 'fim' ? '100%' : '50%');
+      ticks.push(`<span class="op-tick" style="left:${pos.toFixed(3)}%;transform:${anc};--mk:${mk}">${esc(_opHHMM(m))}</span>`);
+    }
+    return `<div class="op-regua"><div class="op-regua-lbl">Horário do dia</div><div class="op-regua-eixo">${ticks.join('')}</div></div>`;
+  };
+
+  // Barra da operação dentro da janela do dia. É onde "07:12 por 3h20" vira
+  // uma coisa que se enxerga ao lado dos outros postos.
+  const barraHtml = (op, jan) => {
+    const i = _opInicioMin(op), dur = _opDuracao(op);
+    if (i == null || !dur) return '';
+    const larg = jan.fim - jan.ini;
+    const left = (i - jan.ini) / larg * 100;
+    const width = Math.max(1.2, dur / larg * 100);
+    const st = _opStatus(op);
+    return `<div class="op-bar ${st}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%"
+      title="${esc(op.operacao)} · ${esc(_opJanelaTexto(op))}"><span>${esc(op.operacao)}</span></div>`;
+  };
+
   const linhaHtml = op => {
     const st = _opStatus(op);
     const resp = _opResponsavelNome(op);
+    const conflito = conflitos.has(op.id);
+    // O selo distingue as duas naturezas: processo inteiro do posto (o padrão,
+    // sem selo) e etapa avulsa planejada à parte.
+    const selo = op.escopo === 'etapa'
+      ? ` <span class="exp-badge info" title="Planejada como etapa isolada da função${op.etapa && op.etapa !== op.operacao ? ': ' + op.etapa : ''}">etapa</span>`
+      : '';
     return `
       <div class="op-row ${st === 'feita' ? 'feita' : ''}">
-        <span class="hora">${esc(op.hora) || '—'}</span>
-        <span class="os">${esc(op.osNumero) || '—'}</span>
-        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
+        <span class="janela">${esc(_opJanelaTexto(op))}</span>
+        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
-        <span class="qtd">${op.pecas ? fmt(op.pecas) + ' pç' : '—'}</span>
+        <span class="ref">${esc(op.referencia) || ''}</span>
         <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
         <span class="admin-only op-acoes">
           <button title="Editar esta operação" onclick="abrirModalOperacao('${esc(op.id)}')">✎</button>
@@ -4262,44 +4400,64 @@ function renderOperacoes() {
       </div>`;
   };
 
-  // Dentro do dia, agrupa por FUNÇÃO: é assim que a folha do dia é lida — cada
-  // função olha o seu bloco.
+  // Um bloco por FUNÇÃO dentro do dia: as funções correm em paralelo, então
+  // cada uma tem a sua faixa própria no mesmo eixo de horas.
   const diaHtml = (data, doDia) => {
+    const jan = _opJanelaDoDia(doDia);
     const grupos = new Map();
     doDia.forEach(op => {
       const nome = _opFuncaoNome(op);
-      const g = grupos.get(nome) || { nome, itens: [], pecas: 0, pend: 0 };
+      const g = grupos.get(nome) || { nome, itens: [], minutos: 0, pend: 0 };
       g.itens.push(op);
-      g.pecas += Number(op.pecas) || 0;
+      g.minutos += _opDuracao(op);
       if (_opStatus(op) !== 'feita') g.pend++;
       grupos.set(nome, g);
     });
+
     const blocos = Array.from(grupos.values())
-      .sort((a, b) => a.nome.localeCompare(b.nome))
-      .map(g => `
+      .sort((a, b) => {
+        // Ordena as faixas por quem começa antes — a leitura natural do dia.
+        const ia = Math.min(...a.itens.map(o => _opInicioMin(o) ?? 99999));
+        const ib = Math.min(...b.itens.map(o => _opInicioMin(o) ?? 99999));
+        return ia - ib || a.nome.localeCompare(b.nome);
+      })
+      .map(g => {
+        const comHora = g.itens.filter(o => _opInicioMin(o) != null);
+        const jIni = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
+        const jFim = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
+        return `
         <div class="op-func">
           <div class="op-func-head">
             <div class="op-func-nome">${esc(g.nome)}</div>
             <div class="op-func-tot">
-              ${g.itens.length} ${g.itens.length === 1 ? 'operação' : 'operações'}
-              ${g.pecas ? ` · ${fmt(g.pecas)} pç` : ''}
+              ${jIni != null ? `<b>${esc(_opHHMM(jIni))} → ${esc(_opHHMM(jFim))}</b> · ` : ''}${esc(_opDurTexto(g.minutos))} de operação
+              ${g.itens.length > 1 ? ` · ${g.itens.length} blocos` : ''}
               ${g.pend ? ` · <span class="exp-badge baixo">${g.pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
             </div>
           </div>
+          ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${g.itens.map(op => barraHtml(op, jan)).join('')}</div></div>` : ''}
           ${g.itens.map(linhaHtml).join('')}
-        </div>`).join('');
-    const totPecas = doDia.reduce((s, o) => s + (Number(o.pecas) || 0), 0);
+        </div>`;
+      }).join('');
+
+    const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
+    const comHora = doDia.filter(o => _opInicioMin(o) != null);
+    const abre = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
+    const fecha = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
     return `
       <div class="card exp-ocor">
         <div class="exp-ocor-head">
           <div>
             <div class="exp-ocor-data">${_EXP_DIAS_CURTO[_expData(data).getDay()]} · ${esc(formatDate(data))}${data === _expHoje() ? ' <span class="exp-badge info">hoje</span>' : ''}</div>
-            <div class="exp-ocor-nome">${doDia.length} ${doDia.length === 1 ? 'operação planejada' : 'operações planejadas'}${totPecas ? ` · ${fmt(totPecas)} peças` : ''} · ${grupos.size} ${grupos.size === 1 ? 'função' : 'funções'}</div>
+            <div class="exp-ocor-nome">
+              ${abre != null ? `Jornada <b>${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}</b> · ` : ''}${grupos.size} ${grupos.size === 1 ? 'posto' : 'postos'} em paralelo · ${esc(_opDurTexto(totMin))} de operação somados
+            </div>
           </div>
           <div class="admin-only">
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
           </div>
         </div>
+        ${jan ? reguaHtml(jan) : ''}
         ${blocos}
       </div>`;
   };
@@ -4316,17 +4474,17 @@ function renderOperacoes() {
     <div class="card">
       <div class="empty" style="padding:24px 0;text-align:center;">
         ${semFuncoes
-          ? 'Nenhuma <b>função</b> cadastrada ainda. O planejamento das operações é organizado por função — cadastre-as em <a href="#" onclick="goto(\'cad-funcoes\'); return false;">Funções</a> antes de começar.'
+          ? 'Nenhuma <b>função</b> cadastrada ainda. O planejamento é feito por posto de trabalho — cadastre as funções em <a href="#" onclick="goto(\'cad-funcoes\'); return false;">Funções</a> antes de começar.'
           : 'Nenhuma operação planejada neste período. Use <b>+ Nova operação</b> para montar o dia.'}
       </div>
     </div>`;
 
   const comoFunciona = `
     <div class="info-box no-print" style="font-size:12px;">
-      Planeje aqui o que cada <b>função</b> executa em cada dia. As opções de operação vêm das
-      <b>responsabilidades cadastradas na função</b> e das etapas de produção; o responsável sai da
-      <b>Equipe</b>, filtrado pela função escolhida. Clique no status da linha para ir de
-      <b>pendente</b> a <b>em andamento</b> e a <b>feita</b>.
+      Planeje a <b>jornada de cada posto</b>: a operação é o processo completo daquela função —
+      informar que a enfestadeira começa às <b>07:12</b> e leva <b>3h20</b> já engloba todas as etapas
+      internas e o tempo total até concluir. As funções correm <b>em paralelo</b>, cada uma na sua faixa
+      do mesmo eixo de horas. Clique no status para ir de <b>pendente</b> a <b>em andamento</b> e a <b>feita</b>.
     </div>`;
 
   cont.innerHTML = toolbar + comoFunciona + resumo + (cards || vazio);
@@ -4350,30 +4508,28 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
     .slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')))
     .map(f => `<option value="${esc(f.id)}" ${f.id === funcaoSel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
 
-  // OSs com peças: as em produção primeiro (ainda no fluxo, é onde o trabalho do
-  // dia acontece), as demais depois — planejar sobre OS já finalizada é raro,
-  // mas retrabalho existe.
-  const emFluxo = [], outras = [];
-  (STATE.ordens || []).forEach(o => {
-    const pecas = _expPecasOS(o);
-    if (!(pecas > 0)) return;
-    const label = `${o.os || '(sem nº)'} · ${o.modeloNome || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
-    (faseAtualOS(o) >= 0 ? emFluxo : outras).push({ id: o.id, label });
-  });
-  const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
-  const optOS = arr => ordena(arr).map(x =>
-    `<option value="${esc(x.id)}" ${op && x.id === op.osId ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+  const dur = op ? _opDuracao(op) : 0;
+  const durH = op ? Math.floor(dur / 60) : '';
+  const durM = op ? (dur % 60) : '';
+  const escopo = op && op.escopo === 'etapa' ? 'etapa' : 'completa';
 
   const statusOpts = Object.entries(_OP_STATUS).map(([k, v]) =>
     `<option value="${k}" ${op && _opStatus(op) === k ? 'selected' : ''}>${esc(v.lbl)}</option>`).join('');
+
+  // Sugestões de referência: números das OS que estão no fluxo. É só atalho de
+  // digitação — o campo é livre e aceita lote, coleção, o que o dia pedir.
+  const refs = (STATE.ordens || [])
+    .filter(o => faseAtualOS(o) >= 0 && (o.os || '').toString().trim())
+    .map(o => `${o.os}${o.modeloNome ? ' · ' + o.modeloNome : ''}`)
+    .sort((a, b) => String(b).localeCompare(String(a), undefined, { numeric: true }))
+    .slice(0, 60);
 
   document.getElementById('modal-op-title').textContent = op ? 'Editar operação do dia' : 'Nova operação do dia';
   document.getElementById('modal-op-fields').innerHTML = `
     <div class="form-grid cols-2">
       <div class="field"><label>Data *</label><input type="date" id="op-data" value="${esc(data)}"></div>
-      <div class="field"><label>Hora (opcional)</label><input type="time" id="op-hora" value="${esc(op ? (op.hora || '') : '')}"><div class="field-hint">Só ordena as operações dentro do dia.</div></div>
       <div class="field">
-        <label>Função *</label>
+        <label>Função / posto *</label>
         <select id="op-funcao" onchange="_opTrocouFuncao()">
           <option value="">— selecione —</option>
           ${funcoesOpts}
@@ -4381,40 +4537,66 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
         <div class="field-hint">Cadastre em <a href="#" onclick="closeModal('modal-op'); goto('cad-funcoes'); return false;">Funções</a>. As responsabilidades da função viram sugestões de operação.</div>
       </div>
       <div class="field">
+        <label>Abrangência *</label>
+        <select id="op-escopo" onchange="_opTrocouEscopo()">
+          <option value="completa" ${escopo !== 'etapa' ? 'selected' : ''}>Processo completo do posto</option>
+          <option value="etapa" ${escopo === 'etapa' ? 'selected' : ''}>Uma etapa só</option>
+        </select>
+        <div class="field-hint">O padrão engloba todas as etapas da função. Escolha <b>uma etapa só</b> quando o posto for planejado por partes.</div>
+      </div>
+      <div class="field hidden" id="op-wrap-etapa">
+        <label>Etapa *</label>
+        <select id="op-etapa" onchange="_opEscolheuEtapa()"></select>
+        <div class="field-hint">Responsabilidades da função e etapas de produção cadastradas.</div>
+      </div>
+      <div class="field full">
+        <label>Operação *</label>
+        <input type="text" id="op-operacao" list="op-sugestoes" value="${esc(op ? (op.operacao || '') : '')}" placeholder="Ex.: Enfesto e corte do dia" autocomplete="off">
+        <datalist id="op-sugestoes"></datalist>
+        <div class="field-hint" id="op-sug-hint">Descreva a operação inteira do posto — as etapas internas ficam subentendidas.</div>
+      </div>
+      <div class="field">
+        <label>Início *</label>
+        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opAtualizarJanela()">
+        <div class="field-hint">Hora planejada para o posto começar.</div>
+      </div>
+      <div class="field">
+        <label>Duração total *</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" min="0" step="1" id="op-dur-h" value="${esc(durH)}" placeholder="0" oninput="_opAtualizarJanela()" style="width:70px;">
+          <span style="font-size:12px;color:var(--ink-3);">h</span>
+          <input type="number" min="0" max="59" step="5" id="op-dur-m" value="${esc(durM)}" placeholder="0" oninput="_opAtualizarJanela()" style="width:70px;">
+          <span style="font-size:12px;color:var(--ink-3);">min</span>
+        </div>
+        <div class="field-hint">Tempo total até concluir, com todas as etapas do posto incluídas.</div>
+      </div>
+      <div class="field">
         <label>Responsável</label>
         <select id="op-responsavel"></select>
         <div class="field-hint">Pessoas da <b>Equipe</b> com esta função aparecem primeiro.</div>
       </div>
-      <div class="field full">
-        <label>Operação *</label>
-        <input type="text" id="op-operacao" list="op-sugestoes" value="${esc(op ? (op.operacao || '') : '')}" placeholder="Ex.: Costurar mangas" autocomplete="off">
-        <datalist id="op-sugestoes"></datalist>
-        <div class="field-hint" id="op-sug-hint">Escolha uma sugestão da função ou digite livremente.</div>
+      <div class="field">
+        <label>Referência (opcional)</label>
+        <input type="text" id="op-referencia" list="op-refs" value="${esc(op ? (op.referencia || '') : '')}" placeholder="Ex.: lote inverno, OS 1042/1051" autocomplete="off">
+        <datalist id="op-refs">${refs.map(r => `<option value="${esc(r)}"></option>`).join('')}</datalist>
+        <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Só para situar, não amarra o plano.</div>
       </div>
-      <div class="field full">
-        <label>OS *</label>
-        <input type="search" id="op-os-busca" oninput="_opFiltrarOS()" placeholder="Buscar pelo número da OS ou modelo…" style="margin-bottom:6px;" autocomplete="off">
-        <select id="op-os" onchange="_opAtualizarInfoOS()">
-          <option value="">— selecione —</option>
-          ${emFluxo.length ? `<optgroup label="Em produção">${optOS(emFluxo)}</optgroup>` : ''}
-          ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
-        </select>
-        <div class="field-hint" id="op-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>
-      </div>
-      <div class="field"><label>Peças</label><input type="number" min="0" step="1" id="op-pecas" value="${esc(op ? (op.pecas || '') : '')}" placeholder="Ex.: 160"><div class="field-hint">Em branco puxa o total de peças da OS.</div></div>
       <div class="field"><label>Status</label><select id="op-status">${statusOpts}</select></div>
-      <div class="field full"><label>Observação</label><input type="text" id="op-obs" value="${esc(op ? (op.obs || '') : '')}" placeholder="Ex.: prioridade, sai na expedição da tarde"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="op-obs" value="${esc(op ? (op.obs || '') : '')}" placeholder="Ex.: depende da entrega do tecido"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;" id="op-info">Selecione a OS para ver as peças.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="op-info">Informe o início e a duração para ver o término.</div>`;
 
-  _opTrocouFuncao(op ? (op.responsavelId || '') : '');
-  _opAtualizarInfoOS();
+  _opTrocouFuncao(op ? (op.responsavelId || '') : '', op ? (op.etapa || '') : '');
+  const selE = document.getElementById('op-etapa');
+  if (selE) selE.dataset.anterior = op ? (op.etapa || '') : '';
+  _opAtualizarJanela();
   openModal('modal-op');
 }
 
-// Função escolhida muda duas coisas: as sugestões de operação e a lista de
-// responsáveis. Mantém a pessoa já selecionada quando ela continua válida.
-function _opTrocouFuncao(responsavelPre = null) {
+// Função escolhida muda três coisas: as sugestões de operação, as etapas
+// oferecidas quando o plano é de uma etapa só, e a lista de responsáveis.
+// Mantém a pessoa e a etapa já selecionadas quando continuam válidas.
+function _opTrocouFuncao(responsavelPre = null, etapaPre = null) {
   const selF = document.getElementById('op-funcao');
   const selR = document.getElementById('op-responsavel');
   const dl = document.getElementById('op-sugestoes');
@@ -4428,11 +4610,21 @@ function _opTrocouFuncao(responsavelPre = null) {
   dl.innerHTML = sugs.map(s => `<option value="${esc(s)}"></option>`).join('');
   if (hint) {
     const nAcoes = String(funcao && funcao.acoes || '').split('\n').filter(s => s.trim()).length;
-    hint.innerHTML = !funcaoId
-      ? 'Escolha a função para ver as sugestões cadastradas nela.'
-      : (nAcoes
-        ? `${nAcoes} responsabilidade(s) cadastrada(s) em <b>${esc(funcao.nome)}</b> + as etapas de produção. Digite para ver as sugestões — texto livre também vale.`
-        : `A função <b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são só as etapas de produção. Você pode digitar livremente.`);
+    hint.innerHTML = 'Descreva a operação inteira do posto — as etapas internas ficam subentendidas. '
+      + (!funcaoId
+        ? 'Escolha a função para ver as sugestões cadastradas nela.'
+        : (nAcoes
+          ? `${nAcoes} responsabilidade(s) de <b>${esc(funcao.nome)}</b> disponíveis como sugestão.`
+          : `<b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são as etapas de produção.`));
+  }
+
+  // Etapas ofertadas quando o plano é de uma etapa só: as mesmas sugestões, mas
+  // como lista fechada — aqui a escolha precisa ser uma etapa nomeada, não texto.
+  const selE = document.getElementById('op-etapa');
+  if (selE) {
+    const etapaManter = etapaPre != null ? etapaPre : selE.value;
+    selE.innerHTML = '<option value="">— selecione —</option>'
+      + sugs.map(s => `<option value="${esc(s)}" ${s === etapaManter ? 'selected' : ''}>${esc(s)}</option>`).join('');
   }
 
   const { dentro, fora } = _opPessoasDaFuncao(funcao ? funcao.nome : '');
@@ -4440,46 +4632,63 @@ function _opTrocouFuncao(responsavelPre = null) {
   selR.innerHTML = '<option value="">— a definir —</option>'
     + (dentro.length ? `<optgroup label="${esc(funcao ? funcao.nome : 'Da função')}">${dentro.map(opt).join('')}</optgroup>` : '')
     + (fora.length ? `<optgroup label="Outras pessoas">${fora.map(opt).join('')}</optgroup>` : '');
+
+  _opTrocouEscopo();
 }
 
-// Mesma busca do select de OS do planejamento de expedição: esconde as options
-// que não batem, some com grupo vazio e seleciona quando sobra uma só.
-function _opFiltrarOS() {
-  const sel = document.getElementById('op-os');
-  const busca = document.getElementById('op-os-busca');
-  if (!sel || !busca) return;
-  const q = _normNome(busca.value);
-  let visiveis = 0, unica = null;
-  sel.querySelectorAll('option').forEach(o => {
-    if (!o.value) return;
-    const bate = !q || _normNome(o.textContent).includes(q);
-    o.hidden = !bate;
-    if (bate) { visiveis++; unica = o; }
-  });
-  sel.querySelectorAll('optgroup').forEach(g => {
-    g.hidden = !Array.from(g.querySelectorAll('option')).some(o => !o.hidden);
-  });
-  if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
-  if (q && visiveis === 1 && unica) sel.value = unica.value;
-  const aviso = document.getElementById('op-os-vazio');
-  if (aviso) aviso.style.display = (q && visiveis === 0) ? 'block' : 'none';
-  _opAtualizarInfoOS();
-}
-
-function _opAtualizarInfoOS() {
-  const osId = document.getElementById('op-os')?.value || '';
-  const info = document.getElementById('op-info');
-  const campo = document.getElementById('op-pecas');
-  const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
-  if (!o) { if (info) info.textContent = 'Selecione a OS para ver as peças.'; return; }
-  const pecas = _expPecasOS(o);
-  const idx = faseAtualOS(o);
-  const fase = idx >= 0 ? FASES_ESTOQUE[idx] : null;
-  if (campo && !campo.value && pecas) campo.value = pecas;   // sugere, nunca sobrescreve
-  if (info) {
-    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
-      + (fase ? ` Hoje o volume está em <b>${esc(fase.titulo)}</b>.` : ' Fora do fluxo em processo (finalizada ou sem etapa marcada).');
+// Mostra/esconde o seletor de etapa conforme a abrangência escolhida.
+function _opTrocouEscopo() {
+  const escopo = document.getElementById('op-escopo')?.value || 'completa';
+  const wrap = document.getElementById('op-wrap-etapa');
+  const hint = document.getElementById('op-sug-hint');
+  if (wrap) wrap.classList.toggle('hidden', escopo !== 'etapa');
+  if (hint && escopo === 'etapa') {
+    hint.innerHTML = 'Planejando <b>uma etapa só</b>: escolha a etapa ao lado. O nome dela vem para cá e pode ser detalhado.';
+  } else if (escopo !== 'etapa') {
+    _opTrocouFuncaoHint();
   }
+}
+// Restaura o texto de ajuda do campo Operação para o modo "processo completo".
+function _opTrocouFuncaoHint() {
+  const hint = document.getElementById('op-sug-hint');
+  const funcaoId = document.getElementById('op-funcao')?.value || '';
+  const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
+  if (!hint) return;
+  const nAcoes = String(funcao && funcao.acoes || '').split('\n').filter(s => s.trim()).length;
+  hint.innerHTML = 'Descreva a operação inteira do posto — as etapas internas ficam subentendidas. '
+    + (!funcaoId
+      ? 'Escolha a função para ver as sugestões cadastradas nela.'
+      : (nAcoes
+        ? `${nAcoes} responsabilidade(s) de <b>${esc(funcao.nome)}</b> disponíveis como sugestão.`
+        : `<b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são as etapas de produção.`));
+}
+
+// Escolher a etapa preenche o nome da operação. Só sobrescreve campo vazio ou
+// que ainda tem o nome da etapa anterior — texto digitado à mão fica de pé.
+function _opEscolheuEtapa() {
+  const selE = document.getElementById('op-etapa');
+  const campo = document.getElementById('op-operacao');
+  if (!selE || !campo) return;
+  const anterior = selE.dataset.anterior || '';
+  if (!campo.value.trim() || campo.value.trim() === anterior) campo.value = selE.value;
+  selE.dataset.anterior = selE.value;
+}
+
+// Mostra ao vivo o término calculado — é o número que o planejador confere.
+function _opAtualizarJanela() {
+  const info = document.getElementById('op-info');
+  if (!info) return;
+  const ini = _opMin(document.getElementById('op-inicio')?.value);
+  const dur = _opDuracaoDoForm();
+  if (ini == null) { info.textContent = 'Informe a hora de início para ver o término.'; return; }
+  if (!dur) { info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>. Informe a duração total para calcular o término.`; return; }
+  info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>, leva <b>${esc(_opDurTexto(dur))}</b> e conclui às <b>${esc(_opHHMM(ini + dur))}</b>.`
+    + (ini + dur > 1440 ? ' <span class="exp-badge baixo">atravessa a meia-noite</span>' : '');
+}
+function _opDuracaoDoForm() {
+  const h = parseInt(document.getElementById('op-dur-h')?.value, 10) || 0;
+  const m = parseInt(document.getElementById('op-dur-m')?.value, 10) || 0;
+  return Math.max(0, h) * 60 + Math.max(0, m);
 }
 
 async function salvarModalOperacao() {
@@ -4491,12 +4700,18 @@ async function salvarModalOperacao() {
   if (!data) return toast('Informe a data da operação', 'err');
   const funcaoId = v('op-funcao');
   const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
-  if (!funcao) return toast('Escolha a função que vai executar', 'err');
-  const operacao = v('op-operacao').trim();
+  if (!funcao) return toast('Escolha a função / posto', 'err');
+  const escopo = v('op-escopo') === 'etapa' ? 'etapa' : 'completa';
+  const etapa = escopo === 'etapa' ? v('op-etapa').trim() : '';
+  if (escopo === 'etapa' && !etapa) return toast('Escolha a etapa que será executada', 'err');
+  // Etapa escolhida e nome livre em branco: o nome da etapa já descreve a
+  // operação — não faz sentido exigir que o usuário redigite o mesmo texto.
+  const operacao = v('op-operacao').trim() || etapa;
   if (!operacao) return toast('Descreva a operação', 'err');
-  const osId = v('op-os');
-  const os = (STATE.ordens || []).find(o => o.id === osId);
-  if (!os) return toast('Escolha a OS da operação', 'err');
+  const inicio = v('op-inicio');
+  if (_opMin(inicio) == null) return toast('Informe a hora de início', 'err');
+  const duracaoMin = _opDuracaoDoForm();
+  if (!duracaoMin) return toast('Informe a duração total da operação', 'err');
 
   const responsavelId = v('op-responsavel');
   const pessoa = (STATE.equipe || []).find(p => p.id === responsavelId);
@@ -4504,13 +4719,12 @@ async function salvarModalOperacao() {
 
   const campos = {
     data,
-    hora: v('op-hora'),
     funcaoId, funcaoNome: funcao.nome,
-    operacao,
+    operacao, escopo, etapa,
+    inicio, duracaoMin,
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
-    osId: os.id, osNumero: (os.os || '').toString().trim(),
-    pecas: Math.max(0, parseInt(v('op-pecas'), 10) || 0),
+    referencia: v('op-referencia').trim(),
     status,
     obs: v('op-obs').trim()
   };
@@ -4555,9 +4769,10 @@ async function excluirOperacao(id) {
   renderOperacoes();
 }
 
-// Repete no dia mostrado o que estava planejado no último dia com operações
-// antes dele. Copia sempre como PENDENTE (é plano novo, não histórico) e pula o
-// que já existe no destino — clicar duas vezes não duplica a agenda.
+// Repete no dia mostrado a jornada do último dia planejado antes dele. A jornada
+// dos postos é estável — o dia seguinte quase sempre começa igual. Copia sempre
+// como PENDENTE (é plano novo, não histórico) e pula o que já existe no destino,
+// então clicar duas vezes não duplica a agenda.
 async function copiarOperacoesDoDiaAnterior() {
   if (!exigirAdmin('planejar operações')) return;
   if (opPlanoModo !== 'dia') return toast('Mude para o modo Diário para repetir um dia', 'err');
@@ -4566,7 +4781,7 @@ async function copiarOperacoesDoDiaAnterior() {
   const origem = anteriores.length ? anteriores[anteriores.length - 1] : '';
   if (!origem) return toast('Não há dia anterior com operações planejadas', 'err');
 
-  const chave = o => [o.funcaoId, o.osId, _normNome(o.operacao), o.responsavelId || ''].join('|');
+  const chave = o => [o.funcaoId, _normNome(o.operacao), o.inicio || '', _opDuracao(o)].join('|');
   const jaTem = new Set((STATE.operacoes || []).filter(o => o.data === destino).map(chave));
   const novas = (STATE.operacoes || [])
     .filter(o => o.data === origem && !jaTem.has(chave(o)))
@@ -4577,6 +4792,32 @@ async function copiarOperacoesDoDiaAnterior() {
   await saveState('operacoes');
   toast(`${novas.length} operação(ões) copiada(s) de ${formatDate(origem)}`, 'ok');
   renderOperacoes();
+}
+
+// Operações gravadas no primeiro desenho do campo (uma linha por OS, com peças
+// e sem horário) viram o formato de jornada: a OS passa a ser só referência e a
+// operação fica sem horário até alguém definir início e duração.
+function migrarOperacoesParaJornada() {
+  const lista = STATE.operacoes;
+  if (!Array.isArray(lista) || !lista.length) return false;
+  let mudou = false;
+  lista.forEach(op => {
+    if (op.escopo == null) { op.escopo = 'completa'; op.etapa = ''; mudou = true; }
+    if (op.duracaoMin == null) { op.duracaoMin = 0; mudou = true; }
+    if (op.inicio == null) { op.inicio = op.hora || ''; mudou = true; }
+    if (op.referencia == null) {
+      const partes = [];
+      if (op.osNumero) partes.push('OS ' + op.osNumero);
+      if (op.pecas) partes.push(op.pecas + ' pç');
+      op.referencia = partes.join(' · ');
+      mudou = true;
+    }
+    if ('hora' in op) { delete op.hora; mudou = true; }
+    if ('osId' in op) { delete op.osId; mudou = true; }
+    if ('osNumero' in op) { delete op.osNumero; mudou = true; }
+    if ('pecas' in op) { delete op.pecas; mudou = true; }
+  });
+  return mudou;
 }
 
 /* ---------------- folha impressa do plano ---------------- */
