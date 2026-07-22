@@ -7091,9 +7091,17 @@ function calcularLimiteCamadas() {
     const sel = r.querySelector('.tec-sel');
     if (!sel || !sel.value) return;
     const tec = STATE.tecidos.find(t => t.id === sel.value);
-    if (!tec || !tec.categoria) return;
-    const lim = LIMITE_CAMADAS[tec.categoria];
-    if (lim < limite) { limite = lim; categoriaRestritiva = tec.categoria; }
+    if (!tec) return;
+    // categoriaEfetivaTecido, não tec.categoria cru: as ribanas do cadastro têm
+    // categoria VAZIA e são reconhecidas pelo nome. Lendo o campo cru, elas eram
+    // puladas aqui — o limite saía calculado só com os demais tecidos, enquanto o
+    // cálculo das camadas e o multiplicador já as tratavam como ribana. Duas
+    // fontes de verdade para a mesma pergunta.
+    const cat = categoriaEfetivaTecido(tec);
+    if (!cat) return;
+    const lim = LIMITE_CAMADAS[cat];
+    if (!(lim > 0)) return;
+    if (lim < limite) { limite = lim; categoriaRestritiva = cat; }
   });
   return { limite, categoriaRestritiva };
 }
