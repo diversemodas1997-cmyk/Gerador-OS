@@ -898,6 +898,12 @@ const STATE = {
 // republicar o snapshot, senão o Estoque continua com o SKU antigo.
 const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos', 'modelos', 'cores'];
 
+// Chaves que mudam o conteúdo da OE. Gancho no saveState em vez de espalhar a
+// chamada por cada função que mexe no plano (alocar, mover, excluir, cancelar,
+// remarcar, recalcular volumes, marcar Ensaque na OS…): todo caminho passa por
+// aqui, inclusive os que vierem depois.
+const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes'];
+
 async function saveState(key) {
   try {
     await DB.set(key, JSON.stringify(STATE[key]));
@@ -905,6 +911,12 @@ async function saveState(key) {
     // que altera os saldos. Best-effort; não bloqueia nem quebra o save.
     if (_CHAVES_CONTAB_SNAPSHOT.includes(key) && typeof construirContabSnapshot === 'function') {
       atualizarContabSnapshot();
+    }
+    // Mexeu no plano de expedição: regrava a OE na pasta, como a OS regrava a
+    // folha e a etiqueta ao ser salva. Best-effort; sem pasta conectada não faz
+    // nada e nunca bloqueia o save.
+    if (_CHAVES_OE.includes(key) && typeof agendarAutoSaveOE === 'function') {
+      agendarAutoSaveOE();
     }
   } catch (e) {
     console.error('Erro ao salvar', key, e);
@@ -8682,6 +8694,46 @@ async function gerarPdfDaSheetExp() {
 // Salva a folha do plano atual como PDF na pasta das OE. Idempotente por
 // período (reescreve o arquivo do mesmo período). silent = sem toasts de
 // progresso (usado no auto-save ao abrir a folha).
+// A folha da OE vive dentro da section .page, que fica display:none quando o
+// usuário está em outra tela. html2canvas mede o elemento no layout: escondido,
+// o retângulo é zero e o PDF sairia em branco. Para poder salvar de QUALQUER
+// tela, a section é revelada fora da vista só durante a captura e devolvida ao
+// estado anterior no fim — o usuário não vê nada piscar.
+async function _comFolhaOeRenderizavel(fn) {
+  const sec = document.querySelector('section.page[data-page="print-expedicao"]');
+  if (!sec || !sec.classList.contains('hidden')) return await fn();
+  const styleAntes = sec.getAttribute('style');
+  sec.classList.remove('hidden');
+  sec.style.position = 'fixed';
+  sec.style.left = '-10000px';
+  sec.style.top = '0';
+  sec.style.width = '260mm';     // folga sobre os 210mm da folha
+  sec.style.zIndex = '-1';
+  sec.style.pointerEvents = 'none';
+  try {
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return await fn();
+  } finally {
+    if (styleAntes == null) sec.removeAttribute('style'); else sec.setAttribute('style', styleAntes);
+    sec.classList.add('hidden');
+  }
+}
+
+// Regrava o PDF da OE depois de mexer no plano de expedição — o mesmo hábito da
+// OS, que regrava folha e etiqueta ao ser salva. Antes o arquivo em disco só era
+// atualizado quando alguém ABRIA a folha do plano: alocar uma OS e não abrir a
+// folha deixava a OE do dia desatualizada na pasta.
+// Debounce porque montar uma carga são vários cliques seguidos, e cada captura
+// html2canvas é cara — interessa o estado final, não cada passo.
+let _oeAutoTimer = null;
+function agendarAutoSaveOE() {
+  if (_oeAutoTimer) clearTimeout(_oeAutoTimer);
+  _oeAutoTimer = setTimeout(() => {
+    _oeAutoTimer = null;
+    salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE', e));
+  }, 1500);
+}
+
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
   if (_oeSalvando) return false;
   let handle = oeFolderHandle || (await loadOeFolderHandle());
@@ -8697,10 +8749,12 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   oeFolderHandle = handle;
   _oeSalvando = true;
   try {
-    renderPrintPlanoExpedicao();
-    await new Promise(r => setTimeout(r, 150));
     if (!silent) toast('Gerando PDF da OE...', '');
-    const blob = await gerarPdfDaSheetExp();
+    const blob = await _comFolhaOeRenderizavel(async () => {
+      renderPrintPlanoExpedicao();
+      await new Promise(r => setTimeout(r, 150));
+      return await gerarPdfDaSheetExp();
+    });
     const filename = oeFilenameForPlano();
     const fh = await handle.getFileHandle(filename, { create: true });
     const w = await fh.createWritable();
