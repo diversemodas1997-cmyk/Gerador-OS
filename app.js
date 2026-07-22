@@ -7448,8 +7448,33 @@ function calcularCamadasParaProducao() {
     return (n.includes('manga') || n.includes('punho')) ? 2 : 1;
   };
 
-  // Papéis das fases
-  const papeis = calcularPapeisFases(fases);
+  // Papéis das fases. As fases da grade definem o PAPEL de cada bloco de enfesto
+  // (moletom, forro de capuz, ribana…) e, por tabela, as camadas de cada um.
+  // Quando a grade não tem fases, papeis[i] vinha vazio e o bloco caía no ramo
+  // genérico com multiplicador 1: o campo de camadas recebia `target / 1`, ou
+  // seja, o PRÓPRIO NÚMERO DE PEÇAS-ALVO no lugar das camadas (160 em vez de 80).
+  // Sem fases na grade, monta-se as fases a partir da própria OS: o tecido vem
+  // das linhas de tecido (que têm o id real) e o nome vem do bloco de enfesto
+  // (que é o que identifica o Viés).
+  // A complementação é POR FASE, não tudo-ou-nada: a grade pode ter as fases e
+  // ainda assim deixar o tecido em branco em alguma delas, e aí só aquela caía
+  // no ramo genérico. Cada fase usa o tecido da grade quando ele existe de fato,
+  // e o da linha de tecido da OS quando não.
+  const blocosParaNome = document.querySelectorAll('#f-enfestos-blocos .enfesto-bloco');
+  const rowsTec = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
+    .map(r => r.querySelector('.tec-sel')?.value || '');
+  const nFases = Math.max(fases.length, rowsTec.length, blocosParaNome.length);
+  const fasesEfetivas = Array.from({ length: nFases }, (_, i) => {
+    const f = fases[i] || {};
+    const idValido = f.tecidoId && STATE.tecidos.some(t => t.id === f.tecidoId);
+    return {
+      ...f,
+      ordem: f.ordem || (i + 1),
+      nome: (f.nome && f.nome.trim()) ? f.nome : (blocosParaNome[i]?.dataset?.nomeTecido || ''),
+      tecidoId: idValido ? f.tecidoId : (rowsTec[i] || '')
+    };
+  });
+  const papeis = calcularPapeisFases(fasesEfetivas);
 
   // qty total por blusa de componentes ribana, agrupado pelo label da fase ribana
   const ribanaLabels = papeis.filter(p => (p.papel || '').startsWith('ribana_')).map(p => p.label);
@@ -7492,7 +7517,7 @@ function calcularCamadasParaProducao() {
     const input = bloco.querySelector('.enf-camadas');
     if (!input) return;
     const papel = papeis[i] || {};
-    const fase = fases[i] || {};
+    const fase = fasesEfetivas[i] || {};
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(papel.label || '') || /vi[eé]s/i.test(bloco.dataset.nomeTecido || '');
     let val;
     if (ehVies) {
@@ -7512,7 +7537,7 @@ function calcularCamadasParaProducao() {
       //   ja cobre toda a grade — "10x" significa "10 unidades de cada slot
       //   da grade por camada", entao o gradeTotal nao precisa de ajuste.
       //   Formula: camadasPrincipal × multPrincipal / unidades.
-      const fase = fases[i] || {};
+      const fase = fasesEfetivas[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
       if (isTecidoRibana(tecFase)) {
         const unidades = parseInt(fase.unidades) || multRib;
