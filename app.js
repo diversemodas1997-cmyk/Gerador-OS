@@ -4822,6 +4822,11 @@ function migrarOperacoesParaJornada() {
 
 /* ---------------- folha impressa do plano ---------------- */
 
+// Campos de assinatura do rodapé da OE, por FUNÇÃO. Quem assina a expedição não
+// é "o responsável" genérico: são os três postos que a carga atravessa — quem
+// separa e despacha, quem entrega as peças da costura e quem leva no veículo.
+const _EXP_ASSINATURAS = ['Auxiliar de expedição', 'Auxiliar de costura', 'Motorista'];
+
 // Segunda folha do programa. Ao contrário da folha de OS, esta pode ocupar
 // várias A4 (um mês de janelas não cabe em uma) — o que não pode partir no
 // meio é o bloco de cada expedição, garantido no CSS.
@@ -4986,9 +4991,7 @@ function renderPrintPlanoExpedicao() {
     </div>
     ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma Ordem de Expedição produzida ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`}
     <div class="exp-print-rodape">
-      <span>Conferente: ____________________________</span>
-      <span>Motorista: ____________________________</span>
-      <span>Visto: ____________________</span>
+      ${_EXP_ASSINATURAS.map(f => `<div class="ass"><div class="linha"></div><div class="lbl">${esc(f)}</div></div>`).join('')}
     </div>`;
 }
 

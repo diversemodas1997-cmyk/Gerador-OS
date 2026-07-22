@@ -1666,14 +1666,25 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   border: 1px solid #000;
   vertical-align: -1px;
 }
+/* Rodapé de assinaturas da OE: um campo por função que a carga atravessa.
+   A linha fica ACIMA do rótulo — é onde a pessoa assina, e o nome da função
+   embaixo diz quem é. As três dividem a largura em partes iguais. */
 .exp-print-rodape {
-  margin-top: 8px;
+  margin-top: 14px;
   padding-top: 4px;
   border-top: 1px solid #000;
   font-size: 7pt;
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 16px;
+}
+.exp-print-rodape .ass { flex: 1 1 0; min-width: 0; }
+.exp-print-rodape .linha { margin-top: 22px; border-top: 1px solid #000; }
+.exp-print-rodape .lbl {
+  padding-top: 2px;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .04em;
 }
 
 @media print {
