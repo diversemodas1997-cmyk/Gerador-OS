@@ -5530,25 +5530,28 @@ function renderPrintPlanoExpedicao() {
 
   const osPrint = (i) => {
     const o = i.os;
+    // Cor do DESENHO TÉCNICO = Cor 1 da 1ª variante (a mesma do banner que aparece
+    // acima do desenho na folha de OS), caindo na cor da 1ª fase do enfesto. Vai na
+    // 1ª LINHA, junto do modelo (à frente da OS); o volume fica ABAIXO.
+    const corPred = o ? corNomeCurto(
+      (o.variantes || []).map(v => v.cor1Nome).find(c => c && c !== '—')
+      || (o.fases || [])[0]?.corNome
+      || (o.tecidos || [])[0]?.corNome
+      || ''
+    ) : '';
+    const volTxt = i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol';
+    // 1ª linha: nº da OS + modelo + cor. A cor é span próprio (fora do .m, que tem
+    // ellipsis) pra não ser cortada quando o modelo é longo.
     const cab = `
       <div class="cab">
         <span class="exp-print-box"></span>
         <span class="n">${esc(i.osNumero)}</span>
         <span class="m">${esc(i.modelo)}</span>
-        <span class="q">${fmt(i.pecas)} pç</span>
-        <span class="v">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol'}</span>
+        ${corPred ? `<span class="cor">${esc(corPred)}</span>` : ''}
       </div>`;
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}</div>`;
-
-    // Cor predominante = Cor 1 da 1ª variante (a mesma do banner da folha de OS),
-    // caindo na cor da 1ª fase do enfesto. Sem o tecido no nome.
-    const corPred = corNomeCurto(
-      (o.variantes || []).map(v => v.cor1Nome).find(c => c && c !== '—')
-      || (o.fases || [])[0]?.corNome
-      || (o.tecidos || [])[0]?.corNome
-      || ''
-    );
+    // Sem grade: ao menos o volume abaixo da 1ª linha.
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div></div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -5596,7 +5599,7 @@ function renderPrintPlanoExpedicao() {
       <div class="exp-print-os">
         ${cab}
         <div class="sub">
-          <b>${esc(corPred) || '—'}</b> · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)}</b>` : ''}
+          ${fmt(i.pecas)} pç · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)} vol</b>` : ''}
         </div>
         <table>
           <thead>

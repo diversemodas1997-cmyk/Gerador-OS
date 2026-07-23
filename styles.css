@@ -1742,6 +1742,9 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .exp-print-os > .cab .m { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exp-print-os > .cab .q,
 .exp-print-os > .cab .v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
+/* Cor do desenho técnico na 1ª linha, ao lado do modelo. nowrap: não é cortada
+   pela ellipsis do modelo (o .m cede largura, a cor fica inteira). */
+.exp-print-os > .cab .cor { font-weight: 700; white-space: nowrap; }
 .exp-print-os > .sub { font-size: 7.5pt; color: #333; margin: 1.5pt 0 1pt; }
 .exp-print-os > .pe { font-size: 7pt; color: #555; font-style: italic; margin-top: 1pt; }
 .exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
