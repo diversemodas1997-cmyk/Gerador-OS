@@ -9097,12 +9097,18 @@ async function gerarPdfDaSheetExp() {
     const pageWmm = 210, pageHmm = 297;
     const pxPorMm = canvas.width / pageWmm;      // px do canvas por mm de largura A4
     const pageHpx = Math.floor(pageHmm * pxPorMm); // px que cabem numa A4 de altura
+    // RECUO do 1º quadro nas folhas repetidas: getBoundingClientRect NÃO inclui o
+    // margin-bottom do cabeçalho, então nas páginas 2+ o conteúdo era colocado
+    // colado em cabAlturaPx e o primeiro quadro saía cortado pela sobreposição do
+    // cabeçalho fixo. Reserva o mesmo respiro do fluxo (margin do head) + 3mm.
+    const headMb = headEl ? (parseFloat(getComputedStyle(headEl).marginBottom) || 0) : 0;
+    const cabGapPx = Math.round(headMb * ratio) + Math.round(3 * pxPorMm);
     let y = 0, pagina = 0;
     while (y < canvas.height - 1) {
       // Na 1ª página o cabeçalho já vem no próprio fluxo; nas demais ele é
       // repetido e consome altura útil da folha.
       const repetirCab = pagina > 0 && cabAlturaPx > 0;
-      const alturaCab = repetirCab ? cabAlturaPx : 0;
+      const alturaCab = repetirCab ? cabAlturaPx + cabGapPx : 0;
       const disponivel = pageHpx - alturaCab;
       const maxY = y + disponivel;
       let cut;
