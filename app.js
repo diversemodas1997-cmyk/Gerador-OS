@@ -42,6 +42,11 @@ let _cloudLoadErro = false;
 // edição local — senão o cloudLoad sobrescrevia o checklist/horário que o
 // usuário acabou de marcar e ainda não foi salvo, revertendo na tela.
 let _flushing = false;
+// Chaves que ESTE dispositivo alterou desde a última gravação. No flush, só
+// estas sobrescrevem o servidor; as demais adotam o valor do servidor. É o que
+// impede um cache desatualizado de apagar o que outro dispositivo gravou numa
+// chave que este nem tocou (causa raiz das perdas recorrentes de cadastro).
+const _dirtyKeys = new Set();
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -156,10 +161,31 @@ async function cloudFlush() {
       return;
     }
   }
-  cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
   setSyncStatus('saving');
   _flushing = true;
   try {
+    // MERGE POR CHAVE (concorrência otimista) — correção definitiva da perda
+    // recorrente de cadastros. Relê o servidor e só sobrescreve as chaves que
+    // ESTE dispositivo alterou (_dirtyKeys). As chaves que NÃO tocamos adotam o
+    // valor do servidor — assim um cache velho não apaga o que outro dispositivo
+    // gravou numa chave que este nem mexeu. Ações intencionais de limpar/
+    // restaurar já marcam TODAS as chaves como dirty (via saveState), então
+    // sobrescrevem tudo normalmente.
+    const adotadas = [];
+    try {
+      const { data: srv } = await supa.from('shared_data').select('data').eq('id', 'main').maybeSingle();
+      const servidor = (srv && srv.data && typeof srv.data === 'object') ? srv.data : null;
+      if (servidor) {
+        Object.keys(servidor).forEach(k => {
+          if (k === '_device' || _dirtyKeys.has(k)) return;   // nosso device / editamos: mantém o nosso
+          if (cloudCache[k] !== servidor[k]) {                 // não editamos e mudou: adota o do servidor
+            cloudCache[k] = servidor[k];
+            adotadas.push(k);
+          }
+        });
+      }
+    } catch (e) { console.warn('merge re-leitura', e); /* segue com o cache local */ }
+    cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
     const { error } = await supa.from('shared_data').upsert({
       id: 'main',
       data: cloudCache,
@@ -167,9 +193,14 @@ async function cloudFlush() {
       updated_by: currentUser.id
     }, { onConflict: 'id' });
     if (error) throw error;
+    _dirtyKeys.clear();
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
     if (_contarItens(cloudCache, 'expedicaoCargas') > 0) _appJaTeveExpedicao = true;
+    // Adotamos mudanças do servidor em chaves que não editamos (outro
+    // dispositivo mexeu): reflete no STATE pra não re-sobrescrever depois. O
+    // realtime/polling do outro dispositivo cuida do re-render visual.
+    if (adotadas.length) { try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); } }
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
     // Snapshot DIÁRIO no servidor. Ele rodava só ao ABRIR o app: uma aba deixada
@@ -701,6 +732,7 @@ const DB = {
   async set(key, value) {
     if (cloudCache) {
       cloudCache[key] = value;
+      _dirtyKeys.add(key);
       scheduleCloudSave();
       return { key, value };
     }
@@ -715,6 +747,7 @@ const DB = {
   async delete(key) {
     if (cloudCache) {
       delete cloudCache[key];
+      _dirtyKeys.add(key);
       scheduleCloudSave();
       return { key, deleted: true };
     }
