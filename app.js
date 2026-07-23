@@ -7111,6 +7111,24 @@ function addAviamentoRow(data = {}) {
   cont.appendChild(row);
 }
 
+// Na NOVA OS, as camadas nascem no MÁXIMO do tecido (moletom 36 / malha 80) e as
+// peças-alvo saem daí (camadas × grade × mult) — não mais o 160 fixo, que dava
+// 160 camadas no moletom, muito acima do limite de 36. Só age quando as camadas
+// ainda não foram definidas (campo vazio) e não é edição de OS salva, pra não
+// atropelar valor do usuário nem o carregado. É chamado ao aplicar a grade,
+// quando o tecido e a grade já estão conhecidos.
+function _aplicarCamadasMaximasDefault() {
+  if (osEditId) return;                                     // edição: respeita o salvo
+  const campoCam = document.getElementById('f-enf-camadas');
+  if (!campoCam || (campoCam.value || '').trim() !== '') return;  // já definido: não mexe
+  const { limite } = calcularLimiteCamadas();
+  if (!(limite > 0) || limite === Infinity) return;         // tecido sem limite conhecido
+  const temGrade = ['p','m','g','gg','g1','g2','g3'].some(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0);
+  if (!temGrade) return;                                     // sem grade não dá pra derivar as peças
+  campoCam.value = limite;                                   // camadas = máx do tecido
+  calcularAlvoDeCamadas();                                   // deriva peças-alvo = camadas × grade × mult
+}
+
 function aplicarGradePreset() {
   const id = document.getElementById('f-grade-preset').value;
   if (!id) return;
@@ -7262,6 +7280,7 @@ function aplicarGradePreset() {
     }
   }
 
+  _aplicarCamadasMaximasDefault();   // camadas no máx do tecido + peças-alvo derivadas (OS nova)
   atualizarCalculosEnfesto();
   const n = fases.length;
   const msg = n <= 1 ? 'Grade aplicada' : `Grade aplicada — Fase 1 no enfesto, ${n} fases no total`;
