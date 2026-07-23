@@ -10029,8 +10029,9 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
 
 // Salva o valor digitado (à mão) de cada TOM em cada fase de enfesto na folha.
 // As tonalidades podem variar em qualquer fase, então cada fase tem seus campos
-// de Tom 1/2/3 (os mesmos tons ativos no "Total por tamanho"). Texto livre —
-// persiste em progresso.enfestosTons[ordem][tom]; vazio remove a chave.
+// de Tom 1/2/3. Na fase PRINCIPAL esses campos são as CAMADAS REAIS por tom: ao
+// digitá-los, camadas/peças-alvo e o "Total por tamanho" são recalculados (ver
+// recalcularDeCamadasPorTom). Nas demais fases é anotação livre.
 async function salvarTomEnfesto(osId, ordem, tom, valor) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
@@ -10040,7 +10041,87 @@ async function salvarTomEnfesto(osId, ordem, tom, valor) {
   const v = (valor || '').trim();
   if (v) os.progresso.enfestosTons[ordem][tom] = v;
   else delete os.progresso.enfestosTons[ordem][tom];
-  try { await saveState('ordens'); } catch (e) { console.warn('salvarTomEnfesto', e); }
+  // Editou a linha de tons da fase PRINCIPAL → recalcula tudo a partir das
+  // camadas reais por tom (a função salva e re-renderiza). Fases secundárias
+  // seguem como anotação livre.
+  if (String(ordem) === String(_ordemFasePrincipal(os))) {
+    await recalcularDeCamadasPorTom(osId);
+  } else {
+    try { await saveState('ordens'); } catch (e) { console.warn('salvarTomEnfesto', e); }
+  }
+}
+
+// Camadas reais por tom de uma fase (parse numérico de enfestosTons[ord]).
+function _camadasPorTomFase(o, ord) {
+  const tv = ((o.progresso || {}).enfestosTons || {})[ord] || {};
+  const out = {};
+  [1, 2, 3].forEach(t => { const n = parseInt(tv[t], 10); if (n > 0) out[t] = n; });
+  return out;
+}
+
+// Ordem da fase PRINCIPAL do enfesto (primeira não-viés). É a fase cujas camadas
+// reais por tom mandam nas camadas/peças-alvo e no "Total por tamanho".
+function _ordemFasePrincipal(o) {
+  const cons = consumoEnfestoOS(o);
+  const p = cons.find(L => !L.ehVies) || cons[0];
+  return p ? p.ordem : null;
+}
+
+// Recalcula camadas, peças-alvo e o "Total por tamanho" a partir das CAMADAS
+// REAIS por tom digitadas na fase principal. As demais fases escalam
+// proporcionalmente à nova camada principal. O último tom continua sendo o
+// balanceador — e, por construção, cai exatamente em camadas_último × mult.
+async function recalcularDeCamadasPorTom(osId) {
+  const o = STATE.ordens.find(x => x.id === osId);
+  if (!o) return;
+  const ordP = _ordemFasePrincipal(o);
+  if (ordP == null) return;
+  const porTom = _camadasPorTomFase(o, ordP);
+  const tomsEntrados = Object.keys(porTom).map(Number).sort((a, b) => a - b);
+  if (!tomsEntrados.length) { // nada digitado: mantém o planejado (balanceador)
+    try { await saveState('ordens'); } catch (e) {}
+    return;
+  }
+  const valores = tomsEntrados.map(t => porTom[t]);   // camadas por tom, em ordem
+  const camadas = valores.reduce((s, v) => s + v, 0);
+  if (!(camadas > 0)) return;
+  const mult = multiplicadorPecaOS(o);
+  const g = o.grade || {};
+  const qtds = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => parseInt(g[k], 10) || 0).filter(q => q > 0);
+  const minQtd = qtds.length ? Math.min(...qtds) : 1;
+
+  o.enfesto = o.enfesto || {};
+  // Escala as demais fases proporcionalmente à nova camada principal.
+  if (Array.isArray(o.enfesto.blocos) && o.enfesto.blocos.length) {
+    const bp = o.enfesto.blocos.find(b => (b.ordem || 0) === ordP);
+    const antes = (bp && parseInt(bp.camadas, 10) > 0) ? parseInt(bp.camadas, 10)
+      : (parseInt(o.enfesto.camadas, 10) || 0);
+    const nomeFaseDe = ord => ((o.fases || []).find(f => f.ordem === ord) || {}).nome || '';
+    o.enfesto.blocos.forEach(b => {
+      const ehVies = /vi[eé]s/i.test(nomeFaseDe(b.ordem) || b.nomeTecido || '');
+      if (ehVies) { b.camadas = 1; return; }
+      if ((b.ordem || 0) === ordP) { b.camadas = camadas; return; }
+      const cur = parseInt(b.camadas, 10) || 0;
+      b.camadas = (antes > 0 && cur > 0) ? Math.max(1, Math.round(cur * camadas / antes)) : camadas;
+    });
+  }
+  o.enfesto.camadas = camadas;
+  o.enfesto.target = camadas * minQtd * mult;   // peças-alvo (tamanho limitante)
+
+  // "Total por tamanho": N tons contíguos; cada tom editável recebe V =
+  // camadas_tom × mult (uniforme por tamanho). O último é o balanceador.
+  o.progresso = o.progresso || {};
+  o.progresso.totalTamanhoTons = {};
+  o.progresso.totalTamanhoTomValor = o.progresso.totalTamanhoTomValor || {};
+  const N = valores.length;
+  for (let slot = 1; slot <= 3; slot++) {
+    if (slot <= N) o.progresso.totalTamanhoTons[slot] = true;
+    if (slot < N) o.progresso.totalTamanhoTomValor[slot] = valores[slot - 1] * mult; // editável
+    else delete o.progresso.totalTamanhoTomValor[slot];                              // balanceador/inexistente
+  }
+
+  try { await saveState('ordens'); } catch (e) { console.warn('recalcularDeCamadasPorTom', e); }
+  if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(o);
 }
 
 // Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
