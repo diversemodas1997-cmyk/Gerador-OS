@@ -6348,6 +6348,12 @@ function renderFuncoes() {
 function renderHome() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('stat-os', STATE.ordens.length);
+  // OEs cadastradas = expedições distintas (janela + data) com pelo menos uma OS
+  // alocada. Uma OE é uma expedição montada, não um registro à parte — por isso
+  // é contada pelas cargas, agrupadas por janela+data.
+  const _oes = new Set((STATE.expedicaoCargas || []).map(c => (c.janelaId || '') + '|' + (c.data || '')));
+  set('stat-oes', _oes.size);
+  set('stat-operacoes', (STATE.operacoes || []).length);
   set('stat-tecidos', STATE.tecidos.length);
   set('stat-cores', STATE.cores.length);
   set('stat-materiais', STATE.materiais.length);
