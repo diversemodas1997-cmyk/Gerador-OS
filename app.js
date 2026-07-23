@@ -511,6 +511,16 @@ function exigirAdmin(acao) {
   return true;
 }
 
+// Ações de PLANEJAMENTO da expedição (montar/editar/remarcar a OE) valem para
+// admin E usuario — o operador da expedição planeja e imprime a própria OE. Só
+// as ações DESTRUTIVAS (excluir janela, remover OS da carga) seguem restritas
+// ao admin, via exigirAdmin.
+function exigirEdicao(acao) {
+  if (currentRole === 'admin' || currentRole === 'usuario') return true;
+  toast(`Faça login para ${acao}`, 'err');
+  return false;
+}
+
 async function setUserRole(novoPapel) {
   if (!supa) return;
   if (!exigirAdmin('gerenciar usuários')) return;
@@ -3768,7 +3778,7 @@ function renderExpedicaoPlano() {
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn accent" onclick="goto('print-expedicao')">🖨 Folha do plano</button>
-        <div class="admin-only" style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;">
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
           <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho, por tonalidade, + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
@@ -3817,7 +3827,7 @@ function renderExpedicaoPlano() {
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
         <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}</span>
-        <span class="admin-only"><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
+        <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>`).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
       <div class="exp-perna">
@@ -3837,7 +3847,7 @@ function renderExpedicaoPlano() {
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
-        ${oc.cancelada ? '' : `<div class="admin-only" style="margin-top:8px;display:flex;gap:6px;">
+        ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
           ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou as peças." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
@@ -3859,7 +3869,7 @@ function renderExpedicaoPlano() {
             ${oc.motivo ? ' · ' + esc(oc.motivo) : ''}
           </div>
         </div>
-        <div class="admin-only" style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;">
           <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">Cancelar / remarcar</button>
           <button class="btn" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')">Editar janela</button>
         </div>
@@ -3903,7 +3913,7 @@ function renderExpedicaoPlano() {
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
               <td class="col-actions row-actions">
                 <button onclick="verOS('${esc(o.id)}')">ver OS</button>
-                <button class="edit admin-only" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar</button>
+                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar</button>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -3915,7 +3925,7 @@ function renderExpedicaoPlano() {
     String(a.tipo).localeCompare(String(b.tipo)) || String(a.horaIda || '').localeCompare(String(b.horaIda || ''))
   );
   const janelasHtml = `
-    <div class="card admin-only">
+    <div class="card">
       <div class="card-title">Janelas de expedição cadastradas</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Uma janela <b>semanal</b> se repete nos dias marcados; uma de <b>data fixa</b> acontece uma vez só. Mín/máx em branco herdam a configuração de <b>Unidades e carga</b> (hoje: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}).</div>
       <table class="table">
@@ -3933,7 +3943,7 @@ function renderExpedicaoPlano() {
               <td>${j.ativo === false ? '<span class="exp-badge vazio">inativa</span>' : '<span class="exp-badge ok">ativa</span>'}</td>
               <td class="col-actions row-actions">
                 <button class="edit" onclick="abrirModalExpJanela('${esc(j.id)}')">editar</button>
-                <button class="del" onclick="excluirJanelaExp('${esc(j.id)}')">excluir</button>
+                <button class="del admin-only" onclick="excluirJanelaExp('${esc(j.id)}')">excluir</button>
               </td>
             </tr>`).join('') : '<tr><td colspan="7" class="empty">Nenhuma janela cadastrada.</td></tr>'}
         </tbody>
@@ -3952,7 +3962,7 @@ function _expCampoNum(id, label, valor, hint) {
 }
 
 function abrirModalExpJanela(editId = null) {
-  if (!exigirAdmin('cadastrar janelas de expedição')) return;
+  if (!exigirEdicao('cadastrar janelas de expedição')) return;
   const j = editId ? (STATE.expedicaoJanelas || []).find(x => x.id === editId) : null;
   if (editId && !j) return;
   _expModalCtx = { tipo: 'janela', editId };
@@ -4002,7 +4012,7 @@ function _expToggleTipoJanela() {
 // lista de pendentes (OS já escolhida) — os dois campos ficam editáveis nos
 // dois casos.
 function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '') {
-  if (!exigirAdmin('alocar OS na expedição')) return;
+  if (!exigirEdicao('alocar OS na expedição')) return;
   if (!(STATE.expedicaoJanelas || []).some(j => j.ativo !== false)) {
     return toast('Cadastre uma janela de expedição antes de alocar OS', 'err');
   }
@@ -4118,7 +4128,7 @@ function _expAtualizarSugestaoVolumes() {
 // unidade. Aqui se escolhe a expedição de origem e as OSs dela vêm junto, com os
 // mesmos volumes.
 function abrirModalExpVolta(janelaId, dataOrig) {
-  if (!exigirAdmin('alocar OS na expedição')) return;
+  if (!exigirEdicao('alocar OS na expedição')) return;
   _expModalCtx = { tipo: 'volta', janelaId, dataOrig };
 
   // Candidatas: qualquer perna de qualquer ocorrência que TENHA carga, exceto a
@@ -4208,7 +4218,7 @@ function _expVoltaListarOS() {
 }
 
 function abrirModalExpConfig() {
-  if (!exigirAdmin('configurar a expedição')) return;
+  if (!exigirEdicao('configurar a expedição')) return;
   _expModalCtx = { tipo: 'config' };
   const cfg = expCfg();
   document.getElementById('modal-exp-title').textContent = 'Unidades e carga de transporte';
@@ -4225,7 +4235,7 @@ function abrirModalExpConfig() {
 }
 
 function abrirModalExpOcorrencia(janelaId, dataOrig) {
-  if (!exigirAdmin('cancelar ou remarcar expedições')) return;
+  if (!exigirEdicao('cancelar ou remarcar expedições')) return;
   const j = (STATE.expedicaoJanelas || []).find(x => x.id === janelaId);
   if (!j) return;
   _expModalCtx = { tipo: 'ocorrencia', janelaId, dataOrig };
@@ -4271,7 +4281,7 @@ async function salvarModalExpedicao() {
   const ctx = _expModalCtx;
 
   if (ctx.tipo === 'janela') {
-    if (!exigirAdmin('cadastrar janelas de expedição')) return;
+    if (!exigirEdicao('cadastrar janelas de expedição')) return;
     const nome = v('ej-nome').trim();
     if (!nome) return toast('Informe o nome da janela', 'err');
     const tipo = v('ej-tipo') === 'data' ? 'data' : 'semanal';
@@ -4304,7 +4314,7 @@ async function salvarModalExpedicao() {
     toast(ctx.editId ? 'Janela atualizada' : 'Janela cadastrada', 'ok');
 
   } else if (ctx.tipo === 'carga') {
-    if (!exigirAdmin('alocar OS na expedição')) return;
+    if (!exigirEdicao('alocar OS na expedição')) return;
     const [janelaId, data, perna] = v('ec-ocorrencia').split('|');
     if (!janelaId || !data || !perna) return toast('Selecione a expedição', 'err');
     const osId = v('ec-os');
@@ -4327,7 +4337,7 @@ async function salvarModalExpedicao() {
     toast(ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição', 'ok');
 
   } else if (ctx.tipo === 'volta') {
-    if (!exigirAdmin('alocar OS na expedição')) return;
+    if (!exigirEdicao('alocar OS na expedição')) return;
     const marcadas = Array.from(document.querySelectorAll('.ev-os:checked'));
     if (!marcadas.length) return toast('Marque ao menos uma OS para trazer', 'err');
     if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
@@ -4350,7 +4360,7 @@ async function salvarModalExpedicao() {
     toast(`${n} OS trazida(s) para a volta`, 'ok');
 
   } else if (ctx.tipo === 'config') {
-    if (!exigirAdmin('configurar a expedição')) return;
+    if (!exigirEdicao('configurar a expedição')) return;
     const unidadeA = v('ex-uni-a').trim(), unidadeB = v('ex-uni-b').trim();
     if (!unidadeA || !unidadeB) return toast('Informe o nome das duas unidades', 'err');
     const volMin = parseInt(v('ex-vol-min')) || 0;
@@ -4369,7 +4379,7 @@ async function salvarModalExpedicao() {
     toast('Configuração salva', 'ok');
 
   } else if (ctx.tipo === 'ocorrencia') {
-    if (!exigirAdmin('cancelar ou remarcar expedições')) return;
+    if (!exigirEdicao('cancelar ou remarcar expedições')) return;
     const situacao = v('eo-situacao');
     if (!Array.isArray(STATE.expedicaoExcecoes)) STATE.expedicaoExcecoes = [];
     STATE.expedicaoExcecoes = STATE.expedicaoExcecoes.filter(e => !(e.janelaId === ctx.janelaId && e.data === ctx.dataOrig));
@@ -4405,7 +4415,7 @@ async function excluirCargaExp(id) {
 // Corrige valores gravados por regras antigas (ex.: OS que ficou com 600).
 // Não toca em expedição já realizada — aquilo é histórico do que saiu.
 async function recalcularVolumesExpedicao() {
-  if (!exigirAdmin('recalcular volumes')) return;
+  if (!exigirEdicao('recalcular volumes')) return;
   const hoje = _expHoje();
   let n = 0;
   (STATE.expedicaoCargas || []).forEach(c => {
