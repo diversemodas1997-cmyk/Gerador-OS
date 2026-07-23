@@ -1171,24 +1171,37 @@ async function loadState() {
     const c = await DB.get('osCounter');
     if (c && c.value) STATE.osCounter = parseInt(c.value) || 0;
   } catch (e) { /* ok */ }
-  // Seed default etapas se vazio (primeira execução)
-  if (!STATE.etapas || !STATE.etapas.length) {
-    STATE.etapas = (STATE.etapasPadrao || []).map((nome, i) => ({
-      id: 'id_' + Date.now() + '_' + i,
-      nome,
-      ordem: (i + 1) * 10,
-      funcoesIds: []
-    }));
-    if (STATE.etapas.length) { try { await saveState('etapas'); } catch (e) {} }
-  }
-  // Seed default componentes se vazio (primeira execução)
-  if (!STATE.componentes || !STATE.componentes.length) {
-    STATE.componentes = (STATE.componentesPadrao || []).map((nome, i) => ({
-      id: 'id_' + (Date.now() + 1000) + '_' + i,
-      nome,
-      desc: ''
-    }));
-    if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
+  // Seed defaults (etapas/componentes) SÓ em conta genuinamente NOVA. Se a conta
+  // já tem dados (OS, funções, tecidos, modelos, grades, equipe) mas as etapas
+  // vieram vazias, isso é um GLITCH de carregamento — semear os defaults e SALVAR
+  // apagaria as etapas CUSTOM do servidor (causa raiz de "o programa apagou as
+  // etapas cadastradas"). Nesse caso não mexe: a próxima carga boa traz de volta.
+  const _contaPopulada = _appJaTeveDados
+    || (STATE.funcoes && STATE.funcoes.length)
+    || (STATE.tecidos && STATE.tecidos.length)
+    || (STATE.modelos && STATE.modelos.length)
+    || (STATE.grades && STATE.grades.length)
+    || (STATE.equipe && STATE.equipe.length);
+  if (!_contaPopulada) {
+    // Seed default etapas se vazio (primeira execução)
+    if (!STATE.etapas || !STATE.etapas.length) {
+      STATE.etapas = (STATE.etapasPadrao || []).map((nome, i) => ({
+        id: 'id_' + Date.now() + '_' + i,
+        nome,
+        ordem: (i + 1) * 10,
+        funcoesIds: []
+      }));
+      if (STATE.etapas.length) { try { await saveState('etapas'); } catch (e) {} }
+    }
+    // Seed default componentes se vazio (primeira execução)
+    if (!STATE.componentes || !STATE.componentes.length) {
+      STATE.componentes = (STATE.componentesPadrao || []).map((nome, i) => ({
+        id: 'id_' + (Date.now() + 1000) + '_' + i,
+        nome,
+        desc: ''
+      }));
+      if (STATE.componentes.length) { try { await saveState('componentes'); } catch (e) {} }
+    }
   }
   // Migração: operações planejadas no formato antigo (uma linha por OS, com
   // peças e sem duração) viram jornada de posto.
