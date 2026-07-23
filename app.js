@@ -1933,12 +1933,25 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     setTimeout(mostrarResponsabilidadesFuncao, 0);
   }
   else if (tipo === 'funcao') {
+    const etapasSel = Array.isArray(item.etapasIds) ? item.etapasIds : [];
+    const etapasLista = etapasOrdenadas();
+    const etapasChk = etapasLista.length
+      ? etapasLista.map(e => `
+        <label class="etapa-check" style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px dotted var(--line);">
+          <input type="checkbox" class="m-func-etapa" value="${esc(e.id)}" ${etapasSel.includes(e.id) ? 'checked' : ''}>
+          <span class="badge" title="Ordem">${e.ordem || 0}</span> ${esc(e.nome)}
+        </label>`).join('')
+      : '<span style="color:var(--ink-3);font-size:12px;">Nenhuma etapa cadastrada. Cadastre em <b>Etapas</b> primeiro.</span>';
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira"></div>
         <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
         <div class="field full"><label>Responsabilidades / ações</label>
           <textarea id="m-acoes" rows="3" placeholder="Ex.: Costurar peças, fazer travete, acabamento. Uma por linha.">${esc(item.acoes||'')}</textarea>
+        </div>
+        <div class="field full"><label>Etapas que esta função executa</label>
+          <div style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;max-height:220px;overflow:auto;">${etapasChk}</div>
+          <div class="field-hint">No <b>Planejamento de operações</b>, o dropdown de etapas mostra só as marcadas aqui.</div>
         </div>
       </div>`;
   }
@@ -2640,6 +2653,9 @@ async function salvarCadastro() {
     item.nome = nomeNovo;
     item.desc = v('m-desc');
     item.acoes = v('m-acoes');
+    // Etapas que a função executa (ids). Alimenta o dropdown filtrado no
+    // planejamento de operações.
+    item.etapasIds = Array.from(document.querySelectorAll('.m-func-etapa:checked')).map(el => el.value);
     // Se o nome mudou, propaga pra todas as pessoas da equipe que usavam o nome antigo
     if (editId && nomeAntigo && nomeAntigo !== nomeNovo) {
       let migradas = 0;
@@ -4771,11 +4787,25 @@ function _opPessoasDaFuncao(funcaoNome) {
 // Sugestões de operação para uma função: as responsabilidades cadastradas nela
 // (uma por linha em Funções) + as etapas de produção. O nome da operação é o do
 // processo inteiro do posto — as sugestões só evitam redigitar tudo todo dia.
+// Etapas que a função executa (cadastradas nela), na ordem das etapas. É a fonte
+// do dropdown de etapas no planejamento de operações.
+function _opEtapasDaFuncao(funcaoId) {
+  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+  const ids = (f && Array.isArray(f.etapasIds)) ? f.etapasIds : [];
+  if (!ids.length) return [];
+  return etapasOrdenadas().filter(e => ids.includes(e.id)).map(e => e.nome).filter(Boolean);
+}
+
 function _opSugestoesOperacao(funcaoId) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
   const acoes = String(f && f.acoes || '').split('\n').map(s => s.trim()).filter(Boolean);
-  const etapas = etapasOrdenadas().map(e => e.nome).filter(Boolean);
+  const etapas = _opEtapasDaFuncao(funcaoId);
   return [...new Set([...acoes, ...etapas])];
+}
+
+// Nomes das etapas marcadas no checklist do modal de operação.
+function _opEtapasMarcadas() {
+  return Array.from(document.querySelectorAll('.op-etapa-chk:checked')).map(el => el.value);
 }
 
 function _opStatus(op) { return _OP_STATUS[op.status] ? op.status : 'pendente'; }
@@ -4995,8 +5025,9 @@ function renderOperacoes() {
     const conflito = conflitos.has(op.id);
     // O selo distingue as duas naturezas: processo inteiro do posto (o padrão,
     // sem selo) e etapa avulsa planejada à parte.
+    const _opEtapas = Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : []);
     const selo = op.escopo === 'etapa'
-      ? ` <span class="exp-badge info" title="Planejada como etapa isolada da função${op.etapa && op.etapa !== op.operacao ? ': ' + op.etapa : ''}">etapa</span>`
+      ? ` <span class="exp-badge info" title="Planejada por etapas da função${_opEtapas.length ? ': ' + _opEtapas.join(', ') : ''}">${_opEtapas.length > 1 ? 'etapas' : 'etapa'}</span>`
       : '';
     const selopr = pr === 'eletiva' ? '' : ` <span class="op-prio ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>`;
     return `
@@ -5159,14 +5190,14 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
         <label>Abrangência *</label>
         <select id="op-escopo" onchange="_opTrocouEscopo()">
           <option value="completa" ${escopo !== 'etapa' ? 'selected' : ''}>Processo completo do posto</option>
-          <option value="etapa" ${escopo === 'etapa' ? 'selected' : ''}>Uma etapa só</option>
+          <option value="etapa" ${escopo === 'etapa' ? 'selected' : ''}>Etapas específicas</option>
         </select>
-        <div class="field-hint">O padrão engloba todas as etapas da função. Escolha <b>uma etapa só</b> quando o posto for planejado por partes.</div>
+        <div class="field-hint">O padrão engloba todas as etapas da função. Escolha <b>etapas específicas</b> para planejar o posto por partes.</div>
       </div>
-      <div class="field hidden" id="op-wrap-etapa">
-        <label>Etapa *</label>
-        <select id="op-etapa" onchange="_opEscolheuEtapa()"></select>
-        <div class="field-hint">Responsabilidades da função e etapas de produção cadastradas.</div>
+      <div class="field full hidden" id="op-wrap-etapa">
+        <label>Etapas *</label>
+        <div id="op-etapas-lista" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;max-height:180px;overflow:auto;"></div>
+        <div class="field-hint">Marque uma ou mais etapas — só as cadastradas na função aparecem.</div>
       </div>
       <div class="field full">
         <label>Operação *</label>
@@ -5210,9 +5241,10 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="op-info">Informe o início e a duração para ver o término.</div>`;
 
-  _opTrocouFuncao(op ? (op.responsavelId || '') : '', op ? (op.etapa || '') : '');
-  const selE = document.getElementById('op-etapa');
-  if (selE) selE.dataset.anterior = op ? (op.etapa || '') : '';
+  const etapasIniciais = op ? (Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : [])) : [];
+  _opTrocouFuncao(op ? (op.responsavelId || '') : '', etapasIniciais);
+  const campoOp = document.getElementById('op-operacao');
+  if (campoOp) campoOp.dataset.etapasAnterior = etapasIniciais.join(' + ');
   _opAtualizarJanela();
   openModal('modal-op');
 }
@@ -5220,7 +5252,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
 // Função escolhida muda três coisas: as sugestões de operação, as etapas
 // oferecidas quando o plano é de uma etapa só, e a lista de responsáveis.
 // Mantém a pessoa e a etapa já selecionadas quando continuam válidas.
-function _opTrocouFuncao(responsavelPre = null, etapaPre = null) {
+function _opTrocouFuncao(responsavelPre = null, etapasPre = null) {
   const selF = document.getElementById('op-funcao');
   const selR = document.getElementById('op-responsavel');
   const dl = document.getElementById('op-sugestoes');
@@ -5242,13 +5274,18 @@ function _opTrocouFuncao(responsavelPre = null, etapaPre = null) {
           : `<b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são as etapas de produção.`));
   }
 
-  // Etapas ofertadas quando o plano é de uma etapa só: as mesmas sugestões, mas
-  // como lista fechada — aqui a escolha precisa ser uma etapa nomeada, não texto.
-  const selE = document.getElementById('op-etapa');
-  if (selE) {
-    const etapaManter = etapaPre != null ? etapaPre : selE.value;
-    selE.innerHTML = '<option value="">— selecione —</option>'
-      + sugs.map(s => `<option value="${esc(s)}" ${s === etapaManter ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  // Etapas ofertadas quando a abrangência é "etapas específicas": checklist das
+  // etapas cadastradas NA FUNÇÃO (só elas). Preserva o que já estava marcado.
+  const lista = document.getElementById('op-etapas-lista');
+  if (lista) {
+    const marcar = etapasPre != null ? etapasPre : _opEtapasMarcadas();
+    const etapasFunc = _opEtapasDaFuncao(funcaoId);
+    lista.innerHTML = etapasFunc.length
+      ? etapasFunc.map(nome => `<label class="etapa-check" style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px dotted var(--line);">`
+          + `<input type="checkbox" class="op-etapa-chk" value="${esc(nome)}" ${marcar.includes(nome) ? 'checked' : ''} onchange="_opEscolheuEtapa()"> ${esc(nome)}</label>`).join('')
+      : (funcaoId
+          ? '<span style="color:var(--ink-3);font-size:12px;">Esta função não tem etapas cadastradas. Marque as etapas dela em <b>Funções</b>.</span>'
+          : '<span style="color:var(--ink-3);font-size:12px;">Escolha a função para ver as etapas.</span>');
   }
 
   const { dentro, fora } = _opPessoasDaFuncao(funcao ? funcao.nome : '');
@@ -5267,7 +5304,7 @@ function _opTrocouEscopo() {
   const hint = document.getElementById('op-sug-hint');
   if (wrap) wrap.classList.toggle('hidden', escopo !== 'etapa');
   if (hint && escopo === 'etapa') {
-    hint.innerHTML = 'Planejando <b>uma etapa só</b>: escolha a etapa ao lado. O nome dela vem para cá e pode ser detalhado.';
+    hint.innerHTML = 'Planejando <b>etapas específicas</b>: marque uma ou mais etapas. Os nomes vêm para o campo Operação e podem ser detalhados.';
   } else if (escopo !== 'etapa') {
     _opTrocouFuncaoHint();
   }
@@ -5287,15 +5324,16 @@ function _opTrocouFuncaoHint() {
         : `<b>${esc(funcao.nome)}</b> não tem responsabilidades cadastradas; as sugestões são as etapas de produção.`));
 }
 
-// Escolher a etapa preenche o nome da operação. Só sobrescreve campo vazio ou
-// que ainda tem o nome da etapa anterior — texto digitado à mão fica de pé.
+// Marcar/desmarcar etapas preenche o nome da operação com os nomes juntos. Só
+// sobrescreve campo vazio ou que ainda tem os nomes anteriores — texto digitado
+// à mão fica de pé.
 function _opEscolheuEtapa() {
-  const selE = document.getElementById('op-etapa');
   const campo = document.getElementById('op-operacao');
-  if (!selE || !campo) return;
-  const anterior = selE.dataset.anterior || '';
-  if (!campo.value.trim() || campo.value.trim() === anterior) campo.value = selE.value;
-  selE.dataset.anterior = selE.value;
+  if (!campo) return;
+  const juntos = _opEtapasMarcadas().join(' + ');
+  const anterior = campo.dataset.etapasAnterior || '';
+  if (!campo.value.trim() || campo.value.trim() === anterior) campo.value = juntos;
+  campo.dataset.etapasAnterior = juntos;
 }
 
 // Mostra ao vivo o término calculado — é o número que o planejador confere.
@@ -5326,11 +5364,11 @@ async function salvarModalOperacao() {
   const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
   if (!funcao) return toast('Escolha a função / posto', 'err');
   const escopo = v('op-escopo') === 'etapa' ? 'etapa' : 'completa';
-  const etapa = escopo === 'etapa' ? v('op-etapa').trim() : '';
-  if (escopo === 'etapa' && !etapa) return toast('Escolha a etapa que será executada', 'err');
-  // Etapa escolhida e nome livre em branco: o nome da etapa já descreve a
+  const etapas = escopo === 'etapa' ? _opEtapasMarcadas() : [];
+  if (escopo === 'etapa' && !etapas.length) return toast('Marque ao menos uma etapa que será executada', 'err');
+  // Etapas marcadas e nome livre em branco: os nomes das etapas já descrevem a
   // operação — não faz sentido exigir que o usuário redigite o mesmo texto.
-  const operacao = v('op-operacao').trim() || etapa;
+  const operacao = v('op-operacao').trim() || etapas.join(' + ');
   if (!operacao) return toast('Descreva a operação', 'err');
   const inicio = v('op-inicio');
   if (_opMin(inicio) == null) return toast('Informe a hora de início', 'err');
@@ -5345,7 +5383,7 @@ async function salvarModalOperacao() {
   const campos = {
     data,
     funcaoId, funcaoNome: funcao.nome,
-    operacao, escopo, etapa,
+    operacao, escopo, etapas,
     inicio, duracaoMin,
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
@@ -5452,7 +5490,7 @@ function renderPrintPlanoOperacoes() {
         <td class="bx"><span class="exp-print-box"></span></td>
         <td class="jan">${esc(_opJanelaTexto(op))}</td>
         <td class="ope">${esc(op.operacao) || '—'}${
-          op.escopo === 'etapa' ? ' <span class="tag">etapa</span>' : ''}${
+          op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
           pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
           conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
           op.obs ? `<div class="obs">${esc(op.obs)}</div>` : ''}</td>
@@ -5540,7 +5578,10 @@ function migrarOperacoesParaJornada() {
   let mudou = false;
   lista.forEach(op => {
     if (op.prioridade == null) { op.prioridade = 'eletiva'; mudou = true; }
-    if (op.escopo == null) { op.escopo = 'completa'; op.etapa = ''; mudou = true; }
+    if (op.escopo == null) { op.escopo = 'completa'; mudou = true; }
+    // Migração: etapa única (op.etapa) → múltiplas (op.etapas).
+    if (!Array.isArray(op.etapas)) { op.etapas = op.etapa ? [op.etapa] : []; mudou = true; }
+    if ('etapa' in op) { delete op.etapa; mudou = true; }
     if (op.duracaoMin == null) { op.duracaoMin = 0; mudou = true; }
     if (op.inicio == null) { op.inicio = op.hora || ''; mudou = true; }
     if (op.referencia == null) {
