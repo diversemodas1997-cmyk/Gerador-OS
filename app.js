@@ -11278,9 +11278,18 @@ function renderPrintSheet(o) {
   // cadastradas distintas, mas o banner deve dizer "PRETO" uma vez só — sem o
   // corte, sairia "PRETO MALHA ALGODÃO / PRETO RIBANA MALHA ALGODÃO" e estouraria
   // a caixa de 324px que o auto-ajuste de fonte abaixo assume.
+  // Quantas cores o DESENHO realmente tem — pela sequência do desc, senão pelos
+  // campos de cor. O banner mostra SÓ essas: um desenho de UMA cor (Básica) cujo
+  // enfesto usa moletom + forro + ribana (3 tecidos coloridos) herda 3 cores na
+  // variante; sem este limite o banner sairia com 3 cores numa peça de 1 cor só.
+  const nCoresDesenho = desenho
+    ? (ordemCoresPorDesc(desenho).length
+        || [desenho.corPrincipalId, desenho.corSecundariaId, desenho.corTerciariaId].filter(Boolean).length
+        || 3)
+    : 3;
   const coresDesenho = ordenarCoresNomesPorDesc([...new Set(
     (o.variantes || [])
-      .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome])
+      .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome].slice(0, nCoresDesenho))
       .filter(c => c && c !== '—')
       .map(corNomeCurto)
   )], desenho);
