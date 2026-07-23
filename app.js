@@ -10971,6 +10971,46 @@ async function estornarBaixaEstoqueOS(osId) {
   }
 }
 
+// Descritor da grade para agrupar OSs "iguais": usa a descrição da grade e, na
+// falta dela, as quantidades por tamanho.
+function _osGradeKey(o) {
+  const g = o.grade || {};
+  const d = (g.descricao || '').trim().toLowerCase();
+  return d || ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).join('-');
+}
+
+// Média histórica da DURAÇÃO de cada fase do enfesto, entre OSs com a MESMA
+// grade e o MESMO conjunto de fases, a partir dos tempos Início/Fim já lançados
+// (progresso.enfestosTempos). Chave = nome da fase (minúsculo). Alimenta a
+// sugestão de "tempo automático" por fase na folha. { nome: {mediaMin, n} }.
+function _mediaTempoFasesSimilares(o) {
+  const gradeKey = _osGradeKey(o);
+  const nomesFase = new Set((o.fases || []).map(f => (f.nome || '').trim().toLowerCase()).filter(Boolean));
+  if (!nomesFase.size) return {};
+  const acc = {};
+  (STATE.ordens || []).forEach(x => {
+    if (!x || x.id === o.id) return;
+    if (_osGradeKey(x) !== gradeKey) return;
+    const nomesX = new Set((x.fases || []).map(f => (f.nome || '').trim().toLowerCase()).filter(Boolean));
+    if (nomesX.size !== nomesFase.size) return;             // mesmo conjunto de fases
+    let igual = true; nomesFase.forEach(n => { if (!nomesX.has(n)) igual = false; });
+    if (!igual) return;
+    const tempos = (x.progresso || {}).enfestosTempos || {};
+    (x.fases || []).forEach(f => {
+      const nome = (f.nome || '').trim().toLowerCase();
+      if (!nome) return;
+      const t = tempos[f.ordem] || {};
+      const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
+      if (ini == null || fim == null || fim <= ini) return;
+      if (!acc[nome]) acc[nome] = { soma: 0, n: 0 };
+      acc[nome].soma += (fim - ini); acc[nome].n++;
+    });
+  });
+  const out = {};
+  Object.keys(acc).forEach(n => { out[n] = { mediaMin: Math.round(acc[n].soma / acc[n].n), n: acc[n].n }; });
+  return out;
+}
+
 function renderEnfestoBox(o) {
   const e = o.enfesto || {};
   const tecs = o.tecidos || [];
@@ -11038,12 +11078,22 @@ function renderEnfestoBox(o) {
     + `onchange="this.value=_horaFmt(this.value); salvarTempoEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${campo}', this.value)" `
     + `style="width:44px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
     + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
-  const linhaTempo = (lbl, ord, campoIni, campoFim, t) =>
-    `<div style="display:flex;align-items:center;gap:5px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
+  // Tempo AUTOMÁTICO por fase: média histórica da duração desta fase entre OSs
+  // com a mesma grade e as mesmas fases (dos tempos já lançados). Só sugestão —
+  // aparece ao lado, não sobrescreve o que o usuário digita.
+  const mediasFase = _mediaTempoFasesSimilares(o);
+  const nomeFaseDe = ord => (((o.fases || []).find(f => f.ordem === ord) || {}).nome || '').trim().toLowerCase();
+  const linhaTempo = (lbl, ord, campoIni, campoFim, t) => {
+    const med = mediasFase[nomeFaseDe(ord)];
+    const hint = med
+      ? ` <span style="color:#888;font-size:5.5pt;" title="Tempo médio desta fase em ${med.n} OS com a mesma grade e fases">⌀ ${esc(_opDurTexto(med.mediaMin))}</span>`
+      : '';
+    return `<div style="display:flex;align-items:center;gap:5px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
       <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">${lbl}</span>
       <span style="color:#555;">Início</span>${campoTempo(ord, campoIni, t[campoIni])}
-      <span style="color:#555;">Fim</span>${campoTempo(ord, campoFim, t[campoFim])}
+      <span style="color:#555;">Fim</span>${campoTempo(ord, campoFim, t[campoFim])}${hint}
     </div>`;
+  };
   const linhasEnfestos = consumo.map(L => {
     const ord = L.ordem;
     const camBloco = L.ehVies ? 1 : (L.camadas || 0);
