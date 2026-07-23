@@ -10170,15 +10170,19 @@ async function recalcularDeCamadasPorTom(osId) {
   o.enfesto.target = camadas * minQtd * mult;   // peças-alvo (tamanho limitante)
 
   // "Total por tamanho": N tons contíguos; cada tom editável recebe V =
-  // camadas_tom × mult (uniforme por tamanho). O último é o balanceador.
+  // camadas_tom × grade × mult — o V é "peças por tamanho", então precisa
+  // multiplicar pela unidade da GRADE (minQtd, ex.: 2 na grade "2X") e pelo
+  // multiplicador do tecido (moletom 1 / malha 2). Sem o minQtd, uma grade de 2
+  // por tamanho saía com metade no tom (o colTotal e o target já incluíam a
+  // grade; só o V dos tons ficava de fora). O último tom é o balanceador.
   o.progresso = o.progresso || {};
   o.progresso.totalTamanhoTons = {};
   o.progresso.totalTamanhoTomValor = o.progresso.totalTamanhoTomValor || {};
   const N = valores.length;
   for (let slot = 1; slot <= 3; slot++) {
     if (slot <= N) o.progresso.totalTamanhoTons[slot] = true;
-    if (slot < N) o.progresso.totalTamanhoTomValor[slot] = valores[slot - 1] * mult; // editável
-    else delete o.progresso.totalTamanhoTomValor[slot];                              // balanceador/inexistente
+    if (slot < N) o.progresso.totalTamanhoTomValor[slot] = valores[slot - 1] * minQtd * mult; // editável
+    else delete o.progresso.totalTamanhoTomValor[slot];                                        // balanceador/inexistente
   }
 
   try { await saveState('ordens'); } catch (e) { console.warn('recalcularDeCamadasPorTom', e); }
