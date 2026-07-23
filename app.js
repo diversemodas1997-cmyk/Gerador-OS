@@ -8656,9 +8656,19 @@ function sanitizeForFilename(s) {
   return String(s || '').replace(/[\\/:*?"<>|\x00-\x1F]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+// Data no formato brasileiro para NOME DE ARQUIVO: DD-MM-AAAA. Usa hífen no
+// lugar da barra (/ é inválida em nome de arquivo). Espelha o formatDate da
+// tela, que mostra DD/MM/AAAA. ISO inesperada cai de volta como veio.
+function dataBrArquivo(iso) {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).split('-');
+  return (d && m && y) ? `${d}-${m}-${y}` : String(iso);
+}
+
 function pdfFilenameForOS(o) {
   const numero = sanitizeForFilename(o.os) || 'sem-numero';
-  return `OS-${numero}.pdf`;
+  const dataBr = dataBrArquivo(o.data);
+  return dataBr ? `OS-${numero}-${dataBr}.pdf` : `OS-${numero}.pdf`;
 }
 
 function etiquetaFilenameForOS(o) {
@@ -8977,7 +8987,8 @@ async function atualizarOeFolderStatus() {
 // mesmo período reescreve o mesmo arquivo, igual às OS pelo número).
 function oeFilenameForPlano() {
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
-  const base = (ini === fim) ? `OE-${ini}` : `OE-${ini}_a_${fim}`;
+  const iniBr = dataBrArquivo(ini), fimBr = dataBrArquivo(fim);
+  const base = (ini === fim) ? `OE-${iniBr}` : `OE-${iniBr}_a_${fimBr}`;
   return sanitizeForFilename(base) + '.pdf';
 }
 
