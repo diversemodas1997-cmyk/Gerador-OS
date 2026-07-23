@@ -9127,6 +9127,18 @@ function _avisarOeUmaVez(chave, msg) {
   toast(msg, 'err');
 }
 
+// Há OE de verdade no período atual? = existe alguma ocorrência não cancelada
+// com pelo menos uma OS alocada (ida ou volta). Espelha o filtro de
+// renderPrintPlanoExpedicao: sem isso a folha sai só com cabeçalho e o aviso
+// "Nenhuma OE produzida". Fonte única pra tela e gravação não divergirem.
+function oeTemConteudo() {
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  return ocorrenciasExpedicao(ini, fim).some(oc =>
+    !oc.cancelada &&
+    resumoPernaExpedicao(oc, 'ida').itens.length +
+    resumoPernaExpedicao(oc, 'volta').itens.length > 0);
+}
+
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // Trava de reentrada com validade: uma captura travada não pode calar o
   // auto-save para sempre.
@@ -9136,6 +9148,13 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // usa (a expedição imprime o diário). O salvar MANUAL (botão, silent=false)
   // continua valendo para qualquer modo.
   if (silent && expPlanoModo !== 'dia') return false;
+  // Não grava OE VAZIA na pasta como se fosse OE emitida: sem nenhuma OS
+  // alocada no período, o PDF sairia só com cabeçalho e "Nenhuma OE produzida".
+  if (!oeTemConteudo()) {
+    if (silent) return false;
+    toast('OE vazia — nenhuma OS alocada neste período. Nada foi salvo.', 'err');
+    return false;
+  }
   let handle = oeFolderHandle || (await loadOeFolderHandle());
   if (!handle) {
     if (silent) {
