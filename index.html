@@ -776,6 +776,11 @@
         <div id="snapshotsLocaisList"><div class="empty" style="padding:20px;">Clique em "Atualizar lista" para carregar.</div></div>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Restaurar só as OEs (expedição) de um snapshot</div>
+        <div class="info-box">Recupera as <b>cargas/alocações de expedição (OEs)</b> de um arquivo de snapshot, <b>sem reverter</b> as OSs e cadastros. Baixe um snapshot de <b>antes da perda</b> (botão "Baixar" nos cards de snapshot acima), depois escolha o arquivo aqui. Só <b>adiciona o que falta</b> — nada do atual é apagado. Ele mostra quantas OEs vai restaurar antes de aplicar; se der 0, o snapshot é posterior à perda — tente um mais antigo.</div>
+        <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Escolher snapshot e restaurar só as OEs<input type="file" accept="application/json" onchange="restaurarExpedicaoDeArquivo(event)"></label>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Usuários e permissões</div>
         <div class="info-box">Somente admin pode gerenciar papéis. Usuário comum só pode criar/editar OS — não mexe em cadastros nem apaga dados.</div>
         <div class="form-grid cols-3" style="margin-bottom: 12px;">
@@ -897,6 +902,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-23o"></script>
+<script src="app.js?v=2026-07-23p"></script>
 </body>
 </html>

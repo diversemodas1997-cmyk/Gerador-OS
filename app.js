@@ -11330,6 +11330,53 @@ async function importarDados(e) {
   }
 }
 
+// Restauração CIRÚRGICA das OEs (expedição) a partir de um snapshot baixado.
+// Ao contrário do "Restaurar snapshot" (tudo-ou-nada, reverte OS e cadastros),
+// aqui só as chaves de expedição são mescladas — e por UNIÃO por id: adiciona o
+// que falta no atual e NUNCA apaga o que já existe. Feito para recuperar OEs
+// perdidas sem jogar fora o trabalho recente nas OSs. Aceita o formato do
+// "Baixar snapshot"/"Exportar" (chaves com arrays reais).
+async function restaurarExpedicaoDeArquivo(e) {
+  if (!exigirAdmin('restaurar expedição')) { e.target.value = ''; return; }
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { toast('Arquivo inválido (não é um JSON de snapshot).', 'err'); return; }
+  const KEYS = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes'];
+  const plano = {};
+  let totalAdd = 0;
+  const resumo = [];
+  KEYS.forEach(k => {
+    let doArq = data[k];
+    if (typeof doArq === 'string') { try { doArq = JSON.parse(doArq); } catch { doArq = []; } }
+    doArq = Array.isArray(doArq) ? doArq : [];
+    const atual = Array.isArray(STATE[k]) ? STATE[k] : [];
+    const idsAtuais = new Set(atual.map(x => x && x.id).filter(Boolean));
+    const faltando = doArq.filter(x => x && x.id && !idsAtuais.has(x.id));
+    plano[k] = atual.concat(faltando);
+    totalAdd += faltando.length;
+    resumo.push(`• ${k.replace('expedicao', '')}: ${atual.length} agora + ${faltando.length} a restaurar (arquivo tem ${doArq.length})`);
+  });
+  if (!totalAdd) {
+    toast('Nada a restaurar — o arquivo não tem OEs que faltem no atual (talvez seja posterior à perda; tente um snapshot mais antigo).', 'err');
+    return;
+  }
+  const snapInfo = (data.__snapshot && data.__snapshot.data) ? `\nSnapshot de ${data.__snapshot.data}.` : '';
+  if (!confirm(`Restaurar ${totalAdd} item(ns) de expedição (OE) que faltam?${snapInfo}\n\n${resumo.join('\n')}\n\nOs itens atuais NÃO são apagados — só adiciona o que falta.`)) return;
+  try {
+    for (const k of KEYS) { STATE[k] = plano[k]; await saveState(k); }
+    toast(`${totalAdd} item(ns) de expedição restaurado(s).`, 'ok');
+    const sec = document.querySelector('section.page[data-page="expedicao"]');
+    if (sec && !sec.classList.contains('hidden') && typeof renderExpedicaoPlano === 'function') {
+      trocarAbaExpedicao('plano');
+    }
+  } catch (err) {
+    toast('Falha ao restaurar: ' + (err.message || err), 'err');
+  }
+}
+
 async function limparTudo() {
   if (!exigirAdmin('apagar todos os dados')) return;
   const resp = prompt(
@@ -11562,6 +11609,7 @@ window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
 window.importarDados = importarDados;
+window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
 window.limparTudo = limparTudo;
 window.popularExemplo = popularExemplo;
 window.abrirLogin = abrirLogin;
