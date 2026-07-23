@@ -1645,6 +1645,13 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .sheet-exp {
   display: block;
   height: auto;
+  /* Anula o min-height: 297mm herdado de .sheet TAMBÉM na tela (não só no
+     @media print). O PDF da OE é gerado por html2canvas com os estilos de TELA:
+     com o piso de 297mm, uma OE curta ocupava uma folha inteira de altura e o
+     corte de paginação jogava o espaço vazio + o rodapé de assinaturas para uma
+     2ª página. Sem o piso, a folha tem a altura do conteúdo e cabe em 1 página;
+     OEs longas (mês) seguem crescendo e paginando normalmente. */
+  min-height: 0;
   padding: 10mm;  /* na tela; na impressao quem manda e a margem da @page */
   page: plano-exp;
 }
