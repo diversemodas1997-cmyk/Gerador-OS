@@ -4718,6 +4718,16 @@ function opHoje() {
   renderOperacoes();
 }
 
+// Vista da agenda: 'posto' (faixa por função) ou 'pessoa' (faixa por pessoa —
+// mostra num quadro só tudo que cada pessoa faz e onde ela se sobrepõe).
+let opVista = 'posto';
+try { opVista = sessionStorage.getItem('gos:op:vista') || opVista; } catch (e) {}
+function opSetVista(v) {
+  opVista = (v === 'pessoa') ? 'pessoa' : 'posto';
+  try { sessionStorage.setItem('gos:op:vista', opVista); } catch (e) {}
+  renderOperacoes();
+}
+
 /* ---------------- tempo ---------------- */
 
 // 'HH:MM' → minutos desde a meia-noite. Vazio/inválido vira null (a operação
@@ -4896,18 +4906,19 @@ async function moverPostoOperacoes(data, funcaoNome, dir) {
 // mais importa numa agenda de tempo.
 function _opConflitos(lista) {
   const ids = new Set();
-  const porFuncao = new Map();
+  const grupos = new Map();
   lista.forEach(op => {
     if (_opInicioMin(op) == null || !_opDuracao(op)) return;
-    // A chave inclui a DATA: o horário é sempre dentro do dia, então comparar
-    // operações de dias diferentes acusava sobreposição onde não há — bastava
-    // um posto ter uma jornada longa na segunda e outra na terça para as duas
-    // saírem marcadas nos modos semanal e mensal.
-    const k = op.data + '|' + (op.funcaoId || _opFuncaoNome(op));
-    if (!porFuncao.has(k)) porFuncao.set(k, []);
-    porFuncao.get(k).push(op);
+    // Cruzar jornadas é erro tanto no MESMO POSTO (função) quanto na MESMA
+    // PESSOA (responsável) — a pessoa não pode estar em dois lugares ao mesmo
+    // tempo, mesmo que os postos sejam diferentes. A chave inclui a DATA: o
+    // horário é dentro do dia, então comparar dias diferentes acusaria
+    // sobreposição onde não há (jornada longa na segunda e outra na terça).
+    const chaves = [op.data + '|F|' + (op.funcaoId || _opFuncaoNome(op))];
+    if (op.responsavelId) chaves.push(op.data + '|P|' + op.responsavelId);
+    chaves.forEach(k => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(op); });
   });
-  porFuncao.forEach(arr => {
+  grupos.forEach(arr => {
     arr.sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
     for (let i = 1; i < arr.length; i++) {
       if (_opInicioMin(arr[i]) < _opFimMin(arr[i - 1])) { ids.add(arr[i].id); ids.add(arr[i - 1].id); }
@@ -4956,6 +4967,10 @@ function renderOperacoes() {
         <div class="exp-periodo">${esc(_expLabelPeriodo(opPlanoModo, opPlanoAncora))}</div>
         <button class="btn" onclick="opNav(1)" title="Próximo período">›</button>
         <button class="btn" onclick="opHoje()">Hoje</button>
+      </div>
+      <div class="exp-seg" title="Como agrupar a linha do tempo">
+        <button class="${opVista === 'posto' ? 'active' : ''}" onclick="opSetVista('posto')">Por posto</button>
+        <button class="${opVista === 'pessoa' ? 'active' : ''}" onclick="opSetVista('pessoa')">Por pessoa</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn accent" onclick="goto('print-operacoes')">🖨 Folha do plano</button>
@@ -5007,15 +5022,18 @@ function renderOperacoes() {
 
   // Barra da operação dentro da janela do dia. É onde "07:12 por 3h20" vira
   // uma coisa que se enxerga ao lado dos outros postos.
-  const barraHtml = (op, jan) => {
+  const barraHtml = (op, jan, comFuncao) => {
     const i = _opInicioMin(op), dur = _opDuracao(op);
     if (i == null || !dur) return '';
     const larg = jan.fim - jan.ini;
     const left = (i - jan.ini) / larg * 100;
     const width = Math.max(1.2, dur / larg * 100);
     const st = _opStatus(op);
-    return `<div class="op-bar ${st}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%"
-      title="${esc(op.operacao)} · ${esc(_opJanelaTexto(op))}"><span>${esc(op.operacao)}</span></div>`;
+    const pr = _opPrioridade(op);
+    const conf = conflitos.has(op.id) ? ' conflito' : '';
+    const rot = comFuncao ? `${_opFuncaoNome(op)}: ${op.operacao}` : op.operacao;
+    return `<div class="op-bar ${st} prio-${pr}${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%"
+      title="${esc(rot)} · ${esc(_opJanelaTexto(op))}${conf ? ' · SOBREPOSTA (mesma pessoa/posto em dois horários)' : ''}"><span>${esc(rot)}</span></div>`;
   };
 
   const linhaHtml = (op, pos, qtd) => {
@@ -5109,12 +5127,55 @@ function renderOperacoes() {
       </div>`;
   };
 
+  // VISTA POR PESSOA: um quadro único do dia com uma faixa por pessoa, no mesmo
+  // eixo de horas. Vê-se de relance tudo que cada pessoa faz e onde ela se
+  // sobrepõe (mesma pessoa em duas tarefas ao mesmo tempo = conflito vermelho).
+  const diaHtmlPessoa = (data, doDia) => {
+    const jan = _opJanelaDoDia(doDia);
+    const porPessoa = new Map();
+    doDia.forEach(op => {
+      const nome = _opResponsavelNome(op) || '— a definir —';
+      if (!porPessoa.has(nome)) porPessoa.set(nome, []);
+      porPessoa.get(nome).push(op);
+    });
+    const lanes = Array.from(porPessoa.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([nome, itens]) => {
+        const temConf = itens.some(o => conflitos.has(o.id));
+        const minutos = itens.reduce((s, o) => s + _opDuracao(o), 0);
+        const semHora = itens.filter(o => _opInicioMin(o) == null).length;
+        return `
+          <div class="op-pessoa-lane ${temConf ? 'conflito' : ''}">
+            <div class="op-pessoa-nome">${esc(nome)}${temConf ? ' <span class="exp-badge alto">conflito</span>' : ''}
+              <div class="op-pessoa-tot">${esc(_opDurTexto(minutos))} · ${itens.length} tarefa${itens.length > 1 ? 's' : ''}${semHora ? ` · ${semHora} sem horário` : ''}</div>
+            </div>
+            ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${itens.map(op => barraHtml(op, jan, true)).join('')}</div></div>`
+                  : '<div class="op-pessoa-tot" style="padding:2px 0;">Sem horário definido nas tarefas.</div>'}
+          </div>`;
+      }).join('');
+    const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
+    const nConf = doDia.filter(o => conflitos.has(o.id)).length;
+    return `
+      <div class="card exp-ocor">
+        <div class="exp-ocor-head">
+          <div>
+            <div class="exp-ocor-data">${_EXP_DIAS_CURTO[_expData(data).getDay()]} · ${esc(formatDate(data))}${data === _expHoje() ? ' <span class="exp-badge info">hoje</span>' : ''}</div>
+            <div class="exp-ocor-nome">${porPessoa.size} pessoa${porPessoa.size === 1 ? '' : 's'} · ${esc(_opDurTexto(totMin))} de operação${nConf ? ` · <span class="exp-badge alto">${nConf} em conflito</span>` : ''}</div>
+          </div>
+          <div class="admin-only"><button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button></div>
+        </div>
+        ${jan ? reguaHtml(jan) : ''}
+        <div class="op-pessoa-quadro">${lanes}</div>
+      </div>`;
+  };
+
   const porDia = new Map();
   ops.forEach(op => {
     if (!porDia.has(op.data)) porDia.set(op.data, []);
     porDia.get(op.data).push(op);
   });
-  const cards = Array.from(porDia.keys()).sort().map(d => diaHtml(d, porDia.get(d))).join('');
+  const montarDia = opVista === 'pessoa' ? diaHtmlPessoa : diaHtml;
+  const cards = Array.from(porDia.keys()).sort().map(d => montarDia(d, porDia.get(d))).join('');
 
   const semFuncoes = !(STATE.funcoes || []).length;
   const vazio = `

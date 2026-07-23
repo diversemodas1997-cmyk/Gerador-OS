@@ -1535,9 +1535,21 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.op-bar.feita { background: var(--ok); }
+/* Cor por prioridade; status (andamento/feita) vence a prioridade, então vem
+   depois. Conflito é um contorno vermelho por cima de qualquer fundo. */
+.op-bar.prio-urgente { background: var(--accent-dark); }
+.op-bar.prio-emergente { background: var(--alert); }
 .op-bar.andamento { background: var(--accent-dark); }
+.op-bar.feita { background: var(--ok); }
+.op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
 .op-bar span { pointer-events: none; }
+
+/* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
+.op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
+.op-pessoa-lane { border: 1px solid var(--line); border-radius: 2px; padding: 6px 12px; }
+.op-pessoa-lane.conflito { border-color: var(--alert); background: var(--alert-bg); }
+.op-pessoa-nome { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.op-pessoa-tot { font-size: 11px; color: var(--ink-3); font-weight: 400; margin-left: auto; }
 
 .op-func { border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; margin-bottom: 10px; }
 .op-func:last-child { margin-bottom: 0; }
