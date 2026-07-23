@@ -3713,6 +3713,64 @@ function moverCargaExp(cargaId) {
   abrirModalExpCarga(c.janelaId, c.data, c.perna, c.osId, cargaId);
 }
 
+// ---- Busca de OE existente no planejamento ----
+// Varre as ocorrências de expedição num intervalo amplo (±1 ano) e lista as que
+// TÊM OS alocada e batem com o termo (nº de OS, modelo, data dd/mm ou nome da
+// janela). Clicar num resultado leva o plano para aquele dia. A busca só mexe no
+// dropdown de resultados — não re-renderiza o plano — pra não perder o foco.
+let _oeBuscaTimer = null;
+function buscarOePlano(q) {
+  if (_oeBuscaTimer) clearTimeout(_oeBuscaTimer);
+  _oeBuscaTimer = setTimeout(() => _oeBuscaExec(q), 180);
+}
+function _oeBuscaExec(q) {
+  const box = document.getElementById('oe-busca-results');
+  if (!box) return;
+  const termo = (q || '').trim().toLowerCase();
+  if (termo.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const hoje = _expHoje();
+  const ocs = ocorrenciasExpedicao(_expAddDias(hoje, -365), _expAddDias(hoje, 365))
+    .filter(oc => !oc.cancelada);
+  const matches = [];
+  ocs.forEach(oc => {
+    const itens = resumoPernaExpedicao(oc, 'ida').itens.concat(resumoPernaExpedicao(oc, 'volta').itens);
+    if (!itens.length) return;
+    const dataBr = formatDate(oc.data);
+    const hay = (oc.data + ' ' + dataBr + ' ' + (oc.janela.nome || '') + ' ' +
+      itens.map(i => (i.osNumero || '') + ' ' + (i.modelo || '')).join(' ')).toLowerCase();
+    if (hay.includes(termo)) {
+      matches.push({
+        anchor: oc.data, dataBr, dow: _EXP_DIAS_CURTO[_expData(oc.data).getDay()],
+        janela: oc.janela.nome || 'Janela sem nome', n: itens.length
+      });
+    }
+  });
+  if (!matches.length) {
+    box.innerHTML = '<div style="padding:10px 12px;color:var(--ink-3);font-size:13px;">Nenhuma OE encontrada com esse termo.</div>';
+    box.style.display = 'block';
+    return;
+  }
+  matches.sort((a, b) => String(b.anchor).localeCompare(String(a.anchor)));
+  box.innerHTML = matches.slice(0, 25).map(m =>
+    `<div class="oe-busca-item" onmousedown="irParaOeDia('${esc(m.anchor)}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line-2);font-size:13px;">`
+    + `<strong>${esc(m.dow)} ${esc(m.dataBr)}</strong> · ${esc(m.janela)} <span style="color:var(--ink-3);">· ${m.n} OS</span></div>`
+  ).join('');
+  box.style.display = 'block';
+}
+// Leva o plano para o dia da OE escolhida (modo diário + âncora na data). Usa
+// onmousedown no item pra disparar ANTES do onblur do input fechar o dropdown.
+function irParaOeDia(data) {
+  expPlanoModo = 'dia';
+  expPlanoAncora = data;
+  try {
+    sessionStorage.setItem('gos:exp:modo', 'dia');
+    sessionStorage.setItem('gos:exp:ancora', data);
+  } catch (e) {}
+  const box = document.getElementById('oe-busca-results');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  renderExpedicaoPlano();
+}
+
 /* ---------------- estado da tela ---------------- */
 
 let expPlanoModo = 'semana';
@@ -3950,7 +4008,15 @@ function renderExpedicaoPlano() {
       </table>
     </div>`;
 
-  cont.innerHTML = toolbar + comoFunciona + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
+  const buscaHtml = `
+    <div class="exp-busca no-print" style="position:relative;margin-bottom:8px;">
+      <input id="oe-busca-input" type="search" autocomplete="off" placeholder="🔎 Buscar OE existente por OS, data (dd/mm) ou janela…"
+        oninput="buscarOePlano(this.value)" onfocus="buscarOePlano(this.value)"
+        onblur="setTimeout(function(){var b=document.getElementById('oe-busca-results');if(b)b.style.display='none';},200)"
+        style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
+      <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
+    </div>`;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */

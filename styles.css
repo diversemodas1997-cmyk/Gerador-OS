@@ -1143,6 +1143,9 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; }
   font-size: 11px;
 }
 
+/* Busca de OE no planejamento: realce da linha sob o cursor. */
+.oe-busca-item:hover { background: var(--line-2); }
+
 /* ============ PAPÉIS / PERMISSÕES ============ */
 .admin-only { display: none !important; }
 body.is-admin .admin-only { display: revert !important; }
