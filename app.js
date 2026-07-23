@@ -1409,6 +1409,7 @@ window.abrirMenuMobile = abrirMenuMobile;
 window.fecharMenuMobile = fecharMenuMobile;
 
 function goto(page) {
+  const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
   // Bloqueia navegação a páginas de cadastro para usuários não-admin
   if (page && page.startsWith('cad-') && currentRole && currentRole !== 'admin') {
     toast('Apenas admin pode acessar cadastros', 'err');
@@ -1423,6 +1424,12 @@ function goto(page) {
   if (btn) btn.classList.add('active');
   _restaurarScrollPagina(page);  // restaura o scroll salvo desta pagina (ou 0 na 1a visita)
   fecharMenuMobile();  // mobile: fecha o overlay do menu quando entra na pagina
+  // Saiu da folha de OE com um auto-save adiado? Agora grava — a seção já está
+  // escondida, então a captura acontece fora da tela, sem perturbar nada.
+  if (paginaAnterior === 'print-expedicao' && page !== 'print-expedicao' && _oeSaveAdiado) {
+    _oeSaveAdiado = false;
+    salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE ao sair', e));
+  }
 
   // Presence: só ativa quando está editando OS
   if (page !== 'nova-os') pararPresenceOS();
@@ -9300,6 +9307,10 @@ async function _comFolhaOeRenderizavel(fn) {
 // Debounce porque montar uma carga são vários cliques seguidos, e cada captura
 // html2canvas é cara — interessa o estado final, não cada passo.
 let _oeAutoTimer = null;
+// Há um auto-save da OE ADIADO porque o usuário está vendo a folha? Grava ao
+// sair da folha (aí ela está escondida e a captura é fora da tela, sem
+// "subir e descer" na frente do usuário).
+let _oeSaveAdiado = false;
 function agendarAutoSaveOE() {
   if (_oeAutoTimer) clearTimeout(_oeAutoTimer);
   _oeAutoTimer = setTimeout(() => {
@@ -9342,6 +9353,15 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // usa (a expedição imprime o diário). O salvar MANUAL (botão, silent=false)
   // continua valendo para qualquer modo.
   if (silent && expPlanoModo !== 'dia') return false;
+  // NÃO perturbar a folha enquanto o usuário a está VENDO. O auto-save
+  // re-renderiza a folha e liga o pdf-capture (que desloca o layout), fazendo
+  // ela "subir e descer". Se a folha está visível, adia: grava quando o usuário
+  // sair dela (aí está escondida → captura fora da tela). O salvar MANUAL
+  // (silent=false, botão) segue normal — o usuário pediu.
+  if (silent) {
+    const secOe = document.querySelector('section.page[data-page="print-expedicao"]');
+    if (secOe && !secOe.classList.contains('hidden')) { _oeSaveAdiado = true; return false; }
+  }
   // Não grava OE VAZIA na pasta como se fosse OE emitida: sem nenhuma OS
   // alocada no período, o PDF sairia só com cabeçalho e "Nenhuma OE produzida".
   if (!oeTemConteudo()) {
