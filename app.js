@@ -1000,6 +1000,7 @@ async function submeterAuth() {
     atualizarUIAuth();
     await loadState();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
+    await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -1367,6 +1368,35 @@ async function revalidarSkusDesenhos() {
     if (ded && validos.has(ded)) { d.skuLinha = ded; mudou++; }  // só preenche se EXISTIR no catálogo
   });
   if (mudou) { try { await saveState('desenhos'); } catch (e) {} }
+}
+
+// Limpeza ÚNICA do desenho 0023 (Blusa Moletom Vermelha): a cópia do desenho
+// mostarda deixou componentes redundantes "Frente/Mangas/Costas Blusa Moletom
+// Básica" (Mostarda) duplicando os novos "Frente/Costas/Mangas". Remove os
+// redundantes SÓ quando o nome-base existe no desenho — pra não apagar nada útil.
+// Roda 1× (flag em meta) no admin; propaga pelo sync normal.
+async function migrarLimpezaDesenho0023() {
+  if (currentRole !== 'admin' || !Array.isArray(STATE.desenhos)) return;
+  STATE.meta = STATE.meta || {};
+  if (STATE.meta.limpezaDesenho0023V1) return;
+  const d = STATE.desenhos.find(x => String(x.codigo || '').trim() === '0023');
+  let removidos = 0;
+  if (d && Array.isArray(d.componentes)) {
+    const nomeDe = c => (c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || '').trim();
+    const nomesBase = new Set(d.componentes.map(nomeDe).map(n => n.toLowerCase()));
+    const antes = d.componentes.length;
+    d.componentes = d.componentes.filter(c => {
+      const m = nomeDe(c).match(/^(Frente|Mangas|Costas)\s+Blusa\s+Moletom\s+B[aá]sica$/i);
+      // remove só se o nome-base (Frente/Mangas/Costas) também existe no desenho
+      return !(m && nomesBase.has(m[1].toLowerCase()));
+    });
+    removidos = antes - d.componentes.length;
+  }
+  STATE.meta.limpezaDesenho0023V1 = true;
+  try {
+    if (removidos) { await saveState('desenhos'); toast(`Desenho 0023 limpo: ${removidos} componente(s) duplicado(s) removido(s)`, 'ok'); }
+    await saveState('meta');
+  } catch (e) { console.warn('migrarLimpezaDesenho0023', e); }
 }
 
 // Template de etapas "mais atual" por tipo de produto (confirmado pelo Junior).
@@ -8193,6 +8223,18 @@ function coletaOS() {
   grade.total = grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
 
   const blocosEnfesto = lerEnfestoBlocos();
+  // Re-deriva a COR de cada bloco pela linha de Tecidos (canônica, do desenho),
+  // pra o dado GRAVADO não ficar com um nomeCor velho — ex.: desenho copiado e a
+  // ribana trocada depois: a linha de tecido vira "Vermelho Ribana Moletom" mas
+  // o bloco guardava "Mostarda". Só quando as contagens batem (alinhamento por
+  // índice seguro) e a linha tem cor real; o nomeTecido do bloco (nome da fase)
+  // é preservado.
+  if (tecidos.length === blocosEnfesto.length) {
+    blocosEnfesto.forEach((bl, i) => {
+      const c = tecidos[i] && tecidos[i].corNome;
+      if (c && c !== '—') bl.nomeCor = c;
+    });
+  }
   const primeiroBloco = blocosEnfesto[0] || { comp: 0, larg: 0 };
   const enfesto = {
     comprimento: primeiroBloco.comp || 0,
@@ -11942,6 +11984,7 @@ async function popularExemplo() {
     await carregarPapel();
     aplicarPermissoesUI();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
+    await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
     // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
