@@ -10918,7 +10918,17 @@ function consumoEnfestoOS(o) {
     const ord = b.ordem || (i + 1);
     const fase = fasesPorOrdem[ord] || {};
     let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
-    let cor = b.nomeCor || fase.corNome || '';
+    // A cor CANÔNICA da fase vem da linha de Tecidos da OS (derivada do desenho e
+    // mantida em dia). O nomeCor do bloco é um snapshot que pode ficar VELHO —
+    // ex.: desenho copiado e a ribana trocada depois: a linha de tecido vira
+    // "Vermelho Ribana Moletom" mas o bloco fica "Mostarda". Prefere a cor da
+    // linha de tecido quando ela é real e o tecido dela bate com o da fase
+    // (evita pegar a linha errada num índice desalinhado).
+    const _tRow = tecs[i];
+    const _corLinha = (_tRow && _tRow.corNome && _tRow.corNome !== '—'
+      && (!fase.tecidoNome || !_tRow.tecidoNome || _tRow.tecidoNome === fase.tecidoNome))
+      ? _tRow.corNome : '';
+    let cor = _corLinha || b.nomeCor || fase.corNome || '';
     if (!cor && nomeEnf.includes(' · ')) {
       const parts = nomeEnf.split(' · ');
       nomeEnf = parts[0];
