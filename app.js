@@ -177,8 +177,13 @@ function iniciarRealtime() {
         // (updated_by) fazia o 2º computador do MESMO login descartar a mudança
         // do 1º achando que era própria — e a OS nunca aparecia lá.
         if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
-        cloudCache = payload.new.data || {};
-        _cloudLoadErro = false; // chegou dado bom do servidor
+        // NÃO confiar no payload.new.data: o Realtime TRUNCA payloads grandes, e
+        // o campo `data` pode chegar AUSENTE ou vazio. Usá-lo direto zerava o
+        // cloudCache ({}), esvaziava a tela (as OEs "sumiam") e travava todo
+        // save com "gravação bloqueada". Trata o realtime só como SINAL e relê o
+        // estado COMPLETO via REST (sem limite de tamanho), que é a verdade.
+        await cloudLoad();
+        if (_cloudLoadErro) return; // leitura falhou: cloudLoad já avisou
         await loadState();
         // Atualiza o marcador do polling pra evitar reload duplo
         if (payload.new.updated_at) lastSeenUpdatedAt = payload.new.updated_at;
@@ -367,6 +372,20 @@ function mostrarAlertaSalvamento(tipo, msg) {
 function esconderAlertaSalvamento() {
   const box = document.getElementById('alertaSalvamento');
   if (box) box.classList.add('hidden');
+}
+
+// Recarrega FORÇANDO versão nova: acrescenta um parâmetro à URL, então o
+// navegador não serve o index.html cacheado (que apontaria pro app.js antigo).
+// O location.reload() comum às vezes reabria a mesma versão em cache — por isso
+// "Recarregar agora" parecia "não mudar nada".
+function recarregarForcado() {
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set('_r', String(Date.now()));
+    window.location.replace(u.toString());
+  } catch (e) {
+    window.location.reload();
+  }
 }
 
 /* Snapshot diário: grava cópia do blob atual em shared_data_backups uma vez por dia. */
@@ -11563,6 +11582,7 @@ window.removerTarefaEtapa = removerTarefaEtapa;
 window.copiarEtapasEntreDesenhos = copiarEtapasEntreDesenhos;
 window.rodarCopiarEtapasParaTodos = rodarCopiarEtapasParaTodos;
 window.recarregarDadosDoServidor = recarregarDadosDoServidor;
+window.recarregarForcado = recarregarForcado;
 window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
