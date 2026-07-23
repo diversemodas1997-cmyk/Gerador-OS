@@ -37,6 +37,11 @@ let cloudCache = null;
 // falho e disparava a trava "gravação bloqueada" em loop a cada reload — quando
 // o problema real é de CARREGAMENTO (ex.: sessão expirada).
 let _cloudLoadErro = false;
+// Uma gravação está em andamento agora? Junto do saveTimer (edição pendente no
+// debounce), serve para o realtime/polling NÃO reler o servidor no meio de uma
+// edição local — senão o cloudLoad sobrescrevia o checklist/horário que o
+// usuário acabou de marcar e ainda não foi salvo, revertendo na tela.
+let _flushing = false;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -129,6 +134,7 @@ async function cloudFlush() {
   }
   cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
   setSyncStatus('saving');
+  _flushing = true;
   try {
     const { error } = await supa.from('shared_data').upsert({
       id: 'main',
@@ -160,6 +166,8 @@ async function cloudFlush() {
       'Suas últimas alterações podem NÃO ter sido salvas no servidor (' + ((e && e.message) || 'erro de conexão') + '). '
       + 'Verifique a internet. Antes de recarregar, evite fechar a página para não perder o que digitou. '
       + 'Se o problema persistir, avise o suporte.');
+  } finally {
+    _flushing = false;
   }
 }
 
@@ -177,6 +185,11 @@ function iniciarRealtime() {
         // (updated_by) fazia o 2º computador do MESMO login descartar a mudança
         // do 1º achando que era própria — e a OS nunca aparecia lá.
         if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
+        // Enquanto há edição local pendente/salvando, NÃO relê o servidor: o
+        // cloudLoad sobrescreveria o checklist/horário que o usuário acabou de
+        // marcar e ainda não foi salvo, revertendo na tela. O polling reaplica a
+        // mudança remota assim que a edição estiver salva.
+        if (saveTimer || _flushing) return;
         // NÃO confiar no payload.new.data: o Realtime TRUNCA payloads grandes, e
         // o campo `data` pode chegar AUSENTE ou vazio. Usá-lo direto zerava o
         // cloudCache ({}), esvaziava a tela (as OEs "sumiam") e travava todo
@@ -303,6 +316,11 @@ function iniciarPolling() {
         lastSeenUpdatedAt = data.updated_at;
         return;
       }
+      // Enquanto há edição local pendente/salvando, adia a aplicação: reler
+      // agora reverteria o checklist/horário recém-marcado. Não atualiza o
+      // marcador, então o próximo poll reaplica a mudança remota quando a
+      // edição já estiver salva.
+      if (saveTimer || _flushing) return;
       // Mudanca de outro usuario: aplica
       cloudCache = data.data || {};
       _cloudLoadErro = false; // chegou dado bom do servidor
