@@ -132,6 +132,30 @@ async function cloudFlush() {
       return;
     }
   }
+  // TRAVA ANTI-APAGAMENTO da EXPEDIÇÃO: um flush que zera as cargas de expedição
+  // — mas ainda tem OS/desenhos, então escapa da trava acima — é a assinatura da
+  // sobrescrita por cache velho que apagou as OEs. Só dispara se ESTE dispositivo
+  // JÁ viu cargas nesta sessão (não bloqueia quem nunca usou expedição) e agora
+  // tenta gravar zero; então confere o servidor e bloqueia se lá ainda houver
+  // cargas. Ações intencionais (limpar/restaurar) liberam via _permitirFlushVazio.
+  if (!_permitirFlushVazio && _appJaTeveExpedicao && _contarItens(cloudCache, 'expedicaoCargas') === 0) {
+    let servidorTemCargas = false;
+    try {
+      const { data } = await supa.from('shared_data').select('data').eq('id', 'main').maybeSingle();
+      const d = (data && data.data) || {};
+      servidorTemCargas = _contarItens(d, 'expedicaoCargas') > 0;
+    } catch (e) { console.warn('checagem anti-apagamento expedição', e); }
+    if (servidorTemCargas) {
+      console.error('cloudFlush BLOQUEADO: gravar 0 cargas de expedição sobre servidor que ainda tem OEs.');
+      setSyncStatus('error');
+      mostrarAlertaSalvamento('bloqueio',
+        'A tela está sem nenhuma OE (carga de expedição), mas o servidor ainda tem as suas. '
+        + 'Para evitar apagar as OEs, a gravação foi bloqueada e NADA foi sobrescrito. '
+        + 'Não continue editando — clique em "Recarregar agora" para trazer as OEs de volta.');
+      toast('⛔ Gravação bloqueada — suas OEs no servidor estão protegidas. Recarregue a página.', 'err');
+      return;
+    }
+  }
   cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
   setSyncStatus('saving');
   _flushing = true;
@@ -145,6 +169,7 @@ async function cloudFlush() {
     if (error) throw error;
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
+    if (_contarItens(cloudCache, 'expedicaoCargas') > 0) _appJaTeveExpedicao = true;
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
     // Snapshot DIÁRIO no servidor. Ele rodava só ao ABRIR o app: uma aba deixada
@@ -1125,6 +1150,7 @@ async function loadState() {
   if ((STATE.ordens && STATE.ordens.length) || (STATE.desenhos && STATE.desenhos.length)) {
     _appJaTeveDados = true;
   }
+  if (STATE.expedicaoCargas && STATE.expedicaoCargas.length) _appJaTeveExpedicao = true;
   // Carrega overrides de rótulos das pastas de grades (objeto, não array)
   try {
     const r = await DB.get('gradeFolderLabels');
@@ -4548,7 +4574,13 @@ async function excluirCargaExp(id) {
   if (!exigirAdmin('remover OS da expedição')) return;
   if (!confirm('Tirar esta OS da carga?')) return;
   STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => c.id !== id);
-  await saveState('expedicaoCargas');
+  // Exclusão INTENCIONAL pode zerar as cargas: libera a trava anti-apagamento da
+  // expedição só para este flush (senão remover a ÚLTIMA carga seria bloqueado).
+  _permitirFlushVazio = true;
+  try {
+    await saveState('expedicaoCargas');
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await cloudFlush(); }
+  } finally { _permitirFlushVazio = false; }
   toast('OS removida da carga', 'ok');
   renderExpedicaoPlano();
 }
@@ -4587,9 +4619,15 @@ async function excluirJanelaExp(id) {
   STATE.expedicaoJanelas = (STATE.expedicaoJanelas || []).filter(x => x.id !== id);
   STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => c.janelaId !== id);
   STATE.expedicaoExcecoes = (STATE.expedicaoExcecoes || []).filter(e => e.janelaId !== id);
-  await saveState('expedicaoJanelas');
-  await saveState('expedicaoCargas');
-  await saveState('expedicaoExcecoes');
+  // Exclusão INTENCIONAL da janela (e das cargas dela) pode zerar as cargas:
+  // libera a trava anti-apagamento da expedição só para este flush.
+  _permitirFlushVazio = true;
+  try {
+    await saveState('expedicaoJanelas');
+    await saveState('expedicaoCargas');
+    await saveState('expedicaoExcecoes');
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await cloudFlush(); }
+  } finally { _permitirFlushVazio = false; }
   toast('Janela excluída', 'ok');
   renderExpedicaoPlano();
 }
@@ -8520,6 +8558,10 @@ let _ultimoSnapTs = 0;
 // Marca se o app já viu dados de verdade nesta sessão. Serve à trava
 // anti-apagamento: se já tivemos dados, um flush "vazio" é bloqueado.
 let _appJaTeveDados = false;
+// Idem para a EXPEDIÇÃO: se este dispositivo já viu cargas de expedição nesta
+// sessão, um flush que as zera é bloqueado (protege as OEs, que NÃO entram na
+// trava geral acima — ela só cobre OS+desenhos).
+let _appJaTeveExpedicao = false;
 let _permitirFlushVazio = false; // liberado só em ações intencionais (limpar/restaurar)
 
 function _openSnapDb() {
