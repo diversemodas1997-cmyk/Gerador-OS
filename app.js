@@ -31,6 +31,12 @@ const DEVICE_ID = (() => {
 })();
 
 let cloudCache = null;
+// A ÚLTIMA leitura do servidor falhou? Enquanto true, não é seguro salvar: o
+// cloudCache pode estar vazio por causa da falha (não porque o usuário apagou).
+// Sem este flag, o seed/migração do loadState tentava gravar logo após um load
+// falho e disparava a trava "gravação bloqueada" em loop a cada reload — quando
+// o problema real é de CARREGAMENTO (ex.: sessão expirada).
+let _cloudLoadErro = false;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -46,29 +52,56 @@ let catalogoSkus = [];
 
 async function cloudLoad() {
   if (!supa || !currentUser) return;
-  const { data, error } = await supa
+  let { data, error } = await supa
     .from('shared_data')
     .select('data')
     .eq('id', 'main')
     .maybeSingle();
   if (error) {
+    // Causa mais comum de reincidência: access token EXPIRADO. Renova a sessão
+    // UMA vez e relê antes de desistir — recupera sozinho o caso mais frequente
+    // (o refresh token ainda vale). Só depois trata como erro real.
+    try {
+      const { data: sess } = await supa.auth.refreshSession();
+      if (sess && sess.session) {
+        if (sess.user) currentUser = sess.user;
+        ({ data, error } = await supa
+          .from('shared_data').select('data').eq('id', 'main').maybeSingle());
+      }
+    } catch (e) { /* refresh falhou (refresh token morto) — cai no erro abaixo */ }
+  }
+  if (error) {
     console.error('cloudLoad', error);
+    _cloudLoadErro = true;
     cloudCache = {};
-    // Visibilidade do problema: a causa quase sempre e RLS bloqueando o
-    // SELECT pra esse usuario. Sem o toast, falha silenciosa esconde
-    // o motivo de "OS de outro computador nao aparecem".
+    // Visibilidade do problema: costuma ser sessão expirada ou RLS. Sem o toast,
+    // a falha silenciosa esconde o motivo (e o seed subsequente virava o popup
+    // enganoso de "gravação bloqueada").
     setTimeout(() => toast(
-      `Falha ao ler dados compartilhados (${error.code || 'erro'}). ` +
-      `Verifique as politicas RLS da tabela shared_data no Supabase.`,
+      `Falha ao ler dados do servidor (${error.code || 'erro'}). ` +
+      `A sessão pode ter expirado — saia e entre de novo, ou verifique a conexão.`,
       'err'
     ), 50);
     return;
   }
+  _cloudLoadErro = false;
   cloudCache = (data && data.data) || {};
 }
 
 async function cloudFlush() {
   if (!supa || !currentUser || !cloudCache) return;
+  // Se a ÚLTIMA leitura falhou, NÃO salvar: o cloudCache pode estar vazio pela
+  // falha, e o seed/migração do loadState tentam gravar logo em seguida. Sem
+  // este atalho, o fluxo caía na trava anti-apagamento e mostrava "gravação
+  // bloqueada" — mensagem enganosa, pois o problema é de CARREGAMENTO. Aqui a
+  // mensagem é a certa e o reload/re-login (que renova a sessão) resolve.
+  if (_cloudLoadErro) {
+    setSyncStatus('error');
+    mostrarAlertaSalvamento('carregamento',
+      'Não foi possível CARREGAR seus dados do servidor (a sessão pode ter expirado ou está sem conexão). '
+      + 'Não edite nada agora, para não sobrescrever. Clique em "Recarregar agora"; se continuar, saia e entre de novo.');
+    return;
+  }
   // TRAVA ANTI-APAGAMENTO (causa raiz dos incidentes de perda de dados):
   // se estamos prestes a gravar um blob VAZIO (sem OS e sem desenhos),
   // isso é quase sempre um cloudCache zerado por uma leitura que falhou.
@@ -145,6 +178,7 @@ function iniciarRealtime() {
         // do 1º achando que era própria — e a OS nunca aparecia lá.
         if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
         cloudCache = payload.new.data || {};
+        _cloudLoadErro = false; // chegou dado bom do servidor
         await loadState();
         // Atualiza o marcador do polling pra evitar reload duplo
         if (payload.new.updated_at) lastSeenUpdatedAt = payload.new.updated_at;
@@ -266,6 +300,7 @@ function iniciarPolling() {
       }
       // Mudanca de outro usuario: aplica
       cloudCache = data.data || {};
+      _cloudLoadErro = false; // chegou dado bom do servidor
       await loadState();
       // Mesma logica do realtime: print pronta atualiza so checkboxes;
       // demais paginas re-renderizam normalmente.
@@ -308,8 +343,9 @@ function setSyncStatus(status) {
   else { el.textContent = '☁ Sincronizado'; esconderAlertaSalvamento(); }
 }
 
-// Banner de aviso no topo do conteúdo. tipo 'bloqueio' (grave, trava
-// anti-apagamento) ou 'erro' (falha de gravação por qualquer motivo).
+// Banner de aviso no topo do conteúdo. tipo 'bloqueio' (trava anti-apagamento),
+// 'carregamento' (falha ao LER os dados — sessão/conexão) ou 'erro' (falha de
+// gravação por qualquer motivo).
 function mostrarAlertaSalvamento(tipo, msg) {
   const box = document.getElementById('alertaSalvamento');
   if (!box) return;
@@ -317,10 +353,12 @@ function mostrarAlertaSalvamento(tipo, msg) {
   const tit = document.getElementById('alertaSalvamentoTitulo');
   const m = document.getElementById('alertaSalvamentoMsg');
   box.classList.remove('erro', 'bloqueio');
-  box.classList.add(tipo === 'bloqueio' ? 'bloqueio' : 'erro');
-  if (ic) ic.textContent = tipo === 'bloqueio' ? '⛔' : '⚠';
-  if (tit) tit.textContent = tipo === 'bloqueio'
-    ? 'Gravação bloqueada — seus dados no servidor estão protegidos'
+  // 'carregamento' usa o mesmo visual grave (vermelho) do bloqueio.
+  box.classList.add(tipo === 'erro' ? 'erro' : 'bloqueio');
+  if (ic) ic.textContent = tipo === 'erro' ? '⚠' : '⛔';
+  if (tit) tit.textContent =
+    tipo === 'carregamento' ? 'Não foi possível carregar seus dados do servidor'
+    : tipo === 'bloqueio' ? 'Gravação bloqueada — seus dados no servidor estão protegidos'
     : 'Falha ao salvar no servidor';
   if (m) m.textContent = msg || '';
   box.classList.remove('hidden');
@@ -574,6 +612,7 @@ async function restaurarSnapshot(id, dataStr) {
     .maybeSingle();
   if (error || !data) { toast('Snapshot não encontrado', 'err'); return; }
   cloudCache = data.data || {};
+  _cloudLoadErro = false; // restauramos dado bom
   cloudCache._device = DEVICE_ID; // este dispositivo é o autor da restauração
   const { error: upErr } = await supa.from('shared_data').upsert({
     id: 'main', data: cloudCache,
@@ -8590,6 +8629,7 @@ async function restaurarSnapshotLocal(id) {
   if (conf === null) return;
   if ((conf || '').trim().toUpperCase() !== 'RESTAURAR') { toast('Palavra não conferiu — nada foi restaurado.', 'err'); return; }
   cloudCache = JSON.parse(JSON.stringify(reg.data));
+  _cloudLoadErro = false; // restauramos dado bom
   cloudCache._device = DEVICE_ID; // este dispositivo é o autor da restauração
   if (supa && currentUser) {
     setSyncStatus('saving');
