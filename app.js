@@ -7574,6 +7574,54 @@ function calcularCamadasParaProducao() {
   atualizarCalculosEnfesto();
 }
 
+// Sentido INVERSO: o usuário digita o Nº de camadas e as Peças-alvo são
+// calculadas sozinhas. É o espelho de calcularCamadasParaProducao: lá
+// camadas = ceil(alvo / (minQtd × multPrincipal)); aqui alvo = camadas ×
+// minQtd × multPrincipal — o round-trip é exato (digitar as camadas
+// resultantes de um alvo devolve o mesmo número de camadas). minQtd e
+// multPrincipal são lidos exatamente como no cálculo direto, para as duas
+// contas concordarem.
+function calcularAlvoDeCamadas() {
+  const camadas = parseInt(document.getElementById('f-enf-camadas')?.value) || 0;
+  // Sem camadas: nada a inferir — só atualiza o display e preserva o alvo
+  // atual (o usuário pode estar apagando para redigitar).
+  if (camadas <= 0) { atualizarCalculosEnfesto(); return; }
+  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3']
+    .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
+    .filter(q => q > 0);
+  // Sem grade não há minQtd: não dá para inferir o alvo. Silencioso (roda a
+  // cada tecla) — só atualiza o display.
+  if (!qtdsPorTamanho.length) { atualizarCalculosEnfesto(); return; }
+  const minQtd = Math.min(...qtdsPorTamanho);
+  // multPrincipal: mesma regra do cálculo direto — malha SEM moletom corta em
+  // camada dupla (2 peças/camada por slot); caso contrário 1. Fonte: tecidos da
+  // OS; se ainda não houver, cai nas fases da grade.
+  const gradeId = document.getElementById('f-grade-preset')?.value;
+  const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
+  const fases = grade?.fases || [];
+  const catsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
+    .map(r => r.querySelector('.tec-sel')?.value)
+    .filter(Boolean)
+    .map(id => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === id)))
+    .filter(Boolean);
+  const cats = catsForm.length
+    ? catsForm
+    : fases.map(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId))).filter(Boolean);
+  const temMoletom = cats.includes('moletom');
+  const temMalha = cats.includes('malha');
+  let multPrincipal = 1;
+  if (!temMoletom && temMalha) multPrincipal = MULTIPLICADOR_PECAS.malha || 2;
+
+  const alvo = camadas * minQtd * multPrincipal;
+  const inputTarget = document.getElementById('f-enf-target');
+  if (inputTarget) inputTarget.value = alvo;
+  // Com o alvo preenchido, reaproveita o cálculo direto para distribuir as
+  // camadas nos blocos (moletom/forro/ribana) e atualizar os totais — o mesmo
+  // resultado de quem tivesse digitado o alvo. Como o round-trip é exato, o
+  // Nº de camadas que o usuário digitou permanece igual.
+  calcularCamadasParaProducao();
+}
+
 /* ========================================================= */
 /*           NÚMERO DA OS — sequencial automático            */
 /* ========================================================= */
@@ -11305,6 +11353,7 @@ window.addEtapaCustomizada = addEtapaCustomizada;
 window.aplicarGradePreset = aplicarGradePreset;
 window.atualizarCalculosEnfesto = atualizarCalculosEnfesto;
 window.calcularCamadasParaProducao = calcularCamadasParaProducao;
+window.calcularAlvoDeCamadas = calcularAlvoDeCamadas;
 window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarCoresComponente = atualizarCoresComponente;
 window.addFaseGradeRow = addFaseGradeRow;

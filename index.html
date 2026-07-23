@@ -547,7 +547,8 @@
             </div>
             <div class="field">
               <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
-              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="atualizarCalculosEnfesto()">
+              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()">
+              <div class="field-hint">Informar as camadas calcula as peças-alvo automaticamente</div>
             </div>
           </div>
           <div id="f-enf-alerta" class="hidden" style="margin-top:10px; padding: 8px 12px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 12px; border-radius: 2px;"></div>
@@ -896,6 +897,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-23f"></script>
+<script src="app.js?v=2026-07-23g"></script>
 </body>
 </html>
