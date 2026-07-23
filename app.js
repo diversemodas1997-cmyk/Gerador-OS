@@ -9120,6 +9120,11 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // Trava de reentrada com validade: uma captura travada não pode calar o
   // auto-save para sempre.
   if (_oeSalvando && (Date.now() - _oeSalvandoDesde) < 60000) return false;
+  // Auto-save (silencioso) grava SÓ a OE DIÁRIA. Semanal e mensal não são
+  // salvas sozinhas — evita encher a pasta com PDFs de período que o chão não
+  // usa (a expedição imprime o diário). O salvar MANUAL (botão, silent=false)
+  // continua valendo para qualquer modo.
+  if (silent && expPlanoModo !== 'dia') return false;
   let handle = oeFolderHandle || (await loadOeFolderHandle());
   if (!handle) {
     if (silent) {
