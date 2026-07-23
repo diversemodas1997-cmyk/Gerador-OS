@@ -7,6 +7,29 @@ const supa = (window.supabase && typeof window.supabase.createClient === 'functi
   ? window.supabase.createClient(SUPA_URL, SUPA_KEY)
   : null;
 
+// Identidade do DISPOSITIVO (aba), NÃO da conta. Dois computadores logados com
+// o MESMO usuário precisam se distinguir. O filtro de sync ("essa gravação fui
+// eu que fiz?") não pode comparar o id da CONTA (updated_by): com login
+// compartilhado os dois têm o mesmo id, então o 2º computador achava que a
+// gravação do 1º era própria e a descartava — a OS nunca aparecia lá. Este id é
+// único por aba (sessionStorage sobrevive ao F5; some ao fechar a aba). Vai
+// junto no blob (campo _device) e é o que comparamos na chegada de cada update.
+const DEVICE_ID = (() => {
+  try {
+    let id = sessionStorage.getItem('deviceId');
+    if (!id) {
+      id = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('deviceId', id);
+    }
+    return id;
+  } catch (e) {
+    // sessionStorage indisponível (modo restrito): id em memória, ainda por aba.
+    return 'dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+})();
+
 let cloudCache = null;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
@@ -71,6 +94,7 @@ async function cloudFlush() {
       return;
     }
   }
+  cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
   setSyncStatus('saving');
   try {
     const { error } = await supa.from('shared_data').upsert({
@@ -116,7 +140,10 @@ function iniciarRealtime() {
       { event: 'UPDATE', schema: 'public', table: 'shared_data', filter: 'id=eq.main' },
       async (payload) => {
         if (!payload.new) return;
-        if (payload.new.updated_by === currentUser.id) return;
+        // Ignora só o eco da gravação DESTE dispositivo. Comparar o id da conta
+        // (updated_by) fazia o 2º computador do MESMO login descartar a mudança
+        // do 1º achando que era própria — e a OS nunca aparecia lá.
+        if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
         cloudCache = payload.new.data || {};
         await loadState();
         // Atualiza o marcador do polling pra evitar reload duplo
@@ -231,7 +258,9 @@ function iniciarPolling() {
       }
       // Sem mudanca ou mudanca propria: ignora
       if (data.updated_at === lastSeenUpdatedAt) return;
-      if (data.updated_by === currentUser.id) {
+      // Mesmo critério do realtime: só pula se foi ESTE dispositivo que gravou
+      // (e não qualquer sessão do mesmo login).
+      if (data.data && data.data._device === DEVICE_ID) {
         lastSeenUpdatedAt = data.updated_at;
         return;
       }
@@ -535,6 +564,7 @@ async function restaurarSnapshot(id, dataStr) {
     .maybeSingle();
   if (error || !data) { toast('Snapshot não encontrado', 'err'); return; }
   cloudCache = data.data || {};
+  cloudCache._device = DEVICE_ID; // este dispositivo é o autor da restauração
   const { error: upErr } = await supa.from('shared_data').upsert({
     id: 'main', data: cloudCache,
     updated_at: new Date().toISOString(),
@@ -8436,6 +8466,7 @@ async function restaurarSnapshotLocal(id) {
   if (conf === null) return;
   if ((conf || '').trim().toUpperCase() !== 'RESTAURAR') { toast('Palavra não conferiu — nada foi restaurado.', 'err'); return; }
   cloudCache = JSON.parse(JSON.stringify(reg.data));
+  cloudCache._device = DEVICE_ID; // este dispositivo é o autor da restauração
   if (supa && currentUser) {
     setSyncStatus('saving');
     try {
