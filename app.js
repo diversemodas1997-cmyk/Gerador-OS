@@ -50,6 +50,9 @@ const _dirtyKeys = new Set();
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
+// Reagenda uma gravação que FALHOU (rede oscilou). Sem isto a edição ficaria só
+// na memória (chave suja) até o próximo save, e um recarregamento a apagaria.
+let _retryTimer = null;
 let inRecoveryFlow = false;
 // Compras de materiais vindas do programa de Contabilidade (tabela própria
 // compras_materiais no Supabase). O Gerador-OS só LÊ — entram como ENTRADAS
@@ -59,6 +62,24 @@ let comprasChannel = null;
 // Catálogo de SKUs publicado pelo Estoque-Confeccao (tabela skus_catalogo).
 // O Gerador-OS só LÊ — usado no dropdown de SKU dos cadastros de Desenho/Modelo.
 let catalogoSkus = [];
+
+// Traz o estado do servidor para o cache local SEM apagar edições ainda não
+// gravadas. Adota do servidor toda chave que ESTE dispositivo não alterou desde
+// a última gravação (_dirtyKeys); as sujas ficam intactas até subirem. Assim um
+// recarregamento de fundo (realtime/polling) nunca reverte o que o usuário
+// acabou de mudar e ainda não foi salvo — a brecha que apagava edições do
+// planejamento de operações quando uma segunda sessão/aba gravava por cima.
+function _adotarServidorPreservandoEdicoes(srvData) {
+  const srv = (srvData && typeof srvData === 'object') ? srvData : {};
+  if (!cloudCache) cloudCache = {};
+  Object.keys(srv).forEach(k => { if (!_dirtyKeys.has(k)) cloudCache[k] = srv[k]; });
+  // Chaves que sumiram do servidor e que não editamos saem também (paridade com
+  // a substituição total antiga), preservando as sujas e o carimbo de device.
+  Object.keys(cloudCache).forEach(k => {
+    if (k === '_device' || _dirtyKeys.has(k)) return;
+    if (!(k in srv)) delete cloudCache[k];
+  });
+}
 
 async function cloudLoad() {
   if (!supa || !currentUser) return;
@@ -95,7 +116,7 @@ async function cloudLoad() {
     return;
   }
   _cloudLoadErro = false;
-  cloudCache = (data && data.data) || {};
+  _adotarServidorPreservandoEdicoes(data && data.data);
 }
 
 async function cloudFlush() {
@@ -194,6 +215,7 @@ async function cloudFlush() {
     }, { onConflict: 'id' });
     if (error) throw error;
     _dirtyKeys.clear();
+    if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }  // subiu: cancela retry pendente
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
     if (_contarItens(cloudCache, 'expedicaoCargas') > 0) _appJaTeveExpedicao = true;
@@ -222,6 +244,13 @@ async function cloudFlush() {
       'Suas últimas alterações podem NÃO ter sido salvas no servidor (' + ((e && e.message) || 'erro de conexão') + '). '
       + 'Verifique a internet. Antes de recarregar, evite fechar a página para não perder o que digitou. '
       + 'Se o problema persistir, avise o suporte.');
+    // As chaves sujas continuam marcadas (não foram limpas). Reagenda a subida
+    // com folga (sem martelar offline) — sem isto a edição ficava órfã na
+    // memória e um recarregamento a apagaria. _adotarServidorPreservandoEdicoes
+    // segura as sujas até esta tentativa (ou o próximo save) conseguir subir.
+    if (!_retryTimer) {
+      _retryTimer = setTimeout(() => { _retryTimer = null; if (_dirtyKeys.size) cloudFlush(); }, 8000);
+    }
   } finally {
     _flushing = false;
   }
@@ -377,8 +406,9 @@ function iniciarPolling() {
       // marcador, então o próximo poll reaplica a mudança remota quando a
       // edição já estiver salva.
       if (saveTimer || _flushing) return;
-      // Mudanca de outro usuario: aplica
-      cloudCache = data.data || {};
+      // Mudanca de outro usuario: aplica, mas preservando o que ESTE dispositivo
+      // ainda não gravou (chaves sujas) — senão reverteria a edição local pendente.
+      _adotarServidorPreservandoEdicoes(data.data);
       _cloudLoadErro = false; // chegou dado bom do servidor
       await loadState();
       // Mesma logica do realtime: print pronta atualiza so checkboxes;
@@ -411,6 +441,23 @@ function pararPolling() {
 function scheduleCloudSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = null; cloudFlush(); }, 800);
+}
+
+// Gravar ao SAIR/ESCONDER a página: uma edição feita e a aba trocada/minimizada/
+// fechada dentro dos 800ms do debounce ficaria sem subir. Ao esconder a página
+// sobe o pendente na hora — só age se houver algo por gravar (chaves sujas).
+function _flushPendentesAoSair() {
+  if (!cloudCache || !_dirtyKeys.size || _flushing) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  try { cloudFlush(); } catch (e) { /* melhor esforço ao sair */ }
+}
+if (typeof document !== 'undefined') {
+  // visibilitychange (trocar de aba / minimizar) mantém a página viva, então o
+  // envio assíncrono conclui; pagehide é a última cartada ao fechar.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') _flushPendentesAoSair();
+  });
+  window.addEventListener('pagehide', _flushPendentesAoSair);
 }
 
 function setSyncStatus(status) {
