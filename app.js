@@ -9204,9 +9204,14 @@ function gerarPdfEtiquetas(dados) {
     // Cada linha tem uma escala (s): 1 = normal, 2 = dobro (o tamanho / o
     // conteúdo do pacote saem em destaque). c = centralizada.
     const ehReposicao = dados.temReposicao && i === total - 1;
+    // Com mais de uma tonalidade, o tom vai JUNTO do tamanho no destaque —
+    // "G tom 1", "G tom 2"… — senão duas etiquetas do mesmo tamanho ficam
+    // indistinguíveis no ensaque. Sem linha "TOM:" separada: seria repetição.
+    const tomDoPacote = (dados.tonsPacotes || [])[i];
+    const tomSuf = (!ehReposicao && (dados.nTons || 1) > 1 && tomDoPacote != null) ? ` tom ${tomDoPacote}` : '';
     const destaque = ehReposicao
       ? { t: ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
-      : { t: tams[i] || dados.tam, s: 2, c: true };           // SÓ o tamanho do pacote, dobro
+      : { t: (tams[i] || dados.tam) + tomSuf, s: 2, c: true };// tamanho (+ tom) do pacote, dobro
     const linhas = [
       { t: String(dados.marca || ''), s: 1, c: true },
       { t: `OS: ${dados.os}`, s: 1 },
@@ -9217,12 +9222,6 @@ function gerarPdfEtiquetas(dados) {
       { t: `LOTE: ${i + 1}/${total}`, s: 1 },
       destaque
     ];
-    // Com mais de uma tonalidade, cada pacote precisa dizer de qual tom é —
-    // senão duas etiquetas do mesmo tamanho ficam indistinguíveis no ensaque.
-    const tomDoPacote = (dados.tonsPacotes || [])[i];
-    if (!ehReposicao && (dados.nTons || 1) > 1 && tomDoPacote != null) {
-      linhas.splice(6, 0, { t: `TOM: ${tomDoPacote}`, s: 1 });
-    }
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     if (!ehReposicao && dados.composicao) {
       dados.composicao.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
@@ -9897,9 +9896,13 @@ function imprimirEtiquetas(osId) {
   const compHtml = composicao ? composicao.map(c => `<div class="comp">${escEt(c)}</div>`).join('') : '';
   const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
     const ehRep = temReposicao && i === numEtiquetas - 1;
+    // Tonalidade junto do tamanho no destaque — "G tom 1", "G tom 2"… — só quando
+    // a OS tem mais de um tom; assim duas etiquetas do mesmo tamanho não ficam
+    // indistinguíveis no ensaque. A linha "TOM:" separada some: viraria repetição.
+    const tomSuf = (nTons > 1 && !ehRep && tonsPacotes[i] != null) ? ` tom ${tonsPacotes[i]}` : '';
     const destaque = ehRep
       ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
-      : `<div class="big">${escEt((tamanhosPacotes && tamanhosPacotes[i]) || tam)}</div>${compHtml}`;
+      : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>${compHtml}`;
     return `
     <div class="page">
       <div class="label">
@@ -9909,7 +9912,6 @@ function imprimirEtiquetas(osId) {
         <div class="row">QTDE: ${escEt(qtde)}</div>
         <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
-        ${(nTons > 1 && !ehRep && tonsPacotes[i] != null) ? `<div class="row">TOM: ${escEt(tonsPacotes[i])}</div>` : ''}
         <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
         ${destaque}
       </div>
