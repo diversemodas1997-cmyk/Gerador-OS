@@ -6,23 +6,35 @@ backup próprio.
 
 ---
 
-## Snapshot de referência deste backup
+## Ponto de restauração deste backup
 
-- Gerado de: `snap-2026-07-23T20-25-51-649Z.json`
-- Conteúdo: **161 OS, 25 desenhos, 64 grades, 37 cores, 10 tecidos, 15 etapas,
-  17 componentes, 8 funções, 26 cargas de expedição, 6 operações, 18 mov. de
-  estoque** · osCounter 444.
+- **CÓDIGO:** tag `restore-2026-07-24-n` (cache-buster `app.js ?v=2026-07-24n`,
+  `styles.css ?v=2026-07-24e`). Novidades desde o `restore-2026-07-23-af`:
+  expedição em lote parcial + remanescentes e limite de volume único global;
+  etiquetas com tonalidade ("G tom 1"); Tom 4 no Total por tamanho; operações
+  com cor por função, botão duplicar, linha do tempo cronológica (escondida na
+  impressão) e sincronização automática de horários por posto; 3 proteções
+  contra perda de edições (preserva chaves não salvas, retry, flush ao sair).
+- **DADOS:** o último snapshot exportado no app está em
+  `backups/BACKUP-COMPLETO-2026-07-23T20-25-51.json` (161 OS, 25 desenhos, 64
+  grades, 37 cores, 10 tecidos, 15 etapas, 17 componentes, 8 funções, 26 cargas
+  de expedição, 6 operações, 18 mov. de estoque · osCounter 444). ⚠️ Para um
+  backup de dados ATUAL, exporte pelo app (Configurações → Exportar tudo (JSON)):
+  o código só carrega a chave `anon` do Supabase, que a RLS bloqueia para leitura
+  fora do app logado — por isso a cópia de dados não é gerada automaticamente aqui.
 
 ---
 
 ## 1) CÓDIGO (app.js, index.html, styles.css)
 
 - **Onde está:** repositório GitHub `diversemodas1997-cmyk/Gerador-OS`, branch `main`.
-- **Ponto de restauração:** tag `restore-2026-07-23-af` (versão `af`).
+- **Ponto de restauração:** tag `restore-2026-07-24-n` (cache-buster `n`).
+  Anterior: `restore-2026-07-23-af`.
 - **Como restaurar / reimplantar:** basta hospedar os 3 arquivos (index.html +
   app.js + styles.css) em qualquer servidor de estático. A cópia VIVA é este
   repo (tem o banner de cor). Ao editar o app.js, sempre suba o `?v=` no
-  index.html (cache-buster) — hoje em `?v=2026-07-23af`.
+  index.html (cache-buster) — hoje em `app.js ?v=2026-07-24n` /
+  `styles.css ?v=2026-07-24e`.
 - **Config do Supabase fica no topo do app.js:** `SUPA_URL` e `SUPA_KEY` (chave
   `anon`). Se o projeto Supabase mudar, troque esses dois valores.
 
