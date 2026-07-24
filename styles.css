@@ -1941,13 +1941,16 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   margin-bottom: 1.5px;
 }
 .op-print-tl .cap {
-  width: 150pt;
+  width: 176pt;
   flex: none;
   font-size: 6.8pt;
-  line-height: 1.15;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  /* Nome da operação por INTEIRO: quebra em mais linhas em vez de cortar com
+     reticências. A régua e as barras começam depois desta mesma largura, então
+     o eixo continua alinhado com as linhas. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .op-print-tl .track {
   position: relative;
