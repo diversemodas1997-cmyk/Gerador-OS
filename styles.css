@@ -2058,6 +2058,12 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   .sheet-exp > * { page-break-inside: auto; }
   /* O bloco de uma expedição é o que não pode partir no meio. */
   .sheet-exp .exp-print-bloco { page-break-inside: avoid; }
+  /* EXCEÇÃO da folha de OPERAÇÕES: ali o bloco é o DIA inteiro (muitos postos,
+     2+ páginas). Com "avoid" ele era jogado inteiro para a página seguinte,
+     deixando a 1ª página quase vazia (só cabeçalho + resumo). Aqui ele pode
+     partir entre páginas — quem não parte no meio é cada POSTO (.op-print-posto,
+     regra acima), a granularidade certa. */
+  #print-sheet-op .exp-print-bloco { page-break-inside: auto; break-inside: auto; }
 }
 
 /* ===== Banner de aviso de salvamento (bloqueio / erro) ===== */
