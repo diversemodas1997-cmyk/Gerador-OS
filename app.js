@@ -3728,8 +3728,11 @@ function _expCargasDa(janelaId, dataOrig, perna) {
 // limites da janela (que herdam da configuração quando em branco).
 function resumoPernaExpedicao(oc, perna) {
   const cfg = expCfg();
-  const volMin = _expNum(oc.janela.volMin, _expNum(cfg.volMin, 0));
-  const volMax = _expNum(oc.janela.volMax, _expNum(cfg.volMax, 0));
+  // Limite = capacidade do transporte, cadastrada UMA vez em Unidades e carga.
+  // É o mesmo caminhão em toda janela, então não há limite por janela: o valor
+  // cadastrado ali vale para todas as pernas e é isso que sai na folha de OE.
+  const volMin = _expNum(cfg.volMin, 0);
+  const volMax = _expNum(cfg.volMax, 0);
   const itens = _expCargasDa(oc.janela.id, oc.dataOrig, perna).map(c => {
     const o = (STATE.ordens || []).find(x => x.id === c.osId);
     return {
@@ -4344,7 +4347,7 @@ function renderExpedicaoPlano() {
   const janelasHtml = `
     <div class="card">
       <div class="card-title">Janelas de expedição cadastradas</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Uma janela <b>semanal</b> se repete nos dias marcados; uma de <b>data fixa</b> acontece uma vez só. Mín/máx em branco herdam a configuração de <b>Unidades e carga</b> (hoje: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}).</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Uma janela <b>semanal</b> se repete nos dias marcados; uma de <b>data fixa</b> acontece uma vez só. O limite de volume é único para todas — <b>${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</b>, definido em <b>Unidades e carga</b>.</div>
       <table class="table">
         <thead><tr><th>Nome</th><th>Quando</th><th>Ida</th><th>Volta</th><th>Volumes</th><th>Situação</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
@@ -4356,7 +4359,7 @@ function renderExpedicaoPlano() {
                 : ((j.diasSemana || []).length ? (j.diasSemana || []).slice().sort((a, b) => a - b).map(d => _EXP_DIAS_CURTO[d]).join(', ') : '<span class="exp-badge alto">sem dias</span>')}</td>
               <td style="font-family:'IBM Plex Mono',monospace;">${esc(j.horaIda) || '—'}</td>
               <td style="font-family:'IBM Plex Mono',monospace;">${esc(j.horaVolta) || '—'}</td>
-              <td>${esc(_expLimitesTexto(_expNum(j.volMin, _expNum(cfg.volMin, 0)), _expNum(j.volMax, _expNum(cfg.volMax, 0))))}</td>
+              <td>${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</td>
               <td>${j.ativo === false ? '<span class="exp-badge vazio">inativa</span>' : '<span class="exp-badge ok">ativa</span>'}</td>
               <td class="col-actions row-actions">
                 <button class="edit" onclick="abrirModalExpJanela('${esc(j.id)}')">editar</button>
@@ -4417,12 +4420,10 @@ function abrirModalExpJanela(editId = null) {
       <div class="field" id="ej-wrap-data"><label>Data *</label><input type="date" id="ej-data" value="${esc(j ? (j.data || '') : _expHoje())}"></div>
       <div class="field"><label>Hora da ida *</label><input type="time" id="ej-hora-ida" value="${esc(j ? (j.horaIda || '') : '08:00')}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
       <div class="field"><label>Hora da volta *</label><input type="time" id="ej-hora-volta" value="${esc(j ? (j.horaVolta || '') : '17:00')}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
-      ${_expCampoNum('ej-vol-min', 'Volume mínimo', j ? j.volMin : '', `Em branco usa o padrão (${_expNum(cfg.volMin, 0) || 'sem mínimo'}). Vale por perna.`)}
-      ${_expCampoNum('ej-vol-max', 'Volume máximo', j ? j.volMax : '', `Em branco usa o padrão (${_expNum(cfg.volMax, 0) || 'sem máximo'}). Vale por perna.`)}
       <div class="field"><label>Situação</label><select id="ej-ativo"><option value="1" ${!j || j.ativo !== false ? 'selected' : ''}>Ativa</option><option value="0" ${j && j.ativo === false ? 'selected' : ''}>Inativa (não gera expedições)</option></select></div>
       <div class="field full"><label>Observação</label><input type="text" id="ej-obs" value="${esc(j ? (j.obs || '') : '')}" placeholder="Ex.: motorista da tarde"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">Toda expedição é interna, de <b>ida e volta</b> entre ${esc(cfg.unidadeA)} e ${esc(cfg.unidadeB)}. Os limites de volume valem para cada perna separadamente.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Toda expedição é interna, de <b>ida e volta</b> entre ${esc(cfg.unidadeA)} e ${esc(cfg.unidadeB)}. O limite de volume (mín/máx) é único, cadastrado em <b>Unidades e carga</b> (hoje: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}) e vale para todas as janelas.</div>`;
   _expToggleTipoJanela();
   openModal('modal-exp');
 }
@@ -4776,7 +4777,7 @@ function abrirModalExpConfig() {
       ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">O <b>volume</b> de cada OS é calculado pela grade: <b>1 pacote por tamanho, por tonalidade, + 1 de reposição</b> — cada tonalidade é ensacada separada. Ex.: grade de 7 tamanhos em 1 tom = 8 volumes; a mesma grade em 2 tons = 15.</div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">Os limites valem por <b>perna</b> (ida e volta contam separado) e podem ser sobrescritos em cada janela. A expedição é sempre interna, entre estas duas unidades.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Este é o limite <b>único</b> de volume por <b>perna</b> (ida e volta contam separado), válido para <b>todas as janelas</b> — é o que aparece na folha de OE. A expedição é sempre interna, entre estas duas unidades.</div>`;
   openModal('modal-exp');
 }
 
@@ -4837,15 +4838,12 @@ async function salvarModalExpedicao() {
     if (tipo === 'data' && !data) return toast('Informe a data da expedição', 'err');
     const horaIda = v('ej-hora-ida'), horaVolta = v('ej-hora-volta');
     if (!horaIda || !horaVolta) return toast('Informe os horários de ida e de volta', 'err');
-    const volMin = v('ej-vol-min') === '' ? '' : (parseInt(v('ej-vol-min')) || 0);
-    const volMax = v('ej-vol-max') === '' ? '' : (parseInt(v('ej-vol-max')) || 0);
-    if (volMin !== '' && volMax !== '' && volMax > 0 && volMin > volMax) {
-      return toast('O volume mínimo não pode ser maior que o máximo', 'err');
-    }
+    // Limite de volume não é mais por janela: vem de Unidades e carga. Zera
+    // qualquer override antigo pra não voltar a divergir da folha de OE.
     const reg = {
       nome, tipo, diasSemana: tipo === 'semanal' ? diasSemana : [],
       data: tipo === 'data' ? data : '',
-      horaIda, horaVolta, volMin, volMax,
+      horaIda, horaVolta, volMin: '', volMax: '',
       ativo: v('ej-ativo') !== '0',
       obs: v('ej-obs').trim()
     };
