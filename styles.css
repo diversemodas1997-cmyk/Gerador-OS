@@ -1535,12 +1535,11 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* Cor por prioridade; status (andamento/feita) vence a prioridade, então vem
-   depois. Conflito é um contorno vermelho por cima de qualquer fundo. */
-.op-bar.prio-urgente { background: var(--accent-dark); }
-.op-bar.prio-emergente { background: var(--alert); }
-.op-bar.andamento { background: var(--accent-dark); }
-.op-bar.feita { background: var(--ok); }
+/* Cada operação tem a sua própria cor (definida inline, por operação), para se
+   identificar de relance qual barra é qual. Por isso o fundo NÃO muda por
+   prioridade ou status: "feita" só esmaece a barra e o conflito vira um contorno
+   vermelho por cima da cor. */
+.op-bar.feita { opacity: .45; }
 .op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
 .op-bar span { pointer-events: none; }
 

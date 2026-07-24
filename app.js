@@ -4766,6 +4766,24 @@ const _OP_PRIORIDADE = {
 };
 function _opPrioridade(op) { return _OP_PRIORIDADE[op.prioridade] ? op.prioridade : 'eletiva'; }
 
+// Paleta de cores distintas para as barras da linha de tempo: cada operação do
+// dia ganha uma cor própria, para se identificar de relance qual barra é qual.
+// Cores escuras o bastante para o texto branco por cima; vermelho puro fica de
+// fora para não se confundir com o contorno de conflito.
+const _OP_PALETA = [
+  '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#d97706',
+  '#4338ca', '#0d9488', '#be123c', '#65a30d', '#c026d3', '#0369a1'
+];
+// Mapa op.id → cor, atribuída na ordem de exibição do dia. Como as duas vistas
+// (por posto e por pessoa) partem do mesmo `_opCompararNoDia`, uma operação
+// mantém a mesma cor nas duas.
+function _opMapaCores(doDia) {
+  const m = new Map();
+  doDia.slice().sort(_opCompararNoDia)
+    .forEach((op, i) => m.set(op.id, _OP_PALETA[i % _OP_PALETA.length]));
+  return m;
+}
+
 let opPlanoModo = 'dia';           // o planejamento é DIÁRIO por natureza
 let opPlanoAncora = _expHoje();
 try {
@@ -5098,7 +5116,7 @@ function renderOperacoes() {
 
   // Barra da operação dentro da janela do dia. É onde "07:12 por 3h20" vira
   // uma coisa que se enxerga ao lado dos outros postos.
-  const barraHtml = (op, jan, comFuncao) => {
+  const barraHtml = (op, jan, comFuncao, cor) => {
     const i = _opInicioMin(op), dur = _opDuracao(op);
     if (i == null || !dur) return '';
     const larg = jan.fim - jan.ini;
@@ -5108,7 +5126,11 @@ function renderOperacoes() {
     const pr = _opPrioridade(op);
     const conf = conflitos.has(op.id) ? ' conflito' : '';
     const rot = comFuncao ? `${_opFuncaoNome(op)}: ${op.operacao}` : op.operacao;
-    return `<div class="op-bar ${st} prio-${pr}${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%"
+    // Cor própria da operação (identifica a etapa na linha de tempo). O status
+    // "feita" fica esmaecido por CSS e o conflito ganha contorno vermelho — os
+    // dois convivem com a cor de fundo sem escondê-la.
+    const bg = cor ? `background:${cor};` : '';
+    return `<div class="op-bar ${st} prio-${pr}${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;${bg}"
       title="${esc(rot)} · ${esc(_opJanelaTexto(op))}${conf ? ' · SOBREPOSTA (mesma pessoa/posto em dois horários)' : ''}"><span>${esc(rot)}</span></div>`;
   };
 
@@ -5146,6 +5168,7 @@ function renderOperacoes() {
   // cada uma tem a sua faixa própria no mesmo eixo de horas.
   const diaHtml = (data, doDia) => {
     const jan = _opJanelaDoDia(doDia);
+    const cores = _opMapaCores(doDia);
     // A mesma estrutura que as setas de mover manipulam — desenhar a partir dela
     // garante que a ordem vista é a ordem gravada.
     const grupos = _opBlocosDoDia(data);
@@ -5172,7 +5195,7 @@ function renderOperacoes() {
               ${pend ? ` · <span class="exp-badge baixo">${pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
             </div>
           </div>
-          ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${g.itens.map(op => barraHtml(op, jan)).join('')}</div></div>` : ''}
+          ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${g.itens.map(op => barraHtml(op, jan, false, cores.get(op.id))).join('')}</div></div>` : ''}
           ${g.itens.map((op, i) => linhaHtml(op, i, g.itens.length)).join('')}
         </div>`;
     }).join('');
@@ -5208,6 +5231,7 @@ function renderOperacoes() {
   // sobrepõe (mesma pessoa em duas tarefas ao mesmo tempo = conflito vermelho).
   const diaHtmlPessoa = (data, doDia) => {
     const jan = _opJanelaDoDia(doDia);
+    const cores = _opMapaCores(doDia);
     const porPessoa = new Map();
     doDia.forEach(op => {
       const nome = _opResponsavelNome(op) || '— a definir —';
@@ -5225,7 +5249,7 @@ function renderOperacoes() {
             <div class="op-pessoa-nome">${esc(nome)}${temConf ? ' <span class="exp-badge alto">conflito</span>' : ''}
               <div class="op-pessoa-tot">${esc(_opDurTexto(minutos))} · ${itens.length} tarefa${itens.length > 1 ? 's' : ''}${semHora ? ` · ${semHora} sem horário` : ''}</div>
             </div>
-            ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${itens.map(op => barraHtml(op, jan, true)).join('')}</div></div>`
+            ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${itens.map(op => barraHtml(op, jan, true, cores.get(op.id))).join('')}</div></div>`
                   : '<div class="op-pessoa-tot" style="padding:2px 0;">Sem horário definido nas tarefas.</div>'}
           </div>`;
       }).join('');
