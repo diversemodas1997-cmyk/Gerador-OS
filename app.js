@@ -5917,27 +5917,38 @@ async function excluirOperacao(id) {
   renderOperacoes();
 }
 
-// Duplica uma operação: cria uma cópia no MESMO posto e dia, logo em seguida.
-// Começa quando a original termina (se tem horário), então não nasce
-// sobreposta — fica pronta pra ajustar. Copia como PENDENTE (é plano novo).
+// Duplica uma operação: cria uma cópia no MESMO posto e dia, na ÚLTIMA posição
+// do posto. Começa quando a última operação do posto termina (se há horário),
+// então não nasce sobreposta — fica pronta pra ajustar. Copia como PENDENTE.
 async function duplicarOperacao(id) {
   if (!exigirAdmin('duplicar operações')) return;
   const op = (STATE.operacoes || []).find(x => x.id === id);
   if (!op) return;
-  const fimMin = _opFimMin(op);
+  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  // Fim da última operação do posto (mesmo dia e função) → início da cópia.
+  const chave = o => o.funcaoId || _opFuncaoNome(o);
+  const finsPosto = STATE.operacoes
+    .filter(o => o.data === op.data && chave(o) === chave(op))
+    .map(_opFimMin).filter(m => m != null);
+  const ultimoFim = finsPosto.length ? Math.max(...finsPosto) : null;
   const nova = {
     ...op,
     id: uid(),
     status: 'pendente',
-    inicio: fimMin != null ? _opHHMM(fimMin) : (op.inicio || '')
+    inicio: ultimoFim != null ? _opHHMM(ultimoFim) : (op.inicio || '')
   };
-  delete nova.ordem;   // cai na ordem por horário (logo após a original)
-  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  const idx = STATE.operacoes.findIndex(x => x.id === id);
-  if (idx >= 0) STATE.operacoes.splice(idx + 1, 0, nova);
-  else STATE.operacoes.push(nova);
+  STATE.operacoes.push(nova);
+  // Manda a cópia pro FIM do seu posto e renumera a ordem de todos — com a ordem
+  // gravada, ela fica na última posição de verdade (a mesma mecânica das setas).
+  const blocos = _opBlocosDoDia(op.data);
+  const bloco = blocos.find(b => b.itens.some(x => x.id === nova.id));
+  if (bloco) {
+    const k = bloco.itens.findIndex(x => x.id === nova.id);
+    if (k >= 0) { const [c] = bloco.itens.splice(k, 1); bloco.itens.push(c); }
+    _opGravarOrdem(blocos);
+  }
   await saveState('operacoes');
-  toast('Operação duplicada — ajuste o horário/descrição se precisar', 'ok');
+  toast('Operação duplicada na última posição do posto', 'ok');
   renderOperacoes();
 }
 
