@@ -5482,6 +5482,7 @@ function renderOperacoes() {
         <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
         <span class="admin-only op-acoes">
           <button title="Editar esta operação" onclick="abrirModalOperacao('${esc(op.id)}')">✎</button>
+          <button title="Duplicar esta operação" onclick="duplicarOperacao('${esc(op.id)}')">⧉</button>
           <button title="Excluir esta operação" onclick="excluirOperacao('${esc(op.id)}')">×</button>
         </span>
       </div>`;
@@ -5913,6 +5914,30 @@ async function excluirOperacao(id) {
   STATE.operacoes = (STATE.operacoes || []).filter(x => x.id !== id);
   await saveState('operacoes');
   toast('Operação excluída', 'ok');
+  renderOperacoes();
+}
+
+// Duplica uma operação: cria uma cópia no MESMO posto e dia, logo em seguida.
+// Começa quando a original termina (se tem horário), então não nasce
+// sobreposta — fica pronta pra ajustar. Copia como PENDENTE (é plano novo).
+async function duplicarOperacao(id) {
+  if (!exigirAdmin('duplicar operações')) return;
+  const op = (STATE.operacoes || []).find(x => x.id === id);
+  if (!op) return;
+  const fimMin = _opFimMin(op);
+  const nova = {
+    ...op,
+    id: uid(),
+    status: 'pendente',
+    inicio: fimMin != null ? _opHHMM(fimMin) : (op.inicio || '')
+  };
+  delete nova.ordem;   // cai na ordem por horário (logo após a original)
+  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  const idx = STATE.operacoes.findIndex(x => x.id === id);
+  if (idx >= 0) STATE.operacoes.splice(idx + 1, 0, nova);
+  else STATE.operacoes.push(nova);
+  await saveState('operacoes');
+  toast('Operação duplicada — ajuste o horário/descrição se precisar', 'ok');
   renderOperacoes();
 }
 
