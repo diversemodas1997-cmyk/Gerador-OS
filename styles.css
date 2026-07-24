@@ -1468,6 +1468,55 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .ev-item .m { flex: 1 1 auto; min-width: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev-item .v { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
 
+/* Seletor de pacotes (lote parcial) no modal de alocar OS: um bloco por
+   tonalidade, com um contador por tamanho, limitado ao que ainda sobra. */
+.ec-pacotes {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--paper);
+}
+.ec-pk-tom { display: flex; flex-direction: column; gap: 4px; }
+.ec-pk-tom + .ec-pk-tom { border-top: 1px dashed var(--line); padding-top: 6px; }
+.ec-pk-tom-h {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.ec-pk-sizes { display: flex; gap: 6px; flex-wrap: wrap; }
+.ec-pk-cel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--line-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ec-pk-cel.off { opacity: .45; }
+.ec-pk-cel .t { font-family: 'IBM Plex Mono', monospace; font-weight: 700; }
+.ec-pk-cel .mx { font-size: 10px; color: var(--ink-3); }
+.ec-pk-in {
+  width: 38px;
+  padding: 1px 2px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'IBM Plex Mono', monospace;
+}
+input.is-auto { background: var(--line-2); color: var(--ink-2); }
+
 /* ============ PLANEJAMENTO DIÁRIO DE OPERAÇÕES ============ */
 /* Reaproveita a moldura do plano de expedição (.exp-toolbar, .exp-resumo,
    .exp-ocor, .exp-badge). O que é próprio daqui: a régua de horas do dia, a

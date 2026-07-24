@@ -3807,6 +3807,115 @@ function _expSugestaoVolumes(o) {
   return String(nTam * nTons + 1);
 }
 
+/* =============== LOTE PARCIAL: pacotes por tamanho × tonalidade ===============
+   A OS é decomposta na MESMA base das etiquetas: 1 pacote por vaga de tamanho
+   (regra camiseta/moletom de _tamanhosDaGradeExpandido) para CADA tonalidade
+   efetiva, + 1 pacote de reposição. Uma carga pode levar só PARTE desses
+   pacotes; o que sobra fica "a alocar" numa próxima expedição. */
+
+// Lista canônica de pacotes da OS: [{tam,tom}] (tom = número 1..3 ou null) na
+// ordem tom→tamanho, mais o flag de reposição. `total` inclui a reposição.
+function _expPacotesCanonicos(o) {
+  const tamanhosBase = _tamanhosDaGradeExpandido(o);      // ['P','M',...] (camiseta repete a vaga)
+  const tons = tonsEfetivos(((o || {}).progresso || {}).totalTamanhoTons || {});
+  const nTons = Math.max(1, tons.length);
+  const itens = [];
+  for (let ti = 0; ti < nTons; ti++) {
+    const tom = tons[ti] != null ? tons[ti] : null;
+    tamanhosBase.forEach(tam => itens.push({ tam, tom }));
+  }
+  const temReposicao = itens.length > 0;
+  return { itens, temReposicao, nTons, total: itens.length + (temReposicao ? 1 : 0) };
+}
+
+// Chave estável de um pacote (tamanho|tom) — agrupa as vagas iguais.
+function _expChavePacote(p) { return `${p.tam}|${p.tom == null ? '-' : p.tom}`; }
+
+// Conta pacotes de uma lista [{tam,tom}] num Map chave→{tam,tom,qtd}.
+function _expContarPacotes(lista) {
+  const m = new Map();
+  (lista || []).forEach(p => {
+    const k = _expChavePacote(p);
+    const e = m.get(k) || { tam: p.tam, tom: p.tom, qtd: 0 };
+    e.qtd++; m.set(k, e);
+  });
+  return m;
+}
+
+// Rótulo curto de um pacote pra tela ("G · tom 2", "G", "reposição").
+function _expRotuloPacote(p) {
+  if (p && p.rep) return 'reposição';
+  const tam = (p && p.tam) || '?';
+  return (p && p.tom != null) ? `${tam} · tom ${p.tom}` : tam;
+}
+
+// Ocorrências CANCELADAS como chaves 'janelaId|data': carga numa expedição
+// cancelada não conta como alocada (aquele lote não vai sair).
+function _expCancelSet() {
+  const s = new Set();
+  (STATE.expedicaoExcecoes || []).forEach(e => { if (e.tipo === 'cancelada') s.add(e.janelaId + '|' + e.data); });
+  return s;
+}
+
+// O que já foi alocado de uma OS, somando as cargas NÃO canceladas (menos a
+// carga em edição). Devolve a contagem por tamanho×tom, se a reposição já saiu,
+// e se existe carga "cheia" ANTIGA (sem composição por pacote) — nesse caso a OS
+// é tratada como já resolvida, pra não inventar pendência em dados antigos.
+function _expAlocadoOS(osId, exceptCargaId) {
+  const cancel = _expCancelSet();
+  const contagem = new Map();
+  let reposicao = false, legacyFull = false;
+  (STATE.expedicaoCargas || []).forEach(c => {
+    if (c.osId !== osId || c.id === exceptCargaId) return;
+    if (cancel.has(c.janelaId + '|' + c.data)) return;
+    if (Array.isArray(c.pacotes)) {
+      c.pacotes.forEach(p => {
+        const k = _expChavePacote(p);
+        const e = contagem.get(k) || { tam: p.tam, tom: p.tom, qtd: 0 };
+        e.qtd++; contagem.set(k, e);
+      });
+      if (c.reposicao) reposicao = true;
+    } else if ((Number(c.volumes) || 0) > 0) {
+      legacyFull = true;   // carga antiga (só número): cobre a OS inteira
+    }
+  });
+  return { contagem, reposicao, legacyFull };
+}
+
+// Remanescente de uma OS: quanto do lote total ainda não foi para NENHUMA
+// expedição. `faltam` lista os pacotes de tamanho que restam (com qtd) e
+// `repRestante` diz se a reposição ainda espera. `parcial` = tem alocado E tem
+// sobra (o caso que o painel de remanescentes destaca).
+function _expRemanescenteOS(o, exceptCargaId) {
+  const vazio = { total: 0, alocado: 0, restante: 0, faltam: [], repRestante: false, legacyFull: false, parcial: false };
+  if (!o) return vazio;
+  const canon = _expPacotesCanonicos(o);
+  if (!canon.total) return vazio;
+  const aloc = _expAlocadoOS(o.id, exceptCargaId);
+  const totKey = _expContarPacotes(canon.itens);
+  const faltam = [];
+  let restante = 0;
+  if (!aloc.legacyFull) {
+    totKey.forEach((e, k) => {
+      const usados = (aloc.contagem.get(k) || {}).qtd || 0;
+      const falta = Math.max(0, e.qtd - usados);
+      if (falta > 0) { faltam.push({ tam: e.tam, tom: e.tom, qtd: falta }); restante += falta; }
+    });
+  }
+  const repRestante = canon.temReposicao && !aloc.legacyFull && !aloc.reposicao;
+  if (repRestante) restante += 1;
+  const total = canon.total;
+  const alocado = total - restante;
+  return { total, alocado, restante, faltam, repRestante, legacyFull: aloc.legacyFull, parcial: alocado > 0 && restante > 0 };
+}
+
+// Texto curto dos pacotes que faltam: "G, GG · tom 1 · G, GG · tom 2 · +rep".
+function _expFaltamTexto(rem) {
+  const partes = (rem.faltam || []).map(f => `${f.qtd > 1 ? f.qtd + '× ' : ''}${_expRotuloPacote(f)}`);
+  if (rem.repRestante) partes.push('reposição');
+  return partes.join(' · ') || '—';
+}
+
 // Aviso na tela quando o volume GRAVADO na carga não bate com a regra
 // (tamanhos × tonalidades + 1). A propagação cobre as cargas futuras a partir do
 // momento em que a tonalidade muda, mas não alcança as que já estavam gravadas
@@ -3815,6 +3924,7 @@ function _expSugestaoVolumes(o) {
 // Só avisa: quem decide é o usuário, que pode ter posto o número à mão de propósito.
 function _expBadgeVolumeDivergente(item) {
   if (!item || !item.os || !(item.volumes > 0)) return '';
+  if (item.carga && Array.isArray(item.carga.pacotes)) return '';  // lote parcial: volume vem dos pacotes, não da regra cheia
   const esperado = Number(_expSugestaoVolumes(item.os)) || 0;
   if (!(esperado > 0) || esperado === item.volumes) return '';
   const nTons = Math.max(1, tonsEfetivos((item.os.progresso || {}).totalTamanhoTons || {}).length);
@@ -3836,6 +3946,7 @@ async function propagarVolumesExpedicaoOS(os) {
   STATE.expedicaoCargas.forEach(c => {
     if (c.osId !== os.id) return;
     if (_expDataEfetivaCarga(c) < hoje) return;
+    if (Array.isArray(c.pacotes)) return;   // lote parcial: o volume vem dos pacotes, não da regra cheia
     if ((Number(c.volumes) || 0) === sug) return;
     c.volumes = sug;
     n++;
@@ -4080,14 +4191,22 @@ function renderExpedicaoPlano() {
   const pernaHtml = (oc, perna) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
-    const linhas = r.itens.length ? r.itens.map(i => `
+    const linhas = r.itens.length ? r.itens.map(i => {
+      // Lote parcial: mostra o que ainda falta alocar desta OS (soma de todas as
+      // cargas não canceladas). Só quando a expedição não foi cancelada.
+      const rem = (!oc.cancelada && i.os) ? _expRemanescenteOS(i.os) : null;
+      const parcialBadge = rem && rem.restante > 0
+        ? ` <span class="exp-badge baixo" title="Faltam ${rem.restante} de ${rem.total} volume(s) desta OS: ${esc(_expFaltamTexto(rem))}">parcial · faltam ${rem.restante}</span>`
+        : '';
+      return `
       <div class="exp-os-row">
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}</span>
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}</span>
         <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
-      </div>`).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
+      </div>`;
+    }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
       <div class="exp-perna">
         <div class="exp-perna-head">
@@ -4148,6 +4267,35 @@ function renderExpedicaoPlano() {
           : 'Nenhuma expedição neste período. Navegue entre os períodos ou cadastre uma janela para estes dias.'}
       </div>
     </div>`;
+
+  // OSs alocadas PELA METADE: parte do lote já foi para alguma expedição, mas
+  // sobraram pacotes esperando. É o rastro do lote parcial — sem esta lista, os
+  // pacotes que ficaram para trás sumiriam da vista.
+  const remanescentes = (STATE.ordens || [])
+    .map(o => ({ o, rem: _expRemanescenteOS(o) }))
+    .filter(x => x.rem.parcial)
+    .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
+  const remanescentesHtml = remanescentes.length ? `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <table class="table">
+        <thead><tr><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>
+          ${remanescentes.map(({ o, rem }) => `
+            <tr>
+              <td><strong>${esc(o.os) || '—'}</strong></td>
+              <td>${esc(o.modeloNome) || '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${fmt(rem.alocado)}/${fmt(rem.total)}</td>
+              <td style="font-size:12px;"><span class="exp-badge baixo">${fmt(rem.restante)}</span> ${esc(_expFaltamTexto(rem))}</td>
+              <td class="col-actions row-actions">
+                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
+                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar restante</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
 
   // OSs ensacadas (prontas) que ninguém colocou em carga nenhuma. É a lista
   // que evita esquecer OS pronta parada no campo.
@@ -4217,7 +4365,7 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + remanescentesHtml + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */
@@ -4330,6 +4478,11 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         </select>
         ${cargaEdit ? '' : '<div class="field-hint" id="ec-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>'}
       </div>
+      <div class="field full" id="ec-pacotes-wrap" style="display:none;">
+        <label>Pacotes desta OS nesta carga</label>
+        <div id="ec-pacotes" class="ec-pacotes"></div>
+        <div class="field-hint">Marque os pacotes (tamanho × tonalidade) que vão nesta carga. Desmarque para deixar o restante para outra expedição — o que sobrar fica listado como <b>a alocar</b>.</div>
+      </div>
       ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *',
         cargaEdit ? (cargaEdit.volumes || '') : (osPre ? _expSugestaoVolumes(osPre) : ''),
         'É este número que conta contra o mínimo e o máximo da carga.')}
@@ -4338,6 +4491,115 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver as peças.</div>`;
   _expAtualizarSugestaoVolumes();
   openModal('modal-exp');
+}
+
+// Monta o seletor de pacotes da OS (tamanho × tonalidade + reposição) no modal
+// de carga. Cada linha por tonalidade traz um contador por tamanho, limitado ao
+// que AINDA sobra pra alocar (o total da grade menos o que já foi pra outras
+// cargas). Por padrão marca tudo que resta — alocar a OS inteira segue sendo um
+// clique; tirar pacotes é opcional. Devolve true se montou o seletor (a OS tem
+// grade), false se caiu no modo "número manual" (OS sem grade).
+function _expMontarSeletorPacotes(o) {
+  const wrap = document.getElementById('ec-pacotes-wrap');
+  const box = document.getElementById('ec-pacotes');
+  const campo = document.getElementById('ec-volumes');
+  if (!wrap || !box) return false;
+  const canon = o ? _expPacotesCanonicos(o) : { total: 0 };
+  if (!o || !canon.total) {           // sem grade → some o seletor, volume manual
+    wrap.style.display = 'none';
+    box.innerHTML = '';
+    if (campo) { campo.readOnly = false; campo.classList.remove('is-auto'); }
+    return false;
+  }
+  const editId = (_expModalCtx && _expModalCtx.editId) || '';
+  const cargaEdit = editId ? (STATE.expedicaoCargas || []).find(c => c.id === editId) : null;
+  const editouPacotes = cargaEdit && Array.isArray(cargaEdit.pacotes);
+  const alocOutros = _expAlocadoOS(o.id, editId);     // já alocado em OUTRAS cargas
+  const proprio = editouPacotes ? _expContarPacotes(cargaEdit.pacotes) : null;
+  const totKey = _expContarPacotes(canon.itens);
+
+  // Agrupa as chaves por tonalidade preservando a ordem canônica (tom→tamanho).
+  const ordem = [];
+  canon.itens.forEach(p => { const k = _expChavePacote(p); if (!ordem.includes(k)) ordem.push(k); });
+  const porTom = new Map();   // tom → [{k,tam,tom,max,def}]
+  ordem.forEach(k => {
+    const e = totKey.get(k);
+    const usadosOutros = (alocOutros.contagem.get(k) || {}).qtd || 0;
+    const max = Math.max(0, e.qtd - usadosOutros);        // teto: o que sobra pra esta carga
+    const def = editouPacotes ? Math.min(max, (proprio.get(k) || {}).qtd || 0) : max;
+    const tomKey = e.tom == null ? '-' : e.tom;
+    if (!porTom.has(tomKey)) porTom.set(tomKey, []);
+    porTom.get(tomKey).push({ k, tam: e.tam, tom: e.tom, max, def });
+  });
+
+  let idx = 0;
+  const blocos = Array.from(porTom.entries()).map(([tomKey, arr]) => {
+    const titulo = tomKey === '-' ? 'Pacotes' : `Tom ${tomKey}`;
+    const cels = arr.map(it => {
+      const id = 'ecpk-' + (idx++);
+      const esgotado = it.max <= 0;
+      return `<label class="ec-pk-cel ${esgotado ? 'off' : ''}" title="${esgotado ? 'Já alocado em outra expedição' : 'Máximo ' + it.max}">
+        <span class="t">${esc(it.tam)}</span>
+        <input type="number" class="ec-pk-in" id="${id}" min="0" max="${it.max}" step="1"
+          value="${it.def}" data-tam="${esc(it.tam)}" data-tom="${it.tom == null ? '' : it.tom}"
+          ${esgotado ? 'disabled' : ''} oninput="_expRecalcVolSeletor()">
+        <span class="mx">/${it.max}</span>
+      </label>`;
+    }).join('');
+    return `<div class="ec-pk-tom"><div class="ec-pk-tom-h">${esc(titulo)}</div><div class="ec-pk-sizes">${cels}</div></div>`;
+  });
+
+  // Reposição: 1 pacote por OS (ribana/viés). Marcada por padrão quando ainda
+  // não saiu em outra carga.
+  let repHtml = '';
+  if (canon.temReposicao) {
+    const repOutros = alocOutros.reposicao;
+    const repDef = editouPacotes ? !!cargaEdit.reposicao : !repOutros;
+    const repDisabled = repOutros && !(editouPacotes && cargaEdit.reposicao);
+    repHtml = `<div class="ec-pk-tom"><div class="ec-pk-tom-h">Reposição</div><div class="ec-pk-sizes">
+      <label class="ec-pk-cel ${repDisabled ? 'off' : ''}" title="${repDisabled ? 'Já foi em outra expedição' : 'Pacote de reposição / ribana'}">
+        <input type="checkbox" id="ecpk-rep" ${repDef ? 'checked' : ''} ${repDisabled ? 'disabled' : ''} onchange="_expRecalcVolSeletor()">
+        <span class="t">1 pacote</span>
+      </label></div></div>`;
+  }
+
+  box.innerHTML = blocos.join('') + repHtml;
+  wrap.style.display = '';
+  if (campo) { campo.readOnly = true; campo.classList.add('is-auto'); }
+  _expRecalcVolSeletor();
+  return true;
+}
+
+// Soma os contadores do seletor de pacotes → escreve em #ec-volumes e atualiza a
+// linha de info. O campo de volumes fica só-leitura enquanto o seletor manda.
+function _expRecalcVolSeletor() {
+  const box = document.getElementById('ec-pacotes');
+  const campo = document.getElementById('ec-volumes');
+  if (!box) return;
+  let n = 0;
+  box.querySelectorAll('.ec-pk-in').forEach(inp => {
+    let v = parseInt(inp.value) || 0;
+    const max = parseInt(inp.max) || 0;
+    if (v < 0) v = 0; if (v > max) { v = max; inp.value = String(max); }
+    n += v;
+  });
+  const rep = document.getElementById('ecpk-rep');
+  if (rep && rep.checked && !rep.disabled) n += 1;
+  if (campo) campo.value = n > 0 ? String(n) : '';
+  const info = document.getElementById('ec-info');
+  const osId = document.getElementById('ec-os')?.value || '';
+  const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
+  if (info && o) {
+    const canon = _expPacotesCanonicos(o);
+    const editId = (_expModalCtx && _expModalCtx.editId) || '';
+    const alocOutros = _expAlocadoOS(o.id, editId);
+    // "restante depois desta carga" = total − (já em outras) − (o que marquei aqui)
+    let jaOutros = 0; alocOutros.contagem.forEach(e => jaOutros += e.qtd); if (alocOutros.reposicao) jaOutros += 1;
+    const sobra = Math.max(0, canon.total - jaOutros - n);
+    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · lote total <b>${canon.total}</b> volume(s).`
+      + ` Nesta carga: <b>${n}</b>.`
+      + (sobra > 0 ? ` <span class="exp-badge baixo">restam ${sobra} a alocar</span>` : ' <span class="exp-badge ok">OS completa</span>');
+  }
 }
 
 // Filtra o select de OS pela busca (número ou modelo). Esconde as options que
@@ -4376,7 +4638,14 @@ function _expAtualizarSugestaoVolumes() {
   const info = document.getElementById('ec-info');
   const campo = document.getElementById('ec-volumes');
   const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
-  if (!o) { if (info) info.textContent = 'Selecione a OS para ver as peças.'; return; }
+  if (!o) {
+    _expMontarSeletorPacotes(null);
+    if (info) info.textContent = 'Selecione a OS para ver as peças.';
+    return;
+  }
+  // Com grade: o seletor de pacotes assume (marca o que resta, calcula o volume
+  // e escreve a info). Sem grade: cai no número manual, como antes.
+  if (_expMontarSeletorPacotes(o)) return;
   const pecas = _expPecasOS(o);
   const nTam = _expTotalTamanhosGrade(o);
   const sug = _expSugestaoVolumes(o);
@@ -4467,7 +4736,7 @@ function _expVoltaListarOS() {
     const rep = jaLa.has(i.carga.osId);
     return `
       <label class="ev-item ${rep ? 'rep' : ''}">
-        <input type="checkbox" class="ev-os" value="${esc(i.carga.osId)}" data-vol="${i.volumes}" ${rep ? '' : 'checked'}>
+        <input type="checkbox" class="ev-os" value="${esc(i.carga.osId)}" data-vol="${i.volumes}" data-carga="${esc(i.carga.id)}" ${rep ? '' : 'checked'}>
         <span class="n">${esc(i.osNumero)}</span>
         <span class="m">${esc(i.modelo) || '—'}</span>
         <span class="v">${i.volumes > 0 ? i.volumes + ' vol' : '— vol'}</span>
@@ -4586,14 +4855,40 @@ async function salvarModalExpedicao() {
     if (!janelaId || !data || !perna) return toast('Selecione a expedição', 'err');
     const osId = v('ec-os');
     if (!osId) return toast('Selecione a OS', 'err');
-    const volumes = parseInt(v('ec-volumes')) || 0;
-    if (!(volumes > 0)) return toast('Informe quantos volumes esta OS ocupa', 'err');
+    // Composição por pacote (lote parcial), quando a OS tem grade. O seletor
+    // manda no número de volumes; sem seletor (OS sem grade), vale o campo.
+    const seletor = document.getElementById('ec-pacotes');
+    const temSeletor = seletor && document.getElementById('ec-pacotes-wrap')
+      && document.getElementById('ec-pacotes-wrap').style.display !== 'none';
+    let pacotes = null, reposicao = false;
+    if (temSeletor) {
+      pacotes = [];
+      seletor.querySelectorAll('.ec-pk-in').forEach(inp => {
+        let q = parseInt(inp.value) || 0;
+        const max = parseInt(inp.max) || 0;
+        if (q > max) q = max;
+        const tam = inp.dataset.tam;
+        const tomRaw = inp.dataset.tom;
+        const tom = tomRaw === '' ? null : (parseInt(tomRaw) || null);
+        for (let i = 0; i < q; i++) pacotes.push({ tam, tom });
+      });
+      const repChk = document.getElementById('ecpk-rep');
+      reposicao = !!(repChk && repChk.checked && !repChk.disabled);
+    }
+    const volumes = temSeletor
+      ? (pacotes.length + (reposicao ? 1 : 0))
+      : (parseInt(v('ec-volumes')) || 0);
+    if (!(volumes > 0)) return toast(temSeletor ? 'Marque ao menos um pacote para esta carga' : 'Informe quantos volumes esta OS ocupa', 'err');
     if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
     // Ao mover, a propria carga nao conta como duplicata dela mesma.
     const jaTem = STATE.expedicaoCargas.some(c => c.id !== ctx.editId
       && c.janelaId === janelaId && c.data === data && c.perna === perna && c.osId === osId);
     if (jaTem) return toast('Esta OS já está nesta carga', 'err');
     const campos = { janelaId, data, perna, osId, volumes, obs: v('ec-obs').trim() };
+    // Guarda (ou limpa) a composição por pacote. Sem seletor, remove qualquer
+    // composição antiga pra não ficar incoerente com o número manual.
+    if (temSeletor) { campos.pacotes = pacotes; campos.reposicao = reposicao; }
+    else { campos.pacotes = null; campos.reposicao = false; }
     if (ctx.editId) {
       const i = STATE.expedicaoCargas.findIndex(c => c.id === ctx.editId);
       if (i >= 0) STATE.expedicaoCargas[i] = { ...STATE.expedicaoCargas[i], ...campos };
@@ -4616,10 +4911,18 @@ async function salvarModalExpedicao() {
       const osId = el.value;
       if (!osId || jaLa.has(osId)) return;   // repetida: a checagem no salvar também vale
       jaLa.add(osId);
-      STATE.expedicaoCargas.push({
+      // A volta espelha a ida: leva a MESMA composição por pacote da carga de
+      // origem, quando ela tem uma (o que veio, volta).
+      const origem = (STATE.expedicaoCargas || []).find(c => c.id === el.dataset.carga);
+      const nova = {
         id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, perna: 'volta',
         osId, volumes: parseInt(el.dataset.vol, 10) || 0, obs: ''
-      });
+      };
+      if (origem && Array.isArray(origem.pacotes)) {
+        nova.pacotes = origem.pacotes.map(p => ({ tam: p.tam, tom: p.tom }));
+        nova.reposicao = !!origem.reposicao;
+      }
+      STATE.expedicaoCargas.push(nova);
       n++;
     });
     if (!n) return toast('Essas OSs já estão na volta', 'err');
@@ -4693,6 +4996,7 @@ async function recalcularVolumesExpedicao() {
   let n = 0;
   (STATE.expedicaoCargas || []).forEach(c => {
     if (_expDataEfetivaCarga(c) < hoje) return; // já realizada: não reescreve
+    if (Array.isArray(c.pacotes)) return;       // lote parcial: volume vem dos pacotes
     const o = (STATE.ordens || []).find(x => x.id === c.osId);
     const sug = Number(_expSugestaoVolumes(o)) || 0;
     if (sug > 0 && sug !== (Number(c.volumes) || 0)) { c.volumes = sug; n++; }
@@ -5881,7 +6185,26 @@ function renderPrintPlanoExpedicao() {
     const nTam = _expTotalTamanhosGrade(o);
     const nTons = Math.max(1, TT.tons.length);
     const volCalc = nTam > 0 ? nTam * nTons + 1 : 0;
-    const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes;
+    // Lote parcial (carga com composição por pacote) tem uma nota própria abaixo;
+    // não mostra a divergência genérica, que aqui é esperada e já explicada.
+    const ehParcialCarga = Array.isArray(i.carga && i.carga.pacotes);
+    const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes && !ehParcialCarga;
+    // Nota do lote parcial: quais pacotes vão NESTA carga e se é a OS inteira ou
+    // só parte — quem confere na doca precisa saber que não é o lote completo.
+    // Só anota quando a carga leva PARTE do lote — o lote completo já é o que a
+    // tabela abaixo descreve, e repetir "15 de 15" em toda OS só poluiria a folha.
+    let pacotesNota = '';
+    if (ehParcialCarga) {
+      const canonTotal = _expPacotesCanonicos(o).total;
+      const nestaCarga = i.carga.pacotes.length + (i.carga.reposicao ? 1 : 0);
+      if (canonTotal > 0 && nestaCarga < canonTotal) {
+        const cont = _expContarPacotes(i.carga.pacotes);
+        const partes = [];
+        cont.forEach(e => partes.push(`${e.qtd > 1 ? e.qtd + '× ' : ''}${_expRotuloPacote(e)}`));
+        if (i.carga.reposicao) partes.push('reposição');
+        pacotesNota = `<div class="sub" style="color:#c81e1e;font-weight:700;">⚠ PARCIAL — ${fmt(nestaCarga)} de ${fmt(canonTotal)} volume(s) desta OS: ${esc(partes.join(' · ') || '—')}</div>`;
+      }
+    }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
     // Escrito por extenso porque quem confere precisa saber o que procurar nele.
     const contaVol = volCalc > 0
@@ -5923,6 +6246,7 @@ function renderPrintPlanoExpedicao() {
         <div class="sub">
           ${fmt(i.pecas)} pç · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)} vol</b>` : ''}
         </div>
+        ${pacotesNota}
         <table>
           <thead>
             <tr>
