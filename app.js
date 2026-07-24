@@ -6084,20 +6084,35 @@ function renderPrintPlanoOperacoes() {
       ticks.push(`<span class="tk" style="left:${pos.toFixed(3)}%;transform:${anc}">${esc(_opHHMM(m))}</span>`);
     }
     const cores = _opMapaCores(doDia);
-    const linhas = doDia.slice().sort(_opCompararNoDia).map(op => {
+    // Ordem CRONOLÓGICA (por horário de início): mostra a continuidade do fluxo
+    // entre as funções — Corte 07h → Costura 09h → Estamparia 10h30… — em vez de
+    // agrupar por posto. Operação sem horário vai para o fim.
+    const ordemCron = (a, b) => {
+      const ia = _opInicioMin(a), ib = _opInicioMin(b);
+      if (ia == null && ib == null) return 0;
+      if (ia == null) return 1;
+      if (ib == null) return -1;
+      return ia - ib || _opFuncaoNome(a).localeCompare(_opFuncaoNome(b));
+    };
+    const linhas = doDia.slice().sort(ordemCron).map(op => {
       const i = _opInicioMin(op), dur = _opDuracao(op);
+      const cor = cores.get(op.id);
+      // Cor da FUNÇÃO na linha inteira: faixa sólida à esquerda + fundo suave,
+      // pintados como BACKGROUND (gradiente) pra não deslocar o conteúdo e manter
+      // as barras alinhadas com a régua. Diferencia as operações de relance.
+      const rowStyle = `background:linear-gradient(to right, ${cor} 0 4pt, ${cor}1f 4pt);`;
       const cap = `${_opFuncaoNome(op)}: ${op.operacao || '—'}`;
       if (i == null || !dur) {
-        return `<div class="row"><div class="cap">${esc(cap)}</div><div class="track"><span class="semh">sem horário</span></div></div>`;
+        return `<div class="row" style="${rowStyle}"><div class="cap">${esc(cap)}</div><div class="track"><span class="semh">sem horário</span></div></div>`;
       }
       const left = (i - jan.ini) / larg * 100;
       const width = Math.max(1.2, dur / larg * 100);
       const conf = conflitos.has(op.id) ? ' conf' : '';
-      return `<div class="row"><div class="cap">${esc(cap)}</div><div class="track"><div class="bar${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;background:${cores.get(op.id)}" title="${esc(cap)} · ${esc(_opJanelaTexto(op))}">${esc(_opJanelaTexto(op))}</div></div></div>`;
+      return `<div class="row" style="${rowStyle}"><div class="cap">${esc(cap)}</div><div class="track"><div class="bar${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;background:${cor}" title="${esc(cap)} · ${esc(_opJanelaTexto(op))}">${esc(_opJanelaTexto(op))}</div></div></div>`;
     }).join('');
     return `
       <div class="op-print-tl">
-        <div class="op-print-tl-cab">Linha do tempo · todas as operações em paralelo</div>
+        <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função</div>
         <div class="op-print-tl-regua"><div class="cap">Horário</div><div class="track">${ticks.join('')}</div></div>
         ${linhas}
       </div>`;

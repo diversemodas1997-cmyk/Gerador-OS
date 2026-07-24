@@ -1939,6 +1939,17 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   align-items: center;
   gap: 6px;
   margin-bottom: 1.5px;
+  /* Recuo igual nas linhas E na régua: a faixa colorida (4pt) da linha cabe
+     aqui sem empurrar o conteúdo, então as barras seguem alinhadas com a régua. */
+  padding-left: 4pt;
+}
+/* O fundo colorido por função (faixa + tom suave) precisa sair na impressão. */
+.op-print-tl .row {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  border-radius: 2px;
 }
 .op-print-tl .cap {
   width: 176pt;
