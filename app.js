@@ -5660,6 +5660,43 @@ function renderPrintPlanoOperacoes() {
       </tr>`;
   };
 
+  // Linha do tempo CONSOLIDADA do dia: todas as operações num só eixo de horas,
+  // uma por linha, para se comparar todas em paralelo — é a duplicata em papel
+  // das faixas que a tela mostra (lá separadas por posto/pessoa; aqui juntas).
+  // As cores são as mesmas da tela (_opMapaCores), então cada operação se
+  // reconhece pela cor. Operação sem horário aparece na lista, marcada, mas sem
+  // barra — não há onde encaixá-la no eixo.
+  const linhaTempoHtml = doDia => {
+    const jan = _opJanelaDoDia(doDia);
+    if (!jan) return '';   // nenhum horário no dia → não há eixo a desenhar
+    const larg = jan.fim - jan.ini;
+    const passo = larg <= 480 ? 60 : (larg <= 960 ? 120 : 180);
+    const ticks = [];
+    for (let m = jan.ini; m <= jan.fim; m += passo) {
+      const pos = (m - jan.ini) / larg * 100;
+      const anc = pos < 1 ? 'translateX(0)' : (pos > 99 ? 'translateX(-100%)' : 'translateX(-50%)');
+      ticks.push(`<span class="tk" style="left:${pos.toFixed(3)}%;transform:${anc}">${esc(_opHHMM(m))}</span>`);
+    }
+    const cores = _opMapaCores(doDia);
+    const linhas = doDia.slice().sort(_opCompararNoDia).map(op => {
+      const i = _opInicioMin(op), dur = _opDuracao(op);
+      const cap = `${_opFuncaoNome(op)}: ${op.operacao || '—'}`;
+      if (i == null || !dur) {
+        return `<div class="row"><div class="cap">${esc(cap)}</div><div class="track"><span class="semh">sem horário</span></div></div>`;
+      }
+      const left = (i - jan.ini) / larg * 100;
+      const width = Math.max(1.2, dur / larg * 100);
+      const conf = conflitos.has(op.id) ? ' conf' : '';
+      return `<div class="row"><div class="cap">${esc(cap)}</div><div class="track"><div class="bar${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;background:${cores.get(op.id)}" title="${esc(cap)} · ${esc(_opJanelaTexto(op))}">${esc(_opJanelaTexto(op))}</div></div></div>`;
+    }).join('');
+    return `
+      <div class="op-print-tl">
+        <div class="op-print-tl-cab">Linha do tempo · todas as operações em paralelo</div>
+        <div class="op-print-tl-regua"><div class="cap">Horário</div><div class="track">${ticks.join('')}</div></div>
+        ${linhas}
+      </div>`;
+  };
+
   const blocos = Array.from(porDia.keys()).sort().map(data => {
     const doDia = porDia.get(data);
     const grupos = _opBlocosDoDia(data);
@@ -5688,6 +5725,7 @@ function renderPrintPlanoOperacoes() {
           <span class="j">${grupos.length} ${grupos.length === 1 ? 'posto' : 'postos'} · ${esc(_opDurTexto(totMin))}${
             abre != null ? ` · jornada ${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}` : ''}</span>
         </div>
+        ${linhaTempoHtml(doDia)}
         ${postosHtml}
       </div>`;
   }).join('');

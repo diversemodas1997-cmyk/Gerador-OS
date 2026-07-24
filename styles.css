@@ -1872,6 +1872,83 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .op-print-posto .tag.emergente,
 .op-print-posto .tag.alto { border-color: #c81e1e; color: #c81e1e; font-weight: 700; }
 
+/* Linha do tempo CONSOLIDADA no papel: todas as operações do dia num só eixo de
+   horas, uma por linha, comparáveis em paralelo. Duplica no papel as faixas da
+   tela; as cores são as mesmas (cor própria por operação). */
+.op-print-tl { margin: 4px 0 7px; }
+.op-print-tl-cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6.5pt;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #555;
+  margin-bottom: 2px;
+}
+.op-print-tl .row,
+.op-print-tl-regua {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1.5px;
+}
+.op-print-tl .cap {
+  width: 150pt;
+  flex: none;
+  font-size: 6.8pt;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-print-tl .track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 11pt;
+  background: #f4f4f4;
+  border: .5pt solid #ddd;
+  border-radius: 2px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-tl .bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  color: #fff;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  line-height: 11pt;
+  padding: 0 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-tl .bar.conf { outline: 1pt solid #c81e1e; outline-offset: -1pt; }
+.op-print-tl .semh {
+  font-size: 6pt;
+  font-style: italic;
+  color: #999;
+  padding: 0 4px;
+  line-height: 11pt;
+}
+/* A régua não tem faixa cinza: só os rótulos de hora, ancorados no mesmo eixo. */
+.op-print-tl-regua .track {
+  height: 9pt;
+  background: none;
+  border: none;
+}
+.op-print-tl-regua .cap { color: #555; }
+.op-print-tl .tk {
+  position: absolute;
+  top: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  color: #666;
+}
+
 @media print {
   /* A margem de toda folha do plano — inclusive as de continuação.
      A superior é maior: o cabeçalho se repete no alto de TODA folha e, encostado
@@ -1895,6 +1972,8 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
   /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
      lida inteira, senão o operador recebe metade da jornada dele. */
   .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
+  /* A linha do tempo consolidada é lida como um todo — não parte no meio. */
+  .sheet-exp .op-print-tl { page-break-inside: avoid; break-inside: avoid; }
   /* CABEÇALHO REPETIDO: o <thead> da tabela da folha é redesenhado no alto de
      cada página impressa — mecanismo especificado, ao contrário do
      position:fixed, que foi tentado antes e jogava o título no RODAPÉ.
