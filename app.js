@@ -5332,6 +5332,42 @@ function _opGravarOrdem(blocos) {
   blocos.forEach(b => b.itens.forEach(op => { op.ordem = n++; }));
 }
 
+// Sincroniza os horários DENTRO de um posto: cada operação começa quando a
+// anterior termina (fim de uma = início da seguinte), na ordem da sequência do
+// posto. A 1ª operação com horário é a ÂNCORA (mantém o início); as demais são
+// reencaixadas — mesmo que isso mude o horário que estava lá. Operação sem
+// duração não avança o relógio nem é reposicionada. Devolve se algo mudou.
+function _opSincronizarPosto(itens) {
+  let running = null, mudou = false;
+  (itens || []).forEach(op => {
+    const dur = _opDuracao(op);
+    if (running == null) {                 // ainda sem âncora
+      const ini = _opInicioMin(op);
+      if (ini != null) running = ini + (dur || 0);   // 1ª com horário fixa a âncora
+      return;
+    }
+    if (dur > 0) {
+      const novo = _opHHMM(running);
+      if (op.inicio !== novo) { op.inicio = novo; mudou = true; }
+      running += dur;
+    }
+  });
+  return mudou;
+}
+
+// Aplica a sincronização a TODOS os postos de um dia. O posto "Operador de
+// esteira de corte" fica de fora: a máquina é automática e as operações rodam em
+// paralelo (mesma exceção da detecção de sobreposição). Só muta o STATE — quem
+// chama é que grava. Devolve se algo mudou.
+function _opSincronizarHorariosDia(data) {
+  let mudou = false;
+  _opBlocosDoDia(data).forEach(b => {
+    if (ehFuncaoOperadorEsteira(b.nome)) return;
+    if (_opSincronizarPosto(b.itens)) mudou = true;
+  });
+  return mudou;
+}
+
 // Move uma operação para cima/baixo DENTRO do seu posto.
 async function moverOperacao(id, dir) {
   if (!exigirAdmin('reordenar operações')) return;
@@ -5345,6 +5381,7 @@ async function moverOperacao(id, dir) {
   if (j < 0 || j >= bloco.itens.length) return;
   [bloco.itens[i], bloco.itens[j]] = [bloco.itens[j], bloco.itens[i]];
   _opGravarOrdem(blocos);
+  _opSincronizarHorariosDia(op.data);   // reencaixa os horários na nova ordem
   await saveState('operacoes');
   renderOperacoes();
 }
@@ -5931,6 +5968,7 @@ async function salvarModalOperacao() {
   } else {
     STATE.operacoes.push({ id: uid(), ...campos });
   }
+  _opSincronizarHorariosDia(data);   // encadeia os horários do posto (fim de uma = início da seguinte)
   await saveState('operacoes');
   closeModal('modal-op');
   toast(_opModalCtx.editId ? 'Operação atualizada' : 'Operação planejada', 'ok');
@@ -5959,6 +5997,7 @@ async function excluirOperacao(id) {
   if (!op) return;
   if (!confirm(`Excluir a operação "${op.operacao || 'sem descrição'}" de ${formatDate(op.data)}?`)) return;
   STATE.operacoes = (STATE.operacoes || []).filter(x => x.id !== id);
+  _opSincronizarHorariosDia(op.data);   // fecha o buraco: as seguintes reencaixam
   await saveState('operacoes');
   toast('Operação excluída', 'ok');
   renderOperacoes();
@@ -5994,6 +6033,7 @@ async function duplicarOperacao(id) {
     if (k >= 0) { const [c] = bloco.itens.splice(k, 1); bloco.itens.push(c); }
     _opGravarOrdem(blocos);
   }
+  _opSincronizarHorariosDia(op.data);   // encadeia: a cópia começa quando a anterior termina
   await saveState('operacoes');
   toast('Operação duplicada na última posição do posto', 'ok');
   renderOperacoes();
@@ -6019,6 +6059,7 @@ async function copiarOperacoesDoDiaAnterior() {
   if (!novas.length) return toast(`Nada novo a copiar de ${formatDate(origem)}`, 'err');
 
   STATE.operacoes.push(...novas);
+  _opSincronizarHorariosDia(destino);   // encadeia os horários no dia de destino
   await saveState('operacoes');
   toast(`${novas.length} operação(ões) copiada(s) de ${formatDate(origem)}`, 'ok');
   renderOperacoes();
