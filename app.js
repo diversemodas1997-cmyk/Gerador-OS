@@ -10622,7 +10622,7 @@ async function salvarTomEnfesto(osId, ordem, tom, valor) {
 function _camadasPorTomFase(o, ord) {
   const tv = ((o.progresso || {}).enfestosTons || {})[ord] || {};
   const out = {};
-  [1, 2, 3].forEach(t => { const n = parseInt(tv[t], 10); if (n > 0) out[t] = n; });
+  [1, 2, 3, 4].forEach(t => { const n = parseInt(tv[t], 10); if (n > 0) out[t] = n; });
   return out;
 }
 
@@ -10685,7 +10685,7 @@ async function recalcularDeCamadasPorTom(osId) {
   o.progresso.totalTamanhoTons = {};
   o.progresso.totalTamanhoTomValor = o.progresso.totalTamanhoTomValor || {};
   const N = valores.length;
-  for (let slot = 1; slot <= 3; slot++) {
+  for (let slot = 1; slot <= 4; slot++) {
     if (slot <= N) o.progresso.totalTamanhoTons[slot] = true;
     if (slot < N) o.progresso.totalTamanhoTomValor[slot] = valores[slot - 1] * minQtd * mult; // editável
     else delete o.progresso.totalTamanhoTomValor[slot];                                        // balanceador/inexistente
@@ -10717,14 +10717,15 @@ async function salvarObsOS(osId, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarObsOS', e); }
 }
 
-// Calcula os tons efetivamente marcados como prefixo consecutivo: Tom 2 so
-// vale se Tom 1 estiver marcado; Tom 3 so vale se Tom 1 e Tom 2 estiverem.
+// Calcula os tons efetivamente marcados como prefixo consecutivo: cada tom só
+// vale se todos os anteriores estiverem marcados (Tom 4 exige Tom 1, 2 e 3).
 // Sanitiza dados antigos ou estado inconsistente sem precisar limpar.
 function tonsEfetivos(ttTons) {
   const out = [];
   if (ttTons && ttTons[1]) out.push(1);
   if (ttTons && ttTons[1] && ttTons[2]) out.push(2);
   if (ttTons && ttTons[1] && ttTons[2] && ttTons[3]) out.push(3);
+  if (ttTons && ttTons[1] && ttTons[2] && ttTons[3] && ttTons[4]) out.push(4);
   return out;
 }
 
@@ -10798,7 +10799,7 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
   const tNum = Number(tom);
   const t = os.progresso.totalTamanhoTons;
   if (checked) {
-    // Bloqueia se prereq nao atendido (Tom 2 exige Tom 1; Tom 3 exige 1+2)
+    // Bloqueia se prereq nao atendido (cada tom exige todos os anteriores)
     if (tNum === 2 && !t[1]) {
       if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
       return;
@@ -10807,12 +10808,17 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
       if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
       return;
     }
+    if (tNum === 4 && (!t[1] || !t[2] || !t[3])) {
+      if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
+      return;
+    }
     t[tNum] = true;
   } else {
     delete t[tNum];
-    // Cascade: desmarcar Tom 1 derruba 2 e 3; desmarcar Tom 2 derruba 3
-    if (tNum === 1) { delete t[2]; delete t[3]; }
-    else if (tNum === 2) { delete t[3]; }
+    // Cascade: desmarcar um tom derruba todos os posteriores.
+    if (tNum === 1) { delete t[2]; delete t[3]; delete t[4]; }
+    else if (tNum === 2) { delete t[3]; delete t[4]; }
+    else if (tNum === 3) { delete t[4]; }
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
   // Mudou o nº de tonalidades → mudou o volume: cada tom é ensacado separado.
@@ -10889,7 +10895,7 @@ function atualizarLinhasTomNoDOM() {
   if (!balancerCells.length && !document.querySelector('[data-tt-row-total]')) return;
   // Toms editaveis = aqueles que tem input renderizado (um por linha basta)
   const vPorTom = {};
-  [1,2,3].forEach(tt => {
+  [1,2,3,4].forEach(tt => {
     const first = document.querySelector(`input[data-tt-tom-input="${tt}"]`);
     if (first) vPorTom[tt] = Math.max(0, Number(first.value) || 0);
   });
@@ -11573,10 +11579,10 @@ function renderEnfestoBox(o) {
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
   // As tonalidades podem aparecer em qualquer fase, então cada fase SEMPRE
-  // ganha campos em branco pros três tons (Tom 1/2/3), independente do que está
-  // marcado no "Total por tamanho" — preenchíveis à mão e persistidos por fase.
+  // ganha campos em branco pros quatro tons (Tom 1/2/3/4), independente do que
+  // está marcado no "Total por tamanho" — preenchíveis à mão e persistidos por fase.
   const enfestosTons = (o.progresso && o.progresso.enfestosTons) || {};
-  const tomsSelEnf = [1, 2, 3];
+  const tomsSelEnf = [1, 2, 3, 4];
   const campoTom = (ord, tom, val) =>
     `<input type="text" value="${esc(val || '')}" `
     + `data-enf-tom="${esc(String(ord))}" data-enf-tomnum="${tom}" `
@@ -11961,6 +11967,7 @@ function renderPrintSheet(o) {
                 let bloqueado = false;
                 if (tom === 2 && !ttTons[1]) bloqueado = true;
                 if (tom === 3 && (!ttTons[1] || !ttTons[2])) bloqueado = true;
+                if (tom === 4 && (!ttTons[1] || !ttTons[2] || !ttTons[3])) bloqueado = true;
                 const disabledAttr = bloqueado ? 'disabled' : '';
                 // Todos os tons com a MESMA cor do Tom 1 (sem desbotar): mesmo
                 // bloqueado, o texto fica na cor normal — só o checkbox continua
@@ -12013,7 +12020,7 @@ function renderPrintSheet(o) {
                   <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
                 </tr>
-                ${tomRow(1)}${tomRow(2)}${tomRow(3)}`;
+                ${tomRow(1)}${tomRow(2)}${tomRow(3)}${tomRow(4)}`;
             })()}
           </tbody>
         </table>
