@@ -1169,6 +1169,16 @@ function ehFuncaoCoordEnfestEsteira(nome) {
   return _normFuncaoNome(nome) === _FUNCAO_COORD_ENFEST_NORM;
 }
 
+// Operador de esteira de corte: a esteira é AUTOMÁTICA, então a mesma pessoa
+// toca duas operações ao mesmo tempo. Por isso as operações deste posto não
+// entram na detecção de sobreposição (não são conflito). Basta o nome conter
+// "operador" e "esteira" — o "Coordenador … Esteira de corte" acima não bate,
+// pois é "coordenador", não "operador".
+function ehFuncaoOperadorEsteira(nome) {
+  const n = _normFuncaoNome(nome);
+  return n.includes('operador') && n.includes('esteira');
+}
+
 async function loadState() {
   const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','meta'];
   for (const k of keys) {
@@ -5307,6 +5317,9 @@ function _opConflitos(lista) {
   const grupos = new Map();
   lista.forEach(op => {
     if (_opInicioMin(op) == null || !_opDuracao(op)) return;
+    // Operador de esteira de corte: máquina automática, a pessoa toca duas
+    // operações ao mesmo tempo — sobreposição aqui é normal, não conflito.
+    if (ehFuncaoOperadorEsteira(_opFuncaoNome(op))) return;
     // Cruzar jornadas é erro tanto no MESMO POSTO (função) quanto na MESMA
     // PESSOA (responsável) — a pessoa não pode estar em dois lugares ao mesmo
     // tempo, mesmo que os postos sejam diferentes. A chave inclui a DATA: o
