@@ -5078,21 +5078,29 @@ const _OP_PRIORIDADE = {
 };
 function _opPrioridade(op) { return _OP_PRIORIDADE[op.prioridade] ? op.prioridade : 'eletiva'; }
 
-// Paleta de cores distintas para as barras da linha de tempo: cada operação do
-// dia ganha uma cor própria, para se identificar de relance qual barra é qual.
-// Cores escuras o bastante para o texto branco por cima; vermelho puro fica de
-// fora para não se confundir com o contorno de conflito.
+// Paleta de cores distintas para as barras da linha de tempo. A cor identifica a
+// FUNÇÃO (posto): todas as operações do mesmo posto saem na mesma cor. Cores
+// escuras o bastante para o texto branco por cima; vermelho puro fica de fora
+// para não se confundir com o contorno de conflito.
 const _OP_PALETA = [
   '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#d97706',
   '#4338ca', '#0d9488', '#be123c', '#65a30d', '#c026d3', '#0369a1'
 ];
-// Mapa op.id → cor, atribuída na ordem de exibição do dia. Como as duas vistas
-// (por posto e por pessoa) partem do mesmo `_opCompararNoDia`, uma operação
-// mantém a mesma cor nas duas.
+// Mapa op.id → cor, uma cor POR FUNÇÃO. A ordem vem de STATE.funcoes (estável),
+// então a cor de um posto é a mesma em todos os dias, nas duas vistas (por posto
+// e por pessoa) e na folha impressa. Funções fora do cadastro entram no fim.
 function _opMapaCores(doDia) {
   const m = new Map();
-  doDia.slice().sort(_opCompararNoDia)
-    .forEach((op, i) => m.set(op.id, _OP_PALETA[i % _OP_PALETA.length]));
+  const ordemFuncao = new Map();
+  (STATE.funcoes || []).forEach((f, i) => ordemFuncao.set(_normFuncaoNome(f && f.nome), i));
+  let extra = (STATE.funcoes || []).length;
+  const corDe = nome => {
+    const key = _normFuncaoNome(nome);
+    let idx = ordemFuncao.get(key);
+    if (idx == null) { idx = extra++; ordemFuncao.set(key, idx); }
+    return _OP_PALETA[idx % _OP_PALETA.length];
+  };
+  doDia.forEach(op => m.set(op.id, corDe(_opFuncaoNome(op))));
   return m;
 }
 
