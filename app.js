@@ -6152,7 +6152,7 @@ function renderPrintPlanoOperacoes() {
       return `<div class="row" style="${rowStyle}"><div class="cap">${esc(cap)}</div><div class="track"><div class="bar${conf}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;background:${cor}" title="${esc(cap)} · ${esc(_opJanelaTexto(op))}">${esc(_opJanelaTexto(op))}</div></div></div>`;
     }).join('');
     return `
-      <div class="op-print-tl">
+      <div class="op-print-tl no-print">
         <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função</div>
         <div class="op-print-tl-regua"><div class="cap">Horário</div><div class="track">${ticks.join('')}</div></div>
         ${linhas}
