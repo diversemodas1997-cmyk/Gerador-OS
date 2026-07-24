@@ -5877,8 +5877,8 @@ function renderPrintPlanoExpedicao() {
             </tr>
             ${linhasTom}
           </tbody>
-        </table>
-        <div class="pe">Cada célula é um pacote: peças daquele tamanho, naquela tonalidade.${indef ? ' A divisão entre as tonalidades ainda não foi repartida na OS.' : ''}</div>
+        </table>${indef ? `
+        <div class="pe">A divisão entre as tonalidades ainda não foi repartida na OS.</div>` : ''}
       </div>`;
   };
 
