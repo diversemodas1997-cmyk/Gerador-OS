@@ -5843,6 +5843,12 @@ const _OP_SEQ_PRINCIPAL = _OP_SEQUENCIA
   .filter(p => p.cadeia === 'principal')
   .slice().sort((a, b) => a.ordem - b.ordem);
 
+// É a operação de ENFESTO propriamente dita (não o corte nem a movimentação dele).
+function _opEhEnfesto(op) {
+  const p = _opPassoSequencia(op);
+  return !!p && p.cadeia === 'principal' && p.nome === 'Enfesto';
+}
+
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
 function _opPassoSequencia(op) {
   const n = _normNome(op && op.operacao);
@@ -6137,6 +6143,24 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         if (empurrar(cur, alvo)) mudou = true;
       }
     });
+    // O ENFESTO não divide a hora com NADA do mesmo posto: a mesa é uma só e o
+    // pano está estendido nela. Quando alguma operação da mesma função cruza com
+    // um enfesto, a que começa DEPOIS espera a outra terminar. Se a de baixo for
+    // rotina de hora marcada (café, almoço, limpeza), quem sai da frente é o
+    // ENFESTO — ele recomeça depois dela, porque a rotina não se mexe.
+    // As demais sobreposições dentro de um mesmo posto seguem só APONTADAS na
+    // análise: reordenar a fila de um posto é decisão de quem planeja.
+    _opGruposSobreposicao(doDia).forEach((arr, chave) => {
+      if (chave.indexOf('|F|') < 0 || !arr.some(_opEhEnfesto)) return;
+      const lista = arr.slice().sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
+      for (let i = 1; i < lista.length; i++) {
+        const ant = lista[i - 1], cur = lista[i];
+        if (_opInicioMin(cur) >= _opFimMin(ant)) continue;
+        if (!_opEhEnfesto(ant) && !_opEhEnfesto(cur)) continue;
+        if (empurrar(cur, _opFimMin(ant))) { mudou = true; continue; }
+        if (_opEhEnfesto(ant) && empurrar(ant, _opFimMin(cur))) mudou = true;
+      }
+    });
     // Sobreposição da MESMA PESSOA em funções diferentes: ninguém está em dois
     // lugares ao mesmo tempo, então a segunda operação espera a primeira acabar.
     // Só os grupos de PESSOA entram aqui — cruzamento dentro do mesmo posto é o
@@ -6234,7 +6258,9 @@ async function corrigirOrdemOperacoes(data) {
   const pessoaAntes = pessoaCruzada(doDia()).size;
   const pausasFora = _opPausasDessincronizadas(doDia());
   const foraJornada = doDia().filter(o => _opForaDaJornada(o)).length;
-  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada) {
+  const enfestoCruzado = _opSobreposicoesMesmaFuncao(doDia())
+    .filter(p => _opEhEnfesto(p.a) || _opEhEnfesto(p.b)).length;
+  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada && !enfestoCruzado) {
     return toast('O dia já está organizado: sem conflitos, dentro da jornada e com as pausas sincronizadas', 'ok');
   }
   const destinoPrev = _opProximoDiaUtil(data);
@@ -6242,11 +6268,13 @@ async function corrigirOrdemOperacoes(data) {
     + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
     + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n`
     + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n`
-    + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n\n`
+    + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n`
+    + `· ${enfestoCruzado} sobreposta(s) a um enfesto no mesmo posto\n\n`
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
     + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.\n'
-    + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.')) return;
+    + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.\n'
+    + 'Nada da mesma função fica sobreposto a um enfesto.')) return;
   const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
   if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
