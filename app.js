@@ -6171,22 +6171,20 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         if (empurrar(cur, alvo)) mudou = true;
       }
     });
-    // O ENFESTO não divide a hora com NADA do mesmo posto: a mesa é uma só e o
-    // pano está estendido nela. Quando alguma operação da mesma função cruza com
-    // um enfesto, a que começa DEPOIS espera a outra terminar. Se a de baixo for
-    // rotina de hora marcada (café, almoço, limpeza), quem sai da frente é o
-    // ENFESTO — ele recomeça depois dela, porque a rotina não se mexe.
-    // As demais sobreposições dentro de um mesmo posto seguem só APONTADAS na
-    // análise: reordenar a fila de um posto é decisão de quem planeja.
+    // Sobreposição dentro da MESMA FUNÇÃO: o posto é uma pessoa e uma máquina —
+    // não faz duas coisas ao mesmo tempo. A que começa DEPOIS espera a outra
+    // terminar. Quando a de baixo é rotina de hora marcada (café, almoço,
+    // limpeza), quem sai da frente é a de cima: ela recomeça depois da rotina,
+    // que não se mexe. Era a última incoerência que ficava só apontada; agora o
+    // programa a resolve, como o resto.
     _opGruposSobreposicao(doDia).forEach((arr, chave) => {
-      if (chave.indexOf('|F|') < 0 || !arr.some(_opEhEnfesto)) return;
+      if (chave.indexOf('|F|') < 0) return;
       const lista = arr.slice().sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
       for (let i = 1; i < lista.length; i++) {
         const ant = lista[i - 1], cur = lista[i];
         if (_opInicioMin(cur) >= _opFimMin(ant)) continue;
-        if (!_opEhEnfesto(ant) && !_opEhEnfesto(cur)) continue;
         if (empurrar(cur, _opFimMin(ant))) { mudou = true; continue; }
-        if (_opEhEnfesto(ant) && empurrar(ant, _opFimMin(cur))) mudou = true;
+        if (empurrar(ant, _opFimMin(cur))) mudou = true;
       }
     });
     // Sobreposição da MESMA PESSOA em funções diferentes: ninguém está em dois
@@ -6289,9 +6287,8 @@ async function corrigirOrdemOperacoes(data) {
   const pessoaAntes = pessoaCruzada(doDia()).size;
   const pausasFora = _opPausasDessincronizadas(doDia());
   const foraJornada = doDia().filter(o => _opForaDaJornada(o)).length;
-  const enfestoCruzado = _opSobreposicoesMesmaFuncao(doDia())
-    .filter(p => _opEhEnfesto(p.a) || _opEhEnfesto(p.b)).length;
-  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada && !enfestoCruzado) {
+  const mesmaFuncao = _opSobreposicoesMesmaFuncao(doDia()).length;
+  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada && !mesmaFuncao) {
     return toast('O dia já está organizado: sem conflitos, dentro da jornada e com as pausas sincronizadas', 'ok');
   }
   const destinoPrev = _opProximoDiaUtil(data);
@@ -6300,12 +6297,12 @@ async function corrigirOrdemOperacoes(data) {
     + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n`
     + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n`
     + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n`
-    + `· ${enfestoCruzado} sobreposta(s) a um enfesto no mesmo posto\n\n`
+    + `· ${mesmaFuncao} par(es) sobrepostos dentro da mesma função\n\n`
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
     + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.\n'
     + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.\n'
-    + 'Nada da mesma função fica sobreposto a um enfesto.')) return;
+    + 'Nenhuma função fica com duas operações ao mesmo tempo.')) return;
   const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
   if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
@@ -6878,7 +6875,12 @@ function renderOperacoes() {
       <div class="op-analise" id="op-analise-${esc(data)}">
         <div class="op-analise-cab">
           Análise do dia ${esc(formatDate(data))}
-          <button type="button" class="btn small" onclick="analisarDiaOperacoes('${esc(data)}')">fechar</button>
+          <span style="display:flex;gap:6px;">
+            ${(faltando.length || cruzadas.length || ordemMsgs.length || pessoaN > 0 || foraJ.length)
+              ? `<button type="button" class="btn small primary admin-only" title="Aplica no dia tudo o que esta análise apontou e o programa sabe resolver sozinho: sobreposição na mesma função, ordem do lote, mesma pessoa em duas funções, jornada e pausas." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Corrigir o que dá</button>`
+              : ''}
+            <button type="button" class="btn small" onclick="analisarDiaOperacoes('${esc(data)}')">fechar</button>
+          </span>
         </div>
         ${secao('Operações esperadas que ainda cabem hoje', faltando.length && `${faltando.length} lote(s)`,
           faltando.map(l => `<div class="op-analise-item"><b>OS ${esc(l.lote)}</b> — ${l.feitos}/${l.total} ·
@@ -6893,7 +6895,8 @@ function renderOperacoes() {
               <button class="btn small" onclick="abrirModalOperacao('${esc(p.a.id)}')">ajustar a 1ª</button>
               <button class="btn small" onclick="abrirModalOperacao('${esc(p.b.id)}')">ajustar a 2ª</button>
             </div>
-          </div>`).join(''))}
+          </div>`).join('')
+          + '<div class="op-analise-item sub">A segunda operação de cada par passa a começar quando a primeira termina — é o que o botão abaixo faz.</div>')}
         ${secao('Coerência da sequência cruzada entre funções', ordemMsgs.length && `${ordemMsgs.length} ponto(s)`,
           ordemMsgs.map(m => `<div class="op-analise-item">${esc(m)}</div>`).join(''))}
         <div class="op-analise-sec">
@@ -6903,7 +6906,7 @@ function renderOperacoes() {
              _opPausasDessincronizadas(doDia) ? 'pausas dessincronizadas' : ''
             ].filter(Boolean).join(' · ') || 'nada a apontar'}</span></div>
           ${(pessoaN > 0 || foraJ.length || _opPausasDessincronizadas(doDia))
-            ? '<div class="op-analise-item sub">O botão <b>Organizar o dia</b> resolve estes três: separa a pessoa, traz o que está fora da jornada e alinha as pausas.</div>'
+            ? '<div class="op-analise-item sub">O botão <b>Corrigir o que dá</b>, no alto desta análise, resolve estes três: separa a pessoa, traz o que está fora da jornada e alinha as pausas.</div>'
             : ''}
         </div>
       </div>`;
