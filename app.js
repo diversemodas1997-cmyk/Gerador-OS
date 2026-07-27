@@ -5480,6 +5480,11 @@ const _OP_PALETA = [
   '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#d97706',
   '#4338ca', '#0d9488', '#be123c', '#65a30d', '#c026d3', '#0369a1'
 ];
+// PRETO é reservado: só operação de horário FIXO (a que o usuário travou) sai
+// nesta cor, em qualquer função. Assim, olhando a linha do tempo, o que não se
+// move é reconhecido de longe — e nenhuma função disputa a mesma leitura, porque
+// a paleta acima não tem tom escuro parecido.
+const _OP_COR_FIXO = '#111827';
 // Mapa op.id → cor, uma cor POR FUNÇÃO. A ordem vem de STATE.funcoes (estável),
 // então a cor de um posto é a mesma em todos os dias, nas duas vistas (por posto
 // e por pessoa) e na folha impressa. Funções fora do cadastro entram no fim.
@@ -5494,7 +5499,7 @@ function _opMapaCores(doDia) {
     if (idx == null) { idx = extra++; ordemFuncao.set(key, idx); }
     return _OP_PALETA[idx % _OP_PALETA.length];
   };
-  doDia.forEach(op => m.set(op.id, corDe(_opFuncaoNome(op))));
+  doDia.forEach(op => m.set(op.id, op.inicioFixo ? _OP_COR_FIXO : corDe(_opFuncaoNome(op))));
   return m;
 }
 
@@ -6714,7 +6719,7 @@ function renderOperacoes() {
       const mk = ponta === 'ini' ? '0' : (ponta === 'fim' ? '100%' : '50%');
       ticks.push(`<span class="op-tick" style="left:${pos.toFixed(3)}%;transform:${anc};--mk:${mk}">${esc(_opHHMM(m))}</span>`);
     }
-    return `<div class="op-regua"><div class="op-regua-lbl">Horário do dia</div><div class="op-regua-eixo">${ticks.join('')}</div></div>`;
+    return `<div class="op-regua"><div class="op-regua-lbl" title="Barra preta = operação com horário fixo (📌), em qualquer função">Horário do dia</div><div class="op-regua-eixo">${ticks.join('')}</div></div>`;
   };
 
   // Barra da operação dentro da janela do dia. É onde "07:12 por 3h20" vira
@@ -7810,7 +7815,7 @@ function renderPrintPlanoOperacoes() {
     }).join('');
     return `
       <div class="op-print-tl no-print">
-        <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função</div>
+        <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função · <span style="color:${_OP_COR_FIXO};font-weight:700;">preto = horário fixo</span></div>
         <div class="op-print-tl-regua"><div class="cap">Horário</div><div class="track">${ticks.join('')}</div></div>
         ${linhas}
       </div>`;
