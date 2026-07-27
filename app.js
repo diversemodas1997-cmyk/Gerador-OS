@@ -3349,6 +3349,10 @@ function _nomeEtapaDaFase(o, fase) {
   return (o.etapas || []).find(n => fase.entrada.re.test(n)) || null;
 }
 
+// Índice de uma fase pelo id — as regras do lote parcial falam de duas fases
+// nominadas (corte e costurando), e ler o índice daqui evita amarrar a posição.
+function _faseIdxPorId(id) { return FASES_ESTOQUE.findIndex(f => f.id === id); }
+
 // Saldo de uma fase por tecido+cor:
 //   entrada  = OSs que entraram na fase (× componentes)
 //   saida    = OSs que já entraram na PRÓXIMA fase
@@ -3366,22 +3370,42 @@ function calcularSaldosFase(idx) {
     if (!cur.corNome && cNome) cur.corNome = cNome;
     return cur;
   };
+  const iCorte = _faseIdxPorId('corte');
+  const iCostura = _faseIdxPorId('costurando');
   (STATE.ordens || []).forEach(o => {
-    if (!_faseEntrouOS(o, fase.entrada)) return;
+    const entrou = _faseEntrouOS(o, fase.entrada);
     // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
     // agora (a última etapa marcada não é a desta fase).
     const atual = faseAtualOS(o);
-    const saiu = atual !== idx;
+    // LOTE PARCIAL: o embarque também move peça. Os pacotes que já foram numa
+    // carga de IDA saem do Estoque de corte e entram em Costurando na hora, sem
+    // esperar a etapa Costura — e o que NÃO foi na carga continua no saldo do
+    // corte, disponível para a próxima expedição. Só vale enquanto a OS, pelas
+    // etapas, ainda está no corte: marcada a etapa seguinte, o modelo sobreposto
+    // já leva o lote inteiro para a fase dela e a fração deixa de fazer sentido.
+    const fracEmb = (atual === iCorte && (idx === iCorte || idx === iCostura))
+      ? _expEmbarcadoOS(o).fracao : 0;
+    const entradaParcial = idx === iCostura && !entrou && fracEmb > 0;
+    if (!entrou && !entradaParcial) return;
+    const saiu = entrou && atual !== idx;
     // Quais OSs listar na coluna OS desta linha:
     //  - padrão: só as que estão ATUALMENTE nesta fase (compõem o saldo).
     //  - fase.osTodasEntradas: TODAS as que entraram na fase (etapa marcada),
     //    mesmo que já tenham avançado (ex.: Costurando lista toda OS com Costura).
-    const listarOS = fase.osTodasEntradas ? true : (atual === idx);
+    //  - entrada parcial: a OS embarcou parte do lote, então compõe o saldo aqui
+    //    mesmo sem a etapa marcada.
+    const listarOS = entradaParcial || (fase.osTodasEntradas ? true : (atual === idx));
     const numOS = (o.os || '').toString().trim();
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
-      cur.entrada += it.qtd;
-      if (saiu) cur.saida += it.qtd;
+      const embarcado = Math.round(it.qtd * fracEmb);
+      if (entradaParcial) {
+        cur.entrada += embarcado;            // em Costurando entra só o que embarcou
+      } else {
+        cur.entrada += it.qtd;
+        if (saiu) cur.saida += it.qtd;
+        else if (idx === iCorte && embarcado > 0) cur.saida += embarcado;
+      }
       if (listarOS && numOS) cur.osNums.add(numOS);
     });
   });
@@ -3435,6 +3459,8 @@ function renderFasePainel(faseIdx) {
   if (!fase) return;
   const cont = document.getElementById(fase.painelId);
   if (!cont) return;
+  const idxCorte = _faseIdxPorId('corte');
+  const idxCostura = _faseIdxPorId('costurando');
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
@@ -3468,6 +3494,13 @@ function renderFasePainel(faseIdx) {
   }).join('');
   const entradaDesc = `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
   const saidaDesc = 'OS cujo volume já foi para outro campo (uma etapa posterior virou a última marcada)';
+  // O lote parcial muda a conta destas duas fases — dizer a regra aqui evita que
+  // um saldo "quebrado" (parte da OS) pareça erro de contagem.
+  const notaParcial = fase.id === 'corte'
+    ? ' <b>Lote parcial:</b> os pacotes já alocados numa carga de <b>ida</b> contam como <b>saída</b> aqui e entram em <b>Costurando</b>; o que não foi na carga fica no saldo, disponível para a próxima expedição.'
+    : (fase.id === 'costurando'
+      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já embarcados na <b>ida</b>, mesmo antes de a etapa Costura ser marcada.'
+      : '');
   const card = `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -3480,7 +3513,7 @@ function renderFasePainel(faseIdx) {
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
         ${mostrarCont ? '<b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).' : 'e <b>Estoque</b> (= Entradas − Saídas, ajustado por lançamentos manuais).'}
-        <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).
+        <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).${notaParcial}
       </div>
       <table class="table">
         <thead><tr>
@@ -3495,25 +3528,47 @@ function renderFasePainel(faseIdx) {
       </table>
     </div>`;
 
-  // OSs atualmente NESTA fase.
+  // OSs atualmente NESTA fase. Com lote parcial, a OS que embarcou parte do lote
+  // aparece nas DUAS: no corte com o que sobrou e em Costurando com o que saiu.
   const pacotes = (STATE.ordens || []).map(o => {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
-    return { osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '', total, faseIdx: faseAtualOS(o) };
-  }).filter(p => p.total > 0 && p.faseIdx === faseIdx)
+    const fAtual = faseAtualOS(o);
+    const frac = (fAtual === idxCorte && (faseIdx === idxCorte || faseIdx === idxCostura))
+      ? _expEmbarcadoOS(o).fracao : 0;
+    const embarcado = Math.round(total * frac);
+    return {
+      osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '',
+      total, faseIdx: fAtual, embarcado, parcial: frac > 0 && frac < 1
+    };
+  }).filter(p => p.total > 0 && (p.faseIdx === faseIdx
+      || (faseIdx === idxCostura && p.faseIdx === idxCorte && p.embarcado > 0)))
     .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
+  // Quantas peças da OS contam NESTA fase: no corte, o lote menos o que embarcou;
+  // em Costurando (sem a etapa marcada), só o que embarcou.
+  const pecasNaFase = p => {
+    if (faseIdx === idxCostura && p.faseIdx === idxCorte) return p.embarcado;
+    if (faseIdx === idxCorte && p.embarcado > 0) return Math.max(0, p.total - p.embarcado);
+    return p.total;
+  };
+  const seloParcial = p => {
+    if (!(p.embarcado > 0) || !p.parcial) return '';
+    return faseIdx === idxCostura
+      ? ' <span class="badge" style="background:#e6eefb;">parcial · embarcada</span>'
+      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.embarcado)} pç já embarcadas</span>`;
+  };
   const pacotesHtml = pacotes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote embarca numa carga, a OS conta nas duas fases: as peças que foram, em Costurando; as que ficaram, no Estoque de corte.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ação</th></tr></thead>
         <tbody>
           ${pacotes.map(p => `
             <tr>
               <td><strong>${esc(p.osNumero) || '—'}</strong></td>
-              <td>${esc(p.modelo) || '—'}</td>
+              <td>${esc(p.modelo) || '—'}${seloParcial(p)}</td>
               <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.total)} pç</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecasNaFase(p))} pç</td>
               <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
             </tr>`).join('')}
         </tbody>
@@ -3782,12 +3837,17 @@ function resumoPernaExpedicao(oc, perna) {
   const volMax = _expNum(cfg.volMax, 0);
   const itens = _expCargasDa(oc.janela.id, oc.dataOrig, perna).map(c => {
     const o = (STATE.ordens || []).find(x => x.id === c.osId);
+    const pecasOS = o ? _expPecasOS(o) : 0;
+    // Lote parcial: as peças da carga são só a parte do lote que vai NELA — o
+    // número ao lado dos volumes tem que falar da carga, não da OS inteira.
+    const comp = (o && Array.isArray(c.pacotes)) ? _expPecasDaComposicao(o, c.pacotes) : null;
     return {
       carga: c,
       os: o,
       osNumero: o ? (o.os || '—') : '(OS excluída)',
       modelo: o ? (o.modeloNome || '') : '',
-      pecas: o ? _expPecasOS(o) : 0,
+      pecas: comp ? Math.round(pecasOS * comp.fracao) : pecasOS,
+      pecasOS,
       volumes: Number(c.volumes) || 0
     };
   }).sort((a, b) => String(a.osNumero).localeCompare(String(b.osNumero), undefined, { numeric: true }));
@@ -3917,27 +3977,47 @@ function _expCancelSet() {
   return s;
 }
 
-// O que já foi alocado de uma OS, somando as cargas NÃO canceladas (menos a
-// carga em edição). Devolve a contagem por tamanho×tom, se a reposição já saiu,
-// e se existe carga "cheia" ANTIGA (sem composição por pacote) — nesse caso a OS
-// é tratada como já resolvida, pra não inventar pendência em dados antigos.
-function _expAlocadoOS(osId, exceptCargaId) {
+// O que já foi alocado de uma OS nas cargas NÃO canceladas (menos a carga em
+// edição). Devolve a contagem por tamanho×tom, se a reposição já saiu, e se
+// existe carga "cheia" ANTIGA (sem composição por pacote) — nesse caso a OS é
+// tratada como já resolvida, pra não inventar pendência em dados antigos.
+//
+// Ida e volta descrevem o MESMO pacote (sai cortado, volta costurado), então as
+// duas pernas NÃO se somam: o alocado de cada pacote é o MAIOR entre elas. Somar
+// fazia um lote parcial parecer resolvido logo que a volta era preenchida — os
+// pacotes que ficaram para trás desapareciam da lista "a alocar". Com `perna`,
+// a conta olha só aquela perna (é o que o seletor de pacotes precisa: a volta
+// pode levar de novo exatamente o que a ida levou).
+function _expAlocadoOS(osId, exceptCargaId, perna = null) {
   const cancel = _expCancelSet();
-  const contagem = new Map();
-  let reposicao = false, legacyFull = false;
+  const pernas = new Map();
   (STATE.expedicaoCargas || []).forEach(c => {
     if (c.osId !== osId || c.id === exceptCargaId) return;
     if (cancel.has(c.janelaId + '|' + c.data)) return;
+    const pn = c.perna === 'volta' ? 'volta' : 'ida';
+    if (perna && pn !== perna) return;
+    let e = pernas.get(pn);
+    if (!e) { e = { contagem: new Map(), reposicao: false, legacyFull: false }; pernas.set(pn, e); }
     if (Array.isArray(c.pacotes)) {
       c.pacotes.forEach(p => {
         const k = _expChavePacote(p);
-        const e = contagem.get(k) || { tam: p.tam, tom: p.tom, qtd: 0 };
-        e.qtd++; contagem.set(k, e);
+        const x = e.contagem.get(k) || { tam: p.tam, tom: p.tom, qtd: 0 };
+        x.qtd++; e.contagem.set(k, x);
       });
-      if (c.reposicao) reposicao = true;
+      if (c.reposicao) e.reposicao = true;
     } else if ((Number(c.volumes) || 0) > 0) {
-      legacyFull = true;   // carga antiga (só número): cobre a OS inteira
+      e.legacyFull = true;   // carga antiga (só número): cobre a OS inteira
     }
+  });
+  const contagem = new Map();
+  let reposicao = false, legacyFull = false;
+  pernas.forEach(e => {
+    if (e.reposicao) reposicao = true;
+    if (e.legacyFull) legacyFull = true;
+    e.contagem.forEach((x, k) => {
+      const cur = contagem.get(k);
+      if (!cur || x.qtd > cur.qtd) contagem.set(k, { tam: x.tam, tom: x.tom, qtd: x.qtd });
+    });
   });
   return { contagem, reposicao, legacyFull };
 }
@@ -3974,6 +4054,70 @@ function _expFaltamTexto(rem) {
   const partes = (rem.faltam || []).map(f => `${f.qtd > 1 ? f.qtd + '× ' : ''}${_expRotuloPacote(f)}`);
   if (rem.repRestante) partes.push('reposição');
   return partes.join(' · ') || '—';
+}
+
+/* ---- peças de cada pacote: a ponte entre o lote parcial e o estoque ---- */
+
+const _EXP_TAM_KEY = { P: 'p', M: 'm', G: 'g', GG: 'gg', G1: 'g1', G2: 'g2', G3: 'g3' };
+
+// Quantas peças tem UM pacote de cada chave tamanho|tom. O pacote é uma VAGA de
+// tamanho: na camiseta o mesmo tamanho pode ter várias vagas e as peças daquele
+// tamanho se repartem entre elas. Os números por tamanho × tom vêm de
+// totaisPorTamanhoTomOS — a mesma fonte da folha de OS e da folha de OE —, então
+// o pacote da folha e o pacote do estoque contam a mesma peça. Enquanto a divisão
+// entre tonalidades não foi digitada na OS, a coluna do tamanho é repartida em
+// partes iguais entre os tons (é o melhor palpite e mantém a soma fechando).
+function _expPecasPacoteOS(o) {
+  const TT = totaisPorTamanhoTomOS(o);
+  const vagas = new Map();
+  _tamanhosDaGradeExpandido(o).forEach(t => vagas.set(t, (vagas.get(t) || 0) + 1));
+  const tons = TT.tons.length ? TT.tons : [null];
+  const mapa = new Map();
+  let total = 0;
+  vagas.forEach((nVagas, tam) => {
+    const k = _EXP_TAM_KEY[tam];
+    const col = k ? TT.colTotal(k) : 0;
+    tons.forEach(tom => {
+      const L = TT.linhas.find(x => x.tom === tom);
+      const cel = (L && !TT.semDigitacao) ? (Number(L.cels[k]) || 0) : col / tons.length;
+      const pecas = nVagas > 0 ? cel / nVagas : 0;
+      mapa.set(_expChavePacote({ tam, tom }), pecas);
+      total += pecas * nVagas;
+    });
+  });
+  return { mapa, total, de: p => mapa.get(_expChavePacote(p)) || 0 };
+}
+
+// Peças de uma composição de carga ([{tam,tom}]) e a fração que ela representa do
+// lote inteiro. É a fração que move o saldo entre Estoque de corte e Costurando.
+function _expPecasDaComposicao(o, lista) {
+  const vazio = { pecas: 0, total: 0, fracao: 0 };
+  if (!o || !Array.isArray(lista)) return vazio;
+  const pp = _expPecasPacoteOS(o);
+  const pecas = lista.reduce((s, p) => s + pp.de(p), 0);
+  return { pecas, total: pp.total, fracao: pp.total > 0 ? Math.min(1, pecas / pp.total) : 0 };
+}
+
+// Quanto do lote de uma OS já EMBARCOU: as peças dos pacotes alocados em cargas
+// de IDA não canceladas. A ida é que leva o corte para a costura — a volta traz o
+// mesmo pacote de volta e contá-la aqui tiraria a peça do estoque duas vezes.
+// Carga antiga (só o número de volumes, sem composição) embarca o lote inteiro.
+function _expEmbarcadoOS(o) {
+  const vazio = { pecas: 0, total: 0, fracao: 0, parcial: false };
+  if (!o) return vazio;
+  const cancel = _expCancelSet();
+  const cargas = (STATE.expedicaoCargas || []).filter(c =>
+    c.osId === o.id && c.perna !== 'volta' && !cancel.has(c.janelaId + '|' + c.data));
+  if (!cargas.length) return vazio;
+  if (cargas.some(c => !Array.isArray(c.pacotes) && (Number(c.volumes) || 0) > 0)) {
+    return { pecas: 0, total: 0, fracao: 1, parcial: false };   // carga cheia antiga
+  }
+  const pp = _expPecasPacoteOS(o);
+  let pecas = 0;
+  cargas.forEach(c => (c.pacotes || []).forEach(p => { pecas += pp.de(p); }));
+  if (!(pp.total > 0)) return vazio;
+  const fracao = Math.min(1, pecas / pp.total);
+  return { pecas, total: pp.total, fracao, parcial: fracao > 0 && fracao < 1 };
 }
 
 // Aviso na tela quando o volume GRAVADO na carga não bate com a regra
@@ -4338,7 +4482,7 @@ function renderExpedicaoPlano() {
   const remanescentesHtml = remanescentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no <b>Estoque de corte</b> — só o que embarcou passou para <b>Costurando</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
@@ -4523,7 +4667,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     <div class="form-grid cols-2">
       <div class="field full">
         <label>Expedição (data · hora · perna) *</label>
-        <select id="ec-ocorrencia">${opts || '<option value="">— nenhuma expedição planejada —</option>'}</select>
+        <select id="ec-ocorrencia" onchange="_expAtualizarSugestaoVolumes()">${opts || '<option value="">— nenhuma expedição planejada —</option>'}</select>
         <div class="field-hint">${cargaEdit ? 'Escolha o dia e o horário em que esta OS será expedida. ' : ''}A perna define o trajeto: IDA é ${esc(expCfg().unidadeA)} → ${esc(expCfg().unidadeB)}; VOLTA é o caminho inverso.</div>
       </div>
       <div class="field full">
@@ -4557,6 +4701,14 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
 // cargas). Por padrão marca tudo que resta — alocar a OS inteira segue sendo um
 // clique; tirar pacotes é opcional. Devolve true se montou o seletor (a OS tem
 // grade), false se caiu no modo "número manual" (OS sem grade).
+// Perna escolhida no modal de carga. O alocado é contado POR PERNA: a volta traz
+// de volta os mesmos pacotes que a ida levou, então o que está na ida não pode
+// bloquear a composição da volta (e vice-versa).
+function _expPernaDoForm() {
+  const p = String(document.getElementById('ec-ocorrencia')?.value || '').split('|')[2];
+  return p === 'volta' ? 'volta' : 'ida';
+}
+
 function _expMontarSeletorPacotes(o) {
   const wrap = document.getElementById('ec-pacotes-wrap');
   const box = document.getElementById('ec-pacotes');
@@ -4572,7 +4724,7 @@ function _expMontarSeletorPacotes(o) {
   const editId = (_expModalCtx && _expModalCtx.editId) || '';
   const cargaEdit = editId ? (STATE.expedicaoCargas || []).find(c => c.id === editId) : null;
   const editouPacotes = cargaEdit && Array.isArray(cargaEdit.pacotes);
-  const alocOutros = _expAlocadoOS(o.id, editId);     // já alocado em OUTRAS cargas
+  const alocOutros = _expAlocadoOS(o.id, editId, _expPernaDoForm());   // já alocado em OUTRAS cargas da mesma perna
   const proprio = editouPacotes ? _expContarPacotes(cargaEdit.pacotes) : null;
   const totKey = _expContarPacotes(canon.itens);
 
@@ -4650,7 +4802,7 @@ function _expRecalcVolSeletor() {
   if (info && o) {
     const canon = _expPacotesCanonicos(o);
     const editId = (_expModalCtx && _expModalCtx.editId) || '';
-    const alocOutros = _expAlocadoOS(o.id, editId);
+    const alocOutros = _expAlocadoOS(o.id, editId, _expPernaDoForm());
     // "restante depois desta carga" = total − (já em outras) − (o que marquei aqui)
     let jaOutros = 0; alocOutros.contagem.forEach(e => jaOutros += e.qtd); if (alocOutros.reposicao) jaOutros += 1;
     const sobra = Math.max(0, canon.total - jaOutros - n);
@@ -6363,6 +6515,71 @@ function renderPrintPlanoExpedicao() {
   // detalha quantas peças vão em cada pacote — é o que a pessoa que ensaca lê.
   // Os números saem de totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
   const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
+  const TH = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
+  const TD = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
+
+  // Tabela de quantidades de uma carga PARCIAL: só os pacotes que vão nesta
+  // viagem. A folha é o papel da doca — trazer tamanho/tonalidade que ficou na
+  // fábrica faria conferir peça que não está no caminhão. O que ficou não se
+  // perde: segue no Estoque de corte e volta a ser oferecido no próximo
+  // planejamento de carga. As peças de cada pacote saem de _expPecasPacoteOS,
+  // que lê o mesmo "Total por tamanho" da folha de OS.
+  const tabelaDaCarga = (o, carga) => {
+    const cont = _expContarPacotes(carga.pacotes);
+    if (!cont.size) return '';
+    const pp = _expPecasPacoteOS(o);
+    const ordem = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+    const vals = Array.from(cont.values());
+    const tams = ordem.filter(t => vals.some(e => e.tam === t));
+    vals.forEach(e => { if (!tams.includes(e.tam)) tams.push(e.tam); });   // tamanho fora da ordem conhecida
+    const tons = [];
+    vals.forEach(e => { const t = e.tom == null ? null : e.tom; if (!tons.includes(t)) tons.push(t); });
+    tons.sort((a, b) => (a == null ? -1 : (b == null ? 1 : a - b)));
+    const cel = (tam, tom) => cont.get(_expChavePacote({ tam, tom })) || null;
+    const pecasDe = (tam, tom) => {
+      const e = cel(tam, tom);
+      return e ? Math.round(e.qtd * pp.de({ tam, tom })) : 0;
+    };
+    const celHtml = (tam, tom) => {
+      const e = cel(tam, tom);
+      if (!e) return `<td style="${TD}">—</td>`;   // pacote não vai nesta carga
+      const p = pecasDe(tam, tom);
+      return `<td style="${TD}">${p > 0 ? fmt(p) : ''}${e.qtd > 1 ? `<span style="font-size:.8em"> (${e.qtd}×)</span>` : ''}</td>`;
+    };
+    const totalTam = tam => tons.reduce((s, tom) => s + pecasDe(tam, tom), 0);
+    const totalGeral = tams.reduce((s, tam) => s + totalTam(tam), 0);
+    const cabec = tams.map(t => `<th style="${TH}text-align:center;">${esc(t)}</th>`).join('');
+    // Com um tom só a linha do tom é a própria linha do total: repetir o mesmo
+    // número duas vezes só faz procurar diferença que não existe.
+    const umTomSo = tons.length <= 1;
+    const rotTotal = umTomSo
+      ? (tons[0] == null ? 'Nesta carga' : `Tom ${tons[0]}`)
+      : 'Total da carga';
+    const linhasTom = umTomSo ? '' : tons.map(tom => `
+      <tr>
+        <td style="${TD}text-align:left;white-space:nowrap;">${tom == null ? 'Sem tom' : 'Tom ' + tom}</td>
+        ${tams.map(tam => celHtml(tam, tom)).join('')}
+        <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(tams.reduce((s, tam) => s + pecasDe(tam, tom), 0))}</td>
+      </tr>`).join('');
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th style="${TH}text-align:left;width:34pt;">Pacotes</th>
+            ${cabec}
+            <th style="${TH}text-align:center;background:#eef3ee;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="${TD}text-align:left;white-space:nowrap;font-weight:700;">${esc(rotTotal)}</td>
+            ${tams.map(tam => `<td style="${TD}font-weight:700;">${fmt(totalTam(tam))}</td>`).join('')}
+            <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(totalGeral)}</td>
+          </tr>
+          ${linhasTom}
+        </tbody>
+      </table>`;
+  };
 
   const osPrint = (i) => {
     const o = i.os;
@@ -6404,16 +6621,32 @@ function renderPrintPlanoExpedicao() {
     // Só anota quando a carga leva PARTE do lote — o lote completo já é o que a
     // tabela abaixo descreve, e repetir "15 de 15" em toda OS só poluiria a folha.
     let pacotesNota = '';
-    if (ehParcialCarga) {
-      const canonTotal = _expPacotesCanonicos(o).total;
-      const nestaCarga = i.carga.pacotes.length + (i.carga.reposicao ? 1 : 0);
-      if (canonTotal > 0 && nestaCarga < canonTotal) {
-        const cont = _expContarPacotes(i.carga.pacotes);
-        const partes = [];
-        cont.forEach(e => partes.push(`${e.qtd > 1 ? e.qtd + '× ' : ''}${_expRotuloPacote(e)}`));
-        if (i.carga.reposicao) partes.push('reposição');
-        pacotesNota = `<div class="sub" style="color:#c81e1e;font-weight:700;">⚠ PARCIAL — ${fmt(nestaCarga)} de ${fmt(canonTotal)} volume(s) desta OS: ${esc(partes.join(' · ') || '—')}</div>`;
-      }
+    const canonTotal = ehParcialCarga ? _expPacotesCanonicos(o).total : 0;
+    const nestaCarga = ehParcialCarga ? (i.carga.pacotes.length + (i.carga.reposicao ? 1 : 0)) : 0;
+    const cargaParcial = ehParcialCarga && canonTotal > 0 && nestaCarga < canonTotal;
+    if (cargaParcial) {
+      const cont = _expContarPacotes(i.carga.pacotes);
+      const partes = [];
+      cont.forEach(e => partes.push(`${e.qtd > 1 ? e.qtd + '× ' : ''}${_expRotuloPacote(e)}`));
+      if (i.carga.reposicao) partes.push('reposição');
+      pacotesNota = `<div class="sub" style="color:#c81e1e;font-weight:700;">⚠ PARCIAL — ${fmt(nestaCarga)} de ${fmt(canonTotal)} volume(s) desta OS: ${esc(partes.join(' · ') || '—')}</div>`;
+    }
+
+    // Carga parcial: o quadro descreve A CARGA, não o lote inteiro. A tabela traz
+    // só os pacotes embarcados; os ausentes não são relacionados aqui (ficam no
+    // Estoque de corte, disponíveis para a próxima carga).
+    if (cargaParcial) {
+      const tab = tabelaDaCarga(o, i.carga);
+      const soRep = !i.carga.pacotes.length && i.carga.reposicao;
+      return `
+        <div class="exp-print-os">
+          ${cab}
+          <div class="sub">
+            ${fmt(i.pecas)} pç · <b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}
+          </div>
+          ${pacotesNota}
+          ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
+        </div>`;
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
     // Escrito por extenso porque quem confere precisa saber o que procurar nele.
