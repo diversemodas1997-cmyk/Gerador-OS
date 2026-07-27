@@ -31,15 +31,21 @@ backup próprio.
     em cada lote e quadrinho de checklist preenchível.
   - **Expedição:** marcar Ensaque não põe mais a OS em OE nenhuma — só o
     planejamento aloca; e a carga registra que foi feita.
-- **DADOS:** o último snapshot exportado no app está em
-  `backups/BACKUP-COMPLETO-2026-07-23T20-25-51.json` (161 OS, 25 desenhos, 64
-  grades, 37 cores, 10 tecidos, 15 etapas, 17 componentes, 8 funções, 26 cargas
-  de expedição, 6 operações, 18 mov. de estoque · osCounter 444). ⚠️ ESTE ARQUIVO
-  ESTÁ DESATUALIZADO em relação ao uso de 24 a 28/07 (o planejamento de operações
-  do dia 24 em diante não está nele). Para um backup de dados ATUAL, exporte pelo
-  app (Configurações → Exportar tudo (JSON)): o código só carrega a chave `anon`
-  do Supabase, que a RLS bloqueia para leitura fora do app logado — por isso a
-  cópia de dados não é gerada automaticamente aqui.
+- **DADOS:** exportação de **27/07/2026 17:31**, em
+  `backups/BACKUP-COMPLETO-2026-07-27T17-31-01.json` (1,5 MB, 29 chaves): 165 OS,
+  25 desenhos, 64 grades, 37 cores, 10 tecidos, 4 materiais, 6 modelos, 2
+  coleções, 15 etapas, 4 tarefas, 17 componentes, **10 funções (todas já com a
+  lista de operações)**, 10 pessoas na equipe, 2 janelas e 30 cargas de
+  expedição, **96 operações planejadas** (22/07: 3 · 24/07: 47 · 27/07: 45 ·
+  28/07: 1) e 29 mov. de estoque · osCounter 444. As OS **187 e 0188** estão
+  nesta cópia. A mesma exportação está na pasta conectada
+  `J:\Meu Drive\Backup ERP Diverse\Gerador-OS` (arquivo
+  `os-gen-backup-1785184261956.json`).
+  O anterior é `backups/BACKUP-COMPLETO-2026-07-23T20-25-51.json` (161 OS, 6
+  operações). Para um backup de dados ATUAL, exporte pelo app (Configurações →
+  Exportar tudo (JSON)): o código só carrega a chave `anon` do Supabase, que a
+  RLS bloqueia para leitura fora do app logado — por isso a cópia de dados não é
+  gerada automaticamente aqui.
 
 ---
 
@@ -68,10 +74,12 @@ estoque, meta, osCounter…).
 ### Camadas de backup dos dados (redundância)
 
 1. **Backup manual completo (este):**
-   - `J:\Meu Drive\Backup ERP Diverse\Gerador-OS\BACKUP-COMPLETO-2026-07-23T20-25-51.json`
-   - `C:\Users\Pichau\Desktop\Gerador-OS\backups\BACKUP-COMPLETO-2026-07-23T20-25-51.json`
+   - `J:\Meu Drive\Backup ERP Diverse\Gerador-OS\os-gen-backup-1785184261956.json`
+     (exportado em 27/07/2026 17:31 — é o mesmo arquivo abaixo)
+   - `C:\Users\Pichau\Desktop\Gerador-OS\backups\BACKUP-COMPLETO-2026-07-27T17-31-01.json`
    - Formato **pronto pra importar** (chaves = arrays reais).
-   - Cópia bruta do snapshot ao lado (`snapshot-bruto-...json`).
+   - Anteriores na mesma pasta: `BACKUP-COMPLETO-2026-07-23T20-25-51.json` e a
+     cópia bruta do snapshot ao lado (`snapshot-bruto-...json`).
 2. **Snapshots de contingência (automáticos, por alteração):** pasta
    `snapshots/` dentro de cada pasta de backup/PDF conectada no Drive
    (ex.: `J:\Meu Drive\Backup ERP Diverse\Gerador-OS\snapshots\snap-*.json`).
