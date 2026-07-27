@@ -5773,6 +5773,18 @@ function _opSeloOrdem(e, tipo) {
     : ` <span class="exp-badge alto" title="${t}">${rot}</span>`;
 }
 
+// Tempo MÍNIMO que uma operação precisa, pelo que já foi medido na grade da OS
+// citada na referência. Vale para as fases de ENFESTO, que é o que o histórico
+// mede (_opTempoMedidoParaOS só marca `aplicavel` nesses casos). É o piso que
+// impede o ajuste de conflitos de encurtar um enfesto para ele caber na agenda.
+function _opDuracaoNecessaria(op) {
+  const os = _opOsDaReferencia(op && op.referencia);
+  if (!os) return 0;
+  const etapas = Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : []);
+  const r = _opTempoMedidoParaOS(os, op.operacao, etapas, _opFuncaoNome(op));
+  return (r && r.aplicavel && r.min > 0) ? r.min : 0;
+}
+
 // Corrige os horários que quebram a corrente do lote (cada passo começa quando o
 // passo anterior daquele lote TERMINA) e as sobreposições da MESMA PESSOA em
 // funções diferentes (ninguém está em dois lugares ao mesmo tempo). Só empurra
@@ -5785,7 +5797,7 @@ function _opSeloOrdem(e, tipo) {
 // Devolve { movidas: [{op, de, para}], travadas: [op] } — travadas são as que só
 // caberiam depois da meia-noite, que o campo de horário do dia não representa.
 function _opCorrigirOrdemDoDia(data, profundidade = 0) {
-  const movidas = new Map(), travadas = new Set(), adiadas = new Map();
+  const movidas = new Map(), travadas = new Set(), adiadas = new Map(), ampliadas = new Map();
   const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
   const destino = _opProximoDiaUtil(data);
   // O que não cabe na jornada vai para o PRÓXIMO DIA ÚTIL, levando junto os
@@ -5803,6 +5815,21 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
   };
   for (let passada = 0; passada < 20; passada++) {
     const doDia = (STATE.operacoes || []).filter(o => o.data === data);
+    let mudou = false;
+    // ANTES de mexer em horário: nenhum enfesto encurtado para caber. Se a grade
+    // da OS já mostrou que aquela fase leva mais tempo do que o planejado, a
+    // duração sobe para o tempo medido. Sem isso o ajuste "resolveria" o conflito
+    // mandando o corte começar no fim de um enfesto que, na prática, ainda estaria
+    // rodando — o conflito voltaria no chão de fábrica, não na tela.
+    doDia.forEach(op => {
+      const nec = _opDuracaoNecessaria(op);
+      if (nec <= _opDuracao(op)) return;
+      const de = _opDuracao(op);
+      op.duracaoMin = nec;
+      const reg = ampliadas.get(op.id);
+      if (reg) reg.para = nec; else ampliadas.set(op.id, { op, de, para: nec });
+      mudou = true;
+    });
     const porLote = new Map();
     doDia.forEach(op => {
       const passo = _opPassoSequencia(op);
@@ -5812,7 +5839,6 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         porLote.get(lote).push({ op, passo });
       });
     });
-    let mudou = false;
     // Empurra `cur` para começar quando `alvo` manda, registrando o movimento.
     const empurrar = (cur, alvo) => {
       if (_opInicioMin(cur) >= alvo) return false;
@@ -5875,6 +5901,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     movidas: Array.from(movidas.values()),
     travadas: Array.from(travadas),
     adiadas: Array.from(adiadas.values()),
+    ampliadas: Array.from(ampliadas.values()),
     destino
   };
   // O dia de destino recebeu trabalho: a corrente do lote precisa ser arrumada lá
@@ -5886,6 +5913,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     saida.movidas = saida.movidas.concat(seguinte.movidas);
     saida.travadas = saida.travadas.concat(seguinte.travadas);
     saida.adiadas = saida.adiadas.concat(seguinte.adiadas);
+    saida.ampliadas = saida.ampliadas.concat(seguinte.ampliadas);
   }
   return saida;
 }
@@ -5916,12 +5944,16 @@ async function corrigirOrdemOperacoes(data) {
     + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
     + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n\n`
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
-    + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.`)) return;
-  const { movidas, travadas, adiadas, destino } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length && !adiadas.length) return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
+    + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
+    + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.')) return;
+  const { movidas, travadas, adiadas, ampliadas, destino } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length && !adiadas.length && !ampliadas.length) {
+    return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
+  }
   await saveState('operacoes');
   const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
+    + (ampliadas.length ? ` · ${ampliadas.length} com a duração medida da grade` : '')
     + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
     + (travadas.length ? ` · ${travadas.length} sem encaixe` : '')
     + (restou ? ` · ainda ${restou} em conflito` : ''), restou || travadas.length ? 'err' : 'ok');
