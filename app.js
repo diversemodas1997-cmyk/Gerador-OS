@@ -6518,36 +6518,46 @@ function renderPrintPlanoExpedicao() {
   const TH = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
   const TD = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
 
-  // Tabela de quantidades de uma carga PARCIAL: só os pacotes que vão nesta
-  // viagem. A folha é o papel da doca — trazer tamanho/tonalidade que ficou na
-  // fábrica faria conferir peça que não está no caminhão. O que ficou não se
-  // perde: segue no Estoque de corte e volta a ser oferecido no próximo
-  // planejamento de carga. As peças de cada pacote saem de _expPecasPacoteOS,
-  // que lê o mesmo "Total por tamanho" da folha de OS.
+  // Tabela de quantidades de uma carga PARCIAL: os números são só o que vai
+  // NESTA viagem, mas a tabela mantém a FORMA DA GRADE — todos os tamanhos (e
+  // todas as tonalidades) da OS aparecem, e o pacote que não vai aparece com
+  // ZERO. Assim quem confere na doca vê que aquele tamanho não foi, em vez de não
+  // encontrar a coluna e ter que adivinhar. As peças de cada pacote saem de
+  // _expPecasPacoteOS, que lê o mesmo "Total por tamanho" da folha de OS.
   const tabelaDaCarga = (o, carga) => {
     const cont = _expContarPacotes(carga.pacotes);
-    if (!cont.size) return '';
+    if (!cont.size) return '';    // carga sem pacote de tamanho: quem chama escreve o aviso
     const pp = _expPecasPacoteOS(o);
     const ordem = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
     const vals = Array.from(cont.values());
-    const tams = ordem.filter(t => vals.some(e => e.tam === t));
+    // Colunas: os tamanhos da grade da OS + qualquer tamanho que esteja na carga
+    // e não esteja mais na grade (grade alterada depois de alocar).
+    const daGrade = [];
+    _tamanhosDaGradeExpandido(o).forEach(t => { if (!daGrade.includes(t)) daGrade.push(t); });
+    const tams = ordem.filter(t => daGrade.includes(t) || vals.some(e => e.tam === t));
     vals.forEach(e => { if (!tams.includes(e.tam)) tams.push(e.tam); });   // tamanho fora da ordem conhecida
-    const tons = [];
+    if (!tams.length) return '';
+    // Linhas: as tonalidades da OS (mesma regra — tom que não vai fica zerado).
+    const tons = (totaisPorTamanhoTomOS(o).tons || []).slice();
     vals.forEach(e => { const t = e.tom == null ? null : e.tom; if (!tons.includes(t)) tons.push(t); });
+    if (!tons.length) tons.push(null);
     tons.sort((a, b) => (a == null ? -1 : (b == null ? 1 : a - b)));
     const cel = (tam, tom) => cont.get(_expChavePacote({ tam, tom })) || null;
     const pecasDe = (tam, tom) => {
       const e = cel(tam, tom);
       return e ? Math.round(e.qtd * pp.de({ tam, tom })) : 0;
     };
+    // Zero em cinza: o número que importa é o que vai: o zero fica legível sem
+    // disputar a atenção com as quantidades reais.
     const celHtml = (tam, tom) => {
       const e = cel(tam, tom);
-      if (!e) return `<td style="${TD}">—</td>`;   // pacote não vai nesta carga
       const p = pecasDe(tam, tom);
-      return `<td style="${TD}">${p > 0 ? fmt(p) : ''}${e.qtd > 1 ? `<span style="font-size:.8em"> (${e.qtd}×)</span>` : ''}</td>`;
+      if (!e || !(p > 0)) return `<td style="${TD}color:#999;">0</td>`;
+      return `<td style="${TD}">${fmt(p)}${e.qtd > 1 ? `<span style="font-size:.8em"> (${e.qtd}×)</span>` : ''}</td>`;
     };
     const totalTam = tam => tons.reduce((s, tom) => s + pecasDe(tam, tom), 0);
     const totalGeral = tams.reduce((s, tam) => s + totalTam(tam), 0);
+    const totCel = (v, fundo) => `<td style="${TD}font-weight:700;${fundo ? 'background:#eef3ee;' : ''}${v > 0 ? '' : 'color:#999;'}">${fmt(v)}</td>`;
     const cabec = tams.map(t => `<th style="${TH}text-align:center;">${esc(t)}</th>`).join('');
     // Com um tom só a linha do tom é a própria linha do total: repetir o mesmo
     // número duas vezes só faz procurar diferença que não existe.
@@ -6559,7 +6569,7 @@ function renderPrintPlanoExpedicao() {
       <tr>
         <td style="${TD}text-align:left;white-space:nowrap;">${tom == null ? 'Sem tom' : 'Tom ' + tom}</td>
         ${tams.map(tam => celHtml(tam, tom)).join('')}
-        <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(tams.reduce((s, tam) => s + pecasDe(tam, tom), 0))}</td>
+        ${totCel(tams.reduce((s, tam) => s + pecasDe(tam, tom), 0), true)}
       </tr>`).join('');
     return `
       <table>
@@ -6573,8 +6583,8 @@ function renderPrintPlanoExpedicao() {
         <tbody>
           <tr>
             <td style="${TD}text-align:left;white-space:nowrap;font-weight:700;">${esc(rotTotal)}</td>
-            ${tams.map(tam => `<td style="${TD}font-weight:700;">${fmt(totalTam(tam))}</td>`).join('')}
-            <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(totalGeral)}</td>
+            ${tams.map(tam => totCel(totalTam(tam), false)).join('')}
+            ${totCel(totalGeral, true)}
           </tr>
           ${linhasTom}
         </tbody>
