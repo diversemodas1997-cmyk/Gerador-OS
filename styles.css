@@ -1643,6 +1643,48 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-falta-btn:hover { background: var(--alert-bg, #fdf3e3); }
 .op-falta-btn .q { font-family: 'IBM Plex Mono', monospace; font-size: 10px; opacity: .75; }
 
+/* Diagnóstico do dia, aberto sob demanda pelo botão "Analisar o dia". */
+.op-analise {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-2);
+  border-radius: 2px;
+  padding: 8px 10px;
+  background: var(--line-2);
+}
+.op-analise-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.op-analise-sec { margin-top: 6px; }
+.op-analise-tit {
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.op-analise-tit.ok { color: var(--ink-3); font-weight: 400; }
+.op-analise-tit.alerta { color: var(--alert); }
+.op-analise-tit .q { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.op-analise-item {
+  font-size: 12px;
+  padding: 3px 0 3px 10px;
+  border-left: 2px solid var(--line);
+  margin-top: 4px;
+}
+.op-analise-item .sub { color: var(--ink-2); font-size: 11.5px; }
+.op-analise-item .q { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); }
+
 /* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
 .op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
 .op-pessoa-lane { border: 1px solid var(--line); border-radius: 2px; padding: 6px 12px; }

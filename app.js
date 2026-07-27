@@ -5453,6 +5453,36 @@ function opHoje() {
 // Vista da agenda: 'posto' (faixa por função) ou 'pessoa' (faixa por pessoa —
 // mostra num quadro só tudo que cada pessoa faz e onde ela se sobrepõe).
 let opVista = 'posto';
+// Dia cujo diagnóstico está aberto na agenda (vazio = nenhum). É sob demanda: a
+// análise é uma pergunta que o usuário faz, não um aviso permanente na tela.
+let opAnaliseDia = '';
+
+function analisarDiaOperacoes(data) {
+  opAnaliseDia = (opAnaliseDia === data) ? '' : data;
+  renderOperacoes();
+  if (opAnaliseDia) {
+    const el = document.getElementById('op-analise-' + opAnaliseDia);
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// Pares de operações da MESMA FUNÇÃO que se cruzam no tempo. É o conflito que o
+// organizador do dia NÃO resolve sozinho — mexer na fila de um posto é decisão
+// de quem planeja —, então é justamente o que a análise precisa mostrar.
+function _opSobreposicoesMesmaFuncao(doDia) {
+  const pares = [];
+  _opGruposSobreposicao(doDia).forEach((arr, chave) => {
+    if (chave.indexOf('|F|') < 0) return;
+    arr.slice().sort((a, b) => _opInicioMin(a) - _opInicioMin(b)).forEach((op, i, lista) => {
+      if (!i) return;
+      const ant = lista[i - 1];
+      const ini = Math.max(_opInicioMin(op), _opInicioMin(ant));
+      const fim = Math.min(_opFimMin(op), _opFimMin(ant));
+      if (fim > ini) pares.push({ funcao: _opFuncaoNome(op), a: ant, b: op, ini, fim, min: fim - ini });
+    });
+  });
+  return pares;
+}
 try { opVista = sessionStorage.getItem('gos:op:vista') || opVista; } catch (e) {}
 function opSetVista(v) {
   opVista = (v === 'pessoa') ? 'pessoa' : 'posto';
@@ -6655,6 +6685,63 @@ function renderOperacoes() {
         onclick="incluirOperacaoFaltante('${esc(data)}','${esc(l0(lote))}','${esc(p.cadeia)}',${p.ordem})">
         + ${esc(p.nome)} <span class="q">${esc(s.inicio)} · ${esc(quem)}</span></button>`;
     };
+    // DIAGNÓSTICO sob demanda. Três perguntas, nesta ordem: falta operação?
+    // alguma função está com duas coisas ao mesmo tempo? a sequência cruzada
+    // entre as funções fecha? No fim, um resumo do que os outros avisos já
+    // apontam, para o relatório não dar a impressão de que o resto está limpo.
+    const analiseHtml = (() => {
+      if (opAnaliseDia !== data) return '';
+      const faltando = lotes.filter(l => l.faltam.length);
+      const cruzadas = _opSobreposicoesMesmaFuncao(doDia);
+      const ordemMsgs = [];
+      doDia.forEach(o => {
+        const e = foraDeOrdem.get(o.id);
+        if (e) e.msgs.forEach(m => { if (!ordemMsgs.includes(m)) ordemMsgs.push(m); });
+      });
+      // Sobreposição de PESSOA = o que sobra dos conflitos depois de tirar as da
+      // mesma função, que já têm seção própria acima.
+      const naFuncao = new Set(cruzadas.flatMap(p => [p.a.id, p.b.id]));
+      const pessoaN = doDia.filter(o => conflitos.has(o.id) && !naFuncao.has(o.id)).length;
+      const foraJ = doDia.filter(o => _opForaDaJornada(o));
+      const secao = (titulo, n, corpo) => `
+        <div class="op-analise-sec">
+          <div class="op-analise-tit ${n ? 'alerta' : 'ok'}">${esc(titulo)} <span class="q">${n ? n : 'nada a apontar'}</span></div>
+          ${n ? corpo : ''}
+        </div>`;
+      const linhaOp = op => `${esc(_opFuncaoNome(op))} · ${esc(op.operacao) || '—'} <span class="q">${esc(_opJanelaTexto(op))}</span>`;
+      return `
+      <div class="op-analise" id="op-analise-${esc(data)}">
+        <div class="op-analise-cab">
+          Análise do dia ${esc(formatDate(data))}
+          <button type="button" class="btn small" onclick="analisarDiaOperacoes('${esc(data)}')">fechar</button>
+        </div>
+        ${secao('Operações esperadas que faltam', faltando.length && `${faltando.length} lote(s)`,
+          faltando.map(l => `<div class="op-analise-item"><b>OS ${esc(l.lote)}</b> — ${l.feitos}/${l.total} ·
+            ${l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')}</div>`).join(''))}
+        ${secao('Sobreposição dentro da mesma função', cruzadas.length && `${cruzadas.length} par(es)`,
+          cruzadas.map(p => `<div class="op-analise-item">
+            <b>${esc(p.funcao)}</b> — ${esc(_opDurTexto(p.min))} sobrepostos (${esc(_opHHMM(p.ini))} → ${esc(_opHHMM(p.fim))})
+            <div class="sub">${linhaOp(p.a)}</div>
+            <div class="sub">${linhaOp(p.b)}</div>
+            <div class="admin-only" style="margin-top:2px;display:flex;gap:4px;">
+              <button class="btn small" onclick="abrirModalOperacao('${esc(p.a.id)}')">ajustar a 1ª</button>
+              <button class="btn small" onclick="abrirModalOperacao('${esc(p.b.id)}')">ajustar a 2ª</button>
+            </div>
+          </div>`).join(''))}
+        ${secao('Coerência da sequência cruzada entre funções', ordemMsgs.length && `${ordemMsgs.length} ponto(s)`,
+          ordemMsgs.map(m => `<div class="op-analise-item">${esc(m)}</div>`).join(''))}
+        <div class="op-analise-sec">
+          <div class="op-analise-tit ${(pessoaN > 0 || foraJ.length || _opPausasDessincronizadas(doDia)) ? 'alerta' : 'ok'}">Outros pontos <span class="q">${
+            [pessoaN > 0 ? `${pessoaN} com a mesma pessoa em duas funções` : '',
+             foraJ.length ? `${foraJ.length} fora da jornada` : '',
+             _opPausasDessincronizadas(doDia) ? 'pausas dessincronizadas' : ''
+            ].filter(Boolean).join(' · ') || 'nada a apontar'}</span></div>
+          ${(pessoaN > 0 || foraJ.length || _opPausasDessincronizadas(doDia))
+            ? '<div class="op-analise-item sub">O botão <b>Organizar o dia</b> resolve estes três: separa a pessoa, traz o que está fora da jornada e alinha as pausas.</div>'
+            : ''}
+        </div>
+      </div>`;
+    })();
     const lotesHtml = lotes.length ? `
       <div class="op-lotes">
         <div class="op-lotes-cab">Lotes do dia · ${lotes.length - incompletos.length} de ${lotes.length} com a sequência completa</div>
@@ -6683,12 +6770,14 @@ function renderOperacoes() {
             ${(doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id) || _opForaDaJornada(o)) || _opPausasDessincronizadas(doDia))
               ? `<button class="btn" title="Sincroniza as pausas, garante a duração medida do enfesto e empurra para frente o que quebra a ordem do lote ou põe a mesma pessoa em duas funções ao mesmo tempo." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Organizar o dia</button>`
               : ''}
+            <button class="btn" title="Confere o dia: operação esperada que falta, sobreposição dentro da mesma função e a coerência da sequência cruzada entre as funções." onclick="analisarDiaOperacoes('${esc(data)}')">${opAnaliseDia === data ? '✕ Fechar análise' : '🔍 Analisar o dia'}</button>
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
           </div>
         </div>
         ${jan ? reguaHtml(jan) : ''}
         ${blocos}
         ${lotesHtml}
+        ${analiseHtml}
       </div>`;
   };
 
