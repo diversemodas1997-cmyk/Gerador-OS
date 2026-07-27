@@ -8,33 +8,51 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
-- **CÓDIGO:** tag `restore-2026-07-24-n` (cache-buster `app.js ?v=2026-07-24n`,
-  `styles.css ?v=2026-07-24e`). Novidades desde o `restore-2026-07-23-af`:
-  expedição em lote parcial + remanescentes e limite de volume único global;
-  etiquetas com tonalidade ("G tom 1"); Tom 4 no Total por tamanho; operações
-  com cor por função, botão duplicar, linha do tempo cronológica (escondida na
-  impressão) e sincronização automática de horários por posto; 3 proteções
-  contra perda de edições (preserva chaves não salvas, retry, flush ao sair).
+- **CÓDIGO:** tag `restore-2026-07-28-t` (cache-buster `app.js ?v=2026-07-28t`,
+  `styles.css ?v=2026-07-28h`), 48 commits desde o `restore-2026-07-24-n`. O que
+  mudou, por assunto:
+  - **Sincronização (a correção mais importante):** o flush passou a fazer merge
+    por REGISTRO nas listas, com base de três vias. Antes, cada chave subia
+    inteira e uma aba desatualizada apagava a OS que outro aparelho tinha
+    acabado de criar — foi a causa das perdas da OS 188.
+  - **Planejamento de operações, reescrito em volta da OS:** o dia começa com
+    "+ Alocar OS" e o programa monta a cascata dos 11 passos, cada um na função
+    que o executa, com o tempo cadastrado nela. Corrente obrigatória do lote
+    (com duas correntes paralelas: carga e matéria-prima), conflito de ordem,
+    jornada 07:15–17:30 com transbordo para o próximo dia útil, pausas
+    sincronizadas, tempo parado por função, botão "Organizar o dia" e a análise
+    "Analisar o dia" com o que falta em cada lote.
+  - **Funções:** cada função cadastra as suas operações com o tempo de cada uma
+    (o campo de texto virou lista); as etapas marcadas deram lugar a essa lista.
+  - **Grades:** tempo medido por fase de enfesto no cadastro, chave de grade
+    unificada por identidade e conferência do horário lançado contra a média.
+  - **Folhas:** OE com tabela da carga parcial e cor completa do tricolor;
+    folha de operações sem o vão de 100mm, com somatório por função, o que falta
+    em cada lote e quadrinho de checklist preenchível.
+  - **Expedição:** marcar Ensaque não põe mais a OS em OE nenhuma — só o
+    planejamento aloca; e a carga registra que foi feita.
 - **DADOS:** o último snapshot exportado no app está em
   `backups/BACKUP-COMPLETO-2026-07-23T20-25-51.json` (161 OS, 25 desenhos, 64
   grades, 37 cores, 10 tecidos, 15 etapas, 17 componentes, 8 funções, 26 cargas
-  de expedição, 6 operações, 18 mov. de estoque · osCounter 444). ⚠️ Para um
-  backup de dados ATUAL, exporte pelo app (Configurações → Exportar tudo (JSON)):
-  o código só carrega a chave `anon` do Supabase, que a RLS bloqueia para leitura
-  fora do app logado — por isso a cópia de dados não é gerada automaticamente aqui.
+  de expedição, 6 operações, 18 mov. de estoque · osCounter 444). ⚠️ ESTE ARQUIVO
+  ESTÁ DESATUALIZADO em relação ao uso de 24 a 28/07 (o planejamento de operações
+  do dia 24 em diante não está nele). Para um backup de dados ATUAL, exporte pelo
+  app (Configurações → Exportar tudo (JSON)): o código só carrega a chave `anon`
+  do Supabase, que a RLS bloqueia para leitura fora do app logado — por isso a
+  cópia de dados não é gerada automaticamente aqui.
 
 ---
 
 ## 1) CÓDIGO (app.js, index.html, styles.css)
 
 - **Onde está:** repositório GitHub `diversemodas1997-cmyk/Gerador-OS`, branch `main`.
-- **Ponto de restauração:** tag `restore-2026-07-24-n` (cache-buster `n`).
-  Anterior: `restore-2026-07-23-af`.
+- **Ponto de restauração:** tag `restore-2026-07-28-t` (cache-buster `t`).
+  Anterior: `restore-2026-07-24-n`.
 - **Como restaurar / reimplantar:** basta hospedar os 3 arquivos (index.html +
   app.js + styles.css) em qualquer servidor de estático. A cópia VIVA é este
   repo (tem o banner de cor). Ao editar o app.js, sempre suba o `?v=` no
-  index.html (cache-buster) — hoje em `app.js ?v=2026-07-24n` /
-  `styles.css ?v=2026-07-24e`.
+  index.html (cache-buster) — hoje em `app.js ?v=2026-07-28t` /
+  `styles.css ?v=2026-07-28h`.
 - **Config do Supabase fica no topo do app.js:** `SUPA_URL` e `SUPA_KEY` (chave
   `anon`). Se o projeto Supabase mudar, troque esses dois valores.
 
