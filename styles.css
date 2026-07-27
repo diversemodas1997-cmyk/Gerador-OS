@@ -1603,6 +1603,31 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   border: 1px dashed rgba(0, 0, 0, .18);
 }
 
+/* O que falta para cada lote fechar a corrente de operações do dia. */
+.op-lotes { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.op-lotes-cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+.op-lote-linha {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+  border-bottom: 1px dotted var(--line);
+}
+.op-lote-linha:last-child { border-bottom: none; }
+.op-lote-linha .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; min-width: 68px; }
+.op-lote-linha .c { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); min-width: 38px; }
+.op-lote-linha .f { flex: 1 1 auto; min-width: 0; }
+.op-lote-linha.falta .f { color: var(--accent-dark); }
+.op-lote-linha.ok .f { color: var(--ink-3); }
+
 /* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
 .op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
 .op-pessoa-lane { border: 1px solid var(--line); border-radius: 2px; padding: 6px 12px; }

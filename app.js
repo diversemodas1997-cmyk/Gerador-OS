@@ -5767,22 +5767,45 @@ function _opForaDaJornada(op) {
 // O padrão é casado pelo NOME da operação já normalizado (sem acento, minúsculo),
 // e a lista é percorrida na ordem escrita: os padrões específicos vêm antes do
 // genérico "enfesto", senão "Corte de enfesto" cairia no passo do enfesto.
+// São TRÊS correntes que correm em paralelo — o lote atravessa a principal, e as
+// outras duas acontecem ao lado, sem depender dela. Passo de correntes
+// diferentes nunca é conflito de ordem entre si.
+//   principal — do preparo da máquina ao retalho estocado;
+//   carga     — o que a expedição faz com os pacotes prontos;
+//   materia   — o preparo da matéria prima que alimenta o enfesto.
+// A lista é percorrida na ORDEM ESCRITA e o primeiro teste que casa vence: os
+// específicos vêm antes dos genéricos ("Corte de enfesto" antes de "Enfesto",
+// "Desmontagem de carga" antes de "Montagem de carga", "matéria prima" antes de
+// "materiais"). O teste é função, não regex solta, porque quase todo passo se
+// identifica por DUAS palavras (o verbo e o objeto) em qualquer ordem.
 const _OP_SEQUENCIA = [
-  { ordem: 2, nome: 'Movimentação de enfesto',            re: /moviment.*enfesto/ },
-  { ordem: 3, nome: 'Corte de enfesto',                   re: /cort.*enfesto/ },
-  { ordem: 4, nome: 'Movimentação de unidades cortadas',  re: /moviment.*cortad/ },
-  { ordem: 5, nome: 'Separação de unidades cortadas',     re: /separa.*cortad/ },
-  { ordem: 6, nome: 'Empacotamento de unidades cortadas', re: /empacot.*cortad/ },
-  { ordem: 7, nome: 'Estocagem de pacotes',               re: /estoca/ },
-  { ordem: 8, nome: 'Empacotamento de retalhos',          re: /empacot.*retalh/ },
-  { ordem: 1, nome: 'Enfesto',                            re: /enfesto/ }
+  { cadeia: 'materia',   ordem: 1,  nome: 'Etapas de preparação de matéria prima', teste: n => /prepar/.test(n) && /materia prima|materia-prima/.test(n) },
+  { cadeia: 'principal', ordem: 1,  nome: 'Preparação das máquinas',               teste: n => /prepar/.test(n) && /maquin/.test(n) },
+  { cadeia: 'principal', ordem: 2,  nome: 'Reposição de materiais',                teste: n => /reposi/.test(n) && /material|materiais/.test(n) },
+  { cadeia: 'carga',     ordem: 1,  nome: 'Seleção de pacotes',                    teste: n => /selec|seleca/.test(n) && /pacote/.test(n) },
+  { cadeia: 'carga',     ordem: 2,  nome: 'Desmontagem de carga',                  teste: n => /desmonta/.test(n) },
+  { cadeia: 'carga',     ordem: 3,  nome: 'Montagem de carga',                     teste: n => /monta/.test(n) && /carga/.test(n) },
+  { cadeia: 'principal', ordem: 4,  nome: 'Movimentação de enfesto',               teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
+  { cadeia: 'principal', ordem: 5,  nome: 'Corte de enfesto',                      teste: n => /cort/.test(n) && /enfesto/.test(n) },
+  { cadeia: 'principal', ordem: 6,  nome: 'Movimentação de unidades cortadas',     teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 7,  nome: 'Separação de unidades cortadas',        teste: n => /separa/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 8,  nome: 'Empacotamento de unidades cortadas',    teste: n => /empacot/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 9,  nome: 'Estocagem de pacotes',                  teste: n => /estoc/.test(n) && /pacote/.test(n) },
+  { cadeia: 'principal', ordem: 10, nome: 'Empacotamento de retalhos',             teste: n => /empacot/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 11, nome: 'Estocagem de retalhos',                 teste: n => /estoc/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 3,  nome: 'Enfesto',                               teste: n => /enfesto/.test(n) }
 ];
+
+// Passos da corrente PRINCIPAL na ordem, para dizer o que falta num lote.
+const _OP_SEQ_PRINCIPAL = _OP_SEQUENCIA
+  .filter(p => p.cadeia === 'principal')
+  .slice().sort((a, b) => a.ordem - b.ordem);
 
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
 function _opPassoSequencia(op) {
   const n = _normNome(op && op.operacao);
   if (!n) return null;
-  return _OP_SEQUENCIA.find(p => p.re.test(n)) || null;
+  return _OP_SEQUENCIA.find(p => p.teste(n)) || null;
 }
 
 // Lotes citados na referência da operação: os números de OS que aparecem no
@@ -5816,8 +5839,10 @@ function _opConflitosOrdem(lista) {
   (lista || []).forEach(op => {
     const passo = _opPassoSequencia(op);
     if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
+    // A chave inclui a CORRENTE: seleção de pacotes não vem depois do enfesto,
+    // são coisas que correm em paralelo. Só passos da mesma corrente se ordenam.
     _opLotesDaOperacao(op).forEach(lote => {
-      const k = op.data + '|' + lote;
+      const k = op.data + '|' + passo.cadeia + '|' + lote;
       if (!porLote.has(k)) porLote.set(k, []);
       porLote.get(k).push({ op, passo, lote });
     });
@@ -5874,6 +5899,22 @@ function _opTipoPausa(op) {
   return '';
 }
 function _opEhPausa(op) { return !!_opTipoPausa(op); }
+
+// Operações de HORÁRIO FIXO por natureza: acontecem em hora marcada, não entram
+// na fila do posto e o organizador não as empurra para resolver conflito de
+// ninguém. Além das pausas, são as rotinas de abertura e fechamento —
+// preparação das máquinas, reposição de materiais e limpeza de ambiente.
+// (Diferente do 📌: aqui é o TIPO da operação que manda, não uma escolha caso a
+// caso; por isso elas são ancoradas sem aparecer como fixadas pelo usuário.)
+function _opHorarioDeRotina(op) {
+  if (_opEhPausa(op)) return true;
+  const n = _normNome(op && op.operacao);
+  if (!n) return false;
+  if (/prepar/.test(n) && /maquin/.test(n)) return true;
+  if (/reposi/.test(n) && /material|materiais/.test(n)) return true;
+  if (/limpeza/.test(n) && /ambiente/.test(n)) return true;
+  return false;
+}
 
 // Alguma pausa do dia está em horários diferentes entre as funções?
 function _opPausasDessincronizadas(lista) {
@@ -5957,6 +5998,12 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
   // junto). Sincronizadas antes, viram âncoras e o resto do ajuste se encaixa em
   // volta delas, em vez de empurrá-las.
   const pausas = _opSincronizarPausasDoDia(data);
+  // As demais rotinas de hora marcada (preparação das máquinas, reposição de
+  // materiais, limpeza de ambiente) não são sincronizadas entre funções — cada
+  // posto tem a sua —, mas ficam ancoradas: o encadeamento não as arrasta.
+  (STATE.operacoes || []).forEach(op => {
+    if (op.data === data && _opHorarioDeRotina(op) && _opInicioMin(op) != null) op.inicioAuto = true;
+  });
   if (pausas.length) _opSincronizarHorariosDia(data);
   // O que não cabe na jornada vai para o PRÓXIMO DIA ÚTIL, levando junto os
   // passos seguintes do mesmo lote que estavam neste dia — eles dependem dele, e
@@ -6015,7 +6062,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     // empurrar um deles para resolver conflito de uma função dessincronizaria
     // todas as outras. O conflito com pausa fica acusado, para o usuário decidir.
     const empurrar = (cur, alvo) => {
-      if (_opEhPausa(cur)) return false;
+      if (_opHorarioDeRotina(cur)) return false;
       if (_opInicioMin(cur) >= alvo) return false;
       // Não empurra para fora do expediente: o dia acaba às 17:30 e uma operação
       // marcada depois disso é plano que ninguém executa. Fica onde está e sai na
@@ -6167,6 +6214,35 @@ async function corrigirOrdemOperacoes(data) {
     + (travadas.length ? ` · ${travadas.length} sem encaixe` : '')
     + (restou ? ` · ainda ${restou} em conflito` : ''), restou || travadas.length ? 'err' : 'ok');
   renderOperacoes();
+}
+
+// O que FALTA para o lote atravessar a corrente principal inteira. Um lote (a OS
+// citada na referência) só está completo quando todos os passos existem no dia.
+// As rotinas de hora marcada (preparação das máquinas, reposição de materiais)
+// contam como atendidas se acontecem no dia, com ou sem referência ao lote: são
+// feitas uma vez e servem a todos os lotes — cobrá-las por lote encheria a lista
+// de falso-faltante.
+// Devolve [{ lote, feitos, faltam:[passo], total }] com os lotes incompletos
+// primeiro, na ordem do número da OS.
+function _opLotesIncompletos(doDia) {
+  const feitosPorLote = new Map();
+  const rotinaNoDia = new Set();
+  (doDia || []).forEach(op => {
+    const passo = _opPassoSequencia(op);
+    if (!passo || passo.cadeia !== 'principal') return;
+    if (_opHorarioDeRotina(op)) rotinaNoDia.add(passo.ordem);
+    _opLotesDaOperacao(op).forEach(lote => {
+      if (!feitosPorLote.has(lote)) feitosPorLote.set(lote, new Set());
+      feitosPorLote.get(lote).add(passo.ordem);
+    });
+  });
+  const saida = [];
+  feitosPorLote.forEach((feitos, lote) => {
+    const faltam = _OP_SEQ_PRINCIPAL.filter(p => !feitos.has(p.ordem) && !rotinaNoDia.has(p.ordem));
+    saida.push({ lote, feitos: _OP_SEQ_PRINCIPAL.length - faltam.length, faltam, total: _OP_SEQ_PRINCIPAL.length });
+  });
+  return saida.sort((a, b) => b.faltam.length - a.faltam.length
+    || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true }));
 }
 
 /* ---------------- vazios (tempo sem operação) ---------------- */
@@ -6512,6 +6588,21 @@ function renderOperacoes() {
     // Onde a continuidade do dia se rompe: janelas em que NENHUMA função opera —
     // o dia inteiro parado, não só um posto.
     const paradaGeral = _opVazios(doDia, jornadaDia, _OP_VAZIO_MIN).filter(v => v.tipo === 'entre');
+    // O que falta para cada lote fechar a corrente inteira.
+    const lotes = _opLotesIncompletos(doDia);
+    const incompletos = lotes.filter(l => l.faltam.length);
+    const lotesHtml = lotes.length ? `
+      <div class="op-lotes">
+        <div class="op-lotes-cab">Lotes do dia · ${lotes.length - incompletos.length} de ${lotes.length} com a sequência completa</div>
+        ${lotes.map(l => `
+          <div class="op-lote-linha ${l.faltam.length ? 'falta' : 'ok'}">
+            <span class="n">OS ${esc(l.lote)}</span>
+            <span class="c">${l.feitos}/${l.total}</span>
+            <span class="f">${l.faltam.length
+              ? 'falta: ' + esc(l.faltam.map(p => p.nome).join(' · '))
+              : 'sequência completa'}</span>
+          </div>`).join('')}
+      </div>` : '';
     return `
       <div class="card exp-ocor">
         <div class="exp-ocor-head">
@@ -6533,6 +6624,7 @@ function renderOperacoes() {
         </div>
         ${jan ? reguaHtml(jan) : ''}
         ${blocos}
+        ${lotesHtml}
       </div>`;
   };
 
