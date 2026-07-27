@@ -6123,7 +6123,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       </div>
       <div class="field full">
         <label>Operação *</label>
-        <input type="text" id="op-operacao" list="op-sugestoes" value="${esc(op ? (op.operacao || '') : '')}" placeholder="Ex.: Enfesto e corte do dia" autocomplete="off">
+        <input type="text" id="op-operacao" list="op-sugestoes" value="${esc(op ? (op.operacao || '') : '')}" placeholder="Ex.: Enfesto e corte do dia" autocomplete="off" oninput="_opTempoMedioDaReferencia()">
         <datalist id="op-sugestoes"></datalist>
         <div class="field-hint" id="op-sug-hint">Descreva a operação inteira do posto — as etapas internas ficam subentendidas.</div>
       </div>
@@ -6139,12 +6139,13 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       <div class="field">
         <label>Duração total *</label>
         <div style="display:flex;gap:6px;align-items:center;">
-          <input type="number" min="0" step="1" id="op-dur-h" value="${esc(durH)}" placeholder="0" oninput="_opAtualizarJanela()" style="width:70px;">
+          <input type="number" min="0" step="1" id="op-dur-h" value="${esc(durH)}" placeholder="0" oninput="_opDuracaoManual()" style="width:70px;">
           <span style="font-size:12px;color:var(--ink-3);">h</span>
-          <input type="number" min="0" max="59" step="5" id="op-dur-m" value="${esc(durM)}" placeholder="0" oninput="_opAtualizarJanela()" style="width:70px;">
+          <input type="number" min="0" max="59" step="5" id="op-dur-m" value="${esc(durM)}" placeholder="0" oninput="_opDuracaoManual()" style="width:70px;">
           <span style="font-size:12px;color:var(--ink-3);">min</span>
         </div>
         <div class="field-hint">Tempo total até concluir, com todas as etapas do posto incluídas.</div>
+        <div class="field-hint" id="op-tempo-medio"></div>
       </div>
       <div class="field">
         <label>Responsável</label>
@@ -6153,9 +6154,9 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       </div>
       <div class="field">
         <label>Referência (opcional)</label>
-        <input type="text" id="op-referencia" list="op-refs" value="${esc(op ? (op.referencia || '') : '')}" placeholder="Ex.: lote inverno, OS 1042/1051" autocomplete="off">
+        <input type="text" id="op-referencia" list="op-refs" value="${esc(op ? (op.referencia || '') : '')}" placeholder="Ex.: lote inverno, OS 1042/1051" autocomplete="off" oninput="_opTempoMedioDaReferencia()">
         <datalist id="op-refs">${refs.map(r => `<option value="${esc(r)}"></option>`).join('')}</datalist>
-        <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Só para situar, não amarra o plano.</div>
+        <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Escolhendo uma OS da lista, a <b>duração</b> vem do tempo já medido na grade dela.</div>
       </div>
       <div class="field">
         <label>Classificação *</label>
@@ -6221,7 +6222,8 @@ function _opTrocouFuncao(responsavelPre = null, etapasPre = null) {
     + (fora.length ? `<optgroup label="Outras pessoas">${fora.map(opt).join('')}</optgroup>` : '');
 
   _opTrocouEscopo();
-  _opSugerirInicio();     // posto novo → hora em que aquele posto fica livre
+  _opSugerirInicio();            // posto novo → hora em que aquele posto fica livre
+  _opTempoMedioDaReferencia();   // OS já citada → duração medida na grade dela
   _opAtualizarJanela();
 }
 
@@ -6262,6 +6264,108 @@ function _opEscolheuEtapa() {
   const anterior = campo.dataset.etapasAnterior || '';
   if (!campo.value.trim() || campo.value.trim() === anterior) campo.value = juntos;
   campo.dataset.etapasAnterior = juntos;
+  // A etapa marcada é o que casa a operação com uma FASE medida da grade.
+  _opTempoMedioDaReferencia();
+}
+
+/* ---- duração vinda do tempo já medido na grade da OS ---- */
+
+// Id da grade cadastrada de uma OS, pela mesma chave que agrupa o histórico.
+function _gradeIdDaOS(o) {
+  const k = _osGradeKey(o);
+  return k.indexOf('g:') === 0 ? k.slice(2) : '';
+}
+
+// A OS citada no campo Referência. O campo é texto livre ("0435 · Blusa Moletom
+// Tricolor", "OS 0435", "lote inverno"), então casa pelo NÚMERO da OS que
+// aparecer no texto — é o que a lista de sugestões escreve.
+function _opOsDaReferencia(txt) {
+  const t = String(txt || '').trim();
+  if (!t) return null;
+  const candidatas = (STATE.ordens || []).filter(o => (o.os || '').toString().trim());
+  // Casa o número mais LONGO primeiro: "0435" não pode ganhar de "10435".
+  return candidatas
+    .slice()
+    .sort((a, b) => String(b.os).length - String(a.os).length)
+    .find(o => new RegExp('(^|\\D)' + String(o.os).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\D|$)').test(t)) || null;
+}
+
+// Tempo já MEDIDO que serve para esta operação, a partir da grade da OS citada:
+//   • se a operação (nome ou etapas marcadas) casa com uma FASE medida daquela
+//     grade, vale a média daquela fase;
+//   • senão, quando a operação é de enfesto, vale a soma das fases medidas — o
+//     enfesto inteiro daquele lote;
+//   • senão devolve só o informativo, sem número para preencher: aplicar tempo
+//     de enfesto numa operação de outra natureza seria inventar dado.
+function _opTempoMedidoParaOS(os, nomeOperacao, etapas, funcaoNome) {
+  const vazio = { min: 0, n: 0, rotulo: '', aplicavel: false, temDados: false };
+  const gradeId = os ? _gradeIdDaOS(os) : '';
+  if (!gradeId) return vazio;
+  const linhas = temposFasesDaGrade(gradeId).filter(l => l.n > 0);
+  if (!linhas.length) return vazio;
+  const alvos = [];
+  (etapas || []).forEach(e => alvos.push(_normFaseNome(e)));
+  if (nomeOperacao) alvos.push(_normFaseNome(nomeOperacao));
+  const casada = linhas.find(l => alvos.includes(_normFaseNome(l.nome)));
+  if (casada) {
+    return { min: casada.mediaMin, n: casada.n, rotulo: `fase "${casada.nome}"`, aplicavel: true, temDados: true };
+  }
+  const total = linhas.reduce((s, l) => s + l.mediaMin, 0);
+  // Quem diz se a operação é de enfesto é a FUNÇÃO, não o nome da operação:
+  // "Corte de enfesto" é operação de CORTE e leva minutos, não as horas do
+  // enfesto inteiro — pelo nome ela cairia na regra e receberia o tempo errado.
+  const ehEnfesto = /enfest/i.test(String(funcaoNome || ''));
+  return {
+    min: total, n: Math.max(...linhas.map(l => l.n)),
+    rotulo: `enfesto inteiro (${linhas.length} fase${linhas.length === 1 ? '' : 's'} medida${linhas.length === 1 ? '' : 's'})`,
+    aplicavel: ehEnfesto, temDados: true
+  };
+}
+
+// Marca a duração como DIGITADA: a partir daí, escolher outra OS não sobrescreve
+// o que o usuário pôs à mão.
+function _opDuracaoManual() {
+  ['op-dur-h', 'op-dur-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.dataset.auto = '';
+  });
+  _opAtualizarJanela();
+}
+
+// Ao escolher a OS no campo Referência, traz o tempo já medido na grade dela para
+// a duração da operação. Só preenche quando o campo está vazio ou quando o valor
+// que está lá foi posto por esta mesma automação — o que o usuário digitou manda.
+function _opTempoMedioDaReferencia() {
+  const box = document.getElementById('op-tempo-medio');
+  const h = document.getElementById('op-dur-h'), m = document.getElementById('op-dur-m');
+  if (!box || !h || !m) return;
+  const os = _opOsDaReferencia(document.getElementById('op-referencia')?.value);
+  if (!os) { box.innerHTML = ''; return; }
+  const funcao = (STATE.funcoes || []).find(f => f.id === (document.getElementById('op-funcao')?.value || ''));
+  const r = _opTempoMedidoParaOS(os, document.getElementById('op-operacao')?.value, _opEtapasMarcadas(), funcao && funcao.nome);
+  if (!r.temDados) {
+    box.innerHTML = `OS <b>${esc(os.os || '—')}</b> · ${esc(os.modeloNome || 'sem modelo')}: a grade dela ainda não tem tempo medido.`;
+    return;
+  }
+  const podeEscrever = _opDuracaoDoForm() === 0 || h.dataset.auto === '1' || m.dataset.auto === '1';
+  if (r.aplicavel && podeEscrever) {
+    h.value = Math.floor(r.min / 60) || '';
+    m.value = r.min % 60 || (Math.floor(r.min / 60) ? 0 : '');
+    h.dataset.auto = '1'; m.dataset.auto = '1';
+  }
+  box.innerHTML = `OS <b>${esc(os.os || '—')}</b> · grade <b>${esc(_gradeNomeDaOS(os))}</b>: `
+    + `<b>${esc(_opDurTexto(r.min))}</b> medidos (${esc(r.rotulo)}, ${r.n} OS)`
+    + (r.aplicavel
+      ? (podeEscrever ? ' — <b>preenchido na duração</b>.' : ' — a duração digitada foi mantida.')
+      : ' — informativo: esta operação não é de enfesto, então a duração não foi preenchida.');
+  _opAtualizarJanela();
+}
+
+// Nome da grade cadastrada de uma OS (para o texto do modal).
+function _gradeNomeDaOS(o) {
+  const id = _gradeIdDaOS(o);
+  const g = id ? (STATE.grades || []).find(x => x.id === id) : null;
+  return (g && (g.nome || g.descricao)) || (o.grade && o.grade.descricao) || '—';
 }
 
 // Para operação NOVA, sugere a hora em que o posto fica livre (fim da última
