@@ -5677,12 +5677,12 @@ function _opLotesDaOperacao(op) {
 //   • invertida  — começa antes de a anterior COMEÇAR (a ordem está trocada);
 //   • encavalada — começa antes de a anterior TERMINAR (o posto seguinte pega o
 //     lote que ainda está na mão do anterior).
-// Devolve Map id → { nivel, msgs }: 'invertida' é erro de ordem (a corrente está
-// de trás para frente); 'encavalada' é aviso (a ordem está certa, mas o posto
-// seguinte pega o lote antes de o anterior soltar). Separados porque o segundo
-// caso pode ser deliberado — a esteira de corte é máquina e vai cortando o
-// enfesto conforme ele avança — e afogar a folha em vermelho esconderia o
-// primeiro, que é sempre erro.
+// Devolve Map id → { nivel, msgs }. Os DOIS níveis são ERRO — a regra da casa é
+// que o passo seguinte não começa antes de o anterior terminar naquele lote
+// (cortar antes de o enfesto acabar é sempre erro, confirmado com o Junior). O
+// nível só distingue o que aconteceu, para o selo dizer qual é o caso:
+//   • 'invertida'  — começa antes de a anterior COMEÇAR (corrente ao contrário);
+//   • 'encavalada' — começa antes de a anterior TERMINAR.
 function _opConflitosOrdem(lista) {
   const porLote = new Map();
   (lista || []).forEach(op => {
@@ -5721,14 +5721,14 @@ function _opConflitosOrdem(lista) {
 }
 
 // Selo do conflito de ordem, no formato de cada folha. `tipo` = 'tela' | 'papel'.
+// Os dois casos saem em VERMELHO: os dois quebram a corrente do lote.
 function _opSeloOrdem(e, tipo) {
   if (!e) return '';
-  const erro = e.nivel === 'invertida';
-  const rot = erro ? 'fora de ordem' : 'encavalada';
+  const rot = e.nivel === 'invertida' ? 'fora de ordem' : 'antes da anterior terminar';
   const t = esc(e.msgs.join(' · '));
   return tipo === 'papel'
-    ? ` <span class="tag ${erro ? 'alto' : 'urgente'}" title="${t}">${rot}</span>`
-    : ` <span class="exp-badge ${erro ? 'alto' : 'baixo'}" title="${t}">${rot}</span>`;
+    ? ` <span class="tag alto" title="${t}">${rot}</span>`
+    : ` <span class="exp-badge alto" title="${t}">${rot}</span>`;
 }
 
 /* ---------------- vazios (tempo sem operação) ---------------- */
