@@ -4430,7 +4430,8 @@ function renderExpedicaoPlano() {
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}</span>
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${
+          i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
         <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>`;
     }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
@@ -5200,6 +5201,20 @@ async function salvarModalExpedicao() {
   closeModal('modal-exp');
   _expModalCtx = null;
   renderExpedicaoPlano();
+}
+
+// Marca/desmarca a OS da carga como FEITA — o quadrinho da folha de OE. É só o
+// avanço do dia (separada e embarcada), não muda volume, pacote nem estoque:
+// quem move peça é a composição da carga, não este visto.
+async function alternarCargaFeita(id) {
+  if (!exigirEdicao('marcar a carga como feita')) return;
+  const c = (STATE.expedicaoCargas || []).find(x => x.id === id);
+  if (!c) return;
+  c.feita = !c.feita;
+  await saveState('expedicaoCargas');
+  renderExpedicaoPlano();
+  const folha = document.getElementById('print-sheet-exp');
+  if (folha && folha.innerHTML) renderPrintPlanoExpedicao();
 }
 
 async function excluirCargaExp(id) {
@@ -6643,11 +6658,19 @@ function renderPrintPlanoExpedicao() {
          || corNomeCurto((o.fases || [])[0]?.corNome || (o.tecidos || [])[0]?.corNome || ''))
       : '';
     const volTxt = i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol';
+    // O quadrinho é o avanço da carga: marcado = esta OS já foi feita (separada e
+    // embarcada). Clicável na tela, para a folha aberta ir mostrando o que já
+    // andou; no papel continua sendo o quadrado de marcar à caneta.
+    const feita = !!(i.carga && i.carga.feita);
+    const box = i.carga
+      ? `<button type="button" class="op-print-chk" title="${feita ? 'Feita — clique para desmarcar' : 'Marcar como feita (separada e embarcada)'}"
+          onclick="alternarCargaFeita('${esc(i.carga.id)}')"><span class="exp-print-box${feita ? ' ok' : ''}"></span></button>`
+      : '<span class="exp-print-box"></span>';
     // 1ª linha: nº da OS + modelo + cor. A cor é span próprio (fora do .m, que tem
     // ellipsis) pra não ser cortada quando o modelo é longo.
     const cab = `
       <div class="cab">
-        <span class="exp-print-box"></span>
+        ${box}
         <span class="n">${esc(i.osNumero)}</span>
         <span class="m">${esc(i.modelo)}</span>
         ${corPred ? `<span class="cor">${esc(corPred)}</span>` : ''}
@@ -6820,6 +6843,11 @@ function renderPrintPlanoExpedicao() {
       <div class="item"><div class="n">${fmt(volIda + volVolta)}</div><div class="l">Volumes total</div></div>
       <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Peças</div></div>
       <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
+    </div>
+    <div style="font-size:7pt;color:#555;margin:3pt 0 5pt;">
+      Quadrinho na frente de cada OS: <span class="exp-print-box"></span> a fazer ·
+      <span class="exp-print-box ok"></span> feita (separada e embarcada).
+      Na tela, clique no quadrinho para registrar o avanço; no papel, marque à caneta.
     </div>
     ${ocs.length ? blocos : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma Ordem de Expedição produzida ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`}
         <div class="exp-print-rodape">

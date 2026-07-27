@@ -1856,7 +1856,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   height: 3.2pt;
   background: #000;
 }
-/* Quadrinho clicável da folha de operações: sem cara de botão, só o quadrado. */
+/* Quadrinho clicável das folhas (operações e OE): sem cara de botão, só o
+   quadrado. No cabeçalho da OS da folha de OE ele entra num flex de baseline —
+   daí o alinhamento próprio, pra não subir nem descer em relação ao número. */
 .op-print-chk {
   background: none;
   border: none;
@@ -1865,6 +1867,7 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   line-height: 1;
   cursor: pointer;
 }
+.exp-print-os > .cab .op-print-chk { display: inline-flex; align-items: center; align-self: center; }
 .exp-print-box.ok::after {
   content: '';
   position: absolute;
