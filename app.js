@@ -47,6 +47,8 @@ let _flushing = false;
 // impede um cache desatualizado de apagar o que outro dispositivo gravou numa
 // chave que este nem tocou (causa raiz das perdas recorrentes de cadastro).
 const _dirtyKeys = new Set();
+// Quantas ancoras do organizador foram convertidas na migracao do 📌 (log unico).
+let _opFixoMigradoAgora = null;
 // BASE do merge de três vias: o valor de cada chave como o servidor tinha na
 // última vez que este dispositivo sincronizou. Comparando BASE × LOCAL sabe-se o
 // que ESTE dispositivo mudou de fato — e só isso sobe por cima do servidor.
@@ -1365,7 +1367,18 @@ async function loadState() {
   // Migração: operações planejadas no formato antigo (uma linha por OS, com
   // peças e sem duração) viram jornada de posto.
   try {
-    if (migrarOperacoesParaJornada()) await saveState('operacoes');
+    if (migrarOperacoesParaJornada()) {
+      await saveState('operacoes');
+      // O marcador da migração do 📌 mora em meta: sem gravar, ela rodaria de
+      // novo na próxima abertura e desfaria um "horário fixo" recém-marcado.
+      if (_opFixoMigradoAgora != null) {
+        await saveState('meta');
+        if (_opFixoMigradoAgora > 0) {
+          console.info(`Operações: ${_opFixoMigradoAgora} âncora(s) do organizador deixaram de aparecer como "horário fixo do usuário".`);
+        }
+        _opFixoMigradoAgora = null;
+      }
+    }
   } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
   // Migração: remove em definitivo a função "Coordenador de produção
   // Enfestadeira/Esteira de corte" (decisão do admin).
@@ -5605,7 +5618,12 @@ function _opSincronizarPosto(itens) {
   (itens || []).forEach(op => {
     const dur = _opDuracao(op);
     const ini = _opInicioMin(op);
-    if (op.inicioFixo && ini != null) {    // âncora escolhida à mão: manda no relógio
+    // Duas âncoras, com donos diferentes: `inicioFixo` é do USUÁRIO (a caixa
+    // "horário fixo" ou uma hora digitada fora do encaixe) e aparece como 📌;
+    // `inicioAuto` é do ORGANIZADOR do dia, que precisa que o horário calculado
+    // por ele não seja desfeito pelo encadeamento — mas não é escolha de
+    // ninguém, então não se apresenta como fixa nem pede que alguém a solte.
+    if ((op.inicioFixo || op.inicioAuto) && ini != null) {
       running = ini + dur;
       return;
     }
@@ -5902,7 +5920,7 @@ function _opSincronizarPausasDoDia(data) {
         op.inicio = _opHHMM(ini);
         if (dur > 0) op.duracaoMin = dur;
       }
-      op.inicioFixo = true;   // âncora: a fábrica inteira para nessa hora
+      op.inicioAuto = true;   // âncora do organizador: a fábrica inteira para nessa hora
     });
   });
   return ajustadas;
@@ -5950,6 +5968,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     op.data = destino;
     op.inicio = hhmm(_OP_JORNADA.ini);
     op.inicioFixo = false;
+    delete op.inicioAuto;
     delete op.ordem;
     adiadas.set(op.id, { op, de: data, para: destino });
   };
@@ -5977,7 +5996,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       if (ini == null || ini >= _OP_JORNADA.ini) return;
       const de = op.inicio;
       op.inicio = hhmm(_OP_JORNADA.ini);
-      op.inicioFixo = true;
+      op.inicioAuto = true;
       const reg = movidas.get(op.id);
       if (reg) reg.para = op.inicio; else movidas.set(op.id, { op, de, para: op.inicio });
       mudou = true;
@@ -6004,7 +6023,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       if (alvo + _opDuracao(cur) > _OP_JORNADA.fim) { travadas.add(cur); return false; }
       const de = cur.inicio;
       cur.inicio = hhmm(alvo);
-      cur.inicioFixo = true;
+      cur.inicioAuto = true;
       const reg = movidas.get(cur.id);
       if (reg) reg.para = cur.inicio; else movidas.set(cur.id, { op: cur, de, para: cur.inicio });
       return true;
@@ -7010,6 +7029,10 @@ async function salvarModalOperacao() {
   // hora era redigitada igual. Bastavam algumas edições para o posto inteiro
   // ficar travado e nada mais se reencaixar: era isso que fazia os horários
   // "não mudarem mais" depois de um tempo de uso.
+  // Salvar pelo modal é o usuário assumindo esta operação: a âncora que o
+  // organizador do dia tinha posto (inicioAuto) sai de cena, senão a hora
+  // calculada por ele continuaria mandando sobre a que acabou de ser digitada.
+  if (alvo) delete alvo.inicioAuto;
   if (alvo && !inicioFixo) {
     alvo.inicioFixo = false;
     _opSincronizarHorariosDia(data);
@@ -7038,6 +7061,7 @@ async function soltarHorarioOperacao(id) {
   const op = (STATE.operacoes || []).find(x => x.id === id);
   if (!op || !op.inicioFixo) return;
   op.inicioFixo = false;
+  delete op.inicioAuto;          // solta de vez: volta para a fila do posto
   _opSincronizarHorariosDia(op.data);
   await saveState('operacoes');
   toast('Horário voltou ao encaixe automático', 'ok');
@@ -7383,6 +7407,26 @@ function migrarOperacoesParaJornada() {
     if ('osNumero' in op) { delete op.osNumero; mudou = true; }
     if ('pecas' in op) { delete op.pecas; mudou = true; }
   });
+  // MIGRAÇÃO ÚNICA: até aqui o organizador do dia marcava `inicioFixo` em tudo
+  // que ele movia (pausas, empurrões, correções de ordem). Isso pintava o 📌 de
+  // "horário fixo pelo usuário" em operação que ninguém fixou, e a agenda ficava
+  // toda travada. Essas âncoras passam a ser `inicioAuto`, que segura o horário
+  // do mesmo jeito mas não é apresentada como escolha de ninguém. Roda uma vez
+  // só (marcador em meta): depois disso, `inicioFixo` só existe quando o usuário
+  // marca a caixa ou digita uma hora fora do encaixe.
+  if (!STATE.meta || typeof STATE.meta !== 'object') STATE.meta = {};
+  if (!STATE.meta.opFixoMigrado) {
+    let convertidas = 0;
+    lista.forEach(op => {
+      if (!op.inicioFixo) return;
+      op.inicioFixo = false;
+      op.inicioAuto = true;
+      convertidas++;
+    });
+    STATE.meta.opFixoMigrado = _expIso(new Date());
+    _opFixoMigradoAgora = convertidas;
+    mudou = true;
+  }
   return mudou;
 }
 
