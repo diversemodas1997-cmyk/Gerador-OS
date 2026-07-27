@@ -1801,14 +1801,18 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   break-inside: avoid;
 }
 .exp-print-os:last-child { margin-bottom: 0; }
+/* flex-wrap + o piso de largura do modelo: com uma cor só tudo cabe numa linha,
+   como antes; num tricolor ("PRETO / MOSTARDA / OFF-WHITE") a cor desce para a
+   linha de baixo INTEIRA, em vez de espremer o modelo até sumir. */
 .exp-print-os > .cab {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 4pt;
   font-size: 9.5pt;
 }
 .exp-print-os > .cab .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; white-space: nowrap; }
-.exp-print-os > .cab .m { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-print-os > .cab .m { flex: 1 1 auto; min-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exp-print-os > .cab .q,
 .exp-print-os > .cab .v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
 /* Cor do desenho técnico na 1ª linha, ao lado do modelo. nowrap: não é cortada

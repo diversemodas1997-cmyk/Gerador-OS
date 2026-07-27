@@ -2526,6 +2526,28 @@ function ordenarCoresNomesPorDesc(nomes, desenho) {
     .map(x => x.n);
 }
 
+// Cores da PEÇA de uma OS, na ordem canônica do desc do desenho: junta Cor 1, 2 e
+// 3 de TODAS as variantes, tira o tecido do nome (corNomeCurto) e colapsa as
+// repetições — preto na malha + preto na ribana é "Preto" uma vez só. O número de
+// cores é limitado ao que o DESENHO tem: uma peça de uma cor cujo enfesto usa
+// moletom + forro + ribana herda 3 cores na variante e sairia tricolor à toa.
+// Ponto único de verdade: o banner da folha de OS e a linha da OS na folha de OE
+// leem daqui, então as duas folhas dizem a mesma cor.
+function coresDaPecaOS(o) {
+  const desenho = (o && o.desenhoId) ? (STATE.desenhos || []).find(x => x.id === o.desenhoId) : null;
+  const nCores = desenho
+    ? (ordemCoresPorDesc(desenho).length
+        || [desenho.corPrincipalId, desenho.corSecundariaId, desenho.corTerciariaId].filter(Boolean).length
+        || 3)
+    : 3;
+  return ordenarCoresNomesPorDesc([...new Set(
+    (((o || {}).variantes) || [])
+      .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome].slice(0, nCores))
+      .filter(c => c && c !== '—')
+      .map(corNomeCurto)
+  )], desenho);
+}
+
 function atualizarCoresComponente() {
   const sel = document.getElementById('m-comp-variacao');
   const wrap = document.getElementById('m-comp-cores-wrap');
@@ -6593,15 +6615,15 @@ function renderPrintPlanoExpedicao() {
 
   const osPrint = (i) => {
     const o = i.os;
-    // Cor do DESENHO TÉCNICO = Cor 1 da 1ª variante (a mesma do banner que aparece
-    // acima do desenho na folha de OS), caindo na cor da 1ª fase do enfesto. Vai na
-    // 1ª LINHA, junto do modelo (à frente da OS); o volume fica ABAIXO.
-    const corPred = o ? corNomeCurto(
-      (o.variantes || []).map(v => v.cor1Nome).find(c => c && c !== '—')
-      || (o.fases || [])[0]?.corNome
-      || (o.tecidos || [])[0]?.corNome
-      || ''
-    ) : '';
+    // Cor do DESENHO TÉCNICO — a MESMA do banner da folha de OS (coresDaPecaOS),
+    // com TODAS as cores da peça: um tricolor sai "Preto / Mostarda / Off-White",
+    // não só a Cor 1. Antes esta linha lia apenas cor1Nome da 1ª variante e a OS
+    // tricolor chegava na doca anunciada como se fosse preta. Sem variante (OS
+    // antiga), cai na cor da 1ª fase do enfesto. Vai na 1ª LINHA, junto do modelo.
+    const corPred = o
+      ? (coresDaPecaOS(o).join(' / ')
+         || corNomeCurto((o.fases || [])[0]?.corNome || (o.tecidos || [])[0]?.corNome || ''))
+      : '';
     const volTxt = i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol';
     // 1ª linha: nº da OS + modelo + cor. A cor é span próprio (fora do .m, que tem
     // ellipsis) pra não ser cortada quando o modelo é longo.
@@ -12169,17 +12191,8 @@ function renderPrintSheet(o) {
   // campos de cor. O banner mostra SÓ essas: um desenho de UMA cor (Básica) cujo
   // enfesto usa moletom + forro + ribana (3 tecidos coloridos) herda 3 cores na
   // variante; sem este limite o banner sairia com 3 cores numa peça de 1 cor só.
-  const nCoresDesenho = desenho
-    ? (ordemCoresPorDesc(desenho).length
-        || [desenho.corPrincipalId, desenho.corSecundariaId, desenho.corTerciariaId].filter(Boolean).length
-        || 3)
-    : 3;
-  const coresDesenho = ordenarCoresNomesPorDesc([...new Set(
-    (o.variantes || [])
-      .flatMap(v => [v.cor1Nome, v.cor2Nome, v.cor3Nome].slice(0, nCoresDesenho))
-      .filter(c => c && c !== '—')
-      .map(corNomeCurto)
-  )], desenho);
+  // A regra inteira mora em coresDaPecaOS — a folha de OE lê da mesma função.
+  const coresDesenho = coresDaPecaOS(o);
   const corTexto = coresDesenho.join(' / ').toUpperCase();
   // Fonte auto-ajustada pra caber SEMPRE em uma linha so, inclusive com tres
   // cores (o CSS poe white-space: nowrap, entao encolher aqui e o que impede
