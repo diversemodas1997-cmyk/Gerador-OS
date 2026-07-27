@@ -5902,6 +5902,18 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       if (reg) reg.para = nec; else ampliadas.set(op.id, { op, de, para: nec });
       mudou = true;
     });
+    // Operação que começa antes da abertura entra NA jornada do próprio dia: o
+    // trabalho existe, só estava marcado antes de a fábrica abrir.
+    doDia.forEach(op => {
+      const ini = _opInicioMin(op);
+      if (ini == null || ini >= _OP_JORNADA.ini) return;
+      const de = op.inicio;
+      op.inicio = hhmm(_OP_JORNADA.ini);
+      op.inicioFixo = true;
+      const reg = movidas.get(op.id);
+      if (reg) reg.para = op.inicio; else movidas.set(op.id, { op, de, para: op.inicio });
+      mudou = true;
+    });
     const porLote = new Map();
     doDia.forEach(op => {
       const passo = _opPassoSequencia(op);
@@ -5956,6 +5968,30 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       for (let i = 1; i < arr.length; i++) {
         if (_opInicioMin(arr[i]) < _opFimMin(arr[i - 1]) && empurrar(arr[i], _opFimMin(arr[i - 1]))) mudou = true;
       }
+    });
+    // Sobrou operação que TERMINA depois do expediente (marcada assim de origem,
+    // ou empurrada até aqui): vai inteira para a jornada do próximo dia útil,
+    // levando junto os passos seguintes do mesmo lote. É o que fecha a regra —
+    // nada fica planejado fora da jornada.
+    doDia.forEach(op => {
+      const ini = _opInicioMin(op);
+      if (ini == null || adiadas.has(op.id)) return;
+      if (ini + _opDuracao(op) <= _OP_JORNADA.fim) return;
+      if (_opEhPausa(op)) return;                 // pausa fora da janela é caso de cadastro, não de fila
+      adiar(op);
+      // Os passos seguintes do lote no mesmo dia não podem ficar para trás.
+      const passo = _opPassoSequencia(op);
+      if (passo) {
+        const lotes = _opLotesDaOperacao(op);
+        doDia.forEach(outra => {
+          if (outra === op || adiadas.has(outra.id)) return;
+          const p2 = _opPassoSequencia(outra);
+          if (!p2 || p2.ordem <= passo.ordem) return;
+          if (!_opLotesDaOperacao(outra).some(l => lotes.includes(l))) return;
+          adiar(outra);
+        });
+      }
+      mudou = true;
     });
     if (!mudou) break;
     _opSincronizarHorariosDia(data);
@@ -6017,12 +6053,16 @@ async function corrigirOrdemOperacoes(data) {
   const ordemAntes = _opConflitosOrdem(doDia()).size;
   const pessoaAntes = pessoaCruzada(doDia()).size;
   const pausasFora = _opPausasDessincronizadas(doDia());
-  if (!ordemAntes && !pessoaAntes && !pausasFora) return toast('O dia já está organizado: sem conflitos e com as pausas sincronizadas', 'ok');
+  const foraJornada = doDia().filter(o => _opForaDaJornada(o)).length;
+  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada) {
+    return toast('O dia já está organizado: sem conflitos, dentro da jornada e com as pausas sincronizadas', 'ok');
+  }
   const destinoPrev = _opProximoDiaUtil(data);
   if (!confirm('Organizar os horários deste dia?\n\n'
     + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
     + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n`
-    + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n\n`
+    + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n`
+    + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n\n`
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
     + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.\n'
@@ -6398,7 +6438,7 @@ function renderOperacoes() {
             </div>` : ''}
           </div>
           <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${(doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id)) || _opPausasDessincronizadas(doDia))
+            ${(doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id) || _opForaDaJornada(o)) || _opPausasDessincronizadas(doDia))
               ? `<button class="btn" title="Sincroniza as pausas, garante a duração medida do enfesto e empurra para frente o que quebra a ordem do lote ou põe a mesma pessoa em duas funções ao mesmo tempo." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Organizar o dia</button>`
               : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
