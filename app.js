@@ -5601,10 +5601,12 @@ async function moverPostoOperacoes(data, funcaoNome, dir) {
 // Operações da MESMA função que se sobrepõem no tempo. O posto é um só: duas
 // jornadas cruzadas no mesmo operador é erro de planejamento, e é o aviso que
 // mais importa numa agenda de tempo.
-function _opConflitos(lista) {
-  const ids = new Set();
+// Os grupos em que a sobreposição É conflito, com a mesma regra usada tanto para
+// ACUSAR quanto para CORRIGIR — se as duas leituras divergissem, o botão de
+// corrigir deixaria selo aceso ou moveria o que não devia.
+function _opGruposSobreposicao(lista) {
   const grupos = new Map();
-  lista.forEach(op => {
+  (lista || []).forEach(op => {
     if (_opInicioMin(op) == null || !_opDuracao(op)) return;
     // Operador de esteira de corte: máquina automática, a pessoa toca duas
     // operações ao mesmo tempo — sobreposição aqui é normal, não conflito.
@@ -5622,6 +5624,12 @@ function _opConflitos(lista) {
     if (pessoa) chaves.push(op.data + '|P|' + pessoa);
     chaves.forEach(k => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(op); });
   });
+  return grupos;
+}
+
+function _opConflitos(lista) {
+  const ids = new Set();
+  const grupos = _opGruposSobreposicao(lista);
   grupos.forEach(arr => {
     arr.sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
     for (let i = 1; i < arr.length; i++) {
@@ -5731,9 +5739,11 @@ function _opSeloOrdem(e, tipo) {
     : ` <span class="exp-badge alto" title="${t}">${rot}</span>`;
 }
 
-// Corrige os horários que quebram a corrente do lote: cada passo passa a começar
-// quando o passo anterior daquele lote TERMINA. Só empurra para FRENTE — puxar
-// para trás resolveria o selo e criaria outro problema (trabalho antes da hora).
+// Corrige os horários que quebram a corrente do lote (cada passo começa quando o
+// passo anterior daquele lote TERMINA) e as sobreposições da MESMA PESSOA em
+// funções diferentes (ninguém está em dois lugares ao mesmo tempo). Só empurra
+// para FRENTE — puxar para trás resolveria o selo e criaria outro problema
+// (trabalho antes da hora).
 // A operação movida vira âncora (inicioFixo), senão a sincronização do posto a
 // traria de volta para logo depois da vizinha de cima; o 📌 na agenda desfaz.
 // Cada passada reencaixa os postos, o que pode empurrar outras operações e criar
@@ -5755,20 +5765,34 @@ function _opCorrigirOrdemDoDia(data) {
       });
     });
     let mudou = false;
+    // Empurra `cur` para começar quando `alvo` manda, registrando o movimento.
+    const empurrar = (cur, alvo) => {
+      if (_opInicioMin(cur) >= alvo) return false;
+      if (alvo + _opDuracao(cur) > 1439) { travadas.add(cur); return false; }
+      const de = cur.inicio;
+      cur.inicio = hhmm(alvo);
+      cur.inicioFixo = true;
+      const reg = movidas.get(cur.id);
+      if (reg) reg.para = cur.inicio; else movidas.set(cur.id, { op: cur, de, para: cur.inicio });
+      return true;
+    };
     porLote.forEach(itens => {
       itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
       for (let i = 1; i < itens.length; i++) {
         if (itens[i - 1].passo.ordem === itens[i].passo.ordem) continue;
-        const ant = itens[i - 1].op, cur = itens[i].op;
-        const alvo = _opFimMin(ant);
-        if (_opInicioMin(cur) >= alvo) continue;
-        if (alvo + _opDuracao(cur) > 1439) { travadas.add(cur); continue; }
-        const de = cur.inicio;
-        cur.inicio = hhmm(alvo);
-        cur.inicioFixo = true;
-        const reg = movidas.get(cur.id);
-        if (reg) reg.para = cur.inicio; else movidas.set(cur.id, { op: cur, de, para: cur.inicio });
-        mudou = true;
+        if (empurrar(itens[i].op, _opFimMin(itens[i - 1].op))) mudou = true;
+      }
+    });
+    // Sobreposição da MESMA PESSOA em funções diferentes: ninguém está em dois
+    // lugares ao mesmo tempo, então a segunda operação espera a primeira acabar.
+    // Só os grupos de PESSOA entram aqui — cruzamento dentro do mesmo posto é o
+    // encadeamento do próprio posto que resolve, e mexer nele aqui atropelaria a
+    // ordem que o usuário montou para aquela função.
+    _opGruposSobreposicao(doDia).forEach((arr, chave) => {
+      if (chave.indexOf('|P|') < 0) return;
+      arr.sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
+      for (let i = 1; i < arr.length; i++) {
+        if (_opInicioMin(arr[i]) < _opFimMin(arr[i - 1]) && empurrar(arr[i], _opFimMin(arr[i - 1]))) mudou = true;
       }
     });
     if (!mudou) break;
@@ -5792,15 +5816,31 @@ function _opCorrigirOrdemDoDia(data) {
 // pergunta antes e diz depois exatamente o que mudou.
 async function corrigirOrdemOperacoes(data) {
   if (!exigirAdmin('corrigir os horários das operações')) return;
-  const doDia = (STATE.operacoes || []).filter(o => o.data === data);
-  const antes = _opConflitosOrdem(doDia);
-  if (!antes.size) return toast('Nenhum conflito de ordem neste dia', 'ok');
-  if (!confirm(`Ajustar os horários deste dia para respeitar a ordem do lote?\n\n`
-    + `${antes.size} operação(ões) estão fora de ordem. Cada passo passa a começar quando o anterior do mesmo lote termina — só para frente, nunca para trás.`)) return;
+  const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
+  // Quantas sobreposições são da MESMA PESSOA (as que este ajuste resolve): as do
+  // mesmo posto ficam de fora, então não podem entrar na conta nem na promessa.
+  const pessoaCruzada = lista => {
+    const ids = new Set();
+    _opGruposSobreposicao(lista).forEach((arr, chave) => {
+      if (chave.indexOf('|P|') < 0) return;
+      arr.sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
+      for (let i = 1; i < arr.length; i++) {
+        if (_opInicioMin(arr[i]) < _opFimMin(arr[i - 1])) { ids.add(arr[i].id); ids.add(arr[i - 1].id); }
+      }
+    });
+    return ids;
+  };
+  const ordemAntes = _opConflitosOrdem(doDia()).size;
+  const pessoaAntes = pessoaCruzada(doDia()).size;
+  if (!ordemAntes && !pessoaAntes) return toast('Nenhum conflito de ordem ou de pessoa neste dia', 'ok');
+  if (!confirm('Ajustar os horários deste dia?\n\n'
+    + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
+    + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n\n`
+    + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.')) return;
   const { movidas, travadas } = _opCorrigirOrdemDoDia(data);
   if (!movidas.length) return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   await saveState('operacoes');
-  const restou = _opConflitosOrdem((STATE.operacoes || []).filter(o => o.data === data)).size;
+  const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
     + (travadas.length ? ` · ${travadas.length} não coube(m) no dia` : '')
     + (restou ? ` · ainda ${restou} em conflito` : ''), restou || travadas.length ? 'err' : 'ok');
@@ -6159,8 +6199,8 @@ function renderOperacoes() {
             </div>` : ''}
           </div>
           <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${doDia.some(o => foraDeOrdem.has(o.id))
-              ? `<button class="btn" title="Empurra para frente as operações que quebram a ordem do lote: cada passo passa a começar quando o anterior termina." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Corrigir ordem dos lotes</button>`
+            ${doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id))
+              ? `<button class="btn" title="Empurra para frente o que quebra a ordem do lote e o que põe a mesma pessoa em duas funções ao mesmo tempo: cada operação passa a começar quando a anterior termina." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Corrigir ordem e conflitos</button>`
               : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
           </div>
