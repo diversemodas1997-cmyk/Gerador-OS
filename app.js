@@ -6351,9 +6351,16 @@ function _opSugestaoPasso(data, lote, passo) {
   });
   const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean))
     || (antes && antes.op.funcaoId) || (depois && depois.op.funcaoId) || '';
+  // NOME como o planejamento escreve. O nome do passo é o rótulo interno da
+  // corrente ("Preparação das máquinas"); no plano ele pode se chamar "Etapas de
+  // preparação das máquinas do setor". Quem lê a agenda tem que ver a operação
+  // com o nome que ela tem na casa — e a operação criada pelo botão nasce com
+  // esse mesmo texto, senão o dia acumularia duas grafias para a mesma coisa.
+  const nome = _opModa(iguais.map(o => String(o.operacao || '').trim()).filter(Boolean)) || passo.nome;
   return {
     inicio: _opHHMM(ini),
     funcaoId,
+    nome,
     duracaoMin: _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0
   };
 }
@@ -6369,7 +6376,7 @@ function incluirOperacaoFaltante(data, lote, cadeia, ordem) {
   const os = (STATE.ordens || []).find(o => semZero(String(o.os || '').trim()) === semZero(lote));
   const ref = os ? `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}` : String(lote);
   abrirModalOperacao('', data, s.funcaoId, {
-    operacao: passo.nome, inicio: s.inicio, duracaoMin: s.duracaoMin, referencia: ref
+    operacao: s.nome, inicio: s.inicio, duracaoMin: s.duracaoMin, referencia: ref
   });
 }
 
@@ -6726,10 +6733,12 @@ function renderOperacoes() {
       const s = _opSugestaoPasso(data, lote, p);
       const func = (STATE.funcoes || []).find(f => f.id === s.funcaoId);
       const quem = func ? func.nome : 'posto a definir';
+      // Rótulo com o nome que o planejamento usa para esse passo, não com o
+      // rótulo interno da corrente.
       return `<button type="button" class="op-falta-btn admin-only"
-        title="Incluir «${esc(p.nome)}» às ${esc(s.inicio)} em ${esc(quem)}${s.duracaoMin ? ' · ' + esc(_opDurTexto(s.duracaoMin)) : ''} (o modal abre preenchido)"
+        title="Incluir «${esc(s.nome)}» às ${esc(s.inicio)} em ${esc(quem)}${s.duracaoMin ? ' · ' + esc(_opDurTexto(s.duracaoMin)) : ''} (o modal abre preenchido)"
         onclick="incluirOperacaoFaltante('${esc(data)}','${esc(l0(lote))}','${esc(p.cadeia)}',${p.ordem})">
-        + ${esc(p.nome)} <span class="q">${esc(s.inicio)} · ${esc(quem)}</span></button>`;
+        + ${esc(s.nome)} <span class="q">${esc(s.inicio)} · ${esc(quem)}</span></button>`;
     };
     // DIAGNÓSTICO sob demanda. Três perguntas, nesta ordem: falta operação?
     // alguma função está com duas coisas ao mesmo tempo? a sequência cruzada
