@@ -5639,6 +5639,28 @@ function _opConflitos(lista) {
   return ids;
 }
 
+/* ---------------- jornada da fábrica ---------------- */
+
+// Nenhuma operação começa antes das 07:15 nem termina depois das 17:30 — é a
+// jornada do setor. Vale como regra de gravação (o modal recusa fora disso), como
+// teto do ajuste automático (não empurra operação para depois do expediente) e
+// como selo na agenda, para o que já está gravado fora da janela aparecer.
+const _OP_JORNADA = { ini: 7 * 60 + 15, fim: 17 * 60 + 30 };
+
+function _opJornadaTexto() {
+  return `${_opHHMM(_OP_JORNADA.ini)} às ${_opHHMM(_OP_JORNADA.fim)}`;
+}
+
+// Por que esta operação está fora da jornada (ou null quando está dentro).
+function _opForaDaJornada(op) {
+  const i = _opInicioMin(op);
+  if (i == null) return null;
+  const f = i + _opDuracao(op);
+  if (i < _OP_JORNADA.ini) return `Começa ${_opHHMM(i)}, antes da abertura (${_opHHMM(_OP_JORNADA.ini)})`;
+  if (f > _OP_JORNADA.fim) return `Termina ${_opHHMM(f)}, depois do fim do expediente (${_opHHMM(_OP_JORNADA.fim)})`;
+  return null;
+}
+
 /* ---------------- sequência obrigatória do lote ---------------- */
 
 // A ORDEM em que um mesmo lote (a OS citada na referência) atravessa os postos.
@@ -5768,7 +5790,10 @@ function _opCorrigirOrdemDoDia(data) {
     // Empurra `cur` para começar quando `alvo` manda, registrando o movimento.
     const empurrar = (cur, alvo) => {
       if (_opInicioMin(cur) >= alvo) return false;
-      if (alvo + _opDuracao(cur) > 1439) { travadas.add(cur); return false; }
+      // Não empurra para fora do expediente: o dia acaba às 17:30 e uma operação
+      // marcada depois disso é plano que ninguém executa. Fica onde está e sai na
+      // lista de "não coube na jornada", para o usuário decidir o que corta.
+      if (alvo + _opDuracao(cur) > _OP_JORNADA.fim) { travadas.add(cur); return false; }
       const de = cur.inicio;
       cur.inicio = hhmm(alvo);
       cur.inicioFixo = true;
@@ -5996,6 +6021,7 @@ function renderOperacoes() {
 
   const conflitos = _opConflitos(ops);
   const foraDeOrdem = _opConflitosOrdem(ops);
+  const foraJornadaN = ops.filter(o => _opForaDaJornada(o)).length;
   let minutos = 0, pendentes = 0, feitas = 0, prioritarias = 0;
   const funcoesSet = new Set();
   ops.forEach(o => {
@@ -6015,6 +6041,7 @@ function renderOperacoes() {
       <div class="item"><div class="num">${fmt(feitas)}</div><div class="lbl">Concluídas</div></div>
       <div class="item ${conflitos.size ? 'alerta' : ''}"><div class="num">${fmt(conflitos.size)}</div><div class="lbl">Em sobreposição</div></div>
       <div class="item ${foraDeOrdem.size ? 'alerta' : ''}"><div class="num">${fmt(foraDeOrdem.size)}</div><div class="lbl">Fora de ordem</div></div>
+      <div class="item ${foraJornadaN ? 'alerta' : ''}" title="Jornada do setor: ${esc(_opJornadaTexto())}"><div class="num">${fmt(foraJornadaN)}</div><div class="lbl">Fora da jornada</div></div>
     </div>`;
 
   // Régua de horas do dia: o eixo em que as barras são lidas. O passo cresce
@@ -6061,6 +6088,7 @@ function renderOperacoes() {
     const resp = _opResponsavelNome(op);
     const conflito = conflitos.has(op.id);
     const ordemErr = foraDeOrdem.get(op.id) || null;   // corrente do lote quebrada
+    const foraJornada = _opForaDaJornada(op);          // fora do expediente
     // O selo distingue as duas naturezas: processo inteiro do posto (o padrão,
     // sem selo) e etapa avulsa planejada à parte.
     const _opEtapas = Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : []);
@@ -6078,7 +6106,8 @@ function renderOperacoes() {
           ? ` <button type="button" class="op-fixo" onclick="soltarHorarioOperacao('${esc(op.id)}')" title="Horário fixo: definido à mão, não reencaixa após a anterior. Clique para voltar ao encaixe automático.">📌</button>`
           : ''}</span>
         <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${
-          _opSeloOrdem(ordemErr, 'tela')}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
+          _opSeloOrdem(ordemErr, 'tela')}${
+          foraJornada ? ` <span class="exp-badge alto" title="${esc(foraJornada)}. Jornada do setor: ${esc(_opJornadaTexto())}">fora da jornada</span>` : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
         <span class="ref">${esc(op.referencia) || ''}</span>
         <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
@@ -6352,7 +6381,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       </div>
       <div class="field">
         <label>Início *</label>
-        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opAtualizarJanela()">
+        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : _opHHMM(_OP_JORNADA.ini))}" min="${esc(_opHHMM(_OP_JORNADA.ini))}" max="${esc(_opHHMM(_OP_JORNADA.fim))}" oninput="_opAtualizarJanela()">
         <label class="op-fixo-chk" style="display:flex;gap:6px;align-items:center;font-weight:400;font-size:12px;margin:6px 0 0;">
           <input type="checkbox" id="op-inicio-fixo" ${op && op.inicioFixo ? 'checked' : ''} onchange="_opAtualizarJanela()" style="width:auto;margin:0;">
           Horário fixo (não reencaixar após a operação anterior)
@@ -6609,7 +6638,9 @@ function _opSugerirInicio() {
   const fins = (STATE.operacoes || [])
     .filter(o => o.data === data && (o.funcaoId || '') === funcaoId)
     .map(_opFimMin).filter(m => m != null);
-  if (fins.length) campo.value = _opHHMM(Math.max(...fins));
+  // A sugestão nunca sai da jornada: posto que já encheu o dia não vira sugestão
+  // de operação começando depois do expediente.
+  if (fins.length) campo.value = _opHHMM(Math.min(Math.max(...fins), _OP_JORNADA.fim));
 }
 
 // Mostra ao vivo o término calculado — é o número que o planejador confere.
@@ -6621,8 +6652,9 @@ function _opAtualizarJanela() {
   if (ini == null) { info.textContent = 'Informe a hora de início para ver o término.'; return; }
   if (!dur) { info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>. Informe a duração total para calcular o término.`; return; }
   const fixo = !!document.getElementById('op-inicio-fixo')?.checked;
+  const fora = _opForaDaJornada({ inicio: _opHHMM(ini), duracaoMin: dur });
   info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>, leva <b>${esc(_opDurTexto(dur))}</b> e conclui às <b>${esc(_opHHMM(ini + dur))}</b>.`
-    + (ini + dur > 1440 ? ' <span class="exp-badge baixo">atravessa a meia-noite</span>' : '')
+    + (fora ? ` <span class="exp-badge alto" title="Jornada do setor: ${esc(_opJornadaTexto())}">fora da jornada</span>` : '')
     + (fixo
       ? ' <b>Horário fixo</b> — esta hora é mantida como está e as operações seguintes do posto contam a partir dela.'
       : ' Se esta hora for o encaixe logo após a operação anterior do posto, a operação segue <b>automática</b>; se for outra, ela é mantida e vira o novo ponto de partida do posto.');
@@ -6657,6 +6689,11 @@ async function salvarModalOperacao() {
   const inicioFixo = !!document.getElementById('op-inicio-fixo')?.checked;
   const duracaoMin = _opDuracaoDoForm();
   if (!duracaoMin) return toast('Informe a duração total da operação', 'err');
+  // Jornada do setor: a operação tem que caber entre a abertura e o fim do
+  // expediente. Sem esta trava, o encaixe automático e o ajuste de ordem
+  // acabavam empurrando operação para depois das 17:30.
+  const foraJornada = _opForaDaJornada({ inicio, duracaoMin });
+  if (foraJornada) return toast(`${foraJornada}. A jornada vai das ${_opJornadaTexto()} — ajuste o início ou a duração.`, 'err');
 
   const responsavelId = v('op-responsavel');
   const pessoa = (STATE.equipe || []).find(p => p.id === responsavelId);
@@ -6861,7 +6898,8 @@ function renderPrintPlanoOperacoes() {
           op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
           pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
           conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
-          _opSeloOrdem(foraDeOrdem.get(op.id), 'papel')}</td>
+          _opSeloOrdem(foraDeOrdem.get(op.id), 'papel')}${
+          _opForaDaJornada(op) ? ` <span class="tag alto" title="${esc(_opForaDaJornada(op))}">fora da jornada</span>` : ''}</td>
         <td class="res">${esc(resp) || '—'}</td>
         <td class="ref">${esc(op.referencia) || ''}</td>
         <td class="obs">${esc(op.obs) || ''}</td>
