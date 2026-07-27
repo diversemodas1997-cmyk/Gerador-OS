@@ -1937,11 +1937,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    o que serve é a jornada em texto, com um quadrinho para dar baixa à caneta. */
 .op-print-posto { margin-bottom: 5px; }
 .op-print-posto:last-child { margin-bottom: 0; }
+/* Nome da função e horário JUNTOS à esquerda: com space-between o horário ia
+   para a borda direita e abria um vão de ~100mm no meio do cabeçalho. */
 .op-print-posto > .ph {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
   border-bottom: 1px solid #999;
   padding: 2px 4px 1px;
   background: #f2f2f2;
@@ -1956,7 +1958,11 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   text-transform: uppercase;
 }
 .op-print-posto > .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 7.5pt; }
-.op-print-posto table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+/* table-layout FIXO: com o layout automático o navegador trata a largura das
+   colunas como sugestão e reparte a sobra entre TODAS elas proporcionalmente —
+   as colunas fixas incham e o vão volta. Fixo, cada uma fica com a largura
+   pedida e a sobra vai inteira para a última (observação). */
+.op-print-posto table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 7.5pt; }
 .op-print-posto td { padding: 1.5px 4px; vertical-align: top; border-bottom: 1px dotted #ccc; }
 .op-print-posto tr:last-child td { border-bottom: none; }
 /* Vazio na folha: a linha existe para o vazio ser LIDO na sequência, mas sem
@@ -1964,6 +1970,11 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-print-posto tr.vz td {
   color: #666;
   font-style: italic;
+  /* Mais baixa que a linha de operação: informa o vazio sem gastar papel como
+     se fosse trabalho. */
+  font-size: 6.5pt;
+  padding-top: 0;
+  padding-bottom: 0;
   background: repeating-linear-gradient(135deg, transparent 0 3pt, rgba(0, 0, 0, .05) 3pt 6pt);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -1975,12 +1986,19 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   color: #7a5f1e;
   padding: 1pt 4pt 0;
 }
+/* Larguras medidas contra o conteúdo real (folha impressa em PDF, Chrome):
+   antes, `ope` era a única coluna elástica e ficava com toda a sobra — o texto
+   da operação terminava aos ~55mm e o responsável só começava aos 154mm, ou
+   seja, ~100mm de branco atravessando TODA linha. Agora cada coluna tem a
+   largura do que ela mostra e quem absorve a sobra é a OBSERVAÇÃO, no fim: ela
+   saiu de baixo do nome da operação (onde roubava uma linha inteira por
+   observação) e passou a ocupar o espaço que estava vazio. */
 .op-print-posto td.bx { width: 12pt; }
-.op-print-posto td.jan { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; width: 96pt; }
-.op-print-posto td.ope { }
-.op-print-posto td.res { width: 78pt; }
-.op-print-posto td.ref { width: 72pt; color: #444; font-size: 7pt; }
-.op-print-posto .obs { font-size: 6.5pt; color: #555; font-style: italic; }
+.op-print-posto td.jan { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; width: 80pt; }
+.op-print-posto td.ope { width: 132pt; }
+.op-print-posto td.res { width: 54pt; }
+.op-print-posto td.ref { width: 48pt; color: #444; font-size: 7pt; }
+.op-print-posto td.obs { font-size: 6.5pt; color: #555; font-style: italic; }
 .op-print-posto .tag {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 6pt;

@@ -6488,10 +6488,10 @@ function renderPrintPlanoOperacoes() {
         <td class="ope">${esc(op.operacao) || '—'}${
           op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
           pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
-          conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
-          op.obs ? `<div class="obs">${esc(op.obs)}</div>` : ''}</td>
+          conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}</td>
         <td class="res">${esc(resp) || '—'}</td>
         <td class="ref">${esc(op.referencia) || ''}</td>
+        <td class="obs">${esc(op.obs) || ''}</td>
       </tr>`;
   };
 
@@ -6573,7 +6573,7 @@ function renderPrintPlanoOperacoes() {
         const ini = _opInicioMin(op);
         if (fimAnterior != null && ini != null && ini - fimAnterior >= _OP_VAZIO_MIN) {
           linhasG.push(`<tr class="vz"><td class="bx"></td><td class="jan">${esc(_opHHMM(fimAnterior))} ${esc(_opHHMM(ini))}</td>`
-            + `<td class="ope" colspan="3">— ${esc(_opDurTexto(ini - fimAnterior))} sem operação —</td></tr>`);
+            + `<td class="ope" colspan="4">— ${esc(_opDurTexto(ini - fimAnterior))} sem operação —</td></tr>`);
         }
         linhasG.push(linha(op));
         if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
