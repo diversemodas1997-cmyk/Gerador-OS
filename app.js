@@ -6015,6 +6015,20 @@ function _opSincronizarPausasDoDia(data) {
   return ajustadas;
 }
 
+// Realinha a ORDEM MANUAL de cada posto do dia ao relógio: quem começa antes
+// aparece antes. A ordem gravada é o que o encadeamento percorre e o que as setas
+// de mover manipulam — deixá-la apontando para uma sequência que os horários já
+// desmentiram faz a agenda mostrar 09:30 acima de 08:15 e o encadeamento
+// reconstruir a fila errada.
+function _opReordenarPostosPorHorario(data) {
+  const blocos = _opBlocosDoDia(data);
+  blocos.forEach(b => b.itens.sort((x, y) => {
+    const ix = _opInicioMin(x), iy = _opInicioMin(y);
+    return (ix == null ? 1e9 : ix) - (iy == null ? 1e9 : iy);
+  }));
+  _opGravarOrdem(blocos);
+}
+
 // Tempo MÍNIMO que uma operação precisa, pelo que já foi medido na grade da OS
 // citada na referência. Vale para as fases de ENFESTO, que é o que o histórico
 // mede (_opTempoMedidoParaOS só marca `aplicavel` nesses casos). É o piso que
@@ -6198,20 +6212,23 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       mudou = true;
     });
     if (!mudou) break;
+    // A ordem manual do posto é realinhada ao RELÓGIO antes de encadear. Sem
+    // isto, o encadeamento — que anda pela ordem gravada — reencaixa a vizinha
+    // logo depois da operação que acabou de ser empurrada e desfaz a correção:
+    // as duas ficam se empurrando a cada passada até uma estourar o expediente e
+    // ser jogada para o dia seguinte. Era isso que dava a impressão de que
+    // "Organizar o dia" não mexia na ordem — ele mexia e o passo seguinte
+    // desmanchava.
+    _opReordenarPostosPorHorario(data);
     _opSincronizarHorariosDia(data);
-    if (adiadas.size) _opSincronizarHorariosDia(destino);   // o dia de destino também encaixa
+    if (adiadas.size) {
+      _opReordenarPostosPorHorario(destino);
+      _opSincronizarHorariosDia(destino);   // o dia de destino também encaixa
+    }
   }
-  if (movidas.size || adiadas.size) {
-    // A ordem manual de cada posto apontava para a sequência ANTIGA: sem
-    // reordenar, a agenda mostraria 08:25 acima de 08:15 e as setas de mover
-    // trabalhariam numa fila que não é mais a do relógio.
-    const blocos = _opBlocosDoDia(data);
-    blocos.forEach(b => b.itens.sort((x, y) => {
-      const ix = _opInicioMin(x), iy = _opInicioMin(y);
-      return (ix == null ? 1e9 : ix) - (iy == null ? 1e9 : iy);
-    }));
-    _opGravarOrdem(blocos);
-    if (adiadas.size) _opGravarOrdem(_opBlocosDoDia(destino));
+  if (movidas.size || adiadas.size || ampliadas.size || pausas.length) {
+    _opReordenarPostosPorHorario(data);
+    if (adiadas.size) _opReordenarPostosPorHorario(destino);
   }
   const saida = {
     movidas: Array.from(movidas.values()),
