@@ -6245,6 +6245,58 @@ function _opLotesIncompletos(doDia) {
     || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true }));
 }
 
+// Valor que mais se repete numa lista (moda); empate fica com o primeiro.
+function _opModa(valores) {
+  const conta = new Map();
+  (valores || []).forEach(v => conta.set(v, (conta.get(v) || 0) + 1));
+  const top = Array.from(conta.entries()).sort((a, b) => b[1] - a[1])[0];
+  return top ? top[0] : null;
+}
+
+// Onde um passo que FALTA se encaixaria: começa quando o passo anterior daquele
+// lote termina (é o buraco exato que ele preenche) e, sem passo anterior, na
+// hora do passo seguinte ou na abertura. Posto e duração vêm do histórico: quem
+// costuma fazer aquele passo e quanto costuma levar — assim o modal já abre com
+// o dia coerente, e não com um formulário em branco no meio da corrente.
+function _opSugestaoPasso(data, lote, passo) {
+  const alvo = String(lote);
+  const doLote = (STATE.operacoes || [])
+    .filter(o => o.data === data && _opLotesDaOperacao(o).includes(alvo))
+    .map(o => ({ op: o, p: _opPassoSequencia(o) }))
+    .filter(x => x.p && x.p.cadeia === passo.cadeia && _opInicioMin(x.op) != null);
+  const antes = doLote.filter(x => x.p.ordem < passo.ordem).sort((a, b) => b.p.ordem - a.p.ordem)[0];
+  const depois = doLote.filter(x => x.p.ordem > passo.ordem).sort((a, b) => a.p.ordem - b.p.ordem)[0];
+  let ini = antes ? _opFimMin(antes.op) : (depois ? _opInicioMin(depois.op) : _OP_JORNADA.ini);
+  if (ini == null) ini = _OP_JORNADA.ini;
+  ini = Math.max(_OP_JORNADA.ini, Math.min(ini, _OP_JORNADA.fim));
+  const iguais = (STATE.operacoes || []).filter(o => {
+    const p = _opPassoSequencia(o);
+    return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
+  });
+  const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean))
+    || (antes && antes.op.funcaoId) || (depois && depois.op.funcaoId) || '';
+  return {
+    inicio: _opHHMM(ini),
+    funcaoId,
+    duracaoMin: _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0
+  };
+}
+
+// Botão "+" do quadro de lotes: abre o modal já com o passo que falta, no
+// horário do buraco, no posto que costuma fazê-lo e com a OS na referência.
+function incluirOperacaoFaltante(data, lote, cadeia, ordem) {
+  if (!exigirAdmin('planejar operações')) return;
+  const passo = _OP_SEQUENCIA.find(p => p.cadeia === cadeia && p.ordem === Number(ordem));
+  if (!passo) return;
+  const s = _opSugestaoPasso(data, lote, passo);
+  const semZero = n => String(n).replace(/^0+/, '') || '0';
+  const os = (STATE.ordens || []).find(o => semZero(String(o.os || '').trim()) === semZero(lote));
+  const ref = os ? `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}` : String(lote);
+  abrirModalOperacao('', data, s.funcaoId, {
+    operacao: passo.nome, inicio: s.inicio, duracaoMin: s.duracaoMin, referencia: ref
+  });
+}
+
 /* ---------------- vazios (tempo sem operação) ---------------- */
 
 // Jornada REAL de um conjunto de operações: da primeira hora de início ao último
@@ -6591,6 +6643,18 @@ function renderOperacoes() {
     // O que falta para cada lote fechar a corrente inteira.
     const lotes = _opLotesIncompletos(doDia);
     const incompletos = lotes.filter(l => l.faltam.length);
+    // Cada passo que falta é um botão: abre o modal já no horário do buraco, no
+    // posto que costuma fazer aquele passo e com a OS na referência.
+    const l0 = s => String(s).replace(/'/g, '&#39;');
+    const botaoFalta = (lote, p) => {
+      const s = _opSugestaoPasso(data, lote, p);
+      const func = (STATE.funcoes || []).find(f => f.id === s.funcaoId);
+      const quem = func ? func.nome : 'posto a definir';
+      return `<button type="button" class="op-falta-btn admin-only"
+        title="Incluir «${esc(p.nome)}» às ${esc(s.inicio)} em ${esc(quem)}${s.duracaoMin ? ' · ' + esc(_opDurTexto(s.duracaoMin)) : ''} (o modal abre preenchido)"
+        onclick="incluirOperacaoFaltante('${esc(data)}','${esc(l0(lote))}','${esc(p.cadeia)}',${p.ordem})">
+        + ${esc(p.nome)} <span class="q">${esc(s.inicio)} · ${esc(quem)}</span></button>`;
+    };
     const lotesHtml = lotes.length ? `
       <div class="op-lotes">
         <div class="op-lotes-cab">Lotes do dia · ${lotes.length - incompletos.length} de ${lotes.length} com a sequência completa</div>
@@ -6599,7 +6663,7 @@ function renderOperacoes() {
             <span class="n">OS ${esc(l.lote)}</span>
             <span class="c">${l.feitos}/${l.total}</span>
             <span class="f">${l.faltam.length
-              ? 'falta: ' + esc(l.faltam.map(p => p.nome).join(' · '))
+              ? l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')
               : 'sequência completa'}</span>
           </div>`).join('')}
       </div>` : '';
@@ -6704,7 +6768,9 @@ function renderOperacoes() {
 
 let _opModalCtx = null;
 
-function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
+// `pre` preenche a operação NOVA já com o que se sabe dela (usado pelo botão do
+// passo que falta): { operacao, inicio, duracaoMin, referencia }.
+function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '', pre = null) {
   if (!exigirAdmin('planejar operações')) return;
   if (!(STATE.funcoes || []).length) {
     return toast('Cadastre ao menos uma função antes de planejar operações', 'err');
@@ -6813,6 +6879,22 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
   _opTrocouFuncao(op ? (op.responsavelId || '') : '', etapasIniciais);
   const campoOp = document.getElementById('op-operacao');
   if (campoOp) campoOp.dataset.etapasAnterior = etapasIniciais.join(' + ');
+  // Pré-preenchimento DEPOIS de _opTrocouFuncao: ela sugere início e duração
+  // sozinha, e aqui o que vale é o buraco que o botão veio tapar.
+  if (!op && pre) {
+    const por = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+    por('op-operacao', pre.operacao);
+    por('op-inicio', pre.inicio);
+    por('op-referencia', pre.referencia);
+    if (pre.duracaoMin > 0) {
+      por('op-dur-h', Math.floor(pre.duracaoMin / 60) || '');
+      por('op-dur-m', pre.duracaoMin % 60 || (Math.floor(pre.duracaoMin / 60) ? 0 : ''));
+    }
+    // A referência recém-posta pode ter tempo medido na grade: deixa a regra do
+    // tempo médio opinar sobre a duração (ela só escreve se o campo estiver vazio
+    // ou se o valor for dela).
+    _opTempoMedioDaReferencia();
+  }
   _opAtualizarJanela();
   openModal('modal-op');
 }

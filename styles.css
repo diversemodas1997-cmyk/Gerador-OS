@@ -1625,8 +1625,23 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-lote-linha .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; min-width: 68px; }
 .op-lote-linha .c { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); min-width: 38px; }
 .op-lote-linha .f { flex: 1 1 auto; min-width: 0; }
-.op-lote-linha.falta .f { color: var(--accent-dark); }
+.op-lote-linha.falta .f { color: var(--accent-dark); display: flex; flex-wrap: wrap; gap: 4px; }
 .op-lote-linha.ok .f { color: var(--ink-3); }
+/* Passo que falta = botão que já abre o modal no horário e no posto certos. */
+.op-falta-btn {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border: 1px dashed var(--accent-dark);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.op-falta-btn:hover { background: var(--alert-bg, #fdf3e3); }
+.op-falta-btn .q { font-family: 'IBM Plex Mono', monospace; font-size: 10px; opacity: .75; }
 
 /* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
 .op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
