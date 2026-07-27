@@ -1595,8 +1595,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
 .op-bar span { pointer-events: none; }
 /* Sombra da MESMA PESSOA em OUTRA função: a operação dela no outro posto,
-   desenhada nesta faixa. Tracejada e sem preenchimento para não se confundir com
-   o trabalho DESTE posto — é contexto, não carga da função. */
+   desenhada nesta faixa NA COR DA FUNÇÃO DE ORIGEM — é assim que se reconhece de
+   qual quadro ela veio. O que a separa do trabalho deste posto é o contorno
+   tracejado e a transparência, não a cor. */
 .op-bar-outra {
   position: absolute;
   top: 0;
@@ -1604,8 +1605,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   z-index: 1;
   border: 1px dashed var(--ink-3);
   border-radius: 2px;
-  background: repeating-linear-gradient(90deg, transparent 0 6px, rgba(0, 0, 0, .05) 6px 12px);
-  color: var(--ink-2);
+  background: var(--line);
+  opacity: .55;
+  color: var(--paper);
   font-size: 9px;
   line-height: 20px;
   padding: 0 4px;
@@ -1620,6 +1622,17 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   color: var(--ink-3);
   font-style: italic;
   margin: 2px 0 4px;
+}
+/* Quadradinho da cor da função de origem, ao lado do nome dela na legenda. */
+.op-sombra-leg .amostra {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin: 0 3px 0 6px;
+  vertical-align: -1px;
+  opacity: .55;
+  border: 1px dashed var(--ink-3);
 }
 
 /* Faixa hachurada do tempo PARADO da função: fica atrás das barras (z-index 0)

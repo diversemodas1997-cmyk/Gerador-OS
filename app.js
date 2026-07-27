@@ -6715,13 +6715,18 @@ function renderOperacoes() {
     // na faixa deste posto. Quem trabalha em duas funções tem uma jornada só, e
     // vê-la partida em duas linhas do tempo escondia justamente o encontro das
     // duas — agora cada linha mostra as duas, e o cruzamento salta.
-    const barraSombra = (op, jan) => {
+    const barraSombra = (op, jan, cor) => {
       const i = _opInicioMin(op), dur = _opDuracao(op);
       if (i == null || !dur) return '';
       const larg = jan.fim - jan.ini;
       const left = (i - jan.ini) / larg * 100;
       const width = Math.max(0.8, dur / larg * 100);
-      return `<div class="op-bar-outra" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;"
+      // COR DE ORIGEM: a mesma da função de onde a operação vem, para se
+      // reconhecer de qual quadro ela é sem precisar ler o rótulo. O que a
+      // distingue do trabalho DESTE posto é o contorno tracejado e o tom mais
+      // claro, não a cor.
+      const pintura = cor ? `background:${cor};border-color:${cor};` : '';
+      return `<div class="op-bar-outra" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;${pintura}"
         title="${esc(_opResponsavelNome(op))} está em ${esc(_opFuncaoNome(op))}: ${esc(op.operacao) || '—'} · ${esc(_opJanelaTexto(op))}"
         ><span>${esc(_opFuncaoNome(op))}</span></div>`;
     };
@@ -6790,9 +6795,13 @@ function renderOperacoes() {
           </div>
           ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${
             vazios.map(v => vazioBarra(v, jan)).join('')}${
-            sombras.map(op => barraSombra(op, jan)).join('')}${
+            sombras.map(op => barraSombra(op, jan, cores.get(op.id))).join('')}${
             g.itens.map(op => barraHtml(op, jan, false, cores.get(op.id))).join('')}</div></div>` : ''}
-          ${sombras.length ? `<div class="op-sombra-leg">Barras tracejadas: ${esc(Array.from(new Set(sombras.map(o => _opResponsavelNome(o)))).join(', '))} em outra função no mesmo horário.</div>` : ''}
+          ${sombras.length ? `<div class="op-sombra-leg">Barras tracejadas — ${esc(Array.from(new Set(sombras.map(o => _opResponsavelNome(o)))).join(', '))} em outra função no mesmo horário, na cor do quadro de origem: ${
+            Array.from(new Set(sombras.map(o => _opFuncaoNome(o)))).map(nome => {
+              const cor = cores.get((sombras.find(o => _opFuncaoNome(o) === nome) || {}).id);
+              return `<span class="amostra" style="background:${cor || 'var(--line)'};"></span>${esc(nome)}`;
+            }).join(' · ')}.</div>` : ''}
           ${linhas.join('')}
         </div>`;
     }).join('');
