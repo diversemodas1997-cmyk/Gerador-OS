@@ -4391,42 +4391,15 @@ async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
   if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
   const num = (os.os || '').toString().trim();
 
-  if (checked) {
-    // Já planejada em algum lugar: respeita onde o usuário a pôs.
-    if (STATE.expedicaoCargas.some(c => c.osId === os.id)) return;
-    const oc = _expProximaOcorrencia();
-    if (!oc) {
-      toast('OS marcada para expedir, mas não há janela de expedição cadastrada', 'err');
-      return;
-    }
-    // PERGUNTA antes de alocar. Marcar "Ensaque" é gesto de checklist de
-    // produção; entrar numa OE é decisão de expedição, e as duas coisas
-    // aconteciam no mesmo clique — a OE do dia amanhecia com OS que ninguém
-    // planejou ali, e quem marcou nem soube que tinha feito isso.
-    const quando = `${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)}${oc.horaIda ? ' às ' + oc.horaIda : ''}`;
-    if (!confirm(`OS ${num} ensacada.\n\nIncluir na expedição de ${quando} (ida)?\n\n`
-      + 'Cancelando, a OS fica marcada como ensacada e aparece em "prontas sem carga" — dá para alocá-la depois, na janela que você escolher.')) return;
-    STATE.expedicaoCargas.push({
-      id: uid(), janelaId: oc.janela.id, data: oc.dataOrig, perna: 'ida',
-      osId: os.id, volumes: Number(_expSugestaoVolumes(os)) || 0, obs: '',
-      origem: 'ensaque'   // entrou pelo checklist, não pelo planejamento
-    });
-    await saveState('expedicaoCargas');
-    toast(`OS ${num} entrou na expedição de ${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)}${oc.horaIda ? ' ' + oc.horaIda : ''}`, 'ok');
-  } else {
-    // Desmarcar tira do que ainda vai acontecer. Expedição já passada é
-    // histórico do que saiu no caminhão — não se reescreve por um clique.
-    const hoje = _expHoje();
-    const antes = STATE.expedicaoCargas.length;
-    STATE.expedicaoCargas = STATE.expedicaoCargas.filter(c =>
-      c.osId !== os.id || _expDataEfetivaCarga(c) < hoje);
-    const tiradas = antes - STATE.expedicaoCargas.length;
-    if (tiradas) {
-      await saveState('expedicaoCargas');
-      toast(`OS ${num} saiu do plano de expedição`, 'ok');
-    }
+  // NÃO aloca nada. A OS entra numa OE quando o usuário a aloca no
+  // planejamento da expedição, e sai quando ele a tira de lá — as duas coisas
+  // com a janela e a perna escolhidas por ele. Marcar "Ensaque" é gesto do
+  // checklist de PRODUÇÃO: diz que o lote está pronto, não em qual caminhão vai.
+  // (Antes o tique criava a carga sozinho, na próxima janela: a OE do dia
+  // amanhecia com OS que ninguém planejou ali, e quem marcou nem sabia.)
+  if (checked && !STATE.expedicaoCargas.some(c => c.osId === os.id)) {
+    toast(`OS ${num} pronta para expedir — aloque na OE pelo planejamento da Expedição`, 'ok');
   }
-  if (expAbaAtiva === 'plano' && document.getElementById('expedicao-plano')) renderExpedicaoPlano();
 }
 
 function moverCargaExp(cargaId) {
@@ -12522,9 +12495,8 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
     delete os.progresso.etapasSeq[etapaNome];
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
-  // Marcar "Expedição" aqui É o ato de selecionar a OS pra ser expedida: ela
-  // entra sozinha no plano, na próxima janela. Trocar a janela é depois, no
-  // planejamento.
+  // Marcar "Ensaque" diz que o lote está PRONTO para expedir — só isso. Entrar
+  // numa OE é ato do planejamento da expedição, feito pelo usuário.
   try { await sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked); }
   catch (e) { console.warn('sincronizarPlanoExpedicaoDaOS', e); }
 }
