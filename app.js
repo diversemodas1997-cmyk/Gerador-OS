@@ -5758,7 +5758,9 @@ function renderOperacoes() {
           <button title="Subir esta operação no posto" onclick="moverOperacao('${esc(op.id)}',-1)" ${pos === 0 ? 'disabled' : ''}>▲</button>
           <button title="Descer esta operação no posto" onclick="moverOperacao('${esc(op.id)}',1)" ${pos === qtd - 1 ? 'disabled' : ''}>▼</button>
         </span>
-        <span class="janela">${esc(_opJanelaTexto(op))}${op.inicioFixo ? ' <span class="op-fixo" title="Horário fixo: definido à mão, não é reencaixado após a operação anterior">📌</span>' : ''}</span>
+        <span class="janela">${esc(_opJanelaTexto(op))}${op.inicioFixo
+          ? ` <button type="button" class="op-fixo" onclick="soltarHorarioOperacao('${esc(op.id)}')" title="Horário fixo: definido à mão, não reencaixa após a anterior. Clique para voltar ao encaixe automático.">📌</button>`
+          : ''}</span>
         <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
         <span class="ref">${esc(op.referencia) || ''}</span>
@@ -5975,12 +5977,12 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       </div>
       <div class="field">
         <label>Início *</label>
-        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opMudouHoraInicio()">
+        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opAtualizarJanela()">
         <label class="op-fixo-chk" style="display:flex;gap:6px;align-items:center;font-weight:400;font-size:12px;margin:6px 0 0;">
           <input type="checkbox" id="op-inicio-fixo" ${op && op.inicioFixo ? 'checked' : ''} onchange="_opAtualizarJanela()" style="width:auto;margin:0;">
           Horário fixo (não reencaixar após a operação anterior)
         </label>
-        <div class="field-hint">Desmarcado, o horário é encaixado automaticamente logo após a operação anterior do posto. Marcado, esta hora manda — pode ficar <b>intervalo vazio</b> antes dela, e as seguintes passam a contar deste horário. Mudar a hora aqui marca a caixa sozinho.</div>
+        <div class="field-hint">Se a hora digitada <b>não for</b> o encaixe logo após a operação anterior, ela é mantida como está e as seguintes contam a partir dela — pode ficar <b>intervalo vazio</b> antes. Digitando exatamente o encaixe, a operação segue <b>automática</b> e anda junto quando a anterior mudar. Marque a caixa para travar a hora mesmo quando ela coincide com o encaixe.</div>
       </div>
       <div class="field">
         <label>Duração total *</label>
@@ -6110,14 +6112,6 @@ function _opEscolheuEtapa() {
   campo.dataset.etapasAnterior = juntos;
 }
 
-// Mexer na hora à mão é a forma natural de dizer "quero ESTE horário": marca a
-// operação como âncora sozinho, sem exigir que o usuário descubra a caixa.
-function _opMudouHoraInicio() {
-  const fixo = document.getElementById('op-inicio-fixo');
-  if (fixo) fixo.checked = true;
-  _opAtualizarJanela();
-}
-
 // Para operação NOVA, sugere a hora em que o posto fica livre (fim da última
 // operação daquele posto no dia) — é o mesmo encaixe que a sincronização faria ao
 // salvar, então o modal mostra de véspera o horário que vai valer. Não toca no
@@ -6152,7 +6146,7 @@ function _opAtualizarJanela() {
     + (ini + dur > 1440 ? ' <span class="exp-badge baixo">atravessa a meia-noite</span>' : '')
     + (fixo
       ? ' <b>Horário fixo</b> — esta hora é mantida como está e as operações seguintes do posto contam a partir dela.'
-      : ' O horário será encaixado logo após a operação anterior deste posto, se houver.');
+      : ' Se esta hora for o encaixe logo após a operação anterior do posto, a operação segue <b>automática</b>; se for outra, ela é mantida e vira o novo ponto de partida do posto.');
 }
 function _opDuracaoDoForm() {
   const h = parseInt(document.getElementById('op-dur-h')?.value, 10) || 0;
@@ -6203,11 +6197,29 @@ async function salvarModalOperacao() {
   };
 
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  let alvo = null;
   if (_opModalCtx.editId) {
     const i = STATE.operacoes.findIndex(x => x.id === _opModalCtx.editId);
-    if (i >= 0) STATE.operacoes[i] = { ...STATE.operacoes[i], ...campos };
+    if (i >= 0) { STATE.operacoes[i] = { ...STATE.operacoes[i], ...campos }; alvo = STATE.operacoes[i]; }
   } else {
-    STATE.operacoes.push({ id: uid(), ...campos });
+    alvo = { id: uid(), ...campos };
+    STATE.operacoes.push(alvo);
+  }
+  // A hora digitada é uma ESCOLHA ou é o encaixe automático? Quem responde é a
+  // própria sincronização: grava sem travar nada e deixa ela opinar. Se ela
+  // reescreve a hora, o que o usuário digitou não era o encaixe — então é
+  // deliberado e a operação vira âncora (mantém a hora, com o intervalo vazio que
+  // sobrar antes). Se a hora sobrevive, a operação segue AUTOMÁTICA e continua
+  // andando junto quando a anterior mudar.
+  //
+  // Antes, mexer no campo já marcava a operação como fixa — inclusive quando a
+  // hora era redigitada igual. Bastavam algumas edições para o posto inteiro
+  // ficar travado e nada mais se reencaixar: era isso que fazia os horários
+  // "não mudarem mais" depois de um tempo de uso.
+  if (alvo && !inicioFixo) {
+    alvo.inicioFixo = false;
+    _opSincronizarHorariosDia(data);
+    if (alvo.inicio !== inicio) { alvo.inicio = inicio; alvo.inicioFixo = true; }
   }
   _opSincronizarHorariosDia(data);   // encadeia os horários do posto (fim de uma = início da seguinte)
   await saveState('operacoes');
@@ -6220,6 +6232,21 @@ async function salvarModalOperacao() {
     opPlanoAncora = data;
     try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
   }
+  renderOperacoes();
+}
+
+// Devolve a operação ao encaixe automático: tira o horário fixo e reencaixa o
+// posto, de modo que ela volte a começar quando a anterior termina. É a saída do
+// 📌 — sem isso, uma operação travada por engano só se soltava reabrindo o modal
+// e desmarcando a caixa, que quase ninguém encontra.
+async function soltarHorarioOperacao(id) {
+  if (!exigirAdmin('mudar o horário das operações')) return;
+  const op = (STATE.operacoes || []).find(x => x.id === id);
+  if (!op || !op.inicioFixo) return;
+  op.inicioFixo = false;
+  _opSincronizarHorariosDia(op.data);
+  await saveState('operacoes');
+  toast('Horário voltou ao encaixe automático', 'ok');
   renderOperacoes();
 }
 
