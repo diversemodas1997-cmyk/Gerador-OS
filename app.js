@@ -6090,6 +6090,11 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     // mandando o corte começar no fim de um enfesto que, na prática, ainda estaria
     // rodando — o conflito voltaria no chão de fábrica, não na tela.
     doDia.forEach(op => {
+      // Duração DIGITADA pelo usuário não é elevada. O tempo medido serve para
+      // quem não decidiu; quem decidiu tem motivo — e sem esta linha o ajuste
+      // devolvia a medição a cada "Organizar o dia", desfazendo a correção
+      // manual tantas vezes quantas o botão fosse clicado.
+      if (op.duracaoManual) return;
       // A média medida cai em qualquer minuto (1h27). Sobe para a marca de 5
       // seguinte: nunca menos que o necessário, e o fim da operação também cai
       // numa hora redonda para a próxima encaixar.
@@ -7277,7 +7282,7 @@ function _opTempoMedidoParaOS(os, nomeOperacao, etapas, funcaoNome) {
   if (nomeOperacao) alvos.push(_normFaseNome(nomeOperacao));
   const casada = linhas.find(l => alvos.includes(_normFaseNome(l.nome)));
   if (casada) {
-    return { min: casada.mediaMin, n: casada.n, rotulo: `fase "${casada.nome}"`, aplicavel: true, temDados: true };
+    return { min: casada.mediaMin, n: casada.n, rotulo: `fase "${casada.nome}"`, osNums: casada.osNums || [], aplicavel: true, temDados: true };
   }
   const total = linhas.reduce((s, l) => s + l.mediaMin, 0);
   // Quem diz se a operação é de enfesto é a FUNÇÃO, não o nome da operação:
@@ -7287,6 +7292,7 @@ function _opTempoMedidoParaOS(os, nomeOperacao, etapas, funcaoNome) {
   return {
     min: total, n: Math.max(...linhas.map(l => l.n)),
     rotulo: `enfesto inteiro (${linhas.length} fase${linhas.length === 1 ? '' : 's'} medida${linhas.length === 1 ? '' : 's'})`,
+    osNums: Array.from(new Set(linhas.flatMap(l => l.osNums || []))),
     aplicavel: ehEnfesto, temDados: true
   };
 }
@@ -7322,8 +7328,21 @@ function _opTempoMedioDaReferencia() {
     m.value = r.min % 60 || (Math.floor(r.min / 60) ? 0 : '');
     h.dataset.auto = '1'; m.dataset.auto = '1';
   }
-  box.innerHTML = `OS <b>${esc(os.os || '—')}</b> · grade <b>${esc(_gradeNomeDaOS(os))}</b>: `
-    + `<b>${esc(_opDurTexto(r.min))}</b> medidos (${esc(r.rotulo)}, ${r.n} OS)`
+  // De ONDE veio o número: com uma medição só, a média é aquela OS — e é o
+  // usuário quem sabe se ela vale para este lote. Sem dizer a origem e as
+  // camadas, um enfesto de 3h30 medido num lote de 50 camadas volta como regra
+  // sem ninguém poder discordar.
+  const camadasDe = num => {
+    const o2 = (STATE.ordens || []).find(x => String(x.os || '').trim() === String(num));
+    const c = o2 && o2.enfesto && o2.enfesto.camadas;
+    return c ? `${num} (${c} camadas)` : String(num);
+  };
+  const origem = (r.osNums && r.osNums.length)
+    ? ` — medido em ${r.n === 1 ? 'uma OS' : r.n + ' OS'}: ${r.osNums.slice(0, 3).map(camadasDe).join(', ')}`
+    : '';
+  const camadasAqui = os.enfesto && os.enfesto.camadas;
+  box.innerHTML = `OS <b>${esc(os.os || '—')}</b>${camadasAqui ? ` (${esc(camadasAqui)} camadas)` : ''} · grade <b>${esc(_gradeNomeDaOS(os))}</b>: `
+    + `<b>${esc(_opDurTexto(r.min))}</b>${esc(origem)}`
     + (r.aplicavel
       ? (podeEscrever ? ' — <b>preenchido na duração</b>.' : ' — a duração digitada foi mantida.')
       : ' — informativo: esta operação não é de enfesto, então a duração não foi preenchida.');
@@ -7406,6 +7425,12 @@ async function salvarModalOperacao() {
   const inicioFixo = !!document.getElementById('op-inicio-fixo')?.checked;
   const duracaoMin = _opDuracaoDoForm();
   if (!duracaoMin) return toast('Informe a duração total da operação', 'err');
+  // Marca de quem é a duração: DIGITADA (o campo perdeu a marca `auto` ao ser
+  // editado à mão) ou vinda do tempo medido da grade. O ajuste do dia não eleva
+  // duração digitada — é a diferença entre ajudar quem não decidiu e insistir
+  // com quem decidiu.
+  const duracaoManual = document.getElementById('op-dur-h')?.dataset.auto !== '1'
+    && document.getElementById('op-dur-m')?.dataset.auto !== '1';
   // Jornada do setor: a operação tem que caber entre a abertura e o fim do
   // expediente. Sem esta trava, o encaixe automático e o ajuste de ordem
   // acabavam empurrando operação para depois das 17:30.
@@ -7421,7 +7446,7 @@ async function salvarModalOperacao() {
     data,
     funcaoId, funcaoNome: funcao.nome,
     operacao, escopo, etapas,
-    inicio, duracaoMin, inicioFixo,
+    inicio, duracaoMin, inicioFixo, duracaoManual,
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
     referencia: v('op-referencia').trim(),
