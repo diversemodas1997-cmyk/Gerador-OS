@@ -6313,7 +6313,7 @@ function renderPrintPlanoOperacoes() {
 
   const conflitos = _opConflitos(ops);
   const minutos = ops.reduce((s, o) => s + _opDuracao(o), 0);
-  const postos = new Set(ops.map(_opFuncaoNome));
+  const funcoes = new Set(ops.map(_opFuncaoNome));
   const prioritarias = ops.filter(o => _opPrioridade(o) !== 'eletiva').length;
 
   const linha = op => {
@@ -6392,7 +6392,7 @@ function renderPrintPlanoOperacoes() {
     const abre = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
     const fecha = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
     const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
-    const postosHtml = grupos.map(g => {
+    const funcoesHtml = grupos.map(g => {
       const gMin = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
       const gCom = g.itens.filter(o => _opInicioMin(o) != null);
       const gIni = gCom.length ? Math.min(...gCom.map(_opInicioMin)) : null;
@@ -6410,11 +6410,11 @@ function renderPrintPlanoOperacoes() {
       <div class="exp-print-bloco">
         <div class="cab">
           <span class="d">${_EXP_DIAS_CURTO[_expData(data).getDay()]} ${esc(formatDate(data))}</span>
-          <span class="j">${grupos.length} ${grupos.length === 1 ? 'posto' : 'postos'} · ${esc(_opDurTexto(totMin))}${
+          <span class="j">${grupos.length} ${grupos.length === 1 ? 'função' : 'funções'} · ${esc(_opDurTexto(totMin))}${
             abre != null ? ` · jornada ${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}` : ''}</span>
         </div>
         ${linhaTempoHtml(doDia)}
-        ${postosHtml}
+        ${funcoesHtml}
       </div>`;
   }).join('');
 
@@ -6431,7 +6431,7 @@ function renderPrintPlanoOperacoes() {
           <div class="exp-print-head">
             <div>
               <div class="tit">PLANEJAMENTO DE OPERAÇÕES</div>
-              <div class="sub">Plano ${esc(_expNomeModo(opPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · jornada por posto de trabalho</div>
+              <div class="sub">Plano ${esc(_expNomeModo(opPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · jornada por função</div>
             </div>
             <div class="meta">
               <div>Emitido em ${esc(emissaoTxt)}</div>
@@ -6442,7 +6442,7 @@ function renderPrintPlanoOperacoes() {
       <tbody><tr><td>
     <div class="exp-print-resumo">
       <div class="item"><div class="n">${fmt(ops.length)}</div><div class="l">Operações</div></div>
-      <div class="item"><div class="n">${fmt(postos.size)}</div><div class="l">Postos</div></div>
+      <div class="item"><div class="n">${fmt(funcoes.size)}</div><div class="l">Funções</div></div>
       <div class="item"><div class="n">${esc(_opDurTexto(minutos))}</div><div class="l">Tempo planejado</div></div>
       <div class="item"><div class="n">${fmt(prioritarias)}</div><div class="l">Urgentes / emerg.</div></div>
       <div class="item"><div class="n">${fmt(porDia.size)}</div><div class="l">Dias com operação</div></div>
