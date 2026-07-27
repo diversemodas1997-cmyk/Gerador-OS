@@ -5683,6 +5683,38 @@ function _opVazios(itens, jornada, minimo = 1) {
 // vira linha na agenda nem na folha.
 const _OP_VAZIO_MIN = 5;
 
+// O que a MESMA PESSOA está fazendo em OUTRA função durante um vazio. A linha do
+// vazio dizia que o posto parou, mas não por quê — e o motivo mais comum é a
+// pessoa ter sido puxada para outra função. Com isso, o vazio de um posto e a
+// ocupação da pessoa aparecem na mesma linha.
+function _opPessoaEmOutraFuncao(v, pessoa, funcaoNome, doDia, max = 2) {
+  const alvo = _normNome(pessoa || '');
+  if (!alvo) return [];
+  const daFuncao = _normNome(funcaoNome || '');
+  return (doDia || [])
+    .filter(o => _normNome(_opFuncaoNome(o)) !== daFuncao
+      && _normNome(_opResponsavelNome(o)) === alvo
+      && _opInicioMin(o) != null && _opDuracao(o) > 0)
+    // Horário RECORTADO no vazio: a operação da outra função quase nunca começa
+    // e termina junto com o buraco, e mostrar a janela inteira dela faria parecer
+    // que a pessoa esteve fora o tempo todo. O que interessa é a parte que cai
+    // dentro do vazio — e só quando ela é relevante (>= o mesmo piso do vazio).
+    .map(o => ({
+      funcao: _opFuncaoNome(o), operacao: o.operacao || '—',
+      ini: Math.max(_opInicioMin(o), v.ini), fim: Math.min(_opFimMin(o), v.fim)
+    }))
+    .filter(x => x.fim - x.ini >= _OP_VAZIO_MIN)
+    .sort((a, b) => a.ini - b.ini)
+    .slice(0, max);
+}
+
+// "Corte de enfesto (Operador de esteira) 09:50→10:00 · ..."
+function _opOcupacaoTexto(lista) {
+  return (lista || [])
+    .map(x => `${x.operacao} (${x.funcao}) ${_opHHMM(x.ini)}→${_opHHMM(x.fim)}`)
+    .join(' · ');
+}
+
 // Texto curto de um vazio para a linha da agenda e da folha.
 function _opVazioTexto(v) {
   const quando = `${_opHHMM(v.ini)} → ${_opHHMM(v.fim)}`;
@@ -5857,12 +5889,19 @@ function renderOperacoes() {
       return `<div class="op-bar-vazio" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;"
         title="${esc(_opVazioTexto(v))}"></div>`;
     };
-    const vazioLinha = v => `
+    // A linha do vazio diz o buraco E, quando a pessoa daquele posto está em
+    // outra função nesse intervalo, o que ela foi fazer.
+    const vazioLinha = (v, pessoa, funcaoNome) => {
+      const ocup = _opPessoaEmOutraFuncao(v, pessoa, funcaoNome, doDia);
+      return `
       <div class="op-row op-vazio">
         <span class="op-mover admin-only"></span>
         <span class="janela">${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))}</span>
-        <span class="oper">— ${esc(_opDurTexto(v.min))} sem operação —</span>
+        <span class="oper">— ${esc(_opDurTexto(v.min))} sem operação —${ocup.length
+          ? ` <span class="obs">${esc(pessoa)} em: ${esc(_opOcupacaoTexto(ocup))}</span>`
+          : ''}</span>
       </div>`;
+    };
 
     const blocos = grupos.map((g, gi) => {
       const minutos = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
@@ -5878,14 +5917,19 @@ function renderOperacoes() {
       // As linhas da função, com o vazio ENTRE duas operações virando linha
       // própria: é onde o buraco aparece para quem lê a sequência.
       const linhas = [];
-      let fimAnterior = null;
+      let fimAnterior = null, pessoaAnterior = '';
       g.itens.forEach((op, i) => {
         const ini = _opInicioMin(op);
         if (fimAnterior != null && ini != null && ini - fimAnterior >= _OP_VAZIO_MIN) {
-          linhas.push(vazioLinha({ ini: fimAnterior, fim: ini, min: ini - fimAnterior, tipo: 'entre' }));
+          // A pessoa do vazio é a que acabou de parar; sem ela, a que retoma.
+          const pessoa = pessoaAnterior || _opResponsavelNome(op);
+          linhas.push(vazioLinha({ ini: fimAnterior, fim: ini, min: ini - fimAnterior, tipo: 'entre' }, pessoa, g.nome));
         }
         linhas.push(linhaHtml(op, i, g.itens.length));
-        if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+        if (ini != null && _opDuracao(op)) {
+          fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+          pessoaAnterior = _opResponsavelNome(op) || pessoaAnterior;
+        }
       });
       return `
         <div class="op-func">
@@ -6568,15 +6612,25 @@ function renderPrintPlanoOperacoes() {
       const vazios = _opVazios(g.itens, jornadaDia, _OP_VAZIO_MIN);
       const paradoMin = vazios.reduce((s, v) => s + v.min, 0);
       const linhasG = [];
-      let fimAnterior = null;
+      let fimAnterior = null, pessoaAnterior = '';
       g.itens.forEach(op => {
         const ini = _opInicioMin(op);
         if (fimAnterior != null && ini != null && ini - fimAnterior >= _OP_VAZIO_MIN) {
-          linhasG.push(`<tr class="vz"><td class="bx"></td><td class="jan">${esc(_opHHMM(fimAnterior))} ${esc(_opHHMM(ini))}</td>`
-            + `<td class="ope" colspan="4">— ${esc(_opDurTexto(ini - fimAnterior))} sem operação —</td></tr>`);
+          const v = { ini: fimAnterior, fim: ini, min: ini - fimAnterior, tipo: 'entre' };
+          // Na MESMA linha do vazio: o que a pessoa daquele posto está fazendo em
+          // outra função nesse intervalo. É o que explica o buraco para quem lê a
+          // folha no chão de fábrica.
+          const pessoa = pessoaAnterior || _opResponsavelNome(op);
+          const ocup = _opPessoaEmOutraFuncao(v, pessoa, g.nome, doDia);
+          linhasG.push(`<tr class="vz"><td class="bx"></td><td class="jan">${esc(_opHHMM(v.ini))} ${esc(_opHHMM(v.fim))}</td>`
+            + `<td class="ope" colspan="4">— ${esc(_opDurTexto(v.min))} sem operação —${
+              ocup.length ? ` &nbsp;${esc(pessoa)} em: ${esc(_opOcupacaoTexto(ocup))}` : ''}</td></tr>`);
         }
         linhasG.push(linha(op));
-        if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+        if (ini != null && _opDuracao(op)) {
+          fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+          pessoaAnterior = _opResponsavelNome(op) || pessoaAnterior;
+        }
       });
       // Somatório da função, fechando o quadro dela: quantas operações, quanto
       // tempo somam e quanto o posto fica parado. O cabeçalho traz os mesmos
