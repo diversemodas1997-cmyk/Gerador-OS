@@ -1828,7 +1828,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
         <div id="m-fases-container"></div>
         <button type="button" class="add-row-btn" onclick="addFaseGradeRow()" style="margin-top:8px;">+ Adicionar fase</button>
-      </div>`;
+      </div>
+      ${_gradeTemposHtml(item)}`;
     // Popula o container com as fases existentes (ou uma fase vazia em "Novo")
     setTimeout(() => {
       const fasesSalvas = Array.isArray(item.fases) && item.fases.length ? item.fases : null;
@@ -11043,6 +11044,9 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
   const v = (valor || '').trim();
   if (v) os.progresso.enfestosTempos[ordem][campo] = v;
   else delete os.progresso.enfestosTempos[ordem][campo];
+  // Confere na hora contra a média das OS de referência: o alerta aparece ao sair
+  // do campo, não só na próxima vez que a folha for aberta.
+  _atualizarSelosTempoEnfesto(osId);
   try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoEnfesto', e); }
 }
 
@@ -11451,6 +11455,9 @@ function aplicarProgressoCheckboxes(os) {
     const desejado = prog.corteTempo?.[inp.dataset.corteTempo] || '';
     if (inp.value !== desejado) inp.value = desejado;
   });
+  // Horário que chegou de outro usuário também tem que ser conferido contra a
+  // média — o alerta não pode depender de quem digitou.
+  _atualizarSelosTempoEnfesto(os.id);
 }
 
 function verOS(id) {
@@ -11949,12 +11956,29 @@ async function estornarBaixaEstoqueOS(osId) {
   }
 }
 
-// Descritor da grade para agrupar OSs "iguais": usa a descrição da grade e, na
-// falta dela, as quantidades por tamanho.
+// Descritor da grade para agrupar OSs "iguais". Prefere a IDENTIDADE da grade
+// cadastrada: o texto em o.grade.descricao é um SNAPSHOT do nome na hora em que a
+// OS foi criada, então renomear a grade (ou um espaço duplo digitado) fazia a
+// MESMA grade virar duas chaves e o histórico de tempo das duas metades nunca se
+// encontrava — era o caso das OS 0405 ("P ao G3 | BM.TRICOLOR") e 0435 ("2X P ao
+// G3 | BM.TRICOLOR"), a mesma grade no cadastro. OS sem gradeId (antiga) ainda
+// entra no grupo quando o texto dela casa com o nome de uma grade cadastrada;
+// sem isso, cai no texto normalizado e, na falta dele, nas quantidades.
 function _osGradeKey(o) {
-  const g = o.grade || {};
-  const d = (g.descricao || '').trim().toLowerCase();
-  return d || ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).join('-');
+  const g = (o && o.grade) || {};
+  const txt = _normNome(g.descricao || '');
+  let viva = (o && o.gradeId) ? (STATE.grades || []).find(x => x.id === o.gradeId) : null;
+  if (!viva && txt) viva = (STATE.grades || []).find(x => _normNome(x.nome || x.descricao || '') === txt);
+  if (viva) return 'g:' + viva.id;
+  return txt || ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).join('-');
+}
+
+// Nome de fase normalizado para COMPARAR entre OSs. Além do que _normNome já faz
+// (acento, caixa, espaço duplo), os separadores viram espaço: a mesma fase foi
+// cadastrada como "Barra + Punhos" numa OS e "Barra/Punhos" noutra, e sem isso o
+// tempo medido numa não somava com o da outra.
+function _normFaseNome(nome) {
+  return _normNome(String(nome || '').replace(/[+/&,;-]+/g, ' '));
 }
 
 // Média histórica da DURAÇÃO de cada fase do enfesto, entre OSs com a MESMA
@@ -11963,19 +11987,19 @@ function _osGradeKey(o) {
 // sugestão de "tempo automático" por fase na folha. { nome: {mediaMin, n} }.
 function _mediaTempoFasesSimilares(o) {
   const gradeKey = _osGradeKey(o);
-  const nomesFase = new Set((o.fases || []).map(f => (f.nome || '').trim().toLowerCase()).filter(Boolean));
+  const nomesFase = new Set((o.fases || []).map(f => _normFaseNome(f.nome)).filter(Boolean));
   if (!nomesFase.size) return {};
   const acc = {};
   (STATE.ordens || []).forEach(x => {
     if (!x || x.id === o.id) return;
     if (_osGradeKey(x) !== gradeKey) return;
-    const nomesX = new Set((x.fases || []).map(f => (f.nome || '').trim().toLowerCase()).filter(Boolean));
+    const nomesX = new Set((x.fases || []).map(f => _normFaseNome(f.nome)).filter(Boolean));
     if (nomesX.size !== nomesFase.size) return;             // mesmo conjunto de fases
     let igual = true; nomesFase.forEach(n => { if (!nomesX.has(n)) igual = false; });
     if (!igual) return;
     const tempos = (x.progresso || {}).enfestosTempos || {};
     (x.fases || []).forEach(f => {
-      const nome = (f.nome || '').trim().toLowerCase();
+      const nome = _normFaseNome(f.nome);
       if (!nome) return;
       const t = tempos[f.ordem] || {};
       const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
@@ -11987,6 +12011,162 @@ function _mediaTempoFasesSimilares(o) {
   const out = {};
   Object.keys(acc).forEach(n => { out[n] = { mediaMin: Math.round(acc[n].soma / acc[n].n), n: acc[n].n }; });
   return out;
+}
+
+/* ---- conferência do tempo lançado contra a média das OS de referência ---- */
+
+// Margem aceita antes de acusar conflito: 25% da média, com piso de 10 min — sem
+// o piso, uma fase de 30 min viraria alerta por 4 minutos de diferença, que é
+// ruído de anotação, não desvio de processo.
+const _ENF_TOL_PCT = 0.25, _ENF_TOL_MIN = 10;
+
+// Duração lançada numa fase (minutos), ou null quando falta horário. `invertido`
+// marca o caso fim ≤ início, que é erro de digitação e não duração.
+function _enfDuracaoFase(o, ord) {
+  const t = ((o.progresso || {}).enfestosTempos || {})[ord] || {};
+  const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
+  if (ini == null || fim == null) return { min: null, invertido: false };
+  if (fim <= ini) return { min: null, invertido: true };
+  return { min: fim - ini, invertido: false };
+}
+
+// Confere o tempo lançado na fase contra a média das OS de referência (mesma
+// grade, mesmas fases) e devolve o veredito: 'sem-ref' (nada com que comparar),
+// 'ok', 'acima', 'abaixo' ou 'invertido'.
+function _enfConferirTempoFase(o, ord) {
+  // ord pode vir como número (render) ou string (dataset do DOM).
+  const fase = (o.fases || []).find(f => String(f.ordem) === String(ord)) || {};
+  const { min, invertido } = _enfDuracaoFase(o, ord);
+  if (invertido) return { veredito: 'invertido' };
+  if (min == null) return { veredito: 'vazio' };
+  const med = _mediaTempoFasesSimilares(o)[_normFaseNome(fase.nome)];
+  if (!med) return { veredito: 'sem-ref', min };
+  const tol = Math.max(_ENF_TOL_MIN, Math.round(med.mediaMin * _ENF_TOL_PCT));
+  const dif = min - med.mediaMin;
+  const veredito = Math.abs(dif) <= tol ? 'ok' : (dif > 0 ? 'acima' : 'abaixo');
+  return { veredito, min, dif, tol, mediaMin: med.mediaMin, n: med.n };
+}
+
+// Conteúdo do selo que vai ao lado dos campos de horário da fase: a duração
+// lançada e, quando ela foge da média das OS de referência, o conflito em
+// vermelho com o tamanho do desvio. Fica num span próprio para ser reescrito
+// sozinho a cada digitação, sem redesenhar a folha.
+function _enfSeloTempoHtml(o, ord) {
+  const r = _enfConferirTempoFase(o, ord);
+  const dur = v => esc(_opDurTexto(v));
+  const cinza = 'color:#555;font-size:5.5pt;';
+  const vermelho = 'color:#c81e1e;font-weight:700;font-size:5.5pt;';
+  if (r.veredito === 'vazio') return '';
+  if (r.veredito === 'invertido') {
+    return `<span style="${vermelho}" title="O horário de fim é anterior (ou igual) ao de início">⚠ fim antes do início</span>`;
+  }
+  const gasto = `<span style="${cinza}">= ${dur(r.min)}</span>`;
+  if (r.veredito === 'sem-ref' || r.veredito === 'ok') return gasto;
+  const sinal = r.dif > 0 ? '+' : '−';
+  const palavra = r.veredito === 'acima' ? 'acima' : 'abaixo';
+  return `${gasto} <span style="${vermelho}" title="Fora da média desta fase: ${_opDurTexto(r.mediaMin)} em ${r.n} OS de referência (mesma grade e mesmas fases), com margem de ${_opDurTexto(r.tol)}">`
+    + `⚠ ${sinal}${dur(Math.abs(r.dif))} ${palavra} da média</span>`;
+}
+
+// Reescreve os selos de conflito da folha aberta (todas as fases da OS). Chamado
+// ao digitar um horário e quando a folha recebe dados de outro usuário.
+function _atualizarSelosTempoEnfesto(osId) {
+  const o = (STATE.ordens || []).find(x => x.id === osId);
+  if (!o) return;
+  document.querySelectorAll('[data-enf-selo]').forEach(el => {
+    el.innerHTML = _enfSeloTempoHtml(o, el.dataset.enfSelo);
+  });
+}
+
+// Tempo de cada fase do enfesto de uma GRADE, medido nas OS dela: cruza os
+// horários de Início/Fim lançados na folha de OS (progresso.enfestosTempos) de
+// todas as OS daquela grade. É número APURADO, não digitado — não existe campo
+// para editar, e a cada abertura do cadastro ele é recalculado do zero, então não
+// há como ficar desatualizado nem como um usuário alterar.
+// Devolve [{ nome, mediaMin, n, minMin, maxMin, osNums }] na ordem das fases
+// cadastradas na grade; fase medida que não está mais no cadastro vai no fim.
+function temposFasesDaGrade(gradeId) {
+  const grade = (STATE.grades || []).find(g => g.id === gradeId);
+  if (!grade) return [];
+  const chave = 'g:' + grade.id;
+  const acc = new Map();     // nome normalizado → { nome, mins:[], osNums:Set }
+  const pegar = (norm, nomeExib) => {
+    let e = acc.get(norm);
+    if (!e) { e = { nome: nomeExib, mins: [], osNums: new Set() }; acc.set(norm, e); }
+    return e;
+  };
+  // As fases do cadastro entram primeiro (mesmo sem medição): a tabela do cadastro
+  // tem que mostrar a fase que ainda não foi cronometrada, senão ela parece não
+  // existir em vez de parecer não medida.
+  (grade.fases || []).forEach(f => {
+    const norm = _normFaseNome(f.nome);
+    if (norm) pegar(norm, (f.nome || '').trim());
+  });
+  (STATE.ordens || []).forEach(o => {
+    if (_osGradeKey(o) !== chave) return;
+    const tempos = (o.progresso || {}).enfestosTempos || {};
+    (o.fases || []).forEach(f => {
+      const norm = _normFaseNome(f.nome);
+      if (!norm) return;
+      const t = tempos[f.ordem] || {};
+      const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
+      if (ini == null || fim == null || fim <= ini) return;
+      const e = pegar(norm, (f.nome || '').trim());
+      e.mins.push(fim - ini);
+      const num = (o.os || '').toString().trim();
+      if (num) e.osNums.add(num);
+    });
+  });
+  return Array.from(acc.values()).map(e => ({
+    nome: e.nome,
+    n: e.mins.length,
+    mediaMin: e.mins.length ? Math.round(e.mins.reduce((s, m) => s + m, 0) / e.mins.length) : null,
+    minMin: e.mins.length ? Math.min(...e.mins) : null,
+    maxMin: e.mins.length ? Math.max(...e.mins) : null,
+    osNums: Array.from(e.osNums).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+  }));
+}
+
+// Bloco só-leitura do cadastro da grade com o tempo apurado por fase.
+function _gradeTemposHtml(grade) {
+  const cab = `<label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Tempo por fase (medido nas OS)</label>`;
+  const nota = `<div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
+      Apurado dos horários de <b>Início</b> e <b>Fim</b> que a folha de OS registra em cada fase do enfesto, somando todas as OS desta grade.
+      É <b>histórico medido</b>, não meta: recalculado a cada abertura e <b>sem campo para digitar ou alterar</b> — para mudar, lance os horários na folha da OS.
+    </div>`;
+  if (!grade || !grade.id) {
+    return `<div style="margin-top:14px;">${cab}
+      <div class="field-hint" style="margin-top:4px;">Disponível depois de salvar a grade e lançar os horários de enfesto em alguma OS dela.</div>
+    </div>`;
+  }
+  const linhas = temposFasesDaGrade(grade.id);
+  const medidas = linhas.filter(l => l.n > 0);
+  const corpo = linhas.length ? `
+    <table class="table" style="margin-top:2px;">
+      <thead><tr>
+        <th>Fase do enfesto</th>
+        <th style="text-align:right;">Tempo médio</th>
+        <th style="text-align:right;">Medições</th>
+        <th style="text-align:right;">Menor → maior</th>
+        <th>OS medidas</th>
+      </tr></thead>
+      <tbody>
+        ${linhas.map(l => `
+          <tr${l.n ? '' : ' style="color:var(--ink-3);"'}>
+            <td><strong>${esc(l.nome)}</strong></td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${l.n ? esc(_opDurTexto(l.mediaMin)) : '—'}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${l.n ? l.n : '—'}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${l.n > 1 ? esc(_opDurTexto(l.minMin)) + ' → ' + esc(_opDurTexto(l.maxMin)) : '—'}</td>
+            <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${l.osNums.length ? esc(l.osNums.join(', ')) : '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${medidas.length
+      ? `<div class="field-hint" style="margin-top:6px;">Total medido nas fases com tempo: <b>${esc(_opDurTexto(medidas.reduce((s, l) => s + l.mediaMin, 0)))}</b>${
+          medidas.length < linhas.length ? ` · ${linhas.length - medidas.length} fase(s) ainda sem nenhuma medição` : ''}.</div>`
+      : `<div class="field-hint" style="margin-top:6px;">Nenhuma OS desta grade tem horário de enfesto lançado ainda — as fases aparecem sem tempo até a primeira medição.</div>`}`
+    : `<div class="field-hint" style="margin-top:4px;">Esta grade ainda não tem fases cadastradas nem OS com horário lançado.</div>`;
+  return `<div style="margin-top:14px;">${cab}${nota}${corpo}</div>`;
 }
 
 function renderEnfestoBox(o) {
@@ -12060,16 +12240,19 @@ function renderEnfestoBox(o) {
   // com a mesma grade e as mesmas fases (dos tempos já lançados). Só sugestão —
   // aparece ao lado, não sobrescreve o que o usuário digita.
   const mediasFase = _mediaTempoFasesSimilares(o);
-  const nomeFaseDe = ord => (((o.fases || []).find(f => f.ordem === ord) || {}).nome || '').trim().toLowerCase();
+  const nomeFaseDe = ord => _normFaseNome(((o.fases || []).find(f => f.ordem === ord) || {}).nome);
   const linhaTempo = (lbl, ord, campoIni, campoFim, t) => {
     const med = mediasFase[nomeFaseDe(ord)];
     const hint = med
       ? ` <span style="color:#888;font-size:5.5pt;" title="Tempo médio desta fase em ${med.n} OS com a mesma grade e fases">⌀ ${esc(_opDurTexto(med.mediaMin))}</span>`
       : '';
+    // Selo da conferência: a duração lançada e o alerta quando ela foge da média.
+    // É reescrito sozinho a cada digitação (_atualizarSelosTempoEnfesto).
     return `<div style="display:flex;align-items:center;gap:5px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
       <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">${lbl}</span>
       <span style="color:#555;">Início</span>${campoTempo(ord, campoIni, t[campoIni])}
       <span style="color:#555;">Fim</span>${campoTempo(ord, campoFim, t[campoFim])}${hint}
+      <span data-enf-selo="${esc(String(ord))}">${_enfSeloTempoHtml(o, ord)}</span>
     </div>`;
   };
   const linhasEnfestos = consumo.map(L => {
