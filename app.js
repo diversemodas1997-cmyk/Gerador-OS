@@ -5773,6 +5773,73 @@ function _opSeloOrdem(e, tipo) {
     : ` <span class="exp-badge alto" title="${t}">${rot}</span>`;
 }
 
+/* ---------------- pausas sincronizadas ---------------- */
+
+// Café da manhã, almoço e café da tarde não são trabalho: são paradas da fábrica
+// inteira e acontecem no MESMO horário em todas as funções. Reconhecidas pelo
+// nome da operação, já normalizado.
+function _opTipoPausa(op) {
+  const n = _normNome(op && op.operacao);
+  if (!n) return '';
+  if (/almoc/.test(n)) return 'almoço';
+  if (/cafe/.test(n) && /manha/.test(n)) return 'café da manhã';
+  if (/cafe/.test(n) && /tarde/.test(n)) return 'café da tarde';
+  if (/cafe|lanche|intervalo/.test(n)) return n;   // outra parada: sincroniza pelo próprio nome
+  return '';
+}
+function _opEhPausa(op) { return !!_opTipoPausa(op); }
+
+// Alguma pausa do dia está em horários diferentes entre as funções?
+function _opPausasDessincronizadas(lista) {
+  const porTipo = new Map();
+  (lista || []).forEach(op => {
+    const t = _opTipoPausa(op);
+    if (!t || _opInicioMin(op) == null) return;
+    if (!porTipo.has(t)) porTipo.set(t, new Set());
+    porTipo.get(t).add(op.inicio + '|' + _opDuracao(op));
+  });
+  return Array.from(porTipo.values()).some(s => s.size > 1);
+}
+
+// Põe cada tipo de pausa no MESMO horário em todas as funções do dia. A hora de
+// referência é a que MAIS funções já usam (o combinado de fato); empatou, vence a
+// MAIS TARDE — adiantar a pausa faria a operação que estava terminando às 09:30
+// invadir um café que passou a começar 09:25, criando conflito onde havia
+// acerto; atrasar só gera espera, que a agenda já mostra como tempo parado. A
+// duração segue o mesmo critério, com a MAIOR no empate: pausa sincronizada é a
+// mesma janela para todo mundo, senão o refeitório recebe em ondas. A pausa vira
+// âncora (inicioFixo) para o encadeamento do posto não a arrastar.
+function _opSincronizarPausasDoDia(data) {
+  const doDia = (STATE.operacoes || []).filter(o => o.data === data && _opEhPausa(o) && _opInicioMin(o) != null);
+  const porTipo = new Map();
+  doDia.forEach(op => {
+    const t = _opTipoPausa(op);
+    if (!porTipo.has(t)) porTipo.set(t, []);
+    porTipo.get(t).push(op);
+  });
+  const ajustadas = [];
+  porTipo.forEach(itens => {
+    const moda = (valores) => {
+      const conta = new Map();
+      valores.forEach(v => conta.set(v, (conta.get(v) || 0) + 1));
+      return Array.from(conta.entries()).sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    };
+    const ini = moda(itens.map(_opInicioMin));
+    const dur = moda(itens.map(_opDuracao).filter(d => d > 0));
+    itens.forEach(op => {
+      const mudouIni = _opInicioMin(op) !== ini;
+      const mudouDur = dur > 0 && _opDuracao(op) !== dur;
+      if (mudouIni || mudouDur) {
+        ajustadas.push({ op, de: `${op.inicio} +${_opDuracao(op)}min`, para: `${_opHHMM(ini)} +${dur}min` });
+        op.inicio = _opHHMM(ini);
+        if (dur > 0) op.duracaoMin = dur;
+      }
+      op.inicioFixo = true;   // âncora: a fábrica inteira para nessa hora
+    });
+  });
+  return ajustadas;
+}
+
 // Tempo MÍNIMO que uma operação precisa, pelo que já foi medido na grade da OS
 // citada na referência. Vale para as fases de ENFESTO, que é o que o histórico
 // mede (_opTempoMedidoParaOS só marca `aplicavel` nesses casos). É o piso que
@@ -5800,6 +5867,11 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
   const movidas = new Map(), travadas = new Set(), adiadas = new Map(), ampliadas = new Map();
   const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
   const destino = _opProximoDiaUtil(data);
+  // Primeiro as pausas: elas são o esqueleto do dia (a fábrica inteira para
+  // junto). Sincronizadas antes, viram âncoras e o resto do ajuste se encaixa em
+  // volta delas, em vez de empurrá-las.
+  const pausas = _opSincronizarPausasDoDia(data);
+  if (pausas.length) _opSincronizarHorariosDia(data);
   // O que não cabe na jornada vai para o PRÓXIMO DIA ÚTIL, levando junto os
   // passos seguintes do mesmo lote que estavam neste dia — eles dependem dele, e
   // deixá-los para trás poria a costura antes do corte. No dia de destino a
@@ -5840,7 +5912,11 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       });
     });
     // Empurra `cur` para começar quando `alvo` manda, registrando o movimento.
+    // PAUSA não se move: café e almoço são hora marcada da fábrica inteira, e
+    // empurrar um deles para resolver conflito de uma função dessincronizaria
+    // todas as outras. O conflito com pausa fica acusado, para o usuário decidir.
     const empurrar = (cur, alvo) => {
+      if (_opEhPausa(cur)) return false;
       if (_opInicioMin(cur) >= alvo) return false;
       // Não empurra para fora do expediente: o dia acaba às 17:30 e uma operação
       // marcada depois disso é plano que ninguém executa. Fica onde está e sai na
@@ -5902,6 +5978,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     travadas: Array.from(travadas),
     adiadas: Array.from(adiadas.values()),
     ampliadas: Array.from(ampliadas.values()),
+    pausas,
     destino
   };
   // O dia de destino recebeu trabalho: a corrente do lote precisa ser arrumada lá
@@ -5914,6 +5991,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     saida.travadas = saida.travadas.concat(seguinte.travadas);
     saida.adiadas = saida.adiadas.concat(seguinte.adiadas);
     saida.ampliadas = saida.ampliadas.concat(seguinte.ampliadas);
+    saida.pausas = saida.pausas.concat(seguinte.pausas);
   }
   return saida;
 }
@@ -5938,21 +6016,25 @@ async function corrigirOrdemOperacoes(data) {
   };
   const ordemAntes = _opConflitosOrdem(doDia()).size;
   const pessoaAntes = pessoaCruzada(doDia()).size;
-  if (!ordemAntes && !pessoaAntes) return toast('Nenhum conflito de ordem ou de pessoa neste dia', 'ok');
+  const pausasFora = _opPausasDessincronizadas(doDia());
+  if (!ordemAntes && !pessoaAntes && !pausasFora) return toast('O dia já está organizado: sem conflitos e com as pausas sincronizadas', 'ok');
   const destinoPrev = _opProximoDiaUtil(data);
-  if (!confirm('Ajustar os horários deste dia?\n\n'
+  if (!confirm('Organizar os horários deste dia?\n\n'
     + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
-    + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n\n`
+    + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n`
+    + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n\n`
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
-    + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.')) return;
-  const { movidas, travadas, adiadas, ampliadas, destino } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length && !adiadas.length && !ampliadas.length) {
+    + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.\n'
+    + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.')) return;
+  const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   }
   await saveState('operacoes');
   const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
+    + (pausas.length ? ` · ${pausas.length} pausa(s) sincronizada(s)` : '')
     + (ampliadas.length ? ` · ${ampliadas.length} com a duração medida da grade` : '')
     + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
     + (travadas.length ? ` · ${travadas.length} sem encaixe` : '')
@@ -6316,8 +6398,8 @@ function renderOperacoes() {
             </div>` : ''}
           </div>
           <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id))
-              ? `<button class="btn" title="Empurra para frente o que quebra a ordem do lote e o que põe a mesma pessoa em duas funções ao mesmo tempo: cada operação passa a começar quando a anterior termina." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Corrigir ordem e conflitos</button>`
+            ${(doDia.some(o => foraDeOrdem.has(o.id) || conflitos.has(o.id)) || _opPausasDessincronizadas(doDia))
+              ? `<button class="btn" title="Sincroniza as pausas, garante a duração medida do enfesto e empurra para frente o que quebra a ordem do lote ou põe a mesma pessoa em duas funções ao mesmo tempo." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Organizar o dia</button>`
               : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
           </div>
