@@ -7827,6 +7827,28 @@ function renderPrintPlanoOperacoes() {
     // continuidade entre as funções se rompe, e o papel precisa dizer isso.
     const jornadaDia = _opJornada(doDia);
     const paradaGeral = _opVazios(doDia, jornadaDia, _OP_VAZIO_MIN).filter(v => v.tipo === 'entre');
+    // O que FALTA em cada lote, no papel. A folha mostrava vazios e sobreposição
+    // mas nada sobre operação ausente — quem confere no chão de fábrica não tinha
+    // como saber que a corrente do lote estava incompleta.
+    const lotesDia = _opLotesIncompletos(doDia, data);
+    const lotesFalta = lotesDia.filter(l => l.faltam.length || l.naoCabem.length);
+    const lotesHtmlPapel = lotesDia.length ? `
+      <div class="op-print-lotes">
+        <div class="cab">Lotes do dia — ${lotesDia.length - lotesFalta.length} de ${lotesDia.length} com a sequência completa</div>
+        ${lotesDia.map(l => `<div class="l${l.faltam.length || l.naoCabem.length ? ' falta' : ''}">
+          <b>OS ${esc(l.lote)}</b> ${l.feitos}/${l.total}${
+            l.faltam.length ? ` · falta hoje: ${esc(l.faltam.map(p => p.nome).join(' · '))}` : ''}${
+            l.naoCabem.length ? ` · continua em ${esc(formatDate(_opProximoDiaUtil(data)))}: ${esc(l.naoCabem.map(p => p.nome).join(' · '))}` : ''}${
+            (!l.faltam.length && !l.naoCabem.length) ? ' · sequência completa' : ''}</div>`).join('')}
+      </div>` : '';
+    // Ações do dia na própria folha (não saem na impressão): daqui não dava para
+    // corrigir nem analisar sem voltar à agenda, e é olhando a folha que os
+    // conflitos aparecem.
+    const acoesDia = `
+      <div class="op-print-acoes no-print admin-only">
+        <button class="btn small" onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Organizar ${esc(formatDate(data))}</button>
+        <button class="btn small" onclick="goto('operacoes'); analisarDiaOperacoes('${esc(data)}');">🔍 Analisar na agenda</button>
+      </div>`;
     const funcoesHtml = grupos.map(g => {
       const gMin = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
       const gCom = g.itens.filter(o => _opInicioMin(o) != null);
@@ -7887,8 +7909,10 @@ function renderPrintPlanoOperacoes() {
         </div>
         ${paradaGeral.length ? `<div class="op-print-parada">Sem nenhuma função operando: ${
           paradaGeral.map(v => `${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))} (${esc(_opDurTexto(v.min))})`).join(' · ')}</div>` : ''}
+        ${acoesDia}
         ${linhaTempoHtml(doDia)}
         ${funcoesHtml}
+        ${lotesHtmlPapel}
       </div>`;
   }).join('');
 

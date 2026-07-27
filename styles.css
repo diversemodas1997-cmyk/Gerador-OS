@@ -2132,6 +2132,27 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
+/* O que falta em cada lote, no pé do dia — a folha precisa dizer também o que
+   NÃO está lá, não só o que está. */
+.op-print-lotes {
+  margin: 3pt 0 2pt;
+  border-top: .5pt solid #999;
+  padding-top: 2pt;
+  font-size: 7pt;
+}
+.op-print-lotes .cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6.5pt;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #555;
+  margin-bottom: 1pt;
+}
+.op-print-lotes .l { padding: .5pt 0; }
+.op-print-lotes .l.falta { color: #7a1414; }
+/* Ações do dia na folha: só na tela, nunca no papel. */
+.op-print-acoes { display: flex; gap: 6px; margin: 3px 0 5px; }
+
 /* Aviso do dia inteiro parado, logo abaixo do cabeçalho da data. */
 .op-print-parada {
   font-size: 7pt;
