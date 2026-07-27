@@ -5631,6 +5631,106 @@ function _opConflitos(lista) {
   return ids;
 }
 
+/* ---------------- sequência obrigatória do lote ---------------- */
+
+// A ORDEM em que um mesmo lote (a OS citada na referência) atravessa os postos.
+// É uma corrente física: não se corta um enfesto que ainda está sendo estendido,
+// não se separa peça que não foi cortada, não se empacota o que não foi separado.
+// O padrão é casado pelo NOME da operação já normalizado (sem acento, minúsculo),
+// e a lista é percorrida na ordem escrita: os padrões específicos vêm antes do
+// genérico "enfesto", senão "Corte de enfesto" cairia no passo do enfesto.
+const _OP_SEQUENCIA = [
+  { ordem: 2, nome: 'Movimentação de enfesto',            re: /moviment.*enfesto/ },
+  { ordem: 3, nome: 'Corte de enfesto',                   re: /cort.*enfesto/ },
+  { ordem: 4, nome: 'Movimentação de unidades cortadas',  re: /moviment.*cortad/ },
+  { ordem: 5, nome: 'Separação de unidades cortadas',     re: /separa.*cortad/ },
+  { ordem: 6, nome: 'Empacotamento de unidades cortadas', re: /empacot.*cortad/ },
+  { ordem: 7, nome: 'Estocagem de pacotes',               re: /estoca/ },
+  { ordem: 8, nome: 'Empacotamento de retalhos',          re: /empacot.*retalh/ },
+  { ordem: 1, nome: 'Enfesto',                            re: /enfesto/ }
+];
+
+// Em que passo da corrente esta operação está (ou null quando não é uma delas).
+function _opPassoSequencia(op) {
+  const n = _normNome(op && op.operacao);
+  if (!n) return null;
+  return _OP_SEQUENCIA.find(p => p.re.test(n)) || null;
+}
+
+// Lotes citados na referência da operação: os números de OS que aparecem no
+// texto ("0440", "OS 0430 · 3000 pç", "1042/1051"). Vale o número que É de uma OS
+// cadastrada — senão "3000 pç" viraria um lote fantasma e juntaria operações que
+// não têm nada a ver. Quando nenhum número bate com OS (quem usa código próprio
+// de lote), valem todos. O zero à esquerda cai, para "0440" e "440" serem o mesmo
+// lote.
+function _opLotesDaOperacao(op) {
+  const nums = String((op && op.referencia) || '').match(/\d{3,}/g) || [];
+  if (!nums.length) return [];
+  const semZero = n => String(n).replace(/^0+/, '') || '0';
+  const conhecidos = new Set((STATE.ordens || []).map(o => semZero(String(o.os || '').trim())).filter(Boolean));
+  const casados = nums.filter(n => conhecidos.has(semZero(n)));
+  return (casados.length ? casados : nums).map(semZero);
+}
+
+// Conflitos de ORDEM: dentro do mesmo lote, um passo da corrente que começa
+// antes do passo anterior. Dois casos, ambos acusados:
+//   • invertida  — começa antes de a anterior COMEÇAR (a ordem está trocada);
+//   • encavalada — começa antes de a anterior TERMINAR (o posto seguinte pega o
+//     lote que ainda está na mão do anterior).
+// Devolve Map id → { nivel, msgs }: 'invertida' é erro de ordem (a corrente está
+// de trás para frente); 'encavalada' é aviso (a ordem está certa, mas o posto
+// seguinte pega o lote antes de o anterior soltar). Separados porque o segundo
+// caso pode ser deliberado — a esteira de corte é máquina e vai cortando o
+// enfesto conforme ele avança — e afogar a folha em vermelho esconderia o
+// primeiro, que é sempre erro.
+function _opConflitosOrdem(lista) {
+  const porLote = new Map();
+  (lista || []).forEach(op => {
+    const passo = _opPassoSequencia(op);
+    if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
+    _opLotesDaOperacao(op).forEach(lote => {
+      const k = op.data + '|' + lote;
+      if (!porLote.has(k)) porLote.set(k, []);
+      porLote.get(k).push({ op, passo, lote });
+    });
+  });
+  const out = new Map();
+  const anota = (op, nivel, msg) => {
+    let e = out.get(op.id);
+    if (!e) { e = { nivel, msgs: [] }; out.set(op.id, e); }
+    if (nivel === 'invertida') e.nivel = 'invertida';   // erro manda sobre aviso
+    if (!e.msgs.includes(msg)) e.msgs.push(msg);
+  };
+  porLote.forEach(itens => {
+    itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
+    for (let i = 1; i < itens.length; i++) {
+      const ant = itens[i - 1], cur = itens[i];
+      if (ant.passo.ordem === cur.passo.ordem) continue;
+      const iAnt = _opInicioMin(ant.op), fAnt = _opFimMin(ant.op), iCur = _opInicioMin(cur.op);
+      const quem = `${cur.passo.nome} (${_opHHMM(iCur)}) × ${ant.passo.nome} (${_opHHMM(iAnt)} → ${_opHHMM(fAnt)}) no lote ${cur.lote}`;
+      if (iCur < iAnt) {
+        const msg = `ORDEM INVERTIDA: ${quem}`;
+        anota(cur.op, 'invertida', msg); anota(ant.op, 'invertida', msg);
+      } else if (iCur < fAnt) {
+        const msg = `COMEÇA ANTES DE TERMINAR A ANTERIOR: ${quem}`;
+        anota(cur.op, 'encavalada', msg); anota(ant.op, 'encavalada', msg);
+      }
+    }
+  });
+  return out;
+}
+
+// Selo do conflito de ordem, no formato de cada folha. `tipo` = 'tela' | 'papel'.
+function _opSeloOrdem(e, tipo) {
+  if (!e) return '';
+  const erro = e.nivel === 'invertida';
+  const rot = erro ? 'fora de ordem' : 'encavalada';
+  const t = esc(e.msgs.join(' · '));
+  return tipo === 'papel'
+    ? ` <span class="tag ${erro ? 'alto' : 'urgente'}" title="${t}">${rot}</span>`
+    : ` <span class="exp-badge ${erro ? 'alto' : 'baixo'}" title="${t}">${rot}</span>`;
+}
+
 /* ---------------- vazios (tempo sem operação) ---------------- */
 
 // Jornada REAL de um conjunto de operações: da primeira hora de início ao último
@@ -5779,6 +5879,7 @@ function renderOperacoes() {
     </div>`;
 
   const conflitos = _opConflitos(ops);
+  const foraDeOrdem = _opConflitosOrdem(ops);
   let minutos = 0, pendentes = 0, feitas = 0, prioritarias = 0;
   const funcoesSet = new Set();
   ops.forEach(o => {
@@ -5797,6 +5898,7 @@ function renderOperacoes() {
       <div class="item ${prioritarias ? 'alerta' : ''}"><div class="num">${fmt(prioritarias)}</div><div class="lbl">Urgentes / emergentes</div></div>
       <div class="item"><div class="num">${fmt(feitas)}</div><div class="lbl">Concluídas</div></div>
       <div class="item ${conflitos.size ? 'alerta' : ''}"><div class="num">${fmt(conflitos.size)}</div><div class="lbl">Em sobreposição</div></div>
+      <div class="item ${foraDeOrdem.size ? 'alerta' : ''}"><div class="num">${fmt(foraDeOrdem.size)}</div><div class="lbl">Fora de ordem</div></div>
     </div>`;
 
   // Régua de horas do dia: o eixo em que as barras são lidas. O passo cresce
@@ -5842,6 +5944,7 @@ function renderOperacoes() {
     const pr = _opPrioridade(op);
     const resp = _opResponsavelNome(op);
     const conflito = conflitos.has(op.id);
+    const ordemErr = foraDeOrdem.get(op.id) || null;   // corrente do lote quebrada
     // O selo distingue as duas naturezas: processo inteiro do posto (o padrão,
     // sem selo) e etapa avulsa planejada à parte.
     const _opEtapas = Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : []);
@@ -5858,7 +5961,8 @@ function renderOperacoes() {
         <span class="janela">${esc(_opJanelaTexto(op))}${op.inicioFixo
           ? ` <button type="button" class="op-fixo" onclick="soltarHorarioOperacao('${esc(op.id)}')" title="Horário fixo: definido à mão, não reencaixa após a anterior. Clique para voltar ao encaixe automático.">📌</button>`
           : ''}</span>
-        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
+        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${
+          _opSeloOrdem(ordemErr, 'tela')}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
         <span class="ref">${esc(op.referencia) || ''}</span>
         <button type="button" class="exp-badge ${_OP_STATUS[st].cls} op-status" onclick="alternarStatusOperacao('${esc(op.id)}')" title="Clique para mudar: pendente → em andamento → feita">${esc(_OP_STATUS[st].lbl)}</button>
@@ -6615,6 +6719,7 @@ function renderPrintPlanoOperacoes() {
   });
 
   const conflitos = _opConflitos(ops);
+  const foraDeOrdem = _opConflitosOrdem(ops);
   const minutos = ops.reduce((s, o) => s + _opDuracao(o), 0);
   const funcoes = new Set(ops.map(_opFuncaoNome));
   const prioritarias = ops.filter(o => _opPrioridade(o) !== 'eletiva').length;
@@ -6636,7 +6741,8 @@ function renderPrintPlanoOperacoes() {
         <td class="ope">${esc(op.operacao) || '—'}${
           op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
           pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
-          conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}</td>
+          conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
+          _opSeloOrdem(foraDeOrdem.get(op.id), 'papel')}</td>
         <td class="res">${esc(resp) || '—'}</td>
         <td class="ref">${esc(op.referencia) || ''}</td>
         <td class="obs">${esc(op.obs) || ''}</td>
