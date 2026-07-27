@@ -6985,7 +6985,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '', pre = nul
           <input type="checkbox" id="op-inicio-fixo" ${op && op.inicioFixo ? 'checked' : ''} onchange="_opAtualizarJanela()" style="width:auto;margin:0;">
           Horário fixo (não reencaixar após a operação anterior)
         </label>
-        <div class="field-hint">Se a hora digitada <b>não for</b> o encaixe logo após a operação anterior, ela é mantida como está e as seguintes contam a partir dela — pode ficar <b>intervalo vazio</b> antes. Digitando exatamente o encaixe, a operação segue <b>automática</b> e anda junto quando a anterior mudar. Marque a caixa para travar a hora mesmo quando ela coincide com o encaixe.</div>
+        <div class="field-hint">Se a hora digitada <b>não for</b> o encaixe logo após a operação anterior, ela é mantida como está e as seguintes contam a partir dela — pode ficar <b>intervalo vazio</b> antes. Digitando exatamente o encaixe, a operação segue <b>automática</b> e anda junto quando a anterior mudar. Marque a caixa para travar a hora mesmo quando ela coincide com o encaixe; <b>desmarcar solta</b> a operação de volta para a fila do posto, e o horário passa a ser o que o encadeamento der.</div>
       </div>
       <div class="field">
         <label>Duração total *</label>
@@ -7329,6 +7329,10 @@ async function salvarModalOperacao() {
 
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
   let alvo = null;
+  // Estado ANTES de gravar: é o que diferencia "quero esta hora" de "quero
+  // soltar esta operação" quando a caixa é desmarcada.
+  const eraFixo = !!(_opModalCtx.editId
+    && (STATE.operacoes.find(x => x.id === _opModalCtx.editId) || {}).inicioFixo);
   if (_opModalCtx.editId) {
     const i = STATE.operacoes.findIndex(x => x.id === _opModalCtx.editId);
     if (i >= 0) { STATE.operacoes[i] = { ...STATE.operacoes[i], ...campos }; alvo = STATE.operacoes[i]; }
@@ -7354,7 +7358,12 @@ async function salvarModalOperacao() {
   if (alvo && !inicioFixo) {
     alvo.inicioFixo = false;
     _opSincronizarHorariosDia(data);
-    if (alvo.inicio !== inicio) { alvo.inicio = inicio; alvo.inicioFixo = true; }
+    // DESMARCAR a caixa é ordem de SOLTAR: a operação volta para a fila do posto
+    // e passa a valer o horário que o encadeamento der, mesmo que o campo tenha
+    // outra hora. Sem esta condição a regra do desvio re-fixava a operação no
+    // mesmo salvamento — e uma operação já fixa não conseguia mais ser
+    // desmarcada: a caixa voltava sozinha ao estado anterior.
+    if (!eraFixo && alvo.inicio !== inicio) { alvo.inicio = inicio; alvo.inicioFixo = true; }
   }
   _opSincronizarHorariosDia(data);   // encadeia os horários do posto (fim de uma = início da seguinte)
   await saveState('operacoes');
