@@ -4305,9 +4305,17 @@ async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
       toast('OS marcada para expedir, mas não há janela de expedição cadastrada', 'err');
       return;
     }
+    // PERGUNTA antes de alocar. Marcar "Ensaque" é gesto de checklist de
+    // produção; entrar numa OE é decisão de expedição, e as duas coisas
+    // aconteciam no mesmo clique — a OE do dia amanhecia com OS que ninguém
+    // planejou ali, e quem marcou nem soube que tinha feito isso.
+    const quando = `${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)}${oc.horaIda ? ' às ' + oc.horaIda : ''}`;
+    if (!confirm(`OS ${num} ensacada.\n\nIncluir na expedição de ${quando} (ida)?\n\n`
+      + 'Cancelando, a OS fica marcada como ensacada e aparece em "prontas sem carga" — dá para alocá-la depois, na janela que você escolher.')) return;
     STATE.expedicaoCargas.push({
       id: uid(), janelaId: oc.janela.id, data: oc.dataOrig, perna: 'ida',
-      osId: os.id, volumes: Number(_expSugestaoVolumes(os)) || 0, obs: ''
+      osId: os.id, volumes: Number(_expSugestaoVolumes(os)) || 0, obs: '',
+      origem: 'ensaque'   // entrou pelo checklist, não pelo planejamento
     });
     await saveState('expedicaoCargas');
     toast(`OS ${num} entrou na expedição de ${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)}${oc.horaIda ? ' ' + oc.horaIda : ''}`, 'ok');
@@ -4512,6 +4520,7 @@ function renderExpedicaoPlano() {
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
         <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${
+          i.carga.origem === 'ensaque' ? ' <span class="exp-badge info" title="Entrou nesta OE ao ser marcada como ensacada no checklist da OS, não pelo planejamento da expedição">pelo ensaque</span>' : ''}${
           i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
         <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>`;
