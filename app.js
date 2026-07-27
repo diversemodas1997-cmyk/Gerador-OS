@@ -5337,12 +5337,21 @@ function _opGravarOrdem(blocos) {
 // posto. A 1ª operação com horário é a ÂNCORA (mantém o início); as demais são
 // reencaixadas — mesmo que isso mude o horário que estava lá. Operação sem
 // duração não avança o relógio nem é reposicionada. Devolve se algo mudou.
+//
+// Exceção que faz o encadeamento ser ajustável: operação com `inicioFixo` é uma
+// âncora nova. O horário dela foi escolhido à mão, então nunca é reescrito — e o
+// relógio do posto passa a contar dali em diante, o que permite deixar INTERVALO
+// VAZIO (posto parado, almoço, espera de tecido) entre uma operação e a seguinte.
 function _opSincronizarPosto(itens) {
   let running = null, mudou = false;
   (itens || []).forEach(op => {
     const dur = _opDuracao(op);
+    const ini = _opInicioMin(op);
+    if (op.inicioFixo && ini != null) {    // âncora escolhida à mão: manda no relógio
+      running = ini + dur;
+      return;
+    }
     if (running == null) {                 // ainda sem âncora
-      const ini = _opInicioMin(op);
       if (ini != null) running = ini + (dur || 0);   // 1ª com horário fixa a âncora
       return;
     }
@@ -5559,7 +5568,7 @@ function renderOperacoes() {
           <button title="Subir esta operação no posto" onclick="moverOperacao('${esc(op.id)}',-1)" ${pos === 0 ? 'disabled' : ''}>▲</button>
           <button title="Descer esta operação no posto" onclick="moverOperacao('${esc(op.id)}',1)" ${pos === qtd - 1 ? 'disabled' : ''}>▼</button>
         </span>
-        <span class="janela">${esc(_opJanelaTexto(op))}</span>
+        <span class="janela">${esc(_opJanelaTexto(op))}${op.inicioFixo ? ' <span class="op-fixo" title="Horário fixo: definido à mão, não é reencaixado após a operação anterior">📌</span>' : ''}</span>
         <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
         <span class="ref">${esc(op.referencia) || ''}</span>
@@ -5746,7 +5755,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
   document.getElementById('modal-op-title').textContent = op ? 'Editar operação do dia' : 'Nova operação do dia';
   document.getElementById('modal-op-fields').innerHTML = `
     <div class="form-grid cols-2">
-      <div class="field"><label>Data *</label><input type="date" id="op-data" value="${esc(data)}"></div>
+      <div class="field"><label>Data *</label><input type="date" id="op-data" value="${esc(data)}" onchange="_opSugerirInicio();_opAtualizarJanela()"></div>
       <div class="field">
         <label>Função / posto *</label>
         <select id="op-funcao" onchange="_opTrocouFuncao()">
@@ -5776,8 +5785,12 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '') {
       </div>
       <div class="field">
         <label>Início *</label>
-        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opAtualizarJanela()">
-        <div class="field-hint">Hora planejada para o posto começar.</div>
+        <input type="time" id="op-inicio" value="${esc(op ? (op.inicio || '') : '07:00')}" oninput="_opMudouHoraInicio()">
+        <label class="op-fixo-chk" style="display:flex;gap:6px;align-items:center;font-weight:400;font-size:12px;margin:6px 0 0;">
+          <input type="checkbox" id="op-inicio-fixo" ${op && op.inicioFixo ? 'checked' : ''} onchange="_opAtualizarJanela()" style="width:auto;margin:0;">
+          Horário fixo (não reencaixar após a operação anterior)
+        </label>
+        <div class="field-hint">Desmarcado, o horário é encaixado automaticamente logo após a operação anterior do posto. Marcado, esta hora manda — pode ficar <b>intervalo vazio</b> antes dela, e as seguintes passam a contar deste horário. Mudar a hora aqui marca a caixa sozinho.</div>
       </div>
       <div class="field">
         <label>Duração total *</label>
@@ -5864,6 +5877,8 @@ function _opTrocouFuncao(responsavelPre = null, etapasPre = null) {
     + (fora.length ? `<optgroup label="Outras pessoas">${fora.map(opt).join('')}</optgroup>` : '');
 
   _opTrocouEscopo();
+  _opSugerirInicio();     // posto novo → hora em que aquele posto fica livre
+  _opAtualizarJanela();
 }
 
 // Mostra/esconde o seletor de etapa conforme a abrangência escolhida.
@@ -5905,6 +5920,35 @@ function _opEscolheuEtapa() {
   campo.dataset.etapasAnterior = juntos;
 }
 
+// Mexer na hora à mão é a forma natural de dizer "quero ESTE horário": marca a
+// operação como âncora sozinho, sem exigir que o usuário descubra a caixa.
+function _opMudouHoraInicio() {
+  const fixo = document.getElementById('op-inicio-fixo');
+  if (fixo) fixo.checked = true;
+  _opAtualizarJanela();
+}
+
+// Para operação NOVA, sugere a hora em que o posto fica livre (fim da última
+// operação daquele posto no dia) — é o mesmo encaixe que a sincronização faria ao
+// salvar, então o modal mostra de véspera o horário que vai valer. Não toca no
+// campo se o usuário já fixou a hora. O posto da esteira fica de fora: as
+// operações dele rodam em paralelo, não em fila.
+function _opSugerirInicio() {
+  if (!_opModalCtx || _opModalCtx.editId) return;
+  const campo = document.getElementById('op-inicio');
+  const fixo = document.getElementById('op-inicio-fixo');
+  if (!campo || (fixo && fixo.checked)) return;
+  const data = document.getElementById('op-data')?.value || '';
+  const funcaoId = document.getElementById('op-funcao')?.value || '';
+  if (!data || !funcaoId) return;
+  const funcao = (STATE.funcoes || []).find(f => f.id === funcaoId);
+  if (funcao && ehFuncaoOperadorEsteira(funcao.nome)) return;
+  const fins = (STATE.operacoes || [])
+    .filter(o => o.data === data && (o.funcaoId || '') === funcaoId)
+    .map(_opFimMin).filter(m => m != null);
+  if (fins.length) campo.value = _opHHMM(Math.max(...fins));
+}
+
 // Mostra ao vivo o término calculado — é o número que o planejador confere.
 function _opAtualizarJanela() {
   const info = document.getElementById('op-info');
@@ -5913,8 +5957,12 @@ function _opAtualizarJanela() {
   const dur = _opDuracaoDoForm();
   if (ini == null) { info.textContent = 'Informe a hora de início para ver o término.'; return; }
   if (!dur) { info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>. Informe a duração total para calcular o término.`; return; }
+  const fixo = !!document.getElementById('op-inicio-fixo')?.checked;
   info.innerHTML = `Começa às <b>${esc(_opHHMM(ini))}</b>, leva <b>${esc(_opDurTexto(dur))}</b> e conclui às <b>${esc(_opHHMM(ini + dur))}</b>.`
-    + (ini + dur > 1440 ? ' <span class="exp-badge baixo">atravessa a meia-noite</span>' : '');
+    + (ini + dur > 1440 ? ' <span class="exp-badge baixo">atravessa a meia-noite</span>' : '')
+    + (fixo
+      ? ' <b>Horário fixo</b> — esta hora é mantida como está e as operações seguintes do posto contam a partir dela.'
+      : ' O horário será encaixado logo após a operação anterior deste posto, se houver.');
 }
 function _opDuracaoDoForm() {
   const h = parseInt(document.getElementById('op-dur-h')?.value, 10) || 0;
@@ -5941,6 +5989,9 @@ async function salvarModalOperacao() {
   if (!operacao) return toast('Descreva a operação', 'err');
   const inicio = v('op-inicio');
   if (_opMin(inicio) == null) return toast('Informe a hora de início', 'err');
+  // Hora fixa: a sincronização do posto não reescreve esta operação (e pode
+  // sobrar intervalo vazio antes dela).
+  const inicioFixo = !!document.getElementById('op-inicio-fixo')?.checked;
   const duracaoMin = _opDuracaoDoForm();
   if (!duracaoMin) return toast('Informe a duração total da operação', 'err');
 
@@ -5953,7 +6004,7 @@ async function salvarModalOperacao() {
     data,
     funcaoId, funcaoNome: funcao.nome,
     operacao, escopo, etapas,
-    inicio, duracaoMin,
+    inicio, duracaoMin, inicioFixo,
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
     referencia: v('op-referencia').trim(),
@@ -6021,7 +6072,8 @@ async function duplicarOperacao(id) {
     ...op,
     id: uid(),
     status: 'pendente',
-    inicio: ultimoFim != null ? _opHHMM(ultimoFim) : (op.inicio || '')
+    inicio: ultimoFim != null ? _opHHMM(ultimoFim) : (op.inicio || ''),
+    inicioFixo: false          // a cópia entra na fila do posto; a hora é calculada
   };
   STATE.operacoes.push(nova);
   // Manda a cópia pro FIM do seu posto e renumera a ordem de todos — com a ordem

@@ -1668,6 +1668,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-row.feita { opacity: .6; }
 .op-row.feita .oper { text-decoration: line-through; }
 .op-row .janela { font-family: 'IBM Plex Mono', monospace; font-weight: 600; width: 168px; flex: 0 0 auto; white-space: nowrap; }
+/* Marca de horário fixo (âncora): a operação não é reencaixada após a anterior. */
+.op-row .janela .op-fixo { font-size: 10px; opacity: .8; cursor: help; }
 .op-row .oper { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-row .obs { color: var(--ink-3); font-style: italic; font-weight: 400; }
 .op-row .resp { color: var(--ink-2); width: 120px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
