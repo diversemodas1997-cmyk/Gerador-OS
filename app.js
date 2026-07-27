@@ -6471,6 +6471,158 @@ function _opLotesIncompletos(doDia, data) {
     || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true }));
 }
 
+/* ---------------- alocar uma OS: a cascata de operações do lote ---------------- */
+
+// Qual FUNÇÃO executa cada passo da corrente, e com que nome e tempo. A fonte é o
+// cadastro: cada função tem as suas operações (com o tempo de cada uma), e é o
+// nome da operação que diz a que passo ela pertence. Sem cadastro para um passo,
+// cai no histórico do plano — quem já fez aquele passo antes.
+function _opFuncaoDoPasso(passo) {
+  const doCadastro = [];
+  (STATE.funcoes || []).forEach(f => {
+    _opsDaFuncao(f).forEach(o => {
+      const p = _opPassoSequencia({ operacao: o.nome });
+      if (p && p.cadeia === passo.cadeia && p.ordem === passo.ordem) {
+        doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome, duracaoMin: Number(o.duracaoMin) || 0 });
+      }
+    });
+  });
+  // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
+  // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
+  if (doCadastro.length) {
+    return doCadastro.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
+  }
+  const iguais = (STATE.operacoes || []).filter(o => {
+    const p = _opPassoSequencia(o);
+    return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
+  });
+  if (!iguais.length) return null;
+  const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean));
+  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+  return {
+    funcaoId: funcaoId || '', funcaoNome: (f && f.nome) || _opFuncaoNome(iguais[0]),
+    nome: _opModa(iguais.map(o => String(o.operacao || '').trim()).filter(Boolean)) || passo.nome,
+    duracaoMin: _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0
+  };
+}
+
+// Monta no dia as operações que faltam para a OS atravessar a corrente inteira.
+// Cada passo começa quando o anterior do MESMO LOTE termina e nunca antes de o
+// posto ficar livre — é a mesma regra que o organizador usa depois. Passo que já
+// existe para aquele lote não é recriado, e as rotinas de hora marcada
+// (preparação das máquinas, reposição de materiais) só entram se o dia ainda não
+// as tiver: são feitas uma vez e servem a todos os lotes.
+// Devolve { criadas, semFuncao, naoCoube }.
+function _opMontarCascataDoLote(data, os) {
+  const lote = String(os.os || '').trim().replace(/^0+/, '') || String(os.os || '').trim();
+  const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
+  const criadas = [], semFuncao = [], naoCoube = [];
+  const jaTem = new Set();     // passos que o lote já tem
+  const rotinaNoDia = new Set();
+  doDia().forEach(op => {
+    const p = _opPassoSequencia(op);
+    if (!p || p.cadeia !== 'principal') return;
+    if (_opHorarioDeRotina(op)) rotinaNoDia.add(p.ordem);
+    if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(p.ordem);
+  });
+  const ref = `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}`;
+  let relogio = null;          // fim do último passo deste lote
+  _OP_SEQ_PRINCIPAL.forEach(passo => {
+    if (jaTem.has(passo.ordem)) return;
+    const cad = _opFuncaoDoPasso(passo);
+    if (!cad || !cad.funcaoId) { semFuncao.push(passo); return; }
+    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(passo.ordem)) return;
+    // Quando o posto fica livre: depois da última operação já marcada nele.
+    const fimDoPosto = doDia()
+      .filter(o => o.funcaoId === cad.funcaoId && _opInicioMin(o) != null)
+      .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
+    const ini = _opArredondar(Math.max(relogio == null ? _OP_JORNADA.ini : relogio, fimDoPosto));
+    if (ini + cad.duracaoMin > _OP_JORNADA.fim) { naoCoube.push(passo); return; }
+    const nova = {
+      id: uid(), data,
+      funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
+      operacao: cad.nome, escopo: 'completa', etapas: [],
+      inicio: _opHHMM(ini), duracaoMin: cad.duracaoMin,
+      // Âncora do programa: o horário veio da corrente do LOTE, que atravessa
+      // vários postos. Sem ancorar, o encadeamento de cada posto reescreveria
+      // tudo pela fila dele e a corrente se quebraria no mesmo instante em que
+      // foi montada — o corte caía depois da separação. Não é 📌 do usuário: ele
+      // segue livre para mudar o que quiser.
+      inicioAuto: true,
+      responsavelId: '', responsavelNome: '',
+      referencia: ref, status: 'pendente', prioridade: 'eletiva', obs: ''
+    };
+    STATE.operacoes.push(nova);
+    criadas.push(nova);
+    relogio = ini + cad.duracaoMin;
+  });
+  if (criadas.length) {
+    _opReordenarPostosPorHorario(data);
+    _opSincronizarHorariosDia(data);
+  }
+  return { criadas, semFuncao, naoCoube };
+}
+
+// Modal: escolher a OS que abre (ou continua) o planejamento do dia.
+function abrirModalAlocarOS(data) {
+  if (!exigirAdmin('planejar operações')) return;
+  const dia = data || opPlanoAncora || _expHoje();
+  const noDia = new Set();
+  (STATE.operacoes || []).filter(o => o.data === dia)
+    .forEach(o => _opLotesDaOperacao(o).forEach(l => noDia.add(l)));
+  const semZero = n => String(n).replace(/^0+/, '') || '0';
+  // Candidatas: OS em produção (dentro do fluxo), com a que já está no dia
+  // marcada — alocar de novo só acrescenta o que falta, e é bom deixar isso claro.
+  const ordens = (STATE.ordens || [])
+    .filter(o => (o.os || '').toString().trim())
+    .sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }))
+    .slice(0, 120);
+  document.getElementById('modal-aloc-title').textContent = `Alocar OS em ${formatDate(dia)}`;
+  document.getElementById('modal-aloc-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Dia *</label><input type="date" id="aloc-data" value="${esc(dia)}"></div>
+      <div class="field full">
+        <label>OS *</label>
+        <select id="aloc-os">
+          <option value="">— selecione —</option>
+          ${ordens.map(o => `<option value="${esc(o.id)}">${esc(o.os)}${o.modeloNome ? ' · ' + esc(o.modeloNome) : ''}${
+            noDia.has(semZero(o.os)) ? ' (já está no dia)' : ''}</option>`).join('')}
+        </select>
+        <div class="field-hint">O programa monta as operações que faltam para esta OS atravessar a sequência inteira, cada uma na função que a executa, com o tempo cadastrado ali. Alocar uma segunda OS acrescenta a sequência dela <b>depois</b> do que cada posto já tem — a ordem entre as OS é você que decide, movendo as operações.</div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">
+      Os tempos vêm do cadastro de <b>Funções</b>. Operação sem tempo cadastrado entra com duração zero — dá para ajustar depois, uma a uma.
+    </div>`;
+  openModal('modal-aloc-os');
+}
+
+async function confirmarAlocarOSNoDia() {
+  if (!exigirAdmin('planejar operações')) return;
+  const data = document.getElementById('aloc-data')?.value || '';
+  const osId = document.getElementById('aloc-os')?.value || '';
+  if (!data) return toast('Escolha o dia', 'err');
+  const os = (STATE.ordens || []).find(o => o.id === osId);
+  if (!os) return toast('Escolha a OS', 'err');
+  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  const { criadas, semFuncao, naoCoube } = _opMontarCascataDoLote(data, os);
+  if (!criadas.length && !semFuncao.length && !naoCoube.length) {
+    return toast(`OS ${os.os} já tem a sequência completa em ${formatDate(data)}`, 'ok');
+  }
+  await saveState('operacoes');
+  closeModal('modal-aloc-os');
+  toast(`${criadas.length} operação(ões) criada(s) para a OS ${os.os}`
+    + (semFuncao.length ? ` · ${semFuncao.length} sem função cadastrada` : '')
+    + (naoCoube.length ? ` · ${naoCoube.length} não coube(m) no dia` : ''),
+    (semFuncao.length || naoCoube.length) ? 'err' : 'ok');
+  if (semFuncao.length) {
+    console.info('Passos sem função cadastrada:', semFuncao.map(p => p.nome).join(', '));
+  }
+  opPlanoAncora = data;
+  try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
+  renderOperacoes();
+}
+
 // Valor que mais se repete numa lista (moda); empate fica com o primeiro.
 function _opModa(valores) {
   const conta = new Map();
@@ -6674,7 +6826,8 @@ function renderOperacoes() {
         <button class="btn accent" onclick="goto('print-operacoes')">🖨 Folha do plano</button>
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn primary" onclick="abrirModalOperacao()">+ Nova operação</button>
+        <button class="btn primary" title="O dia começa pela OS: o programa monta a sequência de operações dela." onclick="abrirModalAlocarOS(opPlanoAncora)">+ Alocar OS no dia</button>
+        <button class="btn" onclick="abrirModalOperacao()">+ Operação avulsa</button>
         ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado a jornada do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
       </div>
     </div>`;
@@ -7023,7 +7176,8 @@ function renderOperacoes() {
               ? `<button class="btn" title="Sincroniza as pausas, garante a duração medida do enfesto e empurra para frente o que quebra a ordem do lote ou põe a mesma pessoa em duas funções ao mesmo tempo." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Organizar o dia</button>`
               : ''}
             <button class="btn" title="Confere o dia: operação esperada que falta, sobreposição dentro da mesma função e a coerência da sequência cruzada entre as funções." onclick="analisarDiaOperacoes('${esc(data)}')">${opAnaliseDia === data ? '✕ Fechar análise' : '🔍 Analisar o dia'}</button>
-            <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
+            <button class="btn primary" title="O planejamento do dia começa pela OS: escolhida a OS, o programa monta a sequência inteira de operações, cada uma na função que a executa." onclick="abrirModalAlocarOS('${esc(data)}')">+ Alocar OS</button>
+            <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação avulsa</button>
           </div>
         </div>
         ${jan ? reguaHtml(jan) : ''}
@@ -7090,7 +7244,7 @@ function renderOperacoes() {
       <div class="empty" style="padding:24px 0;text-align:center;">
         ${semFuncoes
           ? 'Nenhuma <b>função</b> cadastrada ainda. O planejamento é feito por posto de trabalho — cadastre as funções em <a href="#" onclick="goto(\'cad-funcoes\'); return false;">Funções</a> antes de começar.'
-          : 'Nenhuma operação planejada neste período. Use <b>+ Nova operação</b> para montar o dia.'}
+          : 'Nenhuma operação planejada neste período. Comece por <b>+ Alocar OS no dia</b>: escolhida a OS, o programa monta a sequência inteira de operações, cada uma na função que a executa.'}
       </div>
     </div>`;
 

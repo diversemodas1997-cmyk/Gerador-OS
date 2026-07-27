@@ -875,6 +875,19 @@
   </div>
 </div>
 
+<!-- Alocar uma OS no dia: o programa monta a cascata de operações a partir das
+     operações cadastradas em cada função. -->
+<div class="modal-backdrop" id="modal-aloc-os">
+  <div class="modal">
+    <h2 id="modal-aloc-title">Alocar OS no dia</h2>
+    <div id="modal-aloc-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-aloc-os')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarAlocarOSNoDia()">Montar operações</button>
+    </div>
+  </div>
+</div>
+
 <!-- no-print: o toast é position:fixed e o html2canvas 1.4.1 o inclui na foto se
      ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
      etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
@@ -912,6 +925,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28s"></script>
+<script src="app.js?v=2026-07-28t"></script>
 </body>
 </html>
