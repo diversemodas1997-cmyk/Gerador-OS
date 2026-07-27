@@ -1591,6 +1591,17 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-bar.feita { opacity: .45; }
 .op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
 .op-bar span { pointer-events: none; }
+/* Faixa hachurada do tempo PARADO da função: fica atrás das barras (z-index 0)
+   e mostra, no mesmo eixo, a janela em que aquele posto não recebeu operação. */
+.op-bar-vazio {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 0;
+  border-radius: 2px;
+  background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(0, 0, 0, .1) 4px 8px);
+  border: 1px dashed rgba(0, 0, 0, .18);
+}
 
 /* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
 .op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
@@ -1680,6 +1691,14 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   line-height: 1;
 }
 .op-row .janela .op-fixo:hover { opacity: 1; }
+/* Linha de VAZIO: tempo em que a função fica parada entre duas operações. Fica
+   discreta de propósito — é ausência de trabalho, não trabalho. */
+.op-row.op-vazio {
+  background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(0, 0, 0, .035) 5px 10px);
+  color: var(--ink-3);
+  font-style: italic;
+}
+.op-row.op-vazio .janela { font-weight: 400; opacity: .8; }
 .op-row .oper { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-row .obs { color: var(--ink-3); font-style: italic; font-weight: 400; }
 .op-row .resp { color: var(--ink-2); width: 120px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1940,6 +1959,22 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-print-posto table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
 .op-print-posto td { padding: 1.5px 4px; vertical-align: top; border-bottom: 1px dotted #ccc; }
 .op-print-posto tr:last-child td { border-bottom: none; }
+/* Vazio na folha: a linha existe para o vazio ser LIDO na sequência, mas sem
+   competir com as operações — fundo hachurado leve e itálico. */
+.op-print-posto tr.vz td {
+  color: #666;
+  font-style: italic;
+  background: repeating-linear-gradient(135deg, transparent 0 3pt, rgba(0, 0, 0, .05) 3pt 6pt);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* Aviso do dia inteiro parado, logo abaixo do cabeçalho da data. */
+.op-print-parada {
+  font-size: 7pt;
+  font-style: italic;
+  color: #7a5f1e;
+  padding: 1pt 4pt 0;
+}
 .op-print-posto td.bx { width: 12pt; }
 .op-print-posto td.jan { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; width: 96pt; }
 .op-print-posto td.ope { }

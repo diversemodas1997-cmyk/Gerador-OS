@@ -5615,7 +5615,11 @@ function _opConflitos(lista) {
     // horário é dentro do dia, então comparar dias diferentes acusaria
     // sobreposição onde não há (jornada longa na segunda e outra na terça).
     const chaves = [op.data + '|F|' + (op.funcaoId || _opFuncaoNome(op))];
-    if (op.responsavelId) chaves.push(op.data + '|P|' + op.responsavelId);
+    // A pessoa é comparada pelo NOME cadastrado na Equipe (normalizado), não pelo
+    // id: é o nome que o usuário enxerga, e a mesma pessoa às vezes aparece com
+    // id diferente (cadastro repetido) ou só com o nome gravado na operação.
+    const pessoa = _normNome(op.responsavelNome || '') || op.responsavelId || '';
+    if (pessoa) chaves.push(op.data + '|P|' + pessoa);
     chaves.forEach(k => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(op); });
   });
   grupos.forEach(arr => {
@@ -5625,6 +5629,67 @@ function _opConflitos(lista) {
     }
   });
   return ids;
+}
+
+/* ---------------- vazios (tempo sem operação) ---------------- */
+
+// Jornada REAL de um conjunto de operações: da primeira hora de início ao último
+// fim. Diferente de _opJanelaDoDia, que arredonda para horas cheias porque é
+// eixo de desenho — aqui interessa o tempo de verdade.
+function _opJornada(ops) {
+  let ini = null, fim = null;
+  (ops || []).forEach(op => {
+    const i = _opInicioMin(op);
+    if (i == null || !_opDuracao(op)) return;
+    const f = i + _opDuracao(op);
+    if (ini == null || i < ini) ini = i;
+    if (fim == null || f > fim) fim = f;
+  });
+  return ini == null ? null : { ini, fim };
+}
+
+// Janelas SEM operação dentro de uma jornada. Usada em dois níveis:
+//   • por FUNÇÃO (jornada = a do dia): quando aquele posto fica parado enquanto
+//     o dia corre — é o "espaço vazio" que o planejamento precisa enxergar;
+//   • do DIA inteiro (itens = todas as operações): quando NENHUMA função está
+//     operando, que é onde a continuidade entre as funções se rompe.
+// `tipo` diz onde o vazio cai: antes da primeira operação, entre duas, ou depois
+// da última. `minimo` filtra ruído de arredondamento.
+function _opVazios(itens, jornada, minimo = 1) {
+  if (!jornada) return [];
+  const blocos = (itens || [])
+    .filter(o => _opInicioMin(o) != null && _opDuracao(o) > 0)
+    .map(o => ({ i: _opInicioMin(o), f: _opFimMin(o) }))
+    .sort((a, b) => a.i - b.i);
+  if (!blocos.length) {
+    const m = jornada.fim - jornada.ini;
+    return m >= minimo ? [{ ini: jornada.ini, fim: jornada.fim, min: m, tipo: 'todo' }] : [];
+  }
+  const out = [];
+  let cursor = jornada.ini;
+  blocos.forEach(b => {
+    if (b.i - cursor >= minimo) {
+      out.push({ ini: cursor, fim: b.i, min: b.i - cursor, tipo: cursor === jornada.ini ? 'antes' : 'entre' });
+    }
+    cursor = Math.max(cursor, b.f);
+  });
+  if (jornada.fim - cursor >= minimo) {
+    out.push({ ini: cursor, fim: jornada.fim, min: jornada.fim - cursor, tipo: 'depois' });
+  }
+  return out;
+}
+
+// Vazio menor que isto é ruído de arredondamento do plano, não ociosidade: não
+// vira linha na agenda nem na folha.
+const _OP_VAZIO_MIN = 5;
+
+// Texto curto de um vazio para a linha da agenda e da folha.
+function _opVazioTexto(v) {
+  const quando = `${_opHHMM(v.ini)} → ${_opHHMM(v.fim)}`;
+  if (v.tipo === 'todo') return `${quando} · ${_opDurTexto(v.min)} sem nenhuma operação`;
+  if (v.tipo === 'antes') return `${quando} · ${_opDurTexto(v.min)} parada antes de começar`;
+  if (v.tipo === 'depois') return `${quando} · ${_opDurTexto(v.min)} parada até o fim do dia`;
+  return `${quando} · ${_opDurTexto(v.min)} sem operação`;
 }
 
 /* ---------------- render da agenda ---------------- */
@@ -5781,6 +5846,23 @@ function renderOperacoes() {
     // A mesma estrutura que as setas de mover manipulam — desenhar a partir dela
     // garante que a ordem vista é a ordem gravada.
     const grupos = _opBlocosDoDia(data);
+    // Jornada real do dia: é contra ela que se mede o tempo em que cada função
+    // fica parada enquanto as outras trabalham.
+    const jornadaDia = _opJornada(doDia);
+    // Faixa hachurada do vazio na linha do tempo da função.
+    const vazioBarra = (v, j) => {
+      const larg = j.fim - j.ini;
+      const left = (v.ini - j.ini) / larg * 100;
+      const width = Math.max(0.6, v.min / larg * 100);
+      return `<div class="op-bar-vazio" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;"
+        title="${esc(_opVazioTexto(v))}"></div>`;
+    };
+    const vazioLinha = v => `
+      <div class="op-row op-vazio">
+        <span class="op-mover admin-only"></span>
+        <span class="janela">${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))}</span>
+        <span class="oper">— ${esc(_opDurTexto(v.min))} sem operação —</span>
+      </div>`;
 
     const blocos = grupos.map((g, gi) => {
       const minutos = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
@@ -5788,6 +5870,23 @@ function renderOperacoes() {
       const comHora = g.itens.filter(o => _opInicioMin(o) != null);
       const jIni = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
       const jFim = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
+      // Vazios DESTA função dentro da jornada do dia — inclusive antes de ela
+      // começar e depois de ela terminar, que é quando o posto fica parado
+      // enquanto o resto da fábrica anda.
+      const vazios = _opVazios(g.itens, jornadaDia, _OP_VAZIO_MIN);
+      const paradoMin = vazios.reduce((s, v) => s + v.min, 0);
+      // As linhas da função, com o vazio ENTRE duas operações virando linha
+      // própria: é onde o buraco aparece para quem lê a sequência.
+      const linhas = [];
+      let fimAnterior = null;
+      g.itens.forEach((op, i) => {
+        const ini = _opInicioMin(op);
+        if (fimAnterior != null && ini != null && ini - fimAnterior >= _OP_VAZIO_MIN) {
+          linhas.push(vazioLinha({ ini: fimAnterior, fim: ini, min: ini - fimAnterior, tipo: 'entre' }));
+        }
+        linhas.push(linhaHtml(op, i, g.itens.length));
+        if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+      });
       return `
         <div class="op-func">
           <div class="op-func-head">
@@ -5801,11 +5900,14 @@ function renderOperacoes() {
             <div class="op-func-tot">
               ${jIni != null ? `<b>${esc(_opHHMM(jIni))} → ${esc(_opHHMM(jFim))}</b> · ` : ''}${esc(_opDurTexto(minutos))} de operação
               ${g.itens.length > 1 ? ` · ${g.itens.length} blocos` : ''}
+              ${paradoMin > 0 ? ` · <span class="exp-badge baixo" title="${esc(vazios.map(_opVazioTexto).join(' · '))}">${esc(_opDurTexto(paradoMin))} parada</span>` : ''}
               ${pend ? ` · <span class="exp-badge baixo">${pend} a fazer</span>` : ' · <span class="exp-badge ok">tudo feito</span>'}
             </div>
           </div>
-          ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${g.itens.map(op => barraHtml(op, jan, false, cores.get(op.id))).join('')}</div></div>` : ''}
-          ${g.itens.map((op, i) => linhaHtml(op, i, g.itens.length)).join('')}
+          ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${
+            vazios.map(v => vazioBarra(v, jan)).join('')}${
+            g.itens.map(op => barraHtml(op, jan, false, cores.get(op.id))).join('')}</div></div>` : ''}
+          ${linhas.join('')}
         </div>`;
     }).join('');
 
@@ -5817,6 +5919,9 @@ function renderOperacoes() {
       .map(p => ({ p, n: doDia.filter(o => _opPrioridade(o) === p).length }))
       .filter(x => x.n)
       .map(x => ` · <span class="op-prio ${x.p}">${x.n} ${esc(_OP_PRIORIDADE[x.p].lbl.toLowerCase())}${x.n > 1 ? 's' : ''}</span>`).join('');
+    // Onde a continuidade do dia se rompe: janelas em que NENHUMA função opera —
+    // o dia inteiro parado, não só um posto.
+    const paradaGeral = _opVazios(doDia, jornadaDia, _OP_VAZIO_MIN).filter(v => v.tipo === 'entre');
     return `
       <div class="card exp-ocor">
         <div class="exp-ocor-head">
@@ -5825,6 +5930,9 @@ function renderOperacoes() {
             <div class="exp-ocor-nome">
               ${abre != null ? `Jornada <b>${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}</b> · ` : ''}${grupos.length} ${grupos.length === 1 ? 'posto' : 'postos'} em paralelo · ${esc(_opDurTexto(totMin))} de operação somados${prioridades}
             </div>
+            ${paradaGeral.length ? `<div class="exp-ocor-nome" style="color:var(--accent-dark);">
+              Sem <b>nenhuma</b> função operando: ${paradaGeral.map(v => `<b>${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))}</b> (${esc(_opDurTexto(v.min))})`).join(' · ')}
+            </div>` : ''}
           </div>
           <div class="admin-only">
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
@@ -6446,18 +6554,38 @@ function renderPrintPlanoOperacoes() {
     const abre = comHora.length ? Math.min(...comHora.map(_opInicioMin)) : null;
     const fecha = comHora.length ? Math.max(...comHora.map(_opFimMin)) : null;
     const totMin = doDia.reduce((s, o) => s + _opDuracao(o), 0);
+    // Jornada real do dia e as janelas em que NENHUMA função opera — é onde a
+    // continuidade entre as funções se rompe, e o papel precisa dizer isso.
+    const jornadaDia = _opJornada(doDia);
+    const paradaGeral = _opVazios(doDia, jornadaDia, _OP_VAZIO_MIN).filter(v => v.tipo === 'entre');
     const funcoesHtml = grupos.map(g => {
       const gMin = g.itens.reduce((s, o) => s + _opDuracao(o), 0);
       const gCom = g.itens.filter(o => _opInicioMin(o) != null);
       const gIni = gCom.length ? Math.min(...gCom.map(_opInicioMin)) : null;
       const gFim = gCom.length ? Math.max(...gCom.map(_opFimMin)) : null;
+      // Tempo em que esta função fica parada enquanto o dia corre, e o vazio
+      // ENTRE duas operações virando linha própria na tabela.
+      const vazios = _opVazios(g.itens, jornadaDia, _OP_VAZIO_MIN);
+      const paradoMin = vazios.reduce((s, v) => s + v.min, 0);
+      const linhasG = [];
+      let fimAnterior = null;
+      g.itens.forEach(op => {
+        const ini = _opInicioMin(op);
+        if (fimAnterior != null && ini != null && ini - fimAnterior >= _OP_VAZIO_MIN) {
+          linhasG.push(`<tr class="vz"><td class="bx"></td><td class="jan">${esc(_opHHMM(fimAnterior))} ${esc(_opHHMM(ini))}</td>`
+            + `<td class="ope" colspan="3">— ${esc(_opDurTexto(ini - fimAnterior))} sem operação —</td></tr>`);
+        }
+        linhasG.push(linha(op));
+        if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
+      });
       return `
         <div class="op-print-posto">
           <div class="ph">
             <span class="t">${esc(g.nome)}</span>
-            <span class="h">${gIni != null ? esc(_opHHMM(gIni)) + ' → ' + esc(_opHHMM(gFim)) : 'sem horário'} · ${esc(_opDurTexto(gMin))}</span>
+            <span class="h">${gIni != null ? esc(_opHHMM(gIni)) + ' → ' + esc(_opHHMM(gFim)) : 'sem horário'} · ${esc(_opDurTexto(gMin))}${
+              paradoMin > 0 ? ' · ' + esc(_opDurTexto(paradoMin)) + ' parada' : ''}</span>
           </div>
-          <table>${g.itens.map(linha).join('')}</table>
+          <table>${linhasG.join('')}</table>
         </div>`;
     }).join('');
     return `
@@ -6467,6 +6595,8 @@ function renderPrintPlanoOperacoes() {
           <span class="j">${grupos.length} ${grupos.length === 1 ? 'função' : 'funções'} · ${esc(_opDurTexto(totMin))}${
             abre != null ? ` · jornada ${esc(_opHHMM(abre))} → ${esc(_opHHMM(fecha))}` : ''}</span>
         </div>
+        ${paradaGeral.length ? `<div class="op-print-parada">Sem nenhuma função operando: ${
+          paradaGeral.map(v => `${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))} (${esc(_opDurTexto(v.min))})`).join(' · ')}</div>` : ''}
         ${linhaTempoHtml(doDia)}
         ${funcoesHtml}
       </div>`;
