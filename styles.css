@@ -1647,6 +1647,18 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   border: 1px dashed rgba(0, 0, 0, .18);
 }
 
+/* Linha do editor de operações da função: nome + tempo que ela costuma levar. */
+.func-op-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.func-op-row .func-op-nome { flex: 1 1 auto; min-width: 0; }
+.func-op-row .func-op-h,
+.func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
+.func-op-row .u { font-size: 12px; color: var(--ink-3); }
+
 /* O que falta para cada lote fechar a corrente de operações do dia. */
 .op-lotes { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .op-lotes-cab {

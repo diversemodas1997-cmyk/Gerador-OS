@@ -1380,6 +1380,17 @@ async function loadState() {
       }
     }
   } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
+  // Cadastro de operações POR FUNÇÃO: traz para cada função as operações que ela
+  // já executa no planejamento (sem tempo) e converte quem ainda estava no
+  // formato de texto livre.
+  try {
+    const antes = JSON.stringify((STATE.funcoes || []).map(f => f.operacoes || null));
+    const novas = sincronizarOperacoesDasFuncoes();
+    if (antes !== JSON.stringify((STATE.funcoes || []).map(f => f.operacoes || null))) {
+      await saveState('funcoes');
+      if (novas) console.info(`Funções: ${novas} operação(ões) do planejamento cadastradas, sem tempo.`);
+    }
+  } catch (e) { console.warn('sincronizarOperacoesDasFuncoes', e); }
   // Migração: remove em definitivo a função "Coordenador de produção
   // Enfestadeira/Esteira de corte" (decisão do admin).
   if (Array.isArray(STATE.funcoes)) {
@@ -2148,27 +2159,23 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     setTimeout(mostrarResponsabilidadesFuncao, 0);
   }
   else if (tipo === 'funcao') {
-    const etapasSel = Array.isArray(item.etapasIds) ? item.etapasIds : [];
-    const etapasLista = etapasOrdenadas();
-    const etapasChk = etapasLista.length
-      ? etapasLista.map(e => `
-        <label class="etapa-check" style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px dotted var(--line);">
-          <input type="checkbox" class="m-func-etapa" value="${esc(e.id)}" ${etapasSel.includes(e.id) ? 'checked' : ''}>
-          <span class="badge" title="Ordem">${e.ordem || 0}</span> ${esc(e.nome)}
-        </label>`).join('')
-      : '<span style="color:var(--ink-3);font-size:12px;">Nenhuma etapa cadastrada. Cadastre em <b>Etapas</b> primeiro.</span>';
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira"></div>
         <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
-        <div class="field full"><label>Responsabilidades / ações</label>
-          <textarea id="m-acoes" rows="3" placeholder="Ex.: Costurar peças, fazer travete, acabamento. Uma por linha.">${esc(item.acoes||'')}</textarea>
-        </div>
-        <div class="field full"><label>Etapas que esta função executa</label>
-          <div style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;max-height:220px;overflow:auto;">${etapasChk}</div>
-          <div class="field-hint">No <b>Planejamento de operações</b>, o dropdown de etapas mostra só as marcadas aqui.</div>
+        <div class="field full">
+          <label>Operações desta função e o tempo de cada uma</label>
+          <div id="m-func-ops"></div>
+          <button type="button" class="add-row-btn" onclick="addOperacaoFuncaoRow()" style="margin-top:6px;">+ Adicionar operação</button>
+          <div class="field-hint">São as operações que este posto executa. O <b>tempo</b> é o que a operação costuma levar — ele vem preenchido no planejamento quando você escolher esta função e esta operação. Deixe em branco enquanto não souber.</div>
         </div>
       </div>`;
+    // As linhas são montadas depois do innerHTML, como as fases da grade.
+    setTimeout(() => {
+      const lista = _opsDaFuncao(item);
+      if (lista.length) lista.forEach(o => addOperacaoFuncaoRow(o));
+      else addOperacaoFuncaoRow();
+    }, 0);
   }
   else if (tipo === 'tarefa') {
     box.innerHTML = `
@@ -2284,6 +2291,82 @@ function parseBobinas(str) {
   }
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
+}
+
+// Leva para o cadastro de cada FUNÇÃO as operações que ela já executa no
+// planejamento, sem tempo (o tempo é o usuário que decide). Junta com as
+// responsabilidades que já estavam escritas na função e não repete nome. Roda
+// uma vez por operação nova encontrada — operação criada no plano depois disso
+// entra na próxima abertura, o que mantém o cadastro vivo em vez de congelado.
+// Devolve quantas foram acrescentadas.
+function sincronizarOperacoesDasFuncoes() {
+  if (!Array.isArray(STATE.funcoes) || !STATE.funcoes.length) return 0;
+  const usadas = new Map();   // chave da função → Map(nome normalizado → nome)
+  (STATE.operacoes || []).forEach(op => {
+    const nome = String(op.operacao || '').trim();
+    if (!nome) return;
+    const chave = op.funcaoId || _normNome(_opFuncaoNome(op));
+    if (!chave) return;
+    if (!usadas.has(chave)) usadas.set(chave, new Map());
+    const m = usadas.get(chave);
+    if (!m.has(_normNome(nome))) m.set(_normNome(nome), nome);
+  });
+  let novas = 0;
+  STATE.funcoes.forEach(f => {
+    const lista = _opsDaFuncao(f).slice();
+    const jaTem = new Set(lista.map(o => _normNome(o.nome)));
+    const doPlano = usadas.get(f.id) || usadas.get(_normNome(f.nome)) || new Map();
+    doPlano.forEach((nome, norm) => {
+      if (jaTem.has(norm)) return;
+      lista.push({ nome, duracaoMin: 0 });   // sem tempo: quem sabe o tempo é a casa
+      jaTem.add(norm);
+      novas++;
+    });
+    // Grava mesmo sem novidade: é o que converte a função do formato antigo
+    // (texto em `acoes`) para a lista com tempo, sem perder nada.
+    if (!Array.isArray(f.operacoes) || novas) {
+      f.operacoes = lista;
+      f.acoes = lista.map(o => o.nome).join('\n');
+    }
+  });
+  return novas;
+}
+
+// As operações de uma função, no formato novo [{nome, duracaoMin}]. Função ainda
+// no formato antigo (uma ação por linha em `acoes`) é lida como lista sem tempo —
+// ninguém perde o que já cadastrou e ninguém precisa redigitar.
+function _opsDaFuncao(f) {
+  if (f && Array.isArray(f.operacoes)) return f.operacoes;
+  return String((f && f.acoes) || '').split(/\r?\n/)
+    .map(s => s.trim()).filter(Boolean)
+    .map(nome => ({ nome, duracaoMin: 0 }));
+}
+
+// Tempo cadastrado para uma operação de uma função (0 quando não há).
+function _tempoOperacaoCadastrada(funcaoId, nomeOperacao) {
+  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+  if (!f) return 0;
+  const alvo = _normNome(nomeOperacao);
+  if (!alvo) return 0;
+  const achou = _opsDaFuncao(f).find(o => _normNome(o.nome) === alvo);
+  return (achou && Number(achou.duracaoMin)) || 0;
+}
+
+// Uma linha do editor de operações da função: nome + tempo.
+function addOperacaoFuncaoRow(op = {}) {
+  const cont = document.getElementById('m-func-ops');
+  if (!cont) return;
+  const dur = Math.max(0, Math.round(Number(op.duracaoMin) || 0));
+  const div = document.createElement('div');
+  div.className = 'func-op-row';
+  div.innerHTML = `
+    <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off">
+    <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
+    <span class="u">h</span>
+    <input type="number" class="func-op-m" min="0" max="59" step="5" value="${dur ? dur % 60 : ''}" placeholder="0" title="Minutos">
+    <span class="u">min</span>
+    <button type="button" class="btn small danger" title="Remover esta operação" onclick="this.closest('.func-op-row').remove()">✕</button>`;
+  cont.appendChild(div);
 }
 
 function addFaseGradeRow(fase = {}) {
@@ -2889,10 +2972,21 @@ async function salvarCadastro() {
     }
     item.nome = nomeNovo;
     item.desc = v('m-desc');
-    item.acoes = v('m-acoes');
-    // Etapas que a função executa (ids). Alimenta o dropdown filtrado no
-    // planejamento de operações.
-    item.etapasIds = Array.from(document.querySelectorAll('.m-func-etapa:checked')).map(el => el.value);
+    // Operações da função, cada uma com o seu tempo. `acoes` continua sendo
+    // gravado (só os nomes, uma por linha) porque é dele que saem as sugestões de
+    // operação no planejamento e a coluna da tabela — assim nada que já lê `acoes`
+    // precisa mudar junto.
+    item.operacoes = Array.from(document.querySelectorAll('#m-func-ops .func-op-row')).map(row => {
+      const nome = (row.querySelector('.func-op-nome')?.value || '').trim();
+      const h = parseInt(row.querySelector('.func-op-h')?.value, 10) || 0;
+      const m = parseInt(row.querySelector('.func-op-m')?.value, 10) || 0;
+      return { nome, duracaoMin: Math.max(0, h) * 60 + Math.max(0, m) };
+    }).filter(o => o.nome);
+    item.acoes = item.operacoes.map(o => o.nome).join('\n');
+    // `etapasIds` (a antiga marcação de etapas da função) não é mais editada
+    // aqui: quem diz o que o posto faz é a lista de operações acima. O valor
+    // antigo fica gravado como estava, sem uso — não se apaga o que o usuário
+    // cadastrou um dia só porque a tela mudou.
     // Se o nome mudou, propaga pra todas as pessoas da equipe que usavam o nome antigo
     if (editId && nomeAntigo && nomeAntigo !== nomeNovo) {
       let migradas = 0;
@@ -5570,18 +5664,24 @@ function _opPessoasDaFuncao(funcaoNome) {
 // processo inteiro do posto — as sugestões só evitam redigitar tudo todo dia.
 // Etapas que a função executa (cadastradas nela), na ordem das etapas. É a fonte
 // do dropdown de etapas no planejamento de operações.
+// O que a função executa, para o modo "etapas específicas" do planejamento. A
+// fonte passou a ser a lista de OPERAÇÕES da própria função (as que ela executa
+// no plano, com o tempo de cada uma) no lugar das etapas de produção marcadas —
+// planejar o posto por partes é escolher entre as operações dele, não entre as
+// fases do fluxo da OS. Função antiga, sem operações cadastradas, ainda cai nas
+// etapas marcadas, para não ficar sem nada enquanto não for aberta.
 function _opEtapasDaFuncao(funcaoId) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
-  const ids = (f && Array.isArray(f.etapasIds)) ? f.etapasIds : [];
+  if (!f) return [];
+  const ops = _opsDaFuncao(f).map(o => o.nome).filter(Boolean);
+  if (ops.length) return ops;
+  const ids = Array.isArray(f.etapasIds) ? f.etapasIds : [];
   if (!ids.length) return [];
   return etapasOrdenadas().filter(e => ids.includes(e.id)).map(e => e.nome).filter(Boolean);
 }
 
 function _opSugestoesOperacao(funcaoId) {
-  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
-  const acoes = String(f && f.acoes || '').split('\n').map(s => s.trim()).filter(Boolean);
-  const etapas = _opEtapasDaFuncao(funcaoId);
-  return [...new Set([...acoes, ...etapas])];
+  return [...new Set(_opEtapasDaFuncao(funcaoId))];
 }
 
 // Nomes das etapas marcadas no checklist do modal de operação.
@@ -7089,7 +7189,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '', pre = nul
       <div class="field full hidden" id="op-wrap-etapa">
         <label>Etapas *</label>
         <div id="op-etapas-lista" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;max-height:180px;overflow:auto;"></div>
-        <div class="field-hint">Marque uma ou mais etapas — só as cadastradas na função aparecem.</div>
+        <div class="field-hint">Marque uma ou mais operações — aparecem as cadastradas na função escolhida.</div>
       </div>
       <div class="field full">
         <label>Operação *</label>
@@ -7197,7 +7297,7 @@ function _opTrocouFuncao(responsavelPre = null, etapasPre = null) {
       ? etapasFunc.map(nome => `<label class="etapa-check" style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px dotted var(--line);">`
           + `<input type="checkbox" class="op-etapa-chk" value="${esc(nome)}" ${marcar.includes(nome) ? 'checked' : ''} onchange="_opEscolheuEtapa()"> ${esc(nome)}</label>`).join('')
       : (funcaoId
-          ? '<span style="color:var(--ink-3);font-size:12px;">Esta função não tem etapas cadastradas. Marque as etapas dela em <b>Funções</b>.</span>'
+          ? '<span style="color:var(--ink-3);font-size:12px;">Esta função não tem operações cadastradas. Cadastre as operações dela em <b>Funções</b>.</span>'
           : '<span style="color:var(--ink-3);font-size:12px;">Escolha a função para ver as etapas.</span>');
   }
 
@@ -7326,8 +7426,25 @@ function _opTempoMedioDaReferencia() {
   const box = document.getElementById('op-tempo-medio');
   const h = document.getElementById('op-dur-h'), m = document.getElementById('op-dur-m');
   if (!box || !h || !m) return;
+  // TEMPO CADASTRADO na função para esta operação: é o que a casa definiu, e vale
+  // para qualquer operação — não só as de enfesto. Entra primeiro; o tempo medido
+  // na grade (abaixo) fala mais alto quando existe, por ser daquele lote.
+  const cad = _tempoOperacaoCadastrada(
+    document.getElementById('op-funcao')?.value,
+    document.getElementById('op-operacao')?.value);
+  const podeEscreverCad = _opDuracaoDoForm() === 0 || h.dataset.auto === '1' || m.dataset.auto === '1';
+  if (cad > 0 && podeEscreverCad) {
+    h.value = Math.floor(cad / 60) || '';
+    m.value = cad % 60 || (Math.floor(cad / 60) ? 0 : '');
+    h.dataset.auto = '1'; m.dataset.auto = '1';
+  }
   const os = _opOsDaReferencia(document.getElementById('op-referencia')?.value);
-  if (!os) { box.innerHTML = ''; return; }
+  if (!os) {
+    box.innerHTML = cad > 0
+      ? `Tempo cadastrado nesta função para <b>${esc(document.getElementById('op-operacao')?.value || '')}</b>: <b>${esc(_opDurTexto(cad))}</b>.`
+      : '';
+    return;
+  }
   const funcao = (STATE.funcoes || []).find(f => f.id === (document.getElementById('op-funcao')?.value || ''));
   const r = _opTempoMedidoParaOS(os, document.getElementById('op-operacao')?.value, _opEtapasMarcadas(), funcao && funcao.nome);
   if (!r.temDados) {
@@ -8788,9 +8905,13 @@ function renderFuncoes() {
   const tb = document.getElementById('tbl-funcoes');
   if (!STATE.funcoes.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma função cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.funcoes.map(f => {
-    const acoes = (f.acoes||'').trim();
-    const acoesHtml = acoes ? acoes.split(/\r?\n/).filter(x=>x.trim()).map(a => `<span class="badge" style="margin-right:4px">${esc(a)}</span>`).join('') : '—';
-    return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${acoesHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
+    // Cada operação com o seu tempo ao lado; sem tempo, só o nome.
+    const ops = _opsDaFuncao(f);
+    const opsHtml = ops.length
+      ? ops.map(o => `<span class="badge" style="margin-right:4px" title="${o.duracaoMin ? 'Tempo cadastrado: ' + esc(_opDurTexto(o.duracaoMin)) : 'Sem tempo cadastrado'}">${esc(o.nome)}${
+          o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
+      : '—';
+    return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
   }).join('');
 }
 
