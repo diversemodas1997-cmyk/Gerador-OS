@@ -6711,6 +6711,20 @@ function renderOperacoes() {
     };
     // A linha do vazio diz o buraco E, quando a pessoa daquele posto está em
     // outra função nesse intervalo, o que ela foi fazer.
+    // Barra SOMBRA: a operação que a MESMA PESSOA faz em OUTRA função, desenhada
+    // na faixa deste posto. Quem trabalha em duas funções tem uma jornada só, e
+    // vê-la partida em duas linhas do tempo escondia justamente o encontro das
+    // duas — agora cada linha mostra as duas, e o cruzamento salta.
+    const barraSombra = (op, jan) => {
+      const i = _opInicioMin(op), dur = _opDuracao(op);
+      if (i == null || !dur) return '';
+      const larg = jan.fim - jan.ini;
+      const left = (i - jan.ini) / larg * 100;
+      const width = Math.max(0.8, dur / larg * 100);
+      return `<div class="op-bar-outra" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;"
+        title="${esc(_opResponsavelNome(op))} está em ${esc(_opFuncaoNome(op))}: ${esc(op.operacao) || '—'} · ${esc(_opJanelaTexto(op))}"
+        ><span>${esc(_opFuncaoNome(op))}</span></div>`;
+    };
     const vazioLinha = (v, pessoa, funcaoNome) => {
       const ocup = _opPessoaEmOutraFuncao(v, pessoa, funcaoNome, doDia);
       return `
@@ -6734,6 +6748,12 @@ function renderOperacoes() {
       // enquanto o resto da fábrica anda.
       const vazios = _opVazios(g.itens, jornadaDia, _OP_VAZIO_MIN);
       const paradoMin = vazios.reduce((s, v) => s + v.min, 0);
+      // Quem trabalha neste posto e o que essas mesmas pessoas fazem nos outros.
+      const pessoasDoPosto = new Set(g.itens.map(o => _normNome(_opResponsavelNome(o))).filter(Boolean));
+      const sombras = pessoasDoPosto.size
+        ? doDia.filter(o => _normNome(_opFuncaoNome(o)) !== _normNome(g.nome)
+            && pessoasDoPosto.has(_normNome(_opResponsavelNome(o))))
+        : [];
       // As linhas da função, com o vazio ENTRE duas operações virando linha
       // própria: é onde o buraco aparece para quem lê a sequência.
       const linhas = [];
@@ -6770,7 +6790,9 @@ function renderOperacoes() {
           </div>
           ${jan ? `<div class="op-faixa"><div class="op-faixa-eixo">${
             vazios.map(v => vazioBarra(v, jan)).join('')}${
+            sombras.map(op => barraSombra(op, jan)).join('')}${
             g.itens.map(op => barraHtml(op, jan, false, cores.get(op.id))).join('')}</div></div>` : ''}
+          ${sombras.length ? `<div class="op-sombra-leg">Barras tracejadas: ${esc(Array.from(new Set(sombras.map(o => _opResponsavelNome(o)))).join(', '))} em outra função no mesmo horário.</div>` : ''}
           ${linhas.join('')}
         </div>`;
     }).join('');

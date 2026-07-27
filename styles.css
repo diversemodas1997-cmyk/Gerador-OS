@@ -1574,6 +1574,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   position: absolute;
   top: 0;
   height: 100%;
+  /* Acima da sombra da outra função (z-index 1) e do vazio (0): o trabalho DESTE
+     posto é o que se lê primeiro. */
+  z-index: 2;
   border-radius: 2px;
   background: var(--ink);
   color: var(--paper);
@@ -1591,6 +1594,34 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-bar.feita { opacity: .45; }
 .op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
 .op-bar span { pointer-events: none; }
+/* Sombra da MESMA PESSOA em OUTRA função: a operação dela no outro posto,
+   desenhada nesta faixa. Tracejada e sem preenchimento para não se confundir com
+   o trabalho DESTE posto — é contexto, não carga da função. */
+.op-bar-outra {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 1;
+  border: 1px dashed var(--ink-3);
+  border-radius: 2px;
+  background: repeating-linear-gradient(90deg, transparent 0 6px, rgba(0, 0, 0, .05) 6px 12px);
+  color: var(--ink-2);
+  font-size: 9px;
+  line-height: 20px;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+.op-bar-outra span { pointer-events: none; }
+.op-sombra-leg {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-style: italic;
+  margin: 2px 0 4px;
+}
+
 /* Faixa hachurada do tempo PARADO da função: fica atrás das barras (z-index 0)
    e mostra, no mesmo eixo, a janela em que aquele posto não recebeu operação. */
 .op-bar-vazio {
