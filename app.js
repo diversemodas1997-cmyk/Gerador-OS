@@ -5767,6 +5767,18 @@ function _opJornadaTexto() {
   return `${_opHHMM(_OP_JORNADA.ini)} às ${_opHHMM(_OP_JORNADA.fim)}`;
 }
 
+// Horário calculado pelo programa cai sempre em marca de 5 minutos (07:15, 09:20,
+// 13:45…) — é como o chão de fábrica lê o relógio, e um plano cheio de 08:17 e
+// 09:53 não se combina em voz alta. Arredonda para CIMA: para baixo, a operação
+// começaria ANTES de a anterior terminar, que é o conflito que o ajuste veio
+// corrigir. Vale só para o que o programa muda; horário digitado à mão é do
+// usuário e fica como ele escreveu.
+const _OP_PASSO_MIN = 5;
+function _opArredondar(min) {
+  const v = Number(min) || 0;
+  return Math.ceil(v / _OP_PASSO_MIN) * _OP_PASSO_MIN;
+}
+
 // Próximo dia ÚTIL: o que não cabe hoje vai para amanhã, e o que não cabe na
 // sexta vai para a segunda — sábado e domingo não recebem operação.
 function _opProximoDiaUtil(iso) {
@@ -5981,8 +5993,8 @@ function _opSincronizarPausasDoDia(data) {
       valores.forEach(v => conta.set(v, (conta.get(v) || 0) + 1));
       return Array.from(conta.entries()).sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
     };
-    const ini = moda(itens.map(_opInicioMin));
-    const dur = moda(itens.map(_opDuracao).filter(d => d > 0));
+    const ini = _opArredondar(moda(itens.map(_opInicioMin)));
+    const dur = _opArredondar(moda(itens.map(_opDuracao).filter(d => d > 0)));
     itens.forEach(op => {
       const mudouIni = _opInicioMin(op) !== ini;
       const mudouDur = dur > 0 && _opDuracao(op) !== dur;
@@ -6058,7 +6070,10 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     // mandando o corte começar no fim de um enfesto que, na prática, ainda estaria
     // rodando — o conflito voltaria no chão de fábrica, não na tela.
     doDia.forEach(op => {
-      const nec = _opDuracaoNecessaria(op);
+      // A média medida cai em qualquer minuto (1h27). Sobe para a marca de 5
+      // seguinte: nunca menos que o necessário, e o fim da operação também cai
+      // numa hora redonda para a próxima encaixar.
+      const nec = _opArredondar(_opDuracaoNecessaria(op));
       if (nec <= _opDuracao(op)) return;
       const de = _opDuracao(op);
       op.duracaoMin = nec;
@@ -6091,8 +6106,9 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     // PAUSA não se move: café e almoço são hora marcada da fábrica inteira, e
     // empurrar um deles para resolver conflito de uma função dessincronizaria
     // todas as outras. O conflito com pausa fica acusado, para o usuário decidir.
-    const empurrar = (cur, alvo) => {
+    const empurrar = (cur, alvoBruto) => {
       if (_opHorarioDeRotina(cur)) return false;
+      const alvo = _opArredondar(alvoBruto);   // 09:22 vira 09:25
       if (_opInicioMin(cur) >= alvo) return false;
       // Não empurra para fora do expediente: o dia acaba às 17:30 e uma operação
       // marcada depois disso é plano que ninguém executa. Fica onde está e sai na
@@ -6298,7 +6314,9 @@ function _opSugestaoPasso(data, lote, passo) {
   const depois = doLote.filter(x => x.p.ordem > passo.ordem).sort((a, b) => a.p.ordem - b.p.ordem)[0];
   let ini = antes ? _opFimMin(antes.op) : (depois ? _opInicioMin(depois.op) : _OP_JORNADA.ini);
   if (ini == null) ini = _OP_JORNADA.ini;
-  ini = Math.max(_OP_JORNADA.ini, Math.min(ini, _OP_JORNADA.fim));
+  // Mesma marca de 5 minutos que o ajuste usa: a sugestão do botão não pode
+  // propor 09:22 se o organizador poria 09:25.
+  ini = Math.max(_OP_JORNADA.ini, Math.min(_opArredondar(ini), _OP_JORNADA.fim));
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
     return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
