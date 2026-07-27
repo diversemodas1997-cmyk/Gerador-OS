@@ -1625,7 +1625,10 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-lote-linha .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; min-width: 68px; }
 .op-lote-linha .c { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); min-width: 38px; }
 .op-lote-linha .f { flex: 1 1 auto; min-width: 0; }
-.op-lote-linha.falta .f { color: var(--accent-dark); display: flex; flex-wrap: wrap; gap: 4px; }
+.op-lote-linha.falta .f { color: var(--accent-dark); display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+/* Continuação do lote: o que não cabe hoje e o que já está marcado noutro dia.
+   Informação, não cobrança — por isso sem botão e em tom apagado. */
+.op-lote-linha .cont { flex: 1 1 100%; color: var(--ink-3); font-size: 11px; font-style: italic; }
 .op-lote-linha.ok .f { color: var(--ink-3); }
 /* Passo que falta = botão que já abre o modal no horário e no posto certos. */
 .op-falta-btn {

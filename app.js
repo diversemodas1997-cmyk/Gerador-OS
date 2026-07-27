@@ -6290,32 +6290,78 @@ async function corrigirOrdemOperacoes(data) {
   renderOperacoes();
 }
 
-// O que FALTA para o lote atravessar a corrente principal inteira. Um lote (a OS
-// citada na referência) só está completo quando todos os passos existem no dia.
+// O que FALTA para o lote atravessar a corrente principal inteira.
+//
+// Duas coisas que a versão anterior errava e faziam a lista cobrar o que não
+// devia:
+//   • olhava SÓ o dia aberto. Passo do mesmo lote planejado em OUTRA data (o
+//     enfesto de ontem, o empacotamento que o organizador passou para amanhã)
+//     aparecia como ausente. Agora vale o plano inteiro: o passo existe, e a
+//     linha só diz em que dia ele está;
+//   • cobrava passo que não CABE mais no dia. Uma corrente que começou às 16h
+//     não fecha até as 17:30, e insistir nela é pedir o impossível. Só entra em
+//     `faltam` — a lista com botão de incluir — o passo que ainda cabe hoje; o
+//     resto vai para `naoCabem`, que a tela mostra como continuação no próximo
+//     dia útil, sem botão.
 // As rotinas de hora marcada (preparação das máquinas, reposição de materiais)
 // contam como atendidas se acontecem no dia, com ou sem referência ao lote: são
-// feitas uma vez e servem a todos os lotes — cobrá-las por lote encheria a lista
-// de falso-faltante.
-// Devolve [{ lote, feitos, faltam:[passo], total }] com os lotes incompletos
-// primeiro, na ordem do número da OS.
-function _opLotesIncompletos(doDia) {
-  const feitosPorLote = new Map();
+// feitas uma vez e servem a todos os lotes.
+// Devolve [{ lote, feitos, faltam, naoCabem, noutroDia, total }].
+function _opLotesIncompletos(doDia, data) {
+  const dia = data || (doDia && doDia[0] && doDia[0].data) || '';
+  const lotesDoDia = new Set();
   const rotinaNoDia = new Set();
   (doDia || []).forEach(op => {
     const passo = _opPassoSequencia(op);
     if (!passo || passo.cadeia !== 'principal') return;
     if (_opHorarioDeRotina(op)) rotinaNoDia.add(passo.ordem);
-    _opLotesDaOperacao(op).forEach(lote => {
-      if (!feitosPorLote.has(lote)) feitosPorLote.set(lote, new Set());
-      feitosPorLote.get(lote).add(passo.ordem);
+    _opLotesDaOperacao(op).forEach(l => lotesDoDia.add(l));
+  });
+  // Onde cada passo de cada lote está, em QUALQUER data do plano.
+  const ondeEsta = new Map();   // lote → Map(ordem → {data, fim})
+  (STATE.operacoes || []).forEach(op => {
+    const passo = _opPassoSequencia(op);
+    if (!passo || passo.cadeia !== 'principal') return;
+    _opLotesDaOperacao(op).forEach(l => {
+      if (!lotesDoDia.has(l)) return;
+      if (!ondeEsta.has(l)) ondeEsta.set(l, new Map());
+      const m = ondeEsta.get(l);
+      if (!m.has(passo.ordem) || String(op.data) < String(m.get(passo.ordem).data)) {
+        m.set(passo.ordem, { data: op.data, fim: _opFimMin(op) });
+      }
     });
   });
   const saida = [];
-  feitosPorLote.forEach((feitos, lote) => {
-    const faltam = _OP_SEQ_PRINCIPAL.filter(p => !feitos.has(p.ordem) && !rotinaNoDia.has(p.ordem));
-    saida.push({ lote, feitos: _OP_SEQ_PRINCIPAL.length - faltam.length, faltam, total: _OP_SEQ_PRINCIPAL.length });
+  lotesDoDia.forEach(lote => {
+    const onde = ondeEsta.get(lote) || new Map();
+    const faltam = [], naoCabem = [], noutroDia = [];
+    // O que falta é uma FILA: cada passo consome o tempo do seguinte. Medir um a
+    // um contra o mesmo horário diria que todos cabem — foi o que fazia a lista
+    // cobrar dez operações num dia que só comporta uma.
+    let relogio = null, estourou = false;
+    _OP_SEQ_PRINCIPAL.forEach(p => {
+      const existente = onde.get(p.ordem);
+      if (existente) {
+        if (existente.data !== dia) noutroDia.push({ passo: p, data: existente.data });
+        else if (existente.fim != null) relogio = Math.max(relogio == null ? 0 : relogio, existente.fim);
+        return;
+      }
+      if (rotinaNoDia.has(p.ordem)) return;
+      if (estourou) { naoCabem.push(p); return; }   // o anterior não coube: este também não
+      const s = _opSugestaoPasso(dia, lote, p);
+      const ini = Math.max(_opMin(s.inicio) || 0, relogio == null ? 0 : relogio);
+      if (ini + (s.duracaoMin || 0) > _OP_JORNADA.fim) { estourou = true; naoCabem.push(p); return; }
+      relogio = ini + (s.duracaoMin || 0);
+      faltam.push(p);
+    });
+    const pendentes = faltam.length + naoCabem.length;
+    saida.push({
+      lote, faltam, naoCabem, noutroDia,
+      feitos: _OP_SEQ_PRINCIPAL.length - pendentes,
+      total: _OP_SEQ_PRINCIPAL.length
+    });
   });
-  return saida.sort((a, b) => b.faltam.length - a.faltam.length
+  return saida.sort((a, b) => (b.faltam.length + b.naoCabem.length) - (a.faltam.length + a.naoCabem.length)
     || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true }));
 }
 
@@ -6724,8 +6770,8 @@ function renderOperacoes() {
     // o dia inteiro parado, não só um posto.
     const paradaGeral = _opVazios(doDia, jornadaDia, _OP_VAZIO_MIN).filter(v => v.tipo === 'entre');
     // O que falta para cada lote fechar a corrente inteira.
-    const lotes = _opLotesIncompletos(doDia);
-    const incompletos = lotes.filter(l => l.faltam.length);
+    const lotes = _opLotesIncompletos(doDia, data);
+    const incompletos = lotes.filter(l => l.faltam.length || l.naoCabem.length);
     // Cada passo que falta é um botão: abre o modal já no horário do buraco, no
     // posto que costuma fazer aquele passo e com a OS na referência.
     const l0 = s => String(s).replace(/'/g, '&#39;');
@@ -6746,6 +6792,8 @@ function renderOperacoes() {
     // apontam, para o relatório não dar a impressão de que o resto está limpo.
     const analiseHtml = (() => {
       if (opAnaliseDia !== data) return '';
+      // Só entra na seção o lote que tem passo cabendo HOJE: cobrar o que não
+      // cabe mais viraria um pedido impossível na cara de quem planeja.
       const faltando = lotes.filter(l => l.faltam.length);
       const cruzadas = _opSobreposicoesMesmaFuncao(doDia);
       const ordemMsgs = [];
@@ -6770,9 +6818,10 @@ function renderOperacoes() {
           Análise do dia ${esc(formatDate(data))}
           <button type="button" class="btn small" onclick="analisarDiaOperacoes('${esc(data)}')">fechar</button>
         </div>
-        ${secao('Operações esperadas que faltam', faltando.length && `${faltando.length} lote(s)`,
+        ${secao('Operações esperadas que ainda cabem hoje', faltando.length && `${faltando.length} lote(s)`,
           faltando.map(l => `<div class="op-analise-item"><b>OS ${esc(l.lote)}</b> — ${l.feitos}/${l.total} ·
-            ${l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')}</div>`).join(''))}
+            ${l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')}${
+            l.naoCabem.length ? `<div class="sub">Não cabe mais hoje — continua em ${esc(formatDate(_opProximoDiaUtil(data)))}: ${esc(l.naoCabem.map(p => p.nome).join(' · '))}</div>` : ''}</div>`).join(''))}
         ${secao('Sobreposição dentro da mesma função', cruzadas.length && `${cruzadas.length} par(es)`,
           cruzadas.map(p => `<div class="op-analise-item">
             <b>${esc(p.funcao)}</b> — ${esc(_opDurTexto(p.min))} sobrepostos (${esc(_opHHMM(p.ini))} → ${esc(_opHHMM(p.fim))})
@@ -6806,7 +6855,12 @@ function renderOperacoes() {
             <span class="c">${l.feitos}/${l.total}</span>
             <span class="f">${l.faltam.length
               ? l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')
-              : 'sequência completa'}</span>
+              : (l.naoCabem.length ? 'nada mais cabe hoje' : 'sequência completa')}${
+              // Continuação: o que não cabe mais no dia e o que já está marcado
+              // noutra data. Sem botão — não é para incluir hoje, é para saber
+              // que o lote não parou por esquecimento.
+              l.naoCabem.length ? `<span class="cont">continua em ${esc(formatDate(_opProximoDiaUtil(data)))}: ${esc(l.naoCabem.map(p => p.nome).join(' · '))}</span>` : ''}${
+              l.noutroDia.length ? `<span class="cont">já planejado: ${esc(l.noutroDia.map(x => `${x.passo.nome} (${formatDate(x.data)})`).join(' · '))}</span>` : ''}</span>
           </div>`).join('')}
       </div>` : '';
     return `
