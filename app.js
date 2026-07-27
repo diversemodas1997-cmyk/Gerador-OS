@@ -5651,6 +5651,18 @@ function _opJornadaTexto() {
   return `${_opHHMM(_OP_JORNADA.ini)} às ${_opHHMM(_OP_JORNADA.fim)}`;
 }
 
+// Próximo dia ÚTIL: o que não cabe hoje vai para amanhã, e o que não cabe na
+// sexta vai para a segunda — sábado e domingo não recebem operação.
+function _opProximoDiaUtil(iso) {
+  let d = _expAddDias(iso, 1);
+  for (let i = 0; i < 7; i++) {
+    const dow = _expData(d).getDay();
+    if (dow !== 0 && dow !== 6) return d;
+    d = _expAddDias(d, 1);
+  }
+  return d;
+}
+
 // Por que esta operação está fora da jornada (ou null quando está dentro).
 function _opForaDaJornada(op) {
   const i = _opInicioMin(op);
@@ -5772,9 +5784,23 @@ function _opSeloOrdem(e, tipo) {
 // novas quebras — daí o laço, que para quando ninguém mais se move.
 // Devolve { movidas: [{op, de, para}], travadas: [op] } — travadas são as que só
 // caberiam depois da meia-noite, que o campo de horário do dia não representa.
-function _opCorrigirOrdemDoDia(data) {
-  const movidas = new Map(), travadas = new Set();
+function _opCorrigirOrdemDoDia(data, profundidade = 0) {
+  const movidas = new Map(), travadas = new Set(), adiadas = new Map();
   const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+  const destino = _opProximoDiaUtil(data);
+  // O que não cabe na jornada vai para o PRÓXIMO DIA ÚTIL, levando junto os
+  // passos seguintes do mesmo lote que estavam neste dia — eles dependem dele, e
+  // deixá-los para trás poria a costura antes do corte. No dia de destino a
+  // operação entra no FIM da fila do posto (sem `ordem` e sem horário fixo), e o
+  // encadeamento de lá dá o horário.
+  const adiar = op => {
+    if (adiadas.has(op.id)) return;
+    op.data = destino;
+    op.inicio = hhmm(_OP_JORNADA.ini);
+    op.inicioFixo = false;
+    delete op.ordem;
+    adiadas.set(op.id, { op, de: data, para: destino });
+  };
   for (let passada = 0; passada < 20; passada++) {
     const doDia = (STATE.operacoes || []).filter(o => o.data === data);
     const porLote = new Map();
@@ -5805,7 +5831,16 @@ function _opCorrigirOrdemDoDia(data) {
       itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
       for (let i = 1; i < itens.length; i++) {
         if (itens[i - 1].passo.ordem === itens[i].passo.ordem) continue;
-        if (empurrar(itens[i].op, _opFimMin(itens[i - 1].op))) mudou = true;
+        const cur = itens[i].op, alvo = _opFimMin(itens[i - 1].op);
+        if (_opInicioMin(cur) >= alvo) continue;
+        if (alvo + _opDuracao(cur) > _OP_JORNADA.fim) {
+          // Não cabe mais hoje: este passo e TODOS os seguintes do lote vão para
+          // o próximo dia útil.
+          for (let j = i; j < itens.length; j++) adiar(itens[j].op);
+          mudou = true;
+          break;
+        }
+        if (empurrar(cur, alvo)) mudou = true;
       }
     });
     // Sobreposição da MESMA PESSOA em funções diferentes: ninguém está em dois
@@ -5822,8 +5857,9 @@ function _opCorrigirOrdemDoDia(data) {
     });
     if (!mudou) break;
     _opSincronizarHorariosDia(data);
+    if (adiadas.size) _opSincronizarHorariosDia(destino);   // o dia de destino também encaixa
   }
-  if (movidas.size) {
+  if (movidas.size || adiadas.size) {
     // A ordem manual de cada posto apontava para a sequência ANTIGA: sem
     // reordenar, a agenda mostraria 08:25 acima de 08:15 e as setas de mover
     // trabalhariam numa fila que não é mais a do relógio.
@@ -5833,8 +5869,25 @@ function _opCorrigirOrdemDoDia(data) {
       return (ix == null ? 1e9 : ix) - (iy == null ? 1e9 : iy);
     }));
     _opGravarOrdem(blocos);
+    if (adiadas.size) _opGravarOrdem(_opBlocosDoDia(destino));
   }
-  return { movidas: Array.from(movidas.values()), travadas: Array.from(travadas) };
+  const saida = {
+    movidas: Array.from(movidas.values()),
+    travadas: Array.from(travadas),
+    adiadas: Array.from(adiadas.values()),
+    destino
+  };
+  // O dia de destino recebeu trabalho: a corrente do lote precisa ser arrumada lá
+  // também (as operações chegam todas em 07:15, cada uma na fila do seu posto).
+  // Até 3 saltos — se o serviço ainda transbordar depois disso, é falta de dia
+  // útil, não de ajuste, e o usuário vê pelos selos.
+  if (adiadas.size && profundidade < 3) {
+    const seguinte = _opCorrigirOrdemDoDia(destino, profundidade + 1);
+    saida.movidas = saida.movidas.concat(seguinte.movidas);
+    saida.travadas = saida.travadas.concat(seguinte.travadas);
+    saida.adiadas = saida.adiadas.concat(seguinte.adiadas);
+  }
+  return saida;
 }
 
 // Botão da agenda: arruma o dia inteiro. Mexe em horário planejado, então
@@ -5858,16 +5911,19 @@ async function corrigirOrdemOperacoes(data) {
   const ordemAntes = _opConflitosOrdem(doDia()).size;
   const pessoaAntes = pessoaCruzada(doDia()).size;
   if (!ordemAntes && !pessoaAntes) return toast('Nenhum conflito de ordem ou de pessoa neste dia', 'ok');
+  const destinoPrev = _opProximoDiaUtil(data);
   if (!confirm('Ajustar os horários deste dia?\n\n'
     + `· ${ordemAntes} operação(ões) fora da ordem do lote\n`
     + `· ${pessoaAntes} com a mesma pessoa em duas funções ao mesmo tempo\n\n`
-    + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.')) return;
-  const { movidas, travadas } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length) return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
+    + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
+    + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.`)) return;
+  const { movidas, travadas, adiadas, destino } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length && !adiadas.length) return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   await saveState('operacoes');
   const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
-    + (travadas.length ? ` · ${travadas.length} não coube(m) no dia` : '')
+    + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
+    + (travadas.length ? ` · ${travadas.length} sem encaixe` : '')
     + (restou ? ` · ainda ${restou} em conflito` : ''), restou || travadas.length ? 'err' : 'ok');
   renderOperacoes();
 }
