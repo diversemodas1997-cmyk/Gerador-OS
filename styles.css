@@ -1845,6 +1845,26 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 /* Quadrinho já marcado no checklist da OS. O ✓ é desenhado (não é caractere)
    para não depender de fonte na impressão. */
+/* Em andamento: quadrinho com o miolo cheio — no papel se lê como "meio feito",
+   entre o vazio (pendente) e o ✓ (feita). */
+.exp-print-box.meio::after {
+  content: '';
+  position: absolute;
+  left: 1.2pt;
+  top: 1.2pt;
+  width: 3.2pt;
+  height: 3.2pt;
+  background: #000;
+}
+/* Quadrinho clicável da folha de operações: sem cara de botão, só o quadrado. */
+.op-print-chk {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  cursor: pointer;
+}
 .exp-print-box.ok::after {
   content: '';
   position: absolute;

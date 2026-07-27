@@ -6215,6 +6215,10 @@ async function alternarStatusOperacao(id) {
   op.status = _OP_CICLO[_opStatus(op)];
   await saveState('operacoes');
   renderOperacoes();
+  // O mesmo status é marcável pelo quadrinho da folha impressa: se ela está
+  // montada, redesenha para o quadrinho refletir o clique na hora.
+  const folha = document.getElementById('print-sheet-op');
+  if (folha && folha.innerHTML) renderPrintPlanoOperacoes();
 }
 
 async function excluirOperacao(id) {
@@ -6320,9 +6324,16 @@ function renderPrintPlanoOperacoes() {
   const linha = op => {
     const pr = _opPrioridade(op);
     const resp = _opResponsavelNome(op);
+    // O quadrinho do checklist é preenchível NA TELA: clicar avança o status
+    // (pendente → em andamento → feita), que é a evolução do dia. No papel ele
+    // continua sendo o quadrado de marcar à caneta, já com o que foi registrado.
+    const st = _opStatus(op);
+    const marca = st === 'feita' ? ' ok' : (st === 'andamento' ? ' meio' : '');
     return `
       <tr>
-        <td class="bx"><span class="exp-print-box"></span></td>
+        <td class="bx"><button type="button" class="op-print-chk"
+          title="${esc(_OP_STATUS[st].lbl)} — clique para avançar: pendente → em andamento → feita"
+          onclick="alternarStatusOperacao('${esc(op.id)}')"><span class="exp-print-box${marca}"></span></button></td>
         <td class="jan">${esc(_opJanelaTexto(op))}</td>
         <td class="ope">${esc(op.operacao) || '—'}${
           op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
@@ -6447,6 +6458,12 @@ function renderPrintPlanoOperacoes() {
       <div class="item"><div class="n">${esc(_opDurTexto(minutos))}</div><div class="l">Tempo planejado</div></div>
       <div class="item"><div class="n">${fmt(prioritarias)}</div><div class="l">Urgentes / emerg.</div></div>
       <div class="item"><div class="n">${fmt(porDia.size)}</div><div class="l">Dias com operação</div></div>
+    </div>
+    <div style="font-size:7pt;color:#555;margin:3pt 0 5pt;">
+      Quadrinho de cada operação: <span class="exp-print-box"></span> pendente ·
+      <span class="exp-print-box meio"></span> em andamento ·
+      <span class="exp-print-box ok"></span> feita.
+      Na tela, clique no quadrinho para avançar o status; no papel, marque à caneta.
     </div>
     ${blocos || `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma operação planejada ${esc(_EXP_VAZIO_PERIODO[opPlanoModo] || 'neste período')}.</div>`}
         <div class="exp-print-rodape">
