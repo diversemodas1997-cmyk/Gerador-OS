@@ -6228,40 +6228,40 @@ async function excluirOperacao(id) {
   renderOperacoes();
 }
 
-// Duplica uma operação: cria uma cópia no MESMO posto e dia, na ÚLTIMA posição
-// do posto. Começa quando a última operação do posto termina (se há horário),
-// então não nasce sobreposta — fica pronta pra ajustar. Copia como PENDENTE.
+// Duplica uma operação: cria uma cópia no MESMO posto e dia, LOGO ABAIXO da
+// original. Começa quando a original termina, então não nasce sobreposta, e as
+// operações que estavam depois dela reencaixam na sequência (as de horário fixo
+// ficam onde estão). Copia como PENDENTE.
 async function duplicarOperacao(id) {
   if (!exigirAdmin('duplicar operações')) return;
   const op = (STATE.operacoes || []).find(x => x.id === id);
   if (!op) return;
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  // Fim da última operação do posto (mesmo dia e função) → início da cópia.
-  const chave = o => o.funcaoId || _opFuncaoNome(o);
-  const finsPosto = STATE.operacoes
-    .filter(o => o.data === op.data && chave(o) === chave(op))
-    .map(_opFimMin).filter(m => m != null);
-  const ultimoFim = finsPosto.length ? Math.max(...finsPosto) : null;
+  // Fim da ORIGINAL → início da cópia: é ela a vizinha de cima agora.
+  const fimOriginal = _opFimMin(op);
   const nova = {
     ...op,
     id: uid(),
     status: 'pendente',
-    inicio: ultimoFim != null ? _opHHMM(ultimoFim) : (op.inicio || ''),
+    inicio: fimOriginal != null ? _opHHMM(fimOriginal) : (op.inicio || ''),
     inicioFixo: false          // a cópia entra na fila do posto; a hora é calculada
   };
   STATE.operacoes.push(nova);
-  // Manda a cópia pro FIM do seu posto e renumera a ordem de todos — com a ordem
-  // gravada, ela fica na última posição de verdade (a mesma mecânica das setas).
+  // Põe a cópia IMEDIATAMENTE depois da original dentro do posto e renumera a
+  // ordem de todos (a mesma mecânica das setas). Sem a original no bloco (caso
+  // impossível na prática), a cópia vai para o fim.
   const blocos = _opBlocosDoDia(op.data);
   const bloco = blocos.find(b => b.itens.some(x => x.id === nova.id));
   if (bloco) {
     const k = bloco.itens.findIndex(x => x.id === nova.id);
-    if (k >= 0) { const [c] = bloco.itens.splice(k, 1); bloco.itens.push(c); }
+    if (k >= 0) bloco.itens.splice(k, 1);
+    const iOrig = bloco.itens.findIndex(x => x.id === op.id);
+    bloco.itens.splice(iOrig < 0 ? bloco.itens.length : iOrig + 1, 0, nova);
     _opGravarOrdem(blocos);
   }
   _opSincronizarHorariosDia(op.data);   // encadeia: a cópia começa quando a anterior termina
   await saveState('operacoes');
-  toast('Operação duplicada na última posição do posto', 'ok');
+  toast('Operação duplicada logo abaixo da original', 'ok');
   renderOperacoes();
 }
 
