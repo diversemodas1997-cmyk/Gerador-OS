@@ -1965,6 +1965,18 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-print-posto table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 7.5pt; }
 .op-print-posto td { padding: 1.5px 4px; vertical-align: top; border-bottom: 1px dotted #ccc; }
 .op-print-posto tr:last-child td { border-bottom: none; }
+/* Somatório que fecha o quadro da função: linha cheia em cima para separar da
+   última operação, fundo leve para se ler como fechamento e não como mais uma
+   operação da lista. */
+.op-print-posto tr.tot td {
+  border-top: .75pt solid #999;
+  border-bottom: none;
+  background: #f2f2f2;
+  font-size: 7pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-posto tr.tot td.jan { font-weight: 700; }
 /* Vazio na folha: a linha existe para o vazio ser LIDO na sequência, mas sem
    competir com as operações — fundo hachurado leve e itálico. */
 .op-print-posto tr.vz td {

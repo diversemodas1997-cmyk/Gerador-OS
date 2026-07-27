@@ -6578,6 +6578,17 @@ function renderPrintPlanoOperacoes() {
         linhasG.push(linha(op));
         if (ini != null && _opDuracao(op)) fimAnterior = Math.max(fimAnterior == null ? 0 : fimAnterior, _opFimMin(op));
       });
+      // Somatório da função, fechando o quadro dela: quantas operações, quanto
+      // tempo somam e quanto o posto fica parado. O cabeçalho traz os mesmos
+      // números em letra miúda, mas quem confere lê a coluna de baixo para cima —
+      // o total tem que estar onde a lista termina.
+      const totalLinha = `<tr class="tot">
+        <td class="bx"></td>
+        <td class="jan">${gIni != null ? esc(_opHHMM(gIni)) + ' ' + esc(_opHHMM(gFim)) : ''}</td>
+        <td class="ope" colspan="4">Total da função: <b>${esc(_opDurTexto(gMin))}</b> em ${g.itens.length} ${g.itens.length === 1 ? 'operação' : 'operações'}${
+          paradoMin > 0 ? ` · <b>${esc(_opDurTexto(paradoMin))}</b> parada` : ''}${
+          gIni != null ? ` · presença ${esc(_opDurTexto(gFim - gIni))}` : ''}</td>
+      </tr>`;
       return `
         <div class="op-print-posto">
           <div class="ph">
@@ -6585,7 +6596,7 @@ function renderPrintPlanoOperacoes() {
             <span class="h">${gIni != null ? esc(_opHHMM(gIni)) + ' → ' + esc(_opHHMM(gFim)) : 'sem horário'} · ${esc(_opDurTexto(gMin))}${
               paradoMin > 0 ? ' · ' + esc(_opDurTexto(paradoMin)) + ' parada' : ''}</span>
           </div>
-          <table>${linhasG.join('')}</table>
+          <table>${linhasG.join('')}${totalLinha}</table>
         </div>`;
     }).join('');
     return `
