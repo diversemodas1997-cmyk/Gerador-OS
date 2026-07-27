@@ -5731,6 +5731,82 @@ function _opSeloOrdem(e, tipo) {
     : ` <span class="exp-badge alto" title="${t}">${rot}</span>`;
 }
 
+// Corrige os horários que quebram a corrente do lote: cada passo passa a começar
+// quando o passo anterior daquele lote TERMINA. Só empurra para FRENTE — puxar
+// para trás resolveria o selo e criaria outro problema (trabalho antes da hora).
+// A operação movida vira âncora (inicioFixo), senão a sincronização do posto a
+// traria de volta para logo depois da vizinha de cima; o 📌 na agenda desfaz.
+// Cada passada reencaixa os postos, o que pode empurrar outras operações e criar
+// novas quebras — daí o laço, que para quando ninguém mais se move.
+// Devolve { movidas: [{op, de, para}], travadas: [op] } — travadas são as que só
+// caberiam depois da meia-noite, que o campo de horário do dia não representa.
+function _opCorrigirOrdemDoDia(data) {
+  const movidas = new Map(), travadas = new Set();
+  const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+  for (let passada = 0; passada < 20; passada++) {
+    const doDia = (STATE.operacoes || []).filter(o => o.data === data);
+    const porLote = new Map();
+    doDia.forEach(op => {
+      const passo = _opPassoSequencia(op);
+      if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
+      _opLotesDaOperacao(op).forEach(lote => {
+        if (!porLote.has(lote)) porLote.set(lote, []);
+        porLote.get(lote).push({ op, passo });
+      });
+    });
+    let mudou = false;
+    porLote.forEach(itens => {
+      itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
+      for (let i = 1; i < itens.length; i++) {
+        if (itens[i - 1].passo.ordem === itens[i].passo.ordem) continue;
+        const ant = itens[i - 1].op, cur = itens[i].op;
+        const alvo = _opFimMin(ant);
+        if (_opInicioMin(cur) >= alvo) continue;
+        if (alvo + _opDuracao(cur) > 1439) { travadas.add(cur); continue; }
+        const de = cur.inicio;
+        cur.inicio = hhmm(alvo);
+        cur.inicioFixo = true;
+        const reg = movidas.get(cur.id);
+        if (reg) reg.para = cur.inicio; else movidas.set(cur.id, { op: cur, de, para: cur.inicio });
+        mudou = true;
+      }
+    });
+    if (!mudou) break;
+    _opSincronizarHorariosDia(data);
+  }
+  if (movidas.size) {
+    // A ordem manual de cada posto apontava para a sequência ANTIGA: sem
+    // reordenar, a agenda mostraria 08:25 acima de 08:15 e as setas de mover
+    // trabalhariam numa fila que não é mais a do relógio.
+    const blocos = _opBlocosDoDia(data);
+    blocos.forEach(b => b.itens.sort((x, y) => {
+      const ix = _opInicioMin(x), iy = _opInicioMin(y);
+      return (ix == null ? 1e9 : ix) - (iy == null ? 1e9 : iy);
+    }));
+    _opGravarOrdem(blocos);
+  }
+  return { movidas: Array.from(movidas.values()), travadas: Array.from(travadas) };
+}
+
+// Botão da agenda: arruma o dia inteiro. Mexe em horário planejado, então
+// pergunta antes e diz depois exatamente o que mudou.
+async function corrigirOrdemOperacoes(data) {
+  if (!exigirAdmin('corrigir os horários das operações')) return;
+  const doDia = (STATE.operacoes || []).filter(o => o.data === data);
+  const antes = _opConflitosOrdem(doDia);
+  if (!antes.size) return toast('Nenhum conflito de ordem neste dia', 'ok');
+  if (!confirm(`Ajustar os horários deste dia para respeitar a ordem do lote?\n\n`
+    + `${antes.size} operação(ões) estão fora de ordem. Cada passo passa a começar quando o anterior do mesmo lote termina — só para frente, nunca para trás.`)) return;
+  const { movidas, travadas } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length) return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
+  await saveState('operacoes');
+  const restou = _opConflitosOrdem((STATE.operacoes || []).filter(o => o.data === data)).size;
+  toast(`${movidas.length} operação(ões) reencaixada(s)`
+    + (travadas.length ? ` · ${travadas.length} não coube(m) no dia` : '')
+    + (restou ? ` · ainda ${restou} em conflito` : ''), restou || travadas.length ? 'err' : 'ok');
+  renderOperacoes();
+}
+
 /* ---------------- vazios (tempo sem operação) ---------------- */
 
 // Jornada REAL de um conjunto de operações: da primeira hora de início ao último
@@ -6082,7 +6158,10 @@ function renderOperacoes() {
               Sem <b>nenhuma</b> função operando: ${paradaGeral.map(v => `<b>${esc(_opHHMM(v.ini))} → ${esc(_opHHMM(v.fim))}</b> (${esc(_opDurTexto(v.min))})`).join(' · ')}
             </div>` : ''}
           </div>
-          <div class="admin-only">
+          <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${doDia.some(o => foraDeOrdem.has(o.id))
+              ? `<button class="btn" title="Empurra para frente as operações que quebram a ordem do lote: cada passo passa a começar quando o anterior termina." onclick="corrigirOrdemOperacoes('${esc(data)}')">⇄ Corrigir ordem dos lotes</button>`
+              : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação neste dia</button>
           </div>
         </div>
