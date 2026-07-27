@@ -6616,25 +6616,15 @@ function renderPrintPlanoExpedicao() {
     // não mostra a divergência genérica, que aqui é esperada e já explicada.
     const ehParcialCarga = Array.isArray(i.carga && i.carga.pacotes);
     const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes && !ehParcialCarga;
-    // Nota do lote parcial: quais pacotes vão NESTA carga e se é a OS inteira ou
-    // só parte — quem confere na doca precisa saber que não é o lote completo.
-    // Só anota quando a carga leva PARTE do lote — o lote completo já é o que a
-    // tabela abaixo descreve, e repetir "15 de 15" em toda OS só poluiria a folha.
-    let pacotesNota = '';
     const canonTotal = ehParcialCarga ? _expPacotesCanonicos(o).total : 0;
     const nestaCarga = ehParcialCarga ? (i.carga.pacotes.length + (i.carga.reposicao ? 1 : 0)) : 0;
     const cargaParcial = ehParcialCarga && canonTotal > 0 && nestaCarga < canonTotal;
-    if (cargaParcial) {
-      const cont = _expContarPacotes(i.carga.pacotes);
-      const partes = [];
-      cont.forEach(e => partes.push(`${e.qtd > 1 ? e.qtd + '× ' : ''}${_expRotuloPacote(e)}`));
-      if (i.carga.reposicao) partes.push('reposição');
-      pacotesNota = `<div class="sub" style="color:#c81e1e;font-weight:700;">⚠ PARCIAL — ${fmt(nestaCarga)} de ${fmt(canonTotal)} volume(s) desta OS: ${esc(partes.join(' · ') || '—')}</div>`;
-    }
 
     // Carga parcial: o quadro descreve A CARGA, não o lote inteiro. A tabela traz
     // só os pacotes embarcados; os ausentes não são relacionados aqui (ficam no
-    // Estoque de corte, disponíveis para a próxima carga).
+    // Estoque de corte, disponíveis para a próxima carga). Sem aviso de "parcial":
+    // com a tabela mostrando exatamente o que vai, a folha não precisa alertar
+    // sobre o que não vai — o que está no papel é o que está no caminhão.
     if (cargaParcial) {
       const tab = tabelaDaCarga(o, i.carga);
       const soRep = !i.carga.pacotes.length && i.carga.reposicao;
@@ -6644,7 +6634,6 @@ function renderPrintPlanoExpedicao() {
           <div class="sub">
             ${fmt(i.pecas)} pç · <b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}
           </div>
-          ${pacotesNota}
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
         </div>`;
     }
@@ -6689,7 +6678,6 @@ function renderPrintPlanoExpedicao() {
         <div class="sub">
           ${fmt(i.pecas)} pç · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)} vol</b>` : ''}
         </div>
-        ${pacotesNota}
         <table>
           <thead>
             <tr>
