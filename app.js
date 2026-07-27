@@ -47,6 +47,12 @@ let _flushing = false;
 // impede um cache desatualizado de apagar o que outro dispositivo gravou numa
 // chave que este nem tocou (causa raiz das perdas recorrentes de cadastro).
 const _dirtyKeys = new Set();
+// BASE do merge de três vias: o valor de cada chave como o servidor tinha na
+// última vez que este dispositivo sincronizou. Comparando BASE × LOCAL sabe-se o
+// que ESTE dispositivo mudou de fato — e só isso sobe por cima do servidor.
+// Sem a base, uma chave suja subia inteira: quem tinha uma cópia velha de
+// `ordens` apagava a OS que outro dispositivo tinha acabado de criar.
+let _baseline = {};
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -72,13 +78,56 @@ let catalogoSkus = [];
 function _adotarServidorPreservandoEdicoes(srvData) {
   const srv = (srvData && typeof srvData === 'object') ? srvData : {};
   if (!cloudCache) cloudCache = {};
-  Object.keys(srv).forEach(k => { if (!_dirtyKeys.has(k)) cloudCache[k] = srv[k]; });
+  Object.keys(srv).forEach(k => {
+    if (_dirtyKeys.has(k)) return;
+    cloudCache[k] = srv[k];
+    _baseline[k] = srv[k];        // chave limpa: o servidor passa a ser a base
+  });
   // Chaves que sumiram do servidor e que não editamos saem também (paridade com
   // a substituição total antiga), preservando as sujas e o carimbo de device.
   Object.keys(cloudCache).forEach(k => {
     if (k === '_device' || _dirtyKeys.has(k)) return;
-    if (!(k in srv)) delete cloudCache[k];
+    if (!(k in srv)) { delete cloudCache[k]; delete _baseline[k]; }
   });
+}
+
+// Merge de três vias de uma LISTA DE REGISTROS (base × nosso × servidor), por id.
+// Parte do que está no servidor e aplica por cima só o que ESTE dispositivo
+// mudou de verdade: registro criado ou editado aqui entra; registro que sumiu
+// daqui (exclusão intencional) sai; registro que este dispositivo nem tocou fica
+// como está no servidor — inclusive os que ele nunca viu, que é o caso da OS
+// criada em outro aparelho enquanto esta aba estava aberta com a lista velha.
+// Devolve a lista mesclada em JSON, ou null quando não é lista de registros com
+// id (aí quem chama mantém o comportamento antigo).
+function _mergeListaPorRegistro(baseStr, localStr, srvStr) {
+  const parse = s => {
+    if (typeof s !== 'string') return null;
+    try { const v = JSON.parse(s); return Array.isArray(v) ? v : null; } catch (e) { return null; }
+  };
+  const local = parse(localStr), srv = parse(srvStr);
+  if (!local || !srv) return null;
+  const comId = arr => arr.every(x => x && typeof x === 'object' && !Array.isArray(x) && x.id != null);
+  if (!comId(local) || !comId(srv)) return null;
+  const base = parse(baseStr) || [];
+  const porId = new Map();
+  srv.forEach(r => porId.set(String(r.id), r));            // ponto de partida: o servidor
+  const baseTxt = new Map(base.map(r => [String(r.id), JSON.stringify(r)]));
+  const idsLocais = new Set(local.map(r => String(r.id)));
+  local.forEach(r => {                                     // criado ou editado aqui: manda
+    const id = String(r.id);
+    const antes = baseTxt.get(id);
+    if (antes === undefined || antes !== JSON.stringify(r)) porId.set(id, r);
+  });
+  baseTxt.forEach((_, id) => { if (!idsLocais.has(id)) porId.delete(id); });   // apagado aqui: sai
+  // Ordem: a da lista local (é a que o usuário vê); o que só existe no servidor
+  // entra no fim, preservado.
+  const saida = [];
+  local.forEach(r => {
+    const id = String(r.id);
+    if (porId.has(id)) { saida.push(porId.get(id)); porId.delete(id); }
+  });
+  porId.forEach(r => saida.push(r));
+  return JSON.stringify(saida);
 }
 
 async function cloudLoad() {
@@ -105,6 +154,7 @@ async function cloudLoad() {
     console.error('cloudLoad', error);
     _cloudLoadErro = true;
     cloudCache = {};
+    _baseline = {};   // leitura falhou: sem base confiavel para o merge
     // Visibilidade do problema: costuma ser sessão expirada ou RLS. Sem o toast,
     // a falha silenciosa esconde o motivo (e o seed subsequente virava o popup
     // enganoso de "gravação bloqueada").
@@ -192,16 +242,26 @@ async function cloudFlush() {
     // gravou numa chave que este nem mexeu. Ações intencionais de limpar/
     // restaurar já marcam TODAS as chaves como dirty (via saveState), então
     // sobrescrevem tudo normalmente.
-    const adotadas = [];
+    const adotadas = [], mescladas = [];
     try {
       const { data: srv } = await supa.from('shared_data').select('data').eq('id', 'main').maybeSingle();
       const servidor = (srv && srv.data && typeof srv.data === 'object') ? srv.data : null;
       if (servidor) {
         Object.keys(servidor).forEach(k => {
-          if (k === '_device' || _dirtyKeys.has(k)) return;   // nosso device / editamos: mantém o nosso
-          if (cloudCache[k] !== servidor[k]) {                 // não editamos e mudou: adota o do servidor
-            cloudCache[k] = servidor[k];
-            adotadas.push(k);
+          if (k === '_device') return;
+          if (!_dirtyKeys.has(k)) {                            // não editamos: adota o do servidor
+            if (cloudCache[k] !== servidor[k]) { cloudCache[k] = servidor[k]; adotadas.push(k); }
+            return;
+          }
+          // Editamos ESTA chave. Se ela é uma lista de registros, sobe só o que
+          // mudou aqui (merge por registro) — do contrário a lista inteira deste
+          // dispositivo apagaria o que outro criou enquanto esta aba estava
+          // aberta. Não sendo lista de registros, vale o nosso, como antes.
+          if (cloudCache[k] === servidor[k]) return;
+          const mesclado = _mergeListaPorRegistro(_baseline[k], cloudCache[k], servidor[k]);
+          if (mesclado != null && mesclado !== cloudCache[k]) {
+            cloudCache[k] = mesclado;
+            mescladas.push(k);
           }
         });
       }
@@ -215,14 +275,19 @@ async function cloudFlush() {
     }, { onConflict: 'id' });
     if (error) throw error;
     _dirtyKeys.clear();
+    // O que acabou de subir vira a nova BASE: daqui pra frente, só o que mudar
+    // em relação a isto é considerado edição deste dispositivo.
+    _baseline = Object.assign({}, cloudCache);
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }  // subiu: cancela retry pendente
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
     if (_contarItens(cloudCache, 'expedicaoCargas') > 0) _appJaTeveExpedicao = true;
-    // Adotamos mudanças do servidor em chaves que não editamos (outro
-    // dispositivo mexeu): reflete no STATE pra não re-sobrescrever depois. O
-    // realtime/polling do outro dispositivo cuida do re-render visual.
-    if (adotadas.length) { try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); } }
+    // Adotamos mudanças do servidor em chaves que não editamos, ou mesclamos
+    // registros de outro dispositivo numa que editamos: reflete no STATE pra não
+    // re-sobrescrever depois. O realtime/polling do outro cuida do re-render.
+    if (adotadas.length || mescladas.length) {
+      try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); }
+    }
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
     // Snapshot DIÁRIO no servidor. Ele rodava só ao ABRIR o app: uma aba deixada
@@ -760,6 +825,7 @@ async function restaurarSnapshot(id, dataStr) {
     updated_by: currentUser.id
   }, { onConflict: 'id' });
   if (upErr) { toast('Erro ao gravar: ' + upErr.message, 'err'); return; }
+  _baseline = Object.assign({}, cloudCache);   // restauracao e a nova base do merge
   await loadState();
   goto('home');
   toast(`Snapshot de ${dataStr} restaurado`, 'ok');
@@ -844,6 +910,7 @@ async function inicializarAuth() {
       currentUser = null;
       cloudCache = null;
       currentRole = null;
+      _baseline = {};
       comprasCache = [];
       inRecoveryFlow = false;
     }
@@ -1079,6 +1146,7 @@ async function sairConta() {
   currentUser = null;
   cloudCache = null;
   currentRole = null;
+  _baseline = {};
   CAD_KEYS.forEach(k => { if (Array.isArray(STATE[k])) STATE[k] = []; });
   STATE.osCounter = 0;
   aplicarPermissoesUI();
@@ -10639,6 +10707,7 @@ async function restaurarSnapshotLocal(id) {
       setSyncStatus('ok');
     } catch (e) { setSyncStatus('error'); toast('Erro ao gravar no servidor: ' + (e.message || e), 'err'); return; }
   }
+  _baseline = Object.assign({}, cloudCache);   // restauração é a nova base do merge
   await loadState();
   goto('home');
   toast(`Snapshot de ${quando} restaurado`, 'ok');
