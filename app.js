@@ -6616,7 +6616,11 @@ async function corrigirOrdemOperacoes(data) {
     if (ini < _OP_JORNADA.ini || ini + (Number(o.duracaoMin) || 0) > _OP_JORNADA.fim) return false;
     return !doDia().some(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(o.nome));
   }).length, 0);
-  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada && !mesmaFuncao && !fixasFaltando) {
+  // Operações sem dono, num posto que tem uma pessoa só: elas deixam a agenda
+  // sem o vínculo entre os postos que a mesma pessoa ocupa.
+  const semDono = doDia().filter(o => !o.responsavelId && !o.responsavelNome
+    && _opResponsavelDoPosto(_opFuncaoNome(o))).length;
+  if (!ordemAntes && !pessoaAntes && !pausasFora && !foraJornada && !mesmaFuncao && !fixasFaltando && !semDono) {
     return toast('O dia já está organizado: sem conflitos, dentro da jornada e com as pausas sincronizadas', 'ok');
   }
   const destinoPrev = _opProximoDiaUtil(data);
@@ -6626,8 +6630,10 @@ async function corrigirOrdemOperacoes(data) {
     + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n`
     + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n`
     + `· ${mesmaFuncao} par(es) sobrepostos dentro da mesma função\n`
-    + `· ${fixasFaltando} operação(ões) de horário fixo do cadastro que faltam neste dia\n\n`
+    + `· ${fixasFaltando} operação(ões) de horário fixo do cadastro que faltam neste dia\n`
+    + `· ${semDono} sem responsável, em posto que tem uma pessoa só\n\n`
     + 'As de horário fixo entram na hora cadastrada e o resto se encaixa em volta delas.\n'
+    + 'Operação sem dono recebe a pessoa do posto — é o que faz a linha do tempo de uma função mostrar o que a mesma pessoa faz na outra.\n'
     + 'Cada uma passa a começar quando a anterior termina — só para frente, nunca para trás.\n'
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
     + 'Enfesto planejado com menos tempo do que a grade da OS já mostrou ter recebe a duração medida.\n'
@@ -6636,13 +6642,16 @@ async function corrigirOrdemOperacoes(data) {
   // A rotina de hora marcada entra ANTES do ajuste: ela é âncora, e o resto do
   // dia é que se encaixa em volta dela.
   const fixasNovas = _opAplicarHorariosFixosNoDia(data);
+  const donosNovos = _opPreencherResponsaveisDoDia(data);
   const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length && !fixasNovas.length) {
+  if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length
+      && !fixasNovas.length && !donosNovos.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   }
   await saveState('operacoes');
   const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
+    + (donosNovos.length ? ` · ${donosNovos.length} com o responsável do posto` : '')
     + (fixasNovas.length ? ` · ${fixasNovas.length} de horário fixo incluída(s)` : '')
     + (pausas.length ? ` · ${pausas.length} pausa(s) sincronizada(s)` : '')
     + (ampliadas.length ? ` · ${ampliadas.length} com a duração medida da grade` : '')
@@ -6776,6 +6785,7 @@ function _opAplicarHorariosFixosNoDia(data) {
       // Hora cadastrada fora da jornada é erro de cadastro, não plano do dia:
       // criar a operação aqui só encheria a agenda de selo "fora da jornada".
       if (ini < _OP_JORNADA.ini || ini + dur > _OP_JORNADA.fim) return;
+      const pessoa = _opResponsavelDoPosto(f.nome);
       const nova = {
         id: uid(), data,
         funcaoId: f.id, funcaoNome: f.nome,
@@ -6785,7 +6795,7 @@ function _opAplicarHorariosFixosNoDia(data) {
         // não pode reescrevê-la. Não é 📌 do usuário — ele segue livre para
         // mover esta operação no dia, se um dia precisar.
         inicioAuto: true,
-        responsavelId: '', responsavelNome: '',
+        responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
         // Sem referência DE PROPÓSITO: esta operação não é de OS nenhuma.
         referencia: '', status: 'pendente', prioridade: 'eletiva', obs: ''
       };
@@ -6795,6 +6805,24 @@ function _opAplicarHorariosFixosNoDia(data) {
     });
   });
   return criadas;
+}
+
+// Põe o responsável nas operações do dia que estão sem ele, quando o posto tem
+// UMA pessoa só na Equipe. Operação sem dono deixa o programa cego para a única
+// coisa que liga dois postos — a pessoa —, e é isso que faz a linha do tempo de
+// uma função não mostrar o que a mesma pessoa está fazendo na outra.
+// Devolve as que receberam nome.
+function _opPreencherResponsaveisDoDia(data) {
+  const tocadas = [];
+  (STATE.operacoes || []).forEach(op => {
+    if (op.data !== data || op.responsavelId || op.responsavelNome) return;
+    const pessoa = _opResponsavelDoPosto(_opFuncaoNome(op));
+    if (!pessoa) return;
+    op.responsavelId = pessoa.id;
+    op.responsavelNome = pessoa.nome;
+    tocadas.push(op);
+  });
+  return tocadas;
 }
 
 // Primeiro horário, a partir de `piso`, em que o posto fica livre por `dur`
@@ -6915,6 +6943,7 @@ function _opMontarCascataDoLote(data, os) {
     const piso = Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
     const ini = _opPrimeiroVagoNoPosto(data, cad.funcaoId, piso, duracaoMin);
     if (ini + duracaoMin > _OP_JORNADA.fim) { naoCoube.push({ passo, fase }); return null; }
+    const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
     const nova = {
       id: uid(), data,
       funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
@@ -6926,7 +6955,7 @@ function _opMontarCascataDoLote(data, os) {
       // foi montada — o corte caía depois da separação. Não é 📌 do usuário: ele
       // segue livre para mudar o que quiser.
       inicioAuto: true,
-      responsavelId: '', responsavelNome: '',
+      responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
       referencia: fase ? _opRefDaFase(os, fase, fases.length) : _opRefDaFase(os, null, 1),
       status: 'pendente', prioridade: 'eletiva', obs: ''
     };
@@ -7043,6 +7072,21 @@ async function confirmarAlocarOSNoDia() {
   opPlanoAncora = data;
   try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
   renderOperacoes();
+}
+
+// Quem ocupa um posto, para a operação criada pelo programa já nascer com o
+// responsável. É a pessoa da Equipe cuja função principal é esta — e só quando
+// há UMA: com duas (Marina e Roseane em "Auxiliar de costura #1") quem escolhe é
+// o usuário, e chutar poria o nome errado na agenda.
+//
+// Sem responsável, a operação fica sem dono e o programa perde a única coisa que
+// liga dois postos: a PESSOA. Quem trabalha em duas funções (o João na
+// enfestadeira e na esteira, o Denis na produção e na expedição) tem uma jornada
+// só, e é o responsável que faz a linha do tempo de um posto mostrar o que a
+// mesma pessoa está fazendo no outro.
+function _opResponsavelDoPosto(funcaoNome) {
+  const { dentro } = _opPessoasDaFuncao(funcaoNome);
+  return dentro.length === 1 ? dentro[0] : null;
 }
 
 // Valor que mais se repete numa lista (moda); empate fica com o primeiro.
@@ -7530,6 +7574,10 @@ function renderOperacoes() {
       const naFuncao = new Set(cruzadas.flatMap(p => [p.a.id, p.b.id]));
       const pessoaN = doDia.filter(o => conflitos.has(o.id) && !naFuncao.has(o.id)).length;
       const foraJ = doDia.filter(o => _opForaDaJornada(o));
+      // Duração zero: a operação existe no papel e não ocupa tempo nenhum. É o
+      // que rompe a continuidade sem acusar conflito nenhum — a corrente fica
+      // "certa" e mesmo assim o dia não flui.
+      const semDuracao = doDia.filter(o => !_opDuracao(o));
       const secao = (titulo, n, corpo) => `
         <div class="op-analise-sec">
           <div class="op-analise-tit ${n ? 'alerta' : 'ok'}">${esc(titulo)} <span class="q">${n ? n : 'nada a apontar'}</span></div>
@@ -7565,6 +7613,11 @@ function renderOperacoes() {
           + '<div class="op-analise-item sub">A segunda operação de cada par passa a começar quando a primeira termina — é o que o botão abaixo faz.</div>')}
         ${secao('Coerência da sequência cruzada entre funções', ordemMsgs.length && `${ordemMsgs.length} ponto(s)`,
           ordemMsgs.map(m => `<div class="op-analise-item">${esc(m)}</div>`).join(''))}
+        ${secao('Operações sem duração', semDuracao.length && `${semDuracao.length} operação(ões)`,
+          `<div class="op-analise-item sub">Operação com <b>zero minuto</b> não ocupa tempo nenhum: ela não aparece na linha do tempo e o passo seguinte começa no mesmo instante. Quando é o <b>enfesto</b>, todas as fases ficam prontas de uma vez e o posto seguinte recebe o lote inteiro de enxurrada — é o que abre as esperas longas entre o corte e a separação. O tempo se cadastra em <b>Funções</b>, ou sai sozinho do histórico quando os horários de enfesto forem lançados na folha da OS.</div>`
+          + semDuracao.map(o => `<div class="op-analise-item">${linhaOp(o)}
+            <div class="admin-only" style="margin-top:2px;"><button class="btn small" onclick="abrirModalOperacao('${esc(o.id)}')">informar a duração</button></div>
+          </div>`).join(''))}
         <div class="op-analise-sec">
           <div class="op-analise-tit ${(pessoaN > 0 || foraJ.length || _opPausasDessincronizadas(doDia)) ? 'alerta' : 'ok'}">Outros pontos <span class="q">${
             [pessoaN > 0 ? `${pessoaN} com a mesma pessoa em duas funções` : '',
