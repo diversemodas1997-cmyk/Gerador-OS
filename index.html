@@ -711,7 +711,7 @@
       <div class="page-header">
         <div><h1>Configurações</h1><div class="desc">Exportar, importar e limpar dados</div></div>
       </div>
-      <div class="card">
+      <div class="card admin-only">
         <div class="card-title">Pasta de backup automático (JSON)</div>
         <div class="info-box">A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div>
         <div id="backupFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
@@ -721,7 +721,7 @@
           <button class="btn" onclick="desconectarPastaBackup()">Desconectar</button>
         </div>
       </div>
-      <div class="card">
+      <div class="card admin-only">
         <div class="card-title">Pasta de PDFs gerados</div>
         <div class="info-box">Cada OS gerada salva o PDF nesta pasta automaticamente. Funciona apenas no Chrome ou Edge no desktop. Conecte uma vez — o navegador lembra entre sessões. Em outro computador, navegador ou no celular, é preciso conectar de novo (ou nada será salvo).</div>
         <div id="pdfFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
@@ -730,7 +730,7 @@
           <button class="btn" onclick="desconectarPastaPdf()">Desconectar</button>
         </div>
       </div>
-      <div class="card">
+      <div class="card admin-only">
         <div class="card-title">Pasta das Ordens de Expedição (OE)</div>
         <div class="info-box">A folha do plano de expedição no modo <b>diário</b> é salva em PDF nesta pasta automaticamente quando você a abre (menu Expedição → "Folha do plano"). As <b>semanais</b> e <b>mensais</b> não são gravadas sozinhas — use o botão "💾 Salvar OE na pasta" para gravá-las quando quiser. O arquivo é nomeado pelo período do plano (ex.: <code>OE-19-07-2026_a_25-07-2026.pdf</code>) — reabrir o mesmo período reescreve o mesmo arquivo. Funciona no Chrome/Edge no desktop. Conecte uma vez; para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
         <div id="oeFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
@@ -939,6 +939,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28af"></script>
+<script src="app.js?v=2026-07-28ag"></script>
 </body>
 </html>

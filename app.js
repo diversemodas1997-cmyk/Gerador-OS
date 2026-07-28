@@ -609,6 +609,7 @@ async function snapshotDiario() {
 }
 
 async function listarSnapshots() {
+  if (!exigirEdicao('ver os snapshots do servidor')) return;
   if (!supa) return;
   const container = document.getElementById('snapshotsList');
   if (!container) return;
@@ -2682,6 +2683,7 @@ function rotuloModeloDesenho(d) {
 }
 
 async function rodarCopiarEtapasParaTodos() {
+  if (!exigirEdicao('copiar etapas para todos os desenhos')) return;
   const input = document.getElementById('copyEtapasOrigem');
   const codigo = (input?.value || '').trim();
   if (!codigo) { toast('Informe o codigo do desenho de origem', 'err'); return; }
@@ -12212,6 +12214,7 @@ async function pickPdfFolder() {
 }
 
 async function conectarPastaPdf() {
+  if (!exigirEdicao('conectar a pasta de PDFs')) return;
   const handle = await pickPdfFolder();
   if (handle) {
     toast(`Pasta conectada: ${handle.name}`, 'ok');
@@ -12220,6 +12223,7 @@ async function conectarPastaPdf() {
 }
 
 async function desconectarPastaPdf() {
+  if (!exigirEdicao('desconectar a pasta de PDFs')) return;
   await clearPdfFolderHandle();
   pdfFolderHandle = null;
   toast('Pasta desconectada', '');
@@ -12391,6 +12395,7 @@ async function escreverSnapshotNaPasta(registro) {
 }
 
 async function listarSnapshotsLocais() {
+  if (!exigirEdicao('ver os snapshots de contingência')) return;
   const cont = document.getElementById('snapshotsLocaisList');
   if (!cont) return;
   cont.innerHTML = '<div class="empty" style="padding:20px;">Carregando...</div>';
@@ -12479,6 +12484,7 @@ async function pickBackupFolder() {
 }
 
 async function conectarPastaBackup() {
+  if (!exigirEdicao('conectar a pasta de backup')) return;
   const handle = await pickBackupFolder();
   if (handle) {
     toast(`Pasta de backup conectada: ${handle.name}`, 'ok');
@@ -12490,6 +12496,7 @@ async function conectarPastaBackup() {
 }
 
 async function desconectarPastaBackup() {
+  if (!exigirEdicao('desconectar a pasta de backup')) return;
   await clearBackupFolderHandle();
   backupFolderHandle = null;
   toast('Pasta de backup desconectada', '');
@@ -12497,6 +12504,7 @@ async function desconectarPastaBackup() {
 }
 
 async function escreverBackupJsonAgora() {
+  if (!exigirEdicao('gravar o backup na pasta')) return;
   const ok = await escreverBackupJson();
   if (ok) toast('Backup JSON salvo na pasta', 'ok');
   else toast('Falha ao salvar backup. Conecte a pasta primeiro.', 'err');
@@ -12913,6 +12921,7 @@ async function pickOeFolder() {
   }
 }
 async function conectarPastaOe() {
+  if (!exigirEdicao('conectar a pasta das OE')) return;
   const handle = await pickOeFolder();
   if (handle) {
     toast(`Pasta das OE conectada: ${handle.name}`, 'ok');
@@ -12920,6 +12929,7 @@ async function conectarPastaOe() {
   }
 }
 async function desconectarPastaOe() {
+  if (!exigirEdicao('desconectar a pasta das OE')) return;
   await clearOeFolderHandle();
   oeFolderHandle = null;
   toast('Pasta das OE desconectada', '');
@@ -15682,6 +15692,7 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
                   'marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
 
 function exportarDados() {
+  if (!exigirEdicao('exportar todos os dados')) return;
   const data = { exportadoEm: new Date().toISOString() };
   // Exporta TUDO (CAD_KEYS), inclusive estoqueMov (estoque de tecido) e os
   // movimentos de fase + osCounter — ALL_KEYS sozinho deixava o estoque de fora.
