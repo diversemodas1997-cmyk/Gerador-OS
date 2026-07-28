@@ -6939,6 +6939,38 @@ function _opPreencherResponsaveisDoDia(data) {
   return tocadas;
 }
 
+// As operações de hora marcada existem em TODO dia planejado, não só naquele em
+// que alguém alocou uma OS: café, almoço, preparação das máquinas e limpeza
+// acontecem todo dia, tenha ou não OS no dia. Ao abrir a agenda, elas são postas
+// nos dias ÚTEIS do período mostrado.
+//
+// De HOJE PARA FRENTE apenas. Dia passado é registro do que aconteceu, e
+// carimbar um almoço em retrospecto seria inventar histórico — quem quiser
+// completar um dia que já passou usa "Organizar o dia", que pede confirmação.
+// Devolve as criadas.
+function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
+  const hoje = _expHoje();
+  // HORIZONTE: dois meses à frente. Sem ele, navegar a agenda até 2027 encheria
+  // a base de café e almoço de um ano inteiro — e o plano de verdade não vai
+  // tão longe. Quem planejar além disso aloca a OS, e a rotina entra junto.
+  const horizonte = _expAddDias(hoje, 60);
+  const ate = fim < horizonte ? fim : horizonte;
+  const criadas = [];
+  let d = ini < hoje ? hoje : ini;
+  for (let i = 0; i < 62 && d <= ate; i++, d = _expAddDias(d, 1)) {
+    const dow = _expData(d).getDay();
+    if (dow === 0 || dow === 6) continue;   // sábado e domingo não são planejados
+    criadas.push(..._opAplicarHorariosFixosNoDia(d));
+  }
+  if (criadas.length) {
+    Array.from(new Set(criadas.map(o => o.data))).forEach(dia => {
+      _opReordenarPostosPorHorario(dia);
+      _opSincronizarHorariosDia(dia);
+    });
+  }
+  return criadas;
+}
+
 // Primeiro horário, a partir de `piso`, em que o posto fica livre por `dur`
 // minutos seguidos. Existe por causa das operações de hora marcada: sem ele, o
 // almoço das 11:30 empurraria a corrente inteira para as 13:00 e uma limpeza
@@ -7196,6 +7228,119 @@ async function confirmarAlocarOSNoDia() {
   renderOperacoes();
 }
 
+/* ---------------- retirar uma OS do planejamento (ação em massa) ---------------- */
+
+// As operações planejadas de um lote, opcionalmente só num dia. É o conjunto que
+// a retirada apaga — e o mesmo que o modal conta antes de perguntar.
+// Rotinas de hora marcada (café, almoço, preparação das máquinas) NÃO entram:
+// elas são da jornada, não da OS, e nascem sem referência a OS nenhuma.
+function _opOperacoesDoLote(lote, data) {
+  const alvo = String(lote).replace(/^0+/, '') || String(lote);
+  return (STATE.operacoes || []).filter(o =>
+    (!data || o.data === data) && _opLotesDaOperacao(o).includes(alvo));
+}
+
+// Modal: escolher a OS que sai do planejamento e se sai de um dia só ou de todos.
+function abrirModalDesalocarOS(data) {
+  if (!exigirAdmin('planejar operações')) return;
+  const dia = data || opPlanoAncora || _expHoje();
+  const semZero = n => String(n).replace(/^0+/, '') || '0';
+  // Só OS que REALMENTE têm operação planejada: oferecer as outras seria
+  // prometer um desfazer que não desfaz nada.
+  const lotes = new Map();   // lote → { noDia, total }
+  (STATE.operacoes || []).forEach(o => {
+    _opLotesDaOperacao(o).forEach(l => {
+      const e = lotes.get(l) || { noDia: 0, total: 0 };
+      e.total++;
+      if (o.data === dia) e.noDia++;
+      lotes.set(l, e);
+    });
+  });
+  if (!lotes.size) {
+    return toast('Nenhuma OS com operações planejadas para retirar', 'err');
+  }
+  const linhas = Array.from(lotes.entries())
+    .map(([lote, e]) => {
+      const os = _opOsDoLote(lote);
+      return { lote, e, os, rot: `${os ? os.os : lote}${os && os.modeloNome ? ' · ' + os.modeloNome : ''}` };
+    })
+    .sort((a, b) => (b.e.noDia > 0) - (a.e.noDia > 0)
+      || String(b.lote).localeCompare(String(a.lote), undefined, { numeric: true }));
+  document.getElementById('modal-desaloc-title').textContent = 'Retirar OS do planejamento';
+  document.getElementById('modal-desaloc-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Dia *</label><input type="date" id="desaloc-data" value="${esc(dia)}" onchange="abrirModalDesalocarOS(this.value)"></div>
+      <div class="field full">
+        <label>OS *</label>
+        <select id="desaloc-os" onchange="_opDesalocResumo()">
+          <option value="">— selecione —</option>
+          ${linhas.map(l => `<option value="${esc(l.lote)}" data-nodia="${l.e.noDia}" data-total="${l.e.total}">${
+            esc(l.rot)} — ${l.e.noDia} em ${esc(formatDate(dia))}${l.e.total > l.e.noDia ? ` · ${l.e.total} no plano inteiro` : ''}</option>`).join('')}
+        </select>
+        <div class="field-hint">Aparecem só as OS que têm operação planejada. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
+      </div>
+      <div class="field full">
+        <label>Alcance *</label>
+        <select id="desaloc-escopo" onchange="_opDesalocResumo()">
+          <option value="dia">Só o dia ${esc(formatDate(dia))}</option>
+          <option value="tudo">Todos os dias do plano</option>
+        </select>
+        <div class="field-hint">A corrente de uma OS costuma transbordar para o próximo dia útil. <b>Todos os dias</b> tira a OS do planejamento inteiro de uma vez.</div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="desaloc-resumo">Escolha a OS para ver quantas operações serão retiradas.</div>`;
+  openModal('modal-desaloc-os');
+  _opDesalocResumo();
+}
+
+// Resumo do que vai sair, atualizado a cada escolha do modal.
+function _opDesalocResumo() {
+  const box = document.getElementById('desaloc-resumo');
+  if (!box) return;
+  const lote = document.getElementById('desaloc-os')?.value || '';
+  const data = document.getElementById('desaloc-data')?.value || '';
+  const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
+  if (!lote) { box.textContent = 'Escolha a OS para ver quantas operações serão retiradas.'; return; }
+  const alvo = _opOperacoesDoLote(lote, escopo === 'dia' ? data : '');
+  if (!alvo.length) { box.innerHTML = '<b>Nenhuma operação</b> desta OS neste alcance.'; return; }
+  const porDia = new Map();
+  const postos = new Set();
+  alvo.forEach(o => {
+    porDia.set(o.data, (porDia.get(o.data) || 0) + 1);
+    postos.add(_opFuncaoNome(o));
+  });
+  const feitas = alvo.filter(o => _opStatus(o) === 'feita').length;
+  box.innerHTML = `Serão retiradas <b>${alvo.length}</b> operação(ões) da OS <b>${esc(lote)}</b>, em ${postos.size} posto(s):<br>`
+    + Array.from(porDia.entries()).sort().map(([d, n]) => `${esc(formatDate(d))}: <b>${n}</b>`).join(' · ')
+    + (feitas ? `<br><span style="color:var(--alert);"><b>Atenção:</b> ${feitas} já ${feitas === 1 ? 'está marcada' : 'estão marcadas'} como <b>feita</b> — retirar apaga o registro de que ${feitas === 1 ? 'foi executada' : 'foram executadas'}.</span>` : '');
+}
+
+async function confirmarDesalocarOS() {
+  if (!exigirAdmin('planejar operações')) return;
+  const lote = document.getElementById('desaloc-os')?.value || '';
+  const data = document.getElementById('desaloc-data')?.value || '';
+  const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
+  if (!lote) return toast('Escolha a OS', 'err');
+  const alvo = _opOperacoesDoLote(lote, escopo === 'dia' ? data : '');
+  if (!alvo.length) return toast('Nenhuma operação desta OS neste alcance', 'err');
+  const feitas = alvo.filter(o => _opStatus(o) === 'feita').length;
+  const dias = Array.from(new Set(alvo.map(o => o.data))).sort();
+  if (!confirm(`Retirar ${alvo.length} operação(ões) da OS ${lote} do planejamento?\n\n`
+    + `· ${escopo === 'dia' ? formatDate(data) : dias.map(formatDate).join(', ')}\n`
+    + (feitas ? `· ${feitas} já marcada(s) como FEITA — o registro de execução se perde\n` : '')
+    + '\nAs rotinas de hora marcada (café, almoço, preparação das máquinas) ficam: são da jornada, não da OS.\n'
+    + 'Isto não se desfaz — para recolocar, use "+ Alocar OS".')) return;
+  const ids = new Set(alvo.map(o => o.id));
+  STATE.operacoes = (STATE.operacoes || []).filter(o => !ids.has(o.id));
+  // Os dias que perderam operação são reencaixados: quem ficou sobe na fila do
+  // posto em vez de deixar o buraco da OS que saiu.
+  dias.forEach(d => { _opReordenarPostosPorHorario(d); _opSincronizarHorariosDia(d); });
+  await saveState('operacoes');
+  closeModal('modal-desaloc-os');
+  toast(`${alvo.length} operação(ões) da OS ${lote} retirada(s) de ${dias.length === 1 ? formatDate(dias[0]) : dias.length + ' dias'}`, 'ok');
+  renderOperacoes();
+}
+
 // Quem ocupa um posto, para a operação criada pelo programa já nascer com o
 // responsável. É a pessoa da Equipe cuja função principal é esta — e só quando
 // há UMA: com duas (Marina e Roseane em "Auxiliar de costura #1") quem escolhe é
@@ -7397,10 +7542,31 @@ function _opJanelaDoDia(ops) {
   return { ini, fim };
 }
 
+// Impede que a criação das operações de hora marcada, feita ao desenhar a
+// agenda, entre em laço: ela grava e manda redesenhar, e o redesenho chamaria a
+// criação de novo.
+let _opFixasEmCurso = false;
+
 function renderOperacoes() {
   const cont = document.getElementById('operacoes-painel');
   if (!cont) return;
   const { ini, fim } = _expRange(opPlanoModo, opPlanoAncora);
+  // A rotina de hora marcada aparece já posta em todo dia útil do período — ela
+  // é da jornada e não depende de haver OS alocada. Só quem edita cria dados,
+  // e só uma vez: a segunda passada não acha nada para criar.
+  if (!_opFixasEmCurso && currentRole === 'admin') {
+    _opFixasEmCurso = true;
+    try {
+      const novas = _opGarantirHorariosFixosNoPeriodo(ini, fim);
+      if (novas.length) {
+        saveState('operacoes')
+          .then(() => { _opFixasEmCurso = false; renderOperacoes(); })
+          .catch(() => { _opFixasEmCurso = false; });
+        return;
+      }
+    } catch (e) { console.warn('_opGarantirHorariosFixosNoPeriodo', e); }
+    _opFixasEmCurso = false;
+  }
   const ops = operacoesNoPeriodo(ini, fim);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
@@ -7426,6 +7592,8 @@ function renderOperacoes() {
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn primary" title="O dia começa pela OS: o programa monta a sequência de operações dela." onclick="abrirModalAlocarOS(opPlanoAncora)">+ Alocar OS no dia</button>
+        ${(STATE.operacoes || []).some(o => _opLotesDaOperacao(o).length)
+          ? `<button class="btn" title="Tira do planejamento, de uma vez, todas as operações de uma OS alocada — em um dia ou no plano inteiro. É o desfazer do «Alocar OS»." onclick="abrirModalDesalocarOS(opPlanoAncora)">− Retirar OS</button>` : ''}
         <button class="btn" onclick="abrirModalOperacao()">+ Operação avulsa</button>
         ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado a jornada do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
       </div>
@@ -7789,6 +7957,7 @@ function renderOperacoes() {
               : ''}
             <button class="btn" title="Confere o dia: operação esperada que falta, sobreposição dentro da mesma função e a coerência da sequência cruzada entre as funções." onclick="analisarDiaOperacoes('${esc(data)}')">${opAnaliseDia === data ? '✕ Fechar análise' : '🔍 Analisar o dia'}</button>
             <button class="btn primary" title="O planejamento do dia começa pela OS: escolhida a OS, o programa monta a sequência inteira de operações, cada uma na função que a executa." onclick="abrirModalAlocarOS('${esc(data)}')">+ Alocar OS</button>
+            ${lotes.length ? `<button class="btn" title="Tira do planejamento, de uma vez, todas as operações de uma OS alocada — em um dia ou no plano inteiro. É o desfazer do «Alocar OS»." onclick="abrirModalDesalocarOS('${esc(data)}')">− Retirar OS</button>` : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação avulsa</button>
           </div>
         </div>

@@ -888,6 +888,19 @@
   </div>
 </div>
 
+<!-- Retirar do dia todas as operações de uma OS alocada: é o desfazer do
+     "Alocar OS", em massa, sem ter que apagar uma a uma. -->
+<div class="modal-backdrop" id="modal-desaloc-os">
+  <div class="modal">
+    <h2 id="modal-desaloc-title">Retirar OS do planejamento</h2>
+    <div id="modal-desaloc-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-desaloc-os')">Cancelar</button>
+      <button class="btn danger" onclick="confirmarDesalocarOS()">Retirar operações</button>
+    </div>
+  </div>
+</div>
+
 <!-- no-print: o toast é position:fixed e o html2canvas 1.4.1 o inclui na foto se
      ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
      etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
@@ -925,6 +938,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28aa"></script>
+<script src="app.js?v=2026-07-28ab"></script>
 </body>
 </html>
