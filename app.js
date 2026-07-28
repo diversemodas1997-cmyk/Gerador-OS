@@ -1423,9 +1423,14 @@ async function loadState() {
   // já executa no planejamento (sem tempo) e converte quem ainda estava no
   // formato de texto livre.
   try {
-    const antes = JSON.stringify((STATE.funcoes || []).map(f => f.operacoes || null));
+    // A foto inclui `opsSincronizadas` — é a memória do que já foi oferecido a
+    // cada função, e ela precisa ser GRAVADA na primeira vez. Sem isso a linha de
+    // base seria refeita a cada abertura e a operação apagada pelo usuário
+    // voltaria, que é justamente o que esta memória existe para impedir.
+    const foto = () => JSON.stringify((STATE.funcoes || []).map(f => [f.operacoes || null, f.opsSincronizadas || null]));
+    const antes = foto();
     const novas = sincronizarOperacoesDasFuncoes();
-    if (antes !== JSON.stringify((STATE.funcoes || []).map(f => f.operacoes || null))) {
+    if (antes !== foto()) {
       await saveState('funcoes');
       if (novas) console.info(`Funções: ${novas} operação(ões) do planejamento cadastradas, sem tempo.`);
     }
@@ -2335,10 +2340,17 @@ function parseBobinas(str) {
 }
 
 // Leva para o cadastro de cada FUNÇÃO as operações que ela já executa no
-// planejamento, sem tempo (o tempo é o usuário que decide). Junta com as
-// responsabilidades que já estavam escritas na função e não repete nome. Roda
-// uma vez por operação nova encontrada — operação criada no plano depois disso
-// entra na próxima abertura, o que mantém o cadastro vivo em vez de congelado.
+// planejamento, sem tempo (o tempo é o usuário que decide). Serve para o
+// cadastro nascer preenchido e para uma operação NOVA, criada no plano, aparecer
+// ali na próxima abertura em vez de o cadastro ficar congelado.
+//
+// Cada função guarda em `opsSincronizadas` os nomes que já foram oferecidos a
+// ela. Um nome só é acrescentado UMA VEZ na vida. Sem essa memória, a rotina
+// olhava só o que estava na lista naquele momento e repunha tudo o que o plano
+// usava: apagar uma operação no cadastro não colava (ela voltava na abertura
+// seguinte) e renomear criava uma duplicata, porque o nome antigo continuava no
+// plano e era reinserido. Com 47 operações por OS vindas da cascata, quase todo
+// nome estava no plano — na prática o campo tinha virado somente-leitura.
 // Devolve quantas foram acrescentadas.
 function sincronizarOperacoesDasFuncoes() {
   if (!Array.isArray(STATE.funcoes) || !STATE.funcoes.length) return 0;
@@ -2357,15 +2369,33 @@ function sincronizarOperacoesDasFuncoes() {
     const lista = _opsDaFuncao(f).slice();
     const jaTem = new Set(lista.map(o => _normNome(o.nome)));
     const doPlano = usadas.get(f.id) || usadas.get(_normNome(f.nome)) || new Map();
+    // Primeira vez nesta função: a linha de base é TUDO o que o plano já usa
+    // hoje. Assim a memória começa valendo na mesma abertura em que é criada, e
+    // uma operação apagada antes desta regra não volta mais uma última vez.
+    const primeiraVez = !Array.isArray(f.opsSincronizadas);
+    const jaOferecidas = new Set(primeiraVez ? Array.from(doPlano.keys()) : f.opsSincronizadas);
+    // O que está no cadastro AGORA também conta como oferecido — inclusive o que
+    // o usuário digitou à mão. Assim, apagar qualquer linha cola para sempre,
+    // mesmo que aquele nome apareça no plano só mais tarde.
+    jaTem.forEach(norm => jaOferecidas.add(norm));
+    let mudouLista = false;
     doPlano.forEach((nome, norm) => {
-      if (jaTem.has(norm)) return;
-      lista.push({ nome, duracaoMin: 0 });   // sem tempo: quem sabe o tempo é a casa
+      if (jaTem.has(norm)) { jaOferecidas.add(norm); return; }
+      // Já foi oferecida um dia e não está mais aqui: o usuário tirou de
+      // propósito (ou renomeou). Respeita a decisão dele.
+      if (jaOferecidas.has(norm)) return;
+      lista.push({ nome, duracaoMin: 0, horaFixa: '' });   // sem tempo: quem sabe é a casa
       jaTem.add(norm);
+      jaOferecidas.add(norm);
+      mudouLista = true;
       novas++;
     });
-    // Grava mesmo sem novidade: é o que converte a função do formato antigo
-    // (texto em `acoes`) para a lista com tempo, sem perder nada.
-    if (!Array.isArray(f.operacoes) || novas) {
+    f.opsSincronizadas = Array.from(jaOferecidas);
+    // Grava quando entrou nome novo e quando a função ainda estava no formato
+    // antigo (texto em `acoes`) — é o que a converte para a lista com tempo, sem
+    // perder nada. Sem o `mudouLista`, uma novidade em QUALQUER função reescrevia
+    // a lista de TODAS elas.
+    if (!Array.isArray(f.operacoes) || mudouLista) {
       f.operacoes = lista;
       f.acoes = lista.map(o => o.nome).join('\n');
     }
