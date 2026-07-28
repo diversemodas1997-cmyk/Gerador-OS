@@ -15882,6 +15882,22 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
 //     segunda opção a 2,4 m — folga de mais de dez vezes.
 //   • O nome do arquivo é o ÚLTIMO recurso, e serve principalmente de conferência.
 
+// EXCEDENTE DE ENFESTO. O comprimento do relatório é a medida de CORTAR — o
+// risco propriamente dito. O que se cadastra na grade é a medida de ENFESTAR,
+// que é maior: sobra pano nas duas pontas para a enfestadeira segurar e para o
+// corte não morrer na borda. Na casa esse excedente é de 15 cm, somados sempre
+// ao COMPRIMENTO. A LARGURA não recebe nada — ela é a do tecido, e o tecido não
+// estica.
+//
+// Confere com o que já estava cadastrado à mão: no "2X P ao G3 | BM.TRICOLOR" o
+// Corpo Parte 1 do PDF é 4,5493 m e o cadastro dizia 4,70 — 4,5493 + 0,15 dá
+// 4,6993. Exato. As outras fases erravam de 2 a 5 cm, que é o arredondamento de
+// quem digitou; com a regra, a importação passa a gravar o número preciso.
+const RISCO_EXCEDENTE_M = 0.15;
+
+// A medida que vai para o CADASTRO, a partir da que o relatório informa.
+const _riscoCompCadastro = compPdf => (compPdf == null ? null : compPdf + RISCO_EXCEDENTE_M);
+
 let _riscoLeituras = [];
 
 function _riscoNum(txt) {
@@ -16038,7 +16054,10 @@ function _riscoResolverFase(leitura, grade) {
   });
   const pool = (mesmaLarg.length ? mesmaLarg : fases).filter(f => _riscoF(f.comp) != null);
   if (pool.length && leitura.comprimento != null) {
-    const ord = pool.map(f => ({ f, d: Math.abs(_riscoF(f.comp) - leitura.comprimento) }))
+    // Compara com a medida DE CADASTRO (já com o excedente), não com a do
+    // relatório: senão toda fase pareceria estar 15 cm fora.
+    const alvo = _riscoCompCadastro(leitura.comprimento);
+    const ord = pool.map(f => ({ f, d: Math.abs(_riscoF(f.comp) - alvo) }))
       .sort((a, b) => a.d - b.d);
     const folga = ord.length > 1 ? ord[1].d : null;
     // Escolha APERTADA (a segunda opção quase tão perto) não decide sozinha.
@@ -16069,7 +16088,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma <b>15 cm de excedente ao comprimento</b> — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>
@@ -16131,8 +16150,10 @@ function renderRiscoResultado() {
       </select>` : '—';
 
     const atual = L.res.fase ? `${fmt(L.res.fase.comp || '—')} × ${fmt(L.res.fase.larg || '—')}` : '—';
-    const novo = `${fmt(L.comprimento != null ? L.comprimento.toFixed(2) : null)} × ${fmt(L.largura != null ? L.largura.toFixed(3) : null)}`;
-    const mudou = L.res.fase && (_riscoF(L.res.fase.comp) !== L.comprimento || _riscoF(L.res.fase.larg) !== L.largura);
+    const compCad = _riscoCompCadastro(L.comprimento);
+    const novo = `${fmt(compCad != null ? compCad.toFixed(2) : null)} × ${fmt(L.largura != null ? L.largura.toFixed(3) : null)}`;
+    const mudou = L.res.fase && (_riscoF(L.res.fase.comp) !== (compCad == null ? null : +compCad.toFixed(2))
+      || _riscoF(L.res.fase.larg) !== (L.largura == null ? null : +L.largura.toFixed(3)));
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" ${L.aplicar ? 'checked' : ''} ${L.grade && L.res.fase ? '' : 'disabled'} onchange="riscoMarcar(${i}, this.checked)"></td>
       <td style="font-size:11px;">${esc(L.arquivo)}</td>
@@ -16140,7 +16161,8 @@ function renderRiscoResultado() {
       <td>${selFase}<div style="margin-top:2px;">${selo}</div></td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}">${esc(novo)}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}">${esc(novo)}
+        <div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento != null ? L.comprimento.toFixed(2) : '—'))} + ${RISCO_EXCEDENTE_M * 100} cm</div></td>
       <td style="font-size:11px;">${L.gramatura ? esc(L.gramatura + ' g/m²') : ''}${L.aproveitamento ? ' · ' + esc(L.aproveitamento + '%') : ''}</td>
     </tr>`;
   }).join('');
@@ -16185,7 +16207,7 @@ async function aplicarRiscoNasGrades() {
   const alvo = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
   if (!alvo.length) return toast('Nada marcado para aplicar', 'err');
   const mudancas = alvo.map(L =>
-    `${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${L.comprimento.toFixed(2)}×${L.largura.toFixed(3)}`);
+    `${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento).toFixed(2)}×${L.largura.toFixed(3)}`);
   if (!confirm(`Aplicar ${alvo.length} medida(s) no cadastro das grades?\n\n${mudancas.join('\n')}\n\n`
     + 'O programa também vai guardar a que fase corresponde cada código de tecido, para reconhecer sozinho na próxima vez.')) return;
 
@@ -16194,8 +16216,8 @@ async function aplicarRiscoNasGrades() {
   alvo.forEach(L => {
     const f = (L.grade.fases || []).find(x => x.nome === L.res.fase.nome);
     if (!f) return;
-    f.comp = L.comprimento.toFixed(2);
-    f.larg = L.largura.toFixed(3);
+    f.comp = _riscoCompCadastro(L.comprimento).toFixed(2);   // + o excedente de enfesto
+    f.larg = L.largura.toFixed(3);                            // largura vai como veio
     const k = _riscoChave(L);
     if (k) memoria[k] = f.nome;
     n++;
