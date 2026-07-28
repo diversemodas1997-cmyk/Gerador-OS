@@ -1647,17 +1647,28 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   border: 1px dashed rgba(0, 0, 0, .18);
 }
 
-/* Linha do editor de operações da função: nome + tempo que ela costuma levar. */
+/* Linha do editor de operações da função: nome + tempo que ela costuma levar +
+   o horário fixo opcional ("todo dia às"), para a operação de hora marcada. */
 .func-op-row {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
+  flex-wrap: wrap;
 }
-.func-op-row .func-op-nome { flex: 1 1 auto; min-width: 0; }
+.func-op-row .func-op-nome { flex: 1 1 220px; min-width: 0; }
 .func-op-row .func-op-h,
 .func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
-.func-op-row .u { font-size: 12px; color: var(--ink-3); }
+.func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
+.func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+/* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
+.func-op-row .u.as {
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+/* Operação com hora marcada: o campo preenchido se destaca da linha comum. */
+.func-op-row .func-op-fixo:not([value=""]) { font-weight: 600; }
 
 /* O que falta para cada lote fechar a corrente de operações do dia. */
 .op-lotes { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
