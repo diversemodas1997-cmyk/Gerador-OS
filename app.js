@@ -15701,6 +15701,304 @@ function renderPrintSheet(o) {
 const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos',
                   'marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
 
+/* ========================================================= */
+/*        PLANILHA DAS GRADES (.xlsx, sem biblioteca)        */
+/* ========================================================= */
+// Um .xlsx é um ZIP com alguns XML dentro. O app não carrega biblioteca de
+// planilha, e não vale a pena carregar uma: o arquivo aqui é simples (duas abas
+// de texto e número), e escrever o ZIP à mão são poucas linhas. Em troca, a
+// exportação não depende de CDN nenhum e não quebra se um dia a rede cair.
+//
+// O ZIP sai SEM compressão (método 0, "stored"). Some a necessidade de um
+// compressor, o Excel abre igual, e o arquivo continua pequeno — algumas
+// dezenas de KB para as 64 grades.
+
+const _CRC_TAB = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function _crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = _CRC_TAB[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Data/hora no formato do MS-DOS, que é o que o cabeçalho do ZIP guarda.
+function _zipDataDos(d) {
+  return {
+    hora: ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF,
+    data: (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF
+  };
+}
+
+// Monta o ZIP a partir de [{nome, texto}]. Devolve um Blob.
+function _zipMontar(arquivos) {
+  const enc = new TextEncoder();
+  const agora = _zipDataDos(new Date());
+  const partes = [], central = [];
+  let offset = 0;
+  const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF];
+  const u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+  arquivos.forEach(f => {
+    const nome = enc.encode(f.nome);
+    const dados = enc.encode(f.texto);
+    const crc = _crc32(dados);
+    const local = new Uint8Array([
+      ...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(agora.hora), ...u16(agora.data),
+      ...u32(crc), ...u32(dados.length), ...u32(dados.length),
+      ...u16(nome.length), ...u16(0), ...nome
+    ]);
+    partes.push(local, dados);
+    central.push(new Uint8Array([
+      ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(agora.hora), ...u16(agora.data),
+      ...u32(crc), ...u32(dados.length), ...u32(dados.length),
+      ...u16(nome.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+      ...u32(0), ...u32(offset), ...nome
+    ]));
+    offset += local.length + dados.length;
+  });
+  const tamCentral = central.reduce((s, c) => s + c.length, 0);
+  const fim = new Uint8Array([
+    ...u32(0x06054b50), ...u16(0), ...u16(0),
+    ...u16(arquivos.length), ...u16(arquivos.length),
+    ...u32(tamCentral), ...u32(offset), ...u16(0)
+  ]);
+  return new Blob([...partes, ...central, fim], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+}
+
+function _xmlEsc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+    // Caracteres de controle não são válidos em XML e derrubam o Excel inteiro.
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+function _colLetra(n) {           // 0 → A, 25 → Z, 26 → AA
+  let s = '';
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+
+// Uma aba a partir de [[celula, ...], ...]. A primeira linha é o cabeçalho e sai
+// em negrito (estilo 1). Número vira número de verdade — senão o Excel não soma
+// nem ordena, e a planilha existe justamente para conferir números.
+function _xlsxAba(linhas) {
+  const corpo = linhas.map((linha, li) => {
+    const cels = linha.map((val, ci) => {
+      const ref = _colLetra(ci) + (li + 1);
+      const est = li === 0 ? ' s="1"' : '';
+      if (typeof val === 'number' && isFinite(val)) {
+        return `<c r="${ref}"${est}><v>${val}</v></c>`;
+      }
+      const txt = _xmlEsc(val);
+      if (txt === '') return `<c r="${ref}"${est}/>`;
+      return `<c r="${ref}"${est} t="inlineStr"><is><t xml:space="preserve">${txt}</t></is></c>`;
+    }).join('');
+    return `<row r="${li + 1}">${cels}</row>`;
+  }).join('');
+  const nCols = linhas.reduce((m, l) => Math.max(m, l.length), 0);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetPr><outlinePr summaryBelow="1" summaryRight="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<cols>${Array.from({ length: nCols }, (_, i) => `<col min="${i + 1}" max="${i + 1}" width="18" customWidth="1"/>`).join('')}</cols>
+<sheetData>${corpo}</sheetData>
+<autoFilter ref="A1:${_colLetra(nCols - 1)}${linhas.length}"/>
+</worksheet>`;
+}
+
+// Monta o .xlsx com N abas: [{nome, linhas}]. `sheetView` congela a primeira
+// linha para o cabeçalho não sumir ao rolar — numa planilha de conferência com
+// 200 linhas isso é a diferença entre dar para usar e não dar.
+function _xlsxMontar(abas) {
+  const arquivos = [
+    { nome: '[Content_Types].xml', texto:
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${abas.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
+</Types>` },
+    { nome: '_rels/.rels', texto:
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>` },
+    { nome: 'xl/workbook.xml', texto:
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${abas.map((a, i) => `<sheet name="${_xmlEsc(a.nome).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>
+</workbook>` },
+    { nome: 'xl/_rels/workbook.xml.rels', texto:
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${abas.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('\n')}
+<Relationship Id="rId${abas.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>` },
+    { nome: 'xl/styles.xml', texto:
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>` }
+  ];
+  abas.forEach((a, i) => {
+    arquivos.push({ nome: `xl/worksheets/sheet${i + 1}.xml`, texto: _xlsxAba(a.linhas) });
+  });
+  return _zipMontar(arquivos);
+}
+
+// A planilha das GRADES, para conferir os cadastros em lote fora do programa.
+// Duas abas, porque são duas leituras diferentes do mesmo cadastro:
+//   • "Grades" — uma linha por grade. É a visão de quem quer bater os tamanhos,
+//     o tipo de peça e quantas fases cada uma tem, correndo o olho pela lista.
+//   • "Fases das grades" — uma linha por FASE. É onde moram os números que mais
+//     erram (tecido, unidades da grade, comprimento, largura, bobinas), e um por
+//     linha permite filtrar e ordenar no Excel — "me mostre toda fase de ribana
+//     sem comprimento", que na visão por grade seria impossível.
+// Os dois trazem o que o programa já APUROU (uso em OS, tempo medido do
+// enfesto), porque conferir cadastro sem ver o que ele produziu é meio caminho.
+function _linhasPlanilhaGrades() {
+  const tamKeys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const grades = (STATE.grades || []).slice()
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  // Quantas OS usam cada grade — o cadastro que ninguém usa é o primeiro
+  // candidato a estar errado, e o mais usado é o que urge conferir.
+  const usoPorGrade = new Map();
+  (STATE.ordens || []).forEach(o => {
+    const k = _gradeIdDaOS(o);
+    if (k) usoPorGrade.set(k, (usoPorGrade.get(k) || 0) + 1);
+  });
+  const rotuloTipo = { camiseta: 'Camiseta', blusa_moletom: 'Blusa moletom', outro: 'Outro' };
+  const rotuloVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
+
+  const abaGrades = [[
+    'Grade', 'Tipo de peça', 'Variação',
+    'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', 'Total da grade',
+    'Peças por pacote', 'Nº de fases', 'Fases (nomes)',
+    'OS que usam', 'Tempo medido do enfesto (min)', 'Fases medidas'
+  ]];
+  const abaFases = [[
+    'Grade', 'Tipo de peça', 'Variação', 'Fase nº', 'Nome da fase',
+    'Tecido', 'Categoria do tecido', 'Unidades da grade',
+    'Comprimento (m)', 'Largura (m)', 'Bobinas previstas',
+    'Tempo médio medido (min)', 'Medições'
+  ]];
+
+  grades.forEach(g => {
+    const t = g.tamanhos || {};
+    const totalGrade = tamKeys.reduce((s, k) => s + (parseInt(t[k], 10) || 0), 0);
+    const fases = Array.isArray(g.fases) ? g.fases.slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) : [];
+    let medidas = [];
+    try { medidas = temposFasesDaGrade(g.id) || []; } catch (e) { medidas = []; }
+    const medidaDe = nome => medidas.find(l => l.n > 0 && _normFaseNome(l.nome) === _normFaseNome(nome));
+    const comTempo = medidas.filter(l => l.n > 0);
+
+    abaGrades.push([
+      g.nome || '(sem nome)',
+      rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
+      rotuloVar[g.variacao] || g.variacao || '',
+      ...tamKeys.map(k => parseInt(t[k], 10) || 0),
+      totalGrade,
+      parseInt(g.pecasPorPacote, 10) || 0,
+      fases.length,
+      fases.map(f => (f.nome || '').trim() || `F${f.ordem}`).join(' · '),
+      usoPorGrade.get(g.id) || 0,
+      comTempo.length ? comTempo.reduce((s, l) => s + l.mediaMin, 0) : '',
+      comTempo.length ? `${comTempo.length} de ${fases.length}` : 'nenhuma'
+    ]);
+
+    if (!fases.length) {
+      // Grade sem fase cadastrada aparece assim mesmo, com a linha vazia: numa
+      // conferência em lote, o que FALTA é tão importante quanto o que está lá.
+      abaFases.push([
+        g.nome || '(sem nome)', rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
+        rotuloVar[g.variacao] || g.variacao || '',
+        '', '(nenhuma fase cadastrada)', '', '', '', '', '', '', '', ''
+      ]);
+      return;
+    }
+    fases.forEach(f => {
+      const tec = (STATE.tecidos || []).find(x => x.id === f.tecidoId);
+      const med = medidaDe(f.nome);
+      const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : ''; };
+      abaFases.push([
+        g.nome || '(sem nome)',
+        rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
+        rotuloVar[g.variacao] || g.variacao || '',
+        parseInt(f.ordem, 10) || '',
+        (f.nome || '').trim(),
+        tec ? tec.nome : (f.tecidoId ? '(tecido excluído)' : ''),
+        tec ? (categoriaEfetivaTecido(tec) || '') : '',
+        parseInt(f.unidades, 10) || '',
+        num(f.comp),
+        num(f.larg),
+        (f.bobinas === '' || f.bobinas == null) ? '' : (num(f.bobinas) === '' ? '' : num(f.bobinas)),
+        med ? med.mediaMin : '',
+        med ? med.n : 0
+      ]);
+    });
+  });
+  return [
+    { nome: 'Grades', linhas: abaGrades },
+    { nome: 'Fases das grades', linhas: abaFases }
+  ];
+}
+
+// Gera a planilha e grava na PASTA DO PROGRAMA (a mesma da cópia de dados, em
+// Configurações). Sem pasta conectada, cai no download — a planilha é o
+// objetivo, a pasta é a conveniência.
+async function exportarGradesExcel() {
+  if (!exigirEdicao('exportar a planilha das grades')) return;
+  if (!(STATE.grades || []).length) return toast('Nenhuma grade cadastrada', 'err');
+  let blob;
+  try {
+    blob = _xlsxMontar(_linhasPlanilhaGrades());
+  } catch (e) {
+    console.error('exportarGradesExcel', e);
+    return toast('Falha ao montar a planilha: ' + (e.message || e), 'err');
+  }
+  const nome = 'grades-cadastradas.xlsx';
+  // Nome FIXO, sem data: reexportar substitui o arquivo em vez de encher a pasta
+  // de versões — é a mesma lição do PDF da OS.
+  const pasta = backupFolderHandle || (await loadBackupFolderHandle())
+    || pdfFolderHandle || (await loadPdfFolderHandle());
+  if (pasta && await ensureFolderPermission(pasta, 'readwrite')) {
+    try {
+      const fh = await pasta.getFileHandle(nome, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+      const nGrades = (STATE.grades || []).length;
+      const nFases = (STATE.grades || []).reduce((s, g) => s + ((g.fases || []).length || 1), 0);
+      toast(`Planilha salva em ${pasta.name}/${nome} — ${nGrades} grades e ${nFases} fases`, 'ok');
+      return;
+    } catch (e) { console.warn('exportarGradesExcel (pasta)', e); }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome; a.click();
+  URL.revokeObjectURL(url);
+  toast('Planilha das grades baixada (conecte a pasta em Configurações para gravá-la junto do programa)', 'ok');
+}
+
 function exportarDados() {
   if (!exigirEdicao('exportar todos os dados')) return;
   const data = { exportadoEm: new Date().toISOString() };
@@ -16017,6 +16315,7 @@ window.excluirMovFase = excluirMovFase;
 window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
+window.exportarGradesExcel = exportarGradesExcel;
 window.importarDados = importarDados;
 window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
 window.limparTudo = limparTudo;

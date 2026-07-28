@@ -740,6 +740,13 @@
         </div>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Planilha das grades (Excel)</div>
+        <div class="info-box">Gera <code>grades-cadastradas.xlsx</code> na <b>pasta do programa</b> (a mesma da cópia de dados, configurada acima) com <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Duas abas: <b>Grades</b> — uma linha por grade, com os tamanhos, o tipo de peça, quantas fases tem e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado.</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="exportarGradesExcel()">📊 Gerar planilha das grades</button>
+        </div>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Backup e restauração</div>
         <div class="info-box">Além dos snapshots diários automáticos, você pode exportar/importar manualmente. "Limpar tudo" apaga TODOS os cadastros da equipe e é irreversível.</div>
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
@@ -939,6 +946,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28ah"></script>
+<script src="app.js?v=2026-07-28ai"></script>
 </body>
 </html>
