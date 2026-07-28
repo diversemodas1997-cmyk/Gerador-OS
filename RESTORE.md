@@ -8,44 +8,38 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
-- **CÓDIGO:** tag `restore-2026-07-28-t` (cache-buster `app.js ?v=2026-07-28t`,
-  `styles.css ?v=2026-07-28h`), 48 commits desde o `restore-2026-07-24-n`. O que
-  mudou, por assunto:
-  - **Sincronização (a correção mais importante):** o flush passou a fazer merge
-    por REGISTRO nas listas, com base de três vias. Antes, cada chave subia
-    inteira e uma aba desatualizada apagava a OS que outro aparelho tinha
-    acabado de criar — foi a causa das perdas da OS 188.
-  - **Planejamento de operações, reescrito em volta da OS:** o dia começa com
-    "+ Alocar OS" e o programa monta a cascata dos 11 passos, cada um na função
-    que o executa, com o tempo cadastrado nela. Corrente obrigatória do lote
-    (com duas correntes paralelas: carga e matéria-prima), conflito de ordem,
-    jornada 07:15–17:30 com transbordo para o próximo dia útil, pausas
-    sincronizadas, tempo parado por função, botão "Organizar o dia" e a análise
-    "Analisar o dia" com o que falta em cada lote.
-  - **Funções:** cada função cadastra as suas operações com o tempo de cada uma
-    (o campo de texto virou lista); as etapas marcadas deram lugar a essa lista.
-  - **Grades:** tempo medido por fase de enfesto no cadastro, chave de grade
-    unificada por identidade e conferência do horário lançado contra a média.
-  - **Folhas:** OE com tabela da carga parcial e cor completa do tricolor;
-    folha de operações sem o vão de 100mm, com somatório por função, o que falta
-    em cada lote e quadrinho de checklist preenchível.
-  - **Expedição:** marcar Ensaque não põe mais a OS em OE nenhuma — só o
-    planejamento aloca; e a carga registra que foi feita.
-- **DADOS:** exportação de **27/07/2026 17:31**, em
-  `backups/BACKUP-COMPLETO-2026-07-27T17-31-01.json` (1,5 MB, 29 chaves): 165 OS,
-  25 desenhos, 64 grades, 37 cores, 10 tecidos, 4 materiais, 6 modelos, 2
-  coleções, 15 etapas, 4 tarefas, 17 componentes, **10 funções (todas já com a
-  lista de operações)**, 10 pessoas na equipe, 2 janelas e 30 cargas de
-  expedição, **96 operações planejadas** (22/07: 3 · 24/07: 47 · 27/07: 45 ·
-  28/07: 1) e 29 mov. de estoque · osCounter 444. As OS **187 e 0188** estão
-  nesta cópia. A mesma exportação está na pasta conectada
-  `J:\Meu Drive\Backup ERP Diverse\Gerador-OS` (arquivo
-  `os-gen-backup-1785184261956.json`).
-  O anterior é `backups/BACKUP-COMPLETO-2026-07-23T20-25-51.json` (161 OS, 6
-  operações). Para um backup de dados ATUAL, exporte pelo app (Configurações →
-  Exportar tudo (JSON)): o código só carrega a chave `anon` do Supabase, que a
-  RLS bloqueia para leitura fora do app logado — por isso a cópia de dados não é
-  gerada automaticamente aqui.
+- **CÓDIGO:** tag `restore-2026-07-28-an` (cache-buster `app.js ?v=2026-07-28an`,
+  `styles.css ?v=2026-07-28k`). O que mudou desde o `restore-2026-07-28-t`, por
+  assunto:
+  - **Operações, a cascata por FASE DO ENFESTO:** alocar uma OS monta a corrente
+    uma vez por fase da grade (blusa moletom tricolor = 5 voltas de 9 operações,
+    não 9 no lote inteiro). O tempo do enfesto passou a ser **apurado do
+    histórico** — não se cadastra mais em Funções, porque depende do modelo, da
+    grade e da fase. Operação criada pelo programa nasce com o responsável do
+    posto, o que fez as linhas do tempo de quem trabalha em duas funções se
+    mesclarem. Operação de **horário fixo** ("todo dia às") no cadastro de
+    Funções, independente das OS. Botão de **retirar OS** em massa.
+  - **Correções de cálculo:** camadas de ribana pelas "unidades da grade" (36 de
+    moletom = 18 de ribana); divisão por tonalidade proporcional à grade
+    (2M-4G-2GG dá G=48, não 24); quantidade dos componentes acompanhando as
+    camadas lançadas na folha.
+  - **Número da OS e a pasta de PDFs:** número canônico de 4 dígitos, arquivo
+    `OS-<numero>.pdf` sem data (regravar substitui em vez de criar irmão) e
+    recusa de número já usado. Resolveu 17 números com arquivo duplicado.
+  - **Etiquetas:** imprimem pelo PDF, que carrega a página de 100×50 mm.
+  - **Permissões:** só admin escreve, em todo o programa. A escalada a admin foi
+    fechada NO SERVIDOR (`supabase-admin-roles.sql`, precisa ser rodado uma vez).
+    Saiu o botão de "limpar todos os cadastros".
+  - **Novidades de cadastro:** planilha `.xlsx` das grades agrupada por SKU, e
+    **importação do risco do CAD em PDF**, que lança comprimento e largura nas
+    fases da grade sozinha.
+- **DADOS:** exportação de **28/07/2026 17:00**, em
+  `backups/BACKUP-COMPLETO-2026-07-28T20-00-34.json` (1,73 MB, 28 chaves, 610
+  registros): 174 OS, 64 grades, 25 desenhos, 153 operações planejadas, 10
+  funções, 37 cores, 10 tecidos, 33 cargas de expedição. A mesma cópia está na
+  pasta conectada `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+  O anterior é `backups/BACKUP-COMPLETO-2026-07-27T17-31-01.json` (165 OS).
+  Cópia do código deste ponto em `backups-codigo/*.20260728an-risco-pdf.CÓPIA`.
 
 ---
 
