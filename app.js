@@ -1820,6 +1820,7 @@ function goto(page) {
     atualizarPdfFolderStatus();
     atualizarBackupFolderStatus();
     atualizarOeFolderStatus();
+    atualizarExportFolderStatus();
   }
 }
 
@@ -12284,6 +12285,128 @@ async function clearBackupFolderHandle() {
   db.close();
 }
 
+/* ----- Pasta das EXPORTAÇÕES (JSON) ----- */
+// Separada da pasta de backup automático de propósito. São duas coisas com
+// vidas diferentes:
+//   • a de BACKUP guarda um `gerador-os-dados.json` que é REESCRITO a cada
+//     alteração — é o espelho do agora, e não tem história;
+//   • esta guarda as exportações MANUAIS, uma por arquivo datado. É o histórico:
+//     serve para voltar a um dia específico, e por isso nada aqui é sobrescrito.
+// Misturar as duas na mesma pasta funciona, mas quem for procurar "o backup de
+// segunda" acaba achando o espelho de hoje.
+const EXPORT_DB_KEY = 'export-folder';
+let exportFolderHandle = null;
+
+async function saveExportFolderHandle(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).put(handle, EXPORT_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function loadExportFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(EXPORT_DB_KEY);
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) {
+    console.warn('loadExportFolderHandle', e);
+    return null;
+  }
+}
+
+async function clearExportFolderHandle() {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    tx.objectStore(PDF_DB_STORE).delete(EXPORT_DB_KEY);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+
+async function pickExportFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return null;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await saveExportFolderHandle(handle);
+    exportFolderHandle = handle;
+    return handle;
+  } catch (e) {
+    if (e.name === 'AbortError') return null;
+    console.error('pickExportFolder', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+    return null;
+  }
+}
+
+async function conectarPastaExport() {
+  if (!exigirEdicao('conectar a pasta das exportações')) return;
+  const handle = await pickExportFolder();
+  if (handle) {
+    toast(`Pasta das exportações conectada: ${handle.name}`, 'ok');
+    atualizarExportFolderStatus();
+  }
+}
+
+async function desconectarPastaExport() {
+  if (!exigirEdicao('desconectar a pasta das exportações')) return;
+  await clearExportFolderHandle();
+  exportFolderHandle = null;
+  toast('Pasta das exportações desconectada', '');
+  atualizarExportFolderStatus();
+}
+
+async function atualizarExportFolderStatus() {
+  const el = document.getElementById('exportFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = exportFolderHandle || (await loadExportFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada — a exportação vai para os <b>Downloads</b> do navegador.</span>';
+    return;
+  }
+  exportFolderHandle = handle;
+  let permLabel = 'pronta';
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (e) { permLabel = 'permissão desconhecida'; }
+  // Quantas exportações já estão lá: é o que diz se o histórico está de pé.
+  let quantos = 0, ultimo = '';
+  try {
+    if (typeof handle.entries === 'function') {
+      for await (const [n, h] of handle.entries()) {
+        if (h.kind === 'file' && /^BACKUP-COMPLETO-.*\.json$/i.test(n)) {
+          quantos++;
+          if (n > ultimo) ultimo = n;
+        }
+      }
+    }
+  } catch (e) { /* sem iterador: mostra só o nome da pasta */ }
+  el.innerHTML = `Pasta conectada: <b>${esc(handle.name)}</b> — ${esc(permLabel)}.`
+    + (quantos ? ` <span class="exp-badge ok">${quantos} exportação(ões) lá</span>`
+        + (ultimo ? `<div style="font-size:12px;color:var(--ink-3);margin-top:2px;">a mais recente: ${esc(ultimo)}</div>` : '')
+      : ' <span class="exp-badge baixo">ainda sem exportação</span>');
+}
+
 /* ========================================================= */
 /*        SNAPSHOTS DE CONTINGÊNCIA (LOCAL + PASTA)          */
 /* ========================================================= */
@@ -16493,20 +16616,43 @@ async function exportarGradesExcel() {
   toast('Planilha das grades baixada (conecte a pasta em Configurações para gravá-la junto do programa)', 'ok');
 }
 
-function exportarDados() {
+async function exportarDados() {
   if (!exigirEdicao('exportar todos os dados')) return;
   const data = { exportadoEm: new Date().toISOString() };
   // Exporta TUDO (CAD_KEYS), inclusive estoqueMov (estoque de tecido) e os
   // movimentos de fase + osCounter — ALL_KEYS sozinho deixava o estoque de fora.
   CAD_KEYS.forEach(k => { data[k] = STATE[k]; });
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  // Nome DATADO: cada exportação é um ponto no tempo e não substitui a anterior.
+  // É o oposto da planilha de grades e do PDF da OS, que têm nome fixo de
+  // propósito — lá o que interessa é o estado atual, aqui é a história.
+  const iso = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const nome = `BACKUP-COMPLETO-${iso}.json`;
+  const n = CAD_KEYS.reduce((s, k) => s + (Array.isArray(STATE[k]) ? STATE[k].length : 0), 0);
+  const mb = (blob.size / 1048576).toFixed(2);
+
+  const pasta = exportFolderHandle || (await loadExportFolderHandle());
+  if (pasta && await ensureFolderPermission(pasta, 'readwrite')) {
+    try {
+      const fh = await pasta.getFileHandle(nome, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+      toast(`Exportado para ${pasta.name}/${nome} — ${n} registros, ${mb} MB`, 'ok');
+      atualizarExportFolderStatus();
+      return;
+    } catch (e) {
+      console.warn('exportarDados (pasta)', e);
+      toast('Não deu para gravar na pasta — vai para os Downloads.', 'err');
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `os-gen-backup-${Date.now()}.json`;
+  a.download = nome;
   a.click();
   URL.revokeObjectURL(url);
-  toast('Backup exportado', 'ok');
+  toast(`Backup exportado (${n} registros, ${mb} MB) — conecte uma pasta em Configurações para gravar direto nela`, 'ok');
 }
 
 async function importarDados(e) {
@@ -16799,6 +16945,8 @@ window.excluirMovFase = excluirMovFase;
 window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
+window.conectarPastaExport = conectarPastaExport;
+window.desconectarPastaExport = desconectarPastaExport;
 window.exportarGradesExcel = exportarGradesExcel;
 window.abrirModalRisco = abrirModalRisco;
 window.lerRiscosEscolhidos = lerRiscosEscolhidos;

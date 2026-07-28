@@ -741,6 +741,16 @@
         </div>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Pasta das exportações (JSON)</div>
+        <div class="info-box">Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.</div>
+        <div id="exportFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="conectarPastaExport()">Conectar pasta</button>
+          <button class="btn" onclick="exportarDados()">⬇ Exportar tudo agora</button>
+          <button class="btn" onclick="desconectarPastaExport()">Desconectar</button>
+        </div>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Planilha das grades (Excel)</div>
         <div class="info-box">Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, configurada no primeiro cartão desta página (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Tudo agrupado por <b>SKU</b> (o que vem depois do "|" no nome da grade), porque é por ele que as grades se parecem. Três abas: <b>Resumo por SKU</b> — uma linha por SKU, apontando o que <b>diverge</b> entre grades que deveriam ser iguais (nº de fases, peças por pacote, tecido ou medida faltando); <b>Grades</b> — uma linha por grade, com tamanhos, medidas de cada fase e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div>
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
@@ -959,6 +969,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28an"></script>
+<script src="app.js?v=2026-07-28ao"></script>
 </body>
 </html>
