@@ -756,13 +756,19 @@ function exigirAdmin(acao) {
   return true;
 }
 
-// Ações de PLANEJAMENTO da expedição (montar/editar/remarcar a OE) valem para
-// admin E usuario — o operador da expedição planeja e imprime a própria OE. Só
-// as ações DESTRUTIVAS (excluir janela, remover OS da carga) seguem restritas
-// ao admin, via exigirAdmin.
+// QUEM ESCREVE É SÓ O ADMIN. Todo perfil que não é admin usa o programa em
+// modo LEITURA: consulta e imprime, não cadastra nem edita. Um só administra a
+// fábrica; o resto da casa lê a OS, a agenda e a OE na tela ou no papel.
+//
+// Esta função existia para abrir uma exceção ao planejamento da expedição
+// (admin E usuario). A exceção acabou — ela continua existindo com o nome
+// próprio porque é o que os pontos de expedição chamam, e porque a mensagem de
+// recusa fica no vocabulário daquela tela.
 function exigirEdicao(acao) {
-  if (currentRole === 'admin' || currentRole === 'usuario') return true;
-  toast(`Faça login para ${acao}`, 'err');
+  if (currentRole === 'admin') return true;
+  toast(currentRole === 'usuario'
+    ? `Seu acesso é de leitura — apenas o admin pode ${acao}`
+    : `Faça login como admin para ${acao}`, 'err');
   return false;
 }
 
@@ -1383,6 +1389,38 @@ async function loadState() {
       }
     }
   } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
+  // Padroniza o NÚMERO da OS em quatro dígitos. "340" e "0340" são o mesmo
+  // número para quem trabalha, mas eram strings diferentes para o programa: duas
+  // OS distintas no cadastro e dois arquivos distintos na pasta de PDFs.
+  // Só normaliza quando o resultado NÃO colide com outra OS — se colidir, é
+  // duplicata de verdade e quem decide o que fazer é o usuário, avisado abaixo.
+  try {
+    const canon = o => _numeroOSCanonico(o.os);
+    const usados = new Map();
+    (STATE.ordens || []).forEach(o => {
+      const k = canon(o);
+      if (!usados.has(k)) usados.set(k, []);
+      usados.get(k).push(o);
+    });
+    let ajustadas = 0;
+    usados.forEach((lista, k) => {
+      if (k === 'sem-numero' || lista.length !== 1) return;
+      const o = lista[0];
+      if (String(o.os || '').trim() !== k) { o.os = k; ajustadas++; }
+    });
+    if (ajustadas) {
+      await saveState('ordens');
+      console.info(`Números de OS padronizados em 4 dígitos: ${ajustadas}.`);
+    }
+    // Duplicatas de verdade: dois registros para o mesmo número. Não se resolve
+    // sozinho — apagar a errada é decisão de quem toca a fábrica, e as duas
+    // podem ter movimento de estoque, expedição e operação amarrados.
+    const dup = Array.from(usados.entries()).filter(([k, a]) => k !== 'sem-numero' && a.length > 1);
+    if (dup.length) {
+      console.warn('OS com NÚMERO REPETIDO (o programa não escolhe qual vale — resolva em OS Salvas): '
+        + dup.map(([k, a]) => `${k} → ${a.map(o => `${o.modeloNome || 'sem modelo'} de ${o.data}`).join(' | ')}`).join(' · '));
+    }
+  } catch (e) { console.warn('normalizarNumerosOS', e); }
   // Reparo: OS cujas camadas foram lançadas na FOLHA depois de a OS ter sido
   // criada sem elas. A folha passou a mostrar as peças certas, mas os
   // componentes continuaram com o número congelado no cadastro — zero. Quem lê o
@@ -9509,6 +9547,7 @@ function labelVr(vr) {
 }
 
 async function renameGradeFolder(tpAtual) {
+  if (!exigirEdicao('renomear pastas de grade')) return;
   const ehFixa = TP_FIXOS.has(tpAtual);
   const labelAtual = labelTp(tpAtual);
   const novo = (prompt('Novo nome da pasta:', labelAtual) || '').trim();
@@ -9547,6 +9586,7 @@ async function renameGradeFolder(tpAtual) {
 }
 
 async function renameGradeSubfolder(tp, vrAtual) {
+  if (!exigirEdicao('renomear pastas de grade')) return;
   const ehFixa = VR_FIXOS.has(vrAtual);
   const labelAtual = labelVr(vrAtual);
   const novo = (prompt('Novo nome da subpasta:', labelAtual) || '').trim();
@@ -9588,6 +9628,7 @@ function _ordenarPastas(chaves, ordemManual, fixosSet) {
 }
 
 async function moveGradeFolder(tp, dir) {
+  if (!exigirEdicao('reordenar pastas de grade')) return;
   const gfl = _gfl();
   // Constrói a ordem corrente como aparece na tela e move o item
   const presentes = [...new Set(STATE.grades.map(g => g.tipoPeca || ''))];
@@ -9603,6 +9644,7 @@ async function moveGradeFolder(tp, dir) {
 }
 
 async function moveGradeSubfolder(tp, vr, dir) {
+  if (!exigirEdicao('reordenar pastas de grade')) return;
   const gfl = _gfl();
   const presentes = [...new Set(STATE.grades.filter(g => (g.tipoPeca || '') === tp).map(g => g.variacao || ''))];
   const ordem = _ordenarPastas(presentes, gfl.vrOrder, VR_FIXOS);
@@ -11983,12 +12025,59 @@ function _mesclarComOSExistente(data) {
   return ant ? { ...ant, ...data } : data;
 }
 
-async function salvarOS() {
+// Trava contra o duplo clique: gravar demora (Supabase + PDF), e o segundo
+// clique entrava com um `id` novo — nascia uma SEGUNDA OS com o mesmo número.
+// Foi assim que a 0398 virou dois registros, criados com 14 segundos de
+// diferença.
+let _salvandoOS = false;
+
+// Porta única de entrada de toda gravação de OS. Devolve os dados prontos, ou
+// null quando não se deve salvar. Os três botões que gravam (Salvar OS, Salvar e
+// Gerar PDF, Imprimir Etiquetas) passam por aqui, senão a regra valeria em um e
+// não nos outros.
+function _prepararOSParaSalvar() {
+  if (!exigirEdicao('criar ou editar OS')) return null;
   const data = _mesclarComOSExistente(coletaOS());
   if (!data.os && !data.codigo) {
-    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
+    toast('Preencha ao menos número da OS ou código do desenho', 'err');
+    return null;
   }
-  if (!validarAntesDeSalvar(data)) return;
+  // NÚMERO CANÔNICO: sempre quatro dígitos. Sem isto, "340" e "0340" eram duas
+  // OS diferentes para o programa e dois arquivos diferentes na pasta, sendo o
+  // mesmo número para quem trabalha.
+  if (data.os) data.os = _numeroOSCanonico(data.os);
+  // Número já usado por OUTRA OS: recusa. O número é a identidade da OS no chão
+  // de fábrica — é por ele que a operação, a expedição, o estoque e o PDF na
+  // pasta se referem ao lote. Dois registros com o mesmo número deixam tudo isso
+  // ambíguo, e o programa não tem como adivinhar de qual se trata.
+  if (data.os && data.os !== 'sem-numero') {
+    const conflito = (STATE.ordens || []).find(o => o.id !== data.id
+      && _numeroOSCanonico(o.os) === data.os);
+    if (conflito) {
+      toast(`A OS ${data.os} já existe (${conflito.modeloNome || 'sem modelo'} · ${formatDate(conflito.data)}). `
+        + `Use outro número — o próximo livre é ${proximoNumeroOS()}.`, 'err');
+      return null;
+    }
+  }
+  if (!validarAntesDeSalvar(data)) return null;
+  return data;
+}
+
+// Roda uma gravação inteira sob a trava do duplo clique.
+async function _comTravaDeSalvar(fn) {
+  if (_salvandoOS) { toast('Salvando… aguarde', ''); return; }
+  _salvandoOS = true;
+  try { await fn(); }
+  finally { _salvandoOS = false; }
+}
+
+async function salvarOS() {
+  const data = _prepararOSParaSalvar();
+  if (!data) return;
+  await _comTravaDeSalvar(() => _salvarOSConfirmada(data));
+}
+
+async function _salvarOSConfirmada(data) {
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
@@ -12463,15 +12552,56 @@ function dataBrArquivo(iso) {
   return (d && m && y) ? `${d}-${m}-${y}` : String(iso);
 }
 
+// O arquivo da OS na pasta é NOMEADO SÓ PELO NÚMERO, e o número vai sempre com
+// os quatro dígitos. Duas razões, as duas vindas de conflito real na pasta:
+//
+//   • a DATA no nome fazia a mesma OS virar vários arquivos. Regravar a folha
+//     depois de mexer na OS criava um irmão em vez de substituir, e mudar a data
+//     da OS criava mais um: a 0445 chegou a ter três arquivos (sem data, 23/07 e
+//     28/07), com conteúdos diferentes e nenhuma pista de qual valia;
+//   • sem o zero à esquerda, "340" e "0340" viravam arquivos diferentes para o
+//     mesmo número.
+//
+// A data continua dentro da folha, que é onde ela informa. No nome ela só
+// impedia o arquivo de ser substituído.
 function pdfFilenameForOS(o) {
-  const numero = sanitizeForFilename(o.os) || 'sem-numero';
-  const dataBr = dataBrArquivo(o.data);
-  return dataBr ? `OS-${numero}-${dataBr}.pdf` : `OS-${numero}.pdf`;
+  return `OS-${_numeroOSCanonico(o && o.os)}.pdf`;
 }
 
+// Número da OS na forma canônica: quatro dígitos, sem espaço, sem nada que não
+// sirva em nome de arquivo. É o que faz "340", "0340" e " 340 " serem o mesmo.
+function _numeroOSCanonico(os) {
+  const bruto = String(os == null ? '' : os).trim();
+  if (!bruto) return 'sem-numero';
+  const n = parseInt(bruto, 10);
+  return isNaN(n) ? (sanitizeForFilename(bruto) || 'sem-numero') : formatarNumeroOS(n);
+}
+
+// Apaga da pasta as versões ANTIGAS do arquivo desta OS: as que trazem a data no
+// nome e as que ficaram sem o zero à esquerda. É a mesma OS — manter as duas era
+// justamente o conflito. Só mexe em arquivo cujo nome o próprio programa gera.
+async function _limparVariantesPdfDaOS(dir, o, manter) {
+  const numero = _numeroOSCanonico(o && o.os);
+  if (numero === 'sem-numero' || !dir || typeof dir.entries !== 'function') return [];
+  const semZero = String(parseInt(numero, 10));
+  const re = new RegExp(`^OS-0*(?:${semZero})(?:-\\d{2}-\\d{2}-\\d{4})?\\.pdf$`, 'i');
+  const apagados = [];
+  try {
+    const nomes = [];
+    for await (const [n, h] of dir.entries()) {
+      if (h.kind === 'file' && n !== manter && re.test(n)) nomes.push(n);
+    }
+    for (const n of nomes) {
+      try { await dir.removeEntry(n); apagados.push(n); } catch (e) { /* segue */ }
+    }
+  } catch (e) { /* pasta sem iterador: não dá para limpar, e tudo bem */ }
+  return apagados;
+}
+
+// Mesmo número canônico da folha: sem ele, "340" e "0340" geravam
+// `etiqueta-340.pdf` e `etiqueta-0340.pdf` para o mesmo número.
 function etiquetaFilenameForOS(o) {
-  const numero = sanitizeForFilename(o.os) || 'sem-numero';
-  return `etiqueta-${numero}.pdf`;
+  return `etiqueta-${_numeroOSCanonico(o && o.os)}.pdf`;
 }
 
 // Gera PDF das etiquetas direto com jsPDF (sem html2canvas, pois o conteudo
@@ -12658,7 +12788,9 @@ async function gerarPdfDaSheet() {
   }
 }
 
-async function savePdfToFolder(blob, filename) {
+// `os` é opcional: quando vem, as versões antigas do mesmo número são
+// consolidadas depois de gravar.
+async function savePdfToFolder(blob, filename, os) {
   let handle = pdfFolderHandle || (await loadPdfFolderHandle());
   if (!handle) {
     toast('Conectando pasta pra salvar PDFs...', '');
@@ -12676,6 +12808,7 @@ async function savePdfToFolder(blob, filename) {
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
+    if (os) await _limparVariantesPdfDaOS(handle, os, filename);
     return true;
   } catch (e) {
     console.error('savePdfToFolder', e);
@@ -13023,11 +13156,15 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
 }
 
 async function salvarEImprimir() {
-  const data = _mesclarComOSExistente(coletaOS());
-  if (!data.os && !data.codigo) {
-    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
-  }
-  if (!validarAntesDeSalvar(data)) return;
+  const data = _prepararOSParaSalvar();
+  if (!data) return;
+  if (_salvandoOS) return toast('Salvando… aguarde', '');
+  _salvandoOS = true;
+  try { await _salvarEImprimirConfirmada(data); }
+  finally { _salvandoOS = false; }
+}
+
+async function _salvarEImprimirConfirmada(data) {
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
@@ -13046,7 +13183,7 @@ async function salvarEImprimir() {
   try {
     const blob = await gerarPdfDaSheet();
     const filename = pdfFilenameForOS(data);
-    const saved = await savePdfToFolder(blob, filename);
+    const saved = await savePdfToFolder(blob, filename, data);
     if (saved) {
       toast(`PDF salvo: ${filename}`, 'ok');
       // Regrava a etiqueta junto: quem clica em "Salvar e Gerar PDF" espera
@@ -13060,7 +13197,7 @@ async function salvarEImprimir() {
         try {
           const blobC = await gerarPdfDaSheet();
           const fnC = pdfFilenameForOS(conjugada);
-          const okC = await savePdfToFolder(blobC, fnC);
+          const okC = await savePdfToFolder(blobC, fnC, conjugada);
           if (okC) toast(`PDF conjugada salvo: ${fnC}`, 'ok');
           salvarPdfEtiquetasAuto(conjugada, dadosEtiquetaParaOS(conjugada));
         } catch (e) {
@@ -13381,11 +13518,12 @@ function imprimirEtiquetasAtual() {
 }
 
 async function salvarEImprimirEtiquetas() {
-  const data = _mesclarComOSExistente(coletaOS());
-  if (!data.os && !data.codigo) {
-    return toast('Preencha ao menos número da OS ou código do desenho', 'err');
-  }
-  if (!validarAntesDeSalvar(data)) return;
+  const data = _prepararOSParaSalvar();
+  if (!data) return;
+  await _comTravaDeSalvar(() => _salvarEtiquetasConfirmada(data));
+}
+
+async function _salvarEtiquetasConfirmada(data) {
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
@@ -13501,6 +13639,7 @@ let printOsAtual = null;
 // Marca/desmarca etapa do checklist da OS pronta. Persiste em o.progresso e
 // salva STATE.ordens — outros usuarios veem a evolucao ao reabrir a OS.
 async function togglarChecklistEtapa(osId, etapaNome, checked) {
+  if (!exigirEdicao('marcar etapas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13523,6 +13662,7 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
 }
 
 async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
+  if (!exigirEdicao('marcar tarefas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13534,6 +13674,7 @@ async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
 }
 
 async function togglarChecklistEnfesto(osId, ordem, checked) {
+  if (!exigirEdicao('marcar o enfesto da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13573,6 +13714,7 @@ function _horaFmt(v) {
 // impressa. campo ∈ {enfIni, enfFim, corIni, corFim} (enfesto e corte).
 // Valor vazio remove a chave. Persiste em progresso.enfestosTempos[ordem].
 async function salvarTempoEnfesto(osId, ordem, campo, valor) {
+  if (!exigirEdicao('lançar o horário de enfesto')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13593,6 +13735,7 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
 // digitá-los, camadas/peças-alvo e o "Total por tamanho" são recalculados (ver
 // recalcularDeCamadasPorTom). Nas demais fases é anotação livre.
 async function salvarTomEnfesto(osId, ordem, tom, valor) {
+  if (!exigirEdicao('lançar as camadas por tonalidade')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13696,6 +13839,7 @@ async function recalcularDeCamadasPorTom(osId) {
 // Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
 // Etapas de Produção. Um par único por OS. campo ∈ {ini, fim}.
 async function salvarTempoCorte(osId, campo, valor) {
+  if (!exigirEdicao('lançar o horário do corte')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13709,6 +13853,7 @@ async function salvarTempoCorte(osId, campo, valor) {
 // Salva as observações digitadas direto na folha de OS (caixa "Observações").
 // Grava no mesmo campo o.obs usado pelo formulário de cadastro (f-obs).
 async function salvarObsOS(osId, valor) {
+  if (!exigirEdicao('editar a observação da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.obs = (valor || '').trim();
@@ -13852,6 +13997,7 @@ function totaisPorTamanhoTomOS(o) {
 }
 
 async function togglarTotalTamanhoTom(osId, tom, checked) {
+  if (!exigirEdicao('editar o total por tamanho')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13903,6 +14049,7 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
 // digitar 48 no G de uma grade 2M-4G-2GG gravaria V=48 e o M sairia com 48
 // também.
 async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
+  if (!exigirEdicao('editar o total por tamanho')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -14126,7 +14273,11 @@ async function autoSalvarPdfPrintAtual(o) {
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
-    toast(`PDF salvo: ${filename}`, 'ok');
+    // Consolida: versões antigas do MESMO número (com data no nome, ou sem o
+    // zero à esquerda) saem da pasta. São a mesma OS.
+    const velhas = await _limparVariantesPdfDaOS(handle, o, filename);
+    toast(`PDF salvo: ${filename}`
+      + (velhas.length ? ` · ${velhas.length} versão(ões) antiga(s) do mesmo número removida(s)` : ''), 'ok');
   } catch (e) {
     console.warn('autoSalvarPdfPrintAtual', e);
   }
@@ -14233,6 +14384,7 @@ async function excluirOS(id) {
 }
 
 async function duplicarOS(id) {
+  if (!exigirEdicao('duplicar OS')) return;
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return toast('OS não encontrada', 'err');
   // Deep clone — id, numero da OS e data sao regerados; resto e copia exata

@@ -1147,6 +1147,19 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; }
 .oe-busca-item:hover { background: var(--line-2); }
 
 /* ============ PAPÉIS / PERMISSÕES ============ */
+/* Só o admin escreve. Quem não é admin usa o programa em modo LEITURA: consulta
+   e imprime. Além de esconder os botões de edição (.admin-only), os campos
+   editáveis da FOLHA DE OS — os quadrinhos das etapas, os horários de enfesto,
+   o total por tamanho, a observação — ficam inertes, para ninguém clicar e
+   descobrir pelo aviso de recusa que não podia. O bloqueio de verdade está no
+   JS (exigirEdicao); isto aqui é o que evita o clique inútil. */
+body:not(.is-admin) .sheet .os-check,
+body:not(.is-admin) .sheet input,
+body:not(.is-admin) .sheet textarea,
+body:not(.is-admin) .sheet select {
+  pointer-events: none;
+  opacity: .75;
+}
 .admin-only { display: none !important; }
 body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
