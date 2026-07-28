@@ -6755,7 +6755,8 @@ async function corrigirOrdemOperacoes(data) {
     + 'Nenhuma função fica com duas operações ao mesmo tempo.')) return;
   // A rotina de hora marcada entra ANTES do ajuste: ela é âncora, e o resto do
   // dia é que se encaixa em volta dela.
-  const fixasNovas = _opAplicarHorariosFixosNoDia(data);
+  const _fx = _opAplicarHorariosFixosNoDia(data);
+  const fixasNovas = _fx.criadas.concat(_fx.marcadas);
   const donosNovos = _opPreencherResponsaveisDoDia(data);
   const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
   if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length
@@ -6847,9 +6848,12 @@ function _opLotesIncompletos(doDia, data) {
         }
         if (rotinaNoDia.has(p.ordem)) return;
         if (estourou) { naoCabem.push(p); return; }   // o anterior não coube: este também não
+        // A simulação usa as MESMAS regras da cascata: duração real do passo e o
+        // primeiro vão livre do posto. `_opSugestaoPasso` já devolve as duas
+        // coisas — e o `cabe` dele diz se ainda dá para pôr no dia.
         const s = _opSugestaoPasso(dia, lote, p, fase.ordem);
         const ini = Math.max(_opMin(s.inicio) || 0, relogio == null ? 0 : relogio);
-        if (ini + (s.duracaoMin || 0) > _OP_JORNADA.fim) { estourou = true; naoCabem.push(p); return; }
+        if (!s.cabe || ini + (s.duracaoMin || 0) > _OP_JORNADA.fim) { estourou = true; naoCabem.push(p); return; }
         relogio = ini + (s.duracaoMin || 0);
         faltam.push(p);
       });
@@ -6882,10 +6886,11 @@ function _opLotesIncompletos(doDia, data) {
 // checagem de ordem e alocar uma segunda OS não as duplica. O que a corrente do
 // lote faz com elas é só desviar: a fila do posto se encaixa em volta da hora
 // marcada.
-// Devolve as criadas.
+// Devolve { criadas, marcadas } — `marcadas` são as que já estavam no dia e
+// passaram a exibir o 📌 de horário fixo.
 function _opAplicarHorariosFixosNoDia(data) {
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  const criadas = [];
+  const criadas = [], marcadas = [];
   const noDia = (STATE.operacoes || []).filter(o => o.data === data);
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
@@ -6894,7 +6899,15 @@ function _opAplicarHorariosFixosNoDia(data) {
       const ini = _opMin(hora);
       if (!nome || ini == null) return;
       // Já está no dia (posta pelo cadastro, pela cascata ou à mão): não repete.
-      if (noDia.some(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(nome))) return;
+      // Mas garante o 📌 — o cadastro diz que aquela operação é de hora marcada,
+      // e a agenda tem que mostrá-la como fixa (barra preta) em vez de deixá-la
+      // com cara de operação comum, que qualquer reencaixe empurra. A HORA não é
+      // reescrita: se alguém moveu aquele dia à mão, foi de propósito.
+      const jaLa = noDia.filter(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(nome));
+      if (jaLa.length) {
+        jaLa.forEach(x => { if (!x.inicioFixo) { x.inicioFixo = true; marcadas.push(x); } });
+        return;
+      }
       const dur = Math.max(0, Math.round(Number(o.duracaoMin) || 0));
       // Hora cadastrada fora da jornada é erro de cadastro, não plano do dia:
       // criar a operação aqui só encheria a agenda de selo "fora da jornada".
@@ -6905,10 +6918,11 @@ function _opAplicarHorariosFixosNoDia(data) {
         funcaoId: f.id, funcaoNome: f.nome,
         operacao: nome, escopo: 'completa', etapas: [],
         inicio: hora, duracaoMin: dur,
-        // Âncora do programa: a hora veio do cadastro, e o encadeamento do posto
-        // não pode reescrevê-la. Não é 📌 do usuário — ele segue livre para
-        // mover esta operação no dia, se um dia precisar.
-        inicioAuto: true,
+        // HORÁRIO FIXO de verdade, não âncora do organizador: quem decidiu a
+        // hora foi o usuário, no cadastro da função ("todo dia às"). Por isso sai
+        // com o 📌 e em PRETO na linha do tempo, como qualquer hora travada à
+        // mão — e o encadeamento do posto não a reescreve.
+        inicioFixo: true, inicioAuto: true,
         responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
         // Sem referência DE PROPÓSITO: esta operação não é de OS nenhuma.
         referencia: '', status: 'pendente', prioridade: 'eletiva', obs: ''
@@ -6918,7 +6932,7 @@ function _opAplicarHorariosFixosNoDia(data) {
       criadas.push(nova);
     });
   });
-  return criadas;
+  return { criadas, marcadas };
 }
 
 // Põe o responsável nas operações do dia que estão sem ele, quando o posto tem
@@ -6955,12 +6969,14 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
   // tão longe. Quem planejar além disso aloca a OS, e a rotina entra junto.
   const horizonte = _expAddDias(hoje, 60);
   const ate = fim < horizonte ? fim : horizonte;
-  const criadas = [];
+  const criadas = [], marcadas = [];
   let d = ini < hoje ? hoje : ini;
   for (let i = 0; i < 62 && d <= ate; i++, d = _expAddDias(d, 1)) {
     const dow = _expData(d).getDay();
     if (dow === 0 || dow === 6) continue;   // sábado e domingo não são planejados
-    criadas.push(..._opAplicarHorariosFixosNoDia(d));
+    const r = _opAplicarHorariosFixosNoDia(d);
+    criadas.push(...r.criadas);
+    marcadas.push(...r.marcadas);
   }
   if (criadas.length) {
     Array.from(new Set(criadas.map(o => o.data))).forEach(dia => {
@@ -6968,7 +6984,7 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
       _opSincronizarHorariosDia(dia);
     });
   }
-  return criadas;
+  return criadas.concat(marcadas);
 }
 
 // Primeiro horário, a partir de `piso`, em que o posto fica livre por `dur`
@@ -7050,7 +7066,7 @@ function _opMontarCascataDoLote(data, os) {
   const fases = _opFasesDaOS(os);
   // Antes da corrente, as operações de hora marcada do cadastro: elas são o
   // esqueleto do dia e a fila do lote se encaixa em volta delas.
-  const fixas = _opAplicarHorariosFixosNoDia(data);
+  const fixas = _opAplicarHorariosFixosNoDia(data).criadas;
   const jaTem = new Set();     // "fase|ordem" que o lote já tem ("r|ordem" nas rotinas)
   const rotinaNoDia = new Set();
   doDia().forEach(op => {
@@ -7391,19 +7407,40 @@ function _opSugestaoPasso(data, lote, passo, fase) {
     const p = _opPassoSequencia(o);
     return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
   });
-  const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean))
+  // O POSTO sai do cadastro, como na cascata; o histórico é só o reserva.
+  const cad = _opFuncaoDoPasso(passo);
+  const funcaoId = (cad && cad.funcaoId)
+    || _opModa(iguais.map(o => o.funcaoId).filter(Boolean))
     || (antes && antes.op.funcaoId) || (depois && depois.op.funcaoId) || '';
   // NOME como o planejamento escreve. O nome do passo é o rótulo interno da
   // corrente ("Preparação das máquinas"); no plano ele pode se chamar "Etapas de
   // preparação das máquinas do setor". Quem lê a agenda tem que ver a operação
   // com o nome que ela tem na casa — e a operação criada pelo botão nasce com
   // esse mesmo texto, senão o dia acumularia duas grafias para a mesma coisa.
-  const nome = _opModa(iguais.map(o => String(o.operacao || '').trim()).filter(Boolean)) || passo.nome;
+  const nome = (cad && cad.nome)
+    || _opModa(iguais.map(o => String(o.operacao || '').trim()).filter(Boolean)) || passo.nome;
+  // DURAÇÃO pelas mesmas regras da cascata. O enfesto é apurado do histórico
+  // DAQUELA FASE; os demais vêm do cadastro da função. Antes valia a moda das
+  // durações já planejadas, e ela dizia 1h30 para um enfesto de Barra/Punhos que
+  // leva 5h45 — a fila do "o que falta" então achava que tudo cabia no dia.
+  const os = _opOsDoLote(lote);
+  const faseObj = (os && passo.porFase) ? _opFasesDaOS(os).find(f => f.ordem === Number(fase || 1)) : null;
+  let duracaoMin = 0;
+  if (os && faseObj && _opEhEnfesto({ operacao: (cad && cad.nome) || passo.nome })) {
+    duracaoMin = _opTempoEnfestoPrevisto(os, faseObj).min;
+  } else {
+    duracaoMin = (cad && cad.duracaoMin) || _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0;
+  }
+  // HORÁRIO em que o posto realmente tem esse vão livre. Sem isto a sugestão
+  // propunha 07:15 para um posto ocupado o dia inteiro, e incluir criava
+  // sobreposição na hora.
+  if (funcaoId) ini = _opPrimeiroVagoNoPosto(data, funcaoId, ini, duracaoMin);
   return {
     inicio: _opHHMM(ini),
     funcaoId,
     nome,
-    duracaoMin: _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0
+    duracaoMin,
+    cabe: ini + duracaoMin <= _OP_JORNADA.fim
   };
 }
 
