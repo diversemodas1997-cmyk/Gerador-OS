@@ -15875,10 +15875,27 @@ ${abas.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxm
 //     sem comprimento", que na visão por grade seria impossível.
 // Os dois trazem o que o programa já APUROU (uso em OS, tempo medido do
 // enfesto), porque conferir cadastro sem ver o que ele produziu é meio caminho.
+// O SKU de uma grade é o que vem depois do "|" no nome ("2M-4G-2GG | BM.TRICOLOR"
+// → "BM.TRICOLOR"): antes da barra ficam os tamanhos, depois dela o produto.
+// É por ele que as grades se parecem — todas as CM.BÁSICA deveriam ter as mesmas
+// fases, os mesmos tecidos e o mesmo jeito de embalar, mudando só a distribuição
+// de tamanhos. Agrupar por SKU é o que faz a divergência saltar.
+function _skuDaGrade(g) {
+  const n = String((g && g.nome) || '');
+  const i = n.indexOf('|');
+  const bruto = (i >= 0 ? n.slice(i + 1) : '').replace(/\s+/g, ' ').trim();
+  return bruto || '(sem SKU no nome)';
+}
+
 function _linhasPlanilhaGrades() {
   const tamKeys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
-  const grades = (STATE.grades || []).slice()
-    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  // Ordenadas por SKU e, dentro dele, por nome: as semelhantes ficam juntas, uma
+  // embaixo da outra, que é como se confere em lote. Ordenar só pelo nome punha
+  // "2G-2G1 | CM.BICOLOR" ao lado de "2G-2G1 | CM.TRICOLOR" — vizinhas pela
+  // grade de tamanhos, que é justamente o que NÃO precisa bater entre elas.
+  const grades = (STATE.grades || []).slice().sort((a, b) =>
+    _normNome(_skuDaGrade(a)).localeCompare(_normNome(_skuDaGrade(b)), 'pt-BR')
+    || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
   // Quantas OS usam cada grade — o cadastro que ninguém usa é o primeiro
   // candidato a estar errado, e o mais usado é o que urge conferir.
   const usoPorGrade = new Map();
@@ -15890,19 +15907,31 @@ function _linhasPlanilhaGrades() {
   const rotuloVar = { basica: 'Básica', bicolor: 'Bicolor', tricolor: 'Tricolor' };
 
   const abaGrades = [[
-    'Grade', 'Tipo de peça', 'Variação',
+    'SKU', 'Grade', 'Tipo de peça', 'Variação',
     'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', 'Total da grade',
     'Peças por pacote', 'Nº de fases', 'Fases (nomes)',
+    'Comprimento 1ª fase (m)', 'Largura 1ª fase (m)', 'Medidas por fase (comp x larg)',
+    'Fases sem medida',
     'OS que usam', 'Tempo medido do enfesto (min)', 'Fases medidas'
   ]];
   const abaFases = [[
-    'Grade', 'Tipo de peça', 'Variação', 'Fase nº', 'Nome da fase',
+    'SKU', 'Grade', 'Tipo de peça', 'Variação', 'Fase nº', 'Nome da fase',
     'Tecido', 'Categoria do tecido', 'Unidades da grade',
     'Comprimento (m)', 'Largura (m)', 'Bobinas previstas',
     'Tempo médio medido (min)', 'Medições'
   ]];
 
+  const porSku = new Map();
   grades.forEach(g => {
+    const sku = _skuDaGrade(g);
+    const chaveSku = _normNome(sku);
+    if (!porSku.has(chaveSku)) {
+      porSku.set(chaveSku, {
+        sku, grades: 0, fases: 0, os: 0, porGrade: [], nomesFase: new Set(),
+        tecidos: new Set(), pacotes: new Set(), semComp: 0, semTecido: 0, semFase: 0
+      });
+    }
+    const R = porSku.get(chaveSku);
     const t = g.tamanhos || {};
     const totalGrade = tamKeys.reduce((s, k) => s + (parseInt(t[k], 10) || 0), 0);
     const fases = Array.isArray(g.fases) ? g.fases.slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) : [];
@@ -15910,8 +15939,40 @@ function _linhasPlanilhaGrades() {
     try { medidas = temposFasesDaGrade(g.id) || []; } catch (e) { medidas = []; }
     const medidaDe = nome => medidas.find(l => l.n > 0 && _normFaseNome(l.nome) === _normFaseNome(nome));
     const comTempo = medidas.filter(l => l.n > 0);
+    const numOu = v => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : ''; };
+    // As medidas de TODAS as fases numa coluna só, para conferir a grade inteira
+    // sem trocar de aba. Fase sem medida sai como "—", que é o que se procura.
+    const medidasPorFase = fases.map(f => {
+      const c = numOu(f.comp), l = numOu(f.larg);
+      const rot = (f.nome || '').trim() || `F${f.ordem}`;
+      return (c === '' && l === '')
+        ? `${rot}: —`
+        : `${rot}: ${c === '' ? '?' : String(c).replace('.', ',')}×${l === '' ? '?' : String(l).replace('.', ',')}`;
+    }).join(' · ');
+    const semMedida = fases.filter(f => numOu(f.comp) === '' || numOu(f.larg) === '').length;
+    // O comprimento/largura gravado NA GRADE é espelho da 1ª fase (campo antigo,
+    // mantido por compatibilidade). Sai identificado como tal, para ninguém o ler
+    // como "a medida do enfesto inteiro" — as outras fases têm as suas.
+    const compGrade = numOu(g.enfestoComprimento) !== '' ? numOu(g.enfestoComprimento) : numOu((fases[0] || {}).comp);
+    const largGrade = numOu(g.enfestoLargura) !== '' ? numOu(g.enfestoLargura) : numOu((fases[0] || {}).larg);
+
+    R.grades++;
+    R.fases += fases.length;
+    R.os += usoPorGrade.get(g.id) || 0;
+    R.porGrade.push(fases.length);
+    R.pacotes.add(parseInt(g.pecasPorPacote, 10) || 0);
+    if (!fases.length) R.semFase++;
+    fases.forEach(f => {
+      const nf = (f.nome || '').trim();
+      if (nf) R.nomesFase.add(nf);
+      const tf = (STATE.tecidos || []).find(x => x.id === f.tecidoId);
+      R.tecidos.add(tf ? tf.nome : (f.tecidoId ? '(tecido excluído)' : '(sem tecido)'));
+      if (numOu(f.comp) === '' || numOu(f.larg) === '') R.semComp++;
+      if (!tf) R.semTecido++;
+    });
 
     abaGrades.push([
+      sku,
       g.nome || '(sem nome)',
       rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
       rotuloVar[g.variacao] || g.variacao || '',
@@ -15920,6 +15981,7 @@ function _linhasPlanilhaGrades() {
       parseInt(g.pecasPorPacote, 10) || 0,
       fases.length,
       fases.map(f => (f.nome || '').trim() || `F${f.ordem}`).join(' · '),
+      compGrade, largGrade, medidasPorFase, semMedida,
       usoPorGrade.get(g.id) || 0,
       comTempo.length ? comTempo.reduce((s, l) => s + l.mediaMin, 0) : '',
       comTempo.length ? `${comTempo.length} de ${fases.length}` : 'nenhuma'
@@ -15929,7 +15991,7 @@ function _linhasPlanilhaGrades() {
       // Grade sem fase cadastrada aparece assim mesmo, com a linha vazia: numa
       // conferência em lote, o que FALTA é tão importante quanto o que está lá.
       abaFases.push([
-        g.nome || '(sem nome)', rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
+        sku, g.nome || '(sem nome)', rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
         rotuloVar[g.variacao] || g.variacao || '',
         '', '(nenhuma fase cadastrada)', '', '', '', '', '', '', '', ''
       ]);
@@ -15940,6 +16002,7 @@ function _linhasPlanilhaGrades() {
       const med = medidaDe(f.nome);
       const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : ''; };
       abaFases.push([
+        sku,
         g.nome || '(sem nome)',
         rotuloTipo[g.tipoPeca] || g.tipoPeca || '',
         rotuloVar[g.variacao] || g.variacao || '',
@@ -15956,7 +16019,41 @@ function _linhasPlanilhaGrades() {
       ]);
     });
   });
+  // ABA DE RESUMO — uma linha por SKU. É a visão de conferência por semelhança:
+  // dentro de um SKU as grades só deveriam diferir na distribuição de tamanhos.
+  // Fases, tecidos e peças por pacote deveriam ser os mesmos em todas. Quando um
+  // SKU mostra "3 a 5 fases", ou dois valores de peças por pacote, ou um tecido a
+  // mais que os outros, é aí que está o cadastro errado — e é isso que a linha
+  // única por SKU põe na cara, sem precisar comparar 20 grades uma a uma.
+  const abaSku = [[
+    'SKU', 'Grades', 'Fases (total)', 'Fases por grade', 'Divergem?',
+    'Nomes de fase usados no SKU', 'Tecidos usados no SKU',
+    'Peças por pacote', 'Fases sem medida', 'Fases sem tecido',
+    'Grades sem fase', 'OS que usam'
+  ]];
+  const listar = set => Array.from(set).sort((a, b) => String(a).localeCompare(String(b), 'pt-BR')).join(' · ');
+  Array.from(porSku.values())
+    .sort((a, b) => b.grades - a.grades || String(a.sku).localeCompare(String(b.sku), 'pt-BR'))
+    .forEach(R => {
+      const min = R.porGrade.length ? Math.min(...R.porGrade) : 0;
+      const max = R.porGrade.length ? Math.max(...R.porGrade) : 0;
+      const alertas = [];
+      if (min !== max) alertas.push('nº de fases');
+      if (R.pacotes.size > 1) alertas.push('peças por pacote');
+      if (R.semComp) alertas.push('medida faltando');
+      if (R.semTecido) alertas.push('tecido faltando');
+      if (R.semFase) alertas.push('grade sem fase');
+      abaSku.push([
+        R.sku, R.grades, R.fases,
+        min === max ? min : `${min} a ${max}`,
+        alertas.length ? alertas.join(', ') : '',
+        listar(R.nomesFase), listar(R.tecidos),
+        listar(R.pacotes), R.semComp, R.semTecido, R.semFase, R.os
+      ]);
+    });
+
   return [
+    { nome: 'Resumo por SKU', linhas: abaSku },
     { nome: 'Grades', linhas: abaGrades },
     { nome: 'Fases das grades', linhas: abaFases }
   ];

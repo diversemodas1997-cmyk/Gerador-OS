@@ -741,7 +741,7 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Planilha das grades (Excel)</div>
-        <div class="info-box">Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, configurada no primeiro cartão desta página (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Duas abas: <b>Grades</b> — uma linha por grade, com os tamanhos, o tipo de peça, quantas fases tem e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div>
+        <div class="info-box">Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, configurada no primeiro cartão desta página (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Tudo agrupado por <b>SKU</b> (o que vem depois do "|" no nome da grade), porque é por ele que as grades se parecem. Três abas: <b>Resumo por SKU</b> — uma linha por SKU, apontando o que <b>diverge</b> entre grades que deveriam ser iguais (nº de fases, peças por pacote, tecido ou medida faltando); <b>Grades</b> — uma linha por grade, com tamanhos, medidas de cada fase e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div>
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
           <button class="btn primary" onclick="exportarGradesExcel()">📊 Gerar planilha das grades</button>
         </div>
@@ -945,6 +945,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28ak"></script>
+<script src="app.js?v=2026-07-28al"></script>
 </body>
 </html>
