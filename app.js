@@ -15988,7 +15988,16 @@ async function exportarGradesExcel() {
       await w.close();
       const nGrades = (STATE.grades || []).length;
       const nFases = (STATE.grades || []).reduce((s, g) => s + ((g.fases || []).length || 1), 0);
-      toast(`Planilha salva em ${pasta.name}/${nome} — ${nGrades} grades e ${nFases} fases`, 'ok');
+      // Caminho COMPLETO no aviso: dizer só o nome da pasta ("Gerador-OS")
+      // mandava procurar na pasta do código, que tem o mesmo nome e não é onde
+      // o arquivo cai. `resolve` devolve os nomes desde a raiz concedida.
+      let onde = pasta.name;
+      try {
+        const partes = await pasta.resolve(fh);
+        if (partes) onde = [pasta.name].concat(partes.slice(0, -1)).join('/');
+      } catch (e) { /* navegador sem resolve: fica o nome da pasta */ }
+      toast(`Planilha salva em ${onde}/${nome} — ${nGrades} grades e ${nFases} fases. `
+        + 'É a pasta de backup conectada em Configurações.', 'ok');
       return;
     } catch (e) { console.warn('exportarGradesExcel (pasta)', e); }
   }
