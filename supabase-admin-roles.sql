@@ -96,13 +96,31 @@ DROP POLICY IF EXISTS "user_roles: authenticated delete" ON public.user_roles;
 -- ON CONFLICT (user_id) DO UPDATE SET role = 'admin';
 
 -- =====================================================================
--- CONFERIR SE PEGOU
+-- CONFERIR SE PEGOU  — estas duas consultas rodam AQUI, no SQL Editor
 -- =====================================================================
--- Quem é admin hoje:
---   SELECT u.email, r.role FROM public.user_roles r
---     JOIN auth.users u ON u.id = r.user_id ORDER BY r.role, u.email;
+-- 1) A função já tem a conferência de admin dentro dela?
+--    Tem que devolver uma linha com `tem_conferencia = true`.
 --
--- Teste real: entre no app com uma conta que NÃO é admin, abra o console do
--- navegador e rode
---   await supa.rpc('set_user_role', { user_email: 'a-propria-conta@exemplo.com', new_role: 'admin' })
--- A resposta tem que vir com erro "Apenas admin pode gerenciar usuários".
+--    SELECT p.proname,
+--           pg_get_functiondef(p.oid) LIKE '%Apenas admin pode gerenciar%' AS tem_conferencia,
+--           p.prosecdef AS security_definer
+--      FROM pg_proc p
+--      JOIN pg_namespace n ON n.oid = p.pronamespace
+--     WHERE n.nspname = 'public' AND p.proname = 'set_user_role';
+--
+-- 2) Quem é admin hoje:
+--
+--    SELECT u.email, r.role FROM public.user_roles r
+--      JOIN auth.users u ON u.id = r.user_id ORDER BY r.role, u.email;
+--
+-- =====================================================================
+-- TESTE REAL — este NÃO é SQL: roda no NAVEGADOR, não aqui
+-- =====================================================================
+-- Entre no app com uma conta que NÃO é admin, aperte F12 (console) e cole a
+-- linha abaixo. Ela é JavaScript — colar isto no SQL Editor dá erro de sintaxe
+-- em "await", que é justamente o que se espera de JavaScript num editor de SQL.
+--
+--    await supa.rpc('set_user_role', { user_email: 'a-conta-de-teste@exemplo.com', new_role: 'admin' })
+--
+-- A resposta tem que trazer error com a mensagem "Apenas admin pode gerenciar
+-- usuários". Se vier sem erro, o script acima não foi aplicado.
