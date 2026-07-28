@@ -2435,15 +2435,44 @@ function addOperacaoFuncaoRow(op = {}) {
   const div = document.createElement('div');
   div.className = 'func-op-row';
   div.innerHTML = `
-    <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off">
+    <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpTravarTempoDeEnfesto(this.closest('.func-op-row'))">
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
     <span class="u">h</span>
     <input type="number" class="func-op-m" min="0" max="59" step="5" value="${dur ? dur % 60 : ''}" placeholder="0" title="Minutos">
     <span class="u">min</span>
     <span class="u as">todo dia às</span>
     <input type="time" class="func-op-fixo" value="${esc(op.horaFixa || '')}" title="Horário fixo: esta operação entra em todo dia planejado nesta hora e não é reencaixada na fila do posto. Em branco = entra na fila, como as demais.">
-    <button type="button" class="btn small danger" title="Remover esta operação" onclick="this.closest('.func-op-row').remove()">✕</button>`;
+    <button type="button" class="btn small danger" title="Remover esta operação" onclick="this.closest('.func-op-row').remove()">✕</button>
+    <div class="func-op-nota"></div>`;
   cont.appendChild(div);
+  _funcOpTravarTempoDeEnfesto(div);
+}
+
+// O ENFESTO não tem tempo cadastrável. Quanto ele leva é do TRABALHO, não do
+// posto: depende do modelo, da grade, de qual fase é e de quantas camadas ela
+// tem — "Corpo Parte 3" (5,73 m) não leva o mesmo que "Corpo Parte 2" (1,13 m),
+// e um número só no operador de enfestadeira daria o mesmo tempo aos dois.
+// O planejamento apura esse tempo do histórico de horários lançados nas folhas.
+// Por isso os campos de duração desta linha ficam travados e o cadastro explica
+// de onde o número vem.
+function _funcOpTravarTempoDeEnfesto(row) {
+  if (!row) return;
+  const nome = row.querySelector('.func-op-nome')?.value || '';
+  const ehEnfesto = _opEhEnfesto({ operacao: nome });
+  const nota = row.querySelector('.func-op-nota');
+  ['.func-op-h', '.func-op-m'].forEach(sel => {
+    const el = row.querySelector(sel);
+    if (!el) return;
+    el.disabled = ehEnfesto;
+    if (ehEnfesto) el.value = '';
+    el.title = ehEnfesto ? 'O tempo do enfesto é apurado do histórico, não cadastrado aqui' : (sel === '.func-op-h' ? 'Horas' : 'Minutos');
+  });
+  row.classList.toggle('sem-tempo', ehEnfesto);
+  if (nota) {
+    nota.innerHTML = ehEnfesto
+      ? 'Tempo <b>apurado automaticamente</b>: a média desta fase, para este tipo de roupa e esta grade, sai dos horários de enfesto lançados nas folhas de OS. Não se cadastra aqui porque o mesmo posto enfesta panos de tamanhos muito diferentes.'
+      : '';
+  }
 }
 
 function addFaseGradeRow(fase = {}) {
@@ -3060,9 +3089,13 @@ async function salvarCadastro() {
       // Horário fixo: só entra se for hora de verdade. Campo em branco significa
       // "entra na fila do posto", que é o comportamento de sempre.
       const fixa = (row.querySelector('.func-op-fixo')?.value || '').trim();
+      // Enfesto não guarda duração: ela é apurada do histórico a cada
+      // planejamento. Zerar aqui impede que um número antigo, cadastrado antes
+      // desta regra, continue disputando com o tempo apurado.
+      const ehEnfesto = _opEhEnfesto({ operacao: nome });
       return {
         nome,
-        duracaoMin: Math.max(0, h) * 60 + Math.max(0, m),
+        duracaoMin: ehEnfesto ? 0 : Math.max(0, h) * 60 + Math.max(0, m),
         horaFixa: _opMin(fixa) == null ? '' : fixa
       };
     }).filter(o => o.nome);
@@ -6112,6 +6145,85 @@ function _opTempoMedidoDaFase(os, faseNome) {
   return (l && l.mediaMin) || 0;
 }
 
+/* ------- tempo do enfesto: apurado, nunca cadastrado ------- */
+
+// Cada horário de enfesto já lançado numa folha de OS, com o que explica o
+// tamanho dele: de que MODELO e de que GRADE é, que FASE é, quantas CAMADAS
+// tinha e quanto media o pano.
+function _medicoesEnfesto() {
+  const out = [];
+  (STATE.ordens || []).forEach(o => {
+    const tempos = (o.progresso || {}).enfestosTempos || {};
+    const blocos = ((o.enfesto || {}).blocos) || [];
+    const camGlobal = parseInt((o.enfesto || {}).camadas, 10) || 0;
+    (o.fases || []).forEach(f => {
+      const t = tempos[f.ordem] || {};
+      const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
+      if (ini == null || fim == null || fim <= ini) return;
+      const bloco = blocos.find(b => String(b.ordem) === String(f.ordem)) || {};
+      const camadas = parseInt(bloco.camadas, 10) || camGlobal;
+      if (!(camadas > 0)) return;
+      out.push({
+        modeloId: o.modeloId || '', gradeId: o.gradeId || '',
+        faseNome: f.nome || '', minutos: fim - ini, camadas,
+        comp: parseFloat(f.comp) || parseFloat(bloco.comp) || 0,
+        os: o.os
+      });
+    });
+  });
+  return out;
+}
+
+// Quanto o enfesto de UMA FASE vai levar, apurado do histórico. Este número
+// NUNCA vem do cadastro de Funções: quanto leva um enfesto é do trabalho, não do
+// posto — depende do modelo, da grade, de qual fase é e de quantas camadas ela
+// tem. Cadastrar "Enfesto = 40 min" no operador de enfestadeira daria o mesmo
+// tempo para estender 2,51 m de Corpo Parte 1 e 5,73 m de Corpo Parte 3.
+//
+// A medição é convertida em TAXA antes de ser aplicada, senão o histórico de uma
+// grade não serviria para outra: uma fase medida com 23 camadas não diz nada
+// direto sobre a mesma fase com 36. A taxa é por camada e por metro de pano
+// quando as duas pontas têm o comprimento; sem ele, por camada.
+//
+// A amostra é a mais ESPECÍFICA que existir, nesta ordem:
+//   1. a mesma fase da MESMA GRADE;
+//   2. a mesma fase do MESMO MODELO (outra grade do mesmo tipo de roupa);
+//   3. a mesma fase em qualquer OS.
+// Devolve { min, n, escopo } — `min` já arredondado na marca de 5.
+function _opTempoEnfestoPrevisto(os, fase) {
+  const vazio = { min: 0, n: 0, escopo: '' };
+  if (!os || !fase) return vazio;
+  const alvoNome = _normFaseNome(fase.nome);
+  if (!alvoNome) return vazio;
+  const blocos = ((os.enfesto || {}).blocos) || [];
+  const bloco = blocos.find(b => String(b.ordem) === String(fase.ordem)) || {};
+  const camadas = parseInt(bloco.camadas, 10) || parseInt((os.enfesto || {}).camadas, 10) || 0;
+  if (!(camadas > 0)) return vazio;
+  const comp = parseFloat(fase.comp) || parseFloat(bloco.comp) || 0;
+
+  const daFase = _medicoesEnfesto().filter(m => _normFaseNome(m.faseNome) === alvoNome && m.os !== os.os);
+  const escopos = [
+    { nome: 'desta grade', lista: daFase.filter(m => m.gradeId && m.gradeId === os.gradeId) },
+    { nome: 'deste modelo', lista: daFase.filter(m => m.modeloId && m.modeloId === os.modeloId) },
+    { nome: 'de todas as OS', lista: daFase }
+  ];
+  for (const e of escopos) {
+    if (!e.lista.length) continue;
+    // Por camada E por metro só quando os dois lados têm o comprimento; senão a
+    // conta viraria divisão por zero e o tempo sairia zerado justo nas fases sem
+    // medida cadastrada (o forro e a barra/punhos do tricolor).
+    const podeMetro = comp > 0 && e.lista.every(m => m.comp > 0);
+    const taxas = e.lista.map(m => podeMetro
+      ? m.minutos / (m.camadas * m.comp)
+      : m.minutos / m.camadas);
+    const taxa = taxas.reduce((s, x) => s + x, 0) / taxas.length;
+    const bruto = taxa * camadas * (podeMetro ? comp : 1);
+    if (!(bruto > 0)) continue;
+    return { min: Math.max(5, _opArredondar(bruto)), n: e.lista.length, escopo: e.nome };
+  }
+  return vazio;
+}
+
 // Lotes citados na referência da operação: os números de OS que aparecem no
 // texto ("0440", "OS 0430 · 3000 pç", "1042/1051"). Vale o número que É de uma OS
 // cadastrada — senão "3000 pç" viraria um lote fantasma e juntaria operações que
@@ -6349,12 +6461,14 @@ function _opReordenarPostosPorHorario(data) {
 function _opDuracaoNecessaria(op) {
   const os = _opOsDaReferencia(op && op.referencia);
   if (!os) return 0;
+  // ENFESTO: o tempo é apurado do histórico e é a fonte única — não existe
+  // número cadastrado para comparar. Vale a fase da operação; sem ela, o enfesto
+  // da OS não é de fase nenhuma e não há o que estimar.
+  if (_opEhEnfesto(op)) {
+    const fase = _opFasesDaOS(os).find(f => f.ordem === _opFaseDaOperacao(op));
+    return fase ? _opTempoEnfestoPrevisto(os, fase).min : 0;
+  }
   const etapas = Array.isArray(op.etapas) ? op.etapas.slice() : (op.etapa ? [op.etapa] : []);
-  // Operação de UMA FASE do enfesto: o piso é o tempo medido daquela fase, não a
-  // soma das cinco. Só vale para o enfesto propriamente dito — pôr o nome da
-  // fase nos alvos de um corte ou de uma separação daria a essas operações as
-  // horas do enfesto inteiro, que é o erro que a regra existe para evitar.
-  if (op.faseNome && _opEhEnfesto(op)) etapas.push(op.faseNome);
   const r = _opTempoMedidoParaOS(os, op.operacao, etapas, _opFuncaoNome(op));
   return (r && r.aplicavel && r.min > 0) ? r.min : 0;
 }
@@ -6920,12 +7034,12 @@ function _opMontarCascataDoLote(data, os) {
     const cad = _opFuncaoDoPasso(passo);
     if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
     if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(passo.ordem)) return null;
-    // Duração: a cadastrada na função e, no ENFESTO, o tempo já medido daquela
-    // fase quando ele for maior — "Corpo Parte 3" não leva o mesmo que
-    // "Barra/Punhos", e é a grade que sabe disso.
+    // Duração: a cadastrada na função — MENOS no enfesto, que é apurado do
+    // histórico e não do cadastro. "Corpo Parte 3" (5,73 m) não leva o mesmo que
+    // "Corpo Parte 2" (1,13 m), e o posto não tem como saber a diferença.
     let duracaoMin = cad.duracaoMin;
-    if (fase && passo.porFase && passo.ordem === 3) {
-      duracaoMin = Math.max(duracaoMin, _opArredondar(_opTempoMedidoDaFase(os, fase.nome)));
+    if (fase && _opEhEnfesto({ operacao: cad.nome })) {
+      duracaoMin = _opTempoEnfestoPrevisto(os, fase).min;
     }
     // A operação da corrente NUNCA herda o horário fixo do cadastro: a hora
     // marcada é do DIA, não do lote. Se ela mandasse aqui, marcar "Enfesto" às
@@ -6975,8 +7089,16 @@ function _opMontarCascataDoLote(data, os) {
   // Uma volta completa da corrente por fase do enfesto.
   fases.forEach(fase => {
     let relogio = pisoDoDia;   // toda fase começa depois da abertura do dia
+    let travou = false;        // um passo não coube: os seguintes dependem dele
     _OP_SEQ_FASE.forEach(passo => {
+      // Passo que não cabe no dia leva junto o resto da corrente DAQUELA fase.
+      // Sem isto, um enfesto de 5h45 que não cabia deixava o corte, a separação
+      // e o empacotamento da mesma fase marcados assim mesmo — a fase aparecia
+      // sendo cortada sem nunca ter sido estendida.
+      if (travou) { naoCoube.push({ passo, fase }); return; }
+      const antes = naoCoube.length;
       const fim = criar(passo, fase, relogio);
+      if (naoCoube.length > antes) { travou = true; return; }
       if (fim != null) relogio = fim;
     });
   });

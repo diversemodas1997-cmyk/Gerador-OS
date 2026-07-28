@@ -1661,6 +1661,18 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
 .func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
 .func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+/* Enfesto: o tempo é apurado do histórico, então os campos ficam travados e a
+   linha ganha uma nota explicando de onde o número vem. */
+.func-op-row .func-op-nota {
+  flex: 1 1 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-3);
+  padding: 2px 0 4px 2px;
+}
+.func-op-row .func-op-nota:empty { display: none; }
+.func-op-row.sem-tempo .func-op-h,
+.func-op-row.sem-tempo .func-op-m { opacity: .45; cursor: not-allowed; }
 /* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
 .func-op-row .u.as {
   margin-left: 4px;
