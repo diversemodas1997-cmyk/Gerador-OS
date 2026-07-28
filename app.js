@@ -1383,6 +1383,42 @@ async function loadState() {
       }
     }
   } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
+  // Reparo: OS cujas camadas foram lançadas na FOLHA depois de a OS ter sido
+  // criada sem elas. A folha passou a mostrar as peças certas, mas os
+  // componentes continuaram com o número congelado no cadastro — zero. Quem lê o
+  // número gravado (o estoque de corte e o seletor de OS da expedição) enxergava
+  // a OS vazia, e ela sumia da lista de alocação sem nenhum aviso.
+  // Só mexe em OS com camadas > 0 e componentes zerados: é exatamente o
+  // descasamento, e não há como confundir com OS que ainda não tem quantidade.
+  try {
+    const consertadas = [], divergentes = [];
+    (STATE.ordens || []).forEach(o => {
+      const camadas = parseInt((o.enfesto || {}).camadas, 10) || 0;
+      if (!(camadas > 0)) return;
+      const soma = (o.componentes || []).reduce((s, c) => s + (Number(c.qtdTotal) || 0), 0);
+      if (soma > 0) {
+        // Componentes com número, mas de OUTRA quantidade de camadas: a folha
+        // baixou (ou subiu) as camadas depois de a OS ser salva. Aqui NÃO se
+        // conserta sozinho — mexer nisso mudaria o estoque de uma OS já
+        // produzida, e essa é uma decisão de quem toca a fábrica. Só avisa.
+        const copia = JSON.parse(JSON.stringify(o));
+        if (recomputarQuantidadesOS(copia)) {
+          const novo = (copia.componentes || []).reduce((s, c) => s + (Number(c.qtdTotal) || 0), 0);
+          divergentes.push(`${o.os} (gravado ${soma}, pelas ${camadas} camadas seria ${novo})`);
+        }
+        return;
+      }
+      if (recomputarQuantidadesOS(o)) consertadas.push(o.os);
+    });
+    if (consertadas.length) {
+      await saveState('ordens');
+      console.info(`OS com quantidade recomposta das camadas do enfesto: ${consertadas.join(', ')}`);
+    }
+    if (divergentes.length) {
+      console.warn('OS com componentes de uma quantidade de camadas antiga (não alteradas — reabra e salve a OS para acertar): '
+        + divergentes.join(' · '));
+    }
+  } catch (e) { console.warn('recomputarQuantidadesOS', e); }
   // Cadastro de operações POR FUNÇÃO: traz para cada função as operações que ela
   // já executa no planejamento (sem tempo) e converte quem ainda estava no
   // formato de texto livre.
@@ -13220,6 +13256,11 @@ async function recalcularDeCamadasPorTom(osId) {
   }
   o.enfesto.camadas = camadas;
   o.enfesto.target = camadas * minQtd * mult;   // peças-alvo (tamanho limitante)
+  // As camadas mudaram, então a QUANTIDADE da OS mudou junto: os componentes e o
+  // total de peças precisam acompanhar. Sem esta linha eles continuavam com o
+  // número do momento em que a OS foi salva — numa OS criada sem camadas, com
+  // ZERO —, e a expedição não oferecia a OS para alocar porque a via sem peças.
+  recomputarQuantidadesOS(o);
 
   // "Total por tamanho": N tons contíguos; cada tom editável recebe V =
   // camadas_tom × grade × mult — o V é "peças por tamanho", então precisa
@@ -13288,6 +13329,48 @@ function multiplicadorPecaOS(o) {
   const tem = c => fases.some(f => cat(f.tecidoId) === c) || tecs.some(t => cat(t.tecidoId) === c);
   if (tem('moletom')) return 1;
   return tem('malha') ? 2 : 1;
+}
+
+// Reescreve as quantidades CONGELADAS da OS a partir do que ela tem hoje:
+// grade × camadas do enfesto × multiplicador do tecido.
+//
+// Existem duas contas de "quantas peças esta OS tem", e elas se separaram:
+//   • a folha de OS calcula AO VIVO (`totaisPorTamanhoTomOS`) — sempre certa;
+//   • `componentes[].qtdTotal` e `enfesto.totalPecas` ficam GRAVADOS, escritos
+//     uma única vez pelo formulário no momento em que a OS foi salva.
+// Quem lê a segunda é o resto do sistema: o estoque de corte e — o que se viu
+// aqui — o seletor de OS da expedição, que só oferece OS com peças > 0. Numa OS
+// criada sem camadas e completada depois na folha, a folha mostrava 480 peças e
+// a expedição enxergava 0, então a OS simplesmente não aparecia para alocar.
+// Devolve true quando alguma quantidade mudou.
+function recomputarQuantidadesOS(o) {
+  if (!o) return false;
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const g = o.grade || {};
+  const camadas = parseInt((o.enfesto || {}).camadas, 10) || 0;
+  const mult = multiplicadorPecaOS(o);
+  const pecasPorTamanho = {};
+  keys.forEach(k => { pecasPorTamanho[k] = (parseInt(g[k], 10) || 0) * camadas * mult; });
+  let mudou = false;
+  const refazer = lista => (lista || []).forEach(c => {
+    const porPeca = Number(c.qtdPorPeca) || 0;
+    const novo = {};
+    let total = 0;
+    keys.forEach(k => { const v = pecasPorTamanho[k] * porPeca; novo[k] = v; total += v; });
+    if (JSON.stringify(c.qtdPorTamanho || {}) !== JSON.stringify(novo) || (Number(c.qtdTotal) || 0) !== total) {
+      c.qtdPorTamanho = novo;
+      c.qtdTotal = total;
+      mudou = true;
+    }
+  });
+  refazer(o.componentes);
+  refazer(o.aviamentos);
+  const totalPecas = (parseInt(g.total, 10) || 0) * camadas;
+  if (o.enfesto && (Number(o.enfesto.totalPecas) || 0) !== totalPecas) {
+    o.enfesto.totalPecas = totalPecas;
+    mudou = true;
+  }
+  return mudou;
 }
 
 // Fonte ÚNICA dos números do "Total por tamanho": quantidade por tamanho, por
