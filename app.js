@@ -5907,6 +5907,17 @@ function _opForaDaJornada(op) {
 // "Desmontagem de carga" antes de "Montagem de carga", "matéria prima" antes de
 // "materiais"). O teste é função, não regex solta, porque quase todo passo se
 // identifica por DUAS palavras (o verbo e o objeto) em qualquer ordem.
+//
+// `porFase` marca os passos que se repetem A CADA FASE DO ENFESTO. Uma OS de
+// blusa moletom tricolor tem 5 fases (Corpo 1, Corpo 2, Corpo 3, Forro de capuz,
+// Barra/Punhos) e cada uma é um enfesto próprio, com tecido, cor e dimensões
+// próprios: ela é estendida, movida, cortada, e as unidades dela são movidas,
+// separadas, empacotadas e estocadas — e os retalhos dela, empacotados e
+// estocados. São NOVE operações por fase, 45 no tricolor, não nove no lote
+// inteiro. Camiseta tricolor e qualquer outra grade multifase seguem a mesma
+// regra: quem diz quantas voltas a corrente dá é o cadastro de fases da grade.
+// Os passos SEM `porFase` (preparação das máquinas, reposição de materiais) são
+// rotina de abertura do dia: acontecem uma vez e servem a todas as fases.
 const _OP_SEQUENCIA = [
   { cadeia: 'materia',   ordem: 1,  nome: 'Etapas de preparação de matéria prima', teste: n => /prepar/.test(n) && /materia prima|materia-prima/.test(n) },
   { cadeia: 'principal', ordem: 1,  nome: 'Preparação das máquinas',               teste: n => /prepar/.test(n) && /maquin/.test(n) },
@@ -5914,21 +5925,25 @@ const _OP_SEQUENCIA = [
   { cadeia: 'carga',     ordem: 1,  nome: 'Seleção de pacotes',                    teste: n => /selec|seleca/.test(n) && /pacote/.test(n) },
   { cadeia: 'carga',     ordem: 2,  nome: 'Desmontagem de carga',                  teste: n => /desmonta/.test(n) },
   { cadeia: 'carga',     ordem: 3,  nome: 'Montagem de carga',                     teste: n => /monta/.test(n) && /carga/.test(n) },
-  { cadeia: 'principal', ordem: 4,  nome: 'Movimentação de enfesto',               teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
-  { cadeia: 'principal', ordem: 5,  nome: 'Corte de enfesto',                      teste: n => /cort/.test(n) && /enfesto/.test(n) },
-  { cadeia: 'principal', ordem: 6,  nome: 'Movimentação de unidades cortadas',     teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 7,  nome: 'Separação de unidades cortadas',        teste: n => /separa/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 8,  nome: 'Empacotamento de unidades cortadas',    teste: n => /empacot/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 9,  nome: 'Estocagem de pacotes',                  teste: n => /estoc/.test(n) && /pacote/.test(n) },
-  { cadeia: 'principal', ordem: 10, nome: 'Empacotamento de retalhos',             teste: n => /empacot/.test(n) && /retalh/.test(n) },
-  { cadeia: 'principal', ordem: 11, nome: 'Estocagem de retalhos',                 teste: n => /estoc/.test(n) && /retalh/.test(n) },
-  { cadeia: 'principal', ordem: 3,  nome: 'Enfesto',                               teste: n => /enfesto/.test(n) }
+  { cadeia: 'principal', ordem: 4,  nome: 'Movimentação de enfesto',           porFase: true, teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
+  { cadeia: 'principal', ordem: 5,  nome: 'Corte de enfesto',                  porFase: true, teste: n => /cort/.test(n) && /enfesto/.test(n) },
+  { cadeia: 'principal', ordem: 6,  nome: 'Movimentação de unidades cortadas', porFase: true, teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 7,  nome: 'Separação de unidades cortadas',    porFase: true, teste: n => /separa/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 8,  nome: 'Empacotamento de unidades cortadas',porFase: true, teste: n => /empacot/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 9,  nome: 'Estocagem de pacotes',              porFase: true, teste: n => /estoc/.test(n) && /pacote/.test(n) },
+  { cadeia: 'principal', ordem: 10, nome: 'Empacotamento de retalhos',         porFase: true, teste: n => /empacot/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 11, nome: 'Estocagem de retalhos',             porFase: true, teste: n => /estoc/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 3,  nome: 'Enfesto',                           porFase: true, teste: n => /enfesto/.test(n) }
 ];
 
 // Passos da corrente PRINCIPAL na ordem, para dizer o que falta num lote.
 const _OP_SEQ_PRINCIPAL = _OP_SEQUENCIA
   .filter(p => p.cadeia === 'principal')
   .slice().sort((a, b) => a.ordem - b.ordem);
+
+// Os que se repetem por fase do enfesto, e as rotinas de abertura que não.
+const _OP_SEQ_FASE   = _OP_SEQ_PRINCIPAL.filter(p => p.porFase);
+const _OP_SEQ_ROTINA = _OP_SEQ_PRINCIPAL.filter(p => !p.porFase);
 
 // É a operação de ENFESTO propriamente dita (não o corte nem a movimentação dele).
 function _opEhEnfesto(op) {
@@ -5941,6 +5956,76 @@ function _opPassoSequencia(op) {
   const n = _normNome(op && op.operacao);
   if (!n) return null;
   return _OP_SEQUENCIA.find(p => p.teste(n)) || null;
+}
+
+/* ---------------- fases do enfesto dentro da corrente ---------------- */
+
+// As FASES DO ENFESTO de uma OS, na ordem. Cada fase é um enfesto inteiro e
+// separado — tecido, cor e dimensões próprios —, e por isso puxa a sua própria
+// volta na corrente principal. A fonte é a OS (que guarda a cópia das fases no
+// momento em que foi emitida) e, se ela não tiver, o cadastro da grade. Grade
+// sem fases cadastradas devolve UMA fase sem nome: é o caso da peça unicolor, em
+// que a corrente dá uma volta só — exatamente o que o programa fazia antes.
+function _opFasesDaOS(os) {
+  if (!os) return [{ ordem: 1, nome: '' }];
+  let fases = Array.isArray(os.fases) && os.fases.length ? os.fases : null;
+  if (!fases) {
+    const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+    if (g && Array.isArray(g.fases) && g.fases.length) fases = g.fases;
+  }
+  if (!fases) return [{ ordem: 1, nome: '' }];
+  return fases
+    .map((f, i) => ({ ordem: Number(f.ordem) || i + 1, nome: String(f.nome || '').trim() }))
+    .sort((a, b) => a.ordem - b.ordem);
+}
+
+// A OS de um número de lote ("436", "0436").
+function _opOsDoLote(lote) {
+  const semZero = n => String(n).replace(/^0+/, '') || '0';
+  const alvo = semZero(lote);
+  return (STATE.ordens || []).find(o => semZero(String(o.os || '').trim()) === alvo) || null;
+}
+
+// Referência que a operação carrega: OS, modelo e — quando a grade tem mais de
+// uma fase — a fase do enfesto a que aquela volta da corrente pertence.
+// O "F3/5" é o que faz a agenda, a folha e o conferente do chão de fábrica
+// saberem QUAL enfesto está sendo cortado: sem ele, cinco cortes idênticos na
+// mesma OS viram cinco linhas indistinguíveis.
+function _opRefDaFase(os, fase, totalFases) {
+  const base = `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}`;
+  if (!fase || totalFases <= 1) return base;
+  return `${base} · F${fase.ordem}/${totalFases}${fase.nome ? ' ' + fase.nome : ''}`;
+}
+
+// A que fase do enfesto uma operação pertence. Vale o campo gravado; sem ele,
+// lê o "F3/5" da referência (operação digitada à mão pode trazer só o texto).
+// Sem nenhum dos dois é a PRIMEIRA fase: é o que uma operação planejada antes
+// desta regra sempre foi — a corrente dava uma volta só, e essa volta é a fase 1.
+// Assim o plano antigo continua fechando em vez de aparecer duplicado.
+function _opFaseDaOperacao(op) {
+  const n = Number(op && op.faseOrdem);
+  if (n > 0) return n;
+  const m = String((op && op.referencia) || '').match(/(?:^|[·\s])F(\d+)(?:\s*\/\s*\d+)?\b/i);
+  return m ? Number(m[1]) : 1;
+}
+
+// Chave da corrente a que a operação pertence dentro de um lote: passos por fase
+// se ordenam DENTRO da fase (o corte da fase 2 não vem depois do empacotamento
+// da fase 1 — são enfestos diferentes, correm um ao lado do outro); as rotinas
+// de abertura ficam fora das fases.
+function _opChaveFase(op, passo) {
+  return passo && passo.porFase ? String(_opFaseDaOperacao(op)) : 'r';
+}
+
+// Tempo já MEDIDO do enfesto de uma fase, na grade da OS. É a média apurada dos
+// horários lançados na folha — a única fonte que sabe que "Corpo Parte 3" leva
+// mais do que "Barra/Punhos".
+function _opTempoMedidoDaFase(os, faseNome) {
+  const gradeId = os ? _gradeIdDaOS(os) : '';
+  if (!gradeId || !faseNome) return 0;
+  const alvo = _normFaseNome(faseNome);
+  const l = temposFasesDaGrade(gradeId).find(x => x.n > 0 && _normFaseNome(x.nome) === alvo);
+  return (l && l.mediaMin) || 0;
 }
 
 // Lotes citados na referência da operação: os números de OS que aparecem no
@@ -5976,10 +6061,15 @@ function _opConflitosOrdem(lista) {
     if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
     // A chave inclui a CORRENTE: seleção de pacotes não vem depois do enfesto,
     // são coisas que correm em paralelo. Só passos da mesma corrente se ordenam.
+    // A chave inclui a FASE DO ENFESTO: cada fase do tricolor é um enfesto
+    // próprio e atravessa a corrente sozinha. Sem isto, o corte da fase 1 (que
+    // acontece cedo) contra o enfesto da fase 4 (que acontece tarde) seria
+    // acusado de ordem invertida — e o plano correto de uma OS de 5 fases
+    // nasceria coberto de selos vermelhos.
     _opLotesDaOperacao(op).forEach(lote => {
-      const k = op.data + '|' + passo.cadeia + '|' + lote;
+      const k = op.data + '|' + passo.cadeia + '|' + lote + '|' + _opChaveFase(op, passo);
       if (!porLote.has(k)) porLote.set(k, []);
-      porLote.get(k).push({ op, passo, lote });
+      porLote.get(k).push({ op, passo, lote, fase: _opChaveFase(op, passo) });
     });
   });
   const out = new Map();
@@ -5995,7 +6085,8 @@ function _opConflitosOrdem(lista) {
       const ant = itens[i - 1], cur = itens[i];
       if (ant.passo.ordem === cur.passo.ordem) continue;
       const iAnt = _opInicioMin(ant.op), fAnt = _opFimMin(ant.op), iCur = _opInicioMin(cur.op);
-      const quem = `${cur.passo.nome} (${_opHHMM(iCur)}) × ${ant.passo.nome} (${_opHHMM(iAnt)} → ${_opHHMM(fAnt)}) no lote ${cur.lote}`;
+      const ondeFase = cur.fase !== 'r' ? ` (fase ${cur.fase} do enfesto)` : '';
+      const quem = `${cur.passo.nome} (${_opHHMM(iCur)}) × ${ant.passo.nome} (${_opHHMM(iAnt)} → ${_opHHMM(fAnt)}) no lote ${cur.lote}${ondeFase}`;
       if (iCur < iAnt) {
         const msg = `ORDEM INVERTIDA: ${quem}`;
         anota(cur.op, 'invertida', msg); anota(ant.op, 'invertida', msg);
@@ -6123,7 +6214,12 @@ function _opReordenarPostosPorHorario(data) {
 function _opDuracaoNecessaria(op) {
   const os = _opOsDaReferencia(op && op.referencia);
   if (!os) return 0;
-  const etapas = Array.isArray(op.etapas) ? op.etapas : (op.etapa ? [op.etapa] : []);
+  const etapas = Array.isArray(op.etapas) ? op.etapas.slice() : (op.etapa ? [op.etapa] : []);
+  // Operação de UMA FASE do enfesto: o piso é o tempo medido daquela fase, não a
+  // soma das cinco. Só vale para o enfesto propriamente dito — pôr o nome da
+  // fase nos alvos de um corte ou de uma separação daria a essas operações as
+  // horas do enfesto inteiro, que é o erro que a regra existe para evitar.
+  if (op.faseNome && _opEhEnfesto(op)) etapas.push(op.faseNome);
   const r = _opTempoMedidoParaOS(os, op.operacao, etapas, _opFuncaoNome(op));
   return (r && r.aplicavel && r.min > 0) ? r.min : 0;
 }
@@ -6209,9 +6305,14 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     doDia.forEach(op => {
       const passo = _opPassoSequencia(op);
       if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
+      // Uma corrente por lote E POR FASE do enfesto: encadear as cinco fases do
+      // tricolor numa fila só empurraria o enfesto da fase 5 para depois da
+      // estocagem dos retalhos da fase 1, quando na verdade elas só disputam o
+      // posto — e disso cuida a regra de sobreposição, logo abaixo.
       _opLotesDaOperacao(op).forEach(lote => {
-        if (!porLote.has(lote)) porLote.set(lote, []);
-        porLote.get(lote).push({ op, passo });
+        const k = lote + '|' + _opChaveFase(op, passo);
+        if (!porLote.has(k)) porLote.set(k, []);
+        porLote.get(k).push({ op, passo });
       });
     });
     // Empurra `cur` para começar quando `alvo` manda, registrando o movimento.
@@ -6291,11 +6392,16 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       const passo = _opPassoSequencia(op);
       if (passo) {
         const lotes = _opLotesDaOperacao(op);
+        const fase = _opChaveFase(op, passo);
         doDia.forEach(outra => {
           if (outra === op || adiadas.has(outra.id)) return;
           const p2 = _opPassoSequencia(outra);
           if (!p2 || p2.ordem <= passo.ordem) return;
           if (!_opLotesDaOperacao(outra).some(l => lotes.includes(l))) return;
+          // Só os passos seguintes da MESMA FASE dependem desta operação: o
+          // corte da fase 4 não depende do enfesto da fase 2, e arrastá-lo junto
+          // esvaziaria o dia inteiro por causa de um enfesto que atrasou.
+          if (_opChaveFase(outra, p2) !== fase) return;
           adiar(outra);
         });
       }
@@ -6412,7 +6518,13 @@ async function corrigirOrdemOperacoes(data) {
 // As rotinas de hora marcada (preparação das máquinas, reposição de materiais)
 // contam como atendidas se acontecem no dia, com ou sem referência ao lote: são
 // feitas uma vez e servem a todos os lotes.
-// Devolve [{ lote, feitos, faltam, naoCabem, noutroDia, total }].
+//
+// A conta é POR FASE DO ENFESTO. Uma OS de blusa moletom tricolor tem 5 fases e
+// cada uma precisa das suas 9 operações; cobrar 11 passos do lote inteiro dizia
+// "sequência completa" com 4/5 do serviço sem planejar. Cada fase vira uma linha
+// própria (as rotinas de abertura entram na primeira, porque são do dia).
+// Devolve [{ lote, fase, faseNome, nFases, rotulo, feitos, faltam, naoCabem,
+// noutroDia, total }].
 function _opLotesIncompletos(doDia, data) {
   const dia = data || (doDia && doDia[0] && doDia[0].data) || '';
   const lotesDoDia = new Set();
@@ -6423,15 +6535,16 @@ function _opLotesIncompletos(doDia, data) {
     if (_opHorarioDeRotina(op)) rotinaNoDia.add(passo.ordem);
     _opLotesDaOperacao(op).forEach(l => lotesDoDia.add(l));
   });
-  // Onde cada passo de cada lote está, em QUALQUER data do plano.
-  const ondeEsta = new Map();   // lote → Map(ordem → {data, fim})
+  // Onde cada passo de cada lote/fase está, em QUALQUER data do plano.
+  const ondeEsta = new Map();   // "lote|fase" → Map(ordem → {data, fim})
   (STATE.operacoes || []).forEach(op => {
     const passo = _opPassoSequencia(op);
     if (!passo || passo.cadeia !== 'principal') return;
     _opLotesDaOperacao(op).forEach(l => {
       if (!lotesDoDia.has(l)) return;
-      if (!ondeEsta.has(l)) ondeEsta.set(l, new Map());
-      const m = ondeEsta.get(l);
+      const k = l + '|' + _opChaveFase(op, passo);
+      if (!ondeEsta.has(k)) ondeEsta.set(k, new Map());
+      const m = ondeEsta.get(k);
       if (!m.has(passo.ordem) || String(op.data) < String(m.get(passo.ordem).data)) {
         m.set(passo.ordem, { data: op.data, fim: _opFimMin(op) });
       }
@@ -6439,36 +6552,48 @@ function _opLotesIncompletos(doDia, data) {
   });
   const saida = [];
   lotesDoDia.forEach(lote => {
-    const onde = ondeEsta.get(lote) || new Map();
-    const faltam = [], naoCabem = [], noutroDia = [];
-    // O que falta é uma FILA: cada passo consome o tempo do seguinte. Medir um a
-    // um contra o mesmo horário diria que todos cabem — foi o que fazia a lista
-    // cobrar dez operações num dia que só comporta uma.
-    let relogio = null, estourou = false;
-    _OP_SEQ_PRINCIPAL.forEach(p => {
-      const existente = onde.get(p.ordem);
-      if (existente) {
-        if (existente.data !== dia) noutroDia.push({ passo: p, data: existente.data });
-        else if (existente.fim != null) relogio = Math.max(relogio == null ? 0 : relogio, existente.fim);
-        return;
-      }
-      if (rotinaNoDia.has(p.ordem)) return;
-      if (estourou) { naoCabem.push(p); return; }   // o anterior não coube: este também não
-      const s = _opSugestaoPasso(dia, lote, p);
-      const ini = Math.max(_opMin(s.inicio) || 0, relogio == null ? 0 : relogio);
-      if (ini + (s.duracaoMin || 0) > _OP_JORNADA.fim) { estourou = true; naoCabem.push(p); return; }
-      relogio = ini + (s.duracaoMin || 0);
-      faltam.push(p);
-    });
-    const pendentes = faltam.length + naoCabem.length;
-    saida.push({
-      lote, faltam, naoCabem, noutroDia,
-      feitos: _OP_SEQ_PRINCIPAL.length - pendentes,
-      total: _OP_SEQ_PRINCIPAL.length
+    const fases = _opFasesDaOS(_opOsDoLote(lote));
+    fases.forEach((fase, idx) => {
+      const onde = ondeEsta.get(lote + '|' + fase.ordem) || new Map();
+      // As rotinas de abertura são do DIA, não da fase: entram na primeira.
+      const passos = idx === 0 ? _OP_SEQ_ROTINA.concat(_OP_SEQ_FASE) : _OP_SEQ_FASE;
+      const faltam = [], naoCabem = [], noutroDia = [];
+      // O que falta é uma FILA: cada passo consome o tempo do seguinte. Medir um
+      // a um contra o mesmo horário diria que todos cabem — foi o que fazia a
+      // lista cobrar dez operações num dia que só comporta uma.
+      let relogio = null, estourou = false;
+      passos.forEach(p => {
+        // Rotina do dia: quem responde por ela é a fase 1, e o mapa dela está na
+        // corrente 'r' (fora das fases).
+        const mapa = p.porFase ? onde : (ondeEsta.get(lote + '|r') || new Map());
+        const existente = mapa.get(p.ordem);
+        if (existente) {
+          if (existente.data !== dia) noutroDia.push({ passo: p, data: existente.data });
+          else if (existente.fim != null) relogio = Math.max(relogio == null ? 0 : relogio, existente.fim);
+          return;
+        }
+        if (rotinaNoDia.has(p.ordem)) return;
+        if (estourou) { naoCabem.push(p); return; }   // o anterior não coube: este também não
+        const s = _opSugestaoPasso(dia, lote, p, fase.ordem);
+        const ini = Math.max(_opMin(s.inicio) || 0, relogio == null ? 0 : relogio);
+        if (ini + (s.duracaoMin || 0) > _OP_JORNADA.fim) { estourou = true; naoCabem.push(p); return; }
+        relogio = ini + (s.duracaoMin || 0);
+        faltam.push(p);
+      });
+      const pendentes = faltam.length + naoCabem.length;
+      saida.push({
+        lote, faltam, naoCabem, noutroDia,
+        fase: fase.ordem, faseNome: fase.nome, nFases: fases.length,
+        rotulo: `OS ${lote}` + (fases.length > 1
+          ? ` · F${fase.ordem}/${fases.length}${fase.nome ? ' ' + fase.nome : ''}` : ''),
+        feitos: passos.length - pendentes,
+        total: passos.length
+      });
     });
   });
   return saida.sort((a, b) => (b.faltam.length + b.naoCabem.length) - (a.faltam.length + a.naoCabem.length)
-    || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true }));
+    || String(a.lote).localeCompare(String(b.lote), undefined, { numeric: true })
+    || a.fase - b.fase);
 }
 
 /* ---------------- alocar uma OS: a cascata de operações do lote ---------------- */
@@ -6506,43 +6631,63 @@ function _opFuncaoDoPasso(passo) {
   };
 }
 
-// Monta no dia as operações que faltam para a OS atravessar a corrente inteira.
-// Cada passo começa quando o anterior do MESMO LOTE termina e nunca antes de o
-// posto ficar livre — é a mesma regra que o organizador usa depois. Passo que já
-// existe para aquele lote não é recriado, e as rotinas de hora marcada
-// (preparação das máquinas, reposição de materiais) só entram se o dia ainda não
-// as tiver: são feitas uma vez e servem a todos os lotes.
-// Devolve { criadas, semFuncao, naoCoube }.
+// Monta no dia as operações que faltam para a OS atravessar a corrente inteira,
+// UMA VOLTA POR FASE DO ENFESTO. Numa blusa moletom tricolor são 5 fases (Corpo
+// 1, Corpo 2, Corpo 3, Forro de capuz, Barra/Punhos), e cada uma é um enfesto
+// próprio que precisa das suas nove operações: ser estendida, movida, cortada,
+// ter as unidades movidas, separadas, empacotadas e estocadas, e os retalhos
+// empacotados e estocados. Antes o programa montava NOVE operações no lote
+// inteiro — o plano nascia com 1/5 do serviço do dia, e as outras quatro fases
+// eram digitadas à mão ou simplesmente esqueciam.
+//
+// Cada fase é uma corrente independente: dentro dela, um passo começa quando o
+// anterior termina; entre fases, o que separa uma da outra é o POSTO — a
+// enfestadeira só estende uma de cada vez, e a fila do posto já cuida disso.
+// Por isso a fase 2 pode estar sendo cortada enquanto a 1 está sendo separada,
+// que é como a fábrica trabalha de verdade.
+//
+// Passo que a fase já tem não é recriado, e as rotinas de hora marcada
+// (preparação das máquinas, reposição de materiais) entram uma vez só no dia:
+// são de abertura, não de fase.
+// Devolve { criadas, semFuncao, naoCoube, fases }.
 function _opMontarCascataDoLote(data, os) {
   const lote = String(os.os || '').trim().replace(/^0+/, '') || String(os.os || '').trim();
   const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
   const criadas = [], semFuncao = [], naoCoube = [];
-  const jaTem = new Set();     // passos que o lote já tem
+  const fases = _opFasesDaOS(os);
+  const jaTem = new Set();     // "fase|ordem" que o lote já tem ("r|ordem" nas rotinas)
   const rotinaNoDia = new Set();
   doDia().forEach(op => {
     const p = _opPassoSequencia(op);
     if (!p || p.cadeia !== 'principal') return;
     if (_opHorarioDeRotina(op)) rotinaNoDia.add(p.ordem);
-    if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(p.ordem);
+    if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(_opChaveFase(op, p) + '|' + p.ordem);
   });
-  const ref = `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}`;
-  let relogio = null;          // fim do último passo deste lote
-  _OP_SEQ_PRINCIPAL.forEach(passo => {
-    if (jaTem.has(passo.ordem)) return;
+  // Cria um passo da corrente. `fase` é null nas rotinas de abertura.
+  const criar = (passo, fase, pisoRelogio) => {
+    const chave = (fase ? String(fase.ordem) : 'r') + '|' + passo.ordem;
+    if (jaTem.has(chave)) return null;
     const cad = _opFuncaoDoPasso(passo);
-    if (!cad || !cad.funcaoId) { semFuncao.push(passo); return; }
-    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(passo.ordem)) return;
+    if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
+    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(passo.ordem)) return null;
+    // Duração: a cadastrada na função e, no ENFESTO, o tempo já medido daquela
+    // fase quando ele for maior — "Corpo Parte 3" não leva o mesmo que
+    // "Barra/Punhos", e é a grade que sabe disso.
+    let duracaoMin = cad.duracaoMin;
+    if (fase && passo.porFase && passo.ordem === 3) {
+      duracaoMin = Math.max(duracaoMin, _opArredondar(_opTempoMedidoDaFase(os, fase.nome)));
+    }
     // Quando o posto fica livre: depois da última operação já marcada nele.
     const fimDoPosto = doDia()
       .filter(o => o.funcaoId === cad.funcaoId && _opInicioMin(o) != null)
       .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
-    const ini = _opArredondar(Math.max(relogio == null ? _OP_JORNADA.ini : relogio, fimDoPosto));
-    if (ini + cad.duracaoMin > _OP_JORNADA.fim) { naoCoube.push(passo); return; }
+    const ini = _opArredondar(Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto));
+    if (ini + duracaoMin > _OP_JORNADA.fim) { naoCoube.push({ passo, fase }); return null; }
     const nova = {
       id: uid(), data,
       funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
       operacao: cad.nome, escopo: 'completa', etapas: [],
-      inicio: _opHHMM(ini), duracaoMin: cad.duracaoMin,
+      inicio: _opHHMM(ini), duracaoMin,
       // Âncora do programa: o horário veio da corrente do LOTE, que atravessa
       // vários postos. Sem ancorar, o encadeamento de cada posto reescreveria
       // tudo pela fila dele e a corrente se quebraria no mesmo instante em que
@@ -6550,17 +6695,35 @@ function _opMontarCascataDoLote(data, os) {
       // segue livre para mudar o que quiser.
       inicioAuto: true,
       responsavelId: '', responsavelNome: '',
-      referencia: ref, status: 'pendente', prioridade: 'eletiva', obs: ''
+      referencia: fase ? _opRefDaFase(os, fase, fases.length) : _opRefDaFase(os, null, 1),
+      status: 'pendente', prioridade: 'eletiva', obs: ''
     };
+    // A fase fica GRAVADA, não só escrita na referência: é ela que diz a qual
+    // corrente a operação pertence quando o usuário reescreve o texto do campo.
+    if (fase && fases.length > 1) { nova.faseOrdem = fase.ordem; nova.faseNome = fase.nome; }
     STATE.operacoes.push(nova);
     criadas.push(nova);
-    relogio = ini + cad.duracaoMin;
+    return ini + duracaoMin;
+  };
+  // Rotinas de abertura primeiro: elas abrem o dia e o resto conta a partir dali.
+  let pisoDoDia = null;
+  _OP_SEQ_ROTINA.forEach(passo => {
+    const fim = criar(passo, null, pisoDoDia);
+    if (fim != null) pisoDoDia = fim;
+  });
+  // Uma volta completa da corrente por fase do enfesto.
+  fases.forEach(fase => {
+    let relogio = pisoDoDia;   // toda fase começa depois da abertura do dia
+    _OP_SEQ_FASE.forEach(passo => {
+      const fim = criar(passo, fase, relogio);
+      if (fim != null) relogio = fim;
+    });
   });
   if (criadas.length) {
     _opReordenarPostosPorHorario(data);
     _opSincronizarHorariosDia(data);
   }
-  return { criadas, semFuncao, naoCoube };
+  return { criadas, semFuncao, naoCoube, fases };
 }
 
 // Modal: escolher a OS que abre (ou continua) o planejamento do dia.
@@ -6589,11 +6752,27 @@ function abrirModalAlocarOS(data) {
             noDia.has(semZero(o.os)) ? ' (já está no dia)' : ''}</option>`).join('')}
         </select>
         <div class="field-hint">O programa monta as operações que faltam para esta OS atravessar a sequência inteira, cada uma na função que a executa, com o tempo cadastrado ali. Alocar uma segunda OS acrescenta a sequência dela <b>depois</b> do que cada posto já tem — a ordem entre as OS é você que decide, movendo as operações.</div>
+        <div class="field-hint" id="aloc-fases"></div>
       </div>
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">
-      Os tempos vêm do cadastro de <b>Funções</b>. Operação sem tempo cadastrado entra com duração zero — dá para ajustar depois, uma a uma.
+      A sequência é montada <b>uma vez por fase do enfesto</b> da grade: cada fase é um enfesto próprio e tem as suas nove operações (enfesto, mover, cortar, mover as unidades, separar, empacotar, estocar, empacotar os retalhos e estocar os retalhos). Preparação das máquinas e reposição de materiais entram uma vez só, na abertura do dia.<br>
+      Os tempos vêm do cadastro de <b>Funções</b>; o enfesto de cada fase usa o tempo já medido na grade quando ele for maior. Operação sem tempo cadastrado entra com duração zero — dá para ajustar depois, uma a uma.
     </div>`;
+  // Mostra quantas voltas a corrente vai dar assim que a OS é escolhida: 5 fases
+  // do tricolor são 45 operações, e é melhor saber disso antes de clicar.
+  const selOS = document.getElementById('aloc-os');
+  const box = document.getElementById('aloc-fases');
+  const mostrarFases = () => {
+    if (!box) return;
+    const o = (STATE.ordens || []).find(x => x.id === (selOS && selOS.value));
+    if (!o) { box.innerHTML = ''; return; }
+    const fs = _opFasesDaOS(o);
+    box.innerHTML = `<b>${fs.length} fase(s) de enfesto</b>: ${esc(fs.map(f => `F${f.ordem}${f.nome ? ' ' + f.nome : ''}`).join(' · '))}`
+      + ` → até <b>${_OP_SEQ_ROTINA.length + fs.length * _OP_SEQ_FASE.length} operações</b> na sequência completa.`;
+  };
+  if (selOS) selOS.onchange = mostrarFases;
+  mostrarFases();
   openModal('modal-aloc-os');
 }
 
@@ -6605,18 +6784,28 @@ async function confirmarAlocarOSNoDia() {
   const os = (STATE.ordens || []).find(o => o.id === osId);
   if (!os) return toast('Escolha a OS', 'err');
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  const { criadas, semFuncao, naoCoube } = _opMontarCascataDoLote(data, os);
+  const { criadas, semFuncao, naoCoube, fases } = _opMontarCascataDoLote(data, os);
   if (!criadas.length && !semFuncao.length && !naoCoube.length) {
     return toast(`OS ${os.os} já tem a sequência completa em ${formatDate(data)}`, 'ok');
   }
   await saveState('operacoes');
   closeModal('modal-aloc-os');
+  const rotuloPasso = x => x.passo.nome + (x.fase && fases.length > 1 ? ` (F${x.fase.ordem}${x.fase.nome ? ' ' + x.fase.nome : ''})` : '');
+  // Operação sem tempo entra com duração zero e some da linha do tempo. Com uma
+  // volta da corrente isso passava batido; com cinco, um enfesto sem tempo
+  // cadastrado esconde cinco enfestos — o aviso tem que dizer QUAIS faltam.
+  const semTempo = Array.from(new Set(criadas.filter(o => !_opDuracao(o)).map(o => o.operacao)));
   toast(`${criadas.length} operação(ões) criada(s) para a OS ${os.os}`
+    + (fases.length > 1 ? ` em ${fases.length} fases de enfesto` : '')
+    + (semTempo.length ? ` · sem tempo cadastrado: ${semTempo.join(', ')}` : '')
     + (semFuncao.length ? ` · ${semFuncao.length} sem função cadastrada` : '')
     + (naoCoube.length ? ` · ${naoCoube.length} não coube(m) no dia` : ''),
-    (semFuncao.length || naoCoube.length) ? 'err' : 'ok');
+    (semFuncao.length || naoCoube.length || semTempo.length) ? 'err' : 'ok');
   if (semFuncao.length) {
-    console.info('Passos sem função cadastrada:', semFuncao.map(p => p.nome).join(', '));
+    console.info('Passos sem função cadastrada:', semFuncao.map(rotuloPasso).join(', '));
+  }
+  if (naoCoube.length) {
+    console.info('Passos que não couberam na jornada:', naoCoube.map(rotuloPasso).join(', '));
   }
   opPlanoAncora = data;
   try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
@@ -6636,12 +6825,17 @@ function _opModa(valores) {
 // hora do passo seguinte ou na abertura. Posto e duração vêm do histórico: quem
 // costuma fazer aquele passo e quanto costuma levar — assim o modal já abre com
 // o dia coerente, e não com um formulário em branco no meio da corrente.
-function _opSugestaoPasso(data, lote, passo) {
+// `fase` é a fase do enfesto a que o passo pertence: o buraco a preencher é o da
+// corrente DAQUELA fase — o corte da fase 3 entra depois do enfesto da fase 3,
+// não depois do enfesto da fase 1.
+function _opSugestaoPasso(data, lote, passo, fase) {
   const alvo = String(lote);
+  const chaveFase = passo.porFase ? String(fase || 1) : 'r';
   const doLote = (STATE.operacoes || [])
     .filter(o => o.data === data && _opLotesDaOperacao(o).includes(alvo))
     .map(o => ({ op: o, p: _opPassoSequencia(o) }))
-    .filter(x => x.p && x.p.cadeia === passo.cadeia && _opInicioMin(x.op) != null);
+    .filter(x => x.p && x.p.cadeia === passo.cadeia && _opInicioMin(x.op) != null
+      && _opChaveFase(x.op, x.p) === chaveFase);
   const antes = doLote.filter(x => x.p.ordem < passo.ordem).sort((a, b) => b.p.ordem - a.p.ordem)[0];
   const depois = doLote.filter(x => x.p.ordem > passo.ordem).sort((a, b) => a.p.ordem - b.p.ordem)[0];
   let ini = antes ? _opFimMin(antes.op) : (depois ? _opInicioMin(depois.op) : _OP_JORNADA.ini);
@@ -6670,17 +6864,23 @@ function _opSugestaoPasso(data, lote, passo) {
 }
 
 // Botão "+" do quadro de lotes: abre o modal já com o passo que falta, no
-// horário do buraco, no posto que costuma fazê-lo e com a OS na referência.
-function incluirOperacaoFaltante(data, lote, cadeia, ordem) {
+// horário do buraco, no posto que costuma fazê-lo e com a OS — e a FASE DO
+// ENFESTO — na referência. Sem a fase no texto, a operação criada aqui entraria
+// na corrente da fase 1 e o quadro seguiria cobrando o passo da fase certa.
+function incluirOperacaoFaltante(data, lote, cadeia, ordem, fase) {
   if (!exigirAdmin('planejar operações')) return;
   const passo = _OP_SEQUENCIA.find(p => p.cadeia === cadeia && p.ordem === Number(ordem));
   if (!passo) return;
-  const s = _opSugestaoPasso(data, lote, passo);
-  const semZero = n => String(n).replace(/^0+/, '') || '0';
-  const os = (STATE.ordens || []).find(o => semZero(String(o.os || '').trim()) === semZero(lote));
-  const ref = os ? `${os.os}${os.modeloNome ? ' · ' + os.modeloNome : ''}` : String(lote);
+  const nFase = Number(fase) || 1;
+  const s = _opSugestaoPasso(data, lote, passo, nFase);
+  const os = _opOsDoLote(lote);
+  const fases = os ? _opFasesDaOS(os) : [];
+  const faseObj = passo.porFase ? fases.find(f => f.ordem === nFase) : null;
+  const ref = os ? _opRefDaFase(os, faseObj, fases.length) : String(lote);
   abrirModalOperacao('', data, s.funcaoId, {
-    operacao: s.nome, inicio: s.inicio, duracaoMin: s.duracaoMin, referencia: ref
+    operacao: s.nome, inicio: s.inicio, duracaoMin: s.duracaoMin, referencia: ref,
+    faseOrdem: faseObj && fases.length > 1 ? faseObj.ordem : 0,
+    faseNome: faseObj && fases.length > 1 ? faseObj.nome : ''
   });
 }
 
@@ -7065,15 +7265,16 @@ function renderOperacoes() {
     // Cada passo que falta é um botão: abre o modal já no horário do buraco, no
     // posto que costuma fazer aquele passo e com a OS na referência.
     const l0 = s => String(s).replace(/'/g, '&#39;');
-    const botaoFalta = (lote, p) => {
-      const s = _opSugestaoPasso(data, lote, p);
+    const botaoFalta = (l, p) => {
+      const s = _opSugestaoPasso(data, l.lote, p, l.fase);
       const func = (STATE.funcoes || []).find(f => f.id === s.funcaoId);
       const quem = func ? func.nome : 'posto a definir';
+      const naFase = (p.porFase && l.nFases > 1) ? ` na fase ${l.fase}${l.faseNome ? ' (' + l.faseNome + ')' : ''}` : '';
       // Rótulo com o nome que o planejamento usa para esse passo, não com o
       // rótulo interno da corrente.
       return `<button type="button" class="op-falta-btn admin-only"
-        title="Incluir «${esc(s.nome)}» às ${esc(s.inicio)} em ${esc(quem)}${s.duracaoMin ? ' · ' + esc(_opDurTexto(s.duracaoMin)) : ''} (o modal abre preenchido)"
-        onclick="incluirOperacaoFaltante('${esc(data)}','${esc(l0(lote))}','${esc(p.cadeia)}',${p.ordem})">
+        title="Incluir «${esc(s.nome)}»${esc(naFase)} às ${esc(s.inicio)} em ${esc(quem)}${s.duracaoMin ? ' · ' + esc(_opDurTexto(s.duracaoMin)) : ''} (o modal abre preenchido)"
+        onclick="incluirOperacaoFaltante('${esc(data)}','${esc(l0(l.lote))}','${esc(p.cadeia)}',${p.ordem},${l.fase})">
         + ${esc(s.nome)} <span class="q">${esc(s.inicio)} · ${esc(quem)}</span></button>`;
     };
     // DIAGNÓSTICO sob demanda. Três perguntas, nesta ordem: falta operação?
@@ -7113,9 +7314,10 @@ function renderOperacoes() {
             <button type="button" class="btn small" onclick="analisarDiaOperacoes('${esc(data)}')">fechar</button>
           </span>
         </div>
-        ${secao('Operações esperadas que ainda cabem hoje', faltando.length && `${faltando.length} lote(s)`,
-          faltando.map(l => `<div class="op-analise-item"><b>OS ${esc(l.lote)}</b> — ${l.feitos}/${l.total} ·
-            ${l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')}${
+        ${secao('Operações esperadas que ainda cabem hoje',
+          faltando.length && `${faltando.length} ${faltando.some(l => l.nFases > 1) ? 'fase(s) de lote' : 'lote(s)'}`,
+          faltando.map(l => `<div class="op-analise-item"><b>${esc(l.rotulo)}</b> — ${l.feitos}/${l.total} ·
+            ${l.faltam.map(p => botaoFalta(l, p)).join(' ')}${
             l.naoCabem.length ? `<div class="sub">Não cabe mais hoje — continua em ${esc(formatDate(_opProximoDiaUtil(data)))}: ${esc(l.naoCabem.map(p => p.nome).join(' · '))}</div>` : ''}</div>`).join(''))}
         ${secao('Sobreposição dentro da mesma função', cruzadas.length && `${cruzadas.length} par(es)`,
           cruzadas.map(p => `<div class="op-analise-item">
@@ -7144,13 +7346,15 @@ function renderOperacoes() {
     })();
     const lotesHtml = lotes.length ? `
       <div class="op-lotes">
-        <div class="op-lotes-cab">Lotes do dia · ${lotes.length - incompletos.length} de ${lotes.length} com a sequência completa</div>
+        <div class="op-lotes-cab">${lotes.some(l => l.nFases > 1)
+          ? 'Lotes do dia, por fase do enfesto'
+          : 'Lotes do dia'} · ${lotes.length - incompletos.length} de ${lotes.length} com a sequência completa</div>
         ${lotes.map(l => `
           <div class="op-lote-linha ${l.faltam.length ? 'falta' : 'ok'}">
-            <span class="n">OS ${esc(l.lote)}</span>
+            <span class="n">${esc(l.rotulo)}</span>
             <span class="c">${l.feitos}/${l.total}</span>
             <span class="f">${l.faltam.length
-              ? l.faltam.map(p => botaoFalta(l.lote, p)).join(' ')
+              ? l.faltam.map(p => botaoFalta(l, p)).join(' ')
               : (l.naoCabem.length ? 'nada mais cabe hoje' : 'sequência completa')}${
               // Continuação: o que não cabe mais no dia e o que já está marcado
               // noutra data. Sem botão — não é para incluir hoje, é para saber
@@ -7271,7 +7475,13 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '', pre = nul
     return toast('Cadastre ao menos uma função antes de planejar operações', 'err');
   }
   const op = opId ? (STATE.operacoes || []).find(x => x.id === opId) : null;
-  _opModalCtx = { editId: op ? opId : '' };
+  // A fase do enfesto viaja com o modal: quem edita mexe em horário e posto, não
+  // na fase — e perder o vínculo tiraria a operação da corrente da fase dela.
+  _opModalCtx = {
+    editId: op ? opId : '',
+    faseOrdem: op ? (Number(op.faseOrdem) || 0) : (Number(pre && pre.faseOrdem) || 0),
+    faseNome: op ? (op.faseNome || '') : ((pre && pre.faseNome) || '')
+  };
 
   const data = op ? (op.data || '') : (dataPre || opPlanoAncora || _expHoje());
   const funcaoSel = op ? (op.funcaoId || '') : funcaoIdPre;
@@ -7358,7 +7568,7 @@ function abrirModalOperacao(opId = '', dataPre = '', funcaoIdPre = '', pre = nul
         <label>Referência (opcional)</label>
         <input type="text" id="op-referencia" list="op-refs" value="${esc(op ? (op.referencia || '') : '')}" placeholder="Ex.: lote inverno, OS 1042/1051" autocomplete="off" oninput="_opTempoMedioDaReferencia()">
         <datalist id="op-refs">${refs.map(r => `<option value="${esc(r)}"></option>`).join('')}</datalist>
-        <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Escolhendo uma OS da lista, a <b>duração</b> vem do tempo já medido na grade dela.</div>
+        <div class="field-hint">Texto livre — lote, coleção, OSs do dia. Escolhendo uma OS da lista, a <b>duração</b> vem do tempo já medido na grade dela. O <b>F3/5</b> depois do modelo é a <b>fase do enfesto</b>: é ela que diz em qual das correntes da OS esta operação entra — apagar o marcador joga a operação para a fase 1.</div>
       </div>
       <div class="field">
         <label>Classificação *</label>
@@ -7703,6 +7913,18 @@ async function salvarModalOperacao() {
   const status = _OP_STATUS[v('op-status')] ? v('op-status') : 'pendente';
   const prioridade = _OP_PRIORIDADE[v('op-prioridade')] ? v('op-prioridade') : 'eletiva';
 
+  // FASE DO ENFESTO. Manda o que a referência diz: o campo é texto livre e o
+  // usuário pode escrever "…· F3/5 Corpo Parte 3" à mão — se o campo gravado
+  // discordasse do texto, a agenda mostraria uma fase e a corrente usaria outra.
+  // Sem marcador no texto, vale a fase que a operação já tinha.
+  const referencia = v('op-referencia').trim();
+  const mFase = referencia.match(/(?:^|[·\s])F(\d+)(?:\s*\/\s*\d+)?\b/i);
+  const osRef = _opOsDaReferencia(referencia);
+  const fasesRef = osRef ? _opFasesDaOS(osRef) : [];
+  const nFase = mFase ? Number(mFase[1]) : (Number(_opModalCtx.faseOrdem) || 0);
+  const faseValida = fasesRef.length > 1 && fasesRef.some(f => f.ordem === nFase);
+  const faseObj = faseValida ? fasesRef.find(f => f.ordem === nFase) : null;
+
   const campos = {
     data,
     funcaoId, funcaoNome: funcao.nome,
@@ -7710,7 +7932,9 @@ async function salvarModalOperacao() {
     inicio, duracaoMin, inicioFixo, duracaoManual,
     responsavelId: pessoa ? pessoa.id : '',
     responsavelNome: pessoa ? pessoa.nome : '',
-    referencia: v('op-referencia').trim(),
+    referencia,
+    faseOrdem: faseObj ? faseObj.ordem : 0,
+    faseNome: faseObj ? faseObj.nome : '',
     status, prioridade,
     obs: v('op-obs').trim()
   };
@@ -7993,9 +8217,9 @@ function renderPrintPlanoOperacoes() {
     const lotesFalta = lotesDia.filter(l => l.faltam.length || l.naoCabem.length);
     const lotesHtmlPapel = lotesDia.length ? `
       <div class="op-print-lotes">
-        <div class="cab">Lotes do dia — ${lotesDia.length - lotesFalta.length} de ${lotesDia.length} com a sequência completa</div>
+        <div class="cab">${lotesDia.some(l => l.nFases > 1) ? 'Lotes do dia, por fase do enfesto' : 'Lotes do dia'} — ${lotesDia.length - lotesFalta.length} de ${lotesDia.length} com a sequência completa</div>
         ${lotesDia.map(l => `<div class="l${l.faltam.length || l.naoCabem.length ? ' falta' : ''}">
-          <b>OS ${esc(l.lote)}</b> ${l.feitos}/${l.total}${
+          <b>${esc(l.rotulo)}</b> ${l.feitos}/${l.total}${
             l.faltam.length ? ` · falta hoje: ${esc(l.faltam.map(p => p.nome).join(' · '))}` : ''}${
             l.naoCabem.length ? ` · continua em ${esc(formatDate(_opProximoDiaUtil(data)))}: ${esc(l.naoCabem.map(p => p.nome).join(' · '))}` : ''}${
             (!l.faltam.length && !l.naoCabem.length) ? ' · sequência completa' : ''}</div>`).join('')}
