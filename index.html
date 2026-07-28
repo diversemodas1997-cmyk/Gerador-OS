@@ -792,7 +792,8 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Usuários e permissões</div>
-        <div class="info-box">Somente admin pode gerenciar papéis. Usuário comum só pode criar/editar OS — não mexe em cadastros nem apaga dados.</div>
+        <div class="info-box">Somente <b>admin</b> gerencia papéis. Quem não é admin usa o programa em <b>modo leitura</b>: consulta e imprime OS, agenda e expedição, mas não cadastra nem edita nada.</div>
+        <div class="info-box" style="border-color:var(--alert);">A tranca de verdade fica no <b>Supabase</b>, não nesta tela: a função <code>set_user_role</code> confere sozinha se quem chamou é admin. Esconder o painel não basta — o navegador é da pessoa que usa, e o papel guardado nele pode ser alterado por quem souber. Se ainda não rodou, aplique uma vez o script <b>supabase-admin-roles.sql</b> (que está no repositório) no SQL Editor do Supabase.</div>
         <div class="form-grid cols-3" style="margin-bottom: 12px;">
           <div class="field full">
             <label for="roleEmail">E-mail do usuário</label>
@@ -938,6 +939,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28ae"></script>
+<script src="app.js?v=2026-07-28af"></script>
 </body>
 </html>

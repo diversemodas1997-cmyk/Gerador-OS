@@ -772,11 +772,43 @@ function exigirEdicao(acao) {
   return false;
 }
 
+// O papel guardado em `currentRole` serve à TELA — decidir o que mostrar. Ele
+// NÃO pode ser a tranca de nada que importe: é uma variável de JavaScript no
+// navegador de quem usa, e quem abre o console muda o valor em um segundo.
+// Antes de mexer em permissão, o papel é lido de novo NO SERVIDOR.
+//
+// E nem isso é a tranca de verdade: a tranca está na função `set_user_role` do
+// Supabase, que confere sozinha se quem chamou é admin (ver
+// supabase-admin-roles.sql). Sem ela, qualquer usuário logado promove a si
+// mesmo chamando a função direto, sem passar por esta tela. O que se faz aqui é
+// não deixar a tela mentir e não gastar uma ida ao servidor à toa.
+async function _ehAdminNoServidor() {
+  if (!supa || !currentUser) return false;
+  try {
+    const { data, error } = await supa
+      .from('user_roles').select('role').eq('user_id', currentUser.id).maybeSingle();
+    if (error) return false;
+    return ((data && data.role) || '') === 'admin';
+  } catch (e) { return false; }
+}
+
 async function setUserRole(novoPapel) {
   if (!supa) return;
   if (!exigirAdmin('gerenciar usuários')) return;
+  if (!(await _ehAdminNoServidor())) {
+    // O papel em memória dizia admin e o servidor discorda: ou a conta foi
+    // rebaixada nesta sessão, ou alguém mexeu na variável. Nos dois casos, a
+    // tela volta a mostrar o que a conta realmente é.
+    await carregarPapel();
+    aplicarPermissoesUI();
+    toast('Apenas admin pode gerenciar usuários', 'err');
+    return;
+  }
   const email = (document.getElementById('roleEmail').value || '').trim().toLowerCase();
   if (!email) { toast('Informe o e-mail do usuário', 'err'); return; }
+  if (novoPapel === 'admin' && !confirm(
+    `Promover ${email} a ADMIN?\n\nAdmin pode criar e apagar tudo — cadastros, OS, expedição — `
+    + 'e também mudar o papel dos outros, inclusive o seu.')) return;
   const { error } = await supa.rpc('set_user_role', { user_email: email, new_role: novoPapel });
   if (error) { toast('Erro: ' + error.message, 'err'); return; }
   toast(`${email} agora é ${novoPapel}`, 'ok');
@@ -786,6 +818,7 @@ async function setUserRole(novoPapel) {
 
 async function listarUsuariosComPapel() {
   if (!supa) return;
+  if (!exigirAdmin('ver os usuários e os papéis')) return;
   const container = document.getElementById('usersList');
   if (!container) return;
   const { data, error } = await supa
