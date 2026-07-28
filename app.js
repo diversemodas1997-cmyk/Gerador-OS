@@ -13973,9 +13973,17 @@ function totaisPorTamanhoTomOS(o) {
   tons.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
   // Enquanto NADA foi digitado, as linhas de tom saem VAZIAS: a quantidade por
   // tamanho fica só na linha "Total por tamanho", logo acima. Repetir o mesmo
-  // número numa linha de tom (fosse o Tom 1 ou o balanceador) duplicava a linha
-  // de cima e confundia quem lê. A divisão só aparece quando alguém digita.
-  const semDigitacao = somaEditaveis === 0;
+  // número numa linha de tom duplicava a linha de cima e confundia quem lê. A
+  // divisão só aparece quando alguém diz COMO dividir.
+  //
+  // Com UMA tonalidade só, porém, não há divisão a informar: aquele tom carrega
+  // a coluna inteira, e isso não é chute nenhum. Antes ele caía nesta regra —
+  // como o único tom é o balanceador, nenhum V editável existia, a soma dava
+  // zero e a linha saía em branco. Era o que fazia os números SUMIREM ao lançar
+  // as camadas do Tom 1 na folha: o lançamento acertava as camadas da OS, a
+  // linha do Tom 1 aparecia e vinha vazia; só ao digitar o Tom 2 os números
+  // voltavam.
+  const semDigitacao = somaEditaveis === 0 && tons.length > 1;
   const linhas = tons.map(tom => {
     const cels = {};
     let total = 0;
