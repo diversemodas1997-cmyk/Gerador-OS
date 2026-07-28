@@ -16082,33 +16082,22 @@ async function restaurarExpedicaoDeArquivo(e) {
   }
 }
 
+// O APAGAR TUDO FOI REMOVIDO do programa (a pedido).
+//
+// Era o único caminho que zerava a base inteira de uma vez — e numa base
+// compartilhada por toda a equipe, um clique errado levava junto as OS, os
+// cadastros, o estoque e a expedição de todo mundo. Não havia motivo para ele
+// existir: dado desta base se corrige RESTAURANDO um snapshot ou IMPORTANDO um
+// backup, que são operações que trazem algo no lugar do que sai. Zerar não
+// conserta nada.
+//
+// A função fica aqui, sem chamador nenhum, apenas para recusar: se um dia algo
+// antigo (um atalho salvo, um botão esquecido, o console) ainda a chamar, a
+// resposta é não. Apagar a função inteira faria essa chamada virar erro de
+// JavaScript, que é uma forma pior de dizer a mesma coisa.
 async function limparTudo() {
-  if (!exigirAdmin('apagar todos os dados')) return;
-  const resp = prompt(
-    'Isso vai APAGAR todos os cadastros e OS de TODOS os usuários da equipe.\n\n' +
-    'Esta ação é IRREVERSÍVEL — o último snapshot diário pode não ter tudo.\n\n' +
-    'Para confirmar, digite exatamente a palavra APAGAR abaixo:'
-  );
-  if (resp === null) return;
-  if ((resp || '').trim().toUpperCase() !== 'APAGAR') {
-    toast('Palavra não conferiu — nada foi apagado.', 'err');
-    return;
-  }
-  // Ação intencional: libera a trava anti-apagamento para este flush.
-  _permitirFlushVazio = true;
-  try {
-    ALL_KEYS.forEach(k => STATE[k] = []);
-    for (const k of ALL_KEYS) {
-      await saveState(k);
-    }
-    // Garante que o flush pendente saia antes de rearmar a trava.
-    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-    await cloudFlush();
-  } finally {
-    _permitirFlushVazio = false;
-  }
-  toast('Tudo apagado', 'ok');
-  goto('home');
+  toast('Apagar tudo não existe mais no programa. Para desfazer um estrago, '
+    + 'restaure um snapshot em Configurações ou importe um backup.', 'err');
 }
 
 /* ========================================================= */
@@ -16318,7 +16307,6 @@ window.exportarDados = exportarDados;
 window.exportarGradesExcel = exportarGradesExcel;
 window.importarDados = importarDados;
 window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
-window.limparTudo = limparTudo;
 window.popularExemplo = popularExemplo;
 window.abrirLogin = abrirLogin;
 window.fecharLogin = fecharLogin;

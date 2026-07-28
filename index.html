@@ -748,11 +748,10 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Backup e restauração</div>
-        <div class="info-box">Além dos snapshots diários automáticos, você pode exportar/importar manualmente. "Limpar tudo" apaga TODOS os cadastros da equipe e é irreversível.</div>
+        <div class="info-box">Além dos snapshots diários automáticos, você pode exportar e importar manualmente. Não existe botão de apagar tudo: dados desta base se corrigem restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div>
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
           <button class="btn" onclick="exportarDados()">⬇ Exportar tudo (JSON)</button>
           <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
-          <button class="btn danger" onclick="limparTudo()">✕ Limpar todos os cadastros</button>
         </div>
       </div>
       <div class="card admin-only">
@@ -946,6 +945,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28ai"></script>
+<script src="app.js?v=2026-07-28aj"></script>
 </body>
 </html>
