@@ -13377,10 +13377,20 @@ function recomputarQuantidadesOS(o) {
 // tonalidade, total de cada tom e total geral. A folha de OS e a folha de OE
 // (plano de expedição) leem daqui, então não têm como mostrar números diferentes.
 //
-// Regra do balanceador (confirmada com o Junior): o V é uniforme por linha de tom
-// (o mesmo número em todas as células visíveis daquele tom); o ÚLTIMO tom marcado
-// é o balanceador e recebe, em cada tamanho, o total da coluna menos a soma dos V
-// dos tons editáveis — assim a soma das colunas bate com a linha "Total geral".
+// Regra do balanceador: o ÚLTIMO tom marcado recebe, em cada tamanho, o total da
+// coluna menos o que os tons editáveis levaram — assim a soma das colunas bate
+// com a linha "Total geral".
+//
+// O V digitado é a quantidade do TAMANHO LIMITANTE (o de menor número na grade),
+// e cada coluna escala pela grade: v(tamanho) = V × grade[tamanho] / grade[menor].
+// Numa grade 2M-4G-2GG com 12 camadas no Tom 1, o V é 24 e a linha sai
+// M=24 · G=48 · GG=24 — o G tem o dobro porque a grade pede o dobro.
+//
+// Antes o V era uniforme na linha inteira (M=24 · G=24 · GG=24). Era o mesmo
+// número em grade uniforme, mas em grade desigual repartia errado entre os tons:
+// o G do Tom 1 saía com 24 no lugar de 48, e o balanceador absorvia a diferença
+// (96 em vez de 72). A soma da coluna continuava fechando — por isso passava
+// despercebido —, mas o quanto cabia a cada tonalidade estava trocado.
 function totaisPorTamanhoTomOS(o) {
   const keys = ['p','m','g','gg','g1','g2','g3'];
   const g = (o && o.grade) || {};
@@ -13389,10 +13399,20 @@ function totaisPorTamanhoTomOS(o) {
   const prog = (o && o.progresso) || {};
   const colTotal = k => (g[k] || 0) * cam * mult;
   const tamanhos = keys.filter(k => (g[k] || 0) > 0);
+  // Tamanho limitante: é a unidade em que o V é digitado.
+  const qtdMin = tamanhos.length ? Math.min(...tamanhos.map(k => g[k] || 0)) : 1;
   const tons = tonsEfetivos(prog.totalTamanhoTons || {});
   const valores = prog.totalTamanhoTomValor || {};
   const balancer = tons.length ? tons[tons.length - 1] : null;
   const vTom = tom => Math.max(0, Number(valores[tom]) || 0);
+  // O V daquele tom NAQUELE tamanho, já escalado pela grade.
+  const vCel = (tom, k) => Math.round(vTom(tom) * (g[k] || 0) / (qtdMin || 1));
+  // Quanto os tons editáveis levam numa coluna — é o que o balanceador desconta.
+  const somaEditaveisCel = k => {
+    let s = 0;
+    tons.forEach(t => { if (t !== balancer) s += vCel(t, k); });
+    return s;
+  };
   let somaEditaveis = 0;
   tons.forEach(t => { if (t !== balancer) somaEditaveis += vTom(t); });
   // Enquanto NADA foi digitado, as linhas de tom saem VAZIAS: a quantidade por
@@ -13406,15 +13426,15 @@ function totaisPorTamanhoTomOS(o) {
     tamanhos.forEach(k => {
       let v;
       if (semDigitacao) v = 0;
-      else if (tom === balancer) v = Math.max(0, colTotal(k) - somaEditaveis);
-      else v = vTom(tom);
+      else if (tom === balancer) v = Math.max(0, colTotal(k) - somaEditaveisCel(k));
+      else v = vCel(tom, k);
       cels[k] = v;
       total += v;
     });
     return { tom, cels, total, balanceador: tom === balancer, editavel: tom !== balancer };
   });
   return {
-    keys, tamanhos, tons, linhas, colTotal, vTom,
+    keys, tamanhos, tons, linhas, colTotal, vTom, vCel, somaEditaveisCel, qtdMin,
     balancer, somaEditaveis, semDigitacao,
     totalGeral: (g.total || 0) * cam * mult,
   };
@@ -13466,7 +13486,12 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
 // da linha) e atualiza o DOM dos demais inputs sincronizados, das celulas
 // do balanceador e das colunas "Total". O re-render completo nao acontece
 // aqui pra preservar o foco do input quando o usuario tabula entre celulas.
-async function salvarValorTotalTamanhoTom(osId, tom, valor) {
+// `size` é o tamanho da célula em que o número foi digitado: o usuário digita a
+// quantidade DAQUELE tamanho, e o que fica gravado é sempre o V na unidade do
+// tamanho limitante (é dele que as outras colunas são derivadas). Sem o `size`,
+// digitar 48 no G de uma grade 2M-4G-2GG gravaria V=48 e o M sairia com 48
+// também.
+async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -13486,19 +13511,26 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor) {
   const g = os.grade || {};
   const cam = os.enfesto?.camadas || 0;
   const mult = calcularMultPrincipalImpressao(os);
-  let minCol = Infinity;
-  ['p','m','g','gg','g1','g2','g3'].forEach(k => {
-    if ((g[k] || 0) > 0) {
-      const colTotal = g[k] * cam * mult;
-      if (colTotal < minCol) minCol = colTotal;
-    }
-  });
-  const max = minCol === Infinity ? 0 : Math.max(0, minCol - somaOutros);
-  const n = Math.max(0, Math.min(max, Math.floor(Number(valor) || 0)));
+  // O V é digitado na unidade do TAMANHO LIMITANTE e cada coluna escala por
+  // grade[k]/qtdMin. Com isso a trava vira a mesma em todas as colunas —
+  // V × g[k]/qtdMin ≤ g[k] × cam × mult ⟺ V ≤ qtdMin × cam × mult —, então
+  // basta o teto do tamanho limitante em vez de varrer as colunas.
+  const visiveis = ['p','m','g','gg','g1','g2','g3'].map(k => g[k] || 0).filter(q => q > 0);
+  const qtdMin = visiveis.length ? Math.min(...visiveis) : 0;
+  const max = Math.max(0, qtdMin * cam * mult - somaOutros);
+  // O número digitado é do tamanho `size`; converte para a unidade do limitante.
+  const qtdSize = (size && (g[size] || 0) > 0) ? g[size] : qtdMin;
+  const digitado = Math.max(0, Math.floor(Number(valor) || 0));
+  const bruto = qtdSize > 0 ? Math.round(digitado * qtdMin / qtdSize) : digitado;
+  const n = Math.max(0, Math.min(max, bruto));
   os.progresso.totalTamanhoTomValor[tNum] = n;
-  // Ajusta o DOM se o valor digitado foi clampado pra menos
-  const txt = n > 0 ? String(n) : '';
+  // Reescreve a linha inteira com o valor de CADA tamanho (o clamp pode ter
+  // baixado o V, e cada coluna tem o seu número).
   document.querySelectorAll(`input[data-tt-tom-input="${tNum}"]`).forEach(i => {
+    const k = i.dataset.ttSize;
+    const q = (k && (g[k] || 0) > 0) ? g[k] : qtdMin;
+    const v = qtdMin > 0 ? Math.round(n * q / qtdMin) : n;
+    const txt = v > 0 ? String(v) : '';
     if (i.value !== txt) i.value = txt;
   });
   atualizarLinhasTomNoDOM();
@@ -13509,10 +13541,22 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor) {
 // tom (digitar em uma celula preenche as outras com o mesmo numero) e
 // recalcula no DOM as celulas do balanceador e as colunas "Total" das
 // linhas — sem re-render pra preservar o foco do input.
+// Digitar numa célula preenche as outras da linha PROPORCIONALMENTE à grade: o
+// número digitado vale para o tamanho daquela célula, e cada outra recebe
+// digitado × grade[dela] / grade[digitado]. Numa grade 2M-4G-2GG, digitar 24 no
+// M põe 48 no G — antes repetia 24 em todas.
 function propagarValorTomTamanho(input, tom) {
-  const v = input.value;
+  const os = printOsAtual;
+  const g = (os && os.grade) || {};
+  const kIn = input.dataset.ttSize;
+  const qIn = (kIn && (g[kIn] || 0) > 0) ? g[kIn] : 1;
+  const digitado = Math.max(0, Number(input.value) || 0);
   document.querySelectorAll(`input[data-tt-tom-input="${tom}"]`).forEach(i => {
-    if (i !== input) i.value = v;
+    if (i === input) return;
+    const k = i.dataset.ttSize;
+    const q = (k && (g[k] || 0) > 0) ? g[k] : qIn;
+    const v = qIn > 0 ? Math.round(digitado * q / qIn) : digitado;
+    i.value = v > 0 ? String(v) : '';
   });
   atualizarLinhasTomNoDOM();
 }
@@ -13522,18 +13566,28 @@ function atualizarLinhasTomNoDOM() {
   if (!os) return;
   const balancerCells = document.querySelectorAll('[data-tt-balancer-cell]');
   if (!balancerCells.length && !document.querySelector('[data-tt-row-total]')) return;
-  // Toms editaveis = aqueles que tem input renderizado (um por linha basta)
+  const g = os.grade || {};
+  // Tons editaveis. O input guarda a quantidade DO TAMANHO dele; o que interessa
+  // aqui é quanto cada tom leva EM CADA COLUNA, então guarda-se o par
+  // (valor, tamanho) e a conversão é feita por coluna.
   const vPorTom = {};
   [1,2,3,4].forEach(tt => {
     const first = document.querySelector(`input[data-tt-tom-input="${tt}"]`);
-    if (first) vPorTom[tt] = Math.max(0, Number(first.value) || 0);
+    if (first) vPorTom[tt] = { val: Math.max(0, Number(first.value) || 0), size: first.dataset.ttSize };
   });
-  // Atualiza cada celula do balanceador: colTotal(k) - soma dos V editaveis
+  const naColuna = (e, k) => {
+    const qOrig = (e.size && (g[e.size] || 0) > 0) ? g[e.size] : 0;
+    const qDest = g[k] || 0;
+    if (!(qOrig > 0)) return e.val;
+    return Math.round(e.val * qDest / qOrig);
+  };
+  // Atualiza cada celula do balanceador: colTotal(k) - o que os editaveis levam
+  // NAQUELA coluna.
   balancerCells.forEach(c => {
     const size = c.dataset.ttBalancerSize;
     const colTotal = calcularColTotalAlvoImpressao(os, size);
     let somaEditaveis = 0;
-    Object.values(vPorTom).forEach(v => { somaEditaveis += v; });
+    Object.values(vPorTom).forEach(e => { somaEditaveis += naColuna(e, size); });
     const v = Math.max(0, colTotal - somaEditaveis);
     c.textContent = v > 0 ? String(v) : '';
   });
@@ -13542,9 +13596,10 @@ function atualizarLinhasTomNoDOM() {
     const tt = Number(c.dataset.ttRowTotal);
     let sum = 0;
     if (vPorTom[tt] != null) {
-      // Tom editavel: V × numero de celulas visiveis (inputs)
-      const inputs = document.querySelectorAll(`input[data-tt-tom-input="${tt}"]`);
-      sum = vPorTom[tt] * inputs.length;
+      // Tom editavel: soma o valor de cada celula visivel (cada uma tem o seu).
+      document.querySelectorAll(`input[data-tt-tom-input="${tt}"]`).forEach(i => {
+        sum += Math.max(0, Number(i.value) || 0);
+      });
     } else {
       // Tom balanceador: soma das celulas balanceadoras
       document.querySelectorAll(`[data-tt-balancer-cell][data-tt-balancer-tom="${tt}"]`).forEach(bc => {
@@ -13981,6 +14036,57 @@ function gramaturaCorPorNome(nome) {
 // É a fonte única usada tanto na folha de impressão (coluna Consumo) quanto
 // na baixa automática de estoque. Espelha exatamente a resolução de comp/larg/
 // camadas/tecido que a impressão usa, para que os números batam.
+// Camadas que uma FASE do enfesto tem quando a OS não gravou um número próprio
+// para ela. Cada fase enfesta um tanto diferente: a ribana moletom cadastrada
+// como "2x" rende duas unidades da grade por camada, então 36 camadas de moletom
+// pedem 18 de ribana; o forro de capuz vai a metade; o viés é sempre 1.
+//
+// É a mesma tabela do botão "calcular camadas" do formulário
+// (`calcularCamadasParaProducao`). Antes ela só existia lá, e o que sobrava para
+// a folha era `b.camadas || camadasGlobal`: numa OS salva sem as camadas por
+// fase, TODAS as fases herdavam o número do moletom. A ribana da OS 0443
+// aparecia com 36 camadas em vez de 18 — e como o kg sai de
+// comp × larg × camadas × gramatura, a baixa de estoque da ribana saía dobrada.
+function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
+  const cam = parseInt(camadasPrincipal, 10) || 0;
+  if (!(cam > 0)) return 0;
+  const fasesOS = (o && o.fases) || [];
+  const idx = fasesOS.findIndex(f => (f.ordem || 0) === ordem);
+  if (idx < 0) return cam;
+  // Mesma complementação POR FASE que o formulário faz: quando a fase não tem um
+  // tecido que exista de fato no cadastro, vale o da linha de Tecidos da OS
+  // naquela posição. Sem isto, a fase caía sem categoria, o papel saía vazio e a
+  // gola voltava a herdar as camadas do tecido principal.
+  const linhasTec = (o && o.tecidos) || [];
+  const fasesEfetivas = fasesOS.map((f, i) => {
+    const valido = f.tecidoId && (STATE.tecidos || []).some(t => t.id === f.tecidoId);
+    return { ...f, tecidoId: valido ? f.tecidoId : ((linhasTec[i] || {}).tecidoId || '') };
+  });
+  const faseOS = fasesEfetivas[idx] || {};
+  // As "unidades da grade" (o 2x da ribana) moram no CADASTRO da grade — a
+  // cópia de fases guardada na OS não as leva.
+  const grade = (STATE.grades || []).find(x => x.id === (o && o.gradeId));
+  const fasesGrade = (grade && grade.fases) || [];
+  const faseGrade = fasesGrade.find(f => (f.ordem || 0) === ordem) || fasesGrade[idx] || {};
+  const papel = (calcularPapeisFases(fasesEfetivas)[idx] || {}).papel || '';
+  const tec = (STATE.tecidos || []).find(t => t.id === faseOS.tecidoId);
+  if (papel === 'forro_capuz') return Math.max(1, Math.ceil(cam / 2));
+  if (papel.indexOf('ribana_') === 0 && isTecidoRibana(tec)) {
+    const unidades = parseInt(faseGrade.unidades, 10) || (MULTIPLICADOR_PECAS.ribana || 2);
+    // Ribana MOLETOM escala com a grade: "2 barras + 4 punhos por tamanho"
+    // cobre duas blusas/tamanho quando a grade pede 2 por tamanho. As outras
+    // ribanas (gola polo, ribana de malha) já têm a grade toda embutida no "10x".
+    const escalaComGrade = String((tec && tec.nome) || '').toLowerCase().includes('moletom');
+    const g = (o && o.grade) || {};
+    const qtds = ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0).filter(q => q > 0);
+    const fator = (escalaComGrade && qtds.length)
+      ? qtds.reduce((s, x) => s + x, 0) / qtds.length
+      : 1;
+    return Math.max(1, Math.ceil(cam * multiplicadorPecaOS(o) * fator / unidades));
+  }
+  return cam;
+}
+
 function consumoEnfestoOS(o) {
   const e = o.enfesto || {};
   const tecs = o.tecidos || [];
@@ -14021,7 +14127,10 @@ function consumoEnfestoOS(o) {
     // "Preto Ribana Moletom"; se não achar cadastro que case, devolve como veio.
     const corReal = corCanonicaPorTecido(cor || tecs[i]?.corNome || '', tecidoReal);
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
-    const camadas = ehVies ? 1 : (b.camadas || camadasGlobal || 0);
+    // Camadas: as gravadas na fase mandam. Sem elas, cada fase deriva das
+    // camadas principais pela sua própria regra — herdar o número do moletom
+    // dobrava a ribana cadastrada como "2x".
+    const camadas = ehVies ? 1 : (b.camadas || camadasPadraoDaFase(o, ord, camadasGlobal) || camadasGlobal || 0);
     const comp = (parseFloat(fase.comp) > 0 ? parseFloat(fase.comp) : parseFloat(b.comp)) || 0;
     const larg = (parseFloat(fase.larg) > 0 ? parseFloat(fase.larg) : parseFloat(b.larg)) || 0;
     // Gramatura: prioridade para a COR (varia conforme a cor); se a cor não
@@ -14756,10 +14865,10 @@ function renderPrintSheet(o) {
               // a linha "Total geral" e a soma total = X.
               const tomsSel = TT.tons;
               const balancerTom = TT.balancer;
-              // V uniforme por linha (mesmo numero em todas as celulas
-              // visiveis). Digitar em uma celula propaga pra todas via DOM.
+              // O V é digitado na unidade do tamanho limitante; cada célula sai
+              // escalada pela grade (TT.linhas já traz o número de cada uma).
+              // Digitar numa célula propaga pras outras via DOM, na proporção.
               const vTom = TT.vTom;
-              const balancerCellVal = (k) => Math.max(0, TT.colTotal(k) - TT.somaEditaveis);
               const tomRow = (tom) => {
                 const isChecked = tomsSel.includes(tom);
                 const ck = isChecked ? 'checked' : '';
@@ -14795,7 +14904,7 @@ function renderPrintSheet(o) {
                     // apagado e à esquerda, parecendo menos válido que os digitados.
                     return `<td data-tt-balancer-cell="${tom}" data-tt-balancer-tom="${tom}" data-tt-balancer-size="${k}" style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;">${val > 0 ? val : ''}</td>`;
                   }
-                  return `<td style="padding:0;"><input type="number" min="0" value="${val > 0 ? val : ''}" data-tt-tom-input="${tom}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value)" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
+                  return `<td style="padding:0;"><input type="number" min="0" value="${val > 0 ? val : ''}" data-tt-tom-input="${tom}" data-tt-size="${k}" oninput="propagarValorTomTamanho(this, ${tom})" onchange="salvarValorTotalTamanhoTom('${esc(o.id)}', ${tom}, this.value, '${k}')" style="width:100%;box-sizing:border-box;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8pt;padding:1px 2px;"></td>`;
                 }).join('');
                 const totalCell = !mostra
                   ? `<td style="background:#c9e8d0;"></td>`
