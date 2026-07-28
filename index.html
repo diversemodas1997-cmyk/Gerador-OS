@@ -99,7 +99,7 @@
           <div class="desc">Gerador de Ordem de Serviço para confecção · Modelo baseado em ficha técnica DIXIE</div>
         </div>
         <div class="actions">
-          <button class="btn primary" onclick="goto('nova-os')">+ Nova OS</button>
+          <button class="btn primary admin-only" onclick="goto('nova-os')">+ Nova OS</button>
         </div>
       </div>
 
@@ -108,7 +108,7 @@
       </div>
 
       <div class="home-grid">
-        <div class="home-card" onclick="goto('nova-os')">
+        <div class="home-card admin-only" onclick="goto('nova-os')">
           <div class="num">+</div>
           <div class="label">Ação</div>
           <div class="title">Criar nova OS</div>
@@ -630,7 +630,7 @@
     <section class="page hidden" data-page="lista-os">
       <div class="page-header">
         <div><h1>OS Salvas</h1><div class="desc">Ordens de Serviço geradas. Clique em visualizar para imprimir.</div></div>
-        <div class="actions"><button class="btn primary" onclick="goto('nova-os')">+ Nova OS</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="goto('nova-os')">+ Nova OS</button></div>
       </div>
       <div class="card">
         <div style="margin-bottom:12px;max-width:320px">
@@ -651,7 +651,7 @@
         <div><h1>Visualização da OS</h1><div class="desc">Revise a folha e clique em Imprimir.</div></div>
         <div class="actions">
           <button class="btn" onclick="goto('lista-os')">Voltar</button>
-          <button class="btn" onclick="editarOsAtual()">Editar</button>
+          <button class="btn admin-only" onclick="editarOsAtual()">Editar</button>
           <button class="btn" onclick="imprimirEtiquetasAtual()">Imprimir Etiquetas</button>
           <button class="btn accent" onclick="ajustarImpressaoParaA4(); setTimeout(() => window.print(), 50);">🖨 Imprimir / Salvar PDF</button>
         </div>
@@ -939,6 +939,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28ag"></script>
+<script src="app.js?v=2026-07-28ah"></script>
 </body>
 </html>

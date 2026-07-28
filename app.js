@@ -1756,6 +1756,15 @@ function goto(page) {
     toast('Apenas admin pode acessar cadastros', 'err');
     page = 'home';
   }
+  // O FORMULÁRIO DA OS é a mesma página para criar e para editar, e é escrita
+  // pura. Esconder os botões que levam até ele não basta: dá para chegar pelo
+  // card do Início, pelo "+ Nova OS" da lista, pelo "editar" de uma OS e pelo
+  // endereço. Fechar aqui, na rota, fecha todos os caminhos de uma vez — e
+  // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
+  if (page === 'nova-os' && currentRole && currentRole !== 'admin') {
+    toast('Seu acesso é de leitura — apenas o admin cria ou edita OS', 'err');
+    page = 'lista-os';
+  }
   _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
   document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`section.page[data-page="${page}"]`);
@@ -13663,8 +13672,8 @@ function renderListaOS() {
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="imprimirEtiquetas('${o.id}')">etiquetas</button>
-        <button class="edit" onclick="editarOS('${o.id}')">editar</button>
-        <button class="edit" onclick="duplicarOS('${o.id}')">duplicar</button>
+        <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
+        <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
       </td>
     </tr>`;
@@ -14339,6 +14348,7 @@ function editarOsAtual() {
 }
 
 function editarOS(id) {
+  if (!exigirEdicao('editar OS')) return;
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
   osEditId = id;
