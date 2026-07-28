@@ -13395,6 +13395,32 @@ function dadosEtiquetaParaOS(o) {
            tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao };
 }
 
+// Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
+// o PDF leva a página de 100x50 mm dentro do arquivo (jsPDF, format [100,50]),
+// então a impressora recebe a medida e não precisa adivinhar.
+//
+// A janela HTML de etiquetas depende do `@page { size: 100mm 50mm }`, e o Chrome
+// só o respeita quando a impressora escolhida TEM esse papel. Numa laser A4
+// comum ele cai no papel da impressora e a etiqueta sai pequena, no canto de uma
+// folha inteira — foi o que aconteceu na OS 0452. Pelo PDF isso não acontece.
+function imprimirEtiquetasPdf(osId) {
+  const o = STATE.ordens.find(x => x.id === osId);
+  if (!o) { toast('OS não encontrada', 'err'); return; }
+  try {
+    const pdf = gerarPdfEtiquetas(dadosEtiquetaParaOS(o));
+    const url = URL.createObjectURL(pdf.output('blob'));
+    const w = window.open(url, '_blank');
+    if (!w) { toast('Permita pop-ups para abrir o PDF das etiquetas', 'err'); return; }
+    // O objeto só é liberado depois de a aba carregar; revogar na hora deixaria
+    // a aba em branco.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('PDF das etiquetas aberto (100 × 50 mm). No diálogo, deixe Margens: Nenhuma e Escala: 100%.', 'ok');
+  } catch (e) {
+    console.error('imprimirEtiquetasPdf', e);
+    toast('Falha ao gerar o PDF das etiquetas: ' + (e.message || e), 'err');
+  }
+}
+
 function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
@@ -13540,7 +13566,14 @@ function imprimirEtiquetas(osId) {
   <div class="toolbar">
     <button class="primary" onclick="window.print()">🖨 Imprimir</button>
     <button onclick="window.close()">Fechar</button>
+    <button onclick="window.opener && window.opener.imprimirEtiquetasPdf && window.opener.imprimirEtiquetasPdf('${escEt(osId)}')">📄 Abrir PDF 10×5cm</button>
     <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''} · LOTE 1${numEtiquetas>1?'..'+numEtiquetas:''} · 10×5cm</span>
+    <div style="margin-top:8px;font-size:12px;color:#555;line-height:1.45;max-width:760px;">
+      Esta janela imprime pelo navegador, e aí o <b>tamanho da folha é o da impressora</b>: numa laser A4 a etiqueta sai
+      pequena no canto da folha. Para a <b>impressora de etiquetas 10×5cm</b>, use o <b>PDF</b> — ele carrega a página de
+      100&times;50&nbsp;mm dentro do arquivo, e a impressora recebe a medida exata.
+      No diálogo do Chrome, deixe <b>Margens: Nenhuma</b> e <b>Escala: 100%</b> (nunca "Ajustar à página").
+    </div>
   </div>
   ${corpo}
   <script>
@@ -13566,7 +13599,7 @@ function imprimirEtiquetas(osId) {
 
 function imprimirEtiquetasAtual() {
   if (!printOsAtual) { toast('Abra uma OS antes', 'err'); return; }
-  imprimirEtiquetas(printOsAtual.id);
+  imprimirEtiquetasPdf(printOsAtual.id);
 }
 
 async function salvarEImprimirEtiquetas() {
@@ -13581,7 +13614,7 @@ async function _salvarEtiquetasConfirmada(data) {
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
-  imprimirEtiquetas(data.id);
+  imprimirEtiquetasPdf(data.id);
 }
 
 // Usado so pelo botao "Imprimir / Salvar PDF" (window.print()). O caminho
@@ -13671,7 +13704,8 @@ function renderListaOS() {
       <td>${o.grade?.total||0} pç</td>
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
-        <button class="edit" onclick="imprimirEtiquetas('${o.id}')">etiquetas</button>
+        <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
+        <button class="edit" onclick="imprimirEtiquetas('${o.id}')" title="Abre as etiquetas numa janela do navegador. O tamanho da folha passa a ser o da impressora — use só quando quiser conferir na tela.">etiquetas (tela)</button>
         <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
         <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
@@ -16383,6 +16417,7 @@ window.reindexVariantes = reindexVariantes;
 window.salvarOS = salvarOS;
 window.salvarEImprimir = salvarEImprimir;
 window.imprimirEtiquetas = imprimirEtiquetas;
+window.imprimirEtiquetasPdf = imprimirEtiquetasPdf;
 window.imprimirEtiquetasAtual = imprimirEtiquetasAtual;
 window.salvarEImprimirEtiquetas = salvarEImprimirEtiquetas;
 window.ajustarImpressaoParaA4 = ajustarImpressaoParaA4;
