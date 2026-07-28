@@ -16080,6 +16080,249 @@ function _riscoResolverFase(leitura, grade) {
   return { fase: null, origem: 'indefinida', folga: null };
 }
 
+/* ---------------- criar grade NOVA a partir dos riscos ---------------- */
+// Quando os tamanhos do relatório não batem com nenhuma grade cadastrada, é
+// grade nova. O PDF traz o que é medida (tamanhos, comprimento, largura) mas não
+// traz o que é DECISÃO DA CASA: como aquele produto se chama aqui dentro, de que
+// tecido é cada fase, quantas unidades da grade a fase rende, quantas peças vão
+// no pacote. Esta tela pergunta isso — uma vez por produto — e guarda a resposta.
+// Da segunda grade do mesmo produto em diante, tudo já vem preenchido.
+
+// A memória do PRODUTO: "modelo do risco" → como ele se chama e o que é aqui.
+function _riscoProdutos() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.riscoProdutos || typeof STATE.meta.riscoProdutos !== 'object') STATE.meta.riscoProdutos = {};
+  return STATE.meta.riscoProdutos;
+}
+// A memória do TECIDO por fase: "modelo|código do tecido" → id do tecido.
+function _riscoTecidos() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.riscoTecidos || typeof STATE.meta.riscoTecidos !== 'object') STATE.meta.riscoTecidos = {};
+  return STATE.meta.riscoTecidos;
+}
+
+// O pedaço do nome da grade que descreve os tamanhos, na convenção da casa:
+//   todos iguais a 1 e contíguos  -> "P ao G3"
+//   todos iguais a N e contíguos  -> "2X P ao G3"
+//   diferentes entre si           -> "2M-4G-2GG"
+function _riscoNomeTamanhos(tamanhos) {
+  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const presentes = ordem.filter(k => (parseInt(tamanhos[k], 10) || 0) > 0);
+  if (!presentes.length) return '';
+  const qtds = presentes.map(k => parseInt(tamanhos[k], 10));
+  const iguais = qtds.every(q => q === qtds[0]);
+  const contiguo = presentes.every((k, i) =>
+    i === 0 || ordem.indexOf(k) === ordem.indexOf(presentes[i - 1]) + 1);
+  if (iguais && contiguo && presentes.length > 2) {
+    const faixa = `${rot[presentes[0]]} ao ${rot[presentes[presentes.length - 1]]}`;
+    return qtds[0] === 1 ? faixa : `${qtds[0]}X ${faixa}`;
+  }
+  return presentes.map(k => (qtds[presentes.indexOf(k)] === 1 ? '' : qtds[presentes.indexOf(k)]) + rot[k]).join('-');
+}
+
+// Assinatura dos tamanhos, para juntar num só grupo os riscos que são da mesma
+// grade nova. Cinco PDFs da mesma peça viram UMA grade de cinco fases.
+function _riscoAssinatura(tamanhos) {
+  return ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+    .map(k => (parseInt((tamanhos || {})[k], 10) || 0)).join('-');
+}
+
+// O nome sugerido para uma fase que ainda não existe: o que já foi ensinado,
+// senão o que o nome do arquivo diz, senão o próprio código do tecido.
+function _riscoNomeFaseSugerido(L) {
+  const mem = _riscoAprendidos();
+  const k = _riscoChave(L);
+  if (k && mem[k]) return mem[k];
+  const a = L.arquivo || '';
+  const m = a.match(/fase\s+([^.\-]+?)\s*(?:-|\.pdf|$)/i);
+  if (m) return m[1].trim().replace(/\s+/g, ' ');
+  const t = (L.tecido || '').trim();
+  return t && !/^\d+$/.test(t) ? t.charAt(0) + t.slice(1).toLowerCase() : '';
+}
+
+// Blocos de "grade nova" a montar: um por assinatura de tamanhos sem grade.
+function _riscoGruposNovos() {
+  const grupos = new Map();
+  _riscoLeituras.forEach((L, i) => {
+    if (L.erro || (L.grades && L.grades.length)) return;
+    if (!L.tamanhos || !Object.keys(L.tamanhos).length) return;
+    const a = _riscoAssinatura(L.tamanhos);
+    if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
+    grupos.get(a).itens.push({ L, i });
+  });
+  return Array.from(grupos.values());
+}
+
+function _riscoHtmlGradesNovas() {
+  const grupos = _riscoGruposNovos();
+  if (!grupos.length) return '';
+  const produtos = _riscoProdutos();
+  const memTec = _riscoTecidos();
+  const tecOpts = sel => '<option value="">— escolher —</option>' + (STATE.tecidos || [])
+    .map(t => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.nome)}</option>`).join('');
+
+  return grupos.map((G, gi) => {
+    const modelo = (G.itens[0].L.modelo || '').trim();
+    const prod = produtos[_normNome(modelo)] || {};
+    const nomeTam = _riscoNomeTamanhos(G.tamanhos);
+    const skuSug = prod.sku || '';
+    const fases = G.itens.slice().sort((a, b) => (a.L.arquivo || '').localeCompare(b.L.arquivo || '', 'pt-BR'));
+    const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+      .filter(k => (parseInt(G.tamanhos[k], 10) || 0) > 0)
+      .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
+    return `
+    <div class="card" style="margin-top:12px;border-left:3px solid var(--accent);">
+      <div class="card-title">Grade nova — ${esc(modelo) || 'produto sem nome no risco'}</div>
+      <div class="field-hint" style="margin-bottom:8px;">
+        ${fases.length} risco(s) com os mesmos tamanhos (<b>${esc(tamTxt)}</b>) e nenhuma grade cadastrada com essa distribuição.
+        Os campos abaixo são os que o PDF <b>não</b> traz — eles são decisão da casa. Preenchidos uma vez, ficam guardados para este produto.
+      </div>
+      <div class="form-grid cols-3">
+        <div class="field">
+          <label>SKU da grade *</label>
+          <input type="text" id="rn-sku-${gi}" value="${esc(skuSug)}" placeholder="Ex.: BM.TRICOLOR" oninput="riscoAtualizarNome(${gi})">
+          <div class="field-hint">O que vem depois do "|" no nome.</div>
+        </div>
+        <div class="field">
+          <label>Tipo de peça *</label>
+          <select id="rn-tipo-${gi}">
+            <option value="camiseta" ${prod.tipoPeca === 'camiseta' ? 'selected' : ''}>Camiseta</option>
+            <option value="blusa_moletom" ${prod.tipoPeca === 'blusa_moletom' ? 'selected' : ''}>Blusa moletom</option>
+            <option value="outro" ${prod.tipoPeca === 'outro' ? 'selected' : ''}>Outro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Variação</label>
+          <select id="rn-var-${gi}">
+            <option value="">— sem variação —</option>
+            <option value="basica" ${prod.variacao === 'basica' ? 'selected' : ''}>Básica</option>
+            <option value="bicolor" ${prod.variacao === 'bicolor' ? 'selected' : ''}>Bicolor</option>
+            <option value="tricolor" ${prod.variacao === 'tricolor' ? 'selected' : ''}>Tricolor</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Peças por pacote</label>
+          <input type="number" min="0" id="rn-pac-${gi}" value="${esc(prod.pecasPorPacote || '')}" placeholder="0">
+        </div>
+        <div class="field full">
+          <label>Nome da grade</label>
+          <input type="text" id="rn-nome-${gi}" value="${esc(nomeTam + (skuSug ? ' | ' + skuSug : ''))}" readonly class="is-auto">
+          <div class="field-hint">Montado dos tamanhos do risco + o SKU. Os tamanhos vêm do PDF e não se digitam.</div>
+        </div>
+      </div>
+      <table class="table" style="font-size:12px;margin-top:8px;">
+        <thead><tr><th style="width:26px;">Fase</th><th>Nome da fase *</th><th>Tecido *</th><th>Unid.</th><th>Medida (risco + ${RISCO_EXCEDENTE_M * 100} cm)</th><th>Arquivo</th></tr></thead>
+        <tbody>
+          ${fases.map((it, fi) => {
+            const L = it.L;
+            const kTec = _riscoChave(L);
+            return `<tr>
+              <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fi + 1}</td>
+              <td><input type="text" id="rn-f-nome-${gi}-${fi}" value="${esc(_riscoNomeFaseSugerido(L))}" placeholder="Ex.: Corpo Parte 1" style="font-size:12px;"></td>
+              <td><select id="rn-f-tec-${gi}-${fi}" style="font-size:12px;">${tecOpts(memTec[kTec] || '')}</select></td>
+              <td><input type="number" min="1" id="rn-f-un-${gi}-${fi}" value="2" style="width:56px;font-size:12px;"></td>
+              <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">
+                ${esc((_riscoCompCadastro(L.comprimento) || 0).toFixed(2))} × ${esc((L.largura || 0).toFixed(3))}
+                <div style="color:var(--ink-3);font-size:10px;">tecido no risco: ${esc(L.tecido || '—')}</div>
+              </td>
+              <td style="font-size:10px;color:var(--ink-3);">${esc(L.arquivo)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:8px;">
+        <button class="btn primary" onclick="criarGradeDoRisco(${gi})">+ Criar esta grade com ${fases.length} fase(s)</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function riscoAtualizarNome(gi) {
+  const G = _riscoGruposNovos()[gi];
+  if (!G) return;
+  const sku = (document.getElementById(`rn-sku-${gi}`)?.value || '').trim();
+  const el = document.getElementById(`rn-nome-${gi}`);
+  if (el) el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+}
+
+async function criarGradeDoRisco(gi) {
+  if (!exigirEdicao('criar grade pelo risco')) return;
+  const G = _riscoGruposNovos()[gi];
+  if (!G) return;
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const sku = v(`rn-sku-${gi}`);
+  if (!sku) return toast('Informe o SKU da grade', 'err');
+  const nome = v(`rn-nome-${gi}`);
+  if ((STATE.grades || []).some(g => _normNome(g.nome) === _normNome(nome))) {
+    return toast(`Já existe uma grade chamada "${nome}"`, 'err');
+  }
+  const fases = G.itens.slice().sort((a, b) => (a.L.arquivo || '').localeCompare(b.L.arquivo || '', 'pt-BR'));
+  const linhas = fases.map((it, fi) => ({
+    L: it.L,
+    nome: v(`rn-f-nome-${gi}-${fi}`),
+    tecidoId: v(`rn-f-tec-${gi}-${fi}`),
+    unidades: parseInt(v(`rn-f-un-${gi}-${fi}`), 10) || 2
+  }));
+  const semNome = linhas.filter(x => !x.nome);
+  if (semNome.length) return toast(`${semNome.length} fase(s) sem nome`, 'err');
+  const semTec = linhas.filter(x => !x.tecidoId);
+  if (semTec.length && !confirm(`${semTec.length} fase(s) sem tecido escolhido.\n\nFase sem tecido não entra no cálculo de consumo nem na baixa de estoque. Criar mesmo assim?`)) return;
+
+  const tamanhos = {};
+  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhos[k], 10) || 0; });
+  tamanhos.total = Object.keys(tamanhos).reduce((s, k) => s + (k === 'total' ? 0 : tamanhos[k]), 0);
+  tamanhos.descricao = nome;
+
+  const nova = {
+    id: uid(), nome, tamanhos,
+    tipoPeca: v(`rn-tipo-${gi}`), variacao: v(`rn-var-${gi}`),
+    pecasPorPacote: parseInt(v(`rn-pac-${gi}`), 10) || 0,
+    fases: linhas.map((x, i) => ({
+      ordem: i + 1, nome: x.nome, tecidoId: x.tecidoId, unidades: x.unidades,
+      comp: _riscoCompCadastro(x.L.comprimento).toFixed(2),
+      larg: x.L.largura.toFixed(3),
+      // Bobinas previstas o relatório não traz — é decisão da casa, fica em
+      // branco para ser preenchida quando alguém souber.
+      bobinas: ''
+    }))
+  };
+  // Campos legados (espelho da 1ª fase), como o cadastro manual grava.
+  nova.enfestoComprimento = nova.fases[0] ? nova.fases[0].comp : '';
+  nova.enfestoLargura = nova.fases[0] ? nova.fases[0].larg : '';
+
+  if (!confirm(`Criar a grade "${nome}" com ${nova.fases.length} fase(s)?\n\n`
+    + nova.fases.map(f => `  ${f.ordem}. ${f.nome}: ${f.comp} × ${f.larg}`).join('\n'))) return;
+
+  STATE.grades.push(nova);
+  // APRENDE: o produto e, por fase, o código do tecido. A próxima grade deste
+  // mesmo produto já vem com tudo preenchido.
+  const produtos = _riscoProdutos(), memFase = _riscoAprendidos(), memTec = _riscoTecidos();
+  const modeloKey = _normNome(G.itens[0].L.modelo || '');
+  if (modeloKey) {
+    produtos[modeloKey] = { sku, tipoPeca: nova.tipoPeca, variacao: nova.variacao, pecasPorPacote: nova.pecasPorPacote };
+  }
+  linhas.forEach(x => {
+    const k = _riscoChave(x.L);
+    if (!k) return;
+    memFase[k] = x.nome;
+    if (x.tecidoId) memTec[k] = x.tecidoId;
+  });
+  await saveState('grades');
+  await saveState('meta');
+  toast(`Grade "${nome}" criada com ${nova.fases.length} fase(s)`, 'ok');
+  // Relê os mesmos PDFs: agora eles encontram a grade recém-criada.
+  _riscoLeituras.forEach(L => {
+    if (L.erro) return;
+    L.grades = _riscoGradesQueCasam(L.tamanhos);
+    L.grade = L.grades.length === 1 ? L.grades[0] : null;
+    L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: 'sem grade' };
+    L.aplicar = false;   // já foi gravado na criação
+  });
+  renderRiscoResultado();
+  renderGrades();
+}
+
 /* ---------------- tela de importação do risco ---------------- */
 
 function abrirModalRisco() {
@@ -16176,6 +16419,7 @@ function renderRiscoResultado() {
       </tr></thead>
       <tbody>${linhas}</tbody>
     </table>
+    ${_riscoHtmlGradesNovas()}
     <div class="field-hint" style="margin-top:8px;">
       A coluna <b>Do PDF</b> em vermelho é o que vai <b>mudar</b> no cadastro. Desmarque o que não quiser aplicar.
       Ao aplicar, o programa <b>aprende</b> o par <i>modelo do risco + código do tecido</i> de cada linha —
@@ -16974,6 +17218,8 @@ window.abrirModalRisco = abrirModalRisco;
 window.lerRiscosEscolhidos = lerRiscosEscolhidos;
 window.riscoTrocarFase = riscoTrocarFase;
 window.aplicarRiscoNasGrades = aplicarRiscoNasGrades;
+window.criarGradeDoRisco = criarGradeDoRisco;
+window.riscoAtualizarNome = riscoAtualizarNome;
 window.riscoMarcar = riscoMarcar;
 window.importarDados = importarDados;
 window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
