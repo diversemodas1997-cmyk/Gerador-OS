@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
 
@@ -341,7 +342,7 @@
     <section class="page hidden" data-page="cad-grades">
       <div class="page-header">
         <div><h1>Grades</h1><div class="desc">Modelos de grade de tamanhos com quantidades-padrão</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
+        <div class="actions"><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -897,6 +898,19 @@
 
 <!-- Retirar do dia todas as operações de uma OS alocada: é o desfazer do
      "Alocar OS", em massa, sem ter que apagar uma a uma. -->
+<!-- Importar risco: lê os PDFs de encaixe do CAD e lança comprimento/largura
+     nas fases da grade. Um PDF = uma fase. -->
+<div class="modal-backdrop" id="modal-risco">
+  <div class="modal" style="max-width:1100px;">
+    <h2>Importar risco (PDF do encaixe)</h2>
+    <div id="modal-risco-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-risco')">Fechar</button>
+      <button class="btn primary" id="btn-risco-aplicar" onclick="aplicarRiscoNasGrades()" style="display:none;">Aplicar nas grades</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-desaloc-os">
   <div class="modal">
     <h2 id="modal-desaloc-title">Retirar OS do planejamento</h2>
@@ -945,6 +959,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28am"></script>
+<script src="app.js?v=2026-07-28an"></script>
 </body>
 </html>

@@ -15736,6 +15736,360 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
                   'marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens'];
 
 /* ========================================================= */
+/*  IMPORTAR RISCO: ler o PDF do encaixe e cadastrar a grade  */
+/* ========================================================= */
+// O CAD que alimenta a máquina de corte exporta, para cada encaixe, um relatório
+// em PDF com o comprimento e a largura daquele risco. Digitar isso à mão é o que
+// deixa dezenas de fases sem medida no cadastro — e fase sem medida não calcula
+// consumo de tecido nem tempo de enfesto.
+//
+// UM PDF = UMA FASE. Uma grade de cinco fases pede cinco relatórios.
+//
+// A FONTE É O CONTEÚDO, não o nome do arquivo. Verificado nos relatórios reais:
+//   • QUAL GRADE — a tabela de tamanhos do relatório identifica UMA única grade
+//     entre as cadastradas. O nome do modelo não identificaria: o mesmo
+//     "BLUSÃO CANGURU TRICOLOR" serve a três grades diferentes.
+//   • QUAL FASE — o campo "Tecido" do relatório muda a cada fase (2, 3, 1,
+//     FORRO, RIBANA nos cinco riscos da canguru). Ele é um código do CAD, sem
+//     significado para o sistema — até alguém dizer, UMA VEZ, a que fase
+//     corresponde. A partir daí o par (modelo + tecido) reconhece sozinho.
+//   • Enquanto esse par não foi ensinado, a MEDIDA resolve quando a grade já
+//     existe: a largura dá a família do tecido e o comprimento mais próximo dá a
+//     fase. Nos cinco riscos isso acertou os cinco, com a fase certa a 0,15 m e a
+//     segunda opção a 2,4 m — folga de mais de dez vezes.
+//   • O nome do arquivo é o ÚLTIMO recurso, e serve principalmente de conferência.
+
+let _riscoLeituras = [];
+
+function _riscoNum(txt) {
+  const m = String(txt == null ? '' : txt).replace(',', '.').match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+// A memória do que já foi ensinado: "modelo do risco | código do tecido" → fase.
+// Mora em meta, junto do resto do que o programa aprendeu com o uso.
+function _riscoAprendidos() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.riscoFases || typeof STATE.meta.riscoFases !== 'object') STATE.meta.riscoFases = {};
+  return STATE.meta.riscoFases;
+}
+function _riscoChave(leitura) {
+  const m = _normNome(leitura.modelo), t = _normNome(leitura.tecido);
+  return (m && t) ? (m + '|' + t) : '';
+}
+
+// Lê um relatório de encaixe.
+//
+// O relatório tem TRÊS COLUNAS, com o rótulo numa linha e o valor logo abaixo —
+// ler o texto em sequência não serve, porque "Largura:" e o valor dele ficam
+// separados por outros campos. A regra é geométrica e ao contrário do óbvio: em
+// vez de procurar o valor de cada rótulo (o que exigiria adivinhar onde a coluna
+// termina — e erra, porque os rótulos do cabeçalho ficam noutra faixa), cada
+// VALOR é atribuído ao rótulo mais próximo ACIMA e à esquerda dele. Sem
+// fronteira de coluna, sem palpite.
+async function _riscoLerPdf(file) {
+  const lib = window.pdfjsLib;
+  if (!lib) throw new Error('A biblioteca de leitura de PDF não carregou — a primeira vez precisa de internet.');
+  if (lib.GlobalWorkerOptions && !lib.GlobalWorkerOptions.workerSrc) {
+    lib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+  const doc = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pag = await doc.getPage(1);
+  const tc = await pag.getTextContent();
+  const itens = tc.items
+    .map(i => ({ x: i.transform[4], y: i.transform[5], t: String(i.str || '').trim() }))
+    .filter(i => i.t);
+  if (!itens.length) {
+    throw new Error('Este PDF não tem texto — parece ser digitalizado. Só serve o relatório gerado pelo próprio CAD.');
+  }
+
+  const ys = itens.map(i => i.y);
+  const alt = (Math.max(...ys) - Math.min(...ys)) || 1;
+  const janela = alt * 0.02;              // até 2% da altura conta como "logo abaixo"
+  const rot = itens.filter(i => i.t.endsWith(':'));
+  const vals = itens.filter(i => !i.t.endsWith(':'));
+
+  const porRotulo = new Map();
+  vals.forEach(V => {
+    let escolhido = null, melhor = null;
+    rot.forEach(L => {
+      const dy = L.y - V.y;
+      if (dy <= 0 || dy > janela || L.x > V.x + 1) return;
+      const peso = dy * 1000 + (V.x - L.x);
+      if (melhor == null || peso < melhor) { melhor = peso; escolhido = L; }
+    });
+    if (!escolhido) return;
+    const k = escolhido.t.slice(0, -1);
+    if (!porRotulo.has(k)) porRotulo.set(k, []);
+    porRotulo.get(k).push(V);
+  });
+  const campo = nome => {
+    const chave = Array.from(porRotulo.keys())
+      .find(k => _normNome(k) === _normNome(nome));
+    if (!chave) return '';
+    const vs = porRotulo.get(chave).slice().sort((a, b) => b.y - a.y || a.x - b.x);
+    const topo = vs[0].y;
+    return vs.filter(v => Math.abs(v.y - topo) < 3).map(v => v.t).join(' ').trim();
+  };
+
+  // Tabela de tamanhos: a linha do tamanho ("P") e, abaixo, "1 4 MODELO". O
+  // primeiro número é quantas grades COMPLETAS daquele tamanho o risco traz —
+  // é a própria distribuição da grade.
+  const linhas = new Map();
+  itens.forEach(i => {
+    const k = Math.round(i.y);
+    if (!linhas.has(k)) linhas.set(k, []);
+    linhas.get(k).push(i);
+  });
+  const ordem = Array.from(linhas.keys()).sort((a, b) => b - a);
+  const txtDe = y => linhas.get(y).slice().sort((a, b) => a.x - b.x).map(i => i.t).join(' ').trim();
+  const tamanhos = {};
+  ordem.forEach((y, idx) => {
+    const s = txtDe(y);
+    if (!/^(P|M|G|GG|G1|G2|G3)$/i.test(s)) return;
+    const prox = idx + 1 < ordem.length ? txtDe(ordem[idx + 1]) : '';
+    const n = parseInt((prox.match(/^\s*(\d+)/) || [])[1], 10);
+    if (n > 0) tamanhos[s.toLowerCase()] = n;
+  });
+
+  let modelo = '';
+  const yArea = ordem.find(y => /rea usada modelo/i.test(txtDe(y)));
+  if (yArea != null) modelo = txtDe(yArea).replace(/.*rea usada modelo\s*/i, '').trim();
+
+  const comp = _riscoNum(campo('Comprimento'));
+  const larg = _riscoNum(campo('Largura'));
+  return {
+    arquivo: file.name,
+    comprimento: comp != null ? comp / 100 : null,    // o relatório dá em cm
+    largura: larg != null ? larg / 100 : null,
+    area: _riscoNum(campo('Área')),
+    aproveitamento: _riscoNum(campo('Aproveitamento')),
+    gramatura: _riscoNum(campo('Peso')),              // g/m² (o CAD rotula como kg)
+    tecido: campo('Tecido'),
+    sentido: campo('Sentido'),
+    modelo, tamanhos
+  };
+}
+
+// A grade com EXATAMENTE esta distribuição de tamanhos. É o casamento mais seguro
+// que existe aqui: aplicar o risco na grade errada trocaria 2,51 m por 4,55 m e
+// dobraria o consumo de tecido.
+function _riscoGradesQueCasam(tamanhos) {
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const alvo = {};
+  keys.forEach(k => { const n = parseInt((tamanhos || {})[k], 10) || 0; if (n > 0) alvo[k] = n; });
+  if (!Object.keys(alvo).length) return [];
+  return (STATE.grades || []).filter(g => {
+    const t = g.tamanhos || {};
+    return keys.every(k => (parseInt(t[k], 10) || 0) === (alvo[k] || 0));
+  });
+}
+
+const _riscoF = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
+
+// A que fase da grade este risco pertence, e por quê. A ordem das fontes é a
+// ordem da confiança: o que já foi ensinado, depois a medida, depois o nome.
+function _riscoResolverFase(leitura, grade) {
+  const fases = (grade.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  if (!fases.length) return { fase: null, origem: 'sem fases', folga: null };
+
+  // 1) ENSINADO: o par (modelo do risco + código do tecido) já foi apontado uma
+  //    vez. Daí em diante não precisa de mais nada — nem do nome do arquivo.
+  const chave = _riscoChave(leitura);
+  const memoria = _riscoAprendidos();
+  if (chave && memoria[chave]) {
+    const f = fases.find(x => _normNome(x.nome) === _normNome(memoria[chave]));
+    if (f) {
+      // Confere contra a largura: se o CAD trocou o código, a medida denuncia.
+      const l = _riscoF(f.larg);
+      const bate = l == null || leitura.largura == null || Math.abs(l - leitura.largura) < 0.06;
+      return { fase: f, origem: bate ? 'aprendido' : 'aprendido (largura não bate)', folga: null, alerta: !bate };
+    }
+  }
+
+  // 2) MEDIDA: largura dá a família do tecido; dentro dela, o comprimento mais
+  //    próximo dá a fase. Só vale quando a fase já tem medida cadastrada.
+  const mesmaLarg = fases.filter(f => {
+    const l = _riscoF(f.larg);
+    return l != null && leitura.largura != null && Math.abs(l - leitura.largura) < 0.06;
+  });
+  const pool = (mesmaLarg.length ? mesmaLarg : fases).filter(f => _riscoF(f.comp) != null);
+  if (pool.length && leitura.comprimento != null) {
+    const ord = pool.map(f => ({ f, d: Math.abs(_riscoF(f.comp) - leitura.comprimento) }))
+      .sort((a, b) => a.d - b.d);
+    const folga = ord.length > 1 ? ord[1].d : null;
+    // Escolha APERTADA (a segunda opção quase tão perto) não decide sozinha.
+    const apertada = folga != null && folga < ord[0].d * 3;
+    if (!apertada) return { fase: ord[0].f, origem: 'medida', folga, dist: ord[0].d };
+  }
+
+  // 3) NOME DO ARQUIVO: último recurso. Casa por palavra inteira da fase.
+  const a = _normNome(leitura.arquivo);
+  let melhor = null, pontos = 0;
+  fases.forEach(f => {
+    const palavras = _normNome(f.nome).split(/\s+/).filter(w => w.length > 2 && w !== 'parte');
+    const p = palavras.filter(w => a.includes(w)).length;
+    if (p > pontos) { pontos = p; melhor = f; }
+  });
+  if (melhor) return { fase: melhor, origem: 'nome do arquivo', folga: null };
+
+  // 4) fases sem medida ainda: sobra a largura sozinha, se ela isolar uma.
+  if (mesmaLarg.length === 1) return { fase: mesmaLarg[0], origem: 'largura', folga: null };
+  return { fase: null, origem: 'indefinida', folga: null };
+}
+
+/* ---------------- tela de importação do risco ---------------- */
+
+function abrirModalRisco() {
+  if (!exigirEdicao('importar risco de PDF')) return;
+  _riscoLeituras = [];
+  document.getElementById('modal-risco-fields').innerHTML = `
+    <div class="info-box">
+      Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um,
+      descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
+      pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
+    </div>
+    <label class="file-label" style="font-size:13px;font-weight:500;">
+      📄 Escolher os PDFs do encaixe
+      <input type="file" accept="application/pdf" multiple onchange="lerRiscosEscolhidos(event)">
+    </label>
+    <div id="risco-resultado" style="margin-top:12px;"></div>`;
+  const btn = document.getElementById('btn-risco-aplicar');
+  if (btn) btn.style.display = 'none';
+  openModal('modal-risco');
+}
+
+async function lerRiscosEscolhidos(ev) {
+  const files = Array.from(ev.target.files || []);
+  if (!files.length) return;
+  const box = document.getElementById('risco-resultado');
+  box.innerHTML = `<div class="empty" style="padding:16px;">Lendo ${files.length} arquivo(s)…</div>`;
+  _riscoLeituras = [];
+  for (const f of files) {
+    try {
+      const L = await _riscoLerPdf(f);
+      L.grades = _riscoGradesQueCasam(L.tamanhos);
+      L.grade = L.grades.length === 1 ? L.grades[0] : null;
+      L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: 'sem grade' };
+      L.aplicar = !!(L.grade && L.res.fase && L.comprimento && L.largura);
+      _riscoLeituras.push(L);
+    } catch (e) {
+      _riscoLeituras.push({ arquivo: f.name, erro: e.message || String(e) });
+    }
+  }
+  renderRiscoResultado();
+}
+
+function renderRiscoResultado() {
+  const box = document.getElementById('risco-resultado');
+  const btn = document.getElementById('btn-risco-aplicar');
+  if (!box) return;
+  const fmt = v => v == null ? '—' : String(v).replace('.', ',');
+  const linhas = _riscoLeituras.map((L, i) => {
+    if (L.erro) {
+      return `<tr><td colspan="8" style="color:var(--alert);"><b>${esc(L.arquivo)}</b> — ${esc(L.erro)}</td></tr>`;
+    }
+    // De onde veio a decisão da fase: é o que o usuário precisa julgar.
+    const selo = {
+      'aprendido': '<span class="exp-badge ok" title="O par modelo + código do tecido já foi ensinado numa importação anterior.">aprendido</span>',
+      'medida': `<span class="exp-badge ok" title="Largura dá a família do tecido; o comprimento mais próximo dá a fase. Diferença de ${fmt((L.res.dist || 0).toFixed(2))} m contra ${fmt((L.res.folga || 0).toFixed(2))} m da segunda opção.">pela medida</span>`,
+      'nome do arquivo': '<span class="exp-badge baixo" title="O conteúdo não decidiu — valeu o nome do arquivo. Confira.">pelo nome</span>',
+      'largura': '<span class="exp-badge baixo" title="Só a largura isolou esta fase.">pela largura</span>',
+      'indefinida': '<span class="exp-badge alto">não identificada</span>',
+      'sem grade': '<span class="exp-badge alto">grade não encontrada</span>',
+      'sem fases': '<span class="exp-badge alto">a grade não tem fases</span>'
+    }[L.res.origem] || `<span class="exp-badge alto">${esc(L.res.origem)}</span>`;
+
+    const fases = L.grade ? (L.grade.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) : [];
+    const selFase = L.grade ? `<select onchange="riscoTrocarFase(${i}, this.value)" style="font-size:12px;">
+        <option value="">— escolher —</option>
+        ${fases.map(f => `<option value="${esc(f.nome)}" ${L.res.fase && f.nome === L.res.fase.nome ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
+      </select>` : '—';
+
+    const atual = L.res.fase ? `${fmt(L.res.fase.comp || '—')} × ${fmt(L.res.fase.larg || '—')}` : '—';
+    const novo = `${fmt(L.comprimento != null ? L.comprimento.toFixed(2) : null)} × ${fmt(L.largura != null ? L.largura.toFixed(3) : null)}`;
+    const mudou = L.res.fase && (_riscoF(L.res.fase.comp) !== L.comprimento || _riscoF(L.res.fase.larg) !== L.largura);
+    return `<tr>
+      <td style="text-align:center;"><input type="checkbox" ${L.aplicar ? 'checked' : ''} ${L.grade && L.res.fase ? '' : 'disabled'} onchange="riscoMarcar(${i}, this.checked)"></td>
+      <td style="font-size:11px;">${esc(L.arquivo)}</td>
+      <td style="font-size:12px;">${L.grade ? esc(L.grade.nome) : `<span style="color:var(--alert);">${L.grades && L.grades.length > 1 ? L.grades.length + ' grades com estes tamanhos' : 'nenhuma grade com estes tamanhos'}</span>`}</td>
+      <td>${selFase}<div style="margin-top:2px;">${selo}</div></td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}">${esc(novo)}</td>
+      <td style="font-size:11px;">${L.gramatura ? esc(L.gramatura + ' g/m²') : ''}${L.aproveitamento ? ' · ' + esc(L.aproveitamento + '%') : ''}</td>
+    </tr>`;
+  }).join('');
+
+  const nOk = _riscoLeituras.filter(L => L.aplicar).length;
+  box.innerHTML = `
+    <table class="table" style="font-size:12px;">
+      <thead><tr>
+        <th style="width:30px;"></th><th>Arquivo</th><th>Grade (pelos tamanhos)</th>
+        <th>Fase</th><th>Tecido</th><th>Cadastro</th><th>Do PDF</th><th>Extra</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    <div class="field-hint" style="margin-top:8px;">
+      A coluna <b>Do PDF</b> em vermelho é o que vai <b>mudar</b> no cadastro. Desmarque o que não quiser aplicar.
+      Ao aplicar, o programa <b>aprende</b> o par <i>modelo do risco + código do tecido</i> de cada linha —
+      na próxima importação daquele produto a fase é reconhecida sozinha, sem depender do nome do arquivo.
+    </div>`;
+  if (btn) { btn.style.display = nOk ? '' : 'none'; btn.textContent = `Aplicar ${nOk} fase(s) nas grades`; }
+}
+
+// O checkbox da linha. Precisa ser função: `_riscoLeituras` é `let` no escopo do
+// arquivo, e um `onchange` inline resolve nomes no `window`, onde ela não está.
+function riscoMarcar(i, marcado) {
+  if (_riscoLeituras[i]) _riscoLeituras[i].aplicar = !!marcado;
+  const btn = document.getElementById('btn-risco-aplicar');
+  const n = _riscoLeituras.filter(L => L.aplicar).length;
+  if (btn) { btn.style.display = n ? '' : 'none'; btn.textContent = `Aplicar ${n} fase(s) nas grades`; }
+}
+
+function riscoTrocarFase(i, nome) {
+  const L = _riscoLeituras[i];
+  if (!L || !L.grade) return;
+  const f = (L.grade.fases || []).find(x => x.nome === nome);
+  L.res = { fase: f || null, origem: f ? 'escolhida por você' : 'indefinida', folga: null };
+  L.aplicar = !!f;
+  renderRiscoResultado();
+}
+
+async function aplicarRiscoNasGrades() {
+  if (!exigirEdicao('importar risco de PDF')) return;
+  const alvo = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
+  if (!alvo.length) return toast('Nada marcado para aplicar', 'err');
+  const mudancas = alvo.map(L =>
+    `${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${L.comprimento.toFixed(2)}×${L.largura.toFixed(3)}`);
+  if (!confirm(`Aplicar ${alvo.length} medida(s) no cadastro das grades?\n\n${mudancas.join('\n')}\n\n`
+    + 'O programa também vai guardar a que fase corresponde cada código de tecido, para reconhecer sozinho na próxima vez.')) return;
+
+  const memoria = _riscoAprendidos();
+  let n = 0;
+  alvo.forEach(L => {
+    const f = (L.grade.fases || []).find(x => x.nome === L.res.fase.nome);
+    if (!f) return;
+    f.comp = L.comprimento.toFixed(2);
+    f.larg = L.largura.toFixed(3);
+    const k = _riscoChave(L);
+    if (k) memoria[k] = f.nome;
+    n++;
+  });
+  // Campo legado da grade (espelho da 1ª fase), para não ficar divergindo.
+  new Set(alvo.map(L => L.grade)).forEach(g => {
+    const f1 = (g.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))[0];
+    if (f1) { g.enfestoComprimento = f1.comp || ''; g.enfestoLargura = f1.larg || ''; }
+  });
+  await saveState('grades');
+  await saveState('meta');
+  closeModal('modal-risco');
+  toast(`${n} fase(s) atualizada(s) pelo risco · ${Object.keys(memoria).length} vínculo(s) de tecido aprendidos`, 'ok');
+  renderGrades();
+}
+
+/* ========================================================= */
 /*        PLANILHA DAS GRADES (.xlsx, sem biblioteca)        */
 /* ========================================================= */
 // Um .xlsx é um ZIP com alguns XML dentro. O app não carrega biblioteca de
@@ -16446,6 +16800,11 @@ window.darBaixaMaterialOS = darBaixaMaterialOS;
 window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
 window.exportarGradesExcel = exportarGradesExcel;
+window.abrirModalRisco = abrirModalRisco;
+window.lerRiscosEscolhidos = lerRiscosEscolhidos;
+window.riscoTrocarFase = riscoTrocarFase;
+window.aplicarRiscoNasGrades = aplicarRiscoNasGrades;
+window.riscoMarcar = riscoMarcar;
 window.importarDados = importarDados;
 window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
 window.popularExemplo = popularExemplo;
