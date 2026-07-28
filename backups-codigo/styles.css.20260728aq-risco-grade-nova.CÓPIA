@@ -1,0 +1,2404 @@
+:root {
+  --bg: #f5f2ea;
+  --paper: #ffffff;
+  --ink: #1a1a1a;
+  --ink-2: #3a3a3a;
+  --ink-3: #6b6b6b;
+  --line: #d4d0c5;
+  --line-2: #e8e4d9;
+  --accent: #c9a961;
+  --accent-dark: #9a7c3a;
+  --alert: #c81e1e;
+  --alert-bg: #fde8e8;
+  --ok: #2d7d46;
+  --ok-bg: #e6f4ea;
+  --yellow: #f4d03f;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============ LAYOUT GERAL ============ */
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+aside.sidebar {
+  background: var(--ink);
+  color: var(--bg);
+  padding: 24px 0;
+  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.brand {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+  margin-bottom: 12px;
+}
+.brand .logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -.02em;
+  color: var(--accent);
+}
+.brand .sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.6);
+  margin-top: 2px;
+}
+
+.nav-group {
+  padding: 8px 0;
+}
+.nav-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.4);
+  padding: 8px 20px;
+  cursor: pointer;
+  text-align: left;
+  transition: color .15s;
+}
+.nav-label:hover { color: rgba(255,255,255,.7); }
+.nav-toggle {
+  display: inline-block;
+  font-size: 9px;
+  color: rgba(255,255,255,.5);
+  transition: transform .2s;
+  width: 10px;
+}
+.nav-group.collapsed .nav-toggle {
+  transform: rotate(-90deg);
+}
+.nav-group.collapsed .nav-items {
+  display: none;
+}
+.nav-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: rgba(255,255,255,.85);
+  border: none;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all .15s;
+}
+.nav-btn:hover { background: rgba(255,255,255,.05); color: #fff; }
+.nav-btn.active {
+  background: rgba(201,169,97,.1);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+main.content { padding: 32px 40px; overflow-x: hidden; }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--ink);
+}
+.page-header h1 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.page-header .desc {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+.page-header .actions { display: flex; gap: 8px; }
+
+/* ============ BOTÕES ============ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .15s;
+  border-radius: 2px;
+}
+.btn:hover { background: var(--ink); color: var(--paper); }
+.btn.primary {
+  background: var(--ink); color: var(--paper);
+}
+.btn.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn.accent {
+  background: var(--accent); color: var(--ink); border-color: var(--accent-dark);
+}
+.btn.accent:hover { background: var(--accent-dark); color: #fff; }
+.btn.danger {
+  border-color: var(--alert); color: var(--alert);
+}
+.btn.danger:hover { background: var(--alert); color: #fff; }
+.btn.small { padding: 4px 8px; font-size: 12px; }
+.btn.icon { padding: 6px 10px; }
+
+/* ============ FORMULÁRIOS ============ */
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+
+.card-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.form-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.form-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.form-grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(140px, max-content)); justify-content: start; gap: 10px 14px; }
+.form-grid.cols-4 .field { min-width: 140px; max-width: 200px; }
+.form-grid.cols-4 .field select, .form-grid.cols-4 .field input { width: 100%; min-width: 0; }
+.form-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+.form-grid.fit-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.form-grid.fit-cols .field {
+  min-width: 160px;
+  flex: 0 0 auto;
+}
+.form-grid.fit-cols .field select,
+.form-grid.fit-cols .field input {
+  width: auto;
+  max-width: 320px;
+  min-width: 160px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field.full { grid-column: 1 / -1; }
+
+.field label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.field input, .field select, .field textarea {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 2px;
+  transition: border-color .15s;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none; border-color: var(--ink);
+}
+.field textarea { resize: vertical; min-height: 60px; }
+
+/* ============ TABELAS ============ */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.table tr:hover td { background: rgba(201,169,97,.06); }
+.table .col-actions { width: 120px; text-align: right; }
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+/* ============ CHIP DE COR ============ */
+.color-swatch {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* ============ BADGES ============ */
+.badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: var(--line-2);
+  color: var(--ink-2);
+  border-radius: 2px;
+}
+
+/* ============ HOME ============ */
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.home-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 20px;
+  cursor: pointer;
+  transition: all .2s;
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+.home-card:hover {
+  border-color: var(--ink);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.06);
+}
+.home-card::after {
+  content: '→';
+  position: absolute;
+  top: 18px; right: 20px;
+  color: var(--line);
+  font-size: 20px;
+  transition: all .2s;
+}
+.home-card:hover::after { color: var(--accent); transform: translate(2px,-2px); }
+.home-card .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1;
+}
+.home-card .label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 12px;
+}
+.home-card .title {
+  font-weight: 600;
+  font-size: 15px;
+  margin-top: 2px;
+}
+
+/* ============ FORMULÁRIO OS ============ */
+.os-section { margin-bottom: 18px; }
+
+.grade-inputs {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  align-items: end;
+}
+.grade-inputs .field label { font-size: 9px; }
+.grade-inputs input { text-align: center; font-family: 'IBM Plex Mono', monospace; }
+
+.tecido-row, .variante-row, .componente-row, .custo-row {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+  align-items: end;
+}
+.tecido-row { grid-template-columns: 40px 1fr 1fr 160px; }
+.variante-row { grid-template-columns: 60px 1fr 1fr 1fr 1fr; }
+.componente-row { grid-template-columns: 140px 1fr 1fr 100px; }
+.custo-row { grid-template-columns: 1fr 120px; }
+
+.etapas-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+.etapa-check {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.etapa-check:hover { border-color: var(--ink); }
+.etapa-check input { margin: 0; }
+.etapa-check.checked { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.etapa-check.checked label { color: var(--paper); }
+.etapa-reorder { display: inline-flex; flex-direction: column; gap: 1px; margin-right: 2px; }
+.etapa-move {
+  width: 18px; height: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-size: 8px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.etapa-move:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.etapa-check.checked .etapa-move { background: var(--paper); color: var(--ink); }
+
+/* ============ IMAGEM DESENHO ============ */
+.desenho-preview {
+  width: 100%;
+  aspect-ratio: 4/3;
+  border: 2px dashed var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  font-size: 12px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.desenho-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.file-label {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.file-label:hover { background: var(--ink); color: var(--paper); }
+.file-label input { display: none; }
+
+/* ============ MODAL ============ */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.4);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  background: var(--paper);
+  border-radius: 4px;
+  padding: 24px;
+  max-width: 560px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.modal h2 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+.modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+/* ============ TOAST ============ */
+.toast {
+  position: fixed;
+  top: 24px; right: 24px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 12px 18px;
+  border-radius: 3px;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  opacity: 0;
+  transform: translateX(20px);
+  transition: all .25s;
+  z-index: 200;
+  pointer-events: none;
+  max-width: 320px;
+}
+.toast.show { opacity: 1; transform: translateX(0); }
+.toast.ok { background: var(--ok); }
+.toast.err { background: var(--alert); }
+
+/* ======================================================== */
+/* LAYOUT DA FOLHA DE IMPRESSÃO A4                          */
+/* ======================================================== */
+.print-area {
+  background: var(--bg);
+  padding: 20px 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* zoom: 1 — a folha aparece na tela no tamanho A4 real (210x297mm), igual
+   ao PDF e ao papel. NAO por ampliacao de leitura aqui: um zoom de 1.20
+   fazia a folha ser exibida em 252x356mm, 20% maior que a A4 em cada lado.
+   Quem precisa enxergar detalhe usa o zoom do navegador (Ctrl + / Ctrl -),
+   que amplia sem mentir sobre o tamanho da folha.
+
+   O wrapper continua existindo porque e o unico ponto onde se pode escalar
+   a folha: a .sheet nao pode receber zoom (ela E a geometria A4 que o
+   html2canvas fotografa — zoom nela vaza pra captura). Quem usa isso e o
+   ajustarImpressaoParaA4, que encolhe o wrapper quando o conteudo estoura
+   297mm. E o .pdf-capture zera qualquer escala residual antes da foto. */
+.sheet-scaler {
+  zoom: 1;
+  flex: none;
+}
+body.pdf-capture .sheet-scaler { zoom: 1; }
+
+/* .no-print some do papel E do PDF. Precisam existir as DUAS regras: a do
+   @media print (mais abaixo) cobre o Ctrl+P, mas o PDF NAO passa por @media
+   print — ele e uma foto html2canvas dos estilos de tela, tirada com
+   body.pdf-capture ligado. Só a regra do @media print deixaria o bloco no PDF.
+
+   Efeito medido no Chrome (folha com "Componentes — totais por tamanho" de 60
+   linhas): a .sheet e flex column presa em 297mm e NAO estoura — quem cede
+   espaco pro bloco e o .sheet-body (flex: 1), que cai de 995px pra 35px. Com o
+   bloco escondido na captura o .sheet-body volta a 1011px, ou seja, o espaco
+   devolvido vai todo pro desenho e pro enfesto: no PDF a folha sai igual a de
+   uma OS sem componentes. */
+body.pdf-capture .no-print { display: none !important; }
+
+/* O PDF da OE é composto no código: a faixa do topo do canvas é redesenhada em
+   cada página e colada na QUINA do papel (0,0). O respiro entre a borda e o
+   título vem, portanto, do padding capturado — não da @page, que este caminho
+   nem enxerga. Com os 10mm de tela o cabeçalho ficava na faixa que muitas
+   impressoras não imprimem e o título saía cortado. */
+body.pdf-capture .sheet-exp { padding-top: 16mm; }
+
+/* GEOMETRIA A4 — fonte unica da verdade.
+   210x297mm com padding 8mm E a folha A4, margem inclusa. Isso nao e
+   redefinido em @media print nem na captura: e exatamente esse acordo que
+   faz tela == PDF == papel. Nao sobrescrever width/padding/min-height
+   daqui pra frente. */
+.sheet {
+  width: 210mm;
+  min-height: 297mm;
+  background: #fff;
+  padding: 8mm;
+  box-shadow: 0 4px 24px rgba(0,0,0,.12);
+  font-family: 'IBM Plex Sans', sans-serif;
+  color: #000;
+  font-size: 9pt;
+  line-height: 1.25;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+/* Garante que padding/border de tabelas e celulas internas sejam contados
+   dentro da largura definida — evita que o Enfesto/Grade estourem o
+   container principalmente em telas pequenas. */
+.sheet *, .sheet *::before, .sheet *::after {
+  box-sizing: border-box;
+}
+
+/* Cabeçalho da ficha */
+.sheet-header {
+  display: grid;
+  /* 6 células (marca, coleção, bloco, data, OS Nº+SKU, linha). Antes havia uma
+     7ª coluna fantasma (1fr) sem célula, sobrando espaço à direita. Removida e
+     o espaço redistribuído — a célula do OS Nº/SKU ganhou mais largura. */
+  grid-template-columns: 1.3fr 1fr 1.7fr .6fr 1.6fr 1.2fr;
+  border: 1.5px solid #000;
+}
+.sheet-header > div {
+  padding: 3px 5px;
+  border-right: 1px solid #000;
+  font-size: 8pt;
+}
+.sheet-header > div:last-child { border-right: none; }
+.sheet-header .lbl {
+  background: #dfe8f0;
+  font-weight: 700;
+  font-size: 7pt;
+  letter-spacing: .02em;
+}
+.sheet-header .cell {
+  display: flex; flex-direction: column;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+}
+.sheet-header .cell .mini {
+  font-size: 6pt; font-weight: 500; color: #444; text-transform: uppercase; letter-spacing: .06em;
+}
+.sheet-header .brand-cell {
+  background: #c9e8d0; color: #000; display: flex; align-items: center; justify-content: center;
+  font-family: 'IBM Plex Mono', monospace; font-size: 14pt; letter-spacing: .2em; font-weight: 700;
+}
+.sheet-header .des-cell {
+  background: #c9e8d0; color: #000;
+  font-size: 9pt; font-weight: 700;
+}
+.sheet-header .adult-cell {
+  background: #c9e8d0; color: #000;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; letter-spacing: .1em; font-size: 9pt;
+}
+
+/* Corpo principal em 2 colunas — lado direito maior pra acomodar a
+   tabela Enfesto (9 colunas com headers em 1 linha + checkbox/Fase/Cor
+   com largura suficiente pro conteudo). Razao 0.8/1 → desenho ~44%,
+   lado direito ~56% da folha. */
+.sheet-body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  border: 1.5px solid #000;
+  border-top: none;
+  flex: 1;
+}
+
+.sheet-left {
+  border-right: 1.5px solid #000;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.sheet-right {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Área do desenho técnico */
+/* SEM flex: 1 de proposito — quem absorve a sobra da coluna e a .obs-box.
+   A altura da imagem e travada pela LARGURA da coluna (retrato L/A ~0.599
+   em 82.5mm => ~137mm), entao dar a sobra pra ca e dar espaco a quem nao
+   consegue usar: a area cresce, a imagem fica parada no mesmo tamanho e o
+   resto vira branco — metade acima, metade abaixo, porque o align-items e
+   center.
+   Ja aconteceu duas vezes. Enquanto a sobra era ~11mm (folha com
+   Componentes/Aviamentos impressos) o estrago era 5.5mm de cada lado e
+   passava batido. Quando esses dois blocos sairam da folha impressa, a
+   sobra virou 51.2mm: a area foi de 147.6mm pra 198.8mm, a imagem
+   continuou em 137mm e o vao acima do desenho pulou de 5.5mm pra 31.1mm
+   (medido em 8 OS reais, renderizadas com o app.js e os desenhos de
+   verdade). Se o branco em volta do desenho voltar, e este flex.
+   O min-height e so PISO, pro caso de OS sem imagem. */
+.desenho-area {
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 130mm;
+  position: relative;
+}
+/* Barra da cor do desenho técnico — irmã acima da .desenho-area, na .sheet-left.
+   CAIXA ALTA, centralizada. Os estilos essenciais também vão inline no HTML
+   (app.js) pra sobreviver a um styles.css antigo em cache. */
+.sheet-left > .desenho-cor {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  text-align: center;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.05;
+  /* nowrap: o texto das cores tem que sair numa linha so, mesmo com tres
+     cores. Quem garante que cabe e a fonte auto-ajustada do app.js (ver
+     corFont). Aqui era word-break: break-word, que deixava quebrar em duas
+     linhas em vez de exigir que a fonte encolhesse. */
+  white-space: nowrap;
+  color: #000;
+  border-bottom: 1.5px solid #000;
+  background: #fff;
+}
+.desenho-area .desenho-label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 6px;
+  background: #fff;
+  border: 1px solid #000;
+  z-index: 2;
+}
+.desenho-area img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+}
+.desenho-area .no-img {
+  color: #999; font-size: 9pt; font-style: italic;
+  border: 2px dashed #ccc;
+  padding: 40px;
+  border-radius: 4px;
+}
+
+/* Rodapé desenho (designer etc) */
+.desenho-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #000;
+  font-size: 7.5pt;
+}
+.desenho-footer > div {
+  padding: 3px 6px;
+  border-right: 1px solid #000;
+}
+.desenho-footer > div:last-child { border-right: none; }
+.desenho-footer strong {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6.5pt;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  display: block;
+  color: #555;
+}
+
+/* Tabelas no lado direito */
+.side-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 7.5pt;
+}
+.side-table th, .side-table td {
+  border: 1px solid #000;
+  padding: 2px 3px;
+  text-align: left;
+  vertical-align: middle;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.side-table th {
+  background: #fff59d;
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.side-table .subhead {
+  background: #dfe8f0;
+  font-weight: 700;
+  font-size: 7pt;
+  text-transform: uppercase;
+}
+
+/* Tabela com borda externa (Grade, Enfesto) */
+.tab-tecidos {
+  border: 1.5px solid #000;
+}
+
+/* FOLHA DENSA — só para blusa moletom TRICOLOR (classe posta em renderPrintSheet).
+   É a única grade que não cabe em 297mm: 6 fases de enfesto contra 2 de uma
+   camiseta. O excedente fazia o PDF reduzir a folha INTEIRA para caber na altura,
+   encolhendo a largura junto e deixando ~23mm de branco de cada lado — o que
+   parecia erro de margem e não era.
+
+   Aqui só se mexe em ESPAÇAMENTO: nenhum campo sai, nenhuma informação some.
+   Medido com a OS 0435 renderizada de verdade (Chrome headless): 334,7mm -> 297mm,
+   com folga. Camiseta não recebe a classe e continua idêntica.
+
+   Se a folha voltar a estourar, medir antes de chutar: ver
+   memory/project_fila_margem_folha_os.md, que tem o harness e o método. */
+.sheet-densa .tarefas-etapa {
+  font-size: 7pt;
+  line-height: 1.15;
+}
+.sheet-densa .tab-tecidos td,
+.sheet-densa .tab-tecidos th {
+  padding: 0 2px;
+}
+
+/* Etapas de produção */
+.etapas-list {
+  padding: 4px 6px;
+  font-size: 7.5pt;
+  border: 1px solid #000;
+  border-top: none;
+}
+/* Sublista de tarefas de cada etapa. O tamanho estava inline no template e por
+   isso nenhuma regra de folha conseguia sobrepor — veio pra cá para a versão
+   densa (blusa moletom tricolor) poder reduzi-lo. Valor idêntico ao de antes. */
+.tarefas-etapa { font-size: 8.5pt; }
+/* Etapas e o ultimo bloco da coluna direita: estica pra fechar o vao ate o
+   pe da folha. Sem isso a coluna terminava no meio e sobrava branco solto
+   embaixo — ainda mais depois que Observacoes saiu daqui pra coluna do
+   desenho. O espaco extra fica DENTRO da caixa com borda (serve pra riscar
+   as etapas), em vez de virar buraco entre blocos. */
+.sheet-right > .etapas-list { flex: 1; }
+.etapas-list .titulo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  color: #000;
+  background: #fff59d;
+  padding: 2px 4px;
+  margin: -4px -6px 4px;
+  letter-spacing: .04em;
+}
+.etapas-list ul { list-style: none; padding: 0; }
+.etapas-list li { padding: 1px 0; }
+.etapas-list ul li.etapa-antigo::before { content: '— '; font-weight: 700; }
+
+/* Cores do modelo */
+.cores-tab .var-head { background: #1a1a1a; color: #fff; font-size: 7pt; padding: 2px 5px; }
+.cores-tab .cor-cell { padding: 6px 5px; font-weight: 600; text-align: center; }
+
+/* Custos */
+.custos-tab td { padding: 2px 5px; }
+
+/* Aviamentos */
+.aviamentos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #000;
+  border-top: none;
+  font-size: 7pt;
+}
+.aviamentos-grid > div {
+  padding: 2px 5px;
+  border-right: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+}
+.aviamentos-grid .code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+}
+
+/* Warning boxes */
+.warn-box {
+  border: 1.5px solid #c81e1e;
+  background: #fef2f2;
+  padding: 3px 6px;
+  font-size: 6.5pt;
+  color: #c81e1e;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-top: 4px;
+}
+
+/* Rodapé da ficha */
+.sheet-foot {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: 1.5px solid #000;
+  border-top: none;
+  font-size: 7pt;
+}
+.sheet-foot > div {
+  padding: 2px 5px;
+}
+.sheet-foot strong { text-transform: uppercase; letter-spacing: .05em; }
+
+/* Campo de Atenção na folha impressa — texto justificado em largura cheia */
+.sheet-atencao {
+  padding: 3px 6px;
+  border: 1.5px solid #000;
+  border-top: none;
+  font-size: 7.5pt;
+  background: #fff3cd;
+}
+.sheet-atencao strong {
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-right: 6px;
+}
+.sheet-atencao .atencao-text {
+  vertical-align: top;
+}
+
+/* Observações */
+.obs-box {
+  padding: 4px 6px;
+  font-size: 8pt;
+  border: 1px solid #000;
+  border-top: none;
+  min-height: 120px;
+  background: #fafafa;
+}
+.obs-box strong { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 2px; letter-spacing: .05em; }
+
+/* Observacoes fica na coluna do desenho porque e aqui que sobra espaco, e e
+   ela quem absorve essa sobra: o desenho nao consegue (altura travada pela
+   largura da coluna), entao sem isso a sobra vira faixa branca.
+
+   flex: 1 + min-height: 20mm — os 20mm sao PISO, nao teto. A caixa e a unica
+   coisa da coluna que sabe o que fazer com espaco sobrando (vira area de
+   escrita a mao), entao e ela quem estica.
+   Ja foi flex: none com 20mm fixos, quando Componentes/Aviamentos ainda
+   imprimiam e a sobra era ~11mm: naquele cenario a folga ia pra .desenho-area
+   e custava so ~5.5mm de branco. Com os dois blocos fora da folha impressa a
+   sobra virou 51.2mm e aquele arranjo pos 31.1mm de branco acima do desenho
+   (e outro tanto abaixo). Por isso o flex voltou pra ca.
+   Efeito: no papel a caixa sai com ~71mm; na tela, onde os dois blocos ainda
+   aparecem, ela fica no piso de ~20mm.
+   O valor tambem vai INLINE no app.js e inline VENCE esta folha — mexeu aqui,
+   mexe la (ver o comentario do bloco Observacoes no renderPrintSheet).
+   NAO usar min-height: 0 junto com flex: 1 — essa dupla ja colapsou o desenho
+   pra 0 no PDF (html2canvas 1.4.1 tem bug com flexbox). */
+.sheet-left > .obs-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 20mm;
+}
+/* O textarea precisa de piso proprio menor que o da caixa, senao ele e quem
+   manda: o .obs-input base tem min-height: 112px (~29.6mm) e seguraria a
+   caixa em ~32mm por mais que o min-height dela dissesse 20mm.
+   Nao usar min-height: 0 aqui — flex: 1 + min-height: 0 ja colapsou o
+   desenho pra 0 no PDF (bug do html2canvas com flexbox). */
+.sheet-left > .obs-box .obs-input { flex: 1; min-height: 14mm; }
+.obs-input {
+  display: block;
+  width: 100%;
+  min-height: 112px;
+  border: none;
+  background: transparent;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 8pt;
+  line-height: 1.35;
+  color: #000;
+  padding: 0;
+  outline: none;
+  box-sizing: border-box;
+}
+.obs-input::placeholder { color: #bbb; font-style: italic; }
+
+/* ============ IMPRESSÃO ============ */
+@media print {
+  /* margem 0: a propria .sheet ja tem padding 8mm, ou seja, ela E a A4
+     com a margem dentro. Uma margem de @page aqui seria margem em cima
+     de margem e encolheria a folha. */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  body, html {
+    background: #fff;
+    font-size: 9pt;
+  }
+  .app { display: block; }
+  aside.sidebar, .page-header, .no-print { display: none !important; }
+  main.content { padding: 0; }
+  .print-area { padding: 0; background: #fff; display: block; }
+  /* Anula so a ampliacao de leitura da tela. */
+  .sheet-scaler { zoom: 1; }
+  /* A geometria da .sheet NAO e redefinida aqui de proposito. 210x297mm
+     com padding 8mm ja e a A4 exata — reescrever width/padding/min-height
+     era justamente o que fazia o papel sair diferente da tela. */
+  .sheet {
+    box-shadow: none;
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+  .sheet > * { page-break-inside: avoid; }
+}
+
+/* ============ RESPONSIVO ============ */
+/* Botao "≡ Menu" no header de cada pagina: invisivel no desktop, aparece
+   no mobile como gatilho para abrir o drawer da sidebar. */
+.btn-menu-mobile { display: none; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  /* Drawer master/detail: o menu lateral vira overlay fixed que ocupa a tela
+     toda. Por default fica oculto; aparece quando body tem .mobile-menu-open
+     (alternado via abrirMenuMobile() / fecharMenuMobile() ou clicando em
+     uma opcao do menu, que ja chama goto -> fecharMenuMobile). Isso resolve
+     a navegacao ruim em que era necessario arrastar a pagina para alcancar
+     o menu lateral. */
+  aside.sidebar {
+    position: fixed;
+    inset: 0;
+    height: 100vh;
+    z-index: 9000;
+    display: none;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  }
+  body.mobile-menu-open aside.sidebar { display: block; }
+  body.mobile-menu-open { overflow: hidden; }
+  /* Botao "≡ Menu" no topo de cada pagina (injetado por app.js). */
+  .btn-menu-mobile {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    cursor: pointer;
+    margin-bottom: 12px;
+    align-self: flex-start;
+  }
+  .btn-menu-mobile:active { opacity: .85; }
+  /* Page header: empilha verticalmente no mobile (titulo, acoes) e poe o
+     botao Menu em primeiro lugar. */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .page-header .actions { flex-wrap: wrap; }
+  /* No mobile: permite scroll horizontal nas paginas (especialmente a OS
+     pronta com 210mm) e zoom pinch nativo do navegador. Antes
+     overflow-x:hidden bloqueava ver o conteudo todo. */
+  main.content { padding: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* A folha nao precisa de regra propria aqui: ela ja e A4 (210mm) em
+     tamanho real em toda tela, e no celular quem amplia e o pinch nativo. */
+}
+
+/* ============ MISC ============ */
+.hidden { display: none !important; }
+
+.row-actions button {
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 2px;
+  font-family: inherit;
+  margin-left: 4px;
+}
+.row-actions .edit:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.row-actions .del:hover { background: var(--alert); color: #fff; border-color: var(--alert); }
+
+.info-box {
+  background: var(--line-2);
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  font-size: 12px;
+  color: var(--ink-2);
+  border-radius: 2px;
+  margin-bottom: 14px;
+}
+
+.add-row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--ink-3);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+  margin-top: 8px;
+}
+.add-row-btn:hover { border-color: var(--ink); color: var(--ink); border-style: solid; }
+/* ========== Quick cadastro link ========== */
+.field-hint { font-size: 10px; color: var(--ink-3); margin-top: 3px; font-style: italic; }
+.field-hint a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+.field-hint a:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.field-add-link { display: inline-block; font-size: 11px; color: var(--ink-3); text-decoration: none; margin-top: 4px; border-bottom: 1px dotted var(--ink-3); }
+.field-add-link:hover { color: var(--accent-dark); border-bottom-color: var(--accent-dark); }
+/* ========== Auth UI ========== */
+.auth-bar { padding: 12px 20px; border-bottom: 1px solid var(--line-2); background: var(--paper); }
+.auth-logged-out .btn-auth { width: 100%; padding: 8px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
+.auth-logged-out .btn-auth:hover { background: var(--ink-2); }
+.auth-sub { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; font-style: italic; }
+.auth-logged-in .auth-email { font-size: 12px; font-weight: 600; color: var(--ink); word-break: break-all; margin-bottom: 4px; }
+.auth-logged-in .auth-sync { font-size: 11px; color: var(--ok); margin-bottom: 8px; }
+.auth-logged-in .auth-sync.saving { color: var(--accent-dark); }
+.auth-logged-in .auth-sync.error { color: var(--alert); }
+.btn-auth-sm { padding: 4px 10px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.btn-auth-sm:hover { border-color: var(--ink); color: var(--ink); }
+.hidden { display: none !important; }
+.modal-auth { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-auth.hidden { display: none !important; }
+.modal-auth .box { background: var(--paper); padding: 28px; border-radius: 4px; width: 360px; max-width: 90vw; box-shadow: var(--shadow); }
+.modal-auth .title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.modal-auth .sub { font-size: 13px; color: var(--ink-3); margin-bottom: 20px; line-height: 1.4; }
+.modal-auth .tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+.modal-auth .tab { flex: 1; padding: 8px; background: transparent; border: none; cursor: pointer; font-family: inherit; font-size: 13px; color: var(--ink-3); border-bottom: 2px solid transparent; }
+.modal-auth .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.modal-auth label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; margin-top: 12px; }
+.modal-auth input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; font-family: inherit; font-size: 13px; }
+.modal-auth input:focus { border-color: var(--ink); outline: none; }
+.modal-auth .err { color: var(--alert); font-size: 12px; margin-top: 10px; min-height: 14px; }
+.modal-auth .actions-auth { display: flex; gap: 8px; margin-top: 16px; }
+.modal-auth .btn-primary { flex: 1; padding: 10px; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
+.modal-auth .btn-primary:hover { background: var(--ink-2); }
+.modal-auth .btn-primary:disabled { opacity: .5; cursor: wait; }
+.modal-auth .btn-skip { padding: 10px 14px; background: transparent; color: var(--ink-3); border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.modal-auth .btn-skip:hover { color: var(--ink); border-color: var(--ink-3); }
+.modal-auth .auth-extras { margin-top: 14px; text-align: center; font-size: 12px; }
+.modal-auth .auth-extras a { color: var(--ink-3); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+.modal-auth .auth-extras a:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ============ PRESENCE (quem está editando a mesma OS) ============ */
+.presence-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff8e1;
+  border: 1px solid #f4d03f;
+  border-radius: 3px;
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.presence-bar.hidden { display: none; }
+.presence-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #2d7d46;
+  box-shadow: 0 0 0 3px rgba(45,125,70,.2);
+  animation: presence-pulse 1.8s infinite;
+}
+@keyframes presence-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(45,125,70,.2); }
+  50%      { box-shadow: 0 0 0 6px rgba(45,125,70,.1); }
+}
+#presenceUsers .user-chip {
+  display: inline-block;
+  background: rgba(0,0,0,.08);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin: 0 3px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+}
+
+/* Busca de OE no planejamento: realce da linha sob o cursor. */
+.oe-busca-item:hover { background: var(--line-2); }
+
+/* ============ PAPÉIS / PERMISSÕES ============ */
+/* Só o admin escreve. Quem não é admin usa o programa em modo LEITURA: consulta
+   e imprime. Além de esconder os botões de edição (.admin-only), os campos
+   editáveis da FOLHA DE OS — os quadrinhos das etapas, os horários de enfesto,
+   o total por tamanho, a observação — ficam inertes, para ninguém clicar e
+   descobrir pelo aviso de recusa que não podia. O bloqueio de verdade está no
+   JS (exigirEdicao); isto aqui é o que evita o clique inútil. */
+body:not(.is-admin) .sheet .os-check,
+body:not(.is-admin) .sheet input,
+body:not(.is-admin) .sheet textarea,
+body:not(.is-admin) .sheet select {
+  pointer-events: none;
+  opacity: .75;
+}
+.admin-only { display: none !important; }
+body.is-admin .admin-only { display: revert !important; }
+body.is-admin .admin-only.card { display: block !important; }
+body.is-admin .nav-btn.admin-only { display: block !important; }
+
+/* ============ PASTAS DO CADASTRO DE GRADES ============ */
+.grade-folder { cursor: pointer; user-select: none; transition: background .15s, color .15s; }
+.grade-folder td {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  padding: 10px 14px;
+  font-size: 12px;
+  letter-spacing: .04em;
+  transition: background .15s, color .15s;
+}
+.folder-chev { display: inline-block; width: 12px; font-size: 10px; margin-right: 4px; }
+
+/* ============ TABELA DE COMPONENTES/AVIAMENTOS NO MODAL DO DESENHO ============ */
+.desenho-comp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.desenho-comp-table th {
+  text-align: left;
+  padding: 6px 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.desenho-comp-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.desenho-comp-table tr:last-child td { border-bottom: none; }
+.desenho-comp-table select,
+.desenho-comp-table input[type="number"],
+.desenho-comp-table input[type="text"] {
+  width: 100%; min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: inherit;
+  background: var(--paper);
+  box-sizing: border-box;
+}
+.grade-folder-top td {
+  background: var(--ink);
+  color: var(--paper);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.grade-folder-top:hover td {
+  background: var(--paper);
+  color: var(--ink);
+}
+.grade-folder-sub td {
+  background: var(--ink);
+  color: var(--paper);
+  padding-left: 28px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.grade-folder-sub:hover td {
+  background: var(--paper);
+  color: var(--ink);
+}
+.folder-count {
+  font-size: 10px;
+  opacity: .7;
+  margin-left: 6px;
+}
+.table tr.grade-folder:hover td { background: inherit; }
+.folder-actions { float: right; display: inline-flex; gap: 4px; }
+.folder-btn {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1;
+  min-width: 22px;
+  padding: 2px 6px;
+  cursor: pointer;
+  opacity: .55;
+  transition: opacity .15s, background .15s;
+}
+.folder-btn:hover:not(:disabled) { opacity: 1; background: rgba(255,255,255,.12); }
+.folder-btn:disabled { opacity: .2; cursor: not-allowed; }
+
+/* Checkboxes interativos da folha de impressao (etapas/tarefas) */
+.os-check {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #000;
+  margin: 0 8px 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+  background: #fff;
+  flex-shrink: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.os-check.sub {
+  width: 8px;
+  height: 8px;
+  border-width: 1px;
+  margin-right: 5px;
+}
+.os-check:checked {
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2.5 8.5 L6.5 12.5 L13.5 3.5' stroke='%2316a34a' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 130% 130% no-repeat;
+  border-color: #16a34a;
+}
+@media print {
+  .os-check {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .os-check:checked {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ============ EXPEDIÇÃO — ABAS E PLANEJAMENTO ============ */
+.exp-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.exp-tab {
+  padding: 9px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.exp-tab:hover { color: var(--ink); }
+.exp-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+.exp-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.exp-seg { display: flex; border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+.exp-seg button {
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--paper);
+  color: var(--ink);
+  border: none;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+.exp-seg button:last-child { border-right: none; }
+.exp-seg button:hover { background: var(--line-2); }
+.exp-seg button.active { background: var(--ink); color: var(--paper); }
+
+.exp-periodo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 220px;
+  text-align: center;
+}
+
+/* Faixa de totais do período: expedições, volumes de ida, de volta e alertas. */
+.exp-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.exp-resumo .item { background: var(--paper); padding: 10px 14px; }
+.exp-resumo .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.exp-resumo .lbl {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+.exp-resumo .item.alerta .num { color: var(--alert); }
+
+/* Um card por ocorrência (uma data/janela). Dentro dele, as duas pernas. */
+.exp-ocor { margin-bottom: 14px; }
+.exp-ocor.cancelada { opacity: .55; }
+.exp-ocor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.exp-ocor-data {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+}
+.exp-ocor-nome { font-size: 12px; color: var(--ink-3); }
+
+.exp-pernas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { .exp-pernas { grid-template-columns: 1fr; } }
+.exp-perna { border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; }
+.exp-perna-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.exp-perna-tit {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.exp-perna-rota { font-size: 11px; color: var(--ink-3); }
+.exp-perna-hora { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; }
+.exp-perna-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line-2);
+  font-size: 12px;
+}
+.exp-perna-total .vol { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; }
+
+/* Situação da carga contra os limites mín/máx da janela. */
+.exp-badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.exp-badge.ok { background: var(--ok-bg); color: var(--ok); }
+.exp-badge.baixo { background: #fdf3d8; color: var(--accent-dark); }
+.exp-badge.alto { background: var(--alert-bg); color: var(--alert); }
+.exp-badge.vazio { background: var(--line-2); color: var(--ink-3); }
+.exp-badge.info { background: var(--line-2); color: var(--ink-2); }
+
+.exp-os-list { display: flex; flex-direction: column; gap: 4px; }
+.exp-os-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--line-2);
+}
+.exp-os-row .num { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.exp-os-row .mod { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-os-row .qtd { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
+.exp-os-row .vol { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
+.exp-os-row button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.exp-os-row button:hover { color: var(--alert); }
+.exp-vazio { font-size: 12px; color: var(--ink-3); font-style: italic; padding: 6px 0; }
+
+/* Lista de OSs ao trazer uma OE para a volta. */
+.ev-lista { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 2px; }
+.ev-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-bottom: 1px dotted var(--line-2);
+  cursor: pointer;
+}
+.ev-item:last-child { border-bottom: none; }
+.ev-item:hover { background: var(--line-2); }
+.ev-item.rep { opacity: .6; }
+.ev-item input { flex: 0 0 auto; }
+.ev-item .n { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.ev-item .m { flex: 1 1 auto; min-width: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-item .v { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
+
+/* Seletor de pacotes (lote parcial) no modal de alocar OS: um bloco por
+   tonalidade, com um contador por tamanho, limitado ao que ainda sobra. */
+.ec-pacotes {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--paper);
+}
+.ec-pk-tom { display: flex; flex-direction: column; gap: 4px; }
+.ec-pk-tom + .ec-pk-tom { border-top: 1px dashed var(--line); padding-top: 6px; }
+.ec-pk-tom-h {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.ec-pk-sizes { display: flex; gap: 6px; flex-wrap: wrap; }
+.ec-pk-cel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--line-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ec-pk-cel.off { opacity: .45; }
+.ec-pk-cel .t { font-family: 'IBM Plex Mono', monospace; font-weight: 700; }
+.ec-pk-cel .mx { font-size: 10px; color: var(--ink-3); }
+.ec-pk-in {
+  width: 38px;
+  padding: 1px 2px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'IBM Plex Mono', monospace;
+}
+input.is-auto { background: var(--line-2); color: var(--ink-2); }
+
+/* ============ PLANEJAMENTO DIÁRIO DE OPERAÇÕES ============ */
+/* Reaproveita a moldura do plano de expedição (.exp-toolbar, .exp-resumo,
+   .exp-ocor, .exp-badge). O que é próprio daqui: a régua de horas do dia, a
+   faixa de tempo de cada posto e a linha da operação.
+
+   A régua e as faixas compartilham o mesmo recuo à esquerda (o rótulo) para que
+   as barras de todos os postos fiquem no mesmo eixo — é a comparação entre
+   postos que dá sentido ao desenho. */
+/* Régua empilhada (legenda em cima, eixo embaixo). O recuo lateral de 13px
+   repõe a borda (1px) + o padding (12px) do .op-func, para o eixo da régua cair
+   exatamente sobre as faixas dos postos — sem isso as barras ficam deslocadas
+   em relação às horas. */
+.op-regua { margin: 4px 13px 12px; }
+.op-regua-lbl {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 2px;
+}
+.op-regua-eixo {
+  position: relative;
+  height: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.op-tick {
+  position: absolute;
+  bottom: 2px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+/* O risquinho marca a hora exata. Nas pontas o rótulo é ancorado pela borda
+   (não pelo centro), então a marca acompanha via --mk. */
+.op-tick::after {
+  content: '';
+  position: absolute;
+  left: var(--mk, 50%);
+  bottom: -4px;
+  width: 1px;
+  height: 4px;
+  background: var(--line);
+}
+
+.op-faixa { margin: 2px 0 8px; }
+.op-faixa-eixo {
+  position: relative;
+  height: 20px;
+  background: var(--line-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.op-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  /* Acima da sombra da outra função (z-index 1) e do vazio (0): o trabalho DESTE
+     posto é o que se lê primeiro. */
+  z-index: 2;
+  border-radius: 2px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 10px;
+  line-height: 20px;
+  padding: 0 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Cada operação tem a sua própria cor (definida inline, por operação), para se
+   identificar de relance qual barra é qual. Por isso o fundo NÃO muda por
+   prioridade ou status: "feita" só esmaece a barra e o conflito vira um contorno
+   vermelho por cima da cor. */
+.op-bar.feita { opacity: .45; }
+.op-bar.conflito { outline: 2px solid var(--alert); outline-offset: -2px; box-shadow: 0 0 0 1px var(--paper); }
+.op-bar span { pointer-events: none; }
+/* Sombra da MESMA PESSOA em OUTRA função: a operação dela no outro posto,
+   desenhada nesta faixa NA COR DA FUNÇÃO DE ORIGEM — é assim que se reconhece de
+   qual quadro ela veio. O que a separa do trabalho deste posto é o contorno
+   tracejado e a transparência, não a cor. */
+.op-bar-outra {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 1;
+  border: 1px dashed var(--ink-3);
+  border-radius: 2px;
+  background: var(--line);
+  opacity: .55;
+  color: var(--paper);
+  font-size: 9px;
+  line-height: 20px;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+.op-bar-outra span { pointer-events: none; }
+.op-sombra-leg {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-style: italic;
+  margin: 2px 0 4px;
+}
+/* Quadradinho da cor da função de origem, ao lado do nome dela na legenda. */
+.op-sombra-leg .amostra {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin: 0 3px 0 6px;
+  vertical-align: -1px;
+  opacity: .55;
+  border: 1px dashed var(--ink-3);
+}
+
+/* Faixa hachurada do tempo PARADO da função: fica atrás das barras (z-index 0)
+   e mostra, no mesmo eixo, a janela em que aquele posto não recebeu operação. */
+.op-bar-vazio {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 0;
+  border-radius: 2px;
+  background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(0, 0, 0, .1) 4px 8px);
+  border: 1px dashed rgba(0, 0, 0, .18);
+}
+
+/* Linha do editor de operações da função: nome + tempo que ela costuma levar +
+   o horário fixo opcional ("todo dia às"), para a operação de hora marcada. */
+.func-op-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.func-op-row .func-op-nome { flex: 1 1 220px; min-width: 0; }
+.func-op-row .func-op-h,
+.func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
+.func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
+.func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+/* Enfesto: o tempo é apurado do histórico, então os campos ficam travados e a
+   linha ganha uma nota explicando de onde o número vem. */
+.func-op-row .func-op-nota {
+  flex: 1 1 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-3);
+  padding: 2px 0 4px 2px;
+}
+.func-op-row .func-op-nota:empty { display: none; }
+.func-op-row.sem-tempo .func-op-h,
+.func-op-row.sem-tempo .func-op-m { opacity: .45; cursor: not-allowed; }
+/* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
+.func-op-row .u.as {
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+/* Operação com hora marcada: o campo preenchido se destaca da linha comum. */
+.func-op-row .func-op-fixo:not([value=""]) { font-weight: 600; }
+
+/* O que falta para cada lote fechar a corrente de operações do dia. */
+.op-lotes { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.op-lotes-cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+.op-lote-linha {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+  border-bottom: 1px dotted var(--line);
+}
+.op-lote-linha:last-child { border-bottom: none; }
+.op-lote-linha .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; min-width: 68px; }
+.op-lote-linha .c { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); min-width: 38px; }
+.op-lote-linha .f { flex: 1 1 auto; min-width: 0; }
+.op-lote-linha.falta .f { color: var(--accent-dark); display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+/* Continuação do lote: o que não cabe hoje e o que já está marcado noutro dia.
+   Informação, não cobrança — por isso sem botão e em tom apagado. */
+.op-lote-linha .cont { flex: 1 1 100%; color: var(--ink-3); font-size: 11px; font-style: italic; }
+.op-lote-linha.ok .f { color: var(--ink-3); }
+/* Passo que falta = botão que já abre o modal no horário e no posto certos. */
+.op-falta-btn {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border: 1px dashed var(--accent-dark);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent-dark);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.op-falta-btn:hover { background: var(--alert-bg, #fdf3e3); }
+.op-falta-btn .q { font-family: 'IBM Plex Mono', monospace; font-size: 10px; opacity: .75; }
+
+/* Diagnóstico do dia, aberto sob demanda pelo botão "Analisar o dia". */
+.op-analise {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-2);
+  border-radius: 2px;
+  padding: 8px 10px;
+  background: var(--line-2);
+}
+.op-analise-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.op-analise-sec { margin-top: 6px; }
+.op-analise-tit {
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.op-analise-tit.ok { color: var(--ink-3); font-weight: 400; }
+.op-analise-tit.alerta { color: var(--alert); }
+.op-analise-tit .q { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.op-analise-item {
+  font-size: 12px;
+  padding: 3px 0 3px 10px;
+  border-left: 2px solid var(--line);
+  margin-top: 4px;
+}
+.op-analise-item .sub { color: var(--ink-2); font-size: 11.5px; }
+.op-analise-item .q { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); }
+
+/* Vista POR PESSOA: uma faixa por pessoa no mesmo eixo de horas. */
+.op-pessoa-quadro { display: flex; flex-direction: column; gap: 6px; }
+.op-pessoa-lane { border: 1px solid var(--line); border-radius: 2px; padding: 6px 12px; }
+.op-pessoa-lane.conflito { border-color: var(--alert); background: var(--alert-bg); }
+.op-pessoa-nome { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.op-pessoa-tot { font-size: 11px; color: var(--ink-3); font-weight: 400; margin-left: auto; }
+
+.op-func { border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; margin-bottom: 10px; }
+.op-func:last-child { margin-bottom: 0; }
+.op-func-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line-2);
+}
+.op-func-nome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Setas de reordenar: discretas até a linha/bloco receber o cursor. Reordenar é
+   ação ocasional — não pode competir com a leitura da agenda. */
+.op-mover { display: inline-flex; gap: 1px; flex: 0 0 auto; }
+.op-mover button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 2px;
+}
+.op-mover button:hover:not(:disabled) { background: var(--line-2); color: var(--ink); }
+.op-mover button:disabled { opacity: .25; cursor: default; }
+
+/* Classificação. Eletiva não tem selo (é o padrão); as outras duas precisam
+   saltar da linha, e a faixa colorida à esquerda marca a linha inteira. */
+.op-prio {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.op-prio.urgente { background: #fdf3d8; color: var(--accent-dark); font-weight: 600; }
+.op-prio.emergente { background: var(--alert-bg); color: var(--alert); font-weight: 700; }
+.op-func-tot { font-size: 11px; color: var(--ink-3); }
+
+.op-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dotted var(--line-2);
+}
+.op-row:last-child { border-bottom: none; }
+.op-row.prio-urgente { box-shadow: inset 3px 0 0 -1px var(--accent-dark); padding-left: 6px; }
+.op-row.prio-emergente { box-shadow: inset 3px 0 0 -1px var(--alert); padding-left: 6px; }
+.op-row.feita { opacity: .6; }
+.op-row.feita .oper { text-decoration: line-through; }
+.op-row .janela { font-family: 'IBM Plex Mono', monospace; font-weight: 600; width: 168px; flex: 0 0 auto; white-space: nowrap; }
+/* Marca de horário fixo (âncora): a operação não é reencaixada após a anterior.
+   Clicável — é o caminho de volta para o encaixe automático. */
+.op-row .janela .op-fixo {
+  font-size: 10px;
+  opacity: .8;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 2px;
+  line-height: 1;
+}
+.op-row .janela .op-fixo:hover { opacity: 1; }
+/* Linha de VAZIO: tempo em que a função fica parada entre duas operações. Fica
+   discreta de propósito — é ausência de trabalho, não trabalho. */
+.op-row.op-vazio {
+  background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(0, 0, 0, .035) 5px 10px);
+  color: var(--ink-3);
+  font-style: italic;
+}
+.op-row.op-vazio .janela { font-weight: 400; opacity: .8; }
+.op-row .oper { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-row .obs { color: var(--ink-3); font-style: italic; font-weight: 400; }
+.op-row .resp { color: var(--ink-2); width: 120px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-row .ref { color: var(--ink-3); font-size: 11px; width: 130px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-row .op-status { border: none; cursor: pointer; font-family: 'IBM Plex Mono', monospace; flex: 0 0 auto; }
+.op-row .op-acoes { flex: 0 0 auto; display: inline-flex; gap: 2px; }
+.op-row .op-acoes button {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 3px;
+}
+.op-row .op-acoes button:hover { color: var(--alert); }
+
+/* No celular a linha vira duas: horário em cima, o resto embaixo. */
+@media (max-width: 700px) {
+  .op-row { flex-wrap: wrap; gap: 6px 8px; }
+  .op-row .oper { flex: 1 1 100%; white-space: normal; }
+  .op-row .resp, .op-row .ref { width: auto; flex: 1 1 auto; }
+}
+
+/* ============ FOLHA DO PLANO DE EXPEDIÇÃO ============ */
+/* A .sheet da OS é flex e presa em uma A4. Esta é block e cresce: um plano
+   mensal ocupa várias folhas, e o que não pode partir no meio é cada bloco
+   de ocorrência — não a folha inteira.
+
+   Página nomeada: a folha de OS depende de @page { margin: 0 } (a margem dela
+   é o padding de 8mm da propria .sheet). Esse acordo NAO serve aqui — padding
+   so protege a borda da primeira e da ultima pagina, entao da segunda em
+   diante o conteudo encostaria no papel. Com um nome de pagina proprio, a
+   margem vem da @page e vale em TODAS as folhas, sem tocar na regra da OS. */
+.sheet-exp {
+  display: block;
+  height: auto;
+  /* Anula o min-height: 297mm herdado de .sheet TAMBÉM na tela (não só no
+     @media print). O PDF da OE é gerado por html2canvas com os estilos de TELA:
+     com o piso de 297mm, uma OE curta ocupava uma folha inteira de altura e o
+     corte de paginação jogava o espaço vazio + o rodapé de assinaturas para uma
+     2ª página. Sem o piso, a folha tem a altura do conteúdo e cabe em 1 página;
+     OEs longas (mês) seguem crescendo e paginando normalmente. */
+  min-height: 0;
+  padding: 10mm;  /* na tela; na impressao quem manda e a margem da @page */
+  page: plano-exp;
+}
+/* A folha da OE é uma tabela de UMA coluna cujo <thead> carrega o cabeçalho:
+   é assim que o navegador repete o título em toda folha impressa. A tabela não
+   pode introduzir espaçamento nenhum, senão o desenho da folha muda. */
+.exp-print-folha { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.exp-print-folha > thead > tr > td,
+.exp-print-folha > tbody > tr > td { padding: 0; vertical-align: top; }
+
+.exp-print-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid #000;
+}
+.exp-print-head .tit { font-family: 'IBM Plex Mono', monospace; font-size: 17.5pt; font-weight: 700; letter-spacing: .04em; }
+.exp-print-head .sub { font-size: 10pt; margin-top: 2px; }
+.exp-print-head .meta { font-size: 9.5pt; text-align: right; line-height: 1.5; }
+.exp-print-resumo {
+  display: flex;
+  gap: 0;
+  border: 1px solid #000;
+  margin-bottom: 8px;
+}
+.exp-print-resumo .item {
+  flex: 1;
+  padding: 4px 8px;
+  border-right: 1px solid #000;
+}
+.exp-print-resumo .item:last-child { border-right: none; }
+.exp-print-resumo .n { font-family: 'IBM Plex Mono', monospace; font-size: 15pt; font-weight: 700; line-height: 1.1; }
+.exp-print-resumo .l { font-size: 8pt; text-transform: uppercase; letter-spacing: .06em; }
+.exp-print-bloco {
+  border: 1px solid #000;
+  margin-bottom: 6px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.exp-print-bloco > .cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  background: #eee;
+  border-bottom: 1px solid #000;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.exp-print-bloco > .cab .d { font-family: 'IBM Plex Mono', monospace; font-size: 12pt; font-weight: 700; }
+.exp-print-bloco > .cab .j { font-size: 9.5pt; }
+/* align-items: flex-start — sem isto o flex estica a coluna mais curta até a
+   altura da outra, e uma volta com 1 OS ficava com um trecho enorme de coluna
+   riscada e vazia ao lado de 4 quadros da ida. */
+.exp-print-pernas { display: flex; align-items: flex-start; }
+/* Metade da folha para cada perna, sempre — inclusive quando uma delas está
+   vazia. A largura fixa mantém o quadro da ida no mesmo lugar em todas as
+   folhas: quem confere a carga lê sempre na mesma metade, sem ter que
+   reencontrar a coluna a cada página. */
+.exp-print-perna { flex: 0 0 50%; max-width: 50%; min-width: 0; padding: 4px 6px; border-right: 1px solid #000; }
+.exp-print-perna:last-child { border-right: none; }
+.exp-print-perna .ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  border-bottom: 1px solid #999;
+  padding-bottom: 2px;
+  margin-bottom: 3px;
+}
+.exp-print-perna .ph .t { font-family: 'IBM Plex Mono', monospace; font-size: 10pt; font-weight: 700; letter-spacing: .06em; }
+.exp-print-perna .ph .r { font-size: 8pt; }
+.exp-print-perna .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 11pt; font-weight: 700; }
+/* Cada OS da perna é um quadro fechado — a moldura é o que separa uma OS da
+   seguinte quando as duas trazem tabela de pacotes embaixo. */
+.exp-print-os {
+  border: .75pt solid #000;
+  padding: 2pt 3pt;
+  margin-bottom: 3pt;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.exp-print-os:last-child { margin-bottom: 0; }
+/* flex-wrap + o piso de largura do modelo: com uma cor só tudo cabe numa linha,
+   como antes; num tricolor ("PRETO / MOSTARDA / OFF-WHITE") a cor desce para a
+   linha de baixo INTEIRA, em vez de espremer o modelo até sumir. */
+.exp-print-os > .cab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4pt;
+  font-size: 9.5pt;
+}
+.exp-print-os > .cab .n { font-family: 'IBM Plex Mono', monospace; font-weight: 700; white-space: nowrap; }
+.exp-print-os > .cab .m { flex: 1 1 auto; min-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-print-os > .cab .q,
+.exp-print-os > .cab .v { font-family: 'IBM Plex Mono', monospace; text-align: right; white-space: nowrap; }
+/* Cor do desenho técnico na 1ª linha, ao lado do modelo. nowrap: não é cortada
+   pela ellipsis do modelo (o .m cede largura, a cor fica inteira). */
+.exp-print-os > .cab .cor { font-weight: 700; white-space: nowrap; }
+.exp-print-os > .sub { font-size: 7.5pt; color: #333; margin: 1.5pt 0 1pt; }
+.exp-print-os > .pe { font-size: 7pt; color: #555; font-style: italic; margin-top: 1pt; }
+.exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
+
+.exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+.exp-print-perna td { padding: 1px 2px; vertical-align: top; }
+.exp-print-perna .tot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  border-top: 1px solid #999;
+  margin-top: 3px;
+  padding-top: 2px;
+  font-size: 9.5pt;
+  font-weight: 700;
+}
+.exp-print-perna .vazia { font-size: 9pt; font-style: italic; color: #555; padding: 2px 0; }
+.exp-print-box {
+  position: relative;
+  display: inline-block;
+  width: 7pt;
+  height: 7pt;
+  border: 1px solid #000;
+  vertical-align: -1px;
+}
+/* Quadrinho já marcado no checklist da OS. O ✓ é desenhado (não é caractere)
+   para não depender de fonte na impressão. */
+/* Em andamento: quadrinho com o miolo cheio — no papel se lê como "meio feito",
+   entre o vazio (pendente) e o ✓ (feita). */
+.exp-print-box.meio::after {
+  content: '';
+  position: absolute;
+  left: 1.2pt;
+  top: 1.2pt;
+  width: 3.2pt;
+  height: 3.2pt;
+  background: #000;
+}
+/* Quadrinho clicável das folhas (operações e OE): sem cara de botão, só o
+   quadrado. No cabeçalho da OS da folha de OE ele entra num flex de baseline —
+   daí o alinhamento próprio, pra não subir nem descer em relação ao número. */
+.op-print-chk {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  cursor: pointer;
+}
+.exp-print-os > .cab .op-print-chk { display: inline-flex; align-items: center; align-self: center; }
+.exp-print-box.ok::after {
+  content: '';
+  position: absolute;
+  left: 1.6pt;
+  top: -0.4pt;
+  width: 2pt;
+  height: 4.4pt;
+  border: solid #000;
+  border-width: 0 1.1pt 1.1pt 0;
+  transform: rotate(40deg);
+}
+
+/* Rodapé de assinaturas da OE: um campo por função que a carga atravessa.
+   A linha fica ACIMA do rótulo — é onde a pessoa assina, e o nome da função
+   embaixo diz quem é. As três dividem a largura em partes iguais. */
+.exp-print-rodape {
+  margin-top: 14px;
+  padding-top: 4px;
+  border-top: 1px solid #000;
+  font-size: 7pt;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.exp-print-rodape .ass { flex: 1 1 0; min-width: 0; }
+.exp-print-rodape .linha { margin-top: 22px; border-top: 1px solid #000; }
+.exp-print-rodape .lbl {
+  padding-top: 2px;
+  text-align: center;
+  font-size: 7pt;
+  letter-spacing: .04em;
+}
+
+/* ===== FOLHA DO PLANEJAMENTO DE OPERAÇÕES =====
+   Reaproveita a moldura da folha de OE (.exp-print-head/-resumo/-bloco/-rodape).
+   O que é próprio daqui é o bloco de cada posto e a tabela de operações — na
+   tela o plano é interativo (setas, status clicável, faixas de tempo); no papel
+   o que serve é a jornada em texto, com um quadrinho para dar baixa à caneta. */
+.op-print-posto { margin-bottom: 5px; }
+.op-print-posto:last-child { margin-bottom: 0; }
+/* Nome da função e horário JUNTOS à esquerda: com space-between o horário ia
+   para a borda direita e abria um vão de ~100mm no meio do cabeçalho. */
+.op-print-posto > .ph {
+  display: flex;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 1px solid #999;
+  padding: 2px 4px 1px;
+  background: #f2f2f2;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-posto > .ph .t {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.op-print-posto > .ph .h { font-family: 'IBM Plex Mono', monospace; font-size: 7.5pt; }
+/* table-layout FIXO: com o layout automático o navegador trata a largura das
+   colunas como sugestão e reparte a sobra entre TODAS elas proporcionalmente —
+   as colunas fixas incham e o vão volta. Fixo, cada uma fica com a largura
+   pedida e a sobra vai inteira para a última (observação). */
+.op-print-posto table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 7.5pt; }
+.op-print-posto td { padding: 1.5px 4px; vertical-align: top; border-bottom: 1px dotted #ccc; }
+.op-print-posto tr:last-child td { border-bottom: none; }
+/* Somatório que fecha o quadro da função: linha cheia em cima para separar da
+   última operação, fundo leve para se ler como fechamento e não como mais uma
+   operação da lista. */
+.op-print-posto tr.tot td {
+  border-top: .75pt solid #999;
+  border-bottom: none;
+  background: #f2f2f2;
+  font-size: 7pt;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-posto tr.tot td.jan { font-weight: 700; }
+/* Vazio na folha: a linha existe para o vazio ser LIDO na sequência, mas sem
+   competir com as operações — fundo hachurado leve e itálico. */
+.op-print-posto tr.vz td {
+  color: #666;
+  font-style: italic;
+  /* Mais baixa que a linha de operação: informa o vazio sem gastar papel como
+     se fosse trabalho. */
+  font-size: 6.5pt;
+  padding-top: 0;
+  padding-bottom: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 3pt, rgba(0, 0, 0, .05) 3pt 6pt);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* O que falta em cada lote, no pé do dia — a folha precisa dizer também o que
+   NÃO está lá, não só o que está. */
+.op-print-lotes {
+  margin: 3pt 0 2pt;
+  border-top: .5pt solid #999;
+  padding-top: 2pt;
+  font-size: 7pt;
+}
+.op-print-lotes .cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6.5pt;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #555;
+  margin-bottom: 1pt;
+}
+.op-print-lotes .l { padding: .5pt 0; }
+.op-print-lotes .l.falta { color: #7a1414; }
+/* Ações do dia na folha: só na tela, nunca no papel. */
+.op-print-acoes { display: flex; gap: 6px; margin: 3px 0 5px; }
+
+/* Aviso do dia inteiro parado, logo abaixo do cabeçalho da data. */
+.op-print-parada {
+  font-size: 7pt;
+  font-style: italic;
+  color: #7a5f1e;
+  padding: 1pt 4pt 0;
+}
+/* Larguras medidas contra o conteúdo real (folha impressa em PDF, Chrome):
+   antes, `ope` era a única coluna elástica e ficava com toda a sobra — o texto
+   da operação terminava aos ~55mm e o responsável só começava aos 154mm, ou
+   seja, ~100mm de branco atravessando TODA linha. Agora cada coluna tem a
+   largura do que ela mostra e quem absorve a sobra é a OBSERVAÇÃO, no fim: ela
+   saiu de baixo do nome da operação (onde roubava uma linha inteira por
+   observação) e passou a ocupar o espaço que estava vazio. */
+.op-print-posto td.bx { width: 12pt; }
+.op-print-posto td.jan { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; width: 80pt; }
+.op-print-posto td.ope { width: 132pt; }
+.op-print-posto td.res { width: 54pt; }
+.op-print-posto td.ref { width: 48pt; color: #444; font-size: 7pt; }
+.op-print-posto td.obs { font-size: 6.5pt; color: #555; font-style: italic; }
+.op-print-posto .tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border: .5pt solid #666;
+  border-radius: 2px;
+  padding: 0 3px;
+  white-space: nowrap;
+}
+.op-print-posto .tag.urgente { border-color: #9a7c3a; color: #7a5f1e; font-weight: 700; }
+.op-print-posto .tag.emergente,
+.op-print-posto .tag.alto { border-color: #c81e1e; color: #c81e1e; font-weight: 700; }
+
+/* Linha do tempo CONSOLIDADA no papel: todas as operações do dia num só eixo de
+   horas, uma por linha, comparáveis em paralelo. Duplica no papel as faixas da
+   tela; as cores são as mesmas (cor própria por operação). */
+.op-print-tl { margin: 4px 0 7px; }
+.op-print-tl-cab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6.5pt;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #555;
+  margin-bottom: 2px;
+}
+.op-print-tl .row,
+.op-print-tl-regua {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1.5px;
+  /* Recuo igual nas linhas E na régua: a faixa colorida (4pt) da linha cabe
+     aqui sem empurrar o conteúdo, então as barras seguem alinhadas com a régua. */
+  padding-left: 4pt;
+}
+/* O fundo colorido por função (faixa + tom suave) precisa sair na impressão. */
+.op-print-tl .row {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  border-radius: 2px;
+}
+.op-print-tl .cap {
+  width: 176pt;
+  flex: none;
+  font-size: 6.8pt;
+  line-height: 1.2;
+  /* Nome da operação por INTEIRO: quebra em mais linhas em vez de cortar com
+     reticências. A régua e as barras começam depois desta mesma largura, então
+     o eixo continua alinhado com as linhas. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.op-print-tl .track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 11pt;
+  background: #f4f4f4;
+  border: .5pt solid #ddd;
+  border-radius: 2px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-tl .bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  color: #fff;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  line-height: 11pt;
+  padding: 0 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-print-tl .bar.conf { outline: 1pt solid #c81e1e; outline-offset: -1pt; }
+.op-print-tl .semh {
+  font-size: 6pt;
+  font-style: italic;
+  color: #999;
+  padding: 0 4px;
+  line-height: 11pt;
+}
+/* A régua não tem faixa cinza: só os rótulos de hora, ancorados no mesmo eixo. */
+.op-print-tl-regua .track {
+  height: 9pt;
+  background: none;
+  border: none;
+}
+.op-print-tl-regua .cap { color: #555; }
+.op-print-tl .tk {
+  position: absolute;
+  top: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  color: #666;
+}
+
+@media print {
+  /* A margem de toda folha do plano — inclusive as de continuação.
+     A superior é maior: o cabeçalho se repete no alto de TODA folha e, encostado
+     nos 10mm, caía dentro da faixa que a impressora não imprime — o título saía
+     cortado. */
+  /* Ordem: topo · direita · base · ESQUERDA. A esquerda é o dobro das demais
+     laterais — é a borda que vai para o grampo/pasta, e com 10mm o conteúdo
+     ficava embaixo da encadernação. */
+  @page plano-exp {
+    size: A4;
+    margin: 20mm 10mm 10mm 20mm;
+  }
+  /* Respiro entre a borda do papel e o título, em cada folha. Vive no <thead>
+     para acompanhar a repetição do cabeçalho.
+     Medido no PDF impresso: a 1ª folha tem ~4mm de folga extra (herdada do
+     .print-area) que as repetidas não têm, e era só nelas que o título saía
+     cortado — a faixa não-imprimível da impressora ficava entre os 16,9mm das
+     repetidas e os 21,2mm da primeira. Com 20mm de @page + 4mm aqui, as
+     repetidas passam a 24mm, acima do que já se provou imprimível. */
+  .sheet-exp .exp-print-folha > thead > tr > td { padding-top: 4mm; }
+  /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
+     lida inteira, senão o operador recebe metade da jornada dele. */
+  .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
+  /* A linha do tempo consolidada é lida como um todo — não parte no meio. */
+  .sheet-exp .op-print-tl { page-break-inside: avoid; break-inside: avoid; }
+  /* CABEÇALHO REPETIDO: o <thead> da tabela da folha é redesenhado no alto de
+     cada página impressa — mecanismo especificado, ao contrário do
+     position:fixed, que foi tentado antes e jogava o título no RODAPÉ.
+     display explícito porque alguns navegadores perdem o table-header-group
+     quando a tabela recebe outras regras de impressão. */
+  .sheet-exp .exp-print-folha > thead { display: table-header-group; }
+  .sheet-exp .exp-print-folha > tbody { display: table-row-group; }
+  /* Anula, só pra esta folha, o "cabe tudo numa página" da folha de OS. */
+  .sheet-exp {
+    /* A @page plano-exp já reserva a margem: manter o padding de tela aqui
+       somaria margem com margem, e a largura fixa de 210mm estouraria a
+       área útil (190mm) da página. */
+    width: auto;
+    padding: 0;
+    min-height: 0;
+    page-break-inside: auto;
+    page-break-after: auto;
+  }
+  .sheet-exp > * { page-break-inside: auto; }
+  /* O bloco de uma expedição é o que não pode partir no meio. */
+  .sheet-exp .exp-print-bloco { page-break-inside: avoid; }
+  /* EXCEÇÃO da folha de OPERAÇÕES: ali o bloco é o DIA inteiro (muitos postos,
+     2+ páginas). Com "avoid" ele era jogado inteiro para a página seguinte,
+     deixando a 1ª página quase vazia (só cabeçalho + resumo). Aqui ele pode
+     partir entre páginas — quem não parte no meio é cada POSTO (.op-print-posto,
+     regra acima), a granularidade certa. */
+  #print-sheet-op .exp-print-bloco { page-break-inside: auto; break-inside: auto; }
+}
+
+/* ===== Banner de aviso de salvamento (bloqueio / erro) ===== */
+.alerta-salvamento {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--alert);
+  background: var(--alert-bg);
+  color: #7a1414;
+  box-shadow: 0 6px 20px rgba(200, 30, 30, .18);
+}
+.alerta-salvamento.erro {
+  border-color: #b9791a;
+  background: #fdf3e3;
+  color: #7a4d0e;
+  box-shadow: 0 6px 20px rgba(185, 121, 26, .16);
+}
+.alerta-salvamento.hidden { display: none; }
+.alerta-salvamento .alerta-icone { font-size: 26px; line-height: 1; }
+.alerta-salvamento .alerta-texto { flex: 1; font-size: 13.5px; line-height: 1.4; }
+.alerta-salvamento .alerta-texto strong { display: block; font-size: 15px; margin-bottom: 2px; }
+.alerta-salvamento .alerta-acoes { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.alerta-salvamento .btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+  font-weight: 700;
+}
+.alerta-salvamento .btn.ghost:hover { background: rgba(0, 0, 0, .06); }

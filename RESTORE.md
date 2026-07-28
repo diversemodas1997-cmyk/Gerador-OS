@@ -8,38 +8,30 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
-- **CÓDIGO:** tag `restore-2026-07-28-an` (cache-buster `app.js ?v=2026-07-28an`,
-  `styles.css ?v=2026-07-28k`). O que mudou desde o `restore-2026-07-28-t`, por
-  assunto:
-  - **Operações, a cascata por FASE DO ENFESTO:** alocar uma OS monta a corrente
-    uma vez por fase da grade (blusa moletom tricolor = 5 voltas de 9 operações,
-    não 9 no lote inteiro). O tempo do enfesto passou a ser **apurado do
-    histórico** — não se cadastra mais em Funções, porque depende do modelo, da
-    grade e da fase. Operação criada pelo programa nasce com o responsável do
-    posto, o que fez as linhas do tempo de quem trabalha em duas funções se
-    mesclarem. Operação de **horário fixo** ("todo dia às") no cadastro de
-    Funções, independente das OS. Botão de **retirar OS** em massa.
-  - **Correções de cálculo:** camadas de ribana pelas "unidades da grade" (36 de
-    moletom = 18 de ribana); divisão por tonalidade proporcional à grade
-    (2M-4G-2GG dá G=48, não 24); quantidade dos componentes acompanhando as
-    camadas lançadas na folha.
-  - **Número da OS e a pasta de PDFs:** número canônico de 4 dígitos, arquivo
-    `OS-<numero>.pdf` sem data (regravar substitui em vez de criar irmão) e
-    recusa de número já usado. Resolveu 17 números com arquivo duplicado.
-  - **Etiquetas:** imprimem pelo PDF, que carrega a página de 100×50 mm.
-  - **Permissões:** só admin escreve, em todo o programa. A escalada a admin foi
-    fechada NO SERVIDOR (`supabase-admin-roles.sql`, precisa ser rodado uma vez).
-    Saiu o botão de "limpar todos os cadastros".
-  - **Novidades de cadastro:** planilha `.xlsx` das grades agrupada por SKU, e
-    **importação do risco do CAD em PDF**, que lança comprimento e largura nas
-    fases da grade sozinha.
-- **DADOS:** exportação de **28/07/2026 17:00**, em
-  `backups/BACKUP-COMPLETO-2026-07-28T20-00-34.json` (1,73 MB, 28 chaves, 610
+- **CÓDIGO:** tag `restore-2026-07-28-aq` (cache-buster `app.js ?v=2026-07-28aq`,
+  `styles.css ?v=2026-07-28k`). O que mudou desde o `restore-2026-07-28-an`:
+  - **Importar risco (PDF)** ganhou o outro lado: além de corrigir grade
+    existente, agora **cria grade nova** a partir dos relatórios do CAD,
+    perguntando só o que o PDF não traz (SKU, tipo de peça, variação, tecido e
+    nome de cada fase). O nome da grade sai dos tamanhos, na convenção da casa.
+    Ele **aprende** o produto e o código de tecido de cada fase — a segunda grade
+    do mesmo produto abre preenchida.
+  - **Excedente de enfesto:** o comprimento do relatório é a medida de CORTAR; o
+    cadastro recebe +15 cm (a de ENFESTAR). A largura não muda. Conferido: o
+    Corpo Parte 1 da 2X P ao G3 casa exato (4,5493 + 0,15 = 4,70).
+  - **Pasta das exportações (JSON)** em Configurações: o "Exportar tudo" grava
+    direto numa pasta conectada, com nome datado, sem passar pelos Downloads.
+- **DADOS:** exportação de **28/07/2026 17:31**, em
+  `backups/BACKUP-COMPLETO-2026-07-28T20-31-01.json` (1,73 MB, 28 chaves, 610
   registros): 174 OS, 64 grades, 25 desenhos, 153 operações planejadas, 10
-  funções, 37 cores, 10 tecidos, 33 cargas de expedição. A mesma cópia está na
-  pasta conectada `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
-  O anterior é `backups/BACKUP-COMPLETO-2026-07-27T17-31-01.json` (165 OS).
-  Cópia do código deste ponto em `backups-codigo/*.20260728an-risco-pdf.CÓPIA`.
+  funções, 37 cores, 10 tecidos, 33 cargas de expedição, 36 mov. de estoque.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+  Cópia do código deste ponto em `backups-codigo/*.20260728aq-risco-grade-nova.CÓPIA`.
+
+  > ATENÇÃO: esta cópia ainda tem as OS **0340** e **0398** com número repetido
+  > (a de junho da 340 e uma das 398 são cascas vazias, sem expedição, estoque
+  > nem operação). O app avisa no console. Se elas já tiverem sido apagadas
+  > depois desta hora, a próxima exportação sai limpa.
 
 ---
 
