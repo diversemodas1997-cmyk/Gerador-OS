@@ -2576,15 +2576,40 @@ function addFaseGradeRow(fase = {}) {
     </div>
     <div class="form-grid cols-2">
       <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
-      <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this)">${tecOpts(fase.tecidoId)}</select></div>
+      <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this); atualizarSugestaoBobinas(this)">${tecOpts(fase.tecidoId)}</select></div>
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
-      <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" placeholder="Ex.: 6,50"></div>
+      <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
-      <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.</div></div>
+      <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.<span class="fase-bobinas-sug"></span></div></div>
     </div>`;
   cont.appendChild(div);
   toggleUnidadesGrade(div.querySelector('.fase-tec'));
+  atualizarSugestaoBobinas(div.querySelector('.fase-tec'));
   renumerarFasesGrade();
+}
+
+// Preenche as bobinas pela regra da malha algodão assim que o tecido e o
+// comprimento estão postos. NÃO pisa no que foi digitado à mão: só escreve no
+// campo vazio ou no que a própria regra escreveu antes (marcado em data-sug).
+// Quem digita apaga a marca (oninput do campo) e a regra não mexe mais ali.
+function atualizarSugestaoBobinas(el) {
+  const bloco = el?.closest?.('.fase-grade-bloco');
+  if (!bloco) return;
+  const comp = bloco.querySelector('.fase-comp')?.value;
+  const tecId = bloco.querySelector('.fase-tec')?.value;
+  const inp = bloco.querySelector('.fase-bobinas');
+  const dica = bloco.querySelector('.fase-bobinas-sug');
+  const sug = sugestaoBobinasFase(tecId, comp);
+  if (dica) {
+    dica.innerHTML = sug == null ? ''
+      : ` <b style="color:var(--accent);">${esc(textoRegraBobinas(comp))}.</b>`;
+  }
+  if (!inp || sug == null) return;
+  const atual = inp.value.trim();
+  if (atual === '' || atual === inp.dataset.sug) {
+    inp.value = String(sug);
+    inp.dataset.sug = String(sug);
+  }
 }
 
 function toggleUnidadesGrade(selectEl) {
@@ -10798,6 +10823,49 @@ const LIMITE_CAMADAS = { malha: 80, moletom: 36, ribana: 80, outro: Infinity };
 const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
+/* --------- REGRA DAS BOBINAS: malha algodão, pelo comprimento --------- */
+// Quantas bobinas um enfesto de malha algodão consome é coisa que a casa mede na
+// prática, não que se calcule da área: a tabela abaixo é a experiência de quem
+// enfesta. Ela não é proporcional — de 5 para 6 metros pula duas bobinas, de 6
+// para 7 pula uma — e por isso não dá para trocar por uma multiplicação.
+//
+// SÓ VALE PARA MALHA ALGODÃO. Moletom e ribana consomem de outro jeito e ficam
+// de fora: nesses o campo continua em branco, para quem sabe preencher.
+const BOBINAS_MALHA = { 2: 5, 3: 6, 4: 7, 5: 8, 6: 10, 7: 11, 8: 13, 9: 15 };
+const BOBINAS_MALHA_MIN_M = 2;    // abaixo disso, o piso da tabela
+const BOBINAS_MALHA_MAX_M = 9;    // acima disso, segue o ritmo do fim dela
+const BOBINAS_MALHA_PASSO = 2;    // bobinas por metro depois dos 9 m (13→15)
+
+// O comprimento arredonda PARA CIMA ao metro inteiro. Enfesto real quase nunca é
+// metro redondo — 4,70 m usa o que 5 m usa. Prever a menos é o erro caro: falta
+// pano no meio do enfesto.
+function bobinasPrevistasMalha(comp) {
+  const c = parseFloat(String(comp == null ? '' : comp).replace(',', '.'));
+  if (!isFinite(c) || c <= 0) return null;
+  // A folga de 1e-6 evita que 4,00 vindo de uma conta com resto (4.0000000001)
+  // seja tratado como se passasse dos 4 metros.
+  const m = Math.max(BOBINAS_MALHA_MIN_M, Math.ceil(c - 1e-6));
+  if (m <= BOBINAS_MALHA_MAX_M) return BOBINAS_MALHA[m];
+  return BOBINAS_MALHA[BOBINAS_MALHA_MAX_M] + (m - BOBINAS_MALHA_MAX_M) * BOBINAS_MALHA_PASSO;
+}
+
+// A sugestão para uma fase: só existe quando o tecido dela é malha algodão.
+function sugestaoBobinasFase(tecidoId, comp) {
+  const t = (STATE.tecidos || []).find(x => x.id === tecidoId);
+  if (!t || categoriaEfetivaTecido(t) !== 'malha') return null;
+  return bobinasPrevistasMalha(comp);
+}
+
+// O texto que explica de onde saiu o número, para ninguém achar que é chute.
+function textoRegraBobinas(comp) {
+  const c = parseFloat(String(comp == null ? '' : comp).replace(',', '.'));
+  const n = bobinasPrevistasMalha(c);
+  if (n == null) return '';
+  const m = Math.max(BOBINAS_MALHA_MIN_M, Math.ceil(c - 1e-6));
+  return `${n} bobinas — regra da malha algodão para ${m} m`
+       + (Math.abs(m - c) > 1e-6 ? ` (${String(c.toFixed(2)).replace('.', ',')} m arredondado para cima)` : '');
+}
+
 /**
  * Categoria efetiva de um tecido: respeita a categoria cadastrada, mas
  * se o nome contém "ribana" (case-insensitive), força 'ribana'. Isso cobre
@@ -16282,9 +16350,10 @@ async function criarGradeDoRisco(gi) {
       ordem: i + 1, nome: x.nome, tecidoId: x.tecidoId, unidades: x.unidades,
       comp: _riscoCompCadastro(x.L.comprimento).toFixed(2),
       larg: x.L.largura.toFixed(3),
-      // Bobinas previstas o relatório não traz — é decisão da casa, fica em
-      // branco para ser preenchida quando alguém souber.
-      bobinas: ''
+      // Bobinas previstas o relatório não traz. Em malha algodão a regra da casa
+      // dá o número pelo comprimento; nos outros tecidos fica em branco, para
+      // ser preenchida quando alguém souber.
+      bobinas: sugestaoBobinasFase(x.tecidoId, _riscoCompCadastro(x.L.comprimento)) ?? ''
     }))
   };
   // Campos legados (espelho da 1ª fase), como o cadastro manual grava.
@@ -16641,7 +16710,7 @@ function _pastaResetFases(G) {
     const res = grade ? _riscoResolverFase(L, grade) : { fase: null, origem: 'grade nova' };
     const f = res.fase;
     const bobMem = memBob[k];
-    return {
+    const d = {
       alvo: f ? f.nome : '__nova__',
       origem: res.origem,
       nome: f ? f.nome : _riscoNomeFaseSugerido(L),
@@ -16651,7 +16720,23 @@ function _pastaResetFases(G) {
              : (bobMem != null && bobMem !== '' ? String(bobMem).replace('.', ',') : ''),
       aplicar: !!(L.comprimento != null && L.largura != null)
     };
+    _pastaSugerirBobinas(d, L);
+    return d;
   });
+}
+
+// A regra da malha algodão preenchendo o rascunho. Só entra onde o campo está
+// vazio — o que já estava no cadastro, ou o que foi respondido antes para este
+// produto, vale mais do que a regra geral. `sugerida` marca o que foi ela que
+// escreveu, para que trocar o tecido recalcule sem apagar o que foi digitado.
+function _pastaSugerirBobinas(d, L) {
+  const sug = sugestaoBobinasFase(d.tecidoId, _riscoCompCadastro(L.comprimento));
+  d.regra = sug;
+  if (sug == null) return;
+  if (d.bobinas === '' || d.bobinas === d.sugerida) {
+    d.bobinas = String(sug);
+    d.sugerida = String(sug);
+  }
 }
 
 // Lê a tela de volta para o rascunho. Chamado antes de qualquer redesenho e
@@ -16793,9 +16878,10 @@ function _pastaHtmlPasso() {
         <div style="font-family:'IBM Plex Mono',monospace;">tecido: ${esc(L.tecido || '—')}</div></td>
       ${grade ? `<td>${selAlvo}</td>` : ''}
       <td>${campoNome}</td>
-      <td><select id="pw-f-tec-${fi}" style="font-size:12px;">${tecOpts(d.tecidoId)}</select></td>
+      <td><select id="pw-f-tec-${fi}" onchange="pastaTecidoMudou()" style="font-size:12px;">${tecOpts(d.tecidoId)}</select></td>
       <td><input type="number" min="1" id="pw-f-un-${fi}" value="${esc(d.unidades)}" style="width:52px;font-size:12px;"></td>
-      <td><input type="text" id="pw-f-bob-${fi}" value="${esc(d.bobinas)}" placeholder="14 · 1/2 · 0" style="width:76px;font-size:12px;"></td>
+      <td><input type="text" id="pw-f-bob-${fi}" value="${esc(d.bobinas)}" placeholder="14 · 1/2 · 0" style="width:76px;font-size:12px;">
+        ${d.regra == null ? '' : `<div style="font-size:9px;color:var(--ink-3);" title="${esc(textoRegraBobinas(compCad))}">regra: ${d.regra}</div>`}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${atual}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}${semMedida ? 'color:var(--alert);' : ''}">${semMedida ? 'sem medida' : esc(nova)}</td>
     </tr>`;
@@ -16879,6 +16965,15 @@ function pastaTrocarDestino(valor) {
 function pastaTrocarAlvo(fi) {
   _pastaColetar();
   renderPastaWiz();          // "criar fase nova" abre o campo de nome
+}
+
+// Trocar o tecido muda a regra: malha algodão tem previsão de bobinas pelo
+// comprimento, moletom e ribana não têm.
+function pastaTecidoMudou() {
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  _pastaColetar();
+  G.draft.fases.forEach((d, fi) => _pastaSugerirBobinas(d, G.itens[fi]));
+  renderPastaWiz();
 }
 
 function pastaPularPasso() {
