@@ -973,7 +973,16 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; }
    no mobile como gatilho para abrir o drawer da sidebar. */
 .btn-menu-mobile { display: none; }
 
-@media (max-width: 900px) {
+/* screen and — NAO tirar. Na impressao a largura de referencia das media
+   queries NAO e a da janela: e a da PAGINA. Uma A4 tem 210mm = 794px, e a
+   area util da folha do plano tem 180mm = 680px. As duas passam por baixo dos
+   900px, entao sem o `screen` este bloco inteiro (feito para celular) vale
+   tambem no papel — e, por vir DEPOIS do @media print la de cima, ganha dele
+   por ordem, com a mesma especificidade.
+   O estrago medido: `main.content { padding: 16px }` recuava a folha 4,23mm de
+   cada lado, e a folha do plano saia com 171,7mm de largura util em vez dos
+   180,2mm que a @page reserva — tudo reflui mais estreito do que na tela. */
+@media screen and (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   /* Drawer master/detail: o menu lateral vira overlay fixed que ocupa a tela
      toda. Por default fica oculto; aparece quando body tem .mobile-menu-open
@@ -1391,7 +1400,7 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .exp-ocor-nome { font-size: 12px; color: var(--ink-3); }
 
 .exp-pernas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 900px) { .exp-pernas { grid-template-columns: 1fr; } }
+@media screen and (max-width: 900px) { .exp-pernas { grid-template-columns: 1fr; } }
 .exp-perna { border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; }
 .exp-perna-head {
   display: flex;
@@ -1894,7 +1903,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-row .op-acoes button:hover { color: var(--alert); }
 
 /* No celular a linha vira duas: horário em cima, o resto embaixo. */
-@media (max-width: 700px) {
+/* screen and — mesma razao do bloco de 900px: no papel a largura de
+   referencia e a da pagina, e a folha do plano (180mm = 680px) cabe aqui. */
+@media screen and (max-width: 700px) {
   .op-row { flex-wrap: wrap; gap: 6px 8px; }
   .op-row .oper { flex: 1 1 100%; white-space: normal; }
   .op-row .resp, .op-row .ref { width: auto; flex: 1 1 auto; }
