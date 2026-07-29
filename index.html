@@ -342,7 +342,7 @@
     <section class="page hidden" data-page="cad-grades">
       <div class="page-header">
         <div><h1>Grades</h1><div class="desc">Modelos de grade de tamanhos com quantidades-padrão</div></div>
-        <div class="actions"><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
+        <div class="actions"><button class="btn" onclick="abrirAssistentePasta()" title="Escolha uma PASTA: o programa lê todos os PDFs de encaixe que houver nela, agrupa por grade e conduz o cadastro de uma em uma, até acabar.">📁 Importar pasta de riscos</button><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -921,6 +921,19 @@
   </div>
 </div>
 
+<!-- Assistente da PASTA de riscos: lê todos os PDFs de uma pasta, agrupa por
+     grade e conduz o cadastro de uma em uma até o último arquivo. Os botões de
+     cada passo são desenhados dentro do corpo, porque mudam a cada etapa. -->
+<div class="modal-backdrop" id="modal-risco-pasta">
+  <div class="modal" style="max-width:1200px;">
+    <h2>Cadastrar grades a partir de uma pasta de riscos</h2>
+    <div id="modal-risco-pasta-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="pastaFechar()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-desaloc-os">
   <div class="modal">
     <h2 id="modal-desaloc-title">Retirar OS do planejamento</h2>
@@ -969,6 +982,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-28aq"></script>
+<script src="app.js?v=2026-07-29a"></script>
 </body>
 </html>

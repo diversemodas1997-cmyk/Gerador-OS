@@ -16479,6 +16479,533 @@ async function aplicarRiscoNasGrades() {
 }
 
 /* ========================================================= */
+/*   ASSISTENTE: uma PASTA inteira de riscos, uma por vez    */
+/* ========================================================= */
+// A tela de cima ("Importar risco") resolve um punhado de PDFs de uma vez, mas
+// obriga a escolher arquivo por arquivo e a decidir tudo numa tabela só. Quando
+// chega a pasta inteira do CAD — dezenas de relatórios, de vários produtos — o
+// que se quer é outra coisa: apontar A PASTA e ser conduzido, uma grade de cada
+// vez, até não sobrar PDF.
+//
+// O assistente faz isso em três tempos:
+//   1. LÊ tudo. Varre a pasta (e as subpastas), lê cada relatório e mostra o
+//      progresso. PDF que não é relatório do CAD fica de lado, com o motivo.
+//   2. AGRUPA por distribuição de tamanhos. Os cinco riscos da canguru têm os
+//      mesmos tamanhos: são UMA grade de cinco fases, não cinco cadastros. Cada
+//      grupo já nasce sabendo se é grade NOVA (nenhuma cadastrada com aqueles
+//      tamanhos) ou CORREÇÃO de uma existente.
+//   3. PERGUNTA, grupo a grupo, só o que o PDF não traz — nome, tecido, unidades
+//      e o consumo previsto em bobinas. Salva e passa para o próximo. Termina
+//      quando o último grupo foi salvo ou pulado, com um resumo do que mudou.
+//
+// Tudo o que é respondido aqui vira memória (produto, fase, tecido, bobinas): a
+// próxima pasta do mesmo produto chega quase toda preenchida.
+
+let _pastaWiz = null;
+
+// A memória do CONSUMO: "modelo do risco | código do tecido" → bobinas previstas.
+// É o único dos quatro campos decisivos que ninguém consegue deduzir do desenho —
+// vem do que a casa gastou nas últimas produções — e por isso vale guardar.
+function _riscoBobinasMem() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.riscoBobinas || typeof STATE.meta.riscoBobinas !== 'object') STATE.meta.riscoBobinas = {};
+  return STATE.meta.riscoBobinas;
+}
+
+// Escolher a pasta. O Chrome e o Edge no desktop abrem o seletor nativo de
+// pastas e deixam varrer as subpastas; nos outros sobra o <input webkitdirectory>,
+// que entrega a mesma lista de arquivos por outro caminho.
+async function _escolherPastaDeRiscos() {
+  if ('showDirectoryPicker' in window) {
+    const dir = await window.showDirectoryPicker({ mode: 'read', id: 'riscos-cad' });
+    const arquivos = [];
+    const anda = async (h, prefixo) => {
+      for await (const [nome, ent] of h.entries()) {
+        if (ent.kind === 'directory') { await anda(ent, prefixo + nome + '/'); continue; }
+        if (!/\.pdf$/i.test(nome)) continue;
+        arquivos.push({ file: await ent.getFile(), caminho: prefixo + nome });
+      }
+    };
+    await anda(dir, '');
+    return { pasta: dir.name, arquivos };
+  }
+  return new Promise(resolve => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.webkitdirectory = true;
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.onchange = () => {
+      const fs = Array.from(inp.files || []).filter(f => /\.pdf$/i.test(f.name));
+      const raiz = (fs[0]?.webkitRelativePath || '').split('/')[0] || 'pasta escolhida';
+      inp.remove();
+      resolve({ pasta: raiz, arquivos: fs.map(f => ({ file: f, caminho: f.webkitRelativePath || f.name })) });
+    };
+    // Cancelar o seletor não dispara evento nenhum: o Promise fica pendente e o
+    // input morre com a página. Não trava nada — a tela nem chegou a abrir.
+    inp.click();
+  });
+}
+
+async function abrirAssistentePasta() {
+  if (!exigirEdicao('importar uma pasta de riscos')) return;
+  let escolha = null;
+  try {
+    escolha = await _escolherPastaDeRiscos();
+  } catch (e) {
+    if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return;   // desistiu
+    return toast('Não foi possível abrir a pasta: ' + (e.message || e), 'err');
+  }
+  if (!escolha) return;
+  if (!escolha.arquivos.length) return toast('Nenhum PDF nesta pasta', 'err');
+  escolha.arquivos.sort((a, b) => a.caminho.localeCompare(b.caminho, 'pt-BR', { numeric: true }));
+
+  _pastaWiz = {
+    pasta: escolha.pasta, arquivos: escolha.arquivos, leituras: [],
+    grupos: [], idx: 0, etapa: 'lendo', lidos: 0,
+    feito: { criadas: [], atualizadas: [], fases: 0 }
+  };
+  openModal('modal-risco-pasta');
+  renderPastaWiz();
+
+  // `W` é a identidade desta importação. Se quem está usando fechar a janela no
+  // meio da leitura (ou abrir outra pasta), `_pastaWiz` deixa de ser `W` e o
+  // laço para — sem isso ele continuaria empurrando leituras num objeto morto.
+  const W = _pastaWiz;
+  for (const it of escolha.arquivos) {
+    try {
+      const L = await _riscoLerPdf(it.file);
+      L.caminho = it.caminho;
+      W.leituras.push(L);
+    } catch (e) {
+      W.leituras.push({ arquivo: it.file.name, caminho: it.caminho, erro: e.message || String(e) });
+    }
+    if (_pastaWiz !== W) return;
+    W.lidos++;
+    renderPastaWiz();
+    await new Promise(r => setTimeout(r, 0));   // deixa a tela respirar
+    if (_pastaWiz !== W) return;
+  }
+
+  _pastaMontarGrupos();
+  _pastaWiz.etapa = _pastaWiz.grupos.length ? 'passo' : 'fim';
+  renderPastaWiz();
+}
+
+// Um grupo por distribuição de tamanhos: é o que define UMA grade.
+function _pastaMontarGrupos() {
+  const grupos = new Map();
+  _pastaWiz.leituras.forEach(L => {
+    if (L.erro) return;
+    const a = _riscoAssinatura(L.tamanhos);
+    if (a === '0-0-0-0-0-0-0') {
+      L.erro = 'Não deu para ler a tabela de tamanhos deste relatório';
+      return;
+    }
+    if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
+    grupos.get(a).itens.push(L);
+  });
+  _pastaWiz.grupos = Array.from(grupos.values()).map(G => {
+    G.itens.sort((x, y) => (x.caminho || '').localeCompare(y.caminho || '', 'pt-BR', { numeric: true }));
+    G.candidatas = _riscoGradesQueCasam(G.tamanhos);
+    G.gradeId = G.candidatas.length === 1 ? G.candidatas[0].id : '';
+    G.modelo = (G.itens.find(L => L.modelo) || {}).modelo || '';
+    G.status = 'pendente';
+    _pastaIniciarRascunho(G);
+    return G;
+  });
+}
+
+// O rascunho do grupo: o que a tela mostra e o que o "Salvar" grava. Nasce do
+// que já foi aprendido antes; o que não foi, nasce vazio para ser respondido.
+function _pastaIniciarRascunho(G) {
+  const prod = _riscoProdutos()[_normNome(G.modelo)] || {};
+  G.draft = {
+    sku: prod.sku || '',
+    tipoPeca: prod.tipoPeca || 'camiseta',
+    variacao: prod.variacao || '',
+    pecasPorPacote: prod.pecasPorPacote || '',
+    fases: []
+  };
+  _pastaResetFases(G);
+}
+
+// As linhas de fase dependem do destino: numa grade existente cada PDF aponta
+// para uma fase dela; numa grade nova, cada PDF é uma fase a criar.
+function _pastaResetFases(G) {
+  const memTec = _riscoTecidos(), memBob = _riscoBobinasMem();
+  const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
+  G.draft.fases = G.itens.map(L => {
+    const k = _riscoChave(L);
+    const res = grade ? _riscoResolverFase(L, grade) : { fase: null, origem: 'grade nova' };
+    const f = res.fase;
+    const bobMem = memBob[k];
+    return {
+      alvo: f ? f.nome : '__nova__',
+      origem: res.origem,
+      nome: f ? f.nome : _riscoNomeFaseSugerido(L),
+      tecidoId: (f && f.tecidoId) || memTec[k] || '',
+      unidades: (f && parseInt(f.unidades, 10)) || 2,
+      bobinas: (f && f.bobinas !== '' && f.bobinas != null) ? String(f.bobinas).replace('.', ',')
+             : (bobMem != null && bobMem !== '' ? String(bobMem).replace('.', ',') : ''),
+      aplicar: !!(L.comprimento != null && L.largura != null)
+    };
+  });
+}
+
+// Lê a tela de volta para o rascunho. Chamado antes de qualquer redesenho e
+// antes de salvar — sem isso, trocar o destino apagaria o que foi digitado.
+function _pastaColetar() {
+  const G = _pastaWiz && _pastaWiz.grupos[_pastaWiz.idx];
+  if (!G || !G.draft) return;
+  const v = id => (document.getElementById(id)?.value ?? '').trim();
+  if (document.getElementById('pw-sku')) {
+    G.draft.sku = v('pw-sku');
+    G.draft.tipoPeca = v('pw-tipo');
+    G.draft.variacao = v('pw-var');
+    G.draft.pecasPorPacote = v('pw-pac');
+  }
+  G.draft.fases.forEach((d, fi) => {
+    const sel = document.getElementById(`pw-f-alvo-${fi}`);
+    if (sel) d.alvo = sel.value;
+    const nome = document.getElementById(`pw-f-nome-${fi}`);
+    if (nome) d.nome = nome.value.trim();
+    const tec = document.getElementById(`pw-f-tec-${fi}`);
+    if (tec) d.tecidoId = tec.value;
+    const un = document.getElementById(`pw-f-un-${fi}`);
+    if (un) d.unidades = parseInt(un.value, 10) || 2;
+    const bob = document.getElementById(`pw-f-bob-${fi}`);
+    if (bob) d.bobinas = bob.value.trim();
+    const ap = document.getElementById(`pw-f-ap-${fi}`);
+    if (ap) d.aplicar = ap.checked;
+  });
+}
+
+function renderPastaWiz() {
+  const box = document.getElementById('modal-risco-pasta-fields');
+  if (!box || !_pastaWiz) return;
+  if (_pastaWiz.etapa === 'lendo') return void (box.innerHTML = _pastaHtmlLendo());
+  if (_pastaWiz.etapa === 'fim') return void (box.innerHTML = _pastaHtmlResumo());
+  box.innerHTML = _pastaHtmlPasso();
+}
+
+function _pastaHtmlLendo() {
+  const tot = _pastaWiz.arquivos.length, n = _pastaWiz.lidos;
+  const pct = tot ? Math.round(n / tot * 100) : 0;
+  const erros = _pastaWiz.leituras.filter(L => L.erro).length;
+  return `
+    <div class="info-box">Pasta <b>${esc(_pastaWiz.pasta)}</b> — ${tot} arquivo(s) PDF.</div>
+    <div style="margin:14px 0;">
+      <div style="height:8px;background:var(--line-2);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:var(--accent);transition:width .15s;"></div>
+      </div>
+      <div style="margin-top:6px;font-size:13px;color:var(--ink-2);">
+        Lendo ${n} de ${tot}…${erros ? ` · ${erros} sem leitura` : ''}
+      </div>
+    </div>`;
+}
+
+function _pastaHtmlPasso() {
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  const tot = _pastaWiz.grupos.length, pos = _pastaWiz.idx + 1;
+  const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
+  const nomeTam = _riscoNomeTamanhos(G.tamanhos);
+  const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+    .filter(k => (parseInt(G.tamanhos[k], 10) || 0) > 0)
+    .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
+
+  const casaId = new Set(G.candidatas.map(g => g.id));
+  const opts = '<option value="">➕ Criar uma grade NOVA com estes tamanhos</option>'
+    + (STATE.grades || []).slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
+        .map(g => `<option value="${esc(g.id)}" ${g.id === G.gradeId ? 'selected' : ''}>${casaId.has(g.id) ? '✓ ' : ''}${esc(g.nome)}</option>`).join('');
+
+  const dica = grade
+    ? (casaId.has(grade.id)
+        ? 'Os tamanhos deste risco batem com esta grade. As medidas abaixo vão <b>corrigir</b> o cadastro dela.'
+        : '<b>Atenção:</b> os tamanhos deste risco não batem com a distribuição desta grade.')
+    : (G.candidatas.length > 1
+        ? `<b>${G.candidatas.length} grades</b> têm exatamente estes tamanhos — escolha acima em qual lançar, ou crie uma nova.`
+        : 'Nenhuma grade cadastrada tem estes tamanhos. Responda abaixo o que o PDF não traz e ela será criada.');
+
+  const produto = grade ? '' : `
+    <div class="form-grid cols-3" style="margin-top:10px;">
+      <div class="field">
+        <label>SKU da grade *</label>
+        <input type="text" id="pw-sku" value="${esc(G.draft.sku)}" placeholder="Ex.: BM.TRICOLOR" oninput="pastaAtualizarNome()">
+        <div class="field-hint">O que vem depois do "|" no nome.</div>
+      </div>
+      <div class="field">
+        <label>Tipo de peça *</label>
+        <select id="pw-tipo">
+          <option value="camiseta" ${G.draft.tipoPeca === 'camiseta' ? 'selected' : ''}>Camiseta</option>
+          <option value="blusa_moletom" ${G.draft.tipoPeca === 'blusa_moletom' ? 'selected' : ''}>Blusa moletom</option>
+          <option value="outro" ${G.draft.tipoPeca === 'outro' ? 'selected' : ''}>Outro</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Variação</label>
+        <select id="pw-var">
+          <option value="">— sem variação —</option>
+          <option value="basica" ${G.draft.variacao === 'basica' ? 'selected' : ''}>Básica</option>
+          <option value="bicolor" ${G.draft.variacao === 'bicolor' ? 'selected' : ''}>Bicolor</option>
+          <option value="tricolor" ${G.draft.variacao === 'tricolor' ? 'selected' : ''}>Tricolor</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Peças por pacote</label>
+        <input type="number" min="0" id="pw-pac" value="${esc(G.draft.pecasPorPacote)}" placeholder="0">
+      </div>
+      <div class="field full">
+        <label>Nome da grade</label>
+        <input type="text" id="pw-nome" value="${esc(nomeTam + (G.draft.sku ? ' | ' + G.draft.sku : ''))}" readonly class="is-auto">
+        <div class="field-hint">Montado dos tamanhos do risco + o SKU. Os tamanhos vêm do PDF e não se digitam.</div>
+      </div>
+    </div>`;
+
+  const fasesGrade = grade ? (grade.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) : [];
+  const tecOpts = sel => '<option value="">— escolher —</option>' + (STATE.tecidos || [])
+    .map(t => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.nome)}</option>`).join('');
+
+  const linhas = G.itens.map((L, fi) => {
+    const d = G.draft.fases[fi];
+    const compCad = _riscoCompCadastro(L.comprimento);
+    const semMedida = compCad == null || L.largura == null;
+    const alvoFase = grade ? fasesGrade.find(f => f.nome === d.alvo) : null;
+    const atual = alvoFase ? `${esc(String(alvoFase.comp || '—').replace('.', ','))} × ${esc(String(alvoFase.larg || '—').replace('.', ','))}` : '—';
+    const nova = semMedida ? '—' : `${compCad.toFixed(2).replace('.', ',')} × ${L.largura.toFixed(3).replace('.', ',')}`;
+    const mudou = alvoFase && !semMedida &&
+      (_riscoF(alvoFase.comp) !== +compCad.toFixed(2) || _riscoF(alvoFase.larg) !== +L.largura.toFixed(3));
+
+    const selAlvo = grade ? `<select id="pw-f-alvo-${fi}" onchange="pastaTrocarAlvo(${fi})" style="font-size:12px;width:100%;">
+        ${fasesGrade.map(f => `<option value="${esc(f.nome)}" ${f.nome === d.alvo ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
+        <option value="__nova__" ${d.alvo === '__nova__' ? 'selected' : ''}>➕ criar fase nova</option>
+      </select>
+      <div style="font-size:10px;color:var(--ink-3);margin-top:2px;">${esc(d.origem)}</div>` : '';
+
+    const campoNome = (!grade || d.alvo === '__nova__')
+      ? `<input type="text" id="pw-f-nome-${fi}" value="${esc(d.nome)}" placeholder="Ex.: Corpo Parte 1" style="font-size:12px;width:100%;">`
+      : '';
+
+    return `<tr>
+      <td style="text-align:center;"><input type="checkbox" id="pw-f-ap-${fi}" ${d.aplicar ? 'checked' : ''} ${semMedida ? 'disabled' : ''}></td>
+      <td style="font-size:10px;color:var(--ink-3);max-width:150px;word-break:break-all;">${esc(L.caminho || L.arquivo)}
+        <div style="font-family:'IBM Plex Mono',monospace;">tecido: ${esc(L.tecido || '—')}</div></td>
+      ${grade ? `<td>${selAlvo}</td>` : ''}
+      <td>${campoNome}</td>
+      <td><select id="pw-f-tec-${fi}" style="font-size:12px;">${tecOpts(d.tecidoId)}</select></td>
+      <td><input type="number" min="1" id="pw-f-un-${fi}" value="${esc(d.unidades)}" style="width:52px;font-size:12px;"></td>
+      <td><input type="text" id="pw-f-bob-${fi}" value="${esc(d.bobinas)}" placeholder="14 · 1/2 · 0" style="width:76px;font-size:12px;"></td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${atual}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}${semMedida ? 'color:var(--alert);' : ''}">${semMedida ? 'sem medida' : esc(nova)}</td>
+    </tr>`;
+  }).join('');
+
+  const pct = Math.round(_pastaWiz.idx / _pastaWiz.grupos.length * 100);
+  return `
+    <div style="display:flex;align-items:baseline;gap:10px;">
+      <div style="font-weight:700;">Grade ${pos} de ${tot}</div>
+      <div style="font-size:12px;color:var(--ink-3);">pasta ${esc(_pastaWiz.pasta)} · ${G.itens.length} risco(s) com os mesmos tamanhos</div>
+    </div>
+    <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 12px;">
+      <div style="height:100%;width:${pct}%;background:var(--accent);"></div>
+    </div>
+
+    <div class="field">
+      <label>Onde lançar estes riscos</label>
+      <select id="pw-destino" onchange="pastaTrocarDestino(this.value)">${opts}</select>
+      <div class="field-hint">
+        Produto no risco: <b>${esc(G.modelo || '—')}</b> · tamanhos <b>${esc(tamTxt)}</b> (${esc(nomeTam)}). ${dica}
+      </div>
+    </div>
+    ${produto}
+
+    <table class="table" style="font-size:12px;margin-top:10px;">
+      <thead><tr>
+        <th style="width:26px;"></th><th>Arquivo</th>
+        ${grade ? '<th style="width:160px;">Fase do cadastro</th>' : ''}
+        <th>Nome da fase${grade ? '' : ' *'}</th><th style="width:150px;">Tecido *</th>
+        <th style="width:60px;" title="Quantas peças por camada esta fase rende (ribana)">Unid.</th>
+        <th style="width:88px;" title="Consumo previsto: quantas bobinas deste tecido a grade gasta nesta fase. Aparece na coluna Consumo da folha de OS.">Bobinas</th>
+        <th>Cadastro</th><th>Do risco +${RISCO_EXCEDENTE_M * 100}cm</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
+      <button class="btn primary" onclick="pastaSalvarPasso()">${grade ? 'Aplicar e continuar' : 'Criar grade e continuar'} →</button>
+      <button class="btn" onclick="pastaPularPasso()">Pular esta grade</button>
+      <span style="flex:1;"></span>
+      <span style="font-size:12px;color:var(--ink-3);">${tot - pos} grade(s) depois desta</span>
+    </div>`;
+}
+
+function _pastaHtmlResumo() {
+  const F = _pastaWiz.feito;
+  const erros = _pastaWiz.leituras.filter(L => L.erro);
+  const pulados = _pastaWiz.grupos.filter(G => G.status === 'pulado');
+  const li = (t, arr) => arr.length
+    ? `<div style="margin-top:10px;"><b>${t}</b><ul style="margin:4px 0 0 18px;font-size:13px;">${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
+  return `
+    <div class="info-box">
+      Pasta <b>${esc(_pastaWiz.pasta)}</b> — ${_pastaWiz.arquivos.length} PDF(s) lidos,
+      ${_pastaWiz.grupos.length} grade(s) identificada(s).
+      <b>${F.criadas.length}</b> criada(s), <b>${F.atualizadas.length}</b> atualizada(s), <b>${F.fases}</b> fase(s) gravada(s).
+    </div>
+    ${li('Grades criadas', F.criadas)}
+    ${li('Grades atualizadas', F.atualizadas)}
+    ${li('Puladas por você', pulados.map(G => `${G.modelo || 'sem nome no risco'} — ${_riscoNomeTamanhos(G.tamanhos)} (${G.itens.length} risco)`))}
+    ${li('Arquivos sem leitura', erros.map(L => `${L.caminho || L.arquivo}: ${L.erro}`))}
+    <div style="margin-top:16px;">
+      <button class="btn primary" onclick="pastaFechar()">Concluir</button>
+    </div>`;
+}
+
+function pastaAtualizarNome() {
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  const sku = (document.getElementById('pw-sku')?.value || '').trim();
+  const el = document.getElementById('pw-nome');
+  if (el) el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+}
+
+function pastaTrocarDestino(valor) {
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  _pastaColetar();
+  G.gradeId = valor;
+  _pastaResetFases(G);      // as fases só fazem sentido em relação ao destino
+  renderPastaWiz();
+}
+
+function pastaTrocarAlvo(fi) {
+  _pastaColetar();
+  renderPastaWiz();          // "criar fase nova" abre o campo de nome
+}
+
+function pastaPularPasso() {
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  G.status = 'pulado';
+  _pastaAvancar();
+}
+
+function _pastaAvancar() {
+  _pastaWiz.idx++;
+  if (_pastaWiz.idx >= _pastaWiz.grupos.length) _pastaWiz.etapa = 'fim';
+  renderPastaWiz();
+}
+
+async function pastaSalvarPasso() {
+  if (!exigirEdicao('cadastrar grade pelo risco')) return;
+  _pastaColetar();
+  const G = _pastaWiz.grupos[_pastaWiz.idx];
+  const linhas = G.itens.map((L, fi) => ({ L, d: G.draft.fases[fi] })).filter(x => x.d.aplicar);
+  if (!linhas.length) return toast('Nenhum risco marcado — use "Pular esta grade"', 'err');
+
+  const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
+  const memProd = _riscoProdutos(), memFase = _riscoAprendidos(),
+        memTec = _riscoTecidos(), memBob = _riscoBobinasMem();
+  const bob = s => { const n = parseBobinas(s); return n == null ? '' : n; };
+
+  if (!grade) {
+    /* ---- grade NOVA ---- */
+    const sku = G.draft.sku;
+    if (!sku) return toast('Informe o SKU da grade', 'err');
+    const nome = _riscoNomeTamanhos(G.tamanhos) + ' | ' + sku;
+    if ((STATE.grades || []).some(g => _normNome(g.nome) === _normNome(nome))) {
+      return toast(`Já existe uma grade chamada "${nome}"`, 'err');
+    }
+    if (linhas.some(x => !x.d.nome)) return toast('Toda fase precisa de nome', 'err');
+    const semTec = linhas.filter(x => !x.d.tecidoId).length;
+    if (semTec && !confirm(`${semTec} fase(s) sem tecido escolhido.\n\nFase sem tecido não entra no cálculo de consumo nem na baixa de estoque. Criar mesmo assim?`)) return;
+
+    const tamanhos = {};
+    ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhos[k], 10) || 0; });
+    tamanhos.total = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].reduce((s, k) => s + tamanhos[k], 0);
+    tamanhos.descricao = nome;
+
+    const nova = {
+      id: uid(), nome, tamanhos,
+      tipoPeca: G.draft.tipoPeca, variacao: G.draft.variacao,
+      pecasPorPacote: parseInt(G.draft.pecasPorPacote, 10) || 0,
+      fases: linhas.map((x, i) => ({
+        ordem: i + 1, nome: x.d.nome, tecidoId: x.d.tecidoId, unidades: x.d.unidades,
+        comp: _riscoCompCadastro(x.L.comprimento).toFixed(2),
+        larg: x.L.largura.toFixed(3),
+        bobinas: bob(x.d.bobinas)
+      }))
+    };
+    nova.enfestoComprimento = nova.fases[0] ? nova.fases[0].comp : '';
+    nova.enfestoLargura = nova.fases[0] ? nova.fases[0].larg : '';
+    STATE.grades.push(nova);
+    _pastaWiz.feito.criadas.push(`${nome} — ${nova.fases.length} fase(s)`);
+    _pastaWiz.feito.fases += nova.fases.length;
+    G.gradeId = nova.id;
+  } else {
+    /* ---- CORRIGIR grade existente ---- */
+    const alvos = linhas.filter(x => x.d.alvo !== '__nova__').map(x => x.d.alvo);
+    const repetido = alvos.find((a, i) => alvos.indexOf(a) !== i);
+    if (repetido) return toast(`Dois riscos apontam para a fase "${repetido}" — corrija antes de aplicar`, 'err');
+    if (linhas.some(x => x.d.alvo === '__nova__' && !x.d.nome)) return toast('A fase nova precisa de nome', 'err');
+
+    grade.fases = grade.fases || [];
+    let maiorOrdem = grade.fases.reduce((m, f) => Math.max(m, parseInt(f.ordem, 10) || 0), 0);
+    const mudancas = [];
+    linhas.forEach(x => {
+      const comp = _riscoCompCadastro(x.L.comprimento).toFixed(2);
+      const larg = x.L.largura.toFixed(3);
+      let f = x.d.alvo === '__nova__' ? null : grade.fases.find(y => y.nome === x.d.alvo);
+      if (!f) {
+        f = { ordem: ++maiorOrdem, nome: x.d.nome, tecidoId: '', unidades: 2, comp: '', larg: '', bobinas: '' };
+        grade.fases.push(f);
+        mudancas.push(`+ ${f.nome}: ${comp} × ${larg}`);
+      } else {
+        mudancas.push(`${f.nome}: ${f.comp || '—'}×${f.larg || '—'} → ${comp}×${larg}`);
+      }
+      f.comp = comp;
+      f.larg = larg;
+      if (x.d.tecidoId) f.tecidoId = x.d.tecidoId;
+      f.unidades = x.d.unidades;
+      // Bobinas em branco não apaga o que já estava: quem deixou vazio não quis
+      // dizer "zero", quis dizer "não sei" — e zero se digita como zero.
+      if (x.d.bobinas !== '') f.bobinas = bob(x.d.bobinas);
+      _pastaWiz.feito.fases++;
+    });
+    const f1 = grade.fases.slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))[0];
+    if (f1) { grade.enfestoComprimento = f1.comp || ''; grade.enfestoLargura = f1.larg || ''; }
+    _pastaWiz.feito.atualizadas.push(`${grade.nome} — ${mudancas.join(' · ')}`);
+  }
+
+  // APRENDE: produto, fase, tecido e consumo. A próxima pasta deste mesmo
+  // produto chega preenchida.
+  const modeloKey = _normNome(G.modelo);
+  if (modeloKey && G.draft.sku) {
+    memProd[modeloKey] = {
+      sku: G.draft.sku, tipoPeca: G.draft.tipoPeca, variacao: G.draft.variacao,
+      pecasPorPacote: parseInt(G.draft.pecasPorPacote, 10) || 0
+    };
+  }
+  linhas.forEach(x => {
+    const k = _riscoChave(x.L);
+    if (!k) return;
+    const nomeFinal = x.d.alvo === '__nova__' || !grade ? x.d.nome : x.d.alvo;
+    if (nomeFinal) memFase[k] = nomeFinal;
+    if (x.d.tecidoId) memTec[k] = x.d.tecidoId;
+    if (x.d.bobinas !== '') memBob[k] = bob(x.d.bobinas);
+  });
+
+  G.status = 'ok';
+  await saveState('grades');
+  await saveState('meta');
+  toast(`${grade ? 'Grade atualizada' : 'Grade criada'} · ${linhas.length} fase(s)`, 'ok');
+  _pastaAvancar();
+}
+
+function pastaFechar() {
+  closeModal('modal-risco-pasta');
+  _pastaWiz = null;
+  renderGrades();
+}
+
+/* ========================================================= */
 /*        PLANILHA DAS GRADES (.xlsx, sem biblioteca)        */
 /* ========================================================= */
 // Um .xlsx é um ZIP com alguns XML dentro. O app não carrega biblioteca de
