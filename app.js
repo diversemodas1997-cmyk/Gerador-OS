@@ -2577,7 +2577,7 @@ function addFaseGradeRow(fase = {}) {
     <div class="form-grid cols-2">
       <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
       <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this); atualizarSugestaoBobinas(this)">${tecOpts(fase.tecidoId)}</select></div>
-      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
+      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
       <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.<span class="fase-bobinas-sug"></span></div></div>
@@ -2612,19 +2612,52 @@ function atualizarSugestaoBobinas(el) {
   }
 }
 
-function toggleUnidadesGrade(selectEl) {
-  const bloco = selectEl?.closest?.('.fase-grade-bloco');
-  if (!bloco) return;
-  const wrap = bloco.querySelector('.fase-unid-wrap');
-  if (!wrap) return;
-  const tec = STATE.tecidos.find(t => t.id === selectEl.value);
-  wrap.style.display = isTecidoRibana(tec) ? '' : 'none';
+// Quem mostra o campo "Unidades da grade" são DUAS fases, pelo mesmo motivo de
+// fundo: uma camada delas rende mais de uma unidade da grade, então elas se
+// enfestam com menos camadas que o tecido principal.
+//
+//   RIBANA — 2x para barra+punho, 10x ou 20x para gola.
+//   FORRO  — o forro de capuz é a fase de malha numa grade que tem moletom. O
+//            programa SEMPRE enfestou o forro pela metade das camadas do
+//            moletom, o que é exatamente "2x"; só que esse 2 era fixo no
+//            código, sem onde dizer outra coisa. Agora é o mesmo campo da
+//            ribana, com 2x de padrão — quem rende diferente cadastra.
+//
+// A conta é do formulário inteiro, não de um bloco só: ser forro depende de
+// existir uma fase de moletom em OUTRA linha, então trocar um tecido qualquer
+// pode revelar (ou esconder) o campo de outra fase.
+function toggleUnidadesGrade(_selectEl) {
+  atualizarUnidadesDasFases();
+}
+
+const DICA_UNID_RIBANA = '1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.';
+const DICA_UNID_FORRO  = 'Quantas unidades da grade uma camada de forro rende. 2x é o padrão da casa (o forro enfesta com metade das camadas do moletom).';
+
+function atualizarUnidadesDasFases() {
+  const blocos = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco'));
+  if (!blocos.length) return;
+  const fases = blocos.map(b => ({
+    nome: b.querySelector('.fase-nome')?.value || '',
+    tecidoId: b.querySelector('.fase-tec')?.value || ''
+  }));
+  const papeis = calcularPapeisFases(fases);
+  blocos.forEach((b, i) => {
+    const wrap = b.querySelector('.fase-unid-wrap');
+    if (!wrap) return;
+    const tec = STATE.tecidos.find(t => t.id === fases[i].tecidoId);
+    const ehForro = (papeis[i] || {}).papel === 'forro_capuz';
+    wrap.style.display = (isTecidoRibana(tec) || ehForro) ? '' : 'none';
+    const dica = wrap.querySelector('.fase-unid-hint');
+    if (dica) dica.textContent = ehForro ? DICA_UNID_FORRO : DICA_UNID_RIBANA;
+  });
 }
 
 function removerFaseGrade(btn) {
   const bloco = btn.closest('.fase-grade-bloco');
   if (bloco) bloco.remove();
   renumerarFasesGrade();
+  // Tirar a fase de moletom faz as de malha deixarem de ser forro.
+  atualizarUnidadesDasFases();
 }
 
 function renumerarFasesGrade() {
@@ -10821,6 +10854,11 @@ function aplicarGradePreset() {
 /* ========================================================= */
 const LIMITE_CAMADAS = { malha: 80, moletom: 36, ribana: 80, outro: Infinity };
 const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
+// Unidades da grade que uma camada de FORRO rende quando a grade não diz outra
+// coisa. O 2 é a regra que sempre valeu — "o forro enfesta com metade das
+// camadas do moletom" — e continua sendo o padrão: grade cadastrada antes deste
+// campo existir calcula exatamente como calculava.
+const UNIDADES_PADRAO_FORRO = 2;
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
 /* --------- REGRA DAS BOBINAS: malha algodão, pelo comprimento --------- */
@@ -11468,8 +11506,11 @@ function calcularCamadasParaProducao() {
       // Enfesto moletom: todos componentes moletom na mesma camada → 1 camada = 1 blusa
       val = camadasPrincipal;
     } else if (papel.papel === 'forro_capuz') {
-      // Enfesto forro: camadas = metade das camadas de moletom
-      val = Math.max(1, Math.ceil(camadasPrincipal / 2));
+      // Enfesto forro: uma camada rende N unidades da grade, então são N vezes
+      // menos camadas que o moletom. N vem do cadastro da fase; sem ele, 2 —
+      // que é a metade de sempre.
+      const unidForro = parseInt(fase.unidades, 10) || UNIDADES_PADRAO_FORRO;
+      val = Math.max(1, Math.ceil(camadasPrincipal / unidForro));
     } else if ((papel.papel || '').startsWith('ribana_')) {
       // Enfesto ribana com unidades cadastradas:
       // - Ribana moletom: o tecido escala com a unidade da grade (2 barras +
@@ -14919,7 +14960,12 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
   const faseGrade = fasesGrade.find(f => (f.ordem || 0) === ordem) || fasesGrade[idx] || {};
   const papel = (calcularPapeisFases(fasesEfetivas)[idx] || {}).papel || '';
   const tec = (STATE.tecidos || []).find(t => t.id === faseOS.tecidoId);
-  if (papel === 'forro_capuz') return Math.max(1, Math.ceil(cam / 2));
+  if (papel === 'forro_capuz') {
+    // Mesmo "2x" da ribana, agora cadastrável: a fase da GRADE é que guarda as
+    // unidades (a cópia de fases da OS não as leva). Sem cadastro, 2.
+    const unidForro = parseInt(faseGrade.unidades, 10) || UNIDADES_PADRAO_FORRO;
+    return Math.max(1, Math.ceil(cam / unidForro));
+  }
   if (papel.indexOf('ribana_') === 0 && isTecidoRibana(tec)) {
     const unidades = parseInt(faseGrade.unidades, 10) || (MULTIPLICADOR_PECAS.ribana || 2);
     // Ribana MOLETOM escala com a grade: "2 barras + 4 punhos por tamanho"
