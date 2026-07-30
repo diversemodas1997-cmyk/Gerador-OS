@@ -13951,9 +13951,13 @@ function _margensA4mm() {
 function encaixarFolhaNaA4(sheet) {
   const m = _margensA4mm();
   const razaoA4 = A4_A_MM / A4_L_MM;
-  let larguraMm = A4_L_MM;
-  let alturaMm = 0;
-  for (let i = 0; i < 6; i++) {
+
+  // Aplica uma largura e devolve o que a folha OCUPA com ela. A medida vem do
+  // scrollWidth, e nao da largura pedida: quando o conteudo tem um minimo que
+  // nao cabe na caixa (a Camiseta Tricolor tem 5 fases de enfesto e a coluna do
+  // CONSUMO nao comprime), ele transborda, e e o transbordo que decide se sai
+  // cortado no papel.
+  const aplicar = (larguraMm) => {
     const k = larguraMm / A4_L_MM; // o desenho todo vive nesta escala
     sheet.style.width = larguraMm.toFixed(2) + 'mm';
     sheet.style.paddingTop = (m.outras * k).toFixed(2) + 'mm';
@@ -13961,15 +13965,55 @@ function encaixarFolhaNaA4(sheet) {
     sheet.style.paddingBottom = (m.outras * k).toFixed(2) + 'mm';
     sheet.style.paddingLeft = (m.esq * k).toFixed(2) + 'mm';
     void sheet.offsetHeight; // forca reflow pra leitura correta
-    alturaMm = sheet.scrollHeight / PX_POR_MM;
-    const alvo = Math.min(Math.max(alturaMm / razaoA4, A4_L_MM), A4_L_MM * 2);
-    if (Math.abs(alvo - larguraMm) < 0.3) { larguraMm = alvo; break; }
-    larguraMm = alvo;
+    return {
+      largura: Math.max(sheet.scrollWidth, sheet.offsetWidth) / PX_POR_MM,
+      altura: sheet.scrollHeight / PX_POR_MM
+    };
+  };
+
+  // `medida` descreve SEMPRE o que esta no DOM neste instante — e o ponto em
+  // que isto errava. Antes a largura era avancada para o proximo palpite e a
+  // escala saia desse palpite, enquanto a folha no DOM continuava na largura
+  // anterior. Quando as voltas nao assentavam (e nas tricolores nao assentam,
+  // porque a foto e as 5 linhas de enfesto fazem a altura pular), a folha ficava
+  // MAIS LARGA do que a escala supunha e o conteudo saia cortado na direita:
+  // 225,4mm de folha num papel de 210mm na Camiseta Tricolor — o "ADULTO
+  // UNISEX" perdia o X.
+  // A escala de uma medida: o quanto a folha pode crescer sem passar da borda,
+  // em largura OU em altura — manda a mais apertada das duas.
+  const escalaDe = med => Math.min(A4_L_MM / med.largura, A4_A_MM / med.altura);
+  // O que se quer e a folha OCUPADA, entao a nota de cada tentativa e a area
+  // que ela desenha no papel. Notar pela escala seria outra coisa: escolheria a
+  // letra maior, e a letra maior pode vir numa folha estreita, com uma tira de
+  // papel sobrando na direita — que e justamente o que se esta tirando daqui.
+  const areaDe = med => {
+    const e = escalaDe(med);
+    return (med.largura * e) * (med.altura * e);
+  };
+
+  let larguraMm = A4_L_MM;
+  let medida = aplicar(larguraMm);
+  let melhor = { largura: larguraMm, area: areaDe(medida) };
+  for (let i = 0; i < 8; i++) {
+    const alvo = Math.min(Math.max(medida.altura / razaoA4, A4_L_MM), A4_L_MM * 2);
+    if (Math.abs(alvo - larguraMm) < 0.3) break;
+    // AMORTECIDO: meio caminho entre o palpite e o alvo. Nas tricolores a
+    // altura anda em degrau (a foto e as 5 linhas de enfesto nao refluem de
+    // pouquinho em pouquinho), e ir direto ao alvo faz a busca oscilar de um
+    // extremo ao outro sem nunca assentar. A media assenta.
+    larguraMm = (larguraMm + alvo) / 2;
+    medida = aplicar(larguraMm);
+    const a = areaDe(medida);
+    if (a > melhor.area) melhor = { largura: larguraMm, area: a };
   }
-  // A altura manda: melhor sobrar uma tira em branco do que jogar uma segunda
-  // folha. So quando o conteudo nao consegue mais encolher pela largura (caso
-  // extremo) e que o min entra em acao e a folha nao fecha os 210mm.
-  return Math.min(A4_L_MM / larguraMm, A4_A_MM / alturaMm);
+  // Guarda-chuva das oscilacoes: vale a MELHOR largura que a busca viu, e nao
+  // a ultima que ela por acaso tentou. Reaplicada e remedida, para a escala
+  // devolvida descrever exatamente o que ficou no DOM.
+  if (Math.abs(melhor.largura - larguraMm) > 0.3) medida = aplicar(melhor.largura);
+  // A escala sai do que a folha ocupa DE VERDADE, largura e altura. Assim nada
+  // passa da borda, tenha o encaixe assentado ou nao: no pior caso sobra uma
+  // tira em branco, que e melhor do que texto cortado ou uma segunda folha.
+  return escalaDe(medida);
 }
 
 function desfazerEncaixeA4(sheet) {
