@@ -16677,7 +16677,7 @@ async function criarGradeDoRisco(gi) {
     if (L.erro) return;
     L.grades = _riscoGradesQueCasam(L.tamanhos);
     L.grade = L.grades.length === 1 ? L.grades[0] : null;
-    L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: 'sem grade' };
+    L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
     L.aplicar = false;   // já foi gravado na criação
   });
   renderRiscoResultado();
@@ -16717,7 +16717,7 @@ async function lerRiscosEscolhidos(ev) {
       const L = await _riscoLerPdf(f);
       L.grades = _riscoGradesQueCasam(L.tamanhos);
       L.grade = L.grades.length === 1 ? L.grades[0] : null;
-      L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: 'sem grade' };
+      L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
       L.aplicar = !!(L.grade && L.res.fase && L.comprimento && L.largura);
       _riscoLeituras.push(L);
     } catch (e) {
@@ -16725,6 +16725,31 @@ async function lerRiscosEscolhidos(ev) {
     }
   }
   renderRiscoResultado();
+}
+
+// A célula da GRADE de uma linha. Três situações, e a do meio era um beco sem
+// saída até aqui:
+//   • uma só grade com aqueles tamanhos → mostra o nome, e pronto;
+//   • VÁRIAS grades → agora um seletor para escolher em qual lançar. Antes a
+//     linha dizia "7 grades com estes tamanhos" e a fase dizia "grade não
+//     encontrada", com o quadradinho desabilitado e sem botão de aplicar: o
+//     risco não tinha como virar cadastro por esta tela. E o bloco de "grade
+//     nova" também não aparecia, porque grade candidata existia. Acontece em
+//     todo risco de P ao G3, que é a grade mais comum da casa — sete cadastros
+//     têm exatamente esses tamanhos (CM.BÁSICA, CM.TRICOLOR, BM.BÁSICA,
+//     PM.BÁSICA, PM.TRICOLOR, SM.LISO, SM. ESPARTANA).
+//     O assistente de PASTA já resolvia assim; esta tela ficou para trás.
+//   • nenhuma grade → o aviso de sempre, e o bloco de grade nova abaixo.
+function _riscoCelulaGrade(L, i) {
+  const n = (L.grades || []).length;
+  if (n === 1 && L.grade) return esc(L.grade.nome);
+  if (n > 1) {
+    const opts = '<option value="">— escolher entre ' + n + ' —</option>' + L.grades
+      .map(g => `<option value="${esc(g.id)}" ${L.grade && L.grade.id === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`)
+      .join('');
+    return `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`;
+  }
+  return '<span style="color:var(--alert);">nenhuma grade com estes tamanhos</span>';
 }
 
 function renderRiscoResultado() {
@@ -16743,6 +16768,7 @@ function renderRiscoResultado() {
       'nome do arquivo': '<span class="exp-badge baixo" title="O conteúdo não decidiu — valeu o nome do arquivo. Confira.">pelo nome</span>',
       'largura': '<span class="exp-badge baixo" title="Só a largura isolou esta fase.">pela largura</span>',
       'indefinida': '<span class="exp-badge alto">não identificada</span>',
+      'escolher grade': '<span class="exp-badge baixo" title="Mais de uma grade tem exatamente estes tamanhos. Escolha ao lado em qual lançar.">escolha a grade</span>',
       'sem grade': '<span class="exp-badge alto">grade não encontrada</span>',
       'sem fases': '<span class="exp-badge alto">a grade não tem fases</span>'
     }[L.res.origem] || `<span class="exp-badge alto">${esc(L.res.origem)}</span>`;
@@ -16761,7 +16787,7 @@ function renderRiscoResultado() {
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" ${L.aplicar ? 'checked' : ''} ${L.grade && L.res.fase ? '' : 'disabled'} onchange="riscoMarcar(${i}, this.checked)"></td>
       <td style="font-size:11px;">${esc(L.arquivo)}</td>
-      <td style="font-size:12px;">${L.grade ? esc(L.grade.nome) : `<span style="color:var(--alert);">${L.grades && L.grades.length > 1 ? L.grades.length + ' grades com estes tamanhos' : 'nenhuma grade com estes tamanhos'}</span>`}</td>
+      <td style="font-size:12px;">${_riscoCelulaGrade(L, i)}</td>
       <td>${selFase}<div style="margin-top:2px;">${selo}</div></td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
@@ -16796,6 +16822,20 @@ function riscoMarcar(i, marcado) {
   const btn = document.getElementById('btn-risco-aplicar');
   const n = _riscoLeituras.filter(L => L.aplicar).length;
   if (btn) { btn.style.display = n ? '' : 'none'; btn.textContent = `Aplicar ${n} fase(s) nas grades`; }
+}
+
+// Escolher a grade quando várias têm os mesmos tamanhos. Trocar a grade refaz a
+// escolha da FASE: as fases são de cada grade, e a que estava selecionada não
+// existe na nova.
+function riscoTrocarGrade(i, id) {
+  const L = _riscoLeituras[i];
+  if (!L) return;
+  L.grade = (L.grades || []).find(g => g.id === id) || null;
+  L.res = L.grade
+    ? _riscoResolverFase(L, L.grade)
+    : { fase: null, origem: (L.grades || []).length ? 'escolher grade' : 'sem grade' };
+  L.aplicar = !!(L.grade && L.res.fase);
+  renderRiscoResultado();
 }
 
 function riscoTrocarFase(i, nome) {
@@ -18131,6 +18171,7 @@ window.exportarGradesExcel = exportarGradesExcel;
 window.abrirModalRisco = abrirModalRisco;
 window.lerRiscosEscolhidos = lerRiscosEscolhidos;
 window.riscoTrocarFase = riscoTrocarFase;
+window.riscoTrocarGrade = riscoTrocarGrade;
 window.aplicarRiscoNasGrades = aplicarRiscoNasGrades;
 window.criarGradeDoRisco = criarGradeDoRisco;
 window.riscoAtualizarNome = riscoAtualizarNome;
