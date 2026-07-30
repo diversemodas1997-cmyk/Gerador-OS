@@ -16193,13 +16193,19 @@ function _riscoChave(leitura) {
 
 // Lê um relatório de encaixe.
 //
-// O relatório tem TRÊS COLUNAS, com o rótulo numa linha e o valor logo abaixo —
-// ler o texto em sequência não serve, porque "Largura:" e o valor dele ficam
-// separados por outros campos. A regra é geométrica e ao contrário do óbvio: em
-// vez de procurar o valor de cada rótulo (o que exigiria adivinhar onde a coluna
-// termina — e erra, porque os rótulos do cabeçalho ficam noutra faixa), cada
-// VALOR é atribuído ao rótulo mais próximo ACIMA e à esquerda dele. Sem
-// fronteira de coluna, sem palpite.
+// O relatório tem TRÊS COLUNAS de rótulo+valor — ler o texto em sequência não
+// serve, porque "Largura:" e o valor dele ficam separados por campos de outra
+// coluna. A regra é geométrica: cada VALOR é atribuído ao rótulo mais próximo à
+// ESQUERDA dele, preferindo o que está na MESMA linha e só então o que está
+// logo acima. Sem fronteira de coluna, sem palpite.
+//
+// A preferência pela mesma linha não é detalhe. Nestes relatórios o rótulo e o
+// valor saem na mesma altura — `Largura:@233  117 cm@271` —, e a regra antiga,
+// que exigia o rótulo ACIMA, descartava esse par e ainda pegava o rótulo da
+// coluna vizinha, que o CAD desalinha em 1 ponto. Resultado medido nos 13 PDFs
+// da pasta CM.LISA: comprimento e largura vinham NULOS em todos, e o campo
+// "Tecido" vinha com o valor da Área ("7.86 m²"). Sem comprimento e largura o
+// assistente não tem o que levar para a fase — que é a razão de ele existir.
 async function _riscoLerPdf(file) {
   const lib = window.pdfjsLib;
   if (!lib) throw new Error('A biblioteca de leitura de PDF não carregou — a primeira vez precisa de internet.');
@@ -16222,13 +16228,23 @@ async function _riscoLerPdf(file) {
   const rot = itens.filter(i => i.t.endsWith(':'));
   const vals = itens.filter(i => !i.t.endsWith(':'));
 
+  const MESMA_LINHA = 2.5;   // o CAD desalinha rótulo e valor em ~1 ponto
   const porRotulo = new Map();
   vals.forEach(V => {
     let escolhido = null, melhor = null;
     rot.forEach(L => {
+      if (L.x > V.x + 1) return;              // rótulo tem que estar à esquerda
       const dy = L.y - V.y;
-      if (dy <= 0 || dy > janela || L.x > V.x + 1) return;
-      const peso = dy * 1000 + (V.x - L.x);
+      // Duas faixas, e a de mesma linha ganha SEMPRE da de cima — daí o degrau
+      // de 1e6 no peso. Dentro de cada faixa vence o rótulo mais perto.
+      let faixa;
+      if (Math.abs(dy) <= MESMA_LINHA) faixa = 0;
+      else if (dy > 0 && dy <= janela) faixa = 1;
+      else return;
+      // Na mesma linha o desalinho de 1 ponto é ruído e não pesa: manda a
+      // distância horizontal, isto é, o rótulo imediatamente à esquerda. Na
+      // faixa de cima a altura volta a valer, para não pular uma linha inteira.
+      const peso = faixa * 1e6 + (faixa === 0 ? 0 : dy * 1000) + (V.x - L.x);
       if (melhor == null || peso < melhor) { melhor = peso; escolhido = L; }
     });
     if (!escolhido) return;
@@ -16245,29 +16261,63 @@ async function _riscoLerPdf(file) {
     return vs.filter(v => Math.abs(v.y - topo) < 3).map(v => v.t).join(' ').trim();
   };
 
-  // Tabela de tamanhos: a linha do tamanho ("P") e, abaixo, "1 4 MODELO". O
-  // primeiro número é quantas grades COMPLETAS daquele tamanho o risco traz —
-  // é a própria distribuição da grade.
-  const linhas = new Map();
-  itens.forEach(i => {
-    const k = Math.round(i.y);
-    if (!linhas.has(k)) linhas.set(k, []);
-    linhas.get(k).push(i);
+  // As FILAS do relatório. Agrupar por y arredondado não serve para a tabela de
+  // tamanhos: o CAD desalinha o tamanho em 1 ponto do resto da fila, e "M" cai
+  // numa chave e "1  4  MODELO" noutra. A fila é uma faixa de altura.
+  const FILA = 3;                       // pontos de tolerância dentro de uma fila
+  const filas = [];
+  itens.slice().sort((a, b) => b.y - a.y).forEach(i => {
+    const f = filas[filas.length - 1];
+    if (f && Math.abs(f.y - i.y) <= FILA) { f.itens.push(i); return; }
+    filas.push({ y: i.y, itens: [i] });
   });
-  const ordem = Array.from(linhas.keys()).sort((a, b) => b - a);
-  const txtDe = y => linhas.get(y).slice().sort((a, b) => a.x - b.x).map(i => i.t).join(' ').trim();
-  const tamanhos = {};
-  ordem.forEach((y, idx) => {
-    const s = txtDe(y);
-    if (!/^(P|M|G|GG|G1|G2|G3)$/i.test(s)) return;
-    const prox = idx + 1 < ordem.length ? txtDe(ordem[idx + 1]) : '';
-    const n = parseInt((prox.match(/^\s*(\d+)/) || [])[1], 10);
-    if (n > 0) tamanhos[s.toLowerCase()] = n;
-  });
+  filas.forEach(f => f.itens.sort((a, b) => a.x - b.x));
+  const txtFila = f => f.itens.map(i => i.t).join(' ').trim();
+  // Compatibilidade com o resto da função, que lê por linha.
+  const ordem = filas.map(f => f.y);
+  const linhas = new Map(filas.map(f => [f.y, f.itens]));
+  const txtDe = y => txtFila({ itens: linhas.get(y) });
 
+  // Tabela de tamanhos. Cada fila é "P  1  4  NOME DO MODELO": o tamanho, os
+  // COMPLETOS (quantas grades inteiras daquele tamanho o risco traz — é a
+  // própria distribuição da grade), os moldes encaixados e o modelo.
+  //
+  // Lê-se pela fila, não pela linha seguinte. A regra antiga procurava uma linha
+  // cujo texto fosse EXATAMENTE o tamanho e pegava o primeiro número da linha
+  // DE BAIXO — que nestes relatórios é a fila do PRÓXIMO tamanho. Por isso a
+  // pasta P-M-G-GG-G1-G2-G3 era lida como "1xM 1xG" e a 2xP-2xGG como "2xG": a
+  // assinatura saía errada, e com ela o casamento com a grade cadastrada.
+  const iCab = filas.findIndex(f => /(^|\s)Tamanho(\s|$)/i.test(txtFila(f)) && /Completos/i.test(txtFila(f)));
+  const iFim = filas.findIndex((f, k) => k > iCab && iCab >= 0 && /^Encaixe$/i.test(txtFila(f)));
+  const tamanhos = {};
+  if (iCab >= 0) {
+    const ate = iFim > iCab ? iFim : filas.length;
+    for (let k = iCab + 1; k < ate; k++) {
+      const toks = filas[k].itens;
+      const iTam = toks.findIndex(t => /^(P|M|G|GG|G1|G2|G3)$/i.test(t.t));
+      if (iTam < 0) continue;
+      // COMPLETOS = o primeiro número inteiro à direita do tamanho.
+      const num = toks.slice(iTam + 1).find(t => /^\d+$/.test(t.t));
+      const n = num ? parseInt(num.t, 10) : 0;
+      if (n > 0) tamanhos[toks[iTam].t.toLowerCase()] = n;
+    }
+  }
+
+  // O nome do modelo sai do PRÓPRIO item "Área usada modelo XXX", e não do texto
+  // da fila: a área ("7.86 m² (100.00%)") fica na mesma altura, e juntar a fila
+  // colava ela no nome. Isso não é cosmético — o modelo é metade da chave do que
+  // o programa aprende (modelo|tecido), e com a área junto a chave mudava a cada
+  // arquivo, então nada era aprendido nunca.
   let modelo = '';
-  const yArea = ordem.find(y => /rea usada modelo/i.test(txtDe(y)));
-  if (yArea != null) modelo = txtDe(yArea).replace(/.*rea usada modelo\s*/i, '').trim();
+  for (const f of filas) {
+    const it = f.itens.find(i => /rea usada modelo/i.test(i.t));
+    if (!it) continue;
+    modelo = it.t.replace(/.*rea usada modelo\s*/i, '').trim();
+    if (!modelo) modelo = txtFila(f).replace(/.*rea usada modelo\s*/i, '').trim();
+    break;
+  }
+  // Corta um rabo de área que tenha vindo junto, venha de onde vier.
+  modelo = modelo.replace(/\s*\d+(?:[.,]\d+)?\s*m².*$/i, '').trim();
 
   const comp = _riscoNum(campo('Comprimento'));
   const larg = _riscoNum(campo('Largura'));
