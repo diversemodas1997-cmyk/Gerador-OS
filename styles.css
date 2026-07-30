@@ -1939,7 +1939,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    pode introduzir espaçamento nenhum, senão o desenho da folha muda. */
 .exp-print-folha { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .exp-print-folha > thead > tr > td,
-.exp-print-folha > tbody > tr > td { padding: 0; vertical-align: top; }
+.exp-print-folha > tbody > tr > td,
+.exp-print-folha > tfoot > tr > td { padding: 0; vertical-align: top; }
 
 .exp-print-head {
   display: flex;
@@ -2326,25 +2327,39 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 
 @media print {
-  /* A margem de toda folha do plano — inclusive as de continuação.
-     A superior é maior: o cabeçalho se repete no alto de TODA folha e, encostado
-     nos 10mm, caía dentro da faixa que a impressora não imprime — o título saía
-     cortado. */
-  /* Ordem: topo · direita · base · ESQUERDA. A esquerda é o dobro das demais
-     laterais — é a borda que vai para o grampo/pasta, e com 10mm o conteúdo
-     ficava embaixo da encadernação. */
+  /* MARGEM ZERO NA @page — de propósito, igual à folha de OS. A margem da folha
+     do plano é o padding da própria .sheet-exp (abaixo) + o respiro do <thead> e
+     do <tfoot>, que se repetem em toda página.
+
+     Por que não deixar a margem na @page, que seria o caminho natural: quando o
+     usuário escolhe "Margens: Nenhuma" na caixa de impressão do Chrome, a margem
+     declarada na @page é DESCARTADA — e a folha saía com margem 0 de verdade,
+     encostada nas quatro bordas e transbordando 0,2mm pela direita (medido no
+     OE de 30/07/2026: texto de x=0,00mm a x=210,08mm num papel de 210mm).
+     A caixa de impressão guarda a última escolha do usuário, então bastava ter
+     impreso uma etiqueta com "Nenhuma" para toda OE seguinte sair assim.
+     Com margem 0 na @page não há o que descartar: a folha fica igual nas duas
+     opções da caixa, e igual ao PDF que o programa grava na pasta das OE. */
   @page plano-exp {
     size: A4;
-    margin: 20mm 10mm 10mm 20mm;
+    margin: 0;
   }
-  /* Respiro entre a borda do papel e o título, em cada folha. Vive no <thead>
+  /* Margem lateral da folha. Fica no padding, e não na @page, porque padding
+     lateral de um bloco que se parte entre páginas vale em TODAS elas — ao
+     contrário do padding de topo/base, que só protege a primeira e a última. */
+  .sheet-exp { padding-left: 10mm; padding-right: 10mm; }
+  /* Margem superior de toda folha, inclusive as de continuação. Vive no <thead>
      para acompanhar a repetição do cabeçalho.
-     Medido no PDF impresso: a 1ª folha tem ~4mm de folga extra (herdada do
-     .print-area) que as repetidas não têm, e era só nelas que o título saía
-     cortado — a faixa não-imprimível da impressora ficava entre os 16,9mm das
-     repetidas e os 21,2mm da primeira. Com 20mm de @page + 4mm aqui, as
-     repetidas passam a 24mm, acima do que já se provou imprimível. */
-  .sheet-exp .exp-print-folha > thead > tr > td { padding-top: 4mm; }
+     16mm é a mesma medida do PDF gravado na pasta das OE (body.pdf-capture
+     .sheet-exp), que é a referência do formato: papel e arquivo saem iguais.
+     Também é folga suficiente sobre a faixa que a impressora não imprime — foi
+     encostar o título nos ~10mm para ele sair cortado nas folhas repetidas. */
+  .sheet-exp .exp-print-folha > thead > tr > td { padding-top: 16mm; }
+  /* Margem inferior de toda folha. Mesmo motivo do <thead>: o <tfoot> é o único
+     jeito especificado de reservar espaço no pé de CADA página impressa. O
+     padding-bottom da .sheet-exp só valeria na última. */
+  .sheet-exp .exp-print-folha > tfoot { display: table-footer-group; }
+  .sheet-exp .exp-print-folha > tfoot > tr > td { height: 10mm; }
   /* O bloco de um posto não parte no meio: a lista de uma função tem que ser
      lida inteira, senão o operador recebe metade da jornada dele. */
   .sheet-exp .op-print-posto { page-break-inside: avoid; break-inside: avoid; }
@@ -2359,11 +2374,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   .sheet-exp .exp-print-folha > tbody { display: table-row-group; }
   /* Anula, só pra esta folha, o "cabe tudo numa página" da folha de OS. */
   .sheet-exp {
-    /* A @page plano-exp já reserva a margem: manter o padding de tela aqui
-       somaria margem com margem, e a largura fixa de 210mm estouraria a
-       área útil (190mm) da página. */
+    /* A largura fixa de 210mm da .sheet é da folha de OS: aqui a folha ocupa a
+       página inteira (a @page plano-exp não reserva margem) e o recuo lateral
+       vem do padding declarado acima. O padding de topo/base é zerado porque
+       quem reserva essas margens é o <thead>/<tfoot>, folha a folha. */
     width: auto;
-    padding: 0;
+    padding-top: 0;
+    padding-bottom: 0;
     min-height: 0;
     page-break-inside: auto;
     page-break-after: auto;

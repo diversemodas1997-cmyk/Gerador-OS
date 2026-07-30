@@ -9095,6 +9095,9 @@ function renderPrintPlanoOperacoes() {
           <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
         </div>
       </td></tr></tbody>
+      <!-- Mesmo rodapé vazio da folha de OE: o espaço da margem inferior em
+           cada folha impressa (ver o comentário lá). -->
+      <tfoot><tr><td></td></tr></tfoot>
     </table>`;
 }
 
@@ -9483,6 +9486,11 @@ function renderPrintPlanoExpedicao() {
           ${_EXP_ASSINATURAS.map(f => `<div class="ass"><div class="linha"></div><div class="lbl">${esc(f)}</div></div>`).join('')}
         </div>
       </td></tr></tbody>
+      <!-- Rodapé VAZIO de propósito: é só o espaço da margem inferior. O <tfoot>
+           é o par do <thead> — o navegador o repete no pé de CADA folha impressa,
+           que é o único jeito de a última linha não encostar na borda do papel
+           quando a folha ocupa várias páginas. A altura vem do @media print. -->
+      <tfoot><tr><td></td></tr></tfoot>
     </table>`;
 }
 
