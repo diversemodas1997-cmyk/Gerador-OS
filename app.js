@@ -13022,6 +13022,12 @@ async function salvarPdfEtiquetasAuto(o, dados, { silent = false } = {}) {
     return true;
   } catch (e) {
     console.warn('salvarPdfEtiquetasAuto', e);
+    // FALAR quando falha. Antes o erro morria no console e o retorno era
+    // descartado por quem chama: a OS era salva, a folha ia pra pasta, e a
+    // etiqueta continuava a de dias atrás sem ninguém ficar sabendo — foi o que
+    // aconteceu com a 0436, salva em 30/07 com a etiqueta de 22/07 na pasta.
+    // Etiqueta velha é pacote ensacado errado, então isto é aviso de erro.
+    if (!silent) toast(`A etiqueta da OS ${_numeroOSCanonico(o && o.os)} NÃO foi regravada: ${e && e.message || e}`, 'err');
     return false;
   }
 }
@@ -13665,8 +13671,12 @@ function imprimirEtiquetas(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
 
+  // Guarda o objeto INTEIRO, e não só os campos usados na janela: é ele que vai
+  // para o auto-save lá embaixo. Montar um objeto novo à mão ali era o que
+  // gravava etiqueta capenga por cima da boa (ver o comentário no auto-save).
+  const dados = dadosEtiquetaParaOS(o);
   const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
-          tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao } = dadosEtiquetaParaOS(o);
+          tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao } = dados;
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -13834,7 +13844,16 @@ function imprimirEtiquetas(osId) {
   // Auto-save em segundo plano: gera o PDF e salva em <pasta-pdf>/etiquetas/
   // (subpasta criada se nao existir). Silencioso se a pasta nao estiver
   // conectada — nao bloqueia o popup de impressao.
-  salvarPdfEtiquetasAuto(o, { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas });
+  //
+  // `dados` INTEIRO. Aqui se montava um objeto novo com sete campos, sem
+  // tamanhosPacotes/tonsPacotes/nTons/temReposicao/composicao — e o
+  // gerarPdfEtiquetas, sem esses campos, cai nos defaults: o destaque de toda
+  // etiqueta vira a lista inteira de tamanhos ("P-M-G-GG-G1-G2-G3") em vez do
+  // tamanho daquele pacote, a última deixa de ser a de reposição e a composição
+  // do moletom some. Como a janela "etiquetas (tela)" grava por cima do arquivo
+  // da pasta, conferir na tela ESTRAGAVA a etiqueta boa que já estava salva.
+  // Aconteceu com a 0435 (28/07) e a 0452 (30/07), medido pelo tamanho do PDF.
+  salvarPdfEtiquetasAuto(o, dados);
 }
 
 function imprimirEtiquetasAtual() {
