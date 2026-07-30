@@ -32,17 +32,24 @@ backup próprio.
     semelhança** de faixa de tamanhos.
   - Cópia do código deste ponto em
     `backups-codigo/*.20260730k-previsao-fases.CÓPIA`.
-- **DADOS:** exportação de **30/07/2026 10:51**, em
-  `backups/BACKUP-COMPLETO-2026-07-30T13-51-12.json` (1,64 MB, 29 chaves, 616
-  registros): 174 OS, 64 grades, 25 desenhos, 153 operações, 37 cargas de
-  expedição, 38 mov. de estoque, 10 tecidos, 37 cores.
-  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`, junto com a
-  de 29/07.
+- **DADOS:** exportação de **30/07/2026 17:23**, em
+  `backups/BACKUP-COMPLETO-2026-07-30T20-23-43.json` (1,65 MB, 29 chaves, 641
+  registros): 174 OS, **66 grades**, 25 desenhos, **175 operações**, 37 cargas de
+  expedição, 38 mov. de estoque, **11 tecidos**, 37 cores.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`, junto com
+  as de 29/07 e das 10:51.
 
-  > ATENÇÃO: esta exportação é de **10:51**. O que foi cadastrado depois disso
-  > (as grades criadas nos testes de importação de risco da tarde) **não está
-  > nela**. Para fechar o dia, exportar de novo: Configurações → Exportar tudo
-  > (JSON).
+  Fecha o dia inteiro — inclui o que foi feito na tarde de 30/07:
+  - as duas grades cadastradas pela importação de risco: `M-G-GG-G1-G3 |
+    PM.LISA` (pasta Camiseta Polo / básica) e `P ao G3 | CM.LISA | 116.5cm`;
+  - os cinco tecidos já com **excedente de enfesto** cadastrado (Ribana Moletom
+    15, Ribana Malha Algodão 5, Texturizado Prime 15, Texturizado Rugão 15,
+    Piquet Dry 15 cm);
+  - o tecido novo e as 22 operações planejadas a mais.
+
+  > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
+  > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
+  > ver a seção 2 abaixo.
 
 ---
 
