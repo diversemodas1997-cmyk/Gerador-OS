@@ -9845,6 +9845,35 @@ function onSelectGradeFolder(sel, kind) {
   sel.dataset.prev = sel.value;
 }
 
+// SEMELHANÇA ENTRE GRADES. O que faz duas grades se parecerem é a faixa de
+// tamanhos que elas cobrem — é assim que se procura uma grade: "preciso de uma
+// que vá do M ao GG". Guardadas na ordem em que foram cadastradas, as parecidas
+// ficavam espalhadas pela pasta e a mesma faixa aparecia em três lugares.
+//
+// A chave é o CONJUNTO de tamanhos lido de P para G3 como um número binário: o
+// P vale mais que o M, que vale mais que o G, e assim por diante. Ordenado do
+// maior para o menor, sai o que começa no P, depois o que começa no M, depois no
+// G — e, dentro de cada começo, as faixas mais curtas antes das que pulam
+// tamanhos. Grades com EXATAMENTE os mesmos tamanhos ficam vizinhas, e aí a
+// quantidade desempata (1x antes de 2x), com o nome como último critério para a
+// ordem não dançar entre uma abertura e outra.
+const _ORDEM_TAM = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+function _gradeChaveSemelhanca(tamanhos) {
+  let mascara = 0, total = 0;
+  _ORDEM_TAM.forEach((k, i) => {
+    const q = parseInt((tamanhos || {})[k], 10) || 0;
+    if (q > 0) mascara |= 1 << (_ORDEM_TAM.length - 1 - i);
+    total += q;
+  });
+  return { mascara, total };
+}
+function compararGradesPorSemelhanca(a, b) {
+  const ka = _gradeChaveSemelhanca(a && a.tamanhos), kb = _gradeChaveSemelhanca(b && b.tamanhos);
+  if (ka.mascara !== kb.mascara) return kb.mascara - ka.mascara;
+  if (ka.total !== kb.total) return ka.total - kb.total;
+  return String((a && a.nome) || '').localeCompare(String((b && b.nome) || ''), 'pt-BR', { numeric: true });
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
