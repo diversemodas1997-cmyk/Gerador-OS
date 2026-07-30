@@ -1174,6 +1174,24 @@ body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
 
+/* Par de .admin-only: o que só aparece para quem NÃO é admin. Serve para o mesmo
+   botão ter dois nomes — "editar" para o admin, "ver" para quem consulta —
+   sem depender do valor de currentRole na hora em que a tabela é desenhada
+   (o papel chega do servidor DEPOIS do primeiro render; a classe no body, não). */
+body.is-admin .leitura-only { display: none !important; }
+
+/* Ficha de cadastro em modo LEITURA. O não-admin abre a ficha inteira de um
+   tecido, de uma grade, de um desenho — todos os campos, com os valores — só
+   não digita. Mesmo acordo da folha de OS acima: o bloqueio de verdade está no
+   JS (salvarCadastro chama exigirEdicao); isto evita o clique inútil. */
+body:not(.is-admin) #modal-cad-fields input,
+body:not(.is-admin) #modal-cad-fields textarea,
+body:not(.is-admin) #modal-cad-fields select,
+body:not(.is-admin) #modal-cad-fields button {
+  pointer-events: none;
+  opacity: .75;
+}
+
 /* ============ PASTAS DO CADASTRO DE GRADES ============ */
 .grade-folder { cursor: pointer; user-select: none; transition: background .15s, color .15s; }
 .grade-folder td {

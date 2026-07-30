@@ -1751,11 +1751,14 @@ window.fecharMenuMobile = fecharMenuMobile;
 
 function goto(page) {
   const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
-  // Bloqueia navegação a páginas de cadastro para usuários não-admin
-  if (page && page.startsWith('cad-') && currentRole && currentRole !== 'admin') {
-    toast('Apenas admin pode acessar cadastros', 'err');
-    page = 'home';
-  }
+  // As telas de CADASTRO são de LEITURA para todo mundo — aqui não há rota
+  // fechada. Quem está no chão precisa consultar a ficha do tecido, a grade, a
+  // composição do desenho e quem faz cada etapa; barrar a tela inteira só fazia
+  // essa gente vir perguntar. O que o não-admin não pode é ESCREVER: os botões
+  // de novo/editar/duplicar/excluir são `admin-only` e cada função de escrita se
+  // defende sozinha (salvarCadastro, excluirCadastro, duplicarCadastro).
+  // Diferente do formulário de OS logo abaixo, que é escrita pura e não tem
+  // versão de leitura — por isso aquele continua fechado na rota.
   // O FORMULÁRIO DA OS é a mesma página para criar e para editar, e é escrita
   // pura. Esconder os botões que levam até ele não basta: dá para chegar pelo
   // card do Início, pelo "+ Nova OS" da lista, pelo "editar" de uma OS e pelo
@@ -1893,6 +1896,12 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function openCadastroModal(tipo, editId = null, origin = null) {
+  // Este modal é a FICHA do cadastro, e a ficha é de leitura para todo mundo:
+  // é onde se vê a composição de um desenho, os tamanhos de uma grade, a
+  // gramatura de um tecido. Para quem não é admin ele abre inerte (CSS em
+  // styles.css, bloco de PAPÉIS) e sem o botão Salvar.
+  // Só a ficha EM BRANCO é barrada: "novo" não tem o que ler.
+  if (!editId && !exigirEdicao('criar cadastros')) return;
   cadastroContext = { tipo, editId, origin };
   const title = document.getElementById('modal-cad-title');
   const box = document.getElementById('modal-cad-fields');
@@ -1904,7 +1913,11 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
     equipe: 'Membro da equipe', funcao: 'Função', tarefa: 'Tarefa', etapa: 'Etapa de produção', componente: 'Componente'
   };
-  title.textContent = (editId ? 'Editar ' : 'Novo ') + titles[tipo];
+  // "Editar" só quem edita. Para quem consulta o título é "Ficha do/da …" —
+  // dizer "Editar Tecido" numa tela que não deixa digitar é mentir para o
+  // usuário e gerar chamado.
+  const verbo = currentRole === 'admin' ? (editId ? 'Editar ' : 'Novo ') : 'Ficha · ';
+  title.textContent = verbo + titles[tipo];
 
   let item = {};
   if (editId) {
@@ -3038,7 +3051,7 @@ function pluralize(tipo) {
 }
 
 async function salvarCadastro() {
-  if (!exigirAdmin('criar ou editar cadastros')) return;
+  if (!exigirEdicao('criar ou editar cadastros')) return;
   const { tipo, editId } = cadastroContext;
   const list = pluralize(tipo);
   const v = id => document.getElementById(id)?.value || '';
@@ -3348,7 +3361,7 @@ function refreshOSFormDropdowns() {
 }
 
 async function excluirCadastro(tipo, id) {
-  if (!exigirAdmin('excluir cadastros')) return;
+  if (!exigirEdicao('excluir cadastros')) return;
   if (!confirm('Excluir este registro?')) return;
   const list = pluralize(tipo);
   STATE[list] = STATE[list].filter(x => x.id !== id);
@@ -3377,16 +3390,22 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Ações de uma linha de cadastro. Mesmo desenho da lista de OS: a ficha é de
+// TODO MUNDO (o "ver" abre o modal em leitura, com os campos inertes), e o que
+// escreve — editar, duplicar, excluir — é admin-only. "ver" e "editar" abrem a
+// MESMA função: é o body.is-admin que decide qual dos dois aparece, e não o
+// valor de currentRole no instante do render (o papel chega do servidor depois).
 function acoesCell(tipo, id) {
   return `<td class="col-actions row-actions">
-    <button class="edit" onclick="openCadastroModal('${tipo}','${id}')">editar</button>
-    <button class="edit" onclick="duplicarCadastro('${tipo}','${id}')">duplicar</button>
-    <button class="del" onclick="excluirCadastro('${tipo}','${id}')">excluir</button>
+    <button class="edit leitura-only" onclick="openCadastroModal('${tipo}','${id}')">ver</button>
+    <button class="edit admin-only" onclick="openCadastroModal('${tipo}','${id}')">editar</button>
+    <button class="edit admin-only" onclick="duplicarCadastro('${tipo}','${id}')">duplicar</button>
+    <button class="del admin-only" onclick="excluirCadastro('${tipo}','${id}')">excluir</button>
   </td>`;
 }
 
 async function duplicarCadastro(tipo, id) {
-  if (!exigirAdmin('duplicar cadastros')) return;
+  if (!exigirEdicao('duplicar cadastros')) return;
   const list = pluralize(tipo);
   const original = STATE[list].find(x => x.id === id);
   if (!original) return toast('Cadastro não encontrado', 'err');
@@ -9834,7 +9853,9 @@ function renderGrades() {
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   };
 
-  const folderActions = (clickAttrs) => `<span class="folder-actions" onclick="event.stopPropagation()">${clickAttrs}</span>`;
+  // admin-only: renomear e reordenar pasta é escrita. Abrir e fechar a pasta
+  // (o clique na linha) continua de todo mundo — é como se lê a lista.
+  const folderActions = (clickAttrs) => `<span class="folder-actions admin-only" onclick="event.stopPropagation()">${clickAttrs}</span>`;
 
   let html = '';
   for (let i = 0; i < ordemTipoPeca.length; i++) {
@@ -10014,11 +10035,13 @@ function renderEtapasCad() {
     cont.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--ink-3);">Nenhuma etapa cadastrada. Use <strong>+ Nova etapa</strong> para começar.</div>`;
     return;
   }
+  // Mesma regra do acoesCell: "ver" para quem consulta, o resto admin-only.
   const acoesEtapa = (id) => `
     <span class="row-actions" style="display:inline-flex;gap:4px;">
-      <button class="edit" onclick="openCadastroModal('etapa','${esc(id)}')">editar</button>
-      <button class="edit" onclick="duplicarCadastro('etapa','${esc(id)}')">duplicar</button>
-      <button class="del" onclick="excluirCadastro('etapa','${esc(id)}')">excluir</button>
+      <button class="edit leitura-only" onclick="openCadastroModal('etapa','${esc(id)}')">ver</button>
+      <button class="edit admin-only" onclick="openCadastroModal('etapa','${esc(id)}')">editar</button>
+      <button class="edit admin-only" onclick="duplicarCadastro('etapa','${esc(id)}')">duplicar</button>
+      <button class="del admin-only" onclick="excluirCadastro('etapa','${esc(id)}')">excluir</button>
     </span>`;
 
   const html = etapasOrdenadas().map(e => {

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2026-07-30a">
+<link rel="stylesheet" href="styles.css?v=2026-07-30b">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -49,7 +49,10 @@
       </div>
     </div>
 
-    <div class="nav-group admin-only" data-group="cadastros">
+    <!-- Sem admin-only: os cadastros são de CONSULTA para todo mundo. Quem lê a
+         OS precisa poder abrir a grade, o tecido, a etapa. Escrever segue só do
+         admin — os botões de ação de cada tela é que são admin-only. -->
+    <div class="nav-group" data-group="cadastros">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
       <div class="nav-items">
         <button class="nav-btn" data-page="cad-marcas">Marcas</button>
@@ -129,62 +132,62 @@
           <div class="label">Planejamento</div>
           <div class="title">Operações cadastradas</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-tecidos')">
+        <div class="home-card" onclick="goto('cad-tecidos')">
           <div class="num" id="stat-tecidos">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Tecidos</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-cores')">
+        <div class="home-card" onclick="goto('cad-cores')">
           <div class="num" id="stat-cores">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Cores</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-materiais')">
+        <div class="home-card" onclick="goto('cad-materiais')">
           <div class="num" id="stat-materiais">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Materiais / Aviamentos</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-modelos')">
+        <div class="home-card" onclick="goto('cad-modelos')">
           <div class="num" id="stat-modelos">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Modelos</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-colecoes')">
+        <div class="home-card" onclick="goto('cad-colecoes')">
           <div class="num" id="stat-colecoes">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Coleções</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-grades')">
+        <div class="home-card" onclick="goto('cad-grades')">
           <div class="num" id="stat-grades">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Grades</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-desenhos')">
+        <div class="home-card" onclick="goto('cad-desenhos')">
           <div class="num" id="stat-desenhos">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Desenhos técnicos</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-marcas')">
+        <div class="home-card" onclick="goto('cad-marcas')">
           <div class="num" id="stat-marcas">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Marcas</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-linhas')">
+        <div class="home-card" onclick="goto('cad-linhas')">
           <div class="num" id="stat-linhas">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Linhas</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-bases')">
+        <div class="home-card" onclick="goto('cad-bases')">
           <div class="num" id="stat-bases">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Bases</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-blocos')">
+        <div class="home-card" onclick="goto('cad-blocos')">
           <div class="num" id="stat-blocos">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Blocos / Revisões</div>
         </div>
-        <div class="home-card admin-only" onclick="goto('cad-equipe')">
+        <div class="home-card" onclick="goto('cad-equipe')">
           <div class="num" id="stat-equipe">0</div>
           <div class="label">Cadastro</div>
           <div class="title">Equipe</div>
@@ -272,7 +275,7 @@
     <section class="page hidden" data-page="cad-tecidos">
       <div class="page-header">
         <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk. A categoria define o limite de camadas no enfesto. O peso (g/m²) é usado para calcular o consumo em kg e baixar o estoque.</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('tecido')">+ Novo tecido</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('tecido')">+ Novo tecido</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -286,7 +289,7 @@
     <section class="page hidden" data-page="cad-cores">
       <div class="page-header">
         <div><h1>Cores</h1><div class="desc">Paleta de cores usadas nos modelos</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('cor')">+ Nova cor</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('cor')">+ Nova cor</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -300,7 +303,7 @@
     <section class="page hidden" data-page="cad-materiais">
       <div class="page-header">
         <div><h1>Materiais / Aviamentos</h1><div class="desc">Ex.: cordão, ilhós, etiqueta, tag — com código Linx/fornecedor</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('material')">+ Novo material</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('material')">+ Novo material</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -314,7 +317,7 @@
     <section class="page hidden" data-page="cad-modelos">
       <div class="page-header">
         <div><h1>Modelos</h1><div class="desc">Ex.: Moletom fechado básico, Calça jogger, Camiseta regata…</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('modelo')">+ Novo modelo</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('modelo')">+ Novo modelo</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -328,7 +331,7 @@
     <section class="page hidden" data-page="cad-colecoes">
       <div class="page-header">
         <div><h1>Coleções</h1><div class="desc">Ex.: Inverno 2024, Primavera 2025…</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('colecao')">+ Nova coleção</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('colecao')">+ Nova coleção</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -342,7 +345,7 @@
     <section class="page hidden" data-page="cad-grades">
       <div class="page-header">
         <div><h1>Grades</h1><div class="desc">Modelos de grade de tamanhos com quantidades-padrão</div></div>
-        <div class="actions"><button class="btn" onclick="abrirAssistentePasta()" title="Escolha uma PASTA: o programa lê todos os PDFs de encaixe que houver nela, agrupa por grade e conduz o cadastro de uma em uma, até acabar.">📁 Importar pasta de riscos</button><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
+        <div class="actions admin-only"><button class="btn" onclick="abrirAssistentePasta()" title="Escolha uma PASTA: o programa lê todos os PDFs de encaixe que houver nela, agrupa por grade e conduz o cadastro de uma em uma, até acabar.">📁 Importar pasta de riscos</button><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -356,7 +359,7 @@
     <section class="page hidden" data-page="cad-desenhos">
       <div class="page-header">
         <div><h1>Desenhos técnicos</h1><div class="desc">Upload de imagens (PNG/JPG) dos desenhos do produto</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('desenho')">+ Novo desenho</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('desenho')">+ Novo desenho</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -370,7 +373,7 @@
     <section class="page hidden" data-page="cad-marcas">
       <div class="page-header">
         <div><h1>Marcas / Griffes</h1><div class="desc">Ex.: Dixie, Diverse, outras marcas da empresa</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('marca')">+ Nova marca</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('marca')">+ Nova marca</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -384,7 +387,7 @@
     <section class="page hidden" data-page="cad-linhas">
       <div class="page-header">
         <div><h1>Linhas</h1><div class="desc">Ex.: Adulto, Infantil, Juvenil, Plus Size</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('linha')">+ Nova linha</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('linha')">+ Nova linha</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -398,7 +401,7 @@
     <section class="page hidden" data-page="cad-bases">
       <div class="page-header">
         <div><h1>Bases</h1><div class="desc">Moldes base usados como referência (ex.: BASE M, BASE P, BASE MOLETOM)</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('base')">+ Nova base</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('base')">+ Nova base</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -412,7 +415,7 @@
     <section class="page hidden" data-page="cad-blocos">
       <div class="page-header">
         <div><h1>Blocos / Revisões</h1><div class="desc">Ex.: R1 BLOCO 1, R1 BLOCO 2, R2 BLOCO 1</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('bloco')">+ Novo bloco</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('bloco')">+ Novo bloco</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -426,7 +429,7 @@
     <section class="page hidden" data-page="cad-componentes">
       <div class="page-header">
         <div><h1>Componentes</h1><div class="desc">Partes do produto (Frente, Costas, Capuz, Mangas, etc.). Aparecem no select de "Componentes do produto" na Nova OS.</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('componente')">+ Novo componente</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('componente')">+ Novo componente</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -440,7 +443,7 @@
     <section class="page hidden" data-page="cad-etapas">
       <div class="page-header">
         <div><h1>Etapas de produção</h1><div class="desc">Cada etapa é uma pasta. As tarefas vinculadas aparecem como subitens. A ordem define a ordem na folha de OS impressa.</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('etapa')">+ Nova etapa</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('etapa')">+ Nova etapa</button></div>
       </div>
       <div id="etapas-pastas"></div>
     </section>
@@ -449,7 +452,7 @@
     <section class="page hidden" data-page="cad-funcoes">
       <div class="page-header">
         <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe (Designer, Modelista, Costureiro, etc.)</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -463,7 +466,7 @@
     <section class="page hidden" data-page="cad-equipe">
       <div class="page-header">
         <div><h1>Equipe</h1><div class="desc">Pessoas que aparecem como Designer ou responsável pela Ficha Técnica</div></div>
-        <div class="actions"><button class="btn primary" onclick="openCadastroModal('equipe')">+ Nova pessoa</button></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('equipe')">+ Nova pessoa</button></div>
       </div>
       <div class="card">
         <table class="table">
@@ -834,8 +837,9 @@
     <h2 id="modal-cad-title">Novo cadastro</h2>
     <div id="modal-cad-fields"></div>
     <div class="actions">
-      <button class="btn" onclick="closeModal('modal-cad')">Cancelar</button>
-      <button class="btn primary" onclick="salvarCadastro()">Salvar</button>
+      <!-- Quem consulta abre a ficha inteira e fecha; salvar é do admin. -->
+      <button class="btn" onclick="closeModal('modal-cad')">Fechar</button>
+      <button class="btn primary admin-only" onclick="salvarCadastro()">Salvar</button>
     </div>
   </div>
 </div>
@@ -982,6 +986,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-07-30b"></script>
+<script src="app.js?v=2026-07-30c"></script>
 </body>
 </html>
