@@ -8,6 +8,46 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
+- **CÓDIGO:** tag `restore-2026-07-30-k` (cache-buster `app.js ?v=2026-07-30k`,
+  `styles.css ?v=2026-07-30d`). O que mudou desde o `restore-2026-07-28-aq`:
+  - **Impressão:** a folha de OE volta a ter margem no papel, e a de OS sai com
+    as cores e ocupando a A4 inteira. As margens de folha A4 passam a morar num
+    lugar só (`:root` do styles.css), com **recuo padrão de 15 mm na esquerda**.
+    A etiqueta (100×50 mm) não entra nessa regra.
+  - **Etiquetas:** o botão de etiquetas da OS estava quebrado em toda OS
+    (`pdf.output is not a function`); e conferir na janela "etiquetas (tela)"
+    deixou de gravar por cima do PDF bom que estava na pasta.
+  - **Cadastros:** o usuário comum passa a **ver** todos os cadastros em modo
+    leitura (só o admin escreve).
+  - **Tecidos:** campo **Excedente de enfesto (cm)** por tecido; os 15 cm viram
+    apenas o padrão de quem não cadastrou.
+  - **Risco (PDF):** o leitor do relatório do CAD passou a entender o layout de
+    verdade — antes vinha sem comprimento, sem largura e com a tabela de
+    tamanhos errada em todos os 132 PDFs. A janela ganhou: escolher entre
+    **corrigir** uma grade existente ou **criar nova**, a lista completa de
+    pastas (era de 3 opções e mandava PM.LISA para a pasta das CM), e a
+    **previsão de fases** por produto (camiseta, polo, moletom liso, moletom
+    tricolor, camiseta recortada).
+  - **Grades:** a sequência da lista e da fila do assistente passa a ser **por
+    semelhança** de faixa de tamanhos.
+  - Cópia do código deste ponto em
+    `backups-codigo/*.20260730k-previsao-fases.CÓPIA`.
+- **DADOS:** exportação de **30/07/2026 10:51**, em
+  `backups/BACKUP-COMPLETO-2026-07-30T13-51-12.json` (1,64 MB, 29 chaves, 616
+  registros): 174 OS, 64 grades, 25 desenhos, 153 operações, 37 cargas de
+  expedição, 38 mov. de estoque, 10 tecidos, 37 cores.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`, junto com a
+  de 29/07.
+
+  > ATENÇÃO: esta exportação é de **10:51**. O que foi cadastrado depois disso
+  > (as grades criadas nos testes de importação de risco da tarde) **não está
+  > nela**. Para fechar o dia, exportar de novo: Configurações → Exportar tudo
+  > (JSON).
+
+---
+
+## Ponto anterior
+
 - **CÓDIGO:** tag `restore-2026-07-28-aq` (cache-buster `app.js ?v=2026-07-28aq`,
   `styles.css ?v=2026-07-28k`). O que mudou desde o `restore-2026-07-28-an`:
   - **Importar risco (PDF)** ganhou o outro lado: além de corrigir grade
