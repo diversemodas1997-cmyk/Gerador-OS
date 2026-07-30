@@ -13077,6 +13077,11 @@ async function gerarPdfDaSheet() {
   // que nao implementa CSS zoom, mas mede o elemento ja ampliado —
   // fotografa a folha em escala errada, e o PDF sai diferente da tela.
   document.body.classList.add('pdf-capture');
+  // MESMO encaixe da impressao: a folha e alargada ate ficar na proporcao da A4,
+  // com 15mm de margem esquerda e 8mm nas outras tres. Aqui nao ha zoom — a foto
+  // ja sai na proporcao certa, e o addImage abaixo a estica na folha inteira.
+  // E o que faz o arquivo da pasta e o papel saírem iguais.
+  encaixarFolhaNaA4(sheet);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const canvas = await _html2canvas(sheet, {
@@ -13101,6 +13106,7 @@ async function gerarPdfDaSheet() {
     return pdf.output('blob');
   } finally {
     document.body.classList.remove('pdf-capture');
+    desfazerEncaixeA4(sheet);
     sheet.style.zoom = prevZoom;
     sheet.style.transform = prevTransform;
     sheet.style.transformOrigin = prevOrigin;
@@ -13676,8 +13682,14 @@ function imprimirEtiquetasPdf(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
   try {
-    const pdf = gerarPdfEtiquetas(dadosEtiquetaParaOS(o));
-    const url = URL.createObjectURL(pdf.output('blob'));
+    // gerarPdfEtiquetas devolve o BLOB pronto (termina em `pdf.output('blob')`),
+    // não o documento jsPDF. Aqui se chamava .output('blob') no que já era um
+    // Blob — "pdf.output is not a function" —, e o botão de etiquetas da OS
+    // morria nesse erro em TODA OS desde 28/07 (commit 420f7f9). Quem grava na
+    // pasta (salvarPdfEtiquetasAuto) sempre tratou o retorno como Blob; era só
+    // este ponto fora de compasso.
+    const blob = gerarPdfEtiquetas(dadosEtiquetaParaOS(o));
+    const url = URL.createObjectURL(blob);
     const w = window.open(url, '_blank');
     if (!w) { toast('Permita pop-ups para abrir o PDF das etiquetas', 'err'); return; }
     // O objeto só é liberado depois de a aba carregar; revogar na hora deixaria
@@ -13903,9 +13915,69 @@ async function _salvarEtiquetasConfirmada(data) {
 // principal — "Salvar e Gerar PDF" — nao passa por aqui: la o jsPDF ja
 // encaixa a foto na A4 sozinho.
 //
-// Esta funcao NAO mexe mais na geometria da .sheet (largura/padding/altura).
-// Ela ja E a A4; reescrever isso era o que fazia o papel sair diferente da
-// tela. O unico ajuste possivel e encolher a folha inteira pelo wrapper.
+const PX_POR_MM = 3.7795275591;
+const A4_L_MM = 210, A4_A_MM = 297;
+
+// As margens da folha A4 moram no styles.css (:root), num lugar so, para o CSS
+// da folha do plano e este calculo aqui nao saírem de sincronia.
+function _margensA4mm() {
+  const cs = getComputedStyle(document.documentElement);
+  const num = (nome, padrao) => {
+    const n = parseFloat(cs.getPropertyValue(nome));
+    return Number.isFinite(n) ? n : padrao;
+  };
+  return { esq: num('--print-esq', 15), outras: num('--print-margem', 8) };
+}
+
+// ENCAIXA A FOLHA DE OS NA A4 INTEIRA.
+//
+// A folha e desenhada em 210mm de largura e cresce em altura conforme o
+// conteudo. Quando passa de 297mm ela tem que encolher para caber em uma folha
+// — e encolher reduz a LARGURA junto, deixando uma tira de papel em branco na
+// direita e no pe. Era o que se via na impressao: 183mm de conteudo numa folha
+// de 210mm.
+//
+// A saida e alargar o bloco na mesma medida em que ele vai encolher: o conteudo
+// reflui mais largo, a altura cai, e a proporcao caminha para a da A4
+// (297/210). Quando chega la, encolher para caber na altura devolve exatamente
+// 210mm de largura — folha cheia. Como alargar muda a altura, o calculo e
+// repetido ate parar de andar (poucas voltas; a folha e quase toda tabela).
+//
+// As margens sao aplicadas na mesma escala, para caírem nos milimetros pedidos
+// depois do encolhimento: 15mm na esquerda, 8mm nas outras tres.
+//
+// Retorna a escala que a impressao deve aplicar (o PDF da pasta nao usa: la o
+// jsPDF encaixa a foto sozinho, e a foto ja sai na proporcao certa).
+function encaixarFolhaNaA4(sheet) {
+  const m = _margensA4mm();
+  const razaoA4 = A4_A_MM / A4_L_MM;
+  let larguraMm = A4_L_MM;
+  let alturaMm = 0;
+  for (let i = 0; i < 6; i++) {
+    const k = larguraMm / A4_L_MM; // o desenho todo vive nesta escala
+    sheet.style.width = larguraMm.toFixed(2) + 'mm';
+    sheet.style.paddingTop = (m.outras * k).toFixed(2) + 'mm';
+    sheet.style.paddingRight = (m.outras * k).toFixed(2) + 'mm';
+    sheet.style.paddingBottom = (m.outras * k).toFixed(2) + 'mm';
+    sheet.style.paddingLeft = (m.esq * k).toFixed(2) + 'mm';
+    void sheet.offsetHeight; // forca reflow pra leitura correta
+    alturaMm = sheet.scrollHeight / PX_POR_MM;
+    const alvo = Math.min(Math.max(alturaMm / razaoA4, A4_L_MM), A4_L_MM * 2);
+    if (Math.abs(alvo - larguraMm) < 0.3) { larguraMm = alvo; break; }
+    larguraMm = alvo;
+  }
+  // A altura manda: melhor sobrar uma tira em branco do que jogar uma segunda
+  // folha. So quando o conteudo nao consegue mais encolher pela largura (caso
+  // extremo) e que o min entra em acao e a folha nao fecha os 210mm.
+  return Math.min(A4_L_MM / larguraMm, A4_A_MM / alturaMm);
+}
+
+function desfazerEncaixeA4(sheet) {
+  if (!sheet) return;
+  ['width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']
+    .forEach(p => sheet.style.removeProperty(p.replace(/[A-Z]/g, c => '-' + c.toLowerCase())));
+}
+
 function ajustarImpressaoParaA4() {
   const sheet = document.querySelector('.sheet');
   const scaler = document.querySelector('.sheet-scaler');
@@ -13915,25 +13987,19 @@ function ajustarImpressaoParaA4() {
   // leitura, entao scrollHeight vem em mm reais de A4.
   scaler.style.removeProperty('zoom');
   document.body.classList.add('pdf-capture');
-  void sheet.offsetHeight; // forca reflow pra leitura correta
 
-  const pxPerMm = 3.7795275591;
-  const maxHpx = 297 * pxPerMm; // A4 cheia — a margem ja esta no padding
-  const natH = sheet.scrollHeight;
+  const escala = encaixarFolhaNaA4(sheet);
 
   document.body.classList.remove('pdf-capture');
 
-  // A .sheet tem min-height 297mm, entao so passa disso quando o conteudo
-  // realmente estourou a pagina. Ai encolhe tudo por igual pra caber em 1
-  // folha (1% de folga evita o caso borderline por arredondamento).
   // zoom afeta LAYOUT, entao tabelas, fontes e quebras encolhem juntas.
-  const scale = natH > maxHpx ? (maxHpx / natH) * 0.99 : 1;
-  scaler.style.setProperty('zoom', scale.toFixed(4), 'important');
+  scaler.style.setProperty('zoom', escala.toFixed(4), 'important');
 }
 
 window.addEventListener('beforeprint', ajustarImpressaoParaA4);
 window.addEventListener('afterprint', function() {
   const scaler = document.querySelector('.sheet-scaler');
+  desfazerEncaixeA4(document.querySelector('.sheet'));
   if (!scaler) return;
   // Devolve a ampliacao de leitura da tela (volta pra regra do styles.css).
   scaler.style.removeProperty('zoom');

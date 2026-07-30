@@ -538,7 +538,7 @@ body.pdf-capture .no-print { display: none !important; }
    título vem, portanto, do padding capturado — não da @page, que este caminho
    nem enxerga. Com os 10mm de tela o cabeçalho ficava na faixa que muitas
    impressoras não imprimem e o título saía cortado. */
-body.pdf-capture .sheet-exp { padding-top: 16mm; }
+body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq); }
 
 /* GEOMETRIA A4 — fonte unica da verdade.
    210x297mm com padding 8mm E a folha A4, margem inclusa. Isso nao e
@@ -937,6 +937,19 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; }
   box-sizing: border-box;
 }
 .obs-input::placeholder { color: #bbb; font-style: italic; }
+
+/* ============ MARGENS PADRÃO DE FOLHA A4 ============ */
+/* Um lugar só para a margem de toda folha A4 do programa — a de OS, a do plano
+   de expedição e a de operações —, valendo tanto no papel (Ctrl+P) quanto no
+   PDF que o programa grava na pasta.
+   A ESQUERDA é maior de propósito: é a borda que vai para o grampo, o furo ou a
+   pasta, e com margem estreita o conteúdo some embaixo da encadernação.
+   A ETIQUETA NÃO ENTRA AQUI: ela é 100x50mm, sai direto do jsPDF com página
+   própria, e nada nestes números a alcança. */
+:root {
+  --print-esq: 15mm;   /* recuo padrão da margem esquerda */
+  --print-margem: 8mm; /* as outras três */
+}
 
 /* ============ IMPRESSÃO ============ */
 @media print {
@@ -2385,8 +2398,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   }
   /* Margem lateral da folha. Fica no padding, e não na @page, porque padding
      lateral de um bloco que se parte entre páginas vale em TODAS elas — ao
-     contrário do padding de topo/base, que só protege a primeira e a última. */
-  .sheet-exp { padding-left: 10mm; padding-right: 10mm; }
+     contrário do padding de topo/base, que só protege a primeira e a última.
+     A esquerda usa o recuo padrão de folha A4 (:root, --print-esq). */
+  .sheet-exp { padding-left: var(--print-esq); padding-right: 10mm; }
   /* Margem superior de toda folha, inclusive as de continuação. Vive no <thead>
      para acompanhar a repetição do cabeçalho.
      16mm é a mesma medida do PDF gravado na pasta das OE (body.pdf-capture
