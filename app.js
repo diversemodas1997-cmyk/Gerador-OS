@@ -2000,35 +2000,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>`;
   }
   else if (tipo === 'grade') {
-    // Aplica overrides de label (se a pasta fixa foi renomeada)
-    const tiposPeca = [
-      { v: '', lbl: labelTp('') === 'Sem categoria' ? '— sem categoria —' : labelTp('') },
-      { v: 'camiseta', lbl: labelTp('camiseta') },
-      { v: 'blusa_moletom', lbl: labelTp('blusa_moletom') },
-      { v: 'outro', lbl: labelTp('outro') }
-    ];
-    const variacoes = [
-      { v: '', lbl: labelVr('') === 'Sem variação' ? '— sem variação —' : labelVr('') },
-      { v: 'basica', lbl: labelVr('basica') },
-      { v: 'bicolor', lbl: labelVr('bicolor') },
-      { v: 'tricolor', lbl: labelVr('tricolor') }
-    ];
-    const fixosTp = new Set(tiposPeca.map(t => t.v));
-    const fixosVr = new Set(variacoes.map(t => t.v));
-    const tiposPecaCustom = [...new Set(STATE.grades.map(g => g.tipoPeca || '').filter(x => x && !fixosTp.has(x)))]
-      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    const variacoesCustom = [...new Set(STATE.grades.map(g => g.variacao || '').filter(x => x && !fixosVr.has(x)))]
-      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    // garante que o valor atual do item apareça mesmo se ainda não estiver em STATE.grades
-    if (item.tipoPeca && !fixosTp.has(item.tipoPeca) && !tiposPecaCustom.includes(item.tipoPeca)) tiposPecaCustom.push(item.tipoPeca);
-    if (item.variacao && !fixosVr.has(item.variacao) && !variacoesCustom.includes(item.variacao)) variacoesCustom.push(item.variacao);
-
-    const optsTp = tiposPeca.map(t => `<option value="${esc(t.v)}" ${item.tipoPeca===t.v?'selected':''}>${esc(t.lbl)}</option>`).join('')
-      + (tiposPecaCustom.length ? `<optgroup label="Pastas adicionais">${tiposPecaCustom.map(v => `<option value="${esc(v)}" ${item.tipoPeca===v?'selected':''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
-      + `<option value="__nova__">+ Nova pasta…</option>`;
-    const optsVr = variacoes.map(t => `<option value="${esc(t.v)}" ${item.variacao===t.v?'selected':''}>${esc(t.lbl)}</option>`).join('')
-      + (variacoesCustom.length ? `<optgroup label="Subpastas adicionais">${variacoesCustom.map(v => `<option value="${esc(v)}" ${item.variacao===v?'selected':''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
-      + `<option value="__nova__">+ Nova subpasta…</option>`;
+    const optsTp = opcoesPastaGrade('pasta', item.tipoPeca);
+    const optsVr = opcoesPastaGrade('subpasta', item.variacao);
 
     box.innerHTML = `
       <div class="form-grid cols-2">
@@ -9805,6 +9778,45 @@ async function moveGradeSubfolder(tp, vr, dir) {
   renderGrades();
 }
 
+// As opções de PASTA (tipo de peça) e SUBPASTA (variação) de uma grade, num
+// lugar só. Toda tela que cria ou edita grade usa esta lista — o cadastro
+// manual, o "Importar risco (PDF)" e o assistente de pasta.
+//
+// Isso não é organização: era um erro de destino. As telas de importação tinham
+// a lista chumbada em três tipos (camiseta, blusa moletom, outro) e três
+// variações, enquanto a casa já usa "Camiseta Polo", "Camiseta Oversized",
+// "Bermuda Tactel", "Bermuda Moletom", "Jaguar", "Prime", "Rugão", "Espartana".
+// Uma grade de PM.LISA criada pelo risco caía em `camiseta` — a pasta das CM —
+// porque não havia como dizer outra coisa. A pasta vem de tipoPeca/variação, não
+// do SKU: escrever PM.LISA no SKU não muda de pasta.
+//
+// A lista sai de três fontes, na ordem: as fixas (com o nome que a casa deu a
+// elas, se renomearam), as que já existem em alguma grade, e "+ Nova pasta…",
+// que pergunta o nome na hora.
+function opcoesPastaGrade(kind, atual) {
+  const pasta = kind === 'pasta';
+  const fixas = pasta
+    ? [{ v: '', lbl: labelTp('') === 'Sem categoria' ? '— sem categoria —' : labelTp('') },
+       { v: 'camiseta', lbl: labelTp('camiseta') },
+       { v: 'blusa_moletom', lbl: labelTp('blusa_moletom') },
+       { v: 'outro', lbl: labelTp('outro') }]
+    : [{ v: '', lbl: labelVr('') === 'Sem variação' ? '— sem variação —' : labelVr('') },
+       { v: 'basica', lbl: labelVr('basica') },
+       { v: 'bicolor', lbl: labelVr('bicolor') },
+       { v: 'tricolor', lbl: labelVr('tricolor') }];
+  const fixos = new Set(fixas.map(t => t.v));
+  const usados = [...new Set((STATE.grades || [])
+    .map(g => (pasta ? g.tipoPeca : g.variacao) || '')
+    .filter(x => x && !fixos.has(x)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  // O valor atual aparece mesmo que ainda não exista em nenhuma grade salva.
+  if (atual && !fixos.has(atual) && !usados.includes(atual)) usados.push(atual);
+  const rot = pasta ? ['Pastas adicionais', '+ Nova pasta…'] : ['Subpastas adicionais', '+ Nova subpasta…'];
+  return fixas.map(t => `<option value="${esc(t.v)}" ${atual === t.v ? 'selected' : ''}>${esc(t.lbl)}</option>`).join('')
+    + (usados.length ? `<optgroup label="${rot[0]}">${usados.map(v =>
+        `<option value="${esc(v)}" ${atual === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
+    + `<option value="__nova__">${rot[1]}</option>`;
+}
+
 function onSelectGradeFolder(sel, kind) {
   if (sel.value !== '__nova__') {
     sel.dataset.prev = sel.value;
@@ -16545,20 +16557,16 @@ function _riscoHtmlGradesNovas() {
           <div class="field-hint">O que vem depois do "|" no nome.</div>
         </div>
         <div class="field">
-          <label>Tipo de peça *</label>
-          <select id="rn-tipo-${gi}">
-            <option value="camiseta" ${prod.tipoPeca === 'camiseta' ? 'selected' : ''}>Camiseta</option>
-            <option value="blusa_moletom" ${prod.tipoPeca === 'blusa_moletom' ? 'selected' : ''}>Blusa moletom</option>
-            <option value="outro" ${prod.tipoPeca === 'outro' ? 'selected' : ''}>Outro</option>
+          <label>Tipo de peça (pasta) *</label>
+          <select id="rn-tipo-${gi}" data-prev="${esc(prod.tipoPeca || '')}" onchange="onSelectGradeFolder(this,'pasta')">
+            ${opcoesPastaGrade('pasta', prod.tipoPeca || '')}
           </select>
+          <div class="field-hint">É esta escolha que decide em qual <b>pasta</b> a grade vai aparecer — não o SKU.</div>
         </div>
         <div class="field">
-          <label>Variação</label>
-          <select id="rn-var-${gi}">
-            <option value="">— sem variação —</option>
-            <option value="basica" ${prod.variacao === 'basica' ? 'selected' : ''}>Básica</option>
-            <option value="bicolor" ${prod.variacao === 'bicolor' ? 'selected' : ''}>Bicolor</option>
-            <option value="tricolor" ${prod.variacao === 'tricolor' ? 'selected' : ''}>Tricolor</option>
+          <label>Variação (subpasta)</label>
+          <select id="rn-var-${gi}" data-prev="${esc(prod.variacao || '')}" onchange="onSelectGradeFolder(this,'subpasta')">
+            ${opcoesPastaGrade('subpasta', prod.variacao || '')}
           </select>
         </div>
         <div class="field">
@@ -17153,20 +17161,16 @@ function _pastaHtmlPasso() {
         <div class="field-hint">O que vem depois do "|" no nome.</div>
       </div>
       <div class="field">
-        <label>Tipo de peça *</label>
-        <select id="pw-tipo">
-          <option value="camiseta" ${G.draft.tipoPeca === 'camiseta' ? 'selected' : ''}>Camiseta</option>
-          <option value="blusa_moletom" ${G.draft.tipoPeca === 'blusa_moletom' ? 'selected' : ''}>Blusa moletom</option>
-          <option value="outro" ${G.draft.tipoPeca === 'outro' ? 'selected' : ''}>Outro</option>
+        <label>Tipo de peça (pasta) *</label>
+        <select id="pw-tipo" data-prev="${esc(G.draft.tipoPeca || '')}" onchange="onSelectGradeFolder(this,'pasta')">
+          ${opcoesPastaGrade('pasta', G.draft.tipoPeca || '')}
         </select>
+        <div class="field-hint">Decide a <b>pasta</b> da grade — não o SKU.</div>
       </div>
       <div class="field">
-        <label>Variação</label>
-        <select id="pw-var">
-          <option value="">— sem variação —</option>
-          <option value="basica" ${G.draft.variacao === 'basica' ? 'selected' : ''}>Básica</option>
-          <option value="bicolor" ${G.draft.variacao === 'bicolor' ? 'selected' : ''}>Bicolor</option>
-          <option value="tricolor" ${G.draft.variacao === 'tricolor' ? 'selected' : ''}>Tricolor</option>
+        <label>Variação (subpasta)</label>
+        <select id="pw-var" data-prev="${esc(G.draft.variacao || '')}" onchange="onSelectGradeFolder(this,'subpasta')">
+          ${opcoesPastaGrade('subpasta', G.draft.variacao || '')}
         </select>
       </div>
       <div class="field">
