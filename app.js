@@ -9845,6 +9845,35 @@ function onSelectGradeFolder(sel, kind) {
   sel.dataset.prev = sel.value;
 }
 
+// SEMELHANÇA ENTRE GRADES. O que faz duas grades se parecerem é a faixa de
+// tamanhos que elas cobrem — é assim que se procura uma grade: "preciso de uma
+// que vá do M ao GG". Guardadas na ordem em que foram cadastradas, as parecidas
+// ficavam espalhadas pela pasta e a mesma faixa aparecia em três lugares.
+//
+// A chave é o CONJUNTO de tamanhos lido de P para G3 como um número binário: o
+// P vale mais que o M, que vale mais que o G, e assim por diante. Ordenado do
+// maior para o menor, sai o que começa no P, depois o que começa no M, depois no
+// G — e, dentro de cada começo, as faixas mais curtas antes das que pulam
+// tamanhos. Grades com EXATAMENTE os mesmos tamanhos ficam vizinhas, e aí a
+// quantidade desempata (1x antes de 2x), com o nome como último critério para a
+// ordem não dançar entre uma abertura e outra.
+const _ORDEM_TAM = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+function _gradeChaveSemelhanca(tamanhos) {
+  let mascara = 0, total = 0;
+  _ORDEM_TAM.forEach((k, i) => {
+    const q = parseInt((tamanhos || {})[k], 10) || 0;
+    if (q > 0) mascara |= 1 << (_ORDEM_TAM.length - 1 - i);
+    total += q;
+  });
+  return { mascara, total };
+}
+function compararGradesPorSemelhanca(a, b) {
+  const ka = _gradeChaveSemelhanca(a && a.tamanhos), kb = _gradeChaveSemelhanca(b && b.tamanhos);
+  if (ka.mascara !== kb.mascara) return kb.mascara - ka.mascara;
+  if (ka.total !== kb.total) return ka.total - kb.total;
+  return String((a && a.nome) || '').localeCompare(String((b && b.nome) || ''), 'pt-BR', { numeric: true });
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
@@ -9928,7 +9957,9 @@ function renderGrades() {
         ${acoesVr}
       </td></tr>`;
       if (!vrOpen) continue;
-      html += gs.map(renderGradeRow).join('');
+      // Dentro da subpasta, as parecidas juntas — não a ordem em que foram
+      // cadastradas, que não diz nada a quem está procurando uma faixa.
+      html += gs.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('');
     }
   }
   tb.innerHTML = html;
@@ -17206,7 +17237,12 @@ function _pastaMontarGrupos() {
     if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
     grupos.get(a).itens.push(L);
   });
-  _pastaWiz.grupos = Array.from(grupos.values()).map(G => {
+  // A ORDEM DA FILA é por semelhança, e não a ordem dos arquivos na pasta: o
+  // assistente cadastra uma grade por vez, e passar de uma faixa para a
+  // parecida com ela é o que deixa a decisão fácil — o tipo de peça, a variação
+  // e o tecido de cada fase costumam se repetir na seguinte. Pulando de "P ao
+  // G3" para "M-G2-G3" e voltando para "2P-2GG", cada passo recomeça do zero.
+  _pastaWiz.grupos = Array.from(grupos.values()).sort(compararGradesPorSemelhanca).map(G => {
     G.itens.sort((x, y) => (x.caminho || '').localeCompare(y.caminho || '', 'pt-BR', { numeric: true }));
     G.candidatas = _riscoGradesQueCasam(G.tamanhos);
     G.gradeId = G.candidatas.length === 1 ? G.candidatas[0].id : '';
