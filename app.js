@@ -16513,11 +16513,59 @@ function _riscoNomeFaseSugerido(L) {
   return t && !/^\d+$/.test(t) ? t.charAt(0) + t.slice(1).toLowerCase() : '';
 }
 
-// Blocos de "grade nova" a montar: um por assinatura de tamanhos sem grade.
+// PREVISÃO DE FASES. Uma grade não é feita só do que veio em PDF: o risco do
+// CORPO chega sozinho, mas a grade precisa nascer com a gola e o viés também,
+// senão a OS sai sem eles e alguém tem que lembrar de completar depois.
+//
+// A previsão vem do TIPO DE PEÇA + VARIAÇÃO, que é o que define de que partes a
+// peça é feita. Os nomes são os que a casa já usa nas grades cadastradas — não
+// invento vocabulário novo: "Corpo Parte 1" e "Forro de capuz" são como estão
+// nas 40 e poucas grades que já existem, e é assim que saem na folha de OS.
+//
+// A regra não obriga a nada: é o ponto de partida da tabela, e cada linha pode
+// ser renomeada, apagada, e outras podem ser somadas.
+const PREVISAO_FASES = [
+  { tp: 'camiseta',      vr: 'basica',   fases: ['Corpo', 'Gola', 'Viés'] },
+  { tp: 'camiseta',      vr: 'bicolor',  fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Gola', 'Viés'] },
+  // A "camiseta recortada" (CM.REC) é esta: três recortes, gola e viés.
+  { tp: 'camiseta',      vr: 'tricolor', fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Gola', 'Viés'] },
+  { tp: 'camiseta polo', vr: null,       fases: ['Corpo', 'Viés'] },
+  { tp: 'blusa_moletom', vr: 'basica',   fases: ['Corpo', 'Barra/Punhos', 'Viés'] },
+  { tp: 'blusa_moletom', vr: 'tricolor', fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés'] }
+];
+
+// Fases previstas para um destino. `vr: null` na regra vale para qualquer
+// variação daquele tipo. O SKU entra como segunda chance: quem escreve CM.REC
+// ou BM.TRICOLOR está dizendo o produto, mesmo que a pasta ainda não diga.
+function previsaoFases(tipoPeca, variacao, sku) {
+  const tp = _normNome(tipoPeca || ''), vr = _normNome(variacao || '');
+  let regra = PREVISAO_FASES.find(r => _normNome(r.tp) === tp && r.vr != null && _normNome(r.vr) === vr)
+           || PREVISAO_FASES.find(r => _normNome(r.tp) === tp && r.vr == null);
+  if (!regra) {
+    const s = String(sku || '').toUpperCase().replace(/\s+/g, '');
+    const porSku = [
+      [/^CM\.(REC|TRI)/, 'camiseta', 'tricolor'],
+      [/^CM\.BIC/,       'camiseta', 'bicolor'],
+      [/^CM\./,          'camiseta', 'basica'],
+      [/^PM\./,          'camiseta polo', null],
+      [/^BM\.(TRI|REC)/, 'blusa_moletom', 'tricolor'],
+      [/^BM\./,          'blusa_moletom', 'basica']
+    ].find(([re]) => re.test(s));
+    if (porSku) regra = PREVISAO_FASES.find(r => _normNome(r.tp) === _normNome(porSku[1])
+      && (porSku[2] == null ? r.vr == null : (r.vr != null && _normNome(r.vr) === _normNome(porSku[2]))));
+  }
+  return regra ? regra.fases.slice() : [];
+}
+
+// Blocos de "grade nova" a montar: um por assinatura de tamanhos. Entram os
+// riscos sem grade candidata E os que quem está importando mandou virar grade
+// nova mesmo havendo candidata (`forcarNova`) — a grade dos mesmos tamanhos pode
+// existir para outro produto, e é decisão de quem cadastra, não do programa.
 function _riscoGruposNovos() {
   const grupos = new Map();
   _riscoLeituras.forEach((L, i) => {
-    if (L.erro || (L.grades && L.grades.length)) return;
+    if (L.erro) return;
+    if (!L.forcarNova && L.grades && L.grades.length) return;
     if (!L.tamanhos || !Object.keys(L.tamanhos).length) return;
     const a = _riscoAssinatura(L.tamanhos);
     if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
