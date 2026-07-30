@@ -16500,6 +16500,123 @@ function _riscoAssinatura(tamanhos) {
     .map(k => (parseInt((tamanhos || {})[k], 10) || 0)).join('-');
 }
 
+// O rascunho de cada grade nova, por assinatura de tamanhos. Precisa viver fora
+// do HTML: a tabela é redesenhada quando se troca o tipo de peça (a previsão de
+// fases muda com ele), e sem isto o que já foi digitado se perderia a cada
+// troca.
+let _riscoNovas = {};
+
+// Monta (ou devolve) o rascunho de um grupo. As fases nascem da PREVISÃO do
+// destino; cada PDF do grupo é encaixado na fase com que se parece, e o que não
+// casa com nenhuma vira linha própria no fim. As fases previstas que ficaram sem
+// PDF continuam na lista, sem medida — é o ponto do recurso: a grade nasce
+// inteira, e as medidas que faltam entram depois, por outro risco ou à mão.
+function _riscoNovaDraft(G) {
+  if (_riscoNovas[G.assinatura]) return _riscoNovas[G.assinatura];
+  const modelo = (G.itens[0].L.modelo || '').trim();
+  const prod = _riscoProdutos()[_normNome(modelo)] || {};
+  const d = {
+    sku: prod.sku || '',
+    tipoPeca: prod.tipoPeca || '',
+    variacao: prod.variacao || '',
+    pecasPorPacote: prod.pecasPorPacote || '',
+    fases: []
+  };
+  _riscoNovas[G.assinatura] = d;
+  _riscoNovaAplicarPrevisao(G, d);
+  return d;
+}
+
+// Refaz a lista de fases a partir da previsão do destino, preservando o que já
+// foi digitado (nome, tecido, unidades) e os PDFs já encaixados.
+function _riscoNovaAplicarPrevisao(G, d) {
+  const memTec = _riscoTecidos();
+  const previstas = previsaoFases(d.tipoPeca, d.variacao, d.sku);
+  const antigas = d.fases || [];
+  const usadas = new Set();
+  const linha = (nome, iPdf) => {
+    const velha = antigas.find(f => _normNome(f.nome) === _normNome(nome));
+    const L = iPdf != null ? G.itens[iPdf].L : null;
+    return {
+      nome,
+      tecidoId: (velha && velha.tecidoId) || (L ? (memTec[_riscoChave(L)] || '') : ''),
+      unidades: (velha && velha.unidades) || 2,
+      iPdf
+    };
+  };
+  // 1) cada PDF procura a fase prevista com que se parece
+  const destinoDoPdf = new Map();
+  G.itens.forEach((it, ip) => {
+    const sug = _normNome(_riscoNomeFaseSugerido(it.L));
+    const alvo = previstas.find(n => sug && _normNome(n) === sug && !usadas.has(n));
+    if (alvo) { usadas.add(alvo); destinoDoPdf.set(ip, alvo); }
+  });
+  // 2) o que sobrou de PDF ocupa a primeira fase prevista ainda livre
+  G.itens.forEach((it, ip) => {
+    if (destinoDoPdf.has(ip)) return;
+    const livre = previstas.find(n => !usadas.has(n));
+    if (livre) { usadas.add(livre); destinoDoPdf.set(ip, livre); }
+  });
+  const fases = previstas.map(n => {
+    const ip = [...destinoDoPdf.entries()].find(([, alvo]) => alvo === n);
+    return linha(n, ip ? ip[0] : null);
+  });
+  // 3) PDF que não coube em nenhuma prevista vira linha própria
+  G.itens.forEach((it, ip) => {
+    if (destinoDoPdf.has(ip)) return;
+    fases.push(linha(_riscoNomeFaseSugerido(it.L) || `Fase ${fases.length + 1}`, ip));
+  });
+  // 4) sem previsão nenhuma (produto que a regra não conhece): uma linha por PDF
+  if (!fases.length) G.itens.forEach((it, ip) => fases.push(linha(_riscoNomeFaseSugerido(it.L), ip)));
+  d.fases = fases;
+}
+
+// Lê a tela de volta para os rascunhos. Chamado antes de qualquer redesenho e
+// antes de criar a grade — sem isto, trocar o tipo de peça apagaria o que foi
+// digitado.
+function _riscoNovaColetar() {
+  const v = id => (document.getElementById(id)?.value ?? '').toString().trim();
+  _riscoGruposNovos().forEach((G, gi) => {
+    const d = _riscoNovas[G.assinatura];
+    if (!d || !document.getElementById(`rn-sku-${gi}`)) return;
+    d.sku = v(`rn-sku-${gi}`);
+    d.tipoPeca = v(`rn-tipo-${gi}`);
+    d.variacao = v(`rn-var-${gi}`);
+    d.pecasPorPacote = v(`rn-pac-${gi}`);
+    d.fases.forEach((f, fi) => {
+      if (!document.getElementById(`rn-f-nome-${gi}-${fi}`)) return;
+      f.nome = v(`rn-f-nome-${gi}-${fi}`);
+      f.tecidoId = v(`rn-f-tec-${gi}-${fi}`);
+      f.unidades = parseInt(v(`rn-f-un-${gi}-${fi}`), 10) || 2;
+    });
+  });
+}
+
+// Trocar o tipo de peça ou a variação refaz a previsão de fases.
+function riscoNovaMudouDestino(gi, sel, kind) {
+  if (sel && kind) onSelectGradeFolder(sel, kind);
+  _riscoNovaColetar();
+  const G = _riscoGruposNovos()[gi];
+  if (G && _riscoNovas[G.assinatura]) _riscoNovaAplicarPrevisao(G, _riscoNovas[G.assinatura]);
+  renderRiscoResultado();
+}
+
+function riscoNovaAddFase(gi) {
+  _riscoNovaColetar();
+  const G = _riscoGruposNovos()[gi];
+  const d = G && _riscoNovas[G.assinatura];
+  if (d) d.fases.push({ nome: '', tecidoId: '', unidades: 2, iPdf: null });
+  renderRiscoResultado();
+}
+
+function riscoNovaDelFase(gi, fi) {
+  _riscoNovaColetar();
+  const G = _riscoGruposNovos()[gi];
+  const d = G && _riscoNovas[G.assinatura];
+  if (d) d.fases.splice(fi, 1);
+  renderRiscoResultado();
+}
+
 // O nome sugerido para uma fase que ainda não existe: o que já foi ensinado,
 // senão o que o nome do arquivo diz, senão o próprio código do tecido.
 function _riscoNomeFaseSugerido(L) {
@@ -16513,11 +16630,59 @@ function _riscoNomeFaseSugerido(L) {
   return t && !/^\d+$/.test(t) ? t.charAt(0) + t.slice(1).toLowerCase() : '';
 }
 
-// Blocos de "grade nova" a montar: um por assinatura de tamanhos sem grade.
+// PREVISÃO DE FASES. Uma grade não é feita só do que veio em PDF: o risco do
+// CORPO chega sozinho, mas a grade precisa nascer com a gola e o viés também,
+// senão a OS sai sem eles e alguém tem que lembrar de completar depois.
+//
+// A previsão vem do TIPO DE PEÇA + VARIAÇÃO, que é o que define de que partes a
+// peça é feita. Os nomes são os que a casa já usa nas grades cadastradas — não
+// invento vocabulário novo: "Corpo Parte 1" e "Forro de capuz" são como estão
+// nas 40 e poucas grades que já existem, e é assim que saem na folha de OS.
+//
+// A regra não obriga a nada: é o ponto de partida da tabela, e cada linha pode
+// ser renomeada, apagada, e outras podem ser somadas.
+const PREVISAO_FASES = [
+  { tp: 'camiseta',      vr: 'basica',   fases: ['Corpo', 'Gola', 'Viés'] },
+  { tp: 'camiseta',      vr: 'bicolor',  fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Gola', 'Viés'] },
+  // A "camiseta recortada" (CM.REC) é esta: três recortes, gola e viés.
+  { tp: 'camiseta',      vr: 'tricolor', fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Gola', 'Viés'] },
+  { tp: 'camiseta polo', vr: null,       fases: ['Corpo', 'Viés'] },
+  { tp: 'blusa_moletom', vr: 'basica',   fases: ['Corpo', 'Barra/Punhos', 'Viés'] },
+  { tp: 'blusa_moletom', vr: 'tricolor', fases: ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés'] }
+];
+
+// Fases previstas para um destino. `vr: null` na regra vale para qualquer
+// variação daquele tipo. O SKU entra como segunda chance: quem escreve CM.REC
+// ou BM.TRICOLOR está dizendo o produto, mesmo que a pasta ainda não diga.
+function previsaoFases(tipoPeca, variacao, sku) {
+  const tp = _normNome(tipoPeca || ''), vr = _normNome(variacao || '');
+  let regra = PREVISAO_FASES.find(r => _normNome(r.tp) === tp && r.vr != null && _normNome(r.vr) === vr)
+           || PREVISAO_FASES.find(r => _normNome(r.tp) === tp && r.vr == null);
+  if (!regra) {
+    const s = String(sku || '').toUpperCase().replace(/\s+/g, '');
+    const porSku = [
+      [/^CM\.(REC|TRI)/, 'camiseta', 'tricolor'],
+      [/^CM\.BIC/,       'camiseta', 'bicolor'],
+      [/^CM\./,          'camiseta', 'basica'],
+      [/^PM\./,          'camiseta polo', null],
+      [/^BM\.(TRI|REC)/, 'blusa_moletom', 'tricolor'],
+      [/^BM\./,          'blusa_moletom', 'basica']
+    ].find(([re]) => re.test(s));
+    if (porSku) regra = PREVISAO_FASES.find(r => _normNome(r.tp) === _normNome(porSku[1])
+      && (porSku[2] == null ? r.vr == null : (r.vr != null && _normNome(r.vr) === _normNome(porSku[2]))));
+  }
+  return regra ? regra.fases.slice() : [];
+}
+
+// Blocos de "grade nova" a montar: um por assinatura de tamanhos. Entram os
+// riscos sem grade candidata E os que quem está importando mandou virar grade
+// nova mesmo havendo candidata (`forcarNova`) — a grade dos mesmos tamanhos pode
+// existir para outro produto, e é decisão de quem cadastra, não do programa.
 function _riscoGruposNovos() {
   const grupos = new Map();
   _riscoLeituras.forEach((L, i) => {
-    if (L.erro || (L.grades && L.grades.length)) return;
+    if (L.erro) return;
+    if (!L.forcarNova && L.grades && L.grades.length) return;
     if (!L.tamanhos || !Object.keys(L.tamanhos).length) return;
     const a = _riscoAssinatura(L.tamanhos);
     if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
@@ -16558,43 +16723,48 @@ function _riscoHtmlGradesNovas() {
         </div>
         <div class="field">
           <label>Tipo de peça (pasta) *</label>
-          <select id="rn-tipo-${gi}" data-prev="${esc(prod.tipoPeca || '')}" onchange="onSelectGradeFolder(this,'pasta')">
-            ${opcoesPastaGrade('pasta', prod.tipoPeca || '')}
+          <select id="rn-tipo-${gi}" data-prev="${esc(d.tipoPeca)}" onchange="riscoNovaMudouDestino(${gi}, this, 'pasta')">
+            ${opcoesPastaGrade('pasta', d.tipoPeca)}
           </select>
-          <div class="field-hint">É esta escolha que decide em qual <b>pasta</b> a grade vai aparecer — não o SKU.</div>
+          <div class="field-hint">Decide a <b>pasta</b> da grade — não o SKU — e a <b>previsão de fases</b> abaixo.</div>
         </div>
         <div class="field">
           <label>Variação (subpasta)</label>
-          <select id="rn-var-${gi}" data-prev="${esc(prod.variacao || '')}" onchange="onSelectGradeFolder(this,'subpasta')">
-            ${opcoesPastaGrade('subpasta', prod.variacao || '')}
+          <select id="rn-var-${gi}" data-prev="${esc(d.variacao)}" onchange="riscoNovaMudouDestino(${gi}, this, 'subpasta')">
+            ${opcoesPastaGrade('subpasta', d.variacao)}
           </select>
         </div>
         <div class="field">
           <label>Peças por pacote</label>
-          <input type="number" min="0" id="rn-pac-${gi}" value="${esc(prod.pecasPorPacote || '')}" placeholder="0">
+          <input type="number" min="0" id="rn-pac-${gi}" value="${esc(d.pecasPorPacote)}" placeholder="0">
         </div>
         <div class="field full">
           <label>Nome da grade</label>
-          <input type="text" id="rn-nome-${gi}" value="${esc(nomeTam + (skuSug ? ' | ' + skuSug : ''))}" readonly class="is-auto">
+          <input type="text" id="rn-nome-${gi}" value="${esc(nomeTam + (d.sku ? ' | ' + d.sku : ''))}" readonly class="is-auto">
           <div class="field-hint">Montado dos tamanhos do risco + o SKU. Os tamanhos vêm do PDF e não se digitam.</div>
         </div>
       </div>
-      <table class="table" style="font-size:12px;margin-top:8px;">
-        <thead><tr><th style="width:26px;">Fase</th><th>Nome da fase *</th><th>Tecido *</th><th>Unid.</th><th>Medida (risco + excedente do tecido)</th><th>Arquivo</th></tr></thead>
+      <div class="field-hint" style="margin:10px 0 4px;">
+        ${previstasTxt}
+        Fase <b>sem risco</b> nasce sem medida — entra depois, por outro PDF ou à mão. Dá para renomear, tirar e acrescentar.
+      </div>
+      <table class="table" style="font-size:12px;margin-top:4px;">
+        <thead><tr><th style="width:26px;">#</th><th>Nome da fase *</th><th>Tecido *</th><th>Unid.</th><th>Medida (risco + excedente do tecido)</th><th>Arquivo</th><th style="width:28px;"></th></tr></thead>
         <tbody>
-          ${fases.map((it, fi) => {
-            const L = it.L;
-            const kTec = _riscoChave(L);
+          ${d.fases.map((f, fi) => {
+            const L = f.iPdf != null && G.itens[f.iPdf] ? G.itens[f.iPdf].L : null;
+            const medida = L
+              ? `${esc((_riscoCompCadastro(L.comprimento, f.tecidoId) || 0).toFixed(2))} × ${esc((L.largura || 0).toFixed(3))}
+                 <div style="color:var(--ink-3);font-size:10px;">tecido no risco: ${esc(L.tecido || '—')}</div>`
+              : `<span style="color:var(--ink-3);">— sem risco —</span>`;
             return `<tr>
               <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${fi + 1}</td>
-              <td><input type="text" id="rn-f-nome-${gi}-${fi}" value="${esc(_riscoNomeFaseSugerido(L))}" placeholder="Ex.: Corpo Parte 1" style="font-size:12px;"></td>
-              <td><select id="rn-f-tec-${gi}-${fi}" style="font-size:12px;">${tecOpts(memTec[kTec] || '')}</select></td>
-              <td><input type="number" min="1" id="rn-f-un-${gi}-${fi}" value="2" style="width:56px;font-size:12px;"></td>
-              <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">
-                ${esc((_riscoCompCadastro(L.comprimento, memTec[kTec] || '') || 0).toFixed(2))} × ${esc((L.largura || 0).toFixed(3))}
-                <div style="color:var(--ink-3);font-size:10px;">tecido no risco: ${esc(L.tecido || '—')}</div>
-              </td>
-              <td style="font-size:10px;color:var(--ink-3);">${esc(L.arquivo)}</td>
+              <td><input type="text" id="rn-f-nome-${gi}-${fi}" value="${esc(f.nome)}" placeholder="Ex.: Corpo Parte 1" style="font-size:12px;"></td>
+              <td><select id="rn-f-tec-${gi}-${fi}" style="font-size:12px;">${tecOpts(f.tecidoId)}</select></td>
+              <td><input type="number" min="1" id="rn-f-un-${gi}-${fi}" value="${esc(f.unidades)}" style="width:56px;font-size:12px;"></td>
+              <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${medida}</td>
+              <td style="font-size:10px;color:var(--ink-3);">${L ? esc(L.arquivo) : ''}</td>
+              <td><button class="del" onclick="riscoNovaDelFase(${gi}, ${fi})" title="Tirar esta fase">✕</button></td>
             </tr>`;
           }).join('')}
         </tbody>
