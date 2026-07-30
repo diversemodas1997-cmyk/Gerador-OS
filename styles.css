@@ -957,6 +957,27 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; }
   .print-area { padding: 0; background: #fff; display: block; }
   /* Anula so a ampliacao de leitura da tela. */
   .sheet-scaler { zoom: 1; }
+  /* AS CORES DA FOLHA SAEM NO PAPEL. A caixa de impressao do Chrome vem com
+     "Graficos de segundo plano" DESMARCADO, e sem isto TODA cor de fundo da
+     folha some: as faixas verdes do cabecalho e do TOTAL POR TAMANHO, o amarelo
+     da DESCRICAO, da GRADE, do ENFESTOS e da ATENCAO, o realce do coordenador.
+     A folha ia para o chao em preto e branco, diferente do PDF gravado na pasta
+     (que e html2canvas e nunca passou por essa caixa). print-color-adjust:exact
+     manda o navegador NAO otimizar a cor, e ai a faixa sai marcada esteja o
+     quadradinho marcado ou nao. A folha do plano ja fazia isso, cada elemento
+     por sua conta; aqui vale para a folha de OS inteira, de uma vez. */
+  .sheet, .sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* CENTRALIZA a folha no papel. Quando o conteudo passa de 297mm, o
+     ajustarImpressaoParaA4 encolhe tudo pelo zoom do .sheet-scaler — e a folha
+     encolhida ficava encostada na borda ESQUERDA, com toda a sobra de papel
+     amontoada na direita (medido na OS 0452: 7,5mm de margem a esquerda contra
+     19,2mm a direita). O PDF da pasta sempre saiu centrado, porque quem encaixa
+     a foto na A4 la e o jsPDF. Com as margens automaticas as duas saidas ficam
+     com a mesma sobra dos dois lados. */
+  .sheet { margin-left: auto; margin-right: auto; }
   /* A geometria da .sheet NAO e redefinida aqui de proposito. 210x297mm
      com padding 8mm ja e a A4 exata — reescrever width/padding/min-height
      era justamente o que fazia o papel sair diferente da tela. */
