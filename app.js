@@ -6077,23 +6077,34 @@ async function moverPostoOperacoes(data, funcaoNome, dir) {
 // Os grupos em que a sobreposição É conflito, com a mesma regra usada tanto para
 // ACUSAR quanto para CORRIGIR — se as duas leituras divergissem, o botão de
 // corrigir deixaria selo aceso ou moveria o que não devia.
+// Quem executa a operação, na forma em que a comparação de sobreposição precisa.
+// É comparada pelo NOME cadastrado na Equipe (normalizado), não pelo id: é o nome
+// que o usuário enxerga, e a mesma pessoa às vezes aparece com id diferente
+// (cadastro repetido) ou só com o nome gravado na operação.
+function _opChavePessoa(op) {
+  return _normNome((op && op.responsavelNome) || '') || (op && op.responsavelId) || '';
+}
+
 function _opGruposSobreposicao(lista) {
   const grupos = new Map();
   (lista || []).forEach(op => {
     if (_opInicioMin(op) == null || !_opDuracao(op)) return;
-    // Operador de esteira de corte: máquina automática, a pessoa toca duas
-    // operações ao mesmo tempo — sobreposição aqui é normal, não conflito.
-    if (ehFuncaoOperadorEsteira(_opFuncaoNome(op))) return;
     // Cruzar jornadas é erro tanto no MESMO POSTO (função) quanto na MESMA
     // PESSOA (responsável) — a pessoa não pode estar em dois lugares ao mesmo
     // tempo, mesmo que os postos sejam diferentes. A chave inclui a DATA: o
     // horário é dentro do dia, então comparar dias diferentes acusaria
     // sobreposição onde não há (jornada longa na segunda e outra na terça).
-    const chaves = [op.data + '|F|' + (op.funcaoId || _opFuncaoNome(op))];
-    // A pessoa é comparada pelo NOME cadastrado na Equipe (normalizado), não pelo
-    // id: é o nome que o usuário enxerga, e a mesma pessoa às vezes aparece com
-    // id diferente (cadastro repetido) ou só com o nome gravado na operação.
-    const pessoa = _normNome(op.responsavelNome || '') || op.responsavelId || '';
+    const chaves = [];
+    // Operador de esteira de corte: a MÁQUINA é automática e roda várias frentes
+    // ao mesmo tempo, então duas operações no mesmo posto não são conflito. Só o
+    // POSTO fica de fora, nunca a PESSOA — quem carrega e acompanha o corte está
+    // ocupada durante ele, e antes esta exceção apagava a operação do agrupamento
+    // inteiro: a mesma pessoa cortando e enfestando às 08:20 não era acusada por
+    // ninguém, nem aqui nem no "Organizar o dia", que conta pela mesma função.
+    if (!ehFuncaoOperadorEsteira(_opFuncaoNome(op))) {
+      chaves.push(op.data + '|F|' + (op.funcaoId || _opFuncaoNome(op)));
+    }
+    const pessoa = _opChavePessoa(op);
     if (pessoa) chaves.push(op.data + '|P|' + pessoa);
     chaves.forEach(k => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(op); });
   });
@@ -6346,19 +6357,30 @@ function _medicoesEnfesto() {
 function _opTempoEnfestoPrevisto(os, fase) {
   const vazio = { min: 0, n: 0, escopo: '' };
   if (!os || !fase) return vazio;
-  const alvoNome = _normFaseNome(fase.nome);
-  if (!alvoNome) return vazio;
   const blocos = ((os.enfesto || {}).blocos) || [];
   const bloco = blocos.find(b => String(b.ordem) === String(fase.ordem)) || {};
   const camadas = parseInt(bloco.camadas, 10) || parseInt((os.enfesto || {}).camadas, 10) || 0;
   if (!(camadas > 0)) return vazio;
   const comp = parseFloat(fase.comp) || parseFloat(bloco.comp) || 0;
 
-  const daFase = _medicoesEnfesto().filter(m => _normFaseNome(m.faseNome) === alvoNome && m.os !== os.os);
+  const todas = _medicoesEnfesto().filter(m => m.os !== os.os);
+  const alvoNome = _normFaseNome(fase.nome);
+  const daFase = alvoNome ? todas.filter(m => _normFaseNome(m.faseNome) === alvoNome) : [];
+  // TEMPO DE RESERVA: fase que ainda não foi medida em OS nenhuma (o forro e a
+  // barra/punhos do tricolor, e qualquer fase nova) caía em zero. Um enfesto de
+  // zero minuto não é "sem informação", é uma mentira que o plano trata como
+  // verdade: ele encaixa no mesmo minuto do vizinho, não faz o relógio da
+  // corrente andar e a fase seguinte entra por cima. Sem medição DAQUELA fase,
+  // vale a taxa das OUTRAS fases já medidas, aplicada às camadas e ao
+  // comprimento desta — é grosso, mas é da mesma máquina e do mesmo pessoal, e
+  // some sozinho assim que a fase for cronometrada uma vez.
   const escopos = [
     { nome: 'desta grade', lista: daFase.filter(m => m.gradeId && m.gradeId === os.gradeId) },
     { nome: 'deste modelo', lista: daFase.filter(m => m.modeloId && m.modeloId === os.modeloId) },
-    { nome: 'de todas as OS', lista: daFase }
+    { nome: 'de todas as OS', lista: daFase },
+    { nome: 'estimado pelas outras fases desta grade', lista: todas.filter(m => m.gradeId && m.gradeId === os.gradeId), estimado: true },
+    { nome: 'estimado pelas outras fases deste modelo', lista: todas.filter(m => m.modeloId && m.modeloId === os.modeloId), estimado: true },
+    { nome: 'estimado pelas fases já medidas', lista: todas, estimado: true }
   ];
   for (const e of escopos) {
     if (!e.lista.length) continue;
@@ -6372,7 +6394,7 @@ function _opTempoEnfestoPrevisto(os, fase) {
     const taxa = taxas.reduce((s, x) => s + x, 0) / taxas.length;
     const bruto = taxa * camadas * (podeMetro ? comp : 1);
     if (!(bruto > 0)) continue;
-    return { min: Math.max(5, _opArredondar(bruto)), n: e.lista.length, escopo: e.nome };
+    return { min: Math.max(5, _opArredondar(bruto)), n: e.lista.length, escopo: e.nome, estimado: !!e.estimado };
   }
   return vazio;
 }
@@ -6619,7 +6641,12 @@ function _opDuracaoNecessaria(op) {
   // da OS não é de fase nenhuma e não há o que estimar.
   if (_opEhEnfesto(op)) {
     const fase = _opFasesDaOS(os).find(f => f.ordem === _opFaseDaOperacao(op));
-    return fase ? _opTempoEnfestoPrevisto(os, fase).min : 0;
+    if (!fase) return 0;
+    // Só o tempo MEDIDO daquela fase é piso. O tempo de reserva (estimado pelas
+    // outras fases) serve para o plano nascer com um número de pé, mas não pode
+    // esticar um enfesto que alguém já ajustou à mão: é chute, não medição.
+    const r = _opTempoEnfestoPrevisto(os, fase);
+    return r.estimado ? 0 : r.min;
   }
   const etapas = Array.isArray(op.etapas) ? op.etapas.slice() : (op.etapa ? [op.etapa] : []);
   const r = _opTempoMedidoParaOS(os, op.operacao, etapas, _opFuncaoNome(op));
@@ -7193,9 +7220,14 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
 // almoço das 11:30 empurraria a corrente inteira para as 13:00 e uma limpeza
 // marcada para as 17:00 esvaziaria a tarde toda — quando na verdade o serviço
 // cabe ANTES delas. Agora a fila se encaixa em volta da hora marcada.
-function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur) {
+// `chavePessoa` (opcional) inclui na conta o que a MESMA PESSOA já faz em OUTROS
+// postos. Sem ela, a busca enxergava só o posto: a enfestadeira ficava livre às
+// 08:20 e o próximo enfesto entrava ali, enquanto a pessoa daquele posto estava
+// no corte até 08:35. O posto estava vago; quem não estava era ela.
+function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
   const ocupadas = (STATE.operacoes || [])
-    .filter(o => o.data === data && o.funcaoId === funcaoId && _opInicioMin(o) != null && _opDuracao(o) > 0)
+    .filter(o => o.data === data && _opInicioMin(o) != null && _opDuracao(o) > 0
+      && (o.funcaoId === funcaoId || (chavePessoa && _opChavePessoa(o) === chavePessoa)))
     .map(o => ({ ini: _opInicioMin(o), fim: _opFimMin(o) }))
     .sort((a, b) => a.ini - b.ini);
   let t = _opArredondar(Math.max(piso == null ? _OP_JORNADA.ini : piso, _OP_JORNADA.ini));
@@ -7300,13 +7332,23 @@ function _opMontarCascataDoLote(data, os) {
     // nele. As de hora marcada ficam fora desta conta — elas são âncoras no meio
     // do dia, não o fim da fila —, e a colisão com elas é resolvida logo abaixo,
     // procurando o primeiro vago.
-    const fimDoPosto = doDia()
-      .filter(o => o.funcaoId === cad.funcaoId && _opInicioMin(o) != null && !_opHorarioDeRotina(o))
+    //
+    // E também depois do que a PESSOA daquele posto já faz em OUTROS postos. Uma
+    // pessoa só cobre vários postos aqui (a mesma opera a enfestadeira e a esteira
+    // de corte), e a conta olhava apenas o `funcaoId`: o enfesto da fase 2 nascia
+    // às 08:20 porque a enfestadeira estava livre, com a pessoa cortando o enfesto
+    // da fase 1 até 08:35. O plano nascia com a pessoa em dois lugares ao mesmo
+    // tempo — e, como a esteira ficava fora da checagem de conflito, ninguém
+    // acusava.
+    const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
+    const chavePessoa = pessoa ? _opChavePessoa({ responsavelNome: pessoa.nome, responsavelId: pessoa.id }) : '';
+    const ocupaAte = o => _opInicioMin(o) != null && !_opHorarioDeRotina(o)
+      && (o.funcaoId === cad.funcaoId || (chavePessoa && _opChavePessoa(o) === chavePessoa));
+    const fimDoPosto = doDia().filter(ocupaAte)
       .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
     const piso = Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
-    const ini = _opPrimeiroVagoNoPosto(data, cad.funcaoId, piso, duracaoMin);
+    const ini = _opPrimeiroVagoNoPosto(data, cad.funcaoId, piso, duracaoMin, chavePessoa);
     if (ini + duracaoMin > _OP_JORNADA.fim) { naoCoube.push({ passo, fase }); return null; }
-    const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
     const nova = {
       id: uid(), data,
       funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
@@ -7634,8 +7676,14 @@ function _opSugestaoPasso(data, lote, passo, fase) {
   }
   // HORÁRIO em que o posto realmente tem esse vão livre. Sem isto a sugestão
   // propunha 07:15 para um posto ocupado o dia inteiro, e incluir criava
-  // sobreposição na hora.
-  if (funcaoId) ini = _opPrimeiroVagoNoPosto(data, funcaoId, ini, duracaoMin);
+  // sobreposição na hora. Vale também o que a PESSOA do posto faz em outros
+  // postos, pela mesma razão da cascata: o vão tem que ser dela, não só dele.
+  if (funcaoId) {
+    const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+    const p = f ? _opResponsavelDoPosto(f.nome) : null;
+    const chaveP = p ? _opChavePessoa({ responsavelNome: p.nome, responsavelId: p.id }) : '';
+    ini = _opPrimeiroVagoNoPosto(data, funcaoId, ini, duracaoMin, chaveP);
+  }
   return {
     inicio: _opHHMM(ini),
     funcaoId,
