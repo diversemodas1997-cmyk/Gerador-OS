@@ -6931,7 +6931,7 @@ function _opDuracaoNecessaria(op) {
 // caberiam depois da meia-noite, que o campo de horário do dia não representa.
 function _opCorrigirOrdemDoDia(data, profundidade = 0) {
   const movidas = new Map(), travadas = new Set(), adiadas = new Map(), ampliadas = new Map();
-  const partidas = [];
+  const partidas = [], redefinidas = new Map();
   const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
   const destino = _opProximoDiaUtil(data);
   // Primeiro as pausas: elas são o esqueleto do dia (a fábrica inteira para
@@ -6989,6 +6989,27 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       // daquela fase — é ela que manda, para mais e para menos. Sem o "para
       // menos", uma fase curta ficava presa no mínimo cadastrado na função e
       // reservava horas que a fábrica não usa.
+      if (!nec) {
+        // Nada medido a exigir tempo. Para operação da corrente que NÃO é
+        // enfesto, quem diz a duração é o cadastro da função — é de lá que a
+        // cascata a copia. Divergindo, ela volta ao cadastro, para mais e para
+        // menos.
+        //
+        // É isto que desfaz o inchaço herdado: até o conserto de hoje, "Mover
+        // enfesto" recebia a soma do tempo de estender TODAS as fases (7h33 na
+        // BM.TRICOLOR), porque a regra perguntava se o NOME DA FUNÇÃO tinha
+        // "enfest" — e "Operador de enfestadeira" tem. A regra foi corrigida,
+        // mas o número já gravado ficava: o ajuste só sabia aumentar, e uma
+        // operação de 5 min inflada para 3h continuava entupindo o dia.
+        if (_opEhEnfesto(op) || !_opPassoSequencia(op)) return;
+        const cad = _tempoOperacaoCadastrada(op.funcaoId, op.operacao);
+        if (!(cad > 0) || cad === de) return;
+        op.duracaoMin = cad;
+        const r2 = redefinidas.get(op.id);
+        if (r2) r2.para = cad; else redefinidas.set(op.id, { op, de, para: cad });
+        mudou = true;
+        return;
+      }
       if (nec === de || (nec < de && !necess.exata)) return;
       op.duracaoMin = nec;
       const reg = ampliadas.get(op.id);
@@ -7010,7 +7031,12 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     const porLote = new Map();
     doDia.forEach(op => {
       const passo = _opPassoSequencia(op);
-      if (!passo || _opInicioMin(op) == null || !_opDuracao(op)) return;
+      // Operação de duração ZERO entra na fila mesmo assim. Ela era ignorada
+      // aqui, e no dia que recebe o transbordo — onde tudo chega às 07:15 — isso
+      // deixava um enfesto sem tempo apurado parado no primeiro minuto, com o
+      // resto da fase encadeado a partir de um enfesto que nunca aconteceu. Zero
+      // é falta de informação, não licença para sair da corrente.
+      if (!passo || _opInicioMin(op) == null) return;
       // Uma corrente por lote E POR FASE do enfesto: encadear as cinco fases do
       // tricolor numa fila só empurraria o enfesto da fase 5 para depois da
       // estocagem dos retalhos da fase 1, quando na verdade elas só disputam o
@@ -7173,6 +7199,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     travadas: Array.from(travadas),
     adiadas: Array.from(adiadas.values()),
     ampliadas: Array.from(ampliadas.values()),
+    redefinidas: Array.from(redefinidas.values()),
     partidas,
     pausas,
     destino
@@ -7255,6 +7282,7 @@ async function corrigirOrdemOperacoes(data) {
     + `O que não couber até ${_opHHMM(_OP_JORNADA.fim)} passa para ${formatDate(destinoPrev)}, junto com os passos seguintes do mesmo lote.\n`
     + 'Enfesto passa a durar a média já medida daquela fase na grade — para mais e para menos.\n'
     + 'Fase que nunca foi cronometrada usa o tempo cadastrado na função, que só corrige para mais.\n'
+    + 'Operação da corrente que NÃO é enfesto volta a durar o que está cadastrado na função — é o que desfaz duração inflada por engano. Duração digitada à mão não é tocada.\n'
     + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.\n'
     + 'Trabalho que entra numa hora marcada é PARTIDO em duas ("parte 1" e "parte 2"): faz o que dá antes, para, e retoma depois — em vez de ir inteiro para o fim da pausa.\n'
     + 'Nenhuma função fica com duas operações ao mesmo tempo.')) return;
@@ -7263,8 +7291,8 @@ async function corrigirOrdemOperacoes(data) {
   const _fx = _opAplicarHorariosFixosNoDia(data);
   const fixasNovas = _fx.criadas.concat(_fx.marcadas, _fx.atualizadas.map(a => a.op));
   const donosNovos = _opPreencherResponsaveisDoDia(data);
-  const { movidas, travadas, adiadas, ampliadas, partidas, pausas, destino } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length && !adiadas.length && !ampliadas.length && !partidas.length && !pausas.length
+  const { movidas, travadas, adiadas, ampliadas, redefinidas, partidas, pausas, destino } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length && !adiadas.length && !ampliadas.length && !redefinidas.length && !partidas.length && !pausas.length
       && !fixasNovas.length && !donosNovos.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   }
@@ -7275,6 +7303,7 @@ async function corrigirOrdemOperacoes(data) {
     + (_fx.criadas.length ? ` · ${_fx.criadas.length} de horário fixo incluída(s)` : '')
     + (_fx.atualizadas.length ? ` · ${_fx.atualizadas.length} acertada(s) pelo cadastro` : '')
     + (partidas.length ? ` · ${partidas.length} partida(s) em duas em volta da hora marcada` : '')
+    + (redefinidas.length ? ` · ${redefinidas.length} com a duração devolvida ao cadastro da função` : '')
     + (pausas.length ? ` · ${pausas.length} pausa(s) sincronizada(s)` : '')
     + (ampliadas.length ? ` · ${ampliadas.length} com a duração ajustada pela grade` : '')
     + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
