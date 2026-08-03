@@ -49,6 +49,8 @@ let _flushing = false;
 const _dirtyKeys = new Set();
 // Quantas ancoras do organizador foram convertidas na migracao do 📌 (log unico).
 let _opFixoMigradoAgora = null;
+// Quantos passos de corrente de OS tiveram o 📌 solto na migracao (log unico).
+let _opPinoLoteSoltoAgora = null;
 // BASE do merge de três vias: o valor de cada chave como o servidor tinha na
 // última vez que este dispositivo sincronizou. Comparando BASE × LOCAL sabe-se o
 // que ESTE dispositivo mudou de fato — e só isso sobe por cima do servidor.
@@ -1414,12 +1416,16 @@ async function loadState() {
       await saveState('operacoes');
       // O marcador da migração do 📌 mora em meta: sem gravar, ela rodaria de
       // novo na próxima abertura e desfaria um "horário fixo" recém-marcado.
-      if (_opFixoMigradoAgora != null) {
+      if (_opFixoMigradoAgora != null || _opPinoLoteSoltoAgora != null) {
         await saveState('meta');
         if (_opFixoMigradoAgora > 0) {
           console.info(`Operações: ${_opFixoMigradoAgora} âncora(s) do organizador deixaram de aparecer como "horário fixo do usuário".`);
         }
+        if (_opPinoLoteSoltoAgora > 0) {
+          console.info(`Operações: ${_opPinoLoteSoltoAgora} passo(s) de corrente de OS voltaram para a fila do posto (o 📌 vinha do cadastro da função, não do usuário).`);
+        }
         _opFixoMigradoAgora = null;
+        _opPinoLoteSoltoAgora = null;
       }
     }
   } catch (e) { console.warn('migrarOperacoesParaJornada', e); }
@@ -7068,6 +7074,15 @@ function _opAplicarHorariosFixosNoDia(data) {
       const jaLa = noDia.filter(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(nome));
       if (jaLa.length) {
         jaLa.forEach(x => {
+          // Operação da corrente de uma OS fica FORA de TUDO o que vem do
+          // cadastro — nem a hora, nem o 📌. A hora marcada é do DIA, não do
+          // lote: cadastrar "Enfesto" às 07:15 grudaria os cinco enfestos de um
+          // tricolor no mesmo minuto, e o pino travaria no lugar um passo cuja
+          // razão de ser é andar quando o passo anterior anda. É o mesmo motivo
+          // pelo qual a cascata nunca herda o horário fixo (ver `criar` em
+          // _opMontarCascataDoLote): o que atende à hora marcada é a operação
+          // independente criada aqui embaixo; a do lote só se encaixa em volta.
+          if (_opLotesDaOperacao(x).length) return;
           if (!x.inicioFixo) { x.inicioFixo = true; marcadas.push(x); }
           // O CADASTRO MANDA. Mudar "todo dia às" (ou o tempo) na função passa a
           // valer nos dias JÁ planejados, sem precisar alocar de novo nem apagar
@@ -7076,12 +7091,6 @@ function _opAplicarHorariosFixosNoDia(data) {
           // Quem tiver movido aquele dia à mão perde o ajuste — é o preço de o
           // cadastro ser a fonte única, e a agenda avisa quantas foram mexidas.
           if (!cabeNaJornada) return;
-          // Operação da corrente de uma OS fica FORA: a hora marcada é do DIA,
-          // não do lote. Sem esta guarda, cadastrar "Enfesto" às 07:15 grudaria
-          // os cinco enfestos de um tricolor no mesmo minuto — o mesmo motivo
-          // pelo qual a cascata nunca herda o horário fixo (ver `criar` em
-          // _opMontarCascataDoLote).
-          if (_opLotesDaOperacao(x).length) return;
           // Já executada é registro do que aconteceu: mudar o cadastro hoje não
           // reescreve a hora em que a limpeza de ontem foi de fato feita.
           if (_opStatus(x) === 'feita') return;
@@ -9209,6 +9218,31 @@ function migrarOperacoesParaJornada() {
     });
     STATE.meta.opFixoMigrado = _expIso(new Date());
     _opFixoMigradoAgora = convertidas;
+    mudou = true;
+  }
+  // MIGRAÇÃO ÚNICA: a rotina que leva o "todo dia às" do cadastro para o dia
+  // carimbava o 📌 em QUALQUER operação de mesmo nome que encontrasse — inclusive
+  // nos passos da corrente de uma OS. Um enfesto de fase ganhava pino de "hora
+  // travada" que ninguém travou, e o encadeamento do posto parava de reencaixá-lo
+  // quando o passo anterior andava: a corrente do lote ficava presa. A rotina não
+  // faz mais isso; aqui o que ela já carimbou é solto.
+  //
+  // Só solta o pino, sem virar `inicioAuto`: o passo do lote TEM que voltar para a
+  // fila do posto — segurar o horário por outro nome deixaria a corrente presa do
+  // mesmo jeito. O horário atual fica onde está até o próximo encaixe do dia.
+  // Uma âncora do organizador que a operação já tivesse (`inicioAuto`) é
+  // preservada — o dono daquela é outro.
+  if (!STATE.meta.opPinoLoteSolto) {
+    let soltos = 0;
+    lista.forEach(op => {
+      if (!op.inicioFixo) return;
+      if (!_opLotesDaOperacao(op).length) return;      // não é passo de corrente
+      if (!_opHoraFixaCadastrada(op)) return;          // o pino veio de outro lugar
+      op.inicioFixo = false;
+      soltos++;
+    });
+    STATE.meta.opPinoLoteSolto = _expIso(new Date());
+    _opPinoLoteSoltoAgora = soltos;
     mudou = true;
   }
   return mudou;
