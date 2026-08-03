@@ -2573,6 +2573,9 @@ function addFaseGradeRow(fase = {}) {
   const unidadesAtual = parseInt(fase.unidades) || 2;
   const unidadesOpts = [1, 2, 4, 6, 8, 10, 20].map(n =>
     `<option value="${n}" ${unidadesAtual === n ? 'selected' : ''}>${n}x</option>`).join('');
+  const enfMin = Math.max(0, Math.round(Number(fase.enfestoMin) || 0));
+  const enfH = enfMin ? (Math.floor(enfMin / 60) || '') : '';
+  const enfM = enfMin ? (enfMin % 60) : '';
   const div = document.createElement('div');
   div.className = 'fase-grade-bloco';
   div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
@@ -2588,6 +2591,16 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
+      <div class="field full">
+        <label>Tempo de enfesto desta fase</label>
+        <div class="fase-enf-tempo">
+          <input type="number" min="0" step="1" class="fase-enf-h" value="${enfH}" placeholder="0" title="Horas">
+          <span class="u">h</span>
+          <input type="number" min="0" max="59" step="5" class="fase-enf-m" value="${enfM}" placeholder="0" title="Minutos">
+          <span class="u">min</span>
+        </div>
+        <div class="field-hint">Quanto <b>esta fase</b> costuma levar para ser enfestada. É o número mais específico que existe: só perde para a <b>média já medida</b> desta mesma fase nesta grade, e ganha do tempo geral do posto e de qualquer estimativa. Em branco, o programa se vira com o que tem.</div>
+      </div>
       <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.<span class="fase-bobinas-sug"></span></div></div>
       <div class="field full" style="margin-top:2px;">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
@@ -3128,6 +3141,10 @@ async function salvarCadastro() {
         comp: b.querySelector('.fase-comp')?.value || '',
         larg: b.querySelector('.fase-larg')?.value || '',
         bobinas: pb == null ? '' : pb,
+        // Tempo de enfesto DESTA fase. É o número mais específico que o cadastro
+        // tem: um por pano, e não um só para o posto inteiro. 0 = não cadastrado.
+        enfestoMin: Math.max(0, parseInt(b.querySelector('.fase-enf-h')?.value, 10) || 0) * 60
+                  + Math.max(0, parseInt(b.querySelector('.fase-enf-m')?.value, 10) || 0),
         // Fase enfestada em OUTRO momento (gola, viés): entra no consumo e na
         // folha de OS como sempre, mas o planejamento do dia não monta a corrente
         // dela. Guardado como exceção — sem a marca, a fase entra, que é o que
@@ -6733,7 +6750,15 @@ function _opDuracaoEnfesto(os, fase, funcaoId, nomeOperacao) {
   // proporção. Vale como estimativa, logo abaixo, sujeita ao piso.
   if (prev.min > 0 && prev.proprio) return { min: prev.min, fonte: 'medido' };
 
-  // 2) O tempo CADASTRADO na função, que é um MÍNIMO — e um mínimo com tamanho.
+  // 2) O tempo cadastrado NA FASE DA GRADE. É o número mais específico que o
+  // cadastro tem — um por pano, e não um só para o posto inteiro —, então ele
+  // ganha do tempo da função e de qualquer estimativa. Só a medição daquela fase
+  // naquela grade fala mais alto, porque é fato e não previsão. É por aqui que
+  // gola e viés passam a ter tempo próprio.
+  const daFase = _opTempoEnfestoCadastradoNaFase(os, fase);
+  if (daFase > 0) return { min: daFase, fonte: 'cadastrado na fase' };
+
+  // 3) O tempo CADASTRADO na função, que é um MÍNIMO — e um mínimo com tamanho.
   // "1h20" foi cadastrado pensando numa grade de 8 m; usá-lo como piso de uma
   // grade de 4 m reservaria o dobro do que ela leva. Por isso ele só vale quando
   // o pano é de porte parecido com o de referência: acima da METADE dele. Abaixo
@@ -6749,12 +6774,26 @@ function _opDuracaoEnfesto(os, fase, funcaoId, nomeOperacao) {
     return prev.min > cad ? { min: prev.min, fonte: 'estimado' } : { min: cad, fonte: 'cadastrado' };
   }
 
-  // 3) GRADE CURTA (ou sem cadastro): a média dos enfestos já cronometrados
+  // 4) GRADE CURTA (ou sem cadastro): a média dos enfestos já cronometrados
   // DAQUELA grade. É a resposta ao fato de que os tempos de uma grade de 4 m são
   // outros — vêm da própria grade, não de uma regra de três com a de 8 m.
   const media = _opMediaEnfestoDaGrade(os);
   if (media > 0) return { min: media, fonte: 'média da grade' };
   return { min: prev.min, fonte: prev.min > 0 ? 'estimado' : '' };
+}
+
+// Tempo de enfesto cadastrado NAQUELA FASE da grade (0 quando não há). Vale o
+// cadastro da GRADE, não a cópia que a OS guardou ao ser emitida: OS antiga não
+// tem o campo, e ler dela faria o número só valer para OS nova.
+function _opTempoEnfestoCadastradoNaFase(os, fase) {
+  if (!os || !fase) return 0;
+  const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+  const f = (g && Array.isArray(g.fases))
+    ? g.fases.find(x => Number(x.ordem) === Number(fase.ordem)
+        || (fase.nome && _normFaseNome(x.nome) === _normFaseNome(fase.nome)))
+    : null;
+  const v = Math.max(0, Math.round(Number(f && f.enfestoMin) || 0));
+  return v > 0 ? v : Math.max(0, Math.round(Number(fase.enfestoMin) || 0));
 }
 
 // Comprimento do pano desta fase, em metros (0 quando não há medida cadastrada).

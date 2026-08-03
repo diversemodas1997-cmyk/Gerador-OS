@@ -1752,6 +1752,11 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .func-op-row .u.ref { display: none; }
 .func-op-row.com-ref .func-op-comp,
 .func-op-row.com-ref .u.ref { display: inline-block; }
+
+/* Tempo de enfesto de CADA fase, no cadastro da grade. */
+.fase-enf-tempo { display: flex; align-items: center; gap: 6px; }
+.fase-enf-tempo input { width: 72px; flex: 0 0 auto; }
+.fase-enf-tempo .u { font-size: 12px; color: var(--ink-3); }
 /* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
 .func-op-row .u.as {
   margin-left: 4px;
