@@ -16402,6 +16402,29 @@ function _riscoAprendidos() {
   if (!STATE.meta.riscoFases || typeof STATE.meta.riscoFases !== 'object') STATE.meta.riscoFases = {};
   return STATE.meta.riscoFases;
 }
+// Grava o vínculo "modelo|tecido → fase" só quando ele é INEQUÍVOCO no lote.
+// Num tricolor as três partes do corpo têm o mesmo modelo E o mesmo tecido: a
+// chave é UMA para três fases. Gravá-la assim mesmo era o que fazia a primeira
+// importação acertar e todas as seguintes errarem — a memória é consultada antes
+// da medida, então os três PDFs passavam a apontar para a mesma fase e as Partes
+// 2 e 3 nunca eram corrigidas, com o aviso final ainda dizendo "3 fases
+// atualizadas". Chave que apareceu com mais de uma fase é APAGADA: ela não tem
+// como estar certa, e deixá-la lá manteria a armadilha armada.
+function _riscoAprenderFases(pares) {
+  const mem = _riscoAprendidos();
+  const porChave = new Map();
+  (pares || []).forEach(p => {
+    if (!p || !p.chave || !p.fase) return;
+    if (!porChave.has(p.chave)) porChave.set(p.chave, new Set());
+    porChave.get(p.chave).add(p.fase);
+  });
+  porChave.forEach((nomes, chave) => {
+    if (nomes.size === 1) mem[chave] = Array.from(nomes)[0];
+    else delete mem[chave];
+  });
+  return mem;
+}
+
 function _riscoChave(leitura) {
   const m = _normNome(leitura.modelo), t = _normNome(leitura.tecido);
   return (m && t) ? (m + '|' + t) : '';
@@ -16566,14 +16589,52 @@ function _riscoGradesQueCasam(tamanhos) {
 
 const _riscoF = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
 
+// Palavras de um texto, já normalizadas e sem o que não distingue nada. Os
+// NÚMEROS ficam: é o número que separa "Corpo Parte 2" de "Corpo Parte 3", e era
+// justamente ele que se perdia — o filtro antigo exigia palavra com mais de dois
+// caracteres, então "1", "2" e "3" caíam fora e as três partes do corpo viravam
+// a mesma palavra, "corpo".
+const _RISCO_PALAVRA_VAZIA = new Set(['parte', 'pdf', 'de', 'da', 'do', 'dos', 'das', 'e']);
+function _riscoPalavras(txt) {
+  return _normNome(txt).split(/[^a-z0-9]+/i).filter(w => w && !_RISCO_PALAVRA_VAZIA.has(w));
+}
+
+// O nome do ARQUIVO aponta esta fase? Os relatórios saem do CAD nomeados com a
+// fase e o SKU ("CORPO 2 CM.TRI.pdf"), e é esse nome a única coisa que distingue
+// as três partes do corpo de um tricolor: modelo, tecido e largura são iguais nas
+// três, então nem a memória nem a medida conseguem separá-las.
+//
+// Casa quando TODA palavra da fase está no nome do arquivo — e, quando a fase tem
+// número, quando esse número está lá como palavra inteira. "Corpo Parte 2" exige
+// "corpo" e "2"; um SKU como "CM.TRI3" não vale como o 3, porque "tri3" é uma
+// palavra só.
+function _riscoCasaPeloNome(arquivo, faseNome) {
+  const fase = _riscoPalavras(faseNome);
+  if (!fase.length) return false;
+  const arq = _riscoPalavras(arquivo);
+  if (!arq.length) return false;
+  return fase.every(w => arq.includes(w));
+}
+
 // A que fase da grade este risco pertence, e por quê. A ordem das fontes é a
-// ordem da confiança: o que já foi ensinado, depois a medida, depois o nome.
+// ordem da confiança: o nome do arquivo quando ele isola UMA fase (foi o usuário
+// que nomeou, é o sinal mais explícito que existe), depois o que já foi ensinado,
+// depois a medida.
 function _riscoResolverFase(leitura, grade) {
   const fases = (grade.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
   if (!fases.length) return { fase: null, origem: 'sem fases', folga: null };
 
-  // 1) ENSINADO: o par (modelo do risco + código do tecido) já foi apontado uma
-  //    vez. Daí em diante não precisa de mais nada — nem do nome do arquivo.
+  // 1) NOME DO ARQUIVO, quando ele aponta UMA fase só. Vem antes de tudo: é a
+  //    forma direta de o usuário dizer de que fase é aquele PDF, e é o que faz os
+  //    três riscos de corpo do tricolor cadastrarem as três partes. Casando mais
+  //    de uma fase (ou nenhuma), o nome não decide e a vez é das fontes abaixo.
+  const porNome = fases.filter(f => _riscoCasaPeloNome(leitura.arquivo, f.nome));
+  if (porNome.length === 1) {
+    return { fase: porNome[0], origem: 'nome do arquivo', folga: null };
+  }
+
+  // 2) ENSINADO: o par (modelo do risco + código do tecido) já foi apontado uma
+  //    vez. Daí em diante não precisa de mais nada.
   const chave = _riscoChave(leitura);
   const memoria = _riscoAprendidos();
   if (chave && memoria[chave]) {
@@ -16586,7 +16647,7 @@ function _riscoResolverFase(leitura, grade) {
     }
   }
 
-  // 2) MEDIDA: largura dá a família do tecido; dentro dela, o comprimento mais
+  // 3) MEDIDA: largura dá a família do tecido; dentro dela, o comprimento mais
   //    próximo dá a fase. Só vale quando a fase já tem medida cadastrada.
   const mesmaLarg = fases.filter(f => {
     const l = _riscoF(f.larg);
@@ -16607,17 +16668,19 @@ function _riscoResolverFase(leitura, grade) {
     if (!apertada) return { fase: ord[0].f, origem: 'medida', folga, dist: ord[0].d };
   }
 
-  // 3) NOME DO ARQUIVO: último recurso. Casa por palavra inteira da fase.
-  const a = _normNome(leitura.arquivo);
-  let melhor = null, pontos = 0;
-  fases.forEach(f => {
-    const palavras = _normNome(f.nome).split(/\s+/).filter(w => w.length > 2 && w !== 'parte');
-    const p = palavras.filter(w => a.includes(w)).length;
-    if (p > pontos) { pontos = p; melhor = f; }
-  });
-  if (melhor) return { fase: melhor, origem: 'nome do arquivo', folga: null };
+  // 4) NOME DO ARQUIVO por semelhança parcial: o passo 1 exige que o nome case
+  //    inteiro; aqui basta a fase que mais palavras compartilha. EMPATE NÃO
+  //    DECIDE — antes o primeiro da lista vencia calado, e era assim que os três
+  //    "Corpo Parte N" (todos com a mesma única palavra "corpo") caíam na Parte 1.
+  const arq = _riscoPalavras(leitura.arquivo);
+  const placar = fases.map(f => ({ f, p: _riscoPalavras(f.nome).filter(w => arq.includes(w)).length }))
+    .filter(x => x.p > 0)
+    .sort((a, b) => b.p - a.p);
+  if (placar.length === 1 || (placar.length > 1 && placar[0].p > placar[1].p)) {
+    return { fase: placar[0].f, origem: 'nome do arquivo', folga: null };
+  }
 
-  // 4) fases sem medida ainda: sobra a largura sozinha, se ela isolar uma.
+  // 5) fases sem medida ainda: sobra a largura sozinha, se ela isolar uma.
   if (mesmaLarg.length === 1) return { fase: mesmaLarg[0], origem: 'largura', folga: null };
   return { fase: null, origem: 'indefinida', folga: null };
 }
@@ -17020,16 +17083,16 @@ async function criarGradeDoRisco(gi) {
   STATE.grades.push(nova);
   // APRENDE: o produto e, por fase, o código do tecido. A próxima grade deste
   // mesmo produto já vem com tudo preenchido.
-  const produtos = _riscoProdutos(), memFase = _riscoAprendidos(), memTec = _riscoTecidos();
+  const produtos = _riscoProdutos(), memTec = _riscoTecidos();
   const modeloKey = _normNome(G.itens[0].L.modelo || '');
   if (modeloKey) {
     produtos[modeloKey] = { sku, tipoPeca: nova.tipoPeca, variacao: nova.variacao, pecasPorPacote: nova.pecasPorPacote };
   }
+  _riscoAprenderFases(linhas.filter(x => x.L).map(x => ({ chave: _riscoChave(x.L), fase: x.nome })));
   linhas.forEach(x => {
     if (!x.L) return;                 // fase sem risco não ensina nada
     const k = _riscoChave(x.L);
     if (!k) return;
-    memFase[k] = x.nome;
     if (x.tecidoId) memTec[k] = x.tecidoId;
   });
   await saveState('grades');
@@ -17221,21 +17284,35 @@ async function aplicarRiscoNasGrades() {
   const alvo = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
   if (!alvo.length) return toast('Nada marcado para aplicar', 'err');
   const mudancas = alvo.map(L =>
-    `${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`);
+    `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`);
+  // DOIS RISCOS NA MESMA FASE é sempre erro: cada PDF é uma fase, e um grava por
+  // cima do outro sem deixar rastro. Era o que acontecia com os três "Corpo Parte
+  // N" do tricolor, e o aviso final ainda dizia que três fases tinham mudado.
+  const porFase = new Map();
+  alvo.forEach(L => {
+    const k = L.grade.id + '|' + L.res.fase.nome;
+    porFase.set(k, (porFase.get(k) || []).concat(L.arquivo));
+  });
+  const repetidas = Array.from(porFase.entries()).filter(([, arqs]) => arqs.length > 1);
+  if (repetidas.length && !confirm(
+    `ATENÇÃO: ${repetidas.length} fase(s) receberiam mais de um risco, e só o último valeria:\n\n`
+    + repetidas.map(([k, arqs]) => `· ${k.split('|')[1]} ← ${arqs.join(', ')}`).join('\n')
+    + '\n\nO certo é um PDF por fase. Continuar assim mesmo?')) return;
   if (!confirm(`Aplicar ${alvo.length} medida(s) no cadastro das grades?\n\n${mudancas.join('\n')}\n\n`
     + 'O programa também vai guardar a que fase corresponde cada código de tecido, para reconhecer sozinho na próxima vez.')) return;
 
-  const memoria = _riscoAprendidos();
-  let n = 0;
+  const tocadas = new Set();
   alvo.forEach(L => {
     const f = (L.grade.fases || []).find(x => x.nome === L.res.fase.nome);
     if (!f) return;
     f.comp = _riscoCompCadastro(L.comprimento, f.tecidoId).toFixed(2);   // + o excedente do TECIDO da fase
     f.larg = L.largura.toFixed(3);                            // largura vai como veio
-    const k = _riscoChave(L);
-    if (k) memoria[k] = f.nome;
-    n++;
+    tocadas.add(L.grade.id + '|' + f.nome);
   });
+  // Conta FASES DISTINTAS, não PDFs: três riscos na mesma fase mudaram uma fase,
+  // e dizer "3 atualizadas" foi o que escondeu este defeito todo esse tempo.
+  const n = tocadas.size;
+  const memoria = _riscoAprenderFases(alvo.map(L => ({ chave: _riscoChave(L), fase: L.res.fase.nome })));
   // Campo legado da grade (espelho da 1ª fase), para não ficar divergindo.
   new Set(alvo.map(L => L.grade)).forEach(g => {
     const f1 = (g.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))[0];
@@ -17698,7 +17775,7 @@ async function pastaSalvarPasso() {
   if (!linhas.length) return toast('Nenhum risco marcado — use "Pular esta grade"', 'err');
 
   const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
-  const memProd = _riscoProdutos(), memFase = _riscoAprendidos(),
+  const memProd = _riscoProdutos(),
         memTec = _riscoTecidos(), memBob = _riscoBobinasMem();
   const bob = s => { const n = parseBobinas(s); return n == null ? '' : n; };
 
@@ -17780,11 +17857,11 @@ async function pastaSalvarPasso() {
       pecasPorPacote: parseInt(G.draft.pecasPorPacote, 10) || 0
     };
   }
+  const nomeFinalDe = x => (x.d.alvo === '__nova__' || !grade ? x.d.nome : x.d.alvo);
+  _riscoAprenderFases(linhas.map(x => ({ chave: _riscoChave(x.L), fase: nomeFinalDe(x) })));
   linhas.forEach(x => {
     const k = _riscoChave(x.L);
     if (!k) return;
-    const nomeFinal = x.d.alvo === '__nova__' || !grade ? x.d.nome : x.d.alvo;
-    if (nomeFinal) memFase[k] = nomeFinal;
     if (x.d.tecidoId) memTec[k] = x.d.tecidoId;
     if (x.d.bobinas !== '') memBob[k] = bob(x.d.bobinas);
   });
