@@ -8,6 +8,59 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
+- **CÓDIGO:** tag `restore-2026-08-03-l` (cache-buster `app.js ?v=2026-08-03l`,
+  `styles.css ?v=2026-08-03d`). O que mudou desde o `restore-2026-07-30-k` — 13
+  commits, quase todos no **planejamento de operações** e no **tempo de
+  enfesto**:
+  - **Horário fixo:** mudar o "todo dia às" no cadastro da função passa a valer
+    nos dias JÁ planejados (antes só nascia com a operação); o passo da corrente
+    de uma OS deixou de levar o 📌, que o travava no lugar.
+  - **Agenda pela PESSOA, não só pelo posto:** a cascata perguntava só até quando
+    o POSTO estava ocupado, e uma pessoa cobre vários postos aqui — o enfesto da
+    fase 2 nascia às 08:20 com a mesma pessoa cortando até 08:35. A exceção da
+    esteira também apagava a operação da checagem de conflito da PESSOA.
+  - **Tempo de enfesto** ganhou uma cadeia de fontes: (1) média medida daquela
+    fase NAQUELA grade — manda para mais e para menos; (2) tempo cadastrado **na
+    fase da grade** (campo novo); (3) tempo cadastrado **na função**, agora
+    editável e com o **comprimento de referência** ("1h20 para grade de 8 m"),
+    valendo como piso só em grade de porte parecido; (4) média da grade, em grade
+    curta; (5) estimativa por comprimento. O campo do Enfesto era travado na tela
+    e zerado ao salvar.
+  - **"Mover enfesto" inflado:** recebia a soma do tempo de estender TODAS as
+    fases (7h33 na BM.TRICOLOR) porque a regra olhava o nome da FUNÇÃO
+    ("Operador de enfestadeira" casa com /enfest/). Corrigido, e o "Organizar o
+    dia" agora **devolve ao cadastro** a duração já inflada.
+  - **Fase fora do plano:** cada fase da grade pode ser marcada como "produzida
+    em outro momento" (gola e viés), e o dia deixa de montar a corrente dela.
+  - **Operação partida:** trabalho que entra numa hora marcada é dividido em
+    "parte 1" e "parte 2" em vez de ir inteiro para depois da pausa.
+  - **Nome da operação** passa a trazer a fase e a OS: `Enfesto · Corpo 1 · OS 453`.
+  - **Retirar OS:** a janela mostra as OS alocadas em lista (era um seletor que
+    escondia tudo) e aceita **marcar várias** de uma vez.
+  - **Importar risco:** o **nome do arquivo** passa a identificar a fase — os três
+    PDFs de corpo de um tricolor cadastravam uma fase só, porque a memória
+    "modelo|tecido" é a mesma nas três.
+  - Cópia do código deste ponto em
+    `backups-codigo/*.20260803l-operacoes-enfesto.CÓPIA`.
+- **DADOS:** ⚠️ **pendente** — a exportação mais recente continua sendo a de
+  **30/07/2026 17:23** (`backups/BACKUP-COMPLETO-2026-07-30T20-23-43.json`).
+  O backup dos dados **não sai daqui**: a linha `shared_data` do Supabase só é
+  legível por usuário autenticado (o `anon` é bloqueado pela RLS), então quem o
+  gera é o app, logado.
+
+  > Fazer agora: app → **Configurações → Exportar JSON (backup completo)** →
+  > salvar em `backups/` e copiar para `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+  > Depois, trocar esta linha pelo nome do arquivo, a data e a contagem
+  > (OS, grades, desenhos, operações, cargas, tecidos, cores).
+
+  Desde 30/07 mudou muita coisa de CADASTRO que só existe nos dados — tempo de
+  enfesto por fase da grade, o "para grade de 8 m" no posto, as fases marcadas
+  como "produzida em outro momento" — e nada disso está no backup de 30/07.
+- **SUPABASE:** sem mudança de infraestrutura neste ponto (mesmas tabelas e
+  políticas da seção 3).
+
+### Ponto anterior a este
+
 - **CÓDIGO:** tag `restore-2026-07-30-k` (cache-buster `app.js ?v=2026-07-30k`,
   `styles.css ?v=2026-07-30d`). O que mudou desde o `restore-2026-07-28-aq`:
   - **Impressão:** a folha de OE volta a ter margem no papel, e a de OS sai com
