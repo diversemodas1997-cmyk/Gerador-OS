@@ -1793,7 +1793,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 .desaloc-row:last-child { border-bottom: 0; }
 .desaloc-row:hover { background: var(--bg); }
-.desaloc-row input[type="radio"] { width: auto; margin: 0; }
+.desaloc-row input[type="checkbox"] { width: auto; margin: 0; }
+.desaloc-acoes { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .desaloc-row .os { font-size: 13px; font-weight: 600; }
 .desaloc-row .os .mod { font-weight: 400; color: var(--ink-3); }
 .desaloc-row .qtd { font-size: 11px; color: var(--ink-3); text-align: right; white-space: nowrap; }

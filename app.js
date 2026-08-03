@@ -6300,6 +6300,46 @@ function _opNomeExibido(op) {
   return jaTem ? nome : `${nome} OS ${lotes.join('/')}`;
 }
 
+/* ---------------- operação partida em volta de uma hora marcada ---------------- */
+
+// Tempo mínimo de cada pedaço. Partir um enfesto em 4 min antes do café não
+// ajuda ninguém: vira duas linhas na agenda para o mesmo trabalho.
+const _OP_PARTE_MIN = 10;
+
+// O nome sem o sufixo " parte N". É por ele que as partes se reconhecem como
+// pedaços do MESMO trabalho, e é o que permite renumerar sem acumular sufixo
+// ("Enfesto parte 2 parte 1").
+function _opNomeBase(nome) {
+  return String(nome || '').replace(/\s+parte\s*\d+\s*$/i, '').trim();
+}
+
+// A que trabalho um pedaço pertence: mesmo posto, mesmo nome-base, mesmo lote e
+// mesma fase do enfesto. Dois enfestos de FASES diferentes do mesmo lote não são
+// partes um do outro — são panos diferentes.
+function _opChaveParte(op) {
+  return [op.funcaoId, _normNome(_opNomeBase(op.operacao)),
+    _opLotesDaOperacao(op).join(','), _opFaseDaOperacao(op)].join('|');
+}
+
+// Renumera os pedaços de um trabalho pela ORDEM DO RELÓGIO: "parte 1" é o que
+// começa antes. Sobrando um só, o sufixo cai e o nome volta ao original — é o que
+// mantém a agenda honesta quando um pedaço é apagado ou passa para outro dia.
+function _opRenumerarPartes(data, ref) {
+  const chave = _opChaveParte(ref);
+  const base = _opNomeBase(ref.operacao);
+  const grupo = (STATE.operacoes || [])
+    .filter(o => o.data === data && _opChaveParte(o) === chave)
+    .sort((a, b) => {
+      const ia = _opInicioMin(a), ib = _opInicioMin(b);
+      return (ia == null ? 1e9 : ia) - (ib == null ? 1e9 : ib);
+    });
+  grupo.forEach((o, i) => {
+    o.operacao = grupo.length > 1 ? `${base} parte ${i + 1}` : base;
+    if (grupo.length > 1) o.partida = true; else delete o.partida;
+  });
+  return grupo;
+}
+
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
 function _opPassoSequencia(op) {
   const n = _normNome(op && op.operacao);
@@ -6865,6 +6905,7 @@ function _opDuracaoNecessaria(op) {
 // caberiam depois da meia-noite, que o campo de horário do dia não representa.
 function _opCorrigirOrdemDoDia(data, profundidade = 0) {
   const movidas = new Map(), travadas = new Set(), adiadas = new Map(), ampliadas = new Map();
+  const partidas = [];
   const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
   const destino = _opProximoDiaUtil(data);
   // Primeiro as pausas: elas são o esqueleto do dia (a fábrica inteira para
@@ -6906,6 +6947,11 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       // devolvia a medição a cada "Organizar o dia", desfazendo a correção
       // manual tantas vezes quantas o botão fosse clicado.
       if (op.duracaoManual) return;
+      // PEDAÇO de uma operação partida também não: o tempo necessário é do
+      // trabalho inteiro, e devolvê-lo a cada metade desfaria o corte na passada
+      // seguinte — as duas voltariam a durar o total e a invadir a hora marcada
+      // de novo.
+      if (op.partida) return;
       // A média medida cai em qualquer minuto (1h27). Sobe para a marca de 5
       // seguinte: nunca menos que o necessário, e o fim da operação também cai
       // numa hora redonda para a próxima encaixar.
@@ -6990,6 +7036,39 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     // limpeza), quem sai da frente é a de cima: ela recomeça depois da rotina,
     // que não se mexe. Era a última incoerência que ficava só apontada; agora o
     // programa a resolve, como o resto.
+    // A operação de trabalho que ENTRA numa hora marcada é PARTIDA em duas, em
+    // vez de empurrada inteira para depois dela. Um enfesto de 3h que começa
+    // 11:00 fazia 11:00→12:00 virar tempo perdido: ele ia inteiro para as 13:00 e
+    // a manhã acabava vazia. Agora ele trabalha até o almoço, para, e retoma
+    // depois — que é o que a fábrica faz de verdade.
+    // Devolve se partiu.
+    const partir = (op, fixa) => {
+      if (_opHorarioDeRotina(op) || op.partida === 'nao') return false;
+      if (_opStatus(op) === 'feita') return false;   // já aconteceu; não se reescreve
+      const ini = _opInicioMin(op), dur = _opDuracao(op);
+      const f1 = _opInicioMin(fixa), f2 = _opFimMin(fixa);
+      if (ini == null || !dur || f1 == null || f2 == null) return false;
+      // Só o caso de INVADIR: começa antes da hora marcada e entra nela.
+      if (!(ini < f1 && ini + dur > f1)) return false;
+      const d1 = f1 - ini, d2 = dur - d1;
+      // Pedaço curto demais não vale a linha a mais na agenda.
+      if (d1 < _OP_PARTE_MIN || d2 < _OP_PARTE_MIN) return false;
+      // A segunda metade tem que caber HOJE; senão o certo é o caminho de sempre
+      // (empurrar e, não cabendo, adiar o trabalho inteiro).
+      if (f2 + d2 > _OP_JORNADA.fim) return false;
+      const nova = Object.assign({}, op, {
+        id: uid(), inicio: hhmm(f2), duracaoMin: d2,
+        inicioAuto: true, inicioFixo: false, status: 'pendente'
+      });
+      delete nova.ordem;            // entra pela hora; a reordenação do posto cuida
+      op.duracaoMin = d1;
+      op.inicioAuto = true;
+      STATE.operacoes.push(nova);
+      // Os nomes saem daqui: "Enfesto parte 1" e "Enfesto parte 2", pelo relógio.
+      _opRenumerarPartes(data, op);
+      partidas.push({ op, nova, fixa, de: dur, em: `${hhmm(f1)}–${hhmm(f2)}` });
+      return true;
+    };
     _opGruposSobreposicao(doDia).forEach((arr, chave) => {
       if (chave.indexOf('|F|') < 0) return;
       const lista = arr.slice().sort((a, b) => _opInicioMin(a) - _opInicioMin(b));
@@ -6997,6 +7076,9 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         const ant = lista[i - 1], cur = lista[i];
         if (_opInicioMin(cur) >= _opFimMin(ant)) continue;
         if (empurrar(cur, _opFimMin(ant))) { mudou = true; continue; }
+        // `cur` é hora marcada (por isso `empurrar` recusou): tenta partir a de
+        // cima em volta dela antes de jogá-la toda para depois.
+        if ((_opHorarioDeRotina(cur) || cur.inicioFixo) && partir(ant, cur)) { mudou = true; continue; }
         if (empurrar(ant, _opFimMin(cur))) mudou = true;
       }
     });
@@ -7065,6 +7147,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
     travadas: Array.from(travadas),
     adiadas: Array.from(adiadas.values()),
     ampliadas: Array.from(ampliadas.values()),
+    partidas,
     pausas,
     destino
   };
@@ -7147,14 +7230,15 @@ async function corrigirOrdemOperacoes(data) {
     + 'Enfesto passa a durar a média já medida daquela fase na grade — para mais e para menos.\n'
     + 'Fase que nunca foi cronometrada usa o tempo cadastrado na função, que só corrige para mais.\n'
     + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.\n'
+    + 'Trabalho que entra numa hora marcada é PARTIDO em duas ("parte 1" e "parte 2"): faz o que dá antes, para, e retoma depois — em vez de ir inteiro para o fim da pausa.\n'
     + 'Nenhuma função fica com duas operações ao mesmo tempo.')) return;
   // A rotina de hora marcada entra ANTES do ajuste: ela é âncora, e o resto do
   // dia é que se encaixa em volta dela.
   const _fx = _opAplicarHorariosFixosNoDia(data);
   const fixasNovas = _fx.criadas.concat(_fx.marcadas, _fx.atualizadas.map(a => a.op));
   const donosNovos = _opPreencherResponsaveisDoDia(data);
-  const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
-  if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length
+  const { movidas, travadas, adiadas, ampliadas, partidas, pausas, destino } = _opCorrigirOrdemDoDia(data);
+  if (!movidas.length && !adiadas.length && !ampliadas.length && !partidas.length && !pausas.length
       && !fixasNovas.length && !donosNovos.length) {
     return toast('Nada a mover: os conflitos não se resolvem empurrando para frente', 'err');
   }
@@ -7164,6 +7248,7 @@ async function corrigirOrdemOperacoes(data) {
     + (donosNovos.length ? ` · ${donosNovos.length} com o responsável do posto` : '')
     + (_fx.criadas.length ? ` · ${_fx.criadas.length} de horário fixo incluída(s)` : '')
     + (_fx.atualizadas.length ? ` · ${_fx.atualizadas.length} acertada(s) pelo cadastro` : '')
+    + (partidas.length ? ` · ${partidas.length} partida(s) em duas em volta da hora marcada` : '')
     + (pausas.length ? ` · ${pausas.length} pausa(s) sincronizada(s)` : '')
     + (ampliadas.length ? ` · ${ampliadas.length} com a duração ajustada pela grade` : '')
     + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
@@ -7732,9 +7817,9 @@ function abrirModalDesalocarOS(data) {
     })
     .sort((a, b) => (b.e.noDia > 0) - (a.e.noDia > 0)
       || String(b.lote).localeCompare(String(a.lote), undefined, { numeric: true }));
-  // Mantém a OS que já estava escolhida quando o usuário só troca o dia — trocar
-  // a data redesenha o modal inteiro, e perder a seleção obrigava a achá-la de novo.
-  const marcado = _opDesalocLoteEscolhido();
+  // Mantém as OS já escolhidas quando o usuário só troca o dia — trocar a data
+  // redesenha o modal inteiro, e perder a seleção obrigava a achá-las de novo.
+  const marcados = new Set(_opDesalocLotesEscolhidos());
   const noDia = linhas.filter(l => l.e.noDia).length;
   document.getElementById('modal-desaloc-title').textContent = 'Retirar OS do planejamento';
   document.getElementById('modal-desaloc-fields').innerHTML = `
@@ -7750,10 +7835,15 @@ function abrirModalDesalocarOS(data) {
       </div>
       <div class="field full">
         <label>OS alocadas no plano de operações *</label>
+        <div class="desaloc-acoes no-print">
+          <button type="button" class="btn small" onclick="_opDesalocMarcarTodas(true)">Marcar todas</button>
+          <button type="button" class="btn small ghost" onclick="_opDesalocMarcarTodas(false)">Limpar</button>
+          ${noDia && noDia < linhas.length ? `<button type="button" class="btn small" onclick="_opDesalocMarcarTodas(true, true)">Só as de ${esc(formatDate(dia))}</button>` : ''}
+        </div>
         <div class="desaloc-lista">
           ${linhas.map(l => `
             <label class="desaloc-row${l.e.noDia ? '' : ' fora'}">
-              <input type="radio" name="desaloc-os" value="${esc(l.lote)}" ${l.lote === marcado ? 'checked' : ''} onchange="_opDesalocResumo()">
+              <input type="checkbox" name="desaloc-os" value="${esc(l.lote)}" data-nodia="${l.e.noDia}" ${marcados.has(l.lote) ? 'checked' : ''} onchange="_opDesalocResumo()">
               <div class="os">OS ${esc(l.rot)}${l.mod ? ` <span class="mod">· ${esc(l.mod)}</span>` : ''}</div>
               <div class="qtd">${l.e.noDia
                   ? `<b>${l.e.noDia}</b> operação(ões) em ${esc(formatDate(dia))}`
@@ -7763,28 +7853,51 @@ function abrirModalDesalocarOS(data) {
         <div class="field-hint">${linhas.length} OS no plano${noDia < linhas.length ? ` · ${noDia} com operação em ${esc(formatDate(dia))}; as apagadas só saem no alcance «todos os dias»` : ''}. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
       </div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;" id="desaloc-resumo">Escolha a OS para ver quantas operações serão retiradas.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="desaloc-resumo">Marque uma ou mais OS para ver quantas operações serão retiradas.</div>`;
   openModal('modal-desaloc-os');
   _opDesalocResumo();
 }
 
-// A OS marcada na lista. Antes era um <select>: quem abria a janela para saber o
-// que estava alocado só via a linha escolhida, e tinha de abrir o dropdown para
-// ver o resto. Agora a lista fica à vista e a escolha é o rádio da linha.
-function _opDesalocLoteEscolhido() {
-  return document.querySelector('input[name="desaloc-os"]:checked')?.value || '';
+// As OS marcadas na lista. Antes era um <select> de escolha única: quem abria a
+// janela para saber o que estava alocado só via a linha escolhida, e retirar três
+// OS do dia era abrir a janela três vezes. Agora a lista fica à vista e cada
+// linha tem a sua caixa.
+function _opDesalocLotesEscolhidos() {
+  return Array.from(document.querySelectorAll('input[name="desaloc-os"]:checked')).map(el => el.value);
+}
+
+// Marca ou desmarca a lista inteira. `soDoDia` restringe às que têm operação no
+// dia escolhido — é o caso comum: limpar o dia sem tocar no resto do plano.
+function _opDesalocMarcarTodas(marcar, soDoDia) {
+  document.querySelectorAll('input[name="desaloc-os"]').forEach(el => {
+    if (marcar && soDoDia && !(parseInt(el.dataset.nodia, 10) > 0)) { el.checked = false; return; }
+    el.checked = !!marcar;
+  });
+  _opDesalocResumo();
+}
+
+// As operações de VÁRIAS OS, sem repetir: uma operação cuja referência cita dois
+// lotes sairia duas vezes na conta se cada um fosse somado por fora.
+function _opOperacoesDosLotes(lotes, data) {
+  const vistos = new Set(), saida = [];
+  (lotes || []).forEach(l => _opOperacoesDoLote(l, data).forEach(o => {
+    if (vistos.has(o.id)) return;
+    vistos.add(o.id);
+    saida.push(o);
+  }));
+  return saida;
 }
 
 // Resumo do que vai sair, atualizado a cada escolha do modal.
 function _opDesalocResumo() {
   const box = document.getElementById('desaloc-resumo');
   if (!box) return;
-  const lote = _opDesalocLoteEscolhido();
+  const lotes = _opDesalocLotesEscolhidos();
   const data = document.getElementById('desaloc-data')?.value || '';
   const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
-  if (!lote) { box.textContent = 'Escolha a OS para ver quantas operações serão retiradas.'; return; }
-  const alvo = _opOperacoesDoLote(lote, escopo === 'dia' ? data : '');
-  if (!alvo.length) { box.innerHTML = '<b>Nenhuma operação</b> desta OS neste alcance.'; return; }
+  if (!lotes.length) { box.textContent = 'Marque uma ou mais OS para ver quantas operações serão retiradas.'; return; }
+  const alvo = _opOperacoesDosLotes(lotes, escopo === 'dia' ? data : '');
+  if (!alvo.length) { box.innerHTML = `<b>Nenhuma operação</b> ${lotes.length === 1 ? 'desta OS' : 'destas OS'} neste alcance.`; return; }
   const porDia = new Map();
   const postos = new Set();
   alvo.forEach(o => {
@@ -7792,22 +7905,23 @@ function _opDesalocResumo() {
     postos.add(_opFuncaoNome(o));
   });
   const feitas = alvo.filter(o => _opStatus(o) === 'feita').length;
-  box.innerHTML = `Serão retiradas <b>${alvo.length}</b> operação(ões) da OS <b>${esc(lote)}</b>, em ${postos.size} posto(s):<br>`
+  box.innerHTML = `Serão retiradas <b>${alvo.length}</b> operação(ões) de <b>${lotes.length}</b> OS (${esc(lotes.join(', '))}), em ${postos.size} posto(s):<br>`
     + Array.from(porDia.entries()).sort().map(([d, n]) => `${esc(formatDate(d))}: <b>${n}</b>`).join(' · ')
     + (feitas ? `<br><span style="color:var(--alert);"><b>Atenção:</b> ${feitas} já ${feitas === 1 ? 'está marcada' : 'estão marcadas'} como <b>feita</b> — retirar apaga o registro de que ${feitas === 1 ? 'foi executada' : 'foram executadas'}.</span>` : '');
 }
 
 async function confirmarDesalocarOS() {
   if (!exigirAdmin('planejar operações')) return;
-  const lote = _opDesalocLoteEscolhido();
+  const lotes = _opDesalocLotesEscolhidos();
   const data = document.getElementById('desaloc-data')?.value || '';
   const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
-  if (!lote) return toast('Escolha a OS', 'err');
-  const alvo = _opOperacoesDoLote(lote, escopo === 'dia' ? data : '');
-  if (!alvo.length) return toast('Nenhuma operação desta OS neste alcance', 'err');
+  if (!lotes.length) return toast('Marque ao menos uma OS', 'err');
+  const alvo = _opOperacoesDosLotes(lotes, escopo === 'dia' ? data : '');
+  if (!alvo.length) return toast('Nenhuma operação destas OS neste alcance', 'err');
   const feitas = alvo.filter(o => _opStatus(o) === 'feita').length;
   const dias = Array.from(new Set(alvo.map(o => o.data))).sort();
-  if (!confirm(`Retirar ${alvo.length} operação(ões) da OS ${lote} do planejamento?\n\n`
+  if (!confirm(`Retirar ${alvo.length} operação(ões) de ${lotes.length} OS do planejamento?\n\n`
+    + `· OS: ${lotes.join(', ')}\n`
     + `· ${escopo === 'dia' ? formatDate(data) : dias.map(formatDate).join(', ')}\n`
     + (feitas ? `· ${feitas} já marcada(s) como FEITA — o registro de execução se perde\n` : '')
     + '\nAs rotinas de hora marcada (café, almoço, preparação das máquinas) ficam: são da jornada, não da OS.\n'
@@ -7819,7 +7933,7 @@ async function confirmarDesalocarOS() {
   dias.forEach(d => { _opReordenarPostosPorHorario(d); _opSincronizarHorariosDia(d); });
   await saveState('operacoes');
   closeModal('modal-desaloc-os');
-  toast(`${alvo.length} operação(ões) da OS ${lote} retirada(s) de ${dias.length === 1 ? formatDate(dias[0]) : dias.length + ' dias'}`, 'ok');
+  toast(`${alvo.length} operação(ões) de ${lotes.length} OS retirada(s) de ${dias.length === 1 ? formatDate(dias[0]) : dias.length + ' dias'}`, 'ok');
   renderOperacoes();
 }
 
