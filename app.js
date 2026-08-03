@@ -6295,9 +6295,35 @@ function _opNomeExibido(op) {
   if (!nome) return '—';
   const lotes = _opLotesDaOperacao(op);
   if (!lotes.length) return nome;
-  // Já escrito à mão no nome: não repete.
+  const partes = [nome];
+  // A FASE DO ENFESTO. Sem ela, os cinco enfestos de um tricolor liam todos
+  // "Enfesto OS 453" — o número da OS separa lote de lote, mas não separa Corpo
+  // Parte 1 de Corpo Parte 3, que são panos diferentes, de metragens diferentes,
+  // e é justamente o que quem está no chão precisa saber.
+  const fase = _opFaseNomeDaOperacao(op);
+  if (fase && !_normNome(nome).includes(_normNome(fase))) partes.push(fase);
+  // Já escrito à mão no nome: não repete o número.
   const jaTem = lotes.every(l => new RegExp('(^|\\D)0*' + l + '(\\D|$)').test(nome));
-  return jaTem ? nome : `${nome} OS ${lotes.join('/')}`;
+  if (!jaTem) partes.push(`OS ${lotes.join('/')}`);
+  return partes.join(' · ');
+}
+
+// O NOME da fase do enfesto a que a operação pertence ('' quando a peça tem uma
+// fase só — aí não há o que distinguir e o rótulo seria ruído).
+// Três fontes, na ordem: o campo gravado; o texto da referência ("· F2/5 Corpo
+// Parte 2"), que é o que a operação digitada à mão costuma trazer; e o cadastro
+// da grade pela ordem da fase.
+function _opFaseNomeDaOperacao(op) {
+  const gravado = String((op && op.faseNome) || '').trim();
+  if (gravado) return gravado;
+  const m = String((op && op.referencia) || '').match(/(?:^|[·\s])F\d+\s*\/\s*(\d+)\s+([^·]+)/i);
+  if (m && Number(m[1]) > 1) return m[2].trim();
+  const os = _opOsDaReferencia(op && op.referencia);
+  if (!os) return '';
+  const fases = _opFasesDaOS(os);
+  if (fases.length <= 1) return '';
+  const f = fases.find(x => x.ordem === _opFaseDaOperacao(op));
+  return (f && f.nome) || '';
 }
 
 /* ---------------- operação partida em volta de uma hora marcada ---------------- */
