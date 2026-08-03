@@ -42,20 +42,31 @@ backup próprio.
     "modelo|tecido" é a mesma nas três.
   - Cópia do código deste ponto em
     `backups-codigo/*.20260803l-operacoes-enfesto.CÓPIA`.
-- **DADOS:** ⚠️ **pendente** — a exportação mais recente continua sendo a de
-  **30/07/2026 17:23** (`backups/BACKUP-COMPLETO-2026-07-30T20-23-43.json`).
-  O backup dos dados **não sai daqui**: a linha `shared_data` do Supabase só é
-  legível por usuário autenticado (o `anon` é bloqueado pela RLS), então quem o
-  gera é o app, logado.
+- **DADOS:** exportação de **03/08/2026 17:32**, em
+  `backups/BACKUP-COMPLETO-2026-08-03T20-32-59.json` (1,75 MB, 29 chaves, 764
+  registros): **177 OS**, 66 grades, 25 desenhos, **288 operações**, 40 cargas de
+  expedição, 41 mov. de estoque, 11 tecidos, 37 cores, 11 funções, 10 pessoas na
+  equipe, 6 modelos, 15 etapas, 17 componentes, 4 materiais.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`, ao lado das
+  duas de 30/07.
 
-  > Fazer agora: app → **Configurações → Exportar JSON (backup completo)** →
-  > salvar em `backups/` e copiar para `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
-  > Depois, trocar esta linha pelo nome do arquivo, a data e a contagem
-  > (OS, grades, desenhos, operações, cargas, tecidos, cores).
+  Cresceu **113 operações** e 3 OS desde 30/07 — é a semana de planejamento do
+  setor de enfesto/corte.
 
-  Desde 30/07 mudou muita coisa de CADASTRO que só existe nos dados — tempo de
-  enfesto por fase da grade, o "para grade de 8 m" no posto, as fases marcadas
-  como "produzida em outro momento" — e nada disso está no backup de 30/07.
+  > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
+  > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
+  > ver a seção 2 abaixo.
+
+  **O que este backup mostra que ainda NÃO foi cadastrado.** O código deste ponto
+  já aceita os três, mas os dados ainda não os têm — vale conferir isto antes de
+  culpar o programa por um plano de operações torto:
+  - `Operador de enfestadeira · Enfesto = 80 min` ✔, porém **sem comprimento de
+    referência** preenchido: vale o padrão de 8 m, que por acaso é o pretendido;
+  - **nenhuma fase de grade tem tempo de enfesto** (`enfestoMin`) — as 66 grades
+    estão em branco nesse campo, então fase sem medição própria cai no tempo do
+    posto ou na estimativa;
+  - **nenhuma fase está marcada como "produzida em outro momento"** — gola e viés
+    continuam entrando na corrente do dia em todas as grades.
 - **SUPABASE:** sem mudança de infraestrutura neste ponto (mesmas tabelas e
   políticas da seção 3).
 
