@@ -1735,8 +1735,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
 .func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
 .func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-/* Enfesto: o tempo é apurado do histórico, então os campos ficam travados e a
-   linha ganha uma nota explicando de onde o número vem. */
+/* Enfesto: a linha ganha uma nota dizendo de onde vem o número — a média medida
+   da fase manda, o tempo digitado aqui vale enquanto ela não existe. */
 .func-op-row .func-op-nota {
   flex: 1 1 100%;
   font-size: 11px;
@@ -1745,8 +1745,6 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   padding: 2px 0 4px 2px;
 }
 .func-op-row .func-op-nota:empty { display: none; }
-.func-op-row.sem-tempo .func-op-h,
-.func-op-row.sem-tempo .func-op-m { opacity: .45; cursor: not-allowed; }
 /* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
 .func-op-row .u.as {
   margin-left: 4px;
@@ -1755,6 +1753,46 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 /* Operação com hora marcada: o campo preenchido se destaca da linha comum. */
 .func-op-row .func-op-fixo:not([value=""]) { font-weight: 600; }
+
+/* Retirar OS do planejamento: o que está alocado fica À VISTA, uma OS por linha
+   com as contagens, em vez de escondido dentro de um seletor que só mostra o
+   que já foi escolhido. */
+.desaloc-lista {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.desaloc-lista .vazio {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--ink-3);
+  text-align: center;
+}
+.desaloc-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-2);
+  cursor: pointer;
+}
+.desaloc-row:last-child { border-bottom: 0; }
+.desaloc-row:hover { background: var(--bg); }
+.desaloc-row input[type="radio"] { width: auto; margin: 0; }
+.desaloc-row .os { font-size: 13px; font-weight: 600; }
+.desaloc-row .os .mod { font-weight: 400; color: var(--ink-3); }
+.desaloc-row .qtd { font-size: 11px; color: var(--ink-3); text-align: right; white-space: nowrap; }
+.desaloc-row .qtd b { color: var(--ink); font-size: 12px; }
+/* OS que não tem nada no dia escolhido: continua na lista (ela está no plano),
+   mas apagada — retirá-la só faz sentido no alcance "todos os dias". */
+.desaloc-row.fora .os { font-weight: 500; color: var(--ink-3); }
+.desaloc-row:has(input:checked) {
+  background: var(--alert-bg);
+  box-shadow: inset 3px 0 0 var(--alert);
+}
 
 /* O que falta para cada lote fechar a corrente de operações do dia. */
 .op-lotes { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }

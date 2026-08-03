@@ -7538,11 +7538,12 @@ function abrirModalDesalocarOS(data) {
   const semZero = n => String(n).replace(/^0+/, '') || '0';
   // Só OS que REALMENTE têm operação planejada: oferecer as outras seria
   // prometer um desfazer que não desfaz nada.
-  const lotes = new Map();   // lote → { noDia, total }
+  const lotes = new Map();   // lote → { noDia, total, dias:Set }
   (STATE.operacoes || []).forEach(o => {
     _opLotesDaOperacao(o).forEach(l => {
-      const e = lotes.get(l) || { noDia: 0, total: 0 };
+      const e = lotes.get(l) || { noDia: 0, total: 0, dias: new Set() };
       e.total++;
+      e.dias.add(o.data);
       if (o.data === dia) e.noDia++;
       lotes.set(l, e);
     });
@@ -7553,30 +7554,39 @@ function abrirModalDesalocarOS(data) {
   const linhas = Array.from(lotes.entries())
     .map(([lote, e]) => {
       const os = _opOsDoLote(lote);
-      return { lote, e, os, rot: `${os ? os.os : lote}${os && os.modeloNome ? ' · ' + os.modeloNome : ''}` };
+      return { lote, e, os, rot: os ? String(os.os) : String(lote), mod: (os && os.modeloNome) || '' };
     })
     .sort((a, b) => (b.e.noDia > 0) - (a.e.noDia > 0)
       || String(b.lote).localeCompare(String(a.lote), undefined, { numeric: true }));
+  // Mantém a OS que já estava escolhida quando o usuário só troca o dia — trocar
+  // a data redesenha o modal inteiro, e perder a seleção obrigava a achá-la de novo.
+  const marcado = _opDesalocLoteEscolhido();
+  const noDia = linhas.filter(l => l.e.noDia).length;
   document.getElementById('modal-desaloc-title').textContent = 'Retirar OS do planejamento';
   document.getElementById('modal-desaloc-fields').innerHTML = `
     <div class="form-grid cols-2">
       <div class="field"><label>Dia *</label><input type="date" id="desaloc-data" value="${esc(dia)}" onchange="abrirModalDesalocarOS(this.value)"></div>
-      <div class="field full">
-        <label>OS *</label>
-        <select id="desaloc-os" onchange="_opDesalocResumo()">
-          <option value="">— selecione —</option>
-          ${linhas.map(l => `<option value="${esc(l.lote)}" data-nodia="${l.e.noDia}" data-total="${l.e.total}">${
-            esc(l.rot)} — ${l.e.noDia} em ${esc(formatDate(dia))}${l.e.total > l.e.noDia ? ` · ${l.e.total} no plano inteiro` : ''}</option>`).join('')}
-        </select>
-        <div class="field-hint">Aparecem só as OS que têm operação planejada. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
-      </div>
-      <div class="field full">
+      <div class="field">
         <label>Alcance *</label>
         <select id="desaloc-escopo" onchange="_opDesalocResumo()">
           <option value="dia">Só o dia ${esc(formatDate(dia))}</option>
           <option value="tudo">Todos os dias do plano</option>
         </select>
-        <div class="field-hint">A corrente de uma OS costuma transbordar para o próximo dia útil. <b>Todos os dias</b> tira a OS do planejamento inteiro de uma vez.</div>
+        <div class="field-hint">A corrente de uma OS costuma transbordar para o próximo dia útil. <b>Todos os dias</b> tira a OS do planejamento inteiro.</div>
+      </div>
+      <div class="field full">
+        <label>OS alocadas no plano de operações *</label>
+        <div class="desaloc-lista">
+          ${linhas.map(l => `
+            <label class="desaloc-row${l.e.noDia ? '' : ' fora'}">
+              <input type="radio" name="desaloc-os" value="${esc(l.lote)}" ${l.lote === marcado ? 'checked' : ''} onchange="_opDesalocResumo()">
+              <div class="os">OS ${esc(l.rot)}${l.mod ? ` <span class="mod">· ${esc(l.mod)}</span>` : ''}</div>
+              <div class="qtd">${l.e.noDia
+                  ? `<b>${l.e.noDia}</b> operação(ões) em ${esc(formatDate(dia))}`
+                  : `nada em ${esc(formatDate(dia))}`}<br>${l.e.total} no plano · ${l.e.dias.size} dia(s)</div>
+            </label>`).join('')}
+        </div>
+        <div class="field-hint">${linhas.length} OS no plano${noDia < linhas.length ? ` · ${noDia} com operação em ${esc(formatDate(dia))}; as apagadas só saem no alcance «todos os dias»` : ''}. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
       </div>
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="desaloc-resumo">Escolha a OS para ver quantas operações serão retiradas.</div>`;
@@ -7584,11 +7594,18 @@ function abrirModalDesalocarOS(data) {
   _opDesalocResumo();
 }
 
+// A OS marcada na lista. Antes era um <select>: quem abria a janela para saber o
+// que estava alocado só via a linha escolhida, e tinha de abrir o dropdown para
+// ver o resto. Agora a lista fica à vista e a escolha é o rádio da linha.
+function _opDesalocLoteEscolhido() {
+  return document.querySelector('input[name="desaloc-os"]:checked')?.value || '';
+}
+
 // Resumo do que vai sair, atualizado a cada escolha do modal.
 function _opDesalocResumo() {
   const box = document.getElementById('desaloc-resumo');
   if (!box) return;
-  const lote = document.getElementById('desaloc-os')?.value || '';
+  const lote = _opDesalocLoteEscolhido();
   const data = document.getElementById('desaloc-data')?.value || '';
   const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
   if (!lote) { box.textContent = 'Escolha a OS para ver quantas operações serão retiradas.'; return; }
@@ -7608,7 +7625,7 @@ function _opDesalocResumo() {
 
 async function confirmarDesalocarOS() {
   if (!exigirAdmin('planejar operações')) return;
-  const lote = document.getElementById('desaloc-os')?.value || '';
+  const lote = _opDesalocLoteEscolhido();
   const data = document.getElementById('desaloc-data')?.value || '';
   const escopo = document.getElementById('desaloc-escopo')?.value || 'dia';
   if (!lote) return toast('Escolha a OS', 'err');
