@@ -2503,6 +2503,11 @@ function _tempoOperacaoCadastrada(funcaoId, nomeOperacao) {
 // hora" — café, almoço, preparação das máquinas, limpeza do fim do expediente.
 // Preenchido, o planejamento do dia já nasce com ela na hora certa, e nem o
 // encadeamento do posto nem o "Organizar o dia" a arrastam de lugar.
+// Comprimento de grade a que o tempo cadastrado do enfesto se refere, quando o
+// cadastro não diz. 8 m é a grade padrão da casa — é para ela que o tempo do
+// enfesto foi pensado.
+const _OP_ENFESTO_COMP_REF_PADRAO = 8;
+
 function addOperacaoFuncaoRow(op = {}) {
   const cont = document.getElementById('m-func-ops');
   if (!cont) return;
@@ -2515,6 +2520,9 @@ function addOperacaoFuncaoRow(op = {}) {
     <span class="u">h</span>
     <input type="number" class="func-op-m" min="0" max="59" step="5" value="${dur ? dur % 60 : ''}" placeholder="0" title="Minutos">
     <span class="u">min</span>
+    <span class="u ref">para grade de</span>
+    <input type="number" class="func-op-comp" min="0" step="0.5" value="${esc(op.compRef != null && op.compRef !== '' ? String(op.compRef) : '')}" placeholder="${_OP_ENFESTO_COMP_REF_PADRAO}" title="Comprimento de grade a que este tempo se refere">
+    <span class="u ref">m</span>
     <span class="u as">todo dia às</span>
     <input type="time" class="func-op-fixo" value="${esc(op.horaFixa || '')}" title="Horário fixo: esta operação entra em todo dia planejado nesta hora e não é reencaixada na fila do posto. Em branco = entra na fila, como as demais.">
     <button type="button" class="btn small danger" title="Remover esta operação" onclick="this.closest('.func-op-row').remove()">✕</button>
@@ -2545,10 +2553,14 @@ function _funcOpNotaDeEnfesto(row) {
     el.disabled = false;
     el.title = sel === '.func-op-h' ? 'Horas' : 'Minutos';
   });
-  row.classList.remove('sem-tempo');
+  // O comprimento de referência só faz sentido no ENFESTO: é o que dá tamanho ao
+  // número. "1h20" sozinho não diz nada — 1h20 para uma grade de 8 m é outra
+  // coisa que 1h20 para uma de 4 m, e aplicar o mesmo piso nas duas reservaria o
+  // dobro do dia na curta.
+  row.classList.toggle('com-ref', ehEnfesto);
   if (nota) {
     nota.innerHTML = ehEnfesto
-      ? 'Tempo do enfesto: vale primeiro a <b>média medida daquela fase</b> (dos horários lançados nas folhas de OS). Sem medição, vale <b>o que você puser aqui</b>. O programa só chuta pelas outras fases quando não tem nem um nem outro.'
+      ? `Tempo do enfesto, na ordem: <b>1)</b> a média medida daquela fase, dos horários lançados nas folhas de OS — ela manda sempre que existe, para mais e para menos; <b>2)</b> sem medição da fase, o tempo aqui, que vale como <b>mínimo</b> e só para grades de comprimento próximo ao de referência (acima da metade dele); <b>3)</b> em grade bem mais curta, a <b>média dos enfestos já cronometrados daquela grade</b>, porque o tempo não cai na mesma proporção do comprimento.`
       : '';
   }
 }
@@ -3249,9 +3261,12 @@ async function salvarCadastro() {
       // planejamento enquanto aquela fase nunca foi cronometrada. Antes era
       // zerada aqui, e o campo ficava travado na tela: quem sabia o tempo não
       // tinha onde dizer, e o plano nascia com enfesto de zero minuto.
+      const cRef = parseFloat(String(row.querySelector('.func-op-comp')?.value || '').replace(',', '.'));
       return {
         nome,
         duracaoMin: Math.max(0, h) * 60 + Math.max(0, m),
+        // A que tamanho de grade aquele tempo se refere. Vazio = o padrão.
+        compRef: isFinite(cRef) && cRef > 0 ? cRef : '',
         horaFixa: _opMin(fixa) == null ? '' : fixa
       };
     }).filter(o => o.nome);
@@ -6435,8 +6450,12 @@ function _opTempoEnfestoPrevisto(os, fase) {
   // vale a taxa das OUTRAS fases já medidas, aplicada às camadas e ao
   // comprimento desta — é grosso, mas é da mesma máquina e do mesmo pessoal, e
   // some sozinho assim que a fase for cronometrada uma vez.
+  // `proprio` = veio da HISTÓRIA DAQUELA GRADE. Só esse é a "média de tempo da
+  // grade": é ele que dispensa o mínimo cadastrado e que pode encurtar o que já
+  // está planejado. Os demais generalizam — o mesmo nome de fase em outra grade,
+  // com outro comprimento — e ficam sujeitos ao piso do cadastro.
   const escopos = [
-    { nome: 'desta grade', lista: daFase.filter(m => m.gradeId && m.gradeId === os.gradeId) },
+    { nome: 'desta grade', lista: daFase.filter(m => m.gradeId && m.gradeId === os.gradeId), proprio: true },
     { nome: 'deste modelo', lista: daFase.filter(m => m.modeloId && m.modeloId === os.modeloId) },
     { nome: 'de todas as OS', lista: daFase },
     { nome: 'estimado pelas outras fases desta grade', lista: todas.filter(m => m.gradeId && m.gradeId === os.gradeId), estimado: true },
@@ -6455,7 +6474,7 @@ function _opTempoEnfestoPrevisto(os, fase) {
     const taxa = taxas.reduce((s, x) => s + x, 0) / taxas.length;
     const bruto = taxa * camadas * (podeMetro ? comp : 1);
     if (!(bruto > 0)) continue;
-    return { min: Math.max(5, _opArredondar(bruto)), n: e.lista.length, escopo: e.nome, estimado: !!e.estimado };
+    return { min: Math.max(5, _opArredondar(bruto)), n: e.lista.length, escopo: e.nome, estimado: !!e.estimado, proprio: !!e.proprio };
   }
   return vazio;
 }
@@ -6707,11 +6726,70 @@ function _opReordenarPostosPorHorario(data) {
 // Devolve { min, fonte }. É a `fonte` que autoriza corrigir para MENOS: só a
 // medição faz isso.
 function _opDuracaoEnfesto(os, fase, funcaoId, nomeOperacao) {
-  const prev = (os && fase) ? _opTempoEnfestoPrevisto(os, fase) : { min: 0, estimado: false };
-  if (prev.min > 0 && !prev.estimado) return { min: prev.min, fonte: 'medido' };
+  const prev = (os && fase) ? _opTempoEnfestoPrevisto(os, fase) : { min: 0, proprio: false };
+  // 1) MEDIÇÃO DAQUELA FASE NAQUELA GRADE: manda sempre que existe, para mais e
+  // para menos. Medição do mesmo nome de fase em OUTRA grade não entra aqui — ela
+  // tem outro comprimento, e o tempo não acompanha o comprimento na mesma
+  // proporção. Vale como estimativa, logo abaixo, sujeita ao piso.
+  if (prev.min > 0 && prev.proprio) return { min: prev.min, fonte: 'medido' };
+
+  // 2) O tempo CADASTRADO na função, que é um MÍNIMO — e um mínimo com tamanho.
+  // "1h20" foi cadastrado pensando numa grade de 8 m; usá-lo como piso de uma
+  // grade de 4 m reservaria o dobro do que ela leva. Por isso ele só vale quando
+  // o pano é de porte parecido com o de referência: acima da METADE dele. Abaixo
+  // disso o tempo não cai na mesma proporção do comprimento (montar a máquina,
+  // alinhar e cortar a ponta custa igual), e quem responde é o histórico daquela
+  // grade.
   const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao);
-  if (cad > 0) return { min: cad, fonte: 'cadastrado' };
+  const comp = _opCompDaFase(os, fase);
+  const ref = _opCompRefCadastrado(funcaoId, nomeOperacao);
+  const cadastroCabe = cad > 0 && (!(comp > 0) || comp > ref / 2);
+  if (cadastroCabe) {
+    // Piso: a estimativa nunca fica abaixo do mínimo conhecido da casa.
+    return prev.min > cad ? { min: prev.min, fonte: 'estimado' } : { min: cad, fonte: 'cadastrado' };
+  }
+
+  // 3) GRADE CURTA (ou sem cadastro): a média dos enfestos já cronometrados
+  // DAQUELA grade. É a resposta ao fato de que os tempos de uma grade de 4 m são
+  // outros — vêm da própria grade, não de uma regra de três com a de 8 m.
+  const media = _opMediaEnfestoDaGrade(os);
+  if (media > 0) return { min: media, fonte: 'média da grade' };
   return { min: prev.min, fonte: prev.min > 0 ? 'estimado' : '' };
+}
+
+// Comprimento do pano desta fase, em metros (0 quando não há medida cadastrada).
+function _opCompDaFase(os, fase) {
+  if (!os || !fase) return 0;
+  const bloco = (((os.enfesto || {}).blocos) || []).find(b => String(b.ordem) === String(fase.ordem)) || {};
+  const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+  const daGrade = (g && Array.isArray(g.fases))
+    ? g.fases.find(f => Number(f.ordem) === Number(fase.ordem)) : null;
+  const v = parseFloat(fase.comp) || parseFloat(bloco.comp) || parseFloat(daGrade && daGrade.comp) || 0;
+  return v > 0 ? v : 0;
+}
+
+// A que comprimento de grade o tempo cadastrado se refere.
+function _opCompRefCadastrado(funcaoId, nomeOperacao) {
+  const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
+  const alvo = _normNome(nomeOperacao);
+  const achou = f && alvo ? _opsDaFuncao(f).find(o => _normNome(o.nome) === alvo) : null;
+  const v = parseFloat(achou && achou.compRef);
+  return (isFinite(v) && v > 0) ? v : _OP_ENFESTO_COMP_REF_PADRAO;
+}
+
+// A média SIMPLES dos enfestos já cronometrados daquela grade — todas as fases
+// juntas, em minutos. Não é a taxa por camada e por metro: em grade curta é
+// justamente a proporcionalidade que falha, então aqui vale o que a grade
+// costuma levar, e não uma regra de três a partir de outra maior.
+function _opMediaEnfestoDaGrade(os) {
+  if (!os) return 0;
+  const gradeId = _gradeIdDaOS(os);
+  if (!gradeId) return 0;
+  const mins = _medicoesEnfesto()
+    .filter(m => m.gradeId === gradeId && m.os !== os.os && m.minutos > 0)
+    .map(m => m.minutos);
+  if (!mins.length) return 0;
+  return _opArredondar(mins.reduce((s, x) => s + x, 0) / mins.length);
 }
 
 // Quanto uma operação PRECISA durar, pelo que a grade da OS da referência já

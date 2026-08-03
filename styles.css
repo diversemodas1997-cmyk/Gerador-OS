@@ -1745,6 +1745,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   padding: 2px 0 4px 2px;
 }
 .func-op-row .func-op-nota:empty { display: none; }
+/* "para grade de N m": só o enfesto tem um tempo que depende do tamanho do pano,
+   então só a linha dele mostra o comprimento de referência. */
+.func-op-row .func-op-comp { width: 64px; flex: 0 0 auto; }
+.func-op-row .func-op-comp,
+.func-op-row .u.ref { display: none; }
+.func-op-row.com-ref .func-op-comp,
+.func-op-row.com-ref .u.ref { display: inline-block; }
 /* Separa visualmente o tempo (quanto dura) do horário fixo (quando acontece). */
 .func-op-row .u.as {
   margin-left: 4px;
