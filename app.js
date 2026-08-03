@@ -2577,6 +2577,13 @@ function addFaseGradeRow(fase = {}) {
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
       <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.<span class="fase-bobinas-sug"></span></div></div>
+      <div class="field full" style="margin-top:2px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+          <input type="checkbox" class="fase-fora-plano" ${fase.foraDoPlano ? 'checked' : ''} style="width:auto;margin:0;">
+          Produzida em outro momento — fica fora do planejamento de operações
+        </label>
+        <div class="field-hint">Marque nas fases que <b>não</b> são enfestadas junto com o lote (gola e viés são feitos à parte). Elas continuam valendo para o consumo de tecido e para a folha de OS; o que muda é que o dia não monta enfesto, corte e movimentação para elas.</div>
+      </div>
     </div>`;
   cont.appendChild(div);
   toggleUnidadesGrade(div.querySelector('.fase-tec'));
@@ -3108,7 +3115,12 @@ async function salvarCadastro() {
         unidades: parseInt(b.querySelector('.fase-unid')?.value) || 2,
         comp: b.querySelector('.fase-comp')?.value || '',
         larg: b.querySelector('.fase-larg')?.value || '',
-        bobinas: pb == null ? '' : pb
+        bobinas: pb == null ? '' : pb,
+        // Fase enfestada em OUTRO momento (gola, viés): entra no consumo e na
+        // folha de OS como sempre, mas o planejamento do dia não monta a corrente
+        // dela. Guardado como exceção — sem a marca, a fase entra, que é o que
+        // toda grade já cadastrada espera.
+        foraDoPlano: !!b.querySelector('.fase-fora-plano')?.checked
       };
     });
     // Retrocompatibilidade: usa a primeira fase para os campos legados
@@ -6265,12 +6277,33 @@ function _opPassoSequencia(op) {
 
 /* ---------------- fases do enfesto dentro da corrente ---------------- */
 
-// As FASES DO ENFESTO de uma OS, na ordem. Cada fase é um enfesto inteiro e
-// separado — tecido, cor e dimensões próprios —, e por isso puxa a sua própria
-// volta na corrente principal. A fonte é a OS (que guarda a cópia das fases no
-// momento em que foi emitida) e, se ela não tiver, o cadastro da grade. Grade
-// sem fases cadastradas devolve UMA fase sem nome: é o caso da peça unicolor, em
-// que a corrente dá uma volta só — exatamente o que o programa fazia antes.
+// Esta fase é enfestada em OUTRO momento, fora da corrente do dia? Gola e viés
+// são produzidos à parte, e por isso o posto nem tem essas operações cadastradas.
+// Quem manda é o CADASTRO DA GRADE, sempre — não a cópia de fases que a OS
+// guardou quando foi emitida. A OS emitida antes desta marca existir não a tem, e
+// ler dela faria a exceção só valer para OS nova; o cadastro é o que o usuário
+// acabou de responder e vale para o plano que ele está montando agora.
+function _opFaseForaDoPlano(os, fase) {
+  const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+  const doCadastro = (g && Array.isArray(g.fases))
+    ? g.fases.find(f => Number(f.ordem) === Number(fase.ordem)
+        || (fase.nome && _normFaseNome(f.nome) === _normFaseNome(fase.nome)))
+    : null;
+  return !!(doCadastro ? doCadastro.foraDoPlano : fase.foraDoPlano);
+}
+
+// As FASES DO ENFESTO de uma OS QUE ENTRAM NO PLANEJAMENTO, na ordem. Cada fase é
+// um enfesto inteiro e separado — tecido, cor e dimensões próprios —, e por isso
+// puxa a sua própria volta na corrente principal. A fonte é a OS (que guarda a
+// cópia das fases no momento em que foi emitida) e, se ela não tiver, o cadastro
+// da grade. Grade sem fases cadastradas devolve UMA fase sem nome: é o caso da
+// peça unicolor, em que a corrente dá uma volta só.
+//
+// Fica de fora a fase marcada como produzida em outro momento. Ela não some do
+// programa: continua na folha de OS, no consumo de tecido e nas medições. O que
+// muda é só o PLANEJAMENTO DO DIA, que deixa de montar enfesto, corte e
+// movimentação para um pano que não vai passar pela máquina naquele dia — e de
+// cobrar esses passos no quadro do que falta.
 function _opFasesDaOS(os) {
   if (!os) return [{ ordem: 1, nome: '' }];
   let fases = Array.isArray(os.fases) && os.fases.length ? os.fases : null;
@@ -6279,6 +6312,10 @@ function _opFasesDaOS(os) {
     if (g && Array.isArray(g.fases) && g.fases.length) fases = g.fases;
   }
   if (!fases) return [{ ordem: 1, nome: '' }];
+  const dentro = fases.filter(f => !_opFaseForaDoPlano(os, f));
+  // Todas marcadas como "outro momento" seria cadastro enganado, não uma OS sem
+  // trabalho: devolve as originais, para o dia não nascer vazio em silêncio.
+  fases = dentro.length ? dentro : fases;
   return fases
     .map((f, i) => ({ ordem: Number(f.ordem) || i + 1, nome: String(f.nome || '').trim() }))
     .sort((a, b) => a.ordem - b.ordem);
