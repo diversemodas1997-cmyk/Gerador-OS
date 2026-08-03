@@ -6871,11 +6871,20 @@ async function corrigirOrdemOperacoes(data) {
   // Operações de hora marcada do cadastro que este dia ainda não tem. Sem esta
   // conta, quem cadastrasse o "todo dia às" depois de o dia já estar planejado
   // teria de alocar a OS de novo só para a rotina entrar.
+  // Conta as que FALTAM e também as que estão lá com hora ou tempo diferentes do
+  // cadastro. A automática da agenda só acerta de hoje para frente; num dia que
+  // já passou é por aqui que o cadastro entra — e sem contar as divergentes o
+  // botão respondia "o dia já está organizado" e não fazia nada.
   const fixasFaltando = (STATE.funcoes || []).reduce((n, f) => n + _opsDaFuncao(f).filter(o => {
-    const ini = _opMin(String(o.horaFixa || '').trim());
+    const hora = String(o.horaFixa || '').trim();
+    const ini = _opMin(hora);
+    const dur = Math.max(0, Math.round(Number(o.duracaoMin) || 0));
     if (!String(o.nome || '').trim() || ini == null) return false;
-    if (ini < _OP_JORNADA.ini || ini + (Number(o.duracaoMin) || 0) > _OP_JORNADA.fim) return false;
-    return !doDia().some(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(o.nome));
+    if (ini < _OP_JORNADA.ini || ini + dur > _OP_JORNADA.fim) return false;
+    const jaLa = doDia().filter(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(o.nome));
+    if (!jaLa.length) return true;
+    return jaLa.some(x => !_opLotesDaOperacao(x).length
+      && (x.inicio !== hora || (dur > 0 && _opDuracao(x) !== dur)));
   }).length, 0);
   // Operações sem dono, num posto que tem uma pessoa só: elas deixam a agenda
   // sem o vínculo entre os postos que a mesma pessoa ocupa.
@@ -6891,7 +6900,7 @@ async function corrigirOrdemOperacoes(data) {
     + `· pausas ${pausasFora ? 'em horários diferentes entre as funções' : 'já sincronizadas'}\n`
     + `· ${foraJornada} fora da jornada (${_opJornadaTexto()})\n`
     + `· ${mesmaFuncao} par(es) sobrepostos dentro da mesma função\n`
-    + `· ${fixasFaltando} operação(ões) de horário fixo do cadastro que faltam neste dia\n`
+    + `· ${fixasFaltando} operação(ões) de horário fixo do cadastro que faltam neste dia ou estão fora da hora cadastrada\n`
     + `· ${semDono} sem responsável, em posto que tem uma pessoa só\n\n`
     + 'As de horário fixo entram na hora cadastrada e o resto se encaixa em volta delas.\n'
     + 'Operação sem dono recebe a pessoa do posto — é o que faz a linha do tempo de uma função mostrar o que a mesma pessoa faz na outra.\n'
@@ -6903,7 +6912,7 @@ async function corrigirOrdemOperacoes(data) {
   // A rotina de hora marcada entra ANTES do ajuste: ela é âncora, e o resto do
   // dia é que se encaixa em volta dela.
   const _fx = _opAplicarHorariosFixosNoDia(data);
-  const fixasNovas = _fx.criadas.concat(_fx.marcadas);
+  const fixasNovas = _fx.criadas.concat(_fx.marcadas, _fx.atualizadas.map(a => a.op));
   const donosNovos = _opPreencherResponsaveisDoDia(data);
   const { movidas, travadas, adiadas, ampliadas, pausas, destino } = _opCorrigirOrdemDoDia(data);
   if (!movidas.length && !adiadas.length && !ampliadas.length && !pausas.length
@@ -6914,7 +6923,8 @@ async function corrigirOrdemOperacoes(data) {
   const restou = _opConflitosOrdem(doDia()).size + pessoaCruzada(doDia()).size;
   toast(`${movidas.length} operação(ões) reencaixada(s)`
     + (donosNovos.length ? ` · ${donosNovos.length} com o responsável do posto` : '')
-    + (fixasNovas.length ? ` · ${fixasNovas.length} de horário fixo incluída(s)` : '')
+    + (_fx.criadas.length ? ` · ${_fx.criadas.length} de horário fixo incluída(s)` : '')
+    + (_fx.atualizadas.length ? ` · ${_fx.atualizadas.length} acertada(s) pelo cadastro` : '')
     + (pausas.length ? ` · ${pausas.length} pausa(s) sincronizada(s)` : '')
     + (ampliadas.length ? ` · ${ampliadas.length} com a duração medida da grade` : '')
     + (adiadas.length ? ` · ${adiadas.length} passada(s) para ${formatDate(destino)}` : '')
@@ -7033,11 +7043,12 @@ function _opLotesIncompletos(doDia, data) {
 // checagem de ordem e alocar uma segunda OS não as duplica. O que a corrente do
 // lote faz com elas é só desviar: a fila do posto se encaixa em volta da hora
 // marcada.
-// Devolve { criadas, marcadas } — `marcadas` são as que já estavam no dia e
-// passaram a exibir o 📌 de horário fixo.
+// Devolve { criadas, marcadas, atualizadas } — `marcadas` são as que já estavam
+// no dia e passaram a exibir o 📌 de horário fixo; `atualizadas`, as que já
+// estavam no dia com hora ou tempo diferentes do cadastro e foram acertadas.
 function _opAplicarHorariosFixosNoDia(data) {
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  const criadas = [], marcadas = [];
+  const criadas = [], marcadas = [], atualizadas = [];
   const noDia = (STATE.operacoes || []).filter(o => o.data === data);
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
@@ -7045,20 +7056,50 @@ function _opAplicarHorariosFixosNoDia(data) {
       const hora = String(o.horaFixa || '').trim();
       const ini = _opMin(hora);
       if (!nome || ini == null) return;
+      const dur = Math.max(0, Math.round(Number(o.duracaoMin) || 0));
+      // Hora cadastrada fora da jornada é erro de cadastro, não plano do dia:
+      // criar a operação aqui — ou arrastar para lá uma que existe — só encheria
+      // a agenda de selo "fora da jornada".
+      const cabeNaJornada = ini >= _OP_JORNADA.ini && ini + dur <= _OP_JORNADA.fim;
       // Já está no dia (posta pelo cadastro, pela cascata ou à mão): não repete.
       // Mas garante o 📌 — o cadastro diz que aquela operação é de hora marcada,
       // e a agenda tem que mostrá-la como fixa (barra preta) em vez de deixá-la
-      // com cara de operação comum, que qualquer reencaixe empurra. A HORA não é
-      // reescrita: se alguém moveu aquele dia à mão, foi de propósito.
+      // com cara de operação comum, que qualquer reencaixe empurra.
       const jaLa = noDia.filter(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(nome));
       if (jaLa.length) {
-        jaLa.forEach(x => { if (!x.inicioFixo) { x.inicioFixo = true; marcadas.push(x); } });
+        jaLa.forEach(x => {
+          if (!x.inicioFixo) { x.inicioFixo = true; marcadas.push(x); }
+          // O CADASTRO MANDA. Mudar "todo dia às" (ou o tempo) na função passa a
+          // valer nos dias JÁ planejados, sem precisar alocar de novo nem apagar
+          // a linha antiga: antes o cadastro só nascia junto com a operação, e
+          // trocar 07:15 por 07:30 não mexia em nenhum dia que já a tivesse.
+          // Quem tiver movido aquele dia à mão perde o ajuste — é o preço de o
+          // cadastro ser a fonte única, e a agenda avisa quantas foram mexidas.
+          if (!cabeNaJornada) return;
+          // Operação da corrente de uma OS fica FORA: a hora marcada é do DIA,
+          // não do lote. Sem esta guarda, cadastrar "Enfesto" às 07:15 grudaria
+          // os cinco enfestos de um tricolor no mesmo minuto — o mesmo motivo
+          // pelo qual a cascata nunca herda o horário fixo (ver `criar` em
+          // _opMontarCascataDoLote).
+          if (_opLotesDaOperacao(x).length) return;
+          // Já executada é registro do que aconteceu: mudar o cadastro hoje não
+          // reescreve a hora em que a limpeza de ontem foi de fato feita.
+          if (_opStatus(x) === 'feita') return;
+          const mudouIni = x.inicio !== hora;
+          const mudouDur = dur > 0 && _opDuracao(x) !== dur;
+          if (!mudouIni && !mudouDur) return;
+          atualizadas.push({
+            op: x,
+            de: `${x.inicio || 'sem hora'}${_opDuracao(x) ? ' +' + _opDuracao(x) + 'min' : ''}`,
+            para: `${hora}${dur ? ' +' + dur + 'min' : ''}`
+          });
+          x.inicio = hora;
+          if (dur > 0) x.duracaoMin = dur;
+          x.inicioAuto = true;   // âncora: o encadeamento do posto não a arrasta de volta
+        });
         return;
       }
-      const dur = Math.max(0, Math.round(Number(o.duracaoMin) || 0));
-      // Hora cadastrada fora da jornada é erro de cadastro, não plano do dia:
-      // criar a operação aqui só encheria a agenda de selo "fora da jornada".
-      if (ini < _OP_JORNADA.ini || ini + dur > _OP_JORNADA.fim) return;
+      if (!cabeNaJornada) return;
       const pessoa = _opResponsavelDoPosto(f.nome);
       const nova = {
         id: uid(), data,
@@ -7079,7 +7120,7 @@ function _opAplicarHorariosFixosNoDia(data) {
       criadas.push(nova);
     });
   });
-  return { criadas, marcadas };
+  return { criadas, marcadas, atualizadas };
 }
 
 // Põe o responsável nas operações do dia que estão sem ele, quando o posto tem
@@ -7116,7 +7157,7 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
   // tão longe. Quem planejar além disso aloca a OS, e a rotina entra junto.
   const horizonte = _expAddDias(hoje, 60);
   const ate = fim < horizonte ? fim : horizonte;
-  const criadas = [], marcadas = [];
+  const criadas = [], marcadas = [], atualizadas = [];
   let d = ini < hoje ? hoje : ini;
   for (let i = 0; i < 62 && d <= ate; i++, d = _expAddDias(d, 1)) {
     const dow = _expData(d).getDay();
@@ -7124,14 +7165,18 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
     const r = _opAplicarHorariosFixosNoDia(d);
     criadas.push(...r.criadas);
     marcadas.push(...r.marcadas);
+    atualizadas.push(...r.atualizadas);
   }
-  if (criadas.length) {
-    Array.from(new Set(criadas.map(o => o.data))).forEach(dia => {
-      _opReordenarPostosPorHorario(dia);
-      _opSincronizarHorariosDia(dia);
-    });
-  }
-  return criadas.concat(marcadas);
+  // Mexeu na hora de alguém — criando ou acertando pelo cadastro —, o dia
+  // inteiro se reencaixa em volta: a ordem do posto volta a seguir o relógio e a
+  // fila de trabalho se acomoda depois da nova âncora. Sem isto, mudar o almoço
+  // de 11:30 para 12:00 deixaria a operação seguinte começando dentro dele.
+  const diasMexidos = new Set(criadas.map(o => o.data).concat(atualizadas.map(a => a.op.data)));
+  diasMexidos.forEach(dia => {
+    _opReordenarPostosPorHorario(dia);
+    _opSincronizarHorariosDia(dia);
+  });
+  return { tocadas: criadas.concat(marcadas, atualizadas.map(a => a.op)), criadas, marcadas, atualizadas };
 }
 
 // Primeiro horário, a partir de `piso`, em que o posto fica livre por `dur`
@@ -7736,15 +7781,27 @@ function renderOperacoes() {
   if (!cont) return;
   const { ini, fim } = _expRange(opPlanoModo, opPlanoAncora);
   // A rotina de hora marcada aparece já posta em todo dia útil do período — ela
-  // é da jornada e não depende de haver OS alocada. Só quem edita cria dados,
-  // e só uma vez: a segunda passada não acha nada para criar.
+  // é da jornada e não depende de haver OS alocada — e com a hora e o tempo que
+  // o CADASTRO da função diz hoje, não os que ele dizia no dia em que a operação
+  // nasceu. Só quem edita grava, e só uma vez: a segunda passada já encontra
+  // tudo igual ao cadastro e não acha nada a fazer (é o que fecha o laço entre
+  // gravar e redesenhar).
   if (!_opFixasEmCurso && currentRole === 'admin') {
     _opFixasEmCurso = true;
     try {
-      const novas = _opGarantirHorariosFixosNoPeriodo(ini, fim);
-      if (novas.length) {
+      const r = _opGarantirHorariosFixosNoPeriodo(ini, fim);
+      if (r.tocadas.length) {
         saveState('operacoes')
-          .then(() => { _opFixasEmCurso = false; renderOperacoes(); })
+          .then(() => {
+            _opFixasEmCurso = false;
+            // Acertar horário já planejado é mudança que se vê na agenda: diz
+            // quantas foram e de onde veio a ordem, senão a operação "pula"
+            // sozinha e ninguém sabe por quê.
+            if (r.atualizadas.length) {
+              toast(`${r.atualizadas.length} operação(ões) de horário fixo acertada(s) pelo cadastro das funções`, 'ok');
+            }
+            renderOperacoes();
+          })
           .catch(() => { _opFixasEmCurso = false; });
         return;
       }
