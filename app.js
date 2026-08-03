@@ -6236,6 +6236,26 @@ function _opEhEnfesto(op) {
   return !!p && p.cadeia === 'principal' && p.nome === 'Enfesto';
 }
 
+// O nome da operação COMO ELA APARECE: com o número da OS junto. Um dia com 13
+// lotes mostrava treze linhas "Enfesto", "Corte de enfesto", "Mover enfesto" —
+// idênticas —, e não havia como saber qual era de qual OS sem abrir uma por uma.
+//
+// O número sai da REFERÊNCIA, que é onde a OS já mora; o nome GRAVADO segue
+// limpo, de propósito. É por ele que o programa acha o passo na corrente
+// (_opPassoSequencia), o tempo cadastrado na função (_tempoOperacaoCadastrada) e
+// o horário fixo — "Enfesto OS 453" não casaria com o "Enfesto" do cadastro, e
+// cada OS nova ainda entraria como uma operação diferente na lista da função.
+// Operação que não é de OS (café, almoço, limpeza) sai como sempre.
+function _opNomeExibido(op) {
+  const nome = String((op && op.operacao) || '').trim();
+  if (!nome) return '—';
+  const lotes = _opLotesDaOperacao(op);
+  if (!lotes.length) return nome;
+  // Já escrito à mão no nome: não repete.
+  const jaTem = lotes.every(l => new RegExp('(^|\\D)0*' + l + '(\\D|$)').test(nome));
+  return jaTem ? nome : `${nome} OS ${lotes.join('/')}`;
+}
+
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
 function _opPassoSequencia(op) {
   const n = _normNome(op && op.operacao);
@@ -8000,7 +8020,7 @@ function renderOperacoes() {
     const st = _opStatus(op);
     const pr = _opPrioridade(op);
     const conf = conflitos.has(op.id) ? ' conflito' : '';
-    const rot = comFuncao ? `${_opFuncaoNome(op)}: ${op.operacao}` : op.operacao;
+    const rot = comFuncao ? `${_opFuncaoNome(op)}: ${_opNomeExibido(op)}` : _opNomeExibido(op);
     // Cor própria da operação (identifica a etapa na linha de tempo). O status
     // "feita" fica esmaecido por CSS e o conflito ganha contorno vermelho — os
     // dois convivem com a cor de fundo sem escondê-la.
@@ -8032,7 +8052,7 @@ function renderOperacoes() {
         <span class="janela">${esc(_opJanelaTexto(op))}${op.inicioFixo
           ? ` <button type="button" class="op-fixo" onclick="soltarHorarioOperacao('${esc(op.id)}')" title="Horário fixo: definido à mão, não reencaixa após a anterior. Clique para voltar ao encaixe automático.">📌</button>`
           : ''}</span>
-        <span class="oper">${esc(op.operacao) || '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${
+        <span class="oper">${op.operacao ? esc(_opNomeExibido(op)) : '(sem descrição)'}${selopr}${selo}${conflito ? ' <span class="exp-badge alto" title="Este posto tem outra operação no mesmo horário">sobreposta</span>' : ''}${
           _opSeloOrdem(ordemErr, 'tela')}${
           foraJornada ? ` <span class="exp-badge alto" title="${esc(foraJornada)}. Jornada do setor: ${esc(_opJornadaTexto())}">fora da jornada</span>` : ''}${op.obs ? ` <span class="obs">· ${esc(op.obs)}</span>` : ''}</span>
         <span class="resp">${esc(resp) || '<span class="obs">a definir</span>'}</span>
@@ -8083,7 +8103,7 @@ function renderOperacoes() {
       // claro, não a cor.
       const pintura = cor ? `background:${cor};border-color:${cor};` : '';
       return `<div class="op-bar-outra" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;${pintura}"
-        title="${esc(_opResponsavelNome(op))} está em ${esc(_opFuncaoNome(op))}: ${esc(op.operacao) || '—'} · ${esc(_opJanelaTexto(op))}"
+        title="${esc(_opResponsavelNome(op))} está em ${esc(_opFuncaoNome(op))}: ${esc(_opNomeExibido(op))} · ${esc(_opJanelaTexto(op))}"
         ><span>${esc(_opFuncaoNome(op))}</span></div>`;
     };
     const vazioLinha = (v, pessoa, funcaoNome) => {
@@ -8220,7 +8240,7 @@ function renderOperacoes() {
           <div class="op-analise-tit ${n ? 'alerta' : 'ok'}">${esc(titulo)} <span class="q">${n ? n : 'nada a apontar'}</span></div>
           ${n ? corpo : ''}
         </div>`;
-      const linhaOp = op => `${esc(_opFuncaoNome(op))} · ${esc(op.operacao) || '—'} <span class="q">${esc(_opJanelaTexto(op))}</span>`;
+      const linhaOp = op => `${esc(_opFuncaoNome(op))} · ${esc(_opNomeExibido(op))} <span class="q">${esc(_opJanelaTexto(op))}</span>`;
       return `
       <div class="op-analise" id="op-analise-${esc(data)}">
         <div class="op-analise-cab">
@@ -8956,7 +8976,7 @@ async function excluirOperacao(id) {
   if (!exigirAdmin('excluir operações')) return;
   const op = (STATE.operacoes || []).find(x => x.id === id);
   if (!op) return;
-  if (!confirm(`Excluir a operação "${op.operacao || 'sem descrição'}" de ${formatDate(op.data)}?`)) return;
+  if (!confirm(`Excluir a operação "${op.operacao ? _opNomeExibido(op) : 'sem descrição'}" de ${formatDate(op.data)}?`)) return;
   STATE.operacoes = (STATE.operacoes || []).filter(x => x.id !== id);
   _opSincronizarHorariosDia(op.data);   // fecha o buraco: as seguintes reencaixam
   await saveState('operacoes');
@@ -9067,7 +9087,7 @@ function renderPrintPlanoOperacoes() {
           title="${esc(_OP_STATUS[st].lbl)} — clique para avançar: pendente → em andamento → feita"
           onclick="alternarStatusOperacao('${esc(op.id)}')"><span class="exp-print-box${marca}"></span></button></td>
         <td class="jan">${esc(_opJanelaTexto(op))}</td>
-        <td class="ope">${esc(op.operacao) || '—'}${
+        <td class="ope">${esc(_opNomeExibido(op))}${
           op.escopo === 'etapa' ? ` <span class="tag">${(Array.isArray(op.etapas) ? op.etapas.length : (op.etapa ? 1 : 0)) > 1 ? 'etapas' : 'etapa'}</span>` : ''}${
           pr !== 'eletiva' ? ` <span class="tag ${pr}">${esc(_OP_PRIORIDADE[pr].lbl)}</span>` : ''}${
           conflitos.has(op.id) ? ' <span class="tag alto">sobreposta</span>' : ''}${
@@ -9114,7 +9134,7 @@ function renderPrintPlanoOperacoes() {
       // pintados como BACKGROUND (gradiente) pra não deslocar o conteúdo e manter
       // as barras alinhadas com a régua. Diferencia as operações de relance.
       const rowStyle = `background:linear-gradient(to right, ${cor} 0 4pt, ${cor}1f 4pt);`;
-      const cap = `${_opFuncaoNome(op)}: ${op.operacao || '—'}`;
+      const cap = `${_opFuncaoNome(op)}: ${_opNomeExibido(op)}`;
       if (i == null || !dur) {
         return `<div class="row" style="${rowStyle}"><div class="cap">${esc(cap)}</div><div class="track"><span class="semh">sem horário</span></div></div>`;
       }
