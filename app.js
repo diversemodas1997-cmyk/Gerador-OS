@@ -6461,11 +6461,20 @@ function _opFaseNomeDaOperacao(op) {
 // ajuda ninguém: vira duas linhas na agenda para o mesmo trabalho.
 const _OP_PARTE_MIN = 10;
 
-// O nome sem o sufixo " parte N". É por ele que as partes se reconhecem como
-// pedaços do MESMO trabalho, e é o que permite renumerar sem acumular sufixo
-// ("Enfesto parte 2 parte 1").
+// O marcador do pedaço é "2/3", e NÃO "parte 2". A palavra parte já tem dono
+// nesta fábrica: ela nomeia o PANO — Corpo Parte 1, Corpo Parte 2, Corpo Parte 3
+// de um tricolor. Usar a mesma palavra para o pedaço do trabalho produzia a
+// linha "Enfesto parte 2 · Corpo Parte 1", que se lê como contradição: o enfesto
+// da parte 2 do corpo 1. Com a fração não há como confundir — "Enfesto 2/3 ·
+// Corpo Parte 1" é o segundo dos três trechos do enfesto daquele pano.
+const _OP_RE_PEDACO = /\s+(?:\d+\s*\/\s*\d+|parte\s*\d+)\s*$/i;
+
+// O nome sem o marcador de pedaço. É por ele que os pedaços se reconhecem como
+// partes do MESMO trabalho, e é o que permite renumerar sem acumular sufixo
+// ("Enfesto 2/3 1/2"). Aceita também o "parte N" antigo, que segue gravado nas
+// operações criadas antes desta troca.
 function _opNomeBase(nome) {
-  return String(nome || '').replace(/\s+parte\s*\d+\s*$/i, '').trim();
+  return String(nome || '').replace(_OP_RE_PEDACO, '').trim();
 }
 
 // A que trabalho um pedaço pertence: mesmo posto, mesmo nome-base, mesmo lote e
@@ -6476,9 +6485,11 @@ function _opChaveParte(op) {
     _opLotesDaOperacao(op).join(','), _opFaseDaOperacao(op)].join('|');
 }
 
-// Renumera os pedaços de um trabalho pela ORDEM DO RELÓGIO: "parte 1" é o que
-// começa antes. Sobrando um só, o sufixo cai e o nome volta ao original — é o que
+// Renumera os pedaços de um trabalho pela ORDEM DO RELÓGIO: "1/3" é o que começa
+// antes. Sobrando um só, o marcador cai e o nome volta ao original — é o que
 // mantém a agenda honesta quando um pedaço é apagado ou passa para outro dia.
+// O denominador acompanha: apagar um de três deixa os outros dois como 1/2 e
+// 2/2, e não dois terços órfãos de um trabalho que agora tem duas partes.
 function _opRenumerarPartes(data, ref) {
   const chave = _opChaveParte(ref);
   const base = _opNomeBase(ref.operacao);
@@ -6489,7 +6500,7 @@ function _opRenumerarPartes(data, ref) {
       return (ia == null ? 1e9 : ia) - (ib == null ? 1e9 : ib);
     });
   grupo.forEach((o, i) => {
-    o.operacao = grupo.length > 1 ? `${base} parte ${i + 1}` : base;
+    o.operacao = grupo.length > 1 ? `${base} ${i + 1}/${grupo.length}` : base;
     if (grupo.length > 1) o.partida = true; else delete o.partida;
   });
   return grupo;
@@ -7563,7 +7574,7 @@ async function corrigirOrdemOperacoes(data) {
     + 'Fase que nunca foi cronometrada usa o tempo cadastrado na função, que só corrige para mais.\n'
     + 'Operação da corrente que NÃO é enfesto volta a durar o que está cadastrado na função — é o que desfaz duração inflada por engano. Duração digitada à mão não é tocada.\n'
     + 'Café da manhã, almoço e café da tarde ficam no mesmo horário em todas as funções.\n'
-    + 'Trabalho que entra numa hora marcada é PARTIDO em duas ("parte 1" e "parte 2"): faz o que dá antes, para, e retoma depois — em vez de ir inteiro para o fim da pausa.\n'
+    + 'Trabalho que entra numa hora marcada é PARTIDO em dois trechos ("1/2" e "2/2"): faz o que dá antes, para, e retoma depois — em vez de ir inteiro para o fim da pausa.\n'
     + 'Nenhuma função fica com duas operações ao mesmo tempo.')) return;
   // A rotina de hora marcada entra ANTES do ajuste: ela é âncora, e o resto do
   // dia é que se encaixa em volta dela.
@@ -8078,7 +8089,7 @@ function _opMontarCascataDoLote(data, os) {
     if (ini + duracaoMin > _OP_JORNADA.fim) {
       const pedacos = _opPartirNosVagos(_opVagosNoPosto(data, cad.funcaoId, piso, chavePessoa), duracaoMin);
       if (!pedacos || pedacos.length < 2) { naoCoube.push({ passo, fase }); return null; }
-      pedacos.forEach((p, i) => { criarLinha(`${cad.nome} parte ${i + 1}`, p.ini, p.dur).partida = true; });
+      pedacos.forEach((p, i) => { criarLinha(`${cad.nome} ${i + 1}/${pedacos.length}`, p.ini, p.dur).partida = true; });
       const ult = pedacos[pedacos.length - 1];
       partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin });
       return ult.ini + ult.dur;
