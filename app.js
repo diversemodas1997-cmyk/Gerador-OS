@@ -2542,9 +2542,13 @@ function _opsDaFuncao(f) {
 function _tempoOperacaoCadastrada(funcaoId, nomeOperacao) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
   if (!f) return 0;
-  const alvo = _normNome(nomeOperacao);
+  // Mesma tolerância de nome do horário fixo: o tempo do cadastro tem que chegar
+  // à operação do plano mesmo quando as duas grafias diferem por um "das" ou um
+  // ponto e vírgula. Sem isto a operação ficava sem tempo cadastrado e entrava
+  // com duração zero.
+  const alvo = _opChaveOperacaoNome(nomeOperacao);
   if (!alvo) return 0;
-  const achou = _opsDaFuncao(f).find(o => _normNome(o.nome) === alvo);
+  const achou = _opsDaFuncao(f).find(o => _opChaveOperacaoNome(o.nome) === alvo);
   return (achou && Number(achou.duracaoMin)) || 0;
 }
 
@@ -3389,6 +3393,25 @@ async function salvarCadastro() {
 
   closeModal('modal-cad');
   toast('Salvo com sucesso', 'ok');
+
+  // FUNÇÃO SALVA: o "todo dia às" e o tempo das operações de hora marcada valem
+  // AGORA, nos dias já planejados. Antes isso só acontecia ao abrir a agenda de
+  // Operações — quem mudava o horário no cadastro e ia fazer outra coisa via o
+  // plano continuar com a hora velha, sem saber que faltava passar por lá.
+  if (tipo === 'funcao') {
+    try {
+      const hoje = _expHoje();
+      const r = _opGarantirHorariosFixosNoPeriodo(hoje, _expAddDias(hoje, 60));
+      if (r.tocadas.length) {
+        await saveState('operacoes');
+        if (r.atualizadas.length) {
+          toast(`${r.atualizadas.length} operação(ões) já planejada(s) acertada(s) pela nova hora`, 'ok');
+        }
+        const secOps = document.querySelector('section.page[data-page="operacoes"]');
+        if (secOps && !secOps.classList.contains('hidden')) renderOperacoes();
+      }
+    } catch (e) { console.warn('aplicar horários fixos após salvar função', e); }
+  }
 
   // Mudou a lista de etapas do desenho técnico? As OSs já emitidas com ele
   // acompanham sozinhas — era o passo manual que ninguém lembrava de fazer.
@@ -6776,6 +6799,24 @@ function _opEhPausa(op) { return !!_opTipoPausa(op); }
 // outro aparelho).
 let _opHoraFixaVersao = 0;
 let _opHoraFixaCache = null;
+// A OPERAÇÃO CADASTRADA e a OPERAÇÃO DO PLANO são a mesma coisa escrita duas
+// vezes, por gente diferente, em momentos diferentes — e nunca saem idênticas.
+// O cadastro tem "Preparação das máquinas;" (com o ponto e vírgula que sobrou de
+// uma lista antiga) e o dia tem "Preparação de máquinas". Comparando letra a
+// letra, o programa não via que eram a mesma: não reconhecia a operação como de
+// hora marcada, não levava a ela a mudança do "todo dia às" — e ainda criava uma
+// SEGUNDA linha ao lado, com o nome do cadastro.
+// Esta chave ignora o que não distingue nada: pontuação e as palavras de ligação
+// (de/da/do/das/dos/e). O que distingue continua contando — "Montar carga" e
+// "Montagem de carga" seguem sendo duas operações diferentes.
+function _opChaveOperacaoNome(nome) {
+  return _normNome(nome)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(p => p && !['de', 'da', 'do', 'das', 'dos', 'e'].includes(p))
+    .join(' ');
+}
+
 function _opIndiceHorasFixas() {
   const fs = STATE.funcoes || [];
   if (_opHoraFixaCache && _opHoraFixaCache.fonte === fs && _opHoraFixaCache.versao === _opHoraFixaVersao) {
@@ -6785,7 +6826,7 @@ function _opIndiceHorasFixas() {
   const porNome = new Map();     // "nome normalizado" → hora, para quem não diz a função
   fs.forEach(f => {
     _opsDaFuncao(f).forEach(o => {
-      const nome = _normNome(o.nome);
+      const nome = _opChaveOperacaoNome(o.nome);
       if (!nome) return;
       const hora = String(o.horaFixa || '').trim();
       porFuncao.set(f.id + '|' + nome, hora);
@@ -6802,7 +6843,7 @@ function _opIndiceHorasFixas() {
 // é (o programa às vezes pergunta apenas pelo nome) a busca se abre para as
 // demais — aí o cadastro é a única pista que existe.
 function _opHoraFixaCadastrada(op) {
-  const alvo = _normNome(op && op.operacao);
+  const alvo = _opChaveOperacaoNome(op && op.operacao);
   if (!alvo) return '';
   const ix = _opIndiceHorasFixas();
   const id = op && op.funcaoId;
@@ -6983,8 +7024,8 @@ function _opCompDaFase(os, fase) {
 // A que comprimento de grade o tempo cadastrado se refere.
 function _opCompRefCadastrado(funcaoId, nomeOperacao) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
-  const alvo = _normNome(nomeOperacao);
-  const achou = f && alvo ? _opsDaFuncao(f).find(o => _normNome(o.nome) === alvo) : null;
+  const alvo = _opChaveOperacaoNome(nomeOperacao);
+  const achou = f && alvo ? _opsDaFuncao(f).find(o => _opChaveOperacaoNome(o.nome) === alvo) : null;
   const v = parseFloat(achou && achou.compRef);
   return (isFinite(v) && v > 0) ? v : _OP_ENFESTO_COMP_REF_PADRAO;
 }
@@ -7550,7 +7591,8 @@ function _opAplicarHorariosFixosNoDia(data) {
       // Mas garante o 📌 — o cadastro diz que aquela operação é de hora marcada,
       // e a agenda tem que mostrá-la como fixa (barra preta) em vez de deixá-la
       // com cara de operação comum, que qualquer reencaixe empurra.
-      const jaLa = noDia.filter(x => x.funcaoId === f.id && _normNome(x.operacao) === _normNome(nome));
+      const jaLa = noDia.filter(x => x.funcaoId === f.id
+        && _opChaveOperacaoNome(x.operacao) === _opChaveOperacaoNome(nome));
       if (jaLa.length) {
         jaLa.forEach(x => {
           // Operação da corrente de uma OS fica FORA de TUDO o que vem do
