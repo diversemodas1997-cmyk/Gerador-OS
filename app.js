@@ -17926,6 +17926,34 @@ function _riscoNomeTamanhos(tamanhos) {
   return presentes.map(k => (qtds[presentes.indexOf(k)] === 1 ? '' : qtds[presentes.indexOf(k)]) + rot[k]).join('-');
 }
 
+// O NOME SUGERIDO para uma grade nova: tamanhos + SKU, como sempre — mas nunca
+// um nome que JÁ EXISTE. Sugerir o nome de uma grade existente é oferecer um
+// caminho que termina em erro: a criação é barrada no fim, depois de tudo
+// respondido. E acontecia direto na importação em massa, porque quatro riscos
+// da mesma linha e mesmos tamanhos (as larguras 174, 177, 180 e 182 da BM.LISA)
+// compõem os quatro o mesmo nome — inclusive contra a grade que o próprio
+// assistente tinha acabado de criar no risco anterior.
+//
+// Batendo, entra a LARGURA, que é o que a casa já usa para separar duas grades
+// assim ("P ao G3 | CM.LISA | 116.5cm" e "| 117cm"). Sem largura legível, cai
+// num sufixo numérico — feio, mas honesto: diz que há outra igual e deixa
+// renomear, em vez de travar.
+function _riscoNomeSugerido(tamanhos, sku, largura) {
+  const base = _riscoNomeTamanhos(tamanhos) + (sku ? ' | ' + sku : '');
+  const existe = n => (STATE.grades || []).some(g => _normNome(g.nome) === _normNome(n));
+  if (!base || !existe(base)) return base;
+  const cm = parseFloat(largura) > 0 ? +(parseFloat(largura) * 100).toFixed(1) : 0;
+  if (cm > 0) {
+    const comLarg = `${base} | ${cm}cm`;
+    if (!existe(comLarg)) return comLarg;
+  }
+  for (let i = 2; i <= 30; i++) {
+    const n = `${base} (${i})`;
+    if (!existe(n)) return n;
+  }
+  return base;
+}
+
 // Assinatura dos tamanhos, para juntar num só grupo os riscos que são da mesma
 // grade nova. Cinco PDFs da mesma peça viram UMA grade de cinco fases.
 function _riscoAssinatura(tamanhos) {
@@ -18206,7 +18234,7 @@ function _riscoHtmlGradesNovas() {
         </div>
         <div class="field full">
           <label>Nome da grade</label>
-          <input type="text" id="rn-nome-${gi}" value="${esc(d.nome != null ? d.nome : nomeTam + (d.sku ? ' | ' + d.sku : ''))}"
+          <input type="text" id="rn-nome-${gi}" value="${esc(d.nomeManual && d.nome != null ? d.nome : _riscoNomeSugerido(G.tamanhos, d.sku, (G.itens[0] || {}).largura))}"
                  oninput="riscoNomeDigitado(${gi})" placeholder="Ex.: P ao G3 | CM.LISA | 116.5cm">
           <div class="field-hint">Nasce montado dos tamanhos do risco + o SKU, e <b>pode ser mudado</b>: é o nome que vai aparecer na lista de grades e na OS.</div>
         </div>
@@ -18252,7 +18280,7 @@ function riscoAtualizarNome(gi) {
   const el = document.getElementById(`rn-nome-${gi}`);
   // Nome digitado à mão não se refaz sozinho ao mexer no SKU.
   if (!el || d.nomeManual) return;
-  el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  el.value = _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura);
   d.nome = el.value;
 }
 
@@ -18831,7 +18859,7 @@ function _pastaIniciarRascunho(G) {
     variacao: prod.variacao || '',
     pecasPorPacote: prod.pecasPorPacote || '',
     // Nasce montado; vira do usuário no instante em que ele escrever algo.
-    nome: _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : ''),
+    nome: _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura),
     nomeManual: false,
     fases: []
   };
@@ -18947,6 +18975,12 @@ function _pastaHtmlPasso() {
   // novo — só corrigida —, e oferecer "criar nova" ali é oferecer a duplicata:
   // duas grades iguais, com OS emitidas em cada uma, é estrago que ninguém
   // desfaz depois.
+  // O NOME SUGERIDO é refeito a cada passo, e não uma vez no começo: a grade
+  // criada no risco anterior já existe agora, e sugerir o nome dela seria
+  // oferecer um caminho que termina em "já existe uma grade chamada...".
+  if (!G.draft.nomeManual) {
+    G.draft.nome = _riscoNomeSugerido(G.tamanhos, G.draft.sku, (G.itens[0] || {}).largura);
+  }
   const achada = _pastaMelhorCandidata(G);
   const jaExiste = !!(achada && achada.certeza);
   if (jaExiste && !G.gradeId) G.gradeId = achada.grade.id;
@@ -19125,7 +19159,7 @@ function pastaAtualizarNome() {
   const sku = (document.getElementById('pw-sku')?.value || '').trim();
   const el = document.getElementById('pw-nome');
   if (!el || G.draft.nomeManual) return;
-  el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  el.value = _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura);
   G.draft.nome = el.value;
 }
 
