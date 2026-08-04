@@ -832,7 +832,7 @@ function exigirEdicao(acao) {
 //
 // E nem isso é a tranca de verdade: a tranca está na função `set_user_role` do
 // Supabase, que confere sozinha se quem chamou é admin (ver
-// supabase-admin-roles.sql). Sem ela, qualquer usuário logado promove a si
+// sql/supabase-admin-roles.sql). Sem ela, qualquer usuário logado promove a si
 // mesmo chamando a função direto, sem passar por esta tela. O que se faz aqui é
 // não deixar a tela mentir e não gastar uma ida ao servidor à toa.
 async function _ehAdminNoServidor() {
