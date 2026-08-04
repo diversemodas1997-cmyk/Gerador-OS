@@ -18758,9 +18758,26 @@ function _pastaMontarGrupos() {
     G.gradeId = sugerida ? sugerida.grade.id : '';
     G.modelo = (G.itens.find(L => L.modelo) || {}).modelo || '';
     G.status = 'pendente';
+    // O que este risco vai fazer: CRIAR uma grade ou CORRIGIR/AGREGAR numa que
+    // já existe. Fase agregadora (ribana, gola, viés, forro) nunca cria — ela
+    // entra na grade do corpo, e por isso conta sempre como correção.
+    const faseArq = _riscoFaseDoNomeArquivo((G.itens[0] || {}).arquivo || '');
+    const agrega = !!(faseArq && _riscoFaseEhAgregadora(faseArq));
+    G.criaGrade = !agrega && !G.gradeId;
     _pastaIniciarRascunho(G);
     return G;
   });
+  // PRIMEIRO O QUE NÃO EXISTE. Cadastrar o que falta é o trabalho que muda o
+  // estado das coisas — sem a grade, a OS não sai. Corrigir medida de grade que
+  // já existe é acerto, e acerto pode esperar: numa fila de 137 riscos, misturar
+  // os dois faz a pessoa parar no risco 12 sem saber quanto do que importa já
+  // passou.
+  // E há a razão prática: as fases agregadoras ficam todas no segundo bloco, o
+  // que garante que a grade do corpo delas já existe quando chegarem — a ribana
+  // nunca mais chega antes da grade dela.
+  // A ordem da PASTA se mantém dentro de cada bloco (o sort do JS é estável).
+  _pastaWiz.grupos.sort((a, b) => (a.criaGrade ? 0 : 1) - (b.criaGrade ? 0 : 1));
+  _pastaWiz.nNovas = _pastaWiz.grupos.filter(G => G.criaGrade).length;
 }
 
 /* ---- a fase que AGREGA: ribana, gola, viés e as demais ---- */
@@ -19247,7 +19264,10 @@ function _pastaHtmlPasso() {
   return `
     <div style="display:flex;align-items:baseline;gap:10px;">
       <div style="font-weight:700;">Risco ${pos} de ${tot}</div>
-      <div style="font-size:12px;color:var(--ink-3);">pasta ${esc(_pastaWiz.pasta)}</div>
+      <div style="font-size:12px;color:var(--ink-3);">${G.criaGrade
+        ? `<b>grades que faltam cadastrar</b> — ${esc(String(_pastaWiz.nNovas))} nesta etapa`
+        : `<b>correções em grades que já existem</b> — as ${esc(String(_pastaWiz.nNovas))} novas já passaram`
+      } · pasta ${esc(_pastaWiz.pasta)}</div>
     </div>
     <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 10px;">
       <div style="height:100%;width:${pct}%;background:var(--accent);"></div>
