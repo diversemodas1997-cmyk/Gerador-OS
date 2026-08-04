@@ -18767,17 +18767,33 @@ function _pastaMontarGrupos() {
     _pastaIniciarRascunho(G);
     return G;
   });
-  // PRIMEIRO O QUE NÃO EXISTE. Cadastrar o que falta é o trabalho que muda o
-  // estado das coisas — sem a grade, a OS não sai. Corrigir medida de grade que
-  // já existe é acerto, e acerto pode esperar: numa fila de 137 riscos, misturar
-  // os dois faz a pessoa parar no risco 12 sem saber quanto do que importa já
-  // passou.
-  // E há a razão prática: as fases agregadoras ficam todas no segundo bloco, o
-  // que garante que a grade do corpo delas já existe quando chegarem — a ribana
-  // nunca mais chega antes da grade dela.
-  // A ordem da PASTA se mantém dentro de cada bloco (o sort do JS é estável).
-  _pastaWiz.grupos.sort((a, b) => (a.criaGrade ? 0 : 1) - (b.criaGrade ? 0 : 1));
+  // A FILA ANDA POR PASTA, e uma pasta de largura é UMA GRADE: "2xM-4xG-2xGG/
+  // 174 cm" tem o corpo, o forro e a ribana daquela grade e de mais nenhuma.
+  // Mantendo os riscos de uma pasta juntos, cada cadastro é fechado INTEIRO —
+  // todas as fases — antes de o próximo começar. Espalhá-los pela fila obrigaria
+  // a voltar à mesma grade três vezes, em momentos diferentes, sem saber se ela
+  // já está completa.
+  //
+  // Dentro da pasta vale a ordem do nome do arquivo, que já põe o corpo antes:
+  // CORPO, FORRO, RIBANA. É o que a fase agregadora precisa — ela entra na grade
+  // que o corpo acabou de criar, no passo anterior.
+  //
+  // ENTRE PASTAS, a prioridade continua sendo a de antes: primeiro as que têm
+  // grade a cadastrar, depois as que só corrigem medida. O que muda é que agora
+  // a unidade da fila é a pasta, e não o risco solto.
+  const porPasta = new Map();
+  _pastaWiz.grupos.forEach((G, i) => {
+    const k = _pastaPastaDoArquivo(G.itens[0]) || String(i);
+    if (!porPasta.has(k)) porPasta.set(k, { itens: [], ordem: i, cria: false });
+    const p = porPasta.get(k);
+    p.itens.push(G);
+    if (G.criaGrade) p.cria = true;
+  });
+  _pastaWiz.grupos = Array.from(porPasta.values())
+    .sort((a, b) => (a.cria ? 0 : 1) - (b.cria ? 0 : 1) || a.ordem - b.ordem)
+    .flatMap(p => p.itens);
   _pastaWiz.nNovas = _pastaWiz.grupos.filter(G => G.criaGrade).length;
+  _pastaWiz.nPastas = porPasta.size;
 }
 
 /* ---- a fase que AGREGA: ribana, gola, viés e as demais ---- */
@@ -19311,7 +19327,14 @@ function _pastaHtmlPasso() {
       <div style="font-size:12px;color:var(--ink-3);">${G.criaGrade
         ? `<b>grades que faltam cadastrar</b> — ${esc(String(_pastaWiz.nNovas))} nesta etapa`
         : `<b>correções em grades que já existem</b> — as ${esc(String(_pastaWiz.nNovas))} novas já passaram`
-      } · pasta ${esc(_pastaWiz.pasta)}</div>
+      }${(() => {
+        // Onde este risco está DENTRO da pasta dele: a fila fecha uma grade por
+        // vez, e saber "2 de 3 desta pasta" é o que diz se falta fase para ela.
+        const k = _pastaPastaDoArquivo(G.itens[0]);
+        const daPasta = _pastaWiz.grupos.filter(x => _pastaPastaDoArquivo(x.itens[0]) === k);
+        const i = daPasta.indexOf(G) + 1;
+        return daPasta.length > 1 ? ` · fase ${i} de ${daPasta.length} desta grade` : '';
+      })()}</div>
     </div>
     <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 10px;">
       <div style="height:100%;width:${pct}%;background:var(--accent);"></div>
