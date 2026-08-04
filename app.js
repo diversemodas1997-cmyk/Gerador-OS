@@ -18682,6 +18682,9 @@ async function abrirAssistentePasta() {
 
   _pastaWiz = {
     pasta: escolha.pasta, arquivos: escolha.arquivos, leituras: [],
+    // Qual grade cada pasta usou. É o que faz a ribana cair na grade do corpo
+    // que acabou de passar — os dois moram na mesma pasta.
+    gradePorPasta: {},
     grupos: [], idx: 0, etapa: 'lendo', lidos: 0,
     feito: { criadas: [], atualizadas: [], fases: 0 }
   };
@@ -18750,6 +18753,68 @@ function _pastaMontarGrupos() {
     _pastaIniciarRascunho(G);
     return G;
   });
+}
+
+/* ---- a fase que AGREGA: ribana, gola, viés e as demais ---- */
+
+// A RIBANA NÃO É UMA GRADE. Ela é uma fase da grade do corpo — e o risco dela
+// tem os tamanhos dela ("10xM-10xG-10xGG-10xG1", dez golas por camada), que não
+// batem com os do corpo ("M-G-GG-G1"). Como o assistente procurava grade só por
+// tamanho, não achava nenhuma e oferecia CRIAR — nascia uma grade "10xM-10xG…"
+// que não é peça nenhuma, e o corpo ficava sem a ribana dele.
+// Corpo é a única fase que define grade; as outras entram na que já existe.
+function _riscoFaseEhAgregadora(nome) {
+  const n = _normNome(nome);
+  if (!n) return false;
+  return !/\bcorpo\b/.test(n);
+}
+
+// A pasta da GRADE: linha + distribuição de tamanhos ("CM.LISA/M-G-GG-G1"). É o
+// que junta o corpo e a ribana do mesmo produto, estejam eles na pasta da
+// largura ou soltos um nível acima.
+function _pastaPastaDaGrade(L) {
+  const partes = String((L && (L.caminho || L.arquivo)) || '').split('/');
+  partes.pop();
+  return partes.slice(0, 2).join('/');
+}
+
+// As duas grafias em que a casa escreve a mesma distribuição de tamanhos: a
+// faixa ("P ao G3") e a extensa ("P-M-G-GG-G1-G2-G3"). A pasta usa uma, o nome
+// da grade pode usar a outra.
+function _riscoFormasDoNome(tamanhos) {
+  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const presentes = ordem.filter(k => (parseInt((tamanhos || {})[k], 10) || 0) > 0);
+  const extensa = presentes
+    .map(k => { const q = parseInt(tamanhos[k], 10); return (q === 1 ? '' : q) + rot[k]; }).join('-');
+  return [_riscoNomeTamanhos(tamanhos), extensa].filter(Boolean);
+}
+
+const _chaveTam = s => _normNome(s).replace(/(\d)\s*x/gi, '$1').replace(/[\s.]/g, '');
+
+// A grade em que este risco agregador entra. Duas pistas, nesta ordem:
+//   1. a grade que os riscos ANTERIORES desta mesma pasta usaram — o corpo vem
+//      antes na fila, porque a fila segue a pasta;
+//   2. a pasta escrita no caminho: linha + tamanhos, contra o nome das grades.
+function _pastaGradeAgregadora(G) {
+  const L = G.itens[0] || {};
+  const pasta = _pastaPastaDaGrade(L);
+  const mem = (_pastaWiz && _pastaWiz.gradePorPasta) || {};
+  if (pasta && mem[pasta]) {
+    const g = (STATE.grades || []).find(x => x.id === mem[pasta]);
+    if (g) return { grade: g, porque: 'é a grade que os riscos desta pasta acabaram de usar' };
+  }
+  const partes = String(L.caminho || '').split('/');
+  const linha = String(partes[0] || '').toUpperCase();
+  const tok = _chaveTam(partes[1] || '');
+  if (!tok) return null;
+  const cand = (STATE.grades || []).filter(g => {
+    const nome = String(g.nome || '').toUpperCase();
+    const casaLinha = !linha || nome.includes(linha) || nome.includes(linha.split('.')[0] + '.');
+    return casaLinha && _riscoFormasDoNome(g.tamanhos || {}).some(f => _chaveTam(f) === tok);
+  });
+  if (cand.length === 1) return { grade: cand[0], porque: `é a grade da pasta ${partes[1]}` };
+  return null;
 }
 
 // A grade que este risco provavelmente é. Tamanhos iguais não bastam para
@@ -18981,8 +19046,14 @@ function _pastaHtmlPasso() {
   if (!G.draft.nomeManual) {
     G.draft.nome = _riscoNomeSugerido(G.tamanhos, G.draft.sku, (G.itens[0] || {}).largura);
   }
-  const achada = _pastaMelhorCandidata(G);
-  const jaExiste = !!(achada && achada.certeza);
+  // FASE AGREGADORA (ribana, gola, viés, forro…): ela não é uma grade, é uma
+  // fase de uma que já existe. Achando a grade da pasta, o destino é ela e a
+  // opção de criar sai da lista.
+  const faseArq = _riscoFaseDoNomeArquivo((G.itens[0] || {}).arquivo || '');
+  const agregadora = faseArq && _riscoFaseEhAgregadora(faseArq) ? _pastaGradeAgregadora(G) : null;
+  if (agregadora && !G.draft.destinoManual) G.gradeId = agregadora.grade.id;
+  const achada = agregadora || _pastaMelhorCandidata(G);
+  const jaExiste = !!agregadora || !!(achada && achada.certeza);
   if (jaExiste && !G.gradeId) G.gradeId = achada.grade.id;
   const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
 
@@ -18991,7 +19062,12 @@ function _pastaHtmlPasso() {
     + (STATE.grades || []).slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
         .map(g => `<option value="${esc(g.id)}" ${g.id === G.gradeId ? 'selected' : ''}>${casaId.has(g.id) ? '✓ ' : ''}${esc(g.nome)}</option>`).join('');
 
-  const dica = jaExiste
+  const ehAgregadora = !!(faseArq && _riscoFaseEhAgregadora(faseArq));
+  const dica = agregadora
+    ? `<b>${esc(faseArq)} é uma fase, não uma grade.</b> Este risco entra em <b>${esc(agregadora.grade.nome)}</b>, que ${esc(agregadora.porque)}. Os tamanhos do risco da ribana são os dela (dez por camada) e não os do corpo — por isso ela não casa por tamanho com grade nenhuma.`
+    : ehAgregadora
+    ? `<b>${esc(faseArq)} é uma fase, não uma grade</b> — mas não achei a grade desta pasta. Escolha acima em qual ela entra. Se o corpo ainda não foi cadastrado, o melhor é <b>pular este risco</b> e voltar a ele depois: pulado, ele reaparece no fim da fila.`
+    : jaExiste
     ? `<b>Esta grade já existe</b> — mesmos tamanhos, mesma linha e mesma largura (${esc(achada.porque)}). Aqui só dá para <b>corrigi-la</b>: criar outra igual duplicaria o cadastro. Se for mesmo outra grade, escolha qual acima.`
     : grade
       ? (casaId.has(grade.id)
@@ -19178,6 +19254,8 @@ function pastaNomeDigitado() {
 function pastaTrocarDestino(valor) {
   const G = _pastaWiz.grupos[_pastaWiz.idx];
   _pastaColetar();
+  // Escolha do usuário manda sobre a sugestão da pasta, inclusive na ribana.
+  G.draft.destinoManual = true;
   G.gradeId = valor;
   _pastaResetFases(G);      // as fases só fazem sentido em relação ao destino
   renderPastaWiz();
@@ -19199,6 +19277,22 @@ function pastaTecidoMudou() {
 
 function pastaPularPasso() {
   const G = _pastaWiz.grupos[_pastaWiz.idx];
+  // RISCO AGREGADOR SEM GRADE (a ribana que chegou antes do corpo dela) volta
+  // para o FIM da fila, uma vez só. A grade dele pode nascer num passo adiante —
+  // e aí ele acha o destino sozinho, sem ninguém precisar recomeçar a
+  // importação. Pulado de novo, aí sim fica pulado.
+  const faseArq = _riscoFaseDoNomeArquivo((G.itens[0] || {}).arquivo || '');
+  if (!G.reenfileirado && faseArq && _riscoFaseEhAgregadora(faseArq) && !_pastaGradeAgregadora(G)) {
+    G.reenfileirado = true;
+    G.status = 'pendente';
+    _pastaWiz.grupos.splice(_pastaWiz.idx, 1);
+    _pastaWiz.grupos.push(G);
+    toast(`${faseArq} ainda sem grade — volta para o fim da fila`, 'ok');
+    // O índice fica onde está: o risco seguinte ocupou esta posição.
+    if (_pastaWiz.idx >= _pastaWiz.grupos.length) _pastaWiz.etapa = 'fim';
+    renderPastaWiz();
+    return;
+  }
   G.status = 'pulado';
   _pastaAvancar();
 }
@@ -19256,6 +19350,9 @@ async function pastaSalvarPasso() {
     nova.enfestoComprimento = nova.fases[0] ? nova.fases[0].comp : '';
     nova.enfestoLargura = nova.fases[0] ? nova.fases[0].larg : '';
     STATE.grades.push(nova);
+    // A grade recém-criada passa a ser a desta pasta: é nela que a ribana e o
+    // viés, que vêm logo atrás na fila, vão entrar.
+    G.gradeId = nova.id;
     _pastaWiz.feito.criadas.push(`${nome} — ${nova.fases.length} fase(s)`);
     _pastaWiz.feito.fases += nova.fases.length;
     G.gradeId = nova.id;
@@ -19313,6 +19410,10 @@ async function pastaSalvarPasso() {
   });
 
   G.status = 'ok';
+  // Guarda em que grade esta pasta lançou: é o que leva a ribana, que vem
+  // depois na fila, para a mesma grade do corpo.
+  const pastaChave = _pastaPastaDaGrade(G.itens[0]);
+  if (pastaChave && G.gradeId) _pastaWiz.gradePorPasta[pastaChave] = G.gradeId;
   await saveState('grades');
   await saveState('meta');
   toast(`${grade ? 'Grade atualizada' : 'Grade criada'} · ${linhas.length} fase(s)`, 'ok');
