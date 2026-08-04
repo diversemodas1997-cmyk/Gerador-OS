@@ -8,6 +8,73 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
+- **CÓDIGO:** tag `restore-2026-08-05-d` (cache-buster `app.js ?v=2026-08-05d`,
+  `styles.css ?v=2026-08-04a`). O que mudou desde o `restore-2026-08-03-l` — 33
+  commits, em três frentes: a **importação de riscos**, o **planejamento de
+  operações** e a **gravação na nuvem**.
+
+  **IMPORTAÇÃO DE RISCOS (PDF)** — a maior parte do trabalho. A janela pedia
+  sete decisões de uma vez, para riscos que nem eram da mesma grade:
+  - **um PDF por passo**, com uma pergunta só ("cria uma grade ou corrige uma
+    existente?"). O agrupamento era só por distribuição de tamanhos, e juntava
+    numa "grade" os quatro BM.LISA (174, 177, 180, 182 cm), os dois CM.LISA e o
+    PM.LISA, todos "P ao G3";
+  - **a fila anda por PASTA**: uma pasta de largura é uma grade, e o cadastro
+    fecha inteiro — todas as fases — antes de o próximo começar. Entre pastas,
+    primeiro as que têm grade a cadastrar, depois as que só corrigem;
+  - **largura diferente é outra grade**, e ela entra no nome
+    (`M-G-GG-G1 | BM.LISA 174cm`). A sugestão não atravessa larguras, e a escolha
+    manual pergunta antes de trocar a medida de uma grade boa;
+  - **grade que já existe só pode ser corrigida** — a opção de criar some, para
+    não nascer duplicata;
+  - **ribana, gola, viés e forro são FASES, não grades**: entram na grade do
+    corpo, achada pela pasta (com a largura). O risco delas tem os tamanhos
+    delas ("10xM-10xG…") e não casava com grade nenhuma;
+  - **lê do nome do arquivo** o que ele já diz: SKU, tipo de peça, fase
+    ("CORPO 2" → "Corpo Parte 2") e variação (LISA = básica, TRI = tricolor,
+    REC = Recortada);
+  - **preenche pelo SKU**: unidades da grade (BM e PM = 1, resto = 2) e peças
+    por pacote (BM = 36, CM = 80);
+  - **nome da grade editável**, e a sugestão nunca é a de uma grade existente;
+  - o cabeçalho mostra a **soma do excedente por extenso** (2,79 + 15 cm =
+    2,94), que antes aparecia só como total e passava por erro de conta.
+
+  **PLANEJAMENTO DE OPERAÇÕES**
+  - **enfesto longo repartido pelos vãos** ("Enfesto 1/3", "2/3", "3/3"). O maior
+    vão do dia é 2h15 entre as pausas, e nenhum enfesto acima disso conseguia ser
+    planejado — sumia a fase mais longa, e a corrente começava pelo Corpo 2;
+  - **a corrente que não cabe hoje continua no próximo dia útil**, em vez de o
+    resto da fase ser descartado;
+  - **tempo de corte por fase**, com a OS de referência enquanto não há média (na
+    OS 0405 o corte levou 60, 20 e 20 min; o cadastro dava 15 para as três);
+  - **ordem das operações por função**, com setas ↑↓; hora marcada fica à parte,
+    ordenada pelo relógio;
+  - **botão "+ Expedição do dia"**, que monta a carga a partir das janelas de OE;
+  - **hora marcada** repetida na mesma pessoa deixa de ser sobreposição, e o
+    cadastro passa a alcançar a operação já planejada (inclusive em dia passado);
+  - **gola e viés fora do plano automático**; **busca de OS por número** na
+    janela de alocação; **Retirar OS** lista só o que o alcance retira.
+
+  **GRAVAÇÃO NA NUVEM** — o clique feito DURANTE uma gravação se perdia e era
+  revertido (`_dirtyKeys.clear()` limpava também o que sujou no meio do voo). É
+  o que fazia o checklist e o número do tom voltarem atrás sozinhos.
+
+  **ARQUIVO** — raiz do projeto organizada (`sql/`, `docs/`, `dados/`), desenhos
+  técnicos com nome padronizado (`<LINHA> - <PEÇA> <GRADE>.pdf`) e sem cópia
+  repetida — **menos as ribanas por largura, que são uma por grade e devem
+  existir**.
+
+  Cópia do código deste ponto em
+  `backups-codigo/*.20260805d-importacao-riscos.CÓPIA`.
+
+- **DADOS:** ⚠️ **a exportação mais nova continua sendo a de 03/08/2026 17:32**
+  (`backups/BACKUP-COMPLETO-2026-08-03T20-32-59.json`). O código deste ponto
+  mexeu muito em grades e operações — **exporte antes de rodar a importação em
+  massa**: app → Configurações → **Exportar tudo (JSON)**. Sem isso, o retrato
+  mais próximo de um erro na importação tem dois dias.
+
+### Ponto anterior a este
+
 - **CÓDIGO:** tag `restore-2026-08-03-l` (cache-buster `app.js ?v=2026-08-03l`,
   `styles.css ?v=2026-08-03d`). O que mudou desde o `restore-2026-07-30-k` — 13
   commits, quase todos no **planejamento de operações** e no **tempo de
@@ -70,7 +137,7 @@ backup próprio.
 - **SUPABASE:** sem mudança de infraestrutura neste ponto (mesmas tabelas e
   políticas da seção 3).
 
-### Ponto anterior a este
+### Pontos mais antigos
 
 - **CÓDIGO:** tag `restore-2026-07-30-k` (cache-buster `app.js ?v=2026-07-30k`,
   `styles.css ?v=2026-07-30d`). O que mudou desde o `restore-2026-07-28-aq`:
