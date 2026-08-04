@@ -17983,11 +17983,12 @@ function _riscoNovaDraft(G) {
   if (_riscoNovas[G.assinatura]) return _riscoNovas[G.assinatura];
   const modelo = (G.itens[0].L.modelo || '').trim();
   const prod = _riscoProdutos()[_normNome(modelo)] || {};
+  const skuArq = prod.sku || _pastaSkuDoCaminho(G.itens[0] && G.itens[0].L);
   const d = {
-    sku: prod.sku || '',
-    tipoPeca: prod.tipoPeca || '',
+    sku: skuArq,
+    tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(skuArq) || '',
     variacao: prod.variacao || '',
-    pecasPorPacote: prod.pecasPorPacote || '',
+    pecasPorPacote: prod.pecasPorPacote || _riscoPacotePadrao(skuArq),
     fases: []
   };
   _riscoNovas[G.assinatura] = d;
@@ -18773,6 +18774,15 @@ function _riscoUnidadesPadrao(sku) {
   return /^(BM|PM)\b/i.test(String(sku || '').trim()) ? 1 : 2;
 }
 
+// PEÇAS POR PACOTE que a importação assume, pelo SKU. No moletom (BM) o pacote
+// é de 36 peças — é o número da casa, e ele nunca chegou ao cadastro: as sete
+// grades BM estão todas com zero, e um pacote de zero peça não fecha conta
+// nenhuma na expedição. Nas demais linhas o campo continua em branco, porque o
+// número varia (as CM cadastradas vão de 3 a 9) e chutar seria pior.
+function _riscoPacotePadrao(sku) {
+  return /^BM\b/i.test(String(sku || '').trim()) ? 36 : '';
+}
+
 // A RIBANA NÃO É UMA GRADE. Ela é uma fase da grade do corpo — e o risco dela
 // tem os tamanhos dela ("10xM-10xG-10xGG-10xG1", dez golas por camada), que não
 // batem com os do corpo ("M-G-GG-G1"). Como o assistente procurava grade só por
@@ -18951,7 +18961,7 @@ function _pastaIniciarRascunho(G) {
     sku,
     tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(sku) || 'camiseta',
     variacao: prod.variacao || '',
-    pecasPorPacote: prod.pecasPorPacote || '',
+    pecasPorPacote: prod.pecasPorPacote || _riscoPacotePadrao(sku),
     // Nasce montado; vira do usuário no instante em que ele escrever algo.
     nome: _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura),
     nomeManual: false,
