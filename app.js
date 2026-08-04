@@ -18619,7 +18619,7 @@ function _pastaMontarGrupos() {
   _pastaWiz.grupos = passos.map(G => {
     G.candidatas = _riscoGradesQueCasam(G.tamanhos);
     const sugerida = _pastaMelhorCandidata(G);
-    G.gradeId = sugerida ? sugerida.id : '';
+    G.gradeId = sugerida ? sugerida.grade.id : '';
     G.modelo = (G.itens.find(L => L.modelo) || {}).modelo || '';
     G.status = 'pendente';
     _pastaIniciarRascunho(G);
@@ -18644,30 +18644,43 @@ function _pastaMelhorCandidata(G) {
   const cm = larg * 100;
   const alvosCm = larg > 0 ? [String(+cm.toFixed(1))] : [];
   if (larg > 0 && Math.abs(cm - Math.round(cm)) < 0.01) alvosCm.push(String(Math.round(cm)));
-  let melhor = null, melhorPts = 0, melhorDif = 99;
+  let melhor = null, melhorPts = 0, melhorDif = 99, melhorPorque = '', melhorCerteza = false;
   G.candidatas.forEach(g => {
     const nome = String(g.nome || '').toUpperCase();
-    let pts = 0;
+    let pts = 0; const razoes = [];
     // A linha, pelo nome da pasta ("BM.LISA/..."): é o que o nome da grade traz
     // depois do "|". Casa também pelo prefixo ("CM." em "CM.BÁSICA").
-    if (pasta && (nome.includes(pasta) || nome.includes(pasta.split('.')[0] + '.'))) pts += 2;
+    const linhaCasa = !!(pasta && (nome.includes(pasta) || nome.includes(pasta.split('.')[0] + '.')));
+    if (linhaCasa) { pts += 2; razoes.push('linha ' + pasta); }
     // A LARGURA é o sinal mais forte: é ela que distingue duas grades de mesmos
     // tamanhos, e é medida, não digitada.
     const difs = (Array.isArray(g.fases) ? g.fases : [])
       .map(f => Math.abs((parseFloat(f.larg) || 0) - larg))
       .filter(x => isFinite(x));
     const dif = difs.length ? Math.min(...difs) : 99;
-    if (larg > 0 && dif <= 0.02) pts += 3;
-    if (alvosCm.length && alvosCm.some(a => nome.replace(',', '.').includes(a))) pts += 2;
+    const larguraCasa = larg > 0 && dif <= 0.02;
+    if (larguraCasa) { pts += 3; razoes.push('largura ' + larg.toFixed(3).replace('.', ',') + ' m'); }
+    const nomeCasa = alvosCm.length && alvosCm.some(a => nome.replace(',', '.').includes(a));
+    if (nomeCasa) { pts += 2; razoes.push('a largura está no nome'); }
     // Empate na pontuação: vence a largura mais próxima — 1,165 é da grade de
     // 116,5 cm, não da de 117, ainda que as duas tenham fase de 1,17.
     if (pts > melhorPts || (pts === melhorPts && pts > 0 && dif < melhorDif)) {
       melhorPts = pts; melhorDif = dif; melhor = g;
+      // CERTEZA é a largura casando junto com a linha (ou com a largura escrita
+      // no nome). Só a linha não basta: as quatro larguras da BM.LISA são quatro
+      // grades. Só a largura também não: 1,17 aparece na CM.LISA e na CM.TRI.
+      // Fica em variável, e não no objeto da grade: uma marca posta ali seria
+      // gravada junto no cadastro e subiria para a nuvem com ele.
+      melhorCerteza = larguraCasa && (linhaCasa || nomeCasa);
+      melhorPorque = razoes.join(' · ');
     }
   });
-  // Uma candidata só e nada contra ela: vale como sugestão, como era antes.
-  if (!melhor && G.candidatas.length === 1) return G.candidatas[0];
-  return melhor;
+  // Uma candidata só e nada contra ela: vale como sugestão, sem ser certeza.
+  if (!melhor && G.candidatas.length === 1) {
+    return { grade: G.candidatas[0], certeza: false, porque: 'única grade com estes tamanhos' };
+  }
+  if (!melhor) return null;
+  return { grade: melhor, certeza: melhorCerteza, porque: melhorPorque };
 }
 
 // O rascunho do grupo: o que a tela mostra e o que o "Salvar" grava. Nasce do
@@ -18778,24 +18791,39 @@ function _pastaHtmlLendo() {
 function _pastaHtmlPasso() {
   const G = _pastaWiz.grupos[_pastaWiz.idx];
   const tot = _pastaWiz.grupos.length, pos = _pastaWiz.idx + 1;
-  const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
   const nomeTam = _riscoNomeTamanhos(G.tamanhos);
   const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
     .filter(k => (parseInt(G.tamanhos[k], 10) || 0) > 0)
     .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
 
+  // As candidatas são refeitas a cada passo, e não uma vez no começo: a grade
+  // criada no risco anterior já existe quando o próximo aparece, e é justamente
+  // ela que o próximo costuma corrigir.
+  G.candidatas = _riscoGradesQueCasam(G.tamanhos);
+  // ESTA GRADE JÁ EXISTE? O que identifica uma grade nesta casa são os tamanhos,
+  // a LINHA e a LARGURA do tecido. Batendo os três, ela não é para ser criada de
+  // novo — só corrigida —, e oferecer "criar nova" ali é oferecer a duplicata:
+  // duas grades iguais, com OS emitidas em cada uma, é estrago que ninguém
+  // desfaz depois.
+  const achada = _pastaMelhorCandidata(G);
+  const jaExiste = !!(achada && achada.certeza);
+  if (jaExiste && !G.gradeId) G.gradeId = achada.grade.id;
+  const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
+
   const casaId = new Set(G.candidatas.map(g => g.id));
-  const opts = '<option value="">➕ CRIAR uma grade nova com estes tamanhos</option>'
+  const opts = (jaExiste ? '' : '<option value="">➕ CRIAR uma grade nova com estes tamanhos</option>')
     + (STATE.grades || []).slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
         .map(g => `<option value="${esc(g.id)}" ${g.id === G.gradeId ? 'selected' : ''}>${casaId.has(g.id) ? '✓ ' : ''}${esc(g.nome)}</option>`).join('');
 
-  const dica = grade
-    ? (casaId.has(grade.id)
-        ? 'Os tamanhos batem com esta grade — a sugestão veio da <b>largura do tecido</b> e da pasta do arquivo. A medida deste risco vai <b>corrigir</b> o cadastro dela.'
-        : '<b>Atenção:</b> os tamanhos deste risco não batem com a distribuição desta grade.')
-    : (G.candidatas.length > 1
-        ? `<b>${G.candidatas.length} grades</b> têm estes mesmos tamanhos, e nenhuma delas casa pela largura ou pela pasta — escolha acima qual é, ou crie uma nova.`
-        : 'Nenhuma grade cadastrada tem estes tamanhos. Responda abaixo o que o PDF não traz e ela será criada.');
+  const dica = jaExiste
+    ? `<b>Esta grade já existe</b> — mesmos tamanhos, mesma linha e mesma largura (${esc(achada.porque)}). Aqui só dá para <b>corrigi-la</b>: criar outra igual duplicaria o cadastro. Se for mesmo outra grade, escolha qual acima.`
+    : grade
+      ? (casaId.has(grade.id)
+          ? 'Os tamanhos batem com esta grade. A medida deste risco vai <b>corrigir</b> o cadastro dela.'
+          : '<b>Atenção:</b> os tamanhos deste risco não batem com a distribuição desta grade.')
+      : (G.candidatas.length > 1
+          ? `<b>${G.candidatas.length} grades</b> têm estes mesmos tamanhos, e nenhuma delas casa pela largura ou pela pasta — escolha acima qual é, ou crie uma nova.`
+          : 'Nenhuma grade cadastrada tem estes tamanhos. Responda abaixo o que o PDF não traz e ela será criada.');
 
   const produto = grade ? '' : `
     <div class="form-grid cols-3" style="margin-top:10px;">
