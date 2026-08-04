@@ -19197,10 +19197,21 @@ function _pastaHtmlPasso() {
   const cam = String(L0.caminho || L0.arquivo || '');
   const partes = cam.split('/');
   const arq = partes.pop() || cam;
-  const compL = _riscoCompCadastro(L0.comprimento, (G.draft.fases[0] || {}).tecidoId);
+  // A MEDIDA, com a conta à mostra. Esta linha dizia "medida do risco" e mostrava
+  // o número JÁ COM O EXCEDENTE somado — quem comparasse com o cadastro via uma
+  // diferença que não é o excedente (2,75 no cadastro contra 2,94 aqui dá 19 cm,
+  // e o excedente é 15) e concluía que o programa estava somando errado. Agora a
+  // soma aparece inteira: o que o PDF traz, quanto entra de excedente e de que
+  // tecido ele é.
+  const tec0 = (G.draft.fases[0] || {}).tecidoId;
+  const compL = _riscoCompCadastro(L0.comprimento, tec0);
+  const excCm = excedenteEnfestoCm(tec0);
+  const nomeTec = ((STATE.tecidos || []).find(t => t.id === tec0) || {}).nome;
   const medida = (compL == null || L0.largura == null)
     ? '<span style="color:var(--alert);">sem medida legível</span>'
-    : `<b>${compL.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b>`;
+    : `<b>${L0.comprimento.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b>`
+      + ` &nbsp;+&nbsp; <b>${excCm} cm</b> de excedente${nomeTec ? ` (${esc(nomeTec)})` : ' (padrão)'}`
+      + ` &nbsp;=&nbsp; <b>${compL.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b> para cadastrar`;
   return `
     <div style="display:flex;align-items:baseline;gap:10px;">
       <div style="font-weight:700;">Risco ${pos} de ${tot}</div>
@@ -19214,8 +19225,9 @@ function _pastaHtmlPasso() {
       <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;word-break:break-all;">${esc(arq)}</div>
       ${partes.length ? `<div style="font-size:11px;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${esc(partes.join(' / '))}</div>` : ''}
       <div style="margin-top:6px;font-size:12px;">
-        Produto: <b>${esc(G.modelo || '—')}</b> · tamanhos <b>${esc(tamTxt)}</b> (${esc(nomeTam)}) · medida do risco ${medida}
+        Produto: <b>${esc(G.modelo || '—')}</b> · tamanhos <b>${esc(tamTxt)}</b> (${esc(nomeTam)})
       </div>
+      <div style="margin-top:4px;font-size:12px;">Medida: ${medida}</div>
     </div>
 
     <div class="field">
