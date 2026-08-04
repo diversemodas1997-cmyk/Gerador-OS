@@ -14865,6 +14865,56 @@ async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistTarefa', e); }
 }
 
+// TEMPO TOTAL DO CORTE de uma OS, em minutos: a soma do Ini→Fim lançado em cada
+// fase, nas linhas do checklist. Fase sem um dos dois horários (ou com o fim
+// antes do início, que é digitação trocada) não entra — somar meia medição daria
+// um total menor que a realidade e ninguém veria que faltava lançar.
+//
+// Devolve { min, fases, incompletas, doPar }. `doPar` diz que o número não veio
+// das fases e sim do par Início/Fim antigo, gravado quando a cabeça da etapa
+// ainda tinha os dois campos.
+function _totalCorteMinOS(o) {
+  const tempos = ((o && o.progresso) || {}).enfestosTempos || {};
+  let min = 0, fases = 0, incompletas = 0;
+  Object.keys(tempos).forEach(ord => {
+    const t = tempos[ord] || {};
+    const temAlgum = !!(t.corteIni || t.corteFim);
+    if (!temAlgum) return;
+    const ini = _opMin(t.corteIni), fim = _opMin(t.corteFim);
+    if (ini == null || fim == null || fim <= ini) { incompletas++; return; }
+    min += fim - ini;
+    fases++;
+  });
+  if (fases) return { min, fases, incompletas, doPar: false };
+  // Nenhuma fase medida: vale o par antigo da cabeça, se estiver lá.
+  const ct = ((o && o.progresso) || {}).corteTempo || {};
+  const pi = _opMin(ct.ini), pf = _opMin(ct.fim);
+  if (pi != null && pf != null && pf > pi) return { min: pf - pi, fases: 0, incompletas, doPar: true };
+  return { min: 0, fases: 0, incompletas, doPar: false };
+}
+
+// O total como ele aparece na folha. Sem nenhuma medição fica a linha em branco,
+// para preencher à mão no papel — que é o que a folha impressa precisa.
+function _corteTotalTexto(t) {
+  return (t && t.min > 0) ? _opDurTexto(t.min) : '';
+}
+
+// Reescreve o total do corte na folha aberta, sem re-render: é chamado a cada
+// horário de fase lançado, e o re-render completo tiraria o foco de quem está
+// digitando a linha seguinte.
+function _atualizarTotalCorteFolha(osId) {
+  const el = document.querySelector(`[data-corte-total="${osId}"]`);
+  if (!el) return;
+  const o = (STATE.ordens || []).find(x => x.id === osId);
+  if (!o) return;
+  const t = _totalCorteMinOS(o);
+  el.textContent = _corteTotalTexto(t);
+  el.title = t.fases
+    ? `Soma de ${t.fases} fase${t.fases === 1 ? '' : 's'} medida${t.fases === 1 ? '' : 's'}`
+      + (t.incompletas ? ` · ${t.incompletas} fase(s) com só um horário lançado` : '')
+    : (t.doPar ? 'Início/Fim lançado antes, na cabeça da etapa' : 'Lance Ini e Fim nas fases abaixo');
+}
+
 async function togglarChecklistEnfesto(osId, ordem, checked) {
   if (!exigirEdicao('marcar o enfesto da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
@@ -14918,6 +14968,9 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
   // Confere na hora contra a média das OS de referência: o alerta aparece ao sair
   // do campo, não só na próxima vez que a folha for aberta.
   _atualizarSelosTempoEnfesto(osId);
+  // O total do corte, na cabeça da etapa, é a soma destes horários: refaz agora,
+  // no campo, em vez de esperar a folha ser reaberta.
+  _atualizarTotalCorteFolha(osId);
   try { await saveState('ordens'); } catch (e) { console.warn('salvarTempoEnfesto', e); }
 }
 
@@ -15456,6 +15509,7 @@ function aplicarProgressoCheckboxes(os) {
   // Horário que chegou de outro usuário também tem que ser conferido contra a
   // média — o alerta não pode depender de quem digitou.
   _atualizarSelosTempoEnfesto(os.id);
+  _atualizarTotalCorteFolha(os.id);
 }
 
 function verOS(id) {
@@ -16784,18 +16838,18 @@ function renderPrintSheet(o) {
                 onchange="togglarChecklistTarefa('${esc(o.id)}', this.dataset.etapa, this.dataset.tarefa, this.checked)"
                 data-etapa="${esc(nomeEtapa)}" data-tarefa="${esc(nomeTarefa)}">`;
             };
-            // Campo Início/Fim de corte, exibido só na etapa "Corte". Par único
-            // por OS em progresso.corteTempo. Texto livre (imprime como linha de
-            // preencher e aceita digitação na tela).
-            const ct = prog.corteTempo || {};
-            const campoCorte = (campo) =>
-              `<input type="text" inputmode="numeric" placeholder="--:--" value="${esc(ct[campo] || '')}" `
-              + `data-corte-tempo="${campo}" `
-              + `onchange="this.value=_horaFmt(this.value); salvarTempoCorte('${esc(o.id)}', '${campo}', this.value)" `
-              + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
-              + `font-family:'IBM Plex Mono',monospace;font-size:8pt;padding:0 1px;">`;
+            // Cabeça da etapa "Corte": um campo só, com o TEMPO TOTAL — a soma do
+            // que cada fase levou, nos campos Ini/Fim das próprias linhas logo
+            // abaixo. Antes havia aqui um segundo par Início/Fim, do corte
+            // inteiro: duas contas do mesmo trabalho na mesma caixa, uma
+            // preenchida à mão e outra pelas fases, que só batiam por acaso — e
+            // era a de cima, a que ninguém somava, que ia para o papel.
+            // O par antigo continua GRAVADO (progresso.corteTempo) e vira o total
+            // quando a OS não tem horário lançado em nenhuma fase: as 11 OS que
+            // já o preencheram não perdem o que registraram.
+            const totalCorte = _totalCorteMinOS(o);
             const temposCorte = `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:7pt;color:#555;font-weight:400;">
-                <span>Início</span>${campoCorte('ini')}<span>Fim</span>${campoCorte('fim')}
+                <span>Tempo total</span><span data-corte-total="${esc(o.id)}" title="Soma do Ini→Fim de cada fase, nas linhas abaixo" style="min-width:44px;border-bottom:1px solid #888;text-align:center;font-size:8pt;font-weight:700;color:#000;padding:0 2px;">${esc(_corteTotalTexto(totalCorte))}</span>
               </span>`;
             // Início/Fim de corte POR FASE, na própria linha do checklist. Grava
             // em progresso.enfestosTempos[ordem] com chaves PRÓPRIAS (corteIni/
