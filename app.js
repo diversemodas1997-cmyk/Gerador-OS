@@ -7860,23 +7860,25 @@ function abrirModalAlocarOS(data) {
   (STATE.operacoes || []).filter(o => o.data === dia)
     .forEach(o => _opLotesDaOperacao(o).forEach(l => noDia.add(l)));
   const semZero = n => String(n).replace(/^0+/, '') || '0';
-  // Candidatas: OS em produção (dentro do fluxo), com a que já está no dia
-  // marcada — alocar de novo só acrescenta o que falta, e é bom deixar isso claro.
-  const ordens = (STATE.ordens || [])
+  // Candidatas: TODAS as OS com número, da mais nova para a mais velha. A lista
+  // aberta mostra só as 120 primeiras — passar de 177 opções num seletor não
+  // ajuda ninguém a achar nada —, mas a BUSCA varre todas: a OS de abril está
+  // fora das 120 e é justamente a que ninguém achava para realocar.
+  const todas = (STATE.ordens || [])
     .filter(o => (o.os || '').toString().trim())
-    .sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }))
-    .slice(0, 120);
+    .sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }));
+  const TETO_SEM_BUSCA = 120;
   document.getElementById('modal-aloc-title').textContent = `Alocar OS em ${formatDate(dia)}`;
   document.getElementById('modal-aloc-fields').innerHTML = `
     <div class="form-grid cols-2">
       <div class="field"><label>Dia *</label><input type="date" id="aloc-data" value="${esc(dia)}"></div>
+      <div class="field"><label>Buscar OS pelo número</label>
+        <input type="text" id="aloc-busca" inputmode="numeric" autocomplete="off" placeholder="Ex.: 453">
+        <div class="field-hint" id="aloc-busca-nota"></div>
+      </div>
       <div class="field full">
         <label>OS *</label>
-        <select id="aloc-os">
-          <option value="">— selecione —</option>
-          ${ordens.map(o => `<option value="${esc(o.id)}">${esc(o.os)}${o.modeloNome ? ' · ' + esc(o.modeloNome) : ''}${
-            noDia.has(semZero(o.os)) ? ' (já está no dia)' : ''}</option>`).join('')}
-        </select>
+        <select id="aloc-os"></select>
         <div class="field-hint">O programa monta as operações que faltam para esta OS atravessar a sequência inteira, cada uma na função que a executa, com o tempo cadastrado ali. Alocar uma segunda OS acrescenta a sequência dela <b>depois</b> do que cada posto já tem — a ordem entre as OS é você que decide, movendo as operações.</div>
         <div class="field-hint" id="aloc-fases"></div>
       </div>
@@ -7889,6 +7891,39 @@ function abrirModalAlocarOS(data) {
   // do tricolor são 45 operações, e é melhor saber disso antes de clicar.
   const selOS = document.getElementById('aloc-os');
   const box = document.getElementById('aloc-fases');
+  const busca = document.getElementById('aloc-busca');
+  const nota = document.getElementById('aloc-busca-nota');
+  // Repinta o seletor com o que casa com a busca. Casa pelo NÚMERO — com ou sem
+  // os zeros à esquerda, porque "453" e "0453" são a mesma OS e ninguém digita os
+  // zeros — e também pelo nome do modelo, que às vezes é o que a pessoa lembra.
+  const pintar = () => {
+    const termo = _normNome(busca ? busca.value : '');
+    const alvo = semZero(termo);
+    const casa = o => {
+      const num = String(o.os || '').trim();
+      return semZero(num).includes(alvo) || _normNome(o.modeloNome || '').includes(termo);
+    };
+    const achadas = termo ? todas.filter(casa) : todas;
+    const mostradas = termo ? achadas : achadas.slice(0, TETO_SEM_BUSCA);
+    const anterior = selOS.value;
+    selOS.innerHTML = '<option value="">— selecione —</option>'
+      + mostradas.map(o => `<option value="${esc(o.id)}">${esc(o.os)}${o.modeloNome ? ' · ' + esc(o.modeloNome) : ''}${
+          noDia.has(semZero(o.os)) ? ' (já está no dia)' : ''}</option>`).join('');
+    // Uma achada só já entra escolhida: digitar o número e ter de abrir a lista
+    // para clicar no único item é um passo a troco de nada.
+    if (mostradas.length === 1) selOS.value = mostradas[0].id;
+    else if (anterior && mostradas.some(o => o.id === anterior)) selOS.value = anterior;
+    if (nota) {
+      nota.textContent = !termo
+        ? (todas.length > TETO_SEM_BUSCA
+            ? `${TETO_SEM_BUSCA} OS mais recentes na lista, de ${todas.length} — busque pelo número para chegar às demais.`
+            : `${todas.length} OS na lista.`)
+        : (achadas.length
+            ? `${achadas.length} OS encontrada(s).`
+            : 'Nenhuma OS com esse número.');
+    }
+    mostrarFases();
+  };
   const mostrarFases = () => {
     if (!box) return;
     const o = (STATE.ordens || []).find(x => x.id === (selOS && selOS.value));
@@ -7898,8 +7933,12 @@ function abrirModalAlocarOS(data) {
       + ` → até <b>${_OP_SEQ_ROTINA.length + fs.length * _OP_SEQ_FASE.length} operações</b> na sequência completa.`;
   };
   if (selOS) selOS.onchange = mostrarFases;
-  mostrarFases();
+  if (busca) busca.oninput = pintar;
+  pintar();
   openModal('modal-aloc-os');
+  // Foco na busca: a janela abre pronta para digitar o número, que é como o dia
+  // costuma começar — o usuário já sabe qual OS vai alocar.
+  if (busca) setTimeout(() => busca.focus(), 60);
 }
 
 async function confirmarAlocarOSNoDia() {
