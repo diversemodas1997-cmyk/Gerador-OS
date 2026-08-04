@@ -18052,11 +18052,39 @@ function riscoNovaDelFase(gi, fi) {
 
 // O nome sugerido para uma fase que ainda não existe: o que já foi ensinado,
 // senão o que o nome do arquivo diz, senão o próprio código do tecido.
+// As peças que a casa nomeia nos arquivos de risco, com a grafia que as grades
+// já usam. O nome do arquivo é "<SKU> - <PEÇA> <GRADE>.pdf": a peça está ali,
+// escrita, e mesmo assim o campo vinha do tecido ou vazio.
+const _RISCO_PECAS = [
+  [/\bCORPO\b/i, 'Corpo'], [/\bFORRO\b/i, 'Forro'], [/\bRIBANA\b/i, 'Ribana'],
+  [/\bGOLA\b/i, 'Gola'], [/\bVI[EÉ]S\b/i, 'Viés'], [/\bPUNHOS?\b/i, 'Punhos'],
+  [/\bBARRA\b/i, 'Barra'], [/\bMANGAS?\b/i, 'Mangas'], [/\bCAPUZ\b/i, 'Capuz'],
+  [/\bBOLSO\b/i, 'Bolso'], [/\bVISTA\b/i, 'Vista'], [/\bPALA\b/i, 'Pala']
+];
+
+// A FASE que o nome do arquivo diz. "CORPO 2" vira "Corpo Parte 2", que é como
+// as grades da casa chamam — o número solto ali é a parte da peça, não uma
+// contagem. O trecho de tamanhos ("2xG-G1", "10xM-10xG") não confunde: o dígito
+// só conta quando termina palavra, e em "2xG" vem um "x" depois.
+function _riscoFaseDoNomeArquivo(nomeArq) {
+  const base = String(nomeArq || '').replace(/\.pdf$/i, '');
+  const partes = base.split(' - ');
+  const trecho = partes.length > 1 ? partes.slice(1).join(' - ') : base;
+  for (const [re, nome] of _RISCO_PECAS) {
+    if (!re.test(trecho)) continue;
+    const m = trecho.match(new RegExp(re.source + '\\s*(?:PARTE\\s*)?(\\d)\\b', 'i'));
+    return (m && m[1]) ? `${nome} Parte ${m[1]}` : nome;
+  }
+  return '';
+}
+
 function _riscoNomeFaseSugerido(L) {
   const mem = _riscoAprendidos();
   const k = _riscoChave(L);
   if (k && mem[k]) return mem[k];
   const a = L.arquivo || '';
+  const doNome = _riscoFaseDoNomeArquivo(a);
+  if (doNome) return doNome;
   const m = a.match(/fase\s+([^.\-]+?)\s*(?:-|\.pdf|$)/i);
   if (m) return m[1].trim().replace(/\s+/g, ' ');
   const t = (L.tecido || '').trim();
@@ -18736,13 +18764,54 @@ function _pastaMelhorCandidata(G) {
   return { grade: melhor, certeza: melhorCerteza, porque: melhorPorque };
 }
 
+// O SKU que o PRÓPRIO ARQUIVO já diz. Na pasta de riscos ele está escrito duas
+// vezes — na pasta de primeiro nível ("BM.LISA/2xG-G1/182 cm/") e no começo do
+// nome do arquivo ("BM.LISA - CORPO 2xG-G1.pdf") —, e mesmo assim o campo abria
+// vazio, esperando que alguém redigitasse o que estava na tela inteira.
+// Reconhece a forma que a casa usa: duas ou três letras, ponto, e o resto do
+// código ("BM.LISA", "CM.TRI", "PM.LISA", "SM. ESPARTANA").
+const _RE_SKU_PASTA = /^([A-Z]{2,3}\.\s?[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 ._-]*)$/i;
+function _pastaSkuDoCaminho(L) {
+  const cam = String((L && (L.caminho || L.arquivo)) || '').trim();
+  if (!cam) return '';
+  const partes = cam.split('/');
+  const arq = partes.pop() || '';
+  // A pasta manda: é a organização do arquivo, não o batismo de quem salvou.
+  const naPasta = partes.map(p => p.trim()).find(p => _RE_SKU_PASTA.test(p));
+  if (naPasta) return naPasta.replace(/\s+/g, ' ').toUpperCase();
+  // Sem pasta (o "Importar risco" avulso manda um arquivo só), vale o começo do
+  // nome, até o " - " que separa o SKU da peça.
+  const m = arq.replace(/\.pdf$/i, '').split(' - ')[0].trim();
+  return _RE_SKU_PASTA.test(m) ? m.replace(/\s+/g, ' ').toUpperCase() : '';
+}
+
+// A PASTA da grade (o tipo de peça) pelo prefixo do SKU: BM = blusa moletom,
+// CM = camiseta, PM = camiseta polo. É o mesmo prefixo que nomeia as pastas do
+// arquivo de riscos, e a correspondência é da casa, não invenção. Só entra
+// quando o produto ainda não foi respondido nenhuma vez — o que se aprendeu
+// antes manda, e o campo segue editável.
+function _pastaTipoPelaSku(sku) {
+  const pre = String(sku || '').split('.')[0].trim().toUpperCase();
+  const alvo = { BM: /moletom/i, CM: /camiseta/i, PM: /polo/i }[pre];
+  if (!alvo) return '';
+  if (pre === 'CM') return 'camiseta';
+  if (pre === 'BM') return 'blusa_moletom';
+  // Polo e as demais moram em pastas que a casa criou: procura pelo rótulo.
+  const usada = [...new Set((STATE.grades || []).map(g => g.tipoPeca || '').filter(Boolean))]
+    .find(v => alvo.test(labelTp(v)) || alvo.test(v));
+  return usada || '';
+}
+
 // O rascunho do grupo: o que a tela mostra e o que o "Salvar" grava. Nasce do
-// que já foi aprendido antes; o que não foi, nasce vazio para ser respondido.
+// que já foi aprendido antes; o que não foi, nasce do que o ARQUIVO já diz; e só
+// o que ninguém tem como saber nasce vazio, para ser respondido.
 function _pastaIniciarRascunho(G) {
   const prod = _riscoProdutos()[_normNome(G.modelo)] || {};
+  const skuArq = _pastaSkuDoCaminho(G.itens[0]);
+  const sku = prod.sku || skuArq;
   G.draft = {
-    sku: prod.sku || '',
-    tipoPeca: prod.tipoPeca || 'camiseta',
+    sku,
+    tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(sku) || 'camiseta',
     variacao: prod.variacao || '',
     pecasPorPacote: prod.pecasPorPacote || '',
     fases: []
