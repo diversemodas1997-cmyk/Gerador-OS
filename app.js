@@ -18587,9 +18587,20 @@ async function abrirAssistentePasta() {
   renderPastaWiz();
 }
 
-// Um grupo por distribuição de tamanhos: é o que define UMA grade.
+// UM PASSO POR RISCO. Antes o assistente agrupava pela distribuição de tamanhos
+// e só por ela — e isso juntava numa "grade" só sete riscos que não são a mesma
+// grade: os quatro BM.LISA (174, 177, 180 e 182 cm), os dois CM.LISA (116,5 e
+// 117) e o PM.LISA, todos "P ao G3". A tela pedia sete decisões de uma vez, cada
+// uma sobre um pano diferente, e quem estava cadastrando não tinha como separar
+// o que era de quem. Agora cada PDF é um passo com uma pergunta só: esta medida
+// CRIA uma grade ou CORRIGE uma que já existe?
+//
+// A grade de várias fases (o tricolor, com corpo 1, 2, 3, forro e ribana)
+// continua possível — e fica até mais clara: o primeiro risco da pasta cria a
+// grade, e os seguintes, que vêm logo atrás por estarem na mesma pasta, entram
+// nela como fase nova.
 function _pastaMontarGrupos() {
-  const grupos = new Map();
+  const passos = [];
   _pastaWiz.leituras.forEach(L => {
     if (L.erro) return;
     const a = _riscoAssinatura(L.tamanhos);
@@ -18597,23 +18608,66 @@ function _pastaMontarGrupos() {
       L.erro = 'Não deu para ler a tabela de tamanhos deste relatório';
       return;
     }
-    if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
-    grupos.get(a).itens.push(L);
+    passos.push({ assinatura: a, tamanhos: L.tamanhos, itens: [L] });
   });
-  // A ORDEM DA FILA é por semelhança, e não a ordem dos arquivos na pasta: o
-  // assistente cadastra uma grade por vez, e passar de uma faixa para a
-  // parecida com ela é o que deixa a decisão fácil — o tipo de peça, a variação
-  // e o tecido de cada fase costumam se repetir na seguinte. Pulando de "P ao
-  // G3" para "M-G2-G3" e voltando para "2P-2GG", cada passo recomeça do zero.
-  _pastaWiz.grupos = Array.from(grupos.values()).sort(compararGradesPorSemelhanca).map(G => {
-    G.itens.sort((x, y) => (x.caminho || '').localeCompare(y.caminho || '', 'pt-BR', { numeric: true }));
+  // A ORDEM É A DA PASTA, e não mais por semelhança de faixa de tamanhos. Os
+  // riscos de uma mesma grade moram na mesma pasta: em fila, o seguinte cai
+  // sempre na grade que o anterior acabou de criar, e o cadastro anda sem
+  // ninguém ter de reencontrar nada.
+  passos.sort((x, y) => String(x.itens[0].caminho || '')
+    .localeCompare(String(y.itens[0].caminho || ''), 'pt-BR', { numeric: true }));
+  _pastaWiz.grupos = passos.map(G => {
     G.candidatas = _riscoGradesQueCasam(G.tamanhos);
-    G.gradeId = G.candidatas.length === 1 ? G.candidatas[0].id : '';
+    const sugerida = _pastaMelhorCandidata(G);
+    G.gradeId = sugerida ? sugerida.id : '';
     G.modelo = (G.itens.find(L => L.modelo) || {}).modelo || '';
     G.status = 'pendente';
     _pastaIniciarRascunho(G);
     return G;
   });
+}
+
+// A grade que este risco provavelmente é. Tamanhos iguais não bastam para
+// escolher — foi o que juntou sete panos diferentes na mesma tela. O que separa
+// um do outro é a LARGURA do tecido e a LINHA (a pasta de onde o arquivo veio):
+// "P ao G3" da BM.LISA a 1,82 m e "P ao G3" da CM.LISA a 1,165 m são duas
+// grades, e cada uma tem a sua. Sem sinal nenhum além do tamanho, não sugere
+// nada: é melhor perguntar do que lançar a medida na grade errada.
+function _pastaMelhorCandidata(G) {
+  const L = G.itens[0];
+  if (!G.candidatas.length) return null;
+  const cam = String(L.caminho || '').toUpperCase();
+  const pasta = cam.split('/')[0] || '';
+  const larg = parseFloat(L.largura) || 0;
+  // A largura escrita no NOME da grade, em cm: é como a casa separa duas grades
+  // de mesmos tamanhos e mesma linha ("...| CM.LISA | 116.5cm" e "| 117cm").
+  const cm = larg * 100;
+  const alvosCm = larg > 0 ? [String(+cm.toFixed(1))] : [];
+  if (larg > 0 && Math.abs(cm - Math.round(cm)) < 0.01) alvosCm.push(String(Math.round(cm)));
+  let melhor = null, melhorPts = 0, melhorDif = 99;
+  G.candidatas.forEach(g => {
+    const nome = String(g.nome || '').toUpperCase();
+    let pts = 0;
+    // A linha, pelo nome da pasta ("BM.LISA/..."): é o que o nome da grade traz
+    // depois do "|". Casa também pelo prefixo ("CM." em "CM.BÁSICA").
+    if (pasta && (nome.includes(pasta) || nome.includes(pasta.split('.')[0] + '.'))) pts += 2;
+    // A LARGURA é o sinal mais forte: é ela que distingue duas grades de mesmos
+    // tamanhos, e é medida, não digitada.
+    const difs = (Array.isArray(g.fases) ? g.fases : [])
+      .map(f => Math.abs((parseFloat(f.larg) || 0) - larg))
+      .filter(x => isFinite(x));
+    const dif = difs.length ? Math.min(...difs) : 99;
+    if (larg > 0 && dif <= 0.02) pts += 3;
+    if (alvosCm.length && alvosCm.some(a => nome.replace(',', '.').includes(a))) pts += 2;
+    // Empate na pontuação: vence a largura mais próxima — 1,165 é da grade de
+    // 116,5 cm, não da de 117, ainda que as duas tenham fase de 1,17.
+    if (pts > melhorPts || (pts === melhorPts && pts > 0 && dif < melhorDif)) {
+      melhorPts = pts; melhorDif = dif; melhor = g;
+    }
+  });
+  // Uma candidata só e nada contra ela: vale como sugestão, como era antes.
+  if (!melhor && G.candidatas.length === 1) return G.candidatas[0];
+  return melhor;
 }
 
 // O rascunho do grupo: o que a tela mostra e o que o "Salvar" grava. Nasce do
@@ -18731,16 +18785,16 @@ function _pastaHtmlPasso() {
     .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
 
   const casaId = new Set(G.candidatas.map(g => g.id));
-  const opts = '<option value="">➕ Criar uma grade NOVA com estes tamanhos</option>'
+  const opts = '<option value="">➕ CRIAR uma grade nova com estes tamanhos</option>'
     + (STATE.grades || []).slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
         .map(g => `<option value="${esc(g.id)}" ${g.id === G.gradeId ? 'selected' : ''}>${casaId.has(g.id) ? '✓ ' : ''}${esc(g.nome)}</option>`).join('');
 
   const dica = grade
     ? (casaId.has(grade.id)
-        ? 'Os tamanhos deste risco batem com esta grade. As medidas abaixo vão <b>corrigir</b> o cadastro dela.'
+        ? 'Os tamanhos batem com esta grade — a sugestão veio da <b>largura do tecido</b> e da pasta do arquivo. A medida deste risco vai <b>corrigir</b> o cadastro dela.'
         : '<b>Atenção:</b> os tamanhos deste risco não batem com a distribuição desta grade.')
     : (G.candidatas.length > 1
-        ? `<b>${G.candidatas.length} grades</b> têm exatamente estes tamanhos — escolha acima em qual lançar, ou crie uma nova.`
+        ? `<b>${G.candidatas.length} grades</b> têm estes mesmos tamanhos, e nenhuma delas casa pela largura ou pela pasta — escolha acima qual é, ou crie uma nova.`
         : 'Nenhuma grade cadastrada tem estes tamanhos. Responda abaixo o que o PDF não traz e ela será criada.');
 
   const produto = grade ? '' : `
@@ -18778,6 +18832,9 @@ function _pastaHtmlPasso() {
   const tecOpts = sel => '<option value="">— escolher —</option>' + (STATE.tecidos || [])
     .map(t => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.nome)}</option>`).join('');
 
+  // Um risco por passo é a regra nova; a coluna "Arquivo" vira ruído, porque o
+  // arquivo já está no cabeçalho, em cima e por extenso.
+  const umRisco = G.itens.length === 1;
   const linhas = G.itens.map((L, fi) => {
     const d = G.draft.fases[fi];
     const compCad = _riscoCompCadastro(L.comprimento, d.tecidoId);
@@ -18800,8 +18857,8 @@ function _pastaHtmlPasso() {
 
     return `<tr>
       <td style="text-align:center;"><input type="checkbox" id="pw-f-ap-${fi}" ${d.aplicar ? 'checked' : ''} ${semMedida ? 'disabled' : ''}></td>
-      <td style="font-size:10px;color:var(--ink-3);max-width:150px;word-break:break-all;">${esc(L.caminho || L.arquivo)}
-        <div style="font-family:'IBM Plex Mono',monospace;">tecido: ${esc(L.tecido || '—')}</div></td>
+      ${umRisco ? '' : `<td style="font-size:10px;color:var(--ink-3);max-width:150px;word-break:break-all;">${esc(L.caminho || L.arquivo)}
+        <div style="font-family:'IBM Plex Mono',monospace;">tecido: ${esc(L.tecido || '—')}</div></td>`}
       ${grade ? `<td>${selAlvo}</td>` : ''}
       <td>${campoNome}</td>
       <td><select id="pw-f-tec-${fi}" onchange="pastaTecidoMudou()" style="font-size:12px;">${tecOpts(d.tecidoId)}</select></td>
@@ -18814,27 +18871,43 @@ function _pastaHtmlPasso() {
   }).join('');
 
   const pct = Math.round(_pastaWiz.idx / _pastaWiz.grupos.length * 100);
+  // O RISCO DA VEZ, em cima e por extenso. É o assunto do passo inteiro — a
+  // pergunta abaixo é sobre ele, e sobre mais nada.
+  const L0 = G.itens[0] || {};
+  const cam = String(L0.caminho || L0.arquivo || '');
+  const partes = cam.split('/');
+  const arq = partes.pop() || cam;
+  const compL = _riscoCompCadastro(L0.comprimento, (G.draft.fases[0] || {}).tecidoId);
+  const medida = (compL == null || L0.largura == null)
+    ? '<span style="color:var(--alert);">sem medida legível</span>'
+    : `<b>${compL.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b>`;
   return `
     <div style="display:flex;align-items:baseline;gap:10px;">
-      <div style="font-weight:700;">Grade ${pos} de ${tot}</div>
-      <div style="font-size:12px;color:var(--ink-3);">pasta ${esc(_pastaWiz.pasta)} · ${G.itens.length} risco(s) com os mesmos tamanhos</div>
+      <div style="font-weight:700;">Risco ${pos} de ${tot}</div>
+      <div style="font-size:12px;color:var(--ink-3);">pasta ${esc(_pastaWiz.pasta)}</div>
     </div>
-    <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 12px;">
+    <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 10px;">
       <div style="height:100%;width:${pct}%;background:var(--accent);"></div>
     </div>
 
-    <div class="field">
-      <label>Onde lançar estes riscos</label>
-      <select id="pw-destino" onchange="pastaTrocarDestino(this.value)">${opts}</select>
-      <div class="field-hint">
-        Produto no risco: <b>${esc(G.modelo || '—')}</b> · tamanhos <b>${esc(tamTxt)}</b> (${esc(nomeTam)}). ${dica}
+    <div class="info-box" style="margin-bottom:10px;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;word-break:break-all;">${esc(arq)}</div>
+      ${partes.length ? `<div style="font-size:11px;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${esc(partes.join(' / '))}</div>` : ''}
+      <div style="margin-top:6px;font-size:12px;">
+        Produto: <b>${esc(G.modelo || '—')}</b> · tamanhos <b>${esc(tamTxt)}</b> (${esc(nomeTam)}) · medida do risco ${medida}
       </div>
+    </div>
+
+    <div class="field">
+      <label>Este risco cria uma grade ou corrige uma existente?</label>
+      <select id="pw-destino" onchange="pastaTrocarDestino(this.value)">${opts}</select>
+      <div class="field-hint">${dica}</div>
     </div>
     ${produto}
 
     <table class="table" style="font-size:12px;margin-top:10px;">
       <thead><tr>
-        <th style="width:26px;"></th><th>Arquivo</th>
+        <th style="width:26px;"></th>${umRisco ? '' : '<th>Arquivo</th>'}
         ${grade ? '<th style="width:160px;">Fase do cadastro</th>' : ''}
         <th>Nome da fase${grade ? '' : ' *'}</th><th style="width:150px;">Tecido *</th>
         <th style="width:60px;" title="Quantas peças por camada esta fase rende (ribana)">Unid.</th>
@@ -18845,10 +18918,10 @@ function _pastaHtmlPasso() {
     </table>
 
     <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
-      <button class="btn primary" onclick="pastaSalvarPasso()">${grade ? 'Aplicar e continuar' : 'Criar grade e continuar'} →</button>
-      <button class="btn" onclick="pastaPularPasso()">Pular esta grade</button>
+      <button class="btn primary" onclick="pastaSalvarPasso()">${grade ? 'Corrigir a grade e continuar' : 'Criar a grade e continuar'} →</button>
+      <button class="btn" onclick="pastaPularPasso()">Pular este risco</button>
       <span style="flex:1;"></span>
-      <span style="font-size:12px;color:var(--ink-3);">${tot - pos} grade(s) depois desta</span>
+      <span style="font-size:12px;color:var(--ink-3);">${tot - pos} risco(s) depois deste</span>
     </div>`;
 }
 
@@ -18919,7 +18992,7 @@ async function pastaSalvarPasso() {
   _pastaColetar();
   const G = _pastaWiz.grupos[_pastaWiz.idx];
   const linhas = G.itens.map((L, fi) => ({ L, d: G.draft.fases[fi] })).filter(x => x.d.aplicar);
-  if (!linhas.length) return toast('Nenhum risco marcado — use "Pular esta grade"', 'err');
+  if (!linhas.length) return toast('Marque o risco para aplicar, ou use "Pular este risco"', 'err');
 
   const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
   const memProd = _riscoProdutos(),
