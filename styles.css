@@ -1752,6 +1752,14 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .func-op-row .u.ref { display: none; }
 .func-op-row.com-ref .func-op-comp,
 .func-op-row.com-ref .u.ref { display: inline-block; }
+/* Ordem da fila do posto: as setas mudam a sequência em que aquele posto executa
+   as operações, e é essa ordem que o planejamento do dia segue. Operação de HORA
+   MARCADA não está numa fila, está numa hora — nela as setas somem e no lugar
+   fica o traço, para a linha não parecer quebrada. */
+.func-op-row .func-op-mover { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.func-op-row .func-op-mover .btn { padding: 2px 6px; line-height: 1; min-width: 22px; }
+.func-op-row.com-hora .func-op-mover { visibility: hidden; }
+.func-op-row.com-hora .func-op-nome { font-style: italic; }
 
 /* Tempo de enfesto de CADA fase, no cadastro da grade. */
 .fase-enf-tempo { display: flex; align-items: center; gap: 6px; }

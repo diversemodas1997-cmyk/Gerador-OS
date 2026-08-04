@@ -2337,6 +2337,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div id="m-func-ops"></div>
           <button type="button" class="add-row-btn" onclick="addOperacaoFuncaoRow()" style="margin-top:6px;">+ Adicionar operação</button>
           <div class="field-hint">São as operações que este posto executa. O <b>tempo</b> é o que a operação costuma levar — ele vem preenchido no planejamento quando você escolher esta função e esta operação. Deixe em branco enquanto não souber.</div>
+          <div class="field-hint"><b>A ordem da lista é a ordem em que este posto trabalha</b>, e é ela que o planejamento do dia segue: use as setas ↑↓ para dizer o que vem antes. Entre postos quem manda continua sendo a corrente da fábrica — o corte não vem antes do enfesto, porque não há como cortar o que não foi estendido. As de <b>hora marcada</b> ficam num grupo à parte, no fim, <b>ordenadas pelo relógio</b>: elas não estão numa fila, estão numa hora.</div>
           <div class="field-hint"><b>Todo dia às</b> é para a operação de <b>hora marcada</b>: café, almoço, preparação das máquinas, limpeza do fim do expediente. Preenchida, ela entra sozinha em todo dia que você planejar, sempre nessa hora, e nem o encadeamento do posto nem o botão <b>Organizar o dia</b> a tiram do lugar — a fila do posto passa a se encaixar em volta dela. Em branco, a operação entra na fila normalmente.</div>
           <div class="field-hint">Essa operação é <b>independente das OS</b>: ela é da jornada, não do lote. Entra <b>uma vez por dia</b> — não uma por OS nem uma por fase do enfesto —, sem referência a OS nenhuma, e alocar mais OS no mesmo dia não a repete.</div>
         </div>
@@ -2346,6 +2347,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       const lista = _opsDaFuncao(item);
       if (lista.length) lista.forEach(o => addOperacaoFuncaoRow(o));
       else addOperacaoFuncaoRow();
+      _funcOpOrdenarFixas();
     }, 0);
   }
   else if (tipo === 'tarefa') {
@@ -2562,6 +2564,46 @@ function _tempoOperacaoCadastrada(funcaoId, nomeOperacao) {
 // enfesto foi pensado.
 const _OP_ENFESTO_COMP_REF_PADRAO = 8;
 
+// Sobe ou desce uma operação na lista da função. A ORDEM DA LISTA é a ordem em
+// que aquele posto executa: o programa monta a corrente do dia seguindo-a.
+// Entre postos quem manda continua sendo a sequência do programa (o corte vem
+// depois do enfesto, sempre); aqui se decide o que vem antes DENTRO do posto.
+// A linha é de HORA MARCADA? Essas ficam fora da fila: a hora já diz onde elas
+// acontecem, e ordená-las junto misturaria duas decisões diferentes.
+function _funcOpTemHora(row) {
+  return !!(row && String(row.querySelector('.func-op-fixo')?.value || '').trim());
+}
+
+// Põe a lista em ordem: primeiro a FILA, na ordem que o usuário deu com as
+// setas; depois as de HORA MARCADA, ordenadas pelo relógio. As duas se decidem
+// de formas diferentes, e misturá-las na mesma lista fazia parecer que a hora do
+// café dependia de onde ele estava escrito. A ordem das de hora marcada não
+// precisa de seta nenhuma: ela já está no próprio horário.
+function _funcOpOrdenarFixas() {
+  const cont = document.getElementById('m-func-ops');
+  if (!cont) return;
+  const rows = Array.from(cont.querySelectorAll('.func-op-row'));
+  if (!rows.length) return;
+  const hora = r => String(r.querySelector('.func-op-fixo')?.value || '').trim();
+  const fila = rows.filter(r => !_funcOpTemHora(r));
+  const fixas = rows.filter(_funcOpTemHora).sort((a, b) => hora(a).localeCompare(hora(b)));
+  fila.concat(fixas).forEach(r => cont.appendChild(r));
+}
+
+function moverOperacaoFuncao(btn, dir) {
+  const row = btn && btn.closest('.func-op-row');
+  if (!row || !row.parentNode || _funcOpTemHora(row)) return;
+  // Pula por cima das de hora marcada: a troca é sempre com a operação de FILA
+  // vizinha, mesmo que haja um café listado entre as duas.
+  let alvo = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+  while (alvo && alvo.classList.contains('func-op-row') && _funcOpTemHora(alvo)) {
+    alvo = dir < 0 ? alvo.previousElementSibling : alvo.nextElementSibling;
+  }
+  if (!alvo || !alvo.classList.contains('func-op-row')) return;
+  if (dir < 0) row.parentNode.insertBefore(row, alvo);
+  else row.parentNode.insertBefore(alvo, row);
+}
+
 function addOperacaoFuncaoRow(op = {}) {
   const cont = document.getElementById('m-func-ops');
   if (!cont) return;
@@ -2569,6 +2611,10 @@ function addOperacaoFuncaoRow(op = {}) {
   const div = document.createElement('div');
   div.className = 'func-op-row';
   div.innerHTML = `
+    <span class="func-op-mover">
+      <button type="button" class="btn small ghost" title="Subir: esta operação passa a vir antes na sequência deste posto" onclick="moverOperacaoFuncao(this, -1)">↑</button>
+      <button type="button" class="btn small ghost" title="Descer: esta operação passa a vir depois na sequência deste posto" onclick="moverOperacaoFuncao(this, 1)">↓</button>
+    </span>
     <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
     <span class="u">h</span>
@@ -2578,7 +2624,7 @@ function addOperacaoFuncaoRow(op = {}) {
     <input type="number" class="func-op-comp" min="0" step="0.5" value="${esc(op.compRef != null && op.compRef !== '' ? String(op.compRef) : '')}" placeholder="${_OP_ENFESTO_COMP_REF_PADRAO}" title="Comprimento de grade a que este tempo se refere">
     <span class="u ref">m</span>
     <span class="u as">todo dia às</span>
-    <input type="time" class="func-op-fixo" value="${esc(op.horaFixa || '')}" title="Horário fixo: esta operação entra em todo dia planejado nesta hora e não é reencaixada na fila do posto. Em branco = entra na fila, como as demais.">
+    <input type="time" class="func-op-fixo" value="${esc(op.horaFixa || '')}" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))" onchange="_funcOpNotaDeEnfesto(this.closest('.func-op-row')); _funcOpOrdenarFixas()" title="Horário fixo: esta operação entra em todo dia planejado nesta hora e não é reencaixada na fila do posto. Em branco = entra na fila, como as demais.">
     <button type="button" class="btn small danger" title="Remover esta operação" onclick="this.closest('.func-op-row').remove()">✕</button>
     <div class="func-op-nota"></div>`;
   cont.appendChild(div);
@@ -2612,6 +2658,10 @@ function _funcOpNotaDeEnfesto(row) {
   // coisa que 1h20 para uma de 4 m, e aplicar o mesmo piso nas duas reservaria o
   // dobro do dia na curta.
   row.classList.toggle('com-ref', ehEnfesto);
+  // Hora marcada: a linha sai da FILA e as setas somem. Não é limitação — é que
+  // "antes" e "depois" não querem dizer nada para quem tem hora: o café é às
+  // 09:30 esteja onde estiver na lista.
+  row.classList.toggle('com-hora', _funcOpTemHora(row));
   if (nota) {
     nota.innerHTML = ehEnfesto
       ? `Tempo do enfesto, na ordem: <b>1)</b> a média medida daquela fase, dos horários lançados nas folhas de OS — ela manda sempre que existe, para mais e para menos; <b>2)</b> sem medição da fase, o tempo aqui, que vale como <b>mínimo</b> e só para grades de comprimento próximo ao de referência (acima da metade dele); <b>3)</b> em grade bem mais curta, a <b>média dos enfestos já cronometrados daquela grade</b>, porque o tempo não cai na mesma proporção do comprimento.`
@@ -6403,6 +6453,79 @@ const _OP_SEQ_PRINCIPAL = _OP_SEQUENCIA
 const _OP_SEQ_FASE   = _OP_SEQ_PRINCIPAL.filter(p => p.porFase);
 const _OP_SEQ_ROTINA = _OP_SEQ_PRINCIPAL.filter(p => !p.porFase);
 
+/* ---------------- a ordem que o CADASTRO dá à corrente ---------------- */
+
+// A sequência acima é a do programa e vale ENTRE POSTOS: o corte vem depois do
+// enfesto porque não há como cortar o que não foi estendido, e isso não é
+// escolha de ninguém. DENTRO de um posto, porém, quem sabe a ordem é quem
+// trabalha nele — e é a ordem em que as operações estão listadas no cadastro da
+// função. Trocar duas de lugar lá passa a valer aqui.
+//
+// A troca acontece NAS MESMAS POSIÇÕES que aquele posto já ocupava na corrente:
+// se a enfestadeira responde pelos passos 3 e 4, inverter a lista dela faz o 4
+// vir no lugar do 3 e vice-versa — os postos seguintes não se mexem.
+function _opReordenarPorCadastro(passos) {
+  const info = new Map();
+  passos.forEach(p => {
+    const cad = _opFuncaoDoPasso(p);
+    if (!cad || !cad.funcaoId) return;
+    const f = (STATE.funcoes || []).find(x => x.id === cad.funcaoId);
+    const lista = f ? _opsDaFuncao(f) : [];
+    const i = lista.findIndex(o => _opChaveOperacaoNome(o.nome) === _opChaveOperacaoNome(cad.nome));
+    // OPERAÇÃO DE HORA MARCADA FICA DE FORA desta ordenação, e não por omissão:
+    // ela não está numa fila, está numa HORA. O café é às 09:30 esteja onde
+    // estiver na lista, e a preparação das máquinas às 07:15. Deixá-la entrar
+    // aqui misturaria duas coisas que se decidem de formas diferentes — e
+    // arrastaria os passos da fila para posições que a hora dela já ocupa.
+    if (i >= 0 && String((lista[i] || {}).horaFixa || '').trim()) return;
+    info.set(p, { funcaoId: cad.funcaoId, i: i < 0 ? 1e9 : i });
+  });
+  const out = passos.slice();
+  const grupos = new Map();
+  out.forEach((p, pos) => {
+    const e = info.get(p);
+    if (!e) return;
+    if (!grupos.has(e.funcaoId)) grupos.set(e.funcaoId, { pos: [], itens: [] });
+    const g = grupos.get(e.funcaoId);
+    g.pos.push(pos); g.itens.push(p);
+  });
+  grupos.forEach(g => {
+    if (g.itens.length < 2) return;
+    const ord = g.itens.slice().sort((a, b) => info.get(a).i - info.get(b).i);
+    g.pos.forEach((pos, k) => { out[pos] = ord[k]; });
+  });
+  return out;
+}
+
+// Cache: a corrente é perguntada muitas vezes por clique e a conta varre o
+// cadastro inteiro. Invalida junto com o índice de horas fixas, que já sobe a
+// versão a cada `saveState('funcoes')`.
+let _opCorrenteCache = null;
+function _opCorrente() {
+  const fs = STATE.funcoes || [];
+  if (_opCorrenteCache && _opCorrenteCache.fonte === fs && _opCorrenteCache.versao === _opHoraFixaVersao) {
+    return _opCorrenteCache;
+  }
+  const seq = _opReordenarPorCadastro(_OP_SEQ_PRINCIPAL);
+  const pos = new Map();
+  seq.forEach((p, i) => pos.set(p, i + 1));
+  _opCorrenteCache = {
+    fonte: fs, versao: _opHoraFixaVersao, pos, seq,
+    fase: seq.filter(p => p.porFase),
+    rotina: seq.filter(p => !p.porFase)
+  };
+  return _opCorrenteCache;
+}
+
+// A POSIÇÃO do passo na corrente, já com a ordem do cadastro. É o que compara
+// "vem antes" e "vem depois" — nunca o `passo.ordem`, que é a identidade do
+// passo (a chave que diz QUAL passo é) e não pode mudar de valor.
+function _opOrdemNaCorrente(passo) {
+  if (!passo) return 0;
+  if (passo.cadeia !== 'principal') return passo.ordem;
+  return _opCorrente().pos.get(passo) || passo.ordem;
+}
+
 // É a operação de ENFESTO propriamente dita (não o corte nem a movimentação dele).
 function _opEhEnfesto(op) {
   const p = _opPassoSequencia(op);
@@ -6772,10 +6895,10 @@ function _opConflitosOrdem(lista) {
     if (!e.msgs.includes(msg)) e.msgs.push(msg);
   };
   porLote.forEach(itens => {
-    itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
+    itens.sort((a, b) => _opOrdemNaCorrente(a.passo) - _opOrdemNaCorrente(b.passo) || _opInicioMin(a.op) - _opInicioMin(b.op));
     for (let i = 1; i < itens.length; i++) {
       const ant = itens[i - 1], cur = itens[i];
-      if (ant.passo.ordem === cur.passo.ordem) continue;
+      if (_opOrdemNaCorrente(ant.passo) === _opOrdemNaCorrente(cur.passo)) continue;
       const iAnt = _opInicioMin(ant.op), fAnt = _opFimMin(ant.op), iCur = _opInicioMin(cur.op);
       const ondeFase = cur.fase !== 'r' ? ` (fase ${cur.fase} do enfesto)` : '';
       const quem = `${cur.passo.nome} (${_opHHMM(iCur)}) × ${ant.passo.nome} (${_opHHMM(iAnt)} → ${_opHHMM(fAnt)}) no lote ${cur.lote}${ondeFase}`;
@@ -7357,9 +7480,9 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       return true;
     };
     porLote.forEach(itens => {
-      itens.sort((a, b) => a.passo.ordem - b.passo.ordem || _opInicioMin(a.op) - _opInicioMin(b.op));
+      itens.sort((a, b) => _opOrdemNaCorrente(a.passo) - _opOrdemNaCorrente(b.passo) || _opInicioMin(a.op) - _opInicioMin(b.op));
       for (let i = 1; i < itens.length; i++) {
-        if (itens[i - 1].passo.ordem === itens[i].passo.ordem) continue;
+        if (_opOrdemNaCorrente(itens[i - 1].passo) === _opOrdemNaCorrente(itens[i].passo)) continue;
         const cur = itens[i].op, alvo = _opFimMin(itens[i - 1].op);
         if (_opInicioMin(cur) >= alvo) continue;
         if (alvo + _opDuracao(cur) > _OP_JORNADA.fim) {
@@ -7454,7 +7577,7 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         doDia.forEach(outra => {
           if (outra === op || adiadas.has(outra.id)) return;
           const p2 = _opPassoSequencia(outra);
-          if (!p2 || p2.ordem <= passo.ordem) return;
+          if (!p2 || _opOrdemNaCorrente(p2) <= _opOrdemNaCorrente(passo)) return;
           if (!_opLotesDaOperacao(outra).some(l => lotes.includes(l))) return;
           // Só os passos seguintes da MESMA FASE dependem desta operação: o
           // corte da fase 4 não depende do enfesto da fase 2, e arrastá-lo junto
@@ -7656,7 +7779,7 @@ function _opLotesIncompletos(doDia, data) {
     fases.forEach((fase, idx) => {
       const onde = ondeEsta.get(lote + '|' + fase.ordem) || new Map();
       // As rotinas de abertura são do DIA, não da fase: entram na primeira.
-      const passos = idx === 0 ? _OP_SEQ_ROTINA.concat(_OP_SEQ_FASE) : _OP_SEQ_FASE;
+      const passos = idx === 0 ? _opCorrente().rotina.concat(_opCorrente().fase) : _opCorrente().fase;
       const faltam = [], naoCabem = [], noutroDia = [];
       // O que falta é uma FILA: cada passo consome o tempo do seguinte. Medir um
       // a um contra o mesmo horário diria que todos cabem — foi o que fazia a
@@ -8099,7 +8222,7 @@ function _opMontarCascataDoLote(data, os) {
   };
   // Rotinas de abertura primeiro: elas abrem o dia e o resto conta a partir dali.
   let pisoDoDia = null;
-  _OP_SEQ_ROTINA.forEach(passo => {
+  _opCorrente().rotina.forEach(passo => {
     const fim = criar(passo, null, pisoDoDia);
     if (fim != null) pisoDoDia = fim;
   });
@@ -8107,7 +8230,7 @@ function _opMontarCascataDoLote(data, os) {
   fases.forEach(fase => {
     let relogio = pisoDoDia;   // toda fase começa depois da abertura do dia
     let travou = false;        // um passo não coube: os seguintes dependem dele
-    _OP_SEQ_FASE.forEach(passo => {
+    _opCorrente().fase.forEach(passo => {
       // Passo que não cabe no dia leva junto o resto da corrente DAQUELA fase.
       // Sem isto, um enfesto de 5h45 que não cabia deixava o corte, a separação
       // e o empacotamento da mesma fase marcados assim mesmo — a fase aparecia
@@ -8583,8 +8706,9 @@ function _opSugestaoPasso(data, lote, passo, fase) {
     .map(o => ({ op: o, p: _opPassoSequencia(o) }))
     .filter(x => x.p && x.p.cadeia === passo.cadeia && _opInicioMin(x.op) != null
       && _opChaveFase(x.op, x.p) === chaveFase);
-  const antes = doLote.filter(x => x.p.ordem < passo.ordem).sort((a, b) => b.p.ordem - a.p.ordem)[0];
-  const depois = doLote.filter(x => x.p.ordem > passo.ordem).sort((a, b) => a.p.ordem - b.p.ordem)[0];
+  const ordAlvo = _opOrdemNaCorrente(passo);
+  const antes = doLote.filter(x => _opOrdemNaCorrente(x.p) < ordAlvo).sort((a, b) => _opOrdemNaCorrente(b.p) - _opOrdemNaCorrente(a.p))[0];
+  const depois = doLote.filter(x => _opOrdemNaCorrente(x.p) > ordAlvo).sort((a, b) => _opOrdemNaCorrente(a.p) - _opOrdemNaCorrente(b.p))[0];
   let ini = antes ? _opFimMin(antes.op) : (depois ? _opInicioMin(depois.op) : _OP_JORNADA.ini);
   if (ini == null) ini = _OP_JORNADA.ini;
   // Mesma marca de 5 minutos que o ajuste usa: a sugestão do botão não pode
