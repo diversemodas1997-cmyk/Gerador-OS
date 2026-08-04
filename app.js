@@ -2630,6 +2630,9 @@ function addFaseGradeRow(fase = {}) {
   const enfMin = Math.max(0, Math.round(Number(fase.enfestoMin) || 0));
   const enfH = enfMin ? (Math.floor(enfMin / 60) || '') : '';
   const enfM = enfMin ? (enfMin % 60) : '';
+  const corMin = Math.max(0, Math.round(Number(fase.corteMin) || 0));
+  const corH = corMin ? (Math.floor(corMin / 60) || '') : '';
+  const corM = corMin ? (corMin % 60) : '';
   const div = document.createElement('div');
   div.className = 'fase-grade-bloco';
   div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
@@ -2654,6 +2657,16 @@ function addFaseGradeRow(fase = {}) {
           <span class="u">min</span>
         </div>
         <div class="field-hint">Quanto <b>esta fase</b> costuma levar para ser enfestada. É o número mais específico que existe: só perde para a <b>média já medida</b> desta mesma fase nesta grade, e ganha do tempo geral do posto e de qualquer estimativa. Em branco, o programa se vira com o que tem.</div>
+      </div>
+      <div class="field full">
+        <label>Tempo de corte desta fase</label>
+        <div class="fase-enf-tempo">
+          <input type="number" min="0" step="1" class="fase-cor-h" value="${corH}" placeholder="0" title="Horas">
+          <span class="u">h</span>
+          <input type="number" min="0" max="59" step="5" class="fase-cor-m" value="${corM}" placeholder="0" title="Minutos">
+          <span class="u">min</span>
+        </div>
+        <div class="field-hint">Quanto <b>esta fase</b> leva na esteira. O corte não acompanha o comprimento do enfesto — a faca corre pelo <b>contorno das peças</b> —, então aqui não há estimativa: vale a <b>média já medida</b> desta fase nesta grade, depois este número, depois a medição da mesma fase em <b>outra OS</b> e, por último, o tempo único do posto.</div>
       </div>
       <div class="field full"><label>Bobinas previstas (consumo esperado)</label><input type="text" class="fase-bobinas" value="${esc(fase.bobinas != null && fase.bobinas !== '' ? String(fase.bobinas).replace('.', ',') : '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 14  ·  1/2  ·  0"><div class="field-hint">Quantas bobinas deste tecido esta grade costuma consumir nesta fase. Aparece na coluna "Consumo" da folha de OS. Aceita fração (1/2) e zero.<span class="fase-bobinas-sug"></span></div></div>
       <div class="field full" style="margin-top:2px;">
@@ -3199,6 +3212,10 @@ async function salvarCadastro() {
         // tem: um por pano, e não um só para o posto inteiro. 0 = não cadastrado.
         enfestoMin: Math.max(0, parseInt(b.querySelector('.fase-enf-h')?.value, 10) || 0) * 60
                   + Math.max(0, parseInt(b.querySelector('.fase-enf-m')?.value, 10) || 0),
+        // Tempo de CORTE desta fase, pela mesma razão: a esteira leva 60 min no
+        // Corpo Parte 1 e 20 no Corpo Parte 3 do mesmo lote.
+        corteMin: Math.max(0, parseInt(b.querySelector('.fase-cor-h')?.value, 10) || 0) * 60
+                + Math.max(0, parseInt(b.querySelector('.fase-cor-m')?.value, 10) || 0),
         // Fase enfestada em OUTRO momento (gola, viés): entra no consumo e na
         // folha de OS como sempre, mas o planejamento do dia não monta a corrente
         // dela. Guardado como exceção — sem a marca, a fase entra, que é o que
@@ -7010,6 +7027,112 @@ function _opTempoEnfestoCadastradoNaFase(os, fase) {
   return v > 0 ? v : Math.max(0, Math.round(Number(fase.enfestoMin) || 0));
 }
 
+/* ---------------- tempo de CORTE, fase a fase ---------------- */
+
+// As medições de CORTE já lançadas na folha de OS: o Ini/Fim que cada fase tem
+// na linha dela, dentro da etapa Corte (progresso.enfestosTempos[ordem].corteIni
+// / corteFim). É o mesmo lugar de onde sai o "Tempo total" da cabeça da etapa.
+function _medicoesCorte() {
+  const out = [];
+  (STATE.ordens || []).forEach(o => {
+    const tempos = (o.progresso || {}).enfestosTempos || {};
+    const blocos = ((o.enfesto || {}).blocos) || [];
+    const camGlobal = parseInt((o.enfesto || {}).camadas, 10) || 0;
+    (o.fases || []).forEach(f => {
+      const t = tempos[f.ordem] || {};
+      const ini = _opMin(t.corteIni), fim = _opMin(t.corteFim);
+      if (ini == null || fim == null || fim <= ini) return;
+      const bloco = blocos.find(b => String(b.ordem) === String(f.ordem)) || {};
+      out.push({
+        modeloId: o.modeloId || '', gradeId: o.gradeId || '',
+        faseNome: f.nome || '', minutos: fim - ini,
+        camadas: parseInt(bloco.camadas, 10) || camGlobal,
+        os: o.os
+      });
+    });
+  });
+  return out;
+}
+
+// Quanto o CORTE de uma fase leva, pelo que já foi cronometrado. Diferente do
+// enfesto, aqui NÃO existe estimativa por comprimento — e não é esquecimento.
+// A faca corre pelo CONTORNO das peças, não pelo comprimento do enfesto: na
+// OS 0405, o Corpo Parte 1 (4,70 m) levou 60 min e o Corpo Parte 3 (10,82 m),
+// com o dobro do pano, levou 20. A taxa por metro vai de 1,2 a 12,8 min/m no
+// acervo — extrapolar por metro erraria mais do que o número fixo do posto.
+// O que vale é o tempo daquela MESMA fase, medido em algum lugar.
+//
+// A amostra é a mais específica que existir:
+//   1. a mesma fase da MESMA GRADE — é fato daquele risco, e manda;
+//   2. a mesma fase do MESMO MODELO;
+//   3. a mesma fase em qualquer OS — é a OS de referência enquanto só uma
+//      cronometrou aquela fase; virando duas, o número já é a média das duas,
+//      sozinho.
+// Devolve { min, n, escopo, proprio }.
+function _opTempoCorteMedido(os, fase) {
+  const vazio = { min: 0, n: 0, escopo: '', proprio: false };
+  if (!os || !fase) return vazio;
+  const alvoNome = _normFaseNome(fase.nome);
+  if (!alvoNome) return vazio;
+  const daFase = _medicoesCorte().filter(m => m.os !== os.os && _normFaseNome(m.faseNome) === alvoNome);
+  if (!daFase.length) return vazio;
+  const escopos = [
+    { nome: 'desta grade', lista: daFase.filter(m => m.gradeId && m.gradeId === os.gradeId), proprio: true },
+    { nome: 'deste modelo', lista: daFase.filter(m => m.modeloId && m.modeloId === os.modeloId) },
+    { nome: 'de todas as OS', lista: daFase }
+  ];
+  for (const e of escopos) {
+    if (!e.lista.length) continue;
+    const media = e.lista.reduce((s, m) => s + m.minutos, 0) / e.lista.length;
+    if (!(media > 0)) continue;
+    return {
+      min: Math.max(5, _opArredondar(media)), n: e.lista.length, escopo: e.nome,
+      proprio: !!e.proprio, osNums: Array.from(new Set(e.lista.map(m => m.os)))
+    };
+  }
+  return vazio;
+}
+
+// Tempo de corte cadastrado NAQUELA FASE da grade (0 quando não há). Mesma ideia
+// do `enfestoMin`: o número mais específico que o cadastro tem, um por pano.
+function _opTempoCorteCadastradoNaFase(os, fase) {
+  if (!os || !fase) return 0;
+  const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+  const f = (g && Array.isArray(g.fases))
+    ? g.fases.find(x => Number(x.ordem) === Number(fase.ordem)
+        || (fase.nome && _normFaseNome(x.nome) === _normFaseNome(fase.nome)))
+    : null;
+  const v = Math.max(0, Math.round(Number(f && f.corteMin) || 0));
+  return v > 0 ? v : Math.max(0, Math.round(Number(fase.corteMin) || 0));
+}
+
+// Quanto o corte DESTA fase precisa durar. Na ordem:
+//   1. a média medida daquela fase NAQUELA grade — fato, e manda para mais e
+//      para menos;
+//   2. o tempo cadastrado NA FASE da grade;
+//   3. a média medida da fase equivalente em outra grade/modelo — é a OS de
+//      referência, que vale enquanto aquela fase não for cronometrada aqui;
+//   4. o tempo cadastrado na função, que é o mesmo para toda fase e por isso é o
+//      último recurso: são 15 min para o Corpo Parte 1 e para a Gola igualmente.
+// Devolve { min, fonte }. Só a fonte 'medido' autoriza ENCURTAR o que já está
+// planejado — as demais são previsão, e apagariam por baixo um ajuste feito à
+// mão com motivo.
+function _opDuracaoCorte(os, fase, funcaoId, nomeOperacao) {
+  const med = (os && fase) ? _opTempoCorteMedido(os, fase) : { min: 0 };
+  if (med.min > 0 && med.proprio) return { min: med.min, fonte: 'medido', ref: med };
+  const daFase = _opTempoCorteCadastradoNaFase(os, fase);
+  if (daFase > 0) return { min: daFase, fonte: 'cadastrado na fase' };
+  if (med.min > 0) return { min: med.min, fonte: 'referência', ref: med };
+  const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao);
+  return { min: cad > 0 ? cad : 0, fonte: cad > 0 ? 'cadastrado no posto' : '' };
+}
+
+// É o passo de CORTE do enfesto (não o enfesto, não a movimentação dele).
+function _opEhCorteDeEnfesto(op) {
+  const p = _opPassoSequencia(op);
+  return !!p && p.cadeia === 'principal' && p.nome === 'Corte de enfesto';
+}
+
 // Comprimento do pano desta fase, em metros (0 quando não há medida cadastrada).
 function _opCompDaFase(os, fase) {
   if (!os || !fase) return 0;
@@ -7059,6 +7182,15 @@ function _opDuracaoNecessaria(op) {
     const fase = _opFasesDaOS(os).find(f => f.ordem === _opFaseDaOperacao(op));
     if (!fase) return { min: 0, exata: false };
     const r = _opDuracaoEnfesto(os, fase, op.funcaoId, op.operacao);
+    return { min: r.min, exata: r.fonte === 'medido' };
+  }
+  // O CORTE segue a mesma regra do enfesto: é por fase, e o que manda é o tempo
+  // já cronometrado daquela fase. Sem isto, o "Organizar o dia" devolvia o corte
+  // ao número único do posto e desfazia o que a alocação tinha apurado.
+  if (_opEhCorteDeEnfesto(op)) {
+    const fase = _opFasesDaOS(os).find(f => f.ordem === _opFaseDaOperacao(op));
+    if (!fase) return { min: 0, exata: false };
+    const r = _opDuracaoCorte(os, fase, op.funcaoId, op.operacao);
     return { min: r.min, exata: r.fonte === 'medido' };
   }
   const etapas = Array.isArray(op.etapas) ? op.etapas.slice() : (op.etapa ? [op.etapa] : []);
@@ -7873,6 +8005,11 @@ function _opMontarCascataDoLote(data, os) {
     let duracaoMin = cad.duracaoMin;
     if (fase && _opEhEnfesto({ operacao: cad.nome })) {
       duracaoMin = _opDuracaoEnfesto(os, fase, cad.funcaoId, cad.nome).min;
+    } else if (fase && _opEhCorteDeEnfesto({ operacao: cad.nome })) {
+      // O CORTE também é por fase. O cadastro do posto tem um número só (15 min)
+      // e ele ia igual para o Corpo Parte 1 e para a Gola — na OS 0405, onde as
+      // três partes foram cronometradas, o corte levou 60, 20 e 20 minutos.
+      duracaoMin = _opDuracaoCorte(os, fase, cad.funcaoId, cad.nome).min || duracaoMin;
     }
     // A operação da corrente NUNCA herda o horário fixo do cadastro: a hora
     // marcada é do DIA, não do lote. Se ela mandasse aqui, marcar "Enfesto" às
@@ -8467,6 +8604,9 @@ function _opSugestaoPasso(data, lote, passo, fase) {
   let duracaoMin = 0;
   if (os && faseObj && _opEhEnfesto({ operacao: (cad && cad.nome) || passo.nome })) {
     duracaoMin = _opDuracaoEnfesto(os, faseObj, funcaoId, (cad && cad.nome) || passo.nome).min;
+  } else if (os && faseObj && _opEhCorteDeEnfesto({ operacao: (cad && cad.nome) || passo.nome })) {
+    duracaoMin = _opDuracaoCorte(os, faseObj, funcaoId, (cad && cad.nome) || passo.nome).min
+      || (cad && cad.duracaoMin) || 0;
   } else {
     duracaoMin = (cad && cad.duracaoMin) || _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0;
   }
