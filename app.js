@@ -7730,6 +7730,52 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
 // postos. Sem ela, a busca enxergava só o posto: a enfestadeira ficava livre às
 // 08:20 e o próximo enfesto entrava ali, enquanto a pessoa daquele posto estava
 // no corte até 08:35. O posto estava vago; quem não estava era ela.
+// Os VÃOS LIVRES do posto (e da pessoa dele) entre `piso` e o fim da jornada, na
+// ordem do relógio. É a mesma conta do primeiro-vago, mas devolvendo TODOS —
+// porque o dia de quem enfesta não é um bloco: café, almoço e o café da tarde o
+// picam em pedaços de no máximo 2h15, e um enfesto de 5h55 não cabe em nenhum
+// deles. Sem enxergar os vãos, a alocação só sabia desistir.
+function _opVagosNoPosto(data, funcaoId, piso, chavePessoa) {
+  const ocupadas = (STATE.operacoes || [])
+    .filter(o => o.data === data && _opInicioMin(o) != null && _opDuracao(o) > 0
+      && (o.funcaoId === funcaoId || (chavePessoa && _opChavePessoa(o) === chavePessoa)))
+    .map(o => ({ ini: _opInicioMin(o), fim: _opFimMin(o) }))
+    .sort((a, b) => a.ini - b.ini);
+  const vagos = [];
+  let t = Math.max(piso == null ? _OP_JORNADA.ini : piso, _OP_JORNADA.ini);
+  ocupadas.forEach(o => {
+    if (o.fim <= t) return;
+    if (o.ini > t) vagos.push({ ini: t, fim: Math.min(o.ini, _OP_JORNADA.fim) });
+    t = Math.max(t, o.fim);
+  });
+  if (t < _OP_JORNADA.fim) vagos.push({ ini: t, fim: _OP_JORNADA.fim });
+  return vagos.filter(v => v.fim - v.ini > 0);
+}
+
+// Reparte uma operação de `dur` minutos pelos vãos livres do posto, na ordem do
+// relógio: faz o que dá antes do café, para, retoma depois, para no almoço,
+// retoma de novo — que é como a fábrica trabalha um enfesto longo de verdade.
+// Devolve [{ini, dur}] ou null quando NEM PARTIDA ela cabe no que resta do dia:
+// aí o certo é continuar dizendo "não coube", e não deixar meio enfesto no dia
+// com o corte marcado em cima dele.
+// Pedaço menor que `_OP_PARTE_MIN` não vira linha na agenda — só o ÚLTIMO pode
+// ser curto, porque aí ele é o que fecha o trabalho, não uma sobra.
+function _opPartirNosVagos(vagos, dur) {
+  const pedacos = [];
+  let resta = dur;
+  for (const v of vagos) {
+    if (resta <= 0) break;
+    const ini = _opArredondar(v.ini);
+    const disp = v.fim - ini;
+    if (disp <= 0) continue;
+    const usa = Math.min(resta, disp);
+    if (usa < _OP_PARTE_MIN && usa !== resta) continue;
+    pedacos.push({ ini, dur: usa });
+    resta -= usa;
+  }
+  return resta > 0 ? null : pedacos;
+}
+
 function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
   const ocupadas = (STATE.operacoes || [])
     .filter(o => o.data === data && _opInicioMin(o) != null && _opDuracao(o) > 0
@@ -7801,7 +7847,7 @@ function _opFuncaoDoPasso(passo) {
 function _opMontarCascataDoLote(data, os) {
   const lote = String(os.os || '').trim().replace(/^0+/, '') || String(os.os || '').trim();
   const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
-  const criadas = [], semFuncao = [], naoCoube = [];
+  const criadas = [], semFuncao = [], naoCoube = [], partidas = [];
   const fases = _opFasesDaOS(os);
   // Antes da corrente, as operações de hora marcada do cadastro: elas são o
   // esqueleto do dia e a fila do lote se encaixa em volta delas.
@@ -7853,28 +7899,54 @@ function _opMontarCascataDoLote(data, os) {
     const fimDoPosto = doDia().filter(ocupaAte)
       .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
     const piso = Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
-    const ini = _opPrimeiroVagoNoPosto(data, cad.funcaoId, piso, duracaoMin, chavePessoa);
-    if (ini + duracaoMin > _OP_JORNADA.fim) { naoCoube.push({ passo, fase }); return null; }
-    const nova = {
-      id: uid(), data,
-      funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
-      operacao: cad.nome, escopo: 'completa', etapas: [],
-      inicio: _opHHMM(ini), duracaoMin,
-      // Âncora do programa: o horário veio da corrente do LOTE, que atravessa
-      // vários postos. Sem ancorar, o encadeamento de cada posto reescreveria
-      // tudo pela fila dele e a corrente se quebraria no mesmo instante em que
-      // foi montada — o corte caía depois da separação. Não é 📌 do usuário: ele
-      // segue livre para mudar o que quiser.
-      inicioAuto: true,
-      responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
-      referencia: fase ? _opRefDaFase(os, fase, fases.length) : _opRefDaFase(os, null, 1),
-      status: 'pendente', prioridade: 'eletiva', obs: ''
+    // Uma linha de operação no dia. Sai daqui porque a operação REPARTIDA cria
+    // várias, e todas precisam nascer idênticas em tudo o que não é hora nem
+    // duração — posto, pessoa, referência e fase.
+    const criarLinha = (nome, iniMin, dur) => {
+      const nova = {
+        id: uid(), data,
+        funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
+        operacao: nome, escopo: 'completa', etapas: [],
+        inicio: _opHHMM(iniMin), duracaoMin: dur,
+        // Âncora do programa: o horário veio da corrente do LOTE, que atravessa
+        // vários postos. Sem ancorar, o encadeamento de cada posto reescreveria
+        // tudo pela fila dele e a corrente se quebraria no mesmo instante em que
+        // foi montada — o corte caía depois da separação. Não é 📌 do usuário: ele
+        // segue livre para mudar o que quiser.
+        inicioAuto: true,
+        responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
+        referencia: fase ? _opRefDaFase(os, fase, fases.length) : _opRefDaFase(os, null, 1),
+        status: 'pendente', prioridade: 'eletiva', obs: ''
+      };
+      // A fase fica GRAVADA, não só escrita na referência: é ela que diz a qual
+      // corrente a operação pertence quando o usuário reescreve o texto do campo.
+      if (fase && fases.length > 1) { nova.faseOrdem = fase.ordem; nova.faseNome = fase.nome; }
+      STATE.operacoes.push(nova);
+      criadas.push(nova);
+      return nova;
     };
-    // A fase fica GRAVADA, não só escrita na referência: é ela que diz a qual
-    // corrente a operação pertence quando o usuário reescreve o texto do campo.
-    if (fase && fases.length > 1) { nova.faseOrdem = fase.ordem; nova.faseNome = fase.nome; }
-    STATE.operacoes.push(nova);
-    criadas.push(nova);
+    const ini = _opPrimeiroVagoNoPosto(data, cad.funcaoId, piso, duracaoMin, chavePessoa);
+    // NÃO COUBE INTEIRA num vão só. Antes o passo era simplesmente descartado —
+    // e como o maior vão do dia de quem enfesta é 2h15 (o que sobra entre o
+    // café, o almoço e o café da tarde), NENHUM enfesto acima disso conseguia
+    // ser planejado. Sumia sempre a fase mais longa, que é a mais importante do
+    // dia: o Corpo Parte 1 de um tricolor (5h55) desaparecia e a corrente
+    // começava pelo Corpo Parte 2, como se a peça pudesse ser cortada fora de
+    // ordem.
+    // Agora ela é REPARTIDA pelos vãos, como o "Organizar o dia" já fazia em
+    // volta de uma hora marcada: parte 1 antes do café, parte 2 depois, parte 3
+    // depois do almoço. Só continua "não coube" o que não cabe nem repartido —
+    // aí é dia cheio de verdade, e meio enfesto no dia com o corte marcado em
+    // cima dele seria pior que nada.
+    if (ini + duracaoMin > _OP_JORNADA.fim) {
+      const pedacos = _opPartirNosVagos(_opVagosNoPosto(data, cad.funcaoId, piso, chavePessoa), duracaoMin);
+      if (!pedacos || pedacos.length < 2) { naoCoube.push({ passo, fase }); return null; }
+      pedacos.forEach((p, i) => { criarLinha(`${cad.nome} parte ${i + 1}`, p.ini, p.dur).partida = true; });
+      const ult = pedacos[pedacos.length - 1];
+      partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin });
+      return ult.ini + ult.dur;
+    }
+    criarLinha(cad.nome, ini, duracaoMin);
     return ini + duracaoMin;
   };
   // Rotinas de abertura primeiro: elas abrem o dia e o resto conta a partir dali.
@@ -7903,7 +7975,7 @@ function _opMontarCascataDoLote(data, os) {
     _opReordenarPostosPorHorario(data);
     _opSincronizarHorariosDia(data);
   }
-  return { criadas, semFuncao, naoCoube, fases, fixas };
+  return { criadas, semFuncao, naoCoube, partidas, fases, fixas };
 }
 
 /* ---------------- expedição do dia, a partir do plano de OE ---------------- */
@@ -8115,7 +8187,7 @@ async function confirmarAlocarOSNoDia() {
   const os = (STATE.ordens || []).find(o => o.id === osId);
   if (!os) return toast('Escolha a OS', 'err');
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  const { criadas, semFuncao, naoCoube, fases, fixas } = _opMontarCascataDoLote(data, os);
+  const { criadas, semFuncao, naoCoube, partidas, fases, fixas } = _opMontarCascataDoLote(data, os);
   if (!criadas.length && !fixas.length && !semFuncao.length && !naoCoube.length) {
     return toast(`OS ${os.os} já tem a sequência completa em ${formatDate(data)}`, 'ok');
   }
@@ -8130,9 +8202,18 @@ async function confirmarAlocarOSNoDia() {
     + (fases.length > 1 ? ` em ${fases.length} fases de enfesto` : '')
     + (fixas.length ? ` · + ${fixas.length} de horário fixo do dia (não são da OS)` : '')
     + (semTempo.length ? ` · sem tempo cadastrado: ${semTempo.join(', ')}` : '')
+    + (partidas.length ? ` · ${partidas.length} repartida(s) em volta das pausas` : '')
     + (semFuncao.length ? ` · ${semFuncao.length} sem função cadastrada` : '')
     + (naoCoube.length ? ` · ${naoCoube.length} não coube(m) no dia` : ''),
     (semFuncao.length || naoCoube.length || semTempo.length) ? 'err' : 'ok');
+  // O trabalho longo repartido é a mudança mais visível na agenda: diz QUAL foi
+  // e em quantos pedaços, senão a pessoa vê "Enfesto parte 1" e não sabe de onde
+  // saiu nem onde está o resto.
+  partidas.forEach(p => {
+    const rot = p.nome + (p.fase && fases.length > 1 ? ` · ${p.fase.nome || 'F' + p.fase.ordem}` : '');
+    toast(`${rot}: ${_opDurTexto(p.total)} repartidos em ${p.pedacos.length} partes — `
+      + p.pedacos.map(x => `${_opHHMM(x.ini)} (${_opDurTexto(x.dur)})`).join(' · '), 'ok');
+  });
   if (semFuncao.length) {
     console.info('Passos sem função cadastrada:', semFuncao.map(rotuloPasso).join(', '));
   }
