@@ -57,6 +57,14 @@ let _opPinoLoteSoltoAgora = null;
 // Sem a base, uma chave suja subia inteira: quem tinha uma cópia velha de
 // `ordens` apagava a OS que outro dispositivo tinha acabado de criar.
 let _baseline = {};
+// O `updated_at` que ESTE dispositivo acabou de gravar. É por ele que o realtime
+// e o polling reconhecem o próprio eco: o `_device` carimbado dentro do blob não
+// serve para isso, porque o payload do realtime vem TRUNCADO num blob deste
+// tamanho (1,7 MB) — `payload.new.data` chega vazio e a comparação nunca casa.
+// Sem este carimbo, cada gravação nossa disparava uma releitura completa do
+// servidor e um loadState logo depois, que é o que fazia o checklist recém
+// marcado voltar atrás na tela.
+let _ultimoUpdatedAtEnviado = null;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -175,6 +183,11 @@ async function cloudLoad() {
 
 async function cloudFlush() {
   if (!supa || !currentUser || !cloudCache) return;
+  // Uma gravação de cada vez. O blob é grande e a subida demora; sem isto, a
+  // edição feita no meio dela disparava um segundo flush em paralelo, e as duas
+  // gravações corriam uma contra a outra em cima da mesma linha. Reagenda: o
+  // pendente sobe assim que a atual terminar.
+  if (_flushing) { scheduleCloudSave(); return; }
   // Se a ÚLTIMA leitura falhou, NÃO salvar: o cloudCache pode estar vazio pela
   // falha, e o seed/migração do loadState tentam gravar logo em seguida. Sem
   // este atalho, o fluxo caía na trava anti-apagamento e mostrava "gravação
@@ -271,17 +284,31 @@ async function cloudFlush() {
       }
     } catch (e) { console.warn('merge re-leitura', e); /* segue com o cache local */ }
     cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
+    // FOTOGRAFIA DO QUE VAI SUBIR. A gravação leva SEGUNDOS (o blob passa de
+    // 1,5 MB), e o usuário continua clicando nesse meio-tempo: cada clique marca
+    // a chave como suja e reescreve o cloudCache. O que subiu foi esta foto, não
+    // o cache de agora — e é ela que precisa virar base e baixar as bandeiras.
+    const enviado = Object.assign({}, cloudCache);
+    const enviadas = new Set(_dirtyKeys);
     const { error } = await supa.from('shared_data').upsert({
       id: 'main',
-      data: cloudCache,
-      updated_at: new Date().toISOString(),
+      data: enviado,
+      updated_at: _ultimoUpdatedAtEnviado = new Date().toISOString(),
       updated_by: currentUser.id
     }, { onConflict: 'id' });
     if (error) throw error;
-    _dirtyKeys.clear();
+    // Baixa a bandeira só das chaves que subiram INTACTAS. A que o usuário mexeu
+    // durante a subida continua suja — e é isto que a salva: com a bandeira
+    // limpa, o flush seguinte a tratava como "não editei aqui" e trocava o valor
+    // pelo do servidor (o de antes do clique). Era o que apagava o checklist e o
+    // número do tom recém-digitado, e obrigava a clicar de novo até pegar uma
+    // janela em que nenhuma gravação estivesse no ar.
+    enviadas.forEach(k => { if (cloudCache[k] === enviado[k]) _dirtyKeys.delete(k); });
     // O que acabou de subir vira a nova BASE: daqui pra frente, só o que mudar
-    // em relação a isto é considerado edição deste dispositivo.
-    _baseline = Object.assign({}, cloudCache);
+    // em relação a isto é considerado edição deste dispositivo. Tem que ser a
+    // FOTO, não o cache: a edição feita durante a subida entraria na base como se
+    // o servidor já a tivesse, e o merge por registro a descartaria depois.
+    _baseline = enviado;
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }  // subiu: cancela retry pendente
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
@@ -291,6 +318,14 @@ async function cloudFlush() {
     // re-sobrescrever depois. O realtime/polling do outro cuida do re-render.
     if (adotadas.length || mescladas.length) {
       try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); }
+      // `loadState` refaz os objetos do STATE. A folha de OS aberta guarda uma
+      // referência ao objeto ANTIGO — que a partir daqui não está mais na lista.
+      // Sem reapontar, a folha passa a calcular o balanceador e o consumo em cima
+      // de uma OS órfã, que ninguém mais atualiza.
+      if (printOsAtual) {
+        const fresh = (STATE.ordens || []).find(x => x.id === printOsAtual.id);
+        if (fresh) printOsAtual = fresh;
+      }
     }
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
@@ -339,6 +374,16 @@ function iniciarRealtime() {
         // (updated_by) fazia o 2º computador do MESMO login descartar a mudança
         // do 1º achando que era própria — e a OS nunca aparecia lá.
         if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
+        // O eco da NOSSA gravação, reconhecido pelo `updated_at` que acabamos de
+        // escrever. O `_device` de dentro do blob não resolve aqui: neste tamanho
+        // o payload vem truncado e `payload.new.data` chega vazio, então toda
+        // gravação nossa caía como se fosse de outro e disparava releitura +
+        // loadState + reaplicação dos checkboxes — que é o instante em que a
+        // etapa recém-marcada voltava a aparecer desmarcada.
+        if (payload.new.updated_at && payload.new.updated_at === _ultimoUpdatedAtEnviado) {
+          lastSeenUpdatedAt = payload.new.updated_at;
+          return;
+        }
         // Enquanto há edição local pendente/salvando, NÃO relê o servidor: o
         // cloudLoad sobrescreveria o checklist/horário que o usuário acabou de
         // marcar e ainda não foi salvo, revertendo na tela. O polling reaplica a
@@ -467,6 +512,11 @@ function iniciarPolling() {
       // Mesmo critério do realtime: só pula se foi ESTE dispositivo que gravou
       // (e não qualquer sessão do mesmo login).
       if (data.data && data.data._device === DEVICE_ID) {
+        lastSeenUpdatedAt = data.updated_at;
+        return;
+      }
+      // Mesmo carimbo do realtime: gravação nossa não é mudança de outro.
+      if (data.updated_at === _ultimoUpdatedAtEnviado) {
         lastSeenUpdatedAt = data.updated_at;
         return;
       }
@@ -15231,6 +15281,18 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
   const digitado = Math.max(0, Math.floor(Number(valor) || 0));
   const bruto = qtdSize > 0 ? Math.round(digitado * qtdMin / qtdSize) : digitado;
   const n = Math.max(0, Math.min(max, bruto));
+  // O número digitado NÃO cabia e foi reduzido (às vezes a zero, e aí a célula
+  // fica vazia — foi o que parecia "o programa apagou o que eu escrevi"). O teto
+  // é a coluna inteira: grade × camadas × peças por camada, menos o que os outros
+  // tons editáveis já levam. Sem dizer isso, o número sumia sem explicação e a
+  // pessoa digitava de novo esperando outro resultado.
+  if (n !== bruto) {
+    const noTamanho = v => qtdMin > 0 ? Math.round(v * qtdSize / qtdMin) : v;
+    toast(`Tom ${tNum}: ${digitado} não cabe — o tamanho ${String(size || '').toUpperCase()} tem `
+      + `${noTamanho(qtdMin * cam * mult)} peça(s) no total`
+      + (somaOutros > 0 ? ` e os outros tons já levam ${noTamanho(somaOutros)}` : '')
+      + `. Ficou ${noTamanho(n) || 'em branco'}.`, 'err');
+  }
   os.progresso.totalTamanhoTomValor[tNum] = n;
   // Reescreve a linha inteira com o valor de CADA tamanho (o clamp pode ter
   // baixado o V, e cada coluna tem o seu número).
