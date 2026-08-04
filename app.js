@@ -7852,6 +7852,118 @@ function _opMontarCascataDoLote(data, os) {
   return { criadas, semFuncao, naoCoube, fases, fixas };
 }
 
+/* ---------------- expedição do dia, a partir do plano de OE ---------------- */
+
+// Os passos da cadeia de CARGA, na ordem: selecionar os pacotes, desmontar a
+// carga que voltou e montar a que sai.
+const _OP_SEQ_CARGA = _OP_SEQUENCIA.filter(p => p.cadeia === 'carga')
+  .slice().sort((a, b) => a.ordem - b.ordem);
+
+// Monta no dia as operações do posto de expedição a partir das JANELAS DE
+// EXPEDIÇÃO com carga naquele dia. Elas não vinham do "+ Alocar OS": a cascata
+// da OS monta só a corrente do corte, então o trabalho da expedição era digitado
+// à mão, com referência sem número de OS — e por isso nem o "Retirar OS" o
+// alcançava depois.
+//
+// HORÁRIO: as três são a PREPARAÇÃO do caminhão, então são encadeadas para
+// TERMINAR na hora da saída da janela (09:30 na Matinal). Somando 25 min do
+// cadastro, a seleção começa 09:05 e a montagem fecha às 09:30 — o caminhão sai
+// com a carga pronta, não começando a ser feita.
+//
+// Uma volta por JANELA e por PERNA, não por OS: o caminhão é um só e a carga é
+// dele. As OS daquela perna entram na REFERÊNCIA, que é o que liga a operação
+// aos lotes — e o que faz o "Retirar OS" passar a alcançá-las.
+// Devolve { criadas, jaTinha, semFuncao, semHora, ocorrencias }.
+function _opMontarExpedicaoDoDia(data) {
+  const criadas = [], jaTinha = [], semFuncao = [], semHora = [];
+  const ocs = (typeof ocorrenciasExpedicao === 'function' ? ocorrenciasExpedicao(data, data) : [])
+    .filter(oc => !oc.cancelada);
+  ocs.forEach(oc => {
+    ['ida', 'volta'].forEach(perna => {
+      const cargas = _expCargasDa(oc.janela.id, oc.dataOrig, perna);
+      if (!cargas.length) return;
+      const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
+      const fim = _opMin(hora);
+      if (fim == null) { semHora.push({ oc, perna }); return; }
+      const cads = _OP_SEQ_CARGA.map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
+      const faltando = cads.filter(x => !x.cad || !x.cad.funcaoId);
+      if (faltando.length) { faltando.forEach(x => semFuncao.push({ passo: x.passo, oc, perna })); return; }
+      const total = cads.reduce((s, x) => s + Math.max(0, x.cad.duracaoMin || 0), 0);
+      // Começa cedo o bastante para acabar na saída — e nunca antes de a fábrica
+      // abrir. Encostando na abertura, a carga só fica pronta ANTES da hora, que
+      // é o lado certo de errar.
+      let relogio = Math.max(_OP_JORNADA.ini, fim - total);
+      const nums = Array.from(new Set(cargas
+        .map(c => (STATE.ordens || []).find(o => o.id === c.osId))
+        .filter(Boolean).map(o => String(o.os || '').trim()).filter(Boolean)));
+      const ref = `Expedição ${oc.janela.nome || ''} (${perna})`.replace(/\s+/g, ' ').trim()
+        + (nums.length ? ` · OS ${nums.join('/')}` : '');
+      const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
+      cads.forEach(({ passo, cad }) => {
+        const chave = [oc.janela.id, oc.dataOrig, perna, passo.ordem].join('|');
+        // Já montada, ou já digitada à mão para esta janela: não duplica. O
+        // reconhecimento pelo NOME DA JANELA na referência é o que salva o que
+        // foi lançado antes desta automação existir ("Lotes para expedição
+        // matinal") de virar uma segunda linha do mesmo trabalho.
+        const ja = doDia().find(o => {
+          const p = _opPassoSequencia(o);
+          if (!p || p.cadeia !== 'carga' || p.ordem !== passo.ordem) return false;
+          if (o.expChave === chave) return true;
+          const nomeJanela = _normNome(oc.janela.nome || '');
+          return !!nomeJanela && _normNome(o.referencia || '').includes(nomeJanela);
+        });
+        const dur = Math.max(0, cad.duracaoMin || 0);
+        if (ja) { jaTinha.push({ op: ja, passo }); relogio += dur; return; }
+        const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
+        const nova = {
+          id: uid(), data,
+          funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
+          operacao: cad.nome, escopo: 'completa', etapas: [],
+          inicio: _opHHMM(relogio), duracaoMin: dur,
+          // Âncora: a hora veio do PLANO DE EXPEDIÇÃO, não da fila do posto. Sem
+          // isto o encadeamento do posto a puxaria para logo depois da operação
+          // de cima e a carga ficaria pronta na hora errada.
+          inicioFixo: true,
+          expChave: chave, expJanelaId: oc.janela.id, expPerna: perna,
+          responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
+          referencia: ref, status: 'pendente', prioridade: 'eletiva', obs: ''
+        };
+        STATE.operacoes.push(nova);
+        criadas.push(nova);
+        relogio += dur;
+      });
+    });
+  });
+  return { criadas, jaTinha, semFuncao, semHora, ocorrencias: ocs.length };
+}
+
+async function montarExpedicaoDoDia(data) {
+  if (!exigirAdmin('planejar operações')) return;
+  const dia = data || opPlanoAncora || _expHoje();
+  if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
+  const prev = _opMontarExpedicaoDoDia(dia);
+  // Prévia sem gravar: desfaz o que a simulação pôs e pergunta antes.
+  const idsPrev = new Set(prev.criadas.map(o => o.id));
+  STATE.operacoes = STATE.operacoes.filter(o => !idsPrev.has(o.id));
+  if (!prev.criadas.length) {
+    if (prev.semFuncao.length) {
+      return toast('Nenhuma função tem "Seleção de pacotes", "Montar carga" e "Desmontar carga" cadastradas — cadastre no posto da expedição', 'err');
+    }
+    if (prev.jaTinha.length) return toast(`A expedição de ${formatDate(dia)} já está no plano`, 'ok');
+    return toast(`Nenhuma carga de expedição em ${formatDate(dia)}`, 'err');
+  }
+  const linhas = prev.criadas.map(o => `· ${o.inicio} ${o.operacao} (${_opDurTexto(_opDuracao(o))}) — ${o.referencia}`);
+  if (!confirm(`Montar a expedição de ${formatDate(dia)} no plano de operações?\n\n`
+    + linhas.join('\n')
+    + '\n\nAs três terminam na hora de saída da janela: o caminhão sai com a carga pronta.\n'
+    + (prev.jaTinha.length ? `${prev.jaTinha.length} operação(ões) já estavam no dia e não foram repetidas.\n` : '')
+    + 'A hora fica fixada (📌), porque vem do plano de expedição e não da fila do posto.')) return;
+  const r = _opMontarExpedicaoDoDia(dia);
+  await saveState('operacoes');
+  toast(`${r.criadas.length} operação(ões) de expedição criada(s) em ${formatDate(dia)}`, 'ok');
+  renderOperacoes();
+}
+
 // Modal: escolher a OS que abre (ou continua) o planejamento do dia.
 function abrirModalAlocarOS(data) {
   if (!exigirAdmin('planejar operações')) return;
@@ -8439,6 +8551,7 @@ function renderOperacoes() {
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn primary" title="O dia começa pela OS: o programa monta a sequência de operações dela." onclick="abrirModalAlocarOS(opPlanoAncora)">+ Alocar OS no dia</button>
+        <button class="btn" title="Monta as operações do posto de expedição a partir das janelas de OE com carga neste dia: seleção de pacotes, desmontagem e montagem, terminando na hora de saída do caminhão." onclick="montarExpedicaoDoDia(opPlanoAncora)">+ Expedição do dia</button>
         ${(STATE.operacoes || []).some(o => _opLotesDaOperacao(o).length)
           ? `<button class="btn" title="Tira do planejamento, de uma vez, todas as operações de uma OS alocada — em um dia ou no plano inteiro. É o desfazer do «Alocar OS»." onclick="abrirModalDesalocarOS(opPlanoAncora)">− Retirar OS</button>` : ''}
         <button class="btn" onclick="abrirModalOperacao()">+ Operação avulsa</button>
@@ -8804,6 +8917,7 @@ function renderOperacoes() {
               : ''}
             <button class="btn" title="Confere o dia: operação esperada que falta, sobreposição dentro da mesma função e a coerência da sequência cruzada entre as funções." onclick="analisarDiaOperacoes('${esc(data)}')">${opAnaliseDia === data ? '✕ Fechar análise' : '🔍 Analisar o dia'}</button>
             <button class="btn primary" title="O planejamento do dia começa pela OS: escolhida a OS, o programa monta a sequência inteira de operações, cada uma na função que a executa." onclick="abrirModalAlocarOS('${esc(data)}')">+ Alocar OS</button>
+            <button class="btn" title="Monta as operações do posto de expedição a partir das janelas de OE com carga neste dia: seleção de pacotes, desmontagem e montagem, terminando na hora de saída do caminhão." onclick="montarExpedicaoDoDia('${esc(data)}')">+ Expedição do dia</button>
             ${lotes.length ? `<button class="btn" title="Tira do planejamento, de uma vez, todas as operações de uma OS alocada — em um dia ou no plano inteiro. É o desfazer do «Alocar OS»." onclick="abrirModalDesalocarOS('${esc(data)}')">− Retirar OS</button>` : ''}
             <button class="btn" onclick="abrirModalOperacao('','${esc(data)}')">+ Operação avulsa</button>
           </div>
