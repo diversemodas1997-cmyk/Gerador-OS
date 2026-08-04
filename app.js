@@ -7572,7 +7572,14 @@ function _opLotesIncompletos(doDia, data) {
 // Devolve { criadas, marcadas, atualizadas } — `marcadas` são as que já estavam
 // no dia e passaram a exibir o 📌 de horário fixo; `atualizadas`, as que já
 // estavam no dia com hora ou tempo diferentes do cadastro e foram acertadas.
-function _opAplicarHorariosFixosNoDia(data) {
+// `soAcertar` = dia que já passou: ACERTA a hora do que está lá, mas não CRIA o
+// que faltou. São coisas diferentes. Criar um café numa terça de julho em que
+// ninguém o planejou é inventar histórico; deixar uma limpeza planejada às 15:20
+// quando o cadastro sempre disse 17:20 é conservar um erro do programa — aquela
+// hora não foi escolhida por ninguém, ela é o resto de um reencaixe automático
+// feito antes de a operação ser reconhecida como de hora marcada.
+function _opAplicarHorariosFixosNoDia(data, opcoes) {
+  const soAcertar = !!(opcoes && opcoes.soAcertar);
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
   const criadas = [], marcadas = [], atualizadas = [];
   const noDia = (STATE.operacoes || []).filter(o => o.data === data);
@@ -7629,6 +7636,7 @@ function _opAplicarHorariosFixosNoDia(data) {
         });
         return;
       }
+      if (soAcertar) return;   // dia passado: acerta o que existe, não cria o que faltou
       if (!cabeNaJornada) return;
       const pessoa = _opResponsavelDoPosto(f.nome);
       const nova = {
@@ -7676,9 +7684,13 @@ function _opPreencherResponsaveisDoDia(data) {
 // acontecem todo dia, tenha ou não OS no dia. Ao abrir a agenda, elas são postas
 // nos dias ÚTEIS do período mostrado.
 //
-// De HOJE PARA FRENTE apenas. Dia passado é registro do que aconteceu, e
-// carimbar um almoço em retrospecto seria inventar histórico — quem quiser
-// completar um dia que já passou usa "Organizar o dia", que pede confirmação.
+// CRIAR, só de hoje para frente: carimbar um almoço numa terça de julho em que
+// ninguém o planejou seria inventar histórico. ACERTAR A HORA, em qualquer dia
+// do período à vista, inclusive os passados — uma operação de hora marcada
+// parada num horário que o cadastro nunca teve não é registro de nada: é o resto
+// de um reencaixe automático de quando ela ainda não era reconhecida como fixa.
+// O que de fato aconteceu fica preservado pela regra de sempre: operação marcada
+// como FEITA nunca é reescrita.
 // Devolve as criadas.
 function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
   const hoje = _expHoje();
@@ -7688,11 +7700,11 @@ function _opGarantirHorariosFixosNoPeriodo(ini, fim) {
   const horizonte = _expAddDias(hoje, 60);
   const ate = fim < horizonte ? fim : horizonte;
   const criadas = [], marcadas = [], atualizadas = [];
-  let d = ini < hoje ? hoje : ini;
+  let d = ini;
   for (let i = 0; i < 62 && d <= ate; i++, d = _expAddDias(d, 1)) {
     const dow = _expData(d).getDay();
     if (dow === 0 || dow === 6) continue;   // sábado e domingo não são planejados
-    const r = _opAplicarHorariosFixosNoDia(d);
+    const r = _opAplicarHorariosFixosNoDia(d, { soAcertar: d < hoje });
     criadas.push(...r.criadas);
     marcadas.push(...r.marcadas);
     atualizadas.push(...r.atualizadas);
