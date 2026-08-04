@@ -19014,6 +19014,9 @@ function _pastaIniciarRascunho(G) {
     // Nasce montado; vira do usuário no instante em que ele escrever algo.
     nome: _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura),
     nomeManual: false,
+    // Para qual grade este rascunho foi montado. É o que denuncia, mais adiante,
+    // que o destino mudou e as fases precisam ser resolvidas de novo.
+    paraGradeId: G.gradeId || '',
     fases: []
   };
   _pastaResetFases(G);
@@ -19143,6 +19146,17 @@ function _pastaHtmlPasso() {
   const achada = agregadora || _pastaMelhorCandidata(G);
   const jaExiste = !!agregadora || !!(achada && achada.certeza);
   if (jaExiste && !G.gradeId) G.gradeId = achada.grade.id;
+  // O DESTINO MUDOU DEPOIS QUE O RASCUNHO FOI FEITO — refaz a que fase cada
+  // risco aponta. As linhas do rascunho nascem no começo da importação, quando a
+  // grade da vez pode ainda não existir; se ela é criada por um risco anterior e
+  // só aqui o destino passa a ser ela, as linhas continuavam marcadas como
+  // "➕ criar fase nova". Aplicar assim ACRESCENTAVA uma segunda fase "Corpo" na
+  // grade em vez de corrigir a que estava lá — a medida entrava na fase nova e a
+  // antiga ficava como estava, que é o "importei e a medida não mudou".
+  if (G.draft.paraGradeId !== G.gradeId) {
+    _pastaResetFases(G);
+    G.draft.paraGradeId = G.gradeId;
+  }
   const grade = (STATE.grades || []).find(g => g.id === G.gradeId) || null;
 
   const casaId = new Set(G.candidatas.map(g => g.id));
@@ -19361,6 +19375,7 @@ function pastaTrocarDestino(valor) {
   G.draft.destinoManual = true;
   G.gradeId = valor;
   _pastaResetFases(G);      // as fases só fazem sentido em relação ao destino
+  G.draft.paraGradeId = G.gradeId;
   renderPastaWiz();
 }
 
