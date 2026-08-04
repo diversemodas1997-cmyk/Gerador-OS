@@ -6156,7 +6156,46 @@ function _opGruposSobreposicao(lista) {
     if (pessoa) chaves.push(op.data + '|P|' + pessoa);
     chaves.forEach(k => { if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(op); });
   });
+  // A mesma HORA MARCADA aparecendo em dois postos da mesma pessoa não é duas
+  // operações: é uma só, contada duas vezes.
+  grupos.forEach((arr, k) => {
+    if (k.indexOf('|P|') < 0) return;
+    grupos.set(k, _opColapsarRotinasDaPessoa(arr));
+  });
   return grupos;
+}
+
+// O café das 09:30 do "Operador de enfestadeira" e o café das 09:30 do "Auxiliar
+// de produção #1" são o MESMO café quando é a mesma pessoa nos dois postos: ela
+// para uma vez, quinze minutos, e volta. As duas linhas existem porque a hora
+// marcada é cadastrada POR FUNÇÃO — é assim que cada posto sabe que para —, mas
+// somá-las acusava uma sobreposição que não existe, e que ninguém podia
+// resolver: hora marcada não se move, então o selo vermelho ficava aceso no dia
+// inteiro e o "Organizar o dia" nunca terminava dizendo que estava tudo certo.
+//
+// Sai da conta da PESSOA só a REPETIÇÃO — a rotina que cabe dentro de outra, de
+// OUTRO posto. Sobra uma delas, de propósito: o trabalho que cair dentro do café
+// continua sendo acusado, que é conflito de verdade. Duas horas marcadas no
+// MESMO posto seguem acusadas: aí são duas paradas cadastradas em cima uma da
+// outra, e isso é erro de cadastro.
+function _opColapsarRotinasDaPessoa(arr) {
+  const rotinas = (arr || [])
+    .filter(o => _opInicioMin(o) != null && _opDuracao(o) && _opHorarioDeRotina(o))
+    .sort((a, b) => _opInicioMin(a) - _opInicioMin(b) || _opDuracao(b) - _opDuracao(a));
+  const fora = new Set();
+  rotinas.forEach((o, i) => {
+    if (fora.has(o.id)) return;
+    for (let j = i + 1; j < rotinas.length; j++) {
+      const outra = rotinas[j];
+      if (fora.has(outra.id) || (outra.funcaoId || '') === (o.funcaoId || '')) continue;
+      // Ordenadas pelo início: a partir daqui ninguém mais cruza com esta.
+      if (_opInicioMin(outra) >= _opFimMin(o)) break;
+      // Só a que cabe INTEIRA dentro da outra. A que passa do fim traz tempo que
+      // a primeira não cobre, e some-lo apagaria uma parada mais longa da conta.
+      if (_opFimMin(outra) <= _opFimMin(o)) fora.add(outra.id);
+    }
+  });
+  return fora.size ? arr.filter(o => !fora.has(o.id)) : arr;
 }
 
 function _opConflitos(lista) {
