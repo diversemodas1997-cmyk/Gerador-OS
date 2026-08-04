@@ -7902,9 +7902,15 @@ function _opOperacoesDoLote(lote, data) {
 }
 
 // Modal: escolher a OS que sai do planejamento e se sai de um dia só ou de todos.
-function abrirModalDesalocarOS(data) {
+// A lista segue o ALCANCE, e não o plano inteiro: no alcance "só o dia" aparecem
+// apenas as OS que têm operação NAQUELE dia. A janela mostrava as 15 OS do plano
+// para um dia que tinha uma só — as outras catorze eram de julho, já fora do
+// quadro, e ficavam ali cinzentas dizendo "nada em 04/08". Quem abre a janela
+// quer ver o que dá para tirar; o resto é ruído que faz procurar.
+function abrirModalDesalocarOS(data, escopoEscolhido) {
   if (!exigirAdmin('planejar operações')) return;
   const dia = data || opPlanoAncora || _expHoje();
+  const escopo = escopoEscolhido === 'tudo' ? 'tudo' : 'dia';
   const semZero = n => String(n).replace(/^0+/, '') || '0';
   // Só OS que REALMENTE têm operação planejada: oferecer as outras seria
   // prometer um desfazer que não desfaz nada.
@@ -7921,13 +7927,16 @@ function abrirModalDesalocarOS(data) {
   if (!lotes.size) {
     return toast('Nenhuma OS com operações planejadas para retirar', 'err');
   }
-  const linhas = Array.from(lotes.entries())
+  const todas = Array.from(lotes.entries())
     .map(([lote, e]) => {
       const os = _opOsDoLote(lote);
       return { lote, e, os, rot: os ? String(os.os) : String(lote), mod: (os && os.modeloNome) || '' };
     })
     .sort((a, b) => (b.e.noDia > 0) - (a.e.noDia > 0)
       || String(b.lote).localeCompare(String(a.lote), undefined, { numeric: true }));
+  // No alcance do DIA, só o que aquele dia tem. No alcance do plano inteiro,
+  // tudo — lá a OS de julho é retirável de verdade, então listá-la é honesto.
+  const linhas = escopo === 'dia' ? todas.filter(l => l.e.noDia > 0) : todas;
   // Mantém as OS já escolhidas quando o usuário só troca o dia — trocar a data
   // redesenha o modal inteiro, e perder a seleção obrigava a achá-las de novo.
   const marcados = new Set(_opDesalocLotesEscolhidos());
@@ -7935,33 +7944,36 @@ function abrirModalDesalocarOS(data) {
   document.getElementById('modal-desaloc-title').textContent = 'Retirar OS do planejamento';
   document.getElementById('modal-desaloc-fields').innerHTML = `
     <div class="form-grid cols-2">
-      <div class="field"><label>Dia *</label><input type="date" id="desaloc-data" value="${esc(dia)}" onchange="abrirModalDesalocarOS(this.value)"></div>
+      <div class="field"><label>Dia *</label><input type="date" id="desaloc-data" value="${esc(dia)}" onchange="abrirModalDesalocarOS(this.value, document.getElementById('desaloc-escopo').value)"></div>
       <div class="field">
         <label>Alcance *</label>
-        <select id="desaloc-escopo" onchange="_opDesalocResumo()">
-          <option value="dia">Só o dia ${esc(formatDate(dia))}</option>
-          <option value="tudo">Todos os dias do plano</option>
+        <select id="desaloc-escopo" onchange="abrirModalDesalocarOS(document.getElementById('desaloc-data').value, this.value)">
+          <option value="dia" ${escopo === 'dia' ? 'selected' : ''}>Só o dia ${esc(formatDate(dia))}</option>
+          <option value="tudo" ${escopo === 'tudo' ? 'selected' : ''}>Todos os dias do plano</option>
         </select>
-        <div class="field-hint">A corrente de uma OS costuma transbordar para o próximo dia útil. <b>Todos os dias</b> tira a OS do planejamento inteiro.</div>
+        <div class="field-hint">A corrente de uma OS costuma transbordar para o próximo dia útil. <b>Todos os dias</b> tira a OS do planejamento inteiro — e é lá que aparecem as OS de outros dias.</div>
       </div>
       <div class="field full">
-        <label>OS alocadas no plano de operações *</label>
+        <label>${escopo === 'dia' ? `OS com operação em ${esc(formatDate(dia))} *` : 'OS alocadas no plano de operações *'}</label>
         <div class="desaloc-acoes no-print">
           <button type="button" class="btn small" onclick="_opDesalocMarcarTodas(true)">Marcar todas</button>
           <button type="button" class="btn small ghost" onclick="_opDesalocMarcarTodas(false)">Limpar</button>
-          ${noDia && noDia < linhas.length ? `<button type="button" class="btn small" onclick="_opDesalocMarcarTodas(true, true)">Só as de ${esc(formatDate(dia))}</button>` : ''}
+          ${escopo === 'tudo' && noDia && noDia < linhas.length ? `<button type="button" class="btn small" onclick="_opDesalocMarcarTodas(true, true)">Só as de ${esc(formatDate(dia))}</button>` : ''}
         </div>
         <div class="desaloc-lista">
-          ${linhas.map(l => `
+          ${linhas.length ? linhas.map(l => `
             <label class="desaloc-row${l.e.noDia ? '' : ' fora'}">
               <input type="checkbox" name="desaloc-os" value="${esc(l.lote)}" data-nodia="${l.e.noDia}" ${marcados.has(l.lote) ? 'checked' : ''} onchange="_opDesalocResumo()">
               <div class="os">OS ${esc(l.rot)}${l.mod ? ` <span class="mod">· ${esc(l.mod)}</span>` : ''}</div>
               <div class="qtd">${l.e.noDia
                   ? `<b>${l.e.noDia}</b> operação(ões) em ${esc(formatDate(dia))}`
                   : `nada em ${esc(formatDate(dia))}`}<br>${l.e.total} no plano · ${l.e.dias.size} dia(s)</div>
-            </label>`).join('')}
+            </label>`).join('')
+            : `<div class="vazio">Nenhuma OS com operação em <b>${esc(formatDate(dia))}</b>. O plano tem <b>${todas.length}</b> OS em outros dias — para chegar a elas, troque o alcance para «todos os dias do plano».</div>`}
         </div>
-        <div class="field-hint">${linhas.length} OS no plano${noDia < linhas.length ? ` · ${noDia} com operação em ${esc(formatDate(dia))}; as apagadas só saem no alcance «todos os dias»` : ''}. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
+        <div class="field-hint">${escopo === 'dia'
+            ? `${linhas.length} OS neste dia (o plano inteiro tem ${todas.length})`
+            : `${linhas.length} OS no plano${noDia < linhas.length ? ` · ${noDia} com operação em ${esc(formatDate(dia))}` : ''}`}. Café, almoço e as demais rotinas de hora marcada <b>não</b> são retiradas: elas são da jornada, não da OS.</div>
       </div>
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;" id="desaloc-resumo">Marque uma ou mais OS para ver quantas operações serão retiradas.</div>`;
