@@ -17987,7 +17987,7 @@ function _riscoNovaDraft(G) {
   const d = {
     sku: skuArq,
     tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(skuArq) || '',
-    variacao: prod.variacao || '',
+    variacao: prod.variacao || _riscoVariacaoPelaSku(skuArq),
     pecasPorPacote: prod.pecasPorPacote || _riscoPacotePadrao(skuArq),
     fases: []
   };
@@ -18774,13 +18774,45 @@ function _riscoUnidadesPadrao(sku) {
   return /^(BM|PM)\b/i.test(String(sku || '').trim()) ? 1 : 2;
 }
 
-// PEÇAS POR PACOTE que a importação assume, pelo SKU. No moletom (BM) o pacote
-// é de 36 peças — é o número da casa, e ele nunca chegou ao cadastro: as sete
-// grades BM estão todas com zero, e um pacote de zero peça não fecha conta
-// nenhuma na expedição. Nas demais linhas o campo continua em branco, porque o
-// número varia (as CM cadastradas vão de 3 a 9) e chutar seria pior.
+// PEÇAS POR PACOTE que a importação assume, pelo SKU: 36 no moletom (BM) e 80
+// na camiseta (CM). São os números da casa, e nenhum dos dois chegou ao
+// cadastro — as sete grades BM estão com zero, e as CM têm de 3 a 9, que é
+// outra contagem (pacotes por volume, não peças por pacote). Pacote de zero
+// peça não fecha conta nenhuma na expedição.
+// As demais linhas (PM, SM, CO…) continuam em branco: sem número da casa,
+// perguntar é melhor do que chutar.
 function _riscoPacotePadrao(sku) {
-  return /^BM\b/i.test(String(sku || '').trim()) ? 36 : '';
+  const s = String(sku || '').trim();
+  if (/^BM\b/i.test(s)) return 36;
+  if (/^CM\b/i.test(s)) return 80;
+  return '';
+}
+
+// A VARIAÇÃO vem no próprio SKU, depois do ponto: BM.LISA é básica, CM.TRI é
+// tricolor, CM.REC é a recortada — que nesta casa está cadastrada como bicolor
+// nas onze grades dela. O campo abria vazio e alguém respondia de novo o que o
+// nome do arquivo já dizia; pior, a variação é o que decide a PREVISÃO DE FASES
+// (tricolor prevê corpo 1, 2, 3, forro e ribana), então errá-la fazia a grade
+// nascer com as fases erradas.
+// As variações próprias da casa (Jaguar, Prime, Rugão, Espartana) não precisam
+// de lista fixa: o sufixo do SKU é o nome delas, e é assim que estão gravadas.
+function _riscoVariacaoPelaSku(sku) {
+  const suf = _normNome(String(sku || '').split('.').slice(1).join(' '));
+  if (!suf) return '';
+  if (/^(lisa|liso|basica|basico)$/.test(suf)) return 'basica';
+  if (/^(tri|tricolor)$/.test(suf)) return 'tricolor';
+  if (/^(bi|bicolor)$/.test(suf)) return 'bicolor';
+  // REC é RECORTADA — variação própria, e não a bicolor. As onze grades CM.REC
+  // estão cadastradas como "bicolor", o que junta duas coisas diferentes na
+  // mesma subpasta; daqui para frente a importação escreve o nome certo.
+  if (/^(rec|recortada|recortado)$/.test(suf)) {
+    const jaUsada = [...new Set((STATE.grades || []).map(g => g.variacao || '').filter(Boolean))]
+      .find(v => /^recortad/i.test(_normNome(v)));
+    return jaUsada || 'Recortada';
+  }
+  const usada = [...new Set((STATE.grades || []).map(g => g.variacao || '').filter(Boolean))]
+    .find(v => _normNome(v) === suf);
+  return usada || '';
 }
 
 // A RIBANA NÃO É UMA GRADE. Ela é uma fase da grade do corpo — e o risco dela
@@ -18960,7 +18992,7 @@ function _pastaIniciarRascunho(G) {
   G.draft = {
     sku,
     tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(sku) || 'camiseta',
-    variacao: prod.variacao || '',
+    variacao: prod.variacao || _riscoVariacaoPelaSku(sku),
     pecasPorPacote: prod.pecasPorPacote || _riscoPacotePadrao(sku),
     // Nasce montado; vira do usuário no instante em que ele escrever algo.
     nome: _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura),
