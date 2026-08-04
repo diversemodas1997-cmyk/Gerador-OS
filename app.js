@@ -18206,8 +18206,9 @@ function _riscoHtmlGradesNovas() {
         </div>
         <div class="field full">
           <label>Nome da grade</label>
-          <input type="text" id="rn-nome-${gi}" value="${esc(nomeTam + (d.sku ? ' | ' + d.sku : ''))}" readonly class="is-auto">
-          <div class="field-hint">Montado dos tamanhos do risco + o SKU. Os tamanhos vêm do PDF e não se digitam.</div>
+          <input type="text" id="rn-nome-${gi}" value="${esc(d.nome != null ? d.nome : nomeTam + (d.sku ? ' | ' + d.sku : ''))}"
+                 oninput="riscoNomeDigitado(${gi})" placeholder="Ex.: P ao G3 | CM.LISA | 116.5cm">
+          <div class="field-hint">Nasce montado dos tamanhos do risco + o SKU, e <b>pode ser mudado</b>: é o nome que vai aparecer na lista de grades e na OS.</div>
         </div>
       </div>
       <div class="field-hint" style="margin:10px 0 4px;">
@@ -18246,9 +18247,24 @@ function _riscoHtmlGradesNovas() {
 function riscoAtualizarNome(gi) {
   const G = _riscoGruposNovos()[gi];
   if (!G) return;
+  const d = _riscoNovas[G.assinatura] || {};
   const sku = (document.getElementById(`rn-sku-${gi}`)?.value || '').trim();
   const el = document.getElementById(`rn-nome-${gi}`);
-  if (el) el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  // Nome digitado à mão não se refaz sozinho ao mexer no SKU.
+  if (!el || d.nomeManual) return;
+  el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  d.nome = el.value;
+}
+
+function riscoNomeDigitado(gi) {
+  const G = _riscoGruposNovos()[gi];
+  if (!G) return;
+  const d = _riscoNovas[G.assinatura];
+  const el = document.getElementById(`rn-nome-${gi}`);
+  if (!d || !el) return;
+  d.nome = el.value;
+  d.nomeManual = !!el.value.trim();
+  if (!d.nomeManual) riscoAtualizarNome(gi);
 }
 
 async function criarGradeDoRisco(gi) {
@@ -18814,6 +18830,9 @@ function _pastaIniciarRascunho(G) {
     tipoPeca: prod.tipoPeca || _pastaTipoPelaSku(sku) || 'camiseta',
     variacao: prod.variacao || '',
     pecasPorPacote: prod.pecasPorPacote || '',
+    // Nasce montado; vira do usuário no instante em que ele escrever algo.
+    nome: _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : ''),
+    nomeManual: false,
     fases: []
   };
   _pastaResetFases(G);
@@ -18869,6 +18888,7 @@ function _pastaColetar() {
     G.draft.tipoPeca = v('pw-tipo');
     G.draft.variacao = v('pw-var');
     G.draft.pecasPorPacote = v('pw-pac');
+    if (document.getElementById('pw-nome')) G.draft.nome = v('pw-nome');
   }
   G.draft.fases.forEach((d, fi) => {
     const sel = document.getElementById(`pw-f-alvo-${fi}`);
@@ -18972,9 +18992,10 @@ function _pastaHtmlPasso() {
         <input type="number" min="0" id="pw-pac" value="${esc(G.draft.pecasPorPacote)}" placeholder="0">
       </div>
       <div class="field full">
-        <label>Nome da grade</label>
-        <input type="text" id="pw-nome" value="${esc(nomeTam + (G.draft.sku ? ' | ' + G.draft.sku : ''))}" readonly class="is-auto">
-        <div class="field-hint">Montado dos tamanhos do risco + o SKU. Os tamanhos vêm do PDF e não se digitam.</div>
+        <label>Nome da grade *</label>
+        <input type="text" id="pw-nome" value="${esc(G.draft.nome != null ? G.draft.nome : nomeTam + (G.draft.sku ? ' | ' + G.draft.sku : ''))}"
+               oninput="pastaNomeDigitado()" placeholder="Ex.: P ao G3 | CM.LISA | 116.5cm">
+        <div class="field-hint">Nasce montado dos tamanhos do risco + o SKU, e <b>pode ser mudado</b>: é o nome que vai aparecer na lista de grades e na OS. Mexendo no SKU acima, ele se refaz — a menos que você já tenha escrito o seu, que fica.</div>
       </div>
     </div>`;
 
@@ -19096,11 +19117,28 @@ function _pastaHtmlResumo() {
     </div>`;
 }
 
+// O NOME MONTADO acompanha o SKU enquanto ninguém escreveu o seu. Digitado à
+// mão, ele para de se refazer: quem escreveu "P ao G3 | CM.LISA | 116.5cm" não
+// quer ver isso virar "P ao G3 | CM.LISA" ao corrigir uma letra do SKU.
 function pastaAtualizarNome() {
   const G = _pastaWiz.grupos[_pastaWiz.idx];
   const sku = (document.getElementById('pw-sku')?.value || '').trim();
   const el = document.getElementById('pw-nome');
-  if (el) el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  if (!el || G.draft.nomeManual) return;
+  el.value = _riscoNomeTamanhos(G.tamanhos) + (sku ? ' | ' + sku : '');
+  G.draft.nome = el.value;
+}
+
+function pastaNomeDigitado() {
+  const G = _pastaWiz && _pastaWiz.grupos[_pastaWiz.idx];
+  if (!G) return;
+  const el = document.getElementById('pw-nome');
+  if (!el) return;
+  G.draft.nome = el.value;
+  // Esvaziou o campo: volta a ser montado sozinho, senão a grade ficaria sem
+  // nome e sem caminho de volta.
+  G.draft.nomeManual = !!el.value.trim();
+  if (!G.draft.nomeManual) pastaAtualizarNome();
 }
 
 function pastaTrocarDestino(valor) {
@@ -19153,7 +19191,11 @@ async function pastaSalvarPasso() {
     /* ---- grade NOVA ---- */
     const sku = G.draft.sku;
     if (!sku) return toast('Informe o SKU da grade', 'err');
-    const nome = _riscoNomeTamanhos(G.tamanhos) + ' | ' + sku;
+    // O NOME É O QUE ESTÁ NO CAMPO. Ele nasce montado dos tamanhos + SKU, mas
+    // quem digitou o seu tem razão para isso: é assim que "P ao G3 | CM.LISA |
+    // 116.5cm" existe — duas grades de mesmos tamanhos e mesma linha, separadas
+    // pela largura. O campo era só leitura, e não havia como escrever isso aqui.
+    const nome = String(G.draft.nome || '').trim() || (_riscoNomeTamanhos(G.tamanhos) + ' | ' + sku);
     if ((STATE.grades || []).some(g => _normNome(g.nome) === _normNome(nome))) {
       return toast(`Já existe uma grade chamada "${nome}"`, 'err');
     }
