@@ -2607,7 +2607,7 @@ function addFaseGradeRow(fase = {}) {
           <input type="checkbox" class="fase-fora-plano" ${fase.foraDoPlano ? 'checked' : ''} style="width:auto;margin:0;">
           Produzida em outro momento — fica fora do planejamento de operações
         </label>
-        <div class="field-hint">Marque nas fases que <b>não</b> são enfestadas junto com o lote (gola e viés são feitos à parte). Elas continuam valendo para o consumo de tecido e para a folha de OS; o que muda é que o dia não monta enfesto, corte e movimentação para elas.</div>
+        <div class="field-hint">Marque nas fases que <b>não</b> são enfestadas junto com o lote. Elas continuam valendo para o consumo de tecido e para a folha de OS; o que muda é que o dia não monta enfesto, corte e movimentação para elas — quando precisarem entrar, entram à mão. <b>Gola e viés já ficam de fora sozinhos</b>, marcados ou não.</div>
       </div>
     </div>`;
   cont.appendChild(div);
@@ -6382,12 +6382,30 @@ function _opPassoSequencia(op) {
 // ler dela faria a exceção só valer para OS nova; o cadastro é o que o usuário
 // acabou de responder e vale para o plano que ele está montando agora.
 function _opFaseForaDoPlano(os, fase) {
+  if (_opFaseForaDoPlanoPorPadrao(fase && fase.nome)) return true;
   const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
   const doCadastro = (g && Array.isArray(g.fases))
     ? g.fases.find(f => Number(f.ordem) === Number(fase.ordem)
         || (fase.nome && _normFaseNome(f.nome) === _normFaseNome(fase.nome)))
     : null;
   return !!(doCadastro ? doCadastro.foraDoPlano : fase.foraDoPlano);
+}
+
+// GOLA e VIÉS ficam fora do plano automático SEMPRE, marcados ou não no cadastro.
+// Eles não são enfestados junto com o lote — são feitos à parte, quando dá — e o
+// automático que os incluía enchia o dia de enfesto, corte e movimentação de um
+// pano que não ia passar pela máquina. Depender da marca no cadastro não bastava:
+// são 66 grades, nenhuma marcada, e cada grade nova nasceria com o problema de
+// volta. Quando esses panos entrarem mesmo no dia, entram À MÃO, pelo "+" do
+// quadro de lotes ou por uma operação nova.
+//
+// Só o nome que É gola/viés conta: "Gola", "Viés", "Gola e Viés", "Gola/Viés".
+// "Corpo + Gola" é um pano de corpo — esse continua no plano.
+function _opFaseForaDoPlanoPorPadrao(nome) {
+  const n = _normFaseNome(nome);
+  if (!n) return false;
+  const palavras = n.split(' ').filter(p => p && p !== 'e' && p !== 'de' && p !== 'da' && p !== 'do');
+  return palavras.length > 0 && palavras.every(p => p === 'gola' || p === 'golas' || p === 'vies' || p === 'vieses');
 }
 
 // As FASES DO ENFESTO de uma OS QUE ENTRAM NO PLANEJAMENTO, na ordem. Cada fase é
@@ -6983,7 +7001,6 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
       // numa hora redonda para a próxima encaixar.
       const necess = _opDuracaoNecessaria(op);
       const nec = _opArredondar(necess.min);
-      if (!nec) return;
       const de = _opDuracao(op);
       // SOBE sempre que faltar tempo. DESCE só quando o número é a média medida
       // daquela fase — é ela que manda, para mais e para menos. Sem o "para
