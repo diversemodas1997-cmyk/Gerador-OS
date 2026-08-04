@@ -67,11 +67,34 @@ backup próprio.
   Cópia do código deste ponto em
   `backups-codigo/*.20260805d-importacao-riscos.CÓPIA`.
 
-- **DADOS:** ⚠️ **a exportação mais nova continua sendo a de 03/08/2026 17:32**
-  (`backups/BACKUP-COMPLETO-2026-08-03T20-32-59.json`). O código deste ponto
-  mexeu muito em grades e operações — **exporte antes de rodar a importação em
-  massa**: app → Configurações → **Exportar tudo (JSON)**. Sem isso, o retrato
-  mais próximo de um erro na importação tem dois dias.
+- **DADOS:** exportação de **04/08/2026 17:23**, em
+  `backups/BACKUP-COMPLETO-2026-08-04T20-23-49.json` (1,77 MB, 29 chaves, 701
+  registros): **177 OS**, **115 grades**, 25 desenhos, **173 operações**, 43
+  cargas de expedição, 41 mov. de estoque, 11 tecidos, 37 cores, 11 funções, 10
+  pessoas na equipe, 6 modelos, 15 etapas, 17 componentes, 4 materiais.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+
+  > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
+  > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
+  > ver a seção 2 abaixo.
+
+  **É o retrato da importação de riscos rodando.** Contra o de 03/08:
+  - **grades: 66 → 115.** 101 nomes novos, 52 que sumiram, 13 mantidos — o
+    cadastro foi refeito com a **largura no nome** (`P ao G3 | CM.TRI | 116.5cm`,
+    `2X P ao G3 | BM.TRI | 177cm`). Das 115, **104 já têm a largura**; as 11 que
+    faltam são as `CO.*` (Jaguar, Prime, Rugão), que não passaram pela
+    importação.
+  - **operações: 288 → 173.** Os dias 22/07 e 27/07 foram esvaziados e 24/07,
+    28/07, 03/08 e 04/08 encolheram — é a retirada e realocação das OS. **05/08
+    (+19) e 06/08 (+23) apareceram**: é a corrente transbordando para o próximo
+    dia útil, que este ponto de código passou a fazer em vez de descartar o resto
+    da fase.
+  - cargas de expedição: 40 → 43.
+
+  **Conferido neste retrato:** **nenhuma grade tem fase repetida** — o defeito
+  corrigido em `9db3a4a` (acrescentar uma fase nova em vez de corrigir a
+  existente, quando a grade nascia durante a própria importação) não deixou
+  rastro nas 115.
 
 ### Ponto anterior a este
 
