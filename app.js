@@ -17919,7 +17919,12 @@ function _riscoNomeTamanhos(tamanhos) {
   const iguais = qtds.every(q => q === qtds[0]);
   const contiguo = presentes.every((k, i) =>
     i === 0 || ordem.indexOf(k) === ordem.indexOf(presentes[i - 1]) + 1);
-  if (iguais && contiguo && presentes.length > 2) {
+  // A FAIXA ("P ao G3") só a partir de SEIS tamanhos — é onde a casa de fato a
+  // usa. Nas 66 grades cadastradas, todas as de 6 e 7 tamanhos estão em faixa e
+  // todas as de 4 e 5 estão por extenso ("M-G-GG-G1 | CM.LISA",
+  // "P-M-G-GG-G1 | CO.RUGÃO"). A regra antiga abria a faixa em três, e sugeria
+  // "M ao G1" onde o cadastro diz "M-G-GG-G1" — nome que ninguém reconhece.
+  if (iguais && contiguo && presentes.length >= 6) {
     const faixa = `${rot[presentes[0]]} ao ${rot[presentes[presentes.length - 1]]}`;
     return qtds[0] === 1 ? faixa : `${qtds[0]}X ${faixa}`;
   }
@@ -17939,14 +17944,16 @@ function _riscoNomeTamanhos(tamanhos) {
 // num sufixo numérico — feio, mas honesto: diz que há outra igual e deixa
 // renomear, em vez de travar.
 function _riscoNomeSugerido(tamanhos, sku, largura) {
-  const base = _riscoNomeTamanhos(tamanhos) + (sku ? ' | ' + sku : '');
+  const semLarg = _riscoNomeTamanhos(tamanhos) + (sku ? ' | ' + sku : '');
   const existe = n => (STATE.grades || []).some(g => _normNome(g.nome) === _normNome(n));
-  if (!base || !existe(base)) return base;
+  // A LARGURA ENTRA SEMPRE no nome, e não só quando dá conflito: é ela que
+  // determina o corte do enfesto, e duas grades de mesmos tamanhos e mesma linha
+  // em larguras diferentes são duas grades — não uma com a medida trocada.
+  // "M-G-GG-G1 | BM.LISA 174cm" diz, no próprio nome, em que pano aquele risco
+  // foi encaixado.
   const cm = parseFloat(largura) > 0 ? +(parseFloat(largura) * 100).toFixed(1) : 0;
-  if (cm > 0) {
-    const comLarg = `${base} | ${cm}cm`;
-    if (!existe(comLarg)) return comLarg;
-  }
+  const base = cm > 0 ? `${semLarg} ${cm}cm` : semLarg;
+  if (!base || !existe(base)) return base;
   for (let i = 2; i <= 30; i++) {
     const n = `${base} (${i})`;
     if (!existe(n)) return n;
@@ -18838,6 +18845,12 @@ function _pastaMelhorCandidata(G) {
   G.candidatas.forEach(g => {
     const nome = String(g.nome || '').toUpperCase();
     let pts = 0; const razoes = [];
+    // LARGURA DIFERENTE É OUTRA GRADE, e nem entra na disputa. Mesmos tamanhos e
+    // mesma linha num pano de 1,74 e num de 1,82 são dois encaixes diferentes,
+    // dois cortes diferentes — sugerir a de 1,82 para o risco de 1,74 seria
+    // convidar a sobrescrever a medida de uma grade boa com a de outra peça.
+    if (larg > 0 && Array.isArray(g.fases) && g.fases.length
+      && !g.fases.some(f => Math.abs((parseFloat(f.larg) || 0) - larg) <= 0.02)) return;
     // A linha, pelo nome da pasta ("BM.LISA/..."): é o que o nome da grade traz
     // depois do "|". Casa também pelo prefixo ("CM." em "CM.BÁSICA").
     const linhaCasa = !!(pasta && (nome.includes(pasta) || nome.includes(pasta.split('.')[0] + '.')));
@@ -18865,9 +18878,16 @@ function _pastaMelhorCandidata(G) {
       melhorPorque = razoes.join(' · ');
     }
   });
-  // Uma candidata só e nada contra ela: vale como sugestão, sem ser certeza.
+  // Uma candidata só e nada contra ela: vale como sugestão, sem ser certeza. Mas
+  // "nada contra" inclui a largura — este atalho existia antes da regra e
+  // devolvia a única grade de mesmos tamanhos mesmo sendo de outro pano, que é
+  // justamente o que não pode.
   if (!melhor && G.candidatas.length === 1) {
-    return { grade: G.candidatas[0], certeza: false, porque: 'única grade com estes tamanhos' };
+    const g = G.candidatas[0];
+    const temLarg = Array.isArray(g.fases) && g.fases.some(f => parseFloat(f.larg) > 0);
+    const cabe = !(larg > 0 && temLarg)
+      || g.fases.some(f => Math.abs((parseFloat(f.larg) || 0) - larg) <= 0.02);
+    if (cabe) return { grade: g, certeza: false, porque: 'única grade com estes tamanhos' };
   }
   if (!melhor) return null;
   return { grade: melhor, certeza: melhorCerteza, porque: melhorPorque };
@@ -19362,6 +19382,29 @@ async function pastaSalvarPasso() {
     const repetido = alvos.find((a, i) => alvos.indexOf(a) !== i);
     if (repetido) return toast(`Dois riscos apontam para a fase "${repetido}" — corrija antes de aplicar`, 'err');
     if (linhas.some(x => x.d.alvo === '__nova__' && !x.d.nome)) return toast('A fase nova precisa de nome', 'err');
+
+    // LARGURA DIFERENTE = OUTRA GRADE. A sugestão nunca aponta para uma grade de
+    // outra largura, mas a lista deixa escolher qualquer uma — e é aqui que a
+    // escolha manual é conferida. Trocar a largura de uma fase que já tem medida
+    // não costuma ser corrigir um erro de leitura: é lançar o encaixe de OUTRO
+    // pano por cima de uma grade boa, e as OS emitidas com ela passam a mentir.
+    const trocaLargura = (grade.fases || []).length ? linhas.filter(x => {
+      if (x.d.alvo === '__nova__') return false;
+      const f = (grade.fases || []).find(y => y.nome === x.d.alvo);
+      const atual = f ? parseFloat(f.larg) : 0;
+      return atual > 0 && Math.abs(atual - x.L.largura) > 0.02;
+    }) : [];
+    if (trocaLargura.length) {
+      const q = trocaLargura.map(x => {
+        const f = (grade.fases || []).find(y => y.nome === x.d.alvo) || {};
+        return `${x.d.alvo}: ${String(f.larg).replace('.', ',')} m no cadastro × ${x.L.largura.toFixed(3).replace('.', ',')} m no risco`;
+      }).join('\n· ');
+      const ok = confirm(`LARGURA DIFERENTE em "${grade.nome}":\n\n· ${q}\n\n`
+        + 'Largura diferente costuma ser OUTRA GRADE — o mesmo corpo encaixado num pano de outra largura —, e não erro de medida. '
+        + 'Nesse caso o certo é voltar e escolher "criar uma grade nova", que já nasce com a largura no nome.\n\n'
+        + 'Aplicar assim mesmo, trocando a medida do cadastro?');
+      if (!ok) return;
+    }
 
     grade.fases = grade.fases || [];
     let maiorOrdem = grade.fases.reduce((m, f) => Math.max(m, parseInt(f.ordem, 10) || 0), 0);
