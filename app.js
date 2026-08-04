@@ -18008,7 +18008,7 @@ function _riscoNovaAplicarPrevisao(G, d) {
     return {
       nome,
       tecidoId: (velha && velha.tecidoId) || (L ? (memTec[_riscoChave(L)] || '') : ''),
-      unidades: (velha && velha.unidades) || 2,
+      unidades: (velha && velha.unidades) || _riscoUnidadesPadrao(d.sku),
       iPdf
     };
   };
@@ -18073,7 +18073,7 @@ function riscoNovaAddFase(gi) {
   _riscoNovaColetar();
   const G = _riscoGruposNovos()[gi];
   const d = G && _riscoNovas[G.assinatura];
-  if (d) d.fases.push({ nome: '', tecidoId: '', unidades: 2, iPdf: null });
+  if (d) d.fases.push({ nome: '', tecidoId: '', unidades: _riscoUnidadesPadrao(d.sku), iPdf: null });
   renderRiscoResultado();
 }
 
@@ -18764,6 +18764,15 @@ function _pastaMontarGrupos() {
 
 /* ---- a fase que AGREGA: ribana, gola, viés e as demais ---- */
 
+// UNIDADES DA GRADE que a importação assume, pelo SKU. É quantas peças daquele
+// componente cada camada rende: no moletom (BM) e na polo (PM) o risco encaixa
+// UMA unidade por camada; nas demais linhas, DUAS. É a regra da casa, e vale
+// como ponto de partida — a fase que já existe no cadastro manda sobre ela, e o
+// campo continua editável.
+function _riscoUnidadesPadrao(sku) {
+  return /^(BM|PM)\b/i.test(String(sku || '').trim()) ? 1 : 2;
+}
+
 // A RIBANA NÃO É UMA GRADE. Ela é uma fase da grade do corpo — e o risco dela
 // tem os tamanhos dela ("10xM-10xG-10xGG-10xG1", dez golas por camada), que não
 // batem com os do corpo ("M-G-GG-G1"). Como o assistente procurava grade só por
@@ -18966,7 +18975,7 @@ function _pastaResetFases(G) {
       origem: res.origem,
       nome: f ? f.nome : _riscoNomeFaseSugerido(L),
       tecidoId: (f && f.tecidoId) || memTec[k] || '',
-      unidades: (f && parseInt(f.unidades, 10)) || 2,
+      unidades: (f && parseInt(f.unidades, 10)) || _riscoUnidadesPadrao(G.draft.sku),
       bobinas: (f && f.bobinas !== '' && f.bobinas != null) ? String(f.bobinas).replace('.', ',')
              : (bobMem != null && bobMem !== '' ? String(bobMem).replace('.', ',') : ''),
       aplicar: !!(L.comprimento != null && L.largura != null)
