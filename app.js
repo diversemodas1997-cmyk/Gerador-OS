@@ -18844,9 +18844,20 @@ function _riscoFaseEhAgregadora(nome) {
   return !/\bcorpo\b/.test(n);
 }
 
-// A pasta da GRADE: linha + distribuição de tamanhos ("CM.LISA/M-G-GG-G1"). É o
-// que junta o corpo e a ribana do mesmo produto, estejam eles na pasta da
-// largura ou soltos um nível acima.
+// A PASTA EXATA do arquivo ("BM.LISA/2xM-4xG-2xGG/174 cm") e a da FAMÍLIA da
+// grade ("BM.LISA/2xM-4xG-2xGG", sem a largura).
+//
+// A largura tem que entrar na chave. A mesma ribana está copiada dentro de cada
+// pasta de largura DE PROPÓSITO: 174, 177, 180 e 182 são quatro grades, e cada
+// uma precisa da fase de ribana dela. Uma chave sem a largura mandaria as quatro
+// cópias para a mesma grade — a última processada — e três grades ficariam sem
+// ribana. A da família fica como reserva, para a ribana guardada um nível acima,
+// que serve a todas as larguras.
+function _pastaPastaDoArquivo(L) {
+  const partes = String((L && (L.caminho || L.arquivo)) || '').split('/');
+  partes.pop();
+  return partes.join('/');
+}
 function _pastaPastaDaGrade(L) {
   const partes = String((L && (L.caminho || L.arquivo)) || '').split('/');
   partes.pop();
@@ -18873,21 +18884,40 @@ const _chaveTam = s => _normNome(s).replace(/(\d)\s*x/gi, '$1').replace(/[\s.]/g
 //   2. a pasta escrita no caminho: linha + tamanhos, contra o nome das grades.
 function _pastaGradeAgregadora(G) {
   const L = G.itens[0] || {};
-  const pasta = _pastaPastaDaGrade(L);
   const mem = (_pastaWiz && _pastaWiz.gradePorPasta) || {};
-  if (pasta && mem[pasta]) {
-    const g = (STATE.grades || []).find(x => x.id === mem[pasta]);
-    if (g) return { grade: g, porque: 'é a grade que os riscos desta pasta acabaram de usar' };
+  const acha = id => (STATE.grades || []).find(x => x.id === id);
+  // 1) A PASTA EXATA — inclusive a largura. É a pista mais forte: a ribana
+  //    copiada dentro de "174 cm" é a ribana da grade de 174.
+  const exata = _pastaPastaDoArquivo(L);
+  if (exata && mem[exata]) {
+    const g = acha(mem[exata]);
+    if (g) return { grade: g, porque: 'é a grade do risco que veio desta mesma pasta' };
   }
+  // 2) A FAMÍLIA (sem a largura), para a ribana guardada um nível acima.
+  const familia = _pastaPastaDaGrade(L);
+  if (familia && mem[familia]) {
+    const g = acha(mem[familia]);
+    if (g) return { grade: g, porque: 'é a última grade desta pasta de grade' };
+  }
+  // 3) Pelo NOME: linha + tamanhos da pasta e, quando a pasta diz a largura, a
+  //    largura também — senão as quatro grades da mesma família empatam.
   const partes = String(L.caminho || '').split('/');
   const linha = String(partes[0] || '').toUpperCase();
   const tok = _chaveTam(partes[1] || '');
   if (!tok) return null;
-  const cand = (STATE.grades || []).filter(g => {
+  const mLarg = String(partes[2] || '').match(/(d+[.,]?d*)s*cm/i);
+  const cmPasta = mLarg ? mLarg[1].replace(',', '.') : '';
+  let cand = (STATE.grades || []).filter(g => {
     const nome = String(g.nome || '').toUpperCase();
     const casaLinha = !linha || nome.includes(linha) || nome.includes(linha.split('.')[0] + '.');
     return casaLinha && _riscoFormasDoNome(g.tamanhos || {}).some(f => _chaveTam(f) === tok);
   });
+  if (cand.length > 1 && cmPasta) {
+    const porLargura = cand.filter(g => String(g.nome || '').replace(',', '.').includes(cmPasta));
+    if (porLargura.length === 1) {
+      return { grade: porLargura[0], porque: `é a grade de ${cmPasta}cm da pasta ${partes[1]}` };
+    }
+  }
   if (cand.length === 1) return { grade: cand[0], porque: `é a grade da pasta ${partes[1]}` };
   return null;
 }
@@ -19553,8 +19583,14 @@ async function pastaSalvarPasso() {
   G.status = 'ok';
   // Guarda em que grade esta pasta lançou: é o que leva a ribana, que vem
   // depois na fila, para a mesma grade do corpo.
-  const pastaChave = _pastaPastaDaGrade(G.itens[0]);
-  if (pastaChave && G.gradeId) _pastaWiz.gradePorPasta[pastaChave] = G.gradeId;
+  // Duas chaves: a pasta EXATA (com a largura) é a que a ribana da mesma pasta
+  // procura; a da família serve de reserva para a ribana guardada um nível acima.
+  if (G.gradeId) {
+    const exata = _pastaPastaDoArquivo(G.itens[0]);
+    const familia = _pastaPastaDaGrade(G.itens[0]);
+    if (exata) _pastaWiz.gradePorPasta[exata] = G.gradeId;
+    if (familia) _pastaWiz.gradePorPasta[familia] = G.gradeId;
+  }
   await saveState('grades');
   await saveState('meta');
   toast(`${grade ? 'Grade atualizada' : 'Grade criada'} · ${linhas.length} fase(s)`, 'ok');
