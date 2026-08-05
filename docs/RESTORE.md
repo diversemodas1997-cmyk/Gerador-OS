@@ -8,6 +8,106 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
+- **CÓDIGO:** tag `restore-2026-08-05-e` (cache-buster `app.js ?v=2026-08-05n`,
+  `styles.css ?v=2026-08-05n`). O que mudou desde o `restore-2026-08-05-d` — 12
+  commits, em três frentes: o **cadastro de operações por função**, o **tempo do
+  enfesto** e a **importação de riscos**.
+
+  **CADASTRO DE OPERAÇÕES POR FUNÇÃO**
+  - **o PASSO da corrente passa a ser gravado, não adivinhado.** A que passo uma
+    operação pertencia era decidido por regex sobre o NOME, a cada consulta:
+    renomear "Corte de enfesto" para "Corte na esteira" quebrava o vínculo em
+    silêncio, nenhuma linha respondia mais pelo passo 5, e a cascata caía no
+    histórico do plano — voltando a criar a operação com o **nome e o tempo
+    antigos**. Agora a linha grava `passoId`, escolhido num seletor
+    pré-preenchido pelo mesmo regex de sempre;
+  - **tempo por TIPO DE ENFESTO** (o SKU no meio do nome da grade: BM.TRI,
+    CM.LISA, CM.REC…). Era um número só por posto — os mesmos 80 min de enfesto
+    para a camiseta lisa de uma fase e para a blusa tricolor de cinco. O seletor
+    se enche sozinho com os tipos que existem nas grades;
+  - **"todos os tipos" saiu das opções**: cada linha é de um produto. Linha sem
+    tipo é cadastro por terminar — ainda vale para todos, mas aparece com badge
+    vermelho na tabela de Funções e num aviso ao salvar. Quando só existem linhas
+    de OUTROS tipos, a função vale mas o **tempo não vem** (sai zero, e o aviso
+    da alocação nomeia a operação): emprestar o número do vizinho seria errar
+    parecendo certo;
+  - **dois quadros na janela** — "Fila do posto" e "Hora marcada" —, cada um com
+    título, contagem e o motivo de aquelas estarem juntas. Preencher "todo dia
+    às" move a linha de um quadro para o outro na hora;
+  - **"Mover enfesto" antes do "Enfesto"**: passo sem linha no cadastro daquele
+    posto recebia índice 1e9 e afundava para o fim do grupo. Agora não reordena —
+    quem não disse nada não inverte ordem física.
+
+  **TEMPO DO ENFESTO**
+  - **a medição passa a ser tempo de TRABALHO, não de relógio.** Era
+    `fim − início` cru, com o café e o almoço dentro: das 29 medições, **15
+    atravessam uma pausa**, e a pior (OS 0405 Barra/Punhos) gravava 165 min para
+    75 min de trabalho. O número inflado alimentava toda média do programa — a
+    taxa por camada/metro, a média da grade, a conferência da folha. No total:
+    **2890 min → 2215 min**. O plano já fazia isso do outro lado: ele PARTE a
+    operação longa em volta das pausas e reserva só o trabalho;
+  - **o tempo cadastrado deixa de ser sobrescrito pela medição** no modal de
+    operação. Ele era escrito na duração e apagado três linhas abaixo pelo
+    "medido" — que, quando o nome não casa com nenhuma fase, é a SOMA de todas as
+    fases da grade. Era o caminho de um enfesto de gola de 15 min nascer com
+    horas.
+
+  **IMPORTAÇÃO DE RISCOS (PDF)** — três defeitos que faziam a correção não colar:
+  - **a gravação ia para uma grade ÓRFÃ e o toast dizia que deu certo.** A tela
+    guardava a grade escolhida como referência ao objeto que estava em
+    `STATE.grades` quando o PDF foi lido — mas o realtime/polling chama
+    `loadState`, que substitui o array por objetos novos. A conta rodava, o save
+    gravava o array vivo (sem a alteração) e o aviso anunciava "1 fase
+    atualizada". Agora reacha pelo ID antes de desenhar e antes de gravar, e
+    **confere no cadastro vivo** antes de dizer que deu certo;
+  - **PDF sem medida deixa de morrer em silêncio.** Trocar a grade remarcava a
+    linha sem conferir se havia comprimento/largura, e o clique estourava num
+    `.toFixed` de `null` — nada gravado, nenhum aviso. Numa grade como a
+    `P ao G3 | BM.LISA | 177cm`, onde **doze cadastros têm os mesmos tamanhos**,
+    escolher a grade na lista é obrigatório, então o caminho era certeiro;
+  - **a largura barra o palpite, e dá para CRIAR a fase que falta.** Um risco de
+    RIBANA (1,68 × 0,542) numa grade que só tem Corpo (10,29 × 1,750) saía
+    marcado "pela medida" como se fosse o corpo — 8,46 m de diferença contavam
+    como acerto, porque o comprimento é justamente o número que veio ser
+    corrigido. Agora, sem nenhuma fase com a largura do risco, a medida não
+    decide, e a linha chega propondo criar a fase com o nome tirado do arquivo.
+
+  **EXPEDIÇÃO** — ordem **crescente/decrescente** no planejamento semanal e
+  mensal (a folha do plano continua em ordem de calendário).
+
+  Cópia do código deste ponto em
+  `backups-codigo/*.20260805e-tipo-enfesto.CÓPIA`.
+
+- **DADOS:** exportação de **05/08/2026 15:05**, em
+  `backups/BACKUP-COMPLETO-2026-08-05T15-05-08.json` (2,46 MB, 29 chaves, 1701
+  registros): **182 OS**, 115 grades, 25 desenhos, **1157 operações**, 46 cargas
+  de expedição, 49 mov. de estoque, 11 tecidos, 37 cores, 11 funções, 10 pessoas
+  na equipe, 6 modelos, 15 etapas, 17 componentes, 4 materiais.
+  A mesma cópia está em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+
+  > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
+  > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
+  > ver a seção 2 abaixo.
+
+  Contra o de 04/08 17:23:
+  - **operações: 173 → 1157 (+984).** Não é planejamento novo de OS: é a rotina
+    de **hora marcada** preenchendo o calendário. O plano agora cobre **48 dias,
+    de 24/07 a 02/10** — o horizonte de 60 dias que
+    `_opGarantirHorariosFixosNoPeriodo` alcança —, com **24 operações por dia
+    útil** (café, almoço, preparação das máquinas, limpeza, cobrir máquinas, nas
+    11 funções). Restaurar este ponto traz esse calendário junto.
+  - **OS: 177 → 182** (+5); cargas de expedição 43 → 46; mov. de estoque 41 → 49.
+  - **grades: 115, sem mudança.** Das 115, **104 têm a largura no nome**; as 11
+    que faltam são as `CO.*` (Jaguar, Prime, Rugão), `PM.LISA`, `PM.TRI`,
+    `SM.LISO` e `SM. ESPARTANA`, que não passaram pela importação.
+
+  **A conferir neste retrato:** **73 das 115 grades têm ao menos uma fase sem
+  comprimento**. É o que a importação de riscos existe para preencher — e é o
+  que os três defeitos acima impediam de colar. Vale reimportar os riscos dessas
+  grades com este ponto de código no ar.
+
+### Ponto anterior a este
+
 - **CÓDIGO:** tag `restore-2026-08-05-d` (cache-buster `app.js ?v=2026-08-05d`,
   `styles.css ?v=2026-08-04a`). O que mudou desde o `restore-2026-08-03-l` — 33
   commits, em três frentes: a **importação de riscos**, o **planejamento de
