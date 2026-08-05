@@ -4968,10 +4968,18 @@ function irParaOeDia(data) {
 let expPlanoModo = 'semana';
 let expPlanoAncora = _expHoje();
 let expAbaAtiva = 'estoque';
+// Em que ORDEM as expedições do período aparecem. 'asc' é a do calendário — a
+// primeira do período em cima —, e segue sendo o padrão: é ela que responde "o
+// que vem primeiro". 'desc' põe a MAIS RECENTE em cima, que é o que serve para
+// conferir o que acabou de sair sem rolar um mês inteiro de cards.
+// Só vale no semanal e no mensal: no diário há um dia só, e ordenar um dia é
+// ordenar nada.
+let expPlanoOrdem = 'asc';
 try {
   expPlanoModo = sessionStorage.getItem('gos:exp:modo') || expPlanoModo;
   expPlanoAncora = sessionStorage.getItem('gos:exp:ancora') || expPlanoAncora;
   expAbaAtiva = sessionStorage.getItem('gos:exp:aba') || expAbaAtiva;
+  expPlanoOrdem = sessionStorage.getItem('gos:exp:ordem') === 'desc' ? 'desc' : 'asc';
 } catch (e) { /* sessionStorage indisponível, segue no padrão */ }
 
 function trocarAbaExpedicao(aba) {
@@ -4988,6 +4996,12 @@ function trocarAbaExpedicao(aba) {
 function expSetModo(modo) {
   expPlanoModo = modo;
   try { sessionStorage.setItem('gos:exp:modo', modo); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
+function expSetOrdem(ordem) {
+  expPlanoOrdem = ordem === 'desc' ? 'desc' : 'asc';
+  try { sessionStorage.setItem('gos:exp:ordem', expPlanoOrdem); } catch (e) {}
   renderExpedicaoPlano();
 }
 
@@ -5011,7 +5025,20 @@ function renderExpedicaoPlano() {
   const cfg = expCfg();
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
   const ocs = ocorrenciasExpedicao(ini, fim);
+  // ORDEM DA LISTA. `ocorrenciasExpedicao` devolve sempre em ordem de calendário
+  // — é a ordem em que a fábrica vai executar, e continua sendo o padrão. O
+  // decrescente é para CONFERIR: com um mês à vista, a expedição de ontem fica
+  // no fim da página e obriga a rolar tudo para chegar nela.
+  // O diário não entra: um dia só não tem ordem.
+  const podeOrdenar = expPlanoModo !== 'dia';
+  if (podeOrdenar && expPlanoOrdem === 'desc') ocs.reverse();
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  const segOrdem = podeOrdenar ? `
+      <div class="exp-seg" title="Em que ordem as expedições do período aparecem nesta tela. Não muda a folha do plano, que sai sempre em ordem de calendário.">
+        <button class="${expPlanoOrdem === 'asc' ? 'active' : ''}" onclick="expSetOrdem('asc')" title="Crescente: a expedição mais antiga do período em cima — a ordem em que elas vão acontecer.">↑ Crescente</button>
+        <button class="${expPlanoOrdem === 'desc' ? 'active' : ''}" onclick="expSetOrdem('desc')" title="Decrescente: a expedição mais recente do período em cima — para conferir o que acabou de sair sem rolar o período inteiro.">↓ Decrescente</button>
+      </div>` : '';
 
   const toolbar = `
     <div class="exp-toolbar no-print">
@@ -5020,6 +5047,7 @@ function renderExpedicaoPlano() {
         <button class="${expPlanoModo === 'semana' ? 'active' : ''}" onclick="expSetModo('semana')">Semanal</button>
         <button class="${expPlanoModo === 'mes' ? 'active' : ''}" onclick="expSetModo('mes')">Mensal</button>
       </div>
+      ${segOrdem}
       <div style="display:flex;align-items:center;gap:6px;">
         <button class="btn" onclick="expNav(-1)" title="Período anterior">‹</button>
         <div class="exp-periodo">${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</div>
