@@ -18925,6 +18925,10 @@ function renderRiscoResultado() {
   const btn = document.getElementById('btn-risco-aplicar');
   if (!box) return;
   const fmt = v => v == null ? '—' : String(v).replace('.', ',');
+  // Antes de desenhar, reaponta tudo para o cadastro VIVO: a coluna "Cadastro"
+  // tem que mostrar o que está lá agora, e a fase escolhida tem que ser a fase
+  // que vai receber a medida — não uma cópia que ficou para trás.
+  _riscoLeituras.forEach(_riscoRevalidar);
   const linhas = _riscoLeituras.map((L, i) => {
     if (L.erro) {
       return `<tr><td colspan="8" style="color:var(--alert);"><b>${esc(L.arquivo)}</b> — ${esc(L.erro)}</td></tr>`;
@@ -19027,6 +19031,48 @@ function _riscoTemMedida(L) {
   return !!L && L.comprimento != null && L.largura != null;
 }
 
+// REAPONTA a linha para os objetos VIVOS do cadastro.
+//
+// `_riscoLeituras` guarda a grade e a fase escolhidas como REFERÊNCIA ao objeto
+// que estava em `STATE.grades` na hora em que o PDF foi lido. Só que o programa
+// recarrega o estado por baixo — o realtime e o polling chamam `loadState`, que
+// substitui `STATE.grades` por um array NOVO, de objetos NOVOS, sempre que outro
+// dispositivo grava. A partir daí a grade guardada aqui é órfã: escrever nela
+// não escreve em lugar nenhum.
+//
+// Era o que fazia a importação "dar certo" e não mudar nada. A conta rodava, o
+// `saveState('grades')` gravava — o array vivo, sem a alteração — e o toast
+// dizia "1 fase atualizada". No cadastro, os números continuavam vazios. Entre
+// ler o PDF e escolher a grade numa lista de doze passa tempo de sobra para um
+// ciclo de sincronização entrar no meio.
+//
+// A cura é não guardar objeto: guardar o ID e reachar antes de cada uso. Os IDs
+// não mudam com o recarregamento.
+function _riscoRevalidar(L) {
+  if (!L || L.erro) return L;
+  const gradeId = L.grade && L.grade.id;
+  // A lista de candidatas é refeita do cadastro atual — grade criada ou apagada
+  // por outro dispositivo aparece e some daqui também.
+  if (L.tamanhos) L.grades = _riscoGradesQueCasam(L.tamanhos);
+  if (gradeId) {
+    L.grade = (L.grades || []).find(g => g.id === gradeId)
+      || (STATE.grades || []).find(g => g.id === gradeId) || null;
+  }
+  // A fase segue a grade. A fase NOVA não: ela ainda não existe no cadastro, e é
+  // um objeto desta tela mesmo.
+  const fase = L.res && L.res.fase;
+  if (fase && !fase.__nova) {
+    L.res.fase = L.grade
+      ? ((L.grade.fases || []).find(f => _normNome(f.nome) === _normNome(fase.nome)) || null)
+      : null;
+    if (!L.res.fase) {
+      L.res = { fase: null, origem: 'indefinida', folga: null };
+      L.aplicar = false;
+    }
+  }
+  return L;
+}
+
 function riscoTrocarGrade(i, id) {
   const L = _riscoLeituras[i];
   if (!L) return;
@@ -19087,6 +19133,9 @@ async function aplicarRiscoNasGrades() {
   // estourava logo abaixo, no `.toFixed` de um `_riscoCompCadastro(null)` — a
   // função morria no meio, nada era gravado e a tela não dizia nada. O usuário
   // clicava "Aplicar" e não acontecia coisa nenhuma.
+  // Reaponta para o cadastro vivo ANTES de conferir e de gravar. Sem isto a
+  // gravação vai para uma grade órfã — ver `_riscoRevalidar`.
+  _riscoLeituras.forEach(_riscoRevalidar);
   const marcadas = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
   const alvo = marcadas.filter(_riscoTemMedida);
   const semMedida = marcadas.filter(L => !_riscoTemMedida(L));
@@ -19149,8 +19198,32 @@ async function aplicarRiscoNasGrades() {
     const f1 = (g.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))[0];
     if (f1) { g.enfestoComprimento = f1.comp || ''; g.enfestoLargura = f1.larg || ''; }
   });
+  // O QUE FOI GRAVADO, para conferir depois do save. Guarda VALOR, não objeto:
+  // é justamente objeto guardado que produziu o defeito que esta conferência
+  // existe para pegar.
+  const esperado = alvo.map(L => ({
+    gradeId: L.grade.id, gradeNome: L.grade.nome, fase: L.res.fase.nome,
+    comp: _riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)
+  }));
   await saveState('grades');
   await saveState('meta');
+  // CONFERE NO CADASTRO VIVO antes de dizer que deu certo. O programa já anunciou
+  // "1 fase atualizada" uma vez com a grade intacta — a gravação tinha ido para
+  // um objeto órfão. Dizer que fez sem ter feito é pior do que falhar: o usuário
+  // fecha a tela confiando, e o número errado segue para a OS.
+  const naoColaram = esperado.filter(e => {
+    const g = (STATE.grades || []).find(x => x.id === e.gradeId);
+    const f = g && (g.fases || []).find(x => _normNome(x.nome) === _normNome(e.fase));
+    return !f || String(f.comp) !== e.comp;
+  });
+  if (naoColaram.length) {
+    toast(`ATENÇÃO: ${naoColaram.length} fase(s) NÃO ficaram gravadas — `
+      + naoColaram.map(e => `${e.gradeNome} · ${e.fase}`).join(', ')
+      + '. Recarregue a página e importe de novo.', 'err');
+    console.error('Risco: fases que não persistiram', naoColaram);
+    renderGrades();
+    return;
+  }
   closeModal('modal-risco');
   toast(`${n} fase(s) atualizada(s) pelo risco${criadas.length ? ` · ${criadas.length} criada(s)` : ''}`
     + ` · ${Object.keys(memoria).length} vínculo(s) de tecido aprendidos`, 'ok');
