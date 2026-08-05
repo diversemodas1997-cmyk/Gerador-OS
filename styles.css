@@ -1737,6 +1737,16 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    entre o cadastro e o planejamento quando a operação é renomeada — antes disso
    a ligação era adivinhada pelo nome e se desfazia em silêncio. */
 .func-op-row .func-op-passo { width: 190px; flex: 0 0 auto; font-size: 12px; }
+/* O TIPO DE ENFESTO (o SKU do produto: BM.TRI, CM.LISA…). Enfestar e cortar não
+   levam o mesmo tempo em produtos diferentes, então cada tipo tem a sua linha
+   com o seu tempo. Monoespaçada porque é código, e é assim que os SKU aparecem
+   no nome da grade. */
+.func-op-row .func-op-sku {
+  width: 132px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+}
 .func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
 .func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 /* Enfesto: a linha ganha uma nota dizendo de onde vem o número — a média medida

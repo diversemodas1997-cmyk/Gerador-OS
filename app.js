@@ -2545,16 +2545,78 @@ function _opsDaFuncao(f) {
 }
 
 // Tempo cadastrado para uma operação de uma função (0 quando não há).
-function _tempoOperacaoCadastrada(funcaoId, nomeOperacao) {
+/* -------- o TIPO DE ENFESTO (o SKU da grade) -------- */
+
+// "P ao G3 | BM.TRI | 177cm" → "BM.TRI". O tipo é o pedaço do meio do nome da
+// grade, que é como a casa nomeia o produto desde sempre: CM.LISA, CM.REC,
+// CM.TRI, BM.LISA, BM.TRI, PM.LISA, CO.JAGUAR… Não há campo próprio para ele na
+// grade — ele mora no nome, e é de lá que se lê.
+//
+// Existe porque ENFESTAR e CORTAR não levam o mesmo tempo em produtos
+// diferentes: uma camiseta lisa de 117 cm numa fase só não é uma blusa moletom
+// tricolor de 177 cm em cinco. Um número por posto obrigava a escolher entre
+// planejar a lisa com folga demais ou a tricolor com folga de menos.
+function _skuDaGrade(g) {
+  const partes = String((g && (g.nome || g.descricao)) || '').split('|').map(s => s.trim());
+  return partes.length >= 2 ? partes[1] : '';
+}
+
+function _skuDaOS(os) {
+  if (!os) return '';
+  const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(os));
+  return g ? _skuDaGrade(g) : '';
+}
+
+// Para COMPARAR. O cadastro tem "SM. ESPARTANA" com espaço depois do ponto e
+// "BM.TRI" sem; comparando letra a letra, escolher um no seletor não acharia o
+// outro. O que não distingue nada — espaço, caixa — sai fora. O que distingue
+// FICA: "BM.LISA" e "BM.BÁSICA" seguem sendo dois tipos, porque só quem cadastra
+// sabe se são a mesma coisa, e juntá-los por conta própria seria inventar.
+function _normSku(s) {
+  return _normNome(s).replace(/\s*\.\s*/g, '.').replace(/\s+/g, '');
+}
+
+// Os tipos que existem HOJE nas grades cadastradas, para o seletor do cadastro
+// de funções. Sai da grade, não de uma lista fixa: produto novo aparece aqui
+// sozinho no dia em que a primeira grade dele for cadastrada.
+function _skusCadastrados() {
+  const vistos = new Map();   // normalizado → como está escrito
+  (STATE.grades || []).forEach(g => {
+    const s = _skuDaGrade(g);
+    const n = _normSku(s);
+    if (n && !vistos.has(n)) vistos.set(n, s);
+  });
+  return Array.from(vistos.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+// A LINHA do cadastro que responde por esta operação neste tipo de enfesto.
+//
+// Três degraus, do específico para o geral:
+//   1. a linha daquele TIPO ("Enfesto · BM.TRI");
+//   2. a linha SEM tipo, que vale para todos ("Enfesto");
+//   3. qualquer uma com aquele nome — é o que mantém funcionando o cadastro de
+//      quem nunca usou tipo nenhum, que é como todo mundo está hoje.
+function _opLinhaCadastrada(f, nomeOperacao, sku) {
+  const alvo = _opChaveOperacaoNome(nomeOperacao);
+  if (!f || !alvo) return null;
+  const linhas = _opsDaFuncao(f).filter(o => _opChaveOperacaoNome(o.nome) === alvo);
+  if (!linhas.length) return null;
+  const n = _normSku(sku);
+  return (n && linhas.find(o => o.sku && _normSku(o.sku) === n))
+    || linhas.find(o => !o.sku)
+    || linhas[0];
+}
+
+// Tempo cadastrado para uma operação de uma função, no tipo de enfesto da OS
+// (0 quando não há). `sku` vazio = não sei de que tipo é, vale o geral.
+function _tempoOperacaoCadastrada(funcaoId, nomeOperacao, sku) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
   if (!f) return 0;
   // Mesma tolerância de nome do horário fixo: o tempo do cadastro tem que chegar
   // à operação do plano mesmo quando as duas grafias diferem por um "das" ou um
   // ponto e vírgula. Sem isto a operação ficava sem tempo cadastrado e entrava
   // com duração zero.
-  const alvo = _opChaveOperacaoNome(nomeOperacao);
-  if (!alvo) return 0;
-  const achou = _opsDaFuncao(f).find(o => _opChaveOperacaoNome(o.nome) === alvo);
+  const achou = _opLinhaCadastrada(f, nomeOperacao, sku);
   return (achou && Number(achou.duracaoMin)) || 0;
 }
 
@@ -2637,6 +2699,15 @@ function addOperacaoFuncaoRow(op = {}) {
   });
   if (cadeiaAtual) opts.push('</optgroup>');
   opts.push(`<option value="${_OP_PASSO_NENHUM}" ${passoSel === _OP_PASSO_NENHUM ? 'selected' : ''}>Fora da corrente</option>`);
+  // TIPO DE ENFESTO. O tipo gravado entra na lista mesmo que a grade dele tenha
+  // sumido do cadastro — senão salvar a função apagaria calado um tempo que
+  // alguém definiu.
+  const skuAtual = String((op && op.sku) || '').trim();
+  const skus = _skusCadastrados();
+  if (skuAtual && !skus.some(s => _normSku(s) === _normSku(skuAtual))) skus.unshift(skuAtual);
+  const optsSku = [`<option value="" ${!skuAtual ? 'selected' : ''}>todos os tipos</option>`]
+    .concat(skus.map(s => `<option value="${esc(s)}" ${_normSku(s) === _normSku(skuAtual) ? 'selected' : ''}>${esc(s)}</option>`))
+    .join('');
   const div = document.createElement('div');
   div.className = 'func-op-row';
   div.innerHTML = `
@@ -2645,6 +2716,8 @@ function addOperacaoFuncaoRow(op = {}) {
       <button type="button" class="btn small ghost" title="Descer: esta operação passa a vir depois na sequência deste posto" onclick="moverOperacaoFuncao(this, 1)">↓</button>
     </span>
     <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">
+    <span class="u tipo">no</span>
+    <select class="func-op-sku" title="Tipo de enfesto (o produto, como aparece no meio do nome da grade: BM.TRI, CM.LISA…). Enfestar e cortar não levam o mesmo tempo em produtos diferentes — cadastre uma linha por tipo, com o tempo de cada um. Deixe em «todos os tipos» para a linha valer onde não houver linha própria.">${optsSku}</select>
     <span class="u passo">é o passo</span>
     <select class="func-op-passo" title="Que passo da corrente da fábrica esta operação é. É por ele que o planejamento monta a sequência do dia — não pelo nome. Definido aqui, renomear a operação não desfaz mais a ligação." onchange="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">${opts.join('')}</select>
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
@@ -3438,8 +3511,12 @@ async function salvarCadastro() {
       // valer sobre o nome: renomear a operação não a tira mais da corrente nem
       // faz a cascata voltar a criar o nome velho, tirado do histórico.
       const passoId = String(row.querySelector('.func-op-passo')?.value || '').trim();
+      // O TIPO DE ENFESTO a que este tempo se refere. Vazio = vale para todos os
+      // tipos que não tiverem linha própria.
+      const sku = String(row.querySelector('.func-op-sku')?.value || '').trim();
       return {
         nome,
+        sku,
         passoId: (passoId === _OP_PASSO_NENHUM || _opPassoPorId(passoId)) ? passoId : '',
         duracaoMin: Math.max(0, h) * 60 + Math.max(0, m),
         // A que tamanho de grade aquele tempo se refere. Vazio = o padrão.
@@ -3447,7 +3524,12 @@ async function salvarCadastro() {
         horaFixa: _opMin(fixa) == null ? '' : fixa
       };
     }).filter(o => o.nome);
-    item.acoes = item.operacoes.map(o => o.nome).join('\n');
+    // `acoes` é o espelho legado (só os nomes, um por linha) que alimenta as
+    // sugestões de operação no planejamento. Com uma linha POR TIPO, o mesmo
+    // nome aparece várias vezes — e a lista de sugestões mostraria "Enfesto"
+    // cinco vezes. O espelho guarda nomes DISTINTOS; os tempos, que é o que
+    // varia por tipo, moram em `operacoes`.
+    item.acoes = Array.from(new Set(item.operacoes.map(o => o.nome))).join('\n');
     // `etapasIds` (a antiga marcação de etapas da função) não é mais editada
     // aqui: quem diz o que o posto faz é a lista de operações acima. O valor
     // antigo fica gravado como estava, sem uso — não se apaga o que o usuário
@@ -7370,9 +7452,13 @@ function _opDuracaoEnfesto(os, fase, funcaoId, nomeOperacao) {
   // disso o tempo não cai na mesma proporção do comprimento (montar a máquina,
   // alinhar e cortar a ponta custa igual), e quem responde é o histórico daquela
   // grade.
-  const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao);
+  // O tempo do posto PARA ESTE TIPO DE ENFESTO. Antes era um número só para
+  // tudo — os mesmos 80 min para a camiseta lisa de uma fase e para a blusa
+  // moletom tricolor de cinco.
+  const sku = _skuDaOS(os);
+  const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao, sku);
   const comp = _opCompDaFase(os, fase);
-  const ref = _opCompRefCadastrado(funcaoId, nomeOperacao);
+  const ref = _opCompRefCadastrado(funcaoId, nomeOperacao, sku);
   const cadastroCabe = cad > 0 && (!(comp > 0) || comp > ref / 2);
   if (cadastroCabe) {
     // Piso: a estimativa nunca fica abaixo do mínimo conhecido da casa.
@@ -7497,7 +7583,9 @@ function _opDuracaoCorte(os, fase, funcaoId, nomeOperacao) {
   const daFase = _opTempoCorteCadastradoNaFase(os, fase);
   if (daFase > 0) return { min: daFase, fonte: 'cadastrado na fase' };
   if (med.min > 0) return { min: med.min, fonte: 'referência', ref: med };
-  const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao);
+  // Também por TIPO: a esteira leva 15 min numa camiseta lisa e bem mais numa
+  // tricolor, e era o mesmo número para as duas.
+  const cad = _tempoOperacaoCadastrada(funcaoId, nomeOperacao, _skuDaOS(os));
   return { min: cad > 0 ? cad : 0, fonte: cad > 0 ? 'cadastrado no posto' : '' };
 }
 
@@ -7518,11 +7606,11 @@ function _opCompDaFase(os, fase) {
   return v > 0 ? v : 0;
 }
 
-// A que comprimento de grade o tempo cadastrado se refere.
-function _opCompRefCadastrado(funcaoId, nomeOperacao) {
+// A que comprimento de grade o tempo cadastrado se refere. Lê a linha DAQUELE
+// tipo: o comprimento de referência é do número, e cada tipo tem o seu.
+function _opCompRefCadastrado(funcaoId, nomeOperacao, sku) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
-  const alvo = _opChaveOperacaoNome(nomeOperacao);
-  const achou = f && alvo ? _opsDaFuncao(f).find(o => _opChaveOperacaoNome(o.nome) === alvo) : null;
+  const achou = _opLinhaCadastrada(f, nomeOperacao, sku);
   const v = parseFloat(achou && achou.compRef);
   return (isFinite(v) && v > 0) ? v : _OP_ENFESTO_COMP_REF_PADRAO;
 }
@@ -7655,7 +7743,11 @@ function _opCorrigirOrdemDoDia(data, profundidade = 0) {
         // mas o número já gravado ficava: o ajuste só sabia aumentar, e uma
         // operação de 5 min inflada para 3h continuava entupindo o dia.
         if (_opEhEnfesto(op) || !_opPassoSequencia(op)) return;
-        const cad = _tempoOperacaoCadastrada(op.funcaoId, op.operacao);
+        // Pelo TIPO DE ENFESTO da OS desta operação: devolver ao cadastro tem que
+        // devolver ao número DAQUELE produto, senão o "Organizar o dia" trocaria
+        // o tempo da tricolor pelo da lisa a cada clique.
+        const cad = _tempoOperacaoCadastrada(op.funcaoId, op.operacao,
+          _skuDaOS(_opOsDaReferencia(op.referencia)));
         if (!(cad > 0) || cad === de) return;
         op.duracaoMin = cad;
         const r2 = redefinidas.get(op.id);
@@ -8305,20 +8397,34 @@ function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
 // cadastro: cada função tem as suas operações (com o tempo de cada uma), e é o
 // nome da operação que diz a que passo ela pertence. Sem cadastro para um passo,
 // cai no histórico do plano — quem já fez aquele passo antes.
-function _opFuncaoDoPasso(passo) {
+function _opFuncaoDoPasso(passo, sku) {
   const doCadastro = [];
+  const n = _normSku(sku);
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
       const p = _opPassoDaLinhaCadastro(o);
       if (p && p.cadeia === passo.cadeia && p.ordem === passo.ordem) {
-        doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome, duracaoMin: Number(o.duracaoMin) || 0 });
+        doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome,
+          duracaoMin: Number(o.duracaoMin) || 0, sku: o.sku || '' });
       }
     });
   });
+  // O TIPO DE ENFESTO manda primeiro. "Enfesto · BM.TRI" e "Enfesto · CM.LISA"
+  // são o MESMO passo da corrente cadastrado duas vezes, uma por produto — e
+  // para uma OS de blusa tricolor quem responde é a primeira. Sem este degrau,
+  // as duas linhas disputariam o passo pelo desempate de baixo e o plano
+  // levaria o tempo do produto errado metade das vezes.
+  const doTipo = n ? doCadastro.filter(c => c.sku && _normSku(c.sku) === n) : [];
+  // Linha SEM tipo é a geral: vale para o que não tem linha própria. Ela só entra
+  // quando o tipo não achou nada — senão o geral roubaria a vez do específico.
+  const gerais = doCadastro.filter(c => !c.sku);
+  // E se nada disso houver, vale qualquer linha daquele passo: é o cadastro de
+  // quem nunca usou tipo, que não pode parar de funcionar.
+  const pool = doTipo.length ? doTipo : (gerais.length ? gerais : doCadastro);
   // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
   // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
-  if (doCadastro.length) {
-    return doCadastro.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
+  if (pool.length) {
+    return pool.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
   }
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
@@ -8392,7 +8498,9 @@ function _opMontarCascataDoLote(data, os) {
     dia = dia || data;
     const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + passo.ordem;
     if (jaTem.has(chave)) return null;
-    const cad = _opFuncaoDoPasso(passo);
+    // O TIPO DE ENFESTO desta OS (BM.TRI, CM.LISA…): é ele que escolhe, dentro
+    // do posto, a linha cadastrada com o tempo daquele produto.
+    const cad = _opFuncaoDoPasso(passo, _skuDaOS(os));
     if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
     if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(dia + '|' + passo.ordem)) return null;
     // Duração: a cadastrada na função — MENOS no enfesto, que é apurado do
@@ -10029,9 +10137,13 @@ function _opTempoMedioDaReferencia() {
   // TEMPO CADASTRADO na função para esta operação: é o que a casa definiu, e vale
   // para qualquer operação — não só as de enfesto. Entra primeiro; o tempo medido
   // na grade (abaixo) fala mais alto quando existe, por ser daquele lote.
+  // Pelo TIPO DE ENFESTO da OS escolhida no campo Referência — é o que faz o
+  // modal oferecer o tempo da BM.TRI numa OS de blusa tricolor e o da CM.LISA
+  // numa de camiseta.
   const cad = _tempoOperacaoCadastrada(
     document.getElementById('op-funcao')?.value,
-    document.getElementById('op-operacao')?.value);
+    document.getElementById('op-operacao')?.value,
+    _skuDaOS(_opOsDaReferencia(document.getElementById('op-referencia')?.value)));
   const podeEscreverCad = _opDuracaoDoForm() === 0 || h.dataset.auto === '1' || m.dataset.auto === '1';
   // O CADASTRO MANDA sobre a medição. Este número é a decisão da casa para
   // ESTA operação; o medido, logo abaixo, é a média da grade — e quando os dois
@@ -11679,7 +11791,11 @@ function renderFuncoes() {
     // Cada operação com o seu tempo ao lado; sem tempo, só o nome.
     const ops = _opsDaFuncao(f);
     const opsHtml = ops.length
-      ? ops.map(o => `<span class="badge" style="margin-right:4px" title="${o.duracaoMin ? 'Tempo cadastrado: ' + esc(_opDurTexto(o.duracaoMin)) : 'Sem tempo cadastrado'}">${esc(o.nome)}${
+      // O TIPO vai junto: com uma linha por produto, "Enfesto" aparece várias
+      // vezes e sem o tipo as etiquetas ficariam idênticas, cada uma com um
+      // tempo diferente e nada explicando por quê.
+      ? ops.map(o => `<span class="badge" style="margin-right:4px" title="${o.sku ? 'Tipo de enfesto: ' + esc(o.sku) + '. ' : 'Vale para todos os tipos. '}${o.duracaoMin ? 'Tempo cadastrado: ' + esc(_opDurTexto(o.duracaoMin)) : 'Sem tempo cadastrado'}">${esc(o.nome)}${
+          o.sku ? ` <span style="font-family:'IBM Plex Mono',monospace;opacity:.75;">${esc(o.sku)}</span>` : ''}${
           o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
       : '—';
     return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
@@ -20194,17 +20310,17 @@ ${abas.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxm
 //     sem comprimento", que na visão por grade seria impossível.
 // Os dois trazem o que o programa já APUROU (uso em OS, tempo medido do
 // enfesto), porque conferir cadastro sem ver o que ele produziu é meio caminho.
-// O SKU de uma grade é o que vem depois do "|" no nome ("2M-4G-2GG | BM.TRICOLOR"
-// → "BM.TRICOLOR"): antes da barra ficam os tamanhos, depois dela o produto.
-// É por ele que as grades se parecem — todas as CM.BÁSICA deveriam ter as mesmas
-// fases, os mesmos tecidos e o mesmo jeito de embalar, mudando só a distribuição
-// de tamanhos. Agrupar por SKU é o que faz a divergência saltar.
-function _skuDaGrade(g) {
-  const n = String((g && g.nome) || '');
-  const i = n.indexOf('|');
-  const bruto = (i >= 0 ? n.slice(i + 1) : '').replace(/\s+/g, ' ').trim();
-  return bruto || '(sem SKU no nome)';
-}
+// O SKU vem de `_skuDaGrade`, lá em cima, junto do cadastro de funções — é o
+// mesmo "tipo de enfesto" que dá o tempo de cada posto, e ter duas leituras do
+// mesmo nome era o começo de elas divergirem.
+//
+// Havia uma segunda cópia AQUI que pegava tudo o que vem DEPOIS da primeira
+// barra. Ela nasceu quando o nome tinha duas partes ("2M-4G-2GG | BM.TRICOLOR"),
+// mas hoje quase todo nome tem três, com a largura no fim — e então o SKU saía
+// "BM.LISA | 177cm". Cada largura virava um SKU diferente, e a planilha, que
+// existe justamente para pôr as grades semelhantes lado a lado, separava as oito
+// BM.LISA em oito grupos de uma.
+const _SKU_VAZIO = '(sem SKU no nome)';
 
 function _linhasPlanilhaGrades() {
   const tamKeys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
@@ -20242,7 +20358,7 @@ function _linhasPlanilhaGrades() {
 
   const porSku = new Map();
   grades.forEach(g => {
-    const sku = _skuDaGrade(g);
+    const sku = _skuDaGrade(g) || _SKU_VAZIO;
     const chaveSku = _normNome(sku);
     if (!porSku.has(chaveSku)) {
       porSku.set(chaveSku, {
