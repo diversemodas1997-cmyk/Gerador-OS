@@ -2337,6 +2337,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <div id="m-func-ops"></div>
           <button type="button" class="add-row-btn" onclick="addOperacaoFuncaoRow()" style="margin-top:6px;">+ Adicionar operação</button>
           <div class="field-hint">São as operações que este posto executa. O <b>tempo</b> é o que a operação costuma levar — ele vem preenchido no planejamento quando você escolher esta função e esta operação. Deixe em branco enquanto não souber.</div>
+          <div class="field-hint">Cada linha é de <b>UM tipo de enfesto</b> (o produto: BM.TRI, CM.LISA, CM.REC…), porque enfestar e cortar não levam o mesmo tempo em produtos diferentes. Para a mesma operação valer em vários, <b>repita a linha</b> — uma por tipo, com o tempo de cada um. Linha marcada <b style="color:var(--alert);">sem tipo</b> é cadastro por terminar, de antes deste campo existir: ela ainda vale para todos, mas é para ser resolvida.</div>
           <div class="field-hint"><b>A ordem da lista é a ordem em que este posto trabalha</b>, e é ela que o planejamento do dia segue: use as setas ↑↓ para dizer o que vem antes. Entre postos quem manda continua sendo a corrente da fábrica — o corte não vem antes do enfesto, porque não há como cortar o que não foi estendido. As de <b>hora marcada</b> ficam num grupo à parte, no fim, <b>ordenadas pelo relógio</b>: elas não estão numa fila, estão numa hora.</div>
           <div class="field-hint"><b>Todo dia às</b> é para a operação de <b>hora marcada</b>: café, almoço, preparação das máquinas, limpeza do fim do expediente. Preenchida, ela entra sozinha em todo dia que você planejar, sempre nessa hora, e nem o encadeamento do posto nem o botão <b>Organizar o dia</b> a tiram do lugar — a fila do posto passa a se encaixar em volta dela. Em branco, a operação entra na fila normalmente.</div>
           <div class="field-hint">Essa operação é <b>independente das OS</b>: ela é da jornada, não do lote. Entra <b>uma vez por dia</b> — não uma por OS nem uma por fase do enfesto —, sem referência a OS nenhuma, e alocar mais OS no mesmo dia não a repete.</div>
@@ -2715,7 +2716,16 @@ function addOperacaoFuncaoRow(op = {}) {
   const skuAtual = String((op && op.sku) || '').trim();
   const skus = _skusCadastrados();
   if (skuAtual && !skus.some(s => _normSku(s) === _normSku(skuAtual))) skus.unshift(skuAtual);
-  const optsSku = [`<option value="" ${!skuAtual ? 'selected' : ''}>todos os tipos</option>`]
+  // NÃO EXISTE MAIS "todos os tipos" nas opções: toda linha é de um produto.
+  //
+  // O que sobra no lugar é um ESTADO, não uma escolha — "— escolher o tipo —",
+  // desabilitado, que aparece só na linha que ainda está sem tipo (todas as de
+  // hoje estão) e some assim que um tipo é escolhido. Sem ele, abrir uma função
+  // antiga mostraria o PRIMEIRO tipo da lista já selecionado em cada linha, e
+  // salvar carimbaria "BM.BÁSICA" no café, no almoço e em tudo o mais, calado.
+  // Desabilitado porque não é para onde voltar: uma vez escolhido o tipo, não há
+  // como pôr a linha de volta em "vale para todos".
+  const optsSku = (skuAtual ? [] : ['<option value="" selected disabled>— escolher o tipo —</option>'])
     .concat(skus.map(s => `<option value="${esc(s)}" ${_normSku(s) === _normSku(skuAtual) ? 'selected' : ''}>${esc(s)}</option>`))
     .join('');
   const div = document.createElement('div');
@@ -2727,7 +2737,7 @@ function addOperacaoFuncaoRow(op = {}) {
     </span>
     <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">
     <span class="u tipo">no</span>
-    <select class="func-op-sku" title="Tipo de enfesto (o produto, como aparece no meio do nome da grade: BM.TRI, CM.LISA…). Enfestar e cortar não levam o mesmo tempo em produtos diferentes — cadastre uma linha por tipo, com o tempo de cada um. Deixe em «todos os tipos» para a linha valer onde não houver linha própria.">${optsSku}</select>
+    <select class="func-op-sku" title="Tipo de enfesto (o produto, como aparece no meio do nome da grade: BM.TRI, CM.LISA…). Cada linha é de UM tipo: enfestar e cortar não levam o mesmo tempo em produtos diferentes. Para a mesma operação valer em vários tipos, repita a linha uma vez por tipo.">${optsSku}</select>
     <span class="u passo">é o passo</span>
     <select class="func-op-passo" title="Que passo da corrente da fábrica esta operação é. É por ele que o planejamento monta a sequência do dia — não pelo nome. Definido aqui, renomear a operação não desfaz mais a ligação." onchange="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">${opts.join('')}</select>
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
@@ -3521,8 +3531,12 @@ async function salvarCadastro() {
       // valer sobre o nome: renomear a operação não a tira mais da corrente nem
       // faz a cascata voltar a criar o nome velho, tirado do histórico.
       const passoId = String(row.querySelector('.func-op-passo')?.value || '').trim();
-      // O TIPO DE ENFESTO a que este tempo se refere. Vazio = vale para todos os
-      // tipos que não tiverem linha própria.
+      // O TIPO DE ENFESTO a que este tempo se refere. Vazio já NÃO é uma escolha
+      // — o seletor não oferece mais "todos os tipos" —, é linha por terminar:
+      // ou é cadastro antigo, de antes do campo existir, ou alguém salvou sem
+      // escolher. Segue valendo para todos enquanto estiver assim, para o
+      // planejamento não parar no meio da migração, e o aviso abaixo diz quantas
+      // faltam.
       const sku = String(row.querySelector('.func-op-sku')?.value || '').trim();
       return {
         nome,
@@ -3597,6 +3611,16 @@ async function salvarCadastro() {
   // Operações — quem mudava o horário no cadastro e ia fazer outra coisa via o
   // plano continuar com a hora velha, sem saber que faltava passar por lá.
   if (tipo === 'funcao') {
+    // LINHAS SEM TIPO. O seletor não oferece mais "todos os tipos", então uma
+    // linha assim é cadastro por terminar — de antes do campo existir. Ela ainda
+    // funciona (vale para todos), mas é o oposto do que se quer: o tempo do
+    // enfesto tem que ser do produto. O aviso diz quantas faltam e quais são,
+    // para a migração ter fim em vez de ficar meio feita para sempre.
+    const semTipo = _opsDaFuncao(item).filter(o => !String(o.sku || '').trim());
+    if (semTipo.length) {
+      toast(`${semTipo.length} operação(ões) ainda sem tipo em "${item.nome}": `
+        + semTipo.map(o => o.nome).join(', '), 'err');
+    }
     try {
       const hoje = _expHoje();
       const r = _opGarantirHorariosFixosNoPeriodo(hoje, _expAddDias(hoje, 60));
@@ -11816,8 +11840,9 @@ function renderFuncoes() {
       // O TIPO vai junto: com uma linha por produto, "Enfesto" aparece várias
       // vezes e sem o tipo as etiquetas ficariam idênticas, cada uma com um
       // tempo diferente e nada explicando por quê.
-      ? ops.map(o => `<span class="badge" style="margin-right:4px" title="${o.sku ? 'Tipo de enfesto: ' + esc(o.sku) + '. ' : 'Vale para todos os tipos. '}${o.duracaoMin ? 'Tempo cadastrado: ' + esc(_opDurTexto(o.duracaoMin)) : 'Sem tempo cadastrado'}">${esc(o.nome)}${
-          o.sku ? ` <span style="font-family:'IBM Plex Mono',monospace;opacity:.75;">${esc(o.sku)}</span>` : ''}${
+      ? ops.map(o => `<span class="badge" style="margin-right:4px" title="${o.sku ? 'Tipo de enfesto: ' + esc(o.sku) + '. ' : 'SEM TIPO — cadastro por terminar. Abra a função e escolha o tipo desta linha. '}${o.duracaoMin ? 'Tempo cadastrado: ' + esc(_opDurTexto(o.duracaoMin)) : 'Sem tempo cadastrado'}">${esc(o.nome)}${
+          o.sku ? ` <span style="font-family:'IBM Plex Mono',monospace;opacity:.75;">${esc(o.sku)}</span>`
+                : ` <span style="color:var(--alert);font-weight:700;" title="Sem tipo">·  sem tipo</span>`}${
           o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
       : '—';
     return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
