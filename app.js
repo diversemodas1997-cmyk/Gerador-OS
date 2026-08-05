@@ -2489,7 +2489,10 @@ function sincronizarOperacoesDasFuncoes() {
     if (!chave) return;
     if (!usadas.has(chave)) usadas.set(chave, new Map());
     const m = usadas.get(chave);
-    if (!m.has(_normNome(nome))) m.set(_normNome(nome), nome);
+    // Leva junto o PASSO que a operação do plano carrega: a linha nasce no
+    // cadastro já ligada à corrente, em vez de depender de o nome dela casar com
+    // os padrões — que é justamente o que se quis parar de depender.
+    if (!m.has(_normNome(nome))) m.set(_normNome(nome), { nome, passoId: String(op.passoId || '').trim() });
   });
   let novas = 0;
   STATE.funcoes.forEach(f => {
@@ -2506,12 +2509,13 @@ function sincronizarOperacoesDasFuncoes() {
     // mesmo que aquele nome apareça no plano só mais tarde.
     jaTem.forEach(norm => jaOferecidas.add(norm));
     let mudouLista = false;
-    doPlano.forEach((nome, norm) => {
+    doPlano.forEach((doPlanoOp, norm) => {
       if (jaTem.has(norm)) { jaOferecidas.add(norm); return; }
       // Já foi oferecida um dia e não está mais aqui: o usuário tirou de
       // propósito (ou renomeou). Respeita a decisão dele.
       if (jaOferecidas.has(norm)) return;
-      lista.push({ nome, duracaoMin: 0, horaFixa: '' });   // sem tempo: quem sabe é a casa
+      // sem tempo: quem sabe é a casa
+      lista.push({ nome: doPlanoOp.nome, passoId: doPlanoOp.passoId || '', duracaoMin: 0, horaFixa: '' });
       jaTem.add(norm);
       jaOferecidas.add(norm);
       mudouLista = true;
@@ -2604,10 +2608,35 @@ function moverOperacaoFuncao(btn, dir) {
   else row.parentNode.insertBefore(alvo, row);
 }
 
+// A que passo a linha JÁ APARECE ligada ao abrir o cadastro. O gravado, quando
+// há; senão o que o nome sempre disse — assim o campo nasce preenchido com a
+// resposta que o programa já vinha dando sozinho, e salvar a função CONGELA essa
+// resposta. É isso que faz um rename posterior não quebrar mais nada.
+// Nome que não casa com passo nenhum fica em "automático", não em "fora da
+// corrente": um erro de digitação continua se consertando ao ser corrigido.
+function _funcOpPassoInicial(op) {
+  const gravado = op && op.passoId != null ? String(op.passoId).trim() : '';
+  if (gravado) return gravado;
+  return _opPassoId(_opPassoSequencia({ operacao: op && op.nome }));
+}
+
 function addOperacaoFuncaoRow(op = {}) {
   const cont = document.getElementById('m-func-ops');
   if (!cont) return;
   const dur = Math.max(0, Math.round(Number(op.duracaoMin) || 0));
+  const passoSel = _funcOpPassoInicial(op);
+  const opts = [`<option value="" ${passoSel === '' ? 'selected' : ''}>Automático (pelo nome)</option>`];
+  let cadeiaAtual = '';
+  _OP_PASSOS_OPCOES.forEach(p => {
+    if (p.cadeia !== cadeiaAtual) {
+      if (cadeiaAtual) opts.push('</optgroup>');
+      opts.push(`<optgroup label="${esc(p.cadeia)}">`);
+      cadeiaAtual = p.cadeia;
+    }
+    opts.push(`<option value="${esc(p.id)}" ${passoSel === p.id ? 'selected' : ''}>${esc(p.nome)}</option>`);
+  });
+  if (cadeiaAtual) opts.push('</optgroup>');
+  opts.push(`<option value="${_OP_PASSO_NENHUM}" ${passoSel === _OP_PASSO_NENHUM ? 'selected' : ''}>Fora da corrente</option>`);
   const div = document.createElement('div');
   div.className = 'func-op-row';
   div.innerHTML = `
@@ -2616,6 +2645,8 @@ function addOperacaoFuncaoRow(op = {}) {
       <button type="button" class="btn small ghost" title="Descer: esta operação passa a vir depois na sequência deste posto" onclick="moverOperacaoFuncao(this, 1)">↓</button>
     </span>
     <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">
+    <span class="u passo">é o passo</span>
+    <select class="func-op-passo" title="Que passo da corrente da fábrica esta operação é. É por ele que o planejamento monta a sequência do dia — não pelo nome. Definido aqui, renomear a operação não desfaz mais a ligação." onchange="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">${opts.join('')}</select>
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
     <span class="u">h</span>
     <input type="number" class="func-op-m" min="0" max="59" step="5" value="${dur ? dur % 60 : ''}" placeholder="0" title="Minutos">
@@ -2645,7 +2676,10 @@ function addOperacaoFuncaoRow(op = {}) {
 function _funcOpNotaDeEnfesto(row) {
   if (!row) return;
   const nome = row.querySelector('.func-op-nome')?.value || '';
-  const ehEnfesto = _opEhEnfesto({ operacao: nome });
+  // Quem diz se a linha é o ENFESTO é o passo escolhido, e só na falta dele o
+  // nome — a mesma ordem que o resto do programa passou a seguir.
+  const passoId = row.querySelector('.func-op-passo')?.value ?? '';
+  const ehEnfesto = _opEhEnfesto({ operacao: nome, passoId });
   const nota = row.querySelector('.func-op-nota');
   ['.func-op-h', '.func-op-m'].forEach(sel => {
     const el = row.querySelector(sel);
@@ -3400,8 +3434,13 @@ async function salvarCadastro() {
       // zerada aqui, e o campo ficava travado na tela: quem sabia o tempo não
       // tinha onde dizer, e o plano nascia com enfesto de zero minuto.
       const cRef = parseFloat(String(row.querySelector('.func-op-comp')?.value || '').replace(',', '.'));
+      // O PASSO da corrente a que esta operação pertence. Gravado, ele passa a
+      // valer sobre o nome: renomear a operação não a tira mais da corrente nem
+      // faz a cascata voltar a criar o nome velho, tirado do histórico.
+      const passoId = String(row.querySelector('.func-op-passo')?.value || '').trim();
       return {
         nome,
+        passoId: (passoId === _OP_PASSO_NENHUM || _opPassoPorId(passoId)) ? passoId : '',
         duracaoMin: Math.max(0, h) * 60 + Math.max(0, m),
         // A que tamanho de grade aquele tempo se refere. Vazio = o padrão.
         compRef: isFinite(cRef) && cRef > 0 ? cRef : '',
@@ -6453,6 +6492,52 @@ const _OP_SEQ_PRINCIPAL = _OP_SEQUENCIA
 const _OP_SEQ_FASE   = _OP_SEQ_PRINCIPAL.filter(p => p.porFase);
 const _OP_SEQ_ROTINA = _OP_SEQ_PRINCIPAL.filter(p => !p.porFase);
 
+/* ---------------- o passo GRAVADO na linha do cadastro ---------------- */
+
+// Até aqui, a que passo da corrente uma operação pertencia era ADIVINHADO pelo
+// nome, a cada consulta, pelos `teste` acima. Renomear no cadastro quebrava o
+// vínculo em silêncio: "Corte de enfesto" virando "Corte na esteira" deixava de
+// casar `/cort/ && /enfesto/`, nenhuma linha do cadastro respondia mais pelo
+// passo 5 — e a cascata caía no histórico do plano, voltando a criar a operação
+// com o NOME e o TEMPO ANTIGOS. O cadastro atualizado, o plano desatualizado.
+//
+// Agora a linha do cadastro pode GRAVAR a que passo ela pertence (`passoId`), e
+// aí o nome é só o nome: renomear não muda mais nada de lugar. O campo é
+// pré-preenchido pelo mesmo `teste` de sempre, para nada mudar para quem já
+// tinha tudo cadastrado — a adivinhação vira o padrão, não a regra.
+//
+// `cadeia:ordem` é a identidade estável do passo: `ordem` nunca muda de valor
+// (quem muda de valor é a POSIÇÃO na corrente, e essa é outra conta —
+// _opOrdemNaCorrente).
+const _OP_PASSO_AUTO   = '';         // adivinha pelo nome, como sempre foi
+const _OP_PASSO_NENHUM = 'nenhum';   // fora da corrente, dito de propósito
+
+function _opPassoId(p) { return p ? p.cadeia + ':' + p.ordem : ''; }
+
+function _opPassoPorId(id) {
+  const s = String(id || '').trim();
+  if (!s || s === _OP_PASSO_NENHUM) return null;
+  const i = s.indexOf(':');
+  if (i < 0) return null;
+  const cadeia = s.slice(0, i), ordem = Number(s.slice(i + 1));
+  return _OP_SEQUENCIA.find(p => p.cadeia === cadeia && p.ordem === ordem) || null;
+}
+
+// Os passos oferecidos no cadastro, na ordem em que a fábrica os executa.
+const _OP_PASSOS_OPCOES = _OP_SEQ_PRINCIPAL
+  .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Corte' }))
+  .concat(_OP_SEQUENCIA.filter(p => p.cadeia === 'carga').slice().sort((a, b) => a.ordem - b.ordem)
+    .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Expedição' })))
+  .concat(_OP_SEQUENCIA.filter(p => p.cadeia === 'materia')
+    .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Matéria prima' })));
+
+// O passo de uma LINHA DO CADASTRO: o gravado, quando há; senão o adivinhado
+// pelo nome. É a mesma pergunta que `_opPassoSequencia` responde para a operação
+// do plano, e por isso passa por ela — assim as duas nunca divergem.
+function _opPassoDaLinhaCadastro(o) {
+  return _opPassoSequencia({ operacao: o && o.nome, passoId: o && o.passoId });
+}
+
 /* ---------------- a ordem que o CADASTRO dá à corrente ---------------- */
 
 // A sequência acima é a do programa e vale ENTRE POSTOS: o corte vem depois do
@@ -6471,14 +6556,29 @@ function _opReordenarPorCadastro(passos) {
     if (!cad || !cad.funcaoId) return;
     const f = (STATE.funcoes || []).find(x => x.id === cad.funcaoId);
     const lista = f ? _opsDaFuncao(f) : [];
-    const i = lista.findIndex(o => _opChaveOperacaoNome(o.nome) === _opChaveOperacaoNome(cad.nome));
+    // Acha a linha pelo PASSO, não pelo nome: depois que o passo passou a ser
+    // gravado, o nome da linha pode ser qualquer um, e comparar nomes deixaria
+    // de achar justamente a linha que foi renomeada.
+    const i = lista.findIndex(o => _opPassoDaLinhaCadastro(o) === p);
+    // NÃO ESTÁ NO CADASTRO DESTE POSTO: fica onde a corrente do programa o pôs.
+    //
+    // Este `return` conserta o "Mover enfesto antes do Enfesto". Quando um posto
+    // tem "Movimentação de enfesto" cadastrada mas não "Enfesto", quem responde
+    // pelo Enfesto é o HISTÓRICO do plano (_opFuncaoDoPasso), que devolve a
+    // MESMA função — e a linha não existe na lista dela. O índice virava 1e9, o
+    // passo entrava no grupo daquele posto como o ÚLTIMO de todos e afundava
+    // para depois da movimentação: o plano nascia mandando mover um enfesto que
+    // ainda não tinha sido estendido. Ordem física não se inverte por omissão:
+    // sem linha no cadastro, o posto não disse nada, e quem não disse nada não
+    // reordena.
+    if (i < 0) return;
     // OPERAÇÃO DE HORA MARCADA FICA DE FORA desta ordenação, e não por omissão:
     // ela não está numa fila, está numa HORA. O café é às 09:30 esteja onde
     // estiver na lista, e a preparação das máquinas às 07:15. Deixá-la entrar
     // aqui misturaria duas coisas que se decidem de formas diferentes — e
     // arrastaria os passos da fila para posições que a hora dela já ocupa.
-    if (i >= 0 && String((lista[i] || {}).horaFixa || '').trim()) return;
-    info.set(p, { funcaoId: cad.funcaoId, i: i < 0 ? 1e9 : i });
+    if (String((lista[i] || {}).horaFixa || '').trim()) return;
+    info.set(p, { funcaoId: cad.funcaoId, i });
   });
   const out = passos.slice();
   const grupos = new Map();
@@ -6630,8 +6730,32 @@ function _opRenumerarPartes(data, ref) {
 }
 
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
+//
+// TRÊS fontes, nesta ordem — da mais explícita para a mais adivinhada:
+//   1. o passo GRAVADO na própria operação (a cascata o carimba ao criá-la);
+//   2. o passo gravado na linha do CADASTRO daquele posto, achada por função +
+//      nome — é o que faz uma operação digitada à mão herdar a decisão do
+//      cadastro sem que ninguém precise repeti-la;
+//   3. o nome, pelos `teste` de `_OP_SEQUENCIA`, como sempre foi.
+// A 3 continua valendo para tudo o que ninguém decidiu — nada muda para quem já
+// tinha o cadastro do jeito que o programa esperava.
 function _opPassoSequencia(op) {
-  const n = _normNome(op && op.operacao);
+  const pid = op && op.passoId != null ? String(op.passoId).trim() : '';
+  if (pid) return pid === _OP_PASSO_NENHUM ? null : _opPassoPorId(pid);
+  const nome = _opNomeBase(op && op.operacao);
+  if (!nome) return null;
+  // Só custa a busca no cadastro quando ALGUMA linha foi de fato decidida — sem
+  // isso o índice está vazio e esta pergunta, feita aos milhares por clique,
+  // segue tão barata quanto era.
+  const fid = op && op.funcaoId;
+  if (fid) {
+    const ix = _opIndicePassosCadastro();
+    if (ix.size) {
+      const doCad = ix.get(fid + '|' + _opChaveOperacaoNome(nome));
+      if (doCad) return doCad === _OP_PASSO_NENHUM ? null : _opPassoPorId(doCad);
+    }
+  }
+  const n = _normNome(nome);
   if (!n) return null;
   return _OP_SEQUENCIA.find(p => p.teste(n)) || null;
 }
@@ -6966,6 +7090,31 @@ function _opChaveOperacaoNome(nome) {
     .split(' ')
     .filter(p => p && !['de', 'da', 'do', 'das', 'dos', 'e'].includes(p))
     .join(' ');
+}
+
+// Índice dos passos DECIDIDOS no cadastro de Funções ("esta operação é o passo
+// tal da corrente"). Só entram as linhas com passo gravado: as que seguem no
+// automático não têm o que indexar — elas são resolvidas pelo nome, e indexá-las
+// aqui faria `_opPassoSequencia` chamar a si mesma.
+// Mesmo cache e mesma invalidação do índice de horas fixas.
+let _opPassoCadCache = null;
+function _opIndicePassosCadastro() {
+  const fs = STATE.funcoes || [];
+  if (_opPassoCadCache && _opPassoCadCache.fonte === fs && _opPassoCadCache.versao === _opHoraFixaVersao) {
+    return _opPassoCadCache.mapa;
+  }
+  const mapa = new Map();   // "funcaoId|nome normalizado" → passoId
+  fs.forEach(f => {
+    _opsDaFuncao(f).forEach(o => {
+      const pid = o && o.passoId != null ? String(o.passoId).trim() : '';
+      if (!pid) return;
+      const nome = _opChaveOperacaoNome(o.nome);
+      if (!nome) return;
+      mapa.set(f.id + '|' + nome, pid);
+    });
+  });
+  _opPassoCadCache = { fonte: fs, versao: _opHoraFixaVersao, mapa };
+  return mapa;
 }
 
 function _opIndiceHorasFixas() {
@@ -7909,6 +8058,9 @@ function _opAplicarHorariosFixosNoDia(data, opcoes) {
         id: uid(), data,
         funcaoId: f.id, funcaoNome: f.nome,
         operacao: nome, escopo: 'completa', etapas: [],
+        // O passo decidido no cadastro vem junto — inclusive o "fora da
+        // corrente", que é o caso do café e do almoço.
+        passoId: String((o && o.passoId) || '').trim(),
         inicio: hora, duracaoMin: dur,
         // HORÁRIO FIXO de verdade, não âncora do organizador: quem decidiu a
         // hora foi o usuário, no cadastro da função ("todo dia às"). Por isso sai
@@ -8066,7 +8218,7 @@ function _opFuncaoDoPasso(passo) {
   const doCadastro = [];
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
-      const p = _opPassoSequencia({ operacao: o.nome });
+      const p = _opPassoDaLinhaCadastro(o);
       if (p && p.cadeia === passo.cadeia && p.ordem === passo.ordem) {
         doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome, duracaoMin: Number(o.duracaoMin) || 0 });
       }
@@ -8197,6 +8349,12 @@ function _opMontarCascataDoLote(data, os) {
         id: uid(), data: dia,
         funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
         operacao: nome, escopo: 'completa', etapas: [],
+        // A que passo da corrente esta operação pertence, GRAVADO. Sem isto, o
+        // programa readivinhava pelo nome a cada consulta — e uma operação criada
+        // com o nome que o cadastro usa hoje saía da corrente no dia em que esse
+        // nome deixasse de casar com os padrões. O plano guarda a decisão que
+        // valia quando ele foi montado; é ele o registro do que foi planejado.
+        passoId: _opPassoId(passo),
         inicio: _opHHMM(iniMin), duracaoMin: dur,
         // Âncora do programa: o horário veio da corrente do LOTE, que atravessa
         // vários postos. Sem ancorar, o encadeamento de cada posto reescreveria

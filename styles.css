@@ -1733,6 +1733,10 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .func-op-row .func-op-nome { flex: 1 1 220px; min-width: 0; }
 .func-op-row .func-op-h,
 .func-op-row .func-op-m { width: 64px; flex: 0 0 auto; }
+/* O PASSO da corrente a que a operação pertence. É o campo que segura a ligação
+   entre o cadastro e o planejamento quando a operação é renomeada — antes disso
+   a ligação era adivinhada pelo nome e se desfazia em silêncio. */
+.func-op-row .func-op-passo { width: 190px; flex: 0 0 auto; font-size: 12px; }
 .func-op-row .func-op-fixo { width: 108px; flex: 0 0 auto; }
 .func-op-row .u { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 /* Enfesto: a linha ganha uma nota dizendo de onde vem o número — a média medida
