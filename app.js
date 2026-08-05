@@ -6921,7 +6921,9 @@ function _medicoesEnfesto() {
       if (!(camadas > 0)) return;
       out.push({
         modeloId: o.modeloId || '', gradeId: o.gradeId || '',
-        faseNome: f.nome || '', minutos: fim - ini, camadas,
+        // TEMPO DE TRABALHO, não tempo de relógio: o café e o almoço que caem
+        // dentro do intervalo lançado saem da conta. Ver `_opMinutosTrabalhados`.
+        faseNome: f.nome || '', minutos: _opMinutosTrabalhados(ini, fim), camadas,
         comp: parseFloat(f.comp) || parseFloat(bloco.comp) || 0,
         os: o.os
       });
@@ -7092,6 +7094,67 @@ function _opTipoPausa(op) {
   return '';
 }
 function _opEhPausa(op) { return !!_opTipoPausa(op); }
+
+/* -------- as pausas da jornada, e o tempo de TRABALHO de um intervalo -------- */
+
+// As PAUSAS da fábrica, tiradas do cadastro de Funções: as operações de hora
+// marcada cujo nome é café, almoço ou lanche. Uma por tipo — o mesmo almoço está
+// cadastrado em todas as funções, e contá-lo cinco vezes descontaria 7h30 de um
+// dia de 10h. Vence a linha mais LONGA de cada tipo: pausa é a mesma janela para
+// a fábrica inteira, e é assim que `_opSincronizarPausasDoDia` já a resolve.
+// Devolve [{ini, fim, tipo}] em minutos, na ordem do relógio.
+let _opPausasCache = null;
+function _opPausasDaJornada() {
+  const fs = STATE.funcoes || [];
+  if (_opPausasCache && _opPausasCache.fonte === fs && _opPausasCache.versao === _opHoraFixaVersao) {
+    return _opPausasCache.lista;
+  }
+  const porTipo = new Map();
+  fs.forEach(f => {
+    _opsDaFuncao(f).forEach(o => {
+      const tipo = _opTipoPausa({ operacao: o.nome });
+      if (!tipo) return;
+      const ini = _opMin(String(o.horaFixa || '').trim());
+      const dur = Math.max(0, Math.round(Number(o.duracaoMin) || 0));
+      if (ini == null || !(dur > 0)) return;
+      const atual = porTipo.get(tipo);
+      if (!atual || dur > atual.fim - atual.ini) porTipo.set(tipo, { ini, fim: ini + dur, tipo });
+    });
+  });
+  const lista = Array.from(porTipo.values()).sort((a, b) => a.ini - b.ini);
+  _opPausasCache = { fonte: fs, versao: _opHoraFixaVersao, lista };
+  return lista;
+}
+
+// Quanto de TRABALHO há entre dois horários do dia, descontando as pausas que
+// caem dentro deles.
+//
+// Um enfesto lançado na folha como "11:15 → 14:00" não levou 2h45: 1h30 daquilo
+// foi o almoço da fábrica inteira. O tempo cru era o que alimentava toda média
+// de enfesto do programa — e era ele que devolvia um enfesto de gola de 15 min
+// planejado com horas. Nas 29 medições que existem hoje, 15 atravessam um café
+// ou o almoço; a pior delas (OS 0405 Barra/Punhos) gravava 165 min para 75 min
+// de trabalho.
+//
+// O plano já trabalha assim do outro lado: ele PARTE a operação longa em volta
+// do café e do almoço (`_opPartirNosVagos`), reservando só o tempo de trabalho.
+// Medir com a pausa dentro e reservar sem ela era medir uma coisa e planejar
+// outra.
+//
+// Sobrou ZERO ou menos? Então quem fez aquilo trabalhou durante a pausa — e aí o
+// tempo cru é que é o registro honesto. Devolve o cru também quando não há pausa
+// cadastrada nenhuma, que é o estado de quem ainda não cadastrou as funções.
+function _opMinutosTrabalhados(ini, fim) {
+  const bruto = fim - ini;
+  if (!(bruto > 0)) return 0;
+  let pausa = 0;
+  _opPausasDaJornada().forEach(p => {
+    const ov = Math.min(fim, p.fim) - Math.max(ini, p.ini);
+    if (ov > 0) pausa += ov;
+  });
+  const liquido = bruto - pausa;
+  return liquido > 0 ? liquido : bruto;
+}
 
 // Índice das horas marcadas do cadastro de Funções (o campo "todo dia às").
 // É cache porque `_opHorarioDeRotina` é perguntado aos milhares por clique — o
@@ -9970,7 +10033,16 @@ function _opTempoMedioDaReferencia() {
     document.getElementById('op-funcao')?.value,
     document.getElementById('op-operacao')?.value);
   const podeEscreverCad = _opDuracaoDoForm() === 0 || h.dataset.auto === '1' || m.dataset.auto === '1';
-  if (cad > 0 && podeEscreverCad) {
+  // O CADASTRO MANDA sobre a medição. Este número é a decisão da casa para
+  // ESTA operação; o medido, logo abaixo, é a média da grade — e quando os dois
+  // nomes não casam com nenhuma fase, "o medido" vira a SOMA de todas as fases,
+  // o enfesto inteiro. Era assim que um enfesto de gola cadastrado com 15 min
+  // nascia no plano com horas: o cadastro era escrito aqui e apagado três linhas
+  // abaixo, sem que nada na tela dissesse que tinha sido trocado.
+  // O número medido continua aparecendo no texto, para quem quiser usá-lo poder
+  // digitá-lo — o que não acontece mais é a troca em silêncio.
+  const veioDoCadastro = cad > 0 && podeEscreverCad;
+  if (veioDoCadastro) {
     h.value = Math.floor(cad / 60) || '';
     m.value = cad % 60 || (Math.floor(cad / 60) ? 0 : '');
     h.dataset.auto = '1'; m.dataset.auto = '1';
@@ -9989,7 +10061,8 @@ function _opTempoMedioDaReferencia() {
     return;
   }
   const podeEscrever = _opDuracaoDoForm() === 0 || h.dataset.auto === '1' || m.dataset.auto === '1';
-  if (r.aplicavel && podeEscrever) {
+  const escreveuMedido = r.aplicavel && podeEscrever && !veioDoCadastro;
+  if (escreveuMedido) {
     h.value = Math.floor(r.min / 60) || '';
     m.value = r.min % 60 || (Math.floor(r.min / 60) ? 0 : '');
     h.dataset.auto = '1'; m.dataset.auto = '1';
@@ -10007,11 +10080,23 @@ function _opTempoMedioDaReferencia() {
     ? ` — medido em ${r.n === 1 ? 'uma OS' : r.n + ' OS'}: ${r.osNums.slice(0, 3).map(camadasDe).join(', ')}`
     : '';
   const camadasAqui = os.enfesto && os.enfesto.camadas;
+  // O QUE ACONTECEU COM A DURAÇÃO, dito por extenso. São quatro desfechos e cada
+  // um precisa aparecer, senão o campo muda (ou não muda) sem explicação:
+  //   • o cadastro segurou o número — e o medido fica à vista, para quem quiser;
+  //   • o medido preencheu, por não haver cadastro para esta operação;
+  //   • o usuário digitou e nada foi mexido;
+  //   • a operação não é de enfesto, então o medido é só informação.
+  const desfecho = !r.aplicavel
+    ? ' — informativo: esta operação não é de enfesto, então a duração não foi preenchida.'
+    : veioDoCadastro
+      ? ` — a duração ficou com o <b>tempo cadastrado nesta função</b> (${esc(_opDurTexto(cad))}), que é o que vale para esta operação. `
+        + `O medido acima é a média da grade${r.rotulo ? ` (${esc(r.rotulo)})` : ''}; se for ele que vale para este lote, digite-o.`
+      : escreveuMedido
+        ? ' — <b>preenchido na duração</b>.'
+        : ' — a duração digitada foi mantida.';
   box.innerHTML = `OS <b>${esc(os.os || '—')}</b>${camadasAqui ? ` (${esc(camadasAqui)} camadas)` : ''} · grade <b>${esc(_gradeNomeDaOS(os))}</b>: `
     + `<b>${esc(_opDurTexto(r.min))}</b>${esc(origem)}`
-    + (r.aplicavel
-      ? (podeEscrever ? ' — <b>preenchido na duração</b>.' : ' — a duração digitada foi mantida.')
-      : ' — informativo: esta operação não é de enfesto, então a duração não foi preenchida.');
+    + desfecho;
   _opAtualizarJanela();
 }
 
@@ -16924,7 +17009,11 @@ function _mediaTempoFasesSimilares(o) {
       const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
       if (ini == null || fim == null || fim <= ini) return;
       if (!acc[nome]) acc[nome] = { soma: 0, n: 0 };
-      acc[nome].soma += (fim - ini); acc[nome].n++;
+      // Sem pausa, como em toda média de enfesto do programa. A duração desta
+      // fase (`_enfDuracaoFase`) é apurada do mesmo jeito — se só um dos dois
+      // lados descontasse, todo enfesto que atravessa o almoço apareceria
+      // "acima da média" sem nunca ter passado do tempo.
+      acc[nome].soma += _opMinutosTrabalhados(ini, fim); acc[nome].n++;
     });
   });
   const out = {};
@@ -16941,12 +17030,17 @@ const _ENF_TOL_PCT = 0.25, _ENF_TOL_MIN = 10;
 
 // Duração lançada numa fase (minutos), ou null quando falta horário. `invertido`
 // marca o caso fim ≤ início, que é erro de digitação e não duração.
+// `min` é TEMPO DE TRABALHO — o café e o almoço que caem entre os dois horários
+// saem da conta, como em toda média de enfesto do programa. `bruto` é o que o
+// relógio andou, e `pausa` a diferença: é com eles que a folha explica por que o
+// número mostrado não é a subtração dos dois horários lançados.
 function _enfDuracaoFase(o, ord) {
   const t = ((o.progresso || {}).enfestosTempos || {})[ord] || {};
   const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
   if (ini == null || fim == null) return { min: null, invertido: false };
   if (fim <= ini) return { min: null, invertido: true };
-  return { min: fim - ini, invertido: false };
+  const min = _opMinutosTrabalhados(ini, fim);
+  return { min, bruto: fim - ini, pausa: (fim - ini) - min, invertido: false };
 }
 
 // Confere o tempo lançado na fase contra a média das OS de referência (mesma
@@ -16955,15 +17049,15 @@ function _enfDuracaoFase(o, ord) {
 function _enfConferirTempoFase(o, ord) {
   // ord pode vir como número (render) ou string (dataset do DOM).
   const fase = (o.fases || []).find(f => String(f.ordem) === String(ord)) || {};
-  const { min, invertido } = _enfDuracaoFase(o, ord);
+  const { min, pausa, invertido } = _enfDuracaoFase(o, ord);
   if (invertido) return { veredito: 'invertido' };
   if (min == null) return { veredito: 'vazio' };
   const med = _mediaTempoFasesSimilares(o)[_normFaseNome(fase.nome)];
-  if (!med) return { veredito: 'sem-ref', min };
+  if (!med) return { veredito: 'sem-ref', min, pausa };
   const tol = Math.max(_ENF_TOL_MIN, Math.round(med.mediaMin * _ENF_TOL_PCT));
   const dif = min - med.mediaMin;
   const veredito = Math.abs(dif) <= tol ? 'ok' : (dif > 0 ? 'acima' : 'abaixo');
-  return { veredito, min, dif, tol, mediaMin: med.mediaMin, n: med.n };
+  return { veredito, min, pausa, dif, tol, mediaMin: med.mediaMin, n: med.n };
 }
 
 // Conteúdo do selo que vai ao lado dos campos de horário da fase: a duração
@@ -16979,7 +17073,11 @@ function _enfSeloTempoHtml(o, ord) {
   if (r.veredito === 'invertido') {
     return `<span style="${vermelho}" title="O horário de fim é anterior (ou igual) ao de início">⚠ fim antes do início</span>`;
   }
-  const gasto = `<span style="${cinza}">= ${dur(r.min)}</span>`;
+  // PAUSA DESCONTADA: sem esta explicação, "11:15 → 14:00 = 1h15" se lê como
+  // conta errada. O número é o tempo de trabalho; a diferença é o almoço.
+  const gasto = r.pausa > 0
+    ? `<span style="${cinza}" title="O relógio andou ${_opDurTexto(r.pausa + r.min)}, mas ${_opDurTexto(r.pausa)} disso é pausa da fábrica (café/almoço) que cai dentro deste intervalo. O que conta como tempo de enfesto é o trabalho.">= ${dur(r.min)} <span style="font-size:5pt;">(−${dur(r.pausa)} de pausa)</span></span>`
+    : `<span style="${cinza}">= ${dur(r.min)}</span>`;
   if (r.veredito === 'sem-ref' || r.veredito === 'ok') return gasto;
   const sinal = r.dif > 0 ? '+' : '−';
   const palavra = r.veredito === 'acima' ? 'acima' : 'abaixo';
@@ -17031,7 +17129,9 @@ function temposFasesDaGrade(gradeId) {
       const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
       if (ini == null || fim == null || fim <= ini) return;
       const e = pegar(norm, (f.nome || '').trim());
-      e.mins.push(fim - ini);
+      // Desconta o café e o almoço que caem dentro do horário lançado: o que
+      // interessa é quanto o enfesto LEVOU, não quanto tempo o relógio andou.
+      e.mins.push(_opMinutosTrabalhados(ini, fim));
       const num = (o.os || '').toString().trim();
       if (num) e.osNums.add(num);
     });
