@@ -1721,6 +1721,45 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   border: 1px dashed rgba(0, 0, 0, .18);
 }
 
+/* QUADROS da janela de operações da função. A lista tem duas metades que se
+   decidem de formas diferentes — a FILA, cuja ordem é escolhida com as setas, e
+   a HORA MARCADA, cuja ordem é o relógio. Vinham uma embaixo da outra, sem nada
+   entre elas: vinte linhas iguais, e as setas sumindo no meio sem explicação. */
+.func-op-grupo {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 8px 10px 6px;
+  margin-bottom: 10px;
+  background: var(--paper);
+}
+.func-op-grupo.vazio { display: none; }
+.func-op-grupo-tit {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 2px;
+}
+.func-op-grupo-tit .n {
+  font-size: 10px;
+  color: var(--ink-3);
+  opacity: .7;
+}
+.func-op-grupo-tit .n:not(:empty)::before { content: '· '; }
+.func-op-grupo-nota {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+/* A de hora marcada é a exceção da tela: fundo levemente distinto para que se
+   veja, de relance, que aquele bloco não obedece à fila. */
+.func-op-grupo[data-grupo="hora"] { background: var(--line-2); }
+
 /* Linha do editor de operações da função: nome + tempo que ela costuma levar +
    o horário fixo opcional ("todo dia às"), para a operação de hora marcada. */
 .func-op-row {

@@ -2656,15 +2656,65 @@ function _funcOpTemHora(row) {
 // de formas diferentes, e misturá-las na mesma lista fazia parecer que a hora do
 // café dependia de onde ele estava escrito. A ordem das de hora marcada não
 // precisa de seta nenhuma: ela já está no próprio horário.
+// Os DOIS QUADROS da janela. A lista sempre teve duas metades que se decidem de
+// formas diferentes — a FILA, onde a ordem é escolhida com as setas, e a HORA
+// MARCADA, onde quem ordena é o relógio —, mas na tela elas vinham uma embaixo
+// da outra, sem nada entre as duas. Quem abria via vinte linhas iguais e as
+// setas sumindo no meio delas, sem entender por quê.
+// Cada quadro tem título, contagem e uma linha dizendo por que aquelas estão
+// juntas. Vazio, o quadro some — quadro sem conteúdo é moldura à toa.
+const _FUNC_OP_GRUPOS = [
+  { id: 'fila', titulo: 'Fila do posto',
+    nota: 'A ordem aqui é a ordem em que este posto trabalha, e é ela que o planejamento segue. Use ↑↓.' },
+  { id: 'hora', titulo: 'Hora marcada',
+    nota: 'Acontecem todo dia na hora cadastrada, esteja onde estiver na lista. Não têm fila — por isso não têm setas.' }
+];
+
+function _funcOpQuadro(cont, g) {
+  let box = cont.querySelector(`.func-op-grupo[data-grupo="${g.id}"]`);
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'func-op-grupo';
+    box.dataset.grupo = g.id;
+    box.innerHTML = `<div class="func-op-grupo-tit"><span>${esc(g.titulo)}</span><span class="n"></span></div>`
+      + `<div class="func-op-grupo-nota">${esc(g.nota)}</div>`
+      + `<div class="func-op-grupo-corpo"></div>`;
+    cont.appendChild(box);
+  }
+  return box;
+}
+
+// Põe a lista em ordem: primeiro a FILA, na ordem que o usuário deu com as
+// setas; depois as de HORA MARCADA, ordenadas pelo relógio. As duas se decidem
+// de formas diferentes, e misturá-las na mesma lista fazia parecer que a hora do
+// café dependia de onde ele estava escrito. A ordem das de hora marcada não
+// precisa de seta nenhuma: ela já está no próprio horário.
 function _funcOpOrdenarFixas() {
   const cont = document.getElementById('m-func-ops');
   if (!cont) return;
   const rows = Array.from(cont.querySelectorAll('.func-op-row'));
-  if (!rows.length) return;
   const hora = r => String(r.querySelector('.func-op-fixo')?.value || '').trim();
   const fila = rows.filter(r => !_funcOpTemHora(r));
   const fixas = rows.filter(_funcOpTemHora).sort((a, b) => hora(a).localeCompare(hora(b)));
-  fila.concat(fixas).forEach(r => cont.appendChild(r));
+  // Os quadros existem SEMPRE, mesmo vazios: eles são criados aqui e escondidos
+  // logo abaixo. Criá-los só quando há linha faria o primeiro café cadastrado
+  // aparecer solto, fora de quadro nenhum, até o próximo redesenho.
+  const caixas = _FUNC_OP_GRUPOS.map(g => _funcOpQuadro(cont, g));
+  const conteudo = { fila, hora: fixas };
+  _FUNC_OP_GRUPOS.forEach((g, i) => {
+    const box = caixas[i];
+    const corpo = box.querySelector('.func-op-grupo-corpo');
+    // `appendChild` MOVE o elemento — a linha sai de onde estava e entra aqui,
+    // na ordem em que este laço a visita. É o mesmo mecanismo de antes; o que
+    // muda é o destino.
+    conteudo[g.id].forEach(r => corpo.appendChild(r));
+    const n = conteudo[g.id].length;
+    box.querySelector('.n').textContent = n ? `${n}` : '';
+    box.classList.toggle('vazio', !n);
+  });
+  // Os quadros vão para o fim do container, nesta ordem, para ficarem abaixo de
+  // qualquer linha recém-criada que ainda esteja solta.
+  caixas.forEach(b => cont.appendChild(b));
 }
 
 function moverOperacaoFuncao(btn, dir) {
@@ -2753,6 +2803,11 @@ function addOperacaoFuncaoRow(op = {}) {
     <div class="func-op-nota"></div>`;
   cont.appendChild(div);
   _funcOpNotaDeEnfesto(div);
+  // A linha nasce solta no container e é o ordenador que a põe no quadro certo —
+  // fila ou hora marcada, conforme o campo "todo dia às". Sem esta chamada, a
+  // operação recém-adicionada ficaria fora dos dois quadros até alguém mexer
+  // noutra coisa.
+  _funcOpOrdenarFixas();
 }
 
 // O ENFESTO tem um tempo que MUDA com a fase: depende do modelo, da grade e de
