@@ -18963,18 +18963,24 @@ function renderRiscoResultado() {
 
     const atual = L.res.fase ? `${fmt(L.res.fase.comp || '—')} × ${fmt(L.res.fase.larg || '—')}` : '—';
     const compCad = _riscoCompCadastro(L.comprimento, (L.res.fase || {}).tecidoId);
-    const novo = `${fmt(compCad != null ? compCad.toFixed(2) : null)} × ${fmt(L.largura != null ? L.largura.toFixed(3) : null)}`;
+    // SEM MEDIDA, dito com todas as letras. Um "— × —" nesta coluna se lê como
+    // "não mudou nada", quando o que houve foi o programa não achar comprimento
+    // e largura no relatório — e é isso que impede a linha de ser aplicada.
+    const semMedida = !_riscoTemMedida(L);
+    const novo = semMedida
+      ? '<span title="O programa não achou comprimento e largura neste relatório. Sem eles não há o que gravar na fase — confira se o PDF é o relatório de encaixe do CAD, e não outra folha.">o PDF não trouxe medida</span>'
+      : `${fmt(compCad != null ? compCad.toFixed(2) : null)} × ${fmt(L.largura != null ? L.largura.toFixed(3) : null)}`;
     const mudou = L.res.fase && (_riscoF(L.res.fase.comp) !== (compCad == null ? null : +compCad.toFixed(2))
       || _riscoF(L.res.fase.larg) !== (L.largura == null ? null : +L.largura.toFixed(3)));
     return `<tr>
-      <td style="text-align:center;"><input type="checkbox" ${L.aplicar ? 'checked' : ''} ${L.grade && L.res.fase ? '' : 'disabled'} onchange="riscoMarcar(${i}, this.checked)"></td>
+      <td style="text-align:center;"><input type="checkbox" ${L.aplicar ? 'checked' : ''} ${L.grade && L.res.fase && !semMedida ? '' : 'disabled'} onchange="riscoMarcar(${i}, this.checked)"></td>
       <td style="font-size:11px;">${esc(L.arquivo)}</td>
       <td style="font-size:12px;">${_riscoCelulaGrade(L, i)}</td>
       <td>${selFase}<div style="margin-top:2px;">${selo}</div></td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${mudou ? 'color:var(--alert);' : ''}">${esc(novo)}
-        <div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento != null ? L.comprimento.toFixed(2) : '—'))} + ${excedenteEnfestoCm((L.res.fase || {}).tecidoId)} cm</div></td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${(mudou || semMedida) ? 'color:var(--alert);' : ''}">${semMedida ? novo : esc(novo)}
+        ${semMedida ? '' : `<div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento.toFixed(2)))} + ${excedenteEnfestoCm((L.res.fase || {}).tecidoId)} cm</div>`}</td>
       <td style="font-size:11px;">${L.gramatura ? esc(L.gramatura + ' g/m²') : ''}${L.aproveitamento ? ' · ' + esc(L.aproveitamento + '%') : ''}</td>
     </tr>`;
   }).join('');
@@ -19009,6 +19015,18 @@ function riscoMarcar(i, marcado) {
 // Escolher a grade quando várias têm os mesmos tamanhos. Trocar a grade refaz a
 // escolha da FASE: as fases são de cada grade, e a que estava selecionada não
 // existe na nova.
+// O PDF trouxe MEDIDA? Sem comprimento e largura não há o que aplicar — é o
+// único conteúdo que o relatório existe para entregar. Uma regra só, usada em
+// todo lugar: a leitura marcava `aplicar` conferindo a medida, mas trocar a
+// grade ou a fase remarcava sem conferir nada. Numa grade como a "P ao G3 |
+// BM.LISA | 177cm", onde DOZE cadastros têm os mesmos tamanhos, escolher a
+// grade na lista é obrigatório — então bastava um PDF sem medida para a linha
+// ficar marcada, o botão dizer "Aplicar 1 fase(s)" e o clique estourar em
+// silêncio no `.toFixed` de um `null`. Nada salvo, nenhum aviso, nenhuma pista.
+function _riscoTemMedida(L) {
+  return !!L && L.comprimento != null && L.largura != null;
+}
+
 function riscoTrocarGrade(i, id) {
   const L = _riscoLeituras[i];
   if (!L) return;
@@ -19018,7 +19036,7 @@ function riscoTrocarGrade(i, id) {
   L.res = L.grade
     ? _riscoResolverOuPropor(L, L.grade)
     : { fase: null, origem: L.forcarNova ? 'grade nova' : ((L.grades || []).length ? 'escolher grade' : 'sem grade') };
-  L.aplicar = !!(L.grade && L.res.fase);
+  L.aplicar = !!(L.grade && L.res.fase) && _riscoTemMedida(L);
   renderRiscoResultado();
 }
 
@@ -19031,13 +19049,13 @@ function riscoTrocarFase(i, nome) {
     // vai preenchê-la —, e por isso a coluna "Cadastro" mostra "—" e tudo o que
     // vem do PDF conta como mudança.
     L.res = { fase: _riscoFaseNovaEmBranco(L), origem: 'fase nova', folga: null };
-    L.aplicar = !!(L.res.fase.nome && L.comprimento != null && L.largura != null);
+    L.aplicar = !!L.res.fase.nome && _riscoTemMedida(L);
     renderRiscoResultado();
     return;
   }
   const f = (L.grade.fases || []).find(x => x.nome === nome);
   L.res = { fase: f || null, origem: f ? 'escolhida por você' : 'indefinida', folga: null };
-  L.aplicar = !!f;
+  L.aplicar = !!f && _riscoTemMedida(L);
   renderRiscoResultado();
 }
 
@@ -19057,7 +19075,7 @@ function riscoNomeFaseNova(i, nome) {
   const L = _riscoLeituras[i];
   if (!L || !L.res || !L.res.fase || !L.res.fase.__nova) return;
   L.res.fase.nome = String(nome || '').trim();
-  L.aplicar = !!(L.res.fase.nome && L.comprimento != null && L.largura != null);
+  L.aplicar = !!L.res.fase.nome && _riscoTemMedida(L);
   const btn = document.getElementById('btn-risco-aplicar');
   const n = _riscoLeituras.filter(x => x.aplicar).length;
   if (btn) { btn.style.display = n ? '' : 'none'; btn.textContent = `Aplicar ${n} fase(s) nas grades`; }
@@ -19065,7 +19083,17 @@ function riscoNomeFaseNova(i, nome) {
 
 async function aplicarRiscoNasGrades() {
   if (!exigirEdicao('importar risco de PDF')) return;
-  const alvo = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
+  // SEM MEDIDA fica de fora, e é DITO. Antes esta linha entrava em `alvo` e
+  // estourava logo abaixo, no `.toFixed` de um `_riscoCompCadastro(null)` — a
+  // função morria no meio, nada era gravado e a tela não dizia nada. O usuário
+  // clicava "Aplicar" e não acontecia coisa nenhuma.
+  const marcadas = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
+  const alvo = marcadas.filter(_riscoTemMedida);
+  const semMedida = marcadas.filter(L => !_riscoTemMedida(L));
+  if (semMedida.length) {
+    toast(`${semMedida.length} PDF(s) sem comprimento/largura — não há o que gravar: `
+      + semMedida.map(L => L.arquivo).join(', '), 'err');
+  }
   if (!alvo.length) return toast('Nada marcado para aplicar', 'err');
   // Fase nova sem nome não tem como ser criada — e sem esta checagem ela viraria
   // uma fase chamada "" na grade, que ninguém consegue apontar depois.
