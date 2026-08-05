@@ -78,8 +78,8 @@ backup próprio.
   Cópia do código deste ponto em
   `backups-codigo/*.20260805e-tipo-enfesto.CÓPIA`.
 
-- **DADOS:** exportação de **05/08/2026 15:05**, em
-  `backups/BACKUP-COMPLETO-2026-08-05T15-05-08.json` (2,46 MB, 29 chaves, 1701
+- **DADOS:** exportação de **05/08/2026 20:29**, em
+  `backups/BACKUP-COMPLETO-2026-08-05T20-29-49.json` (2,46 MB, 29 chaves, 1701
   registros): **182 OS**, 115 grades, 25 desenhos, **1157 operações**, 46 cargas
   de expedição, 49 mov. de estoque, 11 tecidos, 37 cores, 11 funções, 10 pessoas
   na equipe, 6 modelos, 15 etapas, 17 componentes, 4 materiais.
@@ -88,6 +88,20 @@ backup próprio.
   > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
   > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
   > ver a seção 2 abaixo.
+
+  **É o primeiro retrato com o cadastro por TIPO DE ENFESTO em uso.** Contra a
+  exportação das 15:05 do mesmo dia, nenhuma contagem mudou — o que mudou está
+  dentro das funções: o **Operador de enfestadeira** passou de 4 para 21 linhas,
+  **17 delas com tipo e passo gravados** (CM.LISA, CM.REC, CM.TRI). As outras
+  cinco funções seguem inteiras sem tipo, valendo para todos como antes.
+
+  > **Cadastro a rever neste retrato** (ver a seção "Tempo do enfesto por fase"
+  > mais abaixo): há **mais de uma linha do passo Enfesto no mesmo tipo** — em
+  > CM.REC são quatro (Corpo parte 1, 2, 3 e Gola). O programa usa UMA por
+  > passo e por tipo, e a que vence é a que tem tempo: hoje, a **Gola de 15 min**
+  > responderia pelo enfesto de todas as fases de uma OS CM.REC. O tempo POR
+  > FASE não mora aqui — mora no cadastro da GRADE, campo "tempo de enfesto" de
+  > cada fase, que ganha desta linha.
 
   Contra o de 04/08 17:23:
   - **operações: 173 → 1157 (+984).** Não é planejamento novo de OS: é a rotina
@@ -105,6 +119,25 @@ backup próprio.
   comprimento**. É o que a importação de riscos existe para preencher — e é o
   que os três defeitos acima impediam de colar. Vale reimportar os riscos dessas
   grades com este ponto de código no ar.
+
+  #### Tempo do enfesto por fase — onde cada número mora
+
+  Três cadastros diferentes parecem o mesmo e não são. Da fonte mais específica
+  para a mais geral, que é a ordem em que o programa pergunta:
+
+  1. **medição** — os horários de início/fim lançados na folha da OS, daquela
+     fase naquela grade. Manda sempre que existe, para mais e para menos, e
+     desde este ponto de código é apurada **sem as pausas dentro**;
+  2. **cadastro da GRADE, campo de cada fase** ("tempo de enfesto" no cadastro
+     da grade). É **um número por pano** — é aqui que "Corpo parte 1", "Corpo
+     parte 3" e "Gola" têm tempos diferentes;
+  3. **cadastro da FUNÇÃO, uma linha por tipo** (o que foi feito neste retrato).
+     É **um número por produto**, não por fase: o piso que segura o planejamento
+     enquanto aquela fase nunca foi cronometrada.
+
+  Por isso repetir o passo *Enfesto* várias vezes no mesmo tipo, uma por fase,
+  não faz o que parece: o programa escolhe uma só. Uma linha "Enfesto" por tipo,
+  com o tempo típico daquele produto; o resto vai na grade, fase a fase.
 
 ### Ponto anterior a este
 
