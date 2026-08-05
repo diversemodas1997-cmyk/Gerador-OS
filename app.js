@@ -18135,11 +18135,22 @@ function _riscoResolverFase(leitura, grade) {
 
   // 3) MEDIDA: largura dá a família do tecido; dentro dela, o comprimento mais
   //    próximo dá a fase. Só vale quando a fase já tem medida cadastrada.
-  const mesmaLarg = fases.filter(f => {
-    const l = _riscoF(f.larg);
-    return l != null && leitura.largura != null && Math.abs(l - leitura.largura) < 0.06;
-  });
-  const pool = (mesmaLarg.length ? mesmaLarg : fases).filter(f => _riscoF(f.comp) != null);
+  const comLarg = fases.filter(f => _riscoF(f.larg) != null);
+  const mesmaLarg = comLarg.filter(f => leitura.largura != null
+    && Math.abs(_riscoF(f.larg) - leitura.largura) < 0.06);
+  // A LARGURA É O PANO; o comprimento é o que se está corrigindo.
+  //
+  // Nenhuma fase da grade tem a largura deste risco, mas TODAS têm largura
+  // cadastrada? Então este pano não é de nenhuma delas — e o comprimento não
+  // tem autoridade para dizer o contrário, porque ele é exatamente o número
+  // que veio ser corrigido. Sem esta trava, o comprimento mais próximo vencia
+  // sempre, por pior que fosse: um risco de RIBANA de 1,68 × 0,542 numa grade
+  // que só tem Corpo (10,29 × 1,750) saía marcado "pela medida" como se fosse
+  // o corpo, e aplicar trocava o comprimento do corpo por um oitavo dele.
+  // A largura, essa, quase não muda entre o cadastro e o risco: ela é a do
+  // tecido. É por isso que ela pode barrar e o comprimento não.
+  const larguraDescarta = leitura.largura != null && comLarg.length > 0 && !mesmaLarg.length;
+  const pool = larguraDescarta ? [] : (mesmaLarg.length ? mesmaLarg : fases).filter(f => _riscoF(f.comp) != null);
   if (pool.length && leitura.comprimento != null) {
     // Compara com a medida DE CADASTRO (já com o excedente), não com a do
     // relatório: senão toda fase pareceria estar o excedente inteiro fora.
@@ -18168,7 +18179,32 @@ function _riscoResolverFase(leitura, grade) {
 
   // 5) fases sem medida ainda: sobra a largura sozinha, se ela isolar uma.
   if (mesmaLarg.length === 1) return { fase: mesmaLarg[0], origem: 'largura', folga: null };
-  return { fase: null, origem: 'indefinida', folga: null };
+  // NÃO IDENTIFICADA. Dizer POR QUE muda o que o usuário faz em seguida: quando
+  // foi a largura que descartou todas, o provável é que a grade não tenha essa
+  // fase ainda — e o certo é criá-la, não escolher uma qualquer da lista.
+  return { fase: null, origem: larguraDescarta ? 'largura não bate' : 'indefinida', folga: null,
+    faseNovaSugerida: _riscoNomeFaseSugerido(leitura) };
+}
+
+// A resolução da fase, mais a PROPOSTA de criar a que falta.
+//
+// Quando foi a LARGURA que descartou todas as fases da grade, não é que o
+// programa não soube escolher: é que aquele pano não está cadastrado ali. Deixar
+// a linha em "— escolher —" empurra o usuário a apontar uma fase qualquer, e a
+// única da lista costuma ser o Corpo — que então recebe a medida da ribana.
+// Nesse caso a linha já chega propondo CRIAR a fase, com o nome que o arquivo
+// diz. Continua sendo proposta: o seletor mostra as fases existentes, e a
+// tabela só grava quando o usuário aplica.
+//
+// "Não identificada" por outro motivo (medida apertada, empate de nome) segue em
+// "— escolher —": ali as fases da grade são candidatas de verdade, e propor uma
+// fase nova criaria duplicata do que já existe.
+function _riscoResolverOuPropor(L, grade) {
+  const res = _riscoResolverFase(L, grade);
+  if (res.fase || res.origem !== 'largura não bate') return res;
+  const nova = _riscoFaseNovaEmBranco(L);
+  if (!nova.nome) return res;   // sem nome para sugerir, não há o que propor
+  return { fase: nova, origem: 'fase nova (sugerida)', folga: null };
 }
 
 /* ---------------- criar grade NOVA a partir dos riscos ---------------- */
@@ -18669,7 +18705,7 @@ async function criarGradeDoRisco(gi) {
     if (L.erro) return;
     L.grades = _riscoGradesQueCasam(L.tamanhos);
     L.grade = L.grades.length === 1 ? L.grades[0] : null;
-    L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
+    L.res = L.grade ? _riscoResolverOuPropor(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
     L.aplicar = false;   // já foi gravado na criação
   });
   renderRiscoResultado();
@@ -18710,7 +18746,7 @@ async function lerRiscosEscolhidos(ev) {
       const L = await _riscoLerPdf(f);
       L.grades = _riscoGradesQueCasam(L.tamanhos);
       L.grade = L.grades.length === 1 ? L.grades[0] : null;
-      L.res = L.grade ? _riscoResolverFase(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
+      L.res = L.grade ? _riscoResolverOuPropor(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
       L.aplicar = !!(L.grade && L.res.fase && L.comprimento && L.largura);
       _riscoLeituras.push(L);
     } catch (e) {
@@ -18762,6 +18798,9 @@ function renderRiscoResultado() {
       'nome do arquivo': '<span class="exp-badge baixo" title="O conteúdo não decidiu — valeu o nome do arquivo. Confira.">pelo nome</span>',
       'largura': '<span class="exp-badge baixo" title="Só a largura isolou esta fase.">pela largura</span>',
       'indefinida': '<span class="exp-badge alto">não identificada</span>',
+      'largura não bate': '<span class="exp-badge alto" title="Nenhuma fase desta grade tem a largura deste risco. Este pano não é de nenhuma delas — provavelmente a grade ainda não tem esta fase. Crie-a no seletor acima em vez de apontar uma existente.">largura não bate com fase nenhuma</span>',
+      'fase nova': '<span class="exp-badge ok" title="Esta fase será CRIADA na grade, com as medidas do risco.">vai criar a fase</span>',
+      'fase nova (sugerida)': '<span class="exp-badge baixo" title="Nenhuma fase desta grade tem a largura deste risco, e o nome do arquivo diz de que peça ele é. A fase será CRIADA — confira o nome, ou escolha uma fase existente no seletor.">criar esta fase · confira</span>',
       'escolher grade': '<span class="exp-badge baixo" title="Mais de uma grade tem exatamente estes tamanhos. Escolha ao lado em qual lançar.">escolha a grade</span>',
       'sem grade': '<span class="exp-badge alto">grade não encontrada</span>',
       'grade nova': '<span class="exp-badge ok">vai virar grade nova</span>',
@@ -18769,10 +18808,20 @@ function renderRiscoResultado() {
     }[L.res.origem] || `<span class="exp-badge alto">${esc(L.res.origem)}</span>`;
 
     const fases = L.grade ? (L.grade.fases || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) : [];
+    // CRIAR A FASE QUE FALTA. Sem esta opção, um risco de RIBANA numa grade que
+    // só tem Corpo era um beco sem saída: o seletor só oferecia as fases que
+    // existem, e a única saída à mão era apontar o Corpo — que aplicaria a
+    // medida da ribana por cima da medida do corpo. O assistente de PASTA já
+    // criava fase nova (`__nova__`); esta tela ficou para trás, como o seletor
+    // de grade tinha ficado antes.
+    const ehNova = !!(L.res.fase && L.res.fase.__nova);
     const selFase = L.grade ? `<select onchange="riscoTrocarFase(${i}, this.value)" style="font-size:12px;">
         <option value="">— escolher —</option>
-        ${fases.map(f => `<option value="${esc(f.nome)}" ${L.res.fase && f.nome === L.res.fase.nome ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
-      </select>` : '—';
+        ${fases.map(f => `<option value="${esc(f.nome)}" ${!ehNova && L.res.fase && f.nome === L.res.fase.nome ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}
+        <option value="__nova__" ${ehNova ? 'selected' : ''}>➕ criar fase nova</option>
+      </select>${ehNova ? `
+      <input type="text" value="${esc(L.res.fase.nome || '')}" placeholder="Nome da fase" title="Nome da fase que será CRIADA nesta grade"
+        oninput="riscoNomeFaseNova(${i}, this.value)" style="font-size:12px;width:100%;margin-top:3px;">` : ''}` : '—';
 
     const atual = L.res.fase ? `${fmt(L.res.fase.comp || '—')} × ${fmt(L.res.fase.larg || '—')}` : '—';
     const compCad = _riscoCompCadastro(L.comprimento, (L.res.fase || {}).tecidoId);
@@ -18829,7 +18878,7 @@ function riscoTrocarGrade(i, id) {
   L.forcarNova = id === '__nova__';
   L.grade = L.forcarNova ? null : ((L.grades || []).find(g => g.id === id) || null);
   L.res = L.grade
-    ? _riscoResolverFase(L, L.grade)
+    ? _riscoResolverOuPropor(L, L.grade)
     : { fase: null, origem: L.forcarNova ? 'grade nova' : ((L.grades || []).length ? 'escolher grade' : 'sem grade') };
   L.aplicar = !!(L.grade && L.res.fase);
   renderRiscoResultado();
@@ -18839,18 +18888,55 @@ function riscoTrocarFase(i, nome) {
   const L = _riscoLeituras[i];
   if (!L || !L.grade) return;
   _riscoNovaColetar();   // este render tambem redesenha os blocos de grade nova
+  if (nome === '__nova__') {
+    // Fase que ainda NÃO EXISTE na grade. Nasce vazia de medida — é o risco que
+    // vai preenchê-la —, e por isso a coluna "Cadastro" mostra "—" e tudo o que
+    // vem do PDF conta como mudança.
+    L.res = { fase: _riscoFaseNovaEmBranco(L), origem: 'fase nova', folga: null };
+    L.aplicar = !!(L.res.fase.nome && L.comprimento != null && L.largura != null);
+    renderRiscoResultado();
+    return;
+  }
   const f = (L.grade.fases || []).find(x => x.nome === nome);
   L.res = { fase: f || null, origem: f ? 'escolhida por você' : 'indefinida', folga: null };
   L.aplicar = !!f;
   renderRiscoResultado();
 }
 
+// Uma fase EM BRANCO para receber este risco. O nome sai do que o programa já
+// sabe: o que foi ensinado para aquele par produto+tecido, senão a peça escrita
+// no nome do arquivo ("BM.LISA - RIBANA - …" → "Ribana"), senão o código do
+// tecido. O tecido vem da memória de importações anteriores, quando há.
+function _riscoFaseNovaEmBranco(L) {
+  const chave = _riscoChave(L);
+  const tecidoId = (chave && _riscoTecidos()[chave]) || '';
+  return { __nova: true, nome: _riscoNomeFaseSugerido(L) || '', comp: '', larg: '', tecidoId, unidades: 2, bobinas: '' };
+}
+
+// O nome digitado para a fase nova. Não redesenha a tabela — redesenhar tiraria
+// o foco do campo a cada tecla.
+function riscoNomeFaseNova(i, nome) {
+  const L = _riscoLeituras[i];
+  if (!L || !L.res || !L.res.fase || !L.res.fase.__nova) return;
+  L.res.fase.nome = String(nome || '').trim();
+  L.aplicar = !!(L.res.fase.nome && L.comprimento != null && L.largura != null);
+  const btn = document.getElementById('btn-risco-aplicar');
+  const n = _riscoLeituras.filter(x => x.aplicar).length;
+  if (btn) { btn.style.display = n ? '' : 'none'; btn.textContent = `Aplicar ${n} fase(s) nas grades`; }
+}
+
 async function aplicarRiscoNasGrades() {
   if (!exigirEdicao('importar risco de PDF')) return;
   const alvo = _riscoLeituras.filter(L => L.aplicar && L.grade && L.res.fase);
   if (!alvo.length) return toast('Nada marcado para aplicar', 'err');
+  // Fase nova sem nome não tem como ser criada — e sem esta checagem ela viraria
+  // uma fase chamada "" na grade, que ninguém consegue apontar depois.
+  const semNome = alvo.filter(L => L.res.fase.__nova && !String(L.res.fase.nome || '').trim());
+  if (semNome.length) return toast('Dê um nome à fase nova antes de aplicar', 'err');
   const mudancas = alvo.map(L =>
-    `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`);
+    L.res.fase.__nova
+      ? `${L.arquivo} → ${L.grade.nome} · CRIAR a fase "${L.res.fase.nome}": ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`
+      : `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`);
   // DOIS RISCOS NA MESMA FASE é sempre erro: cada PDF é uma fase, e um grava por
   // cima do outro sem deixar rastro. Era o que acontecia com os três "Corpo Parte
   // N" do tricolor, e o aviso final ainda dizia que três fases tinham mudado.
@@ -18868,9 +18954,22 @@ async function aplicarRiscoNasGrades() {
     + 'O programa também vai guardar a que fase corresponde cada código de tecido, para reconhecer sozinho na próxima vez.')) return;
 
   const tocadas = new Set();
+  const criadas = [];
   alvo.forEach(L => {
-    const f = (L.grade.fases || []).find(x => x.nome === L.res.fase.nome);
-    if (!f) return;
+    L.grade.fases = L.grade.fases || [];
+    let f = L.grade.fases.find(x => _normNome(x.nome) === _normNome(L.res.fase.nome));
+    if (!f) {
+      // A FASE NÃO EXISTE NA GRADE: cria. Antes esta linha era um `return` mudo —
+      // a fase escolhida sempre existia, porque o seletor só oferecia as que
+      // existiam. Agora que dá para criar, criar é o que tem de acontecer.
+      // Nasce no fim da ordem, com o tecido que o programa aprendeu daquele
+      // código (quando aprendeu) e as unidades no padrão; o resto é do risco.
+      const maiorOrdem = L.grade.fases.reduce((m, x) => Math.max(m, parseInt(x.ordem, 10) || 0), 0);
+      f = { ordem: maiorOrdem + 1, nome: L.res.fase.nome, tecidoId: L.res.fase.tecidoId || '',
+            unidades: 2, comp: '', larg: '', bobinas: '' };
+      L.grade.fases.push(f);
+      criadas.push({ rotulo: `${L.grade.nome} · ${f.nome}`, semTecido: !f.tecidoId });
+    }
     f.comp = _riscoCompCadastro(L.comprimento, f.tecidoId).toFixed(2);   // + o excedente do TECIDO da fase
     f.larg = L.largura.toFixed(3);                            // largura vai como veio
     tocadas.add(L.grade.id + '|' + f.nome);
@@ -18887,7 +18986,16 @@ async function aplicarRiscoNasGrades() {
   await saveState('grades');
   await saveState('meta');
   closeModal('modal-risco');
-  toast(`${n} fase(s) atualizada(s) pelo risco · ${Object.keys(memoria).length} vínculo(s) de tecido aprendidos`, 'ok');
+  toast(`${n} fase(s) atualizada(s) pelo risco${criadas.length ? ` · ${criadas.length} criada(s)` : ''}`
+    + ` · ${Object.keys(memoria).length} vínculo(s) de tecido aprendidos`, 'ok');
+  // Fase criada precisa de TECIDO, e o risco só traz o CÓDIGO dele — que só vira
+  // tecido cadastrado depois que alguém ensinou o par uma vez. Sem tecido não há
+  // consumo, nem gramatura, nem excedente de enfesto próprio, e a fase fica meia
+  // pronta sem nada dizer. Este aviso é o que manda o usuário terminar.
+  const semTecido = criadas.filter(c => c.semTecido);
+  if (semTecido.length) {
+    toast(`Falta o TECIDO em ${semTecido.length} fase(s) criada(s) — abra a grade e complete`, 'err');
+  }
   renderGrades();
 }
 
