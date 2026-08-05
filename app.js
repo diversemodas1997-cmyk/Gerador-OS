@@ -2591,20 +2591,26 @@ function _skusCadastrados() {
 
 // A LINHA do cadastro que responde por esta operação neste tipo de enfesto.
 //
-// Três degraus, do específico para o geral:
+// Dois degraus, do específico para o geral:
 //   1. a linha daquele TIPO ("Enfesto · BM.TRI");
-//   2. a linha SEM tipo, que vale para todos ("Enfesto");
-//   3. qualquer uma com aquele nome — é o que mantém funcionando o cadastro de
-//      quem nunca usou tipo nenhum, que é como todo mundo está hoje.
+//   2. a linha SEM tipo, que vale para todos ("Enfesto") — e é também o cadastro
+//      de quem nunca usou tipo nenhum, onde toda linha é geral.
+//
+// E um terceiro degrau que devolve a linha mas NÃO o tempo dela: quando só
+// existem linhas de OUTROS tipos, o cadastro não tem resposta para este produto.
+// Emprestar o número do vizinho — os 2h30 da BM.TRI numa OS de CM.REC — seria
+// errar parecendo certo. `parcial` marca isso para quem chama zerar o tempo.
 function _opLinhaCadastrada(f, nomeOperacao, sku) {
   const alvo = _opChaveOperacaoNome(nomeOperacao);
   if (!f || !alvo) return null;
   const linhas = _opsDaFuncao(f).filter(o => _opChaveOperacaoNome(o.nome) === alvo);
   if (!linhas.length) return null;
   const n = _normSku(sku);
-  return (n && linhas.find(o => o.sku && _normSku(o.sku) === n))
-    || linhas.find(o => !o.sku)
-    || linhas[0];
+  const doTipo = n ? linhas.find(o => o.sku && _normSku(o.sku) === n) : null;
+  if (doTipo) return doTipo;
+  const geral = linhas.find(o => !o.sku);
+  if (geral) return geral;
+  return { ...linhas[0], parcial: true };
 }
 
 // Tempo cadastrado para uma operação de uma função, no tipo de enfesto da OS
@@ -2617,7 +2623,11 @@ function _tempoOperacaoCadastrada(funcaoId, nomeOperacao, sku) {
   // ponto e vírgula. Sem isto a operação ficava sem tempo cadastrado e entrava
   // com duração zero.
   const achou = _opLinhaCadastrada(f, nomeOperacao, sku);
-  return (achou && Number(achou.duracaoMin)) || 0;
+  // Linha de OUTRO tipo não empresta o tempo dela: zero aqui é "o cadastro não
+  // respondeu por este produto", e quem pergunta trata isso como falta — não
+  // como um número.
+  if (!achou || achou.parcial) return 0;
+  return Number(achou.duracaoMin) || 0;
 }
 
 // Uma linha do editor de operações da função: nome + tempo + horário fixo.
@@ -7611,7 +7621,9 @@ function _opCompDaFase(os, fase) {
 function _opCompRefCadastrado(funcaoId, nomeOperacao, sku) {
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
   const achou = _opLinhaCadastrada(f, nomeOperacao, sku);
-  const v = parseFloat(achou && achou.compRef);
+  // Pelo mesmo motivo do tempo: o comprimento de referência é DAQUELE número, e
+  // o número do outro tipo não vale aqui.
+  const v = parseFloat(achou && !achou.parcial && achou.compRef);
   return (isFinite(v) && v > 0) ? v : _OP_ENFESTO_COMP_REF_PADRAO;
 }
 
@@ -8418,13 +8430,23 @@ function _opFuncaoDoPasso(passo, sku) {
   // Linha SEM tipo é a geral: vale para o que não tem linha própria. Ela só entra
   // quando o tipo não achou nada — senão o geral roubaria a vez do específico.
   const gerais = doCadastro.filter(c => !c.sku);
-  // E se nada disso houver, vale qualquer linha daquele passo: é o cadastro de
-  // quem nunca usou tipo, que não pode parar de funcionar.
+  // NENHUM DOS DOIS: todas as linhas daquele passo são de OUTROS tipos.
+  //
+  // A função ainda vale — quem enfesta é a enfestadeira em qualquer produto, e a
+  // operação tem que nascer no posto certo. O TEMPO, não: emprestar o número de
+  // outro produto é a pior das respostas, porque parece certa. Uma OS de CM.REC
+  // sairia com os 2h30 da BM.TRI e ninguém desconfiaria.
+  //
+  // Zerado, ele cai no aviso que a alocação já dá ("sem tempo cadastrado: …"),
+  // que diz o nome da operação e pinta o toast de erro. É assim que a falta de
+  // uma linha por tipo aparece em vez de virar um número inventado.
+  const emprestada = !doTipo.length && !gerais.length && doCadastro.length;
   const pool = doTipo.length ? doTipo : (gerais.length ? gerais : doCadastro);
   // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
   // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
   if (pool.length) {
-    return pool.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
+    const melhor = pool.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
+    return emprestada ? { ...melhor, duracaoMin: 0, semTempoDoTipo: sku || '' } : melhor;
   }
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
