@@ -1881,6 +1881,10 @@ function goto(page) {
     atualizarOeFolderStatus();
     atualizarExportFolderStatus();
   }
+  // A lista acabou de ser redesenhada inteira: o que estava escrito na busca
+  // daquela tela volta a valer sobre o desenho novo. Sem isto, sair da tela e
+  // voltar trazia a lista completa com o termo ainda escrito no campo.
+  if (page.startsWith('cad-')) _cadBuscaFiltrar(page);
 }
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
@@ -1899,6 +1903,14 @@ document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', (
     btn.addEventListener('click', abrirMenuMobile);
     header.insertBefore(btn, header.firstChild);
   });
+})();
+
+// Um campo de busca no topo de CADA tela de cadastro, montado uma vez ao
+// carregar. Mesma ideia do botão de menu acima: a marcação das telas é toda
+// igual, então o campo é injetado em série em vez de ser escrito quinze vezes
+// à mão no HTML — tela de cadastro nova nasce com busca sem ninguém lembrar.
+(function injetarBuscaNosCadastros() {
+  document.querySelectorAll('section.page[data-page^="cad-"]').forEach(sec => _cadBuscaGarantir(sec.dataset.page));
 })();
 
 // Recolhe/expande grupos do menu lateral. Estado persiste em localStorage.
@@ -3861,6 +3873,122 @@ async function duplicarCadastro(tipo, id) {
   const activeBtn = document.querySelector('.nav-btn.active');
   const pagina = activeBtn?.dataset.page || ('cad-' + list);
   goto(pagina);
+}
+
+// ============ BUSCA NAS TELAS DE CADASTRO ============
+//
+// Não é filtro de dado nem consulta ao servidor: é a MESMA lista, com as linhas
+// que não casam escondidas. Quem procura uma ribana numa lista de duzentos
+// tecidos não quer rolar a tela, quer ver as três.
+//
+// O que foi digitado é quebrado em PALAVRAS e todas têm de aparecer, em
+// qualquer ordem e em qualquer coluna: "preto moletom" acha "Preto Malha
+// Moletom" e também "Moletom preto". Acento e caixa não contam — quem compara é
+// o `_normNome`, o mesmo do resto do programa.
+//
+// A coluna de AÇÕES fica de fora da comparação: "editar", "duplicar" e
+// "excluir" estão em toda linha e casariam com qualquer coisa.
+const _CAD_BUSCA = {};   // data-page → o que está escrito no campo daquela tela
+
+function _cadBuscaTermos(page) {
+  return _normNome(_CAD_BUSCA[page] || '').split(' ').filter(Boolean);
+}
+
+function _cadBuscaCasa(termos, texto) {
+  const t = _normNome(texto);
+  return termos.every(x => t.includes(x));
+}
+
+function _cadBuscaGarantir(page) {
+  if (!page || !page.startsWith('cad-')) return;
+  const sec = document.querySelector(`section.page[data-page="${page}"]`);
+  if (!sec || sec.querySelector('.cad-busca')) return;
+  const header = sec.querySelector('.page-header');
+  if (!header) return;
+  const box = document.createElement('div');
+  box.className = 'cad-busca no-print';
+  box.innerHTML = `<span class="lupa" aria-hidden="true">🔎</span>`
+    + `<input type="search" placeholder="Buscar neste cadastro — parte do nome basta" autocomplete="off" spellcheck="false" aria-label="Buscar neste cadastro">`
+    + `<span class="n"></span>`;
+  const input = box.querySelector('input');
+  const digitou = () => { _CAD_BUSCA[page] = input.value; _cadBuscaAplicar(page); };
+  input.addEventListener('input', digitou);
+  // Esc limpa e devolve a lista inteira, sem tirar a mão do teclado.
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { input.value = ''; digitou(); }
+  });
+  header.insertAdjacentElement('afterend', box);
+  // A lista é redesenhada por fora daqui — ao salvar, ao excluir, ao chegar
+  // alteração de outro usuário. O observador reaplica a busca no desenho novo;
+  // sem ele, o termo continuava escrito no campo valendo para uma lista que já
+  // não existe mais.
+  const alvo = sec.querySelector('table.table tbody') || sec.querySelector('#etapas-pastas');
+  if (alvo && window.MutationObserver) {
+    new MutationObserver(() => _cadBuscaFiltrar(page)).observe(alvo, { childList: true });
+  }
+}
+
+// Digitou: as GRADES são redesenhadas (ver renderGrades — lá a busca atravessa
+// as pastas fechadas, que esconder linha nenhuma alcançaria); as demais telas
+// só escondem linha.
+function _cadBuscaAplicar(page) {
+  if (page === 'cad-grades') renderGrades();
+  _cadBuscaFiltrar(page);
+}
+
+function _cadBuscaFiltrar(page) {
+  const sec = document.querySelector(`section.page[data-page="${page}"]`);
+  if (!sec) return;
+  const termos = _cadBuscaTermos(page);
+  let vis = 0, tot = 0;
+  if (page === 'cad-grades') {
+    // Já vieram filtradas do renderGrades: aqui só se conta o que ficou.
+    tot = (STATE.grades || []).length;
+    const linhas = sec.querySelectorAll('#tbl-grades tr:not(.grade-folder)');
+    const nada = sec.querySelector('#tbl-grades td.empty');
+    vis = nada ? 0 : linhas.length;
+  }
+  else if (page === 'cad-etapas') {
+    // Aqui a lista é de PASTAS com subitens: a pasta fica quando o nome dela
+    // casa (e então mostra tudo que tem dentro) ou quando alguma tarefa casa —
+    // e nesse caso só as tarefas que casaram, que é o que se foi procurar.
+    sec.querySelectorAll('#etapas-pastas .etapa-pasta').forEach(card => {
+      tot++;
+      const cab = card.querySelector('strong')?.textContent || '';
+      const cabOk = !termos.length || _cadBuscaCasa(termos, cab);
+      let algum = cabOk;
+      card.querySelectorAll('li').forEach(li => {
+        const ok = cabOk || _cadBuscaCasa(termos, li.textContent);
+        li.classList.toggle('cad-oculto', !ok);
+        if (ok) algum = true;
+      });
+      card.classList.toggle('cad-oculto', !algum);
+      if (algum) vis++;
+    });
+  }
+  else {
+    const tb = sec.querySelector('table.table tbody');
+    if (!tb) return;
+    Array.from(tb.rows).forEach(tr => {
+      // "Nenhum X cadastrado." não é linha de cadastro: não conta nem some.
+      if (tr.querySelector('td.empty')) return;
+      tot++;
+      const texto = Array.from(tr.cells)
+        .filter(td => !td.classList.contains('col-actions'))
+        .map(td => td.textContent).join(' ');
+      const ok = !termos.length || _cadBuscaCasa(termos, texto);
+      tr.classList.toggle('cad-oculto', !ok);
+      if (ok) vis++;
+    });
+  }
+  // O contador é o que diz que a lista está CURTA de propósito. Sem ele, uma
+  // busca esquecida no campo parece cadastro sumido.
+  const n = sec.querySelector('.cad-busca .n');
+  if (n) {
+    n.textContent = !termos.length ? (tot ? `${tot} no total` : '')
+      : vis ? `${vis} de ${tot}` : 'nada encontrado';
+    n.classList.toggle('vazio', !!termos.length && !vis);
+  }
 }
 
 function renderTecidos() {
@@ -11719,6 +11847,20 @@ function renderGrades() {
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
   };
+
+  // BUSCA: procurar não é navegar. Com algo escrito no campo, a lista larga as
+  // pastas e vira lista chata das grades que casam — inclusive as que estão
+  // dentro de pasta FECHADA, que esconder linha nunca alcançaria, porque a
+  // linha delas nem chega a ser desenhada.
+  const termosBusca = _cadBuscaTermos('cad-grades');
+  if (termosBusca.length) {
+    const achadas = STATE.grades.filter(g => _cadBuscaCasa(termosBusca,
+      [g.nome, labelTp(g.tipoPeca), labelVr(g.variacao)].join(' ')));
+    tb.innerHTML = achadas.length
+      ? achadas.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('')
+      : `<tr><td colspan="4" class="empty">Nenhuma grade encontrada.</td></tr>`;
+    return;
+  }
 
   // admin-only: renomear e reordenar pasta é escrita. Abrir e fechar a pasta
   // (o clique na linha) continua de todo mundo — é como se lê a lista.

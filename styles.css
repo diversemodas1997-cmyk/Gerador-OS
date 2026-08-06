@@ -145,6 +145,40 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 }
 .page-header .actions { display: flex; gap: 8px; }
 
+/* ============ BUSCA DOS CADASTROS ============ */
+/* Uma linha discreta entre o cabeçalho e a lista: o campo é ferramenta de
+   consulta, não formulário — não pode competir com o "+ Novo" nem empurrar a
+   lista para baixo. */
+.cad-busca {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -12px 0 16px;
+}
+.cad-busca .lupa { font-size: 13px; opacity: .55; }
+.cad-busca input {
+  flex: 1 1 auto;
+  max-width: 420px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.cad-busca input:focus { outline: none; border-color: var(--ink); }
+.cad-busca .n {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.cad-busca .n.vazio { color: var(--alert); font-weight: 600; }
+.cad-oculto { display: none !important; }
+@media (max-width: 720px) { .cad-busca input { max-width: none; } }
+
 /* ============ BOTÕES ============ */
 .btn {
   display: inline-flex;
