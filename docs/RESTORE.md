@@ -8,6 +8,102 @@ backup próprio.
 
 ## Ponto de restauração deste backup
 
+- **CÓDIGO:** tag `restore-2026-08-07-y` (cache-buster `app.js ?v=2026-08-07y`,
+  `styles.css ?v=2026-08-07e`). O que mudou desde o `restore-2026-08-05-e` — 29
+  commits, em cinco frentes: o **planejamento das operações**, a **expedição**,
+  a **folha de OS**, o **cadastro de operações** e uma **tela nova de ranking**.
+
+  **PLANEJAMENTO DAS OPERAÇÕES**
+  - **um passo pode ser feito por MAIS DE UM POSTO, juntos.** Quem move o enfesto
+    é a enfestadeira COM o auxiliar. O plano criava UMA operação por passo e o
+    segundo posto sumia — com o tempo dele livre na agenda, para o programa
+    encaixar outra coisa por cima. O agrupamento por posto passou a vir ANTES da
+    escolha por tipo e por fase: feita antes, ela derrubava o auxiliar só porque
+    a linha dele é geral e a da enfestadeira é de um tipo;
+  - **a ordem do cadastro vale dentro do BLOCO do posto.** A troca acontecia
+    entre TODAS as posições que o posto ocupava, mesmo separadas por um passo de
+    OUTRO posto: pôr "Separar unidades cortadas" no topo da lista do auxiliar
+    mandava a separação para antes do corte. Agora só entre posições contíguas;
+  - **nomes dos passos iguais aos do cadastro** ("Mover enfesto", "Estocar
+    unidades cortadas"). O passo 9 exigia a palavra "pacote" e a linha do posto
+    se chama "Estocar unidades cortadas": não casava, o passo ficava sem dono e a
+    operação sumia do plano UMA VEZ POR FASE, sem aparecer na folha;
+  - **passo sem posto vira LINHA**, não silêncio, e **o que não coube nem em 5
+    dias nasce SEM HORÁRIO** — a corrente não fica mais pela metade;
+  - **repartir também em volta das rotinas.** A repartição só era tentada quando
+    a operação estourava o fim da jornada; bater no almoço empurrava a operação
+    inteira para depois dele, e 15 minutos a mais de duração custavam 3h15 de
+    posto parado. O **corte de enfesto** é a exceção: não pode ser interrompido;
+  - **o tempo MEDIDO NA PRÓPRIA OS manda.** A previsão exclui a própria OS de
+    propósito (serve para planejar o que ainda não aconteceu), mas quando a fase
+    já foi cronometrada ali, estimar por média de outras é ignorar o fato que
+    está na folha: a OS 0453 reservava 2h40 numa fase que a folha registra em
+    1h30;
+  - **o marcador de pedaço saiu do NOME** e virou campo próprio: "Enfesto corpo
+    parte 1 1/2" não é o nome de operação nenhuma;
+  - **preparo de matéria-prima entra no DIA ÚTIL ANTERIOR**, uma volta por OS. O
+    que se mede e empilha hoje é o que será enfestado amanhã.
+
+  **EXPEDIÇÃO**
+  - **cada passo da carga sabe a que perna pertence.** Descarregar é o que se faz
+    com o que o caminhão TRAZ: a desmontagem é da volta. Ela nascia na ida com as
+    OS da ida na referência — dizendo que voltou o que acabou de sair;
+  - **a cadeia é um giro só do caminhão**, na ordem do cadastro (seleção →
+    descarga → montagem), terminando na saída. A perna diz DE QUEM É A OS de cada
+    passo, não quando ele acontece;
+  - **a descarga entra mesmo sem OS informada na volta** — é trabalho que o posto
+    faz todo dia —, e nasce sem número de OS, que é o jeito certo de não saber;
+  - **sai na cor do posto, não em preto**, e a hora é âncora do PROGRAMA
+    (`inicioAuto`), não trava do usuário: ela vem do plano de expedição.
+
+  **FOLHA DE OS**
+  - **zero camadas significa "esta fase não foi enfestada"**. Zero era tratado
+    como campo por preencher e o programa devolvia o planejado por cima;
+  - **o Total por tamanho preenche as camadas por tom do enfesto** (caminho de
+    volta), com a conversão `camadas = V ÷ (qtdMin × mult)`.
+
+  **CADASTRO DE OPERAÇÕES**
+  - **as etapas de matéria-prima vêm do cadastro** de Etapas de produção, não de
+    uma lista escrita no código;
+  - **a linha pode dizer a que FASE do enfesto responde** — e, sem isso, o
+    programa lê a fase no próprio nome da operação;
+  - **coluna de COR em OS Salvas**, da mesma fonte do banner da folha.
+
+  **RANKING DE PRODUÇÃO (tela nova)**
+  - cruza tipo × cor × grade, com filtro por ano e mês e série do tempo. A fonte
+    é o **SKU do produto** (`CM.LISA-PRE`), o mesmo que sai impresso: tirar o tipo
+    do nome da grade reclassificava as OS antigas quando a grade era renomeada.
+
+  Cópia do código deste ponto em
+  `backups-codigo/*.20260807y-planejamento-cruzado.CÓPIA`.
+
+- **DADOS:** exportação de **07/08/2026 19:57**, em
+  `backups/BACKUP-COMPLETO-2026-08-07T19-57-40.json` (2,55 MB, 29 chaves, 1855
+  registros): **187 OS**, 123 grades, 25 desenhos, **1282 operações**, 51 cargas
+  de expedição, 60 mov. de estoque, 11 tecidos, 37 cores, **12 funções**, 10
+  pessoas na equipe, 6 modelos, 14 etapas, 17 componentes, 4 materiais.
+
+  > Restaurar: app → Configurações → **Importar JSON** → escolher este arquivo.
+  > Sobrescreve tudo, então é o caminho de "perdi geral". Para casos parciais,
+  > ver a seção 2 abaixo.
+
+  **É o primeiro retrato com TODAS as OS apontando para uma grade que existe.**
+  Contra a exportação de 06/08, o Junior corrigiu 16 OS órfãs (15 de grade
+  apagada + a 0342), recriou 4 grades com a nomenclatura ATUAL (CM.LISA,
+  BM.LISA, CM.TRI — as antigas diziam CM.BÁSICA, BM.BÁSICA, CM.TRICOLOR) e
+  amarrou a linha "Estocar unidades cortadas" do Auxiliar de produção #1 ao
+  passo `principal:9`, que estava sem dono e fazia a corrente sair com 8 dos 9
+  elos por fase.
+
+  **O que ainda está por cadastrar:** os tempos de enfesto de CM.TRI na
+  enfestadeira seguem em 0 min nas três linhas de corpo (só "Enfesto gola" tem
+  15). Não é urgente — o tempo medido na própria OS passou a mandar —, mas OS
+  nova sem medição cai na estimativa.
+
+---
+
+## Ponto de restauração ANTERIOR
+
 - **CÓDIGO:** tag `restore-2026-08-05-e` (cache-buster `app.js ?v=2026-08-05n`,
   `styles.css ?v=2026-08-05n`). O que mudou desde o `restore-2026-08-05-d` — 12
   commits, em três frentes: o **cadastro de operações por função**, o **tempo do
