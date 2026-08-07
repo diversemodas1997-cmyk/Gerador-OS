@@ -4636,27 +4636,55 @@ function _rankingProducao(ano, mes) {
     if (!/^\d{4}-\d{2}/.test(d)) return '';
     return (ano || mes) ? d.slice(0, 7) : d.slice(0, 4);
   };
-  let semGrade = 0;
+  // A cor pelo nome, a partir da SIGLA do SKU ("PRE" → "Preto"). O SKU é o que
+  // se lê na Contabilidade; o nome é o que se lê na prateleira.
+  const nomeDaSigla = sigla => {
+    const s = String(sigla || '').trim().toUpperCase();
+    if (!s) return '';
+    const c = (STATE.cores || []).find(x => String(x.siglaSku || '').trim().toUpperCase() === s);
+    if (c) return corNomeCurto(c.nome) || c.nome;
+    // Sigla que não está no cadastro de cores: acontece quando o SKU já vem
+    // COMPLETO do desenho ("CM.LISA-MARINHO"), sem passar pela sigla da variante.
+    // Vira Capitulada para a coluna não misturar "Preto" com "MARINHO".
+    return s.charAt(0) + s.slice(1).toLowerCase();
+  };
+  let semSku = 0, pares = 0;
   const datas = [];
   ord.forEach(o => {
+    // A FONTE É O SKU DO PRODUTO — o mesmo que sai impresso no cabeçalho da OS e
+    // que a Contabilidade usa (`CM.LISA-PRE`). Ele já traz tipo E cor, decididos
+    // no cadastro do desenho/modelo mais a sigla da cor da variante.
+    //
+    // Antes o tipo vinha do nome da GRADE e a cor do primeiro bloco do enfesto.
+    // Os dois eram frágeis: grade renomeada trocava o tipo de todas as OS
+    // antigas (a 0295 está impressa como CM.BÁSICA e hoje é CM.LISA), e a cor
+    // dependia de qual pano por acaso é a primeira fase. A OS cuja grade foi
+    // apagada ficava fora do ranking inteiro; pelo SKU ela entra normalmente.
+    const skus = skusDaOS(o);
+    if (!skus.length) { semSku++; return; }
     const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(o));
-    // Grade apagada do cadastro: a OS não tem mais tipo nem grade de verdade, e
-    // inventá-los do texto gravado misturaria produto renomeado com produto
-    // apagado. Ela é contada à parte, para o total continuar fechando.
-    if (!g) { semGrade++; return; }
-    const sku = _skuDaGrade(g) || '—';
-    const grade = String(g.nome || '').split('|')[0].trim() || '—';
-    const cor = corNomeCurto((((o.enfesto || {}).blocos || [])[0] || {}).nomeCor) || '—';
-    const pecas = Number((o.enfesto || {}).totalPecas) || 0;
+    const grade = g ? (String(g.nome || '').split('|')[0].trim() || '—') : '(grade apagada)';
+    const totalPecas = Number((o.enfesto || {}).totalPecas) || 0;
     if (o.data) datas.push(o.data);
-    // A chave e a LISTA em JSON, nao um texto emendado: "P ao G3" e "CM.LISA"
-    // tem espacos e pontos, e qualquer separador escolhido a mao acabaria
-    // aparecendo dentro de um nome e cortando a chave no lugar errado.
-    somar(linhas, JSON.stringify([sku, cor, grade]), pecas);
-    somar(porCor, JSON.stringify([cor]), pecas);
-    somar(porSkuCor, JSON.stringify([sku, cor]), pecas);
+    // OS de mais de uma cor entra em CADA uma — ela produz mesmo os dois
+    // produtos. As peças são repartidas entre elas, senão o mesmo lote seria
+    // contado inteiro duas vezes e o total do dia dobraria.
+    const pecas = skus.length ? totalPecas / skus.length : 0;
+    skus.forEach(sku => {
+      pares++;
+      const i = sku.indexOf('-');
+      const tipo = i > 0 ? sku.slice(0, i) : sku;
+      const sigla = i > 0 ? sku.slice(i + 1) : '';
+      const cor = nomeDaSigla(sigla) || sigla || '—';
+      // A chave e a LISTA em JSON, nao um texto emendado: "P ao G3" e "CM.LISA"
+      // tem espacos e pontos, e qualquer separador escolhido a mao acabaria
+      // aparecendo dentro de um nome e cortando a chave no lugar errado.
+      somar(linhas, JSON.stringify([tipo, cor, grade]), pecas);
+      somar(porCor, JSON.stringify([cor]), pecas);
+      somar(porSkuCor, JSON.stringify([sku]), pecas);
+    });
     const f = fatia(o);
-    if (f) somar(porPeriodo, JSON.stringify([f]), pecas);
+    if (f) somar(porPeriodo, JSON.stringify([f]), totalPecas);
   });
   const ordenar = m => [...m.entries()]
     .map(([k, e]) => ({ partes: JSON.parse(k), ...e }))
@@ -4668,7 +4696,7 @@ function _rankingProducao(ano, mes) {
     .map(([k, e]) => ({ periodo: JSON.parse(k)[0], ...e }))
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
   return {
-    total: ord.length, semGrade, de: datas[0] || '', ate: datas[datas.length - 1] || '',
+    total: ord.length, semGrade: semSku, pares, de: datas[0] || '', ate: datas[datas.length - 1] || '',
     linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor),
     serie, porMes: !!(ano || mes)
   };
@@ -4715,7 +4743,7 @@ function renderRanking() {
     box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankMes ? _rankRotuloMes(_rankMes) : _rankAno)}.</div>`;
     return;
   }
-  const contadas = r.total - r.semGrade;
+  const contadas = r.total - r.semGrade;   // OS com SKU de produto resolvido
   const pct = n => contadas ? (n * 100 / contadas).toFixed(1).replace('.', ',') + '%' : '—';
   const num = n => Number(n || 0).toLocaleString('pt-BR');
   const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
@@ -4778,7 +4806,8 @@ function renderRanking() {
     <div class="info-box" style="margin-bottom:14px;">
       <b>${num(contadas)} OS</b> ${foco ? `em <b>${esc(foco)}</b>` : 'no ranking'}${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
       · <b>${r.linhas.length}</b> combinações distintas de tipo × cor × grade
-      ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: a grade delas foi apagada do cadastro, então não têm mais tipo nem grade para cruzar.` : ''}
+      ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: sem SKU de produto resolvido (falta a linha de SKU no desenho/modelo, ou a sigla da cor da variante).` : ''}
+      ${r.pares > contadas ? `<br><b>${r.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — as peças são repartidas entre elas.` : ''}
     </div>
     ${serieHtml}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
