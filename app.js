@@ -9078,14 +9078,19 @@ function _opMontarCascataDoLote(data, os) {
   // sem isto, toda alocação passaria a acusar "10 passos sem função cadastrada"
   // em fábrica que nunca planejou esse preparo, trocando um recurso novo por um
   // erro novo. Cadastrou uma linha, a corrente entra sozinha.
-  // Acordada a corrente, ela vale INTEIRA: os passos que ninguém cadastrou vão
-  // para o aviso de "sem função", como em qualquer outra corrente. Filtrá-los
-  // aqui fazia a etapa que falta sumir calada — quem amarrou 6 das 10 tarefas
-  // receberia 6 operações e nenhum sinal das outras 4, que é o tipo de silêncio
-  // que este programa evita em todo lugar.
-  const todosMateria = _opPassosMateria();
-  const algumCadastrado = todosMateria.some(p => { const c = _opFuncaoDoPasso(p); return c && c.funcaoId; });
-  const passosMateria = algumCadastrado ? todosMateria : [];
+  // QUEM DIZ QUANTAS OPERAÇÕES SÃO É O CADASTRO DO POSTO, NÃO A LISTA DE TAREFAS.
+  //
+  // As tarefas da etapa descrevem o trabalho miúdo ("selecionar bobinas de
+  // tecido compatíveis", "…de ribana compatíveis"); o posto agrupa o que faz de
+  // uma vez só numa linha só ("Selecionar bobinas"), com o tempo do conjunto.
+  // Uma linha, portanto, responde por MAIS DE UMA tarefa — e tarefa sem linha
+  // própria não é tarefa esquecida, é tarefa que já está dentro de outra.
+  //
+  // Por isso a corrente é a lista de tarefas QUE TÊM LINHA, e não a lista
+  // inteira: cobrar as demais como "sem função cadastrada" acusaria falta onde
+  // não há, justamente em quem cadastrou direito.
+  const passosMateria = _opPassosMateria()
+    .filter(p => { const c = _opFuncaoDoPasso(p); return c && c.funcaoId; });
   if (passosMateria.length) {
     const diaMateria = _opDiaUtilAnterior(data);
     diasTocados.add(diaMateria);
