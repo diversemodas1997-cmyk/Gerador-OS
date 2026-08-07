@@ -8870,8 +8870,20 @@ function _opFuncaoDoPasso(passo, sku, faseNome) {
   // a vez da específica, que é o inverso do que este campo veio fazer.
   const fn = _normFaseNome(faseNome);
   const daFase = fn ? poolTipo.filter(c => c.fase && _normFaseNome(c.fase) === fn) : [];
+  // O NOME JÁ DIZ A FASE, e sempre disse. Antes de o campo existir, o posto
+  // escrevia a fase DENTRO do nome — "Enfesto corpo parte 1", "Enfesto gola".
+  // Ignorar isso produzia o rótulo sem sentido "Enfesto gola · Corpo Parte 1":
+  // o programa afirmando duas fases na mesma linha, porque o desempate de baixo
+  // escolhia pelo TEMPO e a linha da gola era a única com tempo cadastrado.
+  //
+  // Então, quando ninguém preencheu o campo, quem responde é o nome. O campo
+  // continua mandando quando existe — ele é a decisão explícita, e um nome
+  // parecido não pode desfazer o que alguém escolheu.
+  const peloNome = (fn && !daFase.length)
+    ? poolTipo.filter(c => !c.fase && _normFaseNome(c.nome).includes(fn)) : [];
   const semFase = poolTipo.filter(c => !c.fase);
-  const pool = daFase.length ? daFase : (semFase.length ? semFase : poolTipo);
+  const pool = daFase.length ? daFase
+    : (peloNome.length ? peloNome : (semFase.length ? semFase : poolTipo));
   // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
   // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
   if (pool.length) {
