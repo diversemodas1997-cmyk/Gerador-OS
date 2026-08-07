@@ -13605,6 +13605,17 @@ function calcularCamadasParaProducao() {
   blocosDom.forEach((bloco, i) => {
     const input = bloco.querySelector('.enf-camadas');
     if (!input) return;
+    // ZERO É RESPOSTA, NÃO CAMPO POR PREENCHER. Quem escreveu 0 está dizendo que
+    // aquela fase NÃO FOI ENFESTADA — faltou pano, deu problema, ficou para outro
+    // dia, não importa o motivo. Recalcular por cima disso apagava o único jeito
+    // de dizer isso: bastava encostar em "Peças-alvo" ou em "Nº de camadas" e a
+    // fórmula devolvia o número planejado, sem aviso. A fase de ribana da OS 0446
+    // voltava de 0 para 40 assim.
+    //
+    // Campo VAZIO continua sendo recalculado: aí ninguém respondeu nada, e a
+    // conta é justamente o que deve preencher. A diferença entre "" e "0" é o que
+    // separa "ainda não sei" de "não aconteceu".
+    if (String(input.value).trim() === '0') return;
     const papel = papeis[i] || {};
     const fase = fasesEfetivas[i] || {};
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(papel.label || '') || /vi[eé]s/i.test(bloco.dataset.nomeTecido || '');
@@ -16371,6 +16382,27 @@ function _camadasPorTomFase(o, ord) {
   return out;
 }
 
+// A fase foi declarada NÃO ENFESTADA na folha? Os números da folha são o que
+// ACONTECEU na produção, não o que se planejou — e um tom escrito com 0 é o
+// operador dizendo que aquele pano não foi estendido, por qualquer motivo.
+//
+// `_camadasPorTomFase` só enxerga positivos, então quatro zeros chegavam lá como
+// quatro campos em branco e o programa mantinha o planejado: não havia como
+// registrar que o enfesto não aconteceu. Aqui a diferença é lida: pelo menos um
+// tom escrito com 0 e nenhum com número positivo.
+function _faseNaoEnfestadaPorTom(o, ord) {
+  const tv = ((o.progresso || {}).enfestosTons || {})[ord] || {};
+  let temZero = false;
+  for (const t of [1, 2, 3, 4]) {
+    const s = String(tv[t] == null ? '' : tv[t]).trim();
+    if (s === '') continue;               // em branco não é resposta
+    const n = parseInt(s, 10);
+    if (n > 0) return false;              // alguém enfestou algo: a fase aconteceu
+    if (n === 0) temZero = true;
+  }
+  return temZero;
+}
+
 // Ordem da fase PRINCIPAL do enfesto (primeira não-viés). É a fase cujas camadas
 // reais por tom mandam nas camadas/peças-alvo e no "Total por tamanho".
 function _ordemFasePrincipal(o) {
@@ -16390,7 +16422,27 @@ async function recalcularDeCamadasPorTom(osId) {
   if (ordP == null) return;
   const porTom = _camadasPorTomFase(o, ordP);
   const tomsEntrados = Object.keys(porTom).map(Number).sort((a, b) => a - b);
-  if (!tomsEntrados.length) { // nada digitado: mantém o planejado (balanceador)
+  if (!tomsEntrados.length) {
+    // Zero escrito nos tons: a fase NÃO FOI ENFESTADA. Zera só o bloco dela e o
+    // campo de camadas — as outras fases não são escaladas por isso, porque o
+    // pano de uma pode não ter sido estendido sem que os demais deixassem de ser.
+    // (Escalar aqui multiplicaria todas por zero e apagaria o que foi feito.)
+    if (_faseNaoEnfestadaPorTom(o, ordP)) {
+      o.enfesto = o.enfesto || {};
+      const bp = Array.isArray(o.enfesto.blocos)
+        ? o.enfesto.blocos.find(b => (b.ordem || 0) === ordP) : null;
+      if (bp) bp.camadas = 0;
+      o.enfesto.camadas = 0;
+      o.enfesto.target = 0;
+      // Sem enfesto não há peça cortada: componentes e total acompanham. É o que
+      // tira a OS do estoque de corte e da expedição — corretamente, já que nada
+      // foi cortado dela.
+      recomputarQuantidadesOS(o);
+      try { await saveState('ordens'); } catch (e) { console.warn('recalcularDeCamadasPorTom', e); }
+      if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(o);
+      return;
+    }
+    // nada digitado: mantém o planejado (balanceador)
     try { await saveState('ordens'); } catch (e) {}
     return;
   }
