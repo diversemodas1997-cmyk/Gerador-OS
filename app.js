@@ -7413,11 +7413,18 @@ function _opEhEnfesto(op) {
 // cada OS nova ainda entraria como uma operação diferente na lista da função.
 // Operação que não é de OS (café, almoço, limpeza) sai como sempre.
 function _opNomeExibido(op) {
-  const nome = String((op && op.operacao) || '').trim();
+  // O NOME É O DO CADASTRO, sempre. O marcador de pedaço ("1/2") é decoração
+  // como a fase e o número da OS: ele diz qual trecho do trabalho esta linha é,
+  // e dentro do nome fazia o rótulo virar "Enfesto corpo parte 1 1/2" — um nome
+  // que não existe em cadastro nenhum e que ninguém acha ao procurar.
+  // `_opNomeBase` cobre o que ficou gravado com o sufixo antes desta separação.
+  const nome = _opNomeSemFracao(String((op && op.operacao) || '').trim());
   if (!nome) return '—';
+  const pedaco = _opParteDaOperacao(op);
   const lotes = _opLotesDaOperacao(op);
-  if (!lotes.length) return nome;
+  if (!lotes.length) return pedaco ? `${nome} · parte ${pedaco}` : nome;
   const partes = [nome];
+  if (pedaco) partes.push(`parte ${pedaco}`);
   // A FASE DO ENFESTO. Sem ela, os cinco enfestos de um tricolor liam todos
   // "Enfesto OS 453" — o número da OS separa lote de lote, mas não separa Corpo
   // Parte 1 de Corpo Parte 3, que são panos diferentes, de metragens diferentes,
@@ -7470,6 +7477,18 @@ function _opNomeBase(nome) {
   return String(nome || '').replace(_OP_RE_PEDACO, '').trim();
 }
 
+// Só a FRAÇÃO ("1/2") conta como marcador de pedaço quando o assunto é o NOME.
+//
+// O `_OP_RE_PEDACO` acima também corta "parte 3", que o programa gravava antes —
+// e isso é ambíguo com o cadastro de verdade: "Enfesto corpo parte 1" é o nome
+// de uma operação, não o primeiro pedaço de nada. Cortar ali apagaria justamente
+// a palavra que distingue uma fase da outra, e "Enfesto corpo parte 1" e
+// "…parte 2" virariam os dois "Enfesto corpo".
+const _OP_RE_FRACAO = /\s+\d+\s*\/\s*\d+\s*$/;
+function _opNomeSemFracao(nome) {
+  return String(nome || '').replace(_OP_RE_FRACAO, '').trim();
+}
+
 // A que trabalho um pedaço pertence: mesmo posto, mesmo nome-base, mesmo lote e
 // mesma fase do enfesto. Dois enfestos de FASES diferentes do mesmo lote não são
 // partes um do outro — são panos diferentes.
@@ -7485,7 +7504,7 @@ function _opChaveParte(op) {
 // 2/2, e não dois terços órfãos de um trabalho que agora tem duas partes.
 function _opRenumerarPartes(data, ref) {
   const chave = _opChaveParte(ref);
-  const base = _opNomeBase(ref.operacao);
+  const base = _opNomeSemFracao(ref.operacao);
   const grupo = (STATE.operacoes || [])
     .filter(o => o.data === data && _opChaveParte(o) === chave)
     .sort((a, b) => {
@@ -7493,10 +7512,25 @@ function _opRenumerarPartes(data, ref) {
       return (ia == null ? 1e9 : ia) - (ib == null ? 1e9 : ib);
     });
   grupo.forEach((o, i) => {
-    o.operacao = grupo.length > 1 ? `${base} ${i + 1}/${grupo.length}` : base;
-    if (grupo.length > 1) o.partida = true; else delete o.partida;
+    // O NOME É SEMPRE O DO CADASTRO. O marcador de pedaço mora em `parte`, fora
+    // dele: "Enfesto corpo parte 1 1/2" não é o nome de operação nenhuma, e quem
+    // procurava esse nome no cadastro não o achava. Escrever aqui também
+    // NORMALIZA o que ficou gravado com o sufixo antes desta separação existir.
+    o.operacao = base;
+    if (grupo.length > 1) { o.parte = `${i + 1}/${grupo.length}`; o.partida = true; }
+    else { delete o.parte; delete o.partida; }
   });
   return grupo;
+}
+
+// O marcador de pedaço desta operação ('' quando ela é inteira). Lê o campo e,
+// na falta dele, o sufixo que ficou gravado no nome antes de o campo existir —
+// assim o plano antigo continua se lendo certo sem precisar ser refeito.
+function _opParteDaOperacao(op) {
+  const gravado = String((op && op.parte) || '').trim();
+  if (gravado) return gravado;
+  const m = String((op && op.operacao) || '').match(_OP_RE_FRACAO);
+  return m ? m[0].trim() : '';
 }
 
 // Em que passo da corrente esta operação está (ou null quando não é uma delas).
@@ -9329,7 +9363,14 @@ function _opMontarCascataDoLote(data, os) {
     if (ini + duracaoMin > _OP_JORNADA.fim) {
       const pedacos = _opPartirNosVagos(_opVagosNoPosto(dia, cad.funcaoId, piso, chavePessoa), duracaoMin);
       if (!pedacos || pedacos.length < 2) return { naoCoube: true };
-      pedacos.forEach((p, i) => { criarLinha(`${cad.nome} ${i + 1}/${pedacos.length}`, p.ini, p.dur).partida = true; });
+      // O nome de cada pedaço é o DO CADASTRO, inteiro. Qual pedaço ele é fica em
+      // `parte` — no nome, viraria "Enfesto corpo parte 1 1/2", que não é o nome
+      // de operação nenhuma e não se acha no cadastro de função nenhuma.
+      pedacos.forEach((p, i) => {
+        const linha = criarLinha(cad.nome, p.ini, p.dur);
+        linha.partida = true;
+        linha.parte = `${i + 1}/${pedacos.length}`;
+      });
       const ult = pedacos[pedacos.length - 1];
       partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin, dia });
       return { fim: ult.ini + ult.dur };
