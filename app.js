@@ -6935,9 +6935,9 @@ const _OP_SEQUENCIA = [
   { cadeia: 'materia',   ordem: 1,  nome: 'Etapas de preparação de matéria prima', teste: n => /prepar/.test(n) && /materia prima|materia-prima/.test(n) },
   { cadeia: 'principal', ordem: 1,  nome: 'Preparação das máquinas',               teste: n => /prepar/.test(n) && /maquin/.test(n) },
   { cadeia: 'principal', ordem: 2,  nome: 'Reposição de materiais',                teste: n => /reposi/.test(n) && /material|materiais/.test(n) },
-  { cadeia: 'carga',     ordem: 1,  nome: 'Seleção de pacotes',                    teste: n => /selec|seleca/.test(n) && /pacote/.test(n) },
-  { cadeia: 'carga',     ordem: 2,  nome: 'Desmontagem de carga',                  teste: n => /desmonta/.test(n) },
-  { cadeia: 'carga',     ordem: 3,  nome: 'Montagem de carga',                     teste: n => /monta/.test(n) && /carga/.test(n) },
+  { cadeia: 'carga',     ordem: 1,  nome: 'Seleção de pacotes',    perna: 'ida',   teste: n => /selec|seleca/.test(n) && /pacote/.test(n) },
+  { cadeia: 'carga',     ordem: 2,  nome: 'Desmontagem de carga',  perna: 'volta', teste: n => /desmonta/.test(n) },
+  { cadeia: 'carga',     ordem: 3,  nome: 'Montagem de carga',     perna: 'ida',   teste: n => /monta/.test(n) && /carga/.test(n) },
   { cadeia: 'principal', ordem: 4,  nome: 'Movimentação de enfesto',           porFase: true, teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
   { cadeia: 'principal', ordem: 5,  nome: 'Corte de enfesto',                  porFase: true, teste: n => /cort/.test(n) && /enfesto/.test(n) },
   { cadeia: 'principal', ordem: 6,  nome: 'Movimentação de unidades cortadas', porFase: true, teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
@@ -9151,6 +9151,25 @@ function _opMontarCascataDoLote(data, os) {
 const _OP_SEQ_CARGA = _OP_SEQUENCIA.filter(p => p.cadeia === 'carga')
   .slice().sort((a, b) => a.ordem - b.ordem);
 
+// Os passos de UMA PERNA da expedição.
+//
+// A desmontagem é da VOLTA — descarregar é o que se faz com o que o caminhão
+// TRAZ —, e a seleção e a montagem são da IDA. Até aqui a montagem criava os três
+// em qualquer perna, todos com a MESMA referência: na ida a desmontagem nascia
+// carregando as OSs da ida, que não têm nada a ver com ela. E como o horário de
+// início é contado para trás a partir da saída do caminhão, os 5 min dela ainda
+// puxavam a corrente inteira 5 min para trás.
+//
+// O efeito era mudo porque a volta nunca teve carga alocada (49 de 49 na ida):
+// a única desmontagem do plano era a indevida, e a legítima nunca nascia.
+//
+// Passo sem perna serve às duas — nenhum é hoje, mas quem acrescentar um passo
+// que valha para ida e volta não precisa saber desta regra.
+function _opSeqCargaDaPerna(perna) {
+  const p = String(perna || '').trim().toLowerCase();
+  return _OP_SEQ_CARGA.filter(x => !x.perna || x.perna === p);
+}
+
 // Monta no dia as operações do posto de expedição a partir das JANELAS DE
 // EXPEDIÇÃO com carga naquele dia. Elas não vinham do "+ Alocar OS": a cascata
 // da OS monta só a corrente do corte, então o trabalho da expedição era digitado
@@ -9177,7 +9196,7 @@ function _opMontarExpedicaoDoDia(data) {
       const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
       const fim = _opMin(hora);
       if (fim == null) { semHora.push({ oc, perna }); return; }
-      const cads = _OP_SEQ_CARGA.map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
+      const cads = _opSeqCargaDaPerna(perna).map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
       const faltando = cads.filter(x => !x.cad || !x.cad.funcaoId);
       if (faltando.length) { faltando.forEach(x => semFuncao.push({ passo: x.passo, oc, perna })); return; }
       const total = cads.reduce((s, x) => s + Math.max(0, x.cad.duracaoMin || 0), 0);
