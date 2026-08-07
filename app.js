@@ -16782,6 +16782,70 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
 }
 
+// CAMINHO DE VOLTA: o "Total por tamanho" preenche as CAMADAS POR TOM do enfesto.
+//
+// Os dois blocos da folha guardam coisas diferentes — o Total por tamanho grava
+// PEÇAS por tamanho (`totalTamanhoTomValor`), a linha TONS do enfesto grava
+// CAMADAS por tom (`enfestosTons`) — e a ligação corria num sentido só: digitar
+// as camadas preenchia o total, nunca o contrário. Quem lançava pelo total via a
+// linha TONS em branco para sempre, sem nada explicando por quê (foi o caso da
+// OS 0424: total com 10/8/18 e `enfestosTons` inexistente).
+//
+// A conversão é a inversa da que monta o total (V = camadas × qtdMin × mult):
+//
+//     camadas = V ÷ (qtdMin × mult)
+//
+// Numa grade de 1 por tamanho os dois números coincidem, e é por isso que copiar
+// o número cru parecia funcionar. Numa "2M-4G-2GG" o mesmo V vale METADE das
+// camadas — copiar cru gravaria o dobro.
+//
+// O último tom marcado é o BALANCEADOR, como em todo o resto do Total por
+// tamanho: não é convertido, recebe o que SOBRA das camadas da fase. Assim a
+// soma dos tons continua batendo com o CAM mesmo quando a divisão dos demais não
+// dá número inteiro — a sobra vai para onde já é o lugar dela.
+function _sincronizarTonsDoEnfestoPeloTotal(os) {
+  const ordP = _ordemFasePrincipal(os);
+  if (ordP == null) return { arredondou: false };
+  const prog = os.progresso = os.progresso || {};
+  prog.enfestosTons = prog.enfestosTons || {};
+  const alvo = prog.enfestosTons[ordP] = prog.enfestosTons[ordP] || {};
+  const tomsSel = tonsEfetivos(prog.totalTamanhoTons || {});
+  const valores = prog.totalTamanhoTomValor || {};
+  const cam = parseInt((os.enfesto || {}).camadas, 10) || 0;
+  const g = os.grade || {};
+  const visiveis = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).filter(q => q > 0);
+  const qtdMin = visiveis.length ? Math.min(...visiveis) : 0;
+  const unidade = qtdMin * calcularMultPrincipalImpressao(os);   // peças que 1 camada rende no limitante
+  // Tom desmarcado não deixa número para trás na linha do enfesto.
+  [1, 2, 3, 4].forEach(t => { if (!tomsSel.includes(t)) delete alvo[t]; });
+  if (!tomsSel.length || !(cam > 0) || !(unidade > 0)) return { arredondou: false };
+  const balanceador = tomsSel[tomsSel.length - 1];
+  let soma = 0, arredondou = false;
+  tomsSel.forEach(t => {
+    if (t === balanceador) return;
+    const exato = Math.max(0, Number(valores[t]) || 0) / unidade;
+    const n = Math.round(exato);
+    if (Math.abs(exato - n) > 1e-9) arredondou = true;
+    soma += n;
+    if (n > 0) alvo[t] = String(n); else delete alvo[t];
+  });
+  const resto = cam - soma;
+  if (resto > 0) alvo[balanceador] = String(resto); else delete alvo[balanceador];
+  return { arredondou };
+}
+
+// Reescreve no DOM a linha TONS da fase principal, sem re-render — mesmo motivo
+// do resto desta área: preservar o foco de quem está tabulando entre células.
+function _atualizarLinhaTonsDoEnfestoNoDOM(os) {
+  const ordP = _ordemFasePrincipal(os);
+  if (ordP == null) return;
+  const tv = ((os.progresso || {}).enfestosTons || {})[ordP] || {};
+  document.querySelectorAll(`input[data-enf-tom="${ordP}"]`).forEach(i => {
+    const txt = tv[i.dataset.enfTomnum] != null ? String(tv[i.dataset.enfTomnum]) : '';
+    if (i.value !== txt) i.value = txt;
+  });
+}
+
 // Salva o valor uniforme V do tom (mesmo numero em todas as celulas visiveis
 // da linha) e atualiza o DOM dos demais inputs sincronizados, das celulas
 // do balanceador e das colunas "Total". O re-render completo nao acontece
@@ -16847,6 +16911,17 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
     if (i.value !== txt) i.value = txt;
   });
   atualizarLinhasTomNoDOM();
+  // Espelha na linha TONS do enfesto: o número que a produção lança aqui passa a
+  // valer como as camadas por tom da fase principal.
+  const eco = _sincronizarTonsDoEnfestoPeloTotal(os);
+  _atualizarLinhaTonsDoEnfestoNoDOM(os);
+  // A divisão não deu camada inteira. Não é erro — o balanceador absorve a sobra
+  // e a soma continua fechando com o CAM —, mas quem lançou precisa saber que o
+  // número da linha TONS foi arredondado, senão vai achar que digitou errado.
+  if (eco.arredondou) {
+    toast('Tons do enfesto arredondados: este total não dá um número inteiro de camadas por tom. '
+      + 'A sobra ficou no último tom.', 'err');
+  }
   try { await saveState('ordens'); } catch (e) { console.warn('salvarValorTotalTamanhoTom', e); }
 }
 
