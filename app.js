@@ -16863,7 +16863,7 @@ function numeroOSordenacao(o) {
 
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
-  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
+  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
   const ordenadas = STATE.ordens.slice().sort((a, b) => {
     const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
@@ -16878,7 +16878,7 @@ function renderListaOS() {
   const filtradas = termo
     ? ordenadas.filter(o => String(o.os || '').toLowerCase().includes(termo))
     : ordenadas;
-  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
+  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
   tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
     // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
@@ -16886,19 +16886,27 @@ function renderListaOS() {
       || (o.codigo && STATE.desenhos.find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
       || null;
     const thumb = `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">${des && des.img ? `<img src="${des.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div>`;
+    // A COR DA PEÇA, da mesma fonte do banner da folha impressa e da folha de OE
+    // (`coresDaPecaOS`): as cores das variantes, sem o tecido no nome e limitadas
+    // a quantas cores o desenho realmente tem. Ler daqui é o que impede a lista
+    // de dizer uma coisa e a folha outra — e é por isso que uma tricolor sai com
+    // as três, e uma peça de uma cor só não herda as três do enfesto.
+    const cores = coresDaPecaOS(o);
     return `
     <tr>
       <td>${thumb}</td>
       <td><strong>${esc(o.os)||'—'}</strong></td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
+      <td>${cores.length
+        ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
+        : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(o.colecaoNome)||'—'}</td>
       <td>${esc(formatDate(o.data))}</td>
       <td>${o.grade?.total||0} pç</td>
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
-        <button class="edit" onclick="imprimirEtiquetas('${o.id}')" title="Abre as etiquetas numa janela do navegador. O tamanho da folha passa a ser o da impressora — use só quando quiser conferir na tela.">etiquetas (tela)</button>
         <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
         <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
         <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
