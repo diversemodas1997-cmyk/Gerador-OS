@@ -8823,8 +8823,18 @@ function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
 // cadastro: cada função tem as suas operações (com o tempo de cada uma), e é o
 // nome da operação que diz a que passo ela pertence. Sem cadastro para um passo,
 // cai no histórico do plano — quem já fez aquele passo antes.
-function _opFuncaoDoPasso(passo, sku, faseNome) {
-  const doCadastro = [];
+function _opFuncoesDoPasso(passo, sku, faseNome) {
+  // As linhas AGRUPADAS POR POSTO. O agrupamento vem antes de qualquer escolha
+  // porque dois postos no mesmo passo NÃO são ambiguidade a resolver: são
+  // trabalho em conjunto. Quem move o enfesto é a enfestadeira COM o auxiliar, e
+  // escolher um dos dois apagava o outro do plano — com o tempo dele livre na
+  // agenda, para o programa encaixar outra coisa por cima.
+  //
+  // A escolha por TIPO e por FASE passa a valer DENTRO de cada posto. Feita antes
+  // do agrupamento, ela derrubava o auxiliar só porque a linha dele é geral e a
+  // da enfestadeira é de um tipo — o específico ganhava do outro POSTO, quando só
+  // deveria ganhar da outra LINHA do mesmo posto.
+  const porPosto = new Map();
   const n = _normSku(sku);
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
@@ -8833,11 +8843,13 @@ function _opFuncaoDoPasso(passo, sku, faseNome) {
       // `ordem` é só a posição na etapa, e a identidade é o id da tarefa. Por
       // cadeia+ordem, a primeira tarefa colidiria com o guarda-chuva `materia:1`.
       if (p && _opPassoId(p) === _opPassoId(passo)) {
-        doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome,
+        if (!porPosto.has(f.id)) porPosto.set(f.id, []);
+        porPosto.get(f.id).push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome,
           duracaoMin: Number(o.duracaoMin) || 0, sku: o.sku || '', fase: o.fase || '' });
       }
     });
   });
+  const escolherNoPosto = doCadastro => {
   // O TIPO DE ENFESTO manda primeiro. "Enfesto · BM.TRI" e "Enfesto · CM.LISA"
   // são o MESMO passo da corrente cadastrado duas vezes, uma por produto — e
   // para uma OS de blusa tricolor quem responde é a primeira. Sem este degrau,
@@ -8886,22 +8898,35 @@ function _opFuncaoDoPasso(passo, sku, faseNome) {
     : (peloNome.length ? peloNome : (semFase.length ? semFase : poolTipo));
   // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
   // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
-  if (pool.length) {
+    if (!pool.length) return null;
     const melhor = pool.slice().sort((a, b) => (b.duracaoMin > 0) - (a.duracaoMin > 0))[0];
     return emprestada ? { ...melhor, duracaoMin: 0, semTempoDoTipo: sku || '' } : melhor;
-  }
+  };
+  const escolhidos = Array.from(porPosto.values()).map(escolherNoPosto).filter(Boolean);
+  // Posto cujas linhas são TODAS de outros tipos entra só quando NENHUM posto
+  // respondeu de verdade — é o mesmo degrau de antes, agora entre postos: o que
+  // tem linha para este produto ganha do que só tem para outros.
+  const reais = escolhidos.filter(c => !c.semTempoDoTipo);
+  const lista = reais.length ? reais : escolhidos;
+  if (lista.length) return lista;
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
     return p && _opPassoId(p) === _opPassoId(passo);
   });
-  if (!iguais.length) return null;
+  if (!iguais.length) return [];
   const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean));
   const f = (STATE.funcoes || []).find(x => x.id === funcaoId);
-  return {
+  return [{
     funcaoId: funcaoId || '', funcaoNome: (f && f.nome) || _opFuncaoNome(iguais[0]),
     nome: _opModa(iguais.map(o => String(o.operacao || '').trim()).filter(Boolean)) || passo.nome,
     duracaoMin: _opModa(iguais.map(o => _opDuracao(o)).filter(d => d > 0)) || 0
-  };
+  }];
+}
+
+// O posto PRINCIPAL do passo. Continua respondendo a quem pergunta "de quem é
+// este passo" no singular — a reordenação pelo cadastro e a folha de OS.
+function _opFuncaoDoPasso(passo, sku, faseNome) {
+  return _opFuncoesDoPasso(passo, sku, faseNome)[0] || null;
 }
 
 // Monta no dia as operações que faltam para a OS atravessar a corrente inteira,
@@ -8955,7 +8980,10 @@ function _opMontarCascataDoLote(data, os) {
       // partir de 1, então por `ordem` a primeira etapa de matéria prima e a
       // "Preparação das máquinas" (principal:1) seriam a mesma linha do índice —
       // e uma calaria a outra no dia em que caíssem no mesmo dia.
-      const pid = _opPassoId(p);
+      // O POSTO entra na chave: o mesmo passo pode ter uma operação em cada um
+      // dos postos que o fazem juntos, e sem isto a segunda seria lida como
+      // repetição da primeira e nunca seria criada.
+      const pid = _opPassoId(p) + '|' + (op.funcaoId || '');
       if (_opHorarioDeRotina(op)) rotinaNoDia.add(dia + '|' + pid);
       if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(dia + '|' + _opChaveFase(op, p) + '|' + pid);
     });
@@ -8965,19 +8993,25 @@ function _opMontarCascataDoLote(data, os) {
   // Devolve { fim } quando criou, { naoCoube: true } quando não coube naquele
   // dia, e null quando não havia o que fazer (já existe, ou o posto não tem a
   // operação cadastrada).
-  const criar = (passo, fase, pisoRelogio, dia) => {
-    dia = dia || data;
-    const pid = _opPassoId(passo);
-    const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + pid;
+  // A partir de quando ESTE POSTO pode pegar o passo: nunca antes do relógio da
+  // corrente, nunca antes de ele terminar o que já tem — dele ou da PESSOA dele,
+  // que pode cobrir outro posto.
+  const pisoDoPosto = (cad, pisoRelogio, dia) => {
+    const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
+    const chavePessoa = pessoa ? _opChavePessoa({ responsavelNome: pessoa.nome, responsavelId: pessoa.id }) : '';
+    const ocupaAte = o => _opInicioMin(o) != null && !_opHorarioDeRotina(o)
+      && (o.funcaoId === cad.funcaoId || (chavePessoa && _opChavePessoa(o) === chavePessoa));
+    const fimDoPosto = doDia(dia).filter(ocupaAte)
+      .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
+    return Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
+  };
+  const criarNoPosto = (passo, fase, pisoRelogio, dia, cad, pid) => {
+    // A chave inclui o POSTO: o mesmo passo pode nascer em dois postos que o
+    // fazem juntos, e sem isto o segundo seria barrado como repetido do primeiro.
+    const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + pid + '|' + cad.funcaoId;
     if (jaTem.has(chave)) return null;
-    // O TIPO DE ENFESTO desta OS (BM.TRI, CM.LISA…): é ele que escolhe, dentro
-    // do posto, a linha cadastrada com o tempo daquele produto.
-    // A FASE entra na consulta junto com o tipo: é ela que escolhe, dentro do
-    // posto, a linha daquele pano. Sem isso as cinco fases de um tricolor
-    // recebiam todas o nome e o tempo de uma única linha.
-    const cad = _opFuncaoDoPasso(passo, _skuDaOS(os), fase ? fase.nome : '');
-    if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
-    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(dia + '|' + pid)) return null;
+    if (_opHorarioDeRotina({ operacao: cad.nome })
+      && rotinaNoDia.has(dia + '|' + pid + '|' + cad.funcaoId)) return null;
     // Duração: a cadastrada na função — MENOS no enfesto, que é apurado do
     // histórico e não do cadastro. "Corpo Parte 3" (5,73 m) não leva o mesmo que
     // "Corpo Parte 2" (1,13 m), e o posto não tem como saber a diferença.
@@ -9010,11 +9044,7 @@ function _opMontarCascataDoLote(data, os) {
     // acusava.
     const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
     const chavePessoa = pessoa ? _opChavePessoa({ responsavelNome: pessoa.nome, responsavelId: pessoa.id }) : '';
-    const ocupaAte = o => _opInicioMin(o) != null && !_opHorarioDeRotina(o)
-      && (o.funcaoId === cad.funcaoId || (chavePessoa && _opChavePessoa(o) === chavePessoa));
-    const fimDoPosto = doDia(dia).filter(ocupaAte)
-      .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
-    const piso = Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
+    const piso = pisoDoPosto(cad, pisoRelogio, dia);
     // Uma linha de operação no dia. Sai daqui porque a operação REPARTIDA cria
     // várias, e todas precisam nascer idênticas em tudo o que não é hora nem
     // duração — posto, pessoa, referência e fase.
@@ -9070,6 +9100,45 @@ function _opMontarCascataDoLote(data, os) {
     }
     criarLinha(cad.nome, ini, duracaoMin);
     return { fim: ini + duracaoMin };
+  };
+  // Cria um passo da corrente EM TODOS OS POSTOS QUE O EXECUTAM. `fase` é null
+  // nas rotinas de abertura.
+  //
+  // Dois postos no mesmo passo trabalham JUNTOS — quem move o enfesto é a
+  // enfestadeira com o auxiliar. Cada um ganha a sua operação, as duas partindo
+  // do mesmo piso, cada uma com o seu tempo. O passo seguinte espera a MAIS
+  // LONGA: se a enfestadeira leva 5 min e o auxiliar 8, o corte começa depois
+  // dos 8, porque o pano só está no lugar quando os dois terminaram.
+  //
+  // Devolve { fim } quando criou, { naoCoube: true } quando nenhum posto coube
+  // no dia, e null quando não havia o que fazer.
+  const criar = (passo, fase, pisoRelogio, dia) => {
+    dia = dia || data;
+    const pid = _opPassoId(passo);
+    // O TIPO DE ENFESTO e a FASE escolhem, DENTRO de cada posto, a linha daquele
+    // produto e daquele pano.
+    const cads = _opFuncoesDoPasso(passo, _skuDaOS(os), fase ? fase.nome : '')
+      .filter(c => c && c.funcaoId);
+    if (!cads.length) { semFuncao.push({ passo, fase }); return null; }
+    // TRABALHO EM CONJUNTO COMEÇA JUNTO. O piso é o do posto que se libera POR
+    // ÚLTIMO: adiantar um deles seria planejar meia dupla movendo o pano — a
+    // enfestadeira movendo às 07:20 e o auxiliar chegando às 07:45, cada um
+    // sozinho num trabalho que exige os dois.
+    const pisoComum = cads.reduce((mx, cad) => Math.max(mx, pisoDoPosto(cad, pisoRelogio, dia)),
+      pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio);
+    let fimMax = null, naoCoubeAlgum = false;
+    cads.forEach(cad => {
+      const r = criarNoPosto(passo, fase, pisoComum, dia, cad, pid);
+      if (!r) return;
+      if (r.naoCoube) { naoCoubeAlgum = true; return; }
+      if (r.fim != null) fimMax = fimMax == null ? r.fim : Math.max(fimMax, r.fim);
+    });
+    // Nenhum coube: o passo inteiro transborda para o próximo dia útil. Se um
+    // coube e outro não, o que coube fica — e o que faltou entra no aviso, em vez
+    // de arrastar para outro dia um trabalho que já começou neste.
+    if (fimMax == null) return naoCoubeAlgum ? { naoCoube: true } : null;
+    if (naoCoubeAlgum) naoCoube.push({ passo, fase, dia });
+    return { fim: fimMax };
   };
   // MATÉRIA PRIMA: NO DIA ÚTIL ANTERIOR, uma volta inteira POR OS.
   //
