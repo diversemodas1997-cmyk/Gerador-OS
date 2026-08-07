@@ -9583,10 +9583,19 @@ function _opMontarExpedicaoDoDia(data) {
           funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
           operacao: cad.nome, escopo: 'completa', etapas: [],
           inicio: _opHHMM(relogio), duracaoMin: dur,
-          // Âncora: a hora veio do PLANO DE EXPEDIÇÃO, não da fila do posto. Sem
-          // isto o encadeamento do posto a puxaria para logo depois da operação
-          // de cima e a carga ficaria pronta na hora errada.
-          inicioFixo: true,
+          // Âncora do PROGRAMA, não do usuário. A hora vem do plano de expedição
+          // (a saída do caminhão), e sem âncora o encadeamento do posto puxaria a
+          // operação para logo depois da de cima — a carga ficaria pronta na hora
+          // errada.
+          //
+          // `inicioAuto` e não `inicioFixo` porque são coisas com donos
+          // diferentes: `inicioFixo` é escolha de ALGUÉM (a caixa "horário fixo",
+          // o "todo dia às" do cadastro) e por isso aparece com 📌; `inicioAuto`
+          // segura o horário do mesmo jeito sem se apresentar como decisão de
+          // ninguém. Marcada como fixa, a operação pedia para ser "solta" de uma
+          // trava que o usuário nunca pôs — e tirar "todo dia às" do cadastro não
+          // a soltava, porque o pino não vinha de lá.
+          inicioAuto: true,
           expChave: chave, expJanelaId: oc.janela.id, expPerna: perna,
           responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
           referencia: ref, status: 'pendente', prioridade: 'eletiva', obs: ''
@@ -9619,7 +9628,7 @@ async function montarExpedicaoDoDia(data) {
     + linhas.join('\n')
     + '\n\nAs três terminam na hora de saída da janela: o caminhão sai com a carga pronta.\n'
     + (prev.jaTinha.length ? `${prev.jaTinha.length} operação(ões) já estavam no dia e não foram repetidas.\n` : '')
-    + 'A hora fica fixada (📌), porque vem do plano de expedição e não da fila do posto.')) return;
+    + 'A hora fica ancorada na saída do caminhão — o encadeamento do posto não a arrasta —, mas sem 📌: ela é do plano de expedição, não uma trava sua.')) return;
   const r = _opMontarExpedicaoDoDia(dia);
   await saveState('operacoes');
   toast(`${r.criadas.length} operação(ões) de expedição criada(s) em ${formatDate(dia)}`, 'ok');
