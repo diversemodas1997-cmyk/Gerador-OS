@@ -9213,38 +9213,52 @@ function _opMontarExpedicaoDoDia(data) {
   const ocs = (typeof ocorrenciasExpedicao === 'function' ? ocorrenciasExpedicao(data, data) : [])
     .filter(oc => !oc.cancelada);
   ocs.forEach(oc => {
-    ['ida', 'volta'].forEach(perna => {
-      const cargas = _expCargasDa(oc.janela.id, oc.dataOrig, perna);
-      const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
-      const fim = _opMin(hora);
-      // A DESCARGA ACONTECE COM OU SEM OS INFORMADA. O caminhão volta e é
-      // descarregado de qualquer jeito — é trabalho que o posto faz todo dia.
-      // QUAIS OSs voltaram é outra pergunta, e fica sem resposta até alguém
-      // alocar a volta: a operação nasce então SEM número de OS na referência,
-      // que é o jeito certo de não saber. Herdar os números da ida, como fazia
-      // antes, era dizer que voltou o que acabou de sair.
-      //
-      // A IDA continua exigindo carga: o caminhão só sai porque há o que levar.
-      // A volta sem HORA também não entra — sem hora não há onde encaixá-la, e
-      // cobrar isso em toda janela que não tem volta marcada seria só ruído.
-      if (!cargas.length && (perna !== 'volta' || fim == null)) return;
-      if (fim == null) { semHora.push({ oc, perna }); return; }
-      const cads = _opSeqCargaDaPerna(perna).map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
-      const faltando = cads.filter(x => !x.cad || !x.cad.funcaoId);
-      if (faltando.length) { faltando.forEach(x => semFuncao.push({ passo: x.passo, oc, perna })); return; }
-      const total = cads.reduce((s, x) => s + Math.max(0, x.cad.duracaoMin || 0), 0);
-      // Começa cedo o bastante para acabar na saída — e nunca antes de a fábrica
-      // abrir. Encostando na abertura, a carga só fica pronta ANTES da hora, que
-      // é o lado certo de errar.
-      let relogio = Math.max(_OP_JORNADA.ini, fim - total);
-      const nums = Array.from(new Set(cargas
+    const cargasDe = perna => _expCargasDa(oc.janela.id, oc.dataOrig, perna);
+    const temIda = cargasDe('ida').length > 0;
+    // A CADEIA DA CARGA É UM GIRO SÓ DO CAMINHÃO, na ordem do cadastro:
+    // selecionar os pacotes, DESCARREGAR o que voltou e montar o que sai. Montar
+    // por perna as punha em sequências separadas, cada uma ancorada na sua hora,
+    // e a descarga caía depois da montagem — descarregar depois de carregar.
+    //
+    // A perna diz DE QUEM É A OS de cada passo, não quando ele acontece. É essa
+    // separação que faz a descarga parar de herdar os números da ida (dizer que
+    // voltou o que acabou de sair) sem tirá-la do lugar certo na sequência.
+    //
+    // Sem carga de ida o caminhão não sai: sobra a descarga sozinha, ancorada na
+    // hora de volta — ela acontece com ou sem OS informada, porque descarregar é
+    // trabalho que o posto faz todo dia.
+    const passos = temIda ? _OP_SEQ_CARGA.slice() : _opSeqCargaDaPerna('volta');
+    const fim = _opMin(temIda ? oc.horaIda : oc.horaVolta);
+    if (!passos.length) return;
+    // Sem hora não há onde encaixar. Só é cobrado quando havia carga de ida —
+    // acusar isso em toda janela sem volta marcada seria só ruído.
+    if (fim == null) { if (temIda) semHora.push({ oc, perna: 'ida' }); return; }
+    const cads = passos.map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
+    const faltando = cads.filter(x => !x.cad || !x.cad.funcaoId);
+    if (faltando.length) {
+      faltando.forEach(x => semFuncao.push({ passo: x.passo, oc, perna: x.passo.perna || 'ida' }));
+      return;
+    }
+    const total = cads.reduce((s, x) => s + Math.max(0, x.cad.duracaoMin || 0), 0);
+    // Começa cedo o bastante para acabar na saída — e nunca antes de a fábrica
+    // abrir. Encostando na abertura, a carga só fica pronta ANTES da hora, que
+    // é o lado certo de errar.
+    let relogio = Math.max(_OP_JORNADA.ini, fim - total);
+    // A referência é POR PASSO, porque cada um responde pela sua perna: a
+    // seleção e a montagem levam as OS que saem, a descarga as que voltam.
+    const refDe = passo => {
+      const perna = passo.perna || 'ida';
+      const nums = Array.from(new Set(cargasDe(perna)
         .map(c => (STATE.ordens || []).find(o => o.id === c.osId))
         .filter(Boolean).map(o => String(o.os || '').trim()).filter(Boolean)));
-      const ref = `Expedição ${oc.janela.nome || ''} (${perna})`.replace(/\s+/g, ' ').trim()
+      return `Expedição ${oc.janela.nome || ''} (${perna})`.replace(/\s+/g, ' ').trim()
         + (nums.length ? ` · OS ${nums.join('/')}` : '');
-      const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
-      cads.forEach(({ passo, cad }) => {
-        const chave = [oc.janela.id, oc.dataOrig, perna, passo.ordem].join('|');
+    };
+    const doDia = () => (STATE.operacoes || []).filter(o => o.data === data);
+    cads.forEach(({ passo, cad }) => {
+      const perna = passo.perna || 'ida';
+      const ref = refDe(passo);
+      const chave = [oc.janela.id, oc.dataOrig, perna, passo.ordem].join('|');
         // Já montada, ou já digitada à mão para esta janela: não duplica. O
         // reconhecimento pelo NOME DA JANELA na referência é o que salva o que
         // foi lançado antes desta automação existir ("Lotes para expedição
@@ -9274,8 +9288,7 @@ function _opMontarExpedicaoDoDia(data) {
         };
         STATE.operacoes.push(nova);
         criadas.push(nova);
-        relogio += dur;
-      });
+      relogio += dur;
     });
   });
   return { criadas, jaTinha, semFuncao, semHora, ocorrencias: ocs.length };
