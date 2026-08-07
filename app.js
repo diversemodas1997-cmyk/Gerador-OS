@@ -4584,14 +4584,58 @@ function faseAtualOS(o) {
 // O TIPO e a GRADE saem da grade CADASTRADA, nunca do texto guardado na OS: a
 // OS guarda o nome que a grade tinha no dia em que foi emitida, e grade
 // renomeada faria o mesmo produto aparecer duas vezes no ranking.
-function _rankingProducao() {
-  const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim());
+// O período em foco. '' nos dois = a fábrica inteira, desde a primeira OS.
+let _rankAno = '', _rankMes = '';
+
+const _RANK_MES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function _rankRotuloMes(aaaaMm) {
+  const [a, m] = String(aaaaMm || '').split('-');
+  const nome = _RANK_MES_NOME[Number(m) - 1];
+  return nome ? `${nome} de ${a}` : String(aaaaMm || '');
+}
+
+// Os anos e meses que EXISTEM nas OS. O filtro não oferece período vazio: mês
+// sem nenhuma OS na lista só faria escolher e não ver nada.
+function _rankingPeriodos() {
+  const anos = new Set(), meses = new Set();
+  (STATE.ordens || []).forEach(o => {
+    const d = String(o.data || '');
+    if (!/^\d{4}-\d{2}/.test(d)) return;
+    anos.add(d.slice(0, 4));
+    meses.add(d.slice(0, 7));
+  });
+  return {
+    anos: [...anos].sort().reverse(),
+    meses: [...meses].sort().reverse()
+  };
+}
+
+function _rankingProducao(ano, mes) {
+  // OS SEM DATA fica de fora de qualquer recorte com período: ela não pertence a
+  // mês nenhum, e contá-la em todos faria as somas dos meses passarem do total.
+  const dentro = o => {
+    const d = String(o.data || '');
+    if (mes) return d.slice(0, 7) === mes;
+    if (ano) return d.slice(0, 4) === ano;
+    return true;
+  };
+  const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim()).filter(dentro);
   const linhas = new Map();
   const somar = (mapa, chave, pecas) => {
     if (!mapa.has(chave)) mapa.set(chave, { n: 0, pecas: 0 });
     const e = mapa.get(chave); e.n++; e.pecas += pecas;
   };
   const porCor = new Map(), porSkuCor = new Map();
+  // A série do tempo: por MÊS quando se está dentro de um ano, por ANO quando se
+  // olha a fábrica inteira. É o mesmo gesto — abrir o período em foco na fatia
+  // imediatamente menor.
+  const porPeriodo = new Map();
+  const fatia = o => {
+    const d = String(o.data || '');
+    if (!/^\d{4}-\d{2}/.test(d)) return '';
+    return (ano || mes) ? d.slice(0, 7) : d.slice(0, 4);
+  };
   let semGrade = 0;
   const datas = [];
   ord.forEach(o => {
@@ -4611,22 +4655,66 @@ function _rankingProducao() {
     somar(linhas, JSON.stringify([sku, cor, grade]), pecas);
     somar(porCor, JSON.stringify([cor]), pecas);
     somar(porSkuCor, JSON.stringify([sku, cor]), pecas);
+    const f = fatia(o);
+    if (f) somar(porPeriodo, JSON.stringify([f]), pecas);
   });
   const ordenar = m => [...m.entries()]
     .map(([k, e]) => ({ partes: JSON.parse(k), ...e }))
     .sort((a, b) => b.n - a.n || b.pecas - a.pecas);
   datas.sort();
+  // A série do tempo sai em ordem CRONOLÓGICA, não por tamanho: aqui o que se lê
+  // é a evolução, e ordenar por volume embaralharia justamente isso.
+  const serie = [...porPeriodo.entries()]
+    .map(([k, e]) => ({ periodo: JSON.parse(k)[0], ...e }))
+    .sort((a, b) => a.periodo.localeCompare(b.periodo));
   return {
     total: ord.length, semGrade, de: datas[0] || '', ate: datas[datas.length - 1] || '',
-    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor)
+    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor),
+    serie, porMes: !!(ano || mes)
   };
+}
+
+// Troca o período em foco. O mês só existe dentro de um ano: escolher outro ano
+// zera o mês, senão ficaria "agosto" pendurado num ano que não o tem.
+function _rankingFiltrar(campo, valor) {
+  if (campo === 'ano') { _rankAno = valor || ''; _rankMes = ''; }
+  else { _rankMes = valor || ''; if (_rankMes) _rankAno = _rankMes.slice(0, 4); }
+  renderRanking();
 }
 
 function renderRanking() {
   const box = document.getElementById('ranking-painel');
   if (!box) return;
-  const r = _rankingProducao();
-  if (!r.total) { box.innerHTML = '<div class="info-box">Nenhuma OS emitida ainda.</div>'; return; }
+  const per = _rankingPeriodos();
+  // Período que sumiu (ano sem OS depois de um filtro de dados): volta para
+  // "toda a fábrica" em vez de mostrar uma tela vazia sem explicação.
+  if (_rankAno && !per.anos.includes(_rankAno)) { _rankAno = ''; _rankMes = ''; }
+  if (_rankMes && !per.meses.includes(_rankMes)) _rankMes = '';
+  const r = _rankingProducao(_rankAno, _rankMes);
+  const mesesDoAno = per.meses.filter(m => !_rankAno || m.slice(0, 4) === _rankAno);
+  const filtro = `
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="field" style="margin:0;">
+        <label>Ano</label>
+        <select onchange="_rankingFiltrar('ano', this.value)">
+          <option value="">Todos os anos</option>
+          ${per.anos.map(a => `<option value="${esc(a)}" ${a === _rankAno ? 'selected' : ''}>${esc(a)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Mês</label>
+        <select onchange="_rankingFiltrar('mes', this.value)">
+          <option value="">${_rankAno ? 'Todos os meses de ' + esc(_rankAno) : 'Todos os meses'}</option>
+          ${mesesDoAno.map(m => `<option value="${esc(m)}" ${m === _rankMes ? 'selected' : ''}>${esc(_rankRotuloMes(m))}</option>`).join('')}
+        </select>
+      </div>
+      ${(_rankAno || _rankMes)
+        ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar filtro</button>` : ''}
+    </div>`;
+  if (!r.total) {
+    box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankMes ? _rankRotuloMes(_rankMes) : _rankAno)}.</div>`;
+    return;
+  }
   const contadas = r.total - r.semGrade;
   const pct = n => contadas ? (n * 100 / contadas).toFixed(1).replace('.', ',') + '%' : '—';
   const num = n => Number(n || 0).toLocaleString('pt-BR');
@@ -4659,12 +4747,40 @@ function renderRanking() {
           </tr>`).join('')}</tbody>
       </table>
     </div>`;
-  box.innerHTML = `
+  // A SÉRIE DO TEMPO. Clicar na linha entra naquele período — é o mesmo gesto de
+  // abrir uma pasta, e evita ter de achar o mês no seletor.
+  const maxP = r.serie.reduce((mx, x) => Math.max(mx, x.n), 0);
+  const serieHtml = !r.serie.length ? '' : `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-title">${r.porMes ? 'Por mês' : 'Por ano'}</div>
+      <div class="desc" style="margin-bottom:8px;">${r.porMes
+        ? 'Os meses do período em foco, em ordem. Clique num mês para ver o ranking só dele.'
+        : 'Os anos com produção, em ordem. Clique num ano para abri-lo em meses.'}</div>
+      <table class="table">
+        <thead><tr>
+          <th>${r.porMes ? 'mês' : 'ano'}</th>
+          <th style="width:64px;text-align:right;">OS</th>
+          <th style="width:90px;text-align:right;">peças</th>
+          <th style="width:150px;"></th>
+        </tr></thead>
+        <tbody>${r.serie.map(x => `
+          <tr style="cursor:pointer;" title="Ver só este período"
+              onclick="_rankingFiltrar('${r.porMes ? 'mes' : 'ano'}', '${esc(x.periodo)}')">
+            <td><strong>${esc(r.porMes ? _rankRotuloMes(x.periodo) : x.periodo)}</strong></td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${x.n}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
+            <td>${barra(x.n, maxP)}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  const foco = _rankMes ? _rankRotuloMes(_rankMes) : (_rankAno || '');
+  box.innerHTML = filtro + `
     <div class="info-box" style="margin-bottom:14px;">
-      <b>${num(contadas)} OS</b> no ranking${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
+      <b>${num(contadas)} OS</b> ${foco ? `em <b>${esc(foco)}</b>` : 'no ranking'}${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
       · <b>${r.linhas.length}</b> combinações distintas de tipo × cor × grade
       ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: a grade delas foi apagada do cadastro, então não têm mais tipo nem grade para cruzar.` : ''}
     </div>
+    ${serieHtml}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
     ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
     ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
@@ -21799,6 +21915,10 @@ async function popularExemplo() {
 
 // Deixar disponível globalmente
 window.goto = goto;
+// Chamada pelos seletores de período e pelas linhas da série do tempo, que são
+// handlers inline no HTML gerado.
+window._rankingFiltrar = _rankingFiltrar;
+window.renderRanking = renderRanking;
 window.openCadastroModal = openCadastroModal;
 window.closeModal = closeModal;
 window.salvarCadastro = salvarCadastro;
