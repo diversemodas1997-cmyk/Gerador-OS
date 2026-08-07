@@ -9381,21 +9381,41 @@ function _opMontarCascataDoLote(data, os) {
     // depois do almoço. Só continua "não coube" o que não cabe nem repartido —
     // aí é dia cheio de verdade, e meio enfesto no dia com o corte marcado em
     // cima dele seria pior que nada.
-    if (ini + duracaoMin > _OP_JORNADA.fim) {
+    //
+    // REPARTIR TAMBÉM EM VOLTA DAS ROTINAS, não só no fim do dia. A condição era
+    // apenas "estourou a jornada", e por isso uma operação que não cabia inteira
+    // antes do almoço era empurrada INTEIRA para depois dele: 15 minutos a mais
+    // de duração custavam 3h15 de posto parado. Foram esses os vãos de 2h15 e 2h
+    // que apareceram no plano de 07/08. A máquina de repartir já sabe respeitar
+    // hora marcada — faltava chamá-la também quando a operação é EMPURRADA.
+    //
+    // `ini > piso` é o sinal de que ela foi empurrada: o primeiro vago do posto
+    // ficou depois de onde a corrente podia começar.
+    //
+    // O CORTE DE ENFESTO é a exceção, e a única: ele não pode ser interrompido no
+    // meio. Continua sendo empurrado inteiro, mesmo que deixe o posto parado.
+    const podePartir = !_opEhCorteDeEnfesto({ operacao: cad.nome });
+    const empurrada = ini > piso;
+    const estouraODia = ini + duracaoMin > _OP_JORNADA.fim;
+    if (podePartir && (empurrada || estouraODia)) {
       const pedacos = _opPartirNosVagos(_opVagosNoPosto(dia, cad.funcaoId, piso, chavePessoa), duracaoMin);
-      if (!pedacos || pedacos.length < 2) return { naoCoube: true };
-      // O nome de cada pedaço é o DO CADASTRO, inteiro. Qual pedaço ele é fica em
-      // `parte` — no nome, viraria "Enfesto corpo parte 1 1/2", que não é o nome
-      // de operação nenhuma e não se acha no cadastro de função nenhuma.
-      pedacos.forEach((p, i) => {
-        const linha = criarLinha(cad.nome, p.ini, p.dur);
-        linha.partida = true;
-        linha.parte = `${i + 1}/${pedacos.length}`;
-      });
-      const ult = pedacos[pedacos.length - 1];
-      partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin, dia });
-      return { fim: ult.ini + ult.dur };
+      if (pedacos && pedacos.length > 1) {
+        // O nome de cada pedaço é o DO CADASTRO, inteiro. Qual pedaço ele é fica
+        // em `parte` — no nome, viraria "Enfesto corpo parte 1 1/2", que não é o
+        // nome de operação nenhuma e não se acha no cadastro de função nenhuma.
+        pedacos.forEach((p, i) => {
+          const linha = criarLinha(cad.nome, p.ini, p.dur);
+          linha.partida = true;
+          linha.parte = `${i + 1}/${pedacos.length}`;
+        });
+        const ult = pedacos[pedacos.length - 1];
+        partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin, dia });
+        return { fim: ult.ini + ult.dur };
+      }
     }
+    // Não coube nem repartido: aí é dia cheio de verdade, e meio enfesto no dia
+    // com o corte marcado em cima dele seria pior que nada.
+    if (estouraODia) return { naoCoube: true };
     criarLinha(cad.nome, ini, duracaoMin);
     return { fim: ini + duracaoMin };
   };
