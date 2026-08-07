@@ -6440,7 +6440,16 @@ function _opMapaCores(doDia) {
     if (idx == null) { idx = extra++; ordemFuncao.set(key, idx); }
     return _OP_PALETA[idx % _OP_PALETA.length];
   };
-  doDia.forEach(op => m.set(op.id, op.inicioFixo ? _OP_COR_FIXO : corDe(_opFuncaoNome(op))));
+  // A EXPEDIÇÃO É A EXCEÇÃO. As três operações de carga têm hora fixa, mas a hora
+  // não é rotina nem trava do usuário: ela vem da SAÍDA DO CAMINHÃO, e o trabalho
+  // em si é o dia do posto de expedição. Pintá-las de preto tirava do Auxiliar de
+  // expedição justamente as únicas operações que ele tem — a linha do tempo dele
+  // saía inteira na cor do que não se move, como se ele não fizesse nada.
+  //
+  // `expChave` é a marca de quem nasceu do plano de expedição, e distingue essas
+  // três do café e do almoço, que também são hora marcada e seguem em preto.
+  doDia.forEach(op => m.set(op.id,
+    (op.inicioFixo && !op.expChave) ? _OP_COR_FIXO : corDe(_opFuncaoNome(op))));
   return m;
 }
 
@@ -11079,7 +11088,7 @@ function renderPrintPlanoOperacoes() {
     }).join('');
     return `
       <div class="op-print-tl no-print">
-        <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função · <span style="color:${_OP_COR_FIXO};font-weight:700;">preto = horário fixo</span></div>
+        <div class="op-print-tl-cab">Linha do tempo · operações em ordem de horário · cor por função · <span style="color:${_OP_COR_FIXO};font-weight:700;">preto = rotina de hora marcada</span></div>
         <div class="op-print-tl-regua"><div class="cap">Horário</div><div class="track">${ticks.join('')}</div></div>
         ${linhas}
       </div>`;
