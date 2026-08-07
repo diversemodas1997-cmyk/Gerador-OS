@@ -6807,6 +6807,19 @@ function _opProximoDiaUtil(iso) {
   return d;
 }
 
+// O dia útil ANTERIOR. Espelho do de cima, para a corrente que corre para trás:
+// o preparo da matéria prima de uma OS acontece no dia antes do enfesto dela.
+// Segunda-feira volta para a sexta, não para o domingo.
+function _opDiaUtilAnterior(iso) {
+  let d = _expAddDias(iso, -1);
+  for (let i = 0; i < 7; i++) {
+    const dow = _expData(d).getDay();
+    if (dow !== 0 && dow !== 6) return d;
+    d = _expAddDias(d, -1);
+  }
+  return d;
+}
+
 // Por que esta operação está fora da jornada (ou null quando está dentro).
 function _opForaDaJornada(op) {
   const i = _opInicioMin(op);
@@ -6938,13 +6951,23 @@ function _opEtapaMateria() {
 // foi estendido —, mas o preparo da matéria prima é da casa: medir bobina,
 // amostrar cor, aparar tubo, empilhar por compatibilidade. Quem sabe quais são
 // as etapas é quem as cadastrou, e é de lá que elas vêm.
+// O cache não é só velocidade: a corrente é comparada por IDENTIDADE DE OBJETO
+// (`_opReordenarPorCadastro` faz `=== p`, e o Map de posições usa o passo como
+// chave). Recriando os objetos a cada chamada, nenhuma dessas comparações casava
+// e os passos de matéria prima ficavam de fora da ordenação do cadastro.
+let _opPassosMateriaCache = null;
 function _opPassosMateria() {
+  const fonte = STATE.etapas || null;
   const et = _opEtapaMateria();
-  if (!et || !Array.isArray(et.tarefas)) return [];
-  return et.tarefas
+  const tarefas = (et && Array.isArray(et.tarefas)) ? et.tarefas : null;
+  const c = _opPassosMateriaCache;
+  if (c && c.fonte === fonte && c.tarefas === tarefas) return c.lista;
+  const lista = !tarefas ? [] : tarefas
     .filter(t => t && String(t.nome || '').trim())
     .slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
     .map((t, i) => ({ cadeia: 'materia', ordem: i + 1, tarefaId: t.id, nome: String(t.nome).trim() }));
+  _opPassosMateriaCache = { fonte, tarefas, lista };
+  return lista;
 }
 
 // Os passos oferecidos no cadastro, na ordem em que a fábrica os executa.
@@ -8735,7 +8758,10 @@ function _opFuncaoDoPasso(passo, sku) {
   (STATE.funcoes || []).forEach(f => {
     _opsDaFuncao(f).forEach(o => {
       const p = _opPassoDaLinhaCadastro(o);
-      if (p && p.cadeia === passo.cadeia && p.ordem === passo.ordem) {
+      // Compara pelo ID do passo, não por cadeia+ordem: em matéria prima a
+      // `ordem` é só a posição na etapa, e a identidade é o id da tarefa. Por
+      // cadeia+ordem, a primeira tarefa colidiria com o guarda-chuva `materia:1`.
+      if (p && _opPassoId(p) === _opPassoId(passo)) {
         doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome,
           duracaoMin: Number(o.duracaoMin) || 0, sku: o.sku || '' });
       }
@@ -8770,7 +8796,7 @@ function _opFuncaoDoPasso(passo, sku) {
   }
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
-    return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
+    return p && _opPassoId(p) === _opPassoId(passo);
   });
   if (!iguais.length) return null;
   const funcaoId = _opModa(iguais.map(o => o.funcaoId).filter(Boolean));
@@ -8826,9 +8852,16 @@ function _opMontarCascataDoLote(data, os) {
   const indexarDia = (dia) => {
     doDia(dia).forEach(op => {
       const p = _opPassoSequencia(op);
-      if (!p || p.cadeia !== 'principal') return;
-      if (_opHorarioDeRotina(op)) rotinaNoDia.add(dia + '|' + p.ordem);
-      if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(dia + '|' + _opChaveFase(op, p) + '|' + p.ordem);
+      // Matéria prima entra no índice junto com a principal: sem isso, remontar a
+      // cascata criaria as etapas de preparo de novo a cada clique.
+      if (!p || (p.cadeia !== 'principal' && p.cadeia !== 'materia')) return;
+      // A chave é o ID do passo, não a `ordem`. As duas correntes numeram a
+      // partir de 1, então por `ordem` a primeira etapa de matéria prima e a
+      // "Preparação das máquinas" (principal:1) seriam a mesma linha do índice —
+      // e uma calaria a outra no dia em que caíssem no mesmo dia.
+      const pid = _opPassoId(p);
+      if (_opHorarioDeRotina(op)) rotinaNoDia.add(dia + '|' + pid);
+      if (_opLotesDaOperacao(op).includes(lote)) jaTem.add(dia + '|' + _opChaveFase(op, p) + '|' + pid);
     });
   };
   indexarDia(data);
@@ -8838,13 +8871,14 @@ function _opMontarCascataDoLote(data, os) {
   // operação cadastrada).
   const criar = (passo, fase, pisoRelogio, dia) => {
     dia = dia || data;
-    const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + passo.ordem;
+    const pid = _opPassoId(passo);
+    const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + pid;
     if (jaTem.has(chave)) return null;
     // O TIPO DE ENFESTO desta OS (BM.TRI, CM.LISA…): é ele que escolhe, dentro
     // do posto, a linha cadastrada com o tempo daquele produto.
     const cad = _opFuncaoDoPasso(passo, _skuDaOS(os));
     if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
-    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(dia + '|' + passo.ordem)) return null;
+    if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(dia + '|' + pid)) return null;
     // Duração: a cadastrada na função — MENOS no enfesto, que é apurado do
     // histórico e não do cadastro. "Corpo Parte 3" (5,73 m) não leva o mesmo que
     // "Corpo Parte 2" (1,13 m), e o posto não tem como saber a diferença.
@@ -8938,6 +8972,42 @@ function _opMontarCascataDoLote(data, os) {
     criarLinha(cad.nome, ini, duracaoMin);
     return { fim: ini + duracaoMin };
   };
+  // MATÉRIA PRIMA: NO DIA ÚTIL ANTERIOR, uma volta inteira POR OS.
+  //
+  // O preparo do pano nunca é para o mesmo dia. O que se mede, amostra, apara e
+  // empilha hoje é o que vai ser enfestado AMANHÃ — por isso esta corrente não
+  // entra na abertura do dia do lote como as outras rotinas, e sim no dia de
+  // antes. O enfesto de terça depende do preparo de segunda; o de segunda, do
+  // preparo da sexta (por isso o dia ÚTIL anterior, não o dia anterior).
+  //
+  // E é uma volta POR OS, não uma por dia: cada OS tem o seu tecido, a sua cor e
+  // as suas bobinas, então duas OSs alocadas para amanhã dão dois preparos hoje.
+  // Não é por FASE — as etapas cobrem o pano da OS inteira, tecido e ribana
+  // juntos, e repeti-las por fase multiplicaria por cinco um trabalho que é
+  // feito uma vez.
+  //
+  // A corrente só acorda quando ALGUÉM A CADASTRA. Enquanto nenhuma função tiver
+  // linha apontando para uma etapa de matéria prima, ela é pulada em silêncio —
+  // sem isto, toda alocação passaria a acusar "10 passos sem função cadastrada"
+  // em fábrica que nunca planejou esse preparo, trocando um recurso novo por um
+  // erro novo. Cadastrou uma linha, a corrente entra sozinha.
+  const passosMateria = _opPassosMateria()
+    .filter(p => { const c = _opFuncaoDoPasso(p); return c && c.funcaoId; });
+  if (passosMateria.length) {
+    const diaMateria = _opDiaUtilAnterior(data);
+    diasTocados.add(diaMateria);
+    garantirFixas(diaMateria);   // o dia de antes também tem café e almoço
+    indexarDia(diaMateria);      // e pode já ter o preparo desta OS
+    let relogioMat = null;
+    passosMateria.forEach(passo => {
+      const r = criar(passo, null, relogioMat, diaMateria);
+      // Não coube no dia anterior: fica registrado como não coube, e NÃO
+      // transborda para frente. Empurrar o preparo para o próprio dia do enfesto
+      // seria desmentir a regra que esta corrente existe para cumprir.
+      if (r && r.naoCoube) { naoCoube.push({ passo, fase: null, dia: diaMateria }); return; }
+      if (r && r.fim != null) relogioMat = r.fim;
+    });
+  }
   // Rotinas de abertura primeiro: elas abrem o dia e o resto conta a partir dali.
   let pisoDoDia = null;
   _opCorrente().rotina.forEach(passo => {
@@ -9176,8 +9246,12 @@ function abrirModalAlocarOS(data) {
     const o = (STATE.ordens || []).find(x => x.id === (selOS && selOS.value));
     if (!o) { box.innerHTML = ''; return; }
     const fs = _opFasesDaOS(o);
+    // O preparo da matéria prima conta na soma, mas cai no dia ANTERIOR — quem
+    // lê precisa saber que nem tudo o que este número promete nasce neste dia.
+    const nMat = _opPassosMateria().length;
     box.innerHTML = `<b>${fs.length} fase(s) de enfesto</b>: ${esc(fs.map(f => `F${f.ordem}${f.nome ? ' ' + f.nome : ''}`).join(' · '))}`
-      + ` → até <b>${_OP_SEQ_ROTINA.length + fs.length * _OP_SEQ_FASE.length} operações</b> na sequência completa.`;
+      + ` → até <b>${_OP_SEQ_ROTINA.length + fs.length * _OP_SEQ_FASE.length + nMat} operações</b> na sequência completa`
+      + (nMat ? `, sendo <b>${nMat}</b> de preparo de matéria prima no dia útil anterior.` : '.');
   };
   if (selOS) selOS.onchange = mostrarFases;
   if (busca) busca.oninput = pintar;
@@ -9468,7 +9542,7 @@ function _opSugestaoPasso(data, lote, passo, fase) {
   ini = Math.max(_OP_JORNADA.ini, Math.min(_opArredondar(ini), _OP_JORNADA.fim));
   const iguais = (STATE.operacoes || []).filter(o => {
     const p = _opPassoSequencia(o);
-    return p && p.cadeia === passo.cadeia && p.ordem === passo.ordem;
+    return p && _opPassoId(p) === _opPassoId(passo);
   });
   // O POSTO sai do cadastro, como na cascata; o histórico é só o reserva.
   const cad = _opFuncaoDoPasso(passo);
