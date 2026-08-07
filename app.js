@@ -7157,16 +7157,20 @@ const _OP_SEQUENCIA = [
   { cadeia: 'principal', ordem: 1,  nome: 'Preparação das máquinas',               teste: n => /prepar/.test(n) && /maquin/.test(n) },
   { cadeia: 'principal', ordem: 2,  nome: 'Reposição de materiais',                teste: n => /reposi/.test(n) && /material|materiais/.test(n) },
   { cadeia: 'carga',     ordem: 1,  nome: 'Seleção de pacotes',    perna: 'ida',   teste: n => /selec|seleca/.test(n) && /pacote/.test(n) },
-  { cadeia: 'carga',     ordem: 2,  nome: 'Desmontagem de carga',  perna: 'volta', teste: n => /desmonta/.test(n) },
-  { cadeia: 'carga',     ordem: 3,  nome: 'Montagem de carga',     perna: 'ida',   teste: n => /monta/.test(n) && /carga/.test(n) },
-  { cadeia: 'principal', ordem: 4,  nome: 'Movimentação de enfesto',           porFase: true, teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
+  { cadeia: 'carga',     ordem: 2,  nome: 'Desmontar carga',       perna: 'volta', teste: n => /desmonta/.test(n) },
+  { cadeia: 'carga',     ordem: 3,  nome: 'Montar carga',          perna: 'ida',   teste: n => /monta/.test(n) && /carga/.test(n) },
+  { cadeia: 'principal', ordem: 4,  nome: 'Mover enfesto',                     porFase: true, teste: n => /mover|moviment/.test(n) && /enfesto/.test(n) },
   { cadeia: 'principal', ordem: 5,  nome: 'Corte de enfesto',                  porFase: true, teste: n => /cort/.test(n) && /enfesto/.test(n) },
-  { cadeia: 'principal', ordem: 6,  nome: 'Movimentação de unidades cortadas', porFase: true, teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 7,  nome: 'Separação de unidades cortadas',    porFase: true, teste: n => /separa/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 8,  nome: 'Empacotamento de unidades cortadas',porFase: true, teste: n => /empacot/.test(n) && /cortad/.test(n) },
-  { cadeia: 'principal', ordem: 9,  nome: 'Estocagem de pacotes',              porFase: true, teste: n => /estoc/.test(n) && /pacote/.test(n) },
-  { cadeia: 'principal', ordem: 10, nome: 'Empacotamento de retalhos',         porFase: true, teste: n => /empacot/.test(n) && /retalh/.test(n) },
-  { cadeia: 'principal', ordem: 11, nome: 'Estocagem de retalhos',             porFase: true, teste: n => /estoc/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 6,  nome: 'Mover unidades cortadas',           porFase: true, teste: n => /mover|moviment/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 7,  nome: 'Separar unidades cortadas',         porFase: true, teste: n => /separa/.test(n) && /cortad/.test(n) },
+  { cadeia: 'principal', ordem: 8,  nome: 'Empacotar unidades cortadas',       porFase: true, teste: n => /empacot/.test(n) && /cortad/.test(n) },
+  // "Estocar unidades cortadas" é como o posto chama, e o teste passou a casar
+  // por AÍ. Enquanto o passo se chamava "Estocagem de pacotes" e exigia a palavra
+  // "pacote", a linha do Auxiliar #1 não casava com nada — o passo ficava sem
+  // dono e a operação sumia do plano, uma vez por fase, sem aparecer na folha.
+  { cadeia: 'principal', ordem: 9,  nome: 'Estocar unidades cortadas',         porFase: true, teste: n => /estoc/.test(n) && /(unidade|pacote)/.test(n) },
+  { cadeia: 'principal', ordem: 10, nome: 'Empacotar retalhos',                porFase: true, teste: n => /empacot/.test(n) && /retalh/.test(n) },
+  { cadeia: 'principal', ordem: 11, nome: 'Estocar retalhos',                  porFase: true, teste: n => /estoc/.test(n) && /retalh/.test(n) },
   { cadeia: 'principal', ordem: 3,  nome: 'Enfesto',                           porFase: true, teste: n => /enfesto/.test(n) }
 ];
 
@@ -7399,7 +7403,7 @@ function _opOrdemNaCorrente(passo) {
 // É a operação de ENFESTO propriamente dita (não o corte nem a movimentação dele).
 function _opEhEnfesto(op) {
   const p = _opPassoSequencia(op);
-  return !!p && p.cadeia === 'principal' && p.nome === 'Enfesto';
+  return !!p && _opPassoId(p) === 'principal:3';
 }
 
 // O nome da operação COMO ELA APARECE: com o número da OS junto. Um dia com 13
@@ -8307,7 +8311,7 @@ function _opDuracaoCorte(os, fase, funcaoId, nomeOperacao) {
 // É o passo de CORTE do enfesto (não o enfesto, não a movimentação dele).
 function _opEhCorteDeEnfesto(op) {
   const p = _opPassoSequencia(op);
-  return !!p && p.cadeia === 'principal' && p.nome === 'Corte de enfesto';
+  return !!p && _opPassoId(p) === 'principal:5';
 }
 
 // Comprimento do pano desta fase, em metros (0 quando não há medida cadastrada).
@@ -9437,7 +9441,33 @@ function _opMontarCascataDoLote(data, os) {
     // produto e daquele pano.
     const cads = _opFuncoesDoPasso(passo, _skuDaOS(os), fase ? fase.nome : '')
       .filter(c => c && c.funcaoId);
-    if (!cads.length) { semFuncao.push({ passo, fase }); return null; }
+    // PASSO SEM POSTO VIRA LINHA, NÃO SILÊNCIO. Antes ele só entrava no aviso da
+    // alocação — que sai num toast e some — e o plano simplesmente não o tinha: a
+    // corrente da fase saía com 8 dos 9 elos e ninguém via o buraco na folha.
+    //
+    // Agora nasce uma linha SEM POSTO e SEM TEMPO, ocupando o lugar dele na
+    // sequência. Ela não reserva nada da jornada (duração zero, e por isso o
+    // relógio da corrente não anda), mas aparece impressa e cobra quem lê: falta
+    // dizer quem faz este passo. O aviso continua saindo, agora acompanhado.
+    if (!cads.length) {
+      semFuncao.push({ passo, fase });
+      const chaveVazia = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + pid + '|sem-posto';
+      if (jaTem.has(chaveVazia)) return null;
+      const nova = {
+        id: uid(), data: dia,
+        funcaoId: '', funcaoNome: '',
+        operacao: passo.nome, escopo: 'completa', etapas: [],
+        passoId: pid, inicio: pisoRelogio == null ? '' : _opHHMM(pisoRelogio), duracaoMin: 0,
+        semPosto: true,
+        responsavelId: '', responsavelNome: '',
+        referencia: fase ? _opRefDaFase(os, fase, fases.length) : _opRefDaFase(os, null, 1),
+        status: 'pendente', prioridade: 'eletiva', obs: ''
+      };
+      if (fase && fases.length > 1) { nova.faseOrdem = fase.ordem; nova.faseNome = fase.nome; }
+      STATE.operacoes.push(nova);
+      criadas.push(nova);
+      return null;   // duração zero: o relógio da corrente não anda por causa dela
+    }
     // TRABALHO EM CONJUNTO COMEÇA JUNTO. O piso é o do posto que se libera POR
     // ÚLTIMO: adiantar um deles seria planejar meia dupla movendo o pano — a
     // enfestadeira movendo às 07:20 e o auxiliar chegando às 07:45, cada um
@@ -9543,6 +9573,37 @@ function _opMontarCascataDoLote(data, os) {
       if (r && r.naoCoube) { naoCoube.push({ passo, fase, dia }); travou = true; return; }
       if (r && r.fim != null) relogio = r.fim;
     });
+    // NEM CINCO DIAS BASTARAM. A fase travou, e antes disso os passos restantes
+    // simplesmente não existiam em lugar nenhum: a corrente ficava pela metade e
+    // o que faltava só aparecia num aviso.
+    //
+    // Agora eles nascem SEM HORÁRIO. Sem hora o programa não afirma nada sobre
+    // quando acontecem — seria mentira dizer que o corte cabe num dia em que o
+    // enfesto não coube —, mas a operação existe, aparece na folha e pode ser
+    // encaixada à mão. O que não pode é sumir.
+    if (travou) {
+      _opCorrente().fase.forEach(passo => {
+        if (!naoCoube.some(x => x.passo === passo && x.fase === fase)) return;
+        _opFuncoesDoPasso(passo, _skuDaOS(os), fase.nome).filter(c => c && c.funcaoId).forEach(cad => {
+          const chave = dia + '|' + String(fase.ordem) + '|' + _opPassoId(passo) + '|' + cad.funcaoId;
+          if (jaTem.has(chave)) return;
+          const pessoa = _opResponsavelDoPosto(cad.funcaoNome);
+          const nova = {
+            id: uid(), data: dia,
+            funcaoId: cad.funcaoId, funcaoNome: cad.funcaoNome,
+            operacao: cad.nome, escopo: 'completa', etapas: [],
+            passoId: _opPassoId(passo), inicio: '', duracaoMin: cad.duracaoMin || 0,
+            semHorario: true,
+            responsavelId: pessoa ? pessoa.id : '', responsavelNome: pessoa ? pessoa.nome : '',
+            referencia: _opRefDaFase(os, fase, fases.length),
+            faseOrdem: fase.ordem, faseNome: fase.nome,
+            status: 'pendente', prioridade: 'eletiva', obs: ''
+          };
+          STATE.operacoes.push(nova);
+          criadas.push(nova);
+        });
+      });
+    }
   });
   if (criadas.length || fixas.length) {
     diasTocados.forEach(dia => {
