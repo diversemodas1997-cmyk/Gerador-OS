@@ -9203,9 +9203,19 @@ function _opMontarExpedicaoDoDia(data) {
   ocs.forEach(oc => {
     ['ida', 'volta'].forEach(perna => {
       const cargas = _expCargasDa(oc.janela.id, oc.dataOrig, perna);
-      if (!cargas.length) return;
       const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
       const fim = _opMin(hora);
+      // A DESCARGA ACONTECE COM OU SEM OS INFORMADA. O caminhão volta e é
+      // descarregado de qualquer jeito — é trabalho que o posto faz todo dia.
+      // QUAIS OSs voltaram é outra pergunta, e fica sem resposta até alguém
+      // alocar a volta: a operação nasce então SEM número de OS na referência,
+      // que é o jeito certo de não saber. Herdar os números da ida, como fazia
+      // antes, era dizer que voltou o que acabou de sair.
+      //
+      // A IDA continua exigindo carga: o caminhão só sai porque há o que levar.
+      // A volta sem HORA também não entra — sem hora não há onde encaixá-la, e
+      // cobrar isso em toda janela que não tem volta marcada seria só ruído.
+      if (!cargas.length && (perna !== 'volta' || fim == null)) return;
       if (fim == null) { semHora.push({ oc, perna }); return; }
       const cads = _opSeqCargaDaPerna(perna).map(p => ({ passo: p, cad: _opFuncaoDoPasso(p) }));
       const faltando = cads.filter(x => !x.cad || !x.cad.funcaoId);
