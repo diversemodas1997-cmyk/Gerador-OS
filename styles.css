@@ -2629,3 +2629,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   font-weight: 700;
 }
 .alerta-salvamento .btn.ghost:hover { background: rgba(0, 0, 0, .06); }
+
+/* A FASE do enfesto a que a linha do cadastro responde. Fica ao lado do tipo
+   porque as duas respondem à mesma pergunta — qual pano é este — e juntas
+   escolhem a linha que o planejamento usa. */
+.func-op-row .func-op-fase { width: 150px; flex: 0 0 auto; font-size: 12px; }

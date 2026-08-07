@@ -2602,6 +2602,25 @@ function _skusCadastrados() {
   return Array.from(vistos.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
+// Os nomes de FASE que existem nas grades de um tipo de enfesto, na ordem em que
+// a grade as executa. É a lista que o cadastro oferece para amarrar uma linha a
+// uma fase — sem tipo escolhido, junta as fases de todas as grades.
+function _fasesCadastradasDoSku(sku) {
+  const n = _normSku(sku);
+  const vistos = new Map();   // normalizado → como está escrito na grade
+  (STATE.grades || []).forEach(g => {
+    if (n && _normSku(_skuDaGrade(g)) !== n) return;
+    (Array.isArray(g.fases) ? g.fases : []).slice()
+      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0))
+      .forEach(f => {
+        const nome = String((f && f.nome) || '').trim();
+        const k = _normFaseNome(nome);
+        if (k && !vistos.has(k)) vistos.set(k, nome);
+      });
+  });
+  return Array.from(vistos.values());
+}
+
 // A LINHA do cadastro que responde por esta operação neste tipo de enfesto.
 //
 // Dois degraus, do específico para o geral:
@@ -2805,6 +2824,26 @@ function _funcOpAtualizarTipoPorNome() {
   });
 }
 
+// O TIPO da linha mudou: as fases oferecidas passam a ser as daquele produto.
+// A escolha é mantida quando existe fase de mesmo nome no tipo novo — "Corpo
+// Parte 1" existe em CM.TRI e em BM.TRI, e trocar o tipo não deve desamarrar em
+// silêncio uma linha que continua fazendo sentido.
+function _funcOpAtualizarFases(row) {
+  if (!row) return;
+  const sel = row.querySelector('.func-op-fase');
+  if (!sel) return;
+  const atual = String(sel.value || '').trim();
+  const sku = String(row.querySelector('.func-op-sku')?.value || '').trim();
+  const fases = _fasesCadastradasDoSku(sku);
+  const igual = fases.find(f => atual && _normFaseNome(f) === _normFaseNome(atual));
+  // A fase escolhida que não existe no tipo novo continua na lista, selecionada:
+  // apagá-la sozinho trocaria calado um vínculo que alguém definiu.
+  if (atual && !igual) fases.unshift(atual);
+  sel.innerHTML = ['<option value="">Todas as fases</option>']
+    .concat(fases.map(f => `<option value="${esc(f)}">${esc(f)}</option>`)).join('');
+  sel.value = igual || atual || '';
+}
+
 function addOperacaoFuncaoRow(op = {}) {
   const cont = document.getElementById('m-func-ops');
   if (!cont) return;
@@ -2843,6 +2882,23 @@ function addOperacaoFuncaoRow(op = {}) {
   const optsSku = primeiraOpt
     .concat(skus.map(s => `<option value="${esc(s)}" ${_normSku(s) === _normSku(skuAtual) ? 'selected' : ''}>${esc(s)}</option>`))
     .join('');
+  // A FASE DO ENFESTO a que esta linha responde.
+  //
+  // Sem ela, um posto que cadastra "Enfesto corpo parte 1", "…parte 2" e
+  // "Enfesto gola" para o MESMO tipo dava três candidatas ao mesmo passo, e o
+  // programa escolhia UMA para todas as fases — a que tivesse tempo. Era o que
+  // fazia a OS 0453 sair com "Enfesto gola" na Corpo Parte 1 e na Corpo Parte 2:
+  // o nome estava no cadastro, mas era o da linha errada. A distinção entre as
+  // fases vivia só dentro do nome, e o nome o programa não lê.
+  //
+  // Vazio segue valendo para TODAS as fases — é o que todo cadastro de hoje é, e
+  // continua funcionando sem ninguém mexer em nada.
+  const faseAtual = String((op && op.fase) || '').trim();
+  const fasesOpts = _fasesCadastradasDoSku(skuAtual);
+  if (faseAtual && !fasesOpts.some(f => _normFaseNome(f) === _normFaseNome(faseAtual))) fasesOpts.unshift(faseAtual);
+  const optsFase = [`<option value="" ${faseAtual ? '' : 'selected'}>Todas as fases</option>`]
+    .concat(fasesOpts.map(f => `<option value="${esc(f)}" ${_normFaseNome(f) === _normFaseNome(faseAtual) ? 'selected' : ''}>${esc(f)}</option>`))
+    .join('');
   const div = document.createElement('div');
   div.className = 'func-op-row';
   div.innerHTML = `
@@ -2852,7 +2908,9 @@ function addOperacaoFuncaoRow(op = {}) {
     </span>
     <input type="text" class="func-op-nome" value="${esc(op.nome || '')}" placeholder="Ex.: Enfesto, Movimentação de unidades cortadas" autocomplete="off" oninput="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">
     <span class="u tipo">no</span>
-    <select class="func-op-sku" title="${esc(aceitaTodos ? _OP_SKU_TITULO_TODOS : _OP_SKU_TITULO)}">${optsSku}</select>
+    <select class="func-op-sku" onchange="_funcOpAtualizarFases(this.closest('.func-op-row'))" title="${esc(aceitaTodos ? _OP_SKU_TITULO_TODOS : _OP_SKU_TITULO)}">${optsSku}</select>
+    <span class="u fase">na fase</span>
+    <select class="func-op-fase" title="A fase do enfesto a que esta linha responde. Cada fase é um enfesto próprio, com tecido, cor e metragem próprios — e o posto pode levar tempos diferentes em cada uma. Deixe em 'Todas as fases' quando a operação for a mesma em qualquer pano.">${optsFase}</select>
     <span class="u passo">é o passo</span>
     <select class="func-op-passo" title="Que passo da corrente da fábrica esta operação é. É por ele que o planejamento monta a sequência do dia — não pelo nome. Definido aqui, renomear a operação não desfaz mais a ligação." onchange="_funcOpNotaDeEnfesto(this.closest('.func-op-row'))">${opts.join('')}</select>
     <input type="number" class="func-op-h" min="0" step="1" value="${dur ? Math.floor(dur / 60) || '' : ''}" placeholder="0" title="Horas">
@@ -3658,9 +3716,13 @@ async function salvarCadastro() {
       // planejamento não parar no meio da migração, e o aviso abaixo diz quantas
       // faltam.
       const sku = String(row.querySelector('.func-op-sku')?.value || '').trim();
+      // A FASE do enfesto a que esta linha responde. Vazio = todas, que é o que
+      // todo cadastro anterior a este campo é.
+      const fase = String(row.querySelector('.func-op-fase')?.value || '').trim();
       return {
         nome,
         sku,
+        fase,
         passoId: (passoId === _OP_PASSO_NENHUM || _opPassoPorId(passoId)) ? passoId : '',
         duracaoMin: Math.max(0, h) * 60 + Math.max(0, m),
         // A que tamanho de grade aquele tempo se refere. Vazio = o padrão.
@@ -8752,7 +8814,7 @@ function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
 // cadastro: cada função tem as suas operações (com o tempo de cada uma), e é o
 // nome da operação que diz a que passo ela pertence. Sem cadastro para um passo,
 // cai no histórico do plano — quem já fez aquele passo antes.
-function _opFuncaoDoPasso(passo, sku) {
+function _opFuncaoDoPasso(passo, sku, faseNome) {
   const doCadastro = [];
   const n = _normSku(sku);
   (STATE.funcoes || []).forEach(f => {
@@ -8763,7 +8825,7 @@ function _opFuncaoDoPasso(passo, sku) {
       // cadeia+ordem, a primeira tarefa colidiria com o guarda-chuva `materia:1`.
       if (p && _opPassoId(p) === _opPassoId(passo)) {
         doCadastro.push({ funcaoId: f.id, funcaoNome: f.nome, nome: o.nome,
-          duracaoMin: Number(o.duracaoMin) || 0, sku: o.sku || '' });
+          duracaoMin: Number(o.duracaoMin) || 0, sku: o.sku || '', fase: o.fase || '' });
       }
     });
   });
@@ -8787,7 +8849,20 @@ function _opFuncaoDoPasso(passo, sku) {
   // que diz o nome da operação e pinta o toast de erro. É assim que a falta de
   // uma linha por tipo aparece em vez de virar um número inventado.
   const emprestada = !doTipo.length && !gerais.length && doCadastro.length;
-  const pool = doTipo.length ? doTipo : (gerais.length ? gerais : doCadastro);
+  const poolTipo = doTipo.length ? doTipo : (gerais.length ? gerais : doCadastro);
+  // A FASE DO ENFESTO é o degrau seguinte, e pela mesma razão do tipo: um posto
+  // que cadastra "Enfesto corpo parte 1", "…parte 2" e "Enfesto gola" para o
+  // mesmo produto tem TRÊS linhas no mesmo passo, e o desempate de baixo escolhia
+  // uma para todas as fases — a que tivesse tempo. Era o que punha "Enfesto gola"
+  // na Corpo Parte 1 da OS 0453.
+  //
+  // Linha SEM fase é a geral (todo cadastro anterior a este campo é assim) e só
+  // entra quando nenhuma linha foi amarrada àquela fase — senão a geral roubaria
+  // a vez da específica, que é o inverso do que este campo veio fazer.
+  const fn = _normFaseNome(faseNome);
+  const daFase = fn ? poolTipo.filter(c => c.fase && _normFaseNome(c.fase) === fn) : [];
+  const semFase = poolTipo.filter(c => !c.fase);
+  const pool = daFase.length ? daFase : (semFase.length ? semFase : poolTipo);
   // Mais de uma função cadastrando o mesmo passo: vence a que tem tempo definido
   // (é a que alguém realmente configurou); empatando, a primeira do cadastro.
   if (pool.length) {
@@ -8876,7 +8951,10 @@ function _opMontarCascataDoLote(data, os) {
     if (jaTem.has(chave)) return null;
     // O TIPO DE ENFESTO desta OS (BM.TRI, CM.LISA…): é ele que escolhe, dentro
     // do posto, a linha cadastrada com o tempo daquele produto.
-    const cad = _opFuncaoDoPasso(passo, _skuDaOS(os));
+    // A FASE entra na consulta junto com o tipo: é ela que escolhe, dentro do
+    // posto, a linha daquele pano. Sem isso as cinco fases de um tricolor
+    // recebiam todas o nome e o tempo de uma única linha.
+    const cad = _opFuncaoDoPasso(passo, _skuDaOS(os), fase ? fase.nome : '');
     if (!cad || !cad.funcaoId) { semFuncao.push({ passo, fase }); return null; }
     if (_opHorarioDeRotina({ operacao: cad.nome }) && rotinaNoDia.has(dia + '|' + pid)) return null;
     // Duração: a cadastrada na função — MENOS no enfesto, que é apurado do
