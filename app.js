@@ -8123,7 +8123,28 @@ function _opReordenarPostosPorHorario(data) {
 //      entra quando não há nem medição nem cadastro.
 // Devolve { min, fonte }. É a `fonte` que autoriza corrigir para MENOS: só a
 // medição faz isso.
+// O tempo MEDIDO NESTA MESMA OS, naquela fase — com a pausa descontada, que é o
+// mesmo número que a folha imprime ("= 1h30 (−1h30 de pausa)").
+function _opTempoEnfestoMedidoNaOS(os, fase) {
+  if (!os || !fase) return 0;
+  const t = (((os.progresso || {}).enfestosTempos) || {})[fase.ordem] || {};
+  const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
+  if (ini == null || fim == null) return 0;
+  return _opMinutosTrabalhados(ini, fim);
+}
+
 function _opDuracaoEnfesto(os, fase, funcaoId, nomeOperacao) {
+  // 0) O QUE ESTA FASE LEVOU NESTA OS. É o número mais forte que existe: não é
+  // média nem previsão, é o que aquele pano levou, cronometrado por quem estava
+  // lá. A previsão abaixo exclui a própria OS de propósito — ela serve para
+  // planejar o que ainda não aconteceu —, mas quando a fase JÁ FOI CRONOMETRADA
+  // aqui, estimar por média de outras é ignorar o fato que está na folha.
+  //
+  // Era o caso da OS 0453: a folha registrava 1h30 na Corpo Parte 1 e o plano
+  // reservava 2h40, tirados da taxa de outras fases, porque o cadastro estava
+  // zerado e a medição própria não era consultada.
+  const medido = _opTempoEnfestoMedidoNaOS(os, fase);
+  if (medido > 0) return { min: medido, fonte: 'medido nesta OS' };
   const prev = (os && fase) ? _opTempoEnfestoPrevisto(os, fase) : { min: 0, proprio: false };
   // 1) MEDIÇÃO DAQUELA FASE NAQUELA GRADE: manda sempre que existe, para mais e
   // para menos. Medição do mesmo nome de fase em OUTRA grade não entra aqui — ela
