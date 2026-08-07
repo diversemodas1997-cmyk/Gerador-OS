@@ -2812,7 +2812,7 @@ function addOperacaoFuncaoRow(op = {}) {
   const passoSel = _funcOpPassoInicial(op);
   const opts = [`<option value="" ${passoSel === '' ? 'selected' : ''}>Automático (pelo nome)</option>`];
   let cadeiaAtual = '';
-  _OP_PASSOS_OPCOES.forEach(p => {
+  _opPassosOpcoes(passoSel).forEach(p => {
     if (p.cadeia !== cadeiaAtual) {
       if (cadeiaAtual) opts.push('</optgroup>');
       opts.push(`<optgroup label="${esc(p.cadeia)}">`);
@@ -6894,24 +6894,82 @@ const _OP_SEQ_ROTINA = _OP_SEQ_PRINCIPAL.filter(p => !p.porFase);
 const _OP_PASSO_AUTO   = '';         // adivinha pelo nome, como sempre foi
 const _OP_PASSO_NENHUM = 'nenhum';   // fora da corrente, dito de propósito
 
-function _opPassoId(p) { return p ? p.cadeia + ':' + p.ordem : ''; }
+function _opPassoId(p) {
+  if (!p) return '';
+  // Os passos de MATÉRIA PRIMA não têm número fixo: cada um é uma tarefa do
+  // cadastro, e a identidade dele é o id DELA. É o que faz renomear "Medir
+  // bobinas" ou trocá-la de lugar na etapa não desfazer o que já foi escolhido
+  // aqui — o mesmo motivo que levou o passo a ser gravado em vez de adivinhado.
+  if (p.tarefaId) return p.cadeia + ':' + p.tarefaId;
+  return p.cadeia + ':' + p.ordem;
+}
 
 function _opPassoPorId(id) {
   const s = String(id || '').trim();
   if (!s || s === _OP_PASSO_NENHUM) return null;
   const i = s.indexOf(':');
   if (i < 0) return null;
-  const cadeia = s.slice(0, i), ordem = Number(s.slice(i + 1));
+  const cadeia = s.slice(0, i), resto = s.slice(i + 1);
+  // Matéria prima com id de tarefa (não numérico): quem responde é o cadastro.
+  // `materia:1` continua caindo na busca de baixo — é o passo guarda-chuva
+  // antigo, e uma linha gravada com ele não pode virar outra coisa calada.
+  if (cadeia === 'materia' && !/^\d+$/.test(resto)) {
+    return _opPassosMateria().find(p => p.tarefaId === resto) || null;
+  }
+  const ordem = Number(resto);
   return _OP_SEQUENCIA.find(p => p.cadeia === cadeia && p.ordem === ordem) || null;
 }
 
+// A etapa de produção onde o preparo da matéria prima está cadastrado. Acha pelo
+// NOME, com o mesmo teste do passo `materia:1`, e não por um id fixo: a etapa é
+// do usuário, foi criada antes deste código existir e pode ser recriada.
+function _opEtapaMateria() {
+  return (STATE.etapas || []).find(e => {
+    const n = _normNome(e && e.nome);
+    return n && /prepar/.test(n) && /materia prima|materia-prima/.test(n);
+  }) || null;
+}
+
+// Os passos da corrente de MATÉRIA PRIMA: um por tarefa cadastrada naquela
+// etapa, na ordem do cadastro.
+//
+// Esta é a única das três correntes que NÃO está escrita no código. Corte e
+// expedição são a mesma coisa em qualquer fábrica — não há como cortar o que não
+// foi estendido —, mas o preparo da matéria prima é da casa: medir bobina,
+// amostrar cor, aparar tubo, empilhar por compatibilidade. Quem sabe quais são
+// as etapas é quem as cadastrou, e é de lá que elas vêm.
+function _opPassosMateria() {
+  const et = _opEtapaMateria();
+  if (!et || !Array.isArray(et.tarefas)) return [];
+  return et.tarefas
+    .filter(t => t && String(t.nome || '').trim())
+    .slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+    .map((t, i) => ({ cadeia: 'materia', ordem: i + 1, tarefaId: t.id, nome: String(t.nome).trim() }));
+}
+
 // Os passos oferecidos no cadastro, na ordem em que a fábrica os executa.
-const _OP_PASSOS_OPCOES = _OP_SEQ_PRINCIPAL
-  .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Corte' }))
-  .concat(_OP_SEQUENCIA.filter(p => p.cadeia === 'carga').slice().sort((a, b) => a.ordem - b.ordem)
-    .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Expedição' })))
-  .concat(_OP_SEQUENCIA.filter(p => p.cadeia === 'materia')
-    .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Matéria prima' })));
+//
+// É FUNÇÃO, e não mais constante: a corrente de matéria prima sai do cadastro de
+// Etapas de produção, que só chega do servidor DEPOIS deste arquivo carregar.
+// Congelada na carga, a lista nasceria sem nenhuma tarefa e o grupo voltaria a
+// ficar vazio — que é exatamente o defeito que isto veio consertar.
+function _opPassosOpcoes(selecionado) {
+  const lista = _OP_SEQ_PRINCIPAL
+    .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Corte' }))
+    .concat(_OP_SEQUENCIA.filter(p => p.cadeia === 'carga').slice().sort((a, b) => a.ordem - b.ordem)
+      .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Expedição' })))
+    .concat(_opPassosMateria()
+      .map(p => ({ id: _opPassoId(p), nome: p.nome, cadeia: 'Matéria prima' })));
+  // O passo GRAVADO entra na lista mesmo que a tarefa dele tenha sumido da etapa
+  // — senão abrir a função e salvar trocaria calado um passo que alguém definiu.
+  // É o mesmo cuidado que o seletor de tipo de enfesto já toma logo acima.
+  const sel = String(selecionado || '').trim();
+  if (sel && sel !== _OP_PASSO_NENHUM && !lista.some(p => p.id === sel)) {
+    const p = _opPassoPorId(sel);
+    lista.push({ id: sel, nome: (p && p.nome) || 'Passo gravado que saiu do cadastro', cadeia: 'Matéria prima' });
+  }
+  return lista;
+}
 
 // O passo de uma LINHA DO CADASTRO: o gravado, quando há; senão o adivinhado
 // pelo nome. É a mesma pergunta que `_opPassoSequencia` responde para a operação
