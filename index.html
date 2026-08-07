@@ -46,6 +46,7 @@
         <button class="nav-btn" data-page="costurando">Costurando</button>
         <button class="nav-btn" data-page="fios">Retirada de fios</button>
         <button class="nav-btn" data-page="operacoes">Operações</button>
+        <button class="nav-btn" data-page="ranking">Ranking de produção</button>
       </div>
     </div>
 
@@ -210,6 +211,17 @@
         </div>
       </div>
       <div id="estoque-painel"></div>
+    </section>
+
+    <!-- RANKING DE PRODUÇÃO: o que a fábrica mais faz, cruzando SKU, cor e grade -->
+    <section class="page hidden" data-page="ranking">
+      <div class="page-header">
+        <div>
+          <h1>Ranking de produção</h1>
+          <div class="desc">O que a fábrica mais produz, cruzando <b>tipo de enfesto</b>, <b>cor</b> e <b>grade</b> — ex.: <b>CM.LISA · Preto · P ao G3</b>. Sai das OS emitidas: o tipo e a grade vêm da grade cadastrada, e a cor é a do <b>corpo</b> (primeira fase do enfesto), sem o nome do tecido. Serve para saber onde tempo cadastrado, gramatura e estoque de tecido rendem mais.</div>
+        </div>
+      </div>
+      <div id="ranking-painel"></div>
     </section>
 
     <section class="page hidden" data-page="corte">
@@ -986,6 +998,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-07p"></script>
+<script src="app.js?v=2026-08-07q"></script>
 </body>
 </html>

@@ -1867,6 +1867,7 @@ function goto(page) {
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
+  if (page === 'ranking') renderRanking();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
@@ -4565,6 +4566,110 @@ function faseAtualOS(o) {
 // Cada fase do fluxo é um CAMPO próprio no menu (Estoque de corte, Costurando,
 // Retirada de fios, Expedição). Renderiza UMA fase no seu painel: saldo tec+cor, OSs
 // atualmente nessa fase e os lançamentos manuais da fase.
+/* ========================================================= */
+/*                   RANKING DE PRODUÇÃO                     */
+/* ========================================================= */
+// O que a fábrica mais faz, cruzando TIPO DE ENFESTO × COR × GRADE.
+//
+// As três variáveis juntas são o que define o trabalho: o tipo diz quanto tempo
+// leva enfestar e cortar, a grade diz quantas peças saem por camada e a cor diz
+// qual pano tem que estar na prateleira. Separadas, cada uma esconde metade da
+// resposta — 22 OS de bege e 22 de verde parecem iguais até se ver que o verde
+// leva 45% mais peças.
+//
+// A COR é a do CORPO (primeira fase do enfesto), sem o nome do tecido: é a cor
+// que identifica a peça. Nas multicolores as demais fases ficam de fora — dizer
+// "Preto/Bege/Verde" numa linha de ranking não agrega nada que se possa comprar.
+//
+// O TIPO e a GRADE saem da grade CADASTRADA, nunca do texto guardado na OS: a
+// OS guarda o nome que a grade tinha no dia em que foi emitida, e grade
+// renomeada faria o mesmo produto aparecer duas vezes no ranking.
+function _rankingProducao() {
+  const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim());
+  const linhas = new Map();
+  const somar = (mapa, chave, pecas) => {
+    if (!mapa.has(chave)) mapa.set(chave, { n: 0, pecas: 0 });
+    const e = mapa.get(chave); e.n++; e.pecas += pecas;
+  };
+  const porCor = new Map(), porSkuCor = new Map();
+  let semGrade = 0;
+  const datas = [];
+  ord.forEach(o => {
+    const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(o));
+    // Grade apagada do cadastro: a OS não tem mais tipo nem grade de verdade, e
+    // inventá-los do texto gravado misturaria produto renomeado com produto
+    // apagado. Ela é contada à parte, para o total continuar fechando.
+    if (!g) { semGrade++; return; }
+    const sku = _skuDaGrade(g) || '—';
+    const grade = String(g.nome || '').split('|')[0].trim() || '—';
+    const cor = corNomeCurto((((o.enfesto || {}).blocos || [])[0] || {}).nomeCor) || '—';
+    const pecas = Number((o.enfesto || {}).totalPecas) || 0;
+    if (o.data) datas.push(o.data);
+    // A chave e a LISTA em JSON, nao um texto emendado: "P ao G3" e "CM.LISA"
+    // tem espacos e pontos, e qualquer separador escolhido a mao acabaria
+    // aparecendo dentro de um nome e cortando a chave no lugar errado.
+    somar(linhas, JSON.stringify([sku, cor, grade]), pecas);
+    somar(porCor, JSON.stringify([cor]), pecas);
+    somar(porSkuCor, JSON.stringify([sku, cor]), pecas);
+  });
+  const ordenar = m => [...m.entries()]
+    .map(([k, e]) => ({ partes: JSON.parse(k), ...e }))
+    .sort((a, b) => b.n - a.n || b.pecas - a.pecas);
+  datas.sort();
+  return {
+    total: ord.length, semGrade, de: datas[0] || '', ate: datas[datas.length - 1] || '',
+    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor)
+  };
+}
+
+function renderRanking() {
+  const box = document.getElementById('ranking-painel');
+  if (!box) return;
+  const r = _rankingProducao();
+  if (!r.total) { box.innerHTML = '<div class="info-box">Nenhuma OS emitida ainda.</div>'; return; }
+  const contadas = r.total - r.semGrade;
+  const pct = n => contadas ? (n * 100 / contadas).toFixed(1).replace('.', ',') + '%' : '—';
+  const num = n => Number(n || 0).toLocaleString('pt-BR');
+  const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
+    + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
+  const maxL = r.linhas[0] ? r.linhas[0].n : 0;
+  const maxC = r.porCor[0] ? r.porCor[0].n : 0;
+  const maxS = r.porSkuCor[0] ? r.porSkuCor[0].n : 0;
+  const tabela = (titulo, desc, itens, max, rotulo) => `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-title">${esc(titulo)}</div>
+      <div class="desc" style="margin-bottom:8px;">${desc}</div>
+      <table class="table">
+        <thead><tr>
+          <th style="width:44px;text-align:right;">#</th>
+          <th>${esc(rotulo)}</th>
+          <th style="width:64px;text-align:right;">OS</th>
+          <th style="width:64px;text-align:right;">%</th>
+          <th style="width:90px;text-align:right;">peças</th>
+          <th style="width:110px;"></th>
+        </tr></thead>
+        <tbody>${itens.map((x, i) => `
+          <tr>
+            <td style="text-align:right;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${i + 1}</td>
+            <td><strong>${esc(x.partes.join(' · '))}</strong></td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${x.n}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">${pct(x.n)}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
+            <td>${barra(x.n, max)}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  box.innerHTML = `
+    <div class="info-box" style="margin-bottom:14px;">
+      <b>${num(contadas)} OS</b> no ranking${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
+      · <b>${r.linhas.length}</b> combinações distintas de tipo × cor × grade
+      ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: a grade delas foi apagada do cadastro, então não têm mais tipo nem grade para cruzar.` : ''}
+    </div>
+    ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
+    ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
+    ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
+}
+
 function renderFasePainel(faseIdx) {
   const fase = FASES_ESTOQUE[faseIdx];
   if (!fase) return;
