@@ -7115,19 +7115,34 @@ function _opReordenarPorCadastro(passos) {
     info.set(p, { funcaoId: cad.funcaoId, i });
   });
   const out = passos.slice();
-  const grupos = new Map();
-  out.forEach((p, pos) => {
-    const e = info.get(p);
-    if (!e) return;
-    if (!grupos.has(e.funcaoId)) grupos.set(e.funcaoId, { pos: [], itens: [] });
-    const g = grupos.get(e.funcaoId);
-    g.pos.push(pos); g.itens.push(p);
-  });
-  grupos.forEach(g => {
-    if (g.itens.length < 2) return;
-    const ord = g.itens.slice().sort((a, b) => info.get(a).i - info.get(b).i);
-    g.pos.forEach((pos, k) => { out[pos] = ord[k]; });
-  });
+  // A TROCA VALE SÓ ENTRE POSIÇÕES CONTÍGUAS DO MESMO POSTO.
+  //
+  // A ordem DENTRO de um posto é dele; a ordem ENTRE postos é física e não é
+  // escolha de ninguém — não se corta o que não foi estendido. Antes o posto
+  // trocava entre TODAS as posições que ocupava, mesmo separadas por um passo de
+  // OUTRO posto: como o auxiliar responde pelos passos 6 a 11 e o corte é o 5,
+  // pôr "Separar unidades cortadas" no topo da lista dele mandava a separação
+  // para antes do corte. O plano saía fisicamente impossível — separar unidades
+  // que ainda não foram cortadas.
+  //
+  // Em trecho contíguo isso não acontece: o que estiver entre os passos do posto
+  // continua onde está, e a lista do cadastro reordena só o bloco dele.
+  let i = 0;
+  while (i < out.length) {
+    const e = info.get(out[i]);
+    if (!e) { i++; continue; }
+    let j = i;
+    while (j + 1 < out.length) {
+      const prox = info.get(out[j + 1]);
+      if (!prox || prox.funcaoId !== e.funcaoId) break;
+      j++;
+    }
+    if (j > i) {
+      const ord = out.slice(i, j + 1).sort((a, b) => info.get(a).i - info.get(b).i);
+      for (let k = i; k <= j; k++) out[k] = ord[k - i];
+    }
+    i = j + 1;
+  }
   return out;
 }
 
