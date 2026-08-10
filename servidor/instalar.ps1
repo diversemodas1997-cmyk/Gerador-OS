@@ -79,7 +79,12 @@ $PastaDocker = Join-Path $PastaSupabase "docker"
 if (Test-Path (Join-Path $PastaDocker "docker-compose.yml")) {
   Pulo "ja clonado"
 } else {
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PastaSupabase) | Out-Null
+  # a pasta-mae so precisa ser criada quando ela mesma nao existe; com
+  # -PastaSupabase C:\supabase a mae e "C:\", e o Windows recusa cria-la
+  $PastaMae = Split-Path -Parent $PastaSupabase
+  if ($PastaMae -and -not (Test-Path $PastaMae)) {
+    New-Item -ItemType Directory -Force -Path $PastaMae | Out-Null
+  }
   git clone --depth 1 https://github.com/supabase/supabase $PastaSupabase
   if ($LASTEXITCODE -ne 0) { Parar "falha ao clonar o Supabase" }
   Ok "clonado"
@@ -92,8 +97,19 @@ if (-not (Test-Path $EnvArq)) {
 
 # --------------------------------------------------------------------- chaves
 Titulo "Chaves do servidor"
-$AnonAtual = LerEnv $EnvArq "ANON_KEY"
-$JaGerado = ($AnonAtual -ne $null -and $AnonAtual.Length -gt 100 -and -not $AnonAtual.StartsWith("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlLWRlbW8i"))
+# A chave de demonstracao e, por definicao, a que vem no .env.example - comparar
+# com ele acerta sempre. A versao anterior procurava um prefixo fixo da chave
+# demo e passou a errar quando o Supabase mudou a ordem dos campos do JWT: ela
+# concluia "ja geradas" sobre um .env recem-copiado do exemplo, e o servidor
+# subia com as credenciais publicas do repositorio deles. Confere tambem o
+# JWT_SECRET, porque sao as duas pontas do mesmo par.
+$ExemploArq   = Join-Path $PastaDocker ".env.example"
+$AnonAtual    = LerEnv $EnvArq "ANON_KEY"
+$AnonExemplo  = LerEnv $ExemploArq "ANON_KEY"
+$SegredoAtual = LerEnv $EnvArq "JWT_SECRET"
+$SegredoExemplo = LerEnv $ExemploArq "JWT_SECRET"
+$JaGerado = ($AnonAtual -ne $null -and $AnonAtual.Length -gt 100 -and
+             $AnonAtual -ne $AnonExemplo -and $SegredoAtual -ne $SegredoExemplo)
 if ($JaGerado -and -not $RefazerChaves) {
   Pulo "ja geradas (use -RefazerChaves so se souber o que isso implica)"
 } else {
