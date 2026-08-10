@@ -29,6 +29,7 @@
       </div>
       <div class="auth-logged-in hidden" id="authLoggedIn">
         <div class="auth-email" id="authEmail">—</div>
+        <div class="modo-servidor" id="modoServidor" hidden>☁ Nuvem</div>
         <div class="auth-sync" id="authSync">☁ Sincronizado</div>
         <button class="btn-auth-sm" onclick="sairConta()">Sair</button>
       </div>
@@ -727,6 +728,24 @@
       <div class="page-header">
         <div><h1>Configurações</h1><div class="desc">Exportar, importar e limpar dados</div></div>
       </div>
+      <div class="card">
+        <div class="card-title">Servidor da fábrica (rede local)</div>
+        <div class="info-box">Com um servidor na rede da fábrica, o programa fala com ele em vez da internet: fica instantâneo, não gasta tráfego e continua funcionando com a internet fora. A nuvem passa a ser espelho — se o servidor local não responder, o programa abre a cópia da nuvem em <b>modo consulta</b>: dá para ver e imprimir, mas não editar. Isso é proposital, para que os dois lados nunca fiquem diferentes. Este endereço vale <b>só nesta máquina</b> — configure em cada computador. Deixando em branco, tudo funciona pela nuvem como antes.</div>
+        <div id="servidorLocalStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+          <label style="flex:1 1 260px;">Endereço
+            <input type="text" id="servidorLocalUrl" placeholder="http://192.168.0.50:8000" autocomplete="off">
+          </label>
+          <label style="flex:2 1 340px;">Chave pública (anon) do servidor local
+            <input type="text" id="servidorLocalKey" placeholder="eyJhbGciOi..." autocomplete="off">
+          </label>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn primary" onclick="testarServidorLocal()">Testar conexão</button>
+          <button class="btn" onclick="salvarServidorLocal()">Salvar e recarregar</button>
+          <button class="btn" onclick="limparServidorLocal()">Usar só a nuvem</button>
+        </div>
+      </div>
       <div class="card admin-only">
         <div class="card-title">Pasta de backup automático (JSON)</div>
         <div class="info-box">A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div>
@@ -998,6 +1017,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-10c"></script>
+<script src="app.js?v=2026-08-10d"></script>
 </body>
 </html>

@@ -3,9 +3,148 @@
 /* ========================================================= */
 const SUPA_URL = 'https://ckkqrjkhorvaahyazqsr.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNra3Fyamtob3J2YWFoeWF6cXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MTY2MjMsImV4cCI6MjA5MjM5MjYyM30.yT3Tb6KKx4sDNJXetwIoA77WudWUqQ2gCgT7JLi0iT8';
-const supa = (window.supabase && typeof window.supabase.createClient === 'function')
-  ? window.supabase.createClient(SUPA_URL, SUPA_KEY)
-  : null;
+
+/* =========================================================================
+   ONDE ESTE APP FALA: SERVIDOR DA FÁBRICA (rede local) OU NUVEM
+   =========================================================================
+   O servidor da fábrica é a fonte da verdade quando existe. Todas as máquinas
+   falam com ele: a internet deixa de estar no caminho crítico e o tráfego não
+   custa nada. A nuvem fica como espelho — backup fora do prédio e consulta.
+
+   MODO NUVEM É SOMENTE LEITURA, e isso não é detalhe de tela: é o que garante
+   que os dois lados nunca divirjam. Enquanto ninguém edita pela nuvem, o
+   espelho é de mão única e não existe reconciliação para dar errado. Consultar
+   e imprimir funciona; gravar, não.
+
+   Sem servidor local configurado, tudo se comporta exatamente como antes.
+   ======================================================================== */
+const LOCAL_CFG_CHAVE = 'servidorLocal';   // {url, key} no localStorage desta máquina
+const MODO_LOCAL = 'local', MODO_NUVEM = 'nuvem';
+let _modoServidor = MODO_NUVEM;
+
+function servidorLocalConfig() {
+  try {
+    const cru = localStorage.getItem(LOCAL_CFG_CHAVE);
+    if (!cru) return null;
+    const c = JSON.parse(cru);
+    return (c && c.url && c.key) ? c : null;
+  } catch (e) { return null; }
+}
+
+function definirServidorLocal(url, key) {
+  try {
+    if (!url || !key) localStorage.removeItem(LOCAL_CFG_CHAVE);
+    else localStorage.setItem(LOCAL_CFG_CHAVE, JSON.stringify({
+      url: String(url).trim().replace(/\/+$/, ''), key: String(key).trim()
+    }));
+    return true;
+  } catch (e) { return false; }
+}
+
+// Está de pé e aceitando a nossa chave? Prazo curto de propósito: a sondagem
+// roda antes de qualquer tela aparecer, e uma máquina desligada precisa falhar
+// depressa em vez de segurar a abertura do programa.
+async function sondarServidorLocal(cfg, ms) {
+  if (!cfg) return false;
+  try {
+    const ctrl = new AbortController();
+    const prazo = setTimeout(() => ctrl.abort(), ms || 2500);
+    const r = await fetch(cfg.url + '/rest/v1/', {
+      headers: { apikey: cfg.key }, signal: ctrl.signal
+    });
+    clearTimeout(prazo);
+    return r.ok;
+  } catch (e) { return false; }   // desligado, fora da rede, DNS, prazo estourado
+}
+
+let supa = null;
+
+async function resolverServidor() {
+  const criar = (u, k) => (window.supabase && typeof window.supabase.createClient === 'function')
+    ? window.supabase.createClient(u, k) : null;
+  const cfg = servidorLocalConfig();
+  if (cfg && await sondarServidorLocal(cfg)) {
+    supa = criar(cfg.url, cfg.key);
+    _modoServidor = MODO_LOCAL;
+  } else {
+    supa = criar(SUPA_URL, SUPA_KEY);
+    _modoServidor = MODO_NUVEM;
+  }
+  mostrarModoServidor();
+  return _modoServidor;
+}
+
+// Só há edição quando falamos com o servidor da fábrica. Sem servidor local
+// configurado nesta máquina não há espelho para divergir, então a nuvem segue
+// sendo o normal e grava como sempre gravou.
+function podeGravar() {
+  return _modoServidor === MODO_LOCAL || !servidorLocalConfig();
+}
+
+function mostrarModoServidor() {
+  const el = document.getElementById('modoServidor');
+  if (!el) return;
+  const soLeitura = !podeGravar();
+  el.textContent = _modoServidor === MODO_LOCAL ? '🏭 Servidor da fábrica' : '☁ Nuvem';
+  el.title = soLeitura
+    ? 'O servidor da fábrica não respondeu. Você está vendo a cópia da nuvem: dá para consultar e imprimir, mas não editar.'
+    : (_modoServidor === MODO_LOCAL
+        ? 'Falando com o servidor da fábrica.'
+        : 'Falando com a nuvem.');
+  el.classList.toggle('somente-leitura', soLeitura);
+  el.hidden = false;
+}
+
+/* ---- Tela de Configurações: endereço do servidor da fábrica ---- */
+
+function atualizarServidorLocalStatus() {
+  const el = document.getElementById('servidorLocalStatus');
+  const iUrl = document.getElementById('servidorLocalUrl');
+  const iKey = document.getElementById('servidorLocalKey');
+  const cfg = servidorLocalConfig();
+  if (iUrl && !iUrl.value) iUrl.value = cfg ? cfg.url : '';
+  if (iKey && !iKey.value) iKey.value = cfg ? cfg.key : '';
+  if (!el) return;
+  if (!cfg) {
+    el.textContent = 'Nenhum servidor local configurado — funcionando pela nuvem, com edição normal.';
+    return;
+  }
+  el.textContent = _modoServidor === MODO_LOCAL
+    ? `Conectado ao servidor da fábrica (${cfg.url}).`
+    : `Servidor da fábrica (${cfg.url}) NÃO respondeu — abrindo a cópia da nuvem em modo consulta.`;
+}
+
+async function testarServidorLocal() {
+  const url = (document.getElementById('servidorLocalUrl') || {}).value || '';
+  const key = (document.getElementById('servidorLocalKey') || {}).value || '';
+  if (!url.trim() || !key.trim()) { toast('Preencha o endereço e a chave', 'err'); return; }
+  toast('Testando…', '');
+  const vivo = await sondarServidorLocal(
+    { url: url.trim().replace(/\/+$/, ''), key: key.trim() }, 5000);
+  toast(vivo ? '✅ O servidor respondeu' :
+    '❌ Sem resposta — confira se está ligado, o endereço, a porta e a chave', vivo ? 'ok' : 'err');
+}
+
+// Recarrega porque a escolha do servidor acontece na abertura do programa: o
+// cliente já está criado e a sessão já está aberta contra um deles. Trocar isso
+// com o app em pé deixaria leitura e gravação apontando para lugares diferentes.
+function salvarServidorLocal() {
+  const url = (document.getElementById('servidorLocalUrl') || {}).value || '';
+  const key = (document.getElementById('servidorLocalKey') || {}).value || '';
+  if (!url.trim() || !key.trim()) { toast('Preencha o endereço e a chave', 'err'); return; }
+  if (!definirServidorLocal(url, key)) { toast('Não foi possível salvar nesta máquina', 'err'); return; }
+  toast('Salvo — recarregando…', 'ok');
+  setTimeout(() => window.location.reload(), 600);
+}
+
+function limparServidorLocal() {
+  definirServidorLocal(null, null);
+  const iUrl = document.getElementById('servidorLocalUrl');
+  const iKey = document.getElementById('servidorLocalKey');
+  if (iUrl) iUrl.value = ''; if (iKey) iKey.value = '';
+  toast('Voltando a usar só a nuvem — recarregando…', 'ok');
+  setTimeout(() => window.location.reload(), 600);
+}
 
 // Identidade do DISPOSITIVO (aba), NÃO da conta. Dois computadores logados com
 // o MESMO usuário precisam se distinguir. O filtro de sync ("essa gravação fui
@@ -301,6 +440,16 @@ async function _cloudLoadCompleto(srvVersoes) {
 
 async function cloudFlush() {
   if (!supa || !currentUser || !cloudCache) return;
+  // TRANCA DO MODO NUVEM. Tem que ser AQUI, e não só nos botões: as migrações
+  // automáticas do boot (migrarEtapasOS, migrarImagensBase64, o seed do
+  // loadState) gravam sem passar por exigirEdicao. Uma delas subindo para a
+  // nuvem enquanto o servidor da fábrica está fora faria os dois lados
+  // divergirem — exatamente o que o modo somente-leitura existe para impedir.
+  if (!podeGravar()) {
+    setSyncStatus('error');
+    console.warn('cloudFlush bloqueado: modo nuvem é somente leitura');
+    return;
+  }
   // Uma gravação de cada vez. O blob é grande e a subida demora; sem isto, a
   // edição feita no meio dela disparava um segundo flush em paralelo, e as duas
   // gravações corriam uma contra a outra em cima da mesma linha. Reagenda: o
@@ -1050,11 +1199,25 @@ async function carregarPapel() {
 function aplicarPermissoesUI() {
   const body = document.body;
   body.classList.remove('is-admin', 'is-usuario');
-  if (currentRole === 'admin') body.classList.add('is-admin');
-  else if (currentRole === 'usuario') body.classList.add('is-usuario');
+  // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
+  // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
+  // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
+  if (currentRole === 'admin' && podeGravar()) body.classList.add('is-admin');
+  else body.classList.add('is-usuario');
+  mostrarModoServidor();
+}
+
+// Mensagem única do modo somente-leitura. Fica antes do teste de papel porque o
+// motivo é outro: não é falta de permissão, é o servidor da fábrica fora do ar.
+function _recusarPorModoNuvem(acao) {
+  if (podeGravar()) return false;
+  toast(`Sem o servidor da fábrica não dá para ${acao} — a nuvem é só para consulta. `
+    + `Verifique se o servidor está ligado e recarregue.`, 'err');
+  return true;
 }
 
 function exigirAdmin(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
   if (currentRole !== 'admin') {
     toast(`Apenas admin pode ${acao}`, 'err');
     return false;
@@ -1071,6 +1234,7 @@ function exigirAdmin(acao) {
 // próprio porque é o que os pontos de expedição chamam, e porque a mensagem de
 // recusa fica no vocabulário daquela tela.
 function exigirEdicao(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
   if (currentRole === 'admin') return true;
   toast(currentRole === 'usuario'
     ? `Seu acesso é de leitura — apenas o admin pode ${acao}`
@@ -2130,6 +2294,7 @@ function goto(page) {
   }
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
+    atualizarServidorLocalStatus();
     atualizarPdfFolderStatus();
     atualizarBackupFolderStatus();
     atualizarOeFolderStatus();
@@ -22330,6 +22495,10 @@ async function popularExemplo() {
 /*                   INICIALIZAÇÃO                           */
 /* ========================================================= */
 (async function init() {
+  // ANTES de tudo: decidir com quem falamos. A sondagem da rede local precisa
+  // terminar antes do login, senão a sessão seria aberta contra um servidor e
+  // as leituras iriam para outro.
+  await resolverServidor();
   await inicializarAuth();
   if (currentUser) {
     await loadState();
@@ -22416,6 +22585,9 @@ window.desconectarPastaPdf = desconectarPastaPdf;
 window.conectarPastaOe = conectarPastaOe;
 window.desconectarPastaOe = desconectarPastaOe;
 window.salvarPdfOeNaPasta = salvarPdfOeNaPasta;
+window.testarServidorLocal = testarServidorLocal;
+window.salvarServidorLocal = salvarServidorLocal;
+window.limparServidorLocal = limparServidorLocal;
 window.conectarPastaBackup = conectarPastaBackup;
 window.desconectarPastaBackup = desconectarPastaBackup;
 window.escreverBackupJsonAgora = escreverBackupJsonAgora;

@@ -1160,6 +1160,11 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .auth-logged-in .auth-sync { font-size: 11px; color: var(--ok); margin-bottom: 8px; }
 .auth-logged-in .auth-sync.saving { color: var(--accent-dark); }
 .auth-logged-in .auth-sync.error { color: var(--alert); }
+/* Com quem o programa esta falando: servidor da fabrica ou nuvem. Fica visivel
+   o tempo todo porque "modo consulta" precisa ser obvio antes de alguem tentar
+   editar e levar uma recusa sem entender o motivo. */
+.auth-logged-in .modo-servidor { font-size: 11px; color: var(--ink-2); margin-bottom: 4px; }
+.auth-logged-in .modo-servidor.somente-leitura { color: var(--alert); font-weight: 600; }
 .btn-auth-sm { padding: 4px 10px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 12px; }
 .btn-auth-sm:hover { border-color: var(--ink); color: var(--ink); }
 .hidden { display: none !important; }
