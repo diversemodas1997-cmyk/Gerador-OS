@@ -76,26 +76,41 @@ Consultar e imprimir funciona igual para todo mundo. O que muda é quem altera.
 
 ## 2. Instalar o `ca.crt` em cada máquina
 
-O certificado do servidor foi emitido por uma autoridade certificadora criada
-para a fábrica. Instalar o `ca.crt` é o que ensina o Windows a confiar nela —
-sem isso o navegador mostra aviso de segurança e o app não funciona direito.
+### O que é esse arquivo
 
-### Levar o arquivo
+`ca.crt` é um arquivinho de 1 KB. Ele é o **crachá da fábrica**: não abre nada
+e não tem senha dentro. Serve só para o Windows de cada máquina saber que
+`https://193.168.0.8` é de confiança. Sem ele, o navegador mostra "a conexão
+não é particular" e o programa não funciona direito.
 
-Copie **`servidor\tls\ca.crt`** para um pendrive ou pasta de rede.
+Ele nasceu junto com o servidor e mora em
+`C:\Users\Pichau\Desktop\Gerador-OS\servidor\tls\ca.crt` — Área de Trabalho,
+pasta `Gerador-OS`, pasta `servidor`, pasta `tls`.
 
-> **Leve só o `ca.crt`.** O `ca.key`, que está na mesma pasta, é segredo: quem
-> tiver esse arquivo emite certificados em nome da sua autoridade. Ele fica no
-> servidor e não vai para pendrive, pasta compartilhada nem repositório.
+### Não precisa de pendrive
 
-### Em cada computador
+O próprio servidor entrega o arquivo. **Em cada computador da fábrica:**
 
-PowerShell **como administrador** (botão direito no menu Iniciar → "Windows
-PowerShell (Admin)"), na pasta onde está o `ca.crt`:
+1. No navegador, digite **`https://193.168.0.8/ca.crt`**.
+2. Vai aparecer "a conexão não é particular" — é esperado, é exatamente o que
+   estamos consertando. Clique em **Avançado** → **Prosseguir para
+   193.168.0.8 (não seguro)**.
+3. O arquivo baixa sozinho, para a pasta **Downloads**.
+4. Abra o PowerShell **como administrador** (botão direito no menu Iniciar →
+   "Windows PowerShell (Admin)") e rode:
 
 ```powershell
-Import-Certificate -FilePath .\ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath "$env:USERPROFILE\Downloads\ca.crt" -CertStoreLocation Cert:\LocalMachine\Root
 ```
+
+O caminho da pasta Downloads já está embutido no comando — é colar e dar Enter,
+sem navegar até pasta nenhuma.
+
+> **Só o `ca.crt` é público.** Na mesma pasta do servidor mora o `ca.key`, que é
+> segredo: quem tiver esse arquivo emite certificados em nome da sua autoridade.
+> O servidor **nega** o acesso a ele pela rede, junto com os backups e o
+> histórico do programa. Se algum dia você copiar essa pasta para outro lugar,
+> lembre que o `ca.key` não pode ir junto.
 
 Depois **feche e reabra o navegador**. Chrome e Edge usam a lista do Windows,
 então já vale para os dois.
