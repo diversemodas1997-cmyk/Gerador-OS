@@ -217,6 +217,57 @@ O terceiro e o quarto são os que realmente importam — são o motivo de tudo i
 
 ---
 
+# Espelho para a nuvem
+
+Com a fábrica atendendo, a nuvem deixa de ser o dia a dia — mas continua valendo
+por dois motivos: **consultar de fora** e ser uma **segunda cópia** dos dados,
+fora do prédio. Para isso ela precisa receber o que acontece aqui.
+
+O espelho é **sempre de mão única**: a fábrica manda, a nuvem recebe. Nada volta.
+Isso é possível porque o app abre a nuvem em modo consulta — ninguém edita por
+lá, então não existem dois lados para conciliar, que é onde mora o risco de
+perder dados.
+
+## Agendar
+
+```powershell
+$acao = New-ScheduledTaskAction -Execute "node" `
+  -Argument 'C:\gerador-os\servidor\espelhar-para-nuvem.js --local http://localhost:8000 --local-key <SR-LOCAL> --nuvem https://ckkqrjkhorvaahyazqsr.supabase.co --nuvem-key <SR-NUVEM>' `
+  -WorkingDirectory 'C:\gerador-os'
+$quando = New-ScheduledTaskTrigger -Once -At 7am -RepetitionInterval (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName "Espelho Gerador-OS" -Action $acao -Trigger $quando -RunLevel Highest
+```
+
+A cada 30 minutos. Se nada mudou desde a última vez, ele não escreve nada — dá
+para rodar com frequência sem custo.
+
+> A `SERVICE_ROLE_KEY` da nuvem passa por cima de todas as permissões. Ela fica
+> só nesse comando, na máquina do servidor. Nunca no navegador, nunca dentro do
+> repositório.
+
+## O que ele faz e o que se recusa a fazer
+
+- Envia o blob e o mapa de versões, com o mesmo carimbo da fábrica — assim quem
+  abrir pela nuvem também baixa só a chave que mudou.
+- Envia as imagens de desenho que ainda não estiverem lá. **Nunca apaga** da
+  nuvem: imagem sobrando não custa quase nada, imagem faltando quebra uma folha
+  de OS.
+- **Recusa espelhar quando a fábrica está sem OS e sem desenhos e a nuvem tem
+  dados.** É a mesma trava que já protege o app. Se a fábrica ficar vazia por um
+  problema — restauração pela metade, migração que não rodou —, a nuvem é a
+  única cópia boa que resta, e o espelho não pode ser justamente o que a destrói.
+  Nesse caso ele sai com erro e não envia nada.
+- Internet fora não é motivo de alarme: ele falha e a execução seguinte recupera
+  o atraso sozinha.
+
+## Custo
+
+Enviar é ingresso de dados, que não entra na cota que restringiu o projeto. O
+espelho lê da nuvem apenas um carimbo por execução. Ele não recria o problema de
+tráfego.
+
+---
+
 # Recuperação: trocar o servidor por outro computador
 
 O disco desse PC passa a ser onde seus dados moram. O pacote de recuperação
@@ -299,7 +350,7 @@ mesma chave, e voltam sozinhos.
 1. **O espelho local → nuvem**, para o backup fora do prédio e a consulta
    remota continuarem valendo.
 3. **HTTPS**, se as pastas automáticas forem necessárias fora do servidor.
-3. **Backup do servidor.** O disco desse PC passa a ser onde seus dados moram.
+2. **Backup do servidor.** O disco desse PC passa a ser onde seus dados moram.
    Os snapshots diários do app continuam funcionando, mas ficam no mesmo disco —
    até o espelho existir, mantenha a pasta de backup automático ligada numa
    máquina que não seja o servidor.
