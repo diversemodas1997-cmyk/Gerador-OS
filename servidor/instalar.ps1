@@ -134,11 +134,22 @@ Write-Host "    esperando a API responder..." -NoNewline
 $pronto = $false
 foreach ($tentativa in 1..90) {
   Start-Sleep -Seconds 2
+  $codigo = 0
   try {
     $r = Invoke-WebRequest -Uri "http://localhost:8000/rest/v1/" -Headers @{ apikey = $AnonKey } `
          -UseBasicParsing -TimeoutSec 5
-    if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) { $pronto = $true; break }
-  } catch { Write-Host "." -NoNewline }
+    $codigo = [int] $r.StatusCode
+  } catch [System.Net.WebException] {
+    # Qualquer resposta HTTP ja prova que o Kong esta de pe - e o Invoke-WebRequest
+    # trata 4xx como excecao, entao o codigo tem de ser lido daqui. Importa em
+    # especial o 403: o Supabase passou a servir a raiz /rest/v1/ como rota so de
+    # admin, e a chave anonima e recusada ali mesmo com tudo funcionando. Antes
+    # disto a espera ia ate o fim e a instalacao parava dizendo que a API nao
+    # respondeu, quando ela estava respondendo o tempo inteiro.
+    if ($_.Exception.Response) { $codigo = [int] $_.Exception.Response.StatusCode }
+  } catch { }
+  if ($codigo -ge 200 -and $codigo -lt 500) { $pronto = $true; break }
+  Write-Host "." -NoNewline
 }
 Write-Host ""
 if (-not $pronto) { Parar "a API nao respondeu em 3 minutos. Veja 'docker compose logs' em $PastaDocker" }
