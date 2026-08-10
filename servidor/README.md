@@ -40,15 +40,17 @@ O resto do programa funciona normalmente. As saídas:
 Se as pastas automáticas importam para você (a de PDF é usada todo dia), me
 avise que eu incluo o HTTPS no roteiro.
 
-### 2. Os desenhos técnicos moram na nuvem
+### 2. Os desenhos técnicos precisam ser copiados
 
-As 25 imagens não estão dentro dos dados: os dados guardam o **endereço** delas
-no Storage da nuvem. Sem copiá-las, a folha de OS abre sem desenho quando a
-internet cair — o oposto do que se quer.
+As 25 imagens não estão dentro dos dados. Os dados guardam só o **nome do
+arquivo**, e o app monta o endereço contra o servidor em uso — o mesmo desenho
+é buscado na fábrica quando ela está de pé, e na nuvem quando não. Mas os
+arquivos precisam existir dos dois lados.
 
-O script `copiar-desenhos.js` resolve, mas ele é **o único passo que precisa da
-nuvem acessível**. Como o projeto está restrito agora, esse passo fica para
-depois que o serviço voltar. Faça-o **antes** de virar a chave.
+O script `copiar-desenhos.js` copia da nuvem para a fábrica, e é **o único passo
+que precisa da nuvem acessível**. Como o projeto está restrito agora, fica para
+depois que o serviço voltar. Faça-o **antes** de virar a chave, senão a folha de
+OS abre sem desenho — justamente o que se quer evitar.
 
 ---
 
@@ -170,8 +172,9 @@ node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_RO
 node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_ROLE_KEY>
 ```
 
-Ele só reescreve os endereços se **todas** as imagens vierem — reescrever pela
-metade deixaria desenhos quebrados.
+Ele só copia arquivos; nada nos dados é alterado, porque o nome é o mesmo dos
+dois lados. Por isso é seguro rodar de novo quantas vezes precisar — se alguma
+falhar, repita.
 
 ## Passo 9 — Rede
 
@@ -293,14 +296,10 @@ mesma chave, e voltam sozinhos.
 
 ## O que ainda falta depois
 
-1. **Endereço dos desenhos.** Depois do passo 8 eles apontam para a rede local,
-   então **de fora da fábrica os desenhos não aparecem**. A solução é guardar só
-   o nome do arquivo e montar o endereço conforme o servidor em uso. É mudança
-   no app, ainda por fazer.
-2. **O espelho local → nuvem**, para o backup fora do prédio e a consulta
+1. **O espelho local → nuvem**, para o backup fora do prédio e a consulta
    remota continuarem valendo.
 3. **HTTPS**, se as pastas automáticas forem necessárias fora do servidor.
-4. **Backup do servidor.** O disco desse PC passa a ser onde seus dados moram.
+3. **Backup do servidor.** O disco desse PC passa a ser onde seus dados moram.
    Os snapshots diários do app continuam funcionando, mas ficam no mesmo disco —
    até o espelho existir, mantenha a pasta de backup automático ligada numa
    máquina que não seja o servidor.

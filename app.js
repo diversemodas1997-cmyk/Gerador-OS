@@ -58,6 +58,42 @@ async function sondarServidorLocal(cfg, ms) {
 }
 
 let supa = null;
+// Endereço do servidor com quem estamos falando. Usado para montar o endereço
+// das imagens dos desenhos — ver urlDesenho().
+let _servidorUrlAtivo = SUPA_URL;
+
+/* =========================================================================
+   ENDEREÇO DAS IMAGENS DOS DESENHOS TÉCNICOS
+   =========================================================================
+   As imagens não ficam dentro dos dados: os dados guardam por onde buscá-las.
+   Guardar o endereço COMPLETO amarrava o desenho a um servidor — apontando para
+   a nuvem, a folha de OS abre sem desenho quando a internet cai; apontando para
+   a rede local, ela abre sem desenho fora da fábrica. Nos dois casos falha
+   justamente onde o desenho mais importa.
+
+   Então o que se guarda é só o NOME DO ARQUIVO, e o endereço é montado na hora,
+   contra o servidor em uso. O mesmo desenho funciona nos dois lugares, sem
+   precisar reescrever nada quando se troca de servidor.
+
+   Endereços antigos (completos) e imagens em base64 continuam sendo aceitos
+   como estão: dado antigo nunca deixa de aparecer por causa desta mudança.
+   ======================================================================== */
+function urlDesenho(valor) {
+  if (!valor || typeof valor !== 'string') return '';
+  if (valor.startsWith('data:')) return valor;          // base64 legado
+  if (/^https?:\/\//i.test(valor)) return valor;        // endereço completo legado
+  const base = (_servidorUrlAtivo || SUPA_URL).replace(/\/+$/, '');
+  return `${base}/storage/v1/object/public/desenhos/${encodeURIComponent(valor)}`;
+}
+
+// O caminho inverso: de um endereço completo para o nome do arquivo. Devolve
+// null quando não é um endereço de desenho (aí não se mexe no valor).
+function _nomeDoArquivoDesenho(valor) {
+  if (typeof valor !== 'string') return null;
+  const m = valor.match(/^https?:\/\/[^/]+\/storage\/v1\/object\/public\/desenhos\/(.+)$/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+}
 
 async function resolverServidor() {
   const criar = (u, k) => (window.supabase && typeof window.supabase.createClient === 'function')
@@ -65,9 +101,11 @@ async function resolverServidor() {
   const cfg = servidorLocalConfig();
   if (cfg && await sondarServidorLocal(cfg)) {
     supa = criar(cfg.url, cfg.key);
+    _servidorUrlAtivo = cfg.url;
     _modoServidor = MODO_LOCAL;
   } else {
     supa = criar(SUPA_URL, SUPA_KEY);
+    _servidorUrlAtivo = SUPA_URL;
     _modoServidor = MODO_NUVEM;
   }
   mostrarModoServidor();
@@ -2561,7 +2599,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           <label>Imagem (PNG/JPG) *</label>
           <label class="file-label">Escolher arquivo <input type="file" id="m-img" accept="image/*" onchange="previewUploadImg(event)"></label>
           <div class="desenho-preview" id="m-img-preview" style="margin-top:8px;">
-            ${item.img ? `<img src="${item.img}">` : '<span>Sem imagem</span>'}
+            ${item.img ? `<img src="${urlDesenho(item.img)}">` : '<span>Sem imagem</span>'}
           </div>
           <input type="hidden" id="m-img-data" value="${item.img||''}">
         </div>
@@ -3874,8 +3912,10 @@ async function uploadDesenhoImagem(dataUrl) {
     upsert: false
   });
   if (error) throw error;
-  const { data } = supa.storage.from('desenhos').getPublicUrl(nome);
-  return data.publicUrl;
+  // Devolve só o NOME do arquivo, não o endereço completo: é o que permite ao
+  // mesmo desenho ser servido pela fábrica ou pela nuvem, conforme o caso.
+  // Ver urlDesenho().
+  return nome;
 }
 
 /* Migra imagens base64 legadas para o Storage (roda uma vez, só para admin). */
@@ -3898,6 +3938,28 @@ async function migrarImagensBase64() {
     await saveState('desenhos');
     toast(`${migradas} imagem(ns) migrada(s) para Storage`, 'ok');
   }
+}
+
+/* Encurta os endereços de imagem já gravados: de endereço completo para só o
+   nome do arquivo (roda uma vez, só para admin).
+
+   Sem isto, os desenhos antigos seguem amarrados ao servidor onde foram
+   enviados. Encurtando, o mesmo desenho passa a ser buscado no servidor em uso
+   — a fábrica quando ela estiver de pé, a nuvem quando não. Ver urlDesenho().
+
+   É seguro rodar antes de as imagens existirem no servidor da fábrica: hoje,
+   sem servidor local, o endereço montado dá exatamente na nuvem, que é de onde
+   elas já vinham. */
+async function migrarEnderecosDesenhos() {
+  if (!supa || !currentUser || !podeGravar()) return;
+  let encurtados = 0;
+  for (const d of (STATE.desenhos || [])) {
+    const nome = _nomeDoArquivoDesenho(d.img);
+    if (nome) { d.img = nome; encurtados++; }
+  }
+  if (!encurtados) return;
+  await saveState('desenhos');
+  console.log(`Endereços de desenho encurtados: ${encurtados}`);
 }
 
 function pluralize(tipo) {
@@ -13115,7 +13177,7 @@ function renderDesenhos() {
   tb.innerHTML = ordenados.map(d => `
     <tr>
       <td><div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">
-        ${d.img ? `<img src="${d.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
+        ${d.img ? `<img src="${urlDesenho(d.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
       <td><strong>${esc(d.codigo)}</strong></td><td>${esc(d.desc)||'—'}</td>${acoesCell('desenho', d.id)}</tr>`).join('');
 }
 function renderMarcas() {
@@ -14892,7 +14954,7 @@ function previewDesenhoSelecionado() {
   const pv = document.getElementById('f-desenho-preview');
   if (!id) { pv.innerHTML = '<span>Nenhum desenho selecionado</span>'; return; }
   const d = STATE.desenhos.find(x => x.id === id);
-  pv.innerHTML = d?.img ? `<img src="${d.img}">` : '<span>Sem imagem</span>';
+  pv.innerHTML = d?.img ? `<img src="${urlDesenho(d.img)}">` : '<span>Sem imagem</span>';
 }
 
 // Componentes de um desenho, normalizados: a estrutura nova (d.componentes, com
@@ -17303,7 +17365,7 @@ function renderListaOS() {
     const des = (o.desenhoId && STATE.desenhos.find(d => d.id === o.desenhoId))
       || (o.codigo && STATE.desenhos.find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
       || null;
-    const thumb = `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">${des && des.img ? `<img src="${des.img}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div>`;
+    const thumb = `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">${des && des.img ? `<img src="${urlDesenho(des.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div>`;
     // A COR DA PEÇA, da mesma fonte do banner da folha impressa e da folha de OE
     // (`coresDaPecaOS`): as cores das variantes, sem o tecido no nome e limitadas
     // a quantas cores o desenho realmente tem. Ler daqui é o que impede a lista
@@ -19118,7 +19180,7 @@ function renderPrintSheet(o) {
   }
   const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
   const imgHtml = desenho?.img
-    ? `<img src="${desenho.img}" alt="Desenho técnico">`
+    ? `<img src="${urlDesenho(desenho.img)}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
 
   // Texto informativo da COR do desenho técnico — barra em CAIXA ALTA logo acima
@@ -22523,6 +22585,7 @@ async function popularExemplo() {
     salvarSnapshotContingencia({ forcar: true }).catch(e => console.warn('snapshot base', e));
     if (currentRole === 'admin') {
       migrarImagensBase64().catch(e => console.warn('migrarImagensBase64', e));
+      migrarEnderecosDesenhos().catch(e => console.warn('migrarEnderecosDesenhos', e));
     }
   }
 })();

@@ -88,6 +88,43 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
   await resolverServidor();
   ok('7. config sem a chave -> tratada como ausente', podeGravar() === true);
 
+  // ---- Endereco das imagens dos desenhos -------------------------------
+  // O dado guarda so o NOME do arquivo; o endereco e montado contra o servidor
+  // em uso. E o que faz o mesmo desenho aparecer na fabrica e fora dela.
+  const NOME = '1777290341246_1bsz6o.png';
+  const NA_NUVEM = 'https://ckkqrjkhorvaahyazqsr.supabase.co/storage/v1/object/public/desenhos/' + NOME;
+
+  definirServidorLocal(null, null);
+  respostaFetch = { ok: false, erro: true };
+  await resolverServidor();
+  ok('8. nome vira endereco da NUVEM quando e a nuvem que atende',
+     urlDesenho(NOME) === NA_NUVEM, urlDesenho(NOME));
+
+  definirServidorLocal(CFG.url, CFG.key);
+  respostaFetch = { ok: true, erro: false };
+  await resolverServidor();
+  ok('8b. o MESMO nome vira endereco da FABRICA quando ela atende',
+     urlDesenho(NOME) === CFG.url + '/storage/v1/object/public/desenhos/' + NOME,
+     urlDesenho(NOME));
+
+  ok('9. endereco completo antigo passa intacto (dado velho nao some)',
+     urlDesenho(NA_NUVEM) === NA_NUVEM);
+  ok('9b. imagem em base64 passa intacta',
+     urlDesenho('data:image/png;base64,iVBOR') === 'data:image/png;base64,iVBOR');
+  ok('9c. vazio nao vira endereco quebrado',
+     urlDesenho('') === '' && urlDesenho(null) === '' && urlDesenho(undefined) === '');
+  ok('9d. nome com espaco e escapado', urlDesenho('a b.png').endsWith('a%20b.png'));
+
+  // A volta: usada pela migracao que encurta os enderecos ja gravados.
+  ok('10. extrai o nome de um endereco da nuvem', _nomeDoArquivoDesenho(NA_NUVEM) === NOME);
+  ok('10b. extrai o nome de um endereco da fabrica',
+     _nomeDoArquivoDesenho(CFG.url + '/storage/v1/object/public/desenhos/' + NOME) === NOME);
+  ok('10c. nome ja encurtado NAO e mexido de novo', _nomeDoArquivoDesenho(NOME) === null);
+  ok('10d. base64 nao e mexido', _nomeDoArquivoDesenho('data:image/png;base64,iVBOR') === null);
+  ok('10e. endereco de outro bucket nao e mexido',
+     _nomeDoArquivoDesenho('https://x.co/storage/v1/object/public/outro/a.png') === null);
+  ok('10f. ida e volta fecha', _nomeDoArquivoDesenho(urlDesenho(NOME)) === NOME);
+
   console.log(falhas ? '\n>>> ' + falhas + ' FALHA(S)' : '\n>>> todos passaram');
   process.exit(falhas ? 1 : 0);
 })();
