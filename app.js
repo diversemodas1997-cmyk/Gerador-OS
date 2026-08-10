@@ -1386,6 +1386,114 @@ async function setUserRole(novoPapel) {
   listarUsuariosComPapel();
 }
 
+/* ---- Contas de acesso: criar e listar ----
+   Passa por uma função do SERVIDOR (/functions/v1/usuarios), e não direto pelo
+   navegador, por dois motivos:
+
+   1. Criar conta pelo navegador exigiria ligar o auto-cadastro do Supabase. A
+      chave anônima está dentro de toda página aberta na fábrica — com o
+      auto-cadastro ligado, qualquer pessoa na rede criaria a própria conta e
+      passaria a ler tudo. A função usa a chave de serviço, que nunca sai do
+      servidor, e confere lá dentro se quem chamou é admin.
+   2. Listar TODAS as contas não é possível daqui: quem é usuário comum não tem
+      linha em `user_roles` (é assim que o app o trata como leitura), então a
+      lista completa só existe em `auth.users`, fora do alcance da chave anônima. */
+
+async function _chamarFuncaoUsuarios(corpo) {
+  if (!supa) return { erro: 'Sem conexão com o servidor' };
+  const { data: { session } } = await supa.auth.getSession();
+  if (!session) return { erro: 'Sua sessão expirou — entre de novo' };
+  try {
+    const r = await fetch(_servidorUrlAtivo + '/functions/v1/usuarios', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(corpo)
+    });
+    // A nuvem não tem esta função instalada. Dizer isso é melhor do que deixar
+    // o botão falhar com "erro 404", que não ensina nada a quem está usando.
+    if (r.status === 404) {
+      return { erro: 'Isto só funciona no servidor da fábrica. Abra o programa pelo endereço dele.' };
+    }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return { erro: d.erro || ('Erro ' + r.status) };
+    return d;
+  } catch (e) {
+    return { erro: 'O servidor não respondeu: ' + (e && e.message ? e.message : e) };
+  }
+}
+
+function sugerirSenha() {
+  // Legível e ditável por telefone: sem I/l/O/0/1, que geram retrabalho.
+  const letras = 'abcdefghjkmnpqrstuvwxyz';
+  const nums = '23456789';
+  const r = n => Math.floor(Math.random() * n);
+  let s = letras[r(letras.length)].toUpperCase();
+  for (let i = 0; i < 5; i++) s += letras[r(letras.length)];
+  for (let i = 0; i < 3; i++) s += nums[r(nums.length)];
+  const campo = document.getElementById('novoUsuarioSenha');
+  if (campo) { campo.value = s; campo.focus(); campo.select(); }
+  toast('Senha sugerida — anote antes de criar', '');
+}
+
+async function criarUsuario() {
+  if (!exigirAdmin('criar contas de acesso')) return;
+  const email = (document.getElementById('novoUsuarioEmail') || {}).value || '';
+  const senha = (document.getElementById('novoUsuarioSenha') || {}).value || '';
+  const papel = (document.getElementById('novoUsuarioPapel') || {}).value || 'usuario';
+  if (!email.trim() || !senha.trim()) { toast('Preencha o e-mail e a senha', 'err'); return; }
+  if (senha.trim().length < 6) { toast('A senha precisa de pelo menos 6 caracteres', 'err'); return; }
+
+  if (papel === 'admin' && !confirm(
+      `Criar ${email.trim()} como ADMINISTRADOR?\n\n`
+      + 'Admin pode criar, editar e apagar tudo — cadastros, OS, expedição — e '
+      + 'também mudar o papel dos outros, inclusive o seu.')) return;
+
+  const st = document.getElementById('contasAcessoStatus');
+  if (st) st.textContent = 'Criando…';
+  const r = await _chamarFuncaoUsuarios({ acao: 'criar', email: email.trim(), senha: senha.trim(), papel });
+  if (r.erro) { if (st) st.textContent = ''; toast(r.erro, 'err'); return; }
+
+  // A senha não fica guardada em lugar nenhum que dê para consultar depois —
+  // por isso ela continua na tela até você sair, em vez de ser limpa junto.
+  document.getElementById('novoUsuarioEmail').value = '';
+  if (st) st.innerHTML = `✅ Conta <b>${esc(email.trim())}</b> criada. `
+    + `Anote a senha <b>${esc(senha.trim())}</b> e entregue à pessoa — ela não pode ser consultada depois.`;
+  toast('Conta criada', 'ok');
+  listarContasAcesso();
+}
+
+async function listarContasAcesso() {
+  if (!exigirAdmin('ver as contas de acesso')) return;
+  const alvo = document.getElementById('contasAcessoLista');
+  if (!alvo) return;
+  alvo.innerHTML = '<div class="empty" style="padding:20px;">Carregando…</div>';
+
+  const r = await _chamarFuncaoUsuarios({ acao: 'listar' });
+  if (r.erro) { alvo.innerHTML = `<div class="empty" style="padding:20px;">${esc(r.erro)}</div>`; return; }
+  const us = r.usuarios || [];
+  if (!us.length) { alvo.innerHTML = '<div class="empty" style="padding:20px;">Nenhuma conta ainda.</div>'; return; }
+
+  const dia = t => t ? new Date(t).toLocaleDateString('pt-BR') : '—';
+  alvo.innerHTML = `<div style="margin-bottom:6px; font-size:13px; color:var(--ink-2);">
+      ${us.length} conta(s) com acesso ao programa
+    </div>
+    <table class="table">
+      <thead><tr><th>E-mail</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th></tr></thead>
+      <tbody>${us.map(u => `
+        <tr>
+          <td>${esc(u.email || '—')}${u.confirmada ? '' : ' <span class="badge" style="background:var(--alert);color:#fff;">não confirmada</span>'}</td>
+          <td>${u.papel === 'admin'
+                ? '<span class="badge">admin</span>'
+                : '<span style="color:var(--ink-3);">só consulta</span>'}</td>
+          <td>${esc(dia(u.criada_em))}</td>
+          <td>${esc(dia(u.ultimo_acesso))}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+}
+
 async function listarUsuariosComPapel() {
   if (!supa) return;
   if (!exigirAdmin('ver os usuários e os papéis')) return;
@@ -2400,6 +2508,9 @@ function goto(page) {
     atualizarBackupFolderStatus();
     atualizarOeFolderStatus();
     atualizarExportFolderStatus();
+    // A lista de contas se carrega sozinha ao abrir a tela: quem entra aqui
+    // para criar uma conta precisa antes ver quem já tem — senão cria repetida.
+    if (currentRole === 'admin') listarContasAcesso();
   }
   // A lista acabou de ser redesenhada inteira: o que estava escrito na busca
   // daquela tela volta a valer sobre o desenho novo. Sem isto, sair da tela e

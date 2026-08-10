@@ -166,6 +166,49 @@ docker exec supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/
 if ($LASTEXITCODE -ne 0) { Parar "o schema.sql falhou. A mensagem do psql esta acima." }
 Ok "tabelas, permissoes, realtime e bucket dos desenhos"
 
+# A tranca dos papeis: `set_user_role` confere no BANCO se quem chamou e admin.
+# Esconder a tela no navegador nao vale de nada - a pagina roda na maquina de
+# quem usa, e o papel e uma variavel de JavaScript.
+$sqlPapeis = Join-Path (Split-Path -Parent $PSScriptRoot) "sql\supabase-admin-roles.sql"
+if (Test-Path $sqlPapeis) {
+  docker cp $sqlPapeis supabase-db:/tmp/papeis.sql | Out-Null
+  docker exec supabase-db psql -U postgres -d postgres -f /tmp/papeis.sql | Out-Null
+  Ok "set_user_role instalada (quem muda papel e conferido no servidor)"
+} else {
+  Aviso "nao achei sql\supabase-admin-roles.sql - o botao de promover a admin nao vai funcionar"
+}
+
+# --------------------------------------------------------------------- funcoes
+Titulo "Funcoes do servidor"
+# Criar conta pelo navegador exigiria ligar o auto-cadastro, e a chave anonima
+# esta dentro de toda pagina aberta na fabrica - qualquer pessoa na rede criaria
+# a propria conta e leria tudo. A funcao abaixo usa a chave de servico, que fica
+# so no servidor, e confere la dentro se quem chamou e admin.
+$origemFuncoes = Join-Path $PSScriptRoot "funcoes"
+$destinoFuncoes = Join-Path $PastaSupabase "docker\volumes\functions"
+if (Test-Path $origemFuncoes) {
+  foreach ($f in Get-ChildItem $origemFuncoes -Directory) {
+    $alvo = Join-Path $destinoFuncoes $f.Name
+    New-Item -ItemType Directory -Force -Path $alvo | Out-Null
+    Copy-Item (Join-Path $f.FullName "*") $alvo -Recurse -Force
+    Ok ("funcao " + $f.Name)
+  }
+} else { Pulo "nenhuma funcao para instalar" }
+
+# Com a criacao de contas feita pelo admin, o auto-cadastro deixa de ter uso -
+# e ligado ele deixaria qualquer um na rede criar conta e ler a fabrica inteira.
+$dis = LerEnv $EnvArq "DISABLE_SIGNUP"
+if ($dis -ne "true") {
+  $texto = Get-Content $EnvArq -Raw
+  if ($texto -match '(?m)^DISABLE_SIGNUP=') { $texto = $texto -replace '(?m)^DISABLE_SIGNUP=.*$', 'DISABLE_SIGNUP=true' }
+  else { $texto = $texto.TrimEnd() + "`nDISABLE_SIGNUP=true`n" }
+  Set-Content -Path $EnvArq -Value $texto -Encoding utf8
+  Push-Location $PastaDocker
+  docker compose up -d auth | Out-Null
+  Pop-Location
+  Ok "auto-cadastro desligado (contas so pelo admin, dentro do programa)"
+} else { Pulo "auto-cadastro ja desligado" }
+
 # ---------------------------------------------------------------------- dados
 Titulo "Migrando os dados"
 if (-not $Backup) {

@@ -28,36 +28,47 @@ As contas não vieram no backup — elas vivem na autenticação, não nos dados
 nenhuma.** Este é o passo que, esquecido, faz parecer que "a intranet não
 funciona" quando está tudo certo.
 
-### Entrar no painel
+### Dentro do próprio programa
 
-No **servidor**, abra `http://localhost:8000`. Ele pede usuário e senha:
+Entre como admin e vá em **Configurações → Contas de acesso**. Ali você vê
+**todas as contas que têm acesso** e cria as que faltam:
 
-- **usuário:** `admin`
-- **senha:** a linha `DASHBOARD_PASSWORD` do arquivo `C:\supabase\docker\.env`
+- **E-mail:** serve como nome de usuário. Pode ser o e-mail real ou um interno,
+  tipo `maria@diverse.local` — nunca chega mensagem nele.
+- **Senha:** o botão **Sugerir senha** gera uma legível, sem letras que se
+  confundem ao ditar por telefone.
+- **Pode editar?** "Não" é o normal: a pessoa consulta e imprime tudo, mas não
+  altera. "Sim" dá poder de administrador, inclusive de mudar o papel dos
+  outros.
 
-O painel só responde aqui na máquina do servidor — de propósito.
+A conta já nasce válida — **não há e-mail de confirmação para esperar**, e a
+pessoa entra na hora.
 
-### Criar cada pessoa
+> **Anote a senha antes de sair da tela.** Ela não fica guardada em lugar nenhum
+> que dê para consultar depois. Se perder, crie outra pela mesma tela.
 
-**Authentication** → **Users** → botão **Add user** → **Create new user**.
+> **Por que isso não é feito direto pelo navegador.** Criar conta pelo navegador
+> exigiria ligar o auto-cadastro do Supabase — e a chave pública está dentro de
+> toda página aberta na fábrica. Com o auto-cadastro ligado, qualquer pessoa na
+> rede criaria a própria conta e passaria a ler tudo: OS, custos, produção. Por
+> isso o auto-cadastro fica **desligado**, e a criação passa por uma função do
+> servidor que confere se quem pediu é admin. Só funciona pelo endereço da
+> fábrica; pela nuvem, o botão avisa isso.
 
-- **Email:** pode ser o e-mail real da pessoa ou um interno, tipo
-  `maria@diverse.local`. Só precisa ser único e a pessoa precisar lembrar.
-- **Password:** a senha dela.
-- **Auto Confirm User:** deixe **ligado**.
+### Pelo painel do Supabase (alternativa)
 
-> **Não use "Send invitation".** Convite manda e-mail, e não há servidor de
-> e-mail configurado aqui — o convite nunca chega e a conta fica pendurada sem
-> poder entrar. "Create new user" com Auto Confirm resolve na hora.
+Se preferir, ou se precisar do primeiro admin antes de conseguir entrar: no
+**servidor**, abra `http://localhost:8000` (usuário `admin`, senha da linha
+`DASHBOARD_PASSWORD` em `C:\supabase\docker\.env`).
 
-Repita para cada pessoa que vai usar o programa.
+**Authentication → Users → Add user → Create new user**, com **Auto Confirm
+User ligado**.
 
-### Dar admin para você
+> **Não use "Send invitation" ali.** Convite manda e-mail, e não há servidor de
+> e-mail na fábrica — o convite nunca chega e a conta fica pendurada sem poder
+> entrar.
 
-Só a sua conta precisa disto. As outras não precisam de registro nenhum: sem
-linha na tabela, o programa já trata como somente leitura.
-
-**SQL Editor** → **New query**, troque o e-mail e rode:
+Para dar admin à primeira conta, no **SQL Editor**:
 
 ```sql
 INSERT INTO user_roles (user_id, role)
