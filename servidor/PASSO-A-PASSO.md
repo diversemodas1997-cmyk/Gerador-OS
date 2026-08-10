@@ -1,6 +1,6 @@
 # O que falta depois do instalador — passo a passo
 
-O servidor está no ar em **`https://193.168.0.8`**. O instalador fez tudo o que
+O servidor está no ar em **`https://193.168.0.200`**. O instalador fez tudo o que
 dava para fazer sozinho. Sobraram quatro tarefas, e todas as quatro sobraram
 pelo mesmo motivo: **exigem uma decisão sua ou uma volta pelas máquinas**.
 
@@ -16,7 +16,7 @@ máquina barra o endereço do servidor e você não chega na tela de configuraç
 
 > **A tarefa 3 deixou de existir.** O servidor publica o próprio endereço e a
 > chave em `/servidor-local.json`, e o programa aberto por ele se conecta
-> sozinho. Abrir `https://193.168.0.8` já basta. O texto do passo 3 continua
+> sozinho. Abrir `https://193.168.0.200` já basta. O texto do passo 3 continua
 > abaixo como referência, para quando alguém precisar conferir ou desfazer.
 
 ---
@@ -85,7 +85,7 @@ Consultar e imprimir funciona igual para todo mundo. O que muda é quem altera.
 
 `ca.crt` é um arquivinho de 1 KB. Ele é o **crachá da fábrica**: não abre nada
 e não tem senha dentro. Serve só para o Windows de cada máquina saber que
-`https://193.168.0.8` é de confiança. Sem ele, o navegador mostra "a conexão
+`https://193.168.0.200` é de confiança. Sem ele, o navegador mostra "a conexão
 não é particular" e o programa não funciona direito.
 
 Ele nasceu junto com o servidor e mora em
@@ -96,10 +96,10 @@ pasta `Gerador-OS`, pasta `servidor`, pasta `tls`.
 
 O próprio servidor entrega o arquivo. **Em cada computador da fábrica:**
 
-1. No navegador, digite **`https://193.168.0.8/ca.crt`**.
+1. No navegador, digite **`https://193.168.0.200/ca.crt`**.
 2. Vai aparecer "a conexão não é particular" — é esperado, é exatamente o que
    estamos consertando. Clique em **Avançado** → **Prosseguir para
-   193.168.0.8 (não seguro)**.
+   193.168.0.200 (não seguro)**.
 3. O arquivo baixa sozinho, para a pasta **Downloads**.
 4. Abra o PowerShell **como administrador** (botão direito no menu Iniciar →
    "Windows PowerShell (Admin)") e rode:
@@ -126,14 +126,14 @@ escolher o `ca.crt` → marcar "Confiar nesta CA para identificar sites".
 
 ### Conferir
 
-Abra `https://193.168.0.8` nessa máquina. O cadeado tem de aparecer **sem
+Abra `https://193.168.0.200` nessa máquina. O cadeado tem de aparecer **sem
 aviso**. Se aparecer aviso de "conexão não é particular", o certificado não
 entrou — refaça com administrador de verdade e reabra o navegador.
 
 > Vale para o servidor também, se você for usar o programa nele.
 
 > O certificado do servidor vale até **novembro de 2028**. Quando vencer, rode
-> `node servidor\gerar-certificado.js --ip 193.168.0.8` de novo — a autoridade
+> `node servidor\gerar-certificado.js --ip 193.168.0.200` de novo — a autoridade
 > continua a mesma, então **não** é preciso passar nas máquinas outra vez.
 
 ---
@@ -141,7 +141,7 @@ entrou — refaça com administrador de verdade e reabra o navegador.
 ## 3. Apontar cada máquina para o servidor — automático
 
 **Normalmente você não precisa fazer nada aqui.** Ao abrir
-`https://193.168.0.8`, o programa pergunta ao próprio servidor quem ele é e se
+`https://193.168.0.200`, o programa pergunta ao próprio servidor quem ele é e se
 conecta sozinho. A barra lateral já mostra **🏭 Servidor da fábrica**.
 
 O passo abaixo continua valendo para conferir, corrigir ou desfazer — por
@@ -150,11 +150,11 @@ exemplo numa máquina que já ficou apontada para um endereço antigo.
 Esta configuração vale **só na máquina onde foi feita** — é por isso que, quando
 precisa ser feita à mão, tem de repetir em cada computador.
 
-1. Abra **`https://193.168.0.8`** (não o endereço antigo da internet).
+1. Abra **`https://193.168.0.200`** (não o endereço antigo da internet).
 2. Entre com a conta daquela pessoa.
 3. Vá em **Configurações** → cartão **Servidor da fábrica (rede local)**.
 4. Preencha os dois campos:
-   - **Endereço:** `https://193.168.0.8` — sem porta, a API vem pelo mesmo
+   - **Endereço:** `https://193.168.0.200` — sem porta, a API vem pelo mesmo
      endereço.
    - **Chave pública (anon) do servidor local:** a chave ANON, que está em
      `servidor\tls\resumo-instalacao.txt` no servidor.
@@ -205,7 +205,7 @@ senha duas vezes.
 ### O teste que vale
 
 Configurar não prova nada. **Reinicie o servidor e não toque nele.** Depois de
-uns três minutos, de outra máquina, abra `https://193.168.0.8`.
+uns três minutos, de outra máquina, abra `https://193.168.0.200`.
 
 Se o app abrir, está resolvido. Se não abrir, o logon automático não pegou —
 resolva agora, não depois.
@@ -224,8 +224,8 @@ cobre o caso comum, que é a oscilação curta.
 |---|---|---|
 | Contas | Cada pessoa entra com a conta dela | entra e vê os cadastros |
 | Seu admin | Menu mostra **Nova OS** | aparece só para você |
-| Certificado | `https://193.168.0.8` em outra máquina | cadeado sem aviso |
-| Arquivos servidos | `https://193.168.0.8/vendor-check.html` | 7 linhas "ok" |
+| Certificado | `https://193.168.0.200` em outra máquina | cadeado sem aviso |
+| Arquivos servidos | `https://193.168.0.200/vendor-check.html` | 7 linhas "ok" |
 | Pastas automáticas | Configurações → as três pastas | deixa conectar |
 | Sem internet | Tire o cabo do roteador (não do switch) | app continua normal |
 | Sobe sozinho | Reinicie e espere | app volta sem ninguém tocar |

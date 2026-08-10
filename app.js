@@ -134,9 +134,24 @@ async function resolverServidor() {
   // servidor da fábrica.
   let descoberto = false;
   if (!cfg) { cfg = await configDoServidorQueServiu(); descoberto = !!cfg; }
-  if (cfg && await sondarServidorLocal(cfg)) {
+  let vivo = cfg ? await sondarServidorLocal(cfg) : false;
+
+  // O endereço guardado não respondeu — mas quem serviu esta página pode ser o
+  // servidor da fábrica em um endereço NOVO. É o que acontece quando o IP do
+  // servidor muda: sem isto, cada máquina ficaria presa no endereço velho e
+  // cairia na nuvem, que é exatamente o que a fábrica não pode depender. E a
+  // correção teria de ser feita computador por computador, à mão.
+  if (!vivo && !descoberto) {
+    const doServidor = await configDoServidorQueServiu();
+    if (doServidor && (!cfg || doServidor.url !== cfg.url || doServidor.key !== cfg.key)
+        && await sondarServidorLocal(doServidor)) {
+      cfg = doServidor; descoberto = true; vivo = true;
+    }
+  }
+
+  if (vivo && cfg) {
     // Guarda o que foi descoberto, para as próximas aberturas não dependerem
-    // de o arquivo continuar lá — e para "Usar só a nuvem" seguir tendo efeito.
+    // de o arquivo continuar lá.
     if (descoberto) definirServidorLocal(cfg.url, cfg.key);
     supa = criar(cfg.url, cfg.key);
     _servidorUrlAtivo = cfg.url;
@@ -213,13 +228,22 @@ function salvarServidorLocal() {
   setTimeout(() => window.location.reload(), 600);
 }
 
+// Apaga o endereço guardado nesta máquina. Numa máquina que abre o programa
+// PELO servidor da fábrica, ela volta a se conectar nele ao recarregar — a
+// descoberta automática age de novo. Isso é proposital: um clique sem querer
+// aqui se conserta sozinho, em vez de deixar o computador falando com a nuvem
+// sem ninguém entender por quê. Para usar só a nuvem de verdade, abra o
+// programa pelo endereço da nuvem.
 function limparServidorLocal() {
   definirServidorLocal(null, null);
   const iUrl = document.getElementById('servidorLocalUrl');
   const iKey = document.getElementById('servidorLocalKey');
   if (iUrl) iUrl.value = ''; if (iKey) iKey.value = '';
-  toast('Voltando a usar só a nuvem — recarregando…', 'ok');
-  setTimeout(() => window.location.reload(), 600);
+  const peloServidor = _modoServidor === MODO_LOCAL;
+  toast(peloServidor
+    ? 'Endereço apagado. Como esta página veio do servidor da fábrica, ele vai se reconectar ao recarregar.'
+    : 'Voltando a usar só a nuvem — recarregando…', 'ok');
+  setTimeout(() => window.location.reload(), peloServidor ? 2200 : 600);
 }
 
 // Identidade do DISPOSITIVO (aba), NÃO da conta. Dois computadores logados com

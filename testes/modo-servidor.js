@@ -141,12 +141,41 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
   ok('13. chave publicada que o servidor recusa -> nuvem, e NAO fica guardada',
      __modo() === 'nuvem' && !guardado['servidorLocal']);
 
-  // "Usar so a nuvem" precisa continuar tendo efeito numa maquina que abre o
-  // programa pelo proprio servidor - senao o botao nao serviria para nada.
-  servidorLocalJson = { url: 'https://193.168.0.8', key: 'chave-publicada' };
-  respostaFetch = { ok: true, erro: false, status: 200 };
+  // O IP do servidor mudou. A maquina tem o endereco VELHO guardado, e ele nao
+  // responde mais. Ela precisa aceitar o endereco novo de quem serviu a pagina,
+  // senao a troca de IP obrigaria a passar computador por computador - e ate la
+  // todos estariam na nuvem.
+  definirServidorLocal('https://193.168.0.8', 'chave-publicada');
+  servidorLocalJson = { url: 'https://193.168.0.200', key: 'chave-publicada' };
+  let tentativas = 0;
+  global.fetch = async (url) => {
+    if (String(url).endsWith('/servidor-local.json')) {
+      return { ok: true, status: 200, json: async () => servidorLocalJson };
+    }
+    urlSondada = url;
+    tentativas++;
+    // O endereco velho nao atende; o novo atende.
+    if (String(url).startsWith('https://193.168.0.200')) return { ok: true, status: 200 };
+    throw new Error('ECONNREFUSED');
+  };
   await resolverServidor();
-  ok('14. (preparo) conectada ao servidor', __modo() === 'local');
+  ok('14. endereco velho morto -> adota o endereco novo que o servidor anuncia',
+     __modo() === 'local' && __supa()._url === 'https://193.168.0.200');
+  ok('14b. grava o endereco novo, para nao redescobrir toda vez',
+     (JSON.parse(guardado['servidorLocal'] || '{}')).url === 'https://193.168.0.200');
+  ok('14c. tentou o velho antes de trocar (nao troca por capricho)', tentativas >= 2);
+
+  // Volta o fetch normal para o resto do arquivo.
+  global.fetch = async (url) => {
+    if (String(url).endsWith('/servidor-local.json')) {
+      return servidorLocalJson
+        ? { ok: true, status: 200, json: async () => servidorLocalJson }
+        : { ok: false, status: 404, json: async () => ({}) };
+    }
+    urlSondada = url;
+    if (respostaFetch.erro) throw new Error('ECONNREFUSED');
+    return { ok: respostaFetch.ok, status: respostaFetch.status };
+  };
 
   // Volta ao estado neutro para o resto do arquivo.
   servidorLocalJson = null;

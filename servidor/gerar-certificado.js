@@ -77,11 +77,28 @@ basicConstraints = critical, CA:TRUE, pathlen:0
 keyUsage = critical, keyCertSign, cRLSign
 `.trim() + '\n');
 
-console.log('Gerando a autoridade certificadora da fábrica…');
-ssl(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256',
-  '-days', String(DIAS_CA), '-keyout', p('ca.key'), '-out', p('ca.crt'),
-  '-subj', '/CN=Gerador-OS - CA da fabrica/O=Gerador-OS',
-  '-config', cfg, '-extensions', 'ca']);
+// A CA é REAPROVEITADA quando já existe, e isso é o ponto mais importante deste
+// arquivo. Ela é o que cada computador da fábrica instalou uma vez; refazê-la
+// invalida silenciosamente todos eles de uma vez, e o sintoma aparece só depois,
+// como "deu erro de segurança em todas as máquinas". Reemitir o certificado do
+// servidor — porque o IP mudou, ou porque venceu — não pode custar isso.
+// Para trocar a CA de propósito, use --refazer-ca, sabendo que aí é obrigatório
+// reinstalar o ca.crt em cada computador.
+const REFAZER_CA = process.argv.includes('--refazer-ca');
+const temCA = fs.existsSync(p('ca.key')) && fs.existsSync(p('ca.crt'));
+
+if (temCA && !REFAZER_CA) {
+  const fim = (ssl(['x509', '-in', p('ca.crt'), '-noout', '-enddate']).split('=')[1] || '').trim();
+  console.log('Aproveitando a autoridade certificadora que já existe (vale até ' + fim + ').');
+  console.log('  As máquinas que já têm o ca.crt instalado continuam valendo.');
+} else {
+  if (temCA) console.log('REFAZENDO a autoridade certificadora — será preciso reinstalar o ca.crt em CADA computador.');
+  else console.log('Gerando a autoridade certificadora da fábrica…');
+  ssl(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256',
+    '-days', String(DIAS_CA), '-keyout', p('ca.key'), '-out', p('ca.crt'),
+    '-subj', '/CN=Gerador-OS - CA da fabrica/O=Gerador-OS',
+    '-config', cfg, '-extensions', 'ca']);
+}
 
 console.log('Gerando o certificado do servidor…');
 ssl(['req', '-newkey', 'rsa:2048', '-nodes', '-sha256',
