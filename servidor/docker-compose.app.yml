@@ -1,0 +1,27 @@
+# Serve o Gerador-OS por HTTPS e repassa a API do Supabase no mesmo endereço.
+#
+# Fica SEPARADO do docker-compose do Supabase de propósito: atualizar o Supabase
+# (git pull na pasta dele) não pode apagar esta configuração.
+#
+# Rodar, de dentro da pasta do Gerador-OS no servidor:
+#   docker compose -f servidor\docker-compose.app.yml up -d
+#
+# Antes disso é preciso ter gerado o certificado:
+#   node servidor\gerar-certificado.js --ip SEU-IP
+
+services:
+  app:
+    image: nginx:alpine
+    container_name: gerador-os-web
+    restart: always          # volta sozinho quando o servidor reinicia
+    ports:
+      - "80:80"              # só redireciona para o 443
+      - "443:443"
+    volumes:
+      # A pasta do app, somente leitura: o container não tem por que escrever nela.
+      - ../:/usr/share/nginx/html:ro
+      - ./nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./tls:/etc/nginx/tls:ro
+    extra_hosts:
+      # Como o nginx alcança o Supabase, que roda no próprio servidor.
+      - "host.docker.internal:host-gateway"

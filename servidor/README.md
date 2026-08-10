@@ -18,27 +18,21 @@ consulta.
 Nenhum dos dois impede a instalação, mas os dois mudam o que você vai obter no
 fim. Melhor saber agora.
 
-### 1. As pastas automáticas param de funcionar em `http://`
+### 1. Tudo passa por HTTPS — e isso não é opcional
 
-O navegador só libera a escolha de pastas (`showDirectoryPicker`, usada em 14
-pontos do app) em **contexto seguro**: `https://` ou `localhost`. Um endereço
-como `http://192.168.0.50:8000` **não** é contexto seguro.
+O navegador só libera a escolha de pastas (gravação automática do PDF da OS, das
+etiquetas, do backup e da OE) em **contexto seguro**: `https://` ou `localhost`.
+Em `http://192.168.0.50` essas quatro funções simplesmente não existem.
 
-Na prática, nas máquinas que acessarem por IP deixam de funcionar:
+Medido, não suposto — mesma máquina, mesmos arquivos, só mudando o endereço:
 
-- pasta de backup automático do JSON;
-- gravação automática do PDF da OS e das etiquetas;
-- pasta das Ordens de Expedição.
+| endereço | contexto seguro | escolha de pastas |
+|---|---|---|
+| `http://192.168.0.8:8081` | não | indisponível |
+| `https://192.168.0.8:8443` | **sim** | **disponível** |
 
-O resto do programa funciona normalmente. As saídas:
-
-- **Servir por HTTPS** com um certificado próprio, instalando a autoridade dele
-  nas ~4 máquinas. É a solução certa, e é trabalho à parte.
-- **Deixar essas funções só na máquina do servidor**, que acessa por
-  `http://localhost:8000` e portanto é contexto seguro.
-
-Se as pastas automáticas importam para você (a de PDF é usada todo dia), me
-avise que eu incluo o HTTPS no roteiro.
+Por isso o roteiro monta o servidor já com HTTPS (passos 5 e 6), usando um
+certificado seu. Não envolve internet, domínio nem pagar nada.
 
 ### 2. Os desenhos técnicos precisam ser copiados
 
@@ -108,36 +102,57 @@ No painel: **SQL Editor → New query**, cole o conteúdo de
 `servidor/schema.sql` e rode. Confira com as consultas comentadas no fim do
 arquivo.
 
-## Passo 5 — Servir os arquivos do app
+## Passo 5 — Certificado HTTPS
 
-O servidor precisa entregar também o `index.html`, o `app.js` e a pasta
-`vendor/` — senão as máquinas continuam dependendo do GitHub para abrir o
-programa, e a internet volta a ser obrigatória.
-
-Copie a pasta do Gerador-OS para o servidor (ex.: `C:\gerador-os`) e suba um
-servidor de arquivos, em um `docker-compose.app.yml` separado — separado de
-propósito, para não ser sobrescrito quando você atualizar o Supabase:
-
-```yaml
-services:
-  app:
-    image: nginx:alpine
-    container_name: gerador-os-web
-    restart: always
-    ports:
-      - "8080:80"
-    volumes:
-      - C:\gerador-os:/usr/share/nginx/html:ro
-```
+Crie a autoridade certificadora da fábrica e o certificado do servidor:
 
 ```powershell
-docker compose -f docker-compose.app.yml up -d
+node servidor\gerar-certificado.js --ip 192.168.0.50
 ```
 
-O app fica em `http://IP-DO-SERVIDOR:8080`. Para atualizar o programa depois,
-basta um `git pull` nessa pasta.
+Ele confere o resultado antes de terminar: valida o certificado contra a própria
+CA e verifica que o IP está na lista de nomes aceitos — um certificado sem isso
+dá erro de segurança no navegador e parece problema de configuração.
 
-## Passo 6 — Migrar os dados
+Saem quatro arquivos em `servidor\tls`. O `ca.key` é **segredo**: quem o tiver
+emite certificados em nome da sua CA. Ele fica no servidor e não vai para pasta
+compartilhada nem para o repositório.
+
+Depois, **em cada computador da fábrica**, com o `ca.crt` copiado para lá,
+no PowerShell **como administrador**:
+
+```powershell
+Import-Certificate -FilePath .\ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+Feche e reabra o navegador. Chrome e Edge usam a lista do Windows; o Firefox tem
+lista própria (Configurações → Certificados → Autoridades).
+
+> O certificado do servidor vale até ~2 anos. Quando vencer, rode o gerador de
+> novo — a CA continua a mesma, então **não** é preciso passar nas máquinas
+> outra vez.
+
+## Passo 6 — Servir o app e a API no mesmo endereço
+
+O servidor precisa entregar o `index.html`, o `app.js` e a pasta `vendor/` —
+senão as máquinas continuam dependendo do GitHub para abrir o programa e a
+internet volta a ser obrigatória.
+
+E precisa entregar a **API do Supabase no mesmo endereço**. Isto não é
+preferência: uma página em `https://` não pode chamar uma API em `http://` — o
+navegador bloqueia como conteúdo misto. Com os dois na mesma origem o problema
+desaparece, e de quebra não há CORS para configurar.
+
+Copie a pasta do Gerador-OS para o servidor (ex.: `C:\gerador-os`) e suba:
+
+```powershell
+docker compose -f servidor\docker-compose.app.yml up -d
+```
+
+O app fica em **`https://IP-DO-SERVIDOR`** (sem porta). Quem digitar `http://` é
+redirecionado. Para atualizar o programa depois, basta um `git pull` na pasta.
+
+## Passo 7 — Migrar os dados
 
 Do backup local — **não precisa da nuvem**:
 
@@ -149,7 +164,7 @@ O script recusa gravar por cima de um servidor que já tenha dados (use
 `--sobrescrever` só se for mesmo a intenção). Confira no painel: **Table
 Editor → shared_data**, uma linha `main`.
 
-## Passo 7 — Contas de login
+## Passo 8 — Contas de login
 
 As contas vivem na autenticação, não nos dados: elas **não** vêm no backup.
 
@@ -181,7 +196,7 @@ de criar, editar e excluir de cada tela também somem.
 Ou seja: consultar e imprimir funciona igual para todo mundo. O que muda é só
 quem pode alterar.
 
-## Passo 8 — Copiar os desenhos (exige a nuvem no ar)
+## Passo 9 — Copiar os desenhos (exige a nuvem no ar)
 
 ```powershell
 node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_ROLE_KEY> --so-listar
@@ -192,23 +207,27 @@ Ele só copia arquivos; nada nos dados é alterado, porque o nome é o mesmo dos
 dois lados. Por isso é seguro rodar de novo quantas vezes precisar — se alguma
 falhar, repita.
 
-## Passo 9 — Rede
+## Passo 10 — Rede
 
 1. **IP fixo** para o servidor (ou reserva por MAC no roteador). Se o IP mudar,
    todas as máquinas param de achá-lo.
-2. **Firewall do Windows**: liberar entrada nas portas 8000 e 8080.
+2. **Firewall do Windows**: liberar entrada nas portas 80 e 443. A 8000 do
+   Supabase **não** precisa ser aberta para a rede — as máquinas chegam nela
+   pelo nginx, e mantê-la fechada evita um caminho sem HTTPS.
 
 ```powershell
-New-NetFirewallRule -DisplayName "Supabase local"  -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
-New-NetFirewallRule -DisplayName "Gerador-OS web"  -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Gerador-OS (HTTP->HTTPS)" -Direction Inbound -LocalPort 80  -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Gerador-OS (HTTPS)"       -Direction Inbound -LocalPort 443 -Protocol TCP -Action Allow
 ```
 
-## Passo 10 — Apontar as máquinas
+## Passo 11 — Apontar as máquinas
 
 Em cada computador, abra o app **pelo endereço do servidor**
-(`http://IP:8080`), vá em **Configurações → Servidor da fábrica** e preencha:
+(`https://IP-DO-SERVIDOR`), vá em **Configurações → Servidor da fábrica** e
+preencha:
 
-- **Endereço:** `http://IP-DO-SERVIDOR:8000`
+- **Endereço:** `https://IP-DO-SERVIDOR` (sem porta — a API vem pelo mesmo
+  endereço, ver passo 6)
 - **Chave:** a `ANON_KEY` gerada no passo 3
 
 Clique em **Testar conexão** e depois em **Salvar e recarregar**. A barra
@@ -224,7 +243,9 @@ divergirem.
 
 | o quê | como |
 |---|---|
-| Arquivos sendo servidos | Abra `http://IP:8080/vendor-check.html` — 7 linhas "ok" |
+| Arquivos sendo servidos | Abra `https://IP/vendor-check.html` — 7 linhas "ok" |
+| Cadeado sem aviso | `https://IP` em outra máquina, depois de instalar o `ca.crt` |
+| Pastas automáticas | Configurações → as três pastas devem deixar conectar |
 | Banco e Realtime | As consultas comentadas no fim de `schema.sql` |
 | Funciona sem internet | Tire o cabo do roteador (não do switch) e use o app normalmente |
 | Sobe sozinho | Reinicie o servidor e veja se o app volta sem ninguém tocar nele |

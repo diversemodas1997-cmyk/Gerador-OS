@@ -6,3 +6,7 @@ backups/
 BACKUP-COMPLETO-*.json
 snapshot-bruto-*.json
 os-gen-backup-*.json
+
+# Certificados do servidor da fabrica. As CHAVES PRIVADAS moram aqui: quem tem
+# o ca.key emite certificado em nome da nossa CA. Nunca versionar.
+servidor/tls/
