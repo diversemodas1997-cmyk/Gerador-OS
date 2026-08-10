@@ -51,6 +51,45 @@ if (!confere(ANON_KEY, JWT_SECRET) || !confere(SERVICE_ROLE_KEY, JWT_SECRET)) {
   process.exit(1);
 }
 
+const NOVOS = {
+  POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY,
+  SECRET_KEY_BASE, VAULT_ENC_KEY,
+  DASHBOARD_USERNAME: 'admin', DASHBOARD_PASSWORD
+};
+
+// Modo automático: grava direto no .env, usado pelo instalar.ps1. Substitui as
+// linhas de mesmo nome e acrescenta as que faltarem, preservando todo o resto
+// do arquivo — o .env do Supabase tem dezenas de outras opções que não são
+// nossas para mexer.
+const iEnv = process.argv.indexOf('--escrever-env');
+if (iEnv > 0) {
+  const fs = require('fs');
+  const arquivo = process.argv[iEnv + 1];
+  if (!arquivo || !fs.existsSync(arquivo)) {
+    console.error('--escrever-env: nao achei o arquivo ' + arquivo);
+    process.exit(1);
+  }
+  let texto = fs.readFileSync(arquivo, 'utf8');
+  for (const [chave, valor] of Object.entries(NOVOS)) {
+    const re = new RegExp('^\\s*' + chave + '\\s*=.*$', 'm');
+    if (re.test(texto)) texto = texto.replace(re, chave + '=' + valor);
+    else texto = texto.replace(/\s*$/, '\n') + chave + '=' + valor + '\n';
+  }
+  fs.writeFileSync(arquivo, texto);
+  // Confere relendo: um .env gravado pela metade derruba a instalacao inteira
+  // com erro de autenticacao, que e o sintoma mais confuso possivel.
+  const relido = fs.readFileSync(arquivo, 'utf8');
+  for (const [chave, valor] of Object.entries(NOVOS)) {
+    if (!new RegExp('^\\s*' + chave + '=' + valor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'm').test(relido)) {
+      console.error('FALHA: ' + chave + ' nao ficou gravada corretamente em ' + arquivo);
+      process.exit(1);
+    }
+  }
+  console.log('ANON_KEY=' + ANON_KEY);           // o instalador captura esta linha
+  console.error('Chaves gravadas em ' + arquivo);
+  process.exit(0);
+}
+
 console.log(`
 =====================================================================
  SEGREDOS DO SERVIDOR DA FABRICA — guarde uma copia em lugar seguro

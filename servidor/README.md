@@ -34,17 +34,16 @@ Medido, não suposto — mesma máquina, mesmos arquivos, só mudando o endereç
 Por isso o roteiro monta o servidor já com HTTPS (passos 5 e 6), usando um
 certificado seu. Não envolve internet, domínio nem pagar nada.
 
-### 2. Os desenhos técnicos precisam ser copiados
+### 2. As imagens dos desenhos vêm da sua pasta
 
-As 25 imagens não estão dentro dos dados. Os dados guardam só o **nome do
-arquivo**, e o app monta o endereço contra o servidor em uso — o mesmo desenho
-é buscado na fábrica quando ela está de pé, e na nuvem quando não. Mas os
-arquivos precisam existir dos dois lados.
+As imagens não estão dentro dos dados: os dados guardam só o nome do arquivo, e
+o app monta o endereço contra o servidor em uso. Os arquivos precisam existir na
+fábrica, senão a folha de OS abre sem desenho.
 
-O script `copiar-desenhos.js` copia da nuvem para a fábrica, e é **o único passo
-que precisa da nuvem acessível**. Como o projeto está restrito agora, fica para
-depois que o serviço voltar. Faça-o **antes** de virar a chave, senão a folha de
-OS abre sem desenho — justamente o que se quer evitar.
+Nenhum backup local tem essas imagens — todos guardam apenas o endereço. Mas a
+pasta `Desenhos técnicos`, organizada por SKU, resolve: o passo 9 as importa
+direto de lá, **sem depender da nuvem**. Foi o que tirou a restrição da conta do
+caminho crítico da instalação.
 
 ---
 
@@ -196,16 +195,39 @@ de criar, editar e excluir de cada tela também somem.
 Ou seja: consultar e imprimir funciona igual para todo mundo. O que muda é só
 quem pode alterar.
 
-## Passo 9 — Copiar os desenhos (exige a nuvem no ar)
+## Passo 9 — Imagens dos desenhos técnicos
+
+As imagens não estão nos dados: os dados guardam só o nome do arquivo, e o app
+monta o endereço contra o servidor em uso. Os arquivos precisam existir na
+fábrica, senão a folha de OS abre sem desenho.
+
+**Caminho normal — a partir da sua pasta** (não precisa da nuvem):
 
 ```powershell
-node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_ROLE_KEY> --so-listar
-node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_ROLE_KEY>
+node servidor\importar-desenhos-da-pasta.js --pasta "Desenhos técnicos" --url http://localhost:8000 --key <SERVICE_ROLE_KEY> --so-listar
+node servidor\importar-desenhos-da-pasta.js --pasta "Desenhos técnicos" --url http://localhost:8000 --key <SERVICE_ROLE_KEY>
 ```
 
-Ele só copia arquivos; nada nos dados é alterado, porque o nome é o mesmo dos
-dois lados. Por isso é seguro rodar de novo quantas vezes precisar — se alguma
-falhar, repita.
+O pareamento é pelo **SKU** do desenho, casado com a pasta e o nome do arquivo
+(`CM.TRI.LISA-CAQUI` → `CM.TRI/TRICOLOR CAQUI.png`). Rode sempre o `--so-listar`
+primeiro e confira a lista: é ali que se percebe um arquivo casado com o desenho
+errado. Na dúvida ele não pareia — desenho trocado numa OS de corte custa tecido.
+
+Desenho sem SKU preenchido vira pendência. O certo é preencher o SKU no cadastro
+do desenho, no app; para resolver na hora, dá para usar um arquivo de mapa:
+
+```json
+{ "0013": "CM.REC/VERDE.png" }
+```
+
+e passar `--mapa mapa.json`.
+
+**Caminho alternativo — copiar da nuvem** (exige o projeto da nuvem fora da
+restrição):
+
+```powershell
+node servidor\copiar-desenhos.js --local http://localhost:8000 --key <SERVICE_ROLE_KEY>
+```
 
 ## Passo 10 — Rede
 
