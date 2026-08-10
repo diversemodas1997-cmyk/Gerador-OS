@@ -212,6 +212,85 @@ divergirem.
 
 O terceiro e o quarto são os que realmente importam — são o motivo de tudo isto.
 
+---
+
+# Recuperação: trocar o servidor por outro computador
+
+O disco desse PC passa a ser onde seus dados moram. O pacote de recuperação
+existe para que, se ele morrer, outro computador ocupe o lugar dele no mesmo
+dia.
+
+## O que vai no pacote
+
+Um arquivo só, **cifrado**, com o banco inteiro (`pg_dump`: dados, contas de
+login com as senhas, papéis, metadados do Storage), as imagens dos desenhos e o
+**`.env` com as chaves originais**.
+
+Esse último item é o que muda o tamanho do estrago. Restaurando as mesmas
+chaves, o servidor novo nasce com a mesma `ANON_KEY` — e **as máquinas da
+fábrica voltam a funcionar sem serem tocadas**. Sem isso, seria preciso passar
+em cada computador reconfigurando a chave.
+
+Vai cifrado porque carrega segredos e hashes de senha, e o destino é uma pasta
+sincronizada. O formato detecta adulteração: um arquivo truncado pela
+sincronização falha ao abrir, em vez de restaurar um servidor pela metade.
+
+> **A senha do backup não fica em lugar nenhum do sistema.** Anote-a fora do
+> computador — junto dos segredos do passo 3. Sem ela o pacote não abre, e não
+> há como recuperá-la.
+
+## Onde guardar: Google Drive, não a nuvem do Supabase
+
+Guardar a recuperação de desastre dentro do serviço que já deixou a fábrica sem
+sistema é frágil. Vocês já usam o `J:\Meu Drive` — uma pasta ali já é fora do
+prédio, versionada e sem custo de tráfego.
+
+## Backup diário automático
+
+Instale o Google Drive no servidor e agende:
+
+```powershell
+$acao = New-ScheduledTaskAction -Execute "node" `
+  -Argument 'C:\gerador-os\servidor\backup-servidor.js --docker C:\supabase\docker --destino "J:\Meu Drive\Backup Gerador-OS" --senha SUA-SENHA-AQUI' `
+  -WorkingDirectory 'C:\gerador-os'
+$quando = New-ScheduledTaskTrigger -Daily -At 12:30
+Register-ScheduledTask -TaskName "Backup Gerador-OS" -Action $acao -Trigger $quando -RunLevel Highest
+```
+
+Horário de almoço, e não de madrugada, de propósito: o `pg_dump` roda com o
+Docker de pé, e de madrugada a máquina pode ter reiniciado sem ninguém logar.
+
+Cada execução **reabre e confere** o arquivo que acabou de gravar. Um backup
+nunca aberto não é backup, é uma suposição — se a conferência falhar, o arquivo
+é apagado em vez de ficar passando por bom. Mantém 14 dias por padrão.
+
+## Testar o backup sem precisar do desastre
+
+De vez em quando, em qualquer computador:
+
+```powershell
+node servidor\restaurar-servidor.js --arq "J:\Meu Drive\Backup Gerador-OS\servidor-gerador-os-2026-08-10.bkp" --senha SUA-SENHA --conferir
+```
+
+Ele abre o pacote e mostra o que tem dentro, **sem escrever nada**. É o único
+jeito de saber que o backup presta antes de precisar dele.
+
+## Trocar o servidor
+
+Na máquina nova: passos 1 e 2 deste guia (Docker + clonar o Supabase). Não
+precisa gerar chaves nem rodar o `schema.sql` — tudo isso vem no pacote.
+
+```powershell
+node servidor\restaurar-servidor.js --arq <o pacote mais recente> --docker C:\supabase\docker --senha SUA-SENHA
+```
+
+Ele restaura o `.env` e as imagens, grava o banco num `.sql` e imprime os três
+comandos que faltam (subir os containers, aplicar o banco, reiniciar).
+
+**Dê à máquina nova o mesmo IP fixo da antiga.** Aí a recuperação termina sem
+tocar em nenhum computador da fábrica: eles procuram o mesmo endereço, com a
+mesma chave, e voltam sozinhos.
+
 ## O que ainda falta depois
 
 1. **Endereço dos desenhos.** Depois do passo 8 eles apontam para a rede local,
