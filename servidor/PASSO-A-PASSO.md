@@ -310,5 +310,54 @@ Os dois últimos são o motivo de tudo isto.
   `skus_catalogo`, que o sistema de Estoque publica na nuvem e que não existe
   no servidor da fábrica. O campo aceita texto livre normalmente — só não
   sugere mais.
-- **Espelho para a nuvem** e **backup diário do servidor** — as duas receitas
-  estão no fim do `README.md`. Até o backup existir, os dados moram num disco só.
+- **Espelho para a nuvem** — a receita está no fim do `README.md`.
+
+---
+
+## O backup diário (já configurado)
+
+Roda **todo dia às 12:30**, pela tarefa `Backup Gerador-OS` do Windows. Gera um
+pacote cifrado em `J:\Meu Drive\Backup Gerador-OS` com o banco inteiro (dados,
+contas de login com as senhas, papéis), as imagens dos desenhos e o `.env` com
+as chaves. Mantém 14 dias.
+
+**Conferir se está rodando.** A pergunta certa não é "a tarefa existe?", é
+"quando foi o último backup bom?":
+
+```powershell
+Get-Content servidor\tls\backup-diario.log -Tail 10
+```
+
+Cada execução escreve uma linha, deu certo ou não:
+
+```
+2026-08-10 17:31:57  ok  servidor-gerador-os-2026-08-10.bkp  50.7 MB
+2026-08-10 17:30:53  FALHA: a unidade Q:\ nao esta disponivel (Google Drive fora do ar?)
+```
+
+**Por que 12:30 e não de madrugada.** O `pg_dump` precisa do Docker de pé, e o
+Docker só existe dentro da sessão do Windows. De madrugada a máquina pode ter
+reiniciado sem ninguém logar — e o backup falharia todo dia, em silêncio. Pelo
+mesmo motivo a tarefa roda **só com a sessão aberta**: o `J:` do Google Drive
+também só existe nela.
+
+**Mudar o horário, ou refazer a tarefa:**
+
+```powershell
+.\servidor\backup-diario.ps1 -Senha 'a-senha' -Agendar -Hora 12:30
+```
+
+> **A senha fica legível no XML da tarefa**, para quem for administrador desta
+> máquina. Como o servidor entra sozinho no Windows sem senha, quem chega nele
+> fisicamente já tem tudo — então isto não abre uma porta que já não estivesse
+> aberta. Mas vale saber o que a cifra protege: o pacote no Google Drive, não a
+> máquina.
+
+**Testar o backup sem precisar do desastre**, de vez em quando:
+
+```powershell
+node servidor\restaurar-servidor.js --arq "J:\Meu Drive\Backup Gerador-OS\<o mais recente>.bkp" --senha 'a-senha' --conferir
+```
+
+Abre o pacote e mostra o que tem dentro, **sem escrever nada**. É o único jeito
+de saber que o backup presta antes de precisar dele.
