@@ -1,0 +1,27 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="vendor/fonts/ibm-plex.css">
+<script src="vendor/supabase-js-2.112.2.min.js"></script>
+<script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="vendor/jspdf-2.5.2.umd.min.js"></script>
+<script src="vendor/pdf-3.11.174.min.js"></script>
+</head><body><div id="r">rodando</div><script>
+(async () => {
+  const t = [];
+  t.push(['supabase.createClient', typeof (window.supabase||{}).createClient === 'function']);
+  t.push(['html2canvas',           typeof window.html2canvas === 'function']);
+  t.push(['jsPDF',                 typeof ((window.jspdf||{}).jsPDF) === 'function']);
+  t.push(['pdfjsLib.getDocument',  typeof ((window.pdfjsLib||{}).getDocument) === 'function']);
+  // O worker do pdf.js e buscado por rede quando um PDF e lido: confere se o
+  // arquivo esta mesmo servido no caminho que o app usa.
+  try { const w = await fetch('vendor/pdf.worker-3.11.174.min.js'); t.push(['worker do pdf.js', w.ok]); }
+  catch (e) { t.push(['worker do pdf.js', false]); }
+  try { await document.fonts.load('600 16px "IBM Plex Sans"');
+        t.push(['fonte IBM Plex Sans', document.fonts.check('600 16px "IBM Plex Sans"')]); }
+  catch (e) { t.push(['fonte IBM Plex Sans', false]); }
+  try { await document.fonts.load('400 16px "IBM Plex Mono"');
+        t.push(['fonte IBM Plex Mono', document.fonts.check('400 16px "IBM Plex Mono"')]); }
+  catch (e) { t.push(['fonte IBM Plex Mono', false]); }
+  document.getElementById('r').textContent =
+    t.map(([n, v]) => (v ? 'ok   ' : 'FALHA ') + n).join(' | ');
+})();
+</script></body></html>

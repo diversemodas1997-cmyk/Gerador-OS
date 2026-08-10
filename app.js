@@ -19675,9 +19675,12 @@ function _riscoChave(leitura) {
 // assistente não tem o que levar para a fase — que é a razão de ele existir.
 async function _riscoLerPdf(file) {
   const lib = window.pdfjsLib;
-  if (!lib) throw new Error('A biblioteca de leitura de PDF não carregou — a primeira vez precisa de internet.');
+  if (!lib) throw new Error('A biblioteca de leitura de PDF não carregou — recarregue a página.');
+  // Worker do próprio site, não de CDN: era o último endereço externo do
+  // programa, e ele só era buscado AQUI, na hora de ler um PDF de risco. Com a
+  // internet fora, o app abria normalmente e só quebrava neste ponto.
   if (lib.GlobalWorkerOptions && !lib.GlobalWorkerOptions.workerSrc) {
-    lib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    lib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker-3.11.174.min.js';
   }
   const doc = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
   const pag = await doc.getPage(1);
