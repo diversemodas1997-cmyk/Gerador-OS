@@ -218,6 +218,62 @@ cobre o caso comum, que é a oscilação curta.
 
 ---
 
+## Se o servidor parar de responder na rede
+
+**Sintoma:** o app abre no próprio servidor, mas nenhuma outra máquina alcança —
+nem o navegador, nem o ping. O servidor continua navegando na internet
+normalmente.
+
+**Causa quase certa:** o Windows reclassificou a rede da fábrica como
+**Pública**. O perfil Público está com *"Bloquear todas as conexões de entrada,
+incluindo as da lista de aplicativos permitidos"*, e nesse modo ele **descarta
+tudo o que chega e ignora todas as regras de permissão** — as do Gerador-OS
+inclusive. As regras continuam lá, aparecem certas em qualquer conferência, e
+não valem nada.
+
+Isso aconteceu na instalação, em 10/08/2026, e custou uma hora de diagnóstico
+em pistas erradas. O Windows reclassifica sozinho quando o roteador é trocado
+ou reiniciado de um jeito que ele lê como rede nova.
+
+**Conferir, em dez segundos:**
+
+```powershell
+Get-NetConnectionProfile | Select-Object InterfaceAlias, NetworkCategory
+```
+
+A placa do cabo (`Ethernet 3`) tem de estar **`Private`**. Se estiver `Public`,
+é isso.
+
+**Consertar** — PowerShell como administrador:
+
+```powershell
+Set-NetConnectionProfile -InterfaceAlias 'Ethernet 3' -NetworkCategory Private
+```
+
+Vale na hora, sem reiniciar nada.
+
+> **Por que Privada e não destravar o perfil Público.** A rede da fábrica é
+> interna, de equipamentos conhecidos — é o que "Privada" significa. Destravar
+> o Público abriria a máquina em *qualquer* rede onde ela se conectasse, o que
+> é bem diferente do que precisamos.
+
+**Se não for isso**, o caminho que resolveu da última vez foi parar de deduzir e
+ligar o registro do firewall, como administrador:
+
+```powershell
+netsh advfirewall set allprofiles logging droppedconnections enable
+netsh advfirewall set allprofiles logging allowedconnections enable
+```
+
+Peça para alguém tentar acessar, e leia
+`C:\Windows\system32\LogFiles\Firewall\pfirewall.log`. Uma linha `DROP TCP
+<origem> <servidor> ... 443 ... RECEIVE` diz, sem margem para dúvida, que o
+pedido chega e o Windows derruba. Nenhuma linha da máquina que tentou diz que o
+pacote não chega, e aí o problema é de rede, não do servidor. Desligue depois
+(`disable` no lugar de `enable`) — registrar tudo custa disco à toa.
+
+---
+
 ## Conferência final
 
 | o quê | como | esperado |
@@ -228,6 +284,7 @@ cobre o caso comum, que é a oscilação curta.
 | Arquivos servidos | `https://193.168.0.200/vendor-check.html` | 7 linhas "ok" |
 | Pastas automáticas | Configurações → as três pastas | deixa conectar |
 | Sem internet | Tire o cabo do roteador (não do switch) | app continua normal |
+| Rede do cabo é Privada | `Get-NetConnectionProfile` | `Ethernet 3 → Private` |
 | Sobe sozinho | Reinicie e espere | app volta sem ninguém tocar |
 
 Os dois últimos são o motivo de tudo isto.
