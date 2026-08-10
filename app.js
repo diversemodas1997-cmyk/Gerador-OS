@@ -2327,7 +2327,8 @@ function goto(page) {
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
-    // PDF das OS. Silencioso e sem pasta conectada não faz nada.
+    // PDF das OS. Só para admin: quem abre a folha para consultar ou imprimir
+    // não dispara gravação nenhuma (ver salvarPdfOeNaPasta).
     salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE', e));
   }
   if (page === 'nova-os') initOSForm();
@@ -16696,6 +16697,13 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // usa (a expedição imprime o diário). O salvar MANUAL (botão, silent=false)
   // continua valendo para qualquer modo.
   if (silent && expPlanoModo !== 'dia') return false;
+  // Gravar a OE na pasta é tarefa de quem administra a expedição. Nas máquinas
+  // de consulta — que só abrem a folha para ler e imprimir — o auto-save não
+  // tem o que fazer, e o aviso "nenhuma pasta conectada" lá embaixo aparecia
+  // como um erro vermelho sobre um recurso que aquela pessoa nem usa. Pior na
+  // rede local, onde a API de pasta nem existe fora do servidor: o aviso
+  // mandava configurar algo impossível de configurar ali.
+  if (silent && currentRole !== 'admin') return false;
   // NÃO perturbar a folha enquanto o usuário a está VENDO. O auto-save
   // re-renderiza a folha e liga o pdf-capture (que desloca o layout), fazendo
   // ela "subir e descer". Se a folha está visível, adia: grava quando o usuário

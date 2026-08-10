@@ -152,7 +152,12 @@ Editor → shared_data**, uma linha `main`.
 ## Passo 7 — Contas de login
 
 As contas vivem na autenticação, não nos dados: elas **não** vêm no backup.
-Recrie-as no painel (**Authentication → Users → Add user**) — são poucas.
+
+**Crie uma conta para cada pessoa que vai usar o programa**, no painel
+(**Authentication → Users → Add user**). Sem conta no servidor da fábrica, a
+pessoa não entra — e sem entrar não vê cadastro, OS nem OE nenhuma. Este é o
+passo que, esquecido, faz parecer que "a intranet não funciona" quando na
+verdade está tudo certo e falta o login.
 
 Depois, dê o papel de admin à sua conta. No **SQL Editor**:
 
@@ -164,6 +169,17 @@ ON CONFLICT (user_id) DO UPDATE SET role = 'admin';
 
 As demais contas não precisam de linha nenhuma — sem registro, o app já as trata
 como somente leitura.
+
+### O que as máquinas de consulta enxergam
+
+Tudo o que é de leitura, sem exceção: **todos os cadastros** (tecidos, cores,
+modelos, grades, desenhos, etapas, equipe…), a **lista de OS e a folha de OS**
+pronta para imprimir, a **Expedição e a folha do plano (OE)**, o estoque, o
+ranking e as operações. No menu, só **Nova OS** é exclusiva do admin; os botões
+de criar, editar e excluir de cada tela também somem.
+
+Ou seja: consultar e imprimir funciona igual para todo mundo. O que muda é só
+quem pode alterar.
 
 ## Passo 8 — Copiar os desenhos (exige a nuvem no ar)
 
