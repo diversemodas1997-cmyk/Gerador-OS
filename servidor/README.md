@@ -77,9 +77,67 @@ instalador fez, ou para refazer alguma etapa isolada.
 
 ## Passo 1 — Docker Desktop
 
-1. Instale o **Docker Desktop para Windows** (ele instala o WSL2 se faltar).
-2. Reinicie e abra o Docker Desktop uma vez, até aparecer "Engine running".
-3. Em **Settings → General**, marque **Start Docker Desktop when you sign in**.
+### Antes de baixar, confira três coisas no servidor
+
+**1. A versão do Windows.** O Docker Desktop exige **Windows 10 Pro 22H2
+(build 19045)** ou mais novo. Tecla Windows + R, digite `winver`, Enter.
+Windows 10 **Home** não serve para o modo recomendado.
+
+**2. A virtualização, ligada na BIOS.** É o tropeço mais comum. Abra o
+Gerenciador de Tarefas (Ctrl+Shift+Esc) → aba **Desempenho** → **CPU** e procure
+**Virtualização: Habilitada**.
+
+Se estiver desabilitada, entra na BIOS (F2 ou Del ao ligar). O nome da opção
+muda conforme o processador: em **AMD** chama-se **SVM Mode**; em **Intel**,
+**Intel VT-x** ou **Intel Virtualization Technology**. Ligue, salve e saia.
+
+**3. Memória.** O mínimo do Docker é 8 GB, mas aqui ele ainda vai carregar o
+Supabase inteiro por cima. Com 8 GB funciona e fica apertado; **16 GB é o
+confortável**.
+
+### Licença
+
+O Docker Desktop é gratuito para empresas com **menos de 250 funcionários e
+menos de US$ 10 milhões de faturamento anual** — a Diverse/Dixie está
+tranquilamente dentro disso. Não é preciso criar conta no Docker Hub: quando ele
+pedir para entrar, pode pular.
+
+### Instalar
+
+1. Baixe em <https://www.docker.com/products/docker-desktop/> (botão
+   *Download for Windows*).
+2. Rode o `Docker Desktop Installer.exe`. Deixe marcado **Use WSL 2 instead of
+   Hyper-V** — é a opção recomendada e a que o instalador do Gerador-OS espera.
+3. Deixe terminar e **reinicie o computador** quando ele pedir.
+4. Abra o Docker Desktop, aceite os termos e espere o canto inferior esquerdo
+   mostrar **Engine running** (verde). A primeira vez demora alguns minutos.
+5. Em **Settings → General**, marque **Start Docker Desktop when you sign in**.
+
+### Conferir antes de seguir
+
+No PowerShell:
+
+```powershell
+docker --version
+docker run --rm hello-world
+```
+
+O segundo comando baixa uma imagem minúscula e imprime uma mensagem de boas
+vindas. Se ele funcionar, o Docker está pronto de verdade — e não só instalado.
+
+### Se der errado
+
+| sintoma | causa provável |
+|---|---|
+| "WSL 2 installation is incomplete" | rode `wsl --update` no PowerShell e reabra |
+| "Virtualization support not detected" | virtualização desligada na BIOS (ver acima) |
+| Fica em "Docker Engine starting" para sempre | reinicie o computador; se persistir, Settings → Troubleshoot → Reset to factory defaults |
+| `docker` não é reconhecido no PowerShell | feche e reabra o PowerShell depois de instalar |
+
+> **Lembrete que vale mais que o resto.** O Docker Desktop só roda **dentro de
+> uma sessão do Windows logada**. Sem o logon automático configurado, um
+> reinício de madrugada deixa a fábrica sem sistema pela manhã. Isso é tratado
+> na conferência final deste guia — não deixe para depois.
 
 > **A fragilidade deste arranjo.** No Windows o Docker Desktop roda dentro da
 > sessão do usuário: se a máquina reiniciar (atualização de madrugada, queda de
