@@ -195,6 +195,17 @@ if ((Test-Path (Join-Path $PastaTls "servidor.crt")) -and -not $RefazerChaves) {
 
 # ----------------------------------------------------------------------- nginx
 Titulo "Publicando o app em https://$IP"
+
+# Como cada maquina descobre com quem falar, sem ninguem preencher endereco e
+# chave computador por computador. So a chave ANONIMA entra aqui: ela ja viaja
+# dentro de todo navegador que abre o app, entao publica-la nao concede nada.
+# Fica em servidor\tls (ignorado pelo git) por ser desta instalacao, nao do
+# programa.
+$LocalJson = Join-Path $PSScriptRoot "tls\servidor-local.json"
+@{ url = "https://$IP"; key = $AnonKey } | ConvertTo-Json -Compress |
+  Set-Content -Path $LocalJson -Encoding utf8 -NoNewline
+Ok "endereco publicado para as maquinas se configurarem sozinhas"
+
 Push-Location $RaizApp
 docker compose -f (Join-Path "servidor" "docker-compose.app.yml") up -d
 $falhou = ($LASTEXITCODE -ne 0)

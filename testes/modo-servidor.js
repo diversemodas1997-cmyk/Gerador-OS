@@ -17,16 +17,28 @@ global.localStorage = {
   setItem: (k, v) => { guardado[k] = String(v); },
   removeItem: k => { delete guardado[k]; }
 };
-let respostaFetch = { ok: false, erro: true };   // servidor local: como responde
+// O status importa tanto quanto o ok: a raiz /rest/v1/ responde 403 a chave
+// anonima com o servidor inteiro funcionando, e so o 401 significa chave
+// recusada. Um falso que devolvesse so "ok" nao distinguiria os dois.
+let respostaFetch = { ok: false, erro: true, status: 0 };
 let urlSondada = null;
+// O que o servidor devolve em /servidor-local.json. null = nao existe (404),
+// que e o caso da nuvem e de qualquer servidor mais velho.
+let servidorLocalJson = null;
 global.fetch = async (url) => {
+  if (String(url).endsWith('/servidor-local.json')) {
+    return servidorLocalJson
+      ? { ok: true, status: 200, json: async () => servidorLocalJson }
+      : { ok: false, status: 404, json: async () => ({}) };
+  }
   urlSondada = url;
   if (respostaFetch.erro) throw new Error('ECONNREFUSED');
-  return { ok: respostaFetch.ok };
+  return { ok: respostaFetch.ok, status: respostaFetch.status };
 };
 global.AbortController = class { constructor() { this.signal = {}; } abort() {} };
 global.document = { getElementById: () => null };
 global.window = { supabase: { createClient: (u, k) => ({ _url: u, _key: k }) } };
+global.location = { origin: 'https://193.168.0.8', protocol: 'https:' };
 
 eval(src.slice(ini, fim) + `
   globalThis.__modo = () => _modoServidor;
@@ -50,7 +62,7 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
 
   // 2. Configurado e de pe: fala com a fabrica e grava.
   definirServidorLocal(CFG.url, CFG.key);
-  respostaFetch = { ok: true, erro: false };
+  respostaFetch = { ok: true, erro: false, status: 200 };
   await resolverServidor();
   ok('2. servidor local de pe -> modo local', __modo() === 'local');
   ok('2b. grava', podeGravar() === true);
@@ -58,7 +70,7 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
   ok('2d. sondou o endereco certo', urlSondada === CFG.url + '/rest/v1/', urlSondada);
 
   // 3. Configurado mas fora do ar: cai para a nuvem em modo CONSULTA.
-  respostaFetch = { ok: false, erro: true };
+  respostaFetch = { ok: false, erro: true, status: 0 };
   await resolverServidor();
   ok('3. servidor local fora -> nuvem', __modo() === 'nuvem');
   ok('3b. gravacao BLOQUEADA (e o que impede os dois lados de divergir)',
@@ -66,14 +78,24 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
   ok('3c. cliente aponta para a nuvem', __supa()._url.includes('supabase.co'));
 
   // 4. De pe mas recusando a chave (401): nao serve como servidor.
-  respostaFetch = { ok: false, erro: false };
+  respostaFetch = { ok: false, erro: false, status: 401 };
   await resolverServidor();
-  ok('4. servidor local recusando a chave -> nuvem, sem gravar',
+  ok('4. servidor local recusando a chave (401) -> nuvem, sem gravar',
      __modo() === 'nuvem' && podeGravar() === false);
+
+  // 4b. 403 na raiz do REST e o comportamento NORMAL do Supabase atual: essa
+  // rota virou so de admin, e a chave anonima e recusada ali com o servidor
+  // inteiro funcionando. Enquanto isto contava como "fora do ar", TODA maquina
+  // da fabrica caia na nuvem em modo consulta - o servidor local nunca era
+  // usado, por mais bem configurado que estivesse.
+  respostaFetch = { ok: false, erro: false, status: 403 };
+  await resolverServidor();
+  ok('4b. 403 na raiz do REST -> segue sendo o servidor da fabrica, gravando',
+     __modo() === 'local' && podeGravar() === true);
 
   // 5. Barra sobrando no endereco nao pode virar // na sondagem.
   definirServidorLocal('http://192.168.0.50:8000///', CFG.key);
-  respostaFetch = { ok: true, erro: false };
+  respostaFetch = { ok: true, erro: false, status: 200 };
   await resolverServidor();
   ok('5. barra extra no endereco e normalizada', urlSondada === CFG.url + '/rest/v1/', urlSondada);
 
@@ -87,6 +109,48 @@ const CFG = { url: 'http://192.168.0.50:8000', key: 'chave-local' };
   guardado['servidorLocal'] = JSON.stringify({ url: CFG.url });
   await resolverServidor();
   ok('7. config sem a chave -> tratada como ausente', podeGravar() === true);
+
+  // ---- Descoberta automatica pelo servidor que serviu a pagina ----------
+  // Sem isto existe um no sem saida: para configurar o servidor e preciso
+  // chegar em Configuracoes, que exige estar logado, e o login vai para a
+  // nuvem - que pode estar fora do ar, restrita ou sem a conta da pessoa.
+  // Abrindo o programa PELO servidor da fabrica, ele se apresenta.
+  definirServidorLocal(null, null);
+  servidorLocalJson = { url: 'https://193.168.0.8', key: 'chave-publicada' };
+  respostaFetch = { ok: true, erro: false, status: 200 };
+  await resolverServidor();
+  ok('11. maquina virgem que abre pelo servidor se conecta sozinha',
+     __modo() === 'local' && __supa()._url === 'https://193.168.0.8');
+  ok('11b. usa a chave que o servidor publicou', __supa()._key === 'chave-publicada');
+  ok('11c. guarda a descoberta para as proximas aberturas',
+     (JSON.parse(guardado['servidorLocal'] || '{}')).key === 'chave-publicada');
+
+  // Servido pela nuvem (ou por um servidor mais velho): o arquivo nao existe,
+  // e tudo tem de seguir como sempre foi.
+  definirServidorLocal(null, null);
+  servidorLocalJson = null;
+  await resolverServidor();
+  ok('12. sem o arquivo publicado -> nuvem, gravando como antes',
+     __modo() === 'nuvem' && podeGravar() === true);
+
+  // Publicado, mas o servidor recusa a chave: nao adianta ter se apresentado.
+  definirServidorLocal(null, null);
+  servidorLocalJson = { url: 'https://193.168.0.8', key: 'chave-errada' };
+  respostaFetch = { ok: false, erro: false, status: 401 };
+  await resolverServidor();
+  ok('13. chave publicada que o servidor recusa -> nuvem, e NAO fica guardada',
+     __modo() === 'nuvem' && !guardado['servidorLocal']);
+
+  // "Usar so a nuvem" precisa continuar tendo efeito numa maquina que abre o
+  // programa pelo proprio servidor - senao o botao nao serviria para nada.
+  servidorLocalJson = { url: 'https://193.168.0.8', key: 'chave-publicada' };
+  respostaFetch = { ok: true, erro: false, status: 200 };
+  await resolverServidor();
+  ok('14. (preparo) conectada ao servidor', __modo() === 'local');
+
+  // Volta ao estado neutro para o resto do arquivo.
+  servidorLocalJson = null;
+  definirServidorLocal(null, null);
 
   // ---- Endereco das imagens dos desenhos -------------------------------
   // O dado guarda so o NOME do arquivo; o endereco e montado contra o servidor

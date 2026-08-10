@@ -53,8 +53,38 @@ async function sondarServidorLocal(cfg, ms) {
       headers: { apikey: cfg.key }, signal: ctrl.signal
     });
     clearTimeout(prazo);
-    return r.ok;
+    // Qualquer resposta já prova que o servidor está atendendo — NÃO exigir
+    // r.ok. O Supabase passou a servir a raiz /rest/v1/ como rota só de admin,
+    // então a chave anônima leva 403 ali com tudo funcionando. Enquanto isto
+    // exigia r.ok, o programa concluía "o servidor da fábrica não respondeu" e
+    // abria a nuvem em modo consulta — em toda máquina da fábrica, sem exceção,
+    // e o botão "Testar conexão" concordava com o diagnóstico errado.
+    // O 401 é o único que reprova: aí a chave foi recusada de verdade.
+    return r.status !== 401;
   } catch (e) { return false; }   // desligado, fora da rede, DNS, prazo estourado
+}
+
+// O servidor da fábrica publica o próprio endereço e a chave anônima em
+// /servidor-local.json. Com isto, abrir o programa PELO servidor já conecta a
+// máquina ao servidor: some a volta de preencher endereço e chave em cada
+// computador, e some o nó de "para configurar preciso entrar, e para entrar
+// preciso do servidor configurado" — que é intransponível quando a nuvem está
+// fora do ar. Servido pela nuvem, o arquivo não existe: dá 404 e nada muda.
+async function configDoServidorQueServiu(ms) {
+  if (typeof location === 'undefined' || location.protocol === 'file:') return null;
+  try {
+    const ctrl = new AbortController();
+    const prazo = setTimeout(() => ctrl.abort(), ms || 2500);
+    const r = await fetch(location.origin + '/servidor-local.json',
+      { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(prazo);
+    if (!r.ok) return null;
+    const c = await r.json();
+    if (!c || !c.key) return null;
+    // O endereço vem de quem serviu a página, e não do arquivo: é o endereço
+    // que este navegador comprovadamente alcança.
+    return { url: String(c.url || location.origin).replace(/\/+$/, ''), key: String(c.key).trim() };
+  } catch (e) { return null; }
 }
 
 let supa = null;
@@ -98,8 +128,16 @@ function _nomeDoArquivoDesenho(valor) {
 async function resolverServidor() {
   const criar = (u, k) => (window.supabase && typeof window.supabase.createClient === 'function')
     ? window.supabase.createClient(u, k) : null;
-  const cfg = servidorLocalConfig();
+  let cfg = servidorLocalConfig();
+  // Nada configurado nesta máquina: pergunta a quem serviu a página. É o caso
+  // de todo computador na primeira vez que abre o programa pelo endereço do
+  // servidor da fábrica.
+  let descoberto = false;
+  if (!cfg) { cfg = await configDoServidorQueServiu(); descoberto = !!cfg; }
   if (cfg && await sondarServidorLocal(cfg)) {
+    // Guarda o que foi descoberto, para as próximas aberturas não dependerem
+    // de o arquivo continuar lá — e para "Usar só a nuvem" seguir tendo efeito.
+    if (descoberto) definirServidorLocal(cfg.url, cfg.key);
     supa = criar(cfg.url, cfg.key);
     _servidorUrlAtivo = cfg.url;
     _modoServidor = MODO_LOCAL;
