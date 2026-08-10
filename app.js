@@ -444,6 +444,11 @@ function iniciarRealtime() {
         // marcar e ainda não foi salvo, revertendo na tela. O polling reaplica a
         // mudança remota assim que a edição estiver salva.
         if (saveTimer || _flushing) return;
+        // Ninguém está olhando esta aba: NÃO baixa o blob agora. Não mexe no
+        // `lastSeenUpdatedAt` de propósito — é essa marca desatualizada que faz a
+        // checagem seguinte perceber a mudança e buscá-la. Vários avisos
+        // recebidos durante a ausência viram um download só, na volta.
+        if (!_abaAtiva()) return;
         // O evento é só o AVISO — o estado vem por REST, completo e sem limite de
         // tamanho. Era assim mesmo quando se assinava `shared_data`, porque o
         // Realtime TRUNCA payloads grandes: o `data` chegava ausente ou vazio,
@@ -556,65 +561,109 @@ function iniciarRealtimeCompras() {
 let pollIntervalId = null;
 let lastSeenUpdatedAt = null;
 
+// A aba está à vista? Enquanto ninguém olha para ela, não vale baixar o blob:
+// a máquina de consulta/impressão fica o dia inteiro com a página aberta e sem
+// ninguém na frente, e cada gravação do escritório mandava 1,8 MB para lá à toa.
+// O que estiver pendente é buscado assim que a aba volta à tela.
+function _abaVisivel() {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden';
+}
+
+// Só a visibilidade não basta. Para o navegador, uma janela parada na tela o dia
+// inteiro sem ninguém na frente continua "visível" — e é exatamente essa a
+// máquina de consulta/impressão. Conta também o tempo desde o último toque no
+// teclado/mouse: passado esse tempo, tratamos como sala vazia.
+const OCIOSO_MS = 5 * 60 * 1000;
+let _ultimaInteracao = Date.now();
+
+function _abaAtiva() {
+  return _abaVisivel() && (Date.now() - _ultimaInteracao) < OCIOSO_MS;
+}
+
+// Qualquer sinal de gente: teclado, clique, rolagem, toque. Quando o app estava
+// ocioso e alguém volta, busca na hora o que foi adiado — assim a primeira coisa
+// que a pessoa vê já é o dado de agora, não o de quando saiu.
+function _marcarInteracao() {
+  const estavaOcioso = (Date.now() - _ultimaInteracao) >= OCIOSO_MS;
+  _ultimaInteracao = Date.now();
+  if (estavaOcioso) verificarServidor();
+}
+if (typeof document !== 'undefined') {
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => {
+    document.addEventListener(ev, _marcarInteracao, { passive: true });
+  });
+}
+
+// Uma checagem do servidor: custa o carimbo (~50 bytes) e só baixa o estado
+// completo se alguém gravou de verdade. Chamada pelo intervalo de 15s e também
+// no instante em que a aba volta a ficar visível.
+async function verificarServidor() {
+  if (!supa || !currentUser) return;
+  try {
+    const { data, error } = await supa.from('shared_data')
+      .select('updated_at')
+      .eq('id', 'main')
+      .maybeSingle();
+    if (error || !data) return;
+    // Inicializa o marcador na primeira leitura sem disparar reload
+    if (lastSeenUpdatedAt === null) {
+      lastSeenUpdatedAt = data.updated_at;
+      return;
+    }
+    // Sem mudanca ou mudanca propria: ignora
+    if (data.updated_at === lastSeenUpdatedAt) return;
+    // Mesmo carimbo do realtime: gravação nossa não é mudança de outro.
+    if (data.updated_at === _ultimoUpdatedAtEnviado) {
+      lastSeenUpdatedAt = data.updated_at;
+      return;
+    }
+    // Enquanto há edição local pendente/salvando, adia a aplicação: reler
+    // agora reverteria o checklist/horário recém-marcado. Não atualiza o
+    // marcador, então o próximo poll reaplica a mudança remota quando a
+    // edição já estiver salva.
+    if (saveTimer || _flushing) return;
+    // Alguém gravou de verdade: AGORA sim baixa o estado completo (uma vez),
+    // preservando o que ESTE dispositivo ainda não gravou (chaves sujas) —
+    // senão reverteria a edição local pendente. É o mesmo cloudLoad do
+    // realtime, que já cuida de sessão expirada e de _cloudLoadErro.
+    await cloudLoad();
+    if (_cloudLoadErro) return;   // leitura falhou: não marca como visto, tenta de novo
+    // O `_device` mora DENTRO do blob, então só é conhecido depois de baixá-lo.
+    // Era ele que evitava tratar a gravação da própria aba como novidade — o
+    // teste continua valendo, apenas mudou de lugar.
+    if (cloudCache && cloudCache._device === DEVICE_ID) {
+      lastSeenUpdatedAt = data.updated_at;
+      return;
+    }
+    await loadState();
+    // Mesma logica do realtime: print pronta atualiza so checkboxes;
+    // demais paginas re-renderizam normalmente.
+    const ativa = document.querySelector('section.page:not(.hidden)');
+    const pagina = ativa?.dataset?.page || 'home';
+    if (pagina === 'print' && printOsAtual) {
+      const fresh = STATE.ordens.find(x => x.id === printOsAtual.id);
+      if (fresh) {
+        printOsAtual = fresh;
+        aplicarProgressoCheckboxes(fresh);
+      }
+    } else if (pagina !== 'nova-os') {
+      goto(pagina);
+    }
+    lastSeenUpdatedAt = data.updated_at;
+    toast('Dados atualizados por outro usuário', 'ok');
+  } catch (e) {
+    console.warn('polling shared_data', e);
+  }
+}
+
 function iniciarPolling() {
   if (!supa || !currentUser || pollIntervalId) return;
-  pollIntervalId = setInterval(async () => {
-    if (!supa || !currentUser) return;
-    try {
-      const { data, error } = await supa.from('shared_data')
-        .select('updated_at')
-        .eq('id', 'main')
-        .maybeSingle();
-      if (error || !data) return;
-      // Inicializa o marcador na primeira leitura sem disparar reload
-      if (lastSeenUpdatedAt === null) {
-        lastSeenUpdatedAt = data.updated_at;
-        return;
-      }
-      // Sem mudanca ou mudanca propria: ignora
-      if (data.updated_at === lastSeenUpdatedAt) return;
-      // Mesmo carimbo do realtime: gravação nossa não é mudança de outro.
-      if (data.updated_at === _ultimoUpdatedAtEnviado) {
-        lastSeenUpdatedAt = data.updated_at;
-        return;
-      }
-      // Enquanto há edição local pendente/salvando, adia a aplicação: reler
-      // agora reverteria o checklist/horário recém-marcado. Não atualiza o
-      // marcador, então o próximo poll reaplica a mudança remota quando a
-      // edição já estiver salva.
-      if (saveTimer || _flushing) return;
-      // Alguém gravou de verdade: AGORA sim baixa o estado completo (uma vez),
-      // preservando o que ESTE dispositivo ainda não gravou (chaves sujas) —
-      // senão reverteria a edição local pendente. É o mesmo cloudLoad do
-      // realtime, que já cuida de sessão expirada e de _cloudLoadErro.
-      await cloudLoad();
-      if (_cloudLoadErro) return;   // leitura falhou: não marca como visto, tenta de novo
-      // O `_device` mora DENTRO do blob, então só é conhecido depois de baixá-lo.
-      // Era ele que evitava tratar a gravação da própria aba como novidade — o
-      // teste continua valendo, apenas mudou de lugar.
-      if (cloudCache && cloudCache._device === DEVICE_ID) {
-        lastSeenUpdatedAt = data.updated_at;
-        return;
-      }
-      await loadState();
-      // Mesma logica do realtime: print pronta atualiza so checkboxes;
-      // demais paginas re-renderizam normalmente.
-      const ativa = document.querySelector('section.page:not(.hidden)');
-      const pagina = ativa?.dataset?.page || 'home';
-      if (pagina === 'print' && printOsAtual) {
-        const fresh = STATE.ordens.find(x => x.id === printOsAtual.id);
-        if (fresh) {
-          printOsAtual = fresh;
-          aplicarProgressoCheckboxes(fresh);
-        }
-      } else if (pagina !== 'nova-os') {
-        goto(pagina);
-      }
-      lastSeenUpdatedAt = data.updated_at;
-      toast('Dados atualizados por outro usuário', 'ok');
-    } catch (e) {
-      console.warn('polling shared_data', e);
-    }
+  pollIntervalId = setInterval(() => {
+    // Aba escondida ou parada sem ninguém mexendo: nem o carimbo é consultado.
+    // Volta a rodar no primeiro toque ou quando a aba retorna à tela, e nesses
+    // dois momentos a checagem é imediata — traz de uma vez tudo o que mudou.
+    if (!_abaAtiva()) return;
+    verificarServidor();
   }, 15000);
 }
 
@@ -641,7 +690,14 @@ if (typeof document !== 'undefined') {
   // visibilitychange (trocar de aba / minimizar) mantém a página viva, então o
   // envio assíncrono conclui; pagehide é a última cartada ao fechar.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') _flushPendentesAoSair();
+    if (document.visibilityState === 'hidden') { _flushPendentesAoSair(); return; }
+    // Voltou à tela: trocar para esta aba é ato de gente, então conta como
+    // interação — sem isso o app seguiria se achando ocioso até alguém clicar.
+    // E recupera na hora o que foi adiado: sem esta checagem imediata a página
+    // ficaria mostrando dados velhos por até 15s, justamente quando a pessoa
+    // chegou para ler.
+    _ultimaInteracao = Date.now();
+    verificarServidor();
   });
   window.addEventListener('pagehide', _flushPendentesAoSair);
 }
