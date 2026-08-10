@@ -47,6 +47,34 @@ caminho crítico da instalação.
 
 ---
 
+## Caminho rápido: o instalador
+
+Os passos 2 a 7 e 9 estão automatizados. No servidor, com o Docker Desktop já
+instalado e aberto, dentro da pasta do Gerador-OS:
+
+```powershell
+.\servidor\instalar.ps1 -IP 192.168.0.50
+```
+
+Ele clona o Supabase, gera e grava as chaves, sobe os containers, cria as
+tabelas, gera o certificado, migra os dados do backup mais recente, publica o
+app, libera o firewall e importa as imagens dos desenhos. No fim imprime a chave
+ANON e a lista do que sobrou para você.
+
+**Pode rodar de novo.** Cada etapa confere se já foi feita e pula. As chaves não
+são regeradas por acidente — trocar o `JWT_SECRET` invalidaria a chave já
+configurada em todas as máquinas.
+
+O que ele **não** faz, e por quê: instalar o Docker Desktop (exige tela,
+administrador e reiniciar), criar as contas de login (cada pessoa tem a sua, e as
+senhas são suas) e instalar o certificado nas máquinas (é um comando por máquina,
+com administrador).
+
+Os passos abaixo continuam valendo como referência — para entender o que o
+instalador fez, ou para refazer alguma etapa isolada.
+
+---
+
 ## Passo 1 — Docker Desktop
 
 1. Instale o **Docker Desktop para Windows** (ele instala o WSL2 se faltar).
