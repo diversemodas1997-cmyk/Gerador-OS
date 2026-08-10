@@ -3611,7 +3611,9 @@ function addFaseGradeRow(fase = {}) {
   const tecOpts = (selId) => '<option value="">— selecione —</option>' + STATE.tecidos.map(t =>
     `<option value="${esc(t.id)}" ${selId===t.id?'selected':''}>${esc(t.nome)}${t.categoria?' ('+esc(t.categoria)+')':''}</option>`).join('');
   const unidadesAtual = parseInt(fase.unidades) || 2;
-  const unidadesOpts = [1, 2, 4, 6, 8, 10, 20].map(n =>
+  // 3x e 5x entraram porque existem grades com 3 e com 5 no tamanho que manda
+  // (2M-3G-2GG). Sem eles não havia como cadastrar um risco proporcional a elas.
+  const unidadesOpts = [1, 2, 3, 4, 5, 6, 8, 10, 20].map(n =>
     `<option value="${n}" ${unidadesAtual === n ? 'selected' : ''}>${n}x</option>`).join('');
   const enfMin = Math.max(0, Math.round(Number(fase.enfestoMin) || 0));
   const enfH = enfMin ? (Math.floor(enfMin / 60) || '') : '';
@@ -3631,7 +3633,7 @@ function addFaseGradeRow(fase = {}) {
     <div class="form-grid cols-2">
       <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
       <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this); atualizarSugestaoBobinas(this)">${tecOpts(fase.tecidoId)}</select></div>
-      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.</div></div>
+      <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
       <div class="field full">
@@ -3711,7 +3713,10 @@ function toggleUnidadesGrade(_selectEl) {
   atualizarUnidadesDasFases();
 }
 
-const DICA_UNID_RIBANA = '1 unidade da grade = N peças por camada (ribana). Ex.: 2x para Barra+Punhos moletom, 10x ou 20x para Gola.';
+const DICA_UNID_RIBANA = 'Quantas peças uma camada rende do tamanho que a grade MAIS pede. '
+  + 'Ex.: 2x para Barra+Punhos de moletom. Se o risco for o de uma grade dobrada '
+  + '(o de 2M-4G-2GG cortado sobre M-2G-GG), o G recebe 4 por camada — então 4x. '
+  + 'Para Gola, 10x ou 20x.';
 const DICA_UNID_FORRO  = 'Quantas unidades da grade uma camada de forro rende. 2x é o padrão da casa (o forro enfesta com metade das camadas do moletom).';
 
 function atualizarUnidadesDasFases() {
@@ -14336,6 +14341,48 @@ const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
 const UNIDADES_PADRAO_FORRO = 2;
 const LABEL_CATEGORIA = { malha: 'Malha algodão', moletom: 'Moletom', ribana: 'Ribana', outro: 'Outro' };
 
+/* ===== INICIO CAMADAS RIBANA (o teste recorta daqui) ===== */
+
+/* O TAMANHO QUE MANDA NA RIBANA
+   Uma camada de ribana moletom rende N peças de CADA tamanho. Ela só termina de
+   cobrir uma unidade da grade quando o tamanho mais numeroso está coberto — os
+   outros sobram. Então quem determina o rendimento é o MAIOR pedido da grade,
+   não a média dela.
+
+   Isto era uma média (total ÷ nº de tamanhos), e em grade uniforme média e
+   máximo são o mesmo número — por isso funcionou por muito tempo sem ninguém
+   notar. Em grade desigual a média mente:
+
+     M-2G-GG (1,2,1) → média 1,33 · máximo 2
+     O G pede 2 por unidade; a camada que rende 2 por tamanho cobre UMA grade,
+     não 1,33. Com a média, o programa calculava 33% menos ribana do que a
+     produção precisava, e NENHUMA opção do campo corrigia — o erro era
+     proporcional, então mudar o multiplicador mudava os dois lados juntos. */
+function _tamanhoQueMandaNaGrade(qtdsPorTamanho) {
+  const qs = (qtdsPorTamanho || []).map(q => parseInt(q, 10) || 0).filter(q => q > 0);
+  return qs.length ? Math.max(...qs) : 1;
+}
+
+/* Camadas de uma fase de ribana. Único lugar onde esta conta existe — ela vivia
+   copiada em três telas (planejar enfesto, recalcular camadas e folha de OS), e
+   uma cópia consertada sem as outras é como o erro sobrevive. */
+function camadasDaFaseRibana(o) {
+  const unidades = parseInt(o.unidades, 10) || (MULTIPLICADOR_PECAS.ribana || 2);
+  const fator = o.escalaComGrade ? _tamanhoQueMandaNaGrade(o.qtdsPorTamanho) : 1;
+  const camadas = Number(o.camadasPrincipal) || 0;
+  const mult = Number(o.multPrincipal) || 1;
+  return Math.max(1, Math.ceil(camadas * mult * fator / unidades));
+}
+
+/* Ribana que "escala com a grade" é a de moletom: a peça dela acompanha o
+   tamanho, então uma camada rende por tamanho. As outras (gola de malha, gola
+   polo) já trazem a grade inteira embutida no 10x/20x e não levam fator. */
+function _ribanaEscalaComGrade(tecido) {
+  return String((tecido && tecido.nome) || '').toLowerCase().includes('moletom');
+}
+
+/* ===== FIM CAMADAS RIBANA ===== */
+
 /* --------- REGRA DAS BOBINAS: malha algodão, pelo comprimento --------- */
 // Quantas bobinas um enfesto de malha algodão consome é coisa que a casa mede na
 // prática, não que se calcule da área: a tabela abaixo é a experiência de quem
@@ -14736,9 +14783,8 @@ function atualizarCalculosEnfesto() {
           // Regra de ribana:
           // - Ribana moletom: escala com unidade media da grade (2 cam moletom = 1 cam ribana).
           // - Outras ribanas (malha algodao, gola polo): so camadasPrincipal × multPrincipal / unidades.
-          const nTamanhos = ['p','m','g','gg','g1','g2','g3']
-            .filter(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0).length;
-          const unidadePorTamMedia = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
+          const qtdsGradeForm = ['p','m','g','gg','g1','g2','g3']
+            .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0);
           const multPrincipalEnf = temMoletom
             ? 1
             : (categoriasUsadas.has('malha') ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
@@ -14747,11 +14793,16 @@ function atualizarCalculosEnfesto() {
           papeis.forEach((p, idx) => {
             if (!(p.papel || '').startsWith('ribana_')) return;
             const tec = STATE.tecidos.find(t => t.id === fasesGrade[idx]?.tecidoId);
-            escalaPorLabel[p.label] = (tec?.nome || '').toLowerCase().includes('moletom');
+            escalaPorLabel[p.label] = _ribanaEscalaComGrade(tec);
           });
           const calcCamadasRibana = (mult, label) => {
-            const fator = escalaPorLabel[label] ? unidadePorTamMedia : 1;
-            return Math.max(1, Math.ceil(camadas * multPrincipalEnf * fator / mult));
+            return camadasDaFaseRibana({
+              camadasPrincipal: camadas,
+              multPrincipal: multPrincipalEnf,
+              qtdsPorTamanho: qtdsGradeForm,
+              unidades: mult,
+              escalaComGrade: !!escalaPorLabel[label]
+            });
           };
           // Para o "Total" em pecas, usa referencia (totalMoletom ou totalForro).
           // Se nao tiver, calcula como total de blusas.
@@ -15009,15 +15060,13 @@ function calcularCamadasParaProducao() {
       const fase = fasesEfetivas[i] || {};
       const tecFase = STATE.tecidos.find(t => t.id === fase.tecidoId);
       if (isTecidoRibana(tecFase)) {
-        const unidades = parseInt(fase.unidades) || multRib;
-        const nomeFase = (tecFase?.nome || '').toLowerCase();
-        const escalaComGrade = nomeFase.includes('moletom');
-        let fator = 1;
-        if (escalaComGrade) {
-          const nTamanhos = qtdsPorTamanho.length;
-          fator = nTamanhos > 0 ? gradeTotal / nTamanhos : 1;
-        }
-        val = Math.max(1, Math.ceil(camadasPrincipal * multPrincipal * fator / unidades));
+        val = camadasDaFaseRibana({
+          camadasPrincipal,
+          multPrincipal,
+          qtdsPorTamanho,
+          unidades: fase.unidades,
+          escalaComGrade: _ribanaEscalaComGrade(tecFase)
+        });
       } else {
         // Ribana padrao (sem unidades cadastradas): usa qtdPorBlusa + mult fixo
         const q = qtyPorLabelRibana[papel.label] || 0;
@@ -18779,17 +18828,14 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
     return Math.max(1, Math.ceil(cam / unidForro));
   }
   if (papel.indexOf('ribana_') === 0 && isTecidoRibana(tec)) {
-    const unidades = parseInt(faseGrade.unidades, 10) || (MULTIPLICADOR_PECAS.ribana || 2);
-    // Ribana MOLETOM escala com a grade: "2 barras + 4 punhos por tamanho"
-    // cobre duas blusas/tamanho quando a grade pede 2 por tamanho. As outras
-    // ribanas (gola polo, ribana de malha) já têm a grade toda embutida no "10x".
-    const escalaComGrade = String((tec && tec.nome) || '').toLowerCase().includes('moletom');
     const g = (o && o.grade) || {};
-    const qtds = ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0).filter(q => q > 0);
-    const fator = (escalaComGrade && qtds.length)
-      ? qtds.reduce((s, x) => s + x, 0) / qtds.length
-      : 1;
-    return Math.max(1, Math.ceil(cam * multiplicadorPecaOS(o) * fator / unidades));
+    return camadasDaFaseRibana({
+      camadasPrincipal: cam,
+      multPrincipal: multiplicadorPecaOS(o),
+      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0),
+      unidades: faseGrade.unidades,
+      escalaComGrade: _ribanaEscalaComGrade(tec)
+    });
   }
   return cam;
 }
