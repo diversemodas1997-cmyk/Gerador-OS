@@ -11,8 +11,13 @@ máquina barra o endereço do servidor e você não chega na tela de configuraç
 |---|---|---|---|
 | 1 | Criar as contas | só no servidor | ~2 min por pessoa |
 | 2 | Instalar o `ca.crt` | em cada máquina | ~2 min por máquina |
-| 3 | Apontar para o servidor | em cada máquina | ~2 min por máquina |
+| 3 | Apontar para o servidor | em cada máquina | **não é mais preciso** |
 | 4 | Logon automático + no-break | só no servidor | ~10 min |
+
+> **A tarefa 3 deixou de existir.** O servidor publica o próprio endereço e a
+> chave em `/servidor-local.json`, e o programa aberto por ele se conecta
+> sozinho. Abrir `https://193.168.0.8` já basta. O texto do passo 3 continua
+> abaixo como referência, para quando alguém precisar conferir ou desfazer.
 
 ---
 
@@ -133,10 +138,17 @@ entrou — refaça com administrador de verdade e reabra o navegador.
 
 ---
 
-## 3. Apontar cada máquina para o servidor
+## 3. Apontar cada máquina para o servidor — automático
 
-Esta configuração vale **só na máquina onde foi feita** — é por isso que tem de
-repetir em cada computador.
+**Normalmente você não precisa fazer nada aqui.** Ao abrir
+`https://193.168.0.8`, o programa pergunta ao próprio servidor quem ele é e se
+conecta sozinho. A barra lateral já mostra **🏭 Servidor da fábrica**.
+
+O passo abaixo continua valendo para conferir, corrigir ou desfazer — por
+exemplo numa máquina que já ficou apontada para um endereço antigo.
+
+Esta configuração vale **só na máquina onde foi feita** — é por isso que, quando
+precisa ser feita à mão, tem de repetir em cada computador.
 
 1. Abra **`https://193.168.0.8`** (não o endereço antigo da internet).
 2. Entre com a conta daquela pessoa.
@@ -224,10 +236,11 @@ Os dois últimos são o motivo de tudo isto.
 
 ## Depois, com calma
 
-- **Desenho 0013 sem SKU.** Preencha o SKU no cadastro do desenho, dentro do
-  app, e rode `node servidor\importar-desenhos-da-pasta.js` de novo. Os outros
-  24 já estão lá.
 - **Dados de 08 a 10/08.** O backup migrado é o de **07/08**. O que foi mexido
   depois disso não está no servidor.
+- **O campo SKU perdeu o autocompletar.** A lista vem da tabela
+  `skus_catalogo`, que o sistema de Estoque publica na nuvem e que não existe
+  no servidor da fábrica. O campo aceita texto livre normalmente — só não
+  sugere mais.
 - **Espelho para a nuvem** e **backup diário do servidor** — as duas receitas
   estão no fim do `README.md`. Até o backup existir, os dados moram num disco só.
