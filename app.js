@@ -94,7 +94,11 @@ let catalogoSkus = [];
 // recarregamento de fundo (realtime/polling) nunca reverte o que o usuário
 // acabou de mudar e ainda não foi salvo — a brecha que apagava edições do
 // planejamento de operações quando uma segunda sessão/aba gravava por cima.
-function _adotarServidorPreservandoEdicoes(srvData) {
+// `chavesDoServidor` é a lista AUTORITATIVA do que o servidor tem. Numa leitura
+// parcial o `srvData` traz só as chaves que mudaram — apagar por ausência ali
+// esvaziaria o app inteiro. Sem a lista (leitura completa), valem as chaves do
+// próprio `srvData`, como sempre foi.
+function _adotarServidorPreservandoEdicoes(srvData, chavesDoServidor) {
   const srv = (srvData && typeof srvData === 'object') ? srvData : {};
   if (!cloudCache) cloudCache = {};
   Object.keys(srv).forEach(k => {
@@ -104,9 +108,12 @@ function _adotarServidorPreservandoEdicoes(srvData) {
   });
   // Chaves que sumiram do servidor e que não editamos saem também (paridade com
   // a substituição total antiga), preservando as sujas e o carimbo de device.
+  const existeNoServidor = Array.isArray(chavesDoServidor)
+    ? new Set(chavesDoServidor)
+    : new Set(Object.keys(srv));
   Object.keys(cloudCache).forEach(k => {
     if (k === '_device' || _dirtyKeys.has(k)) return;
-    if (!(k in srv)) { delete cloudCache[k]; delete _baseline[k]; }
+    if (!existeNoServidor.has(k)) { delete cloudCache[k]; delete _baseline[k]; }
   });
 }
 
@@ -149,8 +156,104 @@ function _mergeListaPorRegistro(baseStr, localStr, srvStr) {
   return JSON.stringify(saida);
 }
 
+// ---------------------------------------------------------------------------
+// LEITURA PARCIAL: baixar só a chave que mudou, não o sistema inteiro.
+//
+// O blob é uma coluna jsonb só. Marcar uma etapa de costura mexe em `ordens` e
+// arrastava junto `operacoes`, `grades`, `desenhos` e todo o resto — 1,8 MB por
+// gravação, vezes cada máquina em uso. O mapa de versões por chave (gravado na
+// tabela-sinal a cada flush) diz QUAIS chaves mudaram; aí só elas descem, pelo
+// operador `->` do jsonb.
+//
+// REGRA DE OURO desta parte: qualquer incerteza cai na leitura COMPLETA, que é o
+// caminho provado. Mapa ausente, nome de chave fora do padrão, select que não
+// devolveu o que se esperava — tudo isso baixa tudo, como antes. O barato só
+// acontece quando dá para ter certeza do que mudou.
+// ---------------------------------------------------------------------------
+
+// O mapa de versões como este dispositivo o conhecia na última sincronização.
+// null = nunca lido nesta sessão; sem base de comparação, a leitura é completa.
+let _versoesConhecidas = null;
+
+// Só nomes simples entram na montagem do select. As chaves do app são todas
+// assim; qualquer coisa diferente derruba para a leitura completa em vez de
+// virar texto interpolado numa consulta.
+const _NOME_CHAVE_OK = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+async function _lerVersoesServidor() {
+  if (!supa) return null;
+  try {
+    const { data, error } = await supa.from('sync_signal')
+      .select('key_versions').eq('id', 'main').maybeSingle();
+    if (error || !data) return null;
+    const v = data.key_versions;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    // Cópia: este mapa fica guardado em _versoesConhecidas como retrato de um
+    // momento. Guardar a referência viva abriria espaço para ele mudar por baixo
+    // e a comparação seguinte não enxergar diferença nenhuma.
+    return Object.assign({}, v);
+  } catch (e) { return null; }
+}
+
+// Devolve a lista de chaves a baixar, ou null para "baixe tudo".
+function _chavesParaBaixar(srvVersoes) {
+  if (!srvVersoes || !_versoesConhecidas) return null;   // sem base de comparação
+  const mudadas = [];
+  for (const k of Object.keys(srvVersoes)) {
+    if (!_NOME_CHAVE_OK.test(k)) return null;
+    if (srvVersoes[k] !== _versoesConhecidas[k]) mudadas.push(k);
+  }
+  const sumiram = Object.keys(_versoesConhecidas).some(k => !(k in srvVersoes));
+  // Nada mudou no mapa e nada sumiu, mas o `updated_at` andou: foi uma gravação
+  // que não atualizou o mapa — tipicamente uma aba com a versão antiga do app em
+  // cache. Não dá para saber o que mudou, então baixa tudo.
+  if (!mudadas.length && !sumiram) return null;
+  return mudadas;
+}
+
+// Devolve true se conseguiu aplicar a leitura parcial; false manda quem chamou
+// cair para a completa.
+async function _cloudLoadParcial(mudadas, srvVersoes) {
+  try {
+    const valores = {};
+    let carimbo = null;
+    // `_device` vai junto sempre: é por ele que o polling reconhece a gravação
+    // da própria aba. Ficando com o valor velho no cache, uma mudança de outra
+    // máquina seria confundida com a nossa e a tela não se atualizaria.
+    const campos = mudadas.concat(['_device']);
+    const sel = 'updated_at,' + campos.map(k => `${k}:data->${k}`).join(',');
+    const { data, error } = await supa.from('shared_data')
+      .select(sel).eq('id', 'main').maybeSingle();
+    if (error || !data) return false;
+    // Chave pedida que voltou indefinida = o select não fez o que se esperava
+    // (PostgREST de outra versão, coluna renomeada). Não adota nada pela metade.
+    for (const k of mudadas) {
+      if (data[k] === undefined) return false;
+      valores[k] = data[k];
+    }
+    if (data._device !== undefined) valores._device = data._device;
+    carimbo = data.updated_at;
+    _cloudLoadErro = false;
+    _ultimoUpdatedAtServidor = carimbo || null;
+    _adotarServidorPreservandoEdicoes(valores, Object.keys(srvVersoes));
+    _versoesConhecidas = srvVersoes;
+    return true;
+  } catch (e) {
+    console.warn('cloudLoad parcial', e);
+    return false;
+  }
+}
+
 async function cloudLoad() {
   if (!supa || !currentUser) return;
+  const srvVersoes = await _lerVersoesServidor();
+  const mudadas = _chavesParaBaixar(srvVersoes);
+  if (mudadas && await _cloudLoadParcial(mudadas, srvVersoes)) return;
+  // Sem mapa confiável, ou a parcial não deu certo: leitura completa.
+  await _cloudLoadCompleto(srvVersoes);
+}
+
+async function _cloudLoadCompleto(srvVersoes) {
   let { data, error } = await supa
     .from('shared_data')
     .select('data, updated_at')
@@ -175,6 +278,7 @@ async function cloudLoad() {
     cloudCache = {};
     _baseline = {};   // leitura falhou: sem base confiavel para o merge
     _ultimoUpdatedAtServidor = null;  // e sem carimbo confiavel: o proximo flush rele o blob
+    _versoesConhecidas = null;        // nem base para a leitura parcial: a proxima baixa tudo
     // Visibilidade do problema: costuma ser sessão expirada ou RLS. Sem o toast,
     // a falha silenciosa esconde o motivo (e o seed subsequente virava o popup
     // enganoso de "gravação bloqueada").
@@ -190,6 +294,9 @@ async function cloudLoad() {
   // se precisa reler o blob depois (ver _ultimoUpdatedAtServidor).
   _ultimoUpdatedAtServidor = (data && data.updated_at) || null;
   _adotarServidorPreservandoEdicoes(data && data.data);
+  // Acabamos de ler o blob inteiro: o mapa lido junto passa a ser a base das
+  // próximas leituras parciais. Se veio null, a próxima também será completa.
+  _versoesConhecidas = srvVersoes || null;
 }
 
 async function cloudFlush() {
@@ -290,6 +397,10 @@ async function cloudFlush() {
       // continuar contando a verdade do que já vimos — senão o flush seguinte
       // pularia a releitura achando que o servidor está onde não está.
       if (srv && srv.updated_at) _ultimoUpdatedAtServidor = srv.updated_at;
+      // Relemos o servidor, então o mapa de versões que tínhamos ficou velho.
+      // Realinha antes de montar o novo — senão carimbaríamos como "nossa" uma
+      // versão de chave que na verdade veio de outra máquina agora.
+      if (servidorMudou) _versoesConhecidas = await _lerVersoesServidor();
       const servidor = (srv && srv.data && typeof srv.data === 'object') ? srv.data : null;
       if (servidor) {
         Object.keys(servidor).forEach(k => {
@@ -338,12 +449,31 @@ async function cloudFlush() {
     // silenciosa: se a tabela ainda não existe, o polling cobre o aviso. O
     // try/catch é essencial — o dado JÁ subiu neste ponto, e uma falha aqui não
     // pode cair no catch lá embaixo e alarmar "suas alterações não foram salvas".
+    //
+    // Junto do aviso vai o MAPA DE VERSÕES: qual carimbo cada chave tem agora.
+    // É por ele que as outras máquinas descobrem que só `ordens` mudou e baixam
+    // só `ordens`. Carimba-se toda chave que subiu como suja — carimbar demais
+    // custa um download extra daquela chave, carimbar de menos faria a mudança
+    // passar despercebida, então o erro é sempre para o lado caro.
+    const versoes = {};
+    Object.keys(enviado).forEach(k => {
+      if (k === '_device') return;
+      const anterior = _versoesConhecidas && _versoesConhecidas[k];
+      versoes[k] = (enviadas.has(k) || !anterior) ? _ultimoUpdatedAtEnviado : anterior;
+    });
     try {
-      await supa.from('sync_signal').upsert({
+      const { error: sinalErro } = await supa.from('sync_signal').upsert({
         id: 'main',
         updated_at: _ultimoUpdatedAtEnviado,
-        device_id: DEVICE_ID
+        device_id: DEVICE_ID,
+        key_versions: versoes
       }, { onConflict: 'id' });
+      // Só vale como base se REALMENTE subiu — e o supabase-js DEVOLVE o erro em
+      // vez de lançá-lo, então o try/catch sozinho não veria a falha. Se a coluna
+      // ainda não existe, o mapa no servidor fica velho e as outras máquinas caem
+      // na leitura completa: mais caro, porém correto.
+      if (sinalErro) console.warn('sync_signal', sinalErro);
+      else _versoesConhecidas = versoes;
     } catch (e) { console.warn('sync_signal', e); }
     // Baixa a bandeira só das chaves que subiram INTACTAS. A que o usuário mexeu
     // durante a subida continua suja — e é isto que a salva: com a bandeira

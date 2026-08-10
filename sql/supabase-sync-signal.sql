@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS sync_signal (
   device_id   text
 );
 
+-- MAPA DE VERSOES POR CHAVE: {"ordens":"...","operacoes":"...", ...}, um
+-- carimbo por chave do blob. E por ele que as outras maquinas descobrem que
+-- so `ordens` mudou e baixam so `ordens`, em vez do sistema inteiro (1,8 MB).
+-- Sem esta coluna o app funciona igual, so que sempre baixando tudo.
+ALTER TABLE sync_signal ADD COLUMN IF NOT EXISTS key_versions jsonb;
+
 ALTER TABLE sync_signal ENABLE ROW LEVEL SECURITY;
 
 -- Qualquer autenticado le e grava: o aviso e coletivo, como o dado.
