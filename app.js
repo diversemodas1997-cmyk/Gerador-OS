@@ -65,6 +65,13 @@ let _baseline = {};
 // servidor e um loadState logo depois, que é o que fazia o checklist recém
 // marcado voltar atrás na tela.
 let _ultimoUpdatedAtEnviado = null;
+// O `updated_at` que o SERVIDOR tinha na última vez que este dispositivo o leu
+// ou gravou. É o que permite ao flush decidir se vale a pena baixar o blob
+// inteiro para o merge: se o carimbo de lá continua sendo este, ninguém gravou
+// no meio e não há nada de outro dispositivo para mesclar — o cloudCache já é
+// aquele conteúdo mais as nossas edições. Baixar 1,8 MB a cada save era o
+// segundo maior gasto de egress do app.
+let _ultimoUpdatedAtServidor = null;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
 let saveTimer = null;
@@ -146,7 +153,7 @@ async function cloudLoad() {
   if (!supa || !currentUser) return;
   let { data, error } = await supa
     .from('shared_data')
-    .select('data')
+    .select('data, updated_at')
     .eq('id', 'main')
     .maybeSingle();
   if (error) {
@@ -158,7 +165,7 @@ async function cloudLoad() {
       if (sess && sess.session) {
         if (sess.user) currentUser = sess.user;
         ({ data, error } = await supa
-          .from('shared_data').select('data').eq('id', 'main').maybeSingle());
+          .from('shared_data').select('data, updated_at').eq('id', 'main').maybeSingle());
       }
     } catch (e) { /* refresh falhou (refresh token morto) — cai no erro abaixo */ }
   }
@@ -167,6 +174,7 @@ async function cloudLoad() {
     _cloudLoadErro = true;
     cloudCache = {};
     _baseline = {};   // leitura falhou: sem base confiavel para o merge
+    _ultimoUpdatedAtServidor = null;  // e sem carimbo confiavel: o proximo flush rele o blob
     // Visibilidade do problema: costuma ser sessão expirada ou RLS. Sem o toast,
     // a falha silenciosa esconde o motivo (e o seed subsequente virava o popup
     // enganoso de "gravação bloqueada").
@@ -178,6 +186,9 @@ async function cloudLoad() {
     return;
   }
   _cloudLoadErro = false;
+  // Acabamos de ver o servidor neste ponto: guarda o carimbo para o flush saber
+  // se precisa reler o blob depois (ver _ultimoUpdatedAtServidor).
+  _ultimoUpdatedAtServidor = (data && data.updated_at) || null;
   _adotarServidorPreservandoEdicoes(data && data.data);
 }
 
@@ -261,7 +272,24 @@ async function cloudFlush() {
     // sobrescrevem tudo normalmente.
     const adotadas = [], mescladas = [];
     try {
-      const { data: srv } = await supa.from('shared_data').select('data').eq('id', 'main').maybeSingle();
+      // Antes de baixar o blob (1,8 MB), pergunta só o CARIMBO. Se o servidor
+      // continua no mesmo `updated_at` que já conhecemos, ninguém gravou desde a
+      // nossa última leitura: não há o que mesclar e o download é puro
+      // desperdício. Baixar o blob a cada save era o 2º maior consumidor de
+      // egress do app (o 1º era o polling) e ajudou a estourar a cota do plano.
+      // Carimbo desconhecido (null) = não dá para ter certeza: relê, por segurança.
+      const { data: cab } = await supa.from('shared_data')
+        .select('updated_at').eq('id', 'main').maybeSingle();
+      const servidorMudou = !_ultimoUpdatedAtServidor || !cab
+        || cab.updated_at !== _ultimoUpdatedAtServidor;
+      const { data: srv } = servidorMudou
+        ? await supa.from('shared_data').select('data, updated_at').eq('id', 'main').maybeSingle()
+        : { data: null };
+      // Acabamos de LER esta versão: registra o carimbo agora, e não só depois da
+      // gravação. Se o upsert abaixo falhar (rede caiu), o carimbo tem que
+      // continuar contando a verdade do que já vimos — senão o flush seguinte
+      // pularia a releitura achando que o servidor está onde não está.
+      if (srv && srv.updated_at) _ultimoUpdatedAtServidor = srv.updated_at;
       const servidor = (srv && srv.data && typeof srv.data === 'object') ? srv.data : null;
       if (servidor) {
         Object.keys(servidor).forEach(k => {
@@ -297,6 +325,26 @@ async function cloudFlush() {
       updated_by: currentUser.id
     }, { onConflict: 'id' });
     if (error) throw error;
+    // Subiu: o servidor está agora exatamente no que acabamos de gravar. Guardar
+    // o carimbo é o que permite ao PRÓXIMO flush pular a releitura do blob.
+    // (Se algum gatilho no banco reescrever `updated_at` com o now() dele, este
+    // valor nunca vai casar e o flush volta a reler sempre — mais caro, mas
+    // continua correto.)
+    _ultimoUpdatedAtServidor = _ultimoUpdatedAtEnviado;
+    // AVISO aos outros dispositivos. É esta linha minúscula que o Realtime
+    // transmite, não o blob: assinar `shared_data` fazia o Postgres empurrar a
+    // linha inteira (~1 MB, truncada) para cada cliente conectado a cada save —
+    // e o app descartava o payload de propósito, usando-o só como sinal. Falha
+    // silenciosa: se a tabela ainda não existe, o polling cobre o aviso. O
+    // try/catch é essencial — o dado JÁ subiu neste ponto, e uma falha aqui não
+    // pode cair no catch lá embaixo e alarmar "suas alterações não foram salvas".
+    try {
+      await supa.from('sync_signal').upsert({
+        id: 'main',
+        updated_at: _ultimoUpdatedAtEnviado,
+        device_id: DEVICE_ID
+      }, { onConflict: 'id' });
+    } catch (e) { console.warn('sync_signal', e); }
     // Baixa a bandeira só das chaves que subiram INTACTAS. A que o usuário mexeu
     // durante a subida continua suja — e é isto que a salva: com a bandeira
     // limpa, o flush seguinte a tratava como "não editei aqui" e trocava o valor
@@ -364,22 +412,29 @@ let realtimeChannel = null;
 
 function iniciarRealtime() {
   if (!supa || !currentUser || realtimeChannel) return;
+  // Assina a tabela-SINAL, não `shared_data`. O Postgres empurra a linha inteira
+  // da tabela assinada para cada cliente conectado, a cada gravação: em
+  // `shared_data` isso era ~1 MB por save por cliente (o teto de payload do
+  // Realtime), e o app jogava fora esse conteúdo — só usava o evento como aviso
+  // de "alguém gravou, vá reler". `sync_signal` tem três campos curtos: o mesmo
+  // aviso por alguns bytes. Bônus: sem truncamento, o `device_id` chega íntegro
+  // e o eco da própria gravação volta a ser reconhecível pelo dispositivo.
   realtimeChannel = supa
-    .channel('shared_data_main')
+    .channel('sync_signal_main')
     .on('postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'shared_data', filter: 'id=eq.main' },
+      // '*' e não 'UPDATE': a primeira gravação da linha é um INSERT.
+      { event: '*', schema: 'public', table: 'sync_signal', filter: 'id=eq.main' },
       async (payload) => {
         if (!payload.new) return;
         // Ignora só o eco da gravação DESTE dispositivo. Comparar o id da conta
         // (updated_by) fazia o 2º computador do MESMO login descartar a mudança
         // do 1º achando que era própria — e a OS nunca aparecia lá.
-        if (payload.new.data && payload.new.data._device === DEVICE_ID) return;
-        // O eco da NOSSA gravação, reconhecido pelo `updated_at` que acabamos de
-        // escrever. O `_device` de dentro do blob não resolve aqui: neste tamanho
-        // o payload vem truncado e `payload.new.data` chega vazio, então toda
-        // gravação nossa caía como se fosse de outro e disparava releitura +
-        // loadState + reaplicação dos checkboxes — que é o instante em que a
-        // etapa recém-marcada voltava a aparecer desmarcada.
+        if (payload.new.device_id === DEVICE_ID) {
+          if (payload.new.updated_at) lastSeenUpdatedAt = payload.new.updated_at;
+          return;
+        }
+        // Segunda rede do mesmo eco, pelo `updated_at` que acabamos de escrever —
+        // cobre o caso de a aba ter recarregado e perdido o DEVICE_ID em memória.
         if (payload.new.updated_at && payload.new.updated_at === _ultimoUpdatedAtEnviado) {
           lastSeenUpdatedAt = payload.new.updated_at;
           return;
@@ -389,11 +444,12 @@ function iniciarRealtime() {
         // marcar e ainda não foi salvo, revertendo na tela. O polling reaplica a
         // mudança remota assim que a edição estiver salva.
         if (saveTimer || _flushing) return;
-        // NÃO confiar no payload.new.data: o Realtime TRUNCA payloads grandes, e
-        // o campo `data` pode chegar AUSENTE ou vazio. Usá-lo direto zerava o
-        // cloudCache ({}), esvaziava a tela (as OEs "sumiam") e travava todo
-        // save com "gravação bloqueada". Trata o realtime só como SINAL e relê o
-        // estado COMPLETO via REST (sem limite de tamanho), que é a verdade.
+        // O evento é só o AVISO — o estado vem por REST, completo e sem limite de
+        // tamanho. Era assim mesmo quando se assinava `shared_data`, porque o
+        // Realtime TRUNCA payloads grandes: o `data` chegava ausente ou vazio,
+        // zerava o cloudCache ({}), esvaziava a tela (as OEs "sumiam") e travava
+        // todo save com "gravação bloqueada". A tabela-sinal só torna explícito
+        // o que já era verdade — e deixa de pagar o transporte do blob.
         await cloudLoad();
         if (_cloudLoadErro) return; // leitura falhou: cloudLoad já avisou
         await loadState();
@@ -489,6 +545,14 @@ function iniciarRealtimeCompras() {
 // Garante sync mesmo se o canal Realtime falhar (rede instavel, publication
 // nao habilitada, etc.). 15s e curto o suficiente pra parecer 'tempo real'
 // sem pesar nas API calls.
+//
+// PEDE SÓ O CARIMBO — nunca a coluna `data`. Esta consulta trazia o blob junto
+// (`select('updated_at, updated_by, data')`) e o descartava em 99% dos ciclos,
+// porque quase sempre o `updated_at` estava igual ao já visto. Com o blob em
+// 1,8 MB, eram ~440 MB por hora por aba aberta, ~3,5 GB num dia de trabalho —
+// contra os 5 GB/mês do plano. Foi o que restringiu o projeto por
+// `exceed_egress_quota`. Agora o blob só desce quando o carimbo mudou de fato,
+// pelo cloudLoad() logo abaixo.
 let pollIntervalId = null;
 let lastSeenUpdatedAt = null;
 
@@ -498,7 +562,7 @@ function iniciarPolling() {
     if (!supa || !currentUser) return;
     try {
       const { data, error } = await supa.from('shared_data')
-        .select('updated_at, updated_by, data')
+        .select('updated_at')
         .eq('id', 'main')
         .maybeSingle();
       if (error || !data) return;
@@ -509,12 +573,6 @@ function iniciarPolling() {
       }
       // Sem mudanca ou mudanca propria: ignora
       if (data.updated_at === lastSeenUpdatedAt) return;
-      // Mesmo critério do realtime: só pula se foi ESTE dispositivo que gravou
-      // (e não qualquer sessão do mesmo login).
-      if (data.data && data.data._device === DEVICE_ID) {
-        lastSeenUpdatedAt = data.updated_at;
-        return;
-      }
       // Mesmo carimbo do realtime: gravação nossa não é mudança de outro.
       if (data.updated_at === _ultimoUpdatedAtEnviado) {
         lastSeenUpdatedAt = data.updated_at;
@@ -525,10 +583,19 @@ function iniciarPolling() {
       // marcador, então o próximo poll reaplica a mudança remota quando a
       // edição já estiver salva.
       if (saveTimer || _flushing) return;
-      // Mudanca de outro usuario: aplica, mas preservando o que ESTE dispositivo
-      // ainda não gravou (chaves sujas) — senão reverteria a edição local pendente.
-      _adotarServidorPreservandoEdicoes(data.data);
-      _cloudLoadErro = false; // chegou dado bom do servidor
+      // Alguém gravou de verdade: AGORA sim baixa o estado completo (uma vez),
+      // preservando o que ESTE dispositivo ainda não gravou (chaves sujas) —
+      // senão reverteria a edição local pendente. É o mesmo cloudLoad do
+      // realtime, que já cuida de sessão expirada e de _cloudLoadErro.
+      await cloudLoad();
+      if (_cloudLoadErro) return;   // leitura falhou: não marca como visto, tenta de novo
+      // O `_device` mora DENTRO do blob, então só é conhecido depois de baixá-lo.
+      // Era ele que evitava tratar a gravação da própria aba como novidade — o
+      // teste continua valendo, apenas mudou de lugar.
+      if (cloudCache && cloudCache._device === DEVICE_ID) {
+        lastSeenUpdatedAt = data.updated_at;
+        return;
+      }
       await loadState();
       // Mesma logica do realtime: print pronta atualiza so checkboxes;
       // demais paginas re-renderizam normalmente.

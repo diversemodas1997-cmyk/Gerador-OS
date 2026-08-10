@@ -73,6 +73,14 @@ CREATE POLICY "user_roles: authenticated select"
 -- REALTIME: habilita push automatico de UPDATEs da tabela shared_data
 -- pra todos os clientes conectados — sem isso, os usuarios so veem
 -- alteracoes apos F5. O app ja faz subscribe nesses eventos no JS.
+--
+-- >>> OBSOLETO. O app NAO assina mais `shared_data`: publicar esta
+-- tabela fazia o Postgres empurrar o blob inteiro (~1 MB truncado) pra
+-- cada cliente a cada gravacao, e o app descartava esse payload — usava
+-- o evento so como aviso. Hoje o aviso vem da tabela-sinal `sync_signal`.
+-- Rode `supabase-sync-signal.sql`, que cria a tabela nova E remove
+-- `shared_data` da publication. O bloco abaixo fica so como historico;
+-- se rodar este arquivo inteiro de novo, rode aquele em seguida.
 -- =====================================================================
 
 -- Em alguns projetos a publication 'supabase_realtime' ja existe e a
