@@ -21,6 +21,9 @@ param(
   [string] $Destino = 'J:\Meu Drive\Backup Gerador-OS',
   [int]    $Manter  = 14,
   [string] $Hora    = '12:30',
+  # Pastas de PDF que o pacote cifrado NAO leva e que so existiam neste disco.
+  # Caminhos relativos a raiz do projeto.
+  [string[]] $Desenhos = @('Desenhos técnicos', 'Desenhos técnicos -grades de corte'),
   [switch] $Agendar
 )
 
@@ -81,6 +84,9 @@ if ($raizDestino -and -not (Test-Path $raizDestino)) {
   exit 1
 }
 
+$falhou = $false
+
+# ---------------------------------------- 1) pacote cifrado do servidor inteiro
 $saida = & node $script --docker $Docker --destino $Destino --senha $Senha --manter $Manter 2>&1 | Out-String
 $codigo = $LASTEXITCODE
 
@@ -92,7 +98,7 @@ if ($codigo -eq 0) {
     Anotar "ok  $($ultimo.Name)  $mb MB"
   } else {
     Anotar 'ATENCAO: o script disse ok, mas nao achei nenhum .bkp no destino'
-    exit 1
+    $falhou = $true
   }
 } else {
   # Parenteses obrigatorios: "Anotar 'x' + $y" o PowerShell le como Anotar 'x' e
@@ -101,5 +107,51 @@ if ($codigo -eq 0) {
   $motivo = ($saida.Trim() -replace '\s+', ' ')
   if ($motivo.Length -gt 400) { $motivo = $motivo.Substring(0, 400) + '…' }
   Anotar ("FALHA (codigo $codigo): " + $motivo)
-  exit 1
+  $falhou = $true
 }
+
+# ------------------------------------------- 2) PDFs dos desenhos e mapas de corte
+#
+# POR QUE ISTO EXISTE:
+# o pacote cifrado leva banco, imagens do Storage e .env. NAO leva estas pastas —
+# 160 PDFs, ~100 MB de desenhos tecnicos e mapas de corte que so existiam neste
+# disco (e nem todos no git). Se o disco morresse, iam junto.
+#
+# NAO usa /MIR de proposito. /MIR apaga no destino o que sumiu na origem, e isso
+# e veneno num backup: uma pasta renomeada ou um arquivo apagado por engano seria
+# apagado da copia de resgate tambem, que e exatamente de onde se ia buscar. O
+# preco e acumular duplicata quando uma pasta e renomeada — barato perto de
+# perder o desenho. Limpar sobra e trabalho manual, e tem de ser.
+#
+# Roda MESMO SE o pacote acima falhar: sao duas protecoes independentes, e uma
+# cair nao e motivo para a outra nem ser tentada.
+$destinoDesenhos = Join-Path $Destino 'Desenhos'
+foreach ($pasta in $Desenhos) {
+  $origem = Join-Path $Raiz $pasta
+  if (-not (Test-Path $origem)) { Anotar "desenhos: pulei '$pasta' (nao existe aqui)"; continue }
+  $alvo = Join-Path $destinoDesenhos $pasta
+
+  # /NFL /NDL /NJH /NJS /NP: sem listar arquivo por arquivo. O log e para
+  # responder "o backup rodou?", nao para despejar 160 linhas por dia.
+  & robocopy $origem $alvo /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  $rc = $LASTEXITCODE
+
+  # Robocopy nao usa 0 para sucesso: 0 = nada a copiar, 1 = copiou, 2 = extras no
+  # destino, 3 = os dois. De 8 para cima e que e erro de verdade. Tratar como
+  # comando comum daria "falhou" todo dia em que copiasse alguma coisa.
+  if ($rc -ge 8) {
+    Anotar "FALHA ao copiar desenhos de '$pasta' (robocopy $rc)"
+    $falhou = $true
+  } else {
+    # Conta TUDO, nao so PDF. A primeira versao filtrava '*.pdf' e escreveu
+    # "0 PDFs" para a pasta de desenhos, que tem 30 PNG e 46 MB: a copia estava
+    # certa e o log dizia zero. Num log de backup, zero se le como falha — e um
+    # log que assusta a toa e tao ruim quanto um que esconde problema.
+    $arquivos = @(Get-ChildItem $alvo -Recurse -File -ErrorAction SilentlyContinue)
+    $mbD = [math]::Round((($arquivos | Measure-Object Length -Sum).Sum) / 1MB, 1)
+    Anotar "ok  desenhos '$pasta' -> $($arquivos.Count) arquivos, $mbD MB no Drive"
+  }
+}
+
+if ($falhou) { exit 1 }
+exit 0
