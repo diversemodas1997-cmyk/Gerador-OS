@@ -14418,42 +14418,44 @@ function sugestaoBobinasFase(tecidoId, comp) {
 
 /* ===== INICIO BOBINAS POR CAMADAS REAIS =====
  *
- * ----- Enfesto que saiu MENOR do que o planejado: bobinas e kg acompanham -----
+ * ----- Bobinas e quilos saem das camadas que a produção enfestou -----
  *
- * A previsão do cadastro da grade (fase.bobinas) e o kg do enfesto valem para o
- * enfesto INTEIRO, com as camadas que a OS planejou. Quando a produção estende
- * menos camadas — e é isso que os tons da folha registram —, gasta-se menos
- * pano. Sem esta conta, a reserva de estoque ficava com o número planejado: um
- * tecido que está livre no galpão aparecia comprometido, e a compra seguinte
- * saía maior do que precisava.
+ * A coluna Consumo mostrava um número parado, digitado no cadastro da grade, que
+ * não se mexia por mais que as camadas mudassem. Quando a produção estendia menos
+ * camadas do que o planejado — e é isso que os tons da folha registram —, o
+ * estoque continuava com tecido reservado para um enfesto que não aconteceu, e a
+ * compra seguinte saía maior do que precisava.
  *
- * SÓ REDUZ, de propósito. Camadas acima do planejado não aumentam a previsão:
- * a tabela BOBINAS_MALHA não é proporcional (de 5 para 6 m pula duas bobinas),
- * então esticá-la para cima seria inventar número. Para cima, quem manda
- * continua sendo o que a casa cadastrou.
+ * A conta agora é física, e é a MESMA do consumo, só que lida ao contrário:
+ *
+ *     kg da fase   = comp × larg × camadas × gramatura ÷ 1000
+ *     bobinas      = kg ÷ 20
+ *     camadas/bob. = 20 ÷ (comp × larg × gramatura ÷ 1000)
+ *
+ * Como o kg já sai das camadas, as bobinas acompanham sozinhas. Não há proporção
+ * sobre número parado, e as duas pontas não podem divergir — há um teste que
+ * amarra as duas (testes/bobinas-camadas-reais.js).
  */
-
-// Quanto do enfesto planejado foi realmente estendido.
-//   1   = tudo, ou sem informação para comparar (nada a escalar)
-//   0,5 = metade das camadas
-//   0   = a folha declarou que a fase não foi enfestada
-function fatorCamadasReais(o) {
-  const e = (o && o.enfesto) || {};
-  const plan = parseInt(e.camadasPlanejadas, 10) || 0;
-  if (!(plan > 0)) return 1;                       // sem referência: não escala
-  const real = parseInt(e.camadas, 10) || 0;
-  // Real em zero quer dizer que a fase PRINCIPAL não foi enfestada — e isso não
-  // diz nada sobre as outras: o pano de uma pode não ter sido estendido sem que
-  // os demais deixassem de ser (é o que `recalcularDeCamadasPorTom` assume ao
-  // NÃO escalar as outras nesse caso). Escalar tudo por zero aqui apagaria o
-  // consumo de fases que aconteceram. Quem zera é a checagem por fase, abaixo.
-  if (!(real > 0)) return 1;
-  return real < plan ? real / plan : 1;
-}
 
 // Quanto pesa uma bobina. É a medida da casa: as bobinas não vêm todas iguais,
 // mas ficam em torno disto, e é o número que transforma quilo em bobina.
 const PESO_BOBINA_KG = 20;
+
+// Em quantas camadas o campo "bobinas previstas" do cadastro da grade foi
+// pensado. A casa preencheu aquele campo imaginando o enfesto CHEIO de malha
+// algodão, que é o limite do tecido (LIMITE_CAMADAS.malha).
+//
+// Só serve para o caminho de reserva — quando falta gramatura para pesar o
+// enfesto de verdade. Vale como referência ABSOLUTA: uma OS de 40 camadas gasta
+// metade do que está cadastrado, independentemente do que ela tenha planejado.
+//
+// Conferido nos dados de 11/08/2026 e o resultado é aproximado, não exato: as
+// bobinas cadastradas correspondem a uma mediana de ~70 camadas (p25 61, p75 81)
+// assumindo 20 kg por bobina. A checagem é ruidosa — a maioria das fases não
+// guarda a cor, e as gramaturas de malha algodão cadastradas se dividem em dois
+// grupos que diferem quase 3× (167-182 e 448-528). Fica registrado para quem for
+// mexer aqui: se o número precisar de ajuste fino, é este.
+const CAMADAS_REF_BOBINAS_CADASTRO = 80;
 
 // Quantas CAMADAS uma bobina rende nesta fase.
 //
@@ -14467,32 +14469,29 @@ function camadasPorBobina(comp, larg, gramatura) {
   return PESO_BOBINA_KG / kgCamada;
 }
 
-// Bobinas efetivas de uma fase.
+// Bobinas efetivas de uma fase. `L` é a linha de consumo dela (comp, larg,
+// camadas, peso, kg), como `consumoEnfestoOS` devolve.
 //
-// Quando dá para calcular o peso do enfesto, a conta é direta: quilos ÷ 20. Esse
-// caminho é o que faz a previsão ACOMPANHAR as camadas de verdade, porque o kg
-// já sai de comp × larg × camadas × gramatura — e as camadas são as que os tons
-// da folha registraram. Não é mais uma proporção sobre um número parado.
-//
-// Sem gramatura, comprimento ou largura cadastrados não há peso, e aí vale o que
-// a casa mediu no cadastro da grade, encolhido pelo tanto que o enfesto encolheu.
-// Pior que estimar por proporção é não mostrar nada.
-function bobinasEfetivasFase(o, bobinasPrevistas, ordem, kgFase) {
+// Duas casas em tudo: bobina se mede em fração (o campo do cadastro já aceita
+// 1/2), e arredondar para inteiro devolveria a imprecisão que se está corrigindo.
+function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
       && _faseNaoEnfestadaPorTom(o, ordem)) return 0;
 
-  const kg = Number(kgFase);
+  // Caminho bom: o enfesto tem peso, então a conta é direta e acompanha as
+  // camadas sozinha, porque o kg já foi calculado a partir delas.
+  const kg = Number(L && L.kg);
   if (isFinite(kg) && kg > 0) return Math.round((kg / PESO_BOBINA_KG) * 100) / 100;
 
+  // Reserva: sem gramatura cadastrada não há peso. Vale o que a casa cadastrou
+  // na grade, que descreve um enfesto cheio — proporcional às camadas desta OS.
   const prev = Number(bobinasPrevistas);
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
-  const f = fatorCamadasReais(o);
-  if (!(f < 1)) return prev;
-  // Duas casas: bobina se mede em fração (o campo já aceita 1/2), e arredondar
-  // para inteiro aqui devolveria a mentira que se está tentando corrigir.
-  return Math.round(prev * f * 100) / 100;
+  const cam = parseInt(L && L.camadas, 10) || 0;
+  if (!(cam > 0)) return prev;
+  return Math.round(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO) * 100) / 100;
 }
 
 // O que a célula "Bobinas" da folha mostra. Até aqui ela só existia quando a
@@ -14500,7 +14499,7 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, kgFase) {
 // número sai da conta — a fase mostra bobinas mesmo sem ninguém ter cadastrado.
 function _bobinasCelula(o, L, bobinasPrevistas, ordem, gradeTemPrevisao, fmt) {
   const prev = (gradeTemPrevisao && bobinasPrevistas != null) ? bobinasPrevistas : null;
-  const v = bobinasEfetivasFase(o, prev, ordem, L && L.kg);
+  const v = bobinasEfetivasFase(o, prev, ordem, L);
   return (typeof v === 'number' && isFinite(v)) ? fmt(v) : '—';
 }
 
@@ -14526,12 +14525,11 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
 
   const prev = Number(bobinasPrevistas);
   if (!isFinite(prev) || prev <= 0) return padrao;
-  const f = fatorCamadasReais(o);
-  if (!(f < 1)) return padrao;
-  const e = (o && o.enfesto) || {};
-  return `Sem gramatura cadastrada para calcular o peso, entao vale o cadastro da`
-       + ` grade: ${prev} bobinas para ${parseInt(e.camadasPlanejadas, 10) || 0} camadas,`
-       + ` e o enfesto saiu com ${parseInt(e.camadas, 10) || 0}.`;
+  const cam = parseInt(L && L.camadas, 10) || 0;
+  if (!(cam > 0)) return padrao;
+  return `Sem gramatura cadastrada para pesar o enfesto, entao vale o cadastro da`
+       + ` grade: ${prev} bobinas para um enfesto cheio de`
+       + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam}.`;
 }
 
 /* ===== FIM BOBINAS POR CAMADAS REAIS ===== */
@@ -15478,12 +15476,6 @@ function coletaOS() {
     comprimento: primeiroBloco.comp || 0,
     largura: primeiroBloco.larg || 0,
     camadas: parseInt(v('f-enf-camadas')) || 0,
-    // O PLANEJADO, congelado aqui. As camadas acima são reescritas pelos tons da
-    // folha com o que a produção realmente estendeu; sem guardar o número de
-    // origem não há como saber que o enfesto saiu menor, e as bobinas e o kg
-    // continuariam reservando o pano inteiro. Salvar pelo formulário é replanejar:
-    // o valor digitado agora passa a ser a nova referência.
-    camadasPlanejadas: parseInt(v('f-enf-camadas')) || 0,
     target: parseInt(v('f-enf-target')) || 0,
     blocos: blocosEnfesto
   };
@@ -17985,7 +17977,6 @@ async function recalcularDeCamadasPorTom(osId) {
     // (Escalar aqui multiplicaria todas por zero e apagaria o que foi feito.)
     if (_faseNaoEnfestadaPorTom(o, ordP)) {
       o.enfesto = o.enfesto || {};
-      _fixarCamadasPlanejadas(o);
       const bp = Array.isArray(o.enfesto.blocos)
         ? o.enfesto.blocos.find(b => (b.ordem || 0) === ordP) : null;
       if (bp) bp.camadas = 0;
@@ -18015,7 +18006,6 @@ async function recalcularDeCamadasPorTom(osId) {
   const minQtd = qtds.length ? Math.min(...qtds) : 1;
 
   o.enfesto = o.enfesto || {};
-  _fixarCamadasPlanejadas(o);
   // Escala as demais fases proporcionalmente à nova camada principal.
   if (Array.isArray(o.enfesto.blocos) && o.enfesto.blocos.length) {
     const bp = o.enfesto.blocos.find(b => (b.ordem || 0) === ordP);
@@ -18062,20 +18052,6 @@ async function recalcularDeCamadasPorTom(osId) {
   // preserva o status 'consumido' de quem já deu baixa de verdade.
   try { await aplicarBaixaEstoqueOS(o); } catch (e) { console.warn('estoque por tom', e); }
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(o);
-}
-
-// Congela o número de camadas PLANEJADO, uma única vez por OS. Serve de
-// referência para saber se o enfesto saiu menor do que o previsto — as camadas
-// correntes viram o que a produção realmente estendeu assim que o primeiro tom
-// é lançado, e sem esta marca não haveria com o que comparar.
-//
-// OS antigas (salvas antes deste campo existir) fixam aqui, no primeiro
-// lançamento de tom, o valor que tinham naquele momento — que é justamente o
-// planejado, já que nenhum tom havia mexido nele ainda.
-function _fixarCamadasPlanejadas(o) {
-  if (!o || !o.enfesto) return;
-  if (o.enfesto.camadasPlanejadas != null) return;
-  o.enfesto.camadasPlanejadas = parseInt(o.enfesto.camadas, 10) || 0;
 }
 
 // Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
