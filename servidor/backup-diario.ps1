@@ -1,4 +1,4 @@
-<#
+﻿<#
   Backup diario do servidor da fabrica — o que o Agendador de Tarefas chama.
 
   POR QUE EXISTE, em vez de o agendador chamar o node direto:
