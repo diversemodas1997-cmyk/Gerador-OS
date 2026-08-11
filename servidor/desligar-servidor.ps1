@@ -1,4 +1,4 @@
-<#
+﻿<#
   Desliga o PC do servidor sem arrancar o banco no meio de uma escrita.
 
   POR QUE EXISTE:
@@ -58,15 +58,20 @@ if ($CriarAtalho) {
 }
 
 # --------------------------------------------------------------------- parar
-$docker = Get-Command docker.exe -ErrorAction SilentlyContinue
-if ($docker) { $docker = $docker.Source } else { $docker = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' }
+# CUIDADO ao renomear: esta variavel NAO pode se chamar $docker. O parametro
+# $Docker acima guarda a PASTA do Supabase, e no PowerShell $docker e $Docker sao
+# a MESMA variavel. Pior: como o parametro e [string], atribuir o objeto do
+# Get-Command nele nao da erro — o PowerShell converte para o texto "docker.exe"
+# calado, .Source vira vazio e a pasta do Supabase se perde.
+$achado = Get-Command docker.exe -ErrorAction SilentlyContinue
+if ($achado) { $dockerExe = $achado.Source } else { $dockerExe = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' }
 
-if (-not (Test-Path $docker)) {
+if (-not (Test-Path $dockerExe)) {
   # Sem Docker nao ha o que parar com cuidado, e travar o desligamento por causa
   # disso seria pior do que deixar desligar.
   Anotar 'nao achei o docker.exe — nada a parar'
 } else {
-  & $docker info 2>$null | Out-Null
+  & $dockerExe info 2>$null | Out-Null
   if ($LASTEXITCODE -ne 0) {
     Anotar 'o motor do Docker ja estava fora do ar — nada a parar'
   } else {
@@ -79,7 +84,7 @@ if (-not (Test-Path $docker)) {
     )
     foreach ($p in $pilhas) {
       if (-not (Test-Path $p.arquivo)) { Anotar ("pulei a pilha '" + $p.nome + "': nao achei " + $p.arquivo); continue }
-      $saida = & $docker compose -f $p.arquivo stop -t $Paciencia 2>&1 | Out-String
+      $saida = & $dockerExe compose -f $p.arquivo stop -t $Paciencia 2>&1 | Out-String
       if ($LASTEXITCODE -eq 0) {
         Anotar ("pilha '" + $p.nome + "' parada com calma")
       } else {
@@ -89,12 +94,24 @@ if (-not (Test-Path $docker)) {
       }
     }
 
-    # Conferencia que vale a pena: se o Postgres fechou em paz, a ultima linha do
-    # log dele diz "database system is shut down". Sem isso, o proximo boot vai
-    # gastar minutos relendo o WAL — e e bom que fique registrado que foi assim.
-    $fim = & $docker logs supabase-db --tail 5 2>&1 | Out-String
-    if ($fim -match 'database system is shut down') { Anotar 'Postgres fechou em paz (checkpoint gravado)' }
-    else { Anotar 'ATENCAO: o Postgres nao registrou fechamento limpo; o proximo boot vai reler o WAL' }
+    # Conferencia que vale a pena: o Postgres fechou em paz ou foi morto no soco?
+    #
+    # A primeira versao procurava "database system is shut down" no docker logs.
+    # NAO FUNCIONA: nesta imagem as mensagens de arranque e parada do Postgres nao
+    # chegam ao docker logs de forma confiavel (so os FATAL e o PANIC chegam), e a
+    # conferencia acusava fechamento sujo TODA VEZ. Um alarme que dispara todo dia
+    # sem motivo e pior do que nenhum alarme: em uma semana ninguem le mais o log.
+    #
+    # O codigo de saida do conteiner e objetivo: 0 = saiu por conta propria depois
+    # do SIGINT (fast shutdown, que e o STOPSIGNAL desta imagem); 137 = levou
+    # SIGKILL por estourar a paciencia, que e exatamente o que se quer evitar.
+    $codigo = (& $dockerExe inspect supabase-db --format '{{.State.ExitCode}}' 2>$null | Select-Object -First 1)
+    if ($codigo -eq '0') {
+      Anotar 'Postgres fechou em paz (saida 0)'
+    } else {
+      Anotar ("ATENCAO: o Postgres saiu com codigo $codigo — nao fechou em paz. " +
+              "O proximo arranque vai reler o WAL. Aumentar -Paciencia se repetir.")
+    }
   }
 }
 

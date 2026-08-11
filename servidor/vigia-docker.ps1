@@ -1,4 +1,4 @@
-<#
+﻿<#
   Vigia do servidor da fabrica: garante que o Docker e os conteineres estejam de pe.
 
   POR QUE EXISTE:
@@ -50,9 +50,9 @@ function Achar-Docker {
   return $null
 }
 
-function Motor-Responde($docker) {
-  if (-not $docker) { return $false }
-  & $docker info --format '{{.ServerVersion}}' 2>$null | Out-Null
+function Motor-Responde($exe) {
+  if (-not $exe) { return $false }
+  & $exe info --format '{{.ServerVersion}}' 2>$null | Out-Null
   return ($LASTEXITCODE -eq 0)
 }
 
@@ -103,24 +103,32 @@ if ($Agendar) {
 }
 
 # -------------------------------------------------------------------- rodar
-$docker = Achar-Docker
-if (-not $docker) { Anotar 'FALHA: nao achei o docker.exe — o Docker Desktop foi desinstalado?'; exit 1 }
+#
+# CUIDADO ao renomear: esta variavel NAO pode se chamar $docker. O parametro
+# $Docker acima guarda a PASTA do Supabase, e no PowerShell $docker e $Docker sao
+# a MESMA variavel. Pior: como o parametro e [string], atribuir o objeto do
+# Get-Command nele nao da erro — o PowerShell converte para o texto "docker.exe"
+# calado, .Source vira vazio e a pasta do Supabase se perde. Foi assim que a
+# primeira versao deste script quebrou, e so no ramo de recuperacao, que e o
+# unico que interessa.
+$dockerExe = Achar-Docker
+if (-not $dockerExe) { Anotar 'FALHA: nao achei o docker.exe — o Docker Desktop foi desinstalado?'; exit 1 }
 
 $agi = $false   # so vira log se o vigia tiver mesmo feito algo
 
 # 1) O motor esta de pe?
-if (-not (Motor-Responde $docker)) {
+if (-not (Motor-Responde $dockerExe)) {
   $agi = $true
   Anotar 'motor do Docker fora do ar — abrindo o Docker Desktop'
 
-  $exe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
-  if (-not (Test-Path $exe)) { Anotar "FALHA: nao achei $exe"; exit 1 }
-  try { Start-Process $exe -ErrorAction Stop } catch { Anotar "FALHA ao abrir: $($_.Exception.Message)"; exit 1 }
+  $appExe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+  if (-not (Test-Path $appExe)) { Anotar "FALHA: nao achei $appExe"; exit 1 }
+  try { Start-Process $appExe -ErrorAction Stop } catch { Anotar "FALHA ao abrir: $($_.Exception.Message)"; exit 1 }
 
   $limite = (Get-Date).AddMinutes($EsperaMin)
-  while ((Get-Date) -lt $limite -and -not (Motor-Responde $docker)) { Start-Sleep -Seconds 10 }
+  while ((Get-Date) -lt $limite -and -not (Motor-Responde $dockerExe)) { Start-Sleep -Seconds 10 }
 
-  if (-not (Motor-Responde $docker)) {
+  if (-not (Motor-Responde $dockerExe)) {
     Anotar "FALHA: o motor nao respondeu em $EsperaMin min. A proxima passagem tenta de novo."
     exit 1
   }
@@ -129,7 +137,7 @@ if (-not (Motor-Responde $docker)) {
 
 # 2) Os conteineres que a fabrica precisa estao rodando?
 $precisa = @('gerador-os-web', 'supabase-db', 'supabase-kong', 'supabase-rest', 'supabase-auth')
-$rodando = @(& $docker ps --format '{{.Names}}' 2>$null)
+$rodando = @(& $dockerExe ps --format '{{.Names}}' 2>$null)
 $faltando = @($precisa | Where-Object { $rodando -notcontains $_ })
 
 if ($faltando.Count -gt 0) {
@@ -138,11 +146,12 @@ if ($faltando.Count -gt 0) {
 
   # O Supabase primeiro: o nginx do app so tem o que servir depois que a API existe.
   $pilhas = @(
-    @{ nome = 'supabase'; args = @('compose', '-f', (Join-Path $Docker 'docker-compose.yml'), 'up', '-d') },
-    @{ nome = 'app';      args = @('compose', '-f', (Join-Path $PSScriptRoot 'docker-compose.app.yml'), 'up', '-d') }
+    @{ nome = 'supabase'; arquivo = (Join-Path $Docker 'docker-compose.yml') },
+    @{ nome = 'app';      arquivo = (Join-Path $PSScriptRoot 'docker-compose.app.yml') }
   )
   foreach ($p in $pilhas) {
-    $saida = & $docker $p.args 2>&1 | Out-String
+    if (-not (Test-Path $p.arquivo)) { Anotar ("FALHA: nao achei " + $p.arquivo); exit 1 }
+    $saida = & $dockerExe compose -f $p.arquivo up -d 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
       $motivo = ($saida.Trim() -replace '\s+', ' ')
       if ($motivo.Length -gt 300) { $motivo = $motivo.Substring(0, 300) + '…' }
@@ -157,7 +166,7 @@ if ($faltando.Count -gt 0) {
   $limite = (Get-Date).AddMinutes($EsperaMin)
   $banco = $false
   while ((Get-Date) -lt $limite) {
-    $r = & $docker exec supabase-db pg_isready -U postgres 2>&1 | Out-String
+    $r = & $dockerExe exec supabase-db pg_isready -U postgres 2>&1 | Out-String
     if ($r -match 'accepting connections') { $banco = $true; break }
     Start-Sleep -Seconds 10
   }
