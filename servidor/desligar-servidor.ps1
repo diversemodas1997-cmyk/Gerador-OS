@@ -13,7 +13,10 @@
   desligamento continuar sendo pelo menu.
 
   Este script pede aos conteineres que parem com calma (o Postgres fecha os
-  arquivos e escreve o checkpoint) e SO DEPOIS desliga o Windows.
+  arquivos e escreve o checkpoint), fecha o Docker Desktop com jeito e SO DEPOIS
+  desliga o Windows. O passo do Docker Desktop entrou em 12/08/2026, quando a
+  fabrica perdeu uma manha: os conteineres tinham parado direitinho, mas o
+  -Force do desligamento matou o Docker Desktop escrevendo a configuracao dele.
 
   Usar (o jeito de todo dia): o atalho "Desligar o servidor" na Area de Trabalho.
     .\servidor\desligar-servidor.ps1 -CriarAtalho     # cria o atalho, uma vez
@@ -117,6 +120,40 @@ if (-not (Test-Path $dockerExe)) {
 
 # ------------------------------------------------------------------ desligar
 if ($NaoDesligar) { Anotar 'parei por aqui (-NaoDesligar): o Windows continua ligado'; exit 0 }
+
+# Fechar o Docker Desktop com jeito ANTES de desligar.
+#
+# POR QUE: em 12/08/2026 a fabrica ficou sem o programa das 7h as 8h. Os
+# conteineres tinham parado com calma na noite anterior — o Postgres saiu com
+# codigo 0, o log esta ali — mas o Stop-Computer -Force logo em seguida matou o
+# Docker Desktop no meio de uma escrita. Tres arquivos de configuracao dele
+# ficaram cheios de bytes zero (o NTFS salvou o tamanho, nao o conteudo) e no dia
+# seguinte o motor simplesmente nao subia. Parar os conteineres nao basta: o
+# proprio Docker Desktop precisa fechar antes de a energia cair.
+if (Test-Path $dockerExe) {
+  Anotar 'pedindo ao Docker Desktop que feche'
+  try { & $dockerExe desktop stop 2>&1 | Out-Null } catch { }
+
+  $limite = (Get-Date).AddSeconds(90)
+  $saiu   = $false
+  while ((Get-Date) -lt $limite) {
+    if (-not (Get-Process -Name 'Docker Desktop', 'com.docker.backend' -ErrorAction SilentlyContinue)) { $saiu = $true; break }
+    Start-Sleep -Seconds 3
+  }
+
+  if ($saiu) {
+    Anotar 'Docker Desktop fechado'
+  } else {
+    # Nao vale travar o desligamento para sempre por causa disso: matar aqui e
+    # pior do que fechar com jeito, mas melhor do que o PC passar a noite ligado.
+    Anotar 'ATENCAO: o Docker Desktop nao fechou em 90s — encerrando na marra'
+    Get-Process -Name 'Docker Desktop', 'com.docker.backend' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  }
+
+  # Um respiro para o Windows terminar de gravar o que ficou em cache. Sao 3
+  # segundos que compram a manha seguinte.
+  Start-Sleep -Seconds 3
+}
 
 Anotar 'desligando o Windows'
 Stop-Computer -Force
