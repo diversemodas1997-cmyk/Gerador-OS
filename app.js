@@ -2793,6 +2793,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       } else {
         addFaseGradeRow(legacy || {});
       }
+      // A fase do viés não se digita: entra sozinha, na grade nova e também na
+      // correção de uma já salva. Ver garantirFaseVies().
+      garantirFaseVies();
     }, 0);
   }
   else if (tipo === 'desenho') {
@@ -3666,11 +3669,11 @@ function addFaseGradeRow(fase = {}) {
       <button type="button" class="btn small danger" onclick="removerFaseGrade(this)">✕ Remover</button>
     </div>
     <div class="form-grid cols-2">
-      <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
+      <div class="field full"><label>Nome da fase (opcional)</label><input type="text" class="fase-nome" value="${esc(fase.nome || '')}" oninput="atualizarFaseVies()" placeholder="Ex.: Moletom, Forro de capuz, Punhos, Barra"></div>
       <div class="field"><label>Tecido</label><select class="fase-tec" onchange="toggleUnidadesGrade(this); atualizarSugestaoBobinas(this)">${tecOpts(fase.tecidoId)}</select></div>
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
-      <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
-      <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
+      <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="this.dataset.sug=''; atualizarSugestaoBobinas(this); atualizarFaseVies()" placeholder="Ex.: 6,50"></div>
+      <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 1,80"></div>
       <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. Em branco vale ${EXCEDENTE_ENFESTO_PADRAO_CM} cm.</div></div>
       <div class="field full">
         <label>Tempo de enfesto desta fase</label>
@@ -3705,6 +3708,96 @@ function addFaseGradeRow(fase = {}) {
   toggleUnidadesGrade(div.querySelector('.fase-tec'));
   atualizarSugestaoBobinas(div.querySelector('.fase-tec'));
   renumerarFasesGrade();
+}
+
+/* ===========================================================================
+   A FASE VIÉS ENTRA SOZINHA
+
+   Toda peça da casa leva viés, e ele quase nunca vinha no cadastro: quem
+   preenchia a grade lançava o corpo, a gola e ia embora — e a OS saía sem o
+   pano do viés, com alguém tendo que lembrar de completar depois, abrindo
+   outra grade só para achar a medida.
+
+   As duas medidas são sempre a mesma coisa, e é por isso que dá para escrevê-las
+   sozinho: a LARGURA é a do rolo de viés que a casa compra (1,17 m), e o
+   COMPRIMENTO acompanha o da primeira fase, arredondado para o metro de cima.
+
+   Não é imposição. A linha nasce preenchida e pode ser renomeada, editada ou
+   removida como qualquer outra. Enquanto ninguém digitar nela, ela acompanha a
+   primeira fase — mesma regra e mesma marca `data-sug` da sugestão de bobinas
+   logo abaixo: quem digita vira dono do campo e o automático não volta a mexer.
+
+   O que esta regra NÃO faz, porque já é resolvido em outro lugar: manter o viés
+   fora do planejamento do dia (`_opFaseForaDoPlanoPorPadrao`) e forçar 1 camada
+   no enfesto. As duas coisas já valem pelo NOME da fase, marcada ou não.
+   =========================================================================== */
+
+const VIES_LARGURA_PADRAO_M = 1.17;
+
+// "Viés", "Gola e Viés", "Gola/Viés" — em qualquer nome onde a palavra viés
+// apareça, aquela linha JÁ é a do viés e não se acrescenta uma segunda.
+// Compara por palavra inteira: "Viés" conta, "Enviesado" não.
+function _ehFaseVies(nome) {
+  const n = _normFaseNome(nome);
+  return !!n && n.split(' ').some(p => p === 'vies' || p === 'vieses');
+}
+
+// O comprimento que o viés deve ter: o da PRIMEIRA fase que não é viés,
+// arredondado para cima. Devolve '' quando essa fase ainda não tem comprimento
+// digitado — sem base não há o que sugerir, e o campo fica em branco esperando.
+function _compViesSugerido() {
+  const cont = document.getElementById('m-fases-container');
+  if (!cont) return '';
+  const primeira = Array.from(cont.querySelectorAll('.fase-grade-bloco'))
+    .find(b => !_ehFaseVies(b.querySelector('.fase-nome')?.value));
+  const bruto = String(primeira?.querySelector('.fase-comp')?.value ?? '').trim().replace(',', '.');
+  const n = parseFloat(bruto);
+  return n > 0 ? String(Math.ceil(n)) : '';
+}
+
+// Acerta a linha do viés a partir da primeira fase. Só escreve no campo VAZIO
+// ou no que esta mesma regra escreveu antes (`data-sug`) — nunca por cima do
+// que foi digitado, e nunca por cima do que já estava salvo na grade.
+function atualizarFaseVies() {
+  const cont = document.getElementById('m-fases-container');
+  if (!cont) return;
+  const bloco = Array.from(cont.querySelectorAll('.fase-grade-bloco'))
+    .find(b => _ehFaseVies(b.querySelector('.fase-nome')?.value));
+  if (!bloco) return;
+  const larg = bloco.querySelector('.fase-larg');
+  if (larg && (!larg.value || larg.dataset.sug)) {
+    // Campo `type="number"`: o valor vai com ponto, senão o navegador o recusa
+    // e o input fica vazio sem dizer por quê. A vírgula é coisa da tela.
+    larg.value = String(VIES_LARGURA_PADRAO_M);
+    larg.dataset.sug = '1';
+  }
+  const comp = bloco.querySelector('.fase-comp');
+  const sug = _compViesSugerido();
+  if (comp && sug && (!comp.value || comp.dataset.sug)) {
+    comp.value = sug;
+    comp.dataset.sug = '1';
+  }
+}
+
+// Garante que a grade tenha a fase do viés. Roda ao ABRIR o cadastro, tanto na
+// grade nova quanto na correção de uma já salva — é na correção que estão as
+// dezenas de grades antigas que nasceram sem viés nenhum.
+function garantirFaseVies() {
+  const cont = document.getElementById('m-fases-container');
+  if (!cont) return;
+  const jaTem = Array.from(cont.querySelectorAll('.fase-grade-bloco'))
+    .some(b => _ehFaseVies(b.querySelector('.fase-nome')?.value));
+  if (!jaTem) {
+    addFaseGradeRow({ nome: 'Viés' });
+    // A linha acabou de nascer: ninguém digitou nada nela, então os dois campos
+    // são da regra e ela pode preenchê-los e continuar acompanhando.
+    const novo = cont.querySelector('.fase-grade-bloco:last-child');
+    ['.fase-larg', '.fase-comp'].forEach(sel => {
+      const el = novo?.querySelector(sel);
+      if (el) el.dataset.sug = '1';
+    });
+  }
+  atualizarFaseVies();
 }
 
 // Preenche as bobinas pela regra da malha algodão assim que o tecido e o
@@ -3780,6 +3873,10 @@ function removerFaseGrade(btn) {
   renumerarFasesGrade();
   // Tirar a fase de moletom faz as de malha deixarem de ser forro.
   atualizarUnidadesDasFases();
+  // Removida a fase que era a primeira, o viés passa a acompanhar a que sobrou.
+  // (Removido o próprio viés, não volta sozinho — tirar foi decisão de quem
+  // cadastra, e o automático que o trouxesse de volta seria briga, não ajuda.)
+  atualizarFaseVies();
 }
 
 function renumerarFasesGrade() {
@@ -23230,6 +23327,8 @@ window.mostrarResponsabilidadesFuncao = mostrarResponsabilidadesFuncao;
 window.atualizarCoresComponente = atualizarCoresComponente;
 window.addFaseGradeRow = addFaseGradeRow;
 window.removerFaseGrade = removerFaseGrade;
+window.atualizarFaseVies = atualizarFaseVies;
+window.garantirFaseVies = garantirFaseVies;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
