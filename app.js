@@ -2537,6 +2537,7 @@ function goto(page) {
   }
   if (page === 'nova-os') initOSForm();
   if (page === 'config') {
+    renderExcedenteCfg();
     atualizarServidorLocalStatus();
     atualizarPdfFolderStatus();
     atualizarBackupFolderStatus();
@@ -4032,6 +4033,91 @@ async function rodarCopiarEtapasParaTodos() {
    sobre elas (devolve null), e mexer no que não se sabe é como se estraga
    cadastro bom.
    --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   A TELA QUE CADASTRA A REGRA DO EXCEDENTE.
+
+   Três faixas de comprimento e duas exceções, editáveis. O padrão de fábrica
+   fica no código; o que se digita aqui manda, e vale para todas as máquinas —
+   mora no cadastro compartilhado, como qualquer outro cadastro.
+
+   O número de faixas é fixo em três porque é a forma da regra que a casa usa.
+   Precisando de uma quarta, o lugar de mexer é EXCEDENTE_FAIXAS e este HTML —
+   e aí vale a pena fazer linhas de verdade, com "+ adicionar faixa".
+   --------------------------------------------------------------------------- */
+
+// Escreve nos campos o que está valendo agora. Chamada ao abrir Configurações.
+function renderExcedenteCfg() {
+  const cfg = excedenteCfg();
+  const preencher = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  [0, 1, 2].forEach(i => {
+    const f = cfg.faixas[i];
+    // Campo `type="number"`: o valor vai com PONTO, senão o navegador o recusa
+    // e o campo aparece vazio — o usuário veria a faixa sumir sem motivo.
+    preencher(`exc-faixa-ate-${i}`, f ? f.ate : '');
+    preencher(`exc-faixa-cm-${i}`, f ? f.cm : '');
+  });
+  preencher('exc-gola', cfg.gola);
+  preencher('exc-vies', cfg.vies);
+  const aviso = document.getElementById('exc-cfg-origem');
+  if (aviso) {
+    const proprio = !!(STATE.meta && STATE.meta.excedenteCfg);
+    aviso.textContent = proprio
+      ? 'Regra cadastrada por vocês.'
+      : 'Ainda no padrão de fábrica — salve para deixar a regra por escrito.';
+  }
+}
+
+async function salvarExcedenteCfg() {
+  if (!exigirEdicao('mudar a regra do excedente')) return;
+  const num = id => {
+    const el = document.getElementById(id);
+    const x = parseFloat(String((el && el.value) || '').replace(',', '.'));
+    return isFinite(x) ? x : null;
+  };
+  const faixas = [];
+  for (let i = 0; i < 3; i++) {
+    const ate = num(`exc-faixa-ate-${i}`), cm = num(`exc-faixa-cm-${i}`);
+    // Linha em branco é linha que não existe — dá para trabalhar com duas
+    // faixas se for o caso. Preenchida pela metade, não: seria adivinhar.
+    if (ate == null && cm == null) continue;
+    if (ate == null || cm == null) return toast(`Faixa ${i + 1}: preencha o limite E o excedente`, 'err');
+    if (ate <= 0) return toast(`Faixa ${i + 1}: o limite tem que ser maior que zero`, 'err');
+    if (cm < 0) return toast(`Faixa ${i + 1}: o excedente não pode ser negativo`, 'err');
+    faixas.push({ ate, cm });
+  }
+  if (!faixas.length) return toast('Cadastre ao menos uma faixa', 'err');
+  // Limites CRESCENTES. A regra pega a primeira faixa que couber, então
+  // "até 9" antes de "até 1,5" faria todo comprimento cair na primeira e a
+  // segunda nunca valer — erro que não dá sintoma, só número errado.
+  for (let i = 1; i < faixas.length; i++) {
+    if (faixas[i].ate <= faixas[i - 1].ate) {
+      return toast(`Os limites têm que subir: ${faixas[i].ate} vem depois de ${faixas[i - 1].ate}`, 'err');
+    }
+  }
+  const gola = num('exc-gola'), vies = num('exc-vies');
+  if (gola == null || gola < 0) return toast('Excedente da gola inválido', 'err');
+  if (vies == null || vies < 0) return toast('Excedente do viés inválido', 'err');
+
+  STATE.meta = STATE.meta || {};
+  STATE.meta.excedenteCfg = { faixas, gola, vies };
+  await saveState('meta');
+  renderExcedenteCfg();
+  toast('Regra do excedente salva', 'ok');
+}
+
+// Volta ao padrão de fábrica, apagando a regra cadastrada.
+async function restaurarExcedenteCfg() {
+  if (!exigirEdicao('restaurar a regra do excedente')) return;
+  if (!confirm('Voltar a regra do excedente ao padrão de fábrica?\n\n'
+    + `   até 1,50 m  ->  10 cm\n   1,50 a 9 m  ->  15 cm\n   9 a 12 m    ->  20 cm\n`
+    + `   gola ${EXCEDENTE_GOLA_CM} cm · viés ${EXCEDENTE_VIES_CM} cm\n\n`
+    + 'Isto NÃO mexe nas grades já cadastradas — só na regra. Para aplicá-la, use o botão abaixo.')) return;
+  if (STATE.meta) delete STATE.meta.excedenteCfg;
+  await saveState('meta');
+  renderExcedenteCfg();
+  toast('Regra de volta ao padrão de fábrica', 'ok');
+}
+
 async function rodarExcedentePorFaixa() {
   if (!exigirEdicao('alterar o excedente de todas as fases')) return;
 
@@ -4073,20 +4159,29 @@ async function rodarExcedentePorFaixa() {
   const porValor = valores.map(v =>
     `${mudam.filter(m => m.para === v).length} para ${v} cm`).join(' · ');
 
+  // A regra que o aviso mostra é a CADASTRADA, e não uma cópia escrita à mão
+  // aqui: um texto fixo continuaria dizendo "até 9 m" no dia em que alguém
+  // mudasse a faixa na tela, e quem confirma leria uma coisa e gravaria outra.
+  const cfg = excedenteCfg();
+  const m1 = v => String(v).replace('.', ',');
+  const linhasFaixa = cfg.faixas.map((f, i) => {
+    const de = i === 0 ? '' : `de ${m1(cfg.faixas[i - 1].ate)} m `;
+    return `   ${de}até ${m1(f.ate)} m  ->  ${f.cm} cm\n`;
+  }).join('');
+  const ultima = cfg.faixas[cfg.faixas.length - 1];
+
   const ok = confirm(
     `Aplicar a regra do excedente em TODAS as grades?\n\n`
     + `Exceções, antes de tudo:\n`
-    + `   gola        ->   ${EXCEDENTE_GOLA_CM} cm\n`
-    + `   viés        ->   ${EXCEDENTE_VIES_CM} cm\n`
+    + `   gola        ->   ${cfg.gola} cm\n`
+    + `   viés        ->   ${cfg.vies} cm\n`
     + `Nas demais, a faixa do comprimento:\n`
-    + `   até 1,50 m  ->  10 cm\n`
-    + `   1,50 a 9 m  ->  15 cm\n`
-    + `   9 a 12 m    ->  20 cm\n\n`
+    + linhasFaixa + `\n`
     + `${mudam.length} fase(s) mudam  (${porValor})\n`
     + `${excecoes} delas por serem gola ou viés\n`
     + `${jaCertas} já estão certas\n`
     + `${semComp} sem comprimento e sem exceção — NÃO serão tocadas\n`
-    + `${foraFaixa} acima de 12 m — NÃO serão tocadas\n`
+    + `${foraFaixa} acima de ${m1(ultima.ate)} m — NÃO serão tocadas\n`
     + `${total} fases no total, em ${(STATE.grades || []).length} grade(s)\n\n`
     + (tinhamProprio
       ? `ATENÇÃO: ${tinhamProprio} dessas fases têm excedente digitado à mão, e esse valor será SUBSTITUÍDO pelo da regra.\n\n`
@@ -20466,12 +20561,43 @@ const EXCEDENTE_FAIXAS = [
   { ate: 12,   cm: 20 }
 ];
 
+/* ---------------------------------------------------------------------------
+   A REGRA É CADASTRADA, não escrita no código.
+
+   Os números acima são o PADRÃO de fábrica. Quem manda é o que estiver em
+   `STATE.meta.excedenteCfg`, editável em Configurações — a faixa dos 15 cm já
+   precisou ir de 8 m para 9 m uma vez, e trocar isso não pode custar um commit.
+
+   Config ausente, malformada ou incompleta cai no padrão, campo a campo: uma
+   configuração pela metade não pode deixar o programa sem regra nenhuma.
+   --------------------------------------------------------------------------- */
+function excedenteCfg() {
+  const c = (typeof STATE !== 'undefined' && STATE.meta && STATE.meta.excedenteCfg) || null;
+  const n = (v, padrao) => {
+    const x = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+    return isFinite(x) && x >= 0 ? x : padrao;
+  };
+  // As faixas sobem sempre: o `find` abaixo pega a PRIMEIRA que couber, então
+  // fora de ordem a tabela responderia errado sem reclamar de nada.
+  let faixas = Array.isArray(c && c.faixas)
+    ? c.faixas.map(f => ({ ate: n(f && f.ate, NaN), cm: n(f && f.cm, NaN) }))
+        .filter(f => isFinite(f.ate) && f.ate > 0 && isFinite(f.cm))
+        .sort((a, b) => a.ate - b.ate)
+    : [];
+  if (!faixas.length) faixas = EXCEDENTE_FAIXAS;
+  return {
+    faixas,
+    gola: n(c && c.gola, EXCEDENTE_GOLA_CM),
+    vies: n(c && c.vies, EXCEDENTE_VIES_CM)
+  };
+}
+
 // O excedente que a regra manda para um comprimento, em CENTÍMETROS.
 // null = a regra não opina (sem comprimento, ou acima da última faixa).
 function excedentePorComprimento(comp) {
   const n = parseFloat(String(comp == null ? '' : comp).replace(',', '.'));
   if (!isFinite(n) || n <= 0) return null;
-  const faixa = EXCEDENTE_FAIXAS.find(f => n <= f.ate);
+  const faixa = excedenteCfg().faixas.find(f => n <= f.ate);
   return faixa ? faixa.cm : null;
 }
 
@@ -20527,8 +20653,9 @@ const _PAL_GOLA = new Set(['gola', 'golas', 'vies', 'vieses']);
 // fase não leva sobra", e precisa ser gravado como zero de verdade.
 function excedenteRegraDaFase(fase, compBase) {
   const nome = fase && fase.nome;
-  if (_faseSoDe(nome, _PAL_VIES)) return EXCEDENTE_VIES_CM;
-  if (_faseSoDe(nome, _PAL_GOLA)) return EXCEDENTE_GOLA_CM;
+  const cfg = excedenteCfg();
+  if (_faseSoDe(nome, _PAL_VIES)) return cfg.vies;
+  if (_faseSoDe(nome, _PAL_GOLA)) return cfg.gola;
   const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
   return excedentePorComprimento(base);
 }
@@ -23613,6 +23740,9 @@ window.removerFaseGrade = removerFaseGrade;
 window.atualizarFaseVies = atualizarFaseVies;
 window.garantirFaseVies = garantirFaseVies;
 window.rodarExcedentePorFaixa = rodarExcedentePorFaixa;
+window.salvarExcedenteCfg = salvarExcedenteCfg;
+window.restaurarExcedenteCfg = restaurarExcedenteCfg;
+window.renderExcedenteCfg = renderExcedenteCfg;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;

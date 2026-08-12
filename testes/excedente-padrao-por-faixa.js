@@ -34,7 +34,7 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
-const api = new Function(`
+const api = new Function('STATE', `
   ${/const EXCEDENTE_ENFESTO_PADRAO_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
   ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
@@ -45,6 +45,7 @@ const api = new Function(`
   ${recorte('function _normNome', 'a normalizacao de nome')}
   ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
   ${recorte('function _faseSoDe', 'o reconhecedor por nome inteiro')}
+  ${recorte('function excedenteCfg', 'a regra cadastrada')}
   ${recorte('function excedentePorComprimento', 'a regra das faixas')}
   ${recorte('function excedenteRegraDaFase', 'a regra inteira da fase')}
   ${recorte('function excedenteEnfestoM', 'o excedente da fase')}
@@ -53,7 +54,7 @@ const api = new Function(`
   ${/const _riscoCompCadastro = \(compPdf, fase\) =>[\s\S]*?;/.exec(src)[0]}
   return { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM,
            excedenteEnfestoCm, excedenteEnfestoOrigem, _riscoCompCadastro, excedenteRegraDaFase };
-`)();
+`)({ meta: {} });
 const { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM,
         excedenteEnfestoCm: excCm, excedenteEnfestoOrigem: origem,
         _riscoCompCadastro: comp, excedenteRegraDaFase: regra } = api;

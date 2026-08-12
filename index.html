@@ -819,9 +819,63 @@
         </div>
       </div>
       <div class="card admin-only">
-        <div class="card-title">Excedente de enfesto por faixa de comprimento</div>
-        <div class="info-box">Reescreve o <b>excedente de enfesto</b> de <b>todas as fases de todas as grades</b>. Duas exceções vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola → 5 cm</b> e <b>viés → 0 cm</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Barra/Punhos" também, mesmo sendo de tecido de ribana. Nas demais, a faixa em que cai o comprimento: <b>até 1,50 m → 10 cm</b>, <b>de 1,50 m a 9 m → 15 cm</b>, <b>de 9 m a 12 m → 20 cm</b>. Os limites ficam na faixa de baixo (1,50 m exato leva 10 cm; 9 m exatos levam 15 cm). Fase <b>sem comprimento</b> e fase <b>acima de 12 m</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida. Antes de gravar, o programa mostra quantas fases mudam, de quanto para quanto, e <b>quantas tinham valor digitado à mão</b> que será substituído. Um snapshot é gravado automaticamente antes, e fica em "Snapshots de contingência".</div>
-        <button class="btn primary" onclick="rodarExcedentePorFaixa()">Aplicar regra do excedente</button>
+        <div class="card-title">Regra do excedente de enfesto</div>
+        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Duas <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b> e <b>viés</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Barra/Punhos" também, mesmo sendo de tecido de ribana.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.</div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
+          <div>
+            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Faixas de comprimento</label>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-0" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-0" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-1" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-1" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-2" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-2" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+            </div>
+            <div class="field-hint" style="margin-top:4px;">Os limites têm que <b>subir</b> de uma linha para a outra. Deixar uma linha inteira em branco tira aquela faixa.</div>
+          </div>
+
+          <div>
+            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Exceções (não dependem do comprimento)</label>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">gola</span>
+                <input type="number" step="1" min="0" id="exc-gola" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">viés</span>
+                <input type="number" step="1" min="0" id="exc-vies" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button class="btn primary" onclick="salvarExcedenteCfg()">Salvar regra</button>
+          <button class="btn" onclick="restaurarExcedenteCfg()">Voltar ao padrão</button>
+          <span style="flex:1;"></span>
+          <button class="btn accent" onclick="rodarExcedentePorFaixa()">Aplicar em todas as grades</button>
+        </div>
+        <div id="exc-cfg-origem" class="field-hint" style="margin-top:8px;"></div>
+        <div class="field-hint" style="margin-top:4px;">Salvar muda a regra <b>daqui para a frente</b> — não mexe nas grades já cadastradas. Para reescrever o que já existe, use "Aplicar em todas as grades": ele mostra quantas fases mudam, de quanto para quanto, e <b>quantas tinham valor digitado à mão</b> que será substituído. Um snapshot é gravado automaticamente antes, e fica em "Snapshots de contingência".</div>
       </div>
       <div class="card admin-only">
         <div class="card-title">Sincronização</div>
@@ -1056,6 +1110,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-12n"></script>
+<script src="app.js?v=2026-08-12o"></script>
 </body>
 </html>

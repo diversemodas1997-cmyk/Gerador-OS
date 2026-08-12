@@ -14,10 +14,18 @@
 
    Uso:
      node servidor\aplicar-excedente-regra.js --entrada <grades.json> \
-          --saida <grades-novo.json> [--aplicar]
+          [--meta <meta.json>] --saida <grades-novo.json> [--aplicar]
 
    Sem --aplicar ele só relata o que MUDARIA (e não escreve a saída). É assim
    que se confere antes.
+
+   --meta é a chave `meta` do blob, e é ONDE MORA A REGRA CADASTRADA
+   (`meta.excedenteCfg`, editável em Configurações). Sem ela o script usa o
+   padrão de fábrica — o que dá silenciosamente um resultado DIFERENTE do que
+   o botão faria, se alguém tiver mudado as faixas na tela. Para pegá-la:
+
+     docker exec supabase-db psql -U postgres -d postgres -At \
+       -c "SELECT data->>'meta' FROM shared_data WHERE id='main';" > meta.json
 */
 const fs = require('fs');
 const path = require('path');
@@ -25,8 +33,24 @@ const path = require('path');
 const arg = n => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : null; };
 const ENTRADA = arg('entrada');
 const SAIDA = arg('saida');
+const META = arg('meta');
 const APLICAR = process.argv.includes('--aplicar');
 if (!ENTRADA) { console.error('Faltou --entrada <arquivo com o array de grades>.'); process.exit(1); }
+
+// A regra CADASTRADA, se veio. O `meta` do blob é um objeto (às vezes gravado
+// como string JSON, como o resto das chaves) — aceita-se as duas formas.
+let meta = {};
+if (META) {
+  try {
+    let m = JSON.parse(fsBoot().readFileSync(META, 'utf8').replace(/^﻿/, ''));
+    if (typeof m === 'string') m = JSON.parse(m);
+    meta = (m && typeof m === 'object') ? m : {};
+  } catch (e) {
+    console.error('nao consegui ler --meta: ' + ((e && e.message) || e));
+    process.exit(1);
+  }
+}
+function fsBoot() { return require('fs'); }
 
 // ---------------------------------------------------------------- a regra
 const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
@@ -42,7 +66,7 @@ function achaConst(re, oQue) {
   if (!m) { console.error('nao achei ' + oQue + ' no app.js'); process.exit(1); }
   return m[0];
 }
-const regra = new Function([
+const regra = new Function('STATE', [
   achaConst(/const EXCEDENTE_ENFESTO_PADRAO_CM = \d+;/, 'o padrao da casa'),
   achaConst(/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/, 'a tabela de faixas'),
   achaConst(/const EXCEDENTE_GOLA_CM = \d+;/, 'o excedente da gola'),
@@ -53,10 +77,21 @@ const regra = new Function([
   recorte('function _normNome'),
   recorte('function _normFaseNome'),
   recorte('function _faseSoDe'),
+  recorte('function excedenteCfg'),
   recorte('function excedentePorComprimento'),
   recorte('function excedenteRegraDaFase'),
-  'return { excedenteRegraDaFase, _faseSoDe, _PAL_VIES, _PAL_GOLA };'
-].join('\n'))();
+  'return { excedenteRegraDaFase, _faseSoDe, _PAL_VIES, _PAL_GOLA, excedenteCfg };'
+].join('\n'))({ meta });
+
+// Diz em voz alta qual regra vai valer. Rodar isto achando que usa a regra da
+// tela, e usar o padrão de fábrica, é o erro que este aviso existe para evitar.
+const cfgUsada = regra.excedenteCfg();
+console.log('REGRA EM USO' + (meta.excedenteCfg ? ' (cadastrada em Configurações)' : ' (padrão de fábrica)') + ':');
+cfgUsada.faixas.forEach((f, i) => {
+  const de = i === 0 ? '' : `de ${String(cfgUsada.faixas[i - 1].ate).replace('.', ',')} m `;
+  console.log(`   ${de}até ${String(f.ate).replace('.', ',')} m  ->  ${f.cm} cm`);
+});
+console.log(`   gola ${cfgUsada.gola} cm · viés ${cfgUsada.vies} cm\n`);
 
 // ---------------------------------------------------------------- aplicar
 const grades = JSON.parse(fs.readFileSync(ENTRADA, 'utf8').replace(/^﻿/, ''));

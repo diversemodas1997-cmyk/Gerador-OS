@@ -42,11 +42,17 @@ function recorte(de, oQue) {
 const tabela = /const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src);
 if (!tabela) { console.error('nao achei EXCEDENTE_FAIXAS no app.js'); process.exit(1); }
 
-const api = new Function(`
+// STATE entra porque a regra passou a ser CADASTRAVEL: excedenteCfg() le
+// STATE.meta.excedenteCfg e cai no padrao quando nao ha nada la. Aqui o
+// cadastro esta vazio de proposito — este arquivo fala do PADRAO de fabrica.
+const api = new Function('STATE', `
   ${tabela[0]}
+  ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${recorte('function excedenteCfg', 'a regra cadastrada')}
   ${recorte('function excedentePorComprimento', 'a regra das faixas')}
-  return { EXCEDENTE_FAIXAS, excedentePorComprimento };
-`)();
+  return { EXCEDENTE_FAIXAS, excedentePorComprimento, excedenteCfg };
+`)({ meta: {} });
 const { excedentePorComprimento: exc, EXCEDENTE_FAIXAS } = api;
 
 let falhas = 0;
