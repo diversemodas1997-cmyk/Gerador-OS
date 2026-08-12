@@ -21142,41 +21142,58 @@ async function lerRiscosEscolhidos(ev) {
   renderRiscoResultado();
 }
 
-// A célula da GRADE de uma linha. Três situações, e a do meio era um beco sem
-// saída até aqui:
-//   • uma só grade com aqueles tamanhos → mostra o nome, e pronto;
-//   • VÁRIAS grades → agora um seletor para escolher em qual lançar. Antes a
-//     linha dizia "7 grades com estes tamanhos" e a fase dizia "grade não
-//     encontrada", com o quadradinho desabilitado e sem botão de aplicar: o
-//     risco não tinha como virar cadastro por esta tela. E o bloco de "grade
-//     nova" também não aparecia, porque grade candidata existia. Acontece em
-//     todo risco de P ao G3, que é a grade mais comum da casa — sete cadastros
-//     têm exatamente esses tamanhos (CM.BÁSICA, CM.TRICOLOR, BM.BÁSICA,
-//     PM.BÁSICA, PM.TRICOLOR, SM.LISO, SM. ESPARTANA).
-//     O assistente de PASTA já resolvia assim; esta tela ficou para trás.
-//   • nenhuma grade → o aviso de sempre, e o bloco de grade nova abaixo.
+// Os tamanhos que o PDF declarou, em uma linha ("M 1 · G 1"). É o que explica a
+// escolha do programa — e, quando ela está errada, é o que mostra por quê.
+function _riscoTamanhosTexto(tamanhos) {
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const ps = Object.keys(rot).filter(k => (parseInt((tamanhos || {})[k], 10) || 0) > 0)
+    .map(k => `${rot[k]} ${parseInt(tamanhos[k], 10)}`);
+  return ps.length ? ps.join(' · ') : 'nenhum';
+}
+
+// A célula da GRADE de uma linha. O seletor traz SEMPRE o cadastro inteiro, em
+// dois grupos: primeiro as grades que casam com os tamanhos do PDF, depois todas
+// as outras.
+//
+// Por que todas: a tabela de tamanhos do relatório nem sempre descreve a grade.
+// No "CM.REC - CORPO 2 - M-G-GG-G1-G2-G3" o encaixe leva os 5 moldes de M e de G
+// e só 1 molde de cada tamanho maior — o CAD conta 2 modelos completos e a
+// tabela sai "M 1 · G 1". Está certo do ponto de vista dele, e não é a grade: a
+// grade é M ao G3. Filtrando o seletor pelos tamanhos lidos, a única candidata
+// oferecida era "M-G (CONJUGADO) | CM.LISA" — uma grade que nada tem a ver — e a
+// certa não aparecia em lugar nenhum. Adivinhar a grade é papel do programa;
+// impedir a correção não é.
 function _riscoCelulaGrade(L, i) {
-  const n = (L.grades || []).length;
-  // NENHUMA grade casou pelos tamanhos. Antes isto era só um aviso — texto
-  // parado, sem seletor —, e a linha morria ali: o risco não tinha como virar
-  // cadastro nem escolhendo à mão. Agora o aviso continua (é informação: o que
-  // o PDF diz não bate com nenhum cadastro), mas vem com a lista inteira de
-  // grades embaixo. Quem cadastra sabe de qual é; o programa é que não sabia.
-  if (!n) {
-    const opts = `<option value="">— escolher a grade à mão —</option>`
-      + (STATE.grades || []).map(g =>
-          `<option value="${esc(g.id)}" ${L.grade && L.grade.id === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')
-      + `<option value="__nova__" ${L.forcarNova ? 'selected' : ''}>+ criar grade NOVA</option>`;
-    return `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos</div>`
-      + `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`;
-  }
-  // CORRIGIR A EXISTENTE OU CRIAR UMA NOVA — a decisão é de quem cadastra, e
-  // fica no mesmo seletor. Ter grade com aqueles tamanhos não quer dizer que o
-  // risco seja dela: a distribuição P ao G3 é a mesma em sete produtos.
-  const opts = `<option value="">— ${n === 1 ? 'escolher' : 'escolher entre ' + n} —</option>`
-    + L.grades.map(g => `<option value="${esc(g.id)}" ${L.grade && L.grade.id === g.id ? 'selected' : ''}>corrigir: ${esc(g.nome)}</option>`).join('')
+  const cands = L.grades || [];
+  const idsCand = new Set(cands.map(g => g.id));
+  const outras = (STATE.grades || []).filter(g => !idsCand.has(g.id));
+  const sel = id => (L.grade && L.grade.id === id) ? 'selected' : '';
+  const opt = (g, pref) => `<option value="${esc(g.id)}" ${sel(g.id)}>${pref}${esc(g.nome)}</option>`;
+
+  const opts = `<option value="">— ${cands.length
+        ? (cands.length === 1 ? 'escolher' : 'escolher entre ' + cands.length)
+        : 'escolher a grade à mão'} —</option>`
+    // CORRIGIR A EXISTENTE OU CRIAR UMA NOVA — a decisão é de quem cadastra, e
+    // fica no mesmo seletor. Ter grade com aqueles tamanhos não quer dizer que o
+    // risco seja dela: a distribuição P ao G3 é a mesma em sete produtos.
+    + (cands.length
+        ? `<optgroup label="com os tamanhos do PDF">${cands.map(g => opt(g, 'corrigir: ')).join('')}</optgroup>`
+        : '')
+    + (outras.length
+        ? `<optgroup label="todas as outras grades">${outras.map(g => opt(g, '')).join('')}</optgroup>`
+        : '')
     + `<option value="__nova__" ${L.forcarNova ? 'selected' : ''}>+ criar grade NOVA</option>`;
-  return `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`
+
+  const aviso = cands.length ? ''
+    : `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos</div>`;
+  // Escolha à mão fora das candidatas: diz o que o PDF trazia, para a diferença
+  // ficar à vista em vez de virar dúvida depois.
+  const foraDaLista = L.grade && !idsCand.has(L.grade.id)
+    ? `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">escolhida à mão — o PDF declara ${esc(_riscoTamanhosTexto(L.tamanhos))}</div>`
+    : '';
+  return aviso
+    + `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`
+    + foraDaLista
     + (L.forcarNova ? '<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">preencha o bloco abaixo</div>' : '');
 }
 
