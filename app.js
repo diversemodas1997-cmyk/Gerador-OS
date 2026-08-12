@@ -20329,16 +20329,48 @@ async function _riscoLerPdf(file) {
   const iCab = filas.findIndex(f => /(^|\s)Tamanho(\s|$)/i.test(txtFila(f)) && /Completos/i.test(txtFila(f)));
   const iFim = filas.findIndex((f, k) => k > iCab && iCab >= 0 && /^Encaixe$/i.test(txtFila(f)));
   const tamanhos = {};
+  const moldes = {};                    // a 2ª coluna: "Moldes encaixados"
+  let temCompletos = false;
   if (iCab >= 0) {
     const ate = iFim > iCab ? iFim : filas.length;
     for (let k = iCab + 1; k < ate; k++) {
       const toks = filas[k].itens;
       const iTam = toks.findIndex(t => /^(P|M|G|GG|G1|G2|G3)$/i.test(t.t));
       if (iTam < 0) continue;
-      // COMPLETOS = o primeiro número inteiro à direita do tamanho.
-      const num = toks.slice(iTam + 1).find(t => /^\d+$/.test(t.t));
-      const n = num ? parseInt(num.t, 10) : 0;
-      if (n > 0) tamanhos[toks[iTam].t.toLowerCase()] = n;
+      // COMPLETOS = o primeiro número inteiro à direita do tamanho;
+      // MOLDES ENCAIXADOS = o segundo.
+      const nums = toks.slice(iTam + 1).filter(t => /^\d+$/.test(t.t));
+      const chave = toks[iTam].t.toLowerCase();
+      const nComp = nums[0] ? parseInt(nums[0].t, 10) : 0;
+      const nMold = nums[1] ? parseInt(nums[1].t, 10) : 0;
+      if (nComp > 0) { tamanhos[chave] = nComp; temCompletos = true; }
+      if (nMold > 0) moldes[chave] = nMold;
+    }
+  }
+
+  // ENCAIXE PARCIAL: quando a fase corta só ALGUMAS peças da roupa, o CAD conta
+  // ZERO modelo completo — nenhuma peça inteira cabe ali — e a coluna Completos
+  // sai toda zerada. Era o caso do "CM.REC - CORPO 2": 4 moldes de 20, coluna
+  // Completos = 0 em todos os tamanhos, e o programa ficava sem assinatura
+  // nenhuma para procurar a grade. A tela então dizia "nenhuma grade com estes
+  // tamanhos" e não oferecia seletor: beco sem saída para a fase corpo 2.
+  //
+  // A distribuição continua ali, na coluna dos MOLDES: basta descobrir quantos
+  // moldes tem uma roupa neste encaixe, e isso o próprio relatório dá —
+  // total de moldes ÷ modelos pedidos. No CORPO 2: (2+2) ÷ 4 = 1 molde por
+  // roupa, então G 2 e G1 2 moldes viram 2 e 2 da grade. No CORPO 1, que tem
+  // Completos, dá o mesmo: (8+8) ÷ 4 = 4 moldes por roupa, 8 ÷ 4 = 2.
+  //
+  // Só vale se a divisão fechar EXATA em todos os tamanhos. Não fechando, o
+  // programa prefere não saber a arriscar a grade errada — aplicar o risco na
+  // grade errada dobra o consumo de tecido.
+  if (!temCompletos && Object.keys(moldes).length) {
+    const pedidos = _riscoNum(campo('Modelos pedidos'));
+    const total = Object.values(moldes).reduce((s, v) => s + v, 0);
+    const porRoupa = pedidos > 0 ? total / pedidos : 0;
+    if (Number.isInteger(porRoupa) && porRoupa > 0
+        && Object.values(moldes).every(v => v % porRoupa === 0)) {
+      Object.keys(moldes).forEach(k => { tamanhos[k] = moldes[k] / porRoupa; });
     }
   }
 
@@ -21085,7 +21117,19 @@ async function lerRiscosEscolhidos(ev) {
 //   • nenhuma grade → o aviso de sempre, e o bloco de grade nova abaixo.
 function _riscoCelulaGrade(L, i) {
   const n = (L.grades || []).length;
-  if (!n) return '<span style="color:var(--alert);">nenhuma grade com estes tamanhos</span>';
+  // NENHUMA grade casou pelos tamanhos. Antes isto era só um aviso — texto
+  // parado, sem seletor —, e a linha morria ali: o risco não tinha como virar
+  // cadastro nem escolhendo à mão. Agora o aviso continua (é informação: o que
+  // o PDF diz não bate com nenhum cadastro), mas vem com a lista inteira de
+  // grades embaixo. Quem cadastra sabe de qual é; o programa é que não sabia.
+  if (!n) {
+    const opts = `<option value="">— escolher a grade à mão —</option>`
+      + (STATE.grades || []).map(g =>
+          `<option value="${esc(g.id)}" ${L.grade && L.grade.id === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('')
+      + `<option value="__nova__" ${L.forcarNova ? 'selected' : ''}>+ criar grade NOVA</option>`;
+    return `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos</div>`
+      + `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`;
+  }
   // CORRIGIR A EXISTENTE OU CRIAR UMA NOVA — a decisão é de quem cadastra, e
   // fica no mesmo seletor. Ter grade com aqueles tamanhos não quer dizer que o
   // risco seja dela: a distribuição P ao G3 é a mesma em sete produtos.
@@ -21254,7 +21298,12 @@ function riscoTrocarGrade(i, id) {
   if (!L) return;
   _riscoNovaColetar();                 // guarda o que já foi digitado nos blocos
   L.forcarNova = id === '__nova__';
-  L.grade = L.forcarNova ? null : ((L.grades || []).find(g => g.id === id) || null);
+  // Procura primeiro entre as candidatas e depois no cadastro inteiro: a linha
+  // sem candidata nenhuma agora também tem seletor, e a grade escolhida ali não
+  // está em L.grades por definição.
+  L.grade = L.forcarNova ? null
+    : ((L.grades || []).find(g => g.id === id)
+       || (STATE.grades || []).find(g => g.id === id) || null);
   L.res = L.grade
     ? _riscoResolverOuPropor(L, L.grade)
     : { fase: null, origem: L.forcarNova ? 'grade nova' : ((L.grades || []).length ? 'escolher grade' : 'sem grade') };
