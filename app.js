@@ -22073,6 +22073,41 @@ function _pastaGradeAgregadora(G) {
   return null;
 }
 
+/* ---------------------------------------------------------------------------
+   ENCAIXE PARCIAL: a grade em que um risco IRMÃO desta MESMA pasta já lançou
+   nesta importação.
+
+   O assistente escolhe o destino pelos TAMANHOS, e isso não fecha quando as
+   fases da mesma grade são encaixadas em quantidades diferentes. Caso real de
+   12/08/2026:
+
+     CM.REC - CORPO 1 - G.pdf   1,07 m   o CAD conta G=1   -> cria a grade
+     CM.REC - CORPO 2 - G.pdf   0,36 m   o CAD conta G=2   -> não acha nada
+
+   O Corpo 2 é peça pequena e cabem duas no mesmo pano; o Corpo 1 cabe uma. O
+   CAD conta MODELOS COMPLETOS POR ENCAIXE, e está certo do ponto de vista dele
+   — só que isso não é a grade. Sem esta pista o Corpo 2 caía em "criar uma
+   grade nova", e a criação morria em "já existe uma grade chamada...", com a
+   grade certa a uma linha de distância na mesma tela.
+
+   A pista é a PASTA, e ela já estava guardada: `gradePorPasta` registra, a cada
+   passo aplicado, em que grade aquela pasta lançou. É a mesma memória que leva
+   a ribana para a grade do corpo — só não estava sendo consultada para as fases
+   que não são agregadoras.
+
+   SÓ A PASTA EXATA, de propósito (a agregadora aceita também a família, um
+   nível acima). "BM.LISA/2xM-4xG-2xGG/174 cm" e ".../182 cm" são duas grades, e
+   um Corpo 2 mora sempre na mesma pasta do Corpo 1 dele. Aceitar a família
+   mandaria o corpo de 174 para a grade de 182.
+   --------------------------------------------------------------------------- */
+function _pastaGradeIrmaDaPasta(G) {
+  const mem = (_pastaWiz && _pastaWiz.gradePorPasta) || {};
+  const exata = _pastaPastaDoArquivo(G.itens[0] || {});
+  if (!exata || !mem[exata]) return null;
+  const g = (STATE.grades || []).find(x => x.id === mem[exata]);
+  return g ? { grade: g, porque: 'é a grade que outro risco desta mesma pasta acabou de usar' } : null;
+}
+
 // A grade que este risco provavelmente é. Tamanhos iguais não bastam para
 // escolher — foi o que juntou sete panos diferentes na mesma tela. O que separa
 // um do outro é a LARGURA do tecido e a LINHA (a pasta de onde o arquivo veio):
@@ -22334,11 +22369,22 @@ function _pastaHtmlPasso() {
   // fase de uma que já existe. Achando a grade da pasta, o destino é ela e a
   // opção de criar sai da lista.
   const faseArq = _riscoFaseDoNomeArquivo((G.itens[0] || {}).arquivo || '');
-  const agregadora = faseArq && _riscoFaseEhAgregadora(faseArq) ? _pastaGradeAgregadora(G) : null;
+  const ehAgregadora = !!(faseArq && _riscoFaseEhAgregadora(faseArq));
+  const agregadora = ehAgregadora ? _pastaGradeAgregadora(G) : null;
   if (agregadora && !G.draft.destinoManual) G.gradeId = agregadora.grade.id;
   const achada = agregadora || _pastaMelhorCandidata(G);
   const jaExiste = !!agregadora || !!(achada && achada.certeza);
   if (jaExiste && !G.gradeId) G.gradeId = achada.grade.id;
+  // ENCAIXE PARCIAL. Nenhuma grade tem estes tamanhos, mas um risco IRMÃO desta
+  // mesma pasta acabou de lançar numa — é o Corpo 2 atrás do Corpo 1, que o CAD
+  // contou com outro número de modelos completos. Ver _pastaGradeIrmaDaPasta.
+  //
+  // Fica como SUGESTÃO, e não como certeza: o destino vem pré-escolhido, mas
+  // "criar uma grade nova" continua na lista. Os tamanhos realmente não batem, e
+  // quem está olhando o risco é quem sabe se é encaixe parcial ou outra grade.
+  const daPasta = (!ehAgregadora && !jaExiste && !G.candidatas.length && !G.draft.destinoManual)
+    ? _pastaGradeIrmaDaPasta(G) : null;
+  if (daPasta && !G.gradeId) G.gradeId = daPasta.grade.id;
   // O DESTINO MUDOU DEPOIS QUE O RASCUNHO FOI FEITO — refaz a que fase cada
   // risco aponta. As linhas do rascunho nascem no começo da importação, quando a
   // grade da vez pode ainda não existir; se ela é criada por um risco anterior e
@@ -22357,13 +22403,14 @@ function _pastaHtmlPasso() {
     + (STATE.grades || []).slice().sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'))
         .map(g => `<option value="${esc(g.id)}" ${g.id === G.gradeId ? 'selected' : ''}>${casaId.has(g.id) ? '✓ ' : ''}${esc(g.nome)}</option>`).join('');
 
-  const ehAgregadora = !!(faseArq && _riscoFaseEhAgregadora(faseArq));
   const dica = agregadora
     ? `<b>${esc(faseArq)} é uma fase, não uma grade.</b> Este risco entra em <b>${esc(agregadora.grade.nome)}</b>, que ${esc(agregadora.porque)}. Os tamanhos do risco da ribana são os dela (dez por camada) e não os do corpo — por isso ela não casa por tamanho com grade nenhuma.`
     : ehAgregadora
     ? `<b>${esc(faseArq)} é uma fase, não uma grade</b> — mas não achei a grade desta pasta. Escolha acima em qual ela entra. Se o corpo ainda não foi cadastrado, o melhor é <b>pular este risco</b> e voltar a ele depois: pulado, ele reaparece no fim da fila.`
     : jaExiste
     ? `<b>Esta grade já existe</b> — mesmos tamanhos, mesma linha e mesma largura (${esc(achada.porque)}). Aqui só dá para <b>corrigi-la</b>: criar outra igual duplicaria o cadastro. Se for mesmo outra grade, escolha qual acima.`
+    : daPasta && grade && grade.id === daPasta.grade.id
+    ? `<b>Encaixe parcial.</b> Nenhuma grade tem os tamanhos deste risco (${esc(tamTxt)}), mas <b>${esc(daPasta.grade.nome)}</b> ${esc(daPasta.porque)} — os arquivos de uma grade moram na mesma pasta. O CAD conta os <b>modelos completos de cada encaixe</b>, e uma peça pequena cabe mais vezes no mesmo pano: por isso o número muda de uma fase para outra da <b>mesma</b> grade. A medida deste risco entra como <b>mais uma fase</b> dela. Se for mesmo outra grade, escolha acima ou crie uma nova.`
     : grade
       ? (casaId.has(grade.id)
           ? 'Os tamanhos batem com esta grade. A medida deste risco vai <b>corrigir</b> o cadastro dela.'
@@ -22478,9 +22525,9 @@ function _pastaHtmlPasso() {
         // Onde este risco está DENTRO da pasta dele: a fila fecha uma grade por
         // vez, e saber "2 de 3 desta pasta" é o que diz se falta fase para ela.
         const k = _pastaPastaDoArquivo(G.itens[0]);
-        const daPasta = _pastaWiz.grupos.filter(x => _pastaPastaDoArquivo(x.itens[0]) === k);
-        const i = daPasta.indexOf(G) + 1;
-        return daPasta.length > 1 ? ` · fase ${i} de ${daPasta.length} desta grade` : '';
+        const irmaos = _pastaWiz.grupos.filter(x => _pastaPastaDoArquivo(x.itens[0]) === k);
+        const i = irmaos.indexOf(G) + 1;
+        return irmaos.length > 1 ? ` · fase ${i} de ${irmaos.length} desta grade` : '';
       })()}</div>
     </div>
     <div style="height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:6px 0 10px;">
