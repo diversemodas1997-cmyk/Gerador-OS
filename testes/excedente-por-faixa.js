@@ -49,6 +49,7 @@ const api = new Function('STATE', `
   ${tabela[0]}
   ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_BARRA_CM = \d+;/.exec(src)[0]}
   ${recorte('function excedenteCfg', 'a regra cadastrada')}
   ${recorte('function excedentePorComprimento', 'a regra das faixas')}
   return { EXCEDENTE_FAIXAS, excedentePorComprimento, excedenteCfg };

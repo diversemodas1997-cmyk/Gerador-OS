@@ -4058,6 +4058,7 @@ function renderExcedenteCfg() {
   });
   preencher('exc-gola', cfg.gola);
   preencher('exc-vies', cfg.vies);
+  preencher('exc-barra', cfg.barra);
   const aviso = document.getElementById('exc-cfg-origem');
   if (aviso) {
     const proprio = !!(STATE.meta && STATE.meta.excedenteCfg);
@@ -4094,28 +4095,16 @@ async function salvarExcedenteCfg() {
       return toast(`Os limites têm que subir: ${faixas[i].ate} vem depois de ${faixas[i - 1].ate}`, 'err');
     }
   }
-  const gola = num('exc-gola'), vies = num('exc-vies');
+  const gola = num('exc-gola'), vies = num('exc-vies'), barra = num('exc-barra');
   if (gola == null || gola < 0) return toast('Excedente da gola inválido', 'err');
   if (vies == null || vies < 0) return toast('Excedente do viés inválido', 'err');
+  if (barra == null || barra < 0) return toast('Excedente da barra/punhos inválido', 'err');
 
   STATE.meta = STATE.meta || {};
-  STATE.meta.excedenteCfg = { faixas, gola, vies };
+  STATE.meta.excedenteCfg = { faixas, gola, vies, barra };
   await saveState('meta');
   renderExcedenteCfg();
   toast('Regra do excedente salva', 'ok');
-}
-
-// Volta ao padrão de fábrica, apagando a regra cadastrada.
-async function restaurarExcedenteCfg() {
-  if (!exigirEdicao('restaurar a regra do excedente')) return;
-  if (!confirm('Voltar a regra do excedente ao padrão de fábrica?\n\n'
-    + `   até 1,50 m  ->  10 cm\n   1,50 a 9 m  ->  15 cm\n   9 a 12 m    ->  20 cm\n`
-    + `   gola ${EXCEDENTE_GOLA_CM} cm · viés ${EXCEDENTE_VIES_CM} cm\n\n`
-    + 'Isto NÃO mexe nas grades já cadastradas — só na regra. Para aplicá-la, use o botão abaixo.')) return;
-  if (STATE.meta) delete STATE.meta.excedenteCfg;
-  await saveState('meta');
-  renderExcedenteCfg();
-  toast('Regra de volta ao padrão de fábrica', 'ok');
 }
 
 async function rodarExcedentePorFaixa() {
@@ -4137,7 +4126,8 @@ async function rodarExcedentePorFaixa() {
       if (isFinite(n) && n > 0) foraFaixa++; else semComp++;
       return;
     }
-    if (_faseSoDe(f.nome, _PAL_VIES) || _faseSoDe(f.nome, _PAL_GOLA)) excecoes++;
+    if (_faseSoDe(f.nome, _PAL_VIES) || _faseSoDe(f.nome, _PAL_GOLA)
+        || _faseSoDe(f.nome, _PAL_BARRA)) excecoes++;
     const cru = f.excedente;
     const proprio = !(cru === '' || cru == null);
     const atual = proprio ? Math.round(parseFloat(cru)) : null;
@@ -4173,8 +4163,9 @@ async function rodarExcedentePorFaixa() {
   const ok = confirm(
     `Aplicar a regra do excedente em TODAS as grades?\n\n`
     + `Exceções, antes de tudo:\n`
-    + `   gola        ->   ${cfg.gola} cm\n`
-    + `   viés        ->   ${cfg.vies} cm\n`
+    + `   gola          ->   ${cfg.gola} cm\n`
+    + `   viés          ->   ${cfg.vies} cm\n`
+    + `   barra/punhos  ->   ${cfg.barra} cm\n`
     + `Nas demais, a faixa do comprimento:\n`
     + linhasFaixa + `\n`
     + `${mudam.length} fase(s) mudam  (${porValor})\n`
@@ -20527,6 +20518,7 @@ function excedenteEnfestoOrigem(fase, compBase) {
   if (!(v === '' || v == null || !isFinite(parseFloat(v)))) return 'fase';
   if (_faseSoDe(fase && fase.nome, _PAL_VIES)) return 'vies';
   if (_faseSoDe(fase && fase.nome, _PAL_GOLA)) return 'gola';
+  if (_faseSoDe(fase && fase.nome, _PAL_BARRA)) return 'barra';
   const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
   return excedentePorComprimento(base) != null ? 'faixa' : 'padrao';
 }
@@ -20588,7 +20580,8 @@ function excedenteCfg() {
   return {
     faixas,
     gola: n(c && c.gola, EXCEDENTE_GOLA_CM),
-    vies: n(c && c.vies, EXCEDENTE_VIES_CM)
+    vies: n(c && c.vies, EXCEDENTE_VIES_CM),
+    barra: n(c && c.barra, EXCEDENTE_BARRA_CM)
   };
 }
 
@@ -20628,6 +20621,10 @@ function excedentePorComprimento(comp) {
 
 const EXCEDENTE_GOLA_CM = 5;
 const EXCEDENTE_VIES_CM = 0;
+// Barra/Punhos entrou como exceção em 12/08/2026, a pedido de Junior. O padrão
+// são os 15 cm que as 41 fases desse nome já tinham cadastrado — assim a regra
+// nasce sem mudar nada, e o número se ajusta no campo de Configurações.
+const EXCEDENTE_BARRA_CM = 15;
 
 // Palavras que não distinguem nada e não contam na comparação.
 const _EXC_LIGACAO = new Set(['e', 'de', 'da', 'do']);
@@ -20644,6 +20641,9 @@ const _PAL_VIES = new Set(['vies', 'vieses']);
 // "Gola e Viés" é um pano de gola que leva o viés junto: vale a regra da gola.
 // O viés puro é testado antes, então este conjunto só recebe o que sobra.
 const _PAL_GOLA = new Set(['gola', 'golas', 'vies', 'vieses']);
+// "Barra/Punhos", "Punhos/Barra", "Barra", "Punhos" — a barra do nome vira
+// espaço em _normFaseNome, então os dois pedaços entram como palavras.
+const _PAL_BARRA = new Set(['barra', 'barras', 'punho', 'punhos']);
 
 // O excedente que a regra manda para uma FASE, em centímetros. As exceções
 // primeiro; sem exceção, a faixa do comprimento. null = a regra não opina, e
@@ -20656,6 +20656,7 @@ function excedenteRegraDaFase(fase, compBase) {
   const cfg = excedenteCfg();
   if (_faseSoDe(nome, _PAL_VIES)) return cfg.vies;
   if (_faseSoDe(nome, _PAL_GOLA)) return cfg.gola;
+  if (_faseSoDe(nome, _PAL_BARRA)) return cfg.barra;
   const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
   return excedentePorComprimento(base);
 }
@@ -22736,7 +22737,8 @@ function _pastaHtmlPasso() {
   // ou o padrão de quem não tem nem uma coisa nem outra. Dizer "padrão" nos três
   // casos escondia justamente a pergunta que se faz olhando a tela.
   const excOrigem = { fase: ' (desta fase)', faixa: ' (faixa do comprimento)',
-                      gola: ' (regra da gola)', vies: ' (regra do viés)', padrao: ' (padrão)' }
+                      gola: ' (regra da gola)', vies: ' (regra do viés)',
+                      barra: ' (regra da barra/punhos)', padrao: ' (padrão)' }
     [excedenteEnfestoOrigem(fase0, L0.comprimento)];
   const medida = (compL == null || L0.largura == null)
     ? '<span style="color:var(--alert);">sem medida legível</span>'
@@ -23741,7 +23743,6 @@ window.atualizarFaseVies = atualizarFaseVies;
 window.garantirFaseVies = garantirFaseVies;
 window.rodarExcedentePorFaixa = rodarExcedentePorFaixa;
 window.salvarExcedenteCfg = salvarExcedenteCfg;
-window.restaurarExcedenteCfg = restaurarExcedenteCfg;
 window.renderExcedenteCfg = renderExcedenteCfg;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;

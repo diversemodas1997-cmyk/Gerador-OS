@@ -785,7 +785,9 @@
           <button class="btn primary" onclick="conectarPastaExport()">Conectar pasta</button>
           <button class="btn" onclick="exportarDados()">⬇ Exportar tudo agora</button>
           <button class="btn" onclick="desconectarPastaExport()">Desconectar</button>
+          <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
         </div>
+        <div class="field-hint" style="margin-top:6px;">O <b>Importar JSON</b> é o caminho de volta: lê um arquivo exportado e traz os dados dele. Não existe botão de apagar tudo — dado desta base se corrige restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div>
       </div>
       <div class="card admin-only">
         <div class="card-title">Planilha das grades (Excel)</div>
@@ -793,19 +795,6 @@
         <div style="display:flex; gap:8px; flex-wrap: wrap;">
           <button class="btn primary" onclick="exportarGradesExcel()">📊 Gerar planilha das grades</button>
         </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Backup e restauração</div>
-        <div class="info-box">Além dos snapshots diários automáticos, você pode exportar e importar manualmente. Não existe botão de apagar tudo: dados desta base se corrigem restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn" onclick="exportarDados()">⬇ Exportar tudo (JSON)</button>
-          <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Popular com dados de exemplo</div>
-        <div class="info-box">Preenche cadastros com dados baseados na ficha Dx7282 da referência (Moletom, cor Camel, coleção Inverno 2024, etc.) para você testar.</div>
-        <button class="btn accent" onclick="popularExemplo()">Carregar dados de exemplo</button>
       </div>
       <div class="card admin-only">
         <div class="card-title">Operações em massa nos desenhos</div>
@@ -820,7 +809,7 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Regra do excedente de enfesto</div>
-        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Duas <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b> e <b>viés</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Barra/Punhos" também, mesmo sendo de tecido de ribana.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.</div>
+        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.</div>
 
         <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
           <div>
@@ -864,13 +853,17 @@
                 <input type="number" step="1" min="0" id="exc-vies" style="width:70px;">
                 <span style="font-size:12px;color:var(--ink-3);">cm</span>
               </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">barra/<br>punhos</span>
+                <input type="number" step="1" min="0" id="exc-barra" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
             </div>
           </div>
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn primary" onclick="salvarExcedenteCfg()">Salvar regra</button>
-          <button class="btn" onclick="restaurarExcedenteCfg()">Voltar ao padrão</button>
           <span style="flex:1;"></span>
           <button class="btn accent" onclick="rodarExcedentePorFaixa()">Aplicar em todas as grades</button>
         </div>
@@ -1110,6 +1103,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-12o"></script>
+<script src="app.js?v=2026-08-12p"></script>
 </body>
 </html>

@@ -39,9 +39,11 @@ const api = new Function('STATE', `
   ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
   ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_BARRA_CM = \d+;/.exec(src)[0]}
   ${/const _EXC_LIGACAO = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${/const _PAL_VIES = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${/const _PAL_GOLA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
+  ${/const _PAL_BARRA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${recorte('function _normNome', 'a normalizacao de nome')}
   ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
   ${recorte('function _faseSoDe', 'o reconhecedor por nome inteiro')}
@@ -52,10 +54,10 @@ const api = new Function('STATE', `
   ${/const excedenteEnfestoCm = [^;]+;/.exec(src)[0]}
   ${recorte('function excedenteEnfestoOrigem', 'a origem do excedente')}
   ${/const _riscoCompCadastro = \(compPdf, fase\) =>[\s\S]*?;/.exec(src)[0]}
-  return { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM,
+  return { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM, EXCEDENTE_BARRA_CM,
            excedenteEnfestoCm, excedenteEnfestoOrigem, _riscoCompCadastro, excedenteRegraDaFase };
 `)({ meta: {} });
-const { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM,
+const { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_GOLA_CM, EXCEDENTE_VIES_CM, EXCEDENTE_BARRA_CM,
         excedenteEnfestoCm: excCm, excedenteEnfestoOrigem: origem,
         _riscoCompCadastro: comp, excedenteRegraDaFase: regra } = api;
 
@@ -185,12 +187,33 @@ console.log('\n-- O NOME INTEIRO: os tres nomes que a regra frouxa estragaria --
   ok('9b. e a origem e a faixa, nao a gola', origem(cg, 2.71) === 'faixa', origem(cg, 2.71));
   const sep = { nome: 'Separação de gola', excedente: '' };
   ok('9c. "Separação de gola" NAO e gola', excCm(sep, 3) === 15, excCm(sep, 3));
-  // Barra/Punhos: 46 fases, e de tecido de RIBANA. Foi por causa dela que o
-  // reconhecimento por tecido teve de sair — 42 fases de 15 cm virariam 5.
+}
+
+console.log('\n-- EXCECAO: BARRA/PUNHOS --');
+{
+  // Entrou como excecao em 12/08/2026. O padrao sao os 15 cm que as 41 fases
+  // desse nome ja tinham cadastrado — assim a regra nasceu sem mudar nada.
+  //
+  // E de tecido de RIBANA, e foi por causa dela que o reconhecimento da gola
+  // por TECIDO teve de sair: 42 fases de 15 cm virariam 5 numa tacada.
   const bp = { nome: 'Barra/Punhos', excedente: '' };
-  ok('9d. "Barra/Punhos" segue a faixa (1,55 m -> 15 cm)', excCm(bp, 1.55) === 15, excCm(bp, 1.55));
-  ok('9e. e NAO os 5 cm da gola', excCm(bp, 1.55) !== 5);
-  ok('9f. "Punhos/Barra" idem', excCm({ nome: 'Punhos/Barra', excedente: '' }, 1.55) === 15);
+  ok('10. "Barra/Punhos" leva o valor da excecao', excCm(bp, 1.55) === EXCEDENTE_BARRA_CM,
+     excCm(bp, 1.55));
+  ok('10b. e NAO os 5 cm da gola', excCm(bp, 1.55) !== 5);
+  ok('10c. a origem e a regra da barra', origem(bp, 1.55) === 'barra', origem(bp, 1.55));
+  ok('10d. num risco CURTO tambem, sem cair na faixa dos 10',
+     excCm(bp, 0.9) === EXCEDENTE_BARRA_CM, excCm(bp, 0.9));
+  ok('10e. e num LONGO, sem cair na faixa dos 20',
+     excCm(bp, 11) === EXCEDENTE_BARRA_CM, excCm(bp, 11));
+  ok('10f. "Punhos/Barra" idem', excCm({ nome: 'Punhos/Barra', excedente: '' }, 1.55) === EXCEDENTE_BARRA_CM);
+  ok('10g. "Barra" sozinha idem', excCm({ nome: 'Barra', excedente: '' }, 1.55) === EXCEDENTE_BARRA_CM);
+  ok('10h. "Punhos" sozinho idem', excCm({ nome: 'Punhos', excedente: '' }, 1.55) === EXCEDENTE_BARRA_CM);
+  ok('10i. SEM comprimento tambem sabe o valor', regra(bp) === EXCEDENTE_BARRA_CM, regra(bp));
+  ok('10j. "Corpo + Barra" NAO e barra — segue a faixa',
+     excCm({ nome: 'Corpo + Barra', excedente: '' }, 3) === 15,
+     excCm({ nome: 'Corpo + Barra', excedente: '' }, 3));
+  ok('10k. valor cadastrado na fase continua mandando',
+     excCm({ nome: 'Barra/Punhos', excedente: 22 }, 1.55) === 22);
 }
 
 console.log('\n-- as excecoes NAO passam por cima do cadastro da fase --');

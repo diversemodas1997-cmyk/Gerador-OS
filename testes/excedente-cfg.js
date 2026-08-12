@@ -39,9 +39,11 @@ function com(cfg) {
     ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
     ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
     ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+    ${/const EXCEDENTE_BARRA_CM = \d+;/.exec(src)[0]}
     ${/const _EXC_LIGACAO = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
     ${/const _PAL_VIES = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
     ${/const _PAL_GOLA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
+    ${/const _PAL_BARRA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
     ${recorte('function _normNome', 'a normalizacao de nome')}
     ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
     ${recorte('function _faseSoDe', 'o reconhecedor por nome inteiro')}
@@ -142,6 +144,22 @@ console.log('\n-- virgula decimal, como se digita na tela --');
   ok('6b. e 1,90 ja cai na faixa seguinte', a.excedentePorComprimento('1.90') === 15,
      a.excedentePorComprimento('1.90'));
   ok('6c. gola em texto tambem', a.excedenteCfg().gola === 7, a.excedenteCfg().gola);
+}
+
+console.log('\n-- a terceira excecao: barra/punhos --');
+{
+  const p = com(undefined);
+  ok('8. no padrao, barra/punhos leva 15', p.excedenteCfg().barra === 15, p.excedenteCfg().barra);
+  const a = com({ barra: 22 });
+  ok('8b. cadastrada, manda o cadastro',
+     a.excedenteRegraDaFase({ nome: 'Barra/Punhos', excedente: '' }, 1.55) === 22,
+     a.excedenteRegraDaFase({ nome: 'Barra/Punhos', excedente: '' }, 1.55));
+  ok('8c. e nao depende do comprimento',
+     a.excedenteRegraDaFase({ nome: 'Barra/Punhos', excedente: '' }, 11) === 22);
+  ok('8d. so ela cadastrada: gola e vies ficam no padrao',
+     a.excedenteCfg().gola === 5 && a.excedenteCfg().vies === 0, a.excedenteCfg());
+  ok('8e. barra invalida cai no padrao', com({ barra: 'x' }).excedenteCfg().barra === 15);
+  ok('8f. barra ZERO cadastrada vale', com({ barra: 0 }).excedenteCfg().barra === 0);
 }
 
 console.log('\n-- duas faixas so, que e um cadastro legitimo --');

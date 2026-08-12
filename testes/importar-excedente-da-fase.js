@@ -40,9 +40,11 @@ const api = new Function('STATE', `
   ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
   ${/const EXCEDENTE_GOLA_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_BARRA_CM = \d+;/.exec(src)[0]}
   ${/const _EXC_LIGACAO = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${/const _PAL_VIES = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${/const _PAL_GOLA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
+  ${/const _PAL_BARRA = new Set\(\[[^\]]*\]\);/.exec(src)[0]}
   ${recorte('function _normNome', 'a normalizacao de nome')}
   ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
   ${recorte('function _faseSoDe', 'o reconhecedor por nome inteiro')}
