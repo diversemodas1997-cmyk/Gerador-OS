@@ -52,10 +52,10 @@ const ok = (nome, cond, extra) => {
   if (!cond) falhas++;
 };
 const perto = (a, b) => Math.abs(a - b) < 1e-6;
-// O resultado sai arredondado em duas casas (bobina se mede em fração, mas não
-// em milésimos). Comparar contra o valor exato falharia por milésimos, então a
-// expectativa passa pelo mesmo arredondamento — e o teste documenta que ele existe.
-const bobDe = kg => Math.round((kg / 20) * 100) / 100;
+// Bobina não se abre pela metade: o consumo previsto arredonda SEMPRE para cima
+// e nunca sai fracionado. A expectativa passa pelo mesmo arredondamento — e o
+// teste documenta que ele existe.
+const bobDe = kg => Math.ceil(kg / 20 - 1e-9);
 
 // Uma OS reduzida ao que importa aqui. `tons` é opcional: { ordem: { tom: valor } }.
 const os = tons => ({ enfesto: {}, progresso: tons ? { enfestosTons: tons } : {} });
@@ -95,19 +95,43 @@ const kgFixo = kg => ({ comp: COMP, larg: LARG, peso: GRAM, camadas: 10, kg });
 ok('9. 40 kg -> 2 bobinas', bobinasEfetivasFase(os(), null, 1, kgFixo(40)) === 2,
    bobinasEfetivasFase(os(), null, 1, kgFixo(40)));
 ok('10. 20 kg -> 1 bobina', bobinasEfetivasFase(os(), null, 1, kgFixo(20)) === 1);
-ok('11. 10 kg -> meia bobina', bobinasEfetivasFase(os(), null, 1, kgFixo(10)) === 0.5);
-ok('12. sobra quebrada mantem duas casas',
-   bobinasEfetivasFase(os(), null, 1, kgFixo(38.88)) === 1.94,
+
+console.log('');
+console.log('-- bobina nao se abre pela metade: sempre para CIMA --');
+ok('11. 10 kg (meia bobina) -> 1 bobina inteira',
+   bobinasEfetivasFase(os(), null, 1, kgFixo(10)) === 1,
+   bobinasEfetivasFase(os(), null, 1, kgFixo(10)));
+ok('12. qualquer sobra abre mais uma bobina (38,88 kg = 1,944)',
+   bobinasEfetivasFase(os(), null, 1, kgFixo(38.88)) === 2,
    bobinasEfetivasFase(os(), null, 1, kgFixo(38.88)));
+ok('12a. um resto minimo ja conta como bobina (1,06 kg = 0,05)',
+   bobinasEfetivasFase(os(), null, 1, kgFixo(1.06)) === 1,
+   bobinasEfetivasFase(os(), null, 1, kgFixo(1.06)));
+ok('12b. o exato NAO sobe: 40 kg sao 2 bobinas, nao 3',
+   bobinasEfetivasFase(os(), null, 1, kgFixo(40)) === 2,
+   bobinasEfetivasFase(os(), null, 1, kgFixo(40)));
+ok('12c. nunca sai fracionado',
+   [1.06, 10, 20, 38.88, 40, 155.52, 64.25].every(
+     kg => Number.isInteger(bobinasEfetivasFase(os(), null, 1, kgFixo(kg)))),
+   [1.06, 10, 20, 38.88, 40, 155.52, 64.25].map(
+     kg => bobinasEfetivasFase(os(), null, 1, kgFixo(kg))).join(' '));
+// A OS 0461 de 12/08/2026, que levantou a regra: 4,25 m x 1,17 m x 71 camadas
+// de malha 182 g/m2 = 64,25 kg = 3,21 bobinas. Quem separa o material tira 4.
+ok('12d. o caso da OS 0461: 64,25 kg -> 4 bobinas',
+   bobinasEfetivasFase(os(), null, 1, kgFixo(64.25)) === 4,
+   bobinasEfetivasFase(os(), null, 1, kgFixo(64.25)));
 
 console.log('');
 console.log('-- e por isso acompanham as camadas, sem proporcao nenhuma --');
 ok('13. 80 camadas -> as bobinas do peso cheio',
    bobinasEfetivasFase(os(), null, 1, L80) === bobDe(L80.kg),
    bobinasEfetivasFase(os(), null, 1, L80));
-ok('14. metade das camadas -> metade das bobinas',
-   perto(bobinasEfetivasFase(os(), null, 1, L40) * 2, bobinasEfetivasFase(os(), null, 1, L80)),
-   bobinasEfetivasFase(os(), null, 1, L40));
+// Com o arredondamento para cima a proporção deixa de ser exata: metade das
+// camadas dá metade das bobinas ou uma a mais, nunca menos e nunca o dobro.
+ok('14. metade das camadas -> cerca de metade das bobinas (nunca mais que isso)',
+   bobinasEfetivasFase(os(), null, 1, L40) <= bobinasEfetivasFase(os(), null, 1, L80)
+   && bobinasEfetivasFase(os(), null, 1, L40) * 2 >= bobinasEfetivasFase(os(), null, 1, L80),
+   bobinasEfetivasFase(os(), null, 1, L40) + ' vs ' + bobinasEfetivasFase(os(), null, 1, L80));
 ok('15. o peso cadastrado no cadastro da grade e IGNORADO quando ha como pesar',
    bobinasEfetivasFase(os(), 999, 1, L80) === bobDe(L80.kg),
    bobinasEfetivasFase(os(), 999, 1, L80));
@@ -140,8 +164,8 @@ ok('21. enfesto cheio (80 camadas) -> o cadastro intacto',
 ok('22. 40 camadas -> metade do cadastro',
    bobinasEfetivasFase(os(), 14, 1, semPeso(40)) === 7,
    bobinasEfetivasFase(os(), 14, 1, semPeso(40)));
-ok('23. 20 camadas -> um quarto do cadastro',
-   bobinasEfetivasFase(os(), 14, 1, semPeso(20)) === 3.5,
+ok('23. 20 camadas -> um quarto do cadastro (3,5), arredondado para 4',
+   bobinasEfetivasFase(os(), 14, 1, semPeso(20)) === 4,
    bobinasEfetivasFase(os(), 14, 1, semPeso(20)));
 // A referencia e ABSOLUTA: nao depende do que a OS planejou, so das camadas dela.
 ok('24. 160 camadas -> o dobro (a referencia e absoluta, nao um teto)',

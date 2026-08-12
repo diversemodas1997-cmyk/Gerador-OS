@@ -14429,7 +14429,7 @@ function sugestaoBobinasFase(tecidoId, comp) {
  * A conta agora é física, e é a MESMA do consumo, só que lida ao contrário:
  *
  *     kg da fase   = comp × larg × camadas × gramatura ÷ 1000
- *     bobinas      = kg ÷ 20
+ *     bobinas      = kg ÷ 20, arredondado SEMPRE para cima
  *     camadas/bob. = 20 ÷ (comp × larg × gramatura ÷ 1000)
  *
  * Como o kg já sai das camadas, as bobinas acompanham sozinhas. Não há proporção
@@ -14469,11 +14469,22 @@ function camadasPorBobina(comp, larg, gramatura) {
   return PESO_BOBINA_KG / kgCamada;
 }
 
+// Bobina não se abre pela metade. O consumo previsto arredonda SEMPRE para
+// CIMA, e nunca sai fracionado: quem separa o material tira bobinas inteiras da
+// prateleira, e prever a menos é o erro caro — falta pano no meio do enfesto e o
+// enfesto para. 3,21 bobinas viram 4; 0,05 vira 1; só o zero continua zero.
+//
+// A folga de 1e-9 é contra o resto da conta de ponto flutuante: sem ela um
+// 2,0000000001 nascido de kg ÷ 20 viraria 3 bobinas.
+const CEIL_BOBINA_EPS = 1e-9;
+function bobinaInteira(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return v;
+  return Math.ceil(n - CEIL_BOBINA_EPS);
+}
+
 // Bobinas efetivas de uma fase. `L` é a linha de consumo dela (comp, larg,
 // camadas, peso, kg), como `consumoEnfestoOS` devolve.
-//
-// Duas casas em tudo: bobina se mede em fração (o campo do cadastro já aceita
-// 1/2), e arredondar para inteiro devolveria a imprecisão que se está corrigindo.
 function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
@@ -14483,15 +14494,15 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   // Caminho bom: o enfesto tem peso, então a conta é direta e acompanha as
   // camadas sozinha, porque o kg já foi calculado a partir delas.
   const kg = Number(L && L.kg);
-  if (isFinite(kg) && kg > 0) return Math.round((kg / PESO_BOBINA_KG) * 100) / 100;
+  if (isFinite(kg) && kg > 0) return bobinaInteira(kg / PESO_BOBINA_KG);
 
   // Reserva: sem gramatura cadastrada não há peso. Vale o que a casa cadastrou
   // na grade, que descreve um enfesto cheio — proporcional às camadas desta OS.
   const prev = Number(bobinasPrevistas);
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
   const cam = parseInt(L && L.camadas, 10) || 0;
-  if (!(cam > 0)) return prev;
-  return Math.round(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO) * 100) / 100;
+  if (!(cam > 0)) return bobinaInteira(prev);
+  return bobinaInteira(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO));
 }
 
 // O que a célula "Bobinas" da folha mostra. Até aqui ela só existia quando a
@@ -14517,8 +14528,10 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
 
   const kg = L && Number(L.kg);
   if (isFinite(kg) && kg > 0) {
+    const cru = kg / PESO_BOBINA_KG;
     const porBob = L ? camadasPorBobina(L.comp, L.larg, L.peso) : null;
-    return `${num(kg)} kg deste enfesto ÷ ${PESO_BOBINA_KG} kg por bobina.`
+    return `${num(kg)} kg deste enfesto ÷ ${PESO_BOBINA_KG} kg por bobina = ${num(cru)},`
+         + ` arredondado para cima: ${bobinaInteira(cru)} bobina(s) inteira(s).`
          + (porBob ? ` Cada bobina rende cerca de ${num(porBob)} camadas aqui`
                    + ` (${num(L.comp)} m × ${num(L.larg)} m × ${num(L.peso)} g/m²).` : '');
   }
@@ -14527,9 +14540,11 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
   if (!isFinite(prev) || prev <= 0) return padrao;
   const cam = parseInt(L && L.camadas, 10) || 0;
   if (!(cam > 0)) return padrao;
+  const cru = prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO);
   return `Sem gramatura cadastrada para pesar o enfesto, entao vale o cadastro da`
        + ` grade: ${prev} bobinas para um enfesto cheio de`
-       + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam}.`;
+       + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam} —`
+       + ` ${num(cru)}, arredondado para cima: ${bobinaInteira(cru)}.`;
 }
 
 /* ===== FIM BOBINAS POR CAMADAS REAIS ===== */
@@ -19371,12 +19386,11 @@ function renderEnfestoBox(o) {
 
   const fmt = n => n ? Number(n).toFixed(2).replace('.',',') : '—';
   const fmtKg = n => Number(n).toFixed(3).replace('.',',');
-  const fmtBob = n => {
-    if (n === 0) return '0';
-    if (Number.isInteger(n)) return String(n);
-    if (Math.abs(n - 0.5) < 1e-9) return '½';
-    return Number(n).toFixed(2).replace(/0+$/, '').replace(/[.]$/, '').replace('.', ',');
-  };
+  // Bobina inteira sempre — `bobinasEfetivasFase` já arredonda para cima, então
+  // aqui nao ha mais fracao para formatar. O `toFixed` continua como rede: se
+  // algum dia chegar um numero quebrado, ele aparece em vez de sumir.
+  const fmtBob = n => Number.isInteger(n) ? String(n)
+    : Number(n).toFixed(2).replace(/0+$/, '').replace(/[.]$/, '').replace('.', ',');
   // Previsão de consumo (bobinas) por fase — vem do cadastro da grade viva
   // (previsão de demanda). Se a grade não tem previsão, a coluna Consumo segue
   // mostrando o kg calculado do enfesto (comportamento antigo).
