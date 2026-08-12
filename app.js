@@ -2639,6 +2639,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
         <div class="field"><label>Peso / gramatura padrão (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">Fallback: a gramatura principal agora é cadastrada por <b>cor</b>. Este valor só é usado quando a cor não tem gramatura própria.</div></div>
         <div class="field"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" id="m-excedente" value="${esc(item.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto este tecido ganha de sobra no <b>comprimento</b> ao ser enfestado: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra na fase). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada — ela é a do tecido. Em branco vale ${EXCEDENTE_ENFESTO_PADRAO_CM} cm.</div></div>
+        <div class="field"><label>Peso médio da bobina (kg)</label><input type="number" min="0" step="0.5" id="m-peso-bobina" value="${esc(item.pesoBobina||'')}" placeholder="Ex.: 22"><div class="field-hint">Quanto pesa, em média, uma bobina <b>deste</b> tecido. Só é usado onde a grade não sabe prever bobinas — hoje a <b>ribana</b>, que vem em rolo de outro tamanho e não segue a conta do tecido principal. Em branco, a folha mostra <b>—</b> na ribana em vez de chutar.</div></div>
         <div class="field full"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
       </div>`;
   }
@@ -4172,6 +4173,10 @@ async function salvarCadastro() {
     // `|| 0`, que apagaria a diferença entre os dois.
     const exc = String(v('m-excedente')).trim().replace(',', '.');
     item.excedente = exc === '' ? '' : (Math.max(0, parseFloat(exc)) || 0);
+    // Peso médio de uma bobina deste tecido, em kg. Zero = não informado, e
+    // "não informado" tem que continuar aparecendo como "—" na folha: é
+    // exatamente o que o programa deve esperar antes de prever bobina de ribana.
+    item.pesoBobina = Math.max(0, parseFloat(String(v('m-peso-bobina')).replace(',', '.')) || 0);
   }
   else if (tipo === 'cor') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -4726,7 +4731,8 @@ function renderTecidos() {
       <td><strong>${esc(t.nome)}</strong></td>
       <td>${esc(t.desc)}</td>
       <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}${
+        t.pesoBobina ? `<div style="font-size:10px;color:var(--ink-3);">bobina ${esc(t.pesoBobina)} kg</div>` : ''}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;${proprio ? '' : 'color:var(--ink-3);'}">${
         esc(excedenteEnfestoCm(t.id))} cm${proprio ? '' : ' <span style="font-size:10px;">(padrão)</span>'}</td>
       ${acoesCell('tecido', t.id)}
@@ -14479,17 +14485,43 @@ function bobinaInteira(v) {
   return Math.ceil(n - CEIL_BOBINA_EPS);
 }
 
-// Bobinas efetivas de uma fase: o que a casa cadastrou na grade para um enfesto
-// cheio, na proporção das camadas que ESTA OS enfestou. `L` é a linha de consumo
-// da fase (comp, larg, camadas, peso, kg), como `consumoEnfestoOS` devolve.
+// A ribana não entra na conta do tecido principal. O número de bobinas do
+// cadastro da grade descreve o enfesto do CORPO; a ribana vem em rolo de outro
+// tamanho, é enfestada em outra largura e outro número de camadas, e o "1
+// bobina" que está cadastrado nela é um mínimo de separação, não uma medida.
 //
-// O kg do enfesto não entra aqui de propósito: transformar quilo em bobina
-// exigiria saber quanto pesa uma bobina, que é justamente o que ninguém mede.
+// Enquanto não houver as duas coisas que faltam — a gramatura de cada ribana em
+// cada cor e o peso médio da bobina daquele tecido —, a folha mostra "—". Um
+// tracinho é a resposta honesta; um número tirado da conta errada viraria compra
+// errada.
+function ehFaseRibana(L) {
+  return /ribana/i.test((L && (L.tecidoReal || L.nomeEnf)) || '');
+}
+
+// Bobinas efetivas de uma fase. `L` é a linha de consumo da fase (comp, larg,
+// camadas, peso, kg, pesoBobina), como `consumoEnfestoOS` devolve.
+//
+// Tecido principal: o que a casa cadastrou na grade para um enfesto cheio, na
+// proporção das camadas que ESTA OS enfestou. O kg não entra — transformar quilo
+// em bobina exigiria saber quanto pesa uma bobina, que é o que ninguém mede.
+//
+// Ribana: aí sim é pelo peso, porque é a única medida que existe para ela — mas
+// só quando as duas pontas estiverem cadastradas.
 function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
       && _faseNaoEnfestadaPorTom(o, ordem)) return 0;
+
+  if (ehFaseRibana(L)) {
+    // Exige a gramatura DA RIBANA naquela cor — não a do tecido principal, que é
+    // o que a fase costuma ter emprestado — e o peso médio da bobina.
+    const kg = Number(L && L.kg);
+    const pb = Number(L && L.pesoBobina);
+    if (!isFinite(kg) || kg <= 0 || !L.pesoDesteTecido) return null;
+    if (!isFinite(pb) || pb <= 0) return null;
+    return bobinaInteira(kg / pb);
+  }
 
   const prev = Number(bobinasPrevistas);
   // Sem cadastro não há previsão nenhuma a dar: devolve o que veio (a folha
@@ -14553,6 +14585,29 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
     return 'Fase declarada nao enfestada na folha: nao consumiu bobina.';
   }
 
+  // A ribana tem conta propria, e ela so existe com as duas pontas cadastradas.
+  if (ehFaseRibana(L)) {
+    const kg = Number(L && L.kg), pb = Number(L && L.pesoBobina);
+    const temGram = isFinite(kg) && kg > 0 && !!(L && L.pesoDesteTecido);
+    if (temGram && isFinite(pb) && pb > 0) {
+      return `Ribana: ${num(kg)} kg deste enfesto ÷ ${num(pb)} kg por bobina`
+           + ` (peso medio cadastrado no tecido) = ${num(kg / pb)},`
+           + ` arredondado para cima: ${bobinaInteira(kg / pb)}.`;
+    }
+    const falta = [];
+    if (!temGram) {
+      falta.push(`a gramatura da ribana nesta cor`
+        + (kg > 0 && L && L.corReal
+            ? ` (a fase esta com a cor ${L.corReal}, que e do tecido principal)` : ''));
+    }
+    if (!(isFinite(pb) && pb > 0)) {
+      falta.push(`o peso medio da bobina de ${L && L.tecidoReal ? L.tecidoReal : 'ribana'}`
+               + ` (no cadastro do tecido)`);
+    }
+    return `A ribana nao segue a conta do tecido principal: o cadastro de bobinas`
+         + ` da grade descreve o enfesto do corpo. Falta cadastrar ${falta.join(' e ')}.`;
+  }
+
   const prev = Number(bobinasPrevistas);
   if (!isFinite(prev) || prev <= 0) return padrao;
   const cam = parseInt(L && L.camadas, 10) || 0;
@@ -14584,11 +14639,9 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
     // O alerta que teria poupado a investigação da OS 0461. É de um lado só, e
     // de propósito: bobina LEVE demais quer dizer gramatura cadastrada a menos,
     // que é o defeito real; pesada demais pode ser só um pano pesado de verdade
-    // (moletom passa dos 50 kg). A ribana fica de fora porque vem em rolo
-    // pequeno mesmo — alarmar nela seria alarmar em toda OS, e alarme que toca
-    // todo dia ninguém lê.
-    const ehRibana = /ribana/i.test(L.tecidoReal || L.nomeEnf || '');
-    if (!ehRibana && peso < PESO_BOBINA_MIN_KG) {
+    // (moletom passa dos 50 kg), e alarme que toca todo dia ninguém lê. A ribana
+    // nem chega aqui — ela saiu antes, pela conta própria dela.
+    if (peso < PESO_BOBINA_MIN_KG) {
       txt += ` ATENCAO: uma bobina nao pesa menos que ${PESO_BOBINA_MIN_KG} kg`
            + ` — confira a gramatura de ${L.corReal || 'desta cor'}`
            + ` (${num(L.peso)} g/m²).`;
@@ -18964,6 +19017,16 @@ function gramaturaTecidoPorNome(nome) {
   return t ? (parseFloat(t.peso) || 0) : 0;
 }
 
+// Peso médio de uma BOBINA daquele tecido, em kg, buscado pelo NOME. Zero quer
+// dizer "ninguém informou ainda" — e é assim que tem de continuar chegando na
+// folha, para a ribana esperar em vez de mostrar um número inventado.
+function pesoBobinaPorNome(nome) {
+  if (!nome) return 0;
+  const alvo = _normNome(nome);
+  const t = (STATE.tecidos || []).find(x => _normNome(x.nome) === alvo);
+  return t ? (parseFloat(t.pesoBobina) || 0) : 0;
+}
+
 // Peso/gramatura (g/m²) de uma COR cadastrada, buscada pelo NOME. A gramatura
 // passou a ser cadastrada por cor (varia conforme a cor); tem prioridade sobre
 // a do tecido. Retorna 0 se não cadastrada ou sem peso (aí cai no tecido).
@@ -19093,11 +19156,25 @@ function consumoEnfestoOS(o) {
     // Gramatura: prioridade para a COR (varia conforme a cor); se a cor não
     // tem peso cadastrado, cai no peso do TECIDO (compatibilidade). Por fim
     // tenta pelo nome do enfesto.
-    const peso = gramaturaCorPorNome(corReal)
-      || gramaturaTecidoPorNome(tecidoReal)
-      || gramaturaTecidoPorNome(nomeEnf);
+    const pesoDaCor = gramaturaCorPorNome(corReal);
+    const pesoDoTecido = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
+    const peso = pesoDaCor || pesoDoTecido;
     const kg = (comp * larg * camadas * peso) / 1000;
-    return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg, ehVies };
+    // A gramatura encontrada é mesmo a DESTE tecido, ou é emprestada?
+    //
+    // Fase de ribana costuma ficar com a cor do tecido principal ("Azul Malha
+    // Algodão" numa fase de "Ribana Malha Algodão"), e aí a gramatura que se
+    // acha é a do corpo. Para o kg isso já era assim e segue igual; para prever
+    // BOBINA de ribana não serve — é gramatura de outro pano. O nome da cor
+    // termina no nome do tecido quando ela é a cor certa daquele tecido.
+    const pesoDesteTecido = pesoDaCor
+      ? _normNome(corReal).endsWith(' ' + _normNome(tecidoReal))
+      : pesoDoTecido > 0;
+    // Peso médio de uma bobina DESTE tecido. Só a ribana usa (ver
+    // `bobinasEfetivasFase`); vazio é resposta legítima e vira "—" na folha.
+    const pesoBobina = pesoBobinaPorNome(tecidoReal) || pesoBobinaPorNome(nomeEnf);
+    return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg,
+             pesoDesteTecido, pesoBobina, ehVies };
   });
 }
 

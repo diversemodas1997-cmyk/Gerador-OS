@@ -48,11 +48,11 @@ const api = new Function(
   src.slice(ini, fim) + '\n' + src.slice(iniF, fimF + 2) + '\n'
   + 'return { CAMADAS_REF_BOBINAS_CADASTRO, PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,'
   + ' bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,'
-  + ' metrosPorBobinaFase, _tituloBobinas, _bobinasCelula };'
+  + ' metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula };'
 )();
 const { CAMADAS_REF_BOBINAS_CADASTRO, PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,
         bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,
-        metrosPorBobinaFase, _tituloBobinas, _bobinasCelula } = api;
+        metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula } = api;
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -198,21 +198,76 @@ ok('32. bobina leve demais manda conferir a gramatura da cor',
 
 console.log('');
 console.log('-- o alarme nao pode tocar a toa --');
-// A gola da propria OS 0461: 1 bobina cadastrada, 14 camadas de ribana. Se a
-// conta dividisse pelo numero arredondado, diria que a bobina pesa 1,3 kg.
-const gola = { comp: 0.8, larg: 0.65, peso: 182, camadas: 14, corReal: 'Azul Ribana Malha Algodão',
-               tecidoReal: 'Ribana Malha Algodão', kg: (0.8 * 0.65 * 14 * 182) / 1000 };
-const tGola = _tituloBobinas(os(), gola, 1, 2);
-ok('33. a gola nao inventa bobina de 1 kg (divide pelo cru, nao pelo arredondado)',
-   !tGola.includes('1,33 kg') && !tGola.includes('1,32 kg'), tGola);
-ok('34. e nao alarma: ribana vem em rolo pequeno mesmo',
-   !tGola.includes('ATENCAO'), tGola);
-ok('35. pano pesado de verdade tambem nao alarma (so o leve demais alarma)',
+ok('33. pano pesado de verdade nao alarma (so o leve demais alarma)',
    !_tituloBobinas(os(), linha(COMP, LARG, GRAM * 3, 80), CADASTRO, 1).includes('ATENCAO'),
    _tituloBobinas(os(), linha(COMP, LARG, GRAM * 3, 80), CADASTRO, 1));
-ok('36. fase nao enfestada diz isso, e nao um numero',
+ok('34. fase nao enfestada diz isso, e nao um numero',
    _tituloBobinas(osMista, cheio, CADASTRO, 2).toLowerCase().includes('nao enfestada'),
    _tituloBobinas(osMista, cheio, CADASTRO, 2));
+
+console.log('');
+console.log('-- RIBANA: conta propria, e o programa espera os dados --');
+// A gola da propria OS 0461. O "1 bobina" cadastrado na grade descreve o corpo,
+// nao a ribana — e por isso NAO pode virar previsao de ribana.
+const golaBase = { comp: 0.8, larg: 0.65, camadas: 14,
+                   corReal: 'Azul Ribana Malha Algodão', tecidoReal: 'Ribana Malha Algodão' };
+// `pesoDesteTecido` diz se a gramatura achada e da PROPRIA ribana; a fase
+// costuma ficar com a cor do tecido principal, e aquela gramatura nao serve.
+const ribana = (gram, pesoBobina) => ({ ...golaBase, peso: gram, pesoBobina,
+                                        pesoDesteTecido: gram > 0,
+                                        kg: (0.8 * 0.65 * 14 * gram) / 1000 });
+ok('35. reconhece a fase de ribana pelo nome do tecido',
+   ehFaseRibana(golaBase) === true && ehFaseRibana(cheio) === false);
+ok('36. sem gramatura e sem peso de bobina -> nao prevê nada (folha mostra tracinho)',
+   bobinasEfetivasFase(os(), 1, 2, ribana(0, 0)) === null,
+   bobinasEfetivasFase(os(), 1, 2, ribana(0, 0)));
+ok('37. com gramatura mas SEM o peso da bobina -> continua esperando',
+   bobinasEfetivasFase(os(), 1, 2, ribana(220, 0)) === null,
+   bobinasEfetivasFase(os(), 1, 2, ribana(220, 0)));
+ok('38. com o peso da bobina mas SEM gramatura -> continua esperando',
+   bobinasEfetivasFase(os(), 1, 2, ribana(0, 8)) === null,
+   bobinasEfetivasFase(os(), 1, 2, ribana(0, 8)));
+ok('39. o cadastro de bobinas da grade NAO vale para a ribana',
+   bobinasEfetivasFase(os(), 99, 2, ribana(0, 0)) === null,
+   bobinasEfetivasFase(os(), 99, 2, ribana(0, 0)));
+// 0,8 x 0,65 x 14 camadas x 220 g/m2 = 1,601 kg; bobina de 8 kg -> 0,2 -> 1.
+ok('40. com as duas pontas cadastradas, prevê pelo peso: 1,6 kg / 8 kg -> 1 bobina',
+   bobinasEfetivasFase(os(), 1, 2, ribana(220, 8)) === 1,
+   bobinasEfetivasFase(os(), 1, 2, ribana(220, 8)));
+ok('41. e acompanha o tamanho do enfesto (10 camadas de sobra pedem outra bobina)',
+   bobinasEfetivasFase(os(), 1, 2, { ...ribana(220, 8), camadas: 100,
+     kg: (0.8 * 0.65 * 100 * 220) / 1000 }) === 2,
+   bobinasEfetivasFase(os(), 1, 2, { ...ribana(220, 8), camadas: 100,
+     kg: (0.8 * 0.65 * 100 * 220) / 1000 }));
+ok('42. ribana declarada nao enfestada segue zerando',
+   bobinasEfetivasFase(osMista, 1, 2, ribana(220, 8)) === 0,
+   bobinasEfetivasFase(osMista, 1, 2, ribana(220, 8)));
+ok('43. a folha mostra tracinho enquanto falta dado',
+   _bobinasCelula(os(), ribana(220, 0), 1, 2, true, fmt) === '—',
+   _bobinasCelula(os(), ribana(220, 0), 1, 2, true, fmt));
+const tRib = _tituloBobinas(os(), ribana(220, 0), 1, 2);
+ok('44. e a dica diz exatamente o que falta cadastrar',
+   tRib.includes('peso medio da bobina') && tRib.includes('Ribana Malha Algodão')
+   && !tRib.includes('gramatura de Azul'), tRib);
+ok('45. faltando os dois, cobra os dois',
+   _tituloBobinas(os(), ribana(0, 0), 1, 2).includes('gramatura')
+   && _tituloBobinas(os(), ribana(0, 0), 1, 2).includes('peso medio'),
+   _tituloBobinas(os(), ribana(0, 0), 1, 2));
+ok('46. com tudo cadastrado, a dica mostra a conta da ribana',
+   _tituloBobinas(os(), ribana(220, 8), 1, 2).startsWith('Ribana:'),
+   _tituloBobinas(os(), ribana(220, 8), 1, 2));
+
+// O caso real da OS 0461: a fase de ribana esta com a cor do tecido principal
+// ("Azul Malha Algodao", 182 g/m2). Ha gramatura, mas ela e de outro pano.
+const golaEmprestada = { ...golaBase, corReal: 'Azul Malha Algodão', peso: 182,
+                         pesoDesteTecido: false, pesoBobina: 8,
+                         kg: (0.8 * 0.65 * 14 * 182) / 1000 };
+ok('47. gramatura EMPRESTADA do tecido principal nao serve, mesmo com peso de bobina',
+   bobinasEfetivasFase(os(), 1, 2, golaEmprestada) === null,
+   bobinasEfetivasFase(os(), 1, 2, golaEmprestada));
+ok('48. e a dica explica que a cor da fase e a do tecido principal',
+   _tituloBobinas(os(), golaEmprestada, 1, 2).includes('tecido principal'),
+   _tituloBobinas(os(), golaEmprestada, 1, 2));
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
