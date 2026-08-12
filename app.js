@@ -1834,6 +1834,7 @@ async function submeterAuth() {
     await loadState();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
+    await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -2391,6 +2392,39 @@ async function migrarEtapasOS() {
   } catch (e) { console.warn('migrarEtapasOS', e); }
 }
 
+// Migração ÚNICA (admin): o excedente de enfesto sai do TECIDO e passa a morar
+// na FASE da grade, que é onde ele varia de verdade — cada fase estende um
+// comprimento diferente e ganha uma sobra diferente.
+//
+// Copia o que estava cadastrado em cada tecido para as fases DAQUELE tecido que
+// ainda não têm valor próprio. Sem isso, mover o campo mudaria medida sozinho:
+// a Ribana Malha Algodão estava com 5 cm, e todas as fases dela voltariam ao
+// padrão de 15 na primeira importação de risco. Roda 1× (flag em STATE.meta).
+async function migrarExcedenteParaFases() {
+  if (currentRole !== 'admin' || !Array.isArray(STATE.grades)) return;
+  STATE.meta = STATE.meta || {};
+  if (STATE.meta.excedentePorFaseV1) return;            // já rodou — não mexe mais
+  const doTecido = {};
+  (STATE.tecidos || []).forEach(t => {
+    const v = t.excedente;
+    if (v !== '' && v != null && isFinite(parseFloat(v))) doTecido[t.id] = Math.max(0, parseFloat(v));
+  });
+  let mudou = 0;
+  STATE.grades.forEach(g => (g.fases || []).forEach(f => {
+    if (f.excedente !== '' && f.excedente != null) return;   // a fase já tem o dela
+    const v = doTecido[f.tecidoId];
+    if (v == null) return;                                   // tecido sem valor: fica no padrão
+    f.excedente = v;
+    mudou++;
+  }));
+  STATE.meta.excedentePorFaseV1 = true;
+  try {
+    if (mudou) await saveState('grades');
+    await saveState('meta');
+    if (mudou) toast(`Excedente de enfesto movido para ${mudou} fase(s)`, 'ok');
+  } catch (e) { console.warn('migrarExcedenteParaFases', e); }
+}
+
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
 
 /* ========================================================= */
@@ -2638,7 +2672,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </select>
         </div>
         <div class="field"><label>Peso / gramatura padrão (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">Fallback: a gramatura principal agora é cadastrada por <b>cor</b>. Este valor só é usado quando a cor não tem gramatura própria.</div></div>
-        <div class="field"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" id="m-excedente" value="${esc(item.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto este tecido ganha de sobra no <b>comprimento</b> ao ser enfestado: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra na fase). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada — ela é a do tecido. Em branco vale ${EXCEDENTE_ENFESTO_PADRAO_CM} cm.</div></div>
+        <div class="field"><label>Excedente de enfesto</label><div class="field-hint" style="padding-top:6px;">Saiu daqui: agora é cadastrado em <b>cada fase de cada grade</b>, junto do comprimento. A sobra não é do pano — ela depende do comprimento que a fase estende, e um corpo de 8 m e um viés de 1 m do mesmo tecido não levam a mesma.</div></div>
         <div class="field"><label>Peso médio da bobina (kg)</label><input type="number" min="0" step="0.5" id="m-peso-bobina" value="${esc(item.pesoBobina||'')}" placeholder="Ex.: 22"><div class="field-hint">Quanto pesa, em média, uma bobina <b>deste</b> tecido. Só é usado onde a grade não sabe prever bobinas — hoje a <b>ribana</b>, que vem em rolo de outro tamanho e não segue a conta do tecido principal. Em branco, a folha mostra <b>—</b> na ribana em vez de chutar.</div></div>
         <div class="field full"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
       </div>`;
@@ -3637,6 +3671,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="atualizarSugestaoBobinas(this)" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" placeholder="Ex.: 1,80"></div>
+      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. Em branco vale ${EXCEDENTE_ENFESTO_PADRAO_CM} cm.</div></div>
       <div class="field full">
         <label>Tempo de enfesto desta fase</label>
         <div class="fase-enf-tempo">
@@ -4167,12 +4202,9 @@ async function salvarCadastro() {
     item.desc = v('m-desc');
     item.categoria = v('m-categoria');
     item.peso = parseFloat(String(v('m-peso')).replace(',', '.')) || 0;
-    // Excedente de enfesto em CENTÍMETROS, como se fala no chão. Vazio é
-    // diferente de zero: vazio significa "usa o padrão da casa", e zero
-    // significa "este tecido não leva sobra nenhuma" — por isso não cai num
-    // `|| 0`, que apagaria a diferença entre os dois.
-    const exc = String(v('m-excedente')).trim().replace(',', '.');
-    item.excedente = exc === '' ? '' : (Math.max(0, parseFloat(exc)) || 0);
+    // `item.excedente` não é mais editado aqui — mudou para a fase da grade. O
+    // valor antigo fica no dado até a migração levá-lo para as fases; mexer nele
+    // agora só apagaria o que ainda não foi copiado.
     // Peso médio de uma bobina deste tecido, em kg. Zero = não informado, e
     // "não informado" tem que continuar aparecendo como "—" na folha: é
     // exatamente o que o programa deve esperar antes de prever bobina de ribana.
@@ -4220,6 +4252,11 @@ async function salvarCadastro() {
     });
     item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => {
       const pb = parseBobinas(b.querySelector('.fase-bobinas')?.value);
+      // Excedente de enfesto em CENTÍMETROS, como se fala no chão. Vazio é
+      // diferente de zero: vazio significa "usa o padrão da casa", e zero
+      // significa "esta fase não leva sobra nenhuma" — por isso não cai num
+      // `|| 0`, que apagaria a diferença entre os dois.
+      const exc = String(b.querySelector('.fase-excedente')?.value ?? '').trim().replace(',', '.');
       return {
         ordem: i + 1,
         nome: b.querySelector('.fase-nome')?.value || '',
@@ -4227,6 +4264,7 @@ async function salvarCadastro() {
         unidades: parseInt(b.querySelector('.fase-unid')?.value) || 2,
         comp: b.querySelector('.fase-comp')?.value || '',
         larg: b.querySelector('.fase-larg')?.value || '',
+        excedente: exc === '' ? '' : Math.max(0, parseFloat(exc) || 0),
         bobinas: pb == null ? '' : pb,
         // Tempo de enfesto DESTA fase. É o número mais específico que o cadastro
         // tem: um por pano, e não um só para o posto inteiro. 0 = não cadastrado.
@@ -4720,24 +4758,19 @@ function _cadBuscaFiltrar(page) {
 
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
-  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
   const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 36', outro: 'Outro' };
-  tb.innerHTML = STATE.tecidos.map(t => {
-    // Quem não cadastrou aparece com o padrão em cinza — assim a coluna não
-    // mente dizendo "—" para um tecido que na prática recebe 15 cm.
-    const proprio = !(t.excedente === '' || t.excedente == null);
-    return `
+  // A coluna do excedente saiu daqui junto com o campo: ele agora é cadastrado
+  // por FASE da grade, e um tecido não tem mais um número só para mostrar.
+  tb.innerHTML = STATE.tecidos.map(t => `
     <tr>
       <td><strong>${esc(t.nome)}</strong></td>
       <td>${esc(t.desc)}</td>
       <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}${
         t.pesoBobina ? `<div style="font-size:10px;color:var(--ink-3);">bobina ${esc(t.pesoBobina)} kg</div>` : ''}</td>
-      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;${proprio ? '' : 'color:var(--ink-3);'}">${
-        esc(excedenteEnfestoCm(t.id))} cm${proprio ? '' : ' <span style="font-size:10px;">(padrão)</span>'}</td>
       ${acoesCell('tecido', t.id)}
-    </tr>`;
-  }).join('');
+    </tr>`).join('');
 }
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
@@ -20155,9 +20188,11 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
 // corte não morrer na borda. O excedente é somado sempre ao COMPRIMENTO. A
 // LARGURA não recebe nada — ela é a do tecido, e o tecido não estica.
 //
-// A sobra é POR TECIDO, e sai do cadastro dele ("Excedente de enfesto (cm)"):
-// malha, moletom e ribana não se comportam igual na enfestadeira, e quem enfesta
-// sabe de quanto cada um precisa. Este número aqui é só o padrão de quem ainda
+// A sobra é POR FASE, e sai do cadastro da grade ("Excedente de enfesto (cm)",
+// no bloco de cada fase). Morou no TECIDO até 12/08/2026 e mudou de lugar porque
+// não é do pano: depende do COMPRIMENTO que aquela fase estende. Um corpo de 8 m
+// e um viés de 1 m saem do mesmo rolo e não levam a mesma ponta. Quem enfesta
+// sabe de quanto cada fase precisa. Este número aqui é só o padrão de quem ainda
 // não foi cadastrado.
 //
 // Os 15 cm conferem com o que já estava cadastrado à mão: no
@@ -20166,11 +20201,15 @@ const ALL_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','d
 // cm, que é o arredondamento de quem digitou.
 const EXCEDENTE_ENFESTO_PADRAO_CM = 15;
 
-// O excedente de um tecido, em METROS. Vazio (nunca cadastrado) cai no padrão;
-// zero cadastrado é zero de verdade — há tecido que não leva sobra.
-function excedenteEnfestoM(tecidoId) {
-  const t = tecidoId ? (STATE.tecidos || []).find(x => x.id === tecidoId) : null;
-  const v = t ? t.excedente : null;
+// O excedente de uma FASE, em METROS. Vazio (nunca cadastrado) cai no padrão;
+// zero cadastrado é zero de verdade — há fase que não leva sobra.
+//
+// Ele morava no TECIDO e mudou de lugar em 12/08/2026: a sobra não é do pano, é
+// do enfesto. A ponta que a enfestadeira segura e a folga das bordas dependem do
+// COMPRIMENTO que aquela fase estende — um corpo de 8 m e um viés de 1 m do
+// mesmo tecido não levam a mesma sobra. Quem sabe disso é a fase, não o rolo.
+function excedenteEnfestoM(fase) {
+  const v = fase ? fase.excedente : null;
   const cm = (v === '' || v == null || !isFinite(parseFloat(v)))
     ? EXCEDENTE_ENFESTO_PADRAO_CM
     : Math.max(0, parseFloat(v));
@@ -20178,12 +20217,12 @@ function excedenteEnfestoM(tecidoId) {
 }
 
 // Rótulo curto do excedente, para a tela dizer de quanto foi a soma.
-const excedenteEnfestoCm = tecidoId => Math.round(excedenteEnfestoM(tecidoId) * 100);
+const excedenteEnfestoCm = fase => Math.round(excedenteEnfestoM(fase) * 100);
 
 // A medida que vai para o CADASTRO, a partir da que o relatório informa.
-// `tecidoId` é o tecido DAQUELA fase — é ele que manda no excedente.
-const _riscoCompCadastro = (compPdf, tecidoId) =>
-  (compPdf == null ? null : compPdf + excedenteEnfestoM(tecidoId));
+// `fase` é a fase que vai receber a medida — é ela que manda no excedente.
+const _riscoCompCadastro = (compPdf, fase) =>
+  (compPdf == null ? null : compPdf + excedenteEnfestoM(fase));
 
 let _riscoLeituras = [];
 
@@ -20500,10 +20539,10 @@ function _riscoResolverFase(leitura, grade) {
   if (pool.length && leitura.comprimento != null) {
     // Compara com a medida DE CADASTRO (já com o excedente), não com a do
     // relatório: senão toda fase pareceria estar o excedente inteiro fora.
-    // O excedente é o do tecido de CADA fase — duas fases do mesmo risco podem
-    // ser de tecidos diferentes, com sobras diferentes.
+    // O excedente é o de CADA fase — duas fases do mesmo risco estendem
+    // comprimentos diferentes, e cada uma tem a sobra dela.
     const ord = pool.map(f => ({
-      f, d: Math.abs(_riscoF(f.comp) - _riscoCompCadastro(leitura.comprimento, f.tecidoId))
+      f, d: Math.abs(_riscoF(f.comp) - _riscoCompCadastro(leitura.comprimento, f))
     })).sort((a, b) => a.d - b.d);
     const folga = ord.length > 1 ? ord[1].d : null;
     // Escolha APERTADA (a segunda opção quase tão perto) não decide sozinha.
@@ -20920,12 +20959,12 @@ function _riscoHtmlGradesNovas() {
         Fase <b>sem risco</b> nasce sem medida — entra depois, por outro PDF ou à mão. Dá para renomear, tirar e acrescentar.
       </div>
       <table class="table" style="font-size:12px;margin-top:4px;">
-        <thead><tr><th style="width:26px;">#</th><th>Nome da fase *</th><th>Tecido *</th><th>Unid.</th><th>Medida (risco + excedente do tecido)</th><th>Arquivo</th><th style="width:28px;"></th></tr></thead>
+        <thead><tr><th style="width:26px;">#</th><th>Nome da fase *</th><th>Tecido *</th><th>Unid.</th><th>Medida (risco + excedente da fase)</th><th>Arquivo</th><th style="width:28px;"></th></tr></thead>
         <tbody>
           ${d.fases.map((f, fi) => {
             const L = f.iPdf != null && G.itens[f.iPdf] ? G.itens[f.iPdf].L : null;
             const medida = L
-              ? `${esc((_riscoCompCadastro(L.comprimento, f.tecidoId) || 0).toFixed(2))} × ${esc((L.largura || 0).toFixed(3))}
+              ? `${esc((_riscoCompCadastro(L.comprimento, f) || 0).toFixed(2))} × ${esc((L.largura || 0).toFixed(3))}
                  <div style="color:var(--ink-3);font-size:10px;">tecido no risco: ${esc(L.tecido || '—')}</div>`
               : `<span style="color:var(--ink-3);">— sem risco —</span>`;
             return `<tr>
@@ -21012,12 +21051,13 @@ async function criarGradeDoRisco(gi) {
     // manual guarda uma fase ainda não medida, e é o que a folha de OS entende.
     fases: linhas.map((x, i) => ({
       ordem: i + 1, nome: x.nome, tecidoId: x.tecidoId, unidades: x.unidades,
-      comp: x.L ? _riscoCompCadastro(x.L.comprimento, x.tecidoId).toFixed(2) : '',
+      excedente: '',                       // fase nova nasce no padrão da casa
+      comp: x.L ? _riscoCompCadastro(x.L.comprimento, x).toFixed(2) : '',
       larg: x.L ? x.L.largura.toFixed(3) : '',
       // Bobinas previstas o relatório não traz. Em malha algodão a regra da casa
       // dá o número pelo comprimento; nos outros tecidos fica em branco, para
       // ser preenchida quando alguém souber.
-      bobinas: x.L ? (sugestaoBobinasFase(x.tecidoId, _riscoCompCadastro(x.L.comprimento, x.tecidoId)) ?? '') : ''
+      bobinas: x.L ? (sugestaoBobinasFase(x.tecidoId, _riscoCompCadastro(x.L.comprimento, x)) ?? '') : ''
     }))
   };
   // Campos legados (espelho da 1ª fase COM medida), como o cadastro manual grava.
@@ -21067,7 +21107,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado no tecido</b> (${EXCEDENTE_ENFESTO_PADRAO_CM} cm nos que não têm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (${EXCEDENTE_ENFESTO_PADRAO_CM} cm nas que não têm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>
@@ -21186,7 +21226,7 @@ function renderRiscoResultado() {
         oninput="riscoNomeFaseNova(${i}, this.value)" style="font-size:12px;width:100%;margin-top:3px;">` : ''}` : '—';
 
     const atual = L.res.fase ? `${fmt(L.res.fase.comp || '—')} × ${fmt(L.res.fase.larg || '—')}` : '—';
-    const compCad = _riscoCompCadastro(L.comprimento, (L.res.fase || {}).tecidoId);
+    const compCad = _riscoCompCadastro(L.comprimento, L.res.fase);
     // SEM MEDIDA, dito com todas as letras. Um "— × —" nesta coluna se lê como
     // "não mudou nada", quando o que houve foi o programa não achar comprimento
     // e largura no relatório — e é isso que impede a linha de ser aplicada.
@@ -21204,7 +21244,7 @@ function renderRiscoResultado() {
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${(mudou || semMedida) ? 'color:var(--alert);' : ''}">${semMedida ? novo : esc(novo)}
-        ${semMedida ? '' : `<div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento.toFixed(2)))} + ${excedenteEnfestoCm((L.res.fase || {}).tecidoId)} cm</div>`}</td>
+        ${semMedida ? '' : `<div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento.toFixed(2)))} + ${excedenteEnfestoCm(L.res.fase)} cm</div>`}</td>
       <td style="font-size:11px;">${L.gramatura ? esc(L.gramatura + ' g/m²') : ''}${L.aproveitamento ? ' · ' + esc(L.aproveitamento + '%') : ''}</td>
     </tr>`;
   }).join('');
@@ -21375,8 +21415,8 @@ async function aplicarRiscoNasGrades() {
   if (semNome.length) return toast('Dê um nome à fase nova antes de aplicar', 'err');
   const mudancas = alvo.map(L =>
     L.res.fase.__nova
-      ? `${L.arquivo} → ${L.grade.nome} · CRIAR a fase "${L.res.fase.nome}": ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`
-      : `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)}×${L.largura.toFixed(3)}`);
+      ? `${L.arquivo} → ${L.grade.nome} · CRIAR a fase "${L.res.fase.nome}": ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}`
+      : `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}`);
   // DOIS RISCOS NA MESMA FASE é sempre erro: cada PDF é uma fase, e um grava por
   // cima do outro sem deixar rastro. Era o que acontecia com os três "Corpo Parte
   // N" do tricolor, e o aviso final ainda dizia que três fases tinham mudado.
@@ -21410,7 +21450,7 @@ async function aplicarRiscoNasGrades() {
       L.grade.fases.push(f);
       criadas.push({ rotulo: `${L.grade.nome} · ${f.nome}`, semTecido: !f.tecidoId });
     }
-    f.comp = _riscoCompCadastro(L.comprimento, f.tecidoId).toFixed(2);   // + o excedente do TECIDO da fase
+    f.comp = _riscoCompCadastro(L.comprimento, f).toFixed(2);   // + o excedente DA FASE
     f.larg = L.largura.toFixed(3);                            // largura vai como veio
     tocadas.add(L.grade.id + '|' + f.nome);
   });
@@ -21428,7 +21468,7 @@ async function aplicarRiscoNasGrades() {
   // existe para pegar.
   const esperado = alvo.map(L => ({
     gradeId: L.grade.id, gradeNome: L.grade.nome, fase: L.res.fase.nome,
-    comp: _riscoCompCadastro(L.comprimento, L.res.fase.tecidoId).toFixed(2)
+    comp: _riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)
   }));
   await saveState('grades');
   await saveState('meta');
@@ -21454,8 +21494,8 @@ async function aplicarRiscoNasGrades() {
     + ` · ${Object.keys(memoria).length} vínculo(s) de tecido aprendidos`, 'ok');
   // Fase criada precisa de TECIDO, e o risco só traz o CÓDIGO dele — que só vira
   // tecido cadastrado depois que alguém ensinou o par uma vez. Sem tecido não há
-  // consumo, nem gramatura, nem excedente de enfesto próprio, e a fase fica meia
-  // pronta sem nada dizer. Este aviso é o que manda o usuário terminar.
+  // consumo nem gramatura, e a fase fica meia pronta sem nada dizer. Este aviso
+  // é o que manda o usuário terminar.
   const semTecido = criadas.filter(c => c.semTecido);
   if (semTecido.length) {
     toast(`Falta o TECIDO em ${semTecido.length} fase(s) criada(s) — abra a grade e complete`, 'err');
@@ -21956,7 +21996,7 @@ function _pastaResetFases(G) {
 // produto, vale mais do que a regra geral. `sugerida` marca o que foi ela que
 // escreveu, para que trocar o tecido recalcule sem apagar o que foi digitado.
 function _pastaSugerirBobinas(d, L) {
-  const sug = sugestaoBobinasFase(d.tecidoId, _riscoCompCadastro(L.comprimento, d.tecidoId));
+  const sug = sugestaoBobinasFase(d.tecidoId, _riscoCompCadastro(L.comprimento, d));
   d.regra = sug;
   if (sug == null) return;
   if (d.bobinas === '' || d.bobinas === d.sugerida) {
@@ -22124,7 +22164,7 @@ function _pastaHtmlPasso() {
   const umRisco = G.itens.length === 1;
   const linhas = G.itens.map((L, fi) => {
     const d = G.draft.fases[fi];
-    const compCad = _riscoCompCadastro(L.comprimento, d.tecidoId);
+    const compCad = _riscoCompCadastro(L.comprimento, d);
     const semMedida = compCad == null || L.largura == null;
     const alvoFase = grade ? fasesGrade.find(f => f.nome === d.alvo) : null;
     const atual = alvoFase ? `${esc(String(alvoFase.comp || '—').replace('.', ','))} × ${esc(String(alvoFase.larg || '—').replace('.', ','))}` : '—';
@@ -22170,14 +22210,14 @@ function _pastaHtmlPasso() {
   // e o excedente é 15) e concluía que o programa estava somando errado. Agora a
   // soma aparece inteira: o que o PDF traz, quanto entra de excedente e de que
   // tecido ele é.
-  const tec0 = (G.draft.fases[0] || {}).tecidoId;
-  const compL = _riscoCompCadastro(L0.comprimento, tec0);
-  const excCm = excedenteEnfestoCm(tec0);
-  const nomeTec = ((STATE.tecidos || []).find(t => t.id === tec0) || {}).nome;
+  const fase0 = G.draft.fases[0] || {};
+  const compL = _riscoCompCadastro(L0.comprimento, fase0);
+  const excCm = excedenteEnfestoCm(fase0);
+  const proprio = !(fase0.excedente === '' || fase0.excedente == null);
   const medida = (compL == null || L0.largura == null)
     ? '<span style="color:var(--alert);">sem medida legível</span>'
     : `<b>${L0.comprimento.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b>`
-      + ` &nbsp;+&nbsp; <b>${excCm} cm</b> de excedente${nomeTec ? ` (${esc(nomeTec)})` : ' (padrão)'}`
+      + ` &nbsp;+&nbsp; <b>${excCm} cm</b> de excedente${proprio ? ' (desta fase)' : ' (padrão)'}`
       + ` &nbsp;=&nbsp; <b>${compL.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b> para cadastrar`;
   return `
     <div style="display:flex;align-items:baseline;gap:10px;">
@@ -22371,7 +22411,8 @@ async function pastaSalvarPasso() {
       pecasPorPacote: parseInt(G.draft.pecasPorPacote, 10) || 0,
       fases: linhas.map((x, i) => ({
         ordem: i + 1, nome: x.d.nome, tecidoId: x.d.tecidoId, unidades: x.d.unidades,
-        comp: _riscoCompCadastro(x.L.comprimento, x.d.tecidoId).toFixed(2),
+        excedente: '',                     // fase nova nasce no padrão da casa
+        comp: _riscoCompCadastro(x.L.comprimento, x.d).toFixed(2),
         larg: x.L.largura.toFixed(3),
         bobinas: bob(x.d.bobinas)
       }))
@@ -22419,7 +22460,7 @@ async function pastaSalvarPasso() {
     let maiorOrdem = grade.fases.reduce((m, f) => Math.max(m, parseInt(f.ordem, 10) || 0), 0);
     const mudancas = [];
     linhas.forEach(x => {
-      const comp = _riscoCompCadastro(x.L.comprimento, x.d.tecidoId).toFixed(2);
+      const comp = _riscoCompCadastro(x.L.comprimento, x.d).toFixed(2);
       const larg = x.L.largura.toFixed(3);
       let f = x.d.alvo === '__nova__' ? null : grade.fases.find(y => y.nome === x.d.alvo);
       if (!f) {
@@ -23127,6 +23168,7 @@ async function popularExemplo() {
     aplicarPermissoesUI();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
+    await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
     // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
