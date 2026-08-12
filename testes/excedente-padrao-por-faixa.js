@@ -34,18 +34,34 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
-const api = new Function(`
+// STATE entra porque a ribana também é reconhecida pelo TECIDO da fase.
+const STATE = { tecidos: [
+  { id: 't_malha', nome: 'Malha Algodão', categoria: 'malha' },
+  { id: 't_rib', nome: 'Ribana', categoria: 'ribana' }
+] };
+const api = new Function('STATE', `
   ${/const EXCEDENTE_ENFESTO_PADRAO_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
+  ${/const EXCEDENTE_RIBANA_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${recorte('function _normNome', 'a normalizacao de nome')}
+  ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
+  ${recorte('function _ehFaseVies', 'o reconhecedor do vies')}
+  ${recorte('function categoriaEfetivaTecido', 'a categoria do tecido')}
+  ${recorte('function isTecidoRibana', 'o reconhecedor de tecido ribana')}
+  ${recorte('function _ehFaseRibana', 'o reconhecedor da fase ribana')}
   ${recorte('function excedentePorComprimento', 'a regra das faixas')}
+  ${recorte('function excedenteRegraDaFase', 'a regra inteira da fase')}
   ${recorte('function excedenteEnfestoM', 'o excedente da fase')}
   ${/const excedenteEnfestoCm = [^;]+;/.exec(src)[0]}
   ${recorte('function excedenteEnfestoOrigem', 'a origem do excedente')}
   ${/const _riscoCompCadastro = \(compPdf, fase\) =>[\s\S]*?;/.exec(src)[0]}
-  return { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoCm, excedenteEnfestoOrigem, _riscoCompCadastro };
-`)();
-const { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoCm: excCm, excedenteEnfestoOrigem: origem,
-        _riscoCompCadastro: comp } = api;
+  return { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_RIBANA_CM, EXCEDENTE_VIES_CM,
+           excedenteEnfestoCm, excedenteEnfestoOrigem, _riscoCompCadastro, excedenteRegraDaFase };
+`)(STATE);
+const { EXCEDENTE_ENFESTO_PADRAO_CM, EXCEDENTE_RIBANA_CM, EXCEDENTE_VIES_CM,
+        excedenteEnfestoCm: excCm, excedenteEnfestoOrigem: origem,
+        _riscoCompCadastro: comp, excedenteRegraDaFase: regra } = api;
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -121,10 +137,62 @@ console.log('\n-- fase nova da importacao (a que nasce sem excedente) --');
   ok('6d. fase nova de risco 9,10 -> 20 cm', excCm(nova, 9.10) === 20, excCm(nova, 9.10));
 }
 
-console.log('\n-- a fase vies, que nasce em 1,17 --');
+/* ===========================================================================
+   AS EXCEÇÕES: ribana 5 cm, viés 0 cm — antes da faixa.
+
+   Não são arbitrárias. Conferindo a alteração em massa contra o cadastro real,
+   as ÚNICAS fases com excedente digitado à mão eram 20 com 5 cm e 7 com 0 — e
+   eram exatamente as ribanas e os viéses. A regra é o que a casa já fazia à
+   mão, escrito uma vez só.
+   =========================================================================== */
+
+console.log('\n-- EXCECAO: vies leva 0, valha o comprimento que valer --');
 {
-  ok('7. o vies cai sozinho na faixa de 10 cm', excCm({ excedente: '' }, 1.17) === 10,
-     excCm({ excedente: '' }, 1.17));
+  const vies = { nome: 'Viés', excedente: '' };
+  ok('7. o vies de 1,17 leva 0, e nao os 10 cm da faixa', excCm(vies, 1.17) === EXCEDENTE_VIES_CM,
+     excCm(vies, 1.17));
+  ok('7b. e a medida de cadastrar nao ganha nada', r2(comp(1.17, vies)) === 1.17, r2(comp(1.17, vies)));
+  ok('7c. um vies longo tambem leva 0 (nao depende da faixa)', excCm(vies, 9) === 0, excCm(vies, 9));
+  ok('7d. a tela diz que veio da regra do vies', origem(vies, 1.17) === 'vies', origem(vies, 1.17));
+  ok('7e. "Gola e Viés" conta como vies', excCm({ nome: 'Gola e Viés', excedente: '' }, 3) === 0);
+  ok('7f. vies SEM comprimento tambem sabe que leva 0', regra({ nome: 'Viés', excedente: '' }) === 0,
+     regra({ nome: 'Viés', excedente: '' }));
+}
+
+console.log('\n-- EXCECAO: ribana leva 5 --');
+{
+  const rib = { nome: 'Ribana', excedente: '' };
+  ok('8. ribana leva 5 cm', excCm(rib, 2.5) === EXCEDENTE_RIBANA_CM, excCm(rib, 2.5));
+  ok('8b. e nao os 15 da faixa de 2,5 m', excCm(rib, 2.5) !== 15);
+  ok('8c. ribana longa tambem leva 5', excCm(rib, 9) === 5, excCm(rib, 9));
+  ok('8d. a origem e a regra da ribana', origem(rib, 2.5) === 'ribana', origem(rib, 2.5));
+  ok('8e. 2,50 + 0,05 = 2,55', r2(comp(2.50, rib)) === 2.55, r2(comp(2.50, rib)));
+  ok('8f. ribana SEM comprimento tambem sabe que leva 5', regra(rib) === 5, regra(rib));
+  // Pelo TECIDO: ha fase de ribana com outro nome, e ela e ribana do mesmo jeito.
+  const porTecido = { nome: 'Punhos', tecidoId: 't_rib', excedente: '' };
+  ok('8g. fase de outro nome com TECIDO de ribana tambem leva 5', excCm(porTecido, 2.5) === 5,
+     excCm(porTecido, 2.5));
+  const malha = { nome: 'Punhos', tecidoId: 't_malha', excedente: '' };
+  ok('8h. e a de malha com o mesmo nome segue a faixa', excCm(malha, 2.5) === 15, excCm(malha, 2.5));
+}
+
+console.log('\n-- as excecoes NAO passam por cima do cadastro da fase --');
+{
+  ok('9. ribana com 12 cm cadastrado continua 12', excCm({ nome: 'Ribana', excedente: 12 }, 2.5) === 12,
+     excCm({ nome: 'Ribana', excedente: 12 }, 2.5));
+  ok('9b. vies com 3 cm cadastrado continua 3', excCm({ nome: 'Viés', excedente: 3 }, 1.17) === 3,
+     excCm({ nome: 'Viés', excedente: 3 }, 1.17));
+  ok('9c. e as duas contam como vindas da fase',
+     origem({ nome: 'Ribana', excedente: 12 }, 2.5) === 'fase'
+     && origem({ nome: 'Viés', excedente: 3 }, 1.17) === 'fase');
+}
+
+console.log('\n-- corpo nao e confundido com as excecoes --');
+{
+  ok('10. "Corpo Parte 2" segue a faixa', excCm({ nome: 'Corpo Parte 2', excedente: '' }, 0.84) === 10);
+  ok('10b. "Enviesado" nao e vies', excCm({ nome: 'Enviesado', excedente: '' }, 3) === 15,
+     excCm({ nome: 'Enviesado', excedente: '' }, 3));
+  ok('10c. fase sem nome segue a faixa', excCm({ excedente: '' }, 3) === 15, excCm({ excedente: '' }, 3));
 }
 
 console.log(falhas ? `\n>>> ${falhas} FALHA(S)` : '\n>>> todos passaram');

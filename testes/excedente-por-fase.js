@@ -27,11 +27,23 @@ function recorte(de, ate, oQue) {
   return src.slice(i, j);
 }
 
-// As três funções da conta: constante, resolução e soma. Não dependem de STATE.
+// O bloco da conta do excedente: constante, faixas, exceções, resolução e soma.
+// Desde 12/08/2026 ele DEPENDE de STATE: a exceção da ribana reconhece a fase
+// também pelo TECIDO, e o tecido mora no cadastro.
 const contas = recorte('// EXCEDENTE DE ENFESTO.', 'let _riscoLeituras', 'a conta do excedente');
-const api = new Function(contas + `
+// Os reconhecedores que o bloco usa e que moram em outras partes do arquivo.
+// Delimitador '\n}' (e não '\n}\n'): o arquivo é gravado com CRLF, e a quebra
+// depois do fecha-chaves é '\r\n' — procurar por '\n}\n' não acha nada.
+const apoio = ['function _normNome', 'function _normFaseNome', 'function _ehFaseVies',
+               'function categoriaEfetivaTecido', 'function isTecidoRibana']
+  .map(f => recorte(f, '\n}', f) + '\n}').join('\n');
+const STATE_TEC = { tecidos: [
+  { id: 't_malha', nome: 'Malha Algodão', categoria: 'malha' },
+  { id: 't_rib', nome: 'Ribana', categoria: 'ribana' }
+] };
+const api = new Function('STATE', apoio + contas + `
   return { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoM, excedenteEnfestoCm, _riscoCompCadastro };
-`)();
+`)(STATE_TEC);
 const { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoM, excedenteEnfestoCm, _riscoCompCadastro } = api;
 
 // A migração, com os arredores dublados: ela mexe em STATE e chama saveState.

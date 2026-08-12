@@ -3674,7 +3674,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="this.dataset.sug=''; atualizarSugestaoBobinas(this); atualizarFaseVies()" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 1,80"></div>
-      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, vale a <b>faixa do comprimento</b>: até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm.</div></div>
+      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, o programa decide: <b>ribana ${EXCEDENTE_RIBANA_CM} cm</b> e <b>viés ${EXCEDENTE_VIES_CM} cm</b> sempre; nas demais, a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm.</div></div>
       <div class="field full">
         <label>Tempo de enfesto desta fase</label>
         <div class="fase-enf-tempo">
@@ -4036,10 +4036,13 @@ async function rodarExcedentePorFaixa() {
   if (!exigirEdicao('alterar o excedente de todas as fases')) return;
 
   const mudam = [];
-  let jaCertas = 0, semComp = 0, foraFaixa = 0, tinhamProprio = 0, total = 0;
+  let jaCertas = 0, semComp = 0, foraFaixa = 0, tinhamProprio = 0, total = 0, excecoes = 0;
   (STATE.grades || []).forEach(g => (g.fases || []).forEach(f => {
     total++;
-    const novo = excedentePorComprimento(f.comp);
+    // A regra INTEIRA: ribana e viés primeiro, faixa do comprimento depois.
+    // Elas não dependem do comprimento, então valem inclusive na fase que ainda
+    // não foi medida — uma ribana sem medida já sabe que leva 5 cm.
+    const novo = excedenteRegraDaFase(f);
     if (novo == null) {
       // Separar os dois motivos: "ainda não tem medida" é coisa a cadastrar,
       // "passa de 12 m" é caso que a regra não previu. Somados viram um número
@@ -4048,6 +4051,7 @@ async function rodarExcedentePorFaixa() {
       if (isFinite(n) && n > 0) foraFaixa++; else semComp++;
       return;
     }
+    if (_ehFaseVies(f.nome) || _ehFaseRibana(f)) excecoes++;
     const cru = f.excedente;
     const proprio = !(cru === '' || cru == null);
     const atual = proprio ? Math.round(parseFloat(cru)) : null;
@@ -4062,20 +4066,26 @@ async function rodarExcedentePorFaixa() {
     return;
   }
 
-  // Quantas caem em cada faixa, para o aviso mostrar o formato da mudança e não
-  // só o tamanho dela.
-  const porFaixa = EXCEDENTE_FAIXAS.map(F =>
-    `${mudam.filter(m => m.para === F.cm).length} para ${F.cm} cm`).join(' · ');
+  // Quanto vai para cada valor, para o aviso mostrar o formato da mudança e não
+  // só o tamanho dela. Sai dos valores que de fato apareceram, e não da tabela
+  // de faixas: com as exceções há 0 e 5 cm, que faixa nenhuma produz.
+  const valores = Array.from(new Set(mudam.map(m => m.para))).sort((a, b) => a - b);
+  const porValor = valores.map(v =>
+    `${mudam.filter(m => m.para === v).length} para ${v} cm`).join(' · ');
 
   const ok = confirm(
-    `Aplicar o excedente por faixa de comprimento em TODAS as grades?\n\n`
-    + `Regra:\n`
+    `Aplicar a regra do excedente em TODAS as grades?\n\n`
+    + `Exceções, antes de tudo:\n`
+    + `   ribana      ->   ${EXCEDENTE_RIBANA_CM} cm\n`
+    + `   viés        ->   ${EXCEDENTE_VIES_CM} cm\n`
+    + `Nas demais, a faixa do comprimento:\n`
     + `   até 1,50 m  ->  10 cm\n`
     + `   1,50 a 8 m  ->  15 cm\n`
     + `   8 a 12 m    ->  20 cm\n\n`
-    + `${mudam.length} fase(s) mudam  (${porFaixa})\n`
+    + `${mudam.length} fase(s) mudam  (${porValor})\n`
+    + `${excecoes} delas por serem ribana ou viés\n`
     + `${jaCertas} já estão certas\n`
-    + `${semComp} sem comprimento cadastrado — NÃO serão tocadas\n`
+    + `${semComp} sem comprimento e sem exceção — NÃO serão tocadas\n`
     + `${foraFaixa} acima de 12 m — NÃO serão tocadas\n`
     + `${total} fases no total, em ${(STATE.grades || []).length} grade(s)\n\n`
     + (tinhamProprio
@@ -20408,9 +20418,8 @@ function excedenteEnfestoM(fase, compBase) {
   if (!(v === '' || v == null || !isFinite(parseFloat(v)))) {
     return Math.max(0, parseFloat(v)) / 100;    // o que a fase manda, inclusive zero
   }
-  const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
-  const daFaixa = excedentePorComprimento(base);
-  return (daFaixa != null ? daFaixa : EXCEDENTE_ENFESTO_PADRAO_CM) / 100;
+  const daRegra = excedenteRegraDaFase(fase, compBase);
+  return (daRegra != null ? daRegra : EXCEDENTE_ENFESTO_PADRAO_CM) / 100;
 }
 
 // Rótulo curto do excedente, para a tela dizer de quanto foi a soma.
@@ -20421,6 +20430,8 @@ const excedenteEnfestoCm = (fase, compBase) => Math.round(excedenteEnfestoM(fase
 function excedenteEnfestoOrigem(fase, compBase) {
   const v = fase ? fase.excedente : null;
   if (!(v === '' || v == null || !isFinite(parseFloat(v)))) return 'fase';
+  if (_ehFaseVies(fase && fase.nome)) return 'vies';
+  if (_ehFaseRibana(fase)) return 'ribana';
   const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
   return excedentePorComprimento(base) != null ? 'faixa' : 'padrao';
 }
@@ -20458,6 +20469,50 @@ function excedentePorComprimento(comp) {
   if (!isFinite(n) || n <= 0) return null;
   const faixa = EXCEDENTE_FAIXAS.find(f => n <= f.ate);
   return faixa ? faixa.cm : null;
+}
+
+/* ---------------------------------------------------------------------------
+   AS EXCEÇÕES, que vêm ANTES da faixa.
+
+   Dois panos não seguem o comprimento, porque não são enfestados como os
+   outros:
+
+       RIBANA .... 5 cm    VIÉS ...... 0 cm
+
+   Não é arbitrário: quando a alteração em massa foi conferida contra o
+   cadastro, as únicas fases com excedente digitado à mão eram 20 com 5 cm e
+   7 com 0 — e eram exatamente as ribanas e os viéses. A regra abaixo é o que
+   a casa já fazia à mão, escrito uma vez só.
+
+   A ribana é reconhecida pelo NOME da fase ou pelo TECIDO: quem cadastra
+   escreve "Ribana" no nome quase sempre, mas há fase de outro nome com tecido
+   de ribana, e ela é ribana do mesmo jeito. O viés vai por _ehFaseVies, o mesmo
+   reconhecedor que faz a fase entrar sozinha no cadastro — "Gola e Viés"
+   também conta.
+   --------------------------------------------------------------------------- */
+
+const EXCEDENTE_RIBANA_CM = 5;
+const EXCEDENTE_VIES_CM = 0;
+
+function _ehFaseRibana(fase) {
+  if (!fase) return false;
+  const n = _normFaseNome(fase.nome);
+  if (n && n.split(' ').some(p => p === 'ribana' || p === 'ribanas')) return true;
+  const t = (typeof STATE !== 'undefined' && STATE.tecidos || []).find(x => x.id === fase.tecidoId);
+  return isTecidoRibana(t);
+}
+
+// O excedente que a regra manda para uma FASE, em centímetros. As exceções
+// primeiro; sem exceção, a faixa do comprimento. null = a regra não opina, e
+// nesse caso não se mexe em nada.
+//
+// O viés devolve 0, que é um número e não "sem opinião": 0 quer dizer "esta
+// fase não leva sobra", e é preciso que ele seja gravado como zero de verdade.
+function excedenteRegraDaFase(fase, compBase) {
+  if (_ehFaseVies(fase && fase.nome)) return EXCEDENTE_VIES_CM;
+  if (_ehFaseRibana(fase)) return EXCEDENTE_RIBANA_CM;
+  const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
+  return excedentePorComprimento(base);
 }
 
 // A medida que vai para o CADASTRO, a partir da que o relatório informa.
@@ -21350,7 +21405,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm, o da <b>faixa do comprimento</b>: até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm: <b>ribana ${EXCEDENTE_RIBANA_CM} cm</b>, <b>viés ${EXCEDENTE_VIES_CM} cm</b>, e nas demais a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>
@@ -22535,7 +22590,8 @@ function _pastaHtmlPasso() {
   // De onde saiu o número: cadastrado na fase, deduzido da faixa do comprimento,
   // ou o padrão de quem não tem nem uma coisa nem outra. Dizer "padrão" nos três
   // casos escondia justamente a pergunta que se faz olhando a tela.
-  const excOrigem = { fase: ' (desta fase)', faixa: ' (faixa do comprimento)', padrao: ' (padrão)' }
+  const excOrigem = { fase: ' (desta fase)', faixa: ' (faixa do comprimento)',
+                      ribana: ' (regra da ribana)', vies: ' (regra do viés)', padrao: ' (padrão)' }
     [excedenteEnfestoOrigem(fase0, L0.comprimento)];
   const medida = (compL == null || L0.largura == null)
     ? '<span style="color:var(--alert);">sem medida legível</span>'

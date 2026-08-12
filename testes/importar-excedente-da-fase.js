@@ -35,15 +35,25 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
-const api = new Function(`
+// STATE entra porque a excecao da ribana reconhece a fase tambem pelo TECIDO.
+const api = new Function('STATE', `
   ${/const EXCEDENTE_ENFESTO_PADRAO_CM = \d+;/.exec(src)[0]}
   ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
+  ${/const EXCEDENTE_RIBANA_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_VIES_CM = \d+;/.exec(src)[0]}
+  ${recorte('function _normNome', 'a normalizacao de nome')}
+  ${recorte('function _normFaseNome', 'a normalizacao de nome de fase')}
+  ${recorte('function _ehFaseVies', 'o reconhecedor do vies')}
+  ${recorte('function categoriaEfetivaTecido', 'a categoria do tecido')}
+  ${recorte('function isTecidoRibana', 'o reconhecedor de tecido ribana')}
+  ${recorte('function _ehFaseRibana', 'o reconhecedor da fase ribana')}
   ${recorte('function excedentePorComprimento', 'a regra das faixas')}
+  ${recorte('function excedenteRegraDaFase', 'a regra inteira da fase')}
   ${recorte('function excedenteEnfestoM', 'o excedente da fase em metros')}
   ${/const excedenteEnfestoCm = [^;]+;/.exec(src)[0]}
-  ${/const _riscoCompCadastro = [\s\S]*?;/.exec(src)[0]}
+  ${/const _riscoCompCadastro = \(compPdf, fase\) =>[\s\S]*?;/.exec(src)[0]}
   return { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoM, excedenteEnfestoCm, _riscoCompCadastro };
-`)();
+`)({ tecidos: [] });
 const { EXCEDENTE_ENFESTO_PADRAO_CM, excedenteEnfestoCm, _riscoCompCadastro } = api;
 
 let falhas = 0;
