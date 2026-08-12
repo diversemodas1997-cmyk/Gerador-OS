@@ -23580,106 +23580,6 @@ async function limparTudo() {
 }
 
 /* ========================================================= */
-/*              DADOS DE EXEMPLO (Dx7282)                    */
-/* ========================================================= */
-async function popularExemplo() {
-  if (!exigirAdmin('popular dados de exemplo')) return;
-  if (!confirm('Isso vai adicionar dados de exemplo aos cadastros. Continuar?')) return;
-
-  // Marcas
-  STATE.marcas.push(
-    { id: uid(), nome: 'Dixie', desc: 'Marca principal' },
-    { id: uid(), nome: 'Diverse', desc: 'Segunda marca' }
-  );
-
-  // Linhas
-  STATE.linhas.push(
-    { id: uid(), nome: 'Adulto', desc: '' },
-    { id: uid(), nome: 'Infantil', desc: '' },
-    { id: uid(), nome: 'Juvenil', desc: '' },
-    { id: uid(), nome: 'Plus Size', desc: '' }
-  );
-
-  // Bases
-  STATE.bases.push(
-    { id: uid(), nome: 'BASE M MOLETOM', desc: 'molde padrão para moletons tam. M' },
-    { id: uid(), nome: 'BASE M CAMISETA', desc: 'molde padrão para camisetas tam. M' },
-    { id: uid(), nome: 'BASE P CALÇA', desc: 'molde base calça tam. P' }
-  );
-
-  // Blocos / revisões
-  STATE.blocos.push(
-    { id: uid(), nome: 'R1 BLOCO 1', desc: 'primeira revisão, primeiro bloco' },
-    { id: uid(), nome: 'R1 BLOCO 2', desc: 'primeira revisão, segundo bloco' },
-    { id: uid(), nome: 'R2 BLOCO 1', desc: 'segunda revisão' }
-  );
-
-  // Equipe
-  STATE.equipe.push(
-    { id: uid(), nome: 'Marcelo', funcao: 'Ambos' },
-    { id: uid(), nome: 'Ana',     funcao: 'Designer' },
-    { id: uid(), nome: 'Paula',   funcao: 'Ficha Técnica' }
-  );
-
-  // Tecidos
-  STATE.tecidos.push(
-    { id: uid(), nome: 'Moletom Bulk', desc: '65% algodão 35% poliéster', categoria: 'moletom' },
-    { id: uid(), nome: '1/2 Malha', desc: 'Malha meia-felpa', categoria: 'malha' },
-    { id: uid(), nome: 'Ribana Bulk', desc: 'Ribana para punho/barra', categoria: 'malha' },
-    { id: uid(), nome: 'Moletom Peluciado', desc: 'Interior peluciado', categoria: 'moletom' },
-    { id: uid(), nome: 'Tricoline', desc: 'Algodão fio tinto', categoria: 'outro' }
-  );
-
-  // Cores
-  STATE.cores.push(
-    { id: uid(), nome: 'Camel', hex: '#c9a961', codigo: 'AV.CO.129' },
-    { id: uid(), nome: 'Palha', hex: '#e4d9b0', codigo: 'AV.IN.848' },
-    { id: uid(), nome: 'Nut', hex: '#6b4423', codigo: 'AV.IL.35' },
-    { id: uid(), nome: 'Preto', hex: '#1a1a1a', codigo: '' },
-    { id: uid(), nome: 'Off-white', hex: '#f5f2ea', codigo: '' },
-    { id: uid(), nome: 'Cinza Mescla', hex: '#9aa0a6', codigo: '' }
-  );
-
-  // Materiais
-  STATE.materiais.push(
-    { id: uid(), codigo: 'AV.IN.848', tipo: 'Cordão', desc: 'Cordão 1,30m palha' },
-    { id: uid(), codigo: 'AV.CO.129', tipo: 'Trançador', desc: 'Trançador camel' },
-    { id: uid(), codigo: 'AV.IL.35', tipo: 'Ilhós', desc: 'Ilhós metal nut' },
-    { id: uid(), codigo: 'AV.EB.182', tipo: 'Etiqueta', desc: 'Etiqueta bordada' },
-    { id: uid(), codigo: 'AV.TG.889', tipo: 'Tag', desc: 'Tag papel Dixie' }
-  );
-
-  // Modelos
-  STATE.modelos.push(
-    { id: uid(), nome: 'Moletom fechado básico', linha: 'Adulto' },
-    { id: uid(), nome: 'Moletom aberto com zíper', linha: 'Adulto' },
-    { id: uid(), nome: 'Calça jogger', linha: 'Adulto' },
-    { id: uid(), nome: 'Camiseta regata', linha: 'Adulto' }
-  );
-
-  // Coleções
-  STATE.colecoes.push(
-    { id: uid(), nome: 'Inverno 2024', temporada: 'Outono-Inverno' },
-    { id: uid(), nome: 'Verão 2024', temporada: 'Primavera-Verão' },
-    { id: uid(), nome: 'Inverno 2025', temporada: 'Outono-Inverno' }
-  );
-
-  // Grades
-  STATE.grades.push(
-    { id: uid(), nome: 'Grade padrão 6 peças', tamanhos: { p:1, m:2, g:2, gg:1, g1:0, g2:0, g3:0 } },
-    { id: uid(), nome: 'Grade ampliada 8 peças', tamanhos: { p:2, m:2, g:2, gg:1, g1:1, g2:0, g3:0 } },
-    { id: uid(), nome: 'Grade plus 4 peças',     tamanhos: { p:0, m:0, g:0, gg:1, g1:1, g2:1, g3:1 } }
-  );
-
-  for (const k of ['tecidos','cores','materiais','modelos','colecoes','grades',
-                   'marcas','linhas','bases','blocos','equipe']) {
-    await saveState(k);
-  }
-  toast('Exemplos carregados — cadastre o desenho técnico em "Desenhos" enviando uma imagem', 'ok');
-  goto('home');
-}
-
-/* ========================================================= */
 /*                   INICIALIZAÇÃO                           */
 /* ========================================================= */
 (async function init() {
@@ -23818,7 +23718,6 @@ window.riscoAtualizarNome = riscoAtualizarNome;
 window.riscoMarcar = riscoMarcar;
 window.importarDados = importarDados;
 window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
-window.popularExemplo = popularExemplo;
 window.abrirLogin = abrirLogin;
 window.fecharLogin = fecharLogin;
 window.trocarAbaAuth = trocarAbaAuth;
