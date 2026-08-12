@@ -79,7 +79,7 @@ console.log('-- o caso do print (risco 11 de 20) --');
 console.log('\n-- sem excedente proprio: cada faixa --');
 {
   const vazia = { excedente: '' };
-  [[0.36, 10], [1.50, 10], [1.51, 15], [6.50, 15], [8, 15], [8.01, 20], [12, 20]].forEach(([c, cm]) =>
+  [[0.36, 10], [1.50, 10], [1.51, 15], [6.50, 15], [8.20, 15], [9, 15], [9.01, 20], [12, 20]].forEach(([c, cm]) =>
     ok(`2. risco de ${c} m -> ${cm} cm`, excCm(vazia, c) === cm, excCm(vazia, c)));
 }
 

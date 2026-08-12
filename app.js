@@ -3674,7 +3674,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="this.dataset.sug=''; atualizarSugestaoBobinas(this); atualizarFaseVies()" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 1,80"></div>
-      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, o programa decide: <b>gola ${EXCEDENTE_GOLA_CM} cm</b> e <b>viés ${EXCEDENTE_VIES_CM} cm</b> sempre; nas demais, a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm.</div></div>
+      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, o programa decide: <b>gola ${EXCEDENTE_GOLA_CM} cm</b> e <b>viés ${EXCEDENTE_VIES_CM} cm</b> sempre; nas demais, a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 9 m → 15 cm, até 12 m → 20 cm.</div></div>
       <div class="field full">
         <label>Tempo de enfesto desta fase</label>
         <div class="fase-enf-tempo">
@@ -4080,8 +4080,8 @@ async function rodarExcedentePorFaixa() {
     + `   viés        ->   ${EXCEDENTE_VIES_CM} cm\n`
     + `Nas demais, a faixa do comprimento:\n`
     + `   até 1,50 m  ->  10 cm\n`
-    + `   1,50 a 8 m  ->  15 cm\n`
-    + `   8 a 12 m    ->  20 cm\n\n`
+    + `   1,50 a 9 m  ->  15 cm\n`
+    + `   9 a 12 m    ->  20 cm\n\n`
     + `${mudam.length} fase(s) mudam  (${porValor})\n`
     + `${excecoes} delas por serem gola ou viés\n`
     + `${jaCertas} já estão certas\n`
@@ -20441,14 +20441,18 @@ function excedenteEnfestoOrigem(fase, compBase) {
 
    A sobra não é a mesma para todo enfesto, e também não é um número por fase
    que alguém tenha de descobrir: ela acompanha o COMPRIMENTO que a fase
-   estende. Um viés de 1 m não precisa da mesma ponta que um corpo de 9 m —
+   estende. Um viés de 1 m não precisa da mesma ponta que um corpo de 10 m —
    é a mesma razão pela qual o excedente saiu do tecido e virou da fase.
 
        comprimento até 1,50 m ......... 10 cm
-       de 1,50 m até 8 m ............. 15 cm
-       de 8 m até 12 m ............... 20 cm
+       de 1,50 m até 9 m ............. 15 cm
+       de 9 m até 12 m ............... 20 cm
 
-   As bordas ficam na faixa DE BAIXO: 1,50 m exato leva 10 cm, 8 m exatos
+   A faixa dos 15 cm ia até 8 m e foi esticada para 9 m em 12/08/2026, a pedido
+   de Junior: o corpo de 8,20 m das grades "P ao G3" é enfesto do mesmo feitio
+   dos de 7 m, e ganhar 20 cm ali era sobra a mais em pano caro.
+
+   As bordas ficam na faixa DE BAIXO: 1,50 m exato leva 10 cm, 9 m exatos
    levam 15 cm. É o que "até" quer dizer, e é a leitura conservadora — na
    dúvida, sobra menos pano, que é o erro barato.
 
@@ -20458,7 +20462,7 @@ function excedenteEnfestoOrigem(fase, compBase) {
 
 const EXCEDENTE_FAIXAS = [
   { ate: 1.50, cm: 10 },
-  { ate: 8,    cm: 15 },
+  { ate: 9,    cm: 15 },
   { ate: 12,   cm: 20 }
 ];
 
@@ -21419,7 +21423,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm: <b>gola ${EXCEDENTE_GOLA_CM} cm</b>, <b>viés ${EXCEDENTE_VIES_CM} cm</b>, e nas demais a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm: <b>gola ${EXCEDENTE_GOLA_CM} cm</b>, <b>viés ${EXCEDENTE_VIES_CM} cm</b>, e nas demais a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 9 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>
