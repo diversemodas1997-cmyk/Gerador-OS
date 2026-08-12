@@ -22221,6 +22221,18 @@ function _pastaResetFases(G) {
       unidades: (f && parseInt(f.unidades, 10)) || _riscoUnidadesPadrao(G.draft.sku),
       bobinas: (f && f.bobinas !== '' && f.bobinas != null) ? String(f.bobinas).replace('.', ',')
              : (bobMem != null && bobMem !== '' ? String(bobMem).replace('.', ',') : ''),
+      // O EXCEDENTE DA FASE, SÓ PARA LER. É ele que decide quanto se soma ao
+      // comprimento do risco para chegar na medida de cadastrar, e ele estava
+      // ficando de fora desta cópia: o rascunho nascia sem `excedente`, a conta
+      // caía no padrão da casa (15 cm) e a tela propunha trocar um cadastro
+      // CERTO por um errado — 1,10 do risco + 15 virava 1,25 numa fase de 10 cm,
+      // cujo cadastro correto (1,20) estava ali do lado, na coluna "Cadastro".
+      //
+      // Não existe campo para editar isto aqui, de propósito: o excedente se
+      // cadastra na grade, e a importação só o consulta. Nenhum caminho de
+      // gravação escreve `f.excedente` — nem a correção (que mexe só em comp,
+      // larg, tecido, unidades e bobinas) nem a grade nova (que nasce no padrão).
+      excedente: (f && f.excedente != null) ? f.excedente : '',
       aplicar: !!(L.comprimento != null && L.largura != null)
     };
     _pastaSugerirBobinas(d, L);
@@ -22701,7 +22713,7 @@ async function pastaSalvarPasso() {
       const larg = x.L.largura.toFixed(3);
       let f = x.d.alvo === '__nova__' ? null : grade.fases.find(y => y.nome === x.d.alvo);
       if (!f) {
-        f = { ordem: ++maiorOrdem, nome: x.d.nome, tecidoId: '', unidades: 2, comp: '', larg: '', bobinas: '' };
+        f = { ordem: ++maiorOrdem, nome: x.d.nome, tecidoId: '', unidades: 2, comp: '', larg: '', excedente: '', bobinas: '' };
         grade.fases.push(f);
         mudancas.push(`+ ${f.nome}: ${comp} × ${larg}`);
       } else {
