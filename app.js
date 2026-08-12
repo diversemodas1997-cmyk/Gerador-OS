@@ -14418,64 +14418,60 @@ function sugestaoBobinasFase(tecidoId, comp) {
 
 /* ===== INICIO BOBINAS POR CAMADAS REAIS =====
  *
- * ----- Bobinas e quilos saem das camadas que a produção enfestou -----
+ * ----- Quem manda é o cadastro; o peso da bobina é consequência -----
  *
- * A coluna Consumo mostrava um número parado, digitado no cadastro da grade, que
- * não se mexia por mais que as camadas mudassem. Quando a produção estendia menos
- * camadas do que o planejado — e é isso que os tons da folha registram —, o
- * estoque continuava com tecido reservado para um enfesto que não aconteceu, e a
- * compra seguinte saía maior do que precisava.
+ * Duas coisas a casa mede e sabe: quantas BOBINAS uma grade gasta num enfesto
+ * cheio (o campo do cadastro da grade) e a GRAMATURA de cada tecido e cor. O que
+ * ninguém mede é quanto pesa uma bobina — elas não vêm todas iguais.
  *
- * A conta agora é física, e é a MESMA do consumo, só que lida ao contrário:
+ * Por isso o peso da bobina NÃO entra na conta: ele SAI dela.
  *
- *     kg da fase   = comp × larg × camadas × gramatura ÷ 1000
- *     bobinas      = kg ÷ 20, arredondado SEMPRE para cima
- *     camadas/bob. = 20 ÷ (comp × larg × gramatura ÷ 1000)
+ *     bobinas     = cadastro da grade × (camadas desta OS ÷ 80), para cima
+ *     kg da fase  = comp × larg × camadas × gramatura ÷ 1000
+ *     ---------------------------------------------------------------
+ *     peso/bobina = kg ÷ bobinas          <- resultado, não premissa
+ *     camadas/bob.= camadas ÷ bobinas     <- idem
  *
- * Como o kg já sai das camadas, as bobinas acompanham sozinhas. Não há proporção
- * sobre número parado, e as duas pontas não podem divergir — há um teste que
- * amarra as duas (testes/bobinas-camadas-reais.js).
+ * A versão anterior fazia o contrário: fixava a bobina em 20 kg e tirava as
+ * bobinas de kg ÷ 20. Duas medidas boas ficavam reféns de um chute, e na OS 0461
+ * (12/08/2026) a folha mostrou 4 bobinas onde o cadastro dizia 8 — o dobro de
+ * erro numa fase só, porque o Azul estava cadastrado com a gramatura do pano
+ * simples e não a do enfesto.
+ *
+ * O peso por bobina que sai daqui vale como CONFERÊNCIA: se der muito longe dos
+ * ~20 kg que a casa vê na prateleira, o que está errado é a gramatura daquela
+ * cor — e agora isso aparece em vez de se esconder dentro do número.
+ *
+ * As bobinas seguem acompanhando as camadas que a produção enfestou de verdade
+ * (é isso que os tons da folha registram): uma fase que não foi enfestada não
+ * gasta bobina nenhuma, e meio enfesto gasta metade do cadastro.
  */
-
-// Quanto pesa uma bobina. É a medida da casa: as bobinas não vêm todas iguais,
-// mas ficam em torno disto, e é o número que transforma quilo em bobina.
-const PESO_BOBINA_KG = 20;
 
 // Em quantas camadas o campo "bobinas previstas" do cadastro da grade foi
 // pensado. A casa preencheu aquele campo imaginando o enfesto CHEIO de malha
 // algodão, que é o limite do tecido (LIMITE_CAMADAS.malha).
 //
-// Só serve para o caminho de reserva — quando falta gramatura para pesar o
-// enfesto de verdade. Vale como referência ABSOLUTA: uma OS de 40 camadas gasta
-// metade do que está cadastrado, independentemente do que ela tenha planejado.
-//
-// Conferido nos dados de 11/08/2026 e o resultado é aproximado, não exato: as
-// bobinas cadastradas correspondem a uma mediana de ~70 camadas (p25 61, p75 81)
-// assumindo 20 kg por bobina. A checagem é ruidosa — a maioria das fases não
-// guarda a cor, e as gramaturas de malha algodão cadastradas se dividem em dois
-// grupos que diferem quase 3× (167-182 e 448-528). Fica registrado para quem for
-// mexer aqui: se o número precisar de ajuste fino, é este.
+// Vale como referência ABSOLUTA: uma OS de 40 camadas gasta metade do que está
+// cadastrado, independentemente do que ela tenha planejado.
 const CAMADAS_REF_BOBINAS_CADASTRO = 80;
 
-// Quantas CAMADAS uma bobina rende nesta fase.
+// O que a casa vê numa bobina de verdade, só para CONFERIR o resultado. Não
+// entra em conta nenhuma — se entrasse, voltaria a ser premissa.
 //
-// Uma camada é um pano de comp × larg; o peso dela sai da gramatura:
-//   kg de uma camada = comp(m) × larg(m) × gramatura(g/m²) ÷ 1000
-// Então uma bobina de 20 kg cobre 20 ÷ (kg de uma camada) camadas. É a mesma
-// conta do consumo, lida ao contrário — por isso não pode divergir dela.
-function camadasPorBobina(comp, larg, gramatura) {
-  const kgCamada = (Number(comp) * Number(larg) * Number(gramatura)) / 1000;
-  if (!isFinite(kgCamada) || kgCamada <= 0) return null;
-  return PESO_BOBINA_KG / kgCamada;
-}
+// A faixa é a da prateleira: bobina não vem com peso exato, mas nunca sai daqui.
+// Conferido no cadastro das grades em 12/08/2026 — as fases de corpo de malha
+// algodão dão ~46 m e ~24 kg por bobina, que é a mesma medida vista de dois
+// jeitos (46 m × 1,17 m × 452 g/m² ÷ 1000 ≈ 24 kg).
+const PESO_BOBINA_MIN_KG = 18;
+const PESO_BOBINA_MAX_KG = 24;
 
 // Bobina não se abre pela metade. O consumo previsto arredonda SEMPRE para
 // CIMA, e nunca sai fracionado: quem separa o material tira bobinas inteiras da
 // prateleira, e prever a menos é o erro caro — falta pano no meio do enfesto e o
-// enfesto para. 3,21 bobinas viram 4; 0,05 vira 1; só o zero continua zero.
+// enfesto para. 7,1 bobinas viram 8; 0,05 vira 1; só o zero continua zero.
 //
 // A folga de 1e-9 é contra o resto da conta de ponto flutuante: sem ela um
-// 2,0000000001 nascido de kg ÷ 20 viraria 3 bobinas.
+// 2,0000000001 nascido de uma divisão viraria 3 bobinas.
 const CEIL_BOBINA_EPS = 1e-9;
 function bobinaInteira(v) {
   const n = Number(v);
@@ -14483,31 +14479,62 @@ function bobinaInteira(v) {
   return Math.ceil(n - CEIL_BOBINA_EPS);
 }
 
-// Bobinas efetivas de uma fase. `L` é a linha de consumo dela (comp, larg,
-// camadas, peso, kg), como `consumoEnfestoOS` devolve.
+// Bobinas efetivas de uma fase: o que a casa cadastrou na grade para um enfesto
+// cheio, na proporção das camadas que ESTA OS enfestou. `L` é a linha de consumo
+// da fase (comp, larg, camadas, peso, kg), como `consumoEnfestoOS` devolve.
+//
+// O kg do enfesto não entra aqui de propósito: transformar quilo em bobina
+// exigiria saber quanto pesa uma bobina, que é justamente o que ninguém mede.
 function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
       && _faseNaoEnfestadaPorTom(o, ordem)) return 0;
 
-  // Caminho bom: o enfesto tem peso, então a conta é direta e acompanha as
-  // camadas sozinha, porque o kg já foi calculado a partir delas.
-  const kg = Number(L && L.kg);
-  if (isFinite(kg) && kg > 0) return bobinaInteira(kg / PESO_BOBINA_KG);
-
-  // Reserva: sem gramatura cadastrada não há peso. Vale o que a casa cadastrou
-  // na grade, que descreve um enfesto cheio — proporcional às camadas desta OS.
   const prev = Number(bobinasPrevistas);
+  // Sem cadastro não há previsão nenhuma a dar: devolve o que veio (a folha
+  // mostra tracinho) em vez de inventar um número a partir do peso.
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
+
   const cam = parseInt(L && L.camadas, 10) || 0;
   if (!(cam > 0)) return bobinaInteira(prev);
   return bobinaInteira(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO));
 }
 
-// O que a célula "Bobinas" da folha mostra. Até aqui ela só existia quando a
-// GRADE tinha previsão cadastrada; agora, sempre que dá para pesar o enfesto, o
-// número sai da conta — a fase mostra bobinas mesmo sem ninguém ter cadastrado.
+// Quanto pesa cada bobina, SEGUNDO ESTA FASE. É consequência, não premissa: o
+// enfesto tem peso (gramatura × comp × larg × camadas) e gasta um número de
+// bobinas, então cada uma pesa o peso dividido pelas bobinas.
+//
+// Serve de conferência. Muito longe dos ~20 kg da prateleira quer dizer que a
+// gramatura daquela cor está errada — foi assim que se descobriu, na OS 0461,
+// que o Azul estava cadastrado com a gramatura do pano simples.
+function pesoPorBobinaFase(L, bobinas) {
+  const kg = Number(L && L.kg), n = Number(bobinas);
+  if (!isFinite(kg) || kg <= 0 || !isFinite(n) || n <= 0) return null;
+  return kg / n;
+}
+
+// Quantas CAMADAS cada bobina cobre nesta fase — pela mesma lógica, camadas
+// divididas pelas bobinas que as cobriram.
+function camadasPorBobina(camadas, bobinas) {
+  const c = Number(camadas), n = Number(bobinas);
+  if (!isFinite(c) || c <= 0 || !isFinite(n) || n <= 0) return null;
+  return c / n;
+}
+
+// Quantos METROS de pano cada bobina traz, segundo esta fase. É a medida que a
+// casa reconhece de olho — uma bobina rende sempre mais ou menos o mesmo tanto
+// de pano, e é daí que vem tudo o mais: o peso é esse metro vezes a largura
+// vezes a gramatura.
+function metrosPorBobinaFase(L, bobinas) {
+  const comp = Number(L && L.comp), cam = Number(L && L.camadas), n = Number(bobinas);
+  if (!isFinite(comp) || comp <= 0 || !isFinite(cam) || cam <= 0
+      || !isFinite(n) || n <= 0) return null;
+  return (comp * cam) / n;
+}
+
+// O que a célula "Bobinas" da folha mostra. Só existe número quando a GRADE tem
+// previsão cadastrada: é ela que sabe quantas bobinas o enfesto gasta.
 function _bobinasCelula(o, L, bobinasPrevistas, ordem, gradeTemPrevisao, fmt) {
   const prev = (gradeTemPrevisao && bobinasPrevistas != null) ? bobinasPrevistas : null;
   const v = bobinasEfetivasFase(o, prev, ordem, L);
@@ -14526,25 +14553,48 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
     return 'Fase declarada nao enfestada na folha: nao consumiu bobina.';
   }
 
-  const kg = L && Number(L.kg);
-  if (isFinite(kg) && kg > 0) {
-    const cru = kg / PESO_BOBINA_KG;
-    const porBob = L ? camadasPorBobina(L.comp, L.larg, L.peso) : null;
-    return `${num(kg)} kg deste enfesto ÷ ${PESO_BOBINA_KG} kg por bobina = ${num(cru)},`
-         + ` arredondado para cima: ${bobinaInteira(cru)} bobina(s) inteira(s).`
-         + (porBob ? ` Cada bobina rende cerca de ${num(porBob)} camadas aqui`
-                   + ` (${num(L.comp)} m × ${num(L.larg)} m × ${num(L.peso)} g/m²).` : '');
-  }
-
   const prev = Number(bobinasPrevistas);
   if (!isFinite(prev) || prev <= 0) return padrao;
   const cam = parseInt(L && L.camadas, 10) || 0;
   if (!(cam > 0)) return padrao;
+
   const cru = prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO);
-  return `Sem gramatura cadastrada para pesar o enfesto, entao vale o cadastro da`
-       + ` grade: ${prev} bobinas para um enfesto cheio de`
-       + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam} —`
-       + ` ${num(cru)}, arredondado para cima: ${bobinaInteira(cru)}.`;
+  const inteiras = bobinaInteira(cru);
+  let txt = `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para um enfesto cheio de`
+          + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam} —`
+          + ` ${num(cru)}, arredondado para cima: ${inteiras}.`;
+
+  // Metro e peso da bobina fecham a explicação como RESULTADO da conta, e não
+  // como números de onde ela partiu.
+  //
+  // Dividir pelo número JÁ ARREDONDADO daria bobina de mentira: a gola gasta
+  // 0,17 bobina, vira 1 na folha, e a conta diria que a bobina pesa 1,3 kg. O
+  // valor cru é o certo — e, como ele é o cadastro na proporção das camadas, o
+  // metro por bobina que sai daqui é o mesmo em qualquer OS desta grade.
+  const metros = metrosPorBobinaFase(L, cru);
+  const porBob = camadasPorBobina(cam, cru);
+  const peso = pesoPorBobinaFase(L, cru);
+  if (metros) {
+    txt += ` Daí cada bobina traz ${num(metros)} m de pano`
+         + (porBob ? ` (${num(porBob)} camadas)` : '') + (peso ? '' : '.');
+  }
+  if (peso) {
+    txt += `${metros ? ' e' : ' Daí cada bobina'} pesa ${num(peso)} kg.`;
+
+    // O alerta que teria poupado a investigação da OS 0461. É de um lado só, e
+    // de propósito: bobina LEVE demais quer dizer gramatura cadastrada a menos,
+    // que é o defeito real; pesada demais pode ser só um pano pesado de verdade
+    // (moletom passa dos 50 kg). A ribana fica de fora porque vem em rolo
+    // pequeno mesmo — alarmar nela seria alarmar em toda OS, e alarme que toca
+    // todo dia ninguém lê.
+    const ehRibana = /ribana/i.test(L.tecidoReal || L.nomeEnf || '');
+    if (!ehRibana && peso < PESO_BOBINA_MIN_KG) {
+      txt += ` ATENCAO: uma bobina nao pesa menos que ${PESO_BOBINA_MIN_KG} kg`
+           + ` — confira a gramatura de ${L.corReal || 'desta cor'}`
+           + ` (${num(L.peso)} g/m²).`;
+    }
+  }
+  return txt;
 }
 
 /* ===== FIM BOBINAS POR CAMADAS REAIS ===== */
