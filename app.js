@@ -4009,6 +4009,94 @@ async function rodarCopiarEtapasParaTodos() {
   await copiarEtapasEntreDesenhos(codigo);
 }
 
+/* ---------------------------------------------------------------------------
+   ALTERAÇÃO EM MASSA: o excedente de todas as fases, pela faixa do comprimento.
+
+   Reescreve `excedente` em TODAS as fases de TODAS as grades segundo
+   excedentePorComprimento() — a regra das faixas, lá em cima.
+
+   Três cuidados, porque isto mexe em mais de 100 cadastros de uma vez, no dado
+   que todas as máquinas compartilham, e não tem desfazer:
+
+   1. CONTA ANTES DE GRAVAR. O `confirm` diz quantas fases mudam, de quanto para
+      quanto, quantas já estão certas e quantas ficam de fora. Sem isso ninguém
+      tem como saber se a regra fez o que se esperava em 124 grades.
+   2. DIZ QUANTAS TÊM VALOR PRÓPRIO. As que alguém digitou à mão aparecem
+      contadas e separadas no aviso: são elas que se perdem, e quem confirma
+      precisa ver esse número antes, não depois.
+   3. SNAPSHOT ANTES. Uma cópia completa vai para a contingência (navegador +
+      pasta de backup) imediatamente antes de gravar, então o estado anterior
+      fica recuperável em "Snapshots de contingência".
+
+   Fase sem comprimento e fase acima de 12 m NÃO são tocadas: a regra não opina
+   sobre elas (devolve null), e mexer no que não se sabe é como se estraga
+   cadastro bom.
+   --------------------------------------------------------------------------- */
+async function rodarExcedentePorFaixa() {
+  if (!exigirEdicao('alterar o excedente de todas as fases')) return;
+
+  const mudam = [];
+  let jaCertas = 0, semComp = 0, foraFaixa = 0, tinhamProprio = 0, total = 0;
+  (STATE.grades || []).forEach(g => (g.fases || []).forEach(f => {
+    total++;
+    const novo = excedentePorComprimento(f.comp);
+    if (novo == null) {
+      // Separar os dois motivos: "ainda não tem medida" é coisa a cadastrar,
+      // "passa de 12 m" é caso que a regra não previu. Somados viram um número
+      // que não diz nada.
+      const n = parseFloat(String(f.comp == null ? '' : f.comp).replace(',', '.'));
+      if (isFinite(n) && n > 0) foraFaixa++; else semComp++;
+      return;
+    }
+    const cru = f.excedente;
+    const proprio = !(cru === '' || cru == null);
+    const atual = proprio ? Math.round(parseFloat(cru)) : null;
+    if (atual === novo) { jaCertas++; return; }
+    if (proprio) tinhamProprio++;
+    mudam.push({ fase: f, grade: g, de: atual, para: novo });
+  }));
+
+  if (!total) { toast('Nenhuma grade com fases cadastradas', 'err'); return; }
+  if (!mudam.length) {
+    toast(`Nada a fazer: as ${jaCertas} fase(s) com comprimento já estão na regra`, 'ok');
+    return;
+  }
+
+  // Quantas caem em cada faixa, para o aviso mostrar o formato da mudança e não
+  // só o tamanho dela.
+  const porFaixa = EXCEDENTE_FAIXAS.map(F =>
+    `${mudam.filter(m => m.para === F.cm).length} para ${F.cm} cm`).join(' · ');
+
+  const ok = confirm(
+    `Aplicar o excedente por faixa de comprimento em TODAS as grades?\n\n`
+    + `Regra:\n`
+    + `   até 1,50 m  ->  10 cm\n`
+    + `   1,50 a 8 m  ->  15 cm\n`
+    + `   8 a 12 m    ->  20 cm\n\n`
+    + `${mudam.length} fase(s) mudam  (${porFaixa})\n`
+    + `${jaCertas} já estão certas\n`
+    + `${semComp} sem comprimento cadastrado — NÃO serão tocadas\n`
+    + `${foraFaixa} acima de 12 m — NÃO serão tocadas\n`
+    + `${total} fases no total, em ${(STATE.grades || []).length} grade(s)\n\n`
+    + (tinhamProprio
+      ? `ATENÇÃO: ${tinhamProprio} dessas fases têm excedente digitado à mão, e esse valor será SUBSTITUÍDO pelo da regra.\n\n`
+      : `Nenhuma fase com valor digitado à mão será perdida.\n\n`)
+    + `Um snapshot é gravado antes, e fica em "Snapshots de contingência". Esta ação não tem desfazer automático.`
+  );
+  if (!ok) return;
+
+  // A cópia de segurança vem ANTES da primeira escrita, e forçada: a rotina
+  // normal tem intervalo mínimo entre snapshots, e é justo agora que ele não
+  // pode valer.
+  try { await salvarSnapshotContingencia({ forcar: true }); }
+  catch (e) { console.warn('snapshot antes do excedente em massa', e); }
+
+  mudam.forEach(m => { m.fase.excedente = m.para; });
+  await saveState('grades');
+  toast(`Excedente aplicado em ${mudam.length} fase(s) de ${new Set(mudam.map(m => m.grade.id)).size} grade(s)`, 'ok');
+  if (typeof renderGrades === 'function') renderGrades();
+}
+
 // Etapas de uma OS que NÃO podem sair da lista: as que já têm marca — a própria
 // etapa marcada, ou qualquer tarefa dela. Tirar da lista uma etapa marcada
 // apagaria da folha um trabalho que já foi registrado; é exatamente assim que os
@@ -20316,6 +20404,41 @@ function excedenteEnfestoM(fase) {
 // Rótulo curto do excedente, para a tela dizer de quanto foi a soma.
 const excedenteEnfestoCm = fase => Math.round(excedenteEnfestoM(fase) * 100);
 
+/* ===========================================================================
+   O EXCEDENTE POR FAIXA DE COMPRIMENTO
+
+   A sobra não é a mesma para todo enfesto, e também não é um número por fase
+   que alguém tenha de descobrir: ela acompanha o COMPRIMENTO que a fase
+   estende. Um viés de 1 m não precisa da mesma ponta que um corpo de 9 m —
+   é a mesma razão pela qual o excedente saiu do tecido e virou da fase.
+
+       comprimento até 1,50 m ......... 10 cm
+       de 1,50 m até 8 m ............. 15 cm
+       de 8 m até 12 m ............... 20 cm
+
+   As bordas ficam na faixa DE BAIXO: 1,50 m exato leva 10 cm, 8 m exatos
+   levam 15 cm. É o que "até" quer dizer, e é a leitura conservadora — na
+   dúvida, sobra menos pano, que é o erro barato.
+
+   Fora da tabela (acima de 12 m) e fase sem comprimento cadastrado devolvem
+   null: não há base para decidir, e inventar seria pior do que não mexer.
+   =========================================================================== */
+
+const EXCEDENTE_FAIXAS = [
+  { ate: 1.50, cm: 10 },
+  { ate: 8,    cm: 15 },
+  { ate: 12,   cm: 20 }
+];
+
+// O excedente que a regra manda para um comprimento, em CENTÍMETROS.
+// null = a regra não opina (sem comprimento, ou acima da última faixa).
+function excedentePorComprimento(comp) {
+  const n = parseFloat(String(comp == null ? '' : comp).replace(',', '.'));
+  if (!isFinite(n) || n <= 0) return null;
+  const faixa = EXCEDENTE_FAIXAS.find(f => n <= f.ate);
+  return faixa ? faixa.cm : null;
+}
+
 // A medida que vai para o CADASTRO, a partir da que o relatório informa.
 // `fase` é a fase que vai receber a medida — é ela que manda no excedente.
 const _riscoCompCadastro = (compPdf, fase) =>
@@ -23329,6 +23452,7 @@ window.addFaseGradeRow = addFaseGradeRow;
 window.removerFaseGrade = removerFaseGrade;
 window.atualizarFaseVies = atualizarFaseVies;
 window.garantirFaseVies = garantirFaseVies;
+window.rodarExcedentePorFaixa = rodarExcedentePorFaixa;
 window.atualizarResponsabilidadesOS = atualizarResponsabilidadesOS;
 window.onModeloChange = onModeloChange;
 window.renderEtapasCad = renderEtapasCad;
