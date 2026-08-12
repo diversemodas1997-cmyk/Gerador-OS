@@ -37,6 +37,8 @@ function recorte(de, oQue) {
 
 const api = new Function(`
   ${/const EXCEDENTE_ENFESTO_PADRAO_CM = \d+;/.exec(src)[0]}
+  ${/const EXCEDENTE_FAIXAS = \[[\s\S]*?\];/.exec(src)[0]}
+  ${recorte('function excedentePorComprimento', 'a regra das faixas')}
   ${recorte('function excedenteEnfestoM', 'o excedente da fase em metros')}
   ${/const excedenteEnfestoCm = [^;]+;/.exec(src)[0]}
   ${/const _riscoCompCadastro = [\s\S]*?;/.exec(src)[0]}
@@ -75,7 +77,10 @@ console.log('\n-- o caso do print: fase de 10 cm --');
   ok('2d. e NAO da o valor errado que aparecia', r2(_riscoCompCadastro(1.10, fase)) !== 1.25);
 }
 
-console.log('\n-- fase sem excedente proprio continua no padrao da casa --');
+// Sem excedente proprio E sem comprimento em que se apoiar, sobra o padrao da
+// casa. Havendo comprimento, quem manda e a faixa — ver
+// testes/excedente-padrao-por-faixa.js.
+console.log('\n-- fase sem excedente proprio e sem comprimento: padrao da casa --');
 {
   const vazio = { nome: 'Corpo', excedente: '' };
   const nulo = { nome: 'Corpo', excedente: null };

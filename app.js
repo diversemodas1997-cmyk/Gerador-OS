@@ -3674,7 +3674,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="this.dataset.sug=''; atualizarSugestaoBobinas(this); atualizarFaseVies()" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 1,80"></div>
-      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. Em branco vale ${EXCEDENTE_ENFESTO_PADRAO_CM} cm.</div></div>
+      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, vale a <b>faixa do comprimento</b>: até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm.</div></div>
       <div class="field full">
         <label>Tempo de enfesto desta fase</label>
         <div class="fase-enf-tempo">
@@ -20393,16 +20393,37 @@ const EXCEDENTE_ENFESTO_PADRAO_CM = 15;
 // do enfesto. A ponta que a enfestadeira segura e a folga das bordas dependem do
 // COMPRIMENTO que aquela fase estende — um corpo de 8 m e um viés de 1 m do
 // mesmo tecido não levam a mesma sobra. Quem sabe disso é a fase, não o rolo.
-function excedenteEnfestoM(fase) {
+// Fase sem excedente próprio NÃO cai mais num número fixo: cai na FAIXA do
+// comprimento (ver EXCEDENTE_FAIXAS logo abaixo). Um corpo de 0,84 m recebia os
+// mesmos 15 cm de um de 9 m, e a importação propunha 0,99 onde o certo é 0,94 —
+// o número fixo era só o padrão de quem ainda não tinha regra. Os 15 cm ficam
+// para quando não há comprimento nenhum em que se apoiar.
+//
+// `compBase` é o comprimento que manda na faixa. Na importação é o do RISCO, que
+// é a medida real do encaixe; sem ele, vale o comprimento da própria fase.
+// Cuidado ao passar `fase.comp` de propósito: ele JÁ inclui um excedente antigo,
+// e usá-lo como base é medir a sobra em cima da sobra.
+function excedenteEnfestoM(fase, compBase) {
   const v = fase ? fase.excedente : null;
-  const cm = (v === '' || v == null || !isFinite(parseFloat(v)))
-    ? EXCEDENTE_ENFESTO_PADRAO_CM
-    : Math.max(0, parseFloat(v));
-  return cm / 100;
+  if (!(v === '' || v == null || !isFinite(parseFloat(v)))) {
+    return Math.max(0, parseFloat(v)) / 100;    // o que a fase manda, inclusive zero
+  }
+  const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
+  const daFaixa = excedentePorComprimento(base);
+  return (daFaixa != null ? daFaixa : EXCEDENTE_ENFESTO_PADRAO_CM) / 100;
 }
 
 // Rótulo curto do excedente, para a tela dizer de quanto foi a soma.
-const excedenteEnfestoCm = fase => Math.round(excedenteEnfestoM(fase) * 100);
+const excedenteEnfestoCm = (fase, compBase) => Math.round(excedenteEnfestoM(fase, compBase) * 100);
+
+// De onde veio o excedente que a tela está mostrando — a diferença entre "alguém
+// cadastrou isto" e "o programa deduziu" é o que decide se o número se discute.
+function excedenteEnfestoOrigem(fase, compBase) {
+  const v = fase ? fase.excedente : null;
+  if (!(v === '' || v == null || !isFinite(parseFloat(v)))) return 'fase';
+  const base = compBase != null && compBase !== '' ? compBase : (fase ? fase.comp : null);
+  return excedentePorComprimento(base) != null ? 'faixa' : 'padrao';
+}
 
 /* ===========================================================================
    O EXCEDENTE POR FAIXA DE COMPRIMENTO
@@ -20441,8 +20462,10 @@ function excedentePorComprimento(comp) {
 
 // A medida que vai para o CADASTRO, a partir da que o relatório informa.
 // `fase` é a fase que vai receber a medida — é ela que manda no excedente.
+// O comprimento do RISCO é a base da faixa: é a medida real do encaixe. Usar o
+// `comp` da fase seria medir em cima de um número que já tem excedente dentro.
 const _riscoCompCadastro = (compPdf, fase) =>
-  (compPdf == null ? null : compPdf + excedenteEnfestoM(fase));
+  (compPdf == null ? null : compPdf + excedenteEnfestoM(fase, compPdf));
 
 let _riscoLeituras = [];
 
@@ -21327,7 +21350,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (${EXCEDENTE_ENFESTO_PADRAO_CM} cm nas que não têm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm, o da <b>faixa do comprimento</b>: até 1,50 m → 10 cm, até 8 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>
@@ -21481,7 +21504,7 @@ function renderRiscoResultado() {
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc(L.tecido || '—')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);">${esc(atual)}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;${(mudou || semMedida) ? 'color:var(--alert);' : ''}">${semMedida ? novo : esc(novo)}
-        ${semMedida ? '' : `<div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento.toFixed(2)))} + ${excedenteEnfestoCm(L.res.fase)} cm</div>`}</td>
+        ${semMedida ? '' : `<div style="font-weight:400;color:var(--ink-3);font-size:10px;">risco ${esc(fmt(L.comprimento.toFixed(2)))} + ${excedenteEnfestoCm(L.res.fase, L.comprimento)} cm</div>`}</td>
       <td style="font-size:11px;">${L.gramatura ? esc(L.gramatura + ' g/m²') : ''}${L.aproveitamento ? ' · ' + esc(L.aproveitamento + '%') : ''}</td>
     </tr>`;
   }).join('');
@@ -22508,12 +22531,16 @@ function _pastaHtmlPasso() {
   // tecido ele é.
   const fase0 = G.draft.fases[0] || {};
   const compL = _riscoCompCadastro(L0.comprimento, fase0);
-  const excCm = excedenteEnfestoCm(fase0);
-  const proprio = !(fase0.excedente === '' || fase0.excedente == null);
+  const excCm = excedenteEnfestoCm(fase0, L0.comprimento);
+  // De onde saiu o número: cadastrado na fase, deduzido da faixa do comprimento,
+  // ou o padrão de quem não tem nem uma coisa nem outra. Dizer "padrão" nos três
+  // casos escondia justamente a pergunta que se faz olhando a tela.
+  const excOrigem = { fase: ' (desta fase)', faixa: ' (faixa do comprimento)', padrao: ' (padrão)' }
+    [excedenteEnfestoOrigem(fase0, L0.comprimento)];
   const medida = (compL == null || L0.largura == null)
     ? '<span style="color:var(--alert);">sem medida legível</span>'
     : `<b>${L0.comprimento.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b>`
-      + ` &nbsp;+&nbsp; <b>${excCm} cm</b> de excedente${proprio ? ' (desta fase)' : ' (padrão)'}`
+      + ` &nbsp;+&nbsp; <b>${excCm} cm</b> de excedente${excOrigem}`
       + ` &nbsp;=&nbsp; <b>${compL.toFixed(2).replace('.', ',')} × ${L0.largura.toFixed(3).replace('.', ',')} m</b> para cadastrar`;
   return `
     <div style="display:flex;align-items:baseline;gap:10px;">
