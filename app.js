@@ -16256,6 +16256,52 @@ async function gerarConjugada(osAtiva) {
     larg: f.larg || ''
   })) : [];
 
+  // A PEÇA muda; o que se herda é o CONTEXTO (data, coleção, marca, equipe).
+  // Sem este bloco a segunda OS nasce com a identidade da primeira, e o erro vai
+  // impresso para o chão: em 13/08/2026 a conjugada BRANCA (CM.LISA-BRA, desenho
+  // "Camiseta Básica | Branco") saiu com "PRETO" na barra acima do desenho
+  // técnico e com preto nas fases de enfesto, porque `variantes`, `tecidos` e
+  // `modeloNome` vieram inteiros da bicolor. Quem corta lê a cor, não o id.
+  //
+  // A regra da cor por fase é a MESMA do formulário (ver corPorFase, onde a
+  // grade é aplicada): fase 1 → cor primária do desenho, 2 → secundária,
+  // 3 → terciária. Da 4ª em diante repete a primária — as conjugadas são peças
+  // de uma cor só, e repetir é melhor que deixar a fase sem cor na folha.
+  if (desAlvo) {
+    const coresIds = ordenarCoresIdsPorDesc(
+      [desAlvo.corPrincipalId, desAlvo.corSecundariaId, desAlvo.corTerciariaId].filter(Boolean), desAlvo);
+    const nomeCor = id => (STATE.cores.find(c => c.id === id) || {}).nome || '';
+    const corDaFase = n => coresIds[n - 1] || coresIds[0] || '';
+
+    novaOs.fases = novaOs.fases.map((f, i) => {
+      const cid = corDaFase(i + 1);
+      return Object.assign({}, f, { corId: cid, corNome: nomeCor(cid) });
+    });
+    // Uma linha de tecido por fase, como a aplicação da grade monta no formulário.
+    novaOs.tecidos = novaOs.fases.map(f => ({
+      c1: '',
+      tecidoId: f.tecidoId || '',
+      tecidoNome: f.tecidoNome || '',
+      corId: f.corId || '',
+      corNome: f.corNome || ''
+    }));
+    // Uma variante, com as cores do desenho da conjugada. É daqui que sai a barra
+    // em caixa alta acima do desenho (coresDaPecaOS) e o SKU por cor.
+    novaOs.variantes = [{
+      num: 1, obs: '',
+      cor1: coresIds[0] || '', cor2: coresIds[1] || '', cor3: coresIds[2] || '',
+      cor1Nome: nomeCor(coresIds[0]) || '—',
+      cor2Nome: nomeCor(coresIds[1]) || '—',
+      cor3Nome: nomeCor(coresIds[2]) || '—'
+    }];
+    // O modelo é o que a folha imprime como DESCRIÇÃO. Herdado, a camiseta básica
+    // saía descrita como "Camiseta Bicolor".
+    if (desAlvo.modeloId) {
+      novaOs.modeloId = desAlvo.modeloId;
+      novaOs.modeloNome = (STATE.modelos || []).find(m => m.id === desAlvo.modeloId)?.nome || novaOs.modeloNome;
+    }
+  }
+
   novaOs.enfesto = {
     comprimento: parseFloat(novaOs.fases[0]?.comp) || 0,
     largura: parseFloat(novaOs.fases[0]?.larg) || 0,

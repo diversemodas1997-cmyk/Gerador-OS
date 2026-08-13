@@ -35,7 +35,14 @@ const motor = [
   'function gradeConjugadaDaGrade',
   'function deveGerarConjugada',
   'async function gerarConjugada(',
-  'async function aplicarRegraConjugadaSeAplicavel'
+  'async function aplicarRegraConjugadaSeAplicavel',
+  // A cor da peça conjugada sai do desenho dela, pela ordem canonica do desc —
+  // as mesmas funcoes que o formulario usa.
+  'function ordemCoresPorDesc',
+  'function ordenarCoresIdsPorDesc',
+  'function _normNome',
+  'function _sufixoTecidoNorm',
+  'function corBaseNome'
 ].map(corta).join('\n');
 
 // O motor mexe em STATE e chama a vizinhanca inteira do app; os dublês abaixo
@@ -90,12 +97,21 @@ const ok = (nome, cond, extra) => {
 const estadoBase = () => ({
   meta: {},
   tecidos: [{ id: 't1', nome: 'Malha Algodão' }],
-  cores: [{ id: 'c1', nome: 'Preto Malha Algodão' }],
+  cores: [
+    { id: 'c_preto', nome: 'Preto Malha Algodão' },
+    { id: 'c_branco', nome: 'Branco Malha Algodão' }
+  ],
   materiais: [],
   componentes: [],
+  modelos: [
+    { id: 'm_bi', nome: 'Camiseta Bicolor' },
+    { id: 'm_ba', nome: 'Camiseta Básica' }
+  ],
   desenhos: [
-    { id: 'd_bi', codigo: 'Dx100', desc: 'Camiseta Bicolor | Preto' },
-    { id: 'd_ba', codigo: 'Dx200', desc: 'Camiseta Básica | Branco' }
+    { id: 'd_bi', codigo: 'Dx100', desc: 'Camiseta Bicolor | Preto/Branco', modeloId: 'm_bi',
+      corPrincipalId: 'c_preto', corSecundariaId: 'c_branco' },
+    { id: 'd_ba', codigo: 'Dx200', desc: 'Camiseta Básica | Branco', modeloId: 'm_ba',
+      corPrincipalId: 'c_branco' }
   ],
   grades: [
     { id: 'g_ativa', nome: 'P-M-G-G1-G2-G3 | CM.BICOLOR',
@@ -103,7 +119,10 @@ const estadoBase = () => ({
       fases: [{ ordem: 1, nome: 'Corpo', tecidoId: 't1', comp: '8', larg: '1.8' }] },
     { id: 'g_passiva', nome: 'M-G (CONJUGADO) | CM.BÁSICA',
       tamanhos: { m: 3, g: 2 },
-      fases: [{ ordem: 1, nome: 'Corpo', tecidoId: 't1', comp: '5', larg: '1.8' }] },
+      fases: [
+        { ordem: 1, nome: 'Corpo', tecidoId: 't1', comp: '5', larg: '1.8' },
+        { ordem: 2, nome: 'Gola', tecidoId: 't1', comp: '1', larg: '1.8' }
+      ] },
     { id: 'g_solta', nome: 'P-M-G | CM.LISA', tamanhos: { p: 2, m: 2, g: 2 }, fases: [] }
   ],
   ordens: []
@@ -112,8 +131,17 @@ const estadoBase = () => ({
 const osAtiva = () => ({
   id: 'os_1', os: '0435', desenhoId: 'd_bi', gradeId: 'g_ativa',
   data: '2026-08-13', colecao: 'Inverno', marca: 'Dixie', responsavel: 'Junior',
+  modeloId: 'm_bi', modeloNome: 'Camiseta Bicolor',
   grade: { descricao: 'P-M-G-G1-G2-G3 | CM.BICOLOR', p: 1, m: 2, g: 2, gg: 1, g1: 1, g2: 1, g3: 1, total: 9 },
-  enfesto: { comprimento: 8, largura: 1.8, camadas: 20, target: 180, totalPecas: 180 }
+  enfesto: { comprimento: 8, largura: 1.8, camadas: 20, target: 180, totalPecas: 180 },
+  // A identidade da peça ATIVA: e exatamente isto que nao pode vazar para a
+  // conjugada. A barra em caixa alta acima do desenho tecnico le `variantes`.
+  variantes: [{ num: 1, obs: '', cor1: 'c_preto', cor2: 'c_branco', cor3: '',
+                cor1Nome: 'Preto Malha Algodão', cor2Nome: 'Branco Malha Algodão', cor3Nome: '—' }],
+  tecidos: [
+    { c1: '', tecidoId: 't1', tecidoNome: 'Malha Algodão', corId: 'c_preto', corNome: 'Preto Malha Algodão' },
+    { c1: '', tecidoId: 't1', tecidoNome: 'Malha Algodão', corId: 'c_branco', corNome: 'Branco Malha Algodão' }
+  ]
 });
 
 console.log('-- quem gera, e quem nao gera --');
@@ -183,7 +211,7 @@ console.log('-- a OS que sai --');
     ok('12. as camadas sao recalculadas pela grade dela', nova.enfesto.camadas === 90, nova.enfesto);
     ok('13. o alvo de pecas e o mesmo da ativa', nova.enfesto.target === 180, nova.enfesto.target);
     ok('14. as fases vem do cadastro da conjugada',
-       nova.fases.length === 1 && nova.fases[0].comp === '5', nova.fases);
+       nova.fases.length === 2 && nova.fases[0].comp === '5', nova.fases);
     ok('15. o contexto da ativa vem junto (data, colecao, marca, equipe)',
        nova.data === '2026-08-13' && nova.colecao === 'Inverno' && nova.marca === 'Dixie'
        && nova.responsavel === 'Junior', nova);
@@ -192,6 +220,33 @@ console.log('-- a OS que sai --');
     ok('17. nasce marcada como filha', nova.conjugadaPaiId === 'os_1' && !nova.conjugadaId, nova.conjugadaPaiId);
     ok('18. a ativa guarda o vinculo', estado.ordens[0].conjugadaId === nova.id, estado.ordens[0].conjugadaId);
     ok('19. a nova entrou na lista', estado.ordens.length === 2 && estado.ordens[1].id === nova.id);
+  }
+
+  {
+    // O DEFEITO DE 13/08/2026, que foi impresso e quase foi para o corte: a
+    // conjugada branca saiu com "PRETO" na barra acima do desenho tecnico e
+    // preto nas fases, porque variantes/tecidos/modelo vinham inteiros da
+    // bicolor. A peca muda; so o contexto e que se herda.
+    const e = estadoBase();
+    e.grades[0].conjugadaGradeId = 'g_passiva';
+    e.grades[0].conjugadaDesenhoId = 'd_ba';       // Camiseta Básica | Branco
+    e.ordens = [osAtiva()];
+    const { api, estado } = comMotor(e);
+    const nova = await api.gerarConjugada(estado.ordens[0]);
+
+    ok('9b. a barra acima do desenho le a cor da PECA conjugada, nao a da ativa',
+       nova.variantes.length === 1 && nova.variantes[0].cor1Nome === 'Branco Malha Algodão',
+       nova.variantes);
+    ok('9c. nenhuma cor da ativa sobra na variante',
+       !JSON.stringify(nova.variantes).includes('Preto'), nova.variantes);
+    ok('9d. as fases do enfesto saem na cor da conjugada',
+       nova.fases.every(f => f.corNome === 'Branco Malha Algodão'),
+       nova.fases.map(f => f.corNome));
+    ok('9e. as linhas de tecido acompanham, uma por fase',
+       nova.tecidos.length === 2 && nova.tecidos.every(t => t.corNome === 'Branco Malha Algodão'),
+       nova.tecidos);
+    ok('9f. a DESCRICAO da folha e o modelo da conjugada',
+       nova.modeloNome === 'Camiseta Básica' && nova.modeloId === 'm_ba', nova.modeloNome);
   }
 
   {
