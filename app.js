@@ -4582,6 +4582,17 @@ async function salvarCadastro() {
   else if (tipo === 'grade') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
+    // NOME REPETIDO NÃO ENTRA. Os dois assistentes de risco já barravam isto; esta
+    // tela, que é por onde a maior parte das grades nasce, não barrava nada — e foi
+    // assim que "GG-G3 | CM.REC | 117cm" ficou cadastrada duas vezes em 12/08/2026,
+    // com uma hora de diferença, cada cópia com um jogo de fases diferente. Duas
+    // grades de mesmo nome não se distinguem em lugar nenhum do app: quem emite a OS
+    // escolhe na lista pelo nome, e metade das OS sai encaixada na grade errada.
+    // O `g.id !== item.id` é o que deixa salvar a grade que já existe sem que ela
+    // acuse a si mesma.
+    if ((STATE.grades || []).some(g => g.id !== item.id && _normNome(g.nome) === _normNome(item.nome))) {
+      return toast(`Já existe uma grade chamada "${item.nome}"`, 'err');
+    }
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
     // Grade conjugada: quem gera a segunda OS. A checagem de "consigo mesma" é
@@ -4631,6 +4642,42 @@ async function salvarCadastro() {
     const f1 = item.fases[0] || {};
     item.enfestoComprimento = f1.comp || '';
     item.enfestoLargura = f1.larg || '';
+
+    // MESMA GRADE COM OUTRO NOME. O bloqueio acima só vê o nome, e nome é campo
+    // livre: a mesma grade cadastrada duas vezes com dois nomes passa por ele
+    // inteira. O que identifica uma grade de verdade é o produto (tipo de peça e
+    // SKU), os tamanhos do encaixe e a largura do pano — se isso tudo bate com
+    // outra já cadastrada, é a mesma grade. Aqui é AVISO e não barreira: existem
+    // motivos legítimos para duas quase-iguais (o mesmo encaixe com fases
+    // diferentes, um cadastro que está sendo refeito), e quem está na tela sabe
+    // qual é o caso. Só pergunta quando há dado suficiente para a comparação
+    // significar alguma coisa — sem tamanhos ou sem largura, a assinatura de uma
+    // grade pela metade casaria com toda grade pela metade.
+    const _larg = parseFloat(String(f1.larg || '').replace(',', '.')) || 0;
+    const _totTam = ['p','m','g','gg','g1','g2','g3'].reduce((s, t) => s + (item.tamanhos[t] || 0), 0);
+    if (_totTam > 0 && _larg > 0) {
+      const _sku = _normNome(_skuDaGrade(item));
+      const iguais = (STATE.grades || []).filter(g => {
+        if (g.id === item.id) return false;
+        if ((g.tipoPeca || '') !== (item.tipoPeca || '')) return false;
+        if (_normNome(_skuDaGrade(g)) !== _sku) return false;
+        const gl = parseFloat(String((g.fases || [])[0]?.larg || '').replace(',', '.')) || 0;
+        if (!gl || Math.abs(gl - _larg) > 0.005) return false;
+        return ['p','m','g','gg','g1','g2','g3']
+          .every(t => (parseInt((g.tamanhos || {})[t], 10) || 0) === (item.tamanhos[t] || 0));
+      });
+      if (iguais.length) {
+        const ok = confirm(`Esta grade parece ser a MESMA que já está cadastrada como:\n\n· `
+          + iguais.map(g => `${g.nome} (${(g.fases || []).length} fase(s))`).join('\n· ')
+          + `\n\nMesmo tipo de peça, mesmo SKU, mesmos tamanhos e mesma largura de pano `
+          + `(${_larg.toFixed(3).replace('.', ',')} m).\n\n`
+          + 'Duas grades iguais com nomes diferentes fazem metade das OS sair pela grade errada. '
+          + 'Se a intenção era corrigir a que já existe, cancele aqui e edite aquela.\n\n'
+          + 'Salvar assim mesmo?');
+        if (!ok) return;
+      }
+    }
+
     // Remove a estrutura antiga "enfestos" (por categoria) que foi substituída pelas fases
     delete item.enfestos;
   }
