@@ -30,6 +30,14 @@
 [CmdletBinding()]
 param(
   [string] $Docker       = 'C:\supabase\docker',
+  # Quanto esperar o MOTOR do Docker. Eram 5 min, e em 13/08/2026 ele levou
+  # 5m18s: o vigia escapou de desistir por 33 segundos. A máquina tem 8 GB e
+  # arranca com a memória no talo, então esse tempo varia de manhã para manhã.
+  # Desistir custa caro (mais 5 min até a próxima passagem, com a fábrica
+  # parada) e esperar não custa nada: o loop sai no segundo em que o motor
+  # responde. Separado do $EsperaMin de propósito — o banco tem outro ritmo, e
+  # somar os dois tem de caber no limite de 20 min da tarefa agendada.
+  [int]    $EsperaMotorMin = 10,
   [int]    $EsperaMin    = 5,
   [int]    $CadaMinutos  = 5,
   [switch] $Agendar
@@ -213,16 +221,19 @@ try {
     if (-not (Test-Path $appExe)) { Anotar "FALHA: nao achei $appExe"; exit 1 }
     try { Start-Process $appExe -ErrorAction Stop } catch { Anotar "FALHA ao abrir: $($_.Exception.Message)"; exit 1 }
 
-    $limite = (Get-Date).AddMinutes($EsperaMin)
+    $comecou = Get-Date
+    $limite = $comecou.AddMinutes($EsperaMotorMin)
     while ((Get-Date) -lt $limite -and -not (Motor-Responde $dockerExe)) { Start-Sleep -Seconds 10 }
 
     if (-not (Motor-Responde $dockerExe)) {
       $porque = Motivo-Do-Docker
-      if ($porque) { Anotar "FALHA: o motor nao respondeu em $EsperaMin min. O Docker reclamou: $porque" }
-      else         { Anotar "FALHA: o motor nao respondeu em $EsperaMin min. A proxima passagem tenta de novo." }
+      if ($porque) { Anotar "FALHA: o motor nao respondeu em $EsperaMotorMin min. O Docker reclamou: $porque" }
+      else         { Anotar "FALHA: o motor nao respondeu em $EsperaMotorMin min. A proxima passagem tenta de novo." }
       exit 1
     }
-    Anotar 'motor do Docker respondendo'
+    # Anotar quanto demorou: e o unico numero que diz se a maquina esta ficando
+    # mais lenta a cada manha. 40 s e o normal; 5 min ja e memoria no limite.
+    Anotar ('motor do Docker respondendo (levou ' + [int]((Get-Date) - $comecou).TotalSeconds + ' s)')
   }
 
   # 2) Os conteineres que a fabrica precisa estao rodando?
