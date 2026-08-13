@@ -1835,6 +1835,7 @@ async function submeterAuth() {
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
+    await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -2427,6 +2428,35 @@ async function migrarExcedenteParaFases() {
 
 function uid() { return 'id_' + Date.now() + '_' + Math.floor(Math.random()*1000); }
 
+// Migração ÚNICA (admin): a conjugação camiseta bicolor → básica sai do código e
+// passa a morar no cadastro da grade, como qualquer outra dupla.
+//
+// Sem isto, o dia em que a regra saísse do código a bicolor pararia de puxar a
+// básica em silêncio: ninguém percebe uma OS que NÃO nasceu — só o corte, dias
+// depois, com pano cortado e sem a peça. Casa por nome (é tudo o que a regra
+// antiga tinha) e só grava se as três coisas existirem e a grade ainda não
+// tiver conjugada própria. Roda 1× (flag em STATE.meta).
+async function migrarRegraConjugadaParaGrade() {
+  if (currentRole !== 'admin' || !Array.isArray(STATE.grades)) return;
+  STATE.meta = STATE.meta || {};
+  if (STATE.meta.conjugadaPorGradeV1) return;           // já rodou — não mexe mais
+  const gAtiva = STATE.grades.find(g => _normNome(g.nome) === _normNome(REGRA_BICOLOR_BASICA.gradeBicolorNome));
+  const gAlvo  = STATE.grades.find(g => _normNome(g.nome) === _normNome(REGRA_BICOLOR_BASICA.gradeBasicaNome));
+  const dAlvo  = (STATE.desenhos || []).find(d => _normNome(d.desc) === _normNome(REGRA_BICOLOR_BASICA.desenhoBasicaNome));
+  let mudou = false;
+  if (gAtiva && gAlvo && !gAtiva.conjugadaGradeId) {
+    gAtiva.conjugadaGradeId = gAlvo.id;
+    if (dAlvo) gAtiva.conjugadaDesenhoId = dAlvo.id;
+    mudou = true;
+  }
+  STATE.meta.conjugadaPorGradeV1 = true;
+  try {
+    if (mudou) await saveState('grades');
+    await saveState('meta');
+    if (mudou) toast('Conjugação bicolor → básica agora é do cadastro da grade', 'ok');
+  } catch (e) { console.warn('migrarRegraConjugadaParaGrade', e); }
+}
+
 /* ========================================================= */
 /*                      NAVEGAÇÃO                            */
 /* ========================================================= */
@@ -2737,6 +2767,14 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'grade') {
     const optsTp = opcoesPastaGrade('pasta', item.tipoPeca);
     const optsVr = opcoesPastaGrade('subpasta', item.variacao);
+    // Grade conjugada: a lista traz todas menos ela mesma — uma grade que se
+    // conjugasse consigo geraria OS sem parar.
+    const optsConjGr = '<option value="">— nenhuma —</option>'
+      + (STATE.grades || []).filter(g => g.id !== item.id)
+          .map(g => `<option value="${esc(g.id)}" ${item.conjugadaGradeId === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('');
+    const optsConjDes = '<option value="">— o mesmo desenho da OS ativa —</option>'
+      + (STATE.desenhos || [])
+          .map(d => `<option value="${esc(d.id)}" ${item.conjugadaDesenhoId === d.id ? 'selected' : ''}>${esc((d.codigo || '') + (d.desc ? ' · ' + d.desc : ''))}</option>`).join('');
 
     box.innerHTML = `
       <div class="form-grid cols-2">
@@ -2768,6 +2806,25 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         </div>
         <div id="m-fases-container"></div>
         <button type="button" class="add-row-btn" onclick="addFaseGradeRow()" style="margin-top:8px;">+ Adicionar fase</button>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">OS conjugada</label>
+        <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
+          Duas peças que saem do mesmo enfesto e sempre andam juntas. Preenchendo aqui, toda OS
+          <b>desta</b> grade gera <b>uma segunda OS</b> na grade escolhida, com as mesmas informações
+          (data, coleção, marca, equipe, peças-alvo) e numeração própria. As camadas da segunda são
+          recalculadas pela grade dela, para alcançar as mesmas peças-alvo.
+          A grade escolhida some do seletor de grades da OS — ela não se pede sozinha, vem a reboque.
+        </div>
+        <div class="form-grid cols-2">
+          <div class="field"><label>Gerar junto uma OS na grade</label>
+            <select id="m-grade-conjugada">${optsConjGr}</select>
+          </div>
+          <div class="field"><label>Desenho da OS conjugada</label>
+            <select id="m-grade-conjugada-desenho">${optsConjDes}</select>
+            <div class="field-hint">Em branco, a segunda OS sai com o mesmo desenho da primeira. Escolha um desenho só quando a peça conjugada for outra — é o caso da Camiseta Bicolor, que puxa a Básica.</div>
+          </div>
+        </div>
       </div>
       ${_gradeTemposHtml(item)}`;
     // Popula o container com as fases existentes (ou uma fase vazia em "Novo")
@@ -4527,6 +4584,14 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
+    // Grade conjugada: quem gera a segunda OS. A checagem de "consigo mesma" é
+    // repetida aqui, e não só na montagem da lista, porque o dado pode chegar de
+    // uma importação — e um ciclo aqui vira OS gerando OS sem fim.
+    item.conjugadaGradeId = v('m-grade-conjugada');
+    if (item.conjugadaGradeId && item.conjugadaGradeId === item.id) {
+      return toast('Uma grade não pode ser conjugada com ela mesma', 'err');
+    }
+    item.conjugadaDesenhoId = v('m-grade-conjugada-desenho');
     item.tamanhos = {};
     ['p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
@@ -15062,10 +15127,14 @@ function gradesParaDropdownOS(extraIds = []) {
   const tipoModelo = tipoPecaModeloOS();
   const variacao = variacaoDesenhoOS();
   const keep = new Set(extraIds.filter(Boolean));
-  // Grades conjugadas ficam ocultas do dropdown — usadas internamente pelo
-  // fluxo de auto-geracao (Camiseta Bicolor → Basica conjugada). Continua
-  // visivel se for a grade ja salva da OS em edicao (via extraIds).
-  const ocultaConjugada = (g) => /conjug/i.test(g.nome || '');
+  // Grades conjugadas ficam ocultas do dropdown: elas não se pedem sozinhas,
+  // vêm a reboque de outra OS. Quem manda é o cadastro — uma grade some daqui
+  // quando ALGUMA outra a aponta como conjugada. O casamento por nome continua
+  // logo abaixo porque é o que escondia essas grades antes de o campo existir,
+  // e tirá-lo faria reaparecer no seletor grade que hoje ninguém vê.
+  // Continua visivel se for a grade ja salva da OS em edicao (via extraIds).
+  const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
+  const ocultaConjugada = (g) => alvos.has(g.id) || /conjug/i.test(g.nome || '');
   if (!cat && !tipoModelo && !variacao) {
     return STATE.grades.filter(g => keep.has(g.id) || !ocultaConjugada(g));
   }
@@ -15985,14 +16054,20 @@ function validarAntesDeSalvar(data) {
 }
 
 /* ========================================================= */
-/*   REGRA: CAMISETA BICOLOR -> auto-gera CAMISETA BÁSICA    */
+/*        OS CONJUGADA: uma OS salva gera a segunda          */
 /* ========================================================= */
-// Quando uma OS e salva com desenho "Camiseta Bicolor" e a grade
-// "P-M-G-G1-G2-G3 (CONJUGADO COM BÁSICA) | CM.BICOLOR", gera
-// automaticamente uma OS conjugada com desenho "Camiseta Básica | Branco"
-// e grade "M-G (CONJUGADO COM BICOLOR) | CM.BÁSICA", reaproveitando o
-// peças-alvo (target) da bicolor pra calcular as camadas da básica.
-
+// Duas peças que saem do mesmo enfesto e sempre andam juntas: salvar a OS da
+// primeira gera sozinha a OS da segunda, com as mesmas informações e numeração
+// própria. Quem manda é o CADASTRO DA GRADE (campo "OS conjugada"), não este
+// arquivo — o mesmo caminho que o excedente de enfesto já tinha feito.
+//
+// Antes isto era UM caso, escrito aqui dentro: camiseta bicolor puxava a básica,
+// casando por NOME de grade e de desenho. Bastava alguém renomear a grade no
+// cadastro para a regra parar de valer, em silêncio, e ninguém saberia por quê.
+// Agora a ligação é por id, e uma dupla nova se cria sem tocar em código.
+//
+// A constante abaixo sobreviveu por um motivo só: alimentar a migração que leva
+// a regra antiga para dentro do cadastro. Ver migrarRegraConjugadaParaGrade().
 const REGRA_BICOLOR_BASICA = {
   gradeBicolorNome: 'P-M-G-G1-G2-G3 | CM.BICOLOR',
   desenhoBasicaNome: 'Camiseta Básica | Branco',
@@ -16087,62 +16162,77 @@ function corCanonicaPorTecido(corNome, tecidoNome) {
   return alvo ? alvo.nome : (corNome || '');
 }
 
-function _desenhoEhCamisetaBicolor(d) {
-  if (!d) return false;
-  const desc = _normNome(d.desc);
-  const cod = _normNome(d.codigo);
-  return (desc.includes('camiseta') && desc.includes('bicolor'))
-      || (cod.includes('camiseta') && cod.includes('bicolor'));
+// A grade que uma OS conjuga, se conjugar alguma. Devolve null em silêncio no
+// caso comum (grade sem conjugada cadastrada); só reclama quando o cadastro
+// aponta para uma grade que não existe mais — aí ficar calado seria pior, porque
+// a segunda OS simplesmente não sairia e ninguém notaria antes do corte.
+function gradeConjugadaDaGrade(gradeId) {
+  const grade = (STATE.grades || []).find(g => g.id === gradeId);
+  if (!grade || !grade.conjugadaGradeId) return null;
+  if (grade.conjugadaGradeId === grade.id) return null;   // ciclo: não gera
+  const alvo = (STATE.grades || []).find(g => g.id === grade.conjugadaGradeId);
+  if (!alvo) {
+    toast(`A grade "${grade.nome}" conjuga uma grade que não existe mais — OS conjugada não foi gerada`, 'err');
+    return null;
+  }
+  return alvo;
 }
 
-function deveGerarConjugadaBasica(osBicolor) {
-  // Evita loop: se a propria OS ja e uma conjugada, nao gera outra
-  if (osBicolor.conjugadaPaiId) return false;
+function deveGerarConjugada(os) {
+  // Evita loop: se a propria OS ja e uma conjugada, nao gera outra. É o que
+  // segura também o par cruzado (A conjuga B, B conjuga A) — a segunda OS nasce
+  // com conjugadaPaiId e não puxa uma terceira.
+  if (os.conjugadaPaiId) return false;
   // Se ja existe a conjugada e ela ainda esta na lista, nao duplica
-  if (osBicolor.conjugadaId && STATE.ordens.find(o => o.id === osBicolor.conjugadaId)) return false;
-  const desenho = STATE.desenhos.find(d => d.id === osBicolor.desenhoId);
-  if (!_desenhoEhCamisetaBicolor(desenho)) return false;
-  const grade = STATE.grades.find(g => g.id === osBicolor.gradeId);
-  if (!grade) return false;
-  if (_normNome(grade.nome) !== _normNome(REGRA_BICOLOR_BASICA.gradeBicolorNome)) return false;
-  return true;
+  if (os.conjugadaId && STATE.ordens.find(o => o.id === os.conjugadaId)) return false;
+  return !!gradeConjugadaDaGrade(os.gradeId);
 }
 
-async function gerarConjugadaBasica(osBicolor) {
-  const desBasica = STATE.desenhos.find(d => _normNome(d.desc) === _normNome(REGRA_BICOLOR_BASICA.desenhoBasicaNome));
-  if (!desBasica) {
-    toast(`Desenho "${REGRA_BICOLOR_BASICA.desenhoBasicaNome}" não cadastrado — OS conjugada não foi gerada`, 'err');
-    return null;
-  }
-  const grBasica = STATE.grades.find(g => _normNome(g.nome) === _normNome(REGRA_BICOLOR_BASICA.gradeBasicaNome));
-  if (!grBasica) {
-    toast(`Grade "${REGRA_BICOLOR_BASICA.gradeBasicaNome}" não cadastrada — OS conjugada não foi gerada`, 'err');
-    return null;
+async function gerarConjugada(osAtiva) {
+  const grAtiva = (STATE.grades || []).find(g => g.id === osAtiva.gradeId);
+  const grAlvo = gradeConjugadaDaGrade(osAtiva.gradeId);
+  if (!grAlvo) return null;
+
+  // Desenho da segunda OS. Em branco no cadastro significa "a mesma peça",
+  // que é o caso comum; escolher outro é a exceção (bicolor puxando a básica).
+  // Se o cadastro aponta um desenho apagado, PARA — sair com a peça errada na
+  // ordem é pior que não sair.
+  let desAlvo = null;
+  if (grAtiva && grAtiva.conjugadaDesenhoId) {
+    desAlvo = (STATE.desenhos || []).find(d => d.id === grAtiva.conjugadaDesenhoId) || null;
+    if (!desAlvo) {
+      toast(`A grade "${grAtiva.nome}" aponta um desenho que não existe mais — OS conjugada não foi gerada`, 'err');
+      return null;
+    }
+  } else {
+    desAlvo = (STATE.desenhos || []).find(d => d.id === osAtiva.desenhoId) || null;
   }
 
-  const target = parseInt(osBicolor.enfesto?.target) || 0;
-  const tamanhos = grBasica.tamanhos || {};
+  const target = parseInt(osAtiva.enfesto?.target) || 0;
+  const tamanhos = grAlvo.tamanhos || {};
   const qtdsValidos = ['p','m','g','gg','g1','g2','g3']
     .map(k => parseInt(tamanhos[k]) || 0)
     .filter(q => q > 0);
   const minQtd = qtdsValidos.length ? Math.min(...qtdsValidos) : 0;
   const camadas = (target > 0 && minQtd > 0)
     ? Math.ceil(target / minQtd)
-    : (parseInt(osBicolor.enfesto?.camadas) || 1);
+    : (parseInt(osAtiva.enfesto?.camadas) || 1);
 
-  // Clona o contexto do bicolor (data, equipe, colecao, marca, etc.) e ajusta
-  const novaOs = JSON.parse(JSON.stringify(osBicolor));
+  // Clona o contexto da OS ativa (data, equipe, colecao, marca, etc.) e ajusta
+  const novaOs = JSON.parse(JSON.stringify(osAtiva));
   novaOs.id = uid();
   novaOs.os = proximoNumeroOS();
-  novaOs.codigo = desBasica.codigo || '';
-  novaOs.desenhoId = desBasica.id;
-  novaOs.gradeId = grBasica.id;
-  novaOs.conjugadaPaiId = osBicolor.id;
+  if (desAlvo) {
+    novaOs.codigo = desAlvo.codigo || '';
+    novaOs.desenhoId = desAlvo.id;
+  }
+  novaOs.gradeId = grAlvo.id;
+  novaOs.conjugadaPaiId = osAtiva.id;
   delete novaOs.conjugadaId;
 
-  // Grade nova (a partir do cadastro da basica)
+  // Grade nova (a partir do cadastro da conjugada)
   novaOs.grade = {
-    descricao: grBasica.nome,
+    descricao: grAlvo.nome,
     p: parseInt(tamanhos.p) || 0,
     m: parseInt(tamanhos.m) || 0,
     g: parseInt(tamanhos.g) || 0,
@@ -16155,7 +16245,7 @@ async function gerarConjugadaBasica(osBicolor) {
                      + novaOs.grade.gg + novaOs.grade.g1 + novaOs.grade.g2 + novaOs.grade.g3;
 
   // Fases do enfesto a partir da grade nova
-  novaOs.fases = Array.isArray(grBasica.fases) ? grBasica.fases.map(f => ({
+  novaOs.fases = Array.isArray(grAlvo.fases) ? grAlvo.fases.map(f => ({
     ordem: f.ordem,
     nome: f.nome || '',
     tecidoId: f.tecidoId || '',
@@ -16177,8 +16267,8 @@ async function gerarConjugadaBasica(osBicolor) {
     totalPecas: novaOs.grade.total * camadas
   };
 
-  // Componentes do desenho da basica (se houver)
-  const compsDes = Array.isArray(desBasica.componentes) ? desBasica.componentes : [];
+  // Componentes do desenho da conjugada (se houver)
+  const compsDes = desAlvo && Array.isArray(desAlvo.componentes) ? desAlvo.componentes : [];
   if (compsDes.length) {
     const pecasPorTamanho = {
       p: novaOs.grade.p * camadas,
@@ -16210,8 +16300,8 @@ async function gerarConjugadaBasica(osBicolor) {
     });
   }
 
-  // Aviamentos do desenho da basica (se houver)
-  const avsDes = Array.isArray(desBasica.aviamentos) ? desBasica.aviamentos : [];
+  // Aviamentos do desenho da conjugada (se houver)
+  const avsDes = desAlvo && Array.isArray(desAlvo.aviamentos) ? desAlvo.aviamentos : [];
   if (avsDes.length) {
     const pecasTot = novaOs.grade.total * camadas;
     novaOs.aviamentos = avsDes.map(av => {
@@ -16228,11 +16318,11 @@ async function gerarConjugadaBasica(osBicolor) {
     });
   }
 
-  // Marca o vinculo na bicolor (sera persistido no proximo saveState)
-  const idxBicolor = STATE.ordens.findIndex(o => o.id === osBicolor.id);
-  if (idxBicolor >= 0) {
-    STATE.ordens[idxBicolor].conjugadaId = novaOs.id;
-    osBicolor.conjugadaId = novaOs.id;
+  // Marca o vinculo na OS ativa (sera persistido no proximo saveState)
+  const idxAtiva = STATE.ordens.findIndex(o => o.id === osAtiva.id);
+  if (idxAtiva >= 0) {
+    STATE.ordens[idxAtiva].conjugadaId = novaOs.id;
+    osAtiva.conjugadaId = novaOs.id;
   }
 
   STATE.ordens.push(novaOs);
@@ -16241,11 +16331,15 @@ async function gerarConjugadaBasica(osBicolor) {
   return novaOs;
 }
 
-async function aplicarRegraConjugadaSeAplicavel(osBicolor) {
-  if (!deveGerarConjugadaBasica(osBicolor)) return null;
-  const conjugada = await gerarConjugadaBasica(osBicolor);
+async function aplicarRegraConjugadaSeAplicavel(osAtiva) {
+  if (!deveGerarConjugada(osAtiva)) return null;
+  const conjugada = await gerarConjugada(osAtiva);
   if (conjugada) {
-    toast(`OS conjugada gerada: OS ${conjugada.os} (Camiseta Básica)`, 'ok');
+    // Diz QUAL peça saiu: com a regra em cadastro, a dupla deixou de ser uma só
+    // e "OS conjugada gerada" sozinho não diria mais o que foi para o chão.
+    const nome = (STATE.desenhos || []).find(d => d.id === conjugada.desenhoId)?.desc
+              || conjugada.grade?.descricao || '';
+    toast(`OS conjugada gerada: OS ${conjugada.os}${nome ? ' (' + nome + ')' : ''}`, 'ok');
   }
   return conjugada;
 }
@@ -23595,6 +23689,7 @@ async function limparTudo() {
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
+    await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
     // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
