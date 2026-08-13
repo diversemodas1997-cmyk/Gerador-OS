@@ -2778,7 +2778,10 @@ function openCadastroModal(tipo, editId = null, origin = null) {
 
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Grade padrão 6 peças"></div>
+        <div class="field full"><label>Nome *</label>
+          <input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: 2M-2GG | CM.LISA | 117cm" oninput="conferirNomeGrade()">
+          <div class="field-hint" id="m-nome-aviso"></div>
+        </div>
         <div class="field"><label>Tipo de peça (pasta)</label>
           <select id="m-grade-tipopeca" data-prev="${esc(item.tipoPeca||'')}" onchange="onSelectGradeFolder(this,'pasta')">
             ${optsTp}
@@ -3175,9 +3178,46 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   }
 
   openModal('modal-cad');
+  // O botão Salvar é o mesmo para todos os cadastros, e a conferência de nome de
+  // grade o desliga. Religa aqui, ao abrir qualquer ficha: sem isto, uma tentativa
+  // barrada numa grade deixaria o botão morto na próxima ficha aberta.
+  const btnSalvar = document.getElementById('btn-cad-salvar');
+  if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.title = ''; }
+  // Grade aberta já acusa o nome repetido na hora, antes de a pessoa preencher
+  // fases e tamanhos — barrar só no fim seria jogar fora o trabalho todo.
+  if (tipo === 'grade') conferirNomeGrade();
   // Recarrega o catálogo de SKUs na hora ao abrir Desenho/Modelo, pra o dropdown
   // não depender do que foi lido no login (auto-cura se o catálogo subiu depois).
   if (tipo === 'desenho' || tipo === 'modelo') refreshDatalistSkus();
+}
+
+// A trava do nome repetido, na tela: campo em vermelho, o nome de quem já usa e
+// o botão Salvar desligado. É o impedimento MAIOR — não dá para chegar ao fim do
+// formulário com um nome que já existe. A conferência do `salvarCadastro` segue
+// existindo atrás desta, para o caminho que não passa pela digitação (colar,
+// autocompletar do navegador, ficha aberta enquanto outro usuário cadastrava).
+function conferirNomeGrade() {
+  const inp = document.getElementById('m-nome');
+  const aviso = document.getElementById('m-nome-aviso');
+  const btn = document.getElementById('btn-cad-salvar');
+  if (!inp || !aviso) return;
+  const nome = (inp.value || '').trim();
+  const choque = _gradeComNome(nome, cadastroContext?.editId || null);
+  if (choque) {
+    inp.style.borderColor = 'var(--danger, #c0392b)';
+    inp.style.background = 'rgba(192,57,43,.06)';
+    aviso.innerHTML = `<b style="color:var(--danger,#c0392b);">Já existe a grade "${esc(choque.nome)}"</b>`
+      + ` — ${(choque.fases || []).length} fase(s)`
+      + (choque.tipoPeca ? `, ${esc(choque.tipoPeca)}` : '')
+      + `. Duas grades de mesmo nome não se distinguem na hora de emitir a OS.`
+      + ` Se a intenção era mexer naquela, feche aqui e edite ela.`;
+    if (btn) { btn.disabled = true; btn.title = 'Nome de grade já usado'; }
+  } else {
+    inp.style.borderColor = '';
+    inp.style.background = '';
+    aviso.textContent = '';
+    if (btn) { btn.disabled = false; btn.title = ''; }
+  }
 }
 
 // Recarrega o catálogo do Supabase e reinjeta as opções no <datalist id="dl-skus">.
@@ -3299,6 +3339,42 @@ function _opsDaFuncao(f) {
 function _skuDaGrade(g) {
   const partes = String((g && (g.nome || g.descricao)) || '').split('|').map(s => s.trim());
   return partes.length >= 2 ? partes[1] : '';
+}
+
+// NOME DE GRADE É ÚNICO, E ESTA É A ÚNICA REGRA QUE DIZ ISSO.
+//
+// Toda porta que cria ou renomeia grade passa por aqui: a tela de cadastro, o
+// botão duplicar, o assistente do risco e o assistente da pasta. Antes cada uma
+// tinha (ou não tinha) a sua própria conferência, e a que faltava era justamente
+// a tela por onde as grades nascem — foi assim que "GG-G3 | CM.REC | 117cm"
+// entrou duas vezes em 12/08/2026.
+//
+// O nome é o que a fábrica inteira usa para escolher a grade: é ele que aparece
+// na lista da OS, na planilha, na folha impressa e nas pastas do risco. Grade
+// repetida não se desempata em lugar nenhum dessas telas — quem emite escolhe no
+// escuro, e o erro só aparece no chão, com o pano já enfestado na medida errada.
+// Por isso aqui é BARREIRA, sem "salvar assim mesmo".
+//
+// `exceptId` é a própria grade quando se está editando: sem ele, toda grade
+// acusaria a si mesma e não daria mais para salvar nenhuma.
+function _gradeComNome(nome, exceptId) {
+  const alvo = _normNome(nome);
+  if (!alvo) return null;
+  return (STATE.grades || []).find(g => g.id !== exceptId && _normNome(g.nome) === alvo) || null;
+}
+
+// O primeiro nome livre a partir de `base`: "X (cópia)", "X (cópia 2)", ...
+// Serve ao botão duplicar, que antes carimbava "(cópia)" sem olhar — duplicar
+// duas vezes a mesma grade dava duas "X (cópia)", e a segunda passava a ser
+// indistinguível da primeira, que é exatamente o que esta regra existe para
+// impedir.
+function _gradeNomeLivre(base) {
+  if (!_gradeComNome(base, null)) return base;
+  for (let i = 2; i < 500; i++) {
+    const tent = `${base} ${i}`;
+    if (!_gradeComNome(tent, null)) return tent;
+  }
+  return `${base} ${uid()}`;
 }
 
 function _skuDaOS(os) {
@@ -4582,16 +4658,12 @@ async function salvarCadastro() {
   else if (tipo === 'grade') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
-    // NOME REPETIDO NÃO ENTRA. Os dois assistentes de risco já barravam isto; esta
-    // tela, que é por onde a maior parte das grades nasce, não barrava nada — e foi
-    // assim que "GG-G3 | CM.REC | 117cm" ficou cadastrada duas vezes em 12/08/2026,
-    // com uma hora de diferença, cada cópia com um jogo de fases diferente. Duas
-    // grades de mesmo nome não se distinguem em lugar nenhum do app: quem emite a OS
-    // escolhe na lista pelo nome, e metade das OS sai encaixada na grade errada.
-    // O `g.id !== item.id` é o que deixa salvar a grade que já existe sem que ela
-    // acuse a si mesma.
-    if ((STATE.grades || []).some(g => g.id !== item.id && _normNome(g.nome) === _normNome(item.nome))) {
-      return toast(`Já existe uma grade chamada "${item.nome}"`, 'err');
+    // NOME REPETIDO NÃO ENTRA. A trava da tela (conferirNomeGrade) já não deixa
+    // chegar até aqui digitando; esta é a que pega o resto — nome colado, ficha
+    // aberta enquanto outro usuário cadastrava o mesmo nome, dado vindo de fora.
+    const _choque = _gradeComNome(item.nome, item.id);
+    if (_choque) {
+      return toast(`Já existe a grade "${_choque.nome}" — o nome tem que ser outro`, 'err');
     }
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
@@ -5020,8 +5092,12 @@ async function duplicarCadastro(tipo, id) {
   if (!original) return toast('Cadastro não encontrado', 'err');
   const copia = JSON.parse(JSON.stringify(original));
   copia.id = uid();
+  // GRADE tem regra própria: o nome é único, e "(cópia)" carimbado às cegas
+  // duplicava duas vezes a mesma grade em duas "X (cópia)" indistinguíveis. Aqui
+  // sai "X (cópia)", "X (cópia) 2", ... — o primeiro nome que ainda não existe.
+  if (tipo === 'grade') copia.nome = _gradeNomeLivre((copia.nome || 'Grade') + ' (cópia)');
   // Marca algum campo identificador com "(cópia)" para distinguir
-  if (copia.nome)   copia.nome   = copia.nome + ' (cópia)';
+  else if (copia.nome)   copia.nome   = copia.nome + ' (cópia)';
   else if (copia.codigo) copia.codigo = copia.codigo + ' (cópia)';
   else if (copia.desc)   copia.desc   = copia.desc + ' (cópia)';
   STATE[list].push(copia);
@@ -21652,8 +21728,9 @@ async function criarGradeDoRisco(gi) {
   const sku = d.sku;
   if (!sku) return toast('Informe o SKU da grade', 'err');
   const nome = v(`rn-nome-${gi}`);
-  if ((STATE.grades || []).some(g => _normNome(g.nome) === _normNome(nome))) {
-    return toast(`Já existe uma grade chamada "${nome}"`, 'err');
+  const choque = _gradeComNome(nome, null);
+  if (choque) {
+    return toast(`Já existe a grade "${choque.nome}" — o nome tem que ser outro`, 'err');
   }
   // As linhas são as da TABELA, não os PDFs: a grade nasce com as fases
   // previstas para o produto, tenha risco para todas ou não.
@@ -23106,8 +23183,9 @@ async function pastaSalvarPasso() {
     // 116.5cm" existe — duas grades de mesmos tamanhos e mesma linha, separadas
     // pela largura. O campo era só leitura, e não havia como escrever isso aqui.
     const nome = String(G.draft.nome || '').trim() || (_riscoNomeTamanhos(G.tamanhos) + ' | ' + sku);
-    if ((STATE.grades || []).some(g => _normNome(g.nome) === _normNome(nome))) {
-      return toast(`Já existe uma grade chamada "${nome}"`, 'err');
+    const choque = _gradeComNome(nome, null);
+    if (choque) {
+      return toast(`Já existe a grade "${choque.nome}" — o nome tem que ser outro`, 'err');
     }
     if (linhas.some(x => !x.d.nome)) return toast('Toda fase precisa de nome', 'err');
     const semTec = linhas.filter(x => !x.d.tecidoId).length;
