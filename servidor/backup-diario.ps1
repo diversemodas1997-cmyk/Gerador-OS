@@ -42,7 +42,13 @@ if ($Agendar) {
   $args = @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', ('"' + (Join-Path $PSScriptRoot 'backup-diario.ps1') + '"'),
-    '-Senha', ("'" + $Senha + "'"),
+    # ASPAS DUPLAS, nao simples. O agendador chama "powershell.exe -File", e nesse
+    # modo o PowerShell tira as aspas DUPLAS e deixa as SIMPLES dentro do valor.
+    # Com aspas simples a senha do pacote virava 'a-senha' com as aspas coladas:
+    # quem restaurasse digitaria a senha anotada e ouviria "senha errada", no pior
+    # dia possivel. Descoberto em 14/08/2026 conferindo um pacote recem-gerado —
+    # os pacotes de 10/08 a 14/08 so abrem com as aspas.
+    '-Senha', ('"' + $Senha + '"'),
     '-Docker', ('"' + $Docker + '"'),
     '-Destino', ('"' + $Destino + '"'),
     '-Manter', $Manter

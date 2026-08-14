@@ -438,6 +438,14 @@ sincronização falha ao abrir, em vez de restaurar um servidor pela metade.
 > computador — junto dos segredos do passo 3. Sem ela o pacote não abre, e não
 > há como recuperá-la.
 
+> **Pacotes de 10/08 a 14/08/2026 (até as 17h) pedem a senha entre aspas
+> simples.** O `-Agendar` montava o argumento como `-Senha 'a-senha'`, e o
+> `powershell.exe -File` tira as aspas duplas mas **deixa as simples dentro do
+> valor** — a senha gravada nesses pacotes é `'a-senha'`, com as aspas. Corrigido
+> em 14/08/2026; os pacotes gerados a partir dali abrem com a senha anotada, sem
+> aspas. Para os antigos, digite a senha entre aspas simples. Achado conferindo um
+> pacote recém-gerado: **o backup que nunca foi aberto não é backup.**
+
 ## Onde guardar: Google Drive, não a nuvem do Supabase
 
 Guardar a recuperação de desastre dentro do serviço que já deixou a fábrica sem
