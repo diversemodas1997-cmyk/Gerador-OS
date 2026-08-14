@@ -4103,6 +4103,27 @@ function rotuloModeloDesenho(d) {
   return (m && m.nome) || d.modeloId || 'mesmo modelo';
 }
 
+// Nome da PEÇA como a fábrica a chama: a descrição do desenho antes do "|"
+// ("Camiseta Recortada | Preto/Branco" → "Camiseta Recortada").
+//
+// O modelo do cadastro é a CATEGORIA, não o nome: "Camiseta Bicolor" quer dizer
+// duas cores, e é isso que a regra da conjugada, o filtro de tecidos e a grade
+// vinculada usam. Quem imprimia o nome da peça vinha lendo `modeloNome`, e em
+// 14/08/2026 a OE da OS 0468 anunciou na doca uma "Camiseta Bicolor" que a
+// fábrica inteira chama de recortada — o desenho já trazia o nome certo, e
+// ninguém o lia. A grade dela dizia CM.REC e o SKU também; só a folha não.
+//
+// Lê o desenho ao vivo, então corrigir a descrição no cadastro corrige as OSs
+// já emitidas — ao contrário de `modeloNome`, que é cópia gravada na OS. Cai
+// nele quando o desenho não tem descrição ou saiu do cadastro: é exatamente o
+// que a folha fazia antes, então nenhuma OS antiga fica sem nome.
+function nomePecaOS(o) {
+  if (!o) return '';
+  const d = (STATE.desenhos || []).find(x => x.id === o.desenhoId);
+  const nome = (((d && d.desc) || '').split('|')[0] || '').trim();
+  return nome || o.modeloNome || '';
+}
+
 async function rodarCopiarEtapasParaTodos() {
   if (!exigirEdicao('copiar etapas para todos os desenhos')) return;
   const input = document.getElementById('copyEtapasOrigem');
@@ -6385,7 +6406,12 @@ function resumoPernaExpedicao(oc, perna) {
       carga: c,
       os: o,
       osNumero: o ? (o.os || '—') : '(OS excluída)',
-      modelo: o ? (o.modeloNome || '') : '',
+      modelo: o ? nomePecaOS(o) : '',
+      // A observação escrita ao alocar é recado para a doca ("apenas mangas e
+      // costas", "unido ombro"). Vinha sendo gravada e nunca lida: nem a tela do
+      // plano nem a folha de OE a mostravam, e quem recebia a carga não tinha
+      // como saber. Sai daqui para os dois.
+      obs: (c.obs || '').trim(),
       pecas: comp ? Math.round(pecasOS * comp.fracao) : pecasOS,
       pecasOS,
       volumes: Number(c.volumes) || 0
@@ -6960,7 +6986,8 @@ function renderExpedicaoPlano() {
           i.carga.origem === 'ensaque' ? ' <span class="exp-badge info" title="Entrou nesta OE ao ser marcada como ensacada no checklist da OS, não pelo planejamento da expedição">pelo ensaque</span>' : ''}${
           i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
         <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
-      </div>`;
+      </div>${i.obs ? `
+      <div class="exp-os-obs" title="Observação escrita ao alocar esta OS na expedição. Também sai na folha de OE.">${esc(i.obs)}</div>` : ''}`;
     }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
       <div class="exp-perna">
@@ -7040,7 +7067,7 @@ function renderExpedicaoPlano() {
           ${remanescentes.map(({ o, rem }) => `
             <tr>
               <td><strong>${esc(o.os) || '—'}</strong></td>
-              <td>${esc(o.modeloNome) || '—'}</td>
+              <td>${esc(nomePecaOS(o)) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${fmt(rem.alocado)}/${fmt(rem.total)}</td>
               <td style="font-size:12px;"><span class="exp-badge baixo">${fmt(rem.restante)}</span> ${esc(_expFaltamTexto(rem))}</td>
               <td class="col-actions row-actions">
@@ -7070,7 +7097,7 @@ function renderExpedicaoPlano() {
           ${pendentes.map(({ o, pecas }) => `
             <tr>
               <td><strong>${esc(o.os) || '—'}</strong></td>
-              <td>${esc(o.modeloNome) || '—'}</td>
+              <td>${esc(nomePecaOS(o)) || '—'}</td>
               <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
               <td class="col-actions row-actions">
@@ -7206,7 +7233,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
   (STATE.ordens || []).forEach(o => {
     const pecas = _expPecasOS(o);
     if (!(pecas > 0)) return;
-    const label = `${o.os || '(sem nº)'} · ${o.modeloNome || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
+    const label = `${o.os || '(sem nº)'} · ${nomePecaOS(o) || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
     (osEnsacada(o) ? ensacadas : outras).push({ id: o.id, label });
   });
   const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
@@ -13202,9 +13229,15 @@ function renderPrintPlanoExpedicao() {
         <span class="m">${esc(i.modelo)}</span>
         ${corPred ? `<span class="cor">${esc(corPred)}</span>` : ''}
       </div>`;
+    // A observação da alocação é recado de quem planejou para quem separa e para
+    // quem recebe ("apenas mangas e costas"). Vai em TODOS os formatos do quadro
+    // — sem grade, carga parcial e lote cheio —, porque o recado não depende de
+    // como a OS foi repartida. Destacado, não em nota de rodapé: é justamente o
+    // que não está em nenhum outro lugar do papel.
+    const obsHtml = i.obs ? `<div class="obs">${esc(i.obs)}</div>` : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div></div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div>${obsHtml}</div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -13235,6 +13268,7 @@ function renderPrintPlanoExpedicao() {
             ${fmt(i.pecas)} pç · <b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}
           </div>
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
+          ${obsHtml}
         </div>`;
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
@@ -13296,6 +13330,7 @@ function renderPrintPlanoExpedicao() {
           </tbody>
         </table>${indef ? `
         <div class="pe">A divisão entre as tonalidades ainda não foi repartida na OS.</div>` : ''}
+        ${obsHtml}
       </div>`;
   };
 
@@ -20421,7 +20456,7 @@ function renderPrintSheet(o) {
     <!-- LINHA SECUNDÁRIA: descrição -->
     <div style="display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;border:1.5px solid #000;border-top:none;font-size:7.5pt;">
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Desenho</strong><br>${esc(o.codigo||'—')}</div>
-      <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(o.modeloNome||'—')}</span></div>
+      <div style="padding:3px 6px;border-right:1px solid #000;background:#fff59d;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;">Descrição</strong><br><span style="font-weight:700;">${esc(nomePecaOS(o)||'—')}</span></div>
       <div style="padding:3px 6px;border-right:1px solid #000;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.05em;">Base</strong><br>${esc(o.baseNome || o.base || '—')}</div>
       <div style="padding:3px 6px;"><strong style="font-family:'IBM Plex Mono',monospace;font-size:7pt;color:#555;letter-spacing:.05em;">${esc(labelCoord)}</strong><br><span style="background:#a7f3d0;padding:1px 4px;">${esc(nomeCoordPessoa)}</span></div>
     </div>

@@ -1546,6 +1546,19 @@ body:not(.is-admin) #modal-cad-fields button {
   padding: 4px 0;
   border-bottom: 1px dotted var(--line-2);
 }
+/* Observação da alocação: linha própria abaixo da OS, porque é texto livre e não
+   caberia entre as colunas sem apertar o modelo. A linha pontilhada da OS sai
+   quando há observação — senão ela cortaria a OS do seu próprio recado e o
+   recado pareceria ser da OS de baixo. */
+.exp-os-row:has(+ .exp-os-obs) { border-bottom: none; padding-bottom: 0; }
+.exp-os-obs {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  padding: 2px 0 4px 4px;
+  margin-bottom: 4px;
+  border-left: 2px solid var(--accent);
+  border-bottom: 1px dotted var(--line-2);
+}
 .exp-os-row .num { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
 .exp-os-row .mod { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exp-os-row .qtd { font-family: 'IBM Plex Mono', monospace; color: var(--ink-3); white-space: nowrap; }
@@ -2241,6 +2254,14 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .exp-print-os > .cab .cor { font-weight: 700; white-space: nowrap; }
 .exp-print-os > .sub { font-size: 7.5pt; color: #333; margin: 1.5pt 0 1pt; }
 .exp-print-os > .pe { font-size: 7pt; color: #555; font-style: italic; margin-top: 1pt; }
+/* Observação escrita ao alocar a OS. Ao contrário do .pe, que é nota de rodapé
+   sobre a conta, esta é RECADO ("apenas mangas e costas") e é o único dado da
+   folha que não está em nenhum outro lugar do papel — por isso vem em preto,
+   com tarja e barra à esquerda, e não em cinza itálico. */
+.exp-print-os > .obs {
+  font-size: 7.5pt; color: #000; margin-top: 1.5pt;
+  padding: 1pt 3pt; background: #fff59d; border-left: 2pt solid #000;
+}
 .exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
 
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
