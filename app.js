@@ -5632,6 +5632,24 @@ function _nomeEtapaDaFase(o, fase) {
 // nominadas (corte e costurando), e ler o índice daqui evita amarrar a posição.
 function _faseIdxPorId(id) { return FASES_ESTOQUE.findIndex(f => f.id === id); }
 
+// LOTE PARCIAL: quanto do lote a ALOCAÇÃO já mandou para a Expedição. Os pacotes
+// alocados numa carga de IDA saem do Estoque de corte e entram em Expedição na
+// hora — pôr no plano já é dizer que aquele pacote vai embarcar —, e o que não
+// foi na carga fica no saldo do corte, disponível para a próxima expedição.
+// Duas guardas, ambas do modelo sobreposto:
+//   - a OS tem que estar NO CORTE pelas etapas. Marcada a etapa Costura, o lote
+//     inteiro volta da Expedição para Costurando e a fração deixa de valer.
+//   - a etapa Expedição não pode estar marcada: aí o lote inteiro já está lá
+//     pelo caminho normal, e somar a fração contaria a mesma peça duas vezes.
+function _fracAlocadaExpedicaoOS(o) {
+  const iCorte = _faseIdxPorId('corte');
+  const iExp = _faseIdxPorId('expedicao');
+  if (iCorte < 0 || iExp < 0 || !o) return 0;
+  if (faseAtualOS(o) !== iCorte) return 0;
+  if (_faseEntrouOS(o, FASES_ESTOQUE[iExp].entrada)) return 0;
+  return _expEmbarcadoOS(o).fracao || 0;
+}
+
 // Saldo de uma fase por tecido+cor:
 //   entrada  = OSs que entraram na fase (× componentes)
 //   saida    = OSs que já entraram na PRÓXIMA fase
@@ -5650,21 +5668,16 @@ function calcularSaldosFase(idx) {
     return cur;
   };
   const iCorte = _faseIdxPorId('corte');
-  const iCostura = _faseIdxPorId('costurando');
+  const iExp = _faseIdxPorId('expedicao');
   (STATE.ordens || []).forEach(o => {
     const entrou = _faseEntrouOS(o, fase.entrada);
     // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
     // agora (a última etapa marcada não é a desta fase).
     const atual = faseAtualOS(o);
-    // LOTE PARCIAL: o embarque também move peça. Os pacotes que já foram numa
-    // carga de IDA saem do Estoque de corte e entram em Costurando na hora, sem
-    // esperar a etapa Costura — e o que NÃO foi na carga continua no saldo do
-    // corte, disponível para a próxima expedição. Só vale enquanto a OS, pelas
-    // etapas, ainda está no corte: marcada a etapa seguinte, o modelo sobreposto
-    // já leva o lote inteiro para a fase dela e a fração deixa de fazer sentido.
-    const fracEmb = (atual === iCorte && (idx === iCorte || idx === iCostura))
-      ? _expEmbarcadoOS(o).fracao : 0;
-    const entradaParcial = idx === iCostura && !entrou && fracEmb > 0;
+    // Lote parcial: a alocação move peça do corte para a Expedição (regra e
+    // guardas em _fracAlocadaExpedicaoOS). Só estas duas fases mudam por ela.
+    const fracEmb = (idx === iCorte || idx === iExp) ? _fracAlocadaExpedicaoOS(o) : 0;
+    const entradaParcial = idx === iExp && !entrou && fracEmb > 0;
     if (!entrou && !entradaParcial) return;
     const saiu = entrou && atual !== idx;
     // Quais OSs listar na coluna OS desta linha:
@@ -5679,7 +5692,7 @@ function calcularSaldosFase(idx) {
       const cur = pegar(it.tecidoNome, it.corNome);
       const embarcado = Math.round(it.qtd * fracEmb);
       if (entradaParcial) {
-        cur.entrada += embarcado;            // em Costurando entra só o que embarcou
+        cur.entrada += embarcado;            // em Expedição entra só o que foi alocado
       } else {
         cur.entrada += it.qtd;
         if (saiu) cur.saida += it.qtd;
@@ -5988,7 +6001,7 @@ function renderFasePainel(faseIdx) {
   const cont = document.getElementById(fase.painelId);
   if (!cont) return;
   const idxCorte = _faseIdxPorId('corte');
-  const idxCostura = _faseIdxPorId('costurando');
+  const idxExp = _faseIdxPorId('expedicao');
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
@@ -6025,9 +6038,9 @@ function renderFasePainel(faseIdx) {
   // O lote parcial muda a conta destas duas fases — dizer a regra aqui evita que
   // um saldo "quebrado" (parte da OS) pareça erro de contagem.
   const notaParcial = fase.id === 'corte'
-    ? ' <b>Lote parcial:</b> os pacotes já alocados numa carga de <b>ida</b> contam como <b>saída</b> aqui e entram em <b>Costurando</b>; o que não foi na carga fica no saldo, disponível para a próxima expedição.'
-    : (fase.id === 'costurando'
-      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já embarcados na <b>ida</b>, mesmo antes de a etapa Costura ser marcada.'
+    ? ' <b>Lote parcial:</b> os pacotes já alocados numa carga de <b>ida</b> contam como <b>saída</b> aqui e entram em <b>Expedição</b>; o que não foi na carga fica no saldo, disponível para a próxima expedição.'
+    : (fase.id === 'expedicao'
+      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já alocados numa carga de <b>ida</b>, mesmo antes de a etapa Expedição ser marcada. Marcar <b>Costura</b> no checklist devolve o lote inteiro para <b>Costurando</b>.'
       : '');
   const card = `
     <div class="card">
@@ -6057,37 +6070,36 @@ function renderFasePainel(faseIdx) {
     </div>`;
 
   // OSs atualmente NESTA fase. Com lote parcial, a OS que embarcou parte do lote
-  // aparece nas DUAS: no corte com o que sobrou e em Costurando com o que saiu.
+  // aparece nas DUAS: no corte com o que sobrou e em Expedição com o que saiu.
   const pacotes = (STATE.ordens || []).map(o => {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
     const fAtual = faseAtualOS(o);
-    const frac = (fAtual === idxCorte && (faseIdx === idxCorte || faseIdx === idxCostura))
-      ? _expEmbarcadoOS(o).fracao : 0;
+    const frac = (faseIdx === idxCorte || faseIdx === idxExp) ? _fracAlocadaExpedicaoOS(o) : 0;
     const embarcado = Math.round(total * frac);
     return {
       osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '',
       total, faseIdx: fAtual, embarcado, parcial: frac > 0 && frac < 1
     };
   }).filter(p => p.total > 0 && (p.faseIdx === faseIdx
-      || (faseIdx === idxCostura && p.faseIdx === idxCorte && p.embarcado > 0)))
+      || (faseIdx === idxExp && p.faseIdx === idxCorte && p.embarcado > 0)))
     .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
   // Quantas peças da OS contam NESTA fase: no corte, o lote menos o que embarcou;
-  // em Costurando (sem a etapa marcada), só o que embarcou.
+  // em Expedição (sem a etapa marcada), só o que foi alocado.
   const pecasNaFase = p => {
-    if (faseIdx === idxCostura && p.faseIdx === idxCorte) return p.embarcado;
+    if (faseIdx === idxExp && p.faseIdx === idxCorte) return p.embarcado;
     if (faseIdx === idxCorte && p.embarcado > 0) return Math.max(0, p.total - p.embarcado);
     return p.total;
   };
   const seloParcial = p => {
     if (!(p.embarcado > 0) || !p.parcial) return '';
-    return faseIdx === idxCostura
-      ? ' <span class="badge" style="background:#e6eefb;">parcial · embarcada</span>'
-      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.embarcado)} pç já embarcadas</span>`;
+    return faseIdx === idxExp
+      ? ' <span class="badge" style="background:#e6eefb;">parcial · alocada</span>'
+      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.embarcado)} pç já alocadas</span>`;
   };
   const pacotesHtml = pacotes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote embarca numa carga, a OS conta nas duas fases: as peças que foram, em Costurando; as que ficaram, no Estoque de corte.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa carga, a OS conta nas duas fases: as peças alocadas, em Expedição; as que ficaram, no Estoque de corte.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ação</th></tr></thead>
         <tbody>
@@ -6617,7 +6629,7 @@ function _expPecasPacoteOS(o) {
 }
 
 // Peças de uma composição de carga ([{tam,tom}]) e a fração que ela representa do
-// lote inteiro. É a fração que move o saldo entre Estoque de corte e Costurando.
+// lote inteiro. É a fração que move o saldo entre Estoque de corte e Expedição.
 function _expPecasDaComposicao(o, lista) {
   const vazio = { pecas: 0, total: 0, fracao: 0 };
   if (!o || !Array.isArray(lista)) return vazio;
@@ -6627,8 +6639,8 @@ function _expPecasDaComposicao(o, lista) {
 }
 
 // Quanto do lote de uma OS já EMBARCOU: as peças dos pacotes alocados em cargas
-// de IDA não canceladas. A ida é que leva o corte para a costura — a volta traz o
-// mesmo pacote de volta e contá-la aqui tiraria a peça do estoque duas vezes.
+// de IDA não canceladas. A ida é que leva o corte para a expedição — a volta traz
+// o mesmo pacote de volta e contá-la aqui tiraria a peça do estoque duas vezes.
 // Carga antiga (só o número de volumes, sem composição) embarca o lote inteiro.
 function _expEmbarcadoOS(o) {
   const vazio = { pecas: 0, total: 0, fracao: 0, parcial: false };
@@ -7021,7 +7033,7 @@ function renderExpedicaoPlano() {
   const remanescentesHtml = remanescentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no <b>Estoque de corte</b> — só o que embarcou passou para <b>Costurando</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no <b>Estoque de corte</b> — só o que foi alocado passou para <b>Expedição</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
       <table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>
