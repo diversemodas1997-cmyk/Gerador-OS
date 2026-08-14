@@ -1591,7 +1591,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','osCounter','meta'];
 
 async function inicializarAuth() {
   if (!supa) return;
@@ -1945,6 +1945,15 @@ const STATE = {
   // renomeado ou excluído, o histórico do dia continua legível. referencia é
   // texto livre (lote, coleção, OSs) — o plano não fica preso a um pedido.
   operacoes: [],
+  // ---------- Lista de compra ----------
+  // O que se pretende produzir e ainda não virou OS. Cada item é uma produção
+  // descrita pelo par que basta para calcular pano: a GRADE (que sabe as medidas
+  // de cada fase e quantas bobinas o enfesto gasta) e o DESENHO TÉCNICO (que
+  // sabe a cor de cada fase). O tamanho do lote entra em camadas.
+  // { id, gradeId, desenhoId, camadas, repeticoes, obs, criadoEm }
+  // Nada aqui mexe em estoque: a lista é uma PREVISÃO de compra, e reserva de
+  // material continua sendo coisa de OS salva.
+  compraPlano: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -2019,7 +2028,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','meta'];
+  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -2551,6 +2560,7 @@ function goto(page) {
   if (page === 'cad-componentes') renderComponentesCad();
   if (page === 'lista-os') renderListaOS();
   if (page === 'estoque') renderEstoque();
+  if (page === 'compra') renderCompra();
   if (page === 'corte') renderFasePainel(0);
   if (page === 'costurando') renderFasePainel(1);
   if (page === 'fios') renderFasePainel(2);
@@ -14726,6 +14736,93 @@ function _aplicarCamadasMaximasDefault() {
   calcularAlvoDeCamadas();                                   // deriva peças-alvo = camadas × grade × mult
 }
 
+/* ---------------------------------------------------------------------------
+   QUAL COR VAI EM CADA FASE DA GRADE
+
+   Esta conta vivia dentro de `aplicarGradePreset`, presa ao formulário: só
+   sabia responder com a tela da Nova OS aberta e o desenho escolhido no select.
+   A tela de Compra precisa da MESMA resposta antes de existir OS nenhuma — e
+   "qual a cor desta fase", decidido em dois lugares, é exatamente como nascem
+   dois números de tecido diferentes para a mesma produção.
+
+   Recebe as fases JÁ ORDENADAS (posição 0 = fase 1; buraco na numeração entra
+   como {}), os papéis que `calcularPapeisFases` deu para elas, e o desenho.
+   Devolve um array paralelo de corId, com '' onde não há resposta.
+   --------------------------------------------------------------------------- */
+function coresPorFaseDaGrade(fasesOrd, papeisFases, desenho) {
+  const total = (fasesOrd || []).length;
+
+  // Cor de um componente específico do desenho (matching por papel + nome).
+  // Em camiseta (sem moletom no grade) ribana_1 não é Punhos, é Gola — então
+  // o matcher tenta 'punho' primeiro e, se não casar, cai pra 'gola'.
+  //   forro_capuz  → "forro"
+  //   ribana_1     → "punho" → "gola"
+  //   ribana_2     → "barra" → "gola"
+  //   ribana_3+    → "cobre" / "gola" / "ribana"
+  //   moletom/malha (corpo) → frente / costas / capuz / manga
+  //   sem papel    → 1º componente com mesmo tecidoId da fase
+  const corDeComponente = (papel, f) => {
+    if (!desenho) return null;
+    const componentes = Array.isArray(desenho.componentes) ? desenho.componentes : [];
+    if (!componentes.length) return null;
+    const comps = componentes.map(c => ({
+      ...c,
+      nome: c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || ''
+    }));
+    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const pickByName = (kws) => comps.find(c => kws.some(k => norm(c.nome).includes(k)))?.corId || null;
+    if (papel === 'forro_capuz')  return pickByName(['forro']);
+    if (papel === 'ribana_1')     return pickByName(['punho']) || pickByName(['gola']);
+    if (papel === 'ribana_2')     return pickByName(['barra']) || pickByName(['gola']);
+    if (papel?.startsWith('ribana_')) return pickByName(['cobre', 'gola', 'ribana']);
+    if (papel === 'moletom' || papel === 'malha') return pickByName(['frente', 'costas', 'capuz', 'manga']);
+    if (f?.tecidoId) {
+      return comps.find(c => c.tecidoId === f.tecidoId)?.corId || null;
+    }
+    return null;
+  };
+
+  // Lista de ordens das fases de CORPO (moletom ou malha sem moletom).
+  // Usada para mapear cor primária/secundária/terciária às 1ª/2ª/3ª body fases,
+  // independente da posição absoluta (assim acessórios entre as body fases
+  // não consomem cor topo-nível).
+  const bodyOrdems = [];
+  for (let n = 1; n <= total; n++) {
+    const p = (papeisFases[n-1] || {}).papel || '';
+    if (p === 'moletom' || p === 'malha') bodyOrdems.push(n);
+  }
+
+  // Cor por fase no Enfesto:
+  //   - Body fase (moletom/malha-corpo): 1ª body → corPrimária, 2ª → corSecund.,
+  //     3ª → corTerciária. Se a posição não tiver cor cadastrada, cai pra
+  //     componente correspondente.
+  //   - Acessório (forro_capuz, ribana_*): SEMPRE cor do componente
+  //     correspondente do desenho (gola, forro, punho, barra, etc.).
+  //   - Sem componente correspondente → f.corId da fase da grade → vazio.
+  const uma = (n, papel, f) => {
+    if (papel === 'moletom' || papel === 'malha') {
+      const idx = bodyOrdems.indexOf(n);
+      // 1ª fase de corpo → 1ª cor do desenho, 2ª → 2ª, 3ª → 3ª. As cores seguem a
+      // sequência canônica do desenho (desc), então a fase acompanha a cor certa
+      // mesmo que os campos corPrincipal/Sec/Ter estejam numa ordem divergente.
+      const cores = ordenarCoresIdsPorDesc([
+        desenho?.corPrincipalId,
+        desenho?.corSecundariaId,
+        desenho?.corTerciariaId
+      ].filter(Boolean), desenho);
+      if (idx >= 0 && idx < cores.length && cores[idx]) return cores[idx];
+    }
+    return corDeComponente(papel, f) || f.corId || '';
+  };
+
+  const out = [];
+  for (let n = 1; n <= total; n++) {
+    const f = fasesOrd[n-1] || {};
+    out.push(uma(n, (papeisFases[n-1] || {}).papel || '', f) || '');
+  }
+  return out;
+}
+
 function aplicarGradePreset() {
   const id = document.getElementById('f-grade-preset').value;
   if (!id) return;
@@ -14757,68 +14854,11 @@ function aplicarGradePreset() {
   for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
   const papeisFases = maxOrd > 0 ? calcularPapeisFases(fasesOrd) : [];
 
-  // Cor de um componente específico do desenho (matching por papel + nome).
-  // Em camiseta (sem moletom no grade) ribana_1 não é Punhos, é Gola — então
-  // o matcher tenta 'punho' primeiro e, se não casar, cai pra 'gola'.
-  //   forro_capuz  → "forro"
-  //   ribana_1     → "punho" → "gola"
-  //   ribana_2     → "barra" → "gola"
-  //   ribana_3+    → "cobre" / "gola" / "ribana"
-  //   moletom/malha (corpo) → frente / costas / capuz / manga
-  //   sem papel    → 1º componente com mesmo tecidoId da fase
-  const corDeComponente = (papel, f) => {
-    if (!desenhoAtual) return null;
-    const componentes = Array.isArray(desenhoAtual.componentes) ? desenhoAtual.componentes : [];
-    if (!componentes.length) return null;
-    const comps = componentes.map(c => ({
-      ...c,
-      nome: c.nome || (STATE.componentes.find(x => x.id === c.componenteId) || {}).nome || ''
-    }));
-    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const pickByName = (kws) => comps.find(c => kws.some(k => norm(c.nome).includes(k)))?.corId || null;
-    if (papel === 'forro_capuz')  return pickByName(['forro']);
-    if (papel === 'ribana_1')     return pickByName(['punho']) || pickByName(['gola']);
-    if (papel === 'ribana_2')     return pickByName(['barra']) || pickByName(['gola']);
-    if (papel?.startsWith('ribana_')) return pickByName(['cobre', 'gola', 'ribana']);
-    if (papel === 'moletom' || papel === 'malha') return pickByName(['frente', 'costas', 'capuz', 'manga']);
-    if (f?.tecidoId) {
-      return comps.find(c => c.tecidoId === f.tecidoId)?.corId || null;
-    }
-    return null;
-  };
-
-  // Lista de ordens das fases de CORPO (moletom ou malha sem moletom).
-  // Usada para mapear cor primária/secundária/terciária às 1ª/2ª/3ª body fases,
-  // independente da posição absoluta (assim acessórios entre as body fases
-  // não consomem cor topo-nível).
-  const bodyOrdems = [];
-  for (let n = 1; n <= maxOrd; n++) {
-    const p = papeisFases[n-1]?.papel || '';
-    if (p === 'moletom' || p === 'malha') bodyOrdems.push(n);
-  }
-
-  // Cor por fase no Enfesto:
-  //   - Body fase (moletom/malha-corpo): 1ª body → corPrimária, 2ª → corSecund.,
-  //     3ª → corTerciária. Se a posição não tiver cor cadastrada, cai pra
-  //     componente correspondente.
-  //   - Acessório (forro_capuz, ribana_*): SEMPRE cor do componente
-  //     correspondente do desenho (gola, forro, punho, barra, etc.).
-  //   - Sem componente correspondente → f.corId da fase da grade → vazio.
-  const corPorFase = (n, papel, f) => {
-    if (papel === 'moletom' || papel === 'malha') {
-      const idx = bodyOrdems.indexOf(n);
-      // 1ª fase de corpo → 1ª cor do desenho, 2ª → 2ª, 3ª → 3ª. As cores seguem a
-      // sequência canônica do desenho (desc), então a fase acompanha a cor certa
-      // mesmo que os campos corPrincipal/Sec/Ter estejam numa ordem divergente.
-      const cores = ordenarCoresIdsPorDesc([
-        desenhoAtual?.corPrincipalId,
-        desenhoAtual?.corSecundariaId,
-        desenhoAtual?.corTerciariaId
-      ].filter(Boolean), desenhoAtual);
-      if (idx >= 0 && idx < cores.length && cores[idx]) return cores[idx];
-    }
-    return corDeComponente(papel, f) || f.corId || '';
-  };
+  // Qual cor vai em cada fase — a conta mora fora daqui (coresPorFaseDaGrade),
+  // porque a tela de Compra faz a mesma pergunta sem o formulário na frente.
+  const coresIdsFases = maxOrd > 0
+    ? coresPorFaseDaGrade(fasesOrd, papeisFases, desenhoAtual) : [];
+  const corPorFase = (n) => coresIdsFases[n - 1] || '';
 
   // Renderiza blocos de Enfesto — um por fase na ordem cadastrada (pode ter blocos vazios no meio)
   if (maxOrd > 0) {
@@ -14826,7 +14866,7 @@ function aplicarGradePreset() {
     for (let n = 1; n <= maxOrd; n++) {
       const f = porOrdem[n] || {};
       const papel = papeisFases[n-1] || { label: '', papel: '' };
-      const corIdEfetiva = corPorFase(n, papel.papel, f);
+      const corIdEfetiva = corPorFase(n);
       const cor = corIdEfetiva ? STATE.cores.find(c => c.id === corIdEfetiva) : null;
       prefills.push({
         comp: f.comp || '',
@@ -14850,7 +14890,7 @@ function aplicarGradePreset() {
       for (let n = 1; n <= maxOrd; n++) {
         const f = porOrdem[n] || {};
         const papel = papeisFases[n-1] || { papel: '' };
-        const corIdEfetiva = corPorFase(n, papel.papel, f);
+        const corIdEfetiva = corPorFase(n);
         if (f.tecidoId || corIdEfetiva) {
           addTecidoRow({ tecidoId: f.tecidoId || '', corId: corIdEfetiva });
         }
@@ -15056,7 +15096,15 @@ function ehFaseRibana(L) {
 //
 // Ribana: aí sim é pelo peso, porque é a única medida que existe para ela — mas
 // só quando as duas pontas estiverem cadastradas.
-function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
+//
+// `cru` pede o número ANTES do arredondamento. Só a tela de Compra usa: lá as
+// fases de várias produções se somam antes de virar bobina, e arredondar cada
+// pedaço para cima antes de somar compraria pano a mais a cada linha da lista
+// (três fases de 0,2 bobina não são três bobinas, são uma). Na folha de OS o
+// arredondamento continua onde sempre esteve — quem separa material tira bobina
+// inteira da prateleira.
+function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
+  const arredonda = v => cru ? v : bobinaInteira(v);
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
@@ -15069,7 +15117,7 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
     const pb = Number(L && L.pesoBobina);
     if (!isFinite(kg) || kg <= 0 || !L.pesoDesteTecido) return null;
     if (!isFinite(pb) || pb <= 0) return null;
-    return bobinaInteira(kg / pb);
+    return arredonda(kg / pb);
   }
 
   const prev = Number(bobinasPrevistas);
@@ -15078,8 +15126,8 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L) {
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
 
   const cam = parseInt(L && L.camadas, 10) || 0;
-  if (!(cam > 0)) return bobinaInteira(prev);
-  return bobinaInteira(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO));
+  if (!(cam > 0)) return arredonda(prev);
+  return arredonda(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO));
 }
 
 // Quanto pesa cada bobina, SEGUNDO ESTA FASE. É consequência, não premissa: o
@@ -23927,8 +23975,523 @@ async function limparTudo() {
   }
 })();
 
+/* =========================================================================
+   COMPRA — o pano de uma produção que ainda não virou OS
+
+   O consumo de tecido só existia depois: a OS era montada, salva, e aí a folha
+   dizia quantas bobinas e quantos quilos aquilo ia comer. Para COMPRAR, isso
+   chega tarde — o pedido ao fornecedor precisa sair antes de a OS existir.
+
+   Aqui o usuário preenche o par que basta para a conta fechar:
+
+     • a GRADE, que sabe as medidas de cada fase (comprimento e largura de
+       enfestar) e quantas bobinas o enfesto cheio gasta;
+     • o DESENHO TÉCNICO, que sabe a COR de cada fase — e a gramatura, que é o
+       que transforma metro em quilo, é cadastrada por cor.
+
+   O tamanho do lote entra em camadas (ou em peças, que viram camadas).
+
+   NÃO HÁ CONTA NOVA AQUI. A tela monta o mesmo objeto que uma OS salva teria e
+   entrega para `consumoEnfestoOS` e `bobinasEfetivasFase` — as mesmas funções da
+   folha de OS e da baixa de estoque. Uma segunda conta "parecida" seria o começo
+   de dois números diferentes de tecido para a mesma produção, e a compra
+   sairia do número errado.
+
+   A única diferença de tratamento está no arredondamento das bobinas: na folha
+   cada fase arredonda para cima, porque quem separa material tira bobina
+   inteira da prateleira. Na compra as fases de várias produções se SOMAM antes
+   de virar bobina — três fases de 0,2 bobina são uma, não três.
+   ========================================================================= */
+
+// Limite de camadas de uma GRADE, sem formulário na frente. `calcularLimiteCamadas`
+// lê os selects da Nova OS; a pergunta aqui é a mesma, feita à grade cadastrada:
+// vence o tecido mais restritivo entre as fases (moletom 36 manda sobre malha
+// 80). Zero = nenhuma fase tem tecido com limite conhecido.
+function compraLimiteCamadasGrade(g) {
+  let limite = Infinity;
+  ((g && g.fases) || []).forEach(f => {
+    const t = (STATE.tecidos || []).find(x => x.id === f.tecidoId);
+    const cat = categoriaEfetivaTecido(t);
+    if (!cat) return;
+    const lim = LIMITE_CAMADAS[cat];
+    if (lim > 0 && lim < limite) limite = lim;
+  });
+  return limite === Infinity ? 0 : limite;
+}
+
+// A OS que ainda não existe. Monta, da grade e do desenho, o mesmo objeto que
+// uma OS salva teria — fases, tecidos, cores e blocos de enfesto.
+//
+// Os blocos vão de propósito SEM camadas: assim cada fase deriva as suas por
+// `camadasPadraoDaFase`, que é a regra que faz a ribana 2x enfestar metade e o
+// viés ficar em 1. Escrever o número principal em todas as fases dobraria a
+// ribana — foi exatamente esse o defeito da OS 0443.
+function compraOsSimulada(gradeId, desenhoId, camadas) {
+  const g = (STATE.grades || []).find(x => x.id === gradeId);
+  if (!g) return null;
+  const desenho = desenhoId ? (STATE.desenhos || []).find(x => x.id === desenhoId) : null;
+  const porOrdem = {};
+  (Array.isArray(g.fases) ? g.fases : []).forEach(f => { if (f.ordem) porOrdem[f.ordem] = f; });
+  const ordens = Object.keys(porOrdem).map(Number);
+  const maxOrd = ordens.length ? Math.max(...ordens) : 0;
+  if (!maxOrd) return null;
+  const fasesOrd = [];
+  for (let n = 1; n <= maxOrd; n++) fasesOrd.push(porOrdem[n] || {});
+  const papeis = calcularPapeisFases(fasesOrd);
+  const coresIds = coresPorFaseDaGrade(fasesOrd, papeis, desenho);
+  const fases = fasesOrd.map((f, i) => {
+    const corId = coresIds[i] || f.corId || '';
+    return {
+      ordem: i + 1,
+      nome: f.nome || '',
+      tecidoId: f.tecidoId || '',
+      tecidoNome: ((STATE.tecidos || []).find(t => t.id === f.tecidoId) || {}).nome || '',
+      corId,
+      corNome: ((STATE.cores || []).find(c => c.id === corId) || {}).nome || '',
+      comp: f.comp || '',
+      larg: f.larg || ''
+    };
+  });
+  return {
+    // Id de mentira, e com cara de mentira: nada aqui é gravado em ordens, e
+    // nenhum movimento de estoque nasce desta OS. A lista de compra é previsão;
+    // reserva de material continua sendo coisa de OS salva de verdade.
+    id: '__compra__' + gradeId,
+    gradeId,
+    desenhoId: desenhoId || '',
+    grade: Object.assign({}, g.tamanhos || {}),
+    fases,
+    tecidos: fases.map(f => ({ tecidoId: f.tecidoId, tecidoNome: f.tecidoNome,
+                               corId: f.corId, corNome: f.corNome })),
+    enfesto: {
+      camadas: Math.max(0, parseInt(camadas, 10) || 0),
+      blocos: fases.map((f, i) => ({
+        ordem: f.ordem,
+        nomeTecido: (papeis[i] || {}).label || '',
+        nomeCor: f.corNome,
+        comp: f.comp,
+        larg: f.larg
+      }))
+    },
+    progresso: {}
+  };
+}
+
+const _COMPRA_TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+
+// Quantas unidades da grade cada camada rende: o MENOR pedido da grade vezes o
+// multiplicador do tecido (camiseta corta em camada dupla, moletom não). Mesma
+// conta do formulário da OS (`calcularAlvoDeCamadas`).
+function _compraPecasPorCamada(o) {
+  const qtds = _COMPRA_TAMS.map(k => parseInt((o.grade || {})[k], 10) || 0).filter(q => q > 0);
+  if (!qtds.length) return 0;
+  return Math.min(...qtds) * multiplicadorPecaOS(o);
+}
+
+function compraPecasDeCamadas(o, camadas) {
+  const cam = Math.max(0, parseInt(camadas, 10) || 0);
+  return cam ? cam * _compraPecasPorCamada(o) : 0;
+}
+
+// O caminho de volta: quantas camadas para chegar às peças pedidas. Arredonda
+// para CIMA — meia camada não existe, e ficar abaixo do pedido é o erro que
+// obriga a montar outro enfesto inteiro por causa de uma dúzia de peças.
+function compraCamadasDePecas(o, pecas) {
+  const p = Math.max(0, parseInt(pecas, 10) || 0);
+  const porCamada = _compraPecasPorCamada(o);
+  return (p && porCamada > 0) ? Math.ceil(p / porCamada) : 0;
+}
+
+// O consumo de UM item da lista, fase por fase, já multiplicado pelas
+// repetições. As bobinas saem CRUAS (sem arredondar) — quem arredonda é o total
+// por tecido, mais adiante.
+function compraConsumoItem(item) {
+  const o = compraOsSimulada(item && item.gradeId, item && item.desenhoId, item && item.camadas);
+  if (!o) return null;
+  const g = (STATE.grades || []).find(x => x.id === item.gradeId);
+  const bobPorOrdem = {};
+  let gradeTemPrevisao = false;
+  ((g && g.fases) || []).forEach(f => {
+    const b = parseBobinas(f.bobinas);
+    if (b != null) { bobPorOrdem[f.ordem] = b; if (b > 0) gradeTemPrevisao = true; }
+  });
+  const rep = Math.max(1, parseInt(item.repeticoes, 10) || 1);
+  const linhas = consumoEnfestoOS(o).map(L => {
+    const prev = (gradeTemPrevisao && bobPorOrdem[L.ordem] != null) ? bobPorOrdem[L.ordem] : null;
+    const bruto = bobinasEfetivasFase(o, prev, L.ordem, L, true);
+    return {
+      ...L,
+      kgTotal: (L.kg || 0) * rep,
+      bobinas: (typeof bruto === 'number' && isFinite(bruto)) ? bruto * rep : null
+    };
+  });
+  return {
+    os: o,
+    grade: g,
+    desenho: item.desenhoId ? (STATE.desenhos || []).find(d => d.id === item.desenhoId) : null,
+    linhas,
+    repeticoes: rep,
+    pecas: compraPecasDeCamadas(o, item.camadas) * rep
+  };
+}
+
+// A necessidade BRUTA, juntando todos os itens da lista por tecido + cor.
+//
+// Não existe linha de total geral, e é de propósito: somar o moletom preto com
+// a ribana branca dá um número que não se compra nem se separa. O agrupamento
+// que serve é este — cada tecido em cada cor, que é como o fornecedor vende.
+function compraNecessidadeBruta(itens) {
+  const mapa = new Map();
+  (itens || []).forEach(item => {
+    const c = compraConsumoItem(item);
+    if (!c) return;
+    c.linhas.forEach(L => {
+      const tecidoNome = L.tecidoReal || L.nomeEnf || '';
+      const corNome = L.corReal || '';
+      if (!(L.kgTotal > 0) && !(L.bobinas > 0)) return;
+      const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
+      const cur = mapa.get(k) || { tecidoNome, corNome, kg: 0, bobinasCru: 0,
+                                   kgComBobina: 0, semPrevisao: [] };
+      cur.kg += L.kgTotal || 0;
+      if (L.bobinas == null) {
+        // Fase que a grade não sabe prever (ou ribana sem gramatura/peso de
+        // bobina cadastrados). O quilo dela entra no total; a bobina não pode
+        // entrar, e o que ela deixa de fora precisa aparecer na tela.
+        const nome = L.nomeEnf || ('fase ' + L.ordem);
+        if (!cur.semPrevisao.includes(nome)) cur.semPrevisao.push(nome);
+      } else {
+        cur.bobinasCru += L.bobinas;
+        // Só fase que gasta bobina alimenta a razão kg/bobina. Uma fase
+        // cadastrada com 0 bobinas tem quilo mas não tem bobina — deixá-la aqui
+        // inflaria o peso da bobina e o pedido sairia curto.
+        if (L.bobinas > 0) cur.kgComBobina += L.kgTotal || 0;
+      }
+      mapa.set(k, cur);
+    });
+  });
+
+  const saldos = new Map();
+  calcularSaldosEstoque().detalhe.forEach(d => {
+    saldos.set(_normNome(d.tecidoNome) + '||' + _normNome(d.corNome), d.disponivel || 0);
+  });
+
+  return Array.from(mapa.entries()).map(([k, c]) => {
+    const disponivel = saldos.get(k) || 0;
+    const kgComprar = Math.max(0, c.kg - Math.max(0, disponivel));
+    // Quanto pesa uma bobina deste tecido, SEGUNDO ESTA CONTA. Resultado, nunca
+    // premissa — o mesmo raciocínio da folha de OS. É por ele que o quilo que
+    // falta comprar volta a virar bobina.
+    const kgPorBobina = (c.bobinasCru > 0 && c.kgComBobina > 0) ? c.kgComBobina / c.bobinasCru : 0;
+    return {
+      ...c,
+      disponivel,
+      kgComprar,
+      kgPorBobina,
+      bobinas: c.bobinasCru > 0 ? bobinaInteira(c.bobinasCru) : null,
+      bobinasComprar: kgPorBobina > 0 ? bobinaInteira(kgComprar / kgPorBobina) : null
+    };
+  }).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || '')
+                 || (a.corNome || '').localeCompare(b.corNome || ''));
+}
+
+/* ---------------------------- a tela ---------------------------- */
+
+const _compraAbertos = new Set();   // itens com o detalhe por fase aberto
+
+const _cpKg = n => Number(n || 0).toFixed(3).replace('.', ',');
+const _cpNum = n => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
+
+function _cpEl(id) { return document.getElementById(id); }
+function _cpVal(id) { const el = _cpEl(id); return el ? el.value : ''; }
+
+// Nome de exibição de uma grade / de um desenho, iguais aos dos cadastros.
+function _cpNomeGrade(id) {
+  const g = (STATE.grades || []).find(x => x.id === id);
+  return g ? (g.nome || '(sem nome)') : '(grade excluída)';
+}
+function _cpNomeDesenho(id) {
+  if (!id) return '— sem desenho —';
+  const d = (STATE.desenhos || []).find(x => x.id === id);
+  return d ? `${d.codigo || ''}${d.desc ? ' · ' + d.desc : ''}`.trim() || '(sem código)'
+           : '(desenho excluído)';
+}
+
+// O item que está sendo montado no formulário, no mesmo formato dos que já
+// estão na lista — assim a prévia e o total usam exatamente o mesmo caminho.
+function _cpItemDoFormulario() {
+  const gradeId = _cpVal('cp-grade');
+  if (!gradeId) return null;
+  return {
+    id: '__previa__',
+    gradeId,
+    desenhoId: _cpVal('cp-desenho'),
+    camadas: parseInt(_cpVal('cp-camadas'), 10) || 0,
+    repeticoes: Math.max(1, parseInt(_cpVal('cp-rep'), 10) || 1)
+  };
+}
+
+// Trocou a grade: as camadas voltam ao máximo do tecido daquela grade. É o mesmo
+// padrão da Nova OS (`_aplicarCamadasMaximasDefault`) — o enfesto cheio é o
+// ponto de partida natural, e quem quiser menos digita por cima.
+function compraGradeMudou() {
+  const item = _cpItemDoFormulario();
+  const campoCam = _cpEl('cp-camadas');
+  if (item && campoCam) {
+    const g = (STATE.grades || []).find(x => x.id === item.gradeId);
+    const lim = compraLimiteCamadasGrade(g);
+    campoCam.value = lim > 0 ? lim : '';
+  }
+  compraCamadasMudou();
+}
+
+// Camadas → peças. Os dois campos são a mesma informação vista de dois lados;
+// mexer num reescreve o outro.
+function compraCamadasMudou() {
+  const item = _cpItemDoFormulario();
+  const campoPec = _cpEl('cp-pecas');
+  if (item && campoPec) {
+    const o = compraOsSimulada(item.gradeId, item.desenhoId, item.camadas);
+    const p = o ? compraPecasDeCamadas(o, item.camadas) : 0;
+    campoPec.value = p > 0 ? p : '';
+  }
+  compraPrevia();
+}
+
+// Peças → camadas.
+function compraPecasMudou() {
+  const gradeId = _cpVal('cp-grade');
+  const campoCam = _cpEl('cp-camadas');
+  if (gradeId && campoCam) {
+    const o = compraOsSimulada(gradeId, _cpVal('cp-desenho'), 1);
+    const cam = o ? compraCamadasDePecas(o, parseInt(_cpVal('cp-pecas'), 10) || 0) : 0;
+    campoCam.value = cam > 0 ? cam : '';
+    // A ida e a volta não são simétricas (as camadas arredondam para cima), então
+    // o campo de peças passa a mostrar o que essas camadas REALMENTE produzem.
+    const campoPec = _cpEl('cp-pecas');
+    const real = o ? compraPecasDeCamadas(o, cam) : 0;
+    if (campoPec && real > 0) campoPec.value = real;
+  }
+  compraPrevia();
+}
+
+// A tabela por fase do item em montagem: de onde sai cada quilo e cada bobina.
+// O número aparece antes de entrar na lista — quem compra confere a medida da
+// fase, não só o total.
+function _cpTabelaFases(c) {
+  if (!c) return '';
+  const linhas = c.linhas.map(L => {
+    const semMedida = !(L.comp > 0) || !(L.larg > 0);
+    return `<tr>
+      <td style="text-align:center;">${L.ordem}</td>
+      <td>${esc(L.nomeEnf) || '—'}</td>
+      <td>${esc(L.tecidoReal) || '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${esc(corSemTecido(L.corReal, L.tecidoReal)) || '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${L.comp > 0 ? _cpNum(L.comp) + ' m' : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${L.larg > 0 ? _cpNum(L.larg) + ' m' : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${L.camadas || '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${L.peso > 0 ? Math.round(L.peso) : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${L.bobinas != null ? _cpNum(L.bobinas) : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;${semMedida ? 'color:#c0392b;' : ''}">${L.kgTotal > 0 ? _cpKg(L.kgTotal) : '—'}</td>
+    </tr>`;
+  }).join('');
+  const semMedida = c.linhas.filter(L => !(L.comp > 0) || !(L.larg > 0)).map(L => L.nomeEnf || ('fase ' + L.ordem));
+  const semGramatura = c.linhas.filter(L => L.comp > 0 && L.larg > 0 && !(L.peso > 0))
+                               .map(L => L.corReal || L.tecidoReal || ('fase ' + L.ordem));
+  const avisos = [];
+  if (semMedida.length) {
+    avisos.push(`<b>Sem comprimento ou largura no cadastro da grade:</b> ${esc(semMedida.join(', '))}.
+      Essas fases entram com <b>zero quilo</b> — o pedido sai curto até a medida ser cadastrada.`);
+  }
+  if (semGramatura.length) {
+    avisos.push(`<b>Sem gramatura (g/m²) cadastrada:</b> ${esc(semGramatura.join(', '))}.
+      Sem ela o metro não vira quilo, e a fase também sai zerada.`);
+  }
+  return `
+    <table class="table" style="margin-top:8px;">
+      <thead><tr>
+        <th style="text-align:center;">Fase</th><th>Enfesto</th><th>Tecido</th><th>Cor</th>
+        <th style="text-align:right;">Compr.</th><th style="text-align:right;">Largura</th>
+        <th style="text-align:right;">Camadas</th><th style="text-align:right;">g/m²</th>
+        <th style="text-align:right;">Bobinas</th><th style="text-align:right;">Consumo</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    ${avisos.map(a => `<div class="info-box" style="margin-top:8px;">⚠ ${a}</div>`).join('')}`;
+}
+
+// A prévia: o que o formulário está descrevendo AGORA, antes de virar item.
+function compraPrevia() {
+  const cont = _cpEl('cp-previa');
+  if (!cont) return;
+  const item = _cpItemDoFormulario();
+  if (!item) {
+    cont.innerHTML = `<div class="muted" style="font-size:12px;margin-top:8px;">Escolha uma grade para ver o consumo.</div>`;
+    return;
+  }
+  const c = compraConsumoItem(item);
+  if (!c) {
+    cont.innerHTML = `<div class="info-box" style="margin-top:8px;">Esta grade não tem <b>fases</b> cadastradas — sem fase não há enfesto, e sem enfesto não há consumo a calcular. Cadastre as fases em <b>Grades</b>.</div>`;
+    return;
+  }
+  const semDesenho = !item.desenhoId ? `<div class="info-box" style="margin-top:8px;">Sem <b>desenho técnico</b> escolhido, as cores saem do que estiver na própria grade — e a gramatura é cadastrada <b>por cor</b>. Escolha o desenho para o quilo sair certo.</div>` : '';
+  cont.innerHTML = `
+    <div style="margin-top:10px;font-size:12px;color:var(--ink-2);">
+      <b>${item.camadas || 0}</b> camada(s) × <b>${item.repeticoes}</b> enfesto(s)
+      = <b>${c.pecas.toLocaleString('pt-BR')}</b> peça(s)
+    </div>
+    ${_cpTabelaFases(c)}
+    ${semDesenho}`;
+}
+
+async function compraAdicionar() {
+  if (!exigirEdicao('montar a lista de compra')) return;
+  const item = _cpItemDoFormulario();
+  if (!item) return toast('Escolha a grade', 'err');
+  if (!(item.camadas > 0)) return toast('Informe as camadas (ou as peças)', 'err');
+  const c = compraConsumoItem(item);
+  if (!c) return toast('Esta grade não tem fases cadastradas', 'err');
+  if (!Array.isArray(STATE.compraPlano)) STATE.compraPlano = [];
+  STATE.compraPlano.push({
+    id: uid(),
+    gradeId: item.gradeId,
+    desenhoId: item.desenhoId || '',
+    camadas: item.camadas,
+    repeticoes: item.repeticoes,
+    obs: (_cpVal('cp-obs') || '').trim(),
+    criadoEm: new Date().toISOString()
+  });
+  await saveState('compraPlano');
+  const campoObs = _cpEl('cp-obs');
+  if (campoObs) campoObs.value = '';
+  renderCompra();
+  toast('Item somado à compra', 'ok');
+}
+
+async function compraRemover(id) {
+  if (!exigirEdicao('mexer na lista de compra')) return;
+  STATE.compraPlano = (STATE.compraPlano || []).filter(x => x.id !== id);
+  _compraAbertos.delete(id);
+  await saveState('compraPlano');
+  renderCompra();
+}
+
+async function compraLimparLista() {
+  if (!exigirEdicao('limpar a lista de compra')) return;
+  const n = (STATE.compraPlano || []).length;
+  if (!n) return;
+  if (!confirm(`Tirar os ${n} itens da lista de compra?\n\nO cálculo se perde; os cadastros e as OSs não são tocados.`)) return;
+  STATE.compraPlano = [];
+  _compraAbertos.clear();
+  await saveState('compraPlano');
+  renderCompra();
+  toast('Lista de compra limpa', 'ok');
+}
+
+function compraDetalhe(id) {
+  if (_compraAbertos.has(id)) _compraAbertos.delete(id); else _compraAbertos.add(id);
+  renderCompra();
+}
+
+function renderCompra() {
+  // Os seletores ficam no HTML fixo (fora do painel que se redesenha), então o
+  // que o usuário escolheu sobrevive a uma sincronização chegando do servidor.
+  fillSelect('cp-grade', (STATE.grades || []).slice()
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || '')), 'nome', '— escolha a grade —');
+  fillSelect('cp-desenho', (STATE.desenhos || []), 'codigo', '— sem desenho —',
+    d => `${d.codigo || ''}${d.desc ? ' · ' + d.desc : ''}`.trim() || '(sem código)');
+  compraPrevia();
+
+  const cont = _cpEl('compra-painel');
+  if (!cont) return;
+  const itens = STATE.compraPlano || [];
+
+  const linhasItens = itens.map(it => {
+    const c = compraConsumoItem(it);
+    const aberto = _compraAbertos.has(it.id);
+    const detalhe = aberto && c ? `<tr><td colspan="6" style="background:var(--line-2);">${_cpTabelaFases(c)}</td></tr>` : '';
+    return `<tr>
+      <td><strong>${esc(_cpNomeGrade(it.gradeId))}</strong>${it.obs ? `<div class="muted" style="font-size:11px;">${esc(it.obs)}</div>` : ''}</td>
+      <td>${esc(_cpNomeDesenho(it.desenhoId))}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${it.camadas || '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${Math.max(1, parseInt(it.repeticoes, 10) || 1)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${c ? c.pecas.toLocaleString('pt-BR') : '—'}</td>
+      <td class="col-actions row-actions">
+        <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
+        <button class="admin-only" onclick="compraRemover('${esc(it.id)}')">remover</button>
+      </td>
+    </tr>${detalhe}`;
+  }).join('');
+
+  const totais = compraNecessidadeBruta(itens);
+  const linhasTotais = totais.map(t => {
+    const falta = t.semPrevisao.length
+      ? ` <span title="Sem previsão de bobinas: ${esc(t.semPrevisao.join(', '))}. O quilo dessas fases está no total; a bobina não dá para prever." style="color:#c0392b;cursor:help;">⚠</span>`
+      : '';
+    return `<tr>
+      <td><strong>${esc(t.tecidoNome) || '(sem tecido)'}</strong> · ${esc(corSemTecido(t.corNome, t.tecidoNome)) || '<span style="color:var(--ink-3)">(sem cor)</span>'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${t.bobinas != null ? t.bobinas : '—'}${falta}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_cpKg(t.kg)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:${t.disponivel < 0 ? '#c0392b' : 'inherit'};">${_cpKg(t.disponivel)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${_cpKg(t.kgComprar)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${t.bobinasComprar != null ? t.bobinasComprar : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">${t.kgPorBobina > 0 ? _cpKg(t.kgPorBobina) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Itens da compra</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        Cada linha é uma produção que ainda não virou OS. A lista é compartilhada,
+        como qualquer cadastro — e não mexe em estoque: só a OS salva reserva material.
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th>Grade</th><th>Desenho técnico</th>
+          <th style="text-align:right;">Camadas</th><th style="text-align:right;">Enfestos</th>
+          <th style="text-align:right;">Peças</th><th class="col-actions">Ações</th>
+        </tr></thead>
+        <tbody>${itens.length ? linhasItens : `<tr><td colspan="6" class="empty">Nenhum item ainda. Preencha a grade e o desenho técnico acima.</td></tr>`}</tbody>
+      </table>
+      ${itens.length ? `<div style="margin-top:8px;"><button class="btn small danger admin-only" onclick="compraLimparLista()">Limpar a lista</button></div>` : ''}
+    </div>
+
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Necessidade bruta de tecido</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        <b>Bobinas</b> e <b>quilos</b> por tecido e cor, somando todos os itens da lista.
+        A bobina vem do cadastro da grade, na proporção das camadas; o quilo vem de
+        comprimento × largura × camadas × gramatura da cor. <b>A comprar</b> desconta o
+        que já está disponível no estoque de tecidos. <b>kg/bobina</b> é resultado da
+        própria conta e serve de conferência: muito longe dos ~20 kg da prateleira quer
+        dizer gramatura cadastrada errada.
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th>Tecido + cor</th>
+          <th style="text-align:right;">Bobinas</th>
+          <th style="text-align:right;">Bruto (kg)</th>
+          <th style="text-align:right;">Disponível (kg)</th>
+          <th style="text-align:right;">A comprar (kg)</th>
+          <th style="text-align:right;">A comprar (bob.)</th>
+          <th style="text-align:right;">kg/bobina</th>
+        </tr></thead>
+        <tbody>${totais.length ? linhasTotais : `<tr><td colspan="7" class="empty">Sem itens na lista — nada a comprar ainda.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+
 // Deixar disponível globalmente
 window.goto = goto;
+window.renderCompra = renderCompra;
+window.compraGradeMudou = compraGradeMudou;
+window.compraCamadasMudou = compraCamadasMudou;
+window.compraPecasMudou = compraPecasMudou;
+window.compraPrevia = compraPrevia;
+window.compraAdicionar = compraAdicionar;
+window.compraRemover = compraRemover;
+window.compraLimparLista = compraLimparLista;
+window.compraDetalhe = compraDetalhe;
 // Chamada pelos seletores de período e pelas linhas da série do tempo, que são
 // handlers inline no HTML gerado.
 window._rankingFiltrar = _rankingFiltrar;

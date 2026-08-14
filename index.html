@@ -44,6 +44,7 @@
         <button class="nav-btn" data-page="home">Início</button>
         <button class="nav-btn admin-only" data-page="nova-os">Nova OS</button>
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
+        <button class="nav-btn" data-page="compra">Compra</button>
         <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
         <button class="nav-btn" data-page="corte">Estoque de corte</button>
         <button class="nav-btn" data-page="expedicao">Expedição</button>
@@ -203,6 +204,60 @@
     <!-- ================= CADASTROS GENÉRICOS ================= -->
     <!-- TECIDOS -->
     <!-- ================= ESTOQUE DE TECIDOS ================= -->
+    <!-- COMPRA: quanto pano uma produção vai pedir, ANTES de ela virar OS.
+         O formulário fica aqui no HTML fixo (e não dentro de #compra-painel)
+         de propósito: o painel se redesenha sozinho quando chega dado novo do
+         servidor, e o que o usuário escolheu não pode sumir no meio. -->
+    <section class="page hidden" data-page="compra">
+      <div class="page-header">
+        <div>
+          <h1>Compra</h1>
+          <div class="desc">A necessidade <b>bruta</b> de tecido de uma produção que ainda não virou OS, em <b>bobinas</b> e em <b>quilos</b>. Você preenche a <b>grade</b> (que sabe as medidas de cada fase e quantas bobinas o enfesto gasta) e o <b>desenho técnico</b> (que sabe a cor de cada fase, e a gramatura é cadastrada por cor); o tamanho do lote entra em camadas ou em peças. É a mesma conta da folha de OS, feita antes de existir OS.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:14px;">Nova produção a comprar</h2>
+        <div class="form-grid cols-3">
+          <div class="field">
+            <label>Grade</label>
+            <select id="cp-grade" onchange="compraGradeMudou()"></select>
+            <div class="field-hint">De onde saem as fases do enfesto, as medidas de cada uma e a previsão de bobinas.</div>
+          </div>
+          <div class="field">
+            <label>Desenho técnico</label>
+            <select id="cp-desenho" onchange="compraCamadasMudou()"></select>
+            <div class="field-hint">De onde sai a cor de cada fase — e a gramatura, que é o que transforma metro em quilo.</div>
+          </div>
+          <div class="field">
+            <label>Enfestos iguais</label>
+            <input type="number" id="cp-rep" min="1" step="1" value="1" oninput="compraPrevia()">
+            <div class="field-hint">Quantas vezes esta mesma produção se repete.</div>
+          </div>
+          <div class="field">
+            <label>Camadas do enfesto</label>
+            <input type="number" id="cp-camadas" min="0" step="1" oninput="compraCamadasMudou()" placeholder="Ex.: 80">
+            <div class="field-hint">Nasce no máximo do tecido da grade (moletom 36, malha 80). Digite por cima para um lote menor.</div>
+          </div>
+          <div class="field">
+            <label>Peças</label>
+            <input type="number" id="cp-pecas" min="0" step="1" onchange="compraPecasMudou()" placeholder="sai das camadas">
+            <div class="field-hint">O mesmo lote visto do outro lado: digitar aqui recalcula as camadas (para cima — meia camada não existe).</div>
+          </div>
+          <div class="field">
+            <label>Observação (opcional)</label>
+            <input type="text" id="cp-obs" placeholder="Ex.: reposição de agosto">
+          </div>
+        </div>
+        <div id="cp-previa"></div>
+        <div style="margin-top:10px;">
+          <button class="btn primary admin-only" onclick="compraAdicionar()">+ Somar à compra</button>
+        </div>
+      </div>
+
+      <div id="compra-painel"></div>
+    </section>
+
     <section class="page hidden" data-page="estoque">
       <div class="page-header">
         <div>
@@ -1103,6 +1158,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-14b"></script>
+<script src="app.js?v=2026-08-14c"></script>
 </body>
 </html>
