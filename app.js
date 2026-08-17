@@ -93,6 +93,60 @@ let supa = null;
 let _servidorUrlAtivo = SUPA_URL;
 
 /* =========================================================================
+   PRAZO DE TODA CHAMADA AO SERVIDOR
+   =========================================================================
+   O fetch do navegador NÃO tem prazo. Uma requisição que sai e não volta —
+   servidor no meio de um reinício, Wi-Fi que caiu com a conexão TCP aberta,
+   Kong esperando um lock no Postgres, nginx da fábrica configurado para esperar
+   3600s — fica pendurada para sempre, sem erro e sem resposta.
+
+   Era isso que travava o programa em "☁ Salvando...": o flush ficava esperando
+   eternamente, `_flushing` nunca era liberado e, dali em diante, TODA gravação
+   seguinte apenas se reagendava (cloudFlush devolve na hora quando `_flushing`
+   está de pé). O app continuava respondendo, dizendo que estava salvando, e não
+   salvava mais nada naquela sessão — nem recebia, porque o polling também se
+   cala enquanto há um flush no ar. Só recarregar a página saía do estado.
+
+   Com prazo, a chamada morre, cai no catch, a bandeira é liberada, o erro
+   aparece na tela e o retry (8s) sobe o que ficou pendente — as chaves sujas
+   nunca são limpas antes de subir, então nada se perde.
+
+   Dois prazos, porque as duas coisas são diferentes: LEITURA é pequena e tem de
+   falhar rápido (o carimbo tem ~50 bytes); ESCRITA carrega o blob (~1,8 MB) ou a
+   imagem de um desenho (até 25 MB) e merece folga. Na rede local o blob sobe em
+   menos de 1s — o prazo é rede de segurança, não orçamento.
+   ======================================================================== */
+const PRAZO_LEITURA_MS = 20000;
+const PRAZO_ESCRITA_MS = 60000;
+
+// Leitura falha rápido, escrita tem folga. Função à parte para a regra ficar
+// dita em um lugar só (e poder ser conferida por teste).
+function _prazoDaRequisicao(metodo) {
+  const m = String(metodo || 'GET').toUpperCase();
+  return (m === 'GET' || m === 'HEAD') ? PRAZO_LEITURA_MS : PRAZO_ESCRITA_MS;
+}
+
+function _fetchComPrazo(entrada, init) {
+  const opts = init || {};
+  if (typeof AbortController === 'undefined') return fetch(entrada, opts);
+  const ms = _prazoDaRequisicao(opts.method);
+  const ctrl = new AbortController();
+  const prazo = setTimeout(() => {
+    try { ctrl.abort(new Error(`O servidor não respondeu em ${Math.round(ms / 1000)}s`)); }
+    catch (e) { ctrl.abort(); }
+  }, ms);
+  // Se quem chamou já trouxe o seu próprio sinal, o nosso acompanha o dele —
+  // senão cancelar por fora (o supabase-js faz isso) deixaria de funcionar.
+  const externo = opts.signal;
+  if (externo) {
+    if (externo.aborted) ctrl.abort(externo.reason);
+    else externo.addEventListener('abort', () => ctrl.abort(externo.reason), { once: true });
+  }
+  return fetch(entrada, Object.assign({}, opts, { signal: ctrl.signal }))
+    .finally(() => clearTimeout(prazo));
+}
+
+/* =========================================================================
    ENDEREÇO DAS IMAGENS DOS DESENHOS TÉCNICOS
    =========================================================================
    As imagens não ficam dentro dos dados: os dados guardam por onde buscá-las.
@@ -126,8 +180,11 @@ function _nomeDoArquivoDesenho(valor) {
 }
 
 async function resolverServidor() {
+  // `global.fetch` = todo pedido a este servidor passa pelo nosso fetch com
+  // prazo (REST, login, storage). O Realtime não usa fetch — ele tem o seu
+  // próprio WebSocket, e é o polling de 15s que cobre a queda dele.
   const criar = (u, k) => (window.supabase && typeof window.supabase.createClient === 'function')
-    ? window.supabase.createClient(u, k) : null;
+    ? window.supabase.createClient(u, k, { global: { fetch: _fetchComPrazo } }) : null;
   let cfg = servidorLocalConfig();
   // Nada configurado nesta máquina: pergunta a quem serviu a página. É o caso
   // de todo computador na primeira vez que abre o programa pelo endereço do
@@ -281,6 +338,30 @@ let _cloudLoadErro = false;
 // edição local — senão o cloudLoad sobrescrevia o checklist/horário que o
 // usuário acabou de marcar e ainda não foi salvo, revertendo na tela.
 let _flushing = false;
+// Quando a gravação em andamento começou, e qual é a "geração" dela. Servem à
+// VIGIA DO FLUSH TRAVADO: se uma gravação passa de FLUSH_ZUMBI_MS sem terminar,
+// ela é dada por perdida e a próxima pode sair — senão uma única requisição
+// pendurada calaria o programa até alguém recarregar a página (era o "Salvando..."
+// eterno). A geração impede que o `finally` da gravação zumbi, ao voltar do
+// além, baixe a bandeira de uma gravação nova que esteja no ar.
+let _flushDesde = 0;
+let _flushGeracao = 0;
+// Maior que o prazo de escrita (PRAZO_ESCRITA_MS): com prazo em toda chamada,
+// nenhuma gravação sadia chega perto disto. É rede de segurança para um await
+// que trave por outro motivo (IndexedDB, pasta local, extensão do navegador).
+const FLUSH_ZUMBI_MS = 90000;
+
+// Uma gravação nova pode sair agora? Sim se não há nenhuma no ar; sim também se a
+// que está no ar passou do prazo de zumbi (ela não vai mais voltar, e esperar por
+// ela é o que emudecia o programa). Separada para a regra ser conferível.
+function _flushPodeComecar(flushing, desde, agora) {
+  if (!flushing) return true;
+  // Sem carimbo de início não há como medir a idade. Na dúvida, DEIXA PASSAR: o
+  // erro para o lado de esperar é justamente o que emudecia o programa, e uma
+  // gravação a mais é inofensiva (o merge por chave cuida da concorrência).
+  if (!desde) return true;
+  return (agora - desde) > FLUSH_ZUMBI_MS;
+}
 // Chaves que ESTE dispositivo alterou desde a última gravação. No flush, só
 // estas sobrescrevem o servidor; as demais adotam o valor do servidor. É o que
 // impede um cache desatualizado de apagar o que outro dispositivo gravou numa
@@ -554,7 +635,15 @@ async function cloudFlush() {
   // edição feita no meio dela disparava um segundo flush em paralelo, e as duas
   // gravações corriam uma contra a outra em cima da mesma linha. Reagenda: o
   // pendente sobe assim que a atual terminar.
-  if (_flushing) { scheduleCloudSave(); return; }
+  if (!_flushPodeComecar(_flushing, _flushDesde, Date.now())) { scheduleCloudSave(); return; }
+  if (_flushing) {
+    // Travada há tempo demais: a requisição não vai mais voltar. Segue em frente
+    // — com prazo em toda chamada isto quase não acontece, mas quando acontecia
+    // era o fim das gravações daquela sessão.
+    console.warn('cloudFlush: gravação anterior travada há '
+      + Math.round((Date.now() - _flushDesde) / 1000) + 's — dando por perdida e tentando de novo.');
+    _flushing = false;
+  }
   // Se a ÚLTIMA leitura falhou, NÃO salvar: o cloudCache pode estar vazio pela
   // falha, e o seed/migração do loadState tentam gravar logo em seguida. Sem
   // este atalho, o fluxo caía na trava anti-apagamento e mostrava "gravação
@@ -618,6 +707,8 @@ async function cloudFlush() {
   }
   setSyncStatus('saving');
   _flushing = true;
+  _flushDesde = Date.now();
+  const minhaGeracao = ++_flushGeracao;
   try {
     // MERGE POR CHAVE (concorrência otimista) — correção definitiva da perda
     // recorrente de cadastros. Relê o servidor e só sobrescreve as chaves que
@@ -783,7 +874,10 @@ async function cloudFlush() {
       _retryTimer = setTimeout(() => { _retryTimer = null; if (_dirtyKeys.size) cloudFlush(); }, 8000);
     }
   } finally {
-    _flushing = false;
+    // Só a gravação MAIS RECENTE baixa a bandeira. Uma gravação dada por perdida
+    // que volte do além depois não pode liberar o caminho para uma terceira
+    // enquanto a segunda ainda está subindo.
+    if (minhaGeracao === _flushGeracao) { _flushing = false; _flushDesde = 0; }
   }
 }
 
@@ -1081,11 +1175,31 @@ if (typeof document !== 'undefined') {
   window.addEventListener('pagehide', _flushPendentesAoSair);
 }
 
+// "Salvando..." que não muda mais é a pior mensagem possível: ela afirma que o
+// programa está trabalhando. Passados alguns segundos sem resposta do servidor, o
+// aviso passa a dizer que está DEMORANDO — e o prazo da requisição (20s/60s)
+// termina de resolver, virando "Erro ao salvar" com o banner explicando.
+const AVISO_DEMORA_MS = 12000;
+let _demoraTimer = null;
+
 function setSyncStatus(status) {
   const el = document.getElementById('authSync');
   if (!el) return;
+  if (_demoraTimer) { clearTimeout(_demoraTimer); _demoraTimer = null; }
   el.classList.remove('saving', 'error');
-  if (status === 'saving') { el.textContent = '☁ Salvando...'; el.classList.add('saving'); }
+  el.title = '';
+  if (status === 'saving') {
+    el.textContent = '☁ Salvando...';
+    el.classList.add('saving');
+    _demoraTimer = setTimeout(() => {
+      _demoraTimer = null;
+      const alvo = document.getElementById('authSync');
+      if (!alvo || !alvo.classList.contains('saving')) return;
+      alvo.textContent = '☁ Salvando... (demorando)';
+      alvo.title = 'O servidor ainda não respondeu. O programa continua tentando e vai avisar se falhar — '
+        + 'o que você digitou não se perde. Se ficar assim, confira a rede e o servidor da fábrica.';
+    }, AVISO_DEMORA_MS);
+  }
   else if (status === 'error') { el.textContent = '☁ Erro ao salvar'; el.classList.add('error'); }
   else { el.textContent = '☁ Sincronizado'; esconderAlertaSalvamento(); }
 }
