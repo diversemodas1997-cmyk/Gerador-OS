@@ -61,8 +61,16 @@ if ($Agendar) {
   # Docker Desktop, que no Windows so existe DENTRO da sessao do usuario; e o
   # destino e o Google Drive, que so aparece como J: na sessao. Fora dela as duas
   # coisas somem e o backup falharia todo dia, com log dizendo o porque.
+  # TENTAR DE NOVO. A falha tipica nao e do backup: e da HORA. Numa manha de
+  # recuperacao o Docker leva minutos para voltar (ja levou 5m18s), e o
+  # StartWhenAvailable dispara a execucao perdida justamente ai — o pg_dump nao
+  # acha o banco e a tarefa morre. Sem retry, o dia inteiro fica sem pacote e
+  # ninguem percebe ate precisar restaurar. Tres tentativas a cada 30 min cobrem
+  # a subida mais lenta ja medida, e o intervalo e largo porque cada execucao
+  # leva minutos e move ~64 MB para o Google Drive.
   $conf = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries `
-            -AllowStartIfOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+            -AllowStartIfOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
+            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30)
 
   try {
     Unregister-ScheduledTask -TaskName $nome -Confirm:$false -ErrorAction SilentlyContinue

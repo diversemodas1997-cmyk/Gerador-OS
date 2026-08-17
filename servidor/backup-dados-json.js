@@ -12,6 +12,30 @@
  * Credenciais ficam em supa-creds.json, na pasta de destino (nunca versionado).
  * Executado pela Tarefa Agendada "Gerador-OS Backup Dados Diario", 16:00.
  *
+ * A TAREFA, se um dia precisar ser recriada (ela foi registrada a mao; a receita
+ * mora aqui para as configuracoes nao se perderem junto):
+ *
+ *   $acao = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\node.exe' `
+ *             -Argument '"C:\Users\Pichau\Desktop\Gerador-OS\servidor\backup-dados-json.js"' `
+ *             -WorkingDirectory 'C:\Users\Pichau\Desktop\Gerador-OS'
+ *   $quando = New-ScheduledTaskTrigger -Daily -At 16:00
+ *   $conf = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+ *             -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+ *             -RestartCount 6 -RestartInterval (New-TimeSpan -Minutes 15)
+ *   Register-ScheduledTask -TaskName 'Gerador-OS Backup Dados Diario' `
+ *             -Action $acao -Trigger $quando -Settings $conf
+ *
+ * As tres configuracoes acima nao sao enfeite:
+ *   StartWhenAvailable -> recupera o dia perdido (maquina desligada no fim de
+ *     semana). Foi ele que disparou a execucao das 07:15 de 17/08/2026.
+ *   ExecutionTimeLimit 10 min -> um backup sadio leva ~40 s. Se passou disso,
+ *     esta esperando um banco que ainda nao subiu: melhor cortar e repetir.
+ *   RestartCount/Interval -> tentar de novo. Sem isto, a recuperacao da manha
+ *     (que cai justamente quando o Supabase ainda sobe) morria no limite de 10
+ *     min e o dia inteiro ficava sem JSON: em 17/08/2026 o ultimo bom era de
+ *     14/08, tres dias atras, e ninguem tinha percebido.
+ * Rodar duas vezes e inofensivo: o commit so sai quando o dado mudou.
+ *
  * ONDE ELE MORA E ONDE ELE ESCREVE sao lugares diferentes, de proposito:
  *
  *   mora aqui  -> servidor\backup-dados-json.js, versionado com o resto do app
