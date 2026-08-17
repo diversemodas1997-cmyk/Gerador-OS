@@ -31,6 +31,10 @@ const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 const cortaLinha = (nome) => recorte(nome, '\n', nome);
 
 const motor = [
+  corta('function _normNome'),
+  corta('function _skuDaGrade'),
+  corta('function _normSku'),
+  corta('function _skuLinhaNorm'),
   cortaLinha('const _GRADE_TIPOS_CONHECIDOS'),
   cortaLinha('const _GRADE_VARIACOES_CONHECIDAS'),
   corta('function categoriaEfetivaTecido'),
@@ -46,6 +50,9 @@ function motivos(estado, tela, extraIds) {
     const categoriaDesenhoOS = () => TELA.catDesenho || '';
     const tipoPecaModeloOS = () => TELA.tipoModelo || '';
     const variacaoDesenhoOS = () => TELA.variacao || '';
+    // Dublê do leitor de tela: devolve a linha de SKU do desenho escolhido, já
+    // sem a cor (é o que a função real faz depois de ler o <select>).
+    const _skuLinhaDesenhoOS = () => String(TELA.skuDesenho || '').split('-')[0].trim();
     ${motor}
     const ctx = _ctxDropdownGradesOS(EXTRA || []);
     const out = {};
@@ -142,7 +149,58 @@ m = motivos(estado([grade('moletom com punho', 't_mole', 'blusa_moletom', 'basic
   { catDesenho: 'moletom', tipoModelo: 'blusa_moletom', variacao: 'basica' });
 eq('moletom com fase de ribana continua moletom', m['moletom com punho'], '');
 
-/* ---------- 3. conjugadas e a grade já salva ---------- */
+/* ---------- 3. o SKU do desenho manda ----------
+   A regra de frente: o SKU está no meio do nome da grade e no cadastro do
+   desenho. Casando, nada mais precisa concordar. */
+
+// O caso COT: pasta nova, tecido sem categoria, e o desenho é de outra
+// "categoria" segundo os campos antigos. Pelo SKU, é a grade certa.
+const gradeCot = grade('P-M-G-GG-G1 | COT.PR | 152cm', 't_cot', 'COT', 'basica');
+const gradeLisa = grade('P ao G3 | CM.LISA | 117cm', 't_malha', 'camiseta', 'basica');
+m = motivos(estado([gradeCot, gradeLisa]),
+  { skuDesenho: 'COT.PR', catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica' });
+eq('a grade do SKU do desenho aparece', m['P-M-G-GG-G1 | COT.PR | 152cm'], '');
+eq('grade de outro SKU sai da lista', m['P ao G3 | CM.LISA | 117cm'], 'sku');
+
+// A cor não entra: o desenho traz o SKU completo, a grade traz a linha.
+m = motivos(estado([gradeCot]), { skuDesenho: 'COT.PR-PRE', catDesenho: 'malha' });
+eq('SKU do desenho com cor casa com a linha da grade', m['P-M-G-GG-G1 | COT.PR | 152cm'], '');
+
+// E o contrário também: grade cujo nome carrega o SKU completo.
+const gradeComCor = grade('2X P ao G3 | BM.TRI-BEGE | 177cm', 't_mole', 'blusa_moletom', 'tricolor');
+m = motivos(estado([gradeComCor]), { skuDesenho: 'BM.TRI', catDesenho: 'moletom' });
+eq('grade com a cor no nome casa com a linha do desenho', m['2X P ao G3 | BM.TRI-BEGE | 177cm'], '');
+
+// Ponto e espaço não distinguem nada (a casa escreve "SM. ESPARTANA").
+const gradeEsp = grade('P ao G3 | SM. ESPARTANA | 117cm', 't_malha', 'camiseta', 'basica');
+m = motivos(estado([gradeEsp]), { skuDesenho: 'SM.ESPARTANA', catDesenho: 'malha' });
+eq('espaço depois do ponto não separa dois SKUs', m['P ao G3 | SM. ESPARTANA | 117cm'], '');
+
+// GUARDA: SKU sem nenhuma grade cadastrada não filtra nada — senão o primeiro
+// enfesto de um produto novo nasceria num dropdown vazio.
+m = motivos(estado([gradeLisa]), { skuDesenho: 'XX.NOVO', catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica' });
+eq('SKU sem grade cadastrada não esconde as outras', m['P ao G3 | CM.LISA | 117cm'], '');
+
+// Grade cujo nome não declara SKU cai nas regras indiretas de sempre.
+const semSku = { id: 'g_ss', nome: 'GRADE ANTIGA SEM SKU', tipoPeca: 'blusa_moletom', variacao: 'basica',
+  fases: [{ ordem: 1, tecidoId: 't_mole' }] };
+m = motivos({ tecidos, grades: [gradeCot, semSku] },
+  { skuDesenho: 'COT.PR', catDesenho: 'malha', tipoModelo: '', variacao: '' });
+eq('grade sem SKU no nome continua julgada pelo tecido', m['GRADE ANTIGA SEM SKU'], 'categoria');
+
+// O SKU vence a pasta e a variação: mesma família, pasta trocada no cadastro.
+const cotPastaErrada = grade('2M-2G | COT.PR | 152cm', 't_cot', 'blusa_moletom', 'tricolor');
+m = motivos(estado([cotPastaErrada]),
+  { skuDesenho: 'COT.PR', catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica' });
+eq('SKU igual passa mesmo com pasta e variação divergentes', m['2M-2G | COT.PR | 152cm'], '');
+
+// Sem SKU no desenho, tudo como antes.
+m = motivos(estado([gradeCot, gradeLisa]),
+  { skuDesenho: '', catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica' });
+eq('desenho sem SKU: a grade COT continua aparecendo pelas indiretas', m['P-M-G-GG-G1 | COT.PR | 152cm'], '');
+eq('desenho sem SKU: a CM.LISA também aparece', m['P ao G3 | CM.LISA | 117cm'], '');
+
+/* ---------- 4. conjugadas e a grade já salva ---------- */
 
 const conjA = grade('mãe', 't_malha', 'camiseta', 'basica');
 conjA.conjugadaGradeId = 'g_filha';

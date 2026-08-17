@@ -15706,12 +15706,28 @@ function variacaoDesenhoOS() {
   return '';
 }
 
-// Grades que devem aparecer no dropdown de "Carregar grade pré-cadastrada" da OS,
-// filtradas pela categoria do tecido do desenho, tipoPeca casado com o modelo
-// e variação (basica/bicolor/tricolor) casada com o número de cores do desenho.
-// `extraIds` mantém grades específicas (geralmente a já selecionada) mesmo fora
-// do filtro. Grades sem tipoPeca/variacao cadastrados passam pelos respectivos
-// filtros (não tem como avaliar) — mas continuam sujeitas aos demais.
+/* ============ QUAIS GRADES O CAMPO DA OS OFERECE ============
+   O filtro nasceu indireto: categoria do TECIDO do desenho × pasta da grade ×
+   variação. Nunca houve regra por SKU — e por muito tempo pareceu que havia,
+   porque nas famílias antigas as duas coisas andavam juntas: CM.* é malha em
+   pasta de camiseta, BM.* é moletom em pasta de blusa. Filtrando por categoria
+   e pasta, o resultado saía igual ao que sairia filtrando por SKU.
+
+   A coincidência acaba numa família nova. O SKU COT (17/08/2026) não tem
+   categoria de tecido própria, nem pasta que o lado da OS saiba pedir — e aí não
+   sobrou nada que casasse: as grades COT não apareciam em nenhuma OS.
+
+   Agora o SKU é a regra de frente, e é a mais forte: o SKU está no nome da grade
+   ("P-M-G-GG-G1 | COT.PR | 152cm", ver _skuDaGrade) e no cadastro do desenho
+   (skuLinha, com o modelo como reserva). Grade do MESMO SKU do desenho entra sem
+   mais perguntas; grade de OUTRO SKU conhecido sai. As indiretas continuam
+   valendo só para as grades cujo nome não declara SKU.
+
+   Guarda que impede o remédio de virar doença: a regra só age quando existe ao
+   menos UMA grade cadastrada com o SKU do desenho. Desenho de produto cujo
+   primeiro enfesto ainda não foi cadastrado continua vendo as grades parecidas,
+   em vez de receber uma lista vazia. */
+
 // Valores de tipoPeca/variacao que SIGNIFICAM algo — os únicos que o filtro da OS
 // sabe comparar. Desde que a pasta da grade virou rótulo livre ("+ Nova pasta…",
 // ver opcoesPastaGrade), tipoPeca pode ser qualquer texto: "COT", "conjunto",
@@ -15721,6 +15737,27 @@ function variacaoDesenhoOS() {
 // sabe avaliar passa, como já era a regra das grades sem pasta nenhuma.
 const _GRADE_TIPOS_CONHECIDOS = new Set(['camiseta', 'blusa_moletom', 'outro']);
 const _GRADE_VARIACOES_CONHECIDAS = new Set(['basica', 'bicolor', 'tricolor']);
+
+// A LINHA de um SKU, normalizada para comparar: "COT.PR-PRE", "COT.PR" e
+// "cot. pr" dão o mesmo. A cor não entra — a grade é do produto, não da cor —, e
+// isso vale nos DOIS lados: há grade cujo nome carrega o SKU completo com a cor
+// ("… | BM.TRI-BEGE | …"), e ela é a grade daquele produto do mesmo jeito.
+function _skuLinhaNorm(s) {
+  return _normSku(String(s == null ? '' : s).split('-')[0]);
+}
+
+// A linha de SKU do desenho escolhido na OS, como está escrita (para mostrar ao
+// usuário). O SKU do desenho tem prioridade sobre o do modelo — é a regra do
+// resto do programa (ver skusDaOS: override da OS > desenho > modelo; aqui ainda
+// não há OS).
+function _skuLinhaDesenhoOS() {
+  const idD = document.getElementById('f-desenho')?.value;
+  const d = idD ? (STATE.desenhos || []).find(x => x.id === idD) : null;
+  const idM = document.getElementById('f-modelo')?.value;
+  const m = idM ? (STATE.modelos || []).find(x => x.id === idM) : null;
+  const bruto = ((d && d.skuLinha) || (m && m.skuLinha) || '').trim();
+  return bruto.split('-')[0].trim();
+}
 
 // O contexto do filtro: o que o desenho e o modelo escolhidos exigem da grade.
 function _ctxDropdownGradesOS(extraIds = []) {
@@ -15732,7 +15769,15 @@ function _ctxDropdownGradesOS(extraIds = []) {
   // Continua visivel se for a grade ja salva da OS em edicao (via extraIds).
   const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
   const tipoModelo = tipoPecaModeloOS();
+  const skuDesenho = _skuLinhaDesenhoOS();
+  const sku = _skuLinhaNorm(skuDesenho);
   return {
+    skuDesenho,
+    sku,
+    // Só filtra por SKU se o SKU do desenho tem grade cadastrada. Sem esta
+    // guarda, desenho novo (ou SKU escrito diferente do nome da grade) receberia
+    // uma lista vazia — que é pior que a lista larga de antes.
+    skuTemGrade: !!sku && (STATE.grades || []).some(g => _skuLinhaNorm(_skuDaGrade(g)) === sku),
     cat: categoriaDesenhoOS(),
     // 'outro' é o balde de tudo que não é camiseta nem moletom: não descreve a
     // peça, então não tem como exigir nada da grade a partir dele.
@@ -15751,6 +15796,16 @@ function _ctxDropdownGradesOS(extraIds = []) {
 function _motivoGradeForaDoDropdownOS(g, ctx) {
   if (ctx.keep.has(g.id)) return '';
   if (ctx.ocultaConjugada(g)) return 'conjugada';
+  // O SKU manda: é a identidade do produto, e as outras três regras são apenas
+  // pistas indiretas dela. Casando o SKU, nada mais precisa concordar — assim uma
+  // grade do produto certo não é mais cortada por estar em pasta "errada" ou por
+  // ter tecido sem categoria.
+  if (ctx.sku && ctx.skuTemGrade) {
+    const s = _skuLinhaNorm(_skuDaGrade(g));
+    if (s === ctx.sku) return '';
+    if (s) return 'sku';
+    // Grade cujo nome não declara SKU: cai nas regras indiretas, abaixo.
+  }
   const catGrade = categoriaPrincipalGrade(g);
   if (ctx.cat && catGrade && catGrade !== ctx.cat) return 'categoria';
   const tp = g.tipoPeca || '';
@@ -15778,6 +15833,7 @@ let _osGradeBusca = '';
 let _osGradeMostrarTodas = false;
 
 const _MOTIVO_GRADE_LABEL = {
+  sku: 'SKU diferente do desenho',
   categoria: 'categoria do tecido diferente da do desenho',
   tipo: 'pasta (tipo de peça) diferente da do modelo',
   variacao: 'subpasta (variação) diferente das cores do desenho',
@@ -15819,13 +15875,13 @@ function preencherDropdownGradesOS(idAlvo = '') {
   }
   fillSelect('f-grade-preset', lista.slice().sort(compararGradesPorSemelhanca), 'nome', '— nenhuma —');
   if (cur) el.value = cur;
-  _atualizarInfoGradesOS({ dentro, fora, lista, termos });
+  _atualizarInfoGradesOS({ dentro, fora, lista, termos, ctx });
 }
 
 // A linha embaixo do campo: quantas grades a busca achou, quantas o filtro
 // escondeu e por quê, e o botão de ver todas. É esta linha que responde
 // "cadastrei a grade e ela não aparece" sem ninguém ter que abrir o código.
-function _atualizarInfoGradesOS({ dentro, fora, lista, termos }) {
+function _atualizarInfoGradesOS({ dentro, fora, lista, termos, ctx }) {
   const box = document.getElementById('f-grade-info');
   if (!box) return;
   const escondidas = fora.filter(x => x.motivo !== 'conjugada');
@@ -15843,6 +15899,18 @@ function _atualizarInfoGradesOS({ dentro, fora, lista, termos }) {
     partes.push(`<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} para "${esc(_osGradeBusca.trim())}"`);
   } else {
     partes.push(`<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} na lista`);
+  }
+  // Quando a regra do SKU está no ar, dizer isso é meia resposta pronta: quem vê
+  // "filtrando pelo SKU COT.PR" já sabe onde olhar se a grade não aparecer (o
+  // nome da grade, que é onde o SKU dela mora).
+  if (ctx && ctx.sku && ctx.skuTemGrade && !_osGradeMostrarTodas) {
+    partes.push(`filtrando pelo SKU <b>${esc(ctx.skuDesenho)}</b> do desenho`);
+  } else if (ctx && ctx.skuDesenho && !ctx.skuTemGrade && !_osGradeMostrarTodas) {
+    partes.push(`nenhuma grade cadastrada com o SKU <b>${esc(ctx.skuDesenho)}</b> — filtrando pelo tecido e pela pasta`);
+  } else if (ctx && !ctx.skuDesenho && !_osGradeMostrarTodas && document.getElementById('f-desenho')?.value) {
+    // Desenho sem SKU no cadastro: é este o caso em que "filtrar por SKU" não
+    // acontece, e sem dizer isso a pessoa fica procurando erro na grade.
+    partes.push('o desenho não tem <b>SKU</b> cadastrado — filtrando pelo tecido e pela pasta');
   }
   if (_osGradeMostrarTodas) {
     partes.push('<b>filtro desligado</b> — todas as grades do cadastro');
