@@ -2908,7 +2908,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </select>
         </div>
         <div class="field"><label>Forma do pano</label>
-          <select id="m-tubular">
+          <select id="m-tubular" onchange="_atualizarDicaTubular()">
             <option value="" ${!item.tubular?'selected':''}>— não informado —</option>
             <option value="tubular" ${item.tubular==='tubular'?'selected':''}>Tubular (vem em tubo, sem abertura lateral)</option>
             <option value="aberto" ${item.tubular==='aberto'?'selected':''}>Não-tubular (vem aberto)</option>
@@ -5463,34 +5463,38 @@ function _cadBuscaFiltrar(page) {
   }
 }
 
-/* TUBULAR OU ABERTO — o registro, e o que o programa faz com ele HOJE.
-   Tubular é o pano que vem em tubo, sem abertura lateral: enfestado, cada camada
-   já são duas espessuras, e o corte sai em dobro. O programa sempre soube disso —
-   só não pelo nome: está em MULTIPLICADOR_PECAS, deduzido da CATEGORIA (malha e
-   ribana rendem 2 peças por camada; moletom e "outro", 1).
+/* TUBULAR OU ABERTO — quem manda nas unidades por camada.
+   Tubular é o pano que vem em tubo, sem abertura lateral: enfestada, a camada já
+   são duas espessuras, e o corte sai em DUAS unidades iguais. Aberto rende UMA.
+   Ver unidadesPorCamadaTecido, onde a regra vive.
 
-   Este campo é o lugar de dizer a forma do pano quando ela não bate com a
-   categoria — o caso que não tinha onde ser registrado. Ele NÃO muda a conta de
-   peças por camada: quem manda ali continua sendo a categoria, exatamente como
-   antes deste campo existir. Trocar o dono dessa conta mexe nas peças e nas
-   camadas de toda OS que usa o tecido, e isso é decisão de quem produz, não
-   efeito colateral de um cadastro novo. */
+   Esta função é só a DICA do campo: ela diz, na hora, quantas unidades por camada
+   aquele tecido vai valer — pela forma escolhida, ou pela categoria enquanto a
+   forma estiver em branco. Sem isso o usuário escolheria no escuro, e a diferença
+   entre 1 e 2 é o dobro das peças de toda OS feita com o pano. */
 function _tecidoTubularDica(item) {
   const cat = (item && item.categoria) || '';
-  const mult = MULTIPLICADOR_PECAS[cat] || 1;
-  const deduz = cat
-    ? `Pela categoria <b>${LABEL_CATEGORIA[cat] || cat}</b>, o programa hoje conta <b>${mult} peça${mult === 1 ? '' : 's'} por camada</b> — ou seja, trata este tecido como <b>${mult > 1 ? 'tubular' : 'aberto'}</b>.`
-    : 'Sem categoria escolhida, o programa conta <b>1 peça por camada</b> (aberto).';
-  return deduz + ' Este campo é <b>registro</b>: serve para a ficha dizer a forma real do pano, e não muda a conta de peças por camada — ela continua vindo da categoria.';
+  const forma = (item && item.tubular) || '';
+  const un = unidadesPorCamadaTecido(item || {});
+  const conta = `<b>${un} unidade${un === 1 ? '' : 's'} igua${un === 1 ? 'l' : 'is'} por camada</b>`;
+  if (forma === 'tubular') return `Tubular: o programa conta ${conta} — o tubo corta em camada dupla.`;
+  if (forma === 'aberto') return `Não-tubular: o programa conta ${conta}.`;
+  return (cat
+      ? `Em branco, vale a <b>categoria</b>: por <b>${LABEL_CATEGORIA[cat] || cat}</b>, o programa conta ${conta}.`
+      : `Em branco e sem categoria, o programa conta ${conta}.`)
+    + ' Preenchido, é a <b>forma do pano</b> que manda — e ela muda as peças e as camadas de toda OS feita com este tecido.';
 }
 
-// A dica fala da categoria escolhida AGORA no formulário — trocar a categoria com
-// o modal aberto tem de trocar o que a dica diz, senão ela passa a informar o que
-// o programa fazia antes da mudança.
+// A dica fala do que está escolhido AGORA no formulário — categoria e forma do
+// pano. Sem isto ela informaria o estado anterior à mudança, e é justamente na
+// hora de mudar que a pessoa precisa ver quanto vai valer uma camada.
 function _atualizarDicaTubular() {
   const el = document.getElementById('m-tubular-dica');
   if (!el) return;
-  el.innerHTML = _tecidoTubularDica({ categoria: document.getElementById('m-categoria')?.value || '' });
+  el.innerHTML = _tecidoTubularDica({
+    categoria: document.getElementById('m-categoria')?.value || '',
+    tubular: document.getElementById('m-tubular')?.value || ''
+  });
 }
 
 function renderTecidos() {
@@ -15560,6 +15564,59 @@ function aplicarGradePreset() {
 /* ========================================================= */
 const LIMITE_CAMADAS = { malha: 80, moletom: 36, ribana: 80, outro: Infinity };
 const MULTIPLICADOR_PECAS = { malha: 2, moletom: 1, ribana: 2, outro: 1 };
+
+/* ============ QUANTAS UNIDADES UMA CAMADA RENDE ============
+   Tubular é o pano que vem em tubo, sem abertura lateral: enfestada, a camada já
+   são duas espessuras, e o corte sai em DUAS unidades iguais. Aberto rende UMA.
+
+   Isto sempre esteve no programa, mas escondido dentro da CATEGORIA: a tabela
+   MULTIPLICADOR_PECAS acima diz malha 2, moletom 1 — que é a mesma coisa dita de
+   outro jeito, "malha vem em tubo, moletom vem aberto". Funcionava enquanto a
+   categoria e a forma do pano andassem juntas; a fábrica passou a ter tecido em
+   que elas não andam (e não havia onde dizer isso).
+
+   Agora quem manda é a FORMA DECLARADA do tecido, quando ela existe:
+     tubular → 2 unidades iguais por camada
+     aberto  → 1 unidade por camada
+   Tecido sem forma declarada (o caso de tudo que já está cadastrado) continua
+   pela categoria, exatamente como antes — vazio é pergunta, não resposta, e um
+   cadastro em branco não pode mudar a conta de nenhuma OS já emitida. */
+function unidadesPorCamadaTecido(tec) {
+  if (!tec) return 1;
+  if (tec.tubular === 'tubular') return 2;
+  if (tec.tubular === 'aberto') return 1;
+  return MULTIPLICADOR_PECAS[categoriaEfetivaTecido(tec)] || 1;
+}
+
+/* A PEÇA PRINCIPAL entre os tecidos de uma OS, e quantas unidades a camada dela
+   rende. A escolha do tecido principal é a MESMA que o programa já fazia — o
+   moletom, se houver; senão a malha —, só que antes ela era feita em cima da
+   categoria e o tecido de onde ela veio se perdia no caminho; sem ele, não havia
+   onde a forma do pano entrar.
+
+   Nem moletom nem malha (ribana pura, "outro"): a regra antiga contava 1, e
+   continua contando 1 — a não ser que alguém tenha DECLARADO a forma daquele
+   pano, que é justamente o caso que este campo existe para atender. */
+function unidadesPorCamadaPrincipal(tecidos) {
+  const lista = (tecidos || []).filter(Boolean);
+  const cat = t => categoriaEfetivaTecido(t);
+  const moletom = lista.find(t => cat(t) === 'moletom');
+  if (moletom) return unidadesPorCamadaTecido(moletom);
+  const malha = lista.find(t => cat(t) === 'malha');
+  if (malha) return unidadesPorCamadaTecido(malha);
+  const declarado = lista.find(t => t.tubular === 'tubular' || t.tubular === 'aberto');
+  return declarado ? unidadesPorCamadaTecido(declarado) : 1;
+}
+
+// Os tecidos que uma OS usa, como objetos do cadastro: os das FASES do enfesto e
+// os da lista de tecidos da OS. É a mesma dupla de fontes que o resto do programa
+// consulta para saber de que pano a OS é feita.
+function tecidosDaOS(o) {
+  const acha = id => (STATE.tecidos || []).find(x => x.id === id);
+  const fases = ((o && o.fases) || []).map(f => acha(f.tecidoId));
+  const tecs = ((o && o.tecidos) || []).map(t => acha(t.tecidoId));
+  return fases.concat(tecs).filter(Boolean);
+}
 // Unidades da grade que uma camada de FORRO rende quando a grade não diz outra
 // coisa. O 2 é a regra que sempre valeu — "o forro enfesta com metade das
 // camadas do moletom" — e continua sendo o padrão: grade cadastrada antes deste
@@ -16248,8 +16305,10 @@ function multiplicadorDominante() {
   rows.forEach(sel => {
     if (!sel.value) return;
     const tec = STATE.tecidos.find(t => t.id === sel.value);
-    if (!tec || !tec.categoria) return;
-    const m = MULTIPLICADOR_PECAS[tec.categoria] || 1;
+    // Tecido sem categoria E sem forma declarada não diz nada — segue de fora,
+    // como sempre. Com a forma declarada, ela vale mesmo sem categoria.
+    if (!tec || (!tec.categoria && tec.tubular !== 'tubular' && tec.tubular !== 'aberto')) return;
+    const m = unidadesPorCamadaTecido(tec);
     if (m > mult) mult = m;
   });
   return mult;
@@ -16316,21 +16375,34 @@ function atualizarCalculosEnfesto() {
   if (camadas > 0 && gradeTotal > 0) {
     // Coleta categorias das fases da grade atual; fallback: linhas de Tecidos do form
     const categoriasUsadas = new Set();
+    // Os TECIDOS, e não só as categorias deles: é do tecido que sai a forma do
+    // pano (tubular/aberto), e era ela que se perdia quando só a categoria
+    // sobrevivia desta coleta.
+    const tecidosUsados = [];
     const gradeId = document.getElementById('f-grade-preset')?.value;
     const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
     const fases = grade?.fases || [];
     fases.forEach(f => {
       if (!f.tecidoId) return;
       const t = STATE.tecidos.find(x => x.id === f.tecidoId);
+      if (t) tecidosUsados.push(t);
       if (t?.categoria) categoriasUsadas.add(t.categoria);
     });
     if (!categoriasUsadas.size) {
       document.querySelectorAll('#tecidos-rows .tec-sel').forEach(sel => {
         if (!sel.value) return;
         const tec = STATE.tecidos.find(t => t.id === sel.value);
+        if (tec) tecidosUsados.push(tec);
         if (tec?.categoria) categoriasUsadas.add(tec.categoria);
       });
     }
+    // Unidades por camada de UMA categoria, pelo tecido daquela categoria que a OS
+    // usa (é ele que sabe se vem em tubo). Sem achar o tecido, cai na tabela — o
+    // comportamento de antes.
+    const unidadesDaCategoria = (cat) => {
+      const t = tecidosUsados.find(x => categoriaEfetivaTecido(x) === cat);
+      return t ? unidadesPorCamadaTecido(t) : (MULTIPLICADOR_PECAS[cat] || 1);
+    };
     // Coletar fases da grade selecionada (se houver) pra calcular papéis
     const gradeIdSel = document.getElementById('f-grade-preset')?.value;
     const gradeSel = gradeIdSel ? STATE.grades.find(g => g.id === gradeIdSel) : null;
@@ -16362,7 +16434,7 @@ function atualizarCalculosEnfesto() {
         // Renderização básica
         const linhas = grupos.map(gr => {
           const cat = gr.papel === 'forro_capuz' ? 'malha' : gr.papel === 'ribana' ? 'ribana' : gr.papel;
-          const mult = MULTIPLICADOR_PECAS[cat] || 1;
+          const mult = unidadesDaCategoria(cat);
           const total = gradeTotal * camadas * mult;
           return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);">
             <span>Total ${gr.label}:</span>
@@ -16372,7 +16444,7 @@ function atualizarCalculosEnfesto() {
         calcBox.innerHTML = linhas;
       } else {
         // Total moletom: soma fases com papel moletom (mesma grade × camadas)
-        const totalMoletom = temMoletom ? (gradeTotal * camadas * (MULTIPLICADOR_PECAS.moletom || 1)) : 0;
+        const totalMoletom = temMoletom ? (gradeTotal * camadas * unidadesDaCategoria('moletom')) : 0;
 
         // Busca desenho selecionado pra analisar componentes
         const desenhoIdCalc = document.getElementById('f-desenho')?.value;
@@ -16448,18 +16520,20 @@ function atualizarCalculosEnfesto() {
             if (!(p.papel || '').startsWith('ribana_')) return;
             const fase = fasesGrade[idx];
             const tec = STATE.tecidos.find(t => t.id === fase?.tecidoId);
+            // Sem "unidades" na fase, a forma do pano responde: ribana tubular
+            // rende 2 por camada, ribana aberta rende 1. Sem forma declarada, o
+            // padrão de sempre (multRib = 2).
+            const padrao = unidadesPorCamadaTecido(tec) || multRib;
             multPorLabelRib[p.label] = isTecidoRibana(tec)
-              ? (parseInt(fase?.unidades) || multRib)
-              : multRib;
+              ? (parseInt(fase?.unidades) || padrao)
+              : padrao;
           });
           // Regra de ribana:
           // - Ribana moletom: escala com unidade media da grade (2 cam moletom = 1 cam ribana).
           // - Outras ribanas (malha algodao, gola polo): so camadasPrincipal × multPrincipal / unidades.
           const qtdsGradeForm = ['p','m','g','gg','g1','g2','g3']
             .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0);
-          const multPrincipalEnf = temMoletom
-            ? 1
-            : (categoriasUsadas.has('malha') ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
+          const multPrincipalEnf = unidadesPorCamadaPrincipal(tecidosUsados);
           // Mapa label → escalaComGrade (para diferenciar moletom de outras ribanas no calculo)
           const escalaPorLabel = {};
           papeis.forEach((p, idx) => {
@@ -16589,20 +16663,23 @@ function calcularCamadasParaProducao() {
   // Os tecidos da OS já são a fonte do limite de camadas (calcularLimiteCamadas)
   // e da contagem de peças (multiplicadorPecaOS): agora as três concordam.
   // Só cai nas fases da grade se a OS ainda não tem tecido escolhido.
-  const catsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
+  // Os TECIDOS escolhidos, e não só as categorias: a forma do pano
+  // (tubular/aberto) mora no tecido, e é ela que manda nas unidades por camada.
+  const tecsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
     .map(r => r.querySelector('.tec-sel')?.value)
     .filter(Boolean)
-    .map(id => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === id)))
+    .map(id => STATE.tecidos.find(t => t.id === id))
     .filter(Boolean);
-  const cats = catsForm.length
-    ? catsForm
-    : fases.map(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId))).filter(Boolean);
+  const tecs = tecsForm.length
+    ? tecsForm
+    : fases.map(f => STATE.tecidos.find(t => t.id === f.tecidoId)).filter(Boolean);
+  const cats = tecs.map(categoriaEfetivaTecido).filter(Boolean);
   const temMoletom = cats.includes('moletom');
   const temMalha = cats.includes('malha');
 
-  // Multiplicador da peça principal
-  let multPrincipal = 1;
-  if (!temMoletom && temMalha) multPrincipal = MULTIPLICADOR_PECAS.malha || 2;
+  // Unidades por camada da peça principal — pela forma do pano do tecido
+  // principal, caindo na categoria quando a forma não foi declarada.
+  const multPrincipal = unidadesPorCamadaPrincipal(tecs);
 
   const minQtd = Math.min(...qtdsPorTamanho);
   const gradeTotal = qtdsPorTamanho.reduce((s, x) => s + x, 0);
@@ -16747,8 +16824,12 @@ function calcularCamadasParaProducao() {
           : Math.max(1, Math.ceil(camadasPrincipal / multRib));
       }
     } else {
-      const cat = papel.categoria || '';
-      const mult = MULTIPLICADOR_PECAS[cat] || 1;
+      // Demais fases: as unidades por camada saem da forma do pano DESTA fase, e
+      // caem na categoria quando a forma não foi declarada.
+      const tecOutro = STATE.tecidos.find(t => t.id === fase.tecidoId);
+      const mult = tecOutro
+        ? unidadesPorCamadaTecido(tecOutro)
+        : (MULTIPLICADOR_PECAS[papel.categoria || ''] || 1);
       val = Math.ceil(target / (minQtd * mult));
     }
     input.value = val;
@@ -16782,18 +16863,20 @@ function calcularAlvoDeCamadas() {
   const gradeId = document.getElementById('f-grade-preset')?.value;
   const grade = gradeId ? STATE.grades.find(g => g.id === gradeId) : null;
   const fases = grade?.fases || [];
-  const catsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
+  // Os TECIDOS escolhidos, e não só as categorias: a forma do pano
+  // (tubular/aberto) mora no tecido, e é ela que manda nas unidades por camada.
+  const tecsForm = Array.from(document.querySelectorAll('#tecidos-rows .tecido-row'))
     .map(r => r.querySelector('.tec-sel')?.value)
     .filter(Boolean)
-    .map(id => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === id)))
+    .map(id => STATE.tecidos.find(t => t.id === id))
     .filter(Boolean);
-  const cats = catsForm.length
-    ? catsForm
-    : fases.map(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId))).filter(Boolean);
+  const tecs = tecsForm.length
+    ? tecsForm
+    : fases.map(f => STATE.tecidos.find(t => t.id === f.tecidoId)).filter(Boolean);
+  const cats = tecs.map(categoriaEfetivaTecido).filter(Boolean);
   const temMoletom = cats.includes('moletom');
   const temMalha = cats.includes('malha');
-  let multPrincipal = 1;
-  if (!temMoletom && temMalha) multPrincipal = MULTIPLICADOR_PECAS.malha || 2;
+  const multPrincipal = unidadesPorCamadaPrincipal(tecs);
 
   const alvo = camadas * minQtd * multPrincipal;
   const inputTarget = document.getElementById('f-enf-target');
@@ -16936,20 +17019,20 @@ function coletaOS() {
   const gG = parseInt(v('f-gr-g'))||0, gGG = parseInt(v('f-gr-gg'))||0, gG1 = parseInt(v('f-gr-g1'))||0;
   const gG2 = parseInt(v('f-gr-g2'))||0, gG3 = parseInt(v('f-gr-g3'))||0;
   const camadasN = parseInt(v('f-enf-camadas'))||0;
-  // multPrincipal: 1 camada produz quantas peças por slot da grade.
-  // Moletom = 1, Malha algodão (camiseta) = 2 (tubo/dobrado corta em camada dupla).
+  // multPrincipal: 1 camada produz quantas UNIDADES IGUAIS por vaga da grade.
+  // Pano tubular = 2 (o tubo corta em camada dupla), pano aberto = 1. Tecido sem a
+  // forma declarada cai na categoria, como sempre foi (moletom 1, malha 2) — então
+  // OS de tecido não conferido continua com o número de antes.
   // Sem isso, qtdPorTamanho dos componentes sai pela metade em camisetas.
-  // Mesma lógica usada em calcularCamadasParaProducao e na linha "Total por tamanho" da impressão.
+  // Mesma conta de unidadesPorCamadaPrincipal usada em calcularCamadasParaProducao
+  // e na linha "Total por tamanho" da impressão (via multiplicadorPecaOS).
   const _gradeIdSel = v('f-grade-preset');
   const _gradeSel = _gradeIdSel ? STATE.grades.find(g => g.id === _gradeIdSel) : null;
   const _fasesSel = _gradeSel?.fases || [];
-  const _temMoletom = _fasesSel.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'moletom')
-    || tecidos.some(t => categoriaEfetivaTecido(STATE.tecidos.find(x => x.id === t.tecidoId)) === 'moletom');
-  const _temMalha = !_temMoletom && (
-    _fasesSel.some(f => categoriaEfetivaTecido(STATE.tecidos.find(t => t.id === f.tecidoId)) === 'malha')
-    || tecidos.some(t => categoriaEfetivaTecido(STATE.tecidos.find(x => x.id === t.tecidoId)) === 'malha')
-  );
-  const multPrincipal = _temMoletom ? 1 : (_temMalha ? (MULTIPLICADOR_PECAS.malha || 2) : 1);
+  const _tecsDaOS = _fasesSel.map(f => STATE.tecidos.find(t => t.id === f.tecidoId))
+    .concat(tecidos.map(t => STATE.tecidos.find(x => x.id === t.tecidoId)))
+    .filter(Boolean);
+  const multPrincipal = unidadesPorCamadaPrincipal(_tecsDaOS);
   const pecasPorTamanho = {
     p:  gP  * camadasN * multPrincipal,
     m:  gM  * camadasN * multPrincipal,
@@ -19718,16 +19801,13 @@ function tonsEfetivos(ttTons) {
 // Multiplicador de peças por camada: quantas unidades cada camada rende em cada
 // vaga da grade. Moletom = 1 (1 camada = 1 blusa); malha sem moletom (camiseta)
 // = 2. Sem isso o total por tamanho sai pela metade na camiseta.
+// Unidades por camada da peça desta OS. É por aqui que a folha (via
+// totaisPorTamanhoTomOS) e as quantidades gravadas (recomputarQuantidadesOS) sabem
+// se uma camada rende uma peça ou duas — e, portanto, é o ponto em que a FORMA DO
+// PANO (tubular/aberto) passa a mandar. Tecido sem forma declarada continua pela
+// categoria: OS antiga não muda de número por causa deste campo.
 function multiplicadorPecaOS(o) {
-  const cat = tecId => {
-    const t = (STATE.tecidos || []).find(x => x.id === tecId);
-    return t ? categoriaEfetivaTecido(t) : null;
-  };
-  const fases = (o && o.fases) || [];
-  const tecs = (o && o.tecidos) || [];
-  const tem = c => fases.some(f => cat(f.tecidoId) === c) || tecs.some(t => cat(t.tecidoId) === c);
-  if (tem('moletom')) return 1;
-  return tem('malha') ? 2 : 1;
+  return unidadesPorCamadaPrincipal(tecidosDaOS(o));
 }
 
 // Reescreve as quantidades CONGELADAS da OS a partir do que ela tem hoje:

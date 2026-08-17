@@ -60,6 +60,9 @@ const FUNCOES = [
   // camadas
   '_tamanhoQueMandaNaGrade', 'camadasDaFaseRibana', '_ribanaEscalaComGrade',
   'camadasPadraoDaFase', 'multiplicadorPecaOS', '_faseNaoEnfestadaPorTom',
+  // A forma do pano (tubular/aberto) é quem manda nas unidades por camada desde
+  // 17/08/2026 — `multiplicadorPecaOS` passa por aqui. Ver testes/forma-do-pano.js.
+  'unidadesPorCamadaTecido', 'unidadesPorCamadaPrincipal', 'tecidosDaOS',
   // consumo
   'gramaturaTecidoPorNome', 'pesoBobinaPorNome', 'gramaturaCorPorNome',
   'consumoEnfestoOS',
