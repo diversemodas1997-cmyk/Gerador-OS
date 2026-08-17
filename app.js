@@ -6397,6 +6397,54 @@ function _expCargasDa(janelaId, dataOrig, perna) {
   return (STATE.expedicaoCargas || []).filter(c => c.janelaId === janelaId && c.data === dataOrig && c.perna === perna);
 }
 
+/* ============ FASES DA OS QUE VÃO NESTA CARGA (carga.fases) ============
+   A expedição interna não leva sempre a peça inteira. O enfesto da OS é feito em
+   FASES (corpo, manga, ribana, gola, viés…), cada uma no seu tecido e cor, e uma
+   viagem pode levar só algumas delas — o corpo e a manga vão costurar, a ribana
+   fica esperando o próximo caminhão. Até 17/08/2026 isso só existia como texto
+   solto na observação ("apenas mangas e costas"): quem separava tinha que ler um
+   recado, e a folha não tinha como conferir nada.
+
+   `carga.fases` é a lista de ORDENS de fase que embarcam. Ausente ou vazia = a OS
+   inteira, que é como toda carga antiga foi gravada — então nada precisa ser
+   migrado e o padrão continua sendo "vai tudo".
+
+   Escolher fases NÃO muda pacote, volume nem estoque: quem move peça é a
+   composição por pacote (tamanho × tonalidade), que é outra pergunta. Aqui se diz
+   QUE PARTE DA PEÇA vai no caminhão — a informação que faltava na doca. */
+function _expFasesDaOS(o) {
+  return ((o && o.fases) || [])
+    .map((f, i) => {
+      const ordem = Number(f.ordem) || (i + 1);
+      const nome = String(f.nome || '').trim() || `Fase ${ordem}`;
+      const cor = corNomeCurto(f.corNome || '');
+      return {
+        ordem, nome, cor,
+        tecido: String(f.tecidoNome || '').trim(),
+        rotulo: nome + (cor ? ` (${cor})` : '')
+      };
+    })
+    .sort((a, b) => a.ordem - b.ordem);
+}
+
+// As fases que embarcam nesta carga e as que ficam. `todas` diz se a carga leva a
+// peça inteira — o caso normal, e o único que a folha não precisa comentar.
+function _expFasesDaCarga(c, o) {
+  const fases = _expFasesDaOS(o);
+  const grav = Array.isArray(c && c.fases) ? c.fases.map(Number).filter(n => Number.isFinite(n)) : null;
+  if (!fases.length) return { fases: [], levam: [], ficam: [], todas: true, temFases: false };
+  // Ordem gravada que não existe mais na OS (fase renomeada/removida na grade
+  // depois de alocar) simplesmente não aparece: a OS manda no que existe.
+  const levam = (grav && grav.length) ? fases.filter(f => grav.includes(f.ordem)) : fases.slice();
+  const ficam = fases.filter(f => !levam.includes(f));
+  return { fases, levam, ficam, todas: !ficam.length, temFases: true };
+}
+
+// Texto curto das fases que vão: "Corpo (Preto) · Manga (Preto)".
+function _expFasesTexto(lista) {
+  return (lista || []).map(f => f.rotulo).join(' · ');
+}
+
 /* ---- O que o usuário reescreveu à mão na folha de OE, por OS alocada ----
    A folha de OE nasce toda calculada: o nome da peça vem do desenho, as cores
    das variantes, as peças dos componentes e os volumes dos pacotes da carga. É
@@ -6467,7 +6515,10 @@ function resumoPernaExpedicao(oc, perna) {
       pecasOS,
       volumes: fo.volumes != null ? fo.volumes : volumesCalc,
       volumesCalc,
-      folha: fo
+      folha: fo,
+      // Que partes da peça vão nesta viagem (corpo, manga, ribana…). `todas` no
+      // caso normal, e é só quando NÃO são todas que a folha comenta.
+      fases: _expFasesDaCarga(c, o)
     };
   }).sort((a, b) => String(a.osNumero).localeCompare(String(b.osNumero), undefined, { numeric: true }));
   const volumes = itens.reduce((s, i) => s + i.volumes, 0);
@@ -7007,7 +7058,7 @@ function renderExpedicaoPlano() {
 
   const comoFunciona = `
     <div class="info-box no-print" style="font-size:12px;">
-      As OSs entram aqui sozinhas: marcar <b>Ensaque</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai, e <b>✎</b> para reescrever o que aquela OS mostra na <b>folha de OE</b> (nome da peça, cor, peças, volumes e o recado) — o ✎ também está em cada quadro da folha.
+      As OSs entram aqui sozinhas: marcar <b>Ensaque</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai, escolher os <b>pacotes</b> e marcar as <b>fases da peça</b> que vão nesta viagem (a expedição pode levar só o corpo e a manga). O <b>✎</b> reescreve o que aquela OS mostra na <b>folha de OE</b> (nome da peça, cor, peças, volumes e o recado) — e também está em cada quadro da folha.
     </div>`;
 
   const resumo = `
@@ -7042,16 +7093,25 @@ function renderExpedicaoPlano() {
       const folhaBadge = trocas.length
         ? ` <span class="exp-badge info" title="Reescrito à mão para a folha de OE: ${esc(trocas.join(' · '))}. Clique em ✎ para ver ou voltar aos valores calculados.">folha editada</span>`
         : '';
+      // Carga que leva só parte da peça: a linha diz quantas fases vão, e o
+      // detalhe (quais vão, quais ficam) desce numa linha própria — é o que a
+      // folha de OE vai imprimir para a doca.
+      const fi = i.fases || { temFases: false, todas: true, levam: [], ficam: [] };
+      const parteDaPeca = fi.temFases && !fi.todas && fi.levam.length > 0;
+      const fasesBadge = parteDaPeca
+        ? ` <span class="exp-badge baixo" title="Esta carga leva só parte da peça. Vão: ${esc(_expFasesTexto(fi.levam))}. Ficam: ${esc(_expFasesTexto(fi.ficam))}. Escolhido em ⇄, no checklist de fases.">${fi.levam.length} de ${fi.fases.length} fases</span>`
+        : '';
       return `
       <div class="exp-os-row">
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${folhaBadge}${
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${fasesBadge}${folhaBadge}${
           i.carga.origem === 'ensaque' ? ' <span class="exp-badge info" title="Entrou nesta OE ao ser marcada como ensacada no checklist da OS, não pelo planejamento da expedição">pelo ensaque</span>' : ''}${
           i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
         <span><button title="Editar o que esta OS mostra na folha de OE: nome da peça, cor, peças, volumes e o recado" onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
-      </div>${i.obs ? `
+      </div>${parteDaPeca ? `
+      <div class="exp-os-fases" title="Fases do enfesto que esta carga leva. Escolhidas no checklist de fases, em ⇄. Sai na folha de OE."><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}${fi.ficam.length ? ` · <span class="fic">ficam: ${esc(_expFasesTexto(fi.ficam))}</span>` : ''}</div>` : ''}${i.obs ? `
       <div class="exp-os-obs" title="Observação escrita ao alocar esta OS na expedição. Também sai na folha de OE.">${esc(i.obs)}</div>` : ''}`;
     }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
     return `
@@ -7328,6 +7388,12 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         <div id="ec-pacotes" class="ec-pacotes"></div>
         <div class="field-hint">Marque os pacotes (tamanho × tonalidade) que vão nesta carga. Desmarque para deixar o restante para outra expedição — o que sobrar fica listado como <b>a alocar</b>.</div>
       </div>
+      <div class="field full" id="ec-fases-wrap" style="display:none;">
+        <label>Fases da peça que vão nesta carga</label>
+        <div id="ec-fases" class="ec-fases"></div>
+        <div id="ec-fases-acoes" class="ec-fase-acoes"></div>
+        <div class="field-hint">São as fases do <b>enfesto</b> desta OS. A expedição pode levar só parte da peça — corpo e manga vão costurar e a ribana espera o próximo caminhão. Desmarque o que <b>não</b> vai: a folha de OE passa a dizer, no quadro desta OS, quais fases embarcam e quais ficam. Isto não muda pacote, volume nem estoque — só o que a doca precisa separar e conferir.</div>
+      </div>
       ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *',
         cargaEdit ? (cargaEdit.volumes || '') : (osPre ? _expSugestaoVolumes(osPre) : ''),
         'É este número que conta contra o mínimo e o máximo da carga.')}
@@ -7350,6 +7416,68 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
 function _expPernaDoForm() {
   const p = String(document.getElementById('ec-ocorrencia')?.value || '').split('|')[2];
   return p === 'volta' ? 'volta' : 'ida';
+}
+
+// Monta o checklist das FASES da OS no modal de carga. Todas marcadas por
+// padrão: alocar a peça inteira é o caso normal e continua sendo um clique só.
+// Ao EDITAR uma carga que já escolheu fases, vêm marcadas as que ela leva.
+// OS sem fases de enfesto (grade sem fase, OS antiga) simplesmente não mostra o
+// bloco — não há o que escolher.
+function _expMontarSeletorFases(o) {
+  const wrap = document.getElementById('ec-fases-wrap');
+  const box = document.getElementById('ec-fases');
+  const acoes = document.getElementById('ec-fases-acoes');
+  if (!wrap || !box) return;
+  const editId = (_expModalCtx && _expModalCtx.editId) || '';
+  const cargaEdit = editId ? (STATE.expedicaoCargas || []).find(c => c.id === editId) : null;
+  const info = _expFasesDaCarga(cargaEdit, o);
+  if (!info.temFases) {
+    wrap.style.display = 'none';
+    box.innerHTML = '';
+    if (acoes) acoes.innerHTML = '';
+    return;
+  }
+  const marcadas = new Set(info.levam.map(f => f.ordem));
+  box.innerHTML = info.fases.map(f => `
+    <label class="ec-fase-cel">
+      <input type="checkbox" class="ec-fase-in" value="${f.ordem}" ${marcadas.has(f.ordem) ? 'checked' : ''} onchange="_expResumoFases()">
+      <span class="n">${esc(f.nome)}</span>
+      ${f.cor ? `<span class="c">${esc(f.cor)}</span>` : ''}
+      ${f.tecido ? `<span class="t">${esc(f.tecido)}</span>` : ''}
+    </label>`).join('');
+  // Os botões e o resumo ficam FORA da caixa que rola: numa OS de muitas fases
+  // eles sairiam da vista justamente quando são mais úteis.
+  if (acoes) {
+    acoes.innerHTML = `
+      <button type="button" class="btn" onclick="_expMarcarTodasFases(true)">Marcar todas</button>
+      <button type="button" class="btn" onclick="_expMarcarTodasFases(false)">Desmarcar todas</button>
+      <span id="ec-fases-resumo" class="ec-fase-resumo"></span>`;
+  }
+  wrap.style.display = '';
+  _expResumoFases();
+}
+
+function _expMarcarTodasFases(v) {
+  document.querySelectorAll('#ec-fases .ec-fase-in').forEach(el => { el.checked = !!v; });
+  _expResumoFases();
+}
+
+// Diz em uma linha o que a folha vai dizer: peça inteira, algumas fases, ou
+// nenhuma marcada (que a folha trata como peça inteira, pra não sair um quadro
+// dizendo que a carga não leva nada).
+function _expResumoFases() {
+  const el = document.getElementById('ec-fases-resumo');
+  if (!el) return;
+  const todos = Array.from(document.querySelectorAll('#ec-fases .ec-fase-in'));
+  const marc = todos.filter(x => x.checked);
+  if (!todos.length) { el.textContent = ''; return; }
+  if (!marc.length) {
+    el.innerHTML = '<span class="exp-badge baixo">nenhuma marcada — a folha vai tratar como peça inteira</span>';
+  } else if (marc.length === todos.length) {
+    el.innerHTML = '<span class="exp-badge ok">a peça inteira</span>';
+  } else {
+    el.innerHTML = `<span class="exp-badge info">${marc.length} de ${todos.length} fases — a folha vai dizer quais ficam</span>`;
+  }
 }
 
 function _expMontarSeletorPacotes(o) {
@@ -7491,6 +7619,9 @@ function _expAtualizarSugestaoVolumes() {
   const info = document.getElementById('ec-info');
   const campo = document.getElementById('ec-volumes');
   const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
+  // As fases do enfesto valem para os dois caminhos abaixo (com e sem grade):
+  // montadas aqui, antes de qualquer saída, elas não dependem de a OS ter grade.
+  _expMontarSeletorFases(o);
   if (!o) {
     _expMontarSeletorPacotes(null);
     if (info) info.textContent = 'Selecione a OS para ver as peças.';
@@ -7575,6 +7706,7 @@ function abrirModalExpFolhaOS(cargaId) {
     <div class="info-box" style="margin-top:8px;font-size:12px;">
       Isto muda <b>só a folha de OE desta OS nesta carga</b>. A OS, o desenho, a grade, os pacotes e o estoque não são tocados — e a mesma OS em outra expedição continua com o texto calculado.
       A tabela de quantidades continua vindo do <b>Total por tamanho</b> da OS: é lá que se corrigem os números por tamanho e tonalidade.
+      Os <b>pacotes</b> e as <b>fases da peça</b> que esta carga leva se escolhem em <b>⇄</b>, no planejamento.
     </div>
     <div style="margin-top:8px;">
       <button class="btn" title="Apaga o que foi reescrito e volta a mostrar os valores calculados. A observação não é apagada." onclick="limparFolhaOeOS('${esc(cargaId)}')">↺ Voltar aos valores calculados</button>
@@ -7832,7 +7964,15 @@ async function salvarModalExpedicao() {
     const jaTem = STATE.expedicaoCargas.some(c => c.id !== ctx.editId
       && c.janelaId === janelaId && c.data === data && c.perna === perna && c.osId === osId);
     if (jaTem) return toast('Esta OS já está nesta carga', 'err');
-    const campos = { janelaId, data, perna, osId, volumes, obs: v('ec-obs').trim() };
+    // Fases do enfesto que embarcam. Todas marcadas (ou nenhuma marcada, ou OS sem
+    // fases) = a peça inteira, gravada como `null` — o mesmo formato de toda carga
+    // anterior a este campo, então a folha não precisa saber quem é antigo.
+    const selFases = Array.from(document.querySelectorAll('#ec-fases .ec-fase-in'));
+    const fasesMarcadas = selFases.filter(el => el.checked).map(el => Number(el.value));
+    const fases = (selFases.length && fasesMarcadas.length && fasesMarcadas.length < selFases.length)
+      ? fasesMarcadas
+      : null;
+    const campos = { janelaId, data, perna, osId, volumes, fases, obs: v('ec-obs').trim() };
     // Guarda (ou limpa) a composição por pacote. Sem seletor, remove qualquer
     // composição antiga pra não ficar incoerente com o número manual.
     if (temSeletor) { campos.pacotes = pacotes; campos.reposicao = reposicao; }
@@ -7874,6 +8014,9 @@ async function salvarModalExpedicao() {
       // voltando, e quem leu "12 sacos, vai como conjunto" na ida tem que ler o
       // mesmo na volta. Segue editável (✎) e apagável em cada perna.
       if (origem && origem.folha && _expFolhaOS(origem).tem) nova.folha = { ...origem.folha };
+      // E as fases também: o que a ida levou é o que volta. Se a ida levou só
+      // corpo e manga, não é a peça inteira que retorna.
+      if (origem && Array.isArray(origem.fases) && origem.fases.length) nova.fases = origem.fases.slice();
       STATE.expedicaoCargas.push(nova);
       n++;
     });
@@ -13439,9 +13582,19 @@ function renderPrintPlanoExpedicao() {
     // como a OS foi repartida. Destacado, não em nota de rodapé: é justamente o
     // que não está em nenhum outro lugar do papel.
     const obsHtml = i.obs ? `<div class="obs">${esc(i.obs)}</div>` : '';
+    // A carga leva só PARTE da peça? Então a folha tem que dizer quais fases do
+    // enfesto embarcam e, principalmente, quais FICAM: quem separa não pode
+    // descobrir isso contando sacos, e quem recebe precisa saber o que esperar do
+    // próximo caminhão. Carga da peça inteira não escreve nada — o silêncio aqui
+    // quer dizer "vai tudo", que é o caso da grande maioria.
+    const fi = i.fases || { temFases: false, todas: true, levam: [], ficam: [] };
+    const fasesHtml = (fi.temFases && !fi.todas && fi.levam.length)
+      ? `<div class="fases"><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}${
+          fi.ficam.length ? `<span class="fic"> · ficam para depois: ${esc(_expFasesTexto(fi.ficam))}</span>` : ''}</div>`
+      : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div>${obsHtml}</div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div>${fasesHtml}${obsHtml}</div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -13476,7 +13629,7 @@ function renderPrintPlanoExpedicao() {
               : `<b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}`}
           </div>
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
-          ${obsHtml}
+          ${fasesHtml}${obsHtml}
         </div>`;
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
@@ -13540,7 +13693,7 @@ function renderPrintPlanoExpedicao() {
           </tbody>
         </table>${indef ? `
         <div class="pe">A divisão entre as tonalidades ainda não foi repartida na OS.</div>` : ''}
-        ${obsHtml}
+        ${fasesHtml}${obsHtml}
       </div>`;
   };
 

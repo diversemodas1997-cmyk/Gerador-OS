@@ -1550,7 +1550,7 @@ body:not(.is-admin) #modal-cad-fields button {
    caberia entre as colunas sem apertar o modelo. A linha pontilhada da OS sai
    quando há observação — senão ela cortaria a OS do seu próprio recado e o
    recado pareceria ser da OS de baixo. */
-.exp-os-row:has(+ .exp-os-obs) { border-bottom: none; padding-bottom: 0; }
+.exp-os-row:has(+ .exp-os-obs), .exp-os-row:has(+ .exp-os-fases) { border-bottom: none; padding-bottom: 0; }
 .exp-os-obs {
   font-size: 11.5px;
   color: var(--ink-2);
@@ -1642,6 +1642,55 @@ body:not(.is-admin) #modal-cad-fields button {
   font-family: 'IBM Plex Mono', monospace;
 }
 input.is-auto { background: var(--line-2); color: var(--ink-2); }
+
+/* Checklist das FASES do enfesto no modal de alocar OS: que partes da peça vão
+   nesta carga (corpo, manga, ribana…). Uma linha por fase, com a cor e o tecido
+   ao lado — é por eles que quem separa reconhece a fase no pacote, não pelo
+   nome sozinho. Sem contador: fase vai ou não vai. */
+.ec-fases {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--paper);
+}
+.ec-fase-cel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  border-bottom: 1px dotted var(--line-2);
+  cursor: pointer;
+}
+.ec-fase-cel:last-of-type { border-bottom: none; }
+.ec-fase-cel input { flex: 0 0 auto; }
+.ec-fase-cel .n { font-weight: 600; }
+.ec-fase-cel .c { color: var(--ink-2); }
+.ec-fase-cel .t { margin-left: auto; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+.ec-fase-acoes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.ec-fase-acoes:empty { display: none; }
+.ec-fase-acoes .btn { padding: 3px 8px; font-size: 11.5px; }
+.ec-fase-resumo { font-size: 11.5px; }
+
+/* Linha das fases na tela do plano: o mesmo lugar e o mesmo peso da observação
+   (as duas são recado para a doca), mas com barra própria pra não se lerem como
+   uma frase só. */
+.exp-os-fases {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  padding: 2px 0 4px 4px;
+  border-left: 2px solid var(--accent);
+  margin: 0 0 4px 2px;
+}
+.exp-os-fases .fic { color: var(--ink-3); }
 
 /* ============ PLANEJAMENTO DIÁRIO DE OPERAÇÕES ============ */
 /* Reaproveita a moldura do plano de expedição (.exp-toolbar, .exp-resumo,
@@ -2262,6 +2311,15 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   font-size: 7.5pt; color: #000; margin-top: 1.5pt;
   padding: 1pt 3pt; background: #fff59d; border-left: 2pt solid #000;
 }
+/* Fases do enfesto quando a carga leva só PARTE da peça. Fica acima da tarja da
+   observação e com moldura própria: as duas são recado, mas esta é uma lista de
+   conferência ("é isto que tem no pacote"), não um aviso solto. Sem cor de fundo
+   para não brigar com o amarelo da observação no papel. */
+.exp-print-os > .fases {
+  font-size: 7.5pt; color: #000; margin-top: 1.5pt;
+  padding: 1pt 3pt; border: .5pt solid #000;
+}
+.exp-print-os > .fases .fic { color: #444; }
 .exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
 
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }

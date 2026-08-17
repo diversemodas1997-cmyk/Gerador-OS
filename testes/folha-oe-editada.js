@@ -35,6 +35,9 @@ function recorte(de, ate, oQue) {
 const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 
 const motor = [
+  corta('function _expFasesDaOS'),
+  corta('function _expFasesDaCarga'),
+  corta('function _expFasesTexto'),
   corta('function _expFolhaOS'),
   corta('function resumoPernaExpedicao')
 ].join('\n');
@@ -50,6 +53,9 @@ function resumo(estado) {
     const _expPecasOS = () => 200;
     const _expPecasDaComposicao = (o, lista) => ({ pecas: lista.length * 50, total: 200, fracao: lista.length / 4 });
     const nomePecaOS = (o) => o.nomeDoDesenho || '';
+    // Dublê: tirar o tecido do nome da cor tem teste próprio; aqui a cor entra
+    // já curta ("Preto") e o que se mede é o rótulo da fase.
+    const corNomeCurto = (n) => String(n == null ? '' : n).trim();
     ${motor}
     const oc = { janela: { id: 'j1' }, dataOrig: '2026-08-20' };
     return resumoPernaExpedicao(oc, 'ida');
@@ -139,6 +145,57 @@ r = resumo(estado(cheia));
 eq('carga antiga: peças = lote inteiro', r.itens[0].pecas, 200);
 r = resumo(estado(Object.assign({}, cheia, { folha: { volumes: 10 } })));
 eq('carga antiga também aceita o volume reescrito', r.itens[0].volumes, 10);
+
+/* ---------- 7. fases do enfesto que a carga leva (carga.fases) ----------
+   A expedição pode levar só parte da peça: corpo e manga vão costurar, a ribana
+   espera. Ausente/vazio tem que continuar significando "a peça inteira" — é como
+   toda carga anterior a este campo está gravada. */
+
+const osComFases = Object.assign({}, os, { fases: [
+  { ordem: 1, nome: 'Corpo', corNome: 'Preto', tecidoNome: 'Malha Algodão' },
+  { ordem: 2, nome: 'Manga', corNome: 'Preto', tecidoNome: 'Malha Algodão' },
+  { ordem: 3, nome: 'Ribana', corNome: 'Preto', tecidoNome: 'Ribana' }
+] });
+const estadoF = (c) => ({ ordens: [osComFases], expedicaoCargas: [c], expedicaoExcecoes: [] });
+const fasesDe = (c) => resumo(estadoF(c)).itens[0].fases;
+
+let f = fasesDe(carga());
+ok('sem fases gravadas, a carga leva a peça inteira', f.todas === true && f.levam.length === 3, f);
+eq('nenhuma fase fica para depois', f.ficam.length, 0);
+
+f = fasesDe(Object.assign(carga(), { fases: [1, 2] }));
+ok('duas fases marcadas: só elas embarcam', f.todas === false && f.levam.length === 2, f);
+eq('a fase não marcada fica para depois', f.ficam.map(x => x.nome).join(','), 'Ribana');
+eq('o rótulo da fase traz a cor', f.levam[0].rotulo, 'Corpo (Preto)');
+
+f = fasesDe(Object.assign(carga(), { fases: [] }));
+ok('lista vazia = peça inteira (não é "carga sem nada")', f.todas === true && f.levam.length === 3, f);
+
+f = fasesDe(Object.assign(carga(), { fases: [1, 2, 3] }));
+ok('todas marcadas = peça inteira', f.todas === true && f.ficam.length === 0, f);
+
+// Grade alterada depois de alocar: a ordem gravada não existe mais na OS.
+f = fasesDe(Object.assign(carga(), { fases: [1, 9] }));
+eq('ordem que não existe mais na OS é ignorada', f.levam.map(x => x.nome).join(','), 'Corpo');
+eq('e as outras duas fases ficam', f.ficam.length, 2);
+
+// Ordem gravada como texto (JSON de fora, import): tem que ser lida como número,
+// senão a carga inteira vira "peça inteira" calada.
+f = fasesDe(Object.assign(carga(), { fases: ['2'] }));
+eq('ordem gravada como texto é lida como número', f.levam.map(x => x.nome).join(','), 'Manga');
+
+// OS sem fases de enfesto (grade antiga): não há o que escolher, e a folha não
+// pode passar a comentar fase nenhuma.
+f = resumo(estado(carga({ /* folha */ }))).itens[0].fases;
+ok('OS sem fases: temFases false e nada a comentar', f.temFases === false && f.todas === true, f);
+
+eq('texto das fases junta com ponto do meio',
+  (() => { const fn = new Function('l', `
+    const corNomeCurto = (n) => String(n == null ? '' : n).trim();
+    ${motor}
+    return _expFasesTexto(l);`);
+    return fn([{ rotulo: 'Corpo (Preto)' }, { rotulo: 'Manga (Preto)' }]); })(),
+  'Corpo (Preto) · Manga (Preto)');
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
