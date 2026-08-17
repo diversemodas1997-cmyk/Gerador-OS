@@ -6397,6 +6397,33 @@ function _expCargasDa(janelaId, dataOrig, perna) {
   return (STATE.expedicaoCargas || []).filter(c => c.janelaId === janelaId && c.data === dataOrig && c.perna === perna);
 }
 
+/* ---- O que o usuário reescreveu à mão na folha de OE, por OS alocada ----
+   A folha de OE nasce toda calculada: o nome da peça vem do desenho, as cores
+   das variantes, as peças dos componentes e os volumes dos pacotes da carga. É
+   o que a doca precisa em quase todo caso — mas quem monta a carga às vezes sabe
+   algo que o cadastro não sabe ("vai como conjunto", "12 sacos porque o G foi
+   desdobrado") e não havia onde escrever isso: ou se corrigia o cadastro inteiro
+   (mexendo em todas as OS que o usam) ou o papel saía errado.
+
+   `carga.folha` guarda SÓ o que foi reescrito. Campo em branco continua vindo do
+   cálculo — então corrigir depois o desenho, a grade ou os pacotes volta a
+   aparecer na folha sozinho, sem ter que limpar nada aqui. E nada disto mexe em
+   pacote, estoque ou na OS: é a FOLHA que está sendo editada, não a carga. */
+function _expFolhaOS(c) {
+  const f = (c && c.folha && typeof c.folha === 'object') ? c.folha : {};
+  const txt = v => (v == null ? '' : String(v)).trim();
+  const num = v => {
+    if (v === '' || v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+  };
+  const out = { modelo: txt(f.modelo), cor: txt(f.cor), pecas: num(f.pecas), volumes: num(f.volumes) };
+  // Zero é resposta, não campo vazio: `!= null` para 0 peças / 0 volumes contarem
+  // como coisa escrita pelo usuário.
+  out.tem = !!(out.modelo || out.cor || out.pecas != null || out.volumes != null);
+  return out;
+}
+
 // Carga de uma perna: as OSs alocadas, os totais e a situação contra os
 // limites da janela (que herdam da configuração quando em branco).
 function resumoPernaExpedicao(oc, perna) {
@@ -6412,19 +6439,35 @@ function resumoPernaExpedicao(oc, perna) {
     // Lote parcial: as peças da carga são só a parte do lote que vai NELA — o
     // número ao lado dos volumes tem que falar da carga, não da OS inteira.
     const comp = (o && Array.isArray(c.pacotes)) ? _expPecasDaComposicao(o, c.pacotes) : null;
+    // O que a folha diria sozinha, e o que o usuário reescreveu para ela. Os
+    // dois viajam juntos: a folha imprime o reescrito, e a tela do plano (e o
+    // próprio modal de edição) mostram o calculado ao lado, para a diferença
+    // ficar à vista em vez de virar surpresa na doca.
+    const fo = _expFolhaOS(c);
+    const modeloCalc = o ? nomePecaOS(o) : '';
+    const pecasCalc = comp ? Math.round(pecasOS * comp.fracao) : pecasOS;
+    const volumesCalc = Number(c.volumes) || 0;
     return {
       carga: c,
       os: o,
       osNumero: o ? (o.os || '—') : '(OS excluída)',
-      modelo: o ? nomePecaOS(o) : '',
+      modelo: fo.modelo || modeloCalc,
+      modeloCalc,
+      // Cor da peça: vazio aqui quer dizer "use as cores calculadas" — quem
+      // imprime é a folha (coresDaPecaOS), que sabe cair na cor da 1ª fase
+      // quando a OS é antiga e não tem variante.
+      cor: fo.cor,
       // A observação escrita ao alocar é recado para a doca ("apenas mangas e
       // costas", "unido ombro"). Vinha sendo gravada e nunca lida: nem a tela do
       // plano nem a folha de OE a mostravam, e quem recebia a carga não tinha
       // como saber. Sai daqui para os dois.
       obs: (c.obs || '').trim(),
-      pecas: comp ? Math.round(pecasOS * comp.fracao) : pecasOS,
+      pecas: fo.pecas != null ? fo.pecas : pecasCalc,
+      pecasCalc,
       pecasOS,
-      volumes: Number(c.volumes) || 0
+      volumes: fo.volumes != null ? fo.volumes : volumesCalc,
+      volumesCalc,
+      folha: fo
     };
   }).sort((a, b) => String(a.osNumero).localeCompare(String(b.osNumero), undefined, { numeric: true }));
   const volumes = itens.reduce((s, i) => s + i.volumes, 0);
@@ -6704,6 +6747,7 @@ function _expEmbarcadoOS(o) {
 // Só avisa: quem decide é o usuário, que pode ter posto o número à mão de propósito.
 function _expBadgeVolumeDivergente(item) {
   if (!item || !item.os || !(item.volumes > 0)) return '';
+  if (item.folha && item.folha.volumes != null) return '';         // volume escrito à mão para a folha: divergir da regra é o objetivo
   if (item.carga && Array.isArray(item.carga.pacotes)) return '';  // lote parcial: volume vem dos pacotes, não da regra cheia
   const esperado = Number(_expSugestaoVolumes(item.os)) || 0;
   if (!(esperado > 0) || esperado === item.volumes) return '';
@@ -6963,7 +7007,7 @@ function renderExpedicaoPlano() {
 
   const comoFunciona = `
     <div class="info-box no-print" style="font-size:12px;">
-      As OSs entram aqui sozinhas: marcar <b>Ensaque</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai.
+      As OSs entram aqui sozinhas: marcar <b>Ensaque</b> no checklist da folha de OS põe a OS na <b>próxima expedição</b> (perna de ida). Use <b>⇄</b> em cada OS para mudar o dia e o horário em que ela sai, e <b>✎</b> para reescrever o que aquela OS mostra na <b>folha de OE</b> (nome da peça, cor, peças, volumes e o recado) — o ✎ também está em cada quadro da folha.
     </div>`;
 
   const resumo = `
@@ -6987,15 +7031,26 @@ function renderExpedicaoPlano() {
       const parcialBadge = rem && rem.restante > 0
         ? ` <span class="exp-badge baixo" title="Faltam ${rem.restante} de ${rem.total} volume(s) desta OS: ${esc(_expFaltamTexto(rem))}">parcial · faltam ${rem.restante}</span>`
         : '';
+      // A folha desta OS foi reescrita à mão? O badge diz O QUE foi trocado e por
+      // qual valor calculado, porque a linha já mostra o número novo: sem isto,
+      // quem não editou não teria como saber que aquele número não é o da regra.
+      const trocas = [];
+      if (i.folha.modelo) trocas.push(`nome (calculado: ${i.modeloCalc || '—'})`);
+      if (i.folha.cor) trocas.push('cor');
+      if (i.folha.pecas != null) trocas.push(`peças (calculado: ${fmt(i.pecasCalc)})`);
+      if (i.folha.volumes != null) trocas.push(`volumes (pacotes desta carga: ${fmt(i.volumesCalc)})`);
+      const folhaBadge = trocas.length
+        ? ` <span class="exp-badge info" title="Reescrito à mão para a folha de OE: ${esc(trocas.join(' · '))}. Clique em ✎ para ver ou voltar aos valores calculados.">folha editada</span>`
+        : '';
       return `
       <div class="exp-os-row">
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
         <span class="qtd">${fmt(i.pecas)} pç</span>
-        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${
+        <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${folhaBadge}${
           i.carga.origem === 'ensaque' ? ' <span class="exp-badge info" title="Entrou nesta OE ao ser marcada como ensacada no checklist da OS, não pelo planejamento da expedição">pelo ensaque</span>' : ''}${
           i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
-        <span><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
+        <span><button title="Editar o que esta OS mostra na folha de OE: nome da peça, cor, peças, volumes e o recado" onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>${i.obs ? `
       <div class="exp-os-obs" title="Observação escrita ao alocar esta OS na expedição. Também sai na folha de OE.">${esc(i.obs)}</div>` : ''}`;
     }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
@@ -7456,6 +7511,104 @@ function _expAtualizarSugestaoVolumes() {
   }
 }
 
+/* ---------------- editar a folha de OE de uma OS alocada ---------------- */
+// Cada quadro da folha de OE é montado a partir do cadastro: nome da peça do
+// desenho, cores das variantes, peças dos componentes, volumes dos pacotes. Este
+// modal é onde esse texto pode ser reescrito PARA AQUELA CARGA — o papel que vai
+// para a doca é o que manda ali, e nem sempre o cadastro tem a palavra final.
+// Campo em branco = valor calculado (e volta a acompanhar o cadastro). Nada aqui
+// mexe na OS, na grade, nos pacotes nem no estoque.
+function abrirModalExpFolhaOS(cargaId) {
+  if (!exigirEdicao('editar a folha de OE')) return;
+  const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
+  if (!c) return toast('Esta OS não está mais alocada nesta expedição', 'err');
+  const o = (STATE.ordens || []).find(x => x.id === c.osId) || null;
+  _expModalCtx = { tipo: 'folha', editId: cargaId };
+  const fo = _expFolhaOS(c);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+
+  // Os valores CALCULADOS, que a folha usaria sozinha. Vão no placeholder e na
+  // dica de cada campo: quem reescreve precisa ver do que está discordando.
+  // Mesmas fontes da folha (nomePecaOS, coresDaPecaOS, _expPecasOS/pacotes), pra
+  // a dica não passar a dizer outra coisa que o papel.
+  const modeloCalc = o ? (nomePecaOS(o) || '') : '';
+  const corCalc = o
+    ? (coresDaPecaOS(o).join(' / ')
+       || corNomeCurto((o.fases || [])[0]?.corNome || (o.tecidos || [])[0]?.corNome || ''))
+    : '';
+  const pecasOS = o ? _expPecasOS(o) : 0;
+  const comp = (o && Array.isArray(c.pacotes)) ? _expPecasDaComposicao(o, c.pacotes) : null;
+  const pecasCalc = comp ? Math.round(pecasOS * comp.fracao) : pecasOS;
+  const volumesCalc = Number(c.volumes) || 0;
+  const ehParcial = Array.isArray(c.pacotes);
+
+  document.getElementById('modal-exp-title').textContent =
+    'Folha de OE — OS ' + ((o && o.os) || '(OS excluída)');
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field full">
+        <label>Nome da peça na folha</label>
+        <input type="text" id="ef-modelo" value="${esc(fo.modelo)}" placeholder="${esc(modeloCalc) || 'sem nome'}" autocomplete="off">
+        <div class="field-hint">Em branco sai <b>${esc(modeloCalc) || '—'}</b>, o nome que vem da descrição do desenho.</div>
+      </div>
+      <div class="field full">
+        <label>Cor(es) na folha</label>
+        <input type="text" id="ef-cor" value="${esc(fo.cor)}" placeholder="${esc(corCalc) || 'sem cor'}" autocomplete="off">
+        <div class="field-hint">Em branco sai <b>${esc(corCalc) || '—'}</b>, as cores da peça. Escreva aqui quando esta carga leva só uma delas, ou quando a doca chama a cor por outro nome.</div>
+      </div>
+      <div class="field">
+        <label>Peças nesta carga</label>
+        <input type="number" min="0" step="1" id="ef-pecas" value="${fo.pecas == null ? '' : fo.pecas}" placeholder="${pecasCalc}">
+        <div class="field-hint">Em branco sai <b>${fmt(pecasCalc)}</b> — ${ehParcial ? 'as peças dos pacotes desta carga' : 'a soma dos componentes da OS'}. Preenchido, é este número que sai na folha e soma no total da perna.</div>
+      </div>
+      <div class="field">
+        <label>Volumes nesta carga</label>
+        <input type="number" min="0" step="1" id="ef-volumes" value="${fo.volumes == null ? '' : fo.volumes}" placeholder="${volumesCalc}">
+        <div class="field-hint">Em branco sai <b>${fmt(volumesCalc)}</b>, o que os pacotes desta carga somam. Preenchido, é este número que sai na folha e conta contra o limite da perna — e nem a regra da grade nem o <b>↻ Recalcular volumes</b> o mudam mais. Os pacotes e o estoque ficam como estão: para mexer neles use <b>⇄</b>.</div>
+      </div>
+      <div class="field full">
+        <label>Observação — o recado desta OS na folha</label>
+        <input type="text" id="ef-obs" value="${esc(c.obs || '')}" placeholder="Ex.: apenas mangas e costas" autocomplete="off">
+        <div class="field-hint">Sai destacado no quadro da OS, em tarja. É o único dado da folha que não está em nenhum outro lugar do papel — o recado de quem planejou para quem separa e para quem recebe.</div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">
+      Isto muda <b>só a folha de OE desta OS nesta carga</b>. A OS, o desenho, a grade, os pacotes e o estoque não são tocados — e a mesma OS em outra expedição continua com o texto calculado.
+      A tabela de quantidades continua vindo do <b>Total por tamanho</b> da OS: é lá que se corrigem os números por tamanho e tonalidade.
+    </div>
+    <div style="margin-top:8px;">
+      <button class="btn" title="Apaga o que foi reescrito e volta a mostrar os valores calculados. A observação não é apagada." onclick="limparFolhaOeOS('${esc(cargaId)}')">↺ Voltar aos valores calculados</button>
+    </div>`;
+  openModal('modal-exp');
+}
+
+// Apaga os valores reescritos desta carga — a folha volta a acompanhar o
+// cadastro. A OBSERVAÇÃO fica: ela não tem valor calculado para voltar a ser, e
+// apagar o recado da doca junto seria perder informação que só existe ali.
+async function limparFolhaOeOS(cargaId) {
+  if (!exigirEdicao('editar a folha de OE')) return;
+  const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
+  if (!c) return;
+  if (!_expFolhaOS(c).tem) {
+    return toast('Esta OS já está com os valores calculados', 'ok');
+  }
+  delete c.folha;
+  await saveState('expedicaoCargas');
+  closeModal('modal-exp');
+  _expModalCtx = null;
+  toast('Folha de OE de volta aos valores calculados', 'ok');
+  renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+
+// A folha de OE aberta na outra tela tem que acompanhar o que o plano acabou de
+// mudar. Antes só o quadrinho "feita" fazia isso; alocar, mover ou editar a
+// folha deixava a página impressa com o estado velho até trocar de tela.
+function _oeRerenderFolhaSeAberta() {
+  const folha = document.getElementById('print-sheet-exp');
+  if (folha && folha.innerHTML) renderPrintPlanoExpedicao();
+}
+
 // Preencher a VOLTA a partir de uma OE já montada. A volta quase nunca é uma
 // carga nova: é o retorno do que uma ida levou. Montá-la OS por OS repetia à mão
 // uma lista que já existe — e qualquer esquecimento vira peça largada na outra
@@ -7534,7 +7687,7 @@ function _expVoltaListarOS() {
     const rep = jaLa.has(i.carga.osId);
     return `
       <label class="ev-item ${rep ? 'rep' : ''}">
-        <input type="checkbox" class="ev-os" value="${esc(i.carga.osId)}" data-vol="${i.volumes}" data-carga="${esc(i.carga.id)}" ${rep ? '' : 'checked'}>
+        <input type="checkbox" class="ev-os" value="${esc(i.carga.osId)}" data-vol="${i.volumesCalc}" data-carga="${esc(i.carga.id)}" ${rep ? '' : 'checked'}>
         <span class="n">${esc(i.osNumero)}</span>
         <span class="m">${esc(i.modelo) || '—'}</span>
         <span class="v">${i.volumes > 0 ? i.volumes + ' vol' : '— vol'}</span>
@@ -7717,6 +7870,10 @@ async function salvarModalExpedicao() {
         nova.pacotes = origem.pacotes.map(p => ({ tam: p.tam, tom: p.tom }));
         nova.reposicao = !!origem.reposicao;
       }
+      // O texto reescrito à mão para a folha acompanha: são os MESMOS pacotes
+      // voltando, e quem leu "12 sacos, vai como conjunto" na ida tem que ler o
+      // mesmo na volta. Segue editável (✎) e apagável em cada perna.
+      if (origem && origem.folha && _expFolhaOS(origem).tem) nova.folha = { ...origem.folha };
       STATE.expedicaoCargas.push(nova);
       n++;
     });
@@ -7760,11 +7917,37 @@ async function salvarModalExpedicao() {
     }
     await saveState('expedicaoExcecoes');
     toast(situacao === 'ativa' ? 'Expedição restabelecida' : (situacao === 'cancelada' ? 'Expedição cancelada' : 'Expedição remarcada'), 'ok');
+
+  } else if (ctx.tipo === 'folha') {
+    if (!exigirEdicao('editar a folha de OE')) return;
+    const c = (STATE.expedicaoCargas || []).find(x => x.id === ctx.editId);
+    if (!c) return toast('Esta OS não está mais alocada nesta expedição', 'err');
+    // Número em branco = "use o calculado". Guardar '' (e não 0) é o que faz o
+    // campo vazio continuar sendo pergunta, e o 0 digitado continuar sendo
+    // resposta — zero volume numa carga é coisa que o usuário pode querer dizer.
+    const numOuVazio = id => {
+      const t = v(id).trim();
+      if (!t) return '';
+      const n = parseInt(t, 10);
+      return (Number.isFinite(n) && n >= 0) ? n : '';
+    };
+    const folha = {
+      modelo: v('ef-modelo').trim(),
+      cor: v('ef-cor').trim(),
+      pecas: numOuVazio('ef-pecas'),
+      volumes: numOuVazio('ef-volumes')
+    };
+    const tem = !!(folha.modelo || folha.cor || folha.pecas !== '' || folha.volumes !== '');
+    if (tem) c.folha = folha; else delete c.folha;
+    c.obs = v('ef-obs').trim();
+    await saveState('expedicaoCargas');
+    toast(tem ? 'Folha de OE desta OS atualizada' : 'Folha de OE desta OS com os valores calculados', 'ok');
   }
 
   closeModal('modal-exp');
   _expModalCtx = null;
   renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
 }
 
 // Marca/desmarca a OS da carga como FEITA — o quadrinho da folha de OE. É só o
@@ -7777,8 +7960,7 @@ async function alternarCargaFeita(id) {
   c.feita = !c.feita;
   await saveState('expedicaoCargas');
   renderExpedicaoPlano();
-  const folha = document.getElementById('print-sheet-exp');
-  if (folha && folha.innerHTML) renderPrintPlanoExpedicao();
+  _oeRerenderFolhaSeAberta();
 }
 
 async function excluirCargaExp(id) {
@@ -7794,6 +7976,7 @@ async function excluirCargaExp(id) {
   } finally { _permitirFlushVazio = false; }
   toast('OS removida da carga', 'ok');
   renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
 }
 
 // Redefine os volumes das cargas FUTURAS pela regra da grade (tamanhos + 1).
@@ -13217,10 +13400,13 @@ function renderPrintPlanoExpedicao() {
     // não só a Cor 1. Antes esta linha lia apenas cor1Nome da 1ª variante e a OS
     // tricolor chegava na doca anunciada como se fosse preta. Sem variante (OS
     // antiga), cai na cor da 1ª fase do enfesto. Vai na 1ª LINHA, junto do modelo.
-    const corPred = o
+    // Reescrita à mão (✎ na própria folha) tem a palavra final: o papel da doca é
+    // o que o usuário decidiu que ele diz. Em branco, segue o cadastro.
+    const corPred = i.cor || (o
       ? (coresDaPecaOS(o).join(' / ')
          || corNomeCurto((o.fases || [])[0]?.corNome || (o.tecidos || [])[0]?.corNome || ''))
-      : '';
+      : '');
+    const volAjustado = !!(i.folha && i.folha.volumes != null);
     const volTxt = i.volumes > 0 ? fmt(i.volumes) + ' vol' : '— vol';
     // O quadrinho é o avanço da carga: marcado = esta OS já foi feita (separada e
     // embarcada). Clicável na tela, para a folha aberta ir mostrando o que já
@@ -13232,12 +13418,20 @@ function renderPrintPlanoExpedicao() {
       : '<span class="exp-print-box"></span>';
     // 1ª linha: nº da OS + modelo + cor. A cor é span próprio (fora do .m, que tem
     // ellipsis) pra não ser cortada quando o modelo é longo.
+    // ✎ só na tela (.no-print): edita o que ESTE quadro mostra — nome, cor, peças,
+    // volumes e o recado. A folha é onde o erro aparece, então é dela que se
+    // corrige, sem ter que voltar ao planejamento e achar a linha da OS.
+    const btnEdit = i.carga
+      ? `<button type="button" class="exp-print-edit no-print" title="Editar o que esta OS mostra na folha: nome da peça, cor, peças, volumes e o recado"
+          onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button>`
+      : '';
     const cab = `
       <div class="cab">
         ${box}
         <span class="n">${esc(i.osNumero)}</span>
         <span class="m">${esc(i.modelo)}</span>
         ${corPred ? `<span class="cor">${esc(corPred)}</span>` : ''}
+        ${btnEdit}
       </div>`;
     // A observação da alocação é recado de quem planejou para quem separa e para
     // quem recebe ("apenas mangas e costas"). Vai em TODOS os formatos do quadro
@@ -13258,7 +13452,9 @@ function renderPrintPlanoExpedicao() {
     // Lote parcial (carga com composição por pacote) tem uma nota própria abaixo;
     // não mostra a divergência genérica, que aqui é esperada e já explicada.
     const ehParcialCarga = Array.isArray(i.carga && i.carga.pacotes);
-    const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes && !ehParcialCarga;
+    // Volume escrito à mão para esta carga não "diverge" de nada: ele é a resposta
+    // do usuário, e a linha abaixo já o anuncia como ajustado.
+    const diverge = volCalc > 0 && i.volumes > 0 && volCalc !== i.volumes && !ehParcialCarga && !volAjustado;
     const canonTotal = ehParcialCarga ? _expPacotesCanonicos(o).total : 0;
     const nestaCarga = ehParcialCarga ? (i.carga.pacotes.length + (i.carga.reposicao ? 1 : 0)) : 0;
     const cargaParcial = ehParcialCarga && canonTotal > 0 && nestaCarga < canonTotal;
@@ -13275,7 +13471,9 @@ function renderPrintPlanoExpedicao() {
         <div class="exp-print-os">
           ${cab}
           <div class="sub">
-            ${fmt(i.pecas)} pç · <b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}
+            ${fmt(i.pecas)} pç · ${volAjustado
+              ? `<b>${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}</b> nesta carga (ajustado à mão)`
+              : `<b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}`}
           </div>
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
           ${obsHtml}
@@ -13283,9 +13481,11 @@ function renderPrintPlanoExpedicao() {
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
     // Escrito por extenso porque quem confere precisa saber o que procurar nele.
-    const contaVol = volCalc > 0
-      ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição e ribana`
-      : `${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}`;
+    const contaVol = volAjustado
+      ? `<b>${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}</b> (ajustado à mão${volCalc > 0 ? ` — a grade daria ${fmt(volCalc)}` : ''})`
+      : (volCalc > 0
+        ? `<b>${fmt(volCalc)} volume${volCalc === 1 ? '' : 's'}</b> = ${fmt(nTam)} tamanho${nTam === 1 ? '' : 's'} × ${nTons} tonalidade${nTons === 1 ? '' : 's'} + 1 reposição e ribana`
+        : `${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}`);
 
     // Linhas por tonalidade. Com DUAS OU MAIS tonalidades a repartição é o
     // detalhe que interessa; com uma tonalidade só (ou nenhuma marcada) ela

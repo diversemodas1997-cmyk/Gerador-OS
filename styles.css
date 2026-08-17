@@ -2310,6 +2310,23 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   cursor: pointer;
 }
 .exp-print-os > .cab .op-print-chk { display: inline-flex; align-items: center; align-self: center; }
+/* ✎ do quadro da OS na folha de OE: abre a edição do que aquela OS mostra na
+   folha. Vive SÓ na tela (.no-print o tira do papel e da foto do PDF) e é
+   discreto de propósito — a folha continua sendo uma folha, não um formulário.
+   Fica no fim do cabeçalho, encostado à direita (margin-left:auto), pra não
+   disputar espaço com o nome do modelo nem com a cor. */
+.exp-print-os > .cab .exp-print-edit {
+  background: none;
+  border: none;
+  padding: 0 1pt;
+  margin: 0 0 0 auto;
+  line-height: 1;
+  font-size: 9pt;
+  color: #888;
+  cursor: pointer;
+  align-self: center;
+}
+.exp-print-os > .cab .exp-print-edit:hover { color: #000; }
 .exp-print-box.ok::after {
   content: '';
   position: absolute;
