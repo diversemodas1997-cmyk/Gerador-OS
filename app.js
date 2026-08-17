@@ -14040,6 +14040,17 @@ function toggleFolderGrade(path) {
   renderGrades();
 }
 
+// Grupos de FAIXA (semelhança) que o usuário fechou. Ao contrário das pastas, a
+// faixa nasce aberta — ela não é uma gaveta a abrir, é um cabeçalho que separa —,
+// então o que vale guardar é o que foi fechado.
+let faixasGradeFechadas = new Set();
+
+function toggleFaixaGrade(path) {
+  if (faixasGradeFechadas.has(path)) faixasGradeFechadas.delete(path);
+  else faixasGradeFechadas.add(path);
+  renderGrades();
+}
+
 const TP_FIXOS = new Set(['camiseta', 'blusa_moletom', 'outro', '']);
 const VR_FIXOS = new Set(['basica', 'bicolor', 'tricolor', '']);
 const LABELS_TP_PADRAO = { camiseta: 'Camiseta', blusa_moletom: 'Blusa Moletom', outro: 'Outro', '': 'Sem categoria' };
@@ -14275,6 +14286,49 @@ function compararGradesPorSemelhanca(a, b) {
   return String((a && a.nome) || '').localeCompare(String((b && b.nome) || ''), 'pt-BR', { numeric: true });
 }
 
+/* ---- A FAIXA DE TAMANHOS COMO PASTA ----
+   Ordenar por semelhança pôs as parecidas lado a lado, mas numa subpasta de trinta
+   grades isso ainda é uma parede de nomes: onde acaba o "P ao G3" e começa o
+   "M-G-GG" só se descobre lendo linha por linha. A faixa passa a ser uma PASTA:
+   o conjunto de tamanhos que a grade cobre é o nome do grupo, o número diz quantas
+   grades têm aquela faixa, e cada grupo abre e fecha.
+
+   O agrupamento é AUTOMÁTICO — não é uma pasta que alguém cadastra e mantém. Ele
+   sai dos tamanhos da própria grade, então uma grade nova cai no grupo certo no
+   instante em que é salva, e não existe grupo para arrumar nem para renomear. */
+
+// "P ao G3" quando a faixa é corrida, "M · G · G2" quando pula tamanho, o próprio
+// tamanho quando é um só. É o nome do grupo, e é como a fábrica pede a grade.
+function _gradeFaixaLabel(tamanhos) {
+  const presentes = _ORDEM_TAM.filter(k => (parseInt((tamanhos || {})[k], 10) || 0) > 0);
+  if (!presentes.length) return 'Sem tamanhos';
+  const rot = k => k.toUpperCase();
+  const i0 = _ORDEM_TAM.indexOf(presentes[0]);
+  const i1 = _ORDEM_TAM.indexOf(presentes[presentes.length - 1]);
+  const corrida = (i1 - i0 + 1) === presentes.length;
+  // Só vira "X ao Y" com três ou mais: "P ao M" diz menos que "P · M" e é mais
+  // comprido de ler.
+  if (corrida && presentes.length >= 3) return `${rot(presentes[0])} ao ${rot(presentes[presentes.length - 1])}`;
+  return presentes.map(rot).join(' · ');
+}
+
+// Grades já ordenadas → grupos por faixa, na mesma ordem. Uma faixa por conjunto
+// de tamanhos; a QUANTIDADE não separa (1x e 2x do mesmo P-ao-G3 são a mesma
+// faixa, e ficam vizinhas dentro dela pela ordem da semelhança).
+function _agruparGradesPorFaixa(ordenadas) {
+  const grupos = [];
+  ordenadas.forEach(g => {
+    const mascara = _gradeChaveSemelhanca(g.tamanhos).mascara;
+    let ult = grupos[grupos.length - 1];
+    if (!ult || ult.mascara !== mascara) {
+      ult = { mascara, label: _gradeFaixaLabel(g.tamanhos), itens: [] };
+      grupos.push(ult);
+    }
+    ult.itens.push(g);
+  });
+  return grupos;
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
@@ -14373,8 +14427,27 @@ function renderGrades() {
       </td></tr>`;
       if (!vrOpen) continue;
       // Dentro da subpasta, as parecidas juntas — não a ordem em que foram
-      // cadastradas, que não diz nada a quem está procurando uma faixa.
-      html += gs.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('');
+      // cadastradas, que não diz nada a quem está procurando uma faixa. E juntas
+      // debaixo da FAIXA a que pertencem, que é como a grade é pedida.
+      const ordenadas = gs.slice().sort(compararGradesPorSemelhanca);
+      const faixas = _agruparGradesPorFaixa(ordenadas);
+      // Uma faixa só: abrir um nível que não separa nada só afastaria as grades
+      // da subpasta delas.
+      if (faixas.length <= 1) {
+        html += ordenadas.map(renderGradeRow).join('');
+        continue;
+      }
+      faixas.forEach(f => {
+        const fxPath = vrPath + '|fx:' + f.mascara;
+        // Faixa nasce ABERTA: quem abriu a subpasta quer ver as grades, não uma
+        // lista de grupos fechados. O que se guarda é o que foi FECHADO à mão.
+        const fxOpen = !faixasGradeFechadas.has(fxPath);
+        html += `<tr class="grade-folder grade-folder-faixa" onclick="event.stopPropagation(); toggleFaixaGrade('${esc(fxPath)}')"><td colspan="4">
+          <span class="folder-chev">${fxOpen ? '▼' : '▶'}</span> 📐 ${esc(f.label)}
+          <span class="folder-count">(${f.itens.length})</span>
+        </td></tr>`;
+        if (fxOpen) html += f.itens.map(renderGradeRow).join('');
+      });
     }
   }
   tb.innerHTML = html;
