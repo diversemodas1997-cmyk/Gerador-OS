@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-17b">
+<link rel="stylesheet" href="styles.css?v=2026-08-17c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -606,7 +606,17 @@
         <div class="card">
           <div class="card-title">Grade de tamanhos</div>
           <div class="form-grid cols-2" style="margin-bottom:10px">
-            <div class="field"><label>Carregar grade pré-cadastrada (opcional)</label><select id="f-grade-preset" onchange="aplicarGradePreset()"></select></div>
+            <!-- A busca fica ACIMA do select: com mais de cem grades cadastradas,
+                 rolar o dropdown até achar "P ao G3 | CM.LISA | 117cm" é pior que
+                 digitar "cm.lisa g3". A linha de baixo (#f-grade-info) diz quantas
+                 grades a lista tem e quantas o filtro do desenho/modelo escondeu —
+                 e por quê. -->
+            <div class="field">
+              <label>Carregar grade pré-cadastrada (opcional)</label>
+              <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="margin-bottom:6px;">
+              <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
+              <div class="field-hint" id="f-grade-info"></div>
+            </div>
             <div class="field"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
           </div>
           <div class="grade-inputs">
@@ -1158,6 +1168,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-17b"></script>
+<script src="app.js?v=2026-08-17c"></script>
 </body>
 </html>

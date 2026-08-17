@@ -14704,6 +14704,13 @@ function initOSForm() {
   // presence: marca o canal da OS sendo editada
   iniciarPresenceOS(osEditId || 'nova');
 
+  // A busca de grade e o "mostrar todas" são da SESSÃO do formulário: abrir uma
+  // OS nova com o filtro desligado da vez anterior faria a lista parecer errada.
+  _osGradeBusca = '';
+  _osGradeMostrarTodas = false;
+  const buscaGrade = document.getElementById('f-grade-busca');
+  if (buscaGrade) buscaGrade.value = '';
+
   // popula dropdowns
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
@@ -15635,14 +15642,26 @@ function isTecidoRibana(t) {
 
 // Categoria principal de uma grade — categoria do tecido da fase de menor `ordem`.
 // Usada pra filtrar o dropdown de grades pelo tecido do desenho selecionado.
+//
+// Quando a 1ª fase não tem categoria (tecido de família nova, ainda sem
+// categoria cadastrada, ou tecido excluído), procura nas fases seguintes —
+// IGNORANDO ribana. Uma peça não é "de ribana": a ribana é sempre a fase
+// acessória (gola, punhos, barra). Sem essa ressalva, uma grade de tecido novo
+// com gola de ribana era classificada como grade DE RIBANA, e como nenhum
+// desenho é de ribana ela era cortada do dropdown da OS em todos os casos —
+// grade cadastrada que não aparecia em lugar nenhum.
+// Grade cuja 1ª fase é ribana continua sendo 'ribana' como antes: aí é o que ela
+// realmente é (grade só de ribana).
 function categoriaPrincipalGrade(g) {
   const fases = Array.isArray(g?.fases) ? g.fases : [];
   if (!fases.length) return '';
   const ordenadas = [...fases].sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
-  for (const f of ordenadas) {
-    const t = STATE.tecidos.find(x => x.id === f.tecidoId);
-    const cat = categoriaEfetivaTecido(t);
-    if (cat) return cat;
+  const catDaFase = f => categoriaEfetivaTecido(STATE.tecidos.find(x => x.id === f.tecidoId));
+  const primeira = catDaFase(ordenadas[0]);
+  if (primeira) return primeira;
+  for (const f of ordenadas.slice(1)) {
+    const cat = catDaFase(f);
+    if (cat && cat !== 'ribana') return cat;
   }
   return '';
 }
@@ -15693,38 +15712,162 @@ function variacaoDesenhoOS() {
 // `extraIds` mantém grades específicas (geralmente a já selecionada) mesmo fora
 // do filtro. Grades sem tipoPeca/variacao cadastrados passam pelos respectivos
 // filtros (não tem como avaliar) — mas continuam sujeitas aos demais.
-function gradesParaDropdownOS(extraIds = []) {
-  const cat = categoriaDesenhoOS();
-  const tipoModelo = tipoPecaModeloOS();
-  const variacao = variacaoDesenhoOS();
-  const keep = new Set(extraIds.filter(Boolean));
+// Valores de tipoPeca/variacao que SIGNIFICAM algo — os únicos que o filtro da OS
+// sabe comparar. Desde que a pasta da grade virou rótulo livre ("+ Nova pasta…",
+// ver opcoesPastaGrade), tipoPeca pode ser qualquer texto: "COT", "conjunto",
+// "polo". E o lado da OS só sabe produzir 'camiseta', 'blusa_moletom' ou 'outro',
+// a partir da categoria do modelo — então uma grade em pasta NOVA nunca casava e
+// desaparecia do dropdown para sempre, sem dizer por quê. Pasta que o filtro não
+// sabe avaliar passa, como já era a regra das grades sem pasta nenhuma.
+const _GRADE_TIPOS_CONHECIDOS = new Set(['camiseta', 'blusa_moletom', 'outro']);
+const _GRADE_VARIACOES_CONHECIDAS = new Set(['basica', 'bicolor', 'tricolor']);
+
+// O contexto do filtro: o que o desenho e o modelo escolhidos exigem da grade.
+function _ctxDropdownGradesOS(extraIds = []) {
   // Grades conjugadas ficam ocultas do dropdown: elas não se pedem sozinhas,
   // vêm a reboque de outra OS. Quem manda é o cadastro — uma grade some daqui
   // quando ALGUMA outra a aponta como conjugada. O casamento por nome continua
-  // logo abaixo porque é o que escondia essas grades antes de o campo existir,
-  // e tirá-lo faria reaparecer no seletor grade que hoje ninguém vê.
+  // porque é o que escondia essas grades antes de o campo existir, e tirá-lo
+  // faria reaparecer no seletor grade que hoje ninguém vê.
   // Continua visivel se for a grade ja salva da OS em edicao (via extraIds).
   const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
-  const ocultaConjugada = (g) => alvos.has(g.id) || /conjug/i.test(g.nome || '');
-  if (!cat && !tipoModelo && !variacao) {
-    return STATE.grades.filter(g => keep.has(g.id) || !ocultaConjugada(g));
-  }
-  return STATE.grades.filter(g => {
-    if (keep.has(g.id)) return true;
-    if (ocultaConjugada(g)) return false;
-    if (cat && categoriaPrincipalGrade(g) !== cat) return false;
-    if (tipoModelo && g.tipoPeca && g.tipoPeca !== tipoModelo) return false;
-    if (variacao && g.variacao && g.variacao !== variacao) return false;
-    return true;
-  });
+  const tipoModelo = tipoPecaModeloOS();
+  return {
+    cat: categoriaDesenhoOS(),
+    // 'outro' é o balde de tudo que não é camiseta nem moletom: não descreve a
+    // peça, então não tem como exigir nada da grade a partir dele.
+    tipoModelo: tipoModelo === 'outro' ? '' : tipoModelo,
+    variacao: variacaoDesenhoOS(),
+    keep: new Set(extraIds.filter(Boolean)),
+    ocultaConjugada: (g) => alvos.has(g.id) || /conjug/i.test(g.nome || '')
+  };
 }
 
-function preencherDropdownGradesOS() {
+// Por que esta grade NÃO aparece no dropdown da OS? '' = aparece.
+// Cada filtro só corta quando os dois lados são conhecidos: o que não se pode
+// avaliar passa. Era assim para tipoPeca e variação, e não era para a categoria
+// do tecido — uma grade cuja 1ª fase usa tecido sem categoria (ou tecido
+// excluído) era cortada em silêncio.
+function _motivoGradeForaDoDropdownOS(g, ctx) {
+  if (ctx.keep.has(g.id)) return '';
+  if (ctx.ocultaConjugada(g)) return 'conjugada';
+  const catGrade = categoriaPrincipalGrade(g);
+  if (ctx.cat && catGrade && catGrade !== ctx.cat) return 'categoria';
+  const tp = g.tipoPeca || '';
+  if (ctx.tipoModelo && _GRADE_TIPOS_CONHECIDOS.has(tp) && tp !== ctx.tipoModelo) return 'tipo';
+  const vr = g.variacao || '';
+  if (ctx.variacao && _GRADE_VARIACOES_CONHECIDAS.has(vr) && vr !== ctx.variacao) return 'variacao';
+  return '';
+}
+
+// Grades que devem aparecer no dropdown de "Carregar grade pré-cadastrada" da OS.
+// `extraIds` mantém grades específicas (geralmente a já selecionada) mesmo fora
+// do filtro.
+function gradesParaDropdownOS(extraIds = []) {
+  const ctx = _ctxDropdownGradesOS(extraIds);
+  return (STATE.grades || []).filter(g => !_motivoGradeForaDoDropdownOS(g, ctx));
+}
+
+/* ---- busca e diagnóstico do dropdown de grades da OS ----
+   O filtro acima é útil (uma OS de camiseta não quer ver grade de moletom) mas
+   era MUDO: grade que não casava simplesmente não existia, e quem cadastrou uma
+   família nova de produto ficava sem entender por que a grade dela não aparecia.
+   Agora o campo diz quantas estão escondidas e por qual motivo, tem busca por
+   nome/SKU e tem como ver todas. */
+let _osGradeBusca = '';
+let _osGradeMostrarTodas = false;
+
+const _MOTIVO_GRADE_LABEL = {
+  categoria: 'categoria do tecido diferente da do desenho',
+  tipo: 'pasta (tipo de peça) diferente da do modelo',
+  variacao: 'subpasta (variação) diferente das cores do desenho',
+  conjugada: 'grade conjugada — vem a reboque de outra OS'
+};
+
+function _gradeBuscaCasa(g, termos) {
+  if (!termos.length) return true;
+  const hay = [g.nome, labelTp(g.tipoPeca), labelVr(g.variacao), g.tipoPeca, g.variacao].join(' ');
+  return _cadBuscaCasa(termos, hay);
+}
+
+// `idAlvo` é a grade que tem de aparecer e ficar selecionada mesmo fora do filtro
+// (a grade salva da OS que está sendo aberta para edição). Sem ele o select ainda
+// não tem a option, e mandar `.value = id` antes de montar não seleciona nada.
+function preencherDropdownGradesOS(idAlvo = '') {
   const el = document.getElementById('f-grade-preset');
   if (!el) return;
-  const cur = el.value || '';
-  fillSelect('f-grade-preset', gradesParaDropdownOS([cur]), 'nome', '— nenhuma —');
+  const cur = idAlvo || el.value || '';
+  const ctx = _ctxDropdownGradesOS([cur]);
+  const termos = _normNome(_osGradeBusca).split(' ').filter(Boolean);
+
+  const dentro = [], fora = [];
+  (STATE.grades || []).forEach(g => {
+    const motivo = _motivoGradeForaDoDropdownOS(g, ctx);
+    if (motivo) fora.push({ g, motivo }); else dentro.push(g);
+  });
+  // "Mostrar todas" não traz as conjugadas: essas não se escolhem à mão em
+  // nenhuma hipótese — nascem junto da OS que as puxa.
+  const base = _osGradeMostrarTodas
+    ? dentro.concat(fora.filter(x => x.motivo !== 'conjugada').map(x => x.g))
+    : dentro;
+  const lista = base.filter(g => _gradeBuscaCasa(g, termos));
+  // A grade já escolhida nunca sai da lista, mesmo com busca escrita: perder a
+  // seleção por causa de uma letra digitada seria trocar a grade da OS sem querer.
+  if (cur && !lista.some(g => g.id === cur)) {
+    const g = (STATE.grades || []).find(x => x.id === cur);
+    if (g) lista.unshift(g);
+  }
+  fillSelect('f-grade-preset', lista.slice().sort(compararGradesPorSemelhanca), 'nome', '— nenhuma —');
   if (cur) el.value = cur;
+  _atualizarInfoGradesOS({ dentro, fora, lista, termos });
+}
+
+// A linha embaixo do campo: quantas grades a busca achou, quantas o filtro
+// escondeu e por quê, e o botão de ver todas. É esta linha que responde
+// "cadastrei a grade e ela não aparece" sem ninguém ter que abrir o código.
+function _atualizarInfoGradesOS({ dentro, fora, lista, termos }) {
+  const box = document.getElementById('f-grade-info');
+  if (!box) return;
+  const escondidas = fora.filter(x => x.motivo !== 'conjugada');
+  const porMotivo = {};
+  escondidas.forEach(x => { porMotivo[x.motivo] = (porMotivo[x.motivo] || 0) + 1; });
+  const motivos = Object.keys(porMotivo)
+    .map(m => `${porMotivo[m]} por ${_MOTIVO_GRADE_LABEL[m] || m}`)
+    .join(' · ');
+  // Achou pela busca, mas está fora do filtro: é o caso que mais confunde —
+  // a grade existe, a pessoa sabe o nome, e ela não está na lista.
+  const foraQueCasam = termos.length ? escondidas.filter(x => _gradeBuscaCasa(x.g, termos)) : [];
+
+  const partes = [];
+  if (termos.length) {
+    partes.push(`<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} para "${esc(_osGradeBusca.trim())}"`);
+  } else {
+    partes.push(`<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} na lista`);
+  }
+  if (_osGradeMostrarTodas) {
+    partes.push('<b>filtro desligado</b> — todas as grades do cadastro');
+  } else if (escondidas.length) {
+    partes.push(`${escondidas.length} escondida${escondidas.length === 1 ? '' : 's'} pelo filtro (${esc(motivos)})`);
+  }
+  const botao = escondidas.length || _osGradeMostrarTodas
+    ? ` <button type="button" class="link-btn" onclick="alternarTodasGradesOS()">${_osGradeMostrarTodas ? 'voltar a filtrar pelo desenho e modelo' : 'mostrar todas'}</button>`
+    : '';
+  const alerta = (!_osGradeMostrarTodas && foraQueCasam.length)
+    ? `<div style="color:var(--alert);margin-top:2px;">${foraQueCasam.length} grade${foraQueCasam.length === 1 ? '' : 's'} com esse nome está${foraQueCasam.length === 1 ? '' : 'ão'} fora do filtro: ${
+        esc(foraQueCasam.slice(0, 3).map(x => x.g.nome + ' — ' + (_MOTIVO_GRADE_LABEL[x.motivo] || x.motivo)).join(' · '))}${
+        foraQueCasam.length > 3 ? ' …' : ''}. Clique em <b>mostrar todas</b> para usá-la, ou corrija a pasta/o tecido no cadastro da grade.</div>`
+    : '';
+  box.innerHTML = partes.join(' · ') + botao + alerta;
+}
+
+function filtrarGradesOS(v) {
+  _osGradeBusca = v == null ? (document.getElementById('f-grade-busca')?.value || '') : v;
+  preencherDropdownGradesOS();
+}
+
+function alternarTodasGradesOS() {
+  _osGradeMostrarTodas = !_osGradeMostrarTodas;
+  preencherDropdownGradesOS();
 }
 
 /**
@@ -19776,8 +19919,10 @@ function editarOS(id) {
     // o usuario continua vendo a opcao salva.
     const gradeEl = document.getElementById('f-grade-preset');
     if (gradeEl) {
-      fillSelect('f-grade-preset', gradesParaDropdownOS([o.gradeId]), 'nome', '— nenhuma —');
-      gradeEl.value = o.gradeId || '';
+      // Mesmo caminho do resto da tela (busca + linha de diagnóstico), em vez de
+      // um fillSelect próprio que não dizia nada ao usuário. A grade salva entra
+      // como alvo: aparece e fica selecionada mesmo fora do filtro atual.
+      preencherDropdownGradesOS(o.gradeId || '');
     }
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
     ['p','m','g','gg','g1','g2','g3'].forEach(k => {

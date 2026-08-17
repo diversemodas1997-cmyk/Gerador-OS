@@ -1643,6 +1643,21 @@ body:not(.is-admin) #modal-cad-fields button {
 }
 input.is-auto { background: var(--line-2); color: var(--ink-2); }
 
+/* Botão que se lê como link, para ações que moram DENTRO de uma frase de dica
+   ("… 3 escondidas pelo filtro · mostrar todas"). Um .btn ali quebraria a linha
+   e pesaria mais que o texto que ele completa. */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent-dark, #8a6d2f);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--ink); }
+
 /* Checklist das FASES do enfesto no modal de alocar OS: que partes da peça vão
    nesta carga (corpo, manga, ribana…). Uma linha por fase, com a cor e o tecido
    ao lado — é por eles que quem separa reconhece a fase no pacote, não pelo
