@@ -394,6 +394,10 @@ let _ultimoUpdatedAtEnviado = null;
 let _ultimoUpdatedAtServidor = null;
 let currentUser = null;
 let currentRole = null; // 'admin' | 'usuario' | null
+// A leitura do papel no servidor, em voo. Quem PRECISA do papel para decidir algo
+// (as migrações de admin, o snapshot da Contabilidade) espera por ela; quem só
+// desenha tela não espera — a tela já se vestiu com o papel lembrado.
+let _papelPronto = null;
 let saveTimer = null;
 // Reagenda uma gravação que FALHOU (rede oscilou). Sem isto a edição ficaria só
 // na memória (chave suja) até o próximo save, e um recarregamento a apagaria.
@@ -1399,6 +1403,45 @@ function renderizarPresence() {
 /* ========================================================= */
 /*                  PAPÉIS / PERMISSÕES                      */
 /* ========================================================= */
+/* O PAPEL É O QUE A TELA MOSTRA, E ELE NÃO DEPENDE DE DADO NENHUM.
+   Enquanto o papel não chega, o programa se veste de quem só consulta: some o
+   "+ Nova OS", some o botão da barra, somem editar/duplicar/excluir. Esconder é o
+   padrão certo (nunca oferecer edição a quem não pode), mas ele era decidido no
+   FIM de uma fila longa — sondagem do servidor, download do blob de 1,8 MB,
+   compras, catálogo de SKUs, revalidação, loadState — e só então a pergunta de 50
+   bytes "qual é o meu papel?" era feita. O cabeçalho aparecia pronto e as opções
+   de edição chegavam segundos depois, uma atrás da outra.
+
+   Duas coisas resolvem, e as duas estão aqui: o papel é LEMBRADO desta máquina
+   (então na abertura seguinte a tela já nasce certa) e é RELIDO em paralelo com o
+   resto (então uma troca de papel aparece em um piscar, sem esperar a fila).
+
+   Lembrar é seguro: o papel guardado só decide o que a tela MOSTRA. Toda ação de
+   escrita passa por exigirAdmin/exigirEdicao, e mexer em permissão relê o papel no
+   servidor antes (ver gerenciarUsuarios). O pior caso de um papel velho é um botão
+   aparecer por um instante e sumir — nunca uma gravação indevida. */
+const PAPEL_CACHE_CHAVE = 'papelUsuario';
+
+function _lembrarPapel(uid, role) {
+  try {
+    if (!uid || !role) localStorage.removeItem(PAPEL_CACHE_CHAVE);
+    else localStorage.setItem(PAPEL_CACHE_CHAVE, JSON.stringify({ uid, role }));
+  } catch (e) { /* modo restrito: sem memória, só perde a pintura rápida */ }
+}
+
+// Veste a tela com o papel da última vez, ANTES de perguntar ao servidor. Só vale
+// para o MESMO usuário — outra conta na mesma máquina começa do padrão (consulta).
+function aplicarPapelLembrado() {
+  if (!currentUser) return false;
+  try {
+    const c = JSON.parse(localStorage.getItem(PAPEL_CACHE_CHAVE) || 'null');
+    if (!c || c.uid !== currentUser.id || !c.role) return false;
+    currentRole = c.role;
+    aplicarPermissoesUI();
+    return true;
+  } catch (e) { return false; }
+}
+
 async function carregarPapel() {
   if (!supa || !currentUser) { currentRole = null; return; }
   const { data, error } = await supa
@@ -1406,8 +1449,25 @@ async function carregarPapel() {
     .select('role')
     .eq('user_id', currentUser.id)
     .maybeSingle();
-  if (error) { console.warn('carregarPapel', error); currentRole = 'usuario'; return; }
+  if (error) {
+    // Servidor não respondeu: o papel lembrado (se houver) continua valendo — é
+    // melhor que rebaixar o admin a espectador por causa de uma falha de rede.
+    console.warn('carregarPapel', error);
+    if (!currentRole) currentRole = 'usuario';
+    return;
+  }
+  const antes = currentRole;
   currentRole = (data && data.role) || 'usuario';
+  _lembrarPapel(currentUser.id, currentRole);
+  if (antes !== currentRole) aplicarPermissoesUI();
+}
+
+// Lê o papel SEM travar a fila: dispara agora, aplica na tela quando chegar, e
+// devolve a promessa para quem precisa do papel antes de seguir.
+function carregarPapelEmParalelo() {
+  const p = carregarPapel().then(() => { aplicarPermissoesUI(); })
+    .catch(e => console.warn('carregarPapel', e));
+  return p;
 }
 
 function aplicarPermissoesUI() {
@@ -1712,6 +1772,11 @@ async function inicializarAuth() {
   const { data: { session } } = await supa.auth.getSession();
   if (session && session.user) {
     currentUser = session.user;
+    // 1º a tela: veste o papel lembrado e já dispara a releitura. Assim o
+    // cabeçalho nasce com as opções de edição de quem tem direito a elas, em vez
+    // de aparecer como consulta e mudar de cara depois do blob inteiro.
+    aplicarPapelLembrado();
+    _papelPronto = carregarPapelEmParalelo();
     await cloudLoad();
     await carregarComprasMateriais();
     await carregarCatalogoSkus();
@@ -1730,8 +1795,12 @@ async function inicializarAuth() {
     }
     if (event === 'SIGNED_IN' && session && !inRecoveryFlow) {
       currentUser = session.user;
+      // Mesma ordem da abertura: o papel vem na frente e em paralelo, para os
+      // botões de edição não esperarem o download dos dados.
+      aplicarPapelLembrado();
+      _papelPronto = carregarPapelEmParalelo();
       await cloudLoad();
-      await carregarPapel();
+      await _papelPronto;
       await carregarComprasMateriais();
       await carregarCatalogoSkus();
       await revalidarSkusDesenhos();
@@ -1743,6 +1812,8 @@ async function inicializarAuth() {
       currentUser = null;
       cloudCache = null;
       currentRole = null;
+      _papelPronto = null;
+      _lembrarPapel(null, null);   // saiu: a próxima conta nesta máquina começa do padrão
       _baseline = {};
       comprasCache = [];
       inRecoveryFlow = false;
@@ -1882,9 +1953,14 @@ async function definirNovaSenha() {
     if (error) { erroEl.textContent = traduzirErroAuth(error.message); return; }
     inRecoveryFlow = false;
     currentUser = data.user;
+    // O papel sai na frente e em paralelo com o download dos dados: ele decide
+    // o que a tela MOSTRA e não depende de dado nenhum. Esperar o blob para
+    // saber se mostra "+ Nova OS" era o que fazia as opções de edição chegarem
+    // ao cabeçalho segundos depois do resto.
+    aplicarPapelLembrado();
+    _papelPronto = carregarPapelEmParalelo();
     await cloudLoad();
-    await carregarPapel();
-    aplicarPermissoesUI();
+    await _papelPronto;
     iniciarRealtime();
     fecharLogin();
     await loadState();
@@ -1932,9 +2008,14 @@ async function submeterAuth() {
       return;
     }
     currentUser = resp.data.session.user;
+    // O papel sai na frente e em paralelo com o download dos dados: ele decide
+    // o que a tela MOSTRA e não depende de dado nenhum. Esperar o blob para
+    // saber se mostra "+ Nova OS" era o que fazia as opções de edição chegarem
+    // ao cabeçalho segundos depois do resto.
+    aplicarPapelLembrado();
+    _papelPronto = carregarPapelEmParalelo();
     await cloudLoad();
-    await carregarPapel();
-    aplicarPermissoesUI();
+    await _papelPronto;
     iniciarRealtime();
     const temLocal = CAD_KEYS.some(k => localStorage.getItem(k) !== null);
     const cloudVazio = !cloudCache || Object.keys(cloudCache).length === 0;
@@ -24702,17 +24783,20 @@ async function limparTudo() {
   await resolverServidor();
   await inicializarAuth();
   if (currentUser) {
+    // O papel já foi pedido lá em inicializarAuth, em paralelo com o download dos
+    // dados. Aqui só se espera por ele — as migrações abaixo e o snapshot da
+    // Contabilidade dependem de saber se este usuário é admin.
+    await (_papelPronto || carregarPapelEmParalelo());
     await loadState();
-    await carregarPapel();
-    aplicarPermissoesUI();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
-    // (reload): aqui o papel já está carregado — no init, loadState roda ANTES de
-    // carregarPapel, então o republish do fim do loadState não pega o papel. Sem
-    // isto, recarregar a página deixava o snapshot antigo (SKUs vazios) no ar.
+    // (reload). Hoje o papel já chega antes do loadState — então o republish do
+    // fim do loadState também o enxerga —, mas a chamada fica: ela é o que garante
+    // o snapshot fresco no ar, e depender da ordem interna do loadState para isso
+    // é o tipo de amarração que quebra calada. Republicar duas vezes não custa.
     if (currentRole === 'admin' && typeof atualizarContabSnapshot === 'function') {
       atualizarContabSnapshot();
     }
