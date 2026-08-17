@@ -2899,13 +2899,21 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"></div>
         <div class="field"><label>Categoria (define limite de enfesto e multiplicador)</label>
-          <select id="m-categoria">
+          <select id="m-categoria" onchange="_atualizarDicaTubular()">
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 36 camadas)</option>
             <option value="ribana" ${item.categoria==='ribana'?'selected':''}>Ribana (1 camada = 2 peças)</option>
             <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
           </select>
+        </div>
+        <div class="field"><label>Forma do pano</label>
+          <select id="m-tubular">
+            <option value="" ${!item.tubular?'selected':''}>— não informado —</option>
+            <option value="tubular" ${item.tubular==='tubular'?'selected':''}>Tubular (vem em tubo, sem abertura lateral)</option>
+            <option value="aberto" ${item.tubular==='aberto'?'selected':''}>Não-tubular (vem aberto)</option>
+          </select>
+          <div class="field-hint" id="m-tubular-dica">${_tecidoTubularDica(item)}</div>
         </div>
         <div class="field"><label>Peso / gramatura padrão (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">Fallback: a gramatura principal agora é cadastrada por <b>cor</b>. Este valor só é usado quando a cor não tem gramatura própria.</div></div>
         <div class="field"><label>Excedente de enfesto</label><div class="field-hint" style="padding-top:6px;">Saiu daqui: agora é cadastrado em <b>cada fase de cada grade</b>, junto do comprimento. A sobra não é do pano — ela depende do comprimento que a fase estende, e um corpo de 8 m e um viés de 1 m do mesmo tecido não levam a mesma.</div></div>
@@ -4841,6 +4849,10 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.desc = v('m-desc');
     item.categoria = v('m-categoria');
+    // Forma do pano: 'tubular' | 'aberto' | '' (não informado). Vazio continua
+    // sendo PERGUNTA, não "aberto" — nenhum dos tecidos já cadastrados foi
+    // conferido, e carimbar todos de aberto seria inventar 130 respostas.
+    item.tubular = (v('m-tubular') === 'tubular' || v('m-tubular') === 'aberto') ? v('m-tubular') : '';
     item.peso = parseFloat(String(v('m-peso')).replace(',', '.')) || 0;
     // `item.excedente` não é mais editado aqui — mudou para a fase da grade. O
     // valor antigo fica no dado até a migração levá-lo para as fases; mexer nele
@@ -5451,6 +5463,36 @@ function _cadBuscaFiltrar(page) {
   }
 }
 
+/* TUBULAR OU ABERTO — o registro, e o que o programa faz com ele HOJE.
+   Tubular é o pano que vem em tubo, sem abertura lateral: enfestado, cada camada
+   já são duas espessuras, e o corte sai em dobro. O programa sempre soube disso —
+   só não pelo nome: está em MULTIPLICADOR_PECAS, deduzido da CATEGORIA (malha e
+   ribana rendem 2 peças por camada; moletom e "outro", 1).
+
+   Este campo é o lugar de dizer a forma do pano quando ela não bate com a
+   categoria — o caso que não tinha onde ser registrado. Ele NÃO muda a conta de
+   peças por camada: quem manda ali continua sendo a categoria, exatamente como
+   antes deste campo existir. Trocar o dono dessa conta mexe nas peças e nas
+   camadas de toda OS que usa o tecido, e isso é decisão de quem produz, não
+   efeito colateral de um cadastro novo. */
+function _tecidoTubularDica(item) {
+  const cat = (item && item.categoria) || '';
+  const mult = MULTIPLICADOR_PECAS[cat] || 1;
+  const deduz = cat
+    ? `Pela categoria <b>${LABEL_CATEGORIA[cat] || cat}</b>, o programa hoje conta <b>${mult} peça${mult === 1 ? '' : 's'} por camada</b> — ou seja, trata este tecido como <b>${mult > 1 ? 'tubular' : 'aberto'}</b>.`
+    : 'Sem categoria escolhida, o programa conta <b>1 peça por camada</b> (aberto).';
+  return deduz + ' Este campo é <b>registro</b>: serve para a ficha dizer a forma real do pano, e não muda a conta de peças por camada — ela continua vindo da categoria.';
+}
+
+// A dica fala da categoria escolhida AGORA no formulário — trocar a categoria com
+// o modal aberto tem de trocar o que a dica diz, senão ela passa a informar o que
+// o programa fazia antes da mudança.
+function _atualizarDicaTubular() {
+  const el = document.getElementById('m-tubular-dica');
+  if (!el) return;
+  el.innerHTML = _tecidoTubularDica({ categoria: document.getElementById('m-categoria')?.value || '' });
+}
+
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
   if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
@@ -5461,7 +5503,9 @@ function renderTecidos() {
     <tr>
       <td><strong>${esc(t.nome)}</strong></td>
       <td>${esc(t.desc)}</td>
-      <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span></td>
+      <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span>${
+        t.tubular === 'tubular' ? ' <span class="badge" title="Vem em tubo, sem abertura lateral">tubular</span>'
+        : t.tubular === 'aberto' ? ' <span class="badge" title="Vem aberto">não-tubular</span>' : ''}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}${
         t.pesoBobina ? `<div style="font-size:10px;color:var(--ink-3);">bobina ${esc(t.pesoBobina)} kg</div>` : ''}</td>
       ${acoesCell('tecido', t.id)}
