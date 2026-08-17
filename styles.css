@@ -1331,31 +1331,12 @@ body:not(.is-admin) #modal-cad-fields button {
   background: var(--paper);
   color: var(--ink);
 }
-/* Terceiro nível: a FAIXA de tamanhos (P ao G3, M · G · GG). É automática — sai
-   dos tamanhos da grade, não do cadastro —, então não tem as ações de renomear e
-   reordenar, e não usa a barra preta das outras duas: é um separador, não uma
-   gaveta. Fundo claro e uma barra à esquerda dão a hierarquia sem competir com as
-   pastas de cima. */
-.grade-folder-faixa td {
-  background: var(--line-2);
-  color: var(--ink-2);
-  padding-left: 40px;
-  border-left: 3px solid var(--accent);
-  text-transform: none;
-  letter-spacing: .04em;
-  font-weight: 600;
-  font-size: 11.5px;
-}
-.grade-folder-faixa:hover td { color: var(--ink); }
 .folder-count {
   font-size: 10px;
   opacity: .7;
   margin-left: 6px;
 }
 .table tr.grade-folder:hover td { background: inherit; }
-/* Depois da regra acima de propósito: sem isto o fundo claro da faixa viraria
-   "inherit" ao passar o mouse e a linha piscaria em branco. */
-.table tr.grade-folder-faixa:hover td { background: var(--line-2); }
 .folder-actions { float: right; display: inline-flex; gap: 4px; }
 .folder-btn {
   background: transparent;

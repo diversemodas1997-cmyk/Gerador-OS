@@ -1,17 +1,24 @@
 /* Rode com:  node testes/pastas-grades-semelhanca.js
 
-   AS PASTAS DE GRADE ORGANIZADAS POR SEMELHANÇA.
+   A ORDEM DAS PASTAS DO CADASTRO DE GRADES.
 
-   O cadastro tem mais de cem grades. Pasta (tipo de peça) e subpasta (variação)
-   dão o primeiro corte, mas dentro delas o que a fábrica pede é uma FAIXA: "uma
-   que vá do M ao GG". Ordenar por semelhança já punha as parecidas lado a lado —
-   e ainda era uma parede de nomes, porque nada dizia onde uma faixa acaba e a
-   outra começa. Agora a faixa é o terceiro nível de pasta, automático: sai dos
-   tamanhos da própria grade, então grade nova cai no grupo certo ao ser salva e
-   não há pasta para manter.
+   As pastas de mesma família têm nome de mesma família, e é assim que se procura
+   uma grade: as camisetas na sequência, as bermudas juntas, as blusas juntas.
 
-   O que este teste guarda: o nome do grupo (é ele que a pessoa procura), e o
-   agrupamento — mesma faixa junta, quantidade não separa, ordem preservada. */
+   A lista saía em dois blocos — primeiro as pastas FIXAS do programa (camiseta,
+   blusa_moletom, outro), na ordem em que estão escritas no código, e depois as
+   criadas pelo usuário, em ordem alfabética. Com os dados reais da fábrica isso
+   espalhava as famílias: "Camiseta Básica" abria a lista, "Blusa Moletom" vinha
+   em seguida, e "Camiseta Oversized" e "Camiseta Polo" iam para o fim, longe da
+   camiseta com que se parecem. A distinção fixa/criada é do CÓDIGO; quem lê a
+   tela vê seis pastas iguais, com nomes.
+
+   Duas coisas continuam mandando mais que o nome: a ordem posta à mão com as
+   setas ↑↓, e os baldes ("Outro", "Sem categoria"), que vão para o fim.
+
+   OBS: houve um terceiro nível de pasta (faixa de tamanhos) em 17/08/2026, que
+   foi removido no mesmo dia — medido com as 130 grades reais, dava 86 grupos e
+   72% deles com uma grade só. Ver o comentário em app.js, acima de renderGrades. */
 const fs = require('fs');
 const path = require('path');
 
@@ -26,98 +33,102 @@ function recorte(de, ate, oQue) {
 const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 const cortaLinha = (nome) => recorte(nome, '\n', nome);
 
-const api = new Function(`
-  ${cortaLinha('const _ORDEM_TAM')}
-  ${corta('function _gradeChaveSemelhanca')}
-  ${corta('function compararGradesPorSemelhanca')}
-  ${corta('function _gradeFaixaLabel')}
-  ${corta('function _agruparGradesPorFaixa')}
-  return { _gradeFaixaLabel, _agruparGradesPorFaixa, compararGradesPorSemelhanca, _gradeChaveSemelhanca };
-`)();
+// `labelTp`/`labelVr` leem os apelidos que o usuário deu às pastas (STATE), então
+// entram de verdade no recorte — é o rótulo VISÍVEL que manda na ordem, e um
+// apelido muda a posição da pasta.
+const motor = [
+  cortaLinha('const LABELS_TP_PADRAO'),
+  cortaLinha('const LABELS_VR_PADRAO'),
+  corta('function _gfl'),
+  corta('function labelTp'),
+  corta('function labelVr'),
+  cortaLinha('const _PASTAS_BALDE'),
+  corta('function _ordenarPastas')
+].join('\n');
+
+function ordenar(chaves, ordemManual, tipo, apelidos) {
+  const fn = new Function('CHAVES', 'MANUAL', 'TIPO', 'APELIDOS', `
+    const STATE = { gradeFolderLabels: APELIDOS };
+    ${motor}
+    return _ordenarPastas(CHAVES, MANUAL, TIPO === 'vr' ? labelVr : labelTp);
+  `);
+  return fn(chaves, ordemManual || [], tipo || 'tp',
+    apelidos || { tp: {}, vr: {}, tpOrder: [], vrOrder: [] });
+}
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
   console.log((cond ? '  ok  ' : 'FALHA ') + nome + (cond ? '' : '   obtido: ' + JSON.stringify(extra)));
   if (!cond) falhas++;
 };
-const eq = (nome, got, esperado) => ok(nome + ' → ' + JSON.stringify(esperado), got === esperado, got);
+const eq = (nome, got, esperado) => {
+  const a = JSON.stringify(got), b = JSON.stringify(esperado);
+  ok(nome + ' → ' + b, a === b, got);
+};
 
-const T = (o) => Object.assign({ p: 0, m: 0, g: 0, gg: 0, g1: 0, g2: 0, g3: 0 }, o);
-const grade = (nome, tam) => ({ nome, tamanhos: T(tam) });
+/* ---------- 1. os dados reais da fábrica (17/08/2026) ----------
+   Seis pastas: duas fixas do programa (camiseta, blusa_moletom) e quatro criadas
+   pelo usuário. E `camiseta` tem apelido: "Camiseta Básica". */
 
-/* ---------- 1. o nome do grupo é como a fábrica pede a grade ---------- */
+const REAIS = ['Bermuda Moletom', 'Bermuda Tactel', 'Camiseta Oversized', 'Camiseta Polo', 'blusa_moletom', 'camiseta'];
+const APELIDOS = { tp: { camiseta: 'Camiseta Básica' }, vr: { bicolor: 'Recortada' }, tpOrder: [], vrOrder: [] };
 
-eq('faixa corrida do começo ao fim',
-  api._gradeFaixaLabel(T({ p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 })), 'P ao G3');
-eq('faixa corrida no meio',
-  api._gradeFaixaLabel(T({ m: 1, g: 1, gg: 1 })), 'M ao GG');
-eq('quantidade não muda o nome da faixa',
-  api._gradeFaixaLabel(T({ p: 2, m: 2, g: 2, gg: 2, g1: 2, g2: 2, g3: 2 })), 'P ao G3');
-eq('faixa que pula tamanho é listada',
-  api._gradeFaixaLabel(T({ m: 1, g: 1, g1: 1, g3: 1 })), 'M · G · G1 · G3');
-eq('duas vizinhas ficam listadas (P ao M diria menos)',
-  api._gradeFaixaLabel(T({ p: 1, m: 1 })), 'P · M');
-eq('duas não vizinhas', api._gradeFaixaLabel(T({ p: 2, gg: 2 })), 'P · GG');
-eq('um tamanho só', api._gradeFaixaLabel(T({ g: 1 })), 'G');
-eq('grade sem tamanho nenhum não fica sem nome',
-  api._gradeFaixaLabel(T({})), 'Sem tamanhos');
-eq('tamanhos como texto (vem assim de import antigo)',
-  api._gradeFaixaLabel({ p: '1', m: '1', g: '1' }), 'P ao G');
+eq('as famílias saem na sequência, pelo nome que aparece',
+  ordenar(REAIS, [], 'tp', APELIDOS),
+  ['Bermuda Moletom', 'Bermuda Tactel', 'blusa_moletom', 'camiseta', 'Camiseta Oversized', 'Camiseta Polo']);
 
-/* ---------- 2. o agrupamento ---------- */
+// O que a tela mostrava antes: Camiseta Básica, Blusa Moletom, e as outras
+// camisetas no fim. Este teste existe para essa ordem não voltar.
+const antes = ['camiseta', 'blusa_moletom', 'Bermuda Moletom', 'Bermuda Tactel', 'Camiseta Oversized', 'Camiseta Polo'];
+ok('a ordem antiga (fixas primeiro) não volta',
+  JSON.stringify(ordenar(REAIS, [], 'tp', APELIDOS)) !== JSON.stringify(antes), antes);
 
-// Entra a lista JÁ ordenada por semelhança, como a tela faz.
-const ordenar = (gs) => gs.slice().sort(api.compararGradesPorSemelhanca);
+// O APELIDO é que manda, não a chave técnica: renomear "camiseta" para "Zebra"
+// tira a pasta do meio das camisetas.
+eq('o apelido muda a posição da pasta',
+  ordenar(REAIS, [], 'tp', { tp: { camiseta: 'Zebra' }, vr: {}, tpOrder: [], vrOrder: [] }),
+  ['Bermuda Moletom', 'Bermuda Tactel', 'blusa_moletom', 'Camiseta Oversized', 'Camiseta Polo', 'camiseta']);
 
-let gs = ordenar([
-  grade('2M-2G | CM.LISA | 117cm', { m: 2, g: 2 }),
-  grade('P ao G3 | CM.LISA | 117cm', { p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }),
-  grade('M-G | CM.REC | 117cm', { m: 1, g: 1 }),
-  grade('2X P ao G3 | CM.LISA | 117cm', { p: 2, m: 2, g: 2, gg: 2, g1: 2, g2: 2, g3: 2 })
-]);
-let grupos = api._agruparGradesPorFaixa(gs);
-eq('duas faixas distintas viram dois grupos', grupos.length, 2);
-eq('o grupo mais largo vem primeiro', grupos[0].label, 'P ao G3');
-eq('e leva as duas grades daquela faixa (1x e 2x juntas)', grupos[0].itens.length, 2);
-eq('a faixa curta vem depois', grupos[1].label, 'M · G');
-eq('com as duas grades dela', grupos[1].itens.length, 2);
-// Dentro do grupo, a ordem da semelhança é preservada: 1x antes de 2x.
-eq('dentro do grupo, a menor quantidade primeiro', grupos[0].itens[0].nome, 'P ao G3 | CM.LISA | 117cm');
+/* ---------- 2. os baldes vão para o fim ---------- */
 
-// Nenhuma grade se perde no caminho — é o que garante que a tela não esconde
-// cadastro atrás de um agrupamento errado.
-const total = grupos.reduce((s, f) => s + f.itens.length, 0);
-eq('nenhuma grade fica fora de grupo', total, gs.length);
+eq('"Outro" e "Sem categoria" não entram no meio dos nomes',
+  ordenar(['outro', '', 'camiseta', 'Bermuda Tactel'], [], 'tp'),
+  ['Bermuda Tactel', 'camiseta', 'outro', '']);
 
-// Faixas iguais separadas na lista de entrada não podem virar dois grupos com o
-// mesmo nome — é por isso que a lista entra ordenada.
-gs = ordenar([
-  grade('a', { m: 1, g: 1 }),
-  grade('b', { p: 1, m: 1, g: 1 }),
-  grade('c', { m: 2, g: 2 })
-]);
-grupos = api._agruparGradesPorFaixa(gs);
-eq('faixas iguais não se repetem como grupos', grupos.length, 2);
-ok('nenhum nome de grupo aparece duas vezes',
-  new Set(grupos.map(f => f.label)).size === grupos.length, grupos.map(f => f.label));
+eq('subpasta sem variação também vai para o fim',
+  ordenar(['', 'tricolor', 'basica'], [], 'vr'),
+  ['basica', 'tricolor', '']);
 
-// Uma faixa só (o caso em que a tela NÃO abre o nível): tem de ser reconhecível.
-grupos = api._agruparGradesPorFaixa(ordenar([grade('x', { g: 1 }), grade('y', { g: 2 })]));
-eq('subpasta de faixa única dá um grupo só', grupos.length, 1);
+/* ---------- 3. a mão do usuário manda mais que o nome ---------- */
 
-// Lista vazia não explode.
-eq('subpasta vazia não gera grupo', api._agruparGradesPorFaixa([]).length, 0);
+eq('a ordem posta com as setas ↑↓ é respeitada',
+  ordenar(REAIS, ['Camiseta Polo', 'camiseta'], 'tp', APELIDOS),
+  ['Camiseta Polo', 'camiseta', 'Bermuda Moletom', 'Bermuda Tactel', 'blusa_moletom', 'Camiseta Oversized']);
 
-/* ---------- 3. a máscara é a identidade da faixa ---------- */
+eq('quem não está na ordem manual segue pelo nome, depois dela',
+  ordenar(['camiseta', 'Bermuda Tactel', 'Bermuda Moletom'], ['camiseta'], 'tp'),
+  ['camiseta', 'Bermuda Moletom', 'Bermuda Tactel']);
 
-const masc = (t) => api._gradeChaveSemelhanca(T(t)).mascara;
-ok('a mesma faixa em quantidades diferentes tem a mesma máscara',
-  masc({ m: 1, g: 1 }) === masc({ m: 9, g: 3 }), [masc({ m: 1, g: 1 }), masc({ m: 9, g: 3 })]);
-ok('faixas diferentes têm máscaras diferentes',
-  masc({ m: 1, g: 1 }) !== masc({ m: 1, gg: 1 }), masc({ m: 1, g: 1 }));
-ok('quem começa no P vem antes de quem começa no M',
-  masc({ p: 1 }) > masc({ m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }),
-  [masc({ p: 1 }), masc({ m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 })]);
+// Ordem manual guardada de uma pasta que não existe mais (renomeada, ou a última
+// grade dela saiu) não pode abrir buraco nem sumir com as outras.
+eq('pasta que saiu do cadastro é ignorada na ordem manual',
+  ordenar(['camiseta', 'Bermuda Tactel'], ['Pasta Que Nao Existe', 'Bermuda Tactel'], 'tp'),
+  ['Bermuda Tactel', 'camiseta']);
+
+/* ---------- 4. detalhes de nome ---------- */
+
+// "Básica Azul" e "basica azul 2" ficam VIZINHAS (é o que importa): acento e
+// caixa não contam, então elas comparam como "basica azul" e "basica azul 2", e a
+// mais curta vem primeiro.
+eq('acento e caixa não separam famílias',
+  ordenar(['basica azul 2', 'Básica Azul', 'Bermuda'], [], 'tp'),
+  ['Básica Azul', 'basica azul 2', 'Bermuda']);
+
+eq('número no nome sai em ordem de número, não de texto',
+  ordenar(['Linha 10', 'Linha 2', 'Linha 1'], [], 'tp'),
+  ['Linha 1', 'Linha 2', 'Linha 10']);
+
+eq('lista vazia não explode', ordenar([], [], 'tp'), []);
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
