@@ -229,43 +229,55 @@ const ribana = (gram, pesoBobina) => ({ ...golaBase, peso: gram, pesoBobina,
 ok('35. reconhece a fase de ribana pelo nome do tecido',
    ehFaseRibana(golaBase) === true && ehFaseRibana(cheio) === false);
 ok('36. sem gramatura e sem peso de bobina -> nao prevê nada (folha mostra tracinho)',
-   bobinasEfetivasFase(os(), 1, 2, ribana(0, 0)) === null,
-   bobinasEfetivasFase(os(), 1, 2, ribana(0, 0)));
+   bobinasEfetivasFase(os(), null, 2, ribana(0, 0)) === null,
+   bobinasEfetivasFase(os(), null, 2, ribana(0, 0)));
 ok('37. com gramatura mas SEM o peso da bobina -> continua esperando',
-   bobinasEfetivasFase(os(), 1, 2, ribana(220, 0)) === null,
-   bobinasEfetivasFase(os(), 1, 2, ribana(220, 0)));
+   bobinasEfetivasFase(os(), null, 2, ribana(220, 0)) === null,
+   bobinasEfetivasFase(os(), null, 2, ribana(220, 0)));
 ok('38. com o peso da bobina mas SEM gramatura -> continua esperando',
-   bobinasEfetivasFase(os(), 1, 2, ribana(0, 8)) === null,
-   bobinasEfetivasFase(os(), 1, 2, ribana(0, 8)));
-ok('39. o cadastro de bobinas da grade NAO vale para a ribana',
-   bobinasEfetivasFase(os(), 99, 2, ribana(0, 0)) === null,
+   bobinasEfetivasFase(os(), null, 2, ribana(0, 8)) === null,
+   bobinasEfetivasFase(os(), null, 2, ribana(0, 8)));
+// 18/08/2026: o cadastro da grade passou a valer para a ribana tambem. Quem
+// escreve um numero naquela fase contou AQUELE enfesto — recusa-lo era o que
+// fazia o Barra/Punhos da BM.TRI sair com tracinho tendo "1" cadastrado, e o
+// tecido inteiro sumir da tela de Compra.
+ok('39. o cadastro de bobinas da grade AGORA vale para a ribana',
+   bobinasEfetivasFase(os(), 99, 2, ribana(0, 0)) === 99,
    bobinasEfetivasFase(os(), 99, 2, ribana(0, 0)));
+ok('39b. e ganha do peso quando os dois existem (quem contou olhou o enfesto)',
+   bobinasEfetivasFase(os(), 3, 2, ribana(220, 8)) === 3,
+   bobinasEfetivasFase(os(), 3, 2, ribana(220, 8)));
+// Zero e resposta, como nas camadas: nao desce para a conta de peso atras de um
+// numero que a casa ja disse nao existir.
+ok('39c. zero cadastrado na grade e resposta, e nao volta para a conta de peso',
+   bobinasEfetivasFase(os(), 0, 2, ribana(220, 8)) === 0,
+   bobinasEfetivasFase(os(), 0, 2, ribana(220, 8)));
 // 0,8 x 0,65 x 14 camadas x 220 g/m2 = 1,601 kg; bobina de 8 kg -> 0,2 -> 1.
 ok('40. com as duas pontas cadastradas, prevê pelo peso: 1,6 kg / 8 kg -> 1 bobina',
-   bobinasEfetivasFase(os(), 1, 2, ribana(220, 8)) === 1,
-   bobinasEfetivasFase(os(), 1, 2, ribana(220, 8)));
+   bobinasEfetivasFase(os(), null, 2, ribana(220, 8)) === 1,
+   bobinasEfetivasFase(os(), null, 2, ribana(220, 8)));
 ok('41. e acompanha o tamanho do enfesto (10 camadas de sobra pedem outra bobina)',
-   bobinasEfetivasFase(os(), 1, 2, { ...ribana(220, 8), camadas: 100,
+   bobinasEfetivasFase(os(), null, 2, { ...ribana(220, 8), camadas: 100,
      kg: (0.8 * 0.65 * 100 * 220) / 1000 }) === 2,
-   bobinasEfetivasFase(os(), 1, 2, { ...ribana(220, 8), camadas: 100,
+   bobinasEfetivasFase(os(), null, 2, { ...ribana(220, 8), camadas: 100,
      kg: (0.8 * 0.65 * 100 * 220) / 1000 }));
 ok('42. ribana declarada nao enfestada segue zerando',
-   bobinasEfetivasFase(osMista, 1, 2, ribana(220, 8)) === 0,
-   bobinasEfetivasFase(osMista, 1, 2, ribana(220, 8)));
+   bobinasEfetivasFase(osMista, null, 2, ribana(220, 8)) === 0,
+   bobinasEfetivasFase(osMista, null, 2, ribana(220, 8)));
 ok('43. a folha mostra tracinho enquanto falta dado',
-   _bobinasCelula(os(), ribana(220, 0), 1, 2, true, fmt) === '—',
-   _bobinasCelula(os(), ribana(220, 0), 1, 2, true, fmt));
-const tRib = _tituloBobinas(os(), ribana(220, 0), 1, 2);
+   _bobinasCelula(os(), ribana(220, 0), null, 2, true, fmt) === '—',
+   _bobinasCelula(os(), ribana(220, 0), null, 2, true, fmt));
+const tRib = _tituloBobinas(os(), ribana(220, 0), null, 2);
 ok('44. e a dica diz exatamente o que falta cadastrar',
    tRib.includes('peso medio da bobina') && tRib.includes('Ribana Malha Algodão')
    && !tRib.includes('gramatura de Azul'), tRib);
 ok('45. faltando os dois, cobra os dois',
-   _tituloBobinas(os(), ribana(0, 0), 1, 2).includes('gramatura')
-   && _tituloBobinas(os(), ribana(0, 0), 1, 2).includes('peso medio'),
-   _tituloBobinas(os(), ribana(0, 0), 1, 2));
+   _tituloBobinas(os(), ribana(0, 0), null, 2).includes('gramatura')
+   && _tituloBobinas(os(), ribana(0, 0), null, 2).includes('peso medio'),
+   _tituloBobinas(os(), ribana(0, 0), null, 2));
 ok('46. com tudo cadastrado, a dica mostra a conta da ribana',
-   _tituloBobinas(os(), ribana(220, 8), 1, 2).startsWith('Ribana:'),
-   _tituloBobinas(os(), ribana(220, 8), 1, 2));
+   _tituloBobinas(os(), ribana(220, 8), null, 2).startsWith('Ribana:'),
+   _tituloBobinas(os(), ribana(220, 8), null, 2));
 
 // O caso real da OS 0461: a fase de ribana esta com a cor do tecido principal
 // ("Azul Malha Algodao", 182 g/m2). Ha gramatura, mas ela e de outro pano.
@@ -273,11 +285,11 @@ const golaEmprestada = { ...golaBase, corReal: 'Azul Malha Algodão', peso: 182,
                          pesoDesteTecido: false, pesoBobina: 8,
                          kg: (0.8 * 0.65 * 14 * 182) / 1000 };
 ok('47. gramatura EMPRESTADA do tecido principal nao serve, mesmo com peso de bobina',
-   bobinasEfetivasFase(os(), 1, 2, golaEmprestada) === null,
-   bobinasEfetivasFase(os(), 1, 2, golaEmprestada));
+   bobinasEfetivasFase(os(), null, 2, golaEmprestada) === null,
+   bobinasEfetivasFase(os(), null, 2, golaEmprestada));
 ok('48. e a dica explica que a cor da fase e a do tecido principal',
-   _tituloBobinas(os(), golaEmprestada, 1, 2).includes('tecido principal'),
-   _tituloBobinas(os(), golaEmprestada, 1, 2));
+   _tituloBobinas(os(), golaEmprestada, null, 2).includes('tecido principal'),
+   _tituloBobinas(os(), golaEmprestada, null, 2));
 
 console.log('');
 console.log('-- MOLETOM: o enfesto cheio e o da GRADE, nao o da malha --');

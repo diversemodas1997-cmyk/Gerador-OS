@@ -15898,12 +15898,16 @@ function bobinaInteira(v) {
   return Math.ceil(n - CEIL_BOBINA_EPS);
 }
 
-// A ribana não entra na conta do tecido principal. O número de bobinas do
-// cadastro da grade descreve o enfesto do CORPO; a ribana vem em rolo de outro
-// tamanho, é enfestada em outra largura e outro número de camadas, e o "1
-// bobina" que está cadastrado nela é um mínimo de separação, não uma medida.
+// A ribana não entra na conta do tecido principal: ela vem em rolo de outro
+// tamanho, é enfestada em outra largura e outro número de camadas. Por isso a
+// bobina dela sai do PESO, e não do número do corpo.
 //
-// Enquanto não houver as duas coisas que faltam — a gramatura de cada ribana em
+// Mas isso vale para a ribana que ninguém contou. Quando a fase de ribana tem
+// bobinas cadastradas na própria grade, esse número manda — ver
+// `bobinasEfetivasFase`. Ele foi escrito olhando aquele enfesto, e recusá-lo era
+// o que fazia o Barra/Punhos sair com tracinho tendo cadastro.
+//
+// Sem cadastro e sem as duas coisas que faltam — a gramatura de cada ribana em
 // cada cor e o peso médio da bobina daquele tecido —, a folha mostra "—". Um
 // tracinho é a resposta honesta; um número tirado da conta errada viraria compra
 // errada.
@@ -15943,9 +15947,23 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
     return arredonda(Number(L.bobinasOS));
   }
 
-  if (ehFaseRibana(L)) {
-    // Exige a gramatura DA RIBANA naquela cor — não a do tecido principal, que é
-    // o que a fase costuma ter emprestado — e o peso médio da bobina.
+  const prev = Number(bobinasPrevistas);
+  // A GRADE respondeu? Um número cadastrado na fase é alguém que olhou aquele
+  // enfesto e contou as bobinas, e isso vale para a ribana como vale para o
+  // corpo: era por não valer que o Barra/Punhos da BM.TRI aparecia com tracinho
+  // na Compra tendo "1" cadastrado na grade, e a linha inteira da Ribana Moletom
+  // sumia da necessidade bruta.
+  //
+  // Zero também é resposta — é a mesma regra das camadas: 0 é resposta, campo em
+  // branco é pergunta. Uma ribana cadastrada com 0 gasta zero bobina e não desce
+  // para a conta de peso atrás de um número que a casa já disse não existir.
+  const gradeRespondeu = bobinasPrevistas != null && bobinasPrevistas !== ''
+    && isFinite(prev) && prev >= 0;
+
+  if (ehFaseRibana(L) && !gradeRespondeu) {
+    // Sem cadastro na grade, a ribana só tem uma medida: o peso. Exige a
+    // gramatura DA RIBANA naquela cor — não a do tecido principal, que é o que a
+    // fase costuma ter emprestado — e o peso médio da bobina.
     const kg = Number(L && L.kg);
     const pb = Number(L && L.pesoBobina);
     if (!isFinite(kg) || kg <= 0 || !L.pesoDesteTecido) return null;
@@ -15953,9 +15971,10 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
     return arredonda(kg / pb);
   }
 
-  const prev = Number(bobinasPrevistas);
   // Sem cadastro não há previsão nenhuma a dar: devolve o que veio (a folha
-  // mostra tracinho) em vez de inventar um número a partir do peso.
+  // mostra tracinho) em vez de inventar um número a partir do peso. O zero
+  // cadastrado passa por aqui também e sai zero — não há proporção a fazer sobre
+  // nada.
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
 
   const cam = parseInt(L && L.camadas, 10) || 0;
@@ -16028,8 +16047,13 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
          + ` Apague o campo para a folha voltar a seguir o cadastro da grade.`;
   }
 
-  // A ribana tem conta propria, e ela so existe com as duas pontas cadastradas.
-  if (ehFaseRibana(L)) {
+  // A ribana tem conta propria — mas so quando a grade NAO respondeu. Havendo
+  // numero cadastrado na fase, ela segue o mesmo caminho do corpo (ver
+  // `bobinasEfetivasFase`), e a dica precisa contar essa historia, nao a do peso.
+  const _prevRib = Number(bobinasPrevistas);
+  const _gradeRespondeu = bobinasPrevistas != null && bobinasPrevistas !== ''
+    && isFinite(_prevRib) && _prevRib >= 0;
+  if (ehFaseRibana(L) && !_gradeRespondeu) {
     const kg = Number(L && L.kg), pb = Number(L && L.pesoBobina);
     const temGram = isFinite(kg) && kg > 0 && !!(L && L.pesoDesteTecido);
     if (temGram && isFinite(pb) && pb > 0) {
@@ -16047,8 +16071,10 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
       falta.push(`o peso medio da bobina de ${L && L.tecidoReal ? L.tecidoReal : 'ribana'}`
                + ` (no cadastro do tecido)`);
     }
-    return `A ribana nao segue a conta do tecido principal: o cadastro de bobinas`
-         + ` da grade descreve o enfesto do corpo. Falta cadastrar ${falta.join(' e ')}.`;
+    return `Esta fase de ribana nao tem bobinas cadastradas na grade, entao a`
+         + ` previsao teria de sair do peso — e a ribana nao segue a conta do`
+         + ` tecido principal. Falta cadastrar ${falta.join(' e ')}`
+         + ` (ou escrever as bobinas desta fase no cadastro da grade).`;
   }
 
   const prev = Number(bobinasPrevistas);
@@ -25358,7 +25384,15 @@ function compraNecessidadeBruta(itens) {
     c.linhas.forEach(L => {
       const tecidoNome = L.tecidoReal || L.nomeEnf || '';
       const corNome = L.corReal || '';
-      if (!(L.kgTotal > 0) && !(L.bobinas > 0)) return;
+      // Uma fase só sai da lista quando a resposta dela é ZERO: bobina cadastrada
+      // em 0, fase não enfestada, viés que não gasta pano. Quando a resposta é
+      // "NÃO SEI" — `bobinas` nulo, que é a ribana sem gramatura, sem peso de
+      // bobina ou sem medida na grade — a linha FICA, mesmo sem quilo e sem
+      // bobina. Era exatamente ela que sumia calada daqui: quem montava o pedido
+      // via uma lista que parecia inteira e não tinha o punho dentro. Sem tecido
+      // não há o que comprar nem o que avisar, e aí a linha não nasce mesmo.
+      const naoSabe = L.bobinas == null && !!tecidoNome;
+      if (!(L.kgTotal > 0) && !(L.bobinas > 0) && !naoSabe) return;
       const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
       const cur = mapa.get(k) || { tecidoNome, corNome, kg: 0, bobinasCru: 0,
                                    kgComBobina: 0, semPrevisao: [] };
@@ -25634,16 +25668,25 @@ function renderCompra() {
 
   const totais = compraNecessidadeBruta(itens);
   const linhasTotais = totais.map(t => {
+    // Tecido do qual não se sabe NADA: nem quilo, nem bobina. É a linha que antes
+    // nem chegava a existir. Mostrar 0,000 aqui seria pior do que o sumiço — leria
+    // como "não precisa comprar". Ela vem toda de tracinho e com o aviso do que
+    // falta cadastrar para a conta fechar.
+    const cego = t.semPrevisao.length > 0 && !(t.kg > 0) && t.bobinas == null;
+    const aviso = cego
+      ? `Este tecido não entrou na conta: ${esc(t.semPrevisao.join(', '))} está sem previsão de bobinas na grade e sem o que precisa para calcular pelo peso (medida da fase, gramatura da cor e peso da bobina). Não há quanto comprar até isso ser cadastrado.`
+      : `Sem previsão de bobinas: ${esc(t.semPrevisao.join(', '))}. O quilo dessas fases está no total; a bobina não dá para prever.`;
     const falta = t.semPrevisao.length
-      ? ` <span title="Sem previsão de bobinas: ${esc(t.semPrevisao.join(', '))}. O quilo dessas fases está no total; a bobina não dá para prever." style="color:#c0392b;cursor:help;">⚠</span>`
+      ? ` <span title="${aviso}" style="color:#c0392b;cursor:help;">⚠</span>`
       : '';
-    return `<tr>
+    const kgCel = v => cego ? '—' : _cpKg(v);
+    return `<tr${cego ? ' style="background:#fdecea;"' : ''}>
       <td><strong>${esc(t.tecidoNome) || '(sem tecido)'}</strong> · ${esc(corSemTecido(t.corNome, t.tecidoNome)) || '<span style="color:var(--ink-3)">(sem cor)</span>'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${t.bobinas != null ? t.bobinas : '—'}${falta}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_cpKg(t.kg)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${kgCel(t.kg)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:${t.disponivel < 0 ? '#c0392b' : 'inherit'};">${_cpKg(t.disponivel)}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${_cpKg(t.kgComprar)}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#fff59d;">${t.bobinasComprar != null ? t.bobinasComprar : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:${cego ? 'transparent' : '#fff59d'};">${kgCel(t.kgComprar)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:${cego ? 'transparent' : '#fff59d'};">${t.bobinasComprar != null ? t.bobinasComprar : '—'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">${t.kgPorBobina > 0 ? _cpKg(t.kgPorBobina) : '—'}</td>
     </tr>`;
   }).join('');

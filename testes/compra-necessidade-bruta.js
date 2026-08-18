@@ -192,8 +192,21 @@ ok('11. e vem CRUA, sem arredondar (quem arredonda é o total)',
     .linhas[0].bobinas % 1 !== 0);
 // 2 m x 1,00 m x 36 x 400 / 1000 = 28,8 kg ; bobina de ribana = 28,8 / 20 = 1,44
 ok('12. a ribana pesa pela gramatura DELA', perto(c1.linhas[1].kgTotal, 28.8), c1.linhas[1].kgTotal);
-ok('13. e a bobina dela sai do peso, não do cadastro da grade',
-  perto(c1.linhas[1].bobinas, 1.44), c1.linhas[1].bobinas);
+// A grade tem "1" cadastrado na fase de punhos, e desde 18/08/2026 esse número
+// MANDA também na ribana: quem escreveu ali contou aquele enfesto. Era por ele
+// ser recusado que o Barra/Punhos da BM.TRI saía com tracinho tendo cadastro.
+// O enfesto está cheio, então o número sai inteiro.
+ok('13. com cadastro na grade, a bobina da ribana sai do cadastro',
+  perto(c1.linhas[1].bobinas, 1), c1.linhas[1].bobinas);
+// Sem cadastro nenhum ela volta ao peso, que é a única medida que sobra:
+// 28,8 kg / 20 kg por bobina = 1,44.
+const semCadRib = cadastroBase();
+semCadRib.grades[0].fases[1].bobinas = '';
+api.setState(semCadRib);
+ok('13b. sem cadastro na grade, a bobina da ribana volta a sair do peso',
+  perto(api.compraConsumoItem({ id: 'i-sc', gradeId: G1, desenhoId: D1, camadas: 36, repeticoes: 1 })
+    .linhas[1].bobinas, 1.44));
+api.setState(cadastroBase());
 // grade M=1, G=2, GG=1 -> menor pedido 1 ; moletom não corta em camada dupla
 ok('14. as peças saem do menor pedido da grade x camadas', c1.pecas === 36, c1.pecas);
 
@@ -295,14 +308,50 @@ ok('29. mas o quilo continua lá', perto(mol8.kg, 259.2), mol8.kg);
 ok('30. e a tela sabe DIZER qual fase ficou sem previsão',
   mol8.semPrevisao.length === 1, JSON.stringify(mol8.semPrevisao));
 
-// Ribana sem o peso médio da bobina cadastrado: espera, não chuta.
+// Ribana sem o peso médio da bobina cadastrado — e sem número na grade, que é o
+// que manda quando existe. Sem nenhuma das duas pontas: espera, não chuta.
 const ribSemPeso = cadastroBase();
 ribSemPeso.tecidos[1].pesoBobina = 0;
+ribSemPeso.grades[0].fases[1].bobinas = '';
 api.setState(ribSemPeso);
 const t9 = api.compraNecessidadeBruta([item1]);
 const rib9 = t9.find(x => x.tecidoNome === 'Ribana Moletom');
 ok('31. ribana sem peso de bobina cadastrado não prevê bobina', rib9.bobinas === null, rib9.bobinas);
 ok('32. e o quilo dela segue contando para a compra', perto(rib9.kg, 28.8), rib9.kg);
+
+/* ---------- 7b. o tecido que não se sabe calcular não some da lista ----------
+
+   O defeito real, achado em 18/08/2026 na BM.TRI: a fase Barra/Punhos vinha sem
+   comprimento e sem largura na grade (kg = 0) e a cor dela não tinha gramatura
+   da ribana. Sem quilo E sem bobina, a linha era descartada antes de virar total
+   — o pedido ao fornecedor saía sem o punho, e sem nenhum aviso de que faltava.
+   Zero continua sumindo (é resposta); "não sei" tem de aparecer. */
+console.log('\n-- o tecido cego aparece em vez de sumir --');
+
+const cega = cadastroBase();
+cega.grades[0].fases[1].bobinas = '';   // a grade não sabe
+cega.grades[0].fases[1].comp = '';      // e a fase não tem medida -> kg 0
+cega.grades[0].fases[1].larg = '';
+cega.tecidos[1].pesoBobina = 0;         // e o tecido não tem peso de bobina
+api.setState(cega);
+const t10 = api.compraNecessidadeBruta([item1]);
+const rib10 = t10.find(x => x.tecidoNome === 'Ribana Moletom');
+ok('31b. a linha da ribana existe mesmo sem quilo e sem bobina', !!rib10,
+  JSON.stringify(t10.map(x => x.tecidoNome)));
+ok('31c. e vem declarada como sem previsão, para a tela poder avisar',
+  rib10 && rib10.bobinas === null && !(rib10.kg > 0) && rib10.semPrevisao.length === 1,
+  rib10 && JSON.stringify({ b: rib10.bobinas, kg: rib10.kg, sp: rib10.semPrevisao }));
+
+// O zero continua sendo resposta: fase cadastrada com 0 bobinas e sem quilo não
+// vira linha nenhuma — não há o que comprar ali, e uma linha a mais só polui.
+const zerada = cadastroBase();
+zerada.grades[0].fases[1].bobinas = '0';
+zerada.grades[0].fases[1].comp = '';
+zerada.grades[0].fases[1].larg = '';
+api.setState(zerada);
+ok('31d. mas a fase que responde ZERO continua fora da lista',
+  !api.compraNecessidadeBruta([item1]).find(x => x.tecidoNome === 'Ribana Moletom'));
+api.setState(cadastroBase());
 
 /* ---------- 8. camadas e peças, os dois lados da mesma medida ---------- */
 console.log('\n-- camadas e peças --');
