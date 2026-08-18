@@ -329,5 +329,42 @@ ok('57. e a do enfesto parcial mostra a conta: 6 x 18/36 = 3',
    tMeio.includes('36 camadas') && tMeio.includes('18') && tMeio.includes('3'), tMeio);
 
 console.log('');
+console.log('-- a previsao escrita NA OS manda no que a grade preve --');
+
+/* O campo "Bobinas previstas" de cada enfesto, na janela da OS. Em branco a
+   folha segue a grade; escrito, ela obedece o que esta ali. Serve para o enfesto
+   que saiu diferente do de sempre — e para a ribana, que sem gramatura e sem
+   peso de bobina cadastrados nao tem como ser prevista por conta nenhuma. */
+const comOverride = (L, n) => ({ ...L, bobinasOS: n });
+
+ok('58. o numero escrito na OS vale como esta, sem proporcao de camadas',
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(18), 5)) === 5,
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(18), 5)));
+ok('59. e vale mesmo quando a grade nao preve nada nesta fase',
+   bobinasEfetivasFase(os(), null, 1, comOverride(corpo485(36), 4)) === 4,
+   bobinasEfetivasFase(os(), null, 1, comOverride(corpo485(36), 4)));
+ok('60. zero escrito na OS e resposta: nao gasta bobina',
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), 0)) === 0,
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), 0)));
+ok('61. fracao escrita a mao sobe para a bobina inteira',
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), 0.5)) === 1,
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), 0.5)));
+ok('62. em branco (null) nao e override: volta a seguir a grade',
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), null)) === 6,
+   bobinasEfetivasFase(os(), 6, 1, comOverride(corpo485(36), null)));
+ok('63. a ribana sem cadastro nenhum finalmente tem previsao quando escrita a mao',
+   bobinasEfetivasFase(os(), 1, 2, comOverride(ribana(0, 0), 2)) === 2,
+   bobinasEfetivasFase(os(), 1, 2, comOverride(ribana(0, 0), 2)));
+ok('64. mas a fase declarada nao enfestada continua zerando por cima de tudo',
+   bobinasEfetivasFase(os({ 2: { 1: '0' } }), 6, 2, comOverride(corpo485(36), 9)) === 0,
+   bobinasEfetivasFase(os({ 2: { 1: '0' } }), 6, 2, comOverride(corpo485(36), 9)));
+ok('65. a celula da folha mostra o numero escrito mesmo sem previsao na grade',
+   _bobinasCelula(os(), comOverride(corpo485(36), 4), null, 1, false, fmt) === '4',
+   _bobinasCelula(os(), comOverride(corpo485(36), 4), null, 1, false, fmt));
+const tOS = _tituloBobinas(os(), comOverride(corpo485(36), 4), 6, 1);
+ok('66. e a dica diz que o numero foi escrito na OS, e como desfazer',
+   tOS.includes('escrita nesta OS') && tOS.includes('Apague'), tOS);
+
+console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

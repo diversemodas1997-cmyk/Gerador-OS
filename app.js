@@ -15146,17 +15146,24 @@ function renderEnfestoBlocos(n, prefills = []) {
     const ehVies = /vi[eé]s/i.test(nomeTecido);
     const camadasValue = ehVies ? '1' : (p.camadas || '');
     const camadasAttrs = ehVies ? 'readonly title="Fase Viés sempre tem 1 camada"' : '';
+    // Bobinas previstas DESTA OS. Em branco = segue a previsão da grade, que é o
+    // caso normal; escrito = esta OS gasta isto, e a folha obedece. Aceita
+    // fração ("1/2") e zero, do mesmo jeito que o campo do cadastro da grade.
+    const bobinasValue = p.bobinas != null && p.bobinas !== ''
+      ? String(p.bobinas).replace('.', ',') : '';
     bloco.innerHTML = `
       <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">
         ENFESTO ${i+1}${labelDisplay ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(labelDisplay)}</span>` : ''}
       </div>
-      <div class="form-grid cols-3">
+      <div class="form-grid cols-4">
         <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
         <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="Ex.: 1,80"></div>
         <div class="field"><label>Camadas</label><input type="number" min="0" step="1" class="enf-camadas" data-idx="${i}" value="${esc(camadasValue)}" ${camadasAttrs} placeholder="—" oninput="atualizarCalculosEnfesto()"></div>
+        <div class="field"><label>Bobinas previstas</label><input type="text" class="enf-bobinas" data-idx="${i}" value="${esc(bobinasValue)}" placeholder="auto" oninput="atualizarBobinasPrevistasForm()"><div class="field-hint enf-bobinas-hint"></div></div>
       </div>`;
     cont.appendChild(bloco);
   }
+  atualizarBobinasPrevistasForm();
 }
 
 function lerEnfestoBlocos() {
@@ -15166,16 +15173,75 @@ function lerEnfestoBlocos() {
     const nomeTecido = b.dataset.nomeTecido || '';
     const ehVies = /vi[eé]s/i.test(nomeTecido);
     const camadasInput = parseInt(b.querySelector('.enf-camadas')?.value) || 0;
+    const bobinasInput = parseBobinas(b.querySelector('.enf-bobinas')?.value);
     return {
       ordem: i + 1,
       nomeTecido,
       nomeCor: b.dataset.nomeCor || '',
       comp: parseFloat(b.querySelector('.enf-comp').value) || 0,
       larg: parseFloat(b.querySelector('.enf-larg').value) || 0,
-      camadas: ehVies ? 1 : camadasInput
+      camadas: ehVies ? 1 : camadasInput,
+      // Campo VAZIO não vira 0: em branco quer dizer "segue a grade", e 0 quer
+      // dizer "esta fase não gasta bobina". A mesma distinção das camadas.
+      bobinas: bobinasInput == null ? '' : bobinasInput
     };
   });
 }
+
+/* A DICA DO CAMPO "BOBINAS PREVISTAS" DA JANELA DA OS.
+   Mostra, no placeholder e na linha de baixo, o numero que a folha usaria se o
+   campo ficasse em branco — o do cadastro da grade, ja na proporcao das camadas
+   deste enfesto. Assim quem escreve por cima sabe o que esta trocando, em vez de
+   descobrir depois de imprimir.
+
+   O numero e calculado pelo CAMINHO DA FOLHA (consumoEnfestoOS + bobinasEfetivasFase)
+   sobre a OS montada do proprio formulario. Refazer a conta aqui daria uma segunda
+   fonte de verdade, que e como as duas se separam sem ninguem notar. */
+function atualizarBobinasPrevistasForm() {
+  const blocos = Array.from(document.querySelectorAll('#f-enfestos-blocos .enfesto-bloco'));
+  if (!blocos.length) return;
+  let auto = [];
+  try {
+    const o = coletaOS();
+    // Sem os overrides: e justamente o numero que eles substituem.
+    ((o.enfesto || {}).blocos || []).forEach(b => { b.bobinas = ''; });
+    const g = (STATE.grades || []).find(x => x.id === o.gradeId);
+    const bobPorOrdem = {};
+    let temPrev = false;
+    ((g && g.fases) || []).forEach(f => {
+      const bb = parseBobinas(f.bobinas);
+      if (bb != null) { bobPorOrdem[f.ordem] = bb; if (bb > 0) temPrev = true; }
+    });
+    auto = consumoEnfestoOS(o).map(L => {
+      const prev = (temPrev && bobPorOrdem[L.ordem] != null) ? bobPorOrdem[L.ordem] : null;
+      const val = bobinasEfetivasFase(o, prev, L.ordem, L);
+      return (typeof val === 'number' && isFinite(val)) ? val : null;
+    });
+  } catch (e) {
+    // Formulario ainda pela metade (sem grade, sem desenho): sem dica, e sem
+    // derrubar o resto do recalculo do enfesto por causa dela.
+    auto = [];
+  }
+  blocos.forEach((b, i) => {
+    const inp = b.querySelector('.enf-bobinas');
+    const dica = b.querySelector('.enf-bobinas-hint');
+    if (!inp) return;
+    const n = auto[i];
+    inp.placeholder = n == null ? 'auto' : String(n);
+    if (!dica) return;
+    const escrito = String(inp.value).trim() !== '';
+    if (escrito) {
+      dica.textContent = n == null
+        ? 'Escrito nesta OS — a folha usa este número.'
+        : `Escrito nesta OS — a folha usa este número no lugar de ${n}.`;
+    } else {
+      dica.textContent = n == null
+        ? 'Em branco: a grade não prevê bobinas nesta fase, e a folha mostra —.'
+        : `Em branco: segue a grade, que prevê ${n} para este enfesto.`;
+    }
+  });
+}
+window.atualizarBobinasPrevistasForm = atualizarBobinasPrevistasForm;
 
 function addTecidoRow(data = {}) {
   const cont = document.getElementById('tecidos-rows');
@@ -15807,6 +15873,15 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
       && _faseNaoEnfestadaPorTom(o, ordem)) return 0;
 
+  // A previsão escrita NA PRÓPRIA OS manda em tudo o que vem abaixo. Quem digitou
+  // ali estava olhando ESTE enfesto — não a média da grade —, então o número vale
+  // como está: sem proporção de camadas, e sem a conta de peso da ribana. É
+  // também o único jeito de a ribana ter previsão enquanto falta cadastrar a
+  // gramatura dela e o peso da bobina.
+  if (L && L.bobinasOS != null && isFinite(Number(L.bobinasOS)) && Number(L.bobinasOS) >= 0) {
+    return arredonda(Number(L.bobinasOS));
+  }
+
   if (ehFaseRibana(L)) {
     // Exige a gramatura DA RIBANA naquela cor — não a do tecido principal, que é
     // o que a fase costuma ter emprestado — e o peso médio da bobina.
@@ -15882,6 +15957,14 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
       && _faseNaoEnfestadaPorTom(o, ordem)) {
     return 'Fase declarada nao enfestada na folha: nao consumiu bobina.';
+  }
+
+  // Escrito a mao nesta OS: nao ha conta a explicar, e nao ha porque esconder
+  // que o numero nao veio da grade.
+  if (L && L.bobinasOS != null && isFinite(Number(L.bobinasOS)) && Number(L.bobinasOS) >= 0) {
+    return `Previsao escrita nesta OS (campo "Bobinas previstas" do enfesto):`
+         + ` ${num(L.bobinasOS)}. Vale como esta, no lugar da previsao da grade.`
+         + ` Apague o campo para a folha voltar a seguir o cadastro da grade.`;
   }
 
   // A ribana tem conta propria, e ela so existe com as duas pontas cadastradas.
@@ -16658,6 +16741,10 @@ function atualizarCalculosEnfesto() {
   } else {
     calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
   }
+
+  // As bobinas previstas acompanham as camadas: mudou o enfesto, muda o que a
+  // grade preve para ele, e a dica do campo tem de dizer o numero novo.
+  atualizarBobinasPrevistasForm();
 }
 
 function calcularCamadasParaProducao() {
@@ -20810,8 +20897,14 @@ function consumoEnfestoOS(o) {
     // O enfesto CHEIO desta fase, para a previsão de bobinas saber com o que
     // comparar as camadas de cima. Só isso: não entra no kg nem no estoque.
     const camadasCheias = camadasCheiasDaFase(o, ord, ehVies);
+    // A previsão de bobinas escrita NESTA OS (campo "Bobinas previstas" de cada
+    // enfesto, na janela da OS). Em branco = null = segue a grade; um número =
+    // esta OS gasta isto. Zero é resposta, e por isso o teste é contra '' e não
+    // contra falsy.
+    const bobinasOS = (b && b.bobinas != null && b.bobinas !== '' && isFinite(Number(b.bobinas)))
+      ? Number(b.bobinas) : null;
     return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg,
-             pesoDesteTecido, pesoBobina, ehVies, camadasCheias };
+             pesoDesteTecido, pesoBobina, ehVies, camadasCheias, bobinasOS };
   });
 }
 
