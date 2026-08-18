@@ -19503,9 +19503,45 @@ function numeroOSordenacao(o) {
   return Number.isNaN(n) ? Infinity : n;
 }
 
+/* A grade escrita por extenso ("P 2 · M 2 · G 2"), para o title da celula. Vem
+   do que a OS GRAVOU, e nao do cadastro: e o pedido daquela OS, que pode ter
+   sido ajustado a mao depois de aplicar a grade. */
+function _gradeDetalheDaOS(o) {
+  const g = (o && o.grade) || {};
+  const partes = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+    .map(k => ({ k, q: parseInt(g[k], 10) || 0 }))
+    .filter(x => x.q > 0)
+    .map(x => `${x.k.toUpperCase()} ${x.q}`);
+  return partes.length ? partes.join(' · ') + ` = ${g.total || 0} pç por camada` : '';
+}
+
+/* A celula da coluna Grade da lista de OS Salvas.
+
+   O nome vem de `_gradeNomeDaOS`, a mesma funcao que o modal de operacoes usa —
+   ela ja resolve a grade viva pela chave do historico (`_gradeIdDaOS`) e cai no
+   que ficou gravado na OS quando a grade foi excluida. Uma segunda funcao aqui
+   so para a lista faria as duas telas dizerem nomes diferentes da mesma grade.
+
+   O nome vem no formato "<tamanhos> | <codigo> | <largura>"; os tamanhos ficam na
+   linha de cima e o resto embaixo, menor — inteiro numa linha so, o nome espremia
+   as outras colunas da tabela. */
+function _gradeCelulaLista(o) {
+  const nome = _gradeNomeDaOS(o);
+  // `_gradeNomeDaOS` ja devolve '—' quando nao achou nada.
+  if (!nome || nome === '—') return '<span style="color:var(--ink-3)">—</span>';
+  const partes = nome.split('|').map(x => x.trim()).filter(Boolean);
+  const tams = partes[0] || nome;
+  const resto = partes.slice(1).join(' | ');
+  const det = _gradeDetalheDaOS(o);
+  return `<span${det ? ` title="${esc(det)}"` : ''}>`
+    + `<strong style="white-space:nowrap;">${esc(tams)}</strong>`
+    + (resto ? `<br><span style="color:var(--ink-3);font-size:11px;white-space:nowrap;">${esc(resto)}</span>` : '')
+    + `</span>`;
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
-  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
+  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
   const ordenadas = STATE.ordens.slice().sort((a, b) => {
     const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
@@ -19520,7 +19556,7 @@ function renderListaOS() {
   const filtradas = termo
     ? ordenadas.filter(o => String(o.os || '').toLowerCase().includes(termo))
     : ordenadas;
-  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
+  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
   tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
     // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
@@ -19544,6 +19580,7 @@ function renderListaOS() {
         ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
         : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(o.colecaoNome)||'—'}</td>
+      <td>${_gradeCelulaLista(o)}</td>
       <td>${esc(formatDate(o.data))}</td>
       <td>${o.grade?.total||0} pç</td>
       <td class="col-actions row-actions">
