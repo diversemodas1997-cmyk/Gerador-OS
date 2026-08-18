@@ -2753,7 +2753,12 @@ function goto(page) {
   if (page === 'cad-funcoes') renderFuncoes();
   if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'cad-componentes') renderComponentesCad();
-  if (page === 'lista-os') renderListaOS();
+  if (page === 'lista-os') {
+    // Consome o grupo armado pelo atalho do Ranking (null nos demais caminhos).
+    _listaOsGrupo = _listaOsGrupoPendente;
+    _listaOsGrupoPendente = null;
+    renderListaOS();
+  }
   if (page === 'estoque') renderEstoque();
   if (page === 'compra') renderCompra();
   if (page === 'corte') renderFasePainel(0);
@@ -6041,6 +6046,37 @@ function faseAtualOS(o) {
 // O período em foco. '' nos dois = a fábrica inteira, desde a primeira OS.
 let _rankAno = '', _rankMes = '';
 
+/* O BALCAO DOS GRUPOS DE OS.
+
+   Cada linha do ranking sabe quais OS a formaram, e a celula da contagem e o
+   atalho para elas: clicar leva para OS Salvas mostrando so aquelas. Antes de
+   existir isto, ver "CM.LISA · Preto · P ao G3 saiu 6 vezes" nao levava a lugar
+   nenhum — para descobrir QUAIS 6, era abrir OS por OS.
+
+   Os grupos ficam aqui e nao dentro do onclick porque uma lista de numeros num
+   atributo HTML e caso classico de aspas que quebram o atributo. A lista e
+   refeita a cada `renderRanking`, entao o indice sempre aponta para o que esta
+   na tela. */
+let _rankGrupos = [];
+
+// O grupo escolhido viaja num campo PENDENTE, que o `goto` consome ao abrir a
+// lista. Assim o recorte vale so para a viagem que o trouxe: chegar em OS Salvas
+// por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
+// um clique dado meia hora antes.
+let _listaOsGrupoPendente = null;
+
+function _rankingAbrirGrupo(i) {
+  const g = _rankGrupos[i];
+  if (!g || !g.os || !g.os.length) return;
+  _listaOsGrupoPendente = { os: g.os.slice(), rotulo: g.rotulo || '' };
+  // A busca por texto e o grupo respondem a mesma pergunta de dois jeitos; deixar
+  // as duas ligadas mostraria "nenhuma OS" sem dizer por que.
+  const busca = document.getElementById('busca-os');
+  if (busca) busca.value = '';
+  goto('lista-os');
+}
+window._rankingAbrirGrupo = _rankingAbrirGrupo;
+
 const _RANK_MES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 function _rankRotuloMes(aaaaMm) {
@@ -6076,10 +6112,24 @@ function _rankingProducao(ano, mes) {
   };
   const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim()).filter(dentro);
   const linhas = new Map();
-  const somar = (mapa, chave, pecas) => {
-    if (!mapa.has(chave)) mapa.set(chave, { n: 0, pecas: 0 });
+  // Cada linha guarda TAMBEM quais OS a formaram. E o que transforma o ranking de
+  // um placar numa lista de trabalho: ver que "CM.LISA · Preto · P ao G3" saiu 22
+  // vezes so vale se der para ir olhar quais 22 foram essas.
+  //
+  // `n` conta PARES (uma OS de duas cores entra uma vez em cada), e o conjunto de
+  // OS e por numero: a mesma OS que cai duas vezes na mesma linha aparece uma vez
+  // so na lista. Por isso os dois numeros podem nao bater, e a coluna diz o que
+  // cada um e.
+  const somar = (mapa, chave, pecas, osNum) => {
+    if (!mapa.has(chave)) mapa.set(chave, { n: 0, pecas: 0, os: new Set() });
     const e = mapa.get(chave); e.n++; e.pecas += pecas;
+    if (osNum) e.os.add(osNum);
   };
+  // Numero de OS ordenado como a casa le: "0099" antes de "0100", e nao pela
+  // ordem alfabetica, que poria "0100" antes de "0099" quando os zeros a esquerda
+  // variam.
+  const ordenarOS = arr => [...arr].sort(
+    (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const porCor = new Map(), porSkuCor = new Map();
   // A série do tempo: por MÊS quando se está dentro de um ano, por ANO quando se
   // olha a fábrica inteira. É o mesmo gesto — abrir o período em foco na fatia
@@ -6133,21 +6183,21 @@ function _rankingProducao(ano, mes) {
       // A chave e a LISTA em JSON, nao um texto emendado: "P ao G3" e "CM.LISA"
       // tem espacos e pontos, e qualquer separador escolhido a mao acabaria
       // aparecendo dentro de um nome e cortando a chave no lugar errado.
-      somar(linhas, JSON.stringify([tipo, cor, grade]), pecas);
-      somar(porCor, JSON.stringify([cor]), pecas);
-      somar(porSkuCor, JSON.stringify([sku]), pecas);
+      somar(linhas, JSON.stringify([tipo, cor, grade]), pecas, o.os);
+      somar(porCor, JSON.stringify([cor]), pecas, o.os);
+      somar(porSkuCor, JSON.stringify([sku]), pecas, o.os);
     });
     const f = fatia(o);
-    if (f) somar(porPeriodo, JSON.stringify([f]), totalPecas);
+    if (f) somar(porPeriodo, JSON.stringify([f]), totalPecas, o.os);
   });
   const ordenar = m => [...m.entries()]
-    .map(([k, e]) => ({ partes: JSON.parse(k), ...e }))
+    .map(([k, e]) => ({ partes: JSON.parse(k), n: e.n, pecas: e.pecas, os: ordenarOS(e.os) }))
     .sort((a, b) => b.n - a.n || b.pecas - a.pecas);
   datas.sort();
   // A série do tempo sai em ordem CRONOLÓGICA, não por tamanho: aqui o que se lê
   // é a evolução, e ordenar por volume embaralharia justamente isso.
   const serie = [...porPeriodo.entries()]
-    .map(([k, e]) => ({ periodo: JSON.parse(k)[0], ...e }))
+    .map(([k, e]) => ({ periodo: JSON.parse(k)[0], n: e.n, pecas: e.pecas, os: ordenarOS(e.os) }))
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
   return {
     total: ord.length, semGrade: semSku, pares, de: datas[0] || '', ate: datas[datas.length - 1] || '',
@@ -6202,6 +6252,16 @@ function renderRanking() {
   const num = n => Number(n || 0).toLocaleString('pt-BR');
   const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
     + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
+  // Cada linha do ranking guarda o grupo de OS dela num balcao, e a celula da
+  // contagem vira o atalho para ele. O indice viaja no onclick porque uma lista
+  // de numeros dentro de um atributo HTML e caso classico de aspas que quebram.
+  _rankGrupos = [];
+  const atalhoOS = (n, os, rotulo) => {
+    if (!(os && os.length)) return String(n);
+    const i = _rankGrupos.push({ os, rotulo }) - 1;
+    return `<button type="button" class="rank-os-link" onclick="_rankingAbrirGrupo(${i})"`
+      + ` title="Ver as ${os.length} OS de ${esc(rotulo)}">${n}</button>`;
+  };
   const maxL = r.linhas[0] ? r.linhas[0].n : 0;
   const maxC = r.porCor[0] ? r.porCor[0].n : 0;
   const maxS = r.porSkuCor[0] ? r.porSkuCor[0].n : 0;
@@ -6222,7 +6282,7 @@ function renderRanking() {
           <tr>
             <td style="text-align:right;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${i + 1}</td>
             <td><strong>${esc(x.partes.join(' · '))}</strong></td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${x.n}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${atalhoOS(x.n, x.os, x.partes.join(' · '))}</td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">${pct(x.n)}</td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
             <td>${barra(x.n, max)}</td>
@@ -6249,7 +6309,8 @@ function renderRanking() {
           <tr style="cursor:pointer;" title="Ver só este período"
               onclick="_rankingFiltrar('${r.porMes ? 'mes' : 'ano'}', '${esc(x.periodo)}')">
             <td><strong>${esc(r.porMes ? _rankRotuloMes(x.periodo) : x.periodo)}</strong></td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${x.n}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;"
+                onclick="event.stopPropagation()">${atalhoOS(x.n, x.os, r.porMes ? _rankRotuloMes(x.periodo) : x.periodo)}</td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
             <td>${barra(x.n, maxP)}</td>
           </tr>`).join('')}</tbody>
@@ -19503,6 +19564,23 @@ function numeroOSordenacao(o) {
   return Number.isNaN(n) ? Infinity : n;
 }
 
+/* O GRUPO DE OS VINDO DO RANKING.
+
+   `null` = a lista mostra tudo, como sempre. Preenchido = a lista mostra so
+   aquelas OS, com um aviso em cima dizendo de onde vieram e um botao para
+   desfazer — sem o aviso, quem chegasse na lista por outro caminho a veria pela
+   metade sem entender por que.
+
+   Mora fora do filtro de texto de proposito: sao duas perguntas diferentes, e a
+   busca por numero continua funcionando DENTRO do grupo. */
+let _listaOsGrupo = null;
+
+function limparGrupoListaOS() {
+  _listaOsGrupo = null;
+  renderListaOS();
+}
+window.limparGrupoListaOS = limparGrupoListaOS;
+
 /* A grade escrita por extenso ("P 2 · M 2 · G 2"), para o title da celula. Vem
    do que a OS GRAVOU, e nao do cadastro: e o pedido daquela OS, que pode ter
    sido ajustado a mao depois de aplicar a grade. */
@@ -19539,9 +19617,36 @@ function _gradeCelulaLista(o) {
     + `</span>`;
 }
 
+// O aviso de que a lista esta recortada por um grupo do Ranking. Fica logo acima
+// da tabela, e some sozinho quando nao ha grupo.
+function _renderAvisoGrupoListaOS(mostradas) {
+  const box = document.getElementById('lista-os-grupo');
+  if (!box) return;
+  if (!(_listaOsGrupo && _listaOsGrupo.os && _listaOsGrupo.os.length)) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
+  const pedidas = _listaOsGrupo.os.length;
+  // OS do ranking que nao esta mais na lista (excluida depois). Dizer isso e mais
+  // util do que a conta nao fechar em silencio.
+  const sumiram = pedidas - mostradas;
+  box.classList.remove('hidden');
+  box.innerHTML = `<div class="info-box" style="margin-bottom:12px;display:flex;gap:12px;`
+    + `align-items:center;flex-wrap:wrap;">`
+    + `<span>Mostrando as <b>${mostradas}</b> OS de <b>${esc(_listaOsGrupo.rotulo || 'um grupo do ranking')}</b>`
+    + (sumiram > 0 ? ` · <b>${sumiram}</b> não está${sumiram > 1 ? 'o' : ''} mais na lista` : '')
+    + `</span>`
+    + `<button class="btn small ghost" onclick="limparGrupoListaOS()">Ver todas as OS</button></div>`;
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
-  if (!STATE.ordens.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`; return; }
+  if (!STATE.ordens.length) {
+    _renderAvisoGrupoListaOS(0);
+    tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
+    return;
+  }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
   const ordenadas = STATE.ordens.slice().sort((a, b) => {
     const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
@@ -19550,12 +19655,19 @@ function renderListaOS() {
     if (nb === Infinity) return -1;
     return nb - na || String(b.os || '').localeCompare(String(a.os || ''));
   });
+  // O grupo vindo do Ranking, quando ha um: corta a lista nas OS daquela linha
+  // ANTES da busca por texto, para a busca continuar valendo dentro do grupo.
+  const doGrupo = (_listaOsGrupo && _listaOsGrupo.os && _listaOsGrupo.os.length)
+    ? new Set(_listaOsGrupo.os.map(x => String(x).trim()))
+    : null;
+  const noGrupo = doGrupo ? ordenadas.filter(o => doGrupo.has(String(o.os || '').trim())) : ordenadas;
   // Filtro por número da OS (busca livre; ignora espaços).
   const buscaEl = document.getElementById('busca-os');
   const termo = (buscaEl ? buscaEl.value : '').trim().toLowerCase();
   const filtradas = termo
-    ? ordenadas.filter(o => String(o.os || '').toLowerCase().includes(termo))
-    : ordenadas;
+    ? noGrupo.filter(o => String(o.os || '').toLowerCase().includes(termo))
+    : noGrupo;
+  _renderAvisoGrupoListaOS(noGrupo.length);
   if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
   tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por

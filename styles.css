@@ -1117,6 +1117,25 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   font-family: inherit;
   margin-left: 4px;
 }
+/* O ATALHO DA COLUNA OS DO RANKING.
+
+   Continua parecendo o numero que sempre foi — mesma fonte monoespacada, mesmo
+   alinhamento a direita — e so o sublinhado pontilhado avisa que da para clicar.
+   Um botao desenhado como botao em toda linha da tabela viraria uma parede de
+   caixinhas e tiraria a leitura do ranking, que e comparar numeros. */
+.rank-os-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  border-bottom: 1px dotted var(--ink-3);
+}
+.rank-os-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.rank-os-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .row-actions .edit:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .row-actions .del:hover { background: var(--alert); color: #fff; border-color: var(--alert); }
 
