@@ -15709,7 +15709,7 @@ function sugestaoBobinasFase(tecidoId, comp) {
  *
  * Por isso o peso da bobina NÃO entra na conta: ele SAI dela.
  *
- *     bobinas     = cadastro da grade × (camadas desta OS ÷ 80), para cima
+ *     bobinas     = cadastro × (camadas desta OS ÷ camadas do enfesto CHEIO)
  *     kg da fase  = comp × larg × camadas × gramatura ÷ 1000
  *     ---------------------------------------------------------------
  *     peso/bobina = kg ÷ bobinas          <- resultado, não premissa
@@ -15731,12 +15731,21 @@ function sugestaoBobinasFase(tecidoId, comp) {
  */
 
 // Em quantas camadas o campo "bobinas previstas" do cadastro da grade foi
-// pensado. A casa preencheu aquele campo imaginando o enfesto CHEIO de malha
-// algodão, que é o limite do tecido (LIMITE_CAMADAS.malha).
+// pensado: no enfesto CHEIO **desta grade**, que é o que a casa tem na frente
+// quando preenche o campo. Esse número chega aqui pronto, em `L.camadasCheias`
+// (montado por `consumoEnfestoOS` a partir de `camadasCheiasDaFase`), fase por
+// fase — o forro de capuz "2x" enfesta metade do corpo, e o cheio dele é metade
+// do cheio do corpo.
 //
-// Vale como referência ABSOLUTA: uma OS de 40 camadas gasta metade do que está
-// cadastrado, independentemente do que ela tenha planejado.
-const CAMADAS_REF_BOBINAS_CADASTRO = 80;
+// Até 18/08/2026 a referência era a constante 80, o limite da MALHA ALGODÃO
+// (LIMITE_CAMADAS.malha). Moletom não passa de 36 (LIMITE_CAMADAS.moletom):
+// enfesto de moletom cheio já entrava na conta valendo 36/80 = 45%, e toda grade
+// de moletom aparecia na folha com menos da metade do que estava cadastrado. Foi
+// assim na OS 0485 (BM.TRI 177cm), onde as 6 bobinas do Corpo Parte 1 viraram 3
+// e as 12 do Corpo Parte 3 viraram 6, num enfesto que estava CHEIO.
+//
+// A referência segue ABSOLUTA, só que agora é a da grade certa: meio enfesto
+// gasta meia previsão, e o enfesto cheio devolve o cadastro intacto.
 
 // O que a casa vê numa bobina de verdade, só para CONFERIR o resultado. Não
 // entra em conta nenhuma — se entrasse, voltaria a ser premissa.
@@ -15814,8 +15823,13 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
   if (!isFinite(prev) || prev <= 0) return bobinasPrevistas;
 
   const cam = parseInt(L && L.camadas, 10) || 0;
+  const ref = parseInt(L && L.camadasCheias, 10) || 0;
   if (!(cam > 0)) return arredonda(prev);
-  return arredonda(prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO));
+  // Sem saber o enfesto cheio desta grade não há proporção a fazer, e o cadastro
+  // é a medida que a casa tirou a olho — devolve ele inteiro em vez de inventar
+  // uma referência. Acontece só em OS sem grade viva, que nem tem cadastro.
+  if (!(ref > 0)) return arredonda(prev);
+  return arredonda(prev * (cam / ref));
 }
 
 // Quanto pesa cada bobina, SEGUNDO ESTA FASE. É consequência, não premissa: o
@@ -15897,12 +15911,17 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
   if (!isFinite(prev) || prev <= 0) return padrao;
   const cam = parseInt(L && L.camadas, 10) || 0;
   if (!(cam > 0)) return padrao;
+  const ref = parseInt(L && L.camadasCheias, 10) || 0;
+  if (!(ref > 0)) return padrao;
 
-  const cru = prev * (cam / CAMADAS_REF_BOBINAS_CADASTRO);
+  const cru = prev * (cam / ref);
   const inteiras = bobinaInteira(cru);
-  let txt = `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para um enfesto cheio de`
-          + ` ${CAMADAS_REF_BOBINAS_CADASTRO} camadas, e esta fase tem ${cam} —`
-          + ` ${num(cru)}, arredondado para cima: ${inteiras}.`;
+  let txt = cam === ref
+    ? `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para o enfesto cheio desta`
+      + ` fase, que e de ${ref} camadas — e esta OS enfestou as ${cam}, cheio.`
+    : `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para o enfesto cheio desta`
+      + ` fase, que e de ${ref} camadas, e esta OS tem ${cam} —`
+      + ` ${num(cru)}, arredondado para cima: ${inteiras}.`;
 
   // Metro e peso da bobina fecham a explicação como RESULTADO da conta, e não
   // como números de onde ela partiu.
@@ -20684,6 +20703,32 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
   return cam;
 }
 
+// Quantas camadas ESTA FASE teria num enfesto CHEIO desta grade. É a referência
+// contra a qual o campo "bobinas previstas" do cadastro foi preenchido: quem
+// preenche está olhando um enfesto de verdade, no máximo que o tecido aguenta.
+//
+// Vem em duas partes, e as duas já existiam:
+//   1. `compraLimiteCamadasGrade` diz o máximo da GRADE — vence o tecido mais
+//      restritivo entre as fases (moletom 36 manda sobre malha 80).
+//   2. `camadasPadraoDaFase` desdobra esse máximo para cada fase pela regra da
+//      própria fase — o forro "2x" fica na metade, a ribana escala com a grade.
+//
+// Ou seja: o cheio do corpo do moletom é 36, e o cheio do forro de capuz da
+// mesma grade é 18. Cada fase é comparada com o cheio DELA, e não com o do
+// corpo — foi isso que fez o forro da OS 0485 aparecer com 2 bobinas de 6.
+//
+// Zero quando a grade sumiu ou nenhum tecido dela tem limite conhecido. Aí não
+// há proporção a fazer, e `bobinasEfetivasFase` devolve o cadastro inteiro.
+function camadasCheiasDaFase(o, ordem, ehVies) {
+  // Viés é uma camada só, cheio ou vazio: a referência dele é ele mesmo.
+  if (ehVies) return 1;
+  const grade = (STATE.grades || []).find(x => x.id === (o && o.gradeId));
+  if (!grade) return 0;
+  const lim = compraLimiteCamadasGrade(grade);
+  if (!(lim > 0)) return 0;
+  return parseInt(camadasPadraoDaFase(o, ordem, lim), 10) || 0;
+}
+
 function consumoEnfestoOS(o) {
   const e = o.enfesto || {};
   const tecs = o.tecidos || [];
@@ -20762,8 +20807,11 @@ function consumoEnfestoOS(o) {
     // Peso médio de uma bobina DESTE tecido. Só a ribana usa (ver
     // `bobinasEfetivasFase`); vazio é resposta legítima e vira "—" na folha.
     const pesoBobina = pesoBobinaPorNome(tecidoReal) || pesoBobinaPorNome(nomeEnf);
+    // O enfesto CHEIO desta fase, para a previsão de bobinas saber com o que
+    // comparar as camadas de cima. Só isso: não entra no kg nem no estoque.
+    const camadasCheias = camadasCheiasDaFase(o, ord, ehVies);
     return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg,
-             pesoDesteTecido, pesoBobina, ehVies };
+             pesoDesteTecido, pesoBobina, ehVies, camadasCheias };
   });
 }
 

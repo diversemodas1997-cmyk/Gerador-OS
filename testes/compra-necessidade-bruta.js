@@ -48,8 +48,7 @@ function pegaConst(nome) {
 }
 
 const CONSTS = ['LIMITE_CAMADAS', 'MULTIPLICADOR_PECAS', 'LABEL_CATEGORIA',
-                'UNIDADES_PADRAO_FORRO', 'CAMADAS_REF_BOBINAS_CADASTRO',
-                'CEIL_BOBINA_EPS', '_COMPRA_TAMS'];
+                'UNIDADES_PADRAO_FORRO', 'CEIL_BOBINA_EPS', '_COMPRA_TAMS'];
 
 const FUNCOES = [
   // nomes, cores e tecidos
@@ -59,7 +58,8 @@ const FUNCOES = [
   'coresPorFaseDaGrade',
   // camadas
   '_tamanhoQueMandaNaGrade', 'camadasDaFaseRibana', '_ribanaEscalaComGrade',
-  'camadasPadraoDaFase', 'multiplicadorPecaOS', '_faseNaoEnfestadaPorTom',
+  'camadasPadraoDaFase', 'camadasCheiasDaFase', 'multiplicadorPecaOS',
+  '_faseNaoEnfestadaPorTom',
   // A forma do pano (tubular/aberto) é quem manda nas unidades por camada desde
   // 17/08/2026 — `multiplicadorPecaOS` passa por aqui. Ver testes/forma-do-pano.js.
   'unidadesPorCamadaTecido', 'unidadesPorCamadaPrincipal', 'tecidosDaOS',
@@ -176,47 +176,63 @@ const c1 = api.compraConsumoItem(item1);
 // 8 m x 1,80 m x 36 camadas x 500 g/m2 / 1000 = 259,2 kg
 ok('8. o quilo do corpo é comprimento x largura x camadas x gramatura',
   perto(c1.linhas[0].kgTotal, 259.2), c1.linhas[0].kgTotal);
-// 14 bobinas para o enfesto cheio de 80 camadas, e esta OS tem 36: 14 x 36/80 = 6,3
-ok('9. a bobina do corpo vem do cadastro da grade, na proporção das camadas',
-  perto(c1.linhas[0].bobinas, 6.3), c1.linhas[0].bobinas);
-ok('10. e vem CRUA, sem arredondar (quem arredonda é o total)',
-  c1.linhas[0].bobinas !== 7, c1.linhas[0].bobinas);
+// 14 bobinas para o enfesto cheio DESTA grade, que é de moletom e para nas 36
+// camadas do tecido (LIMITE_CAMADAS.moletom). Esta OS tem 36: está cheia, e o
+// cadastro sai intacto. Até 18/08/2026 a referência era a constante 80, da malha
+// algodão, e o mesmo enfesto cheio devolvia 6,3 — ver testes/bobinas-camadas-reais.js.
+ok('9. no enfesto cheio da grade a bobina sai igual ao cadastro',
+  perto(c1.linhas[0].bobinas, 14), c1.linhas[0].bobinas);
+// Meio enfesto de moletom são 18 camadas, não 40: 14 x 18/36 = 7.
+const cMeio = api.compraConsumoItem(
+  { id: 'i-meio', gradeId: G1, desenhoId: D1, camadas: 18, repeticoes: 1 });
+ok('10. meio enfesto gasta meia previsão — e meio é metade do cheio DA GRADE',
+  perto(cMeio.linhas[0].bobinas, 7), cMeio.linhas[0].bobinas);
+ok('11. e vem CRUA, sem arredondar (quem arredonda é o total)',
+  api.compraConsumoItem({ id: 'i-q', gradeId: G1, desenhoId: D1, camadas: 20, repeticoes: 1 })
+    .linhas[0].bobinas % 1 !== 0);
 // 2 m x 1,00 m x 36 x 400 / 1000 = 28,8 kg ; bobina de ribana = 28,8 / 20 = 1,44
-ok('11. a ribana pesa pela gramatura DELA', perto(c1.linhas[1].kgTotal, 28.8), c1.linhas[1].kgTotal);
-ok('12. e a bobina dela sai do peso, não do cadastro da grade',
+ok('12. a ribana pesa pela gramatura DELA', perto(c1.linhas[1].kgTotal, 28.8), c1.linhas[1].kgTotal);
+ok('13. e a bobina dela sai do peso, não do cadastro da grade',
   perto(c1.linhas[1].bobinas, 1.44), c1.linhas[1].bobinas);
 // grade M=1, G=2, GG=1 -> menor pedido 1 ; moletom não corta em camada dupla
-ok('13. as peças saem do menor pedido da grade x camadas', c1.pecas === 36, c1.pecas);
+ok('14. as peças saem do menor pedido da grade x camadas', c1.pecas === 36, c1.pecas);
 
 /* ---------- 4. o total: soma antes de arredondar ---------- */
 console.log('\n-- a bobina soma antes de arredondar --');
 
-const t1 = api.compraNecessidadeBruta([item1]);
+// Um enfesto PARCIAL, de propósito: 14 x 9/36 = 3,5 bobinas. O enfesto cheio da
+// grade dá 14 redondas, e um número inteiro não mostraria o que esta seção
+// testa — que a fração sobrevive até o total.
+const itemPeq = { id: 'ip', gradeId: G1, desenhoId: D1, camadas: 9, repeticoes: 1 };
+const t1 = api.compraNecessidadeBruta([itemPeq]);
 const mol1 = t1.find(x => x.tecidoNome === 'Moletom');
 const rib1 = t1.find(x => x.tecidoNome === 'Ribana Moletom');
-ok('14. uma produção: 6,3 bobinas viram 7', mol1.bobinas === 7, mol1.bobinas);
-ok('15. e 1,44 bobina de ribana vira 2', rib1.bobinas === 2, rib1.bobinas);
+ok('15. uma produção: 3,5 bobinas viram 4', mol1.bobinas === 4, mol1.bobinas);
+// 2 m x 1,00 m x 9 camadas x 400 g / 1000 = 7,2 kg ; 7,2 / 20 = 0,36 bobina
+ok('16. e 0,36 bobina de ribana vira 1', rib1.bobinas === 1, rib1.bobinas);
 
-// DUAS produções iguais: 6,3 + 6,3 = 12,6 -> 13. Arredondando cada uma antes de
-// somar dariam 14, e a casa compraria uma bobina a mais por engano de conta.
-const item2 = { id: 'i2', gradeId: G1, desenhoId: D1, camadas: 36, repeticoes: 1 };
-const t2 = api.compraNecessidadeBruta([item1, item2]);
+// DUAS produções iguais: 3,5 + 3,5 = 7. Arredondando cada uma antes de somar
+// dariam 8, e a casa compraria uma bobina a mais por engano de conta.
+const item2 = { id: 'i2', gradeId: G1, desenhoId: D1, camadas: 9, repeticoes: 1 };
+const t2 = api.compraNecessidadeBruta([itemPeq, item2]);
 const mol2 = t2.find(x => x.tecidoNome === 'Moletom');
-ok('16. duas produções de 6,3 bobinas são 13, e não 14', mol2.bobinas === 13, mol2.bobinas);
-ok('17. o quilo dobra junto', perto(mol2.kg, 518.4), mol2.kg);
+ok('17. duas produções de 3,5 bobinas são 7, e não 8', mol2.bobinas === 7, mol2.bobinas);
+// 8 m x 1,8 m x 9 camadas x 500 g / 1000 = 64,8 kg, duas vezes
+ok('18. o quilo dobra junto', perto(mol2.kg, 129.6), mol2.kg);
 
 // O mesmo pelo campo "enfestos iguais".
-const t3 = api.compraNecessidadeBruta([{ ...item1, repeticoes: 2 }]);
+const t3 = api.compraNecessidadeBruta([{ ...itemPeq, repeticoes: 2 }]);
 const mol3 = t3.find(x => x.tecidoNome === 'Moletom');
-ok('18. dois enfestos iguais dão o mesmo que dois itens', mol3.bobinas === 13, mol3.bobinas);
+ok('19. dois enfestos iguais dão o mesmo que dois itens', mol3.bobinas === 7, mol3.bobinas);
 
 /* ---------- 5. kg por bobina: resultado, nunca premissa ---------- */
 console.log('\n-- o peso da bobina sai da conta --');
 
-// 259,2 kg / 6,3 bobinas = 41,14 kg. Moletom é pano pesado; o número serve de
-// conferência, e não entra em conta nenhuma.
-ok('19. o kg/bobina é o quilo dividido pelas bobinas CRUAS',
-  perto(mol1.kgPorBobina, 259.2 / 6.3, 0.01), mol1.kgPorBobina);
+// 64,8 kg / 3,5 bobinas = 18,51 kg. O número serve de conferência, e não entra
+// em conta nenhuma — e por sair das bobinas CRUAS ele é o mesmo em qualquer
+// número de camadas desta grade.
+ok('20. o kg/bobina é o quilo dividido pelas bobinas CRUAS',
+  perto(mol1.kgPorBobina, 64.8 / 3.5, 0.01), mol1.kgPorBobina);
 
 /* ---------- 6. o que falta comprar desconta o estoque ---------- */
 console.log('\n-- a comprar = bruto - disponível --');
@@ -228,11 +244,12 @@ comEstoque.estoqueMov = [
 api.setState(comEstoque);
 const t4 = api.compraNecessidadeBruta([item1]);
 const mol4 = t4.find(x => x.tecidoNome === 'Moletom');
-ok('20. o disponível aparece', perto(mol4.disponivel, 100), mol4.disponivel);
-ok('21. e sai do bruto', perto(mol4.kgComprar, 159.2), mol4.kgComprar);
-// 159,2 kg a comprar / 41,14 kg por bobina = 3,87 -> 4 bobinas
-ok('22. o quilo a comprar volta a virar bobina pelo kg/bobina da própria conta',
-  mol4.bobinasComprar === 4, mol4.bobinasComprar);
+ok('21. o disponível aparece', perto(mol4.disponivel, 100), mol4.disponivel);
+ok('22. e sai do bruto', perto(mol4.kgComprar, 159.2), mol4.kgComprar);
+// 259,2 kg / 14 bobinas = 18,51 kg por bobina ;
+// 159,2 kg a comprar / 18,51 = 8,6 -> 9 bobinas
+ok('23. o quilo a comprar volta a virar bobina pelo kg/bobina da própria conta',
+  mol4.bobinasComprar === 9, mol4.bobinasComprar);
 
 // Estoque de sobra: não se compra negativo.
 const sobrando = cadastroBase();
@@ -242,9 +259,9 @@ sobrando.estoqueMov = [
 api.setState(sobrando);
 const t5 = api.compraNecessidadeBruta([item1]);
 const mol5 = t5.find(x => x.tecidoNome === 'Moletom');
-ok('23. com estoque de sobra, não há o que comprar', mol5.kgComprar === 0 && mol5.bobinasComprar === 0,
+ok('24. com estoque de sobra, não há o que comprar', mol5.kgComprar === 0 && mol5.bobinasComprar === 0,
   mol5.kgComprar + ' kg / ' + mol5.bobinasComprar + ' bob');
-ok('24. mas o bruto continua sendo o bruto', perto(mol5.kg, 259.2), mol5.kg);
+ok('25. mas o bruto continua sendo o bruto', perto(mol5.kg, 259.2), mol5.kg);
 
 /* ---------- 7. cadastro incompleto não vira número inventado ---------- */
 console.log('\n-- o que falta cadastrar aparece, e não vira chute --');
@@ -256,7 +273,7 @@ semMedida.grades[0].fases[0].comp = '';
 api.setState(semMedida);
 const t6 = api.compraNecessidadeBruta([item1]);
 const mol6 = t6.find(x => x.tecidoNome === 'Moletom');
-ok('25. fase sem comprimento sai com zero quilo (e não com um quilo inventado)',
+ok('26. fase sem comprimento sai com zero quilo (e não com um quilo inventado)',
   !mol6 || mol6.kg === 0, mol6 && mol6.kg);
 
 const semGramatura = cadastroBase();
@@ -264,7 +281,7 @@ semGramatura.cores[0].peso = 0;
 api.setState(semGramatura);
 const t7 = api.compraNecessidadeBruta([item1]);
 const mol7 = t7.find(x => x.tecidoNome === 'Moletom');
-ok('26. cor sem gramatura também sai zerada', !mol7 || mol7.kg === 0, mol7 && mol7.kg);
+ok('27. cor sem gramatura também sai zerada', !mol7 || mol7.kg === 0, mol7 && mol7.kg);
 
 // Grade sem previsão de bobinas: o quilo continua, a bobina não se inventa.
 const semBobinas = cadastroBase();
@@ -273,9 +290,9 @@ semBobinas.grades[0].fases[1].bobinas = '';
 api.setState(semBobinas);
 const t8 = api.compraNecessidadeBruta([item1]);
 const mol8 = t8.find(x => x.tecidoNome === 'Moletom');
-ok('27. sem previsão no cadastro da grade, a bobina fica em branco', mol8.bobinas === null, mol8.bobinas);
-ok('28. mas o quilo continua lá', perto(mol8.kg, 259.2), mol8.kg);
-ok('29. e a tela sabe DIZER qual fase ficou sem previsão',
+ok('28. sem previsão no cadastro da grade, a bobina fica em branco', mol8.bobinas === null, mol8.bobinas);
+ok('29. mas o quilo continua lá', perto(mol8.kg, 259.2), mol8.kg);
+ok('30. e a tela sabe DIZER qual fase ficou sem previsão',
   mol8.semPrevisao.length === 1, JSON.stringify(mol8.semPrevisao));
 
 // Ribana sem o peso médio da bobina cadastrado: espera, não chuta.
@@ -284,20 +301,20 @@ ribSemPeso.tecidos[1].pesoBobina = 0;
 api.setState(ribSemPeso);
 const t9 = api.compraNecessidadeBruta([item1]);
 const rib9 = t9.find(x => x.tecidoNome === 'Ribana Moletom');
-ok('30. ribana sem peso de bobina cadastrado não prevê bobina', rib9.bobinas === null, rib9.bobinas);
-ok('31. e o quilo dela segue contando para a compra', perto(rib9.kg, 28.8), rib9.kg);
+ok('31. ribana sem peso de bobina cadastrado não prevê bobina', rib9.bobinas === null, rib9.bobinas);
+ok('32. e o quilo dela segue contando para a compra', perto(rib9.kg, 28.8), rib9.kg);
 
 /* ---------- 8. camadas e peças, os dois lados da mesma medida ---------- */
 console.log('\n-- camadas e peças --');
 
 api.setState(cadastroBase());
 const oo = api.compraOsSimulada(G1, D1, 1);
-ok('32. o limite de camadas da grade é o do tecido mais restritivo (moletom 36)',
+ok('33. o limite de camadas da grade é o do tecido mais restritivo (moletom 36)',
   api.compraLimiteCamadasGrade(cadastroBase().grades[0]) === 36,
   api.compraLimiteCamadasGrade(cadastroBase().grades[0]));
-ok('33. camadas -> peças', api.compraPecasDeCamadas(oo, 36) === 36, api.compraPecasDeCamadas(oo, 36));
-ok('34. peças -> camadas', api.compraCamadasDePecas(oo, 36) === 36, api.compraCamadasDePecas(oo, 36));
-ok('35. peças que não fecham camada arredondam para CIMA (nunca produzir a menos)',
+ok('34. camadas -> peças', api.compraPecasDeCamadas(oo, 36) === 36, api.compraPecasDeCamadas(oo, 36));
+ok('35. peças -> camadas', api.compraCamadasDePecas(oo, 36) === 36, api.compraCamadasDePecas(oo, 36));
+ok('36. peças que não fecham camada arredondam para CIMA (nunca produzir a menos)',
   api.compraCamadasDePecas(oo, 37) === 37, api.compraCamadasDePecas(oo, 37));
 
 // Camiseta: malha sem moletom corta em camada dupla, então cada camada rende 2.
@@ -311,9 +328,9 @@ camiseta.desenhos.push({ id: 'd-2', codigo: 'CM.TESTE', desc: 'Camiseta | Branco
                          corPrincipalId: C_MALHA, componentes: [] });
 api.setState(camiseta);
 const oc = api.compraOsSimulada('g-2', 'd-2', 80);
-ok('36. camiseta corta em camada dupla: 80 camadas dão 160 peças',
+ok('37. camiseta corta em camada dupla: 80 camadas dão 160 peças',
   api.compraPecasDeCamadas(oc, 80) === 160, api.compraPecasDeCamadas(oc, 80));
-ok('37. e o limite dela é o da malha (80)',
+ok('38. e o limite dela é o da malha (80)',
   api.compraLimiteCamadasGrade(camiseta.grades[1]) === 80,
   api.compraLimiteCamadasGrade(camiseta.grades[1]));
 
@@ -321,9 +338,9 @@ ok('37. e o limite dela é o da malha (80)',
 console.log('\n-- item órfão não derruba a tela --');
 
 api.setState(cadastroBase());
-ok('38. item apontando para grade excluída não calcula nada (e não estoura)',
+ok('39. item apontando para grade excluída não calcula nada (e não estoura)',
   api.compraConsumoItem({ id: 'x', gradeId: 'nao-existe', camadas: 10 }) === null);
-ok('39. e o total ignora esse item em vez de quebrar',
+ok('40. e o total ignora esse item em vez de quebrar',
   api.compraNecessidadeBruta([{ id: 'x', gradeId: 'nao-existe', camadas: 10 }]).length === 0);
 
 console.log('');

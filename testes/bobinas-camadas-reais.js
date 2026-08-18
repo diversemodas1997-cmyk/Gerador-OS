@@ -7,7 +7,7 @@
    mede é quanto pesa uma bobina — elas não vêm todas iguais, ficam entre 18 e
    24 kg. Por isso o peso não entra na conta: sai dela.
 
-       bobinas     = cadastro × (camadas desta OS ÷ 80), sempre para cima
+       bobinas     = cadastro × (camadas desta OS ÷ camadas do enfesto CHEIO)
        kg da fase  = comp × larg × camadas × gramatura ÷ 1000
        ---------------------------------------------------------------
        metros/bob. = comp × camadas ÷ bobinas     <- resultado
@@ -20,6 +20,13 @@
 
    O peso que sai da conta vale como CONFERÊNCIA: fora de 18-24 kg, o errado é a
    gramatura daquela cor, e agora isso aparece em vez de se esconder no número.
+
+   O ENFESTO CHEIO é o da própria grade, fase por fase (`L.camadasCheias`, que
+   `consumoEnfestoOS` monta com `camadasCheiasDaFase`). Até 18/08/2026 era a
+   constante 80, o limite da malha algodão — e como moletom para nas 36 camadas,
+   toda grade de moletom aparecia na folha com 45% do que estava cadastrado, com
+   o enfesto CHEIO. Foi assim na OS 0485 (BM.TRI 177cm): 6 bobinas cadastradas no
+   Corpo Parte 1 saíam 3, e as 12 do Corpo Parte 3 saíam 6.
 
    O teste recorta as funções do app.js de verdade. Copiar a fórmula para cá
    testaria a cópia, que é exatamente como um defeito sobrevive em dois lugares. */
@@ -46,11 +53,11 @@ if (fimF < 0) { console.error('nao achei o fim de _faseNaoEnfestadaPorTom'); pro
 // escopo de fora (só `function` vaza), e as constantes daqui são const.
 const api = new Function(
   src.slice(ini, fim) + '\n' + src.slice(iniF, fimF + 2) + '\n'
-  + 'return { CAMADAS_REF_BOBINAS_CADASTRO, PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,'
+  + 'return { PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,'
   + ' bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,'
   + ' metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula };'
 )();
-const { CAMADAS_REF_BOBINAS_CADASTRO, PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,
+const { PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,
         bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,
         metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula } = api;
 
@@ -63,9 +70,13 @@ const perto = (a, b) => Math.abs(a - b) < 0.01;
 
 // Uma OS reduzida ao que importa aqui. `tons` é opcional: { ordem: { tom: valor } }.
 const os = tons => ({ enfesto: {}, progresso: tons ? { enfestosTons: tons } : {} });
-// Uma linha de consumo como `consumoEnfestoOS` devolve.
-const linha = (comp, larg, peso, camadas, corReal) => ({
+// Uma linha de consumo como `consumoEnfestoOS` devolve. `camadasCheias` é o
+// enfesto CHEIO desta fase nesta grade — a referência contra a qual o cadastro
+// de bobinas foi preenchido. Sem passar, vale 80: o caso da malha algodão, que
+// é o das grades abaixo.
+const linha = (comp, larg, peso, camadas, corReal, camadasCheias) => ({
   comp, larg, peso, camadas, corReal: corReal || 'Preto Malha Algodão',
+  camadasCheias: camadasCheias == null ? 80 : camadasCheias,
   kg: (comp * larg * camadas * peso) / 1000
 });
 
@@ -78,9 +89,7 @@ const os461 = linha(COMP, LARG, GRAM, 71);
 const os461Errada = linha(COMP, LARG, 182, 71, 'Azul Malha Algodão');
 
 console.log('-- as constantes da casa --');
-ok('1. o cadastro da grade descreve um enfesto de 80 camadas',
-   CAMADAS_REF_BOBINAS_CADASTRO === 80, CAMADAS_REF_BOBINAS_CADASTRO);
-ok('2. uma bobina de verdade pesa entre 18 e 24 kg',
+ok('1. uma bobina de verdade pesa entre 18 e 24 kg',
    PESO_BOBINA_MIN_KG === 18 && PESO_BOBINA_MAX_KG === 24,
    PESO_BOBINA_MIN_KG + '-' + PESO_BOBINA_MAX_KG);
 
@@ -141,9 +150,10 @@ ok('18. tom em branco nao e resposta: nao zera nada',
 
 console.log('');
 console.log('-- metro e peso da bobina sao CONSEQUENCIA --');
-// O divisor e o valor CRU (cadastro x camadas/80), nao o arredondado: e assim
-// que o metro por bobina fica igual em qualquer OS desta grade.
-const cru = cam => CADASTRO * (cam / CAMADAS_REF_BOBINAS_CADASTRO);
+// O divisor e o valor CRU (cadastro x camadas/cheio), nao o arredondado: e
+// assim que o metro por bobina fica igual em qualquer OS desta grade. Aqui o
+// cheio e 80, que e o da malha algodao desta grade.
+const cru = cam => CADASTRO * (cam / 80);
 ok('19. o enfesto cheio da 42,5 m por bobina (4,25 m x 80 camadas / 8)',
    perto(metrosPorBobinaFase(cheio, cru(80)), 42.5), metrosPorBobinaFase(cheio, cru(80)));
 ok('20. e 22,5 kg por bobina — dentro da faixa da prateleira',
@@ -186,7 +196,7 @@ ok('28. fase nao enfestada mostra zero, nao tracinho',
 console.log('');
 console.log('-- a dica explica de onde saiu o numero --');
 const t = _tituloBobinas(os(), os461, CADASTRO, 1);
-ok('29. cita o cadastro, as 80 camadas de referencia e as desta OS',
+ok('29. cita o cadastro, o enfesto cheio de referencia e as camadas desta OS',
    t.includes('8 bobinas') && t.includes('80 camadas') && t.includes('71'), t);
 ok('30. mostra o metro e o peso da bobina como resultado',
    t.includes('42,5 m de pano') && t.includes('22,5 kg'), t);
@@ -268,6 +278,55 @@ ok('47. gramatura EMPRESTADA do tecido principal nao serve, mesmo com peso de bo
 ok('48. e a dica explica que a cor da fase e a do tecido principal',
    _tituloBobinas(os(), golaEmprestada, 1, 2).includes('tecido principal'),
    _tituloBobinas(os(), golaEmprestada, 1, 2));
+
+console.log('');
+console.log('-- MOLETOM: o enfesto cheio e o da GRADE, nao o da malha --');
+
+/* A OS 0485 (18/08/2026), grade 2X P ao G3 | BM.TRI | 177cm. Moletom nao passa
+   de 36 camadas (LIMITE_CAMADAS.moletom), e o enfesto estava CHEIO nas 36. A
+   folha mostrava 3 bobinas onde o cadastro dizia 6, porque a referencia era a
+   constante 80 — o limite da MALHA. Todo enfesto de moletom entrava valendo
+   36/80 = 45%, e nenhuma grade de moletom conseguia mostrar o proprio cadastro. */
+const MOL_GRAM = 300;
+// comp, larg, gramatura, camadas desta OS, cor, camadas do enfesto CHEIO
+const corpo485 = (cam) => linha(4.70, 1.77, MOL_GRAM, cam, 'Verde Moletom', 36);
+// O forro de capuz e "2x": num enfesto cheio de 36 do corpo, ele enfesta 18. O
+// cheio DELE e 18 — comparar com o do corpo o deixaria eternamente pela metade.
+const forro485 = (cam) => linha(2.78, 1.165, 452, cam, 'Preto Malha Algodão', 18);
+
+ok('49. moletom cheio (36 de 36) devolve o cadastro intacto: 6 bobinas, nao 3',
+   bobinasEfetivasFase(os(), 6, 1, corpo485(36)) === 6,
+   bobinasEfetivasFase(os(), 6, 1, corpo485(36)));
+ok('50. e as 12 do Corpo Parte 3 tambem saem inteiras, nao 6',
+   bobinasEfetivasFase(os(), 12, 3, corpo485(36)) === 12,
+   bobinasEfetivasFase(os(), 12, 3, corpo485(36)));
+ok('51. meio enfesto de moletom (18 de 36) segue gastando meia previsao',
+   bobinasEfetivasFase(os(), 6, 1, corpo485(18)) === 3,
+   bobinasEfetivasFase(os(), 6, 1, corpo485(18)));
+ok('52. o forro 2x, cheio, e comparado com o cheio DELE: 18 de 18 -> 6 bobinas',
+   bobinasEfetivasFase(os(), 6, 4, forro485(18)) === 6,
+   bobinasEfetivasFase(os(), 6, 4, forro485(18)));
+ok('53. e meio forro (9 de 18) volta a metade',
+   bobinasEfetivasFase(os(), 6, 4, forro485(9)) === 3,
+   bobinasEfetivasFase(os(), 6, 4, forro485(9)));
+ok('54. a mesma grade em malha (cheio 80) nao mudou de comportamento',
+   bobinasEfetivasFase(os(), CADASTRO, 1, cheio) === 8,
+   bobinasEfetivasFase(os(), CADASTRO, 1, cheio));
+
+// Sem enfesto cheio conhecido (grade apagada) nao ha proporcao a fazer: o
+// cadastro e a medida que a casa tirou a olho, e sai inteiro.
+const semRef = { ...corpo485(36), camadasCheias: 0 };
+ok('55. sem saber o enfesto cheio, devolve o cadastro em vez de inventar',
+   bobinasEfetivasFase(os(), 6, 1, semRef) === 6,
+   bobinasEfetivasFase(os(), 6, 1, semRef));
+
+const tCheio = _tituloBobinas(os(), corpo485(36), 6, 1);
+ok('56. a dica do enfesto cheio diz que ele esta cheio, e nao encolhe o numero',
+   tCheio.includes('36 camadas') && tCheio.includes('cheio')
+   && !tCheio.includes('arredondado'), tCheio);
+const tMeio = _tituloBobinas(os(), corpo485(18), 6, 1);
+ok('57. e a do enfesto parcial mostra a conta: 6 x 18/36 = 3',
+   tMeio.includes('36 camadas') && tMeio.includes('18') && tMeio.includes('3'), tMeio);
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
