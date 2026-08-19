@@ -14497,9 +14497,187 @@ function compararGradesPorSemelhanca(a, b) {
    Removido no mesmo dia. Se voltar a tentar, medir com o dado real ANTES: a
    pergunta que decide não é "o agrupamento funciona?", é "quantos grupos sobram?". */
 
+/* ---------------------------------------------------------------------------
+   OS RISCOS DE UMA GRADE: o PDF de onde saíram o comprimento e a largura.
+
+   O cadastro guarda os números (1,74 × 0,535) e mais nada. Quando alguém
+   desconfia de uma medida — e desconfia, porque medida errada vira pano
+   comprado a mais —, o caminho até hoje era abrir o Explorer, lembrar a linha,
+   a faixa de tamanhos e a largura, e procurar a pasta. Aqui a grade aponta para
+   o próprio arquivo.
+
+   COMO A GRADE ACHA O PDF DELA
+   Pelo CAMINHO, que na pasta da casa é uma classificação completa:
+
+       BM.LISA / 2xM-4xG-2xGG / 177 cm - MAPAS IMPRESSOS / BM.LISA - CORPO ....pdf
+       linha     tamanhos       largura                    arquivo
+
+   e o nome da grade diz as mesmas três coisas: "2M-4G-2GG | BM.LISA | 177cm".
+   As duas grafias dos tamanhos (a faixa "P ao G3" e a extensa
+   "P-M-G-GG-G1-G2-G3") já são resolvidas por _riscoFormasDoNome e _chaveTam —
+   as mesmas que o assistente de pasta usa no sentido contrário.
+
+   A LINHA É OBRIGATÓRIA, e isso não é rigor de mais: sem ela, medido nas 130
+   grades de 18/08/2026, a "P ao G3 | CM.TRI" casava com a pasta da CM.LISA e
+   oferecia o risco de OUTRO produto como se fosse o dela. Abrir o PDF errado é
+   pior do que não ter atalho nenhum — quem confere uma medida no arquivo errado
+   confirma um erro.
+
+   A LARGURA É PREFERÊNCIA, não filtro: quando existe pasta na largura exata,
+   são só aquelas; quando não existe, mostra as outras larguras da mesma faixa
+   COM AVISO. É o caso real da "2G3 | BM.LISA | 182cm", cuja pasta é "183 cm".
+
+   Medido nas 130 grades: 96 acham pelo menos um PDF (29 acham exatamente um),
+   e 34 não acham nenhum — a maioria delas é grade cuja pasta ainda não existe,
+   que é a pendência das grades a medir, e não defeito daqui.
+   --------------------------------------------------------------------------- */
+let _riscosIdx = null;          // a lista já lida, ou null enquanto não veio
+let _riscosIdxPromessa = null;
+let _riscosIdxFalhou = false;
+
+const _riscoCmDoTexto = s => {
+  const m = String(s || '').match(/(\d+[.,]?\d*)\s*cm/i);
+  return m ? m[1].replace(',', '.') : '';
+};
+
+// O endereço do PDF. Cada pedaço vai por encodeURIComponent e as barras ficam:
+// os nomes têm espaço e acento, e encodeURI sozinho não escaparia um "#" no
+// nome do arquivo — que quebraria o link em silêncio, cortando o resto.
+const _riscoUrl = rel => ((_riscosIdx && _riscosIdx.pasta ? _riscosIdx.pasta + '/' : '') + rel)
+  .split('/').map(encodeURIComponent).join('/');
+
+function _riscosIndice() {
+  if (_riscosIdx) return Promise.resolve(_riscosIdx);
+  if (_riscosIdxPromessa) return _riscosIdxPromessa;
+  _riscosIdxPromessa = fetch('dados/riscos-pdf.json')
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(j => {
+      const itens = (j.arquivos || []).map(rel => {
+        const p = rel.split('/');
+        return {
+          rel,
+          linha: p[0] || '',
+          tam: p.length > 2 ? p[1] : '',
+          cm: p.length > 3 ? _riscoCmDoTexto(p[2]) : '',
+          pasta: p.slice(0, -1).join('/'),
+          arq: p[p.length - 1]
+        };
+      });
+      _riscosIdx = { pasta: j.pasta || '', gerado: j.gerado || '', itens };
+      return _riscosIdx;
+    })
+    .catch(e => {
+      // Sem a lista o resto da tela continua inteiro: a coluna fica vazia, e é
+      // só isso. Não vale derrubar o cadastro de grades por causa de um atalho.
+      _riscosIdxFalhou = true;
+      _riscosIdxPromessa = null;
+      console.warn('não consegui ler dados/riscos-pdf.json:', e.message || e);
+      throw e;
+    });
+  return _riscosIdxPromessa;
+}
+
+// Os três dados que o NOME da grade carrega: faixa de tamanhos, linha e largura.
+function _gradeNomePartes(g) {
+  const ps = String((g && g.nome) || '').split('|').map(s => s.trim());
+  const mCm = ps.length > 2 ? ps[2].replace(',', '.').match(/(\d+\.?\d*)/) : null;
+  return { faixa: ps[0] || '', linha: ps[1] || '', cm: mCm ? parseFloat(mCm[1]) : 0 };
+}
+
+function _riscosDaGrade(g) {
+  if (!_riscosIdx) return null;                     // ainda não veio: quem chama decide
+  const { faixa, linha, cm } = _gradeNomePartes(g);
+  const toks = new Set(_riscoFormasDoNome(g.tamanhos || {}).map(_chaveTam));
+  if (faixa) toks.add(_chaveTam(faixa));
+  toks.delete('');
+  if (!linha || !toks.size) return { itens: [], aviso: '' };
+
+  const base = _riscosIdx.itens.filter(p =>
+    _normNome(p.linha) === _normNome(linha) && toks.has(_chaveTam(p.tam)));
+  if (!base.length) return { itens: [], aviso: '' };
+
+  if (cm > 0) {
+    // Pasta sem nível de largura entra sempre: "não diz" não é "diz outra".
+    const exatos = base.filter(p => !p.cm || Math.abs(parseFloat(p.cm) - cm) < 0.05);
+    if (exatos.length) return { itens: exatos, aviso: '' };
+    return { itens: base, aviso: `Não há pasta de ${cm}cm para esta faixa — os PDFs abaixo são de OUTRA largura.` };
+  }
+  return { itens: base, aviso: '' };
+}
+
+// O caminho do PDF, como o assistente o viu. Guardado na fase no momento em que
+// a medida entrou: é o único registro EXATO de onde vieram aquele comprimento e
+// aquela largura — a busca pela pasta, por melhor que seja, continua sendo
+// dedução. As grades cadastradas antes de 19/08/2026 não têm isto.
+const _riscoCaminhoDoPdf = L => String((L && (L.caminho || L.arquivo)) || '');
+
+// "Este PDF é um dos que a grade registrou?" — comparado por SUFIXO de propósito.
+// O caminho guardado depende de onde a pasta foi escolhida: pelo seletor nativo
+// ele começa na pasta escolhida ("BM.LISA/..."), pelo <input webkitdirectory>
+// vem com o nome da pasta raiz na frente. Exigir igualdade faria o ✓ sumir por
+// um pedaço de caminho, sendo o mesmo arquivo.
+function _riscosRegistrados(g) {
+  const paths = [];
+  (g.fases || []).forEach(f => { if (f && f.risco) paths.push(_normNome(f.risco)); });
+  return rel => {
+    const r = _normNome(rel);
+    return paths.some(p => p === r || p.endsWith('/' + r) || r.endsWith('/' + p));
+  };
+}
+
+function abrirRiscosDaGrade(id) {
+  const g = (STATE.grades || []).find(x => x.id === id);
+  if (!g) return;
+  const r = _riscosDaGrade(g);
+  if (!r) return;
+  const usado = _riscosRegistrados(g);
+  const porPasta = {};
+  r.itens.forEach(p => { (porPasta[p.pasta] = porPasta[p.pasta] || []).push(p); });
+
+  document.getElementById('modal-riscos-title').textContent = `Riscos de ${g.nome}`;
+  document.getElementById('modal-riscos-fields').innerHTML = `
+    ${r.aviso ? `<div class="info-box" style="margin-bottom:10px;border-color:#e6a23c;background:#fff8e1;">⚠ ${esc(r.aviso)}</div>` : ''}
+    <div style="font-size:12px;color:var(--ink-3);margin-bottom:8px;">
+      O comprimento e a largura de cada fase saíram destes relatórios de encaixe.
+      O ✓ marca os que o cadastro registrou ter lido.
+    </div>
+    ${Object.keys(porPasta).sort().map(pasta => `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;margin-bottom:4px;">📁 ${esc(pasta)}</div>
+        ${porPasta[pasta].map(p => `
+          <div style="padding:4px 0 4px 14px;">
+            <a href="${esc(_riscoUrl(p.rel))}" target="_blank" rel="noopener">📄 ${esc(p.arq)}</a>
+            ${usado(p.rel) ? ' <span class="badge" style="background:#e8f5e9;" title="Registrado no cadastro desta grade">✓ usado</span>' : ''}
+          </div>`).join('')}
+      </div>`).join('')}
+    <div style="font-size:11px;color:var(--ink-3);margin-top:10px;">
+      Lista de ${esc(_riscosIdx.gerado || '—')}. PDF novo na pasta só aparece aqui depois de
+      <code>node servidor/indexar-riscos.js</code>.
+    </div>`;
+  openModal('modal-riscos');
+}
+
+// A célula da coluna "Riscos". Botão de LEITURA: conferir de onde veio uma
+// medida é o que todo mundo faz, não só quem edita — por isso sem admin-only.
+function _riscoCell(g) {
+  if (!_riscosIdx) return _riscosIdxFalhou ? '' : '<span style="color:var(--ink-3);">…</span>';
+  const r = _riscosDaGrade(g);
+  if (!r || !r.itens.length) {
+    return `<span style="color:var(--ink-3);" title="Nenhum PDF na pasta de riscos para esta linha e esta faixa de tamanhos.">—</span>`;
+  }
+  const t = r.aviso
+    ? `${r.itens.length} PDF(s) — ATENÇÃO: de outra largura`
+    : `${r.itens.length} PDF(s) de encaixe desta grade`;
+  return `<button class="edit" title="${esc(t)}" onclick="abrirRiscosDaGrade('${g.id}')">📄 ${r.itens.length}${r.aviso ? ' ⚠' : ''}</button>`;
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
-  if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
+  // A lista dos PDFs vem uma vez por sessão, e sozinha: quando chegar, redesenha.
+  // Sem o guarda do _riscosIdxFalhou isto viraria um par render/fetch infinito
+  // no dia em que o arquivo não existir.
+  if (!_riscosIdx && !_riscosIdxFalhou) _riscosIndice().then(() => renderGrades()).catch(() => {});
+  if (!STATE.grades.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhuma grade cadastrada.</td></tr>`; return; }
 
   const gfl = _gfl();
 
@@ -14528,7 +14706,8 @@ function renderGrades() {
     const volBadge = total > 0 ? ` <span class="badge" title="Volume na expedição com 1 tonalidade: 1 pacote por tamanho + 1 de reposição. Com 2 tons dobra (${total * 2 + 1}), com 3 triplica (${total * 3 + 1}).">${total + 1} vol</span>` : '';
     return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${volBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
-      <td><span class="badge">${total}</span></td>${acoesCell('grade', g.id)}</tr>`;
+      <td><span class="badge">${total}</span></td>
+      <td style="text-align:center;">${_riscoCell(g)}</td>${acoesCell('grade', g.id)}</tr>`;
   };
 
   // BUSCA: procurar não é navegar. Com algo escrito no campo, a lista larga as
@@ -14541,7 +14720,7 @@ function renderGrades() {
       [g.nome, labelTp(g.tipoPeca), labelVr(g.variacao)].join(' ')));
     tb.innerHTML = achadas.length
       ? achadas.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('')
-      : `<tr><td colspan="4" class="empty">Nenhuma grade encontrada.</td></tr>`;
+      : `<tr><td colspan="5" class="empty">Nenhuma grade encontrada.</td></tr>`;
     return;
   }
 
@@ -14565,7 +14744,7 @@ function renderGrades() {
       + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDis} onclick="moveGradeFolder(${tpJson}, 1)">↓</button>`
       + `<button type="button" class="folder-btn" title="Renomear pasta" onclick="renameGradeFolder(${tpJson})">✎</button>`
     );
-    html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="4">
+    html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="5">
       <span class="folder-chev">${chevTop}</span> 📁 ${esc(labelTp(tp))}
       <span class="folder-count">(${totalNoGrupo})</span>
       ${acoesTp}
@@ -14588,7 +14767,7 @@ function renderGrades() {
         + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDisV} onclick="moveGradeSubfolder(${tpJson}, ${vrJson}, 1)">↓</button>`
         + `<button type="button" class="folder-btn" title="Renomear subpasta" onclick="renameGradeSubfolder(${tpJson}, ${vrJson})">✎</button>`
       );
-      html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="4">
+      html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="5">
         <span class="folder-chev">${chevSub}</span> ↳ ${esc(labelVr(vr))}
         <span class="folder-count">(${gs.length})</span>
         ${acoesVr}
@@ -23505,6 +23684,7 @@ async function aplicarRiscoNasGrades() {
     }
     f.comp = _riscoCompCadastro(L.comprimento, f).toFixed(2);   // + o excedente DA FASE
     f.larg = L.largura.toFixed(3);                            // largura vai como veio
+    f.risco = _riscoCaminhoDoPdf(L);      // de qual PDF vieram estes dois números
     tocadas.add(L.grade.id + '|' + f.nome);
   });
   // Conta FASES DISTINTAS, não PDFs: três riscos na mesma fase mudaram uma fase,
@@ -24591,6 +24771,7 @@ async function pastaSalvarPasso() {
       }
       f.comp = comp;
       f.larg = larg;
+      f.risco = _riscoCaminhoDoPdf(x.L);  // de qual PDF vieram estes dois números
       if (x.d.tecidoId) f.tecidoId = x.d.tecidoId;
       f.unidades = x.d.unidades;
       // Bobinas em branco não apaga o que já estava: quem deixou vazio não quis

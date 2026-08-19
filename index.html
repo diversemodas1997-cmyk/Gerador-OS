@@ -420,7 +420,7 @@
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th>Nome</th><th>Distribuição</th><th>Total peças</th><th class="col-actions">Ações</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Distribuição</th><th>Total peças</th><th style="text-align:center;" title="Os relatórios de encaixe (PDF) de onde saíram o comprimento e a largura desta grade.">Riscos</th><th class="col-actions">Ações</th></tr></thead>
           <tbody id="tbl-grades"></tbody>
         </table>
       </div>
@@ -1108,6 +1108,19 @@
   </div>
 </div>
 
+<!-- Os riscos de UMA grade: os PDFs de encaixe de onde saíram o comprimento e a
+     largura dela. Só links — quem abre é o leitor de PDF do navegador, em outra
+     aba, e por isso não há nada a salvar aqui. -->
+<div class="modal-backdrop" id="modal-riscos">
+  <div class="modal" style="max-width:760px;">
+    <h2 id="modal-riscos-title">Riscos da grade</h2>
+    <div id="modal-riscos-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-riscos')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Assistente da PASTA de riscos: lê todos os PDFs de uma pasta, agrupa por
      grade e conduz o cadastro de uma em uma até o último arquivo. Os botões de
      cada passo são desenhados dentro do corpo, porque mudam a cada etapa. -->
@@ -1169,6 +1182,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-18e"></script>
+<script src="app.js?v=2026-08-19a"></script>
 </body>
 </html>
