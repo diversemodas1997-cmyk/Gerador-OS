@@ -5,10 +5,15 @@
    A coluna "Riscos" do cadastro de grades acha os PDFs pelo CAMINHO em que eles
    estão guardados, que na pasta da casa é uma classificação completa:
 
-       BM.LISA / 2xM-4xG-2xGG / 177 cm - MAPAS IMPRESSOS / BM.LISA - CORPO ....pdf
-       linha     tamanhos       largura                    arquivo
+       BM.LISA / 2M-4G-2GG / 177 cm - MAPAS IMPRESSOS / BM.LISA - CORPO ....pdf
+       linha     tamanhos    largura                    arquivo
 
    e o nome da grade diz as mesmas três coisas: "2M-4G-2GG | BM.LISA | 177cm".
+
+   Em 19/08/2026 as pastas e os arquivos perderam o "x" dos tamanhos ("2xM" virou
+   "2M"), para ficarem escritos como o cadastro escreve. O casamento não dependia
+   disso nem antes: _chaveTam já tirava o x dos dois lados — e é por isso que a
+   renomeação de 120 nomes não mexeu em uma linha de regra.
 
    O QUE ESTE TESTE PROTEGE, e por que cada regra existe:
 
@@ -130,26 +135,26 @@ const r5 = achar({ id: 'e', nome: 'P ao G3', tamanhos: { p: 1, m: 1, g: 1, gg: 1
 ok('nome sem linha não devolve nada', r5.itens.length === 0, r5.itens.length);
 
 /* ---------- 6. o endereço do PDF ---------- */
-const url = rodar('_riscoUrl("BM.LISA/2xG/182 cm/BM.LISA - CORPO 2xG.pdf")', null);
+const url = rodar('_riscoUrl("BM.LISA/2G/182 cm/BM.LISA - CORPO 2G.pdf")', null);
 ok('a URL escapa espaço e acento e mantém as barras',
-  url === 'Desenhos%20t%C3%A9cnicos%20-grades%20de%20corte/BM.LISA/2xG/182%20cm/BM.LISA%20-%20CORPO%202xG.pdf', url);
+  url === 'Desenhos%20t%C3%A9cnicos%20-grades%20de%20corte/BM.LISA/2G/182%20cm/BM.LISA%20-%20CORPO%202G.pdf', url);
 
 /* ---------- 7. o ✓ do arquivo registrado, por sufixo ---------- */
 const gReg = {
   id: 'f', nome: '2M-4G-2GG | BM.LISA | 177cm', tamanhos: { m: 2, g: 4, gg: 2 },
   // Caminho como o seletor nativo entrega: começa DENTRO da pasta escolhida.
-  fases: [{ risco: 'BM.LISA/2xM-4xG-2xGG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf' }]
+  fases: [{ risco: 'BM.LISA/2M-4G-2GG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf' }]
 };
 const usado = rodar('_riscosRegistrados(GRADE)', gReg);
 ok('marca o PDF que a grade registrou',
-  usado('BM.LISA/2xM-4xG-2xGG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf') === true);
+  usado('BM.LISA/2M-4G-2GG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf') === true);
 ok('  ... mesmo com a pasta raiz na frente (input webkitdirectory)',
   rodar('_riscosRegistrados(GRADE)', {
     ...gReg,
-    fases: [{ risco: 'Desenhos técnicos -grades de corte/BM.LISA/2xM-4xG-2xGG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf' }]
-  })('BM.LISA/2xM-4xG-2xGG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf') === true);
+    fases: [{ risco: 'Desenhos técnicos -grades de corte/BM.LISA/2M-4G-2GG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf' }]
+  })('BM.LISA/2M-4G-2GG/177 cm - MAPAS IMPRESSOS/BM.LISA - CORPO 2M-4G-2GG.pdf') === true);
 ok('  ... e não marca um arquivo de outra fase',
-  usado('BM.LISA/2xM-4xG-2xGG/177 cm - MAPAS IMPRESSOS/BM.LISA - RIBANA 2M-4G-2GG.pdf') === false);
+  usado('BM.LISA/2M-4G-2GG/177 cm - MAPAS IMPRESSOS/BM.LISA - RIBANA 2M-4G-2GG.pdf') === false);
 
 /* ---------- 8. o índice e a pasta continuam de pé ---------- */
 ok('o índice tem PDFs', itens.length > 100, itens.length);
