@@ -233,7 +233,14 @@ try {
     }
     # Anotar quanto demorou: e o unico numero que diz se a maquina esta ficando
     # mais lenta a cada manha. 40 s e o normal; 5 min ja e memoria no limite.
-    Anotar ('motor do Docker respondendo (levou ' + [int]((Get-Date) - $comecou).TotalSeconds + ' s)')
+    # Junto com o tempo vai a memoria livre: sao os dois numeros que andam
+    # juntos. Em 13/08/2026 o motor levou 5m18s com 99 MB livres, e sem o
+    # segundo numero no log gastei a manha procurando defeito no Docker. Se um
+    # dia o arranque voltar a demorar, o log ja diz se foi falta de ar.
+    # (atribuir direto de um try/catch so vale do PowerShell 7 em diante; aqui e 5.1)
+    $livre = -1
+    try { $livre = [int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1KB) } catch { }
+    Anotar ('motor do Docker respondendo (levou ' + [int]((Get-Date) - $comecou).TotalSeconds + ' s, ' + $livre + ' MB livres)')
   }
 
   # 2) Os conteineres que a fabrica precisa estao rodando?
