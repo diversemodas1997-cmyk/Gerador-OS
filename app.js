@@ -3147,7 +3147,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                   <th style="width:72px;">Qtd/peça</th>
                 </tr></thead>
                 <tbody>
-                ${STATE.componentes.map(c => {
+                ${_componentesPorSemelhanca(STATE.componentes).map(c => {
                   const atual = porId.get(c.id) || porNome.get(_normNome(c.nome)) || {};
                   const marcado = porId.has(c.id) || porNome.has(_normNome(c.nome));
                   return `<tr class="desenho-comp-row">
@@ -14842,6 +14842,61 @@ function nomesTarefasPorIds(ids) {
     .map(t => t.nome);
 }
 
+/* ---------------------------------------------------------------------------
+   COMPONENTES POR SEMELHANÇA: as partes da mesma peça, juntas.
+
+   O cadastro guarda os componentes na ordem em que foram criados, e com o tempo
+   isso separa o que é a MESMA coisa. Nos 17 componentes da fábrica (19/08/2026)
+   o resultado era este: "Frente" na primeira linha e "Frente Parte 2" e "Frente
+   Parte 3" nas duas últimas, catorze linhas abaixo — porque foram criadas
+   depois, quando entrou a tricolor. Quem marca os componentes de um desenho
+   tricolor tinha de procurar as partes da frente em duas pontas da lista.
+
+   A REGRA É A FAMÍLIA + A PARTE. "Frente", "Frente Parte 2" e "Frente Parte 3"
+   são uma família só, e dentro dela manda o número. A ordem das FAMÍLIAS não é
+   inventada: é a ordem em que a primeira delas aparece no cadastro — a ordem da
+   casa (Frente, Costas, Capuz, Forro do capuz, Mangas...), que segue a peça
+   sendo montada. Componente novo continua nascendo no fim, onde quem cadastrou
+   espera achá-lo.
+
+   NÃO AGRUPA POR PARECENÇA DE PALAVRA, de propósito. "Gola" e "Cobre gola" são
+   duas peças diferentes, e juntá-las por terem uma palavra em comum trocaria
+   uma lista fora de ordem por uma lista errada.
+
+   É ORDENAÇÃO, NÃO PASTA. São 17 itens: agrupar deixaria quase toda família com
+   um membro só — a mesma medida que derrubou o terceiro nível de pasta das
+   grades em 17/08/2026 (ver o comentário em compararGradesPorSemelhanca).
+
+   E não mexe nos DADOS: ordena na hora de mostrar, como as grades. O que está
+   gravado continua como está, e ninguém precisa salvar nada.
+   --------------------------------------------------------------------------- */
+
+// "Frente Parte 2" -> família "frente", parte 2. Sem número, parte 1: é a peça
+// inteira, e ela vem antes das partes.
+function _componenteFamilia(nome) {
+  const n = _normNome(nome);
+  const m = n.match(/^(.*?)\s+(?:parte\s*)?(\d+)$/);
+  return m ? { base: m[1], parte: parseInt(m[2], 10) || 1 } : { base: n, parte: 1 };
+}
+
+function _componentesPorSemelhanca(lista) {
+  const arr = (lista || []).slice();
+  // A ordem de cada família é a posição em que ela aparece pela PRIMEIRA vez.
+  const ordemFamilia = new Map();
+  arr.forEach((c, i) => {
+    const b = _componenteFamilia(c && c.nome).base;
+    if (!ordemFamilia.has(b)) ordemFamilia.set(b, i);
+  });
+  return arr.sort((a, b) => {
+    const fa = _componenteFamilia(a && a.nome), fb = _componenteFamilia(b && b.nome);
+    if (fa.base !== fb.base) return ordemFamilia.get(fa.base) - ordemFamilia.get(fb.base);
+    if (fa.parte !== fb.parte) return fa.parte - fb.parte;
+    // Mesmo nome duas vezes: manda o nome cru, para que os duplicados (que a
+    // lista marca com "⚠ Nome duplicado") fiquem em linhas vizinhas.
+    return String((a && a.nome) || '').localeCompare(String((b && b.nome) || ''), 'pt-BR', { numeric: true });
+  });
+}
+
 function renderComponentesCad() {
   const tb = document.getElementById('tbl-componentes');
   if (!STATE.componentes.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum componente cadastrado.</td></tr>`; return; }
@@ -14872,7 +14927,7 @@ function renderComponentesCad() {
     if (labelTipoLegacy[v]) return `<span class="badge">${esc(labelTipoLegacy[v])}</span>`;
     return `<span class="badge">${esc(v)}</span>`;
   };
-  tb.innerHTML = STATE.componentes.map(c => {
+  tb.innerHTML = _componentesPorSemelhanca(STATE.componentes).map(c => {
     const cores = [c.cor1Id, c.cor2Id, c.cor3Id].filter(Boolean).map(corSwatch).join('') || '—';
     const dupBadge = duplicado(c.nome)
       ? ' <span class="badge" style="background:#fff3cd;color:#856404;border:1px solid #ffc107;" title="Existem múltiplos componentes com este nome — o auto-preenchimento de cor pode pegar o errado">⚠ Nome duplicado</span>'
@@ -15598,7 +15653,7 @@ function addComponenteRow(data = {}) {
   const row = document.createElement('div');
   row.className = 'componente-row';
   const fonteComponentes = STATE.componentes.length
-    ? STATE.componentes.map(c => c.nome)
+    ? _componentesPorSemelhanca(STATE.componentes).map(c => c.nome)
     : STATE.componentesPadrao;
   const compOpts = fonteComponentes.map(c =>
     `<option value="${esc(c)}" ${data.nome===c?'selected':''}>${esc(c)}</option>`).join('');
