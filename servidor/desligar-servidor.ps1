@@ -60,6 +60,35 @@ if ($CriarAtalho) {
   exit 0
 }
 
+# ------------------------------------------------------- calar o vigia antes
+# O vigia roda de 5 em 5 minutos e a unica coisa que ele sabe fazer e LEVANTAR
+# conteiner. Em 18/08/2026 as 17:41:15 este script terminou de parar a pilha; a
+# passagem do vigia das 17:41:19 — QUATRO segundos depois — viu tudo parado,
+# achou que era pane e mandou "up -d" enquanto o Docker Desktop ja estava
+# fechando. Resultado: 9 conteineres foram levantados e mortos junto com o
+# motor as 17:43, e os 2 que o compose ainda nao tinha alcancado (storage e
+# edge-functions) ficaram parados DE PROPOSITO. Na manha seguinte o Docker
+# ressuscitou os 9 mortos no soco (o "unless-stopped" so respeita quem parou de
+# propriedade) e deixou os 2 no chao: a fabrica passou a manha sem desenho.
+#
+# A tranca e a mesma que o vigia usa para nao rodar duas vezes ao mesmo tempo.
+# Segurando ela aqui, a passagem do vigia sai calada enquanto o servidor desliga.
+# Ela morre com o processo — e com a maquina —, entao nao existe estado velho
+# que possa impedir o vigia de trabalhar amanha (foi por isso que NAO desativei
+# a tarefa agendada: se a energia caisse no meio, ela ficaria desativada para
+# sempre e o servidor nunca mais voltaria sozinho).
+$tranca   = New-Object System.Threading.Mutex($false, 'Local\GeradorOS-VigiaDocker')
+$minhaVez = $false
+try { $minhaVez = $tranca.WaitOne([TimeSpan]::FromSeconds(120)) }
+catch [System.Threading.AbandonedMutexException] { $minhaVez = $true }
+if (-not $minhaVez) {
+  # Uma passagem do vigia esta no meio do trabalho (elas podem levar 10 min
+  # esperando o motor). Desligar por cima e ruim, mas deixar o PC ligado a noite
+  # inteira e pior: amanha ninguem lembra de desligar e o Postgres arrisca o
+  # mesmo PANIC de 10/08.
+  Anotar 'ATENCAO: o vigia estava trabalhando e nao soltou a tranca em 120s — desligando assim mesmo'
+}
+
 # --------------------------------------------------------------------- parar
 # CUIDADO ao renomear: esta variavel NAO pode se chamar $docker. O parametro
 # $Docker acima guarda a PASTA do Supabase, e no PowerShell $docker e $Docker sao

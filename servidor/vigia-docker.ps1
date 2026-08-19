@@ -237,7 +237,15 @@ try {
   }
 
   # 2) Os conteineres que a fabrica precisa estao rodando?
-  $precisa = @('gerador-os-web', 'supabase-db', 'supabase-kong', 'supabase-rest', 'supabase-auth')
+  #
+  # O 'supabase-storage' entrou em 19/08/2026, e custou uma manha de desenhos
+  # invisiveis: na noite anterior ele parou com calma junto com o resto, o vigia
+  # subiu os outros e, como ele NAO estava nesta lista, o log do vigia disse
+  # "tudo de pe" com o storage fora. A OS abria, a lista de OS abria, so as
+  # imagens dos desenhos vinham quebradas — e ninguem liga isso a um conteiner.
+  # A regra que ficou: entra nesta lista tudo que, faltando, o usuario percebe.
+  $precisa = @('gerador-os-web', 'supabase-db', 'supabase-kong', 'supabase-rest',
+               'supabase-auth', 'supabase-storage', 'supabase-edge-functions')
   $rodando = @(& $dockerExe ps --format '{{.Names}}' 2>$null)
   $faltando = @($precisa | Where-Object { $rodando -notcontains $_ })
 
@@ -254,7 +262,15 @@ try {
       if (-not (Test-Path $p.arquivo)) { Anotar ("FALHA: nao achei " + $p.arquivo); exit 1 }
       $saida = & $dockerExe compose -f $p.arquivo up -d 2>&1 | Out-String
       if ($LASTEXITCODE -ne 0) {
-        $motivo = ($saida.Trim() -replace '\s+', ' ')
+        # Cortar os avisos ANTES de truncar em 300 caracteres. O compose abre a
+        # saida com o aviso do volume "supabase_deno-cache" (existe, mas nao foi
+        # ele quem criou) toda vez, e so ele ja passa dos 300 — de 14/08 a
+        # 18/08/2026 TODA falha desta linha foi registrada como se fosse esse
+        # aviso, e o erro de verdade nunca chegou ao log. O aviso e inofensivo;
+        # o que interessa vem depois dele.
+        $util = ($saida -split "`n" | Where-Object { $_ -notmatch 'level=warning' }) -join ' '
+        if (-not $util.Trim()) { $util = $saida }
+        $motivo = ($util.Trim() -replace '\s+', ' ')
         if ($motivo.Length -gt 300) { $motivo = $motivo.Substring(0, 300) + '…' }
         Anotar ("FALHA ao levantar a pilha '" + $p.nome + "': " + $motivo)
         exit 1
