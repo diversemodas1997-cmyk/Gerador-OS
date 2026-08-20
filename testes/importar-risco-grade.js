@@ -69,6 +69,8 @@ const api = new Function('STATE', `
   ${recorte('function _riscoTamanhosTexto', 'o texto dos tamanhos')}
   ${recorte('function _riscoCelulaGrade', 'a celula da grade')}
   ${recorte('function _riscoFaseEhAgregadora', 'a fase agregadora')}
+  ${recorte('function _riscoEhAgregadora', 'o risco agregador')}
+  ${recorte('function _riscoEhCorpo', 'o risco de corpo')}
   ${bloco('const _RISCO_PECAS = [')}
   ${recorte('function _riscoFaseDoNomeArquivo', 'a fase pelo nome do arquivo')}
   ${recorte('function _riscoAssinatura', 'a assinatura dos tamanhos')}
@@ -263,15 +265,11 @@ ok('26k. e a tela mostra o aviso quando ha divergencia',
      grade: STATE.grades.find(g => g.id === 'g_dobro') }, 0).includes('as quantidades cadastradas dizem'));
 
 console.log('');
-console.log('-- o nome da GRADE NOVA nao carrega o 10x da ribana --');
-/* "Nao deve existir uma grade com nome 10x no inicio, pois o nome da grade tem
-   correspondencia com a fase CORPO, nao tem relacao com a fase gola" (Junior,
-   20/08/2026). O encaixe da ribana leva dez grades no mesmo pano, entao a tela
-   propunha criar "10M-10GG-10G3" — nome que nao descreve peca nenhuma. O dez
-   pertence as UNIDADES da fase.
-
-   A divisao e NA BASE DE DEZ, e nao pelo maior divisor comum, e as duas travas
-   abaixo (casos 41 e 42) sao o motivo. */
+console.log('-- SO O CORPO define grade; o resto e fase --');
+/* "O programa so deve oferecer grade nova quando o pdf for de corpo. Todos os
+   outros pdf o programa deve oferecer o cadastro de fase, apenas" (Junior,
+   20/08/2026). A ribana, a gola, o vies e o forro sao FASES da grade do corpo;
+   criar grade a partir delas fazia nascer uma grade que nao e peca nenhuma. */
 const grupoDe = (arquivo, tamanhos) => {
   _riscoLeituras.length = 0;
   _riscoLeituras.push({ arquivo, tamanhos, grades: [] });
@@ -279,29 +277,44 @@ const grupoDe = (arquivo, tamanhos) => {
 };
 const nomeDe = G => _riscoNomeTamanhos(G.tamanhosGrade);
 
-let G10 = grupoDe('CM.LISA RIBANA M-GG-G3.pdf', { m: 10, gg: 10, g3: 10 });
-ok('35. a ribana 10x nasce como a grade do corpo',
-  nomeDe(G10) === 'M-GG-G3' && G10.fator === 10, nomeDe(G10) + ' fator ' + G10.fator);
-ok('36. e a faixa tambem: "10X P ao G3" vira "P ao G3"',
-  nomeDe(grupoDe('RIBANA 10X P M G GG G1 G2 G3.pdf',
-    { p: 10, m: 10, g: 10, gg: 10, g1: 10, g2: 10, g3: 10 })) === 'P ao G3');
-ok('37. gola tambem e agregadora',
-  nomeDe(grupoDe('CM.LISA - GOLA 10P-10M.pdf', { p: 10, m: 10 })) === 'P-M');
-ok('38. o que ja era 2G continua 2G depois de dividir',
-  nomeDe(grupoDe('CM.LISA - RIBANA M-2G-GG.pdf', { m: 10, g: 20, gg: 10 })) === 'M-2G-GG');
-// O caso que obriga a base 10: este arquivo mora na pasta "2M-2G". Pelo maior
+ok('35. ribana NAO oferece grade nova',
+  !grupoDe('CM.LISA RIBANA M-GG-G3.pdf', { m: 10, gg: 10, g3: 10 }), '');
+ok('36. gola tambem nao', !grupoDe('CM.LISA - GOLA 10P-10M.pdf', { p: 10, m: 10 }), '');
+ok('37. forro tambem nao', !grupoDe('BM.TRI - FORRO 2M-4G-2GG.pdf', { m: 2, g: 4, gg: 2 }), '');
+ok('38. vies tambem nao', !grupoDe('CM.LISA - VIES P-M-G.pdf', { p: 1, m: 1, g: 1 }), '');
+ok('39. mas o CORPO oferece', !!grupoDe('BM.LISA - CORPO 4M-4G.pdf', { m: 4, g: 4 }), '');
+ok('40. e nasce com a distribuicao que o relatorio deu',
+  nomeDe(grupoDe('BM.LISA - CORPO 4M-4G.pdf', { m: 4, g: 4 })) === '4M-4G', '');
+ok('41. o seletor esconde "criar grade NOVA" na ribana',
+  !_riscoCelulaGrade({ arquivo: 'CM.LISA RIBANA M-GG-G3.pdf', tamanhos: { m: 10 }, grades: [] }, 0)
+    .includes('__nova__'), '');
+ok('42. e mostra no corpo',
+  _riscoCelulaGrade({ arquivo: 'BM.LISA - CORPO 4M-4G.pdf', tamanhos: { m: 4, g: 4 }, grades: [] }, 0)
+    .includes('__nova__'), '');
+ok('43. sem candidata, a ribana e mandada para a grade do corpo',
+  _riscoCelulaGrade({ arquivo: 'CM.LISA RIBANA M-GG-G3.pdf', tamanhos: { m: 10 }, grades: [] }, 0)
+    .includes('escolha a grade do <b>corpo</b>'), '');
+
+console.log('');
+console.log('-- o "5.pdf": nome que nao diz nada --');
+/* Dezenas de relatorios da pasta se chamam so "5.pdf" — o nome nao identifica a
+   fase. Esses continuam podendo criar grade (errar para o lado de proibir
+   deixaria um corpo mal batizado sem nenhum caminho), mas o nome sugerido NAO
+   pode carregar o multiplicador da ribana. Por isso a divisao na base de dez
+   pergunta "algum item e reconhecidamente CORPO?", e nao "todos sao ribana". */
+const G5 = grupoDe('5.pdf', { m: 10, gg: 10, g3: 10 });
+ok('44. o 5.pdf ainda oferece grade nova', !!G5, '');
+ok('45. mas o nome dela sai dividido: M-GG-G3, e nao 10M-10GG-10G3',
+  nomeDe(G5) === 'M-GG-G3' && G5.fator === 10, nomeDe(G5) + ' fator ' + G5.fator);
+// O caso que obriga a base dez: este arquivo mora na pasta "2M-2G". Pelo maior
 // divisor comum (20) o nome sairia "M-G", que e OUTRA grade.
-const G20 = grupoDe('CM.LISA - RIBANA 20M-20G.pdf', { m: 20, g: 20 });
-ok('39. 20M-20G vira 2M-2G (a pasta dele), e nao M-G',
+const G20 = grupoDe('7.pdf', { m: 20, g: 20 });
+ok('46. 20M-20G vira 2M-2G (a pasta dele), e nao M-G',
   nomeDe(G20) === '2M-2G' && G20.fator === 10, nomeDe(G20) + ' fator ' + G20.fator);
-ok('40. o CORPO nunca e dividido — "4M-4G" e grade de verdade',
-  nomeDe(grupoDe('BM.LISA - CORPO 4M-4G.pdf', { m: 4, g: 4 })) === '4M-4G');
-// FORRO e agregadora, mas 2/4/2 nao e multiplo de dez: aquele encaixe e da
-// grade 2M-4G-2GG mesmo. Pelo mdc viraria "M-2G-GG", que nao e aquela grade.
-ok('41. forro 2M-4G-2GG fica como esta (mdc 2 nao e base dez)',
-  nomeDe(grupoDe('BM.TRI - FORRO 2M-4G-2GG.pdf', { m: 2, g: 4, gg: 2 })) === '2M-4G-2GG');
-ok('42. e o corpo 2/2/2 do tricolor tambem',
-  nomeDe(grupoDe('CM.TRI - CORPO 2 - M-G-G1.pdf', { m: 2, g: 2, g1: 2 })) === '2M-2G-2G1');
+ok('47. e um 2/4/2 sem nome NAO e dividido (2 nao e base dez)',
+  nomeDe(grupoDe('3.pdf', { m: 2, g: 4, gg: 2 })) === '2M-4G-2GG', '');
+ok('48. corpo com nome NUNCA e dividido, nem em dezena',
+  nomeDe(grupoDe('BM.LISA - CORPO 10M-10G.pdf', { m: 10, g: 10 })) === '10M-10G', '');
 
 console.log('');
 console.log('-- as travas --');

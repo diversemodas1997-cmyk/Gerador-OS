@@ -23707,11 +23707,13 @@ function _riscoDivisorDoGrupo(G) {
   const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
   const qs = keys.map(k => parseInt(G.tamanhos[k], 10) || 0).filter(n => n > 0);
   if (!qs.length) return 1;
-  const agrega = it => {
-    const f = _riscoFaseDoNomeArquivo((it.L && it.L.arquivo) || '');
-    return !!f && _riscoFaseEhAgregadora(f);
-  };
-  if (!G.itens.every(agrega)) return 1;
+  // A trava aqui e "nenhum item e reconhecidamente CORPO", e nao "todos sao
+  // reconhecidamente ribana". A diferenca aparece no caso que existe de verdade
+  // na pasta: dezenas de relatorios se chamam so "5.pdf". Esse nao e reconhecido
+  // como ribana — entao, pela regra antiga, um 10/10/10 dele voltaria a virar
+  // "10M-10GG-10G3". Exigindo apenas que ninguem seja corpo, ele e dividido; e o
+  // corpo, que o nome identifica, continua intocado.
+  if (G.itens.some(it => _riscoEhCorpo(it.L))) return 1;
   // NA BASE DE DEZ, e nao pelo maior divisor comum. O encaixe da ribana e
   // montado em dezenas — dez grades no pano, vinte quando cabem —, e e so isso
   // que se divide. Dois exemplos de por que a diferenca importa:
@@ -23737,11 +23739,41 @@ const _riscoTamanhosDivididos = (tamanhos, d) => {
   return out;
 };
 
+/* SO O CORPO DEFINE GRADE (Junior, 20/08/2026): "o programa so deve oferecer
+   grade nova quando o pdf for de corpo. Todos os outros pdf o programa deve
+   oferecer o cadastro de fase, apenas."
+
+   A ribana, a gola, o vies, o forro e a barra nao sao grades — sao FASES da
+   grade do corpo. Oferecer "criar grade nova" a partir de um risco de ribana
+   era o caminho para nascer uma grade que nao e peca nenhuma, duplicando a do
+   corpo com outro nome. Sem essa porta, o caminho passa a ser o certo: escolher
+   a grade do corpo no seletor e deixar o programa criar a FASE nela.
+
+   O assistente de PASTA ja fazia assim desde que a ribana entrou (`criaGrade =
+   !agrega`); esta tela e que tinha ficado para tras.
+
+   NOME QUE O PROGRAMA NAO RECONHECE continua podendo criar grade. Errar para o
+   lado de proibir seria pior: um corpo batizado fora do padrao ficaria sem
+   nenhum caminho para virar cadastro, e nao ha outra porta. */
+function _riscoEhAgregadora(L) {
+  const fase = _riscoFaseDoNomeArquivo((L && L.arquivo) || '');
+  return !!fase && _riscoFaseEhAgregadora(fase);
+}
+
+// O nome do arquivo diz, com todas as letras, que este risco e de CORPO.
+// Diferente de "nao e agregadora": um "5.pdf" nao e nenhum dos dois — o nome
+// nao diz nada, e vários riscos da casa se chamam assim.
+function _riscoEhCorpo(L) {
+  const fase = _riscoFaseDoNomeArquivo((L && L.arquivo) || '');
+  return !!fase && !_riscoFaseEhAgregadora(fase);
+}
+
 function _riscoGruposNovos() {
   const grupos = new Map();
   _riscoLeituras.forEach((L, i) => {
     if (L.erro) return;
     if (!L.forcarNova && L.grades && L.grades.length) return;
+    if (_riscoEhAgregadora(L)) return;      // ribana, gola, vies... nao viram grade
     if (!L.tamanhos || !Object.keys(L.tamanhos).length) return;
     const a = _riscoAssinatura(L.tamanhos);
     if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
@@ -24064,10 +24096,18 @@ function _riscoCelulaGrade(L, i) {
     + (outras.length
         ? `<optgroup label="todas as outras grades">${outras.map(g => opt(g, '')).join('')}</optgroup>`
         : '')
-    + `<option value="__nova__" ${L.forcarNova ? 'selected' : ''}>+ criar grade NOVA</option>`;
+    // "Criar grade NOVA" so existe para o CORPO: a ribana e a gola sao fases da
+    // grade dele, e nao grades (ver _riscoEhAgregadora).
+    + (_riscoEhAgregadora(L) ? ''
+        : `<option value="__nova__" ${L.forcarNova ? 'selected' : ''}>+ criar grade NOVA</option>`);
 
   const aviso = cands.length ? ''
-    : `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos</div>`;
+    : _riscoEhAgregadora(L)
+      // Sem candidata E sendo fase agregadora, nao ha "criar grade": o caminho
+      // e apontar a grade do CORPO, e a linha diz isso em vez de deixar a
+      // pessoa procurando um botao que nao existe mais.
+      ? `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos — escolha a grade do <b>corpo</b>: este risco vira uma <b>fase</b> dela</div>`
+      : `<div style="color:var(--alert);margin-bottom:3px;">nenhuma grade com estes tamanhos</div>`;
   // Escolha à mão fora das candidatas: diz o que o PDF trazia, para a diferença
   // ficar à vista em vez de virar dúvida depois.
   const foraDaLista = L.grade && !idsCand.has(L.grade.id)
@@ -24255,7 +24295,13 @@ function riscoTrocarGrade(i, id) {
   const L = _riscoLeituras[i];
   if (!L) return;
   _riscoNovaColetar();                 // guarda o que já foi digitado nos blocos
-  L.forcarNova = id === '__nova__';
+  // A porta ja nao aparece para ribana/gola (ver _riscoCelulaGrade), mas a
+  // tranca fica aqui tambem: tela velha em cache nao pode criar grade de uma
+  // fase que nao e grade.
+  L.forcarNova = id === '__nova__' && !_riscoEhAgregadora(L);
+  if (id === '__nova__' && !L.forcarNova) {
+    toast('Ribana, gola, viés e forro são FASES: escolha a grade do corpo e o risco vira uma fase dela', 'err');
+  }
   // Procura primeiro entre as candidatas e depois no cadastro inteiro: a linha
   // sem candidata nenhuma agora também tem seletor, e a grade escolhida ali não
   // está em L.grades por definição.
