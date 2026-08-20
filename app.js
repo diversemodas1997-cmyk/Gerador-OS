@@ -20443,6 +20443,11 @@ function _obsNomeLogin(login) {
 }
 
 function _obsQuando(nota) {
+  // NOTA MIGRADA da caixa antiga (servidor/migrar-obs-para-nota.js): o texto é
+  // de verdade, mas NÃO SE SABE de que dia — a caixa antiga não guardava hora.
+  // Carimbar uma data inventada é pior do que dizer que não se sabe. Editada
+  // depois de migrada, passa a valer a data da edição, que essa é conhecida.
+  if (nota && nota.anterior && !nota.editadoEm) return 'anterior a 20/08/2026';
   const t = nota && (nota.editadoEm || nota.em);
   if (!t) return '';
   const d = new Date(t);
