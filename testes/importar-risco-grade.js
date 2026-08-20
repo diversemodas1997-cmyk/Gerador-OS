@@ -36,9 +36,13 @@ const api = new Function('STATE', `
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   ${recorte('function _riscoGradesQueCasam', 'a busca por tamanhos')}
+  ${recorte('function _riscoGradesProporcionais', 'a busca proporcional')}
+  ${recorte('function _riscoCandidatas', 'a montagem das candidatas')}
+  ${recorte('function _riscoFator', 'o fator do risco')}
   ${recorte('function _riscoTamanhosTexto', 'o texto dos tamanhos')}
   ${recorte('function _riscoCelulaGrade', 'a celula da grade')}
-  return { _riscoGradesQueCasam, _riscoTamanhosTexto, _riscoCelulaGrade };
+  return { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
+           _riscoTamanhosTexto, _riscoCelulaGrade };
 `);
 
 // O cadastro, reduzido ao que importa: a grade CERTA e a que casa por engano.
@@ -46,9 +50,17 @@ const T = (o) => Object.assign({ p: 0, m: 0, g: 0, gg: 0, g1: 0, g2: 0, g3: 0 },
 const STATE = { grades: [
   { id: 'g_conj', nome: 'M-G (CONJUGADO) | CM.LISA | 117cm', tamanhos: T({ m: 1, g: 1 }) },
   { id: 'g_certa', nome: 'M ao G3 | CM.REC | 117cm', tamanhos: T({ m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }) },
-  { id: 'g_outra', nome: '2P-2GG | CM.REC | 117cm', tamanhos: T({ p: 2, gg: 2 }) }
+  { id: 'g_outra', nome: '2P-2GG | CM.REC | 117cm', tamanhos: T({ p: 2, gg: 2 }) },
+  // O caso da ribana: a grade do corpo, com 1 de cada, e o risco que a corta 10x.
+  { id: 'g_ribana', nome: 'M-GG-G3 | CM.LISA | 117cm', tamanhos: T({ m: 1, gg: 1, g3: 1 }) },
+  { id: 'g_dobrada', nome: 'M-2G-GG | CM.LISA | 117cm', tamanhos: T({ m: 1, g: 2, gg: 1 }) },
+  // Grades de verdade cujos números PARECEM múltiplos: elas casam exato e a
+  // proporção nao pode passar na frente.
+  { id: 'g_4m4g', nome: '4M-4G | BM.LISA | 177cm', tamanhos: T({ m: 4, g: 4 }) },
+  { id: 'g_8g', nome: '8G | BM.TRI | 179cm', tamanhos: T({ g: 8 }) }
 ] };
-const { _riscoGradesQueCasam, _riscoTamanhosTexto, _riscoCelulaGrade } = api(STATE);
+const { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
+        _riscoTamanhosTexto, _riscoCelulaGrade } = api(STATE);
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -114,6 +126,59 @@ ok('16. casamento e por distribuicao inteira, nao por subconjunto',
    _riscoGradesQueCasam({ m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }).map(g => g.nome).join());
 ok('17. quantidade diferente nao casa', _riscoGradesQueCasam({ m: 2, g: 2 }).length === 0);
 ok('18. tabela vazia nao casa com nada', _riscoGradesQueCasam({}).length === 0);
+
+console.log('');
+console.log('-- o risco que corta a grade N vezes (a RIBANA) --');
+// CM.LISA RIBANA M-GG-G3.pdf: "RIBANA 57CM - 10x M GG G3", 30 modelos completos.
+const ribana = { m: 10, gg: 10, g3: 10 };
+ok('19. exato nao acha nada (era o "nenhuma grade com estes tamanhos")',
+   _riscoGradesQueCasam(ribana).length === 0);
+const prop = _riscoGradesProporcionais(ribana);
+ok('20. a proporcional acha a grade do corpo, com o fator',
+   prop.length === 1 && prop[0].grade.id === 'g_ribana' && prop[0].fator === 10,
+   JSON.stringify(prop.map(p => [p.grade.nome, p.fator])));
+const Lr = { tamanhos: ribana };
+_riscoCandidatas(Lr);
+Lr.grade = Lr.grades[0];
+ok('21. vira candidata da leitura', Lr.grades.length === 1 && Lr.grades[0].id === 'g_ribana');
+ok('22. e o fator fica disponivel para as unidades da fase', _riscoFator(Lr) === 10);
+const htmlR = _riscoCelulaGrade(Lr, 0);
+ok('23. o seletor escreve o fator', htmlR.includes('10× M-GG-G3'), htmlR);
+ok('24. e nao acusa mais "nenhuma grade"',
+   !htmlR.includes('nenhuma grade com estes tamanhos'), htmlR);
+ok('25. a linha explica o que o multiplo significa',
+   htmlR.includes('corta <b>10×</b> a grade'), htmlR);
+ok('26. a grade dobrada tambem: 10M-20G-10GG e 10x a M-2G-GG',
+   _riscoGradesProporcionais({ m: 10, g: 20, gg: 10 })
+     .map(p => p.grade.id + ':' + p.fator).join() === 'g_dobrada:10',
+   JSON.stringify(_riscoGradesProporcionais({ m: 10, g: 20, gg: 10 }).map(p => [p.grade.nome, p.fator])));
+
+console.log('');
+console.log('-- as travas --');
+const L4m = { tamanhos: { m: 4, g: 4 } };
+_riscoCandidatas(L4m);
+ok('27. EXATO PRIMEIRO: 4M-4G e uma grade de verdade, nao 4x a M-G',
+   L4m.grades.length === 1 && L4m.grades[0].id === 'g_4m4g' && _riscoFator(L4m, L4m.grades[0]) === 1,
+   L4m.grades.map(g => g.nome).join());
+const L8g = { tamanhos: { g: 8 } };
+_riscoCandidatas(L8g);
+ok('28. o mesmo com a 8G da BM.TRI', L8g.grades.length === 1 && L8g.grades[0].id === 'g_8g',
+   L8g.grades.map(g => g.nome).join());
+ok('29. fator tem de fechar em TODOS os tamanhos',
+   _riscoGradesProporcionais({ m: 10, gg: 15, g3: 10 }).length === 0);
+ok('30. fator tem de ser inteiro',
+   _riscoGradesProporcionais({ m: 3, gg: 3, g3: 3 }).length === 1
+   && _riscoGradesProporcionais({ m: 2, g: 5, gg: 2 }).length === 0);
+ok('31. os tamanhos tem de ser os MESMOS (nem sobra nem falta)',
+   _riscoGradesProporcionais({ m: 10, gg: 10 }).length === 0
+   && _riscoGradesProporcionais({ m: 10, g: 10, gg: 10, g3: 10 }).length === 0);
+ok('32. fator 1 nao e proporcao (isso e o casamento exato)',
+   _riscoGradesProporcionais({ m: 1, gg: 1, g3: 1 }).length === 0);
+ok('33. tabela vazia nao casa por proporcao', _riscoGradesProporcionais({}).length === 0);
+const Lmao = { tamanhos: ribana };
+_riscoCandidatas(Lmao);
+Lmao.grade = STATE.grades[1];                       // escolhida a mao, fora das candidatas
+ok('34. grade escolhida a mao nao herda fator nenhum', _riscoFator(Lmao) === 1);
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }

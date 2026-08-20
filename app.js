@@ -22727,6 +22727,72 @@ function _riscoGradesQueCasam(tamanhos) {
   });
 }
 
+// A grade que este risco corta N VEZES DE UMA VEZ.
+//
+// O encaixe da ribana leva dez grades no mesmo pano — o arquivo do CAD chama-se
+// "RIBANA 57CM - 10x M GG G3" e o relatório conta "Modelos completos: 30" —,
+// então a tabela sai "M 10 · GG 10 · G3 10" para a grade M-GG-G3, que está
+// cadastrada com 1 · 1 · 1. Pelo casamento exato nada batia: a tela dizia
+// "nenhuma grade com estes tamanhos" e oferecia criar "10M-10GG-10G3", que é uma
+// duplicata da grade que já existe. Dos 243 relatórios da pasta, 33 são assim, e
+// são TODOS os de RIBANA — nenhum deles casava.
+//
+// O múltiplo NÃO É outra grade. A casa já o registra na fase, no campo
+// "Unidades da grade": a Gola dessa mesma M-GG-G3 está cadastrada com 10x. Por
+// isso a grade proporcional entra como candidata e o fator vira a sugestão de
+// unidades da fase.
+//
+// AS TRAVAS, porque dividir tamanho por conta própria estraga cadastro certo:
+//
+//  1. Só entra quando NENHUMA grade casa exato. "4M-4G | BM.LISA" e
+//     "8G | BM.TRI" são grades de verdade — o risco de CORPO delas traz 4/4 e 8
+//     legítimos —, e continuam casando exato antes de qualquer proporção.
+//  2. Os tamanhos têm de ser OS MESMOS, e o fator INTEIRO e igual em todos:
+//     10·M/10·GG/10·G3 é M-GG-G3 vezes 10, e 10·M/20·G/10·GG é M-2G-GG vezes 10.
+//     Fechando em um só tamanho não vale — seria adivinhação.
+//  3. Fator 1 não existe aqui (é o casamento exato), e o fator vai ESCRITO no
+//     seletor: ninguém aplica um risco de dez grades sem ver que são dez.
+function _riscoGradesProporcionais(tamanhos) {
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const alvo = {};
+  keys.forEach(k => { const n = parseInt((tamanhos || {})[k], 10) || 0; if (n > 0) alvo[k] = n; });
+  const usados = Object.keys(alvo);
+  if (!usados.length) return [];
+  const achadas = [];
+  (STATE.grades || []).forEach(g => {
+    const t = g.tamanhos || {};
+    const daGrade = keys.filter(k => (parseInt(t[k], 10) || 0) > 0);
+    // Os mesmos tamanhos, nem um a mais nem um a menos.
+    if (daGrade.length !== usados.length || !usados.every(k => daGrade.includes(k))) return;
+    const fator = alvo[daGrade[0]] / (parseInt(t[daGrade[0]], 10) || 0);
+    if (!Number.isInteger(fator) || fator < 2) return;
+    if (!daGrade.every(k => (parseInt(t[k], 10) || 0) * fator === alvo[k])) return;
+    achadas.push({ grade: g, fator });
+  });
+  return achadas;
+}
+
+// As candidatas de uma leitura, e o fator de cada uma. EXATO PRIMEIRO: havendo
+// grade com a distribuição idêntica, as proporcionais nem são procuradas.
+// Guarda o fator por ID, e não no objeto da grade — marca posta na grade seria
+// gravada junto no cadastro e subiria para o servidor com ele.
+function _riscoCandidatas(L) {
+  L.fatores = {};
+  const exatas = _riscoGradesQueCasam(L.tamanhos);
+  if (exatas.length) return (L.grades = exatas);
+  const props = _riscoGradesProporcionais(L.tamanhos);
+  props.forEach(p => { L.fatores[p.grade.id] = p.fator; });
+  return (L.grades = props.map(p => p.grade));
+}
+
+// Quantas grades este risco corta de uma vez, na grade escolhida. 1 = a grade
+// inteira, como o corpo. Escolha à mão fora das candidatas também dá 1: o fator
+// só existe onde o programa o calculou.
+function _riscoFator(L, grade) {
+  const g = grade || (L && L.grade);
+  return (g && L && L.fatores && L.fatores[g.id]) || 1;
+}
+
 const _riscoF = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
 
 // Palavras de um texto, já normalizadas e sem o que não distingue nada. Os
@@ -23359,7 +23425,7 @@ async function criarGradeDoRisco(gi) {
   // Relê os mesmos PDFs: agora eles encontram a grade recém-criada.
   _riscoLeituras.forEach(L => {
     if (L.erro) return;
-    L.grades = _riscoGradesQueCasam(L.tamanhos);
+    _riscoCandidatas(L);
     L.grade = L.grades.length === 1 ? L.grades[0] : null;
     L.res = L.grade ? _riscoResolverOuPropor(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
     L.aplicar = false;   // já foi gravado na criação
@@ -23400,7 +23466,7 @@ async function lerRiscosEscolhidos(ev) {
   for (const f of files) {
     try {
       const L = await _riscoLerPdf(f);
-      L.grades = _riscoGradesQueCasam(L.tamanhos);
+      _riscoCandidatas(L);
       L.grade = L.grades.length === 1 ? L.grades[0] : null;
       L.res = L.grade ? _riscoResolverOuPropor(L, L.grade) : { fase: null, origem: L.grades.length ? 'escolher grade' : 'sem grade' };
       L.aplicar = !!(L.grade && L.res.fase && L.comprimento && L.largura);
@@ -23438,7 +23504,13 @@ function _riscoCelulaGrade(L, i) {
   const idsCand = new Set(cands.map(g => g.id));
   const outras = (STATE.grades || []).filter(g => !idsCand.has(g.id));
   const sel = id => (L.grade && L.grade.id === id) ? 'selected' : '';
-  const opt = (g, pref) => `<option value="${esc(g.id)}" ${sel(g.id)}>${pref}${esc(g.nome)}</option>`;
+  // O FATOR VAI NO RÓTULO. Uma candidata proporcional é a mesma grade cortada N
+  // vezes no mesmo pano (a ribana, 10x); sem o "10×" escrito, ela se parece com
+  // um casamento exato e ninguém confere o que está aplicando.
+  const fatorDe = id => (L.fatores && L.fatores[id]) || 1;
+  const opt = (g, pref) => `<option value="${esc(g.id)}" ${sel(g.id)}>${pref}${
+    fatorDe(g.id) > 1 ? fatorDe(g.id) + '× ' : ''}${esc(g.nome)}</option>`;
+  const multiplas = cands.some(g => fatorDe(g.id) > 1);
 
   const opts = `<option value="">— ${cands.length
         ? (cands.length === 1 ? 'escolher' : 'escolher entre ' + cands.length)
@@ -23447,7 +23519,8 @@ function _riscoCelulaGrade(L, i) {
     // fica no mesmo seletor. Ter grade com aqueles tamanhos não quer dizer que o
     // risco seja dela: a distribuição P ao G3 é a mesma em sete produtos.
     + (cands.length
-        ? `<optgroup label="com os tamanhos do PDF">${cands.map(g => opt(g, 'corrigir: ')).join('')}</optgroup>`
+        ? `<optgroup label="${multiplas ? 'a mesma grade, cortada mais de uma vez neste risco' : 'com os tamanhos do PDF'}">${
+            cands.map(g => opt(g, 'corrigir: ')).join('')}</optgroup>`
         : '')
     + (outras.length
         ? `<optgroup label="todas as outras grades">${outras.map(g => opt(g, '')).join('')}</optgroup>`
@@ -23461,9 +23534,16 @@ function _riscoCelulaGrade(L, i) {
   const foraDaLista = L.grade && !idsCand.has(L.grade.id)
     ? `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">escolhida à mão — o PDF declara ${esc(_riscoTamanhosTexto(L.tamanhos))}</div>`
     : '';
+  // Escolhida uma proporcional, a linha diz o que isso significa na prática: uma
+  // camada deste pano rende N grades, e é esse N que a fase tem de ter em
+  // "Unidades da grade" para o consumo não sair dez vezes maior.
+  const fatorEscolhido = L.grade ? fatorDe(L.grade.id) : 1;
+  const multiplo = fatorEscolhido > 1
+    ? `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">este risco corta <b>${fatorEscolhido}×</b> a grade — uma camada rende ${fatorEscolhido} grades (Unidades da fase: ${fatorEscolhido}x)</div>`
+    : '';
   return aviso
     + `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`
-    + foraDaLista
+    + foraDaLista + multiplo
     + (L.forcarNova ? '<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">preencha o bloco abaixo</div>' : '');
 }
 
@@ -23599,8 +23679,9 @@ function _riscoRevalidar(L) {
   if (!L || L.erro) return L;
   const gradeId = L.grade && L.grade.id;
   // A lista de candidatas é refeita do cadastro atual — grade criada ou apagada
-  // por outro dispositivo aparece e some daqui também.
-  if (L.tamanhos) L.grades = _riscoGradesQueCasam(L.tamanhos);
+  // por outro dispositivo aparece e some daqui também. O fator vem junto: criada
+  // a grade exata, ela passa a valer e a proporcional some.
+  if (L.tamanhos) _riscoCandidatas(L);
   if (gradeId) {
     L.grade = (L.grades || []).find(g => g.id === gradeId)
       || (STATE.grades || []).find(g => g.id === gradeId) || null;
@@ -23664,7 +23745,12 @@ function riscoTrocarFase(i, nome) {
 function _riscoFaseNovaEmBranco(L) {
   const chave = _riscoChave(L);
   const tecidoId = (chave && _riscoTecidos()[chave]) || '';
-  return { __nova: true, nome: _riscoNomeFaseSugerido(L) || '', comp: '', larg: '', tecidoId, unidades: 2, bobinas: '' };
+  // AS UNIDADES SAEM DO FATOR quando o risco é múltiplo: um encaixe de dez
+  // grades nasce como fase de 10x, que é como a casa já cadastra a gola. Nascer
+  // com o padrão 2x contaria cinco vezes mais enfesto do que o corte precisa.
+  const fator = _riscoFator(L);
+  return { __nova: true, nome: _riscoNomeFaseSugerido(L) || '', comp: '', larg: '', tecidoId,
+           unidades: fator > 1 ? fator : 2, bobinas: '' };
 }
 
 // O nome digitado para a fase nova. Não redesenha a tabela — redesenhar tiraria
@@ -23700,10 +23786,23 @@ async function aplicarRiscoNasGrades() {
   // uma fase chamada "" na grade, que ninguém consegue apontar depois.
   const semNome = alvo.filter(L => L.res.fase.__nova && !String(L.res.fase.nome || '').trim());
   if (semNome.length) return toast('Dê um nome à fase nova antes de aplicar', 'err');
+  const mult = L => _riscoFator(L) > 1 ? ` · risco de ${_riscoFator(L)}× a grade` : '';
   const mudancas = alvo.map(L =>
     L.res.fase.__nova
-      ? `${L.arquivo} → ${L.grade.nome} · CRIAR a fase "${L.res.fase.nome}": ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}`
-      : `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}`);
+      ? `${L.arquivo} → ${L.grade.nome} · CRIAR a fase "${L.res.fase.nome}" (${L.res.fase.unidades}x): ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}${mult(L)}`
+      : `${L.arquivo} → ${L.grade.nome} · ${L.res.fase.nome}: ${L.res.fase.comp || '—'}×${L.res.fase.larg || '—'} → ${_riscoCompCadastro(L.comprimento, L.res.fase).toFixed(2)}×${L.largura.toFixed(3)}${mult(L)}`);
+  // UNIDADES QUE NÃO BATEM COM O FATOR é o estrago silencioso deste recurso: o
+  // pano de 0,85 m rende DEZ grades, e numa fase marcada 2x o programa contaria
+  // cinco vezes mais enfesto do que o corte precisa. A medida entra do mesmo
+  // jeito — mexer nas unidades de uma fase já cadastrada é decisão de quem
+  // cadastra, não desta tela —, mas nunca calada.
+  const unidTorta = alvo.filter(L => _riscoFator(L) > 1 && !L.res.fase.__nova
+    && (parseInt(L.res.fase.unidades, 10) || 0) !== _riscoFator(L));
+  const avisoUnid = unidTorta.length
+    ? 'ATENÇÃO — estas fases estão com "Unidades da grade" diferente do fator do risco:\n'
+      + unidTorta.map(L => `· ${L.grade.nome} · ${L.res.fase.nome}: cadastrada ${parseInt(L.res.fase.unidades, 10) || 0}x, o risco é de ${_riscoFator(L)}×`).join('\n')
+      + '\nA medida entra assim mesmo; corrija as unidades na grade depois.\n\n'
+    : '';
   // DOIS RISCOS NA MESMA FASE é sempre erro: cada PDF é uma fase, e um grava por
   // cima do outro sem deixar rastro. Era o que acontecia com os três "Corpo Parte
   // N" do tricolor, e o aviso final ainda dizia que três fases tinham mudado.
@@ -23717,7 +23816,7 @@ async function aplicarRiscoNasGrades() {
     `ATENÇÃO: ${repetidas.length} fase(s) receberiam mais de um risco, e só o último valeria:\n\n`
     + repetidas.map(([k, arqs]) => `· ${k.split('|')[1]} ← ${arqs.join(', ')}`).join('\n')
     + '\n\nO certo é um PDF por fase. Continuar assim mesmo?')) return;
-  if (!confirm(`Aplicar ${alvo.length} medida(s) no cadastro das grades?\n\n${mudancas.join('\n')}\n\n`
+  if (!confirm(`Aplicar ${alvo.length} medida(s) no cadastro das grades?\n\n${mudancas.join('\n')}\n\n${avisoUnid}`
     + 'O programa também vai guardar a que fase corresponde cada código de tecido, para reconhecer sozinho na próxima vez.')) return;
 
   const tocadas = new Set();
@@ -23732,8 +23831,11 @@ async function aplicarRiscoNasGrades() {
       // Nasce no fim da ordem, com o tecido que o programa aprendeu daquele
       // código (quando aprendeu) e as unidades no padrão; o resto é do risco.
       const maiorOrdem = L.grade.fases.reduce((m, x) => Math.max(m, parseInt(x.ordem, 10) || 0), 0);
+      // As unidades vêm da fase proposta, não do 2x fixo: num risco múltiplo
+      // elas são o fator (a ribana de dez grades nasce 10x). Ver
+      // _riscoFaseNovaEmBranco.
       f = { ordem: maiorOrdem + 1, nome: L.res.fase.nome, tecidoId: L.res.fase.tecidoId || '',
-            unidades: 2, comp: '', larg: '', bobinas: '' };
+            unidades: parseInt(L.res.fase.unidades, 10) || 2, comp: '', larg: '', bobinas: '' };
       L.grade.fases.push(f);
       criadas.push({ rotulo: `${L.grade.nome} · ${f.nome}`, semTecido: !f.tecidoId });
     }
@@ -24107,7 +24209,11 @@ function _pastaGradeAgregadora(G) {
   const linha = String(partes[0] || '').toUpperCase();
   const tok = _chaveTam(partes[1] || '');
   if (!tok) return null;
-  const mLarg = String(partes[2] || '').match(/(d+[.,]?d*)s*cm/i);
+  // \d e \s, não "d" e "s": sem as barras esta regex só casava a palavra
+  // literal "dcm", cmPasta saía sempre vazio e o desempate pela largura NUNCA
+  // rodava — as quatro larguras da mesma família empatavam e a ribana ficava
+  // sem grade, que é o mesmo sintoma que este arquivo existe para evitar.
+  const mLarg = String(partes[2] || '').match(/(\d+[.,]?\d*)\s*cm/i);
   const cmPasta = mLarg ? mLarg[1].replace(',', '.') : '';
   let cand = (STATE.grades || []).filter(g => {
     const nome = String(g.nome || '').toUpperCase();
