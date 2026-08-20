@@ -23516,7 +23516,12 @@ function _riscoNovaAplicarPrevisao(G, d) {
     return {
       nome,
       tecidoId: (velha && velha.tecidoId) || (L ? (memTec[_riscoChave(L)] || '') : ''),
-      unidades: (velha && velha.unidades) || _riscoUnidadesPadrao(d.sku),
+      // A fase que veio de um risco MÚLTIPLO nasce com o fator nas unidades: é
+      // ali que o "10x" da ribana pertence, e não no nome da grade (ver
+      // _riscoDivisorDoGrupo). As fases previstas que não têm risco seguem no
+      // padrão da casa.
+      unidades: (velha && velha.unidades)
+        || (iPdf != null && G.fator > 1 ? G.fator : _riscoUnidadesPadrao(d.sku)),
       iPdf
     };
   };
@@ -23682,6 +23687,56 @@ function previsaoFases(tipoPeca, variacao, sku) {
 // riscos sem grade candidata E os que quem está importando mandou virar grade
 // nova mesmo havendo candidata (`forcarNova`) — a grade dos mesmos tamanhos pode
 // existir para outro produto, e é decisão de quem cadastra, não do programa.
+/* O NOME DA GRADE DESCREVE O CORPO, e nao a ribana.
+
+   Junior, 20/08/2026: "nao deve existir uma grade com nome 10x no inicio, pois
+   o nome da grade tem correspondencia com a fase CORPO, nao tem relacao com a
+   fase gola."
+
+   O encaixe da ribana leva dez grades no mesmo pano, entao a tabela dele sai
+   "M 10 - GG 10 - G3 10". Quando esse risco chega sozinho e nao acha grade, a
+   tela propunha criar uma chamada `10M-10GG-10G3` — nome que nao descreve peca
+   nenhuma e que duplicaria a grade do corpo. O dez pertence as UNIDADES da
+   fase, e nao ao nome (ver _riscoMultiplo).
+
+   A TRAVA: so divide quando TODO risco do grupo e de fase agregadora (ribana,
+   gola, vies, forro). Um CORPO que sai 4/4 pode ser a grade "4M-4G | BM.LISA",
+   que existe de verdade — a mesma razao de o casamento exato vir sempre antes
+   da proporcao. */
+function _riscoDivisorDoGrupo(G) {
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const qs = keys.map(k => parseInt(G.tamanhos[k], 10) || 0).filter(n => n > 0);
+  if (!qs.length) return 1;
+  const agrega = it => {
+    const f = _riscoFaseDoNomeArquivo((it.L && it.L.arquivo) || '');
+    return !!f && _riscoFaseEhAgregadora(f);
+  };
+  if (!G.itens.every(agrega)) return 1;
+  // NA BASE DE DEZ, e nao pelo maior divisor comum. O encaixe da ribana e
+  // montado em dezenas — dez grades no pano, vinte quando cabem —, e e so isso
+  // que se divide. Dois exemplos de por que a diferenca importa:
+  //
+  //   "RIBANA 20M-20G" mora na pasta "2M-2G": dividindo por 20 (o mdc) o nome
+  //   sairia "M-G", que e outra grade; dividindo por 10 sai "2M-2G", que e a
+  //   dela.
+  //   "FORRO 2M-4G-2GG" tem mdc 2 e NAO e multiplo: aquele encaixe e da grade
+  //   2M-4G-2GG mesmo. Pelo mdc viraria "M-2G-GG", uma grade que nao e aquela.
+  //
+  // Entao: a maior potencia de dez que divide todas as quantidades.
+  let d = 1;
+  while (qs.every(n => n % (d * 10) === 0)) d *= 10;
+  return d;
+}
+
+const _riscoTamanhosDivididos = (tamanhos, d) => {
+  const out = {};
+  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => {
+    const n = parseInt(tamanhos[k], 10) || 0;
+    if (n > 0) out[k] = n / d;
+  });
+  return out;
+};
+
 function _riscoGruposNovos() {
   const grupos = new Map();
   _riscoLeituras.forEach((L, i) => {
@@ -23692,7 +23747,15 @@ function _riscoGruposNovos() {
     if (!grupos.has(a)) grupos.set(a, { assinatura: a, tamanhos: L.tamanhos, itens: [] });
     grupos.get(a).itens.push({ L, i });
   });
-  return Array.from(grupos.values());
+  // `tamanhos` continua sendo O QUE O PDF DECLAROU — e o que a tela mostra, e
+  // esconder isso seria mentir sobre o relatorio. `tamanhosGrade` e a
+  // distribuicao que a GRADE vai ter, ja dividida quando for o caso.
+  const lista = Array.from(grupos.values());
+  lista.forEach(G => {
+    G.fator = _riscoDivisorDoGrupo(G);
+    G.tamanhosGrade = G.fator > 1 ? _riscoTamanhosDivididos(G.tamanhos, G.fator) : G.tamanhos;
+  });
+  return lista;
 }
 
 function _riscoHtmlGradesNovas() {
@@ -23719,7 +23782,9 @@ function _riscoHtmlGradesNovas() {
     <div class="card" style="margin-top:12px;border-left:3px solid var(--accent);">
       <div class="card-title">Grade nova — ${esc(modelo) || 'produto sem nome no risco'}</div>
       <div class="field-hint" style="margin-bottom:8px;">
-        ${G.itens.length} risco(s) com os mesmos tamanhos (<b>${esc(tamTxt)}</b>)${forcada
+        ${G.itens.length} risco(s) com os mesmos tamanhos (<b>${esc(tamTxt)}</b>)${G.fator > 1
+          ? ` — <b>${G.fator}× a grade</b>: este encaixe corta ${G.fator} grades no mesmo pano, então a grade nasce como <b>${esc(_riscoNomeTamanhos(G.tamanhosGrade))}</b> e o ${G.fator} vai para as <b>Unidades</b> da fase`
+          : ''}${forcada
           ? ' — há grade(s) com essa distribuição, mas você pediu para <b>criar uma nova</b>.'
           : ' e nenhuma grade cadastrada com essa distribuição.'}
         Os campos abaixo são os que o PDF <b>não</b> traz — eles são decisão da casa. Preenchidos uma vez, ficam guardados para este produto.
@@ -23749,7 +23814,7 @@ function _riscoHtmlGradesNovas() {
         </div>
         <div class="field full">
           <label>Nome da grade</label>
-          <input type="text" id="rn-nome-${gi}" value="${esc(d.nomeManual && d.nome != null ? d.nome : _riscoNomeSugerido(G.tamanhos, d.sku, (G.itens[0] || {}).largura))}"
+          <input type="text" id="rn-nome-${gi}" value="${esc(d.nomeManual && d.nome != null ? d.nome : _riscoNomeSugerido(G.tamanhosGrade, d.sku, (G.itens[0] || {}).largura))}"
                  oninput="riscoNomeDigitado(${gi})" placeholder="Ex.: P ao G3 | CM.LISA | 116.5cm">
           <div class="field-hint">Nasce montado dos tamanhos do risco + o SKU, e <b>pode ser mudado</b>: é o nome que vai aparecer na lista de grades e na OS.</div>
         </div>
@@ -23795,7 +23860,7 @@ function riscoAtualizarNome(gi) {
   const el = document.getElementById(`rn-nome-${gi}`);
   // Nome digitado à mão não se refaz sozinho ao mexer no SKU.
   if (!el || d.nomeManual) return;
-  el.value = _riscoNomeSugerido(G.tamanhos, sku, (G.itens[0] || {}).largura);
+  el.value = _riscoNomeSugerido(G.tamanhosGrade, sku, (G.itens[0] || {}).largura);
   d.nome = el.value;
 }
 
@@ -23839,8 +23904,11 @@ async function criarGradeDoRisco(gi) {
   const semRisco = linhas.filter(x => !x.L);
   if (semRisco.length && !confirm(`${semRisco.length} fase(s) sem risco: ${semRisco.map(x => x.nome).join(', ')}.\n\nElas entram no cadastro SEM medida, para serem preenchidas depois — por outro PDF ou à mão. Criar assim?`)) return;
 
+  // A distribuicao da GRADE, e nao a do relatorio: um risco de ribana traz dez
+  // grades no mesmo pano, e o dez vai para as Unidades da fase. Ver
+  // _riscoDivisorDoGrupo.
   const tamanhos = {};
-  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhos[k], 10) || 0; });
+  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhosGrade[k], 10) || 0; });
   tamanhos.total = Object.keys(tamanhos).reduce((s, k) => s + (k === 'total' ? 0 : tamanhos[k]), 0);
   tamanhos.descricao = nome;
 

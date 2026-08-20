@@ -32,6 +32,20 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
+// Uma arrow de varias linhas: `const X = (...) => { ... };`
+const arrow = comeco => {
+  const i = src.indexOf(comeco);
+  if (i < 0) { console.error('nao achei ' + comeco + ' no app.js'); process.exit(1); }
+  return src.slice(i, src.indexOf('\n};', i) + 3);
+};
+
+// Um bloco `const X = [ ... ];` inteiro.
+const bloco = comeco => {
+  const i = src.indexOf(comeco);
+  if (i < 0) { console.error('nao achei ' + comeco + ' no app.js'); process.exit(1); }
+  return src.slice(i, src.indexOf('\n];', i) + 3);
+};
+
 // Uma linha inteira do app.js, para os `const X = ...` de uma linha so.
 const linha = comeco => {
   const i = src.indexOf(comeco);
@@ -54,8 +68,17 @@ const api = new Function('STATE', `
   ${recorte('function _riscoNomeDivergente', 'o nome que discorda das quantidades')}
   ${recorte('function _riscoTamanhosTexto', 'o texto dos tamanhos')}
   ${recorte('function _riscoCelulaGrade', 'a celula da grade')}
-  return { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
-           _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente };
+  ${recorte('function _riscoFaseEhAgregadora', 'a fase agregadora')}
+  ${bloco('const _RISCO_PECAS = [')}
+  ${recorte('function _riscoFaseDoNomeArquivo', 'a fase pelo nome do arquivo')}
+  ${recorte('function _riscoAssinatura', 'a assinatura dos tamanhos')}
+  ${recorte('function _riscoDivisorDoGrupo', 'o divisor do grupo')}
+  ${arrow('const _riscoTamanhosDivididos =')}
+  ${recorte('function _riscoGruposNovos', 'os grupos de grade nova')}
+  let _riscoLeituras = [];
+  return { _riscoGruposNovos, _riscoLeituras, _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
+           _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente,
+           _riscoNomeTamanhos };
 `);
 
 // O cadastro, reduzido ao que importa: a grade CERTA e a que casa por engano.
@@ -78,7 +101,8 @@ const STATE = { grades: [
   { id: 'g_pg1', nome: '2P-2G1 | CM.TRI | 116.5cm', tamanhos: T({ p: 2, g1: 2 }) }
 ] };
 const { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
-        _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente } = api(STATE);
+        _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente,
+        _riscoNomeTamanhos, _riscoGruposNovos, _riscoLeituras } = api(STATE);
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -237,6 +261,47 @@ ok('26j. faixa e forma extensa sao a mesma coisa',
 ok('26k. e a tela mostra o aviso quando ha divergencia',
    _riscoCelulaGrade({ tamanhos: { m: 1, g: 2, gg: 1 }, grades: [], fatores: {},
      grade: STATE.grades.find(g => g.id === 'g_dobro') }, 0).includes('as quantidades cadastradas dizem'));
+
+console.log('');
+console.log('-- o nome da GRADE NOVA nao carrega o 10x da ribana --');
+/* "Nao deve existir uma grade com nome 10x no inicio, pois o nome da grade tem
+   correspondencia com a fase CORPO, nao tem relacao com a fase gola" (Junior,
+   20/08/2026). O encaixe da ribana leva dez grades no mesmo pano, entao a tela
+   propunha criar "10M-10GG-10G3" — nome que nao descreve peca nenhuma. O dez
+   pertence as UNIDADES da fase.
+
+   A divisao e NA BASE DE DEZ, e nao pelo maior divisor comum, e as duas travas
+   abaixo (casos 41 e 42) sao o motivo. */
+const grupoDe = (arquivo, tamanhos) => {
+  _riscoLeituras.length = 0;
+  _riscoLeituras.push({ arquivo, tamanhos, grades: [] });
+  return _riscoGruposNovos()[0];
+};
+const nomeDe = G => _riscoNomeTamanhos(G.tamanhosGrade);
+
+let G10 = grupoDe('CM.LISA RIBANA M-GG-G3.pdf', { m: 10, gg: 10, g3: 10 });
+ok('35. a ribana 10x nasce como a grade do corpo',
+  nomeDe(G10) === 'M-GG-G3' && G10.fator === 10, nomeDe(G10) + ' fator ' + G10.fator);
+ok('36. e a faixa tambem: "10X P ao G3" vira "P ao G3"',
+  nomeDe(grupoDe('RIBANA 10X P M G GG G1 G2 G3.pdf',
+    { p: 10, m: 10, g: 10, gg: 10, g1: 10, g2: 10, g3: 10 })) === 'P ao G3');
+ok('37. gola tambem e agregadora',
+  nomeDe(grupoDe('CM.LISA - GOLA 10P-10M.pdf', { p: 10, m: 10 })) === 'P-M');
+ok('38. o que ja era 2G continua 2G depois de dividir',
+  nomeDe(grupoDe('CM.LISA - RIBANA M-2G-GG.pdf', { m: 10, g: 20, gg: 10 })) === 'M-2G-GG');
+// O caso que obriga a base 10: este arquivo mora na pasta "2M-2G". Pelo maior
+// divisor comum (20) o nome sairia "M-G", que e OUTRA grade.
+const G20 = grupoDe('CM.LISA - RIBANA 20M-20G.pdf', { m: 20, g: 20 });
+ok('39. 20M-20G vira 2M-2G (a pasta dele), e nao M-G',
+  nomeDe(G20) === '2M-2G' && G20.fator === 10, nomeDe(G20) + ' fator ' + G20.fator);
+ok('40. o CORPO nunca e dividido — "4M-4G" e grade de verdade',
+  nomeDe(grupoDe('BM.LISA - CORPO 4M-4G.pdf', { m: 4, g: 4 })) === '4M-4G');
+// FORRO e agregadora, mas 2/4/2 nao e multiplo de dez: aquele encaixe e da
+// grade 2M-4G-2GG mesmo. Pelo mdc viraria "M-2G-GG", que nao e aquela grade.
+ok('41. forro 2M-4G-2GG fica como esta (mdc 2 nao e base dez)',
+  nomeDe(grupoDe('BM.TRI - FORRO 2M-4G-2GG.pdf', { m: 2, g: 4, gg: 2 })) === '2M-4G-2GG');
+ok('42. e o corpo 2/2/2 do tricolor tambem',
+  nomeDe(grupoDe('CM.TRI - CORPO 2 - M-G-G1.pdf', { m: 2, g: 2, g1: 2 })) === '2M-2G-2G1');
 
 console.log('');
 console.log('-- as travas --');
