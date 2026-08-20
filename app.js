@@ -17661,7 +17661,62 @@ function coletaOS() {
 
 // Validação antes de salvar: limite de camadas.
 // Retorna true se pode prosseguir, false se o usuário cancelou.
+/* ---- A MEDIDA DA GRADE TEM QUE VIR DE UM PDF -----------------------------
+   Pedido de Junior em 20/08/2026: OS cuja grade tem fase com medida que não
+   veio de um relatório de encaixe NÃO É GERADA. O número digitado à mão é a
+   origem do pedido curto ao fornecedor — a bobina a menos só aparece no dia do
+   corte, e aí o lote já parou. O PDF é a prova de onde o número saiu, e vive em
+   `fase.risco` (gravado pela importação de risco e pelo
+   servidor/parear-riscos-medidas.js).
+
+   VIÉS E GOLA NÃO ENTRAM, e não é lacuna de cadastro: nenhuma grade vai ter PDF
+   de viés — é tira cortada da sobra do mesmo pano, não encaixe —, e Junior
+   decidiu o mesmo para a gola. Exigir prova delas seria uma trava que ninguém
+   nunca conseguiria satisfazer, e trava assim vira hábito de clicar "continuar".
+
+   Fase SEM medida também não entra: aqui a pergunta é "de onde veio este
+   número", e onde não há número não há o que provar. */
+
+// A fase é SÓ de viés/gola? Vale `_faseSoDe`, o mesmo teste que a regra do
+// excedente usa, e não um "contém a palavra gola": as três fases "Corpo + Gola"
+// do cadastro SÃO encaixe, têm o relatório e continuam sendo cobradas. Isentar
+// pelo pedaço do nome abriria um buraco em silêncio.
+function _faseSemEncaixe(nome) {
+  return _faseSoDe(nome, _PAL_VIES) || _faseSoDe(nome, _PAL_GOLA);
+}
+
+function fasesSemProvaDeMedida(gradeId) {
+  const g = (STATE.grades || []).find(x => x.id === gradeId);
+  if (!g) return [];
+  return (g.fases || []).filter(f => {
+    if (_faseSemEncaixe(f.nome)) return false;
+    const comp = parseFloat(String(f.comp || '').replace(',', '.'));
+    const larg = parseFloat(String(f.larg || '').replace(',', '.'));
+    if (!(comp > 0 && larg > 0)) return false;
+    return !String(f.risco || '').trim();
+  });
+}
+
 function validarAntesDeSalvar(data) {
+  // A PROVA DA MEDIDA. Barra a gravação e mostra o que falta — mas quem está
+  // com a OS na mão pode seguir assim mesmo: hoje 53 das 111 grades em uso
+  // ainda não têm o relatório exportado, e uma trava sem saída pararia a
+  // produção por uma pendência de cadastro. O aviso é o que faz a pendência
+  // aparecer para quem pode resolvê-la, e não um mês depois no pedido curto.
+  const semProva = fasesSemProvaDeMedida(data.gradeId);
+  if (semProva.length) {
+    const g = (STATE.grades || []).find(x => x.id === data.gradeId);
+    return confirm(`⚠ A medida de enfesto desta grade não veio de um risco.\n\n`
+      + `GRADE: ${g ? g.nome : '(sem grade)'}\n\n`
+      + `Sem PDF de encaixe:\n`
+      + semProva.map(f => `  · ${f.nome} — ${f.comp || '—'} × ${f.larg || '—'} (digitada à mão)`).join('\n')
+      + `\n\nO comprimento e a largura acima não têm de onde ser conferidos, e é `
+      + `desse número que sai o pedido de tecido. O certo é exportar o relatório `
+      + `de encaixe do Audaces para a pasta da grade e importar por `
+      + `"Importar risco (PDF)": a fase passa a apontar o arquivo e este aviso some.\n\n`
+      + `Viés e gola não são cobrados — não têm encaixe.\n\n`
+      + `Gerar a OS assim mesmo?`);
+  }
   const { limite, categoriaRestritiva } = calcularLimiteCamadas();
   const camadas = data.enfesto?.camadas || 0;
   if (camadas > 0 && camadas > limite) {
