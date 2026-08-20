@@ -1556,10 +1556,14 @@ function exigirEdicaoCompra(acao) {
   return false;
 }
 
-// A folha de OS. O QUE NÃO SE ABRE JUNTO: a OBSERVAÇÃO da folha continua do
-// admin (é texto livre que sai impresso como instrução, não é registro do que
-// aconteceu), e criar, editar ou duplicar a OS também — quem marca o que a
-// produção fez não redefine o que a produção deve fazer.
+// A folha de OS, INTEIRA: os quadrinhos, os números e também a OBSERVAÇÃO — ela
+// começou fora, por ser texto livre que sai impresso, e Junior mandou abrir em
+// 20/08/2026. Faz sentido: o que se escreve ali é quase sempre o que explica o
+// número ao lado ("faltou pano na 3ª fase"), e separar o recado do registro
+// obrigava a chamar o admin para escrever o motivo do que já tinha sido lançado.
+//
+// O QUE NÃO SE ABRE JUNTO: criar, editar ou duplicar a OS — quem registra o que
+// a produção fez não redefine o que a produção deve fazer.
 function exigirEdicaoFolha(acao) {
   if (_recusarPorModoNuvem(acao)) return false;
   if (_contaPodeRegistrar()) return true;
@@ -20345,7 +20349,7 @@ async function salvarTempoCorte(osId, campo, valor) {
 // Salva as observações digitadas direto na folha de OS (caixa "Observações").
 // Grava no mesmo campo o.obs usado pelo formulário de cadastro (f-obs).
 async function salvarObsOS(osId, valor) {
-  if (!exigirEdicao('editar a observação da OS')) return;
+  if (!exigirEdicaoFolha('editar a observação da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.obs = (valor || '').trim();

@@ -9,8 +9,8 @@
      · a LISTA DE COMPRA — rascunho de quanto tecido comprar; nada do que entra
        ali muda uma grade, uma OS ou um saldo de estoque;
      · o que a FOLHA DE OS anota — quadrinhos das etapas, horários, camadas por
-       tonalidade, total por tamanho. Não é o que a OS PEDE, é o que a produção
-       FEZ, e quem sabe é quem estava lá.
+       tonalidade, total por tamanho e a observação. Não é o que a OS PEDE, é o
+       que a produção FEZ, e quem sabe é quem estava lá.
 
    O que este teste protege são as BORDAS da exceção, que é onde ela estraga:
 
@@ -20,8 +20,8 @@
        para todo mundo, inclusive admin — senão os dois lados divergem;
      · cada pessoa tira da lista o que ELA somou; o levantamento do outro, não;
      · item sem dono (os que já estavam lá antes desta regra) fica com o admin;
-     · a OBSERVAÇÃO da folha NÃO entra: é texto que sai impresso como instrução
-       para quem produz, e continua sendo do admin (exigirEdicao).
+     · a folha vai INTEIRA — inclusive a observação —, mas CRIAR e EDITAR a OS
+       não: registrar o que a produção fez não é redefinir o que ela deve fazer.
 
    O teste recorta as funções do app.js de verdade. */
 const fs = require('fs');
@@ -119,8 +119,11 @@ t = monta('admin');
 ok('16. admin continua marcando', t.api.exigirEdicaoFolha('marcar etapas da OS') === true);
 t = monta(null);
 ok('17. sem login, nao', t.api.exigirEdicaoFolha('marcar etapas da OS') === false);
+t = monta('usuario');
+ok('18. e escreve a observacao da folha (aberta em 20/08/2026)',
+   t.api.exigirEdicaoFolha('editar a observação da OS') === true, t.ctx.toasts.join(' | '));
 t = monta('usuario', false);
-ok('18. servidor da fabrica fora do ar: ninguem marca',
+ok('19. servidor da fabrica fora do ar: ninguem marca',
    t.api.exigirEdicaoFolha('marcar etapas da OS') === false
    && /nuvem/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
 
@@ -129,8 +132,9 @@ console.log('-- o que NAO se abriu junto (conferido no app.js, nao em copia) --'
 const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 // Cada linha aqui e um portao que tem que continuar sendo `exigirEdicao` (so
 // admin). Se alguem trocar por exigirEdicaoFolha sem pensar, o teste cai.
+// A OBSERVACAO da folha saiu desta lista em 20/08/2026, a pedido do Junior:
+// ela agora e exigirEdicaoFolha, e o caso 18 acima cobra isso.
 const soAdmin = [
-  ['a observacao da folha', "exigirEdicao('editar a observação da OS')"],
   ['criar ou editar OS', "exigirEdicao('criar ou editar OS')"],
   ['editar OS', "exigirEdicao('editar OS')"],
   ['duplicar OS', "exigirEdicao('duplicar OS')"],
@@ -140,7 +144,7 @@ const soAdmin = [
   ['limpar a lista de compra', "exigirEdicao('limpar a lista de compra')"]
 ];
 soAdmin.forEach(([oQue, trecho], i) => {
-  ok((19 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
+  ok((20 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
 });
 
 console.log('');
