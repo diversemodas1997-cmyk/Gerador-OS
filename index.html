@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-17h">
+<link rel="stylesheet" href="styles.css?v=2026-08-20a">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -251,7 +251,9 @@
         </div>
         <div id="cp-previa"></div>
         <div style="margin-top:10px;">
-          <button class="btn primary admin-only" onclick="compraAdicionar()">+ Somar à compra</button>
+          <!-- Não é admin-only: somar na lista de compra está aberto a quem tem
+               conta (ver exigirEdicaoCompra). Limpar a lista inteira, não. -->
+          <button class="btn primary compra-only" onclick="compraAdicionar()">+ Somar à compra</button>
         </div>
       </div>
 
@@ -1182,6 +1184,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-20a"></script>
+<script src="app.js?v=2026-08-20b"></script>
 </body>
 </html>

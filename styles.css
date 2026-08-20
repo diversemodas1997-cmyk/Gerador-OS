@@ -1266,6 +1266,13 @@ body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
 
+/* A LISTA DE COMPRA é a exceção: quem tem conta soma nela, admin ou não (ver
+   exigirEdicaoCompra no app.js). A classe do body é `pode-comprar`, e não
+   `is-usuario` — essa é vestida também por quem nem fez login e pelo modo
+   nuvem, que só consultam. */
+.compra-only { display: none !important; }
+body.pode-comprar .compra-only { display: revert !important; }
+
 /* Par de .admin-only: o que só aparece para quem NÃO é admin. Serve para o mesmo
    botão ter dois nomes — "editar" para o admin, "ver" para quem consulta —
    sem depender do valor de currentRole na hora em que a tabela é desenhada

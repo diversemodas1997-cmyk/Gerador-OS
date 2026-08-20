@@ -1472,7 +1472,14 @@ function carregarPapelEmParalelo() {
 
 function aplicarPermissoesUI() {
   const body = document.body;
-  body.classList.remove('is-admin', 'is-usuario');
+  body.classList.remove('is-admin', 'is-usuario', 'pode-comprar');
+  // QUEM PODE SOMAR NA LISTA DE COMPRA tem classe própria, e não `is-usuario`:
+  // essa lá é vestida também por quem não fez login e pelo modo nuvem, que só
+  // consultam. Aqui é preciso ser uma conta de verdade, com o servidor da
+  // fábrica no ar. Ver exigirEdicaoCompra.
+  if ((currentRole === 'admin' || currentRole === 'usuario') && podeGravar()) {
+    body.classList.add('pode-comprar');
+  }
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
   // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
@@ -1513,6 +1520,26 @@ function exigirEdicao(acao) {
   toast(currentRole === 'usuario'
     ? `Seu acesso é de leitura — apenas o admin pode ${acao}`
     : `Faça login como admin para ${acao}`, 'err');
+  return false;
+}
+
+// A LISTA DE COMPRA É A EXCEÇÃO ao "só o admin escreve" — a mesma forma que a
+// exceção da expedição tinha, com o nome próprio da tela que a usa.
+//
+// Ela não é cadastro nem OS: é o rascunho de quanto tecido comprar, que se
+// monta, se confere e se joga fora. Nada do que entra ali muda uma grade, uma
+// OS ou um saldo de estoque — o item é grade + camadas, e a conta é refeita do
+// cadastro a cada desenho da tela. Quem levanta a necessidade é quem está na
+// produção; obrigar a passar pelo admin para somar uma linha é o que fazia a
+// conta voltar para o papel.
+//
+// O QUE NÃO SE ABRE JUNTO: limpar a lista inteira segue sendo do admin, e cada
+// pessoa só tira da lista o que ela mesma somou (ver _cpPodeRemover). Somar é
+// acrescentar; apagar o levantamento do outro é outra coisa.
+function exigirEdicaoCompra(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
+  if (currentRole === 'admin' || currentRole === 'usuario') return true;
+  toast(`Faça login para ${acao}`, 'err');
   return false;
 }
 
@@ -25929,8 +25956,26 @@ function compraPrevia() {
     ${semDesenho}`;
 }
 
+// QUEM ESTÁ SOMANDO, para a lista dizer de quem é cada linha. Agora que não é
+// só o admin que soma (ver exigirEdicaoCompra), sem isto uma lista de trinta
+// itens não responde "quem pediu este?" nem "qual é o meu?".
+function _cpQuemSou() {
+  return ((currentUser && currentUser.email) || '').trim().toLowerCase();
+}
+
+// Tirar da lista: o admin tira qualquer item; cada pessoa tira o que ela mesma
+// somou. Item sem dono — os que já estavam na lista antes desta regra, e os do
+// admin — não é de ninguém e fica com o admin. Somar é acrescentar; apagar o
+// levantamento do outro é outra coisa.
+function _cpPodeRemover(item, papel, quem) {
+  if (papel === 'admin') return true;
+  if (papel !== 'usuario') return false;
+  const dono = ((item && item.criadoPor) || '').trim().toLowerCase();
+  return !!dono && !!quem && dono === quem;
+}
+
 async function compraAdicionar() {
-  if (!exigirEdicao('montar a lista de compra')) return;
+  if (!exigirEdicaoCompra('montar a lista de compra')) return;
   const item = _cpItemDoFormulario();
   if (!item) return toast('Escolha a grade', 'err');
   if (!(item.camadas > 0)) return toast('Informe as camadas (ou as peças)', 'err');
@@ -25944,6 +25989,7 @@ async function compraAdicionar() {
     camadas: item.camadas,
     repeticoes: item.repeticoes,
     obs: (_cpVal('cp-obs') || '').trim(),
+    criadoPor: _cpQuemSou(),
     criadoEm: new Date().toISOString()
   });
   await saveState('compraPlano');
@@ -25954,7 +26000,11 @@ async function compraAdicionar() {
 }
 
 async function compraRemover(id) {
-  if (!exigirEdicao('mexer na lista de compra')) return;
+  if (!exigirEdicaoCompra('mexer na lista de compra')) return;
+  const it = (STATE.compraPlano || []).find(x => x.id === id);
+  if (it && !_cpPodeRemover(it, currentRole, _cpQuemSou())) {
+    return toast('Este item foi somado por outra pessoa — só quem somou (ou o admin) pode tirar', 'err');
+  }
   STATE.compraPlano = (STATE.compraPlano || []).filter(x => x.id !== id);
   _compraAbertos.delete(id);
   await saveState('compraPlano');
@@ -25996,14 +26046,15 @@ function renderCompra() {
     const aberto = _compraAbertos.has(it.id);
     const detalhe = aberto && c ? `<tr><td colspan="6" style="background:var(--line-2);">${_cpTabelaFases(c)}</td></tr>` : '';
     return `<tr>
-      <td><strong>${esc(_cpNomeGrade(it.gradeId))}</strong>${it.obs ? `<div class="muted" style="font-size:11px;">${esc(it.obs)}</div>` : ''}</td>
+      <td><strong>${esc(_cpNomeGrade(it.gradeId))}</strong>${it.obs ? `<div class="muted" style="font-size:11px;">${esc(it.obs)}</div>` : ''}${
+        it.criadoPor ? `<div class="muted" style="font-size:11px;">somou: ${esc(it.criadoPor)}</div>` : ''}</td>
       <td>${esc(_cpNomeDesenho(it.desenhoId))}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${it.camadas || '—'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${Math.max(1, parseInt(it.repeticoes, 10) || 1)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${c ? c.pecas.toLocaleString('pt-BR') : '—'}</td>
       <td class="col-actions row-actions">
         <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
-        <button class="admin-only" onclick="compraRemover('${esc(it.id)}')">remover</button>
+        <button class="${_cpPodeRemover(it, 'usuario', _cpQuemSou()) ? 'compra-only' : 'admin-only'}" onclick="compraRemover('${esc(it.id)}')">remover</button>
       </td>
     </tr>${detalhe}`;
   }).join('');
