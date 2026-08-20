@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-20c">
+<link rel="stylesheet" href="styles.css?v=2026-08-20d">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1068,6 +1068,21 @@
   </div>
 </div>
 
+<!-- ============= MODAL DAS OBSERVAÇÕES DA OS ============= -->
+<!-- A folha é uma A4 e a caixa de observações tem a altura que sobra na coluna:
+     quando os recados não cabem, os mais antigos saem da folha e é AQUI que se
+     lê tudo, com o login de quem escreveu e a hora. Só leitura — cada um edita
+     a sua na própria folha (ver _obsCaberNaFolha em app.js). -->
+<div class="modal-backdrop" id="modal-obs">
+  <div class="modal">
+    <h2 id="modal-obs-title">Observações da OS</h2>
+    <div id="modal-obs-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-obs')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL DO PLANEJAMENTO DE OPERAÇÕES ============= -->
 <!-- Uma operação do dia: data, função, o que será feito, quem executa, a OS e
      as peças. Os campos são montados em app.js (abrirModalOperacao). -->
@@ -1184,6 +1199,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-20d"></script>
+<script src="app.js?v=2026-08-20e"></script>
 </body>
 </html>

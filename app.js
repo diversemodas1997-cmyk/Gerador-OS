@@ -20348,8 +20348,128 @@ async function salvarTempoCorte(osId, campo, valor) {
 
 // Salva as observações digitadas direto na folha de OS (caixa "Observações").
 // Grava no mesmo campo o.obs usado pelo formulário de cadastro (f-obs).
+/* ---- OBSERVAÇÕES DA FOLHA: uma por pessoa, e de quem a escreveu ----------
+   Até 20/08/2026 a folha tinha UMA caixa de observação, sem dono: o texto era
+   um campo só da OS (`o.obs`) e quem escrevesse por último apagava o recado do
+   anterior. Enquanto só o admin escrevia isso não aparecia; abrir a folha para
+   a produção transformaria a caixa em cima-e-embaixo — dois turnos, um recado.
+
+   Agora cada pessoa tem A SUA (`o.obsNotas`, uma por login), e a folha imprime
+   todas. Ninguém edita nem apaga a do outro — NEM O ADMIN, por decisão do
+   Junior em 20/08/2026: o que está escrito ali é o que aquela pessoa viu
+   acontecer, e um recado reescrito por terceiro não vale como registro. Para
+   corrigir, pede-se a quem escreveu.
+
+   A trava é de TELA, como todas as outras deste programa (a caixa do outro nem
+   vira campo, e salvarObsNota só mexe na nota de quem chamou). Ela impede o
+   engano e a passada por cima; não é cofre. Ver exigirEdicaoFolha.
+
+   O CAMPO ANTIGO (`o.obs`) continua onde está, com as 21 OS que já o
+   preencheram. Ele é texto de admin — até esta data ninguém mais podia
+   escrever — e por isso segue em exigirEdicao, aparecendo só quando tem
+   conteúdo: apagado uma vez, some da folha e o assunto acaba em notas. */
+function _obsNotas(o) {
+  return Array.isArray(o && o.obsNotas) ? o.obsNotas : [];
+}
+
+// O login de quem está com a folha aberta. Minúsculo e sem espaço, que é como
+// ele é gravado na nota — senão "Costura@…" e "costura@…" viram duas pessoas.
+function _obsQuemSou() {
+  return ((currentUser && currentUser.email) || '').trim().toLowerCase();
+}
+
+// O NOME DO LOGIN, que é o que a folha mostra. O e-mail inteiro não cabe em 8pt
+// na coluna da esquerda e não diz mais nada: o domínio é o mesmo para todos.
+// O e-mail completo fica no title, para quem precisar conferir.
+function _obsNomeLogin(login) {
+  const s = String(login || '').trim();
+  const i = s.indexOf('@');
+  return i > 0 ? s.slice(0, i) : s;
+}
+
+function _obsQuando(nota) {
+  const t = nota && (nota.editadoEm || nota.em);
+  if (!t) return '';
+  const d = new Date(t);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+    + (nota.editadoEm && nota.editadoEm !== nota.em ? ' (editada)' : '');
+}
+
+// A observação DESTA pessoa. Texto em branco apaga a dela — e só a dela.
+async function salvarObsNota(osId, texto) {
+  if (!exigirEdicaoFolha('escrever a observação da OS')) return;
+  const eu = _obsQuemSou();
+  if (!eu) return toast('Não dá para saber de quem seria a observação — entre de novo na sua conta', 'err');
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  const t = (texto || '').trim();
+  const notas = _obsNotas(os).slice();
+  const i = notas.findIndex(n => String(n.login || '').trim().toLowerCase() === eu);
+  const agora = new Date().toISOString();
+  if (!t) {
+    if (i < 0) return;                       // nada escrito e nada a apagar
+    notas.splice(i, 1);
+  } else if (i >= 0) {
+    notas[i] = Object.assign({}, notas[i], { texto: t, editadoEm: agora });
+  } else {
+    notas.push({ login: eu, texto: t, em: agora });
+  }
+  os.obsNotas = notas;
+  try { await saveState('ordens'); } catch (e) { console.warn('salvarObsNota', e); }
+  // Redesenha: a nota recém-criada precisa ganhar o cabeçalho com o login e a
+  // hora, e a apagada precisa sumir. Só quando a folha desta OS está na tela.
+  const folha = document.getElementById('print-sheet');
+  if (folha && !document.querySelector('section.page[data-page="print-os"]')?.classList.contains('hidden')) {
+    renderPrintSheet(os);
+  }
+}
+
+// A CAIXA DE OBSERVAÇÕES da folha. As dos outros são TEXTO, não campo: além de
+// impedir a passada por cima, é o que faz o recado do outro turno sair inteiro
+// no papel — um <textarea> imprime só o que cabe na altura dele e corta o resto
+// em silêncio, e é justamente o texto que ninguém mais pode reescrever que não
+// pode ser cortado.
+//
+// A minha é campo, e vem por último: é a única que cresce enquanto se digita.
+function _obsCaixaHtml(o) {
+  const eu = _obsQuemSou();
+  const notas = _obsNotas(o).slice().sort((a, b) => String(a.em || '').localeCompare(String(b.em || '')));
+  const minha = eu ? notas.find(n => String(n.login || '').trim().toLowerCase() === eu) : null;
+  const cabec = n => `<span class="obs-quem" title="${esc(n.login || '')}">${
+    esc(_obsNomeLogin(n.login) || '—')}</span><span class="obs-quando">${esc(_obsQuando(n))}</span>`;
+
+  // O texto antigo, de quando a caixa não tinha dono. Aparece só se tem
+  // conteúdo, e só o admin o edita — apagado uma vez, some da folha.
+  const legado = (o.obs || '').trim() ? (currentRole === 'admin'
+    ? `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">observação da OS</span><span class="obs-quando">sem autor — anterior a 20/08/2026</span></div>
+         <textarea class="obs-input obs-legado" style="min-height:8mm;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs)}</textarea></div>`
+    : `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">observação da OS</span><span class="obs-quando">sem autor</span></div>
+         <div class="obs-texto">${esc(o.obs)}</div></div>`) : '';
+
+  const dosOutros = notas.filter(n => n !== minha).map(n =>
+    `<div class="obs-nota"><div class="obs-nota-cab">${cabec(n)}</div>
+       <div class="obs-texto">${esc(n.texto || '')}</div></div>`).join('');
+
+  // Sem login não há a quem atribuir: a folha mostra o que já foi escrito e não
+  // oferece campo nenhum.
+  if (!eu) return legado + dosOutros;
+
+  const meuCab = minha
+    ? cabec(minha)
+    : `<span class="obs-quem" title="${esc(eu)}">${esc(_obsNomeLogin(eu))}</span><span class="obs-quando">a sua</span>`;
+  return legado + dosOutros
+    + `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${meuCab}</div>
+        <textarea class="obs-input" placeholder="Digite a sua observação..." style="flex:1;min-height:10mm;"
+          onchange="salvarObsNota('${esc(o.id)}', this.value)">${esc(minha ? minha.texto || '' : '')}</textarea></div>`;
+}
+
+// O campo ANTIGO, de antes de a folha ter dono. Só admin — ver o comentário
+// acima; ele existe para não perder o que já estava escrito, não para receber
+// coisa nova.
 async function salvarObsOS(osId, valor) {
-  if (!exigirEdicaoFolha('editar a observação da OS')) return;
+  if (!exigirEdicao('editar a observação antiga da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.obs = (valor || '').trim();
@@ -22060,7 +22180,7 @@ function renderPrintSheet(o) {
              inline vence a folha de estilo, entao mudar so o styles.css nao
              tem efeito nenhum aqui. Mexeu num, mexe no outro. -->
         <div style="background:#c9e8d0;padding:3px 6px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;border:1px solid #000;border-left:none;border-right:none;">Observações</div>
-        <div class="obs-box" style="flex:1;min-height:20mm;display:flex;flex-direction:column;border-left:none;border-right:none;"><textarea class="obs-input" placeholder="Digite as observações..." style="flex:1;min-height:14mm;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs || '')}</textarea></div>
+        <div class="obs-box" style="flex:1;min-height:20mm;display:flex;flex-direction:column;border-left:none;border-right:none;">${_obsCaixaHtml(o)}</div>
       </div>
 
       <div class="sheet-right">
@@ -22310,6 +22430,85 @@ function renderPrintSheet(o) {
 
     <div class="sheet-atencao"><strong>Atenção</strong> <span class="atencao-text">${esc(o.atencao || '')}</span></div>
   `;
+  _obsOsDaFolha = o;
+  _obsCaberNaFolha();
+}
+
+// A CAIXA DE OBSERVAÇÕES NÃO PODE MENTIR. A folha é uma A4 e a caixa tem a
+// altura que sobra na coluna; com quatro ou cinco recados longos o texto passa
+// disso — e aí a folha impressa mostra os primeiros e engole os últimos SEM
+// DIZER NADA. Quem lê o papel não tem como saber que faltou coisa. Medido: 5
+// notas de ~280 caracteres já transbordam.
+//
+// Então, quando não cabe, esconde as MAIS ANTIGAS (as novas é que interessam a
+// quem está produzindo agora) e escreve, no lugar delas, quantas ficaram de
+// fora e onde vê-las. A nota de quem está com a folha aberta nunca é escondida:
+// é onde essa pessoa escreve.
+//
+// É medição de layout, então roda depois do innerHTML, não durante: só o
+// navegador sabe quantas linhas um texto ocupou.
+// De qual OS é a folha que está desenhada. O aviso de "não coube" precisa saber
+// disso para abrir a lista certa, e ele nasce depois do innerHTML.
+let _obsOsDaFolha = null;
+
+// TODAS as observações desta OS, em leitura, para quando a folha não deu conta.
+function abrirTodasAsObs(o) {
+  if (!o) return;
+  const notas = _obsNotas(o).slice().sort((a, b) => String(a.em || '').localeCompare(String(b.em || '')));
+  const bloco = (quem, quando, texto, titulo) => `
+    <div style="padding:8px 0;border-bottom:1px solid var(--line);">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px;">
+        <b style="color:var(--ink-1);" title="${esc(titulo || '')}">${esc(quem)}</b><span>${esc(quando)}</span>
+      </div>
+      <div style="white-space:pre-wrap;font-size:13px;margin-top:2px;">${esc(texto)}</div>
+    </div>`;
+  const legado = (o.obs || '').trim()
+    ? bloco('observação da OS', 'sem autor — anterior a 20/08/2026', o.obs) : '';
+  const corpo = legado + notas.map(n =>
+    bloco(_obsNomeLogin(n.login) || '—', _obsQuando(n), n.texto || '', n.login)).join('');
+  document.getElementById('modal-obs-title').textContent =
+    `Observações da OS ${o.os || ''}`.trim();
+  document.getElementById('modal-obs-fields').innerHTML = corpo
+    || '<div class="empty" style="padding:16px;">Nenhuma observação nesta OS.</div>';
+  openModal('modal-obs');
+}
+
+function _obsCaberNaFolha() {
+  const box = document.querySelector('#print-sheet .obs-box');
+  if (!box) return;
+  const aviso = box.querySelector('.obs-cortadas');
+  if (aviso) aviso.remove();
+  const podem = Array.from(box.querySelectorAll('.obs-nota:not(.obs-minha)'));
+  podem.forEach(n => n.classList.remove('obs-oculta'));
+  const transborda = () => box.scrollHeight > box.clientHeight + 1;
+  if (!transborda()) return;
+  let escondidas = 0;
+  for (const nota of podem) {                 // da mais antiga para a mais nova
+    nota.classList.add('obs-oculta');
+    escondidas++;
+    if (!transborda()) break;
+  }
+  const linha = document.createElement('div');
+  linha.className = 'obs-cortadas';
+  const dizer = n => (n === 1
+    ? '1 observação mais antiga não coube nesta folha'
+    : `${n} observações mais antigas não couberam nesta folha`) + ' — clique para ver todas';
+  linha.textContent = dizer(escondidas);
+  // Na TELA o aviso abre a lista inteira; no papel ele fica sendo o que é, um
+  // aviso. Não expande a caixa na tela de propósito: o PDF da folha é gerado
+  // por html2canvas em cima deste mesmo DOM (ver o comentário do pdf-capture),
+  // e uma caixa esticada aqui sairia esticada no PDF.
+  linha.onclick = () => abrirTodasAsObs(_obsOsDaFolha);
+  box.insertBefore(linha, box.firstChild);
+  // A própria linha ocupa espaço: se ela reabriu o transbordo, esconde mais uma.
+  if (transborda()) {
+    const resta = podem.find(n => !n.classList.contains('obs-oculta'));
+    if (resta) {
+      resta.classList.add('obs-oculta');
+      escondidas++;
+      linha.textContent = dizer(escondidas);
+    }
+  }
 }
 
 /* ========================================================= */

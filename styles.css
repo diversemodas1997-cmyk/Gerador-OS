@@ -953,8 +953,13 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    manda: o .obs-input base tem min-height: 112px (~29.6mm) e seguraria a
    caixa em ~32mm por mais que o min-height dela dissesse 20mm.
    Nao usar min-height: 0 aqui — flex: 1 + min-height: 0 ja colapsou o
-   desenho pra 0 no PDF (bug do html2canvas com flexbox). */
-.sheet-left > .obs-box .obs-input { flex: 1; min-height: 14mm; }
+   desenho pra 0 no PDF (bug do html2canvas com flexbox).
+   Desde 20/08/2026 os campos da caixa moram dentro de .obs-nota (uma nota por
+   pessoa), e sao dois casos: a NOTA DA PROPRIA PESSOA, que estica com o que
+   sobra, e o texto ANTIGO do admin, que nao estica — quem tem de crescer e a
+   caixa de quem esta escrevendo agora. */
+.sheet-left > .obs-box .obs-minha .obs-input { flex: 1; min-height: 10mm; }
+.sheet-left > .obs-box .obs-legado { flex: 0 0 auto; min-height: 8mm; }
 .obs-input {
   display: block;
   width: 100%;
@@ -971,6 +976,52 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   box-sizing: border-box;
 }
 .obs-input::placeholder { color: #bbb; font-style: italic; }
+
+/* UMA OBSERVAÇÃO POR PESSOA (desde 20/08/2026). Cada nota leva o login de quem
+   escreveu; as dos outros são TEXTO, não campo — ninguém reescreve o recado
+   alheio, e texto sai inteiro no papel, enquanto um <textarea> corta em
+   silêncio o que passa da altura dele. A minha é a última e é a única que
+   estica, porque é a que cresce enquanto se digita. */
+.obs-box .obs-nota { display: flex; flex-direction: column; margin-bottom: 1.5mm; }
+.obs-box .obs-nota:last-child { margin-bottom: 0; }
+.obs-box .obs-nota.obs-minha { flex: 1; min-height: 10mm; margin-bottom: 0; }
+.obs-nota-cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  line-height: 1.2;
+}
+.obs-quem { font-weight: 700; color: #000; text-transform: lowercase; }
+.obs-quando { color: #777; white-space: nowrap; }
+.obs-texto {
+  font-size: 8pt;
+  line-height: 1.35;
+  color: #000;
+  white-space: pre-wrap;      /* respeita as quebras de linha de quem escreveu */
+  overflow-wrap: anywhere;    /* e não estoura a coluna com uma palavra longa */
+}
+/* O piso dos dois campos (a nota da própria pessoa e o texto antigo do admin)
+   mora lá em cima, junto da regra que explica por que ele precisa existir. */
+
+/* O QUE NÃO COUBE NA FOLHA, dito com todas as letras. Ver _obsCaberNaFolha: a
+   caixa tem a altura que sobra na A4, e sem isto a folha impressa engoliria os
+   recados mais antigos sem avisar ninguém. */
+.obs-nota.obs-oculta { display: none; }
+.obs-cortadas {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  line-height: 1.2;
+  color: #b03030;
+  margin-bottom: 1mm;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+/* No papel ele é um aviso, não um link: sublinhado de clique numa folha
+   impressa só confunde quem a lê. */
+@media print { .obs-cortadas { text-decoration: none; cursor: auto; } }
 
 /* ============ MARGENS PADRÃO DE FOLHA A4 ============ */
 /* Um lugar só para a margem de toda folha A4 do programa — a de OS, a do plano

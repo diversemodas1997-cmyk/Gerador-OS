@@ -120,8 +120,8 @@ ok('16. admin continua marcando', t.api.exigirEdicaoFolha('marcar etapas da OS')
 t = monta(null);
 ok('17. sem login, nao', t.api.exigirEdicaoFolha('marcar etapas da OS') === false);
 t = monta('usuario');
-ok('18. e escreve a observacao da folha (aberta em 20/08/2026)',
-   t.api.exigirEdicaoFolha('editar a observação da OS') === true, t.ctx.toasts.join(' | '));
+ok('18. e escreve a observacao DELE na folha (aberta em 20/08/2026)',
+   t.api.exigirEdicaoFolha('escrever a observação da OS') === true, t.ctx.toasts.join(' | '));
 t = monta('usuario', false);
 ok('19. servidor da fabrica fora do ar: ninguem marca',
    t.api.exigirEdicaoFolha('marcar etapas da OS') === false
@@ -132,9 +132,12 @@ console.log('-- o que NAO se abriu junto (conferido no app.js, nao em copia) --'
 const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 // Cada linha aqui e um portao que tem que continuar sendo `exigirEdicao` (so
 // admin). Se alguem trocar por exigirEdicaoFolha sem pensar, o teste cai.
-// A OBSERVACAO da folha saiu desta lista em 20/08/2026, a pedido do Junior:
-// ela agora e exigirEdicaoFolha, e o caso 18 acima cobra isso.
+// A OBSERVACAO virou UMA POR PESSOA em 20/08/2026: quem escreve e
+// salvarObsNota (exigirEdicaoFolha, caso 18 acima), e ninguem mexe na do outro
+// — isso quem cobra e testes/observacao-por-autor.js. O que ficou aqui e o
+// campo ANTIGO, sem dono, que segue do admin.
 const soAdmin = [
+  ['a observacao antiga (sem dono)', "exigirEdicao('editar a observação antiga da OS')"],
   ['criar ou editar OS', "exigirEdicao('criar ou editar OS')"],
   ['editar OS', "exigirEdicao('editar OS')"],
   ['duplicar OS', "exigirEdicao('duplicar OS')"],
