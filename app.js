@@ -4068,6 +4068,12 @@ function addFaseGradeRow(fase = {}) {
   const corM = corMin ? (corMin % 60) : '';
   const div = document.createElement('div');
   div.className = 'fase-grade-bloco';
+  // O PDF QUE DEU A MEDIDA VIAJA NO BLOCO, num data-attribute, porque a ficha
+  // nao tem campo para ele: `fase.risco` e prova de origem, nao coisa que se
+  // digita. Sem isto, abrir a ficha de uma grade e clicar em Salvar APAGAVA a
+  // prova de todas as fases dela em silencio — e desde 20/08/2026 e essa prova
+  // que decide se a OS sai com aviso (ver fasesSemProvaDeMedida).
+  div.dataset.risco = fase.risco || '';
   div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
   div.innerHTML = `
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
@@ -5005,7 +5011,11 @@ async function salvarCadastro() {
         // folha de OS como sempre, mas o planejamento do dia não monta a corrente
         // dela. Guardado como exceção — sem a marca, a fase entra, que é o que
         // toda grade já cadastrada espera.
-        foraDoPlano: !!b.querySelector('.fase-fora-plano')?.checked
+        foraDoPlano: !!b.querySelector('.fase-fora-plano')?.checked,
+        // A prova de onde vieram comprimento e largura, carregada no bloco (ver
+        // o data-risco acima). Vem por ultimo de proposito: e o unico campo
+        // desta lista que a pessoa nao digitou.
+        risco: b.dataset.risco || ''
       };
     });
     // Retrocompatibilidade: usa a primeira fase para os campos legados
@@ -14700,9 +14710,12 @@ function abrirRiscosDaGrade(id) {
       <div style="margin-bottom:12px;">
         <div style="font-size:11px;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;margin-bottom:4px;">📁 ${esc(pasta)}</div>
         ${porPasta[pasta].map(p => `
-          <div style="padding:4px 0 4px 14px;">
+          <div style="padding:4px 0 4px 14px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
             <a href="${esc(_riscoUrl(p.rel))}" target="_blank" rel="noopener">📄 ${esc(p.arq)}</a>
-            ${usado(p.rel) ? ' <span class="badge" style="background:#e8f5e9;" title="Registrado no cadastro desta grade">✓ usado</span>' : ''}
+            ${usado(p.rel)
+              ? ' <span class="badge" style="background:#e8f5e9;" title="Registrado no cadastro desta grade">✓ usado</span>'
+              : `<button class="btn small admin-only" title="Abre este relatório numa aba e a ficha da grade ao lado, com uma fase nova já apontando para ele — é só preencher o nome, o tecido e as medidas que o PDF mostra."
+                   onclick="cadastrarFaseDoRisco('${esc(g.id)}', '${esc(p.rel)}')">+ cadastrar fase</button>`}
           </div>`).join('')}
       </div>`).join('')}
     <div style="font-size:11px;color:var(--ink-3);margin-top:10px;">
@@ -14710,6 +14723,39 @@ function abrirRiscosDaGrade(id) {
       <code>node servidor/indexar-riscos.js</code>.
     </div>`;
   openModal('modal-riscos');
+}
+
+// O ATALHO DO PDF SEM FASE. O relatório está na pasta da grade e nenhuma fase
+// aponta para ele: ou falta cadastrar essa fase, ou ela existe e foi preenchida
+// à mão, sem registrar de onde veio o número. Nos dois casos o caminho é o
+// mesmo — ler o PDF e mexer na ficha —, e ele custava fechar o modal, achar a
+// grade na lista, clicar em editar e abrir o arquivo por fora.
+//
+// Abre as duas coisas lado a lado: o relatório numa aba (é dele que saem o
+// comprimento e a largura) e a ficha da grade, com uma FASE NOVA já apontando
+// para o arquivo. Assim, salvando, a fase nasce com a prova — que é o que faz
+// o ✓ aparecer aqui e o aviso da OS calar.
+//
+// A aba vem ANTES de abrir a ficha: `window.open` só passa no bloqueador de
+// pop-up enquanto o clique ainda está sendo processado.
+function cadastrarFaseDoRisco(gradeId, rel) {
+  if (!exigirEdicao('cadastrar fase da grade')) return;
+  window.open(_riscoUrl(rel), '_blank', 'noopener');
+  closeModal('modal-riscos');
+  openCadastroModal('grade', gradeId);
+  // A ficha monta as fases existentes de forma assíncrona (fillSelect de tecidos
+  // e o resto do formulário); a fase nova entra depois que ela terminou.
+  setTimeout(() => {
+    const cont = document.getElementById('m-fases-container');
+    if (!cont) return;
+    addFaseGradeRow({ risco: rel });
+    const novo = cont.querySelector('.fase-grade-bloco:last-child');
+    if (!novo) return;
+    novo.style.outline = '2px solid var(--accent)';
+    novo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    novo.querySelector('.fase-nome')?.focus();
+    toast('Fase nova apontando para ' + rel.split('/').pop() + ' — preencha o nome, o tecido e as medidas do PDF', '');
+  }, 60);
 }
 
 // A célula da coluna "Riscos". Botão de LEITURA: conferir de onde veio uma

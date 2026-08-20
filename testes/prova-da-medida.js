@@ -111,5 +111,36 @@ ok('15. risco so com espaco nao vale como prova',
   com(fase('Corpo', '3.88', '1.170', '   ')).length === 1);
 
 console.log('');
+console.log('-- a prova SOBREVIVE a um Salvar na ficha da grade --');
+/* Este e um teste de GUARDA, e olha o texto do app.js de proposito.
+
+   A ficha da grade nao tem campo para `fase.risco`: ele e prova de origem, nao
+   coisa que se digita. Ate 20/08/2026 o Salvar remontava `item.fases` inteiro a
+   partir dos campos da tela — e, como o risco nao era campo, ABRIR A FICHA DE
+   UMA GRADE E SALVAR APAGAVA A PROVA DE TODAS AS FASES DELA, em silencio.
+   Passou a doer no mesmo dia, quando a prova virou o que decide se a OS sai com
+   aviso.
+
+   O conserto sao duas metades que so funcionam juntas: o bloco carrega o valor
+   num data-attribute, e o Salvar le de volta de la. Uma sem a outra apaga tudo
+   de novo, e nenhum teste de comportamento pegaria isso sem montar a ficha
+   inteira no navegador. Entao as duas metades sao cobradas aqui, pelo nome. */
+ok('16. o bloco da fase CARREGA o risco', /div\.dataset\.risco = fase\.risco/.test(src), '');
+ok('17. e o Salvar LE o risco de volta', /risco: b\.dataset\.risco/.test(src), '');
+ok('18. as duas metades estao na mesma funcao de gravar',
+  /item\.fases = Array\.from[\s\S]{0,3000}risco: b\.dataset\.risco/.test(src), '');
+
+console.log('');
+console.log('-- o atalho "cadastrar fase" --');
+ok('19. o botao aparece so no PDF que nenhuma fase usa',
+  /usado\(p\.rel\)[\s\S]{0,400}cadastrarFaseDoRisco/.test(src), '');
+ok('20. abre o PDF ANTES da ficha (pop-up so passa durante o clique)',
+  /window\.open\(_riscoUrl\(rel\)[\s\S]{0,200}openCadastroModal\('grade', gradeId\)/.test(src), '');
+ok('21. e a fase nova ja nasce apontando para o arquivo',
+  /addFaseGradeRow\(\{ risco: rel \}\)/.test(src), '');
+ok('22. so quem edita ve o atalho', /cadastrarFaseDoRisco[\s\S]{0,600}exigirEdicao\('cadastrar fase da grade'\)/.test(src)
+  || /exigirEdicao\('cadastrar fase da grade'\)/.test(src), '');
+
+console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');
