@@ -156,6 +156,35 @@ const ctxDe = (login, papel, os, servidorNoAr = true) => ({
     A._obsQuando({ em: '2026-08-20T14:10:00', editadoEm: '2026-08-20T16:00:00' }));
 
   console.log('');
+  console.log('-- o campo cresce em vez de rolar --');
+  // A folha não tem barra de rolagem (20/08/2026): o que está rolado para baixo
+  // simplesmente não sai no papel, e quem lê não tem como saber que falta. Quem
+  // faz o campo crescer é _obsAjustarAltura; aqui se cobra o CSS que tira a
+  // rolagem, porque é ele que torna o corte silencioso possível se alguém
+  // devolver o overflow sem devolver o crescimento.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  // A regra BASE (inicio de linha), e nao a `.obs-minha .obs-input` que vem antes.
+  const iIn = css.search(/^\.obs-input \{/m);
+  const regraInput = css.slice(iIn, css.indexOf('}', iIn));
+  ok('19. o campo da observacao nao rola', /overflow:\s*hidden/.test(regraInput), regraInput);
+  ok('20. e nao tem alca de arrastar', /resize:\s*none/.test(regraInput), regraInput);
+  ok('21. e existe quem faca o campo crescer com o texto',
+    /function _obsAjustarAltura/.test(src) && /oninput="_obsAjustarAltura\(this\)"/.test(src));
+
+  console.log('');
+  console.log('-- o texto antigo e do admin --');
+  // Junior confirmou em 20/08/2026: todas as anotações que já existem, em todas
+  // as OS, são do admin — até essa data ninguém mais podia escrever ali.
+  // Procura no que a tela DESENHA (o rotulo dentro do span), e nao no arquivo
+  // inteiro: o comentario logo acima da funcao cita "sem autor" para explicar
+  // por que ele saiu, e isso nao pode derrubar o teste.
+  const rotulos = (src.match(/class="obs-quem"[^>]*>([^<]*)</g) || []).join(' | ');
+  ok('22. aparece assinado "admin", e nao "sem autor"',
+    !/>sem autor</.test(src) && /"obs-quem">admin</.test(src), rotulos);
+  ok('23. e continua sendo do admin para editar',
+    /exigirEdicao\('editar a observação antiga da OS'\)/.test(src));
+
+  console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
   console.log('todos os testes passaram');
 })();

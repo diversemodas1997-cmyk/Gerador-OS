@@ -960,13 +960,21 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    caixa de quem esta escrevendo agora. */
 .sheet-left > .obs-box .obs-minha .obs-input { flex: 1; min-height: 10mm; }
 .sheet-left > .obs-box .obs-legado { flex: 0 0 auto; min-height: 8mm; }
+/* SEM ROLAGEM (20/08/2026). O campo cresce com o texto em vez de esconder o
+   resto atrás de uma barra: o volume de anotação da casa cabe na caixa, e uma
+   barra de rolagem numa FOLHA é pior do que inútil — o que está rolado para
+   baixo não existe no papel, e ninguém tem como saber que falta. Quem faz o
+   campo crescer é _obsAjustarAltura, no app.js.
+   O `resize` sai junto: alça de arrastar numa folha que vira PDF só serve para
+   alguém deixar a caixa de um tamanho na tela e outro no papel. */
 .obs-input {
   display: block;
   width: 100%;
   min-height: 112px;
   border: none;
   background: transparent;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   font-family: inherit;
   font-size: 8pt;
   line-height: 1.35;

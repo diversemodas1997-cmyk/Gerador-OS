@@ -20495,12 +20495,15 @@ function _obsCaixaHtml(o) {
   const cabec = n => `<span class="obs-quem" title="${esc(n.login || '')}">${
     esc(_obsNomeLogin(n.login) || '—')}</span><span class="obs-quando">${esc(_obsQuando(n))}</span>`;
 
-  // O texto antigo, de quando a caixa não tinha dono. Aparece só se tem
-  // conteúdo, e só o admin o edita — apagado uma vez, some da folha.
+  // O TEXTO ANTIGO, de quando a caixa era uma só. Junior confirmou em
+  // 20/08/2026 que TODAS as anotações que já existem, em todas as OS, são do
+  // admin — até essa data ninguém mais podia escrever ali. Por isso ele aparece
+  // assinado "admin", e não "sem autor", e só admin o edita. Aparece só quando
+  // tem conteúdo: apagado uma vez, some da folha e o assunto acaba em notas.
   const legado = (o.obs || '').trim() ? (currentRole === 'admin'
-    ? `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">observação da OS</span><span class="obs-quando">sem autor — anterior a 20/08/2026</span></div>
-         <textarea class="obs-input obs-legado" style="min-height:8mm;" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs)}</textarea></div>`
-    : `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">observação da OS</span><span class="obs-quando">sem autor</span></div>
+    ? `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">admin</span><span class="obs-quando">anterior a 20/08/2026</span></div>
+         <textarea class="obs-input obs-legado" style="min-height:8mm;" oninput="_obsAjustarAltura(this)" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs)}</textarea></div>`
+    : `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">admin</span><span class="obs-quando">anterior a 20/08/2026</span></div>
          <div class="obs-texto">${esc(o.obs)}</div></div>`) : '';
 
   const dosOutros = notas.filter(n => n !== minha).map(n =>
@@ -20517,6 +20520,7 @@ function _obsCaixaHtml(o) {
   return legado + dosOutros
     + `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${meuCab}</div>
         <textarea class="obs-input" placeholder="Digite a sua observação..." style="flex:1;min-height:10mm;"
+          oninput="_obsAjustarAltura(this)"
           onchange="salvarObsNota('${esc(o.id)}', this.value)">${esc(minha ? minha.texto || '' : '')}</textarea></div>`;
 }
 
@@ -22518,7 +22522,7 @@ function abrirTodasAsObs(o) {
       <div style="white-space:pre-wrap;font-size:13px;margin-top:2px;">${esc(texto)}</div>
     </div>`;
   const legado = (o.obs || '').trim()
-    ? bloco('observação da OS', 'sem autor — anterior a 20/08/2026', o.obs) : '';
+    ? bloco('admin', 'anterior a 20/08/2026', o.obs) : '';
   const corpo = legado + notas.map(n =>
     bloco(_obsNomeLogin(n.login) || '—', _obsQuando(n), n.texto || '', n.login)).join('');
   document.getElementById('modal-obs-title').textContent =
@@ -22528,7 +22532,26 @@ function abrirTodasAsObs(o) {
   openModal('modal-obs');
 }
 
+// O CAMPO CRESCE COM O TEXTO — a folha não tem barra de rolagem.
+//
+// Textarea rola por natureza, e numa FOLHA isso é pior do que inútil: o que
+// está rolado para baixo simplesmente não sai no papel, e quem lê não tem como
+// saber que falta. O `flex: 1` continua mandando enquanto o texto é pequeno (a
+// caixa ocupa a sobra da coluna, como sempre ocupou); passando disso, o piso
+// sobe para a altura do conteúdo e a caixa cresce.
+function _obsAjustarAltura(el) {
+  if (!el) return;
+  el.style.minHeight = '';                       // volta ao piso do CSS p/ remedir
+  if (el.scrollHeight > el.clientHeight) el.style.minHeight = el.scrollHeight + 'px';
+}
+
+// Todas as caixas da folha de uma vez, depois de desenhar.
+function _obsAjustarAlturas() {
+  document.querySelectorAll('#print-sheet .obs-input').forEach(_obsAjustarAltura);
+}
+
 function _obsCaberNaFolha() {
+  _obsAjustarAlturas();
   const box = document.querySelector('#print-sheet .obs-box');
   if (!box) return;
   const aviso = box.querySelector('.obs-cortadas');
