@@ -14714,7 +14714,7 @@ function abrirRiscosDaGrade(id) {
             <a href="${esc(_riscoUrl(p.rel))}" target="_blank" rel="noopener">📄 ${esc(p.arq)}</a>
             ${usado(p.rel)
               ? ' <span class="badge" style="background:#e8f5e9;" title="Registrado no cadastro desta grade">✓ usado</span>'
-              : `<button class="btn small admin-only" title="Abre este relatório numa aba e a ficha da grade ao lado, com uma fase nova já apontando para ele — é só preencher o nome, o tecido e as medidas que o PDF mostra."
+              : `<button class="btn small admin-only" title="Abre a tela de importação com este relatório já lido: comprimento, largura, tamanhos e tecido saem dele, e a grade já vem escolhida. É só conferir a fase e aplicar."
                    onclick="cadastrarFaseDoRisco('${esc(g.id)}', '${esc(p.rel)}')">+ cadastrar fase</button>`}
           </div>`).join('')}
       </div>`).join('')}
@@ -14727,35 +14727,52 @@ function abrirRiscosDaGrade(id) {
 
 // O ATALHO DO PDF SEM FASE. O relatório está na pasta da grade e nenhuma fase
 // aponta para ele: ou falta cadastrar essa fase, ou ela existe e foi preenchida
-// à mão, sem registrar de onde veio o número. Nos dois casos o caminho é o
-// mesmo — ler o PDF e mexer na ficha —, e ele custava fechar o modal, achar a
-// grade na lista, clicar em editar e abrir o arquivo por fora.
+// à mão, sem registrar de onde veio o número.
 //
-// Abre as duas coisas lado a lado: o relatório numa aba (é dele que saem o
-// comprimento e a largura) e a ficha da grade, com uma FASE NOVA já apontando
-// para o arquivo. Assim, salvando, a fase nasce com a prova — que é o que faz
-// o ✓ aparecer aqui e o aviso da OS calar.
+// Leva para a TELA DE IMPORTAÇÃO com este PDF já lido — e não para a ficha da
+// grade. É a mesma tela do "Importar risco (PDF)", com a diferença de que o
+// arquivo não é escolhido no disco: ele já está na pasta de riscos, e é de lá
+// que o programa o busca. Assim o comprimento, a largura, a tabela de tamanhos
+// e o tecido saem do próprio relatório, como em qualquer importação — ninguém
+// redigita número que o PDF já traz.
 //
-// A aba vem ANTES de abrir a ficha: `window.open` só passa no bloqueador de
-// pop-up enquanto o clique ainda está sendo processado.
-function cadastrarFaseDoRisco(gradeId, rel) {
-  if (!exigirEdicao('cadastrar fase da grade')) return;
-  window.open(_riscoUrl(rel), '_blank', 'noopener');
+// A GRADE JÁ VEM ESCOLHIDA: este modal é o "Riscos de <grade>", então é dela
+// que se trata. Se o PDF declarar outros tamanhos, a própria tela avisa
+// ("escolhida à mão — o PDF declara ..."), que é o certo: quem manda é quem
+// está cadastrando, e o programa só não deixa a diferença passar calada.
+async function cadastrarFaseDoRisco(gradeId, rel) {
+  if (!exigirEdicao('importar risco de PDF')) return;
   closeModal('modal-riscos');
-  openCadastroModal('grade', gradeId);
-  // A ficha monta as fases existentes de forma assíncrona (fillSelect de tecidos
-  // e o resto do formulário); a fase nova entra depois que ela terminou.
-  setTimeout(() => {
-    const cont = document.getElementById('m-fases-container');
-    if (!cont) return;
-    addFaseGradeRow({ risco: rel });
-    const novo = cont.querySelector('.fase-grade-bloco:last-child');
-    if (!novo) return;
-    novo.style.outline = '2px solid var(--accent)';
-    novo.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    novo.querySelector('.fase-nome')?.focus();
-    toast('Fase nova apontando para ' + rel.split('/').pop() + ' — preencha o nome, o tecido e as medidas do PDF', '');
-  }, 60);
+  abrirModalRisco();
+  const box = document.getElementById('risco-resultado');
+  const arq = rel.split('/').pop();
+  if (box) box.innerHTML = `<div class="empty" style="padding:16px;">Lendo ${esc(arq)}…</div>`;
+  try {
+    // O PDF vem da PASTA, pelo mesmo endereço que o link do modal usa — é
+    // arquivo do próprio site, então não há permissão nem seletor no meio.
+    const resp = await fetch(_riscoUrl(rel));
+    if (!resp.ok) throw new Error(`o servidor respondeu ${resp.status}`);
+    const file = new File([await resp.blob()], arq, { type: 'application/pdf' });
+    const L = await _riscoLerPdf(file);
+    // O caminho COMPLETO, e não só o nome: é ele que vai para `fase.risco` e
+    // faz o "✓ usado" aparecer no modal de riscos (ver _riscoCaminhoDoPdf).
+    L.caminho = rel;
+    _riscoCandidatas(L);
+    L.grade = (STATE.grades || []).find(g => g.id === gradeId)
+      || (L.grades.length === 1 ? L.grades[0] : null);
+    L.res = L.grade
+      ? _riscoResolverOuPropor(L, L.grade)
+      : { fase: null, origem: (L.grades || []).length ? 'escolher grade' : 'sem grade' };
+    L.aplicar = !!(L.grade && L.res.fase && _riscoTemMedida(L));
+    _riscoLeituras = [L];
+    renderRiscoResultado();
+  } catch (e) {
+    if (box) {
+      box.innerHTML = `<div class="info-box" style="border-color:var(--alert);">`
+        + `Não deu para ler <b>${esc(arq)}</b>: ${esc(e.message || e)}.<br>`
+        + `Escolha o arquivo pelo botão acima.</div>`;
+    }
+  }
 }
 
 // A célula da coluna "Riscos". Botão de LEITURA: conferir de onde veio uma

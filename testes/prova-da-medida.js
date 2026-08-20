@@ -132,14 +132,22 @@ ok('18. as duas metades estao na mesma funcao de gravar',
 
 console.log('');
 console.log('-- o atalho "cadastrar fase" --');
+// Ele leva para a TELA DE IMPORTACAO com o PDF ja lido — nao para a ficha da
+// grade, e sem abrir o arquivo na cara de ninguem. O numero tem de sair do
+// relatorio, e nao ser redigitado.
 ok('19. o botao aparece so no PDF que nenhuma fase usa',
   /usado\(p\.rel\)[\s\S]{0,400}cadastrarFaseDoRisco/.test(src), '');
-ok('20. abre o PDF ANTES da ficha (pop-up so passa durante o clique)',
-  /window\.open\(_riscoUrl\(rel\)[\s\S]{0,200}openCadastroModal\('grade', gradeId\)/.test(src), '');
-ok('21. e a fase nova ja nasce apontando para o arquivo',
-  /addFaseGradeRow\(\{ risco: rel \}\)/.test(src), '');
-ok('22. so quem edita ve o atalho', /cadastrarFaseDoRisco[\s\S]{0,600}exigirEdicao\('cadastrar fase da grade'\)/.test(src)
-  || /exigirEdicao\('cadastrar fase da grade'\)/.test(src), '');
+ok('20. abre a tela de IMPORTACAO, e nao a ficha da grade',
+  /cadastrarFaseDoRisco[\s\S]{0,900}abrirModalRisco\(\)/.test(src)
+  && !/cadastrarFaseDoRisco[\s\S]{0,900}openCadastroModal/.test(src), '');
+ok('21. NAO abre o PDF numa aba', !/window\.open\(_riscoUrl/.test(src), '');
+ok('22. busca o PDF na pasta e o le como qualquer importacao',
+  /fetch\(_riscoUrl\(rel\)\)/.test(src) && /_riscoLerPdf\(file\)/.test(src), '');
+ok('23. guarda o CAMINHO completo, que e o que vira fase.risco',
+  /L\.caminho = rel;/.test(src), '');
+ok('24. e a grade ja vem escolhida (o modal era o "Riscos de" dela)',
+  /cadastrarFaseDoRisco[\s\S]{0,1400}find\(g => g\.id === gradeId\)/.test(src), '');
+ok('25. so quem edita ve o atalho', /exigirEdicao\('importar risco de PDF'\)/.test(src), '');
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
