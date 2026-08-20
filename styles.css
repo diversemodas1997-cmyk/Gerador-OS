@@ -1248,14 +1248,29 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .oe-busca-item:hover { background: var(--line-2); }
 
 /* ============ PAPÉIS / PERMISSÕES ============ */
-/* Só o admin escreve. Quem não é admin usa o programa em modo LEITURA: consulta
-   e imprime. Além de esconder os botões de edição (.admin-only), os campos
-   editáveis da FOLHA DE OS — os quadrinhos das etapas, os horários de enfesto,
-   o total por tamanho, a observação — ficam inertes, para ninguém clicar e
-   descobrir pelo aviso de recusa que não podia. O bloqueio de verdade está no
-   JS (exigirEdicao); isto aqui é o que evita o clique inútil. */
-body:not(.is-admin) .sheet .os-check,
-body:not(.is-admin) .sheet input,
+/* Só o admin escreve — menos o que a produção REGISTRA. Quem não é admin usa o
+   resto do programa em modo LEITURA: consulta e imprime. O bloqueio de verdade
+   está sempre no JS (exigirEdicao / exigirEdicaoFolha); isto aqui é o que evita
+   o clique inútil, e por isso tem que acompanhar o JS campo a campo.
+
+   NA FOLHA DE OS, quem tem conta preenche o que aconteceu: os quadrinhos das
+   etapas e das tarefas, os horários de enfesto e de corte, as camadas por
+   tonalidade e o total por tamanho. Todos são checkbox ou número, e é por isso
+   que a regra abaixo separa `input` de `textarea`.
+
+   A OBSERVAÇÃO (o único textarea da folha) fica com o admin: ela é texto livre
+   que sai impresso como INSTRUÇÃO para quem produz, não registro do que a
+   produção fez.
+
+   E a abertura vale só para a FOLHA DE OS (#print-sheet). A folha de OE e a de
+   operações também são `.sheet`, e o que se reescreve nelas é do admin — hoje
+   isso passa por um modal e não por campo na folha, mas escrever a regra pela
+   folha certa é o que impede um campo novo lá de nascer aberto sem ninguém ter
+   decidido. */
+body:not(.pode-registrar) #print-sheet .os-check,
+body:not(.pode-registrar) #print-sheet input,
+body:not(.is-admin) .sheet:not(#print-sheet) .os-check,
+body:not(.is-admin) .sheet:not(#print-sheet) input,
 body:not(.is-admin) .sheet textarea,
 body:not(.is-admin) .sheet select {
   pointer-events: none;
@@ -1266,12 +1281,12 @@ body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
 
-/* A LISTA DE COMPRA é a exceção: quem tem conta soma nela, admin ou não (ver
-   exigirEdicaoCompra no app.js). A classe do body é `pode-comprar`, e não
-   `is-usuario` — essa é vestida também por quem nem fez login e pelo modo
-   nuvem, que só consultam. */
-.compra-only { display: none !important; }
-body.pode-comprar .compra-only { display: revert !important; }
+/* REGISTRAR é a exceção: quem tem conta soma na lista de compra e marca a folha
+   de OS, admin ou não (ver _contaPodeRegistrar no app.js). A classe do body é
+   `pode-registrar`, e não `is-usuario` — essa é vestida também por quem nem fez
+   login e pelo modo nuvem, que só consultam. */
+.registro-only { display: none !important; }
+body.pode-registrar .registro-only { display: revert !important; }
 
 /* Par de .admin-only: o que só aparece para quem NÃO é admin. Serve para o mesmo
    botão ter dois nomes — "editar" para o admin, "ver" para quem consulta —

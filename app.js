@@ -1472,14 +1472,12 @@ function carregarPapelEmParalelo() {
 
 function aplicarPermissoesUI() {
   const body = document.body;
-  body.classList.remove('is-admin', 'is-usuario', 'pode-comprar');
-  // QUEM PODE SOMAR NA LISTA DE COMPRA tem classe própria, e não `is-usuario`:
-  // essa lá é vestida também por quem não fez login e pelo modo nuvem, que só
-  // consultam. Aqui é preciso ser uma conta de verdade, com o servidor da
-  // fábrica no ar. Ver exigirEdicaoCompra.
-  if ((currentRole === 'admin' || currentRole === 'usuario') && podeGravar()) {
-    body.classList.add('pode-comprar');
-  }
+  body.classList.remove('is-admin', 'is-usuario', 'pode-registrar');
+  // QUEM REGISTRA — a lista de compra e o que a folha de OS anota — tem classe
+  // própria, e não `is-usuario`: essa lá é vestida também por quem não fez login
+  // e pelo modo nuvem, que só consultam. Aqui é preciso ser uma conta de
+  // verdade, com o servidor da fábrica no ar. Ver _contaPodeRegistrar.
+  if (_contaPodeRegistrar() && podeGravar()) body.classList.add('pode-registrar');
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
   // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
@@ -1523,22 +1521,48 @@ function exigirEdicao(acao) {
   return false;
 }
 
-// A LISTA DE COMPRA É A EXCEÇÃO ao "só o admin escreve" — a mesma forma que a
-// exceção da expedição tinha, com o nome próprio da tela que a usa.
-//
-// Ela não é cadastro nem OS: é o rascunho de quanto tecido comprar, que se
-// monta, se confere e se joga fora. Nada do que entra ali muda uma grade, uma
-// OS ou um saldo de estoque — o item é grade + camadas, e a conta é refeita do
-// cadastro a cada desenho da tela. Quem levanta a necessidade é quem está na
-// produção; obrigar a passar pelo admin para somar uma linha é o que fazia a
-// conta voltar para o papel.
-//
-// O QUE NÃO SE ABRE JUNTO: limpar a lista inteira segue sendo do admin, e cada
-// pessoa só tira da lista o que ela mesma somou (ver _cpPodeRemover). Somar é
-// acrescentar; apagar o levantamento do outro é outra coisa.
+/* ---- REGISTRAR: a exceção ao "só o admin escreve" ----------------------
+   Há duas coisas no programa que quem está na produção precisa escrever, e
+   nenhuma delas é cadastro nem definição de OS:
+
+     · a LISTA DE COMPRA — rascunho de quanto tecido comprar, que se monta, se
+       confere e se joga fora. O item é grade + camadas, e a conta é refeita do
+       cadastro a cada desenho da tela;
+     · o que a FOLHA DE OS registra — os quadrinhos das etapas, os horários de
+       enfesto e de corte, as camadas por tonalidade e o total por tamanho. Isso
+       não é o que a OS PEDE, é o que a produção FEZ; quem sabe é quem estava lá.
+
+   Nos dois casos, obrigar a passar pelo admin era o que fazia o registro voltar
+   para o papel — e o papel não volta para o programa.
+
+   A TRANCA CONTINUA VALENDO PARA O RESTO: cadastro, criação e edição de OS,
+   expedição, importação de risco — tudo isso segue em exigirEdicao.
+
+   O papel é o mesmo nos dois; a MENSAGEM de recusa é que muda, e é por isso que
+   são duas funções e não uma. A condição mora em _contaPodeRegistrar, uma só,
+   para as duas não divergirem com o tempo. */
+function _contaPodeRegistrar() {
+  return currentRole === 'admin' || currentRole === 'usuario';
+}
+
+// A lista de compra. O QUE NÃO SE ABRE JUNTO: limpar a lista inteira segue
+// sendo do admin, e cada pessoa só tira da lista o que ela mesma somou (ver
+// _cpPodeRemover). Somar é acrescentar; apagar o levantamento do outro é outra
+// coisa.
 function exigirEdicaoCompra(acao) {
   if (_recusarPorModoNuvem(acao)) return false;
-  if (currentRole === 'admin' || currentRole === 'usuario') return true;
+  if (_contaPodeRegistrar()) return true;
+  toast(`Faça login para ${acao}`, 'err');
+  return false;
+}
+
+// A folha de OS. O QUE NÃO SE ABRE JUNTO: a OBSERVAÇÃO da folha continua do
+// admin (é texto livre que sai impresso como instrução, não é registro do que
+// aconteceu), e criar, editar ou duplicar a OS também — quem marca o que a
+// produção fez não redefine o que a produção deve fazer.
+function exigirEdicaoFolha(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
+  if (_contaPodeRegistrar()) return true;
   toast(`Faça login para ${acao}`, 'err');
   return false;
 }
@@ -20004,7 +20028,7 @@ let printOsAtual = null;
 // Marca/desmarca etapa do checklist da OS pronta. Persiste em o.progresso e
 // salva STATE.ordens — outros usuarios veem a evolucao ao reabrir a OS.
 async function togglarChecklistEtapa(osId, etapaNome, checked) {
-  if (!exigirEdicao('marcar etapas da OS')) return;
+  if (!exigirEdicaoFolha('marcar etapas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20027,7 +20051,7 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
 }
 
 async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
-  if (!exigirEdicao('marcar tarefas da OS')) return;
+  if (!exigirEdicaoFolha('marcar tarefas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20089,7 +20113,7 @@ function _atualizarTotalCorteFolha(osId) {
 }
 
 async function togglarChecklistEnfesto(osId, ordem, checked) {
-  if (!exigirEdicao('marcar o enfesto da OS')) return;
+  if (!exigirEdicaoFolha('marcar o enfesto da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20129,7 +20153,7 @@ function _horaFmt(v) {
 // impressa. campo ∈ {enfIni, enfFim, corIni, corFim} (enfesto e corte).
 // Valor vazio remove a chave. Persiste em progresso.enfestosTempos[ordem].
 async function salvarTempoEnfesto(osId, ordem, campo, valor) {
-  if (!exigirEdicao('lançar o horário de enfesto')) return;
+  if (!exigirEdicaoFolha('lançar o horário de enfesto')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20153,7 +20177,7 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
 // digitá-los, camadas/peças-alvo e o "Total por tamanho" são recalculados (ver
 // recalcularDeCamadasPorTom). Nas demais fases é anotação livre.
 async function salvarTomEnfesto(osId, ordem, tom, valor) {
-  if (!exigirEdicao('lançar as camadas por tonalidade')) return;
+  if (!exigirEdicaoFolha('lançar as camadas por tonalidade')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20307,7 +20331,7 @@ async function recalcularDeCamadasPorTom(osId) {
 // Salva o tempo de Início/Fim do corte, mostrado junto da etapa "Corte" em
 // Etapas de Produção. Um par único por OS. campo ∈ {ini, fim}.
 async function salvarTempoCorte(osId, campo, valor) {
-  if (!exigirEdicao('lançar o horário do corte')) return;
+  if (!exigirEdicaoFolha('lançar o horário do corte')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20470,7 +20494,7 @@ function totaisPorTamanhoTomOS(o) {
 }
 
 async function togglarTotalTamanhoTom(osId, tom, checked) {
-  if (!exigirEdicao('editar o total por tamanho')) return;
+  if (!exigirEdicaoFolha('editar o total por tamanho')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -20586,7 +20610,7 @@ function _atualizarLinhaTonsDoEnfestoNoDOM(os) {
 // digitar 48 no G de uma grade 2M-4G-2GG gravaria V=48 e o M sairia com 48
 // também.
 async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
-  if (!exigirEdicao('editar o total por tamanho')) return;
+  if (!exigirEdicaoFolha('editar o total por tamanho')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
   os.progresso = os.progresso || {};
@@ -26054,7 +26078,7 @@ function renderCompra() {
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${c ? c.pecas.toLocaleString('pt-BR') : '—'}</td>
       <td class="col-actions row-actions">
         <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
-        <button class="${_cpPodeRemover(it, 'usuario', _cpQuemSou()) ? 'compra-only' : 'admin-only'}" onclick="compraRemover('${esc(it.id)}')">remover</button>
+        <button class="${_cpPodeRemover(it, 'usuario', _cpQuemSou()) ? 'registro-only' : 'admin-only'}" onclick="compraRemover('${esc(it.id)}')">remover</button>
       </td>
     </tr>${detalhe}`;
   }).join('');

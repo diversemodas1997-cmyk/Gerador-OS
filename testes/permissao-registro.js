@@ -1,11 +1,16 @@
-/* Rode com:  node testes/compra-usuario.js
+/* Rode com:  node testes/permissao-registro.js
 
-   A LISTA DE COMPRA é a única tela em que quem não é admin escreve.
+   O QUE A PRODUÇÃO REGISTRA é a exceção ao "só o admin escreve".
 
    O programa inteiro é "só o admin escreve" — quem não é admin consulta e
-   imprime. A lista de compra abriu exceção porque não é cadastro nem OS: é o
-   rascunho de quanto tecido comprar, que se monta, se confere e se joga fora.
-   Nada do que entra ali muda uma grade, uma OS ou um saldo de estoque.
+   imprime. Duas coisas abriram exceção, porque nenhuma delas é cadastro nem
+   definição de OS:
+
+     · a LISTA DE COMPRA — rascunho de quanto tecido comprar; nada do que entra
+       ali muda uma grade, uma OS ou um saldo de estoque;
+     · o que a FOLHA DE OS anota — quadrinhos das etapas, horários, camadas por
+       tonalidade, total por tamanho. Não é o que a OS PEDE, é o que a produção
+       FEZ, e quem sabe é quem estava lá.
 
    O que este teste protege são as BORDAS da exceção, que é onde ela estraga:
 
@@ -14,7 +19,9 @@
      · o modo nuvem (servidor da fábrica fora do ar) continua sendo só leitura
        para todo mundo, inclusive admin — senão os dois lados divergem;
      · cada pessoa tira da lista o que ELA somou; o levantamento do outro, não;
-     · item sem dono (os que já estavam lá antes desta regra) fica com o admin.
+     · item sem dono (os que já estavam lá antes desta regra) fica com o admin;
+     · a OBSERVAÇÃO da folha NÃO entra: é texto que sai impresso como instrução
+       para quem produz, e continua sendo do admin (exigirEdicao).
 
    O teste recorta as funções do app.js de verdade. */
 const fs = require('fs');
@@ -34,10 +41,13 @@ const api = new Function('ctx', `
   const toast = (m, t) => ctx.toasts.push(t + ': ' + m);
   const podeGravar = () => ctx.servidorNoAr;
   ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
+  ${recorte('function _contaPodeRegistrar', 'a condicao do papel')}
   ${recorte('function exigirEdicaoCompra', 'a permissao da lista de compra')}
+  ${recorte('function exigirEdicaoFolha', 'a permissao da folha de OS')}
   ${recorte('function _cpPodeRemover', 'a regra de quem tira da lista')}
   return {
     exigirEdicaoCompra: (acao) => { currentRole = ctx.papel; return exigirEdicaoCompra(acao); },
+    exigirEdicaoFolha: (acao) => { currentRole = ctx.papel; return exigirEdicaoFolha(acao); },
     _cpPodeRemover
   };
   var currentRole;
@@ -95,6 +105,43 @@ ok('12. sem saber quem sou, nao tiro nada',
    A._cpPodeRemover(meu, 'usuario', '') === false);
 ok('13. quem nao fez login nao tira nem o proprio',
    A._cpPodeRemover(meu, null, 'costura@diverse.com') === false);
+
+console.log('');
+console.log('-- quem marca a folha de OS --');
+t = monta('usuario');
+ok('14. USUARIO comum marca as etapas', t.api.exigirEdicaoFolha('marcar etapas da OS') === true,
+   t.ctx.toasts.join(' | '));
+t = monta('usuario');
+ok('15. e lanca os numeros (horario, camadas, total por tamanho)',
+   t.api.exigirEdicaoFolha('lançar o horário de enfesto') === true
+   && monta('usuario').api.exigirEdicaoFolha('editar o total por tamanho') === true);
+t = monta('admin');
+ok('16. admin continua marcando', t.api.exigirEdicaoFolha('marcar etapas da OS') === true);
+t = monta(null);
+ok('17. sem login, nao', t.api.exigirEdicaoFolha('marcar etapas da OS') === false);
+t = monta('usuario', false);
+ok('18. servidor da fabrica fora do ar: ninguem marca',
+   t.api.exigirEdicaoFolha('marcar etapas da OS') === false
+   && /nuvem/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
+
+console.log('');
+console.log('-- o que NAO se abriu junto (conferido no app.js, nao em copia) --');
+const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+// Cada linha aqui e um portao que tem que continuar sendo `exigirEdicao` (so
+// admin). Se alguem trocar por exigirEdicaoFolha sem pensar, o teste cai.
+const soAdmin = [
+  ['a observacao da folha', "exigirEdicao('editar a observação da OS')"],
+  ['criar ou editar OS', "exigirEdicao('criar ou editar OS')"],
+  ['editar OS', "exigirEdicao('editar OS')"],
+  ['duplicar OS', "exigirEdicao('duplicar OS')"],
+  ['criar ou editar cadastros', "exigirEdicao('criar ou editar cadastros')"],
+  ['excluir cadastros', "exigirEdicao('excluir cadastros')"],
+  ['a folha de OE', "exigirEdicao('editar a folha de OE')"],
+  ['limpar a lista de compra', "exigirEdicao('limpar a lista de compra')"]
+];
+soAdmin.forEach(([oQue, trecho], i) => {
+  ok((19 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
+});
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
