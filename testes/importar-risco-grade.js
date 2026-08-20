@@ -32,6 +32,13 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
+// Uma linha inteira do app.js, para os `const X = ...` de uma linha so.
+const linha = comeco => {
+  const i = src.indexOf(comeco);
+  if (i < 0) { console.error('nao achei ' + comeco + ' no app.js'); process.exit(1); }
+  return src.slice(i, src.indexOf('\n', i) + 1);
+};
+
 const api = new Function('STATE', `
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -39,10 +46,16 @@ const api = new Function('STATE', `
   ${recorte('function _riscoGradesProporcionais', 'a busca proporcional')}
   ${recorte('function _riscoCandidatas', 'a montagem das candidatas')}
   ${recorte('function _riscoFator', 'o fator do risco')}
+  ${recorte('function _riscoMultiplo', 'o multiplo com o sentido')}
+  ${recorte('function _normNome(', '_normNome')}
+  ${recorte('function _riscoFormasDoNome', 'as formas do nome')}
+  ${linha('const _chaveTam =')}
+  ${recorte('function _riscoNomeTamanhos', 'o nome pelos tamanhos')}
+  ${recorte('function _riscoNomeDivergente', 'o nome que discorda das quantidades')}
   ${recorte('function _riscoTamanhosTexto', 'o texto dos tamanhos')}
   ${recorte('function _riscoCelulaGrade', 'a celula da grade')}
   return { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
-           _riscoTamanhosTexto, _riscoCelulaGrade };
+           _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente };
 `);
 
 // O cadastro, reduzido ao que importa: a grade CERTA e a que casa por engano.
@@ -57,10 +70,15 @@ const STATE = { grades: [
   // Grades de verdade cujos números PARECEM múltiplos: elas casam exato e a
   // proporção nao pode passar na frente.
   { id: 'g_4m4g', nome: '4M-4G | BM.LISA | 177cm', tamanhos: T({ m: 4, g: 4 }) },
-  { id: 'g_8g', nome: '8G | BM.TRI | 179cm', tamanhos: T({ g: 8 }) }
+  { id: 'g_8g', nome: '8G | BM.TRI | 179cm', tamanhos: T({ g: 8 }) },
+  // A GRADE DOBRADA: o nome diz a metade, os tamanhos dizem o dobro, e o
+  // relatorio dela e o da metade (caso real da "M-2G-GG | CM.TRI").
+  { id: 'g_dobro', nome: 'M-2G-GG | CM.TRI | 116.5cm', tamanhos: T({ m: 2, g: 4, gg: 2 }) },
+  // A mesma coisa, mas sem nenhuma grade com a distribuicao do proprio risco.
+  { id: 'g_pg1', nome: '2P-2G1 | CM.TRI | 116.5cm', tamanhos: T({ p: 2, g1: 2 }) }
 ] };
 const { _riscoGradesQueCasam, _riscoGradesProporcionais, _riscoCandidatas, _riscoFator,
-        _riscoTamanhosTexto, _riscoCelulaGrade } = api(STATE);
+        _riscoMultiplo, _riscoTamanhosTexto, _riscoCelulaGrade, _riscoNomeDivergente } = api(STATE);
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -148,10 +166,77 @@ ok('24. e nao acusa mais "nenhuma grade"',
    !htmlR.includes('nenhuma grade com estes tamanhos'), htmlR);
 ok('25. a linha explica o que o multiplo significa',
    htmlR.includes('corta <b>10×</b> a grade'), htmlR);
-ok('26. a grade dobrada tambem: 10M-20G-10GG e 10x a M-2G-GG',
-   _riscoGradesProporcionais({ m: 10, g: 20, gg: 10 })
-     .map(p => p.grade.id + ':' + p.fator).join() === 'g_dobrada:10',
-   JSON.stringify(_riscoGradesProporcionais({ m: 10, g: 20, gg: 10 }).map(p => [p.grade.nome, p.fator])));
+// 10M-20G-10GG e 10x a "M-2G-GG | CM.LISA" (1/2/1) e 5x a "M-2G-GG | CM.TRI"
+// (2/4/2). As duas sao candidatas de verdade, com fatores diferentes — quem
+// escolhe e quem cadastra, e o seletor mostra os dois numeros.
+const dez = _riscoGradesProporcionais({ m: 10, g: 20, gg: 10 });
+ok('26. a grade dobrada tambem, e com o fator de cada uma',
+   dez.map(p => p.grade.id + ':' + p.fator + ':' + p.sentido).sort().join(' ')
+     === 'g_dobrada:10:risco g_dobro:5:risco',
+   JSON.stringify(dez.map(p => [p.grade.nome, p.fator, p.sentido])));
+
+console.log('');
+console.log('-- o sentido inverso: a GRADE DOBRADA --');
+// Caso real: "M-2G-GG | CM.TRI" esta cadastrada com {m:2,g:4,gg:2} (o nome diz
+// a metade, os tamanhos dizem o dobro) e o relatorio dela e o de M-2G-GG. A
+// grade se corta DUAS VEZES sobre esse encaixe.
+const metade = _riscoGradesProporcionais({ m: 1, g: 2, gg: 1 });
+const doDobro = metade.find(p => p.grade.id === 'g_dobro');
+ok('26b. o risco da metade acha a grade dobrada',
+   !!doDobro && doDobro.fator === 2 && doDobro.sentido === 'grade',
+   JSON.stringify(metade.map(p => [p.grade.nome, p.fator, p.sentido])));
+// EXATO CONTINUA VINDO PRIMEIRO, e e por isso que a tela so oferece a dobrada
+// quando nao ha grade com a distribuicao do proprio risco: a "M-2G-GG |
+// CM.LISA" (1/2/1) casa exato com este risco e ganha a vez. Quem quiser a
+// dobrada assim mesmo a acha em "todas as outras grades".
+const Lx = { tamanhos: { m: 1, g: 2, gg: 1 } };
+_riscoCandidatas(Lx);
+ok('26c. havendo grade exata, a dobrada NAO passa na frente',
+   Lx.grades.length === 1 && Lx.grades[0].id === 'g_dobrada',
+   Lx.grades.map(g => g.nome).join());
+
+// O caso de verdade: risco de P-G1 e a grade cadastrada com o DOBRO (2/2), sem
+// nenhuma grade com a distribuicao do risco.
+const Ld = { tamanhos: { p: 1, g1: 1 } };
+_riscoCandidatas(Ld);
+Ld.grade = Ld.grades.find(g => g.id === 'g_pg1');
+ok('26c2. sem exata, a dobrada e oferecida',
+   !!Ld.grade, Ld.grades.map(g => g.nome).join() || '(nenhuma)');
+ok('26d. o seletor escreve "1/2 de", e nao "2x"',
+   _riscoCelulaGrade(Ld, 0).includes('1/2 de 2P-2G1 | CM.TRI'), _riscoCelulaGrade(Ld, 0));
+ok('26d2. e a linha diz que a grade se corta 2 vezes sobre o risco',
+   _riscoCelulaGrade(Ld, 0).includes('<b>1/2</b> da grade'), _riscoCelulaGrade(Ld, 0));
+// A TRAVA QUE IMPORTA AQUI: no sentido inverso o numero NAO vira unidades da
+// fase. Uma camada nao rende 2 grades — ela rende metade de uma.
+ok('26e. o fator do sentido inverso NAO vale como unidades da fase',
+   _riscoFator(Ld) === 1, _riscoFator(Ld));
+ok('26f. mas o multiplo continua sabido, com o sentido',
+   JSON.stringify(_riscoMultiplo(Ld)) === '{"fator":2,"sentido":"grade"}',
+   JSON.stringify(_riscoMultiplo(Ld)));
+
+console.log('');
+console.log('-- o NOME da grade que discorda das quantidades dela --');
+// 4 das 133 grades reais estao assim. "M-2G-GG | CM.TRI" esta cadastrada com
+// M=2 G=4 GG=2, e "G | CM.TRI" com G=1 G1=2 — o nome esconde um tamanho
+// inteiro. Quem confere o risco le o NOME; quem calcula pano usa a QUANTIDADE.
+ok('26g. acusa o nome que diz a metade do que a grade tem',
+   _riscoNomeDivergente({ nome: 'M-2G-GG | CM.TRI | 116.5cm', tamanhos: T({ m: 2, g: 4, gg: 2 }) }) === '2M-4G-2GG',
+   _riscoNomeDivergente({ nome: 'M-2G-GG | CM.TRI | 116.5cm', tamanhos: T({ m: 2, g: 4, gg: 2 }) }));
+ok('26h. e o nome que esconde um tamanho',
+   _riscoNomeDivergente({ nome: 'G | CM.TRI | 116.5cm', tamanhos: T({ g: 1, g1: 2 }) }) === 'G-2G1',
+   _riscoNomeDivergente({ nome: 'G | CM.TRI | 116.5cm', tamanhos: T({ g: 1, g1: 2 }) }));
+ok('26i. nome que bate nao acusa nada',
+   _riscoNomeDivergente({ nome: '2M-4G-2GG | CM.TRI | 116.5cm', tamanhos: T({ m: 2, g: 4, gg: 2 }) }) === '');
+// A FAIXA nao e divergencia: "P ao G3" e "P-M-G-GG-G1-G2-G3" sao a mesma
+// distribuicao escrita de dois jeitos, e a casa usa as duas.
+ok('26j. faixa e forma extensa sao a mesma coisa',
+   _riscoNomeDivergente({ nome: 'P ao G3 | CM.LISA | 117cm',
+     tamanhos: T({ p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }) }) === '',
+   _riscoNomeDivergente({ nome: 'P ao G3 | CM.LISA | 117cm',
+     tamanhos: T({ p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }) }));
+ok('26k. e a tela mostra o aviso quando ha divergencia',
+   _riscoCelulaGrade({ tamanhos: { m: 1, g: 2, gg: 1 }, grades: [], fatores: {},
+     grade: STATE.grades.find(g => g.id === 'g_dobro') }, 0).includes('as quantidades cadastradas dizem'));
 
 console.log('');
 console.log('-- as travas --');

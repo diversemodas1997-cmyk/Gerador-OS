@@ -23089,6 +23089,21 @@ function _riscoGradesQueCasam(tamanhos) {
 //     Fechando em um só tamanho não vale — seria adivinhação.
 //  3. Fator 1 não existe aqui (é o casamento exato), e o fator vai ESCRITO no
 //     seletor: ninguém aplica um risco de dez grades sem ver que são dez.
+// O múltiplo tem DOIS SENTIDOS, e a casa usa os dois:
+//
+//   sentido 'risco' — O RISCO TRAZ N GRADES. É a ribana: um encaixe de dez
+//     grades no mesmo pano (10·M/10·GG/10·G3 para a grade M-GG-G3).
+//
+//   sentido 'grade' — A GRADE É N RISCOS, a GRADE DOBRADA. O encaixe é o da
+//     metade e se corta duas vezes: a "M-2G-GG | CM.TRI" está cadastrada com
+//     {m:2, g:4, gg:2} — o nome diz a metade, os tamanhos dizem o dobro — e o
+//     relatório dela é o de M-2G-GG. É o que a dica do campo Unidades já
+//     descrevia: "o risco de 2M-4G-2GG cortado sobre M-2G-GG; o G recebe 4 por
+//     camada — então 4x".
+//
+// Devolve os dois com o sentido escrito, porque eles NÃO querem dizer a mesma
+// coisa nas unidades da fase: no primeiro uma camada rende N grades; no segundo
+// uma camada precisa render N vezes mais para fechar uma grade.
 function _riscoGradesProporcionais(tamanhos) {
   const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
   const alvo = {};
@@ -23101,10 +23116,18 @@ function _riscoGradesProporcionais(tamanhos) {
     const daGrade = keys.filter(k => (parseInt(t[k], 10) || 0) > 0);
     // Os mesmos tamanhos, nem um a mais nem um a menos.
     if (daGrade.length !== usados.length || !usados.every(k => daGrade.includes(k))) return;
-    const fator = alvo[daGrade[0]] / (parseInt(t[daGrade[0]], 10) || 0);
-    if (!Number.isInteger(fator) || fator < 2) return;
-    if (!daGrade.every(k => (parseInt(t[k], 10) || 0) * fator === alvo[k])) return;
-    achadas.push({ grade: g, fator });
+    const naGrade = k => parseInt(t[k], 10) || 0;
+    const fatorRisco = alvo[daGrade[0]] / naGrade(daGrade[0]);
+    if (Number.isInteger(fatorRisco) && fatorRisco >= 2
+        && daGrade.every(k => naGrade(k) * fatorRisco === alvo[k])) {
+      achadas.push({ grade: g, fator: fatorRisco, sentido: 'risco' });
+      return;
+    }
+    const fatorGrade = naGrade(daGrade[0]) / alvo[daGrade[0]];
+    if (Number.isInteger(fatorGrade) && fatorGrade >= 2
+        && daGrade.every(k => alvo[k] * fatorGrade === naGrade(k))) {
+      achadas.push({ grade: g, fator: fatorGrade, sentido: 'grade' });
+    }
   });
   return achadas;
 }
@@ -23115,19 +23138,61 @@ function _riscoGradesProporcionais(tamanhos) {
 // gravada junto no cadastro e subiria para o servidor com ele.
 function _riscoCandidatas(L) {
   L.fatores = {};
+  L.sentidos = {};
   const exatas = _riscoGradesQueCasam(L.tamanhos);
   if (exatas.length) return (L.grades = exatas);
   const props = _riscoGradesProporcionais(L.tamanhos);
-  props.forEach(p => { L.fatores[p.grade.id] = p.fator; });
+  props.forEach(p => { L.fatores[p.grade.id] = p.fator; L.sentidos[p.grade.id] = p.sentido; });
   return (L.grades = props.map(p => p.grade));
 }
 
 // Quantas grades este risco corta de uma vez, na grade escolhida. 1 = a grade
 // inteira, como o corpo. Escolha à mão fora das candidatas também dá 1: o fator
 // só existe onde o programa o calculou.
+//
+// SÓ CONTA O SENTIDO 'risco'. No sentido 'grade' (a grade dobrada) o número
+// existe, mas quer dizer o contrário — a camada precisa render N vezes mais,
+// e não rende N grades. Devolver o mesmo número nos dois casos faria a fase
+// nova nascer com unidades ao contrário, que é erro de consumo de pano.
 function _riscoFator(L, grade) {
   const g = grade || (L && L.grade);
-  return (g && L && L.fatores && L.fatores[g.id]) || 1;
+  if (!g || !L || !L.fatores) return 1;
+  if (L.sentidos && L.sentidos[g.id] === 'grade') return 1;
+  return L.fatores[g.id] || 1;
+}
+
+// O NOME DA GRADE PODE MENTIR sobre as quantidades, e mente em 4 das 133:
+//
+//   "M-2G-GG | CM.TRI"  esta cadastrada com M=2 G=4 GG=2  (o dobro do nome)
+//   "G | CM.TRI"        esta cadastrada com G=1 G1=2      (o nome esconde o G1)
+//   "G-2GG-G3 | BM.LISA" esta cadastrada com GG=2 e G3=2  (o nome diz 1 G3)
+//
+// Quem le a folha ou escolhe a grade na importacao le o NOME; quem calcula pano,
+// pecas e volumes usa as QUANTIDADES. Enquanto os dois discordam, uma pessoa
+// confere o risco contra a grade "errada" e nao tem como perceber. Junior pediu
+// (20/08/2026) que a leitura do PDF acuse essa incongruencia — e o lugar de
+// acusar e aqui, na hora de escolher a grade, com os dois numeros lado a lado.
+//
+// Nao e para o programa "corrigir" o nome: o nome pode estar certo e a
+// quantidade errada, ou o contrario, e so quem cadastra sabe qual dos dois.
+function _riscoNomeDivergente(grade) {
+  if (!grade) return '';
+  const noNome = (String(grade.nome || '').split('|')[0] || '').trim();
+  const pelasQtds = _riscoNomeTamanhos(grade.tamanhos || {});
+  if (!pelasQtds || !noNome) return '';
+  // Compara a FORMA, nao a grafia: "2X P ao G3" e "2P-2M-...-2G3" sao a mesma
+  // distribuicao escrita de dois jeitos, e a faixa so abre a partir de seis
+  // tamanhos (ver _riscoNomeTamanhos). Por isso a volta pelos tamanhos.
+  const mesmo = _chaveTam(noNome) === _chaveTam(pelasQtds)
+    || _riscoFormasDoNome(grade.tamanhos || {}).some(f => _chaveTam(f) === _chaveTam(noNome));
+  return mesmo ? '' : pelasQtds;
+}
+
+// O múltiplo da grade escolhida, com o sentido — para a tela dizer qual é.
+function _riscoMultiplo(L, grade) {
+  const g = grade || (L && L.grade);
+  if (!g || !L || !L.fatores || !L.fatores[g.id]) return null;
+  return { fator: L.fatores[g.id], sentido: (L.sentidos && L.sentidos[g.id]) || 'risco' };
 }
 
 const _riscoF = v => { const x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : null; };
@@ -23845,8 +23910,14 @@ function _riscoCelulaGrade(L, i) {
   // vezes no mesmo pano (a ribana, 10x); sem o "10×" escrito, ela se parece com
   // um casamento exato e ninguém confere o que está aplicando.
   const fatorDe = id => (L.fatores && L.fatores[id]) || 1;
-  const opt = (g, pref) => `<option value="${esc(g.id)}" ${sel(g.id)}>${pref}${
-    fatorDe(g.id) > 1 ? fatorDe(g.id) + '× ' : ''}${esc(g.nome)}</option>`;
+  const sentidoDe = id => (L.sentidos && L.sentidos[id]) || 'risco';
+  // O rótulo diz QUAL dos dois múltiplos é: "10×" = o risco traz dez grades
+  // (a ribana); "1/2" = o risco é metade da grade (a grade dobrada). Sem essa
+  // diferença no rótulo os dois casos ficam com a mesma cara e levam a unidades
+  // trocadas, que é erro de consumo de pano.
+  const marca = id => fatorDe(id) <= 1 ? ''
+    : sentidoDe(id) === 'grade' ? '1/' + fatorDe(id) + ' de ' : fatorDe(id) + '× ';
+  const opt = (g, pref) => `<option value="${esc(g.id)}" ${sel(g.id)}>${pref}${marca(g.id)}${esc(g.nome)}</option>`;
   const multiplas = cands.some(g => fatorDe(g.id) > 1);
 
   const opts = `<option value="">— ${cands.length
@@ -23874,13 +23945,24 @@ function _riscoCelulaGrade(L, i) {
   // Escolhida uma proporcional, a linha diz o que isso significa na prática: uma
   // camada deste pano rende N grades, e é esse N que a fase tem de ter em
   // "Unidades da grade" para o consumo não sair dez vezes maior.
-  const fatorEscolhido = L.grade ? fatorDe(L.grade.id) : 1;
-  const multiplo = fatorEscolhido > 1
-    ? `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">este risco corta <b>${fatorEscolhido}×</b> a grade — uma camada rende ${fatorEscolhido} grades (Unidades da fase: ${fatorEscolhido}x)</div>`
+  const mult = L.grade ? _riscoMultiplo(L, L.grade) : null;
+  const multiplo = !mult ? ''
+    : mult.sentido === 'grade'
+      ? `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">este risco é <b>1/${mult.fator}</b> da grade — ela se corta ${mult.fator} vezes sobre este encaixe; confira as <b>Unidades da fase</b></div>`
+      : `<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">este risco corta <b>${mult.fator}×</b> a grade — uma camada rende ${mult.fator} grades (Unidades da fase: ${mult.fator}x)</div>`;
+  // O NOME DA GRADE ESCOLHIDA DISCORDA DAS QUANTIDADES DELA? Diz, com os dois
+  // lado a lado. Ver _riscoNomeDivergente: quem confere o risco le o nome, quem
+  // calcula pano usa as quantidades, e enquanto os dois discordam ninguem
+  // percebe que esta conferindo contra outra coisa.
+  const pelasQtds = L.grade ? _riscoNomeDivergente(L.grade) : '';
+  const nomeMente = pelasQtds
+    ? `<div style="font-size:10px;color:var(--alert);margin-top:2px;">⚠ o nome desta grade diz <b>${
+        esc((String(L.grade.nome || '').split('|')[0] || '').trim())}</b>, mas as quantidades cadastradas dizem <b>${
+        esc(pelasQtds)}</b> — confira qual dos dois esta certo</div>`
     : '';
   return aviso
     + `<select onchange="riscoTrocarGrade(${i}, this.value)" style="font-size:12px;max-width:100%;">${opts}</select>`
-    + foraDaLista + multiplo
+    + foraDaLista + multiplo + nomeMente
     + (L.forcarNova ? '<div style="font-size:10px;color:var(--ink-3);margin-top:2px;">preencha o bloco abaixo</div>' : '');
 }
 
