@@ -112,9 +112,16 @@ ok('  ... e todos são da pasta de 177 cm da BM.LISA',
   r1.itens.map(p => p.rel));
 ok('  ... sem aviso de largura', r1.aviso === '', r1.aviso);
 
-/* ---------- 2. a linha é obrigatória (o defeito que motivou o teste) ---------- */
+/* ---------- 2. a linha é obrigatória (o defeito que motivou o teste) ----------
+   Até 19/08/2026 esta grade não tinha pasta nenhuma, e o teste cobrava LISTA
+   VAZIA — que era só o sintoma de "não emprestou a da CM.LISA". Em 20/08 a
+   pasta CM.TRI/P-M-G-GG-G1-G2-G3 passou a existir e a grade achou os cinco
+   riscos DELA, corretamente; a asserção antiga acusou o acerto como falha.
+   O que este teste protege é a LINHA, então é a linha que ele confere: venha
+   um PDF ou nenhum, nenhum deles pode ser de outra linha. */
 const r2 = achar(G_CMTRI);
-ok('P ao G3 | CM.TRI NÃO empresta a pasta da CM.LISA', r2.itens.length === 0,
+ok('P ao G3 | CM.TRI NÃO empresta a pasta da CM.LISA',
+  r2.itens.every(p => p.linha === 'CM.TRI'),
   r2.itens.map(p => p.rel));
 
 /* ---------- 3. faixa ("P ao G3") casa com pasta extensa ---------- */
