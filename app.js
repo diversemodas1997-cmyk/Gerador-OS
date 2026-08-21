@@ -15422,8 +15422,11 @@ function initOSForm() {
     document.getElementById('f-id').value = '';
     document.getElementById('f-data').value = new Date().toISOString().slice(0,10);
     document.getElementById('os-form-title').textContent = 'Nova Ordem de Serviço';
-    // número OS automático sequencial
-    document.getElementById('f-os').value = proximoNumeroOS();
+    // número OS automático sequencial (um degrau acima se a grade conjugar —
+    // ver proximoNumeroOSParaGrade; aqui a grade ainda está vazia, o ajuste vem
+    // quando ela for escolhida, em aplicarGradePreset)
+    _osNumeroAuto = proximoNumeroOSParaGrade(document.getElementById('f-grade-preset')?.value || '');
+    document.getElementById('f-os').value = _osNumeroAuto;
     // Peças-alvo já nasce em 160 (padrão da casa), como o número da OS e a data.
     // Só no formulário NOVO: editar uma OS existente carrega o valor salvo dela,
     // mais abaixo. Continua editável — é só o ponto de partida.
@@ -15942,6 +15945,18 @@ function aplicarGradePreset() {
   if (!id) return;
   const g = STATE.grades.find(x => x.id === id);
   if (!g) return;
+
+  // Grade que conjuga: a segunda OS vai levar o número ANTERIOR, então esta sobe
+  // um degrau e deixa a vaga de baixo livre. Só mexe no número ainda automático
+  // de uma OS nova — número digitado à mão, ou OS em edição, ficam como estão.
+  if (!osEditId) {
+    const campoOS = document.getElementById('f-os');
+    if (campoOS && (!campoOS.value || campoOS.value === _osNumeroAuto)) {
+      _osNumeroAuto = proximoNumeroOSParaGrade(id);
+      campoOS.value = _osNumeroAuto;
+    }
+  }
+
   const t = g.tamanhos || {};
   ['p','m','g','gg','g1','g2','g3'].forEach(k => {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
@@ -17458,6 +17473,48 @@ function proximoNumeroOS() {
   return formatarNumeroOS(counterAtual + 1);
 }
 
+// A dupla conjugada sai COLADA na numeração, e a gerada automaticamente fica
+// SEMPRE embaixo: CM.REC 0351 puxa a CM.LISA 0350. Para o número de baixo estar
+// livre na hora de gerar, a OS que o usuário está digitando já nasce um degrau
+// acima quando a grade escolhida conjuga — esse degrau vazio é a vaga da segunda.
+// Último número que o programa sugeriu sozinho no formulário. Serve para saber
+// se o campo ainda está automático (pode ser reajustado ao trocar a grade) ou se
+// o usuário digitou um número à mão (aí não se mexe).
+let _osNumeroAuto = '';
+
+// Silenciosa de propósito: roda a cada troca de grade no formulário, onde um
+// toast de cadastro quebrado só atrapalharia. Quem reclama é gradeConjugadaDaGrade,
+// na hora de gerar.
+function gradeConjugaAlguma(gradeId) {
+  const g = (STATE.grades || []).find(x => x.id === gradeId);
+  if (!g || !g.conjugadaGradeId || g.conjugadaGradeId === g.id) return false;
+  return (STATE.grades || []).some(x => x.id === g.conjugadaGradeId);
+}
+
+function numeroOSLivre(numero, exceptId) {
+  const alvo = _numeroOSCanonico(numero);
+  if (alvo === 'sem-numero') return false;
+  return !(STATE.ordens || []).some(o => o.id !== exceptId && _numeroOSCanonico(o.os) === alvo);
+}
+
+function proximoNumeroOSParaGrade(gradeId) {
+  const base = parseInt(proximoNumeroOS()) || 1;
+  return formatarNumeroOS(gradeConjugaAlguma(gradeId) ? base + 1 : base);
+}
+
+// O número da OS que a conjugada recebe: o degrau abaixo do da OS salva. Quando
+// esse número já é de outra OS — típico de OS antiga cuja grade só agora ganhou
+// conjugada — não atropela ninguém: pega o próximo livre e avisa.
+function numeroParaConjugada(osAtiva) {
+  const n = parseInt(osAtiva && osAtiva.os);
+  if (!isNaN(n) && n > 1) {
+    const anterior = formatarNumeroOS(n - 1);
+    if (numeroOSLivre(anterior)) return anterior;
+    toast(`A OS ${anterior} já existe — a conjugada saiu com o próximo número livre`, '');
+  }
+  return proximoNumeroOS();
+}
+
 async function atualizarCounterOS(numeroUsado) {
   // Mantem o counter sincronizado com o maior numero usado, util como
   // fallback quando todas as OSs sao excluidas. Nao influencia o
@@ -17957,7 +18014,8 @@ async function gerarConjugada(osAtiva) {
   // Clona o contexto da OS ativa (data, equipe, colecao, marca, etc.) e ajusta
   const novaOs = JSON.parse(JSON.stringify(osAtiva));
   novaOs.id = uid();
-  novaOs.os = proximoNumeroOS();
+  // Número de baixo: a conjugada fica sempre um degrau ABAIXO da OS que a puxou.
+  novaOs.os = numeroParaConjugada(osAtiva);
   if (desAlvo) {
     novaOs.codigo = desAlvo.codigo || '';
     novaOs.desenhoId = desAlvo.id;
