@@ -18349,6 +18349,37 @@ async function ensureFolderPermission(handle, mode = 'readwrite') {
   return false;
 }
 
+// A pasta escolhida um dia pode não existir MAIS: renomeada, movida, apagada,
+// ou num drive que não está montado agora (o Google Drive em J:\ é o caso
+// comum aqui). O handle continua guardado no IndexedDB e parece perfeito — a
+// permissão até responde 'granted' —, e só a primeira operação de disco
+// estoura, com um erro cru do navegador ("NotFoundError"). Pior: isso acontece
+// DEPOIS de gerar o PDF, então o usuário espera a captura inteira para receber
+// um aviso que não diz o que fazer.
+// Este probe pergunta ao disco ANTES, e não cria nada: só pede o primeiro item
+// da pasta e para. Só o sumiço responde false; falta de permissão (tratada por
+// ensureFolderPermission) e qualquer erro estranho respondem true, para não
+// bloquear uma gravação que talvez funcionasse.
+async function pastaAcessivel(handle) {
+  if (!handle) return false;
+  try {
+    if (typeof handle.values === 'function') {
+      for await (const _ of handle.values()) break;
+    }
+    return true;
+  } catch (e) {
+    const nome = e && e.name;
+    if (nome === 'NotFoundError' || nome === 'NotReadableError') return false;
+    return true;
+  }
+}
+
+// Erro do navegador que significa "a pasta/arquivo não está mais lá".
+function _ehErroPastaSumiu(e) {
+  const nome = e && e.name;
+  return nome === 'NotFoundError' || nome === 'NotReadableError';
+}
+
 async function pickPdfFolder() {
   if (!('showDirectoryPicker' in window)) {
     toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
@@ -19241,10 +19272,17 @@ async function atualizarOeFolderStatus() {
   }
   oeFolderHandle = handle;
   let permLabel = 'pronta — a folha do plano é salva ao abrir/gerar';
+  let perm = 'granted';
   try {
-    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    perm = await handle.queryPermission({ mode: 'readwrite' });
     if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
   } catch (_) {}
+  // Pasta que sumiu do disco continua "conectada" para o navegador. Dizer isso
+  // AQUI é o que evita a descoberta na hora de salvar, com o PDF já gerado.
+  if (perm === 'granted' && !(await pastaAcessivel(handle))) {
+    el.innerHTML = `<span style="color: var(--alert);"><strong>Pasta não encontrada:</strong> <code>${esc(handle.name)}</code> — o <b>Google Drive</b> pode estar fechado (sem ele o <code>J:\</code> não existe), ou a pasta foi movida/renomeada. Abra o Drive e recarregue, ou clique em "Conectar pasta" para apontar de novo.</span>`;
+    return;
+  }
   el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
 }
 
@@ -19417,7 +19455,13 @@ function oeTemConteudo() {
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // Trava de reentrada com validade: uma captura travada não pode calar o
   // auto-save para sempre.
-  if (_oeSalvando && (Date.now() - _oeSalvandoDesde) < 60000) return false;
+  if (_oeSalvando && (Date.now() - _oeSalvandoDesde) < 60000) {
+    // No clique manual, calar aqui fazia o botão parecer morto: o usuário
+    // clicava (às vezes várias vezes) sobre uma gravação que já estava em
+    // curso em segundo plano e não recebia sinal nenhum.
+    if (!silent) toast('A OE já está sendo gravada neste instante — aguarde o aviso de conclusão.', '');
+    return false;
+  }
   // Auto-save (silencioso) grava SÓ a OE DIÁRIA. Semanal e mensal não são
   // salvas sozinhas — evita encher a pasta com PDFs de período que o chão não
   // usa (a expedição imprime o diário). O salvar MANUAL (botão, silent=false)
@@ -19471,6 +19515,17 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
     if (!permOk) { toast('Permissão da pasta das OE negada', 'err'); return false; }
     _oeAvisoDado = '';   // permissão renovada: volta a avisar se falhar de novo
   }
+  // A pasta ainda existe? (drive desconectado, pasta renomeada/movida.) Perguntar
+  // ANTES economiza a captura inteira e troca o "NotFoundError" cru por uma
+  // instrução: o que aconteceu e onde reconectar.
+  if (!(await pastaAcessivel(handle))) {
+    // O Google Drive fechado é a causa nº 1 aqui: sem ele o J:\ não existe e a
+    // pasta some inteira, mesmo estando lá quando o Drive sobe.
+    const msg = `Pasta das OE "${handle.name}" não encontrada — o Google Drive está aberto? Se a pasta mudou de lugar, reconecte em Configurações.`;
+    if (silent) { _avisarOeUmaVez('pasta-sumiu', 'A OE não está sendo salva sozinha: ' + msg); return false; }
+    toast(msg, 'err');
+    return false;
+  }
   oeFolderHandle = handle;
   _oeSalvando = true;
   _oeSalvandoDesde = Date.now();
@@ -19490,6 +19545,14 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
     return true;
   } catch (e) {
     console.error('salvarPdfOeNaPasta', e);
+    // A pasta pode sumir ENTRE o probe e a gravação (drive que cai, pasta
+    // renomeada no meio). Mesmo aviso útil, e não o erro cru do navegador.
+    if (_ehErroPastaSumiu(e)) {
+      const msg = `Pasta das OE "${handle.name}" não encontrada na hora de gravar — o Google Drive caiu? Reconecte em Configurações.`;
+      if (silent) _avisarOeUmaVez('pasta-sumiu', 'A OE não está sendo salva sozinha: ' + msg);
+      else toast(msg, 'err');
+      return false;
+    }
     if (!silent) toast('Falha ao salvar OE: ' + (e.message || e), 'err');
     return false;
   } finally {
