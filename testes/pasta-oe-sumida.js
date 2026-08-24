@@ -20,7 +20,9 @@
      • pasta boa continua gravando;
      • o clique sobre uma gravação em curso FALA (antes o botão emudecia);
      • o gatilho do Drive: pede que ele seja aberto, vigia a pasta e retoma a
-       gravação sozinho quando ela reaparece.
+       gravação sozinho quando ela reaparece;
+     • o porteiro que TODAS as pastas usam (PDF da OS, etiquetas, OE, backup,
+       snapshots, exportação): pasta muda, o aviso e a retomada não.
 
    Recorta pastaAcessivel, _ehErroPastaSumiu e salvarPdfOeNaPasta do app.js de
    verdade; o resto entra dublado — o que se mede aqui é a decisão, não como o
@@ -48,6 +50,9 @@ const motor = [
   corta('async function _driveVoltou'),
   corta('async function tentarDriveAgora'),
   corta('function fecharPedidoDrive'),
+  corta('function _avisoPastaSumiu'),
+  corta('async function pastaProntaOuPedeDrive'),
+  corta('function tratarErroPastaSumiu'),
   corta('async function salvarPdfOeNaPasta')
 ].join('\n');
 
@@ -178,6 +183,48 @@ const ok = (nome, cond, extra) => {
   ok('gatilho: Drive aberto, o pedido sai da tela', g.ok.modalDepois === false, g.ok);
   ok('gatilho: a OE que tinha ficado pelo caminho é gravada',
      p.escritos.length === 1 && p.escritos[0].fn === 'OE-24-08-2026.pdf', p.escritos.map(e => e.fn));
+
+  /* ---------- 6. o porteiro genérico, usado por todas as pastas ---------- */
+  // A OE foi só a primeira: PDF da OS, etiquetas, backup, snapshots e exportação
+  // passam pelo mesmo pastaProntaOuPedeDrive. Aqui ele é chamado direto.
+  const porteiro = new Function('pastaBoa', 'pastaMorta', 'toasts', `
+    return (async () => {
+      const modal = { aberto: false, texto: '' };
+      const document = {
+        querySelector: () => null,
+        getElementById: () => ({ set innerHTML(v) { modal.texto = v; }, get innerHTML() { return modal.texto; } })
+      };
+      const openModal = () => { modal.aberto = true; };
+      const closeModal = () => { modal.aberto = false; };
+      const esc = (v) => String(v == null ? '' : v);
+      const toast = (m, t) => toasts.push({ m, t: t || '' });
+      let _pedidoDrive = null, _pedidoDriveAutoDado = false;
+      ${motor}
+      let retomou = 0;
+      const boa = await pastaProntaOuPedeDrive(pastaBoa, { oQue: 'x', retomar: () => { retomou++; } });
+      const morta = await pastaProntaOuPedeDrive(pastaMorta, { oQue: 'salvar o PDF da OS 0501', retomar: () => { retomou++; } });
+      const modalDepoisDaMorta = modal.aberto;
+      const textoDaMorta = modal.texto;
+      _pararVigiaDrive();
+      // Erro no meio da gravação: só o sumiço é tratado como sumiço.
+      const naoSumiu = new Error('quota'); naoSumiu.name = 'QuotaExceededError';
+      const sumiu = new Error('sumiu'); sumiu.name = 'NotFoundError';
+      const reconheceOutro = tratarErroPastaSumiu(naoSumiu, pastaMorta, { oQue: 'x' });
+      const reconheceSumico = tratarErroPastaSumiu(sumiu, pastaMorta, { oQue: 'x' });
+      _pararVigiaDrive();
+      return { boa, morta, modalDepoisDaMorta, textoDaMorta, reconheceOutro, reconheceSumico, retomou };
+    })();
+  `);
+  const t6 = [];
+  const q = await porteiro(pasta({ nome: 'PDFs' }), pasta({ nome: 'PDFs', sumida: true }), t6);
+  ok('porteiro: pasta boa libera a gravação', q.boa === true, q);
+  ok('porteiro: pasta sumida barra a gravação', q.morta === false, q);
+  ok('porteiro: pasta sumida abre o pedido do Drive', q.modalDepoisDaMorta === true, q);
+  ok('porteiro: o pedido nomeia o que ficou por fazer',
+     /salvar o PDF da OS 0501/.test(q.textoDaMorta), q.textoDaMorta);
+  ok('porteiro: nada é retomado enquanto a pasta não volta', q.retomou === 0, q.retomou);
+  ok('porteiro: erro que não é sumiço segue o caminho normal', q.reconheceOutro === false, q);
+  ok('porteiro: sumiço na gravação é reconhecido', q.reconheceSumico === true, q);
 
   console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
   process.exit(falhas ? 1 : 0);

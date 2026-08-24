@@ -18473,6 +18473,44 @@ function fecharPedidoDrive() {
   closeModal('modal-drive');
 }
 
+// Linha de status para a pasta que sumiu do disco — a mesma em Configurações,
+// para todas as pastas conectadas. Devolve '' quando a pasta está lá.
+async function _statusPastaSumidaHtml(handle) {
+  if (!handle || (await pastaAcessivel(handle))) return '';
+  return `<span style="color: var(--alert);"><strong>Pasta não encontrada:</strong> <code>${esc(handle.name)}</code> — o <b>Google Drive</b> pode estar fechado (sem ele o <code>J:\</code> não existe), ou a pasta foi movida/renomeada. Abra o Drive e recarregue, ou clique em "Conectar pasta" para apontar de novo.</span>`;
+}
+
+// A frase única para "essa pasta não está no disco agora".
+function _avisoPastaSumiu(handle) {
+  return `Pasta "${handle && handle.name || '—'}" não encontrada — o Google Drive está aberto? Se ela mudou de lugar, reconecte em Configurações.`;
+}
+
+// Porteiro de TODA gravação em pasta conectada (PDF da OS, etiquetas, OE,
+// backup, snapshots, exportação): a pasta responde agora? Se não responde,
+// avisa e dispara o pedido do Drive, que retoma `retomar` quando ela voltar.
+// Devolve true só quando dá para gravar.
+//   oQue    — o que ficou por fazer, para a frase do modal ("salvar o PDF da OS 0501")
+//   silent  — gravação de fundo: o modal só interrompe uma vez por sessão
+//   avisar  — quem prefere dar o recado do seu jeito (a OE avisa uma vez só)
+async function pastaProntaOuPedeDrive(handle, { oQue, retomar, silent = false, avisar } = {}) {
+  if (!handle) return false;
+  if (await pastaAcessivel(handle)) return true;
+  const msg = _avisoPastaSumiu(handle);
+  if (typeof avisar === 'function') avisar(msg);
+  else if (!silent) toast(msg, 'err');
+  pedirGoogleDrive({ handle, oQue, retomar, auto: silent });
+  return false;
+}
+
+// Mesmo porteiro, do lado de dentro do catch: a pasta pode cair DEPOIS do
+// teste (o Drive fecha no meio da gravação). Devolve true se era isso.
+function tratarErroPastaSumiu(e, handle, { oQue, retomar, silent = false } = {}) {
+  if (!_ehErroPastaSumiu(e)) return false;
+  if (!silent) toast(_avisoPastaSumiu(handle), 'err');
+  pedirGoogleDrive({ handle, oQue, retomar, auto: silent });
+  return true;
+}
+
 async function pickPdfFolder() {
   if (!('showDirectoryPicker' in window)) {
     toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
@@ -18652,6 +18690,8 @@ async function atualizarExportFolderStatus() {
     return;
   }
   exportFolderHandle = handle;
+  const sumiuE = await _statusPastaSumidaHtml(handle);
+  if (sumiuE) { el.innerHTML = sumiuE; return; }
   let permLabel = 'pronta';
   try {
     const perm = await handle.queryPermission({ mode: 'readwrite' });
@@ -18775,6 +18815,13 @@ async function escreverSnapshotNaPasta(registro) {
   const raiz = backupFolderHandle || (await loadBackupFolderHandle()) || pdfFolderHandle || (await loadPdfFolderHandle());
   if (!raiz) return;
   if (!(await ensureFolderPermission(raiz, 'readwrite'))) return;
+  // O snapshot é a rede de segurança contra perda de dados: se ele parar de ser
+  // gravado porque o Drive está fechado, ninguém percebe até precisar dele.
+  if (!(await pastaProntaOuPedeDrive(raiz, {
+    oQue: 'gravar o snapshot de contingência',
+    retomar: () => escreverSnapshotNaPasta(registro),
+    silent: true
+  }))) return;
   const dir = await raiz.getDirectoryHandle('snapshots', { create: true });
   const nome = 'snap-' + registro.iso.replace(/[:.]/g, '-') + '.json';
   const fh = await dir.getFileHandle(nome, { create: true });
@@ -18905,17 +18952,25 @@ async function desconectarPastaBackup() {
 
 async function escreverBackupJsonAgora() {
   if (!exigirEdicao('gravar o backup na pasta')) return;
-  const ok = await escreverBackupJson();
+  const ok = await escreverBackupJson({ silent: false });
   if (ok) toast('Backup JSON salvo na pasta', 'ok');
   else toast('Falha ao salvar backup. Conecte a pasta primeiro.', 'err');
 }
 
-async function escreverBackupJson() {
+// silent = gravação de fundo (a cada mudança). O botão de Configurações chama
+// com silent:false, e aí a pasta sumida é dita na hora.
+async function escreverBackupJson({ silent = true } = {}) {
   const handle = backupFolderHandle || (await loadBackupFolderHandle());
   if (!handle) return false;
   const ok = await ensureFolderPermission(handle, 'readwrite');
   if (!ok) return false;
   backupFolderHandle = handle;
+  const pedido = {
+    oQue: 'gravar o backup dos dados na pasta',
+    retomar: () => escreverBackupJson({ silent: false }),
+    silent
+  };
+  if (!(await pastaProntaOuPedeDrive(handle, pedido))) return false;
   try {
     const dados = cloudCache || {};
     const payload = {
@@ -18934,6 +18989,7 @@ async function escreverBackupJson() {
     return true;
   } catch (e) {
     console.warn('escreverBackupJson', e);
+    tratarErroPastaSumiu(e, handle, pedido);
     return false;
   }
 }
@@ -18951,6 +19007,8 @@ async function atualizarBackupFolderStatus() {
     return;
   }
   backupFolderHandle = handle;
+  const sumiuB = await _statusPastaSumidaHtml(handle);
+  if (sumiuB) { el.innerHTML = sumiuB; return; }
   let permLabel = 'pronta — backup gravado a cada mudança';
   try {
     const perm = await handle.queryPermission({ mode: 'readwrite' });
@@ -18972,6 +19030,8 @@ async function atualizarPdfFolderStatus() {
     return;
   }
   pdfFolderHandle = handle;
+  const sumiuP = await _statusPastaSumidaHtml(handle);
+  if (sumiuP) { el.innerHTML = sumiuP; return; }
   let permLabel = 'pronta';
   try {
     const perm = await handle.queryPermission({ mode: 'readwrite' });
@@ -19171,6 +19231,12 @@ async function salvarPdfEtiquetasAuto(o, dados, { silent = false } = {}) {
   const ok = await ensureFolderPermission(handle, 'readwrite');
   if (!ok) return false;
   pdfFolderHandle = handle;
+  const pedido = {
+    oQue: `salvar as etiquetas da OS ${_numeroOSCanonico(o && o.os)}`,
+    retomar: () => salvarPdfEtiquetasAuto(o, dados, { silent: false }),
+    silent
+  };
+  if (!(await pastaProntaOuPedeDrive(handle, pedido))) return false;
   try {
     const blob = gerarPdfEtiquetas(dados);
     const filename = etiquetaFilenameForOS(o);
@@ -19183,6 +19249,7 @@ async function salvarPdfEtiquetasAuto(o, dados, { silent = false } = {}) {
     return true;
   } catch (e) {
     console.warn('salvarPdfEtiquetasAuto', e);
+    if (tratarErroPastaSumiu(e, handle, pedido)) return false;
     // FALAR quando falha. Antes o erro morria no console e o retorno era
     // descartado por quem chama: a OS era salva, a folha ia pra pasta, e a
     // etiqueta continuava a de dias atrás sem ninguém ficar sabendo — foi o que
@@ -19266,6 +19333,10 @@ async function savePdfToFolder(blob, filename, os) {
     return false;
   }
   pdfFolderHandle = handle;
+  // O blob já está pronto na memória: se a pasta voltar, a retomada grava ESTE
+  // mesmo PDF, sem refazer a captura.
+  const pedido = { oQue: `salvar ${filename}`, retomar: () => savePdfToFolder(blob, filename, os) };
+  if (!(await pastaProntaOuPedeDrive(handle, pedido))) return false;
   try {
     const fileHandle = await handle.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
@@ -19275,6 +19346,7 @@ async function savePdfToFolder(blob, filename, os) {
     return true;
   } catch (e) {
     console.error('savePdfToFolder', e);
+    if (tratarErroPastaSumiu(e, handle, pedido)) return false;
     toast('Falha ao salvar PDF: ' + (e.message || e), 'err');
     return false;
   }
@@ -19378,9 +19450,9 @@ async function atualizarOeFolderStatus() {
   } catch (_) {}
   // Pasta que sumiu do disco continua "conectada" para o navegador. Dizer isso
   // AQUI é o que evita a descoberta na hora de salvar, com o PDF já gerado.
-  if (perm === 'granted' && !(await pastaAcessivel(handle))) {
-    el.innerHTML = `<span style="color: var(--alert);"><strong>Pasta não encontrada:</strong> <code>${esc(handle.name)}</code> — o <b>Google Drive</b> pode estar fechado (sem ele o <code>J:\</code> não existe), ou a pasta foi movida/renomeada. Abra o Drive e recarregue, ou clique em "Conectar pasta" para apontar de novo.</span>`;
-    return;
+  if (perm === 'granted') {
+    const sumiu = await _statusPastaSumidaHtml(handle);
+    if (sumiu) { el.innerHTML = sumiu; return; }
   }
   el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
 }
@@ -21381,6 +21453,12 @@ async function autoSalvarPdfPrintAtual(o) {
   const ok = await ensureFolderPermission(handle, 'readwrite');
   if (!ok) return;
   pdfFolderHandle = handle;
+  const pedido = {
+    oQue: `salvar o PDF da OS ${_numeroOSCanonico(o && o.os)}`,
+    retomar: () => autoSalvarPdfPrintAtual(o),
+    silent: true
+  };
+  if (!(await pastaProntaOuPedeDrive(handle, pedido))) return;
   // Da tempo do .sheet ficar com layout calculado apos o goto('print')
   await new Promise(r => setTimeout(r, 250));
   try {
@@ -21397,6 +21475,7 @@ async function autoSalvarPdfPrintAtual(o) {
       + (velhas.length ? ` · ${velhas.length} versão(ões) antiga(s) do mesmo número removida(s)` : ''), 'ok');
   } catch (e) {
     console.warn('autoSalvarPdfPrintAtual', e);
+    tratarErroPastaSumiu(e, handle, pedido);
   }
 }
 
@@ -26283,7 +26362,13 @@ async function exportarDados() {
   const mb = (blob.size / 1048576).toFixed(2);
 
   const pasta = exportFolderHandle || (await loadExportFolderHandle());
-  if (pasta && await ensureFolderPermission(pasta, 'readwrite')) {
+  // Pasta sumida NÃO cancela a exportação: o arquivo desce nos Downloads (o
+  // caminho de baixo). O pedido do Drive fica sem retomada de propósito —
+  // exportar de novo criaria um segundo arquivo datado do mesmo conteúdo.
+  if (pasta && !(await pastaAcessivel(pasta))) {
+    toast(_avisoPastaSumiu(pasta) + ' A exportação vai para os Downloads.', 'err');
+    pedirGoogleDrive({ handle: pasta, oQue: 'gravar a exportação na pasta' });
+  } else if (pasta && await ensureFolderPermission(pasta, 'readwrite')) {
     try {
       const fh = await pasta.getFileHandle(nome, { create: true });
       const w = await fh.createWritable();
