@@ -19105,6 +19105,10 @@ function gerarPdfEtiquetas(dados) {
     // vier um `dados` sem o campo.
     const nRep = dados.temReposicao ? (dados.nReposicao || 1) : 0;
     const ehReposicao = nRep > 0 && i >= total - nRep;
+    // Via EXTRA da reposição: a mesma etiqueta, sem lote — o pacote já foi
+    // contado na primeira via.
+    const ehViaExtra = ehReposicao && i > total - nRep;
+    const totalPacotes = dados.totalPacotes || total;
     // Com mais de uma tonalidade, o tom vai JUNTO do tamanho no destaque —
     // "G tom 1", "G tom 2"… — senão duas etiquetas do mesmo tamanho ficam
     // indistinguíveis no ensaque. Sem linha "TOM:" separada: seria repetição.
@@ -19119,10 +19123,12 @@ function gerarPdfEtiquetas(dados) {
       { t: `MODELO: ${dados.modelo}`, s: 1 },
       { t: `QTDE: ${dados.qtde}`, s: 1 },
       { t: `TAM: ${dados.tam}`, s: 1 },                       // TODOS os tamanhos da grade, normal
-      { t: `COR: ${dados.cor}`, s: 1 },
-      { t: `LOTE: ${i + 1}/${total}`, s: 1 },
-      destaque
+      { t: `COR: ${dados.cor}`, s: 1 }
     ];
+    // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
+    if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
+    if (!ehViaExtra) linhas.push({ t: `LOTE: ${i + 1}/${totalPacotes}`, s: 1 });
+    linhas.push(destaque);
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     if (!ehReposicao && dados.composicao) {
       dados.composicao.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
@@ -19768,11 +19774,13 @@ function _tamanhosDaGradeExpandido(o) {
   return out;
 }
 
-// Uma etiqueta por pagina (100mm x 50mm), uma por PACOTE — mesma regra do
-// volume de expedição: 1 por vaga de tamanho da grade + as de reposição. As
-// etiquetas de tamanho sao iguais (só o LOTE muda); as DUAS ÚLTIMAS são o
-// pacote de reposição (duplicata, ETIQUETAS_REPOSICAO_POR_OS) e mostram o
-// conteúdo (${ETIQUETA_CONTEUDO_REPOSICAO}) no lugar de tamanho/qtde.
+// Uma etiqueta por pagina (100mm x 50mm). Os PACOTES seguem a regra do volume
+// de expedição: 1 por vaga de tamanho da grade + 1 de reposição — e é isso que
+// o LOTE conta. As etiquetas de tamanho sao iguais (só o LOTE muda); as DUAS
+// ÚLTIMAS são o MESMO pacote de reposição (ETIQUETAS_REPOSICAO_POR_OS: uma
+// colada por fora, outra dentro) e mostram o conteúdo
+// (${ETIQUETA_CONTEUDO_REPOSICAO}) no lugar de tamanho/qtde, mais o resumo das
+// tonalidades. A via extra sai SEM lote: pacote já contado na primeira.
 // Calcula os dados que vao para cada etiqueta a partir de uma OS. Centralizado
 // num helper porque tambem e usado pelos auto-saves silenciosos de
 // salvarOS/salvarEImprimir, fora do fluxo de impressao.
@@ -19848,12 +19856,24 @@ function dadosEtiquetaParaOS(o) {
   const temReposicao = tamanhosPacotes.length > 0;
   const nReposicao = temReposicao ? ETIQUETAS_REPOSICAO_POR_OS : 0;
   const numEtiquetas = temReposicao ? tamanhosPacotes.length + nReposicao : 1;
+  // PACOTES ≠ ETIQUETAS. O pacote de reposição é UM só, e as duas etiquetas
+  // dele são duas vias do mesmo pacote — a segunda vai dentro. Por isso o LOTE
+  // conta os PACOTES (tamanhos + 1 de reposição) e a via extra não recebe LOTE
+  // nenhum: numerá-la faria a expedição procurar um pacote que não existe.
+  const totalPacotes = temReposicao ? tamanhosPacotes.length + 1 : 1;
+  // A reposição não tem tamanho para exibir em destaque, e por isso era a única
+  // etiqueta do conjunto que não dizia a tonalidade. Aqui ela ganha o RESUMO
+  // dos tons da OS numa linha só, junto das demais ("TONS: 1 · 2 · 3").
+  const tonsTexto = tonsAtivos.length
+    ? (tonsAtivos.length > 1 ? 'TONS: ' : 'TOM: ') + tonsAtivos.join(' · ')
+    : '';
 
   // Moletom: cada etiqueta de pacote (de tamanho) recebe a lista de composição.
   const composicao = temMoletom ? ETIQUETA_COMPOSICAO_MOLETOM : null;
 
   return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
-           tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao, composicao };
+           tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
+           totalPacotes, tonsTexto, composicao };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
@@ -19897,8 +19917,10 @@ function imprimirEtiquetas(osId) {
   // gravava etiqueta capenga por cima da boa (ver o comentário no auto-save).
   const dados = dadosEtiquetaParaOS(o);
   const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
-          tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao, composicao } = dados;
+          tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
+          totalPacotes, tonsTexto, composicao } = dados;
   const nRep = temReposicao ? (nReposicao || 1) : 0;
+  const totPac = totalPacotes || numEtiquetas;
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -19910,6 +19932,9 @@ function imprimirEtiquetas(osId) {
   const compHtml = composicao ? composicao.map(c => `<div class="comp">${escEt(c)}</div>`).join('') : '';
   const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
     const ehRep = nRep > 0 && i >= numEtiquetas - nRep;
+    // A via extra da reposição é a mesma etiqueta, sem lote (ver o comentário
+    // de totalPacotes em dadosEtiquetaParaOS).
+    const ehViaExtra = ehRep && i > numEtiquetas - nRep;
     // Tonalidade junto do tamanho no destaque — "G tom 1", "G tom 2"… — só quando
     // a OS tem mais de um tom; assim duas etiquetas do mesmo tamanho não ficam
     // indistinguíveis no ensaque. A linha "TOM:" separada some: viraria repetição.
@@ -19926,7 +19951,8 @@ function imprimirEtiquetas(osId) {
         <div class="row">QTDE: ${escEt(qtde)}</div>
         <div class="row">TAM: ${escEt(tam)}</div>
         <div class="row">COR: ${escEt(cor)}</div>
-        <div class="row">LOTE: ${i + 1}/${numEtiquetas}</div>
+        ${ehRep && tonsTexto ? `<div class="row">${escEt(tonsTexto)}</div>` : ''}
+        ${ehViaExtra ? '' : `<div class="row">LOTE: ${i + 1}/${totPac}</div>`}
         ${destaque}
       </div>
     </div>`;
@@ -20040,7 +20066,7 @@ function imprimirEtiquetas(osId) {
     <button class="primary" onclick="window.print()">🖨 Imprimir</button>
     <button onclick="window.close()">Fechar</button>
     <button onclick="window.opener && window.opener.imprimirEtiquetasPdf && window.opener.imprimirEtiquetasPdf('${escEt(osId)}')">📄 Abrir PDF 10×5cm</button>
-    <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''} · LOTE 1${numEtiquetas>1?'..'+numEtiquetas:''} · 10×5cm</span>
+    <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''} · LOTE 1${totPac>1?'..'+totPac:''}${nRep>1?' + '+(nRep-1)+' via da reposição (sem lote)':''} · 10×5cm</span>
     <div style="margin-top:8px;font-size:12px;color:#555;line-height:1.45;max-width:760px;">
       Esta janela imprime pelo navegador, e aí o <b>tamanho da folha é o da impressora</b>: numa laser A4 a etiqueta sai
       pequena no canto da folha. Para a <b>impressora de etiquetas 10×5cm</b>, use o <b>PDF</b> — ele carrega a página de
