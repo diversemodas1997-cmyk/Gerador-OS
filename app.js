@@ -14605,6 +14605,55 @@ const _riscoCmDoTexto = s => {
   return m ? m[1].replace(',', '.') : '';
 };
 
+// A sequência de tamanhos escrita num texto qualquer: "COT.JAC - CORPO
+// -P-M-G-GG-G1.pdf" → "P-M-G-GG-G1". Serve para o acervo em que a pasta NÃO
+// tem um nível de tamanhos (a linha vai direto para a largura) — aí o nome do
+// arquivo é o único lugar que diz a que grade o risco pertence.
+// Os lookarounds são o que impede o "P" de CORPO e o "PM" de PM.LISA de virarem
+// tamanho: só conta P/M/G/GG/G1..G3 que não estejam grudados em outra letra ou
+// número. Exige pelo menos DOIS ligados por hífen — um "G" solto no meio de uma
+// frase não descreve grade nenhuma.
+// Um tamanho da grade escrito em texto: "2G1", "GG", "10x M". Os lookarounds
+// são o que impede o "P" de CORPO e o "PM" de PM.LISA de virarem tamanho — só
+// conta o que não está grudado em outra letra ou número. A sequência exige pelo
+// menos DOIS ligados por hífen: um "G" solto numa frase não descreve grade.
+const _RISCO_TAM_RE = /(?<![A-Za-z0-9])(?:\d+\s*[xX]?\s*)?(?:GG|G[123]|[PMG])(?![A-Za-z0-9])(?:\s*-\s*(?<![A-Za-z0-9])(?:\d+\s*[xX]?\s*)?(?:GG|G[123]|[PMG])(?![A-Za-z0-9]))+/gi;
+function _riscoTamsDoTexto(txt) {
+  const achados = String(txt == null ? '' : txt).match(_RISCO_TAM_RE) || [];
+  // A MAIOR sequência é a que descreve a grade inteira.
+  return achados.sort((a, b) => b.length - a.length)[0] || '';
+}
+
+// Um PDF do índice, lido pelo CAMINHO. O caminho é a informação, mas o acervo
+// tem seis formas dele (medidas em 24/08/2026, 261 PDFs):
+//   LINHA/TAM/CM (237) · LINHA/TAM/CM/Versão (11) · LINHA/TAM (9)
+//   LINHA/TAM/TAM/CM (2, PM.LISA) · LINHA/CM (1, COT.JAC) · LINHA/CM/TAM (1, COT.PRI)
+// Ler por POSIÇÃO fixa (p[1] = tamanhos, p[2] = largura) só acerta as três
+// primeiras: nas outras o "157 cm" caía no lugar dos tamanhos e o PDF não
+// aparecia na coluna Riscos de grade nenhuma — era o caso das três linhas COT,
+// que têm um PDF cada e cada um numa forma diferente.
+// Por isso a leitura é por CONTEÚDO: o segmento que diz "N cm" é a largura,
+// e todos os outros são candidatos a tamanhos — mais o que o nome do arquivo
+// disser. Candidato a mais não estraga: o casamento é por igualdade de chave.
+function _riscoItemDoCaminho(rel) {
+  const p = String(rel || '').split('/');
+  const arq = p[p.length - 1] || '';
+  const meio = p.slice(1, -1);                       // entre a linha e o arquivo
+  const iCm = meio.findIndex(seg => _riscoCmDoTexto(seg));
+  const tams = meio.filter((_, i) => i !== iCm);
+  const doNome = _riscoTamsDoTexto(arq.replace(/\.pdf$/i, ''));
+  if (doNome) tams.push(doNome);
+  return {
+    rel,
+    linha: p[0] || '',
+    tam: tams[0] || '',
+    tams,
+    cm: iCm >= 0 ? _riscoCmDoTexto(meio[iCm]) : '',
+    pasta: p.slice(0, -1).join('/'),
+    arq
+  };
+}
+
 // O endereço do PDF. Cada pedaço vai por encodeURIComponent e as barras ficam:
 // os nomes têm espaço e acento, e encodeURI sozinho não escaparia um "#" no
 // nome do arquivo — que quebraria o link em silêncio, cortando o resto.
@@ -14617,17 +14666,7 @@ function _riscosIndice() {
   _riscosIdxPromessa = fetch('dados/riscos-pdf.json')
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(j => {
-      const itens = (j.arquivos || []).map(rel => {
-        const p = rel.split('/');
-        return {
-          rel,
-          linha: p[0] || '',
-          tam: p.length > 2 ? p[1] : '',
-          cm: p.length > 3 ? _riscoCmDoTexto(p[2]) : '',
-          pasta: p.slice(0, -1).join('/'),
-          arq: p[p.length - 1]
-        };
-      });
+      const itens = (j.arquivos || []).map(_riscoItemDoCaminho);
       _riscosIdx = { pasta: j.pasta || '', gerado: j.gerado || '', itens };
       return _riscosIdx;
     })
@@ -14657,8 +14696,10 @@ function _riscosDaGrade(g) {
   toks.delete('');
   if (!linha || !toks.size) return { itens: [], aviso: '' };
 
+  // Qualquer candidato de tamanho do caminho serve — ver _riscoItemDoCaminho.
   const base = _riscosIdx.itens.filter(p =>
-    _normNome(p.linha) === _normNome(linha) && toks.has(_chaveTam(p.tam)));
+    _normNome(p.linha) === _normNome(linha)
+    && (p.tams || [p.tam]).some(t => toks.has(_chaveTam(t))));
   if (!base.length) return { itens: [], aviso: '' };
 
   if (cm > 0) {
