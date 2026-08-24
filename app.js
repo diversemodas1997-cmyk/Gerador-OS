@@ -14789,6 +14789,22 @@ function _riscoCell(g) {
   return `<button class="edit" title="${esc(t)}" onclick="abrirRiscosDaGrade('${g.id}')">📄 ${r.itens.length}${r.aviso ? ' ⚠' : ''}</button>`;
 }
 
+// A MESMA célula da coluna "Riscos", vista pela OS. A OS não tem pasta de
+// riscos própria: o encaixe é da GRADE que ela usou, então o atalho aqui é o
+// mesmo botão da lista de grades — só que a grade é descoberta pela OS
+// (`_gradeIdDaOS`, a mesma chave do histórico e do modal de operações).
+//
+// Grade excluída (ou OS antiga, sem vínculo) fica em "—": sem grade cadastrada
+// não há linha nem faixa de tamanhos para procurar pasta nenhuma.
+function _riscoCellOS(o) {
+  const id = _gradeIdDaOS(o);
+  const g = id ? (STATE.grades || []).find(x => x.id === id) : null;
+  if (!g) {
+    return `<span style="color:var(--ink-3);" title="Esta OS não aponta para uma grade cadastrada — sem ela não há pasta de riscos para procurar.">—</span>`;
+  }
+  return _riscoCell(g);
+}
+
 function renderGrades() {
   const tb = document.getElementById('tbl-grades');
   // A lista dos PDFs vem uma vez por sessão, e sozinha: quando chegar, redesenha.
@@ -20133,9 +20149,12 @@ function _renderAvisoGrupoListaOS(mostradas) {
 
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
+  // Mesma lista de PDFs da tela de grades: vem uma vez por sessão e, quando
+  // chegar, redesenha (o guarda do _riscosIdxFalhou evita render/fetch infinito).
+  if (!_riscosIdx && !_riscosIdxFalhou) _riscosIndice().then(() => renderListaOS()).catch(() => {});
   if (!STATE.ordens.length) {
     _renderAvisoGrupoListaOS(0);
-    tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
     return;
   }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
@@ -20159,7 +20178,7 @@ function renderListaOS() {
     ? noGrupo.filter(o => String(o.os || '').toLowerCase().includes(termo))
     : noGrupo;
   _renderAvisoGrupoListaOS(noGrupo.length);
-  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
+  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
   tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
     // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
@@ -20186,6 +20205,7 @@ function renderListaOS() {
       <td>${_gradeCelulaLista(o)}</td>
       <td>${esc(formatDate(o.data))}</td>
       <td>${o.grade?.total||0} pç</td>
+      <td style="text-align:center;">${_riscoCellOS(o)}</td>
       <td class="col-actions row-actions">
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
