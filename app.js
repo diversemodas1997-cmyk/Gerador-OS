@@ -18976,7 +18976,11 @@ function gerarPdfEtiquetas(dados) {
 
     // Cada linha tem uma escala (s): 1 = normal, 2 = dobro (o tamanho / o
     // conteúdo do pacote saem em destaque). c = centralizada.
-    const ehReposicao = dados.temReposicao && i === total - 1;
+    // As ÚLTIMAS nRep etiquetas são as de reposição — duas iguais por OS
+    // (ETIQUETAS_REPOSICAO_POR_OS). `|| 1` mantém o comportamento antigo se
+    // vier um `dados` sem o campo.
+    const nRep = dados.temReposicao ? (dados.nReposicao || 1) : 0;
+    const ehReposicao = nRep > 0 && i >= total - nRep;
     // Com mais de uma tonalidade, o tom vai JUNTO do tamanho no destaque —
     // "G tom 1", "G tom 2"… — senão duas etiquetas do mesmo tamanho ficam
     // indistinguíveis no ensaque. Sem linha "TOM:" separada: seria repetição.
@@ -19559,6 +19563,11 @@ async function _salvarEImprimirConfirmada(data) {
 // Conteúdo do pacote de reposição (a última etiqueta). Texto do usuário.
 const ETIQUETA_CONTEUDO_REPOSICAO = 'Viés/Reposição/Ribana';
 
+// Quantas etiquetas de reposição (viés/reposição/ribana) saem em CADA OS. São
+// duas iguais, sempre as últimas do conjunto: o pacote de reposição leva uma
+// colada por fora e a outra vai dentro, junto do conteúdo.
+const ETIQUETAS_REPOSICAO_POR_OS = 2;
+
 // Composição de um pacote de blusa de MOLETOM (360 peças = 36 blusas). Sai em
 // cada etiqueta de pacote de moletom (não na de reposição). Duas linhas,
 // agrupadas por quantidade (as de 36 e as de 72). Camiseta não recebe lista.
@@ -19595,10 +19604,10 @@ function _tamanhosDaGradeExpandido(o) {
 }
 
 // Uma etiqueta por pagina (100mm x 50mm), uma por PACOTE — mesma regra do
-// volume de expedição: 1 por vaga de tamanho da grade + 1 de reposição. As
-// etiquetas de tamanho sao iguais (só o LOTE muda); a ÚLTIMA é o pacote de
-// reposição e mostra o conteúdo (${ETIQUETA_CONTEUDO_REPOSICAO}) no lugar de
-// tamanho/qtde.
+// volume de expedição: 1 por vaga de tamanho da grade + as de reposição. As
+// etiquetas de tamanho sao iguais (só o LOTE muda); as DUAS ÚLTIMAS são o
+// pacote de reposição (duplicata, ETIQUETAS_REPOSICAO_POR_OS) e mostram o
+// conteúdo (${ETIQUETA_CONTEUDO_REPOSICAO}) no lugar de tamanho/qtde.
 // Calcula os dados que vao para cada etiqueta a partir de uma OS. Centralizado
 // num helper porque tambem e usado pelos auto-saves silenciosos de
 // salvarOS/salvarEImprimir, fora do fluxo de impressao.
@@ -19653,12 +19662,12 @@ function dadosEtiquetaParaOS(o) {
     .toUpperCase();
 
   // Uma etiqueta por PACOTE — a MESMA regra do volume de expedição:
-  // tamanhos × TONALIDADES + 1 (reposição/ribana). Cada tonalidade é ensacada
+  // tamanhos × TONALIDADES + 2 (reposição/ribana, duas iguais). Cada tonalidade é ensacada
   // separada, então cada tamanho rende um pacote por tom.
   // Antes o cálculo parava em "tamanhos + 1" e ignorava a tonalidade: uma OS de
   // 7 tamanhos em 2 tons saía com 8 etiquetas para 15 pacotes reais — 7 pacotes
   // iam para a expedição sem etiqueta nenhuma.
-  // Ex.: P-G1-G2 em 1 tom = 4 etiquetas; os mesmos 3 tamanhos em 2 tons = 7.
+  // Ex.: P-G1-G2 em 1 tom = 5 etiquetas (3 + 2 de reposição); em 2 tons = 8.
   // Mínimo 1 pra não bloquear OS sem grade.
   const tamanhosBase = _tamanhosDaGradeExpandido(o);
   const tonsAtivos = tonsEfetivos((o.progresso || {}).totalTamanhoTons || {});
@@ -19672,13 +19681,14 @@ function dadosEtiquetaParaOS(o) {
     });
   }
   const temReposicao = tamanhosPacotes.length > 0;
-  const numEtiquetas = temReposicao ? tamanhosPacotes.length + 1 : 1;
+  const nReposicao = temReposicao ? ETIQUETAS_REPOSICAO_POR_OS : 0;
+  const numEtiquetas = temReposicao ? tamanhosPacotes.length + nReposicao : 1;
 
   // Moletom: cada etiqueta de pacote (de tamanho) recebe a lista de composição.
   const composicao = temMoletom ? ETIQUETA_COMPOSICAO_MOLETOM : null;
 
   return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
-           tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao };
+           tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao, composicao };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
@@ -19722,17 +19732,19 @@ function imprimirEtiquetas(osId) {
   // gravava etiqueta capenga por cima da boa (ver o comentário no auto-save).
   const dados = dadosEtiquetaParaOS(o);
   const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
-          tamanhosPacotes, tonsPacotes, nTons, temReposicao, composicao } = dados;
+          tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao, composicao } = dados;
+  const nRep = temReposicao ? (nReposicao || 1) : 0;
 
   const escEt = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   // Cada etiqueta é um pacote: as de tamanho mostram o SEU tamanho em destaque
-  // (fonte dobrada); a última é o pacote de reposição, com o conteúdo. Moletom:
+  // (fonte dobrada); as duas últimas são o pacote de reposição, com o conteúdo
+  // (etiquetas iguais, uma por fora e uma por dentro do saco). Moletom:
   // as etiquetas de tamanho recebem a lista de composição do pacote.
   const compHtml = composicao ? composicao.map(c => `<div class="comp">${escEt(c)}</div>`).join('') : '';
   const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
-    const ehRep = temReposicao && i === numEtiquetas - 1;
+    const ehRep = nRep > 0 && i >= numEtiquetas - nRep;
     // Tonalidade junto do tamanho no destaque — "G tom 1", "G tom 2"… — só quando
     // a OS tem mais de um tom; assim duas etiquetas do mesmo tamanho não ficam
     // indistinguíveis no ensaque. A linha "TOM:" separada some: viraria repetição.
