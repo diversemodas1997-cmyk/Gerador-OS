@@ -18380,6 +18380,99 @@ function _ehErroPastaSumiu(e) {
   return nome === 'NotFoundError' || nome === 'NotReadableError';
 }
 
+/* --------- GATILHO: PEDIR QUE O GOOGLE DRIVE SEJA ABERTO --------- */
+// A pasta conectada mora no J:\ do Google Drive. Drive fechado = J:\ não
+// existe = pasta some, e toda gravação (OE, PDF de OS) falha.
+// Uma página da web NÃO pode ligar um programa do Windows — não existe API para
+// isso, e é bom que não exista. O que dá para fazer é o que este bloco faz:
+//   1. pedir, num modal que fica na tela (o toast some em 2,4s e a pessoa já
+//      estava olhando para outra coisa);
+//   2. VIGIAR a pasta a cada 4s e, no instante em que ela reaparecer, retomar
+//      sozinho o que tinha ficado pelo caminho — sem depender de a pessoa
+//      lembrar de clicar de novo.
+// A vigia morre em 10 min: passou disso, quem voltar clica no botão de novo.
+let _pedidoDrive = null;   // { handle, retomar, timer, ate }
+// Um pedido AUTOMÁTICO (auto-save, sem clique) por sessão: o modal é uma
+// interrupção, e repeti-la a cada gravação seria pior que o problema.
+let _pedidoDriveAutoDado = false;
+
+function _modalDriveTexto(nomePasta, oQue) {
+  const el = document.getElementById('modal-drive-fields');
+  if (!el) return;
+  el.innerHTML = `
+    <p style="margin:0 0 10px;">
+      Não consegui achar a pasta <code>${esc(nomePasta || '—')}</code> no disco, então
+      <b>${esc(oQue || 'a gravação')}</b> não aconteceu.
+    </p>
+    <p style="margin:0 0 10px;">
+      Quase sempre é o <b>Google Drive fechado</b>: sem ele o <code>J:\</code> não
+      existe e a pasta some inteira.
+    </p>
+    <ol style="margin:0 0 10px 18px;padding:0;line-height:1.6;">
+      <li>Abra o <b>Google Drive</b> (Menu Iniciar → digite <i>Google Drive</i> → Enter).</li>
+      <li>Espere o ícone aparecer ao lado do relógio e o <code>J:\</code> voltar.</li>
+      <li>Não precisa clicar em nada aqui: assim que a pasta voltar, eu gravo sozinho.</li>
+    </ol>
+    <p style="margin:0;color:var(--ink-3);font-size:13px;">
+      Para não passar por isso de novo: nas configurações do Google Drive, marque
+      <b>“Abrir o Google Drive ao iniciar o sistema”</b>.
+    </p>`;
+}
+
+// Pede o Drive e passa a vigiar a pasta. `retomar` é chamado uma única vez,
+// quando ela reaparecer. `auto` = pedido nascido de um auto-save (sem clique):
+// esse só interrompe uma vez por sessão.
+function pedirGoogleDrive({ handle, oQue, retomar, auto = false } = {}) {
+  if (!handle) return;
+  if (auto && _pedidoDriveAutoDado) return;
+  if (auto) _pedidoDriveAutoDado = true;
+  // Já há um pedido na tela para a mesma pasta: só troca o que será retomado.
+  if (_pedidoDrive && _pedidoDrive.handle === handle) {
+    _pedidoDrive.retomar = retomar || _pedidoDrive.retomar;
+    return;
+  }
+  _pararVigiaDrive();
+  _pedidoDrive = { handle, retomar, timer: null, ate: Date.now() + 10 * 60 * 1000 };
+  _modalDriveTexto(handle.name, oQue);
+  openModal('modal-drive');
+  _pedidoDrive.timer = setInterval(async () => {
+    if (!_pedidoDrive) return _pararVigiaDrive();
+    if (Date.now() > _pedidoDrive.ate) { _pararVigiaDrive(); return; }
+    if (await pastaAcessivel(_pedidoDrive.handle)) await _driveVoltou();
+  }, 4000);
+}
+
+function _pararVigiaDrive() {
+  if (_pedidoDrive && _pedidoDrive.timer) clearInterval(_pedidoDrive.timer);
+  _pedidoDrive = null;
+}
+
+async function _driveVoltou() {
+  const retomar = _pedidoDrive && _pedidoDrive.retomar;
+  _pararVigiaDrive();
+  closeModal('modal-drive');
+  // A sessão volta a poder avisar: o problema de agora foi resolvido, e o
+  // próximo (se houver) é outro.
+  _pedidoDriveAutoDado = false;
+  _oeAvisoDado = '';
+  toast('Pasta encontrada — retomando a gravação.', 'ok');
+  if (typeof retomar === 'function') {
+    try { await retomar(); } catch (e) { console.warn('retomar após Drive', e); }
+  }
+}
+
+// Botão "Já abri — tentar de novo": não espera o ciclo da vigia.
+async function tentarDriveAgora() {
+  if (!_pedidoDrive) { closeModal('modal-drive'); return; }
+  if (await pastaAcessivel(_pedidoDrive.handle)) { await _driveVoltou(); return; }
+  toast('A pasta ainda não apareceu. O Drive terminou de abrir?', 'err');
+}
+
+function fecharPedidoDrive() {
+  _pararVigiaDrive();
+  closeModal('modal-drive');
+}
+
 async function pickPdfFolder() {
   if (!('showDirectoryPicker' in window)) {
     toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
@@ -19520,10 +19613,15 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // instrução: o que aconteceu e onde reconectar.
   if (!(await pastaAcessivel(handle))) {
     // O Google Drive fechado é a causa nº 1 aqui: sem ele o J:\ não existe e a
-    // pasta some inteira, mesmo estando lá quando o Drive sobe.
+    // pasta some inteira, mesmo estando lá quando o Drive sobe. O modal pede que
+    // ele seja aberto e retoma esta mesma gravação quando a pasta voltar.
     const msg = `Pasta das OE "${handle.name}" não encontrada — o Google Drive está aberto? Se a pasta mudou de lugar, reconecte em Configurações.`;
-    if (silent) { _avisarOeUmaVez('pasta-sumiu', 'A OE não está sendo salva sozinha: ' + msg); return false; }
-    toast(msg, 'err');
+    if (silent) _avisarOeUmaVez('pasta-sumiu', 'A OE não está sendo salva sozinha: ' + msg);
+    else toast(msg, 'err');
+    pedirGoogleDrive({
+      handle, oQue: 'salvar a OE na pasta', auto: silent,
+      retomar: () => salvarPdfOeNaPasta({ silent: false })
+    });
     return false;
   }
   oeFolderHandle = handle;
@@ -19551,6 +19649,10 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
       const msg = `Pasta das OE "${handle.name}" não encontrada na hora de gravar — o Google Drive caiu? Reconecte em Configurações.`;
       if (silent) _avisarOeUmaVez('pasta-sumiu', 'A OE não está sendo salva sozinha: ' + msg);
       else toast(msg, 'err');
+      pedirGoogleDrive({
+        handle, oQue: 'salvar a OE na pasta', auto: silent,
+        retomar: () => salvarPdfOeNaPasta({ silent: false })
+      });
       return false;
     }
     if (!silent) toast('Falha ao salvar OE: ' + (e.message || e), 'err');

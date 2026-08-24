@@ -18,7 +18,9 @@
      • o sumiço no meio do caminho (entre o probe e a gravação) cai na mesma
        mensagem, e não no erro do navegador;
      • pasta boa continua gravando;
-     • o clique sobre uma gravação em curso FALA (antes o botão emudecia).
+     • o clique sobre uma gravação em curso FALA (antes o botão emudecia);
+     • o gatilho do Drive: pede que ele seja aberto, vigia a pasta e retoma a
+       gravação sozinho quando ela reaparece.
 
    Recorta pastaAcessivel, _ehErroPastaSumiu e salvarPdfOeNaPasta do app.js de
    verdade; o resto entra dublado — o que se mede aqui é a decisão, não como o
@@ -40,6 +42,12 @@ const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 const motor = [
   corta('async function pastaAcessivel'),
   corta('function _ehErroPastaSumiu'),
+  corta('function _modalDriveTexto'),
+  corta('function pedirGoogleDrive'),
+  corta('function _pararVigiaDrive'),
+  corta('async function _driveVoltou'),
+  corta('async function tentarDriveAgora'),
+  corta('function fecharPedidoDrive'),
   corta('async function salvarPdfOeNaPasta')
 ].join('\n');
 
@@ -51,6 +59,8 @@ function pasta({ nome = 'OE', sumida = false, sumidaAoGravar = false } = {}) {
   return {
     name: nome,
     escritos,
+    // O Drive subindo = a pasta voltando a existir no meio da sessão.
+    driveAbriu() { sumida = false; sumidaAoGravar = false; },
     async queryPermission() { return 'granted'; },
     async requestPermission() { return 'granted'; },
     async *values() { if (sumida) throw err(); },
@@ -64,15 +74,23 @@ function pasta({ nome = 'OE', sumida = false, sumidaAoGravar = false } = {}) {
 // Roda um clique em "Salvar OE na pasta" (silent=false) sobre a pasta dada.
 // Devolve { ok, toasts, capturas } — capturas conta quantas vezes o PDF foi
 // gerado, que é o custo que o probe existe para evitar.
-async function clicarSalvar(handle, { travada = false } = {}) {
+async function clicarSalvar(handle, { travada = false, roteiro = null } = {}) {
   const toasts = [];
   const conta = { capturas: 0 };
-  const fn = new Function('handle', 'toasts', 'conta', 'travada', `
+  const fn = new Function('handle', 'toasts', 'conta', 'travada', 'roteiro', `
     return (async () => {
       let _oeSalvando = travada, _oeSalvandoDesde = travada ? Date.now() : 0;
       let _oeAvisoDado = '', oeFolderHandle = handle;
       let expPlanoModo = 'dia', currentRole = 'admin';
-      const document = { querySelector: () => null };
+      const modal = { aberto: false, texto: '' };
+      const document = {
+        querySelector: () => null,
+        getElementById: () => ({ set innerHTML(v) { modal.texto = v; }, get innerHTML() { return modal.texto; } })
+      };
+      const openModal = () => { modal.aberto = true; };
+      const closeModal = () => { modal.aberto = false; };
+      const esc = (v) => String(v == null ? '' : v);
+      let _pedidoDrive = null, _pedidoDriveAutoDado = false;
       const toast = (m, t) => toasts.push({ m, t: t || '' });
       const _avisarOeUmaVez = (chave, m) => toasts.push({ m, t: 'err', silencioso: true });
       const ensureFolderPermission = async () => true;
@@ -83,11 +101,16 @@ async function clicarSalvar(handle, { travada = false } = {}) {
       const gerarPdfDaSheetExp = async () => { conta.capturas++; return 'BLOB'; };
       const oeFilenameForPlano = () => 'OE-24-08-2026.pdf';
       ${motor}
-      return await salvarPdfOeNaPasta();
+      const r = await salvarPdfOeNaPasta();
+      // A vigia é um setInterval de 4s: sem desligar, o teste ficaria pendurado.
+      const pedido = { modalAberto: modal.aberto, texto: modal.texto };
+      if (roteiro) return await roteiro({ salvar: salvarPdfOeNaPasta, tentarDriveAgora, pedido, modal });
+      _pararVigiaDrive();
+      return { r, pedido };
     })();
   `);
-  const ok = await fn(handle, toasts, conta, travada);
-  return { ok, toasts, capturas: conta.capturas };
+  const { r, pedido } = await fn(handle, toasts, conta, travada, roteiro);
+  return { ok: r, toasts, capturas: conta.capturas, pedido };
 }
 
 let falhas = 0;
@@ -132,6 +155,29 @@ const ok = (nome, cond, extra) => {
   ok('gravação em curso: não grava de novo', r.ok === false && p.escritos.length === 0, p.escritos.length);
   ok('gravação em curso: o botão não emudece',
      r.toasts.length > 0 && /aguarde/i.test(r.toasts[0].m), r.toasts);
+
+  /* ---------- 5. o gatilho: pede o Drive e retoma sozinho ---------- */
+  p = pasta({ nome: 'OE 2026', sumida: true });
+  const g = await clicarSalvar(p, {
+    roteiro: async ({ tentarDriveAgora, pedido, modal }) => {
+      // O usuário clica "Já abri" com o Drive AINDA fechado: nada retomado.
+      await tentarDriveAgora();
+      const cedo = { modalAberto: modal.aberto, gravou: p.escritos.length };
+      // Agora o Drive sobe de verdade e ele clica de novo.
+      p.driveAbriu();
+      await tentarDriveAgora();
+      return { r: { pedidoInicial: pedido, cedo, modalDepois: modal.aberto }, pedido };
+    }
+  });
+  ok('gatilho: o pedido do Drive aparece na tela', g.ok.pedidoInicial.modalAberto === true, g.ok);
+  ok('gatilho: o pedido diz como abrir o Google Drive',
+     /Google Drive/.test(g.ok.pedidoInicial.texto) && /Menu Iniciar/.test(g.ok.pedidoInicial.texto),
+     g.ok.pedidoInicial.texto);
+  ok('gatilho: Drive ainda fechado, nada é retomado',
+     g.ok.cedo.modalAberto === true && g.ok.cedo.gravou === 0, g.ok.cedo);
+  ok('gatilho: Drive aberto, o pedido sai da tela', g.ok.modalDepois === false, g.ok);
+  ok('gatilho: a OE que tinha ficado pelo caminho é gravada',
+     p.escritos.length === 1 && p.escritos[0].fn === 'OE-24-08-2026.pdf', p.escritos.map(e => e.fn));
 
   console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
   process.exit(falhas ? 1 : 0);

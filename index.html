@@ -1110,6 +1110,24 @@
   </div>
 </div>
 
+<!-- ================= MODAL: GOOGLE DRIVE FECHADO ================= -->
+<!-- As pastas conectadas (OE, PDFs das OS) moram no J:\ do Google Drive. Com o
+     Drive fechado o J:\ não existe, a pasta some do disco e a gravação falha —
+     foi o que aconteceu ao clicar em "Salvar OE na pasta".
+     Uma página da web não pode ligar um programa do Windows, então o app PEDE
+     que o Drive seja aberto e fica de olho na pasta: assim que ela reaparece,
+     ele mesmo retoma a gravação que tinha ficado pelo caminho. -->
+<div class="modal-backdrop" id="modal-drive">
+  <div class="modal" style="max-width:560px;">
+    <h2>⚠️ Abra o Google Drive</h2>
+    <div id="modal-drive-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="fecharPedidoDrive()">Agora não</button>
+      <button class="btn primary" onclick="tentarDriveAgora()">Já abri — tentar de novo</button>
+    </div>
+  </div>
+</div>
+
 <!-- Retirar do dia todas as operações de uma OS alocada: é o desfazer do
      "Alocar OS", em massa, sem ter que apagar uma a uma. -->
 <!-- Importar risco: lê os PDFs de encaixe do CAD e lança comprimento/largura
@@ -1199,6 +1217,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-24c"></script>
+<script src="app.js?v=2026-08-24d"></script>
 </body>
 </html>
