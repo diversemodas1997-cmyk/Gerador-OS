@@ -1363,7 +1363,7 @@ function iniciarPresenceOS(osKey) {
     .subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         await presenceChannel.track({
-          email: currentUser.email || 'sem e-mail',
+          email: emailParaNome(currentUser.email) || 'sem nome',
           at: Date.now()
         });
       }
@@ -1603,14 +1603,15 @@ async function setUserRole(novoPapel) {
     toast('Apenas admin pode gerenciar usuários', 'err');
     return;
   }
-  const email = (document.getElementById('roleEmail').value || '').trim().toLowerCase();
-  if (!email) { toast('Informe o e-mail do usuário', 'err'); return; }
+  const nome = (document.getElementById('roleEmail').value || '').trim();
+  const email = nomeParaEmail(nome);
+  if (!email) { toast('Informe o nome do usuário', 'err'); return; }
   if (novoPapel === 'admin' && !confirm(
-    `Promover ${email} a ADMIN?\n\nAdmin pode criar e apagar tudo — cadastros, OS, expedição — `
+    `Promover ${nome} a ADMIN?\n\nAdmin pode criar e apagar tudo — cadastros, OS, expedição — `
     + 'e também mudar o papel dos outros, inclusive o seu.')) return;
   const { error } = await supa.rpc('set_user_role', { user_email: email, new_role: novoPapel });
   if (error) { toast('Erro: ' + error.message, 'err'); return; }
-  toast(`${email} agora é ${novoPapel}`, 'ok');
+  toast(`${nome} agora é ${novoPapel}`, 'ok');
   document.getElementById('roleEmail').value = '';
   listarUsuariosComPapel();
 }
@@ -1669,26 +1670,28 @@ function sugerirSenha() {
 
 async function criarUsuario() {
   if (!exigirAdmin('criar contas de acesso')) return;
-  const email = (document.getElementById('novoUsuarioEmail') || {}).value || '';
+  const nome = ((document.getElementById('novoUsuarioEmail') || {}).value || '').trim();
+  const email = nomeParaEmail(nome);
   const senha = (document.getElementById('novoUsuarioSenha') || {}).value || '';
   const papel = (document.getElementById('novoUsuarioPapel') || {}).value || 'usuario';
-  if (!email.trim() || !senha.trim()) { toast('Preencha o e-mail e a senha', 'err'); return; }
+  if (!nome || !senha.trim()) { toast('Preencha o nome e a senha', 'err'); return; }
+  if (!email) { toast('Nome inválido — use letras e números', 'err'); return; }
   if (senha.trim().length < 6) { toast('A senha precisa de pelo menos 6 caracteres', 'err'); return; }
 
   if (papel === 'admin' && !confirm(
-      `Criar ${email.trim()} como ADMINISTRADOR?\n\n`
+      `Criar ${nome} como ADMINISTRADOR?\n\n`
       + 'Admin pode criar, editar e apagar tudo — cadastros, OS, expedição — e '
       + 'também mudar o papel dos outros, inclusive o seu.')) return;
 
   const st = document.getElementById('contasAcessoStatus');
   if (st) st.textContent = 'Criando…';
-  const r = await _chamarFuncaoUsuarios({ acao: 'criar', email: email.trim(), senha: senha.trim(), papel });
+  const r = await _chamarFuncaoUsuarios({ acao: 'criar', email, senha: senha.trim(), papel });
   if (r.erro) { if (st) st.textContent = ''; toast(r.erro, 'err'); return; }
 
   // A senha não fica guardada em lugar nenhum que dê para consultar depois —
   // por isso ela continua na tela até você sair, em vez de ser limpa junto.
   document.getElementById('novoUsuarioEmail').value = '';
-  if (st) st.innerHTML = `✅ Conta <b>${esc(email.trim())}</b> criada. `
+  if (st) st.innerHTML = `✅ Conta <b>${esc(nome)}</b> criada. `
     + `Anote a senha <b>${esc(senha.trim())}</b> e entregue à pessoa — ela não pode ser consultada depois.`;
   toast('Conta criada', 'ok');
   listarContasAcesso();
@@ -1710,10 +1713,10 @@ async function listarContasAcesso() {
       ${us.length} conta(s) com acesso ao programa
     </div>
     <table class="table">
-      <thead><tr><th>E-mail</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th></tr></thead>
+      <thead><tr><th>Nome</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th></tr></thead>
       <tbody>${us.map(u => `
         <tr>
-          <td>${esc(u.email || '—')}${u.confirmada ? '' : ' <span class="badge" style="background:var(--alert);color:#fff;">não confirmada</span>'}</td>
+          <td>${esc(emailParaNome(u.email) || '—')}${u.confirmada ? '' : ' <span class="badge" style="background:var(--alert);color:#fff;">não confirmada</span>'}</td>
           <td>${u.papel === 'admin'
                 ? '<span class="badge">admin</span>'
                 : '<span style="color:var(--ink-3);">só consulta</span>'}</td>
@@ -1822,6 +1825,35 @@ const DB = {
 /* ========================================================= */
 const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','osCounter','meta'];
 
+/* ---- Conta por NOME, não por e-mail ----
+   O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
+   e-mail; então o nome vira um endereço interno `nome@diverse.local` — que nunca
+   recebe mensagem, só serve de identificador. Assim a tela fala "nome" e todo o
+   resto (papéis por user_id, RLS, função do servidor) continua igual.
+
+   A conversão é DETERMINÍSTICA: o mesmo nome dá sempre o mesmo endereço, na
+   criação e no login. Quem digitar um e-mail de verdade (com @) é respeitado
+   como está — é o que mantém a conta antiga do dono (gmail) entrando. */
+const DOMINIO_CONTA = 'diverse.local';
+
+function nomeParaEmail(txt) {
+  const t = (txt || '').trim();
+  if (!t) return '';
+  if (t.includes('@')) return t.toLowerCase();   // já é e-mail: respeita
+  const slug = t.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // tira acentos
+    .replace(/[^a-z0-9]+/g, '.')                        // espaço/pontuação → ponto
+    .replace(/^\.+|\.+$/g, '');                          // sem ponto nas pontas
+  return slug ? `${slug}@${DOMINIO_CONTA}` : '';
+}
+
+function emailParaNome(email) {
+  const e = (email || '').trim();
+  if (!e) return '';
+  const suf = '@' + DOMINIO_CONTA;
+  return e.toLowerCase().endsWith(suf) ? e.slice(0, -suf.length) : e;
+}
+
 async function inicializarAuth() {
   if (!supa) return;
   const { data: { session } } = await supa.auth.getSession();
@@ -1888,7 +1920,7 @@ function atualizarUIAuth() {
   if (currentUser) {
     out.classList.add('hidden');
     inn.classList.remove('hidden');
-    if (emailEl) emailEl.textContent = currentUser.email || currentUser.id;
+    if (emailEl) emailEl.textContent = emailParaNome(currentUser.email) || currentUser.id;
     appEl.classList.remove('hidden');
     modal.classList.add('hidden');
   } else {
@@ -1946,7 +1978,7 @@ function trocarAbaAuth(modo) {
     linkEsqueci.classList.add('hidden');
     linkVoltar.classList.remove('hidden');
     titulo.textContent = 'Recuperar senha';
-    sub.textContent = 'Informe seu e-mail. Vamos enviar um link para você criar uma nova senha.';
+    sub.textContent = 'Contas internas não recebem e-mail — peça ao administrador para criar uma nova senha para você. (Contas com e-mail de verdade recebem um link.)';
     actionBtn.textContent = 'Enviar link de recuperação';
     actionBtn.setAttribute('onclick', 'enviarEmailRecuperacao()');
   } else if (modo === 'reset_confirm') {
@@ -1974,10 +2006,10 @@ function abrirRecuperacaoSenha() {
 
 async function enviarEmailRecuperacao() {
   if (!supa) { toast('Supabase não carregado', 'err'); return; }
-  const email = document.getElementById('authEmailInput').value.trim();
+  const email = nomeParaEmail(document.getElementById('authEmailInput').value.trim());
   const erroEl = document.getElementById('authErro');
   const btn = document.getElementById('authActionBtn');
-  if (!email) { erroEl.textContent = 'Informe seu e-mail'; return; }
+  if (!email) { erroEl.textContent = 'Informe seu nome'; return; }
   btn.disabled = true;
   erroEl.textContent = '';
   try {
@@ -2030,14 +2062,14 @@ async function definirNovaSenha() {
 }
 
 function traduzirErroAuth(msg) {
-  if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha incorretos';
-  if (/user already registered/i.test(msg)) return 'Este e-mail já está cadastrado — use Entrar';
+  if (/invalid login credentials/i.test(msg)) return 'Nome ou senha incorretos';
+  if (/user already registered/i.test(msg)) return 'Este nome já está cadastrado — use Entrar';
   if (/password should be at least/i.test(msg)) return 'Senha muito curta';
   if (/rate limit/i.test(msg)) return 'Muitas tentativas — aguarde um minuto';
-  if (/email.*invalid/i.test(msg)) return 'E-mail inválido';
+  if (/email.*invalid/i.test(msg)) return 'Nome inválido — use letras e números';
   if (/signup.*disabled|signups are disabled/i.test(msg)) return 'Cadastro público desabilitado. Peça acesso ao administrador.';
   if (/for security purposes.*seconds/i.test(msg)) return 'Muitas tentativas. Aguarde alguns segundos.';
-  if (/user not found/i.test(msg)) return 'E-mail não cadastrado';
+  if (/user not found/i.test(msg)) return 'Nome não cadastrado';
   if (/new password should be different/i.test(msg)) return 'A nova senha precisa ser diferente da atual';
   return msg;
 }
@@ -2045,11 +2077,12 @@ function traduzirErroAuth(msg) {
 async function submeterAuth() {
   if (!supa) { toast('Supabase não carregado — verifique conexão', 'err'); return; }
   const modo = document.getElementById('modalAuth').dataset.mode || 'login';
-  const email = document.getElementById('authEmailInput').value.trim();
+  const nome = document.getElementById('authEmailInput').value.trim();
+  const email = nomeParaEmail(nome);
   const senha = document.getElementById('authSenhaInput').value;
   const erroEl = document.getElementById('authErro');
   const btn = document.getElementById('authActionBtn');
-  if (!email || !senha) { erroEl.textContent = 'Informe e-mail e senha'; return; }
+  if (!nome || !senha) { erroEl.textContent = 'Informe nome e senha'; return; }
   if (senha.length < 6) { erroEl.textContent = 'Senha precisa ter ao menos 6 caracteres'; return; }
   btn.disabled = true;
   erroEl.textContent = '';

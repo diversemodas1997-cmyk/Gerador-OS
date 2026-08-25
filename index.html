@@ -969,9 +969,9 @@
         <div class="info-box">Crie aqui a conta de cada pessoa que vai usar o programa. <b>Sem conta ninguém entra</b> — e sem entrar não vê cadastro, OS nem OE nenhuma. A conta já nasce válida: não há e-mail de confirmação para esperar.</div>
         <div class="form-grid cols-3" style="margin-bottom: 12px;">
           <div class="field">
-            <label for="novoUsuarioEmail">E-mail</label>
-            <input type="email" id="novoUsuarioEmail" placeholder="maria@diverse.local" autocomplete="off">
-            <div class="field-hint">Serve como nome de usuário. Pode ser interno — nunca chega mensagem nele.</div>
+            <label for="novoUsuarioEmail">Nome</label>
+            <input type="text" id="novoUsuarioEmail" placeholder="maria" autocomplete="off">
+            <div class="field-hint">É o nome com que a pessoa vai entrar. Pode ter espaço (ex.: Maria Silva); não precisa de e-mail.</div>
           </div>
           <div class="field">
             <label for="novoUsuarioSenha">Senha</label>
@@ -1001,8 +1001,8 @@
         <div class="info-box" style="border-color:var(--alert);">A tranca de verdade fica no <b>Supabase</b>, não nesta tela: a função <code>set_user_role</code> confere sozinha se quem chamou é admin. Esconder o painel não basta — o navegador é da pessoa que usa, e o papel guardado nele pode ser alterado por quem souber. Se ainda não rodou, aplique uma vez o script <b>sql/supabase-admin-roles.sql</b> (que está no repositório) no SQL Editor do Supabase.</div>
         <div class="form-grid cols-3" style="margin-bottom: 12px;">
           <div class="field full">
-            <label for="roleEmail">E-mail do usuário</label>
-            <input type="email" id="roleEmail" placeholder="usuario@exemplo.com">
+            <label for="roleEmail">Nome do usuário</label>
+            <input type="text" id="roleEmail" placeholder="maria">
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -1195,8 +1195,8 @@
       <button class="tab" id="tabSignup" onclick="trocarAbaAuth('signup')">Criar conta</button>
     </div>
     <div id="authEmailGroup">
-      <label for="authEmailInput">E-mail</label>
-      <input type="email" id="authEmailInput" autocomplete="email" placeholder="seu@email.com">
+      <label for="authEmailInput">Nome</label>
+      <input type="text" id="authEmailInput" autocomplete="username" placeholder="seu nome">
     </div>
     <div id="authSenhaGroup">
       <label for="authSenhaInput">Senha</label>
@@ -1217,6 +1217,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-24g"></script>
+<script src="app.js?v=2026-08-25a"></script>
 </body>
 </html>
