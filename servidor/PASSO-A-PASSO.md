@@ -103,7 +103,22 @@ Ele nasceu junto com o servidor e mora em
 `C:\Users\Pichau\Desktop\Gerador-OS\servidor\tls\ca.crt` — Área de Trabalho,
 pasta `Gerador-OS`, pasta `servidor`, pasta `tls`.
 
-### Não precisa de pendrive
+### Jeito mais rápido: o atalho pronto (sem digitar comando)
+
+Quando não se acha o PowerShell na máquina, use o atalho. **Em cada computador:**
+
+1. No navegador, abra **`https://193.168.0.200/instalar-cracha-fabrica.bat`**
+   (dê **Avançado → Prosseguir** no aviso, como no `ca.crt`). Ele baixa para
+   **Downloads**.
+2. Na pasta Downloads, **clique com o botão direito** no
+   `instalar-cracha-fabrica.bat` → **Executar como administrador** → **Sim**.
+3. Ele baixa e instala o crachá sozinho. Quando disser **PRONTO**, feche e
+   reabra o navegador e abra `https://193.168.0.200`.
+
+O atalho faz exatamente o que os passos abaixo fazem à mão — serve para quem não
+quer mexer no PowerShell. Se preferir o manual, siga a seguir.
+
+### À mão, sem pendrive
 
 O próprio servidor entrega o arquivo. **Em cada computador da fábrica:**
 
