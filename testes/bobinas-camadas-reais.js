@@ -302,9 +302,10 @@ console.log('-- MOLETOM: o enfesto cheio e o da GRADE, nao o da malha --');
 const MOL_GRAM = 300;
 // comp, larg, gramatura, camadas desta OS, cor, camadas do enfesto CHEIO
 const corpo485 = (cam) => linha(4.70, 1.77, MOL_GRAM, cam, 'Verde Moletom', 36);
-// O forro de capuz e "2x": num enfesto cheio de 36 do corpo, ele enfesta 18. O
-// cheio DELE e 18 — comparar com o do corpo o deixaria eternamente pela metade.
-const forro485 = (cam) => linha(2.78, 1.165, 452, cam, 'Preto Malha Algodão', 18);
+// O forro de capuz e "2x" E a grade e 2-por-tamanho (2X P ao G3): os dois x2 se
+// cancelam, e o cheio do forro passa a ser o do corpo, 36 (confirmado por Junior
+// em 25/08/2026). Com forro 4x voltaria a 18.
+const forro485 = (cam) => linha(2.78, 1.165, 452, cam, 'Preto Malha Algodão', 36);
 
 ok('49. moletom cheio (36 de 36) devolve o cadastro intacto: 6 bobinas, nao 3',
    bobinasEfetivasFase(os(), 6, 1, corpo485(36)) === 6,
@@ -315,12 +316,12 @@ ok('50. e as 12 do Corpo Parte 3 tambem saem inteiras, nao 6',
 ok('51. meio enfesto de moletom (18 de 36) segue gastando meia previsao',
    bobinasEfetivasFase(os(), 6, 1, corpo485(18)) === 3,
    bobinasEfetivasFase(os(), 6, 1, corpo485(18)));
-ok('52. o forro 2x, cheio, e comparado com o cheio DELE: 18 de 18 -> 6 bobinas',
-   bobinasEfetivasFase(os(), 6, 4, forro485(18)) === 6,
+ok('52. o forro 2x numa grade 2x, cheio (36 de 36) -> 6 bobinas',
+   bobinasEfetivasFase(os(), 6, 4, forro485(36)) === 6,
+   bobinasEfetivasFase(os(), 6, 4, forro485(36)));
+ok('53. e meio forro (18 de 36) volta a metade -> 3 bobinas',
+   bobinasEfetivasFase(os(), 6, 4, forro485(18)) === 3,
    bobinasEfetivasFase(os(), 6, 4, forro485(18)));
-ok('53. e meio forro (9 de 18) volta a metade',
-   bobinasEfetivasFase(os(), 6, 4, forro485(9)) === 3,
-   bobinasEfetivasFase(os(), 6, 4, forro485(9)));
 ok('54. a mesma grade em malha (cheio 80) nao mudou de comportamento',
    bobinasEfetivasFase(os(), CADASTRO, 1, cheio) === 8,
    bobinasEfetivasFase(os(), CADASTRO, 1, cheio));

@@ -16316,6 +16316,29 @@ function _ribanaEscalaComGrade(tecido) {
   return String((tecido && tecido.nome) || '').toLowerCase().includes('moletom');
 }
 
+/* Camadas de uma fase de FORRO de capuz. Único lugar onde esta conta existe —
+   vivia copiada no formulário e na folha, e uma cópia consertada sem a outra é
+   como o erro sobrevive.
+
+   O forro ESCALA COM A GRADE, igual à ribana moletom: uma camada rende
+   `unidades` peças de CADA tamanho, e só fecha uma unidade da grade quando o
+   tamanho mais pedido está coberto. Por isso o fator é o MAIOR pedido por
+   tamanho, não a média — o mesmo `_tamanhoQueMandaNaGrade` da ribana.
+
+   O corpo do moletom vem em `camadasPrincipal`. Contra ele:
+     grade 2-por-tamanho + forro 2x → 36 × 2 / 2 = 36  (cheio, = o corpo)
+     grade 2-por-tamanho + forro 4x → 36 × 2 / 4 = 18  (metade do corpo)
+     grade 1-por-tamanho + forro 2x → 36 × 1 / 2 = 18  (a metade de sempre)
+
+   Confirmado por Junior em 25/08/2026: com a grade 2x, o forro 2x dá o cheio do
+   corpo (os dois ×2 se cancelam) e o forro 4x volta à metade. */
+function camadasDaFaseForro(o) {
+  const unid = parseInt(o.unidades, 10) || UNIDADES_PADRAO_FORRO;
+  const fator = _tamanhoQueMandaNaGrade(o.qtdsPorTamanho);
+  const camadas = Number(o.camadasPrincipal) || 0;
+  return Math.max(1, Math.ceil(camadas * fator / unid));
+}
+
 /* ===== FIM CAMADAS RIBANA ===== */
 
 /* --------- REGRA DAS BOBINAS: malha algodão, pelo comprimento --------- */
@@ -16386,8 +16409,8 @@ function sugestaoBobinasFase(tecidoId, comp) {
 // pensado: no enfesto CHEIO **desta grade**, que é o que a casa tem na frente
 // quando preenche o campo. Esse número chega aqui pronto, em `L.camadasCheias`
 // (montado por `consumoEnfestoOS` a partir de `camadasCheiasDaFase`), fase por
-// fase — o forro de capuz "2x" enfesta metade do corpo, e o cheio dele é metade
-// do cheio do corpo.
+// fase — o forro de capuz escala com a grade (o cheio dele é o do corpo quando a
+// grade é 2x e o forro 2x; metade quando o forro é 4x ou a grade 1x).
 //
 // Até 18/08/2026 a referência era a constante 80, o limite da MALHA ALGODÃO
 // (LIMITE_CAMADAS.malha). Moletom não passa de 36 (LIMITE_CAMADAS.moletom):
@@ -17510,11 +17533,10 @@ function calcularCamadasParaProducao() {
       // Enfesto moletom: todos componentes moletom na mesma camada → 1 camada = 1 blusa
       val = camadasPrincipal;
     } else if (papel.papel === 'forro_capuz') {
-      // Enfesto forro: uma camada rende N unidades da grade, então são N vezes
-      // menos camadas que o moletom. N vem do cadastro da fase; sem ele, 2 —
-      // que é a metade de sempre.
-      const unidForro = parseInt(fase.unidades, 10) || UNIDADES_PADRAO_FORRO;
-      val = Math.max(1, Math.ceil(camadasPrincipal / unidForro));
+      // Enfesto forro: escala com a grade igual à ribana moletom. O fator é o
+      // maior pedido por tamanho; grade 2x + forro 2x dá o cheio do corpo, forro
+      // 4x volta à metade. A conta mora só em camadasDaFaseForro.
+      val = camadasDaFaseForro({ camadasPrincipal, unidades: fase.unidades, qtdsPorTamanho });
     } else if ((papel.papel || '').startsWith('ribana_')) {
       // Enfesto ribana com unidades cadastradas:
       // - Ribana moletom: o tecido escala com a unidade da grade (2 barras +
@@ -21953,7 +21975,8 @@ function gramaturaCorPorNome(nome) {
 // Camadas que uma FASE do enfesto tem quando a OS não gravou um número próprio
 // para ela. Cada fase enfesta um tanto diferente: a ribana moletom cadastrada
 // como "2x" rende duas unidades da grade por camada, então 36 camadas de moletom
-// pedem 18 de ribana; o forro de capuz vai a metade; o viés é sempre 1.
+// pedem 18 de ribana; o forro de capuz escala com a grade (36 de forro 2x numa
+// grade 2x, 18 se o forro é 4x); o viés é sempre 1.
 //
 // É a mesma tabela do botão "calcular camadas" do formulário
 // (`calcularCamadasParaProducao`). Antes ela só existia lá, e o que sobrava para
@@ -21985,10 +22008,16 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
   const papel = (calcularPapeisFases(fasesEfetivas)[idx] || {}).papel || '';
   const tec = (STATE.tecidos || []).find(t => t.id === faseOS.tecidoId);
   if (papel === 'forro_capuz') {
-    // Mesmo "2x" da ribana, agora cadastrável: a fase da GRADE é que guarda as
-    // unidades (a cópia de fases da OS não as leva). Sem cadastro, 2.
-    const unidForro = parseInt(faseGrade.unidades, 10) || UNIDADES_PADRAO_FORRO;
-    return Math.max(1, Math.ceil(cam / unidForro));
+    // Escala com a grade, igual à ribana moletom: o fator é o maior pedido por
+    // tamanho. Grade 2x + forro 2x = cheio do corpo; forro 4x = metade. As
+    // unidades moram no CADASTRO da grade (a cópia de fases da OS não as leva);
+    // sem grade/qtds, o fator é 1 e volta à metade de sempre.
+    const g = (o && o.grade) || {};
+    return camadasDaFaseForro({
+      camadasPrincipal: cam,
+      unidades: faseGrade.unidades,
+      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0)
+    });
   }
   if (papel.indexOf('ribana_') === 0 && isTecidoRibana(tec)) {
     const g = (o && o.grade) || {};
@@ -22011,11 +22040,12 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
 //   1. `compraLimiteCamadasGrade` diz o máximo da GRADE — vence o tecido mais
 //      restritivo entre as fases (moletom 36 manda sobre malha 80).
 //   2. `camadasPadraoDaFase` desdobra esse máximo para cada fase pela regra da
-//      própria fase — o forro "2x" fica na metade, a ribana escala com a grade.
+//      própria fase — o forro e a ribana escalam com a grade.
 //
-// Ou seja: o cheio do corpo do moletom é 36, e o cheio do forro de capuz da
-// mesma grade é 18. Cada fase é comparada com o cheio DELA, e não com o do
-// corpo — foi isso que fez o forro da OS 0485 aparecer com 2 bobinas de 6.
+// Ou seja: o cheio do corpo do moletom é 36. Numa grade 2-por-tamanho com forro
+// 2x, o cheio do forro também é 36 (os dois ×2 se cancelam); com forro 4x, é 18.
+// Cada fase é comparada com o cheio DELA, e não com o do corpo — foi isso que
+// fez o forro da OS 0485 aparecer com 2 bobinas de 6.
 //
 // Zero quando a grade sumiu ou nenhum tecido dela tem limite conhecido. Aí não
 // há proporção a fazer, e `bobinasEfetivasFase` devolve o cadastro inteiro.

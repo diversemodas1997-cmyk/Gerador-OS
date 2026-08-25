@@ -94,5 +94,26 @@ ok('24. malha (multPrincipal 2) dobra a ribana',
                          unidades: 2, escalaComGrade: true }) === 100);
 
 console.log('');
+console.log('-- FORRO de capuz: escala com a grade, igual a ribana moletom --');
+// Confirmado por Junior em 25/08/2026: grade 2x + forro 2x = cheio do corpo (os
+// dois x2 se cancelam); forro 4x = metade do corpo.
+const UNIDADES_PADRAO_FORRO = 2;
+const forro = (qtds, unidades, camadasPrincipal) =>
+  camadasDaFaseForro({ camadasPrincipal, unidades, qtdsPorTamanho: qtds });
+ok('25. grade 2x + forro 2x -> o cheio do corpo (36), nao a metade',
+   forro([0,2,2,2,0,0,0], 2, 36) === 36, forro([0,2,2,2,0,0,0], 2, 36));
+ok('26. 2X P ao G3 (2x) + forro 2x -> 36 tambem (a OS 0485)',
+   forro([2,2,2,2,2,2,2], 2, 36) === 36, forro([2,2,2,2,2,2,2], 2, 36));
+ok('27. grade 2x + forro 4x -> metade do corpo (18)',
+   forro([0,2,2,2,0,0,0], 4, 36) === 18, forro([0,2,2,2,0,0,0], 4, 36));
+ok('28. grade 1-por-tamanho + forro 2x -> a metade de sempre (18)',
+   forro([1,1,1,1,1,1,1], 2, 36) === 18, forro([1,1,1,1,1,1,1], 2, 36));
+ok('29. grade desigual manda o MAIOR pedido, nao a media',
+   forro([0,1,2,1,0,0,0], 2, 36) === 36, forro([0,1,2,1,0,0,0], 2, 36));
+ok('30. sem unidades cadastradas, usa o padrao 2',
+   forro([0,2,2,2,0,0,0], null, 36) === 36, forro([0,2,2,2,0,0,0], null, 36));
+ok('31. nunca devolve zero camadas', forro([0,2,2,2,0,0,0], 4, 1) === 1);
+
+console.log('');
 if (falhas === 0) console.log('>>> todos passaram');
 else { console.log('>>> ' + falhas + ' FALHA(S)'); process.exitCode = 1; }
