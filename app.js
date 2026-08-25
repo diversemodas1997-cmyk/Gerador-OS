@@ -3015,6 +3015,31 @@ window.toggleNavGroup = toggleNavGroup;
   } catch (e) { /* ignora */ }
 })();
 
+// Recolher/expandir a barra lateral. O estado é por MÁQUINA (localStorage), como
+// os grupos de navegação — é preferência de tela, não dado da fábrica.
+function _sidebarBotao(colapsada) {
+  const b = document.getElementById('sidebarToggle');
+  if (!b) return;
+  b.textContent = colapsada ? '☰' : '‹';
+  b.title = colapsada ? 'Expandir o menu' : 'Recolher o menu';
+}
+function toggleSidebar() {
+  const app = document.querySelector('.app');
+  if (!app) return;
+  const colapsada = app.classList.toggle('sidebar-collapsed');
+  try { localStorage.setItem('sidebarCollapsed', colapsada ? '1' : '0'); } catch (e) { /* ignora */ }
+  _sidebarBotao(colapsada);
+}
+window.toggleSidebar = toggleSidebar;
+
+(function restaurarSidebar() {
+  let colapsada = false;
+  try { colapsada = localStorage.getItem('sidebarCollapsed') === '1'; } catch (e) { /* ignora */ }
+  const app = document.querySelector('.app');
+  if (app && colapsada) app.classList.add('sidebar-collapsed');
+  _sidebarBotao(colapsada);
+})();
+
 /* ========================================================= */
 /*                      TOAST                                */
 /* ========================================================= */

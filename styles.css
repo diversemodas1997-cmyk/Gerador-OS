@@ -34,6 +34,39 @@ html, body {
   min-height: 100vh;
 }
 
+/* Barra lateral recolhível: a coluna some e o conteúdo ocupa a tela toda.
+   O estado fica por MÁQUINA (localStorage), como as outras preferências de tela. */
+.app.sidebar-collapsed { grid-template-columns: 0 1fr; }
+.app.sidebar-collapsed aside.sidebar {
+  padding: 0;
+  border-right: none;
+  overflow: hidden;
+}
+.sidebar-toggle {
+  position: fixed;
+  top: 16px;
+  left: 202px;
+  z-index: 60;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  transition: left .2s ease, background .15s ease;
+}
+.sidebar-toggle:hover { background: var(--accent); color: #fff; }
+.app.sidebar-collapsed .sidebar-toggle { left: 10px; }
+@media print { .sidebar-toggle { display: none; } }
+
 aside.sidebar {
   background: var(--ink);
   color: var(--bg);
@@ -261,6 +294,29 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field.full { grid-column: 1 / -1; }
+
+/* Modal de cadastro: os campos EMPACOTAM em duas colunas (masonry), em vez de
+   ficarem presos a linhas de grade. Assim dicas de alturas diferentes e campos
+   sem input não abrem rombos verticais nem deixam colunas vazias — o que fazia
+   a ficha parecer "separada e desordenada". Os campos de largura total (Nome,
+   Composição…) atravessam as duas colunas e delimitam os blocos. */
+#modal-cad-fields .form-grid {
+  display: block;
+  column-count: 2;
+  column-gap: 18px;
+}
+#modal-cad-fields .form-grid .field {
+  display: block;
+  break-inside: avoid;
+  margin: 0 0 12px;
+}
+#modal-cad-fields .form-grid .field.full { column-span: all; }
+#modal-cad-fields .form-grid .field label { display: block; margin-bottom: 4px; }
+#modal-cad-fields .form-grid .field input,
+#modal-cad-fields .form-grid .field select,
+#modal-cad-fields .form-grid .field textarea { width: 100%; }
+/* Uma coluna só quando a tela é estreita — empilhar é melhor que espremer. */
+@media (max-width: 620px) { #modal-cad-fields .form-grid { column-count: 1; } }
 
 .field label {
   font-family: 'IBM Plex Mono', monospace;
