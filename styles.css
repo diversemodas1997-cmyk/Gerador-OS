@@ -1232,6 +1232,22 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   font-family: inherit;
   margin-left: 4px;
 }
+/* A coluna AÇÕES das TABELAS: os botoes empilham num bloco vertical alinhado,
+   de largura igual, em vez de quebrarem escalonados dentro da coluna estreita
+   (o que fazia a coluna parecer "separada e desordenada"). Escopado a
+   .col-actions para nao mexer nos row-actions inline (ex.: lista de grades). */
+.table .col-actions.row-actions { text-align: left; vertical-align: top; width: 112px; }
+.table .col-actions.row-actions button {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  text-align: center;
+}
+.table .col-actions.row-actions button:last-child { margin-bottom: 0; }
+/* Em telas largas (ex.: 2560px) a tabela de OS Salvas esticava e as colunas
+   ficavam longe umas das outras, com um vao grande no meio. Limitar a largura
+   junta as colunas; abaixo disso ela ocupa 100% normalmente. */
+[data-page="lista-os"] .table { max-width: 1600px; }
 /* O ATALHO DA COLUNA OS DO RANKING.
 
    Continua parecendo o numero que sempre foi — mesma fonte monoespacada, mesmo
