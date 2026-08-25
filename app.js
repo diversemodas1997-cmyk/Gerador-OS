@@ -1783,9 +1783,21 @@ async function salvarEdicaoConta() {
   const r = await _chamarFuncaoUsuarios(corpo);
   if (r.erro) { if (st) st.textContent = ''; toast(r.erro, 'err'); return; }
 
+  // Trouxe o nome novo? As observações já escritas por esta pessoa estão
+  // assinadas com o login antigo — reatribui para o novo, senão a folha
+  // continuaria mostrando o nome velho no histórico dela.
+  let notasReatribuidas = 0;
+  if (corpo.novoEmail && u) {
+    notasReatribuidas = _reatribuirAutorNotas(u.email, corpo.novoEmail);
+    if (notasReatribuidas > 0) {
+      try { await saveState('ordens'); } catch (e) { console.warn('reatribuir notas', e); }
+    }
+  }
+
   const partes = [];
   if (corpo.novoEmail) partes.push(`nome → <b>${esc(nome.trim())}</b>`);
   if (corpo.novaSenha) partes.push(`nova senha <b>${esc(senha.trim())}</b> (anote e entregue — não pode ser consultada depois)`);
+  if (notasReatribuidas > 0) partes.push(`${notasReatribuidas} observação(ões) de OS reassinada(s) com o nome novo`);
   if (st) st.innerHTML = '✅ Conta atualizada: ' + partes.join(' · ');
   toast('Conta atualizada', 'ok');
   _editandoContaId = null;
@@ -21005,6 +21017,41 @@ async function salvarTempoCorte(osId, campo, valor) {
    conteúdo: apagado uma vez, some da folha e o assunto acaba em notas. */
 function _obsNotas(o) {
   return Array.isArray(o && o.obsNotas) ? o.obsNotas : [];
+}
+
+// Ao renomear uma conta, as observações já escritas continuam assinadas com o
+// login ANTIGO: cada nota guarda o autor congelado (`n.login`, o e-mail de
+// quando escreveu), não uma referência viva à conta. Renomear muda o login
+// futuro, não o texto já gravado. Isto reatribui o autor das notas do login
+// antigo para o novo, em todas as OS, para que o histórico da MESMA pessoa
+// (o user_id não muda) apareça com o nome atual. Devolve quantas notas mudaram.
+function _reatribuirAutorNotas(oldEmail, newEmail) {
+  const de = String(oldEmail || '').trim().toLowerCase();
+  const para = String(newEmail || '').trim().toLowerCase();
+  if (!de || !para || de === para) return 0;
+  let n = 0;
+  (STATE.ordens || []).forEach(os => {
+    const notas = _obsNotas(os);
+    if (!notas.length) return;
+    let mudou = false;
+    notas.forEach(nota => {
+      if (String(nota.login || '').trim().toLowerCase() === de) { nota.login = para; n++; mudou = true; }
+    });
+    if (!mudou) return;
+    // A reatribuição pode ter juntado duas notas do MESMO autor na mesma OS (a
+    // pessoa já tinha escrito com o nome novo). Colapsa para uma por login,
+    // ficando a de data mais recente — a mesma invariante que salvarObsNota já
+    // assume (uma nota por login).
+    const porLogin = new Map();
+    notas.forEach(nota => {
+      const k = String(nota.login || '').trim().toLowerCase();
+      const t = nota.editadoEm || nota.em || '';
+      const atual = porLogin.get(k);
+      if (!atual || t > (atual.editadoEm || atual.em || '')) porLogin.set(k, nota);
+    });
+    os.obsNotas = Array.from(porLogin.values());
+  });
+  return n;
 }
 
 // O login de quem está com a folha aberta. Minúsculo e sem espaço, que é como
