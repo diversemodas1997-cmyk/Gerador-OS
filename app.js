@@ -1483,6 +1483,7 @@ function aplicarPermissoesUI() {
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
   if (currentRole === 'admin' && podeGravar()) body.classList.add('is-admin');
   else body.classList.add('is-usuario');
+  _pintarPerfil();   // o papel chega em paralelo: reflete no ícone quando muda
   mostrarModoServidor();
 }
 
@@ -1990,6 +1991,33 @@ async function inicializarAuth() {
   });
 }
 
+// Ícone do perfil logado: iniciais do nome num círculo de cor determinística
+// (o mesmo nome dá sempre a mesma cor), e o papel logo abaixo. O anel dourado
+// do admin vem do CSS (body.is-admin), então basta o texto do papel aqui.
+function _avatarIniciais(nome) {
+  const partes = String(nome || '').trim().split(/[\s._@-]+/).filter(Boolean);
+  if (!partes.length) return '?';
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+function _avatarCor(nome) {
+  const s = String(nome || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 52% 46%)`;
+}
+function _pintarPerfil() {
+  const nome = emailParaNome((currentUser && currentUser.email) || '') || (currentUser && currentUser.id) || '';
+  const av = document.getElementById('authAvatar');
+  if (av) {
+    av.textContent = _avatarIniciais(nome);
+    av.style.background = _avatarCor(nome);
+    av.title = nome + (currentRole === 'admin' ? ' · administrador' : (currentRole ? ' · consulta' : ''));
+  }
+  const roleEl = document.getElementById('authRole');
+  if (roleEl) roleEl.textContent = currentRole === 'admin' ? 'administrador' : (currentRole ? 'consulta' : '…');
+}
+
 function atualizarUIAuth() {
   const out = document.getElementById('authLoggedOut');
   const inn = document.getElementById('authLoggedIn');
@@ -2001,6 +2029,7 @@ function atualizarUIAuth() {
     out.classList.add('hidden');
     inn.classList.remove('hidden');
     if (emailEl) emailEl.textContent = emailParaNome(currentUser.email) || currentUser.id;
+    _pintarPerfil();
     appEl.classList.remove('hidden');
     modal.classList.add('hidden');
   } else {

@@ -32,7 +32,13 @@
         <div class="auth-sub">Dados só neste navegador</div>
       </div>
       <div class="auth-logged-in hidden" id="authLoggedIn">
-        <div class="auth-email" id="authEmail">—</div>
+        <div class="auth-identity">
+          <div class="auth-avatar" id="authAvatar" aria-hidden="true">–</div>
+          <div class="auth-who">
+            <div class="auth-email" id="authEmail">—</div>
+            <div class="auth-role" id="authRole"></div>
+          </div>
+        </div>
         <div class="modo-servidor" id="modoServidor" hidden>☁ Nuvem</div>
         <div class="auth-sync" id="authSync">☁ Sincronizado</div>
         <button class="btn-auth-sm" onclick="sairConta()">Sair</button>
@@ -1238,6 +1244,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-25e"></script>
+<script src="app.js?v=2026-08-25f"></script>
 </body>
 </html>
