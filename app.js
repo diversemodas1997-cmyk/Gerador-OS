@@ -1708,12 +1708,16 @@ async function listarContasAcesso() {
   const us = r.usuarios || [];
   if (!us.length) { alvo.innerHTML = '<div class="empty" style="padding:20px;">Nenhuma conta ainda.</div>'; return; }
 
+  // Guarda a lista para o botão Editar achar o nome/e-mail pelo id, sem passar
+  // texto (que pode ter aspas) por dentro do onclick.
+  _contasAcessoCache = us;
+
   const dia = t => t ? new Date(t).toLocaleDateString('pt-BR') : '—';
   alvo.innerHTML = `<div style="margin-bottom:6px; font-size:13px; color:var(--ink-2);">
       ${us.length} conta(s) com acesso ao programa
     </div>
     <table class="table">
-      <thead><tr><th>Nome</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th></tr></thead>
+      <thead><tr><th>Nome</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th><th></th></tr></thead>
       <tbody>${us.map(u => `
         <tr>
           <td>${esc(emailParaNome(u.email) || '—')}${u.confirmada ? '' : ' <span class="badge" style="background:var(--alert);color:#fff;">não confirmada</span>'}</td>
@@ -1722,8 +1726,72 @@ async function listarContasAcesso() {
                 : '<span style="color:var(--ink-3);">só consulta</span>'}</td>
           <td>${esc(dia(u.criada_em))}</td>
           <td>${esc(dia(u.ultimo_acesso))}</td>
+          <td><button class="btn small" onclick="prepararEdicaoConta('${esc(u.id)}')">Editar</button></td>
         </tr>`).join('')}
       </tbody></table>`;
+}
+
+// A conta que o admin está editando no momento (id vindo da lista). O nome e a
+// senha novos entram nos campos do bloco de edição.
+let _contasAcessoCache = [];
+let _editandoContaId = null;
+
+function prepararEdicaoConta(id) {
+  if (!exigirAdmin('editar contas de acesso')) return;
+  const u = (_contasAcessoCache || []).find(x => String(x.id) === String(id));
+  if (!u) { toast('Conta não encontrada — atualize a lista', 'err'); return; }
+  _editandoContaId = u.id;
+  const box = document.getElementById('editarContaBox');
+  const nomeEl = document.getElementById('editarContaNome');
+  const emailEl = document.getElementById('editarContaEmail');
+  const senhaEl = document.getElementById('editarContaSenha');
+  if (nomeEl) nomeEl.textContent = emailParaNome(u.email) || u.email || '—';
+  if (emailEl) emailEl.value = emailParaNome(u.email) || u.email || '';
+  if (senhaEl) senhaEl.value = '';
+  const st = document.getElementById('editarContaStatus');
+  if (st) st.textContent = '';
+  if (box) { box.classList.remove('hidden'); box.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+
+function cancelarEdicaoConta() {
+  _editandoContaId = null;
+  const box = document.getElementById('editarContaBox');
+  if (box) box.classList.add('hidden');
+}
+
+async function salvarEdicaoConta() {
+  if (!exigirAdmin('editar contas de acesso')) return;
+  if (!_editandoContaId) { toast('Escolha uma conta na lista para editar', 'err'); return; }
+  const nome = (document.getElementById('editarContaEmail') || {}).value || '';
+  const senha = (document.getElementById('editarContaSenha') || {}).value || '';
+  const st = document.getElementById('editarContaStatus');
+
+  // Só entra o que mudou de fato. O nome novo vira o endereço interno; a senha
+  // em branco quer dizer "não mexer na senha".
+  const u = (_contasAcessoCache || []).find(x => String(x.id) === String(_editandoContaId));
+  const corpo = { acao: 'editar', id: _editandoContaId };
+  const novoEmail = nomeParaEmail(nome);
+  if (nome.trim() && u && novoEmail !== (u.email || '').toLowerCase()) corpo.novoEmail = novoEmail;
+  if (senha.trim()) {
+    if (senha.trim().length < 6) { toast('A senha precisa de pelo menos 6 caracteres', 'err'); return; }
+    corpo.novaSenha = senha.trim();
+  }
+  if (!corpo.novoEmail && !corpo.novaSenha) { toast('Nada mudou — altere o nome ou a senha', 'err'); return; }
+  if (nome.trim() && !novoEmail) { toast('Nome inválido — use letras e números', 'err'); return; }
+
+  if (st) st.textContent = 'Salvando…';
+  const r = await _chamarFuncaoUsuarios(corpo);
+  if (r.erro) { if (st) st.textContent = ''; toast(r.erro, 'err'); return; }
+
+  const partes = [];
+  if (corpo.novoEmail) partes.push(`nome → <b>${esc(nome.trim())}</b>`);
+  if (corpo.novaSenha) partes.push(`nova senha <b>${esc(senha.trim())}</b> (anote e entregue — não pode ser consultada depois)`);
+  if (st) st.innerHTML = '✅ Conta atualizada: ' + partes.join(' · ');
+  toast('Conta atualizada', 'ok');
+  _editandoContaId = null;
+  const box = document.getElementById('editarContaBox');
+  if (box) box.classList.add('hidden');
+  listarContasAcesso();
 }
 
 async function listarUsuariosComPapel() {

@@ -993,6 +993,26 @@
         </div>
         <div id="contasAcessoStatus" style="margin-top:10px; font-size:13px; color:var(--ink-2);"></div>
         <div id="contasAcessoLista" style="margin-top: 12px;"></div>
+
+        <div id="editarContaBox" class="hidden" style="margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--bg);">
+          <div style="font-weight:600; margin-bottom:8px;">Editar conta: <span id="editarContaNome">—</span></div>
+          <div class="info-box">Troque o <b>nome de login</b> e/ou a <b>senha</b> desta conta. Deixe a senha em branco para não mexer nela. O papel (admin/consulta) muda no painel de baixo. O acesso e o histórico da pessoa continuam os mesmos — só o modo de entrar muda.</div>
+          <div class="form-grid cols-3" style="margin-bottom: 12px;">
+            <div class="field">
+              <label for="editarContaEmail">Nome de login</label>
+              <input type="text" id="editarContaEmail" placeholder="maria" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="editarContaSenha">Nova senha</label>
+              <input type="text" id="editarContaSenha" placeholder="deixe em branco para manter" autocomplete="off">
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn primary" onclick="salvarEdicaoConta()">Salvar alterações</button>
+            <button class="btn" onclick="cancelarEdicaoConta()">Cancelar</button>
+          </div>
+          <div id="editarContaStatus" style="margin-top:10px; font-size:13px; color:var(--ink-2);"></div>
+        </div>
       </div>
 
       <div class="card admin-only">
@@ -1217,6 +1237,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-25a"></script>
+<script src="app.js?v=2026-08-25b"></script>
 </body>
 </html>

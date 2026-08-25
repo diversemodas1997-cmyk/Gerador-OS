@@ -126,6 +126,35 @@ async function criarConta(email: string, senha: string, papel: string) {
   return { ok: true, id: corpo.id, email: corpo.email };
 }
 
+async function editarConta(id: string, novoEmail: string, novaSenha: string) {
+  // Só o que veio preenchido entra no PATCH — trocar só a senha não mexe no
+  // nome, e vice-versa. O papel (admin/usuário) tem caminho próprio
+  // (set_user_role), então não passa por aqui.
+  const patch: Record<string, unknown> = {};
+  if (novoEmail) { patch.email = novoEmail; patch.email_confirm = true; }
+  if (novaSenha) patch.password = novaSenha;
+  if (!Object.keys(patch).length) return { erro: 'Nada para alterar' };
+
+  const r = await fetch(`${URL_BASE}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: {
+      apikey: CHAVE_SERVICO,
+      Authorization: `Bearer ${CHAVE_SERVICO}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  });
+
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = corpo.msg || corpo.message || corpo.error_description || `erro ${r.status}`;
+    return { erro: /already|exists|registered|duplicate/i.test(String(msg))
+      ? 'Já existe uma conta com esse nome'
+      : String(msg) };
+  }
+  return { ok: true, id: corpo.id, email: corpo.email };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CABECALHOS });
   if (req.method !== 'POST') return resposta({ erro: 'use POST' }, 405);
@@ -160,6 +189,19 @@ Deno.serve(async (req: Request) => {
     if (senha.length < 6) return resposta({ erro: 'A senha precisa de pelo menos 6 caracteres' }, 400);
 
     const r = await criarConta(email, senha, papel);
+    return resposta(r, (r as any).erro ? 400 : 200);
+  }
+
+  if (acao === 'editar') {
+    const id = String(corpo.id || '').trim();
+    const novoEmail = corpo.novoEmail ? String(corpo.novoEmail).trim().toLowerCase() : '';
+    const novaSenha = corpo.novaSenha ? String(corpo.novaSenha) : '';
+    if (!id) return resposta({ erro: 'Conta não informada' }, 400);
+    if (novoEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(novoEmail)) return resposta({ erro: 'Nome inválido' }, 400);
+    if (novaSenha && novaSenha.length < 6) return resposta({ erro: 'A senha precisa de pelo menos 6 caracteres' }, 400);
+    if (!novoEmail && !novaSenha) return resposta({ erro: 'Nada para alterar' }, 400);
+
+    const r = await editarConta(id, novoEmail, novaSenha);
     return resposta(r, (r as any).erro ? 400 : 200);
   }
 
