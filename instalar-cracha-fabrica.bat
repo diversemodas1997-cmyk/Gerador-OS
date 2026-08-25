@@ -67,9 +67,13 @@ echo.
 echo ============================================================
 echo   PRONTO! O cracha foi instalado.
 echo.
-echo   Agora FECHE e reabra o navegador (Chrome ou Edge) e acesse
-echo   %SERVIDOR%
-echo   O cadeado deve aparecer sem nenhum aviso.
+echo   ATENCAO: fechar so a JANELA nao basta - o navegador fica
+echo   rodando por tras e ignora o cracha novo. Encerre ele DE VEZ:
+echo     - na barra de endereco digite  chrome://restart  (ou edge://restart)
+echo     - ou clique com o botao direito no icone do navegador perto
+echo       do relogio e escolha "Sair", e abra de novo.
+echo.
+echo   Depois acesse %SERVIDOR% - o cadeado deve vir sem aviso.
 echo ============================================================
 echo.
 pause
