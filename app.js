@@ -20782,15 +20782,6 @@ async function mudarStatusOS(id, valor) {
   }
 }
 
-/* O FILTRO POR STATUS da lista de OS Salvas.
-
-   As opções são montadas aqui, e não no HTML, por causa da CONTAGEM: "Parado
-   (3)" responde a pergunta antes mesmo de filtrar, e é ela que faz alguém
-   perceber que há três OS travadas. A contagem é feita sobre a lista que já
-   passou pelo grupo do Ranking — o filtro conta o que está à vista, não o
-   cadastro inteiro.
-
-   Devolve a chave escolhida ('' = todas). */
 /* O DIA EM QUE A OS TERMINOU.
 
    `finalizadaEm` é gravado por mudarStatusOS no momento em que alguém marca
@@ -20818,6 +20809,18 @@ function _dataCelulaListaOS(o) {
     + `✓ ${esc(txt)}</span>`;
 }
 
+/* OS FILTROS da lista de OS Salvas: status, cor, grade e SKU.
+
+   As opções são montadas aqui, e não no HTML, por causa da CONTAGEM: "Parado
+   (3)" e "Preto (41)" respondem a pergunta antes mesmo de filtrar, e é esse
+   número que faz alguém perceber que há três OS travadas. A contagem é feita
+   sobre a lista que já passou pelo grupo do Ranking — o filtro conta o que está
+   à vista, não o cadastro inteiro.
+
+   Os quatro valem JUNTOS, e junto com a busca por texto: "das paradas, quais
+   são pretas na grade P ao G3?" é uma pergunta só, feita em quatro cliques.
+
+   Devolve a chave escolhida ('' = todas). */
 function _filtroStatusListaOS(base) {
   const sel = document.getElementById('filtro-status-os');
   if (!sel) return '';
@@ -20832,6 +20835,52 @@ function _filtroStatusListaOS(base) {
   // busca fecharia a listinha aberta e faria o campo piscar.
   if (sel.innerHTML !== novo) sel.innerHTML = novo;
   return escolhido;
+}
+
+/* Um seletor de filtro montado a partir dos PRÓPRIOS dados da lista: cada opção
+   é um valor que existe em alguma OS à vista, com quantas OS o têm, as mais
+   frequentes em cima. Uma OS entra em cada valor que ela tem (uma tricolor
+   aparece nas três cores), mas conta UMA vez em cada — senão a soma das opções
+   passaria do tamanho da lista.
+
+   `chaves(o)` diz quais valores aquela OS tem. */
+function _filtroListaOS(id, base, rotuloTodos, chaves) {
+  const sel = document.getElementById(id);
+  if (!sel) return '';
+  const escolhido = sel.value || '';
+  const conta = new Map();
+  (base || []).forEach(o => {
+    new Set((chaves(o) || []).filter(k => k && k !== '\u2014')).forEach(k => {
+      conta.set(k, (conta.get(k) || 0) + 1);
+    });
+  });
+  const ordenadas = [...conta.entries()]
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'pt-BR'));
+  const novo = `<option value="">${esc(rotuloTodos)} (${(base || []).length})</option>`
+    + ordenadas.map(([k, n]) => `<option value="${esc(k)}"${k === escolhido ? ' selected' : ''}>`
+        + `${esc(k)} (${n})</option>`).join('');
+  if (sel.innerHTML !== novo) sel.innerHTML = novo;
+  // A escolha sumiu da lista (mudou o grupo, a OS foi excluída): volta para
+  // "todas", senão a tela ficaria vazia sem dizer por quê.
+  if (escolhido && !conta.has(escolhido)) { sel.value = ''; return ''; }
+  return escolhido;
+}
+
+// O que a busca por texto varre em cada OS. É tudo o que a linha mostra, mais o
+// SKU, que não é coluna mas é como a Contabilidade chama a peça.
+function _textoBuscaOS(o) {
+  return [o.os, o.codigo, o.modeloNome, o.colecaoNome,
+          coresDaPecaOS(o).join(' '), _gradeNomeDaOS(o), skusDaOS(o).join(' ')]
+    .filter(Boolean).join(' ').toLowerCase();
+}
+
+// Devolve a lista ao estado de "tudo à vista". Existe porque quatro filtros
+// somados escondem a lista inteira com facilidade, e desfazer um por um é o
+// caminho mais curto para a pessoa achar que a OS sumiu.
+function limparFiltrosListaOS() {
+  ['busca-os', 'filtro-status-os', 'filtro-cor-os', 'filtro-grade-os', 'filtro-sku-os']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderListaOS();
 }
 
 function renderListaOS() {
@@ -20858,25 +20907,41 @@ function renderListaOS() {
     ? new Set(_listaOsGrupo.os.map(x => String(x).trim()))
     : null;
   const noGrupo = doGrupo ? ordenadas.filter(o => doGrupo.has(String(o.os || '').trim())) : ordenadas;
-  // Filtro por número da OS (busca livre; ignora espaços).
+  // A BUSCA POR TEXTO varre número, código, modelo, coleção, cor, grade e SKU, e
+  // casa TODOS os termos digitados, cada um em qualquer campo: "preto tricolor"
+  // acha o que é preto E tricolor. É assim que se procura sem saber em qual
+  // coluna a palavra está.
   const buscaEl = document.getElementById('busca-os');
-  const termo = (buscaEl ? buscaEl.value : '').trim().toLowerCase();
-  const porTexto = termo
-    ? noGrupo.filter(o => String(o.os || '').toLowerCase().includes(termo))
+  const termos = (buscaEl ? buscaEl.value : '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const porTexto = termos.length
+    ? noGrupo.filter(o => { const alvo = _textoBuscaOS(o); return termos.every(t => alvo.includes(t)); })
     : noGrupo;
-  // O STATUS é a segunda pergunta, e vale junto com a busca: "das paradas, cadê
-  // a 483?". A contagem de cada estado sai da lista do grupo, não do que sobrou
-  // da busca — senão o número mudaria a cada tecla digitada.
+  // OS QUATRO FILTROS valem junto com a busca. A contagem de cada opção sai da
+  // lista do grupo, não do que sobrou da busca — senão os números mudariam a
+  // cada tecla digitada e ninguém conseguiria ler.
   const statusEscolhido = _filtroStatusListaOS(noGrupo);
-  const filtradas = statusEscolhido
-    ? porTexto.filter(o => _statusOS(o) === statusEscolhido)
-    : porTexto;
+  const corEscolhida = _filtroListaOS('filtro-cor-os', noGrupo, 'Todas as cores',
+    o => coresDaPecaOS(o));
+  const gradeEscolhida = _filtroListaOS('filtro-grade-os', noGrupo, 'Todas as grades',
+    o => [_gradeNomeDaOS(o)]);
+  const skuEscolhido = _filtroListaOS('filtro-sku-os', noGrupo, 'Todos os SKUs',
+    o => skusDaOS(o));
+  const filtradas = porTexto.filter(o =>
+    (!statusEscolhido || _statusOS(o) === statusEscolhido)
+    && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
+    && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
+    && (!skuEscolhido || skusDaOS(o).includes(skuEscolhido)));
   _renderAvisoGrupoListaOS(noGrupo.length);
   if (!filtradas.length) {
     const sRot = (STATUS_OS.find(x => x.k === statusEscolhido) || {}).rotulo || '';
-    const oQue = [termo ? `"${esc(termo)}"` : '', sRot ? `status <b>${esc(sRot)}</b>` : '']
+    const oQue = [termos.length ? `"${esc(termos.join(' '))}"` : '',
+                  sRot ? `status <b>${esc(sRot)}</b>` : '',
+                  corEscolhida ? `cor <b>${esc(corEscolhida)}</b>` : '',
+                  gradeEscolhida ? `grade <b>${esc(gradeEscolhida)}</b>` : '',
+                  skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '']
       .filter(Boolean).join(' e ');
-    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
+      + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;
     return;
   }
   tb.innerHTML = filtradas.map(o => {
@@ -28083,6 +28148,7 @@ window.toggleAvisos = toggleAvisos;
 window.limparAvisos = limparAvisos;
 window.abrirListaOSporStatus = abrirListaOSporStatus;
 window.marcarAvisoAberto = marcarAvisoAberto;
+window.limparFiltrosListaOS = limparFiltrosListaOS;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;

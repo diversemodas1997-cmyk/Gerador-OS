@@ -1386,8 +1386,13 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    status, lado a lado. Sao duas perguntas diferentes e valem juntas. No celular
    empilham, que e o unico jeito de os dois caberem. */
 .lista-os-filtros { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.lista-os-filtros input[type="search"] { flex: 1 1 240px; max-width: 320px; }
-.lista-os-filtros select { flex: 0 0 auto; min-width: 190px; }
+.lista-os-filtros input[type="search"] { flex: 1 1 240px; max-width: 380px; }
+/* Os seletores nao passam de 220px: o nome de uma grade inteira ("2P-2G-2GG-2G3
+   | CM.LISA | 117cm") esticaria a linha toda e empurraria os outros filtros
+   para fora da tela. O texto e cortado no fim, e o valor escolhido continua
+   inteiro na dica do mouse. */
+.lista-os-filtros select { flex: 0 1 auto; min-width: 150px; max-width: 220px; }
+.lista-os-filtros .btn { align-self: center; }
 /* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
 
    Mesma caixa nos dois casos — seletor para quem pode mudar (admin e

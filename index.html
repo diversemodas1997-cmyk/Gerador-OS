@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26i">
+<link rel="stylesheet" href="styles.css?v=2026-08-26j">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -756,8 +756,13 @@
              e valem juntas: "das que estão paradas, cadê a 483?". As opções do
              filtro (com a contagem de cada estado) são montadas em app.js. -->
         <div class="lista-os-filtros">
-          <input type="search" id="busca-os" placeholder="Buscar por número da OS..." oninput="renderListaOS()">
+          <input type="search" id="busca-os" placeholder="Buscar: número, código, modelo, coleção, cor, grade ou SKU…"
+                 title="Busca em tudo o que a linha mostra, mais o SKU. Vários termos valem juntos: &quot;preto tricolor&quot;." oninput="renderListaOS()">
           <select id="filtro-status-os" title="Mostrar só as OS de um status" onchange="renderListaOS()"></select>
+          <select id="filtro-cor-os" title="Mostrar só as OS de uma cor" onchange="renderListaOS()"></select>
+          <select id="filtro-grade-os" title="Mostrar só as OS de uma grade" onchange="renderListaOS()"></select>
+          <select id="filtro-sku-os" title="Mostrar só as OS de um SKU" onchange="renderListaOS()"></select>
+          <button class="btn small ghost" onclick="limparFiltrosListaOS()" title="Voltar a mostrar todas as OS">Limpar</button>
         </div>
         <table class="table">
           <thead><tr>
@@ -1272,6 +1277,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26i"></script>
+<script src="app.js?v=2026-08-26j"></script>
 </body>
 </html>
