@@ -1635,6 +1635,14 @@ body.is-admin .admin-only { display: revert !important; }
 body.is-admin .admin-only.card { display: block !important; }
 body.is-admin .nav-btn.admin-only { display: block !important; }
 
+/* O ESTOQUE DE TECIDOS tem dono proprio: o admin e a conta nomeada em
+   LOGINS_ESTOQUE_TECIDOS (app.js). Mesma mecanica do admin-only - a classe no
+   body decide, e nao o valor de currentRole na hora do render, porque o papel
+   chega do servidor depois do primeiro desenho da tela. */
+.estoque-tecidos-only { display: none !important; }
+body.is-admin .estoque-tecidos-only,
+body.pode-estoque-tecidos .estoque-tecidos-only { display: revert !important; }
+
 /* REGISTRAR é a exceção: quem tem conta soma na lista de compra e marca a folha
    de OS, admin ou não (ver _contaPodeRegistrar no app.js). A classe do body é
    `pode-registrar`, e não `is-usuario` — essa é vestida também por quem nem fez

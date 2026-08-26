@@ -1472,12 +1472,16 @@ function carregarPapelEmParalelo() {
 
 function aplicarPermissoesUI() {
   const body = document.body;
-  body.classList.remove('is-admin', 'is-usuario', 'pode-registrar');
+  body.classList.remove('is-admin', 'is-usuario', 'pode-registrar', 'pode-estoque-tecidos');
   // QUEM REGISTRA — a lista de compra e o que a folha de OS anota — tem classe
   // própria, e não `is-usuario`: essa lá é vestida também por quem não fez login
   // e pelo modo nuvem, que só consultam. Aqui é preciso ser uma conta de
   // verdade, com o servidor da fábrica no ar. Ver _contaPodeRegistrar.
   if (_contaPodeRegistrar() && podeGravar()) body.classList.add('pode-registrar');
+  // O estoque de tecidos tem dono próprio: admin e a conta nomeada em
+  // LOGINS_ESTOQUE_TECIDOS. Sem esta classe os botões da tela ficariam
+  // escondidos para quem justamente pode usá-los.
+  if (podeMexerEstoqueTecidos()) body.classList.add('pode-estoque-tecidos');
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
   // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
@@ -1577,6 +1581,34 @@ function exigirEdicaoFolha(acao) {
   if (_recusarPorModoNuvem(acao)) return false;
   if (_contaPodeRegistrar()) return true;
   toast(`Faça login para ${acao}`, 'err');
+  return false;
+}
+
+/* ---- O ESTOQUE DE TECIDOS: a segunda exceção nominal ----------------------
+   Quem mexe no estoque de tecidos é o ADMIN e a conta NATALHY, por decisão do
+   Junior em 26/08/2026. É a mesma ideia do status da OS no Enfesto.corte: quem
+   está com o pano na mão é quem sabe o que entrou, o que saiu e o que a
+   contagem física achou — passar isso pelo admin fazia o número esperar.
+
+   VALE PARA A TELA "Estoque de tecidos" e para o que ela faz: entrada de
+   compra, saída/ajuste manual, apagar um lançamento manual e dar baixa (ou
+   estornar) o material de uma OS. As outras telas de estoque — corte, costura,
+   fios, expedição — seguem só do admin; abrir uma de cada vez é o que permite
+   saber de onde veio cada número.
+
+   A comparação do login ignora pontuação e acento, como em LOGINS_STATUS_OS. */
+const LOGINS_ESTOQUE_TECIDOS = ['natalhy'];
+
+function podeMexerEstoqueTecidos() {
+  if (!podeGravar()) return false;              // modo nuvem: só consulta
+  if (currentRole === 'admin') return true;
+  return LOGINS_ESTOQUE_TECIDOS.includes(_chaveLogin(_obsNomeLogin(_obsQuemSou())));
+}
+
+function exigirEstoqueTecidos(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
+  if (podeMexerEstoqueTecidos()) return true;
+  toast(`Só o admin e ${LOGINS_ESTOQUE_TECIDOS.join(', ')} podem ${acao}`, 'err');
   return false;
 }
 
@@ -6215,7 +6247,7 @@ function renderEstoque() {
 
 let movEstoqueTipo = 'entrada';
 function abrirMovEstoque(tipo) {
-  if (!exigirAdmin('movimentar estoque')) return;
+  if (!exigirEstoqueTecidos('lançar no estoque de tecidos')) return;
   movEstoqueTipo = tipo === 'saida' ? 'saida' : 'entrada';
   const title = document.getElementById('modal-estoque-title');
   const box = document.getElementById('modal-estoque-fields');
@@ -6239,7 +6271,7 @@ function abrirMovEstoque(tipo) {
 }
 
 async function salvarMovEstoque() {
-  if (!exigirAdmin('movimentar estoque')) return;
+  if (!exigirEstoqueTecidos('lançar no estoque de tecidos')) return;
   const v = id => document.getElementById(id)?.value || '';
   const tecidoNome = v('me-tecido');
   if (!tecidoNome) return toast('Selecione o tecido', 'err');
@@ -6269,7 +6301,7 @@ async function salvarMovEstoque() {
 }
 
 async function excluirMovEstoque(id) {
-  if (!exigirAdmin('excluir movimentação')) return;
+  if (!exigirEstoqueTecidos('apagar um lançamento de estoque')) return;
   const m = (STATE.estoqueMov || []).find(x => x.id === id);
   if (!m) return;
   if (m.origem !== 'manual') return toast('Saídas automáticas de OS são removidas ao excluir a própria OS', 'err');
@@ -23341,7 +23373,7 @@ async function aplicarBaixaEstoqueOS(data) {
 
 // Aponta a OS como produzida → converte a RESERVA em SAÍDA definitiva (baixa real).
 async function darBaixaMaterialOS(osId) {
-  if (!exigirAdmin('dar baixa de material')) return;
+  if (!exigirEstoqueTecidos('dar baixa de material')) return;
   const hoje = new Date().toISOString().slice(0, 10);
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
@@ -23357,7 +23389,7 @@ async function darBaixaMaterialOS(osId) {
 
 // Desfaz a baixa: volta a OS para RESERVADO.
 async function estornarBaixaMaterialOS(osId) {
-  if (!exigirAdmin('estornar baixa de material')) return;
+  if (!exigirEstoqueTecidos('estornar baixa de material')) return;
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
     if (m.origem === 'os' && m.osId === osId && m.status === 'consumido') {

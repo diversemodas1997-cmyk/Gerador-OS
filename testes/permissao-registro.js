@@ -36,6 +36,14 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 
+// A lista de logins sai do app.js: o teste nao pode ter a sua propria ideia de
+// quem pode mexer no estoque.
+const constante = (nome) => {
+  const m = src.match(new RegExp('^const ' + nome + ' = [^;]+;', 'm'));
+  if (!m) { console.error('nao achei a constante ' + nome); process.exit(1); }
+  return m[0];
+};
+
 // currentRole e podeGravar() sao do app; aqui entram como controles do teste.
 const api = new Function('ctx', `
   const toast = (m, t) => ctx.toasts.push(t + ': ' + m);
@@ -127,9 +135,66 @@ ok('19. servidor da fabrica fora do ar: ninguem marca',
    t.api.exigirEdicaoFolha('marcar etapas da OS') === false
    && /nuvem/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
 
+const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+console.log('');
+console.log('-- o estoque de tecidos: admin e a conta nomeada --');
+// Pedido do Junior em 26/08/2026: a Natalhy lanca no estoque de tecidos como o
+// admin. Mesma ideia do Enfesto.corte no status da OS - quem esta com o pano na
+// mao e quem sabe o que entrou e o que saiu.
+const estoque = (papel, login, servidorNoAr = true) => {
+  const ctx = { toasts: [] };
+  const api = new Function('ctx', `
+    const toast = (m, t) => ctx.toasts.push(t + ': ' + m);
+    const podeGravar = () => ${servidorNoAr};
+    const currentUser = ${JSON.stringify(login) === '""' ? 'null' : '{ email: ' + JSON.stringify(login) + ' }'};
+    let currentRole = ${JSON.stringify(papel)};
+    ${constante('LOGINS_ESTOQUE_TECIDOS')}
+    ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
+    ${recorte('function _obsNomeLogin', 'o nome do login')}
+    ${recorte('function _chaveLogin', 'a chave do login')}
+    ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
+    ${recorte('function podeMexerEstoqueTecidos', 'quem mexe no estoque de tecidos')}
+    ${recorte('function exigirEstoqueTecidos', 'a recusa do estoque de tecidos')}
+    return { podeMexerEstoqueTecidos, exigirEstoqueTecidos };
+  `)(ctx);
+  return { ctx, api };
+};
+let e = estoque('admin', 'admin@diverse.local');
+ok('28. admin lanca no estoque de tecidos', e.api.podeMexerEstoqueTecidos() === true);
+e = estoque('usuario', 'natalhy@diverse.local');
+ok('29. a Natalhy tambem', e.api.podeMexerEstoqueTecidos() === true);
+e = estoque('usuario', 'Natalhy@diverse.local');
+ok('30. e o login entra com qualquer caixa', e.api.podeMexerEstoqueTecidos() === true);
+e = estoque('usuario', 'costura@diverse.local');
+ok('31. usuario comum NAO lanca', e.api.podeMexerEstoqueTecidos() === false);
+e = estoque('usuario', 'costura@diverse.local');
+ok('32. e a recusa diz quem pode',
+   e.api.exigirEstoqueTecidos('lançar no estoque de tecidos') === false
+   && /natalhy/.test(e.ctx.toasts.join(' ')), e.ctx.toasts.join(' | '));
+e = estoque(null, '');
+ok('33. sem login, nao', e.api.podeMexerEstoqueTecidos() === false);
+e = estoque('admin', 'admin@diverse.local', false);
+ok('34. servidor da fabrica fora do ar: nem o admin', e.api.podeMexerEstoqueTecidos() === false);
+e = estoque('usuario', 'natalhy@diverse.local', false);
+ok('35. nem a Natalhy, no modo nuvem', e.api.podeMexerEstoqueTecidos() === false);
+// As portas da tela, conferidas no app.js: se alguem devolver uma delas para
+// exigirAdmin, a Natalhy perde o acesso em silencio.
+const portasEstoque = [
+  ['lancar entrada/saida', "exigirEstoqueTecidos('lançar no estoque de tecidos')"],
+  ['apagar lancamento', "exigirEstoqueTecidos('apagar um lançamento de estoque')"],
+  ['dar baixa de material', "exigirEstoqueTecidos('dar baixa de material')"],
+  ['estornar baixa', "exigirEstoqueTecidos('estornar baixa de material')"]
+];
+portasEstoque.forEach(([oQue, trecho], i) => {
+  ok((36 + i) + '. ' + oQue + ' passa pela permissao nova', app.includes(trecho), trecho);
+});
+ok('40. e a tela mostra os botoes para quem pode',
+   fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8').includes('actions estoque-tecidos-only')
+   && fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8').includes('body.pode-estoque-tecidos .estoque-tecidos-only'),
+   'a classe da tela nao esta ligada');
+
 console.log('');
 console.log('-- o que NAO se abriu junto (conferido no app.js, nao em copia) --');
-const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 // Cada linha aqui e um portao que tem que continuar sendo `exigirEdicao` (so
 // admin). Se alguem trocar por exigirEdicaoFolha sem pensar, o teste cai.
 // A OBSERVACAO virou UMA POR PESSOA em 20/08/2026: quem escreve e
@@ -147,7 +212,7 @@ const soAdmin = [
   ['limpar a lista de compra', "exigirEdicao('limpar a lista de compra')"]
 ];
 soAdmin.forEach(([oQue, trecho], i) => {
-  ok((20 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
+  ok((41 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
 });
 
 console.log('');
