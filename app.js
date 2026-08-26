@@ -8529,7 +8529,10 @@ async function salvarModalExpedicao() {
       const i = STATE.expedicaoCargas.findIndex(c => c.id === ctx.editId);
       if (i >= 0) STATE.expedicaoCargas[i] = { ...STATE.expedicaoCargas[i], ...campos };
     } else {
-      STATE.expedicaoCargas.push({ id: uid(), ...campos });
+      // Quando e quem: é o nascimento da carga, e é por ele que a OE aparece no
+      // mural de avisos. Sem isto sobra só o milissegundo dentro do `id`.
+      STATE.expedicaoCargas.push({ id: uid(), ...campos,
+                                   criadaEm: new Date().toISOString(), criadaPor: _obsQuemSou() });
     }
     await saveState('expedicaoCargas');
     toast(ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição', 'ok');
@@ -8552,7 +8555,8 @@ async function salvarModalExpedicao() {
       const origem = (STATE.expedicaoCargas || []).find(c => c.id === el.dataset.carga);
       const nova = {
         id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, perna: 'volta',
-        osId, volumes: parseInt(el.dataset.vol, 10) || 0, obs: ''
+        osId, volumes: parseInt(el.dataset.vol, 10) || 0, obs: '',
+        criadaEm: new Date().toISOString(), criadaPor: _obsQuemSou()
       };
       if (origem && Array.isArray(origem.pacotes)) {
         nova.pacotes = origem.pacotes.map(p => ({ tam: p.tam, tom: p.tom }));
@@ -18033,7 +18037,8 @@ function coletaOS() {
     tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
     obs: v('f-obs'),
     atencao: v('f-atencao'),
-    criadoEm: new Date().toISOString()
+    criadoEm: new Date().toISOString(),
+    criadoPor: _obsQuemSou()
   };
 }
 
@@ -18453,7 +18458,14 @@ async function aplicarRegraConjugadaSeAplicavel(osAtiva) {
 // Mesclando, o que o formulário controla é sobrescrito e o resto sobrevive.
 function _mesclarComOSExistente(data) {
   const ant = (STATE.ordens || []).find(o => o.id === data.id);
-  return ant ? { ...ant, ...data } : data;
+  if (!ant) return data;
+  const juntos = { ...ant, ...data };
+  // `criadoEm` é quando a OS NASCEU. coletaOS carimba a hora a cada gravação, e
+  // sem isto uma OS de março reeditada hoje diria que foi criada hoje — e o
+  // aviso de "OS gerada" dispararia de novo a cada correção de vírgula.
+  if (ant.criadoEm) juntos.criadoEm = ant.criadoEm;
+  if (ant.criadoPor) juntos.criadoPor = ant.criadoPor;
+  return juntos;
 }
 
 // Trava contra o duplo clique: gravar demora (Supabase + PDF), e o segundo
@@ -20932,6 +20944,24 @@ function renderListaOS() {
    cada um, não dado da fábrica, e assim ninguém paga sincronização por ela. */
 const AVISOS_DIAS = 30;    // o mural olha um mês para trás
 const AVISOS_MAX = 100;    // e mostra no máximo isto de linhas
+/* AÇÃO EM LOTE vira UMA linha. Marcar 200 OS de uma vez (ou o script de faixa)
+   empurrava tudo o mais para fora do mural: 200 linhas iguais, do mesmo autor,
+   no mesmo minuto, e o recado da produção sumia embaixo delas. A partir de três
+   iguais o mural conta o lote em vez de listá-lo. */
+const AVISOS_LOTE = 3;
+
+/* QUANDO UM REGISTRO NASCEU, em milissegundos.
+
+   Carga nova guarda `criadaEm`. As antigas não guardam nada — mas o `id` vem do
+   uid(), que é 'id_<Date.now()>_<sorteio>': o milissegundo do nascimento está
+   dentro do próprio id, e lê-lo dali é melhor do que deixar a expedição inteira
+   de fora do mural por falta de um campo. */
+function _avisosNascimento(reg) {
+  const t = reg && (reg.criadaEm || reg.criadoEm);
+  if (t) { const ms = Date.parse(t); if (!isNaN(ms)) return ms; }
+  const m = /^id_(\d{10,})_/.exec(String((reg && reg.id) || ''));
+  return m ? parseInt(m[1], 10) : null;
+}
 
 function _avisosEventos() {
   const limite = Date.now() - AVISOS_DIAS * 24 * 60 * 60 * 1000;
@@ -20959,11 +20989,83 @@ function _avisosEventos() {
       ev.push({ tipo: 'status', osId: o.id, os: o.os || '—',
                 quem: o.statusOSPor || '', em: o.statusOSEm, status: st });
     }
+    // A OS GERADA. `criadoEm` é o nascimento do registro (preservado nas
+    // edições por _mesclarComOSExistente) — é o aviso de que existe lote novo
+    // para a fábrica, que era o que só se descobria abrindo a lista.
+    const nasc = o.criadoEm ? Date.parse(o.criadoEm) : NaN;
+    if (!isNaN(nasc) && nasc >= limite) {
+      ev.push({ tipo: 'os', osId: o.id, os: o.os || '—', quem: o.criadoPor || '',
+                em: o.criadoEm,
+                texto: [o.modeloNome, (o.grade && o.grade.total ? o.grade.total + ' pç por camada' : '')]
+                  .filter(Boolean).join(' · ') });
+    }
+  });
+
+  /* A OE MONTADA. Uma OE é uma expedição distinta (janela + data) com pelo menos
+     uma OS alocada — a mesma definição do contador do Início; não existe um
+     registro "OE" à parte. Ela NASCE com a primeira carga, e alocar mais OS
+     depois não a faz nascer de novo: o aviso é "montaram a expedição do dia X",
+     e não uma linha por saco.
+
+     Cancelada não entra: aquele lote não vai sair, e avisar de uma expedição
+     que foi desmarcada é pior do que não avisar. */
+  const cancel = (typeof _expCancelSet === 'function') ? _expCancelSet() : new Set();
+  const oes = new Map();
+  (STATE.expedicaoCargas || []).forEach(c => {
+    const chave = (c.janelaId || '') + '|' + (c.data || '');
+    if (cancel.has(chave)) return;
+    const ms = _avisosNascimento(c);
+    if (ms == null) return;
+    const at = oes.get(chave);
+    if (!at) oes.set(chave, { ms, n: 1, c });
+    else { at.n++; if (ms < at.ms) { at.ms = ms; at.c = c; } }
+  });
+  oes.forEach((g, chave) => {
+    if (g.ms < limite) return;
+    const data = chave.split('|')[1] || '';
+    const jan = (STATE.expedicaoJanelas || []).find(j => j.id === chave.split('|')[0]);
+    ev.push({ tipo: 'oe', osId: '', os: '', quem: (g.c && g.c.criadaPor) || '',
+              em: new Date(g.ms).toISOString(), dataOe: data,
+              janela: (jan && jan.nome) || '', n: g.n });
   });
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
   const vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
-  return vivos.slice(0, AVISOS_MAX);
+  return _avisosAgrupar(vivos).slice(0, AVISOS_MAX);
+}
+
+/* O LOTE VIRA UMA LINHA. Mesmo tipo, mesmo autor, mesmo estado e mesmo MINUTO:
+   isso é uma ação só, feita de uma vez — e é assim que ela é lida ("o admin
+   finalizou 200 OS às 10:52"). Abaixo de três, cada uma continua na sua linha:
+   duas OS marcadas seguidas ainda são duas notícias.
+
+   Observação NÃO agrupa: cada recado é um texto diferente, e resumir "3
+   observações" esconderia justamente o que se quer ler. */
+function _avisosAgrupar(ev) {
+  const soltos = [], grupos = new Map();
+  ev.forEach(e => {
+    if (e.tipo !== 'status' && e.tipo !== 'os') { soltos.push(e); return; }
+    const k = [e.tipo, String(e.quem || '').toLowerCase(), e.status || '',
+               String(e.em).slice(0, 16)].join('|');
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(e);
+  });
+  grupos.forEach(lista => {
+    if (lista.length < AVISOS_LOTE) { lista.forEach(e => soltos.push(e)); return; }
+    const p = lista[0];
+    soltos.push({ tipo: p.tipo + '-lote', n: lista.length, quem: p.quem, em: p.em,
+                  status: p.status, oss: lista.map(x => x.os) });
+  });
+  soltos.sort((a, b) => String(b.em).localeCompare(String(a.em)));
+  return soltos;
+}
+
+// Abre a lista de OS já filtrada por um status — é para onde o aviso de lote
+// leva: "200 finalizadas" só serve se der para ver quais.
+function abrirListaOSporStatus(k) {
+  goto('lista-os');
+  const sel = document.getElementById('filtro-status-os');
+  if (sel) { sel.value = k || ''; renderListaOS(); }
 }
 
 // A marca é POR LOGIN: dois turnos no mesmo computador não herdam o "já li" um
@@ -21098,6 +21200,15 @@ function atualizarBadgeAvisos() {
   _avisosContagem = n;
 }
 
+// Os números do lote em uma linha: os primeiros e "e mais N". A lista inteira
+// de 200 números não cabe no painel e ninguém a lê — quem quer ver quais clica.
+function _avisosListaOSs(oss) {
+  const l = (oss || []).filter(Boolean);
+  if (!l.length) return '';
+  const mostra = l.slice(0, 6).join(', ');
+  return l.length > 6 ? `${mostra} e mais ${l.length - 6}` : mostra;
+}
+
 function _avisosQuando(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return '';
@@ -21143,25 +21254,61 @@ function renderAvisos() {
       const meu = String(e.quem || '').trim().toLowerCase() === eu;
       const novo = String(e.em) > desde && !meu;
       const quem = _obsNomeLogin(e.quem) || 'alguém';
-      let icone, cabec, corpo = '';
+      // Por quem foi feito: "por alguém" some quando o registro é antigo e não
+      // guardou autor — dizer "por alguém" a cada linha vira ruído.
+      const porQuem = e.quem ? ` por ${esc(meu ? 'você' : quem)}` : '';
+      let icone, titulo, cabec, corpo = '', abrir;
       if (e.tipo === 'status') {
         const s = STATUS_OS.find(x => x.k === e.status) || STATUS_OS[0];
         icone = s.icone;
+        titulo = `OS ${esc(e.os)}`;
         cabec = `${esc(meu ? 'você' : quem)} marcou como <b>${esc(s.rotulo)}</b>`;
+        abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
+      } else if (e.tipo === 'status-lote') {
+        const s = STATUS_OS.find(x => x.k === e.status) || STATUS_OS[0];
+        icone = s.icone;
+        titulo = `${e.n} OS`;
+        cabec = `marcadas como <b>${esc(s.rotulo)}</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(_avisosListaOSs(e.oss))}</div>`;
+        abrir = `fecharAvisos(); abrirListaOSporStatus('${esc(e.status)}')`;
+      } else if (e.tipo === 'os-lote') {
+        icone = '📄';
+        titulo = `${e.n} OS`;
+        cabec = `<b>geradas</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(_avisosListaOSs(e.oss))}</div>`;
+        abrir = `fecharAvisos(); goto('lista-os')`;
+      } else if (e.tipo === 'os') {
+        icone = '📄';
+        titulo = `OS ${esc(e.os)}`;
+        cabec = `<b>gerada</b>${porQuem}`;
+        if (e.texto) corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
+      } else if (e.tipo === 'oe') {
+        icone = '🚚';
+        titulo = `OE ${esc(formatDate(e.dataOe))}`;
+        cabec = `<b>montada</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(e.janela || 'expedição')} · `
+          + `${e.n} OS na carga</div>`;
+        // A OE não é uma folha só: o que se abre é o PLANO da expedição, que é
+        // onde ela mora.
+        abrir = `fecharAvisos(); goto('expedicao'); trocarAbaExpedicao('plano')`;
       } else {
         icone = '💬';
+        titulo = `OS ${esc(e.os)}`;
         cabec = `${esc(meu ? 'você' : quem)} ${e.editada ? 'corrigiu a' : 'escreveu uma'} observação`;
         corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
       }
-      // A LINHA INTEIRA abre a OS: num painel estreito, um botão ao lado do
-      // texto quebra em duas linhas e come a largura do recado. O › é o que
-      // avisa que dá para clicar.
+      // A LINHA INTEIRA abre: num painel estreito, um botão ao lado do texto
+      // quebra em duas linhas e come a largura do recado. O › é o que avisa
+      // que dá para clicar.
       return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}"
-           title="Abrir a folha da OS ${esc(e.os)}"
-           onclick="fecharAvisos(); verOS('${esc(e.osId)}')">
+           title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
+                    : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
+           onclick="${abrir}">
         <span class="aviso-icone">${icone}</span>
         <div class="aviso-corpo">
-          <div class="aviso-cab"><b>OS ${esc(e.os)}</b> · ${cabec}
+          <div class="aviso-cab"><b>${titulo}</b> · ${cabec}
             <span class="aviso-quando">${esc(_avisosQuando(e.em))}</span>
             ${novo ? '<span class="aviso-novo">novo</span>' : ''}</div>
           ${corpo}
@@ -22312,6 +22459,14 @@ async function duplicarOS(id) {
   copia.id = uid();
   copia.os = proximoNumeroOS();
   copia.data = new Date().toISOString().slice(0, 10);
+  // A duplicata NASCE agora: herdar o carimbo da original faria a OS nova
+  // aparecer no mural com a data da velha — ou não aparecer.
+  copia.criadoEm = new Date().toISOString();
+  copia.criadoPor = _obsQuemSou();
+  // Status é do lote, não do desenho: a cópia começa do zero, sem o "Finalizado"
+  // da OS que foi copiada.
+  delete copia.statusOS; delete copia.statusOSPor; delete copia.statusOSEm;
+  delete copia.finalizadaEm;
   STATE.ordens.push(copia);
   await saveState('ordens');
   await atualizarCounterOS(copia.os);
@@ -27876,6 +28031,7 @@ window.verOS = verOS;
 window.mudarStatusOS = mudarStatusOS;
 window.toggleAvisos = toggleAvisos;
 window.limparAvisos = limparAvisos;
+window.abrirListaOSporStatus = abrirListaOSporStatus;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;

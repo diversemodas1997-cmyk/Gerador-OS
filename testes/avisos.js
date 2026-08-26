@@ -46,7 +46,11 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _obsNotas', 'as notas da OS')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
   ${recorte('function _statusOS', 'a leitura do status')}
+  ${recorte('function _avisosNascimento', 'o nascimento de um registro')}
+  ${recorte('function _expCancelSet', 'as expedicoes canceladas')}
   ${recorte('function _avisosEventos', 'a lista de eventos')}
+  ${constante('AVISOS_LOTE')}
+  ${recorte('function _avisosAgrupar', 'o agrupamento do lote')}
   ${recorte('function _avisosChaveVistos', 'a chave da ultima visita')}
   ${recorte('function _avisosChaveLimpos', 'a chave da limpeza')}
   ${recorte('function _avisosLimpoAte', 'o corte da limpeza')}
@@ -55,12 +59,15 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _avisosNaoLidos', 'a conta do que e novo')}
   const limpar = (quando) => { ctx.ls[_avisosChaveLimpos()] = quando; };
   const desfazer = () => { delete ctx.ls[_avisosChaveLimpos()]; };
-  return { _avisosEventos, _avisosNaoLidos, _avisosVistos, _avisosMarcarVistos, _avisosLimpoAte, limpar, desfazer };
+  return { _avisosEventos, _avisosNaoLidos, _avisosVistos, _avisosMarcarVistos, _avisosLimpoAte,
+           _avisosAgrupar, limpar, desfazer };
 `)(ctx);
 
 const diasAtras = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
-const ctxDe = (login, ordens, ls = {}) => {
-  const ctx = { login, ls, STATE: { ordens } };
+const ctxDe = (login, ordens, ls = {}, exp = {}) => {
+  const ctx = { login, ls, STATE: { ordens,
+    expedicaoCargas: exp.cargas || [], expedicaoJanelas: exp.janelas || [],
+    expedicaoExcecoes: exp.excecoes || [] } };
   return { ctx, api: monta(ctx) };
 };
 
@@ -141,17 +148,94 @@ ok('15. quem nao entrou na conta ve o mural, sem nada pendente',
    String(t.api._avisosNaoLidos().length));
 
 console.log('');
+console.log('-- a OS gerada e a OE montada --');
+// Pedido de 26/08/2026: o programa avisa tambem quando nasce uma OS e quando
+// uma expedicao e montada - era o que so se descobria abrindo a lista.
+const msAtras = (h) => Date.now() - h * 3600 * 1000;
+const nascidas = [
+  { id: 'n1', os: '0504', criadoEm: new Date(msAtras(3)).toISOString(), criadoPor: 'admin@diverse.local',
+    modeloNome: 'Camiseta Basica', grade: { total: 12 } },
+  { id: 'n2', os: '0100', criadoEm: new Date(msAtras(24 * 40)).toISOString() }   // fora da janela
+];
+const janelas = [{ id: 'j1', nome: 'Matinal' }, { id: 'j2', nome: 'Tarde' }];
+const cargas = [
+  // A OE de 27/08: nasce com a primeira carga, e a segunda nao a faz nascer de novo.
+  { id: 'c1', janelaId: 'j1', data: '2026-08-27', osId: 'n1', criadaEm: new Date(msAtras(5)).toISOString(), criadaPor: 'admin@diverse.local' },
+  { id: 'c2', janelaId: 'j1', data: '2026-08-27', osId: 'n2', criadaEm: new Date(msAtras(2)).toISOString(), criadaPor: 'admin@diverse.local' },
+  // Carga ANTIGA, sem criadaEm: o milissegundo sai do proprio id (uid()).
+  { id: 'id_' + msAtras(8) + '_42', janelaId: 'j2', data: '2026-08-26', osId: 'n1' },
+  // Expedicao CANCELADA: nao vira aviso.
+  { id: 'c4', janelaId: 'j1', data: '2026-08-28', osId: 'n1', criadaEm: new Date(msAtras(1)).toISOString() }
+];
+const excecoes = [{ janelaId: 'j1', data: '2026-08-28', tipo: 'cancelada' }];
+t = ctxDe('costura@diverse.local', nascidas, {}, { cargas, janelas, excecoes });
+ev = t.api._avisosEventos();
+const porTipo = (k) => ev.filter(e => e.tipo === k);
+ok('16. a OS gerada vira aviso', porTipo('os').length === 1 && porTipo('os')[0].os === '0504',
+   JSON.stringify(ev.map(e => e.tipo + ':' + (e.os || e.dataOe))));
+ok('17. e leva o modelo e as pecas por camada',
+   /Camiseta Basica/.test(porTipo('os')[0].texto) && /12/.test(porTipo('os')[0].texto),
+   porTipo('os')[0].texto);
+ok('18. OS criada ha 40 dias fica fora da janela', !porTipo('os').some(e => e.os === '0100'),
+   JSON.stringify(porTipo('os').map(e => e.os)));
+ok('19. a OE montada vira UM aviso, nao um por carga',
+   porTipo('oe').filter(e => e.dataOe === '2026-08-27').length === 1,
+   JSON.stringify(porTipo('oe').map(e => e.dataOe)));
+const oe27 = porTipo('oe').find(e => e.dataOe === '2026-08-27');
+ok('20. com a janela, quantas OS estao na carga e quem montou',
+   oe27.janela === 'Matinal' && oe27.n === 2 && oe27.quem === 'admin@diverse.local', JSON.stringify(oe27));
+ok('21. a OE nasce com a PRIMEIRA carga (5h atras), nao com a ultima',
+   Math.abs(Date.parse(oe27.em) - msAtras(5)) < 2000, oe27.em);
+ok('22. carga antiga sem criadaEm: o milissegundo sai do proprio id',
+   porTipo('oe').some(e => e.dataOe === '2026-08-26'), JSON.stringify(porTipo('oe').map(e => e.dataOe)));
+ok('23. expedicao CANCELADA nao vira aviso',
+   !porTipo('oe').some(e => e.dataOe === '2026-08-28'), JSON.stringify(porTipo('oe').map(e => e.dataOe)));
+
+console.log('');
+console.log('-- acao em lote vira UMA linha --');
+// O lote de 26/08 (200 OS finalizadas de uma vez pelo script) afogava o mural:
+// 200 linhas iguais empurravam o recado da producao para fora das 100 linhas.
+const mesmoMinuto = '2026-08-26T10:52:53.823Z';
+const lote = [];
+for (let i = 0; i < 12; i++) {
+  lote.push({ id: 'L' + i, os: '02' + String(10 + i), statusOS: 'finalizado',
+              statusOSPor: 'admin@diverse.local', statusOSEm: mesmoMinuto });
+}
+// Duas no mesmo minuto continuam sendo duas noticias.
+lote.push({ id: 'p1', os: '0301', statusOS: 'parado', statusOSPor: 'enfesto.corte@diverse.local',
+            statusOSEm: '2026-08-26T11:10:00.000Z' });
+lote.push({ id: 'p2', os: '0302', statusOS: 'parado', statusOSPor: 'enfesto.corte@diverse.local',
+            statusOSEm: '2026-08-26T11:10:10.000Z' });
+const A = ctxDe('costura@diverse.local', [], {}).api;
+const juntos = A._avisosAgrupar([
+  ...lote.map(o => ({ tipo: 'status', osId: o.id, os: o.os, quem: o.statusOSPor,
+                      em: o.statusOSEm, status: o.statusOS }))
+]);
+const doLote = juntos.find(e => e.tipo === 'status-lote');
+ok('24. doze carimbos iguais no mesmo minuto viram uma linha so',
+   !!doLote && doLote.n === 12, JSON.stringify(juntos.map(e => e.tipo + (e.n ? ':' + e.n : ''))));
+ok('25. a linha do lote diz o estado e quem fez',
+   doLote.status === 'finalizado' && doLote.quem === 'admin@diverse.local', JSON.stringify(doLote));
+ok('26. e guarda os numeros das OS para mostrar os primeiros',
+   Array.isArray(doLote.oss) && doLote.oss.length === 12, JSON.stringify(doLote.oss));
+ok('27. duas no mesmo minuto NAO agrupam (ainda sao duas noticias)',
+   juntos.filter(e => e.tipo === 'status' && e.status === 'parado').length === 2,
+   JSON.stringify(juntos.map(e => e.tipo)));
+ok('28. e o mural nao afoga: 14 carimbos viram 3 linhas',
+   juntos.length === 3, String(juntos.length));
+
+console.log('');
 console.log('-- limpar a lista --');
 // Limpar e marca de LEITURA, nao apagamento: o que sai e a linha do mural, e o
 // recado segue na OS. Vale so para quem limpou, e so neste computador.
 t = ctxDe('admin@diverse.local', ordens(), { 'avisosVistos:admin@diverse.local': diasAtras(5) });
-ok('16. antes de limpar, os dois eventos estao na lista',
+ok('29. antes de limpar, os dois eventos estao na lista',
    t.api._avisosEventos().length === 2 && t.api._avisosNaoLidos().length === 2,
    String(t.api._avisosEventos().length));
 t.api.limpar(new Date().toISOString());
-ok('17. limpar esvazia a lista', t.api._avisosEventos().length === 0, String(t.api._avisosEventos().length));
-ok('18. e zera o contador junto', t.api._avisosNaoLidos().length === 0, String(t.api._avisosNaoLidos().length));
-ok('19. as OS nao foram tocadas — o recado segue la',
+ok('30. limpar esvazia a lista', t.api._avisosEventos().length === 0, String(t.api._avisosEventos().length));
+ok('31. e zera o contador junto', t.api._avisosNaoLidos().length === 0, String(t.api._avisosNaoLidos().length));
+ok('32. as OS nao foram tocadas — o recado segue la',
    t.ctx.STATE.ordens[0].obsNotas[0].texto === 'faltou pano na 3a fase'
    && t.ctx.STATE.ordens[1].statusOS === 'parado', JSON.stringify(t.ctx.STATE.ordens[1]));
 // O que acontecer DEPOIS da limpeza volta a aparecer.
@@ -159,16 +243,16 @@ const depois = ordens();
 depois.push({ id: 'g', os: '0490', statusOS: 'andamento', statusOSPor: 'costura@diverse.local',
               statusOSEm: new Date(Date.now() + 2000).toISOString() });
 t.ctx.STATE.ordens = depois;
-ok('20. o que acontece depois da limpeza aparece',
+ok('33. o que acontece depois da limpeza aparece',
    t.api._avisosEventos().length === 1 && t.api._avisosNaoLidos().length === 1,
    String(t.api._avisosEventos().length));
 t.api.desfazer();
-ok('21. "ver os avisos de novo" traz a lista de volta',
+ok('34. "ver os avisos de novo" traz a lista de volta',
    t.api._avisosEventos().length === 3, String(t.api._avisosEventos().length));
 // A limpeza e de quem limpou: o outro login continua com os avisos dele.
 t.api.limpar(new Date().toISOString());
 const outro = ctxDe('costura@diverse.local', depois, t.ctx.ls);
-ok('22. limpar a minha lista nao limpa a do outro turno',
+ok('35. limpar a minha lista nao limpa a do outro turno',
    outro.api._avisosEventos().length === 3, String(outro.api._avisosEventos().length));
 
 console.log('');
@@ -177,23 +261,23 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 // O pedido de 26/08/2026: os avisos nao sao uma pagina do menu, sao uma lista
 // acumulada que se expande no clique do sino — e o sino fica junto do icone do
 // perfil, que e onde se olha para saber quem esta logado.
-ok('23. o sino esta dentro do bloco do perfil logado',
+ok('36. o sino esta dentro do bloco do perfil logado',
    /auth-identity[\s\S]{0,900}?id="avisosSino"/.test(html)
    && html.indexOf('id="avisosSino"') < html.indexOf('</aside>'), 'sino fora do bloco do perfil');
-ok('24. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
-ok('25. o painel existe e nasce escondido, fora da barra lateral',
+ok('37. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
+ok('38. o painel existe e nasce escondido, fora da barra lateral',
    /class="avisos-painel hidden" id="avisosPainel"/.test(html)
    && html.indexOf('id="avisosPainel"') > html.indexOf('</aside>'), 'painel dentro da aside ou visivel');
-ok('26. nao ha mais pagina de avisos no menu (a lista e o painel)',
+ok('39. nao ha mais pagina de avisos no menu (a lista e o painel)',
    !/data-page="avisos"/.test(html), 'sobrou a pagina antiga');
-ok('27. clicar no sino abre e fecha',
+ok('40. clicar no sino abre e fecha',
    /function toggleAvisos/.test(src) && /function abrirAvisos/.test(src) && /function fecharAvisos/.test(src),
    'faltou abrir/fechar');
-ok('28. e abrir a OS pelo aviso fecha o painel antes',
+ok('41. e abrir a OS pelo aviso fecha o painel antes',
    /fecharAvisos\(\); verOS\(/.test(src), 'o painel ficaria por cima da folha');
-ok('29. o painel tem o botao de limpar',
+ok('42. o painel tem o botao de limpar',
    /class="avisos-limpar" onclick="limparAvisos\(\)"/.test(html), 'sem botao de limpar');
-ok('30. e o painel vazio oferece o desfazer',
+ok('43. e o painel vazio oferece o desfazer',
    /mostrarTodosAvisos\(\)/.test(src), 'sem "ver os avisos de novo"');
 
 console.log('');
