@@ -21782,6 +21782,24 @@ function _avisosMarcarVistos(quando) {
   catch (e) { /* sem localStorage não há o que lembrar */ }
 }
 
+/* O NÚMERO DO SINO: quantos avisos estão ACUMULADOS para esta pessoa, ou seja,
+   quantos ela ainda não abriu.
+
+   Ele NÃO zera por ter aberto o painel. Antes zerava — o número dizia "chegou
+   coisa desde a sua última visita", e bastava espiar a lista para ele sumir,
+   mesmo com trinta avisos por ler. Agora ele acompanha o que a pessoa já
+   abriu: cai de um em um conforme ela clica, e vai a zero quando ela abre
+   todos ou limpa a lista.
+
+   Fora da conta: o que ela mesma escreveu (ninguém se avisa) e o que já foi
+   limpo (isso já sai da lista de eventos). */
+function _avisosPorAbrir(eventos) {
+  const eu = _obsQuemSou();
+  const abertos = _avisosAbertos();
+  return (eventos || _avisosEventos()).filter(e =>
+    String(e.quem || '').trim().toLowerCase() !== eu && !abertos.has(_avisoChave(e)));
+}
+
 // O que é novo para MIM: depois da última leitura e escrito por outra pessoa.
 // O próprio recado nunca vira aviso — ninguém precisa ser avisado de si mesmo.
 function _avisosNaoLidos(eventos) {
@@ -21793,9 +21811,18 @@ function _avisosNaoLidos(eventos) {
 
 function _pintarBadgeAvisos(n) {
   const el = document.getElementById('avisosBadge');
-  if (!el) return;
-  el.textContent = n > 99 ? '99+' : String(n);
-  el.classList.toggle('hidden', !n);
+  if (el) {
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.classList.toggle('hidden', !n);
+  }
+  // A dica do sino diz o que o número é. Sem isto, "12" pendurado no sino pode
+  // ser lido como "12 OS" ou "12 novos hoje", e não é nem um nem outro.
+  const sino = document.getElementById('avisosSino');
+  if (sino) {
+    sino.title = n
+      ? `${n} aviso${n > 1 ? 's' : ''} por abrir — clique para ver a lista`
+      : 'Avisos: observações e mudanças de status nas OS';
+  }
 }
 
 // `null` = ainda não contamos nesta sessão. O primeiro cálculo não avisa nada:
@@ -21847,13 +21874,17 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharAvis
 function atualizarBadgeAvisos() {
   // Painel aberto: redesenha nele mesmo e ele zera o contador sozinho.
   if (avisosAberto()) { renderAvisos(); return; }
-  const n = _avisosNaoLidos().length;
+  const eventos = _avisosEventos();
+  const n = _avisosPorAbrir(eventos).length;
   _pintarBadgeAvisos(n);
-  if (_avisosContagem !== null && n > _avisosContagem) {
-    const novos = n - _avisosContagem;
-    toast(`🔔 ${novos} aviso${novos > 1 ? 's' : ''} nov${novos > 1 ? 'os' : 'o'} — clique no sino`, '');
+  // O toast é do que CHEGOU agora (desde a última visita), não do acumulado:
+  // avisar "12 por abrir" a cada gravação seria repetir o número do sino.
+  const novos = _avisosNaoLidos(eventos).length;
+  if (_avisosContagem !== null && novos > _avisosContagem) {
+    const quantos = novos - _avisosContagem;
+    toast(`🔔 ${quantos} aviso${quantos > 1 ? 's' : ''} nov${quantos > 1 ? 'os' : 'o'} — clique no sino`, '');
   }
-  _avisosContagem = n;
+  _avisosContagem = novos;
 }
 
 // Os números do lote em uma linha: os primeiros e "e mais N". A lista inteira
@@ -21890,11 +21921,16 @@ function renderAvisos() {
   const abertos = _avisosAbertos();
   const novos = _avisosNaoLidos(eventos).length;
 
+  const porAbrir = _avisosPorAbrir(eventos).length;
   const resumo = document.getElementById('avisos-resumo');
   if (resumo) {
-    resumo.textContent = novos
-      ? `${novos} aviso${novos > 1 ? 's' : ''} desde a sua última visita`
-      : (eventos.length ? 'Nada novo desde a sua última visita' : '');
+    // Duas contas diferentes, e as duas interessam: o que CHEGOU (desde a
+    // última visita) e o que está ACUMULADO (por abrir, que é o número do sino).
+    const partes = [];
+    if (novos) partes.push(`${novos} novo${novos > 1 ? 's' : ''}`);
+    if (porAbrir) partes.push(`${porAbrir} por abrir`);
+    resumo.textContent = partes.length ? partes.join(' · ')
+      : (eventos.length ? 'tudo aberto' : '');
   }
 
   if (!eventos.length) {
@@ -21966,7 +22002,7 @@ function renderAvisos() {
       return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}${aberta ? ' aberta' : ''}"
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
-           onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}">
+           onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}; atualizarBadgeAvisos()">
         <span class="aviso-icone">${icone}</span>
         <div class="aviso-corpo">
           <div class="aviso-cab"><b>${titulo}</b> · ${cabec}
@@ -21980,11 +22016,12 @@ function renderAvisos() {
     }).join('');
   }
 
-  // Visto. Daqui em diante o contador do menu volta a zero — quem abriu o mural
-  // leu o que havia nele.
+  // Visto: some o "NOVO" das linhas na próxima abertura. O NÚMERO do sino não
+  // zera aqui — ele conta o que ainda está por abrir, e espiar a lista não é
+  // abrir os avisos.
   _avisosMarcarVistos(new Date().toISOString());
   _avisosContagem = 0;
-  _pintarBadgeAvisos(0);
+  _pintarBadgeAvisos(_avisosPorAbrir(eventos).length);
 }
 
 function formatDate(iso) {
