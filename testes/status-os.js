@@ -59,8 +59,12 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _statusCelulaOS', 'a celula do status')}
+  ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
+  ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
+  ${recorte('function _dataCelulaListaOS', 'a celula da coluna Data')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
-  return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS };
+  return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
+           _dataFinalizacaoOS, _dataCelulaListaOS };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -144,6 +148,44 @@ console.log('-- o que fica gravado --');
   ok('23. quem so olha ve etiqueta, sem seletor',
      /^<span class="os-status ro"/.test(cel) && !/<select/.test(cel), cel);
   ok('24. e o icone do estado aparece nos dois casos', cel.includes('\u{1F534}'), cel);
+
+  console.log('');
+  console.log('-- a data de finalizacao (coluna Data, segunda linha) --');
+  t = ctxDe('admin', 'admin@diverse.local', true, [{ id: 'a1', os: '1234', data: '2026-03-10' }]);
+  const os2 = t.ctx.STATE.ordens[0];
+  await t.api.mudarStatusOS('a1', 'andamento');
+  ok('33. andamento nao carimba data de finalizacao', !('finalizadaEm' in os2), JSON.stringify(os2));
+  await t.api.mudarStatusOS('a1', 'finalizado');
+  ok('34. marcar Finalizado carimba o dia',
+     typeof os2.finalizadaEm === 'string' && !isNaN(new Date(os2.finalizadaEm)), JSON.stringify(os2));
+  const primeira = os2.finalizadaEm;
+  // Um respiro: os dois carimbos no MESMO milissegundo dariam a mesma string, e
+  // o teste acusaria como "nao recarimbou" algo que recarimbou.
+  await new Promise(r => setTimeout(r, 5));
+  await t.api.mudarStatusOS('a1', 'parado');
+  ok('35. tirar de Finalizado apaga a data (a OS voltou a andar)',
+     !('finalizadaEm' in os2), JSON.stringify(os2));
+  await t.api.mudarStatusOS('a1', 'finalizado');
+  ok('36. marcar de novo carimba o dia NOVO',
+     typeof os2.finalizadaEm === 'string' && os2.finalizadaEm !== primeira,
+     os2.finalizadaEm + ' vs ' + primeira);
+
+  const A = ctxDe('admin', 'admin@diverse.local', true, []).api;
+  let cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10' });
+  ok('37. OS sem status mostra so a data em que foi feita',
+     /10\/03\/2026/.test(cel2) && !/data-fim/.test(cel2), cel2);
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'finalizado',
+                                finalizadaEm: '2026-08-26T13:40:00.000Z' });
+  ok('38. finalizada mostra as duas: a de cima feita, a de baixo finalizada',
+     /10\/03\/2026/.test(cel2) && /data-fim/.test(cel2) && /26\/08\/2026/.test(cel2), cel2);
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'finalizado',
+                                statusOSEm: '2026-08-26T13:40:00.000Z' });
+  ok('39. finalizada ANTES do campo existir vale o dia do carimbo',
+     /26\/08\/2026/.test(cel2), cel2);
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'parado',
+                                statusOSEm: '2026-08-26T13:40:00.000Z' });
+  ok('40. status que nao e Finalizado nao vira data de finalizacao',
+     !/data-fim/.test(cel2), cel2);
 
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');

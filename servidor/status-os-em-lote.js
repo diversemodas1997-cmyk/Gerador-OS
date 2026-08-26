@@ -97,6 +97,10 @@ const numeroOS = (o) => {
     if (String(o.statusOS || 'nao-iniciado') === STATUS) return;
     if (STATUS === 'nao-iniciado') { delete o.statusOS; delete o.statusOSPor; delete o.statusOSEm; }
     else { o.statusOS = STATUS; o.statusOSPor = POR; o.statusOSEm = quando; }
+    // A data de finalização segue a mesma regra da tela (mudarStatusOS): entra
+    // ao marcar "Finalizado", sai ao tirar. Aqui ela é o dia da RODADA — o dia
+    // em que a faixa foi carimbada —, que é a única data que o script sabe.
+    if (STATUS === 'finalizado') o.finalizadaEm = quando; else delete o.finalizadaEm;
     mudadas++;
   });
 

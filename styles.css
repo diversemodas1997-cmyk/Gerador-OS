@@ -1353,6 +1353,10 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    ficavam longe umas das outras, com um vao grande no meio. Limitar a largura
    junta as colunas; abaixo disso ela ocupa 100% normalmente. */
 [data-page="lista-os"] .table { max-width: 1600px; }
+/* A SEGUNDA DATA da coluna Data: o dia em que a OS foi finalizada, embaixo do
+   dia em que ela foi feita. Menor e em verde, para as duas nao se confundirem a
+   um olhar de lista - a de cima e a data da OS, que sempre esteve ali. */
+.data-fim { display: block; font-size: 11px; color: var(--ok); margin-top: 2px; }
 /* A LINHA DE FILTROS da lista de OS Salvas: buscar por numero e filtrar por
    status, lado a lado. Sao duas perguntas diferentes e valem juntas. No celular
    empilham, que e o unico jeito de os dois caberem. */

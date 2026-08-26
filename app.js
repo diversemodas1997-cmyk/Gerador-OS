@@ -20744,13 +20744,21 @@ async function mudarStatusOS(id, valor) {
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
   if (_statusOS(o) === alvo) return;
+  const agora = new Date().toISOString();
   if (alvo === 'nao-iniciado') {
     delete o.statusOS; delete o.statusOSPor; delete o.statusOSEm;
   } else {
     o.statusOS = alvo;
     o.statusOSPor = _obsQuemSou();
-    o.statusOSEm = new Date().toISOString();
+    o.statusOSEm = agora;
   }
+  /* A DATA DE FINALIZAÇÃO. Marcar "Finalizado" carimba o dia; tirar a OS de
+     "Finalizado" apaga o carimbo. Guardar a data de uma OS que voltou a andar
+     faria a lista dizer que ela terminou num dia em que ela não terminou — e a
+     coluna Data existe justamente para ser lida sem perguntar a ninguém.
+     Marcar de novo carimba o dia novo, que é o dia em que ela terminou de fato. */
+  if (alvo === 'finalizado') o.finalizadaEm = agora;
+  else delete o.finalizadaEm;
   renderListaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
   try {
@@ -20771,6 +20779,33 @@ async function mudarStatusOS(id, valor) {
    cadastro inteiro.
 
    Devolve a chave escolhida ('' = todas). */
+/* O DIA EM QUE A OS TERMINOU.
+
+   `finalizadaEm` é gravado por mudarStatusOS no momento em que alguém marca
+   "Finalizado". As OS marcadas ANTES de este campo existir (as 200 carimbadas
+   em lote em 26/08/2026) não o têm: para elas vale o `statusOSEm`, que é o dia
+   em que o carimbo foi dado — a única data que o programa realmente sabe.
+   Inventar a data em que a peça saiu da produção seria pior do que não ter. */
+function _dataFinalizacaoOS(o) {
+  if (_statusOS(o) !== 'finalizado') return '';
+  return (o && (o.finalizadaEm || o.statusOSEm)) || '';
+}
+
+/* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia
+   em que ela foi finalizada. Duas datas na mesma coluna porque é a mesma
+   pergunta ("quando?") e porque a linha da OS não comporta mais uma coluna. */
+function _dataCelulaListaOS(o) {
+  const feita = `<span title="Dia em que a OS foi feita">${esc(formatDate(o.data))}</span>`;
+  const fim = _dataFinalizacaoOS(o);
+  if (!fim) return feita;
+  const d = new Date(fim);
+  if (isNaN(d)) return feita;
+  const p = n => String(n).padStart(2, '0');
+  const txt = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+  return feita + `<br><span class="data-fim" title="Dia em que a OS foi finalizada">`
+    + `✓ ${esc(txt)}</span>`;
+}
+
 function _filtroStatusListaOS(base) {
   const sel = document.getElementById('filtro-status-os');
   if (!sel) return '';
@@ -20856,7 +20891,7 @@ function renderListaOS() {
         : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(o.colecaoNome)||'—'}</td>
       <td>${_gradeCelulaLista(o)}</td>
-      <td>${esc(formatDate(o.data))}</td>
+      <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
       <td>${o.grade?.total||0} pç</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
       <td class="col-actions row-actions">
