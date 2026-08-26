@@ -20935,6 +20935,9 @@ const AVISOS_MAX = 100;    // e mostra no máximo isto de linhas
 
 function _avisosEventos() {
   const limite = Date.now() - AVISOS_DIAS * 24 * 60 * 60 * 1000;
+  // O que já foi LIMPO não volta: tudo o que aconteceu até este carimbo sai da
+  // lista (e do contador junto). Ver limparAvisos.
+  const limpoAte = _avisosLimpoAte();
   const ev = [];
   (STATE.ordens || []).forEach(o => {
     _obsNotas(o).forEach(n => {
@@ -20959,13 +20962,48 @@ function _avisosEventos() {
   });
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
-  return ev.slice(0, AVISOS_MAX);
+  const vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
+  return vivos.slice(0, AVISOS_MAX);
 }
 
 // A marca é POR LOGIN: dois turnos no mesmo computador não herdam o "já li" um
 // do outro.
 function _avisosChaveVistos() {
   return 'avisosVistos:' + (_obsQuemSou() || 'sem-login');
+}
+
+/* ---- LIMPAR A LISTA ------------------------------------------------------
+   Limpar é uma marca de LEITURA, não um apagamento: os recados e os carimbos
+   continuam onde sempre estiveram, nas próprias OS — a folha de cada uma segue
+   mostrando tudo. O que a limpeza faz é dizer "até aqui eu já resolvi", e a
+   lista volta a encher com o que acontecer depois.
+
+   Vale só para QUEM limpou, e só neste computador (localStorage, por login):
+   limpar a lista do outro turno seria apagar o recado que ele ainda não leu.
+
+   E não pede confirmação de propósito — nada se perde, e "ver os avisos de
+   novo" desfaz na hora, ali mesmo no painel vazio. */
+function _avisosChaveLimpos() {
+  return 'avisosLimpos:' + (_obsQuemSou() || 'sem-login');
+}
+
+function _avisosLimpoAte() {
+  try { return localStorage.getItem(_avisosChaveLimpos()) || ''; }
+  catch (e) { return ''; }
+}
+
+function limparAvisos() {
+  try { localStorage.setItem(_avisosChaveLimpos(), new Date().toISOString()); }
+  catch (e) { toast('Este navegador não deixa guardar a limpeza', 'err'); return; }
+  _avisosContagem = 0;
+  _pintarBadgeAvisos(0);
+  renderAvisos();
+  toast('Avisos limpos — os recados seguem nas OS', 'ok');
+}
+
+function mostrarTodosAvisos() {
+  try { localStorage.removeItem(_avisosChaveLimpos()); } catch (e) {}
+  renderAvisos();
 }
 
 function _avisosVistos() {
@@ -21092,8 +21130,14 @@ function renderAvisos() {
   }
 
   if (!eventos.length) {
-    box.innerHTML = `<div class="empty" style="padding:28px;">Nenhuma observação nem mudança de status `
-      + `nos últimos ${AVISOS_DIAS} dias.</div>`;
+    const limpou = !!_avisosLimpoAte();
+    box.innerHTML = `<div class="empty" style="padding:24px;">`
+      + (limpou
+          ? `A lista foi limpa. O que acontecer daqui em diante aparece aqui.`
+            + `<br><button type="button" class="btn small" style="margin-top:10px;"`
+            + ` onclick="mostrarTodosAvisos()">Ver os avisos de novo</button>`
+          : `Nenhuma observação nem mudança de status nos últimos ${AVISOS_DIAS} dias.`)
+      + `</div>`;
   } else {
     box.innerHTML = eventos.map(e => {
       const meu = String(e.quem || '').trim().toLowerCase() === eu;
@@ -27831,6 +27875,8 @@ window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
 window.mudarStatusOS = mudarStatusOS;
 window.toggleAvisos = toggleAvisos;
+window.limparAvisos = limparAvisos;
+window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;

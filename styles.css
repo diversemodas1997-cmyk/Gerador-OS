@@ -198,6 +198,17 @@ aside.sidebar {
   flex: 0 0 auto;
 }
 .avisos-topo .avisos-resumo { font-size: 11px; color: var(--ink-3); margin-left: auto; }
+.avisos-limpar {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.avisos-limpar:hover { background: var(--bg); }
 .avisos-fechar {
   background: transparent; border: none; cursor: pointer;
   font-size: 13px; color: var(--ink-3); padding: 2px 4px; font-family: inherit;

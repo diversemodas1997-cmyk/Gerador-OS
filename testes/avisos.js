@@ -48,10 +48,14 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _avisosEventos', 'a lista de eventos')}
   ${recorte('function _avisosChaveVistos', 'a chave da ultima visita')}
+  ${recorte('function _avisosChaveLimpos', 'a chave da limpeza')}
+  ${recorte('function _avisosLimpoAte', 'o corte da limpeza')}
   ${recorte('function _avisosMarcarVistos', 'a marca da visita')}
   ${recorte('function _avisosVistos', 'a leitura da ultima visita')}
   ${recorte('function _avisosNaoLidos', 'a conta do que e novo')}
-  return { _avisosEventos, _avisosNaoLidos, _avisosVistos, _avisosMarcarVistos };
+  const limpar = (quando) => { ctx.ls[_avisosChaveLimpos()] = quando; };
+  const desfazer = () => { delete ctx.ls[_avisosChaveLimpos()]; };
+  return { _avisosEventos, _avisosNaoLidos, _avisosVistos, _avisosMarcarVistos, _avisosLimpoAte, limpar, desfazer };
 `)(ctx);
 
 const diasAtras = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
@@ -137,25 +141,60 @@ ok('15. quem nao entrou na conta ve o mural, sem nada pendente',
    String(t.api._avisosNaoLidos().length));
 
 console.log('');
+console.log('-- limpar a lista --');
+// Limpar e marca de LEITURA, nao apagamento: o que sai e a linha do mural, e o
+// recado segue na OS. Vale so para quem limpou, e so neste computador.
+t = ctxDe('admin@diverse.local', ordens(), { 'avisosVistos:admin@diverse.local': diasAtras(5) });
+ok('16. antes de limpar, os dois eventos estao na lista',
+   t.api._avisosEventos().length === 2 && t.api._avisosNaoLidos().length === 2,
+   String(t.api._avisosEventos().length));
+t.api.limpar(new Date().toISOString());
+ok('17. limpar esvazia a lista', t.api._avisosEventos().length === 0, String(t.api._avisosEventos().length));
+ok('18. e zera o contador junto', t.api._avisosNaoLidos().length === 0, String(t.api._avisosNaoLidos().length));
+ok('19. as OS nao foram tocadas — o recado segue la',
+   t.ctx.STATE.ordens[0].obsNotas[0].texto === 'faltou pano na 3a fase'
+   && t.ctx.STATE.ordens[1].statusOS === 'parado', JSON.stringify(t.ctx.STATE.ordens[1]));
+// O que acontecer DEPOIS da limpeza volta a aparecer.
+const depois = ordens();
+depois.push({ id: 'g', os: '0490', statusOS: 'andamento', statusOSPor: 'costura@diverse.local',
+              statusOSEm: new Date(Date.now() + 2000).toISOString() });
+t.ctx.STATE.ordens = depois;
+ok('20. o que acontece depois da limpeza aparece',
+   t.api._avisosEventos().length === 1 && t.api._avisosNaoLidos().length === 1,
+   String(t.api._avisosEventos().length));
+t.api.desfazer();
+ok('21. "ver os avisos de novo" traz a lista de volta',
+   t.api._avisosEventos().length === 3, String(t.api._avisosEventos().length));
+// A limpeza e de quem limpou: o outro login continua com os avisos dele.
+t.api.limpar(new Date().toISOString());
+const outro = ctxDe('costura@diverse.local', depois, t.ctx.ls);
+ok('22. limpar a minha lista nao limpa a do outro turno',
+   outro.api._avisosEventos().length === 3, String(outro.api._avisosEventos().length));
+
+console.log('');
 console.log('-- a lista acumulada mora atras do sino, junto do icone do perfil --');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 // O pedido de 26/08/2026: os avisos nao sao uma pagina do menu, sao uma lista
 // acumulada que se expande no clique do sino — e o sino fica junto do icone do
 // perfil, que e onde se olha para saber quem esta logado.
-ok('16. o sino esta dentro do bloco do perfil logado',
+ok('23. o sino esta dentro do bloco do perfil logado',
    /auth-identity[\s\S]{0,900}?id="avisosSino"/.test(html)
    && html.indexOf('id="avisosSino"') < html.indexOf('</aside>'), 'sino fora do bloco do perfil');
-ok('17. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
-ok('18. o painel existe e nasce escondido, fora da barra lateral',
+ok('24. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
+ok('25. o painel existe e nasce escondido, fora da barra lateral',
    /class="avisos-painel hidden" id="avisosPainel"/.test(html)
    && html.indexOf('id="avisosPainel"') > html.indexOf('</aside>'), 'painel dentro da aside ou visivel');
-ok('19. nao ha mais pagina de avisos no menu (a lista e o painel)',
+ok('26. nao ha mais pagina de avisos no menu (a lista e o painel)',
    !/data-page="avisos"/.test(html), 'sobrou a pagina antiga');
-ok('20. clicar no sino abre e fecha',
+ok('27. clicar no sino abre e fecha',
    /function toggleAvisos/.test(src) && /function abrirAvisos/.test(src) && /function fecharAvisos/.test(src),
    'faltou abrir/fechar');
-ok('21. e abrir a OS pelo aviso fecha o painel antes',
+ok('28. e abrir a OS pelo aviso fecha o painel antes',
    /fecharAvisos\(\); verOS\(/.test(src), 'o painel ficaria por cima da folha');
+ok('29. o painel tem o botao de limpar',
+   /class="avisos-limpar" onclick="limparAvisos\(\)"/.test(html), 'sem botao de limpar');
+ok('30. e o painel vazio oferece o desfazer',
+   /mostrarTodosAvisos\(\)/.test(src), 'sem "ver os avisos de novo"');
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
