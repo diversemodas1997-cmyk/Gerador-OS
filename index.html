@@ -49,6 +49,9 @@
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
       <div class="nav-items">
         <button class="nav-btn" data-page="home">Início</button>
+        <!-- O contador de avisos: quantas observações e mudanças de status
+             apareceram desde a última vez que esta pessoa abriu o mural. -->
+        <button class="nav-btn tem-badge" data-page="avisos">Avisos <span class="nav-badge hidden" id="avisosBadge">0</span></button>
         <button class="nav-btn admin-only" data-page="nova-os">Nova OS</button>
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
         <button class="nav-btn" data-page="compra">Compra</button>
@@ -718,6 +721,19 @@
 
         <input type="hidden" id="f-id">
       </form>
+    </section>
+
+    <!-- ================= AVISOS ================= -->
+    <section class="page hidden" data-page="avisos">
+      <div class="page-header">
+        <div><h1>Avisos</h1>
+          <div class="desc">O que foi escrito e carimbado nas OS — observações da folha e mudanças de status.</div>
+        </div>
+        <div class="actions"><div class="desc" id="avisos-resumo"></div></div>
+      </div>
+      <div class="card">
+        <div id="avisos-lista"></div>
+      </div>
     </section>
 
     <!-- ================= LISTA OS ================= -->

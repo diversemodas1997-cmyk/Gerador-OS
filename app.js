@@ -2702,6 +2702,10 @@ async function loadState() {
   if (currentRole === 'admin' && typeof atualizarContabSnapshot === 'function') {
     atualizarContabSnapshot();
   }
+  // O MURAL DE AVISOS é lido das próprias OS: estado novo na mão, contador novo
+  // no menu. Aqui cobre tudo de uma vez — a carga inicial e cada volta do
+  // realtime/polling, que passam por loadState depois de reler o servidor.
+  try { atualizarBadgeAvisos(); } catch (e) { console.warn('avisos', e); }
 }
 
 // Preenche o SKU dos desenhos técnicos VAZIOS, validando contra o catálogo de
@@ -2971,6 +2975,7 @@ function goto(page) {
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
+  if (page === 'avisos') renderAvisos();
   if (page === 'ranking') renderRanking();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-expedicao') {
@@ -20829,6 +20834,188 @@ function renderListaOS() {
   }).join('');
 }
 
+/* ========================================================= */
+/*                         AVISOS                            */
+/* ========================================================= */
+
+/* O MURAL DE AVISOS: o que os outros escreveram e carimbaram nas OS.
+
+   Duas coisas passaram a ser escritas por quem está na produção, e as duas se
+   perdiam de vista: a OBSERVAÇÃO da folha ("faltou pano na 3ª fase") e o
+   STATUS da OS (não iniciado / em andamento / parado / finalizado). Quem não
+   estava com aquela OS aberta não ficava sabendo — e um recado que ninguém lê
+   é papel outra vez.
+
+   O MURAL NÃO GUARDA NADA. Ele é LIDO das próprias OS: cada observação já traz
+   quem escreveu e quando (`obsNotas`), e cada status traz quem carimbou e
+   quando (`statusOSPor`/`statusOSEm`). Uma tabela de eventos no blob seria uma
+   segunda verdade para manter — e o blob desce inteiro a cada abertura, então
+   toda linha guardada ali se paga em egresso todo dia. O preço disso é que o
+   mural mostra o ESTADO ATUAL de cada coisa: o status que está valendo (não o
+   histórico das trocas) e a última versão de cada observação.
+
+   O QUE É "NÃO LIDO": o que aconteceu depois da última vez que ESTA PESSOA
+   abriu o mural NESTE computador, tirando o que ela mesma escreveu. A marca
+   fica no navegador (localStorage), não no blob: é preferência de leitura de
+   cada um, não dado da fábrica, e assim ninguém paga sincronização por ela. */
+const AVISOS_DIAS = 30;    // o mural olha um mês para trás
+const AVISOS_MAX = 100;    // e mostra no máximo isto de linhas
+
+function _avisosEventos() {
+  const limite = Date.now() - AVISOS_DIAS * 24 * 60 * 60 * 1000;
+  const ev = [];
+  (STATE.ordens || []).forEach(o => {
+    _obsNotas(o).forEach(n => {
+      // Nota migrada da caixa antiga não tem data (ver _obsQuando): sem data
+      // não dá para dizer se é nova, e um aviso de dia desconhecido seria
+      // barulho eterno no topo do mural.
+      const t = n.editadoEm || n.em;
+      const ms = t ? Date.parse(t) : NaN;
+      if (isNaN(ms) || ms < limite) return;
+      ev.push({
+        tipo: 'obs', osId: o.id, os: o.os || '—', quem: n.login || '', em: t,
+        texto: String(n.texto || '').trim(),
+        editada: !!(n.editadoEm && n.editadoEm !== n.em)
+      });
+    });
+    const st = _statusOS(o);
+    const ms = o.statusOSEm ? Date.parse(o.statusOSEm) : NaN;
+    if (st !== 'nao-iniciado' && !isNaN(ms) && ms >= limite) {
+      ev.push({ tipo: 'status', osId: o.id, os: o.os || '—',
+                quem: o.statusOSPor || '', em: o.statusOSEm, status: st });
+    }
+  });
+  // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
+  ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
+  return ev.slice(0, AVISOS_MAX);
+}
+
+// A marca é POR LOGIN: dois turnos no mesmo computador não herdam o "já li" um
+// do outro.
+function _avisosChaveVistos() {
+  return 'avisosVistos:' + (_obsQuemSou() || 'sem-login');
+}
+
+function _avisosVistos() {
+  try {
+    const v = localStorage.getItem(_avisosChaveVistos());
+    if (v) return v;
+  } catch (e) { /* navegador sem localStorage: o mural vira só consulta */ }
+  // PRIMEIRA VEZ desta conta neste computador: o mural nasce lido. Sem isto,
+  // quem entrasse pela primeira vez começaria com trezentos avisos de coisas
+  // que já resolveu — e um contador que nasce cheio ninguém zera, ignora.
+  const agora = new Date().toISOString();
+  _avisosMarcarVistos(agora);
+  return agora;
+}
+
+function _avisosMarcarVistos(quando) {
+  try { localStorage.setItem(_avisosChaveVistos(), quando || new Date().toISOString()); }
+  catch (e) { /* sem localStorage não há o que lembrar */ }
+}
+
+// O que é novo para MIM: depois da última leitura e escrito por outra pessoa.
+// O próprio recado nunca vira aviso — ninguém precisa ser avisado de si mesmo.
+function _avisosNaoLidos(eventos) {
+  const desde = _avisosVistos();
+  const eu = _obsQuemSou();
+  return (eventos || _avisosEventos())
+    .filter(e => String(e.em) > desde && String(e.quem || '').trim().toLowerCase() !== eu);
+}
+
+function _pintarBadgeAvisos(n) {
+  const el = document.getElementById('avisosBadge');
+  if (!el) return;
+  el.textContent = n > 99 ? '99+' : String(n);
+  el.classList.toggle('hidden', !n);
+}
+
+// `null` = ainda não contamos nesta sessão. O primeiro cálculo não avisa nada:
+// o que já estava lá quando o programa abriu não é novidade, é histórico.
+let _avisosContagem = null;
+
+function atualizarBadgeAvisos() {
+  // A própria tela do mural aberta: redesenha e ela zera o contador sozinha.
+  const sec = document.querySelector('section.page[data-page="avisos"]');
+  if (sec && !sec.classList.contains('hidden')) { renderAvisos(); return; }
+  const n = _avisosNaoLidos().length;
+  _pintarBadgeAvisos(n);
+  if (_avisosContagem !== null && n > _avisosContagem) {
+    const novos = n - _avisosContagem;
+    toast(`🔔 ${novos} aviso${novos > 1 ? 's' : ''} nov${novos > 1 ? 'os' : 'o'} — veja em Avisos`, '');
+  }
+  _avisosContagem = n;
+}
+
+function _avisosQuando(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  const hoje = new Date();
+  const mesmoDia = d.toDateString() === hoje.toDateString();
+  const ontem = new Date(hoje.getTime() - 24 * 60 * 60 * 1000).toDateString() === d.toDateString();
+  const hora = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  if (mesmoDia) return `hoje ${hora}`;
+  if (ontem) return `ontem ${hora}`;
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${hora}`;
+}
+
+function renderAvisos() {
+  const box = document.getElementById('avisos-lista');
+  if (!box) return;
+  const eventos = _avisosEventos();
+  // O corte do "novo" é lido ANTES de marcar como visto: as linhas que chegaram
+  // desde a última visita ficam destacadas nesta tela, e só na próxima é que
+  // deixam de ser novidade.
+  const desde = _avisosVistos();
+  const eu = _obsQuemSou();
+  const novos = _avisosNaoLidos(eventos).length;
+
+  const resumo = document.getElementById('avisos-resumo');
+  if (resumo) {
+    resumo.textContent = novos
+      ? `${novos} aviso${novos > 1 ? 's' : ''} desde a sua última visita`
+      : (eventos.length ? 'Nada novo desde a sua última visita' : '');
+  }
+
+  if (!eventos.length) {
+    box.innerHTML = `<div class="empty" style="padding:28px;">Nenhuma observação nem mudança de status `
+      + `nos últimos ${AVISOS_DIAS} dias.</div>`;
+  } else {
+    box.innerHTML = eventos.map(e => {
+      const meu = String(e.quem || '').trim().toLowerCase() === eu;
+      const novo = String(e.em) > desde && !meu;
+      const quem = _obsNomeLogin(e.quem) || 'alguém';
+      let icone, cabec, corpo = '';
+      if (e.tipo === 'status') {
+        const s = STATUS_OS.find(x => x.k === e.status) || STATUS_OS[0];
+        icone = s.icone;
+        cabec = `${esc(meu ? 'você' : quem)} marcou como <b>${esc(s.rotulo)}</b>`;
+      } else {
+        icone = '💬';
+        cabec = `${esc(meu ? 'você' : quem)} ${e.editada ? 'corrigiu a' : 'escreveu uma'} observação`;
+        corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+      }
+      return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}">
+        <span class="aviso-icone">${icone}</span>
+        <div class="aviso-corpo">
+          <div class="aviso-cab"><b>OS ${esc(e.os)}</b> · ${cabec}
+            <span class="aviso-quando">${esc(_avisosQuando(e.em))}</span>
+            ${novo ? '<span class="aviso-novo">novo</span>' : ''}</div>
+          ${corpo}
+        </div>
+        <button class="btn small" onclick="verOS('${esc(e.osId)}')">abrir a OS</button>
+      </div>`;
+    }).join('');
+  }
+
+  // Visto. Daqui em diante o contador do menu volta a zero — quem abriu o mural
+  // leu o que havia nele.
+  _avisosMarcarVistos(new Date().toISOString());
+  _avisosContagem = 0;
+  _pintarBadgeAvisos(0);
+}
+
 function formatDate(iso) {
   if (!iso) return '—';
   const [y,m,d] = iso.split('-');
@@ -27525,6 +27712,7 @@ window.desconectarPastaBackup = desconectarPastaBackup;
 window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
 window.mudarStatusOS = mudarStatusOS;
+window.renderAvisos = renderAvisos;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;

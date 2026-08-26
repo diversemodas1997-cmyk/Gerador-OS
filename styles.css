@@ -155,6 +155,64 @@ aside.sidebar {
   font-weight: 500;
 }
 
+/* ===== O MURAL DE AVISOS =====
+
+   O CONTADOR NO MENU: o numero vermelho ao lado de "Avisos". Ele so existe
+   quando ha algo para ler — zero nao vira "0" pendurado no menu, que a pessoa
+   aprende a ignorar. */
+.nav-btn.tem-badge { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nav-badge {
+  background: var(--alert);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+.nav-badge.hidden { display: none; }
+
+/* A LINHA DO MURAL. Uma por observacao ou carimbo de status: o icone diz o que
+   e (💬 recado, a bolinha do status), o corpo diz de qual OS e de quem, e o
+   botao leva para a folha — o aviso so serve se der para chegar na OS por ele. */
+.aviso-linha {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.aviso-linha:last-child { border-bottom: none; }
+/* O QUE CHEGOU DESDE A ULTIMA VISITA fica marcado ate a proxima abertura do
+   mural — quem entra ve na hora o que e novidade sem ler tudo de novo. */
+.aviso-linha.novo { background: #fffdf2; border-left: 3px solid var(--accent); padding-left: 9px; }
+.aviso-linha.meu { opacity: .72; }   /* o proprio recado, que nunca e novidade */
+.aviso-icone { font-size: 16px; line-height: 1.4; flex: 0 0 auto; }
+.aviso-corpo { flex: 1 1 auto; min-width: 0; }
+.aviso-cab { font-size: 13px; }
+.aviso-quando { color: var(--ink-3); font-size: 12px; margin-left: 6px; }
+.aviso-novo {
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-left: 6px;
+}
+.aviso-txt {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+
 main.content { padding: 32px 40px; overflow-x: hidden; }
 
 .page-header {
