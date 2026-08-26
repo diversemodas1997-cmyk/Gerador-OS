@@ -20883,6 +20883,25 @@ function limparFiltrosListaOS() {
   renderListaOS();
 }
 
+/* A CONTA DA LISTA, ao lado da busca: quantas OS estão à vista agora.
+
+   Sem filtro é o tamanho da lista ("228 OS"). Com filtro é "32 de 228 OS" — e
+   é esse "de 228" que impede alguém de achar que as outras sumiram do cadastro
+   quando um filtro ficou ligado de uma consulta anterior. */
+function _contaListaOS(mostradas, total) {
+  const el = document.getElementById('conta-os');
+  if (!el) return;
+  const n = x => Number(x || 0).toLocaleString('pt-BR');
+  const filtrando = mostradas !== total;
+  el.classList.toggle('filtrando', filtrando);
+  el.innerHTML = filtrando
+    ? `<b>${n(mostradas)}</b> de ${n(total)} OS`
+    : `<b>${n(total)}</b> OS`;
+  el.title = filtrando
+    ? `A lista tem ${n(total)} OS; os filtros estão mostrando ${n(mostradas)}.`
+    : `Todas as ${n(total)} OS da lista.`;
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
   // Mesma lista de PDFs da tela de grades: vem uma vez por sessão e, quando
@@ -20890,6 +20909,7 @@ function renderListaOS() {
   if (!_riscosIdx && !_riscosIdxFalhou) _riscosIndice().then(() => renderListaOS()).catch(() => {});
   if (!STATE.ordens.length) {
     _renderAvisoGrupoListaOS(0);
+    _contaListaOS(0, 0);
     tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
     return;
   }
@@ -20932,6 +20952,7 @@ function renderListaOS() {
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
     && (!skuEscolhido || skusDaOS(o).includes(skuEscolhido)));
   _renderAvisoGrupoListaOS(noGrupo.length);
+  _contaListaOS(filtradas.length, noGrupo.length);
   if (!filtradas.length) {
     const sRot = (STATUS_OS.find(x => x.k === statusEscolhido) || {}).rotulo || '';
     const oQue = [termos.length ? `"${esc(termos.join(' '))}"` : '',

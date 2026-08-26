@@ -131,19 +131,42 @@ ok('20. escolha que sumiu da lista volta sozinha para "todas"',
    && t.ctx.sel['filtro-cor-os'].value === '', t.ctx.sel['filtro-cor-os'].value);
 
 console.log('');
+console.log('-- a conta ao lado da busca --');
+const contaCtx = { el: { classList: { toggle: (c, v) => { contaCtx.classe = v; } }, innerHTML: '', title: '' } };
+const conta = new Function('ctx', `
+  const document = { getElementById: () => ctx.el };
+  ${recorte('function _contaListaOS', 'a conta da lista')}
+  return _contaListaOS;
+`)(contaCtx);
+conta(228, 228);
+ok('25. sem filtro, a conta e o tamanho da lista',
+   /<b>228<\/b> OS/.test(contaCtx.el.innerHTML) && contaCtx.classe === false, contaCtx.el.innerHTML);
+conta(32, 228);
+ok('26. com filtro, diz quantas de quantas',
+   /<b>32<\/b> de 228 OS/.test(contaCtx.el.innerHTML) && contaCtx.classe === true, contaCtx.el.innerHTML);
+ok('27. e a dica explica o recorte', /32/.test(contaCtx.el.title) && /228/.test(contaCtx.el.title), contaCtx.el.title);
+conta(0, 228);
+ok('28. zero tambem conta (e o "de 228" que diz que nada sumiu)',
+   /<b>0<\/b> de 228 OS/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+conta(1200, 1200);
+ok('29. milhar sai com o ponto do portugues', /1\.200/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+
+console.log('');
 console.log('-- na tela --');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-ok('21. os tres seletores novos estao na barra de filtros da lista',
+ok('30. os tres seletores novos estao na barra de filtros da lista',
    /id="filtro-cor-os"/.test(html) && /id="filtro-grade-os"/.test(html) && /id="filtro-sku-os"/.test(html),
    'faltou seletor');
-ok('22. e o botao que devolve a lista inteira',
+ok('31. e o botao que devolve a lista inteira',
    /limparFiltrosListaOS\(\)/.test(html) && /function limparFiltrosListaOS/.test(src), 'sem o Limpar');
-ok('23. a busca diz o que procura', /Buscar: número, código, modelo/.test(html), 'placeholder antigo');
-ok('24. os quatro filtros valem junto com a busca (um filter so)',
+ok('32. a busca diz o que procura', /Buscar: número, código, modelo/.test(html), 'placeholder antigo');
+ok('33. os quatro filtros valem junto com a busca (um filter so)',
    /!statusEscolhido \|\| _statusOS\(o\) === statusEscolhido/.test(src)
    && /!corEscolhida \|\| coresDaPecaOS\(o\)\.includes\(corEscolhida\)/.test(src)
    && /!gradeEscolhida \|\| _gradeNomeDaOS\(o\) === gradeEscolhida/.test(src)
    && /!skuEscolhido \|\| skusDaOS\(o\)\.includes\(skuEscolhido\)/.test(src), 'filtro incompleto');
+ok('34. a conta fica ao lado da busca na barra de filtros',
+   /id="busca-os"[\s\S]{0,600}?id="conta-os"/.test(html), 'conta fora da barra');
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }

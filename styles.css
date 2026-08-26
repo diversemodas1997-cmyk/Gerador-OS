@@ -1393,6 +1393,19 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    inteiro na dica do mouse. */
 .lista-os-filtros select { flex: 0 1 auto; min-width: 150px; max-width: 220px; }
 .lista-os-filtros .btn { align-self: center; }
+/* A CONTA DA LISTA, ao lado da busca. Monoespacada como todo numero do
+   programa, e destacada quando ha filtro: "32 de 228" e a resposta da busca, e
+   e o que impede alguem de achar que a OS sumiu do cadastro. */
+.lista-os-conta {
+  align-self: center;
+  flex: 0 0 auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.lista-os-conta b { color: var(--ink); }
+.lista-os-conta.filtrando { color: var(--accent-dark); }
 /* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
 
    Mesma caixa nos dois casos — seletor para quem pode mudar (admin e
