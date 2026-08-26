@@ -50,6 +50,13 @@ const monta = (ctx) => new Function('ctx', `
   const renderListaOS = () => { ctx.redesenhou++; };
   ${constante('STATUS_OS')}
   ${constante('LOGINS_STATUS_OS')}
+  ${constante('AREAS_ACESSO')}
+  ${constante('ACESSO_PADRAO')}
+  ${constante('LOGINS_ESTOQUE_TECIDOS')}
+  ${recorte('function _acessosTabela', 'a tabela de acessos')}
+  ${recorte('function _acessoChaveConta', 'a chave da conta')}
+  ${recorte('function contaTemAcesso', 'o acesso de uma conta')}
+  ${recorte('function temAcesso', 'o acesso de quem esta logado')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
   ${recorte('function _obsNomeLogin', 'o nome do login')}
   ${recorte('function _obsQuando', 'a data da nota')}
@@ -69,7 +76,7 @@ const monta = (ctx) => new Function('ctx', `
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
   const ctx = { papel, login, servidorNoAr, toasts: [], salvou: 0, redesenhou: 0,
-                STATE: { ordens } };
+                STATE: { ordens, meta: {} } };
   return { ctx, api: monta(ctx) };
 };
 

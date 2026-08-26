@@ -1473,6 +1473,7 @@ function carregarPapelEmParalelo() {
 function aplicarPermissoesUI() {
   const body = document.body;
   body.classList.remove('is-admin', 'is-usuario', 'pode-registrar', 'pode-estoque-tecidos');
+  AREAS_ACESSO.forEach(a => body.classList.remove('pode-' + a.k));
   // QUEM REGISTRA — a lista de compra e o que a folha de OS anota — tem classe
   // própria, e não `is-usuario`: essa lá é vestida também por quem não fez login
   // e pelo modo nuvem, que só consultam. Aqui é preciso ser uma conta de
@@ -1482,6 +1483,11 @@ function aplicarPermissoesUI() {
   // LOGINS_ESTOQUE_TECIDOS. Sem esta classe os botões da tela ficariam
   // escondidos para quem justamente pode usá-los.
   if (podeMexerEstoqueTecidos()) body.classList.add('pode-estoque-tecidos');
+  // Uma classe por ÁREA concedida: é o que faz os botões daquela tela
+  // aparecerem para quem recebeu o acesso (ver as regras `body.pode-…` no CSS).
+  AREAS_ACESSO.forEach(a => {
+    if (!a.soAdmin && temAcesso(a.k)) body.classList.add('pode-' + a.k);
+  });
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
   // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
@@ -1510,11 +1516,14 @@ function _recusarPorModoNuvem(acao) {
 
 function exigirAdmin(acao) {
   if (_recusarPorModoNuvem(acao)) return false;
-  if (currentRole !== 'admin') {
-    toast(`Apenas admin pode ${acao}`, 'err');
-    return false;
-  }
-  return true;
+  if (currentRole === 'admin') return true;
+  // A conta pode ter recebido a ÁREA desta ação em Configurações (ver
+  // AREAS_ACESSO). Sem isto, conceder acesso não teria efeito nenhum nos botões
+  // que o programa fecha com exigirAdmin.
+  const area = _areaDaAcao(acao);
+  if (area && temAcesso(area)) return true;
+  toast(`Você não tem acesso para ${acao} — peça ao admin`, 'err');
+  return false;
 }
 
 // QUEM ESCREVE É SÓ O ADMIN. Todo perfil que não é admin usa o programa em
@@ -1528,9 +1537,12 @@ function exigirAdmin(acao) {
 function exigirEdicao(acao) {
   if (_recusarPorModoNuvem(acao)) return false;
   if (currentRole === 'admin') return true;
+  // Idem: a área desta ação pode ter sido concedida a esta conta.
+  const area = _areaDaAcao(acao);
+  if (area && temAcesso(area)) return true;
   toast(currentRole === 'usuario'
-    ? `Seu acesso é de leitura — apenas o admin pode ${acao}`
-    : `Faça login como admin para ${acao}`, 'err');
+    ? `Seu acesso não inclui ${acao} — peça ao admin`
+    : `Faça login para ${acao}`, 'err');
   return false;
 }
 
@@ -1597,12 +1609,13 @@ function exigirEdicaoFolha(acao) {
    saber de onde veio cada número.
 
    A comparação do login ignora pontuação e acento, como em LOGINS_STATUS_OS. */
-const LOGINS_ESTOQUE_TECIDOS = ['natalhy'];
+// A conta na fábrica é `nathaly`; `natalhy` é a grafia com que o acesso foi
+// pedido, e fica junto para uma troca de letra no nome da conta não tirar o
+// acesso em silêncio.
+const LOGINS_ESTOQUE_TECIDOS = ['nathaly', 'natalhy'];
 
 function podeMexerEstoqueTecidos() {
-  if (!podeGravar()) return false;              // modo nuvem: só consulta
-  if (currentRole === 'admin') return true;
-  return LOGINS_ESTOQUE_TECIDOS.includes(_chaveLogin(_obsNomeLogin(_obsQuemSou())));
+  return temAcesso('estoque-tecidos');   // idem, com padrão LOGINS_ESTOQUE_TECIDOS
 }
 
 function exigirEstoqueTecidos(acao) {
@@ -1610,6 +1623,195 @@ function exigirEstoqueTecidos(acao) {
   if (podeMexerEstoqueTecidos()) return true;
   toast(`Só o admin e ${LOGINS_ESTOQUE_TECIDOS.join(', ')} podem ${acao}`, 'err');
   return false;
+}
+
+/* ========================================================= */
+/*                   ACESSO POR ÁREA                         */
+/* ========================================================= */
+
+/* A RELAÇÃO DE ÁREAS DO PROGRAMA, e quem o admin deixa entrar em cada uma.
+
+   Até aqui a permissão era um interruptor só: admin escreve, o resto lê — com
+   duas exceções abertas na mão, no código (o status da OS para o Enfesto.corte,
+   o estoque de tecidos para a Natalhy). Cada nova exceção pedia uma linha nova
+   no programa, e só o programador sabia quem podia o quê.
+
+   Agora as áreas são uma LISTA, e o admin marca, para cada conta, em quais ela
+   entra — em Configurações, na lista de contas de acesso. As duas exceções
+   antigas viram o PADRÃO daquelas contas: quem já podia continua podendo, e o
+   admin pode tirar ou dar a qualquer um sem mexer no código.
+
+   ONDE FICA: `STATE.meta.acessos`, dentro do próprio blob — é a mesma tabela
+   para todos os computadores da fábrica, e muda junto com o resto.
+
+   O QUE ISTO É E O QUE NÃO É: é a mesma tranca de TELA de todo o programa (ver
+   a nota em `_ehAdminNoServidor`). Ela evita o engano e a passada por cima; não
+   é cofre. Quem administra a fábrica é o admin no servidor, e "Contas de
+   acesso" é a única área que nunca se concede — senão uma conta se promoveria
+   sozinha. */
+const AREAS_ACESSO = [
+  { k: 'os', rotulo: 'Ordens de Serviço',
+    desc: 'Criar, editar, duplicar e excluir OS' },
+  { k: 'os-status', rotulo: 'Status da OS',
+    desc: 'Marcar não iniciado / em andamento / parado / finalizado na lista' },
+  { k: 'cadastros', rotulo: 'Cadastros',
+    desc: 'Tecidos, cores, modelos, grades, desenhos, etapas, equipe, riscos' },
+  { k: 'estoque-tecidos', rotulo: 'Estoque de tecidos',
+    desc: 'Entradas de compra, saídas, ajustes e baixa de material' },
+  { k: 'estoque-fases', rotulo: 'Estoques de corte, costura, fios e expedição',
+    desc: 'Contagem física e ajustes das fases seguintes ao corte' },
+  { k: 'expedicao', rotulo: 'Expedição',
+    desc: 'Alocar OS nas cargas, janelas, cancelamentos e a folha de OE' },
+  { k: 'operacoes', rotulo: 'Planejamento de operações',
+    desc: 'A jornada dos postos: criar, mover, duplicar e excluir operações' },
+  { k: 'compra', rotulo: 'Lista de compra',
+    desc: 'Limpar a lista inteira (somar já é de toda conta)' },
+  { k: 'dados', rotulo: 'Dados, backup e pastas',
+    desc: 'Snapshots, importação, exportação e as pastas do computador' },
+  { k: 'contas', rotulo: 'Contas de acesso', soAdmin: true,
+    desc: 'Criar contas e conceder acesso — sempre só do admin' }
+];
+
+/* De cada AÇÃO para a sua área. As ações são os textos que `exigirEdicao` e
+   `exigirAdmin` já recebiam em todo o programa ("alocar OS na expedição") —
+   aproveitá-los evita ter de tocar em duzentos pontos de chamada para ensinar
+   ao programa a que área cada botão pertence. Ação que não estiver aqui segue
+   como sempre foi: só do admin. */
+const ACOES_POR_AREA = {
+  // OS
+  'criar ou editar OS': 'os', 'editar OS': 'os', 'duplicar OS': 'os',
+  'excluir OS': 'os', 'editar a observação antiga da OS': 'os',
+  // Cadastros
+  'criar ou editar cadastros': 'cadastros', 'criar cadastros': 'cadastros',
+  'duplicar cadastros': 'cadastros', 'excluir cadastros': 'cadastros',
+  'renomear pastas de grade': 'cadastros', 'reordenar pastas de grade': 'cadastros',
+  'apagar pastas de grade': 'cadastros', 'importar risco de PDF': 'cadastros',
+  'importar uma pasta de riscos': 'cadastros', 'criar grade pelo risco': 'cadastros',
+  'cadastrar grade pelo risco': 'cadastros', 'copiar etapas para todos os desenhos': 'cadastros',
+  'copiar etapas entre desenhos': 'cadastros', 'exportar a planilha das grades': 'cadastros',
+  'alterar o excedente de todas as fases': 'cadastros', 'mudar a regra do excedente': 'cadastros',
+  // Estoque de tecidos
+  'lançar no estoque de tecidos': 'estoque-tecidos',
+  'apagar um lançamento de estoque': 'estoque-tecidos',
+  'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
+  // Estoques das fases
+  'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
+  // Expedição
+  'alocar OS na expedição': 'expedicao', 'configurar a expedição': 'expedicao',
+  'cadastrar janelas de expedição': 'expedicao', 'cancelar ou remarcar expedições': 'expedicao',
+  'editar a folha de OE': 'expedicao', 'marcar a carga como feita': 'expedicao',
+  'recalcular volumes': 'expedicao', 'remover OS da expedição': 'expedicao',
+  'excluir janelas de expedição': 'expedicao', 'restaurar expedição': 'expedicao',
+  // Operações
+  'planejar operações': 'operacoes', 'reordenar operações': 'operacoes',
+  'excluir operações': 'operacoes', 'duplicar operações': 'operacoes',
+  'mudar o status das operações': 'operacoes', 'mudar o horário das operações': 'operacoes',
+  'corrigir os horários das operações': 'operacoes',
+  // Compra
+  'limpar a lista de compra': 'compra',
+  // Dados
+  'ver os snapshots do servidor': 'dados', 'ver os snapshots de contingência': 'dados',
+  'restaurar snapshots': 'dados', 'baixar snapshots': 'dados', 'importar dados': 'dados',
+  'exportar todos os dados': 'dados', 'gravar o backup na pasta': 'dados',
+  'recarregar dados do servidor': 'dados',
+  'conectar a pasta de PDFs': 'dados', 'desconectar a pasta de PDFs': 'dados',
+  'conectar a pasta de backup': 'dados', 'desconectar a pasta de backup': 'dados',
+  'conectar a pasta das OE': 'dados', 'desconectar a pasta das OE': 'dados',
+  'conectar a pasta das exportações': 'dados', 'desconectar a pasta das exportações': 'dados'
+};
+
+/* O PADRÃO de cada área quando o admin ainda não disse nada sobre aquela conta.
+   É aqui que moram as duas concessões feitas à mão antes desta tela existir —
+   elas continuam valendo sozinhas, e aparecem marcadas na lista de contas. */
+const ACESSO_PADRAO = {
+  'os-status': (login) => LOGINS_STATUS_OS.includes(login),
+  'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login)
+};
+
+function _acessosTabela() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.acessos || typeof STATE.meta.acessos !== 'object') STATE.meta.acessos = {};
+  return STATE.meta.acessos;
+}
+
+// A conta pelo NOME do login, sem pontuação nem acento — a mesma chave que
+// LOGINS_STATUS_OS usa, para "Enfesto.corte" e "enfesto corte" serem a mesma
+// pessoa aqui também.
+function _acessoChaveConta(emailOuNome) {
+  return _chaveLogin(_obsNomeLogin(emailOuNome || ''));
+}
+
+/* Esta conta entra nesta área? Admin entra em tudo. Para os demais vale o que o
+   admin marcou; e, se ele nunca disse nada, o padrão da área. */
+function contaTemAcesso(area, emailOuNome, papel) {
+  if ((papel !== undefined ? papel : currentRole) === 'admin') return true;
+  const def = (AREAS_ACESSO.find(a => a.k === area) || {});
+  if (def.soAdmin) return false;
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) return false;
+  const marcado = (_acessosTabela()[login] || {})[area];
+  if (typeof marcado === 'boolean') return marcado;
+  const padrao = ACESSO_PADRAO[area];
+  return padrao ? !!padrao(login) : false;
+}
+
+// A mesma pergunta para quem está logado agora.
+function temAcesso(area) {
+  if (!podeGravar()) return false;   // modo nuvem: a tela inteira é consulta
+  return contaTemAcesso(area, _obsQuemSou());
+}
+
+function _areaDaAcao(acao) {
+  return ACOES_POR_AREA[String(acao || '').trim()] || '';
+}
+
+// Marca (ou desmarca) uma área para uma conta. Só o admin.
+async function definirAcesso(emailOuNome, area, permitido) {
+  if (!exigirAdmin('conceder acesso')) return;
+  const def = AREAS_ACESSO.find(a => a.k === area);
+  if (!def || def.soAdmin) { toast('Esta área é sempre só do admin', 'err'); return; }
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) { toast('Conta inválida', 'err'); return; }
+  const tab = _acessosTabela();
+  tab[login] = tab[login] || {};
+  tab[login][area] = !!permitido;
+  desfazerNomearAcao(`acesso de ${login} a "${def.rotulo}"`);
+  try { await saveState('meta'); } catch (e) { console.warn('definirAcesso', e); }
+  aplicarPermissoesUI();
+  listarContasAcesso();
+  toast(`${login}: ${permitido ? 'pode' : 'não pode'} ${def.rotulo.toLowerCase()}`, 'ok');
+}
+
+// Abre e fecha a listinha de áreas de uma conta.
+function alternarAcessos(id) {
+  const box = document.getElementById('acessos-' + id);
+  if (box) box.classList.toggle('hidden');
+}
+
+// O bloco de áreas de uma conta, dentro da lista de contas de acesso.
+function _acessosMenuHtml(u) {
+  const email = u.email || '';
+  const login = _acessoChaveConta(email);
+  const linhas = AREAS_ACESSO.map(a => {
+    const marcado = contaTemAcesso(a.k, email, 'usuario');
+    const id = `ac-${esc(u.id)}-${a.k}`;
+    return `<label class="acesso-linha${a.soAdmin ? ' fixa' : ''}" for="${id}" title="${esc(a.desc)}">
+      <input type="checkbox" id="${id}" ${marcado ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
+             onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">
+      <span><b>${esc(a.rotulo)}</b><br><span class="acesso-desc">${esc(a.desc)}</span></span>
+    </label>`;
+  }).join('');
+  return `<div class="acessos-menu hidden" id="acessos-${esc(u.id)}">
+    <div class="acesso-topo">A que <b>${esc(_obsNomeLogin(email) || email)}</b> tem acesso</div>
+    ${linhas}
+    <div class="acesso-rodape">O admin entra em tudo — a marcação vale para as demais contas.
+      É a tranca da TELA: ela evita o engano, não substitui o cuidado de quem administra.</div>
+  </div>`;
+}
+
+// Quantas áreas esta conta tem, para o botão dizer sem precisar abrir.
+function _acessosQuantas(email) {
+  return AREAS_ACESSO.filter(a => !a.soAdmin && contaTemAcesso(a.k, email, 'usuario')).length;
 }
 
 // O papel guardado em `currentRole` serve à TELA — decidir o que mostrar. Ele
@@ -1758,13 +1960,16 @@ async function listarContasAcesso() {
       ${us.length} conta(s) com acesso ao programa
     </div>
     <table class="table">
-      <thead><tr><th>Nome</th><th>Pode editar?</th><th>Criada</th><th>Último acesso</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Acesso</th><th>Criada</th><th>Último acesso</th><th></th></tr></thead>
       <tbody>${us.map(u => `
         <tr>
           <td>${esc(emailParaNome(u.email) || '—')}${u.confirmada ? '' : ' <span class="badge" style="background:var(--alert);color:#fff;">não confirmada</span>'}</td>
           <td>${u.papel === 'admin'
                 ? '<span class="badge">admin</span>'
-                : '<span style="color:var(--ink-3);">só consulta</span>'}</td>
+                : `<button type="button" class="btn small" onclick="alternarAcessos('${esc(u.id)}')"
+                     title="Escolher a que áreas do programa esta conta tem acesso">Acesso ▾
+                     <span class="badge">${_acessosQuantas(u.email)}</span></button>
+                   ${_acessosMenuHtml(u)}`}</td>
           <td>${esc(dia(u.criada_em))}</td>
           <td>${esc(dia(u.ultimo_acesso))}</td>
           <td><button class="btn small" onclick="prepararEdicaoConta('${esc(u.id)}')">Editar</button></td>
@@ -3157,8 +3362,8 @@ function goto(page) {
   // card do Início, pelo "+ Nova OS" da lista, pelo "editar" de uma OS e pelo
   // endereço. Fechar aqui, na rota, fecha todos os caminhos de uma vez — e
   // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
-  if (page === 'nova-os' && currentRole && currentRole !== 'admin') {
-    toast('Seu acesso é de leitura — apenas o admin cria ou edita OS', 'err');
+  if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')) {
+    toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
   _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
@@ -21028,9 +21233,11 @@ function _chaveLogin(txt) {
 }
 
 function podeMudarStatusOS() {
-  if (!podeGravar()) return false;             // modo nuvem: a tela é só consulta
-  if (currentRole === 'admin') return true;
-  return LOGINS_STATUS_OS.includes(_chaveLogin(_obsNomeLogin(_obsQuemSou())));
+  // Quem pode vem da tabela de áreas (Configurações → Contas de acesso). Ela já
+  // cai no padrão desta área, que é LOGINS_STATUS_OS — então quem podia antes
+  // desta tela existir continua podendo, e agora dá para conceder a outros sem
+  // mexer no código.
+  return temAcesso('os-status');
 }
 
 // A recusa, com o motivo certo em cada caso. Mesma ideia de exigirEdicaoFolha:
@@ -28492,6 +28699,8 @@ window.limparFiltrosListaOS = limparFiltrosListaOS;
 window.desfazerUltimaAcao = desfazerUltimaAcao;
 window.deleteGradeFolder = deleteGradeFolder;
 window.deleteGradeSubfolder = deleteGradeSubfolder;
+window.alternarAcessos = alternarAcessos;
+window.definirAcesso = definirAcesso;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;

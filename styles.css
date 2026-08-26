@@ -1643,6 +1643,59 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 body.is-admin .estoque-tecidos-only,
 body.pode-estoque-tecidos .estoque-tecidos-only { display: revert !important; }
 
+/* AS AREAS CONCEDIDAS (Configuracoes -> Contas de acesso -> Acesso).
+
+   O programa inteiro esconde o que e de escrita com .admin-only. Em vez de
+   trocar essa classe em duzentos lugares, cada area LIBERA o admin-only DENTRO
+   da tela dela: a pessoa que recebeu "Expedicao" passa a ver os botoes da
+   expedicao, e so os dela. E o botao do menu que leva a tela fechada
+   (Nova OS) tambem volta.
+
+   Vale para quem recebeu a area; o admin ja ve tudo pela regra de cima. */
+body.pode-os [data-page="nova-os"] .admin-only,
+body.pode-os [data-page="lista-os"] .admin-only,
+body.pode-os [data-page="print"] .admin-only,
+body.pode-cadastros [data-page^="cad-"] .admin-only,
+body.pode-expedicao [data-page="expedicao"] .admin-only,
+body.pode-expedicao [data-page="print-expedicao"] .admin-only,
+body.pode-operacoes [data-page="operacoes"] .admin-only,
+body.pode-operacoes [data-page="print-operacoes"] .admin-only,
+body.pode-estoque-fases [data-page="corte"] .admin-only,
+body.pode-estoque-fases [data-page="costurando"] .admin-only,
+body.pode-estoque-fases [data-page="fios"] .admin-only,
+body.pode-compra [data-page="compra"] .admin-only,
+body.pode-dados [data-page="config"] .admin-only { display: revert !important; }
+body.pode-os .nav-btn[data-page="nova-os"] { display: block !important; }
+body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !important; }
+
+/* A LISTINHA DE AREAS de uma conta, aberta pelo botao "Acesso ▾". Fica embaixo
+   do botao, dentro da propria linha da tabela: um menu flutuante seria cortado
+   pela rolagem da lista de contas. */
+.acessos-menu {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg);
+  max-width: 420px;
+}
+.acessos-menu.hidden { display: none; }
+.acesso-topo { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.acesso-linha {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 4px;
+  border-top: 1px solid var(--line-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.acesso-linha:hover { background: var(--paper); }
+.acesso-linha.fixa { opacity: .55; cursor: default; }
+.acesso-linha input { margin-top: 2px; }
+.acesso-desc { color: var(--ink-3); font-size: 11px; }
+.acesso-rodape { font-size: 11px; color: var(--ink-3); margin-top: 8px; font-style: italic; }
+
 /* REGISTRAR é a exceção: quem tem conta soma na lista de compra e marca a folha
    de OS, admin ou não (ver _contaPodeRegistrar no app.js). A classe do body é
    `pode-registrar`, e não `is-usuario` — essa é vestida também por quem nem fez

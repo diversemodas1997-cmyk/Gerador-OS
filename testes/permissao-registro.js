@@ -148,7 +148,15 @@ const estoque = (papel, login, servidorNoAr = true) => {
     const podeGravar = () => ${servidorNoAr};
     const currentUser = ${JSON.stringify(login) === '""' ? 'null' : '{ email: ' + JSON.stringify(login) + ' }'};
     let currentRole = ${JSON.stringify(papel)};
+    const STATE = { meta: {} };
     ${constante('LOGINS_ESTOQUE_TECIDOS')}
+    ${constante('LOGINS_STATUS_OS')}
+    ${constante('AREAS_ACESSO')}
+    ${constante('ACESSO_PADRAO')}
+    ${recorte('function _acessosTabela', 'a tabela de acessos')}
+    ${recorte('function _acessoChaveConta', 'a chave da conta')}
+    ${recorte('function contaTemAcesso', 'o acesso de uma conta')}
+    ${recorte('function temAcesso', 'o acesso de quem esta logado')}
     ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
     ${recorte('function _obsNomeLogin', 'o nome do login')}
     ${recorte('function _chaveLogin', 'a chave do login')}
@@ -161,22 +169,22 @@ const estoque = (papel, login, servidorNoAr = true) => {
 };
 let e = estoque('admin', 'admin@diverse.local');
 ok('28. admin lanca no estoque de tecidos', e.api.podeMexerEstoqueTecidos() === true);
-e = estoque('usuario', 'natalhy@diverse.local');
-ok('29. a Natalhy tambem', e.api.podeMexerEstoqueTecidos() === true);
-e = estoque('usuario', 'Natalhy@diverse.local');
+e = estoque('usuario', 'nathaly@diverse.local');
+ok('29. a Nathaly tambem', e.api.podeMexerEstoqueTecidos() === true);
+e = estoque('usuario', 'Nathaly@diverse.local');
 ok('30. e o login entra com qualquer caixa', e.api.podeMexerEstoqueTecidos() === true);
 e = estoque('usuario', 'costura@diverse.local');
 ok('31. usuario comum NAO lanca', e.api.podeMexerEstoqueTecidos() === false);
 e = estoque('usuario', 'costura@diverse.local');
 ok('32. e a recusa diz quem pode',
    e.api.exigirEstoqueTecidos('lançar no estoque de tecidos') === false
-   && /natalhy/.test(e.ctx.toasts.join(' ')), e.ctx.toasts.join(' | '));
+   && /nathaly/.test(e.ctx.toasts.join(' ')), e.ctx.toasts.join(' | '));
 e = estoque(null, '');
 ok('33. sem login, nao', e.api.podeMexerEstoqueTecidos() === false);
 e = estoque('admin', 'admin@diverse.local', false);
 ok('34. servidor da fabrica fora do ar: nem o admin', e.api.podeMexerEstoqueTecidos() === false);
-e = estoque('usuario', 'natalhy@diverse.local', false);
-ok('35. nem a Natalhy, no modo nuvem', e.api.podeMexerEstoqueTecidos() === false);
+e = estoque('usuario', 'nathaly@diverse.local', false);
+ok('35. nem a Nathaly, no modo nuvem', e.api.podeMexerEstoqueTecidos() === false);
 // As portas da tela, conferidas no app.js: se alguem devolver uma delas para
 // exigirAdmin, a Natalhy perde o acesso em silencio.
 const portasEstoque = [
