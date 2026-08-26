@@ -160,8 +160,30 @@ aside.sidebar {
    O SINO fica junto do icone do perfil, na barra lateral, e o numero vermelho
    so existe quando ha algo para ler — zero nao vira "0" pendurado na tela, que
    a pessoa aprende a ignorar. Clicar expande a lista acumulada. */
+/* Os ICONES do bloco do perfil (o desfazer e o sino): mesmo desenho, colados a
+   direita do nome. O desfazer so aparece quando ha o que desfazer - um botao
+   permanentemente apagado ninguem le. */
+.auth-icone {
+  flex: 0 0 auto;
+  position: relative;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+}
+.auth-icone:hover { background: rgba(0,0,0,.05); border-color: var(--line); }
+.auth-icone.hidden { display: none; }
+#btnDesfazer { font-size: 17px; }
+/* Os dois moram no mesmo bloco, colado a direita: assim o sino nao muda de
+   lugar quando o desfazer aparece e some. */
+.auth-icones { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
 .avisos-sino {
-  margin-left: auto;
   flex: 0 0 auto;
   position: relative;
   width: 32px; height: 32px;
@@ -1726,6 +1748,11 @@ body:not(.is-admin) #modal-cad-fields button {
 }
 .folder-btn:hover:not(:disabled) { opacity: 1; background: rgba(255,255,255,.12); }
 .folder-btn:disabled { opacity: .2; cursor: not-allowed; }
+/* O apagar da pasta fica mais apagado que os vizinhos e so acende no hover, em
+   vermelho: ele leva as grades de dentro junto, e nao pode ser o botao que a
+   mao encosta sem querer ao mirar o renomear. */
+.folder-btn.folder-del { opacity: .35; }
+.folder-btn.folder-del:hover { opacity: 1; background: var(--alert); border-color: var(--alert); color: #fff; }
 
 /* Checkboxes interativos da folha de impressao (etapas/tarefas) */
 .os-check {

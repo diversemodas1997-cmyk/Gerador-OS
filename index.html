@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26k">
+<link rel="stylesheet" href="styles.css?v=2026-08-26l">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -38,13 +38,18 @@
             <div class="auth-email" id="authEmail">—</div>
             <div class="auth-role" id="authRole"></div>
           </div>
-          <!-- O SINO fica junto do ícone do perfil: quem está logado e o que
-               chegou para essa pessoa são a mesma pergunta. Clicar expande a
-               lista acumulada (o painel logo abaixo, fora da barra lateral para
-               não ser cortado por ela). -->
-          <button type="button" class="avisos-sino" id="avisosSino" onclick="toggleAvisos()"
-                  title="Avisos: observações e mudanças de status nas OS" aria-label="Avisos">🔔<span
-                  class="nav-badge hidden" id="avisosBadge">0</span></button>
+          <!-- O SINO e o DESFAZER ficam junto do ícone do perfil: quem está
+               logado, o que chegou para essa pessoa e o que ela acabou de fazer
+               são a mesma pergunta. O sino expande a lista acumulada (o painel
+               logo abaixo, fora da barra lateral para não ser cortado por ela);
+               o ↩ só aparece quando há o que desfazer. -->
+          <span class="auth-icones">
+            <button type="button" class="auth-icone hidden" id="btnDesfazer" onclick="desfazerUltimaAcao()"
+                    title="Desfazer a última coisa que você fez" aria-label="Desfazer">↩</button>
+            <button type="button" class="auth-icone avisos-sino" id="avisosSino" onclick="toggleAvisos()"
+                    title="Avisos: observações e mudanças de status nas OS" aria-label="Avisos">🔔<span
+                    class="nav-badge hidden" id="avisosBadge">0</span></button>
+          </span>
         </div>
         <div class="modo-servidor" id="modoServidor" hidden>☁ Nuvem</div>
         <div class="auth-sync" id="authSync">☁ Sincronizado</div>
@@ -1280,6 +1285,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26k"></script>
+<script src="app.js?v=2026-08-26l"></script>
 </body>
 </html>

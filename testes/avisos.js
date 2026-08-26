@@ -297,8 +297,8 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 // acumulada que se expande no clique do sino — e o sino fica junto do icone do
 // perfil, que e onde se olha para saber quem esta logado.
 ok('43. o sino esta dentro do bloco do perfil logado',
-   /auth-identity[\s\S]{0,900}?id="avisosSino"/.test(html)
-   && html.indexOf('id="avisosSino"') < html.indexOf('</aside>'), 'sino fora do bloco do perfil');
+   html.indexOf('id="avisosSino"') > html.indexOf('class="auth-identity"')
+   && html.indexOf('id="avisosSino"') < html.indexOf('id="modoServidor"'), 'sino fora do bloco do perfil');
 ok('44. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
 ok('45. o painel existe e nasce escondido, fora da barra lateral',
    /class="avisos-painel hidden" id="avisosPainel"/.test(html)

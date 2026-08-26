@@ -2383,7 +2383,16 @@ async function saveState(key) {
     // O cadastro de funções mudou: o índice de horas marcadas tem que ser refeito
     // (ele é lido milhares de vezes por clique e por isso vive em cache).
     if (key === 'funcoes') _opHoraFixaVersao++;
-    await DB.set(key, JSON.stringify(STATE[key]));
+    // O ESTADO ANTERIOR, para o desfazer: o que está gravado neste instante é
+    // exatamente o que havia antes da mexida que está sendo salva. Ler daqui
+    // dispensa cada botão do programa tirar foto antes de agir (ver DESFAZER).
+    let _antes = null;
+    if (!_desfazendo) {
+      try { const r = await DB.get(key); _antes = r ? r.value : null; } catch (e) { }
+    }
+    const _depois = JSON.stringify(STATE[key]);
+    await DB.set(key, _depois);
+    try { _desfazerRegistrar(key, _antes, _depois); } catch (e) { console.warn('desfazer', e); }
     // Republica o snapshot de estoque p/ a Contabilidade quando muda algo
     // que altera os saldos. Best-effort; não bloqueia nem quebra o save.
     if (_CHAVES_CONTAB_SNAPSHOT.includes(key) && typeof construirContabSnapshot === 'function') {
@@ -2400,6 +2409,200 @@ async function saveState(key) {
     toast('Erro ao salvar no armazenamento', 'err');
   }
 }
+
+/* ========================================================= */
+/*                        DESFAZER                           */
+/* ========================================================= */
+
+/* O DESFAZER DO PROGRAMA INTEIRO.
+
+   Toda gravação do programa passa por `saveState(chave)`: é ela que escreve a
+   chave (ordens, grades, tecidos, expedicaoCargas…) no armazenamento local e
+   dispara a subida para o servidor. Por isso o desfazer mora AQUI, e não em
+   cada botão: um único gancho cobre cadastro, OS, expedição, planejamento e
+   compra de uma vez, e nada que grave fica de fora por esquecimento.
+
+   COMO SABE O QUE HAVIA ANTES: antes de escrever, lê do armazenamento o valor
+   que estava lá — que é exatamente o estado anterior à mexida que está sendo
+   salva. Não é preciso ninguém tirar foto antes de agir.
+
+   UMA AÇÃO, VÁRIAS CHAVES: apagar uma pasta de grades grava `grades` e
+   `gradeFolderLabels`; excluir uma tarefa grava `tarefas` e `etapas`. Gravações
+   coladas no tempo (menos de um segundo) são a MESMA ação e voltam juntas —
+   desfazer metade de uma exclusão seria pior do que não desfazer.
+
+   O QUE ELE NÃO É: histórico do servidor. A pilha vive na memória desta aba e
+   desfaz o que ESTA PESSOA fez NESTA sessão. Fechou o programa, a pilha se foi
+   — e o que ficou gravado continua gravado. Também não é cofre contra o outro
+   turno: a chave volta inteira, então uma mudança que outra pessoa tenha feito
+   na MESMA chave, no meio tempo, volta com ela. Na prática um admin edita por
+   vez (ver a nota de permissões), e o alerta disso está na dica do botão. */
+const DESFAZER_MAX = 12;                    // quantas ações a pilha guarda
+const DESFAZER_JANELA_MS = 1000;            // gravações coladas = uma ação só
+const DESFAZER_BYTES_MAX = 24 * 1024 * 1024; // teto de memória da pilha
+
+let _desfazerPilha = [];
+let _desfazendo = false;      // durante o desfazer, nada entra na pilha
+let _desfazerRotulo = '';     // nome explícito da ação em curso (opcional)
+
+// O nome de cada chave em português, no singular e no plural. Sem isto o aviso
+// diria "exclusão de 1 expedicaoCargas", que é o nome interno e não diz nada a
+// quem está na fábrica.
+const DESFAZER_NOMES = {
+  ordens: ['OS', 'OS'],
+  grades: ['grade', 'grades'],
+  gradeFolderLabels: ['pasta de grades', 'pastas de grades'],
+  tecidos: ['tecido', 'tecidos'],
+  cores: ['cor', 'cores'],
+  materiais: ['material', 'materiais'],
+  modelos: ['modelo', 'modelos'],
+  colecoes: ['coleção', 'coleções'],
+  desenhos: ['desenho técnico', 'desenhos técnicos'],
+  marcas: ['marca', 'marcas'],
+  linhas: ['linha', 'linhas'],
+  bases: ['base', 'bases'],
+  blocos: ['bloco', 'blocos'],
+  equipe: ['pessoa da equipe', 'pessoas da equipe'],
+  funcoes: ['função', 'funções'],
+  tarefas: ['tarefa', 'tarefas'],
+  etapas: ['etapa', 'etapas'],
+  componentes: ['componente', 'componentes'],
+  operacoes: ['operação do plano', 'operações do plano'],
+  compraPlano: ['item da lista de compra', 'itens da lista de compra'],
+  expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
+  expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
+  expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
+  estoqueMov: ['lançamento de estoque', 'lançamentos de estoque'],
+  corteMov: ['lançamento do corte', 'lançamentos do corte'],
+  costurandoMov: ['lançamento da costura', 'lançamentos da costura'],
+  fiosMov: ['lançamento de fios', 'lançamentos de fios'],
+  expedicaoMov: ['lançamento da expedição', 'lançamentos da expedição'],
+  meta: ['configuração', 'configurações'],
+  osCounter: ['contador de OS', 'contador de OS']
+};
+
+function _desfazerNome(chave, n) {
+  const par = DESFAZER_NOMES[chave] || [chave, chave];
+  return n === 1 ? par[0] : par[1];
+}
+
+/* A FRASE DA AÇÃO, deduzida do que mudou. "exclusão de 1 grade" em vez de
+   "grade excluída" para não ter de acertar gênero e número de trinta nomes
+   diferentes — e para caber igual em "1 OS" e "3 coleções". */
+function _desfazerFrase(chave, antes, depois) {
+  let a = null, d = null;
+  try { a = JSON.parse(antes); } catch (e) { }
+  try { d = JSON.parse(depois); } catch (e) { }
+  if (Array.isArray(a) && Array.isArray(d)) {
+    if (d.length < a.length) {
+      const n = a.length - d.length;
+      return `exclusão de ${n} ${_desfazerNome(chave, n)}`;
+    }
+    if (d.length > a.length) {
+      const n = d.length - a.length;
+      return `inclusão de ${n} ${_desfazerNome(chave, n)}`;
+    }
+  }
+  return `alteração em ${_desfazerNome(chave, 2)}`;
+}
+
+function _desfazerTamanho() {
+  return _desfazerPilha.reduce((soma, a) =>
+    soma + Object.values(a.antes).reduce((s, v) => s + (v ? v.length : 0), 0), 0);
+}
+
+function _desfazerRegistrar(chave, antes, depois) {
+  if (_desfazendo) return;
+  if (antes == null || antes === depois) return;   // nada mudou de fato
+  const agora = Date.now();
+  const topo = _desfazerPilha[_desfazerPilha.length - 1];
+  if (topo && (agora - topo.quando) < DESFAZER_JANELA_MS) {
+    // Mesma ação: a primeira foto de cada chave é a que vale (a segunda
+    // gravação da mesma chave já traz o estado no meio da ação).
+    if (!(chave in topo.antes)) topo.antes[chave] = antes;
+    topo.quando = agora;
+    if (_desfazerRotulo) topo.rotulo = _desfazerRotulo;
+  } else {
+    _desfazerPilha.push({
+      antes: { [chave]: antes },
+      rotulo: _desfazerRotulo || _desfazerFrase(chave, antes, depois),
+      quando: agora
+    });
+  }
+  while (_desfazerPilha.length > DESFAZER_MAX) _desfazerPilha.shift();
+  // Teto de memória: `desenhos` carrega imagem, e uma pilha de fotos dele
+  // encheria a aba. As mais antigas saem primeiro.
+  while (_desfazerPilha.length > 1 && _desfazerTamanho() > DESFAZER_BYTES_MAX) _desfazerPilha.shift();
+  _desfazerAtualizarBotao();
+}
+
+// Dá nome à próxima ação (a que as gravações dos próximos instantes formam).
+// Sem isto o nome sai da diferença entre o antes e o depois, que acerta o
+// número mas não sabe dizer que aquilo era "a pasta Camiseta".
+function desfazerNomearAcao(rotulo) {
+  _desfazerRotulo = rotulo || '';
+  setTimeout(() => { _desfazerRotulo = ''; }, DESFAZER_JANELA_MS + 500);
+}
+
+function _desfazerQuando(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `há ${s} s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
+}
+
+function _desfazerAtualizarBotao() {
+  const btn = document.getElementById('btnDesfazer');
+  if (!btn) return;
+  const topo = _desfazerPilha[_desfazerPilha.length - 1];
+  btn.classList.toggle('hidden', !topo);
+  if (!topo) return;
+  btn.title = `Desfazer: ${topo.rotulo} (${_desfazerQuando(topo.quando)})`
+    + `\nCtrl+Z faz o mesmo. Desfaz o que você fez nesta sessão, neste computador.`;
+}
+
+async function desfazerUltimaAcao() {
+  if (!_desfazerPilha.length) { toast('Não há nada para desfazer nesta sessão', ''); return; }
+  if (_recusarPorModoNuvem('desfazer')) return;
+  const acao = _desfazerPilha[_desfazerPilha.length - 1];
+  if (!confirm(`Desfazer: ${acao.rotulo}?\n\n`
+      + `O que foi feito ${_desfazerQuando(acao.quando)} volta como estava.\n`
+      + `Se outra pessoa mexeu no mesmo cadastro depois disso, a mudança dela volta junto.`)) return;
+  _desfazerPilha.pop();
+  _desfazendo = true;
+  const chaves = Object.keys(acao.antes);
+  try {
+    for (const chave of chaves) {
+      let valor;
+      try { valor = JSON.parse(acao.antes[chave]); }
+      catch (e) { console.warn('desfazer: chave ilegível', chave, e); continue; }
+      STATE[chave] = valor;
+      await saveState(chave);
+    }
+  } finally {
+    _desfazendo = false;
+  }
+  _desfazerAtualizarBotao();
+  toast(`Desfeito: ${acao.rotulo}`, 'ok');
+  // Redesenha a tela em que a pessoa está: o que voltou tem de aparecer sem ela
+  // precisar sair e entrar de novo.
+  const ativa = document.querySelector('section.page:not(.hidden)');
+  const pagina = (ativa && ativa.dataset && ativa.dataset.page) || 'home';
+  if (pagina !== 'nova-os') goto(pagina);
+}
+
+// Ctrl+Z. Dentro de um campo de texto o Ctrl+Z é o do NAVEGADOR (desfaz o que
+// se está digitando) — tomá-lo dali faria a pessoa perder a frase inteira para
+// desfazer algo que ela nem tinha salvo.
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || String(e.key).toLowerCase() !== 'z') return;
+  const alvo = e.target;
+  const tag = alvo && alvo.tagName ? alvo.tagName.toUpperCase() : '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (alvo && alvo.isContentEditable)) return;
+  if (!_desfazerPilha.length) return;
+  e.preventDefault();
+  desfazerUltimaAcao();
+});
 
 // Normaliza nome de função pra comparar (remove acentos, baixa caixa, colapsa
 // qualquer pontuação/espaço múltiplo) — assim "Produção", "producao",
@@ -14573,6 +14776,88 @@ async function renameGradeSubfolder(tp, vrAtual) {
   toast('Subpasta renomeada', 'ok');
 }
 
+/* ---- APAGAR UMA PASTA DE GRADES -----------------------------------------
+   A pasta não é um registro: ela é o `tipoPeca` (e o `variacao`) escrito nas
+   grades. Apagar a pasta é, portanto, apagar as GRADES que estão dentro dela —
+   não há meio-termo, e é isso que o aviso diz com todas as letras.
+
+   O QUE NÃO SE PERDE: a OS que usou uma dessas grades continua inteira. Ela
+   guarda a medida e o nome da grade dentro de si (é o que `_gradeNomeDaOS` lê
+   quando a grade some), e a folha impressa dela não muda. O que se perde é
+   poder escolher aquela grade numa OS NOVA.
+
+   E dá para voltar atrás: a exclusão entra no ↩ Desfazer como uma ação só,
+   com as grades e os rótulos da pasta juntos. */
+function _gradesDaPasta(tp, vr) {
+  return (STATE.grades || []).filter(g =>
+    (g.tipoPeca || '') === tp && (vr == null || (g.variacao || '') === vr));
+}
+
+// Quantas OS usam estas grades. Não impede a exclusão — informa o tamanho do
+// que está sendo mexido antes de a pessoa confirmar.
+function _osQueUsamGrades(ids) {
+  const set = new Set(ids);
+  return (STATE.ordens || []).filter(o => set.has(_gradeIdDaOS(o)));
+}
+
+async function _apagarPastaGrade(tp, vr, rotuloPasta) {
+  if (!exigirAdmin('apagar pastas de grade')) return;
+  const gs = _gradesDaPasta(tp, vr);
+  if (!gs.length) { toast('Esta pasta já está vazia', ''); return; }
+  const ids = gs.map(g => g.id);
+  const comOS = _osQueUsamGrades(ids);
+  const nomes = gs.slice(0, 8).map(g => '  · ' + (g.nome || '(sem nome)')).join('\n')
+    + (gs.length > 8 ? `\n  · … e mais ${gs.length - 8}` : '');
+  const aviso = `Apagar a pasta "${rotuloPasta}" e as ${gs.length} grade(s) dentro dela?\n\n`
+    + nomes + '\n\n'
+    + (comOS.length
+        ? `${comOS.length} OS usam essas grades (${comOS.slice(0, 6).map(o => o.os).join(', ')}`
+          + `${comOS.length > 6 ? '…' : ''}). Elas continuam inteiras — a medida e o nome da\n`
+          + `grade ficam gravados dentro da própria OS. O que sai é a grade do cadastro,\n`
+          + `que não poderá mais ser escolhida numa OS nova.\n\n`
+        : 'Nenhuma OS usa essas grades.\n\n')
+    + 'Dá para voltar atrás no ↩ Desfazer, ao lado do seu nome.';
+  if (!confirm(aviso)) return;
+
+  desfazerNomearAcao(`exclusão da pasta de grades "${rotuloPasta}" (${gs.length} grade(s))`);
+  const apagar = new Set(ids);
+  STATE.grades = (STATE.grades || []).filter(g => !apagar.has(g.id));
+  // Os rótulos e a ordem da pasta vão junto: sem grade nenhuma, a pasta some da
+  // árvore, e deixar o apelido dela guardado faria o nome antigo reaparecer se
+  // uma grade nova nascesse com a mesma chave.
+  const gfl = _gfl();
+  if (vr == null) {
+    delete gfl.tp[tp];
+    gfl.tpOrder = (gfl.tpOrder || []).filter(x => x !== tp);
+    pastasGradeExpandidas.delete('tp:' + tp);
+    for (const k of [...pastasGradeExpandidas]) {
+      if (k.startsWith('tp:' + tp + '|var:')) pastasGradeExpandidas.delete(k);
+    }
+  } else {
+    // A subpasta só perde o apelido se mais ninguém a usa: "Tricolor" é a mesma
+    // chave em todas as pastas de tipo, e apagar a tricolor da camiseta não pode
+    // levar o nome da tricolor do moletom junto.
+    const aindaUsada = (STATE.grades || []).some(g => (g.variacao || '') === vr);
+    if (!aindaUsada) {
+      delete gfl.vr[vr];
+      gfl.vrOrder = (gfl.vrOrder || []).filter(x => x !== vr);
+    }
+    pastasGradeExpandidas.delete('tp:' + tp + '|var:' + vr);
+  }
+  await saveState('grades');
+  await saveState('gradeFolderLabels');
+  renderGrades();
+  toast(`Pasta "${rotuloPasta}" apagada — ${gs.length} grade(s)`, 'ok');
+}
+
+async function deleteGradeFolder(tp) {
+  await _apagarPastaGrade(tp, null, labelTp(tp));
+}
+
+async function deleteGradeSubfolder(tp, vr) {
+  await _apagarPastaGrade(tp, vr, labelTp(tp) + ' › ' + labelVr(vr));
+}
+
 // Aplica ordem manual + fallback (fixos primeiro, depois custom alfabético)
 /* A ORDEM DAS PASTAS É A ORDEM DO NOME QUE APARECE.
    As pastas de mesma família têm nome de mesma família — "Camiseta Básica",
@@ -15101,6 +15386,7 @@ function renderGrades() {
       `<button type="button" class="folder-btn" title="Mover para cima" ${upDis} onclick="moveGradeFolder(${tpJson}, -1)">↑</button>`
       + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDis} onclick="moveGradeFolder(${tpJson}, 1)">↓</button>`
       + `<button type="button" class="folder-btn" title="Renomear pasta" onclick="renameGradeFolder(${tpJson})">✎</button>`
+      + `<button type="button" class="folder-btn folder-del" title="Apagar a pasta e as ${totalNoGrupo} grade(s) dentro dela" onclick="deleteGradeFolder(${tpJson})">🗑</button>`
     );
     html += `<tr class="grade-folder grade-folder-top" onclick="toggleFolderGrade('${esc(tpPath)}')"><td colspan="5">
       <span class="folder-chev">${chevTop}</span> 📁 ${esc(labelTp(tp))}
@@ -15124,6 +15410,7 @@ function renderGrades() {
         `<button type="button" class="folder-btn" title="Mover para cima" ${upDisV} onclick="moveGradeSubfolder(${tpJson}, ${vrJson}, -1)">↑</button>`
         + `<button type="button" class="folder-btn" title="Mover para baixo" ${downDisV} onclick="moveGradeSubfolder(${tpJson}, ${vrJson}, 1)">↓</button>`
         + `<button type="button" class="folder-btn" title="Renomear subpasta" onclick="renameGradeSubfolder(${tpJson}, ${vrJson})">✎</button>`
+        + `<button type="button" class="folder-btn folder-del" title="Apagar a subpasta e as ${gs.length} grade(s) dentro dela" onclick="deleteGradeSubfolder(${tpJson}, ${vrJson})">🗑</button>`
       );
       html += `<tr class="grade-folder grade-folder-sub" onclick="event.stopPropagation(); toggleFolderGrade('${esc(vrPath)}')"><td colspan="5">
         <span class="folder-chev">${chevSub}</span> ↳ ${esc(labelVr(vr))}
@@ -28170,6 +28457,9 @@ window.limparAvisos = limparAvisos;
 window.abrirListaOSporStatus = abrirListaOSporStatus;
 window.marcarAvisoAberto = marcarAvisoAberto;
 window.limparFiltrosListaOS = limparFiltrosListaOS;
+window.desfazerUltimaAcao = desfazerUltimaAcao;
+window.deleteGradeFolder = deleteGradeFolder;
+window.deleteGradeSubfolder = deleteGradeSubfolder;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;
