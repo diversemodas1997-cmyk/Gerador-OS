@@ -155,12 +155,56 @@ aside.sidebar {
   font-weight: 500;
 }
 
-/* ===== O MURAL DE AVISOS =====
+/* ===== OS AVISOS =====
 
-   O CONTADOR NO MENU: o numero vermelho ao lado de "Avisos". Ele so existe
-   quando ha algo para ler — zero nao vira "0" pendurado no menu, que a pessoa
-   aprende a ignorar. */
-.nav-btn.tem-badge { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+   O SINO fica junto do icone do perfil, na barra lateral, e o numero vermelho
+   so existe quando ha algo para ler — zero nao vira "0" pendurado na tela, que
+   a pessoa aprende a ignorar. Clicar expande a lista acumulada. */
+.avisos-sino {
+  margin-left: auto;
+  flex: 0 0 auto;
+  position: relative;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.avisos-sino:hover { background: rgba(0,0,0,.05); border-color: var(--line); }
+/* O numero senta no canto do sino, como em qualquer app de mensagem. */
+.avisos-sino .nav-badge { position: absolute; top: -2px; right: -4px; }
+
+/* O PAINEL: a lista acumulada que se abre no clique. Posicao (top/left/width)
+   vem do JS, calculada a partir do proprio sino — aqui fica so o desenho. */
+.avisos-painel {
+  position: fixed;
+  z-index: 80;
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.18);
+}
+.avisos-painel.hidden { display: none; }
+.avisos-topo {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.avisos-topo .avisos-resumo { font-size: 11px; color: var(--ink-3); margin-left: auto; }
+.avisos-fechar {
+  background: transparent; border: none; cursor: pointer;
+  font-size: 13px; color: var(--ink-3); padding: 2px 4px; font-family: inherit;
+}
+/* A lista rola dentro do painel: acumulado nao pode empurrar a pagina. */
+.avisos-corpo { overflow-y: auto; flex: 1 1 auto; }
+
 .nav-badge {
   background: var(--alert);
   color: #fff;
@@ -180,10 +224,13 @@ aside.sidebar {
 .aviso-linha {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line-2);
+  cursor: pointer;
 }
+.aviso-linha:hover { background: var(--bg); }
+.aviso-abrir { color: var(--ink-3); font-size: 16px; line-height: 1.2; flex: 0 0 auto; }
 .aviso-linha:last-child { border-bottom: none; }
 /* O QUE CHEGOU DESDE A ULTIMA VISITA fica marcado ate a proxima abertura do
    mural — quem entra ve na hora o que e novidade sem ler tudo de novo. */

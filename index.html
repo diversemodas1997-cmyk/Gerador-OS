@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26c">
+<link rel="stylesheet" href="styles.css?v=2026-08-26e">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -38,6 +38,13 @@
             <div class="auth-email" id="authEmail">—</div>
             <div class="auth-role" id="authRole"></div>
           </div>
+          <!-- O SINO fica junto do ícone do perfil: quem está logado e o que
+               chegou para essa pessoa são a mesma pergunta. Clicar expande a
+               lista acumulada (o painel logo abaixo, fora da barra lateral para
+               não ser cortado por ela). -->
+          <button type="button" class="avisos-sino" id="avisosSino" onclick="toggleAvisos()"
+                  title="Avisos: observações e mudanças de status nas OS" aria-label="Avisos">🔔<span
+                  class="nav-badge hidden" id="avisosBadge">0</span></button>
         </div>
         <div class="modo-servidor" id="modoServidor" hidden>☁ Nuvem</div>
         <div class="auth-sync" id="authSync">☁ Sincronizado</div>
@@ -49,9 +56,6 @@
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
       <div class="nav-items">
         <button class="nav-btn" data-page="home">Início</button>
-        <!-- O contador de avisos: quantas observações e mudanças de status
-             apareceram desde a última vez que esta pessoa abriu o mural. -->
-        <button class="nav-btn tem-badge" data-page="avisos">Avisos <span class="nav-badge hidden" id="avisosBadge">0</span></button>
         <button class="nav-btn admin-only" data-page="nova-os">Nova OS</button>
         <button class="nav-btn" data-page="lista-os">OS Salvas</button>
         <button class="nav-btn" data-page="compra">Compra</button>
@@ -96,6 +100,19 @@
       </div>
     </div>
   </aside>
+
+  <!-- O PAINEL DE AVISOS. Mora fora da <aside> de propósito: dentro dela seria
+       cortado pela rolagem do menu. Fica escondido até alguém clicar no sino, e
+       a posição é calculada na hora a partir do próprio sino (o menu recolhe e
+       vira gaveta no celular). -->
+  <div class="avisos-painel hidden" id="avisosPainel" role="dialog" aria-label="Avisos">
+    <div class="avisos-topo">
+      <b>Avisos</b>
+      <span class="avisos-resumo" id="avisos-resumo"></span>
+      <button type="button" class="avisos-fechar" onclick="fecharAvisos()" title="Fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="avisos-corpo" id="avisos-lista"></div>
+  </div>
 
   <main class="content">
     <!-- Banner de aviso de salvamento: aparece quando uma gravação é
@@ -723,19 +740,6 @@
       </form>
     </section>
 
-    <!-- ================= AVISOS ================= -->
-    <section class="page hidden" data-page="avisos">
-      <div class="page-header">
-        <div><h1>Avisos</h1>
-          <div class="desc">O que foi escrito e carimbado nas OS — observações da folha e mudanças de status.</div>
-        </div>
-        <div class="actions"><div class="desc" id="avisos-resumo"></div></div>
-      </div>
-      <div class="card">
-        <div id="avisos-lista"></div>
-      </div>
-    </section>
-
     <!-- ================= LISTA OS ================= -->
     <section class="page hidden" data-page="lista-os">
       <div class="page-header">
@@ -1264,6 +1268,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26c"></script>
+<script src="app.js?v=2026-08-26e"></script>
 </body>
 </html>

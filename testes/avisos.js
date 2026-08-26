@@ -137,5 +137,26 @@ ok('15. quem nao entrou na conta ve o mural, sem nada pendente',
    String(t.api._avisosNaoLidos().length));
 
 console.log('');
+console.log('-- a lista acumulada mora atras do sino, junto do icone do perfil --');
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+// O pedido de 26/08/2026: os avisos nao sao uma pagina do menu, sao uma lista
+// acumulada que se expande no clique do sino — e o sino fica junto do icone do
+// perfil, que e onde se olha para saber quem esta logado.
+ok('16. o sino esta dentro do bloco do perfil logado',
+   /auth-identity[\s\S]{0,900}?id="avisosSino"/.test(html)
+   && html.indexOf('id="avisosSino"') < html.indexOf('</aside>'), 'sino fora do bloco do perfil');
+ok('17. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
+ok('18. o painel existe e nasce escondido, fora da barra lateral',
+   /class="avisos-painel hidden" id="avisosPainel"/.test(html)
+   && html.indexOf('id="avisosPainel"') > html.indexOf('</aside>'), 'painel dentro da aside ou visivel');
+ok('19. nao ha mais pagina de avisos no menu (a lista e o painel)',
+   !/data-page="avisos"/.test(html), 'sobrou a pagina antiga');
+ok('20. clicar no sino abre e fecha',
+   /function toggleAvisos/.test(src) && /function abrirAvisos/.test(src) && /function fecharAvisos/.test(src),
+   'faltou abrir/fechar');
+ok('21. e abrir a OS pelo aviso fecha o painel antes',
+   /fecharAvisos\(\); verOS\(/.test(src), 'o painel ficaria por cima da folha');
+
+console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

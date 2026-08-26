@@ -2975,7 +2975,6 @@ function goto(page) {
   if (page === 'fios') renderFasePainel(2);
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
-  if (page === 'avisos') renderAvisos();
   if (page === 'ranking') renderRanking();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-expedicao') {
@@ -20972,15 +20971,56 @@ function _pintarBadgeAvisos(n) {
 // o que já estava lá quando o programa abriu não é novidade, é histórico.
 let _avisosContagem = null;
 
+function avisosAberto() {
+  const p = document.getElementById('avisosPainel');
+  return !!(p && !p.classList.contains('hidden'));
+}
+
+/* ABRIR E FECHAR O PAINEL. A lista fica ACUMULADA atrás do sino: um clique
+   expande tudo o que chegou, outro fecha. A posição é calculada a partir do
+   próprio sino, e não fixada no CSS, porque o menu lateral recolhe (‹) e no
+   celular vira gaveta — coordenada chumbada deixaria o painel no vazio. */
+function abrirAvisos() {
+  const painel = document.getElementById('avisosPainel');
+  const sino = document.getElementById('avisosSino');
+  if (!painel || !sino) return;
+  const r = sino.getBoundingClientRect();
+  const largura = Math.min(380, window.innerWidth - 24);
+  painel.style.width = largura + 'px';
+  painel.style.top = Math.round(r.bottom + 8) + 'px';
+  // Encosta na esquerda do sino, mas nunca sai da tela pela direita.
+  painel.style.left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - largura - 12))) + 'px';
+  painel.classList.remove('hidden');
+  renderAvisos();
+}
+
+function fecharAvisos() {
+  const painel = document.getElementById('avisosPainel');
+  if (painel) painel.classList.add('hidden');
+}
+
+function toggleAvisos() {
+  if (avisosAberto()) fecharAvisos(); else abrirAvisos();
+}
+
+// Clicar fora fecha, e Esc também. Sem isto o painel ficaria pendurado sobre a
+// tela enquanto a pessoa tenta trabalhar por baixo dele.
+document.addEventListener('click', (e) => {
+  if (!avisosAberto()) return;
+  const painel = document.getElementById('avisosPainel');
+  const sino = document.getElementById('avisosSino');
+  if (painel && !painel.contains(e.target) && sino && !sino.contains(e.target)) fecharAvisos();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharAvisos(); });
+
 function atualizarBadgeAvisos() {
-  // A própria tela do mural aberta: redesenha e ela zera o contador sozinha.
-  const sec = document.querySelector('section.page[data-page="avisos"]');
-  if (sec && !sec.classList.contains('hidden')) { renderAvisos(); return; }
+  // Painel aberto: redesenha nele mesmo e ele zera o contador sozinho.
+  if (avisosAberto()) { renderAvisos(); return; }
   const n = _avisosNaoLidos().length;
   _pintarBadgeAvisos(n);
   if (_avisosContagem !== null && n > _avisosContagem) {
     const novos = n - _avisosContagem;
-    toast(`🔔 ${novos} aviso${novos > 1 ? 's' : ''} nov${novos > 1 ? 'os' : 'o'} — veja em Avisos`, '');
+    toast(`🔔 ${novos} aviso${novos > 1 ? 's' : ''} nov${novos > 1 ? 'os' : 'o'} — clique no sino`, '');
   }
   _avisosContagem = n;
 }
@@ -21034,7 +21074,12 @@ function renderAvisos() {
         cabec = `${esc(meu ? 'você' : quem)} ${e.editada ? 'corrigiu a' : 'escreveu uma'} observação`;
         corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
       }
-      return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}">
+      // A LINHA INTEIRA abre a OS: num painel estreito, um botão ao lado do
+      // texto quebra em duas linhas e come a largura do recado. O › é o que
+      // avisa que dá para clicar.
+      return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}"
+           title="Abrir a folha da OS ${esc(e.os)}"
+           onclick="fecharAvisos(); verOS('${esc(e.osId)}')">
         <span class="aviso-icone">${icone}</span>
         <div class="aviso-corpo">
           <div class="aviso-cab"><b>OS ${esc(e.os)}</b> · ${cabec}
@@ -21042,7 +21087,7 @@ function renderAvisos() {
             ${novo ? '<span class="aviso-novo">novo</span>' : ''}</div>
           ${corpo}
         </div>
-        <button class="btn small" onclick="verOS('${esc(e.osId)}')">abrir a OS</button>
+        <span class="aviso-abrir" aria-hidden="true">›</span>
       </div>`;
     }).join('');
   }
@@ -27750,7 +27795,8 @@ window.desconectarPastaBackup = desconectarPastaBackup;
 window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
 window.mudarStatusOS = mudarStatusOS;
-window.renderAvisos = renderAvisos;
+window.toggleAvisos = toggleAvisos;
+window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;
