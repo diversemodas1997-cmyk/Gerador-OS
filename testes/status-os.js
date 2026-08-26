@@ -146,15 +146,53 @@ console.log('-- o que fica gravado --');
   ok('24. e o icone do estado aparece nos dois casos', cel.includes('\u{1F534}'), cel);
 
   console.log('');
+  console.log('-- o filtro por status da lista de OS Salvas --');
+  // O <select> de mentira: e tudo o que _filtroStatusListaOS toca (value e
+  // innerHTML), entao da para conferir as opcoes sem navegador.
+  const comSelect = (escolhido, ordens) => {
+    const sel = { value: escolhido, innerHTML: '' };
+    const ctx = { papel: 'admin', login: 'admin@diverse.local', servidorNoAr: true,
+                  toasts: [], salvou: 0, redesenhou: 0, STATE: { ordens }, sel };
+    const api = new Function('ctx', `
+      const document = { getElementById: () => ctx.sel };
+      const esc = (s) => String(s == null ? '' : s);
+      ${constante('STATUS_OS')}
+      ${recorte('function _statusOS', 'a leitura do status')}
+      ${recorte('function _filtroStatusListaOS', 'o filtro por status')}
+      return { _filtroStatusListaOS };
+    `)(ctx);
+    return { ctx, api, sel };
+  };
+  const osDoFiltro = [
+    { id: '1', os: '0483' },                          // nao iniciado
+    { id: '2', os: '0484', statusOS: 'parado' },
+    { id: '3', os: '0485', statusOS: 'finalizado' },
+    { id: '4', os: '0486', statusOS: 'finalizado' }
+  ];
+  let f = comSelect('', osDoFiltro);
+  ok('27. sem escolha, o filtro nao corta nada', f.api._filtroStatusListaOS(osDoFiltro) === '');
+  ok('28. as opcoes sao "todos" mais os quatro estados',
+     (f.sel.innerHTML.match(/<option/g) || []).length === 5, f.sel.innerHTML);
+  ok('29. cada opcao ja diz quantas OS tem naquele estado',
+     /Todos os status \(4\)/.test(f.sel.innerHTML)
+     && /Finalizado \(2\)/.test(f.sel.innerHTML)
+     && /Parado \(1\)/.test(f.sel.innerHTML)
+     && /Não iniciado \(1\)/.test(f.sel.innerHTML), f.sel.innerHTML);
+  f = comSelect('finalizado', osDoFiltro);
+  ok('30. o escolhido volta como chave e continua marcado',
+     f.api._filtroStatusListaOS(osDoFiltro) === 'finalizado'
+     && /value="finalizado" selected/.test(f.sel.innerHTML), f.sel.innerHTML);
+
+  console.log('');
   console.log('-- o status mora SO na lista de OS Salvas --');
   // A celula e montada em um lugar so, dentro da coluna ACOES do renderListaOS.
   // Se alguem levar o status para a folha, a OE ou o painel de fases, o teste cai
   // e a conversa acontece antes.
   const usos = (src.match(/_statusCelulaOS\(/g) || []).length;
-  ok('25. _statusCelulaOS e chamada uma vez so (a definicao + a chamada)',
+  ok('31. _statusCelulaOS e chamada uma vez so (a definicao + a chamada)',
      usos === 2, String(usos));
   const lista = src.slice(src.indexOf('function renderListaOS'));
-  ok('26. e a chamada esta dentro da coluna col-actions da lista',
+  ok('32. e a chamada esta dentro da coluna col-actions da lista',
      /col-actions row-actions">\s*\$\{_statusCelulaOS\(o\)\}/.test(lista),
      lista.slice(lista.indexOf('col-actions'), lista.indexOf('col-actions') + 120));
 

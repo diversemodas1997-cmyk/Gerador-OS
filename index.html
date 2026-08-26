@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26a">
+<link rel="stylesheet" href="styles.css?v=2026-08-26c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -744,8 +744,12 @@
       </div>
       <div class="card">
         <div id="lista-os-grupo" class="hidden"></div>
-        <div style="margin-bottom:12px;max-width:320px">
-          <input type="search" id="busca-os" placeholder="Buscar por número da OS..." oninput="renderListaOS()" style="width:100%">
+        <!-- Buscar por número e filtrar por status são duas perguntas diferentes
+             e valem juntas: "das que estão paradas, cadê a 483?". As opções do
+             filtro (com a contagem de cada estado) são montadas em app.js. -->
+        <div class="lista-os-filtros">
+          <input type="search" id="busca-os" placeholder="Buscar por número da OS..." oninput="renderListaOS()">
+          <select id="filtro-status-os" title="Mostrar só as OS de um status" onchange="renderListaOS()"></select>
         </div>
         <table class="table">
           <thead><tr>
@@ -1260,6 +1264,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26a"></script>
+<script src="app.js?v=2026-08-26c"></script>
 </body>
 </html>

@@ -1306,6 +1306,12 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    ficavam longe umas das outras, com um vao grande no meio. Limitar a largura
    junta as colunas; abaixo disso ela ocupa 100% normalmente. */
 [data-page="lista-os"] .table { max-width: 1600px; }
+/* A LINHA DE FILTROS da lista de OS Salvas: buscar por numero e filtrar por
+   status, lado a lado. Sao duas perguntas diferentes e valem juntas. No celular
+   empilham, que e o unico jeito de os dois caberem. */
+.lista-os-filtros { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.lista-os-filtros input[type="search"] { flex: 1 1 240px; max-width: 320px; }
+.lista-os-filtros select { flex: 0 0 auto; min-width: 190px; }
 /* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
 
    Mesma caixa nos dois casos — seletor para quem pode mudar (admin e

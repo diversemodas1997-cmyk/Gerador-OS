@@ -20763,6 +20763,31 @@ async function mudarStatusOS(id, valor) {
   }
 }
 
+/* O FILTRO POR STATUS da lista de OS Salvas.
+
+   As opções são montadas aqui, e não no HTML, por causa da CONTAGEM: "Parado
+   (3)" responde a pergunta antes mesmo de filtrar, e é ela que faz alguém
+   perceber que há três OS travadas. A contagem é feita sobre a lista que já
+   passou pelo grupo do Ranking — o filtro conta o que está à vista, não o
+   cadastro inteiro.
+
+   Devolve a chave escolhida ('' = todas). */
+function _filtroStatusListaOS(base) {
+  const sel = document.getElementById('filtro-status-os');
+  if (!sel) return '';
+  const escolhido = sel.value || '';
+  const conta = {};
+  (base || []).forEach(o => { const k = _statusOS(o); conta[k] = (conta[k] || 0) + 1; });
+  const opcoes = [{ k: '', rotulo: `Todos os status (${(base || []).length})` }]
+    .concat(STATUS_OS.map(x => ({ k: x.k, rotulo: `${x.icone} ${x.rotulo} (${conta[x.k] || 0})` })));
+  const novo = opcoes.map(x => `<option value="${x.k}"${x.k === escolhido ? ' selected' : ''}>`
+    + `${esc(x.rotulo)}</option>`).join('');
+  // Só toca no DOM quando algo mudou: reescrever o <select> a cada tecla da
+  // busca fecharia a listinha aberta e faria o campo piscar.
+  if (sel.innerHTML !== novo) sel.innerHTML = novo;
+  return escolhido;
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
   // Mesma lista de PDFs da tela de grades: vem uma vez por sessão e, quando
@@ -20790,11 +20815,24 @@ function renderListaOS() {
   // Filtro por número da OS (busca livre; ignora espaços).
   const buscaEl = document.getElementById('busca-os');
   const termo = (buscaEl ? buscaEl.value : '').trim().toLowerCase();
-  const filtradas = termo
+  const porTexto = termo
     ? noGrupo.filter(o => String(o.os || '').toLowerCase().includes(termo))
     : noGrupo;
+  // O STATUS é a segunda pergunta, e vale junto com a busca: "das paradas, cadê
+  // a 483?". A contagem de cada estado sai da lista do grupo, não do que sobrou
+  // da busca — senão o número mudaria a cada tecla digitada.
+  const statusEscolhido = _filtroStatusListaOS(noGrupo);
+  const filtradas = statusEscolhido
+    ? porTexto.filter(o => _statusOS(o) === statusEscolhido)
+    : porTexto;
   _renderAvisoGrupoListaOS(noGrupo.length);
-  if (!filtradas.length) { tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada para "${esc(termo)}".</td></tr>`; return; }
+  if (!filtradas.length) {
+    const sRot = (STATUS_OS.find(x => x.k === statusEscolhido) || {}).rotulo || '';
+    const oQue = [termo ? `"${esc(termo)}"` : '', sRot ? `status <b>${esc(sRot)}</b>` : '']
+      .filter(Boolean).join(' e ');
+    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.</td></tr>`;
+    return;
+  }
   tb.innerHTML = filtradas.map(o => {
     // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
     // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
