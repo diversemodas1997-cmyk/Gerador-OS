@@ -42,6 +42,24 @@ function montar(estado) {
       escritas.push({ alvo: lado, tipo: 'sinal', corpo: JSON.parse(op.body) });
       return resposta();
     }
+    if (url.includes('/rest/v1/mensagens')) {
+      if (estado[lado + 'SemMensagens']) return resposta({ message: 'relation does not exist' }, false);
+      const lista = estado[lado].mensagens || [];
+      if (metodo === 'GET') {
+        // A nuvem so pede os ids; a fabrica manda a mensagem inteira.
+        return resposta(url.includes('select=id') ? lista.map(m => ({ id: m.id })) : lista);
+      }
+      if (metodo === 'DELETE') {
+        const ids = (url.match(/id=in\.\(([^)]*)\)/) || [, ''])[1].split(',').filter(Boolean);
+        escritas.push({ alvo: lado, tipo: 'msg-apagar', ids });
+        estado[lado].mensagens = lista.filter(m => !ids.includes(m.id));
+        return resposta();
+      }
+      const novas = JSON.parse(op.body);
+      escritas.push({ alvo: lado, tipo: 'msg-enviar', ids: novas.map(m => m.id) });
+      estado[lado].mensagens = lista.concat(novas);
+      return resposta();
+    }
     if (url.includes('/storage/v1/object/list/')) {
       const offset = JSON.parse(op.body).offset;
       return resposta(offset ? [] : (estado[lado].imagens || []).map(n => ({ name: n })));
@@ -59,9 +77,11 @@ function montar(estado) {
 }
 
 const cenario = (fabrica, nuvem, extra) => Object.assign({
-  fabrica: Object.assign({ dados: null, sinal: null, imagens: [] }, fabrica),
-  nuvem: Object.assign({ dados: null, sinal: null, imagens: [] }, nuvem)
+  fabrica: Object.assign({ dados: null, sinal: null, imagens: [], mensagens: [] }, fabrica),
+  nuvem: Object.assign({ dados: null, sinal: null, imagens: [], mensagens: [] }, nuvem)
 }, extra || {});
+const msg = (id, texto) => ({ id, criado_em: '2026-08-26T12:0' + id + ':00Z',
+                              autor_id: 'u1', autor: 'costura@diverse.local', texto });
 
 const rodar = (est, op) => {
   const { buscar, escritas } = montar(est);
@@ -131,6 +151,42 @@ const rodar = (est, op) => {
      && blobVazio(null) === true && blobVazio({}) === true);
   ok('8b. só desenhos já conta como não-vazio',
      blobVazio({ ordens: '[]', desenhos: '[{"id":1}]' }) === false);
+
+  /* AS MENSAGENS. Elas moram em tabela propria (o canal de recados), e nao no
+     blob: recado novo NAO muda o carimbo do shared_data, entao este passo tem
+     de rodar mesmo quando os dados nao mudaram. */
+  est = cenario({ dados: { data: CHEIO, updated_at: 't9' }, mensagens: [msg('1', 'oi'), msg('2', 'faltou pano')] },
+                { dados: { data: CHEIO, updated_at: 't9' }, mensagens: [msg('1', 'oi')] });
+  ({ rel, escritas } = await rodar(est));
+  ok('9. mensagem nova sobe mesmo com os dados iguais (carimbo nao muda com recado)',
+     rel.dados === 'nao-mexeu' && rel.mensagens === 1, JSON.stringify(rel));
+  ok('10. e sobe SO a que faltava',
+     escritas.filter(e => e.tipo === 'msg-enviar').flatMap(e => e.ids).join(',') === '2',
+     JSON.stringify(escritas.filter(e => e.tipo === 'msg-enviar')));
+
+  // Recado apagado na fabrica sai da nuvem: quem apagou o proprio recado fez
+  // isso de proposito, e deixa-lo legivel de fora desfaria a decisao.
+  est = cenario({ dados: { data: CHEIO, updated_at: 't9' }, mensagens: [msg('1', 'oi')] },
+                { dados: { data: CHEIO, updated_at: 't9' }, mensagens: [msg('1', 'oi'), msg('3', 'engano')] });
+  ({ rel, escritas } = await rodar(est));
+  ok('11. o que foi apagado na fabrica e apagado na nuvem',
+     rel.mensagensApagadas === 1
+     && escritas.some(e => e.tipo === 'msg-apagar' && e.ids.join(',') === '3'), JSON.stringify(rel));
+
+  // Um lado sem a tabela nao pode derrubar o espelho dos DADOS, que e o que importa.
+  est = cenario({ dados: { data: CHEIO, updated_at: 't10' }, mensagens: [msg('1', 'oi')] },
+                { dados: { data: CHEIO, updated_at: 't9' } }, { nuvemSemMensagens: true });
+  ({ rel } = await rodar(est));
+  ok('12. servidor sem a tabela de mensagens nao derruba o espelho dos dados',
+     rel.dados === 'espelhado' && rel.mensagens === 0, JSON.stringify(rel));
+
+  // E da para desligar as mensagens sem desligar o resto.
+  est = cenario({ dados: { data: CHEIO, updated_at: 't11' }, mensagens: [msg('1', 'oi')] },
+                { dados: { data: CHEIO, updated_at: 't9' } });
+  ({ rel, escritas } = await rodar(est, { semMensagens: true }));
+  ok('13. --sem-mensagens espelha os dados e nao toca no canal',
+     rel.dados === 'espelhado' && !escritas.some(e => String(e.tipo).startsWith('msg-')),
+     JSON.stringify(escritas.map(e => e.tipo)));
 
   console.log(falhas ? '\n>>> ' + falhas + ' FALHA(S)' : '\n>>> todos passaram');
   process.exit(falhas ? 1 : 0);

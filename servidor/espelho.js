@@ -56,7 +56,7 @@ async function listarBucket(buscar, base, chave) {
 async function espelhar(cfg) {
   const buscar = cfg.buscar || fetch;
   const log = cfg.log || (() => {});
-  const rel = { dados: 'nao-mexeu', imagens: 0, motivo: null };
+  const rel = { dados: 'nao-mexeu', imagens: 0, mensagens: 0, mensagensApagadas: 0, motivo: null };
 
   // 1. O que a fábrica tem agora.
   const localLinhas = await json(buscar,
@@ -148,6 +148,55 @@ async function espelhar(cfg) {
         });
       if (env.ok) { rel.imagens++; log('imagem enviada: ' + nome); }
       else log('aviso: falhou ao enviar ' + nome + ' (' + env.status + ')');
+    }
+  }
+
+  // 6. AS MENSAGENS — o canal de recados da fábrica (sql/supabase-mensagens.sql).
+  //    Elas moram em tabela própria, e não no blob, então não vêm no passo 4:
+  //    um recado novo não muda o carimbo do shared_data. Por isso este passo
+  //    roda SEMPRE, mesmo quando os dados não mudaram.
+  //
+  //    Diferente das imagens, aqui o que foi APAGADO na fábrica é apagado na
+  //    nuvem: quem apagou o próprio recado fez isso de propósito, e deixá-lo
+  //    legível de fora seria desfazer a decisão pelas costas. Continua sendo de
+  //    mão única — a nuvem nunca manda nada de volta.
+  if (!cfg.semMensagens) {
+    try {
+      const daFabricaMsgs = await json(buscar,
+        `${cfg.local}/rest/v1/mensagens?select=id,criado_em,autor_id,autor,texto&order=criado_em.asc`,
+        { headers: cab(cfg.localKey) }) || [];
+      const naNuvemMsgs = await json(buscar,
+        `${cfg.nuvem}/rest/v1/mensagens?select=id`, { headers: cab(cfg.nuvemKey) }) || [];
+      const jaLa = new Set(naNuvemMsgs.map(m => m.id));
+      const novas = daFabricaMsgs.filter(m => !jaLa.has(m.id));
+      for (let i = 0; i < novas.length; i += 200) {
+        const lote = novas.slice(i, i + 200);
+        const r = await buscar(`${cfg.nuvem}/rest/v1/mensagens`, {
+          method: 'POST',
+          headers: cab(cfg.nuvemKey, {
+            'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates'
+          }),
+          body: JSON.stringify(lote)
+        });
+        if (!r.ok) throw new Error('envio respondeu ' + r.status);
+        rel.mensagens += lote.length;
+      }
+      const aqui = new Set(daFabricaMsgs.map(m => m.id));
+      const sobrando = naNuvemMsgs.map(m => m.id).filter(id => !aqui.has(id));
+      for (let i = 0; i < sobrando.length; i += 100) {
+        const lote = sobrando.slice(i, i + 100);
+        const r = await buscar(
+          `${cfg.nuvem}/rest/v1/mensagens?id=in.(${lote.map(encodeURIComponent).join(',')})`,
+          { method: 'DELETE', headers: cab(cfg.nuvemKey) });
+        if (r.ok) rel.mensagensApagadas += lote.length;
+      }
+      if (rel.mensagens || rel.mensagensApagadas) {
+        log(`mensagens: ${rel.mensagens} enviada(s), ${rel.mensagensApagadas} apagada(s) na nuvem`);
+      }
+    } catch (e) {
+      // Servidor sem a tabela (script ainda não rodado de um dos lados) não
+      // pode derrubar o espelho dos dados, que é o que importa.
+      log('aviso: as mensagens não foram espelhadas (' + e.message + ')');
     }
   }
 

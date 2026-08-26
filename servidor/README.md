@@ -373,22 +373,40 @@ Isso é possível porque o app abre a nuvem em modo consulta — ninguém edita 
 lá, então não existem dois lados para conciliar, que é onde mora o risco de
 perder dados.
 
+## As chaves
+
+O script acha as duas sozinho, e por isso o comando agendado não carrega segredo
+nenhum:
+
+| chave | onde ele procura |
+|---|---|
+| servidor da fábrica | `SERVICE_ROLE_KEY` em `C:\supabase\docker\.env` (de onde os outros scripts já leem) |
+| nuvem | `C:\supabase\nuvem-service-role.key` — uma linha só, a chave e nada mais |
+
+O arquivo da nuvem já existe na máquina, com a explicação dentro; falta colar a
+chave, que está no painel do Supabase em **Project Settings → API → service_role**.
+Enquanto ela não estiver lá, o script para na hora e diz exatamente isso.
+
+> Por que num arquivo, e não no comando: essa chave passa por cima de todas as
+> permissões. Na linha de comando ela aparece no Agendador de Tarefas, no
+> histórico do PowerShell e em qualquer print da tela. Num arquivo do servidor,
+> não. Nunca no navegador, nunca dentro do repositório.
+
 ## Agendar
 
 ```powershell
-$acao = New-ScheduledTaskAction -Execute "node" `
-  -Argument 'C:\gerador-os\servidor\espelhar-para-nuvem.js --local http://localhost:8000 --local-key <SR-LOCAL> --nuvem https://ckkqrjkhorvaahyazqsr.supabase.co --nuvem-key <SR-NUVEM>' `
-  -WorkingDirectory 'C:\gerador-os'
-$quando = New-ScheduledTaskTrigger -Once -At 7am -RepetitionInterval (New-TimeSpan -Minutes 30)
-Register-ScheduledTask -TaskName "Espelho Gerador-OS" -Action $acao -Trigger $quando -RunLevel Highest
+$node = (Get-Command node).Source
+$acao = New-ScheduledTaskAction -Execute $node -Argument 'servidor\espelhar-para-nuvem.js' `
+  -WorkingDirectory 'C:\Users\Pichau\Desktop\Gerador-OS'
+$quando = New-ScheduledTaskTrigger -Once -At 7am -RepetitionInterval (New-TimeSpan -Minutes 30) `
+  -RepetitionDuration (New-TimeSpan -Days 3650)
+Register-ScheduledTask -TaskName "Espelho Gerador-OS" -Action $acao -Trigger $quando -Force
 ```
 
-A cada 30 minutos. Se nada mudou desde a última vez, ele não escreve nada — dá
-para rodar com frequência sem custo.
-
-> A `SERVICE_ROLE_KEY` da nuvem passa por cima de todas as permissões. Ela fica
-> só nesse comando, na máquina do servidor. Nunca no navegador, nunca dentro do
-> repositório.
+**Já está agendada nesta máquina** (26/08/2026), a cada 30 minutos a partir das
+7h. Se nada mudou desde a última vez, ele não escreve nada — dá para rodar com
+frequência sem custo. Para rodar na hora: `Start-ScheduledTask "Espelho Gerador-OS"`,
+ou `node servidor\espelhar-para-nuvem.js` dentro da pasta do programa.
 
 ## O que ele faz e o que se recusa a fazer
 
@@ -397,6 +415,14 @@ para rodar com frequência sem custo.
 - Envia as imagens de desenho que ainda não estiverem lá. **Nunca apaga** da
   nuvem: imagem sobrando não custa quase nada, imagem faltando quebra uma folha
   de OS.
+- Envia as **mensagens** do canal de recados (tabela `mensagens`) e, ao
+  contrário das imagens, **apaga da nuvem o que foi apagado na fábrica**: quem
+  apagou o próprio recado fez isso de propósito, e deixá-lo legível de fora
+  desfaria a decisão pelas costas. Este passo roda mesmo quando os dados não
+  mudaram — recado novo não altera o carimbo do `shared_data`. Desliga com
+  `--sem-mensagens`. Se um dos lados ainda não tiver a tabela
+  (`sql/supabase-mensagens.sql`), ele avisa e segue: o espelho dos dados é o que
+  não pode parar.
 - **Recusa espelhar quando a fábrica está sem OS e sem desenhos e a nuvem tem
   dados.** É a mesma trava que já protege o app. Se a fábrica ficar vazia por um
   problema — restauração pela metade, migração que não rodou —, a nuvem é a
