@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26p">
+<link rel="stylesheet" href="styles.css?v=2026-08-26q">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -654,7 +654,18 @@
         <div class="card">
           <div class="card-title">Desenho técnico</div>
           <div class="form-grid cols-2">
-            <div class="field"><label>Selecionar desenho cadastrado</label><select id="f-desenho" onchange="previewDesenhoSelecionado(); sincCodigoDesenho('desenho')"></select></div>
+            <!-- São mais de cem desenhos numa lista só: a busca recorta a lista
+                 enquanto se digita (código, descrição, modelo, cor ou SKU). O
+                 desenho já escolhido nunca sai da lista. -->
+            <div class="field"><label>Selecionar desenho cadastrado</label>
+              <div class="busca-desenho">
+                <input type="search" id="f-desenho-busca" placeholder="Buscar: código, descrição, modelo, cor ou SKU…"
+                       title="Vários termos valem juntos, cada um em qualquer campo: &quot;moletom preto&quot;."
+                       oninput="filtrarDesenhosOS()">
+                <span id="f-desenho-conta" class="lista-os-conta"></span>
+              </div>
+              <select id="f-desenho" onchange="previewDesenhoSelecionado(); sincCodigoDesenho('desenho')"></select>
+            </div>
             <div class="field"><label>Preview</label><div class="desenho-preview" id="f-desenho-preview"><span>Nenhum desenho selecionado</span></div></div>
           </div>
         </div>
@@ -1311,6 +1322,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26p"></script>
+<script src="app.js?v=2026-08-26q"></script>
 </body>
 </html>

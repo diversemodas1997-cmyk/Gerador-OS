@@ -5962,7 +5962,8 @@ function refreshOSFormDropdowns() {
   IDS.forEach(id => { const el = document.getElementById(id); if (el) saved[id] = el.value; });
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
-  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', _rotuloDesenhoOS);
+  filtrarDesenhosOS();   // mantém o recorte da busca, se houver algo escrito
   preencherDropdownGradesOS();
   fillSelect('f-griffe', STATE.marcas, 'nome', '— selecione —');
   fillSelect('f-linha', STATE.linhas, 'nome', '— selecione —');
@@ -16169,11 +16170,16 @@ function initOSForm() {
   _osGradeMostrarTodas = false;
   const buscaGrade = document.getElementById('f-grade-busca');
   if (buscaGrade) buscaGrade.value = '';
+  // O mesmo vale para a busca do desenho: o que foi procurado na OS anterior
+  // não pode chegar recortando a lista da OS seguinte.
+  const buscaDes = document.getElementById('f-desenho-busca');
+  if (buscaDes) buscaDes.value = '';
 
   // popula dropdowns
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
   fillSelect('f-modelo', STATE.modelos, 'nome', '— selecione —');
-  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', d => `${d.codigo}${d.desc ? ' · '+d.desc : ''}`);
+  fillSelect('f-desenho', STATE.desenhos, 'codigo', '— selecione —', _rotuloDesenhoOS);
+  filtrarDesenhosOS();   // mantém o recorte da busca, se houver algo escrito
   preencherDropdownGradesOS();
   atualizarDatalistCodigos();
 
@@ -16217,6 +16223,65 @@ function initOSForm() {
   renderEtapas();
   atualizarCalculosEnfesto();
   atualizarResponsabilidadesOS();
+}
+
+/* A BUSCA DO DESENHO TÉCNICO, no formulário da OS.
+
+   São 133 desenhos cadastrados numa lista suspensa só — achar o certo ali é
+   rolar a lista inteira lendo código por código. O campo de busca recorta a
+   lista enquanto se digita, e procura em tudo o que identifica o desenho: o
+   código, a descrição, o modelo, a cor e o SKU. Vários termos valem juntos
+   ("moletom preto"), como na lista de OS Salvas.
+
+   O QUE ELE NÃO FAZ: escolher por você. A lista continua sendo a lista, e o
+   desenho JÁ ESCOLHIDO nunca some dela — filtrar não pode desfazer, em
+   silêncio, uma escolha que já estava na OS. */
+function _textoBuscaDesenho(d) {
+  const m = (STATE.modelos || []).find(x => x.id === d.modeloId);
+  const cores = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId]
+    .filter(Boolean)
+    .map(id => ((STATE.cores || []).find(c => c.id === id) || {}).nome || '');
+  return [d.codigo, d.desc, (m && m.nome) || '', cores.join(' '), d.skuLinha]
+    .filter(Boolean).join(' ').toLowerCase();
+}
+
+// O rótulo de cada opção: o mesmo em toda parte do formulário.
+function _rotuloDesenhoOS(d) {
+  return `${d.codigo}${d.desc ? ' · ' + d.desc : ''}`;
+}
+
+function filtrarDesenhosOS() {
+  const sel = document.getElementById('f-desenho');
+  const campo = document.getElementById('f-desenho-busca');
+  const conta = document.getElementById('f-desenho-conta');
+  if (!sel) return;
+  const termos = ((campo && campo.value) || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const todos = STATE.desenhos || [];
+  const escolhido = sel.value;
+  const casam = termos.length
+    ? todos.filter(d => { const alvo = _textoBuscaDesenho(d); return termos.every(t => alvo.includes(t)); })
+    : todos;
+  // O desenho já escolhido entra sempre, mesmo que não case com a busca.
+  const lista = (escolhido && !casam.some(d => d.id === escolhido))
+    ? todos.filter(d => d.id === escolhido).concat(casam)
+    : casam;
+  sel.innerHTML = `<option value="">— selecione —</option>`
+    + lista.map(d => `<option value="${esc(d.id)}"${d.id === escolhido ? ' selected' : ''}>`
+        + `${esc(_rotuloDesenhoOS(d))}</option>`).join('');
+  if (conta) {
+    conta.textContent = termos.length
+      ? `${casam.length} de ${todos.length} desenhos`
+      : `${todos.length} desenhos`;
+    conta.classList.toggle('filtrando', !!termos.length);
+  }
+}
+
+// Devolve a lista inteira. Chamado ao abrir o formulário: busca de uma OS
+// anterior não pode chegar recortando a lista da OS seguinte.
+function limparBuscaDesenhoOS() {
+  const campo = document.getElementById('f-desenho-busca');
+  if (campo) campo.value = '';
+  filtrarDesenhosOS();
 }
 
 function fillSelect(id, items, labelField, placeholder, custom = null) {
@@ -29012,6 +29077,8 @@ window.limparAvisos = limparAvisos;
 window.abrirListaOSporStatus = abrirListaOSporStatus;
 window.marcarAvisoAberto = marcarAvisoAberto;
 window.limparFiltrosListaOS = limparFiltrosListaOS;
+window.filtrarDesenhosOS = filtrarDesenhosOS;
+window.limparBuscaDesenhoOS = limparBuscaDesenhoOS;
 window.desfazerUltimaAcao = desfazerUltimaAcao;
 window.deleteGradeFolder = deleteGradeFolder;
 window.deleteGradeSubfolder = deleteGradeSubfolder;

@@ -1473,6 +1473,10 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   white-space: nowrap;
 }
 .lista-os-conta b { color: var(--ink); }
+/* A busca do desenho tecnico, no formulario da OS: o campo em cima da lista
+   suspensa, e a conta do que sobrou ao lado. */
+.busca-desenho { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.busca-desenho input[type="search"] { flex: 1 1 auto; min-width: 0; }
 .lista-os-conta.filtrando { color: var(--accent-dark); }
 /* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
 
