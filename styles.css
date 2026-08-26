@@ -238,6 +238,52 @@ aside.sidebar {
 /* A lista rola dentro do painel: acumulado nao pode empurrar a pagina. */
 .avisos-corpo { overflow-y: auto; flex: 1 1 auto; }
 
+/* ===== O PAINEL DE MENSAGENS =====
+   Herda o desenho do painel de avisos (mesma classe) e acrescenta o campo de
+   escrever no pe. */
+.msg-escrever {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.msg-escrever input { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.msg-dia {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 10px 0 4px;
+}
+.msg-linha { padding: 6px 12px; }
+/* O proprio recado fica levemente destacado, para a pessoa se achar na
+   conversa sem precisar ler o nome em toda linha. */
+.msg-linha.meu { background: #fbf9f2; }
+.msg-linha.novo { border-left: 3px solid var(--accent); padding-left: 9px; }
+.msg-cab { display: flex; align-items: baseline; gap: 6px; font-size: 12px; }
+.msg-cab b { color: var(--ink); }
+.msg-hora { color: var(--ink-3); font-size: 11px; }
+.msg-del {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: .4;
+}
+.msg-linha:hover .msg-del { opacity: 1; }
+.msg-txt {
+  font-size: 13px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 1px;
+}
+
 .nav-badge {
   background: var(--alert);
   color: #fff;

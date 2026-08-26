@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-26o">
+<link rel="stylesheet" href="styles.css?v=2026-08-26p">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -46,6 +46,11 @@
           <span class="auth-icones">
             <button type="button" class="auth-icone hidden" id="btnDesfazer" onclick="desfazerUltimaAcao()"
                     title="Desfazer a última coisa que você fez" aria-label="Desfazer">↩</button>
+            <!-- O RECADO DE TODO MUNDO: um canal só, sem conversa privada. O
+                 ícone some quando o servidor não tem a tabela de mensagens. -->
+            <button type="button" class="auth-icone hidden" id="msgBotao" onclick="toggleMensagens()"
+                    title="Mensagens: o recado de todo mundo, num canal só" aria-label="Mensagens">💬<span
+                    class="nav-badge hidden" id="msgBadge">0</span></button>
             <button type="button" class="auth-icone avisos-sino" id="avisosSino" onclick="toggleAvisos()"
                     title="Avisos: observações e mudanças de status nas OS" aria-label="Avisos">🔔<span
                     class="nav-badge hidden" id="avisosBadge">0</span></button>
@@ -110,6 +115,24 @@
        cortado pela rolagem do menu. Fica escondido até alguém clicar no sino, e
        a posição é calculada na hora a partir do próprio sino (o menu recolhe e
        vira gaveta no celular). -->
+  <!-- O PAINEL DE MENSAGENS. Mesma casa do painel de avisos: fora da <aside>
+       para não ser cortado pela rolagem do menu, e posicionado a partir do
+       próprio ícone. A conversa se lê de cima para baixo; o campo de escrever
+       fica no pé, onde a mão já está. -->
+  <div class="avisos-painel msg-painel hidden" id="msgPainel" role="dialog" aria-label="Mensagens">
+    <div class="avisos-topo">
+      <b>Mensagens</b>
+      <span class="avisos-resumo">todo mundo lê o que é escrito aqui</span>
+      <button type="button" class="avisos-fechar" onclick="fecharMensagens()" title="Fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="avisos-corpo" id="msg-lista"></div>
+    <div class="msg-escrever">
+      <input type="text" id="msg-texto" maxlength="2000" placeholder="Escreva um recado para todos…"
+             onkeydown="_msgTecla(event)">
+      <button type="button" class="btn small primary" onclick="enviarMensagem()">Enviar</button>
+    </div>
+  </div>
+
   <div class="avisos-painel hidden" id="avisosPainel" role="dialog" aria-label="Avisos">
     <div class="avisos-topo">
       <b>Avisos</b>
@@ -1288,6 +1311,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-26o"></script>
+<script src="app.js?v=2026-08-26p"></script>
 </body>
 </html>

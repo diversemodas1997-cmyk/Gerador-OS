@@ -964,6 +964,7 @@ function iniciarRealtime() {
 }
 
 function pararRealtime() {
+  pararRealtimeMensagens();
   if (supa && realtimeChannel) {
     supa.removeChannel(realtimeChannel);
     realtimeChannel = null;
@@ -2194,8 +2195,11 @@ async function inicializarAuth() {
     await carregarComprasMateriais();
     await carregarCatalogoSkus();
     await revalidarSkusDesenhos();
+    await carregarMensagens();
     iniciarRealtime();
     iniciarRealtimeCompras();
+    iniciarRealtimeMensagens();
+    atualizarBadgeMensagens();
   }
   atualizarUIAuth();
   supa.auth.onAuthStateChange(async (event, session) => {
@@ -2217,8 +2221,11 @@ async function inicializarAuth() {
       await carregarComprasMateriais();
       await carregarCatalogoSkus();
       await revalidarSkusDesenhos();
+      await carregarMensagens();
       iniciarRealtime();
       iniciarRealtimeCompras();
+      iniciarRealtimeMensagens();
+      atualizarBadgeMensagens();
     } else if (event === 'SIGNED_OUT') {
       pararRealtime();
       pararPresenceOS();
@@ -21531,6 +21538,278 @@ function renderListaOS() {
 }
 
 /* ========================================================= */
+/*                        MENSAGENS                          */
+/* ========================================================= */
+
+/* O RECADO DE TODO MUNDO, NUM CANAL SÓ.
+
+   Um campo de mensagens onde a fábrica inteira se fala: quem escreve, escreve
+   para todos; quem abre, lê tudo o que foi dito. Sem conversa privada e sem
+   grupo, de propósito — recado de produção que só duas pessoas veem é o mesmo
+   que recado no papel: some, e ninguém mais sabe que existiu.
+
+   ONDE MORA: na tabela `mensagens` do servidor (sql/supabase-mensagens.sql), e
+   NÃO no blob dos dados. O blob desce e sobe inteiro, quase 2 MB; cada recado
+   custaria uma subida dessas em cada envio e uma descida em cada computador.
+   A tabela custa alguns bytes por mensagem e chega na hora pelo Realtime — que
+   é como conversa tem de ser.
+
+   QUEM ESCREVE: qualquer conta com login, admin ou não. É a única coisa do
+   programa que não tem dono: o recado é o mesmo para quem corta, quem costura
+   e quem administra. Cada um apaga só o que ele mesmo escreveu (o admin,
+   qualquer um) — a tranca disso está no RLS, no servidor, não aqui.
+
+   MODO NUVEM: a nuvem é cópia de consulta e pode nem ter a tabela. Se a leitura
+   falhar, o ícone some em silêncio em vez de piscar erro a cada abertura. */
+const MSG_MAX = 200;              // quantas mensagens a tela guarda
+let _mensagens = [];              // mais antigas primeiro, como se lê
+let _msgCanal = null;
+let _msgContagem = null;          // null = ainda não contamos nesta sessão
+let _msgIndisponivel = false;     // servidor sem a tabela: o campo não existe
+
+function _msgQuemSou() { return (currentUser && currentUser.id) || ''; }
+
+async function carregarMensagens() {
+  if (!supa || !currentUser) { _mensagens = []; return; }
+  try {
+    const { data, error } = await supa
+      .from('mensagens')
+      .select('id, criado_em, autor_id, autor, texto')
+      .order('criado_em', { ascending: false })
+      .limit(MSG_MAX);
+    if (error) {
+      // Tabela ausente (nuvem sem o script) ou sem permissão: o campo de
+      // mensagens simplesmente não aparece.
+      _msgIndisponivel = true;
+      _mensagens = [];
+      console.warn('mensagens', error.message || error);
+      return;
+    }
+    _msgIndisponivel = false;
+    _mensagens = (Array.isArray(data) ? data : []).slice().reverse();
+  } catch (e) {
+    _msgIndisponivel = true;
+    _mensagens = [];
+  }
+}
+
+function iniciarRealtimeMensagens() {
+  if (!supa || !currentUser || _msgCanal || _msgIndisponivel) return;
+  _msgCanal = supa
+    .channel('mensagens_all')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens' },
+      async (payload) => {
+        if (payload.eventType === 'INSERT' && payload.new) {
+          if (!_mensagens.some(m => m.id === payload.new.id)) _mensagens.push(payload.new);
+          while (_mensagens.length > MSG_MAX) _mensagens.shift();
+          // O recado do outro chegou com a tela em outra coisa: um toast chama
+          // o olho uma vez; o número no ícone é quem guarda o recado.
+          if (payload.new.autor_id !== _msgQuemSou() && !mensagensAberto()) {
+            const t = String(payload.new.texto || '').trim();
+            toast(`💬 ${_obsNomeLogin(payload.new.autor) || 'alguém'}: `
+              + (t.length > 60 ? t.slice(0, 60) + '…' : t), '');
+          }
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          _mensagens = _mensagens.filter(m => m.id !== payload.old.id);
+        } else {
+          await carregarMensagens();
+        }
+        if (mensagensAberto()) renderMensagens();
+        atualizarBadgeMensagens();
+      })
+    .subscribe();
+}
+
+function pararRealtimeMensagens() {
+  if (supa && _msgCanal) { try { supa.removeChannel(_msgCanal); } catch (e) { } }
+  _msgCanal = null;
+}
+
+async function enviarMensagem() {
+  const campo = document.getElementById('msg-texto');
+  const texto = ((campo && campo.value) || '').trim();
+  if (!texto) return;
+  if (!currentUser) { toast('Entre na sua conta para mandar recado', 'err'); return; }
+  if (_recusarPorModoNuvem('mandar recado')) return;
+  const linha = {
+    autor_id: currentUser.id,
+    autor: _obsQuemSou(),
+    texto: texto.slice(0, 2000)      // recado é recado; texto de página é OS
+  };
+  if (campo) { campo.value = ''; campo.focus(); }
+  try {
+    const { data, error } = await supa.from('mensagens').insert(linha).select().maybeSingle();
+    if (error) throw error;
+    if (data && !_mensagens.some(m => m.id === data.id)) _mensagens.push(data);
+    renderMensagens();
+  } catch (e) {
+    console.warn('enviarMensagem', e);
+    toast('Não deu para mandar o recado — tente de novo', 'err');
+    if (campo) campo.value = texto;   // devolve o que a pessoa escreveu
+  }
+}
+
+async function apagarMensagem(id) {
+  const m = _mensagens.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('Apagar este recado?\n\n"' + String(m.texto || '').slice(0, 120) + '"')) return;
+  try {
+    const { error } = await supa.from('mensagens').delete().eq('id', id);
+    if (error) throw error;
+    _mensagens = _mensagens.filter(x => x.id !== id);
+    renderMensagens();
+  } catch (e) {
+    console.warn('apagarMensagem', e);
+    toast('Só dá para apagar o próprio recado', 'err');
+  }
+}
+
+/* ---- O que ainda não li ---------------------------------------------------
+   Mesma ideia do sino: a marca é por login e mora no navegador (é preferência
+   de leitura de cada um, não dado da fábrica). O que eu mesmo mandei nunca
+   conta como não lido. */
+function _msgChaveVistas() { return 'mensagensVistas:' + (_obsQuemSou() || 'sem-login'); }
+
+function _msgVistas() {
+  try {
+    const v = localStorage.getItem(_msgChaveVistas());
+    if (v) return v;
+  } catch (e) { }
+  const agora = new Date().toISOString();
+  _msgMarcarVistas(agora);
+  return agora;
+}
+
+function _msgMarcarVistas(quando) {
+  try { localStorage.setItem(_msgChaveVistas(), quando || new Date().toISOString()); } catch (e) { }
+}
+
+function _msgNaoLidas() {
+  const desde = _msgVistas();
+  const eu = _msgQuemSou();
+  return _mensagens.filter(m => String(m.criado_em) > desde && m.autor_id !== eu);
+}
+
+function atualizarBadgeMensagens() {
+  const btn = document.getElementById('msgBotao');
+  const el = document.getElementById('msgBadge');
+  // Servidor sem a tabela (ou sem login): o campo de mensagens não existe para
+  // esta sessão, e um ícone que não faz nada é pior do que ícone nenhum.
+  if (btn) btn.classList.toggle('hidden', !!_msgIndisponivel || !currentUser);
+  if (mensagensAberto()) { renderMensagens(); return; }
+  const n = _msgNaoLidas().length;
+  if (el) {
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.classList.toggle('hidden', !n);
+  }
+  if (btn) {
+    btn.title = n
+      ? `${n} recado${n > 1 ? 's' : ''} novo${n > 1 ? 's' : ''} — clique para ler`
+      : 'Mensagens: o recado de todo mundo, num canal só';
+  }
+  _msgContagem = n;
+}
+
+function mensagensAberto() {
+  const p = document.getElementById('msgPainel');
+  return !!(p && !p.classList.contains('hidden'));
+}
+
+function abrirMensagens() {
+  const painel = document.getElementById('msgPainel');
+  const btn = document.getElementById('msgBotao');
+  if (!painel || !btn) return;
+  fecharAvisos();                        // um painel de cada vez, no mesmo canto
+  const r = btn.getBoundingClientRect();
+  const largura = Math.min(380, window.innerWidth - 24);
+  painel.style.width = largura + 'px';
+  painel.style.top = Math.round(r.bottom + 8) + 'px';
+  painel.style.left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - largura - 12))) + 'px';
+  painel.classList.remove('hidden');
+  renderMensagens();
+  const campo = document.getElementById('msg-texto');
+  if (campo) campo.focus();
+}
+
+function fecharMensagens() {
+  const p = document.getElementById('msgPainel');
+  if (p) p.classList.add('hidden');
+}
+
+function toggleMensagens() {
+  if (mensagensAberto()) fecharMensagens(); else abrirMensagens();
+}
+
+// Dia e hora de um recado, curtos: "hoje 14:32", "ontem 08:10", "24/08 16:05".
+function _msgQuando(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  const hoje = new Date();
+  const hora = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  if (d.toDateString() === hoje.toDateString()) return hora;
+  const ontem = new Date(hoje.getTime() - 24 * 60 * 60 * 1000);
+  if (d.toDateString() === ontem.toDateString()) return 'ontem ' + hora;
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${hora}`;
+}
+
+function renderMensagens() {
+  const box = document.getElementById('msg-lista');
+  if (!box) return;
+  const eu = _msgQuemSou();
+  const desde = _msgVistas();
+  if (!_mensagens.length) {
+    box.innerHTML = `<div class="empty" style="padding:24px;">Nenhum recado ainda. `
+      + `O que for escrito aqui, toda a fábrica lê.</div>`;
+  } else {
+    let ultimoDia = '';
+    box.innerHTML = _mensagens.map(m => {
+      const meu = m.autor_id === eu;
+      const novo = String(m.criado_em) > desde && !meu;
+      const d = new Date(m.criado_em);
+      const dia = isNaN(d) ? '' : d.toDateString();
+      // Uma etiqueta por DIA, e não em toda linha: a conversa de um dia se lê
+      // seguida, e repetir a data em cada recado atrapalha mais do que ajuda.
+      const sep = (dia && dia !== ultimoDia)
+        ? `<div class="msg-dia">${esc(formatDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+            .toISOString().slice(0, 10)))}</div>` : '';
+      ultimoDia = dia;
+      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}">
+        <div class="msg-cab">
+          <b>${esc(_obsNomeLogin(m.autor) || 'alguém')}</b>
+          <span class="msg-hora">${esc(_msgQuando(m.criado_em))}</span>
+          ${meu || currentRole === 'admin'
+            ? `<button type="button" class="msg-del" title="Apagar este recado"
+                 onclick="apagarMensagem('${esc(m.id)}')">✕</button>` : ''}
+        </div>
+        <div class="msg-txt">${esc(m.texto)}</div>
+      </div>`;
+    }).join('');
+  }
+  // A conversa se lê de cima para baixo e o novo fica embaixo: abrir no fim é
+  // onde a pessoa quer estar.
+  box.scrollTop = box.scrollHeight;
+  _msgMarcarVistas(new Date().toISOString());
+  _msgContagem = 0;
+  const el = document.getElementById('msgBadge');
+  if (el) { el.textContent = '0'; el.classList.add('hidden'); }
+}
+
+// Enter manda; Shift+Enter não, para quem quiser um recado de duas linhas.
+function _msgTecla(ev) {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarMensagem(); }
+}
+
+// Clique fora fecha, como no painel de avisos.
+document.addEventListener('click', (e) => {
+  if (!mensagensAberto()) return;
+  const painel = document.getElementById('msgPainel');
+  const btn = document.getElementById('msgBotao');
+  if (painel && !painel.contains(e.target) && btn && !btn.contains(e.target)) fecharMensagens();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharMensagens(); });
+
+/* ========================================================= */
 /*                         AVISOS                            */
 /* ========================================================= */
 
@@ -28738,6 +29017,11 @@ window.deleteGradeFolder = deleteGradeFolder;
 window.deleteGradeSubfolder = deleteGradeSubfolder;
 window.alternarAcessos = alternarAcessos;
 window.definirAcesso = definirAcesso;
+window.toggleMensagens = toggleMensagens;
+window.fecharMensagens = fecharMensagens;
+window.enviarMensagem = enviarMensagem;
+window.apagarMensagem = apagarMensagem;
+window._msgTecla = _msgTecla;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;
