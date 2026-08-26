@@ -1248,6 +1248,34 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    ficavam longe umas das outras, com um vao grande no meio. Limitar a largura
    junta as colunas; abaixo disso ela ocupa 100% normalmente. */
 [data-page="lista-os"] .table { max-width: 1600px; }
+/* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
+
+   Mesma caixa nos dois casos — seletor para quem pode mudar (admin e
+   Enfesto.corte) e etiqueta para quem so olha — para a coluna nao mudar de
+   forma conforme quem esta logado. A cor de fundo e o recado rapido: cinza
+   parado no zero, azul andando, vermelho travado, verde pronto. */
+.table .col-actions.row-actions .os-status {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 3px 4px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.table .col-actions.row-actions .os-status.ro { cursor: default; }
+.table .col-actions.row-actions .os-status[data-st="andamento"]  { background: #e7f0ff; border-color: #9dbdf0; }
+.table .col-actions.row-actions .os-status[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
+.table .col-actions.row-actions .os-status[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
+/* O rotulo mais longo ("Em andamento") nao cabe nos 112px da coluna junto com a
+   seta do seletor; a lista de OS ganha alguns pixels a mais so nessa coluna. */
+[data-page="lista-os"] .table .col-actions.row-actions { width: 126px; }
 /* O ATALHO DA COLUNA OS DO RANKING.
 
    Continua parecendo o numero que sempre foi — mesma fonte monoespacada, mesmo

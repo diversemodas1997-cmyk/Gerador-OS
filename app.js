@@ -1484,6 +1484,14 @@ function aplicarPermissoesUI() {
   if (currentRole === 'admin' && podeGravar()) body.classList.add('is-admin');
   else body.classList.add('is-usuario');
   _pintarPerfil();   // o papel chega em paralelo: reflete no ícone quando muda
+  // O status da OS é seletor para o admin e para o Enfesto.corte, e etiqueta
+  // para o resto — quem decide é o papel, que chega DEPOIS do primeiro desenho
+  // da lista. Redesenha se ela já estiver aberta, senão a pessoa certa veria a
+  // lista travada até trocar de tela.
+  try {
+    const secOs = document.querySelector('section.page[data-page="lista-os"]');
+    if (secOs && !secOs.classList.contains('hidden') && document.getElementById('tbl-os')) renderListaOS();
+  } catch (e) { console.warn('status na lista de OS', e); }
   mostrarModoServidor();
 }
 
@@ -20652,6 +20660,104 @@ function _renderAvisoGrupoListaOS(mostradas) {
     + `<button class="btn small ghost" onclick="limparGrupoListaOS()">Ver todas as OS</button></div>`;
 }
 
+/* ---------- O STATUS DA OS (só na lista de OS Salvas) ---------------------
+   Quatro estados, na ordem em que a produção anda: não iniciado → em andamento
+   → parado → finalizado. O ícone mora na coluna AÇÕES da lista de OS Salvas e
+   em lugar nenhum mais — é o painel de quem abre a lista para saber o que está
+   de pé; não é dado da folha impressa, da OE nem do planejamento.
+
+   QUEM MUDA: o admin e o login do ENFESTO/CORTE — é lá que se sabe se a OS
+   começou, travou ou terminou. Para todo o resto o status aparece igual, só que
+   como etiqueta, sem poder mexer.
+
+   O QUE FICA GRAVADO: `statusOS` (a chave), `statusOSPor` (o login) e
+   `statusOSEm` (quando). "Não iniciado" é a AUSÊNCIA dos três — OS que ninguém
+   tocou não engorda o blob, que desce inteiro a cada abertura. */
+const STATUS_OS = [
+  { k: 'nao-iniciado', icone: '⚪', rotulo: 'Não iniciado' },
+  { k: 'andamento',    icone: '🔵', rotulo: 'Em andamento' },
+  { k: 'parado',       icone: '🔴', rotulo: 'Parado' },
+  { k: 'finalizado',   icone: '🟢', rotulo: 'Finalizado' }
+];
+
+/* Os logins que mexem no status além do admin. A comparação joga fora pontuação
+   e acento: "Enfesto.corte", "enfesto corte" e "Enfesto-Corte" são a mesma
+   conta — o nome vira endereço interno de um jeito ou de outro conforme foi
+   digitado na criação (ver nomeParaEmail). */
+const LOGINS_STATUS_OS = ['enfestocorte'];
+
+function _chaveLogin(txt) {
+  return String(txt || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function podeMudarStatusOS() {
+  if (!podeGravar()) return false;             // modo nuvem: a tela é só consulta
+  if (currentRole === 'admin') return true;
+  return LOGINS_STATUS_OS.includes(_chaveLogin(_obsNomeLogin(_obsQuemSou())));
+}
+
+// A recusa, com o motivo certo em cada caso. Mesma ideia de exigirEdicaoFolha:
+// não é cofre (o papel vive no navegador de quem usa), é o que impede a mudança
+// por engano de quem não é do corte.
+function exigirStatusOS(acao) {
+  if (_recusarPorModoNuvem(acao)) return false;
+  if (podeMudarStatusOS()) return true;
+  toast(`Só o admin e o Enfesto.corte podem ${acao}`, 'err');
+  return false;
+}
+
+function _statusOS(o) {
+  const k = String((o && o.statusOS) || '').trim();
+  return STATUS_OS.some(x => x.k === k) ? k : 'nao-iniciado';
+}
+
+// O ícone do status dentro da coluna AÇÕES: seletor para quem pode mudar,
+// etiqueta para quem só olha. Nos dois casos a dica do mouse conta quem mexeu
+// por último e quando.
+function _statusCelulaOS(o) {
+  const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
+  const quem = _obsNomeLogin(o.statusOSPor || '');
+  const quando = o.statusOSEm ? _obsQuando({ em: o.statusOSEm }) : '';
+  const dica = `Status da OS: ${s.rotulo}`
+    + (quem ? ` · ${quem}${quando ? ' em ' + quando : ''}` : '');
+  if (!podeMudarStatusOS()) {
+    return `<span class="os-status ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(s.rotulo)}</span>`;
+  }
+  return `<select class="os-status" data-st="${s.k}" title="${esc(dica)}"`
+    + ` onchange="mudarStatusOS('${o.id}', this.value)">`
+    + STATUS_OS.map(x => `<option value="${x.k}"${x.k === s.k ? ' selected' : ''}>`
+        + `${x.icone} ${esc(x.rotulo)}</option>`).join('')
+    + `</select>`;
+}
+
+async function mudarStatusOS(id, valor) {
+  const o = STATE.ordens.find(x => x.id === id);
+  if (!o) return;
+  // Sem permissão: redesenha para o seletor voltar ao valor que está gravado —
+  // senão a tela fica mostrando um status que ninguém salvou.
+  if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); return; }
+  const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
+  if (_statusOS(o) === alvo) return;
+  if (alvo === 'nao-iniciado') {
+    delete o.statusOS; delete o.statusOSPor; delete o.statusOSEm;
+  } else {
+    o.statusOS = alvo;
+    o.statusOSPor = _obsQuemSou();
+    o.statusOSEm = new Date().toISOString();
+  }
+  renderListaOS();
+  const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
+  try {
+    await saveState('ordens');
+    toast(`OS ${o.os || ''} · ${rot}`, 'ok');
+  } catch (e) {
+    console.warn('mudarStatusOS', e);
+    toast('Não deu para salvar o status — tente de novo', 'err');
+  }
+}
+
 function renderListaOS() {
   const tb = document.getElementById('tbl-os');
   // Mesma lista de PDFs da tela de grades: vem uma vez por sessão e, quando
@@ -20712,6 +20818,7 @@ function renderListaOS() {
       <td>${o.grade?.total||0} pç</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
       <td class="col-actions row-actions">
+        ${_statusCelulaOS(o)}
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
         <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
         <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
@@ -27417,6 +27524,7 @@ window.conectarPastaBackup = conectarPastaBackup;
 window.desconectarPastaBackup = desconectarPastaBackup;
 window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
+window.mudarStatusOS = mudarStatusOS;
 window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;
