@@ -247,6 +247,20 @@ aside.sidebar {
    mural — quem entra ve na hora o que e novidade sem ler tudo de novo. */
 .aviso-linha.novo { background: #fffdf2; border-left: 3px solid var(--accent); padding-left: 9px; }
 .aviso-linha.meu { opacity: .72; }   /* o proprio recado, que nunca e novidade */
+/* ABERTO x POR ABRIR. Quem ja foi aberto (clicado) fica apagado e sem a bolinha;
+   quem nao foi continua em preto, com a bolinha dourada na direita. E a unica
+   marca que sobrevive a visita: entrar no painel e sair nao "abre" as linhas
+   que a pessoa nao leu. */
+.aviso-linha.aberta { opacity: .55; }
+.aviso-linha.aberta .aviso-cab { color: var(--ink-3); }
+.aviso-linha:not(.aberta) .aviso-cab { color: var(--ink); }
+.aviso-ponto {
+  width: 8px; height: 8px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .aviso-icone { font-size: 16px; line-height: 1.4; flex: 0 0 auto; }
 .aviso-corpo { flex: 1 1 auto; min-width: 0; }
 .aviso-cab { font-size: 13px; }

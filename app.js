@@ -21074,6 +21074,48 @@ function _avisosChaveVistos() {
   return 'avisosVistos:' + (_obsQuemSou() || 'sem-login');
 }
 
+/* ---- O QUE JA FOI ABERTO -------------------------------------------------
+   Duas perguntas diferentes convivem no mural: "isto chegou depois da minha
+   última visita?" (o NOVO, que o contador do sino usa) e "EU já abri isto?".
+   A segunda é a que sobrevive à visita: entrei no painel, li três linhas e saí
+   — as outras continuam por abrir, e é isso que o destaque tem que dizer.
+
+   Guarda-se a CHAVE de cada aviso aberto (tipo + de quem é + o instante), não
+   um contador: assim uma observação corrigida depois — instante novo — volta a
+   aparecer por abrir, que é o certo, porque o texto mudou.
+
+   Mora no navegador, por login, como o resto das marcas de leitura. */
+const AVISOS_ABERTOS_MAX = 400;   // a lista de chaves não cresce para sempre
+
+function _avisosChaveAbertos() {
+  return 'avisosAbertos:' + (_obsQuemSou() || 'sem-login');
+}
+
+// A chave de um aviso. `osId` para os da OS, a data para a OE, o tamanho para a
+// linha de lote — mais o instante, que é o que muda quando o aviso é outro.
+function _avisoChave(e) {
+  return [e.tipo, e.osId || e.dataOe || e.n || '', e.em].join('|');
+}
+
+// Lê do zero a cada chamada de propósito: sair de uma conta e entrar em outra
+// no mesmo computador não pode herdar o "já abri" da anterior.
+function _avisosAbertos() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_avisosChaveAbertos()) || '[]');
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) { return new Set(); }
+}
+
+function marcarAvisoAberto(chave) {
+  if (!chave) return;
+  const set = _avisosAbertos();
+  if (set.has(chave)) return;
+  let arr = Array.from(set);
+  arr.push(chave);
+  if (arr.length > AVISOS_ABERTOS_MAX) arr = arr.slice(arr.length - AVISOS_ABERTOS_MAX);
+  try { localStorage.setItem(_avisosChaveAbertos(), JSON.stringify(arr)); } catch (e) {}
+}
+
 /* ---- LIMPAR A LISTA ------------------------------------------------------
    Limpar é uma marca de LEITURA, não um apagamento: os recados e os carimbos
    continuam onde sempre estiveram, nas próprias OS — a folha de cada uma segue
@@ -21097,6 +21139,8 @@ function _avisosLimpoAte() {
 function limparAvisos() {
   try { localStorage.setItem(_avisosChaveLimpos(), new Date().toISOString()); }
   catch (e) { toast('Este navegador não deixa guardar a limpeza', 'err'); return; }
+  // As chaves do "já abri" vão junto: a lista que elas descreviam saiu da tela.
+  try { localStorage.removeItem(_avisosChaveAbertos()); } catch (e) {}
   _avisosContagem = 0;
   _pintarBadgeAvisos(0);
   renderAvisos();
@@ -21231,6 +21275,7 @@ function renderAvisos() {
   // deixam de ser novidade.
   const desde = _avisosVistos();
   const eu = _obsQuemSou();
+  const abertos = _avisosAbertos();
   const novos = _avisosNaoLidos(eventos).length;
 
   const resumo = document.getElementById('avisos-resumo');
@@ -21253,6 +21298,10 @@ function renderAvisos() {
     box.innerHTML = eventos.map(e => {
       const meu = String(e.quem || '').trim().toLowerCase() === eu;
       const novo = String(e.em) > desde && !meu;
+      // ABERTO ou POR ABRIR. O que eu mesmo escrevi nasce lido: ninguém precisa
+      // abrir o próprio recado.
+      const chave = _avisoChave(e);
+      const aberta = meu || abertos.has(chave);
       const quem = _obsNomeLogin(e.quem) || 'alguém';
       // Por quem foi feito: "por alguém" some quando o registro é antigo e não
       // guardou autor — dizer "por alguém" a cada linha vira ruído.
@@ -21302,10 +21351,10 @@ function renderAvisos() {
       // A LINHA INTEIRA abre: num painel estreito, um botão ao lado do texto
       // quebra em duas linhas e come a largura do recado. O › é o que avisa
       // que dá para clicar.
-      return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}"
+      return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}${aberta ? ' aberta' : ''}"
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
-           onclick="${abrir}">
+           onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}">
         <span class="aviso-icone">${icone}</span>
         <div class="aviso-corpo">
           <div class="aviso-cab"><b>${titulo}</b> · ${cabec}
@@ -21313,6 +21362,7 @@ function renderAvisos() {
             ${novo ? '<span class="aviso-novo">novo</span>' : ''}</div>
           ${corpo}
         </div>
+        ${aberta ? '' : '<span class="aviso-ponto" title="Você ainda não abriu este aviso"></span>'}
         <span class="aviso-abrir" aria-hidden="true">›</span>
       </div>`;
     }).join('');
@@ -28032,6 +28082,7 @@ window.mudarStatusOS = mudarStatusOS;
 window.toggleAvisos = toggleAvisos;
 window.limparAvisos = limparAvisos;
 window.abrirListaOSporStatus = abrirListaOSporStatus;
+window.marcarAvisoAberto = marcarAvisoAberto;
 window.mostrarTodosAvisos = mostrarTodosAvisos;
 window.fecharAvisos = fecharAvisos;
 window.editarOS = editarOS;

@@ -52,6 +52,11 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('AVISOS_LOTE')}
   ${recorte('function _avisosAgrupar', 'o agrupamento do lote')}
   ${recorte('function _avisosChaveVistos', 'a chave da ultima visita')}
+  ${constante('AVISOS_ABERTOS_MAX')}
+  ${recorte('function _avisosChaveAbertos', 'a chave do que foi aberto')}
+  ${recorte('function _avisoChave', 'a chave de um aviso')}
+  ${recorte('function _avisosAbertos', 'a leitura do que foi aberto')}
+  ${recorte('function marcarAvisoAberto', 'a marca de aberto')}
   ${recorte('function _avisosChaveLimpos', 'a chave da limpeza')}
   ${recorte('function _avisosLimpoAte', 'o corte da limpeza')}
   ${recorte('function _avisosMarcarVistos', 'a marca da visita')}
@@ -60,7 +65,7 @@ const monta = (ctx) => new Function('ctx', `
   const limpar = (quando) => { ctx.ls[_avisosChaveLimpos()] = quando; };
   const desfazer = () => { delete ctx.ls[_avisosChaveLimpos()]; };
   return { _avisosEventos, _avisosNaoLidos, _avisosVistos, _avisosMarcarVistos, _avisosLimpoAte,
-           _avisosAgrupar, limpar, desfazer };
+           _avisosAgrupar, _avisoChave, _avisosAbertos, marcarAvisoAberto, limpar, desfazer };
 `)(ctx);
 
 const diasAtras = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
@@ -225,17 +230,46 @@ ok('28. e o mural nao afoga: 14 carimbos viram 3 linhas',
    juntos.length === 3, String(juntos.length));
 
 console.log('');
+console.log('-- aviso aberto x por abrir --');
+// Pedido de 26/08/2026: da para ver qual aviso ja foi aberto e qual nao foi. E
+// uma marca por AVISO, que sobrevive a visita - entrar no painel e sair nao
+// "abre" as linhas que a pessoa nao leu.
+t = ctxDe('admin@diverse.local', ordens(), { 'avisosVistos:admin@diverse.local': diasAtras(5) });
+ev = t.api._avisosEventos();
+const k0 = t.api._avisoChave(ev[0]);
+ok('29. nenhum aviso nasce aberto', t.api._avisosAbertos().size === 0, String(t.api._avisosAbertos().size));
+t.api.marcarAvisoAberto(k0);
+ok('30. clicar marca AQUELE aviso',
+   t.api._avisosAbertos().has(k0) && t.api._avisosAbertos().size === 1, JSON.stringify([...t.api._avisosAbertos()]));
+ok('31. e nao marca os outros', !t.api._avisosAbertos().has(t.api._avisoChave(ev[1])), 'marcou o vizinho');
+ok('32. a marca sobrevive a visita (nao e a mesma coisa que "ja vi a lista")',
+   (t.api._avisosMarcarVistos(new Date().toISOString()), t.api._avisosAbertos().has(k0)), 'perdeu a marca');
+t.api.marcarAvisoAberto(k0);
+ok('33. marcar duas vezes nao duplica', t.api._avisosAbertos().size === 1, String(t.api._avisosAbertos().size));
+// A chave carrega o INSTANTE: recado corrigido depois volta a ficar por abrir.
+const corrigida = ordens();
+corrigida[0].obsNotas[0].editadoEm = new Date().toISOString();
+t.ctx.STATE.ordens = corrigida;
+const evDepois = t.api._avisosEventos().find(e => e.tipo === 'obs');
+ok('34. observacao corrigida volta a ficar por abrir',
+   !t.api._avisosAbertos().has(t.api._avisoChave(evDepois)), 'continuou marcada como aberta');
+// A marca e por login, como o resto.
+const outroLogin = ctxDe('costura@diverse.local', ordens(), t.ctx.ls);
+ok('35. o "ja abri" de um login nao vale para o outro',
+   outroLogin.api._avisosAbertos().size === 0, JSON.stringify([...outroLogin.api._avisosAbertos()]));
+
+console.log('');
 console.log('-- limpar a lista --');
 // Limpar e marca de LEITURA, nao apagamento: o que sai e a linha do mural, e o
 // recado segue na OS. Vale so para quem limpou, e so neste computador.
 t = ctxDe('admin@diverse.local', ordens(), { 'avisosVistos:admin@diverse.local': diasAtras(5) });
-ok('29. antes de limpar, os dois eventos estao na lista',
+ok('36. antes de limpar, os dois eventos estao na lista',
    t.api._avisosEventos().length === 2 && t.api._avisosNaoLidos().length === 2,
    String(t.api._avisosEventos().length));
 t.api.limpar(new Date().toISOString());
-ok('30. limpar esvazia a lista', t.api._avisosEventos().length === 0, String(t.api._avisosEventos().length));
-ok('31. e zera o contador junto', t.api._avisosNaoLidos().length === 0, String(t.api._avisosNaoLidos().length));
-ok('32. as OS nao foram tocadas — o recado segue la',
+ok('37. limpar esvazia a lista', t.api._avisosEventos().length === 0, String(t.api._avisosEventos().length));
+ok('38. e zera o contador junto', t.api._avisosNaoLidos().length === 0, String(t.api._avisosNaoLidos().length));
+ok('39. as OS nao foram tocadas — o recado segue la',
    t.ctx.STATE.ordens[0].obsNotas[0].texto === 'faltou pano na 3a fase'
    && t.ctx.STATE.ordens[1].statusOS === 'parado', JSON.stringify(t.ctx.STATE.ordens[1]));
 // O que acontecer DEPOIS da limpeza volta a aparecer.
@@ -243,42 +277,46 @@ const depois = ordens();
 depois.push({ id: 'g', os: '0490', statusOS: 'andamento', statusOSPor: 'costura@diverse.local',
               statusOSEm: new Date(Date.now() + 2000).toISOString() });
 t.ctx.STATE.ordens = depois;
-ok('33. o que acontece depois da limpeza aparece',
+ok('40. o que acontece depois da limpeza aparece',
    t.api._avisosEventos().length === 1 && t.api._avisosNaoLidos().length === 1,
    String(t.api._avisosEventos().length));
 t.api.desfazer();
-ok('34. "ver os avisos de novo" traz a lista de volta',
+ok('41. "ver os avisos de novo" traz a lista de volta',
    t.api._avisosEventos().length === 3, String(t.api._avisosEventos().length));
 // A limpeza e de quem limpou: o outro login continua com os avisos dele.
 t.api.limpar(new Date().toISOString());
 const outro = ctxDe('costura@diverse.local', depois, t.ctx.ls);
-ok('35. limpar a minha lista nao limpa a do outro turno',
+ok('42. limpar a minha lista nao limpa a do outro turno',
    outro.api._avisosEventos().length === 3, String(outro.api._avisosEventos().length));
 
 console.log('');
 console.log('-- a lista acumulada mora atras do sino, junto do icone do perfil --');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 // O pedido de 26/08/2026: os avisos nao sao uma pagina do menu, sao uma lista
 // acumulada que se expande no clique do sino — e o sino fica junto do icone do
 // perfil, que e onde se olha para saber quem esta logado.
-ok('36. o sino esta dentro do bloco do perfil logado',
+ok('43. o sino esta dentro do bloco do perfil logado',
    /auth-identity[\s\S]{0,900}?id="avisosSino"/.test(html)
    && html.indexOf('id="avisosSino"') < html.indexOf('</aside>'), 'sino fora do bloco do perfil');
-ok('37. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
-ok('38. o painel existe e nasce escondido, fora da barra lateral',
+ok('44. o contador fica no sino', /id="avisosSino"[\s\S]{0,400}?id="avisosBadge"/.test(html), 'badge solto');
+ok('45. o painel existe e nasce escondido, fora da barra lateral',
    /class="avisos-painel hidden" id="avisosPainel"/.test(html)
    && html.indexOf('id="avisosPainel"') > html.indexOf('</aside>'), 'painel dentro da aside ou visivel');
-ok('39. nao ha mais pagina de avisos no menu (a lista e o painel)',
+ok('46. nao ha mais pagina de avisos no menu (a lista e o painel)',
    !/data-page="avisos"/.test(html), 'sobrou a pagina antiga');
-ok('40. clicar no sino abre e fecha',
+ok('47. clicar no sino abre e fecha',
    /function toggleAvisos/.test(src) && /function abrirAvisos/.test(src) && /function fecharAvisos/.test(src),
    'faltou abrir/fechar');
-ok('41. e abrir a OS pelo aviso fecha o painel antes',
+ok('48. e abrir a OS pelo aviso fecha o painel antes',
    /fecharAvisos\(\); verOS\(/.test(src), 'o painel ficaria por cima da folha');
-ok('42. o painel tem o botao de limpar',
+ok('49. o painel tem o botao de limpar',
    /class="avisos-limpar" onclick="limparAvisos\(\)"/.test(html), 'sem botao de limpar');
-ok('43. e o painel vazio oferece o desfazer',
+ok('50. e o painel vazio oferece o desfazer',
    /mostrarTodosAvisos\(\)/.test(src), 'sem "ver os avisos de novo"');
+ok('51. a linha por abrir ganha bolinha, e a aberta fica apagada',
+   /aviso-ponto/.test(src) && /aberta \? '' :/.test(src) && /\.aviso-linha\.aberta/.test(css),
+   'sem a marca visual de aberto');
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
