@@ -623,6 +623,53 @@ async function _cloudLoadCompleto(srvVersoes) {
   _versoesConhecidas = srvVersoes || null;
 }
 
+/* ---- GRAVAÇÃO PARCIAL: subir só a parte que mudou ------------------------
+   A LEITURA já baixava só a chave mudada (ver "LEITURA PARCIAL", acima). A
+   ESCRITA não: para trocar uma chave, o app devolvia a linha INTEIRA — 2,5 MB
+   em 26/08/2026, e crescendo ~5 KB por OS nova. Era isso que deixava o ícone em
+   "Salvando" por segundos, punha as gravações em fila e fazia quem fechasse o
+   programa no meio arriscar a última alteração.
+
+   Agora sobe só o que este dispositivo sujou, e QUEM COSTURA É O BANCO, pela
+   função `gravar_chaves` (sql/supabase-gravar-chaves.sql): `data || pares`
+   troca as chaves recebidas e mantém as outras.
+
+   O QUE ISSO GANHA, com os números de hoje: marcar status, mexer na expedição,
+   no plano, na compra ou nas configurações passam a mandar kilobytes. Salvar
+   uma OS ainda manda `ordens` inteira (1,35 MB das 251 OS), mas para de
+   arrastar junto `operacoes` (500 KB), `grades`, `desenhos` e o resto — e o
+   navegador para de serializar 2,5 MB a cada clique, que é metade da demora.
+   Descer abaixo desse piso exige quebrar `ordens` em um registro por linha.
+
+   O `_device` vai SEMPRE junto: é por ele que a outra aba reconhece a gravação
+   como sua ou de terceiro. Sem ele no pacote, o eco da própria gravação
+   pareceria mudança alheia e a tela se recarregaria à toa.
+
+   SERVIDOR SEM A FUNÇÃO (a nuvem antes do script, uma instalação antiga): o
+   app percebe na primeira tentativa e volta a mandar o blob inteiro pelo resto
+   da sessão — mais lento, porém correto. Nada quebra por falta dela. */
+function _paresParaGravar(cache, sujas, deviceId) {
+  const pares = { _device: deviceId };
+  (sujas || []).forEach(k => {
+    if (k === '_device') return;
+    if (cache[k] !== undefined) pares[k] = cache[k];
+  });
+  return pares;
+}
+
+// Vira true quando o servidor mostra que não tem a função. A partir daí a
+// sessão inteira usa o caminho antigo, sem tentar de novo a cada gravação.
+let _semGravacaoParcial = false;
+
+// O erro que significa "essa função não existe aqui" — e não "deu errado".
+function _ehFuncaoAusente(erro) {
+  if (!erro) return false;
+  const code = String(erro.code || '');
+  const msg = String(erro.message || '').toLowerCase();
+  return code === 'PGRST202' || code === '42883'
+    || msg.includes('could not find the function') || msg.includes('does not exist');
+}
+
 async function cloudFlush() {
   if (!supa || !currentUser || !cloudCache) return;
   // TRANCA DO MODO NUVEM. Tem que ser AQUI, e não só nos botões: as migrações
@@ -773,12 +820,32 @@ async function cloudFlush() {
     // o cache de agora — e é ela que precisa virar base e baixar as bandeiras.
     const enviado = Object.assign({}, cloudCache);
     const enviadas = new Set(_dirtyKeys);
-    const { error } = await supa.from('shared_data').upsert({
-      id: 'main',
-      data: enviado,
-      updated_at: _ultimoUpdatedAtEnviado = new Date().toISOString(),
-      updated_by: currentUser.id
-    }, { onConflict: 'id' });
+    _ultimoUpdatedAtEnviado = new Date().toISOString();
+    // O CAMINHO NORMAL: só as chaves sujas, costuradas pelo banco.
+    let error = null;
+    if (!_semGravacaoParcial) {
+      const pares = _paresParaGravar(enviado, enviadas, DEVICE_ID);
+      const r = await supa.rpc('gravar_chaves', {
+        pares, quem: currentUser.id, carimbo: _ultimoUpdatedAtEnviado
+      });
+      if (r.error && _ehFuncaoAusente(r.error)) {
+        // Servidor sem a função: avisa uma vez e segue pelo caminho antigo.
+        _semGravacaoParcial = true;
+        console.warn('gravar_chaves não existe neste servidor — voltando a gravar o blob inteiro. '
+          + 'Rode sql/supabase-gravar-chaves.sql para deixar a gravação leve de novo.');
+      } else {
+        error = r.error;
+      }
+    }
+    if (_semGravacaoParcial) {
+      const r = await supa.from('shared_data').upsert({
+        id: 'main',
+        data: enviado,
+        updated_at: _ultimoUpdatedAtEnviado,
+        updated_by: currentUser.id
+      }, { onConflict: 'id' });
+      error = r.error;
+    }
     if (error) throw error;
     // Subiu: o servidor está agora exatamente no que acabamos de gravar. Guardar
     // o carimbo é o que permite ao PRÓXIMO flush pular a releitura do blob.
