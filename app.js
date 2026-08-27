@@ -8567,7 +8567,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
       <div class="field full" id="ec-pacotes-wrap" style="display:none;">
         <label>Pacotes desta OS nesta carga</label>
         <div id="ec-pacotes" class="ec-pacotes"></div>
-        <div class="field-hint">Marque os pacotes (tamanho × tonalidade) que vão nesta carga. Desmarque para deixar o restante para outra expedição — o que sobrar fica listado como <b>a alocar</b>.</div>
+        <div class="field-hint">Marque os pacotes (tamanho × tonalidade) que vão nesta carga. Desmarque para deixar o restante para outra expedição — o que sobrar fica listado como <b>a alocar</b>. <b>Zero em tudo</b> é resposta: a carga leva só as <b>fases</b> marcadas abaixo (a barra/punhos que ficou para depois, por exemplo), e aí você escreve quantos volumes ela ocupa.</div>
       </div>
       <div class="field full" id="ec-fases-wrap" style="display:none;">
         <label>Fases da peça que vão nesta carga</label>
@@ -8727,7 +8727,8 @@ function _expMontarSeletorPacotes(o) {
 
   box.innerHTML = blocos.join('') + repHtml;
   wrap.style.display = '';
-  if (campo) { campo.readOnly = true; campo.classList.add('is-auto'); }
+  // Quem trava (ou destrava) o campo de volumes é o _expRecalcVolSeletor, logo
+  // abaixo: com pacote marcado ele manda; sem nenhum, o campo é de quem digita.
   _expRecalcVolSeletor();
   return true;
 }
@@ -8747,7 +8748,23 @@ function _expRecalcVolSeletor() {
   });
   const rep = document.getElementById('ecpk-rep');
   if (rep && rep.checked && !rep.disabled) n += 1;
-  if (campo) campo.value = n > 0 ? String(n) : '';
+  /* NENHUM PACOTE MARCADO = o campo de volumes volta a ser de quem digita.
+     É a carga que leva só uma fase (ver o comentário em salvarModalExpedicao):
+     não há pacote de onde tirar o número, e quantos sacos a barra/punhos ocupa
+     é coisa da doca. Com pacote marcado, o seletor volta a mandar e o campo
+     volta a ser só-leitura — o valor digitado antes não sobrevive a isso de
+     propósito: dois números discordando na mesma carga é pior que redigitar. */
+  if (campo) {
+    if (n > 0) {
+      campo.value = String(n);
+      campo.readOnly = true;
+      campo.classList.add('is-auto');
+    } else {
+      if (campo.readOnly) campo.value = '';      // vinha do seletor: limpa uma vez
+      campo.readOnly = false;
+      campo.classList.remove('is-auto');
+    }
+  }
   const info = document.getElementById('ec-info');
   const osId = document.getElementById('ec-os')?.value || '';
   const o = osId ? (STATE.ordens || []).find(x => x.id === osId) : null;
@@ -9160,10 +9177,37 @@ async function salvarModalExpedicao() {
       const repChk = document.getElementById('ecpk-rep');
       reposicao = !!(repChk && repChk.checked && !repChk.disabled);
     }
-    const volumes = temSeletor
-      ? (pacotes.length + (reposicao ? 1 : 0))
-      : (parseInt(v('ec-volumes')) || 0);
-    if (!(volumes > 0)) return toast(temSeletor ? 'Marque ao menos um pacote para esta carga' : 'Informe quantos volumes esta OS ocupa', 'err');
+    /* CARGA QUE LEVA SÓ UMA FASE, e nenhum pacote (27/08/2026, Junior).
+
+       O caso: os pacotes da OS já saíram todos em viagens anteriores, e o que
+       falta embarcar é a BARRA/PUNHOS — pano de uma fase, que não tem pacote
+       por tamanho nenhum. Até aqui o programa exigia "ao menos um pacote" e a
+       carga não podia existir; a saída era mandar de novo um pacote que já
+       tinha ido, mentindo no estoque e na folha.
+
+       Agora, com o seletor de pacotes em zero, o campo de volumes volta a ser
+       de quem digita — quantos sacos aquela fase ocupa é coisa que só a doca
+       sabe — e a carga é gravada com `pacotes: []`: zero peça embarcada, o
+       lote continua constando como já expedido nas outras cargas, e a folha
+       diz quais fases vão. Exige a fase marcada, senão a carga não leva nada. */
+    const somaPacotes = temSeletor ? (pacotes.length + (reposicao ? 1 : 0)) : 0;
+    const soFase = temSeletor && somaPacotes === 0;
+    const volumes = temSeletor && !soFase ? somaPacotes : (parseInt(v('ec-volumes')) || 0);
+    if (!(volumes > 0)) {
+      return toast(temSeletor
+        ? 'Sem pacotes marcados, diga quantos volumes esta carga ocupa — é o caso de levar só uma fase'
+        : 'Informe quantos volumes esta OS ocupa', 'err');
+    }
+    if (soFase) {
+      const marc = Array.from(document.querySelectorAll('#ec-fases .ec-fase-in')).filter(el => el.checked);
+      const todas = document.querySelectorAll('#ec-fases .ec-fase-in').length;
+      if (!marc.length) {
+        return toast('Sem pacote e sem fase esta carga não leva nada — marque a fase que vai', 'err');
+      }
+      if (todas && marc.length === todas) {
+        return toast('Sem nenhum pacote, marque só a(s) fase(s) que realmente vão nesta viagem', 'err');
+      }
+    }
     if (!Array.isArray(STATE.expedicaoCargas)) STATE.expedicaoCargas = [];
     // Ao mover, a propria carga nao conta como duplicata dela mesma.
     const jaTem = STATE.expedicaoCargas.some(c => c.id !== ctx.editId
