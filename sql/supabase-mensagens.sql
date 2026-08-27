@@ -37,6 +37,19 @@ create table if not exists mensagens (
 --  tudo aqui e idempotente.)
 alter table mensagens add column if not exists editado_em timestamptz;
 
+-- A QUEM ESTE RECADO RESPONDE. Nulo = recado solto, que e o caso comum. Com
+-- valor, a tela desenha a mensagem recuada logo abaixo daquela a que ela
+-- responde — um nivel so, de proposito: conversa de fabrica se le de cima para
+-- baixo, e arvore de resposta dentro de resposta vira lista que ninguem segue.
+--
+-- `on delete set null`, e NAO cascade: apagar o proprio recado nao pode levar
+-- junto as respostas dos outros. Sem a mae, a resposta volta a ser um recado
+-- solto na conversa — continua la, que e o que importa.
+-- (Coluna acrescentada em 27/08/2026.)
+alter table mensagens add column if not exists responde_a uuid
+  references mensagens(id) on delete set null;
+create index if not exists idx_mensagens_responde_a on mensagens (responde_a);
+
 create index if not exists idx_mensagens_criado_em on mensagens (criado_em);
 
 -- RLS — a conversa é de quem tem conta no programa.
@@ -144,6 +157,16 @@ begin
   new.criado_em := old.criado_em;
   new.autor_id  := old.autor_id;
   new.autor     := old.autor;
+  -- Corrigir o texto nao remaneja a conversa: a resposta nao muda de mae.
+  -- O NULO passa, e passa por um motivo MEDIDO: apagar a mae dispara o
+  -- `on delete set null` da chave estrangeira, que chega aqui como um update
+  -- pondo `responde_a = null`. Devolvendo o valor antigo, o gatilho recolocava
+  -- o id da linha que estava sendo apagada — e o proprio banco recusava o
+  -- DELETE por violacao da chave. Ou seja: sem esta excecao, nenhuma mensagem
+  -- com resposta podia ser apagada.
+  -- O que sobra de brecha e um cliente desamarrar a PROPRIA resposta (ela vira
+  -- recado solto na conversa); trocar de mae, nao.
+  if new.responde_a is not null then new.responde_a := old.responde_a; end if;
   if new.texto is distinct from old.texto then
     new.editado_em := now();
   else
@@ -175,7 +198,62 @@ begin
   end if;
 end $$;
 
+-- =====================================================================
+-- REACOES — o polegar de "vi e concordo"
+-- =====================================================================
+-- Metade dos recados da fabrica so pede um "ok". Escrever "ok" gasta uma linha
+-- da conversa por pessoa; o polegar responde sem empurrar o resto para cima.
+--
+-- Tabela propria, e nao uma coluna em `mensagens`: reagir e mexer na linha de
+-- OUTRA pessoa, e a politica de UPDATE de mensagens diz justamente que ninguem
+-- escreve na linha alheia. Aqui cada reacao e uma linha de quem reagiu, com o
+-- dono na chave — ninguem reage pelos outros e ninguem tira a reacao alheia.
+--
+-- A chave primaria (mensagem_id, user_id, reacao) e a trava do clique repetido:
+-- reagir duas vezes na mesma mensagem nao cria duas linhas.
+create table if not exists mensagem_reacoes (
+  mensagem_id uuid not null references mensagens(id) on delete cascade,
+  user_id     uuid not null,
+  reacao      text not null default '+1',
+  criado_em   timestamptz not null default now(),
+  primary key (mensagem_id, user_id, reacao)
+);
+
+create index if not exists idx_mensagem_reacoes_msg on mensagem_reacoes (mensagem_id);
+
+alter table mensagem_reacoes enable row level security;
+
+-- LER: quem tem conta le todas. O numero ao lado do polegar e publico, como o
+-- recado.
+drop policy if exists "reacoes: authenticated select" on mensagem_reacoes;
+create policy "reacoes: authenticated select"
+  on mensagem_reacoes for select to authenticated using (true);
+
+-- REAGIR: em nome proprio, e so.
+drop policy if exists "reacoes: reagir em nome proprio" on mensagem_reacoes;
+create policy "reacoes: reagir em nome proprio"
+  on mensagem_reacoes for insert to authenticated
+  with check (user_id = auth.uid());
+
+-- TIRAR: a propria reacao. Nem o admin tira a dos outros — nao ha nada a
+-- moderar num polegar, e a linha diz quem a pos.
+drop policy if exists "reacoes: tirar a propria" on mensagem_reacoes;
+create policy "reacoes: tirar a propria"
+  on mensagem_reacoes for delete to authenticated
+  using (user_id = auth.uid());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime' and tablename = 'mensagem_reacoes'
+  ) then
+    alter publication supabase_realtime add table mensagem_reacoes;
+  end if;
+end $$;
+
 -- Verificação:
 -- select * from pg_policies where tablename='mensagens';
+-- select * from pg_policies where tablename='mensagem_reacoes';
 -- select tgname from pg_trigger where tgrelid='mensagens'::regclass and not tgisinternal;
 -- select * from pg_publication_tables where pubname='supabase_realtime' and tablename='mensagens';

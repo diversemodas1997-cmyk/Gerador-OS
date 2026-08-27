@@ -21704,6 +21704,9 @@ const MSG_MAX = 200;              // quantas mensagens a tela guarda
 const MSG_EDIT_MS = 5 * 60 * 1000;
 let _mensagens = [];              // mais antigas primeiro, como se lê
 let _msgEditando = null;          // id do recado aberto para conserto (um por vez)
+let _msgRespondendoA = null;      // id do recado que o campo de baixo esta respondendo
+let _msgReacoes = [];             // uma linha por polegar: {mensagem_id, user_id}
+let _msgReacoesIndisponivel = false;   // servidor sem a tabela: o polegar nao aparece
 let _msgRelogio = null;           // tira o lápis da tela na hora em que ele vence
 let _msgCanal = null;
 let _msgContagem = null;          // null = ainda não contamos nesta sessão
@@ -21716,11 +21719,12 @@ async function carregarMensagens() {
   try {
     const ler = cols => supa.from('mensagens').select(cols)
       .order('criado_em', { ascending: false }).limit(MSG_MAX);
-    let { data, error } = await ler('id, criado_em, editado_em, autor_id, autor, texto');
-    // SERVIDOR QUE AINDA NÃO GANHOU A COLUNA `editado_em` (a cópia da nuvem, um
-    // servidor onde o SQL novo não rodou): lê sem ela em vez de sumir com o
-    // campo de mensagens inteiro. Só o "(editado)" deixa de aparecer.
-    if (error && /editado_em/.test(String(error.message || ''))) {
+    let { data, error } = await ler('id, criado_em, editado_em, responde_a, autor_id, autor, texto');
+    // SERVIDOR QUE AINDA NÃO GANHOU AS COLUNAS NOVAS (a cópia da nuvem, um
+    // servidor onde o SQL novo não rodou): lê sem elas em vez de sumir com o
+    // campo de mensagens inteiro. Só o "(editado)" e o recuo das respostas
+    // deixam de aparecer.
+    if (error && /editado_em|responde_a/.test(String(error.message || ''))) {
       ({ data, error } = await ler('id, criado_em, autor_id, autor, texto'));
     }
     if (error) {
@@ -21733,6 +21737,7 @@ async function carregarMensagens() {
     }
     _msgIndisponivel = false;
     _mensagens = (Array.isArray(data) ? data : []).slice().reverse();
+    await carregarReacoes();
   } catch (e) {
     _msgIndisponivel = true;
     _mensagens = [];
@@ -21743,6 +21748,16 @@ function iniciarRealtimeMensagens() {
   if (!supa || !currentUser || _msgCanal || _msgIndisponivel) return;
   _msgCanal = supa
     .channel('mensagens_all')
+    // O POLEGAR DO OUTRO também chega na hora: sem isto, o número só mudaria
+    // no próximo carregamento, e duas pessoas olhando a mesma tela veriam
+    // contas diferentes. Recarrega a lista inteira de reações porque ela é
+    // pequena (uma linha por polegar, das 200 mensagens em memória) e porque
+    // assim o DELETE, que só traz a chave, não precisa de tratamento à parte.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagem_reacoes' },
+      async () => {
+        await carregarReacoes();
+        if (mensagensAberto()) renderMensagens();
+      })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens' },
       async (payload) => {
         if (payload.eventType === 'INSERT' && payload.new) {
@@ -21790,7 +21805,12 @@ async function enviarMensagem() {
     autor: _obsQuemSou(),
     texto: texto.slice(0, 2000)      // recado é recado; texto de página é OS
   };
+  // Respondendo a alguém: o recado nasce amarrado ao outro, e a tela o desenha
+  // recuado embaixo dele. A tarja some assim que este sai.
+  const respondia = _msgRespondendoA;
+  if (respondia && _mensagens.some(m => m.id === respondia)) linha.responde_a = respondia;
   if (campo) { campo.value = ''; campo.focus(); }
+  _msgRespondendoA = null;
   try {
     const { data, error } = await supa.from('mensagens').insert(linha).select().maybeSingle();
     if (error) throw error;
@@ -21800,7 +21820,117 @@ async function enviarMensagem() {
     console.warn('enviarMensagem', e);
     toast('Não deu para mandar o recado — tente de novo', 'err');
     if (campo) campo.value = texto;   // devolve o que a pessoa escreveu
+    _msgRespondendoA = respondia;     // e a quem ela respondia
+    renderMensagens();
   }
+}
+
+/* ---- O POLEGAR ------------------------------------------------------------
+   Metade dos recados só pede um "ok". Escrever "ok" gasta uma linha da conversa
+   por pessoa, e empurra para cima justamente o recado que estava sendo lido; o
+   polegar responde sem mexer na conversa.
+
+   Cada reação é uma LINHA de quem reagiu (tabela mensagem_reacoes), não um
+   número dentro da mensagem: reagir é mexer na linha de outra pessoa, e a regra
+   deste canal é que ninguém escreve na linha alheia. Clicar de novo tira a sua
+   — e só a sua. */
+async function carregarReacoes() {
+  if (!supa || !currentUser || !_mensagens.length) { _msgReacoes = []; return; }
+  try {
+    const { data, error } = await supa.from('mensagem_reacoes')
+      .select('mensagem_id, user_id')
+      .in('mensagem_id', _mensagens.map(m => m.id));
+    if (error) {
+      // Servidor sem a tabela: o polegar some, o resto do campo continua.
+      _msgReacoesIndisponivel = true; _msgReacoes = [];
+      console.warn('reacoes', error.message || error);
+      return;
+    }
+    _msgReacoesIndisponivel = false;
+    _msgReacoes = Array.isArray(data) ? data : [];
+  } catch (e) { _msgReacoesIndisponivel = true; _msgReacoes = []; }
+}
+
+function _msgQuemReagiu(id) {
+  return _msgReacoes.filter(r => r.mensagem_id === id);
+}
+
+function _msgEuReagi(id) {
+  const eu = _msgQuemSou();
+  return _msgReacoes.some(r => r.mensagem_id === id && r.user_id === eu);
+}
+
+async function reagirMensagem(id) {
+  if (!currentUser) return toast('Entre na sua conta para reagir', 'err');
+  if (_recusarPorModoNuvem('reagir a um recado')) return;
+  const eu = _msgQuemSou();
+  const tinha = _msgEuReagi(id);
+  // Na tela já muda: o polegar tem de responder ao dedo, não à rede.
+  if (tinha) _msgReacoes = _msgReacoes.filter(r => !(r.mensagem_id === id && r.user_id === eu));
+  else _msgReacoes = _msgReacoes.concat([{ mensagem_id: id, user_id: eu }]);
+  renderMensagens();
+  try {
+    const q = tinha
+      ? supa.from('mensagem_reacoes').delete().eq('mensagem_id', id).eq('user_id', eu)
+      : supa.from('mensagem_reacoes').insert({ mensagem_id: id, user_id: eu });
+    const { error } = await q;
+    if (error) throw error;
+  } catch (e) {
+    console.warn('reagirMensagem', e);
+    await carregarReacoes();     // o servidor é quem tem a verdade
+    renderMensagens();
+    toast('Não deu para registrar a reação', 'err');
+  }
+}
+
+/* ---- RESPONDER A UM RECADO ------------------------------------------------
+   Um nível só, de propósito. Conversa de fábrica se lê de cima para baixo, e
+   resposta dentro de resposta dentro de resposta vira uma árvore que ninguém
+   acompanha no meio do turno. Responder a uma resposta ancora na mesma mãe: o
+   assunto continua junto, recuado uma vez.
+
+   A resposta é uma mensagem como qualquer outra — conta como não lida, chega
+   pelo Realtime, pode ser corrigida e apagada pelas mesmas regras. O que ela
+   tem a mais é o `responde_a`, que diz onde ela mora na tela. */
+function _msgMae(m) {
+  if (!m || !m.responde_a) return null;
+  const mae = _mensagens.find(x => x.id === m.responde_a);
+  // Mãe fora do pedaço carregado (ou apagada, que zera o campo no banco): a
+  // resposta vira recado solto em vez de sumir da conversa.
+  return mae || null;
+}
+
+function responderMensagem(id) {
+  const m = _mensagens.find(x => x.id === id);
+  if (!m) return;
+  // Resposta de resposta ancora na mãe: um nível só.
+  _msgRespondendoA = m.responde_a && _mensagens.some(x => x.id === m.responde_a) ? m.responde_a : id;
+  renderMensagens();
+  const campo = document.getElementById('msg-texto');
+  if (campo) campo.focus();
+}
+
+function cancelarResposta() {
+  _msgRespondendoA = null;
+  renderMensagens();
+  const campo = document.getElementById('msg-texto');
+  if (campo) campo.focus();
+}
+
+// A tarja acima do campo, dizendo a quem se responde. Sem ela, quem digitou e
+// foi tomar um café não tem como saber que o recado vai sair recuado.
+function _msgBarraResposta() {
+  const barra = document.getElementById('msg-respondendo');
+  if (!barra) return;
+  const m = _msgRespondendoA ? _mensagens.find(x => x.id === _msgRespondendoA) : null;
+  if (!m) { barra.classList.add('hidden'); barra.innerHTML = ''; _msgRespondendoA = null; return; }
+  const t = String(m.texto || '').trim();
+  barra.innerHTML = `<span class="msg-resp-quem">↩ respondendo a ${
+    esc(_obsNomeLogin(m.autor) || 'alguém')}</span>`
+    + `<span class="msg-resp-trecho">${esc(t.length > 60 ? t.slice(0, 60) + '…' : t)}</span>`
+    + `<button type="button" class="msg-resp-x" title="Desistir de responder"
+         onclick="cancelarResposta()">✕</button>`;
+  barra.classList.remove('hidden');
 }
 
 /* ---- CONSERTAR O PRÓPRIO RECADO (5 minutos) -------------------------------
@@ -22004,6 +22134,7 @@ function fecharMensagens() {
   const p = document.getElementById('msgPainel');
   if (p) p.classList.add('hidden');
   _msgEditando = null;             // painel fechado, correção largada
+  _msgRespondendoA = null;         // e a resposta que ninguém chegou a escrever
 }
 
 function toggleMensagens() {
@@ -22033,17 +22164,36 @@ function renderMensagens() {
       + `O que for escrito aqui, toda a fábrica lê.</div>`;
   } else {
     let ultimoDia = '';
-    box.innerHTML = _mensagens.map(m => {
+    // A CONVERSA, MONTADA: cada recado solto no seu lugar de sempre (a hora
+    // manda), e as respostas logo abaixo da mãe, na ordem em que chegaram. Uma
+    // resposta cuja mãe não está neste pedaço da conversa entra como recado
+    // solto, no lugar dela — sumir seria pior do que aparecer sem o recuo.
+    const respostasDe = new Map();
+    _mensagens.forEach(m => {
+      if (!_msgMae(m)) return;
+      const l = respostasDe.get(m.responde_a) || [];
+      l.push(m); respostasDe.set(m.responde_a, l);
+    });
+    const emOrdem = [];
+    _mensagens.forEach(m => {
+      if (_msgMae(m)) return;                       // entra junto com a mãe
+      emOrdem.push({ m: m, resposta: false });
+      (respostasDe.get(m.id) || []).forEach(r => emOrdem.push({ m: r, resposta: true }));
+    });
+    box.innerHTML = emOrdem.map(item => {
+      const m = item.m;
       const meu = m.autor_id === eu;
       const novo = String(m.criado_em) > desde && !meu;
       const d = new Date(m.criado_em);
       const dia = isNaN(d) ? '' : d.toDateString();
       // Uma etiqueta por DIA, e não em toda linha: a conversa de um dia se lê
       // seguida, e repetir a data em cada recado atrapalha mais do que ajuda.
-      const sep = (dia && dia !== ultimoDia)
+      // A etiqueta de dia não entra no meio de um grupo de respostas: ali ela
+      // separaria a resposta da pergunta, que é o contrário do que ela faz.
+      const sep = (dia && dia !== ultimoDia && !item.resposta)
         ? `<div class="msg-dia">${esc(formatDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000)
             .toISOString().slice(0, 10)))}</div>` : '';
-      ultimoDia = dia;
+      if (!item.resposta) ultimoDia = dia;
       const editando = _msgEditando === m.id;
       // "editado" sem hora: o que importa é avisar que o texto de cima não é
       // exatamente o que foi lido antes. A hora do recado continua sendo a do
@@ -22062,7 +22212,21 @@ function renderMensagens() {
              </div>
            </div>`
         : `<div class="msg-txt">${esc(m.texto)}</div>`;
-      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}${editando ? ' editando' : ''}">
+
+      // O POLEGAR e o RESPONDER, embaixo do texto. O polegar mostra o número só
+      // quando há o que contar: "👍 0" em toda linha é sujeira, e quem reagiu
+      // aparece no title, que é o que se quer saber ("quem já viu?").
+      const quemReagiu = _msgReacoesIndisponivel ? [] : _msgQuemReagiu(m.id);
+      const euReagi = _msgEuReagi(m.id);
+      const polegar = _msgReacoesIndisponivel ? '' :
+        `<button type="button" class="msg-reagir${euReagi ? ' eu' : ''}"
+           title="${quemReagiu.length ? esc(quemReagiu.length + (quemReagiu.length > 1 ? ' pessoas marcaram' : ' pessoa marcou') + ' este recado') : 'Marcar que você viu / concorda'}"
+           onclick="reagirMensagem('${esc(m.id)}')">👍${quemReagiu.length ? ' <b>' + quemReagiu.length + '</b>' : ''}</button>`;
+      const responder = `<button type="button" class="msg-responder" title="Responder a este recado"
+           onclick="responderMensagem('${esc(m.id)}')">↩</button>`;
+      const acoes = editando ? '' : `<div class="msg-acoes">${polegar}${responder}</div>`;
+
+      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}${editando ? ' editando' : ''}${item.resposta ? ' msg-resposta' : ''}">
         <div class="msg-cab">
           <b>${esc(_obsNomeLogin(m.autor) || 'alguém')}</b>
           <span class="msg-hora">${esc(_msgQuando(m.criado_em))}${marca}</span>
@@ -22072,9 +22236,11 @@ function renderMensagens() {
                  onclick="apagarMensagem('${esc(m.id)}')">✕</button>` : ''}
         </div>
         ${corpo}
+        ${acoes}
       </div>`;
     }).join('');
   }
+  _msgBarraResposta();
   // A conversa se lê de cima para baixo e o novo fica embaixo: abrir no fim é
   // onde a pessoa quer estar. Corrigindo um recado, não: rolar até o fim tiraria
   // da tela justamente a linha que a pessoa está reescrevendo.
@@ -22133,6 +22299,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (_msgEditando && mensagensAberto()) { cancelarEdicaoMensagem(); return; }
+  if (_msgRespondendoA && mensagensAberto()) { cancelarResposta(); return; }
   fecharMensagens();
 });
 

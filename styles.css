@@ -309,6 +309,71 @@ aside.sidebar {
   background: #fff;
 }
 .msg-editar-bt { display: flex; gap: 6px; margin-top: 4px; }
+
+/* O POLEGAR E O RESPONDER (27/08/2026), embaixo do texto de cada recado.
+   Discretos ate o mouse passar: numa conversa de trabalho o que se le e o
+   recado, nao a botoeira. Quem ja reagiu fica sempre visivel — a reacao E o
+   recado dessa pessoa, e sumir com ela seria esconder resposta. */
+.msg-acoes { display: flex; gap: 4px; margin-top: 3px; }
+.msg-reagir, .msg-responder {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: .35;
+  transition: opacity .12s;
+}
+.msg-linha:hover .msg-reagir, .msg-linha:hover .msg-responder { opacity: 1; }
+.msg-reagir b { font-weight: 700; color: var(--ink); }
+/* Reagido: o polegar fica de pe sozinho, com a moldura marcando que o dedo
+   foi ESTE. Sem isso, so o numero mudaria — e o numero e de todo mundo. */
+.msg-reagir.eu {
+  opacity: 1;
+  border-color: var(--accent);
+  background: #fbf6e8;
+}
+/* Com gente reagindo, o polegar nao some mais: ele virou parte da conversa. */
+.msg-reagir:has(b) { opacity: 1; }
+
+/* A RESPOSTA, RECUADA. O traco a esquerda e o recuo dizem, sem legenda, que
+   aquilo pertence ao recado de cima — e o `border-left` continua valendo no
+   celular, onde o recuo sozinho fica curto demais para ser percebido. */
+.msg-linha.msg-resposta {
+  margin-left: 18px;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+}
+.msg-linha.msg-resposta.novo { border-left-color: var(--accent); }
+
+/* A TARJA de "respondendo a fulano", entre a conversa e o campo de escrever. */
+.msg-respondendo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+  background: #fbf9f2;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.msg-respondendo.hidden { display: none; }
+.msg-resp-quem { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.msg-resp-trecho {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+.msg-resp-x {
+  background: transparent; border: none; color: var(--ink-3);
+  cursor: pointer; font-size: 11px; padding: 0 2px;
+}
 .msg-txt {
   font-size: 13px;
   color: var(--ink);

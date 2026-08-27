@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-27e">
+<link rel="stylesheet" href="styles.css?v=2026-08-27f">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -126,6 +126,10 @@
       <button type="button" class="avisos-fechar" onclick="fecharMensagens()" title="Fechar" aria-label="Fechar">✕</button>
     </div>
     <div class="avisos-corpo" id="msg-lista"></div>
+    <!-- A tarja de "respondendo a fulano": quem digitou e foi tomar um cafe
+         precisa ver, ao voltar, que o recado vai sair recuado embaixo do outro.
+         Quem a preenche e _msgBarraResposta, no app.js. -->
+    <div class="msg-respondendo hidden" id="msg-respondendo"></div>
     <div class="msg-escrever">
       <input type="text" id="msg-texto" maxlength="2000" placeholder="Escreva um recado para todos…"
              onkeydown="_msgTecla(event)">
@@ -1322,6 +1326,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-27e"></script>
+<script src="app.js?v=2026-08-27f"></script>
 </body>
 </html>
