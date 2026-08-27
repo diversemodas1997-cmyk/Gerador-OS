@@ -22099,6 +22099,25 @@ function _msgTecla(ev) {
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarMensagem(); }
 }
 
+/* ONDE O CLIQUE COMECOU, e nao onde o elemento esta agora.
+
+   Um clique DENTRO de um painel pode REDESENHAR esse painel — o lapis de
+   corrigir o recado e exatamente isso: ele chama renderMensagens, que troca o
+   innerHTML da lista inteira. Quando a bolha do mesmo clique chega aqui, o
+   botao que foi clicado ja nao esta mais no documento, e `painel.contains(
+   e.target)` responde FALSE: "veio de fora". Resultado, medido em 27/08/2026:
+   clicar no lapis abria a correcao e o proprio clique a cancelava um instante
+   depois — da tela, nada acontecia.
+
+   `composedPath()` guarda o caminho que o evento atravessou NO MOMENTO do
+   clique, e continua valendo depois de o alvo sair do DOM. E a pergunta certa:
+   "esse clique passou por dentro do painel?". O `contains` fica de reserva para
+   navegador sem composedPath. */
+function _cliqueDentro(e, ...alvos) {
+  const caminho = (typeof e.composedPath === 'function' && e.composedPath()) || [];
+  return alvos.some(a => a && (caminho.indexOf(a) >= 0 || a.contains(e.target)));
+}
+
 // Clique fora fecha, como no painel de avisos — MENOS com uma correção aberta:
 // aí o clique fora só desiste da correção, e o painel fica. Fechar levaria
 // junto o que a pessoa acabou de digitar, sem ela ter pedido nada disso.
@@ -22106,7 +22125,7 @@ document.addEventListener('click', (e) => {
   if (!mensagensAberto()) return;
   const painel = document.getElementById('msgPainel');
   const btn = document.getElementById('msgBotao');
-  if (painel && !painel.contains(e.target) && btn && !btn.contains(e.target)) {
+  if (painel && btn && !_cliqueDentro(e, painel, btn)) {
     if (_msgEditando) cancelarEdicaoMensagem(); else fecharMensagens();
   }
 });
@@ -22454,7 +22473,9 @@ document.addEventListener('click', (e) => {
   if (!avisosAberto()) return;
   const painel = document.getElementById('avisosPainel');
   const sino = document.getElementById('avisosSino');
-  if (painel && !painel.contains(e.target) && sino && !sino.contains(e.target)) fecharAvisos();
+  // Mesma armadilha do painel de mensagens: um clique que redesenha o painel
+  // tira o proprio alvo do DOM. Ver _cliqueDentro.
+  if (painel && sino && !_cliqueDentro(e, painel, sino)) fecharAvisos();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharAvisos(); });
 
