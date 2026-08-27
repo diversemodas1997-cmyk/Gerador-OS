@@ -8501,11 +8501,20 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
   const cargaEdit = cargaId ? (STATE.expedicaoCargas || []).find(c => c.id === cargaId) : null;
   _expModalCtx = { tipo: 'carga', editId: cargaEdit ? cargaId : '' };
 
-  // Ocorrências oferecidas: do começo do período (ou de hoje, o que vier antes)
-  // até 90 dias após o fim dele — cobre a que foi clicada e as próximas.
+  /* Ocorrências oferecidas: do começo do período (ou de hoje, o que vier antes)
+     até 90 dias após o fim dele — cobre a que foi clicada e as próximas.
+
+     E TAMBÉM O DIA DA PRÓPRIA CARGA, quando se está editando uma. Sem isso,
+     abrir o ⇄ de uma OS expedida em julho com o plano mostrando agosto trazia
+     uma lista que NÃO CONTINHA 13/07 — e o seletor caía na primeira opção,
+     03/08. Quem abriu só para corrigir um tamanho e clicou em Salvar mudava a
+     carga de dia sem ver. Medido em 27/08/2026 com a OS 0405. */
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
   const hoje = _expHoje();
-  const ocs = ocorrenciasExpedicao(ini < hoje ? ini : hoje, _expAddDias(fim, 90)).filter(o => !o.cancelada);
+  const daCarga = cargaEdit && cargaEdit.data ? String(cargaEdit.data) : '';
+  let de = ini < hoje ? ini : hoje;
+  if (daCarga && daCarga < de) de = daCarga;
+  const ocs = ocorrenciasExpedicao(de, _expAddDias(fim, 90)).filter(o => !o.cancelada);
   const selecionada = janelaId ? `${janelaId}|${dataOrig}|${perna}` : '';
   const opts = ocs.map(oc => ['ida', 'volta'].map(p => {
     const val = `${oc.janela.id}|${oc.dataOrig}|${p}`;
@@ -8513,6 +8522,16 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     const label = `${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${formatDate(oc.data)} · ${hora || '—'} · ${p === 'ida' ? 'IDA' : 'VOLTA'} · ${oc.janela.nome || 'sem nome'}`;
     return `<option value="${esc(val)}" ${val === selecionada ? 'selected' : ''}>${esc(label)}</option>`;
   }).join('')).join('');
+  /* A OCORRÊNCIA DESTA CARGA PODE NÃO EXISTIR MAIS: a janela foi apagada, teve
+     o dia da semana mudado, ou aquela data virou exceção cancelada. A carga
+     continua lá, e a data dela é um fato. Então ela entra na lista como está,
+     marcada "(a atual)" — assim o seletor abre no lugar certo e Salvar não
+     remaneja nada que ninguém pediu. */
+  const faltaAtual = selecionada && opts.indexOf(`value="${esc(selecionada)}"`) < 0;
+  const optAtual = faltaAtual
+    ? `<option value="${esc(selecionada)}" selected>${esc(
+        `${formatDate(dataOrig)} · ${perna === 'ida' ? 'IDA' : 'VOLTA'} · a atual (fora do plano)`)}</option>`
+    : '';
 
   // OSs: as ensacadas (prontas pra embarcar) primeiro; as demais ficam
   // disponíveis porque adiantar carga de OS que ainda vai chegar é legítimo.
@@ -8532,7 +8551,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     <div class="form-grid cols-2">
       <div class="field full">
         <label>Expedição (data · hora · perna) *</label>
-        <select id="ec-ocorrencia" onchange="_expAtualizarSugestaoVolumes()">${opts || '<option value="">— nenhuma expedição planejada —</option>'}</select>
+        <select id="ec-ocorrencia" onchange="_expAtualizarSugestaoVolumes()">${optAtual}${opts || (optAtual ? '' : '<option value="">— nenhuma expedição planejada —</option>')}</select>
         <div class="field-hint">${cargaEdit ? 'Escolha o dia e o horário em que esta OS será expedida. ' : ''}A perna define o trajeto: IDA é ${esc(expCfg().unidadeA)} → ${esc(expCfg().unidadeB)}; VOLTA é o caminho inverso.</div>
       </div>
       <div class="field full">
@@ -8811,6 +8830,22 @@ function _expAtualizarSugestaoVolumes() {
 // para a doca é o que manda ali, e nem sempre o cadastro tem a palavra final.
 // Campo em branco = valor calculado (e volta a acompanhar o cadastro). Nada aqui
 // mexe na OS, na grade, nos pacotes nem no estoque.
+/* DA FOLHA DE OE PARA O QUE SAIU DE VERDADE.
+
+   O ✎ reescreve o TEXTO da folha (nome, cor, peças, volumes, recado). O que a
+   carga LEVOU — os pacotes, por tamanho e tonalidade, e as fases da peça — mora
+   na própria carga, e quem o edita é o seletor do ⇄. Este botão liga os dois:
+   abre aquele seletor já nesta carga, sem passar pelo planejamento.
+
+   Salva o que estiver escrito na folha antes de trocar de janela: quem
+   corrigiu o nome da peça e clicou aqui não perde o que digitou. */
+async function corrigirCargaDaFolhaOe(cargaId) {
+  const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
+  if (!c) return toast('Esta OS não está mais alocada nesta expedição', 'err');
+  try { await salvarModalExpedicao(); } catch (e) { console.warn('corrigirCargaDaFolhaOe', e); }
+  moverCargaExp(cargaId);
+}
+
 function abrirModalExpFolhaOS(cargaId) {
   if (!exigirEdicao('editar a folha de OE')) return;
   const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
@@ -8868,9 +8903,17 @@ function abrirModalExpFolhaOS(cargaId) {
     <div class="info-box" style="margin-top:8px;font-size:12px;">
       Isto muda <b>só a folha de OE desta OS nesta carga</b>. A OS, o desenho, a grade, os pacotes e o estoque não são tocados — e a mesma OS em outra expedição continua com o texto calculado.
       A tabela de quantidades continua vindo do <b>Total por tamanho</b> da OS: é lá que se corrigem os números por tamanho e tonalidade.
-      Os <b>pacotes</b> e as <b>fases da peça</b> que esta carga leva se escolhem em <b>⇄</b>, no planejamento.
     </div>
-    <div style="margin-top:8px;">
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+      <!-- O QUE FOI EXPEDIDO DE VERDADE se corrige aqui do lado, e não só no
+           planejamento. Quem descobre que saiu um G a menos está OLHANDO a
+           folha de OE daquele dia — mandá-lo procurar a data no plano para
+           clicar no ⇄ era o caminho mais longo entre o erro e o conserto, e
+           numa OE de semanas atrás nem sempre ele achava o dia.
+           O botão abre o MESMO seletor de pacotes e fases do ⇄ (uma verdade
+           só), já apontado para esta carga. -->
+      <button class="btn primary" title="Corrigir os pacotes (tamanho × tonalidade) e as fases da peça que esta carga levou. É o mesmo seletor do ⇄ do planejamento, já nesta OS."
+        onclick="corrigirCargaDaFolhaOe('${esc(cargaId)}')">⇄ Corrigir tamanhos, tons e fases</button>
       <button class="btn" title="Apaga o que foi reescrito e volta a mostrar os valores calculados. A observação não é apagada." onclick="limparFolhaOeOS('${esc(cargaId)}')">↺ Voltar aos valores calculados</button>
     </div>`;
   openModal('modal-exp');
