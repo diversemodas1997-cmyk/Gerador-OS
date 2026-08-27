@@ -72,20 +72,25 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _tituloFinalizacaoOS', 'a dica da data de finalizacao')}
   ${recorte('function _dataCelulaListaOS', 'a celula da coluna Data')}
   ${constante('_STATUS_QUE_BAIXAM')}
+  ${recorte('async function aplicarBaixaEstoqueOS', 'a reserva ao salvar a OS')}
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   const exigirEstoqueTecidos = () => true;
+  // aplicarBaixaEstoqueOS pergunta o consumo da OS ao cadastro; aqui ele vem
+  // pronto pelo ctx, que e o que este teste tem a dizer sobre o assunto.
+  const consumoAgregadoPorTecidoCor = () => ctx.consumo || [];
+  const uid = () => 'm' + (++ctx.seq);
   const _estoqueRedesenharSeAberto = () => {};
   const renderEstoque = () => {};
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
-           darBaixaMaterialOS, estornarBaixaMaterialOS,
+           darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
-  const ctx = { papel, login, servidorNoAr, toasts: [], salvou: 0, redesenhou: 0,
+  const ctx = { papel, login, servidorNoAr, toasts: [], salvou: 0, redesenhou: 0, seq: 0,
                 STATE: { ordens, meta: {} } };
   return { ctx, api: monta(ctx) };
 };
@@ -262,6 +267,23 @@ console.log('-- o que fica gravado --');
   ok('50. a entrada de NF nao e tocada por nada disso',
      e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').status === undefined
      && e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').kg === 99);
+
+  // E o outro lado da mesma regra: o movimento NASCE conforme o status, porque o
+  // consumo e recalculado toda vez que a OS e salva — e uma OS em producao pode
+  // ser salva a qualquer momento (corrigir uma camada na folha, por exemplo).
+  const salvando = async (st) => {
+    const t3 = ctxDe('admin', 'admin@diverse.local', true,
+                     [{ id: 's1', os: '901', data: '2026-03-10', statusOS: st }]);
+    t3.ctx.STATE.estoqueMov = [];
+    t3.ctx.consumo = [{ tecidoNome: 'Malha', corNome: 'Preto', kg: 12 }];
+    await t3.api.aplicarBaixaEstoqueOS(t3.ctx.STATE.ordens[0]);
+    return t3.ctx.STATE.estoqueMov.map(m => m.status).join('+');
+  };
+  ok('51. OS nao iniciada: o pano nasce RESERVADO', await salvando(undefined) === 'reservado');
+  ok('52. OS em andamento salva de novo: o pano nasce ja BAIXADO',
+     await salvando('andamento') === 'consumido', await salvando('andamento'));
+  ok('53. e finalizada tambem — corrigir a folha nao desfaz a baixa',
+     await salvando('finalizado') === 'consumido', await salvando('finalizado'));
 
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');

@@ -24900,7 +24900,19 @@ async function aplicarBaixaEstoqueOS(data) {
   // Se a OS já estava baixada (produzida), mantém o status ao recalcular.
   const jaConsumida = STATE.estoqueMov.some(
     m => m.origem === 'os' && m.osId === data.id && m.status === 'consumido');
-  const status = jaConsumida ? 'consumido' : 'reservado';
+  /* SÓ OS NÃO INICIADA TEM PANO RESERVADO (27/08/2026, Junior).
+
+     Quem baixa é o status (ver _estoqueSeguirStatusOS), mas o status muda numa
+     tela e o consumo é recalculado em OUTRA: salvar de novo uma OS que já está
+     em andamento apagava os movimentos dela e criava movimentos novos — e os
+     novos nasciam "reservado", desfazendo a baixa sem ninguém pedir. Bastava
+     corrigir uma camada na folha de uma OS em produção.
+
+     Então o status da OS decide também aqui, no nascimento do movimento: em
+     andamento, parada ou finalizada, o pano nasce baixado. Reservado fica sendo
+     o que ele diz ser — pano comprometido por OS que ainda não começou. */
+  const jaAndando = _STATUS_QUE_BAIXAM.indexOf(_statusOS(data)) >= 0;
+  const status = (jaConsumida || jaAndando) ? 'consumido' : 'reservado';
   const antes = STATE.estoqueMov.length;
   STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
   const itens = consumoAgregadoPorTecidoCor(data);
@@ -24917,7 +24929,7 @@ async function aplicarBaixaEstoqueOS(data) {
       osId: data.id,
       osNumero: data.os || '',
       status,
-      consumidoEm: jaConsumida ? hoje : '',
+      consumidoEm: status === 'consumido' ? hoje : '',
       obs: ''
     });
   });
