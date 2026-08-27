@@ -21813,12 +21813,23 @@ function _msgPrazoRestante(m) {
   return Math.max(0, t + MSG_EDIT_MS - Date.now());
 }
 
+/* O ADMIN NÃO TEM PRAZO (27/08/2026, por decisão do Junior). O relógio existe
+   para o recado da produção não ser reescrito depois de lido; a conta que
+   administra o programa é a que responde pelo canal e corrige o que ficou
+   errado ali, no dia seguinte se for o caso. Continua valendo, para todo mundo,
+   que só se corrige o PRÓPRIO recado: prazo é uma coisa, autoria é outra.
+   Como o resto do programa, a trava é no RLS e não na tela — a política de
+   UPDATE em sql/supabase-mensagens.sql dispensa o prazo para quem está em
+   user_roles como admin, e o gatilho segue deixando mudar só o texto. */
+function _msgSemPrazo() { return currentRole === 'admin'; }
+
 function _msgPossoEditar(m) {
-  return !!m && m.autor_id === _msgQuemSou() && _msgPrazoRestante(m) > 0;
+  return !!m && m.autor_id === _msgQuemSou() && (_msgSemPrazo() || _msgPrazoRestante(m) > 0);
 }
 
 // Quanto falta, em palavra de gente: é o title do lápis.
 function _msgPrazoTexto(m) {
+  if (_msgSemPrazo()) return 'Corrigir este recado';
   const ms = _msgPrazoRestante(m);
   const min = Math.ceil(ms / 60000);
   return ms <= 0 ? '' : `Corrigir este recado — ${min} min para acabar o prazo`;
@@ -21828,7 +21839,7 @@ function editarMensagem(id) {
   const m = _mensagens.find(x => x.id === id);
   if (!m) return;
   if (m.autor_id !== _msgQuemSou()) return toast('Só dá para corrigir o próprio recado', 'err');
-  if (_msgPrazoRestante(m) <= 0) {
+  if (!_msgSemPrazo() && _msgPrazoRestante(m) <= 0) {
     // O lápis podia estar na tela desde antes de o prazo vencer.
     _msgEditando = null; renderMensagens();
     return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
@@ -21851,7 +21862,7 @@ async function salvarEdicaoMensagem(id) {
   const texto = (campo.value || '').trim();
   if (!texto) return toast('Recado vazio não é correção — para tirar da conversa, apague', 'err');
   if (texto === String(m.texto || '')) { cancelarEdicaoMensagem(); return; }
-  if (_msgPrazoRestante(m) <= 0) {
+  if (!_msgSemPrazo() && _msgPrazoRestante(m) <= 0) {
     _msgEditando = null; renderMensagens();
     return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
   }
@@ -21879,7 +21890,8 @@ async function salvarEdicaoMensagem(id) {
     m.texto = antes;
     delete m.editado_em;
     renderMensagens();
-    toast('Não deu para corrigir — o prazo de 5 minutos pode ter acabado', 'err');
+    toast(_msgSemPrazo() ? 'Não deu para corrigir — tente de novo'
+      : 'Não deu para corrigir — o prazo de 5 minutos pode ter acabado', 'err');
   }
 }
 
@@ -21894,6 +21906,7 @@ function _msgTeclaEdicao(ev, id) {
 // que é a pior forma de descobrir que o prazo acabou.
 function _msgAgendarRelogio() {
   if (_msgRelogio) { clearTimeout(_msgRelogio); _msgRelogio = null; }
+  if (_msgSemPrazo()) return;          // sem prazo, não há lápis para tirar da tela
   const eu = _msgQuemSou();
   const prazos = _mensagens.filter(m => m.autor_id === eu)
     .map(_msgPrazoRestante).filter(ms => ms > 0);

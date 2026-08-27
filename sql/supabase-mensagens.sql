@@ -82,9 +82,17 @@ create policy "mensagens: apagar a propria"
 -- isso e o relogio DAQUELE computador — atrasado, adiantado, ou a tela aberta
 -- desde antes. `now()` aqui e o relogio do servidor, um so para todo mundo.
 --
--- NEM O ADMIN corrige recado alheio (e ele pode APAGAR, isso segue valendo):
+-- O ADMIN NAO TEM PRAZO (27/08/2026, decisao do Junior): ele corrige as
+-- PROPRIAS mensagens a qualquer momento. O relogio existe para o recado da
+-- producao nao ser reescrito depois de lido; a conta que administra o programa
+-- e a que responde pelo canal, e corrige o que ficou errado ali no dia seguinte
+-- se for o caso. A dispensa e SO do prazo.
+--
+-- NEM O ADMIN corrige recado ALHEIO (e ele pode APAGAR, isso segue valendo):
 -- apagar deixa claro que sumiu; reescrever poe a palavra de um na boca do
--- outro. Mesmo principio da observacao da folha de OS.
+-- outro. Mesmo principio da observacao da folha de OS. Por isso o
+-- `autor_id = auth.uid()` fica FORA do parenteses: ele vale para todo mundo, e
+-- o que o admin dispensa e so a segunda condicao.
 --
 -- O `with check` repete o dono e o prazo porque a linha e conferida DEPOIS da
 -- alteracao: sem ele, um update poderia trocar `autor_id` ou empurrar
@@ -95,11 +103,23 @@ create policy "mensagens: corrigir a propria em 5 min"
   to authenticated
   using (
     autor_id = auth.uid()
-    and criado_em > now() - interval '5 minutes'
+    and (
+      criado_em > now() - interval '5 minutes'
+      or exists (
+        select 1 from public.user_roles
+         where user_id = auth.uid() and role = 'admin'
+      )
+    )
   )
   with check (
     autor_id = auth.uid()
-    and criado_em > now() - interval '5 minutes'
+    and (
+      criado_em > now() - interval '5 minutes'
+      or exists (
+        select 1 from public.user_roles
+         where user_id = auth.uid() and role = 'admin'
+      )
+    )
   );
 
 -- NUM UPDATE, SO O TEXTO MUDA.
