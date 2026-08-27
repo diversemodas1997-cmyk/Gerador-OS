@@ -280,6 +280,12 @@ as $$
     from auth.users u
    where u.deleted_at is null
      and coalesce(u.email, '') <> ''
+     -- CONTAS DE SERVICO ficam de fora: sao logins de PROGRAMA, nao de gente.
+     -- `backup` e a conta que o script de backup diario usa para entrar; um
+     -- recado "@backup, olha essa OS" nao chega a ninguem, porque do outro
+     -- lado nao ha ninguem. Para tirar outra conta desta lista no futuro,
+     -- acrescente o login aqui dentro dos parenteses.
+     and split_part(u.email, '@', 1) not in ('backup')
    order by 2
 $$;
 
