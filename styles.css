@@ -1619,6 +1619,13 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    um olhar de lista - a de cima e a data da OS, que sempre esteve ali. */
 .data-fim { display: block; font-size: 11px; color: var(--ok); margin-top: 2px; }
 
+/* O ATALHO DO PDF na linha de cada fase, no cadastro de grade. Discreto: quem
+   cadastra esta olhando as medidas, e o PDF e conferencia. Apagado quando a
+   fase nao registrou de onde veio a medida — o icone continua la porque
+   "nao tem prova" e informacao (ver fasesSemProvaDeMedida). */
+.fase-risco { font-size: 13px; text-decoration: none; line-height: 1; }
+.fase-risco.vazio { opacity: .25; cursor: help; filter: grayscale(1); }
+
 /* A LINHA DE FILTROS da lista de OS Salvas: buscar por numero e filtrar por
    status, lado a lado. Sao duas perguntas diferentes e valem juntas. No celular
    empilham, que e o unico jeito de os dois caberem. */

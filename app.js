@@ -4743,6 +4743,62 @@ function _funcOpNotaDeEnfesto(row) {
   }
 }
 
+/* O CAMINHO GRAVADO NA FASE NEM SEMPRE É UM CAMINHO.
+
+   Quando a medida entrou pelo assistente de PASTA, `fase.risco` guarda o
+   caminho inteiro ("CM.TRI/2P-2G1/116.5 cm/CM.TRI - CORPO 1 - 2P-2G1.pdf").
+   Quando entrou pelo botão "Importar risco (PDF)", que recebe UM arquivo
+   escolhido no disco, o que se sabe é só o NOME dele — não há pasta nenhuma no
+   que o navegador entrega. As duas formas convivem no cadastro (a grade
+   2P-2G1 | CM.TRI tem as três fases assim, só com o nome).
+
+   Só o nome basta para o ✓ do modal de riscos, que compara por sufixo, mas não
+   para ABRIR o arquivo: sem a pasta o endereço cai em 404. Então aqui o nome é
+   procurado na lista de PDFs e devolvido inteiro. Não achou — PDF renomeado,
+   movido, ou lista velha — devolve vazio, e o ícone diz isso em vez de oferecer
+   um link quebrado. */
+function _riscoRelResolvido(rel) {
+  const r = String(rel || '').trim();
+  if (!r) return '';
+  if (r.indexOf('/') >= 0) return r;
+  if (!_riscosIdx) return '';                       // sem a lista não dá para saber
+  const alvo = _normNome(r);
+  const achado = (_riscosIdx.itens || []).find(p => {
+    const c = _normNome(p.rel || '');
+    return c === alvo || c.endsWith('/' + alvo);
+  });
+  return achado ? achado.rel : '';
+}
+
+// O ícone do PDF de uma fase, do jeito que ele está agora: link quando o
+// arquivo é alcançável, apagado quando não é — e o title diz por quê.
+function _faseRiscoHtml(rel) {
+  const r = String(rel || '').trim();
+  if (!r) {
+    return `<span class="fase-risco vazio" title="Esta fase não registrou de qual PDF veio a medida: ou ela foi digitada à mão, ou entrou antes de 19/08/2026, quando o programa passou a guardar a prova.">📄</span>`;
+  }
+  const cheio = _riscoRelResolvido(r);
+  if (!cheio) {
+    const porque = _riscosIdx
+      ? `O PDF "${r.split('/').pop()}" está registrado nesta fase, mas não foi achado na pasta de riscos. Ou ele foi renomeado ou movido, ou a lista está velha — quem a atualiza é: node servidor/indexar-riscos.js`
+      : `Carregando a lista dos PDFs…`;
+    return `<span class="fase-risco vazio" title="${esc(porque)}">📄</span>`;
+  }
+  return `<a class="fase-risco" href="${esc(_riscoUrl(cheio))}" target="_blank" rel="noopener"
+     title="Abrir o PDF de encaixe de onde saíram estas medidas: ${esc(cheio.split('/').pop())}">📄</a>`;
+}
+
+// Redesenha os ícones das fases já na tela. Chamada quando a lista dos riscos
+// chega depois da ficha (ver addFaseGradeRow): antes dela nem o endereço nem o
+// "existe?" podem ser respondidos. O caminho de cada fase mora no `data-risco`
+// do bloco, então não é preciso redesenhar mais nada.
+function _faseRiscoAtualizarLinks() {
+  document.querySelectorAll('#m-fases-container .fase-grade-bloco').forEach(b => {
+    const alvo = b.querySelector('.fase-risco');
+    if (alvo) alvo.outerHTML = _faseRiscoHtml(b.dataset.risco || '');
+  });
+}
+
 function addFaseGradeRow(fase = {}) {
   const cont = document.getElementById('m-fases-container');
   if (!cont) return;
@@ -4768,9 +4824,27 @@ function addFaseGradeRow(fase = {}) {
   // que decide se a OS sai com aviso (ver fasesSemProvaDeMedida).
   div.dataset.risco = fase.risco || '';
   div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+  /* O ATALHO PARA O PDF DA MEDIDA, na própria linha da fase.
+     O caminho já viajava no bloco (`data-risco`, logo acima) para não ser
+     apagado ao salvar, mas ninguém o via: para conferir de onde saiu um
+     comprimento era preciso fechar a ficha, achar a grade na lista e abrir a
+     coluna Riscos. Agora o PDF abre daqui, ao lado da medida que ele produziu.
+     Fase sem PDF mostra o ícone apagado, e o title diz o que isso significa —
+     é a mesma prova que decide se a OS sai com aviso (fasesSemProvaDeMedida),
+     então "não tem" é informação, não ausência de botão. */
+  // A LISTA DOS PDFs VEM SOZINHA, E PODE NÃO TER CHEGADO AINDA. `_riscoUrl`
+  // precisa do nome da pasta raiz, que mora nessa lista (dados/riscos-pdf.json);
+  // sem ela o endereço sai sem a pasta e o PDF abre em 404 — medido ao abrir a
+  // ficha logo depois de o programa carregar, antes de qualquer tela ter pedido
+  // o índice. Pede aqui e, quando chegar, reescreve os links já desenhados.
+  if (!_riscosIdx && !_riscosIdxFalhou) {
+    _riscosIndice().then(_faseRiscoAtualizarLinks).catch(() => {});
+  }
+  const _rkBt = _faseRiscoHtml(fase.risco || '');
   div.innerHTML = `
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
       <span class="fase-label" style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">FASE ?</span>
+      ${_rkBt}
       <span style="flex:1;"></span>
       <button type="button" class="btn small danger" onclick="removerFaseGrade(this)">✕ Remover</button>
     </div>
