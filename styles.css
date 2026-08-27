@@ -352,6 +352,7 @@ aside.sidebar {
 /* A TARJA de "respondendo a fulano", entre a conversa e o campo de escrever. */
 .msg-respondendo {
   display: flex;
+  flex: 0 0 auto;              /* pelo mesmo motivo da lista do @ */
   align-items: baseline;
   gap: 6px;
   padding: 5px 8px;
@@ -370,6 +371,43 @@ aside.sidebar {
   white-space: nowrap;
   font-style: italic;
 }
+/* A LISTA DO @ (27/08/2026). Fica acima do campo porque o campo mora no rodape
+   do painel — lista para baixo sairia da tela. Rola quando ha muita gente, mas
+   o filtro do que se digita quase sempre a deixa com dois ou tres nomes. */
+.msg-mencoes {
+  display: flex;
+  flex-direction: column;
+  /* `flex: 0 0 auto` NAO e enfeite: o painel e uma coluna flex, e sem isto a
+     lista era ESPREMIDA pela conversa acima dela — cinco nomes em 34px de
+     altura, medido. O mesmo motivo do `flex: 0 0 auto` do campo de escrever. */
+  flex: 0 0 auto;
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+.msg-mencoes.hidden { display: none; }
+.msg-mencao-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line-2, #f0ece3);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.msg-mencao-item:last-child { border-bottom: none; }
+/* `sel` e a marcada pelo teclado; o hover marca a do mouse. As duas usam o
+   mesmo fundo de proposito: e a mesma ideia, "e esta que sai se voce confirmar". */
+.msg-mencao-item.sel, .msg-mencao-item:hover { background: #fbf6e8; }
+
+/* O NOME CITADO dentro do recado, e a linha que cita VOCE. */
+.msg-mencao { color: var(--accent); font-weight: 600; }
+.msg-mencao.eu { background: #fff3cd; border-radius: 3px; padding: 0 2px; }
+.msg-linha.pra-mim { background: #fffaf0; border-left: 3px solid var(--accent); padding-left: 9px; }
+
 .msg-resp-x {
   background: transparent; border: none; color: var(--ink-3);
   cursor: pointer; font-size: 11px; padding: 0 2px;

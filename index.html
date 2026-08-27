@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-27f">
+<link rel="stylesheet" href="styles.css?v=2026-08-27h">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -130,8 +130,13 @@
          precisa ver, ao voltar, que o recado vai sair recuado embaixo do outro.
          Quem a preenche e _msgBarraResposta, no app.js. -->
     <div class="msg-respondendo hidden" id="msg-respondendo"></div>
+    <!-- A lista que o @ abre. Fica ACIMA do campo (o campo mora no rodape do
+         painel; lista para baixo sairia da tela). Quem a preenche e
+         _msgDesenharMencao, no app.js. -->
+    <div class="msg-mencoes hidden" id="msg-mencoes"></div>
     <div class="msg-escrever">
-      <input type="text" id="msg-texto" maxlength="2000" placeholder="Escreva um recado para todos…"
+      <input type="text" id="msg-texto" maxlength="2000" placeholder="Escreva um recado para todos… (@ chama alguem)"
+             autocomplete="off" oninput="_msgAoDigitar()" onblur="setTimeout(_msgFecharMencao, 150)"
              onkeydown="_msgTecla(event)">
       <button type="button" class="btn small primary" onclick="enviarMensagem()">Enviar</button>
     </div>
@@ -1326,6 +1331,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-27f"></script>
+<script src="app.js?v=2026-08-27h"></script>
 </body>
 </html>

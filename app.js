@@ -21706,6 +21706,8 @@ let _mensagens = [];              // mais antigas primeiro, como se lê
 let _msgEditando = null;          // id do recado aberto para conserto (um por vez)
 let _msgRespondendoA = null;      // id do recado que o campo de baixo esta respondendo
 let _msgReacoes = [];             // uma linha por polegar: {mensagem_id, user_id}
+let _msgPerfis = [];              // os logins do programa, para a menção com @
+let _msgMencao = null;            // a lista aberta: {inicio, termo, itens, sel}
 let _msgReacoesIndisponivel = false;   // servidor sem a tabela: o polegar nao aparece
 let _msgRelogio = null;           // tira o lápis da tela na hora em que ele vence
 let _msgCanal = null;
@@ -21738,6 +21740,7 @@ async function carregarMensagens() {
     _msgIndisponivel = false;
     _mensagens = (Array.isArray(data) ? data : []).slice().reverse();
     await carregarReacoes();
+    await carregarPerfis();
   } catch (e) {
     _msgIndisponivel = true;
     _mensagens = [];
@@ -21823,6 +21826,142 @@ async function enviarMensagem() {
     _msgRespondendoA = respondia;     // e a quem ela respondia
     renderMensagens();
   }
+}
+
+/* ---- MENCIONAR ALGUEM COM @ -----------------------------------------------
+   A fábrica já mencionava: "@enfesto.corte: confirme se o encaixe…" estava
+   sendo digitado à mão, letra por letra, e um nome errado é um recado que não
+   chega a ninguém. Agora o @ abre a lista de quem existe, e o programa escreve
+   o nome certo.
+
+   DE ONDE VEM A LISTA: da função `perfis()` no banco (ver
+   sql/supabase-mensagens.sql), que devolve só id e login. Ela precisou existir
+   porque a lista de contas mora em `auth.users` e, até aqui, só o admin
+   alcançava — usuário comum não tem nem linha em `user_roles`.
+
+   E QUANDO ELA NÃO VEM (a cópia da nuvem, um servidor sem o SQL novo): a lista
+   se monta com quem já escreveu no canal e quem já assinou observação de OS.
+   É menos gente do que existe, mas é gente de verdade, e o campo continua
+   servindo em vez de sumir. */
+async function carregarPerfis() {
+  const doQueJaExiste = () => {
+    const vistos = new Map();
+    (_mensagens || []).forEach(m => {
+      const l = _obsNomeLogin(m.autor);
+      if (l) vistos.set(l.toLowerCase(), { user_id: m.autor_id, login: l });
+    });
+    (STATE.ordens || []).forEach(o => (o.obsNotas || []).forEach(n => {
+      const l = _obsNomeLogin(n.login);
+      if (l && !vistos.has(l.toLowerCase())) vistos.set(l.toLowerCase(), { user_id: null, login: l });
+    }));
+    const meu = _obsNomeLogin((currentUser && currentUser.email) || '');
+    if (meu) vistos.set(meu.toLowerCase(), { user_id: _msgQuemSou(), login: meu });
+    return Array.from(vistos.values()).sort((a, b) => a.login.localeCompare(b.login));
+  };
+  if (!supa || !currentUser) { _msgPerfis = doQueJaExiste(); return; }
+  try {
+    const { data, error } = await supa.rpc('perfis');
+    if (error || !Array.isArray(data) || !data.length) { _msgPerfis = doQueJaExiste(); return; }
+    _msgPerfis = data.filter(p => p && p.login);
+  } catch (e) { _msgPerfis = doQueJaExiste(); }
+}
+
+// O @ que está sendo escrito NESTE momento: só conta o que vem depois de um
+// espaço ou do começo do campo (um e-mail digitado no meio da frase não abre
+// lista nenhuma), e só até onde o cursor está.
+function _msgTokenMencao(campo) {
+  if (!campo) return null;
+  const ate = String(campo.value || '').slice(0, campo.selectionStart == null ? undefined : campo.selectionStart);
+  const m = ate.match(/(^|\s)@([\wÀ-ÿ.\-]*)$/);
+  if (!m) return null;
+  return { inicio: ate.length - m[2].length - 1, termo: m[2] };
+}
+
+function _msgFecharMencao() {
+  _msgMencao = null;
+  const cx = document.getElementById('msg-mencoes');
+  if (cx) { cx.classList.add('hidden'); cx.innerHTML = ''; }
+}
+
+// Chamado a cada tecla digitada no campo. Abre, filtra ou fecha a lista.
+function _msgAoDigitar() {
+  const campo = document.getElementById('msg-texto');
+  const tok = _msgTokenMencao(campo);
+  if (!tok) return _msgFecharMencao();
+  const t = tok.termo.toLowerCase();
+  const itens = _msgPerfis
+    .filter(p => !t || p.login.toLowerCase().indexOf(t) >= 0)
+    // Quem começa com o que foi digitado vem primeiro: digitar "na" e ver
+    // "nathaly" em terceiro lugar é o mesmo que não ter lista.
+    .sort((a, b) => {
+      const ia = a.login.toLowerCase().startsWith(t) ? 0 : 1;
+      const ib = b.login.toLowerCase().startsWith(t) ? 0 : 1;
+      return ia - ib || a.login.localeCompare(b.login);
+    })
+    .slice(0, 8);
+  if (!itens.length) return _msgFecharMencao();
+  const antes = _msgMencao;
+  _msgMencao = { inicio: tok.inicio, termo: tok.termo, itens: itens, sel: 0 };
+  // Mantém a escolha quando a pessoa só apagou/acrescentou uma letra e o nome
+  // marcado continua na lista.
+  if (antes && antes.itens[antes.sel]) {
+    const i = itens.findIndex(p => p.login === antes.itens[antes.sel].login);
+    if (i >= 0) _msgMencao.sel = i;
+  }
+  _msgDesenharMencao();
+}
+
+function _msgDesenharMencao() {
+  const cx = document.getElementById('msg-mencoes');
+  if (!cx || !_msgMencao) return;
+  cx.innerHTML = _msgMencao.itens.map((p, i) =>
+    `<button type="button" class="msg-mencao-item${i === _msgMencao.sel ? ' sel' : ''}"
+       onmousedown="event.preventDefault(); escolherMencao(${i})">@${esc(p.login)}</button>`).join('');
+  cx.classList.remove('hidden');
+}
+
+// `onmousedown` e não `onclick` de propósito: o clique tira o foco do campo, e
+// o blur fecharia a lista antes de o clique chegar.
+function escolherMencao(i) {
+  const campo = document.getElementById('msg-texto');
+  if (!_msgMencao || !campo) return;
+  const p = _msgMencao.itens[i == null ? _msgMencao.sel : i];
+  if (!p) return;
+  const valor = String(campo.value || '');
+  const fim = campo.selectionStart == null ? valor.length : campo.selectionStart;
+  const novo = valor.slice(0, _msgMencao.inicio) + '@' + p.login + ' ' + valor.slice(fim);
+  campo.value = novo;
+  const cursor = _msgMencao.inicio + p.login.length + 2;
+  _msgFecharMencao();
+  campo.focus();
+  try { campo.setSelectionRange(cursor, cursor); } catch (e) { }
+}
+
+// O texto do recado com as menções em destaque. Roda DEPOIS do esc(), sobre o
+// texto já escapado — por isso casa só com letras, números, ponto e traço, que
+// é do que um login é feito e não tem nada de escapável.
+function _msgComMencoes(textoEscapado) {
+  const meu = (_obsNomeLogin((currentUser && currentUser.email) || '') || '').toLowerCase();
+  return String(textoEscapado).replace(/(^|\s)@([\wÀ-ÿ.\-]{2,40})/g, (todo, antes, nome) =>
+    `${antes}<span class="msg-mencao${nome.toLowerCase() === meu ? ' eu' : ''}">@${nome}</span>`);
+}
+
+// Este recado chama por mim? É o que faz a linha ficar destacada na conversa.
+function _msgMeMencionou(m) {
+  const meu = (_obsNomeLogin((currentUser && currentUser.email) || '') || '').toLowerCase();
+  if (!meu) return false;
+  // Sem montar expressão com o nome dentro: o login tem ponto ("enfesto.corte"),
+  // e ponto em expressão casa com qualquer letra — "@enfestoXcorte" acenderia a
+  // linha. Procurar o texto e olhar as bordas responde a mesma pergunta sem
+  // essa armadilha.
+  const t = String(m.texto || '').toLowerCase();
+  const alvo = '@' + meu;
+  for (let i = t.indexOf(alvo); i >= 0; i = t.indexOf(alvo, i + 1)) {
+    const antes = i === 0 || /\s/.test(t.charAt(i - 1));
+    const depois = t.charAt(i + alvo.length);
+    if (antes && (!depois || !/[\wÀ-ÿ.\-]/.test(depois))) return true;
+  }
+  return false;
 }
 
 /* ---- O POLEGAR ------------------------------------------------------------
@@ -22135,6 +22274,7 @@ function fecharMensagens() {
   if (p) p.classList.add('hidden');
   _msgEditando = null;             // painel fechado, correção largada
   _msgRespondendoA = null;         // e a resposta que ninguém chegou a escrever
+  _msgFecharMencao();
 }
 
 function toggleMensagens() {
@@ -22211,7 +22351,7 @@ function renderMensagens() {
                <button type="button" class="btn small" onclick="cancelarEdicaoMensagem()">Cancelar</button>
              </div>
            </div>`
-        : `<div class="msg-txt">${esc(m.texto)}</div>`;
+        : `<div class="msg-txt">${_msgComMencoes(esc(m.texto))}</div>`;
 
       // O POLEGAR e o RESPONDER, embaixo do texto. O polegar mostra o número só
       // quando há o que contar: "👍 0" em toda linha é sujeira, e quem reagiu
@@ -22226,7 +22366,10 @@ function renderMensagens() {
            onclick="responderMensagem('${esc(m.id)}')">↩</button>`;
       const acoes = editando ? '' : `<div class="msg-acoes">${polegar}${responder}</div>`;
 
-      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}${editando ? ' editando' : ''}${item.resposta ? ' msg-resposta' : ''}">
+      // Chamaram por mim: a linha fica marcada na conversa. Um recado que cita
+      // seu nome no meio de vinte outros nao pode ter o mesmo peso dos vinte.
+      const praMim = _msgMeMencionou(m) && !meu;
+      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}${editando ? ' editando' : ''}${item.resposta ? ' msg-resposta' : ''}${praMim ? ' pra-mim' : ''}">
         <div class="msg-cab">
           <b>${esc(_obsNomeLogin(m.autor) || 'alguém')}</b>
           <span class="msg-hora">${esc(_msgQuando(m.criado_em))}${marca}</span>
@@ -22262,6 +22405,19 @@ function renderMensagens() {
 
 // Enter manda; Shift+Enter não, para quem quiser um recado de duas linhas.
 function _msgTecla(ev) {
+  // COM A LISTA DO @ ABERTA o teclado e dela: Enter escolhe o nome, nao manda o
+  // recado pela metade. E o Esc fecha so a lista — o painel fica.
+  if (_msgMencao) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      const n = _msgMencao.itens.length;
+      _msgMencao.sel = (_msgMencao.sel + (ev.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      _msgDesenharMencao();
+      return;
+    }
+    if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); escolherMencao(); return; }
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); _msgFecharMencao(); return; }
+  }
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarMensagem(); }
 }
 

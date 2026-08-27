@@ -252,7 +252,42 @@ begin
   end if;
 end $$;
 
+-- =====================================================================
+-- perfis() — a lista de nomes para a mencao com @
+-- =====================================================================
+-- Digitar "@" no campo de recado abre a lista de quem existe no programa. Ate
+-- 27/08/2026 essa lista nao existia para quem nao e admin: `user_roles` so tem
+-- o id (e usuario comum nem tem linha la), e a lista completa mora em
+-- `auth.users`, fora do alcance da chave anonima. Quem quisesse mencionar
+-- alguem tinha de acertar o nome de cabeca — e era o que estava acontecendo,
+-- "@enfesto.corte:" digitado a mao nos recados.
+--
+-- Esta funcao devolve o MINIMO para a mencao funcionar: o id e o LOGIN (o
+-- pedaco antes do @ do e-mail), que e o nome que a fabrica ja usa e ja aparece
+-- em cada recado e em cada observacao de OS. Nao devolve e-mail completo, nem
+-- papel, nem data, nem nada de senha.
+--
+-- `security definer` porque quem chama nao tem acesso ao schema auth; o
+-- `search_path` fixo e a regra de ouro dessas funcoes (sem ele, um schema
+-- plantado no caminho troca o que `users` significa). Conta apagada nao entra.
+create or replace function public.perfis()
+returns table (user_id uuid, login text)
+language sql
+security definer
+set search_path = public, auth
+as $$
+  select u.id, split_part(u.email, '@', 1)
+    from auth.users u
+   where u.deleted_at is null
+     and coalesce(u.email, '') <> ''
+   order by 2
+$$;
+
+revoke all on function public.perfis() from public;
+grant execute on function public.perfis() to authenticated;
+
 -- Verificação:
+-- select * from public.perfis();
 -- select * from pg_policies where tablename='mensagens';
 -- select * from pg_policies where tablename='mensagem_reacoes';
 -- select tgname from pg_trigger where tgrelid='mensagens'::regclass and not tgisinternal;
