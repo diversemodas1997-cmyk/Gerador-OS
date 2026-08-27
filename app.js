@@ -14849,15 +14849,18 @@ function renderPrintPlanoExpedicao() {
     // como a OS foi repartida. Destacado, não em nota de rodapé: é justamente o
     // que não está em nenhum outro lugar do papel.
     const obsHtml = i.obs ? `<div class="obs">${esc(i.obs)}</div>` : '';
-    // A carga leva só PARTE da peça? Então a folha tem que dizer quais fases do
-    // enfesto embarcam e, principalmente, quais FICAM: quem separa não pode
-    // descobrir isso contando sacos, e quem recebe precisa saber o que esperar do
-    // próximo caminhão. Carga da peça inteira não escreve nada — o silêncio aqui
-    // quer dizer "vai tudo", que é o caso da grande maioria.
+    // A carga leva só PARTE da peça? Então a folha diz quais fases do enfesto
+    // embarcam. Carga da peça inteira não escreve nada — o silêncio aqui quer
+    // dizer "vai tudo", que é o caso da grande maioria.
+    //
+    // O QUE FICA NÃO É MAIS ESCRITO (27/08/2026, Junior). A folha é o papel que
+    // anda com a carga, e ali só interessa o que está dentro do caminhão: quem
+    // separa confere o que vai, e quem recebe confere o que chegou. O que ficou
+    // é assunto do PLANEJAMENTO, e continua lá — na linha da OS, no plano de
+    // expedição, com "ficam: …" e o painel de remanescentes.
     const fi = i.fases || { temFases: false, todas: true, levam: [], ficam: [] };
     const fasesHtml = (fi.temFases && !fi.todas && fi.levam.length)
-      ? `<div class="fases"><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}${
-          fi.ficam.length ? `<span class="fic"> · ficam para depois: ${esc(_expFasesTexto(fi.ficam))}</span>` : ''}</div>`
+      ? `<div class="fases"><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}</div>`
       : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.

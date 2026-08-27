@@ -3021,7 +3021,9 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   font-size: 7.5pt; color: #000; margin-top: 1.5pt;
   padding: 1pt 3pt; border: .5pt solid #000;
 }
-.exp-print-os > .fases .fic { color: #444; }
+/* O ".fic" (o que fica para depois) saiu da FOLHA em 27/08/2026 — ali so
+   interessa o que esta dentro do caminhao. A regra continua valendo para a
+   linha da OS no planejamento, que ainda escreve "ficam: ...". */
 .exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
 
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
