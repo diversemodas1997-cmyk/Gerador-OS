@@ -23078,6 +23078,20 @@ function _obsCaixaHtml(o) {
   const cabec = n => `<span class="obs-quem" title="${esc(n.login || '')}">${
     esc(_obsNomeLogin(n.login) || '—')}</span><span class="obs-quando">${esc(_obsQuando(n))}</span>`;
 
+  /* O CARIMBO NA MESMA LINHA DO TEXTO (27/08/2026). A data e a hora abriam uma
+     linha só delas em cima de cada recado: numa caixa que já disputa milímetro
+     com o desenho, era uma linha de papel gasta por observação — e três ou
+     quatro recados curtos viravam oito linhas. Agora o carimbo vai NO COMEÇO do
+     texto, corrido com ele, e a folha ganha de volta uma linha por observação.
+     Ele fica em cinza e em mono para o olho separar o carimbo do recado sem
+     precisar de linha própria.
+     Só vale para recado em LEITURA: o campo de quem está escrevendo não pode
+     levar carimbo dentro (o que estivesse ali dentro viraria texto da pessoa,
+     e ela apagaria sem querer), então ali o cabeçalho continua por cima. */
+  const carimbo = (quando, login, nome) =>
+    `<span class="obs-carimbo"><span class="obs-quando">${esc(quando)}</span>`
+    + `<span class="obs-quem" title="${esc(login || '')}">${esc(nome || '—')}</span></span> `;
+
   // O TEXTO ANTIGO, de quando a caixa era uma só. Junior confirmou em
   // 20/08/2026 que TODAS as anotações que já existem, em todas as OS, são do
   // admin — até essa data ninguém mais podia escrever ali. Por isso ele aparece
@@ -23086,12 +23100,12 @@ function _obsCaixaHtml(o) {
   const legado = (o.obs || '').trim() ? (currentRole === 'admin'
     ? `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">admin</span><span class="obs-quando">anterior a 20/08/2026</span></div>
          <textarea class="obs-input obs-legado" style="min-height:8mm;" oninput="_obsAjustarAltura(this)" onchange="salvarObsOS('${esc(o.id)}', this.value)">${esc(o.obs)}</textarea></div>`
-    : `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">admin</span><span class="obs-quando">anterior a 20/08/2026</span></div>
-         <div class="obs-texto">${esc(o.obs)}</div></div>`) : '';
+    : `<div class="obs-nota">
+         <div class="obs-texto">${carimbo('anterior a 20/08/2026', '', 'admin')}${esc(o.obs)}</div></div>`) : '';
 
   const deOutro = n =>
-    `<div class="obs-nota"><div class="obs-nota-cab">${cabec(n)}</div>
-       <div class="obs-texto">${esc(n.texto || '')}</div></div>`;
+    `<div class="obs-nota">
+       <div class="obs-texto">${carimbo(_obsQuando(n), n.login, _obsNomeLogin(n.login))}${esc(n.texto || '')}</div></div>`;
 
   // Sem login não há a quem atribuir: a folha mostra o que já foi escrito e não
   // oferece campo nenhum.
@@ -25129,12 +25143,14 @@ let _obsOsDaFolha = null;
 function abrirTodasAsObs(o) {
   if (!o) return;
   const notas = _obsEmOrdem(o);   // mesma ordem da folha: antiga em cima
+  // Mesma forma da folha: carimbo no começo da linha, texto em seguida. O que
+  // se lê aqui é o que está no papel.
   const bloco = (quem, quando, texto, titulo) => `
     <div style="padding:8px 0;border-bottom:1px solid var(--line);">
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px;">
-        <b style="color:var(--ink-1);" title="${esc(titulo || '')}">${esc(quem)}</b><span>${esc(quando)}</span>
+      <div style="white-space:pre-wrap;font-size:13px;overflow-wrap:anywhere;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);white-space:nowrap;">${esc(quando)}
+          <b style="color:var(--ink-1);" title="${esc(titulo || '')}">${esc(quem)}</b></span> ${esc(texto)}
       </div>
-      <div style="white-space:pre-wrap;font-size:13px;margin-top:2px;">${esc(texto)}</div>
     </div>`;
   const legado = (o.obs || '').trim()
     ? bloco('admin', 'anterior a 20/08/2026', o.obs) : '';

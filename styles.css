@@ -1295,6 +1295,20 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 }
 .obs-quem { font-weight: 700; color: #000; text-transform: lowercase; }
 .obs-quando { color: #777; white-space: nowrap; }
+/* O CARIMBO NA MESMA LINHA DO TEXTO (27/08/2026): data, hora e quem escreveu
+   abrem o recado em vez de tomarem uma linha só deles em cima. Ver o comentario
+   em _obsCaixaHtml — cada observacao economiza uma linha da folha, que e A4 e
+   nao estica. Mono e cinza para o olho achar onde o carimbo acaba e o recado
+   comeca; `nowrap` para o carimbo nunca quebrar no meio (a hora numa linha e o
+   nome na seguinte nao seria carimbo nenhum), enquanto o texto continua
+   quebrando normalmente depois dele. */
+.obs-carimbo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 6pt;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.obs-carimbo .obs-quem { margin-left: 4px; }
 .obs-texto {
   font-size: 8pt;
   line-height: 1.35;
