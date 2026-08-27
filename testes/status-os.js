@@ -285,6 +285,26 @@ console.log('-- o que fica gravado --');
   ok('53. e finalizada tambem — corrigir a folha nao desfaz a baixa',
      await salvando('finalizado') === 'consumido', await salvando('finalizado'));
 
+  /* O PANO NAO VOLTA PARA A PRATELEIRA NO MEIO DO CAMINHO (Junior, 27/08/2026):
+     "se as OS mudam para status parado ou voltam para em andamento, isso nao faz
+     os tecidos reservados voltarem para o estoque reservado". E o que a fabrica
+     ve: o rolo foi cortado no enfesto; a OS parar depois disso nao remonta o
+     rolo. So "nao iniciado" — a OS que nao comecou — devolve a reserva. */
+  e = comMov();
+  await e.api.mudarStatusOS('e1', 'andamento');
+  await e.api.mudarStatusOS('e1', 'parado');
+  ok('54. andamento -> parado: o pano continua baixado',
+     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'andamento');
+  ok('55. e voltando a andar tambem — nada volta para reservado',
+     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'finalizado');
+  ok('56. ate o fim da OS, um caminho so: baixado continua baixado',
+     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'nao-iniciado');
+  ok('57. e so "nao iniciado" devolve a reserva',
+     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');
   // O <select> de mentira: e tudo o que _filtroStatusListaOS toca (value e
