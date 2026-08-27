@@ -276,6 +276,39 @@ aside.sidebar {
   opacity: .4;
 }
 .msg-linha:hover .msg-del { opacity: 1; }
+/* O LAPIS (corrigir o proprio recado, 5 minutos) mora ao lado do X e some
+   sozinho quando o prazo acaba — quem nao pode mais corrigir nao ve o botao.
+   `margin-left:auto` no primeiro dos dois empurra o par para a direita: com o
+   lapis presente e ele quem manda, senao o X sozinho (.so-del). */
+.msg-edit {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: .4;
+}
+.msg-linha:hover .msg-edit { opacity: 1; }
+.msg-del { margin-left: 0; }
+.msg-del.so-del { margin-left: auto; }
+.msg-editado { font-style: italic; }
+/* A linha em correcao: a caixa toma o lugar do texto, no mesmo lugar da
+   conversa, para a pessoa ver o que vem antes e depois enquanto reescreve. */
+.msg-linha.editando { background: #fff8e1; }
+.msg-editar { margin-top: 2px; }
+.msg-editar textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  resize: vertical;
+  background: #fff;
+}
+.msg-editar-bt { display: flex; gap: 6px; margin-top: 4px; }
 .msg-txt {
   font-size: 13px;
   color: var(--ink);

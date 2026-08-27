@@ -21694,7 +21694,17 @@ function renderListaOS() {
    MODO NUVEM: a nuvem é cópia de consulta e pode nem ter a tabela. Se a leitura
    falhar, o ícone some em silêncio em vez de piscar erro a cada abertura. */
 const MSG_MAX = 200;              // quantas mensagens a tela guarda
+/* CORRIGIR O QUE ACABOU DE SAIR — E SÓ ISSO. Quem manda recado erra o tamanho,
+   o número da OS, a palavra. Reescrever logo é conserto; reescrever depois é
+   outra coisa: quem já leu "manda 200" e volta e encontra "manda 400" não tem
+   como saber que mudou, e o canal deixa de valer como registro do que foi
+   combinado. Cinco minutos é o tempo de reler o que se escreveu.
+   O prazo aqui é de TELA (o lápis some). A tranca é o RLS, no servidor
+   (sql/supabase-mensagens.sql): passado o prazo o próprio banco recusa. */
+const MSG_EDIT_MS = 5 * 60 * 1000;
 let _mensagens = [];              // mais antigas primeiro, como se lê
+let _msgEditando = null;          // id do recado aberto para conserto (um por vez)
+let _msgRelogio = null;           // tira o lápis da tela na hora em que ele vence
 let _msgCanal = null;
 let _msgContagem = null;          // null = ainda não contamos nesta sessão
 let _msgIndisponivel = false;     // servidor sem a tabela: o campo não existe
@@ -21704,11 +21714,15 @@ function _msgQuemSou() { return (currentUser && currentUser.id) || ''; }
 async function carregarMensagens() {
   if (!supa || !currentUser) { _mensagens = []; return; }
   try {
-    const { data, error } = await supa
-      .from('mensagens')
-      .select('id, criado_em, autor_id, autor, texto')
-      .order('criado_em', { ascending: false })
-      .limit(MSG_MAX);
+    const ler = cols => supa.from('mensagens').select(cols)
+      .order('criado_em', { ascending: false }).limit(MSG_MAX);
+    let { data, error } = await ler('id, criado_em, editado_em, autor_id, autor, texto');
+    // SERVIDOR QUE AINDA NÃO GANHOU A COLUNA `editado_em` (a cópia da nuvem, um
+    // servidor onde o SQL novo não rodou): lê sem ela em vez de sumir com o
+    // campo de mensagens inteiro. Só o "(editado)" deixa de aparecer.
+    if (error && /editado_em/.test(String(error.message || ''))) {
+      ({ data, error } = await ler('id, criado_em, autor_id, autor, texto'));
+    }
     if (error) {
       // Tabela ausente (nuvem sem o script) ou sem permissão: o campo de
       // mensagens simplesmente não aparece.
@@ -21741,8 +21755,16 @@ function iniciarRealtimeMensagens() {
             toast(`💬 ${_obsNomeLogin(payload.new.autor) || 'alguém'}: `
               + (t.length > 60 ? t.slice(0, 60) + '…' : t), '');
           }
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          // Recado consertado por quem escreveu: troca a linha no lugar. Não
+          // avisa nem conta como novo — o texto já tinha sido lido, e o que
+          // mudou foi um erro de digitação, não um recado a mais.
+          const i = _mensagens.findIndex(m => m.id === payload.new.id);
+          if (i >= 0) _mensagens[i] = payload.new;
+          if (_msgEditando === payload.new.id && payload.new.autor_id !== _msgQuemSou()) _msgEditando = null;
         } else if (payload.eventType === 'DELETE' && payload.old) {
           _mensagens = _mensagens.filter(m => m.id !== payload.old.id);
+          if (_msgEditando === payload.old.id) _msgEditando = null;
         } else {
           await carregarMensagens();
         }
@@ -21781,6 +21803,107 @@ async function enviarMensagem() {
   }
 }
 
+/* ---- CONSERTAR O PRÓPRIO RECADO (5 minutos) -------------------------------
+   Só o autor, e só enquanto o prazo corre. NEM O ADMIN edita o recado dos
+   outros — ele pode APAGAR (isso já era assim), que é diferente: apagar deixa
+   claro que sumiu; reescrever deixa a palavra de um na boca do outro. */
+function _msgPrazoRestante(m) {
+  const t = m && Date.parse(m.criado_em);
+  if (!t || isNaN(t)) return 0;
+  return Math.max(0, t + MSG_EDIT_MS - Date.now());
+}
+
+function _msgPossoEditar(m) {
+  return !!m && m.autor_id === _msgQuemSou() && _msgPrazoRestante(m) > 0;
+}
+
+// Quanto falta, em palavra de gente: é o title do lápis.
+function _msgPrazoTexto(m) {
+  const ms = _msgPrazoRestante(m);
+  const min = Math.ceil(ms / 60000);
+  return ms <= 0 ? '' : `Corrigir este recado — ${min} min para acabar o prazo`;
+}
+
+function editarMensagem(id) {
+  const m = _mensagens.find(x => x.id === id);
+  if (!m) return;
+  if (m.autor_id !== _msgQuemSou()) return toast('Só dá para corrigir o próprio recado', 'err');
+  if (_msgPrazoRestante(m) <= 0) {
+    // O lápis podia estar na tela desde antes de o prazo vencer.
+    _msgEditando = null; renderMensagens();
+    return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
+  }
+  if (_recusarPorModoNuvem('corrigir o recado')) return;
+  _msgEditando = id;
+  renderMensagens();
+}
+
+function cancelarEdicaoMensagem() {
+  if (!_msgEditando) return;
+  _msgEditando = null;
+  renderMensagens();
+}
+
+async function salvarEdicaoMensagem(id) {
+  const m = _mensagens.find(x => x.id === id);
+  const campo = document.getElementById('msg-edit-' + id);
+  if (!m || !campo) return;
+  const texto = (campo.value || '').trim();
+  if (!texto) return toast('Recado vazio não é correção — para tirar da conversa, apague', 'err');
+  if (texto === String(m.texto || '')) { cancelarEdicaoMensagem(); return; }
+  if (_msgPrazoRestante(m) <= 0) {
+    _msgEditando = null; renderMensagens();
+    return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
+  }
+  const antes = m.texto;
+  const agora = new Date().toISOString();
+  // Na tela já muda: o servidor confirma em seguida, e se recusar volta atrás.
+  m.texto = texto.slice(0, 2000);
+  m.editado_em = agora;
+  _msgEditando = null;
+  renderMensagens();
+  try {
+    const { data, error } = await supa.from('mensagens')
+      .update({ texto: m.texto, editado_em: agora })
+      .eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    // Zero linhas de volta = o RLS recusou (prazo vencido no relógio do
+    // SERVIDOR, que é o que vale). O relógio deste computador pode estar
+    // atrasado, e é por isso que a tela não é a tranca.
+    if (!data) throw new Error('sem linha');
+    const i = _mensagens.findIndex(x => x.id === id);
+    if (i >= 0) _mensagens[i] = data;
+    renderMensagens();
+  } catch (e) {
+    console.warn('salvarEdicaoMensagem', e);
+    m.texto = antes;
+    delete m.editado_em;
+    renderMensagens();
+    toast('Não deu para corrigir — o prazo de 5 minutos pode ter acabado', 'err');
+  }
+}
+
+// Enter salva a correção; Shift+Enter quebra linha; Esc desiste.
+function _msgTeclaEdicao(ev, id) {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); salvarEdicaoMensagem(id); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancelarEdicaoMensagem(); }
+}
+
+// O LÁPIS SOME SOZINHO. Sem isto, o botão fica na tela de quem deixou o painel
+// aberto e só some no próximo desenho — e clicar nele daria erro do servidor,
+// que é a pior forma de descobrir que o prazo acabou.
+function _msgAgendarRelogio() {
+  if (_msgRelogio) { clearTimeout(_msgRelogio); _msgRelogio = null; }
+  const eu = _msgQuemSou();
+  const prazos = _mensagens.filter(m => m.autor_id === eu)
+    .map(_msgPrazoRestante).filter(ms => ms > 0);
+  if (!prazos.length) return;
+  _msgRelogio = setTimeout(() => {
+    _msgRelogio = null;
+    if (mensagensAberto()) renderMensagens(); else _msgAgendarRelogio();
+  }, Math.min.apply(null, prazos) + 1000);
+}
+
 async function apagarMensagem(id) {
   const m = _mensagens.find(x => x.id === id);
   if (!m) return;
@@ -21789,6 +21912,7 @@ async function apagarMensagem(id) {
     const { error } = await supa.from('mensagens').delete().eq('id', id);
     if (error) throw error;
     _mensagens = _mensagens.filter(x => x.id !== id);
+    if (_msgEditando === id) _msgEditando = null;
     renderMensagens();
   } catch (e) {
     console.warn('apagarMensagem', e);
@@ -21866,6 +21990,7 @@ function abrirMensagens() {
 function fecharMensagens() {
   const p = document.getElementById('msgPainel');
   if (p) p.classList.add('hidden');
+  _msgEditando = null;             // painel fechado, correção largada
 }
 
 function toggleMensagens() {
@@ -21906,21 +22031,50 @@ function renderMensagens() {
         ? `<div class="msg-dia">${esc(formatDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000)
             .toISOString().slice(0, 10)))}</div>` : '';
       ultimoDia = dia;
-      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}">
+      const editando = _msgEditando === m.id;
+      // "editado" sem hora: o que importa é avisar que o texto de cima não é
+      // exatamente o que foi lido antes. A hora do recado continua sendo a do
+      // envio — é por ela que a conversa se ordena.
+      const marca = m.editado_em ? ` <span class="msg-editado" title="Corrigido por quem escreveu, dentro dos 5 minutos">(editado)</span>` : '';
+      const lapis = (meu && _msgPossoEditar(m) && !editando)
+        ? `<button type="button" class="msg-edit" title="${esc(_msgPrazoTexto(m))}"
+             onclick="editarMensagem('${esc(m.id)}')">✎</button>` : '';
+      const corpo = editando
+        ? `<div class="msg-editar">
+             <textarea id="msg-edit-${esc(m.id)}" maxlength="2000" rows="2"
+               onkeydown="_msgTeclaEdicao(event, '${esc(m.id)}')">${esc(m.texto)}</textarea>
+             <div class="msg-editar-bt">
+               <button type="button" class="btn small primary" onclick="salvarEdicaoMensagem('${esc(m.id)}')">Salvar</button>
+               <button type="button" class="btn small" onclick="cancelarEdicaoMensagem()">Cancelar</button>
+             </div>
+           </div>`
+        : `<div class="msg-txt">${esc(m.texto)}</div>`;
+      return sep + `<div class="msg-linha${meu ? ' meu' : ''}${novo ? ' novo' : ''}${editando ? ' editando' : ''}">
         <div class="msg-cab">
           <b>${esc(_obsNomeLogin(m.autor) || 'alguém')}</b>
-          <span class="msg-hora">${esc(_msgQuando(m.criado_em))}</span>
+          <span class="msg-hora">${esc(_msgQuando(m.criado_em))}${marca}</span>
+          ${lapis}
           ${meu || currentRole === 'admin'
-            ? `<button type="button" class="msg-del" title="Apagar este recado"
+            ? `<button type="button" class="msg-del${lapis ? '' : ' so-del'}" title="Apagar este recado"
                  onclick="apagarMensagem('${esc(m.id)}')">✕</button>` : ''}
         </div>
-        <div class="msg-txt">${esc(m.texto)}</div>
+        ${corpo}
       </div>`;
     }).join('');
   }
   // A conversa se lê de cima para baixo e o novo fica embaixo: abrir no fim é
-  // onde a pessoa quer estar.
-  box.scrollTop = box.scrollHeight;
+  // onde a pessoa quer estar. Corrigindo um recado, não: rolar até o fim tiraria
+  // da tela justamente a linha que a pessoa está reescrevendo.
+  const emEdicao = _msgEditando && document.getElementById('msg-edit-' + _msgEditando);
+  if (emEdicao) {
+    const fim = emEdicao.value.length;
+    emEdicao.focus();
+    try { emEdicao.setSelectionRange(fim, fim); } catch (e) { }
+    emEdicao.scrollIntoView({ block: 'nearest' });
+  } else {
+    box.scrollTop = box.scrollHeight;
+  }
+  _msgAgendarRelogio();
   _msgMarcarVistas(new Date().toISOString());
   _msgContagem = 0;
   const el = document.getElementById('msgBadge');
@@ -21932,14 +22086,23 @@ function _msgTecla(ev) {
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviarMensagem(); }
 }
 
-// Clique fora fecha, como no painel de avisos.
+// Clique fora fecha, como no painel de avisos — MENOS com uma correção aberta:
+// aí o clique fora só desiste da correção, e o painel fica. Fechar levaria
+// junto o que a pessoa acabou de digitar, sem ela ter pedido nada disso.
 document.addEventListener('click', (e) => {
   if (!mensagensAberto()) return;
   const painel = document.getElementById('msgPainel');
   const btn = document.getElementById('msgBotao');
-  if (painel && !painel.contains(e.target) && btn && !btn.contains(e.target)) fecharMensagens();
+  if (painel && !painel.contains(e.target) && btn && !btn.contains(e.target)) {
+    if (_msgEditando) cancelarEdicaoMensagem(); else fecharMensagens();
+  }
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharMensagens(); });
+// Esc: primeiro desiste da correção, depois fecha o painel.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (_msgEditando && mensagensAberto()) { cancelarEdicaoMensagem(); return; }
+  fecharMensagens();
+});
 
 /* ========================================================= */
 /*                         AVISOS                            */

@@ -28,6 +28,15 @@ create table if not exists mensagens (
   texto     text not null
 );
 
+-- Corrigido quando? Nulo = como saiu. Serve so para a tela escrever "(editado)"
+-- ao lado da hora: quem le precisa saber que aquele texto nao e exatamente o
+-- que estava ali antes. A HORA DO RECADO continua sendo `criado_em` — e por ela
+-- que a conversa se ordena, e corrigir nao faz o recado pular para o fim.
+-- (Coluna acrescentada em 27/08/2026, junto com a correcao de 5 minutos.
+--  Rodar este arquivo de novo num servidor que ja tinha a tabela e seguro:
+--  tudo aqui e idempotente.)
+alter table mensagens add column if not exists editado_em timestamptz;
+
 create index if not exists idx_mensagens_criado_em on mensagens (criado_em);
 
 -- RLS — a conversa é de quem tem conta no programa.
@@ -62,6 +71,72 @@ create policy "mensagens: apagar a propria"
     )
   );
 
+-- CORRIGIR: so o AUTOR, e so nos 5 primeiros minutos.
+--
+-- Por que existe: quem manda recado erra o numero da OS, o tamanho, a palavra.
+-- Reescrever logo e conserto. Reescrever depois e outra coisa — quem ja leu
+-- "manda 200" e volta e encontra "manda 400" nao tem como saber que mudou, e o
+-- canal deixa de valer como registro do que foi combinado.
+--
+-- Por que a TRANCA E AQUI: no programa o lapis some quando o prazo acaba, mas
+-- isso e o relogio DAQUELE computador — atrasado, adiantado, ou a tela aberta
+-- desde antes. `now()` aqui e o relogio do servidor, um so para todo mundo.
+--
+-- NEM O ADMIN corrige recado alheio (e ele pode APAGAR, isso segue valendo):
+-- apagar deixa claro que sumiu; reescrever poe a palavra de um na boca do
+-- outro. Mesmo principio da observacao da folha de OS.
+--
+-- O `with check` repete o dono e o prazo porque a linha e conferida DEPOIS da
+-- alteracao: sem ele, um update poderia trocar `autor_id` ou empurrar
+-- `criado_em` para a frente e renovar o proprio prazo.
+drop policy if exists "mensagens: corrigir a propria em 5 min" on mensagens;
+create policy "mensagens: corrigir a propria em 5 min"
+  on mensagens for update
+  to authenticated
+  using (
+    autor_id = auth.uid()
+    and criado_em > now() - interval '5 minutes'
+  )
+  with check (
+    autor_id = auth.uid()
+    and criado_em > now() - interval '5 minutes'
+  );
+
+-- NUM UPDATE, SO O TEXTO MUDA.
+--
+-- O `with check` acima nao basta sozinho, e isto foi MEDIDO: ele confere a
+-- linha como ela FICOU, e nao como ela era. Um update que faca
+-- `criado_em = now()` passa na conferencia (a linha fica dentro do prazo) e
+-- renova o prazo para sempre — alem de mudar a hora do recado na conversa dos
+-- outros. RLS nao enxerga o valor antigo; trigger enxerga.
+--
+-- Entao a hora, o dono e o nome do autor voltam a ser o que eram, e o carimbo
+-- de "editado" e do SERVIDOR, nao do que o programa mandou. Sobra o texto, que
+-- e o que se quis deixar corrigir.
+--
+-- Vale para todo mundo, inclusive service_role: manutencao que precise mexer
+-- de verdade numa linha desliga o gatilho na transacao
+-- (`alter table mensagens disable trigger trg_mensagens_so_o_texto`).
+create or replace function mensagens_so_o_texto() returns trigger
+language plpgsql as $$
+begin
+  new.id        := old.id;
+  new.criado_em := old.criado_em;
+  new.autor_id  := old.autor_id;
+  new.autor     := old.autor;
+  if new.texto is distinct from old.texto then
+    new.editado_em := now();
+  else
+    new.editado_em := old.editado_em;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_mensagens_so_o_texto on mensagens;
+create trigger trg_mensagens_so_o_texto
+  before update on mensagens
+  for each row execute function mensagens_so_o_texto();
+
 -- Realtime: a mensagem aparece na tela dos outros sem ninguém recarregar.
 do $$
 begin
@@ -82,4 +157,5 @@ end $$;
 
 -- Verificação:
 -- select * from pg_policies where tablename='mensagens';
+-- select tgname from pg_trigger where tgrelid='mensagens'::regclass and not tgisinternal;
 -- select * from pg_publication_tables where pubname='supabase_realtime' and tablename='mensagens';
