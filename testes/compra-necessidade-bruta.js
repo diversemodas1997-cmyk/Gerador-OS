@@ -68,7 +68,7 @@ const FUNCOES = [
   // 17/08/2026 — `multiplicadorPecaOS` passa por aqui. Ver testes/forma-do-pano.js.
   'unidadesPorCamadaTecido', 'unidadesPorCamadaPrincipal', 'tecidosDaOS',
   // consumo
-  'gramaturaTecidoPorNome', 'pesoBobinaPorNome', 'gramaturaCorPorNome',
+  'gramaturaTecidoPorNome', 'pesoBobinaPorNome',
   '_normFaseNome', '_faseSoDe',
   'consumoEnfestoOS',
   // bobinas
@@ -111,16 +111,19 @@ const G1 = 'g-1', D1 = 'd-1';
 
 function cadastroBase() {
   return {
+    // A GRAMATURA MORA NO TECIDO desde 27/08/2026 (era por cor). Os numeros
+    // sao os mesmos de antes, so mudaram de lugar: e o mesmo pano, e o que este
+    // teste mede e a conta, nao onde o dado esta guardado.
     tecidos: [
-      { id: T_MOL,   nome: 'Moletom',        categoria: 'moletom' },
+      { id: T_MOL,   nome: 'Moletom',        categoria: 'moletom', peso: 500 },
       // Ribana não tem categoria no cadastro: é reconhecida pelo nome.
-      { id: T_RIB,   nome: 'Ribana Moletom', categoria: '', pesoBobina: 20 },
-      { id: T_MALHA, nome: 'Malha Algodão',  categoria: 'malha' }
+      { id: T_RIB,   nome: 'Ribana Moletom', categoria: '', pesoBobina: 20, peso: 400 },
+      { id: T_MALHA, nome: 'Malha Algodão',  categoria: 'malha', peso: 452 }
     ],
     cores: [
-      { id: C_MOL,   nome: 'Preto Moletom',        peso: 500 },
-      { id: C_RIB,   nome: 'Preto Ribana Moletom', peso: 400 },
-      { id: C_MALHA, nome: 'Branco Malha Algodão', peso: 452 }
+      { id: C_MOL,   nome: 'Preto Moletom' },
+      { id: C_RIB,   nome: 'Preto Ribana Moletom' },
+      { id: C_MALHA, nome: 'Branco Malha Algodão' }
     ],
     componentes: [],
     desenhos: [{
@@ -294,12 +297,14 @@ const mol6 = t6.find(x => x.tecidoNome === 'Moletom');
 ok('26. fase sem comprimento sai com zero quilo (e não com um quilo inventado)',
   !mol6 || mol6.kg === 0, mol6 && mol6.kg);
 
+// Tecido sem gramatura: o kg sai ZERO, e nao um quilo inventado. Era "cor sem
+// gramatura" ate 27/08/2026; a pergunta e a mesma, mudou de quem se pergunta.
 const semGramatura = cadastroBase();
-semGramatura.cores[0].peso = 0;
+semGramatura.tecidos[0].peso = 0;
 api.setState(semGramatura);
 const t7 = api.compraNecessidadeBruta([item1]);
 const mol7 = t7.find(x => x.tecidoNome === 'Moletom');
-ok('27. cor sem gramatura também sai zerada', !mol7 || mol7.kg === 0, mol7 && mol7.kg);
+ok('27. tecido sem gramatura também sai zerado', !mol7 || mol7.kg === 0, mol7 && mol7.kg);
 
 // Grade sem previsão de bobinas: o quilo continua, a bobina não se inventa.
 const semBobinas = cadastroBase();

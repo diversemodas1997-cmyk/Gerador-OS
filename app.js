@@ -3668,7 +3668,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </select>
           <div class="field-hint" id="m-tubular-dica">${_tecidoTubularDica(item)}</div>
         </div>
-        <div class="field"><label>Peso / gramatura padrão (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">Fallback: a gramatura principal agora é cadastrada por <b>cor</b>. Este valor só é usado quando a cor não tem gramatura própria.</div></div>
+        <div class="field"><label>Gramatura média (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 450"><div class="field-hint">É <b>daqui</b> que sai o kg de todo enfesto deste pano: comp × larg × camadas × gramatura ÷ 1000. Uma média por tecido, igual para todas as cores. <b>Confira pela bobina</b>: o programa mostra, na folha de OS, quanto pesaria uma bobina com esta gramatura — tem que dar entre ${PESO_BOBINA_MIN_KG} e ${PESO_BOBINA_MAX_KG} kg. Muito abaixo disso, o número está na escala do pano <b>simples</b>, e o enfesto usa o pano como ele vem (tubular, dobrado).</div></div>
         <div class="field"><label>Excedente de enfesto</label><div class="field-hint" style="padding-top:6px;">Saiu daqui: agora é cadastrado em <b>cada fase de cada grade</b>, junto do comprimento. A sobra não é do pano — ela depende do comprimento que a fase estende, e um corpo de 8 m e um viés de 1 m do mesmo tecido não levam a mesma.</div></div>
         <div class="field"><label>Peso médio da bobina (kg)</label><input type="number" min="0" step="0.5" id="m-peso-bobina" value="${esc(item.pesoBobina||'')}" placeholder="Ex.: 22"><div class="field-hint">Quanto pesa, em média, uma bobina <b>deste</b> tecido. Só é usado onde a grade não sabe prever bobinas — hoje a <b>ribana</b>, que vem em rolo de outro tamanho e não segue a conta do tecido principal. Em branco, a folha mostra <b>—</b> na ribana em vez de chutar.</div></div>
         <div class="field full"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
@@ -3681,7 +3681,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
         <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
         <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
-        <div class="field"><label>Peso / gramatura (g/m²)</label><input type="number" min="0" step="1" id="m-cor-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 300"><div class="field-hint">A gramatura é por COR+TECIDO (o nome da cor traz o tecido). Base da estimativa em kg da folha de OS: comp × larg × camadas × gramatura ÷ 1000. Se vazia, cai no peso do tecido.</div></div>
+
       </div>`;
   }
   else if (tipo === 'material') {
@@ -5718,7 +5718,6 @@ async function salvarCadastro() {
     item.hex = v('m-hex');
     item.codigo = v('m-codigo');
     item.siglaSku = (v('m-siglasku') || '').trim().toUpperCase();
-    item.peso = parseFloat(String(v('m-cor-peso')).replace(',', '.')) || 0;
   }
   else if (tipo === 'material') {
     if (!v('m-codigo') || !v('m-desc')) return toast('Código e descrição obrigatórios', 'err');
@@ -24658,16 +24657,6 @@ function pesoBobinaPorNome(nome) {
   return t ? (parseFloat(t.pesoBobina) || 0) : 0;
 }
 
-// Peso/gramatura (g/m²) de uma COR cadastrada, buscada pelo NOME. A gramatura
-// passou a ser cadastrada por cor (varia conforme a cor); tem prioridade sobre
-// a do tecido. Retorna 0 se não cadastrada ou sem peso (aí cai no tecido).
-function gramaturaCorPorNome(nome) {
-  if (!nome) return 0;
-  const alvo = _normNome(nome);
-  const c = (STATE.cores || []).find(x => _normNome(x.nome) === alvo);
-  return c ? (parseFloat(c.peso) || 0) : 0;
-}
-
 // Resolve cada fase do enfesto de uma OS e calcula o consumo em kg.
 // Fórmula (confirmada): kg = comprimento(m) × largura(m) × camadas × peso(g/m²) / 1000.
 // É a fonte única usada tanto na folha de impressão (coluna Consumo) quanto
@@ -24794,9 +24783,9 @@ function consumoEnfestoOS(o) {
     }
     const tecidoReal = fase.tecidoNome || tecs[i]?.tecidoNome || '';
     // OSs salvas ANTES do rename das cores gravaram a cor pura ("Preto"), que
-    // não existe mais no cadastro — sem canonicalizar, gramaturaCorPorNome falha,
-    // o kg dessas OSs zera ao reimprimir/re-salvar e a chave tecido||cor do
-    // estoque diverge das OSs novas. Resolve "Preto"+"Ribana Moletom" para
+    // não existe mais no cadastro — sem canonicalizar, a chave tecido||cor do
+    // estoque diverge das OSs novas (a gramatura já não depende da cor, mas o
+    // saldo é somado por tecido E cor, e é aí que a divergência aparece). Resolve "Preto"+"Ribana Moletom" para
     // "Preto Ribana Moletom"; se não achar cadastro que case, devolve como veio.
     const corReal = corCanonicaPorTecido(cor || tecs[i]?.corNome || '', tecidoReal);
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
@@ -24828,9 +24817,16 @@ function consumoEnfestoOS(o) {
     // Gramatura: prioridade para a COR (varia conforme a cor); se a cor não
     // tem peso cadastrado, cai no peso do TECIDO (compatibilidade). Por fim
     // tenta pelo nome do enfesto.
-    const pesoDaCor = gramaturaCorPorNome(corReal);
-    const pesoDoTecido = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
-    const peso = pesoDaCor || pesoDoTecido;
+    /* A GRAMATURA É DO TECIDO, E SÓ DELE (27/08/2026, Junior: "retire a
+       gramatura das cores e considere as gramaturas médias por tecido").
+
+       Ela já foi por cor, e a ideia era boa no papel: o mesmo pano em preto e em
+       branco não pesa exatamente igual. Na prática deu o contrário do que
+       prometia — 43 cores aparecem no consumo das OS e só 10 tinham gramatura,
+       então a mesma malha calculava kg em duas escalas conforme a cor tivesse
+       sido medida ou não. Uma média por tecido é menos exata e é igual para
+       todo mundo, e é isso que faz o número servir para comprar. */
+    const peso = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
     /* O VIÉS NÃO CONSOME PANO (27/08/2026, Junior, na mesma conversa das
        bobinas). Ele é cortado das partes da camada que não dão peça — do
        retalho que sairia do enfesto das outras fases e iria para o lixo. Esse
@@ -24849,9 +24845,10 @@ function consumoEnfestoOS(o) {
     // acha é a do corpo. Para o kg isso já era assim e segue igual; para prever
     // BOBINA de ribana não serve — é gramatura de outro pano. O nome da cor
     // termina no nome do tecido quando ela é a cor certa daquele tecido.
-    const pesoDesteTecido = pesoDaCor
-      ? _normNome(corReal).endsWith(' ' + _normNome(tecidoReal))
-      : pesoDoTecido > 0;
+    // "A gramatura achada é mesmo a DESTE tecido?" — a pergunta continua de pé
+    // para a previsão de bobina da ribana, mas a resposta ficou direta: só há
+    // uma fonte, e ela é do tecido da fase.
+    const pesoDesteTecido = peso > 0;
     // Peso médio de uma bobina DESTE tecido. Só a ribana usa (ver
     // `bobinasEfetivasFase`); vazio é resposta legítima e vira "—" na folha.
     const pesoBobina = pesoBobinaPorNome(tecidoReal) || pesoBobinaPorNome(nomeEnf);
