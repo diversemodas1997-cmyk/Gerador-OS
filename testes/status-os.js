@@ -71,8 +71,16 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _dataHoraFinalizacaoOS', 'o dia e a hora da finalizacao')}
   ${recorte('function _tituloFinalizacaoOS', 'a dica da data de finalizacao')}
   ${recorte('function _dataCelulaListaOS', 'a celula da coluna Data')}
+  ${constante('_STATUS_QUE_BAIXAM')}
+  ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
+  ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
+  ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
+  const exigirEstoqueTecidos = () => true;
+  const _estoqueRedesenharSeAberto = () => {};
+  const renderEstoque = () => {};
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
+           darBaixaMaterialOS, estornarBaixaMaterialOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS };
 `)(ctx);
 
@@ -218,6 +226,42 @@ console.log('-- o que fica gravado --');
      A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que a OS foi finalizada'
      && A._tituloFinalizacaoOS({ statusOS: 'finalizado', statusOSEm: instante.toISOString() })
         === 'Dia e hora em que a OS foi marcada como finalizada');
+
+  console.log('');
+  console.log('-- o pano sai do estoque quando a OS comeca a andar --');
+  // A reserva nasce ao salvar a OS (aplicarBaixaEstoqueOS, fora deste teste);
+  // aqui o que se prova e o que o STATUS faz com ela.
+  const comMov = (st) => {
+    const t2 = ctxDe('admin', 'admin@diverse.local', true,
+                     [{ id: 'e1', os: '900', data: '2026-03-10', statusOS: st }]);
+    t2.ctx.STATE.estoqueMov = [
+      { id: 'm1', origem: 'os', osId: 'e1', kg: 10, status: 'reservado' },
+      { id: 'm2', origem: 'os', osId: 'e1', kg: 5, status: 'reservado' },
+      { id: 'm3', origem: 'nf', kg: 99, tipo: 'entrada' }
+    ];
+    return t2;
+  };
+  const situacao = ctx => ctx.STATE.estoqueMov.filter(m => m.origem === 'os').map(m => m.status).join('+');
+  let e = comMov();
+  await e.api.mudarStatusOS('e1', 'andamento');
+  ok('46. "em andamento" baixa o pano sozinho', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  e = comMov();
+  await e.api.mudarStatusOS('e1', 'finalizado');
+  ok('47. finalizado tambem baixa (quem pulou o andamento ja gastou o pano)',
+     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  e = comMov();
+  await e.api.mudarStatusOS('e1', 'parado');
+  ok('48. parado idem: parou DEPOIS de comecar', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  e = comMov('andamento');
+  e.ctx.STATE.estoqueMov.forEach(m => { if (m.origem === 'os') m.status = 'consumido'; });
+  await e.api.mudarStatusOS('e1', 'nao-iniciado');
+  ok('49. voltar para "nao iniciado" estorna: a OS nao gastou pano nenhum',
+     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+  e = comMov();
+  await e.api.mudarStatusOS('e1', 'andamento');
+  ok('50. a entrada de NF nao e tocada por nada disso',
+     e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').status === undefined
+     && e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').kg === 99);
 
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');

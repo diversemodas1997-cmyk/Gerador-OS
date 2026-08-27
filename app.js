@@ -21702,6 +21702,40 @@ async function mudarStatusOS(id, valor) {
     console.warn('mudarStatusOS', e);
     toast('Não deu para salvar o status — tente de novo', 'err');
   }
+  // E o pano sai (ou volta para) o estoque conforme o status. Ver
+  // _estoqueSeguirStatusOS: é ele que diz por que "em andamento" é a hora.
+  await _estoqueSeguirStatusOS(o, alvo);
+}
+
+/* O PANO SAI DO ESTOQUE QUANDO A OS COMEÇA A ANDAR (27/08/2026, Junior).
+
+   Até aqui a reserva virava saída definitiva por um clique em "dar baixa", na
+   tela de estoque de tecidos. Ninguém clicava: medido em 27/08/2026, 69 OS
+   FINALIZADAS e 2 paradas ainda estavam como "reservado" — quase 16 toneladas
+   de pano marcadas como comprometidas em OS que já tinham sido produzidas.
+
+   O sinal certo já existia e é dado no chão: o STATUS da OS. "Em andamento"
+   quer dizer que o enfesto começou, e é aí que o rolo desce da prateleira e é
+   cortado — não quando alguém lembra de apontar. Parado e finalizado vêm
+   depois disso, então também baixam: o pano já foi.
+
+   VOLTAR PARA "NÃO INICIADO" ESTORNA, pelo mesmo raciocínio ao contrário: a OS
+   que voltou a não ter começado não gastou pano, e o material volta a ser
+   reserva. É o caminho de quem carimbou a OS errada.
+
+   NO SALDO ISSO NÃO MOVE UM QUILO: disponível = entrada − reservado − saída, e
+   a mudança é de uma coluna para a outra. O que muda é a leitura — "Reservado"
+   passa a significar de verdade o que ainda não entrou em produção. */
+const _STATUS_QUE_BAIXAM = ['andamento', 'parado', 'finalizado'];
+
+async function _estoqueSeguirStatusOS(o, alvo) {
+  if (!o || !o.id) return;
+  const temMov = (STATE.estoqueMov || []).some(m => m.origem === 'os' && m.osId === o.id);
+  if (!temMov) return;                       // OS sem consumo calculado: nada a mexer
+  try {
+    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) await darBaixaMaterialOS(o.id, true);
+    else if (alvo === 'nao-iniciado') await estornarBaixaMaterialOS(o.id, true);
+  } catch (e) { console.warn('_estoqueSeguirStatusOS', e); }
 }
 
 /* O DIA EM QUE A OS TERMINOU.
@@ -24893,8 +24927,12 @@ async function aplicarBaixaEstoqueOS(data) {
 }
 
 // Aponta a OS como produzida → converte a RESERVA em SAÍDA definitiva (baixa real).
-async function darBaixaMaterialOS(osId) {
-  if (!exigirEstoqueTecidos('dar baixa de material')) return;
+// `auto` = a baixa veio do STATUS da OS, não do botão da tela de estoque.
+// Nesse caso não se pede a permissão do estoque (quem mudou o status já tinha
+// direito de mudá-lo, e é o status que manda no pano) e não se redesenha uma
+// tela que não está aberta.
+async function darBaixaMaterialOS(osId, auto) {
+  if (!auto && !exigirEstoqueTecidos('dar baixa de material')) return;
   const hoje = new Date().toISOString().slice(0, 10);
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
@@ -24904,13 +24942,13 @@ async function darBaixaMaterialOS(osId) {
   });
   if (!mudou) return;
   try { await saveState('estoqueMov'); } catch (e) { console.warn('baixa material', e); }
-  toast('Baixa de material registrada', 'ok');
-  renderEstoque();
+  if (!auto) { toast('Baixa de material registrada', 'ok'); renderEstoque(); }
+  else _estoqueRedesenharSeAberto();
 }
 
 // Desfaz a baixa: volta a OS para RESERVADO.
-async function estornarBaixaMaterialOS(osId) {
-  if (!exigirEstoqueTecidos('estornar baixa de material')) return;
+async function estornarBaixaMaterialOS(osId, auto) {
+  if (!auto && !exigirEstoqueTecidos('estornar baixa de material')) return;
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
     if (m.origem === 'os' && m.osId === osId && m.status === 'consumido') {
@@ -24919,8 +24957,16 @@ async function estornarBaixaMaterialOS(osId) {
   });
   if (!mudou) return;
   try { await saveState('estoqueMov'); } catch (e) { console.warn('estorno baixa', e); }
-  toast('Baixa estornada — voltou para reservado', 'ok');
-  renderEstoque();
+  if (!auto) { toast('Baixa estornada — voltou para reservado', 'ok'); renderEstoque(); }
+  else _estoqueRedesenharSeAberto();
+}
+
+// A tela do estoque só se redesenha quando está na frente: a baixa automática
+// acontece na LISTA DE OS, e redesenhar uma página escondida é trabalho jogado
+// fora (e, com a lista aberta, um piscar sem motivo).
+function _estoqueRedesenharSeAberto() {
+  const sec = document.querySelector('section.page[data-page="estoque"]');
+  if (sec && !sec.classList.contains('hidden') && typeof renderEstoque === 'function') renderEstoque();
 }
 
 // Estorna (remove) as saídas automáticas de uma OS — usado ao excluir a OS.
