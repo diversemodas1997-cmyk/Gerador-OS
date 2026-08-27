@@ -24622,7 +24622,17 @@ function consumoEnfestoOS(o) {
     const pesoDaCor = gramaturaCorPorNome(corReal);
     const pesoDoTecido = gramaturaTecidoPorNome(tecidoReal) || gramaturaTecidoPorNome(nomeEnf);
     const peso = pesoDaCor || pesoDoTecido;
-    const kg = (comp * larg * camadas * peso) / 1000;
+    /* O VIÉS NÃO CONSOME PANO (27/08/2026, Junior, na mesma conversa das
+       bobinas). Ele é cortado das partes da camada que não dão peça — do
+       retalho que sairia do enfesto das outras fases e iria para o lixo. Esse
+       pano JÁ FOI CONTADO no kg da fase que o enfestou; cobrá-lo de novo aqui
+       era contar duas vezes o mesmo metro, e era isso que baixava do estoque um
+       tecido que ninguém tirou da prateleira.
+
+       Zera o KG, e não as camadas: a linha do viés continua aparecendo na folha
+       com o seu comprimento e a sua largura, que é o que o corte precisa ler
+       para tirar a tira. O que ela deixa de fazer é pesar. */
+    const kg = viesPuro ? 0 : (comp * larg * camadas * peso) / 1000;
     // A gramatura encontrada é mesmo a DESTE tecido, ou é emprestada?
     //
     // Fase de ribana costuma ficar com a cor do tecido principal ("Azul Malha

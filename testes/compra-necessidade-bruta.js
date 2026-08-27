@@ -397,6 +397,32 @@ ok('39. item apontando para grade excluída não calcula nada (e não estoura)',
 ok('40. e o total ignora esse item em vez de quebrar',
   api.compraNecessidadeBruta([{ id: 'x', gradeId: 'nao-existe', camadas: 10 }]).length === 0);
 
+/* ---------- 10. o vies nao pesa nem gasta bobina ---------- */
+console.log('');
+console.log('-- o vies sai da sobra: nao pesa, nao gasta bobina --');
+
+// Uma grade com a fase de vies como o cadastro da casa tem: mesmo tecido do
+// corpo, largura do rolo de vies e comprimento copiado do corpo.
+const comVies = cadastroBase();
+comVies.grades[0].fases.push(
+  { ordem: 3, nome: 'Viés',       tecidoId: T_MOL, comp: 8, larg: 1.17, bobinas: '9' });
+comVies.grades[0].fases.push(
+  { ordem: 4, nome: 'Gola e Viés', tecidoId: T_MOL, comp: 2, larg: 1.17, bobinas: '2' });
+api.setState(comVies);
+const oV = api.compraOsSimulada(G1, D1, 36);
+const consV = api.consumoEnfestoOS(oV);
+const lVies = consV.find(L => L.faseNome === 'Viés');
+const lGolaVies = consV.find(L => L.faseNome === 'Gola e Viés');
+ok('41. a linha do vies e marcada como vies PURO',
+  lVies && lVies.viesPuro === true, lVies && lVies.viesPuro);
+ok('42. e o kg dela e zero: o pano ja foi contado na fase que o enfestou',
+  lVies && lVies.kg === 0, lVies && lVies.kg);
+ok('43. mas comprimento e largura continuam la, que e o que o corte le',
+  lVies && lVies.comp === 8 && lVies.larg === 1.17,
+  lVies && (lVies.comp + ' x ' + lVies.larg));
+ok('44. "Gola e Vies" NAO e vies puro, e continua pesando',
+  lGolaVies && lGolaVies.viesPuro === false && lGolaVies.kg > 0,
+  lGolaVies && (lGolaVies.viesPuro + ' / ' + lGolaVies.kg));
 console.log('');
 if (falhas) { console.error(falhas + ' teste(s) falharam'); process.exit(1); }
 console.log('todos os testes passaram');
