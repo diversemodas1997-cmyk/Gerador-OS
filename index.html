@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-27p">
+<link rel="stylesheet" href="styles.css?v=2026-08-27q">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -971,7 +971,7 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Regra do excedente de enfesto</div>
-        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.</div>
+        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.<br><br>São <b>quatro linhas</b> de faixa, e usar todas é opcional: <b>linha em branco é linha que não existe</b>, então quem trabalha com três deixa a última vazia e nada muda.</div>
 
         <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
           <div>
@@ -996,6 +996,18 @@
                 <input type="number" step="0.01" min="0" id="exc-faixa-ate-2" style="width:82px;">
                 <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
                 <input type="number" step="1" min="0" id="exc-faixa-cm-2" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <!-- A QUARTA FAIXA (27/08/2026, pedido do Junior). Nasce vazia: o
+                   padrao da casa segue com tres, e linha em branco e linha que
+                   nao existe. Quem le as faixas CONTA as linhas que estao aqui
+                   (_excFaixasNaTela, no app.js), entao acrescentar a quinta um
+                   dia e copiar este bloco e mudar o indice. -->
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-3" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-3" style="width:70px;">
                 <span style="font-size:12px;color:var(--ink-3);">cm</span>
               </div>
             </div>
@@ -1331,6 +1343,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-27p"></script>
+<script src="app.js?v=2026-08-27q"></script>
 </body>
 </html>

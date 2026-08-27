@@ -5252,20 +5252,34 @@ async function rodarCopiarEtapasParaTodos() {
 /* ---------------------------------------------------------------------------
    A TELA QUE CADASTRA A REGRA DO EXCEDENTE.
 
-   Três faixas de comprimento e duas exceções, editáveis. O padrão de fábrica
-   fica no código; o que se digita aqui manda, e vale para todas as máquinas —
-   mora no cadastro compartilhado, como qualquer outro cadastro.
+   Faixas de comprimento e três exceções, editáveis. O padrão de fábrica fica no
+   código; o que se digita aqui manda, e vale para todas as máquinas — mora no
+   cadastro compartilhado, como qualquer outro cadastro.
 
-   O número de faixas é fixo em três porque é a forma da regra que a casa usa.
-   Precisando de uma quarta, o lugar de mexer é EXCEDENTE_FAIXAS e este HTML —
-   e aí vale a pena fazer linhas de verdade, com "+ adicionar faixa".
+   QUANTAS FAIXAS: as que estiverem no HTML. Eram três fixas; em 27/08/2026
+   Junior pediu uma quarta, e em vez de trocar o 3 por um 4 o código passou a
+   CONTAR as linhas que existem na tela (`_excFaixasNaTela`). Acrescentar a
+   quinta um dia é acrescentar um bloco de HTML, e mais nada.
+
+   Linha em branco é linha que não existe: quem usa três faixas deixa a quarta
+   vazia e a regra segue com três. O padrão de fábrica continua sendo três
+   (EXCEDENTE_FAIXAS) — a quarta nasce vazia porque inventar uma faixa que
+   ninguém pediu mudaria medida em cadastro bom.
    --------------------------------------------------------------------------- */
+
+// Quantas linhas de faixa a tela tem. Conta as que existem em vez de saber um
+// número: é o que faz a quarta (e a quinta) valerem só mexendo no HTML.
+function _excFaixasNaTela() {
+  let n = 0;
+  while (document.getElementById(`exc-faixa-ate-${n}`)) n++;
+  return n;
+}
 
 // Escreve nos campos o que está valendo agora. Chamada ao abrir Configurações.
 function renderExcedenteCfg() {
   const cfg = excedenteCfg();
   const preencher = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  [0, 1, 2].forEach(i => {
+  Array.from({ length: _excFaixasNaTela() }, (_, i) => i).forEach(i => {
     const f = cfg.faixas[i];
     // Campo `type="number"`: o valor vai com PONTO, senão o navegador o recusa
     // e o campo aparece vazio — o usuário veria a faixa sumir sem motivo.
@@ -5292,7 +5306,7 @@ async function salvarExcedenteCfg() {
     return isFinite(x) ? x : null;
   };
   const faixas = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0, n = _excFaixasNaTela(); i < n; i++) {
     const ate = num(`exc-faixa-ate-${i}`), cm = num(`exc-faixa-cm-${i}`);
     // Linha em branco é linha que não existe — dá para trabalhar com duas
     // faixas se for o caso. Preenchida pela metade, não: seria adivinhar.
