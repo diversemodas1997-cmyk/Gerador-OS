@@ -48,7 +48,11 @@ function pegaConst(nome) {
 }
 
 const CONSTS = ['LIMITE_CAMADAS', 'MULTIPLICADOR_PECAS', 'LABEL_CATEGORIA',
-                'UNIDADES_PADRAO_FORRO', 'CEIL_BOBINA_EPS', '_COMPRA_TAMS'];
+                'UNIDADES_PADRAO_FORRO', 'CEIL_BOBINA_EPS', '_COMPRA_TAMS',
+                // O viés puro nao gasta bobina (ver bobinasEfetivasFase), e
+                // quem separa "Viés" de "Gola e Viés" e _faseSoDe com estas
+                // duas listas.
+                '_EXC_LIGACAO', '_PAL_VIES'];
 
 const FUNCOES = [
   // nomes, cores e tecidos
@@ -65,6 +69,7 @@ const FUNCOES = [
   'unidadesPorCamadaTecido', 'unidadesPorCamadaPrincipal', 'tecidosDaOS',
   // consumo
   'gramaturaTecidoPorNome', 'pesoBobinaPorNome', 'gramaturaCorPorNome',
+  '_normFaseNome', '_faseSoDe',
   'consumoEnfestoOS',
   // bobinas
   'parseBobinas', 'bobinaInteira', 'ehFaseRibana', 'bobinasEfetivasFase',

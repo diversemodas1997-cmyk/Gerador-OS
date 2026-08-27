@@ -379,5 +379,29 @@ ok('66. e a dica diz que o numero foi escrito na OS, e como desfazer',
    tOS.includes('escrita nesta OS') && tOS.includes('Apague'), tOS);
 
 console.log('');
+console.log('-- o VIES nao gasta bobina, nunca --');
+// Ele nao e enfestado: sai da sobra da camada das outras fases, durante o
+// enfesto delas. `viesPuro` e o que `consumoEnfestoOS` marca na linha, usando
+// _faseSoDe — "Gola e Vies" NAO e vies puro, porque ali ha pano de gola sendo
+// enfestado de verdade.
+const vies = Object.assign(linha(5, 1.17, 452.5, 1), { viesPuro: true, faseNome: 'Viés' });
+ok('67. cadastro com numero no vies (a sugestao automatica) vale zero',
+   bobinasEfetivasFase(os(), 8, 3, vies) === 0,
+   bobinasEfetivasFase(os(), 8, 3, vies));
+ok('68. cadastro em branco no vies tambem e zero, e nao tracinho',
+   bobinasEfetivasFase(os(), '', 3, vies) === 0,
+   bobinasEfetivasFase(os(), '', 3, vies));
+ok('69. nem o numero escrito na propria OS levanta bobina de vies',
+   bobinasEfetivasFase(os(), '', 3, Object.assign({}, vies, { bobinasOS: 4 })) === 0,
+   bobinasEfetivasFase(os(), '', 3, Object.assign({}, vies, { bobinasOS: 4 })));
+ok('70. e no cru (a tela de Compra) tambem e zero',
+   bobinasEfetivasFase(os(), 8, 3, vies, true) === 0,
+   bobinasEfetivasFase(os(), 8, 3, vies, true));
+const golaEVies = Object.assign(linha(4.25, 1.17, 452.5, 80), { viesPuro: false, faseNome: 'Gola e Viés' });
+ok('71. "Gola e Vies" NAO e vies puro: continua gastando o que a grade diz',
+   bobinasEfetivasFase(os(), 8, 2, golaEVies) === 8,
+   bobinasEfetivasFase(os(), 8, 2, golaEVies));
+
+console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

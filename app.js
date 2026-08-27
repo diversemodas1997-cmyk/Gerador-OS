@@ -4917,6 +4917,22 @@ function atualizarSugestaoBobinas(el) {
   const tecId = bloco.querySelector('.fase-tec')?.value;
   const inp = bloco.querySelector('.fase-bobinas');
   const dica = bloco.querySelector('.fase-bobinas-sug');
+  // O VIÉS É ZERO, e a sugestão tem de dizer isso. Era ela que enchia o campo:
+  // a regra da malha algodão olha o comprimento da fase, e o comprimento do
+  // viés é copiado do corpo — daí saíam as 6, 7, 8, 15 bobinas encontradas no
+  // cadastro para uma fase que não tira bobina nenhuma da prateleira.
+  const nomeFase = bloco.querySelector('.fase-nome')?.value;
+  if (_faseSoDe(nomeFase, _PAL_VIES)) {
+    if (dica) {
+      dica.innerHTML = ` <b style="color:var(--accent);">Viés não gasta bobina:`
+        + ` ele sai da sobra da camada, durante o enfesto das outras fases.</b>`;
+    }
+    if (inp && (inp.value.trim() === '' || inp.value.trim() === inp.dataset.sug)) {
+      inp.value = '0';
+      inp.dataset.sug = '0';
+    }
+    return;
+  }
   const sug = sugestaoBobinasFase(tecId, comp);
   if (dica) {
     dica.innerHTML = sug == null ? ''
@@ -17226,6 +17242,27 @@ function ehFaseRibana(L) {
 // inteira da prateleira.
 function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
   const arredonda = v => cru ? v : bobinaInteira(v);
+  /* O VIÉS NÃO GASTA BOBINA. NUNCA (27/08/2026, Junior).
+
+     Ele não é enfestado: é cortado DURANTE o enfesto das outras fases, das
+     partes da camada que não dão peça — a sobra que iria para o lixo. Não há
+     bobina a tirar da prateleira por causa dele, e prever uma é comprar pano
+     que já está comprado.
+
+     Isto é regra da CASA, e por isso vem antes de tudo — antes até do número
+     escrito na própria OS. Nas outras fases quem digitou estava olhando aquele
+     enfesto e o programa acata; aqui não há enfesto para olhar.
+
+     Medido em 27/08/2026, nas 136 grades: das 120 fases de viés puro, 48
+     estavam com 0 (alguém corrigiu à mão), 62 em branco (a folha mostrava "—")
+     e 10 com número de verdade — 6, 7, 8, 10, 15 bobinas. Esses números não
+     foram digitados: são a sugestão automática da malha algodão, que olha o
+     comprimento da fase e não sabia que aquela fase é viés. Três respostas
+     diferentes para a mesma pergunta, e nenhuma delas zero em todo lugar.
+
+     A conta de KG do viés continua como está: aquilo mede pano, não bobina, e
+     mexer nele mudaria a baixa de estoque sem ninguém ter pedido. */
+  if (L && L.viesPuro) return 0;
   // Esta fase, especificamente, foi declarada não enfestada na folha: não gastou
   // bobina nenhuma, independentemente do que as outras fizeram.
   if (ordem != null && typeof _faseNaoEnfestadaPorTom === 'function'
@@ -24542,6 +24579,13 @@ function consumoEnfestoOS(o) {
     // "Preto Ribana Moletom"; se não achar cadastro que case, devolve como veio.
     const corReal = corCanonicaPorTecido(cor || tecs[i]?.corNome || '', tecidoReal);
     const ehVies = /vi[eé]s/i.test(fase.nome || '') || /vi[eé]s/i.test(b.nomeTecido || '') || /vi[eé]s/i.test(nomeEnf);
+    // VIÉS PURO é outra coisa de "tem viés no nome": "Gola e Viés" é um pano de
+    // gola que leva o viés junto, e esse pano é enfestado de verdade. Quem
+    // separa os dois é `_faseSoDe`, o mesmo teste que a regra do excedente usa —
+    // e é ele que autoriza zerar a bobina mais abaixo. Fase sem nome, com o viés
+    // vindo do tecido, é viés puro também: não há outra peça declarada ali.
+    const nomeDaFase = String(fase.nome || '').trim();
+    const viesPuro = nomeDaFase ? _faseSoDe(nomeDaFase, _PAL_VIES) : ehVies;
     // Camadas: as gravadas na fase mandam. Sem elas, cada fase deriva das
     // camadas principais pela sua própria regra — herdar o número do moletom
     // dobrava a ribana cadastrada como "2x".
@@ -24590,7 +24634,8 @@ function consumoEnfestoOS(o) {
     const bobinasOS = (b && b.bobinas != null && b.bobinas !== '' && isFinite(Number(b.bobinas)))
       ? Number(b.bobinas) : null;
     return { ordem: ord, nomeEnf, tecidoReal, corReal, comp, larg, camadas, peso, kg,
-             pesoDesteTecido, pesoBobina, ehVies, camadasCheias, bobinasOS };
+             pesoDesteTecido, pesoBobina, ehVies, viesPuro, faseNome: nomeDaFase,
+             camadasCheias, bobinasOS };
   });
 }
 
