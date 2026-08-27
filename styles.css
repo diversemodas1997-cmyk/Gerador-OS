@@ -1619,11 +1619,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    um olhar de lista - a de cima e a data da OS, que sempre esteve ali. */
 .data-fim { display: block; font-size: 11px; color: var(--ok); margin-top: 2px; }
 
-/* A LINHA ACESA: para onde o botao "grade" da lista de OS acabou de levar.
-   A busca ja deixou a lista curta, mas "curta" pode ser tres linhas parecidas
-   cuja diferenca e um numero no meio do nome — e e esse numero que o olho
-   pula. Apaga sozinha em 2,6 s (o timer esta em _acenderLinhaGrade). */
-tr.linha-acesa > td { background: #fff3cd; transition: background .4s; }
 /* A LINHA DE FILTROS da lista de OS Salvas: buscar por numero e filtrar por
    status, lado a lado. Sao duas perguntas diferentes e valem juntas. No celular
    empilham, que e o unico jeito de os dois caberem. */

@@ -21321,49 +21321,29 @@ function _gradeCelulaLista(o) {
    A lista de OS já mostra o NOME da grade, mas quem quer conferir a
    distribuição, as fases ou o encaixe tinha de ir ao cadastro de grades e
    procurar o nome à mão — e nome de grade é "2X P ao G3 | BM.TRI | 177cm",
-   que ninguém digita sem errar. O botão faz esse caminho: abre o cadastro,
-   escreve a busca com o nome exato e acende a linha.
+   que ninguém digita sem errar.
 
-   Usa a busca da tela de grades de propósito, em vez de abrir a grade num
-   modal próprio: a busca ATRAVESSA AS PASTAS FECHADAS (ver renderGrades), e o
-   que aparece é a grade no cadastro de verdade — com riscos, fases e os botões
-   de sempre para quem pode mexer.
+   O botão abre a JANELA DA GRADE, a mesma do cadastro (`openCadastroModal`):
+   os tamanhos, as fases, as medidas de cada uma. Para o admin ela abre como
+   "Editar" e salva; para quem consulta abre como "Ficha ·", inerte e sem o
+   botão Salvar — é a regra do modal, e não uma segunda tela que teria de ser
+   mantida em dobro.
 
-   Grade apagada depois da OS: o nome fica gravado na OS e a busca não acha
-   nada. Aí o programa DIZ isso, em vez de abrir uma tela vazia sem explicação.
-*/
+   Grade apagada depois da OS: não há janela a abrir, porque não há cadastro. O
+   nome fica gravado na OS, e é isso que o programa diz — em vez de abrir uma
+   ficha em branco, que pareceria uma grade zerada. */
 function verGradeDaOS(id) {
   const o = (STATE.ordens || []).find(x => x.id === id);
   if (!o) return;
-  const nome = _gradeNomeDaOS(o);
-  if (!nome || nome === '—') return toast('Esta OS não tem grade escolhida', 'err');
-  const existe = !!(STATE.grades || []).find(g => g.id === _gradeIdDaOS(o));
-  goto('cad-grades');
-  _CAD_BUSCA['cad-grades'] = nome;
-  const campo = document.querySelector('section.page[data-page="cad-grades"] .cad-busca input');
-  if (campo) campo.value = nome;
-  _cadBuscaAplicar('cad-grades');
-  if (!existe) {
-    toast(`A grade "${nome}" não está mais no cadastro — a OS guarda o nome dela`, 'err');
-    return;
+  const gradeId = _gradeIdDaOS(o);
+  const g = gradeId ? (STATE.grades || []).find(x => x.id === gradeId) : null;
+  if (!g) {
+    const nome = _gradeNomeDaOS(o);
+    return toast(nome && nome !== '—'
+      ? `A grade "${nome}" não está mais no cadastro — a OS guarda o nome dela`
+      : 'Esta OS não tem grade escolhida', 'err');
   }
-  _acenderLinhaGrade(nome);
-}
-
-// Acende a linha por alguns segundos. A busca já deixou a lista curta, mas
-// "curta" pode ser três linhas parecidas — e a diferença entre elas é um
-// número no meio do nome, que é justamente o que o olho pula.
-function _acenderLinhaGrade(nome) {
-  const alvo = _normNome(nome);
-  const linha = Array.from(document.querySelectorAll('#tbl-grades tr'))
-    .find(tr => {
-      const b = tr.querySelector('strong');
-      return b && _normNome(b.textContent) === alvo;
-    });
-  if (!linha) return;
-  linha.classList.add('linha-acesa');
-  linha.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  setTimeout(() => linha.classList.remove('linha-acesa'), 2600);
+  openCadastroModal('grade', g.id);
 }
 
 // O aviso de que a lista esta recortada por um grupo do Ranking. Fica logo acima
@@ -21736,7 +21716,7 @@ function renderListaOS() {
       <td class="col-actions row-actions">
         ${_statusCelulaOS(o)}
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
-        <button class="edit" onclick="verGradeDaOS('${o.id}')" title="Abre o cadastro de grades na grade que esta OS usa — com a distribuição, as fases e o encaixe.">grade</button>
+        <button class="edit" onclick="verGradeDaOS('${o.id}')" title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
         <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
         <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
         <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
