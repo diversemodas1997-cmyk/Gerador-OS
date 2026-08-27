@@ -6034,6 +6034,15 @@ async function salvarCadastro() {
         if (tipo === 'desenho') sincCodigoDesenho('desenho');
       }
     }
+  } else if (cadastroContext.origin === 'lista-os') {
+    // VEIO DA LISTA DE OS (o botão "grade" da linha): salvar tem de devolver a
+    // pessoa à lista onde ela estava, e não jogá-la no cadastro de grades.
+    // Redesenha em vez de `goto`: a lista pode estar recortada por um grupo do
+    // Ranking, com busca e filtros postos, e o `goto` limparia o grupo — quem
+    // salvou uma medida perderia o recorte que estava conferindo.
+    const sec = document.querySelector('section.page[data-page="lista-os"]');
+    if (sec && !sec.classList.contains('hidden')) renderListaOS();
+    else goto('lista-os');
   } else {
     goto('cad-' + list);
   }
@@ -21380,7 +21389,10 @@ function verGradeDaOS(id) {
       ? `A grade "${nome}" não está mais no cadastro — a OS guarda o nome dela`
       : 'Esta OS não tem grade escolhida', 'err');
   }
-  openCadastroModal('grade', g.id);
+  // A ORIGEM importa na hora de salvar: sem ela, salvarCadastro joga quem
+  // salvou no cadastro de grades, e a pessoa perde a lista de OS que estava
+  // conferindo (com busca, filtros e, às vezes, um grupo do Ranking).
+  openCadastroModal('grade', g.id, 'lista-os');
 }
 
 // O aviso de que a lista esta recortada por um grupo do Ranking. Fica logo acima
