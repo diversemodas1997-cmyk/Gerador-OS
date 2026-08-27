@@ -6569,31 +6569,51 @@ function renderEstoque() {
   const osMat = osComMaterialReservado().filter(o => o.kg > 0);
   const reservadas = osMat.filter(o => !o.consumido);
   const baixadas = osMat.filter(o => o.consumido);
-  const linhaOS = (o, baixada) => `
+  /* SEM BOTÃO DE BAIXA (27/08/2026, Junior: "essa ação deve ser sempre
+     automática"). Um botão que faz o que o programa já faz sozinho só serve
+     para criar uma segunda verdade: quem clicasse aqui baixaria o pano de uma
+     OS que a produção ainda não começou, e o número deixaria de bater com o
+     chão. Quem manda é o STATUS da OS, e ele se muda na lista de OS Salvas —
+     inclusive para desfazer (voltar para "Não iniciada"). */
+  const linhaOS = (o) => `
     <tr>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</td>
-      <td>${baixada ? '<span class="badge" style="background:#f6dcda;">Baixado</span>' : '<span class="badge" style="background:#fde9c8;">Reservado</span>'}</td>
-      <td class="col-actions row-actions">${baixada
-        ? `<button onclick="estornarBaixaMaterialOS('${esc(o.osId)}')">estornar</button>`
-        : `<button onclick="darBaixaMaterialOS('${esc(o.osId)}')">dar baixa</button>`}</td>
+      <td><span class="badge" style="background:#fde9c8;">Reservado</span></td>
     </tr>`;
+  /* A LISTA MOSTRA SÓ O QUE AINDA SEGURA PANO (27/08/2026, Junior).
+
+     Ela nasceu quando a baixa era um clique: as reservadas em cima, as já
+     baixadas embaixo, todas com o botão de desfazer. Desde que o STATUS da OS
+     passou a baixar sozinho, "já baixada" virou a esmagadora maioria — 100 das
+     105 hoje — e a lista deixou de responder à pergunta que ela existe para
+     responder: quais OS ainda estão segurando pano na prateleira.
+
+     As baixadas saem da tabela e viram UMA LINHA de resumo. Não somem de todo
+     porque o total delas é o contrapeso do que se lê logo acima, em Saídas.
+     Onde cada uma aparece continua sendo em Movimentações recentes, e desfazer
+     uma baixa é voltar a OS para "não iniciada", na lista de OS Salvas — que é
+     o mesmo lugar onde ela foi carimbada. */
+  const kgBaixadas = baixadas.reduce((a, o) => a + (Number(o.kg) || 0), 0);
   const apontarHtml = osMat.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">OSs · baixa de material</h2>
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs · material reservado</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        Aponte a OS como <b>produzida</b> ("dar baixa") para converter a reserva em
-        <b>saída definitiva</b> do estoque. Use "estornar" para desfazer.
+        O pano de uma OS fica <b>reservado</b> enquanto ela não começa, e sai do estoque
+        sozinho quando alguém muda o status dela para <b>Em andamento</b> — na lista de
+        OS Salvas. Aqui ficam só as que ainda seguram material.
       </div>
-      <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Material</th><th>Situação</th><th class="col-actions">Ação</th></tr></thead>
-        <tbody>
-          ${reservadas.map(o => linhaOS(o, false)).join('')}
-          ${baixadas.map(o => linhaOS(o, true)).join('')}
-        </tbody>
-      </table>
+      ${reservadas.length ? `<table class="table">
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Material</th><th>Situação</th></tr></thead>
+        <tbody>${reservadas.map(linhaOS).join('')}</tbody>
+      </table>`
+      : '<div class="empty" style="padding:14px;">Nenhuma OS segurando pano — todas as que começaram já baixaram.</div>'}
+      ${baixadas.length ? `<div class="muted" style="font-size:12px;margin-top:8px;">
+        Mais <b>${baixadas.length}</b> OS já baixaram o material (<b>${fmt(kgBaixadas)} kg</b>), e por isso não aparecem aqui.
+        Elas estão em <b>Movimentações recentes</b>; para desfazer uma baixa, volte a OS para <b>Não iniciada</b>.
+      </div>` : ''}
     </div>` : '';
 
   const movs = movimentacoesEstoque().slice()
@@ -21733,8 +21753,8 @@ async function _estoqueSeguirStatusOS(o, alvo) {
   const temMov = (STATE.estoqueMov || []).some(m => m.origem === 'os' && m.osId === o.id);
   if (!temMov) return;                       // OS sem consumo calculado: nada a mexer
   try {
-    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) await darBaixaMaterialOS(o.id, true);
-    else if (alvo === 'nao-iniciado') await estornarBaixaMaterialOS(o.id, true);
+    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) await darBaixaMaterialOS(o.id);
+    else if (alvo === 'nao-iniciado') await estornarBaixaMaterialOS(o.id);
   } catch (e) { console.warn('_estoqueSeguirStatusOS', e); }
 }
 
@@ -24939,12 +24959,12 @@ async function aplicarBaixaEstoqueOS(data) {
 }
 
 // Aponta a OS como produzida → converte a RESERVA em SAÍDA definitiva (baixa real).
-// `auto` = a baixa veio do STATUS da OS, não do botão da tela de estoque.
-// Nesse caso não se pede a permissão do estoque (quem mudou o status já tinha
-// direito de mudá-lo, e é o status que manda no pano) e não se redesenha uma
-// tela que não está aberta.
-async function darBaixaMaterialOS(osId, auto) {
-  if (!auto && !exigirEstoqueTecidos('dar baixa de material')) return;
+/* A BAIXA NÃO TEM BOTÃO: quem a dispara é sempre o status da OS (ver
+   _estoqueSeguirStatusOS). Por isso não se pede aqui a permissão do estoque de
+   tecidos — quem mudou o status já tinha direito de mudá-lo, e é o status que
+   manda no pano — nem se dá toast: o aviso que interessa é o do status, que já
+   saiu. A tela de estoque se redesenha só se estiver aberta. */
+async function darBaixaMaterialOS(osId) {
   const hoje = new Date().toISOString().slice(0, 10);
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
@@ -24954,13 +24974,13 @@ async function darBaixaMaterialOS(osId, auto) {
   });
   if (!mudou) return;
   try { await saveState('estoqueMov'); } catch (e) { console.warn('baixa material', e); }
-  if (!auto) { toast('Baixa de material registrada', 'ok'); renderEstoque(); }
-  else _estoqueRedesenharSeAberto();
+  _estoqueRedesenharSeAberto();
 }
 
 // Desfaz a baixa: volta a OS para RESERVADO.
-async function estornarBaixaMaterialOS(osId, auto) {
-  if (!auto && !exigirEstoqueTecidos('estornar baixa de material')) return;
+// O estorno, pelo mesmo caminho: só acontece quando a OS volta para "Não
+// iniciada". Sem botão, pela mesma razão.
+async function estornarBaixaMaterialOS(osId) {
   let mudou = false;
   (STATE.estoqueMov || []).forEach(m => {
     if (m.origem === 'os' && m.osId === osId && m.status === 'consumido') {
@@ -24969,8 +24989,7 @@ async function estornarBaixaMaterialOS(osId, auto) {
   });
   if (!mudou) return;
   try { await saveState('estoqueMov'); } catch (e) { console.warn('estorno baixa', e); }
-  if (!auto) { toast('Baixa estornada — voltou para reservado', 'ok'); renderEstoque(); }
-  else _estoqueRedesenharSeAberto();
+  _estoqueRedesenharSeAberto();
 }
 
 // A tela do estoque só se redesenha quando está na frente: a baixa automática
@@ -30106,8 +30125,6 @@ window.renderFasePainel = renderFasePainel;
 window.abrirMovFase = abrirMovFase;
 window.salvarMovFase = salvarMovFase;
 window.excluirMovFase = excluirMovFase;
-window.darBaixaMaterialOS = darBaixaMaterialOS;
-window.estornarBaixaMaterialOS = estornarBaixaMaterialOS;
 window.exportarDados = exportarDados;
 window.conectarPastaExport = conectarPastaExport;
 window.desconectarPastaExport = desconectarPastaExport;
