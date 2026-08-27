@@ -35,6 +35,12 @@ const motor = [
   'function gradeConjugadaDaGrade',
   'function deveGerarConjugada',
   'async function gerarConjugada(',
+  // A conjugada tenta nascer com o numero ANTERIOR ao da ativa (a dupla fica
+  // junta na lista); so quando ele ja existe e que ela cai no proximo livre.
+  'function numeroParaConjugada',
+  'function formatarNumeroOS',
+  'function numeroOSLivre',
+  'function _numeroOSCanonico',
   'async function aplicarRegraConjugadaSeAplicavel',
   // A cor da peça conjugada sai do desenho dela, pela ordem canonica do desc —
   // as mesmas funcoes que o formulario usa.
@@ -203,7 +209,11 @@ console.log('-- a OS que sai --');
     const { api, estado } = comMotor(e);
     const nova = await api.gerarConjugada(estado.ordens[0]);
 
-    ok('9. sai com numero proprio', nova.os === 100 && nova.id !== 'os_1', [nova.os, nova.id]);
+    // A conjugada nasce com o numero ANTERIOR ao da ativa (0435 -> 0434), para a
+    // dupla ficar junta na lista; so cai no proximo livre quando o anterior ja
+    // existe. Ver numeroParaConjugada.
+    ok('9. sai com numero proprio, e e o anterior ao da ativa',
+       nova.os === '0434' && nova.id !== 'os_1', [nova.os, nova.id]);
     ok('10. vem na grade conjugada', nova.gradeId === 'g_passiva'
        && nova.grade.descricao === 'M-G (CONJUGADO) | CM.BÁSICA', nova.grade);
     ok('11. o total da grade e o da conjugada, nao o da ativa', nova.grade.total === 5, nova.grade.total);

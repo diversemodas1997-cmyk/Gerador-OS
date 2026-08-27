@@ -46,16 +46,30 @@ const monta = (ctx) => new Function('ctx', `
   const currentUser = ctx.user;
   let currentRole = ctx.papel || 'usuario';
   const _recusarPorModoNuvem = () => !!ctx.modoNuvem;
+  // O select das MENSAGENS termina em .limit(); o das REACOES, em .in(). O mesmo
+  // objeto responde aos dois, e o .in devolve lista vazia: reacao nao e assunto
+  // deste teste, mas carregarMensagens passa por la.
   const supa = {
-    from: () => ({
-      select: () => ({ order: () => ({ limit: async () => ctx.resposta }) }),
+    from: (tabela) => ({
+      select: () => ({
+        order: () => ({ limit: async () => (tabela === 'mensagens' ? ctx.resposta : { data: [] }) }),
+        in: async () => ({ data: ctx.reacoes || [] })
+      }),
       insert: (linha) => { ctx.inserido = linha; return {
         select: () => ({ maybeSingle: async () => ({ data: { id: 'novo', ...linha, criado_em: new Date().toISOString() } }) }) }; },
       delete: () => ({ eq: async () => ({ error: null }) })
-    })
+    }),
+    rpc: async () => ({ data: ctx.perfis || [] })
   };
   let _mensagens = ctx.mensagens || [];
   let _msgIndisponivel = false, _msgContagem = null, _msgCanal = null;
+  // O canal ganhou resposta (responde_a), polegar e mencao em 27/08/2026; o
+  // que este teste precisa saber deles e so que existem.
+  let _msgRespondendoA = null, _msgReacoes = [], _msgReacoesIndisponivel = false;
+  let _msgPerfis = [], _msgMencao = null, _msgEditando = null;
+  const STATE = { ordens: [] };
+  function _msgBarraResposta() {}
+  function _msgFecharMencao() {}
   ${constante('MSG_MAX')}
   ${recorte('function _msgQuemSou', 'quem sou nas mensagens')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
@@ -66,6 +80,11 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _msgVistas', 'a marca de leitura')}
   ${recorte('function _msgMarcarVistas', 'a gravacao da marca')}
   ${recorte('function _msgNaoLidas', 'a conta do que nao li')}
+  // O polegar e a lista de mencao tem os seus proprios caminhos e nao sao o
+  // assunto deste teste (que e ler, mandar e contar o que nao foi lido);
+  // carregarMensagens passa por eles, entao aqui eles existem e nao fazem nada.
+  async function carregarReacoes() { ctx.pediuReacoes = (ctx.pediuReacoes || 0) + 1; }
+  async function carregarPerfis() { ctx.pediuPerfis = (ctx.pediuPerfis || 0) + 1; }
   function mensagensAberto() { return false; }
   function renderMensagens() { ctx.desenhou = (ctx.desenhou || 0) + 1; }
   return {

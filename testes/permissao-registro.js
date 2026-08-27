@@ -189,13 +189,24 @@ ok('35. nem a Nathaly, no modo nuvem', e.api.podeMexerEstoqueTecidos() === false
 // exigirAdmin, a Natalhy perde o acesso em silencio.
 const portasEstoque = [
   ['lancar entrada/saida', "exigirEstoqueTecidos('lançar no estoque de tecidos')"],
-  ['apagar lancamento', "exigirEstoqueTecidos('apagar um lançamento de estoque')"],
-  ['dar baixa de material', "exigirEstoqueTecidos('dar baixa de material')"],
-  ['estornar baixa', "exigirEstoqueTecidos('estornar baixa de material')"]
+  ['apagar lancamento', "exigirEstoqueTecidos('apagar um lançamento de estoque')"]
 ];
 portasEstoque.forEach(([oQue, trecho], i) => {
   ok((36 + i) + '. ' + oQue + ' passa pela permissao nova', app.includes(trecho), trecho);
 });
+/* A BAIXA DE MATERIAL SAIU DAQUI EM 27/08/2026, e nao por descuido: ela deixou
+   de ser uma porta de tela. Quem baixa (e quem estorna) e o STATUS da OS —
+   "Em andamento" tira o pano do estoque, "Nao iniciada" devolve —, e quem muda
+   o status ja passou por exigirStatusOS. Pedir a permissao do estoque no meio
+   do caminho barraria o carimbo de quem tem direito de carimbar.
+   O que este teste passa a cobrar e o contrario: que nao exista botao de baixa
+   na tela, porque um botao desses cria uma segunda verdade sobre o mesmo pano. */
+ok('38. a baixa de material nao pede a permissao do estoque (quem manda e o status)',
+   !app.includes("exigirEstoqueTecidos('dar baixa de material')")
+   && !app.includes("exigirEstoqueTecidos('estornar baixa de material')"));
+ok('39. e nao ha botao de dar baixa / estornar na tela',
+   !app.includes('onclick="darBaixaMaterialOS') && !app.includes('onclick="estornarBaixaMaterialOS'),
+   'sobrou onclick de baixa manual no app.js');
 ok('40. e a tela mostra os botoes para quem pode',
    fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8').includes('actions estoque-tecidos-only')
    && fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8').includes('body.pode-estoque-tecidos .estoque-tecidos-only'),
