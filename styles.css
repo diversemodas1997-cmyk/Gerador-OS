@@ -1020,6 +1020,20 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .sheet-header .cell .mini {
   font-size: 6pt; font-weight: 500; color: #444; text-transform: uppercase; letter-spacing: .06em;
 }
+/* O INSTANTE DA FINALIZACAO, embaixo da data da OS na folha. Menor que a data
+   de propósito: a data manda, e esta responde "terminou quando?". Verde do
+   mesmo tom do "finalizado" da lista, e `nowrap` porque "27/08/2026 16:40"
+   quebrado em duas linhas nao e hora nenhuma. */
+.sheet-header .cell .fim-cell {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 5.8pt;
+  font-weight: 600;
+  color: #1a7f37;
+  white-space: nowrap;
+  letter-spacing: -.01em;
+  margin-top: 1px;
+}
+
 .sheet-header .brand-cell {
   background: #c9e8d0; color: #000; display: flex; align-items: center; justify-content: center;
   font-family: 'IBM Plex Mono', monospace; font-size: 14pt; letter-spacing: .2em; font-weight: 700;

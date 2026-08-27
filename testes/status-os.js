@@ -68,10 +68,12 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
   ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
+  ${recorte('function _dataHoraFinalizacaoOS', 'o dia e a hora da finalizacao')}
+  ${recorte('function _tituloFinalizacaoOS', 'a dica da data de finalizacao')}
   ${recorte('function _dataCelulaListaOS', 'a celula da coluna Data')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
-           _dataFinalizacaoOS, _dataCelulaListaOS };
+           _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -193,6 +195,29 @@ console.log('-- o que fica gravado --');
                                 statusOSEm: '2026-08-26T13:40:00.000Z' });
   ok('40. status que nao e Finalizado nao vira data de finalizacao',
      !/data-fim/.test(cel2), cel2);
+
+  // A HORA JUNTO COM O DIA (27/08/2026). O instante sempre esteve gravado; era
+  // a tela que o cortava. A hora e a LOCAL, a mesma do relogio da fabrica —
+  // por isso o teste monta o instante a partir de um Date local, e nao crava
+  // "16:26" em cima de um ISO com Z, que mudaria de valor conforme o fuso.
+  const instante = new Date(2026, 7, 26, 16, 26, 0);
+  const finalizada = { os: '1', data: '2026-03-10', statusOS: 'finalizado',
+                       finalizadaEm: instante.toISOString() };
+  ok('41. a data de finalizacao leva a hora junto',
+     A._dataHoraFinalizacaoOS(finalizada) === '26/08/2026 16:26',
+     A._dataHoraFinalizacaoOS(finalizada));
+  ok('42. e ela aparece assim na coluna Data da lista',
+     /26\/08\/2026 16:26/.test(A._dataCelulaListaOS(finalizada)),
+     A._dataCelulaListaOS(finalizada));
+  ok('43. OS que nao terminou nao tem dia nem hora',
+     A._dataHoraFinalizacaoOS({ os: '1', data: '2026-03-10', statusOS: 'andamento',
+                                statusOSEm: instante.toISOString() }) === '');
+  ok('44. data gravada que nao e data nao vira hora inventada',
+     A._dataHoraFinalizacaoOS({ os: '1', statusOS: 'finalizado', finalizadaEm: 'nao e data' }) === '');
+  ok('45. a dica separa a hora REAL da hora do carimbo em lote',
+     A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que a OS foi finalizada'
+     && A._tituloFinalizacaoOS({ statusOS: 'finalizado', statusOSEm: instante.toISOString() })
+        === 'Dia e hora em que a OS foi marcada como finalizada');
 
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');

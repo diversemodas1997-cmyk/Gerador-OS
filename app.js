@@ -21459,18 +21459,44 @@ function _dataFinalizacaoOS(o) {
   return (o && (o.finalizadaEm || o.statusOSEm)) || '';
 }
 
+/* DIA E HORA, e não só o dia (27/08/2026, pedido do Junior).
+
+   O instante sempre esteve gravado — `finalizadaEm` é um ISO com hora —, mas a
+   tela cortava fora a hora e mostrava só a data. Numa fábrica em que a OS
+   termina no meio do turno, "finalizou dia 27" e "finalizou dia 27 às 16:40"
+   respondem coisas diferentes: a segunda diz se deu tempo de expedir no mesmo
+   dia, e é ela que se confere quando alguém pergunta por que o caminhão foi
+   sem aquela caixa.
+
+   Devolve '' quando a OS não está finalizada ou quando a data gravada não é
+   data — quem chama decide o que mostrar no lugar. */
+function _dataHoraFinalizacaoOS(o) {
+  const iso = _dataFinalizacaoOS(o);
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// A dica do mouse muda conforme a data é o instante REAL da finalização ou o
+// do carimbo: as OS marcadas antes de `finalizadaEm` existir (as 200 de
+// 26/08/2026) só sabem quando foram carimbadas, e dizer o contrário seria
+// inventar hora de produção.
+function _tituloFinalizacaoOS(o) {
+  return (o && o.finalizadaEm)
+    ? 'Dia e hora em que a OS foi finalizada'
+    : 'Dia e hora em que a OS foi marcada como finalizada';
+}
+
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia
    em que ela foi finalizada. Duas datas na mesma coluna porque é a mesma
    pergunta ("quando?") e porque a linha da OS não comporta mais uma coluna. */
 function _dataCelulaListaOS(o) {
   const feita = `<span title="Dia em que a OS foi feita">${esc(formatDate(o.data))}</span>`;
-  const fim = _dataFinalizacaoOS(o);
-  if (!fim) return feita;
-  const d = new Date(fim);
-  if (isNaN(d)) return feita;
-  const p = n => String(n).padStart(2, '0');
-  const txt = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
-  return feita + `<br><span class="data-fim" title="Dia em que a OS foi finalizada">`
+  const txt = _dataHoraFinalizacaoOS(o);
+  if (!txt) return feita;
+  return feita + `<br><span class="data-fim" title="${esc(_tituloFinalizacaoOS(o))}">`
     + `✓ ${esc(txt)}</span>`;
 }
 
@@ -25178,7 +25204,16 @@ function renderPrintSheet(o) {
       <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>
       <div class="cell"><span class="mini">Coleção</span>${esc(o.colecaoNome || '—')}</div>
       <div class="cell"><span class="mini">${esc(o.blocoNome || o.bloco || 'R1 BLOCO 1')}</span></div>
-      <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}</div>
+      <!-- A data da OS e, ABAIXO dela, o instante em que a OS foi finalizada
+           (27/08/2026, pedido do Junior). A folha e o papel que anda com a
+           peca pela fabrica: quem a pega na expedicao ve, sem abrir o
+           programa, se aquilo terminou hoje de manha ou ontem a noite.
+           Aparece so quando ha o que mostrar — OS em producao nao ganha
+           linha em branco. -->
+      <div class="cell"><span class="mini">Data</span>${esc(formatDate(o.data))}${
+        _dataHoraFinalizacaoOS(o)
+          ? `<span class="fim-cell" title="${esc(_tituloFinalizacaoOS(o))}">✓ ${esc(_dataHoraFinalizacaoOS(o))}</span>`
+          : ''}</div>
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
         <span class="mini">OS Nº:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
