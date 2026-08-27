@@ -22851,6 +22851,27 @@ function _obsQuando(nota) {
     + (nota.editadoEm && nota.editadoEm !== nota.em ? ' (editada)' : '');
 }
 
+// POR QUE A FOLHA ORDENA PELO CARIMBO QUE ELA MOSTRA (editadoEm || em), e nao
+// pela data de criacao: a coluna da direita de cada cabecalho imprime esse
+// carimbo. Ordenar por outra coisa poria "25/08" acima de "22/08" no papel, e
+// quem le a folha nao tem como saber que a de cima e mais antiga POR TER SIDO
+// escrita antes — ele so ve as duas datas fora de ordem. Nota corrigida depois
+// desce para o fim: e o mesmo criterio do mural de avisos.
+// Nota MIGRADA da caixa antiga nao tem data nenhuma ('' ordena primeiro), que e
+// onde ela pertence: e anterior a 20/08/2026, mais velha que qualquer outra.
+function _obsChaveData(nota) {
+  return String((nota && (nota.editadoEm || nota.em)) || '');
+}
+
+// Da mais ANTIGA (topo) para a mais RECENTE (base). Empate — duas notas no
+// mesmo instante, ou duas migradas sem data — fica na ordem em que ja estavam.
+function _obsEmOrdem(o) {
+  return _obsNotas(o)
+    .map((n, i) => ({ n, i }))
+    .sort((a, b) => _obsChaveData(a.n).localeCompare(_obsChaveData(b.n)) || a.i - b.i)
+    .map(x => x.n);
+}
+
 // A observação DESTA pessoa. Texto em branco apaga a dela — e só a dela.
 async function salvarObsNota(osId, texto) {
   if (!exigirEdicaoFolha('escrever a observação da OS')) return;
@@ -22889,7 +22910,7 @@ async function salvarObsNota(osId, texto) {
 // A minha é campo, e vem por último: é a única que cresce enquanto se digita.
 function _obsCaixaHtml(o) {
   const eu = _obsQuemSou();
-  const notas = _obsNotas(o).slice().sort((a, b) => String(a.em || '').localeCompare(String(b.em || '')));
+  const notas = _obsEmOrdem(o);
   const minha = eu ? notas.find(n => String(n.login || '').trim().toLowerCase() === eu) : null;
   const cabec = n => `<span class="obs-quem" title="${esc(n.login || '')}">${
     esc(_obsNomeLogin(n.login) || '—')}</span><span class="obs-quando">${esc(_obsQuando(n))}</span>`;
@@ -22905,22 +22926,31 @@ function _obsCaixaHtml(o) {
     : `<div class="obs-nota"><div class="obs-nota-cab"><span class="obs-quem">admin</span><span class="obs-quando">anterior a 20/08/2026</span></div>
          <div class="obs-texto">${esc(o.obs)}</div></div>`) : '';
 
-  const dosOutros = notas.filter(n => n !== minha).map(n =>
+  const deOutro = n =>
     `<div class="obs-nota"><div class="obs-nota-cab">${cabec(n)}</div>
-       <div class="obs-texto">${esc(n.texto || '')}</div></div>`).join('');
+       <div class="obs-texto">${esc(n.texto || '')}</div></div>`;
 
   // Sem login não há a quem atribuir: a folha mostra o que já foi escrito e não
   // oferece campo nenhum.
-  if (!eu) return legado + dosOutros;
+  if (!eu) return legado + notas.map(deOutro).join('');
 
   const meuCab = minha
     ? cabec(minha)
     : `<span class="obs-quem" title="${esc(eu)}">${esc(_obsNomeLogin(eu))}</span><span class="obs-quando">a sua</span>`;
-  return legado + dosOutros
-    + `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${meuCab}</div>
+  const aMinha = `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${meuCab}</div>
         <textarea class="obs-input" placeholder="Digite a sua observação..." style="flex:1;min-height:10mm;"
           oninput="_obsAjustarAltura(this)"
           onchange="salvarObsNota('${esc(o.id)}', this.value)">${esc(minha ? minha.texto || '' : '')}</textarea></div>`;
+
+  // A MINHA SAI NA DATA DELA, não no fim da fila. Até 27/08/2026 o campo de
+  // quem estava com a folha aberta era sempre o último, e bastava eu ter
+  // escrito ontem e o outro turno hoje para a folha imprimir a de hoje ACIMA da
+  // de ontem — a caixa deixava de ser a linha do tempo da OS. Só a nota AINDA
+  // NÃO ESCRITA vai por último: ela não tem data, e é um campo em branco
+  // esperando texto, não um registro.
+  return legado + (minha
+    ? notas.map(n => n === minha ? aMinha : deOutro(n)).join('')
+    : notas.map(deOutro).join('') + aMinha);
 }
 
 // O campo ANTIGO, de antes de a folha ter dono. Só admin — ver o comentário
@@ -24935,7 +24965,7 @@ let _obsOsDaFolha = null;
 // TODAS as observações desta OS, em leitura, para quando a folha não deu conta.
 function abrirTodasAsObs(o) {
   if (!o) return;
-  const notas = _obsNotas(o).slice().sort((a, b) => String(a.em || '').localeCompare(String(b.em || '')));
+  const notas = _obsEmOrdem(o);   // mesma ordem da folha: antiga em cima
   const bloco = (quem, quando, texto, titulo) => `
     <div style="padding:8px 0;border-bottom:1px solid var(--line);">
       <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px;">

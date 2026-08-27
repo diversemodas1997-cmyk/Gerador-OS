@@ -1242,11 +1242,15 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 /* UMA OBSERVAÇÃO POR PESSOA (desde 20/08/2026). Cada nota leva o login de quem
    escreveu; as dos outros são TEXTO, não campo — ninguém reescreve o recado
    alheio, e texto sai inteiro no papel, enquanto um <textarea> corta em
-   silêncio o que passa da altura dele. A minha é a última e é a única que
-   estica, porque é a que cresce enquanto se digita. */
+   silêncio o que passa da altura dele. A minha é a única que estica, porque é
+   a que cresce enquanto se digita — mas só quando é a última: desde 27/08/2026
+   a caixa sai em ordem de data, e a minha nota pode cair no meio da fila. Ali
+   ela não pode esticar, senão empurraria as mais recentes para o rodapé da
+   caixa; a sobra branca fica no fim, que é onde se escreve à mão. */
 .obs-box .obs-nota { display: flex; flex-direction: column; margin-bottom: 1.5mm; }
 .obs-box .obs-nota:last-child { margin-bottom: 0; }
 .obs-box .obs-nota.obs-minha { flex: 1; min-height: 10mm; margin-bottom: 0; }
+.obs-box .obs-nota.obs-minha:not(:last-child) { flex: none; margin-bottom: 1.5mm; }
 .obs-nota-cab {
   display: flex;
   justify-content: space-between;
