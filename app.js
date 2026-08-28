@@ -21926,12 +21926,17 @@ function _statusCelulaOS(o) {
     + `</select>`;
 }
 
-/* A CONJUGADA É FINALIZADA JUNTO COM A ATIVA (28/08/2026, Junior).
+/* A CONJUGADA SEGUE O STATUS DA ATIVA — TODOS ELES (28/08/2026, Junior).
 
    As duas são o MESMO enfesto na mesa: o pano é estendido uma vez, cortado uma
-   vez, e as duas ordens saem do mesmo corte. Terminar uma e deixar a outra
-   aberta descreve um trabalho que não existe — e era o que acontecia, porque
-   quem carimba o status carimba a OS que está olhando.
+   vez, e as duas ordens saem do mesmo corte. Não há estado em que uma esteja e
+   a outra não: se o enfesto começou, começou para as duas; se parou, parou para
+   as duas; se terminou, terminou para as duas.
+
+   Nasceu menor — só "finalizado" propagava, e depois o desfazer —, e as duas
+   ampliações vieram pelo mesmo motivo: cada estado que não seguia deixava a
+   dupla em pé quebrado, e alguém tinha de arrumar a segunda à mão. A regra
+   inteira é mais simples de ler e não tem canto onde a folha se contradiga.
 
    Só a ATIVA arrasta. A passiva não puxa ninguém: é a mesma trava que segura o
    par cruzado em `deveGerarConjugada`, e sem ela duas OS que se apontassem
@@ -21939,25 +21944,15 @@ function _statusCelulaOS(o) {
 
    Devolve lista, e não uma OS, para o dia em que uma ativa puxar mais de uma
    conjugada — quem chama já trata todas do mesmo jeito. */
-function _conjugadasQueSeguemStatus(os, antes, alvo) {
+function _conjugadasQueSeguemStatus(os, alvo) {
   if (!os || os.conjugadaPaiId || !os.conjugadaId) return [];
   const c = (STATE.ordens || []).find(x => x.id === os.conjugadaId);
   if (!c) return [];
-  const cAgora = _statusOS(c);
-  // Terminar: leva a conjugada junto. Já finalizada não é recarimbada — a data
-  // dela é o dia em que ela terminou, e reescrevê-la faria a lista dizer outro.
-  if (alvo === 'finalizado') return cAgora === 'finalizado' ? [] : [c];
-  /* DESFAZER TAMBÉM ACOMPANHA (28/08/2026, Junior). Tirar a ativa de
-     "Finalizado" e deixar a conjugada finalizada travaria a dupla: a partir
-     dali só a mão desfaria a segunda, e a lista mostraria metade de um enfesto
-     terminada e metade não.
-
-     Desfaz SÓ o que a propagação fez, e por isso as duas condições: a ativa
-     tem de estar SAINDO de finalizado, e a conjugada tem de estar finalizada.
-     Conjugada que nunca terminou (parada, em andamento) não é mexida — ela
-     está no estado dela, não num estado herdado. */
-  if (antes === 'finalizado' && cAgora === 'finalizado') return [c];
-  return [];
+  // Já no estado pedido: não é recarimbada. Vale sobretudo para "finalizado",
+  // onde recarimbar reescreveria a data — e a data dela é o dia em que ela
+  // terminou, não o dia em que alguém mexeu na irmã.
+  if (_statusOS(c) === alvo) return [];
+  return [c];
 }
 
 // Escreve o status numa OS. Um lugar só, usado pela OS que o usuário carimbou e
@@ -21987,8 +21982,7 @@ async function mudarStatusOS(id, valor) {
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
-  const antes = _statusOS(o);
-  if (antes === alvo) return;
+  if (_statusOS(o) === alvo) return;
   const agora = new Date().toISOString();
   const quem = _obsQuemSou();
   _carimbarStatusOS(o, alvo, agora, quem);
@@ -21996,7 +21990,7 @@ async function mudarStatusOS(id, valor) {
   // a ativa sai de finalizada. Carimbada ANTES do saveState: as duas viajam na
   // mesma gravação, senão uma pode ir e a outra ficar para trás se a rede cair
   // no meio.
-  const juntas = _conjugadasQueSeguemStatus(o, antes, alvo);
+  const juntas = _conjugadasQueSeguemStatus(o, alvo);
   juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
   renderListaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
