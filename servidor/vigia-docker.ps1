@@ -130,10 +130,59 @@ function Achar-Docker {
   return $null
 }
 
+# NAO trocar por 'docker info' (28/08/2026). Parece a pergunta certa, e era o que
+# estava aqui, mas o 'info' monta o retrato do CLIENTE tambem: ele EXECUTA os 15
+# cli-plugins instalados, um por um, so para ler a versao de cada um. Medido nesta
+# maquina com o motor saudavel: 'info' 455 ms contra 72 ms deste 'version'.
+#
+# E o primeiro plugin da fila e o docker-agent.exe — justamente o que fica ate
+# 60 s pendurado no arranque (ver Desligar-Agente-IA). Ou seja: a pergunta "o
+# motor ja subiu?" ficava presa no unico programa que ainda nao tinha subido. Em
+# 28/08 o motor estava de pe as 07:16:18 e o vigia so conseguiu ver as 07:18:13 —
+# 115 s anotados como demora do motor que eram demora da PERGUNTA.
+#
+# 'version' pergunta a versao AO SERVIDOR: se ele responde, o motor esta de pe.
 function Motor-Responde($exe) {
   if (-not $exe) { return $false }
-  & $exe info --format '{{.ServerVersion}}' 2>$null | Out-Null
+  & $exe version --format '{{.Server.Version}}' 2>$null | Out-Null
   return ($LASTEXITCODE -eq 0)
+}
+
+# O "Docker AI Agent" nao serve para nada nesta maquina — a fabrica roda nginx e
+# Postgres locais — e cobra caro em toda manha. O log do Docker de 28/08:
+#
+#   10:16:20  starting docker agent api process
+#   10:16:20  pinging agent api server at \\.\pipe\dockerAgent
+#   ... 18 tentativas, todas falhando ...
+#   10:17:21  agent api process stopped as requested        (60,6 s)
+#   10:17:28  boot probe to https://registry-1.docker.io/v2/ failed: context deadline
+#   10:17:30  docker agent boot timed out
+#
+# Setenta segundos por manha para uma funcao que falha sempre — e que ainda
+# segurava o 'docker info' de quem estivesse perguntando pelo motor.
+#
+# Aqui e o lugar certo de desligar: este trecho so roda com o motor fora do ar e
+# ANTES de abrir o Docker Desktop, entao a gravacao nao e sobrescrita por ele ao
+# fechar. E se uma atualizacao do Docker religar a funcao, a manha seguinte
+# desliga de novo sozinha.
+function Desligar-Agente-IA {
+  $arq = Join-Path $env:APPDATA 'Docker\settings-store.json'
+  if (-not (Test-Path $arq)) { return $false }
+  try {
+    $cfg = Get-Content $arq -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch { return $false }   # corrompido e problema do Consertar-Configs, nao deste
+  if ($null -ne $cfg.EnableDockerAI -and -not $cfg.EnableDockerAI) { return $false }
+  try {
+    if ($null -eq $cfg.PSObject.Properties['EnableDockerAI']) {
+      $cfg | Add-Member -NotePropertyName 'EnableDockerAI' -NotePropertyValue $false
+    } else { $cfg.EnableDockerAI = $false }
+    [IO.File]::WriteAllText($arq, ($cfg | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+    Anotar 'agente de IA do Docker desligado (economiza ~70 s de arranque)'
+    return $true
+  } catch {
+    Anotar "aviso: nao consegui desligar o agente de IA do Docker: $($_.Exception.Message)"
+    return $false
+  }
 }
 
 # ------------------------------------------------------------------- agendar
@@ -225,6 +274,7 @@ try {
     Anotar 'motor do Docker fora do ar — abrindo o Docker Desktop'
 
     if (Consertar-Configs) { $agi = $true }   # antes de abrir: config zerada nao deixa o motor subir
+    Desligar-Agente-IA | Out-Null              # tambem antes de abrir, ou o Docker regrava ao fechar
 
     $appExe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
     if (-not (Test-Path $appExe)) { Anotar "FALHA: nao achei $appExe"; exit 1 }
