@@ -58,6 +58,8 @@
       .\servidor\enxugar-supabase.ps1
     Deixar agendado para aplicar sozinho no fim do expediente:
       .\servidor\enxugar-supabase.ps1 -Agendar
+    Empurrar a estreia para um dia certo (segue tentando todo dia depois dele):
+      .\servidor\enxugar-supabase.ps1 -Agendar -APartirDe 2026-08-31
     Subir o painel do Supabase quando precisar dele:
       .\servidor\enxugar-supabase.ps1 -Painel
       .\servidor\enxugar-supabase.ps1 -FecharPainel
@@ -83,6 +85,13 @@ param(
   # fabrica ja parou de produzir. Cedo o bastante para a maquina estar de pe,
   # tarde o bastante para os 15 s de porta fechada nao pegarem ninguem.
   [string] $Hora   = '17:10',
+  # Dia da PRIMEIRA tentativa ('aaaa-mm-dd'). Em branco, hoje. Serve para
+  # empurrar a estreia sem perder o "todo dia ate conseguir": a partir dessa
+  # data ela continua tentando diariamente. Foi assim que a aplicacao passou de
+  # sexta 28/08 para segunda 31/08, a pedido do Junior — mexer no compose numa
+  # sexta a noite deixa a fabrica o fim de semana inteiro sem ninguem por perto
+  # se alguma coisa nao subir de volta.
+  [string] $APartirDe = '',
   [switch] $Agendar,
   [switch] $Simular,
   [switch] $Desfazer,
@@ -117,7 +126,11 @@ if ($Agendar) {
   [IO.File]::WriteAllText($vbs, ('CreateObject("Wscript.Shell").Run "' + ($cmd -replace '"', '""') + '", 0, False'), (New-Object Text.ASCIIEncoding))
 
   $acao    = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '"') -WorkingDirectory $Raiz
-  $gatilho = New-ScheduledTaskTrigger -Daily -At $Hora
+  # Com -APartirDe, o gatilho nasce com a data daquele dia; sem ele, a de hoje.
+  # `-At` aceita a hora sozinha (que o Windows resolve como hoje) ou um instante
+  # inteiro — e e por isso que a data e a hora sao montadas juntas aqui.
+  $quando = if ($APartirDe) { [datetime]::Parse($APartirDe + ' ' + $Hora) } else { [datetime]$Hora }
+  $gatilho = New-ScheduledTaskTrigger -Daily -At $quando
   # "Somente com o usuario conectado", pelo mesmo motivo do vigia: o Docker
   # Desktop no Windows so existe DENTRO da sessao.
   $conf = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
@@ -126,7 +139,8 @@ if ($Agendar) {
   Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $gatilho -Settings $conf `
     -Description 'Enxuga a pilha do Supabase no fim do expediente. Some sozinha depois de aplicar.' `
     -ErrorAction Stop | Out-Null
-  Falar "tarefa '$Tarefa' registrada para as $Hora, todo dia, ate conseguir aplicar"
+  $dia = if ($APartirDe) { "a partir de $APartirDe" } else { 'a partir de hoje' }
+  Falar "tarefa '$Tarefa' registrada para as $Hora, $dia, todo dia ate conseguir aplicar"
   exit 0
 }
 
