@@ -81,8 +81,21 @@ async function configDoServidorQueServiu(ms) {
     if (!r.ok) return null;
     const c = await r.json();
     if (!c || !c.key) return null;
-    // O endereço vem de quem serviu a página, e não do arquivo: é o endereço
-    // que este navegador comprovadamente alcança.
+    /* O endereço vem do arquivo quando ele traz um, e de quem serviu a página
+       quando não traz.
+
+       O `url` existe para um caso real: a máquina guardou um endereço que
+       morreu, e precisa aprender o novo sem alguém passar computador por
+       computador (ver testes/modo-servidor.js, casos 14–14c).
+
+       Mas ele também pode ENVELHECER, e foi o que aconteceu em 28/08/2026: o
+       arquivo trazia `https://193.168.0.200` escrito desde a instalação, o cabo
+       de rede caiu, e o servidor passou a ser alcançado pelo Wi-Fi. A página
+       abria pelo endereço novo e a API continuava sendo chamada no antigo.
+       O conserto foi TIRAR o `url` do arquivo, não tirar o recurso do código:
+       sem ele, vale `location.origin` — o endereço que este navegador
+       comprovadamente acabou de alcançar, já que a página veio por ele. Só se
+       escreve um `url` ali quando o endereço realmente mudar de casa. */
     return { url: String(c.url || location.origin).replace(/\/+$/, ''), key: String(c.key).trim() };
   } catch (e) { return null; }
 }

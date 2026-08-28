@@ -15,6 +15,13 @@
    Uso:
      node servidor\gerar-certificado.js --ip 192.168.0.50 [--nome gerador-os]
 
+   O --ip aceita MAIS DE UM endereco, separados por virgula. Serve quando o
+   servidor e alcancavel por dois caminhos — foi o caso em 28/08/2026, com o
+   cabo de rede fora e a fabrica dependendo do Wi-Fi:
+     node servidor\gerar-certificado.js --ip 193.168.0.200,192.168.1.158
+   Reemitir assim NAO toca na autoridade: quem ja instalou o ca.crt continua
+   valendo, sem passar de maquina em maquina.
+
    O --nome é opcional: serve se você der um nome ao servidor no roteador, para
    poder acessar por https://gerador-os em vez do IP.
 */
@@ -24,14 +31,19 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const arg = n => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : null; };
-const IP = arg('ip');
+// Aceita um ou varios: "--ip a,b". O primeiro e o principal (vai no CN).
+const IPS = String(arg('ip') || '').split(',').map(x => x.trim()).filter(Boolean);
+const IP = IPS[0];
 const NOME = arg('nome');
 const SAIDA = arg('saida') || path.join(__dirname, 'tls');
 const DIAS_CA = 3650;    // a CA vale 10 anos: trocá-la obriga a passar em todas as máquinas
 const DIAS_SRV = 825;    // o certificado do servidor, ~2 anos (limite aceito pelos navegadores)
 
-if (!IP || !/^\d{1,3}(\.\d{1,3}){3}$/.test(IP)) {
-  console.error('Faltou --ip, ou o valor não é um endereço IPv4. Ex.: --ip 192.168.0.50');
+const invalido = IPS.filter(x => !/^\d{1,3}(\.\d{1,3}){3}$/.test(x));
+if (!IPS.length || invalido.length) {
+  console.error(invalido.length
+    ? 'Nao e um endereco IPv4: ' + invalido.join(', ')
+    : 'Faltou --ip. Ex.: --ip 192.168.0.50   (ou --ip 192.168.0.50,192.168.1.158)');
   process.exit(1);
 }
 
@@ -59,7 +71,7 @@ const p = n => path.join(SAIDA, n);
 // Os nomes pelos quais o servidor pode ser chamado. O navegador exige que o
 // endereço digitado esteja NESTA lista — um certificado sem o IP aqui dá erro
 // mesmo estando tudo certo no resto.
-const nomes = [`IP:${IP}`, 'IP:127.0.0.1', 'DNS:localhost'];
+const nomes = [...IPS.map(x => `IP:${x}`), 'IP:127.0.0.1', 'DNS:localhost'];
 if (NOME) nomes.push(`DNS:${NOME}`, `DNS:${NOME}.local`);
 
 const cfg = p('openssl.cnf');
@@ -116,8 +128,10 @@ const verif = ssl(['verify', '-CAfile', p('ca.crt'), p('servidor.crt')]);
 if (!/OK\s*$/m.test(verif)) { console.error('O certificado não validou contra a CA:\n' + verif); process.exit(1); }
 const texto = ssl(['x509', '-in', p('servidor.crt'), '-noout', '-text']);
 const san = (texto.match(/X509v3 Subject Alternative Name:\s*\n\s*(.+)/) || [])[1] || '';
-if (!san.includes(`IP Address:${IP}`)) {
-  console.error('O certificado saiu SEM o IP na lista de nomes — o navegador recusaria.');
+const faltando = IPS.filter(x => !san.includes(`IP Address:${x}`));
+if (faltando.length) {
+  console.error('O certificado saiu SEM estes enderecos na lista de nomes: '
+    + faltando.join(', ') + ' — o navegador recusaria.');
   process.exit(1);
 }
 try { fs.unlinkSync(p('servidor.csr')); } catch (e) {}

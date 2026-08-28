@@ -30,7 +30,13 @@ REM A impressao digital do CA de verdade. E por ela que o fim confere se
 REM o que entrou na lista foi ESTE certificado, e nao outro com o mesmo
 REM nome de arquivo.
 set "DIGITAL=3581656E6C0EABC4FD52989652B59A56715AF356"
+REM O servidor pode ser alcancado por dois caminhos: o cabo de rede (o de
+REM sempre) e o Wi-Fi (o contorno de 28/08/2026, com o cabo fora). O mesmo
+REM certificado vale para os dois. O instalador testa os dois e diz qual
+REM responde nesta maquina - dizer "nao respondeu" quando o outro caminho
+REM funciona seria mandar a pessoa procurar um problema que nao existe.
 set "SERVIDOR=https://193.168.0.200"
+set "ALTERNATIVO=https://192.168.1.158"
 
 echo.
 echo   ================================================
@@ -112,31 +118,46 @@ REM Instalado o certificado, a pergunta seguinte e sempre "e agora, abre?".
 REM Melhor responder aqui do que deixar a pessoa descobrir no navegador.
 echo.
 echo   Testando o servidor...
+set "ACHOU="
+call :testar "%SERVIDOR%"    && set "ACHOU=%SERVIDOR%"
+if not defined ACHOU call :testar "%ALTERNATIVO%" && set "ACHOU=%ALTERNATIVO%"
+
+if defined ACHOU (
+  echo   OK - o servidor respondeu em %ACHOU%
+  if not "%ACHOU%"=="%SERVIDOR%" (
+    echo.
+    echo   [AVISO] Respondeu pelo endereco ALTERNATIVO, nao pelo de sempre.
+    echo   Use %ACHOU% enquanto o de sempre nao voltar.
+    >"%ATALHO%" echo [InternetShortcut]
+    >>"%ATALHO%" echo URL=%ACHOU%/
+  )
+  goto fim
+)
+
+echo   [ATENCAO] O certificado esta instalado, mas o servidor NAO respondeu
+echo   em nenhum dos dois enderecos.
+echo.
+echo   Isso nao e problema desta maquina. Quase sempre e uma destas:
+echo     - o cabo de rede do servidor esta fora do lugar;
+echo     - esta maquina esta em outra rede (Wi-Fi de visitante, p.ex.^);
+echo     - o servidor esta desligado.
+echo.
+echo   Avise o Junior.
+goto fim
+
+REM Devolve 0 quando o endereco respondeu 200. Sub-rotina para nao repetir a
+REM linha do powershell duas vezes - repetida, uma seria corrigida sem a outra.
+:testar
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "try { $r = Invoke-WebRequest -Uri '%SERVIDOR%/index.html' -TimeoutSec 8 -UseBasicParsing; if ($r.StatusCode -eq 200) { exit 0 } else { exit 2 } } catch { exit 1 }" >nul 2>&1
-if errorlevel 2 (
-  echo   [ATENCAO] O servidor respondeu, mas de um jeito inesperado.
-  goto fim
-)
-if errorlevel 1 (
-  echo   [ATENCAO] O certificado esta instalado, mas o servidor NAO
-  echo   respondeu em %SERVIDOR%.
-  echo.
-  echo   Isso nao e problema desta maquina. Quase sempre e uma destas:
-  echo     - o cabo de rede do servidor esta fora do lugar;
-  echo     - esta maquina esta em outra rede (Wi-Fi de visitante, p.ex.^);
-  echo     - o servidor esta desligado.
-  echo.
-  echo   Avise o Junior.
-  goto fim
-)
-echo   OK - o servidor respondeu. Ja da para usar.
+  "try { $r = Invoke-WebRequest -Uri '%~1/index.html' -TimeoutSec 6 -UseBasicParsing; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+exit /b %errorlevel%
 
 :fim
 echo.
 echo   ------------------------------------------------
 echo    Pronto. Abra o atalho "Gerador-OS" na area de
 echo    trabalho, ou digite  %SERVIDOR%
+echo    (se o de sempre nao responder: %ALTERNATIVO%^)
 echo.
 echo    Se esta maquina usa FIREFOX, ele tem uma lista
 echo    propria de certificados e precisa de um passo a
