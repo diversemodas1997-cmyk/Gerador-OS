@@ -77,6 +77,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
+  ${recorte('function conjugadasSemPanoDaOS', 'as conjugadas da lista de reservados')}
   const exigirEstoqueTecidos = () => true;
   // aplicarBaixaEstoqueOS pergunta o consumo da OS ao cadastro; aqui ele vem
   // pronto pelo ctx, que e o que este teste tem a dizer sobre o assunto.
@@ -86,7 +87,8 @@ const monta = (ctx) => new Function('ctx', `
   const renderEstoque = () => {};
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
-           _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS };
+           _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
+           conjugadasSemPanoDaOS };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -346,6 +348,37 @@ console.log('-- o que fica gravado --');
      t5.ctx.STATE.estoqueMov.length === 1
      && t5.ctx.STATE.estoqueMov[0].id === 'nf',
      JSON.stringify(t5.ctx.STATE.estoqueMov));
+
+  console.log('');
+  console.log('-- e ela APARECE na lista, dizendo onde o pano esta --');
+  /* Junior, 28/08/2026: "mostra a passiva na lista como conjugada, o pano esta
+     na ativa". Nao reservar e certo, mas sumir sem explicacao e o que faz
+     alguem procurar a OS na lista de material e concluir que o pano dela foi
+     esquecido. Ela volta como linha filha da ativa. */
+  const t6 = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'pai',    os: '0498', data: '2026-08-20' },
+    { id: 'fil',    os: '0497', data: '2026-08-20', conjugadaPaiId: 'pai' },
+    { id: 'outra',  os: '0499', data: '2026-08-20' }
+  ]);
+  const F = t6.api.conjugadasSemPanoDaOS;
+  ok('61. a ativa traz a conjugada dela', F('pai', new Set()).map(o => o.os).join() === '0497');
+  ok('62. uma OS sem conjugada nao traz ninguem', F('outra', new Set()).length === 0);
+  ok('63. sem pai nao ha o que parear', F('', new Set()).length === 0
+     && F(undefined, new Set()).length === 0);
+  ok('64. a passiva que AINDA tem movimento proprio nao se repete aqui',
+     F('pai', new Set(['fil'])).length === 0);
+  ok('65. e a lista tambem aceita um array de ids, nao so um Set',
+     F('pai', ['fil']).length === 0 && F('pai', []).length === 1);
+
+  // A linha filha e montada dentro da tabela de reservados, colada na ativa —
+  // se alguem separar as duas em tabelas diferentes, a leitura que o Junior
+  // pediu ("o pano esta na de cima") se perde e o teste cai.
+  const secao = src.slice(src.indexOf('OSs · material reservado'));
+  ok('66. a filha sai logo depois da linha da ativa, na mesma tabela',
+     /linhaOS\(p\.pai\)\s*\+\s*p\.filhas\.map\(c => linhaConjugada\(c, p\.pai\)\)/.test(secao),
+     secao.slice(secao.indexOf('<tbody>'), secao.indexOf('<tbody>') + 200));
+  ok('67. e ela diz em qual OS o pano esta, com o numero da ativa',
+     /o pano está na OS \$\{esc\(pai\.osNumero\)/.test(src));
 
   console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');

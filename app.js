@@ -6481,6 +6481,24 @@ function osComMaterialReservado() {
   }).sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
 }
 
+/* As OS CONJUGADAS de uma OS ativa, para a lista de material reservado.
+
+   A passiva não reserva pano (ver aplicarBaixaEstoqueOS): ela é a fase Corpo 2
+   da ativa, em OS separada. Sem movimento de estoque ela não entrava na lista —
+   e sumir sem explicação é o que faz alguém procurar a OS e achar que o pano
+   dela foi esquecido. Aqui ela volta, dizendo em qual OS o pano está.
+
+   `idsComMovimento` exclui a passiva que AINDA tenha movimento próprio, gravado
+   antes da guarda existir: essa aparece como linha de verdade, e repeti-la aqui
+   mostraria a mesma OS duas vezes. */
+function conjugadasSemPanoDaOS(paiId, idsComMovimento) {
+  if (!paiId) return [];
+  const comMov = idsComMovimento instanceof Set ? idsComMovimento : new Set(idsComMovimento || []);
+  return (STATE.ordens || [])
+    .filter(o => o.conjugadaPaiId === paiId && !comMov.has(o.id))
+    .sort((a, b) => String(a.os || '').localeCompare(String(b.os || ''), undefined, { numeric: true }));
+}
+
 function renderEstoque() {
   const cont = document.getElementById('estoque-painel');
   if (!cont) return;
@@ -6553,6 +6571,7 @@ function renderEstoque() {
   const osMat = osComMaterialReservado().filter(o => o.kg > 0);
   const reservadas = osMat.filter(o => !o.consumido);
   const baixadas = osMat.filter(o => o.consumido);
+  const idsComMovimento = new Set(osComMaterialReservado().map(o => o.osId));
   /* SEM BOTÃO DE BAIXA (27/08/2026, Junior: "essa ação deve ser sempre
      automática"). Um botão que faz o que o programa já faz sozinho só serve
      para criar uma segunda verdade: quem clicasse aqui baixaria o pano de uma
@@ -6566,6 +6585,22 @@ function renderEstoque() {
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</td>
       <td><span class="badge" style="background:#fde9c8;">Reservado</span></td>
+    </tr>`;
+  /* A CONJUGADA APARECE JUNTO DA ATIVA, SEM PANO (28/08/2026, Junior).
+
+     Ela vem logo abaixo da OS de quem herdou o enfesto, com "↳", porque as duas
+     são o MESMO pano na mesa: separá-las na tabela desfaria justamente a leitura
+     que o Junior pediu. O material dela é um travessão, não um zero — zero seria
+     dizer que essa OS não precisa de pano, e ela precisa; o pano está ali em
+     cima, na linha da ativa. */
+  const linhaConjugada = (o, pai) => `
+    <tr>
+      <td style="padding-left:18px;"><span style="color:var(--ink-2);">↳</span> <strong>${esc(o.os) || '—'}</strong></td>
+      <td>${esc(o.modeloNome) || '—'}</td>
+      <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">—</td>
+      <td><span class="badge" style="background:#dfe7f7;">Conjugada</span>
+        <span class="muted" style="font-size:11px;">o pano está na OS ${esc(pai.osNumero) || '—'}</span></td>
     </tr>`;
   /* A LISTA MOSTRA SÓ O QUE AINDA SEGURA PANO (27/08/2026, Junior).
 
@@ -6581,17 +6616,24 @@ function renderEstoque() {
      uma baixa é voltar a OS para "não iniciada", na lista de OS Salvas — que é
      o mesmo lugar onde ela foi carimbada. */
   const kgBaixadas = baixadas.reduce((a, o) => a + (Number(o.kg) || 0), 0);
+  const parConjugado = reservadas.map(o => ({ pai: o, filhas: conjugadasSemPanoDaOS(o.osId, idsComMovimento) }));
+  const temConjugada = parConjugado.some(p => p.filhas.length);
   const apontarHtml = osMat.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs · material reservado</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         O pano de uma OS fica <b>reservado</b> enquanto ela não começa, e sai do estoque
         sozinho quando alguém muda o status dela para <b>Em andamento</b> — na lista de
-        OS Salvas. Aqui ficam só as que ainda seguram material.
+        OS Salvas. Aqui ficam só as que ainda seguram material.${temConjugada ? `
+        A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
+        então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
+        mesmo metro na mesa.` : ''}
       </div>
       ${reservadas.length ? `<table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Material</th><th>Situação</th></tr></thead>
-        <tbody>${reservadas.map(linhaOS).join('')}</tbody>
+        <tbody>${parConjugado.map(p => linhaOS(p.pai)
+          + p.filhas.map(c => linhaConjugada(c, p.pai)).join('')
+        ).join('')}</tbody>
       </table>`
       : '<div class="empty" style="padding:14px;">Nenhuma OS segurando pano — todas as que começaram já baixaram.</div>'}
       ${baixadas.length ? `<div class="muted" style="font-size:12px;margin-top:8px;">
