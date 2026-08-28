@@ -21939,13 +21939,45 @@ function _statusCelulaOS(o) {
 
    Devolve lista, e não uma OS, para o dia em que uma ativa puxar mais de uma
    conjugada — quem chama já trata todas do mesmo jeito. */
-function _conjugadasParaFinalizar(os) {
+function _conjugadasQueSeguemStatus(os, antes, alvo) {
   if (!os || os.conjugadaPaiId || !os.conjugadaId) return [];
   const c = (STATE.ordens || []).find(x => x.id === os.conjugadaId);
-  // Já finalizada não é recarimbada: a data dela é o dia em que ela terminou,
-  // e reescrevê-la faria a lista dizer outro dia.
-  if (!c || _statusOS(c) === 'finalizado') return [];
-  return [c];
+  if (!c) return [];
+  const cAgora = _statusOS(c);
+  // Terminar: leva a conjugada junto. Já finalizada não é recarimbada — a data
+  // dela é o dia em que ela terminou, e reescrevê-la faria a lista dizer outro.
+  if (alvo === 'finalizado') return cAgora === 'finalizado' ? [] : [c];
+  /* DESFAZER TAMBÉM ACOMPANHA (28/08/2026, Junior). Tirar a ativa de
+     "Finalizado" e deixar a conjugada finalizada travaria a dupla: a partir
+     dali só a mão desfaria a segunda, e a lista mostraria metade de um enfesto
+     terminada e metade não.
+
+     Desfaz SÓ o que a propagação fez, e por isso as duas condições: a ativa
+     tem de estar SAINDO de finalizado, e a conjugada tem de estar finalizada.
+     Conjugada que nunca terminou (parada, em andamento) não é mexida — ela
+     está no estado dela, não num estado herdado. */
+  if (antes === 'finalizado' && cAgora === 'finalizado') return [c];
+  return [];
+}
+
+// Escreve o status numa OS. Um lugar só, usado pela OS que o usuário carimbou e
+// pela conjugada que vai junto — se as duas escrevessem por caminhos
+// diferentes, um dia uma ganharia um campo que a outra não tem.
+function _carimbarStatusOS(os, alvo, agora, quem) {
+  if (alvo === 'nao-iniciado') {
+    delete os.statusOS; delete os.statusOSPor; delete os.statusOSEm;
+  } else {
+    os.statusOS = alvo;
+    os.statusOSPor = quem;
+    os.statusOSEm = agora;
+  }
+  /* A DATA DE FINALIZAÇÃO. Marcar "Finalizado" carimba o dia; tirar a OS de
+     "Finalizado" apaga o carimbo. Guardar a data de uma OS que voltou a andar
+     faria a lista dizer que ela terminou num dia em que ela não terminou — e a
+     coluna Data existe justamente para ser lida sem perguntar a ninguém.
+     Marcar de novo carimba o dia novo, que é o dia em que ela terminou de fato. */
+  if (alvo === 'finalizado') os.finalizadaEm = agora;
+  else delete os.finalizadaEm;
 }
 
 async function mudarStatusOS(id, valor) {
@@ -21955,32 +21987,17 @@ async function mudarStatusOS(id, valor) {
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
-  if (_statusOS(o) === alvo) return;
+  const antes = _statusOS(o);
+  if (antes === alvo) return;
   const agora = new Date().toISOString();
-  if (alvo === 'nao-iniciado') {
-    delete o.statusOS; delete o.statusOSPor; delete o.statusOSEm;
-  } else {
-    o.statusOS = alvo;
-    o.statusOSPor = _obsQuemSou();
-    o.statusOSEm = agora;
-  }
-  /* A DATA DE FINALIZAÇÃO. Marcar "Finalizado" carimba o dia; tirar a OS de
-     "Finalizado" apaga o carimbo. Guardar a data de uma OS que voltou a andar
-     faria a lista dizer que ela terminou num dia em que ela não terminou — e a
-     coluna Data existe justamente para ser lida sem perguntar a ninguém.
-     Marcar de novo carimba o dia novo, que é o dia em que ela terminou de fato. */
-  if (alvo === 'finalizado') o.finalizadaEm = agora;
-  else delete o.finalizadaEm;
-  // A conjugada vai junto — mesmo enfesto, mesmo corte. Carimbada ANTES do
-  // saveState: as duas viajam na mesma gravação, senão uma pode ir e a outra
-  // ficar para trás se a rede cair no meio.
-  const juntas = (alvo === 'finalizado') ? _conjugadasParaFinalizar(o) : [];
-  juntas.forEach(c => {
-    c.statusOS = 'finalizado';
-    c.statusOSPor = o.statusOSPor;
-    c.statusOSEm = agora;
-    c.finalizadaEm = agora;
-  });
+  const quem = _obsQuemSou();
+  _carimbarStatusOS(o, alvo, agora, quem);
+  // A conjugada vai junto — mesmo enfesto, mesmo corte —, e volta junto quando
+  // a ativa sai de finalizada. Carimbada ANTES do saveState: as duas viajam na
+  // mesma gravação, senão uma pode ir e a outra ficar para trás se a rede cair
+  // no meio.
+  const juntas = _conjugadasQueSeguemStatus(o, antes, alvo);
+  juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
   renderListaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
   try {
@@ -21997,7 +22014,7 @@ async function mudarStatusOS(id, valor) {
   // A conjugada não reserva pano (ver aplicarBaixaEstoqueOS), então aqui não há
   // o que baixar. Passa mesmo assim: OS antiga, de antes daquela guarda, pode
   // ter movimento gravado — e ela também tem de ser baixada ao terminar.
-  for (const c of juntas) await _estoqueSeguirStatusOS(c, 'finalizado');
+  for (const c of juntas) await _estoqueSeguirStatusOS(c, alvo);
 }
 
 /* O PANO SAI DO ESTOQUE QUANDO A OS COMEÇA A ANDAR (27/08/2026, Junior).

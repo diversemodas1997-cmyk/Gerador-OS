@@ -76,7 +76,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
-  ${recorte('function _conjugadasParaFinalizar', 'a conjugada que vai junto')}
+  ${recorte('function _conjugadasQueSeguemStatus', 'a conjugada que vai junto')}
+  ${recorte('function _carimbarStatusOS', 'a escrita do status numa OS')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   ${recorte('function conjugadasSemPanoDaOS', 'as conjugadas da lista de reservados')}
   const exigirEstoqueTecidos = () => true;
@@ -89,7 +90,7 @@ const monta = (ctx) => new Function('ctx', `
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
-           conjugadasSemPanoDaOS, _conjugadasParaFinalizar };
+           conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -351,7 +352,7 @@ console.log('-- o que fica gravado --');
      JSON.stringify(t5.ctx.STATE.estoqueMov));
 
   console.log('');
-  console.log('-- e a conjugada e finalizada JUNTO com a ativa --');
+  console.log('-- a conjugada termina JUNTO com a ativa, e volta junto --');
   /* Junior, 28/08/2026: "insira funcao no programa que altera status da os
      conjugada para finalizada, quando a os ativa tem seu status alterado para
      finalizada". As duas sao o MESMO enfesto: o pano e estendido uma vez e
@@ -405,8 +406,56 @@ console.log('-- o que fica gravado --');
   await orfa.api.mudarStatusOS('x', 'finalizado');
   ok('76. conjugada excluida depois: finaliza a ativa e nao reclama',
      orfa.ctx.STATE.ordens[0].statusOS === 'finalizado' && orfa.ctx.salvou === 1);
-  ok('77. _conjugadasParaFinalizar devolve LISTA (uma ativa pode puxar mais de uma)',
-     Array.isArray(orfa.api._conjugadasParaFinalizar(orfa.ctx.STATE.ordens[0])));
+  ok('77. _conjugadasQueSeguemStatus devolve LISTA (uma ativa pode puxar mais de uma)',
+     Array.isArray(orfa.api._conjugadasQueSeguemStatus(orfa.ctx.STATE.ordens[0], 'nao-iniciado', 'finalizado')));
+
+  /* DESFAZER TAMBEM ACOMPANHA (Junior, 28/08/2026). Tirar a ativa de
+     "Finalizado" e deixar a conjugada finalizada travaria a dupla: dali em
+     diante so a mao desfaria a segunda, e a lista mostraria metade de um
+     enfesto terminada e metade nao. */
+  const parFinalizado = () => {
+    const t = ctxDe('admin', 'admin@diverse.local', true, [
+      { id: 'at', os: '0498', conjugadaId: 'pa' },
+      { id: 'pa', os: '0497', conjugadaPaiId: 'at' }
+    ]);
+    return t;
+  };
+  let d = parFinalizado();
+  await d.api.mudarStatusOS('at', 'finalizado');
+  await d.api.mudarStatusOS('at', 'nao-iniciado');
+  const dp = () => d.ctx.STATE.ordens[1];
+  ok('78. tirar a ativa de finalizado tira a conjugada tambem',
+     dp().statusOS === undefined, JSON.stringify(dp()));
+  ok('79. e apaga a data de finalizacao dela junto',
+     !('finalizadaEm' in dp()), JSON.stringify(dp()));
+
+  // A conjugada vai para o MESMO estado da ativa, nao para um estado escolhido
+  // aqui: as duas sao o mesmo enfesto, e ficar em estados diferentes e o que se
+  // esta consertando.
+  d = parFinalizado();
+  await d.api.mudarStatusOS('at', 'finalizado');
+  await d.api.mudarStatusOS('at', 'andamento');
+  ok('80. finalizado -> em andamento: a conjugada vai para em andamento tambem',
+     dp().statusOS === 'andamento' && !('finalizadaEm' in dp()), JSON.stringify(dp()));
+
+  /* So desfaz o que a propagacao fez. Conjugada que NUNCA terminou esta no
+     estado dela, nao num estado herdado — e mexer nela seria inventar. */
+  d = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'finalizado' },
+    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'parado' }
+  ]);
+  await d.api.mudarStatusOS('at', 'andamento');
+  ok('81. conjugada que nunca terminou nao e mexida ao desfazer',
+     d.ctx.STATE.ordens[1].statusOS === 'parado', JSON.stringify(d.ctx.STATE.ordens[1]));
+
+  // E mudar entre dois estados que nao sao finalizado nao propaga nada.
+  d = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'andamento' },
+    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'finalizado' }
+  ]);
+  await d.api.mudarStatusOS('at', 'parado');
+  ok('82. andamento -> parado nao mexe na conjugada (nao passa por finalizado)',
+     d.ctx.STATE.ordens[1].statusOS === 'finalizado', JSON.stringify(d.ctx.STATE.ordens[1]));
 
   console.log('');
   console.log('-- e ela APARECE na lista, dizendo onde o pano esta --');
