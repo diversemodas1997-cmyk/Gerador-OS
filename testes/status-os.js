@@ -306,6 +306,48 @@ console.log('-- o que fica gravado --');
      situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
 
   console.log('');
+  console.log('-- a OS conjugada nao reserva pano (o enfesto e o mesmo) --');
+  /* Junior, 28/08/2026: "os de grade conjugada nao reserva tecido, pois esse
+     tipo de os representa a fase corpo 2 cm.rec. e o mesmo enfesto, separado em
+     duas os diferentes. O tecido reservado correspondente e o da fase corpo 2".
+
+     Ate 28/08 isso acontecia por ACIDENTE: as grades conjugadas estavam sem
+     comprimento e largura, entao a passiva nascia com 0 x 0 e kg zero. Quatro
+     das cinco ja foram medidas — o acidente acabou, e sem a guarda a proxima OS
+     conjugada salva dobraria a reserva do tecido. O teste existe porque o erro
+     nao apareceria na tela: apareceria no "Disponivel" de um pano que ninguem
+     ia tirar da prateleira. */
+  const salvandoConj = async (osExtra) => {
+    const t4 = ctxDe('admin', 'admin@diverse.local', true,
+                     [Object.assign({ id: 'c1', os: '902', data: '2026-03-10' }, osExtra)]);
+    t4.ctx.STATE.estoqueMov = [];
+    t4.ctx.consumo = [{ tecidoNome: 'Malha Algodao', corNome: 'Branco', kg: 106.722 }];
+    await t4.api.aplicarBaixaEstoqueOS(t4.ctx.STATE.ordens[0]);
+    return t4.ctx.STATE.estoqueMov;
+  };
+  ok('58. a OS ATIVA continua reservando o pano das duas',
+     (await salvandoConj({})).length === 1);
+  ok('59. a PASSIVA (conjugadaPaiId) nao gera movimento nenhum',
+     (await salvandoConj({ conjugadaPaiId: 'pai' })).length === 0,
+     JSON.stringify(await salvandoConj({ conjugadaPaiId: 'pai' })));
+
+  // A guarda fica DEPOIS do filtro por osId de proposito: passiva que ja tenha
+  // movimento gravado (nascido antes desta regra) e LIMPA ao salvar de novo, em
+  // vez de a reserva velha ficar pendurada para sempre.
+  const t5 = ctxDe('admin', 'admin@diverse.local', true,
+                   [{ id: 'c2', os: '903', data: '2026-03-10', conjugadaPaiId: 'pai' }]);
+  t5.ctx.STATE.estoqueMov = [
+    { id: 'velho', origem: 'os', osId: 'c2', kg: 106.722, status: 'reservado' },
+    { id: 'nf', origem: 'nf', kg: 99, tipo: 'entrada' }
+  ];
+  t5.ctx.consumo = [{ tecidoNome: 'Malha Algodao', corNome: 'Branco', kg: 106.722 }];
+  await t5.api.aplicarBaixaEstoqueOS(t5.ctx.STATE.ordens[0]);
+  ok('60. e a reserva antiga de uma passiva e apagada ao salvar de novo',
+     t5.ctx.STATE.estoqueMov.length === 1
+     && t5.ctx.STATE.estoqueMov[0].id === 'nf',
+     JSON.stringify(t5.ctx.STATE.estoqueMov));
+
+  console.log('');
   console.log('-- o filtro por status da lista de OS Salvas --');
   // O <select> de mentira: e tudo o que _filtroStatusListaOS toca (value e
   // innerHTML), entao da para conferir as opcoes sem navegador.

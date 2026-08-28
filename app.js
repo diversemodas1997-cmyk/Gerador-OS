@@ -24909,7 +24909,22 @@ async function aplicarBaixaEstoqueOS(data) {
   const status = (jaConsumida || jaAndando) ? 'consumido' : 'reservado';
   const antes = STATE.estoqueMov.length;
   STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
-  const itens = consumoAgregadoPorTecidoCor(data);
+  /* A OS CONJUGADA NÃO RESERVA PANO (28/08/2026, Junior).
+
+     A passiva não é outro enfesto: ela é a fase "Corpo 2" da ativa, separada em
+     OS própria só porque sai numa cor/grade diferente. O pano dela JÁ está
+     reservado na ativa — cobrar de novo é contar duas vezes o mesmo metro
+     estendido na mesa. É a mesma razão pela qual o viés não entra na conta.
+
+     Até hoje isso funcionava por acidente: as grades conjugadas não tinham
+     comprimento nem largura cadastrados, então `gerarConjugada` copiava 0 × 0 e
+     o kg dava zero. Quatro das cinco já foram medidas desde então — sem esta
+     guarda, a próxima OS conjugada salva dobraria a reserva do tecido (na grade
+     da OS 0498: 113,8 kg de Branco na ativa mais 106,7 kg na passiva).
+
+     Fica DEPOIS do filtro de propósito: se alguma passiva já tiver movimento
+     gravado, salvar de novo o apaga em vez de só deixar de criar. */
+  const itens = data.conjugadaPaiId ? [] : consumoAgregadoPorTecidoCor(data);
   const hoje = new Date().toISOString().slice(0, 10);
   itens.forEach(it => {
     STATE.estoqueMov.push({
