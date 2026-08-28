@@ -152,11 +152,20 @@ if ($Agendar) {
   $acao = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '"') -WorkingDirectory $Raiz
 
   # Dois gatilhos: um no logon (o caso de religar o PC) e um repetindo para
-  # sempre (o caso de o Docker morrer no meio do expediente). O atraso de 1 min
-  # no logon e para nao brigar com o Windows enquanto ele ainda esta montando a
-  # sessao — inclusive o J: do Google Drive.
+  # sempre (o caso de o Docker morrer no meio do expediente).
+  #
+  # SEM ATRASO NO LOGON (28/08/2026). Havia um 'Delay = PT1M' aqui, para "nao
+  # brigar com o Windows enquanto ele ainda monta a sessao — inclusive o J: do
+  # Google Drive". Mas o vigia nao le o J: nem nenhuma outra pasta de rede: ele
+  # confere cinco JSONs em C:, abre o Docker Desktop e chama o compose. O
+  # minuto protegia contra um trabalho que ele nao faz.
+  #
+  # E custava caro na unica hora que importa. Em 28/08 a maquina ligou as
+  # 07:13:52 e o vigia so abriu o Docker as 07:15:47 — quase dois minutos com o
+  # servidor ligado e ninguem pedindo o motor, que e a parte mais demorada do
+  # arranque (144 s naquela manha). Abrir o Docker JUNTO com o resto do logon
+  # sobrepoe as duas esperas em vez de somar.
   $noLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-  $noLogon.Delay = 'PT1M'
 
   $repetindo = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(1) `
                  -RepetitionInterval (New-TimeSpan -Minutes $CadaMinutos)
@@ -174,7 +183,7 @@ if ($Agendar) {
       -Settings $conf `
       -Description 'Abre o Docker Desktop e levanta os conteineres do Gerador-OS se estiverem fora.' `
       -ErrorAction Stop | Out-Null
-    Anotar "tarefa '$nome' registrada: no logon (+1 min) e a cada $CadaMinutos min"
+    Anotar "tarefa '$nome' registrada: no logon (sem atraso) e a cada $CadaMinutos min"
   } catch {
     Anotar "FALHA ao registrar a tarefa: $($_.Exception.Message)"
     exit 1
