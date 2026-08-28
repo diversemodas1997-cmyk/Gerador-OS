@@ -57,7 +57,11 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function temAcesso', 'o acesso de quem esta logado')}
   ${recorte('function _areaDaAcao', 'a area de uma acao')}
   ${recorte('function _acessosQuantas', 'quantas areas a conta tem')}
-  return { contaTemAcesso, temAcesso, _areaDaAcao, _acessosQuantas, AREAS_ACESSO, ACOES_POR_AREA };
+  ${constante('DOMINIO_CONTA')}
+  ${recorte('function emailParaNome', 'o nome a partir do endereco interno')}
+  ${recorte('function _nomeDoPerfil', 'o nome que a barra lateral mostra')}
+  return { contaTemAcesso, temAcesso, _areaDaAcao, _acessosQuantas, AREAS_ACESSO, ACOES_POR_AREA,
+           emailParaNome, _nomeDoPerfil };
 `)(ctx);
 
 const ctxDe = (papel, login, acessos = {}, servidorNoAr = true) => {
@@ -162,6 +166,38 @@ ok('28. marcar uma area grava e redesenha',
 ok('29. e o contador do botao conta so o que da para conceder',
    ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local') === 1,
    String(ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local')));
+
+/* --------------------------------------------------------------------------
+   O NOME QUE A BARRA LATERAL MOSTRA (Junior, 28/08/2026)
+
+   As contas da fabrica sao por NOME: "enfesto.corte" vira o endereco interno
+   `enfesto.corte@diverse.local`, que nunca recebe mensagem. A barra mostra o
+   nome, e NADA aqui passa a exigir e-mail.
+
+   `_nomeDoPerfil` e separada de `emailParaNome` de proposito: a segunda
+   preenche um CAMPO que a tela de Contas edita e salva, e encurtar ali mudaria
+   o dado. Esta so pinta a barra.
+   -------------------------------------------------------------------------- */
+console.log('');
+console.log('-- o nome do perfil na barra lateral --');
+{
+  const A = ctxDe('admin', 'admin@diverse.local').api;
+  const perfil = (email) => A._nomeDoPerfil(email ? { email } : null);
+  ok('30. conta por nome mostra o nome, sem o endereco interno',
+     perfil('enfesto.corte@diverse.local') === 'enfesto.corte', perfil('enfesto.corte@diverse.local'));
+  ok('31. e vale para todas as contas da fabrica',
+     ['admin', 'backup', 'nathaly', 'escritorio'].every(n => perfil(n + '@diverse.local') === n));
+  // A conta antiga do dono e um e-mail de verdade, aceito de proposito. Dela a
+  // barra mostra so o nome, nao o endereco — mas ninguem passa a precisar de um.
+  ok('32. e-mail de verdade tambem vira nome na barra',
+     perfil('diversemodas1997@gmail.com') === 'diversemodas1997', perfil('diversemodas1997@gmail.com'));
+  ok('33. sem conta nenhuma, uma palavra em vez do id interno',
+     perfil('') === 'conta sem nome' && perfil(null) === 'conta sem nome');
+  // emailParaNome NAO mudou: e ela que preenche o campo editavel de Contas.
+  ok('34. emailParaNome segue devolvendo o e-mail inteiro (o campo que se edita)',
+     A.emailParaNome('diversemodas1997@gmail.com') === 'diversemodas1997@gmail.com',
+     A.emailParaNome('diversemodas1997@gmail.com'));
+}
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }

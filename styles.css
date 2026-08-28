@@ -1740,7 +1740,20 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .auth-logged-out .btn-auth { width: 100%; padding: 8px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
 .auth-logged-out .btn-auth:hover { background: var(--ink-2); }
 .auth-sub { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; font-style: italic; }
-.auth-logged-in .auth-identity { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+/* O NOME TEM PISO; QUEM DESCE SAO OS ICONES (28/08/2026, Junior).
+
+   Os tres icones (desfazer, mensagens, sino) aparecem e somem conforme o que
+   esta acontecendo, e o bloco deles tem `flex: 0 0 auto` — nao encolhe. Como o
+   nome era a unica coisa elastica da linha, ele absorvia tudo: medido em 240px,
+   a coluna do nome ia de 95px (so o sino) para 62px (mais mensagens) e para
+   28px com os tres. Nos 28px ate "admin" era cortado.
+
+   Reservar o lugar dos icones que podem aparecer seria deixar o caso comum tao
+   apertado quanto o pior. Entao e o contrario: o nome ganha um piso que cabe o
+   maior login da fabrica ("enfesto.corte"), e a linha pode QUEBRAR — quando os
+   tres icones nao couberem ao lado, eles descem para a linha de baixo, colados
+   a direita. Nome inteiro sempre; o que se move e o que e secundario. */
+.auth-logged-in .auth-identity { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .auth-logged-in .auth-avatar {
   width: 36px; height: 36px; flex: 0 0 auto;
   border-radius: 50%;
@@ -1752,8 +1765,20 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 }
 /* Admin ganha anel dourado — o papel se reconhece pelo próprio ícone. */
 body.is-admin .auth-logged-in .auth-avatar { box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 1px rgba(0,0,0,.10); }
-.auth-logged-in .auth-who { min-width: 0; }
-.auth-logged-in .auth-email { font-size: 12px; font-weight: 600; color: var(--ink); word-break: break-word; margin-bottom: 1px; }
+.auth-logged-in .auth-who { flex: 1 1 auto; min-width: 92px; }
+/* O NOME DO PERFIL CABE EM UMA LINHA (28/08/2026, Junior).
+
+   Aqui havia `word-break: break-word`, e a coluna do nome e a unica coisa desta
+   linha que encolhe: o avatar e fixo em 36px e o bloco de icones tem
+   `flex: 0 0 auto`. Sobram 95px — e 62px quando o botao de desfazer aparece,
+   porque ele nasce escondido e entra em cena depois da primeira acao. Nessa
+   largura "enfesto.corte" era partido no meio da palavra.
+
+   Cortar com reticencias em vez de quebrar: o nome tem de caber na linha, e
+   quem precisar do nome inteiro tem ele no `title` (posto em atualizarUIAuth) e
+   na dica do proprio avatar. */
+.auth-logged-in .auth-email { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auth-logged-in .auth-role { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
 body.is-admin .auth-logged-in .auth-role { color: var(--accent-dark); font-weight: 600; }
 .auth-logged-in .auth-sync { font-size: 11px; color: var(--ok); margin-bottom: 8px; }

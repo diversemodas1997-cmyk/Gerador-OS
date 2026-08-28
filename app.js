@@ -2248,6 +2248,25 @@ function emailParaNome(email) {
   return e.toLowerCase().endsWith(suf) ? e.slice(0, -suf.length) : e;
 }
 
+/* O NOME QUE A BARRA MOSTRA. Só para EXIBIR — não é ele que entra em conta
+   nenhuma, e por isso é separado de `emailParaNome`, que a tela de Contas usa
+   para preencher um campo que a pessoa edita e salva.
+
+   As contas da fábrica são por NOME ("enfesto.corte@diverse.local" mostra
+   "enfesto.corte"), e é o que continua aparecendo — nada aqui passa a exigir
+   e-mail. A única diferença é a conta antiga do dono, que é um e-mail de
+   verdade e o programa aceita de propósito: dela a barra mostra só o que vem
+   antes do "@", em vez do endereço inteiro. Nome é nome nos dois casos.
+
+   Sem nome nenhum a barra mostrava o id interno da conta — 36 caracteres de
+   identificador, que não dizem a ninguém quem está logado. Melhor a palavra. */
+function _nomeDoPerfil(user) {
+  const nome = emailParaNome((user && user.email) || '');
+  if (!nome) return 'conta sem nome';
+  const arroba = nome.indexOf('@');
+  return arroba > 0 ? nome.slice(0, arroba) : nome;
+}
+
 async function inicializarAuth() {
   if (!supa) return;
   const { data: { session } } = await supa.auth.getSession();
@@ -2326,7 +2345,9 @@ function _avatarCor(nome) {
   return `hsl(${h % 360} 52% 46%)`;
 }
 function _pintarPerfil() {
-  const nome = emailParaNome((currentUser && currentUser.email) || '') || (currentUser && currentUser.id) || '';
+  // O mesmo nome da barra: as iniciais do avatar e a letra escrita ao lado têm
+  // de sair da mesma palavra, senão "DI" apareceria ao lado de "diversemodas".
+  const nome = _nomeDoPerfil(currentUser);
   const av = document.getElementById('authAvatar');
   if (av) {
     av.textContent = _avatarIniciais(nome);
@@ -2347,7 +2368,13 @@ function atualizarUIAuth() {
   if (currentUser) {
     out.classList.add('hidden');
     inn.classList.remove('hidden');
-    if (emailEl) emailEl.textContent = emailParaNome(currentUser.email) || currentUser.id;
+    if (emailEl) {
+      const nome = _nomeDoPerfil(currentUser);
+      emailEl.textContent = nome;
+      // A barra corta o que nao cabe com reticencias; a dica traz o nome
+      // inteiro, para quem precisar conferir sem abrir Contas.
+      emailEl.title = nome;
+    }
     _pintarPerfil();
     appEl.classList.remove('hidden');
     modal.classList.add('hidden');
