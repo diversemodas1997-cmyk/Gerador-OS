@@ -16803,17 +16803,62 @@ function atualizarBobinasPrevistasForm() {
 }
 window.atualizarBobinasPrevistasForm = atualizarBobinasPrevistasForm;
 
+/* AS CORES DO TECIDO DA LINHA VÊM PRIMEIRO (28/08/2026, Junior).
+
+   O <select> de Cor listava as 45 cores do cadastro sem olhar para o tecido da
+   linha — enquanto o de Tecido ao lado (tecOptions) já filtrava pela categoria
+   do modelo. Como o cadastro de cores é POR TECIDO e a peça tem UMA cor, quem
+   escolhia via os quatro "Bege" na mesma lista e pegava o que conhecia: era
+   assim que a linha da gola (Ribana) ficava com "Bege Malha Algodão".
+
+   Aqui elas viram dois grupos, as deste tecido em cima — e as outras FICAM na
+   lista, porque escondê-las apagaria a cor de uma OS antiga ao abri-la.
+
+   E a cor que chega de outro tecido é resolvida para a equivalente deste: a
+   linha nasce já apontando "Bege Ribana Malha Algodão". É a mesma conta de
+   corCanonicaPorTecido, feita agora no formulário e não só na leitura do
+   estoque — para o dado GRAVADO nascer certo, não só o número lido. */
+function corOptionsDaLinha(tecidoId, corIdSel) {
+  const cores = STATE.cores || [];
+  const tec = (STATE.tecidos || []).find(t => t.id === tecidoId);
+  const tecNome = tec ? tec.nome : '';
+  const opt = (c, selId) => `<option value="${esc(c.id)}" ${selId === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`;
+  let selId = corIdSel || '';
+  const atual = selId ? cores.find(c => c.id === selId) : null;
+  if (atual && tecNome) {
+    const certo = corCanonicaPorTecido(atual.nome, tecNome);
+    const alvo = cores.find(c => _normNome(c.nome) === _normNome(certo));
+    if (alvo) selId = alvo.id;
+  }
+  if (!tecNome) return '<option value="">—</option>' + cores.map(c => opt(c, selId)).join('');
+  const tn = _normNome(tecNome);
+  const daLinha = cores.filter(c => _normNome(c.nome) === corBaseNome(c.nome) + ' ' + tn);
+  const outras = cores.filter(c => !daLinha.includes(c));
+  return '<option value="">—</option>'
+    + (daLinha.length ? `<optgroup label="${esc(tecNome)}">${daLinha.map(c => opt(c, selId)).join('')}</optgroup>` : '')
+    + (outras.length ? `<optgroup label="Outros tecidos">${outras.map(c => opt(c, selId)).join('')}</optgroup>` : '');
+}
+
+// Trocar o tecido da linha remonta as cores dela — sem isto, a lista ficaria a
+// do tecido anterior, que é o mesmo descasamento por outro caminho.
+function onTecidoLinhaChange(sel) {
+  const row = sel.closest('.tecido-row');
+  const corSel = row && row.querySelector('.tec-cor');
+  if (corSel) corSel.innerHTML = corOptionsDaLinha(sel.value, corSel.value);
+  atualizarCalculosEnfesto();
+}
+window.onTecidoLinhaChange = onTecidoLinhaChange;
+
 function addTecidoRow(data = {}) {
   const cont = document.getElementById('tecidos-rows');
   const idx = cont.children.length + 1;
   if (idx > 5) { toast('Máximo 5 tecidos', 'err'); return; }
-  const corOpts = '<option value="">—</option>' + STATE.cores.map(c =>
-    `<option value="${esc(c.id)}" ${data.corId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const corOpts = corOptionsDaLinha(data.tecidoId, data.corId);
   const row = document.createElement('div');
   row.className = 'tecido-row';
   row.innerHTML = `
     <div class="field"><label>Nº</label><input type="text" value="${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
-    <div class="field"><label>Tecido</label><select class="tec-sel" onchange="atualizarCalculosEnfesto()">${tecOptions(data.tecidoId)}</select></div>
+    <div class="field"><label>Tecido</label><select class="tec-sel" onchange="onTecidoLinhaChange(this)">${tecOptions(data.tecidoId)}</select></div>
     <div class="field"><label>Cor</label><select class="tec-cor">${corOpts}</select></div>
     <div class="field">
       <label>Consumo C.1</label>
@@ -19131,15 +19176,31 @@ function corCanonicaPorTecido(corNome, tecidoNome) {
   const cn = _normNome(corNome);
   const tn = _normNome(tecidoNome);
   if (!cn) return corNome || '';
-  // Já veio no formato composto de uma cor cadastrada → nada a fazer.
-  const jaComposta = (STATE.cores || []).some(
-    c => _normNome(c.nome) === cn && corBaseNome(c.nome) !== cn);
-  if (jaComposta || !tn) return corNome || '';
+  if (!tn) return corNome || '';
+  /* A COR COMPOSTA DE OUTRO TECIDO TAMBÉM É CORRIGIDA (28/08/2026, Junior:
+     "moletom: bege malha algodão. Essa informação é incongruente").
+
+     Antes daqui saía um `jaComposta → devolve como veio`: cor já composta e
+     cadastrada era tida como resolvida. Mas composta não quer dizer CERTA. A
+     peça tem UMA cor e o cadastro de cores é POR TECIDO, então a cor do
+     componente do desenho ("Bege Malha Algodão") descia igual para a linha da
+     gola, cujo tecido é Ribana — e o estoque ganhava a prateleira fantasma
+     "Ribana Malha Algodão · Bege Malha Algodão", ao lado da de verdade.
+
+     Agora a pergunta é uma só: a cor base, sob ESTE tecido, existe no cadastro?
+     Se existe, é ela. Vale para a cor pura antiga ("Preto") e para a composta
+     errada, que antes escapava.
+
+     Quando o sufixo da cor não é um tecido cadastrado — "Preto Rugão", que pela
+     convenção dos Texturizados usa o nome curto — corBaseNome devolve o nome
+     inteiro, nada casa, e a cor sai como veio. Mudar isso é decisão de cadastro,
+     não de código. */
+  const base = corBaseNome(corNome);
+  if (cn === base + ' ' + tn) return corNome || '';   // já é a cor deste tecido
   // Casamento EXATO de "cor base + tecido": com tecidos aninhados ("Ribana Malha
   // Algodão" termina em "Malha Algodão"), um endsWith faria a compra de Malha
   // Algodão cair na cor da Ribana e baixar do saldo errado.
-  const alvo = (STATE.cores || []).find(
-    c => corBaseNome(c.nome) === cn && _normNome(c.nome) === cn + ' ' + tn);
+  const alvo = (STATE.cores || []).find(c => _normNome(c.nome) === base + ' ' + tn);
   return alvo ? alvo.nome : (corNome || '');
 }
 

@@ -89,7 +89,8 @@ const api = new Function(
   + FUNCOES.map(pegaFuncao).join('\n') + '\n'
   + 'return { setState: s => { STATE = s; }, '
   + FUNCOES.filter(n => n.indexOf('compra') === 0 || n === 'consumoEnfestoOS'
-                        || n === 'compraNecessidadeBruta').join(', ')
+                        || n === 'compraNecessidadeBruta'
+                        || n === 'corCanonicaPorTecido' || n === 'calcularSaldosEstoque').join(', ')
   + ' };'
 )();
 
@@ -428,6 +429,77 @@ ok('43. mas comprimento e largura continuam la, que e o que o corte le',
 ok('44. "Gola e Vies" NAO e vies puro, e continua pesando',
   lGolaVies && lGolaVies.viesPuro === false && lGolaVies.kg > 0,
   lGolaVies && (lGolaVies.viesPuro + ' / ' + lGolaVies.kg));
+/* --------------------------------------------------------------------------
+   A COR DE OUTRO TECIDO (Junior, 28/08/2026: "o campo estoque por tecido mais
+   cor mostra moletom: bege malha algodão. Essa informação é incongruente")
+
+   A peça tem UMA cor e o cadastro de cores é POR TECIDO, então a cor do
+   componente do desenho descia igual para a linha de outro tecido. Antes daqui,
+   corCanonicaPorTecido só sabia resolver a cor PURA ("Preto"): cor já composta e
+   cadastrada era tida como resolvida — composta, mas errada, passava intacta e
+   o estoque ganhava a prateleira fantasma ao lado da de verdade.
+   -------------------------------------------------------------------------- */
+console.log('\n-- a cor sempre acaba sendo a do tecido da linha --');
+api.setState(cadastroBase());
+const K = api.corCanonicaPorTecido;
+
+ok('45. a cor pura antiga continua sendo resolvida (o motivo original)',
+   K('Preto', 'Ribana Moletom') === 'Preto Ribana Moletom', K('Preto', 'Ribana Moletom'));
+ok('46. a cor que ja e a deste tecido nao e tocada',
+   K('Preto Moletom', 'Moletom') === 'Preto Moletom', K('Preto Moletom', 'Moletom'));
+ok('47. e a COMPOSTA DE OUTRO TECIDO passa a ser corrigida',
+   K('Preto Malha Algodão', 'Moletom') === 'Preto Moletom', K('Preto Malha Algodão', 'Moletom'));
+ok('48. idem no caminho que motivou o pedido: ribana com cor da malha',
+   K('Preto Malha Algodão', 'Ribana Moletom') === 'Preto Ribana Moletom',
+   K('Preto Malha Algodão', 'Ribana Moletom'));
+// Sem cor equivalente cadastrada nao se inventa nome: melhor a linha estranha
+// e visivel do que um nome que nao existe no cadastro.
+ok('49. sem a cor equivalente no cadastro, sai como veio',
+   K('Branco Malha Algodão', 'Moletom') === 'Branco Malha Algodão',
+   K('Branco Malha Algodão', 'Moletom'));
+ok('50. sem tecido nao ha o que resolver', K('Preto Malha Algodão', '') === 'Preto Malha Algodão');
+ok('51. e cor vazia continua vazia', K('', 'Moletom') === '');
+
+/* O tecido aninhado, que e a armadilha desta funcao: "Ribana Malha Algodão"
+   TERMINA em "Malha Algodão". Um endsWith faria a cor da ribana ser lida como
+   cor da malha e baixar do saldo errado — o casamento tem de ser exato. */
+const cadNinho = cadastroBase();
+cadNinho.tecidos.push({ id: 't-rma', nome: 'Ribana Malha Algodão', categoria: '' });
+cadNinho.cores.push({ id: 'c-bma', nome: 'Bege Malha Algodão' },
+                    { id: 'c-brma', nome: 'Bege Ribana Malha Algodão' });
+api.setState(cadNinho);
+const K2 = api.corCanonicaPorTecido;
+ok('52. tecido aninhado: a malha fica com a cor da malha',
+   K2('Bege Malha Algodão', 'Malha Algodão') === 'Bege Malha Algodão',
+   K2('Bege Malha Algodão', 'Malha Algodão'));
+ok('53. e a ribana da malha ganha a SUA cor, nao a da malha',
+   K2('Bege Malha Algodão', 'Ribana Malha Algodão') === 'Bege Ribana Malha Algodão',
+   K2('Bege Malha Algodão', 'Ribana Malha Algodão'));
+ok('54. e nao volta: a cor da ribana nao vira cor da malha',
+   K2('Bege Ribana Malha Algodão', 'Ribana Malha Algodão') === 'Bege Ribana Malha Algodão',
+   K2('Bege Ribana Malha Algodão', 'Ribana Malha Algodão'));
+
+/* E o que isso vale no saldo: as duas linhas do MESMO pano viram uma. O
+   movimento cruzado nao e reescrito no banco — movimentacoesEstoque converte na
+   leitura, entao desfazer e reverter o codigo. */
+const cadSaldo = cadastroBase();
+cadSaldo.tecidos.push({ id: 't-rma', nome: 'Ribana Malha Algodão', categoria: '' });
+cadSaldo.cores.push({ id: 'c-bma', nome: 'Bege Malha Algodão' },
+                    { id: 'c-brma', nome: 'Bege Ribana Malha Algodão' });
+cadSaldo.estoqueMov = [
+  { id: 'e1', tipo: 'entrada', tecidoNome: 'Ribana Malha Algodão', corNome: 'Bege Ribana Malha Algodão', kg: 100 },
+  { id: 's1', tipo: 'saida', origem: 'os', osId: 'x', status: 'consumido',
+    tecidoNome: 'Ribana Malha Algodão', corNome: 'Bege Malha Algodão', kg: 30 }
+];
+api.setState(cadSaldo);
+const det = api.calcularSaldosEstoque().detalhe
+  .filter(c => /ribana malha/i.test(c.tecidoNome) && /bege/i.test(c.corNome));
+ok('55. a prateleira partida em duas volta a ser UMA linha', det.length === 1,
+   JSON.stringify(det.map(d => d.tecidoNome + ' :: ' + d.corNome)));
+ok('56. e a baixa cai na prateleira certa: 100 entrou, 30 saiu, sobram 70',
+   det[0] && perto(det[0].entrada, 100) && perto(det[0].saida, 30),
+   det[0] && JSON.stringify({ ent: det[0].entrada, sai: det[0].saida }));
+
 console.log('');
 if (falhas) { console.error(falhas + ' teste(s) falharam'); process.exit(1); }
 console.log('todos os testes passaram');
