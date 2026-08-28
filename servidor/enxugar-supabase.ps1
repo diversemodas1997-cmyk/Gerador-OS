@@ -56,6 +56,8 @@
     Aplicar (derruba os quatro conteineres e reinicia o kong; ~15 s de porta
     fechada, entao fora do horario da fabrica):
       .\servidor\enxugar-supabase.ps1
+    Deixar agendado para aplicar sozinho no fim do expediente:
+      .\servidor\enxugar-supabase.ps1 -Agendar
     Subir o painel do Supabase quando precisar dele:
       .\servidor\enxugar-supabase.ps1 -Painel
       .\servidor\enxugar-supabase.ps1 -FecharPainel
@@ -65,10 +67,23 @@
   O ORIGINAL FICA GUARDADO em docker-compose.yml.antes-do-enxugamento, ao lado
   do proprio compose. -Desfazer e uma copia de arquivo, nao uma tentativa de
   desfazer edicao por edicao.
+
+  SOBRE O -Agendar (28/08/2026):
+  a mudanca e de UMA VEZ — depois de aplicada, o compose fica enxuto e nao ha
+  mais o que enxugar. Por isso a tarefa APAGA A SI MESMA assim que consegue: ela
+  existe so para pegar a maquina ligada num fim de expediente. Se num dia o PC
+  ja estiver desligado na hora marcada, ela simplesmente tenta de novo amanha.
+  Nao ha 'StartWhenAvailable' de proposito: uma tarefa perdida a noite voltaria
+  as 07:15 da manha seguinte, que e exatamente a hora em que a fabrica chega.
 #>
 [CmdletBinding()]
 param(
   [string] $Docker = 'C:\supabase\docker',
+  # 17:10: os desligamentos de 21 a 27/08 sairam entre 17:28 e 17:58, e a
+  # fabrica ja parou de produzir. Cedo o bastante para a maquina estar de pe,
+  # tarde o bastante para os 15 s de porta fechada nao pegarem ninguem.
+  [string] $Hora   = '17:10',
+  [switch] $Agendar,
   [switch] $Simular,
   [switch] $Desfazer,
   [switch] $Painel,
@@ -76,10 +91,58 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$Raiz     = Split-Path -Parent $PSScriptRoot
+$Tarefa   = 'Gerador-OS Enxugar Supabase'
+$Log      = Join-Path $Raiz 'servidor\tls\enxugar-supabase.log'
 $Compose  = Join-Path $Docker 'docker-compose.yml'
 $Guardado = Join-Path $Docker 'docker-compose.yml.antes-do-enxugamento'
 
-function Falar($t) { Write-Host $t }
+# Rodando pela tarefa nao ha console para ler. Tudo o que o script diz vai
+# tambem para o log, que e o unico lugar onde amanha da para saber o que houve.
+function Falar($t) {
+  Write-Host $t
+  $linha = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $t
+  try { Add-Content -Path $Log -Value $linha -Encoding utf8 } catch { }
+}
+
+# ------------------------------------------------------------------ agendar
+# Antes de qualquer coisa que precise do docker: agendar tem de funcionar mesmo
+# com o motor fora do ar.
+if ($Agendar) {
+  $ps1 = Join-Path $PSScriptRoot 'enxugar-supabase.ps1'
+  # Pelo wscript, como o vigia e o relatorio: chamar o powershell.exe direto
+  # pisca uma janela preta na cara de quem estiver na maquina as 17:10.
+  $vbs = Join-Path $Raiz 'servidor\tls\enxugar-supabase.vbs'
+  $cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $ps1 + '" -Docker "' + $Docker + '"'
+  [IO.File]::WriteAllText($vbs, ('CreateObject("Wscript.Shell").Run "' + ($cmd -replace '"', '""') + '", 0, False'), (New-Object Text.ASCIIEncoding))
+
+  $acao    = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '"') -WorkingDirectory $Raiz
+  $gatilho = New-ScheduledTaskTrigger -Daily -At $Hora
+  # "Somente com o usuario conectado", pelo mesmo motivo do vigia: o Docker
+  # Desktop no Windows so existe DENTRO da sessao.
+  $conf = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
+            -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+  Unregister-ScheduledTask -TaskName $Tarefa -Confirm:$false -ErrorAction SilentlyContinue
+  Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $gatilho -Settings $conf `
+    -Description 'Enxuga a pilha do Supabase no fim do expediente. Some sozinha depois de aplicar.' `
+    -ErrorAction Stop | Out-Null
+  Falar "tarefa '$Tarefa' registrada para as $Hora, todo dia, ate conseguir aplicar"
+  exit 0
+}
+
+# A tarefa ja cumpriu o que tinha para cumprir: sai de cena. Chamada no fim de
+# um caminho que deixou o compose enxuto — nunca depois de uma falha, para que
+# amanha ela tenha outra chance.
+function Aposentar-Tarefa {
+  if (Get-ScheduledTask -TaskName $Tarefa -ErrorAction SilentlyContinue) {
+    try {
+      Unregister-ScheduledTask -TaskName $Tarefa -Confirm:$false -ErrorAction Stop
+      Falar "tarefa '$Tarefa' removida — nao ha mais o que enxugar"
+    } catch {
+      Falar "aviso: nao consegui remover a tarefa '$Tarefa': $($_.Exception.Message)"
+    }
+  }
+}
 function DockerExe {
   $c = Get-Command docker -ErrorAction SilentlyContinue
   if ($c) { return $c.Source }
@@ -184,7 +247,25 @@ if ($Simular) {
   exit 0
 }
 
-if (-not $feitas.Count) { Falar 'nada a fazer — o compose ja esta enxuto'; exit 0 }
+if (-not $feitas.Count) { Falar 'nada a fazer — o compose ja esta enxuto'; Aposentar-Tarefa; exit 0 }
+
+# A MESMA TRANCA DO VIGIA, e pelo motivo de sempre: o vigia passa de 5 em 5
+# minutos e a unica coisa que ele sabe fazer e LEVANTAR conteiner. Daqui para
+# baixo o script derruba quatro deles de proposito e reinicia o kong. Uma
+# passagem do vigia no meio disso veria a pilha incompleta, chamaria "up -d" no
+# mesmo projeto e as duas se atrapalhariam — foi o que aconteceu em 18/08/2026,
+# quando o desligamento e o vigia se cruzaram e a fabrica passou a manha sem
+# desenho. Segurando a tranca aqui, a passagem do vigia sai calada.
+$tranca = New-Object System.Threading.Mutex($false, 'Local\GeradorOS-VigiaDocker')
+$minhaVez = $false
+try { $minhaVez = $tranca.WaitOne([TimeSpan]::FromMinutes(5)) }
+catch [System.Threading.AbandonedMutexException] { $minhaVez = $true }
+if (-not $minhaVez) {
+  Falar 'o vigia esta trabalhando ha mais de 5 min — nao mexi em nada. Tento amanha.'
+  exit 1
+}
+
+try {
 
 if (-not (Test-Path $Guardado)) { Copy-Item $Compose $Guardado -Force; Falar "original guardado em $Guardado" }
 
@@ -206,8 +287,23 @@ if ($LASTEXITCODE -ne 0) {
 Falar 'derrubando o que saiu da pilha...'
 & $docker rm -f supabase-studio supabase-meta supabase-pooler supabase-imgproxy 2>&1 | Out-Null
 Falar 'aplicando (o kong reinicia para pegar o worker unico)...'
-& $docker compose -f $Compose up -d --remove-orphans
-Falar ''
-Falar 'pronto. Conferir com:  docker stats --no-stream'
+$subida = & $docker compose -f $Compose up -d --remove-orphans 2>&1 | Out-String
+Falar ($subida.Trim())
+
+# So aposenta a tarefa depois de ver a pilha de pe. Se o "up -d" tropecou, a
+# tarefa fica e tenta de novo amanha — e o log diz o que houve.
+$dePe = @(& $docker ps --format '{{.Names}}' 2>$null)
+$precisa = @('supabase-db','supabase-kong','supabase-rest','supabase-auth','supabase-storage','supabase-edge-functions')
+$faltam = @($precisa | Where-Object { $dePe -notcontains $_ })
+if ($faltam.Count) {
+  Falar ('ATENCAO: ainda fora depois do up -d: ' + ($faltam -join ', ') + ' — a tarefa fica e tenta amanha')
+} else {
+  Falar 'pilha enxuta e de pe.'
+  Aposentar-Tarefa
+}
+
+Falar 'Conferir com:  docker stats --no-stream'
 Falar 'O teto do WSL (.wslconfig) continua em 4 GB de proposito: baixe para 3 GB'
 Falar 'so depois de ver, por alguns dias, quanto a VM passou a usar de fato.'
+
+} finally { $tranca.ReleaseMutex(); $tranca.Dispose() }
