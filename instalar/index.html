@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerador-OS · liberar esta máquina</title>
+<!--
+  A PÁGINA QUE ARRUMA A MÁQUINA ANTES DE ELA CONSEGUIR ABRIR O PROGRAMA.
+
+  Ela mora fora do app de propósito e é servida TAMBÉM por http://, sem
+  certificado nenhum: quem chega aqui é justamente quem ainda não confia no
+  certificado do servidor: pela porta 443 essa pessoa levaria a tela vermelha
+  antes de ler a primeira palavra.
+
+  Por isso também não há folha de estilo externa nem imagem: tudo o que a
+  página precisa está dentro dela. Um arquivo, uma requisição, nada que possa
+  faltar.
+-->
+<style>
+  :root{
+    --papel:#faf7f2; --tinta:#1a1a1a; --tinta2:#555; --tinta3:#8a8a8a;
+    --linha:#e2ddd4; --ok:#2e7d4f; --dourado:#b8860b; --alerta:#b3261e;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--papel); color:var(--tinta);
+    font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
+    line-height:1.55; padding:28px 18px 60px;
+  }
+  .folha{max-width:660px;margin:0 auto}
+  header{border-bottom:2px solid var(--tinta);padding-bottom:14px;margin-bottom:26px}
+  .logo{font-weight:700;letter-spacing:.14em;font-size:15px}
+  .logo b{color:var(--dourado)}
+  h1{font-size:24px;margin:10px 0 6px;line-height:1.25}
+  .sub{color:var(--tinta2);font-size:14px;margin:0}
+  .porque{background:#fff;border:1px solid var(--linha);border-radius:3px;
+    padding:14px 16px;font-size:14px;color:var(--tinta2);margin:0 0 26px}
+  .porque b{color:var(--tinta)}
+  ol{padding-left:0;list-style:none;counter-reset:passo;margin:0}
+  li{counter-increment:passo;position:relative;padding:0 0 22px 46px;margin:0}
+  li::before{
+    content:counter(passo);position:absolute;left:0;top:0;
+    width:30px;height:30px;border-radius:50%;background:var(--tinta);color:var(--papel);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:14px;font-family:'IBM Plex Mono',monospace;
+  }
+  li h2{font-size:16px;margin:4px 0 4px}
+  li p{margin:0;font-size:14px;color:var(--tinta2)}
+  .btn{
+    display:inline-block;margin:10px 0 4px;padding:13px 22px;
+    background:var(--tinta);color:var(--papel);text-decoration:none;
+    border-radius:3px;font-weight:600;font-size:15px;
+  }
+  .btn:hover{background:#000}
+  .aviso{
+    border-left:3px solid var(--dourado);background:#fffdf6;
+    padding:10px 14px;margin:10px 0 0;font-size:13.5px;color:var(--tinta2);
+  }
+  .aviso b{color:var(--tinta)}
+  code{
+    font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    background:#f0ece4;padding:1px 5px;border-radius:2px;font-size:13px;
+  }
+  .fim{
+    margin-top:30px;padding:16px 18px;border:1px solid var(--linha);
+    background:#fff;border-radius:3px;font-size:14px;
+  }
+  .fim h2{margin:0 0 8px;font-size:15px}
+  .fim a{color:var(--tinta);font-weight:600}
+  footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--linha);
+    font-size:12.5px;color:var(--tinta3)}
+  .manual{margin-top:26px;font-size:13px;color:var(--tinta3)}
+  .manual summary{cursor:pointer;color:var(--tinta2);font-weight:600}
+  .manual pre{
+    background:#f0ece4;padding:10px 12px;border-radius:3px;overflow-x:auto;
+    font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;font-size:12.5px;
+    color:var(--tinta);margin:10px 0 0;
+  }
+</style>
+</head>
+<body>
+<div class="folha">
+
+  <header>
+    <div class="logo">OS <b>·</b> GEN</div>
+    <h1>Liberar esta máquina para abrir o Gerador&#8209;OS</h1>
+    <p class="sub">Leva um minuto, e só precisa ser feito uma vez em cada computador.</p>
+  </header>
+
+  <p class="porque">
+    O servidor da fábrica usa um certificado <b>próprio</b>, e nenhum computador
+    conhece esse certificado de nascença. Enquanto ele não for instalado, o
+    navegador mostra a tela vermelha de <b>“site não seguro”</b> e o programa
+    nem chega a abrir. Instalar é copiar um arquivo para a lista de autoridades
+    confiáveis do Windows — não muda mais nada na máquina.
+  </p>
+
+  <ol>
+    <li>
+      <h2>Baixe o instalador</h2>
+      <p>São dois arquivos numa pasta só. Baixe os dois e deixe-os <b>juntos na mesma pasta</b>.</p>
+      <a class="btn" href="/instalar/instalar-certificado.cmd" download>1 · instalar-certificado.cmd</a><br>
+      <a class="btn" href="/instalar/ca.crt" download>2 · ca.crt</a>
+      <div class="aviso">
+        O navegador pode dizer que o arquivo <b>“pode ser perigoso”</b>. Ele diz
+        isso de qualquer arquivo que termina em <code>.cmd</code>, porque não
+        conhece este. Escolha <b>Manter</b> — o arquivo veio do servidor da
+        própria fábrica.
+      </div>
+    </li>
+
+    <li>
+      <h2>Clique duas vezes no <code>instalar-certificado.cmd</code></h2>
+      <p>
+        Ele pede a permissão de administrador sozinho. Quando o Windows
+        perguntar, clique em <b>Sim</b>.
+      </p>
+      <div class="aviso">
+        Se aparecer uma tela azul do <b>Windows Defender</b> dizendo “o Windows
+        protegeu o computador”, clique em <b>Mais informações</b> e depois em
+        <b>Executar assim mesmo</b>.
+      </div>
+    </li>
+
+    <li>
+      <h2>Espere a mensagem “Pronto”</h2>
+      <p>
+        Ele instala, confere que instalou o certificado certo, cria o atalho
+        <b>Gerador&#8209;OS</b> na área de trabalho e ainda testa se o servidor
+        está respondendo. Feche a janela no fim.
+      </p>
+    </li>
+  </ol>
+
+  <div class="fim">
+    <h2>Depois disso</h2>
+    Abra o atalho <b>Gerador&#8209;OS</b> na área de trabalho, ou digite
+    <a href="https://193.168.0.200/">https://193.168.0.200</a> no navegador.
+    A tela vermelha não aparece mais.
+  </div>
+
+  <details class="manual">
+    <summary>Se preferir fazer sem baixar arquivo (linha de comando)</summary>
+    <p style="margin:10px 0 0">
+      Abra o <b>PowerShell como administrador</b> e cole a linha abaixo. Ela faz
+      a mesma coisa: baixa o certificado e o instala.
+    </p>
+<pre>curl.exe -s -o "$env:TEMP\ca.crt" http://193.168.0.200/instalar/ca.crt
+certutil -addstore -f Root "$env:TEMP\ca.crt"</pre>
+  </details>
+
+  <footer>
+    Certificado: <code>Gerador-OS - CA da fabrica</code> ·
+    impressão digital <code>3581 656E 6C0E ABC4 FD52 9896 52B5 9A56 715A F356</code><br>
+    Se alguma coisa não sair como está escrito aqui, chame o Junior.
+  </footer>
+
+</div>
+</body>
+</html>
