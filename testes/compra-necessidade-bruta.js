@@ -62,6 +62,10 @@ const FUNCOES = [
   'coresPorFaseDaGrade',
   // camadas
   '_tamanhoQueMandaNaGrade', 'camadasDaFaseRibana', '_ribanaEscalaComGrade',
+  // O forro de capuz tem regra propria desde 25/08/2026 (grade 2x + forro 2x =
+  // cheio do corpo). Faltava aqui: nenhum caso deste arquivo tinha fase de
+  // forro, entao consumoEnfestoOS so quebrava quando alguem escrevesse um.
+  'camadasDaFaseForro',
   'camadasPadraoDaFase', 'camadasCheiasDaFase', 'multiplicadorPecaOS',
   '_faseNaoEnfestadaPorTom',
   // A forma do pano (tubular/aberto) é quem manda nas unidades por camada desde
@@ -78,7 +82,10 @@ const FUNCOES = [
   // a compra
   'compraLimiteCamadasGrade', 'compraOsSimulada', '_compraPecasPorCamada',
   'compraPecasDeCamadas', 'compraCamadasDePecas', 'compraConsumoItem',
-  'compraNecessidadeBruta'
+  'compraNecessidadeBruta',
+  // o material reservado, fase a fase (a lista de OSs · material reservado)
+  'materialPorFaseOS', 'corposDoMaterialOS', '_juntaMaterial',
+  'ribanaDoMaterialOS', 'forroDoMaterialOS'
 ];
 
 // `new Function` em vez de `eval`: dentro de eval um `const` não vaza para o
@@ -90,7 +97,8 @@ const api = new Function(
   + 'return { setState: s => { STATE = s; }, '
   + FUNCOES.filter(n => n.indexOf('compra') === 0 || n === 'consumoEnfestoOS'
                         || n === 'compraNecessidadeBruta'
-                        || n === 'corCanonicaPorTecido' || n === 'calcularSaldosEstoque').join(', ')
+                        || n === 'corCanonicaPorTecido' || n === 'calcularSaldosEstoque'
+                        || n.indexOf('DoMaterialOS') > 0 || n === 'materialPorFaseOS').join(', ')
   + ' };'
 )();
 
@@ -499,6 +507,110 @@ ok('55. a prateleira partida em duas volta a ser UMA linha', det.length === 1,
 ok('56. e a baixa cai na prateleira certa: 100 entrou, 30 saiu, sobram 70',
    det[0] && perto(det[0].entrada, 100) && perto(det[0].saida, 30),
    det[0] && JSON.stringify({ ent: det[0].entrada, sai: det[0].saida }));
+
+/* --------------------------------------------------------------------------
+   O MATERIAL RESERVADO, FASE A FASE (Junior, 28/08/2026)
+
+   A lista de "OSs · material reservado" mostrava um kg só, somado. Ele pediu
+   uma coluna por fase, em BOBINAS, com a ribana e o forro de capuz em colunas
+   proprias, e disse quantas colunas espera em cada linha de produto:
+
+     CM.REC -> 3 (corpo 1, corpo 2, ribana)
+     CM.TRI -> 4 (corpo 1, corpo 2, corpo 3, ribana)
+     BM.TRI -> 5 (corpo 1, 2, 3, forro de capuz, ribana)
+
+   O que o teste guarda e a CONTAGEM e a SEPARACAO: quem e corpo, quem e forro e
+   quem e ribana sai de calcularPapeisFases (a mesma malha e forro quando ha
+   moletom na OS, e corpo quando nao ha), e o vies fica de fora porque nao gasta
+   pano nenhum. Errar isso poe a bobina do forro na coluna do corpo, e quem
+   separa material tira o pano errado da prateleira.
+   -------------------------------------------------------------------------- */
+console.log('\n-- o material reservado, uma coluna por fase --');
+
+// BM.LISA de mentira: um corpo de moletom + punhos de ribana. (cadastroBase)
+api.setState(cadastroBase());
+const oBM = api.compraOsSimulada(G1, D1, 36);
+ok('57. corpo: uma coluna', api.corposDoMaterialOS(oBM).length === 1,
+   api.corposDoMaterialOS(oBM).length);
+ok('58. ribana: coluna propria, e e a fase de ribana',
+   api.ribanaDoMaterialOS(oBM) && /punho/i.test(api.ribanaDoMaterialOS(oBM).nome),
+   JSON.stringify(api.ribanaDoMaterialOS(oBM)));
+ok('59. sem forro de capuz nesta OS, nao ha coluna de forro',
+   api.forroDoMaterialOS(oBM) === null, JSON.stringify(api.forroDoMaterialOS(oBM)));
+ok('60. a celula traz o tecido e a cor, que e o que identifica a prateleira',
+   api.corposDoMaterialOS(oBM)[0].tecido === 'Moletom'
+   && /Preto/.test(api.corposDoMaterialOS(oBM)[0].cor),
+   JSON.stringify(api.corposDoMaterialOS(oBM)[0]));
+ok('61. e a bobina, que e o numero grande da coluna',
+   api.corposDoMaterialOS(oBM)[0].bobinas > 0, JSON.stringify(api.corposDoMaterialOS(oBM)[0]));
+
+// BM.TRI de mentira: tres corpos de moletom + forro de capuz (malha) + ribana
+// + vies. O vies NAO gasta pano — e por isso que dao 5 colunas, e nao 6.
+const cadTri = cadastroBase();
+cadTri.grades[0].fases = [
+  { ordem: 1, nome: 'Corpo Parte 1', tecidoId: T_MOL,   comp: 3, larg: 1.8, bobinas: '5' },
+  { ordem: 2, nome: 'Corpo Parte 2', tecidoId: T_MOL,   comp: 3, larg: 1.8, bobinas: '5' },
+  { ordem: 3, nome: 'Corpo Parte 3', tecidoId: T_MOL,   comp: 3, larg: 1.8, bobinas: '5' },
+  { ordem: 4, nome: 'Forro de capuz', tecidoId: T_MALHA, comp: 2, larg: 1.6, bobinas: '2' },
+  { ordem: 5, nome: 'Barra/Punhos',  tecidoId: T_RIB,   comp: 2, larg: 1.0, unidades: 2, bobinas: '1' },
+  { ordem: 6, nome: 'Viés',          tecidoId: T_MALHA, comp: 7, larg: 1.6 }
+];
+api.setState(cadTri);
+const oTri = api.compraOsSimulada(G1, D1, 36);
+ok('62. BM.TRI: tres colunas de corpo', api.corposDoMaterialOS(oTri).length === 3,
+   api.corposDoMaterialOS(oTri).map(f => f.nome).join(' / '));
+ok('63. o forro de capuz ganha coluna propria, e NAO conta como corpo',
+   api.forroDoMaterialOS(oTri) && /forro/i.test(api.forroDoMaterialOS(oTri).nome),
+   JSON.stringify(api.forroDoMaterialOS(oTri)));
+ok('64. e a ribana continua na dela', api.ribanaDoMaterialOS(oTri) != null);
+ok('65. sao 5 colunas ao todo, como ele pediu para a BM.TRI',
+   api.corposDoMaterialOS(oTri).length
+   + (api.forroDoMaterialOS(oTri) ? 1 : 0)
+   + (api.ribanaDoMaterialOS(oTri) ? 1 : 0) === 5);
+ok('66. o VIES nao vira coluna: nao e enfestado, nao gasta bobina nem kg',
+   !api.materialPorFaseOS(oTri).some(f => /vi[eé]s/i.test(f.nome)),
+   api.materialPorFaseOS(oTri).map(f => f.nome).join(' / '));
+
+// CM.TRI de mentira: tres corpos de MALHA (sem moletom na OS) + ribana. Sem
+// moletom, a malha e CORPO — e a mesma malha que na BM.TRI era forro. E este o
+// ponto de usar calcularPapeisFases em vez de um regex de nome.
+const cadCmTri = cadastroBase();
+cadCmTri.tecidos.push({ id: 't-rma', nome: 'Ribana Malha Algodão', categoria: 'ribana', pesoBobina: 15, peso: 400 });
+cadCmTri.cores.push({ id: 'c-rma', nome: 'Branco Ribana Malha Algodão' });
+cadCmTri.desenhos[0].componentes = [
+  { nome: 'Frente', corId: C_MALHA, tecidoId: T_MALHA },
+  { nome: 'Gola',   corId: 'c-rma', tecidoId: 't-rma' }
+];
+cadCmTri.grades[0].fases = [
+  { ordem: 1, nome: 'Corpo Parte 1', tecidoId: T_MALHA, comp: 3, larg: 1.6, bobinas: '4' },
+  { ordem: 2, nome: 'Corpo Parte 2', tecidoId: T_MALHA, comp: 3, larg: 1.6, bobinas: '4' },
+  { ordem: 3, nome: 'Corpo Parte 3', tecidoId: T_MALHA, comp: 3, larg: 1.6, bobinas: '4' },
+  { ordem: 4, nome: 'Gola',          tecidoId: 't-rma', comp: 1, larg: 0.6, bobinas: '1' },
+  { ordem: 5, nome: 'Viés',          tecidoId: T_MALHA, comp: 7, larg: 1.6 }
+];
+api.setState(cadCmTri);
+const oCm = api.compraOsSimulada(G1, D1, 36);
+ok('67. CM.TRI: a malha sem moletom na OS e CORPO, nao forro',
+   api.corposDoMaterialOS(oCm).length === 3 && api.forroDoMaterialOS(oCm) === null,
+   api.corposDoMaterialOS(oCm).length + ' corpos / forro: ' + JSON.stringify(api.forroDoMaterialOS(oCm)));
+ok('68. sao 4 colunas, como ele pediu para a CM.TRI',
+   api.corposDoMaterialOS(oCm).length + (api.ribanaDoMaterialOS(oCm) ? 1 : 0) === 4);
+
+// Duas fases de ribana (gola E barra/punhos) somam numa coluna so: a prateleira
+// e a mesma, e separa-las na lista nao ajuda quem vai buscar o pano.
+const cadDuasRib = cadastroBase();
+cadDuasRib.grades[0].fases = [
+  { ordem: 1, nome: 'Corpo',        tecidoId: T_MOL, comp: 8, larg: 1.8, bobinas: '10' },
+  { ordem: 2, nome: 'Gola',         tecidoId: T_RIB, comp: 1, larg: 1.0, unidades: 2, bobinas: '1' },
+  { ordem: 3, nome: 'Barra/Punhos', tecidoId: T_RIB, comp: 2, larg: 1.0, unidades: 2, bobinas: '2' }
+];
+api.setState(cadDuasRib);
+const oDuas = api.compraOsSimulada(G1, D1, 36);
+const ribDuas = api.ribanaDoMaterialOS(oDuas);
+ok('69. duas fases de ribana viram UMA coluna, com as bobinas somadas',
+   ribDuas && ribDuas.bobinas === 3, JSON.stringify(ribDuas));
+ok('70. e a coluna nomeia as duas, para nao esconder o que foi somado',
+   ribDuas && /Gola/.test(ribDuas.nome) && /Punhos/.test(ribDuas.nome), ribDuas && ribDuas.nome);
 
 console.log('');
 if (falhas) { console.error(falhas + ' teste(s) falharam'); process.exit(1); }

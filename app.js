@@ -6491,6 +6491,81 @@ function osComMaterialReservado() {
    `idsComMovimento` exclui a passiva que AINDA tenha movimento próprio, gravado
    antes da guarda existir: essa aparece como linha de verdade, e repeti-la aqui
    mostraria a mesma OS duas vezes. */
+/* O MATERIAL RESERVADO DE UMA OS, FASE A FASE (28/08/2026, Junior).
+
+   A lista mostrava um kg só, somado. Três pedidos dele no mesmo dia — "coluna
+   mostrando a quantidade reservada medida em número de bobinas", "coluna
+   mostrando ribana reservada" e "no caso de OS para CM.REC, três colunas, uma
+   para fase 1, uma para fase 2, outra para fase 3" — são o mesmo desenho: o
+   total somado não serve para separar material, porque cada fase é um enfesto
+   de um pano e uma cor próprios. Quem vai à prateleira precisa saber quantas
+   bobinas de qual fase.
+
+   As bobinas saem pelo CAMINHO DA FOLHA (consumoEnfestoOS + bobinasEfetivasFase),
+   não por uma conta nova aqui — é a mesma razão de sempre: duas contas para a
+   mesma pergunta se separam sem ninguém notar.
+
+   Fase sem pano nenhum fica de fora, e é por isso que a CM.REC dá TRÊS colunas
+   e não quatro: o Viés não é enfestado, é cortado da sobra das outras fases
+   (ver bobinasEfetivasFase) — kg zero e bobina zero. */
+function materialPorFaseOS(o) {
+  if (!o) return [];
+  const g = (STATE.grades || []).find(x => x.id === o.gradeId);
+  const bobPorOrdem = {};
+  let temPrev = false;
+  ((g && g.fases) || []).forEach(f => {
+    const bb = parseBobinas(f.bobinas);
+    if (bb != null) { bobPorOrdem[f.ordem] = bb; if (bb > 0) temPrev = true; }
+  });
+  /* QUEM É CORPO, QUEM É FORRO E QUEM É RIBANA é `calcularPapeisFases`, o mesmo
+     classificador que o formulário e o cadastro usam — não um regex de nome
+     novo aqui. É ele que sabe que malha COM moletom na mesma OS é forro de
+     capuz, e que a mesma malha SEM moletom (a camiseta) é corpo. */
+  const fases = o.fases || [];
+  let papeis = [];
+  try { papeis = calcularPapeisFases(fases) || []; } catch (e) { papeis = []; }
+  const papelPorOrdem = {};
+  fases.forEach((f, i) => {
+    papelPorOrdem[f.ordem != null ? f.ordem : i + 1] = (papeis[i] || {}).papel || '';
+  });
+  let linhas = [];
+  try { linhas = consumoEnfestoOS(o) || []; } catch (e) { return []; }
+  return linhas.map(L => {
+    const prev = (temPrev && bobPorOrdem[L.ordem] != null) ? bobPorOrdem[L.ordem] : null;
+    const b = bobinasEfetivasFase(o, prev, L.ordem, L);
+    const papel = papelPorOrdem[L.ordem] || '';
+    const ribana = ehFaseRibana(L) || /^ribana_/.test(papel);
+    return {
+      ordem: L.ordem,
+      nome: L.faseNome || L.nomeEnf || ('Fase ' + L.ordem),
+      ribana,
+      forro: !ribana && papel === 'forro_capuz',
+      bobinas: (typeof b === 'number' && isFinite(b) && b > 0) ? b : null,
+      kg: Number(L.kg) || 0,
+      tecido: L.tecidoReal || L.nomeEnf || '',
+      cor: L.corReal || ''
+    };
+  }).filter(f => f.kg > 0 || f.bobinas != null);
+}
+
+// As fases de CORPO, na ordem — uma coluna cada. Forro e ribana têm as suas.
+function corposDoMaterialOS(o) { return materialPorFaseOS(o).filter(f => !f.ribana && !f.forro); }
+// Fases de um mesmo papel somadas numa coluna só: a ribana pode ser duas (gola
+// e barra/punhos) e a prateleira é a mesma, então separá-las na lista não ajuda
+// quem vai buscar o pano.
+function _juntaMaterial(fs) {
+  if (!fs.length) return null;
+  return {
+    nome: fs.map(f => f.nome).join(' + '),
+    bobinas: fs.some(f => f.bobinas != null)
+      ? fs.reduce((a, f) => a + (f.bobinas || 0), 0) : null,
+    kg: fs.reduce((a, f) => a + f.kg, 0),
+    tecido: fs[0].tecido, cor: fs[0].cor
+  };
+}
+function ribanaDoMaterialOS(o) { return _juntaMaterial(materialPorFaseOS(o).filter(f => f.ribana)); }
+function forroDoMaterialOS(o) { return _juntaMaterial(materialPorFaseOS(o).filter(f => f.forro)); }
+
 function conjugadasSemPanoDaOS(paiId, idsComMovimento) {
   if (!paiId) return [];
   const comMov = idsComMovimento instanceof Set ? idsComMovimento : new Set(idsComMovimento || []);
@@ -6578,14 +6653,50 @@ function renderEstoque() {
      OS que a produção ainda não começou, e o número deixaria de bater com o
      chão. Quem manda é o STATUS da OS, e ele se muda na lista de OS Salvas —
      inclusive para desfazer (voltar para "Não iniciada"). */
-  const linhaOS = (o) => `
+  /* UMA COLUNA POR FASE, EM BOBINAS (28/08/2026, Junior).
+
+     O número grande é a BOBINA, que é o que se tira da prateleira; o kg fica
+     embaixo, pequeno, porque é ele que bate com o saldo do estoque. Fase sem
+     bobina prevista mostra só o kg — é o caso da ribana cuja gramatura ou peso
+     de bobina ainda não foram cadastrados, e inventar um número ali seria pior
+     do que o branco (ver bobinasEfetivasFase).
+
+     Quantas colunas de corpo aparecem é o maior número de fases de corpo entre
+     as OS da lista: CM.TRI traz 3 (+ ribana = 4), CM.REC traz 2 (+ ribana = 3),
+     a camiseta básica traz 1. Coluna que ninguém usa não é desenhada. */
+  /* A CÉLULA DIZ O PANO INTEIRO (28/08/2026, Junior: "o material reservado deve
+     informar tipo de tecido e cor"). Sem isso a coluna dava um número sem dizer
+     de qual prateleira — e é justamente o tecido+cor que identifica a
+     prateleira no estoque, logo acima. A cor sai por corSemTecido porque o
+     tecido já está na linha de cima da própria célula. */
+  const celFase = (f) => {
+    if (!f) return '<td style="text-align:right;color:var(--ink-3);">—</td>';
+    const cor = corSemTecido(f.cor, f.tecido);
+    return `<td style="text-align:right;white-space:nowrap;" title="${esc(f.nome)}">
+      <div style="font-family:'IBM Plex Mono',monospace;">
+        ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
+        <span style="font-size:10px;color:var(--ink-2);">· ${fmt(f.kg)} kg</span>
+      </div>
+      <div style="font-size:10px;color:var(--ink-2);">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
+    </td>`;
+  };
+  const linhaOS = (o) => {
+    const os = (STATE.ordens || []).find(x => x.id === o.osId);
+    const corpos = corposDoMaterialOS(os);
+    const forro = forroDoMaterialOS(os);
+    const rib = ribanaDoMaterialOS(os);
+    return `
     <tr>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</td>
+      ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i])).join('')}
+      ${temForro ? celFase(forro) : ''}
+      ${temRibana ? celFase(rib) : ''}
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${fmt(o.kg)} kg</td>
       <td><span class="badge" style="background:#fde9c8;">Reservado</span></td>
     </tr>`;
+  };
   /* A CONJUGADA APARECE JUNTO DA ATIVA, SEM PANO (28/08/2026, Junior).
 
      Ela vem logo abaixo da OS de quem herdou o enfesto, com "↳", porque as duas
@@ -6598,7 +6709,7 @@ function renderEstoque() {
       <td style="padding-left:18px;"><span style="color:var(--ink-2);">↳</span> <strong>${esc(o.os) || '—'}</strong></td>
       <td>${esc(o.modeloNome) || '—'}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">—</td>
+      <td colspan="${nCorpos + (temForro ? 1 : 0) + (temRibana ? 1 : 0) + 1}" style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">—</td>
       <td><span class="badge" style="background:#dfe7f7;">Conjugada</span>
         <span class="muted" style="font-size:11px;">o pano está na OS ${esc(pai.osNumero) || '—'}</span></td>
     </tr>`;
@@ -6618,6 +6729,12 @@ function renderEstoque() {
   const kgBaixadas = baixadas.reduce((a, o) => a + (Number(o.kg) || 0), 0);
   const parConjugado = reservadas.map(o => ({ pai: o, filhas: conjugadasSemPanoDaOS(o.osId, idsComMovimento) }));
   const temConjugada = parConjugado.some(p => p.filhas.length);
+  // Quantas colunas de fase a lista precisa: o maior número de fases de corpo
+  // entre as OS listadas, e a da ribana só se alguém tiver ribana.
+  const _osRes = reservadas.map(o => (STATE.ordens || []).find(x => x.id === o.osId)).filter(Boolean);
+  const nCorpos = Math.max(1, ..._osRes.map(os => corposDoMaterialOS(os).length));
+  const temForro = _osRes.some(os => !!forroDoMaterialOS(os));
+  const temRibana = _osRes.some(os => !!ribanaDoMaterialOS(os));
   const apontarHtml = osMat.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs · material reservado</h2>
@@ -6630,7 +6747,12 @@ function renderEstoque() {
         mesmo metro na mesa.` : ''}
       </div>
       ${reservadas.length ? `<table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Material</th><th>Situação</th></tr></thead>
+        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th>
+          ${Array.from({ length: nCorpos }, (_, i) =>
+            `<th style="text-align:right;">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
+          ${temForro ? '<th style="text-align:right;">Forro de capuz</th>' : ''}
+          ${temRibana ? '<th style="text-align:right;">Ribana</th>' : ''}
+          <th style="text-align:right;">Total</th><th>Situação</th></tr></thead>
         <tbody>${parConjugado.map(p => linhaOS(p.pai)
           + p.filhas.map(c => linhaConjugada(c, p.pai)).join('')
         ).join('')}</tbody>
