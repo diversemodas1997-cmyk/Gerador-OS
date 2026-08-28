@@ -21747,6 +21747,41 @@ function _gradeDetalheDaOS(o) {
    O nome vem no formato "<tamanhos> | <codigo> | <largura>"; os tamanhos ficam na
    linha de cima e o resto embaixo, menor — inteiro numa linha so, o nome espremia
    as outras colunas da tabela. */
+/* A DUPLA CONJUGADA SE RECONHECE NA LISTA (28/08/2026, Junior: "o programa deve
+   mostrar no campo de OS cadastradas a OS pertencente à grade conjugada, de
+   forma que o usuário possa identificar as OS relacionadas").
+
+   Duas OS conjugadas são o MESMO enfesto na mesa, separado em duas ordens só
+   porque saem em cor ou grade diferentes — e até aqui nada na lista dizia isso.
+   Quem batia o olho via duas OS parecidas, com números que nem sempre são
+   vizinhos (0468 puxa a 0471), e não tinha como saber que uma depende da outra.
+   Pior: a passiva não reserva pano nenhum (ver aplicarBaixaEstoqueOS), e sem a
+   marca isso parece OS esquecida em vez de OS que já tem o pano contado.
+
+   A ligação está gravada nos dois sentidos — `conjugadaId` na ativa,
+   `conjugadaPaiId` na passiva —, então cada linha acha a irmã sozinha. O
+   texto diz QUAL das duas segura o pano, que é a pergunta que a marca existe
+   para responder; e clicar abre a irmã, porque o passo seguinte a reconhecer a
+   dupla é sempre ir ver a outra. */
+function _conjugadaCelulaOS(o) {
+  if (!o) return '';
+  const passiva = !!o.conjugadaPaiId;
+  const irmaId = passiva ? o.conjugadaPaiId : o.conjugadaId;
+  if (!irmaId) return '';
+  const irma = (STATE.ordens || []).find(x => x.id === irmaId);
+  // Irmã excluída depois: a marca sai, em vez de apontar uma OS que não abre.
+  if (!irma) return '';
+  const num = String(irma.os || '').trim() || '—';
+  const titulo = passiva
+    ? `Conjugada: sai do mesmo enfesto da OS ${num}, que é quem reserva o pano das duas. Clique para abri-la.`
+    : `Conjugada: puxa a OS ${num}, que sai do mesmo enfesto. O pano das duas está reservado nesta. Clique para abri-la.`;
+  return `<div style="margin-top:2px;">`
+    + `<span class="badge" onclick="event.stopPropagation();verOS('${esc(irma.id)}')"`
+    + ` title="${esc(titulo)}"`
+    + ` style="background:#dfe7f7;cursor:pointer;font-size:10px;white-space:nowrap;">`
+    + `⇄ ${esc(num)}</span></div>`;
+}
+
 function _gradeCelulaLista(o) {
   const nome = _gradeNomeDaOS(o);
   // `_gradeNomeDaOS` ja devolve '—' quando nao achou nada.
@@ -21891,6 +21926,28 @@ function _statusCelulaOS(o) {
     + `</select>`;
 }
 
+/* A CONJUGADA É FINALIZADA JUNTO COM A ATIVA (28/08/2026, Junior).
+
+   As duas são o MESMO enfesto na mesa: o pano é estendido uma vez, cortado uma
+   vez, e as duas ordens saem do mesmo corte. Terminar uma e deixar a outra
+   aberta descreve um trabalho que não existe — e era o que acontecia, porque
+   quem carimba o status carimba a OS que está olhando.
+
+   Só a ATIVA arrasta. A passiva não puxa ninguém: é a mesma trava que segura o
+   par cruzado em `deveGerarConjugada`, e sem ela duas OS que se apontassem
+   ficariam se carimbando em círculo.
+
+   Devolve lista, e não uma OS, para o dia em que uma ativa puxar mais de uma
+   conjugada — quem chama já trata todas do mesmo jeito. */
+function _conjugadasParaFinalizar(os) {
+  if (!os || os.conjugadaPaiId || !os.conjugadaId) return [];
+  const c = (STATE.ordens || []).find(x => x.id === os.conjugadaId);
+  // Já finalizada não é recarimbada: a data dela é o dia em que ela terminou,
+  // e reescrevê-la faria a lista dizer outro dia.
+  if (!c || _statusOS(c) === 'finalizado') return [];
+  return [c];
+}
+
 async function mudarStatusOS(id, valor) {
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
@@ -21914,11 +21971,22 @@ async function mudarStatusOS(id, valor) {
      Marcar de novo carimba o dia novo, que é o dia em que ela terminou de fato. */
   if (alvo === 'finalizado') o.finalizadaEm = agora;
   else delete o.finalizadaEm;
+  // A conjugada vai junto — mesmo enfesto, mesmo corte. Carimbada ANTES do
+  // saveState: as duas viajam na mesma gravação, senão uma pode ir e a outra
+  // ficar para trás se a rede cair no meio.
+  const juntas = (alvo === 'finalizado') ? _conjugadasParaFinalizar(o) : [];
+  juntas.forEach(c => {
+    c.statusOS = 'finalizado';
+    c.statusOSPor = o.statusOSPor;
+    c.statusOSEm = agora;
+    c.finalizadaEm = agora;
+  });
   renderListaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
   try {
     await saveState('ordens');
-    toast(`OS ${o.os || ''} · ${rot}`, 'ok');
+    toast(`OS ${o.os || ''} · ${rot}`
+      + (juntas.length ? ` — e a conjugada ${juntas.map(c => c.os || '').join(', ')}` : ''), 'ok');
   } catch (e) {
     console.warn('mudarStatusOS', e);
     toast('Não deu para salvar o status — tente de novo', 'err');
@@ -21926,6 +21994,10 @@ async function mudarStatusOS(id, valor) {
   // E o pano sai (ou volta para) o estoque conforme o status. Ver
   // _estoqueSeguirStatusOS: é ele que diz por que "em andamento" é a hora.
   await _estoqueSeguirStatusOS(o, alvo);
+  // A conjugada não reserva pano (ver aplicarBaixaEstoqueOS), então aqui não há
+  // o que baixar. Passa mesmo assim: OS antiga, de antes daquela guarda, pode
+  // ter movimento gravado — e ela também tem de ser baixada ao terminar.
+  for (const c of juntas) await _estoqueSeguirStatusOS(c, 'finalizado');
 }
 
 /* O PANO SAI DO ESTOQUE QUANDO A OS COMEÇA A ANDAR (27/08/2026, Junior).
@@ -22184,7 +22256,7 @@ function renderListaOS() {
     return `
     <tr>
       <td>${thumb}</td>
-      <td><strong>${esc(o.os)||'—'}</strong></td>
+      <td><strong>${esc(o.os)||'—'}</strong>${_conjugadaCelulaOS(o)}</td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
       <td>${cores.length

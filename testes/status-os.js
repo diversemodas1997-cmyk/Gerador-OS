@@ -76,6 +76,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
+  ${recorte('function _conjugadasParaFinalizar', 'a conjugada que vai junto')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   ${recorte('function conjugadasSemPanoDaOS', 'as conjugadas da lista de reservados')}
   const exigirEstoqueTecidos = () => true;
@@ -88,7 +89,7 @@ const monta = (ctx) => new Function('ctx', `
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
-           conjugadasSemPanoDaOS };
+           conjugadasSemPanoDaOS, _conjugadasParaFinalizar };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -348,6 +349,64 @@ console.log('-- o que fica gravado --');
      t5.ctx.STATE.estoqueMov.length === 1
      && t5.ctx.STATE.estoqueMov[0].id === 'nf',
      JSON.stringify(t5.ctx.STATE.estoqueMov));
+
+  console.log('');
+  console.log('-- e a conjugada e finalizada JUNTO com a ativa --');
+  /* Junior, 28/08/2026: "insira funcao no programa que altera status da os
+     conjugada para finalizada, quando a os ativa tem seu status alterado para
+     finalizada". As duas sao o MESMO enfesto: o pano e estendido uma vez e
+     cortado uma vez. Terminar uma e deixar a outra aberta descreve um trabalho
+     que nao existe — e era o que acontecia, porque quem carimba carimba a OS
+     que esta olhando. */
+  const parDe = (st) => ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0498', conjugadaId: 'pa' },
+    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: st },
+    { id: 'so', os: '0500' }
+  ]);
+  let p = parDe();
+  await p.api.mudarStatusOS('at', 'finalizado');
+  const pa = () => p.ctx.STATE.ordens[1];
+  ok('68. finalizar a ativa finaliza a conjugada', pa().statusOS === 'finalizado',
+     JSON.stringify(pa()));
+  ok('69. e carimba a data nela tambem, que e o que a coluna Data le',
+     !!pa().finalizadaEm && !isNaN(new Date(pa().finalizadaEm)), pa().finalizadaEm);
+  ok('70. as duas viajam na MESMA gravacao (uma so, nao duas)',
+     p.ctx.salvou === 1, String(p.ctx.salvou));
+  ok('71. e o aviso diz que a conjugada foi junto',
+     p.ctx.toasts.some(t => /0497/.test(t)), JSON.stringify(p.ctx.toasts));
+
+  // So a ATIVA arrasta. Sem esta trava, duas OS que se apontassem ficariam se
+  // carimbando em circulo — a mesma razao do guard em deveGerarConjugada.
+  p = parDe();
+  await p.api.mudarStatusOS('pa', 'finalizado');
+  ok('72. a PASSIVA nao arrasta a ativa', p.ctx.STATE.ordens[0].statusOS === undefined,
+     JSON.stringify(p.ctx.STATE.ordens[0]));
+
+  // Outro status nao propaga: o pedido e sobre terminar. "Em andamento" na
+  // ativa nao diz que a conjugada comecou — ela pode nem ter sido cortada.
+  p = parDe();
+  await p.api.mudarStatusOS('at', 'andamento');
+  ok('73. so "finalizado" propaga; "em andamento" nao',
+     pa().statusOS === undefined, JSON.stringify(pa()));
+
+  // Ja finalizada nao e recarimbada: a data dela e o dia em que ela terminou.
+  p = parDe('finalizado');
+  p.ctx.STATE.ordens[1].finalizadaEm = '2026-01-01T10:00:00.000Z';
+  await p.api.mudarStatusOS('at', 'finalizado');
+  ok('74. conjugada ja finalizada mantem a data dela',
+     pa().finalizadaEm === '2026-01-01T10:00:00.000Z', pa().finalizadaEm);
+
+  // OS sozinha continua sozinha, e OS cuja irma sumiu nao quebra nada.
+  p = parDe();
+  await p.api.mudarStatusOS('so', 'finalizado');
+  ok('75. OS sem conjugada segue seu caminho', p.ctx.STATE.ordens[2].statusOS === 'finalizado');
+  const orfa = ctxDe('admin', 'admin@diverse.local', true,
+                     [{ id: 'x', os: '0499', conjugadaId: 'sumiu' }]);
+  await orfa.api.mudarStatusOS('x', 'finalizado');
+  ok('76. conjugada excluida depois: finaliza a ativa e nao reclama',
+     orfa.ctx.STATE.ordens[0].statusOS === 'finalizado' && orfa.ctx.salvou === 1);
+  ok('77. _conjugadasParaFinalizar devolve LISTA (uma ativa pode puxar mais de uma)',
+     Array.isArray(orfa.api._conjugadasParaFinalizar(orfa.ctx.STATE.ordens[0])));
 
   console.log('');
   console.log('-- e ela APARECE na lista, dizendo onde o pano esta --');

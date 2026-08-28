@@ -361,6 +361,49 @@ console.log('-- a OS que sai --');
        !estado.grades[0].conjugadaGradeId && !estado.meta.conjugadaPorGradeV1);
   }
 
+  /* ----------------------------------------------------------------------
+     A DUPLA SE RECONHECE NA LISTA DE OS (Junior, 28/08/2026: "o programa deve
+     mostrar no campo de OS cadastradas a OS pertencente a grade conjugada, de
+     forma que o usuario possa identificar as OS relacionadas").
+
+     Os numeros nem sempre sao vizinhos — a 0468 puxa a 0471 —, e a passiva nao
+     reserva pano nenhum. Sem a marca, ela parece OS esquecida em vez de OS que
+     ja tem o pano contado na irma. O texto tem de dizer QUAL das duas segura o
+     pano; e essa a pergunta.
+     ---------------------------------------------------------------------- */
+  {
+    console.log('');
+    console.log('-- a marca da dupla na lista de OS --');
+    const cel = (STATE) => new Function('STATE', `
+      const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      ${corta('function _conjugadaCelulaOS')}
+      return _conjugadaCelulaOS;
+    `)(STATE);
+    const STATE = { ordens: [
+      { id: 'a', os: '0498' , conjugadaId: 'p' },
+      { id: 'p', os: '0497', conjugadaPaiId: 'a' },
+      { id: 's', os: '0500' }
+    ] };
+    const f = cel(STATE);
+    const ativa = f(STATE.ordens[0]), passiva = f(STATE.ordens[1]);
+
+    ok('35. a ativa aponta a conjugada dela', /0497/.test(ativa), ativa);
+    ok('36. e a passiva aponta a ativa', /0498/.test(passiva), passiva);
+    ok('37. OS sem dupla nao ganha marca nenhuma', f(STATE.ordens[2]) === '', f(STATE.ordens[2]));
+    // Quem segura o pano e a informacao que a marca existe para dar.
+    ok('38. na passiva o texto diz que o pano esta na OUTRA',
+       /reserva o pano das duas/.test(passiva), passiva);
+    ok('39. na ativa o texto diz que o pano esta NESTA',
+       /reservado nesta/.test(ativa), ativa);
+    ok('40. clicar abre a irma, pelo id dela',
+       /verOS\('p'\)/.test(ativa) && /verOS\('a'\)/.test(passiva), ativa + ' / ' + passiva);
+    // Irma excluida depois: melhor sem marca do que uma marca que nao abre nada.
+    const semIrma = { ordens: [{ id: 'a', os: '0498', conjugadaId: 'sumiu' }] };
+    ok('41. irma excluida: a marca some, em vez de apontar o vazio',
+       cel(semIrma)(semIrma.ordens[0]) === '', cel(semIrma)(semIrma.ordens[0]));
+  }
+
   console.log('');
   console.log(falhas === 0 ? 'tudo certo' : falhas + ' falha(s)');
   process.exit(falhas === 0 ? 0 : 1);
