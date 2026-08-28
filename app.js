@@ -23609,6 +23609,38 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
     delete os.progresso.etapasCheck[etapaNome];
     delete os.progresso.etapasSeq[etapaNome];
   }
+  /* O PAI PREENCHE OS FILHOS (28/08/2026, Junior).
+
+     Marcar a etapa quer dizer que ela ACABOU, e uma etapa que acabou tem todas
+     as tarefas dela feitas. Quem estava no chão marcava a etapa e depois clicava
+     uma a uma nas tarefas para o papel não sair pela metade — trabalho que o
+     programa sabia fazer.
+
+     Desmarcar limpa os filhos pela mesma razão, e não por simetria de enfeite:
+     etapa desmarcada com as tarefas todas marcadas é uma folha que se
+     contradiz, e quem lê acredita na parte errada.
+
+     Os filhos saem do DOM, não de uma segunda derivação da lista de tarefas:
+     assim são exatamente as caixas que a pessoa está vendo — inclusive as fases
+     do Corte, que não vêm do cadastro da etapa, e as tarefas "fora do cadastro"
+     que a OS carrega de quando aquela etapa era outra. Derivar de novo aqui
+     deixaria justamente essas de fora. */
+  const filhos = (typeof document !== 'undefined')
+    ? Array.from(document.querySelectorAll('.os-check.sub'))
+        .filter(inp => inp.dataset && inp.dataset.etapa === etapaNome && inp.dataset.tarefa)
+    : [];
+  if (filhos.length) {
+    os.progresso.tarefasCheck = os.progresso.tarefasCheck || {};
+    const mapa = os.progresso.tarefasCheck[etapaNome] = os.progresso.tarefasCheck[etapaNome] || {};
+    filhos.forEach(inp => {
+      if (checked) mapa[inp.dataset.tarefa] = true;
+      else delete mapa[inp.dataset.tarefa];
+      // A caixa na tela acompanha na hora: a folha não é redesenhada a cada
+      // clique, e esperar o próximo desenho faria o pai e os filhos discordarem
+      // à vista de quem acabou de clicar.
+      inp.checked = checked;
+    });
+  }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
   // Marcar "Ensaque" diz que o lote está PRONTO para expedir — só isso. Entrar
   // numa OE é ato do planejamento da expedição, feito pelo usuário.
