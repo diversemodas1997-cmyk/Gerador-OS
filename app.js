@@ -23546,12 +23546,31 @@ function ajustarAmpliacao() {
   }
 }
 
-// A janela mudou de tamanho: reavalia. Com espera, porque arrastar a borda do
-// navegador dispara isto dezenas de vezes por segundo.
-window.addEventListener('resize', () => {
+function _ampAgendar() {
   clearTimeout(_ampTimer);
   _ampTimer = setTimeout(ajustarAmpliacao, 150);
-});
+}
+
+// A janela mudou de tamanho: reavalia. Com espera, porque arrastar a borda do
+// navegador dispara isto dezenas de vezes por segundo.
+window.addEventListener('resize', _ampAgendar);
+
+/* E QUANDO O CONTEUDO MUDA -- que foi o furo da primeira versao.
+
+   Medir na troca de tela nao basta: quando o `goto('lista-os')` roda, a tabela
+   ainda esta VAZIA. As 255 OS chegam depois, a tabela incha, e ninguem mede de
+   novo. Era exatamente isso que o print de 31/08 mostrava: a coluna DATA
+   espremida na borda com a data cortada, e QTD e RISCOS fora da tela, enquanto
+   a ampliacao seguia no alvo porque na hora em que ela olhou nada transbordava.
+
+   O observador e de MUTACAO, e nao de tamanho, de proposito: mudar a ampliacao
+   muda o TAMANHO da caixa, entao um ResizeObserver reagiria a si mesmo e o
+   valor ficaria piscando entre o alvo e o que coube. Redesenhar a lista mexe no
+   DOM; mudar a ampliacao nao. */
+if (typeof MutationObserver === 'function') {
+  const alvoObs = document.querySelector('main.content');
+  if (alvoObs) new MutationObserver(_ampAgendar).observe(alvoObs, { childList: true, subtree: true });
+}
 
 /* Poe um painel logo abaixo do seu botao, sem passar das bordas da tela.
    A altura tambem entra aqui: o max-height do CSS e em vh, e vh dentro de um

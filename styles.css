@@ -39,7 +39,22 @@ html, body {
    Quem decide o segundo e o `ajustarAmpliacao()` do app.js, medindo a tela:
    ampliar escondendo conteudo nao e ampliar. Para mudar a ampliacao, mexa
    no ALVO -- so nele. */
-:root { --ui-zoom-alvo: 1.25; --ui-zoom: var(--ui-zoom-alvo); }
+/* 1 = tamanho original, e e ASSIM QUE FICA.
+
+   O pedido de 31/08 foi "aumentar a fonte em 25%", e a ampliacao entrou em
+   1,25. So depois se soube o que faltava saber: a fabrica JA usava o zoom do
+   NAVEGADOR em 200%. Os 25% do programa entravam por cima disso -- 2,5x no
+   total -- e era essa soma que espremia a lista de OS ate as ultimas colunas
+   sairem da tela.
+
+   Quem amplia e o navegador (Ctrl +). Ele escala a pagina inteira do jeito
+   para que foi feito, e o Chrome guarda a escolha por site, em cada maquina.
+   O programa nao tem por que competir com isso.
+
+   O mecanismo continua aqui, inteiro e conferido, para o dia em que alguem
+   quiser voltar a mexer: basta trocar este numero. O ajustarAmpliacao() do
+   app.js encolhe sozinho se o valor pedido nao couber. */
+:root { --ui-zoom-alvo: 1; --ui-zoom: var(--ui-zoom-alvo); }
 
 .app { zoom: var(--ui-zoom); }
 
