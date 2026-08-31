@@ -22665,6 +22665,48 @@ function _msgQuemReagiu(id) {
   return _msgReacoes.filter(r => r.mensagem_id === id);
 }
 
+/* O NOME de quem reagiu, a partir do user_id. A tabela mensagem_reacoes guarda
+   so o id — o nome mora em outro lugar, e em tres lugares diferentes conforme
+   o que ja foi carregado. Por isso os recuos, do mais confiavel ao menos:
+
+     1. sou eu            -> "voce", que e como a pessoa se reconhece na lista;
+     2. a lista de perfis -> o login de verdade (rpc `perfis`);
+     3. algum recado dele -> todo recado carrega o nome do autor junto, entao
+        quem ja escreveu no canal tem nome mesmo sem a lista de perfis;
+     4. nada disso        -> "alguem", que e honesto. Some do tooltip seria
+        pior: o numero diria 3 e os nomes seriam 2. */
+function _msgNomeDe(userId) {
+  if (!userId) return 'alguém';
+  if (userId === _msgQuemSou()) return 'você';
+  const p = (_msgPerfis || []).find(x => x && x.user_id === userId);
+  if (p && p.login) return p.login;
+  const m = (_mensagens || []).find(x => x && x.autor_id === userId);
+  const l = m && _obsNomeLogin(m.autor);
+  return l || 'alguém';
+}
+
+/* A frase do tooltip. "voce" vem primeiro (e quem le), o resto em ordem
+   alfabetica, e a lista para em 8 nomes: um tooltip com trinta nomes nao
+   informa, entulha. O verbo acompanha o numero — "marcou" / "marcaram". */
+function _msgTextoReacao(quemReagiu) {
+  const eu = _msgQuemSou();
+  const souEu = quemReagiu.some(r => r.user_id === eu);
+  const outros = quemReagiu.filter(r => r.user_id !== eu)
+    .map(r => _msgNomeDe(r.user_id))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const nomes = (souEu ? ['você'] : []).concat(outros);
+  const total = nomes.length;
+  if (!total) return '';
+  const LIMITE = 8;
+  const mostra = nomes.slice(0, LIMITE);
+  const sobra = total - mostra.length;
+  let lista;
+  if (mostra.length === 1) lista = mostra[0];
+  else lista = mostra.slice(0, -1).join(', ') + ' e ' + mostra[mostra.length - 1];
+  if (sobra > 0) lista += ` e mais ${sobra}`;
+  return lista + (total > 1 ? ' marcaram' : ' marcou') + ' este recado';
+}
+
 function _msgEuReagi(id) {
   const eu = _msgQuemSou();
   return _msgReacoes.some(r => r.mensagem_id === id && r.user_id === eu);
@@ -23021,13 +23063,16 @@ function renderMensagens() {
         : `<div class="msg-txt">${_msgComMencoes(esc(m.texto))}</div>`;
 
       // O POLEGAR e o RESPONDER, embaixo do texto. O polegar mostra o número só
-      // quando há o que contar: "👍 0" em toda linha é sujeira, e quem reagiu
-      // aparece no title, que é o que se quer saber ("quem já viu?").
+      // quando há o que contar: "👍 0" em toda linha é sujeira. No mouse em
+      // cima aparecem os NOMES de quem marcou — que é o que se quer saber de
+      // verdade ("quem já viu?"). Até 31/08/2026 o tooltip dizia só quantos,
+      // que responde a pergunta errada: numa fábrica de dez pessoas, saber que
+      // "3 pessoas marcaram" não diz se quem precisava ver, viu.
       const quemReagiu = _msgReacoesIndisponivel ? [] : _msgQuemReagiu(m.id);
       const euReagi = _msgEuReagi(m.id);
       const polegar = _msgReacoesIndisponivel ? '' :
         `<button type="button" class="msg-reagir${euReagi ? ' eu' : ''}"
-           title="${quemReagiu.length ? esc(quemReagiu.length + (quemReagiu.length > 1 ? ' pessoas marcaram' : ' pessoa marcou') + ' este recado') : 'Marcar que você viu / concorda'}"
+           title="${quemReagiu.length ? esc(_msgTextoReacao(quemReagiu)) : 'Marcar que você viu / concorda'}"
            onclick="reagirMensagem('${esc(m.id)}')">👍${quemReagiu.length ? ' <b>' + quemReagiu.length + '</b>' : ''}</button>`;
       const responder = `<button type="button" class="msg-responder" title="Responder a este recado"
            onclick="responderMensagem('${esc(m.id)}')">↩</button>`;
