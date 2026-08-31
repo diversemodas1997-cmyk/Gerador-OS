@@ -1374,15 +1374,16 @@ async function listarSnapshots() {
   if (error) { container.innerHTML = `<div class="empty" style="padding:20px;">Erro: ${esc(error.message)}</div>`; return; }
   if (!data || !data.length) { container.innerHTML = '<div class="empty" style="padding:20px;">Nenhum snapshot ainda — o primeiro é criado ao carregar o app.</div>'; return; }
   container.innerHTML = `<table class="table">
-    <thead><tr><th>Data</th><th>Criado em</th><th class="col-actions">Ação</th></tr></thead>
+    <thead><tr><th class="col-actions">Ação</th><th>Data</th><th>Criado em</th></tr></thead>
     <tbody>${data.map(s => `
       <tr>
-        <td><strong>${esc(s.snapshot_date)}</strong></td>
-        <td>${esc(new Date(s.created_at).toLocaleString('pt-BR'))}</td>
-        <td class="col-actions">
+      <td class="col-actions">
           <button class="btn small" onclick="baixarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Baixar</button>
           <button class="btn small danger" onclick="restaurarSnapshot(${s.id}, '${esc(s.snapshot_date)}')">Restaurar</button>
         </td>
+        <td><strong>${esc(s.snapshot_date)}</strong></td>
+        <td>${esc(new Date(s.created_at).toLocaleString('pt-BR'))}</td>
+
       </tr>`).join('')}
     </tbody></table>`;
 }
@@ -6406,6 +6407,7 @@ function renderTecidos() {
   // por FASE da grade, e um tecido não tem mais um número só para mostrar.
   tb.innerHTML = STATE.tecidos.map(t => `
     <tr>
+      ${acoesCell('tecido', t.id)}
       <td><strong>${esc(t.nome)}</strong></td>
       <td>${esc(t.desc)}</td>
       <td><span class="badge">${esc(catLabel[t.categoria] || '—')}</span>${
@@ -6413,23 +6415,22 @@ function renderTecidos() {
         : t.tubular === 'aberto' ? ' <span class="badge" title="Vem aberto">não-tubular</span>' : ''}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}${
         t.pesoBobina ? `<div style="font-size:10px;color:var(--ink-3);">bobina ${esc(t.pesoBobina)} kg</div>` : ''}</td>
-      ${acoesCell('tecido', t.id)}
     </tr>`).join('');
 }
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
   if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.cores.map(c => `
-    <tr><td><span class="color-swatch" style="background:${esc(c.hex)}"></span><strong>${esc(c.nome)}</strong></td>
+    <tr>${acoesCell('cor', c.id)}<td><span class="color-swatch" style="background:${esc(c.hex)}"></span><strong>${esc(c.nome)}</strong></td>
     <td><span class="badge">${esc(c.codigo)||'—'}</span></td>
-    <td style="font-family:'IBM Plex Mono',monospace;">${c.peso ? esc(c.peso)+' g/m²' : '—'}</td>${acoesCell('cor', c.id)}</tr>`).join('');
+    <td style="font-family:'IBM Plex Mono',monospace;">${c.peso ? esc(c.peso)+' g/m²' : '—'}</td></tr>`).join('');
 }
 function renderMateriais() {
   const tb = document.getElementById('tbl-materiais');
   if (!STATE.materiais.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum material cadastrado.</td></tr>`; return; }
   tb.innerHTML = STATE.materiais.map(m => `
-    <tr><td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
-    <td>${esc(m.tipo)||'—'}</td>${acoesCell('material', m.id)}</tr>`).join('');
+    <tr>${acoesCell('material', m.id)}<td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
+    <td>${esc(m.tipo)||'—'}</td></tr>`).join('');
 }
 /* ========================================================= */
 /*                ESTOQUE DE TECIDOS (kg)                     */
@@ -6814,10 +6815,11 @@ function renderEstoque() {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;">Abertos</th><th>Origem</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;">Abertos</th><th>Origem</th></tr></thead>
         <tbody>
           ${movs.length ? movs.map(m => `
             <tr>
+      <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
               <td>${m.tipo === 'entrada'
                 ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
@@ -6832,7 +6834,7 @@ function renderEstoque() {
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.abertos ? Number(m.abertos) : '—'}</td>
               <td>${origemLabel(m)}</td>
-              <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
+
             </tr>`).join('') : `<tr><td colspan="9" class="empty">Nenhuma movimentação.</td></tr>`}
         </tbody>
       </table>
@@ -7516,15 +7518,16 @@ function renderFasePainel(faseIdx) {
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa carga, a OS conta nas duas fases: as peças alocadas, em Expedição; as que ficaram, no Estoque de corte.</div>
       <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ação</th></tr></thead>
+        <thead><tr><th class="col-actions">Ação</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
         <tbody>
           ${pacotes.map(p => `
             <tr>
+      <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
               <td><strong>${esc(p.osNumero) || '—'}</strong></td>
               <td>${esc(p.modelo) || '—'}${seloParcial(p)}</td>
               <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecasNaFase(p))} pç</td>
-              <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
+
             </tr>`).join('')}
         </tbody>
       </table>
@@ -7538,10 +7541,11 @@ function renderFasePainel(faseIdx) {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes — ${esc(fase.titulo)}</h2>
       <table class="table">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th></tr></thead>
         <tbody>
           ${movs.map(m => `
             <tr>
+      <td class="col-actions row-actions"><button onclick="excluirMovFase('${esc(fase.id)}', '${esc(m.id)}')">excluir</button></td>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
               <td>${m.tipo === 'entrada'
                 ? '<span class="badge" style="background:#d6f0db;">Entrada</span>'
@@ -7550,7 +7554,7 @@ function renderFasePainel(faseIdx) {
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.qtd)}</td>
               <td>${esc(m.obs) || '—'}</td>
-              <td class="col-actions row-actions"><button onclick="excluirMovFase('${esc(fase.id)}', '${esc(m.id)}')">excluir</button></td>
+
             </tr>`).join('')}
         </tbody>
       </table>
@@ -8571,18 +8575,19 @@ function renderExpedicaoPlano() {
       <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no <b>Estoque de corte</b> — só o que foi alocado passou para <b>Expedição</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
       <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th></tr></thead>
         <tbody>
           ${remanescentes.map(({ o, rem }) => `
             <tr>
+      <td class="col-actions row-actions">
+                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
+                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar restante</button>
+              </td>
               <td><strong>${esc(o.os) || '—'}</strong></td>
               <td>${esc(nomePecaOS(o)) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${fmt(rem.alocado)}/${fmt(rem.total)}</td>
               <td style="font-size:12px;"><span class="exp-badge baixo">${fmt(rem.restante)}</span> ${esc(_expFaltamTexto(rem))}</td>
-              <td class="col-actions row-actions">
-                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
-                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar restante</button>
-              </td>
+
             </tr>`).join('')}
         </tbody>
       </table>
@@ -8601,18 +8606,19 @@ function renderExpedicaoPlano() {
       <h2 style="margin:0 0 8px;font-size:14px;">OSs ensacadas sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Ensaque</b> marcada mas não entraram em nenhuma expedição — nem passada, nem planejada. Acontece com OS ensacada antes de existir janela cadastrada. Use <b>alocar</b> para pô-las numa expedição.</div>
       <table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
         <tbody>
           ${pendentes.map(({ o, pecas }) => `
             <tr>
+      <td class="col-actions row-actions">
+                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
+                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar</button>
+              </td>
               <td><strong>${esc(o.os) || '—'}</strong></td>
               <td>${esc(nomePecaOS(o)) || '—'}</td>
               <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
-              <td class="col-actions row-actions">
-                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
-                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar</button>
-              </td>
+
             </tr>`).join('')}
         </tbody>
       </table>
@@ -8627,10 +8633,14 @@ function renderExpedicaoPlano() {
       <div class="card-title">Janelas de expedição cadastradas</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Uma janela <b>semanal</b> se repete nos dias marcados; uma de <b>data fixa</b> acontece uma vez só. O limite de volume é único para todas — <b>${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</b>, definido em <b>Unidades e carga</b>.</div>
       <table class="table">
-        <thead><tr><th>Nome</th><th>Quando</th><th>Ida</th><th>Volta</th><th>Volumes</th><th>Situação</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Quando</th><th>Ida</th><th>Volta</th><th>Volumes</th><th>Situação</th></tr></thead>
         <tbody>
           ${janelas.length ? janelas.map(j => `
             <tr>
+      <td class="col-actions row-actions">
+                <button class="edit" onclick="abrirModalExpJanela('${esc(j.id)}')">editar</button>
+                <button class="del admin-only" onclick="excluirJanelaExp('${esc(j.id)}')">excluir</button>
+              </td>
               <td><strong>${esc(j.nome) || '—'}</strong></td>
               <td>${j.tipo === 'data'
                 ? esc(formatDate(j.data))
@@ -8639,10 +8649,7 @@ function renderExpedicaoPlano() {
               <td style="font-family:'IBM Plex Mono',monospace;">${esc(j.horaVolta) || '—'}</td>
               <td>${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}</td>
               <td>${j.ativo === false ? '<span class="exp-badge vazio">inativa</span>' : '<span class="exp-badge ok">ativa</span>'}</td>
-              <td class="col-actions row-actions">
-                <button class="edit" onclick="abrirModalExpJanela('${esc(j.id)}')">editar</button>
-                <button class="del admin-only" onclick="excluirJanelaExp('${esc(j.id)}')">excluir</button>
-              </td>
+
             </tr>`).join('') : '<tr><td colspan="7" class="empty">Nenhuma janela cadastrada.</td></tr>'}
         </tbody>
       </table>
@@ -15380,13 +15387,13 @@ function renderModelos() {
   if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
   const catLabel = { malha: 'Camiseta', moletom: 'Moletom', outro: 'Outro' };
   tb.innerHTML = STATE.modelos.map(m => `
-    <tr><td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${catLabel[m.categoria]||'—'}</span></td><td>${esc(m.linha)||'—'}</td>${acoesCell('modelo', m.id)}</tr>`).join('');
+    <tr>${acoesCell('modelo', m.id)}<td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${catLabel[m.categoria]||'—'}</span></td><td>${esc(m.linha)||'—'}</td></tr>`).join('');
 }
 function renderColecoes() {
   const tb = document.getElementById('tbl-colecoes');
   if (!STATE.colecoes.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma coleção cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.colecoes.map(c => `
-    <tr><td><strong>${esc(c.nome)}</strong></td><td>${esc(c.temporada)||'—'}</td>${acoesCell('colecao', c.id)}</tr>`).join('');
+    <tr>${acoesCell('colecao', c.id)}<td><strong>${esc(c.nome)}</strong></td><td>${esc(c.temporada)||'—'}</td></tr>`).join('');
 }
 let pastasGradeExpandidas = new Set();
 
@@ -16062,10 +16069,10 @@ function renderGrades() {
     // + 1 de reposição. Na OS o número é multiplicado pelo nº de tonalidades
     // marcadas (ver _expSugestaoVolumes) — aqui ainda não se sabe quantas são.
     const volBadge = total > 0 ? ` <span class="badge" title="Volume na expedição com 1 tonalidade: 1 pacote por tamanho + 1 de reposição. Com 2 tons dobra (${total * 2 + 1}), com 3 triplica (${total * 3 + 1}).">${total + 1} vol</span>` : '';
-    return `<tr><td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${volBadge}</td>
+    return `<tr>${acoesCell('grade', g.id)}<td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${volBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>
-      <td style="text-align:center;">${_riscoCell(g)}</td>${acoesCell('grade', g.id)}</tr>`;
+      <td style="text-align:center;">${_riscoCell(g)}</td></tr>`;
   };
 
   // BUSCA: procurar não é navegar. Com algo escrito no campo, a lista larga as
@@ -16147,40 +16154,40 @@ function renderDesenhos() {
     (a.codigo || '').localeCompare(b.codigo || '', 'pt-BR', { numeric: true, sensitivity: 'base' })
   );
   tb.innerHTML = ordenados.map(d => `
-    <tr>
+    <tr>${acoesCell('desenho', d.id)}
       <td><div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">
         ${d.img ? `<img src="${urlDesenho(d.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div></td>
-      <td><strong>${esc(d.codigo)}</strong></td><td>${esc(d.desc)||'—'}</td>${acoesCell('desenho', d.id)}</tr>`).join('');
+      <td><strong>${esc(d.codigo)}</strong></td><td>${esc(d.desc)||'—'}</td></tr>`).join('');
 }
 function renderMarcas() {
   const tb = document.getElementById('tbl-marcas');
   if (!STATE.marcas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma marca cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.marcas.map(m => `
-    <tr><td><strong>${esc(m.nome)}</strong></td><td>${esc(m.desc)||'—'}</td>${acoesCell('marca', m.id)}</tr>`).join('');
+    <tr>${acoesCell('marca', m.id)}<td><strong>${esc(m.nome)}</strong></td><td>${esc(m.desc)||'—'}</td></tr>`).join('');
 }
 function renderLinhas() {
   const tb = document.getElementById('tbl-linhas');
   if (!STATE.linhas.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma linha cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.linhas.map(l => `
-    <tr><td><strong>${esc(l.nome)}</strong></td><td>${esc(l.desc)||'—'}</td>${acoesCell('linha', l.id)}</tr>`).join('');
+    <tr>${acoesCell('linha', l.id)}<td><strong>${esc(l.nome)}</strong></td><td>${esc(l.desc)||'—'}</td></tr>`).join('');
 }
 function renderBases() {
   const tb = document.getElementById('tbl-bases');
   if (!STATE.bases.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma base cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.bases.map(b => `
-    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('base', b.id)}</tr>`).join('');
+    <tr>${acoesCell('base', b.id)}<td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td></tr>`).join('');
 }
 function renderBlocos() {
   const tb = document.getElementById('tbl-blocos');
   if (!STATE.blocos.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhum bloco cadastrado.</td></tr>`; return; }
   tb.innerHTML = STATE.blocos.map(b => `
-    <tr><td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td>${acoesCell('bloco', b.id)}</tr>`).join('');
+    <tr>${acoesCell('bloco', b.id)}<td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td></tr>`).join('');
 }
 function renderEquipe() {
   const tb = document.getElementById('tbl-equipe');
   if (!STATE.equipe.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada.</td></tr>`; return; }
   tb.innerHTML = STATE.equipe.map(p => `
-    <tr><td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td>${acoesCell('equipe', p.id)}</tr>`).join('');
+    <tr>${acoesCell('equipe', p.id)}<td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td></tr>`).join('');
 }
 function etapasOrdenadas() {
   return [...STATE.etapas].sort((a,b) => (a.ordem||0) - (b.ordem||0));
@@ -16294,12 +16301,12 @@ function renderComponentesCad() {
       : '';
     return `
     <tr>
+      ${acoesCell('componente', c.id)}
       <td><strong>${esc(c.nome)}</strong>${dupBadge}</td>
       <td>${tipoLabel(c.tipoPeca)}</td>
       <td>${c.variacao ? `<span class="badge">${esc(labelVar[c.variacao]||c.variacao)}</span>` : '—'}</td>
       <td>${cores}</td>
       <td>${esc(c.desc)||'—'}</td>
-      ${acoesCell('componente', c.id)}
     </tr>`;
   }).join('');
 }
@@ -16378,7 +16385,7 @@ function renderFuncoes() {
                 : ` <span style="opacity:.6;" title="Vale para todos os tipos">· todos os tipos</span>`}${
           o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
       : '—';
-    return `<tr><td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td>${acoesCell('funcao', f.id)}</tr>`;
+    return `<tr>${acoesCell('funcao', f.id)}<td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td></tr>`;
   }).join('');
 }
 
@@ -20264,12 +20271,13 @@ async function listarSnapshotsLocais() {
   if (!regs.length) { cont.innerHTML = '<div class="empty" style="padding:20px;">Nenhum snapshot ainda — é criado automaticamente a cada alteração.</div>'; return; }
   regs.sort((a, b) => b.ts - a.ts);
   cont.innerHTML = `<table class="table">
-    <thead><tr><th>Quando</th><th>Conteúdo</th><th class="col-actions">Ação</th></tr></thead>
+    <thead><tr><th class="col-actions">Ação</th><th>Quando</th><th>Conteúdo</th></tr></thead>
     <tbody>${regs.map(r => `
       <tr>
+      <td class="col-actions"><button class="btn small danger" onclick="restaurarSnapshotLocal(${r.id})">Restaurar</button></td>
         <td>${esc(new Date(r.ts).toLocaleString('pt-BR'))}</td>
         <td>${r.resumo ? `${r.resumo.ordens} OS · ${r.resumo.desenhos} desenhos` : '—'}</td>
-        <td class="col-actions"><button class="btn small danger" onclick="restaurarSnapshotLocal(${r.id})">Restaurar</button></td>
+
       </tr>`).join('')}
     </tbody></table>`;
 }
@@ -22306,6 +22314,15 @@ function renderListaOS() {
     const cores = coresDaPecaOS(o);
     return `
     <tr>
+      <td class="col-actions row-actions">
+        ${_statusCelulaOS(o)}
+        <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
+        <button class="edit" onclick="verGradeDaOS('${o.id}')" title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
+        <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
+        <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
+        <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
+        <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
+      </td>
       <td>${thumb}</td>
       <td><strong>${esc(o.os)||'—'}</strong>${_conjugadaCelulaOS(o)}</td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
@@ -22318,15 +22335,7 @@ function renderListaOS() {
       <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
       <td>${o.grade?.total||0} pç</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
-      <td class="col-actions row-actions">
-        ${_statusCelulaOS(o)}
-        <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
-        <button class="edit" onclick="verGradeDaOS('${o.id}')" title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
-        <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
-        <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
-        <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
-        <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
-      </td>
+
     </tr>`;
   }).join('');
 }
@@ -30298,16 +30307,17 @@ function renderCompra() {
     const aberto = _compraAbertos.has(it.id);
     const detalhe = aberto && c ? `<tr><td colspan="6" style="background:var(--line-2);">${_cpTabelaFases(c)}</td></tr>` : '';
     return `<tr>
+      <td class="col-actions row-actions">
+        <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
+        <button class="${_cpPodeRemover(it, 'usuario', _cpQuemSou()) ? 'registro-only' : 'admin-only'}" onclick="compraRemover('${esc(it.id)}')">remover</button>
+      </td>
       <td><strong>${esc(_cpNomeGrade(it.gradeId))}</strong>${it.obs ? `<div class="muted" style="font-size:11px;">${esc(it.obs)}</div>` : ''}${
         it.criadoPor ? `<div class="muted" style="font-size:11px;">somou: ${esc(it.criadoPor)}</div>` : ''}</td>
       <td>${esc(_cpNomeDesenho(it.desenhoId))}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${it.camadas || '—'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${Math.max(1, parseInt(it.repeticoes, 10) || 1)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${c ? c.pecas.toLocaleString('pt-BR') : '—'}</td>
-      <td class="col-actions row-actions">
-        <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
-        <button class="${_cpPodeRemover(it, 'usuario', _cpQuemSou()) ? 'registro-only' : 'admin-only'}" onclick="compraRemover('${esc(it.id)}')">remover</button>
-      </td>
+
     </tr>${detalhe}`;
   }).join('');
 
@@ -30345,9 +30355,9 @@ function renderCompra() {
       </div>
       <table class="table">
         <thead><tr>
-          <th>Grade</th><th>Desenho técnico</th>
+          <th class="col-actions">Ações</th><th>Grade</th><th>Desenho técnico</th>
           <th style="text-align:right;">Camadas</th><th style="text-align:right;">Enfestos</th>
-          <th style="text-align:right;">Peças</th><th class="col-actions">Ações</th>
+          <th style="text-align:right;">Peças</th>
         </tr></thead>
         <tbody>${itens.length ? linhasItens : `<tr><td colspan="6" class="empty">Nenhum item ainda. Preencha a grade e o desenho técnico acima.</td></tr>`}</tbody>
       </table>

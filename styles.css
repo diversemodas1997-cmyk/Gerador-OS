@@ -739,7 +739,11 @@ main.content { padding: 32px 40px; overflow-x: hidden; }
   border-bottom: 1px solid var(--line);
 }
 .table tr:hover td { background: rgba(201,169,97,.06); }
-.table .col-actions { width: 120px; text-align: right; }
+/* A coluna de acoes e a PRIMEIRA de todas as tabelas (31/08/2026): ela era a
+   ultima, e alinhada a direita para encostar na borda. Na frente, alinhada a
+   direita, os botoes ficariam colados na coluna seguinte e longe da borda
+   esquerda -- exatamente ao contrario do que se queria. */
+.table .col-actions { width: 120px; text-align: left; }
 
 .empty {
   text-align: center;
