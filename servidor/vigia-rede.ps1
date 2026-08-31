@@ -20,17 +20,26 @@
 
     a) toda rede conectada esta como PARTICULAR (senao as regras nao valem);
     b) as portas 80 e 443 tem regra de entrada;
-    c) o cabo, quando tem link, esta no 193.168.0.200 fixo.
+    c) o cabo, quando tem link, esta no 193.168.0.200 fixo;
+    d) o Wi-Fi esta ASSOCIADO ao SSID que ele ja conhece.
 
   O (a) e o (b) nao tem risco: nao mexem em endereco nem derrubam conexao. O
   (c) mexe, e por isso e delegado ao `fixar-ip-cabo.ps1`, que confere se o
   endereco esta livre antes, prova rota/gateway/DNS/app depois, e devolve a
   placa para DHCP sozinho se qualquer conferencia falhar.
 
-  O Wi-Fi NAO e mexido de proposito. E por ele que esta maquina fala com a
-  internet -- backup, espelho e o proprio atendimento remoto -- e trocar o
-  endereco dele as cegas, sem ninguem olhando, e arriscar o que nao precisa
-  ser arriscado. Ele ja esta fixo; se sair do lugar, o log avisa.
+  O ENDERECO do Wi-Fi continua sem ser mexido, de proposito. E por ele que
+  esta maquina fala com a internet -- backup, espelho e o proprio atendimento
+  remoto -- e troca-lo as cegas, sem ninguem olhando, e arriscar o que nao
+  precisa ser arriscado. Ele ja esta fixo; se sair do lugar, o log avisa.
+
+  O (d) e outra coisa, e nasceu do reboot de 31/08/2026: a maquina voltou
+  com o cabo perfeito e o Wi-Fi DESCONECTADO -- placa habilitada, radio
+  ligado, associada a SSID nenhuma, porque o perfil salvo estava em
+  "conectar manualmente". O https://192.168.1.158 ficou mudo e nada
+  denunciava: o .200 respondia, os 12 conteineres de pe, o resto verde.
+  Reassociar a uma rede que a maquina ja conhece nao mexe em endereco nem
+  derruba conexao -- e da mesma classe do (a) e do (b).
 
   COMO USAR
     .\servidor\vigia-rede.ps1              conferir e consertar agora
@@ -54,6 +63,7 @@ $LogDir  = Join-Path $PSScriptRoot 'tls'
 $Log     = Join-Path $LogDir 'vigia-rede.log'
 $PLACA_CABO = 'Ethernet 3'
 $IP_CABO    = '193.168.0.200'
+$PLACA_WIFI = 'Wi-Fi'
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
@@ -213,6 +223,44 @@ if (-not $cabo) {
     } else {
       Anotar "nao achei $fix - o cabo ficou como estava"
     }
+  }
+}
+
+# ---- d) o Wi-Fi associado ao SSID que ele conhece --------------------------
+# So reassocia: nao escolhe rede nova, nao digita senha, nao toca no endereco.
+# Se nao ha perfil salvo, nao ha o que fazer -- e dizer isso e melhor do que
+# adivinhar a qual rede esta maquina deveria entrar.
+$wifi = Get-NetAdapter -Name $PLACA_WIFI -ErrorAction SilentlyContinue
+if (-not $wifi) {
+  Dizer "nao ha placa '$PLACA_WIFI' nesta maquina - nada a fazer"
+} elseif ($wifi.Status -eq 'Disabled') {
+  Anotar "a placa '$PLACA_WIFI' esta DESABILITADA - nao ha caminho pelo Wi-Fi ate alguem religa-la"
+} elseif ($wifi.Status -eq 'Up') {
+  Dizer "Wi-Fi associado - ok"
+} else {
+  # O nome do perfil sai do proprio netsh, e nao chumbado aqui: o SSID desta
+  # maquina ja mudou uma vez, e um nome escrito no script envelhece calado.
+  $perfilWifi = $null
+  foreach ($linha in (& netsh @('wlan','show','profiles') 2>&1)) {
+    $m = [regex]::Match([string]$linha, '^\s*(?:Todos os Perfis de Usu.rios|All User Profile)\s*:\s*(.+?)\s*$')
+    if ($m.Success) { $perfilWifi = $m.Groups[1].Value; break }
+  }
+  if (-not $perfilWifi) {
+    Anotar "o Wi-Fi esta desconectado e nao ha perfil de rede salvo - so a mao"
+  } elseif ($Somente) {
+    Anotar "o Wi-Fi esta DESCONECTADO (perfil salvo: '$perfilWifi') - o https://192.168.1.158 nao responde"
+  } else {
+    # connectionmode=auto e o conserto de raiz: sem ele, todo reboot volta com
+    # o Wi-Fi fora. O connect logo abaixo resolve o agora.
+    & netsh @('wlan','set','profileparameter',"name=$perfilWifi",'connectionmode=auto') 2>&1 | Out-Null
+    & netsh @('wlan','connect',"name=$perfilWifi") 2>&1 | Out-Null
+    $voltou = $false
+    foreach ($i in 1..10) {
+      Start-Sleep -Seconds 3
+      if ((Get-NetAdapter -Name $PLACA_WIFI -ErrorAction SilentlyContinue).Status -eq 'Up') { $voltou = $true; break }
+    }
+    if ($voltou) { Anotar "o Wi-Fi estava desconectado - reassociado a '$perfilWifi'" }
+    else         { Anotar "o Wi-Fi estava desconectado e NAO voltou em 30 s (perfil '$perfilWifi')" }
   }
 }
 
