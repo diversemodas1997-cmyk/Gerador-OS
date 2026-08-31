@@ -164,34 +164,91 @@ entrou — refaça com administrador de verdade e reabra o navegador.
 
 ---
 
-## 3. Apontar cada máquina para o servidor — automático
+## 3. Cada máquina, uma vez só — e depois ela se vira sozinha
 
-**Normalmente você não precisa fazer nada aqui.** Ao abrir
-`https://193.168.0.200`, o programa pergunta ao próprio servidor quem ele é e se
-conecta sozinho. A barra lateral já mostra **🏭 Servidor da fábrica**.
+O servidor tem **dois caminhos**: o cabo (`193.168.0.200`) e o Wi-Fi
+(`192.168.1.158`). Ele troca de um para o outro quando o cabo cai. Em
+**31/08/2026** isso parou a fábrica inteira numa segunda-feira: os atalhos
+guardavam um endereço, o endereço morreu no fim de semana, e "tempo esgotado"
+era toda a explicação.
 
-O passo abaixo continua valendo para conferir, corrigir ou desfazer — por
-exemplo numa máquina que já ficou apontada para um endereço antigo.
+Hoje **nenhuma máquina precisa saber em qual rede o servidor está.**
 
-Esta configuração vale **só na máquina onde foi feita** — é por isso que, quando
-precisa ser feita à mão, tem de repetir em cada computador.
+### 3.1 Instalar — uma vez por máquina
 
-1. Abra **`https://193.168.0.200`** (não o endereço antigo da internet).
-2. Entre com a conta daquela pessoa.
-3. Vá em **Configurações** → cartão **Servidor da fábrica (rede local)**.
-4. Preencha os dois campos:
-   - **Endereço:** `https://193.168.0.200` — sem porta, a API vem pelo mesmo
-     endereço.
-   - **Chave pública (anon) do servidor local:** a chave ANON, que está em
-     `servidor\tls\resumo-instalacao.txt` no servidor.
-5. **Testar conexão**. Depois **Salvar e recarregar**.
+No servidor, monte o pacote (ele aparece na Área de Trabalho):
 
-A barra lateral deve passar a mostrar **🏭 Servidor da fábrica**.
+```powershell
+.\servidor\preparar-instalador.ps1
+```
 
-**Se aparecer ☁ Nuvem em vermelho**, o servidor não respondeu, e o programa
-abriu a cópia da nuvem em **modo consulta** — dá para ver e imprimir, mas não
-editar. Isso é proposital: impede que os dois lados fiquem diferentes. Confira
-o endereço, o certificado (tarefa 2) e se o servidor está ligado.
+Leve a **pasta inteira** (pen drive ou rede) e clique duas vezes em
+`instalar-certificado.cmd` → **SIM** na permissão. Não separe os arquivos: o
+instalador procura o `ca.crt` e o `abrir-gerador-os.cmd` ao lado dele.
+
+Ele faz quatro coisas: instala o certificado da fábrica, copia o lançador para
+`%ProgramData%\Gerador-OS`, cria o atalho **Gerador-OS** na Área de Trabalho de
+todos os perfis, e **apaga o `.url` antigo** — que é a armadilha de endereço
+fixo, e voltaria a ser.
+
+### 3.2 Guardar as DUAS redes nessa máquina
+
+No Windows, conecte-a uma vez ao **cabo** (`Diverse001`) e uma vez ao **Wi-Fi**
+(`Desktop_F7027412`), deixando **"Conectar automaticamente"** marcado nos dois.
+
+Este passo é o que ninguém lembra, e sem ele o resto não adianta: **o lançador
+escolhe o caminho, não cria caminho.** Cliente e servidor precisam estar na
+mesma rede. Se o servidor migrar para o Wi-Fi e a máquina só conhecer o cabo,
+não há endereço no mundo que os junte.
+
+### 3.3 Como a troca acontece sozinha — três camadas
+
+Cada uma cobre a falha da anterior:
+
+1. **O atalho procura.** `abrir-gerador-os.cmd` tenta, nesta ordem —
+   `DESKTOP-SOV61AF` → `193.168.0.200` → `192.168.1.158` — e abre o primeiro que
+   responde. Ele refaz a busca **a cada clique**, não só na instalação.
+2. **O nome acompanha a rede.** Um número pertence a *uma* rede; um nome, não. O
+   Windows resolve o nome da máquina sozinho (LLMNR/NetBIOS) na rede em que o
+   **cliente** estiver. Os dois IPs ficam abaixo dele como rede de segurança,
+   para a máquina onde a resolução de nome esteja desligada por política.
+3. **O programa reaprende o endereço.** Se o endereço guardado nas Configurações
+   daquela máquina não responder, o programa pergunta a quem serviu a página e
+   passa a usar esse. É por isso que uma máquina que ficou presa num endereço
+   velho se conserta sozinha, sem ninguém ir até ela.
+
+O certificado cobre os três caminhos, com a **mesma autoridade** — por isso
+reemiti-lo não obriga ninguém a reinstalar o `ca.crt`.
+
+### 3.4 Configurações → "Servidor da fábrica": normalmente NÃO mexer
+
+Vale para conferir ou corrigir à mão, numa máquina que ficou presa em algo
+antigo. Vale **só naquela máquina**.
+
+1. Abra o atalho **Gerador-OS**.
+2. Entre com a conta da pessoa.
+3. **Configurações** → cartão **Servidor da fábrica (rede local)**.
+4. **Endereço:** `https://DESKTOP-SOV61AF` — sem porta, a API vem pelo mesmo
+   endereço. Preferir o **nome** ao número: o número volta a envelhecer.
+   **Chave pública (anon):** está em `servidor	lsesumo-instalacao.txt`.
+5. **Testar conexão** → **Salvar e recarregar**.
+
+A barra lateral deve mostrar **🏭 Servidor da fábrica**.
+
+### 3.5 Quando não abre — o que a mensagem está dizendo
+
+| O que aparece | O que é | O que fazer |
+|---|---|---|
+| O lançador lista os três e diz "não responde" | a máquina está em outra rede que o servidor | conferir o cabo / o Wi-Fi **desta** máquina (3.2) |
+| "Sua conexão não é particular" (cadeado vermelho) | chegou ao servidor; falta o `ca.crt` **aqui** | rodar o instalador nesta máquina (3.1) |
+| **☁ Nuvem** em vermelho na barra lateral | o servidor não respondeu; abriu a cópia da nuvem em **modo consulta** — vê e imprime, não edita | proposital, para os dois lados não ficarem diferentes; conferir servidor e rede |
+| Abre no servidor e em **nenhuma** outra máquina | o Windows classificou a rede do servidor como **Pública**, e o perfil Público ignora TODA regra de entrada | no servidor: `.\servidor\liberar-portas-firewall.ps1` como administrador |
+
+O último é o mais traiçoeiro: a regra do firewall aparece verde e correta, não
+há erro nem log, a conexão simplesmente não chega — e testar do próprio servidor
+**sempre dá certo**, porque o laço local não passa pelo firewall. A tarefa
+**"Gerador-OS Vigia Rede"** (logon + 15 min) existe para que ele não volte, mas
+**toda rede nova entra como Pública**: trocar de roteador o traz de volta.
 
 ---
 
