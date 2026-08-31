@@ -22,8 +22,13 @@
    Reemitir assim NAO toca na autoridade: quem ja instalou o ca.crt continua
    valendo, sem passar de maquina em maquina.
 
-   O --nome é opcional: serve se você der um nome ao servidor no roteador, para
-   poder acessar por https://gerador-os em vez do IP.
+   O --nome tambem aceita varios, separados por virgula, e vale MAIS que o IP:
+   um numero pertence a UMA rede, um nome nao. O Windows resolve o nome da
+   maquina sozinho na rede em que o cliente estiver (LLMNR/NetBIOS), entao
+   https://DESKTOP-SOV61AF abre pelo cabo quando os dois estao no cabo, e pelo
+   Wi-Fi quando os dois estao no Wi-Fi -- sem ninguem reescrever atalho nenhum.
+     node servidor\gerar-certificado.js --ip 193.168.0.200,192.168.1.158 --nome DESKTOP-SOV61AF
+   Cada nome entra duas vezes no SAN: "nome" e "nome.local".
 */
 const fs = require('fs');
 const os = require('os');
@@ -34,7 +39,11 @@ const arg = n => { const i = process.argv.indexOf('--' + n); return i > 0 ? proc
 // Aceita um ou varios: "--ip a,b". O primeiro e o principal (vai no CN).
 const IPS = String(arg('ip') || '').split(',').map(x => x.trim()).filter(Boolean);
 const IP = IPS[0];
-const NOME = arg('nome');
+// Aceita um ou varios, igual ao --ip. O nome importa mais que o numero: um
+// NOME resolve sozinho na rede em que o cliente estiver (LLMNR/NetBIOS), e por
+// isso sobrevive a troca de cabo para Wi-Fi sem ninguem reescrever atalho.
+const NOMES = String(arg('nome') || '').split(',').map(x => x.trim()).filter(Boolean);
+const NOME = NOMES[0];
 const SAIDA = arg('saida') || path.join(__dirname, 'tls');
 const DIAS_CA = 3650;    // a CA vale 10 anos: trocá-la obriga a passar em todas as máquinas
 const DIAS_SRV = 825;    // o certificado do servidor, ~2 anos (limite aceito pelos navegadores)
@@ -72,7 +81,7 @@ const p = n => path.join(SAIDA, n);
 // endereço digitado esteja NESTA lista — um certificado sem o IP aqui dá erro
 // mesmo estando tudo certo no resto.
 const nomes = [...IPS.map(x => `IP:${x}`), 'IP:127.0.0.1', 'DNS:localhost'];
-if (NOME) nomes.push(`DNS:${NOME}`, `DNS:${NOME}.local`);
+for (const n of NOMES) nomes.push(`DNS:${n}`, `DNS:${n}.local`);
 
 const cfg = p('openssl.cnf');
 fs.writeFileSync(cfg, `

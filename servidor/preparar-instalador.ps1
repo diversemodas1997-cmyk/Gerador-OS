@@ -29,8 +29,9 @@ $Raiz = Split-Path -Parent $PSScriptRoot
 $ca   = Join-Path $Raiz 'servidor\tls\ca.crt'
 $srv  = Join-Path $Raiz 'servidor\tls\servidor.crt'
 $cmd  = Join-Path $Raiz 'servidor\instalar-certificado.cmd'
+$abre = Join-Path $Raiz 'servidor\abrir-gerador-os.cmd'
 
-foreach ($f in @($ca, $cmd)) {
+foreach ($f in @($ca, $cmd, $abre)) {
   if (-not (Test-Path $f)) { throw "nao achei $f" }
 }
 
@@ -61,6 +62,10 @@ if (Test-Path $srv) {
 New-Item -ItemType Directory -Force -Path $Destino | Out-Null
 Copy-Item $ca  (Join-Path $Destino 'ca.crt') -Force
 Copy-Item $cmd (Join-Path $Destino 'instalar-certificado.cmd') -Force
+# O lancador vai junto: e ele que o instalador copia para a maquina e vira o
+# atalho da area de trabalho. Sem ele ao lado, o instalador cai no atalho
+# antigo, de endereco fixo -- que e a armadilha que derrubou a fabrica em 31/08.
+Copy-Item $abre (Join-Path $Destino 'abrir-gerador-os.cmd') -Force
 
 # Um LEIA-ME curto: quem leva o pendrive nao e quem escreveu isto.
 $leia = @"
@@ -70,11 +75,14 @@ GERADOR-OS - instalar o certificado nesta maquina
 2. Quando o Windows perguntar, clique em SIM (permissao de administrador).
 3. Espere a mensagem "Pronto" e feche.
 
-Depois disso, abra o atalho "Gerador-OS" que aparece na area de trabalho,
-ou digite  https://193.168.0.200
+Depois disso, abra o atalho "Gerador-OS" que aparece na area de trabalho.
+Ele PROCURA o servidor sozinho - pelo nome, pelo cabo ou pelo Wi-Fi - e
+por isso continua funcionando quando o servidor troca de rede.
 
-Nao separe os dois arquivos desta pasta: o instalador procura o ca.crt
-ao lado dele.
+Se precisar digitar:  https://DESKTOP-SOV61AF
+
+Nao separe os arquivos desta pasta: o instalador procura o ca.crt e o
+abrir-gerador-os.cmd ao lado dele.
 
 Certificado: $($cert.Subject)
 Vale ate:    $($cert.NotAfter.ToString('dd/MM/yyyy'))

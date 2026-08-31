@@ -35,6 +35,11 @@ REM sempre) e o Wi-Fi (o contorno de 28/08/2026, com o cabo fora). O mesmo
 REM certificado vale para os dois. O instalador testa os dois e diz qual
 REM responde nesta maquina - dizer "nao respondeu" quando o outro caminho
 REM funciona seria mandar a pessoa procurar um problema que nao existe.
+REM  O NOME vem primeiro: um numero pertence a UMA rede, um nome nao. O
+REM  Windows resolve o nome da maquina sozinho (LLMNR/NetBIOS) na rede em
+REM  que esta maquina estiver, entao ele acerta o endereco certo sem que
+REM  ninguem escolha. Os IPs ficam abaixo como rede de seguranca.
+set "PORNOME=https://DESKTOP-SOV61AF"
 set "SERVIDOR=https://193.168.0.200"
 set "ALTERNATIVO=https://192.168.1.158"
 
@@ -106,12 +111,38 @@ if errorlevel 1 (
 echo   OK - certificado instalado e conferido.
 
 REM ---- 5. atalho na area de trabalho de todo mundo --------------------
-REM Um .url simples: nao depende de qual navegador e o padrao, e some com
-REM um delete se nao quiserem.
-set "ATALHO=%PUBLIC%\Desktop\Gerador-OS.url"
->"%ATALHO%" echo [InternetShortcut]
->>"%ATALHO%" echo URL=%SERVIDOR%/
-if exist "%ATALHO%" (echo   OK - atalho "Gerador-OS" criado na area de trabalho.)
+REM Ate 31/08/2026 aqui se escrevia um .url com UM endereco fixo. Foi
+REM exatamente isso que deixou a fabrica parada numa segunda-feira: o
+REM servidor trocou de rede e o atalho continuou apontando para o endereco
+REM morto, com "tempo esgotado" por toda explicacao.
+REM Agora vai um LANCADOR: ele procura o servidor entre os caminhos
+REM conhecidos e abre o primeiro que responde. Quem troca de rede -- o
+REM servidor ou esta maquina -- nao precisa avisar ninguem.
+set "PASTA=%ProgramData%\Gerador-OS"
+set "LANCADOR=%PASTA%\abrir-gerador-os.cmd"
+set "ATALHO=%PUBLIC%\Desktop\Gerador-OS.lnk"
+set "URLVELHO=%PUBLIC%\Desktop\Gerador-OS.url"
+set "TEMLANCADOR="
+
+if exist "%~dp0abrir-gerador-os.cmd" (
+  if not exist "%PASTA%" mkdir "%PASTA%" >nul 2>&1
+  copy /y "%~dp0abrir-gerador-os.cmd" "%LANCADOR%" >nul 2>&1
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%ATALHO%'); $s.TargetPath='%LANCADOR%'; $s.WindowStyle=7; $s.Description='Abre o Gerador-OS procurando o servidor na rede'; $s.Save()" >nul 2>&1
+)
+if exist "%ATALHO%" (
+  set "TEMLANCADOR=1"
+  echo   OK - atalho "Gerador-OS" criado: ele PROCURA o servidor.
+  REM O .url antigo, de endereco fixo, seria a mesma armadilha de novo.
+  if exist "%URLVELHO%" del /q "%URLVELHO%" >nul 2>&1
+) else (
+  REM Pacote antigo, sem o lancador ao lado: fica o de antes, que ao menos
+  REM abre alguma coisa. Melhor um atalho velho do que nenhum.
+  >"%URLVELHO%" echo [InternetShortcut]
+  >>"%URLVELHO%" echo URL=%SERVIDOR%/
+  set "ATALHO=%URLVELHO%"
+  echo   OK - atalho "Gerador-OS" criado na area de trabalho.
+)
 
 REM ---- 6. o servidor esta respondendo agora? --------------------------
 REM Instalado o certificado, a pergunta seguinte e sempre "e agora, abre?".
@@ -119,17 +150,24 @@ REM Melhor responder aqui do que deixar a pessoa descobrir no navegador.
 echo.
 echo   Testando o servidor...
 set "ACHOU="
-call :testar "%SERVIDOR%"    && set "ACHOU=%SERVIDOR%"
+call :testar "%PORNOME%"     && set "ACHOU=%PORNOME%"
+if not defined ACHOU call :testar "%SERVIDOR%"    && set "ACHOU=%SERVIDOR%"
 if not defined ACHOU call :testar "%ALTERNATIVO%" && set "ACHOU=%ALTERNATIVO%"
 
 if defined ACHOU (
   echo   OK - o servidor respondeu em %ACHOU%
-  if not "%ACHOU%"=="%SERVIDOR%" (
-    echo.
-    echo   [AVISO] Respondeu pelo endereco ALTERNATIVO, nao pelo de sempre.
-    echo   Use %ACHOU% enquanto o de sempre nao voltar.
-    >"%ATALHO%" echo [InternetShortcut]
-    >>"%ATALHO%" echo URL=%ACHOU%/
+  if defined TEMLANCADOR (
+    REM Com o lancador, saber QUAL respondeu e informacao, nao decisao: ele
+    REM refaz esta busca a cada clique, e por isso acerta tambem amanha.
+    echo   O atalho refaz esta busca a cada clique - nao fica preso a este.
+  ) else (
+    if not "%ACHOU%"=="%SERVIDOR%" (
+      echo.
+      echo   [AVISO] Respondeu pelo endereco ALTERNATIVO, nao pelo de sempre.
+      echo   Use %ACHOU% enquanto o de sempre nao voltar.
+      >"%ATALHO%" echo [InternetShortcut]
+      >>"%ATALHO%" echo URL=%ACHOU%/
+    )
   )
   goto fim
 )
@@ -156,8 +194,12 @@ exit /b %errorlevel%
 echo.
 echo   ------------------------------------------------
 echo    Pronto. Abra o atalho "Gerador-OS" na area de
-echo    trabalho, ou digite  %SERVIDOR%
-echo    (se o de sempre nao responder: %ALTERNATIVO%^)
+echo    trabalho: ele procura o servidor sozinho, pelo
+echo    cabo ou pelo Wi-Fi, e nao precisa ser trocado
+echo    quando o servidor mudar de rede.
+echo.
+echo    Se precisar digitar:  %PORNOME%
+echo    (ou %SERVIDOR% / %ALTERNATIVO%^)
 echo.
 echo    Se esta maquina usa FIREFOX, ele tem uma lista
 echo    propria de certificados e precisa de um passo a
