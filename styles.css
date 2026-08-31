@@ -27,6 +27,43 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ============ AMPLIACAO DE LEITURA DA TELA ============
+   As medidas deste arquivo sao quase todas em px (987 delas) e nao ha um
+   `rem` sequer: nao existe um numero unico para aumentar a fonte. O que
+   existe e o zoom, que amplia texto E caixa juntos -- por isso nada estoura
+   o proprio container, que e o que aconteceria multiplicando so as fontes
+   dentro de larguras fixas em px.
+
+   Para mudar a ampliacao, mexa SO nesta linha. 1 = tamanho original. */
+:root { --ui-zoom: 1.25; }
+
+.app { zoom: var(--ui-zoom); }
+
+/* As sobreposicoes sao filhas diretas do <body>, fora do .app -- entao
+   precisam da ampliacao por conta propria, senao a tela cresce e elas ficam
+   para tras, menores que tudo em volta.
+
+   O zoom vai no CARTAO, nunca no fundo: o fundo e `position:fixed; inset:0`,
+   e zoom nele multiplicaria o proprio viewport -- a cortina passaria da tela
+   e o cartao sairia do centro, deslocado para baixo e para a direita. */
+.modal-backdrop > .modal,
+.modal-auth > .box,
+.toast,
+.avisos-painel { zoom: var(--ui-zoom); }
+
+/* AS FOLHAS FICAM DE FORA, e isto nao e detalhe. A .sheet nao e texto de
+   tela: e a geometria A4 (210x297mm) que o html2canvas fotografa para virar
+   PDF e que a impressora poe no papel. Ampliada, a folha passaria a ser
+   exibida em 262x371mm e o PDF sairia junto -- mentindo sobre o tamanho do
+   papel. Aqui a .print-area (que envolve as TRES folhas: OS, expedicao e
+   operacoes) desfaz a ampliacao, e o acordo tela == PDF == papel continua
+   de pe. Quem precisa enxergar detalhe DA FOLHA usa o zoom do navegador. */
+.print-area { zoom: calc(1 / var(--ui-zoom)); }
+
+/* Na foto do html2canvas, nenhuma ampliacao em lugar nenhum. */
+body.pdf-capture .app,
+body.pdf-capture .print-area { zoom: 1; }
+
 /* ============ LAYOUT GERAL ============ */
 .app {
   display: grid;
@@ -1479,10 +1516,11 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
     background: #fff;
     font-size: 9pt;
   }
-  .app { display: block; }
+  /* No papel a ampliacao de leitura nao existe: a folha e A4 e ponto. */
+  .app { display: block; zoom: 1; }
   aside.sidebar, .page-header, .no-print { display: none !important; }
   main.content { padding: 0; }
-  .print-area { padding: 0; background: #fff; display: block; }
+  .print-area { padding: 0; background: #fff; display: block; zoom: 1; }
   /* Anula so a ampliacao de leitura da tela. */
   .sheet-scaler { zoom: 1; }
   /* AS CORES DA FOLHA SAEM NO PAPEL. A caixa de impressao do Chrome vem com
