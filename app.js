@@ -10773,10 +10773,56 @@ function _opTempoMedidoDaFase(os, faseNome) {
   if (!gradeId || !faseNome) return 0;
   const alvo = _normFaseNome(faseNome);
   const l = temposFasesDaGrade(gradeId).find(x => x.n > 0 && _normFaseNome(x.nome) === alvo);
-  return (l && l.mediaMin) || 0;
+  if (!l) return 0;
+  // Ajustado às camadas desta OS naquela fase — mesma regra do resto.
+  const f = (os.fases || []).find(x => _normFaseNome(x.nome) === alvo);
+  return _tempoEsperadoFase(l, f ? _camadasDaFase(os, f.ordem) : 0) || 0;
 }
 
 /* ------- tempo do enfesto: apurado, nunca cadastrado ------- */
+
+// Camadas que aquela fase REALMENTE teve nesta OS. É o denominador de toda taxa
+// por camada — e o motivo de ela existir: a mesma fase enfestada com 78 camadas
+// e com 12 não leva o mesmo tempo, e uma média que soma as duas não descreve
+// nenhuma das duas.
+//
+// O bloco da fase manda; sem bloco, valem as camadas da OS. É a mesma leitura
+// que `_medicoesEnfesto` e `_opTempoEnfestoPrevisto` já faziam — agora num lugar
+// só, para as três contas não divergirem.
+function _camadasDaFase(o, ordem) {
+  const blocos = ((o || {}).enfesto || {}).blocos || [];
+  const bloco = blocos.find(b => String(b.ordem) === String(ordem)) || {};
+  return parseInt(bloco.camadas, 10) || parseInt(((o || {}).enfesto || {}).camadas, 10) || 0;
+}
+
+// O tempo ESPERADO de uma fase para um número de camadas, a partir de uma linha
+// de histórico (`temposFasesDaGrade` ou `_mediaTempoFasesSimilares`).
+//
+// POR QUE A MÉDIA CHAPADA NÃO SERVE (Junior, 31/08/2026: "nem todos os enfestos
+// produzem o limite máximo de camadas, mas sim, apenas algumas camadas. Logo, o
+// tempo estimado deve considerar também fases que não são determinadas por
+// preencher o máximo de camadas").
+//
+// Uma fase medida três vezes — 78, 36 e 12 camadas — tem média chapada que não
+// vale para nenhuma das três. Aplicada a um enfesto de 12 camadas, ela acusa
+// "muito abaixo da média" um enfesto que foi perfeitamente normal para o
+// tamanho dele; aplicada a um de 78, promete um tempo que não vai dar.
+//
+// A taxa por camada resolve, e é a MESMA ideia que `_opTempoEnfestoPrevisto` já
+// usava na cascata de operações desde sempre — este helper só a traz para os
+// outros dois lugares que estimavam tempo de enfesto.
+//
+// A média é das TAXAS, não a razão dos totais, pelo mesmo motivo de lá: assim
+// cada medição pesa igual, e um único enfesto gigante não domina a conta.
+//
+// Sem camadas para aplicar (ou sem taxa apurada), devolve a média chapada — é o
+// que existia, e continua sendo melhor do que nada.
+function _tempoEsperadoFase(linha, camadas) {
+  if (!linha) return null;
+  const cam = parseInt(camadas, 10) || 0;
+  if (cam > 0 && linha.minPorCamada > 0) return Math.max(1, Math.round(linha.minPorCamada * cam));
+  return linha.mediaMin != null ? linha.mediaMin : null;
+}
 
 // Cada horário de enfesto já lançado numa folha de OS, com o que explica o
 // tamanho dele: de que MODELO e de que GRADE é, que FASE é, quantas CAMADAS
@@ -14204,11 +14250,24 @@ function _opTempoMedidoParaOS(os, nomeOperacao, etapas, funcaoNome) {
   const alvos = [];
   (etapas || []).forEach(e => alvos.push(_normFaseNome(e)));
   if (nomeOperacao) alvos.push(_normFaseNome(nomeOperacao));
+  // As camadas desta OS naquela fase — é o que transforma a média em previsão.
+  // Sem elas (fase que a OS não tem), continua valendo a média chapada.
+  const camDaLinha = l => {
+    const f = (os.fases || []).find(x => _normFaseNome(x.nome) === _normFaseNome(l.nome));
+    return f ? _camadasDaFase(os, f.ordem) : 0;
+  };
   const casada = linhas.find(l => alvos.includes(_normFaseNome(l.nome)));
   if (casada) {
-    return { min: casada.mediaMin, n: casada.n, rotulo: `fase "${casada.nome}"`, osNums: casada.osNums || [], aplicavel: true, temDados: true };
+    const cam = camDaLinha(casada);
+    const prev = _tempoEsperadoFase(casada, cam);
+    const porCam = cam > 0 && casada.minPorCamada > 0;
+    return {
+      min: prev, n: casada.n,
+      rotulo: `fase "${casada.nome}"` + (porCam ? ` · ${cam} camadas` : ''),
+      osNums: casada.osNums || [], aplicavel: true, temDados: true
+    };
   }
-  const total = linhas.reduce((s, l) => s + l.mediaMin, 0);
+  const total = linhas.reduce((s, l) => s + (_tempoEsperadoFase(l, camDaLinha(l)) || 0), 0);
   // Quem diz se a operação é de enfesto é o PASSO DELA NA CORRENTE, não um
   // /enfest/ solto. Duas armadilhas, uma de cada lado:
   //   • pelo NOME cru, "Corte de enfesto" cairia na regra e receberia as horas do
@@ -25757,16 +25816,30 @@ function _mediaTempoFasesSimilares(o) {
       const t = tempos[f.ordem] || {};
       const ini = _opMin(t.enfIni), fim = _opMin(t.enfFim);
       if (ini == null || fim == null || fim <= ini) return;
-      if (!acc[nome]) acc[nome] = { soma: 0, n: 0 };
+      if (!acc[nome]) acc[nome] = { soma: 0, n: 0, taxas: [], cams: [] };
       // Sem pausa, como em toda média de enfesto do programa. A duração desta
       // fase (`_enfDuracaoFase`) é apurada do mesmo jeito — se só um dos dois
       // lados descontasse, todo enfesto que atravessa o almoço apareceria
       // "acima da média" sem nunca ter passado do tempo.
-      acc[nome].soma += _opMinutosTrabalhados(ini, fim); acc[nome].n++;
+      const min = _opMinutosTrabalhados(ini, fim);
+      acc[nome].soma += min; acc[nome].n++;
+      // A mesma taxa por camada de `temposFasesDaGrade`, e pela mesma razão:
+      // sem ela, um enfesto de 12 camadas é acusado de "abaixo da média" por
+      // uma média formada por enfestos de 78.
+      const cam = _camadasDaFase(x, f.ordem);
+      if (cam > 0) { acc[nome].taxas.push(min / cam); acc[nome].cams.push(cam); }
     });
   });
   const out = {};
-  Object.keys(acc).forEach(n => { out[n] = { mediaMin: Math.round(acc[n].soma / acc[n].n), n: acc[n].n }; });
+  Object.keys(acc).forEach(n => {
+    const a = acc[n];
+    out[n] = {
+      mediaMin: Math.round(a.soma / a.n), n: a.n,
+      nCam: a.taxas.length,
+      minPorCamada: a.taxas.length ? a.taxas.reduce((s, x) => s + x, 0) / a.taxas.length : 0,
+      camadasMedia: a.cams.length ? Math.round(a.cams.reduce((s, c) => s + c, 0) / a.cams.length) : null
+    };
+  });
   return out;
 }
 
@@ -25803,10 +25876,18 @@ function _enfConferirTempoFase(o, ord) {
   if (min == null) return { veredito: 'vazio' };
   const med = _mediaTempoFasesSimilares(o)[_normFaseNome(fase.nome)];
   if (!med) return { veredito: 'sem-ref', min, pausa };
-  const tol = Math.max(_ENF_TOL_MIN, Math.round(med.mediaMin * _ENF_TOL_PCT));
-  const dif = min - med.mediaMin;
+  // A referência é o tempo esperado PARA AS CAMADAS DESTA FASE, não a média
+  // chapada: um enfesto de 12 camadas medido contra a média de enfestos de 78
+  // aparecia "muito abaixo" sem nada de errado ter acontecido, e era o alarme
+  // que fazia o selo perder o sentido.
+  const camadas = _camadasDaFase(o, ord);
+  const esperado = _tempoEsperadoFase(med, camadas);
+  const porCamada = camadas > 0 && med.minPorCamada > 0;
+  const tol = Math.max(_ENF_TOL_MIN, Math.round(esperado * _ENF_TOL_PCT));
+  const dif = min - esperado;
   const veredito = Math.abs(dif) <= tol ? 'ok' : (dif > 0 ? 'acima' : 'abaixo');
-  return { veredito, min, pausa, dif, tol, mediaMin: med.mediaMin, n: med.n };
+  return { veredito, min, pausa, dif, tol, mediaMin: esperado, n: med.n,
+           camadas, porCamada, nCam: med.nCam, minPorCamada: med.minPorCamada };
 }
 
 // Conteúdo do selo que vai ao lado dos campos de horário da fase: a duração
@@ -25830,8 +25911,16 @@ function _enfSeloTempoHtml(o, ord) {
   if (r.veredito === 'sem-ref' || r.veredito === 'ok') return gasto;
   const sinal = r.dif > 0 ? '+' : '−';
   const palavra = r.veredito === 'acima' ? 'acima' : 'abaixo';
-  return `${gasto} <span style="${vermelho}" title="Fora da média desta fase: ${_opDurTexto(r.mediaMin)} em ${r.n} OS de referência (mesma grade e mesmas fases), com margem de ${_opDurTexto(r.tol)}">`
-    + `⚠ ${sinal}${dur(Math.abs(r.dif))} ${palavra} da média</span>`;
+  // A palavra muda com a referência: "da média" quando é a média chapada,
+  // "do previsto" quando o número foi ajustado às camadas desta fase — são
+  // coisas diferentes e quem lê tem de saber qual está vendo.
+  const ref = r.porCamada
+    ? `Fora do previsto para esta fase com ${r.camadas} camada${r.camadas === 1 ? '' : 's'}: `
+      + `${_opDurTexto(r.mediaMin)} (${(r.minPorCamada).toFixed(1)} min por camada, apurado em ${r.nCam} enfesto${r.nCam === 1 ? '' : 's'} `
+      + `de OS com a mesma grade e as mesmas fases), com margem de ${_opDurTexto(r.tol)}`
+    : `Fora da média desta fase: ${_opDurTexto(r.mediaMin)} em ${r.n} OS de referência (mesma grade e mesmas fases), com margem de ${_opDurTexto(r.tol)}`;
+  return `${gasto} <span style="${vermelho}" title="${esc(ref)}">`
+    + `⚠ ${sinal}${dur(Math.abs(r.dif))} ${palavra} ${r.porCamada ? 'do previsto' : 'da média'}</span>`;
 }
 
 // Reescreve os selos de conflito da folha aberta (todas as fases da OS). Chamado
@@ -25855,10 +25944,12 @@ function temposFasesDaGrade(gradeId) {
   const grade = (STATE.grades || []).find(g => g.id === gradeId);
   if (!grade) return [];
   const chave = 'g:' + grade.id;
-  const acc = new Map();     // nome normalizado → { nome, mins:[], osNums:Set }
+  // `taxas` guarda minutos POR CAMADA de cada medição que sabe quantas camadas
+  // tinha. É o que permite estimar uma fase que não vai encher o enfesto.
+  const acc = new Map();     // nome normalizado → { nome, mins:[], taxas:[], cams:[], osNums:Set }
   const pegar = (norm, nomeExib) => {
     let e = acc.get(norm);
-    if (!e) { e = { nome: nomeExib, mins: [], osNums: new Set() }; acc.set(norm, e); }
+    if (!e) { e = { nome: nomeExib, mins: [], taxas: [], cams: [], osNums: new Set() }; acc.set(norm, e); }
     return e;
   };
   // As fases do cadastro entram primeiro (mesmo sem medição): a tabela do cadastro
@@ -25880,7 +25971,13 @@ function temposFasesDaGrade(gradeId) {
       const e = pegar(norm, (f.nome || '').trim());
       // Desconta o café e o almoço que caem dentro do horário lançado: o que
       // interessa é quanto o enfesto LEVOU, não quanto tempo o relógio andou.
-      e.mins.push(_opMinutosTrabalhados(ini, fim));
+      const min = _opMinutosTrabalhados(ini, fim);
+      e.mins.push(min);
+      // Medição sem camadas conhecidas entra na média chapada, mas não na taxa:
+      // dividir por zero, ou por um palpite, estragaria o número que existe para
+      // ser mais honesto que a média.
+      const cam = _camadasDaFase(o, f.ordem);
+      if (cam > 0) { e.taxas.push(min / cam); e.cams.push(cam); }
       const num = (o.os || '').toString().trim();
       if (num) e.osNums.add(num);
     });
@@ -25891,6 +25988,14 @@ function temposFasesDaGrade(gradeId) {
     mediaMin: e.mins.length ? Math.round(e.mins.reduce((s, m) => s + m, 0) / e.mins.length) : null,
     minMin: e.mins.length ? Math.min(...e.mins) : null,
     maxMin: e.mins.length ? Math.max(...e.mins) : null,
+    // Minutos por camada (média das taxas) e o tamanho típico dos enfestos que
+    // a geraram — sem o segundo, quem lê a tabela não sabe se a taxa veio de
+    // enfestos parecidos com o que vai planejar.
+    nCam: e.taxas.length,
+    minPorCamada: e.taxas.length ? e.taxas.reduce((s, x) => s + x, 0) / e.taxas.length : 0,
+    camadasMedia: e.cams.length ? Math.round(e.cams.reduce((s, c) => s + c, 0) / e.cams.length) : null,
+    camadasMin: e.cams.length ? Math.min(...e.cams) : null,
+    camadasMax: e.cams.length ? Math.max(...e.cams) : null,
     osNums: Array.from(e.osNums).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
   }));
 }
@@ -25914,6 +26019,8 @@ function _gradeTemposHtml(grade) {
       <thead><tr>
         <th>Fase do enfesto</th>
         <th style="text-align:right;">Tempo médio</th>
+        <th style="text-align:right;">Por camada</th>
+        <th style="text-align:right;">Camadas medidas</th>
         <th style="text-align:right;">Medições</th>
         <th style="text-align:right;">Menor → maior</th>
         <th>OS medidas</th>
@@ -25923,6 +26030,12 @@ function _gradeTemposHtml(grade) {
           <tr${l.n ? '' : ' style="color:var(--ink-3);"'}>
             <td><strong>${esc(l.nome)}</strong></td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${l.n ? esc(_opDurTexto(l.mediaMin)) : '—'}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;" title="${l.nCam
+              ? esc(`Minutos por camada, média das ${l.nCam} medição(ões) que sabiam quantas camadas tinham. É este número que estima uma fase que não vai encher o enfesto.`)
+              : 'Nenhuma medição desta fase registrou quantas camadas tinha'}">${l.nCam ? esc(l.minPorCamada.toFixed(1)) + ' min' : '—'}</td>
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;" title="O tamanho dos enfestos que geraram a taxa — uma taxa apurada só em enfestos cheios descreve mal um enfesto curto.">${l.nCam
+              ? (l.camadasMin === l.camadasMax ? esc(String(l.camadasMin)) : esc(l.camadasMin + ' → ' + l.camadasMax))
+              : '—'}</td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${l.n ? l.n : '—'}</td>
             <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${l.n > 1 ? esc(_opDurTexto(l.minMin)) + ' → ' + esc(_opDurTexto(l.maxMin)) : '—'}</td>
             <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${l.osNums.length ? esc(l.osNums.join(', ')) : '—'}</td>
@@ -25931,7 +26044,8 @@ function _gradeTemposHtml(grade) {
     </table>
     ${medidas.length
       ? `<div class="field-hint" style="margin-top:6px;">Total medido nas fases com tempo: <b>${esc(_opDurTexto(medidas.reduce((s, l) => s + l.mediaMin, 0)))}</b>${
-          medidas.length < linhas.length ? ` · ${linhas.length - medidas.length} fase(s) ainda sem nenhuma medição` : ''}.</div>`
+          medidas.length < linhas.length ? ` · ${linhas.length - medidas.length} fase(s) ainda sem nenhuma medição` : ''}.
+          <br><b>Tempo médio</b> é a média crua do relógio; <b>por camada</b> é o que o programa usa para PREVER, porque nem todo enfesto vai até o limite de camadas — uma fase de 12 camadas não leva o tempo de uma de 78, e a média das duas não descreve nenhuma. A coluna <b>camadas medidas</b> diz de que tamanho de enfesto a taxa saiu.</div>`
       : `<div class="field-hint" style="margin-top:6px;">Nenhuma OS desta grade tem horário de enfesto lançado ainda — as fases aparecem sem tempo até a primeira medição.</div>`}`
     : `<div class="field-hint" style="margin-top:4px;">Esta grade ainda não tem fases cadastradas nem OS com horário lançado.</div>`;
   return `<div style="margin-top:14px;">${cab}${nota}${corpo}</div>`;
@@ -26036,9 +26150,17 @@ function renderEnfestoBox(o) {
   const mediasFase = _mediaTempoFasesSimilares(o);
   const nomeFaseDe = ord => _normFaseNome(((o.fases || []).find(f => f.ordem === ord) || {}).nome);
   const linhaTempo = (lbl, ord, campoIni, campoFim, t) => {
+    // A dica mostra o tempo PREVISTO para as camadas desta fase, não a média
+    // chapada — é o número contra o qual o selo vai comparar, e mostrar um e
+    // conferir contra o outro seria pedir para não confiar em nenhum dos dois.
     const med = mediasFase[nomeFaseDe(ord)];
+    const camFase = _camadasDaFase(o, ord);
+    const prev = med ? _tempoEsperadoFase(med, camFase) : null;
+    const porCam = med && camFase > 0 && med.minPorCamada > 0;
     const hint = med
-      ? ` <span style="color:#888;font-size:5.5pt;" title="Tempo médio desta fase em ${med.n} OS com a mesma grade e fases">⌀ ${esc(_opDurTexto(med.mediaMin))}</span>`
+      ? ` <span style="color:#888;font-size:5.5pt;" title="${esc(porCam
+          ? `Previsto para ${camFase} camadas: ${(med.minPorCamada).toFixed(1)} min por camada, apurado em ${med.nCam} enfesto(s) desta fase em OS com a mesma grade e fases`
+          : `Tempo médio desta fase em ${med.n} OS com a mesma grade e fases`)}">⌀ ${esc(_opDurTexto(prev))}${porCam ? `<span style="font-size:5pt;"> / ${camFase} cam</span>` : ''}</span>`
       : '';
     // Selo da conferência: a duração lançada e o alerta quando ela foge da média.
     // É reescrito sozinho a cada digitação (_atualizarSelosTempoEnfesto).
