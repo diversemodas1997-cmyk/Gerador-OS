@@ -25,9 +25,9 @@
    O --nome tambem aceita varios, separados por virgula, e vale MAIS que o IP:
    um numero pertence a UMA rede, um nome nao. O Windows resolve o nome da
    maquina sozinho na rede em que o cliente estiver (LLMNR/NetBIOS), entao
-   https://DESKTOP-SOV61AF abre pelo cabo quando os dois estao no cabo, e pelo
+   https://GERADOR-OS abre pelo cabo quando os dois estao no cabo, e pelo
    Wi-Fi quando os dois estao no Wi-Fi -- sem ninguem reescrever atalho nenhum.
-     node servidor\gerar-certificado.js --ip 193.168.0.200,192.168.1.158 --nome DESKTOP-SOV61AF
+     node servidor\gerar-certificado.js --ip 193.168.0.200,192.168.1.158 --nome GERADOR-OS
    Cada nome entra duas vezes no SAN: "nome" e "nome.local".
 */
 const fs = require('fs');
