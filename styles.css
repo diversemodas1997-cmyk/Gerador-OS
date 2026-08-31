@@ -46,10 +46,12 @@ html, body {
    O zoom vai no CARTAO, nunca no fundo: o fundo e `position:fixed; inset:0`,
    e zoom nele multiplicaria o proprio viewport -- a cortina passaria da tela
    e o cartao sairia do centro, deslocado para baixo e para a direita. */
+/* SO os que vivem no <body>. Os paineis de avisos e de mensagens ficam
+   DENTRO do .app e ja herdam a ampliacao dele -- listados aqui, levavam zoom
+   duas vezes (1,25 x 1,25 = 1,5625) e ficavam maiores que tudo em volta. */
 .modal-backdrop > .modal,
 .modal-auth > .box,
-.toast,
-.avisos-painel { zoom: var(--ui-zoom); }
+.toast { zoom: var(--ui-zoom); }
 
 /* AS FOLHAS FICAM DE FORA, e isto nao e detalhe. A .sheet nao e texto de
    tela: e a geometria A4 (210x297mm) que o html2canvas fotografa para virar

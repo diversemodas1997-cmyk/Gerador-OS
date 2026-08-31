@@ -22929,11 +22929,7 @@ function abrirMensagens() {
   const btn = document.getElementById('msgBotao');
   if (!painel || !btn) return;
   fecharAvisos();                        // um painel de cada vez, no mesmo canto
-  const r = btn.getBoundingClientRect();
-  const largura = Math.min(380, window.innerWidth - 24);
-  painel.style.width = largura + 'px';
-  painel.style.top = Math.round(r.bottom + 8) + 'px';
-  painel.style.left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - largura - 12))) + 'px';
+  _posicionarPainel(painel, btn);
   painel.classList.remove('hidden');
   renderMensagens();
   const campo = document.getElementById('msg-texto');
@@ -23438,16 +23434,50 @@ function avisosAberto() {
    expande tudo o que chegou, outro fecha. A posição é calculada a partir do
    próprio sino, e não fixada no CSS, porque o menu lateral recolhe (‹) e no
    celular vira gaveta — coordenada chumbada deixaria o painel no vazio. */
+/* AMPLIACAO DA INTERFACE E COORDENADAS — por que existe esta conta.
+
+   Os paineis de avisos e de mensagens sao `position: fixed` e vivem DENTRO
+   do .app, que tem `zoom` (ver --ui-zoom no styles.css). Isso poe duas
+   reguas na mesma conta:
+
+     · getBoundingClientRect() devolve pixels de VIEWPORT, ja ampliados;
+     · o style.top/left que escrevemos e lido no espaco AMPLIADO, onde cada
+       pixel vale --ui-zoom pixels de tela.
+
+   Somar as duas sem converter foi o defeito de 31/08/2026: com a ampliacao
+   em 1,25 o painel de mensagens descia e ia para a direita 25% alem do
+   botao e saia da tela. Pior, calado -- o limite "nunca sai pela direita"
+   comparava viewport com espaco ampliado e por isso nao segurava nada.
+
+   Dividir pelo fator poe tudo na mesma regua. Com --ui-zoom em 1 a conta e
+   a de sempre, entao isto nao e um remendo do zoom: e a conta certa. */
+function _uiZoom() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'));
+  return v > 0 ? v : 1;
+}
+
+/* Poe um painel logo abaixo do seu botao, sem passar das bordas da tela.
+   A altura tambem entra aqui: o max-height do CSS e em vh, e vh dentro de um
+   elemento ampliado rende 25% a mais — o pe do painel passava do rodape. */
+function _posicionarPainel(painel, botao) {
+  const z = _uiZoom();
+  const r = botao.getBoundingClientRect();
+  const telaL = window.innerWidth  / z;   // a tela, na regua do espaco ampliado
+  const telaA = window.innerHeight / z;
+  const largura = Math.min(380, telaL - 24);
+  const topo = Math.round(r.bottom / z + 8);
+  painel.style.width = largura + 'px';
+  painel.style.top   = topo + 'px';
+  painel.style.left  = Math.round(Math.max(12, Math.min(r.left / z, telaL - largura - 12))) + 'px';
+  painel.style.maxHeight = Math.max(160, Math.round(telaA - topo - 12)) + 'px';
+}
+
 function abrirAvisos() {
   const painel = document.getElementById('avisosPainel');
   const sino = document.getElementById('avisosSino');
   if (!painel || !sino) return;
-  const r = sino.getBoundingClientRect();
-  const largura = Math.min(380, window.innerWidth - 24);
-  painel.style.width = largura + 'px';
-  painel.style.top = Math.round(r.bottom + 8) + 'px';
-  // Encosta na esquerda do sino, mas nunca sai da tela pela direita.
-  painel.style.left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - largura - 12))) + 'px';
+  // Encosta na esquerda do sino, mas nunca sai da tela.
+  _posicionarPainel(painel, sino);
   painel.classList.remove('hidden');
   renderAvisos();
 }
