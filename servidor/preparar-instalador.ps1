@@ -79,7 +79,7 @@ Depois disso, abra o atalho "Gerador-OS" que aparece na area de trabalho.
 Ele PROCURA o servidor sozinho - pelo nome, pelo cabo ou pelo Wi-Fi - e
 por isso continua funcionando quando o servidor troca de rede.
 
-Se precisar digitar:  https://GERADOR-OS
+Se precisar digitar:  https://DESKTOP-SOV61AF
 
 Nao separe os arquivos desta pasta: o instalador procura o ca.crt e o
 abrir-gerador-os.cmd ao lado dele.

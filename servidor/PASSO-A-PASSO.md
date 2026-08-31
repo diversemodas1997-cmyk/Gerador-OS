@@ -214,7 +214,7 @@ em texto puro no registro:
 
 1. Baixe <https://download.sysinternals.com/files/AutoLogon.zip> e descompacte.
 2. Rode o `Autologon.exe`, aceite os termos.
-3. Preencha **Username** (`Pichau`), **Domain** (`GERADOR-OS` — o nome da máquina; era `DESKTOP-SOV61AF` até 31/08/2026) e a senha.
+3. Preencha **Username** (`Pichau`), **Domain** (`DESKTOP-SOV61AF`) e a senha.
 4. Clique em **Enable**.
 
 **Caminho alternativo — netplwiz.** Primeiro faça a caixa aparecer, no

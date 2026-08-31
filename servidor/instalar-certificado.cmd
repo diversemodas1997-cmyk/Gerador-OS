@@ -39,10 +39,7 @@ REM  O NOME vem primeiro: um numero pertence a UMA rede, um nome nao. O
 REM  Windows resolve o nome da maquina sozinho (LLMNR/NetBIOS) na rede em
 REM  que esta maquina estiver, entao ele acerta o endereco certo sem que
 REM  ninguem escolha. Os IPs ficam abaixo como rede de seguranca.
-REM  O nome antigo fica logo abaixo do novo enquanto houver maquina que
-REM  ainda nao viu o reboot da renomeacao. O certificado cobre os dois.
-set "PORNOME=https://GERADOR-OS"
-set "PORNOMEANTIGO=https://DESKTOP-SOV61AF"
+set "PORNOME=https://DESKTOP-SOV61AF"
 set "SERVIDOR=https://193.168.0.200"
 set "ALTERNATIVO=https://192.168.1.158"
 
@@ -154,7 +151,6 @@ echo.
 echo   Testando o servidor...
 set "ACHOU="
 call :testar "%PORNOME%"     && set "ACHOU=%PORNOME%"
-if not defined ACHOU call :testar "%PORNOMEANTIGO%" && set "ACHOU=%PORNOMEANTIGO%"
 if not defined ACHOU call :testar "%SERVIDOR%"    && set "ACHOU=%SERVIDOR%"
 if not defined ACHOU call :testar "%ALTERNATIVO%" && set "ACHOU=%ALTERNATIVO%"
 
