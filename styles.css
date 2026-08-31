@@ -3599,3 +3599,37 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    porque as duas respondem à mesma pergunta — qual pano é este — e juntas
    escolhem a linha que o planejamento usa. */
 .func-op-row .func-op-fase { width: 150px; flex: 0 0 auto; font-size: 12px; }
+
+/* + e − das linhas de tom do "Total por tamanho", na folha de OS.
+   Vivem SÓ na tela (.no-print os tira do papel e da foto do PDF): no papel a
+   quantidade de tons já está decidida, e um botão impresso seria tinta gasta.
+   Discretos de propósito, como o ✎ do quadro da OE — a folha continua sendo
+   uma folha. Ficam na faixa verde do bloco, presos à direita por position
+   absolute: a tabela é table-layout fixed, então ocupar espaço no fluxo
+   empurraria conteúdo em vez de alargar a célula. */
+.tt-tom-btns {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.tt-tom-btn {
+  background: none;
+  border: 1px solid #b6ccbb;
+  border-radius: 3px;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  line-height: 1;
+  font-size: 9pt;
+  font-weight: 700;
+  color: #4a6b52;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tt-tom-btn:hover { background: #dcefe1; color: #14361d; border-color: #7fa88a; }

@@ -24073,7 +24073,10 @@ async function salvarTomEnfesto(osId, ordem, tom, valor) {
 function _camadasPorTomFase(o, ord) {
   const tv = ((o.progresso || {}).enfestosTons || {})[ord] || {};
   const out = {};
-  [1, 2, 3, 4].forEach(t => { const n = parseInt(tv[t], 10); if (n > 0) out[t] = n; });
+  Object.keys(tv).forEach(k => {
+    const t = parseInt(k, 10), n = parseInt(tv[k], 10);
+    if (t > 0 && n > 0) out[t] = n;
+  });
   return out;
 }
 
@@ -24088,8 +24091,8 @@ function _camadasPorTomFase(o, ord) {
 function _faseNaoEnfestadaPorTom(o, ord) {
   const tv = ((o.progresso || {}).enfestosTons || {})[ord] || {};
   let temZero = false;
-  for (const t of [1, 2, 3, 4]) {
-    const s = String(tv[t] == null ? '' : tv[t]).trim();
+  for (const k of Object.keys(tv)) {
+    const s = String(tv[k] == null ? '' : tv[k]).trim();
     if (s === '') continue;               // em branco não é resposta
     const n = parseInt(s, 10);
     if (n > 0) return false;              // alguém enfestou algo: a fase aconteceu
@@ -24185,7 +24188,7 @@ async function recalcularDeCamadasPorTom(osId) {
   o.progresso.totalTamanhoTons = {};
   o.progresso.totalTamanhoTomValor = o.progresso.totalTamanhoTomValor || {};
   const N = valores.length;
-  for (let slot = 1; slot <= 4; slot++) {
+  for (let slot = 1; slot <= MAX_TONS; slot++) {
     if (slot <= N) o.progresso.totalTamanhoTons[slot] = true;
     if (slot < N) o.progresso.totalTamanhoTomValor[slot] = valores[slot - 1] * minQtd * mult; // editável
     else delete o.progresso.totalTamanhoTomValor[slot];                                        // balanceador/inexistente
@@ -24433,16 +24436,29 @@ async function salvarObsOS(osId, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarObsOS', e); }
 }
 
+// Teto de tonalidades de uma OS. Eram 4 fixas; viraram 7 porque a folha passou
+// a ganhar linha de tom sob demanda (o + e o − do "Total por tamanho").
+const MAX_TONS = 7;
+
 // Calcula os tons efetivamente marcados como prefixo consecutivo: cada tom só
 // vale se todos os anteriores estiverem marcados (Tom 4 exige Tom 1, 2 e 3).
-// Sanitiza dados antigos ou estado inconsistente sem precisar limpar.
+// Sanitiza dados antigos ou estado inconsistente sem precisar limpar — um Tom 5
+// solto, sem o 4, não vira volume nem etiqueta.
 function tonsEfetivos(ttTons) {
   const out = [];
-  if (ttTons && ttTons[1]) out.push(1);
-  if (ttTons && ttTons[1] && ttTons[2]) out.push(2);
-  if (ttTons && ttTons[1] && ttTons[2] && ttTons[3]) out.push(3);
-  if (ttTons && ttTons[1] && ttTons[2] && ttTons[3] && ttTons[4]) out.push(4);
+  if (!ttTons) return out;
+  for (let t = 1; t <= MAX_TONS; t++) {
+    if (!ttTons[t]) break;
+    out.push(t);
+  }
   return out;
+}
+
+// Quantas LINHAS de tom a folha mostra. É o número de tons marcados, e nunca
+// menos de UMA: o Tom 1 aparece mesmo sem nada marcado — é a tonalidade
+// implícita de toda OS, e a linha dele vem vazia até alguém dizer como dividir.
+function nLinhasTomOS(o) {
+  return Math.max(1, tonsEfetivos(((o || {}).progresso || {}).totalTamanhoTons || {}).length);
 }
 
 // Multiplicador de peças por camada: quantas unidades cada camada rende em cada
@@ -24574,37 +24590,48 @@ function totaisPorTamanhoTomOS(o) {
   };
 }
 
-async function togglarTotalTamanhoTom(osId, tom, checked) {
-  if (!exigirEdicaoFolha('editar o total por tamanho')) return;
+// AS LINHAS DE TOM DA FOLHA, e quem manda nelas.
+//
+// Cada linha teve, até 31/08/2026, uma CAIXA DE MARCAR, e marcar era o que
+// ligava a tonalidade. A caixa saiu porque ela perguntava o que a folha já
+// sabia: quem determina os tons são as CAMADAS lançadas na fase principal (o
+// "Corpo 1") — `recalcularDeCamadasPorTom` escreve os tons a partir delas desde
+// sempre, e a caixa só podia discordar do que estava lançado ali embaixo.
+//
+// No lugar dela ficou um + e um −, para quem precisa da LINHA antes de ter o
+// número: o + abre a próxima (até MAX_TONS), o − recolhe a última. O Tom 1 não
+// sai nunca — uma OS sem tonalidade nenhuma não existe.
+//
+// A marcação continua gravada em `progresso.totalTamanhoTons`, do jeito que
+// sempre esteve: é dela que saem o volume da expedição, as etiquetas e o
+// balanceador. O que mudou é só QUEM escreve — em vez de N caixas soltas, duas
+// portas que sempre deixam um PREFIXO CONTÍGUO 1..N. Um estado furado (Tom 5
+// marcado sem o 4) deixa de ser possível de produzir.
+async function _definirLinhasTomOS(osId, alvoBruto) {
+  if (!exigirEdicaoFolha('mudar as tonalidades do total por tamanho')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
+  const antes = nLinhasTomOS(os);
+  const alvo = Math.min(MAX_TONS, Math.max(1, Number(alvoBruto) || 1));
+  if (alvo === antes) return;
   os.progresso = os.progresso || {};
-  os.progresso.totalTamanhoTons = os.progresso.totalTamanhoTons || {};
-  const tNum = Number(tom);
-  const t = os.progresso.totalTamanhoTons;
-  if (checked) {
-    // Bloqueia se prereq nao atendido (cada tom exige todos os anteriores)
-    if (tNum === 2 && !t[1]) {
-      if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
-      return;
-    }
-    if (tNum === 3 && (!t[1] || !t[2])) {
-      if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
-      return;
-    }
-    if (tNum === 4 && (!t[1] || !t[2] || !t[3])) {
-      if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
-      return;
-    }
-    t[tNum] = true;
-  } else {
-    delete t[tNum];
-    // Cascade: desmarcar um tom derruba todos os posteriores.
-    if (tNum === 1) { delete t[2]; delete t[3]; delete t[4]; }
-    else if (tNum === 2) { delete t[3]; delete t[4]; }
-    else if (tNum === 3) { delete t[4]; }
+  const t = os.progresso.totalTamanhoTons = os.progresso.totalTamanhoTons || {};
+  for (let i = 1; i <= MAX_TONS; i++) {
+    if (i <= alvo) t[i] = true; else delete t[i];
   }
-  try { await saveState('ordens'); } catch (e) { console.warn('togglarTotalTamanhoTom', e); }
+  // Retirar um tom apaga o RASTRO dele, senão ele voltaria sozinho: as camadas
+  // por tom da fase principal são justamente o que reescreve `totalTamanhoTons`
+  // no próximo lançamento, e um número esquecido lá ressuscitaria a linha que
+  // acabou de ser recolhida. O V do "Total por tamanho" sai pelo mesmo motivo.
+  if (alvo < antes) {
+    const val = os.progresso.totalTamanhoTomValor || {};
+    const enf = os.progresso.enfestosTons || {};
+    for (let i = alvo + 1; i <= MAX_TONS; i++) {
+      delete val[i];
+      Object.keys(enf).forEach(ord => { if (enf[ord]) delete enf[ord][i]; });
+    }
+  }
+  try { await saveState('ordens'); } catch (e) { console.warn('_definirLinhasTomOS', e); }
   // Mudou o nº de tonalidades → mudou o volume: cada tom é ensacado separado.
   // Propaga para as expedições futuras desta OS, senão a OE seguiria com o
   // número congelado de quando a OS entrou no plano.
@@ -24615,6 +24642,22 @@ async function togglarTotalTamanhoTom(osId, tom, checked) {
     if (secExp && !secExp.classList.contains('hidden')) renderExpedicaoPlano();
   }
   if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
+}
+
+async function adicionarLinhaTomOS(osId) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  const n = nLinhasTomOS(os);
+  if (n >= MAX_TONS) { toast(`O máximo é ${MAX_TONS} tonalidades.`, 'erro'); return; }
+  await _definirLinhasTomOS(osId, n + 1);
+}
+
+async function removerLinhaTomOS(osId) {
+  const os = STATE.ordens.find(x => x.id === osId);
+  if (!os) return;
+  const n = nLinhasTomOS(os);
+  if (n <= 1) { toast('O Tom 1 não pode ser retirado.', 'erro'); return; }
+  await _definirLinhasTomOS(osId, n - 1);
 }
 
 // CAMINHO DE VOLTA: o "Total por tamanho" preenche as CAMADAS POR TOM do enfesto.
@@ -24652,7 +24695,7 @@ function _sincronizarTonsDoEnfestoPeloTotal(os) {
   const qtdMin = visiveis.length ? Math.min(...visiveis) : 0;
   const unidade = qtdMin * calcularMultPrincipalImpressao(os);   // peças que 1 camada rende no limitante
   // Tom desmarcado não deixa número para trás na linha do enfesto.
-  [1, 2, 3, 4].forEach(t => { if (!tomsSel.includes(t)) delete alvo[t]; });
+  for (let t = 1; t <= MAX_TONS; t++) { if (!tomsSel.includes(t)) delete alvo[t]; }
   if (!tomsSel.length || !(cam > 0) || !(unidade > 0)) return { arredondou: false };
   const balanceador = tomsSel[tomsSel.length - 1];
   let soma = 0, arredondou = false;
@@ -24794,10 +24837,10 @@ function atualizarLinhasTomNoDOM() {
   // aqui é quanto cada tom leva EM CADA COLUNA, então guarda-se o par
   // (valor, tamanho) e a conversão é feita por coluna.
   const vPorTom = {};
-  [1,2,3,4].forEach(tt => {
+  for (let tt = 1; tt <= MAX_TONS; tt++) {
     const first = document.querySelector(`input[data-tt-tom-input="${tt}"]`);
     if (first) vPorTom[tt] = { val: Math.max(0, Number(first.value) || 0), size: first.dataset.ttSize };
-  });
+  }
   const naColuna = (e, k) => {
     const qOrig = (e.size && (g[e.size] || 0) > 0) ? g[e.size] : 0;
     const qDest = g[k] || 0;
@@ -24887,11 +24930,18 @@ function aplicarProgressoCheckboxes(os) {
     const desejado = !!prog.enfestosCheck?.[inp.dataset.enfesto];
     if (inp.checked !== desejado) inp.checked = desejado;
   });
-  document.querySelectorAll('.os-check[data-tt-tom]').forEach(inp => {
-    const tom = inp.dataset.ttTom;
-    const desejado = !!prog.totalTamanhoTons?.[tom];
-    if (inp.checked !== desejado) inp.checked = desejado;
-  });
+  // As linhas de tom não têm mais caixa de marcar, então não há checkbox para
+  // acertar aqui — o que pode ter mudado do outro lado é a QUANTIDADE de linhas.
+  // Isso não dá para costurar no DOM sem refazer a tabela inteira (as células do
+  // balanceador e os totais de linha mudam de dono), então quando o número
+  // diverge a folha é redesenhada. Só quando diverge: redesenhar a cada
+  // sincronização faria a tela piscar e roubaria o foco de quem digita.
+  if (printOsAtual && printOsAtual.id === os.id
+      && document.querySelector('[data-tt-linha]')
+      && document.querySelectorAll('[data-tt-linha]').length !== nLinhasTomOS(os)) {
+    renderPrintSheet(os);
+    return;
+  }
   // Tempos de enfesto (texto, por fase) e de corte (par único da etapa Corte).
   // Não mexe no campo em foco pra não atropelar quem está digitando.
   document.querySelectorAll('input[data-enf-tempo]').forEach(inp => {
@@ -25889,10 +25939,18 @@ function renderEnfestoBox(o) {
   const enfestosCheck = (o.progresso && o.progresso.enfestosCheck) || {};
   const enfestosTempos = (o.progresso && o.progresso.enfestosTempos) || {};
   // As tonalidades podem aparecer em qualquer fase, então cada fase SEMPRE
-  // ganha campos em branco pros quatro tons (Tom 1/2/3/4), independente do que
-  // está marcado no "Total por tamanho" — preenchíveis à mão e persistidos por fase.
+  // ganha campos em branco pros tons, independente do que o "Total por tamanho"
+  // mostra — preenchíveis à mão e persistidos por fase.
+  //
+  // O piso é QUATRO, que era o número fixo antigo: assim nenhuma folha perde
+  // campo por causa da mudança. O teto acompanha os tons que a OS realmente tem,
+  // porque é aqui que eles são lançados — a linha do Total por tamanho nasce
+  // deste número, não o contrário. Acima de quatro a linha QUEBRA (flex-wrap):
+  // sete campos em fila estourariam a largura da coluna do enfesto, que já é
+  // apertada.
   const enfestosTons = (o.progresso && o.progresso.enfestosTons) || {};
-  const tomsSelEnf = [1, 2, 3, 4];
+  const nTonsEnf = Math.max(4, nLinhasTomOS(o));
+  const tomsSelEnf = Array.from({ length: nTonsEnf }, (_, i) => i + 1);
   const campoTom = (ord, tom, val) =>
     `<input type="text" value="${esc(val || '')}" `
     + `data-enf-tom="${esc(String(ord))}" data-enf-tomnum="${tom}" `
@@ -25900,7 +25958,7 @@ function renderEnfestoBox(o) {
     + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
     + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
   const linhaTons = (ord, tv) => tomsSelEnf.length
-    ? `<div style="display:flex;align-items:center;gap:6px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
+    ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
         <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">Tons</span>
         ${tomsSelEnf.map(tom => `<span style="color:#555;">Tom ${tom}</span>${campoTom(ord, tom, tv[tom])}`).join('')}
       </div>`
@@ -26262,8 +26320,10 @@ function renderPrintSheet(o) {
               const multPrincipal = multiplicadorPecaOS(o);
               const t = (q) => (q > 0 && cam > 0) ? q * cam * multPrincipal : '';
               const totalGeral = TT.totalGeral;
-              const ttTons = (o.progresso && o.progresso.totalTamanhoTons) || {};
               const sizeKeys = TT.keys;
+              // Quantas linhas de tom esta folha mostra hoje. Não é mais uma
+              // constante: o + e o − do rótulo da última linha mexem nela.
+              const nLinhas = nLinhasTomOS(o);
               // Tons marcados em ordem (prefixo: 1, 1+2 ou 1+2+3). O ultimo
               // vira o "balanceador": cada celula dele recebe colTotal menos a
               // soma dos V dos editaveis, mantendo as somas das colunas iguais
@@ -26274,17 +26334,23 @@ function renderPrintSheet(o) {
               // escalada pela grade (TT.linhas já traz o número de cada uma).
               // Digitar numa célula propaga pras outras via DOM, na proporção.
               const vTom = TT.vTom;
+              // O + e o − moram na FAIXA VERDE do bloco, não no rótulo da
+              // última linha. Foi onde eles couberam: a tabela é table-layout
+              // fixed e a primeira coluna tem 48px — "Tom 3" mais dois botões
+              // pedem 60px, e os 12px de sobra vazavam por cima da coluna P.
+              // Na faixa há a linha inteira, e o + fica encostado à direita,
+              // longe do texto. Também não custa altura nenhuma: a faixa já
+              // existia. O .no-print tira os dois do papel E da foto do PDF
+              // (html2canvas) — no papel o número de tons já está decidido.
+              const btnsBloco = `<span class="tt-tom-btns no-print">`
+                + (nLinhas < MAX_TONS
+                    ? `<button type="button" class="tt-tom-btn" title="Acrescentar o Tom ${nLinhas + 1}" onclick="adicionarLinhaTomOS('${esc(o.id)}')">+</button>`
+                    : '')
+                + (nLinhas > 1
+                    ? `<button type="button" class="tt-tom-btn" title="Retirar o Tom ${nLinhas}" onclick="removerLinhaTomOS('${esc(o.id)}')">−</button>`
+                    : '')
+                + `</span>`;
               const tomRow = (tom) => {
-                const isChecked = tomsSel.includes(tom);
-                const ck = isChecked ? 'checked' : '';
-                let bloqueado = false;
-                if (tom === 2 && !ttTons[1]) bloqueado = true;
-                if (tom === 3 && (!ttTons[1] || !ttTons[2])) bloqueado = true;
-                if (tom === 4 && (!ttTons[1] || !ttTons[2] || !ttTons[3])) bloqueado = true;
-                const disabledAttr = bloqueado ? 'disabled' : '';
-                // Todos os tons com a MESMA cor do Tom 1 (sem desbotar): mesmo
-                // bloqueado, o texto fica na cor normal — só o checkbox continua
-                // desabilitado pra manter a sequência (Tom 2 exige Tom 1 etc.).
                 const labelStyle = "display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:7pt;font-weight:700;";
                 // A linha sai de TT.linhas — a mesma estrutura que a folha de OE
                 // usa. O Tom 1 aparece mesmo sem checkbox marcado (tonalidade
@@ -26314,26 +26380,23 @@ function renderPrintSheet(o) {
                 const totalCell = !mostra
                   ? `<td style="background:#c9e8d0;"></td>`
                   : `<td style="background:#c9e8d0;" data-tt-row-total="${tom}">${rowSum > 0 ? rowSum : ''}</td>`;
-                return `<tr style="background:#f4faf5;">
+                return `<tr style="background:#f4faf5;" data-tt-linha="${tom}">
                   <td style="white-space:nowrap;padding:1px 4px;">
-                    <label style="${labelStyle}">
-                      <input type="checkbox" class="os-check" ${ck} ${disabledAttr} data-tt-tom="${tom}" onchange="togglarTotalTamanhoTom('${esc(o.id)}', this.dataset.ttTom, this.checked)" style="margin:0;">
-                      Tom ${tom}
-                    </label>
+                    <span style="${labelStyle}">Tom ${tom}</span>
                   </td>
                   ${cells}
                   ${totalCell}
                 </tr>`;
               };
               return `
-                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
+                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;position:relative;">Total por tamanho${btnsBloco}</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td></td>
                   <td>${t(g.p)}</td><td>${t(g.m)}</td><td>${t(g.g)}</td>
                   <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
                 </tr>
-                ${tomRow(1)}${tomRow(2)}${tomRow(3)}${tomRow(4)}`;
+                ${Array.from({ length: nLinhas }, (_, i) => tomRow(i + 1)).join('')}`;
             })()}
           </tbody>
         </table>
@@ -30673,7 +30736,8 @@ window.togglarChecklistEtapa = togglarChecklistEtapa;
 window.togglarChecklistTarefa = togglarChecklistTarefa;
 window.togglarChecklistEnfesto = togglarChecklistEnfesto;
 window.salvarTomEnfesto = salvarTomEnfesto;
-window.togglarTotalTamanhoTom = togglarTotalTamanhoTom;
+window.adicionarLinhaTomOS = adicionarLinhaTomOS;
+window.removerLinhaTomOS = removerLinhaTomOS;
 window.salvarValorTotalTamanhoTom = salvarValorTotalTamanhoTom;
 window.propagarValorTomTamanho = propagarValorTomTamanho;
 window.renderComponentesCad = renderComponentesCad;
