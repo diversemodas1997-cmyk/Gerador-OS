@@ -3555,6 +3555,9 @@ function goto(page) {
   // daquela tela volta a valer sobre o desenho novo. Sem isto, sair da tela e
   // voltar trazia a lista completa com o termo ainda escrito no campo.
   if (page.startsWith('cad-')) _cadBuscaFiltrar(page);
+  // Cada tela tem uma largura natural diferente — a lista de OS e a mais larga
+  // de todas. Reavalia a ampliacao DEPOIS do desenho, senao mede a tela velha.
+  setTimeout(ajustarAmpliacao, 0);
 }
 
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
@@ -23501,6 +23504,55 @@ function _uiZoom() {
   return v > 0 ? v : 1;
 }
 
+/* A AMPLIACAO SE ENCOLHE SOZINHA QUANDO NAO CABE.
+
+   --ui-zoom-alvo e o tamanho DESEJADO (1,25). Ele nem sempre e possivel: a
+   lista de OS tem 11 colunas, e o mesmo 1,25 que se le bem num monitor de
+   2560 empurra as ultimas colunas para fora num de 1366. Ampliar escondendo
+   conteudo nao e ampliar: e trocar um problema de leitura por outro pior,
+   porque o que sumiu nao avisa que sumiu.
+
+   Entao a regra e: pede-se o alvo, mede-se, e recua-se so o quanto for preciso
+   para nada transbordar — nunca abaixo de 1, que e o tamanho original. Quando
+   a janela cresce de novo, o alvo volta sozinho.
+
+   Roda em quatro passos no maximo: cada leitura de scrollWidth ja forca o
+   layout, entao a conta converge em um ou dois; o limite existe so para o caso
+   de um conteudo que muda de largura conforme a escala (nao ha nenhum hoje) nao
+   virar laco infinito. */
+let _ampTimer = null;
+function ajustarAmpliacao() {
+  const raiz = document.documentElement;
+  // Na foto do PDF e na impressao a escala e outra, e mexer aqui estragaria
+  // as duas. Ver .pdf-capture e @media print no styles.css.
+  if (document.body && document.body.classList.contains('pdf-capture')) return;
+
+  const alvo = parseFloat(getComputedStyle(raiz).getPropertyValue('--ui-zoom-alvo')) || 1;
+  raiz.style.setProperty('--ui-zoom', String(alvo));
+
+  // QUEM MEDE E A CAIXA QUE CORTA, e nao o documento. A primeira versao disto
+  // olhou o `documentElement` e nao viu nada: o `main.content` e que segurava o
+  // transbordo, e ele nao empurra a pagina para o lado -- a lista de OS ficava
+  // com colunas fora da tela e o documento jurando que estava tudo bem.
+  const caixa = document.querySelector('main.content') || raiz;
+
+  for (let i = 0; i < 4; i++) {
+    if (caixa.scrollWidth - caixa.clientWidth <= 1) break;
+    const atual = parseFloat(getComputedStyle(raiz).getPropertyValue('--ui-zoom')) || alvo;
+    // Arredonda para BAIXO: sobrar um fio de folga e melhor do que faltar.
+    const novo = Math.max(1, Math.floor(atual * (caixa.clientWidth / caixa.scrollWidth) * 100) / 100);
+    if (!(novo < atual)) break;
+    raiz.style.setProperty('--ui-zoom', String(novo));
+  }
+}
+
+// A janela mudou de tamanho: reavalia. Com espera, porque arrastar a borda do
+// navegador dispara isto dezenas de vezes por segundo.
+window.addEventListener('resize', () => {
+  clearTimeout(_ampTimer);
+  _ampTimer = setTimeout(ajustarAmpliacao, 150);
+});
+
 /* Poe um painel logo abaixo do seu botao, sem passar das bordas da tela.
    A altura tambem entra aqui: o max-height do CSS e em vh, e vh dentro de um
    elemento ampliado rende 25% a mais — o pe do painel passava do rodape. */
@@ -30619,3 +30671,9 @@ window.duplicarCadastro = duplicarCadastro;
 window.toggleFolderGrade = toggleFolderGrade;
 window.moverEtapaForm = moverEtapaForm;
 window.moverEtapaDesenho = moverEtapaDesenho;
+
+// Primeira medicao. O app.js e carregado no fim do <body>, entao o DOM ja
+// existe aqui; o setTimeout deixa o navegador terminar o primeiro layout antes
+// de perguntar quanto ele mede.
+window.ajustarAmpliacao = ajustarAmpliacao;
+setTimeout(ajustarAmpliacao, 0);

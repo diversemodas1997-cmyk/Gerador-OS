@@ -35,7 +35,11 @@ html, body {
    dentro de larguras fixas em px.
 
    Para mudar a ampliacao, mexa SO nesta linha. 1 = tamanho original. */
-:root { --ui-zoom: 1.25; }
+/* --ui-zoom-alvo e o tamanho DESEJADO; --ui-zoom e o que coube de verdade.
+   Quem decide o segundo e o `ajustarAmpliacao()` do app.js, medindo a tela:
+   ampliar escondendo conteudo nao e ampliar. Para mudar a ampliacao, mexa
+   no ALVO -- so nele. */
+:root { --ui-zoom-alvo: 1.25; --ui-zoom: var(--ui-zoom-alvo); }
 
 .app { zoom: var(--ui-zoom); }
 
@@ -535,7 +539,14 @@ aside.sidebar {
 }
 
 
-main.content { padding: 32px 40px; overflow-x: hidden; }
+/* `overflow-x: hidden` aqui ESCONDIA, sem aviso e sem rolagem, tudo o que
+   passasse da largura da area -- e o que passa mais e a lista de OS, com 11
+   colunas. Medido em 31/08/2026 numa tela de 1024: o conteudo pedia 757px
+   numa caixa de 566, e os 191 de diferenca simplesmente nao existiam para
+   quem estava olhando. `auto` troca o sumico por uma barra de rolagem: o
+   ajustarAmpliacao() encolhe a ampliacao ate caber, e quando nem em 1 cabe
+   (tela estreita demais) ainda da para alcancar o resto arrastando. */
+main.content { padding: 32px 40px; overflow-x: auto; }
 
 .page-header {
   display: flex;
