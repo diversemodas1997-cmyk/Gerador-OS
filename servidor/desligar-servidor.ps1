@@ -21,13 +21,20 @@
   Usar (o jeito de todo dia): o atalho "Desligar o servidor" na Area de Trabalho.
     .\servidor\desligar-servidor.ps1 -CriarAtalho     # cria o atalho, uma vez
     .\servidor\desligar-servidor.ps1                  # para tudo e desliga
+    .\servidor\desligar-servidor.ps1 -Reiniciar       # para tudo e REINICIA
     .\servidor\desligar-servidor.ps1 -NaoDesligar     # so para, para testar
+
+  O -Reiniciar entrou em 31/08/2026, com a renomeacao da maquina para
+  GERADOR-OS: desligar exige alguem no lugar para apertar o botao, e a
+  maquina do servidor nem sempre tem alguem por perto. Reiniciar percorre
+  exatamente o mesmo caminho cuidadoso -- so muda o ultimo passo.
 #>
 [CmdletBinding()]
 param(
   [string] $Docker      = 'C:\supabase\docker',
   [int]    $Paciencia   = 60,
   [switch] $NaoDesligar,
+  [switch] $Reiniciar,
   [switch] $CriarAtalho
 )
 
@@ -150,6 +157,8 @@ if (-not (Test-Path $dockerExe)) {
 # ------------------------------------------------------------------ desligar
 if ($NaoDesligar) { Anotar 'parei por aqui (-NaoDesligar): o Windows continua ligado'; exit 0 }
 
+$acao = if ($Reiniciar) { 'reiniciando' } else { 'desligando' }
+
 # Fechar o Docker Desktop com jeito ANTES de desligar.
 #
 # POR QUE: em 12/08/2026 a fabrica ficou sem o programa das 7h as 8h. Os
@@ -184,5 +193,7 @@ if (Test-Path $dockerExe) {
   Start-Sleep -Seconds 3
 }
 
-Anotar 'desligando o Windows'
-Stop-Computer -Force
+Anotar "$acao o Windows"
+# O cuidado todo acima -- Postgres com checkpoint, Docker Desktop fechado --
+# vale igual nos dois casos. So o ultimo passo muda.
+if ($Reiniciar) { Restart-Computer -Force } else { Stop-Computer -Force }
