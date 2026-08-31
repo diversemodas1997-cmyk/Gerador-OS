@@ -176,9 +176,11 @@ foreach ($porta in @(443, 80)) {
 $cabo = Get-NetAdapter -Name $PLACA_CABO -ErrorAction SilentlyContinue
 if (-not $cabo) {
   $cabo = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+          # Mesma exclusao do fixar-ip-cabo.ps1, e pela mesma razao: o
+          # loopback do Audaces se apresenta como placa fisica conectada.
           Where-Object { $_.MediaConnectionState -eq 'Connected' -and
-                         $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11' -and
-                         $_.Name -notmatch '^(vEthernet|Wi-Fi)' } |
+                         $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11|Loopback|Virtual|TAP|VPN' -and
+                         $_.Name -notmatch '^(vEthernet|Wi-Fi|Topaz|Loopback)' } |
           Select-Object -First 1
   if ($cabo) { Anotar "a placa '$PLACA_CABO' nao existe mais; usando '$($cabo.Name)'"; $PLACA_CABO = $cabo.Name }
 }

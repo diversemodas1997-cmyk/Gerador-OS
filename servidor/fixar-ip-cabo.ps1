@@ -40,8 +40,18 @@ $ErrorActionPreference = 'Continue'
 function AcharPlacaDoCabo {
   $c = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
        Where-Object { $_.MediaConnectionState -eq 'Connected' -and
-                      $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11' -and
-                      $_.Name -notmatch '^(vEthernet|Wi-Fi)' } |
+                      # LOOPBACK FICA DE FORA, e isto custou caro em 31/08/2026:
+                      # o 'Microsoft KM-TEST Loopback Adapter' (o do Audaces) e
+                      # reportado como FISICO, aparece 'Connected' a 1,2 Gbps e
+                      # por isso ganhou a ordenacao por velocidade. O .200 foi
+                      # parar nele -- que nao esta em fio nenhum --, o loopback
+                      # perdeu o proprio endereco (54.232.189.113, de onde a
+                      # licenca do CAD depende), e todas as conferencias
+                      # PASSARAM: daqui de dentro respondia tudo. A fabrica e
+                      # que nao alcancaria.
+                      $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11|Loopback|Virtual|TAP|VPN' -and
+                      $_.Name -notmatch '^(vEthernet|Wi-Fi|Topaz|Loopback)' } |
+       # Ordena por velocidade so para desempatar entre placas de verdade.
        Sort-Object -Property @{ E = { $_.LinkSpeed } } -Descending |
        Select-Object -First 1
   if ($c) { return $c.Name }
