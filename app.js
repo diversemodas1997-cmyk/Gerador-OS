@@ -8236,6 +8236,22 @@ const ENSAQUE_ETAPA_RE = /ensaque/i;
 // A OS está ensacada? (caixinha "Ensaque" marcada no checklist da folha.)
 function osEnsacada(o) { return osEtapaMarcada(o, ENSAQUE_ETAPA_RE); }
 
+// Quem entra na lista "OSs sem carga alocada": tem peça e não está em NENHUMA
+// carga. Duas condições, e o Ensaque não é uma delas.
+//
+// O `ensacada` sai junto, porque a lista mostra a etapa numa coluna — mas ele é
+// carga do item, nunca critério de entrada. É essa separação que o teste
+// testes/expedicao-sem-gate-ensaque.js trava: uma OS não ensacada tem de sair
+// daqui igual a uma ensacada.
+function _expOsSemCarga(ordens, cargas) {
+  const alocadas = new Set((cargas || []).map(c => c.osId));
+  return (ordens || [])
+    .filter(o => !alocadas.has(o.id))
+    .map(o => ({ o, pecas: _expPecasOS(o), ensacada: osEnsacada(o) }))
+    .filter(x => x.pecas > 0)
+    .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
+}
+
 // A carga guarda a data ORIGINAL da ocorrência; se ela foi remarcada, a data
 // em que a expedição de fato acontece é outra.
 function _expDataEfetivaCarga(c) {
@@ -8596,22 +8612,33 @@ function renderExpedicaoPlano() {
       </table>
     </div>` : '';
 
-  // OSs ensacadas (prontas) que ninguém colocou em carga nenhuma. É a lista
-  // que evita esquecer OS pronta parada no campo.
-  const alocadasSempre = new Set((STATE.expedicaoCargas || []).map(c => c.osId));
-  const pendentes = (STATE.ordens || [])
-    .filter(o => osEnsacada(o) && !alocadasSempre.has(o.id))
-    .map(o => ({ o, pecas: _expPecasOS(o) }))
-    .filter(x => x.pecas > 0)
-    .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
+  // OSs com peças que ninguém colocou em carga nenhuma. É a lista que evita
+  // esquecer OS parada no campo.
+  //
+  // ELA NÃO OLHA MAIS O ENSAQUE (31/08/2026, Junior: "o preenchimento do
+  // checklist ensacamento não pode determinar a capacidade do usuário de alocar
+  // uma OS no planejamento de expedição").
+  //
+  // A regra antiga exigia a etapa Ensaque marcada, e o efeito medido no dia era
+  // o contrário do que a lista se propunha: das 174 OS com peças e sem viagem
+  // nenhuma, ela mostrava 86 — quase todas ANTIGAS — e escondia 88, entre elas
+  // as MAIS RECENTES (0504, 0503, 0500, 0498, 0497...). A OS que acabou de sair
+  // do corte é justamente a que ainda não tem o Ensaque marcado, então a lista
+  // de "não esqueça" escondia exatamente o que ninguém podia esquecer. Foi por
+  // aí que a OS 0500 sumiu.
+  //
+  // O Ensaque não some da tela: vira COLUNA. Saber se a OS já está ensacada
+  // continua valendo — só não decide mais quem pode ser alocado.
+  const pendentes = _expOsSemCarga(STATE.ordens, STATE.expedicaoCargas);
+  const nEnsacadas = pendentes.filter(x => x.ensacada).length;
   const pendentesHtml = pendentes.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">OSs ensacadas sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estão com a etapa <b>Ensaque</b> marcada mas não entraram em nenhuma expedição — nem passada, nem planejada. Acontece com OS ensacada antes de existir janela cadastrada. Use <b>alocar</b> para pô-las numa expedição.</div>
+      <h2 style="margin:0 0 8px;font-size:14px;">OSs sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Têm peças mas não entraram em <b>nenhuma</b> expedição — nem passada, nem planejada. Use <b>alocar</b> para pôr numa expedição. A coluna <b>Ensaque</b> diz quais já estão ensacadas (${fmt(nEnsacadas)} de ${fmt(pendentes.length)}); ela é <b>informação</b>, não requisito — adiantar a carga de uma OS que ainda vai ser ensacada é legítimo, e a mais nova é justamente a que ainda não tem a etapa marcada.</div>
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Data</th><th>Ensaque</th><th style="text-align:right;">Peças</th></tr></thead>
         <tbody>
-          ${pendentes.map(({ o, pecas }) => `
+          ${pendentes.map(({ o, pecas, ensacada }) => `
             <tr>
       <td class="col-actions row-actions">
                 <button onclick="verOS('${esc(o.id)}')">ver OS</button>
@@ -8620,6 +8647,9 @@ function renderExpedicaoPlano() {
               <td><strong>${esc(o.os) || '—'}</strong></td>
               <td>${esc(nomePecaOS(o)) || '—'}</td>
               <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
+              <td style="font-size:12px;white-space:nowrap;">${ensacada
+                ? '<span class="exp-badge ok" title="A etapa Ensaque está marcada na folha desta OS">ensacada</span>'
+                : '<span class="muted" title="A etapa Ensaque ainda não foi marcada. Não impede alocar — só diz que os sacos ainda não foram fechados.">—</span>'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
 
             </tr>`).join('')}
@@ -8765,17 +8795,27 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         `${formatDate(dataOrig)} · ${perna === 'ida' ? 'IDA' : 'VOLTA'} · a atual (fora do plano)`)}</option>`
     : '';
 
-  // OSs: as ensacadas (prontas pra embarcar) primeiro; as demais ficam
-  // disponíveis porque adiantar carga de OS que ainda vai chegar é legítimo.
-  const ensacadas = [], outras = [];
+  // OSs: UMA lista só, da mais nova para a mais velha.
+  //
+  // Eram dois grupos — "Ensacadas (prontas)" e "Outras OS" —, e o Ensaque
+  // decidia em qual a OS caía. Quem procurava a OS recém-cortada abria a lista,
+  // olhava o grupo de cima e não a encontrava: ela estava no de baixo, porque a
+  // etapa ainda não tinha sido marcada. Separar por uma etapa do checklist é dar
+  // a ela um poder que não é dela — adiantar a carga de uma OS que ainda vai ser
+  // ensacada sempre foi legítimo.
+  //
+  // O "ensacada" continua no RÓTULO, que informa sem esconder, e a ordem por
+  // número decrescente põe as recentes no topo, que é onde são procuradas.
+  const lista = [];
   (STATE.ordens || []).forEach(o => {
     const pecas = _expPecasOS(o);
     if (!(pecas > 0)) return;
-    const label = `${o.os || '(sem nº)'} · ${nomePecaOS(o) || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç`;
-    (osEnsacada(o) ? ensacadas : outras).push({ id: o.id, label });
+    const marca = osEnsacada(o) ? ' · ensacada' : '';
+    const label = `${o.os || '(sem nº)'} · ${nomePecaOS(o) || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç${marca}`;
+    lista.push({ id: o.id, os: String(o.os || ''), label });
   });
-  const ordena = arr => arr.sort((a, b) => String(b.label).localeCompare(String(a.label), undefined, { numeric: true }));
-  const optOS = arr => ordena(arr).map(x => `<option value="${esc(x.id)}" ${x.id === osIdPre ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+  lista.sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }));
+  const optOS = arr => arr.map(x => `<option value="${esc(x.id)}" ${x.id === osIdPre ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
   const osPre = osIdPre ? (STATE.ordens || []).find(o => o.id === osIdPre) : null;
 
   document.getElementById('modal-exp-title').textContent = cargaEdit ? 'Mudar a expedição desta OS' : 'Alocar OS na expedição';
@@ -8791,8 +8831,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         ${cargaEdit ? '' : `<input type="search" id="ec-os-busca" oninput="_expFiltrarOS()" placeholder="Buscar pelo número da OS ou modelo…" style="margin-bottom:6px;" autocomplete="off">`}
         <select id="ec-os" onchange="_expAtualizarSugestaoVolumes()">
           <option value="">— selecione —</option>
-          ${ensacadas.length ? `<optgroup label="Ensacadas (prontas)">${optOS(ensacadas)}</optgroup>` : ''}
-          ${outras.length ? `<optgroup label="Outras OS">${optOS(outras)}</optgroup>` : ''}
+          ${optOS(lista)}
         </select>
         ${cargaEdit ? '' : '<div class="field-hint" id="ec-os-vazio" style="display:none;color:var(--alert);">Nenhuma OS encontrada para essa busca.</div>'}
       </div>
