@@ -48,12 +48,41 @@ param(
   [string] $PlacaCabo = 'Ethernet 3',
   [string] $PlacaWifi = 'Wi-Fi',
   [int]    $SegundosPorVelocidade = 20,
-  [int]    $MinutosDeSeguranca = 15
+  [int]    $MinutosDeSeguranca = 15,
+  # Cria o atalho "Testar o cabo de rede" na Area de Trabalho e sai. Uma vez so.
+  [switch] $CriarAtalho
 )
 
 $ErrorActionPreference = 'Continue'
 $Log = Join-Path $PSScriptRoot 'tls\teste-cabo.log'
 if (-not (Test-Path (Split-Path $Log))) { New-Item -ItemType Directory -Force -Path (Split-Path $Log) | Out-Null }
+
+# ---- o atalho ---------------------------------------------------------------
+# Digitar comando no PowerShell no meio de uma manha corrida e pedir erro -- e
+# este teste tira a maquina da rede, entao nao e hora de errar a digitacao. O
+# atalho ja pede a permissao de administrador sozinho, e deixa a janela ABERTA
+# no fim (-NoExit): o veredito tem de poder ser lido antes de a janela sumir.
+if ($CriarAtalho) {
+  $ps1    = Join-Path $PSScriptRoot 'testar-cabo.ps1'
+  $atalho = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Testar o cabo de rede.lnk'
+  try {
+    $s = (New-Object -ComObject WScript.Shell).CreateShortcut($atalho)
+    $s.TargetPath       = 'powershell.exe'
+    $s.Arguments        = '-NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -ArgumentList ''-NoProfile'',''-ExecutionPolicy'',''Bypass'',''-NoExit'',''-File'',''' + $ps1 + '''"'
+    $s.WorkingDirectory = (Split-Path -Parent $PSScriptRoot)
+    $s.IconLocation     = 'shell32.dll,18'
+    $s.Description      = 'Testa a placa do cabo com o Wi-Fi desligado e religa o Wi-Fi no fim.'
+    $s.Save()
+    Write-Host ""
+    Write-Host "Atalho criado na Area de Trabalho: Testar o cabo de rede" -ForegroundColor Green
+    Write-Host "Clique duas vezes nele e confirme a permissao do Windows." -ForegroundColor Green
+    Write-Host ""
+  } catch {
+    Write-Host "nao consegui criar o atalho: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+  }
+  exit 0
+}
 
 function Anotar($t) {
   $linha = "{0}  {1}" -f (Get-Date -Format 'HH:mm:ss'), $t
