@@ -25955,12 +25955,31 @@ function renderEnfestoBox(o) {
     `<input type="text" value="${esc(val || '')}" `
     + `data-enf-tom="${esc(String(ord))}" data-enf-tomnum="${tom}" `
     + `onchange="salvarTomEnfesto('${esc(o.id)}', '${esc(String(ord))}', '${tom}', this.value)" `
-    + `style="width:48px;border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
+    + `style="flex:1 1 auto;width:100%;min-width:0;max-width:48px;`
+    + `border:none;border-bottom:1px solid #888;background:transparent;text-align:center;`
     + `font-family:'IBM Plex Mono',monospace;font-size:6.5pt;padding:0 1px;">`;
+  // Cada "Tom N" anda colado na LACUNA dele, e as lacunas ficam em COLUNA.
+  //
+  // A linha era um flex-wrap solto, e com cinco tons ela quebrava no pior lugar
+  // possível: o rótulo "Tom 4" fechava a primeira fila e a lacuna dele nascia na
+  // segunda, sozinha, debaixo da palavra TONS. Quem preenchia à mão não tinha
+  // como saber de quem era aquele tracinho — e quem lê a folha depois, menos
+  // ainda. (Visto no print da OS 0503, 31/08/2026.)
+  //
+  // Duas correções, e as duas importam: o par virou indivisível (white-space
+  // nowrap dentro de um inline-flex), e as filas viraram uma GRADE de 4 colunas
+  // — assim a segunda fila nasce alinhada com a primeira em vez de encostar no
+  // rótulo. O campo encolhe com a coluna (max-width em vez de largura fixa)
+  // para caber sem espremer o "Tom N".
+  const parTom = (ord, tom, val) =>
+    `<span style="display:inline-flex;align-items:center;gap:3px;white-space:nowrap;">`
+    + `<span style="color:#555;">Tom ${tom}</span>${campoTom(ord, tom, val)}</span>`;
   const linhaTons = (ord, tv) => tomsSelEnf.length
-    ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
-        <span style="font-weight:700;min-width:44px;text-transform:uppercase;letter-spacing:.04em;">Tons</span>
-        ${tomsSelEnf.map(tom => `<span style="color:#555;">Tom ${tom}</span>${campoTom(ord, tom, tv[tom])}`).join('')}
+    ? `<div style="display:flex;align-items:flex-start;gap:6px;padding:1px 0;font-family:'IBM Plex Mono',monospace;font-size:6pt;line-height:1.3;">
+        <span style="font-weight:700;min-width:44px;padding-top:1px;text-transform:uppercase;letter-spacing:.04em;">Tons</span>
+        <div style="flex:1;min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 4px;">
+          ${tomsSelEnf.map(tom => parTom(ord, tom, tv[tom])).join('')}
+        </div>
       </div>`
     : '';
   // Campo de tempo preenchível (Início/Fim) — persiste em progresso.enfestosTempos[ord].
@@ -26334,14 +26353,17 @@ function renderPrintSheet(o) {
               // escalada pela grade (TT.linhas já traz o número de cada uma).
               // Digitar numa célula propaga pras outras via DOM, na proporção.
               const vTom = TT.vTom;
-              // O + e o − moram na FAIXA VERDE do bloco, não no rótulo da
-              // última linha. Foi onde eles couberam: a tabela é table-layout
-              // fixed e a primeira coluna tem 48px — "Tom 3" mais dois botões
-              // pedem 60px, e os 12px de sobra vazavam por cima da coluna P.
-              // Na faixa há a linha inteira, e o + fica encostado à direita,
-              // longe do texto. Também não custa altura nenhuma: a faixa já
-              // existia. O .no-print tira os dois do papel E da foto do PDF
-              // (html2canvas) — no papel o número de tons já está decidido.
+              // O + e o − ficam LOGO ABAIXO da última linha de tom, que é onde
+              // a próxima vai nascer — pedido do Junior, e é onde o gesto e o
+              // resultado ficam no mesmo lugar. Moram numa linha própria da
+              // tabela, com `.no-print`: no papel a linha inteira deixa de
+              // existir (display:none), então não sobra faixa em branco nem na
+              // folha nem na foto do PDF, onde o número de tons já está decidido.
+              //
+              // Não cabiam no rótulo da última linha, que foi a primeira
+              // tentativa: a tabela é table-layout fixed com a primeira coluna
+              // em 48px, e "Tom 3" mais dois botões pedem 60 — os 12px de sobra
+              // vazavam por cima da coluna P.
               const btnsBloco = `<span class="tt-tom-btns no-print">`
                 + (nLinhas < MAX_TONS
                     ? `<button type="button" class="tt-tom-btn" title="Acrescentar o Tom ${nLinhas + 1}" onclick="adicionarLinhaTomOS('${esc(o.id)}')">+</button>`
@@ -26389,14 +26411,15 @@ function renderPrintSheet(o) {
                 </tr>`;
               };
               return `
-                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;position:relative;">Total por tamanho${btnsBloco}</th></tr>
+                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td></td>
                   <td>${t(g.p)}</td><td>${t(g.m)}</td><td>${t(g.g)}</td>
                   <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
                 </tr>
-                ${Array.from({ length: nLinhas }, (_, i) => tomRow(i + 1)).join('')}`;
+                ${Array.from({ length: nLinhas }, (_, i) => tomRow(i + 1)).join('')}
+                <tr class="no-print"><td colspan="9" style="background:#f4faf5;padding:1px 4px;">${btnsBloco}</td></tr>`;
             })()}
           </tbody>
         </table>

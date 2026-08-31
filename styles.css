@@ -3604,17 +3604,12 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    Vivem SÓ na tela (.no-print os tira do papel e da foto do PDF): no papel a
    quantidade de tons já está decidida, e um botão impresso seria tinta gasta.
    Discretos de propósito, como o ✎ do quadro da OE — a folha continua sendo
-   uma folha. Ficam na faixa verde do bloco, presos à direita por position
-   absolute: a tabela é table-layout fixed, então ocupar espaço no fluxo
-   empurraria conteúdo em vez de alargar a célula. */
+   uma folha. Ficam numa linha própria logo abaixo do último tom, que é onde a
+   próxima linha vai nascer: o gesto e o resultado no mesmo lugar. */
 .tt-tom-btns {
-  position: absolute;
-  right: 3px;
-  top: 50%;
-  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 .tt-tom-btn {
   background: none;
