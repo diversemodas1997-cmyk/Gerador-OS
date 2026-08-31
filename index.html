@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-31e">
+<link rel="stylesheet" href="styles.css?v=2026-08-31f">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1310,6 +1310,10 @@
      ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
      etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
      sobreposto à folha do passo seguinte. -->
+<!-- O MENU DE ACOES DA LISTA DE OS. Um so, reaproveitado por todas as linhas:
+     255 OS x 5 botoes escondidos seriam 1275 elementos parados no DOM. Fica
+     no <body>, fora do .app, para nao ser cortado pela rolagem da tabela. -->
+<div class="menu-acoes hidden no-print" id="menuAcoesOS" role="menu"></div>
 <div class="toast no-print" id="toast"></div>
 
 <div class="modal-auth hidden" id="modalAuth" data-mode="login">
@@ -1343,6 +1347,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-31e"></script>
+<script src="app.js?v=2026-08-31f"></script>
 </body>
 </html>

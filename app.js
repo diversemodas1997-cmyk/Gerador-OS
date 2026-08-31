@@ -22240,6 +22240,10 @@ function _contaListaOS(mostradas, total) {
 }
 
 function renderListaOS() {
+  // A lista vai ser redesenhada: o botao que abriu o menu pode nem existir
+  // depois disto, e um menu pendurado apontando para uma linha que sumiu age
+  // sobre a OS errada. Fecha antes.
+  if (typeof fecharMenuAcoesOS === 'function') fecharMenuAcoesOS();
   const tb = document.getElementById('tbl-os');
   // Mesma lista de PDFs da tela de grades: vem uma vez por sessão e, quando
   // chegar, redesenha (o guarda do _riscosIdxFalhou evita render/fetch infinito).
@@ -22320,11 +22324,8 @@ function renderListaOS() {
       <td class="col-actions row-actions">
         ${_statusCelulaOS(o)}
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
-        <button class="edit" onclick="verGradeDaOS('${o.id}')" title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
-        <button class="edit" onclick="imprimirEtiquetasPdf('${o.id}')" title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
-        <button class="edit admin-only" onclick="editarOS('${o.id}')">editar</button>
-        <button class="edit admin-only" onclick="duplicarOS('${o.id}')">duplicar</button>
-        <button class="del admin-only" onclick="excluirOS('${o.id}')">excluir</button>
+        <button class="edit btn-mais" title="Mais ações desta OS" aria-haspopup="menu"
+          onclick="abrirMenuAcoesOS('${o.id}', this)">⋯</button>
       </td>
       <td>${thumb}</td>
       <td><strong>${esc(o.os)||'—'}</strong>${_conjugadaCelulaOS(o)}</td>
@@ -22663,6 +22664,91 @@ async function carregarReacoes() {
     _msgReacoes = Array.isArray(data) ? data : [];
   } catch (e) { _msgReacoesIndisponivel = true; _msgReacoes = []; }
 }
+
+/* ===================== O MENU "⋯" DA LISTA DE OS =====================
+
+   Ate 31/08/2026 a coluna de acoes empilhava SETE controles em cada linha, e
+   cobrava por isso 126px de largura e 242px de altura POR OS. Numa maquina com
+   o navegador em 200% -- que e como a fabrica trabalha --, a tela util vira
+   1280px e essa coluna era a razao de QTD e RISCOS nao caberem.
+
+   Ficaram visiveis os dois de uso diario: o STATUS, que e como a producao anda,
+   e o VISUALIZAR, que e como a folha se imprime. Os outros cinco vivem aqui.
+
+   UM MENU SO, reaproveitado por todas as linhas. Com 255 OS na lista, cinco
+   botoes escondidos por linha seriam 1275 elementos parados no DOM, redesenhados
+   a cada filtro digitado.
+
+   Ele mora no <body> e nao dentro da celula: dentro, a rolagem horizontal da
+   area de conteudo o cortaria justamente nas telas estreitas, que sao as que
+   precisam dele. */
+let _menuOsId = null;
+
+function menuAcoesOSAberto() {
+  const m = document.getElementById('menuAcoesOS');
+  return !!m && !m.classList.contains('hidden');
+}
+
+function fecharMenuAcoesOS() {
+  const m = document.getElementById('menuAcoesOS');
+  if (m) m.classList.add('hidden');
+  _menuOsId = null;
+}
+
+function abrirMenuAcoesOS(id, botao) {
+  const m = document.getElementById('menuAcoesOS');
+  if (!m || !botao) return;
+  // Clicar de novo no mesmo "⋯" fecha — e o que o dedo espera de um menu.
+  if (menuAcoesOSAberto() && _menuOsId === id) { fecharMenuAcoesOS(); return; }
+  _menuOsId = id;
+
+  // As classes admin-only/leitura-only continuam valendo aqui: quem decide o
+  // que aparece e o body.is-admin, pelo CSS, como no resto do programa.
+  m.innerHTML = `
+    <button class="edit" onclick="fecharMenuAcoesOS(); verGradeDaOS('${esc(id)}')"
+      title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
+    <button class="edit" onclick="fecharMenuAcoesOS(); imprimirEtiquetasPdf('${esc(id)}')"
+      title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
+    <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>
+    <button class="edit admin-only" onclick="fecharMenuAcoesOS(); duplicarOS('${esc(id)}')">duplicar</button>
+    <div class="sep admin-only"></div>
+    <button class="del admin-only" onclick="fecharMenuAcoesOS(); excluirOS('${esc(id)}')">excluir</button>`;
+
+  m.classList.remove('hidden');   // precisa estar visivel para poder ser medido
+  _posicionarMenuAcoes(m, botao);
+}
+
+/* Encosta o menu no botao, e nunca deixa parte dele fora da tela: se nao cabe
+   embaixo, abre para CIMA; se nao cabe a direita, encosta na borda. A divisao
+   por _uiZoom() e a mesma dos paineis -- o botao esta dentro do .app e o menu
+   nao, entao as coordenadas precisam da mesma regua. */
+function _posicionarMenuAcoes(menu, botao) {
+  const z = _uiZoom();
+  const r = botao.getBoundingClientRect();
+  const cm = menu.getBoundingClientRect();
+  const telaL = window.innerWidth / z, telaA = window.innerHeight / z;
+  const larg = cm.width / z, alt = cm.height / z;
+
+  let esq = r.left / z;
+  if (esq + larg > telaL - 8) esq = telaL - larg - 8;
+
+  let topo = r.bottom / z + 4;
+  if (topo + alt > telaA - 8) topo = r.top / z - alt - 4;   // não coube embaixo: abre para cima
+
+  menu.style.left = Math.round(Math.max(8, esq)) + 'px';
+  menu.style.top  = Math.round(Math.max(8, topo)) + 'px';
+}
+
+// Clique fora fecha, e Esc tambem — como os paineis de avisos e mensagens.
+document.addEventListener('click', (e) => {
+  if (!menuAcoesOSAberto()) return;
+  const m = document.getElementById('menuAcoesOS');
+  if (m && !m.contains(e.target) && !e.target.closest('.btn-mais')) fecharMenuAcoesOS();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharMenuAcoesOS(); });
+// A lista redesenhou: o botao que abriu este menu pode nem existir mais, e um
+// menu apontando para uma linha que sumiu age sobre a OS errada.
+window.addEventListener('resize', fecharMenuAcoesOS);
 
 function _msgQuemReagiu(id) {
   return _msgReacoes.filter(r => r.mensagem_id === id);
@@ -30696,3 +30782,5 @@ window.moverEtapaDesenho = moverEtapaDesenho;
 // de perguntar quanto ele mede.
 window.ajustarAmpliacao = ajustarAmpliacao;
 setTimeout(ajustarAmpliacao, 0);
+window.abrirMenuAcoesOS = abrirMenuAcoesOS;
+window.fecharMenuAcoesOS = fecharMenuAcoesOS;

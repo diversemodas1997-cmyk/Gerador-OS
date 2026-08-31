@@ -70,6 +70,7 @@ html, body {
    duas vezes (1,25 x 1,25 = 1,5625) e ficavam maiores que tudo em volta. */
 .modal-backdrop > .modal,
 .modal-auth > .box,
+.menu-acoes,
 .toast { zoom: var(--ui-zoom); }
 
 /* AS FOLHAS FICAM DE FORA, e isto nao e detalhe. A .sheet nao e texto de
@@ -1761,7 +1762,61 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .table .col-actions.row-actions .os-status[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
 /* O rotulo mais longo ("Em andamento") nao cabe nos 112px da coluna junto com a
    seta do seletor; a lista de OS ganha alguns pixels a mais so nessa coluna. */
-[data-page="lista-os"] .table .col-actions.row-actions { width: 126px; }
+/* A coluna encolheu em 31/08/2026. Ela empilhava SETE controles -- status,
+   visualizar, grade, etiquetas, editar, duplicar, excluir -- e sozinha custava
+   126px de largura e 242px de altura POR LINHA. Numa maquina com o navegador em
+   200%, onde a tela util vira 1280px, essa coluna era a razao de as ultimas
+   colunas (QTD, RISCOS) nao caberem.
+
+   Ficaram os dois de uso diario: o status, que e como a producao anda, e o
+   visualizar, que e como a folha se imprime. Os outros cinco foram para o menu
+   do "⋯" -- perto o bastante para quem precisa, longe o bastante para nao
+   cobrar largura de quem nao precisa. */
+[data-page="lista-os"] .table .col-actions.row-actions { width: 92px; }
+
+/* O MENU DO "⋯". Mora no <body> e e posicionado pelo JS a partir do proprio
+   botao, como os paineis de avisos e mensagens -- e pela mesma razao: dentro da
+   tabela ele seria cortado pela rolagem horizontal da area de conteudo. */
+.menu-acoes {
+  position: fixed;
+  z-index: 120;
+  min-width: 150px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-acoes.hidden { display: none !important; }
+.menu-acoes button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.menu-acoes button:hover { background: rgba(201,169,97,.14); }
+.menu-acoes button.del { color: var(--alert); }
+.menu-acoes button.del:hover { background: var(--alert-bg); }
+/* O separador antes do que apaga: um clique a mais de distancia entre
+   "duplicar" e "excluir" nao custa nada e evita o engano que custa. */
+.menu-acoes .sep { height: 1px; background: var(--line-2); margin: 3px 2px; }
+/* O botao que abre, na celula. Discreto: quem olha a lista procura a OS, e nao
+   o menu. */
+.table .col-actions.row-actions .btn-mais {
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
 /* O ATALHO DA COLUNA OS DO RANKING.
 
    Continua parecendo o numero que sempre foi — mesma fonte monoespacada, mesmo
