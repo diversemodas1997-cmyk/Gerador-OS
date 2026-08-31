@@ -20,9 +20,36 @@
 # roteador (MAC B4-2E-99-F4-B6-8B), para o roteador nunca entregar este
 # endereco a outro aparelho enquanto o servidor estiver desligado.
 
+param(
+  # A placa do cabo. Vazio = descobre sozinha qual placa com fio esta com link.
+  #
+  # Por que virou parametro em 31/08/2026: com o cabo sem dar link nem em
+  # autonegociacao, a saida mais provavel passou a ser um adaptador
+  # USB-Ethernet -- e ele entra no Windows com OUTRO nome ('Ethernet 4',
+  # 'Realtek USB GbE...'). Sem isto, o script continuaria procurando uma placa
+  # que talvez nunca mais tenha link, e diria "cabo sem link" com o cabo
+  # funcionando na placa nova, ao lado.
+  [string] $Placa
+)
+
 $ErrorActionPreference = 'Continue'
 
-$PLACA    = 'Ethernet 3'
+# Descobre a placa COM FIO que esta com link. Exclui Wi-Fi (que tem casa
+# propria, no fixar-ip-wifi.ps1) e as virtuais do Docker/Hyper-V, que estao
+# sempre "conectadas" e roubariam a escolha.
+function AcharPlacaDoCabo {
+  $c = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+       Where-Object { $_.MediaConnectionState -eq 'Connected' -and
+                      $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11' -and
+                      $_.Name -notmatch '^(vEthernet|Wi-Fi)' } |
+       Sort-Object -Property @{ E = { $_.LinkSpeed } } -Descending |
+       Select-Object -First 1
+  if ($c) { return $c.Name }
+  # Nenhuma com link: fica com a de sempre, para as mensagens fazerem sentido.
+  return 'Ethernet 3'
+}
+
+$PLACA    = if ($Placa) { $Placa } else { AcharPlacaDoCabo }
 $IP       = '193.168.0.200'
 $MASCARA  = '255.255.255.0'
 $GATEWAY  = '193.168.0.1'
@@ -60,6 +87,9 @@ function VoltarParaDhcp {
 }
 
 # ---- 1. como esta agora (para conferencia) --------------------------------
+Write-Host ""
+Write-Host "Placa do cabo: $PLACA$(if (-not $Placa) { '  (descoberta automaticamente)' })" -ForegroundColor Cyan
+
 Passo "Como a placa '$PLACA' esta agora"
 Get-NetIPAddress -InterfaceAlias $PLACA -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Select-Object IPAddress, PrefixLength, PrefixOrigin, AddressState |

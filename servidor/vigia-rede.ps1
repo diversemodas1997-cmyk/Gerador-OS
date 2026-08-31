@@ -170,9 +170,20 @@ foreach ($porta in @(443, 80)) {
 }
 
 # ---- c) o cabo, quando tem link, no IP fixo -------------------------------
+# Se a placa de sempre nao existe (trocada por um adaptador USB, por exemplo),
+# vale qualquer placa com fio que esteja com link -- e o fixar-ip-cabo.ps1
+# descobre a dele do mesmo jeito.
 $cabo = Get-NetAdapter -Name $PLACA_CABO -ErrorAction SilentlyContinue
 if (-not $cabo) {
-  Dizer "a placa '$PLACA_CABO' nao existe nesta maquina - nada a fazer"
+  $cabo = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+          Where-Object { $_.MediaConnectionState -eq 'Connected' -and
+                         $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11' -and
+                         $_.Name -notmatch '^(vEthernet|Wi-Fi)' } |
+          Select-Object -First 1
+  if ($cabo) { Anotar "a placa '$PLACA_CABO' nao existe mais; usando '$($cabo.Name)'"; $PLACA_CABO = $cabo.Name }
+}
+if (-not $cabo) {
+  Dizer "nenhuma placa com fio com link nesta maquina - nada a fazer"
 } elseif ($cabo.MediaConnectionState -ne 'Connected') {
   Dizer "cabo sem link - nada a fazer (o Wi-Fi atende sozinho)"
 } else {
