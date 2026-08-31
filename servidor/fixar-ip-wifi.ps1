@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 $PLACA    = 'Wi-Fi'
 $IP       = '192.168.1.158'
 $PREFIXO  = 24
+$MASCARA  = '255.255.255.0'
 $GATEWAY  = '192.168.1.1'
 $DNS      = '192.168.1.1'
 
@@ -37,13 +38,26 @@ if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
 function VoltarParaDhcp {
   Aviso "Devolvendo a placa para DHCP..."
   try {
-    Set-NetIPInterface -InterfaceAlias $PLACA -Dhcp Enabled -ErrorAction SilentlyContinue
-    Set-DnsClientServerAddress -InterfaceAlias $PLACA -ResetServerAddresses -ErrorAction SilentlyContinue
-    ipconfig /renew "$PLACA" | Out-Null
-    Aviso "Placa devolvida para DHCP. A maquina deve voltar a rede em alguns segundos."
+    & netsh @('interface','ipv4','set','address',"name=$PLACA",'source=dhcp')    | Out-Null
+    & netsh @('interface','ipv4','set','dnsservers',"name=$PLACA",'source=dhcp') | Out-Null
+
+    # O DHCP nao entrega o endereco na hora. Sem esperar, a mensagem final
+    # mente: diz "voltou" enquanto a placa ainda esta em 169.254 -- que e ficar
+    # sem rede. Foi o que aconteceu no cabo em 31/08.
+    $voltou = $false
+    foreach ($i in 1..12) {
+      Start-Sleep -Seconds 5
+      $a = (Get-NetIPAddress -InterfaceAlias $PLACA -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.PrefixOrigin -eq 'Dhcp' }).IPAddress
+      if ($a) { Aviso "placa de volta no DHCP, endereco $a."; $voltou = $true; break }
+    }
+    if (-not $voltou) {
+      Write-Host "   A PLACA NAO PEGOU ENDERECO DO DHCP. A maquina esta SEM REDE." -ForegroundColor Red
+      Write-Host "   Tente a mao:  ipconfig /release   e depois   ipconfig /renew" -ForegroundColor Red
+    }
   } catch {
     Write-Host "   NAO consegui devolver para DHCP. Rode a mao:" -ForegroundColor Red
-    Write-Host "   Set-NetIPInterface -InterfaceAlias '$PLACA' -Dhcp Enabled" -ForegroundColor Red
+    Write-Host "   netsh interface ipv4 set address name=`"$PLACA`" source=dhcp" -ForegroundColor Red
   }
 }
 
@@ -70,28 +84,34 @@ if ($eu -contains $IP) {
 
 # ---- 3. fixar ---------------------------------------------------------------
 Passo "Fixando $IP/$PREFIXO, gateway $GATEWAY, DNS $DNS"
-try {
-  Set-NetIPInterface -InterfaceAlias $PLACA -Dhcp Disabled
 
-  # Tira os enderecos IPv4 que vieram do DHCP antes de por o fixo, senao a
-  # placa fica com os dois e o Windows escolhe um deles na hora de responder.
-  Get-NetIPAddress -InterfaceAlias $PLACA -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    Where-Object { $_.PrefixOrigin -ne 'WellKnown' } |
-    Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
-
-  Get-NetRoute -InterfaceAlias $PLACA -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-    Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
-
-  New-NetIPAddress -InterfaceAlias $PLACA -IPAddress $IP -PrefixLength $PREFIXO -DefaultGateway $GATEWAY | Out-Null
-  Set-DnsClientServerAddress -InterfaceAlias $PLACA -ServerAddresses $DNS
-  Ok "endereco fixado."
-} catch {
-  Write-Host "   FALHOU: $($_.Exception.Message)" -ForegroundColor Red
+# Por que netsh e nao New-NetIPAddress: em 31/08, no cabo, o cmdlet devolveu
+# "Inconsistent parameters PolicyStore PersistentStore and Dhcp Enabled" (erro
+# 87) -- o `Set-NetIPInterface -Dhcp Disabled` acima nao pega enquanto a placa
+# ainda segura o endereco que o DHCP deu. E o cmdlet entrou pela METADE: gravou
+# o endereco e nao gravou o gateway. Aqui isso seria pior do que no cabo: sem
+# gateway no Wi-Fi, esta maquina fica sem internet. O netsh faz endereco,
+# mascara e gateway numa operacao so, e desliga o DHCP junto.
+$saida = (& netsh @('interface','ipv4','set','address',"name=$PLACA",'static',$IP,$MASCARA,$GATEWAY) | Out-String).Trim()
+if ($saida) {
+  Write-Host "   FALHOU ao fixar o endereco: $saida" -ForegroundColor Red
   VoltarParaDhcp
   exit 1
 }
+& netsh @('interface','ipv4','set','dnsservers',"name=$PLACA",'static',$DNS,'primary','validate=no') | Out-Null
+Ok "endereco fixado."
 
-Start-Sleep -Seconds 4
+# O Windows testa o endereco na rede antes de usa-lo (deteccao de duplicado).
+# Conferir enquanto ele esta 'Tentative' da falso negativo.
+Passo "Esperando o endereco ficar valido"
+$pronto = $false
+foreach ($i in 1..10) {
+  Start-Sleep -Seconds 3
+  $e = Get-NetIPAddress -InterfaceAlias $PLACA -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+       Where-Object { $_.IPAddress -eq $IP }
+  if ($e -and $e.AddressState -eq 'Preferred') { Ok "endereco valido (Preferred)."; $pronto = $true; break }
+}
+if (-not $pronto) { Aviso "o endereco nao chegou a 'Preferred' - as conferencias abaixo dirao se serve." }
 
 # ---- 4. conferir que a rede continua de pe --------------------------------
 # Fixar IP errado tira a maquina do ar. Nao adianta dizer "pronto" sem provar
