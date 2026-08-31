@@ -98,9 +98,14 @@
   <ol>
     <li>
       <h2>Baixe o instalador</h2>
-      <p>São dois arquivos numa pasta só. Baixe os dois e deixe-os <b>juntos na mesma pasta</b>.</p>
+      <p>
+        São <b>três</b> arquivos. Baixe os três e deixe-os <b>juntos na mesma
+        pasta</b> — o instalador procura os outros dois ao lado dele, e sem o
+        terceiro o atalho sai preso a um endereço só.
+      </p>
       <a class="btn" href="/instalar/instalar-certificado.cmd" download>1 · instalar-certificado.cmd</a><br>
-      <a class="btn" href="/instalar/ca.crt" download>2 · ca.crt</a>
+      <a class="btn" href="/instalar/ca.crt" download>2 · ca.crt</a><br>
+      <a class="btn" href="/instalar/abrir-gerador-os.cmd" download>3 · abrir-gerador-os.cmd</a>
       <div class="aviso">
         O navegador pode dizer que o arquivo <b>“pode ser perigoso”</b>. Ele diz
         isso de qualquer arquivo que termina em <code>.cmd</code>, porque não
@@ -134,27 +139,48 @@
 
   <div class="fim">
     <h2>Depois disso</h2>
-    Abra o atalho <b>Gerador&#8209;OS</b> na área de trabalho, ou digite
-    <a href="https://193.168.0.200/">https://193.168.0.200</a> no navegador.
-    A tela vermelha não aparece mais.
+    Abra o atalho <b>Gerador&#8209;OS</b> na área de trabalho. Ele
+    <b>procura o servidor</b> a cada clique — pelo nome, pelo cabo e pelo
+    Wi&#8209;Fi — e abre o primeiro que responder. Não é preciso trocar nada
+    quando o servidor mudar de rede.
     <div class="aviso" style="margin-top:12px">
-      <b>Hoje o cabo de rede do servidor está fora.</b> Enquanto ele não voltar,
-      use o endereço do Wi&#8209;Fi:
-      <a href="https://192.168.1.158/">https://192.168.1.158</a>.
-      O mesmo certificado vale para os dois — não é preciso instalar nada de
-      novo quando o cabo voltar. O instalador testa os dois e já cria o atalho
-      apontando para o que estiver respondendo.
+      <b>Falta um passo, e é o mais esquecido:</b> guarde as
+      <b>duas redes</b> nesta máquina — o cabo <code>Diverse001</code> e o
+      Wi&#8209;Fi <code>Desktop_F7027412</code> —, com
+      <b>“Conectar automaticamente”</b> marcado nos dois.
+      <br><br>
+      O atalho <b>escolhe</b> o caminho, ele não <b>cria</b> caminho. Se o
+      servidor passar para o Wi&#8209;Fi e esta máquina só conhecer o cabo, não
+      há endereço no mundo que junte os dois.
+    </div>
+    <div style="margin-top:12px;font-size:14px;color:#555">
+      Se precisar digitar à mão:
+      <a href="https://DESKTOP-SOV61AF/">https://DESKTOP-SOV61AF</a> —
+      e, se o nome não abrir nesta máquina,
+      <a href="https://193.168.0.200/">193.168.0.200</a> (cabo) ou
+      <a href="https://192.168.1.158/">192.168.1.158</a> (Wi&#8209;Fi).
+      O mesmo certificado vale para os três.
     </div>
   </div>
 
   <details class="manual">
     <summary>Se preferir fazer sem baixar arquivo (linha de comando)</summary>
     <p style="margin:10px 0 0">
-      Abra o <b>PowerShell como administrador</b> e cole a linha abaixo. Ela faz
-      a mesma coisa: baixa o certificado e o instala.
+      Abra o <b>PowerShell como administrador</b> e cole o bloco abaixo. Ele faz
+      tudo: baixa os três arquivos para uma pasta só e chama o instalador — que
+      instala o certificado, cria o atalho que procura o servidor e ainda testa
+      se ele responde.
     </p>
-<pre>curl.exe -s -o "$env:TEMP\ca.crt" http://193.168.0.200/instalar/ca.crt
-certutil -addstore -f Root "$env:TEMP\ca.crt"</pre>
+<pre>$p = "$env:TEMP\gerador-os"; mkdir $p -Force | Out-Null
+$s = "http://192.168.1.158/instalar"
+"ca.crt","instalar-certificado.cmd","abrir-gerador-os.cmd" | % {
+  curl.exe -s -o "$p\$_" "$s/$_" }
+& "$p\instalar-certificado.cmd"</pre>
+    <p style="margin:10px 0 0;font-size:13px;color:#8a8a8a">
+      Se o endereço acima não responder nesta máquina, troque o
+      <code>192.168.1.158</code> por <code>193.168.0.200</code> na segunda
+      linha — é o mesmo servidor pelo cabo.
+    </p>
   </details>
 
   <footer>
