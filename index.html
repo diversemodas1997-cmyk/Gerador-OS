@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-08-31k">
+<link rel="stylesheet" href="styles.css?v=2026-09-01a">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1330,11 +1330,23 @@
     </div>
     <div id="authSenhaGroup">
       <label for="authSenhaInput">Senha</label>
-      <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+      <div class="campo-senha">
+        <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+        <button type="button" class="olho-senha" data-alvo="authSenhaInput" aria-label="Mostrar senha" title="Mostrar senha" onclick="alternarVisibilidadeSenha(this)">
+          <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+          <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/><path d="M3.5 3.5 20.5 20.5"/></svg>
+        </button>
+      </div>
     </div>
     <div id="authSenha2Group" class="hidden">
       <label for="authSenha2Input">Confirmar nova senha</label>
-      <input type="password" id="authSenha2Input" autocomplete="new-password" placeholder="repita a nova senha">
+      <div class="campo-senha">
+        <input type="password" id="authSenha2Input" autocomplete="new-password" placeholder="repita a nova senha">
+        <button type="button" class="olho-senha" data-alvo="authSenha2Input" aria-label="Mostrar senha" title="Mostrar senha" onclick="alternarVisibilidadeSenha(this)">
+          <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+          <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/><path d="M3.5 3.5 20.5 20.5"/></svg>
+        </button>
+      </div>
     </div>
     <div class="err" id="authErro"></div>
     <div class="actions-auth">
@@ -1347,6 +1359,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-08-31k"></script>
+<script src="app.js?v=2026-09-01a"></script>
 </body>
 </html>

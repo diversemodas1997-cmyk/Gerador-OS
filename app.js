@@ -2410,9 +2410,38 @@ function abrirLogin() {
 
 function fecharLogin() {
   document.getElementById('modalAuth').classList.add('hidden');
+  ocultarSenhasAuth();
+}
+
+// O olho do campo de senha. Alterna type entre password e text e devolve o foco
+// ao campo: o clique no botao rouba o cursor, e sem isso a digitacao para.
+function alternarVisibilidadeSenha(btn) {
+  const campo = document.getElementById(btn.dataset.alvo);
+  if (!campo) return;
+  const revelar = campo.type === 'password';
+  campo.type = revelar ? 'text' : 'password';
+  btn.classList.toggle('aberto', revelar);
+  const rotulo = revelar ? 'Ocultar senha' : 'Mostrar senha';
+  btn.setAttribute('aria-label', rotulo);
+  btn.title = rotulo;
+  campo.focus();
+  try { const fim = campo.value.length; campo.setSelectionRange(fim, fim); } catch (e) {}
+}
+
+// Trocar de aba ou reabrir o modal volta as senhas a escondidas: senha revelada
+// nao pode sobreviver a uma tela que o usuario fechou.
+function ocultarSenhasAuth() {
+  document.querySelectorAll('.modal-auth .olho-senha').forEach(btn => {
+    const campo = document.getElementById(btn.dataset.alvo);
+    if (campo) campo.type = 'password';
+    btn.classList.remove('aberto');
+    btn.setAttribute('aria-label', 'Mostrar senha');
+    btn.title = 'Mostrar senha';
+  });
 }
 
 function trocarAbaAuth(modo) {
+  ocultarSenhasAuth();
   const modal = document.getElementById('modalAuth');
   const tabs = document.getElementById('authTabs');
   const emailGroup = document.getElementById('authEmailGroup');
@@ -31004,6 +31033,7 @@ window.restaurarExpedicaoDeArquivo = restaurarExpedicaoDeArquivo;
 window.abrirLogin = abrirLogin;
 window.fecharLogin = fecharLogin;
 window.trocarAbaAuth = trocarAbaAuth;
+window.alternarVisibilidadeSenha = alternarVisibilidadeSenha;
 window.submeterAuth = submeterAuth;
 window.sairConta = sairConta;
 window.abrirRecuperacaoSenha = abrirRecuperacaoSenha;

@@ -1938,6 +1938,21 @@ body.is-admin .auth-logged-in .auth-role { color: var(--accent-dark); font-weigh
 .modal-auth label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; margin-top: 12px; }
 .modal-auth input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; font-family: inherit; font-size: 13px; }
 .modal-auth input:focus { border-color: var(--ink); outline: none; }
+
+/* O olho que revela a senha. O botao mora DENTRO do campo, entao o input
+   reserva o espaco dele no padding-right — senao a digitacao passa por baixo. */
+.campo-senha { position: relative; display: block; }
+.campo-senha input { padding-right: 36px !important; }
+.olho-senha {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 26px; height: 26px; padding: 4px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 2px; cursor: pointer; color: var(--ink-3);
+}
+.olho-senha:hover { color: var(--ink); background: var(--line); }
+.olho-senha svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.olho-senha .ico-off { display: none; }
+.olho-senha.aberto .ico-on { display: none; }
+.olho-senha.aberto .ico-off { display: block; }
 .modal-auth .err { color: var(--alert); font-size: 12px; margin-top: 10px; min-height: 14px; }
 .modal-auth .actions-auth { display: flex; gap: 8px; margin-top: 16px; }
 .modal-auth .btn-primary { flex: 1; padding: 10px; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 2px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; }
