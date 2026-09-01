@@ -16022,9 +16022,28 @@ function _riscoTamsDoTexto(txt) {
 // primeiras: nas outras o "157 cm" caía no lugar dos tamanhos e o PDF não
 // aparecia na coluna Riscos de grade nenhuma — era o caso das três linhas COT,
 // que têm um PDF cada e cada um numa forma diferente.
-// Por isso a leitura é por CONTEÚDO: o segmento que diz "N cm" é a largura,
-// e todos os outros são candidatos a tamanhos — mais o que o nome do arquivo
-// disser. Candidato a mais não estraga: o casamento é por igualdade de chave.
+// Por isso a leitura é por CONTEÚDO: o segmento que diz "N cm" é a largura, e
+// todos os outros são candidatos a tamanhos.
+//
+// A PASTA MANDA; O NOME DO ARQUIVO É SÓ RESERVA (01/09/2026). Até esta data o
+// nome do arquivo entrava SEMPRE como mais um candidato, com o argumento de que
+// "candidato a mais não estraga". Estraga: candidato a mais faz o PDF aparecer
+// na janela de uma grade que não é a dele.
+//
+// Foi o que o Junior viu na CM.TRI. Dentro de `P-M-2G-GG-G1-G2-G3` havia duas
+// ribanas chamadas `... - P-M-G-GG-G1-G2-G3-v1/v2.pdf` — cópias que guardaram o
+// nome da grade vizinha —, e por causa do NOME a pasta inteira aparecia na
+// janela da grade "P ao G3", que tem a sua própria ribana com esses mesmos dois
+// nomes. Duas grades diferentes, uma pasta trocada.
+//
+// O nome do arquivo continua valendo onde ele é a ÚNICA pista: o acervo em que
+// a pasta vai da linha direto para a largura, ou nomeia o pano em vez do
+// tamanho ("PM.LISA/malha piquet/..."). Aí nenhum segmento da pasta se parece
+// com uma faixa de tamanhos, e o nome é o que resta.
+//
+// Medido com os 279 PDFs e as 136 grades: 16 arquivos têm nome que discorda da
+// pasta; com a mudança, 134 grades não mudam nada, 2 param de mostrar pasta
+// alheia e NENHUMA fica sem risco.
 function _riscoItemDoCaminho(rel) {
   const p = String(rel || '').split('/');
   const arq = p[p.length - 1] || '';
@@ -16032,7 +16051,8 @@ function _riscoItemDoCaminho(rel) {
   const iCm = meio.findIndex(seg => _riscoCmDoTexto(seg));
   const tams = meio.filter((_, i) => i !== iCm);
   const doNome = _riscoTamsDoTexto(arq.replace(/\.pdf$/i, ''));
-  if (doNome) tams.push(doNome);
+  const pastaDizTamanho = tams.some(seg => _riscoTamsDoTexto(seg));
+  if (doNome && !pastaDizTamanho) tams.push(doNome);
   return {
     rel,
     linha: p[0] || '',
