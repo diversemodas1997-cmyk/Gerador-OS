@@ -564,3 +564,65 @@ mesma chave, e voltam sozinhos.
    Os snapshots diários do app continuam funcionando, mas ficam no mesmo disco —
    até o espelho existir, mantenha a pasta de backup automático ligada numa
    máquina que não seja o servidor.
+
+---
+
+# O índice dos riscos, mantido sozinho
+
+O navegador não lista pasta. A lista de PDFs de encaixe que o app lê é um
+arquivo estático — `dados/riscos-pdf.json` — gerado por
+`servidor/indexar-riscos.js`. **Enquanto essa lista não sabe de um PDF, ele não
+existe para o programa:** a coluna Riscos da grade fica vazia, não há de onde
+importar a medida, e ela acaba digitada à mão.
+
+Foi o que aconteceu em **01/09/2026**, com a OS 0508:
+
+| hora | o quê |
+|---|---|
+| 08:58 | os três PDFs de encaixe da CM.TRI P-G-GG-G2 entram na pasta |
+| 09:02 | a grade é criada, com os números certos e sem apontar arquivo nenhum |
+| 12:04 | a OS é criada → *"a medida desta grade não veio de um risco"* |
+
+O índice de então era de 31/08 às 14:36 — anterior aos arquivos. O passo
+esquecido não dá erro nenhum: ele só faz o programa **parecer errado dias
+depois**, e a conversa vira "o aviso está mentindo" quando o aviso está certo.
+
+## O vigia
+
+`servidor/vigia-riscos.ps1` roda o indexador de cinco em cinco minutos. O
+indexador varre a pasta e **só reescreve o JSON quando a lista mudou de
+verdade** — comparando a lista, não a data —, então rodar sempre não suja o
+`git status` nem gasta disco.
+
+Agendar, uma vez, no PowerShell aberto **como administrador**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:\Users\Pichau\Desktop\Gerador-OS\servidor\vigia-riscos.ps1" -Agendar
+```
+
+Fica no logon (cobre o reboot) e a cada 5 minutos (cobre o dia). Para rodar na
+hora: `Start-ScheduledTask "Gerador-OS Vigia Riscos"`.
+
+**Por que uma tarefa e não um vigia de arquivo (`FileSystemWatcher`):** o vigia
+de arquivo é um processo que precisa estar VIVO, e um processo que morre em
+silêncio devolve exatamente o problema que ele existe para resolver — com o
+agravante de todo mundo achar que está resolvido. A tarefa agendada é
+reiniciada pelo próprio Windows, sobrevive a reboot e não tem estado para
+perder. A varredura custa milissegundos: são ~270 arquivos.
+
+## O que ele NÃO faz: commit
+
+Na fábrica o efeito é imediato — o nginx serve esta pasta direto, então o JSON
+regravado já está no ar assim que o vigia passa. **A cópia da nuvem (GitHub
+Pages) só muda com um commit**, e commit automático sem ninguém olhando não é
+coisa que se faça com a pasta de produção.
+
+O log `servidor/tls/vigia-riscos.log` é o que avisa que há algo para commitar, e
+diz QUAL arquivo entrou ou saiu — "272 PDFs" não ajuda ninguém três dias depois:
+
+```
+2026-09-01 10:45:13  a lista de riscos mudou:
+2026-09-01 10:45:13     273 PDFs em dados/riscos-pdf.json
+2026-09-01 10:45:13       + CM.TRI/P-G-GG-G2/116.5 cm - MAPAS IMPRESSOS/CM.TRI - RIBANA - P-G-GG-G2.pdf
+2026-09-01 10:45:13  ja vale na fabrica; para a copia da nuvem, falta commit de dados/riscos-pdf.json
+```

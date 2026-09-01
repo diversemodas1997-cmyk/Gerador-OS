@@ -53,13 +53,50 @@ if (!fs.existsSync(raiz)) {
 // git mostra diferença onde nada mudou.
 const arquivos = varrer(raiz, '', []).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+/* SÓ REESCREVE QUANDO A LISTA MUDOU DE VERDADE.
+
+   Isto roda de cinco em cinco minutos no vigia (ver servidor/vigia-riscos.ps1).
+   Reescrever sempre trocaria a data em `gerado` a cada passagem, e o git
+   passaria a mostrar diferença o dia inteiro sem nenhum PDF ter entrado nem
+   saído — quem olhasse `git status` não saberia mais dizer o que é mudança de
+   verdade. A comparação é da LISTA, não do arquivo: a data não conta.
+
+   Devolve 0 quando não mexeu e 10 quando mexeu, para o vigia saber se tem o que
+   anotar sem precisar ler a saída. */
+function listaAtual() {
+  try { return (JSON.parse(fs.readFileSync(SAIDA, 'utf8')) || {}).arquivos || null; }
+  catch (e) { return null; }
+}
+const antes = listaAtual();
+const igual = Array.isArray(antes) && antes.length === arquivos.length
+  && antes.every((a, i) => a === arquivos[i]);
+
+const porLinha = {};
+arquivos.forEach(a => { const l = a.split('/')[0]; porLinha[l] = (porLinha[l] || 0) + 1; });
+
+if (igual) {
+  if (!process.argv.includes('--silencioso')) {
+    console.log(`${arquivos.length} PDFs — a lista já estava em dia, nada reescrito.`);
+  }
+  process.exit(0);
+}
+
 // A data é do ARQUIVO, não do relógio de quem roda: serve para o app dizer "a
 // lista é de tal dia" quando um PDF novo ainda não estiver nela.
 const hoje = new Date().toISOString().slice(0, 10);
 fs.mkdirSync(path.dirname(SAIDA), { recursive: true });
 fs.writeFileSync(SAIDA, JSON.stringify({ pasta: PASTA, gerado: hoje, arquivos }, null, 0) + '\n', 'utf8');
 
-const porLinha = {};
-arquivos.forEach(a => { const l = a.split('/')[0]; porLinha[l] = (porLinha[l] || 0) + 1; });
+// O QUE MUDOU, POR NOME: é isto que vai para o log do vigia. "272 PDFs" não diz
+// a ninguém qual risco entrou; o caminho do arquivo diz.
+const eram = new Set(antes || []);
+const sao = new Set(arquivos);
+const entraram = arquivos.filter(a => !eram.has(a));
+const sairam = (antes || []).filter(a => !sao.has(a));
+
 console.log(`${arquivos.length} PDFs em dados/riscos-pdf.json`);
+if (!antes) console.log('  (a lista nao existia antes - primeira geracao)');
+entraram.forEach(a => console.log(`  + ${a}`));
+sairam.forEach(a => console.log(`  - ${a}`));
 Object.keys(porLinha).sort().forEach(l => console.log(`  ${l}: ${porLinha[l]}`));
+process.exit(10);
