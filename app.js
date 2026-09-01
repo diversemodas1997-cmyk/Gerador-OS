@@ -24353,11 +24353,25 @@ async function salvarTempoCorte(osId, campo, valor) {
    anterior. Enquanto só o admin escrevia isso não aparecia; abrir a folha para
    a produção transformaria a caixa em cima-e-embaixo — dois turnos, um recado.
 
-   Agora cada pessoa tem A SUA (`o.obsNotas`, uma por login), e a folha imprime
-   todas. Ninguém edita nem apaga a do outro — NEM O ADMIN, por decisão do
-   Junior em 20/08/2026: o que está escrito ali é o que aquela pessoa viu
-   acontecer, e um recado reescrito por terceiro não vale como registro. Para
-   corrigir, pede-se a quem escreveu.
+   Agora cada RECADO é um registro próprio (`o.obsNotas`), com o seu autor e a
+   sua data, e a folha imprime todos. Ninguém edita nem apaga o do outro — NEM O
+   ADMIN, por decisão do Junior em 20/08/2026: o que está escrito ali é o que
+   aquela pessoa viu acontecer, e um recado reescrito por terceiro não vale como
+   registro. Para corrigir, pede-se a quem escreveu.
+
+   UM RECADO POR VEZ, E NÃO UM POR PESSOA (01/09/2026). Até esta data a caixa
+   guardava UMA nota por login: a caixa da folha vinha preenchida com o que a
+   pessoa tinha escrito antes, e escrever de novo passava por cima — o texto
+   antigo sumia e o carimbo pulava para hoje. Foi o que aconteceu com as OS 0496
+   e 0507: o recado de 28/08 virou o de 01/09, e o de 28/08 não existe mais. O
+   pessoal do enfesto já vinha digitando a data dentro do texto à mão, para se
+   defender disso. Agora escrever de novo ACRESCENTA, e cada recado guarda a
+   data em que foi feito.
+
+   EDITAR NÃO MUDA A DATA em que o recado foi feito. `em` é quando se escreveu e
+   é o que a folha carimba e por onde ela ordena; `editadoEm` só acrescenta o
+   "(editada)" ao lado. Um recado de 28/08 corrigido hoje continua sendo de
+   28/08 — porque foi ali que a coisa aconteceu, e é isso que a folha conta.
 
    A trava é de TELA, como todas as outras deste programa (a caixa do outro nem
    vira campo, e salvarObsNota só mexe na nota de quem chamou). Ela impede o
@@ -24389,19 +24403,11 @@ function _reatribuirAutorNotas(oldEmail, newEmail) {
     notas.forEach(nota => {
       if (String(nota.login || '').trim().toLowerCase() === de) { nota.login = para; n++; mudou = true; }
     });
-    if (!mudou) return;
-    // A reatribuição pode ter juntado duas notas do MESMO autor na mesma OS (a
-    // pessoa já tinha escrito com o nome novo). Colapsa para uma por login,
-    // ficando a de data mais recente — a mesma invariante que salvarObsNota já
-    // assume (uma nota por login).
-    const porLogin = new Map();
-    notas.forEach(nota => {
-      const k = String(nota.login || '').trim().toLowerCase();
-      const t = nota.editadoEm || nota.em || '';
-      const atual = porLogin.get(k);
-      if (!atual || t > (atual.editadoEm || atual.em || '')) porLogin.set(k, nota);
-    });
-    os.obsNotas = Array.from(porLogin.values());
+    // NÃO se colapsa mais nada aqui. Até 01/09/2026 esta função juntava as notas
+    // do mesmo autor em uma só, "ficando a de data mais recente" — o que era
+    // coerente com a regra de uma nota por login, e passou a ser apagar
+    // histórico assim que cada recado virou um registro com data própria.
+    // Renomear uma conta troca a assinatura; não é lugar de perder recado.
   });
   return n;
 }
@@ -24424,10 +24430,17 @@ function _obsNomeLogin(login) {
 function _obsQuando(nota) {
   // NOTA MIGRADA da caixa antiga (servidor/migrar-obs-para-nota.js): o texto é
   // de verdade, mas NÃO SE SABE de que dia — a caixa antiga não guardava hora.
-  // Carimbar uma data inventada é pior do que dizer que não se sabe. Editada
-  // depois de migrada, passa a valer a data da edição, que essa é conhecida.
-  if (nota && nota.anterior && !nota.editadoEm) return 'anterior a 20/08/2026';
-  const t = nota && (nota.editadoEm || nota.em);
+  // Carimbar uma data inventada é pior do que dizer que não se sabe. Continua
+  // "anterior a 20/08/2026" mesmo depois de corrigida: corrigir o texto não
+  // muda o dia em que a coisa foi escrita.
+  if (nota && nota.anterior) return 'anterior a 20/08/2026'
+    + (nota.editadoEm ? ' (editada)' : '');
+  // O CARIMBO É `em`, A DATA EM QUE O RECADO FOI FEITO — nunca `editadoEm`.
+  // Até 01/09/2026 a folha mostrava a data da última edição, e um recado de
+  // 28/08 corrigido hoje aparecia como sendo de hoje. A correção é do texto; o
+  // dia em que a coisa aconteceu é o que a folha existe para contar. Quem
+  // corrigiu fica dito no "(editada)", ao lado, sem mexer na data.
+  const t = nota && nota.em;
   if (!t) return '';
   const d = new Date(t);
   if (isNaN(d)) return '';
@@ -24436,16 +24449,28 @@ function _obsQuando(nota) {
     + (nota.editadoEm && nota.editadoEm !== nota.em ? ' (editada)' : '');
 }
 
-// POR QUE A FOLHA ORDENA PELO CARIMBO QUE ELA MOSTRA (editadoEm || em), e nao
-// pela data de criacao: a coluna da direita de cada cabecalho imprime esse
-// carimbo. Ordenar por outra coisa poria "25/08" acima de "22/08" no papel, e
-// quem le a folha nao tem como saber que a de cima e mais antiga POR TER SIDO
-// escrita antes — ele so ve as duas datas fora de ordem. Nota corrigida depois
-// desce para o fim: e o mesmo criterio do mural de avisos.
+// A FOLHA ORDENA PELO CARIMBO QUE ELA MOSTRA — e desde 01/09/2026 esse carimbo
+// e `em`, a data em que o recado foi feito. Ordenar por outra coisa poria
+// "25/08" acima de "22/08" no papel, e quem le a folha nao tem como saber por
+// que as duas datas estao fora de ordem. Assim a caixa e a linha do tempo da
+// OS: cada recado no lugar do dia em que aconteceu, e uma correcao feita hoje
+// nao arranca o recado de 28/08 do meio da historia para joga-lo no fim.
 // Nota MIGRADA da caixa antiga nao tem data nenhuma ('' ordena primeiro), que e
 // onde ela pertence: e anterior a 20/08/2026, mais velha que qualquer outra.
 function _obsChaveData(nota) {
-  return String((nota && (nota.editadoEm || nota.em)) || '');
+  return String((nota && nota.em) || '');
+}
+
+// QUEM É CADA RECADO. Um recado é identificado pelo autor mais o instante em
+// que foi escrito — os dois juntos, porque agora a mesma pessoa tem vários na
+// mesma OS. É esta chave que o campo da folha devolve ao gravar, e é ela que
+// impede uma caixa de escrever por cima da outra.
+function _obsChave(nota) {
+  return _obsLogin(nota) + '|' + String((nota && nota.em) || '');
+}
+
+function _obsLogin(nota) {
+  return String((nota && nota.login) || '').trim().toLowerCase();
 }
 
 // Da mais ANTIGA (topo) para a mais RECENTE (base). Empate — duas notas no
@@ -24457,8 +24482,19 @@ function _obsEmOrdem(o) {
     .map(x => x.n);
 }
 
-// A observação DESTA pessoa. Texto em branco apaga a dela — e só a dela.
-async function salvarObsNota(osId, texto) {
+/* UM RECADO DESTA PESSOA. `chave` diz QUAL: vazia é a caixa em branco do fim da
+   folha (nasce um recado novo, com a data de agora), preenchida é um recado que
+   já existe (corrige o texto e mantém a data em que ele foi feito). Texto em
+   branco apaga aquele recado — e só aquele.
+
+   A chave carrega o login, e a busca ainda exige que ele seja o MEU: uma chave
+   de outra pessoa não encontra nada aqui. É a mesma trava de tela de sempre
+   (a caixa do outro nem vira campo), dita também do lado de quem grava.
+
+   Chave que não acha nada — o recado foi apagado noutra máquina enquanto esta
+   folha estava aberta — vira recado NOVO em vez de erro: o que a pessoa acabou
+   de escrever não se perde por causa de uma corrida entre dois navegadores. */
+async function salvarObsNota(osId, chave, texto) {
   if (!exigirEdicaoFolha('escrever a observação da OS')) return;
   const eu = _obsQuemSou();
   if (!eu) return toast('Não dá para saber de quem seria a observação — entre de novo na sua conta', 'err');
@@ -24466,14 +24502,15 @@ async function salvarObsNota(osId, texto) {
   if (!os) return;
   const t = (texto || '').trim();
   const notas = _obsNotas(os).slice();
-  const i = notas.findIndex(n => String(n.login || '').trim().toLowerCase() === eu);
+  const alvo = String(chave || '');
+  const i = alvo ? notas.findIndex(n => _obsChave(n) === alvo && _obsLogin(n) === eu) : -1;
   const agora = new Date().toISOString();
-  if (!t) {
-    if (i < 0) return;                       // nada escrito e nada a apagar
-    notas.splice(i, 1);
-  } else if (i >= 0) {
-    notas[i] = Object.assign({}, notas[i], { texto: t, editadoEm: agora });
+  if (i >= 0) {
+    // `em` NÃO é tocado: a data do recado é a de quando ele foi feito.
+    if (!t) notas.splice(i, 1);
+    else notas[i] = Object.assign({}, notas[i], { texto: t, editadoEm: agora });
   } else {
+    if (!t) return;                          // caixa nova em branco: nada a gravar
     notas.push({ login: eu, texto: t, em: agora });
   }
   os.obsNotas = notas;
@@ -24492,11 +24529,11 @@ async function salvarObsNota(osId, texto) {
 // em silêncio, e é justamente o texto que ninguém mais pode reescrever que não
 // pode ser cortado.
 //
-// A minha é campo, e vem por último: é a única que cresce enquanto se digita.
+// Os MEUS recados são campos, cada um com a data dele; a caixa em branco de
+// escrever um novo vem por último e vive só na tela.
 function _obsCaixaHtml(o) {
   const eu = _obsQuemSou();
   const notas = _obsEmOrdem(o);
-  const minha = eu ? notas.find(n => String(n.login || '').trim().toLowerCase() === eu) : null;
   const cabec = n => `<span class="obs-quem" title="${esc(n.login || '')}">${
     esc(_obsNomeLogin(n.login) || '—')}</span><span class="obs-quando">${esc(_obsQuando(n))}</span>`;
 
@@ -24533,23 +24570,34 @@ function _obsCaixaHtml(o) {
   // oferece campo nenhum.
   if (!eu) return legado + notas.map(deOutro).join('');
 
-  const meuCab = minha
-    ? cabec(minha)
-    : `<span class="obs-quem" title="${esc(eu)}">${esc(_obsNomeLogin(eu))}</span><span class="obs-quando">a sua</span>`;
-  const aMinha = `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${meuCab}</div>
+  // CADA RECADO MEU É UM CAMPO, com a data dele no cabeçalho. Corrigir um
+  // recado de 28/08 continua possível a qualquer momento, e a data continua
+  // sendo 28/08 — só ganha o "(editada)" ao lado.
+  const aMinha = n => `<div class="obs-nota obs-minha"><div class="obs-nota-cab">${cabec(n)}</div>
+        <textarea class="obs-input" style="flex:1;min-height:10mm;"
+          oninput="_obsAjustarAltura(this)"
+          onchange="salvarObsNota('${esc(o.id)}', '${esc(_obsChave(n))}', this.value)">${esc(n.texto || '')}</textarea></div>`;
+
+  /* A CAIXA EM BRANCO DO FIM, para escrever um recado NOVO. Ela é `no-print`:
+     vive só na tela. Um campo vazio no papel seria uma linha gasta em cada
+     folha impressa, numa caixa que já disputa milímetro com o desenho — e no
+     papel ele não serve para nada, porque ninguém escreve numa folha impressa
+     esperando que o programa saiba.
+
+     Vai por último de propósito: não tem data, é um campo esperando texto, não
+     um registro. Os recados datados ficam acima, na ordem do tempo. */
+  const aNova = `<div class="obs-nota obs-minha obs-nova no-print">
+        <div class="obs-nota-cab"><span class="obs-quem" title="${esc(eu)}">${esc(_obsNomeLogin(eu))}</span><span
+          class="obs-quando">nova observação</span></div>
         <textarea class="obs-input" placeholder="Digite a sua observação..." style="flex:1;min-height:10mm;"
           oninput="_obsAjustarAltura(this)"
-          onchange="salvarObsNota('${esc(o.id)}', this.value)">${esc(minha ? minha.texto || '' : '')}</textarea></div>`;
+          onchange="salvarObsNota('${esc(o.id)}', '', this.value)"></textarea></div>`;
 
-  // A MINHA SAI NA DATA DELA, não no fim da fila. Até 27/08/2026 o campo de
+  // CADA RECADO SAI NA DATA DELE, não no fim da fila. Até 27/08/2026 o campo de
   // quem estava com a folha aberta era sempre o último, e bastava eu ter
   // escrito ontem e o outro turno hoje para a folha imprimir a de hoje ACIMA da
-  // de ontem — a caixa deixava de ser a linha do tempo da OS. Só a nota AINDA
-  // NÃO ESCRITA vai por último: ela não tem data, e é um campo em branco
-  // esperando texto, não um registro.
-  return legado + (minha
-    ? notas.map(n => n === minha ? aMinha : deOutro(n)).join('')
-    : notas.map(deOutro).join('') + aMinha);
+  // de ontem — a caixa deixava de ser a linha do tempo da OS.
+  return legado + notas.map(n => _obsLogin(n) === eu ? aMinha(n) : deOutro(n)).join('') + aNova;
 }
 
 // O campo ANTIGO, de antes de a folha ter dono. Só admin — ver o comentário
@@ -26818,7 +26866,14 @@ function _obsCaberNaFolha() {
   if (!box) return;
   const aviso = box.querySelector('.obs-cortadas');
   if (aviso) aviso.remove();
-  const podem = Array.from(box.querySelectorAll('.obs-nota:not(.obs-minha)'));
+  /* O QUE PODE SER ESCONDIDO quando a caixa transborda: todo recado JÁ ESCRITO,
+     meu ou de quem for. Até 01/09/2026 os meus eram poupados, e fazia sentido
+     enquanto eu só podia ter UM: era o campo em que eu estava escrevendo.
+     Agora quem recebe o texto é a caixa em branco do fim — essa sim nunca se
+     esconde, senão a folha deixaria de ter onde escrever —, e os meus recados
+     antigos são registro como os dos outros: escondê-los é o que impede que
+     cinco recados meus empurrem a caixa para fora da folha. */
+  const podem = Array.from(box.querySelectorAll('.obs-nota:not(.obs-nova)'));
   podem.forEach(n => n.classList.remove('obs-oculta'));
   const transborda = () => box.scrollHeight > box.clientHeight + 1;
   if (!transborda()) return;

@@ -74,16 +74,10 @@ function pk(v) { return typeof v === 'string' ? JSON.parse(v) : v; }
     arr.forEach(n => { if (String(n.login || '').trim().toLowerCase() === DE) { n.login = PARA; notas++; mudou = true; } });
     if (!mudou) return;
     osTocadas++;
-    // Colapsa para uma nota por login (a reatribuição pode juntar duas do mesmo
-    // autor na mesma OS): fica a de data mais recente.
-    const porLogin = new Map();
-    arr.forEach(n => {
-      const k = String(n.login || '').trim().toLowerCase();
-      const t = n.editadoEm || n.em || '';
-      const at = porLogin.get(k);
-      if (!at || t > (at.editadoEm || at.em || '')) porLogin.set(k, n);
-    });
-    o.obsNotas = Array.from(porLogin.values());
+    // NÃO se colapsa nada. Até 01/09/2026 isto juntava as notas do mesmo autor
+    // em uma só, "ficando a de data mais recente" — coerente com a regra de uma
+    // nota por login, e apagar histórico assim que cada recado passou a ser um
+    // registro com data própria. Trocar a assinatura não é perder recado.
   });
 
   console.log(`de:   ${DE}`);
