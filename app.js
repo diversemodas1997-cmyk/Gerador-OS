@@ -19896,7 +19896,10 @@ async function aplicarRegraConjugadaSeAplicavel(osAtiva) {
 // Mesclando, o que o formulário controla é sobrescrito e o resto sobrevive.
 function _mesclarComOSExistente(data) {
   const ant = (STATE.ordens || []).find(o => o.id === data.id);
-  if (!ant) return data;
+  // OS NOVA nasce com as tonalidades padrão já abertas (ver TONS_PADRAO_NOVA_OS):
+  // é aqui que se sabe que é nova, e não numa reedição. Quem enfesta em menos
+  // recolhe as linhas no − da própria folha.
+  if (!ant) return _aplicarTonsPadrao(data);
   const juntos = { ...ant, ...data };
   // `criadoEm` é quando a OS NASCEU. coletaOS carimba a hora a cada gravação, e
   // sem isto uma OS de março reeditada hoje diria que foi criada hoje — e o
@@ -24767,6 +24770,36 @@ async function salvarObsOS(osId, valor) {
 // Teto de tonalidades de uma OS. Eram 4 fixas; viraram 7 porque a folha passou
 // a ganhar linha de tom sob demanda (o + e o − do "Total por tamanho").
 const MAX_TONS = 7;
+
+/* QUANTAS LINHAS DE TOM UMA OS NOVA JÁ NASCE MOSTRANDO.
+
+   A folha nascia com UMA linha de tom, e quem enfesta em três tonalidades —
+   que é o normal da casa — tinha de abrir as outras duas no + antes de poder
+   escrever. Pior no papel: a folha impressa saía com uma linha só, e as
+   tonalidades 2 e 3 eram anotadas à caneta na margem, fora do lugar onde o
+   programa saberia lê-las depois.
+
+   Três é o padrão de quem enfesta, não um teto: o + continua abrindo até
+   MAX_TONS, e o − recolhe o que não for usado (é o caminho de quem enfesta em
+   uma tonalidade só). Vale apenas para OS NOVA — mexer no que já está gravado
+   mudaria o volume da expedição de OS que já foram planejadas, já que cada
+   tonalidade é ensacada separada (pacotes = tamanhos × tonalidades + 1). */
+const TONS_PADRAO_NOVA_OS = 3;
+
+// Marca as N primeiras tonalidades de uma OS que ainda não tem nenhuma. Não
+// escreve VALOR nenhum: a linha nasce vazia, esperando as camadas — quem
+// determina os números continua sendo o que se lança na fase principal.
+function _aplicarTonsPadrao(os) {
+  if (!os) return os;
+  os.progresso = os.progresso || {};
+  const t = os.progresso.totalTamanhoTons;
+  if (t && Object.keys(t).length) return os;      // já tem tom: não é OS nova de verdade
+  os.progresso.totalTamanhoTons = {};
+  for (let i = 1; i <= Math.min(MAX_TONS, TONS_PADRAO_NOVA_OS); i++) {
+    os.progresso.totalTamanhoTons[i] = true;
+  }
+  return os;
+}
 
 // Calcula os tons efetivamente marcados como prefixo consecutivo: cada tom só
 // vale se todos os anteriores estiverem marcados (Tom 4 exige Tom 1, 2 e 3).
