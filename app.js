@@ -16918,6 +16918,84 @@ function _rotuloDesenhoOS(d) {
   return `${d.codigo}${d.desc ? ' · ' + d.desc : ''}`;
 }
 
+/* ---- OS DESENHOS SEMELHANTES FICAM JUNTOS NA HORA DE ESCOLHER -------------
+   A lista era a ordem de cadastro: as nove camisetas básicas, as oito blusas de
+   moletom e as três texturizadas apareciam embaralhadas, e achar "a básica
+   verde" era ler código por código até topar com ela. Quem escolhe o desenho de
+   uma OS não procura um código — procura uma FAMÍLIA ("a camiseta recortada")
+   e, dentro dela, uma cor.
+
+   A CHAVE É O SKU DO PRODUTO — o `skuLinha` sem o sufixo de cor
+   ("CM.LISA-PRE" → "CM.LISA"). É o mesmo vocabulário que a grade e a planilha
+   de conferência já usam, e não uma classificação nova só para este campo.
+
+   MEDIDO ANTES DE ESCOLHER, com os 33 desenhos da fábrica — que é a lição
+   deixada em compararGradesPorSemelhanca: a pergunta que decide não é "o
+   agrupamento funciona?", é "quantos grupos sobram?".
+
+       por base    ·  2 grupos, nenhum com um só
+       por modelo  ·  6 grupos, nenhum com um só
+       por SKU     ·  8 grupos, nenhum com um só   ← escolhido
+
+   O SKU ganha do modelo por separar as três Camisetas Oversized Texturizadas
+   (COT.JAC, COT.PRI, COT.RUG), que o modelo juntava num grupo de seis: são
+   panos diferentes, e é por pano que se procura. Nenhum grupo de um só, que é o
+   que reprovou a pasta por faixa de tamanhos nas grades.
+
+   Dentro do grupo, ordem por CÓDIGO com leitura numérica: "001" antes de
+   "0010", e o 0024 antes do 0025 (no cadastro eles estão ao contrário). */
+function _desenhoSkuProduto(d) {
+  const s = String((d && d.skuLinha) || '').trim();
+  const i = s.lastIndexOf('-');
+  return (i > 0 ? s.slice(0, i) : s);
+}
+
+// A descrição da fábrica é "Modelo | Cor" ("Camiseta Básica | Preto"). O modelo
+// vira o nome do grupo e a cor fica na linha — assim a linha diz o que a
+// diferencia das irmãs, em vez de repetir o modelo trinta e três vezes.
+function _desenhoModelo(d) {
+  return String((d && d.desc) || '').split('|')[0].trim();
+}
+function _desenhoVariacao(d) {
+  const p = String((d && d.desc) || '').split('|');
+  return p.length > 1 ? p.slice(1).join('|').trim() : '';
+}
+
+function _desenhosAgrupados(lista) {
+  const porSku = new Map();
+  (lista || []).forEach(d => {
+    const k = _desenhoSkuProduto(d);
+    if (!porSku.has(k)) porSku.set(k, []);
+    porSku.get(k).push(d);
+  });
+  const grupos = Array.from(porSku.entries()).map(([sku, itens]) => {
+    itens.sort((a, b) => String((a && a.codigo) || '')
+      .localeCompare(String((b && b.codigo) || ''), 'pt-BR', { numeric: true }));
+    // O modelo só vira nome do grupo quando é o MESMO em todos: se dois
+    // desenhos do mesmo SKU descrevem modelos diferentes, o cabeçalho estaria
+    // mentindo sobre metade da lista — aí fica o SKU sozinho e cada linha
+    // carrega a sua descrição inteira.
+    const modelos = new Set(itens.map(_desenhoModelo).filter(Boolean));
+    return { sku, modelo: modelos.size === 1 ? Array.from(modelos)[0] : '', itens };
+  });
+  // Alfabética pelo SKU já põe as famílias lado a lado (BM.*, CM.*, COT.*).
+  // Desenho sem SKU não some nem se mistura: vai para o fim, num grupo próprio.
+  grupos.sort((a, b) => (a.sku ? 0 : 1) - (b.sku ? 0 : 1)
+    || a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true }));
+  return grupos;
+}
+
+function _rotuloGrupoDesenho(g) {
+  if (!g.sku) return 'Sem SKU';
+  return g.modelo ? `${g.sku} · ${g.modelo}` : g.sku;
+}
+
+// Dentro de um grupo que já diz o modelo, a linha mostra só o código e a cor.
+function _rotuloDesenhoNoGrupo(d, g) {
+  const v = _desenhoVariacao(d);
+  return (g.modelo && v) ? `${d.codigo} · ${v}` : _rotuloDesenhoOS(d);
+}
+
 function filtrarDesenhosOS() {
   const sel = document.getElementById('f-desenho');
   const campo = document.getElementById('f-desenho-busca');
@@ -16933,9 +17011,14 @@ function filtrarDesenhosOS() {
   const lista = (escolhido && !casam.some(d => d.id === escolhido))
     ? todos.filter(d => d.id === escolhido).concat(casam)
     : casam;
+  // Agrupado por família (ver _desenhosAgrupados): o <optgroup> é o que põe o
+  // nome do grupo na lista suspensa, e o navegador o desenha sem deixar clicar.
   sel.innerHTML = `<option value="">— selecione —</option>`
-    + lista.map(d => `<option value="${esc(d.id)}"${d.id === escolhido ? ' selected' : ''}>`
-        + `${esc(_rotuloDesenhoOS(d))}</option>`).join('');
+    + _desenhosAgrupados(lista).map(g =>
+        `<optgroup label="${esc(_rotuloGrupoDesenho(g))}">`
+        + g.itens.map(d => `<option value="${esc(d.id)}"${d.id === escolhido ? ' selected' : ''}>`
+            + `${esc(_rotuloDesenhoNoGrupo(d, g))}</option>`).join('')
+        + `</optgroup>`).join('');
   if (conta) {
     conta.textContent = termos.length
       ? `${casam.length} de ${todos.length} desenhos`

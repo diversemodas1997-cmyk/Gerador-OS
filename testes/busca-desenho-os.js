@@ -34,6 +34,12 @@ const monta = (ctx) => new Function('ctx', `
   const document = { getElementById: (id) => ctx.el[id] || null };
   ${recorte('function _textoBuscaDesenho', 'o texto que a busca varre')}
   ${recorte('function _rotuloDesenhoOS', 'o rotulo da opcao')}
+  ${recorte('function _desenhoSkuProduto', 'o SKU do produto')}
+  ${recorte('function _desenhoModelo', 'o modelo do desenho')}
+  ${recorte('function _desenhoVariacao', 'a variacao do desenho')}
+  ${recorte('function _desenhosAgrupados', 'o agrupamento por semelhanca')}
+  ${recorte('function _rotuloGrupoDesenho', 'o rotulo do grupo')}
+  ${recorte('function _rotuloDesenhoNoGrupo', 'o rotulo dentro do grupo')}
   ${recorte('function filtrarDesenhosOS', 'o filtro do desenho')}
   return { filtrarDesenhosOS, _textoBuscaDesenho };
 `)(ctx);
