@@ -25301,6 +25301,17 @@ async function duplicarOS(id) {
   // da OS que foi copiada.
   delete copia.statusOS; delete copia.statusOSPor; delete copia.statusOSEm;
   delete copia.finalizadaEm;
+  /* AS OBSERVAÇÕES NÃO VÊM JUNTO. Cada recado é assinado e datado por quem o
+     escreveu, sobre o que ele viu naquele lote. Copiado para uma OS que nasce
+     hoje, ele vira um registro falso: a folha da OS nova mostrava o recado de
+     outra pessoa, carimbado num dia em que esta OS ainda não existia.
+
+     Foi o que aconteceu com a OS 0507 (01/09/2026): copiada da 0496, ela nasceu
+     com o recado de 28/08 da 0496 e o carimbo daquele dia. É o mesmo motivo
+     pelo qual `criadoEm` logo acima é regerado, e não herdado. O texto antigo
+     (`obs`) sai pela mesma razão: ele se anuncia como "anterior a 20/08/2026",
+     o que é impossível numa OS criada agora. */
+  delete copia.obsNotas; delete copia.obs;
   STATE.ordens.push(copia);
   await saveState('ordens');
   await atualizarCounterOS(copia.os);
