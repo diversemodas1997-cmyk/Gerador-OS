@@ -16170,7 +16170,8 @@ function abrirRiscosDaGrade(id) {
           </div>`).join('')}
       </div>`).join('')}
     <div style="font-size:11px;color:var(--ink-3);margin-top:10px;">
-      Lista de ${esc(_riscosIdx.gerado || '—')}. PDF novo na pasta só aparece aqui depois de
+      Lista de ${esc(_riscosIdx.gerado || '—')}. PDF novo na pasta entra sozinho em até 5 minutos
+      (a tarefa <i>Gerador-OS Vigia Riscos</i>, no servidor). Para não esperar:
       <code>node servidor/indexar-riscos.js</code>.
     </div>`;
   openModal('modal-riscos');
