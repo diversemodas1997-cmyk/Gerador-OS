@@ -2550,7 +2550,7 @@ async function definirNovaSenha() {
     fecharLogin();
     await loadState();
     atualizarUIAuth();
-    goto('home');
+    goto(_paginaInicial());
     toast('Senha atualizada. Bem-vindo(a)!', 'ok');
   } catch (e) {
     erroEl.textContent = e.message || 'Erro inesperado';
@@ -2620,7 +2620,7 @@ async function submeterAuth() {
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
-    goto('home');
+    goto(_paginaInicial());   // respeita a aba aberta direto numa área
     toast('Conectado — cadastros sincronizados na nuvem', 'ok');
   } catch (e) {
     erroEl.textContent = e.message || 'Erro inesperado';
@@ -3511,6 +3511,7 @@ function goto(page) {
     page = 'lista-os';
   }
   _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
+  _enderecoDaPagina(page);     // a area vira endereco: aba nova, F5 e voltar funcionam
   document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`section.page[data-page="${page}"]`);
   if (target) target.classList.remove('hidden');
@@ -3589,7 +3590,67 @@ function goto(page) {
   setTimeout(ajustarAmpliacao, 0);
 }
 
-document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
+/* ---- CADA ÁREA TEM ENDEREÇO, E ABRE EM ABA PRÓPRIA ----------------------
+   O programa é uma página só: trocar de área é esconder uma <section> e mostrar
+   outra. Sem endereço nenhum, abrir uma segunda aba caía sempre no Início, e
+   não havia como ter a lista de OS numa aba e a expedição na outra — voltar a
+   uma delas custava refazer o caminho pelo menu, e perder a rolagem e o filtro.
+
+   Agora cada área é `#nome-da-area` no endereço. Isso dá três coisas de graça,
+   todas do navegador e não nossas: o Ctrl+clique (e o botão direito → abrir em
+   nova aba) sobre o menu abre a área em outra aba; recarregar a página volta
+   para onde se estava, em vez de para o Início; e o voltar do navegador anda
+   entre as áreas visitadas.
+
+   As duas abas conversam com o servidor cada uma por si, e isso já era seguro:
+   a gravação é POR CHAVE (`_dirtyKeys`) e a aba que não mexeu numa chave adota
+   a versão do servidor. Duas abas em áreas diferentes é a mesma situação de
+   duas pessoas em áreas diferentes, que o programa já resolvia.
+
+   SÓ ÁREA DE MENU VIRA ENDEREÇO. A folha de OS e o formulário de uma OS já
+   aberta dependem de qual OS está na mão: `#print-os` numa aba nova abriria uma
+   folha sem OS. Quem não tem item de menu não escreve no endereço, e um
+   endereço desconhecido cai no Início. */
+function _paginaTemEndereco(page) {
+  return !!(page && document.querySelector(`.nav-btn[data-page="${page}"]`));
+}
+
+// A área pedida no endereço, se for uma que existe. Senão, nada.
+function _paginaDoEndereco() {
+  const h = String(location.hash || '').replace(/^#/, '').trim();
+  return _paginaTemEndereco(h) ? h : '';
+}
+
+// Por onde o programa abre: o endereço manda, e o Início é o padrão.
+function _paginaInicial() {
+  return _paginaDoEndereco() || 'home';
+}
+
+// Trocar de área escreve no endereço SEM empilhar no histórico quando é a mesma
+// área (recarregar não deve criar uma volta para lugar nenhum).
+function _enderecoDaPagina(page) {
+  if (!_paginaTemEndereco(page)) return;
+  const novo = '#' + page;
+  if (location.hash !== novo) location.hash = novo;
+}
+
+// Voltar/avançar do navegador, e o Ctrl+clique que abriu esta mesma aba noutra
+// área. Só age quando a área do endereço não é a que já está na tela — senão o
+// goto que acabou de escrever o endereço voltaria aqui e se chamaria de novo.
+window.addEventListener('hashchange', () => {
+  const page = _paginaDoEndereco();
+  const atual = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
+  if (page && page !== atual) goto(page);
+});
+
+document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', e => {
+  // Ctrl/⌘/Shift-clique é do NAVEGADOR: é assim que se abre em outra aba (ou
+  // noutra janela). Interceptar aqui faria a aba de agora trocar de área junto,
+  // que é justamente o que o usuário não pediu ao segurar a tecla.
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  goto(b.dataset.page);
+}));
 
 // Injeta o botao "≡ Menu" no topo de cada .page-header. Visivel apenas no
 // mobile via CSS — desktop nunca o ve. Idempotente: se rodar de novo, nao
@@ -30403,7 +30464,9 @@ async function limparTudo() {
     if (currentRole === 'admin' && typeof atualizarContabSnapshot === 'function') {
       atualizarContabSnapshot();
     }
-    goto('home');
+    // O endereço manda: a aba aberta em "#expedicao" abre na expedição, e o F5
+    // volta para onde se estava. Sem endereço, o Início, como sempre foi.
+    goto(_paginaInicial());
     // Tarefas em background — não bloqueiam a navegação
     snapshotDiario().catch(e => console.warn('snapshotDiario', e));
     // Snapshot de contingência base ao abrir (estado carregado, não-vazio).

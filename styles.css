@@ -199,10 +199,16 @@ aside.sidebar {
 .nav-group.collapsed .nav-items {
   display: none;
 }
+/* O item do menu é um <a href="#area">, e não um <button>: é o que faz o
+   Ctrl+clique, o clique do meio e o "abrir em nova aba" do botão direito
+   funcionarem, deixando cada área do programa aberta na sua própria aba. Um
+   <button> não é link nenhum para o navegador, e nenhum desses gestos existia.
+   O text-decoration some para ele continuar parecendo o que sempre pareceu. */
 .nav-btn {
   display: block;
   width: 100%;
   text-align: left;
+  text-decoration: none;
   background: transparent;
   color: rgba(255,255,255,.85);
   border: none;

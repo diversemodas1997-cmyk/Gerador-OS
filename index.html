@@ -10,7 +10,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-01b">
+<link rel="stylesheet" href="styles.css?v=2026-09-01c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -65,17 +65,17 @@
     <div class="nav-group" data-group="principal">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
       <div class="nav-items">
-        <button class="nav-btn" data-page="home">Início</button>
-        <button class="nav-btn admin-only" data-page="nova-os">Nova OS</button>
-        <button class="nav-btn" data-page="lista-os">OS Salvas</button>
-        <button class="nav-btn" data-page="compra">Compra</button>
-        <button class="nav-btn" data-page="estoque">Estoque de tecidos</button>
-        <button class="nav-btn" data-page="corte">Estoque de corte</button>
-        <button class="nav-btn" data-page="expedicao">Expedição</button>
-        <button class="nav-btn" data-page="costurando">Costurando</button>
-        <button class="nav-btn" data-page="fios">Retirada de fios</button>
-        <button class="nav-btn" data-page="operacoes">Operações</button>
-        <button class="nav-btn" data-page="ranking">Ranking de produção</button>
+        <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
+        <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
+        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">OS Salvas</a>
+        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
+        <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
+        <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de corte</a>
+        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Expedição</a>
+        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando</a>
+        <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
+        <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Operações</a>
+        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
       </div>
     </div>
 
@@ -85,28 +85,28 @@
     <div class="nav-group" data-group="cadastros">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
       <div class="nav-items">
-        <button class="nav-btn" data-page="cad-marcas">Marcas</button>
-        <button class="nav-btn" data-page="cad-colecoes">Coleções</button>
-        <button class="nav-btn" data-page="cad-modelos">Modelos</button>
-        <button class="nav-btn" data-page="cad-linhas">Linhas</button>
-        <button class="nav-btn" data-page="cad-bases">Bases</button>
-        <button class="nav-btn" data-page="cad-blocos">Blocos / Revisões</button>
-        <button class="nav-btn" data-page="cad-equipe">Equipe</button>
-        <button class="nav-btn" data-page="cad-funcoes">Funções</button>
-        <button class="nav-btn" data-page="cad-etapas">Etapas de produção</button>
-        <button class="nav-btn" data-page="cad-componentes">Componentes</button>
-        <button class="nav-btn" data-page="cad-tecidos">Tecidos</button>
-        <button class="nav-btn" data-page="cad-cores">Cores</button>
-        <button class="nav-btn" data-page="cad-materiais">Materiais / Aviamentos</button>
-        <button class="nav-btn" data-page="cad-grades">Grades</button>
-        <button class="nav-btn" data-page="cad-desenhos">Desenhos técnicos</button>
+        <a class="nav-btn" href="#cad-marcas" data-page="cad-marcas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Marcas</a>
+        <a class="nav-btn" href="#cad-colecoes" data-page="cad-colecoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Coleções</a>
+        <a class="nav-btn" href="#cad-modelos" data-page="cad-modelos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Modelos</a>
+        <a class="nav-btn" href="#cad-linhas" data-page="cad-linhas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Linhas</a>
+        <a class="nav-btn" href="#cad-bases" data-page="cad-bases" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Bases</a>
+        <a class="nav-btn" href="#cad-blocos" data-page="cad-blocos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Blocos / Revisões</a>
+        <a class="nav-btn" href="#cad-equipe" data-page="cad-equipe" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Equipe</a>
+        <a class="nav-btn" href="#cad-funcoes" data-page="cad-funcoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Funções</a>
+        <a class="nav-btn" href="#cad-etapas" data-page="cad-etapas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Etapas de produção</a>
+        <a class="nav-btn" href="#cad-componentes" data-page="cad-componentes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Componentes</a>
+        <a class="nav-btn" href="#cad-tecidos" data-page="cad-tecidos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Tecidos</a>
+        <a class="nav-btn" href="#cad-cores" data-page="cad-cores" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Cores</a>
+        <a class="nav-btn" href="#cad-materiais" data-page="cad-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Materiais / Aviamentos</a>
+        <a class="nav-btn" href="#cad-grades" data-page="cad-grades" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Grades</a>
+        <a class="nav-btn" href="#cad-desenhos" data-page="cad-desenhos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Desenhos técnicos</a>
       </div>
     </div>
 
     <div class="nav-group" data-group="sistema">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Sistema</button>
       <div class="nav-items">
-        <button class="nav-btn" data-page="config">Configurações</button>
+        <a class="nav-btn" href="#config" data-page="config" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Configurações</a>
       </div>
     </div>
   </aside>
@@ -1359,6 +1359,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-01b"></script>
+<script src="app.js?v=2026-09-01c"></script>
 </body>
 </html>
