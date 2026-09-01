@@ -3239,11 +3239,20 @@ async function loadState() {
   // Roda só p/ admin, só quando o campo está VAZIO (nunca sobrescreve edição
   // manual) — então roda no máximo uma vez por modelo. Camiseta Bicolor fica de
   // fora (não há linha clara no catálogo de SKUs).
+  //
+  // A LINHA TEM DE SER A MESMA QUE AS GRADES USAM. O nome da grade carrega o SKU
+  // ("P ao G3 | CM.TRI | 116.5cm"), e é comparando os dois que o formulário da
+  // OS oferece as grades daquele produto (ver _skuLinhaNorm, que corta na
+  // primeira barra: "CM.TRI-PRE" e "CM.TRI" dão o mesmo, "CM.TRI.LISA" não).
+  // Até 01/09/2026 a Camiseta Tricolor era semeada aqui como "CM.TRI.LISA",
+  // enquanto as 18 grades dela dizem "CM.TRI": os quatro desenhos tricolores
+  // ficavam sem NENHUMA grade compatível no dropdown, e a única saída era
+  // "mostrar todas" — que é o filtro desligado.
   if (currentRole === 'admin' && Array.isArray(STATE.modelos)) {
     const padroes = [
       { re: /blusa\s+moletom\s+tricolor/, linha: 'BM.TRI' },
       { re: /blusa\s+moletom\s+basica/,   linha: 'BM.LISA' },
-      { re: /camiseta\s+tricolor/,        linha: 'CM.TRI.LISA' },
+      { re: /camiseta\s+tricolor/,        linha: 'CM.TRI' },
       { re: /camiseta\s+polo/,            linha: 'PM.LISA' },
       { re: /camiseta\s+basica/,          linha: 'CM.LISA' },
     ];
