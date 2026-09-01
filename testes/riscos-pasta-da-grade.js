@@ -7,11 +7,16 @@
    tamanhos, com o argumento de que "candidato a mais não estraga". Estraga:
    candidato a mais faz o PDF aparecer na janela de uma grade que não é a dele.
 
-   Foi o que o Junior viu na CM.TRI. Dentro de `P-M-2G-GG-G1-G2-G3` havia duas
-   ribanas chamadas `... - P-M-G-GG-G1-G2-G3-v1/v2.pdf` — cópias que guardaram o
-   nome da grade vizinha —, e por causa do NOME a pasta inteira aparecia na
-   janela da grade "P ao G3 | CM.TRI", que tem a própria ribana com esses mesmos
-   dois nomes. Duas grades diferentes, uma pasta trocada.
+   Foi o que o Junior viu na CM.TRI. Dentro de `P-M-2G-GG-G1-G2-G3` há duas
+   ribanas chamadas `... - P-M-G-GG-G1-G2-G3-v1/v2.pdf`, e por causa do NOME a
+   pasta inteira aparecia na janela da grade "P ao G3 | CM.TRI" — outra grade,
+   que tem a própria ribana com esses mesmos dois nomes.
+
+   E O ARQUIVO NÃO ESTÁ NO LUGAR ERRADO: a ribana é encaixada À PARTE, noutro
+   momento e por outro método, então a distribuição de tamanhos DELA não é a do
+   corpo — a grade que corta o corpo em `P-M-2G-GG-G1-G2-G3` corta a ribana em
+   `P-M-G-GG-G1-G2-G3`. O nome descreve o encaixe da RIBANA; a pasta diz de qual
+   grade ele é. Renomear o arquivo apagaria uma informação verdadeira.
 
    A regra agora: a PASTA manda. O nome do arquivo continua valendo onde ele é a
    ÚNICA pista — o acervo em que a pasta vai da linha direto para a largura, ou
@@ -53,12 +58,13 @@ const ok = (nome, cond, extra) => {
 const chaves = rel => A._riscoItemDoCaminho(rel).tams.map(A._chaveTam);
 
 console.log('-- o caso real da CM.TRI --');
-// As duas ribanas dentro da pasta 2G, com o nome da grade vizinha.
-const ribanaNaPastaErrada = 'CM.TRI/P-M-2G-GG-G1-G2-G3/116.5 cm - MAPAS IMPRESSOS/CM.TRI - RIBANA - P-M-G-GG-G1-G2-G3-v1.pdf';
-ok('1. o PDF pertence a pasta em que esta, e nao ao que o nome dele diz',
-  chaves(ribanaNaPastaErrada).join(',') === 'p-m-2g-gg-g1-g2-g3', chaves(ribanaNaPastaErrada));
+// A ribana da grade 2G, encaixada a parte e por isso com outra distribuicao de
+// tamanhos no nome. Ela E desta pasta: a fase Gola da grade aponta para ela.
+const ribanaDaGrade2G = 'CM.TRI/P-M-2G-GG-G1-G2-G3/116.5 cm - MAPAS IMPRESSOS/CM.TRI - RIBANA - P-M-G-GG-G1-G2-G3-v1.pdf';
+ok('1. a ribana e da grade da PASTA, e nao da que o nome dela descreve',
+  chaves(ribanaDaGrade2G).join(',') === 'p-m-2g-gg-g1-g2-g3', chaves(ribanaDaGrade2G));
 ok('2. e nao carrega mais a faixa da grade vizinha',
-  chaves(ribanaNaPastaErrada).indexOf('p-m-g-gg-g1-g2-g3') < 0, chaves(ribanaNaPastaErrada));
+  chaves(ribanaDaGrade2G).indexOf('p-m-g-gg-g1-g2-g3') < 0, chaves(ribanaDaGrade2G));
 const ribanaCerta = 'CM.TRI/P-M-G-GG-G1-G2-G3/116.5 cm/CM.TRI - RIBANA - P-M-G-GG-G1-G2-G3-v1.pdf';
 ok('3. a ribana da grade "P ao G3" continua sendo dela',
   chaves(ribanaCerta).join(',') === 'p-m-g-gg-g1-g2-g3', chaves(ribanaCerta));

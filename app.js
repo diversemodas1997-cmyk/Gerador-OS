@@ -16030,11 +16030,21 @@ function _riscoTamsDoTexto(txt) {
 // "candidato a mais não estraga". Estraga: candidato a mais faz o PDF aparecer
 // na janela de uma grade que não é a dele.
 //
-// Foi o que o Junior viu na CM.TRI. Dentro de `P-M-2G-GG-G1-G2-G3` havia duas
-// ribanas chamadas `... - P-M-G-GG-G1-G2-G3-v1/v2.pdf` — cópias que guardaram o
-// nome da grade vizinha —, e por causa do NOME a pasta inteira aparecia na
-// janela da grade "P ao G3", que tem a sua própria ribana com esses mesmos dois
-// nomes. Duas grades diferentes, uma pasta trocada.
+// Foi o que o Junior viu na CM.TRI. Dentro de `P-M-2G-GG-G1-G2-G3` há duas
+// ribanas chamadas `... - P-M-G-GG-G1-G2-G3-v1/v2.pdf`, e por causa do NOME a
+// pasta inteira aparecia na janela da grade "P ao G3" — outra grade, que tem a
+// própria ribana com esses mesmos dois nomes.
+//
+// E O ARQUIVO NÃO ESTÁ NO LUGAR ERRADO — ESTE É O PONTO. A ribana é encaixada
+// À PARTE, noutro momento e por outro método, então a distribuição de tamanhos
+// DELA não é a do corpo: a grade que corta o corpo em `P-M-2G-GG-G1-G2-G3`
+// corta a ribana em `P-M-G-GG-G1-G2-G3`. O nome do arquivo descreve o encaixe
+// da RIBANA; a pasta é que diz de qual grade ele é. (Confirmado por Junior em
+// 01/09/2026, e o cadastro concorda: a fase Gola dessa grade aponta para esse
+// arquivo.)
+//
+// Ou seja, o nome não pode mandar porque ele fala de OUTRA COISA — não porque
+// esteja errado. Corrigir o nome seria apagar uma informação verdadeira.
 //
 // O nome do arquivo continua valendo onde ele é a ÚNICA pista: o acervo em que
 // a pasta vai da linha direto para a largura, ou nomeia o pano em vez do
