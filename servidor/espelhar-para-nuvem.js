@@ -44,6 +44,7 @@ function chaveDoEnv(caminho) {
   } catch (e) { return ''; }
 }
 const { espelhar } = require('./espelho');
+const { espelharContas } = require('./espelhar-contas');
 
 const arg = n => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : null; };
 const cfg = {
@@ -70,6 +71,30 @@ if (!cfg.nuvemKey) {
   process.exit(1);
 }
 
+/* AS CONTAS DE ACESSO VÃO JUNTO.
+
+   A cópia da nuvem existe para o dia em que o servidor da fábrica cair. De
+   nada adianta ela ter todos os dados se ninguém consegue ENTRAR nela: as
+   contas de nome (`admin`, `nathaly`…) nascem só na fábrica, e a nuvem nunca
+   soube delas. Foi o que aconteceu em 01/09/2026 — o Admin digitava a senha
+   certa e ouvia "Nome ou senha incorretos", porque naquele servidor a conta não
+   existia.
+
+   Vai junto do espelho de dados, e não em tarefa separada, para não haver como
+   uma rodar e a outra não. Falhar aqui NÃO derruba o espelho: os dados já
+   subiram, e conta é coisa que a próxima passada resolve. */
+function contas() {
+  return espelharContas({ nuvemKey: cfg.nuvemKey, nuvem: cfg.nuvem, log: cfg.log })
+    .then(c => {
+      const mexeu = c.criadas || c.senhas || c.falhas;
+      if (mexeu) {
+        cfg.log(`contas: ${c.criadas} criada(s), ${c.senhas} senha(s) realinhada(s)`
+          + `${c.falhas ? `, ${c.falhas} FALHA(S)` : ''}`);
+      }
+    })
+    .catch(e => cfg.log('contas não espelhadas: ' + (e && e.message ? e.message : e)));
+}
+
 espelhar(cfg).then(rel => {
   if (rel.dados === 'bloqueado') {
     console.error(`\n⛔ ESPELHO BLOQUEADO — nada foi enviado.\n   ${rel.motivo}\n`
@@ -80,6 +105,7 @@ espelhar(cfg).then(rel => {
   }
   const parte = rel.dados === 'espelhado' ? 'dados enviados' : `dados: ${rel.motivo || 'sem mudança'}`;
   cfg.log(`${parte}; imagens novas: ${rel.imagens}`);
+  return contas();
 }).catch(e => {
   // Internet fora é o caso mais comum e não é motivo de alarme: o espelho é
   // best-effort e a próxima execução recupera o atraso sozinha.

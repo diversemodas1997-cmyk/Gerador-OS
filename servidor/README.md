@@ -430,6 +430,37 @@ ou `node servidor\espelhar-para-nuvem.js` dentro da pasta do programa.
   Nesse caso ele sai com erro e não envia nada.
 - Internet fora não é motivo de alarme: ele falha e a execução seguinte recupera
   o atraso sozinha.
+- Envia as **contas de acesso** (`servidor/espelhar-contas.js`, chamado no fim de
+  cada passada). Ver abaixo.
+
+## As contas de acesso vão junto
+
+A cópia da nuvem existe para o dia em que o servidor da fábrica cair. De nada
+adianta ela ter todos os dados se ninguém consegue **entrar** nela — e era esse
+o caso: as contas de nome (`admin`, `nathaly`, `enfesto.corte`…) nascem só na
+fábrica, pela função `usuarios`, e a nuvem nunca soube delas. Em **01/09/2026** o
+Admin digitava a senha certa e ouvia *"Nome ou senha incorretos"*: a senha estava
+certa, o servidor é que era o outro.
+
+O que o espelho de contas faz:
+
+- Copia o **hash** da senha, nunca a senha. As senhas continuam sendo as mesmas
+  nos dois lugares, e nenhuma senha em claro passa pelo script, pela rede ou pela
+  tela.
+- Mantém o **mesmo id** dos dois lados, e repõe o papel (`admin`) na nuvem.
+- Só mexe no que mudou: guarda a impressão digital de cada hash em
+  `C:\supabase\espelho-contas.json` e compara. Rodar de meia em meia hora não
+  custa nada.
+- Quando a senha muda na fábrica, a conta da nuvem é **apagada e recriada** com o
+  hash novo. O caminho óbvio — `PUT /admin/users/<id>` com `password_hash` —
+  responde 200 e **não troca a senha**: o campo só é lido na criação (testado em
+  01/09/2026). Um espelho que diz ter copiado e não copiou é pior do que não
+  existir.
+- Só cuida do que termina em `@diverse.local`. As contas de e-mail de verdade
+  (@gmail) não são tocadas.
+
+Para rodar sozinho: `node servidor\espelhar-contas.js`, ou
+`node servidor\espelhar-contas.js --so-listar` para ver o que ele faria.
 
 ## Custo
 
