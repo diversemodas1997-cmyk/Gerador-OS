@@ -21683,6 +21683,41 @@ function dadosEtiquetaParaOS(o) {
 // só o respeita quando a impressora escolhida TEM esse papel. Numa laser A4
 // comum ele cai no papel da impressora e a etiqueta sai pequena, no canto de uma
 // folha inteira — foi o que aconteceu na OS 0452. Pelo PDF isso não acontece.
+/* ---- QUEM IMPRIMIU AS ETIQUETAS, E QUANDO ---------------------------------
+
+   O mural do sino não guarda evento: ele é LIDO das próprias OS a cada
+   abertura (ver _avisosEventos). Imprimir etiqueta não deixava rastro nenhum
+   nos dados — nem um campo —, então não havia o que o mural pudesse mostrar, e
+   a impressão era a única coisa que a produção fazia sem ninguém ficar sabendo.
+   O único sinal era um toast, que dura três segundos e só na máquina de quem
+   clicou.
+
+   Agora a OS guarda DOIS campos: `etiquetaEm` e `etiquetaPor`. É o mesmo
+   formato do status (`statusOSEm`/`statusOSPor`) e pelo mesmo motivo: nunca
+   impressa é a AUSÊNCIA dos dois, então OS que ninguém etiquetou não engorda o
+   blob — que desce inteiro a cada abertura.
+
+   REIMPRIMIR CARIMBA POR CIMA. O mural mostra o estado atual das coisas, não o
+   histórico: o que interessa é quem imprimiu por último e quando. E reimprimir
+   É notícia — a etiqueta anterior foi para o lixo ou está num pacote errado.
+
+   O QUE ISTO SABE DE VERDADE é que o PDF foi gerado e entregue ao navegador. Se
+   a folha entrou na impressora, nenhum programa aqui tem como saber — por isso
+   o carimbo só acontece depois de a aba abrir de fato: pop-up bloqueado não
+   carimba nada.
+
+   MELHOR ESFORÇO, e em silêncio: imprimir etiqueta é ato de consulta e não pode
+   falhar por causa do aviso. Sem login ou no modo nuvem (só consulta), a
+   impressão sai igual e o carimbo não é dado — o programa não teria como dizer
+   quem imprimiu, e um aviso sem autor não é aviso. */
+async function _carimbarEtiquetaImpressa(o) {
+  if (!o || !o.id) return;
+  if (!podeGravar() || !_contaPodeRegistrar()) return;
+  o.etiquetaEm = new Date().toISOString();
+  o.etiquetaPor = _obsQuemSou();
+  try { await saveState('ordens'); } catch (e) { console.warn('_carimbarEtiquetaImpressa', e); }
+}
+
 function imprimirEtiquetasPdf(osId) {
   const o = STATE.ordens.find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
@@ -21701,6 +21736,9 @@ function imprimirEtiquetasPdf(osId) {
     // a aba em branco.
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     toast('PDF das etiquetas aberto (100 × 50 mm). No diálogo, deixe Margens: Nenhuma e Escala: 100%.', 'ok');
+    // Só depois de a aba ter aberto: pop-up bloqueado sai pelo return acima e
+    // não carimba impressão que não houve.
+    _carimbarEtiquetaImpressa(o);
   } catch (e) {
     console.error('imprimirEtiquetasPdf', e);
     toast('Falha ao gerar o PDF das etiquetas: ' + (e.message || e), 'err');
@@ -23690,6 +23728,15 @@ function _avisosEventos() {
       ev.push({ tipo: 'status', osId: o.id, os: o.os || '—',
                 quem: o.statusOSPor || '', em: o.statusOSEm, status: st });
     }
+    // AS ETIQUETAS IMPRESSAS. Ver _carimbarEtiquetaImpressa: `etiquetaEm` é a
+    // última vez que o PDF das etiquetas daquela OS foi aberto para impressão.
+    // Reimpressão entra como linha nova, no lugar da anterior — é o mesmo
+    // "estado atual" que vale para o status e para a observação.
+    const etq = o.etiquetaEm ? Date.parse(o.etiquetaEm) : NaN;
+    if (!isNaN(etq) && etq >= limite) {
+      ev.push({ tipo: 'etiqueta', osId: o.id, os: o.os || '—',
+                quem: o.etiquetaPor || '', em: o.etiquetaEm });
+    }
     // A OS GERADA. `criadoEm` é o nascimento do registro (preservado nas
     // edições por _mesclarComOSExistente) — é o aviso de que existe lote novo
     // para a fábrica, que era o que só se descobria abrindo a lista.
@@ -23741,11 +23788,13 @@ function _avisosEventos() {
    duas OS marcadas seguidas ainda são duas notícias.
 
    Observação NÃO agrupa: cada recado é um texto diferente, e resumir "3
-   observações" esconderia justamente o que se quer ler. */
+   observações" esconderia justamente o que se quer ler. Etiqueta agrupa: são
+   todas a mesma notícia ("saíram as etiquetas de 5 OS"), e quem imprime um lote
+   de OS imprime uma atrás da outra. */
 function _avisosAgrupar(ev) {
   const soltos = [], grupos = new Map();
   ev.forEach(e => {
-    if (e.tipo !== 'status' && e.tipo !== 'os') { soltos.push(e); return; }
+    if (e.tipo !== 'status' && e.tipo !== 'os' && e.tipo !== 'etiqueta') { soltos.push(e); return; }
     const k = [e.tipo, String(e.quem || '').toLowerCase(), e.status || '',
                String(e.em).slice(0, 16)].join('|');
     if (!grupos.has(k)) grupos.set(k, []);
@@ -24173,6 +24222,17 @@ function renderAvisos() {
         cabec = `<b>gerada</b>${porQuem}`;
         if (e.texto) corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
         abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
+      } else if (e.tipo === 'etiqueta') {
+        icone = '🏷️';
+        titulo = `OS ${esc(e.os)}`;
+        cabec = `${esc(meu ? 'você' : quem)} imprimiu as <b>etiquetas</b>`;
+        abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
+      } else if (e.tipo === 'etiqueta-lote') {
+        icone = '🏷️';
+        titulo = `${e.n} OS`;
+        cabec = `com as <b>etiquetas impressas</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(_avisosListaOSs(e.oss))}</div>`;
+        abrir = `fecharAvisos(); goto('lista-os')`;
       } else if (e.tipo === 'oe') {
         icone = '🚚';
         titulo = `OE ${esc(formatDate(e.dataOe))}`;
@@ -25566,6 +25626,9 @@ async function duplicarOS(id) {
   // da OS que foi copiada.
   delete copia.statusOS; delete copia.statusOSPor; delete copia.statusOSEm;
   delete copia.finalizadaEm;
+  // Nem o carimbo das etiquetas: as etiquetas da cópia ainda não foram
+  // impressas — quem as imprimiu imprimiu as da OS original.
+  delete copia.etiquetaEm; delete copia.etiquetaPor;
   /* AS OBSERVAÇÕES NÃO VÊM JUNTO. Cada recado é assinado e datado por quem o
      escreveu, sobre o que ele viu naquele lote. Copiado para uma OS que nasce
      hoje, ele vira um registro falso: a folha da OS nova mostrava o recado de
