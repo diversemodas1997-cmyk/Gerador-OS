@@ -21953,12 +21953,34 @@ async function salvarEImprimirEtiquetas() {
   await _comTravaDeSalvar(() => _salvarEtiquetasConfirmada(data));
 }
 
+/* GRAVAR E GRAVAR TEM DE SER A MESMA COISA (02/09/2026, Junior).
+
+   Este caminho fazia metade do que os outros dois fazem. "Salvar OS" e "Salvar
+   e Gerar PDF" gravam, baixam o pano do estoque e geram a conjugada; aqui só se
+   gravava e imprimia. Quem criava a OS pelo botão de etiquetas — que é um jeito
+   normal de criar, o lote nasce e as etiquetas saem na mesma hora — ficava com
+   uma OS que não reservou tecido nenhum e sem a segunda ordem do par, e ninguém
+   tinha como desconfiar: o programa não reclama do que ele mesmo não fez.
+
+   O que decide isso é a OS, não o botão que a gravou. Um enfesto consome o
+   mesmo pano e a grade conjuga com a mesma dupla, tenha o clique saído daqui ou
+   dali — então os três caminhos passam pelos mesmos passos, na mesma ordem.
+
+   O PDF da conjugada continua não saindo por aqui, como não sai no "Salvar OS":
+   quem pediu etiqueta pediu a etiqueta DESTA OS. A conjugada nasce, aparece na
+   lista e imprime a sua quando for a vez dela. */
 async function _salvarEtiquetasConfirmada(data) {
   const idx = STATE.ordens.findIndex(o => o.id === data.id);
   if (idx >= 0) STATE.ordens[idx] = data; else STATE.ordens.push(data);
   await saveState('ordens');
   await atualizarCounterOS(data.os);
   osEditId = null;
+  await aplicarBaixaEstoqueOS(data);
+  await aplicarRegraConjugadaSeAplicavel(data);
+  // A impressão fica por ÚLTIMO, como estava: é ela que abre a aba do PDF, e o
+  // navegador só deixa abrir enquanto o clique ainda vale. Os dois passos acima
+  // são gravação local (milissegundos); o que demora — a subida para o servidor
+  // — não é esperado por ninguém aqui.
   imprimirEtiquetasPdf(data.id);
 }
 
