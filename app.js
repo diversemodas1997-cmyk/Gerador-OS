@@ -3570,6 +3570,14 @@ function goto(page) {
   if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
+  /* A CAIXA DE OBSERVAÇÕES SÓ PODE SER MEDIDA AGORA. A folha de OS é desenhada
+     ANTES desta chamada (verOS e _salvarEImprimirConfirmada fazem
+     renderPrintSheet e só então goto), e naquele instante a seção ainda está
+     .hidden — medida ali dá zero e o campo nasce cortado. Aqui a folha já
+     apareceu. Fica no goto, e não em verOS, para valer em TODO caminho que
+     chega na folha; é o mesmo lugar de onde as outras duas folhas se
+     desenham. */
+  if (page === 'print') _obsRemedirFolha();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
@@ -27233,6 +27241,26 @@ function abrirTodasAsObs(o) {
 // sobe para a altura do conteúdo e a caixa cresce.
 function _obsAjustarAltura(el) {
   if (!el) return;
+  /* SÓ MEDE O QUE TEM LAYOUT (02/09/2026, Junior: "o campo da 0486 ainda está
+     rolando").
+
+     Elemento dentro de `display: none` devolve scrollHeight e clientHeight
+     ZERO — e a conta abaixo, com dois zeros, decide que o texto cabe e não
+     grava piso nenhum. O campo fica nos 38px do CSS, o `overflow: hidden` come
+     o resto, e ninguém é avisado.
+
+     Era o que acontecia em TODA primeira abertura de folha: verOS desenha
+     (renderPrintSheet, que termina medindo) e só DEPOIS mostra (goto). Medido
+     no Chrome com a nota da 0486: o texto pede 216px, o campo ficava com 38, e
+     178px sumiam. Pior, _obsCaberNaFolha lia 494 > 494 e concluía que nada
+     transbordava — o aviso "não coube nesta folha" também não saía. A mesma
+     medida zerada derrubava as duas defesas de uma vez.
+
+     getClientRects().length === 0 é o teste exato de "não gera caixa nenhuma".
+     A saída vem ANTES de limpar o minHeight: sem isso, uma chamada fora de hora
+     apagaria o piso bom que já estava lá e o campo encolheria. Quem remede na
+     hora certa é _obsRemedirFolha, chamado pelo goto quando a folha aparece. */
+  if (!el.getClientRects().length) return;
   el.style.minHeight = '';                       // volta ao piso do CSS p/ remedir
   if (el.scrollHeight > el.clientHeight) el.style.minHeight = el.scrollHeight + 'px';
 }
@@ -27242,10 +27270,31 @@ function _obsAjustarAlturas() {
   document.querySelectorAll('#print-sheet .obs-input').forEach(_obsAjustarAltura);
 }
 
+/* MEDIR A FOLHA DEPOIS DE ELA APARECER. Chamado pelo goto, que é quem tira o
+   .hidden — a medida feita antes disso não vale nada (ver _obsAjustarAltura).
+
+   E DE NOVO QUANDO A FONTE CHEGA: quantas linhas um texto ocupa depende da
+   fonte com que ele foi medido. Na primeira folha do dia a IBM Plex ainda pode
+   estar carregando, e a conta sairia pela fonte de reserva — um campo curto
+   demais, com o fim do recado escondido, que é justamente o que se está
+   consertando. `fonts.ready` já resolvido devolve na hora, então nas folhas
+   seguintes isto não custa nada. */
+function _obsRemedirFolha() {
+  _obsCaberNaFolha();
+  try {
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => _obsCaberNaFolha()).catch(() => {});
+    }
+  } catch (e) { /* navegador sem a API: a medida de cima já serve */ }
+}
+
 function _obsCaberNaFolha() {
   _obsAjustarAlturas();
   const box = document.querySelector('#print-sheet .obs-box');
   if (!box) return;
+  // Folha ainda escondida: toda medida daria zero e a conclusão seria "cabe".
+  // Não mexe em nada e espera o goto chamar de novo (ver _obsRemedirFolha).
+  if (!box.getClientRects().length) return;
   const aviso = box.querySelector('.obs-cortadas');
   if (aviso) aviso.remove();
   /* O QUE PODE SER ESCONDIDO quando a caixa transborda: todo recado JÁ ESCRITO,
