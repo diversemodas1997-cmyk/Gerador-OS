@@ -1766,6 +1766,29 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .table .col-actions.row-actions .os-status[data-st="andamento"]  { background: #e7f0ff; border-color: #9dbdf0; }
 .table .col-actions.row-actions .os-status[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
 .table .col-actions.row-actions .os-status[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
+/* O MESMO STATUS, no cabecalho da janela da folha de OS. Ali ele nao divide
+   coluna com nada, entao ganha o tamanho dos botoes ao lado (mesma altura,
+   mesma fonte) em vez dos 11px apertados da tabela. As cores dos quatro
+   estados sao as mesmas -- e a mesma leitura de relance nas duas telas. */
+.page-header .actions .os-status.folha {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.page-header .actions .os-status.folha.ro { cursor: default; }
+.page-header .actions .os-status.folha[data-st="andamento"]  { background: #e7f0ff; border-color: #9dbdf0; }
+.page-header .actions .os-status.folha[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
+.page-header .actions .os-status.folha[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
+
 /* O rotulo mais longo ("Em andamento") nao cabe nos 112px da coluna junto com a
    seta do seletor; a lista de OS ganha alguns pixels a mais so nessa coluna. */
 /* A coluna encolheu em 31/08/2026. Ela empilhava SETE controles -- status,

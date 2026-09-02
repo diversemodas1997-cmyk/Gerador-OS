@@ -22275,20 +22275,64 @@ function _statusOS(o) {
 // O ícone do status dentro da coluna AÇÕES: seletor para quem pode mudar,
 // etiqueta para quem só olha. Nos dois casos a dica do mouse conta quem mexeu
 // por último e quando.
-function _statusCelulaOS(o) {
+// `extra` é a classe do lugar onde o controle está sendo posto (a folha usa
+// "folha"): a caixa é a mesma, o que muda é o tamanho que cada tela dá a ela.
+function _statusCelulaOS(o, extra) {
   const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
   const quem = _obsNomeLogin(o.statusOSPor || '');
   const quando = o.statusOSEm ? _obsQuando({ em: o.statusOSEm }) : '';
+  const cls = 'os-status' + (extra ? ' ' + extra : '');
   const dica = `Status da OS: ${s.rotulo}`
     + (quem ? ` · ${quem}${quando ? ' em ' + quando : ''}` : '');
   if (!podeMudarStatusOS()) {
-    return `<span class="os-status ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(s.rotulo)}</span>`;
+    return `<span class="${cls} ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(s.rotulo)}</span>`;
   }
-  return `<select class="os-status" data-st="${s.k}" title="${esc(dica)}"`
+  return `<select class="${cls}" data-st="${s.k}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
     + STATUS_OS.map(x => `<option value="${x.k}"${x.k === s.k ? ' selected' : ''}>`
         + `${x.icone} ${esc(x.rotulo)}</option>`).join('')
     + `</select>`;
+}
+
+/* O STATUS TAMBÉM NA JANELA DA FOLHA DE OS (02/09/2026, Junior).
+
+   O status nasceu só na lista de OS Salvas. Quem carimba, porém, é o corte — e
+   o corte trabalha com a FOLHA aberta na tela, que é o que diz o que fazer.
+   Para dizer "comecei" ou "terminei" era preciso voltar à lista, achar a linha
+   e voltar: três passos para um clique, no meio do enfesto. Agora o mesmo
+   controle está no cabeçalho da folha.
+
+   MESMO CONTROLE, MESMO CAMINHO: _statusCelulaOS monta e mudarStatusOS grava.
+   Nada aqui é segunda verdade — a permissão, a conjugada que segue junto e a
+   baixa de estoque continuam sendo decididas num lugar só.
+
+   Fica no cabeçalho .no-print: status é como a produção anda, não é dado do
+   papel. A folha impressa sai exatamente como sempre saiu. */
+function renderStatusFolhaOS() {
+  const box = document.getElementById('print-status-os');
+  if (!box) return;
+  // Lê do STATE, e não do `printOsAtual` que a folha recebeu: renderPrintSheet
+  // trabalha com uma CÓPIA da OS (mescla a grade viva), e o status carimbado
+  // por outro usuário chega no objeto do STATE.
+  const o = printOsAtual && (STATE.ordens || []).find(x => x.id === printOsAtual.id);
+  if (!o) { box.innerHTML = ''; return; }
+  const html = _statusCelulaOS(o, 'folha');
+  // Quem acabou de escolher o status ainda está com o seletor em foco: trocar o
+  // innerHTML tiraria o foco dele no meio do clique. Nesse caso só acerta o que
+  // muda de aparência — a cor do estado e a dica de quem carimbou.
+  const foco = box.contains(document.activeElement) ? box.firstElementChild : null;
+  if (foco) {
+    const molde = document.createElement('div');
+    molde.innerHTML = html;
+    const novo = molde.firstElementChild;
+    if (novo) {
+      foco.dataset.st = novo.dataset.st;
+      foco.title = novo.title;
+      if (foco.value !== undefined) foco.value = novo.dataset.st;
+    }
+    return;
+  }
+  box.innerHTML = html;
 }
 
 /* A CONJUGADA SEGUE O STATUS DA ATIVA — TODOS ELES (28/08/2026, Junior).
@@ -22345,7 +22389,7 @@ async function mudarStatusOS(id, valor) {
   if (!o) return;
   // Sem permissão: redesenha para o seletor voltar ao valor que está gravado —
   // senão a tela fica mostrando um status que ninguém salvou.
-  if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); return; }
+  if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); renderStatusFolhaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
   if (_statusOS(o) === alvo) return;
   const agora = new Date().toISOString();
@@ -22358,6 +22402,7 @@ async function mudarStatusOS(id, valor) {
   const juntas = _conjugadasQueSeguemStatus(o, alvo);
   juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
   renderListaOS();
+  renderStatusFolhaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
   try {
     await saveState('ordens');
@@ -25309,6 +25354,9 @@ function calcularColTotalAlvoImpressao(o, size) {
 // mudancas de outros usuarios sem piscar a tela nem perder o scroll.
 function aplicarProgressoCheckboxes(os) {
   if (!os) return;
+  // O status carimbado por outro usuário também chega por aqui — é a mesma
+  // folha aberta em duas máquinas do corte.
+  renderStatusFolhaOS();
   const prog = os.progresso || {};
   document.querySelectorAll('.os-check[data-etapa]').forEach(inp => {
     const etapaNome = inp.dataset.etapa;
@@ -26542,6 +26590,9 @@ function renderEnfestoBox(o) {
 
 function renderPrintSheet(o) {
   printOsAtual = o;
+  // O status vive no cabeçalho (fora da folha), então é desenhado à parte —
+  // mas junto, para que abrir a folha e ver o status sejam a mesma coisa.
+  renderStatusFolhaOS();
   // Se a OS aponta para uma grade cadastrada, usa os dados ATUAIS da grade
   // (fases, distribuição de tamanhos e descrição). Só o enfesto local (comp/larg/camadas
   // digitados na OS) permanece salvo. Isso faz alterações posteriores na grade refletirem
@@ -31267,6 +31318,7 @@ window.escreverBackupJsonAgora = escreverBackupJsonAgora;
 window.verOS = verOS;
 window.verGradeDaOS = verGradeDaOS;
 window.mudarStatusOS = mudarStatusOS;
+window.renderStatusFolhaOS = renderStatusFolhaOS;
 window.toggleAvisos = toggleAvisos;
 window.limparAvisos = limparAvisos;
 window.abrirListaOSporStatus = abrirListaOSporStatus;
