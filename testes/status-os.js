@@ -23,6 +23,9 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+// O cabecalho da folha e marcacao, nao codigo: o lugar do status na janela
+// so da para conferir no index.html.
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 function recorte(de, oQue) {
   const i = src.indexOf(de);
   if (i < 0) { console.error('nao achei ' + oQue + ' no app.js'); process.exit(1); }
@@ -48,6 +51,10 @@ const monta = (ctx) => new Function('ctx', `
   const STATE = ctx.STATE;
   const saveState = async () => { ctx.salvou++; };
   const renderListaOS = () => { ctx.redesenhou++; };
+  // O status tambem mora no cabecalho da folha de OS desde 02/09/2026, e
+  // mudarStatusOS redesenha os dois. Aqui e so um contador: quem prova a caixa
+  // da folha e o bloco "a folha mostra o status" la embaixo.
+  const renderStatusFolhaOS = () => { ctx.redesenhouFolha = (ctx.redesenhouFolha || 0) + 1; };
   ${constante('STATUS_OS')}
   ${constante('LOGINS_STATUS_OS')}
   ${constante('AREAS_ACESSO')}
@@ -541,17 +548,30 @@ console.log('-- o que fica gravado --');
      && /value="finalizado" selected/.test(f.sel.innerHTML), f.sel.innerHTML);
 
   console.log('');
-  console.log('-- o status mora SO na lista de OS Salvas --');
-  // A celula e montada em um lugar so, dentro da coluna ACOES do renderListaOS.
-  // Se alguem levar o status para a folha, a OE ou o painel de fases, o teste cai
-  // e a conversa acontece antes.
+  console.log('-- o status mora em DOIS lugares, e monta num so --');
+  /* Ate 02/09/2026 ele morava so na coluna ACOES da lista de OS Salvas, e este
+     teste dizia isso. Junior pediu o status tambem no cabecalho da janela da
+     folha: quem carimba e o corte, e o corte trabalha com a folha aberta.
+
+     A regra que sobra — e que este teste guarda — e a que importa: os dois
+     lugares montam pela MESMA _statusCelulaOS. Duas telas desenhando o status
+     por caminhos diferentes e como uma ganha um estado que a outra nao tem.
+     Se aparecer um terceiro uso, o teste cai e a conversa acontece antes. */
   const usos = (src.match(/_statusCelulaOS\(/g) || []).length;
-  ok('31. _statusCelulaOS e chamada uma vez so (a definicao + a chamada)',
-     usos === 2, String(usos));
+  ok('31. _statusCelulaOS e chamada em dois lugares (a definicao + as duas)',
+     usos === 3, String(usos));
   const lista = src.slice(src.indexOf('function renderListaOS'));
-  ok('32. e a chamada esta dentro da coluna col-actions da lista',
+  ok('32. uma chamada esta na coluna col-actions da lista',
      /col-actions row-actions">\s*\$\{_statusCelulaOS\(o\)\}/.test(lista),
      lista.slice(lista.indexOf('col-actions'), lista.indexOf('col-actions') + 120));
+  const folha = src.slice(src.indexOf('function renderStatusFolhaOS'));
+  ok('33. a outra esta no cabecalho da folha, e nao redesenha OS que sumiu',
+     /_statusCelulaOS\(o, 'folha'\)/.test(folha.slice(0, 1600))
+     && /if \(!o\) \{ box\.innerHTML = ''; return; \}/.test(folha.slice(0, 1600)),
+     folha.slice(0, 200));
+  ok('34. e o cabecalho da folha e .no-print — status nao e dado do papel',
+     /id="print-status-os"/.test(html)
+     && /page-header no-print[\s\S]{0,900}id="print-status-os"/.test(html));
 
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }

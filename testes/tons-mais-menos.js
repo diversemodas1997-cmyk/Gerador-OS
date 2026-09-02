@@ -73,7 +73,11 @@ const ok = (nome, cond, extra) => {
   console.log((cond ? '  ok  ' : 'FALHA ') + nome + (cond ? '' : '\n       obtido: ' + extra));
   if (!cond) falhas++;
 };
-const marcados = os => Object.keys(os.progresso.totalTamanhoTons || {}).sort().join(',');
+// Ordem NUMERICA, nao alfabetica. Com o teto em 7 os dois davam no mesmo; com o
+// Tom 10 o .sort() cru devolve "1,10,2,3..." e o teste acusaria um furo que nao
+// existe.
+const marcados = os => Object.keys(os.progresso.totalTamanhoTons || {})
+  .map(Number).sort((a, b) => a - b).join(',');
 
 (async () => {
   console.log('-- o Tom 1 e o piso --');
@@ -94,14 +98,23 @@ const marcados = os => Object.keys(os.progresso.totalTamanhoTons || {}).sort().j
     await t.api.adicionarLinhaTomOS('os1');
     ok('4. o primeiro + leva a DUAS linhas (Tom 1 editavel + Tom 2 balanceador)',
        t.api.nLinhasTomOS(t.os()) === 2 && marcados(t.os()) === '1,2', marcados(t.os()));
-    for (let i = 0; i < 10; i++) await t.api.adicionarLinhaTomOS('os1');
+    // Onze cliques no +, contando o de cima. As contas saem do TETO e nao de
+    // numeros escritos a mao: o teto ja subiu de 4 para 7 e de 7 para 10, e um
+    // teste preso ao numero da vez quebra a cada mudanca sem nada ter quebrado
+    // de verdade.
+    const CLIQUES = 11;
+    for (let i = 0; i < CLIQUES - 1; i++) await t.api.adicionarLinhaTomOS('os1');
+    const aceitos = t.api.MAX_TONS - 1;            // o Tom 1 ja existia
+    const recusados = CLIQUES - aceitos;
+    const prefixo = Array.from({ length: t.api.MAX_TONS }, (_, i) => i + 1).join(',');
     ok('5. o + para no teto de ' + t.api.MAX_TONS,
        t.api.nLinhasTomOS(t.os()) === t.api.MAX_TONS, t.api.nLinhasTomOS(t.os()));
-    ok('6. e o que ficou gravado e um prefixo contiguo 1..7',
-       marcados(t.os()) === '1,2,3,4,5,6,7', marcados(t.os()));
+    ok('6. e o que ficou gravado e um prefixo contiguo 1..' + t.api.MAX_TONS,
+       marcados(t.os()) === prefixo, marcados(t.os()));
     ok('7. o + recusado avisou o teto, e nao gravou de novo',
-       t.ctx.avisos.length === 5 && t.ctx.salvou === 6,
-       'avisos=' + t.ctx.avisos.length + ' gravacoes=' + t.ctx.salvou);
+       t.ctx.avisos.length === recusados && t.ctx.salvou === aceitos,
+       'avisos=' + t.ctx.avisos.length + ' (esperado ' + recusados + ')'
+       + ' gravacoes=' + t.ctx.salvou + ' (esperado ' + aceitos + ')');
   }
 
   console.log('-- o − apaga o rastro do tom retirado --');

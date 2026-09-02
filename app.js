@@ -24925,9 +24925,27 @@ async function salvarObsOS(osId, valor) {
   try { await saveState('ordens'); } catch (e) { console.warn('salvarObsOS', e); }
 }
 
-// Teto de tonalidades de uma OS. Eram 4 fixas; viraram 7 porque a folha passou
-// a ganhar linha de tom sob demanda (o + e o − do "Total por tamanho").
-const MAX_TONS = 7;
+/* Teto de tonalidades de uma OS. Eram 4 fixas; viraram 7 quando a folha passou
+   a ganhar linha de tom sob demanda (o + e o − do "Total por tamanho"), e são 10
+   desde 02/09/2026, a pedido do Junior.
+
+   O teto não é uma decisão de layout, é o limite de quantas tonalidades a casa
+   pode enfestar num lote — e quem sabe isso é quem está na mesa. Medido antes de
+   subir: o rótulo "Tom 10" ocupa 33,6px dos 40px úteis da primeira coluna da
+   tabela (48px menos o padding), então a linha não vaza para a coluna do P; e a
+   grade de tons do enfesto já quebra de quatro em quatro, então dez campos viram
+   três filas por fase em vez de estourar a largura.
+
+   O que ele NÃO muda: a folha continua nascendo com TONS_PADRAO_NOVA_OS linhas,
+   e o + só abre a próxima quando alguém pede. Uma OS de três tonalidades sai
+   igual à de ontem.
+
+   O preço de cada tonalidade a mais é a EXPEDIÇÃO: cada tom é ensacado separado
+   (pacotes = tamanhos × tonalidades + 1), então dez tons numa grade de sete
+   tamanhos são 71 volumes e 71 etiquetas. É conta de quem enfesta, não do
+   programa — mas está escrito aqui para ninguém abrir a décima linha achando
+   que ela sai de graça. */
+const MAX_TONS = 10;
 
 /* QUANTAS LINHAS DE TOM UMA OS NOVA JÁ NASCE MOSTRANDO.
 
@@ -26536,9 +26554,9 @@ function renderEnfestoBox(o) {
   // O piso é QUATRO, que era o número fixo antigo: assim nenhuma folha perde
   // campo por causa da mudança. O teto acompanha os tons que a OS realmente tem,
   // porque é aqui que eles são lançados — a linha do Total por tamanho nasce
-  // deste número, não o contrário. Acima de quatro a linha QUEBRA (flex-wrap):
-  // sete campos em fila estourariam a largura da coluna do enfesto, que já é
-  // apertada.
+  // deste número, não o contrário. Acima de quatro a linha QUEBRA: em fila, os
+  // campos estourariam a largura da coluna do enfesto, que já é apertada. Com o
+  // teto em dez (02/09/2026) são três filas de quatro na pior das hipóteses.
   const enfestosTons = (o.progresso && o.progresso.enfestosTons) || {};
   const nTonsEnf = Math.max(4, nLinhasTomOS(o));
   const tomsSelEnf = Array.from({ length: nTonsEnf }, (_, i) => i + 1);
