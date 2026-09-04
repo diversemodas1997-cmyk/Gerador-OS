@@ -288,12 +288,43 @@ function ehCelular() {
   return _ehCelular;
 }
 
-// Só há edição quando falamos com o servidor da fábrica. Sem servidor local
-// configurado nesta máquina não há espelho para divergir, então a nuvem segue
-// sendo o normal e grava como sempre gravou.
+/* SÃO DUAS PERGUNTAS DIFERENTES, e por muito tempo foram a mesma.
+
+   "O servidor aceita gravar?" é sobre divergência entre os dois lados: sem
+   servidor local configurado nesta máquina não há espelho para divergir, então
+   a nuvem segue sendo o normal e grava como sempre gravou. Com servidor
+   configurado e fora do ar, gravar na nuvem faria os dois lados brigarem.
+
+   "Este aparelho pode gravar?" é outra coisa, e é o celular (ver ehCelular).
+
+   Quase tudo precisa das duas respostas — mas não tudo. Ver podeMandarRecado. */
+function servidorAceitaGravar() {
+  return _modoServidor === MODO_LOCAL || !servidorLocalConfig();
+}
+
+// Os dados da fábrica: precisa das duas.
 function podeGravar() {
   if (ehCelular()) return false;
-  return _modoServidor === MODO_LOCAL || !servidorLocalConfig();
+  return servidorAceitaGravar();
+}
+
+/* O RECADO É A EXCEÇÃO, LIBERADA A PEDIDO DO JUNIOR EM 04/09/2026.
+
+   A trava do celular existe contra gravação DUPLICADA: os dados da fábrica
+   moram numa linha só, e duas telas gravando o blob fazem a última apagar o
+   trabalho da primeira. Recado não é isso. Cada um é uma linha própria na
+   tabela `mensagens`, que só nasce — ninguém reescreve a conversa inteira para
+   acrescentar uma frase. Duas pessoas mandando recado ao mesmo tempo é o uso
+   normal do canal, não um acidente.
+
+   E o telefone é justamente onde o recado é útil: quem está na máquina, longe
+   do computador, é quem tem o que avisar.
+
+   O que ele NÃO dispensa é o servidor. Escrever recado na cópia da nuvem seria
+   escrever num lugar que o espelho reescreve por cima — o recado sumiria
+   sozinho na passada seguinte, o que é pior do que não ter sido enviado. */
+function podeMandarRecado() {
+  return servidorAceitaGravar();
 }
 
 function mostrarModoServidor() {
@@ -1663,6 +1694,16 @@ function aplicarPermissoesUI() {
    ela recarrega a página várias vezes até desistir. No celular a resposta é
    outra: vá até um computador. Um recado que aponta para o lugar errado custa
    mais do que recado nenhum. */
+/* A recusa do recado. Só pergunta pelo servidor — o aparelho não entra, e é
+   essa a diferença entre ela e a de cima. Fica separada em vez de virar um
+   parâmetro da outra porque o que muda não é o texto, é a PERGUNTA. */
+function _recusarRecado(acao) {
+  if (podeMandarRecado()) return false;
+  toast(`Sem o servidor da fábrica não dá para ${acao} — o recado se perderia `
+    + `na passada seguinte do espelho. Verifique se o servidor está ligado.`, 'err');
+  return true;
+}
+
 function _recusarSomenteLeitura(acao) {
   if (podeGravar()) return false;
   toast(ehCelular()
@@ -22981,7 +23022,7 @@ async function enviarMensagem() {
   const texto = ((campo && campo.value) || '').trim();
   if (!texto) return;
   if (!currentUser) { toast('Entre na sua conta para mandar recado', 'err'); return; }
-  if (_recusarSomenteLeitura('mandar recado')) return;
+  if (_recusarRecado('mandar recado')) return;
   const linha = {
     autor_id: currentUser.id,
     autor: _obsQuemSou(),
@@ -23307,7 +23348,7 @@ function _msgEuReagi(id) {
 
 async function reagirMensagem(id) {
   if (!currentUser) return toast('Entre na sua conta para reagir', 'err');
-  if (_recusarSomenteLeitura('reagir a um recado')) return;
+  if (_recusarRecado('reagir a um recado')) return;
   const eu = _msgQuemSou();
   const tinha = _msgEuReagi(id);
   // Na tela já muda: o polegar tem de responder ao dedo, não à rede.
@@ -23419,7 +23460,7 @@ function editarMensagem(id) {
     _msgEditando = null; renderMensagens();
     return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
   }
-  if (_recusarSomenteLeitura('corrigir o recado')) return;
+  if (_recusarRecado('corrigir o recado')) return;
   _msgEditando = id;
   renderMensagens();
 }

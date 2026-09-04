@@ -20,6 +20,11 @@
    Por isso o caso do PAINEL DE TOQUE (tela grande, sem mouse) tem um teste
    próprio: foi o motivo de "não tem mouse" não valer sozinho como sinal.
 
+   E o RECADO é a exceção, liberada no celular a pedido do Junior em 04/09/2026.
+   Ele não é dado da fábrica, é conversa: cada recado é uma linha própria que só
+   nasce, e não há blob para a segunda tela apagar. O que ele continua exigindo
+   é o servidor — recado escrito na nuvem some na passada seguinte do espelho.
+
    O teste recorta as funções do app.js de verdade. */
 const fs = require('fs');
 const path = require('path');
@@ -60,12 +65,15 @@ const montar = (amb) => new Function('amb', `
   const MODO_LOCAL = 'local';
   let _modoServidor = amb.servidorNoAr ? 'local' : 'nuvem';
   const servidorLocalConfig = () => ({ url: 'https://193.168.0.200', key: 'k' });
+  ${recorte('function servidorAceitaGravar', 'a pergunta do servidor')}
   ${recorte('function podeGravar', 'a trava de gravacao')}
+  ${recorte('function podeMandarRecado', 'a excecao do recado')}
 
   const toast = (m) => amb.recados.push(m);
   ${recorte('function _recusarSomenteLeitura', 'a recusa de quem so le')}
+  ${recorte('function _recusarRecado', 'a recusa do recado')}
 
-  return { ehCelular, podeGravar, _recusarSomenteLeitura };
+  return { ehCelular, podeGravar, podeMandarRecado, _recusarSomenteLeitura, _recusarRecado };
 `)(amb);
 
 /* ------------------------------ os aparelhos ----------------------------- */
@@ -182,17 +190,54 @@ console.log('\n-- o recado tem de apontar para o lugar certo --');
   ok('sem servidor o recado NAO fala de celular', !/celular/i.test(semServidor), semServidor);
 }
 
-console.log('\n-- o funil e um so --');
+console.log('\n-- o recado e a excecao --');
 {
-  // Toda recusa de gravacao do programa passa por _recusarSomenteLeitura. Se
-  // alguem criar um caminho novo que nao passe por ela, a trava do celular nao
-  // vale naquele caminho — e o furo nao aparece em teste nenhum.
-  const chamadas = (src.match(/_recusarSomenteLeitura\(/g) || []).length - 1; // menos a definicao
-  ok(`os portoes chamam o funil (${chamadas} chamadas)`, chamadas >= 10, String(chamadas));
+  const noCelular = aparelho('cel', {
+    ua: UA.androidChrome, tela: [412, 915], dedo: true, temMouse: false, servidorNoAr: true
+  });
+  const cel = montar(noCelular);
+  ok('no celular o recado PASSA (e conversa, nao dado da fabrica)',
+     cel.podeMandarRecado() === true);
+  ok('e a trava dos dados continua de pe no mesmo aparelho',
+     cel.podeGravar() === false);
+  cel._recusarRecado('mandar recado');
+  ok('e o portao do recado nao recusa nada', noCelular.recados.length === 0,
+     noCelular.recados.join(' '));
+
+  // O recado dispensa o APARELHO, nunca o SERVIDOR: escrito na copia da nuvem,
+  // ele sumiria na passada seguinte do espelho — pior do que nao ter enviado.
+  const semServidor = aparelho('cel', {
+    ua: UA.androidChrome, tela: [412, 915], dedo: true, temMouse: false, servidorNoAr: false
+  });
+  const cel2 = montar(semServidor);
+  ok('sem o servidor o recado e recusado, mesmo no celular',
+     cel2.podeMandarRecado() === false);
+  cel2._recusarRecado('mandar recado');
+  ok('e a recusa fala do servidor, nao do aparelho',
+     /servidor da fábrica/i.test(semServidor.recados.join(' ')),
+     semServidor.recados.join(' '));
+}
+
+console.log('\n-- os dois funis --');
+{
+  // Toda recusa passa por um dos dois funis. Se alguem criar um caminho novo
+  // que nao passe por nenhum, a trava do celular nao vale naquele caminho — e o
+  // furo nao aparece em teste nenhum.
+  const dados = (src.match(/_recusarSomenteLeitura\(/g) || []).length - 1;   // menos a definicao
+  const recado = (src.match(/_recusarRecado\(/g) || []).length - 1;
+  ok(`os portoes de DADOS chamam o funil de dados (${dados})`, dados >= 7, String(dados));
+  ok(`os tres portoes de RECADO chamam o funil de recado (${recado})`, recado === 3, String(recado));
   ok('nao sobrou nenhum nome antigo', !src.includes('_recusarPorModoNuvem'));
   // O cloudFlush e a raiz: mesmo que um botao escape, a gravacao do blob para aqui.
   ok('o cloudFlush continua barrado por podeGravar',
      /cloudFlush[\s\S]{0,2000}?if \(!podeGravar\(\)\)/.test(src));
+  // O funil do recado NAO pode consultar o aparelho: e exatamente isso que o
+  // libera no celular. Se alguem trocar podeMandarRecado por podeGravar ali, o
+  // recado volta a ser bloqueado e estas duas linhas caem.
+  ok('o funil do recado nao pergunta pelo aparelho',
+     !recorte('function _recusarRecado', 'o funil do recado').includes('ehCelular'));
+  ok('podeMandarRecado nao pergunta pelo aparelho',
+     !recorte('function podeMandarRecado', 'a excecao do recado').includes('ehCelular'));
 }
 
 console.log(falhas ? '\n>>> ' + falhas + ' FALHA(S)' : '\n>>> todos passaram');
