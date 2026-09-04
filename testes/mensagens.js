@@ -45,7 +45,7 @@ const monta = (ctx) => new Function('ctx', `
   const document = { getElementById: () => ctx.campo, addEventListener: () => {} };
   const currentUser = ctx.user;
   let currentRole = ctx.papel || 'usuario';
-  const _recusarPorModoNuvem = () => !!ctx.modoNuvem;
+  const _recusarSomenteLeitura = () => !!ctx.modoNuvem;
   // O select das MENSAGENS termina em .limit(); o das REACOES, em .in(). O mesmo
   // objeto responde aos dois, e o .in devolve lista vazia: reacao nao e assunto
   // deste teste, mas carregarMensagens passa por la.

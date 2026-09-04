@@ -48,7 +48,10 @@ const constante = (nome) => {
 const api = new Function('ctx', `
   const toast = (m, t) => ctx.toasts.push(t + ': ' + m);
   const podeGravar = () => ctx.servidorNoAr;
-  ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
+  // No celular ninguem grava, nem o admin: aqui o aparelho e um controle
+  // do teste, como o papel e o servidor no ar.
+  const ehCelular = () => !!ctx.celular;
+  ${recorte('function _recusarSomenteLeitura', 'a recusa de quem so le')}
   ${recorte('function _contaPodeRegistrar', 'a condicao do papel')}
   ${recorte('function exigirEdicaoCompra', 'a permissao da lista de compra')}
   ${recorte('function exigirEdicaoFolha', 'a permissao da folha de OS')}
@@ -160,7 +163,10 @@ const estoque = (papel, login, servidorNoAr = true) => {
     ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
     ${recorte('function _obsNomeLogin', 'o nome do login')}
     ${recorte('function _chaveLogin', 'a chave do login')}
-    ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
+    // No celular ninguem grava, nem o admin: aqui o aparelho e um controle
+  // do teste, como o papel e o servidor no ar.
+  const ehCelular = () => !!ctx.celular;
+  ${recorte('function _recusarSomenteLeitura', 'a recusa de quem so le')}
     ${recorte('function podeMexerEstoqueTecidos', 'quem mexe no estoque de tecidos')}
     ${recorte('function exigirEstoqueTecidos', 'a recusa do estoque de tecidos')}
     return { podeMexerEstoqueTecidos, exigirEstoqueTecidos };

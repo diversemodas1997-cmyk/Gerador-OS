@@ -235,10 +235,64 @@ async function resolverServidor() {
   return _modoServidor;
 }
 
+/* O APARELHO DE MÃO NÃO GRAVA — E ISSO VALE TAMBÉM PARA O ADMIN.
+
+   Decidido em 04/09/2026, e o motivo não é permissão: é gravação duplicada. Os
+   dados da fábrica inteira moram numa LINHA só (shared_data), e cada save
+   reescreve o blob inteiro em ler-alterar-gravar. Dois aparelhos com a mesma
+   conta editando ao mesmo tempo não brigam por um campo — o último a gravar
+   leva a linha toda, e o trabalho do outro some sem erro nenhum na tela. O
+   admin é justamente quem tem esse poder nos dois aparelhos ao mesmo tempo,
+   então isentá-lo seria isentar o único caso perigoso.
+
+   A trava é uma linha só porque o programa já tinha o caminho pronto: o modo
+   nuvem (ver podeGravar abaixo) já veste a tela de quem só lê, já esconde os
+   botões pelo CSS e já barra o cloudFlush na raiz. Aqui o celular entra pela
+   mesma porta — não há um segundo conjunto de regras para manter em dia.
+
+   COMO O PROGRAMA SABE QUE É UM CELULAR. Pelo que o navegador diz de si, e não
+   pelo tamanho da janela: janela estreita é um computador com a tela dividida,
+   e travar esse caso tiraria o trabalho de quem está trabalhando.
+
+   O que NÃO entrou aqui, de propósito: "não tem mouse" sozinho. Um painel de
+   toque na fábrica — sem mouse, mas computador — seria travado por engano, e o
+   engano cai justamente sobre quem registra compra e folha de OS todo dia. Por
+   isso a falta de mouse só conta junto com uma tela pequena de verdade
+   (screen, o vidro do aparelho — não a janela), que é o que sobra quando
+   alguém liga "Site para computador" no Chrome do Android e apaga os outros
+   sinais. */
+let _ehCelular = null;
+function ehCelular() {
+  if (_ehCelular !== null) return _ehCelular;
+  const ua = String(navigator.userAgent || '');
+  const mm = q => (window.matchMedia ? window.matchMedia(q).matches : false);
+
+  // O sinal bom, quando existe: o próprio navegador dizendo o que é.
+  const dizQueEMovel = !!(navigator.userAgentData && navigator.userAgentData.mobile === true);
+  const uaMovel = /Android|iPhone|iPod|iPad|Windows Phone|IEMobile|BlackBerry|Opera Mini|webOS/i.test(ua);
+  // O iPad de 2019 para cá se apresenta como Mac. O que o entrega é a tela
+  // sensível ao toque — Mac de verdade não tem.
+  const ipadDisfarcado = /Mac/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+
+  // A saída pelos fundos: "Site para computador" reescreve o userAgent inteiro
+  // e apaga os três sinais acima. O que ele não reescreve é o vidro do aparelho
+  // nem a ausência de mouse. `pointer: coarse` = o dedo é o ponteiro
+  // principal; `any-pointer: fine` = existe um mouse em algum lugar.
+  const semMouse = mm('(pointer: coarse)') && !mm('(any-pointer: fine)');
+  const vidro = (window.screen && screen.width)
+    ? Math.min(screen.width, screen.height) : 9999;
+  const telaDeMao = vidro < 900;   // painel de fábrica é 1080+; celular é ~400
+
+  _ehCelular = !!(dizQueEMovel || uaMovel || ipadDisfarcado || (semMouse && telaDeMao));
+  if (_ehCelular) console.log('Gerador-OS: aparelho de mão — modo consulta, sem gravação.');
+  return _ehCelular;
+}
+
 // Só há edição quando falamos com o servidor da fábrica. Sem servidor local
 // configurado nesta máquina não há espelho para divergir, então a nuvem segue
 // sendo o normal e grava como sempre gravou.
 function podeGravar() {
+  if (ehCelular()) return false;
   return _modoServidor === MODO_LOCAL || !servidorLocalConfig();
 }
 
@@ -246,12 +300,25 @@ function mostrarModoServidor() {
   const el = document.getElementById('modoServidor');
   if (!el) return;
   const soLeitura = !podeGravar();
-  el.textContent = _modoServidor === MODO_LOCAL ? '🏭 Servidor da fábrica' : '☁ Nuvem';
-  el.title = soLeitura
-    ? 'O servidor da fábrica não respondeu. Você está vendo a cópia da nuvem: dá para consultar e imprimir, mas não editar.'
-    : (_modoServidor === MODO_LOCAL
-        ? 'Falando com o servidor da fábrica.'
-        : 'Falando com a nuvem.');
+  const ondeEstou = _modoServidor === MODO_LOCAL ? 'servidor da fábrica' : 'nuvem';
+  // O CELULAR TEM TARJA PRÓPRIA, e ela vem antes da do servidor. Sem isto, o
+  // telefone diria "🏭 Servidor da fábrica" com os botões todos escondidos, e
+  // não haveria nada na tela explicando o sumiço — o jeito mais rápido de
+  // alguém concluir que o programa quebrou. E se um dia esta detecção errar
+  // num computador, é esta tarja que conta o que aconteceu.
+  if (ehCelular()) {
+    el.textContent = '📱 Celular · consulta';
+    el.title = 'No celular o programa é só para consultar e imprimir: gravar fica '
+      + 'para o computador, para que duas telas nunca gravem por cima uma da outra. '
+      + `Lendo do ${ondeEstou}.`;
+  } else {
+    el.textContent = _modoServidor === MODO_LOCAL ? '🏭 Servidor da fábrica' : '☁ Nuvem';
+    el.title = soLeitura
+      ? 'O servidor da fábrica não respondeu. Você está vendo a cópia da nuvem: dá para consultar e imprimir, mas não editar.'
+      : (_modoServidor === MODO_LOCAL
+          ? 'Falando com o servidor da fábrica.'
+          : 'Falando com a nuvem.');
+  }
   el.classList.toggle('somente-leitura', soLeitura);
   el.hidden = false;
 }
@@ -1587,17 +1654,27 @@ function aplicarPermissoesUI() {
   mostrarModoServidor();
 }
 
-// Mensagem única do modo somente-leitura. Fica antes do teste de papel porque o
-// motivo é outro: não é falta de permissão, é o servidor da fábrica fora do ar.
-function _recusarPorModoNuvem(acao) {
+/* Mensagem única do modo somente-leitura. Fica antes do teste de papel porque o
+   motivo é outro: não é falta de permissão.
+
+   E são DOIS motivos, com respostas opostas — por isso o texto se divide. "O
+   servidor não respondeu" pede para conferir o servidor e recarregar; num
+   celular essa instrução manda a pessoa atrás de um problema que não existe, e
+   ela recarrega a página várias vezes até desistir. No celular a resposta é
+   outra: vá até um computador. Um recado que aponta para o lugar errado custa
+   mais do que recado nenhum. */
+function _recusarSomenteLeitura(acao) {
   if (podeGravar()) return false;
-  toast(`Sem o servidor da fábrica não dá para ${acao} — a nuvem é só para consulta. `
-    + `Verifique se o servidor está ligado e recarregue.`, 'err');
+  toast(ehCelular()
+    ? `No celular o programa é só para consultar — não dá para ${acao}. `
+      + `Use um computador da fábrica: assim duas telas nunca gravam por cima uma da outra.`
+    : `Sem o servidor da fábrica não dá para ${acao} — a nuvem é só para consulta. `
+      + `Verifique se o servidor está ligado e recarregue.`, 'err');
   return true;
 }
 
 function exigirAdmin(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (currentRole === 'admin') return true;
   // A conta pode ter recebido a ÁREA desta ação em Configurações (ver
   // AREAS_ACESSO). Sem isto, conceder acesso não teria efeito nenhum nos botões
@@ -1617,7 +1694,7 @@ function exigirAdmin(acao) {
 // próprio porque é o que os pontos de expedição chamam, e porque a mensagem de
 // recusa fica no vocabulário daquela tela.
 function exigirEdicao(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (currentRole === 'admin') return true;
   // Idem: a área desta ação pode ter sido concedida a esta conta.
   const area = _areaDaAcao(acao);
@@ -1657,7 +1734,7 @@ function _contaPodeRegistrar() {
 // _cpPodeRemover). Somar é acrescentar; apagar o levantamento do outro é outra
 // coisa.
 function exigirEdicaoCompra(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (_contaPodeRegistrar()) return true;
   toast(`Faça login para ${acao}`, 'err');
   return false;
@@ -1672,7 +1749,7 @@ function exigirEdicaoCompra(acao) {
 // O QUE NÃO SE ABRE JUNTO: criar, editar ou duplicar a OS — quem registra o que
 // a produção fez não redefine o que a produção deve fazer.
 function exigirEdicaoFolha(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (_contaPodeRegistrar()) return true;
   toast(`Faça login para ${acao}`, 'err');
   return false;
@@ -1701,7 +1778,7 @@ function podeMexerEstoqueTecidos() {
 }
 
 function exigirEstoqueTecidos(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (podeMexerEstoqueTecidos()) return true;
   toast(`Só o admin e ${LOGINS_ESTOQUE_TECIDOS.join(', ')} podem ${acao}`, 'err');
   return false;
@@ -2944,7 +3021,7 @@ function _desfazerAtualizarBotao() {
 
 async function desfazerUltimaAcao() {
   if (!_desfazerPilha.length) { toast('Não há nada para desfazer nesta sessão', ''); return; }
-  if (_recusarPorModoNuvem('desfazer')) return;
+  if (_recusarSomenteLeitura('desfazer')) return;
   const acao = _desfazerPilha[_desfazerPilha.length - 1];
   if (!confirm(`Desfazer: ${acao.rotulo}?\n\n`
       + `O que foi feito ${_desfazerQuando(acao.quando)} volta como estava.\n`
@@ -22329,7 +22406,7 @@ function podeMudarStatusOS() {
 // não é cofre (o papel vive no navegador de quem usa), é o que impede a mudança
 // por engano de quem não é do corte.
 function exigirStatusOS(acao) {
-  if (_recusarPorModoNuvem(acao)) return false;
+  if (_recusarSomenteLeitura(acao)) return false;
   if (podeMudarStatusOS()) return true;
   toast(`Só o admin e o Enfesto.corte podem ${acao}`, 'err');
   return false;
@@ -22904,7 +22981,7 @@ async function enviarMensagem() {
   const texto = ((campo && campo.value) || '').trim();
   if (!texto) return;
   if (!currentUser) { toast('Entre na sua conta para mandar recado', 'err'); return; }
-  if (_recusarPorModoNuvem('mandar recado')) return;
+  if (_recusarSomenteLeitura('mandar recado')) return;
   const linha = {
     autor_id: currentUser.id,
     autor: _obsQuemSou(),
@@ -23230,7 +23307,7 @@ function _msgEuReagi(id) {
 
 async function reagirMensagem(id) {
   if (!currentUser) return toast('Entre na sua conta para reagir', 'err');
-  if (_recusarPorModoNuvem('reagir a um recado')) return;
+  if (_recusarSomenteLeitura('reagir a um recado')) return;
   const eu = _msgQuemSou();
   const tinha = _msgEuReagi(id);
   // Na tela já muda: o polegar tem de responder ao dedo, não à rede.
@@ -23342,7 +23419,7 @@ function editarMensagem(id) {
     _msgEditando = null; renderMensagens();
     return toast('Passaram os 5 minutos — este recado não muda mais. Escreva outro embaixo', 'err');
   }
-  if (_recusarPorModoNuvem('corrigir o recado')) return;
+  if (_recusarSomenteLeitura('corrigir o recado')) return;
   _msgEditando = id;
   renderMensagens();
 }

@@ -64,7 +64,7 @@ const monta = (ctx) => new Function('ctx', `
   function _desfazerAtualizarBotao() {}
   ${recorte('async function saveState', 'a gravacao')}
   ${recorte('async function desfazerUltimaAcao', 'o desfazer')}
-  const _recusarPorModoNuvem = () => false;
+  const _recusarSomenteLeitura = () => false;
   const goto = () => {};
   return {
     saveState, desfazerUltimaAcao, desfazerNomearAcao,

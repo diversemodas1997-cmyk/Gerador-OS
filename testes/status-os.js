@@ -70,7 +70,10 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _chaveLogin', 'a chave do login')}
   ${recorte('function podeMudarStatusOS', 'quem muda o status')}
   ${recorte('function exigirStatusOS', 'a recusa do status')}
-  ${recorte('function _recusarPorModoNuvem', 'a recusa do modo nuvem')}
+  // No celular ninguem grava, nem o admin: aqui o aparelho e um controle
+  // do teste, como o papel e o servidor no ar.
+  const ehCelular = () => !!ctx.celular;
+  ${recorte('function _recusarSomenteLeitura', 'a recusa de quem so le')}
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
