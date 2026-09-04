@@ -3,6 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- O ATALHO NA TELA DE INICIO DO CELULAR.
+     Na fabrica o programa nao tem endereco de site: e um IP digitado a mao
+     (https://192.168.1.158). Sem icone, cada consulta no celular comeca por
+     digitar o numero — e o numero errado abre a nuvem, que e outra copia.
+     Com o manifest, quem usa toca "Adicionar a tela de inicio" UMA vez e
+     depois abre por um icone, em tela cheia, sempre no mesmo servidor.
+
+     start_url e scope sao RELATIVOS ("."): na fabrica o app mora na raiz e na
+     copia da nuvem mora em /Gerador-OS/. Um caminho absoluto acertaria um dos
+     dois e quebraria o outro em silencio — o atalho abriria fora do escopo e
+     perderia a tela cheia. -->
+<link rel="manifest" href="manifest.json?v=2026-09-04">
+<link rel="icon" type="image/png" sizes="32x32" href="icones/favicon-32.png?v=2026-09-04">
+<meta name="theme-color" content="#1a1a1a">
+<!-- O iPhone NAO le o manifest para o icone nem para o nome: essas quatro
+     linhas sao o caminho dele, e sem elas o atalho sai com um retrato borrado
+     da tela no lugar do icone. A barra de status vai "black" e nao
+     "black-translucent" de proposito — a translucida poe o conteudo POR BAIXO
+     do relogio, e o cabecalho de cada tela nasceria cortado. -->
+<link rel="apple-touch-icon" href="icones/icone-180.png?v=2026-09-04">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Gerador OS">
 <title>Gerador de Ordem de Serviço · Confecção</title>
 <!-- Tudo servido pelo proprio site. Nenhum endereco externo aqui: na fabrica, o
      programa roda contra o servidor da rede local e precisa abrir mesmo com a
