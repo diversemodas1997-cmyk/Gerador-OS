@@ -69,6 +69,36 @@
   .fim a{color:var(--tinta);font-weight:600}
   footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--linha);
     font-size:12.5px;color:var(--tinta3)}
+  /* A SECAO DO CELULAR. Bloco proprio, e nao mais tres passos na mesma lista:
+     quem chega aqui pelo telefone nao tem nada a fazer com os arquivos .cmd, e
+     misturar os dois caminhos e o jeito mais rapido de a pessoa baixar o
+     instalador do Windows no celular e concluir que o programa nao funciona. */
+  .atalho-celular{
+    display:block;margin:14px 0 0;padding:10px 14px;
+    border:1px solid var(--linha);background:#fff;border-radius:3px;
+    font-size:14px;color:var(--tinta2);text-decoration:none;
+  }
+  .atalho-celular b{color:var(--tinta)}
+  .celular{margin-top:38px;padding-top:22px;border-top:2px solid var(--tinta)}
+  .celular > h2{font-size:20px;margin:0 0 6px}
+  .so{
+    margin-top:22px;padding:16px 18px;
+    border:1px solid var(--linha);background:#fff;border-radius:3px;
+  }
+  .so > h3{
+    margin:0 0 14px;font-size:15px;
+    font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    letter-spacing:.06em;text-transform:uppercase;
+  }
+  .so ol li{padding-bottom:18px}
+  .so ol li:last-child{padding-bottom:0}
+  .caminho{
+    display:block;margin:8px 0 0;padding:8px 10px;
+    background:#f0ece4;border-radius:2px;
+    font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    font-size:12.5px;line-height:1.7;color:var(--tinta);
+  }
+  .esquecido{border-left-color:var(--alerta);background:#fdf3f2}
   .manual{margin-top:26px;font-size:13px;color:var(--tinta3)}
   .manual summary{cursor:pointer;color:var(--tinta2);font-weight:600}
   .manual pre{
@@ -85,6 +115,10 @@
     <div class="logo">OS <b>·</b> GEN</div>
     <h1>Liberar esta máquina para abrir o Gerador&#8209;OS</h1>
     <p class="sub">Leva um minuto, e só precisa ser feito uma vez em cada computador.</p>
+    <a class="atalho-celular" href="#celular">
+      <b>Está num celular?</b> Os passos abaixo são do computador — o do telefone
+      é outro. Toque aqui para ir direto a ele. →
+    </a>
   </header>
 
   <p class="porque">
@@ -162,6 +196,136 @@
       O mesmo certificado vale para os três.
     </div>
   </div>
+
+  <section class="celular" id="celular">
+    <h2>No celular — para consultar</h2>
+    <p class="sub">
+      O mesmo certificado, por outro caminho: no telefone não há instalador para
+      clicar duas vezes. São dois ou três toques, uma vez só neste aparelho.
+    </p>
+
+    <div class="aviso" style="margin-top:16px">
+      <b>Primeiro, a rede.</b> O celular tem de estar no Wi&#8209;Fi
+      <code>Desktop_F7027412</code>. O endereço do cabo
+      (<code>193.168.0.200</code>) <b>não responde pelo Wi&#8209;Fi</b> — são
+      duas redes diferentes, e não há rota de uma para a outra. Pelo celular o
+      endereço é sempre <code>https://192.168.1.158</code>.
+    </div>
+
+    <div class="aviso" style="margin-top:10px">
+      <b>No celular o programa é de consulta.</b> Lista de OS, folha de OS,
+      grades, expedição, estoque — tudo abre. O que grava em pasta (PDF da OS,
+      etiquetas, backup, OE) <b>não existe</b> em navegador de celular: não é
+      ajuste que falta, é função que o aparelho não tem. Gravar continua sendo
+      trabalho do computador.
+    </div>
+
+    <div class="so">
+      <h3>Android</h3>
+      <ol>
+        <li>
+          <h2>Baixe o certificado</h2>
+          <a class="btn" href="/instalar/ca.crt" download>ca.crt</a>
+          <p>
+            O Chrome pode dizer que o arquivo <b>“pode ser perigoso”</b> — ele diz
+            isso de todo arquivo que não conhece. Escolha <b>Baixar mesmo assim</b>.
+          </p>
+        </li>
+        <li>
+          <h2>Instale pelas Configurações do telefone</h2>
+          <p>
+            <b>Tocar no arquivo baixado não instala.</b> Do Android 11 em diante o
+            caminho é só este, por dentro das Configurações:
+          </p>
+          <span class="caminho">Configurações →<br>
+            Segurança e privacidade →<br>
+            Mais segurança →<br>
+            Criptografia e credenciais →<br>
+            Instalar um certificado →<br>
+            <b>Certificado da AC</b> →<br>
+            escolher o <b>ca.crt</b> em Downloads</span>
+          <div class="aviso">
+            O nome dos menus muda de marca para marca. O caminho curto que funciona
+            em todas: abrir as Configurações e <b>buscar por “certificado”</b>.
+          </div>
+        </li>
+        <li>
+          <h2>Duas coisas que o Android vai fazer — e são normais</h2>
+          <p>
+            Ele <b>exige bloqueio de tela</b> (PIN, padrão ou digital) para aceitar
+            o certificado; sem isso ele recusa, e a recusa não explica o motivo. E,
+            depois de instalado, fica um <b>aviso permanente</b> de que “a rede pode
+            ser monitorada”. O aviso é sobre este certificado — o da própria
+            fábrica.
+          </p>
+        </li>
+        <li>
+          <h2>Abra o programa</h2>
+          <a class="btn" href="https://192.168.1.158/">https://192.168.1.158</a>
+        </li>
+      </ol>
+    </div>
+
+    <div class="so">
+      <h3>iPhone</h3>
+      <ol>
+        <li>
+          <h2>Abra este link <b>no Safari</b></h2>
+          <a class="btn" href="/instalar/ca-iphone.crt">ca-iphone.crt</a>
+          <p>
+            O Chrome do iPhone <b>não</b> instala perfil — tem de ser o Safari.
+            Quando ele perguntar se permite baixar um <b>perfil de configuração</b>,
+            toque em <b>Permitir</b>.
+          </p>
+          <div class="aviso">
+            É o mesmo certificado do Android, servido de outro jeito: o iPhone só o
+            reconhece quando o Safari <b>abre</b> o arquivo. Baixado como arquivo,
+            ele cai no app Arquivos — e de lá o iPhone não instala autoridade
+            nenhuma.
+          </div>
+        </li>
+        <li>
+          <h2>Instale o perfil</h2>
+          <span class="caminho">Ajustes → Geral →<br>
+            VPN e Gerenciamento de Dispositivo →<br>
+            <b>Gerador-OS - CA da fabrica</b> → Instalar</span>
+          <p>Ele pede a senha do aparelho e confirma mais de uma vez.</p>
+        </li>
+        <li>
+          <h2>Ligue a confiança — este é o passo esquecido</h2>
+          <span class="caminho">Ajustes → Geral → Sobre →<br>
+            (rolar até o fim) <b>Certificados Confiáveis</b> →<br>
+            ligar a chave de <b>Gerador-OS - CA da fabrica</b></span>
+          <div class="aviso esquecido">
+            <b>Sem isto o iPhone continua na tela vermelha.</b> Instalar o perfil e
+            confiar nele são dois passos separados, em telas distantes uma da
+            outra. Quem para no passo anterior conclui que a instalação falhou —
+            quando ela deu certo, e faltou uma chave para ligar.
+          </div>
+        </li>
+        <li>
+          <h2>Abra o programa</h2>
+          <a class="btn" href="https://192.168.1.158/">https://192.168.1.158</a>
+        </li>
+      </ol>
+    </div>
+
+    <div class="fim" style="margin-top:26px">
+      <h2>Deixe o ícone na tela de início</h2>
+      Assim ninguém digita o número de novo, e o programa abre em tela cheia,
+      sem barra de endereço.
+      <span class="caminho" style="margin-top:10px">
+        <b>Android</b> (Chrome):<br>
+        menu <b>⋮</b> → Adicionar à tela inicial<br><br>
+        <b>iPhone</b> (Safari):<br>
+        botão <b>Compartilhar</b> → Adicionar à Tela de Início
+      </span>
+      <div style="margin-top:12px;font-size:14px;color:#555">
+        Entrar pede a <b>mesma conta e a mesma senha</b> do computador. Quem não
+        tem conta não entra — e sem entrar não vê OS nenhuma.
+      </div>
+    </div>
+  </section>
 
   <details class="manual">
     <summary>Se preferir fazer sem baixar arquivo (linha de comando)</summary>
