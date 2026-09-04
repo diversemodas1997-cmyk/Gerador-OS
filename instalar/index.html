@@ -67,6 +67,10 @@
   }
   .fim h2{margin:0 0 8px;font-size:15px}
   .fim a{color:var(--tinta);font-weight:600}
+  /* ...menos quando o link É um botão. `.fim a` tem mais peso que `.btn`, então
+     o texto nascia da cor da tinta em cima da caixa da mesma tinta: uma caixa
+     preta vazia, com o endereço lá dentro, invisível. */
+  .fim a.btn{color:var(--papel)}
   footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--linha);
     font-size:12.5px;color:var(--tinta3)}
   /* A SECAO DO CELULAR. Bloco proprio, e nao mais tres passos na mesma lista:
@@ -200,8 +204,9 @@
   <section class="celular" id="celular">
     <h2>No celular — para consultar</h2>
     <p class="sub">
-      O mesmo certificado, por outro caminho: no telefone não há instalador para
-      clicar duas vezes. São dois ou três toques, uma vez só neste aparelho.
+      O telefone tem um caminho próprio, e ele é mais curto que o do computador:
+      <b>não há nada para instalar</b>. Um endereço, um toque para guardar o
+      ícone, e pronto.
     </p>
 
     <div class="aviso" style="margin-top:16px">
@@ -209,7 +214,8 @@
       <code>Desktop_F7027412</code>. O endereço do cabo
       (<code>193.168.0.200</code>) <b>não responde pelo Wi&#8209;Fi</b> — são
       duas redes diferentes, e não há rota de uma para a outra. Pelo celular o
-      endereço é sempre <code>https://192.168.1.158</code>.
+      endereço é <code>http://192.168.1.158</code> — ver o caminho curto logo
+      abaixo.
     </div>
 
     <div class="aviso" style="margin-top:10px">
@@ -219,6 +225,29 @@
       ajuste que falta, é função que o aparelho não tem. Gravar continua sendo
       trabalho do computador.
     </div>
+
+    <div class="fim" style="margin-top:22px;border-color:var(--ok);border-width:2px">
+      <h2 style="color:var(--ok)">O caminho curto: não instale nada</h2>
+      Desde 04/09/2026 o celular tem um endereço só dele, <b>sem certificado e
+      sem tela vermelha</b>. Abra este, digitando o <code>http</code> na frente:
+      <a class="btn" href="http://192.168.1.158/" style="margin-top:10px">http://192.168.1.158</a>
+      <div class="aviso" style="margin-top:12px">
+        <b>Digite o <code>http://</code>.</b> Se você escrever só o número, o
+        Chrome tenta o <code>https</code> por conta própria e a tela vermelha
+        volta. Depois de abrir, use <b>Adicionar à tela de início</b> — o ícone
+        guarda o endereço certo e você não digita mais nada.
+      </div>
+      <div style="margin-top:12px;font-size:14px;color:#555">
+        <b>O que se perde:</b> nesse endereço a senha do login viaja
+        <b>sem criptografia</b> pela rede da fábrica. Foi uma escolha
+        consciente: o celular só consulta, não grava nada, e o cadeado custava
+        um certificado que o Android recusa de três formas diferentes. No
+        computador nada muda — lá continua sendo <code>https</code>.
+      </div>
+    </div>
+
+    <details class="manual" style="margin-top:26px">
+      <summary>Se quiser o cadeado mesmo assim: instalar o certificado</summary>
 
     <div class="so">
       <h3>Android</h3>
@@ -342,6 +371,8 @@
       </ol>
     </div>
 
+    </details>
+
     <div class="fim" style="margin-top:26px">
       <h2>Deixe o ícone na tela de início</h2>
       Assim ninguém digita o número de novo, e o programa abre em tela cheia,
@@ -358,15 +389,6 @@
       </div>
     </div>
 
-    <div class="aviso" style="margin-top:22px">
-      <b>Enquanto o certificado não entrar, o programa funciona assim mesmo.</b>
-      Abra <code>https://192.168.1.158</code>, toque em <b>Avançado</b> e depois
-      em <b>Prosseguir para 192.168.1.158</b>. Nada do programa depende do
-      cadeado: o que exigiria certificado válido é a gravação em pasta, que em
-      celular nenhum existe. O que se ganha instalando o certificado é parar de
-      ver esse aviso — que volta de tempos em tempos, e é o suficiente para
-      valer a pena resolver.
-    </div>
   </section>
 
   <details class="manual">

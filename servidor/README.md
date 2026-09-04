@@ -234,8 +234,16 @@ Copie a pasta do Gerador-OS para o servidor (ex.: `C:\gerador-os`) e suba:
 docker compose -f servidor\docker-compose.app.yml up -d
 ```
 
-O app fica em **`https://IP-DO-SERVIDOR`** (sem porta). Quem digitar `http://` é
-redirecionado. Para atualizar o programa depois, basta um `git pull` na pasta.
+O app fica em **`https://IP-DO-SERVIDOR`** (sem porta). Para atualizar o programa
+depois, basta um `git pull` na pasta.
+
+**Desde 04/09/2026 a porta 80 também atende, e só o computador é redirecionado.**
+O celular fica no `http://` — ver o `map $aparelho_de_mao` no `nginx-tls.conf`,
+que explica por que isso existe e, principalmente, **o que ele não é**: não é uma
+trava. Qualquer cliente pode se dizer celular; o map decide quem é *mandado* para
+o https, não quem *pode* usar o http. O custo aceito é que, numa página `http://`,
+a senha do login trafega sem criptografia pela rede da fábrica. No computador nada
+mudou — lá continua `https`, que é onde as funções de pasta existem.
 
 ## Passo 7 — Migrar os dados
 
