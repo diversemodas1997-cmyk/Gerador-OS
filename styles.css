@@ -3705,3 +3705,61 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
     font-size: 16px;
   }
 }
+
+/* ============ O CELULAR: A GAVETA, OS PAINEIS E A FOLHA ============ */
+/* Fim da folha de estilo pela mesma razao do bloco acima: `@media` nao da peso
+   nenhum, e estas regras precisam ganhar de regras iguais escritas antes. */
+@media screen and (max-width: 900px) {
+
+  /* OS PAINEIS DE AVISOS E DE RECADOS FICAVAM ATRAS DA GAVETA.
+
+     O sino e o 💬 moram na barra lateral. No computador ela esta sempre a
+     vista, e o painel abre encostado neles com z-index 80 — que basta, porque
+     ali nao ha nada por cima. No celular a mesma barra e uma GAVETA
+     (`position: fixed; inset: 0; z-index: 9000`), a tela inteira: para tocar
+     no sino e obrigatorio abri-la, e o painel entao nascia por baixo dela.
+     Ele abria de verdade, e ninguem via — do lado de fora e igualzinho a "o
+     botao nao faz nada".
+
+     Aqui ele sobe acima da gaveta e deixa de ser um balaozinho encostado no
+     botao: numa tela de 414px, a coordenada calculada a partir do sino nao
+     quer dizer nada. Vira uma folha de margem a margem, que e a forma que
+     cabe. As quatro medidas levam !important porque o JS as escreve no
+     `style` do proprio elemento (ver _posicionarPainel), e de la elas ganham
+     de qualquer regra sem !important. */
+  .avisos-painel {
+    z-index: 9100;
+    left: 8px !important;
+    right: 8px;
+    width: auto !important;
+    top: 64px !important;
+    max-height: calc(80vh / var(--ui-zoom)) !important;
+  }
+
+  /* A FOLHA DE OS INTEIRA NA TELA.
+
+     A folha tem 210mm (~794px) porque ela E uma A4 — isso nao muda, e nao
+     pode mudar: e a mesma geometria que o html2canvas fotografa. Num celular
+     de 414px ela entrava num rolo horizontal dentro do `main.content`, e o
+     rolo e o problema: com a folha presa num quadro que rola por dentro,
+     AFASTAR OS DEDOS NAO ADIANTA — o navegador afasta a pagina, e a pagina
+     continua com 414px de largura, com a folha cortada la dentro. Nao havia
+     gesto nenhum capaz de mostrar a folha inteira.
+
+     A saida e a mesma que o programa ja usa para caber a folha no papel:
+     encolher o .sheet-scaler, que existe exatamente para isso (a .sheet nao
+     pode ser tocada). O fator vem do JS em --folha-zoom, porque depende da
+     largura do aparelho. Fica pequeno? Fica — e ai sim afastar os dedos
+     funciona, porque agora e a pagina inteira que amplia. E como se le um PDF
+     no telefone: primeiro a folha toda, depois o pedaco.
+
+     `zoom` e nao `transform: scale()` de proposito: zoom afeta o LAYOUT, entao
+     a folha encolhida ocupa 414px de verdade e o rolo horizontal simplesmente
+     deixa de existir. Com transform ela continuaria ocupando 794px e o rolo
+     ficaria la, agora com um espaco vazio do lado.
+
+     Quem anula isto na hora da foto e o `body.pdf-capture .sheet-scaler`, que
+     tem peso maior e continua valendo — e a impressao nem chega aqui, porque
+     este bloco e `screen and`. */
+  .sheet-scaler { zoom: var(--folha-zoom, 1); }
+}

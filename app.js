@@ -3618,6 +3618,46 @@ function fecharMenuMobile() {
 window.abrirMenuMobile = abrirMenuMobile;
 window.fecharMenuMobile = fecharMenuMobile;
 
+/* A FOLHA DE OS INTEIRA NA TELA DO CELULAR.
+
+   A folha tem 210mm porque ela É uma A4 — e isso não pode mudar: é a mesma
+   geometria que o html2canvas fotografa. Num telefone de 414px ela ficava
+   presa num rolo horizontal dentro do `main.content`, e o rolo era o problema:
+   com a folha dentro de um quadro que rola por dentro, AFASTAR OS DEDOS NÃO
+   ADIANTA — o navegador afasta a página, e a página continua com 414px, com a
+   folha cortada lá dentro. Não havia gesto capaz de mostrar a folha inteira.
+
+   A conta sai daqui, e não do CSS, porque depende da largura do aparelho —
+   e o CSS só a consome, por --folha-zoom. Quem encolhe é o .sheet-scaler, que
+   existe exatamente para isso (ver a nota dele no styles.css); a .sheet nunca
+   é tocada. */
+function ajustarFolhaAoCelular() {
+  const raiz = document.documentElement;
+  // No computador a folha é A4 em tamanho real, e encolher seria mentir sobre
+  // o tamanho dela — o mesmo motivo pelo qual o wrapper existe zerado lá.
+  if (window.innerWidth > 900) { raiz.style.removeProperty('--folha-zoom'); return; }
+  const conteudo = document.querySelector('main.content');
+  // A largura do conteúdo quando ele já tem tamanho; senão a da tela. A folha
+  // pode ser pedida antes de o layout assentar — F5 direto no endereço dela, ou
+  // o instante logo depois do login —, e aí clientWidth vem 0. Sem esta queda
+  // para innerWidth, a folha ficaria em 794px até alguém girar o telefone, que
+  // é o defeito exato que isto veio consertar. Medido: 0 antes de entrar.
+  const bruta = (conteudo && conteudo.clientWidth) || window.innerWidth;
+  const util = bruta - 32;                  // menos o respiro das laterais
+  const LARGURA_A4 = 794;                   // 210mm a 96dpi: a largura da .sheet
+  if (!(util > 0)) return;
+  // Nunca AMPLIA: numa tela larga o fator daria mais que 1, e a folha sairia
+  // maior que a A4 — que é exatamente o engano que o .sheet-scaler já corrigiu
+  // uma vez (a folha exibida em 252mm).
+  raiz.style.setProperty('--folha-zoom', Math.min(1, util / LARGURA_A4).toFixed(4));
+}
+window.ajustarFolhaAoCelular = ajustarFolhaAoCelular;
+// Virar o telefone muda a largura, e a folha tem de acompanhar. O `resize`
+// cobre os dois: no celular o giro dispara os dois eventos, e no computador
+// ele devolve --folha-zoom quando a janela volta a ser larga.
+window.addEventListener('resize', ajustarFolhaAoCelular);
+window.addEventListener('orientationchange', ajustarFolhaAoCelular);
+
 function goto(page) {
   const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
   // As telas de CADASTRO são de LEITURA para todo mundo — aqui não há rota
@@ -3647,6 +3687,7 @@ function goto(page) {
   if (btn) btn.classList.add('active');
   _restaurarScrollPagina(page);  // restaura o scroll salvo desta pagina (ou 0 na 1a visita)
   fecharMenuMobile();  // mobile: fecha o overlay do menu quando entra na pagina
+  ajustarFolhaAoCelular();  // a folha de OS cabe inteira na tela do telefone
   // Saiu da folha de OE com um auto-save adiado? Agora grava — a seção já está
   // escondida, então a captura acontece fora da tela, sem perturbar nada.
   if (paginaAnterior === 'print-expedicao' && page !== 'print-expedicao' && _oeSaveAdiado) {
