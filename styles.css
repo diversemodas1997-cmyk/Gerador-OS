@@ -3672,3 +3672,36 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   justify-content: center;
 }
 .tt-tom-btn:hover { background: #dcefe1; color: #14361d; border-color: #7fa88a; }
+
+/* ============ O CELULAR DIGITANDO ============ */
+/* POR QUE ISTO MORA NO FIM DA FOLHA, e nao junto do bloco de 900px la de cima:
+   `@media` nao acrescenta peso nenhum a uma regra. `.modal-auth input`
+   (font-size: 13px) tem exatamente o mesmo peso do seletor daqui, entao quem
+   ganha e quem vem DEPOIS no arquivo — e aquele bloco vem antes. Escrito la em
+   cima, isto perdia calado para a tela de login: a unica tela em que todo mundo
+   digita no celular. Aqui, ganha por ordem.
+
+   O QUE ELE CONSERTA: o iPhone AMPLIA a tela sozinho ao tocar num campo com
+   fonte menor que 16px — e nao volta. A pessoa fica com a tela deslocada e tem
+   de juntar os dedos a cada campo. Os campos do programa sao de 13px.
+
+   No celular o programa e de CONSULTA, mas ainda ha o que digitar: o login, a
+   busca da lista de OS e a busca do desenho. Sao esses, e por isso a regra e
+   uma lista nomeada e nao um `input` solto.
+
+   A FOLHA FICA DE FORA, de proposito. Ela tem 210mm fixos e os campos dentro
+   dela sao parte do desenho da folha: subir a fonte ali nao conserta nada
+   (ninguem digita na folha pelo celular) e desmancharia o unico documento que
+   o celular existe para mostrar.
+
+   `screen and` pela mesma razao do bloco de 900px la de cima: sem ele, a
+   largura de referencia no papel e a da pagina, e isto valeria na impressao. */
+@media screen and (max-width: 900px) {
+  .field input, .field select, .field textarea,
+  .lista-os-filtros input, .lista-os-filtros select,
+  .busca-desenho input,
+  .modal input, .modal select, .modal textarea,
+  .modal-auth input {
+    font-size: 16px;
+  }
+}
