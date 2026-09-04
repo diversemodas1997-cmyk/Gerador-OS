@@ -237,8 +237,16 @@
         volta. Depois de abrir, use <b>Adicionar à tela de início</b> — o ícone
         guarda o endereço certo e você não digita mais nada.
       </div>
+      <div class="aviso" style="margin-top:12px">
+        <b>O Chrome vai escrever “Não seguro” ao lado do endereço, e vai
+        continuar escrevendo.</b> Isso não é erro nem aviso de que algo quebrou:
+        é o rótulo que ele põe em toda página <code>http</code>, sempre. O que
+        acabou foi a <b>tela vermelha que bloqueava</b> — aquela que exigia
+        “Avançado → Prosseguir”. O rótulo só sairia com o certificado
+        instalado, e é justamente ele que não entrou.
+      </div>
       <div style="margin-top:12px;font-size:14px;color:#555">
-        <b>O que se perde:</b> nesse endereço a senha do login viaja
+        <b>O que se perde de verdade:</b> nesse endereço a senha do login viaja
         <b>sem criptografia</b> pela rede da fábrica. Foi uma escolha
         consciente: o celular só consulta, não grava nada, e o cadeado custava
         um certificado que o Android recusa de três formas diferentes. No
