@@ -264,6 +264,28 @@
           <a class="btn" href="https://192.168.1.158/">https://192.168.1.158</a>
         </li>
       </ol>
+
+      <div class="aviso esquecido" style="margin-top:18px">
+        <b>Se o menu existir mas ele recusar o arquivo</b> — três motivos, nesta
+        ordem:
+        <br><br>
+        <b>1 · O tipo escolhido.</b> A mesma tela oferece
+        <code>Certificado de VPN e app</code> e <code>Certificado da AC</code>.
+        A primeira recusa este arquivo e é a mais fácil de tocar por engano:
+        ela quer um arquivo com <b>senha dentro</b>, que é outra coisa. Tem de
+        ser <b>Certificado da AC</b>.
+        <br><br>
+        <b>2 · O bloqueio de tela.</b> Sem PIN, padrão ou digital no aparelho, o
+        Android <b>recusa e não diz que é por isso</b>. Ponha um bloqueio nas
+        Configurações e tente de novo.
+        <br><br>
+        <b>3 · A outra forma do mesmo arquivo.</b> Alguns aparelhos não aceitam
+        o <code>ca.crt</code> e aceitam este — é o <b>mesmo certificado</b>,
+        mesma impressão digital, escrito em binário em vez de texto. Baixe e
+        repita o caminho das Configurações.
+        <a class="btn" href="/instalar/ca-android.cer" download
+           style="margin-top:12px">ca-android.cer</a>
+      </div>
     </div>
 
     <div class="so">
@@ -324,6 +346,16 @@
         Entrar pede a <b>mesma conta e a mesma senha</b> do computador. Quem não
         tem conta não entra — e sem entrar não vê OS nenhuma.
       </div>
+    </div>
+
+    <div class="aviso" style="margin-top:22px">
+      <b>Enquanto o certificado não entrar, o programa funciona assim mesmo.</b>
+      Abra <code>https://192.168.1.158</code>, toque em <b>Avançado</b> e depois
+      em <b>Prosseguir para 192.168.1.158</b>. Nada do programa depende do
+      cadeado: o que exigiria certificado válido é a gravação em pasta, que em
+      celular nenhum existe. O que se ganha instalando o certificado é parar de
+      ver esse aviso — que volta de tempos em tempos, e é o suficiente para
+      valer a pena resolver.
     </div>
   </section>
 

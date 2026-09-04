@@ -121,6 +121,19 @@ if (temCA && !REFAZER_CA) {
     '-config', cfg, '-extensions', 'ca']);
 }
 
+/* O MESMO ca.crt, EM DER — para o Android que recusa o PEM.
+
+   Não é outro certificado: é o mesmo, escrito em binário em vez de texto. A
+   impressão digital é idêntica, e instalar um ou outro dá no mesmo.
+
+   Existe porque a tela "Instalar um certificado → Certificado da AC" de alguns
+   aparelhos recusa o arquivo em PEM sem dizer por quê — e "recusou" é tudo o
+   que a pessoa vê. Ter as duas formas transforma um impasse em um segundo
+   toque. Sai daqui, e não do openssl na mão, para nunca ficar para trás quando
+   a CA for refeita: um .cer velho apontando para uma CA nova seria pior que
+   nenhum, porque instala e não funciona. */
+ssl(['x509', '-in', p('ca.crt'), '-outform', 'DER', '-out', p('ca.cer')]);
+
 console.log('Gerando o certificado do servidor…');
 ssl(['req', '-newkey', 'rsa:2048', '-nodes', '-sha256',
   '-keyout', p('servidor.key'), '-out', p('servidor.csr'),
