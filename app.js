@@ -19748,6 +19748,75 @@ function fasesSemProvaDeMedida(gradeId) {
   });
 }
 
+/* NÃO HÁ PANO PARA ESTA OS — E ELE PODE ESTAR NA PRATELEIRA (10/09/2026, Junior:
+   "insira no programa um aviso quando o usuario cadastrar uma OS, mas que a
+   quantidade de tecido reservado ultrapassa a quantidade necessaria para
+   produzir aquela OS... o programa deve avisar se nao tiver tecido suficiente,
+   por conta de os tecidos estarem reservados").
+
+   O saldo que importa e o DISPONIVEL — entradas menos reservado menos saidas —,
+   e nao o que esta no chao do deposito. Um rolo prometido a uma OS que ainda nao
+   foi produzida ja tem dono: cortar com ele resolve hoje e falta amanha, na OS
+   que contava com aquele pano. Ate aqui isso so aparecia dias depois, quando a
+   segunda OS chegava ao enfesto e o pano nao estava la.
+
+   Os movimentos DESTA OS ficam de fora da conta. Salvar de novo uma OS que ja
+   reservou 113 kg nao pode faze-la concorrer consigo mesma e acusar falta que
+   nao existe — a reserva antiga vai ser substituida pela nova em
+   aplicarBaixaEstoqueOS, logo depois.
+
+   Devolve lista vazia quando ha pano, quando a OS nao consome nada (grade sem
+   medida) e quando o estoque nem existe: um aviso de falta baseado em estoque
+   que ninguem alimenta seria barulho em toda OS. */
+function faltaDeTecidoParaOS(data) {
+  if (!data || !Array.isArray(STATE.estoqueMov) || !STATE.estoqueMov.length) return [];
+  const precisa = consumoAgregadoPorTecidoCor(data) || [];
+  if (!precisa.length) return [];
+  const salvo = STATE.estoqueMov;
+  try {
+    STATE.estoqueMov = salvo.filter(m => !(m.origem === 'os' && m.osId === data.id));
+    const porChave = new Map();
+    calcularSaldosEstoque().detalhe.forEach(c => {
+      porChave.set(_normNome(c.tecidoNome) + '||' + _normNome(c.corNome), c);
+    });
+    const arred = n => Math.round(n * 1000) / 1000;
+    return precisa.map(it => {
+      const c = porChave.get(_normNome(it.tecidoNome) + '||' + _normNome(it.corNome));
+      const disponivel = c ? c.disponivel : 0;
+      const falta = arred(it.kg - disponivel);
+      if (!(falta > 0.0005)) return null;
+      return {
+        tecidoNome: it.tecidoNome, corNome: it.corNome,
+        precisa: arred(it.kg), disponivel: arred(disponivel),
+        reservado: arred(c ? c.reservado : 0), falta
+      };
+    }).filter(Boolean);
+  } finally {
+    // O STATE volta ao que era mesmo se a conta explodir no meio: esta funcao
+    // so responde uma pergunta, e nao pode deixar o estoque do programa mexido.
+    STATE.estoqueMov = salvo;
+  }
+}
+
+// O texto do aviso. Separado da conta para poder ser lido por teste sem DOM, e
+// porque e ele que faz a diferenca: dizer "faltam 113 kg" sem dizer que o pano
+// esta prometido a outra OS manda a pessoa conferir a prateleira e achar que o
+// programa errou.
+function _textoFaltaDeTecido(faltando) {
+  const kg = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const linhas = faltando.map(f =>
+    `  · ${f.tecidoNome} · ${corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)'}\n`
+    + `      precisa ${kg(f.precisa)} kg · disponível ${kg(f.disponivel)} kg · `
+    + `FALTAM ${kg(f.falta)} kg`
+    + (f.reservado > 0.0005 ? `\n      (${kg(f.reservado)} kg estão reservados em outras OS)` : ''));
+  return `⚠ Não há tecido disponível para esta OS.\n\n`
+    + linhas.join('\n')
+    + `\n\nDisponível = entradas − reservado − saídas. O pano pode estar na `
+    + `prateleira e ainda assim faltar aqui: ele já está prometido a outra OS que `
+    + `ainda não foi produzida.\n\n`
+    + `Gerar a OS assim mesmo?`;
+}
+
 function validarAntesDeSalvar(data) {
   // A PROVA DA MEDIDA. Barra a gravação e mostra o que falta — mas quem está
   // com a OS na mão pode seguir assim mesmo: hoje 53 das 111 grades em uso
@@ -19774,6 +19843,13 @@ function validarAntesDeSalvar(data) {
     const catLabel = categoriaRestritiva === 'moletom' ? 'moletom (máx 36)' : 'malha algodão (máx 80)';
     return confirm(`⚠ Atenção: você informou ${camadas} camadas, mas o limite para ${catLabel} é ${limite}.\n\nDeseja salvar mesmo assim?`);
   }
+  /* O PANO QUE JÁ TEM DONO. Avisa, e não barra: quem está com a OS na mão pode
+     saber de uma entrada que ainda não foi lançada, ou estar cortando de
+     propósito o pano de um lote que mudou. Barrar pararia a produção por causa
+     do cadastro; avisar põe a decisão na frente de quem pode tomá-la — que é a
+     mesma escolha da prova da medida, logo acima. */
+  const faltando = faltaDeTecidoParaOS(data);
+  if (faltando.length) return confirm(_textoFaltaDeTecido(faltando));
   return true;
 }
 
