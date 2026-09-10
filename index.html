@@ -1240,6 +1240,21 @@
   </div>
 </div>
 
+<!-- ================== MODAL: CONJUGAR OS ================== -->
+<!-- Amarrar OS que JÁ existem, para o status andar junto. Não gera OS, não
+     mexe em tecido e não toca no cadastro da grade — os campos são montados
+     em app.js (renderModalConjugarOS). -->
+<div class="modal-backdrop" id="modal-conjugar">
+  <div class="modal">
+    <h2 id="modal-conjugar-title">Conjugar OS</h2>
+    <div id="modal-conjugar-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-conjugar')">Cancelar</button>
+      <button class="btn primary" onclick="salvarConjugarOS()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL DO PLANEJAMENTO DE OPERAÇÕES ============= -->
 <!-- Uma operação do dia: data, função, o que será feito, quem executa, a OS e
      as peças. Os campos são montados em app.js (abrirModalOperacao). -->
@@ -1390,6 +1405,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-10a"></script>
+<script src="app.js?v=2026-09-10c"></script>
 </body>
 </html>

@@ -22365,24 +22365,57 @@ function _gradeDetalheDaOS(o) {
    `conjugadaPaiId` na passiva —, então cada linha acha a irmã sozinha. O
    texto diz QUAL das duas segura o pano, que é a pergunta que a marca existe
    para responder; e clicar abre a irmã, porque o passo seguinte a reconhecer a
-   dupla é sempre ir ver a outra. */
+   dupla é sempre ir ver a outra. 
+
+   Desde 10/09/2026 a marca cobre TAMBÉM as OS conjugadas à mão, em outra cor:
+   a dupla da grade divide o pano, a conjugada à mão divide só o status. Ler as
+   duas do mesmo jeito faria alguém procurar na lista de material o pano de uma
+   OS que nunca deixou de ter o dela. */
 function _conjugadaCelulaOS(o) {
   if (!o) return '';
+  const marcas = [];
+  const badge = (irma, titulo, fundo) => {
+    const num = String(irma.os || '').trim() || '—';
+    marcas.push(`<span class="badge" onclick="event.stopPropagation();verOS('${esc(irma.id)}')"`
+      + ` title="${esc(titulo)}"`
+      + ` style="background:${fundo};cursor:pointer;font-size:10px;white-space:nowrap;margin-right:3px;">`
+      + `⇄ ${esc(num)}</span>`);
+  };
+
+  // 1. A DUPLA DA GRADE: mesmo enfesto, e uma delas reserva o pano das duas.
   const passiva = !!o.conjugadaPaiId;
   const irmaId = passiva ? o.conjugadaPaiId : o.conjugadaId;
-  if (!irmaId) return '';
-  const irma = (STATE.ordens || []).find(x => x.id === irmaId);
+  const irma = irmaId ? (STATE.ordens || []).find(x => x.id === irmaId) : null;
   // Irmã excluída depois: a marca sai, em vez de apontar uma OS que não abre.
-  if (!irma) return '';
-  const num = String(irma.os || '').trim() || '—';
-  const titulo = passiva
-    ? `Conjugada: sai do mesmo enfesto da OS ${num}, que é quem reserva o pano das duas. Clique para abri-la.`
-    : `Conjugada: puxa a OS ${num}, que sai do mesmo enfesto. O pano das duas está reservado nesta. Clique para abri-la.`;
-  return `<div style="margin-top:2px;">`
-    + `<span class="badge" onclick="event.stopPropagation();verOS('${esc(irma.id)}')"`
-    + ` title="${esc(titulo)}"`
-    + ` style="background:#dfe7f7;cursor:pointer;font-size:10px;white-space:nowrap;">`
-    + `⇄ ${esc(num)}</span></div>`;
+  if (irma) {
+    const num = String(irma.os || '').trim() || '—';
+    badge(irma, passiva
+      ? `Conjugada: sai do mesmo enfesto da OS ${num}, que é quem reserva o pano das duas. Clique para abri-la.`
+      : `Conjugada: puxa a OS ${num}, que sai do mesmo enfesto. O pano das duas está reservado nesta. Clique para abri-la.`,
+      '#dfe7f7');
+  }
+
+  /* 2. AS CONJUGADAS À MÃO (10/09/2026). Fundo diferente de propósito: a dupla
+     da grade divide o PANO, e estas não dividem nada além do status. Quem lê a
+     lista de material reservado precisa dessa diferença — a azul explica uma OS
+     sem pano, a verde não explica nada disso, porque cada uma tem o seu. */
+  const ativaMao = _ativaStatusDaOS(o);
+  if (ativaMao) {
+    const num = String(ativaMao.os || '').trim() || '—';
+    badge(ativaMao, `Conjugada à mão: esta OS segue o status da OS ${num}. O tecido continua reservado nesta. Clique para abri-la.`, '#dff0e4');
+    // As outras que seguem a mesma ativa: são o resto do grupo, e sem elas a
+    // linha diria "sigo alguém" sem dizer com quem mais anda junto.
+    _conjugadasManuaisDaOS(ativaMao).forEach(x => {
+      if (x.id === o.id) return;
+      badge(x, `Conjugada à mão: anda junto com esta OS — as duas seguem o status da OS ${num}. Clique para abri-la.`, '#dff0e4');
+    });
+  }
+  _conjugadasManuaisDaOS(o).forEach(x => {
+    badge(x, `Conjugada à mão: a OS ${String(x.os || '').trim() || '—'} segue o status desta. O tecido continua reservado nela. Clique para abri-la.`, '#dff0e4');
+  });
+
+  if (!marcas.length) return '';
+  return `<div style="margin-top:2px;">${marcas.join('')}</div>`;
 }
 
 function _gradeCelulaLista(o) {
@@ -22573,6 +22606,34 @@ function renderStatusFolhaOS() {
   box.innerHTML = html;
 }
 
+/* CONJUGAR OS À MÃO (10/09/2026, Junior: "o usuário deve ser capaz de conjugar
+   duas ou mais OS, sem interferir no cadastro das grades de cada OS").
+
+   Existia UMA forma de duas OS andarem juntas: o cadastro da grade gerava a
+   segunda, e ela nascia amarrada. Isso só serve para OS que ainda não existem,
+   vale para TODA OS daquela grade e ainda esconde a grade do seletor — de
+   propósito, para ninguém pedir a segunda à mão. Nada disso responde a "estas
+   duas OS, que já estão na lista, têm de terminar juntas".
+
+   Agora existe a amarra manual: `conjugadaStatusPaiId` guarda, na OS que segue,
+   o id da OS que manda. É um campo SÓ de status, e de propósito separado do
+   `conjugadaPaiId` da grade — este último também significa "não reserva pano"
+   (ver aplicarBaixaEstoqueOS), e conjugar duas OS à mão não pode zerar a
+   reserva de tecido de ninguém em silêncio. Cada OS continua com o pano dela.
+
+   O grupo é achado percorrendo as amarras, e não guardado numa lista: lista de
+   ids envelhece quando alguém apaga uma OS, e a marca na OS que segue não. */
+function _ativaStatusDaOS(os) {
+  if (!os || !os.conjugadaStatusPaiId) return null;
+  return (STATE.ordens || []).find(x => x.id === os.conjugadaStatusPaiId) || null;
+}
+
+// As OS que foram conjugadas A ESTA, à mão.
+function _conjugadasManuaisDaOS(os) {
+  if (!os) return [];
+  return (STATE.ordens || []).filter(o => o.id !== os.id && o.conjugadaStatusPaiId === os.id);
+}
+
 /* A CONJUGADA SEGUE O STATUS DA ATIVA — TODOS ELES (28/08/2026, Junior).
 
    As duas são o MESMO enfesto na mesa: o pano é estendido uma vez, cortado uma
@@ -22582,24 +22643,42 @@ function renderStatusFolhaOS() {
 
    Nasceu menor — só "finalizado" propagava, e depois o desfazer —, e as duas
    ampliações vieram pelo mesmo motivo: cada estado que não seguia deixava a
-   dupla em pé quebrado, e alguém tinha de arrumar a segunda à mão. A regra
-   inteira é mais simples de ler e não tem canto onde a folha se contradiga.
+   dupla em pé quebrado, e alguém tinha de arrumar a segunda à mão.
 
-   Só a ATIVA arrasta. A passiva não puxa ninguém: é a mesma trava que segura o
-   par cruzado em `deveGerarConjugada`, e sem ela duas OS que se apontassem
-   ficariam se carimbando em círculo.
+   Desde 10/09/2026 são DUAS as amarras que trazem uma OS para junto: a da grade
+   (`conjugadaId`, gerada) e a da mão (`conjugadaStatusPaiId`). O caminho é
+   percorrido em largura porque as duas se misturam — a OS que alguém conjugou à
+   mão pode ela mesma ter a conjugada dela pela grade, e carimbar metade do
+   conjunto seria o mesmo pé quebrado de sempre. O conjunto `vistos` é o que
+   impede o passeio de voltar por onde veio.
 
-   Devolve lista, e não uma OS, para o dia em que uma ativa puxar mais de uma
-   conjugada — quem chama já trata todas do mesmo jeito. */
+   Só a ATIVA arrasta a conjugada DA GRADE: a passiva não puxa ninguém, que é a
+   mesma trava do par cruzado em `deveGerarConjugada`. */
 function _conjugadasQueSeguemStatus(os, alvo) {
-  if (!os || os.conjugadaPaiId || !os.conjugadaId) return [];
-  const c = (STATE.ordens || []).find(x => x.id === os.conjugadaId);
-  if (!c) return [];
+  if (!os) return [];
+  const ordens = STATE.ordens || [];
+  const vistos = new Set([os.id]);
+  const fila = [os];
+  const juntas = [];
+  while (fila.length) {
+    const atual = fila.shift();
+    const proximas = [];
+    if (!atual.conjugadaPaiId && atual.conjugadaId) {
+      const c = ordens.find(x => x.id === atual.conjugadaId);
+      if (c) proximas.push(c);
+    }
+    _conjugadasManuaisDaOS(atual).forEach(c => proximas.push(c));
+    proximas.forEach(c => {
+      if (!c || vistos.has(c.id)) return;
+      vistos.add(c.id);
+      juntas.push(c);
+      fila.push(c);
+    });
+  }
   // Já no estado pedido: não é recarimbada. Vale sobretudo para "finalizado",
   // onde recarimbar reescreveria a data — e a data dela é o dia em que ela
   // terminou, não o dia em que alguém mexeu na irmã.
-  if (_statusOS(c) === alvo) return [];
-  return [c];
+  return juntas.filter(c => _statusOS(c) !== alvo);
 }
 
 // Escreve o status numa OS. Um lugar só, usado pela OS que o usuário carimbou e
@@ -22645,7 +22724,9 @@ async function mudarStatusOS(id, valor) {
   try {
     await saveState('ordens');
     toast(`OS ${o.os || ''} · ${rot}`
-      + (juntas.length ? ` — e a conjugada ${juntas.map(c => c.os || '').join(', ')}` : ''), 'ok');
+      + (juntas.length
+          ? ` — e ${juntas.length > 1 ? 'as conjugadas' : 'a conjugada'} ${juntas.map(c => c.os || '').join(', ')}`
+          : ''), 'ok');
   } catch (e) {
     console.warn('mudarStatusOS', e);
     toast('Não deu para salvar o status — tente de novo', 'err');
@@ -22941,6 +23022,161 @@ function renderListaOS() {
   }).join('');
 }
 
+/* ========================================================= */
+/*        CONJUGAR OS À MÃO: a tela                          */
+/* ========================================================= */
+/* Junior, 10/09/2026: "o usuário deve ser capaz de conjugar duas ou mais OS,
+   sem interferir no cadastro das grades de cada OS".
+
+   Abre pelo "⋯" da linha da OS. A OS de onde se abriu é a ATIVA — a que manda —,
+   e as escolhidas passam a seguir o status dela. Nada é gerado, nada é cadastro,
+   e nenhuma reserva de tecido muda de lugar: a única coisa que a amarra faz é o
+   status andar junto.
+
+   Abrindo pelo "⋯" de uma OS que JÁ segue outra, a tela trabalha no grupo dela,
+   com a ativa lá em cima — em vez de recusar e mandar o usuário descobrir
+   sozinho por onde entrar. */
+let _conjugarOsId = null;
+
+function abrirModalConjugarOS(id) {
+  // Mesma permissão de carimbar o status, e pelo mesmo motivo: quem sabe que
+  // duas OS são o mesmo trabalho é quem está no enfesto e no corte.
+  if (!exigirStatusOS('conjugar OS')) return;
+  const o = (STATE.ordens || []).find(x => x.id === id);
+  if (!o) return toast('OS não encontrada', 'err');
+  // Sobe para a ativa do grupo: quem manda é uma só, e conjugar a partir de uma
+  // que segue faria um degrau a mais sem que ninguém tivesse pedido.
+  const ativa = _ativaStatusDaOS(o) || o;
+  _conjugarOsId = ativa.id;
+  const t = document.getElementById('modal-conjugar-title');
+  if (t) t.textContent = `Conjugar OS ${ativa.os || ''}`;
+  const busca = document.getElementById('conjugarBusca');
+  if (busca) busca.value = '';
+  renderModalConjugarOS();
+  openModal('modal-conjugar');
+}
+
+// A lista de OS para marcar. Filtra pelo que foi digitado (número, código,
+// modelo ou grade) e mostra sempre, no topo, as que já estão conjugadas — senão
+// desconjugar exigiria adivinhar o texto de busca da OS que se quer soltar.
+function renderModalConjugarOS() {
+  const box = document.getElementById('modal-conjugar-fields');
+  if (!box) return;
+  const ativa = (STATE.ordens || []).find(x => x.id === _conjugarOsId);
+  if (!ativa) { box.innerHTML = '<div class="field-hint">OS não encontrada.</div>'; return; }
+  const termo = _normNome(document.getElementById('conjugarBusca')?.value || '');
+  const jaNoGrupo = new Set(_conjugadasManuaisDaOS(ativa).map(o => o.id));
+  const casa = (o) => {
+    if (!termo) return true;
+    const alvo = _normNome([o.os, o.codigo, o.modeloNome, _gradeNomeDaOS(o)].join(' '));
+    return alvo.includes(termo);
+  };
+  const candidatas = (STATE.ordens || [])
+    .filter(o => o.id !== ativa.id)
+    // A OS gerada pela grade já vem amarrada; conjugá-la de novo seria escrever
+    // a mesma regra duas vezes, por dois caminhos diferentes.
+    .filter(o => o.conjugadaPaiId !== ativa.id && o.id !== ativa.conjugadaId)
+    .filter(o => jaNoGrupo.has(o.id) || casa(o))
+    .sort((a, b) => {
+      const g = (jaNoGrupo.has(b.id) ? 1 : 0) - (jaNoGrupo.has(a.id) ? 1 : 0);
+      if (g) return g;
+      return String(b.os || '').localeCompare(String(a.os || ''));
+    });
+  const TETO = 60;
+  const mostradas = candidatas.slice(0, TETO);
+  const linha = (o) => {
+    const marcada = jaNoGrupo.has(o.id);
+    // Já segue OUTRA ativa: dizer isso antes do clique evita o puxão de guerra
+    // silencioso em que a última pessoa a salvar leva a OS.
+    const outra = !marcada && o.conjugadaStatusPaiId
+      ? (STATE.ordens || []).find(x => x.id === o.conjugadaStatusPaiId) : null;
+    return `<label class="conjugar-linha" style="display:flex;gap:8px;align-items:baseline;padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;">
+      <input type="checkbox" class="conjugar-check" value="${esc(o.id)}" ${marcada ? 'checked' : ''}>
+      <strong style="font-family:'IBM Plex Mono',monospace;min-width:52px;">${esc(o.os || '—')}</strong>
+      <span style="flex:1;">${esc(o.modeloNome || o.codigo || '—')}</span>
+      <span style="color:var(--ink-3);font-size:11px;white-space:nowrap;">${esc(_gradeNomeDaOS(o))}</span>
+      ${outra ? `<span class="badge" style="background:#f7e7df;font-size:10px;" title="Marcar aqui tira esta OS do grupo da OS ${esc(outra.os || '')}">segue ${esc(outra.os || '')}</span>` : ''}
+    </label>`;
+  };
+  box.innerHTML = `
+    <div class="field-hint" style="margin-bottom:8px;">
+      As OS marcadas passam a <b>seguir o status</b> da OS <b>${esc(ativa.os || '')}</b>:
+      quando ela for para Em andamento, Parado ou Finalizado, todas vão junto — e voltam junto
+      quando ela voltar. <b>O tecido de cada uma continua reservado nela</b>; conjugar aqui não
+      mexe em estoque, não gera OS nenhuma e não altera o cadastro de grade de ninguém.
+    </div>
+    <div class="field"><label>Procurar OS</label>
+      <input type="text" id="conjugarBusca" value="${esc(document.getElementById('conjugarBusca')?.value || '')}"
+        placeholder="Número, código, modelo ou grade" oninput="renderModalConjugarOS()">
+    </div>
+    <div style="max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:2px;margin-top:8px;">
+      ${mostradas.length ? mostradas.map(linha).join('') : '<div class="field-hint" style="padding:10px;">Nenhuma OS encontrada.</div>'}
+    </div>
+    ${candidatas.length > TETO
+      ? `<div class="field-hint" style="margin-top:6px;">Mostrando ${TETO} de ${candidatas.length} — use a busca para achar a OS.</div>`
+      : ''}
+    <label style="display:flex;gap:8px;align-items:baseline;margin-top:10px;">
+      <input type="checkbox" id="conjugarAlinhar">
+      <span class="field-hint">Alinhar <b>agora</b> o status das marcadas com o da OS ${esc(ativa.os || '')}
+      (${esc((STATUS_OS.find(x => x.k === _statusOS(ativa)) || STATUS_OS[0]).rotulo)}).
+      Em branco, ninguém é carimbado hoje: elas passam a seguir a partir da <b>próxima</b> mudança.</span>
+    </label>`;
+  // O innerHTML acabou de recriar o campo de busca: devolve o cursor para ele,
+  // senão digitar a segunda letra do número da OS exigiria clicar de novo.
+  const b = document.getElementById('conjugarBusca');
+  if (b && termo !== '') { b.focus(); b.setSelectionRange(b.value.length, b.value.length); }
+}
+
+async function salvarConjugarOS() {
+  if (!exigirStatusOS('conjugar OS')) return;
+  const ativa = (STATE.ordens || []).find(x => x.id === _conjugarOsId);
+  if (!ativa) return closeModal('modal-conjugar');
+  const marcadas = new Set(Array.from(document.querySelectorAll('#modal-conjugar-fields .conjugar-check'))
+    .filter(c => c.checked).map(c => c.value));
+  const alinhar = !!document.getElementById('conjugarAlinhar')?.checked;
+  const eram = new Set(_conjugadasManuaisDaOS(ativa).map(o => o.id));
+  let mudou = 0;
+  (STATE.ordens || []).forEach(o => {
+    if (marcadas.has(o.id) && o.conjugadaStatusPaiId !== ativa.id) {
+      o.conjugadaStatusPaiId = ativa.id; mudou++;
+    } else if (!marcadas.has(o.id) && eram.has(o.id)) {
+      // Desconjugar é tirar a marca, e só. A OS fica exatamente como estava —
+      // com o status que tem hoje, e com o pano dela, que nunca saiu do lugar.
+      delete o.conjugadaStatusPaiId; mudou++;
+    }
+  });
+  // O alinhamento é opcional de propósito: carimbar sozinho reescreveria a data
+  // de finalização de quem já tinha terminado em outro dia.
+  let alinhadas = [];
+  if (alinhar) {
+    const alvo = _statusOS(ativa);
+    const agora = new Date().toISOString();
+    const quem = _obsQuemSou();
+    alinhadas = _conjugadasQueSeguemStatus(ativa, alvo);
+    alinhadas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
+  }
+  closeModal('modal-conjugar');
+  renderListaOS();
+  renderStatusFolhaOS();
+  if (!mudou && !alinhadas.length) return;
+  try {
+    await saveState('ordens');
+    const quantas = marcadas.size;
+    toast(quantas
+      ? `OS ${ativa.os || ''} · ${quantas} OS conjugada${quantas > 1 ? 's' : ''}`
+        + (alinhadas.length ? ` — e ${alinhadas.length} alinhada${alinhadas.length > 1 ? 's' : ''} agora` : '')
+      : `OS ${ativa.os || ''} · conjugação desfeita`, 'ok');
+  } catch (e) {
+    console.warn('salvarConjugarOS', e);
+    toast('Não deu para salvar a conjugação — tente de novo', 'err');
+  }
+  // O estoque não entra nesta conta: conjugar à mão não mexe em reserva de
+  // tecido. O alinhamento de status, sim — é o mesmo caminho de mudarStatusOS.
+  if (alinhadas.length) {
+    const alvo = _statusOS(ativa);
+    for (const c of alinhadas) await _estoqueSeguirStatusOS(c, alvo);
+  }
+}
 /* ========================================================= */
 /*                        MENSAGENS                          */
 /* ========================================================= */
@@ -23306,6 +23542,8 @@ function abrirMenuAcoesOS(id, botao) {
       title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
     <button class="edit" onclick="fecharMenuAcoesOS(); imprimirEtiquetasPdf('${esc(id)}')"
       title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
+    ${podeMudarStatusOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); abrirModalConjugarOS('${esc(id)}')"
+      title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Nao mexe em tecido nem no cadastro da grade.">conjugar</button>` : ''}
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); duplicarOS('${esc(id)}')">duplicar</button>
     <div class="sep admin-only"></div>

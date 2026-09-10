@@ -86,11 +86,26 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
+  ${recorte('function _ativaStatusDaOS', 'a ativa de quem foi conjugada a mao')}
+  ${recorte('function _conjugadasManuaisDaOS', 'as OS conjugadas a mao')}
   ${recorte('function _conjugadasQueSeguemStatus', 'a conjugada que vai junto')}
   ${recorte('function _carimbarStatusOS', 'a escrita do status numa OS')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   ${recorte('function conjugadasSemPanoDaOS', 'as conjugadas da lista de reservados')}
+  ${recorte('async function salvarConjugarOS', 'o salvar da tela de conjugar')}
   const exigirEstoqueTecidos = () => true;
+  /* A TELA DO "CONJUGAR": um DOM de mentira com as caixas marcadas. O que
+     importa provar aqui e o que a funcao ESCREVE nas OS — e ela le a marcacao
+     do modal, entao o modal precisa existir de alguma forma. */
+  let _conjugarOsId = null;
+  const openModal = () => {};
+  const closeModal = () => { ctx.fechou = (ctx.fechou || 0) + 1; };
+  const document = {
+    getElementById: (id) => (id === 'conjugarAlinhar' ? { checked: !!ctx.alinhar } : null),
+    querySelectorAll: () => (ctx.candidatas || []).map(c => ({
+      value: c.id, checked: (ctx.marcadas || []).indexOf(c.id) >= 0
+    }))
+  };
   // aplicarBaixaEstoqueOS pergunta o consumo da OS ao cadastro; aqui ele vem
   // pronto pelo ctx, que e o que este teste tem a dizer sobre o assunto.
   const consumoAgregadoPorTecidoCor = () => ctx.consumo || [];
@@ -100,7 +115,9 @@ const monta = (ctx) => new Function('ctx', `
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
-           conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus };
+           conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus,
+           _ativaStatusDaOS, _conjugadasManuaisDaOS, salvarConjugarOS,
+           conjugarNaOS: (id) => { _conjugarOsId = id; } };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -480,6 +497,197 @@ console.log('-- o que fica gravado --');
   await d.api.mudarStatusOS('at', 'parado');
   ok('83. conjugada ja no estado pedido nao e recarimbada',
      d.ctx.STATE.ordens[1].statusOSEm === 'ontem', JSON.stringify(d.ctx.STATE.ordens[1]));
+
+  /* ----------------------------------------------------------------------
+     CONJUGAR OS À MÃO (10/09/2026, Junior: "o usuário deve ser capaz de
+     conjugar duas ou mais OS, sem interferir no cadastro das grades de cada
+     OS" — e, antes disso, "de forma que elas respondam pela mudanca de status
+     da OS ativa").
+
+     A amarra da grade só serve para OS que ainda não existem. Esta serve para
+     as que já estão na lista: marca-se `conjugadaStatusPaiId` na OS que segue,
+     e mais nada. Campo separado do `conjugadaPaiId` da grade DE PROPÓSITO —
+     aquele também significa "não reserva pano", e conjugar duas OS à mão não
+     pode zerar a reserva de tecido de ninguém em silêncio.
+     ---------------------------------------------------------------------- */
+  console.log('');
+  console.log('-- conjugar OS a mao --');
+  const maoDe = (extra) => ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500', conjugadaStatusPaiId: 'at' },
+    { id: 'c', os: '0512', conjugadaStatusPaiId: 'at' },
+    { id: 'so', os: '0600' }
+  ].concat(extra || []));
+
+  p = maoDe();
+  await p.api.mudarStatusOS('at', 'andamento');
+  ok('93. as OS conjugadas a mao seguem a ativa',
+     p.ctx.STATE.ordens[1].statusOS === 'andamento' && p.ctx.STATE.ordens[2].statusOS === 'andamento',
+     JSON.stringify(p.ctx.STATE.ordens.slice(1, 3)));
+  ok('94. e sao duas ou mais, nao so uma', p.api._conjugadasManuaisDaOS(p.ctx.STATE.ordens[0]).length === 2);
+  ok('95. numa gravacao so', p.ctx.salvou === 1, String(p.ctx.salvou));
+  ok('96. a OS que nao foi conjugada nao e tocada',
+     p.ctx.STATE.ordens[3].statusOS === undefined);
+
+  // Finalizar e desfazer: o grupo inteiro vai e volta.
+  p = maoDe();
+  await p.api.mudarStatusOS('at', 'finalizado');
+  ok('97. finalizar leva todas, com a data',
+     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === 'finalizado' && !!o.finalizadaEm));
+  await p.api.mudarStatusOS('at', 'nao-iniciado');
+  ok('98. desfazer traz todas de volta, e apaga a data',
+     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === undefined && o.finalizadaEm === undefined),
+     JSON.stringify(p.ctx.STATE.ordens.slice(1, 3)));
+
+  // Quem segue nao arrasta: e a mesma regra da conjugada da grade.
+  p = maoDe();
+  await p.api.mudarStatusOS('b', 'parado');
+  ok('99. a OS que segue nao arrasta a ativa nem a irma',
+     p.ctx.STATE.ordens[0].statusOS === undefined && p.ctx.STATE.ordens[2].statusOS === undefined,
+     JSON.stringify(p.ctx.STATE.ordens));
+
+  // A que ja esta no estado pedido nao e recarimbada: a data dela e o dia em
+  // que ELA terminou.
+  p = maoDe();
+  p.ctx.STATE.ordens[1].statusOS = 'finalizado';
+  p.ctx.STATE.ordens[1].finalizadaEm = '2026-09-02T10:00:00.000Z';
+  await p.api.mudarStatusOS('at', 'finalizado');
+  ok('100. a que ja estava finalizada mantem a data dela',
+     p.ctx.STATE.ordens[1].finalizadaEm === '2026-09-02T10:00:00.000Z');
+
+  /* AS DUAS AMARRAS SE MISTURAM. A OS conjugada a mao pode ter a conjugada
+     DELA pela grade — carimbar metade do conjunto e o mesmo pe quebrado de
+     sempre. Por isso o caminho e percorrido em largura. */
+  p = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500', conjugadaStatusPaiId: 'at', conjugadaId: 'bf' },
+    { id: 'bf', os: '0499', conjugadaPaiId: 'b' }
+  ]);
+  await p.api.mudarStatusOS('at', 'andamento');
+  ok('101. a conjugada DA CONJUGADA tambem vai (a mao puxa a da grade)',
+     p.ctx.STATE.ordens[2].statusOS === 'andamento', JSON.stringify(p.ctx.STATE.ordens[2]));
+
+  // Ciclo: A segue B e B segue A. Sem a trava do "ja visto" isto rodaria para
+  // sempre — e o programa inteiro para junto.
+  p = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0435', conjugadaStatusPaiId: 'b' },
+    { id: 'b', os: '0500', conjugadaStatusPaiId: 'at' }
+  ]);
+  await p.api.mudarStatusOS('at', 'parado');
+  ok('102. duas OS que se apontam nao entram em loop',
+     p.ctx.STATE.ordens[1].statusOS === 'parado');
+
+  /* O TECIDO NAO SE MEXE. E a diferenca que separa esta amarra da outra: a
+     conjugada da GRADE e a fase 2 do mesmo enfesto e nao reserva pano; a
+     conjugada A MAO e uma OS inteira, com o pano dela na prateleira. Zerar a
+     reserva aqui sumiria com material de verdade, em silencio. */
+  const comPano = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500', conjugadaStatusPaiId: 'at' }
+  ]);
+  comPano.ctx.consumo = [{ tecidoNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', kg: 50 }];
+  await comPano.api.aplicarBaixaEstoqueOS(comPano.ctx.STATE.ordens[1]);
+  ok('103. a OS conjugada a mao CONTINUA reservando o pano dela',
+     (comPano.ctx.STATE.estoqueMov || []).length === 1
+     && comPano.ctx.STATE.estoqueMov[0].kg === 50,
+     JSON.stringify(comPano.ctx.STATE.estoqueMov));
+  // E a da grade continua nao reservando, como sempre.
+  const semPano = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500', conjugadaPaiId: 'at' }
+  ]);
+  semPano.ctx.consumo = [{ tecidoNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', kg: 50 }];
+  await semPano.api.aplicarBaixaEstoqueOS(semPano.ctx.STATE.ordens[1]);
+  ok('104. e a conjugada da GRADE segue sem reservar (o pano esta na ativa)',
+     (semPano.ctx.STATE.estoqueMov || []).length === 0,
+     JSON.stringify(semPano.ctx.STATE.estoqueMov));
+  // A lista de material reservado tambem nao pode confundir as duas: a linha
+  // filha "o pano esta na OS X" so vale para a da grade.
+  ok('105. a lista de reservados nao trata a conjugada a mao como filha',
+     comPano.api.conjugadasSemPanoDaOS('at', new Set()).length === 0);
+
+  /* O QUE A TELA ESCREVE. Marcar e desmarcar caixas e o unico caminho pelo qual
+     a amarra manual nasce e morre — um erro aqui amarra a OS errada, e o status
+     de amanha vai junto com ela. */
+  console.log('');
+  console.log('-- o salvar da tela de conjugar --');
+  const telaDe = (ordens) => {
+    const feito = ctxDe('admin', 'admin@diverse.local', true, ordens);
+    feito.ctx.candidatas = ordens;
+    return feito;
+  };
+
+  let tc = telaDe([
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500' },
+    { id: 'c', os: '0512' },
+    { id: 'so', os: '0600' }
+  ]);
+  tc.api.conjugarNaOS('at');
+  tc.ctx.marcadas = ['b', 'c'];
+  await tc.api.salvarConjugarOS();
+  ok('106. marcar duas OS amarra as duas a ativa',
+     tc.ctx.STATE.ordens[1].conjugadaStatusPaiId === 'at'
+     && tc.ctx.STATE.ordens[2].conjugadaStatusPaiId === 'at',
+     JSON.stringify(tc.ctx.STATE.ordens));
+  ok('107. e nao encosta em quem nao foi marcado',
+     !('conjugadaStatusPaiId' in tc.ctx.STATE.ordens[3]));
+  ok('108. gravou uma vez e fechou a janela', tc.ctx.salvou === 1 && tc.ctx.fechou === 1);
+  ok('109. e NAO carimbou status nenhum: conjugar nao e carimbar',
+     tc.ctx.STATE.ordens.every(o => o.statusOS === undefined),
+     JSON.stringify(tc.ctx.STATE.ordens));
+
+  // Desmarcar solta a OS, e ela fica exatamente como estava.
+  tc = telaDe([
+    { id: 'at', os: '0435' },
+    { id: 'b', os: '0500', conjugadaStatusPaiId: 'at', statusOS: 'andamento' },
+    { id: 'c', os: '0512', conjugadaStatusPaiId: 'at' }
+  ]);
+  tc.api.conjugarNaOS('at');
+  tc.ctx.marcadas = ['c'];
+  await tc.api.salvarConjugarOS();
+  ok('110. desmarcar solta a OS do grupo',
+     !('conjugadaStatusPaiId' in tc.ctx.STATE.ordens[1])
+     && tc.ctx.STATE.ordens[2].conjugadaStatusPaiId === 'at',
+     JSON.stringify(tc.ctx.STATE.ordens));
+  ok('111. e a OS solta fica com o status que ja tinha',
+     tc.ctx.STATE.ordens[1].statusOS === 'andamento');
+
+  /* O ALINHAR E OPCIONAL, e por isso: carimbar sozinho reescreveria a data de
+     finalizacao de quem terminou em outro dia. Em branco, ninguem e tocado
+     hoje; marcado, as escolhidas entram no estado da ativa agora. */
+  tc = telaDe([
+    { id: 'at', os: '0435', statusOS: 'andamento' },
+    { id: 'b', os: '0500' }
+  ]);
+  tc.api.conjugarNaOS('at');
+  tc.ctx.marcadas = ['b'];
+  await tc.api.salvarConjugarOS();
+  ok('112. sem alinhar, a OS conjugada nao muda de estado hoje',
+     tc.ctx.STATE.ordens[1].statusOS === undefined, JSON.stringify(tc.ctx.STATE.ordens[1]));
+
+  tc = telaDe([
+    { id: 'at', os: '0435', statusOS: 'andamento' },
+    { id: 'b', os: '0500' }
+  ]);
+  tc.api.conjugarNaOS('at');
+  tc.ctx.marcadas = ['b'];
+  tc.ctx.alinhar = true;
+  await tc.api.salvarConjugarOS();
+  ok('113. com alinhar, ela entra no estado da ativa agora',
+     tc.ctx.STATE.ordens[1].statusOS === 'andamento', JSON.stringify(tc.ctx.STATE.ordens[1]));
+
+  // Quem so consulta nao conjuga: e a mesma permissao de carimbar o status.
+  tc = telaDe([{ id: 'at', os: '0435' }, { id: 'b', os: '0500' }]);
+  tc.ctx.papel = 'consulta';
+  tc.ctx.login = 'costura@diverse.local';
+  const semPermissao = monta(t.ctx);
+  semPermissao.conjugarNaOS('at');
+  tc.ctx.marcadas = ['b'];
+  await semPermissao.salvarConjugarOS();
+  ok('114. quem nao pode carimbar status tambem nao conjuga',
+     !('conjugadaStatusPaiId' in tc.ctx.STATE.ordens[1]) && tc.ctx.salvou === 0,
+     JSON.stringify(tc.ctx.STATE.ordens[1]));
 
   console.log('');
   console.log('-- e ela APARECE na lista, dizendo onde o pano esta --');

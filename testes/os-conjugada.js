@@ -377,6 +377,8 @@ console.log('-- a OS que sai --');
     const cel = (STATE) => new Function('STATE', `
       const esc = (s) => String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      ${corta('function _ativaStatusDaOS')}
+      ${corta('function _conjugadasManuaisDaOS')}
       ${corta('function _conjugadaCelulaOS')}
       return _conjugadaCelulaOS;
     `)(STATE);
@@ -402,6 +404,36 @@ console.log('-- a OS que sai --');
     const semIrma = { ordens: [{ id: 'a', os: '0498', conjugadaId: 'sumiu' }] };
     ok('41. irma excluida: a marca some, em vez de apontar o vazio',
        cel(semIrma)(semIrma.ordens[0]) === '', cel(semIrma)(semIrma.ordens[0]));
+
+    /* A CONJUGADA A MAO NA MESMA COLUNA (10/09/2026). Mesma marca, outra cor: a
+       dupla da grade divide o PANO, a conjugada a mao divide so o status. Ler as
+       duas do mesmo jeito faria alguem procurar na lista de material o pano de
+       uma OS que nunca deixou de ter o dela. */
+    const M = { ordens: [
+      { id: 'a', os: '0435' },
+      { id: 'b', os: '0500', conjugadaStatusPaiId: 'a' },
+      { id: 'c', os: '0512', conjugadaStatusPaiId: 'a' }
+    ] };
+    const fm = cel(M);
+    const mandaNelas = fm(M.ordens[0]), segue = fm(M.ordens[1]);
+    ok('42. a ativa mostra as duas que seguem ela',
+       /0500/.test(mandaNelas) && /0512/.test(mandaNelas), mandaNelas);
+    ok('43. e quem segue mostra a ativa E a irma',
+       /0435/.test(segue) && /0512/.test(segue), segue);
+    ok('44. o texto diz que o tecido continua na propria OS',
+       /tecido continua/.test(segue), segue);
+    ok('45. e a cor e outra: nao e a dupla que divide pano',
+       /#dff0e4/.test(segue) && !/#dfe7f7/.test(segue), segue);
+    // As duas amarras na MESMA OS: a da grade e a da mao, cada uma com a sua.
+    const D = { ordens: [
+      { id: 'a', os: '0498', conjugadaId: 'p' },
+      { id: 'p', os: '0497', conjugadaPaiId: 'a' },
+      { id: 'x', os: '0600', conjugadaStatusPaiId: 'a' }
+    ] };
+    const dupla = cel(D)(D.ordens[0]);
+    ok('46. uma OS pode ter as duas amarras, cada uma com a sua cor',
+       /0497/.test(dupla) && /0600/.test(dupla)
+       && /#dfe7f7/.test(dupla) && /#dff0e4/.test(dupla), dupla);
   }
 
   console.log('');
