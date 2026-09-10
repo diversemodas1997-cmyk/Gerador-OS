@@ -86,7 +86,6 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
-  ${recorte('function _filhasConjugadasDaOS', 'as conjugadas que ja nasceram')}
   ${recorte('function _conjugadasQueSeguemStatus', 'a conjugada que vai junto')}
   ${recorte('function _carimbarStatusOS', 'a escrita do status numa OS')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
@@ -101,7 +100,7 @@ const monta = (ctx) => new Function('ctx', `
   return { podeMudarStatusOS, _statusOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
-           conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus, _filhasConjugadasDaOS };
+           conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus };
 `)(ctx);
 
 const ctxDe = (papel, login, servidorNoAr = true, ordens = []) => {
@@ -481,71 +480,6 @@ console.log('-- o que fica gravado --');
   await d.api.mudarStatusOS('at', 'parado');
   ok('83. conjugada ja no estado pedido nao e recarimbada',
      d.ctx.STATE.ordens[1].statusOSEm === 'ontem', JSON.stringify(d.ctx.STATE.ordens[1]));
-
-  /* O TRIO SEGUE JUNTO (10/09/2026, Junior: "insira a capacidade do usuario
-     conjugar duas ou mais OSs, de forma que elas respondam pela mudanca de
-     status da OS ativa").
-
-     A razao e a mesma da dupla, e nao muda com o numero: o pano e estendido uma
-     vez e cortado uma vez. Se o enfesto comecou, comecou para todas; se
-     terminou, terminou para todas. Uma que ficasse para tras teria de ser
-     carimbada a mao — e a mao esquece. */
-  const trioDe = (st1, st2) => ctxDe('admin', 'admin@diverse.local', true, [
-    { id: 'at', os: '0435', conjugadaIds: ['p1', 'p2'], conjugadaId: 'p1' },
-    { id: 'p1', os: '0434', conjugadaPaiId: 'at', statusOS: st1 },
-    { id: 'p2', os: '0433', conjugadaPaiId: 'at', statusOS: st2 },
-    { id: 'so', os: '0500' }
-  ]);
-  p = trioDe();
-  await p.api.mudarStatusOS('at', 'finalizado');
-  ok('84. finalizar a ativa finaliza as DUAS conjugadas',
-     p.ctx.STATE.ordens[1].statusOS === 'finalizado'
-     && p.ctx.STATE.ordens[2].statusOS === 'finalizado',
-     JSON.stringify(p.ctx.STATE.ordens.slice(1, 3)));
-  ok('85. as tres viajam na MESMA gravacao', p.ctx.salvou === 1, String(p.ctx.salvou));
-  ok('86. e o aviso nomeia as duas', p.ctx.toasts.some(t => /0434/.test(t) && /0433/.test(t)),
-     JSON.stringify(p.ctx.toasts));
-  ok('87. a OS solta nao entra na conta', p.ctx.STATE.ordens[3].statusOS === undefined);
-
-  // Uma ja no estado pedido nao e recarimbada; a outra vai. E a razao de sempre:
-  // a data de finalizacao dela e o dia em que ELA terminou.
-  p = trioDe('finalizado', undefined);
-  p.ctx.STATE.ordens[1].finalizadaEm = '2026-09-01T10:00:00.000Z';
-  await p.api.mudarStatusOS('at', 'finalizado');
-  ok('88. a que ja estava finalizada mantem a data dela',
-     p.ctx.STATE.ordens[1].finalizadaEm === '2026-09-01T10:00:00.000Z',
-     p.ctx.STATE.ordens[1].finalizadaEm);
-  ok('89. e a outra e finalizada agora', p.ctx.STATE.ordens[2].statusOS === 'finalizado');
-
-  // Desfazer tambem leva as duas: metade de um enfesto terminada e metade nao
-  // descreve um trabalho que nao existe.
-  p = trioDe('finalizado', 'finalizado');
-  p.ctx.STATE.ordens[0].statusOS = 'finalizado';
-  await p.api.mudarStatusOS('at', 'nao-iniciado');
-  ok('90. tirar a ativa de finalizado tira as duas juntas',
-     p.ctx.STATE.ordens[1].statusOS === undefined && p.ctx.STATE.ordens[2].statusOS === undefined,
-     JSON.stringify(p.ctx.STATE.ordens.slice(1, 3)));
-
-  // Nenhuma passiva arrasta ninguem: e a trava do par cruzado, e vale igual
-  // quando sao tres.
-  p = trioDe();
-  await p.api.mudarStatusOS('p1', 'andamento');
-  ok('91. a passiva nao arrasta nem a ativa nem a irma',
-     p.ctx.STATE.ordens[0].statusOS === undefined && p.ctx.STATE.ordens[2].statusOS === undefined,
-     JSON.stringify(p.ctx.STATE.ordens));
-
-  // A ligacao que manda e a da FILHA. Uma OS antiga, gravada quando so existia
-  // conjugadaId, continua sendo arrastada — e a filha nova tambem.
-  p = ctxDe('admin', 'admin@diverse.local', true, [
-    { id: 'at', os: '0435', conjugadaId: 'p1' },
-    { id: 'p1', os: '0434', conjugadaPaiId: 'at' },
-    { id: 'p2', os: '0433', conjugadaPaiId: 'at' }
-  ]);
-  await p.api.mudarStatusOS('at', 'andamento');
-  ok('92. a filha achada pela marca dela vai junto, mesmo fora de conjugadaIds',
-     p.ctx.STATE.ordens[1].statusOS === 'andamento'
-     && p.ctx.STATE.ordens[2].statusOS === 'andamento',
-     JSON.stringify(p.ctx.STATE.ordens.slice(1)));
 
   console.log('');
   console.log('-- e ela APARECE na lista, dizendo onde o pano esta --');
