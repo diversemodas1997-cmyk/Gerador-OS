@@ -68,9 +68,21 @@ async function espelhar(cfg) {
     return rel;
   }
 
-  // 2. O que a nuvem já tem. Só o carimbo: é o bastante para saber se mudou.
+  // 2. O que a nuvem já tem. SÓ O CARIMBO — e isto é uma questão de conta, não
+  //    de elegância: o blob passou de 3 MB, o espelho roda de 30 em 30 minutos, e
+  //    pedir `data` aqui baixava 3 MB da nuvem 48 vezes por dia (~4,4 GB/mês) só
+  //    para ler uma data. A cota de saída do plano gratuito é 5 GB/mês: em
+  //    10/09/2026 ela estourou e o projeto inteiro foi bloqueado com
+  //    `exceed_egress_quota` — ninguém mais conseguia sequer ENTRAR pela nuvem,
+  //    porque o 402 vem antes de o login olhar a senha.
+  //
+  //    O único trecho que precisava do `data` da nuvem é a trava anti-apagamento
+  //    do passo 3, e ela só entra em cena quando a FÁBRICA está vazia — caso
+  //    raro. Então o blob da nuvem só desce nesse caso.
+  const fabricaVazia = blobVazio(daFabrica.data);
+  const camposNuvem = fabricaVazia ? 'data,updated_at' : 'updated_at';
   const nuvemLinhas = await json(buscar,
-    `${cfg.nuvem}/rest/v1/shared_data?id=eq.main&select=data,updated_at`,
+    `${cfg.nuvem}/rest/v1/shared_data?id=eq.main&select=${camposNuvem}`,
     { headers: cab(cfg.nuvemKey) });
   const naNuvem = Array.isArray(nuvemLinhas) ? nuvemLinhas[0] : null;
 
@@ -79,7 +91,7 @@ async function espelhar(cfg) {
   //    (banco recém-criado, restauração pela metade, migração que não rodou), a
   //    nuvem é a única cópia boa que resta — e o espelho não pode ser justamente
   //    o que a destrói.
-  if (blobVazio(daFabrica.data) && naNuvem && !blobVazio(naNuvem.data)) {
+  if (fabricaVazia && naNuvem && !blobVazio(naNuvem.data)) {
     rel.dados = 'bloqueado';
     rel.motivo = 'a fábrica está sem OS e sem desenhos, mas a nuvem tem dados — '
       + 'espelhar agora apagaria a única cópia boa';

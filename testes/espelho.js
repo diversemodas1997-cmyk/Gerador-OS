@@ -17,6 +17,7 @@ const VAZIO = { ordens: '[]', desenhos: '[]' };
 /* Servidor de mentira: guarda o estado dos dois lados e anota o que foi escrito. */
 function montar(estado) {
   const escritas = [];
+  const leituras = [];
   const resposta = (corpo, ok_) => Promise.resolve({
     ok: ok_ !== false, status: ok_ === false ? 500 : 200,
     text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)),
@@ -30,8 +31,13 @@ function montar(estado) {
 
     if (url.includes('/rest/v1/shared_data')) {
       if (metodo === 'GET') {
+        const pediuData = /select=[^&]*\bdata\b/.test(url);
+        leituras.push({ alvo: lado, tipo: 'dados', pediuData });
         const d = estado[lado].dados;
-        return resposta(d ? [d] : []);
+        if (!d) return resposta([]);
+        // O servidor de mentira OBEDECE o select: quem não pediu `data` não
+        // recebe `data`. É o que faz o teste 2b enxergar o blob descendo à toa.
+        return resposta([pediuData ? d : { updated_at: d.updated_at }]);
       }
       escritas.push({ alvo: lado, tipo: 'dados', corpo: JSON.parse(op.body) });
       estado[lado].dados = JSON.parse(op.body);
@@ -73,7 +79,7 @@ function montar(estado) {
     }
     throw new Error('rota não prevista no teste: ' + url);
   };
-  return { buscar, escritas };
+  return { buscar, escritas, leituras };
 }
 
 const cenario = (fabrica, nuvem, extra) => Object.assign({
@@ -84,10 +90,10 @@ const msg = (id, texto) => ({ id, criado_em: '2026-08-26T12:0' + id + ':00Z',
                               autor_id: 'u1', autor: 'costura@diverse.local', texto });
 
 const rodar = (est, op) => {
-  const { buscar, escritas } = montar(est);
+  const { buscar, escritas, leituras } = montar(est);
   return espelhar(Object.assign({
     local: LOCAL, localKey: 'kl', nuvem: NUVEM, nuvemKey: 'kn', buscar
-  }, op || {})).then(rel => ({ rel, escritas }));
+  }, op || {})).then(rel => ({ rel, escritas, leituras }));
 };
 
 (async () => {
@@ -110,14 +116,26 @@ const rodar = (est, op) => {
   // 2. Nada mudou: não escreve nada. Espelhar de novo o mesmo não pode custar.
   est = cenario({ dados: { data: CHEIO, updated_at: 't2' }, imagens: ['a.png'] },
                 { dados: { data: CHEIO, updated_at: 't2' }, imagens: ['a.png'] });
-  ({ rel, escritas } = await rodar(est));
+  let leituras;
+  ({ rel, escritas, leituras } = await rodar(est));
   ok('2. carimbo igual -> não reescreve', rel.dados === 'nao-mexeu'
      && !escritas.some(e => e.tipo === 'dados'), rel.motivo);
+  /* 2b. A CONTA DA COTA. O espelho roda de 30 em 30 minutos e o blob passou de
+     3 MB: pedir `data` à nuvem só para ler o carimbo eram ~4,4 GB/mês de saída
+     num plano de 5 GB. Foi o que bloqueou o projeto (exceed_egress_quota) em
+     10/09/2026 e derrubou o LOGIN de todo mundo pela nuvem. */
+  ok('2b. não baixa o blob da nuvem só para ler o carimbo',
+     !leituras.some(l => l.alvo === 'nuvem' && l.tipo === 'dados' && l.pediuData),
+     JSON.stringify(leituras));
 
   // 3. A TRAVA QUE IMPORTA: fábrica vazia não pode apagar a nuvem cheia.
   est = cenario({ dados: { data: VAZIO, updated_at: 't9' } },
                 { dados: { data: CHEIO, updated_at: 't1' } });
-  ({ rel, escritas } = await rodar(est));
+  ({ rel, escritas, leituras } = await rodar(est));
+  /* 3d. E aqui o blob da nuvem PRECISA descer: é o único jeito de saber que a
+     nuvem tem dados que a fábrica vazia apagaria. */
+  ok('3d. fábrica vazia: aí sim busca o blob da nuvem para poder travar',
+     leituras.some(l => l.alvo === 'nuvem' && l.tipo === 'dados' && l.pediuData));
   ok('3. fábrica vazia NÃO apaga a nuvem cheia', rel.dados === 'bloqueado');
   ok('3b. e não escreveu absolutamente nada', escritas.length === 0);
   ok('3c. o motivo é explicado', /única cópia boa/.test(rel.motivo || ''), rel.motivo);
