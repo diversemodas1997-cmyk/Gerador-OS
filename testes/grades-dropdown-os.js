@@ -39,6 +39,9 @@ const motor = [
   cortaLinha('const _GRADE_VARIACOES_CONHECIDAS'),
   corta('function categoriaEfetivaTecido'),
   corta('function categoriaPrincipalGrade'),
+  // A grade pode conjugar mais de uma desde 10/09/2026, e quem esconde as
+  // conjugadas do dropdown le essa lista.
+  corta('function conjugacoesDaGrade'),
   corta('function _ctxDropdownGradesOS'),
   corta('function _motivoGradeForaDoDropdownOS')
 ].join('\n');

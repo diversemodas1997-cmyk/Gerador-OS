@@ -3582,6 +3582,11 @@ async function migrarRegraConjugadaParaGrade() {
   if (gAtiva && gAlvo && !gAtiva.conjugadaGradeId) {
     gAtiva.conjugadaGradeId = gAlvo.id;
     if (dAlvo) gAtiva.conjugadaDesenhoId = dAlvo.id;
+    // E na lista também: desde 10/09/2026 é ela que manda (ver
+    // conjugacoesDaGrade). Escrever só os campos antigos funcionaria pela porta
+    // dos fundos — a leitura cai neles quando a lista está vazia —, mas deixaria
+    // a grade migrada com uma forma que nenhuma outra grade tem.
+    gAtiva.conjugadas = [{ gradeId: gAlvo.id, desenhoId: dAlvo ? dAlvo.id : '' }];
     mudou = true;
   }
   STATE.meta.conjugadaPorGradeV1 = true;
@@ -4054,15 +4059,6 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'grade') {
     const optsTp = opcoesPastaGrade('pasta', item.tipoPeca);
     const optsVr = opcoesPastaGrade('subpasta', item.variacao);
-    // Grade conjugada: a lista traz todas menos ela mesma — uma grade que se
-    // conjugasse consigo geraria OS sem parar.
-    const optsConjGr = '<option value="">— nenhuma —</option>'
-      + (STATE.grades || []).filter(g => g.id !== item.id)
-          .map(g => `<option value="${esc(g.id)}" ${item.conjugadaGradeId === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('');
-    const optsConjDes = '<option value="">— o mesmo desenho da OS ativa —</option>'
-      + (STATE.desenhos || [])
-          .map(d => `<option value="${esc(d.id)}" ${item.conjugadaDesenhoId === d.id ? 'selected' : ''}>${esc((d.codigo || '') + (d.desc ? ' · ' + d.desc : ''))}</option>`).join('');
-
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label>
@@ -4098,23 +4094,17 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <button type="button" class="add-row-btn" onclick="addFaseGradeRow()" style="margin-top:8px;">+ Adicionar fase</button>
       </div>
       <div style="margin-top:14px;">
-        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">OS conjugada</label>
+        <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">OS conjugadas</label>
         <div class="field-hint" style="margin-top:4px;margin-bottom:8px;">
-          Duas peças que saem do mesmo enfesto e sempre andam juntas. Preenchendo aqui, toda OS
-          <b>desta</b> grade gera <b>uma segunda OS</b> na grade escolhida, com as mesmas informações
-          (data, coleção, marca, equipe, peças-alvo) e numeração própria. As camadas da segunda são
-          recalculadas pela grade dela, para alcançar as mesmas peças-alvo.
-          A grade escolhida some do seletor de grades da OS — ela não se pede sozinha, vem a reboque.
+          Peças que saem do <b>mesmo enfesto</b> e sempre andam juntas. Cada linha aqui faz toda OS
+          <b>desta</b> grade gerar <b>mais uma OS</b> na grade escolhida, com as mesmas informações
+          (data, coleção, marca, equipe, peças-alvo) e numeração própria — <b>pode cadastrar duas ou
+          mais</b>, e todas nascem juntas e <b>seguem o status</b> da OS desta grade. As camadas de
+          cada uma são recalculadas pela grade dela, para alcançar as mesmas peças-alvo.
+          As grades escolhidas somem do seletor de grades da OS — elas não se pedem sozinhas, vêm a reboque.
         </div>
-        <div class="form-grid cols-2">
-          <div class="field"><label>Gerar junto uma OS na grade</label>
-            <select id="m-grade-conjugada">${optsConjGr}</select>
-          </div>
-          <div class="field"><label>Desenho da OS conjugada</label>
-            <select id="m-grade-conjugada-desenho">${optsConjDes}</select>
-            <div class="field-hint">Em branco, a segunda OS sai com o mesmo desenho da primeira. Escolha um desenho só quando a peça conjugada for outra — é o caso da Camiseta Bicolor, que puxa a Básica.</div>
-          </div>
-        </div>
+        <div id="m-conjugadas-container" data-grade-id="${esc(item.id || '')}"></div>
+        <button type="button" class="add-row-btn" onclick="addConjugadaGradeRow()" style="margin-top:8px;">+ Adicionar OS conjugada</button>
       </div>
       ${_gradeTemposHtml(item)}`;
     // Popula o container com as fases existentes (ou uma fase vazia em "Novo")
@@ -4144,6 +4134,10 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       // A fase do viés não se digita: entra sozinha, na grade nova e também na
       // correção de uma já salva. Ver garantirFaseVies().
       garantirFaseVies();
+      // As OS conjugadas já cadastradas. Grade sem nenhuma abre sem linha:
+      // conjugada é a exceção, e uma linha vazia em toda ficha faria parecer
+      // que falta preencher alguma coisa.
+      conjugacoesDaGrade(item).forEach(c => addConjugadaGradeRow(c));
     }, 0);
   }
   else if (tipo === 'desenho') {
@@ -5371,6 +5365,62 @@ function atualizarUnidadesDasFases() {
   });
 }
 
+/* AS LINHAS DA "OS CONJUGADA" (10/09/2026). Mesma mecânica das fases do enfesto:
+   um container, uma linha por conjugada, e a leitura de volta no salvar. Virou
+   lista porque o cadastro só sabia guardar UMA, e o mesmo enfesto já rendia mais
+   de uma peça — ver conjugacoesDaGrade. */
+function addConjugadaGradeRow(conj) {
+  const cont = document.getElementById('m-conjugadas-container');
+  if (!cont) return;
+  const c = conj || {};
+  // A grade não pode se conjugar consigo mesma: geraria OS sem parar. O id da
+  // grade em edição viaja no container porque a linha nasce depois da ficha.
+  const meuId = cont.dataset.gradeId || '';
+  const optsGr = '<option value="">— selecione a grade —</option>'
+    + (STATE.grades || []).filter(g => g.id !== meuId)
+        .map(g => `<option value="${esc(g.id)}" ${c.gradeId === g.id ? 'selected' : ''}>${esc(g.nome)}</option>`).join('');
+  const optsDes = '<option value="">— o mesmo desenho da OS ativa —</option>'
+    + (STATE.desenhos || [])
+        .map(d => `<option value="${esc(d.id)}" ${c.desenhoId === d.id ? 'selected' : ''}>${esc((d.codigo || '') + (d.desc ? ' · ' + d.desc : ''))}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'conjugada-grade-bloco';
+  div.style.cssText = 'margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
+  div.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+      <span class="conjugada-label" style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:var(--ink);">OS CONJUGADA ?</span>
+      <span style="flex:1;"></span>
+      <button type="button" class="btn small danger" onclick="removerConjugadaGrade(this)">✕ Remover</button>
+    </div>
+    <div class="form-grid cols-2">
+      <div class="field"><label>Gerar junto uma OS na grade</label>
+        <select class="conj-grade">${optsGr}</select>
+      </div>
+      <div class="field"><label>Desenho dessa OS</label>
+        <select class="conj-desenho">${optsDes}</select>
+        <div class="field-hint">Em branco, ela sai com o mesmo desenho da OS ativa. Escolha um desenho só quando a peça conjugada for outra — é o caso da Camiseta Bicolor, que puxa a Básica.</div>
+      </div>
+    </div>`;
+  cont.appendChild(div);
+  renumerarConjugadasGrade();
+}
+
+function removerConjugadaGrade(btn) {
+  const bloco = btn.closest('.conjugada-grade-bloco');
+  if (bloco) bloco.remove();
+  renumerarConjugadasGrade();
+}
+
+// A ordem importa: é ela que decide qual conjugada fica no degrau logo abaixo da
+// ativa na numeração (ver numeroParaConjugada).
+function renumerarConjugadasGrade() {
+  const cont = document.getElementById('m-conjugadas-container');
+  if (!cont) return;
+  Array.from(cont.querySelectorAll('.conjugada-grade-bloco')).forEach((b, i) => {
+    const lbl = b.querySelector('.conjugada-label');
+    if (lbl) lbl.textContent = `OS CONJUGADA ${i + 1}`;
+  });
+}
+
 function removerFaseGrade(btn) {
   const bloco = btn.closest('.fase-grade-bloco');
   if (bloco) bloco.remove();
@@ -6075,14 +6125,31 @@ async function salvarCadastro() {
     }
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
-    // Grade conjugada: quem gera a segunda OS. A checagem de "consigo mesma" é
-    // repetida aqui, e não só na montagem da lista, porque o dado pode chegar de
-    // uma importação — e um ciclo aqui vira OS gerando OS sem fim.
-    item.conjugadaGradeId = v('m-grade-conjugada');
-    if (item.conjugadaGradeId && item.conjugadaGradeId === item.id) {
-      return toast('Uma grade não pode ser conjugada com ela mesma', 'err');
+    /* OS conjugadas: quem gera as outras OS do mesmo enfesto. As checagens são
+       repetidas aqui, e não só na montagem das linhas, porque o dado pode chegar
+       de uma importação — e um ciclo aqui vira OS gerando OS sem fim. */
+    const _conjs = [];
+    for (const b of document.querySelectorAll('#m-conjugadas-container .conjugada-grade-bloco')) {
+      const gid = b.querySelector('.conj-grade')?.value || '';
+      if (!gid) continue;                       // linha em branco: só ignora
+      if (gid === item.id) {
+        return toast('Uma grade não pode ser conjugada com ela mesma', 'err');
+      }
+      if (_conjs.some(x => x.gradeId === gid)) {
+        // A mesma grade duas vezes geraria duas OS iguais no mesmo enfesto — e
+        // quem lesse a lista não teria como saber qual das duas é a boa.
+        const nome = (STATE.grades || []).find(g => g.id === gid)?.nome || '';
+        return toast(`A grade "${nome}" está conjugada duas vezes — deixe só uma linha`, 'err');
+      }
+      _conjs.push({ gradeId: gid, desenhoId: b.querySelector('.conj-desenho')?.value || '' });
     }
-    item.conjugadaDesenhoId = v('m-grade-conjugada-desenho');
+    item.conjugadas = _conjs;
+    // Os campos antigos seguem gravados com a PRIMEIRA da lista: é o que mantém
+    // a grade legível para quem ainda lê a dupla (a cópia da nuvem, o ERP).
+    // Vazios quando não há nenhuma, para não deixar rastro de uma conjugada que
+    // o usuário acabou de remover.
+    item.conjugadaGradeId = _conjs.length ? _conjs[0].gradeId : '';
+    item.conjugadaDesenhoId = _conjs.length ? _conjs[0].desenhoId : '';
     item.tamanhos = {};
     ['p','m','g','gg','g1','g2','g3'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
@@ -18545,7 +18612,8 @@ function _ctxDropdownGradesOS(extraIds = []) {
   // porque é o que escondia essas grades antes de o campo existir, e tirá-lo
   // faria reaparecer no seletor grade que hoje ninguém vê.
   // Continua visivel se for a grade ja salva da OS em edicao (via extraIds).
-  const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
+  const alvos = new Set();
+  (STATE.grades || []).forEach(g => conjugacoesDaGrade(g).forEach(c => alvos.add(c.gradeId)));
   const tipoModelo = tipoPecaModeloOS();
   const skuDesenho = _skuLinhaDesenhoOS();
   const sku = _skuLinhaNorm(skuDesenho);
@@ -19370,18 +19438,24 @@ function proximoNumeroOS() {
 // SEMPRE embaixo: CM.REC 0351 puxa a CM.LISA 0350. Para o número de baixo estar
 // livre na hora de gerar, a OS que o usuário está digitando já nasce um degrau
 // acima quando a grade escolhida conjuga — esse degrau vazio é a vaga da segunda.
+// Com mais de uma conjugada são VÁRIOS degraus: uma grade que puxa duas nasce
+// duas casas acima, e as duas filhas ocupam as duas vagas abaixo dela. Sem isso
+// a segunda filha cairia no fim da numeração, longe da dupla, e a lista deixaria
+// de mostrar o enfesto inteiro junto — que é a razão de a regra existir.
 // Último número que o programa sugeriu sozinho no formulário. Serve para saber
 // se o campo ainda está automático (pode ser reajustado ao trocar a grade) ou se
 // o usuário digitou um número à mão (aí não se mexe).
 let _osNumeroAuto = '';
 
-// Silenciosa de propósito: roda a cada troca de grade no formulário, onde um
-// toast de cadastro quebrado só atrapalharia. Quem reclama é gradeConjugadaDaGrade,
-// na hora de gerar.
-function gradeConjugaAlguma(gradeId) {
+// Quantas OS esta grade puxa junto. Silenciosa de propósito: roda a cada troca
+// de grade no formulário, onde um toast de cadastro quebrado só atrapalharia —
+// por isso conta as que EXISTEM em vez de reclamar das que sumiram. Quem reclama
+// é gradesConjugadasDaGrade, na hora de gerar.
+function quantasConjugadasDaGrade(gradeId) {
   const g = (STATE.grades || []).find(x => x.id === gradeId);
-  if (!g || !g.conjugadaGradeId || g.conjugadaGradeId === g.id) return false;
-  return (STATE.grades || []).some(x => x.id === g.conjugadaGradeId);
+  if (!g) return 0;
+  return conjugacoesDaGrade(g)
+    .filter(c => (STATE.grades || []).some(x => x.id === c.gradeId)).length;
 }
 
 function numeroOSLivre(numero, exceptId) {
@@ -19392,16 +19466,18 @@ function numeroOSLivre(numero, exceptId) {
 
 function proximoNumeroOSParaGrade(gradeId) {
   const base = parseInt(proximoNumeroOS()) || 1;
-  return formatarNumeroOS(gradeConjugaAlguma(gradeId) ? base + 1 : base);
+  return formatarNumeroOS(base + quantasConjugadasDaGrade(gradeId));
 }
 
-// O número da OS que a conjugada recebe: o degrau abaixo do da OS salva. Quando
-// esse número já é de outra OS — típico de OS antiga cuja grade só agora ganhou
-// conjugada — não atropela ninguém: pega o próximo livre e avisa.
-function numeroParaConjugada(osAtiva) {
+// O número da OS que a conjugada recebe: o degrau abaixo do da OS salva — e,
+// quando ela puxa mais de uma, cada filha desce mais um degrau (`indice`).
+// Quando esse número já é de outra OS — típico de OS antiga cuja grade só agora
+// ganhou conjugada — não atropela ninguém: pega o próximo livre e avisa.
+function numeroParaConjugada(osAtiva, indice) {
   const n = parseInt(osAtiva && osAtiva.os);
-  if (!isNaN(n) && n > 1) {
-    const anterior = formatarNumeroOS(n - 1);
+  const degrau = n - 1 - (parseInt(indice) || 0);
+  if (!isNaN(n) && degrau > 0) {
+    const anterior = formatarNumeroOS(degrau);
     if (numeroOSLivre(anterior)) return anterior;
     toast(`A OS ${anterior} já existe — a conjugada saiu com o próximo número livre`, '');
   }
@@ -19869,31 +19945,109 @@ function corCanonicaPorTecido(corNome, tecidoNome) {
 // caso comum (grade sem conjugada cadastrada); só reclama quando o cadastro
 // aponta para uma grade que não existe mais — aí ficar calado seria pior, porque
 // a segunda OS simplesmente não sairia e ninguém notaria antes do corte.
-function gradeConjugadaDaGrade(gradeId) {
+/* DUAS OU MAIS CONJUGADAS NA MESMA GRADE (10/09/2026, Junior: "insira a
+   capacidade do usuário conjugar duas ou mais OSs, de forma que elas respondam
+   pela mudança de status da OS ativa").
+
+   O cadastro guardava UMA conjugada por grade, e o enfesto real já pedia mais:
+   do mesmo pano estendido sai mais de uma peça, cada uma com sua grade. Quem
+   precisava da terceira cadastrava a OS à mão — e a mão não segue o status. Era
+   exatamente a metade de enfesto em pé que a regra do status existe para acabar.
+
+   Agora a grade guarda uma LISTA (`conjugadas: [{gradeId, desenhoId}]`), e todas
+   as OS que ela puxa andam com a ativa: nascem juntas e seguem o status dela.
+   Os campos antigos (`conjugadaGradeId`/`conjugadaDesenhoId`) continuam gravados
+   espelhando a PRIMEIRA da lista — dado antigo continua legível por quem ainda
+   não conhece a lista, e grade que nunca ganhou uma segunda não muda de forma. */
+function conjugacoesDaGrade(grade) {
+  if (!grade) return [];
+  const bruto = (Array.isArray(grade.conjugadas) && grade.conjugadas.length)
+    ? grade.conjugadas
+    : (grade.conjugadaGradeId
+        ? [{ gradeId: grade.conjugadaGradeId, desenhoId: grade.conjugadaDesenhoId || '' }]
+        : []);
+  const vistas = new Set();
+  const lista = [];
+  bruto.forEach(c => {
+    const gid = c && c.gradeId;
+    // Consigo mesma geraria OS sem parar; repetida geraria a mesma OS duas vezes.
+    if (!gid || gid === grade.id || vistas.has(gid)) return;
+    vistas.add(gid);
+    lista.push({ gradeId: gid, desenhoId: (c.desenhoId || '') });
+  });
+  return lista;
+}
+
+// As conjugadas de uma grade já resolvidas no cadastro. Silêncio no caso comum
+// (nenhuma); reclama alto de entrada quebrada, porque a OS que não nasce não
+// aparece na tela — aparece no chão. Uma entrada quebrada NÃO derruba as outras:
+// perder as três porque uma grade foi apagada seria trocar um buraco por três.
+function gradesConjugadasDaGrade(gradeId) {
   const grade = (STATE.grades || []).find(g => g.id === gradeId);
-  if (!grade || !grade.conjugadaGradeId) return null;
-  if (grade.conjugadaGradeId === grade.id) return null;   // ciclo: não gera
-  const alvo = (STATE.grades || []).find(g => g.id === grade.conjugadaGradeId);
-  if (!alvo) {
-    toast(`A grade "${grade.nome}" conjuga uma grade que não existe mais — OS conjugada não foi gerada`, 'err');
-    return null;
-  }
-  return alvo;
+  if (!grade) return [];
+  const achadas = [];
+  conjugacoesDaGrade(grade).forEach(c => {
+    const alvo = (STATE.grades || []).find(g => g.id === c.gradeId);
+    if (!alvo) {
+      toast(`A grade "${grade.nome}" conjuga uma grade que não existe mais — OS conjugada não foi gerada`, 'err');
+      return;
+    }
+    achadas.push({ grade: alvo, gradeId: alvo.id, desenhoId: c.desenhoId });
+  });
+  return achadas;
+}
+
+// A PRIMEIRA conjugada da grade. Continua existindo porque "esta grade conjuga
+// alguma?" é a pergunta de várias telas, e é mais barata que a lista inteira.
+function gradeConjugadaDaGrade(gradeId) {
+  const primeira = gradesConjugadasDaGrade(gradeId)[0];
+  return primeira ? primeira.grade : null;
+}
+
+/* As OS que já nasceram desta. A marca que manda é a da FILHA
+   (`conjugadaPaiId`): ela é escrita uma vez e não envelhece, enquanto a lista
+   de ids da ativa pode apontar OS que alguém apagou depois. Os ids da ativa
+   entram junto para as duplas antigas, gravadas antes de a filha existir. */
+function _filhasConjugadasDaOS(os) {
+  if (!os) return [];
+  const ids = new Set([].concat(os.conjugadaIds || [], os.conjugadaId || []).filter(Boolean));
+  return (STATE.ordens || [])
+    .filter(o => o.id !== os.id && (o.conjugadaPaiId === os.id || ids.has(o.id)));
+}
+
+// O que esta OS ainda tem para gerar: as conjugadas cadastradas menos as que já
+// nasceram. Devolver a LISTA (e não um sim/não) é o que permite acrescentar uma
+// terceira conjugada a uma grade antiga e salvar de novo uma OS — sai só a que
+// falta, sem duplicar as que já existem.
+function conjugacoesPendentesDaOS(os) {
+  // Se a própria OS já é uma conjugada, para aqui. É o que segura também o par
+  // cruzado (A conjuga B, B conjuga A): a filha nasce marcada e não puxa neta.
+  if (!os || os.conjugadaPaiId) return [];
+  const alvos = gradesConjugadasDaGrade(os.gradeId);
+  if (!alvos.length) return [];
+  const filhas = _filhasConjugadasDaOS(os);
+  const feitas = new Set(filhas.map(x => x.gradeId).filter(Boolean));
+  /* A DUPLA ANTIGA. Antes desta mudança a ligação era uma só e não dizia de qual
+     grade a filha era. Uma OS daquele tempo, numa grade que hoje tem uma segunda
+     conjugada, não pode gerar de novo a filha que já existe: filha sem grade
+     reconhecível cobre a PRIMEIRA da lista, a única que existia quando ela
+     nasceu. */
+  const semGrade = filhas.filter(x => !x.gradeId).length;
+  return alvos.filter(a => !feitas.has(a.gradeId)).slice(semGrade);
 }
 
 function deveGerarConjugada(os) {
-  // Evita loop: se a propria OS ja e uma conjugada, nao gera outra. É o que
-  // segura também o par cruzado (A conjuga B, B conjuga A) — a segunda OS nasce
-  // com conjugadaPaiId e não puxa uma terceira.
-  if (os.conjugadaPaiId) return false;
-  // Se ja existe a conjugada e ela ainda esta na lista, nao duplica
-  if (os.conjugadaId && STATE.ordens.find(o => o.id === os.conjugadaId)) return false;
-  return !!gradeConjugadaDaGrade(os.gradeId);
+  return conjugacoesPendentesDaOS(os).length > 0;
 }
 
-async function gerarConjugada(osAtiva) {
+// Gera UMA conjugada. `entrada` diz qual delas ({grade, desenhoId}, como sai de
+// conjugacoesPendentesDaOS) e `indice` diz quantos degraus abaixo da ativa ela
+// fica. Sem `entrada`, gera a primeira que estiver faltando — é assim que a
+// dupla simples continua sendo chamada de um lugar só.
+async function gerarConjugada(osAtiva, entrada, indice) {
   const grAtiva = (STATE.grades || []).find(g => g.id === osAtiva.gradeId);
-  const grAlvo = gradeConjugadaDaGrade(osAtiva.gradeId);
+  const cfg = entrada || conjugacoesPendentesDaOS(osAtiva)[0];
+  const grAlvo = cfg && cfg.grade;
   if (!grAlvo) return null;
 
   // Desenho da segunda OS. Em branco no cadastro significa "a mesma peça",
@@ -19901,10 +20055,10 @@ async function gerarConjugada(osAtiva) {
   // Se o cadastro aponta um desenho apagado, PARA — sair com a peça errada na
   // ordem é pior que não sair.
   let desAlvo = null;
-  if (grAtiva && grAtiva.conjugadaDesenhoId) {
-    desAlvo = (STATE.desenhos || []).find(d => d.id === grAtiva.conjugadaDesenhoId) || null;
+  if (cfg.desenhoId) {
+    desAlvo = (STATE.desenhos || []).find(d => d.id === cfg.desenhoId) || null;
     if (!desAlvo) {
-      toast(`A grade "${grAtiva.nome}" aponta um desenho que não existe mais — OS conjugada não foi gerada`, 'err');
+      toast(`A grade "${(grAtiva || {}).nome || ''}" aponta um desenho que não existe mais — OS conjugada não foi gerada`, 'err');
       return null;
     }
   } else {
@@ -19924,15 +20078,19 @@ async function gerarConjugada(osAtiva) {
   // Clona o contexto da OS ativa (data, equipe, colecao, marca, etc.) e ajusta
   const novaOs = JSON.parse(JSON.stringify(osAtiva));
   novaOs.id = uid();
-  // Número de baixo: a conjugada fica sempre um degrau ABAIXO da OS que a puxou.
-  novaOs.os = numeroParaConjugada(osAtiva);
+  // Número de baixo: a conjugada fica sempre ABAIXO da OS que a puxou, um degrau
+  // por conjugada (a primeira em 0350, a segunda em 0349, e assim por diante).
+  novaOs.os = numeroParaConjugada(osAtiva, indice);
   if (desAlvo) {
     novaOs.codigo = desAlvo.codigo || '';
     novaOs.desenhoId = desAlvo.id;
   }
   novaOs.gradeId = grAlvo.id;
   novaOs.conjugadaPaiId = osAtiva.id;
+  // A filha nasce sem as ligações da mãe: ela é clone da ativa, e herdar a lista
+  // de filhas faria a lista de OS pendurar as irmãs na pessoa errada.
   delete novaOs.conjugadaId;
+  delete novaOs.conjugadaIds;
 
   // Grade nova (a partir do cadastro da conjugada)
   novaOs.grade = {
@@ -20068,12 +20226,18 @@ async function gerarConjugada(osAtiva) {
     });
   }
 
-  // Marca o vinculo na OS ativa (sera persistido no proximo saveState)
+  // Marca o vinculo na OS ativa (sera persistido no proximo saveState). A lista
+  // `conjugadaIds` é a verdade quando a grade puxa mais de uma; `conjugadaId`
+  // segue gravado com a PRIMEIRA, para o dado continuar legível por quem só
+  // conhece a dupla (a cópia da nuvem, o ERP, uma OS exportada antes de hoje).
+  const _ligar = (o) => {
+    o.conjugadaIds = Array.from(new Set(
+      [].concat(o.conjugadaIds || [], o.conjugadaId || [], novaOs.id).filter(Boolean)));
+    o.conjugadaId = o.conjugadaIds[0];
+  };
   const idxAtiva = STATE.ordens.findIndex(o => o.id === osAtiva.id);
-  if (idxAtiva >= 0) {
-    STATE.ordens[idxAtiva].conjugadaId = novaOs.id;
-    osAtiva.conjugadaId = novaOs.id;
-  }
+  if (idxAtiva >= 0) _ligar(STATE.ordens[idxAtiva]);
+  _ligar(osAtiva);
 
   STATE.ordens.push(novaOs);
   await saveState('ordens');
@@ -20081,17 +20245,28 @@ async function gerarConjugada(osAtiva) {
   return novaOs;
 }
 
+// Gera TODAS as conjugadas que faltam para esta OS, na ordem do cadastro.
+// Devolve a LISTA do que nasceu (vazia quando não havia o que gerar) — quem
+// chama trata todas do mesmo jeito, e o PDF de cada uma sai igual.
 async function aplicarRegraConjugadaSeAplicavel(osAtiva) {
-  if (!deveGerarConjugada(osAtiva)) return null;
-  const conjugada = await gerarConjugada(osAtiva);
-  if (conjugada) {
+  const pendentes = conjugacoesPendentesDaOS(osAtiva);
+  const geradas = [];
+  // O degrau conta as filhas que JÁ existem. Uma grade que ganhou a segunda
+  // conjugada depois já tem a primeira ocupando o número logo abaixo da ativa:
+  // começar do zero faria a nova bater na irmã e cair no fim da numeração,
+  // longe do enfesto a que ela pertence.
+  const jaNascidas = _filhasConjugadasDaOS(osAtiva).length;
+  for (let i = 0; i < pendentes.length; i++) {
+    const nova = await gerarConjugada(osAtiva, pendentes[i], jaNascidas + geradas.length);
+    if (!nova) continue;
+    geradas.push(nova);
     // Diz QUAL peça saiu: com a regra em cadastro, a dupla deixou de ser uma só
     // e "OS conjugada gerada" sozinho não diria mais o que foi para o chão.
-    const nome = (STATE.desenhos || []).find(d => d.id === conjugada.desenhoId)?.desc
-              || conjugada.grade?.descricao || '';
-    toast(`OS conjugada gerada: OS ${conjugada.os}${nome ? ' (' + nome + ')' : ''}`, 'ok');
+    const nome = (STATE.desenhos || []).find(d => d.id === nova.desenhoId)?.desc
+              || nova.grade?.descricao || '';
+    toast(`OS conjugada gerada: OS ${nova.os}${nome ? ' (' + nome + ')' : ''}`, 'ok');
   }
-  return conjugada;
+  return geradas;
 }
 
 // A OS montada pelo formulário só contém os campos DO FORMULÁRIO. Tudo o que é
@@ -21661,8 +21836,9 @@ async function _salvarEImprimirConfirmada(data) {
   await atualizarCounterOS(data.os);
   osEditId = null;
   await aplicarBaixaEstoqueOS(data);
-  // Aplica regra de conjugada (camiseta bicolor -> camiseta basica)
-  const conjugada = await aplicarRegraConjugadaSeAplicavel(data);
+  // Aplica regra de conjugada (camiseta bicolor -> camiseta basica). Pode ser
+  // mais de uma: a grade diz quantas.
+  const conjugadas = await aplicarRegraConjugadaSeAplicavel(data);
   // Renderiza e navega pra print page pra que o .sheet tenha layout
   // computado (html2canvas precisa do elemento visivel com dimensoes).
   // Apos salvar o PDF, vai pra lista — sem dialogo de impressao.
@@ -21679,8 +21855,9 @@ async function _salvarEImprimirConfirmada(data) {
       // Regrava a etiqueta junto: quem clica em "Salvar e Gerar PDF" espera
       // que TUDO que sai dessa OS pra disco fique atualizado.
       salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
-      // Se gerou conjugada, gera o PDF dela tambem
-      if (conjugada) {
+      // Cada conjugada que nasceu ganha o PDF dela também. Uma que falhe não
+      // pode levar as outras junto: são ordens diferentes indo para o chão.
+      for (const conjugada of conjugadas) {
         await new Promise(r => setTimeout(r, 400));
         renderPrintSheet(conjugada);
         await new Promise(r => setTimeout(r, 250));
@@ -22361,28 +22538,41 @@ function _gradeDetalheDaOS(o) {
    Pior: a passiva não reserva pano nenhum (ver aplicarBaixaEstoqueOS), e sem a
    marca isso parece OS esquecida em vez de OS que já tem o pano contado.
 
-   A ligação está gravada nos dois sentidos — `conjugadaId` na ativa,
-   `conjugadaPaiId` na passiva —, então cada linha acha a irmã sozinha. O
-   texto diz QUAL das duas segura o pano, que é a pergunta que a marca existe
-   para responder; e clicar abre a irmã, porque o passo seguinte a reconhecer a
-   dupla é sempre ir ver a outra. */
+   A ligação está gravada nos dois sentidos — `conjugadaIds` na ativa,
+   `conjugadaPaiId` em cada passiva —, então cada linha acha o grupo sozinha. O
+   texto diz QUAL delas segura o pano, que é a pergunta que a marca existe para
+   responder; e clicar abre a outra, porque o passo seguinte a reconhecer a dupla
+   é sempre ir ver a irmã.
+
+   Desde 10/09/2026 o grupo pode ter mais de duas OS, e a linha mostra TODAS as
+   parentes: numa passiva aparecem a ativa e as outras passivas. Mostrar só a
+   ativa esconderia metade do enfesto de quem está justamente olhando para uma
+   das metades. */
 function _conjugadaCelulaOS(o) {
   if (!o) return '';
-  const passiva = !!o.conjugadaPaiId;
-  const irmaId = passiva ? o.conjugadaPaiId : o.conjugadaId;
-  if (!irmaId) return '';
-  const irma = (STATE.ordens || []).find(x => x.id === irmaId);
-  // Irmã excluída depois: a marca sai, em vez de apontar uma OS que não abre.
-  if (!irma) return '';
-  const num = String(irma.os || '').trim() || '—';
-  const titulo = passiva
-    ? `Conjugada: sai do mesmo enfesto da OS ${num}, que é quem reserva o pano das duas. Clique para abri-la.`
-    : `Conjugada: puxa a OS ${num}, que sai do mesmo enfesto. O pano das duas está reservado nesta. Clique para abri-la.`;
+  const ordens = STATE.ordens || [];
+  const pai = o.conjugadaPaiId ? ordens.find(x => x.id === o.conjugadaPaiId) : o;
+  // Passiva cuja ativa foi excluída depois: sem a ativa não há grupo a mostrar,
+  // e uma marca que não abre nada é pior que marca nenhuma.
+  if (!pai) return '';
+  const grupo = [].concat(pai === o ? [] : [pai], _filhasConjugadasDaOS(pai))
+    .filter(x => x && x.id !== o.id);
+  if (!grupo.length) return '';
+  const numPai = String(pai.os || '').trim() || '—';
+  // "das duas" continua quando são duas: é como se fala do par no chão. Só
+  // vira "de todas" quando o enfesto realmente rende mais de duas ordens.
+  const quantas = grupo.length + 1 > 2 ? 'de todas' : 'das duas';
+  const titulo = (x) => {
+    if (pai === o) return `Conjugada: puxa a OS ${String(x.os || '').trim() || '—'}, que sai do mesmo enfesto. O pano ${quantas} está reservado nesta. Clique para abri-la.`;
+    if (x.id === pai.id) return `Conjugada: sai do mesmo enfesto da OS ${numPai}, que é quem reserva o pano ${quantas}. Clique para abri-la.`;
+    return `Conjugada: sai do mesmo enfesto que esta OS — as duas vêm da OS ${numPai}, que reserva o pano ${quantas}. Clique para abri-la.`;
+  };
   return `<div style="margin-top:2px;">`
-    + `<span class="badge" onclick="event.stopPropagation();verOS('${esc(irma.id)}')"`
-    + ` title="${esc(titulo)}"`
-    + ` style="background:#dfe7f7;cursor:pointer;font-size:10px;white-space:nowrap;">`
-    + `⇄ ${esc(num)}</span></div>`;
+    + grupo.map(x => `<span class="badge" onclick="event.stopPropagation();verOS('${esc(x.id)}')"`
+        + ` title="${esc(titulo(x))}"`
+        + ` style="background:#dfe7f7;cursor:pointer;font-size:10px;white-space:nowrap;margin-right:3px;">`
+        + `⇄ ${esc(String(x.os || '').trim() || '—')}</span>`).join('')
+    + `</div>`;
 }
 
 function _gradeCelulaLista(o) {
@@ -22589,17 +22779,18 @@ function renderStatusFolhaOS() {
    par cruzado em `deveGerarConjugada`, e sem ela duas OS que se apontassem
    ficariam se carimbando em círculo.
 
-   Devolve lista, e não uma OS, para o dia em que uma ativa puxar mais de uma
-   conjugada — quem chama já trata todas do mesmo jeito. */
+   Sempre devolveu lista, "para o dia em que uma ativa puxar mais de uma
+   conjugada". Esse dia é 10/09/2026: a grade passou a poder conjugar duas ou
+   mais, e TODAS seguem a ativa pela mesma razão de sempre — o pano é um só, o
+   corte é um só, e nenhuma delas pode ficar em pé sozinha. Nada aqui precisou
+   crescer para isso: só a pergunta "quais são as filhas" mudou de uma para
+   todas (_filhasConjugadasDaOS). */
 function _conjugadasQueSeguemStatus(os, alvo) {
-  if (!os || os.conjugadaPaiId || !os.conjugadaId) return [];
-  const c = (STATE.ordens || []).find(x => x.id === os.conjugadaId);
-  if (!c) return [];
+  if (!os || os.conjugadaPaiId) return [];
   // Já no estado pedido: não é recarimbada. Vale sobretudo para "finalizado",
   // onde recarimbar reescreveria a data — e a data dela é o dia em que ela
   // terminou, não o dia em que alguém mexeu na irmã.
-  if (_statusOS(c) === alvo) return [];
-  return [c];
+  return _filhasConjugadasDaOS(os).filter(c => _statusOS(c) !== alvo);
 }
 
 // Escreve o status numa OS. Um lugar só, usado pela OS que o usuário carimbou e
@@ -22645,7 +22836,9 @@ async function mudarStatusOS(id, valor) {
   try {
     await saveState('ordens');
     toast(`OS ${o.os || ''} · ${rot}`
-      + (juntas.length ? ` — e a conjugada ${juntas.map(c => c.os || '').join(', ')}` : ''), 'ok');
+      + (juntas.length
+          ? ` — e ${juntas.length > 1 ? 'as conjugadas' : 'a conjugada'} ${juntas.map(c => c.os || '').join(', ')}`
+          : ''), 'ok');
   } catch (e) {
     console.warn('mudarStatusOS', e);
     toast('Não deu para salvar o status — tente de novo', 'err');

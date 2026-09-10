@@ -32,7 +32,13 @@ function recorte(de, ate, oQue) {
 const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 
 const motor = [
+  // A grade guarda uma LISTA de conjugadas desde 10/09/2026; estas tres sao a
+  // leitura dela (o cadastro), quem ja nasceu (as filhas) e o que falta nascer.
+  'function conjugacoesDaGrade',
+  'function gradesConjugadasDaGrade',
   'function gradeConjugadaDaGrade',
+  'function _filhasConjugadasDaOS',
+  'function conjugacoesPendentesDaOS',
   'function deveGerarConjugada',
   'async function gerarConjugada(',
   // A conjugada tenta nascer com o numero ANTERIOR ao da ativa (a dupla fica
@@ -64,7 +70,9 @@ function comMotor(estado, numeros = [100, 101, 102]) {
     const atualizarCounterOS = async () => {};
     const toast = (msg, tipo) => { avisos.push([tipo || '', msg]); };
     ${motor}
-    return { gradeConjugadaDaGrade, deveGerarConjugada, gerarConjugada, aplicarRegraConjugadaSeAplicavel };
+    return { gradeConjugadaDaGrade, gradesConjugadasDaGrade, conjugacoesDaGrade,
+             conjugacoesPendentesDaOS, deveGerarConjugada, gerarConjugada,
+             aplicarRegraConjugadaSeAplicavel };
   `);
   return { api: fn(estado, avisos, fila), avisos, estado };
 }
@@ -89,7 +97,10 @@ function rodarMigracao(estado, papel = 'admin') {
 // A regra de esconder do seletor de grades da OS mora em gradesParaDropdownOS;
 // aqui interessa so o pedaco que decide quem some.
 function ocultas(grades) {
-  const alvos = new Set(grades.map(g => g.conjugadaGradeId).filter(Boolean));
+  const alvos = new Set();
+  grades.forEach(g => (Array.isArray(g.conjugadas) && g.conjugadas.length
+      ? g.conjugadas.map(c => c.gradeId)
+      : [g.conjugadaGradeId]).filter(Boolean).forEach(id => alvos.add(id)));
   return grades.filter(g => alvos.has(g.id) || /conjug/i.test(g.nome || '')).map(g => g.id);
 }
 
@@ -303,9 +314,9 @@ console.log('-- a OS que sai --');
     e.grades[0].conjugadaDesenhoId = 'd_ba';
     e.ordens = [osAtiva()];
     const m = comMotor(e);
-    const nova = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
+    const novas = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
     ok('24. o aviso diz QUAL peca saiu, nao so que saiu',
-       nova && m.avisos.some(a => a[0] === 'ok' && /Camiseta Básica/.test(a[1])), m.avisos);
+       novas.length === 1 && m.avisos.some(a => a[0] === 'ok' && /Camiseta Básica/.test(a[1])), m.avisos);
   }
 
   console.log('');
@@ -333,6 +344,11 @@ console.log('-- a OS que sai --');
     const g = estado.grades.find(x => x.id === 'g_ativa');
     ok('28. a bicolor passa a apontar a basica', g.conjugadaGradeId === 'g_passiva', g.conjugadaGradeId);
     ok('29. com o desenho da basica junto', g.conjugadaDesenhoId === 'd_ba', g.conjugadaDesenhoId);
+    // E na LISTA, que e quem manda desde 10/09/2026: a grade migrada tem de
+    // ficar com a mesma forma das outras, e nao so com os campos antigos.
+    ok('29b. e a conjugacao entra na lista, nao so nos campos antigos',
+       JSON.stringify(g.conjugadas) === JSON.stringify([{ gradeId: 'g_passiva', desenhoId: 'd_ba' }]),
+       g.conjugadas);
     ok('30. gravou grades e meta', salvos.includes('grades') && salvos.includes('meta'), salvos);
     ok('31. marcou que ja rodou', estado.meta.conjugadaPorGradeV1 === true);
   }
@@ -362,6 +378,199 @@ console.log('-- a OS que sai --');
   }
 
   /* ----------------------------------------------------------------------
+     DUAS OU MAIS CONJUGADAS NA MESMA GRADE (10/09/2026, Junior: "insira a
+     capacidade do usuario conjugar duas ou mais OSs, de forma que elas
+     respondam pela mudanca de status da OS ativa").
+
+     O mesmo enfesto rende mais de uma peca, cada uma com sua grade. Ate aqui o
+     cadastro so sabia guardar UMA, e a terceira OS era digitada a mao — e a mao
+     nao segue o status: era exatamente a metade de enfesto em pe que a regra do
+     status existe para acabar.
+     ---------------------------------------------------------------------- */
+  console.log('');
+  console.log('-- duas ou mais conjugadas na mesma grade --');
+  const trio = () => {
+    const e = estadoBase();
+    e.grades.push({ id: 'g_terceira', nome: 'P-M (CONJUGADO) | CM.INFANTIL',
+                    tamanhos: { p: 4, m: 4 },
+                    fases: [{ ordem: 1, nome: 'Corpo', tecidoId: 't1', comp: '3', larg: '1.8' }] });
+    e.grades[0].conjugadas = [
+      { gradeId: 'g_passiva', desenhoId: 'd_ba' },
+      { gradeId: 'g_terceira', desenhoId: '' }
+    ];
+    e.ordens = [osAtiva()];
+    return e;
+  };
+  {
+    const m = comMotor(trio());
+    ok('42. a grade le a LISTA de conjugadas, nao so a primeira',
+       m.api.conjugacoesDaGrade(m.estado.grades[0]).length === 2,
+       m.api.conjugacoesDaGrade(m.estado.grades[0]));
+    const novas = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
+    ok('43. salvar a ativa gera as DUAS de uma vez', novas.length === 2,
+       novas.map(n => n.os));
+    // Cada uma um degrau abaixo: a dupla (o trio) continua junta na lista.
+    ok('44. cada uma pega um degrau abaixo da ativa (0435 -> 0434, 0433)',
+       novas[0].os === '0434' && novas[1].os === '0433', novas.map(n => n.os));
+    ok('45. cada uma na SUA grade, com as camadas recalculadas por ela',
+       novas[0].gradeId === 'g_passiva' && novas[1].gradeId === 'g_terceira',
+       novas.map(n => n.gradeId));
+    // 180 pecas-alvo: a de 2 tamanhos (min 2) faz 90 camadas; a de P-M (min 4),
+    // 45. Cada grade responde pela conta dela.
+    ok('46. as camadas saem da grade de cada uma',
+       novas[0].enfesto.camadas === 90 && novas[1].enfesto.camadas === 45,
+       novas.map(n => n.enfesto.camadas));
+    ok('47. as duas nascem marcadas como filhas da MESMA ativa',
+       novas.every(n => n.conjugadaPaiId === 'os_1'), novas.map(n => n.conjugadaPaiId));
+    ok('48. e a ativa guarda as duas em conjugadaIds',
+       (m.estado.ordens[0].conjugadaIds || []).length === 2,
+       m.estado.ordens[0].conjugadaIds);
+    // O campo antigo continua valendo para quem so conhece a dupla (a copia da
+    // nuvem, o ERP): ele aponta a PRIMEIRA.
+    ok('49. conjugadaId segue gravado, com a primeira da lista',
+       m.estado.ordens[0].conjugadaId === novas[0].id, m.estado.ordens[0].conjugadaId);
+    ok('50. nenhuma filha herda as ligacoes da mae',
+       novas.every(n => !n.conjugadaId && !n.conjugadaIds), novas.map(n => n.conjugadaIds));
+    // Salvar de novo nao pode dobrar o enfesto.
+    const denovo = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
+    ok('51. salvar de novo nao gera nada: as duas ja existem', denovo.length === 0, denovo);
+  }
+  {
+    /* A GRADE QUE GANHA UMA SEGUNDA CONJUGADA DEPOIS. E o caminho real: a dupla
+       ja rodava, e um dia o mesmo enfesto passa a render mais uma peca. Salvar
+       a OS de novo tem de gerar SO a que falta — gerar as duas duplicaria o que
+       ja foi para o chao. */
+    const e = trio();
+    e.ordens[0].conjugadaId = 'os_ja';
+    e.ordens.push({ id: 'os_ja', os: '0434', gradeId: 'g_passiva', conjugadaPaiId: 'os_1' });
+    const m = comMotor(e);
+    const pend = m.api.conjugacoesPendentesDaOS(m.estado.ordens[0]);
+    ok('52. so falta a que ainda nao nasceu', pend.length === 1
+       && pend[0].gradeId === 'g_terceira', pend.map(p => p.gradeId));
+    const novas = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
+    ok('53. e sai so ela, sem duplicar a que ja existe',
+       novas.length === 1 && novas[0].gradeId === 'g_terceira', novas.map(n => n.gradeId));
+    ok('54. no degrau livre logo abaixo da ativa (0434 ocupada -> 0433)',
+       novas[0].os === '0433', novas[0].os);
+    ok('55. e a ativa passa a guardar as duas',
+       (m.estado.ordens[0].conjugadaIds || []).length === 2, m.estado.ordens[0].conjugadaIds);
+  }
+  {
+    // Uma entrada quebrada nao pode levar as boas junto: perder as duas porque
+    // alguem apagou uma grade seria trocar um buraco por dois.
+    const e = trio();
+    e.grades[0].conjugadas[0].gradeId = 'g_apagada';
+    const m = comMotor(e);
+    const novas = await m.api.aplicarRegraConjugadaSeAplicavel(m.estado.ordens[0]);
+    ok('56. grade apagada no meio da lista: a outra sai assim mesmo, e reclama',
+       novas.length === 1 && novas[0].gradeId === 'g_terceira'
+       && m.avisos.some(a => a[0] === 'err'), [novas.map(n => n.gradeId), m.avisos]);
+  }
+  {
+    // Cadastro repetido nao vira duas OS iguais no mesmo enfesto: ninguem
+    // saberia qual das duas e a boa.
+    const e = trio();
+    e.grades[0].conjugadas = [{ gradeId: 'g_passiva' }, { gradeId: 'g_passiva' }];
+    const m = comMotor(e);
+    ok('57. a mesma grade repetida na lista conta uma vez so',
+       m.api.conjugacoesDaGrade(m.estado.grades[0]).length === 1);
+    // E a grade que aparece na propria lista continua sem gerar nada.
+    const e2 = trio();
+    e2.grades[0].conjugadas = [{ gradeId: 'g_ativa' }, { gradeId: 'g_passiva' }];
+    const m2 = comMotor(e2);
+    ok('58. a grade nao se conjuga consigo mesma nem dentro da lista',
+       m2.api.conjugacoesDaGrade(m2.estado.grades[0]).map(c => c.gradeId).join() === 'g_passiva');
+  }
+  {
+    // O seletor de grades da OS: as duas somem, nao so a primeira.
+    const e = trio();
+    const some = ocultas(e.grades);
+    ok('59. as duas grades conjugadas somem do seletor',
+       some.includes('g_passiva') && some.includes('g_terceira'), some);
+    ok('60. e a ativa continua a vista', !some.includes('g_ativa'), some);
+  }
+  {
+    // A vaga na numeracao: com duas conjugadas a ativa nasce DUAS casas acima,
+    // senao a segunda filha cairia longe da dupla.
+    const e = trio();
+    const vagas = new Function('STATE', `
+      ${corta('function conjugacoesDaGrade')}
+      ${corta('function quantasConjugadasDaGrade')}
+      return quantasConjugadasDaGrade;
+    `)(e);
+    ok('61. a grade reserva uma vaga por conjugada', vagas('g_ativa') === 2, vagas('g_ativa'));
+    ok('62. grade sem conjugada nao reserva vaga nenhuma', vagas('g_solta') === 0);
+    // Grade apagada nao reserva vaga: o numero ficaria vago para sempre.
+    const e2 = trio();
+    e2.grades[0].conjugadas[1].gradeId = 'g_apagada';
+    const vagas2 = new Function('STATE', `
+      ${corta('function conjugacoesDaGrade')}
+      ${corta('function quantasConjugadasDaGrade')}
+      return quantasConjugadasDaGrade;
+    `)(e2);
+    ok('63. conjugada apagada nao reserva vaga', vagas2('g_ativa') === 1, vagas2('g_ativa'));
+  }
+
+  /* ----------------------------------------------------------------------
+     A FICHA DA GRADE. As linhas sao montadas por JS e lidas de volta por
+     classe CSS: se a linha nascer com uma classe e o salvar procurar outra, o
+     cadastro aceita o clique e nao guarda nada — falha calada, que e o pior
+     jeito de perder uma conjugada.
+     ---------------------------------------------------------------------- */
+  console.log('');
+  console.log('-- a ficha da grade --');
+  {
+    // Um DOM de mentira: addConjugadaGradeRow so precisa criar a div, escrever
+    // o innerHTML e pendurar no container.
+    const criados = [];
+    const container = {
+      dataset: { gradeId: 'g_ativa' },
+      filhos: [],
+      appendChild(d) { this.filhos.push(d); },
+      querySelectorAll() { return this.filhos; }
+    };
+    const doc = {
+      getElementById: (id) => (id === 'm-conjugadas-container' ? container : null),
+      createElement: () => {
+        const d = { style: {}, className: '', innerHTML: '',
+                    querySelector: () => null };
+        criados.push(d);
+        return d;
+      }
+    };
+    const STATE = {
+      grades: [{ id: 'g_ativa', nome: 'ATIVA' }, { id: 'g_passiva', nome: 'PASSIVA' }],
+      desenhos: [{ id: 'd_ba', codigo: 'Dx200', desc: 'Camiseta Básica' }]
+    };
+    const linha = new Function('document', 'STATE', `
+      const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      ${corta('function addConjugadaGradeRow')}
+      ${corta('function renumerarConjugadasGrade')}
+      return addConjugadaGradeRow;
+    `)(doc, STATE);
+
+    linha({ gradeId: 'g_passiva', desenhoId: 'd_ba' });
+    const html = criados[0].innerHTML;
+    ok('68. a linha nasce com as classes que o salvar procura',
+       criados[0].className === 'conjugada-grade-bloco'
+       && /class="conj-grade"/.test(html) && /class="conj-desenho"/.test(html), html.slice(0, 120));
+    ok('69. e ja vem com a grade e o desenho salvos escolhidos',
+       /value="g_passiva" selected/.test(html) && /value="d_ba" selected/.test(html), html);
+    ok('70. a grade nao se oferece para conjugar consigo mesma',
+       !/value="g_ativa"/.test(html), html);
+    ok('71. e o botao de remover chama a funcao que existe',
+       /removerConjugadaGrade\(this\)/.test(html), html);
+
+    // A ficha e o salvar tem de falar do MESMO container.
+    const naFicha = /id="m-conjugadas-container"/.test(src)
+                 && /addConjugadaGradeRow\(\)/.test(src);
+    const noSalvar = /#m-conjugadas-container \.conjugada-grade-bloco/.test(src);
+    ok('72. a ficha monta e o salvar le o mesmo container', naFicha && noSalvar,
+       [naFicha, noSalvar]);
+  }
+
+  /* ----------------------------------------------------------------------
      A DUPLA SE RECONHECE NA LISTA DE OS (Junior, 28/08/2026: "o programa deve
      mostrar no campo de OS cadastradas a OS pertencente a grade conjugada, de
      forma que o usuario possa identificar as OS relacionadas").
@@ -377,6 +586,7 @@ console.log('-- a OS que sai --');
     const cel = (STATE) => new Function('STATE', `
       const esc = (s) => String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      ${corta('function _filhasConjugadasDaOS')}
       ${corta('function _conjugadaCelulaOS')}
       return _conjugadaCelulaOS;
     `)(STATE);
@@ -402,6 +612,23 @@ console.log('-- a OS que sai --');
     const semIrma = { ordens: [{ id: 'a', os: '0498', conjugadaId: 'sumiu' }] };
     ok('41. irma excluida: a marca some, em vez de apontar o vazio',
        cel(semIrma)(semIrma.ordens[0]) === '', cel(semIrma)(semIrma.ordens[0]));
+    /* O TRIO NA LISTA. Com mais de duas OS no mesmo enfesto, mostrar so a ativa
+       esconderia metade do enfesto de quem esta olhando justamente para uma das
+       metades. Cada linha mostra TODAS as parentes. */
+    const T = { ordens: [
+      { id: 'a', os: '0435', conjugadaIds: ['p1', 'p2'], conjugadaId: 'p1' },
+      { id: 'p1', os: '0434', conjugadaPaiId: 'a' },
+      { id: 'p2', os: '0433', conjugadaPaiId: 'a' }
+    ] };
+    const g = cel(T);
+    const at = g(T.ordens[0]), f1 = g(T.ordens[1]), f2 = g(T.ordens[2]);
+    ok('64. a ativa aponta as DUAS conjugadas', /0434/.test(at) && /0433/.test(at), at);
+    ok('65. e cada passiva ve a ativa E a irma',
+       /0435/.test(f1) && /0433/.test(f1) && /0435/.test(f2) && /0434/.test(f2), f1 + ' / ' + f2);
+    ok('66. com tres, o texto para de dizer "das duas"',
+       /de todas/.test(at) && !/das duas/.test(at), at);
+    ok('67. e a marca da irma diz que o pano esta na ativa',
+       /vêm da OS 0435/.test(f1), f1);
   }
 
   console.log('');
