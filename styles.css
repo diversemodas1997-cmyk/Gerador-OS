@@ -1724,22 +1724,14 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    inteiro na dica do mouse. */
 .lista-os-filtros select { flex: 0 1 auto; min-width: 150px; max-width: 220px; }
 .lista-os-filtros .btn { align-self: center; }
-/* AS DUAS DATAS DA FINALIZAÇÃO andam coladas: são um intervalo só, e separá-las
-   pelo `gap` da barra faria "Finalizada de" parecer um filtro e "até" outro.
-   Os rótulos são pequenos e monoespaçados como o resto dos números do
-   programa; no celular o bloco inteiro desce junto, sem partir o intervalo. */
-/* AS DUAS DATAS DA FINALIZAÇÃO andam coladas: são um intervalo só, e separá-las
-   pelo `gap` da barra faria "Finalizada de" parecer um filtro e "até" outro.
-   Os rótulos são pequenos e monoespaçados como o resto dos números do
-   programa. */
+/* A DATA DA FINALIZACAO: rotulo e campo colados, como um filtro so. O rotulo e
+   pequeno e monoespacado como o resto dos numeros do programa. Nao encolhe
+   (`0 0 auto`): faltando espaco na barra, o par desce inteiro para a linha de
+   baixo em vez de o campo se espremer ate deixar de mostrar "dd/mm/aaaa". */
 .lista-os-datas {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* NÃO ENCOLHE (`0 0 auto`): faltando espaço, a barra desce o bloco INTEIRO
-     para a linha de baixo em vez de espremê-lo. Com encolhimento o bloco se
-     partia no meio já na primeira falta de espaço — "Finalizada de" numa linha
-     e o "até" na outra, que aos olhos de quem lê vira dois filtros. */
   flex: 0 0 auto;
   max-width: 100%;
 }
@@ -1750,14 +1742,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   white-space: nowrap;
 }
 .lista-os-datas input[type="date"] { min-width: 132px; }
-/* No CELULAR nem a linha inteira comporta o intervalo. Aí ele quebra POR
-   DENTRO, em duas linhas: feio, mas inteiro na tela. Sem isto o bloco vazaria
-   para fora do cartão e o campo "até" ficaria escondido — e campo escondido é
-   filtro ligado que ninguém vê. */
-@media (max-width: 620px) {
-  .lista-os-datas { flex-wrap: wrap; }
-  .lista-os-datas input[type="date"] { flex: 1 1 120px; min-width: 120px; }
-}
 /* A CONTA DA LISTA, ao lado da busca. Monoespacada como todo numero do
    programa, e destacada quando ha filtro: "32 de 228" e a resposta da busca, e
    e o que impede alguem de achar que a OS sumiu do cadastro. */

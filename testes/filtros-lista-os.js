@@ -231,10 +231,10 @@ console.log('-- o SKU nao exige cor --');
 
 /* ----------------------------------------------------------------------
    BUSCA POR DATA DE FINALIZACAO (10/09/2026, Junior: "insira no campo de
-   cadastros de os, campo de busca por data de finalizacao da OS").
+   cadastros de os, campo de busca por data de finalizacao da OS" e, logo
+   depois, "para data unica, que represente a data de finalizacao da OS").
 
-   Nao e seletor: a resposta nao e uma lista de opcoes, e um intervalo — "o
-   que saiu esta semana?". Preencher so um lado vale.
+   Uma data so. A pergunta do chao e "o que foi finalizado neste dia?".
 
    A ARMADILHA E O FUSO. `finalizadaEm` e gravado em UTC; uma OS terminada as
    21:40 de 09/09 na fabrica esta gravada como "2026-09-10T00:40:00Z". Fatiar
@@ -244,60 +244,49 @@ console.log('-- o SKU nao exige cor --');
 console.log('');
 console.log('-- a busca por data de finalizacao --');
 {
-  const periodo = new Function(`
+  const api = new Function(`
     ${constante('STATUS_OS')}
     ${recorte('function _statusOS', 'a leitura do status')}
     ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
     ${recorte('function _diaFinalizacaoOS', 'o dia da finalizacao')}
-    ${recorte('function _osFinalizadaNoPeriodo', 'a OS dentro do periodo')}
-    return { _diaFinalizacaoOS, _osFinalizadaNoPeriodo };
+    ${recorte('function _osFinalizadaNoDia', 'a OS no dia pedido')}
+    return { _diaFinalizacaoOS, _osFinalizadaNoDia };
   `)();
 
-  // O dia local de uma OS terminada as 21:40 do dia 9 (00:40Z do dia 10).
+  // A OS terminada as 21:40 do dia 9 (00:40Z do dia 10).
   const noite = { statusOS: 'finalizado', finalizadaEm: new Date(2026, 8, 9, 21, 40).toISOString() };
-  ok('46. a OS terminada a noite fica no dia em que ela terminou',
-     periodo._diaFinalizacaoOS(noite) === '2026-09-09', periodo._diaFinalizacaoOS(noite));
-  ok('47. e a busca do dia 9 a encontra',
-     periodo._osFinalizadaNoPeriodo(noite, '2026-09-09', '2026-09-09') === true);
-  ok('48. a do dia 10 nao a encontra (ela nao terminou no dia 10)',
-     periodo._osFinalizadaNoPeriodo(noite, '2026-09-10', '2026-09-10') === false);
-
   const dia5 = { statusOS: 'finalizado', finalizadaEm: new Date(2026, 8, 5, 10, 0).toISOString() };
   const aberta = { statusOS: 'andamento' };
   const nunca = {};
-  ok('49. sem periodo, todas passam — inclusive as que nem terminaram',
-     periodo._osFinalizadaNoPeriodo(aberta, '', '') && periodo._osFinalizadaNoPeriodo(nunca, '', ''));
-  ok('50. com periodo, a OS que nao terminou fica de fora',
-     periodo._osFinalizadaNoPeriodo(aberta, '2026-09-01', '2026-09-30') === false
-     && periodo._osFinalizadaNoPeriodo(nunca, '2026-09-01', '2026-09-30') === false);
-  ok('51. so o "de" vale: dali para ca',
-     periodo._osFinalizadaNoPeriodo(noite, '2026-09-08', '') === true
-     && periodo._osFinalizadaNoPeriodo(dia5, '2026-09-08', '') === false);
-  ok('52. so o "ate" vale: ate aquele dia',
-     periodo._osFinalizadaNoPeriodo(dia5, '', '2026-09-08') === true
-     && periodo._osFinalizadaNoPeriodo(noite, '', '2026-09-08') === false);
-  ok('53. as bordas do intervalo entram (o dia de e o dia ate contam)',
-     periodo._osFinalizadaNoPeriodo(dia5, '2026-09-05', '2026-09-05') === true);
-  ok('54. OS parada nao entra em periodo nenhum, mesmo com carimbo antigo',
-     periodo._osFinalizadaNoPeriodo({ statusOS: 'parado', finalizadaEm: dia5.finalizadaEm },
-                                    '2026-09-01', '2026-09-30') === false);
 
-  /* DATAS INVERTIDAS. Nao existe outra leitura para um periodo de tras para
-     frente; devolver lista vazia deixaria a pessoa procurando o erro na OS em
-     vez de no campo. A troca vale TAMBEM nos campos da tela, senao ela diria
-     uma coisa e a lista mostraria outra. */
-  const campos = { 'filtro-fim-de': { value: '2026-09-30' }, 'filtro-fim-ate': { value: '2026-09-01' } };
-  const inverte = new Function('campos', `
-    const document = { getElementById: (id) => campos[id] || null };
-    ${recorte('function _periodoFinalizacaoListaOS', 'a leitura do periodo')}
-    return _periodoFinalizacaoListaOS();
-  `)(campos);
-  ok('55. datas invertidas sao trocadas',
-     inverte.de === '2026-09-01' && inverte.ate === '2026-09-30', JSON.stringify(inverte));
-  ok('56. e trocadas TAMBEM na tela, para o campo nao mentir',
-     campos['filtro-fim-de'].value === '2026-09-01'
-     && campos['filtro-fim-ate'].value === '2026-09-30',
-     JSON.stringify(campos));
+  ok('46. a OS terminada a noite fica no dia em que ela terminou',
+     api._diaFinalizacaoOS(noite) === '2026-09-09', api._diaFinalizacaoOS(noite));
+  ok('47. e a busca do dia 9 a encontra',
+     api._osFinalizadaNoDia(noite, '2026-09-09') === true);
+  ok('48. a do dia 10 nao a encontra (ela nao terminou no dia 10)',
+     api._osFinalizadaNoDia(noite, '2026-09-10') === false);
+  ok('49. sem data, todas passam — inclusive as que nem terminaram',
+     api._osFinalizadaNoDia(aberta, '') && api._osFinalizadaNoDia(nunca, '')
+     && api._osFinalizadaNoDia(dia5, ''));
+  ok('50. com data, a OS que nao terminou fica de fora',
+     api._osFinalizadaNoDia(aberta, '2026-09-05') === false
+     && api._osFinalizadaNoDia(nunca, '2026-09-05') === false);
+  ok('51. cada dia traz so quem terminou nele',
+     api._osFinalizadaNoDia(dia5, '2026-09-05') === true
+     && api._osFinalizadaNoDia(noite, '2026-09-05') === false);
+  ok('52. OS parada nao entra em dia nenhum, mesmo com carimbo antigo',
+     api._osFinalizadaNoDia({ statusOS: 'parado', finalizadaEm: dia5.finalizadaEm },
+                            '2026-09-05') === false);
+
+  // A leitura do campo da tela.
+  const leitura = (valor) => new Function('campo', `
+    const document = { getElementById: (id) => (id === 'filtro-fim' ? campo : null) };
+    ${recorte('function _diaFiltroFinalizacaoListaOS', 'a leitura da data da tela')}
+    return _diaFiltroFinalizacaoListaOS();
+  `)(valor === null ? null : { value: valor });
+  ok('53. le a data do campo da tela', leitura('2026-09-09') === '2026-09-09');
+  ok('54. campo vazio e campo que nem existe valem "todas"',
+     leitura('') === '' && leitura(null) === '');
 }
 
 console.log('');
@@ -335,20 +324,21 @@ ok('34. a conta fica ao lado da busca na barra de filtros',
      /<input[^>]*id="busca-os"[^>]*autocomplete="off"/.test(html), 'busca-os sem a guarda');
 }
 
-/* Os dois campos de data e o que o programa faz com eles: se um deles nao
-   estiver na barra, ou o Limpar esquecer dele, o filtro fica ligado sem
-   ninguem ver — e a lista some sem explicacao. */
+/* O campo de data e o que o programa faz com ele: se ele nao estiver na barra,
+   ou o Limpar esquecer dele, o filtro fica ligado sem ninguem ver — e a lista
+   some sem explicacao. */
 {
-  ok('57. os dois campos estao na barra de filtros da lista',
-     /class="lista-os-filtros"[\s\S]{0,2600}id="filtro-fim-de"/.test(html)
-     && /id="filtro-fim-ate"/.test(html), 'campo de data fora da barra');
-  ok('58. e o Limpar apaga os dois junto com o resto',
-     /limparFiltrosListaOS[\s\S]{0,400}filtro-fim-de[\s\S]{0,80}filtro-fim-ate/.test(src),
-     'Limpar esqueceu as datas');
-  ok('59. o periodo entra no filtro da lista, junto com os outros',
-     /_osFinalizadaNoPeriodo\(o, fimDe, fimAte\)/.test(src), 'periodo fora do filter');
-  ok('60. e a lista vazia diz o periodo que ninguem atendeu',
-     /_textoPeriodoFinalizacao\(fimDe, fimAte\)/.test(src), 'aviso sem o periodo');
+  ok('55. o campo esta na barra de filtros da lista',
+     /class="lista-os-filtros"[\s\S]{0,2600}id="filtro-fim"/.test(html), 'campo de data fora da barra');
+  ok('56. e e um so — o intervalo de duas datas nao voltou',
+     !/filtro-fim-de|filtro-fim-ate/.test(html) && !/filtro-fim-de|filtro-fim-ate/.test(src),
+     'sobrou campo do intervalo');
+  ok('57. o Limpar apaga a data junto com o resto',
+     /limparFiltrosListaOS[\s\S]{0,400}'filtro-fim'/.test(src), 'Limpar esqueceu a data');
+  ok('58. a data entra no filtro da lista, junto com os outros',
+     /_osFinalizadaNoDia\(o, diaFim\)/.test(src), 'data fora do filter');
+  ok('59. e a lista vazia diz o dia que ninguem atendeu',
+     /finalizadas em <b>\$\{esc\(formatDate\(diaFim\)\)\}<\/b>/.test(src), 'aviso sem o dia');
 }
 
 console.log('');
