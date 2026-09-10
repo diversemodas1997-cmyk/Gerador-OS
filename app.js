@@ -22618,11 +22618,24 @@ function _statusCelulaOS(o, extra) {
    papel. A folha impressa sai exatamente como sempre saiu. */
 function renderStatusFolhaOS() {
   const box = document.getElementById('print-status-os');
-  if (!box) return;
   // Lê do STATE, e não do `printOsAtual` que a folha recebeu: renderPrintSheet
   // trabalha com uma CÓPIA da OS (mescla a grade viva), e o status carimbado
   // por outro usuário chega no objeto do STATE.
   const o = printOsAtual && (STATE.ordens || []).find(x => x.id === printOsAtual.id);
+  /* O BOTÃO CONJUGAR ACOMPANHA O STATUS (10/09/2026, Junior: "insira a ação do
+     botão conjugar na barra de tarefas da janela de visualização da OS").
+
+     Mesma OS, mesma permissão e a mesma razão de o status morar aqui: quem
+     está com a folha aberta é o corte, e mandá-lo voltar à lista para amarrar
+     duas OS do mesmo trabalho é o passo a mais que já tinha trazido o status
+     para esta barra. Some — em vez de ficar inerte — para quem não carimba e
+     na folha de uma OS que não existe mais, como o resto do programa faz.
+
+     Fica ANTES dos returns de propósito: a barra tem de acertar o botão mesmo
+     quando não há caixa de status para desenhar. */
+  const bt = document.getElementById('print-conjugar-os');
+  if (bt) bt.classList.toggle('hidden', !(o && podeMudarStatusOS()));
+  if (!box) return;
   if (!o) { box.innerHTML = ''; return; }
   const html = _statusCelulaOS(o, 'folha');
   // Quem acabou de escolher o status ainda está com o seletor em foco: trocar o
@@ -26010,6 +26023,12 @@ async function autoSalvarPdfPrintAtual(o) {
 
 function editarOsAtual() {
   if (printOsAtual) editarOS(printOsAtual.id);
+}
+
+// Conjugar a OS que está na tela. A janela é a mesma da lista de OS Salvas —
+// um lugar só decide quem pode, o que aparece e o que é gravado.
+function conjugarOsAtual() {
+  if (printOsAtual) abrirModalConjugarOS(printOsAtual.id);
 }
 
 function editarOS(id) {

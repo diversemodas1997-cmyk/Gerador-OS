@@ -872,6 +872,11 @@
                (renderStatusFolhaOS): seletor para quem pode mudar, etiqueta
                para quem só olha. -->
           <span id="print-status-os" class="print-status-os"></span>
+          <!-- Conjugar esta OS a outras, sem voltar à lista. Nasce escondido:
+               renderStatusFolhaOS o mostra para quem pode carimbar status, que
+               é a mesma permissão do seletor ao lado. -->
+          <button class="btn hidden" id="print-conjugar-os" onclick="conjugarOsAtual()"
+            title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Não mexe em tecido nem no cadastro da grade.">⇄ Conjugar</button>
           <button class="btn" onclick="goto('lista-os')">Voltar</button>
           <button class="btn admin-only" onclick="editarOsAtual()">Editar</button>
           <button class="btn" onclick="imprimirEtiquetasAtual()">Imprimir Etiquetas</button>
@@ -1414,6 +1419,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-10e"></script>
+<script src="app.js?v=2026-09-10f"></script>
 </body>
 </html>

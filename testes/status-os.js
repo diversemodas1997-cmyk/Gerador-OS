@@ -784,6 +784,26 @@ console.log('-- o que fica gravado --');
      /id="print-status-os"/.test(html)
      && /page-header no-print[\s\S]{0,900}id="print-status-os"/.test(html));
 
+  /* O BOTAO CONJUGAR NA BARRA DA FOLHA (10/09/2026, Junior: "insira a acao do
+     botao conjugar na barra de tarefas da janela de visualizacao da OS").
+
+     Mesma barra e mesma permissao do status, pela mesma razao: quem esta com a
+     folha aberta e o corte, e mandar voltar a lista para amarrar duas OS do
+     mesmo trabalho e o passo a mais que ja tinha trazido o status para ca. */
+  ok('35. o botao esta na barra .no-print da folha, e nasce escondido',
+     /page-header no-print[\s\S]{0,1600}id="print-conjugar-os"/.test(html)
+     && /class="btn hidden" id="print-conjugar-os"/.test(html), 'botao fora da barra');
+  ok('36. ele chama a acao, que abre a MESMA janela da lista',
+     /onclick="conjugarOsAtual\(\)"/.test(html)
+     && /function conjugarOsAtual\(\)[\s\S]{0,200}abrirModalConjugarOS\(printOsAtual\.id\)/.test(src),
+     'acao desligada do botao');
+  ok('37. quem nao carimba status nao ve o botao (e a OS que sumiu o esconde)',
+     /bt\.classList\.toggle\('hidden', !\(o && podeMudarStatusOS\(\)\)\)/.test(folha.slice(0, 1600)),
+     folha.slice(0, 1200));
+  ok('38. e o botao e acertado ANTES dos returns, senao a barra ficaria mentindo',
+     folha.indexOf("print-conjugar-os") < folha.indexOf("if (!box) return;"),
+     'o toggle ficou depois do return');
+
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
   console.log('todos os testes passaram');
