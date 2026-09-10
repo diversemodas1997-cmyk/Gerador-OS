@@ -15642,14 +15642,51 @@ function renderPrintPlanoExpedicao() {
     </table>`;
 }
 
+/* O SKU BASE de uma OS, antes de a cor entrar: override da OS > SKU do desenho
+   técnico > SKU do modelo. Em caixa alta, '' quando não há nenhum. Separado de
+   skusDaOS porque duas perguntas diferentes precisam dele — "qual é o SKU
+   completo desta peça" (a folha, a Contabilidade) e "de que linha ela é" (o
+   filtro da lista). */
+function _skuBaseDaOS(o) {
+  const desenhoObj = (STATE.desenhos || []).find(d => d.id === o.desenhoId);
+  const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
+  return ((o.skuOverride || (desenhoObj && desenhoObj.skuLinha)
+          || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
+}
+
+/* A LINHA DE SKU de uma OS: o SKU SEM a cor — "CM.LISA", e não "CM.LISA-AZU".
+
+   Junior, 10/09/2026: "o cruzamento entre sku e cor deve estar em filtros
+   diferentes. O filtro de sku não deve exigir cor, apenas sku".
+
+   O filtro da lista de OS usava `skusDaOS`, que é o SKU COMPLETO — linha mais a
+   sigla da cor. Duas consequências, as duas erradas para um filtro:
+
+   1. Escolher "CM.LISA" era impossível: só existiam CM.LISA-AZU, CM.LISA-PRE,
+      CM.LISA-BRA... Ver todas as camiseta lisa exigia passar uma cor por vez, e
+      a cor já tem filtro próprio ao lado. Um filtro que obriga a responder outra
+      pergunta não é filtro, é cruzamento.
+   2. OS cuja cor não tem SIGLA cadastrada sumia do filtro inteiro — `skusDaOS`
+      devolve lista vazia quando não consegue compor —, e não havia nada na tela
+      dizendo por quê.
+
+   A linha responde as duas: existe mesmo sem sigla de cor, e cruza com o filtro
+   de cor ao lado quando alguém quiser as duas coisas. */
+function linhasSkuDaOS(o) {
+  const base = _skuBaseDaOS(o);
+  if (!base) return [];
+  // O cadastro aceita o SKU já completo ("CM.LISA-PRE"): a linha é o que vem
+  // antes do traço, que é a mesma regra que skusDaOS usa para decidir se compõe.
+  const linha = base.split('-')[0].trim();
+  return linha ? [linha] : [];
+}
+
 // SKU(s) do produto acabado de uma OS = Linha de SKU do modelo + Sigla SKU de
 // cada cor (variante). Override em o.skuOverride tem prioridade. Usado no
 // cabeçalho da folha impressa e no snapshot para a Contabilidade/Estoque.
 function skusDaOS(o) {
   // Valor base: override da OS > SKU do desenho técnico > SKU do modelo.
-  const desenhoObj = (STATE.desenhos || []).find(d => d.id === o.desenhoId);
-  const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
-  const base = ((o.skuOverride || (desenhoObj && desenhoObj.skuLinha) || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
+  const base = _skuBaseDaOS(o);
   if (!base) return [];
   // Regra do traço: SKU COMPLETO (ex.: CM.LISA-PRE) tem "-" → usa direto.
   // LINHA (ex.: CM.LISA) não tem "-" → compõe com a Sigla da cor de cada variante.
@@ -22883,9 +22920,15 @@ function _filtroListaOS(id, base, rotuloTodos, chaves) {
 
 // O que a busca por texto varre em cada OS. É tudo o que a linha mostra, mais o
 // SKU, que não é coluna mas é como a Contabilidade chama a peça.
+//
+// A LINHA de SKU entra junto com o SKU completo, e não por elegância: quando a
+// cor da OS não tem sigla cadastrada, `skusDaOS` não consegue compor e devolve
+// vazio — a OS ficava sem SKU nenhum para a busca, e digitar "CM.LISA" não a
+// achava. A linha existe mesmo sem a sigla.
 function _textoBuscaOS(o) {
   return [o.os, o.codigo, o.modeloNome, o.colecaoNome,
-          coresDaPecaOS(o).join(' '), _gradeNomeDaOS(o), skusDaOS(o).join(' ')]
+          coresDaPecaOS(o).join(' '), _gradeNomeDaOS(o),
+          skusDaOS(o).join(' '), linhasSkuDaOS(o).join(' ')]
     .filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -22963,13 +23006,16 @@ function renderListaOS() {
     o => coresDaPecaOS(o));
   const gradeEscolhida = _filtroListaOS('filtro-grade-os', noGrupo, 'Todas as grades',
     o => [_gradeNomeDaOS(o)]);
+  // Por LINHA de SKU, e não pelo SKU completo: a cor é a pergunta do filtro
+  // ao lado, e um filtro que obriga a responder a outra não é filtro (ver
+  // linhasSkuDaOS). Os dois cruzam quando alguém escolhe os dois.
   const skuEscolhido = _filtroListaOS('filtro-sku-os', noGrupo, 'Todos os SKUs',
-    o => skusDaOS(o));
+    o => linhasSkuDaOS(o));
   const filtradas = porTexto.filter(o =>
     (!statusEscolhido || _statusOS(o) === statusEscolhido)
     && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
-    && (!skuEscolhido || skusDaOS(o).includes(skuEscolhido)));
+    && (!skuEscolhido || linhasSkuDaOS(o).includes(skuEscolhido)));
   _renderAvisoGrupoListaOS(noGrupo.length);
   _contaListaOS(filtradas.length, noGrupo.length);
   if (!filtradas.length) {

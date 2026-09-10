@@ -43,6 +43,9 @@ const monta = (ctx) => new Function('ctx', `
   const coresDaPecaOS = (o) => o.cores || [];
   const _gradeNomeDaOS = (o) => o.gradeNome || '\\u2014';
   const skusDaOS = (o) => o.skus || [];
+  // A LINHA de SKU e o SKU sem a cor. Duble proprio porque desde 10/09/2026 o
+  // filtro le a linha, e a busca le as duas.
+  const linhasSkuDaOS = (o) => o.linhasSku || [];
   ${recorte('function _filtroListaOS', 'o seletor de filtro')}
   ${recorte('function _textoBuscaOS', 'o texto que a busca varre')}
   return { _filtroListaOS, _textoBuscaOS };
@@ -63,14 +66,22 @@ const ok = (nome, cond, extra) => {
 
 const lista = [
   { os: '0501', codigo: '008', modeloNome: 'Camiseta Básica', colecaoNome: 'Verão 2026',
-    cores: ['Preto'], gradeNome: 'M-2G-GG | CM.LISA | 117cm', skus: ['CM.LISA-PRE'] },
+    cores: ['Preto'], gradeNome: 'M-2G-GG | CM.LISA | 117cm',
+    skus: ['CM.LISA-PRE'], linhasSku: ['CM.LISA'] },
   { os: '0502', codigo: '009', modeloNome: 'Camiseta Básica', colecaoNome: 'Verão 2026',
-    cores: ['Grafite'], gradeNome: 'M-2G-GG | CM.LISA | 117cm', skus: ['CM.LISA-GRA'] },
+    cores: ['Grafite'], gradeNome: 'M-2G-GG | CM.LISA | 117cm',
+    skus: ['CM.LISA-GRA'], linhasSku: ['CM.LISA'] },
   { os: '0492', codigo: '0023', modeloNome: 'Blusa Moletom Tricolor', colecaoNome: 'Inverno 2026',
     cores: ['Preto', 'Mostarda', 'Off-White'], gradeNome: '2M-2G-2GG | BM.TRI | 177,5cm',
-    skus: ['BM.TRI-PRE'] },
+    skus: ['BM.TRI-PRE'], linhasSku: ['BM.TRI'] },
   { os: '0400', codigo: '010', modeloNome: 'Camiseta Polo', colecaoNome: 'Verão 2026',
-    cores: [], gradeNome: '', skus: [] }
+    cores: [], gradeNome: '', skus: [], linhasSku: [] },
+  /* A OS DA COR SEM SIGLA. `skusDaOS` nao consegue compor o SKU completo e
+     devolve vazio — era assim que ela sumia do filtro de SKU inteiro, sem nada
+     na tela dizendo por que. A LINHA existe do mesmo jeito. */
+  { os: '0505', codigo: '011', modeloNome: 'Camiseta Básica', colecaoNome: 'Verão 2026',
+    cores: ['Verde Musgo'], gradeNome: 'M-2G-GG | CM.LISA | 117cm',
+    skus: [], linhasSku: ['CM.LISA'] }
 ];
 
 console.log('-- a busca por texto --');
@@ -98,7 +109,7 @@ let t = ctxDe();
 const escolhidoCor = t.api._filtroListaOS('filtro-cor-os', lista, 'Todas as cores', o => o.cores);
 const htmlCor = t.ctx.sel['filtro-cor-os'].innerHTML;
 ok('11. sem escolha, o filtro nao corta nada', escolhidoCor === '');
-ok('12. a primeira opcao conta a lista inteira', /Todas as cores \(4\)/.test(htmlCor), htmlCor);
+ok('12. a primeira opcao conta a lista inteira', /Todas as cores \(5\)/.test(htmlCor), htmlCor);
 ok('13. a cor de duas OS vem antes das de uma (mais frequente em cima)',
    htmlCor.indexOf('Preto (2)') > 0 && htmlCor.indexOf('Preto (2)') < htmlCor.indexOf('Grafite (1)'), htmlCor);
 ok('14. a tricolor entra nas TRES cores dela',
@@ -108,15 +119,17 @@ ok('15. cor vazia nao vira opcao', !/value="">.*\(0\)/.test(htmlCor) && !/—/.t
 t = ctxDe();
 t.api._filtroListaOS('filtro-grade-os', lista, 'Todas as grades', o => [o.gradeNome]);
 const htmlGrade = t.ctx.sel['filtro-grade-os'].innerHTML;
-ok('16. a grade de duas OS conta duas',
-   /M-2G-GG \| CM\.LISA \| 117cm \(2\)/.test(htmlGrade), htmlGrade);
+ok('16. a grade repetida conta todas as OS dela',
+   /M-2G-GG \| CM\.LISA \| 117cm \(3\)/.test(htmlGrade), htmlGrade);
 ok('17. OS sem grade nao inventa uma opcao vazia',
    (htmlGrade.match(/<option/g) || []).length === 3, htmlGrade);
 
 t = ctxDe();
-t.api._filtroListaOS('filtro-sku-os', lista, 'Todos os SKUs', o => o.skus);
+t.api._filtroListaOS('filtro-sku-os', lista, 'Todos os SKUs', o => o.linhasSku);
 const htmlSku = t.ctx.sel['filtro-sku-os'].innerHTML;
-ok('18. cada SKU vira uma opcao', /CM\.LISA-PRE \(1\)/.test(htmlSku) && /BM\.TRI-PRE \(1\)/.test(htmlSku), htmlSku);
+ok('18. cada LINHA de SKU vira uma opcao, e a cor nao entra nela',
+   /CM\.LISA \(3\)/.test(htmlSku) && /BM\.TRI \(1\)/.test(htmlSku)
+   && !/CM\.LISA-/.test(htmlSku), htmlSku);
 
 console.log('');
 console.log('-- a escolha feita --');
@@ -151,6 +164,63 @@ ok('28. zero tambem conta (e o "de 228" que diz que nada sumiu)',
 conta(1200, 1200);
 ok('29. milhar sai com o ponto do portugues', /1\.200/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
 
+/* ----------------------------------------------------------------------
+   O SKU NAO EXIGE COR (10/09/2026, Junior: "o cruzamento entre sku e cor deve
+   estar em filtros diferentes. O filtro de sku nao deve exigir cor, apenas
+   sku").
+
+   O filtro usava o SKU COMPLETO — linha mais a sigla da cor. Escolher
+   "CM.LISA" era impossivel: so existiam CM.LISA-PRE, CM.LISA-GRA... Ver todas
+   as camiseta lisa exigia passar cor por cor, e a cor ja tem filtro ao lado.
+   ---------------------------------------------------------------------- */
+console.log('');
+console.log('-- o SKU nao exige cor --');
+{
+  // A regra que separa a linha da cor, recortada do app de verdade.
+  const linhaDe = new Function('STATE', `
+    ${recorte('function _skuBaseDaOS', 'o SKU base da OS')}
+    ${recorte('function linhasSkuDaOS', 'a linha de SKU da OS')}
+    return linhasSkuDaOS;
+  `)({ desenhos: [], modelos: [] });
+
+  ok('37. a linha e o SKU sem a cor',
+     linhaDe({ skuOverride: 'CM.LISA-PRE' }).join() === 'CM.LISA',
+     linhaDe({ skuOverride: 'CM.LISA-PRE' }));
+  ok('38. e quem ja e linha continua linha',
+     linhaDe({ skuOverride: 'CM.LISA' }).join() === 'CM.LISA');
+  ok('39. OS sem SKU nenhum nao inventa uma linha',
+     linhaDe({}).length === 0, linhaDe({}));
+  ok('40. minusculo e espaco sobrando nao viram outra linha',
+     linhaDe({ skuOverride: '  cm.lisa-pre ' }).join() === 'CM.LISA');
+
+  /* A COR SEM SIGLA. `skusDaOS` nao consegue compor e devolve vazio; era assim
+     que a OS sumia do filtro de SKU. A linha sai do mesmo jeito. */
+  const semSigla = new Function('STATE', `
+    const _normNome = (x) => String(x || '').toLowerCase().trim();
+    ${recorte('function _skuBaseDaOS', 'o SKU base da OS')}
+    ${recorte('function linhasSkuDaOS', 'a linha de SKU da OS')}
+    ${recorte('function skusDaOS', 'o SKU completo da OS')}
+    return { linhasSkuDaOS, skusDaOS };
+  `)({ desenhos: [], modelos: [], cores: [{ nome: 'Verde Musgo', siglaSku: '' }] });
+  const osSemSigla = { skuOverride: 'CM.LISA', variantes: [{ cor1Nome: 'Verde Musgo' }] };
+  ok('41. cor sem sigla: o SKU completo nao sai...',
+     semSigla.skusDaOS(osSemSigla).length === 0, semSigla.skusDaOS(osSemSigla));
+  ok('42. ...mas a linha sai, e a OS continua achavel pelo SKU',
+     semSigla.linhasSkuDaOS(osSemSigla).join() === 'CM.LISA');
+
+  // Na lista: escolher a linha traz as OS de TODAS as cores dela.
+  const porLinha = (escolhido) => lista.filter(o => !escolhido || (o.linhasSku || []).includes(escolhido));
+  ok('43. escolher CM.LISA traz as tres, de qualquer cor',
+     porLinha('CM.LISA').map(o => o.os).join() === '0501,0502,0505',
+     porLinha('CM.LISA').map(o => o.os));
+  ok('44. e nao traz a de outra linha', !porLinha('CM.LISA').some(o => o.os === '0492'));
+
+  // E as duas perguntas continuam cruzando quando alguem escolhe as duas.
+  const cruzado = porLinha('CM.LISA').filter(o => (o.cores || []).includes('Preto'));
+  ok('45. SKU e cor juntos ainda cruzam (é o filtro ao lado que faz isso)',
+     cruzado.map(o => o.os).join() === '0501', cruzado.map(o => o.os));
+}
+
 console.log('');
 console.log('-- na tela --');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -164,7 +234,7 @@ ok('33. os quatro filtros valem junto com a busca (um filter so)',
    /!statusEscolhido \|\| _statusOS\(o\) === statusEscolhido/.test(src)
    && /!corEscolhida \|\| coresDaPecaOS\(o\)\.includes\(corEscolhida\)/.test(src)
    && /!gradeEscolhida \|\| _gradeNomeDaOS\(o\) === gradeEscolhida/.test(src)
-   && /!skuEscolhido \|\| skusDaOS\(o\)\.includes\(skuEscolhido\)/.test(src), 'filtro incompleto');
+   && /!skuEscolhido \|\| linhasSkuDaOS\(o\)\.includes\(skuEscolhido\)/.test(src), 'filtro incompleto');
 ok('34. a conta fica ao lado da busca na barra de filtros',
    /id="busca-os"[\s\S]{0,600}?id="conta-os"/.test(html), 'conta fora da barra');
 
