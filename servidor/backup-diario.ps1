@@ -15,7 +15,7 @@
 #>
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)]
+  # Sem -Senha, vale a senha guardada cifrada nesta maquina (ver "a senha" abaixo).
   [string] $Senha,
   [string] $Docker  = 'C:\supabase\docker',
   [string] $Destino = 'J:\Meu Drive\Backup Gerador-OS',
@@ -24,7 +24,8 @@ param(
   # Pastas de PDF que o pacote cifrado NAO leva e que so existiam neste disco.
   # Caminhos relativos a raiz do projeto.
   [string[]] $Desenhos = @('Desenhos técnicos', 'Desenhos técnicos -grades de corte'),
-  [switch] $Agendar
+  [switch] $Agendar,
+  [switch] $GravarSenha
 )
 
 $Raiz = Split-Path -Parent $PSScriptRoot
@@ -36,19 +37,67 @@ function Anotar($texto) {
   Write-Host $linha
 }
 
+# --------------------------------------------------------------------- senha
+#
+# A SENHA DO PACOTE SAIU DO XML DA TAREFA (10/09/2026, pedido do Junior).
+#
+# Ela protege o pacote NO GOOGLE DRIVE — quem senta neste PC ja tem tudo, porque
+# o servidor faz logon automatico. Ainda assim, escrita em texto puro nos
+# argumentos da tarefa ela tinha dois precos: qualquer coisa que exporte a
+# tarefa (um print, um suporte remoto, o proprio backup do Windows) levava a
+# senha junto; e lembrar dela dependia de UMA anotacao a mao — perdida a
+# anotacao, perdido o pacote.
+#
+# Agora ela mora cifrada em %LOCALAPPDATA%\Gerador-OS\backup-senha.txt, pelo
+# DPAPI do Windows: so a MESMA conta de usuario desta maquina consegue decifrar,
+# e o arquivo copiado para outro PC nao serve para nada. E de proposito que ele
+# NAO vai para o Google Drive: guardar a chave ao lado do cofre e nao ter cofre.
+#
+#   gravar (uma vez):  .\servidor\backup-diario.ps1 -Senha 'a-senha' -GravarSenha
+#   rodar a mao:       .\servidor\backup-diario.ps1              (le a guardada)
+#                      .\servidor\backup-diario.ps1 -Senha 'x'   (manda esta)
+$ArquivoSenha = Join-Path (Join-Path $env:LOCALAPPDATA 'Gerador-OS') 'backup-senha.txt'
+
+function GravarSenhaCifrada($texto) {
+  $pasta = Split-Path -Parent $ArquivoSenha
+  if (-not (Test-Path $pasta)) { New-Item -ItemType Directory -Path $pasta -Force | Out-Null }
+  $cifrada = ConvertTo-SecureString $texto -AsPlainText -Force | ConvertFrom-SecureString
+  Set-Content -Path $ArquivoSenha -Value $cifrada -Encoding ascii
+}
+
+function LerSenhaCifrada {
+  if (-not (Test-Path $ArquivoSenha)) { return '' }
+  try {
+    # .Trim() obrigatorio: Set-Content grava uma quebra de linha no fim, e
+    # ConvertTo-SecureString recusa a cadeia com ela ("nao estava em um formato
+    # correto"). Sem o Trim o backup falhava dizendo que nao havia senha — com a
+    # senha guardada ali do lado, que e o jeito mais rapido de perder uma tarde.
+    $segura = (Get-Content $ArquivoSenha -Raw).Trim() | ConvertTo-SecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+  } catch { return '' }
+}
+
+if ($GravarSenha) {
+  if (-not $Senha) { Anotar 'FALHA: -GravarSenha precisa de -Senha'; exit 1 }
+  GravarSenhaCifrada $Senha
+  Anotar "senha do pacote guardada cifrada em $ArquivoSenha"
+  exit 0
+}
+
 # ------------------------------------------------------------------- agendar
 if ($Agendar) {
   $nome = 'Backup Gerador-OS'
   $args = @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', ('"' + (Join-Path $PSScriptRoot 'backup-diario.ps1') + '"'),
-    # ASPAS DUPLAS, nao simples. O agendador chama "powershell.exe -File", e nesse
-    # modo o PowerShell tira as aspas DUPLAS e deixa as SIMPLES dentro do valor.
-    # Com aspas simples a senha do pacote virava 'a-senha' com as aspas coladas:
-    # quem restaurasse digitaria a senha anotada e ouviria "senha errada", no pior
-    # dia possivel. Descoberto em 14/08/2026 conferindo um pacote recem-gerado —
-    # os pacotes de 10/08 a 14/08 so abrem com as aspas.
-    '-Senha', ('"' + $Senha + '"'),
+    # A SENHA NAO ENTRA AQUI. Ate 10/09/2026 ela vinha como '-Senha "<senha>"' e
+    # ficava legivel para qualquer um que exportasse a tarefa. Agora o script a
+    # le do arquivo cifrado desta maquina (ver "senha", acima) — e some junto o
+    # velho problema das aspas: em 14/08/2026 os pacotes de 10 a 14/08 so abriam
+    # com a senha entre aspas simples, porque "powershell.exe -File" tira as
+    # duplas e deixa as simples dentro do valor. Sem argumento, sem aspas.
     '-Docker', ('"' + $Docker + '"'),
     '-Destino', ('"' + $Destino + '"'),
     '-Manter', $Manter
@@ -86,6 +135,14 @@ if ($Agendar) {
 }
 
 # -------------------------------------------------------------------- rodar
+# Sem -Senha na linha de comando, vale a guardada. Falhar AQUI, alto e no log, e
+# melhor que cifrar o pacote com senha vazia e ninguem notar ate precisar dele.
+if (-not $Senha) { $Senha = LerSenhaCifrada }
+if (-not $Senha) {
+  Anotar "FALHA: nao ha senha do pacote. Grave uma com: backup-diario.ps1 -Senha '<senha>' -GravarSenha"
+  exit 1
+}
+
 $script = Join-Path $PSScriptRoot 'backup-servidor.js'
 if (-not (Test-Path $script)) { Anotar "FALHA: nao achei $script"; exit 1 }
 
