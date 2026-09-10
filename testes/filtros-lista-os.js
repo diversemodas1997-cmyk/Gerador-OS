@@ -168,6 +168,24 @@ ok('33. os quatro filtros valem junto com a busca (um filter so)',
 ok('34. a conta fica ao lado da busca na barra de filtros',
    /id="busca-os"[\s\S]{0,600}?id="conta-os"/.test(html), 'conta fora da barra');
 
+/* A LISTA DO NAVEGADOR NAO PODE COBRIR A COLUNA ACOES (10/09/2026, print do
+   Junior). Campo de busca sem `autocomplete="off"` faz o Chrome abrir a lista
+   dele — os numeros de OS ja digitados antes — logo abaixo do campo, e ela cai
+   POR CIMA da primeira coluna da tabela: status, visualizar e o "..." ficam
+   atras de uma janela que o programa nao desenhou e nao consegue mover.
+
+   O teste cobre TODOS os campos de busca da tela, e nao so o da lista de OS:
+   a regra e a mesma em qualquer um deles, e o proximo campo novo nasce certo
+   ou o teste reclama. */
+{
+  const buscas = html.match(/<input[^>]*type="search"[^>]*>/g) || [];
+  const semGuarda = buscas.filter(t => !/autocomplete="off"/.test(t));
+  ok('35. todo campo de busca desliga o autocompletar do navegador',
+     buscas.length >= 3 && semGuarda.length === 0, semGuarda.join(' | '));
+  ok('36. a busca da lista de OS e uma delas (foi ela que abriu o caso)',
+     /<input[^>]*id="busca-os"[^>]*autocomplete="off"/.test(html), 'busca-os sem a guarda');
+}
+
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

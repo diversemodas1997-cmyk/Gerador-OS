@@ -693,7 +693,10 @@
                  desenho já escolhido nunca sai da lista. -->
             <div class="field"><label>Selecionar desenho cadastrado</label>
               <div class="busca-desenho">
+                <!-- Mesma razão do busca-os: a lista do navegador cobriria a
+                     lista de desenhos logo abaixo. -->
                 <input type="search" id="f-desenho-busca" placeholder="Buscar: código, descrição, modelo, cor ou SKU…"
+                       autocomplete="off" spellcheck="false"
                        title="Vários termos valem juntos, cada um em qualquer campo: &quot;moletom preto&quot;."
                        oninput="filtrarDesenhosOS()">
                 <span id="f-desenho-conta" class="lista-os-conta"></span>
@@ -832,7 +835,13 @@
              e valem juntas: "das que estão paradas, cadê a 483?". As opções do
              filtro (com a contagem de cada estado) são montadas em app.js. -->
         <div class="lista-os-filtros">
+          <!-- autocomplete="off": sem isto o navegador abre a lista dele, com os
+               números de OS já digitados antes, e ela cai POR CIMA da coluna
+               Ações — os botões de status, visualizar e "⋯" ficam atrás de uma
+               janela que o programa não desenhou e não consegue mover. Todos os
+               outros campos de busca do app já nascem assim. -->
           <input type="search" id="busca-os" placeholder="Buscar: número, código, modelo, coleção, cor, grade ou SKU…"
+                 autocomplete="off" spellcheck="false"
                  title="Busca em tudo o que a linha mostra, mais o SKU. Vários termos valem juntos: &quot;preto tricolor&quot;." oninput="renderListaOS()">
           <!-- Quantas OS a lista está mostrando agora. Ao lado da busca porque é
                a resposta dela: quem digita quer saber quantas sobraram. -->
@@ -1405,6 +1414,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-10c"></script>
+<script src="app.js?v=2026-09-10d"></script>
 </body>
 </html>
