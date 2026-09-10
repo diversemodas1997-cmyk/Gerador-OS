@@ -22874,7 +22874,61 @@ function _dataCelulaListaOS(o) {
     + `✓ ${esc(txt)}</span>`;
 }
 
-/* OS FILTROS da lista de OS Salvas: status, cor, grade e SKU.
+/* O DIA EM QUE A OS TERMINOU, no formato do campo de data (aaaa-mm-dd).
+
+   Em hora LOCAL, e não fatiando o texto do ISO. `finalizadaEm` é gravado em
+   UTC: uma OS terminada às 21:40 de 09/09 na fábrica está gravada como
+   "2026-09-10T00:40:00Z", e um `.slice(0, 10)` a jogaria no dia 10 — ela
+   sumiria da busca do dia 9, que é o dia em que ela terminou para quem estava
+   lá. A tela já mostra a hora local (_dataHoraFinalizacaoOS); a busca tem de
+   concordar com o que a tela mostra.
+
+   Devolve '' para OS que não está finalizada — ela não tem dia de término, e
+   não pertence a período nenhum. */
+function _diaFinalizacaoOS(o) {
+  const iso = _dataFinalizacaoOS(o);
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* AS DUAS DATAS DA BUSCA POR FINALIZAÇÃO, lidas da tela.
+
+   Preencher só uma vale: "de" sozinho é "daí para cá", "até" sozinho é "até
+   esse dia". É como se pergunta na fábrica — "o que saiu de segunda para cá?".
+
+   Datas invertidas (de > até) são TROCADAS, e trocadas também nos campos: não
+   existe outra leitura para um período de trás para frente, e devolver uma
+   lista vazia deixaria a pessoa procurando o erro na OS em vez de no campo.
+   Trocar só por dentro seria pior — a tela diria uma coisa e a lista outra. */
+function _periodoFinalizacaoListaOS() {
+  const elDe = document.getElementById('filtro-fim-de');
+  const elAte = document.getElementById('filtro-fim-ate');
+  let de = (elDe && elDe.value) || '';
+  let ate = (elAte && elAte.value) || '';
+  if (de && ate && de > ate) {
+    const t = de; de = ate; ate = t;
+    if (elDe) elDe.value = de;
+    if (elAte) elAte.value = ate;
+  }
+  return { de, ate };
+}
+
+// A OS terminou dentro do período pedido? Sem período, todas passam — inclusive
+// as que nem estão finalizadas, que é o estado normal da lista.
+function _osFinalizadaNoPeriodo(o, de, ate) {
+  if (!de && !ate) return true;
+  const dia = _diaFinalizacaoOS(o);
+  if (!dia) return false;
+  if (de && dia < de) return false;
+  if (ate && dia > ate) return false;
+  return true;
+}
+
+/* OS FILTROS da lista de OS Salvas: status, cor, grade, SKU e o período de
+   finalização.
 
    As opções são montadas aqui, e não no HTML, por causa da CONTAGEM: "Parado
    (3)" e "Preto (41)" respondem a pergunta antes mesmo de filtrar, e é esse
@@ -22945,11 +22999,21 @@ function _textoBuscaOS(o) {
     .filter(Boolean).join(' ').toLowerCase();
 }
 
-// Devolve a lista ao estado de "tudo à vista". Existe porque quatro filtros
+// Como o período de finalização se lê em português, para o aviso de lista
+// vazia. '' quando não há período — aí ele não entra na frase.
+function _textoPeriodoFinalizacao(de, ate) {
+  if (de && ate) return `finalizadas entre <b>${esc(formatDate(de))}</b> e <b>${esc(formatDate(ate))}</b>`;
+  if (de) return `finalizadas de <b>${esc(formatDate(de))}</b> em diante`;
+  if (ate) return `finalizadas até <b>${esc(formatDate(ate))}</b>`;
+  return '';
+}
+
+// Devolve a lista ao estado de "tudo à vista". Existe porque os filtros
 // somados escondem a lista inteira com facilidade, e desfazer um por um é o
 // caminho mais curto para a pessoa achar que a OS sumiu.
 function limparFiltrosListaOS() {
-  ['busca-os', 'filtro-status-os', 'filtro-cor-os', 'filtro-grade-os', 'filtro-sku-os']
+  ['busca-os', 'filtro-status-os', 'filtro-cor-os', 'filtro-grade-os', 'filtro-sku-os',
+   'filtro-fim-de', 'filtro-fim-ate']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderListaOS();
 }
@@ -23024,11 +23088,15 @@ function renderListaOS() {
   // linhasSkuDaOS). Os dois cruzam quando alguém escolhe os dois.
   const skuEscolhido = _filtroListaOS('filtro-sku-os', noGrupo, 'Todos os SKUs',
     o => linhasSkuDaOS(o));
+  // QUANDO A OS TERMINOU. Não é seletor porque a resposta não é uma lista de
+  // opções: é um intervalo, e a pergunta real é "o que saiu esta semana?".
+  const { de: fimDe, ate: fimAte } = _periodoFinalizacaoListaOS();
   const filtradas = porTexto.filter(o =>
     (!statusEscolhido || _statusOS(o) === statusEscolhido)
     && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
-    && (!skuEscolhido || linhasSkuDaOS(o).includes(skuEscolhido)));
+    && (!skuEscolhido || linhasSkuDaOS(o).includes(skuEscolhido))
+    && _osFinalizadaNoPeriodo(o, fimDe, fimAte));
   _renderAvisoGrupoListaOS(noGrupo.length);
   _contaListaOS(filtradas.length, noGrupo.length);
   if (!filtradas.length) {
@@ -23037,7 +23105,8 @@ function renderListaOS() {
                   sRot ? `status <b>${esc(sRot)}</b>` : '',
                   corEscolhida ? `cor <b>${esc(corEscolhida)}</b>` : '',
                   gradeEscolhida ? `grade <b>${esc(gradeEscolhida)}</b>` : '',
-                  skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '']
+                  skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '',
+                  _textoPeriodoFinalizacao(fimDe, fimAte)]
       .filter(Boolean).join(' e ');
     tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
       + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;

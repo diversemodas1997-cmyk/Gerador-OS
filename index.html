@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-04c">
+<link rel="stylesheet" href="styles.css?v=2026-09-10c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -850,6 +850,18 @@
           <select id="filtro-cor-os" title="Mostrar só as OS de uma cor" onchange="renderListaOS()"></select>
           <select id="filtro-grade-os" title="Mostrar só as OS de uma grade" onchange="renderListaOS()"></select>
           <select id="filtro-sku-os" title="Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos" onchange="renderListaOS()"></select>
+          <!-- QUANDO A OS TERMINOU. Não é seletor porque a resposta não é uma
+               lista de opções: é um intervalo ("o que saiu esta semana?").
+               Preencher só um lado vale — "de" sozinho é daí para cá, "até"
+               sozinho é até aquele dia. Só entram OS finalizadas: quem não
+               terminou não tem dia de término. -->
+          <span class="lista-os-datas"
+                title="Mostrar só as OS finalizadas no período. Vale preencher só um dos dois: uma data em &quot;de&quot; mostra dali para cá; só em &quot;até&quot;, até aquele dia.">
+            <label for="filtro-fim-de">Finalizada de</label>
+            <input type="date" id="filtro-fim-de" onchange="renderListaOS()">
+            <label for="filtro-fim-ate">até</label>
+            <input type="date" id="filtro-fim-ate" onchange="renderListaOS()">
+          </span>
           <button class="btn small ghost" onclick="limparFiltrosListaOS()" title="Voltar a mostrar todas as OS">Limpar</button>
         </div>
         <table class="table">
@@ -1419,6 +1431,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-10f"></script>
+<script src="app.js?v=2026-09-10g"></script>
 </body>
 </html>
