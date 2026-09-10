@@ -2678,6 +2678,17 @@ async function definirNovaSenha() {
 }
 
 function traduzirErroAuth(msg) {
+  /* O PROVEDOR BLOQUEOU O PROJETO DA NUVEM. Aconteceu em 10/09/2026: a cota de
+     tráfego do plano gratuito estourou, o Supabase passou a responder 402 a TUDO
+     — inclusive ao login — e a tela mostrava o texto em inglês do provedor logo
+     abaixo da senha. Quem lia entendia "minha senha está errada" e tentava de
+     novo; nenhuma senha do mundo passaria, porque o 402 vem antes de a senha ser
+     olhada. A tradução diz o que aconteceu e para onde ir: o servidor da fábrica
+     continua inteiro, e é por ele que se entra. */
+  if (/exceed_egress_quota|exceeded.*quota|restricted due to the following violations|payment required/i.test(msg)) {
+    return 'A cópia da nuvem está bloqueada pelo provedor (cota de tráfego do mês). '
+      + 'Não é a sua senha. Abra o programa pelo endereço do servidor da fábrica para entrar.';
+  }
   if (/invalid login credentials/i.test(msg)) return 'Nome ou senha incorretos';
   if (/user already registered/i.test(msg)) return 'Este nome já está cadastrado — use Entrar';
   if (/password should be at least/i.test(msg)) return 'Senha muito curta';
