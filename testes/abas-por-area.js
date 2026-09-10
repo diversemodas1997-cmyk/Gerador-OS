@@ -128,5 +128,41 @@ ok('16. o programa abre pelo endereco, e nao sempre no Inicio',
   (src.match(/goto\(_paginaInicial\(\)\)/g) || []).length);
 
 console.log('');
+console.log('-- so as opcoes rolam; o cabecalho da barra fica parado --');
+/* Junior, 10/09/2026: "a rolagem da barra lateral deve ser apenas para os itens
+   e nao para a caixa que mostra login". Descer ate "Configuracoes" levava
+   embora justamente o que diz QUEM esta logado e SE esta sincronizado — a
+   resposta que se procura quando algo parece errado. */
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  // A regra que comeca a LINHA. Sem isto, "aside.sidebar" casa primeiro com
+  // ".app.sidebar-collapsed aside.sidebar", que e outra regra e tem outro
+  // overflow — o teste passaria lendo o bloco errado.
+  const bloco = (sel) => {
+    const i = css.indexOf(String.fromCharCode(10) + sel + ' {');
+    return i < 0 ? '' : css.slice(i + 1, css.indexOf('}', i));
+  };
+  ok('17. as opcoes moram numa caixa propria, depois do cabecalho',
+     /class="sidebar-nav"[\s\S]{0,400}class="nav-group"/.test(html)
+     && (html.match(/class="sidebar-nav"/g) || []).length === 1, 'sem a caixa das opcoes');
+  ok('18. a marca e a caixa do login estao FORA dela',
+     html.indexOf('class="brand"') < html.indexOf('class="sidebar-nav"')
+     && html.indexOf('class="auth-bar"') < html.indexOf('class="sidebar-nav"'),
+     'cabecalho dentro da area que rola');
+  const barra = bloco('aside.sidebar');
+  ok('19. a barra inteira nao rola mais',
+     /overflow:\s*hidden/.test(barra) && !/overflow-y:\s*auto/.test(barra), barra);
+  ok('20. e ela e uma coluna flex, para o cabecalho ter tamanho proprio',
+     /display:\s*flex/.test(barra) && /flex-direction:\s*column/.test(barra), barra);
+  const lista = bloco('.sidebar-nav');
+  ok('21. quem rola e a lista das opcoes',
+     /overflow-y:\s*auto/.test(lista) && /flex:\s*1 1 auto/.test(lista), lista);
+  ok('22. com min-height 0 — sem ele o item flex nao rola, so estica',
+     /min-height:\s*0/.test(lista), lista);
+  ok('23. no celular a barra vira flex tambem, senao o cabecalho voltaria a rolar',
+     /body\.mobile-menu-open aside\.sidebar \{ display: flex; \}/.test(css), 'celular ainda em block');
+}
+
+console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

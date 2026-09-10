@@ -133,6 +133,17 @@ body.pdf-capture .print-area { zoom: 1; }
 .app.sidebar-collapsed .sidebar-toggle { left: 10px; }
 @media print { .sidebar-toggle { display: none; } }
 
+/* A BARRA INTEIRA NAO ROLA MAIS — so a lista de opcoes (10/09/2026, pedido do
+   Junior). O cabecalho (a marca e a caixa de quem esta logado, com o sino, os
+   recados, o estado do servidor e o Sair) fica PARADO no topo.
+
+   Antes o `overflow-y: auto` estava aqui, na barra toda: descer ate
+   "Configuracoes" levava embora justamente o que diz QUEM esta logado e SE
+   esta sincronizado — a resposta que se procura quando algo parece errado.
+
+   Coluna flex: cabecalho com tamanho proprio (`0 0 auto`), lista ocupando o que
+   sobra e rolando dentro dela. O `overflow: hidden` aqui e o que impede a barra
+   de crescer alem da tela e voltar a rolar por fora. */
 aside.sidebar {
   background: var(--ink);
   color: var(--bg);
@@ -141,7 +152,18 @@ aside.sidebar {
   position: sticky;
   top: 0;
   height: calc(100vh / var(--ui-zoom));   /* ver a nota do vh no .app */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar .brand,
+.sidebar .auth-bar { flex: 0 0 auto; }
+.sidebar-nav {
+  flex: 1 1 auto;
   overflow-y: auto;
+  /* Sem isto o Firefox/Chrome dao ao item flex a altura do conteudo e a rolagem
+     nao acontece: `min-height: auto` e o padrao de um item de coluna flex. */
+  min-height: 0;
 }
 
 .brand {
@@ -1632,10 +1654,13 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
     height: calc(100vh / var(--ui-zoom));   /* ver a nota do vh no .app */
     z-index: 9000;
     display: none;
-    overflow-y: auto;
+    overflow: hidden;
     box-shadow: 0 8px 32px rgba(0,0,0,.4);
   }
-  body.mobile-menu-open aside.sidebar { display: block; }
+  /* `flex`, e nao `block`: no celular a barra ocupa a tela inteira, e o
+     cabecalho parado com a lista rolando vale ainda mais aqui, onde a tela e
+     curta e o menu e longo. */
+  body.mobile-menu-open aside.sidebar { display: flex; }
   body.mobile-menu-open { overflow: hidden; }
   /* Botao "≡ Menu" no topo de cada pagina (injetado por app.js). */
   .btn-menu-mobile {

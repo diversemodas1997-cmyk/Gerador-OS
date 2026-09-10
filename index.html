@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-10d">
+<link rel="stylesheet" href="styles.css?v=2026-09-10e">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -87,6 +87,12 @@
       </div>
     </div>
 
+    <!-- SO AS OPCOES ROLAM. O cabecalho da barra — a marca e a caixa de quem
+         esta logado, com o sino, os recados e o botao Sair — fica parado no
+         topo; a lista de opcoes rola dentro desta caixa. Antes a barra inteira
+         rolava junto, e descer ate "Configuracoes" levava embora justamente o
+         que diz QUEM esta logado e SE esta sincronizado. -->
+    <div class="sidebar-nav">
     <div class="nav-group" data-group="principal">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
       <div class="nav-items">
@@ -133,6 +139,7 @@
       <div class="nav-items">
         <a class="nav-btn" href="#config" data-page="config" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Configurações</a>
       </div>
+    </div>
     </div>
   </aside>
 
