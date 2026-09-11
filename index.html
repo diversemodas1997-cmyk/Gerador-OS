@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-10e">
+<link rel="stylesheet" href="styles.css?v=2026-09-11a">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -128,6 +128,7 @@
         <a class="nav-btn" href="#cad-componentes" data-page="cad-componentes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Componentes</a>
         <a class="nav-btn" href="#cad-tecidos" data-page="cad-tecidos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Tecidos</a>
         <a class="nav-btn" href="#cad-cores" data-page="cad-cores" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Cores</a>
+        <a class="nav-btn" href="#cad-fornecedores" data-page="cad-fornecedores" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Fornecedores</a>
         <a class="nav-btn" href="#cad-materiais" data-page="cad-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Materiais / Aviamentos</a>
         <a class="nav-btn" href="#cad-grades" data-page="cad-grades" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Grades</a>
         <a class="nav-btn" href="#cad-desenhos" data-page="cad-desenhos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Desenhos técnicos</a>
@@ -455,7 +456,7 @@
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Composição / Obs.</th><th>Categoria</th><th>Peso (g/m²)</th></tr></thead>
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Composição</th><th>Categoria</th><th>Peso (g/m²)</th><th>Largura / rend.</th><th>Fornecedor</th></tr></thead>
           <tbody id="tbl-tecidos"></tbody>
         </table>
       </div>
@@ -469,8 +470,22 @@
       </div>
       <div class="card">
         <table class="table">
-          <thead><tr><th class="col-actions">Ações</th><th>Cor</th><th>Código</th><th>Gramatura</th></tr></thead>
+          <thead><tr><th class="col-actions">Ações</th><th>Cor</th><th>Código</th><th>Fornecedor</th><th>Tecido vinculado</th></tr></thead>
           <tbody id="tbl-cores"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FORNECEDORES -->
+    <section class="page hidden" data-page="cad-fornecedores">
+      <div class="page-header">
+        <div><h1>Fornecedores</h1><div class="desc">De quem vem o pano. Tecidos e cores apontam para cá; a ficha guarda o que a etiqueta e a nota não dizem — condição de indenização, contato, cidade.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('fornecedor')">+ Novo fornecedor</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Razão social</th><th>CNPJ</th><th>Cidade / UF</th><th>Telefone</th><th>Observações</th></tr></thead>
+          <tbody id="tbl-fornecedores"></tbody>
         </table>
       </div>
     </section>
@@ -1434,6 +1449,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-10i"></script>
+<script src="app.js?v=2026-09-11a"></script>
 </body>
 </html>

@@ -2349,7 +2349,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -2789,6 +2789,9 @@ const STATE = {
   tecidos: [],
   cores: [],
   materiais: [],
+  // Fornecedores de tecido. { id, nome (razao social), cnpj, cidadeUf,
+  // telefone, obs }. Tecidos e cores apontam para ele por fornecedorId.
+  fornecedores: [],
   modelos: [],
   colecoes: [],
   grades: [],
@@ -2965,6 +2968,7 @@ const DESFAZER_NOMES = {
   tecidos: ['tecido', 'tecidos'],
   cores: ['cor', 'cores'],
   materiais: ['material', 'materiais'],
+  fornecedores: ['fornecedor', 'fornecedores'],
   modelos: ['modelo', 'modelos'],
   colecoes: ['coleção', 'coleções'],
   desenhos: ['desenho técnico', 'desenhos técnicos'],
@@ -3141,7 +3145,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -3713,6 +3717,7 @@ function goto(page) {
   if (page === 'home') renderHome();
   if (page === 'cad-tecidos') renderTecidos();
   if (page === 'cad-cores') renderCores();
+  if (page === 'cad-fornecedores') renderFornecedores();
   if (page === 'cad-materiais') renderMateriais();
   if (page === 'cad-modelos') renderModelos();
   if (page === 'cad-colecoes') renderColecoes();
@@ -3950,7 +3955,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   const box = document.getElementById('modal-cad-fields');
 
   const titles = {
-    tecido: 'Tecido', cor: 'Cor', material: 'Material / Aviamento',
+    tecido: 'Tecido', cor: 'Cor', fornecedor: 'Fornecedor', material: 'Material / Aviamento',
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
@@ -3971,7 +3976,21 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   if (tipo === 'tecido') {
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"></div>
+        <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"><div class="field-hint">É o <b>nome de casa</b>: as cores ("Preto <b>Ribana Moletom</b>"), as fases das grades e o razão do estoque penduram nele. Renomear aqui não reescreve sozinho quem já aponta para o nome antigo — o nome do fornecedor vai no campo <b>Código / artigo</b>.</div></div>
+        <div class="field"><label>Tipo de estrutura</label>
+          <select id="m-estrutura">
+            <option value="">— não informado —</option>
+            <option value="meia-malha" ${item.estrutura==='meia-malha'?'selected':''}>Meia malha</option>
+            <option value="ribana-1x1" ${item.estrutura==='ribana-1x1'?'selected':''}>Ribana 1x1</option>
+            <option value="ribana-2x1" ${item.estrutura==='ribana-2x1'?'selected':''}>Ribana 2x1</option>
+            <option value="moletom" ${item.estrutura==='moletom'?'selected':''}>Moletom</option>
+            <option value="piquet" ${item.estrutura==='piquet'?'selected':''}>Piquet</option>
+            <option value="outro" ${item.estrutura==='outro'?'selected':''}>Outro</option>
+          </select>
+          <div class="field-hint">A <b>construção da malha</b>, como vem na ficha do fornecedor. Não é a <b>Categoria</b> logo abaixo: quem manda no limite de camadas do enfesto é ela, não este campo.</div>
+        </div>
+        <div class="field"><label>Fornecedor</label><select id="m-fornecedor">${fornecedorOptions(item.fornecedorId)}</select><div class="field-hint">Cadastre em <b>Cadastros › Fornecedores</b>.</div></div>
+        <div class="field full"><label>Código / artigo no fornecedor</label><input type="text" id="m-codforn" value="${esc(item.codigoFornecedor||'')}" placeholder="Ex.: RIBANA 2X1 PA"><div class="field-hint">Como o fornecedor chama o artigo, na etiqueta e na nota.</div></div>
         <div class="field"><label>Categoria (define limite de enfesto e multiplicador)</label>
           <select id="m-categoria" onchange="_atualizarDicaTubular()">
             <option value="">— selecione —</option>
@@ -3989,11 +4008,21 @@ function openCadastroModal(tipo, editId = null, origin = null) {
           </select>
           <div class="field-hint" id="m-tubular-dica">${_tecidoTubularDica(item)}</div>
         </div>
-        <div class="field"><label>Gramatura média (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" placeholder="Ex.: 450"><div class="field-hint">É <b>daqui</b> que sai o kg de todo enfesto deste pano: comp × larg × camadas × gramatura ÷ 1000. Uma média por tecido, igual para todas as cores. <b>Confira pela bobina</b>: o programa mostra, na folha de OS, quanto pesaria uma bobina com esta gramatura — tem que dar entre ${PESO_BOBINA_MIN_KG} e ${PESO_BOBINA_MAX_KG} kg. Muito abaixo disso, o número está na escala do pano <b>simples</b>, e o enfesto usa o pano como ele vem (tubular, dobrado).</div></div>
+        <div class="field"><label>Gramatura média (g/m²)</label><input type="number" min="0" step="1" id="m-peso" value="${esc(item.peso||'')}" oninput="_atualizarDicaRendimento()" placeholder="Ex.: 450"><div class="field-hint">É <b>daqui</b> que sai o kg de todo enfesto deste pano: comp × larg × camadas × gramatura ÷ 1000. Uma média por tecido, igual para todas as cores. <b>Confira pela bobina</b>: o programa mostra, na folha de OS, quanto pesaria uma bobina com esta gramatura — tem que dar entre ${PESO_BOBINA_MIN_KG} e ${PESO_BOBINA_MAX_KG} kg. Muito abaixo disso, o número está na escala do pano <b>simples</b>, e o enfesto usa o pano como ele vem (tubular, dobrado).</div></div>
+        <div class="field"><label>Largura (cm)</label><input type="number" min="0" step="0.5" id="m-largura" value="${esc(item.largura||'')}" oninput="_atualizarDicaRendimento()" placeholder="Ex.: 60"><div class="field-hint">Da etiqueta. No pano <b>tubular</b> é a largura do <b>tubo achatado</b> (60 de tubo = 120 abertos). É <b>ficha técnica</b>: a largura que entra na conta do enfesto continua sendo a de <b>cada fase da grade</b>.</div></div>
+        <div class="field"><label>Rendimento (m/kg)</label><input type="number" min="0" step="0.01" id="m-rendimento" value="${esc(item.rendimento||'')}" oninput="_atualizarDicaRendimento()" placeholder="vazio = calcular"><div class="field-hint" id="m-rendimento-dica">${_rendimentoDica(item)}</div></div>
         <div class="field"><label>Excedente de enfesto</label><div class="field-hint" style="padding-top:6px;">Saiu daqui: agora é cadastrado em <b>cada fase de cada grade</b>, junto do comprimento. A sobra não é do pano — ela depende do comprimento que a fase estende, e um corpo de 8 m e um viés de 1 m do mesmo tecido não levam a mesma.</div></div>
         <div class="field"><label>Peso médio da bobina (kg)</label><input type="number" min="0" step="0.5" id="m-peso-bobina" value="${esc(item.pesoBobina||'')}" placeholder="Ex.: 22"><div class="field-hint">Quanto pesa, em média, uma bobina <b>deste</b> tecido. Só é usado onde a grade não sabe prever bobinas — hoje a <b>ribana</b>, que vem em rolo de outro tamanho e não segue a conta do tecido principal. Em branco, a folha mostra <b>—</b> na ribana em vez de chutar.</div></div>
-        <div class="field full"><label>Composição / observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 65% algodão 35% poliéster"></div>
+        <div class="field full"><label>Composição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 48% CO 48% PES 4% ELAS"></div>
+        <div class="field full"><label>Observações</label><textarea id="m-obs" rows="3" placeholder="Padrão de mercado, tolerâncias, onde se usa…">${esc(item.obs||'')}</textarea></div>
+        <div class="field full">
+          <label>Entradas de rolo <span style="font-weight:400;color:var(--ink-3);">— de qual lote saiu o pano</span></label>
+          <div id="m-rolos"></div>
+          <button type="button" class="btn small admin-only" onclick="addRoloRow()">+ Entrada de rolo</button>
+          <div class="field-hint">Uma linha por rolo recebido, como vem na etiqueta. Na <b>Nova OS</b>, ao escolher este tecido, elas aparecem no campo <b>Lote / Rolo</b> — é assim que se sabe, depois, de qual lote saiu o pano daquela OS. <b>Peso líquido em branco</b> é etiqueta sem peso, e fica em branco: não vira zero.</div>
+        </div>
       </div>`;
+    (item.entradasRolo || []).forEach(r => addRoloRow(r));
   }
   else if (tipo === 'cor') {
     box.innerHTML = `
@@ -4002,7 +4031,27 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
         <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
         <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
+        <div class="field"><label>Fornecedor</label><select id="m-cor-fornecedor">${fornecedorOptions(item.fornecedorId)}</select></div>
+        <div class="field"><label>Código no fornecedor</label><input type="text" id="m-cor-codforn" value="${esc(item.codigoFornecedor||'')}" placeholder="Ex.: 020104"></div>
+        <div class="field"><label>Nome no fornecedor</label><input type="text" id="m-cor-nomeforn" value="${esc(item.nomeFornecedor||'')}" placeholder="Ex.: PRETO ENXOFRE"><div class="field-hint">O nome que vem na etiqueta e na nota. Fica <b>ao lado</b> do nome de casa, não no lugar dele: é o nome de casa que amarra a cor ao tecido nas contas.</div></div>
+        <div class="field"><label>Tecido vinculado</label>
+          <select id="m-cor-tecido">
+            <option value="">— nenhum —</option>
+            ${(STATE.tecidos||[]).map(t => `<option value="${esc(t.id)}" ${item.tecidoId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('')}
+          </select>
+          <div class="field-hint">Opcional, para referência. Quem amarra a cor ao tecido nas contas continua sendo o <b>sufixo do nome</b> (ex.: <i>Preto <b>Ribana Moletom</b></i>).</div>
+        </div>
 
+      </div>`;
+  }
+  else if (tipo === 'fornecedor') {
+    box.innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>Razão social *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: PLUMA INDUSTRIA E COMERCIO DE TECIDOS"></div>
+        <div class="field"><label>CNPJ</label><input type="text" id="m-cnpj" value="${esc(item.cnpj||'')}" placeholder="00.000.000/0000-00"></div>
+        <div class="field"><label>Cidade / UF</label><input type="text" id="m-cidade" value="${esc(item.cidadeUf||'')}" placeholder="Ex.: Blumenau / SC"></div>
+        <div class="field"><label>Telefone</label><input type="text" id="m-telefone" value="${esc(item.telefone||'')}" placeholder="(00) 00000-0000"></div>
+        <div class="field full"><label>Observações</label><textarea id="m-obs" rows="3" placeholder="Ex.: condições de indenização, prazo, representante…">${esc(item.obs||'')}</textarea></div>
       </div>`;
   }
   else if (tipo === 'material') {
@@ -5997,7 +6046,7 @@ async function migrarEnderecosDesenhos() {
 }
 
 function pluralize(tipo) {
-  return { tecido:'tecidos', cor:'cores', material:'materiais', modelo:'modelos',
+  return { tecido:'tecidos', cor:'cores', fornecedor:'fornecedores', material:'materiais', modelo:'modelos',
            colecao:'colecoes', grade:'grades', desenho:'desenhos',
            marca:'marcas', linha:'linhas', base:'bases', bloco:'blocos', equipe:'equipe', funcao:'funcoes', tarefa:'tarefas', etapa:'etapas', componente:'componentes' }[tipo];
 }
@@ -6032,6 +6081,19 @@ async function salvarCadastro() {
     // "não informado" tem que continuar aparecendo como "—" na folha: é
     // exatamente o que o programa deve esperar antes de prever bobina de ribana.
     item.pesoBobina = Math.max(0, parseFloat(String(v('m-peso-bobina')).replace(',', '.')) || 0);
+    item.estrutura = v('m-estrutura');
+    item.fornecedorId = v('m-fornecedor');
+    item.codigoFornecedor = v('m-codforn');
+    // FICHA TÉCNICA, não premissa de conta. A largura que o enfesto usa continua
+    // saindo da FASE da grade — duas fontes para a mesma largura divergiriam sem
+    // ninguém notar, e o kg de todo enfesto do pano sairia junto.
+    item.largura = Math.max(0, parseFloat(String(v('m-largura')).replace(',', '.')) || 0);
+    // Rendimento digitado manda; zero (vazio) cai no cálculo — ver
+    // rendimentoEfetivoTecido. A ficha do fornecedor nem sempre fecha com a
+    // conta, e quando ela diz um número é ele que vale.
+    item.rendimento = Math.max(0, parseFloat(String(v('m-rendimento')).replace(',', '.')) || 0);
+    item.obs = v('m-obs');
+    item.entradasRolo = _rolosDoForm();
   }
   else if (tipo === 'cor') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -6039,6 +6101,21 @@ async function salvarCadastro() {
     item.hex = v('m-hex');
     item.codigo = v('m-codigo');
     item.siglaSku = (v('m-siglasku') || '').trim().toUpperCase();
+    item.fornecedorId = v('m-cor-fornecedor');
+    item.tecidoId = v('m-cor-tecido');
+    // O código do FORNECEDOR mora aqui, separado de `codigo` (o do Linx). São
+    // duas numerações de donos diferentes; guardar as duas no mesmo campo faria
+    // uma apagar a outra na primeira vez que a ficha fosse salva.
+    item.codigoFornecedor = v('m-cor-codforn');
+    item.nomeFornecedor = v('m-cor-nomeforn');
+  }
+  else if (tipo === 'fornecedor') {
+    if (!v('m-nome')) return toast('Razão social obrigatória', 'err');
+    item.nome = v('m-nome');
+    item.cnpj = v('m-cnpj');
+    item.cidadeUf = v('m-cidade');
+    item.telefone = v('m-telefone');
+    item.obs = v('m-obs');
   }
   else if (tipo === 'material') {
     if (!v('m-codigo') || !v('m-desc')) return toast('Código e descrição obrigatórios', 'err');
@@ -6679,9 +6756,143 @@ function _atualizarDicaTubular() {
   });
 }
 
+/* ========================================================= */
+/*        FORNECEDORES · FICHA TÉCNICA · ROLOS               */
+/* ========================================================= */
+function fornecedorOptions(selId) {
+  return '<option value="">— nenhum —</option>' + (STATE.fornecedores || []).map(f =>
+    `<option value="${esc(f.id)}" ${selId === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+}
+function fornecedorNome(id) {
+  return ((STATE.fornecedores || []).find(f => f.id === id) || {}).nome || '';
+}
+
+function renderFornecedores() {
+  const tb = document.getElementById('tbl-fornecedores');
+  if (!tb) return;
+  const list = STATE.fornecedores || [];
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Nenhum fornecedor cadastrado.</td></tr>`; return; }
+  tb.innerHTML = list.map(f => `
+    <tr>
+      ${acoesCell('fornecedor', f.id)}
+      <td><strong>${esc(f.nome)}</strong></td>
+      <td style="font-family:'IBM Plex Mono',monospace;">${esc(f.cnpj) || '—'}</td>
+      <td>${esc(f.cidadeUf) || '—'}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;">${esc(f.telefone) || '—'}</td>
+      <td style="font-size:11px;color:var(--ink-2);">${esc(f.obs) || '—'}</td>
+    </tr>`).join('');
+}
+
+/* RENDIMENTO (m/kg): quantos metros de pano vêm em um quilo.
+
+     rendimento = 1000 ÷ (gramatura × largura em metros)
+
+   SEM dobrar a largura do tubular, e é de propósito. A gramatura DESTE cadastro
+   já conta as duas faces do tubo (Malha Algodão 330 = 165 da etiqueta × 2), e a
+   largura aqui é a do TUBO ACHATADO. Dobrar outra vez daria metade do rendimento
+   real. Quem parte dos números crus da etiqueta (165 g/m² e 1,20 m aberto) chega
+   ao mesmo lugar: o ×2 de um lado cancela o ÷2 do outro.
+   Ver project_gramatura_tecido. */
+function rendimentoCalculadoTecido(t) {
+  const g = parseFloat(t && t.peso) || 0;
+  const larg = parseFloat(t && t.largura) || 0;
+  if (!(g > 0) || !(larg > 0)) return null;
+  return 1000 / (g * (larg / 100));
+}
+// O rendimento que VALE: o digitado manda; vazio cai no calculado. A ficha do
+// fornecedor nem sempre fecha com a conta, e quando ela responde é ela que vale.
+function rendimentoEfetivoTecido(t) {
+  const inf = parseFloat(t && t.rendimento) || 0;
+  return inf > 0 ? inf : rendimentoCalculadoTecido(t);
+}
+function _rendimentoDica(item) {
+  const calc = rendimentoCalculadoTecido(item);
+  if (calc == null) return 'Preencha <b>gramatura</b> e <b>largura</b> e ele sai sozinho: 1000 ÷ (g/m² × largura em metros).';
+  const inf = parseFloat(item && item.rendimento) || 0;
+  return inf > 0
+    ? `Pela ficha daria <b>${calc.toFixed(2)} m/kg</b>. Como há número digitado, vale o digitado.`
+    : `Em branco — vale o cálculo: <b>${calc.toFixed(2)} m/kg</b>.`;
+}
+function _atualizarDicaRendimento() {
+  const el = document.getElementById('m-rendimento-dica');
+  if (!el) return;
+  const num = id => parseFloat(String(document.getElementById(id)?.value || '').replace(',', '.')) || 0;
+  el.innerHTML = _rendimentoDica({ peso: num('m-peso'), largura: num('m-largura'), rendimento: num('m-rendimento') });
+}
+
+/* ENTRADAS DE ROLO — o rastro do lote.
+
+   Vivem DENTRO do tecido (`tecido.entradasRolo`), não numa chave própria do
+   blob: são a ficha daquele pano, andam junto dele ao duplicar ou excluir, e não
+   há pergunta que se faça a elas sem já se saber de qual tecido se fala.
+
+   Elas NÃO mexem no estoque em kg. Quem soma entrada e saída é `estoqueMov`
+   (ver calcularSaldosEstoque); aqui é só rastreabilidade — de qual lote saiu o
+   pano de cada OS. Lançar nos dois lugares contaria a mesma compra duas vezes. */
+function _roloCorOptions(selId) {
+  return '<option value="">— sem cor —</option>' + (STATE.cores || []).map(c =>
+    `<option value="${esc(c.id)}" ${selId === c.id ? 'selected' : ''}>${c.codigo ? esc(c.codigo) + ' · ' : ''}${esc(c.nome)}</option>`).join('');
+}
+function addRoloRow(data = {}) {
+  const cont = document.getElementById('m-rolos');
+  if (!cont) return;
+  const row = document.createElement('div');
+  row.className = 'rolo-row';
+  // O id da linha SOBREVIVE à edição: é por ele que a OS aponta para o rolo.
+  // Gerar um novo a cada gravação faria a OS perder o lote em silêncio.
+  row.dataset.id = data.id || uid();
+  row.innerHTML = `
+    <div class="field"><label>Nota fiscal</label><input type="text" class="rolo-nf" value="${esc(data.nf || '')}" placeholder="658"></div>
+    <div class="field"><label>Data</label><input type="date" class="rolo-data" value="${esc(data.data || '')}"></div>
+    <div class="field"><label>Lote</label><input type="text" class="rolo-lote" value="${esc(data.lote || '')}" placeholder="1795"></div>
+    <div class="field"><label>Partida</label><input type="text" class="rolo-partida" value="${esc(data.partida || '')}" placeholder="04286"></div>
+    <div class="field"><label>Rolo</label><input type="text" class="rolo-rolo" value="${esc(data.rolo || '')}" placeholder="1 de 4"></div>
+    <div class="field"><label>Peso líq. (kg)</label><input type="text" class="rolo-peso" value="${esc(data.peso || '')}" placeholder="em branco"></div>
+    <div class="field"><label>Cor</label><select class="rolo-cor">${_roloCorOptions(data.corId)}</select></div>
+    <div class="field"><label>&nbsp;</label><button type="button" class="btn small danger admin-only" onclick="this.closest('.rolo-row').remove()">✕</button></div>`;
+  cont.appendChild(row);
+}
+// Lê as linhas da sub-lista. O PESO fica como TEXTO: etiqueta sem peso (a da
+// Pluma vem com 0) tem de continuar em branco, e virar 0 seria inventar uma
+// resposta — vazio é pergunta, zero é resposta.
+function _rolosDoForm() {
+  return Array.from(document.querySelectorAll('#m-rolos .rolo-row')).map(r => {
+    const val = cls => (r.querySelector(cls)?.value || '').trim();
+    const corId = val('.rolo-cor');
+    return {
+      id: r.dataset.id || uid(),
+      nf: val('.rolo-nf'),
+      data: val('.rolo-data'),
+      lote: val('.rolo-lote'),
+      partida: val('.rolo-partida'),
+      rolo: val('.rolo-rolo'),
+      peso: val('.rolo-peso'),
+      corId,
+      corNome: ((STATE.cores || []).find(c => c.id === corId) || {}).nome || ''
+    };
+  }).filter(r => r.nf || r.lote || r.partida || r.rolo || r.peso || r.corId);
+}
+// O rótulo de uma entrada de rolo, do jeito que se procura por ela na prateleira.
+function roloLabel(r) {
+  const p = [];
+  if (r.nf) p.push('NF ' + r.nf);
+  if (r.lote) p.push('lote ' + r.lote);
+  if (r.partida) p.push('partida ' + r.partida);
+  if (r.rolo) p.push('rolo ' + r.rolo);
+  if (r.corNome) p.push(r.corNome);
+  return p.join(' · ') || '(sem identificação)';
+}
+// As entradas de rolo de um tecido, como opções do campo Lote / Rolo da OS.
+function loteOptionsDoTecido(tecidoId, selId) {
+  const t = (STATE.tecidos || []).find(x => x.id === tecidoId);
+  const rolos = (t && t.entradasRolo) || [];
+  return '<option value="">—</option>' + rolos.map(r =>
+    `<option value="${esc(r.id)}" ${selId === r.id ? 'selected' : ''}>${esc(roloLabel(r))}</option>`).join('');
+}
+
 function renderTecidos() {
   const tb = document.getElementById('tbl-tecidos');
-  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
+  if (!STATE.tecidos.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhum tecido cadastrado.</td></tr>`; return; }
   const catLabel = { malha: 'Malha algodão · máx 80', moletom: 'Moletom · máx 36', outro: 'Outro' };
   // A coluna do excedente saiu daqui junto com o campo: ele agora é cadastrado
   // por FASE da grade, e um tecido não tem mais um número só para mostrar.
@@ -6695,15 +6906,26 @@ function renderTecidos() {
         : t.tubular === 'aberto' ? ' <span class="badge" title="Vem aberto">não-tubular</span>' : ''}</td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.peso ? esc(t.peso) + ' g/m²' : '—'}${
         t.pesoBobina ? `<div style="font-size:10px;color:var(--ink-3);">bobina ${esc(t.pesoBobina)} kg</div>` : ''}</td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace;">${t.largura ? esc(t.largura) + ' cm' : '—'}${
+        (() => { const r = rendimentoEfetivoTecido(t); return r ? `<div style="font-size:10px;color:var(--ink-3);">${r.toFixed(2)} m/kg</div>` : ''; })()}</td>
+      <td>${esc(fornecedorNome(t.fornecedorId)) || '—'}${
+        t.codigoFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">${esc(t.codigoFornecedor)}</div>` : ''}${
+        (t.entradasRolo || []).length ? `<div style="font-size:10px;color:var(--ink-3);">${(t.entradasRolo || []).length} entrada(s) de rolo</div>` : ''}</td>
     </tr>`).join('');
 }
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
-  if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
+  if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
+  // A coluna da gramatura saiu: a gramatura por COR foi removida em 27/08/2026
+  // (uma malha calculando em duas escalas). O lugar dela mostra agora o que o
+  // cadastro passou a guardar — de quem vem a cor e a que pano ela pertence.
   tb.innerHTML = STATE.cores.map(c => `
     <tr>${acoesCell('cor', c.id)}<td><span class="color-swatch" style="background:${esc(c.hex)}"></span><strong>${esc(c.nome)}</strong></td>
-    <td><span class="badge">${esc(c.codigo)||'—'}</span></td>
-    <td style="font-family:'IBM Plex Mono',monospace;">${c.peso ? esc(c.peso)+' g/m²' : '—'}</td></tr>`).join('');
+    <td><span class="badge">${esc(c.codigo)||'—'}</span>${
+      c.codigoFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">forn. ${esc(c.codigoFornecedor)}</div>` : ''}</td>
+    <td>${esc(fornecedorNome(c.fornecedorId)) || '—'}${
+      c.nomeFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">${esc(c.nomeFornecedor)}</div>` : ''}</td>
+    <td>${esc(((STATE.tecidos || []).find(t => t.id === c.tecidoId) || {}).nome || '') || '—'}</td></tr>`).join('');
 }
 function renderMateriais() {
   const tb = document.getElementById('tbl-materiais');
@@ -17543,6 +17765,10 @@ function onTecidoLinhaChange(sel) {
   const row = sel.closest('.tecido-row');
   const corSel = row && row.querySelector('.tec-cor');
   if (corSel) corSel.innerHTML = corOptionsDaLinha(sel.value, corSel.value);
+  // Os rolos são DAQUELE pano: trocado o tecido, a lista do lote anterior não
+  // vale mais — é o mesmo descasamento da cor, por outro caminho.
+  const loteSel = row && row.querySelector('.tec-lote');
+  if (loteSel) loteSel.innerHTML = loteOptionsDoTecido(sel.value, loteSel.value);
   atualizarCalculosEnfesto();
 }
 window.onTecidoLinhaChange = onTecidoLinhaChange;
@@ -17552,12 +17778,14 @@ function addTecidoRow(data = {}) {
   const idx = cont.children.length + 1;
   if (idx > 5) { toast('Máximo 5 tecidos', 'err'); return; }
   const corOpts = corOptionsDaLinha(data.tecidoId, data.corId);
+  const loteOpts = loteOptionsDoTecido(data.tecidoId, data.lote);
   const row = document.createElement('div');
   row.className = 'tecido-row';
   row.innerHTML = `
     <div class="field"><label>Nº</label><input type="text" value="${idx}" readonly style="text-align:center;background:var(--line-2)"></div>
     <div class="field"><label>Tecido</label><select class="tec-sel" onchange="onTecidoLinhaChange(this)">${tecOptions(data.tecidoId)}</select></div>
     <div class="field"><label>Cor</label><select class="tec-cor">${corOpts}</select></div>
+    <div class="field"><label>Lote / Rolo</label><select class="tec-lote">${loteOpts}</select></div>
     <div class="field">
       <label>Consumo C.1</label>
       <div style="display:flex; gap:4px;">
@@ -19529,7 +19757,11 @@ function coletaOS() {
       tecidoNome: tecSel.options[tecSel.selectedIndex]?.text || '',
       corId: corSel?.value || '',
       corNome: corSel?.options[corSel.selectedIndex]?.text || '',
-      c1: r.querySelector('.tec-c1').value
+      c1: r.querySelector('.tec-c1').value,
+      // Guarda o id E o texto: se a entrada de rolo for apagada do cadastro, a
+      // OS já emitida continua dizendo de qual lote saiu o pano dela.
+      lote: r.querySelector('.tec-lote')?.value || '',
+      loteTexto: r.querySelector('.tec-lote')?.selectedOptions?.[0]?.text || ''
     };
   }).filter(t => t.tecidoId);
 

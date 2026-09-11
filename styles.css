@@ -910,7 +910,10 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   border-bottom: 1px dashed var(--line);
   align-items: end;
 }
-.tecido-row { grid-template-columns: 40px 1fr 1fr 160px; }
+.tecido-row { grid-template-columns: 40px 1fr 1fr 1fr 160px; }
+/* Sub-lista de entradas de rolo, dentro da ficha do tecido. */
+.rolo-row { display: grid; grid-template-columns: 80px 125px 80px 85px 80px 85px 1fr 34px; gap: 6px; align-items: end; margin-bottom: 6px; }
+.rolo-row .field label { font-size: 10px; }
 .variante-row { grid-template-columns: 60px 1fr 1fr 1fr 1fr; }
 .componente-row { grid-template-columns: 140px 1fr 1fr 100px; }
 .custo-row { grid-template-columns: 1fr 120px; }
