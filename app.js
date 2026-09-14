@@ -7156,11 +7156,32 @@ function materialPorFaseOS(o) {
     const b = bobinasEfetivasFase(o, prev, L.ordem, L);
     const papel = papelPorOrdem[L.ordem] || '';
     const ribana = ehFaseRibana(L) || /^ribana_/.test(papel);
+    const nomeFase = L.faseNome || L.nomeEnf || ('Fase ' + L.ordem);
+    /* O VIÉS É UMA FASE à PARTE (14/09/2026, Junior: "viés deixa de fora").
+
+       calcularPapeisFases classifica pela CATEGORIA DO TECIDO, e o viés é
+       malha nas duas peças da casa — então ele saia disfarçado de outra coisa:
+       na camiseta virava mais uma coluna de CORPO (a "Corpo 2" de uma básica
+       era o viés), e no moletom, onde toda malha é forro, virava FORRO DE
+       CAPUZ — numa básica sem capuz a coluna do forro mostrava viés puro, e
+       numa com capuz mostrava forro + viés somados na mesma célula.
+
+       Quem sabe que aquela linha é o viés é o NOME, e a regra do nome já
+       existe: _ehFaseVies, a mesma que o cadastro da grade usa para não
+       acrescentar um segundo viés. Não é regex nova aqui — é a regra da casa.
+       A guarda do ribana fica porque "Gola e Viés" é linha de gola: tirar a
+       linha inteira levaria a gola junto.
+
+       O viés continua reservando pano de verdade e continua somado no
+       Reservado do quadro de estoque; o que ele não faz mais é ocupar uma
+       coluna que diz outro nome. */
+    const vies = !ribana && _ehFaseVies(nomeFase);
     return {
       ordem: L.ordem,
-      nome: L.faseNome || L.nomeEnf || ('Fase ' + L.ordem),
+      nome: nomeFase,
       ribana,
-      forro: !ribana && papel === 'forro_capuz',
+      vies,
+      forro: !ribana && !vies && papel === 'forro_capuz',
       bobinas: (typeof b === 'number' && isFinite(b) && b > 0) ? b : null,
       kg: Number(L.kg) || 0,
       tecido: L.tecidoReal || L.nomeEnf || '',
@@ -7169,8 +7190,9 @@ function materialPorFaseOS(o) {
   }).filter(f => f.kg > 0 || f.bobinas != null);
 }
 
-// As fases de CORPO, na ordem — uma coluna cada. Forro e ribana têm as suas.
-function corposDoMaterialOS(o) { return materialPorFaseOS(o).filter(f => !f.ribana && !f.forro); }
+// As fases de CORPO, na ordem — uma coluna cada. Forro e ribana têm as suas;
+// o viés não tem coluna nenhuma (ver materialPorFaseOS).
+function corposDoMaterialOS(o) { return materialPorFaseOS(o).filter(f => !f.ribana && !f.forro && !f.vies); }
 // Fases de um mesmo papel somadas numa coluna só: a ribana pode ser duas (gola
 // e barra/punhos) e a prateleira é a mesma, então separá-las na lista não ajuda
 // quem vai buscar o pano.
