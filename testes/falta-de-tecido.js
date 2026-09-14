@@ -42,6 +42,12 @@ const monta = (ctx) => new Function('ctx', `
   const movimentacoesEstoque = () => STATE.estoqueMov || [];
   ${recorte('function calcularSaldosEstoque', 'os saldos do estoque')}
   ${recorte('function faltaDeTecidoParaOS', 'a falta de tecido da OS')}
+  // O aviso fala em bobina desde 14/09/2026; o peso da bobina vem do cadastro
+  // do tecido ou das entradas anteriores (pesoBobinaEstimado).
+  const _normFake = (x) => _normNome(x);
+  ${recorte('function pesoBobinaPorNome', 'o peso de bobina cadastrado')}
+  ${recorte('function pesoBobinaEstimado', 'o peso de bobina estimado')}
+  ${recorte('function _bobinasDoKg', 'a conversao de kg em bobinas')}
   ${recorte('function _textoFaltaDeTecido', 'o texto do aviso')}
   return { faltaDeTecidoParaOS, _textoFaltaDeTecido, calcularSaldosEstoque };
 `)(ctx);
@@ -57,7 +63,8 @@ const reserva = (tec, cor, kg, osId) => ({ id: 'r' + Math.random(), tipo: 'saida
 const baixa  = (tec, cor, kg, osId) => ({ id: 'b' + Math.random(), tipo: 'saida', tecidoNome: tec, corNome: cor, kg, origem: 'os', osId, status: 'consumido' });
 
 const MALHA = 'Malha Algodão', PRETO = 'Preto Malha Algodão';
-const cenario = (mov, consumo) => monta({ STATE: { estoqueMov: mov }, consumo });
+const cenario = (mov, consumo, tecidos) => monta({
+  STATE: { estoqueMov: mov, tecidos: tecidos || [] }, consumo });
 const osNova = { id: 'os_nova' };
 
 console.log('-- quando avisa, e quando fica quieto --');
@@ -243,6 +250,37 @@ console.log('-- o vermelho na lista de material reservado --');
      /falta \? ' style="color:#c0392b;"/.test(tela), '');
   ok('28. a falta NAO e gravada na OS — nada de marca a limpar depois',
      !/\.faltaPano\s*=/.test(tela) && !/o\.semPano\s*=/.test(tela), '');
+}
+
+
+/* O AVISO FALA EM BOBINA, ALEM DO QUILO (14/09/2026, Junior).
+   "Faltam 69,094 kg" nao diz a ninguem se o problema e meia bobina ou um
+   caminhao. A bobina que FALTA arredonda para cima e a DISPONIVEL para baixo:
+   meia bobina que falta obriga a comprar uma inteira, e meia bobina na
+   prateleira ninguem vai buscar. */
+console.log('');
+console.log('-- o aviso em bobinas --');
+{
+  const TEC = [{ id: 't1', nome: MALHA, pesoBobina: 19 }];
+  // 100 kg na prateleira, a OS quer 200: faltam 100 = 5,26 bobinas.
+  const api = cenario([entrada(MALHA, PRETO, 100)],
+    { os_nova: [{ tecidoNome: MALHA, corNome: PRETO, kg: 200 }] }, TEC);
+  const txt = api._textoFaltaDeTecido(api.faltaDeTecidoParaOS(osNova));
+  ok('29. o que FALTA vem em bobinas, arredondado para cima (5,26 -> 6)',
+     /FALTAM 100,000 kg \(6 bobinas\)/.test(txt), txt);
+  ok('30. o DISPONIVEL vem em bobinas, arredondado para baixo (5,26 -> 5)',
+     /disponível 100,000 kg \(5 bobinas\)/.test(txt), txt);
+  ok('31. e o que a OS precisa tambem sai em bobinas',
+     /precisa 200,000 kg \(11 bobinas\)/.test(txt), txt);
+
+  // Sem peso de bobina conhecido, o aviso volta a falar so em quilos.
+  const semPeso = cenario([entrada(MALHA, PRETO, 100)],
+    { os_nova: [{ tecidoNome: MALHA, corNome: PRETO, kg: 200 }] }, [{ id: 't1', nome: MALHA }]);
+  const txt2 = semPeso._textoFaltaDeTecido(semPeso.faltaDeTecidoParaOS(osNova));
+  ok('32. pano sem peso de bobina conhecido: so quilos, sem bobina inventada',
+     !/bobina\(s\)|\(\d+ bobinas?\)/.test(txt2) && /FALTAM 100,000 kg/.test(txt2), txt2);
+  ok('33. ... e o aviso diz como fazer a bobina aparecer',
+     /peso médio no cadastro do tecido/.test(txt2), txt2);
 }
 
 console.log('');

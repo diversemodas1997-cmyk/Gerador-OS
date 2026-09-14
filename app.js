@@ -7540,17 +7540,68 @@ function abrirMovEstoque(tipo) {
   const hoje = new Date().toISOString().slice(0, 10);
   box.innerHTML = `
     <div class="form-grid cols-2">
-      <div class="field"><label>Tecido *</label><select id="me-tecido">${tecOpts}</select></div>
+      <div class="field"><label>Tecido *</label><select id="me-tecido" onchange="_meAtualizarEstimativa()">${tecOpts}</select></div>
       <div class="field"><label>Cor</label><select id="me-cor">${corOpts}</select></div>
-      <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000"></div>
-      <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
-      <div class="field"><label>Itens fechados (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0"></div>
+      <div class="field"><label>Bobinas fechadas (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0" oninput="_meAtualizarEstimativa()"></div>
+      <div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Só quando a carga vier em bobina <b>fora do padrão</b> do pano. Em branco, usa a largura de ficha técnica do tecido.</div></div>
+      <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000" oninput="_meMarcarKgManual()"></div>
       <div class="field"><label>Itens abertos em uso (un)</label><input type="number" min="0" step="1" id="me-abertos" placeholder="0"></div>
+      <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
       <div class="field full"><label>Observação</label><input type="text" id="me-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">O kg é o equivalente em peso. As unidades (fechados = rolos/peças lacrados; abertos = em uso) são contagem física e aparecem em colunas próprias no painel.</div>
+    ${movEstoqueTipo === 'entrada' ? '<div class="info-box" id="me-estimativa" style="margin-top:8px;font-size:12px;"></div>' : ''}
+    <div class="info-box" style="margin-top:8px;font-size:12px;">O kg é o equivalente em peso. As unidades (bobinas fechadas = rolos/peças lacrados; abertos = em uso) são contagem física e aparecem em colunas próprias no painel. <b>Rolo aberto não entra na estimativa</b>: meia bobina não tem peso previsível, e o kg dele vai no campo acima, à mão.</div>
     ${movEstoqueTipo === 'saida' ? '<div class="info-box" style="margin-top:8px;">Use para corrigir o estoque (perdas, sobras, inventário). O consumo de produção já é lançado sozinho ao salvar a OS.</div>' : ''}`;
   openModal('modal-estoque');
+  _meKgManual = false;
+  _meAtualizarEstimativa();
+}
+
+/* O KG SAI DAS BOBINAS (14/09/2026). Quem recebe a carga conta bobina; o quilo
+   o programa calcula e escreve no campo, que continua editável — estimativa não
+   manda na balança. Assim que a pessoa mexe no kg à mão, o programa para de
+   reescrever: a conta serve para poupar trabalho, não para discutir com quem
+   está com o pano na frente. */
+let _meKgManual = false;
+function _meMarcarKgManual() { _meKgManual = true; _meAtualizarEstimativa(); }
+
+function _meAtualizarEstimativa() {
+  const cx = document.getElementById('me-estimativa');
+  if (!cx) return;
+  const el = id => document.getElementById(id);
+  const tec = el('me-tecido') ? el('me-tecido').value : '';
+  const bob = parseInt(el('me-fechados') ? el('me-fechados').value : '', 10) || 0;
+  const largEl = el('me-largura');
+  const padrao = larguraPadraoTecido(tec);
+  if (largEl) largEl.placeholder = padrao > 0 ? String(padrao) : 'cm';
+  const kgTxt = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const est = estimativaKgEntrada(tec, bob, largEl ? largEl.value : '');
+
+  if (!est) {
+    cx.innerHTML = !tec
+      ? 'Escolha o <b>tecido</b> e diga quantas <b>bobinas</b> entraram — o kg sai sozinho.'
+      : (!(bob > 0)
+        ? `Diga quantas <b>bobinas</b> de ${esc(tec)} entraram e o kg sai sozinho.`
+        : `Ainda não dá para estimar o kg de <b>${esc(tec)}</b>: o cadastro do tecido está sem o `
+          + `<b>peso médio da bobina</b> e não há entrada anterior deste pano com kg e bobinas juntos. `
+          + `Pese esta carga e informe o kg à mão — a próxima já sai calculada por ela.`);
+    return;
+  }
+  const fonte = est.origem === 'cadastro'
+    ? 'pelo <b>peso médio da bobina</b> no cadastro do tecido'
+    : `pelas suas <b>entradas anteriores</b> deste pano (${est.n} lançamento${est.n === 1 ? '' : 's'} com kg e bobinas, mediana)`;
+  const larg = est.fator !== 1
+    ? ` Ajustado pela <b>largura</b>: ${kgTxt(est.larguraUsada)} cm contra ${kgTxt(est.larguraPadrao)} cm da bobina padrão deste pano.`
+    : '';
+  cx.innerHTML = `<b>${est.bobinas}</b> bobina${est.bobinas === 1 ? '' : 's'} × `
+    + `<b>${kgTxt(est.porBobina)} kg</b> ≈ <b>${kgTxt(est.kg)} kg</b>, ${fonte}.${larg}`
+    + (_meKgManual
+      ? ' O kg abaixo foi escrito à mão — o programa não o reescreve mais.'
+      : ' Já preenchi o campo do kg; corrija se a balança disser outra coisa.');
+  if (!_meKgManual) {
+    const k = el('me-kg');
+    if (k) k.value = est.kg;
+  }
 }
 
 async function salvarMovEstoque() {
@@ -20316,18 +20367,51 @@ function faltaDeTecidoParaOS(data) {
 // porque e ele que faz a diferenca: dizer "faltam 113 kg" sem dizer que o pano
 // esta prometido a outra OS manda a pessoa conferir a prateleira e achar que o
 // programa errou.
+/* O aviso fala em BOBINA, além do quilo (14/09/2026, Junior). O quilo é a
+   unidade do estoque; a bobina é a unidade de quem vai à prateleira ver se o
+   pano está lá. "Faltam 69,094 kg" não diz a ninguém se o problema é meia
+   bobina ou um caminhão — "faltam 4 bobinas" diz.
+ 
+   A bobina é ARREDONDADA PARA CIMA no que falta e PARA BAIXO no que há: meia
+   bobina que falta obriga a comprar uma inteira, e meia bobina na prateleira
+   não é uma bobina que alguém possa ir buscar. Errar para o lado do aperto é
+   o único erro que não para a produção.
+
+   Quando o programa não sabe o peso da bobina daquele pano (cadastro zerado e
+   sem entrada anterior com kg e bobinas), o aviso sai só em quilos, como antes.
+   Inventar bobina seria pior do que não dizer nada — ver pesoBobinaEstimado. */
+function _bobinasDoKg(kg, tecidoNome, modo) {
+  const base = pesoBobinaEstimado(tecidoNome);
+  if (!base || !(base.kg > 0)) return null;
+  const n = (Number(kg) || 0) / base.kg;
+  if (!isFinite(n)) return null;
+  return modo === 'baixo' ? Math.floor(n) : Math.ceil(n);
+}
+
 function _textoFaltaDeTecido(faltando) {
   const kg = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const bob = (n, tec, modo) => {
+    const b = _bobinasDoKg(n, tec, modo);
+    return b == null ? '' : ` (${b} bobina${b === 1 ? '' : 's'})`;
+  };
   const linhas = faltando.map(f =>
     `  · ${f.tecidoNome} · ${corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)'}\n`
-    + `      precisa ${kg(f.precisa)} kg · disponível ${kg(f.disponivel)} kg · `
-    + `FALTAM ${kg(f.falta)} kg`
+    + `      precisa ${kg(f.precisa)} kg${bob(f.precisa, f.tecidoNome, 'cima')}\n`
+    + `      disponível ${kg(f.disponivel)} kg${bob(Math.max(0, f.disponivel), f.tecidoNome, 'baixo')}\n`
+    + `      FALTAM ${kg(f.falta)} kg${bob(f.falta, f.tecidoNome, 'cima')}`
     + (f.reservado > 0.0005 ? `\n      (${kg(f.reservado)} kg estão reservados em outras OS)` : ''));
+  const semPeso = faltando.some(f => _bobinasDoKg(1, f.tecidoNome, 'cima') == null);
   return `⚠ Não há tecido disponível para esta OS.\n\n`
     + linhas.join('\n')
     + `\n\nDisponível = entradas − reservado − saídas. O pano pode estar na `
     + `prateleira e ainda assim faltar aqui: ele já está prometido a outra OS que `
     + `ainda não foi produzida.\n\n`
+    + (semPeso
+      ? `A bobina não aparece nos panos sem peso de bobina conhecido — informe o `
+        + `peso médio no cadastro do tecido, ou lance uma entrada com kg e bobinas juntos.\n\n`
+      : `A bobina que falta é arredondada para cima, e a disponível para baixo: `
+        + `meia bobina que falta obriga a comprar uma inteira, e meia bobina na `
+        + `prateleira ninguém vai buscar.\n\n`)
     + `Gerar a OS assim mesmo?`;
 }
 
@@ -26994,6 +27078,82 @@ function pesoBobinaPorNome(nome) {
   const t = (STATE.tecidos || []).find(x => _normNome(x.nome) === alvo);
   return t ? (parseFloat(t.pesoBobina) || 0) : 0;
 }
+/* QUANTO PESA UMA BOBINA DESTE PANO (14/09/2026, Junior: "O usuário não tem
+   como saber quantos kilos entra, ele sabe apenas quantas bobinas de tecido
+   entra. A quantidade em kilos deve ser estimada pelo programa").
+
+   Quem recebe a carga conta BOBINA — é o que se vê no caminhão e o que se
+   empilha na prateleira. O quilo é o que o estoque precisa, e ninguém o sabe
+   sem balança. Então o programa faz a conta.
+
+   DUAS FONTES, NESTA ORDEM:
+
+   1. O CADASTRO do tecido ("Peso médio da bobina"), quando preenchido. É a
+      resposta declarada, e declarada ganha de deduzida.
+
+   2. O HISTÓRICO das entradas deste mesmo pano — kg dividido por bobinas dos
+      lançamentos que trouxeram os dois números. É o peso que a própria casa já
+      conferiu na balança, e não um valor de tabela: o programa aprende com o
+      que foi pesado em vez de depender de um cadastro que ninguém lembra de
+      manter. Hoje os nove tecidos estão com o cadastro zerado, então na prática
+      é daqui que a estimativa sai.
+
+   MEDIANA, e não média: em 04/09 entraram 40 bobinas de 80 cm a 13 kg, ao lado
+   das normais de 19 kg. A média afundaria a estimativa de todas as cargas por
+   causa de uma carga estreita; a mediana ignora o caso fora de esquadro e
+   continua respondendo o que a bobina normal pesa.
+
+   ENTRADA COM ROLO ABERTO FICA DE FORA da amostra: o kg dela inclui pedaços de
+   rolo, e dividir por bobinas cheias daria um peso por bobina inflado. */
+function larguraPadraoTecido(nome) {
+  const alvo = _normNome(nome);
+  const t = (STATE.tecidos || []).find(x => _normNome(x.nome) === alvo);
+  return t ? (parseFloat(t.largura) || 0) : 0;
+}
+
+function pesoBobinaEstimado(tecidoNome) {
+  if (!tecidoNome) return null;
+  const cad = pesoBobinaPorNome(tecidoNome);
+  if (cad > 0) return { kg: cad, origem: 'cadastro', n: 0 };
+  const alvo = _normNome(tecidoNome);
+  const pesos = (STATE.estoqueMov || [])
+    .filter(m => m.tipo === 'entrada'
+      && _normNome(m.tecidoNome) === alvo
+      && (Number(m.kg) || 0) > 0
+      && (Number(m.fechados) || 0) > 0
+      && !((Number(m.abertos) || 0) > 0))
+    .map(m => (Number(m.kg) || 0) / (Number(m.fechados) || 0))
+    .sort((a, b) => a - b);
+  if (!pesos.length) return null;
+  const i = Math.floor(pesos.length / 2);
+  const mediana = pesos.length % 2 ? pesos[i] : (pesos[i - 1] + pesos[i]) / 2;
+  return { kg: Math.round(mediana * 1000) / 1000, origem: 'historico', n: pesos.length };
+}
+
+/* A LARGURA MUDA O PESO, e foi a própria casa que mostrou: a mesma Malha
+   Algodão deu 19 kg por bobina nas cargas normais e 13 kg na de "Bobinas de
+   80 cm" — 32% a menos. Estimar carga estreita pelo peso da bobina normal
+   erraria 45% para cima, em quilos que ninguém tem na prateleira.
+
+   O ajuste é a razão entre a largura informada e a largura de ficha técnica do
+   tecido. Sem largura cadastrada no tecido não há com o que comparar, e aí o
+   programa não ajusta nada — inventar uma largura padrão seria pior do que não
+   ajustar. */
+function estimativaKgEntrada(tecidoNome, bobinas, larguraCm) {
+  const n = Number(bobinas) || 0;
+  if (!(n > 0)) return null;
+  const base = pesoBobinaEstimado(tecidoNome);
+  if (!base) return null;
+  const padrao = larguraPadraoTecido(tecidoNome);
+  const larg = parseFloat(String(larguraCm == null ? '' : larguraCm).replace(',', '.')) || 0;
+  const ajusta = padrao > 0 && larg > 0 && Math.abs(larg - padrao) > 0.01;
+  const fator = ajusta ? (larg / padrao) : 1;
+  return {
+    kg: Math.round(n * base.kg * fator * 1000) / 1000,
+    porBobina: base.kg, origem: base.origem, n: base.n,
+    fator, larguraPadrao: padrao, larguraUsada: larg, bobinas: n
+  };
+}
 
 // Resolve cada fase do enfesto de uma OS e calcula o consumo em kg.
 // Fórmula (confirmada): kg = comprimento(m) × largura(m) × camadas × peso(g/m²) / 1000.
@@ -32638,6 +32798,8 @@ window.excluirOS = excluirOS;
 window.duplicarOS = duplicarOS;
 window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
+window._meAtualizarEstimativa = _meAtualizarEstimativa;
+window._meMarcarKgManual = _meMarcarKgManual;
 window.excluirMovEstoque = excluirMovEstoque;
 window.renderEstoqueCorte = renderEstoqueCorte;
 window.renderFasePainel = renderFasePainel;
