@@ -7468,7 +7468,7 @@ function componentesPorTecidoCorOS(o) {
 // uma linha aqui (+ a chave do array manual em STATE/keys + nav/section/rota).
 //   entrada.tipo 'etapa' = OS com a etapa (re/label) marcada no checklist.
 const FASES_ESTOQUE = [
-  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true,
+  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
   { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true, osTodasEntradas: true,
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
@@ -8061,6 +8061,14 @@ function renderFasePainel(faseIdx) {
         </tbody>
       </table>
     </div>` : '';
+
+  // Fase "só OSs": apenas a lista de OSs atualmente na fase.
+  if (fase.soOS) {
+    cont.innerHTML = pacotes.length
+      ? pacotesHtml
+      : `<div class="info-box">Nenhuma OS em ${esc(fase.titulo)} agora. A OS entra aqui sozinha quando a etapa <b>${esc(fase.entrada.label)}</b> é a última marcada no checklist.</div>`;
+    return;
+  }
 
   const vazio = !gruposArr.length && !movs.length && !pacotes.length;
   cont.innerHTML = `

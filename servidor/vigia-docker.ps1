@@ -165,22 +165,52 @@ function Motor-Responde($exe) {
 # ANTES de abrir o Docker Desktop, entao a gravacao nao e sobrescrita por ele ao
 # fechar. E se uma atualizacao do Docker religar a funcao, a manha seguinte
 # desliga de novo sozinha.
+#
+# SEGUNDA LEVA, 14/09/2026. Com o Windows e o Supabase ja enxutos, o motor ainda
+# levava 92 s para subir. A medicao mostrou que nao era falta de maquina: no
+# arranque sobravam 995 MB livres, e com tudo de pe ainda sobravam 396 MB. O
+# peso que restava era o proprio Docker Desktop — o painel abrindo junto com o
+# motor, as extensoes, a indexacao SBOM do Scout e as estatisticas de uso, tudo
+# disputando disco e CPU justamente no minuto em que o motor precisa subir.
+# Nada disso serve nesta maquina, que so hospeda nginx e Postgres, entao a
+# funcao passou a desligar as cinco chaves de uma vez, e nao so a do agente.
 function Desligar-Agente-IA {
   $arq = Join-Path $env:APPDATA 'Docker\settings-store.json'
   if (-not (Test-Path $arq)) { return $false }
   try {
     $cfg = Get-Content $arq -Raw -Encoding UTF8 | ConvertFrom-Json
   } catch { return $false }   # corrompido e problema do Consertar-Configs, nao deste
-  if ($null -ne $cfg.EnableDockerAI -and -not $cfg.EnableDockerAI) { return $false }
+  # chave => valor querido: agente de IA (~70 s de arranque), painel abrindo
+  # junto com o motor, extensoes, indexacao SBOM do Scout, estatisticas de uso.
+  # Chave que o Docker desta versao nao conheca fica so ignorada.
+  $querido = [ordered]@{
+    'EnableDockerAI'         = $false
+    'OpenUIOnStartupDisabled'= $true
+    'ExtensionsEnabled'      = $false
+    'SBOMIndexing'           = $false
+    'AnalyticsEnabled'       = $false
+  }
+
+  $mudou = @()
+  foreach ($chave in $querido.Keys) {
+    $valor = $querido[$chave]
+    $prop = $cfg.PSObject.Properties[$chave]
+    if ($null -eq $prop) {
+      $cfg | Add-Member -NotePropertyName $chave -NotePropertyValue $valor
+      $mudou += $chave
+    } elseif ($prop.Value -ne $valor) {
+      $prop.Value = $valor
+      $mudou += $chave
+    }
+  }
+  if ($mudou.Count -eq 0) { return $false }
+
   try {
-    if ($null -eq $cfg.PSObject.Properties['EnableDockerAI']) {
-      $cfg | Add-Member -NotePropertyName 'EnableDockerAI' -NotePropertyValue $false
-    } else { $cfg.EnableDockerAI = $false }
     [IO.File]::WriteAllText($arq, ($cfg | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
-    Anotar 'agente de IA do Docker desligado (economiza ~70 s de arranque)'
+    Anotar ('Docker Desktop enxugado antes de abrir: ' + ($mudou -join ', '))
     return $true
   } catch {
-    Anotar "aviso: nao consegui desligar o agente de IA do Docker: $($_.Exception.Message)"
+    Anotar "aviso: nao consegui gravar as configuracoes do Docker Desktop: $($_.Exception.Message)"
     return $false
   }
 }
