@@ -7394,6 +7394,26 @@ function renderEstoque() {
       <div style="font-size:10px;color:var(--ink-2);">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
     </td>`;
   };
+  /* O SKU COMPLETO NA COLUNA DO MODELO (14/09/2026, Junior).
+
+     "Camiseta Basica" nao identifica pano nenhum: a casa tem dezenas de OS com
+     esse modelo e cores diferentes, e o que amarra a OS ao produto — e ao
+     estoque de acabados do Estoque-Confeccao — e o SKU. Ele ja sai na folha de
+     OS, no cabecalho, e faltava justamente aqui, na tela onde se decide o que
+     cortar primeiro.
+
+     E a MESMA funcao da folha, skusDaOS: o override da OS ganha do SKU do
+     desenho, que ganha do SKU do modelo, e a LINHA sem traco se compoe com a
+     sigla da cor de cada variante. Uma OS bicolor tem mais de um SKU, e os dois
+     aparecem — esconder o segundo faria a metade do lote sumir da conta de
+     quem confere. */
+  const _skuCelula = (os) => {
+    const lista = os ? (skusDaOS(os) || []) : [];
+    if (!lista.length) return '';
+    return `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;`
+      + `color:var(--ink-2);white-space:nowrap;">${esc(lista.join(' / '))}</div>`;
+  };
+
   const linhaOS = (o) => {
     const os = (STATE.ordens || []).find(x => x.id === o.osId);
     const corpos = corposDoMaterialOS(os);
@@ -7404,7 +7424,7 @@ function renderEstoque() {
     return `
     <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
-      <td>${esc(o.modelo) || '—'}</td>
+      <td>${esc(o.modelo) || '—'}${_skuCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i])).join('')}
       ${temForro ? celFase(forro) : ''}
@@ -7424,7 +7444,7 @@ function renderEstoque() {
   const linhaConjugada = (o, pai) => `
     <tr>
       <td style="padding-left:18px;"><span style="color:var(--ink-2);">↳</span> <strong>${esc(o.os) || '—'}</strong></td>
-      <td>${esc(o.modeloNome) || '—'}</td>
+      <td>${esc(o.modeloNome) || '—'}${_skuCelula(o)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       <td colspan="${nCorpos + (temForro ? 1 : 0) + (temRibana ? 1 : 0)}" style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">—</td>
       <td><span class="badge" style="background:#dfe7f7;">Conjugada</span>
