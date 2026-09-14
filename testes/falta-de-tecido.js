@@ -167,6 +167,84 @@ console.log('-- ligado no portao de salvar --');
      && portao.indexOf('calcularLimiteCamadas') < portao.indexOf('faltaDeTecidoParaOS'));
 }
 
+
+/* ---------------------------------------------------------------------------
+   O VERMELHO NA LISTA DE MATERIAL RESERVADO (14/09/2026, Junior).
+
+   O aviso da gravacao passa: some do modal e ninguem mais sabe qual das OS da
+   lista esta segurando pano que a prateleira nao tem. Ele ficou de pe na linha
+   da OS, em vermelho, e a conta e ESTA MESMA — duas contas para a mesma
+   pergunta dariam, mais cedo ou mais tarde, duas respostas.
+
+   E ele tem de SAIR SOZINHO quando a entrada daquele tecido for lancada. Por
+   isso nada e gravado na OS: a falta e perguntada a cada desenho da tela. Marca
+   gravada teria de ser apagada a mao e ficaria vermelha para sempre numa OS que
+   ja tem o pano dela.
+   --------------------------------------------------------------------------- */
+console.log('');
+console.log('-- o vermelho na lista de material reservado --');
+{
+  // A OS 0526 ja esta SALVA: a reserva dela ja esta no razao. 100 kg entraram,
+  // 130 estao reservados nela: faltam 30 que ninguem comprou.
+  const consumo = { os_0526: [{ tecidoNome: MALHA, corNome: PRETO, kg: 130 }] };
+  let api = cenario([entrada(MALHA, PRETO, 100), reserva(MALHA, PRETO, 130, 'os_0526')], consumo);
+  const os0526 = { id: 'os_0526' };
+  const f = api.faltaDeTecidoParaOS(os0526);
+  ok('22. a OS ja salva que nao cabe continua acusando falta (linha vermelha)',
+     f.length === 1 && f[0].falta === 30, f);
+
+  // Lancada a entrada que faltava, a linha volta ao preto — sem tocar na OS.
+  api = cenario([entrada(MALHA, PRETO, 100), reserva(MALHA, PRETO, 130, 'os_0526'),
+                 entrada(MALHA, PRETO, 30)], consumo);
+  ok('23. lancada a entrada do tecido, o vermelho sai sozinho',
+     api.faltaDeTecidoParaOS(os0526).length === 0, api.faltaDeTecidoParaOS(os0526));
+
+  // Entrada menor que a falta nao basta: 10 dos 30 nao apagam o aviso.
+  api = cenario([entrada(MALHA, PRETO, 100), reserva(MALHA, PRETO, 130, 'os_0526'),
+                 entrada(MALHA, PRETO, 10)], consumo);
+  ok('24. entrada PARCIAL nao apaga o vermelho — ainda faltam 20',
+     api.faltaDeTecidoParaOS(os0526).length === 1
+     && api.faltaDeTecidoParaOS(os0526)[0].falta === 20, api.faltaDeTecidoParaOS(os0526));
+
+  /* DUAS OS NA MESMA PRATELEIRA CURTA: AS DUAS ACENDEM.
+
+     100 kg na prateleira, uma OS quer 40 e outra quer 130. Nao existe "a que
+     cabe": o pano nao serve as duas, e quem chegar primeiro ao enfesto leva.
+     Dizer que so a maior esta em falta seria escolher uma ordem — por data? por
+     numero? — que a fabrica nunca combinou, e mandaria a outra OS para a mesa
+     confiante num pano que pode nao estar la.
+
+     E a mesma resposta que o aviso da gravacao ja dava, o que e o ponto: as duas
+     telas contam a mesma coisa. */
+  api = cenario([entrada(MALHA, PRETO, 100),
+                 reserva(MALHA, PRETO, 40, 'os_boa'), reserva(MALHA, PRETO, 130, 'os_0526')],
+                { os_boa: [{ tecidoNome: MALHA, corNome: PRETO, kg: 40 }], ...consumo });
+  ok('25. prateleira que nao serve as duas: as DUAS linhas acendem',
+     api.faltaDeTecidoParaOS({ id: 'os_boa' }).length === 1
+     && api.faltaDeTecidoParaOS(os0526).length === 1,
+     [api.faltaDeTecidoParaOS({ id: 'os_boa' }), api.faltaDeTecidoParaOS(os0526)]);
+
+  // Mas uma OS em OUTRA prateleira, essa com pano, nao e contagiada.
+  const VERDE = 'Verde Malha Algodão';
+  api = cenario([entrada(MALHA, PRETO, 100), entrada(MALHA, VERDE, 500),
+                 reserva(MALHA, PRETO, 130, 'os_0526'), reserva(MALHA, VERDE, 80, 'os_verde')],
+                { os_verde: [{ tecidoNome: MALHA, corNome: VERDE, kg: 80 }], ...consumo });
+  ok('25b. a OS de outra cor, com pano de sobra, continua preta',
+     api.faltaDeTecidoParaOS({ id: 'os_verde' }).length === 0,
+     api.faltaDeTecidoParaOS({ id: 'os_verde' }));
+}
+
+/* A TELA usa esta conta, e nao grava marca nenhuma. */
+{
+  const tela = recorte('function renderEstoque', 'a tela do estoque de tecidos');
+  ok('26. a lista de material reservado pergunta a falta por OS',
+     /faltaPorOS\.set\(r\.osId, f\)/.test(tela) && /faltaDeTecidoParaOS\(os\)/.test(tela), '');
+  ok('27. e pinta a linha de vermelho quando ha falta',
+     /falta \? ' style="color:#c0392b;"/.test(tela), '');
+  ok('28. a falta NAO e gravada na OS — nada de marca a limpar depois',
+     !/\.faltaPano\s*=/.test(tela) && !/o\.semPano\s*=/.test(tela), '');
+}
+
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

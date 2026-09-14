@@ -7329,6 +7329,38 @@ function renderEstoque() {
   const reservadas = osMat.filter(o => !o.consumido);
   const baixadas = osMat.filter(o => o.consumido);
   const idsComMovimento = new Set(osComMaterialReservado().map(o => o.osId));
+  /* A OS QUE RESERVOU PANO QUE NAO EXISTE (14/09/2026, Junior).
+
+     Ao salvar a OS o programa ja avisa que nao ha tecido disponivel, e deixa
+     gravar assim mesmo — quem esta com a OS na mao decide. O aviso, porem,
+     passa: some do modal e ninguem mais sabe QUAL das OS da lista esta segurando
+     um pano que a prateleira nao tem. Aqui ele fica de pe, na linha da OS, em
+     vermelho.
+
+     A CONTA E A MESMA, faltaDeTecidoParaOS — a do aviso da gravacao. Duas contas
+     para a mesma pergunta dariam, mais cedo ou mais tarde, duas respostas: o
+     modal dizendo que falta e a lista dizendo que nao. Ela ja tira os movimentos
+     da propria OS antes de comparar, entao a OS nao concorre consigo mesma.
+
+     E NAO SE GRAVA NADA NA OS. A falta e perguntada a cada desenho da tela, e
+     por isso ela se desfaz sozinha: lancada a entrada daquele tecido — compra,
+     inventario, ajuste —, o disponivel sobe, a falta deixa de existir e a linha
+     volta ao preto no proximo desenho da pagina, sem ninguem ter de limpar
+     marca nenhuma. Marca gravada teria de ser apagada a mao, e ficaria vermelha
+     para sempre na OS que ja tem o pano dela. */
+  const faltaPorOS = new Map();
+  reservadas.forEach(r => {
+    const os = (STATE.ordens || []).find(x => x.id === r.osId);
+    if (!os) return;
+    const f = faltaDeTecidoParaOS(os) || [];
+    if (f.length) faltaPorOS.set(r.osId, f);
+  });
+  const _tituloFalta = (fs) => 'Reservando pano que nao existe:\n'
+    + fs.map(f => '  · ' + (f.tecidoNome || '') + ' · '
+        + (corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)')
+        + ': precisa ' + fmt(f.precisa) + ' kg, disponivel ' + fmt(f.disponivel)
+        + ' kg, faltam ' + fmt(f.falta) + ' kg').join('\n')
+    + '\n\nO vermelho sai sozinho quando a entrada desse tecido for lancada no estoque.';
   /* SEM BOTÃO DE BAIXA (27/08/2026, Junior: "essa ação deve ser sempre
      automática"). Um botão que faz o que o programa já faz sozinho só serve
      para criar uma segunda verdade: quem clicasse aqui baixaria o pano de uma
@@ -7367,15 +7399,19 @@ function renderEstoque() {
     const corpos = corposDoMaterialOS(os);
     const forro = forroDoMaterialOS(os);
     const rib = ribanaDoMaterialOS(os);
+    const falta = faltaPorOS.get(o.osId) || null;
+    const dica = falta ? esc(_tituloFalta(falta)) : '';
     return `
-    <tr>
+    <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i])).join('')}
       ${temForro ? celFase(forro) : ''}
       ${temRibana ? celFase(rib) : ''}
-      <td><span class="badge" style="background:#fde9c8;">Reservado</span></td>
+      <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
+        ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ sem pano</span>`
+        : ''}</td>
     </tr>`;
   };
   /* A CONJUGADA APARECE JUNTO DA ATIVA, SEM PANO (28/08/2026, Junior).
@@ -7425,7 +7461,11 @@ function renderEstoque() {
         OS Salvas. Aqui ficam só as que ainda seguram material.${temConjugada ? `
         A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
         então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
-        mesmo metro na mesa.` : ''}
+        mesmo metro na mesa.` : ''}${faltaPorOS.size ? `
+        A OS <b style="color:#c0392b;">em vermelho</b> está reservando pano que a prateleira
+        <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. Passe o mouse na linha para ver
+        qual tecido e quanto falta. O vermelho <b>sai sozinho</b> assim que a entrada desse
+        tecido for lançada no estoque.` : ''}
       </div>
       ${reservadas.length ? `<table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th>
