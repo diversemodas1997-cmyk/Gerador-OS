@@ -37,6 +37,9 @@ const motor = [
   corta('function _normNome'),
   corta('function osEtapaMarcada'),
   corta('function componentesPorTecidoCorOS'),
+  // As constantes das duas unidades moram logo acima do array e ele as usa
+  // (o `cond` das duas fases de costura sai daqui).
+  recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
   cortaArr('const FASES_ESTOQUE'),
   corta('function _faseEntrouOS'),
   corta('function _nomeEtapaDaFase'),

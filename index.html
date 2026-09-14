@@ -101,10 +101,14 @@
         <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">OS Salvas</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
-        <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de corte</a>
-        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Expedição</a>
-        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando</a>
+        <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
+        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
+        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · IDA</a>
+        <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
+        <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
+        <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · VOLTA</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
+        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Expedição</a>
         <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Operações</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
       </div>
@@ -392,8 +396,8 @@
     <section class="page hidden" data-page="corte">
       <div class="page-header">
         <div>
-          <h1>Estoque de corte</h1>
-          <div class="desc">OSs cuja última etapa marcada é <b>Corte</b>. Ao marcar outra etapa (Costura, Retirada de fios, Expedição…) a OS sai daqui e vai para o campo dela.</div>
+          <h1>Estoque corte · Unidade Descalvado</h1>
+          <div class="desc">OSs cuja última etapa marcada é <b>Corte</b>. Ao marcar outra etapa (Recebido em São Carlos, Costura, Retirada de fios, Expedição…) a OS sai daqui e vai para o campo dela.</div>
         </div>
       </div>
       <div id="corte-painel"></div>
@@ -402,18 +406,58 @@
     <section class="page hidden" data-page="costurando">
       <div class="page-header">
         <div>
-          <h1>Costurando</h1>
-          <div class="desc">Peças em costura, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada; sai quando outra etapa vira a última marcada. A coluna <b>OS</b> aqui mostra todas as OSs que já passaram pela Costura. Use os botões para contagem física e ajustes manuais.</div>
+          <h1>Costurando · Unidade Descalvado</h1>
+          <div class="desc">Peças em costura <b>aqui</b>, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada e a OS <b>não</b> tem <b>Recebido em São Carlos</b>; sai quando outra etapa vira a última marcada. A coluna <b>OS</b> mostra todas as OSs que já passaram por esta costura. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="costurando-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="transito-ida">
+      <div class="page-header">
+        <div>
+          <h1>Em trânsito · IDA</h1>
+          <div class="desc">O que saiu de Descalvado e ainda não foi recebido em São Carlos. Este campo passa a ser preenchido sozinho pela <b>expedição de ida</b> na <b>etapa 2</b>; por enquanto ele existe e fica vazio.</div>
+        </div>
+      </div>
+      <div id="transito-ida-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="corte-sc">
+      <div class="page-header">
+        <div>
+          <h1>Estoque corte · Unidade São Carlos</h1>
+          <div class="desc">OSs cuja última etapa marcada é <b>Recebido em São Carlos</b>: o corte chegou lá e ainda não entrou em costura. Marcar <b>Costura</b> leva a OS para <b>Costurando · Unidade São Carlos</b>.</div>
+        </div>
+      </div>
+      <div id="corte-sc-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="costurando-sc">
+      <div class="page-header">
+        <div>
+          <h1>Costurando · Unidade São Carlos</h1>
+          <div class="desc">Peças em costura <b>em São Carlos</b>, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada e a OS <b>tem</b> <b>Recebido em São Carlos</b>. Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+      </div>
+      <div id="costurando-sc-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="transito-volta">
+      <div class="page-header">
+        <div>
+          <h1>Em trânsito · VOLTA</h1>
+          <div class="desc">O que saiu de São Carlos e ainda não foi recebido em Descalvado. Este campo passa a ser preenchido sozinho pela <b>expedição de volta</b> na <b>etapa 2</b>; por enquanto ele existe e fica vazio.</div>
+        </div>
+      </div>
+      <div id="transito-volta-painel"></div>
     </section>
 
     <section class="page hidden" data-page="fios">
       <div class="page-header">
         <div>
           <h1>Retirada de fios</h1>
-          <div class="desc">Peças na retirada de fios, em peças por tecido e cor. Recebe a OS quando a etapa <b>Retirada de fios</b> é a última marcada; sai quando outra etapa vira a última marcada. Use os botões para contagem física e ajustes manuais.</div>
+          <div class="desc">Peças na retirada de fios, em peças por tecido e cor. Recebe a OS quando <b>Retirada de fios</b> <i>ou</i> <b>Recebido em Descalvado</b> é a última etapa marcada — o que volta de São Carlos cai aqui; sai quando outra etapa vira a última marcada. Use os botões para contagem física e ajustes manuais.</div>
         </div>
       </div>
       <div id="fios-painel"></div>
@@ -1449,6 +1493,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-14b"></script>
+<script src="app.js?v=2026-09-14c"></script>
 </body>
 </html>
