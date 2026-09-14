@@ -30,7 +30,7 @@
    3. LARGURA É PREFERÊNCIA, NÃO FILTRO. Havendo pasta na largura exata, são só
       aquelas — a "P ao G3 | CM.LISA | 117cm" não pode trazer junto a pasta de
       116,5 cm, que é outro encaixe. Não havendo, mostra as outras larguras COM
-      AVISO: a "2G3 | BM.LISA | 182cm" tem pasta só em "183 cm", e é ela mesma.
+      AVISO — a pasta de outra largura é a mesma grade, medida noutro dia.
 
    4. O ✓ DO ARQUIVO REGISTRADO casa por SUFIXO, porque o caminho guardado
       depende de onde a pasta foi escolhida na hora de importar.
@@ -102,7 +102,7 @@ const ok = (nome, cond, extra) => {
 const G_BM_177 = { id: 'a', nome: '2M-4G-2GG | BM.LISA | 177cm', tamanhos: { m: 2, g: 4, gg: 2 }, fases: [] };
 const G_CMTRI  = { id: 'b', nome: 'P ao G3 | CM.TRI | 116.5cm', tamanhos: { p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }, fases: [] };
 const G_CMLISA = { id: 'c', nome: 'P ao G3 | CM.LISA | 117cm', tamanhos: { p: 1, m: 1, g: 1, gg: 1, g1: 1, g2: 1, g3: 1 }, fases: [] };
-const G_2G3    = { id: 'd', nome: '2G3 | BM.LISA | 182cm', tamanhos: { g3: 2 }, fases: [] };
+const G_2G3    = { id: 'd', nome: '2G3 | BM.LISA | 175cm', tamanhos: { g3: 2 }, fases: [] };
 
 /* ---------- 1. acha os PDFs da própria pasta ---------- */
 const r1 = achar(G_BM_177);
@@ -132,9 +132,16 @@ ok('  ... só a largura do nome (117), não a de 116.5 ao lado',
   r3.itens.length > 0 && r3.itens.every(p => p.cm === '117' || p.cm === ''),
   r3.itens.map(p => p.pasta));
 
-/* ---------- 4. largura é preferência, não filtro ---------- */
+/* ---------- 4. largura é preferência, não filtro ----------
+   A 2G3 da BM.LISA tinha UMA pasta, de 183 cm, e a grade cadastrada dizia
+   182 cm: era esse 1 cm de diferença que fazia o caso. Em 14/09/2026 a pasta
+   foi remedida e renomeada para 182 cm, as duas passaram a bater e o aviso
+   deixou de existir — o acerto apareceu aqui como falha, igual ao caso 2.
+   O que este teste protege é a REGRA (largura que não bate não descarta a
+   pasta, só avisa), então a grade do teste passou a pedir uma largura que
+   nenhuma pasta tem. Renomeou a pasta de novo? É esta linha que se ajusta. */
 const r4 = achar(G_2G3);
-ok('2G3 | BM.LISA | 182cm acha a pasta de 183 cm', r4.itens.length > 0, r4.itens.length);
+ok('2G3 | BM.LISA | 175cm acha a pasta de 182 cm', r4.itens.length > 0, r4.itens.length);
 ok('  ... e avisa que a largura é outra', /outra largura/i.test(r4.aviso), r4.aviso);
 
 /* ---------- 5. grade sem linha no nome não chuta ---------- */
