@@ -7353,7 +7353,6 @@ function renderEstoque() {
       ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i])).join('')}
       ${temForro ? celFase(forro) : ''}
       ${temRibana ? celFase(rib) : ''}
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${fmt(o.kg)} kg</td>
       <td><span class="badge" style="background:#fde9c8;">Reservado</span></td>
     </tr>`;
   };
@@ -7369,7 +7368,7 @@ function renderEstoque() {
       <td style="padding-left:18px;"><span style="color:var(--ink-2);">↳</span> <strong>${esc(o.os) || '—'}</strong></td>
       <td>${esc(o.modeloNome) || '—'}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      <td colspan="${nCorpos + (temForro ? 1 : 0) + (temRibana ? 1 : 0) + 1}" style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">—</td>
+      <td colspan="${nCorpos + (temForro ? 1 : 0) + (temRibana ? 1 : 0)}" style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">—</td>
       <td><span class="badge" style="background:#dfe7f7;">Conjugada</span>
         <span class="muted" style="font-size:11px;">o pano está na OS ${esc(pai.osNumero) || '—'}</span></td>
     </tr>`;
@@ -7412,7 +7411,7 @@ function renderEstoque() {
             `<th style="text-align:right;">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
           ${temForro ? '<th style="text-align:right;">Forro de capuz</th>' : ''}
           ${temRibana ? '<th style="text-align:right;">Ribana</th>' : ''}
-          <th style="text-align:right;">Total</th><th>Situação</th></tr></thead>
+          <th>Situação</th></tr></thead>
         <tbody>${parConjugado.map(p => linhaOS(p.pai)
           + p.filhas.map(c => linhaConjugada(c, p.pai)).join('')
         ).join('')}</tbody>
