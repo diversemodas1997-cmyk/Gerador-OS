@@ -27697,6 +27697,20 @@ function renderPrintSheet(o) {
   const folhaEl = document.getElementById('print-sheet');
   folhaEl.classList.toggle('sheet-densa', ehMoletomTricolor);
 
+  // OS CONJUGADA NA FOLHA (14/09/2026, pedido do Junior). A filha guarda
+  // conjugadaPaiId; a mae nao guarda nada, entao a mae se descobre procurando
+  // quem aponta para ela. Vai logo abaixo do numero, em preto (a folha sai em
+  // P&B), com icone diferente em cada lado: quem pega o papel na fabrica ve de
+  // cara que a OS anda em par com outra E qual das duas puxou.
+  const osMae = o.conjugadaPaiId ? (STATE.ordens || []).find(x => x.id === o.conjugadaPaiId) : null;
+  const osFilhas = (STATE.ordens || []).filter(x => x.conjugadaPaiId === o.id);
+  const numsFilhas = osFilhas.map(f => f.os || '—').join(', ');
+  const linhaConj = osMae
+    ? `<span class="conj-cell" title="Conjugada a partir da OS ${esc(osMae.os || '')}">↳ CONJ. DE OS ${esc(osMae.os || '—')}</span>`
+    : (osFilhas.length
+      ? `<span class="conj-cell" title="Esta OS puxou a OS ${esc(numsFilhas)}">⇄ CONJ. COM OS ${esc(numsFilhas)}</span>`
+      : '');
+
   folhaEl.innerHTML = `
     <!-- CABEÇALHO -->
     <div class="sheet-header">
@@ -27716,6 +27730,7 @@ function renderPrintSheet(o) {
       <div class="cell des-cell" style="flex-direction:column;align-items:center;justify-content:center;">
         <span class="mini">OS Nº:</span>
         <span style="font-size:13pt;letter-spacing:.05em;">${esc(o.os || '—')}</span>
+        ${linhaConj}
         <span class="mini" style="margin-top:2px;">SKU</span>
         <span style="font-size:8pt;font-weight:700;font-family:'IBM Plex Mono',monospace;white-space:nowrap;line-height:1.1;text-align:center;">${esc(skuStr)}</span>
       </div>
