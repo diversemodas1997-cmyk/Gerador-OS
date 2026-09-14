@@ -7212,7 +7212,17 @@ function renderEstoque() {
     g.fechados += c.fechados || 0; g.abertos += c.abertos || 0; g.linhas.push(c);
     grupos.set(k, g);
   });
-  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+  // ORDEM DOS QUADROS: cada pano seguido da RIBANA dele (14/09/2026, Junior).
+  // Alfabetico puro jogaria "Ribana Malha Algodao" la embaixo, longe da malha
+  // que ela acompanha — e quem confere a prateleira confere os dois juntos,
+  // porque e a mesma peca que leva os dois panos. A chave e o pano BASE (o nome
+  // sem o "Ribana" da frente) e, dentro dele, o pano vem antes da ribana.
+  const _baseDoTecido = n => _normNome(String(n || '').replace(/^\s*ribana\s+/i, ''));
+  const _ehRibana = n => /^ribana/i.test(String(n || '').trim());
+  const gruposArr = Array.from(grupos.values()).sort((a, b) =>
+    _baseDoTecido(a.tecidoNome).localeCompare(_baseDoTecido(b.tecidoNome))
+    || (_ehRibana(a.tecidoNome) ? 1 : 0) - (_ehRibana(b.tecidoNome) ? 1 : 0)
+    || (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
   gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
 
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
@@ -7226,42 +7236,71 @@ function renderEstoque() {
     numCell(o.entrada, bold) + numCell(o.reservado, bold) + numCell(o.saida, bold) +
     dispCell(o.entrada - o.reservado - o.saida) +
     uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
-  const linhasEstoque = gruposArr.map(g => {
+  /* UM QUADRO POR MATÉRIA-PRIMA (14/09/2026, Junior).
+
+     Era UMA tabela com todos os panos e um subtotal no fim de cada bloco. Na
+     prática ninguém confere "o estoque": confere-se O MOLETOM, ou A RIBANA da
+     malha — pano a pano, prateleira a prateleira. Numa tabela só, achar onde um
+     pano começa e o outro acaba é trabalho de olho, e o subtotal do moletom
+     ficava encostado na primeira cor da malha seguinte.
+
+     Agora cada pano tem o seu quadro, com o nome no título. Por isso a coluna
+     do tecido saiu das linhas: repetir "Malha Algodão" em toda linha de um
+     quadro chamado Malha Algodão só tira espaço da cor, que é o que se lê ali.
+     A legenda das colunas ficou uma só, em cima de todos. */
+  const cabecalhoEstoque = `
+    <thead><tr>
+      <th>Cor</th>
+      <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
+      <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
+      <th style="text-align:right;">Fechados (un)</th>
+      <th style="text-align:right;">Abertos (un)</th>
+    </tr></thead>`;
+
+  const quadroTecido = (g) => {
     const cores = g.linhas.map(c => `
       <tr>
-        <td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
+        <td><strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
         ${cellsVals(c, false)}
       </tr>`).join('');
-    // Subtotal do tipo de tecido (só quando há mais de uma cor no grupo).
-    const subtotal = g.linhas.length > 1 ? `
+    // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
+    // única linha logo acima.
+    const total = g.linhas.length > 1 ? `
       <tr style="background:#eef6f0;">
-        <td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>
+        <td style="text-align:right;font-weight:700;color:var(--ink-2);">Total ${esc(g.tecidoNome)}</td>
         ${cellsVals(g, true)}
       </tr>` : '';
-    return cores + subtotal;
-  }).join('');
+    const disp = g.entrada - g.reservado - g.saida;
+    return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">${esc(g.tecidoNome)}</h2>
+        <div class="muted" style="font-size:12px;">
+          ${g.linhas.length} cor${g.linhas.length === 1 ? '' : 'es'} · disponível
+          <b style="font-family:'IBM Plex Mono',monospace;color:${disp < 0 ? '#c0392b' : 'inherit'};">${fmt(disp)} kg</b>
+        </div>
+      </div>
+      <table class="table">
+        ${cabecalhoEstoque}
+        <tbody>${cores}${total}</tbody>
+      </table>
+    </div>`;
+  };
 
-  const estoqueHtml = `
+  const legendaEstoque = `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Estoque por tecido + cor</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+      <div class="muted" style="font-size:12px;">
+        Um quadro por matéria-prima, cada pano seguido da <b>ribana</b> dele.
         Colunas em <b>kg</b>: Entradas, Reservado (OSs não produzidas), Saídas (baixa definitiva),
         Disponível (= Entradas − Reservado − Saídas). Colunas em <b>unidades</b> (lançamento manual):
         <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso).
       </div>
-      <table class="table">
-        <thead><tr>
-          <th>Tecido + cor</th>
-          <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
-          <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
-          <th style="text-align:right;">Fechados (un)</th>
-          <th style="text-align:right;">Abertos (un)</th>
-        </tr></thead>
-        <tbody>
-          ${gruposArr.length ? linhasEstoque : `<tr><td colspan="7" class="empty">Sem movimentações ainda.</td></tr>`}
-        </tbody>
-      </table>
     </div>`;
+
+  const estoqueHtml = legendaEstoque + (gruposArr.length
+    ? gruposArr.map(quadroTecido).join('')
+    : `<div class="card"><div class="info-box">Sem movimentações ainda.</div></div>`);
 
   // Apontar OS produzida → converte a RESERVA em SAÍDA definitiva.
   const osMat = osComMaterialReservado().filter(o => o.kg > 0);
@@ -7422,8 +7461,8 @@ function renderEstoque() {
 
   cont.innerHTML = `
     ${semNada ? `<div class="info-box">Ainda não há movimentações. As <b>entradas</b> vêm das compras lançadas no programa de Contabilidade (por NF) ou de um lançamento manual aqui; as <b>saídas</b> entram sozinhas ao salvar uma OS com enfesto e o tecido com peso (g/m²) cadastrado.</div>` : ''}
-    ${estoqueHtml}
     ${apontarHtml}
+    ${estoqueHtml}
     ${movHtml}
   `;
 }
