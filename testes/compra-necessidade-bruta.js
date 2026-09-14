@@ -74,6 +74,9 @@ const FUNCOES = [
   // consumo
   'gramaturaTecidoPorNome', 'pesoBobinaPorNome',
   '_normFaseNome', '_faseSoDe',
+  // Desde 14/09/2026 materialPorFaseOS pergunta se a fase e o vies, para ele
+  // nao ocupar a coluna do corpo nem a do forro de capuz.
+  '_ehFaseVies',
   'consumoEnfestoOS',
   // bobinas
   'parseBobinas', 'bobinaInteira', 'ehFaseRibana', 'bobinasEfetivasFase',
