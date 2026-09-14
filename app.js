@@ -2816,8 +2816,12 @@ const STATE = {
   // { id, tipo:'entrada'|'saida', tecidoNome, corNome, qtd, data, obs }.
   corteMov: [],
   // Contagem manual das fases seguintes do fluxo (mesmo formato de corteMov):
-  // Costurando (Costura), Retirada de fios e Expedição.
+  // Costurando (Costura), Retirada de fios e Expedição. Com as duas unidades,
+  // São Carlos tem os seus dois campos próprios — o corte que chega lá e a
+  // costura que acontece lá contam separados dos de Descalvado.
   costurandoMov: [],
+  corteScMov: [],
+  costurandoScMov: [],
   fiosMov: [],
   expedicaoMov: [],
   // ---------- Planejamento de expedição ----------
@@ -3739,10 +3743,16 @@ function goto(page) {
   }
   if (page === 'estoque') renderEstoque();
   if (page === 'compra') renderCompra();
-  if (page === 'corte') renderFasePainel(0);
-  if (page === 'costurando') renderFasePainel(1);
-  if (page === 'fios') renderFasePainel(2);
-  if (page === 'expedicao') { renderFasePainel(3); trocarAbaExpedicao(expAbaAtiva); }
+  // Sempre por ID da fase: a ordem de FASES_ESTOQUE muda quando entra campo novo
+  // (as unidades entraram no meio), e índice fixo aqui abriria o painel errado.
+  if (page === 'corte') renderFasePorId('corte');
+  if (page === 'costurando') renderFasePorId('costurando');
+  if (page === 'transito-ida') renderFasePorId('transitoIda');
+  if (page === 'corte-sc') renderFasePorId('corteSC');
+  if (page === 'costurando-sc') renderFasePorId('costurandoSC');
+  if (page === 'transito-volta') renderFasePorId('transitoVolta');
+  if (page === 'fios') renderFasePorId('fios');
+  if (page === 'expedicao') { renderFasePorId('expedicao'); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
   /* A CAIXA DE OBSERVAÇÕES SÓ PODE SER MEDIDA AGORA. A folha de OS é desenhada
@@ -7433,8 +7443,11 @@ async function excluirMovEstoque(id) {
 // pelos gatilhos automáticos de saída entre os campos de estoque.
 function osEtapaMarcada(o, re) {
   const checks = (o.progresso && o.progresso.etapasCheck) || {};
-  const nome = (o.etapas || []).find(n => re.test(n));
-  return nome ? !!checks[nome] : false;
+  // `some`, e não `find`: desde as duas unidades uma regex pode casar MAIS DE
+  // UMA etapa da OS (a fase "Retirada de fios" entra também por "Recebido em
+  // Descalvado"), e basta uma delas marcada. Com `find`, a etapa marcada ficava
+  // invisível sempre que outra etapa da mesma regex viesse antes na lista.
+  return (o.etapas || []).some(n => re.test(n) && !!checks[n]);
 }
 // "Costura" marcada → gatilho da saída do Estoque de corte (entra em Costurando).
 function osCosturaMarcada(o) { return osEtapaMarcada(o, /costura/i); }
@@ -7467,28 +7480,79 @@ function componentesPorTecidoCorOS(o) {
 // Estampa, Lavanderia…) NÃO movem o volume. Para adicionar uma fase nova, inserir
 // uma linha aqui (+ a chave do array manual em STATE/keys + nav/section/rota).
 //   entrada.tipo 'etapa' = OS com a etapa (re/label) marcada no checklist.
+//   entrada.tipo 'carga' = OS alocada numa OE (ida/volta). Etapa 2 — ver abaixo.
+//
+// DUAS UNIDADES (14/09/2026). Descalvado corta e São Carlos é a segunda
+// confecção: o mesmo trabalho passou a existir em dois lugares, e o campo tem
+// que dizer EM QUAL. Quem separa não é uma etapa nova de costura — é a caixa
+// "Recebido em São Carlos" do checklist: a partir dela, toda Costura daquela OS
+// é costura de São Carlos. Daí o campo `cond`, que deixa DUAS fases dividirem a
+// mesma etapa ("Costura"), cada uma com a sua metade do mundo.
+const ETAPA_SC_NOME = 'Recebido em São Carlos';
+const ETAPA_SC_RE = /recebido em s[aã]o carlos/i;
+const ETAPA_DESC_NOME = 'Recebido em Descalvado';
+const ETAPA_DESC_RE = /recebido em descalvado/i;
+const _osRecebidaSC = o => osEtapaMarcada(o, ETAPA_SC_RE);
+
 const FASES_ESTOQUE = [
-  { id: 'corte',      titulo: 'Estoque de corte', movKey: 'corteMov',      painelId: 'corte-painel', semContagem: true, soOS: true,
+  { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
-  { id: 'costurando', titulo: 'Costurando',       movKey: 'costurandoMov', painelId: 'costurando-painel', semContagem: true, osTodasEntradas: true,
+  // Enquanto a OS não foi recebida em São Carlos, costurar é costurar aqui.
+  { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true,
+    cond: o => !_osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  { id: 'fios',       titulo: 'Retirada de fios', movKey: 'fiosMov',       painelId: 'fios-painel', semContagem: true,
-    entrada: { tipo: 'etapa', re: /fios/i, label: 'Retirada de fios' } },
-  { id: 'expedicao',  titulo: 'Expedição',        movKey: 'expedicaoMov',  painelId: 'expedicao-painel', semContagem: true,
+  // ETAPA 2: quem põe a OS aqui é a alocação numa OE de ida. Por ora a fase
+  // existe e tem página, mas não recebe nada — _faseEntrouOS devolve false para
+  // tipo 'carga', e a lógica de _fracAlocadaExpedicaoOS segue como está.
+  { id: 'transitoIda',  titulo: 'Em trânsito · IDA',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
+    vazioMsg: 'Nada em trânsito para São Carlos por aqui. Na <b>etapa 2</b> este campo passa a receber sozinho as OSs alocadas numa expedição de <b>ida</b>.',
+    entrada: { tipo: 'carga', perna: 'ida', label: 'alocada numa expedição de ida' } },
+  { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
+    entrada: { tipo: 'etapa', re: ETAPA_SC_RE, label: ETAPA_SC_NOME } },
+  { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true,
+    cond: o => _osRecebidaSC(o),
+    entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
+  { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
+    vazioMsg: 'Nada em trânsito de volta por aqui. Na <b>etapa 2</b> este campo passa a receber sozinho as OSs alocadas numa expedição de <b>volta</b>.',
+    entrada: { tipo: 'carga', perna: 'volta', label: 'alocada numa expedição de volta' } },
+  // O que volta de São Carlos cai aqui: "Recebido em Descalvado" entra na mesma
+  // fase que "Retirada de fios", e entre as duas vale a marcada por último.
+  { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true,
+    entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'Retirada de fios (ou Recebido em Descalvado)' } },
+  { id: 'expedicao',    titulo: 'Expedição',                          movKey: 'expedicaoMov',    painelId: 'expedicao-painel',      semContagem: true,
     entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
 ];
 
-// A OS entrou nesta fase? (etapa da fase marcada no checklist).
-function _faseEntrouOS(o, entrada) {
+// A OS entrou nesta fase? Etapa da fase marcada no checklist E a condição da
+// fase satisfeita (é a `cond` que separa Costurando Descalvado de São Carlos).
+function _faseEntrouOS(o, fase) {
+  if (!fase) return false;
+  const entrada = fase.entrada || fase;   // compat: aceita também a própria entrada
   if (!entrada) return false;
+  if (fase.cond && !fase.cond(o)) return false;
   if (entrada.tipo === 'oscriada') return true;
+  if (entrada.tipo === 'carga') return false;   // etapa 2: a entrada pela OE ainda não liga
   return osEtapaMarcada(o, entrada.re);
 }
 
 // Nome (no checklist da OS) da etapa que dispara esta fase, p/ ler o etapasSeq.
+// Uma fase pode ter MAIS DE UMA etapa de entrada (Retirada de fios entra também
+// por "Recebido em Descalvado"): vale a MARCADA de maior etapasSeq, que é a que
+// diz quando o volume chegou de fato nesta fase.
 function _nomeEtapaDaFase(o, fase) {
-  if (!fase || !fase.entrada || fase.entrada.tipo === 'oscriada') return null;
-  return (o.etapas || []).find(n => fase.entrada.re.test(n)) || null;
+  if (!fase || !fase.entrada || fase.entrada.tipo !== 'etapa') return null;
+  const cand = (o.etapas || []).filter(n => fase.entrada.re.test(n));
+  if (!cand.length) return null;
+  const checks = (o.progresso && o.progresso.etapasCheck) || {};
+  const seqs = (o.progresso && o.progresso.etapasSeq) || {};
+  const marcadas = cand.filter(n => checks[n]);
+  const pool = marcadas.length ? marcadas : cand;
+  let melhor = pool[0], melhorSeq = -Infinity;
+  pool.forEach(n => {
+    const s = (seqs[n] != null) ? Number(seqs[n]) : -Infinity;
+    if (s > melhorSeq) { melhorSeq = s; melhor = n; }
+  });
+  return melhor;
 }
 
 // Índice de uma fase pelo id — as regras do lote parcial falam de duas fases
@@ -7509,7 +7573,7 @@ function _fracAlocadaExpedicaoOS(o) {
   const iExp = _faseIdxPorId('expedicao');
   if (iCorte < 0 || iExp < 0 || !o) return 0;
   if (faseAtualOS(o) !== iCorte) return 0;
-  if (_faseEntrouOS(o, FASES_ESTOQUE[iExp].entrada)) return 0;
+  if (_faseEntrouOS(o, FASES_ESTOQUE[iExp])) return 0;
   return _expEmbarcadoOS(o).fracao || 0;
 }
 
@@ -7533,7 +7597,7 @@ function calcularSaldosFase(idx) {
   const iCorte = _faseIdxPorId('corte');
   const iExp = _faseIdxPorId('expedicao');
   (STATE.ordens || []).forEach(o => {
-    const entrou = _faseEntrouOS(o, fase.entrada);
+    const entrou = _faseEntrouOS(o, fase);
     // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
     // agora (a última etapa marcada não é a desta fase).
     const atual = faseAtualOS(o);
@@ -7596,7 +7660,7 @@ function faseAtualOS(o) {
     if (ord > melhorOrd) { melhorOrd = ord; idxOrd = idx; }
   };
   FASES_ESTOQUE.forEach((f, i) => {
-    if (!_faseEntrouOS(o, f.entrada)) return;
+    if (!_faseEntrouOS(o, f)) return;
     considerar(i, i, _nomeEtapaDaFase(o, f));
   });
   if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) {
@@ -7959,7 +8023,7 @@ function renderFasePainel(faseIdx) {
   const notaParcial = fase.id === 'corte'
     ? ' <b>Lote parcial:</b> os pacotes já alocados numa carga de <b>ida</b> contam como <b>saída</b> aqui e entram em <b>Expedição</b>; o que não foi na carga fica no saldo, disponível para a próxima expedição.'
     : (fase.id === 'expedicao'
-      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já alocados numa carga de <b>ida</b>, mesmo antes de a etapa Expedição ser marcada. Marcar <b>Costura</b> no checklist devolve o lote inteiro para <b>Costurando</b>.'
+      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já alocados numa carga de <b>ida</b>, mesmo antes de a etapa Expedição ser marcada. Marcar <b>Costura</b> no checklist devolve o lote inteiro para <b>Costurando</b> (o da unidade em que a OS está).'
       : '');
   const card = `
     <div class="card">
@@ -8018,7 +8082,7 @@ function renderFasePainel(faseIdx) {
   const pacotesHtml = pacotes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa carga, a OS conta nas duas fases: as peças alocadas, em Expedição; as que ficaram, no Estoque de corte.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa carga, a OS conta nas duas fases: as peças alocadas, em Expedição; as que ficaram, no Estoque corte · Unidade Descalvado.</div>
       <table class="table">
         <thead><tr><th class="col-actions">Ação</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
         <tbody>
@@ -8062,11 +8126,13 @@ function renderFasePainel(faseIdx) {
       </table>
     </div>` : '';
 
-  // Fase "só OSs": apenas a lista de OSs atualmente na fase.
+  // Fase "só OSs": apenas a lista de OSs atualmente na fase. As fases de
+  // trânsito trazem `vazioMsg` própria — não entram por etapa do checklist, e
+  // repetir a frase da etapa ali diria o contrário do que acontece.
   if (fase.soOS) {
     cont.innerHTML = pacotes.length
       ? pacotesHtml
-      : `<div class="info-box">Nenhuma OS em ${esc(fase.titulo)} agora. A OS entra aqui sozinha quando a etapa <b>${esc(fase.entrada.label)}</b> é a última marcada no checklist.</div>`;
+      : `<div class="info-box">${fase.vazioMsg || `Nenhuma OS em ${esc(fase.titulo)} agora. A OS entra aqui sozinha quando a etapa <b>${esc(fase.entrada.label)}</b> é a última marcada no checklist.`}</div>`;
     return;
   }
 
@@ -8085,8 +8151,8 @@ function renderFasePorId(faseId) {
   if (idx >= 0) renderFasePainel(idx);
 }
 
-// Compat: "Estoque de corte" = primeira fase.
-function renderEstoqueCorte() { renderFasePainel(0); }
+// Compat: "Estoque de corte" = o corte da unidade Descalvado.
+function renderEstoqueCorte() { renderFasePorId('corte'); }
 
 // Lançamento manual genérico de qualquer fase do fluxo (entra na coluna
 // "Contagem de estoque" daquela fase).
@@ -8095,7 +8161,7 @@ let movFaseId = 'corte';
 function abrirMovFase(faseId, tipo) {
   if (!exigirAdmin('movimentar estoque')) return;
   const fase = FASES_ESTOQUE.find(f => f.id === faseId);
-  if (!fase) return;
+  if (!fase || !fase.movKey) return;   // trânsito não tem contagem manual
   movFaseId = faseId;
   movFaseTipo = tipo === 'saida' ? 'saida' : 'entrada';
   document.getElementById('modal-corte-title').textContent =
@@ -8118,7 +8184,7 @@ function abrirMovFase(faseId, tipo) {
 async function salvarMovFase() {
   if (!exigirAdmin('movimentar estoque')) return;
   const fase = FASES_ESTOQUE.find(f => f.id === movFaseId);
-  if (!fase) return;
+  if (!fase || !fase.movKey) return;
   const v = id => document.getElementById(id)?.value || '';
   const tecidoNome = v('mc-tecido');
   if (!tecidoNome) return toast('Selecione o tecido', 'err');
@@ -8143,7 +8209,7 @@ async function salvarMovFase() {
 async function excluirMovFase(faseId, id) {
   if (!exigirAdmin('excluir lançamento')) return;
   const fase = FASES_ESTOQUE.find(f => f.id === faseId);
-  if (!fase) return;
+  if (!fase || !fase.movKey) return;
   if (!confirm('Excluir este lançamento manual?')) return;
   STATE[fase.movKey] = (STATE[fase.movKey] || []).filter(x => x.id !== id);
   await saveState(fase.movKey);
