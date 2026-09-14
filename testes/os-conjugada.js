@@ -436,6 +436,80 @@ console.log('-- a OS que sai --');
        && /#dfe7f7/.test(dupla) && /#dff0e4/.test(dupla), dupla);
   }
 
+  /* A MESMA DUPLA NA FOLHA DE OS (14/09/2026) ------------------------------
+     A folha e o papel que anda com a peca; a lista fica na tela de quem
+     planeja. Quem pega a folha na fabrica tem de ver, sem abrir o programa,
+     que aquela OS anda em par com outra E qual das duas puxou.
+
+     O defeito que este bloco guarda: a folha nasceu lendo SO a amarra da
+     grade (conjugadaPaiId / conjugadaId), e as OS conjugadas A MAO
+     (conjugadaStatusPaiId) sairam em branco — 4 das 10 OS em par no banco de
+     11/09. Na lista elas apareciam, na folha nao.
+
+     E o verbo TEM de ser outro em cada amarra: a dupla da grade divide o PANO
+     (a passiva nao reserva tecido nenhum), a da mao divide so o STATUS. Um
+     unico texto para as duas mandaria alguem procurar na lista de material o
+     pano de uma OS que nunca deixou de ter o dela.
+     ---------------------------------------------------------------------- */
+  {
+    console.log('');
+    console.log('-- a marca da dupla na folha de OS --');
+    const ini = src.indexOf('  const marcasConj = [];');
+    const alvo = "const linhaConj = marcasConj.join('');";
+    const fim = src.indexOf(alvo, ini) + alvo.length;
+    if (ini < 0 || fim < alvo.length) { console.error('nao achei o trecho da folha no app.js'); process.exit(1); }
+    const naFolha = (STATE) => new Function('STATE', 'o', `
+      const esc = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      ${corta('function _ativaStatusDaOS')}
+      ${corta('function _conjugadasManuaisDaOS')}
+      ${src.slice(ini, fim)}
+      return linhaConj;
+    `).bind(null, STATE);
+
+    const G = { ordens: [
+      { id: 'a', os: '0498', conjugadaId: 'p' },
+      { id: 'p', os: '0497', conjugadaPaiId: 'a' },
+      { id: 's', os: '0500' }
+    ] };
+    const fg = naFolha(G);
+    ok('47. folha da ativa da GRADE: puxou a irma', /CONJ\. COM OS 0497/.test(fg(G.ordens[0])), fg(G.ordens[0]));
+    ok('48. folha da passiva da GRADE: veio da irma', /CONJ\. DE OS 0498/.test(fg(G.ordens[1])), fg(G.ordens[1]));
+    ok('49. OS sem dupla: a folha nao ganha linha nenhuma', fg(G.ordens[2]) === '', fg(G.ordens[2]));
+
+    const M2 = { ordens: [
+      { id: 'a', os: '0514' },
+      { id: 'b', os: '0535', conjugadaStatusPaiId: 'a' },
+      { id: 'c', os: '0538', conjugadaStatusPaiId: 'a' }
+    ] };
+    const fm2 = naFolha(M2);
+    ok('50. folha da conjugada A MAO: diz que SEGUE a outra',
+       /SEGUE A OS 0514/.test(fm2(M2.ordens[1])), fm2(M2.ordens[1]));
+    ok('51. folha de quem manda: diz que PUXA as duas',
+       /PUXA A OS 0535, 0538/.test(fm2(M2.ordens[0])), fm2(M2.ordens[0]));
+    // O VERBO separa as duas amarras: pano numa, status na outra.
+    ok('52. a amarra da mao NAO usa o verbo da que divide pano',
+       !/CONJ\./.test(fm2(M2.ordens[1])), fm2(M2.ordens[1]));
+    ok('53. e o titulo da mao avisa que o pano e de cada uma',
+       /pano de cada uma/i.test(fm2(M2.ordens[1])), fm2(M2.ordens[1]));
+
+    // As duas amarras na MESMA OS: duas linhas na folha, uma de cada.
+    const D2 = { ordens: [
+      { id: 'a', os: '0498', conjugadaId: 'p' },
+      { id: 'p', os: '0497', conjugadaPaiId: 'a' },
+      { id: 'x', os: '0600', conjugadaStatusPaiId: 'a' }
+    ] };
+    const dd = naFolha(D2)(D2.ordens[0]);
+    ok('54. as duas amarras juntas saem em duas linhas na folha',
+       /CONJ\. COM OS 0497/.test(dd) && /PUXA A OS 0600/.test(dd)
+       && (dd.match(/conj-cell/g) || []).length === 2, dd);
+
+    // Irma excluida depois: melhor sem linha do que uma linha que mente.
+    const semIrma2 = { ordens: [{ id: 'a', os: '0498', conjugadaId: 'sumiu' }] };
+    ok('55. irma excluida: a folha nao escreve nada',
+       naFolha(semIrma2)(semIrma2.ordens[0]) === '', naFolha(semIrma2)(semIrma2.ordens[0]));
+  }
+
   console.log('');
   console.log(falhas === 0 ? 'tudo certo' : falhas + ' falha(s)');
   process.exit(falhas === 0 ? 0 : 1);

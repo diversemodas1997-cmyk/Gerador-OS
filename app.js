@@ -27876,14 +27876,35 @@ function renderPrintSheet(o) {
   // quem aponta para ela. Vai logo abaixo do numero, em preto (a folha sai em
   // P&B), com icone diferente em cada lado: quem pega o papel na fabrica ve de
   // cara que a OS anda em par com outra E qual das duas puxou.
+  //
+  // DUAS AMARRAS, DUAS LEITURAS (14/09/2026). A dupla da GRADE divide o PANO: a
+  // filha nao reserva tecido nenhum, e quem for procurar o material dela na
+  // lista nao acha. A conjugada A MAO divide so o STATUS, e cada uma continua
+  // com o pano dela. Ler as duas do mesmo jeito mandaria alguem procurar na
+  // lista de material o pano de uma OS que nunca deixou de ter o dela — por
+  // isso o VERBO e outro: CONJ. na do pano, SEGUE/PUXA na do status. As duas
+  // podem coexistir numa OS, e ai saem em duas linhas.
+  const marcasConj = [];
+
   const osMae = o.conjugadaPaiId ? (STATE.ordens || []).find(x => x.id === o.conjugadaPaiId) : null;
   const osFilhas = (STATE.ordens || []).filter(x => x.conjugadaPaiId === o.id);
   const numsFilhas = osFilhas.map(f => f.os || '—').join(', ');
-  const linhaConj = osMae
-    ? `<span class="conj-cell" title="Conjugada a partir da OS ${esc(osMae.os || '')}">↳ CONJ. DE OS ${esc(osMae.os || '—')}</span>`
-    : (osFilhas.length
-      ? `<span class="conj-cell" title="Esta OS puxou a OS ${esc(numsFilhas)}">⇄ CONJ. COM OS ${esc(numsFilhas)}</span>`
-      : '');
+  if (osMae) {
+    marcasConj.push(`<span class="conj-cell" title="Conjugada a partir da OS ${esc(osMae.os || '')}">↳ CONJ. DE OS ${esc(osMae.os || '—')}</span>`);
+  } else if (osFilhas.length) {
+    marcasConj.push(`<span class="conj-cell" title="Esta OS puxou a OS ${esc(numsFilhas)}">⇄ CONJ. COM OS ${esc(numsFilhas)}</span>`);
+  }
+
+  const osLidera = _ativaStatusDaOS(o);
+  const osSeguem = _conjugadasManuaisDaOS(o);
+  const numsSeguem = osSeguem.map(f => f.os || '—').join(', ');
+  if (osLidera) {
+    marcasConj.push(`<span class="conj-cell" title="Conjugada à mão: esta OS acompanha o status da OS ${esc(osLidera.os || '')}. O pano de cada uma é o dela.">⇉ SEGUE A OS ${esc(osLidera.os || '—')}</span>`);
+  } else if (osSeguem.length) {
+    marcasConj.push(`<span class="conj-cell" title="Conjugada à mão: a OS ${esc(numsSeguem)} acompanha o status desta. O pano de cada uma é o dela.">⇉ PUXA A OS ${esc(numsSeguem)}</span>`);
+  }
+
+  const linhaConj = marcasConj.join('');
 
   folhaEl.innerHTML = `
     <!-- CABEÇALHO -->
