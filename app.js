@@ -7589,7 +7589,7 @@ const FASES_ESTOQUE = [
   // fase que "Retirada de fios", e entre as duas vale a marcada por último.
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'Retirada de fios (ou Recebido em Descalvado)' } },
-  { id: 'expedicao',    titulo: 'Expedição',                          movKey: 'expedicaoMov',    painelId: 'expedicao-painel',      semContagem: true,
+  { id: 'expedicao',    titulo: 'Expedição',                          movKey: 'expedicaoMov',    painelId: 'expedicao-painel',      semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
 ];
 
