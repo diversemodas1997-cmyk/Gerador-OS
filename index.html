@@ -417,7 +417,7 @@
       <div class="page-header">
         <div>
           <h1>Em trânsito · IDA</h1>
-          <div class="desc">O que saiu de Descalvado e ainda não foi recebido em São Carlos. Este campo passa a ser preenchido sozinho pela <b>expedição de ida</b> na <b>etapa 2</b>; por enquanto ele existe e fica vazio.</div>
+          <div class="desc">O que saiu de Descalvado e ainda não foi recebido em São Carlos. A OS entra aqui sozinha na proporção dos pacotes alocados numa <b>expedição de ida</b>; o que não foi na carga fica no campo de origem. Sai quando <b>Recebido em São Carlos</b> é marcada no checklist.</div>
         </div>
       </div>
       <div id="transito-ida-painel"></div>
@@ -447,7 +447,7 @@
       <div class="page-header">
         <div>
           <h1>Em trânsito · VOLTA</h1>
-          <div class="desc">O que saiu de São Carlos e ainda não foi recebido em Descalvado. Este campo passa a ser preenchido sozinho pela <b>expedição de volta</b> na <b>etapa 2</b>; por enquanto ele existe e fica vazio.</div>
+          <div class="desc">O que saiu de São Carlos e ainda não foi recebido em Descalvado. A OS entra aqui sozinha na proporção dos pacotes alocados numa <b>expedição de volta</b>; o que não foi na carga fica no campo de origem. Sai quando <b>Recebido em Descalvado</b> é marcada no checklist.</div>
         </div>
       </div>
       <div id="transito-volta-painel"></div>
@@ -457,7 +457,7 @@
       <div class="page-header">
         <div>
           <h1>Retirada de fios</h1>
-          <div class="desc">Peças na retirada de fios, em peças por tecido e cor. Recebe a OS quando <b>Retirada de fios</b> <i>ou</i> <b>Recebido em Descalvado</b> é a última etapa marcada — o que volta de São Carlos cai aqui; sai quando outra etapa vira a última marcada. Use os botões para contagem física e ajustes manuais.</div>
+          <div class="desc">OSs cuja última etapa marcada é <b>Retirada de fios</b> <i>ou</i> <b>Recebido em Descalvado</b> — o que volta de São Carlos cai aqui. Ao marcar outra etapa (Ensaque, Expedição, Estoque…) a OS sai daqui e vai para o campo dela.</div>
         </div>
       </div>
       <div id="fios-painel"></div>
@@ -1493,6 +1493,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-14c"></script>
+<script src="app.js?v=2026-09-14d"></script>
 </body>
 </html>

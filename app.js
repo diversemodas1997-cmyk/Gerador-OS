@@ -7569,23 +7569,25 @@ const FASES_ESTOQUE = [
   { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true,
     cond: o => !_osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  // ETAPA 2: quem põe a OS aqui é a alocação numa OE de ida. Por ora a fase
-  // existe e tem página, mas não recebe nada — _faseEntrouOS devolve false para
-  // tipo 'carga', e a lógica de _fracAlocadaExpedicaoOS segue como está.
+  // A viagem de Descalvado para São Carlos. Não entra por etapa do checklist: é a
+  // fração alocada na OE que põe a OS aqui (_transitoDaOS), e a caixa "Recebido
+  // em São Carlos" que a tira.
   { id: 'transitoIda',  titulo: 'Em trânsito · IDA',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
-    vazioMsg: 'Nada em trânsito para São Carlos por aqui. Na <b>etapa 2</b> este campo passa a receber sozinho as OSs alocadas numa expedição de <b>ida</b>.',
+    vazioMsg: 'Nada a caminho de São Carlos agora. A OS entra aqui sozinha quando é alocada numa expedição de <b>ida</b>, e sai quando <b>Recebido em São Carlos</b> é marcada no checklist.',
     entrada: { tipo: 'carga', perna: 'ida', label: 'alocada numa expedição de ida' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: ETAPA_SC_RE, label: ETAPA_SC_NOME } },
   { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true,
     cond: o => _osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
+  // E a de volta. Mesma regra, do outro lado: sai de um campo de São Carlos e a
+  // caixa "Recebido em Descalvado" encerra a viagem.
   { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
-    vazioMsg: 'Nada em trânsito de volta por aqui. Na <b>etapa 2</b> este campo passa a receber sozinho as OSs alocadas numa expedição de <b>volta</b>.',
+    vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui sozinha quando é alocada numa expedição de <b>volta</b>, e sai quando <b>Recebido em Descalvado</b> é marcada no checklist.',
     entrada: { tipo: 'carga', perna: 'volta', label: 'alocada numa expedição de volta' } },
   // O que volta de São Carlos cai aqui: "Recebido em Descalvado" entra na mesma
   // fase que "Retirada de fios", e entre as duas vale a marcada por último.
-  { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true,
+  { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'Retirada de fios (ou Recebido em Descalvado)' } },
   { id: 'expedicao',    titulo: 'Expedição',                          movKey: 'expedicaoMov',    painelId: 'expedicao-painel',      semContagem: true,
     entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
@@ -7599,7 +7601,9 @@ function _faseEntrouOS(o, fase) {
   if (!entrada) return false;
   if (fase.cond && !fase.cond(o)) return false;
   if (entrada.tipo === 'oscriada') return true;
-  if (entrada.tipo === 'carga') return false;   // etapa 2: a entrada pela OE ainda não liga
+  // Trânsito não entra por etapa: quem põe a OS lá é a fração alocada na OE, em
+  // _transitoDaOS, do mesmo jeito que o lote parcial sempre entrou por fora.
+  if (entrada.tipo === 'carga') return false;
   return osEtapaMarcada(o, entrada.re);
 }
 
@@ -7627,22 +7631,48 @@ function _nomeEtapaDaFase(o, fase) {
 // nominadas (corte e costurando), e ler o índice daqui evita amarrar a posição.
 function _faseIdxPorId(id) { return FASES_ESTOQUE.findIndex(f => f.id === id); }
 
-// LOTE PARCIAL: quanto do lote a ALOCAÇÃO já mandou para a Expedição. Os pacotes
-// alocados numa carga de IDA saem do Estoque de corte e entram em Expedição na
-// hora — pôr no plano já é dizer que aquele pacote vai embarcar —, e o que não
-// foi na carga fica no saldo do corte, disponível para a próxima expedição.
-// Duas guardas, ambas do modelo sobreposto:
-//   - a OS tem que estar NO CORTE pelas etapas. Marcada a etapa Costura, o lote
-//     inteiro volta da Expedição para Costurando e a fração deixa de valer.
-//   - a etapa Expedição não pode estar marcada: aí o lote inteiro já está lá
-//     pelo caminho normal, e somar a fração contaria a mesma peça duas vezes.
-function _fracAlocadaExpedicaoOS(o) {
-  const iCorte = _faseIdxPorId('corte');
-  const iExp = _faseIdxPorId('expedicao');
-  if (iCorte < 0 || iExp < 0 || !o) return 0;
-  if (faseAtualOS(o) !== iCorte) return 0;
-  if (_faseEntrouOS(o, FASES_ESTOQUE[iExp])) return 0;
-  return _expEmbarcadoOS(o).fracao || 0;
+// EM TRÂNSITO (etapa 2, 14/09/2026). Alocar a OS numa OE é dizer que aquele
+// pacote vai viajar, e viagem entre as duas unidades tem campo próprio: durante
+// ela a peça não está em nenhuma das duas. A fração alocada sai do campo em que
+// a OS está e entra no trânsito da perna; o REMANESCENTE fica onde estava — no
+// Estoque corte ou no Costurando da unidade de origem, conforme o caso.
+//
+// Até 13/09 esta fração ia para a Expedição, que era o único campo que existia
+// depois do corte. Com as duas unidades isso deixou de ser verdade: a OE é
+// viagem INTERNA, e Expedição é o fim do fluxo. Quem recebe a fração agora é o
+// campo da perna, e a Expedição volta a entrar só pela etapa do checklist.
+//
+// Quem TIRA a OS do trânsito é a caixa de chegada: "Recebido em São Carlos"
+// encerra a ida, "Recebido em Descalvado" encerra a volta. Por isso a chegada é
+// caixa no checklist e não botão no planejamento: quem sabe que o caminhão
+// chegou é quem o descarrega, não quem planejou a viagem.
+const _TRANSITO_PERNAS = [
+  { faseId: 'transitoIda',   perna: 'ida',   origens: ['corte', 'costurando'],     chegouRe: ETAPA_SC_RE },
+  { faseId: 'transitoVolta', perna: 'volta', origens: ['corteSC', 'costurandoSC'], chegouRe: ETAPA_DESC_RE },
+];
+
+// O trânsito de uma OS agora: qual campo de viagem, de qual campo ela saiu e
+// que fatia do lote está na estrada. null = a OS não tem nada viajando.
+// As guardas são as do modelo sobreposto, as mesmas de sempre:
+//   - a OS tem que estar num campo de ORIGEM da perna (a ida só sai de
+//     Descalvado, a volta só de São Carlos). Foi para outro campo, a fração
+//     deixa de valer e o lote inteiro conta no campo novo.
+//   - a caixa de chegada da perna não pode estar marcada: aí a viagem acabou.
+function _transitoDaOS(o) {
+  if (!o) return null;
+  const atual = faseAtualOS(o);
+  if (atual < 0) return null;                      // terminal "Estoque": fora do fluxo
+  const idAtual = (FASES_ESTOQUE[atual] || {}).id;
+  for (const t of _TRANSITO_PERNAS) {
+    if (!t.origens.includes(idAtual)) continue;
+    if (osEtapaMarcada(o, t.chegouRe)) continue;
+    const frac = _expEmbarcadoOS(o, t.perna).fracao || 0;
+    if (!(frac > 0)) continue;
+    const faseIdx = _faseIdxPorId(t.faseId);
+    if (faseIdx < 0) continue;
+    return { faseIdx, origemIdx: atual, fracao: frac, parcial: frac > 0 && frac < 1 };
+  }
+  return null;
 }
 
 // Saldo de uma fase por tecido+cor:
@@ -7662,17 +7692,19 @@ function calcularSaldosFase(idx) {
     if (!cur.corNome && cNome) cur.corNome = cNome;
     return cur;
   };
-  const iCorte = _faseIdxPorId('corte');
-  const iExp = _faseIdxPorId('expedicao');
   (STATE.ordens || []).forEach(o => {
     const entrou = _faseEntrouOS(o, fase);
     // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
     // agora (a última etapa marcada não é a desta fase).
     const atual = faseAtualOS(o);
-    // Lote parcial: a alocação move peça do corte para a Expedição (regra e
-    // guardas em _fracAlocadaExpedicaoOS). Só estas duas fases mudam por ela.
-    const fracEmb = (idx === iCorte || idx === iExp) ? _fracAlocadaExpedicaoOS(o) : 0;
-    const entradaParcial = idx === iExp && !entrou && fracEmb > 0;
+    // Lote parcial: a alocação numa OE move peça do campo de origem para o
+    // campo da viagem (regra e guardas em _transitoDaOS). Só esses dois campos
+    // mudam por ela — todos os outros veem o lote inteiro, como sempre.
+    const tr = _transitoDaOS(o);
+    const fracTr = tr ? tr.fracao : 0;
+    const ehTransito = !!tr && idx === tr.faseIdx;   // este campo RECEBE a fração
+    const ehOrigem = !!tr && idx === tr.origemIdx;   // este campo PERDE a fração
+    const entradaParcial = ehTransito && !entrou;
     if (!entrou && !entradaParcial) return;
     const saiu = entrou && atual !== idx;
     // Quais OSs listar na coluna OS desta linha:
@@ -7685,13 +7717,13 @@ function calcularSaldosFase(idx) {
     const numOS = (o.os || '').toString().trim();
     componentesPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
-      const embarcado = Math.round(it.qtd * fracEmb);
+      const viajando = Math.round(it.qtd * fracTr);
       if (entradaParcial) {
-        cur.entrada += embarcado;            // em Expedição entra só o que foi alocado
+        cur.entrada += viajando;             // no trânsito entra só o que foi alocado
       } else {
         cur.entrada += it.qtd;
         if (saiu) cur.saida += it.qtd;
-        else if (idx === iCorte && embarcado > 0) cur.saida += embarcado;
+        else if (ehOrigem && viajando > 0) cur.saida += viajando;
       }
       if (listarOS && numOS) cur.osNums.add(numOS);
     });
@@ -8051,8 +8083,6 @@ function renderFasePainel(faseIdx) {
   if (!fase) return;
   const cont = document.getElementById(fase.painelId);
   if (!cont) return;
-  const idxCorte = _faseIdxPorId('corte');
-  const idxExp = _faseIdxPorId('expedicao');
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const fmtSinal = n => { const v = Number(n) || 0; return (v > 0 ? '+' : '') + v.toLocaleString('pt-BR'); };
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
@@ -8086,12 +8116,15 @@ function renderFasePainel(faseIdx) {
   }).join('');
   const entradaDesc = `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
   const saidaDesc = 'OS cujo volume já foi para outro campo (uma etapa posterior virou a última marcada)';
-  // O lote parcial muda a conta destas duas fases — dizer a regra aqui evita que
-  // um saldo "quebrado" (parte da OS) pareça erro de contagem.
-  const notaParcial = fase.id === 'corte'
-    ? ' <b>Lote parcial:</b> os pacotes já alocados numa carga de <b>ida</b> contam como <b>saída</b> aqui e entram em <b>Expedição</b>; o que não foi na carga fica no saldo, disponível para a próxima expedição.'
-    : (fase.id === 'expedicao'
-      ? ' <b>Lote parcial:</b> a OS entra aqui na proporção dos pacotes já alocados numa carga de <b>ida</b>, mesmo antes de a etapa Expedição ser marcada. Marcar <b>Costura</b> no checklist devolve o lote inteiro para <b>Costurando</b> (o da unidade em que a OS está).'
+  // O lote parcial muda a conta de dois campos — o que despacha e o da viagem.
+  // Dizer a regra aqui evita que um saldo "quebrado" (parte da OS) pareça erro
+  // de contagem de quem confere a prateleira.
+  const _ehOrigemTransito = _TRANSITO_PERNAS.some(t => t.origens.includes(fase.id));
+  const _ehTransito = !!(fase.entrada && fase.entrada.tipo === 'carga');
+  const notaParcial = _ehOrigemTransito
+    ? ' <b>Lote parcial:</b> os pacotes já alocados numa expedição contam como <b>saída</b> aqui e entram em <b>Em trânsito</b>; o que não foi na carga fica no saldo, disponível para a próxima viagem.'
+    : (_ehTransito
+      ? ' <b>Em trânsito:</b> a OS entra aqui na proporção dos pacotes alocados nesta perna, e sai quando a caixa de chegada é marcada no checklist.'
       : '');
   const card = `
     <div class="card">
@@ -8120,37 +8153,40 @@ function renderFasePainel(faseIdx) {
       </table>
     </div>`;
 
-  // OSs atualmente NESTA fase. Com lote parcial, a OS que embarcou parte do lote
-  // aparece nas DUAS: no corte com o que sobrou e em Expedição com o que saiu.
+  // OSs atualmente NESTA fase. Com lote parcial, a OS que despachou parte do lote
+  // aparece nas DUAS: no campo de origem com o que ficou e no campo da viagem
+  // com o que embarcou.
   const pacotes = (STATE.ordens || []).map(o => {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
     const fAtual = faseAtualOS(o);
-    const frac = (faseIdx === idxCorte || faseIdx === idxExp) ? _fracAlocadaExpedicaoOS(o) : 0;
-    const embarcado = Math.round(total * frac);
+    const tr = _transitoDaOS(o);
     return {
       osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '',
-      total, faseIdx: fAtual, embarcado, parcial: frac > 0 && frac < 1
+      total, faseIdx: fAtual,
+      transitoIdx: tr ? tr.faseIdx : -1,
+      viajando: tr ? Math.round(total * tr.fracao) : 0,
+      parcial: !!(tr && tr.parcial)
     };
   }).filter(p => p.total > 0 && (p.faseIdx === faseIdx
-      || (faseIdx === idxExp && p.faseIdx === idxCorte && p.embarcado > 0)))
+      || (p.transitoIdx === faseIdx && p.viajando > 0)))
     .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
-  // Quantas peças da OS contam NESTA fase: no corte, o lote menos o que embarcou;
-  // em Expedição (sem a etapa marcada), só o que foi alocado.
+  // Quantas peças da OS contam NESTA fase: no campo da viagem, só o que embarcou;
+  // no campo de origem, o lote menos o que embarcou.
   const pecasNaFase = p => {
-    if (faseIdx === idxExp && p.faseIdx === idxCorte) return p.embarcado;
-    if (faseIdx === idxCorte && p.embarcado > 0) return Math.max(0, p.total - p.embarcado);
+    if (p.transitoIdx === faseIdx) return p.viajando;
+    if (p.faseIdx === faseIdx && p.viajando > 0) return Math.max(0, p.total - p.viajando);
     return p.total;
   };
   const seloParcial = p => {
-    if (!(p.embarcado > 0) || !p.parcial) return '';
-    return faseIdx === idxExp
-      ? ' <span class="badge" style="background:#e6eefb;">parcial · alocada</span>'
-      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.embarcado)} pç já alocadas</span>`;
+    if (!(p.viajando > 0) || !p.parcial) return '';
+    return p.transitoIdx === faseIdx
+      ? ' <span class="badge" style="background:#e6eefb;">parcial · em viagem</span>'
+      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.viajando)} pç em trânsito</span>`;
   };
   const pacotesHtml = pacotes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa carga, a OS conta nas duas fases: as peças alocadas, em Expedição; as que ficaram, no Estoque corte · Unidade Descalvado.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa expedição, a OS conta nas duas fases: as peças alocadas, em <b>Em trânsito</b>; as que ficaram, no campo de origem (o corte ou a costura da unidade em que a OS está).</div>
       <table class="table">
         <thead><tr><th class="col-actions">Ação</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
         <tbody>
@@ -8791,7 +8827,8 @@ function _expPecasPacoteOS(o) {
 }
 
 // Peças de uma composição de carga ([{tam,tom}]) e a fração que ela representa do
-// lote inteiro. É a fração que move o saldo entre Estoque de corte e Expedição.
+// lote inteiro. É a fração que move o saldo
+// entre o campo de origem e o Em trânsito da perna.
 function _expPecasDaComposicao(o, lista) {
   const vazio = { pecas: 0, total: 0, fracao: 0 };
   if (!o || !Array.isArray(lista)) return vazio;
@@ -8800,16 +8837,19 @@ function _expPecasDaComposicao(o, lista) {
   return { pecas, total: pp.total, fracao: pp.total > 0 ? Math.min(1, pecas / pp.total) : 0 };
 }
 
-// Quanto do lote de uma OS já EMBARCOU: as peças dos pacotes alocados em cargas
-// de IDA não canceladas. A ida é que leva o corte para a expedição — a volta traz
-// o mesmo pacote de volta e contá-la aqui tiraria a peça do estoque duas vezes.
+// Quanto do lote de uma OS está EMBARCADO numa perna: as peças dos pacotes
+// alocados em cargas daquela perna, não canceladas. Desde as duas unidades a
+// perna é parâmetro, e não "ida sempre": cada viagem tem o seu próprio campo de
+// trânsito, e a volta move peça em São Carlos igual à ida em Descalvado. Somar
+// as duas aqui é que tiraria a mesma peça do estoque duas vezes.
 // Carga antiga (só o número de volumes, sem composição) embarca o lote inteiro.
-function _expEmbarcadoOS(o) {
+function _expEmbarcadoOS(o, perna = 'ida') {
   const vazio = { pecas: 0, total: 0, fracao: 0, parcial: false };
   if (!o) return vazio;
+  const alvo = perna === 'volta' ? 'volta' : 'ida';
   const cancel = _expCancelSet();
   const cargas = (STATE.expedicaoCargas || []).filter(c =>
-    c.osId === o.id && c.perna !== 'volta' && !cancel.has(c.janelaId + '|' + c.data));
+    c.osId === o.id && (c.perna === 'volta' ? 'volta' : 'ida') === alvo && !cancel.has(c.janelaId + '|' + c.data));
   if (!cargas.length) return vazio;
   if (cargas.some(c => !Array.isArray(c.pacotes) && (Number(c.volumes) || 0) > 0)) {
     return { pecas: 0, total: 0, fracao: 1, parcial: false };   // carga cheia antiga
@@ -9233,7 +9273,7 @@ function renderExpedicaoPlano() {
   const remanescentesHtml = remanescentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no <b>Estoque de corte</b> — só o que foi alocado passou para <b>Expedição</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no campo em que a OS está — só o que foi alocado passou para <b>Em trânsito</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
       <table class="table">
         <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th></tr></thead>
         <tbody>
