@@ -18165,6 +18165,19 @@ function _dashGraficoColunas(cards) {
 function renderFluxoDash() {
   const cont = document.getElementById('dash-fluxo');
   if (!cont) return;
+  /* DESLOGADO, O PAINEL NÃO MOSTRA ZEROS (15/09/2026). Um dashboard inteiro
+     zerado é indistinguível de uma fábrica parada — ou de uma fábrica que
+     perdeu os dados. Aqui ele diz o que de fato está acontecendo. */
+  if (!currentUser) {
+    _dashFluxoAssinatura = '';   // ao entrar, o painel se redesenha do zero
+    cont.innerHTML = `<div class="info-box">
+      <strong>Entre na sua conta para ver a produção.</strong> Os números desta tela
+      (e os do menu, ao lado) só aparecem para quem está logado — não é que a
+      fábrica esteja vazia: é que o programa ainda não sabe quem está perguntando.
+      Use <b>Entrar</b>, no alto da barra lateral.
+    </div>`;
+    return;
+  }
   const d = _dashFluxoDados();
   const ass = JSON.stringify(d);
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
@@ -18268,9 +18281,26 @@ function _contagensNav() {
   };
 }
 
+/* SEM SESSÃO NÃO É ZERO — É "NÃO SEI" (15/09/2026).
+
+   O banco só entrega os dados a quem está logado: sem sessão, toda leitura
+   volta vazia, e o programa montava a tela inteira com zeros. Quem abria via
+   "0 Grades", "0 Tecidos", "0 Ordens de Serviço" e concluía, com razão, que a
+   fábrica tinha perdido os cadastros. Aconteceu hoje, e custou um susto: os
+   dados estavam todos no servidor o tempo inteiro.
+
+   Zero e "não sei" são respostas diferentes, e a tela tem de saber dizer as
+   duas. Deslogado, o número vira um traço. */
 function atualizarContagensNav() {
-  const conta = _contagensNav();
+  const semSessao = !currentUser;
+  const conta = semSessao ? null : _contagensNav();
   document.querySelectorAll('.nav-num[data-conta]').forEach(el => {
+    if (semSessao) {
+      el.textContent = '–';
+      el.title = 'Entre na sua conta para ver os números.';
+      return;
+    }
+    el.removeAttribute('title');
     const v = conta[el.dataset.conta];
     // Lista vazia mostra 0, e não fica em branco: em branco parece cadastro que
     // o programa não sabe contar; 0 é a resposta.

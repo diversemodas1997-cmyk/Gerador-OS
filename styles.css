@@ -259,24 +259,28 @@ aside.sidebar {
   font-weight: 500;
 }
 
-/* A CONTAGEM NA FRENTE DO NOME, no menu (15/09/2026). Substituiu os dezesseis
+/* A CONTAGEM À DIREITA DO NOME, no menu (15/09/2026). Substituiu os dezesseis
    quadros de atalho do Inicio: o menu esta em todas as telas, e o Inicio nao.
 
-   LARGURA FIXA para os numeros ficarem em COLUNA — sem isso, "9 Bases" e
-   "288 OS Salvas" comecam o texto em lugares diferentes e a lista fica com a
-   margem esquerda serrilhada. 2,6em cabe ate quatro digitos; passando disso o
-   numero empurra o nome, que e melhor do que corta-lo.
+   ELA NASCEU À ESQUERDA e mudou de lado no mesmo dia, a pedido do Junior. À
+   esquerda, o numero empurrava o nome: "9 Bases" e "288 Ordens de Servico"
+   comecavam o texto em lugares diferentes, e a lista ficava com a margem
+   serrilhada. A largura fixa de 2,6em consertava isso as custas de um vao vazio
+   na frente de toda opcao SEM contagem, que sao metade delas.
+
+   À direita o problema nao existe: os nomes comecam todos na mesma margem, que
+   e por onde o olho desce procurando, e os numeros se alinham sozinhos na outra
+   ponta. Por isso o `float` em vez de largura fixa -- ele tira o numero do
+   fluxo, o nome ocupa a linha inteira e nada precisa reservar espaco para nada.
 
    Monoespacada e apagada de proposito: o numero e referencia, nao e o nome da
    tela. Quem procura "Grades" tem de bater o olho no nome, nao no 34. */
 .nav-num {
-  display: inline-block;
-  min-width: 2.6em;
+  float: right;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: rgba(255,255,255,.4);
-  text-align: right;
-  padding-right: 8px;
+  padding-left: 10px;
 }
 .nav-btn:hover .nav-num { color: rgba(255,255,255,.65); }
 .nav-btn.active .nav-num { color: var(--accent); }
