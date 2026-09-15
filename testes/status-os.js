@@ -97,6 +97,7 @@ const monta = (ctx) => new Function('ctx', `
   ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
   ${src.match(/^const COSTURA_SC_RE = .+$/m)[0]}
   ${src.match(/^const _osCosturaEmSC = .+$/m)[0]}
+  ${recorte('function _marcasDoStatus', 'as marcas de um status')}
   ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
   ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
   ${recorte('function _statusOS', 'a leitura do status')}
@@ -240,6 +241,40 @@ console.log('-- o que fica gravado --');
      leitura({ 'Preparo de matéria-prima': true }, { 'Preparo de matéria-prima': 1 }));
   ok('12c. "Enfesto" acende Enfestando',
      leitura({ 'Enfesto': true }, { 'Enfesto': 2 }) === 'enfestando');
+
+  /* O ENFESTO VEM DA TABELA DE ENFESTOS, e não do checklist (15/09/2026,
+     Junior: "o status Enfestando deve estar correlacionado com a etapa Enfesto
+     que já existe na folha de OS, pelos check box das etapas fase 1, fase 2,
+     fase 3"). Não há etapa "Enfesto" no cadastro — ela é de outro tipo: uma
+     linha por FASE da grade, cada uma com a sua caixa (progresso.enfestosCheck).
+     Era por isso que o status existia e nunca acendia sozinho. */
+  const comEnfesto = (check, seq, etapasCheck, etapasSeq) => {
+    const o = osCheck(FLUXO, etapasCheck || {}, etapasSeq || {});
+    o.progresso.enfestosCheck = check;
+    o.progresso.enfestosSeq = seq;
+    return ctxDe('admin', 'admin@diverse.local', true, [o]).api._statusOS(o);
+  };
+  ok('12c-1. a fase 1 do enfesto marcada acende Enfestando',
+     comEnfesto({ 1: true }, { 1: 5000 }) === 'enfestando',
+     comEnfesto({ 1: true }, { 1: 5000 }));
+  // Qualquer fase serve: marcar a 2 diz a mesma coisa que marcar a 1 — ha pano
+  // estendido na mesa agora. Exigir a 1 faria o status mentir quando alguem
+  // marcasse fora de ordem, que e coisa de chao de fabrica.
+  ok('12c-2. qualquer fase do enfesto acende, nao so a primeira',
+     comEnfesto({ 2: true }, { 2: 5000 }) === 'enfestando');
+  ok('12c-3. nenhuma fase marcada: o enfesto nao acende',
+     comEnfesto({}, {}) === 'nao-iniciado');
+  // E o Corte, marcado DEPOIS, passa a frente: as duas fontes disputam pelo
+  // mesmo carimbo de relogio.
+  ok('12c-4. Corte marcado depois do enfesto: vence Cortando',
+     comEnfesto({ 1: true }, { 1: 5000 }, { 'Corte': true }, { 'Corte': 9000 }) === 'cortando');
+  ok('12c-5. e marcado ANTES, o enfesto segue mandando',
+     comEnfesto({ 1: true }, { 1: 9000 }, { 'Corte': true }, { 'Corte': 5000 }) === 'enfestando');
+  // Fase marcada antes desta versao nao tem carimbo: vale o desempate por ordem,
+  // que poe o enfesto entre o preparo e o corte, onde ele esta no chao.
+  ok('12c-6. fase sem carimbo ainda acende, pela ordem da fila',
+     comEnfesto({ 1: true }, {}) === 'enfestando',
+     comEnfesto({ 1: true }, {}));
   ok('12d. "Corte" acende Cortando',
      leitura({ 'Enfesto': true, 'Corte': true }, { 'Enfesto': 2, 'Corte': 3 }) === 'cortando');
   ok('12e. "Retirada de fios" acende Retirando fio',
@@ -910,6 +945,7 @@ console.log('-- o que fica gravado --');
       ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
       ${src.match(/^const COSTURA_SC_RE = .+$/m)[0]}
       ${src.match(/^const _osCosturaEmSC = .+$/m)[0]}
+      ${recorte('function _marcasDoStatus', 'as marcas de um status')}
       ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
       ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
       ${recorte('function _statusOS', 'a leitura do status')}

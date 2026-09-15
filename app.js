@@ -3812,6 +3812,15 @@ function goto(page) {
     // Consome o grupo armado pelo atalho do Ranking (null nos demais caminhos).
     _listaOsGrupo = _listaOsGrupoPendente;
     _listaOsGrupoPendente = null;
+    /* E o status armado por um cartao do dashboard. O <select> e preenchido
+       DURANTE o render, e _filtroStatusListaOS le o valor que ele ja tem — por
+       isso a escolha entra aqui como uma <option> solitaria: no render ela e
+       lida, a lista de opcoes se refaz inteira e a escolha continua marcada. */
+    if (_listaOsStatusPendente) {
+      const sel = document.getElementById('filtro-status-os');
+      if (sel) sel.innerHTML = `<option value="${esc(_listaOsStatusPendente)}" selected></option>`;
+      _listaOsStatusPendente = null;
+    }
     renderListaOS();
   }
   if (page === 'estoque') renderEstoque();
@@ -8177,6 +8186,33 @@ let _rankGrupos = [];
 // por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
 // um clique dado meia hora antes.
 let _listaOsGrupoPendente = null;
+
+/* O CARTAO SEM TELA PROPRIA ABRE A LISTA FILTRADA (15/09/2026, Junior: "o
+   quadro Cortando e Estoque nao permitem clicar para abrir o quadro").
+
+   E os dois nao permitiam mesmo, e nao por engano: nenhum tem tela no menu.
+   Nao ha campo "Cortando" — cortar e trabalho em curso na mesa, nao e lugar
+   onde o pano fica —, e o "Estoque" do fim do fluxo e o de PRODUTO ACABADO,
+   que nao e a tela Estoque do menu (aquela e a de tecidos, em quilos). Sem
+   destino, o cartao nascia sem onclick.
+
+   Mas clicar e o gesto natural de quem ve um numero e quer saber QUAIS. A lista
+   de Ordens de Servico ja sabe filtrar por status desde que o status virou a
+   etapa — entao o destino existia, faltava o caminho. Mesma mecanica do atalho
+   do Ranking logo acima: o pedido viaja num campo PENDENTE que o `goto` consome,
+   e vale so para a viagem que o trouxe. */
+let _listaOsStatusPendente = null;
+
+function abrirListaPorStatus(k) {
+  if (!k) return;
+  _listaOsStatusPendente = k;
+  // A busca por texto e o filtro respondem a mesma pergunta de dois jeitos;
+  // deixar as duas ligadas mostraria "nenhuma OS" sem dizer por que.
+  const busca = document.getElementById('busca-os');
+  if (busca) busca.value = '';
+  goto('lista-os');
+}
+window.abrirListaPorStatus = abrirListaPorStatus;
 
 function _rankingAbrirGrupo(i) {
   const g = _rankGrupos[i];
@@ -18006,7 +18042,7 @@ function _dashFluxoDados() {
 function _dashFluxoPassos(d) {
   return [
     { nome: 'Cortando', cards: [
-      { nome: 'Na mesa de corte', v: d.cortando,
+      { nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
         dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
     ] },
     { nome: 'Estoque de corte', cards: [
@@ -18035,7 +18071,7 @@ function _dashFluxoPassos(d) {
       { nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
     ] },
     { nome: 'Estoque', cards: [
-      { nome: 'Produto acabado', v: d.estoque,
+      { nome: 'Produto acabado', v: d.estoque, statusFiltro: 'estoque',
         dica: 'Toda OS com a caixa Estoque marcada no checklist — mesmo que outra etapa tenha sido marcada depois dela.' },
     ] },
   ];
@@ -18047,6 +18083,49 @@ let _dashFluxoAssinatura = '';
 let _dashFluxoTimer = null;
 const DASH_FLUXO_MS = 30000;
 
+/* O GRÁFICO DE COLUNAS DE UM PASSO DO FLUXO.
+
+   Uma coluna por cartão, em peças, com a altura relativa à maior do próprio
+   passo (ver a nota em renderFluxoDash). Cartão vazio vira um traço rente ao
+   eixo, e não coluna nenhuma: o zero é resposta — "aqui não tem nada agora" —,
+   e some-lo do gráfico faria a coluna ao lado parecer a única que existe.
+
+   Devolve '' quando não há o que comparar: menos de duas colunas, ou tudo
+   zerado. Nos dois casos o desenho não acrescentaria nada ao número que já
+   está no cartão logo acima.
+
+   As medidas são em porcentagem da largura, e não em pixels: o painel encolhe
+   até a tela do celular, e um SVG de largura fixa sairia cortado lá. */
+function _dashGraficoColunas(cards) {
+  const vals = (cards || []).map(c => (c.v && c.v.pecas) || 0);
+  if (vals.length < 2) return '';
+  const max = Math.max(...vals);
+  if (!(max > 0)) return '';
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const larg = 100 / vals.length;
+  // 8% de cada lado viram o respiro entre uma coluna e a vizinha.
+  const barra = larg * 0.84, recuo = larg * 0.08;
+  const H = 72;                       // altura útil do desenho, em unidades do viewBox
+  const colunas = cards.map((c, i) => {
+    const v = (c.v && c.v.pecas) || 0;
+    // Piso de 1 unidade: a coluna de valor zero vira um traço visível no eixo.
+    const h = v > 0 ? Math.max(2, (v / max) * H) : 1;
+    const x = i * larg + recuo;
+    const y = H - h;
+    return `<rect x="${x.toFixed(2)}%" y="${y.toFixed(2)}" width="${barra.toFixed(2)}%" height="${h.toFixed(2)}"
+      rx="0.6" class="dash-barra${v > 0 ? '' : ' vazia'}"><title>${esc(c.nome)}: ${fmt(v)} peças</title></rect>`;
+  }).join('');
+  // O rótulo vai embaixo, um por coluna, no centro dela.
+  const rotulos = cards.map((c, i) => {
+    const x = i * larg + larg / 2;
+    const curto = String(c.nome || '').replace(/^Unidade\s+/i, '').replace(/^Recebido em\s+/i, '');
+    return `<span class="dash-barra-rot" style="left:${x.toFixed(2)}%;">${esc(curto)}</span>`;
+  }).join('');
+  return `<div class="dash-gr">
+    <svg viewBox="0 0 100 ${H}" preserveAspectRatio="none" class="dash-gr-svg" aria-hidden="true">${colunas}</svg>
+    <div class="dash-gr-eixo">${rotulos}</div>
+  </div>`;
+}
 function renderFluxoDash() {
   const cont = document.getElementById('dash-fluxo');
   if (!cont) return;
@@ -18060,8 +18139,14 @@ function renderFluxoDash() {
       const pecas = (c.v && c.v.pecas) || 0;
       const nOS = (c.v && c.v.os) || 0;
       const vazio = pecas > 0 ? '' : ' vazio';
-      const clique = c.rota ? ` onclick="goto('${c.rota}')"` : '';
-      const dica = [c.dica, c.rota ? 'Clique para abrir a tela deste campo.' : '']
+      /* Dois destinos possiveis: a TELA do campo, quando ele tem uma, ou a lista
+         de OS filtrada pelo STATUS, para os cartoes que nao tem tela (Cortando e
+         Estoque). Clicar e o gesto de quem ve um numero e quer saber quais. */
+      const clique = c.rota ? ` onclick="goto('${c.rota}')"`
+        : (c.statusFiltro ? ` onclick="abrirListaPorStatus('${c.statusFiltro}')"` : '');
+      const dica = [c.dica,
+        c.rota ? 'Clique para abrir a tela deste campo.'
+               : (c.statusFiltro ? 'Clique para ver estas OS na lista de Ordens de Serviço.' : '')]
         .filter(Boolean).join(' ');
       return `
         <div class="dash-card${vazio}"${clique}${dica ? ` title="${esc(dica)}"` : ''}>
@@ -18070,10 +18155,27 @@ function renderFluxoDash() {
           <div class="dash-sub">peças · ${fmt(nOS)} OS</div>
         </div>`;
     }).join('');
+    /* O GRÁFICO DE COLUNAS, logo abaixo dos cartões (15/09/2026, Junior).
+
+       Os cartões dizem o número; o gráfico diz a PROPORÇÃO — qual metade do
+       passo está carregada. Num passo de uma coluna só ele não diria nada
+       (uma barra sozinha é sempre 100%), então ali não é desenhado: gráfico
+       que não compara é enfeite que ocupa a tela.
+
+       A ESCALA É DO PASSO, não do painel. Cada grupo se mede contra a sua
+       maior coluna: o que interessa é como o trabalho se reparte ENTRE as
+       duas unidades, ou entre os quatro turnos do trânsito. Numa escala única
+       para o painel inteiro, um passo com 200 peças ao lado de outro com
+       11.000 viraria uma linha rente ao chão, sem leitura nenhuma.
+
+       É SVG inline, sem biblioteca: são barras e rótulos, e uma dependência
+       nova para desenhar retângulo seria mais código do que o desenho. */
+    const grafico = _dashGraficoColunas(p.cards);
     return `
       <div class="dash-etapa">
         <div class="dash-etapa-nome"><span class="dash-passo">${i + 1}</span>${esc(p.nome)}</div>
         <div class="dash-cards">${cards}</div>
+        ${grafico}
       </div>`;
   }).join('');
   cont.innerHTML = `
@@ -24054,8 +24156,13 @@ const STATUS_OS = [
   { k: 'nao-iniciado',   icone: '⚪', rotulo: 'Não iniciado' },
   { k: 'materia-prima',  icone: '🟤', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1,
     re: /prepar\w*\s+(d[ae]\s+)?mat[ée]ria|mat[ée]ria[\s-]?prima/i },
+  /* O ENFESTO NAO E ETAPA DO CHECKLIST: ele mora na TABELA DE ENFESTOS da
+     folha, uma linha por fase da grade, com a caixa de cada uma. Daí `enfesto`
+     em vez de `re` — ver _marcasDoStatus. A `re` fica junto para o caso de
+     alguem um dia cadastrar uma etapa chamada Enfesto: as duas acendem o mesmo
+     status, e vale a marcada por ultimo. */
   { k: 'enfestando',     icone: '🟡', rotulo: 'Enfestando',               ordem: 2, baixa: true,
-    re: /enfest/i },
+    enfesto: true, re: /enfest/i },
   { k: 'cortando',       icone: '🟠', rotulo: 'Cortando',                 ordem: 3, baixa: true,
     re: /corte|cortando/i },
   /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
@@ -24155,23 +24262,59 @@ const STATUS_FIM = 'ensacado';
 
    Devolve 'nao-iniciado' quando nenhuma etapa com status foi marcada: a OS
    existe e ninguém encostou nela. */
+/* O ENFESTO NÃO É ETAPA DO CHECKLIST — É A TABELA DE ENFESTOS (15/09/2026,
+   Junior: "o status Enfestando deve estar correlacionado com a etapa Enfesto que
+   já existe na folha de OS, pelos check box das etapas fase 1, fase 2, fase 3").
+
+   Ele sempre esteve na folha, só que noutro lugar: a tabela de enfestos tem uma
+   linha por FASE da grade, com a sua caixa, e quem enfesta marca a fase que fez
+   (progresso.enfestosCheck, por ordem da fase). Não há etapa "Enfesto" no
+   cadastro de Etapas de produção — por isso o status "Enfestando" existia no
+   programa e nunca acendia sozinho, o que eu tinha reportado como "falta criar a
+   etapa". Não falta: ela é de outro tipo.
+
+   QUALQUER FASE MARCADA acende, e não só a primeira. A fase 1 é o caso normal —
+   é por onde o enfesto começa —, mas marcar a 2 ou a 3 diz a mesma coisa: há
+   pano estendido na mesa agora. Exigir a 1 faria o status mentir quando alguém
+   marcasse fora de ordem, que é coisa de chão de fábrica.
+
+   Vale a mais RECENTE entre as fases, e ela disputa com as etapas do checklist
+   pelo mesmo carimbo de relógio — daí o `enfestosSeq` gravado junto com a caixa
+   (ver togglarChecklistEnfesto). Fase marcada antes desta versão não tem
+   carimbo, e cai no desempate por `ordem`, que põe o enfesto entre o preparo e o
+   corte, onde ele está no chão. */
+function _marcasDoStatus(o, s) {
+  const prog = (o && o.progresso) || {};
+  let achou = false, seq = -Infinity;
+  const considerar = (v) => {
+    achou = true;
+    const n = (v != null) ? Number(v) : null;
+    if (n != null && n > seq) seq = n;
+  };
+  // A tabela de enfestos: uma caixa por fase da grade.
+  if (s.enfesto) {
+    const ck = prog.enfestosCheck || {}, sq = prog.enfestosSeq || {};
+    Object.keys(ck).forEach(k => { if (ck[k]) considerar(sq[k]); });
+  }
+  /* AS DUAS FONTES SOMAM, e não se excluem: o enfesto mora na tabela de
+     enfestos, mas nada impede que um dia exista também uma etapa "Enfesto" no
+     cadastro — e as OS que já a tiverem continuam acendendo o status por ela.
+     Vale a marca mais recente entre as duas. */
+  if (s.re) {
+    const ck = prog.etapasCheck || {}, sq = prog.etapasSeq || {};
+    ((o && o.etapas) || []).forEach(n => { if (s.re.test(n) && ck[n]) considerar(sq[n]); });
+  }
+  return achou ? { seq } : null;            // parado: sem fonte, nunca acende
+}
+
 function _statusDoChecklistOS(o) {
-  const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
-  const seqs = (o && o.progresso && o.progresso.etapasSeq) || {};
   let achouSeq = false, kSeq = '', melhorSeq = -Infinity;
   let kOrd = '', melhorOrd = -1;
   STATUS_OS.forEach(s => {
-    if (!s.re) return;                      // parado/finalizado não vêm daqui
     if (s.cond && !s.cond(o)) return;
-    const marcadas = ((o && o.etapas) || []).filter(n => s.re.test(n) && checks[n]);
-    if (!marcadas.length) return;
-    // Uma etapa pode acender o status por mais de um nome; vale a mais recente.
-    let seq = -Infinity;
-    marcadas.forEach(n => {
-      const v = (seqs[n] != null) ? Number(seqs[n]) : null;
-      if (v != null && v > seq) seq = v;
-    });
-    if (seq > -Infinity && (!achouSeq || seq > melhorSeq)) { achouSeq = true; melhorSeq = seq; kSeq = s.k; }
+    const m = _marcasDoStatus(o, s);
+    if (!m) return;
+    if (m.seq > -Infinity && (!achouSeq || m.seq > melhorSeq)) { achouSeq = true; melhorSeq = m.seq; kSeq = s.k; }
     const ord = Number(s.ordem) || 0;
     if (ord > melhorOrd) { melhorOrd = ord; kOrd = s.k; }
   });
@@ -26701,9 +26844,28 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   if (!os) return;
   os.progresso = os.progresso || {};
   os.progresso.enfestosCheck = os.progresso.enfestosCheck || {};
-  if (checked) os.progresso.enfestosCheck[ordem] = true;
-  else delete os.progresso.enfestosCheck[ordem];
+  /* O CARIMBO DE QUANDO, como nas etapas (15/09/2026). Desde que marcar uma fase
+     do enfesto passou a acender o status "Enfestando", esta caixa entrou na
+     mesma disputa das etapas do checklist — e quem decide o status é a marca
+     mais RECENTE. Sem o carimbo, o enfesto não teria com que disputar e o
+     desempate cairia na ordem da tabela, que é o palpite, não o relógio.
+     As fases marcadas ANTES desta versão não têm carimbo: para elas vale o
+     fallback por ordem, que põe o enfesto no lugar certo da fila de qualquer
+     jeito (ver _statusDoChecklistOS). */
+  os.progresso.enfestosSeq = os.progresso.enfestosSeq || {};
+  if (checked) {
+    os.progresso.enfestosCheck[ordem] = true;
+    os.progresso.enfestosSeq[ordem] = Date.now();
+  } else {
+    delete os.progresso.enfestosCheck[ordem];
+    delete os.progresso.enfestosSeq[ordem];
+  }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
+  /* A LISTA E A FOLHA MOSTRAM O STATUS, e ele acabou de mudar. Sem redesenhar,
+     quem marca a primeira fase do enfesto na folha continua vendo "Não
+     iniciado" no cabeçalho até trocar de tela. */
+  if (typeof renderListaOS === 'function') { try { renderListaOS(); } catch (e) {} }
+  if (typeof renderStatusFolhaOS === 'function') { try { renderStatusFolhaOS(); } catch (e) {} }
 }
 
 // Normaliza para HH:MM o que foi digitado nos campos de horário da folha (os
