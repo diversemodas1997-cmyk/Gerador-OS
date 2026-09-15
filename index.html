@@ -111,11 +111,12 @@
 
          Agora OPERAÇÕES tem só o caminho da peça, na mesma ordem do dashboard
          (as duas unidades juntas em cada passo, e não intercaladas como antes),
-         e GERAL fica com o que não é nem fluxo nem cadastro. -->
+         e GERAL fica com o que não é nem fluxo nem cadastro: a Compra, o Estoque
+         de tecidos e o Ranking — três telas de consulta e decisão, que não são
+         lugar por onde o pano passa nem lista que se mantém. -->
     <div class="nav-group" data-group="geral">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Geral</button>
       <div class="nav-items">
-        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
@@ -124,7 +125,14 @@
 
     <!-- OPERAÇÕES: o caminho da peça, campo a campo, na ordem do chão. As duas
          unidades vêm juntas em cada passo — é assim que a pergunta se faz
-         ("quanto tem em corte?"), e é assim que o dashboard do Início mostra. -->
+         ("quanto tem em corte?"), e é assim que o dashboard do Início mostra.
+
+         SÓ OS LUGARES POR ONDE O PANO PASSA (15/09/2026, Junior). Saíram daqui
+         para os Cadastros a tela de "Operações" — que é o CADASTRO do
+         planejamento, a jornada de cada posto a partir das funções — e a de
+         "Expedição", que é onde as janelas e as cargas se cadastram. Nenhuma das
+         duas é um campo onde peça fica parada: são listas que se mantêm, e é
+         isso que as põe junto das outras listas. -->
     <div class="nav-group" data-group="operacoes">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Operações</button>
       <div class="nav-items">
@@ -135,17 +143,23 @@
         <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · IDA</a>
         <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · VOLTA</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
-        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Expedição</a>
-        <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="operacoes"></span>Operações</a>
       </div>
     </div>
 
     <!-- Sem admin-only: os cadastros são de CONSULTA para todo mundo. Quem lê a
          OS precisa poder abrir a grade, o tecido, a etapa. Escrever segue só do
-         admin — os botões de ação de cada tela é que são admin-only. -->
+         admin — os botões de ação de cada tela é que são admin-only.
+
+         CADASTRO AQUI É "LISTA QUE SE MANTÉM", e não só as tabelas de apoio. Por
+         isso moram nesta seção, desde 15/09/2026, as Ordens de Serviço (a lista
+         principal da casa, no topo), as Operações e a Expedição. As três se
+         cadastram e se editam; o que está nos campos de Operações, ao lado, não
+         se cadastra — é onde a peça está, e isso o checklist da folha é que
+         diz. -->
     <div class="nav-group" data-group="cadastros">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
       <div class="nav-items">
+        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#cad-marcas" data-page="cad-marcas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="marcas"></span>Marcas</a>
         <a class="nav-btn" href="#cad-colecoes" data-page="cad-colecoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="colecoes"></span>Coleções</a>
         <a class="nav-btn" href="#cad-modelos" data-page="cad-modelos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="modelos"></span>Modelos</a>
@@ -154,6 +168,8 @@
         <a class="nav-btn" href="#cad-blocos" data-page="cad-blocos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="blocos"></span>Blocos / Revisões</a>
         <a class="nav-btn" href="#cad-equipe" data-page="cad-equipe" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="equipe"></span>Equipe</a>
         <a class="nav-btn" href="#cad-funcoes" data-page="cad-funcoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="funcoes"></span>Funções</a>
+        <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="operacoes"></span>Operações</a>
+        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Expedição</a>
         <a class="nav-btn" href="#cad-etapas" data-page="cad-etapas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="etapas"></span>Etapas de produção</a>
         <a class="nav-btn" href="#cad-componentes" data-page="cad-componentes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="componentes"></span>Componentes</a>
         <a class="nav-btn" href="#cad-tecidos" data-page="cad-tecidos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="tecidos"></span>Tecidos</a>
@@ -1500,6 +1516,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-15p"></script>
+<script src="app.js?v=2026-09-15q"></script>
 </body>
 </html>
