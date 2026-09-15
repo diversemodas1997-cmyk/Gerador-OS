@@ -157,9 +157,68 @@ if ($raizDestino -and -not (Test-Path $raizDestino)) {
 
 $falhou = $false
 
+# ------------------------------------------------- esperar o banco acordar
+#
+# POR QUE ESPERAR, EM VEZ DE FALHAR (15/09/2026, pedido do Junior).
+#
+# Em 14/09 as 07:15 o backup morreu com "container ... is not running": era a
+# execucao de recuperacao do StartWhenAvailable, disparada quando a maquina
+# ligou, e o Docker ainda estava subindo o Supabase. Nao havia nada de errado —
+# so chegou cedo demais. A tentativa das 12:30 no mesmo dia deu certo, entao
+# aquele dia nao ficou sem copia; mas depender do RestartCount para isso e
+# apostar que a segunda tentativa vai cair numa hora melhor.
+#
+# A janela e conhecida e curta: o nginx sobe sozinho com o Docker e o Supabase
+# so entra quando o vigia manda "up -d" — em 13/08/2026 foram quatro minutos de
+# diferenca. Vinte minutos de paciencia cobrem isso com folga e cabem dentro do
+# ExecutionTimeLimit de uma hora da tarefa.
+#
+# A pergunta e a CERTA: nao "o container existe?", e sim "o Postgres atende?".
+# Um container de pe com o banco ainda recuperando faria o pg_dump falhar do
+# mesmo jeito, e o log diria a mesma coisa.
+function EsperarBanco([int] $LimiteSegundos = 1200, [int] $IntervaloSegundos = 15) {
+  $inicio = Get-Date
+  $avisou = $false
+  while ($true) {
+    # pg_isready devolve 0 quando o banco aceita conexao. A saida vai para o
+    # vazio de proposito: o que interessa e o codigo, e o texto so sujaria o log.
+    $null = & docker exec supabase-db pg_isready -U postgres -d postgres 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      if ($avisou) {
+        $s = [int]((Get-Date) - $inicio).TotalSeconds
+        Anotar "banco respondeu depois de $s s de espera"
+      }
+      return $true
+    }
+    $decorrido = ((Get-Date) - $inicio).TotalSeconds
+    if ($decorrido -ge $LimiteSegundos) {
+      # Em minutos so quando ha minutos: um limite curto (num teste) dizendo
+      # "0 min de espera" faria o log mentir sobre o que foi tentado.
+      $quanto = if ($LimiteSegundos -ge 60) { "$([int]($LimiteSegundos / 60)) min" } else { "$LimiteSegundos s" }
+      Anotar "FALHA: o banco nao respondeu em $quanto de espera. Nada foi exportado."
+      return $false
+    }
+    if (-not $avisou) {
+      # Sem acento e sem travessao: esta linha passa pelo console do Agendador
+      # antes do log, e la a acentuacao vira caca (ver as linhas de 14/09).
+      Anotar 'banco ainda nao responde (maquina recem-ligada?) - esperando'
+      $avisou = $true
+    }
+    Start-Sleep -Seconds $IntervaloSegundos
+  }
+}
+
 # ---------------------------------------- 1) pacote cifrado do servidor inteiro
+if (-not (EsperarBanco)) {
+  # Sai do passo 1 sem tentar o dump — mas os PDFs abaixo continuam, porque sao
+  # protecao independente e nao dependem de banco nenhum.
+  $falhou = $true
+  $codigo = 1
+  $saida = ''
+} else {
 $saida = & node $script --docker $Docker --destino $Destino --senha $Senha --manter $Manter 2>&1 | Out-String
 $codigo = $LASTEXITCODE
+}
 
 if ($codigo -eq 0) {
   $ultimo = Get-ChildItem $Destino -Filter '*.bkp' -ErrorAction SilentlyContinue |
