@@ -7740,8 +7740,29 @@ const ETAPA_DESC_RE = /recebido em descalvado/i;
 const _osRecebidaSC = o => osEtapaMarcada(o, ETAPA_SC_RE);
 
 const FASES_ESTOQUE = [
+  /* ESTOQUE DE CORTE É O QUE ESTÁ ENSACADO (15/09/2026, Junior).
+
+     Até aqui este campo entrava pela etapa CORTE, e por isso mostrava OS que
+     ainda estavam sendo cortadas — "cortando" é trabalho em curso na mesa, não
+     é pano guardado esperando a costura. Medido no dia: das 11 OS no campo, 3
+     estavam em Cortando, 4 já tinham sido carimbadas como Estoque, 1 estava em
+     Preparando matéria-prima e 1 em Costurando; UMA estava Ensacada.
+
+     A peça vira estoque quando é ENSACADA — é o saco fechado, contado, à espera
+     da costura. Daí a `cond`: entra pela etapa (Corte ou Ensaque, que é o que dá
+     o carimbo de QUANDO) e só conta enquanto o STATUS for Ensacado.
+
+     A condição é pelo status, e não só pela caixa de Ensaque, porque na fábrica
+     ninguém marca aquela caixa: o ensaque é apontado carimbando o status na
+     lista de OS. Exigir a caixa esvaziaria o campo. E amarrar ao status resolve
+     junto as duas outras trincas que a medição mostrou: o carimbo à mão (que o
+     campo ignorava, deixando no corte OS já carimbadas como Estoque) e a etapa
+     "Preparo Matéria-prima", que acende status mas não é fase de estoque — a
+     "última etapa" das duas contas podia ser uma para o status e outra para o
+     campo. Agora quem manda é um só: o status. */
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
-    entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
+    cond: o => _statusOS(o) === 'ensacado',
+    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'Corte ou Ensaque, com o status em Ensacado' } },
   // Enquanto a OS não foi recebida em São Carlos, costurar é costurar aqui.
   { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => !_osRecebidaSC(o),
@@ -17790,7 +17811,8 @@ function _dashFluxoDados() {
 function _dashFluxoPassos(d) {
   return [
     { nome: 'Estoque de corte', cards: [
-      { nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte' },
+      { nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
+        dica: 'O corte ensacado, esperando a costura: so as OS com status Ensacado.' },
       { nome: 'Unidade São Carlos', v: d.corteSC, rota: 'corte-sc' },
     ] },
     { nome: 'Costurando', cards: [

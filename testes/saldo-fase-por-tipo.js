@@ -34,6 +34,13 @@ const motor = [
   corta('function componentesPorTecidoCorOS'),
   recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
   cortaArr('const FASES_ESTOQUE'),
+  // O campo "Estoque de corte" so conta OS com o status Ensacado (a `cond` da
+  // fase), entao o motor precisa saber ler o status.
+  cortaArr('const STATUS_OS'),
+  cortaLinha('const STATUS_FIM'),
+  corta('function _statusDoChecklistOS'),
+  corta('function _ultimaMarcacaoChecklist'),
+  corta('function _statusOS'),
   corta('function _faseEntrouOS'),
   corta('function _nomeEtapaDaFase'),
   cortaLinha('function _faseIdxPorId'),

@@ -48,6 +48,13 @@ const motor = [
   // (o `cond` das duas fases de costura sai daqui).
   recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
   cortaArr('const FASES_ESTOQUE'),
+  // O campo "Estoque de corte" so conta OS com o status Ensacado (a `cond` da
+  // fase), entao o motor precisa saber ler o status.
+  cortaArr('const STATUS_OS'),
+  cortaLinha('const STATUS_FIM'),
+  corta('function _statusDoChecklistOS'),
+  corta('function _ultimaMarcacaoChecklist'),
+  corta('function _statusOS'),
   corta('function _faseEntrouOS'),
   corta('function _nomeEtapaDaFase'),
   cortaLinha('function _faseIdxPorId'),
@@ -126,7 +133,11 @@ const estado = (os, cargas, excecoes) => ({
   corteMov: [], costurandoMov: [], fiosMov: [], expedicaoMov: []
 });
 
-const noCorte = () => osBase({ 'Corte': true }, { 'Corte': 1 });
+// NO ESTOQUE DE CORTE = ENSACADA (15/09/2026). O campo deixou de entrar pela
+// etapa Corte: peça que ainda está na mesa não é pano guardado. Entra quem tem
+// o status ENSACADO, e por isso a OS deste teste marca o Ensaque depois do
+// Corte — é o que a fábrica faz quando fecha o saco.
+const noCorte = () => osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 });
 const cargaIda = (extra) => Object.assign({
   id: 'c1', osId: 'os_1', janelaId: 'j1', data: '2026-08-20', perna: 'ida',
   pacotes: [{ tam: 'P', tom: null }, { tam: 'M', tom: null }], volumes: 5
@@ -215,14 +226,21 @@ confere('etapa Expedição marcada: 200 pç lá, sem somar a fração alocada po
     [cargaIda()])),
   { expedicao: 200 });
 
-// O caso torto: a caixa Expedição está marcada, mas o Corte foi marcado DEPOIS
-// (a OS voltou para o corte). O que este caso protege é a SOMA: venha a peça de
-// onde vier, as 200 têm que continuar existindo em algum campo. Sem a guarda do
-// campo de origem, sumiam 100 no meio do caminho.
+/* O caso torto: a caixa Expedição está marcada, mas o Corte foi marcado DEPOIS
+   (a OS voltou para o corte). O que este caso protege é a SOMA: venha a peça de
+   onde vier, as 200 têm que continuar existindo em algum campo. Sem a guarda do
+   campo de origem, sumiam 100 no meio do caminho.
+
+   O DESTINO mudou em 15/09/2026, e a soma não. Antes a OS voltava mesmo para o
+   Estoque de corte e a ida seguia valendo, repartindo 100/100. Agora o Estoque
+   de corte só aceita quem está ENSACADO, e a última etapa marcada aqui é o Corte
+   — o status é "Cortando", peça na mesa. Sem campo de origem, não há fração que
+   viaje: o lote inteiro conta na Expedição, que é a etapa que ela realmente tem
+   marcada. As 200 continuam inteiras, que é o que este caso existe para provar. */
 const torto = saldos(estado(osBase({ 'Corte': true, 'Expedição': true },
   { 'Corte': 5, 'Expedição': 4 }), [cargaIda()]));
-confere('Expedição marcada e Corte remarcado por cima: 100 no corte, 100 na estrada',
-  torto, { corte: 100, transitoIda: 100 });
+confere('Expedição marcada e Corte remarcado por cima: o lote inteiro na Expedição',
+  torto, { expedicao: 200 });
 ok('  ... e as 200 pç continuam inteiras somando os campos',
   CAMPOS.reduce((t, k) => t + torto[k], 0) === 200,
   CAMPOS.reduce((t, k) => t + torto[k], 0));

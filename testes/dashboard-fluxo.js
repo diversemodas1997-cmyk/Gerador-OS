@@ -42,6 +42,13 @@ const motor = [
   corta('function componentesPorTecidoCorOS'),
   recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
   cortaArr('const FASES_ESTOQUE'),
+  // O campo "Estoque de corte" so conta OS com o status Ensacado (a `cond` da
+  // fase), entao o motor precisa saber ler o status.
+  cortaArr('const STATUS_OS'),
+  cortaLinha('const STATUS_FIM'),
+  corta('function _statusDoChecklistOS'),
+  corta('function _ultimaMarcacaoChecklist'),
+  corta('function _statusOS'),
   corta('function _faseEntrouOS'),
   corta('function _nomeEtapaDaFase'),
   cortaLinha('function _faseIdxPorId'),
@@ -121,7 +128,11 @@ const estado = (os, cargas, janelas, excecoes) => ({
   fiosMov: [], expedicaoMov: []
 });
 
-const noCorte = () => osBase({ 'Corte': true }, { 'Corte': 1 });
+// NO ESTOQUE DE CORTE = ENSACADA (15/09/2026). O campo deixou de entrar pela
+// etapa Corte: peça que ainda está na mesa não é pano guardado. Entra quem tem
+// o status ENSACADO, e por isso a OS deste teste marca o Ensaque depois do
+// Corte — é o que a fábrica faz quando fecha o saco.
+const noCorte = () => osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 });
 const carga = (extra) => Object.assign({
   id: 'c1', osId: 'os_1', janelaId: 'j1', data: '2026-09-22', perna: 'ida',
   pacotes: [{ tam: 'P', tom: null }, { tam: 'M', tom: null }], volumes: 5
@@ -175,14 +186,54 @@ confere('OS em Expedição: não aparece em cartão nenhum',
 // O cartão Estoque conta a CAIXA, não a última etapa: marcada uma vez, a OS
 // conta ali mesmo que o fluxo tenha continuado depois. É a exceção pedida em
 // 15/09/2026, e por isso a peça aparece nos dois cartões.
-confere('Estoque marcado e o Corte marcado DEPOIS: conta nos dois cartões',
-  dash(estado(osBase({ 'Estoque': true, 'Corte': true },
-                     { 'Estoque': 1, 'Corte': 2 }), [])),
+confere('Estoque marcado e outra etapa marcada DEPOIS: conta nos dois cartões',
+  dash(estado(osBase({ 'Estoque': true, 'Corte': true, 'Ensaque': true },
+                     { 'Estoque': 1, 'Corte': 2, 'Ensaque': 3 }), [])),
   { corte: 200, estoque: 200 });
 
 confere('OS sem etapa nenhuma marcada: não conta em cartão nenhum',
   dash(estado(osBase({}, {}), [])),
   {});
+
+/* ---------- 1b. o Estoque de corte é só o que está ENSACADO ---------- */
+/* Medido em 15/09/2026, o campo tinha 11 OS e só UMA estava ensacada: 3 ainda
+   sendo cortadas, 4 já carimbadas como Estoque, 1 em Preparando matéria-prima e
+   1 em Costurando. Ele entrava pela etapa CORTE, e corte é trabalho na mesa —
+   não é pano guardado esperando a costura. */
+
+confere('só o Corte marcado (status Cortando): NÃO é estoque de corte, é mesa',
+  dash(estado(osBase({ 'Corte': true }, { 'Corte': 1 }), [])),
+  {});
+
+confere('Ensaque marcado depois do Corte: aí sim entra no Estoque de corte',
+  dash(estado(osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 }), [])),
+  { corte: 200 });
+
+// O carimbo à mão vale: na fábrica ninguém marca a caixa Ensaque, o ensaque é
+// apontado carimbando o status na lista de OS. Exigir a caixa esvaziaria o campo.
+const carimbadaEnsacada = () => {
+  const o = osBase({ 'Corte': true }, { 'Corte': 1000 });
+  o.statusOS = 'ensacado';
+  o.statusOSPor = 'enfesto.corte@diverse.local';
+  o.statusOSEm = new Date(5000).toISOString();
+  return o;
+};
+confere('carimbada Ensacada à mão, sem a caixa: entra igual',
+  dash(estado(carimbadaEnsacada(), [])),
+  { corte: 200 });
+
+// E o carimbo VELHO não segura a OS ali: marcada uma etapa depois dele, o
+// checklist retoma e o status deixa de ser Ensacado.
+const carimboVencido = () => {
+  const o = osBase({ 'Corte': true, 'Costura': true }, { 'Corte': 1000, 'Costura': 9000 });
+  o.statusOS = 'ensacado';
+  o.statusOSPor = 'enfesto.corte@diverse.local';
+  o.statusOSEm = new Date(5000).toISOString();
+  return o;
+};
+confere('carimbo de Ensacado vencido por etapa nova: sai do corte, vai para a costura',
+  dash(estado(carimboVencido(), [])),
+  { costurando: 200 });
 
 /* ---------- 2. o trânsito, turno por turno ---------- */
 
