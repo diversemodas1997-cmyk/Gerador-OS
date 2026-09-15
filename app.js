@@ -17798,6 +17798,7 @@ function _dashPesoTurnos(o, perna) {
 function _dashFluxoDados() {
   const zero = () => ({ pecas: 0, os: 0 });
   const d = {
+    cortando: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
     idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
@@ -17833,6 +17834,26 @@ function _dashFluxoDados() {
        fazem os dois de Recebido. A soma dos cartões não é o total da fábrica;
        cada um responde à sua pergunta. */
     if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total);
+    /* CORTANDO NÃO TEM CAMPO, E PRECISAVA DE CARTÃO (15/09/2026, Junior).
+
+       Os campos do fluxo guardam pano PARADO: o corte ensacado esperando a
+       costura, a costura esperando a viagem. Cortar é trabalho em curso na
+       mesa — não é lugar onde a peça fica —, e por isso nunca houve campo para
+       ele. A consequência apareceu quando o Estoque de corte passou a exigir o
+       status Ensacado: a OS entre o corte e o ensaque deixou de aparecer em
+       qualquer lugar do dashboard, e sumir da tela é pior do que aparecer no
+       campo errado — ninguém procura o que não sabe que existe.
+
+       Este cartão é lido do STATUS, como os de Recebido, e não de um campo. Ele
+       não repete ninguém: quem está Cortando não está em campo nenhum, então
+       aqui é o único lugar onde aquele lote aparece.
+
+       E ele conta SÓ QUEM NÃO ESTÁ EM CAMPO NENHUM (`atual < 0`), que é o
+       buraco que ele existe para tapar. Sem essa guarda, uma OS com a caixa
+       Expedição marcada — que não acende status e por isso deriva "Cortando"
+       do corte que ficou para trás — apareceria na mesa de corte E no campo
+       Expedição ao mesmo tempo. */
+    if (atual < 0 && _statusOS(o) === 'cortando') somar('cortando', total);
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
@@ -17886,6 +17907,10 @@ function _dashFluxoDados() {
 // tela própria — a OS saiu do fluxo em processo).
 function _dashFluxoPassos(d) {
   return [
+    { nome: 'Cortando', cards: [
+      { nome: 'Na mesa de corte', v: d.cortando,
+        dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
+    ] },
     { nome: 'Estoque de corte', cards: [
       { nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
         dica: 'O corte ensacado, esperando a costura: so as OS com status Ensacado.' },

@@ -85,7 +85,7 @@ const ok = (nome, cond, extra) => {
   if (!cond) falhas++;
 };
 
-const CAMPOS = ['corte', 'corteSC', 'costurando', 'costurandoSC',
+const CAMPOS = ['cortando', 'corte', 'corteSC', 'costurando', 'costurandoSC',
   'idaManha', 'idaTarde', 'voltaManha', 'voltaTarde',
   'recDesc', 'recSC', 'fios', 'estoque'];
 
@@ -158,10 +158,10 @@ confere('ensacada e recebida em São Carlos: corte de lá E cartão de recebido'
                      { 'Corte': 1, 'Ensaque': 2, 'Recebido em São Carlos': 3 }), [])),
   { corteSC: 200, recSC: 200 });
 
-confere('só cortada e recebida (sem ensacar): não é estoque, mas o recebido carimba',
+confere('só cortada e recebida (sem ensacar): está na mesa, e o recebido carimba',
   dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true },
                      { 'Corte': 1, 'Recebido em São Carlos': 2 }), [])),
-  { recSC: 200 });
+  { cortando: 200, recSC: 200 });
 
 confere('Costura depois de São Carlos: Costurando · São Carlos',
   dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
@@ -186,9 +186,11 @@ confere('Estoque marcado: sai do fluxo em processo e vai para o cartão final',
                      { 'Corte': 1, 'Retirada de fios': 2, 'Estoque': 3 }), [])),
   { estoque: 200 });
 
-// Expedição não tem cartão neste painel (não está na lista pedida): a OS lá não
-// pode vazar para nenhum outro cartão.
-confere('OS em Expedição: não aparece em cartão nenhum',
+/* Expedição não tem cartão neste painel (não está na lista pedida) e também não
+   acende status — a OS lá deriva "Cortando" do corte que ficou para trás. É o
+   caso que a guarda `atual < 0` do cartão Cortando protege: ela está NUM campo,
+   então não está na mesa, e não pode vazar para cartão nenhum. */
+confere('OS em Expedição: não aparece em cartão nenhum, nem na mesa de corte',
   dash(estado(osBase({ 'Corte': true, 'Expedição': true }, { 'Corte': 1, 'Expedição': 2 }), [])),
   {});
 
@@ -212,7 +214,7 @@ confere('OS sem etapa nenhuma marcada: não conta em cartão nenhum',
 
 confere('só o Corte marcado (status Cortando): NÃO é estoque de corte, é mesa',
   dash(estado(osBase({ 'Corte': true }, { 'Corte': 1 }), [])),
-  {});
+  { cortando: 200 });
 
 confere('Ensaque marcado depois do Corte: aí sim entra no Estoque de corte',
   dash(estado(osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 }), [])),
@@ -242,6 +244,25 @@ const carimboVencido = () => {
 };
 confere('carimbo de Ensacado vencido por etapa nova: sai do corte, vai para a costura',
   dash(estado(carimboVencido(), [])),
+  { costurando: 200 });
+
+/* ---------- 1c. o cartão CORTANDO ---------- */
+/* Cortar é trabalho em curso na mesa, e por isso nunca houve campo para ele.
+   Quando o Estoque de corte passou a exigir o status Ensacado, a OS entre o
+   corte e o ensaque deixou de aparecer em qualquer lugar do dashboard — e
+   sumir da tela é pior do que aparecer no campo errado. */
+
+confere('só o Corte marcado: aparece em Cortando, e em mais nenhum cartão',
+  dash(estado(osBase({ 'Corte': true }, { 'Corte': 1 }), [])),
+  { cortando: 200 });
+
+confere('ensacada depois: sai de Cortando e entra no Estoque de corte',
+  dash(estado(osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 }), [])),
+  { corte: 200 });
+
+// O cartão não repete ninguém: quem está cortando não está em campo nenhum.
+confere('costurando: nem Cortando nem Estoque de corte',
+  dash(estado(osBase({ 'Corte': true, 'Costura': true }, { 'Corte': 1, 'Costura': 2 }), [])),
   { costurando: 200 });
 
 /* ---------- 2. o trânsito, turno por turno ---------- */
