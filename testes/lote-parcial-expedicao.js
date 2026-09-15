@@ -59,7 +59,13 @@ const motor = [
   corta('function _nomeEtapaDaFase'),
   cortaLinha('function _faseIdxPorId'),
   cortaArr('const _TRANSITO_PERNAS'),
+  corta('function _fracoesMovidasOS'),
   corta('function _transitoDaOS'),
+  corta('function _fracaoRecebida'),
+  corta('function _fracaoPerdida'),
+  corta('function _expIso'),
+  corta('function _expHoje'),
+  corta('function _expDataEfetivaCarga'),
   corta('function calcularSaldosFase'),
   cortaLinha('const TERMINAL_ETAPA_RE'),
   corta('function faseAtualOS'),
@@ -138,8 +144,19 @@ const estado = (os, cargas, excecoes) => ({
 // o status ENSACADO, e por isso a OS deste teste marca o Ensaque depois do
 // Corte — é o que a fábrica faz quando fecha o saco.
 const noCorte = () => osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 });
+// A DATA DA CARGA DECIDE O DESTINO (15/09/2026): ainda por sair -> Em trânsito;
+// já saiu -> migra para o Estoque de corte da outra unidade. Datas relativas a
+// HOJE, e não cravadas: cravadas, o teste mudaria de significado sozinho quando
+// a data passasse.
+const _dia = (n) => {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    + '-' + String(d.getDate()).padStart(2, '0');
+};
+const FUTURO = _dia(7);    // a carga ainda vai sair
+const PASSADO = _dia(-7);  // a carga já saiu
 const cargaIda = (extra) => Object.assign({
-  id: 'c1', osId: 'os_1', janelaId: 'j1', data: '2026-08-20', perna: 'ida',
+  id: 'c1', osId: 'os_1', janelaId: 'j1', data: FUTURO, perna: 'ida',
   pacotes: [{ tam: 'P', tom: null }, { tam: 'M', tom: null }], volumes: 5
 }, extra || {});
 
@@ -256,25 +273,66 @@ confere('etapa Estoque (terminal): a OS sai de todos os campos',
 
 confere('carga em data CANCELADA não move peça',
   saldos(estado(noCorte(), [cargaIda()],
-    [{ janelaId: 'j1', data: '2026-08-20', tipo: 'cancelada' }])),
+    [{ janelaId: 'j1', data: FUTURO, tipo: 'cancelada' }])),
   { corte: 200 });
 
 confere('carga remarcada (não cancelada) move normalmente',
   saldos(estado(noCorte(), [cargaIda()],
-    [{ janelaId: 'j1', data: '2026-08-20', tipo: 'remarcada', novaData: '2026-08-27' }])),
+    [{ janelaId: 'j1', data: FUTURO, tipo: 'remarcada', novaData: FUTURO }])),
   { corte: 100, transitoIda: 100 });
 
 confere('carga ANTIGA (só volumes, sem pacotes) leva o lote inteiro',
-  saldos(estado(noCorte(), [{ id: 'c9', osId: 'os_1', janelaId: 'j1', data: '2026-08-20',
+  saldos(estado(noCorte(), [{ id: 'c9', osId: 'os_1', janelaId: 'j1', data: FUTURO,
     perna: 'ida', volumes: 9 }])),
   { transitoIda: 200 });
 
-confere('duas cargas de ida somam os pacotes de cada uma',
+confere('duas cargas de ida, as duas por sair: somam no trânsito',
   saldos(estado(noCorte(), [
     cargaIda(),
-    cargaIda({ id: 'c2', data: '2026-08-27', pacotes: [{ tam: 'G', tom: null }] })
+    cargaIda({ id: 'c2', data: FUTURO, pacotes: [{ tam: 'G', tom: null }] })
   ])),
   { corte: 50, transitoIda: 150 });
+
+/* ---------- 5b. a carga QUE JÁ SAIU migra para São Carlos ----------
+
+   Junior, 15/09/2026: "migre de Estoque de corte | Descalvado para Estoque
+   corte | São Carlos sempre que a OS for alocada no plano de expedição Desc x
+   São Carlos". Quem dispara é a DATA: alocar é planejar, e uma carga marcada
+   para a semana que vem não tirou pano nenhum da prateleira daqui. Chegado o
+   dia, o caminhão saiu — e o estoque acompanha sem ninguém marcar nada. */
+
+confere('carga de ida JÁ SAIU: a metade alocada migra para o corte de São Carlos',
+  saldos(estado(noCorte(), [cargaIda({ data: PASSADO })])),
+  { corte: 100, corteSC: 100 });
+
+confere('carga inteira já saída: o lote todo migra, e Descalvado zera',
+  saldos(estado(noCorte(), [cargaIda({ data: PASSADO, pacotes: [
+    { tam: 'P', tom: null }, { tam: 'M', tom: null },
+    { tam: 'G', tom: null }, { tam: 'GG', tom: null }] })])),
+  { corteSC: 200 });
+
+// As duas coisas convivem: parte foi na carga de ontem, parte vai na de amanhã.
+// É por isso que a conta devolve uma LISTA de frações, e não uma só.
+confere('uma carga já saída e outra por sair: os TRÊS campos ao mesmo tempo',
+  saldos(estado(noCorte(), [
+    cargaIda({ data: PASSADO, pacotes: [{ tam: 'P', tom: null }] }),
+    cargaIda({ id: 'c2', data: FUTURO, pacotes: [{ tam: 'M', tom: null }, { tam: 'G', tom: null }] })
+  ])),
+  { corte: 50, corteSC: 50, transitoIda: 100 });
+
+// A chegada encerra tudo: marcada a caixa, o lote inteiro é de São Carlos e não
+// há mais fração nenhuma a mover.
+confere('marcada a chegada, a migração para de valer: lote inteiro no corte de SC',
+  saldos(estado(osU({ 'Corte': true, 'Ensaque': true, 'Recebido em São Carlos': true },
+    { 'Corte': 1, 'Ensaque': 2, 'Recebido em São Carlos': 3 }), [cargaIda({ data: PASSADO })])),
+  { corteSC: 200 });
+
+// Saindo da COSTURA não há para onde migrar: costurar de novo o que já foi
+// costurado não é o que acontece. A fração continua no trânsito.
+confere('da costura, a carga já saída continua indo para o trânsito',
+  saldos(estado(osU({ 'Corte': true, 'Costura': true }, { 'Corte': 1, 'Costura': 2 }),
+    [cargaIda({ data: PASSADO })])),
+  { costurando: 100, transitoIda: 100 });
 
 confere('carga de outra OS não mexe nesta',
   saldos(estado(noCorte(), [cargaIda({ id: 'c3', osId: 'os_outra' })])),
