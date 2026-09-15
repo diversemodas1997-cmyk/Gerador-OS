@@ -2435,6 +2435,24 @@ async function inicializarAuth() {
       aplicarPapelLembrado();
       _papelPronto = carregarPapelEmParalelo();
       await cloudLoad();
+      /* O CACHE PRECISA VIRAR STATE, E A TELA PRECISA SABER (15/09/2026).
+
+         `cloudLoad` enche o `cloudCache`; quem passa isso para o STATE é o
+         `loadState`, e aqui ele não era chamado. Quando a sessão vem do
+         `getSession()` da abertura, o `init()` chama o `loadState` logo em
+         seguida e tudo funciona — mas quando ela chega por ESTE EVENTO, o
+         `init()` já passou daquele ponto: ele rodou o `loadState` com o cache
+         ainda vazio, e ninguém repetiu.
+
+         O resultado era o programa aberto, logado, com os dados baixados na
+         memória e a tela inteira em zero. Foi o que aconteceu hoje: 33 chaves no
+         cache, 289 ordens dentro delas, STATE.ordens = 0, e nenhum erro no
+         console para denunciar.
+
+         O caminho do evento é o normal quando o token precisa ser renovado na
+         abertura — ou seja, o programa quebrava justamente para quem ficou um
+         tempo sem entrar. */
+      try { await loadState(); } catch (e) { console.warn('loadState pós-login', e); }
       await _papelPronto;
       await carregarComprasMateriais();
       await carregarCatalogoSkus();
@@ -2444,6 +2462,15 @@ async function inicializarAuth() {
       iniciarRealtimeCompras();
       iniciarRealtimeMensagens();
       atualizarBadgeMensagens();
+      /* E redesenha a tela em que a pessoa está, senão ela continua vendo os
+         zeros que o `loadState` vazio deixou. Fora de "nova-os" — redesenhar o
+         formulário levaria embora a OS que está sendo digitada, que é o mesmo
+         cuidado que o realtime já toma. */
+      try {
+        const ativa = document.querySelector('section.page:not(.hidden)');
+        const pagina = (ativa && ativa.dataset && ativa.dataset.page) || 'home';
+        if (pagina !== 'nova-os') goto(pagina);
+      } catch (e) { console.warn('redesenho pós-login', e); }
     } else if (event === 'SIGNED_OUT') {
       pararRealtime();
       pararPresenceOS();
@@ -33434,6 +33461,35 @@ async function limparTudo() {
     // O endereço manda: a aba aberta em "#expedicao" abre na expedição, e o F5
     // volta para onde se estava. Sem endereço, o Início, como sempre foi.
     goto(_paginaInicial());
+    /* O VIGIA DA PRIMEIRA CARGA (15/09/2026).
+
+       Cinto e suspensório para a classe de falha que deixou a fábrica com a tela
+       em zero hoje: o programa aberto, logado, com os dados JÁ BAIXADOS na
+       memória (`cloudCache` cheio) e o STATE vazio, porque o `loadState` correu
+       antes de a carga chegar — e nada o chamou de novo. Nenhum erro no console;
+       só zeros na tela.
+
+       A causa conhecida está corrigida no ramo SIGNED_IN, logo acima. Este vigia
+       não depende de saber a causa: ele olha o RESULTADO. Se, passado o tempo de
+       uma carga normal, existe dado no cache e não existe no STATE, refaz o
+       caminho e redesenha. É a diferença entre uma tela errada até alguém
+       reclamar e uma tela que se conserta sozinha em seis segundos.
+
+       As duas perguntas são baratas (dois `Object.keys`), rodam UMA vez, e a
+       reparação só acontece quando o estrago é certo — cache com dados e STATE
+       sem eles não é um estado possível de programa são. */
+    setTimeout(async () => {
+      try {
+        const temNoCache = cloudCache && Object.keys(cloudCache).length > 1;
+        const vazioNaTela = !(STATE.ordens || []).length && !(STATE.grades || []).length;
+        if (!temNoCache || !vazioNaTela) return;
+        console.warn('carga inicial ficou pela metade — refazendo');
+        await loadState();
+        const ativa = document.querySelector('section.page:not(.hidden)');
+        const pagina = (ativa && ativa.dataset && ativa.dataset.page) || 'home';
+        if (pagina !== 'nova-os') goto(pagina);
+      } catch (e) { console.warn('vigia da primeira carga', e); }
+    }, 6000);
     // Tarefas em background — não bloqueiam a navegação
     snapshotDiario().catch(e => console.warn('snapshotDiario', e));
     // Snapshot de contingência base ao abrir (estado carregado, não-vazio).
