@@ -7776,6 +7776,18 @@ const ETAPA_DESC_NOME = 'Recebido em Descalvado';
 const ETAPA_DESC_RE = /recebido em descalvado/i;
 const _osRecebidaSC = o => osEtapaMarcada(o, ETAPA_SC_RE);
 
+/* A COSTURA DE SÃO CARLOS ESTÁ MARCADA? (15/09/2026, Junior: "quando os dois
+   costurando estão preenchidos o volume migra para Costurando São Carlos".)
+
+   Nas duas costuras marcadas não vale a regra sobreposta — não é a última
+   marcada que manda, é São Carlos, sempre. A costura fracionada COMEÇA aqui e
+   TERMINA lá: as duas caixas marcadas querem dizer que a peça fez as duas
+   metades, e a metade final é a de lá. Deixar a ordem decidir faria o volume
+   pular de uma unidade para a outra conforme a ordem em que alguém lembrasse de
+   marcar as caixas, que é o que menos importa nesta pergunta. */
+const COSTURA_SC_RE = /costura.*s[ãa]o\s+carlos/i;
+const _osCosturaEmSC = o => osEtapaMarcada(o, COSTURA_SC_RE);
+
 /* CADA CAMPO SEGUE O STATUS — UMA RESPOSTA SÓ (15/09/2026, Junior).
 
    Até aqui havia DUAS derivações paralelas para a mesma pergunta "onde a OS
@@ -7905,12 +7917,25 @@ function _faseIdxPorId(id) { return FASES_ESTOQUE.findIndex(f => f.id === id); }
 // caixa no checklist e não botão no planejamento: quem sabe que o caminhão
 // chegou é quem o descarrega, não quem planejou a viagem.
 /* `migra` diz para onde a fração vai quando a carga JÁ SAIU (a data chegou),
-   por campo de ORIGEM. Só o estoque de corte tem destino do outro lado: o pano
-   cortado aqui vira pano cortado lá. Saindo da costura não há para onde migrar,
-   e a fração continua no trânsito até alguém marcar a chegada. */
+   por campo de ORIGEM. Cada campo de Descalvado tem o seu gêmeo do outro lado: o
+   pano cortado aqui vira pano cortado lá, e a peça que estava sendo costurada
+   aqui continua sendo costurada lá.
+
+   A COSTURA TAMBÉM MIGRA (15/09/2026, Junior: "a migração sempre é Costurando
+   Descalvado para Costurando São Carlos, mesmo que as etapas sejam
+   fracionadas"). Esta linha nasceu errada, e o erro era meu: eu tinha escrito
+   que da costura não havia para onde migrar, "porque costurar de novo o que já
+   foi costurado não é o que acontece". É exatamente o que acontece — os 34
+   desenhos listam AS DUAS costuras justamente porque a peça é montada em
+   etapas fracionadas entre as unidades. Ela sai daqui meio-costurada e vai
+   terminar lá.
+
+   A fração migra sem ninguém marcar a costura de lá: quem marca a etapa é quem
+   trabalha na peça, e isso acontece depois de ela chegar. O campo acompanha o
+   caminhão; a etapa acompanha a máquina. */
 const _TRANSITO_PERNAS = [
   { faseId: 'transitoIda',   perna: 'ida',   origens: ['corte', 'costurando'],     chegouRe: ETAPA_SC_RE,
-    migra: { corte: 'corteSC' } },
+    migra: { corte: 'corteSC', costurando: 'costurandoSC' } },
   { faseId: 'transitoVolta', perna: 'volta', origens: ['corteSC', 'costurandoSC'], chegouRe: ETAPA_DESC_RE },
 ];
 
@@ -24054,9 +24079,29 @@ const STATUS_OS = [
 
      A costura SEM unidade no nome ("Costura", "Costura CM.LISA") é a de
      Descalvado: são as OS antigas, de antes de a segunda unidade existir, e
-     naquele tempo só se costurava aqui. Daí o lookahead negativo. */
+     naquele tempo só se costurava aqui. Daí o lookahead negativo.
+
+     E COM AS DUAS MARCADAS VENCE SÃO CARLOS, sempre — não a última marcada. A
+     `cond` tira Descalvado de cena assim que a costura de lá é apontada, e com
+     isso a ORDEM em que as caixas foram marcadas deixa de importar: a costura
+     fracionada começa aqui e termina lá, e a metade final é a de lá. Deixar a
+     ordem decidir faria o volume pular de uma unidade para a outra conforme a
+     ordem em que alguém lembrasse de marcar, que é o que menos importa nesta
+     pergunta (ver _osCosturaEmSC). */
   { k: 'costurando',     icone: '🔷', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
-    re: /^(?!.*s[ãa]o\s+carlos).*costura/i },
+    re: /^(?!.*s[ãa]o\s+carlos).*costura/i, cond: o => !_osCosturaEmSC(o) },
+  /* A regex vai literal, e não pela constante COSTURA_SC_RE: a tabela é montada
+     na carga do arquivo, e uma constante declarada depois dela ainda não existe
+     nesse instante. As duas dizem a mesma coisa — quem só é lido DENTRO de uma
+     função (o _osCosturaEmSC) pode usar a constante à vontade.
+
+     E NADA DE PONTO E VÍRGULA NOS COMENTÁRIOS DESTA TABELA. Os testes a
+     recortam do arquivo lendo do início da declaração até o primeiro ponto e
+     vírgula, que é o que fecha o array. Um solto num comentário daqui trunca a
+     lista no meio, os status que vêm depois somem, e o teste quebra num lugar
+     que não tem nada a ver com o que se mexeu. Este parágrafo mesmo já custou
+     uma rodada: ele explicava a regra escrevendo a regex, com os dois sinais
+     dentro. */
   { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
     re: /costura.*s[ãa]o\s+carlos/i },
   /* "Recebido em Descalvado" acende este status junto com a retirada de fios:

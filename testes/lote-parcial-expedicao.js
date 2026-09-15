@@ -332,11 +332,21 @@ confere('marcada a chegada, a migração para de valer: lote inteiro no corte de
     { 'Corte': 1, 'Ensaque': 2, 'Recebido em São Carlos': 3 }), [cargaIda({ data: PASSADO })])),
   { corteSC: 200 });
 
-// Saindo da COSTURA não há para onde migrar: costurar de novo o que já foi
-// costurado não é o que acontece. A fração continua no trânsito.
-confere('da costura, a carga já saída continua indo para o trânsito',
+/* A COSTURA TAMBÉM MIGRA (15/09/2026, Junior: "a migração sempre é Costurando
+   Descalvado para Costurando São Carlos, mesmo que as etapas sejam
+   fracionadas"). Este caso já esteve escrito ao contrário, com a premissa de
+   que costurar de novo o que já foi costurado não acontece. Acontece: é
+   justamente por isso que os 34 desenhos listam as DUAS costuras. A peça sai
+   daqui meio-costurada e vai terminar lá. */
+confere('da costura, a carga já saída migra para Costurando · São Carlos',
   saldos(estado(osU({ 'Corte': true, 'Costura': true }, { 'Corte': 1, 'Costura': 2 }),
     [cargaIda({ data: PASSADO })])),
+  { costurando: 100, costurandoSC: 100 });
+
+// E a carga que ainda vai sair continua indo para o trânsito, como sempre.
+confere('da costura, a carga por sair continua indo para o trânsito',
+  saldos(estado(osU({ 'Corte': true, 'Costura': true }, { 'Corte': 1, 'Costura': 2 }),
+    [cargaIda({ data: FUTURO })])),
   { costurando: 100, transitoIda: 100 });
 
 confere('carga de outra OS não mexe nesta',

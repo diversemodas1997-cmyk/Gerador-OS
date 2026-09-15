@@ -95,6 +95,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
   ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}
   ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
+  ${src.match(/^const COSTURA_SC_RE = .+$/m)[0]}
+  ${src.match(/^const _osCosturaEmSC = .+$/m)[0]}
   ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
   ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
   ${recorte('function _statusOS', 'a leitura do status')}
@@ -906,6 +908,8 @@ console.log('-- o que fica gravado --');
       ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
       ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}
       ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
+      ${src.match(/^const COSTURA_SC_RE = .+$/m)[0]}
+      ${src.match(/^const _osCosturaEmSC = .+$/m)[0]}
       ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
       ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
       ${recorte('function _statusOS', 'a leitura do status')}

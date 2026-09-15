@@ -217,6 +217,29 @@ confere('OS sem etapa nenhuma marcada: não conta em cartão nenhum',
   dash(estado(osBase({}, {}), [])),
   {});
 
+/* A COSTURA FRACIONADA (15/09/2026, Junior: "alguns produtos são costurados em
+   etapas fracionadas em diferentes unidades" e "quando os dois costurando estão
+   preenchidos o volume migra para Costurando São Carlos").
+
+   Com as duas caixas marcadas vence SÃO CARLOS, e não a última marcada: a
+   costura fracionada começa aqui e termina lá, e a metade final é a de lá. Por
+   isso o primeiro caso marca a de Descalvado DEPOIS — se a ordem mandasse, ele
+   daria Descalvado. */
+confere('as duas costuras: vence São Carlos, mesmo marcada por último a daqui',
+  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true,
+                       'Costura CM.LISA | São Carlos': true, 'Costura': true },
+                     { 'Corte': 1, 'Recebido em São Carlos': 2,
+                       'Costura CM.LISA | São Carlos': 3, 'Costura': 4 }), [])),
+  { costurandoSC: 200, recSC: 200 });
+
+// E na ordem natural (daqui primeiro, lá depois) o resultado é o mesmo.
+confere('as duas costuras, na ordem natural: também São Carlos',
+  dash(estado(osBase({ 'Corte': true, 'Costura': true,
+                       'Costura CM.LISA | São Carlos': true },
+                     { 'Corte': 1, 'Costura': 2,
+                       'Costura CM.LISA | São Carlos': 3 }), [])),
+  { costurandoSC: 200 });
+
 /* ---------- 1b. o Estoque de corte é só o que está ENSACADO ---------- */
 /* Medido em 15/09/2026, o campo tinha 11 OS e só UMA estava ensacada: 3 ainda
    sendo cortadas, 4 já carimbadas como Estoque, 1 em Preparando matéria-prima e
