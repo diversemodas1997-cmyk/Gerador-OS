@@ -7776,56 +7776,74 @@ const ETAPA_DESC_NOME = 'Recebido em Descalvado';
 const ETAPA_DESC_RE = /recebido em descalvado/i;
 const _osRecebidaSC = o => osEtapaMarcada(o, ETAPA_SC_RE);
 
+/* CADA CAMPO SEGUE O STATUS — UMA RESPOSTA SÓ (15/09/2026, Junior).
+
+   Até aqui havia DUAS derivações paralelas para a mesma pergunta "onde a OS
+   está": o STATUS lia a última etapa que acende status (STATUS_OS, 10 entradas)
+   e o CAMPO lia a última etapa que abre campo (esta tabela, 8 fases). As listas
+   não são a mesma, e por isso as duas contas paravam em lugares diferentes
+   sempre que a etapa mais recente existia só numa delas. Medido no dia:
+
+     · OS 0507 — campo "Estoque corte · São Carlos", status "Costurando | SC".
+       "Recebido em São Carlos" foi marcado depois da costura; ele abre campo e
+       não acende status, então o campo voltou e o status não.
+     · OS 0539 — campo "Costurando · Descalvado", status "Ensacado". O Ensaque
+       foi marcado depois da costura; ele acende status e não abre campo, então
+       o status andou e o campo não.
+
+   O dashboard mostrava um campo e a lista de OS mostrava outro estado, para a
+   mesma OS, e as duas estavam "certas" pela sua própria regra. Agora a regra é
+   uma: o `cond` de cada fase pergunta o STATUS, e o status é o que a lista
+   mostra. Não há mais como discordarem.
+
+   O TRÂNSITO E OS RECEBIMENTOS SEGUEM A CAIXA, e não o status, porque não há
+   status para eles: viajar e chegar não são etapas de trabalho, são passagens.
+   A caixa "Expedição Desc X São Carlos" põe a OS na estrada e "Recebido em São
+   Carlos" a tira — e o mesmo do outro lado. O trânsito continua recebendo
+   TAMBÉM a fração alocada numa OE (ver _transitoDaOS): a caixa diz que o lote
+   inteiro foi, a carga diz que parte dele foi, e as duas coisas acontecem.
+
+   A entrada por ETAPA continua existindo em todas as fases porque é dela que
+   sai o carimbo de QUANDO (etapasSeq) — é o `cond` que decide quem conta. */
 const FASES_ESTOQUE = [
-  /* ESTOQUE DE CORTE É O QUE ESTÁ ENSACADO (15/09/2026, Junior).
-
-     Até aqui este campo entrava pela etapa CORTE, e por isso mostrava OS que
-     ainda estavam sendo cortadas — "cortando" é trabalho em curso na mesa, não
-     é pano guardado esperando a costura. Medido no dia: das 11 OS no campo, 3
-     estavam em Cortando, 4 já tinham sido carimbadas como Estoque, 1 estava em
-     Preparando matéria-prima e 1 em Costurando; UMA estava Ensacada.
-
-     A peça vira estoque quando é ENSACADA — é o saco fechado, contado, à espera
-     da costura. Daí a `cond`: entra pela etapa (Corte ou Ensaque, que é o que dá
-     o carimbo de QUANDO) e só conta enquanto o STATUS for Ensacado.
-
-     A condição é pelo status, e não só pela caixa de Ensaque, porque na fábrica
-     ninguém marca aquela caixa: o ensaque é apontado carimbando o status na
-     lista de OS. Exigir a caixa esvaziaria o campo. E amarrar ao status resolve
-     junto as duas outras trincas que a medição mostrou: o carimbo à mão (que o
-     campo ignorava, deixando no corte OS já carimbadas como Estoque) e a etapa
-     "Preparo Matéria-prima", que acende status mas não é fase de estoque — a
-     "última etapa" das duas contas podia ser uma para o status e outra para o
-     campo. Agora quem manda é um só: o status. */
+  /* ESTOQUE DE CORTE É O QUE ESTÁ ENSACADO. Corte é trabalho na mesa; a peça
+     vira estoque quando o saco é fechado e contado. As duas unidades dividem o
+     mesmo status ("Ensacado" é um só) e se separam pela caixa "Recebido em São
+     Carlos", do mesmo jeito que as duas costuras. */
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'ensacado',
-    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'Corte ou Ensaque, com o status em Ensacado' } },
-  // Enquanto a OS não foi recebida em São Carlos, costurar é costurar aqui.
+    cond: o => _statusOS(o) === 'ensacado' && !_osRecebidaSC(o),
+    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'status Ensacado, antes de ir para São Carlos' } },
   { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
-    cond: o => !_osRecebidaSC(o),
-    entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  // A viagem de Descalvado para São Carlos. Não entra por etapa do checklist: é a
-  // fração alocada na OE que põe a OS aqui (_transitoDaOS), e a caixa "Recebido
-  // em São Carlos" que a tira.
+    cond: o => _statusOS(o) === 'costurando',
+    entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | Descalvado' } },
+  // A viagem de Descalvado para São Carlos: a caixa da expedição de ida põe a OS
+  // na estrada, e "Recebido em São Carlos" a tira. A fração alocada numa OE
+  // entra aqui também, por fora do checklist (_transitoDaOS).
   { id: 'transitoIda',  titulo: 'Em trânsito · IDA',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
-    vazioMsg: 'Nada a caminho de São Carlos agora. A OS entra aqui sozinha quando é alocada numa expedição de <b>ida</b>, e sai quando <b>Recebido em São Carlos</b> é marcada no checklist.',
-    entrada: { tipo: 'carga', perna: 'ida', label: 'alocada numa expedição de ida' } },
+    vazioMsg: 'Nada a caminho de São Carlos agora. A OS entra aqui quando a caixa <b>Expedição Desc X São Carlos</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>ida</b>), e sai quando <b>Recebido em São Carlos</b> é marcada.',
+    cond: o => !osEtapaMarcada(o, ETAPA_SC_RE),
+    entrada: { tipo: 'etapa', re: /expedi\w*\s+desc/i, label: 'Expedição Desc X São Carlos' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
-    entrada: { tipo: 'etapa', re: ETAPA_SC_RE, label: ETAPA_SC_NOME } },
+    cond: o => _statusOS(o) === 'ensacado' && _osRecebidaSC(o),
+    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado, já recebida em São Carlos' } },
   { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
-    cond: o => _osRecebidaSC(o),
-    entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
-  // E a de volta. Mesma regra, do outro lado: sai de um campo de São Carlos e a
-  // caixa "Recebido em Descalvado" encerra a viagem.
+    cond: o => _statusOS(o) === 'costurando-sc',
+    entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | São Carlos' } },
+  // E a de volta. Mesma regra, do outro lado.
   { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
-    vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui sozinha quando é alocada numa expedição de <b>volta</b>, e sai quando <b>Recebido em Descalvado</b> é marcada no checklist.',
-    entrada: { tipo: 'carga', perna: 'volta', label: 'alocada numa expedição de volta' } },
-  // O que volta de São Carlos cai aqui: "Recebido em Descalvado" entra na mesma
-  // fase que "Retirada de fios", e entre as duas vale a marcada por último.
+    vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui quando a caixa <b>Expedição São Carlos X Desc.</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>volta</b>), e sai quando <b>Recebido em Descalvado</b> é marcada.',
+    cond: o => !osEtapaMarcada(o, ETAPA_DESC_RE),
+    entrada: { tipo: 'etapa', re: /expedi\w*\s+s[ãa]o carlos/i, label: 'Expedição São Carlos X Desc.' } },
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
-    entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'Retirada de fios (ou Recebido em Descalvado)' } },
+    cond: o => _statusOS(o) === 'fios',
+    entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'status Retirando fio' } },
+  /* EXPEDIÇÃO É O FIM DO FLUXO, e não a viagem entre as unidades. A `re` casa só
+     a etapa "Expedição" PURA: as duas direcionais ("Expedição Desc X São
+     Carlos" e "Expedição São Carlos X Desc.") são viagem interna e pertencem
+     aos campos de trânsito logo acima. Com /expedi/i solto, este campo roubava
+     as duas e a OS na estrada aparecia como se já tivesse saído da fábrica. */
   { id: 'expedicao',    titulo: 'Expedição',                          movKey: 'expedicaoMov',    painelId: 'expedicao-painel',      semContagem: true, soOS: true,
-    entrada: { tipo: 'etapa', re: /expedi/i, label: 'Expedição' } },
+    entrada: { tipo: 'etapa', re: /^\s*expedi(ç|c)[ãa]o\s*$/i, label: 'Expedição' } },
 ];
 
 // A OS entrou nesta fase? Etapa da fase marcada no checklist E a condição da
@@ -7836,9 +7854,14 @@ function _faseEntrouOS(o, fase) {
   if (!entrada) return false;
   if (fase.cond && !fase.cond(o)) return false;
   if (entrada.tipo === 'oscriada') return true;
-  // Trânsito não entra por etapa: quem põe a OS lá é a fração alocada na OE, em
-  // _transitoDaOS, do mesmo jeito que o lote parcial sempre entrou por fora.
-  if (entrada.tipo === 'carga') return false;
+  /* O TRÂNSITO PASSOU A ENTRAR POR ETAPA (15/09/2026). Antes ele só recebia a
+     FRAÇÃO alocada numa OE (_transitoDaOS) e esta função devolvia false para
+     ele — quem marcava a caixa "Expedição Desc X São Carlos" na folha via a OS
+     ir parar no campo Expedição, o fim do fluxo, como se ela já tivesse saído
+     da fábrica. Agora a caixa põe o lote INTEIRO na estrada e a carga continua
+     pondo a fração: são duas coisas que acontecem, e não duas versões da
+     mesma. Quem entrou por etapa não é parcial (ver calcularSaldosFase), então
+     as duas não se somam. */
   return osEtapaMarcada(o, entrada.re);
 }
 
@@ -8349,7 +8372,7 @@ function renderFasePainel(faseIdx) {
   // Dizer a regra aqui evita que um saldo "quebrado" (parte da OS) pareça erro
   // de contagem de quem confere a prateleira.
   const _ehOrigemTransito = _TRANSITO_PERNAS.some(t => t.origens.includes(fase.id));
-  const _ehTransito = !!(fase.entrada && fase.entrada.tipo === 'carga');
+  const _ehTransito = _TRANSITO_PERNAS.some(t => t.faseId === fase.id);
   const notaParcial = _ehOrigemTransito
     ? ' <b>Lote parcial:</b> os pacotes já alocados numa expedição contam como <b>saída</b> aqui e entram em <b>Em trânsito</b>; o que não foi na carga fica no saldo, disponível para a próxima viagem.'
     : (_ehTransito
@@ -17828,16 +17851,32 @@ function _dashFluxoDados() {
     const k = chavePorIdx.get(atual);
     if (!k) return;                       // Expedição: campo fora desta leitura
     somar(k, resta);
-    // RECEBIDO EM… é a mesma peça vista pela porta por onde ela entrou. Não é um
-    // campo a mais: "Recebido em São Carlos" É o Estoque de corte de lá (a caixa
-    // do checklist que abre aquele campo), e "Recebido em Descalvado" cai dentro
-    // da Retirada de fios — onde divide espaço com quem chegou lá marcando a
-    // própria retirada. Por isso o de Descalvado é filtrado pela etapa que
-    // venceu, e o de São Carlos repete, de propósito, o número do cartão de cima.
-    if (k === 'corteSC') somar('recSC', resta);
-    if (k === 'fios' && ETAPA_DESC_RE.test(_nomeEtapaDaFase(o, FASES_ESTOQUE[atual]) || '')) {
-      somar('recDesc', resta);
-    }
+  });
+
+  /* RECEBIDO EM… SEGUE A CAIXA, e não o campo (15/09/2026, Junior: "Recebidos
+     deve mostrar apenas OS com check box Recebido preenchido").
+
+     Chegar não é uma etapa de trabalho — é uma passagem, e não acende status
+     nenhum. Até aqui estes dois cartões eram deduzidos do CAMPO em que a OS
+     estava (o de São Carlos repetia o Estoque de corte de lá, o de Descalvado
+     era a fatia da Retirada de fios), e a dedução errava sempre que a OS já
+     tinha andado: quem chegou em São Carlos e foi para a costura sumia do
+     cartão de Recebido, embora a caixa continuasse marcada.
+
+     Agora a pergunta é a mais simples possível — a caixa está marcada? —, e é
+     por isso que estes dois somam com os outros cartões em vez de dividir o
+     mesmo volume: uma OS costurando em São Carlos conta em "Costurando | São
+     Carlos" E em "Recebido em São Carlos", porque as duas coisas são verdade.
+     São um CARIMBO DE PASSAGEM, não um lugar onde a peça está.
+
+     A OS que já saiu do fluxo (Estoque) não conta: o recebimento dela é
+     história, e o cartão existe para dizer o que chegou e ainda está aqui. */
+  (STATE.ordens || []).forEach(o => {
+    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    if (!(total > 0)) return;
+    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) return;   // já foi para o estoque: é história
+    if (osEtapaMarcada(o, ETAPA_SC_RE)) somar('recSC', total);
+    if (osEtapaMarcada(o, ETAPA_DESC_RE)) somar('recDesc', total);
   });
   return d;
 }
@@ -17864,9 +17903,9 @@ function _dashFluxoPassos(d) {
     ] },
     { nome: 'Recebido', cards: [
       { nome: 'Recebido em Descalvado', v: d.recDesc, rota: 'fios',
-        dica: 'O que voltou de São Carlos e ainda está na Retirada de fios.' },
+        dica: 'Toda OS ainda em produção com a caixa "Recebido em Descalvado" marcada. É um carimbo de passagem: a mesma OS também conta no campo em que está agora.' },
       { nome: 'Recebido em São Carlos', v: d.recSC, rota: 'corte-sc',
-        dica: 'É o mesmo campo do Estoque de corte · Unidade São Carlos: a caixa "Recebido em São Carlos" é o que abre aquele campo.' },
+        dica: 'Toda OS ainda em produção com a caixa "Recebido em São Carlos" marcada. É um carimbo de passagem: a mesma OS também conta no campo em que está agora.' },
     ] },
     { nome: 'Retirada de fios', cards: [
       { nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
@@ -23901,20 +23940,31 @@ const STATUS_OS = [
     re: /costura|costurando/i, cond: o => !_osRecebidaSC(o) },
   { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
     re: /costura|costurando/i, cond: o => _osRecebidaSC(o) },
+  /* "Recebido em Descalvado" acende este status junto com a retirada de fios:
+     o que volta de São Carlos cai aqui, e sem isso a OS voltava da outra
+     unidade e a lista continuava dizendo "Costurando | São Carlos". É a mesma
+     regra que o campo do fluxo já usava — agora as duas concordam. */
   { k: 'fios',           icone: '🟦', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
-    re: /fios/i },
+    re: /fios|recebido em descalvado/i },
   // Fora da fila: não nasce do checklist, só do carimbo.
   { k: 'parado',         icone: '🔴', rotulo: 'Parado',                                                baixa: true },
   { k: 'estoque',        icone: '🟢', rotulo: 'Estoque',                  ordem: 7, baixa: true,
     re: /estoque/i }
 ];
 
-/* O FIM DA PRODUÇÃO. É este status que carimba `finalizadaEm` — o dia e a hora
-   em que a OS terminou, que a lista mostra na coluna Data e o filtro "Finalizada
-   em" procura. Mora numa constante porque duas funções precisam concordar sobre
-   qual é o fim (_carimbarStatusOS escreve, _dataFinalizacaoOS lê), e um dia o
-   fim já mudou de nome. */
-const STATUS_FIM = 'estoque';
+/* O FIM DA PRODUÇÃO É O ENSAQUE (15/09/2026, Junior: "o carimbo de data de
+   Finalização deve ser feito sempre que o status da OS for alterado para
+   Ensacado").
+
+   E é o fim do trabalho de verdade: quando o saco é fechado e contado, aquele
+   lote acabou de ser feito. O que vem depois — a viagem, a costura da outra
+   unidade, a prateleira do acabado — é o destino da peça, não a produção dela.
+   Esteve em "Estoque" por uma tarde, e ali a data só nascia no fim da fila,
+   quando a OS já tinha saído do fluxo havia dias.
+
+   Mora numa constante porque duas funções precisam concordar sobre qual é o
+   fim: _carimbarStatusOS escreve, _dataFinalizacaoOS lê. */
+const STATUS_FIM = 'ensacado';
 
 /* O STATUS QUE O CHECKLIST DIZ. Mesma regra de faseAtualOS, aplicada à lista
    acima: vence a etapa marcada com o maior `etapasSeq` (o carimbo de QUANDO
@@ -24201,14 +24251,20 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
     os.statusOSPor = quem;
     os.statusOSEm = agora;
   }
-  /* A DATA DE FINALIZAÇÃO. Chegar ao fim da fila — hoje "Estoque", ver
-     STATUS_FIM — carimba o dia; sair de lá apaga o carimbo. Guardar a data de
-     uma OS que voltou a andar faria a lista dizer que ela terminou num dia em
-     que ela não terminou, e a coluna Data existe justamente para ser lida sem
-     perguntar a ninguém. Chegar de novo carimba o dia novo, que é o dia em que
-     ela terminou de fato. */
+  /* A DATA DE FINALIZAÇÃO. Chegar ao fim da produção — o ENSAQUE, ver
+     STATUS_FIM — carimba o dia, e ele FICA.
+
+     Ficar é a mudança de 15/09/2026. Antes, sair daquele status apagava a data,
+     e isso fazia sentido enquanto o fim era o último degrau da fila: quem saía
+     dele tinha voltado a andar. Com o fim no ensaque, sair dali é o caminho
+     NORMAL — a OS ensacada segue para a costura da outra unidade —, e apagar a
+     data faria toda OS perder o dia em que foi feita no minuto seguinte.
+
+     Passar pelo ensaque de novo recarimba: o dia que vale é o último em que o
+     saco foi fechado. Só "Não iniciado" limpa, logo acima, junto com o resto —
+     OS que voltou ao começo não tem dia de término. */
   if (alvo === STATUS_FIM) os.finalizadaEm = agora;
-  else delete os.finalizadaEm;
+  else if (alvo === 'nao-iniciado') delete os.finalizadaEm;
 }
 
 async function mudarStatusOS(id, valor) {
@@ -24309,7 +24365,10 @@ async function _estoqueSeguirStatusOS(o, alvo) {
    Fora daí, vazio: inventar a data em que a peça saiu da produção seria pior do
    que não ter. */
 function _dataFinalizacaoOS(o) {
-  if (_statusOS(o) !== STATUS_FIM) return '';
+  /* NÃO SE EXIGE MAIS que o status AINDA seja o fim. A OS ensacada anda — vai
+     para a costura de São Carlos, volta, vai para o estoque —, e a pergunta
+     "quando esta OS ficou pronta?" continua tendo resposta o caminho todo.
+     Exigir o status atual faria a data aparecer por um instante e sumir. */
   if (o && o.finalizadaEm) return o.finalizadaEm;
   const fim = STATUS_OS.find(s => s.k === STATUS_FIM);
   const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
@@ -24323,7 +24382,9 @@ function _dataFinalizacaoOS(o) {
     });
   }
   if (quando > 0) return new Date(quando).toISOString();
-  return (o && o.statusOSEm) || '';
+  // O dia do carimbo só vale se o status AINDA for o fim: numa OS que já andou,
+  // `statusOSEm` é a data de outro carimbo qualquer, e não do ensaque.
+  return (_statusOS(o) === STATUS_FIM && o && o.statusOSEm) || '';
 }
 
 /* DIA E HORA, e não só o dia (27/08/2026, pedido do Junior).
@@ -24356,7 +24417,7 @@ function _tituloFinalizacaoOS(o) {
   const carimbada = _statusOS(o) === String((o && o.statusOS) || '').trim();
   return carimbada
     ? 'Dia e hora em que a OS foi marcada como finalizada'
-    : 'Dia e hora em que a etapa Estoque foi marcada no checklist da folha';
+    : `Dia e hora em que a etapa ${(STATUS_OS.find(s => s.k === STATUS_FIM) || {}).rotulo === 'Ensacado' ? 'Ensaque' : 'do fim'} foi marcada no checklist da folha`;
 }
 
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia

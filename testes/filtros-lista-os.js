@@ -282,9 +282,14 @@ console.log('-- a busca por data de finalizacao --');
   ok('51. cada dia traz so quem terminou nele',
      api._osFinalizadaNoDia(dia5, '2026-09-05') === true
      && api._osFinalizadaNoDia(noite, '2026-09-05') === false);
-  ok('52. OS parada nao entra em dia nenhum, mesmo com carimbo antigo',
+  /* A OS PARADA QUE JA FOI ENSACADA TEM DIA DE TERMINO (15/09/2026). O fim da
+     producao passou a ser o ENSAQUE, e a data deixou de se apagar quando a OS
+     anda: ela e um fato (o dia em que o saco foi fechado), nao o estado atual.
+     Antes isto era false porque so "Finalizado" tinha data, e sair dele
+     apagava. */
+  ok('52. OS parada que ja foi ensacada entra no dia em que foi ensacada',
      api._osFinalizadaNoDia({ statusOS: 'parado', finalizadaEm: dia5.finalizadaEm },
-                            '2026-09-05') === false);
+                            '2026-09-05') === true);
 
   // A leitura do campo da tela.
   const leitura = (valor) => new Function('campo', `

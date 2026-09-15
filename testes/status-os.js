@@ -332,18 +332,24 @@ console.log('-- o que fica gravado --');
   const os2 = t.ctx.STATE.ordens[0];
   await t.api.mudarStatusOS('a1', 'enfestando');
   ok('33. enfestando nao carimba data de finalizacao', !('finalizadaEm' in os2), JSON.stringify(os2));
-  await t.api.mudarStatusOS('a1', 'estoque');
-  ok('34. marcar Finalizado carimba o dia',
+  await t.api.mudarStatusOS('a1', 'ensacado');
+  ok('34. ENSACADO carimba o dia — e o fim da producao (15/09/2026)',
      typeof os2.finalizadaEm === 'string' && !isNaN(new Date(os2.finalizadaEm)), JSON.stringify(os2));
   const primeira = os2.finalizadaEm;
   // Um respiro: os dois carimbos no MESMO milissegundo dariam a mesma string, e
   // o teste acusaria como "nao recarimbou" algo que recarimbou.
   await new Promise(r => setTimeout(r, 5));
-  await t.api.mudarStatusOS('a1', 'parado');
-  ok('35. tirar de Finalizado apaga a data (a OS voltou a andar)',
+  await t.api.mudarStatusOS('a1', 'costurando');
+  /* A DATA FICA. Com o fim no ensaque, sair dali e o caminho NORMAL — a OS
+     ensacada segue para a costura da outra unidade —, e apagar a data faria
+     toda OS perder o dia em que foi feita no minuto seguinte. */
+  ok('35. seguir para a costura NAO apaga a data: ela e um fato, nao um estado',
+     os2.finalizadaEm === primeira, JSON.stringify(os2));
+  await t.api.mudarStatusOS('a1', 'nao-iniciado');
+  ok('35b. so voltar ao comeco limpa: OS nao iniciada nao tem dia de termino',
      !('finalizadaEm' in os2), JSON.stringify(os2));
-  await t.api.mudarStatusOS('a1', 'estoque');
-  ok('36. marcar de novo carimba o dia NOVO',
+  await t.api.mudarStatusOS('a1', 'ensacado');
+  ok('36. ensacar de novo carimba o dia NOVO',
      typeof os2.finalizadaEm === 'string' && os2.finalizadaEm !== primeira,
      os2.finalizadaEm + ' vs ' + primeira);
 
@@ -355,7 +361,7 @@ console.log('-- o que fica gravado --');
                                 finalizadaEm: '2026-08-26T13:40:00.000Z' });
   ok('38. finalizada mostra as duas: a de cima feita, a de baixo finalizada',
      /10\/03\/2026/.test(cel2) && /data-fim/.test(cel2) && /26\/08\/2026/.test(cel2), cel2);
-  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'estoque',
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'ensacado',
                                 statusOSEm: '2026-08-26T13:40:00.000Z' });
   ok('39. finalizada ANTES do campo existir vale o dia do carimbo',
      /26\/08\/2026/.test(cel2), cel2);
@@ -394,25 +400,25 @@ console.log('-- o que fica gravado --');
   // nao uma reconstrucao.
   const terminouNaFolha = {
     os: '1', data: '2026-03-10',
-    etapas: ['Corte', 'Estoque'],
-    progresso: { etapasCheck: { 'Corte': true, 'Estoque': true },
-                 etapasSeq: { 'Corte': 1000, 'Estoque': instante.getTime() } }
+    etapas: ['Corte', 'Ensaque'],
+    progresso: { etapasCheck: { 'Corte': true, 'Ensaque': true },
+                 etapasSeq: { 'Corte': 1000, 'Ensaque': instante.getTime() } }
   };
-  ok('45a. terminada pelo checklist: o status e Estoque, sem carimbo nenhum',
-     A._statusOS(terminouNaFolha) === 'estoque', A._statusOS(terminouNaFolha));
-  ok('45b. e a data de fim e a hora em que a caixa Estoque foi marcada',
+  ok('45a. terminada pelo checklist: o status e Ensacado, sem carimbo nenhum',
+     A._statusOS(terminouNaFolha) === 'ensacado', A._statusOS(terminouNaFolha));
+  ok('45b. e a data de fim e a hora em que a caixa Ensaque foi marcada',
      A._dataHoraFinalizacaoOS(terminouNaFolha) === '26/08/2026 16:26',
      A._dataHoraFinalizacaoOS(terminouNaFolha));
   ok('45c. a dica diz que a hora veio da folha, e nao de um carimbo',
      A._tituloFinalizacaoOS(terminouNaFolha)
-       === 'Dia e hora em que a etapa Estoque foi marcada no checklist da folha',
+       === 'Dia e hora em que a etapa Ensaque foi marcada no checklist da folha',
      A._tituloFinalizacaoOS(terminouNaFolha));
   // Desmarcar a caixa tira a OS do fim: a data some junto, pelo mesmo motivo
   // que apagar o carimbo apaga — OS que voltou a andar nao terminou.
   const voltouAAndar = JSON.parse(JSON.stringify(terminouNaFolha));
   voltouAAndar.progresso.etapasCheck = { 'Corte': true };
   voltouAAndar.progresso.etapasSeq = { 'Corte': instante.getTime() + 1 };
-  ok('45d. desmarcar a caixa Estoque tira a data de fim junto',
+  ok('45d. desmarcar a caixa Ensaque tira a data de fim junto',
      A._dataHoraFinalizacaoOS(voltouAAndar) === '' && A._statusOS(voltouAAndar) === 'cortando',
      A._statusOS(voltouAAndar) + ' / ' + A._dataHoraFinalizacaoOS(voltouAAndar));
 
@@ -546,9 +552,9 @@ console.log('-- o que fica gravado --');
     { id: 'so', os: '0500' }
   ]);
   let p = parDe();
-  await p.api.mudarStatusOS('at', 'estoque');
+  await p.api.mudarStatusOS('at', 'ensacado');
   const pa = () => p.ctx.STATE.ordens[1];
-  ok('68. finalizar a ativa finaliza a conjugada', pa().statusOS === 'estoque',
+  ok('68. finalizar a ativa finaliza a conjugada', pa().statusOS === 'ensacado',
      JSON.stringify(pa()));
   ok('69. e carimba a data nela tambem, que e o que a coluna Data le',
      !!pa().finalizadaEm && !isNaN(new Date(pa().finalizadaEm)), pa().finalizadaEm);
@@ -685,9 +691,9 @@ console.log('-- o que fica gravado --');
 
   // Finalizar e desfazer: o grupo inteiro vai e volta.
   p = maoDe();
-  await p.api.mudarStatusOS('at', 'estoque');
+  await p.api.mudarStatusOS('at', 'ensacado');
   ok('97. finalizar leva todas, com a data',
-     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === 'estoque' && !!o.finalizadaEm));
+     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === 'ensacado' && !!o.finalizadaEm));
   await p.api.mudarStatusOS('at', 'nao-iniciado');
   ok('98. desfazer traz todas de volta, e apaga a data',
      p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === undefined && o.finalizadaEm === undefined),

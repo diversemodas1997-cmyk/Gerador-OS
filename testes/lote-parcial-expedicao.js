@@ -179,9 +179,11 @@ const TMPL_U = ['Corte', 'Recebido em São Carlos', 'Costura', 'Recebido em Desc
   'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'];
 const osU = (check, seq) => Object.assign(osBase(check, seq), { etapas: TMPL_U.slice() });
 
+// O Estoque de corte de São Carlos é o ENSACADO que chegou lá (15/09/2026):
+// sem o ensaque a OS está sendo cortada, e cortar não é ter no estoque.
 confere('a ida acaba quando "Recebido em São Carlos" é marcada: 200 pç no corte de SC',
-  saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true },
-    { 'Corte': 1, 'Recebido em São Carlos': 2 }), [cargaIda()])),
+  saldos(estado(osU({ 'Corte': true, 'Ensaque': true, 'Recebido em São Carlos': true },
+    { 'Corte': 1, 'Ensaque': 2, 'Recebido em São Carlos': 3 }), [cargaIda()])),
   { corteSC: 200 });
 
 confere('recebida em SC e costurando lá: o lote inteiro em Costurando · São Carlos',
