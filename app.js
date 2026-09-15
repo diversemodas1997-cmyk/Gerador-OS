@@ -7360,6 +7360,25 @@ function renderEstoque() {
     const f = faltaDeTecidoParaOS(os) || [];
     if (f.length) faltaPorOS.set(r.osId, f);
   });
+  /* QUANTO FALTA, NA PRÓPRIA LINHA (15/09/2026).
+
+     O selo dizia só "⚠ sem pano", e o quanto vivia na dica do mouse — quem
+     olhava a lista via alarme e não via tamanho. E tamanho é tudo aqui: medido
+     hoje, as três OS em vermelho estavam faltando 0,270 kg, 2,321 kg e 4,556 kg.
+     Duzentos e setenta gramas de malha não são "sem pano"; são o saldo raspando
+     o zero depois de meses de entradas e saídas. Com o número na tela, quem lê
+     decide em um olhar se aquilo é um caminhão ou é sobra de enfesto.
+
+     O QUILO VEM PRIMEIRO, e a bobina entre parênteses. A bobina é arredondada
+     para cima — é o que se compra —, e para 270 gramas ela dá "1 bobina":
+     começar por ela faria o selo exagerar justamente no caso em que não há
+     problema. O quilo é o número exato; a bobina é o que pedir. */
+  const _resumoFalta = (os, fs) => {
+    const t = faltaParaCompletarOS(os, fs);
+    const kgTxt = fmt(t.faltaKg || fs.reduce((s, f) => s + (Number(f.falta) || 0), 0));
+    return `faltam ${kgTxt} kg` + (t.temBobina && t.faltaBob > 0 ? ` (${t.faltaBob} bob)` : '');
+  };
+
   /* O AVISO FECHA A CONTA DA OS (15/09/2026, Junior). Antes ele listava o que
      falta de cada tecido e parava aí — e quem vai comprar precisa saber o
      TAMANHO do buraco: falta pouco para fechar a OS, ou falta quase tudo?
@@ -7451,7 +7470,7 @@ function renderEstoque() {
       ${temForro ? celFase(forro) : ''}
       ${temRibana ? celFase(rib) : ''}
       <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
-        ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ sem pano</span>`
+        ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ ${esc(_resumoFalta(os, falta))}</span>`
         : ''}</td>
     </tr>`;
   };
@@ -7505,9 +7524,11 @@ function renderEstoque() {
         então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
         mesmo metro na mesa.` : ''}${faltaPorOS.size ? `
         A OS <b style="color:#c0392b;">em vermelho</b> está reservando pano que a prateleira
-        <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. Passe o mouse na linha para ver
-        qual tecido e quanto falta. O vermelho <b>sai sozinho</b> assim que a entrada desse
-        tecido for lançada no estoque.` : ''}
+        <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. A coluna <b>Situação</b> diz
+        <b>quanto</b> falta, em quilos e em bobinas; passe o mouse para ver de qual tecido e
+        quanto falta para fechar a OS inteira. <b>Repare no tamanho:</b> uma falta de poucos
+        quilos é o saldo raspando o zero depois de meses de entradas e saídas, e não pano que
+        não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
       ${reservadas.length ? `<table class="table">
         <thead><tr><th>OS</th><th>Modelo</th><th>Data</th>
