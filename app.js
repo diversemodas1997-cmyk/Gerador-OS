@@ -1853,7 +1853,7 @@ const AREAS_ACESSO = [
   { k: 'os', rotulo: 'Ordens de Serviço',
     desc: 'Criar, editar, duplicar e excluir OS' },
   { k: 'os-status', rotulo: 'Status da OS',
-    desc: 'Marcar não iniciado / em andamento / parado / finalizado na lista' },
+    desc: 'Carimbar por cima do status que vem do checklist (Enfestando, Cortando, Parado…)' },
   { k: 'cadastros', rotulo: 'Cadastros',
     desc: 'Tecidos, cores, modelos, grades, desenhos, etapas, equipe, riscos' },
   { k: 'estoque-tecidos', rotulo: 'Estoque de tecidos',
@@ -7477,8 +7477,9 @@ function renderEstoque() {
       <h2 style="margin:0 0 8px;font-size:14px;">OSs · material reservado</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         O pano de uma OS fica <b>reservado</b> enquanto ela não começa, e sai do estoque
-        sozinho quando alguém muda o status dela para <b>Em andamento</b> — na lista de
-        OS Salvas. Aqui ficam só as que ainda seguram material.${temConjugada ? `
+        sozinho quando a OS chega a <b>Enfestando</b> — que é quando o rolo desce da
+        prateleira. O status vem do checklist da folha (marcar <b>Enfesto</b> basta) e pode
+        ser carimbado à mão na lista de OS Salvas. Aqui ficam só as que ainda seguram material.${temConjugada ? `
         A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
         então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
         mesmo metro na mesa.` : ''}${faltaPorOS.size ? `
@@ -23681,25 +23682,124 @@ function _renderAvisoGrupoListaOS(mostradas) {
     + `<button class="btn small ghost" onclick="limparGrupoListaOS()">Ver todas as OS</button></div>`;
 }
 
-/* ---------- O STATUS DA OS (só na lista de OS Salvas) ---------------------
-   Quatro estados, na ordem em que a produção anda: não iniciado → em andamento
-   → parado → finalizado. O ícone mora na coluna AÇÕES da lista de OS Salvas e
-   em lugar nenhum mais — é o painel de quem abre a lista para saber o que está
-   de pé; não é dado da folha impressa, da OE nem do planejamento.
+/* ---------- O STATUS DA OS ------------------------------------------------
 
-   QUEM MUDA: o admin e o login do ENFESTO/CORTE — é lá que se sabe se a OS
-   começou, travou ou terminou. Para todo o resto o status aparece igual, só que
-   como etiqueta, sem poder mexer.
+   O STATUS DIZ ONDE A OS ESTÁ, E NÃO SÓ QUE ELA ANDA (15/09/2026, Junior).
+
+   Até aqui eram quatro estados genéricos — não iniciado, em andamento, parado,
+   finalizado — e eles falavam do enfesto/corte, que era quem carimbava. "Em
+   andamento" servia para qualquer coisa entre o primeiro rolo e o último saco:
+   quem lia a lista sabia que a OS tinha começado e não sabia mais nada. Agora o
+   TEXTO do status é a resposta: Cortando, Costurando | São Carlos, Retirando
+   fio. A pergunta "onde está a OS 0501?" se responde lendo, sem abrir a folha.
+
+   O STATUS NASCE DO CHECKLIST. As etapas já são marcadas na folha, uma a uma, e
+   é isso que diz onde a peça está — pedir que alguém marque a etapa E carimbe o
+   status seria pedir o mesmo apontamento duas vezes, e duas vezes é onde os dois
+   passam a discordar. Cada status abaixo aponta para a etapa que o acende (`re`,
+   casada pelo NOME: "Enfestando" vem de "Enfesto", "Preparando matéria-prima"
+   de "Preparo de matéria-prima"). Vale a etapa marcada por ÚLTIMO, que é a mesma
+   regra dos campos do fluxo (ver faseAtualOS).
+
+   E DÁ PARA ESCREVER POR CIMA. Nem tudo o que acontece no chão tem caixa no
+   checklist da OS, e a folha é marcada quando a etapa TERMINA — entre começar a
+   enfestar e marcar "Enfesto" há um dia inteiro em que a OS está trabalhando e o
+   checklist não sabe. Por isso o seletor continua lá: o carimbo à mão vale até a
+   PRÓXIMA etapa ser marcada, e aí o checklist retoma o comando. Assim o carimbo
+   adianta o que ainda não foi marcado, mas nunca se fossiliza contradizendo a
+   folha (ver _statusOS).
+
+   DOIS ESTADOS FORA DA FILA. "Parado" não é um lugar — o checklist diz em que
+   etapa a OS está e o status diz que ela travou ali; é ele que faz a lista
+   mostrar "Parado (3)" e alguém ir ver o que aconteceu. "Finalizado" é o fim do
+   processo de produção. Nenhum dos dois nasce do checklist: os dois só existem
+   carimbados.
+
+   QUEM MUDA: o admin e o login do ENFESTO/CORTE (área `os-status`). Para todo o
+   resto o status aparece igual, como etiqueta, sem poder mexer.
 
    O QUE FICA GRAVADO: `statusOS` (a chave), `statusOSPor` (o login) e
-   `statusOSEm` (quando). "Não iniciado" é a AUSÊNCIA dos três — OS que ninguém
-   tocou não engorda o blob, que desce inteiro a cada abertura. */
+   `statusOSEm` (quando) — os três, e só, quando alguém carimba à mão. OS que
+   ninguém carimbou não guarda campo nenhum: o status dela é lido do checklist na
+   hora, e o blob (que desce inteiro a cada abertura) não engorda por isso.
+
+   Campos de cada linha:
+     re     = a etapa do checklist que acende este status (ausente = só à mão)
+     cond   = desempata dois status que dividem a mesma etapa — é o que separa
+              as duas costuras, do mesmo jeito que em FASES_ESTOQUE
+     ordem  = a ordem REAL da produção, usada só para desempatar OS antiga sem
+              `etapasSeq`. Não é a ordem desta lista: a lista é a do seletor, na
+              sequência que o Junior escreveu, e nela "Ensacado" vem antes das
+              costuras — no chão ele vem depois.
+     baixa  = a partir deste status o pano já desceu da prateleira (ver
+              _STATUS_QUE_BAIXAM) */
 const STATUS_OS = [
-  { k: 'nao-iniciado', icone: '⚪', rotulo: 'Não iniciado' },
-  { k: 'andamento',    icone: '🔵', rotulo: 'Em andamento' },
-  { k: 'parado',       icone: '🔴', rotulo: 'Parado' },
-  { k: 'finalizado',   icone: '🟢', rotulo: 'Finalizado' }
+  { k: 'nao-iniciado',   icone: '⚪', rotulo: 'Não iniciado' },
+  { k: 'materia-prima',  icone: '🟤', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1,
+    re: /prepar\w*\s+(d[ae]\s+)?mat[ée]ria|mat[ée]ria[\s-]?prima/i },
+  { k: 'enfestando',     icone: '🟡', rotulo: 'Enfestando',               ordem: 2, baixa: true,
+    re: /enfest/i },
+  { k: 'cortando',       icone: '🟠', rotulo: 'Cortando',                 ordem: 3, baixa: true,
+    re: /corte|cortando/i },
+  { k: 'ensacado',       icone: '🟣', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
+    re: /ensaqu|ensacad/i },
+  { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
+    re: /costura|costurando/i, cond: o => _osRecebidaSC(o) },
+  { k: 'costurando',     icone: '🔷', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
+    re: /costura|costurando/i, cond: o => !_osRecebidaSC(o) },
+  { k: 'fios',           icone: '🟦', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
+    re: /fios/i },
+  { k: 'estoque',        icone: '🟢', rotulo: 'Estoque',                  ordem: 7, baixa: true,
+    re: /estoque/i },
+  // Fora da fila: não nascem do checklist, só do carimbo.
+  { k: 'parado',         icone: '🔴', rotulo: 'Parado',     baixa: true },
+  { k: 'finalizado',     icone: '✅', rotulo: 'Finalizado', baixa: true }
 ];
+
+/* O STATUS QUE O CHECKLIST DIZ. Mesma regra de faseAtualOS, aplicada à lista
+   acima: vence a etapa marcada com o maior `etapasSeq` (o carimbo de QUANDO
+   cada uma foi marcada). Sem seq — OS antiga, de antes de o carimbo existir —
+   vale a de maior `ordem` entre as marcadas, que é a ordem real da produção.
+
+   Devolve 'nao-iniciado' quando nenhuma etapa com status foi marcada: a OS
+   existe e ninguém encostou nela. */
+function _statusDoChecklistOS(o) {
+  const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
+  const seqs = (o && o.progresso && o.progresso.etapasSeq) || {};
+  let achouSeq = false, kSeq = '', melhorSeq = -Infinity;
+  let kOrd = '', melhorOrd = -1;
+  STATUS_OS.forEach(s => {
+    if (!s.re) return;                      // parado/finalizado não vêm daqui
+    if (s.cond && !s.cond(o)) return;
+    const marcadas = ((o && o.etapas) || []).filter(n => s.re.test(n) && checks[n]);
+    if (!marcadas.length) return;
+    // Uma etapa pode acender o status por mais de um nome; vale a mais recente.
+    let seq = -Infinity;
+    marcadas.forEach(n => {
+      const v = (seqs[n] != null) ? Number(seqs[n]) : null;
+      if (v != null && v > seq) seq = v;
+    });
+    if (seq > -Infinity && (!achouSeq || seq > melhorSeq)) { achouSeq = true; melhorSeq = seq; kSeq = s.k; }
+    const ord = Number(s.ordem) || 0;
+    if (ord > melhorOrd) { melhorOrd = ord; kOrd = s.k; }
+  });
+  return (achouSeq ? kSeq : kOrd) || 'nao-iniciado';
+}
+
+// O instante da etapa marcada por último. É contra ele que se mede se o carimbo
+// à mão ainda vale: `etapasSeq` é gravado com Date.now(), e `statusOSEm` é a
+// mesma linha do tempo em ISO.
+function _ultimaMarcacaoChecklist(o) {
+  const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
+  const seqs = (o && o.progresso && o.progresso.etapasSeq) || {};
+  let max = 0;
+  Object.keys(seqs).forEach(n => {
+    if (!checks[n]) return;
+    const v = Number(seqs[n]) || 0;
+    if (v > max) max = v;
+  });
+  return max;
+}
 
 /* Os logins que mexem no status além do admin. A comparação joga fora pontuação
    e acento: "Enfesto.corte", "enfesto corte" e "Enfesto-Corte" são a mesma
@@ -23731,9 +23831,25 @@ function exigirStatusOS(acao) {
   return false;
 }
 
+/* O STATUS QUE VALE: o carimbo à mão enquanto ele não foi desmentido pela
+   folha; senão, o que o checklist diz.
+
+   O CARIMBO EXPIRA NA PRÓXIMA ETAPA MARCADA, e não por capricho: ele existe
+   para adiantar o que a folha ainda não sabe ("já estou enfestando", antes de
+   "Enfesto" ser marcado). Marcada a etapa seguinte, a folha passou a saber mais
+   do que o carimbo — e um carimbo velho por cima dela é exatamente o estado em
+   que a lista diz uma coisa e a OS diz outra. Vale para todos, "Parado" e
+   "Finalizado" inclusive: marcar etapa nova quer dizer que a OS voltou a andar.
+
+   Chave que não existe mais na lista (as OS carimbadas como 'andamento', da
+   versão antiga) cai no checklist, que é informação melhor do que a que ela
+   carregava. */
 function _statusOS(o) {
   const k = String((o && o.statusOS) || '').trim();
-  return STATUS_OS.some(x => x.k === k) ? k : 'nao-iniciado';
+  if (!STATUS_OS.some(x => x.k === k)) return _statusDoChecklistOS(o);
+  const carimbo = Date.parse((o && o.statusOSEm) || '') || 0;
+  if (_ultimaMarcacaoChecklist(o) > carimbo) return _statusDoChecklistOS(o);
+  return k;
 }
 
 // O ícone do status dentro da coluna AÇÕES: seletor para quem pode mudar,
@@ -23746,15 +23862,32 @@ function _statusCelulaOS(o, extra) {
   const quem = _obsNomeLogin(o.statusOSPor || '');
   const quando = o.statusOSEm ? _obsQuando({ em: o.statusOSEm }) : '';
   const cls = 'os-status' + (extra ? ' ' + extra : '');
+  /* NA LISTA O RÓTULO VAI ABREVIADO. A coluna de ações da lista de OS Salvas
+     tem pouco mais de 100px — ela foi encolhida de propósito em 31/08/2026,
+     porque sozinha empurrava QTD e RISCOS para fora da tela em quem usa o
+     navegador a 200%. "Costurando | São Carlos" inteiro voltaria a estourá-la,
+     e um <select> corta o texto no fim: ficaria "Costurando | São Car…", que é
+     justamente onde mora a informação. Abreviado, a unidade continua legível.
+     Na folha, onde o controle tem a largura dos botões ao lado, vai inteiro. */
+  const naFolha = String(extra || '').includes('folha');
+  const rot = x => (!naFolha && x.curto) ? x.curto : x.rotulo;
+  /* A DICA CONTA DE ONDE O STATUS VEIO. Ele nasce do checklist e pode estar
+     escrito por cima à mão — e quem lê a lista precisa saber qual dos dois está
+     vendo, senão "por que a OS 0501 diz Enfestando se ninguém marcou Enfesto?"
+     não tem resposta na tela. */
+  const carimbado = _statusOS(o) === String(o.statusOS || '').trim();
   const dica = `Status da OS: ${s.rotulo}`
-    + (quem ? ` · ${quem}${quando ? ' em ' + quando : ''}` : '');
+    + (carimbado
+        ? ` · escrito à mão${quem ? ' por ' + quem : ''}${quando ? ' em ' + quando : ''}`
+          + ' · vale até a próxima etapa ser marcada no checklist'
+        : ' · vem do checklist da folha (a etapa marcada por último)');
   if (!podeMudarStatusOS()) {
-    return `<span class="${cls} ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(s.rotulo)}</span>`;
+    return `<span class="${cls} ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(rot(s))}</span>`;
   }
   return `<select class="${cls}" data-st="${s.k}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
     + STATUS_OS.map(x => `<option value="${x.k}"${x.k === s.k ? ' selected' : ''}>`
-        + `${x.icone} ${esc(x.rotulo)}</option>`).join('')
+        + `${x.icone} ${esc(rot(x))}</option>`).join('')
     + `</select>`;
 }
 
@@ -23891,6 +24024,16 @@ function _conjugadasQueSeguemStatus(os, alvo) {
 // pela conjugada que vai junto — se as duas escrevessem por caminhos
 // diferentes, um dia uma ganharia um campo que a outra não tem.
 function _carimbarStatusOS(os, alvo, agora, quem) {
+  /* "NÃO INICIADO" APAGA O CARIMBO, e é assim que se volta a SEGUIR O
+     CHECKLIST. Os outros status escrevem por cima da folha até a próxima etapa
+     ser marcada; escolher este desfaz isso na hora, sem esperar etapa nenhuma —
+     é o desfazer de quem carimbou a OS errada.
+
+     Numa OS que ninguém marcou, apagar e "não iniciado" são a mesma coisa, e
+     ela não guarda campo nenhum: o blob desce inteiro a cada abertura, e OS
+     intocada não tem por que pesar nele. Numa OS com etapa marcada, o status
+     volta a ser o que a folha diz — que é informação melhor do que um carimbo
+     dizendo que não começou o que já começou. */
   if (alvo === 'nao-iniciado') {
     delete os.statusOS; delete os.statusOSPor; delete os.statusOSEm;
   } else {
@@ -23965,7 +24108,18 @@ async function mudarStatusOS(id, valor) {
    NO SALDO ISSO NÃO MOVE UM QUILO: disponível = entrada − reservado − saída, e
    a mudança é de uma coluna para a outra. O que muda é a leitura — "Reservado"
    passa a significar de verdade o que ainda não entrou em produção. */
-const _STATUS_QUE_BAIXAM = ['andamento', 'parado', 'finalizado'];
+/* 15/09/2026: com o status virando a etapa (Cortando, Costurando…), "em
+   andamento" deixou de existir — e ele era quem dizia aqui que o enfesto tinha
+   começado. A regra não mudou, só o nome: baixa a partir de ENFESTANDO, que é
+   o momento em que o rolo desce da prateleira, e daí para a frente. "Preparando
+   matéria-prima" fica de fora de propósito: separar o pano ainda não é cortá-lo.
+   As OS gravadas com a chave antiga 'andamento' leem o checklist agora (ver
+   _statusOS) e caem em Cortando/Costurando, que também baixam — nenhuma delas
+   volta a ser reserva por causa da troca.
+
+   A LISTA SAI DA PRÓPRIA TABELA (`baixa`), e não de nomes repetidos aqui: status
+   novo entra na fila e já nasce sabendo se o pano dele desceu. */
+const _STATUS_QUE_BAIXAM = STATUS_OS.filter(s => s.baixa).map(s => s.k);
 
 async function _estoqueSeguirStatusOS(o, alvo) {
   if (!o || !o.id) return;
@@ -24085,8 +24239,17 @@ function _filtroStatusListaOS(base, id) {
   const escolhido = sel.value || '';
   const conta = {};
   (base || []).forEach(o => { const k = _statusOS(o); conta[k] = (conta[k] || 0) + 1; });
+  /* SÓ OS STATUS QUE EXISTEM NA LISTA. Enquanto eram quatro, oferecer os quatro
+     sempre não custava nada. Agora são onze — a fila inteira da produção —, e
+     uma lista em que oito linhas dizem "(0)" faz procurar a que interessa no
+     meio do que não existe. É a mesma regra do filtro de cor e de grade ao lado
+     (ver _filtroListaOS): a opção é um valor que alguma OS à vista tem.
+     O escolhido fica mesmo zerado, senão o <select> perderia o próprio valor e
+     a lista voltaria a mostrar tudo no meio da consulta. */
   const opcoes = [{ k: '', rotulo: `Todos os status (${(base || []).length})` }]
-    .concat(STATUS_OS.map(x => ({ k: x.k, rotulo: `${x.icone} ${x.rotulo} (${conta[x.k] || 0})` })));
+    .concat(STATUS_OS
+      .filter(x => (conta[x.k] || 0) > 0 || x.k === escolhido)
+      .map(x => ({ k: x.k, rotulo: `${x.icone} ${x.rotulo} (${conta[x.k] || 0})` })));
   const novo = opcoes.map(x => `<option value="${x.k}"${x.k === escolhido ? ' selected' : ''}>`
     + `${esc(x.rotulo)}</option>`).join('');
   // Só toca no DOM quando algo mudou: reescrever o <select> a cada tecla da

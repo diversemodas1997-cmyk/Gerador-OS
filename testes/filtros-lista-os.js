@@ -246,6 +246,13 @@ console.log('-- a busca por data de finalizacao --');
 {
   const api = new Function(`
     ${constante('STATUS_OS')}
+    // Desde 15/09/2026 o status nasce do CHECKLIST: _statusOS le a etapa
+    // marcada por ultimo antes de olhar o carimbo a mao. Sem estas, ela nao roda.
+    ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
+    ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}
+    ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
+    ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
+    ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
     ${recorte('function _statusOS', 'a leitura do status')}
     ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
     ${recorte('function _diaFinalizacaoOS', 'o dia da finalizacao')}
@@ -256,7 +263,7 @@ console.log('-- a busca por data de finalizacao --');
   // A OS terminada as 21:40 do dia 9 (00:40Z do dia 10).
   const noite = { statusOS: 'finalizado', finalizadaEm: new Date(2026, 8, 9, 21, 40).toISOString() };
   const dia5 = { statusOS: 'finalizado', finalizadaEm: new Date(2026, 8, 5, 10, 0).toISOString() };
-  const aberta = { statusOS: 'andamento' };
+  const aberta = { statusOS: 'enfestando' };
   const nunca = {};
 
   ok('46. a OS terminada a noite fica no dia em que ela terminou',

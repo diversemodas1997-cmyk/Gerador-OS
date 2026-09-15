@@ -45,6 +45,13 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('STATUS_OS')}
   ${recorte('function _obsNotas', 'as notas da OS')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
+  // Desde 15/09/2026 o status nasce do CHECKLIST: _statusOS le a etapa
+  // marcada por ultimo antes de olhar o carimbo a mao. Sem estas, ela nao roda.
+  ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
+  ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}
+  ${src.match(/^const _osRecebidaSC = .+$/m)[0]}
+  ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
+  ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _avisosNascimento', 'o nascimento de um registro')}
   ${recorte('function _expCancelSet', 'as expedicoes canceladas')}
@@ -303,7 +310,7 @@ ok('44. as OS nao foram tocadas — o recado segue la',
    && t.ctx.STATE.ordens[1].statusOS === 'parado', JSON.stringify(t.ctx.STATE.ordens[1]));
 // O que acontecer DEPOIS da limpeza volta a aparecer.
 const depois = ordens();
-depois.push({ id: 'g', os: '0490', statusOS: 'andamento', statusOSPor: 'costura@diverse.local',
+depois.push({ id: 'g', os: '0490', statusOS: 'enfestando', statusOSPor: 'costura@diverse.local',
               statusOSEm: new Date(Date.now() + 2000).toISOString() });
 t.ctx.STATE.ordens = depois;
 ok('45. o que acontece depois da limpeza aparece',

@@ -1912,7 +1912,20 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   cursor: pointer;
 }
 .table .col-actions.row-actions .os-status.ro { cursor: default; }
-.table .col-actions.row-actions .os-status[data-st="andamento"]  { background: #e7f0ff; border-color: #9dbdf0; }
+/* A FILA DA PRODUCAO tem uma cor por etapa desde 15/09/2026, quando o status
+   passou a dizer ONDE a OS esta (Cortando, Costurando | Sao Carlos...) em vez
+   de so que ela anda. As cores acompanham o caminho -- o preparo em terra, o
+   enfesto e o corte em amarelo/laranja (a mesa), as costuras em azul, o estoque
+   em verde -- e os dois de fora da fila ficam com o vermelho de travado e o
+   verde de pronto, que e como a casa ja os lia. */
+.table .col-actions.row-actions .os-status[data-st="materia-prima"]  { background: #f3ece2; border-color: #d7c3a5; }
+.table .col-actions.row-actions .os-status[data-st="enfestando"]     { background: #fdf6d8; border-color: #e3ce7a; }
+.table .col-actions.row-actions .os-status[data-st="cortando"]       { background: #fdeede; border-color: #e6bb8a; }
+.table .col-actions.row-actions .os-status[data-st="ensacado"]       { background: #f1e8f8; border-color: #c4a9de; }
+.table .col-actions.row-actions .os-status[data-st="costurando-sc"]  { background: #e7f0ff; border-color: #9dbdf0; }
+.table .col-actions.row-actions .os-status[data-st="costurando"]     { background: #e3f1f6; border-color: #8fc2d4; }
+.table .col-actions.row-actions .os-status[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
+.table .col-actions.row-actions .os-status[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
 .table .col-actions.row-actions .os-status[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
 .table .col-actions.row-actions .os-status[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
 /* O MESMO STATUS, no cabecalho da janela da folha de OS. Ali ele nao divide
@@ -1934,12 +1947,22 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   cursor: pointer;
 }
 .page-header .actions .os-status.folha.ro { cursor: default; }
-.page-header .actions .os-status.folha[data-st="andamento"]  { background: #e7f0ff; border-color: #9dbdf0; }
+.page-header .actions .os-status.folha[data-st="materia-prima"]  { background: #f3ece2; border-color: #d7c3a5; }
+.page-header .actions .os-status.folha[data-st="enfestando"]     { background: #fdf6d8; border-color: #e3ce7a; }
+.page-header .actions .os-status.folha[data-st="cortando"]       { background: #fdeede; border-color: #e6bb8a; }
+.page-header .actions .os-status.folha[data-st="ensacado"]       { background: #f1e8f8; border-color: #c4a9de; }
+.page-header .actions .os-status.folha[data-st="costurando-sc"]  { background: #e7f0ff; border-color: #9dbdf0; }
+.page-header .actions .os-status.folha[data-st="costurando"]     { background: #e3f1f6; border-color: #8fc2d4; }
+.page-header .actions .os-status.folha[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
+.page-header .actions .os-status.folha[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
 .page-header .actions .os-status.folha[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
 .page-header .actions .os-status.folha[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
 
-/* O rotulo mais longo ("Em andamento") nao cabe nos 112px da coluna junto com a
-   seta do seletor; a lista de OS ganha alguns pixels a mais so nessa coluna. */
+/* O rotulo mais longo nao cabe na coluna junto com a seta do seletor; a lista
+   de OS ganha alguns pixels a mais so nessa coluna. Em 15/09/2026 o status
+   deixou de ser "Em andamento" e virou a etapa ("Costurando | SC"), que e mais
+   comprida -- daí os 92px viraram 112px, e os rotulos vao ABREVIADOS aqui (ver
+   _statusCelulaOS). Os 20px sao o preco de a coluna dizer ONDE a OS esta. */
 /* A coluna encolheu em 31/08/2026. Ela empilhava SETE controles -- status,
    visualizar, grade, etiquetas, editar, duplicar, excluir -- e sozinha custava
    126px de largura e 242px de altura POR LINHA. Numa maquina com o navegador em
@@ -1950,7 +1973,7 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    visualizar, que e como a folha se imprime. Os outros cinco foram para o menu
    do "⋯" -- perto o bastante para quem precisa, longe o bastante para nao
    cobrar largura de quem nao precisa. */
-[data-page="lista-os"] .table .col-actions.row-actions { width: 92px; }
+[data-page="lista-os"] .table .col-actions.row-actions { width: 112px; }
 
 /* O MENU DO "⋯". Mora no <body> e e posicionado pelo JS a partir do proprio
    botao, como os paineis de avisos e mensagens -- e pela mesma razao: dentro da
