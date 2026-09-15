@@ -142,12 +142,20 @@ console.log('-- so as opcoes rolam; o cabecalho da barra fica parado --');
     const i = css.indexOf(String.fromCharCode(10) + sel + ' {');
     return i < 0 ? '' : css.slice(i + 1, css.indexOf('}', i));
   };
-  /* O primeiro filho da caixa pode ser o bloco SOLTO (Inicio e Nova OS, que
-     ficam fora de qualquer grupo desde 15/09/2026) ou o primeiro grupo. O que
-     este caso guarda e que as opcoes moram numa caixa PROPRIA, separada do
-     cabecalho — e nao qual delas vem primeiro. */
+  /* O primeiro filho da caixa pode ser o bloco SOLTO (Inicio, Nova OS e a lista
+     de OS, que ficam fora de qualquer grupo desde 15/09/2026) ou o primeiro
+     grupo. O que este caso guarda e que as opcoes moram numa caixa PROPRIA,
+     separada do cabecalho — e nao qual delas vem primeiro.
+
+     A conferencia e por POSICAO, e nao por uma janela de N caracteres: o
+     comentario que explica o bloco solto cresceu uma vez e derrubou o teste sem
+     nada ter mudado na tela. Prosa nao e estrutura, e nao deve pesar aqui. */
+  const iCaixa = html.indexOf('class="sidebar-nav"');
+  const iPrimeira = Math.min(
+    ...['class="nav-solto"', 'class="nav-group"']
+      .map(c => html.indexOf(c)).filter(x => x >= 0));
   ok('17. as opcoes moram numa caixa propria, depois do cabecalho',
-     /class="sidebar-nav"[\s\S]{0,400}class="nav-(solto|group)"/.test(html)
+     iCaixa >= 0 && iPrimeira > iCaixa
      && (html.match(/class="sidebar-nav"/g) || []).length === 1, 'sem a caixa das opcoes');
   ok('18. a marca e a caixa do login estao FORA dela',
      html.indexOf('class="brand"') < html.indexOf('class="sidebar-nav"')
