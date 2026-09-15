@@ -24058,8 +24058,26 @@ const STATUS_OS = [
     re: /enfest/i },
   { k: 'cortando',       icone: '🟠', rotulo: 'Cortando',                 ordem: 3, baixa: true,
     re: /corte|cortando/i },
+  /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
+     etapa de trabalho, e por isso ele não tinha status — mas é ele que diz que
+     o pano está na prateleira DE LÁ, esperando a máquina, que é exatamente o
+     estado "Ensacado". Sem isto, a caixa era marcada e a OS não saía do lugar:
+
+       OS 0519 e 0539 — Ensaque, depois "Costura CM.LISA | Descalvado", depois
+       "Expedição Desc X São Carlos", depois "Recebido em São Carlos". Como as
+       duas últimas não acendiam status nenhum, a última que acendia continuava
+       sendo a costura DAQUI: a peça viajou, chegou lá, e a lista seguia dizendo
+       "Costurando | Descalvado".
+
+     Com o recebimento acendendo Ensacado, o campo vai junto — `_osRecebidaSC` é
+     quem escolhe entre o Estoque de corte daqui e o de lá —, e o caminho que a
+     fábrica descreve se fecha: estoque de corte SC → costurando SC (ao marcar a
+     costura de lá) → retirada de fios.
+
+     É o mesmo desenho do outro lado, onde "Recebido em Descalvado" já acendia o
+     status de Retirada de fios desde hoje de manhã. */
   { k: 'ensacado',       icone: '🟣', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
-    re: /ensaqu|ensacad/i },
+    re: /ensaqu|ensacad|recebido em s[ãa]o carlos/i },
   /* A UNIDADE SAI DO NOME DA ETAPA, e não da caixa de recebimento (15/09/2026,
      Junior: "alguns produtos são costurados em etapas fracionadas em diferentes
      unidades").

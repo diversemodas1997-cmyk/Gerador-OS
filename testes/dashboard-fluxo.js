@@ -169,10 +169,35 @@ confere('ensacada e recebida em São Carlos: corte de lá E cartão de recebido'
                      { 'Corte': 1, 'Ensaque': 2, 'Recebido em São Carlos': 3 }), [])),
   { corteSC: 200, recSC: 200 });
 
-confere('só cortada e recebida (sem ensacar): está na mesa, e o recebido carimba',
+/* RECEBIDA EM SÃO CARLOS NÃO ESTÁ MAIS NA MESA DAQUI. A caixa de recebimento
+   acende o status Ensacado (15/09/2026): ela é o que diz que o pano está na
+   prateleira DE LÁ, esperando a máquina — e isso é o estado Ensacado, venha ele
+   da caixa de Ensaque ou da de chegada. */
+confere('cortada e recebida em São Carlos: vai para o corte de lá, não fica na mesa',
   dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true },
                      { 'Corte': 1, 'Recebido em São Carlos': 2 }), [])),
-  { cortando: 200, recSC: 200 });
+  { corteSC: 200, recSC: 200 });
+
+/* O CASO QUE A FÁBRICA ACHOU (OS 0519 e 0539, 15/09/2026): ensacada, costurada
+   AQUI, expedida e recebida lá. Nem a caixa de expedição nem a de chegada
+   acendiam status, então a última que acendia continuava sendo a costura DAQUI:
+   a peça viajava, chegava, e a lista seguia dizendo "Costurando | Descalvado".
+   Marcar a chegada tem de tirá-la de lá. */
+confere('costurada aqui, expedida e recebida lá: vai para o corte de São Carlos',
+  dash(estado(osBase({ 'Corte': true, 'Ensaque': true, 'Costura': true,
+                       'Recebido em São Carlos': true },
+                     { 'Corte': 1, 'Ensaque': 2, 'Costura': 3,
+                       'Recebido em São Carlos': 4 }), [])),
+  { corteSC: 200, recSC: 200 });
+
+// E dali a costura de lá a leva para Costurando · São Carlos, que é o caminho
+// que a fábrica descreve: corte SC -> costurando SC -> retirada de fios.
+confere('e a costura de lá, marcada depois, leva para Costurando · São Carlos',
+  dash(estado(osBase({ 'Corte': true, 'Ensaque': true, 'Costura': true,
+                       'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+                     { 'Corte': 1, 'Ensaque': 2, 'Costura': 3,
+                       'Recebido em São Carlos': 4, 'Costura CM.LISA | São Carlos': 5 }), [])),
+  { costurandoSC: 200, recSC: 200 });
 
 confere('Costura depois de São Carlos: Costurando · São Carlos',
   dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
