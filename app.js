@@ -24035,10 +24035,30 @@ const STATUS_OS = [
     re: /corte|cortando/i },
   { k: 'ensacado',       icone: '🟣', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
     re: /ensaqu|ensacad/i },
+  /* A UNIDADE SAI DO NOME DA ETAPA, e não da caixa de recebimento (15/09/2026,
+     Junior: "alguns produtos são costurados em etapas fracionadas em diferentes
+     unidades").
+
+     O checklist já sabia: os 34 desenhos listam AS DUAS costuras, "Costura
+     CM.LISA | Descalvado" e "Costura CM.LISA | São Carlos", e quem está no chão
+     marca a que fez. O programa é que não olhava para elas — separava as duas
+     pela caixa "Recebido em São Carlos", que diz onde o PANO chegou e não onde
+     a MÁQUINA está. Medido no dia: a OS 0507 tinha "Costura BM.LISA |
+     Descalvado" marcada e o programa dizia "Costurando | São Carlos", porque a
+     caixa de recebimento estava marcada — a peça voltou para ser costurada
+     aqui, e a lista jurava que ela estava lá.
+
+     Com a unidade no nome, a costura fracionada se aponta sozinha: marcar a de
+     Descalvado traz a OS para cá, marcar a de São Carlos leva para lá, e a
+     última marcada manda — que é a regra sobreposta de sempre.
+
+     A costura SEM unidade no nome ("Costura", "Costura CM.LISA") é a de
+     Descalvado: são as OS antigas, de antes de a segunda unidade existir, e
+     naquele tempo só se costurava aqui. Daí o lookahead negativo. */
   { k: 'costurando',     icone: '🔷', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
-    re: /costura|costurando/i, cond: o => !_osRecebidaSC(o) },
+    re: /^(?!.*s[ãa]o\s+carlos).*costura/i },
   { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
-    re: /costura|costurando/i, cond: o => _osRecebidaSC(o) },
+    re: /costura.*s[ãa]o\s+carlos/i },
   /* "Recebido em Descalvado" acende este status junto com a retirada de fios:
      o que volta de São Carlos cai aqui, e sem isso a OS voltava da outra
      unidade e a lista continuava dizendo "Costurando | São Carlos". É a mesma

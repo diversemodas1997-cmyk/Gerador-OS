@@ -110,8 +110,9 @@ const confere = (nome, got, esperado) => {
 const osBase = (check, seq) => ({
   id: 'os_1', os: '0501', modeloNome: 'Camiseta', data: '2026-09-14',
   gradeId: 'g1',
-  etapas: ['Corte', 'Recebido em São Carlos', 'Costura', 'Recebido em Descalvado',
-           'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'],
+  etapas: ['Corte', 'Recebido em São Carlos', 'Costura',
+           'Costura CM.LISA | São Carlos',
+           'Recebido em Descalvado', 'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'],
   progresso: { etapasCheck: check, etapasSeq: seq },
   componentes: [
     { materialNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', qtdTotal: 120 },
@@ -150,6 +151,10 @@ confere('OS no corte: as 200 pç no Estoque de corte · Descalvado',
   dash(estado(noCorte(), [])),
   { corte: 200 });
 
+// A UNIDADE DA COSTURA SAI DO NOME DA ETAPA (15/09/2026). Os 34 desenhos listam
+// AS DUAS — "Costura CM.LISA | Descalvado" e "| São Carlos" —, e quem está no
+// chão marca a que fez. A "Costura" pura é a etapa das OS antigas, de antes de
+// a segunda unidade existir, e conta como Descalvado.
 confere('Costura marcada, sem passar por São Carlos: Costurando · Descalvado',
   dash(estado(osBase({ 'Corte': true, 'Costura': true }, { 'Corte': 1, 'Costura': 2 }), [])),
   { costurando: 200 });
@@ -170,21 +175,21 @@ confere('só cortada e recebida (sem ensacar): está na mesa, e o recebido carim
   { cortando: 200, recSC: 200 });
 
 confere('Costura depois de São Carlos: Costurando · São Carlos',
-  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
-                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3 }), [])),
+  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 }), [])),
   { costurandoSC: 200, recSC: 200 });
 
 // A volta cai na Retirada de fios, e o cartão de Recebido em Descalvado é a
 // fatia dela que chegou pela caixa de recebimento.
 confere('Recebido em Descalvado: Retirada de fios E o cartão de recebido',
-  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true, 'Recebido em Descalvado': true },
-                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3, 'Recebido em Descalvado': 4 }), [])),
+  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true, 'Recebido em Descalvado': true },
+                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3, 'Recebido em Descalvado': 4 }), [])),
   { fios: 200, recDesc: 200, recSC: 200 });
 
 // Os dois recebimentos continuam carimbados: a OS passou pelos dois.
 confere('Retirada de fios marcada por último: fios, e os dois recebidos carimbados',
-  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true, 'Recebido em Descalvado': true, 'Retirada de fios': true },
-                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3, 'Recebido em Descalvado': 4, 'Retirada de fios': 5 }), [])),
+  dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true, 'Recebido em Descalvado': true, 'Retirada de fios': true },
+                     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3, 'Recebido em Descalvado': 4, 'Retirada de fios': 5 }), [])),
   { fios: 200, recDesc: 200, recSC: 200 });
 
 confere('Estoque marcado: sai do fluxo em processo e vai para o cartão final',
@@ -302,8 +307,8 @@ confere('Expedição cancelada: nada viaja, o lote inteiro fica no corte',
 // A volta usa a hora da VOLTA da janela (17h), não a da ida (8h).
 confere('Volta da janela das 17h: cai em Volta · tarde, saindo de São Carlos',
   dash(estado(
-    osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
-           { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3 }),
+    osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+           { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 }),
     [carga({ perna: 'volta' })])),
   { costurandoSC: 100, voltaTarde: 100, recSC: 200 });
 

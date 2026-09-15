@@ -218,9 +218,13 @@ console.log('-- o que fica gravado --');
     id: 'c1', os: '0501', etapas,
     progresso: { etapasCheck: check, etapasSeq: seq }
   });
+// A UNIDADE DA COSTURA SAI DO NOME DA ETAPA (15/09/2026). Os 34 desenhos listam
+// AS DUAS — "Costura CM.LISA | Descalvado" e "| São Carlos" —, e quem está no
+// chão marca a que fez. A "Costura" pura é a etapa das OS antigas, de antes de
+// a segunda unidade existir, e conta como Descalvado.
   const FLUXO = ['Preparo de matéria-prima', 'Enfesto', 'Corte',
-                 'Recebido em São Carlos', 'Costura', 'Retirada de fios',
-                 'Ensaque', 'Estoque'];
+                 'Recebido em São Carlos', 'Costura', 'Costura CM.LISA | São Carlos',
+                 'Retirada de fios', 'Ensaque', 'Estoque'];
   const leitura = (check, seq) => {
     const o = osCheck(FLUXO, check, seq);
     return ctxDe('admin', 'admin@diverse.local', true, [o]).api._statusOS(o);
@@ -246,9 +250,14 @@ console.log('-- o que fica gravado --');
   // caixa "Recebido em Sao Carlos", do mesmo jeito que nos campos do fluxo.
   ok('12h. Costura sem passar por Sao Carlos: Costurando | Descalvado',
      leitura({ 'Corte': true, 'Costura': true }, { 'Corte': 3, 'Costura': 5 }) === 'costurando');
-  ok('12i. Costura depois de recebida em Sao Carlos: Costurando | Sao Carlos',
+  ok('12i. a costura de Sao Carlos marcada: Costurando | Sao Carlos',
+     leitura({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+             { 'Corte': 3, 'Recebido em São Carlos': 4, 'Costura CM.LISA | São Carlos': 5 }) === 'costurando-sc');
+  // E o inverso, que e o caso que a medicao achou na OS 0507: a peca voltou
+  // para ser costurada AQUI, e a caixa de recebimento nao pode mandar nela.
+  ok('12i-b. recebida em SC, mas costurando em Descalvado: manda a ETAPA',
      leitura({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
-             { 'Corte': 3, 'Recebido em São Carlos': 4, 'Costura': 5 }) === 'costurando-sc');
+             { 'Corte': 3, 'Recebido em São Carlos': 4, 'Costura': 5 }) === 'costurando');
   // Vale a marcada por ULTIMO, e nao a que esta mais adiante na lista: desmarcar
   // e voltar atras tem de levar o status junto.
   ok('12j. vale a etapa marcada por ULTIMO, mesmo sendo anterior no fluxo',

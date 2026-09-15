@@ -192,8 +192,13 @@ confere('marcada a etapa Costura, a ida continua valendo e sai de Costurando',
 /* ---------- 2. quem tira a OS do trânsito é a caixa de chegada ---------- */
 
 // O checklist da fábrica com as duas caixas das unidades (etapa 1, 14/09/2026).
-const TMPL_U = ['Corte', 'Recebido em São Carlos', 'Costura', 'Recebido em Descalvado',
-  'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'];
+// A UNIDADE DA COSTURA SAI DO NOME DA ETAPA (15/09/2026). Os 34 desenhos listam
+// AS DUAS — "Costura CM.LISA | Descalvado" e "| São Carlos" —, e quem está no
+// chão marca a que fez. A "Costura" pura é a etapa das OS antigas, de antes de
+// a segunda unidade existir, e conta como Descalvado.
+const TMPL_U = ['Corte', 'Recebido em São Carlos', 'Costura',
+  'Costura CM.LISA | São Carlos',
+  'Recebido em Descalvado', 'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'];
 const osU = (check, seq) => Object.assign(osBase(check, seq), { etapas: TMPL_U.slice() });
 
 // O Estoque de corte de São Carlos é o ENSACADO que chegou lá (15/09/2026):
@@ -204,15 +209,15 @@ confere('a ida acaba quando "Recebido em São Carlos" é marcada: 200 pç no cor
   { corteSC: 200 });
 
 confere('recebida em SC e costurando lá: o lote inteiro em Costurando · São Carlos',
-  saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
-    { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3 }), [cargaIda()])),
+  saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+    { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 }), [cargaIda()])),
   { costurandoSC: 200 });
 
 /* ---------- 3. a volta é a mesma regra, do outro lado ---------- */
 
 const cargaVolta = (extra) => cargaIda(Object.assign({ id: 'v1', perna: 'volta' }, extra || {}));
-const emSC = () => osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true },
-  { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3 });
+const emSC = () => osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+  { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 });
 
 confere('alocada METADE numa carga de volta: 100 pç saem de Costurando · SC',
   saldos(estado(emSC(), [cargaVolta()])),
@@ -227,9 +232,9 @@ confere('a ida não mexe na OS que já está em São Carlos',
   { costurandoSC: 200 });
 
 confere('a volta acaba em "Recebido em Descalvado": 200 pç na Retirada de fios',
-  saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura': true,
+  saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true,
     'Recebido em Descalvado': true },
-    { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura': 3, 'Recebido em Descalvado': 4 }),
+    { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3, 'Recebido em Descalvado': 4 }),
     [cargaVolta()])),
   { fios: 200 });
 
