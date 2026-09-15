@@ -142,8 +142,12 @@ console.log('-- so as opcoes rolam; o cabecalho da barra fica parado --');
     const i = css.indexOf(String.fromCharCode(10) + sel + ' {');
     return i < 0 ? '' : css.slice(i + 1, css.indexOf('}', i));
   };
+  /* O primeiro filho da caixa pode ser o bloco SOLTO (Inicio e Nova OS, que
+     ficam fora de qualquer grupo desde 15/09/2026) ou o primeiro grupo. O que
+     este caso guarda e que as opcoes moram numa caixa PROPRIA, separada do
+     cabecalho — e nao qual delas vem primeiro. */
   ok('17. as opcoes moram numa caixa propria, depois do cabecalho',
-     /class="sidebar-nav"[\s\S]{0,400}class="nav-group"/.test(html)
+     /class="sidebar-nav"[\s\S]{0,400}class="nav-(solto|group)"/.test(html)
      && (html.match(/class="sidebar-nav"/g) || []).length === 1, 'sem a caixa das opcoes');
   ok('18. a marca e a caixa do login estao FORA dela',
      html.indexOf('class="brand"') < html.indexOf('class="sidebar-nav"')

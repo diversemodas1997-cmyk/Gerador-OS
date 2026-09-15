@@ -17930,7 +17930,11 @@ function _dashPesoTurnos(o, perna) {
 // que estiver alocada numa expedição cai no trânsito da perna — a mesma divisão
 // que as telas dos campos fazem.
 function _dashFluxoDados() {
-  const zero = () => ({ pecas: 0, os: 0 });
+  /* Cada cartão guarda também a LISTA: qual OS está nele e com quantas peças
+     (15/09/2026, Junior: "o gráfico de barras deve mostrar as informações das
+     OS atualmente presentes em cada quadro"). O total responde "quanto"; a
+     lista responde "quais", que é a pergunta seguinte de quem olha o número. */
+  const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
     cortando: zero(),
     corte: zero(), corteSC: zero(),
@@ -17947,7 +17951,12 @@ function _dashFluxoDados() {
     const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
     if (i >= 0) chavePorIdx.set(i, k);
   });
-  const somar = (k, pecas) => { if (pecas > 0) { d[k].pecas += pecas; d[k].os++; } };
+  const somar = (k, pecas, o) => {
+    if (!(pecas > 0)) return;
+    d[k].pecas += pecas;
+    d[k].os++;
+    d[k].lista.push({ os: String((o && o.os) || '').trim() || '—', pecas });
+  };
 
   (STATE.ordens || []).forEach(o => {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
@@ -17967,7 +17976,7 @@ function _dashFluxoDados() {
        Por isso ele pode repetir peça que também conta noutro cartão, como já
        fazem os dois de Recebido. A soma dos cartões não é o total da fábrica;
        cada um responde à sua pergunta. */
-    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total);
+    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total, o);
     /* CORTANDO NÃO TEM CAMPO, E PRECISAVA DE CARTÃO (15/09/2026, Junior).
 
        Os campos do fluxo guardam pano PARADO: o corte ensacado esperando a
@@ -17987,7 +17996,7 @@ function _dashFluxoDados() {
        Expedição marcada — que não acende status e por isso deriva "Cortando"
        do corte que ficou para trás — apareceria na mesa de corte E no campo
        Expedição ao mesmo tempo. */
-    if (atual < 0 && _statusOS(o) === 'cortando') somar('cortando', total);
+    if (atual < 0 && _statusOS(o) === 'cortando') somar('cortando', total, o);
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
@@ -17999,13 +18008,13 @@ function _dashFluxoDados() {
       const peso = _dashPesoTurnos(o, perna);
       const soma = peso.manha + peso.tarde;
       const manha = soma > 0 ? Math.round(viajando * peso.manha / soma) : viajando;
-      somar(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
-      somar(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha);
+      somar(perna === 'volta' ? 'voltaManha' : 'idaManha', manha, o);
+      somar(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha, o);
     }
     const resta = Math.max(0, total - viajando);
     const k = chavePorIdx.get(atual);
     if (!k) return;                       // Expedição: campo fora desta leitura
-    somar(k, resta);
+    somar(k, resta, o);
   });
 
   /* RECEBIDO EM… SEGUE A CAIXA, e não o campo (15/09/2026, Junior: "Recebidos
@@ -18030,8 +18039,8 @@ function _dashFluxoDados() {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
     if (!(total > 0)) return;
     if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) return;   // já foi para o estoque: é história
-    if (osEtapaMarcada(o, ETAPA_SC_RE)) somar('recSC', total);
-    if (osEtapaMarcada(o, ETAPA_DESC_RE)) somar('recDesc', total);
+    if (osEtapaMarcada(o, ETAPA_SC_RE)) somar('recSC', total, o);
+    if (osEtapaMarcada(o, ETAPA_DESC_RE)) somar('recDesc', total, o);
   });
   return d;
 }
@@ -18083,43 +18092,70 @@ let _dashFluxoAssinatura = '';
 let _dashFluxoTimer = null;
 const DASH_FLUXO_MS = 30000;
 
-/* O GRÁFICO DE COLUNAS DE UM PASSO DO FLUXO.
+/* O GRÁFICO DE COLUNAS DE UM PASSO DO FLUXO: uma coluna por OS.
 
-   Uma coluna por cartão, em peças, com a altura relativa à maior do próprio
-   passo (ver a nota em renderFluxoDash). Cartão vazio vira um traço rente ao
-   eixo, e não coluna nenhuma: o zero é resposta — "aqui não tem nada agora" —,
-   e some-lo do gráfico faria a coluna ao lado parecer a única que existe.
+   Junior, 15/09/2026: "o gráfico de barras deve mostrar as informações das OS
+   atualmente presentes em cada quadro". Ele nasceu agregado — uma barra por
+   quadro — e agregado ele repetia o que os cartões logo acima já diziam, só que
+   em desenho. Com uma coluna por OS ele passa a dizer o que nenhum número do
+   painel dizia: QUAIS lotes estão ali e de que tamanho é cada um. Um passo com
+   11.000 peças pode ser uma OS gigante ou trinta pequenas, e a diferença entre
+   as duas coisas é a diferença entre um dia de trabalho e um mês.
 
-   Devolve '' quando não há o que comparar: menos de duas colunas, ou tudo
-   zerado. Nos dois casos o desenho não acrescentaria nada ao número que já
-   está no cartão logo acima.
+   AS COLUNAS SEGUEM A ORDEM DOS QUADROS, e o rótulo é o número da OS. A dica do
+   mouse diz de qual quadro ela é — sem isso, num passo de duas unidades, não
+   haveria como saber de que lado está cada barra.
 
-   As medidas são em porcentagem da largura, e não em pixels: o painel encolhe
-   até a tela do celular, e um SVG de largura fixa sairia cortado lá. */
+   UM TETO DE COLUNAS, e o resto somado numa só. O cartão Estoque tem 264 OS:
+   264 riscos de um pixel não são um gráfico, são uma textura. Acima do teto, as
+   maiores aparecem e as demais viram uma coluna "+N outras" — que continua
+   dizendo a verdade sobre o volume, sem fingir que dá para ler 264 nomes.
+
+   A escala é do PASSO: cada grupo se mede contra a sua maior coluna. Numa
+   escala única para o painel inteiro, um passo de 200 peças ao lado de outro de
+   11.000 viraria uma linha rente ao chão, sem leitura nenhuma. */
+const DASH_GR_MAX = 14;
+
 function _dashGraficoColunas(cards) {
-  const vals = (cards || []).map(c => (c.v && c.v.pecas) || 0);
-  if (vals.length < 2) return '';
-  const max = Math.max(...vals);
+  /* Uma entrada por OS, na ordem dos quadros e, dentro de cada um, da maior
+     para a menor: é a leitura que se procura primeiro ("qual é o lote grande
+     que está segurando este campo?"). */
+  let itens = [];
+  (cards || []).forEach(c => {
+    const lista = (c.v && c.v.lista) || [];
+    lista.slice().sort((a, b) => b.pecas - a.pecas)
+      .forEach(x => itens.push({ os: x.os, pecas: x.pecas, quadro: c.nome }));
+  });
+  if (!itens.length) return '';
+  const total = itens.reduce((s, x) => s + x.pecas, 0);
+  if (!(total > 0)) return '';
+  // Acima do teto: as maiores ficam, o resto vira uma coluna só.
+  if (itens.length > DASH_GR_MAX) {
+    const porTamanho = itens.slice().sort((a, b) => b.pecas - a.pecas);
+    const ficam = new Set(porTamanho.slice(0, DASH_GR_MAX - 1));
+    const resto = porTamanho.slice(DASH_GR_MAX - 1);
+    const somaResto = resto.reduce((s, x) => s + x.pecas, 0);
+    itens = itens.filter(x => ficam.has(x));
+    itens.push({ os: '+' + resto.length, pecas: somaResto, quadro: '',
+                 resumo: resto.length + ' OS menores, somadas' });
+  }
+  const max = Math.max(...itens.map(x => x.pecas));
   if (!(max > 0)) return '';
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
-  const larg = 100 / vals.length;
-  // 8% de cada lado viram o respiro entre uma coluna e a vizinha.
+  const larg = 100 / itens.length;
   const barra = larg * 0.84, recuo = larg * 0.08;
-  const H = 72;                       // altura útil do desenho, em unidades do viewBox
-  const colunas = cards.map((c, i) => {
-    const v = (c.v && c.v.pecas) || 0;
-    // Piso de 1 unidade: a coluna de valor zero vira um traço visível no eixo.
-    const h = v > 0 ? Math.max(2, (v / max) * H) : 1;
-    const x = i * larg + recuo;
-    const y = H - h;
-    return `<rect x="${x.toFixed(2)}%" y="${y.toFixed(2)}" width="${barra.toFixed(2)}%" height="${h.toFixed(2)}"
-      rx="0.6" class="dash-barra${v > 0 ? '' : ' vazia'}"><title>${esc(c.nome)}: ${fmt(v)} peças</title></rect>`;
+  const H = 72;
+  const colunas = itens.map((x, i) => {
+    const h = x.pecas > 0 ? Math.max(2, (x.pecas / max) * H) : 1;
+    const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' peças'
+      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' peças';
+    return `<rect x="${(i * larg + recuo).toFixed(2)}%" y="${(H - h).toFixed(2)}"
+      width="${barra.toFixed(2)}%" height="${h.toFixed(2)}" rx="0.6"
+      class="dash-barra${x.resumo ? ' resto' : ''}"><title>${esc(dica)}</title></rect>`;
   }).join('');
-  // O rótulo vai embaixo, um por coluna, no centro dela.
-  const rotulos = cards.map((c, i) => {
-    const x = i * larg + larg / 2;
-    const curto = String(c.nome || '').replace(/^Unidade\s+/i, '').replace(/^Recebido em\s+/i, '');
-    return `<span class="dash-barra-rot" style="left:${x.toFixed(2)}%;">${esc(curto)}</span>`;
+  const rotulos = itens.map((x, i) => {
+    const cx = i * larg + larg / 2;
+    return `<span class="dash-barra-rot" style="left:${cx.toFixed(2)}%;">${esc(x.os)}</span>`;
   }).join('');
   return `<div class="dash-gr">
     <svg viewBox="0 0 100 ${H}" preserveAspectRatio="none" class="dash-gr-svg" aria-hidden="true">${colunas}</svg>

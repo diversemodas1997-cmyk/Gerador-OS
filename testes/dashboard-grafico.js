@@ -1,40 +1,52 @@
 /* Rode com:  node testes/dashboard-grafico.js
 
-   O GRÁFICO DE COLUNAS de cada passo do dashboard.
+   O GRÁFICO DE COLUNAS de cada passo do dashboard: UMA COLUNA POR OS.
 
-   Os cartões dizem o número; o gráfico diz a PROPORÇÃO — qual metade do passo
-   está carregada. É desenho, e desenho errado não dá erro: dá uma barra que
-   mente sobre o tamanho da outra, e ninguém confere altura de retângulo com
-   régua. Daí o teste.
+   Ele nasceu agregado — uma barra por quadro — e agregado repetia o que os
+   cartões logo acima já diziam, só que em desenho. Com uma coluna por OS ele
+   passa a dizer o que nenhum número do painel dizia: QUAIS lotes estão ali e de
+   que tamanho é cada um. Um passo com 11.000 peças pode ser uma OS gigante ou
+   trinta pequenas, e a diferença entre as duas coisas é a diferença entre um dia
+   de trabalho e um mês.
+
+   É desenho, e desenho errado não dá erro: dá uma barra que mente sobre o
+   tamanho da outra, e ninguém confere altura de retângulo com régua. Daí o teste.
 
    O que ele guarda:
 
+     · uma coluna por OS, na ordem dos quadros e, dentro de cada um, da maior
+       para a menor — é a leitura que se procura primeiro ("qual é o lote grande
+       que está segurando este campo?");
      · a altura é PROPORCIONAL à maior coluna DO PRÓPRIO passo. A escala é do
        grupo, e não do painel: numa escala única, um passo de 200 peças ao lado
        de outro de 11.000 viraria uma linha rente ao chão;
-     · coluna de valor zero vira um TRAÇO, e não some. O zero é resposta — "aqui
-       não tem nada agora" —, e sumir com ela faria a barra ao lado parecer a
-       única que existe;
-     · sem o que comparar (uma coluna só, ou tudo zerado) não há gráfico. Gráfico
-       que não compara é enfeite ocupando a tela;
-     · o rótulo perde o prefixo que se repete em todas as colunas ("Unidade",
-       "Recebido em") — ele é o que a linha do passo já disse, e repetido em cada
-       coluna só rouba a largura de que o nome precisa. */
+     · um TETO de colunas, com as demais somadas numa só. O cartão Estoque tem
+       264 OS: 264 riscos de um pixel não são um gráfico, são uma textura;
+     · a dica do mouse diz de qual quadro é cada OS — sem isso, num passo de duas
+       unidades, não haveria como saber de que lado está cada barra. */
 const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const i = src.indexOf('function _dashGraficoColunas');
 const j = src.indexOf('\n}', i);
-if (i < 0 || j < 0) { console.error('nao achei _dashGraficoColunas no app.js'); process.exit(1); }
+const iTeto = src.indexOf('const DASH_GR_MAX');
+if (i < 0 || j < 0 || iTeto < 0) { console.error('nao achei o grafico no app.js'); process.exit(1); }
 const desenhar = new Function('esc', 'cards',
-  src.slice(i, j + 2) + '\nreturn _dashGraficoColunas(cards);');
+  src.slice(iTeto, i) + src.slice(i, j + 2) + '\nreturn _dashGraficoColunas(cards);');
+const TETO = Number((src.match(/const DASH_GR_MAX = (\d+)/) || [])[1]);
 
 const esc = (x) => String(x == null ? '' : x)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const g = (cards) => desenhar(esc, cards);
-const card = (nome, pecas) => ({ nome, v: { pecas, os: 1 } });
+// Um quadro do painel: nome e as OS que estao nele agora.
+const quadro = (nome, lista) => ({
+  nome, v: { pecas: lista.reduce((s, x) => s + x.pecas, 0), os: lista.length, lista }
+});
+const os = (n, pecas) => ({ os: n, pecas });
 const alturas = (h) => [...h.matchAll(/height="([\d.]+)"/g)].map(m => Number(m[1]));
+const rotulos = (h) => [...h.matchAll(/dash-barra-rot[^>]*>([^<]*)/g)].map(m => m[1]);
+const dicas = (h) => [...h.matchAll(/<title>([^<]*)<\/title>/g)].map(m => m[1]);
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -44,65 +56,64 @@ const ok = (nome, cond, extra) => {
 
 /* ---------- 1. quando NAO ha grafico ---------- */
 
-ok('uma coluna só não vira gráfico (uma barra sozinha é sempre 100%)',
-   g([card('Produto acabado', 500)]) === '');
-ok('tudo zerado não vira gráfico',
-   g([card('A', 0), card('B', 0)]) === '');
+ok('passo sem OS nenhuma não vira gráfico',
+   g([quadro('A', []), quadro('B', [])]) === '');
 ok('lista vazia não quebra', g([]) === '' && g(null) === '');
+ok('OS de zero peça não inventa gráfico', g([quadro('A', [os('0500', 0)])]) === '');
 
-/* ---------- 2. a altura e proporcional a MAIOR do passo ---------- */
+/* ---------- 2. uma coluna por OS, na ordem dos quadros ---------- */
 
-// 1.944 contra 5.280: a menor tem de ficar em 36,8% da maior.
-let h = g([card('Unidade Descalvado', 1944), card('Unidade São Carlos', 5280)]);
+let h = g([
+  quadro('Unidade Descalvado', [os('0525', 1200), os('0530', 744)]),
+  quadro('Unidade São Carlos', [os('0516', 5280)])
+]);
+ok('três OS em dois quadros dão três colunas',
+   rotulos(h).length === 3, rotulos(h));
+ok('e saem na ordem dos quadros, a maior de cada um primeiro',
+   rotulos(h).join(' ') === '0525 0530 0516', rotulos(h));
+ok('a dica diz de qual quadro é cada OS',
+   dicas(h)[0] === 'OS 0525 · Unidade Descalvado: 1.200 peças'
+   && dicas(h)[2] === 'OS 0516 · Unidade São Carlos: 5.280 peças', dicas(h));
+
+/* ---------- 3. a altura e proporcional a MAIOR do passo ---------- */
+
 let a = alturas(h);
-ok('duas colunas: a maior ocupa a altura toda', a[1] === 72, a);
-ok('e a menor fica na proporção exata (1.944/5.280 = 36,8%)',
-   Math.abs(a[0] / a[1] - 1944 / 5280) < 0.005, { proporcao: a[0] / a[1], esperado: 1944 / 5280 });
-
+ok('a maior OS do passo ocupa a altura toda', a[2] === 72, a);
+ok('e as outras ficam na proporção exata (1.200/5.280)',
+   Math.abs(a[0] / a[2] - 1200 / 5280) < 0.005, { proporcao: a[0] / a[2] });
 // A escala e do PASSO: os mesmos numeros, noutro grupo, dao a mesma figura.
-const h2 = g([card('X', 972), card('Y', 2640)]);
-ok('a escala é do passo, não do painel: 972/2.640 desenha igual a 1.944/5.280',
+const h2 = g([quadro('X', [os('1', 600), os('2', 372)]), quadro('Y', [os('3', 2640)])]);
+ok('a escala é do passo, não do painel: metade dos números desenha igual',
    Math.abs(alturas(h2)[0] - a[0]) < 0.01, { pequeno: alturas(h2), grande: a });
 
-// O ROTULO e so o que esta no eixo: o nome INTEIRO segue na dica do mouse de
-// cada coluna, que e onde ele nao rouba largura de ninguem.
-const rotulos = (h) => [...h.matchAll(/dash-barra-rot[^>]*>([^<]*)/g)].map(m => m[1]);
+/* ---------- 4. o teto de colunas ---------- */
 
-/* ---------- 3. o zero e um traco, e nao um sumico ---------- */
-
-h = g([card('Ida · manhã', 0), card('Ida · tarde', 120),
-       card('Volta · manhã', 0), card('Volta · tarde', 60)]);
-a = alturas(h);
-ok('quatro turnos: quatro colunas, nenhuma sumiu', a.length === 4, a);
-ok('as de zero viram traço rente ao eixo', a[0] === 1 && a[2] === 1, a);
-ok('e saem marcadas como vazias, para a cor dizer que são zero',
-   (h.match(/dash-barra vazia/g) || []).length === 2, h.match(/class="[^"]*"/g));
-ok('a de 60 fica na metade da de 120', Math.abs(a[3] / a[1] - 0.5) < 0.005, a);
-
-/* ---------- 4. os rotulos ---------- */
-
-h = g([card('Unidade Descalvado', 10), card('Unidade São Carlos', 20)]);
-ok('o rótulo perde o "Unidade", que se repete em todas as colunas',
-   rotulos(h).join('|') === 'Descalvado|São Carlos', rotulos(h));
-h = g([card('Recebido em Descalvado', 10), card('Recebido em São Carlos', 20)]);
-ok('e perde o "Recebido em" pelo mesmo motivo',
-   rotulos(h).join('|') === 'Descalvado|São Carlos', rotulos(h));
-ok('mas o nome inteiro segue na dica do mouse da coluna',
-   h.includes('<title>Recebido em Descalvado: 10 peças</title>'),
-   h.match(/<title>[^<]*<\/title>/g));
+const muitas = Array.from({ length: 264 }, (_, k) => os(String(300 + k), 100 + k));
+h = g([quadro('Produto acabado', muitas)]);
+ok('264 OS não viram 264 riscos: o desenho para no teto',
+   rotulos(h).length === TETO, rotulos(h).length);
+ok('as maiores é que aparecem',
+   rotulos(h)[0] === '563' && rotulos(h)[1] === '562', rotulos(h).slice(0, 3));
+ok('e a última coluna diz quantas OS foram somadas nela',
+   rotulos(h)[TETO - 1] === '+' + (264 - (TETO - 1)), rotulos(h)[TETO - 1]);
+ok('a coluna do resto se explica na dica do mouse',
+   /^\d+ OS menores, somadas: [\d.]+ peças$/.test(dicas(h)[TETO - 1]), dicas(h)[TETO - 1]);
+ok('e sai marcada como resto, para a cor não a confundir com um lote',
+   (h.match(/dash-barra resto/g) || []).length === 1, h.match(/class="[^"]*"/g));
+// Exatamente no teto, nada e agrupado.
+h = g([quadro('A', Array.from({ length: TETO }, (_, k) => os('X' + k, 10 + k)))]);
+ok('exatamente no teto, nenhuma OS é agrupada',
+   rotulos(h).length === TETO && !/dash-barra resto/.test(h), rotulos(h).length);
 
 /* ---------- 5. o desenho e honesto com a tela ---------- */
 
-h = g([card('A', 10), card('B', 20)]);
+h = g([quadro('A', [os('0001', 10)]), quadro('B', [os('0002', 20)])]);
 ok('as larguras são em % (o painel encolhe até o celular)',
    /width="\d+\.\d+%"/.test(h) && /x="\d+\.\d+%"/.test(h), h.slice(0, 200));
-ok('cada coluna carrega o número na dica do mouse',
-   h.includes('<title>A: 10 peças</title>') && h.includes('<title>B: 20 peças</title>'),
-   h.match(/<title>[^<]*<\/title>/g));
 // Nome com aspas ou sinal de menor nao pode escapar para dentro do SVG.
-h = g([card('A "B" <C>', 10), card('D', 20)]);
-ok('o nome do cartão sai escapado, e não vira marcação solta',
-   !h.includes('<C>') && h.includes('&quot;B&quot;'), h.match(/<title>[^<]*<\/title>/g));
+h = g([quadro('A "B" <C>', [os('0001', 10)]), quadro('D', [os('0002', 20)])]);
+ok('o nome do quadro sai escapado, e não vira marcação solta',
+   !h.includes('<C>') && h.includes('&quot;B&quot;'), dicas(h));
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);

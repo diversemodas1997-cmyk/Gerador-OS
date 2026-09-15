@@ -187,6 +187,16 @@ aside.sidebar {
   margin-top: 2px;
 }
 
+/* INICIO E NOVA OS ficam soltos no topo, fora de qualquer grupo: nao sao area de
+   nada -- sao a porta de entrada e o gesto de criar. Dentro de um grupo, eles
+   sumiriam junto com ele quando alguem o recolhesse, e o estado do grupo e
+   guardado por maquina: a pessoa perderia os dois botoes que mais usa sem
+   entender por que. A linha embaixo os separa dos grupos, no lugar do rotulo que
+   eles nao tem. */
+.nav-solto {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
 .nav-group {
   padding: 8px 0;
 }
@@ -978,7 +988,9 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 /* Coluna de valor zero e um traco rente ao eixo, e nao coluna nenhuma: o zero e
    resposta -- "aqui nao tem nada agora" --, e some-lo faria a barra ao lado
    parecer a unica que existe. */
-.dash-barra.vazia { fill: var(--line); opacity: 1; }
+/* A coluna que soma as OS menores (o "+N") sai apagada: ela nao e um lote, e um
+   lote so devia ter a cor dos lotes. */
+.dash-barra.resto { fill: var(--ink-3); opacity: .45; }
 /* Os rotulos ficam FORA do SVG: dentro dele o `preserveAspectRatio: none`
    esticaria as letras junto com o desenho, e o texto sairia deformado em telas
    largas. Aqui cada um e posicionado pelo centro da sua coluna. */

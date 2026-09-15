@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-15d">
+<link rel="stylesheet" href="styles.css?v=2026-09-15e">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -93,24 +93,50 @@
          rolava junto, e descer ate "Configuracoes" levava embora justamente o
          que diz QUEM esta logado e SE esta sincronizado. -->
     <div class="sidebar-nav">
-    <div class="nav-group" data-group="principal">
-      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Principal</button>
-      <div class="nav-items">
+    <!-- INICIO E NOVA OS FICAM SOLTOS NO TOPO (15/09/2026, Junior). Nao sao
+         area de nada: sao a porta de entrada e o gesto de criar. Postos dentro
+         de um grupo, some com ele quando alguem recolhe a secao -- e o grupo
+         fica recolhido por maquina, entao a pessoa perderia justamente os dois
+         botoes que mais usa sem entender por que. -->
+    <div class="nav-solto">
         <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
+    </div>
+
+    <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
+         seção "Principal" que era, na verdade, duas coisas empilhadas: as telas
+         do dia a dia de quem emite OS e compra pano, e os CAMPOS do fluxo, que
+         são o chão de fábrica. Quinze opções seguidas, sem divisão, e quem
+         procurava "Costurando · São Carlos" passava por "Compra" no caminho.
+
+         Agora OPERAÇÕES tem só o caminho da peça, na mesma ordem do dashboard
+         (as duas unidades juntas em cada passo, e não intercaladas como antes),
+         e GERAL fica com o que não é nem fluxo nem cadastro. -->
+    <div class="nav-group" data-group="geral">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Geral</button>
+      <div class="nav-items">
         <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
+        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
+      </div>
+    </div>
+
+    <!-- OPERAÇÕES: o caminho da peça, campo a campo, na ordem do chão. As duas
+         unidades vêm juntas em cada passo — é assim que a pergunta se faz
+         ("quanto tem em corte?"), e é assim que o dashboard do Início mostra. -->
+    <div class="nav-group" data-group="operacoes">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Operações</button>
+      <div class="nav-items">
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
-        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
-        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · IDA</a>
         <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
+        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
         <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
+        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · IDA</a>
         <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · VOLTA</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
         <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Expedição</a>
         <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="operacoes"></span>Operações</a>
-        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
       </div>
     </div>
 
@@ -1474,6 +1500,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-15o"></script>
+<script src="app.js?v=2026-09-15p"></script>
 </body>
 </html>
