@@ -24252,11 +24252,17 @@ function _renderAvisoGrupoListaOS(mostradas) {
    mostrar "Parado (3)" e alguém ir ver o que aconteceu. Não nasce do checklist:
    só existe carimbado.
 
-   E "ESTOQUE" É O FIM. Houve um "Finalizado" à parte por um dia (15/09/2026), e
-   ele saiu na mesma tarde: dois jeitos de dizer que a OS acabou — a peça no
-   estoque e um carimbo dizendo que acabou — é a porta para a lista dizer uma
-   coisa e a prateleira outra. Quem carimba a data de fim da produção agora é
-   "Estoque" (ver STATUS_FIM e _dataFinalizacaoOS).
+   E "ENSACADO" É O FIM DO CORTE. Houve um "Finalizado" à parte por um dia
+   (15/09/2026), e ele saiu na mesma tarde: dois jeitos de dizer que algo acabou
+   — a etapa e um carimbo dizendo que acabou — é a porta para a lista dizer uma
+   coisa e a prateleira outra.
+
+   A data de fim sai do ENSAQUE (ver STATUS_FIM e _dataFinalizacaoOS), e não do
+   Estoque, porque ela responde por uma OPERAÇÃO e não pela OS (15/09/2026,
+   Junior: "essa data de finalização é para informar que a operação de corte foi
+   finalizada"). Ensacar é o último ato do corte; dali em diante a peça é da
+   costura. Marcar o fim no Estoque juntaria numa data só o corte e a costura, e
+   ninguém mais saberia quanto tempo cada um levou.
 
    QUEM MUDA: o admin e o login do ENFESTO/CORTE (área `os-status`). Para todo o
    resto o status aparece igual, como etiqueta, sem poder mexer.
@@ -24802,10 +24808,10 @@ async function _estoqueSeguirStatusOS(o, alvo) {
    Três fontes, nesta ordem, e todas são a mesma pergunta respondida por quem
    sabe mais:
 
-   1. `finalizadaEm` — gravado por mudarStatusOS quando alguém CARIMBA o fim da
-      fila (hoje "Estoque", ver STATUS_FIM).
+   1. `finalizadaEm` — gravado por mudarStatusOS quando alguém CARIMBA o fim do
+      corte (hoje "Ensacado", ver STATUS_FIM).
    2. a etapa do checklist que acende esse status. Desde 15/09/2026 o status
-      nasce da folha: marcar "Estoque" no checklist termina a OS sem ninguém
+      nasce da folha: marcar o ensaque no checklist fecha o corte sem ninguém
       carimbar nada, e o instante disso está gravado em `etapasSeq` — que é a
       data real, não uma reconstrução.
    3. `statusOSEm` — o dia do carimbo, para as OS marcadas ANTES de
@@ -24856,17 +24862,24 @@ function _dataHoraFinalizacaoOS(o) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// A dica do mouse muda conforme a data é o instante REAL da finalização ou o
-// do carimbo: as OS marcadas antes de `finalizadaEm` existir (as 200 de
-// 26/08/2026) só sabem quando foram carimbadas, e dizer o contrário seria
-// inventar hora de produção. A OS que terminou pela FOLHA (a etapa Estoque
-// marcada no checklist) sabe a hora exata — ela veio de `etapasSeq`.
+/* A dica do mouse muda conforme a data é o instante REAL do fim do corte ou o
+   do carimbo: as OS marcadas antes de `finalizadaEm` existir (as 200 de
+   26/08/2026) só sabem quando foram carimbadas, e dizer o contrário seria
+   inventar hora de produção. A OS que ensacou pela FOLHA (a caixa do ensaque
+   marcada no checklist) sabe a hora exata — ela veio de `etapasSeq`.
+
+   O QUE ACABA É O CORTE, E NÃO A OS (15/09/2026, Junior: "essa data de
+   finalização é para informar que a operação de corte foi finalizada"). O texto
+   dizia "a OS foi finalizada", e isso fazia a folha mentir: a OS ensacada segue
+   para a costura, volta e só então vai para o estoque. Quem lia a folha na
+   expedição via "finalizada" numa peça que ainda tinha metade do caminho pela
+   frente. */
 function _tituloFinalizacaoOS(o) {
-  if (o && o.finalizadaEm) return 'Dia e hora em que a OS foi finalizada';
+  if (o && o.finalizadaEm) return 'Dia e hora em que o corte foi finalizado (OS ensacada)';
   const carimbada = _statusOS(o) === String((o && o.statusOS) || '').trim();
   return carimbada
-    ? 'Dia e hora em que a OS foi marcada como finalizada'
-    : `Dia e hora em que a etapa ${(STATUS_OS.find(s => s.k === STATUS_FIM) || {}).rotulo === 'Ensacado' ? 'Ensaque' : 'do fim'} foi marcada no checklist da folha`;
+    ? 'Dia e hora em que a OS foi marcada como Ensacado — o fim do corte'
+    : `Dia e hora em que a caixa ${(STATUS_OS.find(s => s.k === STATUS_FIM) || {}).rotulo === 'Ensacado' ? 'do Ensaque' : 'do fim do corte'} foi marcada no checklist da folha`;
 }
 
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia

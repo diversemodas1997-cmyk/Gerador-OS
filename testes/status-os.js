@@ -9,10 +9,12 @@
    Retirando fio, Parado, Estoque. Só "Parado" fica fora da fila: o checklist
    diz a etapa e ele diz que ela travou ali.
 
-   "ESTOQUE" É O FIM. O "Finalizado" à parte existiu por uma tarde e saiu: dois
-   jeitos de dizer que a OS acabou — a peça no estoque e um carimbo dizendo que
+   "ENSACADO" É O FIM DO CORTE. O "Finalizado" à parte existiu por uma tarde e
+   saiu: dois jeitos de dizer que algo acabou — a etapa e um carimbo dizendo que
    acabou — é a porta para a lista dizer uma coisa e a prateleira outra. Quem
-   carimba `finalizadaEm` agora é "Estoque" (STATUS_FIM).
+   carimba `finalizadaEm` é "Ensacado" (STATUS_FIM), porque a data responde por
+   uma OPERAÇÃO e não pela OS: ensacar é o último ato do corte, e dali em diante
+   a peça é da costura.
 
    E o status passou a NASCER DO CHECKLIST, com carimbo à mão por cima que vale
    até a próxima etapa ser marcada. É o miolo novo deste teste: a derivação, a
@@ -434,13 +436,22 @@ console.log('-- o que fica gravado --');
                                 statusOSEm: instante.toISOString() }) === '');
   ok('44. data gravada que nao e data nao vira hora inventada',
      A._dataHoraFinalizacaoOS({ os: '1', statusOS: 'estoque', finalizadaEm: 'nao e data' }) === '');
+  /* A DICA FALA DE CORTE, E NAO DE OS (15/09/2026). Junior: "essa data de
+     finalizacao e para informar que a operacao de corte foi finalizada". A OS
+     ensacada segue para a costura — chamar aquilo de "OS finalizada" fazia a
+     folha mentir para quem a pegava na expedicao. */
   ok('45. a dica separa a hora REAL da hora do carimbo em lote',
-     A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que a OS foi finalizada'
+     A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que o corte foi finalizado (OS ensacada)'
      && A._tituloFinalizacaoOS({ statusOS: 'estoque', statusOSEm: instante.toISOString() })
-        === 'Dia e hora em que a OS foi marcada como finalizada');
+        === 'Dia e hora em que a OS foi marcada como Ensacado — o fim do corte',
+     A._tituloFinalizacaoOS(finalizada));
+  ok('45e. e nenhuma das dicas diz que a OS inteira terminou',
+     ![A._tituloFinalizacaoOS(finalizada),
+       A._tituloFinalizacaoOS({ statusOS: 'estoque', statusOSEm: instante.toISOString() })]
+       .some(t => /OS foi finalizada|OS terminou/.test(t)));
 
-  // A OS QUE TERMINOU PELA FOLHA. Com o status nascendo do checklist, marcar
-  // "Estoque" na folha termina a OS sem ninguem carimbar nada — e ai nao ha
+  // O CORTE QUE TERMINOU PELA FOLHA. Com o status nascendo do checklist, marcar
+  // o ensaque na folha fecha o corte sem ninguem carimbar nada — e ai nao ha
   // `finalizadaEm` nem `statusOSEm` para a coluna Data ler. A data sai de
   // `etapasSeq`, que e o instante em que a caixa foi marcada: e a hora real, e
   // nao uma reconstrucao.
@@ -457,7 +468,7 @@ console.log('-- o que fica gravado --');
      A._dataHoraFinalizacaoOS(terminouNaFolha));
   ok('45c. a dica diz que a hora veio da folha, e nao de um carimbo',
      A._tituloFinalizacaoOS(terminouNaFolha)
-       === 'Dia e hora em que a etapa Ensaque foi marcada no checklist da folha',
+       === 'Dia e hora em que a caixa do Ensaque foi marcada no checklist da folha',
      A._tituloFinalizacaoOS(terminouNaFolha));
   // Desmarcar a caixa tira a OS do fim: a data some junto, pelo mesmo motivo
   // que apagar o carimbo apaga — OS que voltou a andar nao terminou.

@@ -951,15 +951,19 @@
           <select id="filtro-cor-os" title="Mostrar só as OS de uma cor" onchange="renderListaOS()"></select>
           <select id="filtro-grade-os" title="Mostrar só as OS de uma grade" onchange="renderListaOS()"></select>
           <select id="filtro-sku-os" title="Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos" onchange="renderListaOS()"></select>
-          <!-- O DIA EM QUE A OS TERMINOU. Uma data só: a pergunta do chão é
-               "o que foi finalizado neste dia?". Só entram OS finalizadas —
-               quem não terminou não tem dia de término. Desde 15/09/2026
-               terminar é chegar ao status ESTOQUE, que é o fim da fila: a
-               data sai do carimbo ou do dia em que a etapa Estoque foi
-               marcada no checklist da folha. -->
+          <!-- O DIA EM QUE O CORTE TERMINOU. Uma data só: a pergunta do chão é
+               "o que saiu do corte neste dia?". Só entram OS que chegaram ao
+               ENSACADO — quem não ensacou não tem dia de término.
+
+               ENSACADO, E NÃO ESTOQUE (15/09/2026, Junior: "essa data de
+               finalização é para informar que a operação de corte foi
+               finalizada"). O que acaba aqui é o CORTE, não a OS: ensacada, a
+               peça segue para a costura, volta, vai para o estoque. Este rótulo
+               dizia "Finalizada em" e a dica falava em Estoque — as duas coisas
+               apontavam para o fim errado da fila. -->
           <span class="lista-os-datas"
-                title="Mostrar só as OS que chegaram ao Estoque nesse dia — o fim da produção. Vale junto com a busca e com os outros filtros.">
-            <label for="filtro-fim">Finalizada em</label>
+                title="Mostrar só as OS cujo corte foi finalizado nesse dia — o dia em que foram ensacadas. Vale junto com a busca e com os outros filtros.">
+            <label for="filtro-fim">Corte feito em</label>
             <input type="date" id="filtro-fim" onchange="renderListaOS()">
           </span>
           <button class="btn small ghost" onclick="limparFiltrosListaOS()" title="Voltar a mostrar todas as OS">Limpar</button>
@@ -1531,6 +1535,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-15v"></script>
+<script src="app.js?v=2026-09-15w"></script>
 </body>
 </html>
