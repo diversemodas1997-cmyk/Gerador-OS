@@ -767,10 +767,19 @@ console.log('-- o que fica gravado --');
      A regra que sobra — e que este teste guarda — e a que importa: os dois
      lugares montam pela MESMA _statusCelulaOS. Duas telas desenhando o status
      por caminhos diferentes e como uma ganha um estado que a outra nao tem.
-     Se aparecer um terceiro uso, o teste cai e a conversa acontece antes. */
+     Se aparecer um uso novo, o teste cai e a conversa acontece antes.
+
+     15/09/2026: entrou o TERCEIRO lugar — a lista de OS de cada campo do
+     fluxo (Estoque de corte, Costurando, Em transito...), que ganhou a mesma
+     coluna de acoes da lista de OS Salvas. A regra segue de pe, que e o que
+     este teste guarda: os tres montam pela MESMA _statusCelulaOS. */
   const usos = (src.match(/_statusCelulaOS\(/g) || []).length;
-  ok('31. _statusCelulaOS e chamada em dois lugares (a definicao + as duas)',
-     usos === 3, String(usos));
+  ok('31. _statusCelulaOS e chamada em tres lugares (a definicao + os tres)',
+     usos === 4, String(usos));
+  const campo = src.slice(src.indexOf('function renderFaseOsLista'));
+  ok('31b. a terceira esta na coluna col-actions da lista de um campo do fluxo',
+     /col-actions row-actions">\s*\$\{_statusCelulaOS\(o\)\}/.test(campo.slice(0, 4000)),
+     campo.slice(campo.indexOf('col-actions'), campo.indexOf('col-actions') + 120));
   const lista = src.slice(src.indexOf('function renderListaOS'));
   ok('32. uma chamada esta na coluna col-actions da lista',
      /col-actions row-actions">\s*\$\{_statusCelulaOS\(o\)\}/.test(lista),

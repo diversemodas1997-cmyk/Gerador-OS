@@ -7737,7 +7737,7 @@ const FASES_ESTOQUE = [
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: /corte/i, label: 'Corte' } },
   // Enquanto a OS não foi recebida em São Carlos, costurar é costurar aqui.
-  { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true,
+  { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => !_osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
   // A viagem de Descalvado para São Carlos. Não entra por etapa do checklist: é a
@@ -7748,7 +7748,7 @@ const FASES_ESTOQUE = [
     entrada: { tipo: 'carga', perna: 'ida', label: 'alocada numa expedição de ida' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
     entrada: { tipo: 'etapa', re: ETAPA_SC_RE, label: ETAPA_SC_NOME } },
-  { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true,
+  { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => _osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /costura/i, label: 'Costura' } },
   // E a de volta. Mesma regra, do outro lado: sai de um campo de São Carlos e a
@@ -7851,7 +7851,18 @@ function _transitoDaOS(o) {
 //   saida    = OSs que já entraram na PRÓXIMA fase
 //   contagem = líquido dos lançamentos manuais da fase (STATE[movKey])
 //   estoque  = entrada − saida + contagem
-function calcularSaldosFase(idx) {
+// `opts` recorta a mesma conta sem duplicá-la (15/09/2026): os campos de
+// costura passaram a mostrar uma tabela POR TIPO DE PRODUTO, e cada uma é
+// esta conta com um filtro de OS por cima.
+//   filtroOS  = quais OS entram (padrão: todas)
+//   semMov    = deixa os lançamentos manuais de fora. Eles não têm tipo de
+//               produto — somá-los em cada tabela contaria o mesmo ajuste
+//               uma vez por tipo, e o campo passaria a ter mais peça do que
+//               tem. Nas tabelas por tipo eles saem daqui e ganham a sua.
+//   soMov     = o contrário: SÓ os lançamentos manuais, que é a tabela
+//               deles.
+function calcularSaldosFase(idx, opts) {
+  const { filtroOS, semMov, soMov } = (opts || {});
   const fase = FASES_ESTOQUE[idx];
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const map = new Map();
@@ -7863,7 +7874,8 @@ function calcularSaldosFase(idx) {
     if (!cur.corNome && cNome) cur.corNome = cNome;
     return cur;
   };
-  (STATE.ordens || []).forEach(o => {
+  (soMov ? [] : (STATE.ordens || [])).forEach(o => {
+    if (filtroOS && !filtroOS(o)) return;
     const entrou = _faseEntrouOS(o, fase);
     // Modelo sobreposto: a OS "saiu" desta fase se o volume está em OUTRA fase
     // agora (a última etapa marcada não é a desta fase).
@@ -7899,7 +7911,7 @@ function calcularSaldosFase(idx) {
       if (listarOS && numOS) cur.osNums.add(numOS);
     });
   });
-  (STATE[fase.movKey] || []).forEach(m => {
+  ((semMov ? [] : STATE[fase.movKey]) || []).forEach(m => {
     const cur = pegar(m.tecidoNome || '', m.corNome || '');
     const q = Number(m.qtd) || 0;
     cur.contagem += (m.tipo === 'entrada' ? q : -q);
@@ -8267,24 +8279,6 @@ function renderFasePainel(faseIdx) {
   const ordOS = arr => (arr || []).slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const osCell = arr => `<td style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${(arr && arr.length) ? ordOS(arr).map(esc).join(', ') : '—'}</td>`;
 
-  const { detalhe } = calcularSaldosFase(faseIdx);
-  const grupos = new Map();
-  detalhe.forEach(c => {
-    const k = _normNome(c.tecidoNome);
-    const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [], osSet: new Set() };
-    g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
-    (c.osList || []).forEach(n => g.osSet.add(n));
-    g.linhas.push(c); grupos.set(k, g);
-  });
-  const gruposArr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
-  gruposArr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
-  const linhas = gruposArr.map(g => {
-    const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>${cellsVals(c, false)}${osCell(c.osList)}</tr>`).join('');
-    const sub = g.linhas.length > 1
-      ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}${osCell(Array.from(g.osSet))}</tr>`
-      : '';
-    return cores + sub;
-  }).join('');
   const entradaDesc = `OS com a etapa <b>${esc(fase.entrada.label)}</b> marcada`;
   const saidaDesc = 'OS cujo volume já foi para outro campo (uma etapa posterior virou a última marcada)';
   // O lote parcial muda a conta de dois campos — o que despacha e o da viagem.
@@ -8297,19 +8291,44 @@ function renderFasePainel(faseIdx) {
     : (_ehTransito
       ? ' <b>Em trânsito:</b> a OS entra aqui na proporção dos pacotes alocados nesta perna, e sai quando a caixa de chegada é marcada no checklist.'
       : '');
-  const card = `
+
+  /* UMA TABELA DE SALDO. `titulo` é o cabeçalho, `detalhe` são as linhas
+     (tecido + cor) e `acoes` decide se os botões de lançamento manual vão
+     junto — eles pertencem ao campo inteiro, não a um tipo de produto, então
+     só aparecem na primeira tabela. */
+  const cardSaldo = (titulo, detalhe, acoes, nota) => {
+    const grupos = new Map();
+    (detalhe || []).forEach(c => {
+      const k = _normNome(c.tecidoNome);
+      const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [], osSet: new Set() };
+      g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+      (c.osList || []).forEach(n => g.osSet.add(n));
+      g.linhas.push(c); grupos.set(k, g);
+    });
+    const arr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
+    arr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
+    const linhas = arr.map(g => {
+      const cores = g.linhas.map(c => `<tr><td>${esc(g.tecidoNome)} · <strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>${cellsVals(c, false)}${osCell(c.osList)}</tr>`).join('');
+      const sub = g.linhas.length > 1
+        ? `<tr style="background:#eef6f0;"><td style="text-align:right;font-weight:700;color:var(--ink-2);">Subtotal ${esc(g.tecidoNome)}</td>${cellsVals(g, true)}${osCell(Array.from(g.osSet))}</tr>`
+        : '';
+      return cores + sub;
+    }).join('');
+    return {
+      vazio: !arr.length,
+      html: `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-        <h2 style="margin:0;font-size:14px;">${esc(fase.titulo)} — por tecido + cor</h2>
-        <div class="admin-only" style="display:flex;gap:6px;">
+        <h2 style="margin:0;font-size:14px;">${titulo}</h2>
+        ${acoes ? `<div class="admin-only" style="display:flex;gap:6px;">
           <button class="btn primary" onclick="abrirMovFase('${fase.id}','entrada')">+ Entrada</button>
           <button class="btn" onclick="abrirMovFase('${fase.id}','saida')">− Saída / ajuste</button>
-        </div>
+        </div>` : ''}
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
+        ${nota || `Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
         ${mostrarCont ? '<b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).' : 'e <b>Estoque</b> (= Entradas − Saídas, ajustado por lançamentos manuais).'}
-        <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).${notaParcial}
+        <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).${notaParcial}`}
       </div>
       <table class="table">
         <thead><tr>
@@ -8320,57 +8339,103 @@ function renderFasePainel(faseIdx) {
           <th style="text-align:right;">Estoque</th>
           <th>OS</th>
         </tr></thead>
-        <tbody>${gruposArr.length ? linhas : `<tr><td colspan="${mostrarCont ? 6 : 5}" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+        <tbody>${arr.length ? linhas : `<tr><td colspan="${mostrarCont ? 6 : 5}" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
       </table>
-    </div>`;
-
-  // OSs atualmente NESTA fase. Com lote parcial, a OS que despachou parte do lote
-  // aparece nas DUAS: no campo de origem com o que ficou e no campo da viagem
-  // com o que embarcou.
-  const pacotes = (STATE.ordens || []).map(o => {
-    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
-    const fAtual = faseAtualOS(o);
-    const tr = _transitoDaOS(o);
-    return {
-      osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '', data: o.data || '',
-      total, faseIdx: fAtual,
-      transitoIdx: tr ? tr.faseIdx : -1,
-      viajando: tr ? Math.round(total * tr.fracao) : 0,
-      parcial: !!(tr && tr.parcial)
+    </div>`
     };
-  }).filter(p => p.total > 0 && (p.faseIdx === faseIdx
-      || (p.transitoIdx === faseIdx && p.viajando > 0)))
-    .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
-  // Quantas peças da OS contam NESTA fase: no campo da viagem, só o que embarcou;
-  // no campo de origem, o lote menos o que embarcou.
-  const pecasNaFase = p => {
-    if (p.transitoIdx === faseIdx) return p.viajando;
-    if (p.faseIdx === faseIdx && p.viajando > 0) return Math.max(0, p.total - p.viajando);
-    return p.total;
   };
-  const seloParcial = p => {
-    if (!(p.viajando > 0) || !p.parcial) return '';
-    return p.transitoIdx === faseIdx
-      ? ' <span class="badge" style="background:#e6eefb;">parcial · em viagem</span>'
-      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.viajando)} pç em trânsito</span>`;
+
+  /* AS TABELAS DE SALDO, UMA POR TIPO DE PRODUTO (15/09/2026, Junior).
+
+     Uma tabela só, com todos os tecidos e cores do campo misturados, responde
+     "quanto tem" e não responde "de quê". Na costura essa é a pergunta: o posto
+     que monta camiseta lisa não divide fila com o que monta moletom tricolor, e
+     ver os dois somados na mesma linha de tecido não ajuda ninguém a despachar.
+
+     O TIPO é o mesmo do Ranking de produção — o SKU da GRADE cadastrada
+     (CM.LISA, BM.TRI, CO.JAGUAR…), que é como a casa nomeia o produto desde
+     sempre (ver _skuDaGrade). Sai da grade, e não do texto guardado na OS: a OS
+     guarda o nome que a grade tinha no dia em que foi emitida, e grade renomeada
+     faria o mesmo produto abrir duas tabelas.
+
+     Os LANÇAMENTOS MANUAIS ficam na sua própria tabela, no fim: eles são por
+     tecido e cor, sem OS e sem tipo de produto. Somá-los dentro de cada tipo
+     contaria o mesmo ajuste uma vez por tabela. */
+  const tiposDoCampo = () => {
+    const vistos = new Map();
+    (STATE.ordens || []).forEach(o => {
+      if (faseAtualOS(o) !== faseIdx && !_faseEntrouOS(o, fase)) return;
+      const t = _skuDaOS(o) || '';
+      if (!vistos.has(t)) vistos.set(t, t);
+    });
+    return Array.from(vistos.keys()).sort((a, b) =>
+      (a ? 0 : 1) - (b ? 0 : 1) || String(a).localeCompare(String(b), 'pt-BR'));
   };
-  const pacotesHtml = pacotes.length ? `
+  const cardsSaldo = [];
+  let temSaldo = false;
+  if (fase.porTipoDeProduto) {
+    tiposDoCampo().forEach(tipo => {
+      const { detalhe } = calcularSaldosFase(faseIdx, {
+        semMov: true, filtroOS: o => (_skuDaOS(o) || '') === tipo
+      });
+      const rot = tipo ? esc(tipo) : 'Sem tipo de produto';
+      // Os botões de lançamento manual vão na PRIMEIRA tabela que de fato
+      // aparece, e não na primeira da lista de tipos: o tipo cuja tabela saiu
+      // vazia é pulado, e amarrar os botões a ele os faria sumir da tela.
+      const c = cardSaldo(`${esc(fase.titulo)} · <span style="font-family:'IBM Plex Mono',monospace;">${rot}</span> — por tecido + cor`,
+        detalhe, !cardsSaldo.length);
+      if (!c.vazio) cardsSaldo.push(c.html);
+    });
+    const { detalhe: detMov } = calcularSaldosFase(faseIdx, { soMov: true });
+    if (detMov.some(c => c.contagem)) {
+      cardsSaldo.push(cardSaldo(`${esc(fase.titulo)} · lançamentos manuais — por tecido + cor`,
+        detMov, !cardsSaldo.length,
+        'Ajustes lançados à mão (contagem física). Ficam fora das tabelas por tipo de produto porque são por <b>tecido e cor</b>, sem OS e sem tipo — somá-los em cada uma contaria o mesmo ajuste várias vezes.').html);
+    }
+    temSaldo = cardsSaldo.length > 0;
+    // Campo sem nada: uma tabela vazia, só para os botões de lançamento terem
+    // onde morar.
+    if (!cardsSaldo.length) cardsSaldo.push(cardSaldo(`${esc(fase.titulo)} — por tecido + cor`, [], true).html);
+  } else {
+    const c = cardSaldo(`${esc(fase.titulo)} — por tecido + cor`,
+      calcularSaldosFase(faseIdx).detalhe, true);
+    temSaldo = !c.vazio;
+    cardsSaldo.push(c.html);
+  }
+  const card = cardsSaldo.join('');
+
+  // OSs atualmente NESTA fase, com busca e filtros. A lista é a mesma coisa que
+  // a lista de OS Salvas — as mesmas linhas, os mesmos botões de ação, a mesma
+  // busca — só que recortada pelo campo em que a OS está agora. Quem a desenha é
+  // renderFaseOsLista, fora daqui: assim digitar na busca reescreve SÓ o corpo da
+  // tabela, e o cursor não salta do campo a cada tecla.
+  const listaBase = _faseListaOS(faseIdx);
+  const f = _faseFiltroLido(fase.id);
+  const selHtml = (id, val, titulo) =>
+    `<select id="${id}" title="${esc(titulo)}" onchange="renderFaseOsLista('${fase.id}')">`
+    + (val ? `<option value="${esc(val)}" selected>${esc(val)}</option>` : '') + `</select>`;
+  const pacotesHtml = listaBase.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa expedição, a OS conta nas duas fases: as peças alocadas, em <b>Em trânsito</b>; as que ficaram, no campo de origem (o corte ou a costura da unidade em que a OS está).</div>
+      <div class="lista-os-filtros">
+        <input type="search" id="fase-busca-${fase.id}" value="${esc(f.busca)}"
+               placeholder="Buscar: número, código, modelo, coleção, cor, grade ou SKU…"
+               autocomplete="off" spellcheck="false"
+               title="Busca em tudo o que a linha mostra, mais o SKU. Vários termos valem juntos: &quot;preto tricolor&quot;."
+               oninput="renderFaseOsLista('${fase.id}')">
+        <span id="fase-conta-${fase.id}" class="lista-os-conta"></span>
+        ${selHtml('fase-status-' + fase.id, f.status, 'Mostrar só as OS de um status')}
+        ${selHtml('fase-cor-' + fase.id, f.cor, 'Mostrar só as OS de uma cor')}
+        ${selHtml('fase-grade-' + fase.id, f.grade, 'Mostrar só as OS de uma grade')}
+        ${selHtml('fase-sku-' + fase.id, f.sku, 'Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos')}
+        <button class="btn small ghost" onclick="limparFiltrosFase('${fase.id}')" title="Voltar a mostrar todas as OS deste campo">Limpar</button>
+      </div>
       <table class="table">
-        <thead><tr><th class="col-actions">Ação</th><th>OS</th><th>Modelo</th><th>Data</th><th style="text-align:right;">Peças</th></tr></thead>
-        <tbody>
-          ${pacotes.map(p => `
-            <tr>
-      <td class="col-actions row-actions"><button onclick="verOS('${esc(p.osId)}')">ver OS</button></td>
-              <td><strong>${esc(p.osNumero) || '—'}</strong></td>
-              <td>${esc(p.modelo) || '—'}${seloParcial(p)}</td>
-              <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecasNaFase(p))} pç</td>
-
-            </tr>`).join('')}
-        </tbody>
+        <thead><tr>
+          <th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Cor</th><th>Grade</th><th>Data</th><th style="text-align:right;">Peças</th>
+        </tr></thead>
+        <tbody id="fase-tbl-${fase.id}"></tbody>
       </table>
     </div>` : '';
 
@@ -8405,19 +8470,183 @@ function renderFasePainel(faseIdx) {
   // trânsito trazem `vazioMsg` própria — não entram por etapa do checklist, e
   // repetir a frase da etapa ali diria o contrário do que acontece.
   if (fase.soOS) {
-    cont.innerHTML = pacotes.length
+    cont.innerHTML = listaBase.length
       ? pacotesHtml
       : `<div class="info-box">${fase.vazioMsg || `Nenhuma OS em ${esc(fase.titulo)} agora. A OS entra aqui sozinha quando a etapa <b>${esc(fase.entrada.label)}</b> é a última marcada no checklist.`}</div>`;
+    renderFaseOsLista(fase.id);
     return;
   }
 
-  const vazio = !gruposArr.length && !movs.length && !pacotes.length;
+  const vazio = !temSaldo && !movs.length && !listaBase.length;
   cont.innerHTML = `
     ${vazio ? `<div class="info-box">Sem peças nesta fase ainda. O volume entra sozinho conforme a etapa correspondente é marcada no checklist da OS. Use os botões para contagem física e ajustes manuais.</div>` : ''}
-    ${card}
     ${pacotesHtml}
+    ${card}
     ${movHtml}
   `;
+  renderFaseOsLista(fase.id);
+}
+
+/* ====== A LISTA DE OS DE UM CAMPO: as mesmas linhas das OS Salvas ======
+
+   Cada campo do fluxo já dizia QUANTO tem (o saldo por tecido e cor) e QUAIS OS
+   estão nele. O que faltava era poder trabalhar nessa lista: achar uma OS pelo
+   número, ver só as paradas, carimbar o status sem sair da tela. Isso tudo já
+   existia pronto na lista de OS Salvas — a coluna de ações, a busca, os filtros
+   com contagem —, e aqui é a MESMA coisa, recortada pelo campo em que a OS está
+   agora. Reaproveitar (_statusCelulaOS, abrirMenuAcoesOS, _filtroListaOS,
+   _textoBuscaOS) é o que garante que os dois lugares digam a mesma coisa.
+
+   POR QUE O CORPO DA TABELA SE DESENHA SOZINHO, fora de renderFasePainel: o
+   painel inteiro é reescrito a cada render, e reescrever a barra de filtros
+   junto tiraria o cursor do campo de busca a cada tecla digitada. Aqui só o
+   <tbody>, a contagem e as opções dos seletores são refeitos — o campo em que a
+   pessoa está digitando não é tocado. É o mesmo desenho da lista de OS Salvas,
+   onde a barra é HTML fixo e só o corpo muda. */
+
+// Quem está no campo agora e quantas peças dela contam AQUI. É a mesma conta do
+// saldo: no campo da viagem entra só o que embarcou; no campo de origem, o lote
+// menos o que embarcou.
+function _faseListaOS(faseIdx) {
+  return (STATE.ordens || []).map(o => {
+    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    const fAtual = faseAtualOS(o);
+    const tr = _transitoDaOS(o);
+    const viajando = tr ? Math.round(total * tr.fracao) : 0;
+    const transitoIdx = tr ? tr.faseIdx : -1;
+    const pecas = (transitoIdx === faseIdx) ? viajando
+      : ((fAtual === faseIdx && viajando > 0) ? Math.max(0, total - viajando) : total);
+    return {
+      os: o, osId: o.id, osNumero: o.os || '', modelo: o.modeloNome || '',
+      data: o.data || '', total, faseIdx: fAtual, transitoIdx, viajando,
+      parcial: !!(tr && tr.parcial), pecas
+    };
+  }).filter(p => p.total > 0 && (p.faseIdx === faseIdx
+      || (p.transitoIdx === faseIdx && p.viajando > 0)))
+    .sort((a, b) => String(b.osNumero).localeCompare(String(a.osNumero), undefined, { numeric: true }));
+}
+
+/* O QUE ESTÁ FILTRADO EM CADA CAMPO, guardado fora da tela.
+
+   O painel se redesenha sozinho quando chega dado novo do servidor, e sem esta
+   memória o filtro que a pessoa acabou de pôr se perderia no meio da consulta —
+   a lista voltaria a mostrar tudo sem ninguém ter pedido. Guardado por campo:
+   cada um tem a sua pergunta, e sair do corte e voltar não deve trazer o filtro
+   da costura junto. */
+const _faseFiltros = {};
+
+function _faseFiltroLido(faseId) {
+  const salvo = _faseFiltros[faseId] || {};
+  const ler = (pre, k) => {
+    const el = document.getElementById(pre + faseId);
+    return el ? (el.value || '') : (salvo[k] || '');
+  };
+  const f = {
+    busca: ler('fase-busca-', 'busca'),
+    status: ler('fase-status-', 'status'),
+    cor: ler('fase-cor-', 'cor'),
+    grade: ler('fase-grade-', 'grade'),
+    sku: ler('fase-sku-', 'sku')
+  };
+  _faseFiltros[faseId] = f;
+  return f;
+}
+
+// Volta o campo ao estado de "tudo à vista". Existe pelo mesmo motivo da lista
+// de OS Salvas: os filtros somados escondem a lista inteira com facilidade, e
+// desfazer um por um é o caminho mais curto para alguém achar que a OS sumiu.
+function limparFiltrosFase(faseId) {
+  ['fase-busca-', 'fase-status-', 'fase-cor-', 'fase-grade-', 'fase-sku-']
+    .forEach(pre => { const el = document.getElementById(pre + faseId); if (el) el.value = ''; });
+  _faseFiltros[faseId] = { busca: '', status: '', cor: '', grade: '', sku: '' };
+  renderFaseOsLista(faseId);
+}
+
+// A conta ao lado da busca: "32 de 228 OS" quando há filtro, "228 OS" quando
+// não há. É esse "de 228" que impede alguém de achar que as outras sumiram do
+// campo por causa de um filtro ligado numa consulta anterior.
+function _faseContaOS(faseId, mostradas, total) {
+  const el = document.getElementById('fase-conta-' + faseId);
+  if (!el) return;
+  const n = x => Number(x || 0).toLocaleString('pt-BR');
+  const filtrando = mostradas !== total;
+  el.classList.toggle('filtrando', filtrando);
+  el.innerHTML = filtrando ? `<b>${n(mostradas)}</b> de ${n(total)} OS` : `<b>${n(total)}</b> OS`;
+  el.title = filtrando
+    ? `Este campo tem ${n(total)} OS; os filtros estão mostrando ${n(mostradas)}.`
+    : `Todas as ${n(total)} OS deste campo.`;
+}
+
+function renderFaseOsLista(faseId) {
+  const faseIdx = FASES_ESTOQUE.findIndex(f => f.id === faseId);
+  if (faseIdx < 0) return;
+  const tb = document.getElementById('fase-tbl-' + faseId);
+  if (!tb) return;
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const base = _faseListaOS(faseIdx);
+  const ordens = base.map(p => p.os);
+  const f = _faseFiltroLido(faseId);
+  const termos = f.busca.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // As opções (e a contagem de cada uma) saem do que existe NESTE campo, e não
+  // do cadastro inteiro: filtro que oferece uma cor sem nenhuma OS aqui só
+  // esvazia a tela sem dizer por quê.
+  const status = _filtroStatusListaOS(ordens, 'fase-status-' + faseId);
+  const cor = _filtroListaOS('fase-cor-' + faseId, ordens, 'Todas as cores', o => coresDaPecaOS(o));
+  const grade = _filtroListaOS('fase-grade-' + faseId, ordens, 'Todas as grades', o => [_gradeNomeDaOS(o)]);
+  const sku = _filtroListaOS('fase-sku-' + faseId, ordens, 'Todos os SKUs', o => linhasSkuDaOS(o));
+  _faseFiltros[faseId] = { busca: f.busca, status, cor, grade, sku };
+  const filtradas = base.filter(p => {
+    const o = p.os;
+    if (termos.length) {
+      const alvo = _textoBuscaOS(o);
+      if (!termos.every(t => alvo.includes(t))) return false;
+    }
+    if (status && _statusOS(o) !== status) return false;
+    if (cor && !coresDaPecaOS(o).includes(cor)) return false;
+    if (grade && _gradeNomeDaOS(o) !== grade) return false;
+    if (sku && !linhasSkuDaOS(o).includes(sku)) return false;
+    return true;
+  });
+  _faseContaOS(faseId, filtradas.length, base.length);
+  if (!filtradas.length) {
+    const sRot = (STATUS_OS.find(x => x.k === status) || {}).rotulo || '';
+    const oQue = [termos.length ? `"${esc(termos.join(' '))}"` : '',
+                  sRot ? `status <b>${esc(sRot)}</b>` : '',
+                  cor ? `cor <b>${esc(cor)}</b>` : '',
+                  grade ? `grade <b>${esc(grade)}</b>` : '',
+                  sku ? `SKU <b>${esc(sku)}</b>` : ''].filter(Boolean).join(' e ');
+    tb.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
+      + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosFase('${faseId}')">Limpar os filtros</button></td></tr>`;
+    return;
+  }
+  // O selo do lote parcial: a OS que despachou parte do lote conta nos DOIS
+  // campos, e sem dizer isso o número da linha pareceria erro de contagem.
+  const seloParcial = p => {
+    if (!(p.viajando > 0) || !p.parcial) return '';
+    return p.transitoIdx === faseIdx
+      ? ' <span class="badge" style="background:#e6eefb;">parcial · em viagem</span>'
+      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.viajando)} pç em trânsito</span>`;
+  };
+  tb.innerHTML = filtradas.map(p => {
+    const o = p.os;
+    const cores = coresDaPecaOS(o);
+    return `
+    <tr>
+      <td class="col-actions row-actions">
+        ${_statusCelulaOS(o)}
+        <button class="edit" onclick="verOS('${esc(o.id)}')">visualizar</button>
+        <button class="edit btn-mais" title="Mais ações desta OS" aria-haspopup="menu"
+          onclick="abrirMenuAcoesOS('${esc(o.id)}', this)">⋯</button>
+      </td>
+      <td><strong>${esc(p.osNumero) || '—'}</strong>${_conjugadaCelulaOS(o)}</td>
+      <td>${esc(p.modelo) || '—'}${seloParcial(p)}</td>
+      <td>${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
+                         : '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${_gradeCelulaLista(o)}</td>
+      <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.pecas)} pç</td>
+    </tr>`;
+  }).join('');
 }
 
 // Re-renderiza o painel de uma fase pelo id (após salvar/excluir lançamento).
@@ -17502,12 +17731,24 @@ function _dashFluxoDados() {
     const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
     if (!(total > 0)) return;
     const atual = faseAtualOS(o);
-    if (atual < 0) {
-      // -1 é "fora do fluxo": ou a OS chegou ao ESTOQUE (etapa terminal), ou
-      // nenhuma etapa de campo foi marcada ainda. Só a primeira conta aqui.
-      if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total);
-      return;
-    }
+    /* O CARTÃO ESTOQUE CONTA A CAIXA, E NÃO A ÚLTIMA ETAPA (15/09/2026,
+       Junior: "o cartão Estoque deve mostrar todos os produtos em que na OS
+       está checado o box Estoque").
+
+       Os outros onze cartões seguem o modelo sobreposto: o volume mora no
+       campo da etapa marcada por ÚLTIMO, e a OS está em um lugar só. O
+       Estoque é a exceção, e de propósito — a pergunta dele não é "onde a OS
+       está andando", é "o que já entrou no estoque de produto acabado". Basta
+       a caixa marcada, mesmo que depois disso alguém tenha marcado outra
+       etapa e a OS tenha voltado a aparecer num campo do fluxo.
+
+       Por isso ele pode repetir peça que também conta noutro cartão, como já
+       fazem os dois de Recebido. A soma dos cartões não é o total da fábrica;
+       cada um responde à sua pergunta. */
+    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total);
+    // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
+    // nenhum: não tem onde contar.
+    if (atual < 0) return;
     // A fatia embarcada sai do campo de origem e entra no trânsito da perna.
     const tr = _transitoDaOS(o);
     const viajando = tr ? Math.round(total * tr.fracao) : 0;
@@ -17567,7 +17808,7 @@ function _dashFluxoPassos(d) {
     ] },
     { nome: 'Estoque', cards: [
       { nome: 'Produto acabado', v: d.estoque,
-        dica: 'OS com a etapa Estoque marcada: saiu do fluxo em processo.' },
+        dica: 'Toda OS com a caixa Estoque marcada no checklist — mesmo que outra etapa tenha sido marcada depois dela.' },
     ] },
   ];
 }
@@ -23834,8 +24075,12 @@ function _osFinalizadaNoDia(o, dia) {
    são pretas na grade P ao G3?" é uma pergunta só, feita em quatro cliques.
 
    Devolve a chave escolhida ('' = todas). */
-function _filtroStatusListaOS(base) {
-  const sel = document.getElementById('filtro-status-os');
+// `id` existe porque os campos do fluxo (Estoque de corte, Costurando…) têm
+// cada um o SEU seletor de status: sete telas vivem no DOM ao mesmo tempo, e
+// um id fixo faria todas mexerem no mesmo <select>. Sem o parâmetro, é o da
+// lista de OS Salvas — que foi quem nasceu com ele.
+function _filtroStatusListaOS(base, id) {
+  const sel = document.getElementById(id || 'filtro-status-os');
   if (!sel) return '';
   const escolhido = sel.value || '';
   const conta = {};

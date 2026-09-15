@@ -172,6 +172,18 @@ confere('OS em Expedição: não aparece em cartão nenhum',
   dash(estado(osBase({ 'Corte': true, 'Expedição': true }, { 'Corte': 1, 'Expedição': 2 }), [])),
   {});
 
+// O cartão Estoque conta a CAIXA, não a última etapa: marcada uma vez, a OS
+// conta ali mesmo que o fluxo tenha continuado depois. É a exceção pedida em
+// 15/09/2026, e por isso a peça aparece nos dois cartões.
+confere('Estoque marcado e o Corte marcado DEPOIS: conta nos dois cartões',
+  dash(estado(osBase({ 'Estoque': true, 'Corte': true },
+                     { 'Estoque': 1, 'Corte': 2 }), [])),
+  { corte: 200, estoque: 200 });
+
+confere('OS sem etapa nenhuma marcada: não conta em cartão nenhum',
+  dash(estado(osBase({}, {}), [])),
+  {});
+
 /* ---------- 2. o trânsito, turno por turno ---------- */
 
 confere('Ida na janela das 8h: 100 pç em Ida · manhã, 100 ficam no corte',
