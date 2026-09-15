@@ -23709,11 +23709,16 @@ function _renderAvisoGrupoListaOS(mostradas) {
    adianta o que ainda não foi marcado, mas nunca se fossiliza contradizendo a
    folha (ver _statusOS).
 
-   DOIS ESTADOS FORA DA FILA. "Parado" não é um lugar — o checklist diz em que
+   UM ESTADO FORA DA FILA: "Parado". Ele não é um lugar — o checklist diz em que
    etapa a OS está e o status diz que ela travou ali; é ele que faz a lista
-   mostrar "Parado (3)" e alguém ir ver o que aconteceu. "Finalizado" é o fim do
-   processo de produção. Nenhum dos dois nasce do checklist: os dois só existem
-   carimbados.
+   mostrar "Parado (3)" e alguém ir ver o que aconteceu. Não nasce do checklist:
+   só existe carimbado.
+
+   E "ESTOQUE" É O FIM. Houve um "Finalizado" à parte por um dia (15/09/2026), e
+   ele saiu na mesma tarde: dois jeitos de dizer que a OS acabou — a peça no
+   estoque e um carimbo dizendo que acabou — é a porta para a lista dizer uma
+   coisa e a prateleira outra. Quem carimba a data de fim da produção agora é
+   "Estoque" (ver STATUS_FIM e _dataFinalizacaoOS).
 
    QUEM MUDA: o admin e o login do ENFESTO/CORTE (área `os-status`). Para todo o
    resto o status aparece igual, como etiqueta, sem poder mexer.
@@ -23730,7 +23735,7 @@ function _renderAvisoGrupoListaOS(mostradas) {
      ordem  = a ordem REAL da produção, usada só para desempatar OS antiga sem
               `etapasSeq`. Não é a ordem desta lista: a lista é a do seletor, na
               sequência que o Junior escreveu, e nela "Ensacado" vem antes das
-              costuras — no chão ele vem depois.
+              costuras e "Parado" antes de "Estoque" — no chão não é assim.
      baixa  = a partir deste status o pano já desceu da prateleira (ver
               _STATUS_QUE_BAIXAM) */
 const STATUS_OS = [
@@ -23743,18 +23748,24 @@ const STATUS_OS = [
     re: /corte|cortando/i },
   { k: 'ensacado',       icone: '🟣', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
     re: /ensaqu|ensacad/i },
-  { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
-    re: /costura|costurando/i, cond: o => _osRecebidaSC(o) },
   { k: 'costurando',     icone: '🔷', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
     re: /costura|costurando/i, cond: o => !_osRecebidaSC(o) },
+  { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
+    re: /costura|costurando/i, cond: o => _osRecebidaSC(o) },
   { k: 'fios',           icone: '🟦', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
     re: /fios/i },
+  // Fora da fila: não nasce do checklist, só do carimbo.
+  { k: 'parado',         icone: '🔴', rotulo: 'Parado',                                                baixa: true },
   { k: 'estoque',        icone: '🟢', rotulo: 'Estoque',                  ordem: 7, baixa: true,
-    re: /estoque/i },
-  // Fora da fila: não nascem do checklist, só do carimbo.
-  { k: 'parado',         icone: '🔴', rotulo: 'Parado',     baixa: true },
-  { k: 'finalizado',     icone: '✅', rotulo: 'Finalizado', baixa: true }
+    re: /estoque/i }
 ];
+
+/* O FIM DA PRODUÇÃO. É este status que carimba `finalizadaEm` — o dia e a hora
+   em que a OS terminou, que a lista mostra na coluna Data e o filtro "Finalizada
+   em" procura. Mora numa constante porque duas funções precisam concordar sobre
+   qual é o fim (_carimbarStatusOS escreve, _dataFinalizacaoOS lê), e um dia o
+   fim já mudou de nome. */
+const STATUS_FIM = 'estoque';
 
 /* O STATUS QUE O CHECKLIST DIZ. Mesma regra de faseAtualOS, aplicada à lista
    acima: vence a etapa marcada com o maior `etapasSeq` (o carimbo de QUANDO
@@ -23839,7 +23850,7 @@ function exigirStatusOS(acao) {
    "Enfesto" ser marcado). Marcada a etapa seguinte, a folha passou a saber mais
    do que o carimbo — e um carimbo velho por cima dela é exatamente o estado em
    que a lista diz uma coisa e a OS diz outra. Vale para todos, "Parado" e
-   "Finalizado" inclusive: marcar etapa nova quer dizer que a OS voltou a andar.
+   "Parado" inclusive: marcar etapa nova quer dizer que a OS voltou a andar.
 
    Chave que não existe mais na lista (as OS carimbadas como 'andamento', da
    versão antiga) cai no checklist, que é informação melhor do que a que ela
@@ -24041,12 +24052,13 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
     os.statusOSPor = quem;
     os.statusOSEm = agora;
   }
-  /* A DATA DE FINALIZAÇÃO. Marcar "Finalizado" carimba o dia; tirar a OS de
-     "Finalizado" apaga o carimbo. Guardar a data de uma OS que voltou a andar
-     faria a lista dizer que ela terminou num dia em que ela não terminou — e a
-     coluna Data existe justamente para ser lida sem perguntar a ninguém.
-     Marcar de novo carimba o dia novo, que é o dia em que ela terminou de fato. */
-  if (alvo === 'finalizado') os.finalizadaEm = agora;
+  /* A DATA DE FINALIZAÇÃO. Chegar ao fim da fila — hoje "Estoque", ver
+     STATUS_FIM — carimba o dia; sair de lá apaga o carimbo. Guardar a data de
+     uma OS que voltou a andar faria a lista dizer que ela terminou num dia em
+     que ela não terminou, e a coluna Data existe justamente para ser lida sem
+     perguntar a ninguém. Chegar de novo carimba o dia novo, que é o dia em que
+     ela terminou de fato. */
+  if (alvo === STATUS_FIM) os.finalizadaEm = agora;
   else delete os.finalizadaEm;
 }
 
@@ -24133,14 +24145,36 @@ async function _estoqueSeguirStatusOS(o, alvo) {
 
 /* O DIA EM QUE A OS TERMINOU.
 
-   `finalizadaEm` é gravado por mudarStatusOS no momento em que alguém marca
-   "Finalizado". As OS marcadas ANTES de este campo existir (as 200 carimbadas
-   em lote em 26/08/2026) não o têm: para elas vale o `statusOSEm`, que é o dia
-   em que o carimbo foi dado — a única data que o programa realmente sabe.
-   Inventar a data em que a peça saiu da produção seria pior do que não ter. */
+   Três fontes, nesta ordem, e todas são a mesma pergunta respondida por quem
+   sabe mais:
+
+   1. `finalizadaEm` — gravado por mudarStatusOS quando alguém CARIMBA o fim da
+      fila (hoje "Estoque", ver STATUS_FIM).
+   2. a etapa do checklist que acende esse status. Desde 15/09/2026 o status
+      nasce da folha: marcar "Estoque" no checklist termina a OS sem ninguém
+      carimbar nada, e o instante disso está gravado em `etapasSeq` — que é a
+      data real, não uma reconstrução.
+   3. `statusOSEm` — o dia do carimbo, para as OS marcadas ANTES de
+      `finalizadaEm` existir (as 200 carimbadas em lote em 26/08/2026).
+
+   Fora daí, vazio: inventar a data em que a peça saiu da produção seria pior do
+   que não ter. */
 function _dataFinalizacaoOS(o) {
-  if (_statusOS(o) !== 'finalizado') return '';
-  return (o && (o.finalizadaEm || o.statusOSEm)) || '';
+  if (_statusOS(o) !== STATUS_FIM) return '';
+  if (o && o.finalizadaEm) return o.finalizadaEm;
+  const fim = STATUS_OS.find(s => s.k === STATUS_FIM);
+  const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
+  const seqs = (o && o.progresso && o.progresso.etapasSeq) || {};
+  let quando = 0;
+  if (fim && fim.re) {
+    ((o && o.etapas) || []).forEach(n => {
+      if (!fim.re.test(n) || !checks[n]) return;
+      const v = Number(seqs[n]) || 0;
+      if (v > quando) quando = v;
+    });
+  }
+  if (quando > 0) return new Date(quando).toISOString();
+  return (o && o.statusOSEm) || '';
 }
 
 /* DIA E HORA, e não só o dia (27/08/2026, pedido do Junior).
@@ -24166,11 +24200,14 @@ function _dataHoraFinalizacaoOS(o) {
 // A dica do mouse muda conforme a data é o instante REAL da finalização ou o
 // do carimbo: as OS marcadas antes de `finalizadaEm` existir (as 200 de
 // 26/08/2026) só sabem quando foram carimbadas, e dizer o contrário seria
-// inventar hora de produção.
+// inventar hora de produção. A OS que terminou pela FOLHA (a etapa Estoque
+// marcada no checklist) sabe a hora exata — ela veio de `etapasSeq`.
 function _tituloFinalizacaoOS(o) {
-  return (o && o.finalizadaEm)
-    ? 'Dia e hora em que a OS foi finalizada'
-    : 'Dia e hora em que a OS foi marcada como finalizada';
+  if (o && o.finalizadaEm) return 'Dia e hora em que a OS foi finalizada';
+  const carimbada = _statusOS(o) === String((o && o.statusOS) || '').trim();
+  return carimbada
+    ? 'Dia e hora em que a OS foi marcada como finalizada'
+    : 'Dia e hora em que a etapa Estoque foi marcada no checklist da folha';
 }
 
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia
@@ -24525,7 +24562,7 @@ function renderModalConjugarOS() {
   box.innerHTML = `
     <div class="field-hint" style="margin-bottom:8px;">
       As OS marcadas passam a <b>seguir o status</b> da OS <b>${esc(ativa.os || '')}</b>:
-      quando ela for para Em andamento, Parado ou Finalizado, todas vão junto — e voltam junto
+      quando ela for para Enfestando, Parado ou Estoque, todas vão junto — e voltam junto
       quando ela voltar. <b>O tecido de cada uma continua reservado nela</b>; conjugar aqui não
       mexe em estoque, não gera OS nenhuma e não altera o cadastro de grade de ninguém.
     </div>
@@ -27508,7 +27545,7 @@ async function duplicarOS(id) {
   // aparecer no mural com a data da velha — ou não aparecer.
   copia.criadoEm = new Date().toISOString();
   copia.criadoPor = _obsQuemSou();
-  // Status é do lote, não do desenho: a cópia começa do zero, sem o "Finalizado"
+  // Status é do lote, não do desenho: a cópia começa do zero, sem o "Estoque"
   // da OS que foi copiada.
   delete copia.statusOS; delete copia.statusOSPor; delete copia.statusOSEm;
   delete copia.finalizadaEm;

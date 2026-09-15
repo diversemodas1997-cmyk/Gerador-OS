@@ -1927,7 +1927,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .table .col-actions.row-actions .os-status[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
 .table .col-actions.row-actions .os-status[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
 .table .col-actions.row-actions .os-status[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
-.table .col-actions.row-actions .os-status[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
 /* O MESMO STATUS, no cabecalho da janela da folha de OS. Ali ele nao divide
    coluna com nada, entao ganha o tamanho dos botoes ao lado (mesma altura,
    mesma fonte) em vez dos 11px apertados da tabela. As cores dos quatro
@@ -1956,7 +1955,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .page-header .actions .os-status.folha[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
 .page-header .actions .os-status.folha[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
 .page-header .actions .os-status.folha[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
-.page-header .actions .os-status.folha[data-st="finalizado"] { background: var(--ok-bg); border-color: #9c9; }
 
 /* O rotulo mais longo nao cabe na coluna junto com a seta do seletor; a lista
    de OS ganha alguns pixels a mais so nessa coluna. Em 15/09/2026 o status

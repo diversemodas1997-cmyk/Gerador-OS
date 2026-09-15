@@ -212,7 +212,7 @@ console.log('-- acao em lote vira UMA linha --');
 const mesmoMinuto = '2026-08-26T10:52:53.823Z';
 const lote = [];
 for (let i = 0; i < 12; i++) {
-  lote.push({ id: 'L' + i, os: '02' + String(10 + i), statusOS: 'finalizado',
+  lote.push({ id: 'L' + i, os: '02' + String(10 + i), statusOS: 'estoque',
               statusOSPor: 'admin@diverse.local', statusOSEm: mesmoMinuto });
 }
 // Duas no mesmo minuto continuam sendo duas noticias.
@@ -229,7 +229,7 @@ const doLote = juntos.find(e => e.tipo === 'status-lote');
 ok('24. doze carimbos iguais no mesmo minuto viram uma linha so',
    !!doLote && doLote.n === 12, JSON.stringify(juntos.map(e => e.tipo + (e.n ? ':' + e.n : ''))));
 ok('25. a linha do lote diz o estado e quem fez',
-   doLote.status === 'finalizado' && doLote.quem === 'admin@diverse.local', JSON.stringify(doLote));
+   doLote.status === 'estoque' && doLote.quem === 'admin@diverse.local', JSON.stringify(doLote));
 ok('26. e guarda os numeros das OS para mostrar os primeiros',
    Array.isArray(doLote.oss) && doLote.oss.length === 12, JSON.stringify(doLote.oss));
 ok('27. duas no mesmo minuto NAO agrupam (ainda sao duas noticias)',

@@ -4,15 +4,21 @@
 
    15/09/2026 o status deixou de ser genérico. Eram quatro estados — não
    iniciado, em andamento, parado, finalizado — e viraram a ETAPA em que a OS
-   está: Preparando matéria-prima, Enfestando, Cortando, Ensacado, Costurando |
-   São Carlos, Costurando | Descalvado, Retirando fio, Estoque. "Parado" e
-   "Finalizado" ficaram, fora da fila: o checklist diz a etapa e eles dizem que
-   ela travou ou que a produção acabou.
+   está, nesta ordem: Não iniciado, Preparando matéria-prima, Enfestando,
+   Cortando, Ensacado, Costurando | Descalvado, Costurando | São Carlos,
+   Retirando fio, Parado, Estoque. Só "Parado" fica fora da fila: o checklist
+   diz a etapa e ele diz que ela travou ali.
+
+   "ESTOQUE" É O FIM. O "Finalizado" à parte existiu por uma tarde e saiu: dois
+   jeitos de dizer que a OS acabou — a peça no estoque e um carimbo dizendo que
+   acabou — é a porta para a lista dizer uma coisa e a prateleira outra. Quem
+   carimba `finalizadaEm` agora é "Estoque" (STATUS_FIM).
 
    E o status passou a NASCER DO CHECKLIST, com carimbo à mão por cima que vale
    até a próxima etapa ser marcada. É o miolo novo deste teste: a derivação, a
-   validade do carimbo, e a garantia de que a troca de nomes não soltou o pano
-   que já estava baixado (o "em andamento" que baixava o estoque agora se chama
+   validade do carimbo, a data de fim de quem terminou pela FOLHA (sem ninguém
+   carimbar), e a garantia de que a troca de nomes não soltou o pano que já
+   estava baixado (o "em andamento" que baixava o estoque agora se chama
    "enfestando", e as OS gravadas com a chave velha leem o checklist).
 
    O que este teste protege, e já protegia:
@@ -64,6 +70,7 @@ const monta = (ctx) => new Function('ctx', `
   // da folha e o bloco "a folha mostra o status" la embaixo.
   const renderStatusFolhaOS = () => { ctx.redesenhouFolha = (ctx.redesenhouFolha || 0) + 1; };
   ${constante('STATUS_OS')}
+  ${constante('STATUS_FIM')}
   ${constante('LOGINS_STATUS_OS')}
   ${constante('AREAS_ACESSO')}
   ${constante('ACESSO_PADRAO')}
@@ -195,7 +202,7 @@ console.log('-- o que fica gravado --');
      !('statusOS' in t.ctx.STATE.ordens[0]), JSON.stringify(t.ctx.STATE.ordens[0]));
 
   t = ctxDe('usuario', 'costura@diverse.local', true, [{ id: 'a1', os: '1234' }]);
-  await t.api.mudarStatusOS('a1', 'finalizado');
+  await t.api.mudarStatusOS('a1', 'estoque');
   ok('18. quem nao pode mudar nao muda nem salva',
      !('statusOS' in t.ctx.STATE.ordens[0]) && t.ctx.salvou === 0
      && /Enfesto\.corte/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
@@ -253,6 +260,17 @@ console.log('-- o que fica gravado --');
      leitura({ 'Corte': true, 'Costura': true, 'Ensaque': true }, {}) === 'ensacado',
      leitura({ 'Corte': true, 'Costura': true, 'Ensaque': true }, {}));
 
+  // A ORDEM DO SELETOR e a que o Junior escreveu, e nao a do fluxo: "Ensacado"
+  // vem antes das costuras, e "Parado" antes de "Estoque". E o que a pessoa le
+  // no seletor, entao esta escrita aqui por inteiro — mudar a lista sem querer
+  // tem de derrubar o teste.
+  ok('12s. a fila do seletor esta na ordem pedida',
+     ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
+     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando', 'Ensacado',
+      'Costurando | Descalvado', 'Costurando | São Carlos', 'Retirando fio',
+      'Parado', 'Estoque'].join(' / '),
+     ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / '));
+
   console.log('');
   console.log('-- o carimbo a mao vale ATE a proxima etapa ser marcada --');
   /* Ele existe para adiantar o que a folha ainda nao sabe: entre comecar a
@@ -273,7 +291,7 @@ console.log('-- o que fica gravado --');
   ok('12n. vale tambem para "Parado": etapa nova quer dizer que a OS voltou a andar',
      comCarimbo('parado', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
   ok('12o. e para "Finalizado"',
-     comCarimbo('finalizado', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
+     comCarimbo('estoque', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
   ok('12p. sem etapa marcada nenhuma, o carimbo vale sozinho',
      comCarimbo('parado', 1000, {}, {}) === 'parado');
   // As OS gravadas antes de 15/09/2026 tem a chave 'andamento', que saiu da
@@ -314,7 +332,7 @@ console.log('-- o que fica gravado --');
   const os2 = t.ctx.STATE.ordens[0];
   await t.api.mudarStatusOS('a1', 'enfestando');
   ok('33. enfestando nao carimba data de finalizacao', !('finalizadaEm' in os2), JSON.stringify(os2));
-  await t.api.mudarStatusOS('a1', 'finalizado');
+  await t.api.mudarStatusOS('a1', 'estoque');
   ok('34. marcar Finalizado carimba o dia',
      typeof os2.finalizadaEm === 'string' && !isNaN(new Date(os2.finalizadaEm)), JSON.stringify(os2));
   const primeira = os2.finalizadaEm;
@@ -324,7 +342,7 @@ console.log('-- o que fica gravado --');
   await t.api.mudarStatusOS('a1', 'parado');
   ok('35. tirar de Finalizado apaga a data (a OS voltou a andar)',
      !('finalizadaEm' in os2), JSON.stringify(os2));
-  await t.api.mudarStatusOS('a1', 'finalizado');
+  await t.api.mudarStatusOS('a1', 'estoque');
   ok('36. marcar de novo carimba o dia NOVO',
      typeof os2.finalizadaEm === 'string' && os2.finalizadaEm !== primeira,
      os2.finalizadaEm + ' vs ' + primeira);
@@ -333,11 +351,11 @@ console.log('-- o que fica gravado --');
   let cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10' });
   ok('37. OS sem status mostra so a data em que foi feita',
      /10\/03\/2026/.test(cel2) && !/data-fim/.test(cel2), cel2);
-  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'finalizado',
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'estoque',
                                 finalizadaEm: '2026-08-26T13:40:00.000Z' });
   ok('38. finalizada mostra as duas: a de cima feita, a de baixo finalizada',
      /10\/03\/2026/.test(cel2) && /data-fim/.test(cel2) && /26\/08\/2026/.test(cel2), cel2);
-  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'finalizado',
+  cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10', statusOS: 'estoque',
                                 statusOSEm: '2026-08-26T13:40:00.000Z' });
   ok('39. finalizada ANTES do campo existir vale o dia do carimbo',
      /26\/08\/2026/.test(cel2), cel2);
@@ -351,7 +369,7 @@ console.log('-- o que fica gravado --');
   // por isso o teste monta o instante a partir de um Date local, e nao crava
   // "16:26" em cima de um ISO com Z, que mudaria de valor conforme o fuso.
   const instante = new Date(2026, 7, 26, 16, 26, 0);
-  const finalizada = { os: '1', data: '2026-03-10', statusOS: 'finalizado',
+  const finalizada = { os: '1', data: '2026-03-10', statusOS: 'estoque',
                        finalizadaEm: instante.toISOString() };
   ok('41. a data de finalizacao leva a hora junto',
      A._dataHoraFinalizacaoOS(finalizada) === '26/08/2026 16:26',
@@ -363,11 +381,41 @@ console.log('-- o que fica gravado --');
      A._dataHoraFinalizacaoOS({ os: '1', data: '2026-03-10', statusOS: 'enfestando',
                                 statusOSEm: instante.toISOString() }) === '');
   ok('44. data gravada que nao e data nao vira hora inventada',
-     A._dataHoraFinalizacaoOS({ os: '1', statusOS: 'finalizado', finalizadaEm: 'nao e data' }) === '');
+     A._dataHoraFinalizacaoOS({ os: '1', statusOS: 'estoque', finalizadaEm: 'nao e data' }) === '');
   ok('45. a dica separa a hora REAL da hora do carimbo em lote',
      A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que a OS foi finalizada'
-     && A._tituloFinalizacaoOS({ statusOS: 'finalizado', statusOSEm: instante.toISOString() })
+     && A._tituloFinalizacaoOS({ statusOS: 'estoque', statusOSEm: instante.toISOString() })
         === 'Dia e hora em que a OS foi marcada como finalizada');
+
+  // A OS QUE TERMINOU PELA FOLHA. Com o status nascendo do checklist, marcar
+  // "Estoque" na folha termina a OS sem ninguem carimbar nada — e ai nao ha
+  // `finalizadaEm` nem `statusOSEm` para a coluna Data ler. A data sai de
+  // `etapasSeq`, que e o instante em que a caixa foi marcada: e a hora real, e
+  // nao uma reconstrucao.
+  const terminouNaFolha = {
+    os: '1', data: '2026-03-10',
+    etapas: ['Corte', 'Estoque'],
+    progresso: { etapasCheck: { 'Corte': true, 'Estoque': true },
+                 etapasSeq: { 'Corte': 1000, 'Estoque': instante.getTime() } }
+  };
+  ok('45a. terminada pelo checklist: o status e Estoque, sem carimbo nenhum',
+     A._statusOS(terminouNaFolha) === 'estoque', A._statusOS(terminouNaFolha));
+  ok('45b. e a data de fim e a hora em que a caixa Estoque foi marcada',
+     A._dataHoraFinalizacaoOS(terminouNaFolha) === '26/08/2026 16:26',
+     A._dataHoraFinalizacaoOS(terminouNaFolha));
+  ok('45c. a dica diz que a hora veio da folha, e nao de um carimbo',
+     A._tituloFinalizacaoOS(terminouNaFolha)
+       === 'Dia e hora em que a etapa Estoque foi marcada no checklist da folha',
+     A._tituloFinalizacaoOS(terminouNaFolha));
+  // Desmarcar a caixa tira a OS do fim: a data some junto, pelo mesmo motivo
+  // que apagar o carimbo apaga — OS que voltou a andar nao terminou.
+  const voltouAAndar = JSON.parse(JSON.stringify(terminouNaFolha));
+  voltouAAndar.progresso.etapasCheck = { 'Corte': true };
+  voltouAAndar.progresso.etapasSeq = { 'Corte': instante.getTime() + 1 };
+  ok('45d. desmarcar a caixa Estoque tira a data de fim junto',
+     A._dataHoraFinalizacaoOS(voltouAAndar) === '' && A._statusOS(voltouAAndar) === 'cortando',
+     A._statusOS(voltouAAndar) + ' / ' + A._dataHoraFinalizacaoOS(voltouAAndar));
+
 
   console.log('');
   console.log('-- o pano sai do estoque quando a OS comeca a andar --');
@@ -388,7 +436,7 @@ console.log('-- o que fica gravado --');
   await e.api.mudarStatusOS('e1', 'enfestando');
   ok('46. "enfestando" baixa o pano sozinho', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
   e = comMov();
-  await e.api.mudarStatusOS('e1', 'finalizado');
+  await e.api.mudarStatusOS('e1', 'estoque');
   ok('47. finalizado tambem baixa (quem pulou o enfesto ja gastou o pano)',
      situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
   e = comMov();
@@ -420,7 +468,7 @@ console.log('-- o que fica gravado --');
   ok('52. OS enfestando salva de novo: o pano nasce ja BAIXADO',
      await salvando('enfestando') === 'consumido', await salvando('enfestando'));
   ok('53. e finalizada tambem — corrigir a folha nao desfaz a baixa',
-     await salvando('finalizado') === 'consumido', await salvando('finalizado'));
+     await salvando('estoque') === 'consumido', await salvando('estoque'));
 
   /* O PANO NAO VOLTA PARA A PRATELEIRA NO MEIO DO CAMINHO (Junior, 27/08/2026):
      "se as OS mudam para status parado ou voltam para em andamento, isso nao faz
@@ -435,7 +483,7 @@ console.log('-- o que fica gravado --');
   await e.api.mudarStatusOS('e1', 'enfestando');
   ok('55. e voltando a andar tambem — nada volta para reservado',
      situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  await e.api.mudarStatusOS('e1', 'finalizado');
+  await e.api.mudarStatusOS('e1', 'estoque');
   ok('56. ate o fim da OS, um caminho so: baixado continua baixado',
      situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
   await e.api.mudarStatusOS('e1', 'nao-iniciado');
@@ -498,9 +546,9 @@ console.log('-- o que fica gravado --');
     { id: 'so', os: '0500' }
   ]);
   let p = parDe();
-  await p.api.mudarStatusOS('at', 'finalizado');
+  await p.api.mudarStatusOS('at', 'estoque');
   const pa = () => p.ctx.STATE.ordens[1];
-  ok('68. finalizar a ativa finaliza a conjugada', pa().statusOS === 'finalizado',
+  ok('68. finalizar a ativa finaliza a conjugada', pa().statusOS === 'estoque',
      JSON.stringify(pa()));
   ok('69. e carimba a data nela tambem, que e o que a coluna Data le',
      !!pa().finalizadaEm && !isNaN(new Date(pa().finalizadaEm)), pa().finalizadaEm);
@@ -512,7 +560,7 @@ console.log('-- o que fica gravado --');
   // So a ATIVA arrasta. Sem esta trava, duas OS que se apontassem ficariam se
   // carimbando em circulo — a mesma razao do guard em deveGerarConjugada.
   p = parDe();
-  await p.api.mudarStatusOS('pa', 'finalizado');
+  await p.api.mudarStatusOS('pa', 'estoque');
   ok('72. a PASSIVA nao arrasta a ativa', p.ctx.STATE.ordens[0].statusOS === undefined,
      JSON.stringify(p.ctx.STATE.ordens[0]));
 
@@ -527,23 +575,23 @@ console.log('-- o que fica gravado --');
   ok('73b. e "parado" idem', pa().statusOS === 'parado', JSON.stringify(pa()));
 
   // Ja finalizada nao e recarimbada: a data dela e o dia em que ela terminou.
-  p = parDe('finalizado');
+  p = parDe('estoque');
   p.ctx.STATE.ordens[1].finalizadaEm = '2026-01-01T10:00:00.000Z';
-  await p.api.mudarStatusOS('at', 'finalizado');
+  await p.api.mudarStatusOS('at', 'estoque');
   ok('74. conjugada ja finalizada mantem a data dela',
      pa().finalizadaEm === '2026-01-01T10:00:00.000Z', pa().finalizadaEm);
 
   // OS sozinha continua sozinha, e OS cuja irma sumiu nao quebra nada.
   p = parDe();
-  await p.api.mudarStatusOS('so', 'finalizado');
-  ok('75. OS sem conjugada segue seu caminho', p.ctx.STATE.ordens[2].statusOS === 'finalizado');
+  await p.api.mudarStatusOS('so', 'estoque');
+  ok('75. OS sem conjugada segue seu caminho', p.ctx.STATE.ordens[2].statusOS === 'estoque');
   const orfa = ctxDe('admin', 'admin@diverse.local', true,
                      [{ id: 'x', os: '0499', conjugadaId: 'sumiu' }]);
-  await orfa.api.mudarStatusOS('x', 'finalizado');
+  await orfa.api.mudarStatusOS('x', 'estoque');
   ok('76. conjugada excluida depois: finaliza a ativa e nao reclama',
-     orfa.ctx.STATE.ordens[0].statusOS === 'finalizado' && orfa.ctx.salvou === 1);
+     orfa.ctx.STATE.ordens[0].statusOS === 'estoque' && orfa.ctx.salvou === 1);
   ok('77. _conjugadasQueSeguemStatus devolve LISTA (uma ativa pode puxar mais de uma)',
-     Array.isArray(orfa.api._conjugadasQueSeguemStatus(orfa.ctx.STATE.ordens[0], 'finalizado')));
+     Array.isArray(orfa.api._conjugadasQueSeguemStatus(orfa.ctx.STATE.ordens[0], 'estoque')));
 
   /* DESFAZER TAMBEM ACOMPANHA (Junior, 28/08/2026). Tirar a ativa de
      "Finalizado" e deixar a conjugada finalizada travaria a dupla: dali em
@@ -557,7 +605,7 @@ console.log('-- o que fica gravado --');
     return t;
   };
   let d = parFinalizado();
-  await d.api.mudarStatusOS('at', 'finalizado');
+  await d.api.mudarStatusOS('at', 'estoque');
   await d.api.mudarStatusOS('at', 'nao-iniciado');
   const dp = () => d.ctx.STATE.ordens[1];
   ok('78. tirar a ativa de finalizado tira a conjugada tambem',
@@ -569,7 +617,7 @@ console.log('-- o que fica gravado --');
   // aqui: as duas sao o mesmo enfesto, e ficar em estados diferentes e o que se
   // esta consertando.
   d = parFinalizado();
-  await d.api.mudarStatusOS('at', 'finalizado');
+  await d.api.mudarStatusOS('at', 'estoque');
   await d.api.mudarStatusOS('at', 'enfestando');
   ok('80. finalizado -> enfestando: a conjugada vai para enfestando tambem',
      dp().statusOS === 'enfestando' && !('finalizadaEm' in dp()), JSON.stringify(dp()));
@@ -578,7 +626,7 @@ console.log('-- o que fica gravado --');
      finalizado->desfazer acompanhava, e uma conjugada em estado proprio ficava
      para tras — meio enfesto num estado, meio noutro. */
   d = ctxDe('admin', 'admin@diverse.local', true, [
-    { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'finalizado' },
+    { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'estoque' },
     { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'parado' }
   ]);
   await d.api.mudarStatusOS('at', 'enfestando');
@@ -587,7 +635,7 @@ console.log('-- o que fica gravado --');
 
   d = ctxDe('admin', 'admin@diverse.local', true, [
     { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'enfestando' },
-    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'finalizado' }
+    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'estoque' }
   ]);
   await d.api.mudarStatusOS('at', 'parado');
   ok('82. enfestando -> parado leva a conjugada junto, e apaga a finalizacao dela',
@@ -637,9 +685,9 @@ console.log('-- o que fica gravado --');
 
   // Finalizar e desfazer: o grupo inteiro vai e volta.
   p = maoDe();
-  await p.api.mudarStatusOS('at', 'finalizado');
+  await p.api.mudarStatusOS('at', 'estoque');
   ok('97. finalizar leva todas, com a data',
-     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === 'finalizado' && !!o.finalizadaEm));
+     p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === 'estoque' && !!o.finalizadaEm));
   await p.api.mudarStatusOS('at', 'nao-iniciado');
   ok('98. desfazer traz todas de volta, e apaga a data',
      p.ctx.STATE.ordens.slice(1, 3).every(o => o.statusOS === undefined && o.finalizadaEm === undefined),
@@ -655,9 +703,9 @@ console.log('-- o que fica gravado --');
   // A que ja esta no estado pedido nao e recarimbada: a data dela e o dia em
   // que ELA terminou.
   p = maoDe();
-  p.ctx.STATE.ordens[1].statusOS = 'finalizado';
+  p.ctx.STATE.ordens[1].statusOS = 'estoque';
   p.ctx.STATE.ordens[1].finalizadaEm = '2026-09-02T10:00:00.000Z';
-  await p.api.mudarStatusOS('at', 'finalizado');
+  await p.api.mudarStatusOS('at', 'estoque');
   ok('100. a que ja estava finalizada mantem a data dela',
      p.ctx.STATE.ordens[1].finalizadaEm === '2026-09-02T10:00:00.000Z');
 
@@ -838,6 +886,7 @@ console.log('-- o que fica gravado --');
       const document = { getElementById: () => ctx.sel };
       const esc = (s) => String(s == null ? '' : s);
       ${constante('STATUS_OS')}
+      ${constante('STATUS_FIM')}
       // O status le o checklist antes do carimbo: sem estas, _statusOS nao roda.
       ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
       ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}
@@ -853,8 +902,8 @@ console.log('-- o que fica gravado --');
   const osDoFiltro = [
     { id: '1', os: '0483' },                          // nao iniciado
     { id: '2', os: '0484', statusOS: 'parado' },
-    { id: '3', os: '0485', statusOS: 'finalizado' },
-    { id: '4', os: '0486', statusOS: 'finalizado' }
+    { id: '3', os: '0485', statusOS: 'estoque' },
+    { id: '4', os: '0486', statusOS: 'estoque' }
   ];
   let f = comSelect('', osDoFiltro);
   ok('27. sem escolha, o filtro nao corta nada', f.api._filtroStatusListaOS(osDoFiltro) === '');
@@ -867,13 +916,13 @@ console.log('-- o que fica gravado --');
      !/Enfestando/.test(f.sel.innerHTML) && !/Cortando/.test(f.sel.innerHTML), f.sel.innerHTML);
   ok('29. cada opcao ja diz quantas OS tem naquele estado',
      /Todos os status \(4\)/.test(f.sel.innerHTML)
-     && /Finalizado \(2\)/.test(f.sel.innerHTML)
+     && /Estoque \(2\)/.test(f.sel.innerHTML)
      && /Parado \(1\)/.test(f.sel.innerHTML)
      && /Não iniciado \(1\)/.test(f.sel.innerHTML), f.sel.innerHTML);
-  f = comSelect('finalizado', osDoFiltro);
+  f = comSelect('estoque', osDoFiltro);
   ok('30. o escolhido volta como chave e continua marcado',
-     f.api._filtroStatusListaOS(osDoFiltro) === 'finalizado'
-     && /value="finalizado" selected/.test(f.sel.innerHTML), f.sel.innerHTML);
+     f.api._filtroStatusListaOS(osDoFiltro) === 'estoque'
+     && /value="estoque" selected/.test(f.sel.innerHTML), f.sel.innerHTML);
 
   console.log('');
   console.log('-- o status mora em DOIS lugares, e monta num so --');

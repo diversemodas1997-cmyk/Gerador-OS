@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-15b">
+<link rel="stylesheet" href="styles.css?v=2026-09-15c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -968,9 +968,12 @@
           <select id="filtro-sku-os" title="Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos" onchange="renderListaOS()"></select>
           <!-- O DIA EM QUE A OS TERMINOU. Uma data só: a pergunta do chão é
                "o que foi finalizado neste dia?". Só entram OS finalizadas —
-               quem não terminou não tem dia de término. -->
+               quem não terminou não tem dia de término. Desde 15/09/2026
+               terminar é chegar ao status ESTOQUE, que é o fim da fila: a
+               data sai do carimbo ou do dia em que a etapa Estoque foi
+               marcada no checklist da folha. -->
           <span class="lista-os-datas"
-                title="Mostrar só as OS finalizadas nesse dia. Vale junto com a busca e com os outros filtros.">
+                title="Mostrar só as OS que chegaram ao Estoque nesse dia — o fim da produção. Vale junto com a busca e com os outros filtros.">
             <label for="filtro-fim">Finalizada em</label>
             <input type="date" id="filtro-fim" onchange="renderListaOS()">
           </span>
@@ -1543,6 +1546,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-15c"></script>
+<script src="app.js?v=2026-09-15d"></script>
 </body>
 </html>
