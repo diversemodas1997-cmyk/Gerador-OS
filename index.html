@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-14a">
+<link rel="stylesheet" href="styles.css?v=2026-09-15a">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -304,6 +304,14 @@
           <div class="title">Equipe</div>
         </div>
       </div>
+
+      <!-- ============= DASHBOARD DO FLUXO =============
+           Por onde o produto passa, do corte ao estoque, numa tela só. Os
+           números saem dos MESMOS campos das telas do menu (FASES_ESTOQUE) —
+           aqui é o resumo, para não precisar abrir sete telas para saber onde
+           está a produção. Quem o desenha é renderFluxoDash(), no app.js, e ele
+           se redesenha sozinho enquanto o Início está aberto. -->
+      <div class="dash-fluxo" id="dash-fluxo"></div>
     </section>
 
     <!-- ================= CADASTROS GENÉRICOS ================= -->
@@ -1493,6 +1501,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-14l"></script>
+<script src="app.js?v=2026-09-15a"></script>
 </body>
 </html>

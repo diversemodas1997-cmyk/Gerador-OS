@@ -17411,6 +17411,225 @@ function renderFuncoes() {
 }
 
 
+/* ========================================================= */
+/*            DASHBOARD DO FLUXO (tela de Início)            */
+/* ========================================================= */
+/* ONDE ESTÁ A PRODUÇÃO, NUMA TELA SÓ.
+
+   O produto migra de campo em campo — corta em Descalvado, costura aqui ou em
+   São Carlos, viaja no caminhão, volta, tira fio, vai para o estoque. Cada um
+   desses campos já tem a sua tela no menu, com o detalhe por tecido e cor. O
+   que não existia era a VISÃO DE CIMA: para saber quanto tem em cada campo era
+   preciso abrir sete telas e somar de cabeça.
+
+   Este painel não inventa conta nenhuma. Ele lê exatamente os mesmos números
+   das telas do menu (FASES_ESTOQUE, faseAtualOS, _transitoDaOS) e só os põe
+   lado a lado, na ordem em que a peça caminha. Clicar num cartão abre a tela
+   daquele campo, que é onde o detalhe mora.
+
+   O TRÂNSITO É O ÚNICO QUE ESTE PAINEL ABRE MAIS FINO que a tela dele: a tela
+   de Em trânsito mostra a perna inteira, e aqui a perna se divide em MANHÃ e
+   TARDE. Quem separa é a hora cadastrada na janela de expedição — é o caminhão
+   das 8h ou o das 14h —, e essa é a pergunta de quem está na doca. A soma dos
+   dois turnos é igual ao total da tela da perna. */
+
+// O turno de uma carga. A hora sai da janela cadastrada, ou da exceção quando a
+// ocorrência foi remarcada com hora nova. Cada PERNA tem a sua hora — a mesma
+// janela costuma mandar a ida de manhã e a volta à tarde —, por isso a perna
+// entra na conta.
+// Janela sem hora cadastrada conta como MANHÃ: é o começo do dia, e abrir um
+// quarto campo "sem hora" por causa de um cadastro incompleto só atrapalharia
+// a leitura de quem olha o painel.
+function _dashTurnoDaCarga(c) {
+  const perna = c.perna === 'volta' ? 'volta' : 'ida';
+  const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === c.janelaId && e.data === c.data);
+  const j = (STATE.expedicaoJanelas || []).find(x => x.id === c.janelaId);
+  const hora = (exc && (perna === 'volta' ? exc.horaVolta : exc.horaIda))
+            || (j && (perna === 'volta' ? j.horaVolta : j.horaIda)) || '';
+  const h = parseInt(String(hora).slice(0, 2), 10);
+  return (Number.isFinite(h) && h >= 12) ? 'tarde' : 'manha';
+}
+
+// Como o que esta OS tem viajando nesta perna se reparte entre manhã e tarde.
+// Devolve PESOS, não o número final: a mesma OS pode estar em duas cargas da
+// mesma perna (parte no caminhão da manhã, parte no da tarde), e o que o painel
+// mostra é o total do trânsito repartido na proporção desses pesos. Assim a
+// soma dos dois turnos fecha com o total da tela da perna, sem arredondamento
+// sobrando em lugar nenhum.
+// Carga cheia ANTIGA (só o número de volumes, sem composição por pacote) pesa o
+// lote inteiro — é o mesmo tratamento que ela recebe em _expEmbarcadoOS.
+function _dashPesoTurnos(o, perna) {
+  const out = { manha: 0, tarde: 0 };
+  const alvo = perna === 'volta' ? 'volta' : 'ida';
+  const cancel = _expCancelSet();
+  const cargas = (STATE.expedicaoCargas || []).filter(c =>
+    c.osId === o.id && (c.perna === 'volta' ? 'volta' : 'ida') === alvo && !cancel.has(c.janelaId + '|' + c.data));
+  if (!cargas.length) return out;
+  const pp = _expPecasPacoteOS(o);
+  cargas.forEach(c => {
+    const peso = Array.isArray(c.pacotes)
+      ? c.pacotes.reduce((s, p) => s + pp.de(p), 0)
+      : ((Number(c.volumes) || 0) > 0 ? pp.total : 0);
+    if (peso > 0) out[_dashTurnoDaCarga(c)] += peso;
+  });
+  return out;
+}
+
+// O resumo de todos os campos, em peças e em número de OS. Uma passada só pela
+// lista de OS: cada uma cai no campo em que está agora (faseAtualOS), e a fatia
+// que estiver alocada numa expedição cai no trânsito da perna — a mesma divisão
+// que as telas dos campos fazem.
+function _dashFluxoDados() {
+  const zero = () => ({ pecas: 0, os: 0 });
+  const d = {
+    corte: zero(), corteSC: zero(),
+    costurando: zero(), costurandoSC: zero(),
+    idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
+    recDesc: zero(), recSC: zero(),
+    fios: zero(), estoque: zero()
+  };
+  // Índice da fase -> chave do painel. Por id, nunca por posição: a ordem de
+  // FASES_ESTOQUE já mudou uma vez (as duas unidades entraram no meio).
+  const chavePorIdx = new Map();
+  [['corte', 'corte'], ['corteSC', 'corteSC'], ['costurando', 'costurando'],
+   ['costurandoSC', 'costurandoSC'], ['fios', 'fios']].forEach(([faseId, k]) => {
+    const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
+    if (i >= 0) chavePorIdx.set(i, k);
+  });
+  const somar = (k, pecas) => { if (pecas > 0) { d[k].pecas += pecas; d[k].os++; } };
+
+  (STATE.ordens || []).forEach(o => {
+    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    if (!(total > 0)) return;
+    const atual = faseAtualOS(o);
+    if (atual < 0) {
+      // -1 é "fora do fluxo": ou a OS chegou ao ESTOQUE (etapa terminal), ou
+      // nenhuma etapa de campo foi marcada ainda. Só a primeira conta aqui.
+      if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total);
+      return;
+    }
+    // A fatia embarcada sai do campo de origem e entra no trânsito da perna.
+    const tr = _transitoDaOS(o);
+    const viajando = tr ? Math.round(total * tr.fracao) : 0;
+    if (viajando > 0) {
+      const perna = (FASES_ESTOQUE[tr.faseIdx] || {}).id === 'transitoVolta' ? 'volta' : 'ida';
+      const peso = _dashPesoTurnos(o, perna);
+      const soma = peso.manha + peso.tarde;
+      const manha = soma > 0 ? Math.round(viajando * peso.manha / soma) : viajando;
+      somar(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
+      somar(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha);
+    }
+    const resta = Math.max(0, total - viajando);
+    const k = chavePorIdx.get(atual);
+    if (!k) return;                       // Expedição: campo fora desta leitura
+    somar(k, resta);
+    // RECEBIDO EM… é a mesma peça vista pela porta por onde ela entrou. Não é um
+    // campo a mais: "Recebido em São Carlos" É o Estoque de corte de lá (a caixa
+    // do checklist que abre aquele campo), e "Recebido em Descalvado" cai dentro
+    // da Retirada de fios — onde divide espaço com quem chegou lá marcando a
+    // própria retirada. Por isso o de Descalvado é filtrado pela etapa que
+    // venceu, e o de São Carlos repete, de propósito, o número do cartão de cima.
+    if (k === 'corteSC') somar('recSC', resta);
+    if (k === 'fios' && ETAPA_DESC_RE.test(_nomeEtapaDaFase(o, FASES_ESTOQUE[atual]) || '')) {
+      somar('recDesc', resta);
+    }
+  });
+  return d;
+}
+
+// Os seis passos do caminho, na ordem em que a peça anda. `rota` é a tela que o
+// cartão abre; sem rota, o cartão não é clicável (o Estoque terminal não tem
+// tela própria — a OS saiu do fluxo em processo).
+function _dashFluxoPassos(d) {
+  return [
+    { nome: 'Estoque de corte', cards: [
+      { nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte' },
+      { nome: 'Unidade São Carlos', v: d.corteSC, rota: 'corte-sc' },
+    ] },
+    { nome: 'Costurando', cards: [
+      { nome: 'Unidade Descalvado', v: d.costurando,   rota: 'costurando' },
+      { nome: 'Unidade São Carlos', v: d.costurandoSC, rota: 'costurando-sc' },
+    ] },
+    { nome: 'Estoque em trânsito', cards: [
+      { nome: 'Ida · manhã',   v: d.idaManha,   rota: 'transito-ida' },
+      { nome: 'Ida · tarde',   v: d.idaTarde,   rota: 'transito-ida' },
+      { nome: 'Volta · manhã', v: d.voltaManha, rota: 'transito-volta' },
+      { nome: 'Volta · tarde', v: d.voltaTarde, rota: 'transito-volta' },
+    ] },
+    { nome: 'Recebido', cards: [
+      { nome: 'Recebido em Descalvado', v: d.recDesc, rota: 'fios',
+        dica: 'O que voltou de São Carlos e ainda está na Retirada de fios.' },
+      { nome: 'Recebido em São Carlos', v: d.recSC, rota: 'corte-sc',
+        dica: 'É o mesmo campo do Estoque de corte · Unidade São Carlos: a caixa "Recebido em São Carlos" é o que abre aquele campo.' },
+    ] },
+    { nome: 'Retirada de fios', cards: [
+      { nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
+    ] },
+    { nome: 'Estoque', cards: [
+      { nome: 'Produto acabado', v: d.estoque,
+        dica: 'OS com a etapa Estoque marcada: saiu do fluxo em processo.' },
+    ] },
+  ];
+}
+
+// Só redesenha quando o resumo MUDOU de verdade: o relógio abaixo passa de
+// tempos em tempos, e repintar um painel idêntico piscaria a tela à toa.
+let _dashFluxoAssinatura = '';
+let _dashFluxoTimer = null;
+const DASH_FLUXO_MS = 30000;
+
+function renderFluxoDash() {
+  const cont = document.getElementById('dash-fluxo');
+  if (!cont) return;
+  const d = _dashFluxoDados();
+  const ass = JSON.stringify(d);
+  if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
+  _dashFluxoAssinatura = ass;
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const passos = _dashFluxoPassos(d).map((p, i) => {
+    const cards = p.cards.map(c => {
+      const pecas = (c.v && c.v.pecas) || 0;
+      const nOS = (c.v && c.v.os) || 0;
+      const vazio = pecas > 0 ? '' : ' vazio';
+      const clique = c.rota ? ` onclick="goto('${c.rota}')"` : '';
+      const dica = [c.dica, c.rota ? 'Clique para abrir a tela deste campo.' : '']
+        .filter(Boolean).join(' ');
+      return `
+        <div class="dash-card${vazio}"${clique}${dica ? ` title="${esc(dica)}"` : ''}>
+          <div class="dash-card-nome">${esc(c.nome)}</div>
+          <div class="dash-num">${fmt(pecas)}</div>
+          <div class="dash-sub">peças · ${fmt(nOS)} OS</div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="dash-etapa">
+        <div class="dash-etapa-nome"><span class="dash-passo">${i + 1}</span>${esc(p.nome)}</div>
+        <div class="dash-cards">${cards}</div>
+      </div>`;
+  }).join('');
+  cont.innerHTML = `
+    <div class="dash-fluxo-topo">
+      <h2>Por onde o produto passa</h2>
+      <span class="dash-desc">Do corte ao estoque, em peças e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
+    </div>
+    ${passos}`;
+}
+
+// O painel se atualiza SOZINHO. Quem mexe nos campos quase sempre está em outra
+// máquina — marcando etapa no checklist da folha ou alocando carga —, e o
+// realtime/polling já redesenha a tela ativa quando o servidor avisa. Este
+// relógio cobre o resto (aviso perdido, rede instável) e custa quase nada: só
+// corre com o Início aberto e na frente, e só repinta quando o número mudou.
+function _dashFluxoLigarRelogio() {
+  if (_dashFluxoTimer) return;
+  _dashFluxoTimer = setInterval(() => {
+    const sec = document.querySelector('section.page[data-page="home"]');
+    if (!sec || sec.classList.contains('hidden')) return;
+    if (document.hidden) return;
+    try { renderFluxoDash(); } catch (e) { console.warn('dashboard do fluxo', e); }
+  }, DASH_FLUXO_MS);
+}
+
 function renderHome() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('stat-os', STATE.ordens.length);
@@ -17432,6 +17651,8 @@ function renderHome() {
   set('stat-bases', STATE.bases.length);
   set('stat-blocos', STATE.blocos.length);
   set('stat-equipe', STATE.equipe.length);
+  try { renderFluxoDash(); } catch (e) { console.warn('dashboard do fluxo', e); }
+  _dashFluxoLigarRelogio();
 }
 
 /* ========================================================= */
