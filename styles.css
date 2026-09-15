@@ -249,6 +249,28 @@ aside.sidebar {
   font-weight: 500;
 }
 
+/* A CONTAGEM NA FRENTE DO NOME, no menu (15/09/2026). Substituiu os dezesseis
+   quadros de atalho do Inicio: o menu esta em todas as telas, e o Inicio nao.
+
+   LARGURA FIXA para os numeros ficarem em COLUNA — sem isso, "9 Bases" e
+   "288 OS Salvas" comecam o texto em lugares diferentes e a lista fica com a
+   margem esquerda serrilhada. 2,6em cabe ate quatro digitos; passando disso o
+   numero empurra o nome, que e melhor do que corta-lo.
+
+   Monoespacada e apagada de proposito: o numero e referencia, nao e o nome da
+   tela. Quem procura "Grades" tem de bater o olho no nome, nao no 34. */
+.nav-num {
+  display: inline-block;
+  min-width: 2.6em;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: rgba(255,255,255,.4);
+  text-align: right;
+  padding-right: 8px;
+}
+.nav-btn:hover .nav-num { color: rgba(255,255,255,.65); }
+.nav-btn.active .nav-num { color: var(--accent); }
+
 /* ===== OS AVISOS =====
 
    O SINO fica junto do icone do perfil, na barra lateral, e o numero vermelho
@@ -839,58 +861,11 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   border-radius: 2px;
 }
 
-/* ============ HOME ============ */
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-top: 8px;
-}
-.home-card {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  padding: 20px;
-  cursor: pointer;
-  transition: all .2s;
-  border-radius: 3px;
-  position: relative;
-  overflow: hidden;
-}
-.home-card:hover {
-  border-color: var(--ink);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.06);
-}
-.home-card::after {
-  content: '→';
-  position: absolute;
-  top: 18px; right: 20px;
-  color: var(--line);
-  font-size: 20px;
-  transition: all .2s;
-}
-.home-card:hover::after { color: var(--accent); transform: translate(2px,-2px); }
-.home-card .num {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 32px;
-  font-weight: 600;
-  color: var(--accent);
-  line-height: 1;
-}
-.home-card .label {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-top: 12px;
-}
-.home-card .title {
-  font-weight: 600;
-  font-size: 15px;
-  margin-top: 2px;
-}
-
+/* ============ HOME ============
+   Os quadros de atalho (.home-grid/.home-card) sairam em 15/09/2026 junto com
+   a marcacao deles: eram dezesseis caixas que levavam a uma tela e diziam
+   quantos registros ela tem, e o menu ao lado passou a fazer as duas coisas
+   (ver .nav-num). O Inicio ficou com o resumo do fluxo, logo abaixo. */
 /* ============ DASHBOARD DO FLUXO (Inicio) ============
    Mora embaixo dos atalhos de cadastro e nao imita os cartoes deles de
    proposito: la cada caixa e uma PORTA (um cadastro para abrir), aqui cada

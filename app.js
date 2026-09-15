@@ -3785,6 +3785,11 @@ function goto(page) {
   // Presence: só ativa quando está editando OS
   if (page !== 'nova-os') pararPresenceOS();
 
+  // A contagem do menu, a cada troca de tela. Aqui e não em renderHome porque o
+  // menu está em todas elas: cadastrar um tecido e ir para a tela de cores tem
+  // de deixar o número certo nas duas, sem passar pelo Início.
+  try { atualizarContagensNav(); } catch (e) { console.warn('contagem do menu', e); }
+
   // renderiza listas
   if (page === 'home') renderHome();
   if (page === 'cad-tecidos') renderTecidos();
@@ -17872,27 +17877,48 @@ function _dashFluxoLigarRelogio() {
   }, DASH_FLUXO_MS);
 }
 
+/* A CONTAGEM NO MENU (15/09/2026, Junior).
+
+   Até aqui ela morava nos dezesseis quadros de atalho do Início: um por
+   cadastro, cada um com o número de registros. Os quadros faziam duas coisas ao
+   mesmo tempo — levar à tela e dizer quantos registros ela tem — e as duas o
+   menu já fazia melhor, porque o menu está em TODAS as telas e o Início não.
+   Quem estava no meio de uma OS e queria saber quantas grades existem tinha de
+   voltar ao Início para ver um número.
+
+   Agora o número vai na frente do nome, no próprio menu. Os quadros saíram
+   (ver index.html) e o Início ficou só com o resumo do fluxo, que é o que não
+   cabe em lugar nenhum além daquela tela.
+
+   A OE não é uma lista como as outras: ela não tem registro próprio, é uma
+   expedição MONTADA — janela + data com pelo menos uma OS alocada. Por isso
+   sai das cargas, agrupadas, e não de um `STATE.oes` que não existe. */
+function _contagensNav() {
+  const n = k => (STATE[k] || []).length;
+  return {
+    ordens: n('ordens'),
+    oes: new Set((STATE.expedicaoCargas || []).map(c => (c.janelaId || '') + '|' + (c.data || ''))).size,
+    operacoes: n('operacoes'),
+    marcas: n('marcas'), colecoes: n('colecoes'), modelos: n('modelos'),
+    linhas: n('linhas'), bases: n('bases'), blocos: n('blocos'),
+    equipe: n('equipe'), funcoes: n('funcoes'), etapas: n('etapas'),
+    componentes: n('componentes'), tecidos: n('tecidos'), cores: n('cores'),
+    fornecedores: n('fornecedores'), materiais: n('materiais'),
+    grades: n('grades'), desenhos: n('desenhos')
+  };
+}
+
+function atualizarContagensNav() {
+  const conta = _contagensNav();
+  document.querySelectorAll('.nav-num[data-conta]').forEach(el => {
+    const v = conta[el.dataset.conta];
+    // Lista vazia mostra 0, e não fica em branco: em branco parece cadastro que
+    // o programa não sabe contar; 0 é a resposta.
+    el.textContent = (v == null) ? '' : Number(v).toLocaleString('pt-BR');
+  });
+}
+
 function renderHome() {
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set('stat-os', STATE.ordens.length);
-  // OEs cadastradas = expedições distintas (janela + data) com pelo menos uma OS
-  // alocada. Uma OE é uma expedição montada, não um registro à parte — por isso
-  // é contada pelas cargas, agrupadas por janela+data.
-  const _oes = new Set((STATE.expedicaoCargas || []).map(c => (c.janelaId || '') + '|' + (c.data || '')));
-  set('stat-oes', _oes.size);
-  set('stat-operacoes', (STATE.operacoes || []).length);
-  set('stat-tecidos', STATE.tecidos.length);
-  set('stat-cores', STATE.cores.length);
-  set('stat-materiais', STATE.materiais.length);
-  set('stat-modelos', STATE.modelos.length);
-  set('stat-colecoes', STATE.colecoes.length);
-  set('stat-grades', STATE.grades.length);
-  set('stat-desenhos', STATE.desenhos.length);
-  set('stat-marcas', STATE.marcas.length);
-  set('stat-linhas', STATE.linhas.length);
-  set('stat-bases', STATE.bases.length);
-  set('stat-blocos', STATE.blocos.length);
-  set('stat-equipe', STATE.equipe.length);
   try { renderFluxoDash(); } catch (e) { console.warn('dashboard do fluxo', e); }
   _dashFluxoLigarRelogio();
 }
