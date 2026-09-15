@@ -25,17 +25,26 @@
 
    O QUE ELE NÃO FAZ
    Não inventa etapa: se o desenho da OS não tem lista de etapas (ou a OS não
-   tem desenho), o checklist dela fica como está. E nunca REMOVE uma etapa que
-   já tem marca — ela vai para o fim da lista, exatamente como _etapasFinaisOS
-   faz na tela. O que foi registrado no chão não se apaga daqui.
+   tem desenho), o checklist dela fica como está.
+
+   E POR PADRÃO NÃO REMOVE etapa que já tem marca — ela vai para o fim da lista,
+   exatamente como _etapasFinaisOS faz na tela, porque tirar da folha um trabalho
+   que alguém registrou é como checklist "some". Só que essa mesma regra emperra
+   a faxina de nome SUBSTITUÍDO: "Costura CM.LISA" virou "Costura CM.LISA |
+   Descalvado" e "| São Carlos", e a OS antiga fica carregando o nome velho
+   marcado para sempre, mostrando as duas versões da mesma etapa na folha. Daí o
+   --forcar, que põe a lista do desenho e só ela — levando a MARCA do nome velho
+   para o novo (migrarMarcas), e nomeando no relatório o que não teve para onde
+   ir. Rode a conferência antes: é ela que diz quais OS RECENTES perderiam
+   apontamento.
 
    Antes de gravar, o blob inteiro é copiado para backups/ — é a volta atrás.
 
    USO (confere primeiro, grava depois):
      node servidor/checklist-em-lote.js --etapas
      node servidor/checklist-em-lote.js --marcar-antes 2026-09-01
-     node servidor/checklist-em-lote.js --etapas --marcar-antes 2026-09-01
-     node servidor/checklist-em-lote.js --etapas --marcar-antes 2026-09-01 --gravar
+     node servidor/checklist-em-lote.js --etapas --forcar --marcar-antes 2026-09-01 --fim "Estoque"
+     node servidor/checklist-em-lote.js --etapas --forcar --marcar-antes 2026-09-01 --fim "Estoque" --gravar
 */
 const fs = require('fs');
 const path = require('path');
@@ -48,6 +57,8 @@ const ANTES = (opt('--marcar-antes') || '').trim();
 // A etapa que vai para o FIM da lista das OS marcadas (criada se faltar). Sem
 // ela, vale a ordem que o desenho deu — ver o bloco em que FIM e usado.
 const FIM = (opt('--fim') || '').trim();
+// --forcar: a lista da OS vira a do desenho E MAIS NADA — ver etapasFinais.
+const FORCAR = args.includes('--forcar');
 const GRAVAR = args.includes('--gravar');
 const BASE = opt('--url') || 'https://193.168.0.200';
 const ENV = opt('--env') || 'C:\\supabase\\docker\\.env';
@@ -105,12 +116,86 @@ function etapasComMarca(o) {
   return marcadas;
 }
 
-// Lista final ao receber as etapas do desenho: as do desenho, mais as que já têm
-// marca e sumiram de lá — estas vão para o fim, nunca somem. É _etapasFinaisOS.
-function etapasFinais(o, novas) {
+/* Lista final ao receber as etapas do desenho: as do desenho, mais as que já têm
+   marca e sumiram de lá — estas vão para o fim, nunca somem. É _etapasFinaisOS.
+
+   --forcar: a lista passa a ser a do desenho E MAIS NADA, inclusive jogando fora
+   etapa marcada que não está lá.
+
+   Por que existe: a regra de preservar é certa para o dia a dia — tirar da folha
+   uma etapa que alguém marcou apaga trabalho registrado, e é assim que checklist
+   "some". Mas ela emperra a faxina de nomes SUBSTITUÍDOS. Quando "Costura
+   CM.LISA" virou "Costura CM.LISA | Descalvado" e "| São Carlos", e "Expedição"
+   virou as duas direcionais, as OS antigas ficaram carregando o nome velho
+   marcado — e ele nunca mais sai sozinho, porque tem marca. A folha passa a
+   mostrar as duas versões da mesma etapa, uma marcada e outra não.
+
+   Aqui o trabalho não se perde: o nome novo está na lista do desenho e recebe a
+   marca no passo 2. Só use --forcar sabendo disso, e olhando antes o relatório
+   de quais OS perdem marca sem ganhar a equivalente. */
+function etapasFinais(o, novas, forcar) {
+  if (forcar) return [...novas];
   const marcadas = etapasComMarca(o);
   const preservar = (o.etapas || []).filter(e => marcadas.has(e) && !novas.includes(e));
   return [...novas, ...preservar];
+}
+
+/* A ETAPA NOVA QUE SUBSTITUI UMA VELHA, quando o nome foi desdobrado.
+
+   Os nomes velhos não foram apagados: foram PARTIDOS. "Costura CM.LISA" virou
+   "Costura CM.LISA | Descalvado" e "Costura CM.LISA | São Carlos"; "Expedição"
+   virou "Expedição Desc X São Carlos" e "Expedição São Carlos X Desc.". A marca
+   que está no nome velho é trabalho que aconteceu de verdade, e jogá-la fora
+   junto com o nome seria apagar apontamento de OS que ainda está em produção.
+
+   Candidato = etapa nova cujo nome COMEÇA com o nome velho. Quando sobram as
+   duas metades (uma de cada unidade), quem desempata é a caixa "Recebido em São
+   Carlos" — a mesma regra que separa as duas costuras no status e nos campos do
+   fluxo. Sem candidato claro, devolve null e quem chama avisa. */
+function equivalenteNova(velho, novas, o) {
+  const cand = novas.filter(n => n !== velho && n.startsWith(velho));
+  if (!cand.length) return null;
+  if (cand.length === 1) return cand[0];
+  const sc = cand.filter(n => /s[ãa]o carlos/i.test(n));
+  const desc = cand.filter(n => !/s[ãa]o carlos/i.test(n));
+  if (sc.length === 1 && desc.length === 1) {
+    const recebida = ((o.etapas || []).some(n => /recebido em s[ãa]o carlos/i.test(n)
+      && ((o.progresso || {}).etapasCheck || {})[n]));
+    return recebida ? sc[0] : desc[0];
+  }
+  return null;
+}
+
+/* Leva a marca (e as tarefas) do nome velho para o nome novo. Devolve os nomes
+   que não tiveram para onde ir — são os que a folha realmente perde, e quem
+   chama os põe no relatório em vez de deixá-los sumir calados. */
+function migrarMarcas(o, atual, novas) {
+  const prog = o.progresso || (o.progresso = {});
+  const ck = prog.etapasCheck || (prog.etapasCheck = {});
+  const sq = prog.etapasSeq || (prog.etapasSeq = {});
+  const tk = prog.tarefasCheck || (prog.tarefasCheck = {});
+  const orfas = [];
+  atual.forEach(velho => {
+    if (novas.includes(velho)) return;
+    const temMarca = !!ck[velho]
+      || (tk[velho] && Object.values(tk[velho]).some(Boolean));
+    if (!temMarca) { delete ck[velho]; delete sq[velho]; delete tk[velho]; return; }
+    const nova = equivalenteNova(velho, novas, o);
+    if (!nova) { orfas.push(velho); delete ck[velho]; delete sq[velho]; delete tk[velho]; return; }
+    // Não pisa numa marca que já existe no nome novo: a mais ANTIGA é a que
+    // conta como "quando aquela etapa aconteceu".
+    if (ck[velho]) {
+      const seqVelho = Number(sq[velho]) || 0;
+      if (!ck[nova] || (Number(sq[nova]) || 0) > seqVelho) sq[nova] = seqVelho || sq[nova];
+      ck[nova] = true;
+    }
+    if (tk[velho]) {
+      const destino = tk[nova] = tk[nova] || {};
+      Object.entries(tk[velho]).forEach(([t, v]) => { if (v) destino[t] = true; });
+    }
+    delete ck[velho]; delete sq[velho]; delete tk[velho];
+  });
+  return orfas;
 }
 
 // As tarefas cadastradas de uma etapa. É tarefasDaEtapa do app.js.
@@ -175,6 +260,7 @@ function tarefasDaFolha(o, nomeEtapa, etapasCad, tarefasCad) {
   const semDesenho = [];
   const semEtapasNoDesenho = new Set();
   const quaisEtapas = [];
+  const perdeuRecente = [], perdeuAntiga = [];
   if (ETAPAS) {
     ordens.forEach(o => {
       const cod = String(o.codigo || '').trim();
@@ -184,16 +270,36 @@ function tarefasDaFolha(o, nomeEtapa, etapasCad, tarefasCad) {
       if (!d) { semDesenho.push(o.os || '?'); return; }
       const novas = (Array.isArray(d.etapasNomes) ? d.etapasNomes : []).filter(Boolean);
       if (!novas.length) { semEtapasNoDesenho.add(d.codigo || d.id); return; }
-      const final = etapasFinais(o, novas);
+      const final = etapasFinais(o, novas, FORCAR);
       const atual = o.etapas || [];
       if (atual.length === final.length && atual.every((e, i) => e === final[i])) return;
+      /* A MARCA DO NOME VELHO MUDA DE CASA. Etapa marcada que sai da lista é
+         trabalho registrado; migrarMarcas a leva para o nome que a substituiu
+         ("Costura CM.LISA" → "Costura CM.LISA | Descalvado"). O que sobra sem
+         equivalente sai nomeado no relatório — nas OS antigas não importa (o
+         passo 2 remarca a lista nova inteira), nas RECENTES importa e muito. */
+      let orfas = [];
+      if (FORCAR) orfas = migrarMarcas(o, atual, final);
+      if (orfas.length) {
+        const recente = !ANTES || String(o.data || '') >= ANTES;
+        (recente ? perdeuRecente : perdeuAntiga).push(`${o.os || '?'} (${o.data || 's/ data'}): ${orfas.join(', ')}`);
+      }
       quaisEtapas.push(`${o.os || '?'}: ${atual.length} → ${final.length} etapas`);
       o.etapas = final;
       mudouEtapas++;
     });
     console.log('--- 1. checklist vindo do desenho ---');
     console.log(`OS com o checklist reescrito: ${mudouEtapas}`);
-    quaisEtapas.slice(0, 30).forEach(l => console.log('   ' + l));
+    if (quaisEtapas.length <= 12) quaisEtapas.forEach(l => console.log('   ' + l));
+    if (perdeuAntiga.length) {
+      console.log(`OS antigas com marca sem equivalente: ${perdeuAntiga.length}`
+        + ' — sem problema, o passo 2 remarca a lista nova inteira.');
+    }
+    if (perdeuRecente.length) {
+      console.log(`
+  ⚠  OS RECENTES com marca SEM equivalente (a folha perde o apontamento): ${perdeuRecente.length}`);
+      perdeuRecente.slice(0, 40).forEach(l => console.log('     ' + l));
+    }
     if (semDesenho.length) {
       console.log(`OS sem desenho encontrado (ficam como estão): ${semDesenho.length}`
         + (semDesenho.length <= 20 ? ' — ' + semDesenho.join(', ') : ''));
