@@ -438,6 +438,9 @@ const DEVICE_ID = (() => {
 })();
 
 let cloudCache = null;
+// O cache já virou STATE nesta sessão? É a diferença entre "baixado" e "na
+// tela" — as duas coisas que o programa confundia quando abria tudo em zero.
+let _estadoCarregado = false;
 // A ÚLTIMA leitura do servidor falhou? Enquanto true, não é seguro salvar: o
 // cloudCache pode estar vazio por causa da falha (não porque o usuário apagou).
 // Sem este flag, o seed/migração do loadState tentava gravar logo após um load
@@ -2410,14 +2413,41 @@ async function inicializarAuth() {
     aplicarPapelLembrado();
     _papelPronto = carregarPapelEmParalelo();
     await cloudLoad();
-    await carregarComprasMateriais();
-    await carregarCatalogoSkus();
-    await revalidarSkusDesenhos();
-    await carregarMensagens();
-    iniciarRealtime();
-    iniciarRealtimeCompras();
-    iniciarRealtimeMensagens();
-    atualizarBadgeMensagens();
+    /* OS DADOS DA TELA NA FRENTE DOS ACESSÓRIOS (15/09/2026).
+
+       Aqui estava a razão de a fábrica abrir com tudo em zero. A abertura
+       baixava o blob (`cloudLoad`) e, ANTES de passá-lo para a tela, ficava
+       esperando, um atrás do outro, quatro pedidos que a tela não precisa para
+       existir: as compras da Contabilidade, o catálogo de SKUs, a revalidação
+       dos desenhos e as mensagens (que ainda puxam reações e perfis).
+
+       Enquanto essa fila não terminava, o `init()` não chegava ao `loadState` —
+       e é o `loadState` que tira os cadastros do cache e os põe no STATE. Com o
+       servidor respondendo em milissegundos ninguém percebia. Hoje, com as
+       chamadas morrendo no prazo de 20s (ver a correção do nginx em
+       servidor/nginx-tls.conf), a fila passou de um minuto: programa aberto,
+       logado, 33 chaves e 291 OS baixadas na memória, tela em zero, e nenhum
+       erro no console — porque nada falhou. Só ninguém tinha chegado a vez.
+
+       Agora o STATE é montado assim que o blob chega, e os acessórios seguem
+       depois, soltos: se um deles demorar ou morrer, atrasa a si mesmo e a mais
+       ninguém. A ordem entre eles continua a mesma (o catálogo antes da
+       revalidação, as mensagens antes do realtime que depende do que elas
+       descobriram). */
+    await _papelPronto;          // o papel antes do loadState, como o init já fazia
+    await loadState();
+    _estadoCarregado = true;
+    (async () => {
+      await carregarComprasMateriais();
+      await carregarCatalogoSkus();
+      await revalidarSkusDesenhos();
+      await carregarMensagens();
+      iniciarRealtime();
+      iniciarRealtimeCompras();
+      iniciarRealtimeMensagens();
+      atualizarBadgeMensagens();
+      atualizarUIAuth();
+    })().catch(e => console.warn('acessórios da abertura', e));
   }
   atualizarUIAuth();
   supa.auth.onAuthStateChange(async (event, session) => {
@@ -2452,7 +2482,7 @@ async function inicializarAuth() {
          O caminho do evento é o normal quando o token precisa ser renovado na
          abertura — ou seja, o programa quebrava justamente para quem ficou um
          tempo sem entrar. */
-      try { await loadState(); } catch (e) { console.warn('loadState pós-login', e); }
+      try { await loadState(); _estadoCarregado = true; } catch (e) { console.warn('loadState pós-login', e); }
       await _papelPronto;
       await carregarComprasMateriais();
       await carregarCatalogoSkus();
@@ -2476,6 +2506,7 @@ async function inicializarAuth() {
       pararPresenceOS();
       currentUser = null;
       cloudCache = null;
+      _estadoCarregado = false;
       currentRole = null;
       _papelPronto = null;
       _lembrarPapel(null, null);   // saiu: a próxima conta nesta máquina começa do padrão
@@ -33444,7 +33475,10 @@ async function limparTudo() {
     // dados. Aqui só se espera por ele — as migrações abaixo e o snapshot da
     // Contabilidade dependem de saber se este usuário é admin.
     await (_papelPronto || carregarPapelEmParalelo());
-    await loadState();
+    // A abertura logada já montou o STATE (ver inicializarAuth). Só se ela não
+    // chegou lá — sessão que veio por outro caminho — é que se carrega aqui:
+    // reler 2 MB de JSON à toa custa uma tela parada por um segundo.
+    if (!_estadoCarregado) await loadState();
     await migrarEtapasOS();        // padroniza etapas das OSs (1×, admin)
     await migrarEtapasOSV2();      // acrescenta as caixas das duas unidades (1×, admin)
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
