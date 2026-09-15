@@ -3267,7 +3267,7 @@ async function loadState() {
     // podem ter movimento de estoque, expedição e operação amarrados.
     const dup = Array.from(usados.entries()).filter(([k, a]) => k !== 'sem-numero' && a.length > 1);
     if (dup.length) {
-      console.warn('OS com NÚMERO REPETIDO (o programa não escolhe qual vale — resolva em OS Salvas): '
+      console.warn('OS com NÚMERO REPETIDO (o programa não escolhe qual vale — resolva em Ordens de Serviço): '
         + dup.map(([k, a]) => `${k} → ${a.map(o => `${o.modeloNome || 'sem modelo'} de ${o.data}`).join(' | ')}`).join(' · '));
     }
   } catch (e) { console.warn('normalizarNumerosOS', e); }
@@ -7360,17 +7360,33 @@ function renderEstoque() {
     const f = faltaDeTecidoParaOS(os) || [];
     if (f.length) faltaPorOS.set(r.osId, f);
   });
-  const _tituloFalta = (fs) => 'Reservando pano que nao existe:\n'
-    + fs.map(f => '  · ' + (f.tecidoNome || '') + ' · '
-        + (corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)')
-        + ': precisa ' + fmt(f.precisa) + ' kg, disponivel ' + fmt(f.disponivel)
-        + ' kg, faltam ' + fmt(f.falta) + ' kg').join('\n')
-    + '\n\nO vermelho sai sozinho quando a entrada desse tecido for lancada no estoque.';
+  /* O AVISO FECHA A CONTA DA OS (15/09/2026, Junior). Antes ele listava o que
+     falta de cada tecido e parava aí — e quem vai comprar precisa saber o
+     TAMANHO do buraco: falta pouco para fechar a OS, ou falta quase tudo?
+     Agora a última linha diz quanto falta do total previsto, em bobinas e em
+     quilos, que são as duas unidades com que se compra (ver
+     faltaParaCompletarOS). */
+  const _tituloFalta = (fs, os) => {
+    const t = faltaParaCompletarOS(os, fs);
+    const itens = (t.itens.length ? t.itens : fs);
+    const bob = (n) => (n == null ? '' : ` (${n} bob)`);
+    const linhas = itens.map(f => '  · ' + (f.tecidoNome || '') + ' · '
+      + (corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)')
+      + ': precisa ' + fmt(f.precisa) + ' kg, disponivel ' + fmt(f.disponivel)
+      + ' kg, faltam ' + fmt(f.falta) + ' kg' + bob(f.faltaBob));
+    const fecho = t.previstoKg > 0
+      ? '\n\nPara completar esta OS faltam '
+        + (t.temBobina ? t.faltaBob + ' de ' + t.previstoBob + ' bobinas e ' : '')
+        + fmt(t.faltaKg) + ' de ' + fmt(t.previstoKg) + ' kg previstos.'
+      : '';
+    return 'Reservando pano que nao existe:\n' + linhas.join('\n') + fecho
+      + '\n\nO vermelho sai sozinho quando a entrada desse tecido for lancada no estoque.';
+  };
   /* SEM BOTÃO DE BAIXA (27/08/2026, Junior: "essa ação deve ser sempre
      automática"). Um botão que faz o que o programa já faz sozinho só serve
      para criar uma segunda verdade: quem clicasse aqui baixaria o pano de uma
      OS que a produção ainda não começou, e o número deixaria de bater com o
-     chão. Quem manda é o STATUS da OS, e ele se muda na lista de OS Salvas —
+     chão. Quem manda é o STATUS da OS, e ele se muda na lista de Ordens de Serviço —
      inclusive para desfazer (voltar para "Não iniciada"). */
   /* UMA COLUNA POR FASE, EM BOBINAS (28/08/2026, Junior).
 
@@ -7425,7 +7441,7 @@ function renderEstoque() {
     const forro = forroDoMaterialOS(os);
     const rib = ribanaDoMaterialOS(os);
     const falta = faltaPorOS.get(o.osId) || null;
-    const dica = falta ? esc(_tituloFalta(falta)) : '';
+    const dica = falta ? esc(_tituloFalta(falta, os)) : '';
     return `
     <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
@@ -7466,7 +7482,7 @@ function renderEstoque() {
      As baixadas saem da tabela e viram UMA LINHA de resumo. Não somem de todo
      porque o total delas é o contrapeso do que se lê logo acima, em Saídas.
      Onde cada uma aparece continua sendo em Movimentações recentes, e desfazer
-     uma baixa é voltar a OS para "não iniciada", na lista de OS Salvas — que é
+     uma baixa é voltar a OS para "não iniciada", na lista de Ordens de Serviço — que é
      o mesmo lugar onde ela foi carimbada. */
   const kgBaixadas = baixadas.reduce((a, o) => a + (Number(o.kg) || 0), 0);
   const parConjugado = reservadas.map(o => ({ pai: o, filhas: conjugadasSemPanoDaOS(o.osId, idsComMovimento) }));
@@ -7484,7 +7500,7 @@ function renderEstoque() {
         O pano de uma OS fica <b>reservado</b> enquanto ela não começa, e sai do estoque
         sozinho quando a OS chega a <b>Enfestando</b> — que é quando o rolo desce da
         prateleira. O status vem do checklist da folha (marcar <b>Enfesto</b> basta) e pode
-        ser carimbado à mão na lista de OS Salvas. Aqui ficam só as que ainda seguram material.${temConjugada ? `
+        ser carimbado à mão na lista de Ordens de Serviço. Aqui ficam só as que ainda seguram material.${temConjugada ? `
         A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
         então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
         mesmo metro na mesa.` : ''}${faltaPorOS.size ? `
@@ -8007,7 +8023,7 @@ let _rankAno = '', _rankMes = '';
 /* O BALCAO DOS GRUPOS DE OS.
 
    Cada linha do ranking sabe quais OS a formaram, e a celula da contagem e o
-   atalho para elas: clicar leva para OS Salvas mostrando so aquelas. Antes de
+   atalho para elas: clicar leva para Ordens de Serviço mostrando so aquelas. Antes de
    existir isto, ver "CM.LISA · Preto · P ao G3 saiu 6 vezes" nao levava a lugar
    nenhum — para descobrir QUAIS 6, era abrir OS por OS.
 
@@ -8018,7 +8034,7 @@ let _rankAno = '', _rankMes = '';
 let _rankGrupos = [];
 
 // O grupo escolhido viaja num campo PENDENTE, que o `goto` consome ao abrir a
-// lista. Assim o recorte vale so para a viagem que o trouxe: chegar em OS Salvas
+// lista. Assim o recorte vale so para a viagem que o trouxe: chegar em Ordens de Serviço
 // por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
 // um clique dado meia hora antes.
 let _listaOsGrupoPendente = null;
@@ -8432,7 +8448,7 @@ function renderFasePainel(faseIdx) {
   const card = cardsSaldo.join('');
 
   // OSs atualmente NESTA fase, com busca e filtros. A lista é a mesma coisa que
-  // a lista de OS Salvas — as mesmas linhas, os mesmos botões de ação, a mesma
+  // a lista de Ordens de Serviço — as mesmas linhas, os mesmos botões de ação, a mesma
   // busca — só que recortada pelo campo em que a OS está agora. Quem a desenha é
   // renderFaseOsLista, fora daqui: assim digitar na busca reescreve SÓ o corpo da
   // tabela, e o cursor não salta do campo a cada tecla.
@@ -8514,12 +8530,12 @@ function renderFasePainel(faseIdx) {
   renderFaseOsLista(fase.id);
 }
 
-/* ====== A LISTA DE OS DE UM CAMPO: as mesmas linhas das OS Salvas ======
+/* ====== A LISTA DE OS DE UM CAMPO: as mesmas linhas das Ordens de Serviço ======
 
    Cada campo do fluxo já dizia QUANTO tem (o saldo por tecido e cor) e QUAIS OS
    estão nele. O que faltava era poder trabalhar nessa lista: achar uma OS pelo
    número, ver só as paradas, carimbar o status sem sair da tela. Isso tudo já
-   existia pronto na lista de OS Salvas — a coluna de ações, a busca, os filtros
+   existia pronto na lista de Ordens de Serviço — a coluna de ações, a busca, os filtros
    com contagem —, e aqui é a MESMA coisa, recortada pelo campo em que a OS está
    agora. Reaproveitar (_statusCelulaOS, abrirMenuAcoesOS, _filtroListaOS,
    _textoBuscaOS) é o que garante que os dois lugares digam a mesma coisa.
@@ -8528,7 +8544,7 @@ function renderFasePainel(faseIdx) {
    painel inteiro é reescrito a cada render, e reescrever a barra de filtros
    junto tiraria o cursor do campo de busca a cada tecla digitada. Aqui só o
    <tbody>, a contagem e as opções dos seletores são refeitos — o campo em que a
-   pessoa está digitando não é tocado. É o mesmo desenho da lista de OS Salvas,
+   pessoa está digitando não é tocado. É o mesmo desenho da lista de Ordens de Serviço,
    onde a barra é HTML fixo e só o corpo muda. */
 
 // Quem está no campo agora e quantas peças dela contam AQUI. É a mesma conta do
@@ -8580,7 +8596,7 @@ function _faseFiltroLido(faseId) {
 }
 
 // Volta o campo ao estado de "tudo à vista". Existe pelo mesmo motivo da lista
-// de OS Salvas: os filtros somados escondem a lista inteira com facilidade, e
+// de Ordens de Serviço: os filtros somados escondem a lista inteira com facilidade, e
 // desfazer um por um é o caminho mais curto para alguém achar que a OS sumiu.
 function limparFiltrosFase(faseId) {
   ['fase-busca-', 'fase-status-', 'fase-cor-', 'fase-grade-', 'fase-sku-']
@@ -18240,7 +18256,7 @@ function initOSForm() {
    rolar a lista inteira lendo código por código. O campo de busca recorta a
    lista enquanto se digita, e procura em tudo o que identifica o desenho: o
    código, a descrição, o modelo, a cor e o SKU. Vários termos valem juntos
-   ("moletom preto"), como na lista de OS Salvas.
+   ("moletom preto"), como na lista de Ordens de Serviço.
 
    O QUE ELE NÃO FAZ: escolher por você. A lista continua sendo a lista, e o
    desenho JÁ ESCOLHIDO nunca some dela — filtrar não pode desfazer, em
@@ -20892,6 +20908,70 @@ function faltaDeTecidoParaOS(data) {
     // so responde uma pergunta, e nao pode deixar o estoque do programa mexido.
     STATE.estoqueMov = salvo;
   }
+}
+
+/* QUANTO FALTA PARA COMPLETAR A OS, em bobinas e em quilos (15/09/2026, Junior).
+
+   O aviso de falta dizia quanto falta de CADA tecido — e não dizia o tamanho do
+   buraco. "Faltam 88 kg de Malha Preta" não responde a pergunta de quem vai
+   comprar: falta pouco para fechar a OS, ou falta quase tudo? Aqui a conta sai
+   fechada: faltam 4 das 14 bobinas previstas, 88 dos 305 kg.
+
+   A BOBINA QUE FALTA SAI DA BOBINA PREVISTA, e não de kg ÷ peso da bobina. A
+   previsão de bobinas é do CADASTRO DA GRADE (bobinasEfetivasFase, o mesmo
+   caminho da folha de OS e das colunas desta tabela); dividir o quilo que falta
+   pelo peso médio daria um segundo número para a mesma pergunta, e os dois
+   discordariam na tela — a coluna dizendo 10 bobinas e o aviso dizendo 11.
+
+   Então a falta é a MESMA PROPORÇÃO: se falta 40% do quilo daquele tecido,
+   faltam 40% das bobinas dele, arredondado para cima. Para cima porque meia
+   bobina que falta obriga a comprar uma inteira — errar para o lado do aperto é
+   o único erro que não para a produção.
+
+   Tecido sem previsão de bobina (ribana sem peso cadastrado, grade que não
+   respondeu) entra só com o quilo: `bobinas` vem null e quem escreve o texto
+   omite a bobina, como já fazia. Inventar bobina seria pior do que não dizer. */
+function faltaParaCompletarOS(os, faltando) {
+  const vazio = { itens: [], previstoKg: 0, previstoBob: 0, faltaKg: 0, faltaBob: 0, temBobina: false };
+  if (!os || !Array.isArray(faltando) || !faltando.length) return vazio;
+  let fases = [];
+  try { fases = materialPorFaseOS(os) || []; } catch (e) { return vazio; }
+  if (!fases.length) return vazio;
+  const chave = (t, c) => _normNome(t) + '||' + _normNome(c);
+  // O previsto de cada prateleira: as fases daquele tecido+cor somadas.
+  const prev = new Map();
+  fases.forEach(f => {
+    const k = chave(f.tecido, f.cor);
+    const cur = prev.get(k) || { kg: 0, bobinas: 0, temBobina: false };
+    cur.kg += Number(f.kg) || 0;
+    if (f.bobinas != null) { cur.bobinas += f.bobinas; cur.temBobina = true; }
+    prev.set(k, cur);
+  });
+  const arred = n => Math.round(n * 1000) / 1000;
+  const itens = faltando.map(f => {
+    const p = prev.get(chave(f.tecidoNome, f.corNome)) || { kg: 0, bobinas: 0, temBobina: false };
+    // A proporção precisa de um previsto > 0 para existir. Sem ele (tecido que
+    // a OS não usa em fase nenhuma), o quilo vale e a bobina fica em branco.
+    const fatia = p.kg > 0 ? Math.min(1, (Number(f.falta) || 0) / p.kg) : 0;
+    const faltaBob = (p.temBobina && p.kg > 0) ? Math.ceil(p.bobinas * fatia) : null;
+    return {
+      ...f,
+      previstoKg: arred(p.kg),
+      previstoBob: p.temBobina ? p.bobinas : null,
+      faltaBob
+    };
+  });
+  const somar = (arr, f) => arr.reduce((s, x) => s + (f(x) || 0), 0);
+  return {
+    itens,
+    // O total da OS é o previsto INTEIRO — todas as fases, não só as que faltam.
+    // É contra ele que "faltam 4" quer dizer alguma coisa.
+    previstoKg: arred(somar(fases, f => Number(f.kg) || 0)),
+    previstoBob: somar(fases, f => f.bobinas),
+    faltaKg: arred(somar(itens, f => Number(f.falta) || 0)),
+    faltaBob: somar(itens, f => f.faltaBob),
+    temBobina: fases.some(f => f.bobinas != null) && itens.some(f => f.faltaBob != null)
+  };
 }
 
 // O texto do aviso. Separado da conta para poder ser lido por teste sem DOM, e
@@ -23582,7 +23662,7 @@ function _gradeDetalheDaOS(o) {
   return partes.length ? partes.join(' · ') + ` = ${g.total || 0} pç por camada` : '';
 }
 
-/* A celula da coluna Grade da lista de OS Salvas.
+/* A celula da coluna Grade da lista de Ordens de Serviço.
 
    O nome vem de `_gradeNomeDaOS`, a mesma funcao que o modal de operacoes usa —
    ela ja resolve a grade viva pela chave do historico (`_gradeIdDaOS`) e cai no
@@ -23921,7 +24001,7 @@ function _statusCelulaOS(o, extra) {
   const quem = _obsNomeLogin(o.statusOSPor || '');
   const quando = o.statusOSEm ? _obsQuando({ em: o.statusOSEm }) : '';
   const cls = 'os-status' + (extra ? ' ' + extra : '');
-  /* NA LISTA O RÓTULO VAI ABREVIADO. A coluna de ações da lista de OS Salvas
+  /* NA LISTA O RÓTULO VAI ABREVIADO. A coluna de ações da lista de Ordens de Serviço
      tem pouco mais de 100px — ela foi encolhida de propósito em 31/08/2026,
      porque sozinha empurrava QTD e RISCOS para fora da tela em quem usa o
      navegador a 200%. "Costurando | São Carlos" inteiro voltaria a estourá-la,
@@ -23952,7 +24032,7 @@ function _statusCelulaOS(o, extra) {
 
 /* O STATUS TAMBÉM NA JANELA DA FOLHA DE OS (02/09/2026, Junior).
 
-   O status nasceu só na lista de OS Salvas. Quem carimba, porém, é o corte — e
+   O status nasceu só na lista de Ordens de Serviço. Quem carimba, porém, é o corte — e
    o corte trabalha com a FOLHA aberta na tela, que é o que diz o que fazer.
    Para dizer "comecei" ou "terminei" era preciso voltar à lista, achar a linha
    e voltar: três passos para um clique, no meio do enfesto. Agora o mesmo
@@ -24301,7 +24381,7 @@ function _osFinalizadaNoDia(o, dia) {
   return _diaFinalizacaoOS(o) === dia;
 }
 
-/* OS FILTROS da lista de OS Salvas: status, cor, grade, SKU e o dia em que a
+/* OS FILTROS da lista de Ordens de Serviço: status, cor, grade, SKU e o dia em que a
    OS foi finalizada.
 
    As opções são montadas aqui, e não no HTML, por causa da CONTAGEM: "Parado
@@ -24317,7 +24397,7 @@ function _osFinalizadaNoDia(o, dia) {
 // `id` existe porque os campos do fluxo (Estoque de corte, Costurando…) têm
 // cada um o SEU seletor de status: sete telas vivem no DOM ao mesmo tempo, e
 // um id fixo faria todas mexerem no mesmo <select>. Sem o parâmetro, é o da
-// lista de OS Salvas — que foi quem nasceu com ele.
+// lista de Ordens de Serviço — que foi quem nasceu com ele.
 function _filtroStatusListaOS(base, id) {
   const sel = document.getElementById(id || 'filtro-status-os');
   if (!sel) return '';
@@ -27475,7 +27555,7 @@ function editarOsAtual() {
   if (printOsAtual) editarOS(printOsAtual.id);
 }
 
-// Conjugar a OS que está na tela. A janela é a mesma da lista de OS Salvas —
+// Conjugar a OS que está na tela. A janela é a mesma da lista de Ordens de Serviço —
 // um lugar só decide quem pode, o que aparece e o que é gravado.
 function conjugarOsAtual() {
   if (printOsAtual) abrirModalConjugarOS(printOsAtual.id);

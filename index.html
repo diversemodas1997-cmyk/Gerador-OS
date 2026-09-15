@@ -98,7 +98,7 @@
       <div class="nav-items">
         <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
-        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>OS Salvas</a>
+        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
@@ -870,7 +870,7 @@
     <!-- ================= LISTA OS ================= -->
     <section class="page hidden" data-page="lista-os">
       <div class="page-header">
-        <div><h1>OS Salvas</h1><div class="desc">Ordens de Serviço geradas. Clique em visualizar para imprimir.</div></div>
+        <div><h1>Ordens de Serviço - OS</h1><div class="desc">Todas as OS geradas. Clique em visualizar para abrir a folha e imprimir.</div></div>
         <div class="actions admin-only"><button class="btn primary" onclick="goto('nova-os')">+ Nova OS</button></div>
       </div>
       <div class="card">
@@ -921,7 +921,7 @@
       <div class="page-header no-print">
         <div><h1>Visualização da OS</h1><div class="desc">Revise a folha e clique em Imprimir.</div></div>
         <div class="actions">
-          <!-- O status da OS, o mesmo controle da lista de OS Salvas. Fica no
+          <!-- O status da OS, o mesmo controle da lista de Ordens de Serviço. Fica no
                cabeçalho (.no-print) porque status é como a produção anda, não é
                dado do papel — a folha impressa sai igual. Conteúdo por JS
                (renderStatusFolhaOS): seletor para quem pode mudar, etiqueta
@@ -1474,6 +1474,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-15f"></script>
+<script src="app.js?v=2026-09-15g"></script>
 </body>
 </html>
