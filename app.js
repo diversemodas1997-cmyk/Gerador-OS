@@ -18345,10 +18345,9 @@ function _dashFluxoDados() {
      ENTRADA   produtos que entraram no quadro, por período (dia, semana, mês ou
                ano — quem olha escolhe no alto do painel)
      SAÍDA     produtos que saíram dele para o passo seguinte, idem
-     RESIDUAL  o que está no quadro: no fim de cada período, e AGORA (o número
-               do cartão). Junior, 16/09/2026: "residual e saldo são a mesma
-               coisa" — até então o residual era só a parte parada há mais de
-               7 dias, e havia uma linha "saldo" à parte. Ficou um nome só.
+     RESIDUAL  entrada − saída, acumuladas desde a primeira coluna (Junior,
+               16/09/2026). Nas operações é o que está lá; no Estoque, o cartão
+               soma também o que já estava antes do período.
      TOTAL     tudo o que esteve no quadro no período: o que já estava quando as
                períodos começaram, mais o que entrou
 
@@ -18548,18 +18547,23 @@ function _dashHistorico(d, agora, escala) {
   Object.keys(d).forEach(k => {
     const lista = ivs[k] || [];
     const dentro = (t, a, b) => t != null && t >= a && t < b;
-    // Quanto estava no quadro num instante: os intervalos que o cobrem. A OS
-    // sem data conta como presente (ela está lá, e desde quando não se sabe).
-    const presente = t => lista.filter(x => (x.semData || (x.de != null && x.de <= t))
-      && (x.ate == null || x.ate > t)).reduce((s, x) => s + x.pecas, 0);
     const sem = periodos.map(w => ({
       de: w.de, ate: w.ate, rot: w.rot, nome: w.nome,
-      // O RESIDUAL do período: o que estava no quadro quando ele terminou (ou
-      // agora, no período em curso).
-      residual: presente(Math.min(w.ate, agora) - 1),
       entrada: lista.filter(x => dentro(x.de, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0),
       saida: lista.filter(x => dentro(x.ate, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0)
     }));
+    /* O RESIDUAL É ENTRADA − SAÍDA, ACUMULADAS desde a primeira coluna (16/09/2026,
+       Junior: "esse número deve ser o resultado do volume de entrada, menos o
+       volume de saída"). Começa em zero no início do período escolhido.
+
+       Nas operações do caminho isso já era o que se via — o que estava lá quando
+       as colunas começam é zero, porque a hora real das etapas só existe desde
+       agosto. A diferença é o ESTOQUE (produto acabado): ali o cartão soma 130
+       mil produtos de OS antigas, que já estavam antes, e o residual não. O
+       cartão continua dizendo o que está lá; o residual diz o que o período
+       deixou. */
+    let acumulado = 0;
+    sem.forEach(w => { acumulado += w.entrada - w.saida; w.residual = acumulado; });
     const entrada = sem.reduce((s, w) => s + w.entrada, 0);
     const saida = sem.reduce((s, w) => s + w.saida, 0);
     // Movimento de sábado e domingo (no dia e na semana): fica fora, e é dito.
@@ -18596,6 +18600,7 @@ function _dashHistorico(d, agora, escala) {
     out[k] = {
       semHistorico: DASH_SEM_HISTORICO.has(k),
       periodos: sem, entrada, saida, total: jaEstava + entrada, foraDoPeriodo,
+      residual: entrada - saida,
       agora: (d[k] && d[k].pecas) || 0, semData, atuais, faixas,
       tempoMedio, nSaidas: saidas.length,
       maisAntiga: datados[0] || null,
@@ -18663,9 +18668,8 @@ const DASH_FLUXO_MS = 30000;
 
      COLUNAS  entrada e saída de cada período (dia, semana, mês ou ano — o
               seletor do alto)
-     RESIDUAL a terceira coluna: o que estava no quadro no fim de cada período;
-              a do período em curso é o AGORA, com dia e hora, e é o número do
-              cartão (a linha "saldo" que havia aqui era o mesmo número e saiu)
+     RESIDUAL a terceira coluna: entrada − saída acumuladas até o fim de cada
+              período; a do período em curso vai até AGORA, com dia e hora
      DICA     passar o mouse num período mostra os três números dele; no ponto
               Agora, as OS que estão lá e desde quando
      EMBAIXO  entrou · saiu · residual · total, a idade do que está lá
@@ -18735,7 +18739,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const per = x.periodos;
   const n = per.length;
   // O residual do período em curso é o AGORA: o número do cartão.
-  const residual = per.map((w, i) => (i === n - 1 ? x.agora : w.residual));
+  const residual = per.map(w => w.residual);
   const max = Math.max(1,
     ...(ver('ent') ? per.map(w => w.entrada) : []),
     ...(ver('sai') ? per.map(w => w.saida) : []),
@@ -18754,9 +18758,10 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
     const dica = `<b>${esc(w.nome)}${ultimo ? ' · em curso' : ''}</b><br>`
       + `Entrada: ${_dashFmt(w.entrada)} · Saída: ${_dashFmt(w.saida)}<br>`
       + (ultimo
-        ? `<b>Residual agora (${quando}): ${_dashFmt(x.agora)}</b>`
+        ? `<b>Residual até agora (${quando}): ${_dashFmt(x.residual)}</b> <span class="dash-tip-os">(entrada − saída desde ${esc(per[0].nome)})</span>`
+          + (x.agora !== x.residual ? `<br><span class="dash-tip-os">No cartão: ${_dashFmt(x.agora)} — inclui o que já estava antes do período</span>` : '')
           + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
-        : `Residual no fim do período: ${_dashFmt(residual[i])}`);
+        : `Residual no fim do período: ${_dashFmt(residual[i])} <span class="dash-tip-os">(entrada − saída acumuladas)</span>`);
     const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0, ver('res') ? residual[i] : 0);
     const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : '', ver('res') ? `<i class="res"></i>${_dashCurto(residual[i])}` : ''].filter(Boolean);
     const vals = !muitos && topo > 0 && linhasVal.length
@@ -18799,7 +18804,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
     ${ver('numeros') ? `<div class="dash-an-kpis">
       ${kpi('Entrou', x.entrada, `Produtos que entraram nesta operação no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
       ${kpi('Saiu', x.saida, `Produtos que saíram desta operação para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-      ${kpi('Residual', x.agora, `O que está na operação agora, ${quando} (o número do cartão)`)}
+      ${kpi('Residual', x.residual, `Entrada − saída acumuladas desde ${per[0].nome}` + (x.agora !== x.residual ? ` (o cartão mostra ${_dashFmt(x.agora)}: inclui o que já estava antes do período)` : ''))}
       ${kpi('Total', x.total, `Tudo o que esteve na operação no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
     </div>` : ''}
     ${ver('idade') ? idade : ''}
@@ -18819,7 +18824,7 @@ function _dashAnalisePasso(p, h, escala, oc) {
   const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? '<span><i class="res"></i>Residual (o que está na operação; a última coluna é o agora)</span>' : ''}
+      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? '<span><i class="res"></i>Residual (entrada − saída acumuladas; a última coluna é até agora)</span>' : ''}
       ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
