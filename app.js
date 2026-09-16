@@ -18281,12 +18281,13 @@ function _dashFluxoDados() {
    volume residual (estoque), volume de saída e volume total de cada quadro",
    "com datas e tempos". O que ficou combinado:
 
-     ENTRADA   produtos que entraram no quadro, por semana (4 semanas corridas)
+     ENTRADA   produtos que entraram no quadro, por período (dia, semana, mês ou
+               ano — quem olha escolhe no alto do painel)
      SAÍDA     produtos que saíram dele para o passo seguinte, idem
      CORRENTE  o que está no quadro agora (o número do cartão)
      RESIDUAL  do que está agora, o que está parado há mais de 7 dias
      TOTAL     tudo o que esteve no quadro no período: o que já estava quando as
-               4 semanas começaram, mais o que entrou
+               períodos começaram, mais o que entrou
 
    DE ONDE SAI O PASSADO. O programa não guarda um diário de "a OS mudou de
    campo". Guarda, desde que o checklist existe, a HORA em que cada etapa foi
@@ -18304,7 +18305,6 @@ function _dashFluxoDados() {
      · O TRÂNSITO segue a DATA da carga, e não o checklist: não tem histórico
        aqui (os cartões dele mostram só o agora). */
 const DASH_RESIDUAL_DIAS = 7;
-const DASH_SEMANAS = 4;
 const DASH_DIA_MS = 86400000;
 const DASH_SEM_HISTORICO = new Set(['idaManha', 'idaTarde', 'voltaManha', 'voltaTarde']);
 
@@ -18375,25 +18375,118 @@ function _dashIntervalos() {
   return por;
 }
 
+/* O PERÍODO DE ANÁLISE É ESCOLHA DE QUEM OLHA (16/09/2026, Junior: "o parâmetro
+   de tempo a ser analisado deve ser escolhido pelo usuário, por dia, por semana,
+   por mês e por ano"). Um seletor no alto do painel vale para todos os passos e
+   fica lembrado neste computador.
+
+     DIA     os últimos 10 dias ÚTEIS (segunda a sexta), um por coluna
+     SEMANA  de SEGUNDA 00:00 a SEXTA 23:59 (Junior, mesmo dia): a atual e as 3
+             anteriores. Antes eram janelas de 7 dias contadas para trás a
+             partir de agora — numa quarta a "semana" ia de quarta a terça
+     MÊS     o mês de calendário inteiro: o atual e os 5 anteriores
+     ANO     o ano inteiro: o atual e os 2 anteriores
+
+   No DIA e na SEMANA o sábado e o domingo ficam FORA das colunas e dos totais,
+   e a tela diz quanto foi, em vez de sumir com isso calado. No mês e no ano não
+   há o que deixar de fora. Tudo em hora LOCAL da fábrica; `ate` é exclusivo. */
+const DASH_ESCALAS = [
+  { k: 'dia', rot: 'Dia', n: 10 },
+  { k: 'semana', rot: 'Semana', n: 4 },
+  { k: 'mes', rot: 'Mês', n: 6 },
+  { k: 'ano', rot: 'Ano', n: 3 }
+];
+const DASH_ESCALA_CHAVE = 'dashEscalaAnalise';
+function _dashEscala() {
+  try {
+    const k = localStorage.getItem(DASH_ESCALA_CHAVE);
+    if (DASH_ESCALAS.some(e => e.k === k)) return k;
+  } catch (e) { /* sem armazenamento: vale o padrão */ }
+  return 'semana';
+}
+const _DASH_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const _DASH_MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const _DASH_DIAS_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+// Os períodos da escala: [{de, ate, rot (eixo), nome (dica)}], do mais antigo
+// ao atual. `uteis` diz se o fim de semana fica de fora.
+function _dashPeriodos(agora, escala) {
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const p2 = n => String(n).padStart(2, '0');
+  const dm = d => p2(d.getDate()) + '/' + p2(d.getMonth() + 1);
+  const hoje = new Date(agora);
+  hoje.setHours(0, 0, 0, 0);
+  const out = [];
+  if (cfg.k === 'dia') {
+    const d = new Date(hoje);
+    while (out.length < cfg.n) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) {
+        const ate = new Date(d); ate.setDate(d.getDate() + 1);
+        out.unshift({ de: d.getTime(), ate: ate.getTime(), rot: dm(d),
+          nome: _DASH_DIAS_SEM[d.getDay()] + ' ' + dm(d) });
+      }
+      d.setDate(d.getDate() - 1);
+    }
+    return { periodos: out, uteis: true, cfg };
+  }
+  if (cfg.k === 'semana') {
+    const seg = new Date(hoje);
+    seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7));   // volta até a segunda
+    for (let i = cfg.n - 1; i >= 0; i--) {
+      const de = new Date(seg); de.setDate(seg.getDate() - i * 7);
+      const sex = new Date(de); sex.setDate(de.getDate() + 4);
+      const ate = new Date(de); ate.setDate(de.getDate() + 5);   // sábado 00:00
+      out.push({ de: de.getTime(), ate: ate.getTime(), rot: dm(de) + '–' + dm(sex),
+        nome: dm(de) + ' a ' + dm(sex) });
+    }
+    return { periodos: out, uteis: true, cfg };
+  }
+  if (cfg.k === 'mes') {
+    for (let i = cfg.n - 1; i >= 0; i--) {
+      const de = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const ate = new Date(de.getFullYear(), de.getMonth() + 1, 1);
+      out.push({ de: de.getTime(), ate: ate.getTime(),
+        rot: _DASH_MESES[de.getMonth()] + '/' + String(de.getFullYear()).slice(2),
+        nome: _DASH_MESES_LONGOS[de.getMonth()] + ' de ' + de.getFullYear() });
+    }
+    return { periodos: out, uteis: false, cfg };
+  }
+  for (let i = cfg.n - 1; i >= 0; i--) {
+    const de = new Date(hoje.getFullYear() - i, 0, 1);
+    const ate = new Date(hoje.getFullYear() - i + 1, 0, 1);
+    out.push({ de: de.getTime(), ate: ate.getTime(), rot: String(de.getFullYear()), nome: String(de.getFullYear()) });
+  }
+  return { periodos: out, uteis: false, cfg };
+}
+
+function _dashTrocarEscala(k) {
+  try { localStorage.setItem(DASH_ESCALA_CHAVE, k); } catch (e) { /* vale só nesta tela */ }
+  _dashFluxoAssinatura = '';
+  renderFluxoDash();
+}
+window._dashTrocarEscala = _dashTrocarEscala;
+
 // Os números de cada cartão para as abas do gráfico. `agora` em ms.
-function _dashHistorico(d, agora) {
+function _dashHistorico(d, agora, escala) {
   const ivs = _dashIntervalos();
-  const inicio = agora - DASH_SEMANAS * 7 * DASH_DIA_MS;
-  const semanas = Array.from({ length: DASH_SEMANAS }, (_, i) => {
-    const de = inicio + i * 7 * DASH_DIA_MS;
-    return { de, ate: de + 7 * DASH_DIA_MS };
-  });
+  const { periodos, uteis } = _dashPeriodos(agora, escala || 'semana');
+  const inicio = periodos[0].de;
   const out = {};
   Object.keys(d).forEach(k => {
     const lista = ivs[k] || [];
-    const dentro = (t, a, b) => t != null && t > a && t <= b;
-    const sem = semanas.map(w => ({
-      de: w.de, ate: w.ate,
+    const dentro = (t, a, b) => t != null && t >= a && t < b;
+    const sem = periodos.map(w => ({
+      de: w.de, ate: w.ate, rot: w.rot, nome: w.nome,
       entrada: lista.filter(x => dentro(x.de, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0),
       saida: lista.filter(x => dentro(x.ate, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0)
     }));
     const entrada = sem.reduce((s, w) => s + w.entrada, 0);
     const saida = sem.reduce((s, w) => s + w.saida, 0);
+    // Movimento de sábado e domingo (no dia e na semana): fica fora, e é dito.
+    const noFimDeSemana = t => uteis && t != null && t >= inicio && t <= agora
+      && !periodos.some(w => t >= w.de && t < w.ate);
+    const foraDoPeriodo = lista.filter(x => noFimDeSemana(x.de)).reduce((s, x) => s + x.pecas, 0)
+      + lista.filter(x => noFimDeSemana(x.ate)).reduce((s, x) => s + x.pecas, 0);
     const jaEstava = lista.filter(x => (x.semData || (x.de != null && x.de <= inicio))
       && (x.ate == null || x.ate > inicio)).reduce((s, x) => s + x.pecas, 0);
     // Quem está AGORA, com o "desde" de cada OS. A lista do cartão manda (ela
@@ -18423,7 +18516,7 @@ function _dashHistorico(d, agora) {
     });
     out[k] = {
       semHistorico: DASH_SEM_HISTORICO.has(k),
-      semanas: sem, entrada, saida, total: jaEstava + entrada,
+      periodos: sem, entrada, saida, total: jaEstava + entrada, foraDoPeriodo,
       agora: (d[k] && d[k].pecas) || 0, residual, semData, atuais, faixas,
       tempoMedio, nSaidas: saidas.length,
       maisAntiga: datados[0] || null,
@@ -18617,7 +18710,7 @@ function _dashGraficoColunas(cards) {
      AGORA            as OS que estão no quadro, uma coluna cada (o de sempre),
                       com a data de entrada na dica e as paradas há mais de
                       7 dias marcadas com listras
-     ENTRADA × SAÍDA  4 semanas, um pequeno gráfico por quadro, e embaixo os
+     ENTRADA × SAÍDA  por dia, semana, mês ou ano (o seletor no alto), um gráfico por quadro, e embaixo os
                       números: entrou, saiu, agora, residual e total
      TEMPO NO QUADRO  há quanto tempo o que está ali chegou (por faixa), o tempo
                       médio de permanência, a OS mais antiga e a última entrada */
@@ -18667,7 +18760,8 @@ function _dashAbaAgora(cards, h) {
 
 // A aba ENTRADA × SAÍDA: um pequeno gráfico por quadro, na mesma grade dos
 // cartões, e os cinco volumes embaixo.
-function _dashAbaFluxo(cards, h) {
+function _dashAbaFluxo(cards, h, escala) {
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const cel = (cards || []).map(c => {
     const x = h[c.k];
     const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
@@ -18675,7 +18769,7 @@ function _dashAbaFluxo(cards, h) {
       return `<div class="dash-an-cel">${nome}
         <div class="dash-an-aviso">O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu. Agora: <b>${_dashFmt(x ? x.agora : 0)}</b> produtos.</div></div>`;
     }
-    const max = Math.max(1, ...x.semanas.map(w => Math.max(w.entrada, w.saida)));
+    const max = Math.max(1, ...x.periodos.map(w => Math.max(w.entrada, w.saida)));
     const curto = n => n >= 1000
       ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 10000 ? 0 : 1 }) + ' mil'
       : _dashFmt(n);
@@ -18686,8 +18780,8 @@ function _dashAbaFluxo(cards, h) {
           <span class="dash-gr-tip" role="tooltip">${esc(rot)}</span>
         </div>`;
     };
-    const grupos = x.semanas.map(w => {
-      const periodo = `${_dashData(w.de)} a ${_dashData(w.ate)}`;
+    const grupos = x.periodos.map(w => {
+      const periodo = w.nome;
       // Os dois valores EMPILHADOS acima da semana, e não um sobre cada barra:
       // lado a lado, as barras são estreitas e os números se atropelavam.
       const topo = Math.max(w.entrada, w.saida);
@@ -18698,30 +18792,36 @@ function _dashAbaFluxo(cards, h) {
           ${barra(w.saida, 'sai', `Saída de ${periodo}: ${_dashFmt(w.saida)} produtos`)}
         </div>`;
     }).join('');
-    const eixo = x.semanas.map(w => `<span>${_dashData(w.de)}</span>`).join('');
+    // Com 10 dias as colunas são estreitas: o eixo mostra um dia sim, um não, e o
+    // valor fica só na dica. O número exato de cada dia continua a um toque.
+    const muitos = x.periodos.length > 6;
+    const eixo = x.periodos.map((w, i) => `<span>${muitos && i % 2 ? '' : esc(w.rot)}</span>`).join('');
     const kpi = (rot, v, dica, cls) =>
       `<div class="dash-an-kpi${cls ? ' ' + cls : ''}" title="${esc(dica)}"><span>${rot}</span><b>${_dashFmt(v)}</b></div>`;
     return `<div class="dash-an-cel">${nome}
-      <div class="dash-an-plot"><div class="dash-an-grupos">${grupos}</div></div>
+      <div class="dash-an-plot${muitos ? ' muitos' : ''}"><div class="dash-an-grupos">${grupos}</div></div>
       <div class="dash-an-eixo">${eixo}</div>
       <div class="dash-an-kpis">
-        ${kpi('Entrou', x.entrada, 'Produtos que entraram neste quadro nas 4 semanas')}
-        ${kpi('Saiu', x.saida, 'Produtos que saíram deste quadro para o passo seguinte nas 4 semanas')}
+        ${kpi('Entrou', x.entrada, `Produtos que entraram neste quadro no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
+        ${kpi('Saiu', x.saida, `Produtos que saíram deste quadro para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
         ${kpi('Agora', x.agora, 'O que está no quadro agora (o número do cartão)')}
         ${kpi('Residual', x.residual, `Do que está agora, o que está parado há mais de ${DASH_RESIDUAL_DIAS} dias`, x.residual > 0 ? 'alerta' : '')}
-        ${kpi('Total', x.total, 'Tudo o que esteve no quadro no período: o que já estava há 4 semanas, mais o que entrou')}
+        ${kpi('Total', x.total, `Tudo o que esteve no quadro no período: o que já estava em ${x.periodos[0].nome}, mais o que entrou`)}
       </div>
+      ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
     </div>`;
   }).join('');
   return `<div class="dash-an-leg">
       <span><i class="ent"></i>Entrada</span><span><i class="sai"></i>Saída</span>
-      <em>semanas de 7 dias, contadas para trás a partir de agora (${_dashDataHora(Date.now())})</em>
+      <em>${({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k]} · atualizado ${_dashDataHora(Date.now())}</em>
     </div>
     <div class="dash-an-grid">${cel}</div>`;
 }
 
 // A aba TEMPO NO QUADRO: a idade do que está ali, e as datas que importam.
-function _dashAbaTempo(cards, h) {
+function _dashAbaTempo(cards, h, escala) {
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const noPeriodo = `em ${cfg.n} ${({ dia: 'dias úteis', semana: 'semanas', mes: 'meses', ano: 'anos' })[cfg.k]}`;
   const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
   const linhas = (cards || []).map(c => {
     const x = h[c.k];
@@ -18739,8 +18839,8 @@ function _dashAbaTempo(cards, h) {
       : `<span class="dash-tp-vazio">vazio agora</span>`;
     const partes = [];
     partes.push(x.tempoMedio != null
-      ? `Tempo médio no quadro: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram em 4 semanas)</span>`
-      : 'Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu em 4 semanas)</span>');
+      ? `Tempo médio no quadro: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram ${noPeriodo})</span>`
+      : `Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu ${noPeriodo})</span>`);
     if (x.maisAntiga) {
       partes.push(`Mais antiga: <b>OS ${esc(x.maisAntiga.os)}</b>, desde ${_dashDataHora(x.maisAntiga.desde)} <span>(${_dashDuracao(x.maisAntiga.dias)})</span>`);
     }
@@ -18761,7 +18861,7 @@ function _dashAbaTempo(cards, h) {
 }
 
 // O espaço do gráfico de um passo: as abas e a aba escolhida.
-function _dashAnalisePasso(p, h) {
+function _dashAnalisePasso(p, h, escala) {
   const temAlgo = (p.cards || []).some(c => (c.v && c.v.pecas > 0) || ((h[c.k] || {}).total > 0));
   if (!temAlgo) return '';
   const aba = _dashAbaPorPasso[p.nome] || 'agora';
@@ -18769,8 +18869,8 @@ function _dashAnalisePasso(p, h) {
   const botoes = DASH_ABAS.map(a => `<button type="button" class="dash-aba${a.k === aba ? ' ativa' : ''}"
       onclick="_dashTrocarAba(${nomeJs}, '${a.k}')">${a.rot}</button>`).join('');
   let corpo = '';
-  if (aba === 'fluxo') corpo = _dashAbaFluxo(p.cards, h);
-  else if (aba === 'tempo') corpo = _dashAbaTempo(p.cards, h);
+  if (aba === 'fluxo') corpo = _dashAbaFluxo(p.cards, h, escala);
+  else if (aba === 'tempo') corpo = _dashAbaTempo(p.cards, h, escala);
   else corpo = _dashAbaAgora(p.cards, h) || '<div class="dash-an-aviso">Nenhuma OS neste passo agora.</div>';
   return `<div class="dash-analise">
     <div class="dash-abas" role="tablist">${botoes}</div>
@@ -18795,11 +18895,12 @@ function renderFluxoDash() {
     return;
   }
   const d = _dashFluxoDados();
-  const ass = JSON.stringify(d) + JSON.stringify(_dashAbaPorPasso);
+  const escala = _dashEscala();
+  const ass = JSON.stringify(d) + JSON.stringify(_dashAbaPorPasso) + escala;
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
-  const h = _dashHistorico(d, Date.now());
+  const h = _dashHistorico(d, Date.now(), escala);
   const passos = _dashFluxoPassos(d).map((p, i) => {
     const cards = p.cards.map(c => {
       const pecas = (c.v && c.v.pecas) || 0;
@@ -18836,7 +18937,7 @@ function renderFluxoDash() {
 
        É SVG inline, sem biblioteca: são barras e rótulos, e uma dependência
        nova para desenhar retângulo seria mais código do que o desenho. */
-    const grafico = _dashAnalisePasso(p, h);
+    const grafico = _dashAnalisePasso(p, h, escala);
     return `
       <div class="dash-etapa">
         <div class="dash-etapa-nome"><span class="dash-passo">${i + 1}</span>${esc(p.nome)}</div>
@@ -18848,6 +18949,12 @@ function renderFluxoDash() {
     <div class="dash-fluxo-topo">
       <h2>Por onde o produto passa</h2>
       <span class="dash-desc">Do corte ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
+    </div>
+    <div class="dash-escala" role="group" aria-label="Período de análise dos gráficos">
+      <span>Analisar por</span>
+      ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
+        onclick="_dashTrocarEscala('${e.k}')" aria-pressed="${e.k === escala}">${e.rot}</button>`).join('')}
+      <em>vale para as abas Entrada × saída e Tempo no quadro de todos os passos</em>
     </div>
     ${passos}`;
 }

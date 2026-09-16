@@ -1121,6 +1121,36 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   .dash-num { font-size: 20px; }
 }
 
+/* O SELETOR DO PERIODO DE ANALISE (Dia, Semana, Mes, Ano), no alto do painel. */
+.dash-escala {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.dash-escala > span { margin-right: 4px; font-weight: 600; }
+.dash-escala em { font-style: normal; font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+.dash-escala-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.dash-escala-btn:hover { border-color: var(--accent); color: var(--ink); }
+.dash-escala-btn.ativa { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+/* Com muitas colunas (10 dias), o valor sai de cima e fica so na dica. */
+.dash-an-plot.muitos .dash-an-val { display: none; }
+.dash-an-plot.muitos { margin-top: 8px; }
+.dash-an-plot.muitos .dash-an-grupos { gap: 3px; }
+.dash-an-plot.muitos + .dash-an-eixo { gap: 3px; }
+
 /* AS ABAS DO ESPACO DO GRAFICO (16/09/2026): Agora, Entrada x saida, Tempo no
    quadro. Um grafico por vez no mesmo lugar, para o painel nao triplicar de
    altura. As cores novas foram validadas para daltonismo (dataviz):
