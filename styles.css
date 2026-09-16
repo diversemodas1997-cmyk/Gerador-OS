@@ -1145,6 +1145,46 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 }
 .dash-escala-btn:hover { border-color: var(--accent); color: var(--ink); }
 .dash-escala-btn.ativa { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+/* O GRAFICO UNICO: a linha do volume no quadro, os pontos e o Agora. */
+.dash-an-linha {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.dash-an-linha polyline { fill: none; stroke: var(--an-est); stroke-width: 2; stroke-linejoin: round; }
+.dash-an-ponto {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: 0 0 -4px -4px;
+  border-radius: 50%;
+  background: var(--an-est);
+  box-shadow: 0 0 0 2px var(--paper);
+  pointer-events: none;
+}
+.dash-an-ponto.agora { width: 11px; height: 11px; margin: 0 0 -5.5px -5.5px; background: var(--paper); border: 3px solid var(--an-est); box-sizing: border-box; }
+.dash-an-rot-agora {
+  position: absolute;
+  right: 0;
+  transform: translateY(-6px);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.dash-an-grupo.agora { background: rgba(235,104,52,.06); border-radius: 3px 3px 0 0; }
+.dash-an-eixo span.agora { color: var(--ink); font-weight: 700; }
+.dash-an-grupo:hover .dash-gr-tip, .dash-an-grupo:focus .dash-gr-tip { display: block; white-space: normal; min-width: 200px; line-height: 1.45; }
+.dash-an-grupo:first-child .dash-gr-tip { left: 0; transform: none; }
+.dash-an-grupo:last-child .dash-gr-tip { left: auto; right: 0; transform: none; }
+.dash-tip-os { font-size: 11px; color: var(--ink-2); }
+.dash-an-cel .dash-tp-barra { margin-top: 8px; height: 14px; }
+.dash-an-cel .dash-tp-seg em { font-size: 9px; }
+.dash-an-cel .dash-tp-info { font-size: 11px; }
 /* Com muitas colunas (10 dias), o valor sai de cima e fica so na dica. */
 .dash-an-plot.muitos .dash-an-val { display: none; }
 .dash-an-plot.muitos { margin-top: 8px; }
@@ -1159,6 +1199,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-analise {
   --an-ent: #1baf7a;
   --an-sai: #4a3aa7;
+  --an-est: #eb6834;   /* a linha do volume no quadro */
   --tp-f0: #86b6ef;
   --tp-f1: #5598e7;
   --tp-f2: #256abf;
@@ -1170,20 +1211,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 }
 /* Dentro das abas o grafico de colunas nao repete a linha de cima. */
 .dash-analise .dash-gr { margin-top: 8px; padding-top: 0; border-top: 0; }
-.dash-abas { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--line-2); }
-.dash-aba {
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 5px 10px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--ink-3);
-  cursor: pointer;
-}
-.dash-aba:hover { color: var(--ink); }
-.dash-aba.ativa { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+
 
 /* Listras do residual: a coluna parada ha mais de 7 dias. A textura carrega o
    significado junto com a legenda, sem depender de cor. */
@@ -1208,6 +1236,8 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-leg em { font-style: normal; font-size: 11px; color: var(--ink-3); }
 .dash-an-leg i.ent { background: var(--an-ent); }
 .dash-an-leg i.sai { background: var(--an-sai); }
+.dash-an-leg i.linha { width: 16px; height: 2px; border-radius: 0; background: var(--an-est); }
+.dash-an-leg i.f0, .dash-an-leg i.f1, .dash-an-leg i.f2, .dash-an-leg i.f3 { width: 7px; margin-right: -4px; }
 .dash-an-leg i.f0, .dash-tp-seg.f0 { background: var(--tp-f0); }
 .dash-an-leg i.f1, .dash-tp-seg.f1 { background: var(--tp-f1); }
 .dash-an-leg i.f2, .dash-tp-seg.f2 { background: var(--tp-f2); }
@@ -1228,7 +1258,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 }
 .dash-an-nome { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 .dash-an-aviso { font-size: 12px; color: var(--ink-3); padding: 6px 0; }
-.dash-an-plot { position: relative; height: 90px; margin-top: 28px; border-bottom: 1px solid var(--line); }
+.dash-an-plot { position: relative; height: 130px; margin-top: 28px; border-bottom: 1px solid var(--line); }
 .dash-an-grupos { position: absolute; inset: 0; display: flex; gap: 8px; }
 .dash-an-grupo {
   position: relative;

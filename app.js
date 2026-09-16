@@ -18475,8 +18475,13 @@ function _dashHistorico(d, agora, escala) {
   Object.keys(d).forEach(k => {
     const lista = ivs[k] || [];
     const dentro = (t, a, b) => t != null && t >= a && t < b;
+    // Quanto estava no quadro num instante: os intervalos que o cobrem. A OS
+    // sem data conta como presente (ela está lá, e desde quando não se sabe).
+    const presente = t => lista.filter(x => (x.semData || (x.de != null && x.de <= t))
+      && (x.ate == null || x.ate > t)).reduce((s, x) => s + x.pecas, 0);
     const sem = periodos.map(w => ({
       de: w.de, ate: w.ate, rot: w.rot, nome: w.nome,
+      estoque: presente(Math.min(w.ate, agora) - 1),
       entrada: lista.filter(x => dentro(x.de, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0),
       saida: lista.filter(x => dentro(x.ate, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0)
     }));
@@ -18573,161 +18578,27 @@ let _dashFluxoAssinatura = '';
 let _dashFluxoTimer = null;
 const DASH_FLUXO_MS = 30000;
 
-/* O GRÁFICO DE COLUNAS DE UM PASSO DO FLUXO: uma coluna por OS.
+/* UM GRÁFICO SÓ POR QUADRO (16/09/2026, Junior: "inclua todas as informações dos
+   gráficos em um único gráfico. Agora deve ser mostrado em entrada × saída, pois
+   Agora é uma data e hora").
 
-   Junior, 15/09/2026: "o gráfico de barras deve mostrar as informações das OS
-   atualmente presentes em cada quadro". Ele nasceu agregado — uma barra por
-   quadro — e agregado ele repetia o que os cartões logo acima já diziam, só que
-   em desenho. Com uma coluna por OS ele passa a dizer o que nenhum número do
-   painel dizia: QUAIS lotes estão ali e de que tamanho é cada um. Um passo com
-   11.000 peças pode ser uma OS gigante ou trinta pequenas, e a diferença entre
-   as duas coisas é a diferença entre um dia de trabalho e um mês.
+   Até aqui eram três abas — Agora, Entrada × saída e Tempo no quadro — e cada
+   uma respondia um pedaço da mesma pergunta. O "Agora" era uma aba à parte,
+   quando ele é só o ÚLTIMO INSTANTE da mesma linha do tempo. Agora é um gráfico
+   por quadro, na grade dos cartões:
 
-   AS COLUNAS SEGUEM A ORDEM DOS QUADROS, e o rótulo é o número da OS. A dica do
-   mouse diz de qual quadro ela é — sem isso, num passo de duas unidades, não
-   haveria como saber de que lado está cada barra.
+     COLUNAS  entrada e saída de cada período (dia, semana, mês ou ano — o
+              seletor do alto)
+     LINHA    o volume no quadro no fim de cada período; o último ponto é o
+              AGORA, com dia e hora, e é o número do cartão
+     DICA     passar o mouse num período mostra os três números dele; no ponto
+              Agora, as OS que estão lá e desde quando
+     EMBAIXO  entrou · saiu · agora · residual · total, a idade do que está lá
+              (faixas), o tempo médio no quadro, a OS mais antiga e a última
+              entrada
 
-   UM TETO DE COLUNAS, e o resto somado numa só. O cartão Estoque tem 264 OS:
-   264 riscos de um pixel não são um gráfico, são uma textura. Acima do teto, as
-   maiores aparecem e as demais viram uma coluna "+N outras" — que continua
-   dizendo a verdade sobre o volume, sem fingir que dá para ler 264 nomes.
-
-   A escala é do PASSO: cada grupo se mede contra a sua maior coluna. Numa
-   escala única para o painel inteiro, um passo de 200 peças ao lado de outro de
-   11.000 viraria uma linha rente ao chão, sem leitura nenhuma. */
-const DASH_GR_MAX = 14;
-
-function _dashGraficoColunas(cards) {
-  /* Uma entrada por OS, na ordem dos quadros e, dentro de cada um, da maior
-     para a menor: é a leitura que se procura primeiro ("qual é o lote grande
-     que está segurando este campo?"). */
-  let itens = [];
-  (cards || []).forEach(c => {
-    const lista = (c.v && c.v.lista) || [];
-    lista.slice().sort((a, b) => b.pecas - a.pecas)
-      .forEach(x => itens.push({ os: x.os, pecas: x.pecas, quadro: c.nome, desde: x.desde, dias: x.dias }));
-  });
-  if (!itens.length) return '';
-  const total = itens.reduce((s, x) => s + x.pecas, 0);
-  if (!(total > 0)) return '';
-  // Acima do teto: as maiores ficam, o resto vira uma coluna só.
-  if (itens.length > DASH_GR_MAX) {
-    const porTamanho = itens.slice().sort((a, b) => b.pecas - a.pecas);
-    const ficam = new Set(porTamanho.slice(0, DASH_GR_MAX - 1));
-    const resto = porTamanho.slice(DASH_GR_MAX - 1);
-    const somaResto = resto.reduce((s, x) => s + x.pecas, 0);
-    itens = itens.filter(x => ficam.has(x));
-    itens.push({ os: '+' + resto.length, pecas: somaResto, quadro: '',
-                 resumo: resto.length + ' OS menores, somadas' });
-  }
-  const max = Math.max(...itens.map(x => x.pecas));
-  if (!(max > 0)) return '';
-  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
-
-  /* NO FORMATO DO POWER BI (16/09/2026, Junior). Até aqui eram colunas soltas,
-     sem régua: dava para ver qual era maior, e não QUANTO. Agora o gráfico tem o
-     que um visual de colunas do Power BI tem — título, legenda, eixo de valores
-     com linhas de grade, o valor em cima de cada coluna, e a dica ao passar o
-     mouse numa caixa própria.
-
-     A COR É DO QUADRO, e não da OS: num passo de duas unidades, azul é sempre
-     Descalvado e laranja é sempre São Carlos, em qualquer dia. É a ordem fixa
-     dos quadros no passo que escolhe a cor (a mesma de _dashFluxoPassos), então
-     um quadro vazio não faz o vizinho mudar de cor. Paleta validada para
-     daltonismo (dataviz: validate_palette, 4 cores, contraste com rótulo). */
-  const nomesQuadro = (cards || []).map(c => c.nome);
-  const serie = nome => Math.max(0, nomesQuadro.indexOf(nome)) % 4 + 1;
-
-  // Régua "redonda": o topo do eixo é o próximo número bonito acima da maior
-  // coluna, dividido em 4 marcas. Os passos são apertados (1,5 · 3 · 4 · 6 · 8)
-  // para a maior coluna não ficar baixa: 5.280 desenha contra 6 mil, e não 8 mil.
-  const passo = (() => {
-    const bruto = max / 4;
-    const pot = Math.pow(10, Math.floor(Math.log10(bruto)));
-    const m = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(k => k * pot >= bruto) || 10;
-    return Math.max(1, m * pot);
-  })();
-  const topo = passo * 4;
-  const curto = n => {
-    if (n >= 1000) {
-      const mil = n / 1000;
-      return mil.toLocaleString('pt-BR', { maximumFractionDigits: mil >= 10 ? 0 : 1 }) + ' mil';
-    }
-    return fmt(n);
-  };
-  const pct = n => (n / topo * 100).toFixed(2);
-
-  const grade = [0, 1, 2, 3, 4].map(k => `
-      <div class="dash-gr-linha${k ? '' : ' base'}" style="bottom:${k * 25}%;"></div>
-      <span class="dash-gr-ytick" style="bottom:${k * 25}%;">${curto(passo * k)}</span>`).join('');
-
-  const colunas = itens.map(x => {
-    const h = x.pecas > 0 ? Math.max(0.8, x.pecas / topo * 100) : 0;
-    const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' produtos'
-      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' produtos'
-        // A data e o tempo no quadro, quando a OS tem hora de verdade (_dashHistorico).
-        + (x.desde != null && typeof _dashDataHora === 'function'
-            ? ' · no quadro desde ' + _dashDataHora(x.desde) + ' (' + _dashDuracao(x.dias) + ')' : '');
-    // Parada há mais de DASH_RESIDUAL_DIAS: a coluna ganha listras (o residual).
-    const velha = !x.resumo && x.dias != null && typeof DASH_RESIDUAL_DIAS === 'number' && x.dias > DASH_RESIDUAL_DIAS;
-    const cls = (x.resumo ? 'dash-barra resto' : 'dash-barra s' + serie(x.quadro)) + (velha ? ' velha' : '');
-    return `<div class="dash-col" tabindex="0" aria-label="${esc(dica)}">
-        <span class="dash-col-val" style="bottom:${h.toFixed(2)}%;">${esc(curto(x.pecas))}</span>
-        <span class="${cls}" style="height:${h.toFixed(2)}%;" data-h="${pct(x.pecas)}"></span>
-        <span class="dash-gr-tip" role="tooltip">${esc(dica)}</span>
-      </div>`;
-  }).join('');
-  const rotulos = itens.map(x => `<span class="dash-barra-rot">${esc(x.os)}</span>`).join('');
-
-  // Legenda só quando há mais de um quadro COM colunas: com um só, o título do
-  // passo já diz de quem são as barras, e uma legenda de um item é ruído.
-  const quadrosNoGrafico = nomesQuadro.filter(n => itens.some(x => x.quadro === n));
-  const temVelha = colunas.includes(' velha"');
-  const itensLeg = (quadrosNoGrafico.length > 1
-      ? quadrosNoGrafico.map(n => `<span><i class="s${serie(n)}"></i>${esc(n)}</span>`) : [])
-    .concat(temVelha ? [`<span><i class="velha"></i>parada há mais de ${DASH_RESIDUAL_DIAS} dias</span>`] : []);
-  const legenda = itensLeg.length ? `<div class="dash-gr-leg">${itensLeg.join('')}</div>` : '';
-
-  return `<div class="dash-gr">
-    <div class="dash-gr-cab"><span class="dash-gr-tit">Produtos por OS</span>${legenda}</div>
-    <div class="dash-gr-corpo">
-      <div class="dash-gr-plot">${grade}
-        <div class="dash-gr-cols">${colunas}</div>
-      </div>
-      <div class="dash-gr-eixo">${rotulos}</div>
-    </div>
-  </div>`;
-}
-/* AS TRÊS ABAS DO ESPAÇO DO GRÁFICO (16/09/2026, Junior: "otimize o espaço de
-   gráfico abaixo de cada quadro, para mostrar outros tipos de gráficos", "com
-   datas e tempos").
-
-   Um gráfico por vez, no mesmo lugar, em vez de três empilhados: o painel já é
-   comprido (sete passos), e triplicar a altura de cada um empurraria o fim do
-   caminho para longe da vista. A aba escolhida vale para aquele passo e fica
-   lembrada enquanto a tela estiver aberta.
-
-     AGORA            as OS que estão no quadro, uma coluna cada (o de sempre),
-                      com a data de entrada na dica e as paradas há mais de
-                      7 dias marcadas com listras
-     ENTRADA × SAÍDA  por dia, semana, mês ou ano (o seletor no alto), um gráfico por quadro, e embaixo os
-                      números: entrou, saiu, agora, residual e total
-     TEMPO NO QUADRO  há quanto tempo o que está ali chegou (por faixa), o tempo
-                      médio de permanência, a OS mais antiga e a última entrada */
-const DASH_ABAS = [
-  { k: 'agora', rot: 'Agora' },
-  { k: 'fluxo', rot: 'Entrada × saída' },
-  { k: 'tempo', rot: 'Tempo no quadro' }
-];
-const _dashAbaPorPasso = {};
-
-function _dashTrocarAba(passo, aba) {
-  _dashAbaPorPasso[passo] = aba;
-  _dashFluxoAssinatura = '';   // força o redesenho: a aba muda sem o dado mudar
-  renderFluxoDash();
-}
-window._dashTrocarAba = _dashTrocarAba;
-
+   Uma escala só para colunas e linha: tudo é produto, e duas réguas no mesmo
+   desenho fariam a linha parecer maior ou menor do que é. */
 const _dashFmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 const _dashDataHora = t => {
   if (t == null) return '';
@@ -18735,7 +18606,6 @@ const _dashDataHora = t => {
   const p2 = n => String(n).padStart(2, '0');
   return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 };
-const _dashData = t => (t == null ? '' : _dashDataHora(t).slice(0, 5));
 // "5 h", "1 dia", "3,5 dias": abaixo de um dia, em horas, que é como se fala.
 const _dashDuracao = dias => {
   if (dias == null) return '—';
@@ -18743,138 +18613,117 @@ const _dashDuracao = dias => {
   const v = dias.toLocaleString('pt-BR', { maximumFractionDigits: dias < 10 ? 1 : 0 });
   return v + (v === '1' ? ' dia' : ' dias');
 };
+const _dashCurto = n => n >= 1000
+  ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 10000 ? 0 : 1 }) + ' mil'
+  : _dashFmt(n);
 
-// A aba AGORA: o gráfico de colunas por OS, com o "desde" de cada uma.
-function _dashAbaAgora(cards, h) {
-  const comDatas = (cards || []).map(c => {
-    const hk = h[c.k] || {};
-    const porOS = new Map((hk.atuais || []).map(x => [x.os, x]));
-    const lista = ((c.v && c.v.lista) || []).map(x => {
-      const a = porOS.get(x.os);
-      return a ? Object.assign({}, x, { desde: a.desde, dias: a.dias }) : x;
-    });
-    return Object.assign({}, c, { v: Object.assign({}, c.v, { lista }) });
-  });
-  return _dashGraficoColunas(comDatas);
-}
-
-// A aba ENTRADA × SAÍDA: um pequeno gráfico por quadro, na mesma grade dos
-// cartões, e os cinco volumes embaixo.
-function _dashAbaFluxo(cards, h, escala) {
+function _dashGraficoQuadro(c, x, escala, agora) {
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
-  const cel = (cards || []).map(c => {
-    const x = h[c.k];
-    const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
-    if (!x || x.semHistorico) {
-      return `<div class="dash-an-cel">${nome}
-        <div class="dash-an-aviso">O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu. Agora: <b>${_dashFmt(x ? x.agora : 0)}</b> produtos.</div></div>`;
-    }
-    const max = Math.max(1, ...x.periodos.map(w => Math.max(w.entrada, w.saida)));
-    const curto = n => n >= 1000
-      ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 10000 ? 0 : 1 }) + ' mil'
-      : _dashFmt(n);
-    const barra = (v, cls, rot) => {
-      const hp = v > 0 ? Math.max(1.5, v / max * 100) : 0;
-      return `<div class="dash-an-bar">
-          <span class="dash-an-fill ${cls}" style="height:${hp.toFixed(1)}%;"></span>
-          <span class="dash-gr-tip" role="tooltip">${esc(rot)}</span>
-        </div>`;
-    };
-    const grupos = x.periodos.map(w => {
-      const periodo = w.nome;
-      // Os dois valores EMPILHADOS acima da semana, e não um sobre cada barra:
-      // lado a lado, as barras são estreitas e os números se atropelavam.
-      const topo = Math.max(w.entrada, w.saida);
-      const hTopo = topo > 0 ? Math.max(1.5, topo / max * 100) : 0;
-      const vals = topo > 0 ? `<span class="dash-an-val" style="bottom:${hTopo.toFixed(1)}%;"><i class="ent"></i>${curto(w.entrada)}<br><i class="sai"></i>${curto(w.saida)}</span>` : '';
-      return `<div class="dash-an-grupo" tabindex="0">${vals}
-          ${barra(w.entrada, 'ent', `Entrada de ${periodo}: ${_dashFmt(w.entrada)} produtos`)}
-          ${barra(w.saida, 'sai', `Saída de ${periodo}: ${_dashFmt(w.saida)} produtos`)}
-        </div>`;
-    }).join('');
-    // Com 10 dias as colunas são estreitas: o eixo mostra um dia sim, um não, e o
-    // valor fica só na dica. O número exato de cada dia continua a um toque.
-    const muitos = x.periodos.length > 6;
-    const eixo = x.periodos.map((w, i) => `<span>${muitos && i % 2 ? '' : esc(w.rot)}</span>`).join('');
-    const kpi = (rot, v, dica, cls) =>
-      `<div class="dash-an-kpi${cls ? ' ' + cls : ''}" title="${esc(dica)}"><span>${rot}</span><b>${_dashFmt(v)}</b></div>`;
+  const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
+  const quando = _dashDataHora(agora);
+  if (!x || x.semHistorico) {
     return `<div class="dash-an-cel">${nome}
-      <div class="dash-an-plot${muitos ? ' muitos' : ''}"><div class="dash-an-grupos">${grupos}</div></div>
-      <div class="dash-an-eixo">${eixo}</div>
-      <div class="dash-an-kpis">
-        ${kpi('Entrou', x.entrada, `Produtos que entraram neste quadro no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-        ${kpi('Saiu', x.saida, `Produtos que saíram deste quadro para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-        ${kpi('Agora', x.agora, 'O que está no quadro agora (o número do cartão)')}
-        ${kpi('Residual', x.residual, `Do que está agora, o que está parado há mais de ${DASH_RESIDUAL_DIAS} dias`, x.residual > 0 ? 'alerta' : '')}
-        ${kpi('Total', x.total, `Tudo o que esteve no quadro no período: o que já estava em ${x.periodos[0].nome}, mais o que entrou`)}
-      </div>
-      ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
-    </div>`;
-  }).join('');
-  return `<div class="dash-an-leg">
-      <span><i class="ent"></i>Entrada</span><span><i class="sai"></i>Saída</span>
-      <em>${({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k]} · atualizado ${_dashDataHora(Date.now())}</em>
-    </div>
-    <div class="dash-an-grid">${cel}</div>`;
-}
+      <div class="dash-an-aviso">Agora (${quando}): <b>${_dashFmt(x ? x.agora : 0)}</b> produtos. O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu.</div></div>`;
+  }
+  const per = x.periodos;
+  const n = per.length;
+  // O último ponto da linha é o AGORA: o período em curso termina aqui.
+  const estoque = per.map((w, i) => (i === n - 1 ? x.agora : w.estoque));
+  const max = Math.max(1, ...per.map(w => Math.max(w.entrada, w.saida)), ...estoque);
+  const alt = v => (v > 0 ? Math.max(1.5, v / max * 100) : 0);
+  const muitos = n > 6;
 
-// A aba TEMPO NO QUADRO: a idade do que está ali, e as datas que importam.
-function _dashAbaTempo(cards, h, escala) {
-  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
-  const noPeriodo = `em ${cfg.n} ${({ dia: 'dias úteis', semana: 'semanas', mes: 'meses', ano: 'anos' })[cfg.k]}`;
+  // As OS que estão no quadro agora, as maiores primeiro, para a dica do Agora.
+  const atuais = (x.atuais || []).slice().sort((a, b) => b.pecas - a.pecas);
+  const listaAgora = atuais.slice(0, 8).map(o => `OS ${o.os}: ${_dashFmt(o.pecas)}`
+    + (o.desde != null ? ` · desde ${_dashDataHora(o.desde)} (${_dashDuracao(o.dias)})` : ' · sem data'))
+    .join('<br>') + (atuais.length > 8 ? `<br>+ ${atuais.length - 8} OS` : '');
+
+  const grupos = per.map((w, i) => {
+    const ultimo = i === n - 1;
+    const dica = `<b>${esc(w.nome)}${ultimo ? ' · em curso' : ''}</b><br>`
+      + `Entrada: ${_dashFmt(w.entrada)} · Saída: ${_dashFmt(w.saida)}<br>`
+      + (ultimo
+        ? `<b>Agora (${quando}): ${_dashFmt(x.agora)}</b>${x.residual > 0 ? ` · residual ${_dashFmt(x.residual)}` : ''}`
+          + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
+        : `No quadro ao fim do período: ${_dashFmt(w.estoque)}`);
+    const topo = Math.max(w.entrada, w.saida);
+    const vals = !muitos && topo > 0
+      ? `<span class="dash-an-val" style="bottom:${alt(topo).toFixed(1)}%;"><i class="ent"></i>${_dashCurto(w.entrada)}<br><i class="sai"></i>${_dashCurto(w.saida)}</span>` : '';
+    return `<div class="dash-an-grupo${ultimo ? ' agora' : ''}" tabindex="0">${vals}
+        <div class="dash-an-bar"><span class="dash-an-fill ent" style="height:${alt(w.entrada).toFixed(1)}%;"></span></div>
+        <div class="dash-an-bar"><span class="dash-an-fill sai" style="height:${alt(w.saida).toFixed(1)}%;"></span></div>
+        <span class="dash-gr-tip" role="tooltip">${dica}</span>
+      </div>`;
+  }).join('');
+
+  // A linha do volume no quadro: SVG esticado só para o traço (a espessura não
+  // estica, por vector-effect); os pontos e o rótulo do Agora são HTML, para
+  // não virarem elipses.
+  const xPct = i => (i + 0.5) / n * 100;
+  const pontos = estoque.map((v, i) => `${xPct(i).toFixed(2)},${(100 - alt(v)).toFixed(2)}`).join(' ');
+  const marcas = estoque.map((v, i) => `<span class="dash-an-ponto${i === n - 1 ? ' agora' : ''}"
+      style="left:${xPct(i).toFixed(2)}%;bottom:${alt(v).toFixed(2)}%;"></span>`).join('');
+  const rotAgora = `<span class="dash-an-rot-agora" style="bottom:${alt(x.agora).toFixed(2)}%;">Agora ${_dashCurto(x.agora)}</span>`;
+  const eixo = per.map((w, i) => `<span${i === n - 1 ? ' class="agora"' : ''}>${
+    i === n - 1 ? 'agora ' + quando.slice(0, 5) : (muitos && i % 2 ? '' : esc(w.rot))}</span>`).join('');
+
+  const kpi = (rot, v, dica, cls) =>
+    `<div class="dash-an-kpi${cls ? ' ' + cls : ''}" title="${esc(dica)}"><span>${rot}</span><b>${_dashFmt(v)}</b></div>`;
+  const faixasTotal = x.faixas.reduce((s, f) => s + f.v, 0);
   const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
-  const linhas = (cards || []).map(c => {
-    const x = h[c.k];
-    const nome = `<div class="dash-tp-nome">${esc(c.nome)}</div>`;
-    if (!x || x.semHistorico) {
-      return `<div class="dash-tp-linha">${nome}<div class="dash-an-aviso">Sem histórico: o trânsito segue a data da carga.</div></div>`;
-    }
-    const total = x.faixas.reduce((s, f) => s + f.v, 0);
-    const barra = total > 0
-      ? x.faixas.map((f, i) => f.v > 0
-          ? `<span class="dash-tp-seg ${FAIXA_CLS[i]}" style="flex:${f.v} 1 0;" tabindex="0">
-               <em>${Math.round(f.v / total * 100)}%</em>
-               <span class="dash-gr-tip" role="tooltip">${esc(f.rot)}: ${_dashFmt(f.v)} produtos</span>
-             </span>` : '').join('')
-      : `<span class="dash-tp-vazio">vazio agora</span>`;
-    const partes = [];
-    partes.push(x.tempoMedio != null
+  const idade = faixasTotal > 0
+    ? `<div class="dash-tp-barra" title="Há quanto tempo o que está no quadro agora chegou nele">${x.faixas.map((f, i) => f.v > 0
+        ? `<span class="dash-tp-seg ${FAIXA_CLS[i]}" style="flex:${f.v} 1 0;" tabindex="0"><em>${Math.round(f.v / faixasTotal * 100)}%</em>
+             <span class="dash-gr-tip" role="tooltip">${esc(f.rot)}: ${_dashFmt(f.v)} produtos</span></span>` : '').join('')}</div>`
+    : '';
+  const noPeriodo = `em ${cfg.n} ${({ dia: 'dias úteis', semana: 'semanas', mes: 'meses', ano: 'anos' })[cfg.k]}`;
+  const tempos = [
+    x.tempoMedio != null
       ? `Tempo médio no quadro: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram ${noPeriodo})</span>`
-      : `Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu ${noPeriodo})</span>`);
-    if (x.maisAntiga) {
-      partes.push(`Mais antiga: <b>OS ${esc(x.maisAntiga.os)}</b>, desde ${_dashDataHora(x.maisAntiga.desde)} <span>(${_dashDuracao(x.maisAntiga.dias)})</span>`);
-    }
-    if (x.ultimaEntrada != null) partes.push(`Última entrada: <b>${_dashDataHora(x.ultimaEntrada)}</b>`);
-    if (x.semData > 0) partes.push(`<span>${_dashFmt(x.semData)} produtos de OS antigas, sem data de entrada</span>`);
-    return `<div class="dash-tp-linha">${nome}
-      <div class="dash-tp-barra">${barra}</div>
-      <div class="dash-tp-info">${partes.join(' · ')}</div>
-    </div>`;
-  }).join('');
-  return `<div class="dash-an-leg">
-      <span><i class="f0"></i>até 2 dias</span><span><i class="f1"></i>3 a 7 dias</span>
-      <span><i class="f2"></i>8 a 14 dias</span><span><i class="f3"></i>mais de 14 dias</span>
-      <span><i class="fsd"></i>sem data</span>
-      <em>há quanto tempo o que está no quadro agora chegou nele</em>
+      : `Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu ${noPeriodo})</span>`,
+    x.maisAntiga ? `Mais antiga: <b>OS ${esc(x.maisAntiga.os)}</b>, desde ${_dashDataHora(x.maisAntiga.desde)} <span>(${_dashDuracao(x.maisAntiga.dias)})</span>` : '',
+    x.ultimaEntrada != null ? `Última entrada: <b>${_dashDataHora(x.ultimaEntrada)}</b>` : '',
+    x.semData > 0 ? `<span>${_dashFmt(x.semData)} produtos de OS antigas, sem data de entrada</span>` : ''
+  ].filter(Boolean).join(' · ');
+
+  return `<div class="dash-an-cel">${nome}
+    <div class="dash-an-plot${muitos ? ' muitos' : ''}">
+      <div class="dash-an-grupos">${grupos}</div>
+      <svg class="dash-an-linha" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="${pontos}" vector-effect="non-scaling-stroke"></polyline>
+      </svg>
+      ${marcas}${rotAgora}
     </div>
-    ${linhas}`;
+    <div class="dash-an-eixo">${eixo}</div>
+    <div class="dash-an-kpis">
+      ${kpi('Entrou', x.entrada, `Produtos que entraram neste quadro no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
+      ${kpi('Saiu', x.saida, `Produtos que saíram deste quadro para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
+      ${kpi('Agora', x.agora, `O que está no quadro agora, ${quando} (o número do cartão)`)}
+      ${kpi('Residual', x.residual, `Do que está agora, o que está parado há mais de ${DASH_RESIDUAL_DIAS} dias`, x.residual > 0 ? 'alerta' : '')}
+      ${kpi('Total', x.total, `Tudo o que esteve no quadro no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
+    </div>
+    ${idade}
+    <div class="dash-tp-info">${tempos}</div>
+    ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
+  </div>`;
 }
 
-// O espaço do gráfico de um passo: as abas e a aba escolhida.
+// O espaço do gráfico de um passo: a legenda e um gráfico por quadro.
 function _dashAnalisePasso(p, h, escala) {
   const temAlgo = (p.cards || []).some(c => (c.v && c.v.pecas > 0) || ((h[c.k] || {}).total > 0));
   if (!temAlgo) return '';
-  const aba = _dashAbaPorPasso[p.nome] || 'agora';
-  const nomeJs = esc(JSON.stringify(p.nome));
-  const botoes = DASH_ABAS.map(a => `<button type="button" class="dash-aba${a.k === aba ? ' ativa' : ''}"
-      onclick="_dashTrocarAba(${nomeJs}, '${a.k}')">${a.rot}</button>`).join('');
-  let corpo = '';
-  if (aba === 'fluxo') corpo = _dashAbaFluxo(p.cards, h, escala);
-  else if (aba === 'tempo') corpo = _dashAbaTempo(p.cards, h, escala);
-  else corpo = _dashAbaAgora(p.cards, h) || '<div class="dash-an-aviso">Nenhuma OS neste passo agora.</div>';
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const agora = Date.now();
+  const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
-    <div class="dash-abas" role="tablist">${botoes}</div>
-    ${corpo}
+    <div class="dash-an-leg">
+      <span><i class="ent"></i>Entrada</span><span><i class="sai"></i>Saída</span>
+      <span><i class="linha"></i>No quadro (termina no Agora)</span>
+      <span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>idade: até 2 · 3–7 · 8–14 · +14 dias</span>
+      <em>${alcance}</em>
+    </div>
+    <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora)).join('')}</div>
   </div>`;
 }
 
@@ -18896,7 +18745,7 @@ function renderFluxoDash() {
   }
   const d = _dashFluxoDados();
   const escala = _dashEscala();
-  const ass = JSON.stringify(d) + JSON.stringify(_dashAbaPorPasso) + escala;
+  const ass = JSON.stringify(d) + escala + Math.floor(Date.now() / 60000);   // o Agora tem hora: repinta a cada minuto
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
@@ -18922,21 +18771,7 @@ function renderFluxoDash() {
           <div class="dash-sub">produtos · ${fmt(nOS)} OS</div>
         </div>`;
     }).join('');
-    /* O GRÁFICO DE COLUNAS, logo abaixo dos cartões (15/09/2026, Junior).
-
-       Os cartões dizem o número; o gráfico diz a PROPORÇÃO — qual metade do
-       passo está carregada. Num passo de uma coluna só ele não diria nada
-       (uma barra sozinha é sempre 100%), então ali não é desenhado: gráfico
-       que não compara é enfeite que ocupa a tela.
-
-       A ESCALA É DO PASSO, não do painel. Cada grupo se mede contra a sua
-       maior coluna: o que interessa é como o trabalho se reparte ENTRE as
-       duas unidades, ou entre os quatro turnos do trânsito. Numa escala única
-       para o painel inteiro, um passo com 200 peças ao lado de outro com
-       11.000 viraria uma linha rente ao chão, sem leitura nenhuma.
-
-       É SVG inline, sem biblioteca: são barras e rótulos, e uma dependência
-       nova para desenhar retângulo seria mais código do que o desenho. */
+    // O gráfico único de cada quadro do passo (ver _dashGraficoQuadro).
     const grafico = _dashAnalisePasso(p, h, escala);
     return `
       <div class="dash-etapa">
@@ -18954,7 +18789,7 @@ function renderFluxoDash() {
       <span>Analisar por</span>
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
         onclick="_dashTrocarEscala('${e.k}')" aria-pressed="${e.k === escala}">${e.rot}</button>`).join('')}
-      <em>vale para as abas Entrada × saída e Tempo no quadro de todos os passos</em>
+      <em>vale para os gráficos de todos os passos</em>
     </div>
     ${passos}`;
 }

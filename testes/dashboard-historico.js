@@ -14,6 +14,7 @@
      · o tempo médio no quadro é a média do que já saiu;
      · a OS sem hora de verdade (carimbo sintético da migração: 1, 2, 3) conta
        onde está, mas fica SEM DATA, em vez de inventar uma;
+     · o volume no quadro ao fim de cada período, e o do período em curso é o agora;
      · o fim do passado reconstruído bate com o cartão de agora.
 
    Recorta do app.js as funções reais, como o teste do painel. */
@@ -146,6 +147,9 @@ ok('a mais antiga é a 0001, desde 07/09 08:00',
 ok('a última entrada foi qua 09/09 10:00', h.corte.ultimaEntrada === em(9, 10), h.corte.ultimaEntrada);
 ok('a idade cai na faixa "8 a 14 dias"', h.corte.faixas[2].v === 200 && h.corte.faixas[0].v === 0, h.corte.faixas);
 ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraDoPeriodo);
+ok('no quadro ao fim de cada semana: 0, 0, 400 (sex 11/09) e 200 na semana em curso',
+   h.corte.periodos.map(w => w.estoque).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.estoque));
+ok('e a semana em curso termina no agora: o mesmo número do cartão', h.corte.periodos[3].estoque === h.corte.agora, [h.corte.periodos[3].estoque, h.corte.agora]);
 
 console.log('');
 console.log('-- costurando, com uma OS sem data --');
