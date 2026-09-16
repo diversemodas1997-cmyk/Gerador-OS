@@ -150,6 +150,9 @@ ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraD
 ok('no quadro ao fim de cada semana: 0, 0, 400 (sex 11/09) e 200 na semana em curso',
    h.corte.periodos.map(w => w.estoque).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.estoque));
 ok('e a semana em curso termina no agora: o mesmo número do cartão', h.corte.periodos[3].estoque === h.corte.agora, [h.corte.periodos[3].estoque, h.corte.agora]);
+ok('residual no fim de cada semana: só na 4ª a 0001 passa de 7 dias parada (desde seg 07/09)',
+   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 0 200', h.corte.periodos.map(w => w.residual));
+ok('a OS sem data nunca vira residual de período', h.costurando.periodos.every(w => w.residual === 0), h.costurando.periodos.map(w => w.residual));
 
 console.log('');
 console.log('-- costurando, com uma OS sem data --');

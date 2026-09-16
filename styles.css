@@ -1306,6 +1306,12 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-fill { display: block; width: 100%; border-radius: 3px 3px 0 0; }
 .dash-an-fill.ent { background: var(--an-ent); }
 .dash-an-fill.sai { background: var(--an-sai); }
+/* O residual e a terceira coluna: cinza com listras, a marca de "parado". A
+   textura carrega o sentido junto com a legenda, sem depender de uma cor a mais. */
+.dash-an-fill.res, .dash-an-leg i.res, .dash-an-val i.res, .dash-parte.ligada[data-parte="res"] i {
+  background-color: #8a8578;
+  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.55) 0 2px, transparent 2px 5px);
+}
 .dash-an-val {
   position: absolute;
   left: 50%;

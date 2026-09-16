@@ -18482,6 +18482,14 @@ function _dashHistorico(d, agora, escala) {
     const sem = periodos.map(w => ({
       de: w.de, ate: w.ate, rot: w.rot, nome: w.nome,
       estoque: presente(Math.min(w.ate, agora) - 1),
+      // O RESIDUAL DO PERÍODO (16/09/2026, Junior: "o volume residual em uma
+      // terceira coluna, para comparação entre entrada e saída"). A mesma
+      // definição do Agora, no fim de cada período: o que estava no quadro e já
+      // estava lá havia mais de DASH_RESIDUAL_DIAS. A OS sem data não entra —
+      // não se sabe há quanto tempo está parada, e residual inventado é pior
+      // do que residual nenhum.
+      residual: (t => lista.filter(x => x.de != null && x.de <= t - DASH_RESIDUAL_DIAS * DASH_DIA_MS
+        && (x.ate == null || x.ate > t)).reduce((s, x) => s + x.pecas, 0))(Math.min(w.ate, agora) - 1),
       entrada: lista.filter(x => dentro(x.de, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0),
       saida: lista.filter(x => dentro(x.ate, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0)
     }));
@@ -18625,6 +18633,7 @@ const _dashCurto = n => n >= 1000
 const DASH_PARTES = [
   { k: 'ent', rot: 'Entrada' },
   { k: 'sai', rot: 'Saída' },
+  { k: 'res', rot: 'Residual' },
   { k: 'linha', rot: 'No quadro (linha e Agora)' },
   { k: 'numeros', rot: 'Números' },
   { k: 'idade', rot: 'Tempo' },
@@ -18662,9 +18671,11 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const n = per.length;
   // O último ponto da linha é o AGORA: o período em curso termina aqui.
   const estoque = per.map((w, i) => (i === n - 1 ? x.agora : w.estoque));
+  const residual = per.map((w, i) => (i === n - 1 ? x.residual : w.residual));
   const max = Math.max(1,
     ...(ver('ent') ? per.map(w => w.entrada) : []),
     ...(ver('sai') ? per.map(w => w.saida) : []),
+    ...(ver('res') ? residual : []),
     ...(ver('linha') ? estoque : []));
   const alt = v => (v > 0 ? Math.max(1.5, v / max * 100) : 0);
   const muitos = n > 6;
@@ -18678,18 +18689,20 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const grupos = per.map((w, i) => {
     const ultimo = i === n - 1;
     const dica = `<b>${esc(w.nome)}${ultimo ? ' · em curso' : ''}</b><br>`
-      + `Entrada: ${_dashFmt(w.entrada)} · Saída: ${_dashFmt(w.saida)}<br>`
+      + `Entrada: ${_dashFmt(w.entrada)} · Saída: ${_dashFmt(w.saida)} · Residual: ${_dashFmt(residual[i])}`
+      + ` <span class="dash-tip-os">(parado há mais de ${DASH_RESIDUAL_DIAS} dias${ultimo ? ', agora' : ', no fim do período'})</span><br>`
       + (ultimo
         ? `<b>Agora (${quando}): ${_dashFmt(x.agora)}</b>${x.residual > 0 ? ` · residual ${_dashFmt(x.residual)}` : ''}`
           + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
         : `No quadro ao fim do período: ${_dashFmt(w.estoque)}`);
-    const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0);
-    const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : ''].filter(Boolean);
+    const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0, ver('res') ? residual[i] : 0);
+    const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : '', ver('res') ? `<i class="res"></i>${_dashCurto(residual[i])}` : ''].filter(Boolean);
     const vals = !muitos && topo > 0 && linhasVal.length
       ? `<span class="dash-an-val" style="bottom:${alt(topo).toFixed(1)}%;">${linhasVal.join('<br>')}</span>` : '';
     return `<div class="dash-an-grupo${ultimo ? ' agora' : ''}" tabindex="0">${vals}
         ${ver('ent') ? `<div class="dash-an-bar"><span class="dash-an-fill ent" style="height:${alt(w.entrada).toFixed(1)}%;"></span></div>` : ''}
         ${ver('sai') ? `<div class="dash-an-bar"><span class="dash-an-fill sai" style="height:${alt(w.saida).toFixed(1)}%;"></span></div>` : ''}
+        ${ver('res') ? `<div class="dash-an-bar"><span class="dash-an-fill res" style="height:${alt(residual[i]).toFixed(1)}%;"></span></div>` : ''}
         <span class="dash-gr-tip" role="tooltip">${dica}</span>
       </div>`;
   }).join('');
@@ -18757,7 +18770,7 @@ function _dashAnalisePasso(p, h, escala, oc) {
   const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}
+      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? `<span><i class="res"></i>Residual (parado há mais de ${DASH_RESIDUAL_DIAS} dias)</span>` : ''}
       ${ver('linha') ? '<span><i class="linha"></i>No quadro (termina no Agora)</span>' : ''}
       ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo no quadro: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
