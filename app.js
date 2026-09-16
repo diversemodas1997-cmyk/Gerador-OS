@@ -25217,7 +25217,8 @@ function renderListaOS() {
       <td>${esc(o.colecaoNome)||'—'}</td>
       <td>${_gradeCelulaLista(o)}</td>
       <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
-      <td>${o.grade?.total||0} pç</td>
+      <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
+          title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
 
     </tr>`;
