@@ -18634,7 +18634,7 @@ const DASH_PARTES = [
   { k: 'ent', rot: 'Entrada' },
   { k: 'sai', rot: 'Saída' },
   { k: 'res', rot: 'Residual' },
-  { k: 'linha', rot: 'No quadro (linha e Agora)' },
+  { k: 'linha', rot: 'Saldo (linha e Agora)' },
   { k: 'numeros', rot: 'Números' },
   { k: 'idade', rot: 'Tempo' },
   { k: 'tempos', rot: 'Tempo médio e datas' }
@@ -18694,7 +18694,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
       + (ultimo
         ? `<b>Agora (${quando}): ${_dashFmt(x.agora)}</b>${x.residual > 0 ? ` · residual ${_dashFmt(x.residual)}` : ''}`
           + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
-        : `No quadro ao fim do período: ${_dashFmt(w.estoque)}`);
+        : `Saldo ao fim do período: ${_dashFmt(w.estoque)}`);
     const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0, ver('res') ? residual[i] : 0);
     const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : '', ver('res') ? `<i class="res"></i>${_dashCurto(residual[i])}` : ''].filter(Boolean);
     const vals = !muitos && topo > 0 && linhasVal.length
@@ -18771,7 +18771,7 @@ function _dashAnalisePasso(p, h, escala, oc) {
   return `<div class="dash-analise">
     <div class="dash-an-leg">
       ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? `<span><i class="res"></i>Residual (parado há mais de ${DASH_RESIDUAL_DIAS} dias)</span>` : ''}
-      ${ver('linha') ? '<span><i class="linha"></i>No quadro (termina no Agora)</span>' : ''}
+      ${ver('linha') ? '<span><i class="linha"></i>Saldo (termina no Agora)</span>' : ''}
       ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo no quadro: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
