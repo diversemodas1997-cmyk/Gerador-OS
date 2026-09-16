@@ -18705,15 +18705,15 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const faixasTotal = x.faixas.reduce((s, f) => s + f.v, 0);
   const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
   const idade = faixasTotal > 0
-    ? `<div class="dash-tp-barra" title="Há quanto tempo o que está no quadro agora chegou nele">${x.faixas.map((f, i) => f.v > 0
+    ? `<div class="dash-tp-barra" title="Há quanto tempo o que está na operação agora chegou nela">${x.faixas.map((f, i) => f.v > 0
         ? `<span class="dash-tp-seg ${FAIXA_CLS[i]}" style="flex:${f.v} 1 0;" tabindex="0"><em>${Math.round(f.v / faixasTotal * 100)}%</em>
              <span class="dash-gr-tip" role="tooltip">${esc(f.rot)}: ${_dashFmt(f.v)} produtos</span></span>` : '').join('')}</div>`
     : '';
   const noPeriodo = `em ${cfg.n} ${({ dia: 'dias úteis', semana: 'semanas', mes: 'meses', ano: 'anos' })[cfg.k]}`;
   const tempos = [
     x.tempoMedio != null
-      ? `Tempo médio no quadro: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram ${noPeriodo})</span>`
-      : `Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu ${noPeriodo})</span>`,
+      ? `Tempo médio na operação: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram ${noPeriodo})</span>`
+      : `Tempo médio na operação: <b>—</b> <span>(nenhuma OS com data saiu ${noPeriodo})</span>`,
     x.maisAntiga ? `Mais antiga: <b>OS ${esc(x.maisAntiga.os)}</b>, desde ${_dashDataHora(x.maisAntiga.desde)} <span>(${_dashDuracao(x.maisAntiga.dias)})</span>` : '',
     x.ultimaEntrada != null ? `Última entrada: <b>${_dashDataHora(x.ultimaEntrada)}</b>` : '',
     x.semData > 0 ? `<span>${_dashFmt(x.semData)} produtos de OS antigas, sem data de entrada</span>` : ''
@@ -18725,10 +18725,10 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
     </div>
     <div class="dash-an-eixo">${eixo}</div>
     ${ver('numeros') ? `<div class="dash-an-kpis">
-      ${kpi('Entrou', x.entrada, `Produtos que entraram neste quadro no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-      ${kpi('Saiu', x.saida, `Produtos que saíram deste quadro para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-      ${kpi('Residual', x.agora, `O que está no quadro agora, ${quando} (o número do cartão)`)}
-      ${kpi('Total', x.total, `Tudo o que esteve no quadro no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
+      ${kpi('Entrou', x.entrada, `Produtos que entraram nesta operação no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
+      ${kpi('Saiu', x.saida, `Produtos que saíram desta operação para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
+      ${kpi('Residual', x.agora, `O que está na operação agora, ${quando} (o número do cartão)`)}
+      ${kpi('Total', x.total, `Tudo o que esteve na operação no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
     </div>` : ''}
     ${ver('idade') ? idade : ''}
     ${ver('tempos') ? `<div class="dash-tp-info">${tempos}</div>` : ''}
@@ -18747,8 +18747,8 @@ function _dashAnalisePasso(p, h, escala, oc) {
   const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? '<span><i class="res"></i>Residual (o que está no quadro; a última coluna é o agora)</span>' : ''}
-      ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo no quadro: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
+      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? '<span><i class="res"></i>Residual (o que está na operação; a última coluna é o agora)</span>' : ''}
+      ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
     <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora, oc)).join('')}</div>
