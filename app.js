@@ -18067,38 +18067,21 @@ function _dashPesoTurnos(o, perna) {
 // lista de OS: cada uma cai no campo em que está agora (faseAtualOS), e a fatia
 // que estiver alocada numa expedição cai no trânsito da perna — a mesma divisão
 // que as telas dos campos fazem.
-function _dashFluxoDados() {
-  /* Cada cartão guarda também a LISTA: qual OS está nele e com quantas peças
-     (15/09/2026, Junior: "o gráfico de barras deve mostrar as informações das
-     OS atualmente presentes em cada quadro"). O total responde "quanto"; a
-     lista responde "quais", que é a pergunta seguinte de quem olha o número. */
-  const zero = () => ({ pecas: 0, os: 0, lista: [] });
-  const d = {
-    cortando: zero(),
-    corte: zero(), corteSC: zero(),
-    costurando: zero(), costurandoSC: zero(),
-    idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
-    recDesc: zero(), recSC: zero(),
-    fios: zero(), estoque: zero()
-  };
-  // Índice da fase -> chave do painel. Por id, nunca por posição: a ordem de
-  // FASES_ESTOQUE já mudou uma vez (as duas unidades entraram no meio).
-  const chavePorIdx = new Map();
-  [['corte', 'corte'], ['corteSC', 'corteSC'], ['costurando', 'costurando'],
-   ['costurandoSC', 'costurandoSC'], ['fios', 'fios']].forEach(([faseId, k]) => {
-    const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
-    if (i >= 0) chavePorIdx.set(i, k);
-  });
-  const somar = (k, pecas, o) => {
-    if (!(pecas > 0)) return;
-    d[k].pecas += pecas;
-    d[k].os++;
-    d[k].lista.push({ os: String((o && o.os) || '').trim() || '—', pecas });
-  };
-
-  (STATE.ordens || []).forEach(o => {
-    const total = produtosOS(o);
-    if (!(total > 0)) return;
+/* EM QUE CARTÕES ESTA OS ESTÁ, e com quantos produtos em cada um. É a regra do
+   painel inteiro numa função só (16/09/2026): o resumo de AGORA (_dashFluxoDados)
+   e o HISTÓRICO (_dashHistorico, que reconstrói o passado pelas horas das
+   etapas) precisam responder a mesma pergunta do mesmo jeito, senão o gráfico de
+   entradas diria uma coisa e o cartão, outra.
+   `opts.semTransito`: deixa de fora a fatia alocada em expedição. O trânsito
+   segue a DATA da carga, e não o checklist, então o passado dele não se
+   reconstrói pelas etapas — o histórico o ignora, e o lote fica no campo. */
+function _dashCartoesDaOS(o, opts) {
+  const out = [];
+  const total = produtosOS(o);
+  if (!(total > 0)) return out;
+  const poe = (k, pecas) => { if (pecas > 0) out.push({ k, pecas }); };
+  const chavePorIdx = _dashChavePorIdx();
+  (() => {
     const atual = faseAtualOS(o);
     /* O CARTÃO ESTOQUE CONTA A CAIXA, E NÃO A ÚLTIMA ETAPA (15/09/2026,
        Junior: "o cartão Estoque deve mostrar todos os produtos em que na OS
@@ -18114,7 +18097,7 @@ function _dashFluxoDados() {
        Por isso ele pode repetir peça que também conta noutro cartão, como já
        fazem os dois de Recebido. A soma dos cartões não é o total da fábrica;
        cada um responde à sua pergunta. */
-    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) somar('estoque', total, o);
+    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) poe('estoque', total);
     /* CORTANDO NÃO TEM CAMPO, E PRECISAVA DE CARTÃO (15/09/2026, Junior).
 
        Os campos do fluxo guardam pano PARADO: o corte ensacado esperando a
@@ -18134,53 +18117,245 @@ function _dashFluxoDados() {
        Expedição marcada — que não acende status e por isso deriva "Cortando"
        do corte que ficou para trás — apareceria na mesa de corte E no campo
        Expedição ao mesmo tempo. */
-    if (atual < 0 && _statusOS(o) === 'cortando') somar('cortando', total, o);
+    if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
     // A fatia embarcada sai do campo de origem e entra no trânsito da perna.
-    const tr = _transitoDaOS(o);
+    const tr = (opts && opts.semTransito) ? null : _transitoDaOS(o);
     const viajando = tr ? Math.round(total * tr.fracao) : 0;
     if (viajando > 0) {
       const perna = (FASES_ESTOQUE[tr.faseIdx] || {}).id === 'transitoVolta' ? 'volta' : 'ida';
       const peso = _dashPesoTurnos(o, perna);
       const soma = peso.manha + peso.tarde;
       const manha = soma > 0 ? Math.round(viajando * peso.manha / soma) : viajando;
-      somar(perna === 'volta' ? 'voltaManha' : 'idaManha', manha, o);
-      somar(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha, o);
+      poe(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
+      poe(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha);
     }
     const resta = Math.max(0, total - viajando);
     const k = chavePorIdx.get(atual);
     if (!k) return;                       // Expedição: campo fora desta leitura
-    somar(k, resta, o);
+    poe(k, resta);
+  })();
+/* RECEBIDO EM… SEGUE A CAIXA, e não o campo (15/09/2026, Junior: "Recebidos
+   deve mostrar apenas OS com check box Recebido preenchido").
+
+   Chegar não é uma etapa de trabalho — é uma passagem, e não acende status
+   nenhum. Até aqui estes dois cartões eram deduzidos do CAMPO em que a OS
+   estava (o de São Carlos repetia o Estoque de corte de lá, o de Descalvado
+   era a fatia da Retirada de fios), e a dedução errava sempre que a OS já
+   tinha andado: quem chegou em São Carlos e foi para a costura sumia do
+   cartão de Recebido, embora a caixa continuasse marcada.
+
+   Agora a pergunta é a mais simples possível — a caixa está marcada? —, e é
+   por isso que estes dois somam com os outros cartões em vez de dividir o
+   mesmo volume: uma OS costurando em São Carlos conta em "Costurando | São
+   Carlos" E em "Recebido em São Carlos", porque as duas coisas são verdade.
+   São um CARIMBO DE PASSAGEM, não um lugar onde a peça está.
+
+   A OS que já saiu do fluxo (Estoque) não conta: o recebimento dela é
+   história, e o cartão existe para dizer o que chegou e ainda está aqui. */
+  if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) return out;   // já foi para o estoque: é história
+  if (osEtapaMarcada(o, ETAPA_SC_RE)) poe('recSC', total);
+  if (osEtapaMarcada(o, ETAPA_DESC_RE)) poe('recDesc', total);
+  return out;
+}
+
+// Índice da fase -> chave do painel. Por id, nunca por posição: a ordem de
+// FASES_ESTOQUE já mudou uma vez (as duas unidades entraram no meio).
+function _dashChavePorIdx() {
+  const m = new Map();
+  [['corte', 'corte'], ['corteSC', 'corteSC'], ['costurando', 'costurando'],
+   ['costurandoSC', 'costurandoSC'], ['fios', 'fios']].forEach(([faseId, k]) => {
+    const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
+    if (i >= 0) m.set(i, k);
   });
+  return m;
+}
 
-  /* RECEBIDO EM… SEGUE A CAIXA, e não o campo (15/09/2026, Junior: "Recebidos
-     deve mostrar apenas OS com check box Recebido preenchido").
+function _dashFluxoDados() {
+  /* Cada cartão guarda também a LISTA: qual OS está nele e com quantas peças
+     (15/09/2026, Junior: "o gráfico de barras deve mostrar as informações das
+     OS atualmente presentes em cada quadro"). O total responde "quanto"; a
+     lista responde "quais", que é a pergunta seguinte de quem olha o número. */
+  const zero = () => ({ pecas: 0, os: 0, lista: [] });
+  const d = {
+    cortando: zero(),
+    corte: zero(), corteSC: zero(),
+    costurando: zero(), costurandoSC: zero(),
+    idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
+    recDesc: zero(), recSC: zero(),
+    fios: zero(), estoque: zero()
+  };
+  const somar = (k, pecas, o) => {
+    if (!(pecas > 0)) return;
+    d[k].pecas += pecas;
+    d[k].os++;
+    d[k].lista.push({ os: String((o && o.os) || '').trim() || '—', pecas });
+  };
 
-     Chegar não é uma etapa de trabalho — é uma passagem, e não acende status
-     nenhum. Até aqui estes dois cartões eram deduzidos do CAMPO em que a OS
-     estava (o de São Carlos repetia o Estoque de corte de lá, o de Descalvado
-     era a fatia da Retirada de fios), e a dedução errava sempre que a OS já
-     tinha andado: quem chegou em São Carlos e foi para a costura sumia do
-     cartão de Recebido, embora a caixa continuasse marcada.
-
-     Agora a pergunta é a mais simples possível — a caixa está marcada? —, e é
-     por isso que estes dois somam com os outros cartões em vez de dividir o
-     mesmo volume: uma OS costurando em São Carlos conta em "Costurando | São
-     Carlos" E em "Recebido em São Carlos", porque as duas coisas são verdade.
-     São um CARIMBO DE PASSAGEM, não um lugar onde a peça está.
-
-     A OS que já saiu do fluxo (Estoque) não conta: o recebimento dela é
-     história, e o cartão existe para dizer o que chegou e ainda está aqui. */
   (STATE.ordens || []).forEach(o => {
-    const total = produtosOS(o);
-    if (!(total > 0)) return;
-    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) return;   // já foi para o estoque: é história
-    if (osEtapaMarcada(o, ETAPA_SC_RE)) somar('recSC', total, o);
-    if (osEtapaMarcada(o, ETAPA_DESC_RE)) somar('recDesc', total, o);
+    _dashCartoesDaOS(o).forEach(c => somar(c.k, c.pecas, o));
   });
   return d;
+}
+
+/* ================= O HISTÓRICO DE CADA CARTÃO (16/09/2026) =================
+
+   Junior: "gráficos para analisar os volumes de entrada, volume corrente,
+   volume residual (estoque), volume de saída e volume total de cada quadro",
+   "com datas e tempos". O que ficou combinado:
+
+     ENTRADA   produtos que entraram no quadro, por semana (4 semanas corridas)
+     SAÍDA     produtos que saíram dele para o passo seguinte, idem
+     CORRENTE  o que está no quadro agora (o número do cartão)
+     RESIDUAL  do que está agora, o que está parado há mais de 7 dias
+     TOTAL     tudo o que esteve no quadro no período: o que já estava quando as
+               4 semanas começaram, mais o que entrou
+
+   DE ONDE SAI O PASSADO. O programa não guarda um diário de "a OS mudou de
+   campo". Guarda, desde que o checklist existe, a HORA em que cada etapa foi
+   marcada (`progresso.etapasSeq`). Então o passado é RECONSTRUÍDO: para cada
+   hora dessas, a OS é recalculada como se só as etapas marcadas até ali
+   existissem, e _dashCartoesDaOS diz em que cartão ela estava. É a mesma regra
+   do cartão de agora — o histórico não tem uma regra própria para discordar.
+
+   O QUE ELE NÃO SABE, e diz em vez de inventar:
+     · OS antiga, migrada com a ORDEM das etapas gravada como milissegundos
+       seguidos (1773414000000, …001, …002): não tem hora de verdade. Ela conta
+       onde está, mas "desde quando" fica sem data. A hora confiável começa em
+       agosto/2026.
+     · Desmarcar uma etapa apaga a hora dela: aquela passagem some do passado.
+     · O TRÂNSITO segue a DATA da carga, e não o checklist: não tem histórico
+       aqui (os cartões dele mostram só o agora). */
+const DASH_RESIDUAL_DIAS = 7;
+const DASH_SEMANAS = 4;
+const DASH_DIA_MS = 86400000;
+const DASH_SEM_HISTORICO = new Set(['idaManha', 'idaTarde', 'voltaManha', 'voltaTarde']);
+
+// As etapas marcadas COM hora de verdade, em ordem. null = a OS só tem a ordem
+// das etapas (carimbo sintético da migração), e o passado dela não se sabe.
+function _dashHorasReais(o) {
+  const prog = (o && o.progresso) || {};
+  const seq = prog.etapasSeq || {}, checks = prog.etapasCheck || {};
+  const marcas = Object.keys(seq)
+    .filter(n => checks[n] && Number.isFinite(Number(seq[n])))
+    .map(n => ({ n, t: Number(seq[n]) }))
+    .sort((a, b) => a.t - b.t);
+  if (!marcas.length) return null;
+  // Três ou mais etapas dentro do mesmo segundo não foram marcadas por gente.
+  if (marcas.length > 2 && marcas[marcas.length - 1].t - marcas[0].t < 1000) return null;
+  return marcas;
+}
+
+/* Por onde a OS passou: a lista de estados {t, cartoes: Map(k -> produtos)},
+   um por hora de etapa. A etapa marcada SEM hora vale desde sempre. O status
+   escrito à mão só vale a partir do dia em que foi escrito. */
+function _dashLinhaDoTempoOS(o) {
+  const marcas = _dashHorasReais(o);
+  if (!marcas) return null;
+  const prog = o.progresso || {};
+  const checks = prog.etapasCheck || {}, seq = prog.etapasSeq || {};
+  const semHora = Object.keys(checks).filter(n => checks[n] && !Number.isFinite(Number(seq[n])));
+  const carimboStatus = Date.parse(o.statusOSEm || '') || 0;
+  // A hora do status escrito à mão também é um momento: sem ela, a OS carimbada
+  // Ensacado depois da última etapa ficaria para sempre no passo anterior.
+  const instantes = [...new Set(marcas.map(m => m.t).concat(carimboStatus ? [carimboStatus] : []))]
+    .sort((x, y) => x - y);
+  return instantes.map(t => {
+    const ck = {}, sq = {};
+    semHora.forEach(n => { ck[n] = true; });
+    marcas.forEach(m => { if (m.t <= t) { ck[m.n] = true; sq[m.n] = m.t; } });
+    const clone = Object.assign({}, o, { progresso: Object.assign({}, prog, { etapasCheck: ck, etapasSeq: sq }) });
+    if (carimboStatus > t) clone.statusOS = '';
+    const cartoes = new Map();
+    _dashCartoesDaOS(clone, { semTransito: true }).forEach(c => cartoes.set(c.k, c.pecas));
+    return { t, cartoes };
+  });
+}
+
+// Os intervalos de cada cartão: {os, pecas, de, ate}. `de` null = sem data (OS
+// sem hora de verdade); `ate` null = ainda está no cartão.
+function _dashIntervalos() {
+  const por = {};
+  const add = (k, iv) => { (por[k] = por[k] || []).push(iv); };
+  (STATE.ordens || []).forEach(o => {
+    const os = String(o.os || '').trim() || '—';
+    const linha = _dashLinhaDoTempoOS(o);
+    if (!linha) {
+      _dashCartoesDaOS(o, { semTransito: true })
+        .forEach(c => add(c.k, { os, pecas: c.pecas, de: null, ate: null, semData: true }));
+      return;
+    }
+    const aberto = new Map();   // k -> intervalo em curso
+    linha.forEach(e => {
+      e.cartoes.forEach((pecas, k) => {
+        if (!aberto.has(k)) { const iv = { os, pecas, de: e.t, ate: null }; aberto.set(k, iv); add(k, iv); }
+      });
+      [...aberto.keys()].forEach(k => {
+        if (!e.cartoes.has(k)) { aberto.get(k).ate = e.t; aberto.delete(k); }
+      });
+    });
+  });
+  return por;
+}
+
+// Os números de cada cartão para as abas do gráfico. `agora` em ms.
+function _dashHistorico(d, agora) {
+  const ivs = _dashIntervalos();
+  const inicio = agora - DASH_SEMANAS * 7 * DASH_DIA_MS;
+  const semanas = Array.from({ length: DASH_SEMANAS }, (_, i) => {
+    const de = inicio + i * 7 * DASH_DIA_MS;
+    return { de, ate: de + 7 * DASH_DIA_MS };
+  });
+  const out = {};
+  Object.keys(d).forEach(k => {
+    const lista = ivs[k] || [];
+    const dentro = (t, a, b) => t != null && t > a && t <= b;
+    const sem = semanas.map(w => ({
+      de: w.de, ate: w.ate,
+      entrada: lista.filter(x => dentro(x.de, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0),
+      saida: lista.filter(x => dentro(x.ate, w.de, w.ate)).reduce((s, x) => s + x.pecas, 0)
+    }));
+    const entrada = sem.reduce((s, w) => s + w.entrada, 0);
+    const saida = sem.reduce((s, w) => s + w.saida, 0);
+    const jaEstava = lista.filter(x => (x.semData || (x.de != null && x.de <= inicio))
+      && (x.ate == null || x.ate > inicio)).reduce((s, x) => s + x.pecas, 0);
+    // Quem está AGORA, com o "desde" de cada OS. A lista do cartão manda (ela
+    // tem a fatia do trânsito descontada); o intervalo aberto só dá a data.
+    const abertos = new Map();
+    lista.filter(x => x.ate == null).forEach(x => abertos.set(x.os, x));
+    const atuais = ((d[k] && d[k].lista) || []).map(x => {
+      const iv = abertos.get(x.os);
+      const desde = iv && iv.de != null ? iv.de : null;
+      return { os: x.os, pecas: x.pecas, desde, dias: desde != null ? (agora - desde) / DASH_DIA_MS : null };
+    });
+    const residual = atuais.filter(x => x.dias != null && x.dias > DASH_RESIDUAL_DIAS).reduce((s, x) => s + x.pecas, 0);
+    const semData = atuais.filter(x => x.desde == null).reduce((s, x) => s + x.pecas, 0);
+    const saidas = lista.filter(x => dentro(x.ate, inicio, agora) && x.de != null);
+    const tempoMedio = saidas.length
+      ? saidas.reduce((s, x) => s + (x.ate - x.de), 0) / saidas.length / DASH_DIA_MS : null;
+    const datados = atuais.filter(x => x.desde != null).sort((a, b) => a.desde - b.desde);
+    const entradas = lista.filter(x => x.de != null).map(x => x.de);
+    // Idade do que está agora, em faixas.
+    const faixas = [
+      { rot: 'até 2 dias', v: 0 }, { rot: '3 a 7 dias', v: 0 },
+      { rot: '8 a 14 dias', v: 0 }, { rot: 'mais de 14 dias', v: 0 }, { rot: 'sem data', v: 0 }
+    ];
+    atuais.forEach(x => {
+      const f = x.dias == null ? 4 : (x.dias <= 2 ? 0 : x.dias <= 7 ? 1 : x.dias <= 14 ? 2 : 3);
+      faixas[f].v += x.pecas;
+    });
+    out[k] = {
+      semHistorico: DASH_SEM_HISTORICO.has(k),
+      semanas: sem, entrada, saida, total: jaEstava + entrada,
+      agora: (d[k] && d[k].pecas) || 0, residual, semData, atuais, faixas,
+      tempoMedio, nSaidas: saidas.length,
+      maisAntiga: datados[0] || null,
+      ultimaEntrada: entradas.length ? Math.max(...entradas) : null
+    };
+  });
+  return out;
 }
 
 // Os seis passos do caminho, na ordem em que a peça anda. `rota` é a tela que o
@@ -18189,36 +18364,36 @@ function _dashFluxoDados() {
 function _dashFluxoPassos(d) {
   return [
     { nome: 'Cortando', cards: [
-      { nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
+      { k: 'cortando', nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
         dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
     ] },
     { nome: 'Estoque de corte', cards: [
-      { nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
+      { k: 'corte', nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
         dica: 'O corte ensacado, esperando a costura: so as OS com status Ensacado.' },
-      { nome: 'Unidade São Carlos', v: d.corteSC, rota: 'corte-sc',
+      { k: 'corteSC', nome: 'Unidade São Carlos', v: d.corteSC, rota: 'corte-sc',
         dica: 'O corte ensacado que está em São Carlos. Entra pela caixa "Recebido em São Carlos" ou sozinho, quando a data da expedição de ida em que a OS foi alocada chega — só a parte alocada.' },
     ] },
     { nome: 'Costurando', cards: [
-      { nome: 'Unidade Descalvado', v: d.costurando,   rota: 'costurando' },
-      { nome: 'Unidade São Carlos', v: d.costurandoSC, rota: 'costurando-sc' },
+      { k: 'costurando', nome: 'Unidade Descalvado', v: d.costurando,   rota: 'costurando' },
+      { k: 'costurandoSC', nome: 'Unidade São Carlos', v: d.costurandoSC, rota: 'costurando-sc' },
     ] },
     { nome: 'Estoque em trânsito', cards: [
-      { nome: 'Ida · manhã',   v: d.idaManha,   rota: 'transito-ida' },
-      { nome: 'Ida · tarde',   v: d.idaTarde,   rota: 'transito-ida' },
-      { nome: 'Volta · manhã', v: d.voltaManha, rota: 'transito-volta' },
-      { nome: 'Volta · tarde', v: d.voltaTarde, rota: 'transito-volta' },
+      { k: 'idaManha', nome: 'Ida · manhã',   v: d.idaManha,   rota: 'transito-ida' },
+      { k: 'idaTarde', nome: 'Ida · tarde',   v: d.idaTarde,   rota: 'transito-ida' },
+      { k: 'voltaManha', nome: 'Volta · manhã', v: d.voltaManha, rota: 'transito-volta' },
+      { k: 'voltaTarde', nome: 'Volta · tarde', v: d.voltaTarde, rota: 'transito-volta' },
     ] },
     { nome: 'Recebido', cards: [
-      { nome: 'Recebido em Descalvado', v: d.recDesc, rota: 'fios',
+      { k: 'recDesc', nome: 'Recebido em Descalvado', v: d.recDesc, rota: 'fios',
         dica: 'Toda OS ainda em produção com a caixa "Recebido em Descalvado" marcada. É um carimbo de passagem: a mesma OS também conta no campo em que está agora.' },
-      { nome: 'Recebido em São Carlos', v: d.recSC, rota: 'corte-sc',
+      { k: 'recSC', nome: 'Recebido em São Carlos', v: d.recSC, rota: 'corte-sc',
         dica: 'Toda OS ainda em produção com a caixa "Recebido em São Carlos" marcada. É um carimbo de passagem: a mesma OS também conta no campo em que está agora.' },
     ] },
     { nome: 'Retirada de fios', cards: [
-      { nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
+      { k: 'fios', nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
     ] },
     { nome: 'Estoque', cards: [
-      { nome: 'Produto acabado', v: d.estoque, statusFiltro: 'estoque',
+      { k: 'estoque', nome: 'Produto acabado', v: d.estoque, statusFiltro: 'estoque',
         dica: 'Toda OS com a caixa Estoque marcada no checklist — mesmo que outra etapa tenha sido marcada depois dela.' },
     ] },
   ];
@@ -18262,7 +18437,7 @@ function _dashGraficoColunas(cards) {
   (cards || []).forEach(c => {
     const lista = (c.v && c.v.lista) || [];
     lista.slice().sort((a, b) => b.pecas - a.pecas)
-      .forEach(x => itens.push({ os: x.os, pecas: x.pecas, quadro: c.nome }));
+      .forEach(x => itens.push({ os: x.os, pecas: x.pecas, quadro: c.nome, desde: x.desde, dias: x.dias }));
   });
   if (!itens.length) return '';
   const total = itens.reduce((s, x) => s + x.pecas, 0);
@@ -18321,8 +18496,13 @@ function _dashGraficoColunas(cards) {
   const colunas = itens.map(x => {
     const h = x.pecas > 0 ? Math.max(0.8, x.pecas / topo * 100) : 0;
     const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' produtos'
-      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' produtos';
-    const cls = x.resumo ? 'dash-barra resto' : 'dash-barra s' + serie(x.quadro);
+      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' produtos'
+        // A data e o tempo no quadro, quando a OS tem hora de verdade (_dashHistorico).
+        + (x.desde != null && typeof _dashDataHora === 'function'
+            ? ' · no quadro desde ' + _dashDataHora(x.desde) + ' (' + _dashDuracao(x.dias) + ')' : '');
+    // Parada há mais de DASH_RESIDUAL_DIAS: a coluna ganha listras (o residual).
+    const velha = !x.resumo && x.dias != null && typeof DASH_RESIDUAL_DIAS === 'number' && x.dias > DASH_RESIDUAL_DIAS;
+    const cls = (x.resumo ? 'dash-barra resto' : 'dash-barra s' + serie(x.quadro)) + (velha ? ' velha' : '');
     return `<div class="dash-col" tabindex="0" aria-label="${esc(dica)}">
         <span class="dash-col-val" style="bottom:${h.toFixed(2)}%;">${esc(curto(x.pecas))}</span>
         <span class="${cls}" style="height:${h.toFixed(2)}%;" data-h="${pct(x.pecas)}"></span>
@@ -18334,10 +18514,11 @@ function _dashGraficoColunas(cards) {
   // Legenda só quando há mais de um quadro COM colunas: com um só, o título do
   // passo já diz de quem são as barras, e uma legenda de um item é ruído.
   const quadrosNoGrafico = nomesQuadro.filter(n => itens.some(x => x.quadro === n));
-  const legenda = quadrosNoGrafico.length > 1
-    ? `<div class="dash-gr-leg">${quadrosNoGrafico.map(n =>
-        `<span><i class="s${serie(n)}"></i>${esc(n)}</span>`).join('')}</div>`
-    : '';
+  const temVelha = colunas.includes(' velha"');
+  const itensLeg = (quadrosNoGrafico.length > 1
+      ? quadrosNoGrafico.map(n => `<span><i class="s${serie(n)}"></i>${esc(n)}</span>`) : [])
+    .concat(temVelha ? [`<span><i class="velha"></i>parada há mais de ${DASH_RESIDUAL_DIAS} dias</span>`] : []);
+  const legenda = itensLeg.length ? `<div class="dash-gr-leg">${itensLeg.join('')}</div>` : '';
 
   return `<div class="dash-gr">
     <div class="dash-gr-cab"><span class="dash-gr-tit">Produtos por OS</span>${legenda}</div>
@@ -18349,6 +18530,179 @@ function _dashGraficoColunas(cards) {
     </div>
   </div>`;
 }
+/* AS TRÊS ABAS DO ESPAÇO DO GRÁFICO (16/09/2026, Junior: "otimize o espaço de
+   gráfico abaixo de cada quadro, para mostrar outros tipos de gráficos", "com
+   datas e tempos").
+
+   Um gráfico por vez, no mesmo lugar, em vez de três empilhados: o painel já é
+   comprido (sete passos), e triplicar a altura de cada um empurraria o fim do
+   caminho para longe da vista. A aba escolhida vale para aquele passo e fica
+   lembrada enquanto a tela estiver aberta.
+
+     AGORA            as OS que estão no quadro, uma coluna cada (o de sempre),
+                      com a data de entrada na dica e as paradas há mais de
+                      7 dias marcadas com listras
+     ENTRADA × SAÍDA  4 semanas, um pequeno gráfico por quadro, e embaixo os
+                      números: entrou, saiu, agora, residual e total
+     TEMPO NO QUADRO  há quanto tempo o que está ali chegou (por faixa), o tempo
+                      médio de permanência, a OS mais antiga e a última entrada */
+const DASH_ABAS = [
+  { k: 'agora', rot: 'Agora' },
+  { k: 'fluxo', rot: 'Entrada × saída' },
+  { k: 'tempo', rot: 'Tempo no quadro' }
+];
+const _dashAbaPorPasso = {};
+
+function _dashTrocarAba(passo, aba) {
+  _dashAbaPorPasso[passo] = aba;
+  _dashFluxoAssinatura = '';   // força o redesenho: a aba muda sem o dado mudar
+  renderFluxoDash();
+}
+window._dashTrocarAba = _dashTrocarAba;
+
+const _dashFmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+const _dashDataHora = t => {
+  if (t == null) return '';
+  const d = new Date(t);
+  const p2 = n => String(n).padStart(2, '0');
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+};
+const _dashData = t => (t == null ? '' : _dashDataHora(t).slice(0, 5));
+// "5 h", "1 dia", "3,5 dias": abaixo de um dia, em horas, que é como se fala.
+const _dashDuracao = dias => {
+  if (dias == null) return '—';
+  if (dias < 1) return Math.max(1, Math.round(dias * 24)) + ' h';
+  const v = dias.toLocaleString('pt-BR', { maximumFractionDigits: dias < 10 ? 1 : 0 });
+  return v + (v === '1' ? ' dia' : ' dias');
+};
+
+// A aba AGORA: o gráfico de colunas por OS, com o "desde" de cada uma.
+function _dashAbaAgora(cards, h) {
+  const comDatas = (cards || []).map(c => {
+    const hk = h[c.k] || {};
+    const porOS = new Map((hk.atuais || []).map(x => [x.os, x]));
+    const lista = ((c.v && c.v.lista) || []).map(x => {
+      const a = porOS.get(x.os);
+      return a ? Object.assign({}, x, { desde: a.desde, dias: a.dias }) : x;
+    });
+    return Object.assign({}, c, { v: Object.assign({}, c.v, { lista }) });
+  });
+  return _dashGraficoColunas(comDatas);
+}
+
+// A aba ENTRADA × SAÍDA: um pequeno gráfico por quadro, na mesma grade dos
+// cartões, e os cinco volumes embaixo.
+function _dashAbaFluxo(cards, h) {
+  const cel = (cards || []).map(c => {
+    const x = h[c.k];
+    const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
+    if (!x || x.semHistorico) {
+      return `<div class="dash-an-cel">${nome}
+        <div class="dash-an-aviso">O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu. Agora: <b>${_dashFmt(x ? x.agora : 0)}</b> produtos.</div></div>`;
+    }
+    const max = Math.max(1, ...x.semanas.map(w => Math.max(w.entrada, w.saida)));
+    const curto = n => n >= 1000
+      ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 10000 ? 0 : 1 }) + ' mil'
+      : _dashFmt(n);
+    const barra = (v, cls, rot) => {
+      const hp = v > 0 ? Math.max(1.5, v / max * 100) : 0;
+      return `<div class="dash-an-bar">
+          <span class="dash-an-fill ${cls}" style="height:${hp.toFixed(1)}%;"></span>
+          <span class="dash-gr-tip" role="tooltip">${esc(rot)}</span>
+        </div>`;
+    };
+    const grupos = x.semanas.map(w => {
+      const periodo = `${_dashData(w.de)} a ${_dashData(w.ate)}`;
+      // Os dois valores EMPILHADOS acima da semana, e não um sobre cada barra:
+      // lado a lado, as barras são estreitas e os números se atropelavam.
+      const topo = Math.max(w.entrada, w.saida);
+      const hTopo = topo > 0 ? Math.max(1.5, topo / max * 100) : 0;
+      const vals = topo > 0 ? `<span class="dash-an-val" style="bottom:${hTopo.toFixed(1)}%;"><i class="ent"></i>${curto(w.entrada)}<br><i class="sai"></i>${curto(w.saida)}</span>` : '';
+      return `<div class="dash-an-grupo" tabindex="0">${vals}
+          ${barra(w.entrada, 'ent', `Entrada de ${periodo}: ${_dashFmt(w.entrada)} produtos`)}
+          ${barra(w.saida, 'sai', `Saída de ${periodo}: ${_dashFmt(w.saida)} produtos`)}
+        </div>`;
+    }).join('');
+    const eixo = x.semanas.map(w => `<span>${_dashData(w.de)}</span>`).join('');
+    const kpi = (rot, v, dica, cls) =>
+      `<div class="dash-an-kpi${cls ? ' ' + cls : ''}" title="${esc(dica)}"><span>${rot}</span><b>${_dashFmt(v)}</b></div>`;
+    return `<div class="dash-an-cel">${nome}
+      <div class="dash-an-plot"><div class="dash-an-grupos">${grupos}</div></div>
+      <div class="dash-an-eixo">${eixo}</div>
+      <div class="dash-an-kpis">
+        ${kpi('Entrou', x.entrada, 'Produtos que entraram neste quadro nas 4 semanas')}
+        ${kpi('Saiu', x.saida, 'Produtos que saíram deste quadro para o passo seguinte nas 4 semanas')}
+        ${kpi('Agora', x.agora, 'O que está no quadro agora (o número do cartão)')}
+        ${kpi('Residual', x.residual, `Do que está agora, o que está parado há mais de ${DASH_RESIDUAL_DIAS} dias`, x.residual > 0 ? 'alerta' : '')}
+        ${kpi('Total', x.total, 'Tudo o que esteve no quadro no período: o que já estava há 4 semanas, mais o que entrou')}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="dash-an-leg">
+      <span><i class="ent"></i>Entrada</span><span><i class="sai"></i>Saída</span>
+      <em>semanas de 7 dias, contadas para trás a partir de agora (${_dashDataHora(Date.now())})</em>
+    </div>
+    <div class="dash-an-grid">${cel}</div>`;
+}
+
+// A aba TEMPO NO QUADRO: a idade do que está ali, e as datas que importam.
+function _dashAbaTempo(cards, h) {
+  const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
+  const linhas = (cards || []).map(c => {
+    const x = h[c.k];
+    const nome = `<div class="dash-tp-nome">${esc(c.nome)}</div>`;
+    if (!x || x.semHistorico) {
+      return `<div class="dash-tp-linha">${nome}<div class="dash-an-aviso">Sem histórico: o trânsito segue a data da carga.</div></div>`;
+    }
+    const total = x.faixas.reduce((s, f) => s + f.v, 0);
+    const barra = total > 0
+      ? x.faixas.map((f, i) => f.v > 0
+          ? `<span class="dash-tp-seg ${FAIXA_CLS[i]}" style="flex:${f.v} 1 0;" tabindex="0">
+               <em>${Math.round(f.v / total * 100)}%</em>
+               <span class="dash-gr-tip" role="tooltip">${esc(f.rot)}: ${_dashFmt(f.v)} produtos</span>
+             </span>` : '').join('')
+      : `<span class="dash-tp-vazio">vazio agora</span>`;
+    const partes = [];
+    partes.push(x.tempoMedio != null
+      ? `Tempo médio no quadro: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram em 4 semanas)</span>`
+      : 'Tempo médio no quadro: <b>—</b> <span>(nenhuma OS com data saiu em 4 semanas)</span>');
+    if (x.maisAntiga) {
+      partes.push(`Mais antiga: <b>OS ${esc(x.maisAntiga.os)}</b>, desde ${_dashDataHora(x.maisAntiga.desde)} <span>(${_dashDuracao(x.maisAntiga.dias)})</span>`);
+    }
+    if (x.ultimaEntrada != null) partes.push(`Última entrada: <b>${_dashDataHora(x.ultimaEntrada)}</b>`);
+    if (x.semData > 0) partes.push(`<span>${_dashFmt(x.semData)} produtos de OS antigas, sem data de entrada</span>`);
+    return `<div class="dash-tp-linha">${nome}
+      <div class="dash-tp-barra">${barra}</div>
+      <div class="dash-tp-info">${partes.join(' · ')}</div>
+    </div>`;
+  }).join('');
+  return `<div class="dash-an-leg">
+      <span><i class="f0"></i>até 2 dias</span><span><i class="f1"></i>3 a 7 dias</span>
+      <span><i class="f2"></i>8 a 14 dias</span><span><i class="f3"></i>mais de 14 dias</span>
+      <span><i class="fsd"></i>sem data</span>
+      <em>há quanto tempo o que está no quadro agora chegou nele</em>
+    </div>
+    ${linhas}`;
+}
+
+// O espaço do gráfico de um passo: as abas e a aba escolhida.
+function _dashAnalisePasso(p, h) {
+  const temAlgo = (p.cards || []).some(c => (c.v && c.v.pecas > 0) || ((h[c.k] || {}).total > 0));
+  if (!temAlgo) return '';
+  const aba = _dashAbaPorPasso[p.nome] || 'agora';
+  const nomeJs = esc(JSON.stringify(p.nome));
+  const botoes = DASH_ABAS.map(a => `<button type="button" class="dash-aba${a.k === aba ? ' ativa' : ''}"
+      onclick="_dashTrocarAba(${nomeJs}, '${a.k}')">${a.rot}</button>`).join('');
+  let corpo = '';
+  if (aba === 'fluxo') corpo = _dashAbaFluxo(p.cards, h);
+  else if (aba === 'tempo') corpo = _dashAbaTempo(p.cards, h);
+  else corpo = _dashAbaAgora(p.cards, h) || '<div class="dash-an-aviso">Nenhuma OS neste passo agora.</div>';
+  return `<div class="dash-analise">
+    <div class="dash-abas" role="tablist">${botoes}</div>
+    ${corpo}
+  </div>`;
+}
+
 function renderFluxoDash() {
   const cont = document.getElementById('dash-fluxo');
   if (!cont) return;
@@ -18366,10 +18720,11 @@ function renderFluxoDash() {
     return;
   }
   const d = _dashFluxoDados();
-  const ass = JSON.stringify(d);
+  const ass = JSON.stringify(d) + JSON.stringify(_dashAbaPorPasso);
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const h = _dashHistorico(d, Date.now());
   const passos = _dashFluxoPassos(d).map((p, i) => {
     const cards = p.cards.map(c => {
       const pecas = (c.v && c.v.pecas) || 0;
@@ -18406,7 +18761,7 @@ function renderFluxoDash() {
 
        É SVG inline, sem biblioteca: são barras e rótulos, e uma dependência
        nova para desenhar retângulo seria mais código do que o desenho. */
-    const grafico = _dashGraficoColunas(p.cards);
+    const grafico = _dashAnalisePasso(p, h);
     return `
       <div class="dash-etapa">
         <div class="dash-etapa-nome"><span class="dash-passo">${i + 1}</span>${esc(p.nome)}</div>

@@ -69,6 +69,8 @@ const motor = [
   corta('function _expEmbarcadoOS'),
   corta('function _dashTurnoDaCarga'),
   corta('function _dashPesoTurnos'),
+  corta('function _dashCartoesDaOS'),
+  corta('function _dashChavePorIdx'),
   corta('function _dashFluxoDados')
 ].join('\n');
 

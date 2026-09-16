@@ -1121,6 +1121,195 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   .dash-num { font-size: 20px; }
 }
 
+/* AS ABAS DO ESPACO DO GRAFICO (16/09/2026): Agora, Entrada x saida, Tempo no
+   quadro. Um grafico por vez no mesmo lugar, para o painel nao triplicar de
+   altura. As cores novas foram validadas para daltonismo (dataviz):
+   entrada aqua x saida violeta; a idade e uma rampa de um azul so, do claro
+   (chegou agora) ao escuro (parado ha mais tempo). */
+.dash-analise {
+  --an-ent: #1baf7a;
+  --an-sai: #4a3aa7;
+  --tp-f0: #86b6ef;
+  --tp-f1: #5598e7;
+  --tp-f2: #256abf;
+  --tp-f3: #104281;
+  --tp-sd: #cfcbc1;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+/* Dentro das abas o grafico de colunas nao repete a linha de cima. */
+.dash-analise .dash-gr { margin-top: 8px; padding-top: 0; border-top: 0; }
+.dash-abas { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--line-2); }
+.dash-aba {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.dash-aba:hover { color: var(--ink); }
+.dash-aba.ativa { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+
+/* Listras do residual: a coluna parada ha mais de 7 dias. A textura carrega o
+   significado junto com a legenda, sem depender de cor. */
+.dash-barra.velha,
+.dash-gr-leg i.velha {
+  background-image: repeating-linear-gradient(135deg,
+    rgba(255,255,255,.55) 0 3px, transparent 3px 7px);
+}
+.dash-gr-leg i.velha { background-color: var(--ink-3); }
+
+.dash-an-leg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 10px 0 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.dash-an-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.dash-an-leg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dash-an-leg em { font-style: normal; font-size: 11px; color: var(--ink-3); }
+.dash-an-leg i.ent { background: var(--an-ent); }
+.dash-an-leg i.sai { background: var(--an-sai); }
+.dash-an-leg i.f0, .dash-tp-seg.f0 { background: var(--tp-f0); }
+.dash-an-leg i.f1, .dash-tp-seg.f1 { background: var(--tp-f1); }
+.dash-an-leg i.f2, .dash-tp-seg.f2 { background: var(--tp-f2); }
+.dash-an-leg i.f3, .dash-tp-seg.f3 { background: var(--tp-f3); }
+.dash-an-leg i.fsd, .dash-tp-seg.fsd { background: var(--tp-sd); }
+
+/* Entrada x saida: um pequeno grafico por quadro, na mesma grade dos cartoes. */
+.dash-an-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.dash-an-cel {
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.dash-an-nome { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.dash-an-aviso { font-size: 12px; color: var(--ink-3); padding: 6px 0; }
+.dash-an-plot { position: relative; height: 90px; margin-top: 28px; border-bottom: 1px solid var(--line); }
+.dash-an-grupos { position: absolute; inset: 0; display: flex; gap: 8px; }
+.dash-an-grupo {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  outline: none;
+}
+.dash-an-bar {
+  position: relative;
+  flex: 1 1 0;
+  max-width: 28px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.dash-an-fill { display: block; width: 100%; border-radius: 3px 3px 0 0; }
+.dash-an-fill.ent { background: var(--an-ent); }
+.dash-an-fill.sai { background: var(--an-sai); }
+.dash-an-val {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -3px);
+  line-height: 1.2;
+  text-align: left;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.dash-an-val i { display: inline-block; width: 6px; height: 6px; border-radius: 1px; margin-right: 3px; vertical-align: 1px; }
+.dash-an-val i.ent { background: var(--an-ent); }
+.dash-an-val i.sai { background: var(--an-sai); }
+.dash-an-bar:hover .dash-gr-tip { display: block; }
+.dash-an-grupos:hover .dash-an-fill { opacity: .4; }
+.dash-an-grupos .dash-an-bar:hover .dash-an-fill { opacity: 1; }
+.dash-an-eixo { display: flex; gap: 8px; margin-top: 3px; }
+.dash-an-eixo span {
+  flex: 1 1 0;
+  text-align: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--ink-3);
+}
+.dash-an-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+}
+.dash-an-kpi { min-width: 0; cursor: help; }
+.dash-an-kpi span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-an-kpi b {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-an-kpi.alerta b { color: #b3261e; }
+
+/* Tempo no quadro: uma linha por quadro, a barra das faixas de idade e as datas. */
+.dash-tp-linha { padding: 8px 0; border-bottom: 1px solid var(--line-2); }
+.dash-tp-linha:last-child { border-bottom: 0; }
+.dash-tp-nome { font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 5px; }
+.dash-tp-barra { display: flex; gap: 2px; height: 20px; }
+.dash-tp-seg {
+  position: relative;
+  min-width: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  outline: none;
+}
+.dash-tp-seg:first-child { border-radius: 4px 2px 2px 4px; }
+.dash-tp-seg:last-child { border-radius: 2px 4px 4px 2px; }
+.dash-tp-seg em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.dash-tp-seg.f0 em, .dash-tp-seg.fsd em { color: var(--ink); }
+.dash-tp-seg:hover .dash-gr-tip, .dash-tp-seg:focus .dash-gr-tip { display: block; }
+.dash-tp-vazio { font-size: 12px; color: var(--ink-3); align-self: center; }
+.dash-tp-info { margin-top: 5px; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.dash-tp-info span { color: var(--ink-3); }
+
+@media (max-width: 640px) {
+  .dash-an-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dash-an-val { display: none; }
+}
+
 /* ============ FORMULÁRIO OS ============ */
 .os-section { margin-bottom: 18px; }
 
