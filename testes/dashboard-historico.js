@@ -1,7 +1,7 @@
 /* Rode com:  node testes/dashboard-historico.js
 
    O HISTÓRICO DE CADA CARTÃO do Início (16/09/2026): entrada e saída por semana,
-   o residual (entrada − saída de cada período, sem acumular), o total do período,
+   o residual (o do período anterior + entrada − saída), o total do período,
    o "desde quando" de cada OS e o tempo médio no quadro.
 
    O programa não guarda um diário de "a OS mudou de campo": o passado é
@@ -145,10 +145,12 @@ ok('a mais antiga é a 0001, desde 07/09 08:00',
 ok('a última entrada foi qua 09/09 10:00', h.corte.ultimaEntrada === em(9, 10), h.corte.ultimaEntrada);
 ok('a idade cai na faixa "8 a 14 dias"', h.corte.faixas[2].v === 200 && h.corte.faixas[0].v === 0, h.corte.faixas);
 ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraDoPeriodo);
-ok('residual de cada semana (entrada − saída só dela): 0, 0, 400 e −200',
-   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 -200', h.corte.periodos.map(w => w.residual));
-ok('o residual de uma semana não carrega o da anterior', h.corte.periodos[3].residual === h.corte.periodos[3].entrada - h.corte.periodos[3].saida, h.corte.periodos[3]);
-ok('o residual do período todo é entrada − saída', h.corte.residual === h.corte.entrada - h.corte.saida && h.corte.residual === 200, h.corte.residual);
+ok('residual de cada semana (anterior + entrada − saída): 0, 0, 400 e 200',
+   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.residual));
+ok('a conta fecha semana a semana: 400 + 0 − 200 = 200',
+   h.corte.periodos.every((w, i) => w.residual === (i ? h.corte.periodos[i - 1].residual : h.corte.residualInicial) + w.entrada - w.saida), h.corte.periodos);
+ok('e nunca fica negativo', h.corte.periodos.every(w => w.residual >= 0), '');
+ok('o residual final é o que ficou: o que já estava + entrou − saiu', h.corte.residual === h.corte.residualInicial + h.corte.entrada - h.corte.saida && h.corte.residual === 200, h.corte.residual);
 ok('não existe mais o "estoque" à parte do residual', !('estoque' in h.corte.periodos[0]), Object.keys(h.corte.periodos[0]));
 console.log('');
 console.log('-- costurando, com uma OS sem data --');
@@ -159,8 +161,8 @@ ok('a 0003 conta, mas SEM DATA', h.costurando.semData === 200 && h.costurando.fa
 ok('a OS sem data NÃO entra no residual (não tem entrada datada), mas está no cartão',
    h.costurando.periodos[3].residual === 200 && h.costurando.agora === 400, [h.costurando.periodos.map(w => w.residual), h.costurando.agora]);
 const residualDia = rodar([os('0020', { 'Corte': em(3, 9), 'Ensaque': em(4, 10) }), os('0021', { 'Corte': em(4, 8) })], 'dia').h.cortando;
-ok('DIA: o residual de sex 04/09 é só o daquele dia (entrou 200, saiu 200: 0), e não soma o de qui 03/09',
-   residualDia.periodos.find(w => w.de === em(4)).residual === 0 && residualDia.periodos.find(w => w.de === em(3)).residual === 200,
+ok('DIA: sex 04/09 carrega o residual de qui 03/09 (200 + 200 − 200 = 200)',
+   residualDia.periodos.find(w => w.de === em(4)).residual === 200 && residualDia.periodos.find(w => w.de === em(3)).residual === 200,
    residualDia.periodos.map(w => w.rot + ' ' + w.entrada + '-' + w.saida + '=' + w.residual));
 ok('a OS sem hora de verdade não tem linha do tempo', r.linha[2] === null, r.linha[2]);
 ok('e entra no total como "já estava"', h.costurando.total === 400, h.costurando.total);
@@ -213,6 +215,11 @@ ok('ANO: 2024, 2025 e 2026, com tudo em 2026',
    porAno.periodos.map(w => w.rot).join(' ') === '2024 2025 2026' && porAno.periodos[2].entrada === 400,
    porAno.periodos.map(w => w.rot + ' ' + w.entrada));
 ok('sem escala escolhida, vale a semana', rodar(massa).h.corte.periodos.length === 4, '');
+
+const comAnterior = rodar([os('0030', { 'Corte': emAgo(20, 9) }), os('0031', { 'Corte': em(15, 9), 'Ensaque': em(16, 8) })], 'semana').h.cortando;
+ok('o que já estava antes da 1ª coluna é o residual inicial (0030, cortada em 20/08)', comAnterior.residualInicial === 200, comAnterior.residualInicial);
+ok('e ele carrega: 200, 200, 200 e 200 (a 0031 entrou e saiu na semana em curso)',
+   comAnterior.periodos.map(w => w.residual).join(' ') === '200 200 200 200', comAnterior.periodos.map(w => w.residual));
 
 console.log('');
 console.log('-- o passado bate com o agora --');
