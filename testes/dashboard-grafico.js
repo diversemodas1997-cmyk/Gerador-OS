@@ -72,8 +72,8 @@ ok('três OS em dois quadros dão três colunas',
 ok('e saem na ordem dos quadros, a maior de cada um primeiro',
    rotulos(h).join(' ') === '0525 0530 0516', rotulos(h));
 ok('a dica diz de qual quadro é cada OS',
-   dicas(h)[0] === 'OS 0525 · Unidade Descalvado: 1.200 peças'
-   && dicas(h)[2] === 'OS 0516 · Unidade São Carlos: 5.280 peças', dicas(h));
+   dicas(h)[0] === 'OS 0525 · Unidade Descalvado: 1.200 produtos'
+   && dicas(h)[2] === 'OS 0516 · Unidade São Carlos: 5.280 produtos', dicas(h));
 
 /* ---------- 3. a altura e proporcional a MAIOR do passo ---------- */
 
@@ -97,7 +97,7 @@ ok('as maiores é que aparecem',
 ok('e a última coluna diz quantas OS foram somadas nela',
    rotulos(h)[TETO - 1] === '+' + (264 - (TETO - 1)), rotulos(h)[TETO - 1]);
 ok('a coluna do resto se explica na dica do mouse',
-   /^\d+ OS menores, somadas: [\d.]+ peças$/.test(dicas(h)[TETO - 1]), dicas(h)[TETO - 1]);
+   /^\d+ OS menores, somadas: [\d.]+ produtos$/.test(dicas(h)[TETO - 1]), dicas(h)[TETO - 1]);
 ok('e sai marcada como resto, para a cor não a confundir com um lote',
    (h.match(/dash-barra resto/g) || []).length === 1, h.match(/class="[^"]*"/g));
 // Exatamente no teto, nada e agrupado.

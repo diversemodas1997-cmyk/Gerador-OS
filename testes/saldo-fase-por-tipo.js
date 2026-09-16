@@ -32,6 +32,9 @@ const motor = [
   corta('function _normNome'),
   corta('function osEtapaMarcada'),
   corta('function componentesPorTecidoCorOS'),
+  corta('function _produtosDosComponentes'),
+  corta('function produtosOS'),
+  corta('function produtosPorTecidoCorOS'),
   recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
   cortaArr('const FASES_ESTOQUE'),
   // O campo "Estoque de corte" so conta OS com o status Ensacado (a `cond` da
@@ -66,6 +69,9 @@ const motor = [
 function rodar(estado, expr) {
   const fn = new Function('STATE', `
     const corCanonicaPorTecido = (cor) => cor || '';
+    // Sem grade no fixture a folha nao tem Total geral, e os produtos saem dos
+    // componentes (qtdTotal / qtdPorPeca) — ver produtosOS.
+    const totaisPorTamanhoTomOS = () => ({ totalGeral: 0 });
     const _gradeIdDaOS = (o) => o.gradeId || '';
     function _expPecasPacoteOS() {
       const mapa = new Map();

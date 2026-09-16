@@ -44,6 +44,9 @@ const motor = [
   corta('function _normNome'),
   corta('function osEtapaMarcada'),
   corta('function componentesPorTecidoCorOS'),
+  corta('function _produtosDosComponentes'),
+  corta('function produtosOS'),
+  corta('function produtosPorTecidoCorOS'),
   // As constantes das duas unidades moram logo acima do array e ele as usa
   // (o `cond` das duas fases de costura sai daqui).
   recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades'),
@@ -79,6 +82,9 @@ function saldos(estado) {
   const fn = new Function('STATE', `
     // A cor dos componentes ja vem no formato composto neste teste.
     const corCanonicaPorTecido = (cor) => cor || '';
+    // Sem grade no fixture a folha nao tem Total geral, e os produtos saem dos
+    // componentes (qtdTotal / qtdPorPeca) — ver produtosOS.
+    const totaisPorTamanhoTomOS = () => ({ totalGeral: 0 });
     // Dublê: 4 vagas de tamanho (P, M, G, GG) em 1 tonalidade, 50 pç cada.
     // Total 200 pç — o mesmo total dos componentes da OS do teste.
     function _expPecasPacoteOS() {
@@ -119,7 +125,9 @@ const confere = (nome, got, esperado) => {
   ok(nome, bate, Object.fromEntries(CAMPOS.filter(k => got[k]).map(k => [k, got[k]])));
 };
 
-// Uma OS de 200 peças, todas do mesmo tecido+cor, com o checklist da fábrica.
+// Uma OS de 200 PRODUTOS, todos do mesmo tecido+cor, com o checklist da fábrica.
+// São 600 peças cortadas (a frente e as duas mangas), e o que os campos contam
+// desde 16/09/2026 é o produto: 200.
 // etapasSeq é o carimbo de QUANDO cada etapa foi marcada: é ele que decide a
 // fase atual no modelo sobreposto.
 const osBase = (check, seq) => ({
@@ -128,8 +136,8 @@ const osBase = (check, seq) => ({
   etapas: ['Corte', 'Costura', 'Retirada de fios', 'Ensaque', 'Expedição', 'Estoque'],
   progresso: { etapasCheck: check, etapasSeq: seq },
   componentes: [
-    { materialNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', qtdTotal: 120 },
-    { materialNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', qtdTotal: 80 }
+    { materialNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', qtdPorPeca: 1, qtdTotal: 200 },
+    { materialNome: 'Malha Algodão', corNome: 'Preto Malha Algodão', qtdPorPeca: 2, qtdTotal: 400 }
   ]
 });
 

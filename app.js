@@ -7822,6 +7822,67 @@ function componentesPorTecidoCorOS(o) {
   return Array.from(mapa.values());
 }
 
+/* PRODUTOS, E NÃO PEÇAS (16/09/2026, Junior: "se um produto é composto por 4
+   peças, o programa deve informar que foram produzidos x produtos e não 4x
+   peças").
+
+   A soma de `qtdTotal` dos componentes conta PEÇA CORTADA: numa camiseta com
+   frente, costas, duas mangas, gola e viés, cada camiseta vale 6. Era essa soma
+   que aparecia no Início, nos campos, na expedição — 1.286.832 "peças" nas 291
+   OS de 16/09/2026, para 160.545 produtos de verdade.
+
+   O número de produtos de uma OS é o TOTAL GERAL da folha de OS (grade ×
+   camadas × multiplicador, em totaisPorTamanhoTomOS): é o que sai impresso, e
+   uma OS não pode dizer um número na folha e outro na tela. Só quando a folha
+   não tem o que dizer (OS sem grade ou sem camadas) a conta sai dos componentes:
+   em cada tamanho, as peças do componente divididas pelo "por peça" dele — 200
+   mangas com 2 por peça são 100 produtos. */
+function _produtosDosComponentes(o) {
+  const porTam = {};
+  let semTam = 0;
+  ((o && o.componentes) || []).forEach(c => {
+    const porPeca = Number(c.qtdPorPeca) > 0 ? Number(c.qtdPorPeca) : 1;
+    const qt = c.qtdPorTamanho || {};
+    const ks = Object.keys(qt);
+    // O componente que mais rende produto naquele tamanho manda: gola que só
+    // existe em alguns tamanhos não pode encolher a OS.
+    if (ks.length) ks.forEach(k => { porTam[k] = Math.max(porTam[k] || 0, (Number(qt[k]) || 0) / porPeca); });
+    else semTam = Math.max(semTam, (Number(c.qtdTotal) || 0) / porPeca);
+  });
+  return Math.max(Object.values(porTam).reduce((s, x) => s + x, 0), semTam);
+}
+
+function produtosOS(o) {
+  if (!o) return 0;
+  const folha = Number(totaisPorTamanhoTomOS(o).totalGeral) || 0;
+  return Math.round(folha > 0 ? folha : _produtosDosComponentes(o));
+}
+
+/* Os mesmos produtos, por tecido + cor — a forma dos campos de estoque. Cada
+   linha diz QUANTOS PRODUTOS têm peça naquele tecido e cor, e não quantas peças
+   há ali: numa camiseta toda preta de malha com gola de ribana, 700 camisetas
+   são 700 na linha da malha e 700 na da ribana. Por isso as linhas de uma OS
+   NÃO se somam entre si (o subtotal por tecido do campo cuida disso). */
+function produtosPorTecidoCorOS(o) {
+  const total = produtosOS(o);
+  const base = _produtosDosComponentes(o);
+  if (!(total > 0) || !(base > 0)) return [];
+  const escala = total / base;   // a folha manda; os componentes só repartem
+  const mapa = new Map();
+  (o.componentes || []).forEach(c => {
+    const qtd = Number(c.qtdTotal) || 0;
+    if (!(qtd > 0)) return;
+    const porPeca = Number(c.qtdPorPeca) > 0 ? Number(c.qtdPorPeca) : 1;
+    const tecidoNome = c.materialNome || '';
+    const corNome = corCanonicaPorTecido(c.corNome || '', tecidoNome);
+    const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
+    const cur = mapa.get(k) || { tecidoNome, corNome, qtd: 0 };
+    cur.qtd = Math.max(cur.qtd, qtd / porPeca);
+    mapa.set(k, cur);
+  });
+  return Array.from(mapa.values()).map(it => ({ ...it, qtd: Math.min(total, Math.round(it.qtd * escala)) }));
+}
+
 // Campos de estoque em processo, um por ETAPA de produção que tem campo. Modelo
 // SOBREPOSTO (cumulativo): o volume de cada OS fica SEMPRE no campo da etapa
 // marcada por ÚLTIMO (faseAtualOS = maior etapasSeq). Marcar uma nova etapa move
@@ -8116,7 +8177,7 @@ function calcularSaldosFase(idx, opts) {
   const pegar = (tNome, cNome) => {
     const k = key(tNome, cNome);
     let cur = map.get(k);
-    if (!cur) { cur = { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0, contagem: 0, osNums: new Set() }; map.set(k, cur); }
+    if (!cur) { cur = { tecidoNome: tNome, corNome: cNome, entrada: 0, saida: 0, contagem: 0, osNums: new Set(), porOS: new Map() }; map.set(k, cur); }
     if (!cur.tecidoNome && tNome) cur.tecidoNome = tNome;
     if (!cur.corNome && cNome) cur.corNome = cNome;
     return cur;
@@ -8147,8 +8208,9 @@ function calcularSaldosFase(idx, opts) {
     //    mesmo sem a etapa marcada.
     const listarOS = entradaParcial || (fase.osTodasEntradas ? true : (atual === idx));
     const numOS = (o.os || '').toString().trim();
-    componentesPorTecidoCorOS(o).forEach(it => {
+    produtosPorTecidoCorOS(o).forEach(it => {
       const cur = pegar(it.tecidoNome, it.corNome);
+      const e0 = cur.entrada, s0 = cur.saida;
       const viajando = Math.round(it.qtd * fracTr);
       if (entradaParcial) {
         cur.entrada += Math.round(it.qtd * fracRecebe);   // entra só o que foi alocado
@@ -8158,6 +8220,10 @@ function calcularSaldosFase(idx, opts) {
         else if (ehOrigem && viajando > 0) cur.saida += viajando;
       }
       if (listarOS && numOS) cur.osNums.add(numOS);
+      // Quanto ESTA OS pôs nesta linha. O subtotal por tecido precisa disso:
+      // as linhas de cor são produtos, e a mesma OS em duas cores do mesmo
+      // tecido (a tricolor) é o mesmo produto contado nas duas.
+      cur.porOS.set(o.id, { entrada: cur.entrada - e0, saida: cur.saida - s0 });
     });
   });
   ((semMov ? [] : STATE[fase.movKey]) || []).forEach(m => {
@@ -8375,7 +8441,10 @@ function _rankingProducao(ano, mes) {
     if (!skus.length) { semSku++; return; }
     const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(o));
     const grade = g ? (String(g.nome || '').split('|')[0].trim() || '—') : '(grade apagada)';
-    const totalPecas = Number((o.enfesto || {}).totalPecas) || 0;
+    // PRODUTOS da OS, o Total geral da folha (16/09/2026). Antes era
+    // `enfesto.totalPecas` (grade × camadas), que esquece o multiplicador da
+    // peça: a camiseta de malha tubular saía com a METADE do que foi produzido.
+    const totalPecas = produtosOS(o);
     if (o.data) datas.push(o.data);
     // OS de mais de uma cor entra em CADA uma — ela produz mesmo os dois
     // produtos. As peças são repartidas entre elas, senão o mesmo lote seria
@@ -8482,7 +8551,7 @@ function renderRanking() {
           <th>${esc(rotulo)}</th>
           <th style="width:64px;text-align:right;">OS</th>
           <th style="width:64px;text-align:right;">%</th>
-          <th style="width:90px;text-align:right;">peças</th>
+          <th style="width:90px;text-align:right;">produtos</th>
           <th style="width:110px;"></th>
         </tr></thead>
         <tbody>${itens.map((x, i) => `
@@ -8509,7 +8578,7 @@ function renderRanking() {
         <thead><tr>
           <th>${r.porMes ? 'mês' : 'ano'}</th>
           <th style="width:64px;text-align:right;">OS</th>
-          <th style="width:90px;text-align:right;">peças</th>
+          <th style="width:90px;text-align:right;">produtos</th>
           <th style="width:150px;"></th>
         </tr></thead>
         <tbody>${r.serie.map(x => `
@@ -8529,7 +8598,7 @@ function renderRanking() {
       <b>${num(contadas)} OS</b> ${foco ? `em <b>${esc(foco)}</b>` : 'no ranking'}${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
       · <b>${r.linhas.length}</b> combinações distintas de tipo × cor × grade
       ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: sem SKU de produto resolvido (falta a linha de SKU no desenho/modelo, ou a sigla da cor da variante).` : ''}
-      ${r.pares > contadas ? `<br><b>${r.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — as peças são repartidas entre elas.` : ''}
+      ${r.pares > contadas ? `<br><b>${r.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — os produtos são repartidos entre elas.` : ''}
     </div>
     ${serieHtml}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
@@ -8576,10 +8645,21 @@ function renderFasePainel(faseIdx) {
     const grupos = new Map();
     (detalhe || []).forEach(c => {
       const k = _normNome(c.tecidoNome);
-      const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [], osSet: new Set() };
-      g.entrada += c.entrada; g.saida += c.saida; g.contagem += c.contagem; g.estoque += c.estoque;
+      const g = grupos.get(k) || { tecidoNome: c.tecidoNome || '(sem tecido)', entrada: 0, saida: 0, contagem: 0, estoque: 0, linhas: [], osSet: new Set(), porOS: new Map() };
+      g.contagem += c.contagem;
+      // O subtotal soma PRODUTOS: de cada OS vale a maior das suas linhas neste
+      // tecido, e não a soma delas — senão a camiseta de frente preta e costas
+      // branca seria contada duas vezes no subtotal da malha.
+      (c.porOS || new Map()).forEach((v, osId) => {
+        const cur = g.porOS.get(osId) || { entrada: 0, saida: 0 };
+        g.porOS.set(osId, { entrada: Math.max(cur.entrada, v.entrada), saida: Math.max(cur.saida, v.saida) });
+      });
       (c.osList || []).forEach(n => g.osSet.add(n));
       g.linhas.push(c); grupos.set(k, g);
+    });
+    grupos.forEach(g => {
+      g.porOS.forEach(v => { g.entrada += v.entrada; g.saida += v.saida; });
+      g.estoque = g.entrada - g.saida + g.contagem;
     });
     const arr = Array.from(grupos.values()).sort((a, b) => (a.tecidoNome || '').localeCompare(b.tecidoNome || ''));
     arr.forEach(g => g.linhas.sort((a, b) => (a.corNome || '').localeCompare(b.corNome || '')));
@@ -8602,7 +8682,7 @@ function renderFasePainel(faseIdx) {
         </div>` : ''}
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
-        ${nota || `Em <b>peças</b>: <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
+        ${nota || `Em <b>produtos</b> (unidades completas, não peças cortadas): <b>Entradas</b> (${entradaDesc}), <b>Saídas</b> (${saidaDesc}),
         ${mostrarCont ? '<b>Contagem de estoque</b> (lançamentos manuais) e <b>Estoque</b> (= Entradas − Saídas + Contagem).' : 'e <b>Estoque</b> (= Entradas − Saídas, ajustado por lançamentos manuais).'}
         <b>OS</b> = números das OS que estão nesta fase agora (várias separadas por vírgula).${notaParcial}`}
       </div>
@@ -8615,7 +8695,7 @@ function renderFasePainel(faseIdx) {
           <th style="text-align:right;">Estoque</th>
           <th>OS</th>
         </tr></thead>
-        <tbody>${arr.length ? linhas : `<tr><td colspan="${mostrarCont ? 6 : 5}" class="empty">Sem peças nesta fase.</td></tr>`}</tbody>
+        <tbody>${arr.length ? linhas : `<tr><td colspan="${mostrarCont ? 6 : 5}" class="empty">Sem produtos nesta fase.</td></tr>`}</tbody>
       </table>
     </div>`
     };
@@ -8693,7 +8773,7 @@ function renderFasePainel(faseIdx) {
   const pacotesHtml = listaBase.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs atualmente em ${esc(fase.titulo)}</h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa expedição, a OS conta nas duas fases: as peças alocadas, em <b>Em trânsito</b>; as que ficaram, no campo de origem (o corte ou a costura da unidade em que a OS está).</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OS avança de fase automaticamente conforme as etapas do checklist são marcadas. Quando só parte do lote é alocada numa expedição, a OS conta nas duas fases: os produtos alocados, em <b>Em trânsito</b>; os que ficaram, no campo de origem (o corte ou a costura da unidade em que a OS está).</div>
       <div class="lista-os-filtros">
         <input type="search" id="fase-busca-${fase.id}" value="${esc(f.busca)}"
                placeholder="Buscar: número, código, modelo, coleção, cor, grade ou SKU…"
@@ -8709,7 +8789,7 @@ function renderFasePainel(faseIdx) {
       </div>
       <table class="table">
         <thead><tr>
-          <th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Cor</th><th>Grade</th><th>Data</th><th style="text-align:right;">Peças</th>
+          <th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Cor</th><th>Grade</th><th>Data</th><th style="text-align:right;">Produtos</th>
         </tr></thead>
         <tbody id="fase-tbl-${fase.id}"></tbody>
       </table>
@@ -8723,7 +8803,7 @@ function renderFasePainel(faseIdx) {
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos manuais recentes — ${esc(fase.titulo)}</h2>
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (pç)</th><th>Obs.</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (un.)</th><th>Obs.</th></tr></thead>
         <tbody>
           ${movs.map(m => `
             <tr>
@@ -8755,7 +8835,7 @@ function renderFasePainel(faseIdx) {
 
   const vazio = !temSaldo && !movs.length && !listaBase.length;
   cont.innerHTML = `
-    ${vazio ? `<div class="info-box">Sem peças nesta fase ainda. O volume entra sozinho conforme a etapa correspondente é marcada no checklist da OS. Use os botões para contagem física e ajustes manuais.</div>` : ''}
+    ${vazio ? `<div class="info-box">Sem produtos nesta fase ainda. O volume entra sozinho conforme a etapa correspondente é marcada no checklist da OS. Use os botões para contagem física e ajustes manuais.</div>` : ''}
     ${pacotesHtml}
     ${card}
     ${movHtml}
@@ -8785,7 +8865,7 @@ function renderFasePainel(faseIdx) {
 // menos o que embarcou.
 function _faseListaOS(faseIdx) {
   return (STATE.ordens || []).map(o => {
-    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    const total = produtosOS(o);
     const fAtual = faseAtualOS(o);
     const tr = _transitoDaOS(o);
     const viajando = tr ? Math.round(total * tr.fracao) : 0;
@@ -8901,7 +8981,7 @@ function renderFaseOsLista(faseId) {
     if (!(p.viajando > 0) || !p.parcial) return '';
     return p.transitoIdx === faseIdx
       ? ' <span class="badge" style="background:#e6eefb;">parcial · em viagem</span>'
-      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.viajando)} pç em trânsito</span>`;
+      : ` <span class="badge" style="background:#fdf0d5;">${fmt(p.viajando)} un. em trânsito</span>`;
   };
   tb.innerHTML = filtradas.map(p => {
     const o = p.os;
@@ -8920,7 +9000,7 @@ function renderFaseOsLista(faseId) {
                          : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${_gradeCelulaLista(o)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.pecas)} pç</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.pecas)} un.</td>
     </tr>`;
   }).join('');
 }
@@ -8953,7 +9033,7 @@ function abrirMovFase(faseId, tipo) {
     <div class="form-grid cols-2">
       <div class="field"><label>Tecido *</label><select id="mc-tecido">${tecOpts}</select></div>
       <div class="field"><label>Cor</label><select id="mc-cor">${corOpts}</select></div>
-      <div class="field"><label>Quantidade (peças) *</label><input type="number" min="0" step="1" id="mc-qtd" placeholder="Ex.: 50"></div>
+      <div class="field"><label>Quantidade (produtos) *</label><input type="number" min="0" step="1" id="mc-qtd" placeholder="Ex.: 50"></div>
       <div class="field"><label>Data</label><input type="date" id="mc-data" value="${hoje}"></div>
       <div class="field full"><label>Observação</label><input type="text" id="mc-obs" placeholder="Ex.: contagem de inventário / sobra"></div>
     </div>
@@ -8969,7 +9049,7 @@ async function salvarMovFase() {
   const tecidoNome = v('mc-tecido');
   if (!tecidoNome) return toast('Selecione o tecido', 'err');
   const qtd = parseInt(String(v('mc-qtd')).replace(',', '.')) || 0;
-  if (!(qtd > 0)) return toast('Informe a quantidade em peças', 'err');
+  if (!(qtd > 0)) return toast('Informe a quantidade em produtos', 'err');
   if (!Array.isArray(STATE[fase.movKey])) STATE[fase.movKey] = [];
   STATE[fase.movKey].push({
     id: uid(),
@@ -9133,8 +9213,9 @@ function ocorrenciasExpedicao(ini, fim) {
   );
 }
 
+// Produtos da OS (e não peças cortadas) — ver produtosOS.
 function _expPecasOS(o) {
-  return componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+  return produtosOS(o);
 }
 
 function _expCargasDa(janelaId, dataOrig, perna) {
@@ -9834,7 +9915,7 @@ function renderExpedicaoPlano() {
       <div class="item"><div class="num">${fmt(volIda)}</div><div class="lbl">Volumes na ida</div></div>
       <div class="item"><div class="num">${fmt(volVolta)}</div><div class="lbl">Volumes na volta</div></div>
       <div class="item"><div class="num">${fmt(volIda + volVolta)}</div><div class="lbl">Volumes no total</div></div>
-      <div class="item"><div class="num">${fmt(pecasIda + pecasVolta)}</div><div class="lbl">Peças movimentadas</div></div>
+      <div class="item"><div class="num">${fmt(pecasIda + pecasVolta)}</div><div class="lbl">Produtos movimentados</div></div>
       <div class="item"><div class="num">${fmt(osAlocadas.size)}</div><div class="lbl">OS alocadas</div></div>
       <div class="item ${alertas ? 'alerta' : ''}"><div class="num">${fmt(alertas)}</div><div class="lbl">Cargas fora do limite</div></div>
     </div>`;
@@ -9855,7 +9936,7 @@ function renderExpedicaoPlano() {
       const trocas = [];
       if (i.folha.modelo) trocas.push(`nome (calculado: ${i.modeloCalc || '—'})`);
       if (i.folha.cor) trocas.push('cor');
-      if (i.folha.pecas != null) trocas.push(`peças (calculado: ${fmt(i.pecasCalc)})`);
+      if (i.folha.pecas != null) trocas.push(`produtos (calculado: ${fmt(i.pecasCalc)})`);
       if (i.folha.volumes != null) trocas.push(`volumes (pacotes desta carga: ${fmt(i.volumesCalc)})`);
       const folhaBadge = trocas.length
         ? ` <span class="exp-badge info" title="Reescrito à mão para a folha de OE: ${esc(trocas.join(' · '))}. Clique em ✎ para ver ou voltar aos valores calculados.">folha editada</span>`
@@ -9872,11 +9953,11 @@ function renderExpedicaoPlano() {
       <div class="exp-os-row">
         <span class="num">${esc(i.osNumero)}</span>
         <span class="mod">${esc(i.modelo) || '—'}</span>
-        <span class="qtd">${fmt(i.pecas)} pç</span>
+        <span class="qtd">${fmt(i.pecas)} un.</span>
         <span class="vol">${i.volumes > 0 ? fmt(i.volumes) + ' vol' : '<span class="exp-badge baixo" title="Ninguém disse quantos volumes esta OS ocupa">vol?</span>'}${_expBadgeVolumeDivergente(i)}${parcialBadge}${fasesBadge}${folhaBadge}${
           i.carga.origem === 'ensaque' ? ' <span class="exp-badge info" title="Entrou nesta OE ao ser marcada como ensacada no checklist da OS, não pelo planejamento da expedição">pelo ensaque</span>' : ''}${
           i.carga.feita ? ' <span class="exp-badge ok" title="Marcada como feita no quadrinho da folha de OE">feita</span>' : ''}</span>
-        <span><button title="Editar o que esta OS mostra na folha de OE: nome da peça, cor, peças, volumes e o recado" onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
+        <span><button title="Editar o que esta OS mostra na folha de OE: nome da peça, cor, produtos, volumes e o recado" onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button><button title="Mudar o dia e o horário em que esta OS será expedida" onclick="moverCargaExp('${esc(i.carga.id)}')">⇄</button><button class="admin-only" title="Tirar esta OS da carga" onclick="excluirCargaExp('${esc(i.carga.id)}')">×</button></span>
       </div>${parteDaPeca ? `
       <div class="exp-os-fases" title="Fases do enfesto que esta carga leva. Escolhidas no checklist de fases, em ⇄. Sai na folha de OE."><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}${fi.ficam.length ? ` · <span class="fic">ficam: ${esc(_expFasesTexto(fi.ficam))}</span>` : ''}</div>` : ''}${i.obs ? `
       <div class="exp-os-obs" title="Observação escrita ao alocar esta OS na expedição. Também sai na folha de OE.">${esc(i.obs)}</div>` : ''}`;
@@ -9894,14 +9975,14 @@ function renderExpedicaoPlano() {
         <div class="exp-perna-total">
           <span>
             <span class="vol">${fmt(r.volumes)}</span> vol
-            <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} pç · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
+            <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} un. · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
             ${r.semVolumes ? `<br><span style="color:var(--accent-dark);font-size:11px;">${r.semVolumes} OS sem volumes definidos — o total está incompleto</span>` : ''}
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
         ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
-          ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou as peças." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
+          ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou os produtos." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
       </div>`;
   };
@@ -9952,7 +10033,7 @@ function renderExpedicaoPlano() {
   const remanescentesHtml = remanescentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. As peças desses pacotes continuam no campo em que a OS está — só o que foi alocado passou para <b>Em trânsito</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. Os produtos desses pacotes continuam no campo em que a OS está — só o que foi alocado passou para <b>Em trânsito</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
       <table class="table">
         <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th></tr></thead>
         <tbody>
@@ -9994,9 +10075,9 @@ function renderExpedicaoPlano() {
   const pendentesHtml = pendentes.length ? `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">OSs sem carga alocada <span class="exp-badge baixo">${pendentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Têm peças mas não entraram em <b>nenhuma</b> expedição — nem passada, nem planejada. Use <b>alocar</b> para pôr numa expedição. A coluna <b>Ensaque</b> diz quais já estão ensacadas (${fmt(nEnsacadas)} de ${fmt(pendentes.length)}); ela é <b>informação</b>, não requisito — adiantar a carga de uma OS que ainda vai ser ensacada é legítimo, e a mais nova é justamente a que ainda não tem a etapa marcada.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Têm produtos mas não entraram em <b>nenhuma</b> expedição — nem passada, nem planejada. Use <b>alocar</b> para pôr numa expedição. A coluna <b>Ensaque</b> diz quais já estão ensacadas (${fmt(nEnsacadas)} de ${fmt(pendentes.length)}); ela é <b>informação</b>, não requisito — adiantar a carga de uma OS que ainda vai ser ensacada é legítimo, e a mais nova é justamente a que ainda não tem a etapa marcada.</div>
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Data</th><th>Ensaque</th><th style="text-align:right;">Peças</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Data</th><th>Ensaque</th><th style="text-align:right;">Produtos</th></tr></thead>
         <tbody>
           ${pendentes.map(({ o, pecas, ensacada }) => `
             <tr>
@@ -10010,7 +10091,7 @@ function renderExpedicaoPlano() {
               <td style="font-size:12px;white-space:nowrap;">${ensacada
                 ? '<span class="exp-badge ok" title="A etapa Ensaque está marcada na folha desta OS">ensacada</span>'
                 : '<span class="muted" title="A etapa Ensaque ainda não foi marcada. Não impede alocar — só diz que os sacos ainda não foram fechados.">—</span>'}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} pç</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(pecas)} un.</td>
 
             </tr>`).join('')}
         </tbody>
@@ -10171,7 +10252,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
     const pecas = _expPecasOS(o);
     if (!(pecas > 0)) return;
     const marca = osEnsacada(o) ? ' · ensacada' : '';
-    const label = `${o.os || '(sem nº)'} · ${nomePecaOS(o) || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} pç${marca}`;
+    const label = `${o.os || '(sem nº)'} · ${nomePecaOS(o) || 'sem modelo'} · ${pecas.toLocaleString('pt-BR')} un.${marca}`;
     lista.push({ id: o.id, os: String(o.os || ''), label });
   });
   lista.sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }));
@@ -10211,7 +10292,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         'É este número que conta contra o mínimo e o máximo da carga.')}
       <div class="field"><label>Observação</label><input type="text" id="ec-obs" value="${esc(cargaEdit ? (cargaEdit.obs || '') : '')}" placeholder="Ex.: vai junto com a grade de mostruário"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver as peças.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;" id="ec-info">Selecione a OS para ver os produtos.</div>`;
   _expAtualizarSugestaoVolumes();
   openModal('modal-exp');
 }
@@ -10453,7 +10534,7 @@ function _expAtualizarSugestaoVolumes() {
   _expMontarSeletorFases(o);
   if (!o) {
     _expMontarSeletorPacotes(null);
-    if (info) info.textContent = 'Selecione a OS para ver as peças.';
+    if (info) info.textContent = 'Selecione a OS para ver os produtos.';
     return;
   }
   // Com grade: o seletor de pacotes assume (marca o que resta, calcula o volume
@@ -10464,7 +10545,7 @@ function _expAtualizarSugestaoVolumes() {
   const sug = _expSugestaoVolumes(o);
   if (campo && !campo.value && sug) campo.value = sug;
   if (info) {
-    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} peças</b>.`
+    info.innerHTML = `OS <b>${esc(o.os || '—')}</b> · ${esc(o.modeloNome || 'sem modelo')} · <b>${pecas.toLocaleString('pt-BR')} produtos</b>.`
       + (nTam > 0
         ? ` Grade com <b>${nTam} tamanho(s)</b> → sugestão de <b>${esc(sug)} volumes</b> (1 pacote por tamanho, por tonalidade, + 1 de reposição).`
         : ' Sem grade com tamanhos definidos — não dá pra sugerir os volumes.');
@@ -10533,9 +10614,9 @@ function abrirModalExpFolhaOS(cargaId) {
         <div class="field-hint">Em branco sai <b>${esc(corCalc) || '—'}</b>, as cores da peça. Escreva aqui quando esta carga leva só uma delas, ou quando a doca chama a cor por outro nome.</div>
       </div>
       <div class="field">
-        <label>Peças nesta carga</label>
+        <label>Produtos nesta carga</label>
         <input type="number" min="0" step="1" id="ef-pecas" value="${fo.pecas == null ? '' : fo.pecas}" placeholder="${pecasCalc}">
-        <div class="field-hint">Em branco sai <b>${fmt(pecasCalc)}</b> — ${ehParcial ? 'as peças dos pacotes desta carga' : 'a soma dos componentes da OS'}. Preenchido, é este número que sai na folha e soma no total da perna.</div>
+        <div class="field-hint">Em branco sai <b>${fmt(pecasCalc)}</b> — ${ehParcial ? 'os produtos dos pacotes desta carga' : 'o Total geral da folha da OS'}. Preenchido, é este número que sai na folha e soma no total da perna.</div>
       </div>
       <div class="field">
         <label>Volumes nesta carga</label>
@@ -16500,7 +16581,7 @@ function renderPrintPlanoExpedicao() {
     // volumes e o recado. A folha é onde o erro aparece, então é dela que se
     // corrige, sem ter que voltar ao planejamento e achar a linha da OS.
     const btnEdit = i.carga
-      ? `<button type="button" class="exp-print-edit no-print" title="Editar o que esta OS mostra na folha: nome da peça, cor, peças, volumes e o recado"
+      ? `<button type="button" class="exp-print-edit no-print" title="Editar o que esta OS mostra na folha: nome da peça, cor, produtos, volumes e o recado"
           onclick="abrirModalExpFolhaOS('${esc(i.carga.id)}')">✎</button>`
       : '';
     const cab = `
@@ -16532,7 +16613,7 @@ function renderPrintPlanoExpedicao() {
       : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} pç · ${volTxt}</div>${fasesHtml}${obsHtml}</div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${obsHtml}</div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -16562,7 +16643,7 @@ function renderPrintPlanoExpedicao() {
         <div class="exp-print-os">
           ${cab}
           <div class="sub">
-            ${fmt(i.pecas)} pç · ${volAjustado
+            ${fmt(i.pecas)} un. · ${volAjustado
               ? `<b>${fmt(i.volumes)} volume${i.volumes === 1 ? '' : 's'}</b> nesta carga (ajustado à mão)`
               : `<b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}`}
           </div>
@@ -16611,7 +16692,7 @@ function renderPrintPlanoExpedicao() {
       <div class="exp-print-os">
         ${cab}
         <div class="sub">
-          ${fmt(i.pecas)} pç · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)} vol</b>` : ''}
+          ${fmt(i.pecas)} un. · ${contaVol}${diverge ? ` · <b>carga alocada com ${fmt(i.volumes)} vol</b>` : ''}
         </div>
         <table>
           <thead>
@@ -16654,7 +16735,7 @@ function renderPrintPlanoExpedicao() {
         </div>
         ${linhas}
         <div class="tot">
-          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} pç</span>
+          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.</span>
           <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
         </div>
       </div>`;
@@ -16704,7 +16785,7 @@ function renderPrintPlanoExpedicao() {
       <div class="item"><div class="n">${fmt(volIda)}</div><div class="l">Volumes ida</div></div>
       <div class="item"><div class="n">${fmt(volVolta)}</div><div class="l">Volumes volta</div></div>
       <div class="item"><div class="n">${fmt(volIda + volVolta)}</div><div class="l">Volumes total</div></div>
-      <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Peças</div></div>
+      <div class="item"><div class="n">${fmt(pecasTot)}</div><div class="l">Produtos</div></div>
       <div class="item"><div class="n">${fmt(osTot.size)}</div><div class="l">OS alocadas</div></div>
     </div>
     <div style="font-size:7pt;color:#555;margin:3pt 0 5pt;">
@@ -18017,7 +18098,7 @@ function _dashFluxoDados() {
   };
 
   (STATE.ordens || []).forEach(o => {
-    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    const total = produtosOS(o);
     if (!(total > 0)) return;
     const atual = faseAtualOS(o);
     /* O CARTÃO ESTOQUE CONTA A CAIXA, E NÃO A ÚLTIMA ETAPA (15/09/2026,
@@ -18094,7 +18175,7 @@ function _dashFluxoDados() {
      A OS que já saiu do fluxo (Estoque) não conta: o recebimento dela é
      história, e o cartão existe para dizer o que chegou e ainda está aqui. */
   (STATE.ordens || []).forEach(o => {
-    const total = componentesPorTecidoCorOS(o).reduce((s, it) => s + it.qtd, 0);
+    const total = produtosOS(o);
     if (!(total > 0)) return;
     if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) return;   // já foi para o estoque: é história
     if (osEtapaMarcada(o, ETAPA_SC_RE)) somar('recSC', total, o);
@@ -18205,8 +18286,8 @@ function _dashGraficoColunas(cards) {
   const H = 72;
   const colunas = itens.map((x, i) => {
     const h = x.pecas > 0 ? Math.max(2, (x.pecas / max) * H) : 1;
-    const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' peças'
-      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' peças';
+    const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' produtos'
+      : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' produtos';
     return `<rect x="${(i * larg + recuo).toFixed(2)}%" y="${(H - h).toFixed(2)}"
       width="${barra.toFixed(2)}%" height="${h.toFixed(2)}" rx="0.6"
       class="dash-barra${x.resumo ? ' resto' : ''}"><title>${esc(dica)}</title></rect>`;
@@ -18288,7 +18369,7 @@ function renderFluxoDash() {
   cont.innerHTML = `
     <div class="dash-fluxo-topo">
       <h2>Por onde o produto passa</h2>
-      <span class="dash-desc">Do corte ao estoque, em peças e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
+      <span class="dash-desc">Do corte ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
     </div>
     ${passos}`;
 }
