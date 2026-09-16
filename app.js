@@ -8290,6 +8290,52 @@ let _rankAno = '', _rankMes = '';
    na tela. */
 let _rankGrupos = [];
 
+/* RECOLHER E ESTENDER OS QUADROS (16/09/2026, Junior). O Ranking tem quadros de
+   160 linhas; quem quer comparar a tabela Grade com a Cor rolava nove telas.
+   Clicar no título recolhe o quadro, e a escolha fica lembrada NESTE computador
+   (localStorage), por quadro — cada máquina da fábrica olha o ranking do seu
+   jeito. Recolher só esconde: nada é recalculado, e a rolagem não pula. */
+const RANK_RECOLHIDOS_CHAVE = 'rankingRecolhidos';
+function _rankRecolhidos() {
+  try { return JSON.parse(localStorage.getItem(RANK_RECOLHIDOS_CHAVE) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function _rankGuardarRecolhidos(mapa) {
+  try { localStorage.setItem(RANK_RECOLHIDOS_CHAVE, JSON.stringify(mapa)); } catch (e) { /* sem armazenamento: vale só nesta tela */ }
+}
+function _rankAlternar(botao) {
+  const card = botao && botao.closest('.rank-card');
+  if (!card) return;
+  const recolher = !card.classList.contains('recolhido');
+  card.classList.toggle('recolhido', recolher);
+  botao.setAttribute('aria-expanded', String(!recolher));
+  const mapa = _rankRecolhidos();
+  if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
+  _rankGuardarRecolhidos(mapa);
+}
+function _rankTodos(recolher) {
+  const mapa = _rankRecolhidos();
+  document.querySelectorAll('#ranking-painel .rank-card').forEach(card => {
+    card.classList.toggle('recolhido', recolher);
+    const b = card.querySelector('.rank-toggle');
+    if (b) b.setAttribute('aria-expanded', String(!recolher));
+    if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
+  });
+  _rankGuardarRecolhidos(mapa);
+}
+window._rankAlternar = _rankAlternar;
+window._rankTodos = _rankTodos;
+
+// O cabeçalho clicável de um quadro. `chave` é fixa por quadro ("Por período"
+// vale para Por ano e Por mês); `resumo` aparece ao lado, útil com ele recolhido.
+function _rankCabecalho(chave, titulo, resumo, recolhidos) {
+  const aberto = !recolhidos[chave];
+  return `<button type="button" class="rank-toggle card-title" aria-expanded="${aberto}"
+      onclick="_rankAlternar(this)" title="Clique para recolher ou estender este quadro">
+      <span class="rank-seta" aria-hidden="true">▼</span>${esc(titulo)}${resumo ? `<span class="rank-resumo">${esc(resumo)}</span>` : ''}
+    </button>`;
+}
+
 // O grupo escolhido viaja num campo PENDENTE, que o `goto` consome ao abrir a
 // lista. Assim o recorte vale so para a viagem que o trouxe: chegar em Ordens de Serviço
 // por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
@@ -8508,6 +8554,10 @@ function renderRanking() {
       </div>
       ${(_rankAno || _rankMes)
         ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar filtro</button>` : ''}
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        <button type="button" class="btn small ghost" onclick="_rankTodos(true)">▶ Recolher todos</button>
+        <button type="button" class="btn small ghost" onclick="_rankTodos(false)">▼ Estender todos</button>
+      </div>
     </div>`;
   if (!r.total) {
     box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankMes ? _rankRotuloMes(_rankMes) : _rankAno)}.</div>`;
@@ -8532,9 +8582,11 @@ function renderRanking() {
   const maxC = r.porCor[0] ? r.porCor[0].n : 0;
   const maxS = r.porSkuCor[0] ? r.porSkuCor[0].n : 0;
   const maxG = r.porGrade[0] ? r.porGrade[0].n : 0;
+  const recolhidos = _rankRecolhidos();
   const tabela = (titulo, desc, itens, max, rotulo) => `
-    <div class="card" style="margin-bottom:14px;">
-      <div class="card-title">${esc(titulo)}</div>
+    <div class="card rank-card${recolhidos[titulo] ? ' recolhido' : ''}" data-rank="${esc(titulo)}" style="margin-bottom:14px;">
+      ${_rankCabecalho(titulo, titulo, itens.length + (itens.length === 1 ? ' linha' : ' linhas'), recolhidos)}
+      <div class="rank-corpo">
       <div class="desc" style="margin-bottom:8px;">${desc}</div>
       <table class="table">
         <thead><tr>
@@ -8555,13 +8607,15 @@ function renderRanking() {
             <td>${barra(x.n, max)}</td>
           </tr>`).join('')}</tbody>
       </table>
+      </div>
     </div>`;
   // A SÉRIE DO TEMPO. Clicar na linha entra naquele período — é o mesmo gesto de
   // abrir uma pasta, e evita ter de achar o mês no seletor.
   const maxP = r.serie.reduce((mx, x) => Math.max(mx, x.n), 0);
   const serieHtml = !r.serie.length ? '' : `
-    <div class="card" style="margin-bottom:14px;">
-      <div class="card-title">${r.porMes ? 'Por mês' : 'Por ano'}</div>
+    <div class="card rank-card${recolhidos['Por período'] ? ' recolhido' : ''}" data-rank="Por período" style="margin-bottom:14px;">
+      ${_rankCabecalho('Por período', r.porMes ? 'Por mês' : 'Por ano', r.serie.length + (r.serie.length === 1 ? ' linha' : ' linhas'), recolhidos)}
+      <div class="rank-corpo">
       <div class="desc" style="margin-bottom:8px;">${r.porMes
         ? 'Os meses do período em foco, em ordem. Clique num mês para ver o ranking só dele.'
         : 'Os anos com produção, em ordem. Clique num ano para abri-lo em meses.'}</div>
@@ -8582,6 +8636,7 @@ function renderRanking() {
             <td>${barra(x.n, maxP)}</td>
           </tr>`).join('')}</tbody>
       </table>
+      </div>
     </div>`;
   const foco = _rankMes ? _rankRotuloMes(_rankMes) : (_rankAno || '');
   box.innerHTML = filtro + `

@@ -1310,6 +1310,32 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   .dash-an-val { display: none; }
 }
 
+/* RANKING: quadros que recolhem (16/09/2026). O titulo vira botao, com a seta
+   e o numero de linhas ao lado; recolhido, so ele fica. */
+.rank-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rank-toggle:hover { color: var(--ink); }
+.rank-seta { display: inline-block; font-size: 9px; transition: transform .15s; }
+.rank-resumo { margin-left: auto; letter-spacing: .04em; text-transform: none; font-size: 11px; color: var(--ink-3); }
+.rank-card.recolhido .rank-corpo { display: none; }
+.rank-card.recolhido .rank-toggle { border-bottom-color: transparent; margin-bottom: 0; padding-bottom: 0; }
+.rank-card.recolhido .rank-seta { transform: rotate(-90deg); }
+
 /* ============ FORMULÁRIO OS ============ */
 .os-section { margin-bottom: 18px; }
 
