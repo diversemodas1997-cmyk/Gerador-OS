@@ -18388,7 +18388,10 @@ function _dashHorasReais(o) {
 /* Por onde a OS passou: a lista de estados {t, cartoes: Map(k -> produtos)},
    um por hora de etapa. A etapa marcada SEM hora vale desde sempre. O status
    escrito à mão só vale a partir do dia em que foi escrito. */
-function _dashLinhaDoTempoOS(o) {
+/* A OS COMO ELA ERA em cada instante com hora de verdade: [{t, clone}]. É a
+   reconstrução do passado numa função só — o histórico dos cartões e o dos
+   status perguntam coisas diferentes ao mesmo clone. null = OS sem hora real. */
+function _dashClonesNoTempoOS(o) {
   const marcas = _dashHorasReais(o);
   if (!marcas) return null;
   const prog = o.progresso || {};
@@ -18405,6 +18408,14 @@ function _dashLinhaDoTempoOS(o) {
     marcas.forEach(m => { if (m.t <= t) { ck[m.n] = true; sq[m.n] = m.t; } });
     const clone = Object.assign({}, o, { progresso: Object.assign({}, prog, { etapasCheck: ck, etapasSeq: sq }) });
     if (carimboStatus > t) clone.statusOS = '';
+    return { t, clone };
+  });
+}
+
+function _dashLinhaDoTempoOS(o) {
+  const clones = _dashClonesNoTempoOS(o);
+  if (!clones) return null;
+  return clones.map(({ t, clone }) => {
     const cartoes = new Map();
     _dashCartoesDaOS(clone, { semTransito: true }).forEach(c => cartoes.set(c.k, c.pecas));
     return { t, cartoes };
@@ -18841,7 +18852,47 @@ function _dashPorStatus() {
   return STATUS_OS.map(st => por.get(st.k));
 }
 
-function _dashPorStatusHtml() {
+/* QUANTO ENTROU EM CADA STATUS, por período (16/09/2026, Junior: "o volume de OS
+   por status também deve ser submetido ao filtro por dia, semana, mês e ano";
+   escolhido: contar o que ENTROU no status, e não o que estava nele).
+
+   Uma OS "entra" num status no instante em que ele passa a ser o dela: a
+   reconstrução pelas horas das etapas (_dashClonesNoTempoOS) pergunta o status
+   em cada instante, e cada troca é uma entrada. A OS sem hora de verdade não
+   tem entrada datada — ela só conta na coluna Agora. No dia e na semana, o que
+   entrou no sábado ou no domingo fica fora das colunas (e é contado à parte). */
+function _dashEntradasPorStatus(periodos) {
+  const por = new Map(STATUS_OS.map(st => [st.k, periodos.map(() => ({ produtos: 0, os: 0 }))]));
+  let foraDoPeriodo = 0;
+  const ini = periodos[0].de, fim = periodos[periodos.length - 1].ate;
+  (STATE.ordens || []).forEach(o => {
+    const clones = _dashClonesNoTempoOS(o);
+    if (!clones) return;
+    const produtos = produtosOS(o);
+    if (!(produtos > 0)) return;
+    let antes = 'nao-iniciado';
+    clones.forEach(({ t, clone }) => {
+      const st = _statusOS(clone);
+      if (st === antes) return;
+      antes = st;
+      const linha = por.get(st);
+      if (!linha || t < ini || t >= fim) return;
+      const i = periodos.findIndex(w => t >= w.de && t < w.ate);
+      if (i < 0) { foraDoPeriodo += produtos; return; }
+      linha[i].produtos += produtos;
+      linha[i].os++;
+    });
+  });
+  return { por, foraDoPeriodo };
+}
+
+function _dashPorStatusHtml(escala) {
+  const { periodos } = _dashPeriodos(Date.now(), escala || 'semana');
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const { por, foraDoPeriodo } = _dashEntradasPorStatus(periodos);
+  const maxEnt = Math.max(1, ...[...por.values()].flat().map(c => c.produtos));
+  const nPer = periodos.length;
+  const cab = periodos.map((w, i) => `<span class="dash-st-per${i === nPer - 1 ? ' atual' : ''}" title="${esc(w.nome)}">${i === nPer - 1 ? esc(w.rot) + ' <em>em curso</em>' : esc(w.rot)}</span>`).join('');
   const linhas = _dashPorStatus();
   const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH);
   const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
@@ -18854,8 +18905,13 @@ function _dashPorStatusHtml() {
     const dica = `${x.st.rotulo}: ${_dashFmt(x.produtos)} produtos em ${_dashFmt(x.os)} OS`
       + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras' : ` — ${pct(x.produtos)} do que está em produção`)
       + (x.os ? '. Clique para ver estas OS na lista.' : '');
-    return `<div class="dash-st-linha${x.os ? '' : ' vazio'}${fim ? ' fim' : ''}"${x.os ? ` onclick="abrirListaPorStatus('${x.st.k}')" tabindex="0"` : ''} title="${esc(dica)}">
+    const entradas = por.get(x.st.k) || [];
+    const celulas = entradas.map((c, i) => `<span class="dash-st-ent${c.produtos ? '' : ' zero'}" title="${esc(`Entraram em ${x.st.rotulo} em ${periodos[i].nome}: ${_dashFmt(c.produtos)} produtos, ${_dashFmt(c.os)} OS`)}">
+          <span class="dash-st-ent-barra" style="width:${(c.produtos / maxEnt * 100).toFixed(1)}%;"></span>
+          <b>${c.produtos ? _dashFmt(c.produtos) : '·'}</b>${c.os ? `<em>${c.os} OS</em>` : ''}</span>`).join('');
+    return `<div class="dash-st-linha${x.os ? '' : ' vazio'}${fim ? ' fim' : ''}" style="--nper:${nPer};"${x.os ? ` onclick="abrirListaPorStatus('${x.st.k}')" tabindex="0"` : ''} title="${esc(dica)}">
         <span class="dash-st-nome">${x.st.icone} ${esc(x.st.rotulo)}</span>
+        ${celulas}
         <span class="dash-st-trilho"><span class="dash-st-barra" style="width:${w.toFixed(1)}%;"></span>${fim ? '<span class="dash-st-corte" aria-hidden="true"></span>' : ''}</span>
         <span class="dash-st-num"><b>${_dashFmt(x.produtos)}</b> <em>produtos</em></span>
         <span class="dash-st-num"><b>${_dashFmt(x.os)}</b> <em>OS</em></span>
@@ -18865,9 +18921,15 @@ function _dashPorStatusHtml() {
   return `<div class="dash-status">
       <div class="dash-status-cab">
         <b>Volume das OS por status</b>
-        <span>em produção agora: <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS (tudo menos Estoque) · clique num status para ver as OS</span>
+        <span>colunas: produtos que <b>entraram</b> em cada status, por ${esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
+      </div>
+      <div class="dash-st-linha dash-st-titulos" style="--nper:${nPer};">
+        <span class="dash-st-nome">Status</span>${cab}
+        <span class="dash-st-agora-tit">Agora</span><span></span><span></span><span></span>
       </div>
       ${corpo}
+      ${foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(foraDoPeriodo)} produtos entraram num status num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
+      <div class="dash-an-aviso">OS antigas, sem a hora em que cada etapa foi marcada, não têm entrada datada: aparecem só na coluna Agora.</div>
     </div>`;
 }
 const STATUS_TERMINAL_DASH = 'estoque';
@@ -18931,12 +18993,12 @@ function renderFluxoDash() {
       <h2>Por onde o produto passa</h2>
       <span class="dash-desc">Do corte ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
     </div>
-    ${_dashPorStatusHtml()}
+    ${_dashPorStatusHtml(escala)}
     <div class="dash-escala" role="group" aria-label="Período de análise dos gráficos">
       <span>Analisar por</span>
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
         onclick="_dashTrocarEscala('${e.k}')" aria-pressed="${e.k === escala}">${e.rot}</button>`).join('')}
-      <em>vale para os gráficos de todos os passos</em>
+      <em>vale para o volume por status e para os gráficos de todos os passos</em>
     </div>
     <div class="dash-escala" role="group" aria-label="O que mostrar nos gráficos">
       <span>Mostrar</span>
