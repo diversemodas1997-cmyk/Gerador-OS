@@ -8592,10 +8592,10 @@ function renderRanking() {
       ${r.pares > contadas ? `<br><b>${r.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — os produtos são repartidos entre elas.` : ''}
     </div>
     ${serieHtml}
+    ${tabela('Grade', 'Só a grade, independente do tipo e da cor. A OS de mais de uma cor entra uma vez, com o lote inteiro. Fica no alto de propósito: é curta, e as tabelas de baixo passam de cem linhas.', r.porGrade, maxG, 'grade')}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
     ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
-    ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}
-    ${tabela('Grade', 'Só a grade, independente do tipo e da cor. A OS de mais de uma cor entra uma vez, com o lote inteiro.', r.porGrade, maxG, 'grade')}`;
+    ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
 }
 
 function renderFasePainel(faseIdx) {
