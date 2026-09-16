@@ -18273,24 +18273,73 @@ function _dashGraficoColunas(cards) {
   const max = Math.max(...itens.map(x => x.pecas));
   if (!(max > 0)) return '';
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
-  const larg = 100 / itens.length;
-  const barra = larg * 0.84, recuo = larg * 0.08;
-  const H = 72;
-  const colunas = itens.map((x, i) => {
-    const h = x.pecas > 0 ? Math.max(2, (x.pecas / max) * H) : 1;
+
+  /* NO FORMATO DO POWER BI (16/09/2026, Junior). Até aqui eram colunas soltas,
+     sem régua: dava para ver qual era maior, e não QUANTO. Agora o gráfico tem o
+     que um visual de colunas do Power BI tem — título, legenda, eixo de valores
+     com linhas de grade, o valor em cima de cada coluna, e a dica ao passar o
+     mouse numa caixa própria.
+
+     A COR É DO QUADRO, e não da OS: num passo de duas unidades, azul é sempre
+     Descalvado e laranja é sempre São Carlos, em qualquer dia. É a ordem fixa
+     dos quadros no passo que escolhe a cor (a mesma de _dashFluxoPassos), então
+     um quadro vazio não faz o vizinho mudar de cor. Paleta validada para
+     daltonismo (dataviz: validate_palette, 4 cores, contraste com rótulo). */
+  const nomesQuadro = (cards || []).map(c => c.nome);
+  const serie = nome => Math.max(0, nomesQuadro.indexOf(nome)) % 4 + 1;
+
+  // Régua "redonda": o topo do eixo é o próximo número bonito acima da maior
+  // coluna, dividido em 4 marcas. Os passos são apertados (1,5 · 3 · 4 · 6 · 8)
+  // para a maior coluna não ficar baixa: 5.280 desenha contra 6 mil, e não 8 mil.
+  const passo = (() => {
+    const bruto = max / 4;
+    const pot = Math.pow(10, Math.floor(Math.log10(bruto)));
+    const m = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(k => k * pot >= bruto) || 10;
+    return Math.max(1, m * pot);
+  })();
+  const topo = passo * 4;
+  const curto = n => {
+    if (n >= 1000) {
+      const mil = n / 1000;
+      return mil.toLocaleString('pt-BR', { maximumFractionDigits: mil >= 10 ? 0 : 1 }) + ' mil';
+    }
+    return fmt(n);
+  };
+  const pct = n => (n / topo * 100).toFixed(2);
+
+  const grade = [0, 1, 2, 3, 4].map(k => `
+      <div class="dash-gr-linha${k ? '' : ' base'}" style="bottom:${k * 25}%;"></div>
+      <span class="dash-gr-ytick" style="bottom:${k * 25}%;">${curto(passo * k)}</span>`).join('');
+
+  const colunas = itens.map(x => {
+    const h = x.pecas > 0 ? Math.max(0.8, x.pecas / topo * 100) : 0;
     const dica = x.resumo ? x.resumo + ': ' + fmt(x.pecas) + ' produtos'
       : 'OS ' + x.os + (x.quadro ? ' · ' + x.quadro : '') + ': ' + fmt(x.pecas) + ' produtos';
-    return `<rect x="${(i * larg + recuo).toFixed(2)}%" y="${(H - h).toFixed(2)}"
-      width="${barra.toFixed(2)}%" height="${h.toFixed(2)}" rx="0.6"
-      class="dash-barra${x.resumo ? ' resto' : ''}"><title>${esc(dica)}</title></rect>`;
+    const cls = x.resumo ? 'dash-barra resto' : 'dash-barra s' + serie(x.quadro);
+    return `<div class="dash-col" tabindex="0" aria-label="${esc(dica)}">
+        <span class="dash-col-val" style="bottom:${h.toFixed(2)}%;">${esc(curto(x.pecas))}</span>
+        <span class="${cls}" style="height:${h.toFixed(2)}%;" data-h="${pct(x.pecas)}"></span>
+        <span class="dash-gr-tip" role="tooltip">${esc(dica)}</span>
+      </div>`;
   }).join('');
-  const rotulos = itens.map((x, i) => {
-    const cx = i * larg + larg / 2;
-    return `<span class="dash-barra-rot" style="left:${cx.toFixed(2)}%;">${esc(x.os)}</span>`;
-  }).join('');
+  const rotulos = itens.map(x => `<span class="dash-barra-rot">${esc(x.os)}</span>`).join('');
+
+  // Legenda só quando há mais de um quadro COM colunas: com um só, o título do
+  // passo já diz de quem são as barras, e uma legenda de um item é ruído.
+  const quadrosNoGrafico = nomesQuadro.filter(n => itens.some(x => x.quadro === n));
+  const legenda = quadrosNoGrafico.length > 1
+    ? `<div class="dash-gr-leg">${quadrosNoGrafico.map(n =>
+        `<span><i class="s${serie(n)}"></i>${esc(n)}</span>`).join('')}</div>`
+    : '';
+
   return `<div class="dash-gr">
-    <svg viewBox="0 0 100 ${H}" preserveAspectRatio="none" class="dash-gr-svg" aria-hidden="true">${colunas}</svg>
-    <div class="dash-gr-eixo">${rotulos}</div>
+    <div class="dash-gr-cab"><span class="dash-gr-tit">Produtos por OS</span>${legenda}</div>
+    <div class="dash-gr-corpo">
+      <div class="dash-gr-plot">${grade}
+        <div class="dash-gr-cols">${colunas}</div>
+      </div>
+      <div class="dash-gr-eixo">${rotulos}</div>
+    </div>
   </div>`;
 }
 function renderFluxoDash() {
@@ -18332,7 +18381,7 @@ function renderFluxoDash() {
         <div class="dash-card${vazio}"${clique}${dica ? ` title="${esc(dica)}"` : ''}>
           <div class="dash-card-nome">${esc(c.nome)}</div>
           <div class="dash-num">${fmt(pecas)}</div>
-          <div class="dash-sub">peças · ${fmt(nOS)} OS</div>
+          <div class="dash-sub">produtos · ${fmt(nOS)} OS</div>
         </div>`;
     }).join('');
     /* O GRÁFICO DE COLUNAS, logo abaixo dos cartões (15/09/2026, Junior).

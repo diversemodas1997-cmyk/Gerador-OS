@@ -973,44 +973,148 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   margin-top: 2px;
 }
 
-/* O GRAFICO DE COLUNAS de cada passo, logo abaixo dos cartoes. Os cartoes dizem
-   o numero e o grafico diz a PROPORCAO -- qual metade do passo esta carregada.
+/* O GRAFICO DE COLUNAS de cada passo, logo abaixo dos cartoes, NO FORMATO DO
+   POWER BI (16/09/2026): titulo e legenda em cima, eixo de valores com linhas
+   de grade, o valor sobre cada coluna, o numero da OS embaixo e a dica numa
+   caixa ao passar o mouse.
 
-   O SVG tem largura 100% e `preserveAspectRatio: none`: ele estica com a caixa,
-   e as colunas acompanham a tela ate a largura do celular. A altura e fixa
-   porque o que se le aqui e a RELACAO entre as barras, e nao o tamanho de
-   nenhuma delas. */
-.dash-gr { margin-top: 12px; }
-.dash-gr-svg {
-  display: block;
-  width: 100%;
-  height: 72px;
-  overflow: visible;
+   E HTML, e nao SVG: os rotulos de valor e de eixo precisam ficar do tamanho
+   certo em qualquer largura, e dentro de um SVG esticado eles deformavam. Cada
+   coluna e uma caixa flex; a altura da barra e % da regua do eixo. */
+.dash-gr {
+  --gr-s1: #2a78d6;   /* 1o quadro do passo (Descalvado, Ida manha) */
+  --gr-s2: #eb6834;   /* 2o quadro (Sao Carlos, Ida tarde) */
+  --gr-s3: #1baf7a;
+  --gr-s4: #eda100;
+  --gr-grade: #e9e6de;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
 }
-.dash-barra { fill: var(--accent); opacity: .75; }
-.dash-etapa:hover .dash-barra { opacity: .95; }
-/* Coluna de valor zero e um traco rente ao eixo, e nao coluna nenhuma: o zero e
-   resposta -- "aqui nao tem nada agora" --, e some-lo faria a barra ao lado
-   parecer a unica que existe. */
-/* A coluna que soma as OS menores (o "+N") sai apagada: ela nao e um lote, e um
-   lote so devia ter a cor dos lotes. */
-.dash-barra.resto { fill: var(--ink-3); opacity: .45; }
-/* Os rotulos ficam FORA do SVG: dentro dele o `preserveAspectRatio: none`
-   esticaria as letras junto com o desenho, e o texto sairia deformado em telas
-   largas. Aqui cada um e posicionado pelo centro da sua coluna. */
-.dash-gr-eixo { position: relative; height: 16px; margin-top: 4px; }
-.dash-barra-rot {
+.dash-gr-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.dash-gr-tit { font-size: 13px; font-weight: 600; color: var(--ink); }
+.dash-gr-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
+.dash-gr-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.dash-gr-leg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dash-gr-corpo { padding-left: 44px; }   /* a faixa dos valores do eixo */
+.dash-gr-plot {
+  position: relative;
+  height: 150px;
+  margin-top: 16px;   /* espaco do rotulo de valor da coluna mais alta */
+}
+.dash-gr-linha {
   position: absolute;
-  top: 0;
+  left: 0; right: 0;
+  border-top: 1px dotted var(--gr-grade);
+}
+.dash-gr-linha.base { border-top: 1px solid var(--line); }
+.dash-gr-ytick {
+  position: absolute;
+  left: -44px;
+  width: 38px;
+  transform: translateY(50%);
+  text-align: right;
+  font-size: 10px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.dash-gr-cols {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.dash-col {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  outline: none;
+}
+.dash-barra {
+  display: block;
+  width: 72%;
+  max-width: 56px;
+  border-radius: 4px 4px 0 0;   /* ponta arredondada, base rente ao eixo */
+  transition: opacity .12s;
+}
+.dash-barra.s1, .dash-gr-leg i.s1 { background: var(--gr-s1); }
+.dash-barra.s2, .dash-gr-leg i.s2 { background: var(--gr-s2); }
+.dash-barra.s3, .dash-gr-leg i.s3 { background: var(--gr-s3); }
+.dash-barra.s4, .dash-gr-leg i.s4 { background: var(--gr-s4); }
+/* A coluna que soma as OS menores (o "+N") sai cinza: ela nao e um lote, e um
+   lote so devia ter a cor do seu quadro. */
+.dash-barra.resto { background: #b9b5ab; }
+/* Como no Power BI: passar o mouse numa coluna apaga as outras. */
+.dash-gr-cols:hover .dash-barra { opacity: .35; }
+.dash-gr-cols .dash-col:hover .dash-barra,
+.dash-gr-cols .dash-col:focus .dash-barra { opacity: 1; }
+.dash-col-val {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -3px);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.dash-gr-tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
   transform: translateX(-50%);
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 8px rgba(0,0,0,.14);
+  border-radius: 3px;
+  padding: 6px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+}
+.dash-col:hover .dash-gr-tip,
+.dash-col:focus .dash-gr-tip { display: block; }
+/* A dica das colunas das pontas nao pode sair da caixa do passo. */
+.dash-col:first-child .dash-gr-tip { left: 0; transform: none; }
+.dash-col:last-child .dash-gr-tip { left: auto; right: 0; transform: none; }
+.dash-gr-eixo {
+  display: flex;
+  gap: 2px;
+  margin-top: 5px;
+}
+.dash-barra-rot {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   color: var(--ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
 }
 @media (max-width: 640px) {
-  .dash-gr-svg { height: 56px; }
-  .dash-barra-rot { font-size: 9px; }
+  .dash-gr-plot { height: 120px; }
+  /* No celular as colunas ficam estreitas demais para o valor em cima; ele
+     continua na dica, ao tocar na coluna. */
+  .dash-col-val { display: none; }
+  .dash-gr-plot { margin-top: 4px; }
+  .dash-barra-rot { font-size: 8px; }
 }
 @media (max-width: 640px) {
   .dash-cards { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }

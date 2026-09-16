@@ -44,9 +44,11 @@ const quadro = (nome, lista) => ({
   nome, v: { pecas: lista.reduce((s, x) => s + x.pecas, 0), os: lista.length, lista }
 });
 const os = (n, pecas) => ({ os: n, pecas });
-const alturas = (h) => [...h.matchAll(/height="([\d.]+)"/g)].map(m => Number(m[1]));
+// Altura de cada barra, em % da régua do eixo (desde 16/09/2026 o gráfico é
+// HTML no formato do Power BI, e a altura mora no style da barra).
+const alturas = (h) => [...h.matchAll(/class="dash-barra[^"]*" style="height:([\d.]+)%/g)].map(m => Number(m[1]));
 const rotulos = (h) => [...h.matchAll(/dash-barra-rot[^>]*>([^<]*)/g)].map(m => m[1]);
-const dicas = (h) => [...h.matchAll(/<title>([^<]*)<\/title>/g)].map(m => m[1]);
+const dicas = (h) => [...h.matchAll(/class="dash-gr-tip"[^>]*>([^<]*)</g)].map(m => m[1]);
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -78,13 +80,18 @@ ok('a dica diz de qual quadro é cada OS',
 /* ---------- 3. a altura e proporcional a MAIOR do passo ---------- */
 
 let a = alturas(h);
-ok('a maior OS do passo ocupa a altura toda', a[2] === 72, a);
+// A régua é "redonda" (5.280 → topo 6.000), como no Power BI: a maior coluna
+// fica perto do topo, e não colada nele.
+ok('a maior OS do passo mede contra a régua redonda (5.280 de 6.000)', Math.abs(a[2] - 88) < 0.01, a);
 ok('e as outras ficam na proporção exata (1.200/5.280)',
    Math.abs(a[0] / a[2] - 1200 / 5280) < 0.005, { proporcao: a[0] / a[2] });
 // A escala e do PASSO: os mesmos numeros, noutro grupo, dao a mesma figura.
 const h2 = g([quadro('X', [os('1', 600), os('2', 372)]), quadro('Y', [os('3', 2640)])]);
-ok('a escala é do passo, não do painel: metade dos números desenha igual',
-   Math.abs(alturas(h2)[0] - a[0]) < 0.01, { pequeno: alturas(h2), grande: a });
+// Com a régua redonda a figura não é idêntica (2.640 → topo 3.200; 5.280 → 6.000),
+// mas o passo pequeno continua ocupando a altura dele, e não rente ao chão.
+ok('a escala é do passo, não do painel: o passo pequeno também enche o gráfico',
+   alturas(h2)[2] >= 75 && a[2] >= 75
+   && Math.abs(alturas(h2)[0] / alturas(h2)[2] - a[0] / a[2]) < 0.005, { pequeno: alturas(h2), grande: a });
 
 /* ---------- 4. o teto de colunas ---------- */
 
@@ -108,8 +115,25 @@ ok('exatamente no teto, nenhuma OS é agrupada',
 /* ---------- 5. o desenho e honesto com a tela ---------- */
 
 h = g([quadro('A', [os('0001', 10)]), quadro('B', [os('0002', 20)])]);
-ok('as larguras são em % (o painel encolhe até o celular)',
-   /width="\d+\.\d+%"/.test(h) && /x="\d+\.\d+%"/.test(h), h.slice(0, 200));
+ok('as colunas são flexíveis, sem largura fixa (o painel encolhe até o celular)',
+   (h.match(/class="dash-col"/g) || []).length === 2 && !/width="\d/.test(h), h.slice(0, 200));
+
+/* ---------- 6. o formato do Power BI ---------- */
+
+h = g([quadro('Unidade Descalvado', [os('0525', 1200)]), quadro('Unidade São Carlos', [os('0516', 5280)])]);
+ok('o eixo tem 5 marcas, do zero ao topo redondo',
+   [...h.matchAll(/dash-gr-ytick[^>]*>([^<]*)/g)].map(m => m[1]).join(' | ') === '0 | 1,5 mil | 3 mil | 4,5 mil | 6 mil',
+   [...h.matchAll(/dash-gr-ytick[^>]*>([^<]*)/g)].map(m => m[1]));
+ok('cada coluna traz o valor em cima',
+   [...h.matchAll(/dash-col-val[^>]*>([^<]*)/g)].map(m => m[1]).join(' ') === '1,2 mil 5,3 mil',
+   [...h.matchAll(/dash-col-val[^>]*>([^<]*)/g)].map(m => m[1]));
+ok('a cor é do quadro: Descalvado s1, São Carlos s2',
+   /dash-barra s1/.test(h) && /dash-barra s2/.test(h), h.match(/dash-barra[^"]*/g));
+ok('dois quadros com colunas: tem legenda',
+   (h.match(/<i class="s\d"><\/i>/g) || []).length === 2, h);
+h = g([quadro('Unidade Descalvado', [os('0525', 1200)]), quadro('Unidade São Carlos', [])]);
+ok('um quadro só com colunas: sem legenda de um item',
+   !/dash-gr-leg/.test(h), h);
 // Nome com aspas ou sinal de menor nao pode escapar para dentro do SVG.
 h = g([quadro('A "B" <C>', [os('0001', 10)]), quadro('D', [os('0002', 20)])]);
 ok('o nome do quadro sai escapado, e não vira marcação solta',
