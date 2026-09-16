@@ -8434,7 +8434,7 @@ function _rankingProducao(ano, mes) {
   // variam.
   const ordenarOS = arr => [...arr].sort(
     (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-  const porCor = new Map(), porSkuCor = new Map(), porGrade = new Map();
+  const porCor = new Map(), porSkuCor = new Map(), porGrade = new Map(), porSkuGrade = new Map();
   // A série do tempo: por MÊS quando se está dentro de um ano, por ANO quando se
   // olha a fábrica inteira. É o mesmo gesto — abrir o período em foco na fatia
   // imediatamente menor.
@@ -8499,6 +8499,13 @@ function _rankingProducao(ano, mes) {
     // Espaços em sequência viram um só: "P  ao G3" (BM.LISA) e "P ao G3"
     // (CM.LISA) são a mesma grade, cadastradas com digitação diferente.
     somar(porGrade, JSON.stringify([grade.replace(/\s+/g, ' ')]), totalPecas, o.os);
+    /* SKU + GRADE (16/09/2026, Junior). O SKU aqui é a LINHA do produto
+       (CM.LISA, BM.TRI), sem a cor: com a cor ele já é a tabela Tipo · cor ·
+       grade. A OS entra uma vez por linha — a de duas cores do mesmo produto
+       conta uma vez, com o lote inteiro. */
+    const linhasDaOS = [...new Set(skus.map(k => { const j = k.indexOf('-'); return j > 0 ? k.slice(0, j) : k; }))];
+    linhasDaOS.forEach(t => somar(porSkuGrade, JSON.stringify([t, grade.replace(/\s+/g, ' ')]),
+      totalPecas / linhasDaOS.length, o.os));
     const f = fatia(o);
     if (f) somar(porPeriodo, JSON.stringify([f]), totalPecas, o.os);
   });
@@ -8513,7 +8520,7 @@ function _rankingProducao(ano, mes) {
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
   return {
     total: ord.length, semGrade: semSku, pares, de: datas[0] || '', ate: datas[datas.length - 1] || '',
-    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor), porGrade: ordenar(porGrade),
+    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor), porGrade: ordenar(porGrade), porSkuGrade: ordenar(porSkuGrade),
     serie, porMes: !!(ano || mes)
   };
 }
@@ -8582,6 +8589,7 @@ function renderRanking() {
   const maxC = r.porCor[0] ? r.porCor[0].n : 0;
   const maxS = r.porSkuCor[0] ? r.porSkuCor[0].n : 0;
   const maxG = r.porGrade[0] ? r.porGrade[0].n : 0;
+  const maxSG = r.porSkuGrade[0] ? r.porSkuGrade[0].n : 0;
   const recolhidos = _rankRecolhidos();
   const tabela = (titulo, desc, itens, max, rotulo) => `
     <div class="card rank-card${recolhidos[titulo] ? ' recolhido' : ''}" data-rank="${esc(titulo)}" style="margin-bottom:14px;">
@@ -8648,6 +8656,7 @@ function renderRanking() {
     </div>
     ${serieHtml}
     ${tabela('Grade', 'Só a grade, independente do tipo e da cor. A OS de mais de uma cor entra uma vez, com o lote inteiro. Fica no alto de propósito: é curta, e as tabelas de baixo passam de cem linhas.', r.porGrade, maxG, 'grade')}
+    ${tabela('SKU · grade', 'A linha do produto (o SKU sem a cor: CM.LISA, BM.TRI) com a grade. É a leitura do que se enfesta: a mesma grade no mesmo produto, em qualquer cor.', r.porSkuGrade, maxSG, 'SKU · grade')}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
     ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
     ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
