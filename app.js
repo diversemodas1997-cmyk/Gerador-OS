@@ -25380,6 +25380,14 @@ async function carregarMensagens() {
     }
     _msgIndisponivel = false;
     _mensagens = (Array.isArray(data) ? data : []).slice().reverse();
+    // O ÍCONE NÃO ESPERA OS ACESSÓRIOS (16/09/2026). As reações e a lista de
+    // nomes vêm depois; se uma delas travar, o canal continua aparecendo. Foi
+    // o que sumiu com o 💬: a leitura das reações ficou repetindo um 503 para
+    // sempre e o ícone esperava por ela.
+    try {
+      const btn = document.getElementById('msgBotao');
+      if (btn && btn.classList) btn.classList.remove('hidden');
+    } catch (e) { }
     await carregarReacoes();
     await carregarPerfis();
   } catch (e) {
@@ -25617,9 +25625,17 @@ function _msgMeMencionou(m) {
 async function carregarReacoes() {
   if (!supa || !currentUser || !_mensagens.length) { _msgReacoes = []; return; }
   try {
-    const { data, error } = await supa.from('mensagem_reacoes')
-      .select('mensagem_id, user_id')
-      .in('mensagem_id', _mensagens.map(m => m.id));
+    // SEM A LISTA DE IDS NA URL (16/09/2026): com 97 recados o `in.(...)` fez
+    // o PostgREST devolver um cabeçalho de 4,5 KB, maior do que o nginx aceitava.
+    // Uma reação nunca é mais velha do que o recado dela, então "desde o recado
+    // mais antigo em memória" pega todas as que importam, com a URL curta; o
+    // filtro fino por id é feito aqui.
+    const ids = new Set(_mensagens.map(m => m.id));
+    const desde = _mensagens.reduce((min, m) => (!min || String(m.criado_em) < min ? String(m.criado_em) : min), '');
+    let q = supa.from('mensagem_reacoes').select('mensagem_id, user_id');
+    if (desde) q = q.gte('criado_em', desde);
+    const { data: todas, error } = await q;
+    const data = Array.isArray(todas) ? todas.filter(r => ids.has(r.mensagem_id)) : todas;
     if (error) {
       // Servidor sem a tabela: o polegar some, o resto do campo continua.
       _msgReacoesIndisponivel = true; _msgReacoes = [];
