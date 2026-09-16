@@ -18915,12 +18915,22 @@ function _dashEntradasPorStatus(periodos) {
 }
 
 function _dashPorStatusHtml(escala) {
-  const { periodos } = _dashPeriodos(Date.now(), escala || 'semana');
+  /* NO DIA, SÓ HOJE (16/09/2026, Junior: "o volume de OS por status deve mostrar
+     apenas o dia de hoje quando o filtro dia está selecionado"). Os gráficos
+     seguem com os 10 dias úteis; aqui é uma coluna só, de hoje 00:00 até agora —
+     mesmo num sábado ou domingo, porque hoje é hoje. */
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
+  const p2 = n => String(n).padStart(2, '0');
+  const { periodos } = escala === 'dia'
+    ? { periodos: [{ de: hoje.getTime(), ate: amanha.getTime(), rot: 'hoje ' + p2(hoje.getDate()) + '/' + p2(hoje.getMonth() + 1),
+        nome: 'hoje, ' + p2(hoje.getDate()) + '/' + p2(hoje.getMonth() + 1) }] }
+    : _dashPeriodos(Date.now(), escala || 'semana');
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const { por, foraDoPeriodo } = _dashEntradasPorStatus(periodos);
   const maxEnt = Math.max(1, ...[...por.values()].flat().map(c => c.produtos));
   const nPer = periodos.length;
-  const cab = periodos.map((w, i) => `<span class="dash-st-per${i === nPer - 1 ? ' atual' : ''}" title="${esc(w.nome)}">${i === nPer - 1 ? esc(w.rot) + ' <em>em curso</em>' : esc(w.rot)}</span>`).join('');
+  const cab = periodos.map((w, i) => `<span class="dash-st-per${i === nPer - 1 ? ' atual' : ''}" title="${esc(w.nome)}">${i === nPer - 1 && escala !== 'dia' ? esc(w.rot) + ' <em>em curso</em>' : esc(w.rot)}</span>`).join('');
   const linhas = _dashPorStatus();
   const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH);
   const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
@@ -18949,7 +18959,7 @@ function _dashPorStatusHtml(escala) {
   return `<div class="dash-status">
       <div class="dash-status-cab">
         <b>Volume das OS por status</b>
-        <span>colunas: produtos que <b>entraram</b> em cada status, por ${esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
+        <span>${escala === 'dia' ? 'coluna: produtos que <b>entraram</b> em cada status <b>hoje</b>' : 'colunas: produtos que <b>entraram</b> em cada status, por ' + esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
       </div>
       <div class="dash-st-linha dash-st-titulos" style="--nper:${nPer};">
         <span class="dash-st-nome">Status</span>${cab}
