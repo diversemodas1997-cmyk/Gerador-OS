@@ -1185,6 +1185,31 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-cel .dash-tp-barra { margin-top: 8px; height: 14px; }
 .dash-an-cel .dash-tp-seg em { font-size: 9px; }
 .dash-an-cel .dash-tp-info { font-size: 11px; }
+/* O FILTRO "MOSTRAR": chips que ligam e desligam cada parte do grafico. O
+   quadradinho tem a cor da serie, e some (vira so contorno) quando ela esta
+   desligada, para o estado nao depender so da cor do botao. */
+.dash-parte {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-decoration: line-through;
+}
+.dash-parte.ligada { color: var(--ink); border-color: var(--ink-3); text-decoration: none; }
+.dash-parte:hover { border-color: var(--accent); }
+.dash-parte i { width: 10px; height: 10px; border-radius: 2px; border: 2px solid var(--ink-3); box-sizing: border-box; }
+.dash-parte.ligada i { border: 0; background: var(--ink-3); }
+.dash-parte.ligada[data-parte="ent"] i { background: #1baf7a; }
+.dash-parte.ligada[data-parte="sai"] i { background: #4a3aa7; }
+.dash-parte.ligada[data-parte="linha"] i { background: #eb6834; height: 3px; }
+.dash-parte.ligada[data-parte="idade"] i { background: linear-gradient(90deg, #86b6ef, #104281); }
 /* Com muitas colunas (10 dias), o valor sai de cima e fica so na dica. */
 .dash-an-plot.muitos .dash-an-val { display: none; }
 .dash-an-plot.muitos { margin-top: 8px; }

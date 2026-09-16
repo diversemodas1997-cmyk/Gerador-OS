@@ -18617,7 +18617,40 @@ const _dashCurto = n => n >= 1000
   ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 10000 ? 0 : 1 }) + ' mil'
   : _dashFmt(n);
 
-function _dashGraficoQuadro(c, x, escala, agora) {
+/* O QUE MOSTRAR NO GRÁFICO (16/09/2026, Junior: "insira filtro do que mostrar no
+   gráfico"). Chips no alto do painel ligam e desligam cada parte, valem para
+   todos os quadros e ficam lembrados neste computador. A ESCALA acompanha o que
+   está ligado: desligar as colunas faz a linha do estoque ocupar a altura toda,
+   em vez de ficar achatada contra um pico que nem aparece mais. */
+const DASH_PARTES = [
+  { k: 'ent', rot: 'Entrada' },
+  { k: 'sai', rot: 'Saída' },
+  { k: 'linha', rot: 'No quadro (linha e Agora)' },
+  { k: 'numeros', rot: 'Números' },
+  { k: 'idade', rot: 'Tempo' },
+  { k: 'tempos', rot: 'Tempo médio e datas' }
+];
+const DASH_PARTES_CHAVE = 'dashPartesOcultas';
+function _dashOcultas() {
+  try {
+    const v = JSON.parse(localStorage.getItem(DASH_PARTES_CHAVE) || '[]');
+    return new Set(Array.isArray(v) ? v : []);
+  } catch (e) { return new Set(); }
+}
+function _dashAlternarParte(k) {
+  const oc = _dashOcultas();
+  if (oc.has(k)) oc.delete(k); else oc.add(k);
+  // O gráfico nunca fica sem nada: das três séries, pelo menos uma fica ligada.
+  if (['ent', 'sai', 'linha'].every(x => oc.has(x))) oc.delete(k === 'linha' ? 'ent' : 'linha');
+  try { localStorage.setItem(DASH_PARTES_CHAVE, JSON.stringify([...oc])); } catch (e) { /* vale só nesta tela */ }
+  _dashFluxoAssinatura = '';
+  renderFluxoDash();
+}
+window._dashAlternarParte = _dashAlternarParte;
+
+function _dashGraficoQuadro(c, x, escala, agora, oc) {
+  oc = oc || new Set();
+  const ver = k => !oc.has(k);
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
   const quando = _dashDataHora(agora);
@@ -18629,7 +18662,10 @@ function _dashGraficoQuadro(c, x, escala, agora) {
   const n = per.length;
   // O último ponto da linha é o AGORA: o período em curso termina aqui.
   const estoque = per.map((w, i) => (i === n - 1 ? x.agora : w.estoque));
-  const max = Math.max(1, ...per.map(w => Math.max(w.entrada, w.saida)), ...estoque);
+  const max = Math.max(1,
+    ...(ver('ent') ? per.map(w => w.entrada) : []),
+    ...(ver('sai') ? per.map(w => w.saida) : []),
+    ...(ver('linha') ? estoque : []));
   const alt = v => (v > 0 ? Math.max(1.5, v / max * 100) : 0);
   const muitos = n > 6;
 
@@ -18647,12 +18683,13 @@ function _dashGraficoQuadro(c, x, escala, agora) {
         ? `<b>Agora (${quando}): ${_dashFmt(x.agora)}</b>${x.residual > 0 ? ` · residual ${_dashFmt(x.residual)}` : ''}`
           + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
         : `No quadro ao fim do período: ${_dashFmt(w.estoque)}`);
-    const topo = Math.max(w.entrada, w.saida);
-    const vals = !muitos && topo > 0
-      ? `<span class="dash-an-val" style="bottom:${alt(topo).toFixed(1)}%;"><i class="ent"></i>${_dashCurto(w.entrada)}<br><i class="sai"></i>${_dashCurto(w.saida)}</span>` : '';
+    const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0);
+    const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : ''].filter(Boolean);
+    const vals = !muitos && topo > 0 && linhasVal.length
+      ? `<span class="dash-an-val" style="bottom:${alt(topo).toFixed(1)}%;">${linhasVal.join('<br>')}</span>` : '';
     return `<div class="dash-an-grupo${ultimo ? ' agora' : ''}" tabindex="0">${vals}
-        <div class="dash-an-bar"><span class="dash-an-fill ent" style="height:${alt(w.entrada).toFixed(1)}%;"></span></div>
-        <div class="dash-an-bar"><span class="dash-an-fill sai" style="height:${alt(w.saida).toFixed(1)}%;"></span></div>
+        ${ver('ent') ? `<div class="dash-an-bar"><span class="dash-an-fill ent" style="height:${alt(w.entrada).toFixed(1)}%;"></span></div>` : ''}
+        ${ver('sai') ? `<div class="dash-an-bar"><span class="dash-an-fill sai" style="height:${alt(w.saida).toFixed(1)}%;"></span></div>` : ''}
         <span class="dash-gr-tip" role="tooltip">${dica}</span>
       </div>`;
   }).join('');
@@ -18690,27 +18727,29 @@ function _dashGraficoQuadro(c, x, escala, agora) {
   return `<div class="dash-an-cel">${nome}
     <div class="dash-an-plot${muitos ? ' muitos' : ''}">
       <div class="dash-an-grupos">${grupos}</div>
-      <svg class="dash-an-linha" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      ${ver('linha') ? `<svg class="dash-an-linha" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <polyline points="${pontos}" vector-effect="non-scaling-stroke"></polyline>
       </svg>
-      ${marcas}${rotAgora}
+      ${marcas}${rotAgora}` : ''}
     </div>
     <div class="dash-an-eixo">${eixo}</div>
-    <div class="dash-an-kpis">
+    ${ver('numeros') ? `<div class="dash-an-kpis">
       ${kpi('Entrou', x.entrada, `Produtos que entraram neste quadro no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
       ${kpi('Saiu', x.saida, `Produtos que saíram deste quadro para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
       ${kpi('Agora', x.agora, `O que está no quadro agora, ${quando} (o número do cartão)`)}
       ${kpi('Residual', x.residual, `Do que está agora, o que está parado há mais de ${DASH_RESIDUAL_DIAS} dias`, x.residual > 0 ? 'alerta' : '')}
       ${kpi('Total', x.total, `Tudo o que esteve no quadro no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
-    </div>
-    ${idade}
-    <div class="dash-tp-info">${tempos}</div>
+    </div>` : ''}
+    ${ver('idade') ? idade : ''}
+    ${ver('tempos') ? `<div class="dash-tp-info">${tempos}</div>` : ''}
     ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
   </div>`;
 }
 
 // O espaço do gráfico de um passo: a legenda e um gráfico por quadro.
-function _dashAnalisePasso(p, h, escala) {
+function _dashAnalisePasso(p, h, escala, oc) {
+  oc = oc || new Set();
+  const ver = k => !oc.has(k);
   const temAlgo = (p.cards || []).some(c => (c.v && c.v.pecas > 0) || ((h[c.k] || {}).total > 0));
   if (!temAlgo) return '';
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
@@ -18718,12 +18757,12 @@ function _dashAnalisePasso(p, h, escala) {
   const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      <span><i class="ent"></i>Entrada</span><span><i class="sai"></i>Saída</span>
-      <span><i class="linha"></i>No quadro (termina no Agora)</span>
-      <span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>idade: até 2 · 3–7 · 8–14 · +14 dias</span>
+      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}
+      ${ver('linha') ? '<span><i class="linha"></i>No quadro (termina no Agora)</span>' : ''}
+      ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo no quadro: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
-    <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora)).join('')}</div>
+    <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora, oc)).join('')}</div>
   </div>`;
 }
 
@@ -18745,7 +18784,8 @@ function renderFluxoDash() {
   }
   const d = _dashFluxoDados();
   const escala = _dashEscala();
-  const ass = JSON.stringify(d) + escala + Math.floor(Date.now() / 60000);   // o Agora tem hora: repinta a cada minuto
+  const oc = _dashOcultas();
+  const ass = JSON.stringify(d) + escala + [...oc].sort().join(',') + Math.floor(Date.now() / 60000);   // o Agora tem hora: repinta a cada minuto
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
@@ -18772,7 +18812,7 @@ function renderFluxoDash() {
         </div>`;
     }).join('');
     // O gráfico único de cada quadro do passo (ver _dashGraficoQuadro).
-    const grafico = _dashAnalisePasso(p, h, escala);
+    const grafico = _dashAnalisePasso(p, h, escala, oc);
     return `
       <div class="dash-etapa">
         <div class="dash-etapa-nome"><span class="dash-passo">${i + 1}</span>${esc(p.nome)}</div>
@@ -18790,6 +18830,11 @@ function renderFluxoDash() {
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
         onclick="_dashTrocarEscala('${e.k}')" aria-pressed="${e.k === escala}">${e.rot}</button>`).join('')}
       <em>vale para os gráficos de todos os passos</em>
+    </div>
+    <div class="dash-escala" role="group" aria-label="O que mostrar nos gráficos">
+      <span>Mostrar</span>
+      ${DASH_PARTES.map(pt => `<button type="button" class="dash-parte${oc.has(pt.k) ? '' : ' ligada'}" data-parte="${pt.k}"
+        onclick="_dashAlternarParte('${pt.k}')" aria-pressed="${!oc.has(pt.k)}"><i></i>${pt.rot}</button>`).join('')}
     </div>
     ${passos}`;
 }
