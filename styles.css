@@ -1351,6 +1351,12 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-fill.res, .dash-an-leg i.res, .dash-an-val i.res, .dash-parte.ligada[data-parte="res"] i {
   background-color: var(--an-est);
 }
+/* Residual NEGATIVO (saiu mais do que entrou): a coluna vazada, so o contorno,
+   e o valor com o sinal de menos. A forma diz o sinal sem depender de cor. */
+.dash-an-fill.res.neg, .dash-an-val i.res.neg {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--an-est);
+}
 .dash-an-val {
   position: absolute;
   left: 50%;

@@ -1,7 +1,7 @@
 /* Rode com:  node testes/dashboard-historico.js
 
    O HISTÓRICO DE CADA CARTÃO do Início (16/09/2026): entrada e saída por semana,
-   o residual (entrada − saída acumuladas desde o começo do período), o total do período,
+   o residual (entrada − saída de cada período, sem acumular), o total do período,
    o "desde quando" de cada OS e o tempo médio no quadro.
 
    O programa não guarda um diário de "a OS mudou de campo": o passado é
@@ -145,10 +145,10 @@ ok('a mais antiga é a 0001, desde 07/09 08:00',
 ok('a última entrada foi qua 09/09 10:00', h.corte.ultimaEntrada === em(9, 10), h.corte.ultimaEntrada);
 ok('a idade cai na faixa "8 a 14 dias"', h.corte.faixas[2].v === 200 && h.corte.faixas[0].v === 0, h.corte.faixas);
 ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraDoPeriodo);
-ok('residual (entrada − saída acumuladas): 0, 0, 400 e 200 na semana em curso',
-   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.residual));
+ok('residual de cada semana (entrada − saída só dela): 0, 0, 400 e −200',
+   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 -200', h.corte.periodos.map(w => w.residual));
+ok('o residual de uma semana não carrega o da anterior', h.corte.periodos[3].residual === h.corte.periodos[3].entrada - h.corte.periodos[3].saida, h.corte.periodos[3]);
 ok('o residual do período todo é entrada − saída', h.corte.residual === h.corte.entrada - h.corte.saida && h.corte.residual === 200, h.corte.residual);
-ok('e aqui bate com o cartão: nada estava lá antes do período', h.corte.periodos[3].residual === h.corte.agora, [h.corte.periodos[3].residual, h.corte.agora]);
 ok('não existe mais o "estoque" à parte do residual', !('estoque' in h.corte.periodos[0]), Object.keys(h.corte.periodos[0]));
 console.log('');
 console.log('-- costurando, com uma OS sem data --');
@@ -158,6 +158,10 @@ ok('só a 0002 tem data de entrada: 200 na 4ª semana', h.costurando.entrada ===
 ok('a 0003 conta, mas SEM DATA', h.costurando.semData === 200 && h.costurando.faixas[4].v === 200, h.costurando.faixas);
 ok('a OS sem data NÃO entra no residual (não tem entrada datada), mas está no cartão',
    h.costurando.periodos[3].residual === 200 && h.costurando.agora === 400, [h.costurando.periodos.map(w => w.residual), h.costurando.agora]);
+const residualDia = rodar([os('0020', { 'Corte': em(3, 9), 'Ensaque': em(4, 10) }), os('0021', { 'Corte': em(4, 8) })], 'dia').h.cortando;
+ok('DIA: o residual de sex 04/09 é só o daquele dia (entrou 200, saiu 200: 0), e não soma o de qui 03/09',
+   residualDia.periodos.find(w => w.de === em(4)).residual === 0 && residualDia.periodos.find(w => w.de === em(3)).residual === 200,
+   residualDia.periodos.map(w => w.rot + ' ' + w.entrada + '-' + w.saida + '=' + w.residual));
 ok('a OS sem hora de verdade não tem linha do tempo', r.linha[2] === null, r.linha[2]);
 ok('e entra no total como "já estava"', h.costurando.total === 400, h.costurando.total);
 
