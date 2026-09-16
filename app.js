@@ -7947,7 +7947,10 @@ const FASES_ESTOQUE = [
   { id: 'transitoIda',  titulo: 'Em trânsito · IDA',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
     vazioMsg: 'Nada a caminho de São Carlos agora. A OS entra aqui quando a caixa <b>Expedição Desc X São Carlos</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>ida</b>), e sai quando <b>Recebido em São Carlos</b> é marcada.',
     cond: o => !osEtapaMarcada(o, ETAPA_SC_RE),
-    entrada: { tipo: 'etapa', re: /expedi\w*\s+desc/i, label: 'Expedição Desc X São Carlos' } },
+    /* \S, e não \w (16/09/2026): em JavaScript \w não casa letra acentuada, e
+       "Expedição" tem ç e ã. Com \w esta caixa NUNCA foi reconhecida — marcada
+       ou não, a OS não entrava na estrada pelo checklist, só pela carga. */
+    entrada: { tipo: 'etapa', re: /expedi\S*\s+desc/i, label: 'Expedição Desc X São Carlos' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'ensacado' && _osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado, já recebida em São Carlos' } },
@@ -7958,7 +7961,7 @@ const FASES_ESTOQUE = [
   { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
     vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui quando a caixa <b>Expedição São Carlos X Desc.</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>volta</b>), e sai quando <b>Recebido em Descalvado</b> é marcada.',
     cond: o => !osEtapaMarcada(o, ETAPA_DESC_RE),
-    entrada: { tipo: 'etapa', re: /expedi\w*\s+s[ãa]o carlos/i, label: 'Expedição São Carlos X Desc.' } },
+    entrada: { tipo: 'etapa', re: /expedi\S*\s+s[ãa]o\s+carlos/i, label: 'Expedição São Carlos X Desc.' } },   // \S: ver a de ida
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'fios',
     entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'status Retirando fio' } },
@@ -9790,6 +9793,36 @@ async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
   }
 }
 
+/* ALOCAR NUMA IDA MARCA "EXPEDIÇÃO DESC X SÃO CARLOS" (16/09/2026, Junior: "OS
+   que são alocadas em plano de expedição devem receber o preenchimento
+   automático do check box Expedição Desc x São Carlos").
+
+   Decidido com ele, e dito aqui porque é o contrário do que o cuidado pediria:
+     · marca NA HORA DA ALOCAÇÃO, com a hora da alocação — mesmo que a viagem
+       seja dias depois;
+     · marca JÁ NO PRIMEIRO PACOTE — mesmo que a carga leve só parte do lote.
+   A caixa põe o lote INTEIRO em Em trânsito · IDA (ver _faseEntrouOS), então a
+   OS passa a contar na estrada a partir da alocação.
+
+   Só vale para a perna de IDA, e só marca: tirar a OS da carga não desmarca a
+   caixa (desmarcar é gesto de quem sabe que a viagem não aconteceu). OS cujo
+   checklist não tem essa etapa fica como está. Devolve o nome da etapa marcada,
+   ou '' quando não havia o que marcar. */
+function _expMarcarExpedicaoIdaOS(os) {
+  const fase = (FASES_ESTOQUE || []).find(f => f.id === 'transitoIda');
+  const re = fase && fase.entrada && fase.entrada.re;
+  if (!os || !re) return '';
+  const nome = (os.etapas || []).find(n => re.test(n));
+  if (!nome) return '';
+  os.progresso = os.progresso || {};
+  os.progresso.etapasCheck = os.progresso.etapasCheck || {};
+  os.progresso.etapasSeq = os.progresso.etapasSeq || {};
+  if (os.progresso.etapasCheck[nome]) return '';          // já marcada: a hora dela fica
+  os.progresso.etapasCheck[nome] = true;
+  os.progresso.etapasSeq[nome] = Date.now();
+  return nome;
+}
+
 function moverCargaExp(cargaId) {
   const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
   if (!c) return;
@@ -11015,7 +11048,18 @@ async function salvarModalExpedicao() {
                                    criadaEm: new Date().toISOString(), criadaPor: _obsQuemSou() });
     }
     await saveState('expedicaoCargas');
-    toast(ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição', 'ok');
+    // Alocada numa IDA: a caixa "Expedição Desc X São Carlos" da OS é marcada
+    // (ver _expMarcarExpedicaoIdaOS).
+    let marcou = '';
+    if (perna !== 'volta') {
+      const osAloc = (STATE.ordens || []).find(o => o.id === osId);
+      marcou = _expMarcarExpedicaoIdaOS(osAloc);
+      if (marcou) {
+        try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição de ida', e); }
+      }
+    }
+    toast((ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição')
+      + (marcou ? ` · "${marcou}" marcada no checklist` : ''), 'ok');
 
   } else if (ctx.tipo === 'volta') {
     if (!exigirEdicao('alocar OS na expedição')) return;
@@ -18196,6 +18240,23 @@ function _dashCartoesDaOS(o, opts) {
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
+    /* NA ESTRADA PELA CAIXA (16/09/2026). Com "Expedição Desc X São Carlos" (ou
+       a de volta) marcada, a OS está no campo Em trânsito, e ele não tem cartão
+       próprio: o trânsito do painel é dividido em manhã e tarde. O lote inteiro
+       vai para o turno da carga dele (a janela da expedição); sem carga, para a
+       manhã. Sem isto a OS sumia de todos os cartões — e é o que passaria a
+       acontecer ao alocar, desde que alocar marca a caixa. */
+    const idAtual = (FASES_ESTOQUE[atual] || {}).id;
+    if (idAtual === 'transitoIda' || idAtual === 'transitoVolta') {
+      if (opts && opts.semTransito) return;          // o histórico não reconstrói o trânsito
+      const perna = idAtual === 'transitoVolta' ? 'volta' : 'ida';
+      const peso = _dashPesoTurnos(o, perna);
+      const soma = peso.manha + peso.tarde;
+      const manha = soma > 0 ? Math.round(total * peso.manha / soma) : total;
+      poe(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
+      poe(perna === 'volta' ? 'voltaTarde' : 'idaTarde', total - manha);
+      return;
+    }
     // A fatia embarcada sai do campo de origem e entra no trânsito da perna.
     const tr = (opts && opts.semTransito) ? null : _transitoDaOS(o);
     const viajando = tr ? Math.round(total * tr.fracao) : 0;

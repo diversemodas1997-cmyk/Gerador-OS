@@ -376,6 +376,33 @@ confere('Carga antiga sem pacotes: as 200 pç inteiras no turno da janela',
   dash(estado(noCorte(), [carga({ pacotes: undefined, volumes: 5 })])),
   { idaManha: 200 });
 
+/* ---------- na estrada pela CAIXA (16/09/2026) ----------
+   Alocar numa ida marca "Expedição Desc X São Carlos", e com a caixa marcada a
+   OS está no campo Em trânsito. Até essa data w não casava o "ç" da palavra e
+   a caixa nunca era reconhecida; e o painel não tinha cartão para esse campo. */
+const naEstrada = (extraCheck, extraSeq) => {
+  const o = noCorte();
+  o.etapas = o.etapas.concat(['Expedição Desc X São Carlos', 'Expedição São Carlos X Desc.']);
+  Object.assign(o.progresso.etapasCheck, extraCheck);
+  Object.assign(o.progresso.etapasSeq, extraSeq);
+  return o;
+};
+confere('caixa "Expedição Desc X São Carlos" marcada (com acento), sem carga: o lote inteiro em Ida · manhã',
+  dash(estado(naEstrada({ 'Expedição Desc X São Carlos': true }, { 'Expedição Desc X São Carlos': 3 }), [])),
+  { idaManha: 200 });
+confere('com a caixa marcada e a carga na janela da tarde: o lote inteiro em Ida · tarde',
+  dash(estado(naEstrada({ 'Expedição Desc X São Carlos': true }, { 'Expedição Desc X São Carlos': 3 }),
+    [carga({ janelaId: 'j2', pacotes: [{ tam: 'P', tom: null }] })])),
+  { idaTarde: 200 });
+confere('marcado "Recebido em São Carlos" depois: sai da estrada e chega no corte de lá',
+  dash(estado(naEstrada({ 'Expedição Desc X São Carlos': true, 'Recebido em São Carlos': true },
+                        { 'Expedição Desc X São Carlos': 3, 'Recebido em São Carlos': 4 }), [])),
+  { corteSC: 200, recSC: 200 });
+confere('a caixa da VOLTA ("Expedição São Carlos X Desc.") põe o lote em Volta · manhã',
+  dash(estado(naEstrada({ 'Recebido em São Carlos': true, 'Expedição São Carlos X Desc.': true },
+                        { 'Recebido em São Carlos': 3, 'Expedição São Carlos X Desc.': 4 }), [])),
+  { voltaManha: 200, recSC: 200 });
+
 /* ---------- 3. o que o painel promete: a soma fecha ---------- */
 
 const d = dash(estado(noCorte(), [
