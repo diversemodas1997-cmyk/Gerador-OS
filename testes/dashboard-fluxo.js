@@ -39,7 +39,6 @@ const cortaLinha = (nome) => recorte(nome, '\n', nome);
 const motor = [
   corta('function _normNome'),
   corta('function osEtapaMarcada'),
-  corta('function componentesPorTecidoCorOS'),
   corta('function _produtosDosComponentes'),
   corta('function produtosOS'),
   corta('function produtosPorTecidoCorOS'),

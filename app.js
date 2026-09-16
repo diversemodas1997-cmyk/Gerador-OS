@@ -7803,25 +7803,6 @@ function osCosturaMarcada(o) { return osEtapaMarcada(o, /costura/i); }
 // "Limpeza de fios" (ou "Retirada de fios") marcada → gatilho da saída de Costurando.
 function osFiosMarcada(o) { return osEtapaMarcada(o, /fios/i); }
 
-// Componentes de uma OS agregados por tecido(material)+cor → unidades cortadas.
-function componentesPorTecidoCorOS(o) {
-  const mapa = new Map();
-  (o.componentes || []).forEach(c => {
-    const qtd = Number(c.qtdTotal) || 0;
-    if (!(qtd > 0)) return;
-    const tecidoNome = c.materialNome || '';
-    // Mesma convergência do razão de kg: OSs antigas gravaram a cor pura
-    // ("Preto") nos componentes, as novas gravam a desdobrada por tecido. Sem
-    // canonicalizar, o Estoque de corte mostraria o mesmo tecido em duas linhas.
-    const corNome = corCanonicaPorTecido(c.corNome || '', tecidoNome);
-    const k = _normNome(tecidoNome) + '||' + _normNome(corNome);
-    const cur = mapa.get(k) || { tecidoNome, corNome, qtd: 0 };
-    cur.qtd += qtd;
-    mapa.set(k, cur);
-  });
-  return Array.from(mapa.values());
-}
-
 /* PRODUTOS, E NÃO PEÇAS (16/09/2026, Junior: "se um produto é composto por 4
    peças, o programa deve informar que foram produzidos x produtos e não 4x
    peças").
@@ -16884,11 +16865,17 @@ function datalistSkusHtml() {
 // Contabilidade = valores. Reescreve a chave a cada save relevante.
 //   materiaPrima       = tecido disponível (entrada − reservado − saída), em kg.
 //   produtosElaboracao = OSs cortadas e NÃO costuradas (work-in-progress):
-//                        kg de tecido consumido + nº de peças, por tecido+cor.
+//                        kg de tecido consumido + nº de PRODUTOS, por tecido+cor.
 //   ordens             = uma linha por OS com produção: data, camisetas produzidas
-//                        (total da grade × camadas × multiplicador), se já costurada
+//                        (produtosOS — o Total geral da folha), se já costurada
 //                        e o consumo de tecido por tecido+cor. A Contabilidade usa
 //                        isto para ratear as despesas operacionais por peça/OS.
+//
+// TUDO EM PRODUTOS (16/09/2026, Junior). Até aqui o WIP ia em peças cortadas
+// (`pecas`, soma dos componentes) e cada OS levava também `componentes`. E as
+// `camisetas` usavam calcularTotalGeralAlvoImpressao, cujo multiplicador ignora
+// o pano ABERTO: as OS 0479–0484 (Texturizado) saíam com o dobro — 280 onde a
+// folha diz 140. Agora os três números são os mesmos da tela.
 function construirContabSnapshot() {
   const r3 = n => Math.round((Number(n) || 0) * 1000) / 1000;
   const materiaPrima = (calcularSaldosEstoque().detalhe || [])
@@ -16899,20 +16886,20 @@ function construirContabSnapshot() {
   const wip = new Map();
   (STATE.ordens || []).forEach(o => {
     if (osCosturaMarcada(o)) return;
-    const peca = (componentesPorTecidoCorOS(o) || []);
+    const peca = (produtosPorTecidoCorOS(o) || []);
     const kgs = (consumoAgregadoPorTecidoCor(o) || []);
     const pegar = (tNome, cNome) => {
       const k = _normNome(tNome) + '||' + _normNome(cNome);
       let cur = wip.get(k);
-      if (!cur) { cur = { tecido: tNome || '', cor: cNome || '', kg: 0, pecas: 0 }; wip.set(k, cur); }
+      if (!cur) { cur = { tecido: tNome || '', cor: cNome || '', kg: 0, produtos: 0 }; wip.set(k, cur); }
       return cur;
     };
-    peca.forEach(it => { pegar(it.tecidoNome, it.corNome).pecas += (Number(it.qtd) || 0); });
+    peca.forEach(it => { pegar(it.tecidoNome, it.corNome).produtos += (Number(it.qtd) || 0); });
     kgs.forEach(it => { pegar(it.tecidoNome, it.corNome).kg += (Number(it.kg) || 0); });
   });
   const produtosElaboracao = Array.from(wip.values())
-    .filter(w => w.pecas > 0 || w.kg > 1e-9)
-    .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), pecas: Math.round(w.pecas) }));
+    .filter(w => w.produtos > 0 || w.kg > 1e-9)
+    .map(w => ({ tecido: w.tecido, cor: w.cor, kg: r3(w.kg), produtos: Math.round(w.produtos) }));
 
   // Por OS: produção (camisetas + por tamanho), material, modelo/cor e fase.
   // O Estoque-Confeccao usa `estoque` (etapa terminal "Estoque" marcada) como
@@ -16920,7 +16907,9 @@ function construirContabSnapshot() {
   const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
   const ordens = (STATE.ordens || []).map(o => {
     const tamanhos = {};
-    TAMS.forEach(t => { const q = Math.round(calcularColTotalAlvoImpressao(o, t) || 0); if (q > 0) tamanhos[t] = q; });
+    // Por tamanho, a mesma coluna "Total por tamanho" da folha.
+    const TT = totaisPorTamanhoTomOS(o);
+    TAMS.forEach(t => { const q = Math.round(TT.colTotal(t) || 0); if (q > 0) tamanhos[t] = q; });
     // Cor: só casa direto quando a OS tem uma única cor (variante). Multicor
     // fica sem cor (vai para "a identificar" no Estoque-Confeccao).
     const coresV = [...new Set((o.variantes || []).map(v => v.cor1Nome).filter(c => c && c !== '—'))];
@@ -16936,9 +16925,8 @@ function construirContabSnapshot() {
       cor: corPrincipal,
       sku,
       multicor: coresV.length > 1,
-      camisetas: Math.round(calcularTotalGeralAlvoImpressao(o) || 0),
+      camisetas: produtosOS(o),
       tamanhos,
-      componentes: Math.round((componentesPorTecidoCorOS(o) || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0)),
       costura: osCosturaMarcada(o),
       fios: osFiosMarcada(o),
       // Etapa terminal "Estoque" marcada = OS virou produto acabado. É o gatilho
@@ -16948,7 +16936,7 @@ function construirContabSnapshot() {
         .filter(x => (Number(x.kg) || 0) > 1e-9)
         .map(x => ({ tecido: x.tecidoNome || '', cor: x.corNome || '', kg: r3(x.kg) })),
     };
-  }).filter(x => x.camisetas > 0 || x.componentes > 0 || x.material.length);
+  }).filter(x => x.camisetas > 0 || x.material.length);
 
   return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao, ordens };
 }
