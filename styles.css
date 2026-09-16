@@ -1193,37 +1193,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 }
 .dash-escala-btn:hover { border-color: var(--accent); color: var(--ink); }
 .dash-escala-btn.ativa { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
-/* O GRAFICO UNICO: a linha do volume no quadro, os pontos e o Agora. */
-.dash-an-linha {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-}
-.dash-an-linha polyline { fill: none; stroke: var(--an-est); stroke-width: 2; stroke-linejoin: round; }
-.dash-an-ponto {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: 0 0 -4px -4px;
-  border-radius: 50%;
-  background: var(--an-est);
-  box-shadow: 0 0 0 2px var(--paper);
-  pointer-events: none;
-}
-.dash-an-ponto.agora { width: 11px; height: 11px; margin: 0 0 -5.5px -5.5px; background: var(--paper); border: 3px solid var(--an-est); box-sizing: border-box; }
-.dash-an-rot-agora {
-  position: absolute;
-  right: 0;
-  transform: translateY(-6px);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--ink);
-  white-space: nowrap;
-  pointer-events: none;
-}
+/* O GRAFICO UNICO: o periodo em curso (o Agora) fica destacado. */
 .dash-an-grupo.agora { background: rgba(235,104,52,.06); border-radius: 3px 3px 0 0; }
 .dash-an-eixo span.agora { color: var(--ink); font-weight: 700; }
 .dash-an-grupo:hover .dash-gr-tip, .dash-an-grupo:focus .dash-gr-tip { display: block; white-space: normal; min-width: 200px; line-height: 1.45; }
@@ -1256,7 +1226,6 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-parte.ligada i { border: 0; background: var(--ink-3); }
 .dash-parte.ligada[data-parte="ent"] i { background: #1baf7a; }
 .dash-parte.ligada[data-parte="sai"] i { background: #4a3aa7; }
-.dash-parte.ligada[data-parte="linha"] i { background: #eb6834; height: 3px; }
 .dash-parte.ligada[data-parte="idade"] i { background: linear-gradient(90deg, #86b6ef, #104281); }
 /* Com muitas colunas (10 dias), o valor sai de cima e fica so na dica. */
 .dash-an-plot.muitos .dash-an-val { display: none; }
@@ -1272,7 +1241,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-analise {
   --an-ent: #1baf7a;
   --an-sai: #4a3aa7;
-  --an-est: #eb6834;   /* a linha do volume no quadro */
+  --an-est: #eb6834;   /* o residual */
   --tp-f0: #86b6ef;
   --tp-f1: #5598e7;
   --tp-f2: #256abf;
@@ -1309,7 +1278,6 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-leg em { font-style: normal; font-size: 11px; color: var(--ink-3); }
 .dash-an-leg i.ent { background: var(--an-ent); }
 .dash-an-leg i.sai { background: var(--an-sai); }
-.dash-an-leg i.linha { width: 16px; height: 2px; border-radius: 0; background: var(--an-est); }
 .dash-an-leg i.f0, .dash-an-leg i.f1, .dash-an-leg i.f2, .dash-an-leg i.f3 { width: 7px; margin-right: -4px; }
 .dash-an-leg i.f0, .dash-tp-seg.f0 { background: var(--tp-f0); }
 .dash-an-leg i.f1, .dash-tp-seg.f1 { background: var(--tp-f1); }
@@ -1354,11 +1322,10 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-an-fill { display: block; width: 100%; border-radius: 3px 3px 0 0; }
 .dash-an-fill.ent { background: var(--an-ent); }
 .dash-an-fill.sai { background: var(--an-sai); }
-/* O residual e a terceira coluna: cinza com listras, a marca de "parado". A
-   textura carrega o sentido junto com a legenda, sem depender de uma cor a mais. */
+/* O residual e a terceira coluna, na cor laranja validada junto de entrada e
+   saida (a mesma que a linha "saldo" usava antes de os dois virarem um so). */
 .dash-an-fill.res, .dash-an-leg i.res, .dash-an-val i.res, .dash-parte.ligada[data-parte="res"] i {
-  background-color: #8a8578;
-  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.55) 0 2px, transparent 2px 5px);
+  background-color: var(--an-est);
 }
 .dash-an-val {
   position: absolute;

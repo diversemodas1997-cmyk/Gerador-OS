@@ -1,7 +1,7 @@
 /* Rode com:  node testes/dashboard-historico.js
 
    O HISTÓRICO DE CADA CARTÃO do Início (16/09/2026): entrada e saída por semana,
-   o que está agora, o residual (parado há mais de 7 dias), o total do período,
+   o residual (o que está no quadro, no fim de cada período e agora), o total do período,
    o "desde quando" de cada OS e o tempo médio no quadro.
 
    O programa não guarda um diário de "a OS mudou de campo": o passado é
@@ -10,7 +10,6 @@
 
      · a entrada e a saída caem na semana certa — de SEGUNDA 00:00 a SEXTA 23:59,
        e o que acontece no sábado ou no domingo fica fora e é contado à parte;
-     · a OS parada há mais de 7 dias conta como residual;
      · o tempo médio no quadro é a média do que já saiu;
      · a OS sem hora de verdade (carimbo sintético da migração: 1, 2, 3) conta
        onde está, mas fica SEM DATA, em vez de inventar uma;
@@ -66,7 +65,7 @@ const motor = [
   corta('function _dashCartoesDaOS'),
   corta('function _dashChavePorIdx'),
   corta('function _dashFluxoDados'),
-  recorte('const DASH_RESIDUAL_DIAS', '// Os seis passos do caminho', 'o historico do painel')
+  recorte('const DASH_DIA_MS', '// Os seis passos do caminho', 'o historico do painel')
 ].join('\n');
 
 const DIA = 86400000;
@@ -113,7 +112,7 @@ const os = (num, marcas) => {
 };
 
 const r = rodar([
-  // A: cortada qua 26/08, ensacada seg 07/09 08:00 — parada no estoque de corte (residual)
+  // A: cortada qua 26/08, ensacada seg 07/09 08:00 — segue no estoque de corte
   os('0001', { 'Corte': emAgo(26, 10), 'Ensaque': em(7, 8) }),
   // B: cortada ter 08/09, ensacada qua 09/09 10:00, costura seg 14/09 15:00
   os('0002', { 'Corte': em(8, 9), 'Ensaque': em(9, 10), 'Costura': em(14, 15) }),
@@ -138,7 +137,6 @@ ok('saiu a 0002 (seg 14/09): 200', h.corte.saida === 200, h.corte.saida);
 ok('as entradas caem na 3ª semana, a saída na 4ª',
    h.corte.periodos.map(w => w.entrada + '/' + w.saida).join(' ') === '0/0 0/0 400/0 0/200',
    h.corte.periodos.map(w => w.entrada + '/' + w.saida));
-ok('a 0001, parada desde 07/09 (9 dias), é residual', h.corte.residual === 200, h.corte.residual);
 ok('total do período: nada estava lá em 24/08 + 400 que entraram', h.corte.total === 400, h.corte.total);
 ok('tempo médio no quadro: a 0002 ficou 5 dias e 5 horas',
    Math.abs(h.corte.tempoMedio - (5 + 5 / 24)) < 1e-9, h.corte.tempoMedio);
@@ -147,20 +145,17 @@ ok('a mais antiga é a 0001, desde 07/09 08:00',
 ok('a última entrada foi qua 09/09 10:00', h.corte.ultimaEntrada === em(9, 10), h.corte.ultimaEntrada);
 ok('a idade cai na faixa "8 a 14 dias"', h.corte.faixas[2].v === 200 && h.corte.faixas[0].v === 0, h.corte.faixas);
 ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraDoPeriodo);
-ok('no quadro ao fim de cada semana: 0, 0, 400 (sex 11/09) e 200 na semana em curso',
-   h.corte.periodos.map(w => w.estoque).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.estoque));
-ok('e a semana em curso termina no agora: o mesmo número do cartão', h.corte.periodos[3].estoque === h.corte.agora, [h.corte.periodos[3].estoque, h.corte.agora]);
-ok('residual no fim de cada semana: só na 4ª a 0001 passa de 7 dias parada (desde seg 07/09)',
-   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 0 200', h.corte.periodos.map(w => w.residual));
-ok('a OS sem data nunca vira residual de período', h.costurando.periodos.every(w => w.residual === 0), h.costurando.periodos.map(w => w.residual));
-
+ok('residual no fim de cada semana: 0, 0, 400 (sex 11/09) e 200 na semana em curso',
+   h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.residual));
+ok('e o residual da semana em curso é o agora: o mesmo número do cartão', h.corte.periodos[3].residual === h.corte.agora, [h.corte.periodos[3].residual, h.corte.agora]);
+ok('não existe mais residual separado do que está no quadro', !('residual' in h.corte) && !('estoque' in h.corte.periodos[0]), Object.keys(h.corte));
 console.log('');
 console.log('-- costurando, com uma OS sem data --');
 ok('agora: 0002 e 0003 (400)', h.costurando.agora === 400, h.costurando.agora);
 ok('só a 0002 tem data de entrada: 200 na 4ª semana', h.costurando.entrada === 200
    && h.costurando.periodos[3].entrada === 200, h.costurando.periodos);
 ok('a 0003 conta, mas SEM DATA', h.costurando.semData === 200 && h.costurando.faixas[4].v === 200, h.costurando.faixas);
-ok('e não vira residual inventado', h.costurando.residual === 0, h.costurando.residual);
+ok('a OS sem data entra no residual: ela está no quadro', h.costurando.periodos[3].residual === 400, h.costurando.periodos.map(w => w.residual));
 ok('a OS sem hora de verdade não tem linha do tempo', r.linha[2] === null, r.linha[2]);
 ok('e entra no total como "já estava"', h.costurando.total === 400, h.costurando.total);
 
