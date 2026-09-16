@@ -7934,7 +7934,11 @@ const FASES_ESTOQUE = [
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'ensacado' && !_osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'status Ensacado, antes de ir para São Carlos' } },
-  { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
+  /* AS COSTURAS MOSTRAM SÓ A LISTA DE OS (16/09/2026, Junior: "no campo
+     costurando, retire o quadro por tecido + cor"). É o mesmo `soOS` do estoque
+     de corte e do trânsito. O `porTipoDeProduto` fica: é ele que monta as
+     tabelas por tipo se um dia o quadro voltar — basta tirar o `soOS`. */
+  { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => _statusOS(o) === 'costurando',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | Descalvado' } },
   // A viagem de Descalvado para São Carlos: a caixa da expedição de ida põe a OS
@@ -7947,7 +7951,7 @@ const FASES_ESTOQUE = [
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'ensacado' && _osRecebidaSC(o),
     entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado, já recebida em São Carlos' } },
-  { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, osTodasEntradas: true, porTipoDeProduto: true,
+  { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => _statusOS(o) === 'costurando-sc',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | São Carlos' } },
   // E a de volta. Mesma regra, do outro lado.
