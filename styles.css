@@ -1329,11 +1329,27 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   text-transform: uppercase;
   color: var(--ink-3);
 }
+.rank-toggle { color: var(--ink-2); }
 .rank-toggle:hover { color: var(--ink); }
-.rank-seta { display: inline-block; font-size: 9px; transition: transform .15s; }
+.rank-seta { display: inline-block; font-size: 13px; color: var(--ink-2); transition: transform .15s; }
 .rank-resumo { margin-left: auto; letter-spacing: .04em; text-transform: none; font-size: 11px; color: var(--ink-3); }
+/* A etiqueta que diz o que o clique faz: e ela que torna o titulo reconhecivel
+   como botao. */
+.rank-acao {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 11px;
+  letter-spacing: .02em;
+  text-transform: none;
+  color: var(--ink-2);
+}
+.rank-toggle:hover .rank-acao { border-color: var(--accent); color: var(--ink); background: var(--paper); }
 .rank-card.recolhido .rank-corpo { display: none; }
 .rank-card.recolhido .rank-toggle { border-bottom-color: transparent; margin-bottom: 0; padding-bottom: 0; }
+.rank-card.recolhido .rank-acao { border-color: var(--accent); }
 .rank-card.recolhido .rank-seta { transform: rotate(-90deg); }
 
 /* ============ FORMULÁRIO OS ============ */

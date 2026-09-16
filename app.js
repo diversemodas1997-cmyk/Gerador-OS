@@ -8290,7 +8290,13 @@ let _rankAno = '', _rankMes = '';
    na tela. */
 let _rankGrupos = [];
 
-/* RECOLHER E ESTENDER OS QUADROS (16/09/2026, Junior). O Ranking tem quadros de
+/* RECOLHER E ESTENDER OS QUADROS (16/09/2026, Junior).
+
+   VISÍVEL (mesmo dia): a primeira versão funcionava e ninguém achava — o título
+   seguia cinza como antes, com uma seta de 9 px, e os botões gerais moravam na
+   ponta direita de um monitor de 2.560 px. Agora cada quadro tem a etiqueta
+   "− recolher / + estender" e os botões gerais ficam junto dos filtros.
+ O Ranking tem quadros de
    160 linhas; quem quer comparar a tabela Grade com a Cor rolava nove telas.
    Clicar no título recolhe o quadro, e a escolha fica lembrada NESTE computador
    (localStorage), por quadro — cada máquina da fábrica olha o ranking do seu
@@ -8309,6 +8315,8 @@ function _rankAlternar(botao) {
   const recolher = !card.classList.contains('recolhido');
   card.classList.toggle('recolhido', recolher);
   botao.setAttribute('aria-expanded', String(!recolher));
+  const acao = botao.querySelector('.rank-acao');
+  if (acao) acao.textContent = recolher ? '+ estender' : '− recolher';
   const mapa = _rankRecolhidos();
   if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
   _rankGuardarRecolhidos(mapa);
@@ -8319,6 +8327,8 @@ function _rankTodos(recolher) {
     card.classList.toggle('recolhido', recolher);
     const b = card.querySelector('.rank-toggle');
     if (b) b.setAttribute('aria-expanded', String(!recolher));
+    const acao = b && b.querySelector('.rank-acao');
+    if (acao) acao.textContent = recolher ? '+ estender' : '− recolher';
     if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
   });
   _rankGuardarRecolhidos(mapa);
@@ -8332,7 +8342,8 @@ function _rankCabecalho(chave, titulo, resumo, recolhidos) {
   const aberto = !recolhidos[chave];
   return `<button type="button" class="rank-toggle card-title" aria-expanded="${aberto}"
       onclick="_rankAlternar(this)" title="Clique para recolher ou estender este quadro">
-      <span class="rank-seta" aria-hidden="true">▼</span>${esc(titulo)}${resumo ? `<span class="rank-resumo">${esc(resumo)}</span>` : ''}
+      <span class="rank-seta" aria-hidden="true">▼</span>${esc(titulo)}
+      <span class="rank-acao">${aberto ? '− recolher' : '+ estender'}</span>${resumo ? `<span class="rank-resumo">${esc(resumo)}</span>` : ''}
     </button>`;
 }
 
@@ -8561,7 +8572,7 @@ function renderRanking() {
       </div>
       ${(_rankAno || _rankMes)
         ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar filtro</button>` : ''}
-      <div style="margin-left:auto;display:flex;gap:6px;">
+      <div style="display:flex;gap:6px;">
         <button type="button" class="btn small ghost" onclick="_rankTodos(true)">▶ Recolher todos</button>
         <button type="button" class="btn small ghost" onclick="_rankTodos(false)">▼ Estender todos</button>
       </div>
