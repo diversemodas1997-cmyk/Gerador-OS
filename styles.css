@@ -1121,6 +1121,54 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   .dash-num { font-size: 20px; }
 }
 
+/* VOLUME DAS OS POR STATUS, no alto do painel. Uma serie so (produtos), entao
+   uma cor so; o status se le pelo icone e pelo nome, nao pela cor da barra. */
+.dash-status {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 10px 14px;
+  margin: 10px 0 6px;
+}
+.dash-status-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; font-size: 13px; color: var(--ink); }
+.dash-status-cab span { font-size: 12px; color: var(--ink-3); }
+.dash-status-cab span b { color: var(--ink-2); }
+.dash-st-linha {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(80px, 1fr) 120px 70px 90px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 4px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+.dash-st-linha[onclick] { cursor: pointer; }
+.dash-st-linha[onclick]:hover, .dash-st-linha[onclick]:focus { background: var(--bg); outline: none; }
+.dash-st-linha.vazio { color: var(--ink-3); }
+.dash-st-nome { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-st-trilho { position: relative; height: 12px; background: var(--line-2); border-radius: 2px; overflow: hidden; }
+.dash-st-barra { display: block; height: 100%; background: #2a78d6; border-radius: 2px 4px 4px 2px; }
+.dash-st-linha.fim .dash-st-barra { background: #9dbfe9; }
+/* O corte da barra fora da escala: duas riscas diagonais no fim dela. */
+.dash-st-corte {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  right: 18px;
+  width: 8px;
+  background: var(--paper);
+  transform: skewX(-20deg);
+  border-left: 1px solid var(--ink-3);
+  border-right: 1px solid var(--ink-3);
+}
+.dash-st-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dash-st-num b { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+.dash-st-num em { font-style: normal; font-size: 10px; color: var(--ink-3); }
+.dash-st-pct { text-align: right; font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+@media (max-width: 640px) {
+  .dash-st-linha { grid-template-columns: 1fr 70px 50px; }
+  .dash-st-trilho, .dash-st-pct { display: none; }
+}
+
 /* O SELETOR DO PERIODO DE ANALISE (Dia, Semana, Mes, Ano), no alto do painel. */
 .dash-escala {
   display: flex;

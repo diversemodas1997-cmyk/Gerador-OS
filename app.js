@@ -18779,6 +18779,62 @@ function _dashAnalisePasso(p, h, escala, oc) {
   </div>`;
 }
 
+/* O VOLUME DAS OS POR STATUS (16/09/2026, Junior: "insira o volume das OS por
+   status"). Uma barra por status, na ordem do fluxo (a de STATUS_OS), com os
+   produtos, o número de OS e quanto isso é do que está em produção. Clicar
+   abre a lista de Ordens de Serviço já filtrada por aquele status.
+
+   O STATUS É O DA LISTA DE OS (_statusOS): o que o checklist diz, ou o que foi
+   escrito à mão por cima. Não é o cartão do fluxo — uma OS Parada, por exemplo,
+   não tem cartão, e aqui ela aparece.
+
+   O ESTOQUE FICA FORA DA ESCALA. Ele é o acumulado de tudo o que a fábrica já
+   terminou (263 OS e 151 mil produtos em 16/09/2026), e numa régua só com ele
+   todas as outras barras virariam um risco de um pixel. Então as barras se
+   medem entre os status EM PRODUÇÃO, e a do Estoque vai marcada como fora da
+   escala, com o número inteiro ao lado. */
+function _dashPorStatus() {
+  const por = new Map(STATUS_OS.map(st => [st.k, { st, os: 0, produtos: 0 }]));
+  (STATE.ordens || []).forEach(o => {
+    const e = por.get(_statusOS(o));
+    if (!e) return;
+    e.os++;
+    e.produtos += produtosOS(o);
+  });
+  return STATUS_OS.map(st => por.get(st.k));
+}
+
+function _dashPorStatusHtml() {
+  const linhas = _dashPorStatus();
+  const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH);
+  const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
+  const totOS = emProducao.reduce((s, x) => s + x.os, 0);
+  const max = Math.max(1, ...emProducao.map(x => x.produtos));
+  const pct = v => totProd > 0 ? (v / totProd * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+  const corpo = linhas.map(x => {
+    const fim = x.st.k === STATUS_TERMINAL_DASH;
+    const w = fim ? 100 : (x.produtos > 0 ? Math.max(0.6, x.produtos / max * 100) : 0);
+    const dica = `${x.st.rotulo}: ${_dashFmt(x.produtos)} produtos em ${_dashFmt(x.os)} OS`
+      + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras' : ` — ${pct(x.produtos)} do que está em produção`)
+      + (x.os ? '. Clique para ver estas OS na lista.' : '');
+    return `<div class="dash-st-linha${x.os ? '' : ' vazio'}${fim ? ' fim' : ''}"${x.os ? ` onclick="abrirListaPorStatus('${x.st.k}')" tabindex="0"` : ''} title="${esc(dica)}">
+        <span class="dash-st-nome">${x.st.icone} ${esc(x.st.rotulo)}</span>
+        <span class="dash-st-trilho"><span class="dash-st-barra" style="width:${w.toFixed(1)}%;"></span>${fim ? '<span class="dash-st-corte" aria-hidden="true"></span>' : ''}</span>
+        <span class="dash-st-num"><b>${_dashFmt(x.produtos)}</b> <em>produtos</em></span>
+        <span class="dash-st-num"><b>${_dashFmt(x.os)}</b> <em>OS</em></span>
+        <span class="dash-st-pct">${fim ? 'fora da escala' : (x.produtos ? pct(x.produtos) : '')}</span>
+      </div>`;
+  }).join('');
+  return `<div class="dash-status">
+      <div class="dash-status-cab">
+        <b>Volume das OS por status</b>
+        <span>em produção agora: <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS (tudo menos Estoque) · clique num status para ver as OS</span>
+      </div>
+      ${corpo}
+    </div>`;
+}
+const STATUS_TERMINAL_DASH = 'estoque';
+
 function renderFluxoDash() {
   const cont = document.getElementById('dash-fluxo');
   if (!cont) return;
@@ -18798,7 +18854,7 @@ function renderFluxoDash() {
   const d = _dashFluxoDados();
   const escala = _dashEscala();
   const oc = _dashOcultas();
-  const ass = JSON.stringify(d) + escala + [...oc].sort().join(',') + Math.floor(Date.now() / 60000);   // o Agora tem hora: repinta a cada minuto
+  const ass = JSON.stringify(d) + JSON.stringify(_dashPorStatus().map(x => [x.os, x.produtos])) + escala + [...oc].sort().join(',') + Math.floor(Date.now() / 60000);   // o Agora tem hora: repinta a cada minuto
   if (ass === _dashFluxoAssinatura && cont.innerHTML) return;
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
@@ -18838,6 +18894,7 @@ function renderFluxoDash() {
       <h2>Por onde o produto passa</h2>
       <span class="dash-desc">Do corte ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
     </div>
+    ${_dashPorStatusHtml()}
     <div class="dash-escala" role="group" aria-label="Período de análise dos gráficos">
       <span>Analisar por</span>
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
