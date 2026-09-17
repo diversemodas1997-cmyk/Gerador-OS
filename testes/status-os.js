@@ -311,6 +311,36 @@ console.log('-- o que fica gravado --');
      leitura({ 'Corte': true, 'Costura': true, 'Ensaque': true }, {}) === 'ensacado',
      leitura({ 'Corte': true, 'Costura': true, 'Ensaque': true }, {}));
 
+  /* O ENSAQUE TEM DUAS UNIDADES desde 17/09/2026, pela MESMA linha das duas
+     costuras: o ensaque daqui e o fim do corte em Descalvado, e "Recebido em
+     Sao Carlos" e o saco na prateleira DE LA. Antes os dois acendiam um
+     "Ensacado" so, e quem lia a lista nao sabia de que lado estava o pano —
+     a divisao existia nos campos do estoque de corte, e nao no status. */
+  ok('12t. o ensaque daqui acende Ensacado | Descalvado',
+     leitura({ 'Ensaque': true }, { 'Ensaque': 3 }) === 'ensacado',
+     leitura({ 'Ensaque': true }, { 'Ensaque': 3 }));
+  ok('12u. e "Recebido em Sao Carlos" acende Ensacado | Sao Carlos',
+     leitura({ 'Corte': true, 'Recebido em São Carlos': true },
+             { 'Corte': 3, 'Recebido em São Carlos': 4 }) === 'ensacado-sc',
+     leitura({ 'Corte': true, 'Recebido em São Carlos': true },
+             { 'Corte': 3, 'Recebido em São Carlos': 4 }));
+  /* O LOOKAHEAD NEGATIVO no `re` do ensaque daqui, olhado de perto: sem ele, a
+     etapa de Sao Carlos casaria com os DOIS status, e o desempate cairia na
+     ordem da tabela em vez do lugar onde o pano esta. E o teste acima que
+     quebraria — mas quebraria sem dizer POR QUE, entao a regra fica escrita. */
+  const reDaqui = ctxDe('admin', 'a@b', true, []).api.STATUS_OS.find(x => x.k === 'ensacado').re;
+  ok('12v. o `re` do ensaque daqui ignora a etapa de Sao Carlos',
+     reDaqui.test('Ensaque') && !reDaqui.test('Recebido em São Carlos')
+     && !reDaqui.test('Ensaque São Carlos'),
+     String(reDaqui));
+  /* E o ensaque daqui marcado DEPOIS traz a OS de volta: e a regra de sempre,
+     vale a etapa marcada por ultimo. */
+  ok('12x. e o ensaque daqui, marcado depois, traz a OS de volta',
+     leitura({ 'Recebido em São Carlos': true, 'Ensaque': true },
+             { 'Recebido em São Carlos': 4, 'Ensaque': 9 }) === 'ensacado',
+     leitura({ 'Recebido em São Carlos': true, 'Ensaque': true },
+             { 'Recebido em São Carlos': 4, 'Ensaque': 9 }));
+
   // A ORDEM DO SELETOR e a que o Junior escreveu, e nao a do fluxo: "Ensacado"
   // vem antes das costuras, e os dois de fora da fila (Parado e Cancelado, este
   // desde 17/09/2026) vem antes de "Estoque". E o que a pessoa le no seletor,
@@ -318,7 +348,8 @@ console.log('-- o que fica gravado --');
   // derrubar o teste.
   ok('12s. a fila do seletor esta na ordem pedida',
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
-     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando', 'Ensacado',
+     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando',
+      'Ensacado | Descalvado', 'Ensacado | São Carlos',
       'Costurando | Descalvado', 'Costurando | São Carlos', 'Retirando fio',
       'Parado', 'Cancelado', 'Estoque'].join(' / '),
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / '));

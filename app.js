@@ -8015,12 +8015,16 @@ const _osCosturaEmSC = o => osEtapaMarcada(o, COSTURA_SC_RE);
    sai o carimbo de QUANDO (etapasSeq) — é o `cond` que decide quem conta. */
 const FASES_ESTOQUE = [
   /* ESTOQUE DE CORTE É O QUE ESTÁ ENSACADO. Corte é trabalho na mesa; a peça
-     vira estoque quando o saco é fechado e contado. As duas unidades dividem o
-     mesmo status ("Ensacado" é um só) e se separam pela caixa "Recebido em São
-     Carlos", do mesmo jeito que as duas costuras. */
+     vira estoque quando o saco é fechado e contado.
+
+     A SEPARAÇÃO DAS DUAS UNIDADES ESTÁ NO STATUS desde 17/09/2026: até então o
+     status era um só ("Ensacado") e estes dois campos se separavam à mão, pela
+     caixa "Recebido em São Carlos". Agora o próprio status diz onde o saco
+     está, e a condição aqui volta a ser o que ela deveria ter sido desde o
+     começo — uma leitura do status, como nas duas costuras logo abaixo. */
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'ensacado' && !_osRecebidaSC(o),
-    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'status Ensacado, antes de ir para São Carlos' } },
+    cond: o => _statusOS(o) === 'ensacado',
+    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'status Ensacado | Descalvado' } },
   /* AS COSTURAS MOSTRAM SÓ A LISTA DE OS (16/09/2026, Junior: "no campo
      costurando, retire o quadro por tecido + cor"). É o mesmo `soOS` do estoque
      de corte e do trânsito. O `porTipoDeProduto` fica: é ele que monta as
@@ -8039,8 +8043,8 @@ const FASES_ESTOQUE = [
        ou não, a OS não entrava na estrada pelo checklist, só pela carga. */
     entrada: { tipo: 'etapa', re: /expedi\S*\s+desc/i, label: 'Expedição Desc X São Carlos' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'ensacado' && _osRecebidaSC(o),
-    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado, já recebida em São Carlos' } },
+    cond: o => _statusOS(o) === 'ensacado-sc',
+    entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado | São Carlos' } },
   { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => _statusOS(o) === 'costurando-sc',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | São Carlos' } },
@@ -18721,7 +18725,7 @@ function _dashFluxoPassos(d) {
     ] },
     { nome: 'Estoque de corte', cards: [
       { k: 'corte', nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
-        dica: 'O corte ensacado, esperando a costura: so as OS com status Ensacado.' },
+        dica: 'O corte ensacado aqui, esperando a costura: so as OS com status Ensacado | Descalvado.' },
       { k: 'corteSC', nome: 'Unidade São Carlos', v: d.corteSC, rota: 'corte-sc',
         dica: 'O corte ensacado que está em São Carlos. Entra pela caixa "Recebido em São Carlos" ou sozinho, quando a data da expedição de ida em que a OS foi alocada chega — só a parte alocada.' },
     ] },
@@ -25396,8 +25400,35 @@ const STATUS_OS = [
 
      É o mesmo desenho do outro lado, onde "Recebido em Descalvado" já acendia o
      status de Retirada de fios desde hoje de manhã. */
-  { k: 'ensacado',        cor: '#c2399c', bg: '#fae6f4', bd: '#e2a6d0', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
-    re: /ensaqu|ensacad|recebido em s[ãa]o carlos/i },
+  /* O ENSAQUE TAMBÉM TEM DUAS UNIDADES (17/09/2026, Junior: "corrija o status
+     Ensacado para Ensacado | Descalvado e Ensacado | São Carlos, dividindo os
+     volumes").
+
+     A divisão já existia no programa, só não tinha nome. O estoque de corte
+     sempre teve dois campos — Unidade Descalvado e Unidade São Carlos — e eles
+     se separavam pela caixa "Recebido em São Carlos", com o comentário de
+     FASES_ESTOQUE dizendo em voz alta que "as duas unidades dividem o mesmo
+     status e se separam pela caixa". Era uma divisão de segunda mão: os campos
+     sabiam onde o pano estava, e o status, que é o que a lista de OS e o painel
+     mostram, dizia só "Ensacado" para os dois.
+
+     Agora o status diz onde. A LINHA É A MESMA de sempre: o ensaque daqui é o
+     fim do corte em Descalvado, e "Recebido em São Carlos" é o saco na
+     prateleira DE LÁ. E é a mesma divisão das duas costuras, pelo mesmo motivo.
+
+     A CHAVE `ensacado` FICA COM DESCALVADO, e não vira `ensacado-desc`: são 300
+     OS com esse carimbo gravado, mais o STATUS_FIM, mais o histórico do
+     dashboard. Renomear a chave obrigaria a migrar tudo isso para não ganhar
+     nada — é o mesmo desenho das costuras, onde `costurando` é a daqui e
+     `costurando-sc` é a de lá.
+
+     O LOOKAHEAD NEGATIVO é o que impede o ensaque daqui de casar com uma etapa
+     de São Carlos, do mesmo jeito que na costura. Sem ele, "Recebido em São
+     Carlos" acenderia os DOIS. */
+  { k: 'ensacado',        cor: '#c2399c', bg: '#fae6f4', bd: '#e2a6d0', rotulo: 'Ensacado | Descalvado',   curto: 'Ensacado | DESC',    ordem: 6, baixa: true,
+    re: /^(?!.*s[ãa]o\s+carlos).*(ensaqu|ensacad)/i },
+  { k: 'ensacado-sc',     cor: '#d8456b', bg: '#fce7ec', bd: '#eeabbd', rotulo: 'Ensacado | São Carlos',   curto: 'Ensacado | SC',      ordem: 6, baixa: true,
+    re: /recebido em s[ãa]o carlos|(ensaqu|ensacad).*s[ãa]o\s+carlos/i },
   /* A UNIDADE SAI DO NOME DA ETAPA, e não da caixa de recebimento (15/09/2026,
      Junior: "alguns produtos são costurados em etapas fracionadas em diferentes
      unidades").
@@ -26043,7 +26074,11 @@ function _tituloFinalizacaoOS(o) {
   const carimbada = _statusOS(o) === String((o && o.statusOS) || '').trim();
   return carimbada
     ? 'Dia e hora em que a OS foi marcada como Ensacado — o fim do corte'
-    : `Dia e hora em que a caixa ${(STATUS_OS.find(s => s.k === STATUS_FIM) || {}).rotulo === 'Ensacado' ? 'do Ensaque' : 'do fim do corte'} foi marcada no checklist da folha`;
+    /* A caixa que carimba o fim é a do ENSAQUE quando o status do fim é o
+       ensacado — e o rótulo dele passou a dizer a unidade (Ensacado |
+       Descalvado), então a comparação é pela CHAVE e não pelo texto. Pelo
+       texto, ela quebrou calada no dia em que o rótulo mudou. */
+    : `Dia e hora em que a caixa ${STATUS_FIM === 'ensacado' ? 'do Ensaque' : 'do fim do corte'} foi marcada no checklist da folha`;
 }
 
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia
