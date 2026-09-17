@@ -1714,6 +1714,60 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   box-sizing: border-box;
 }
 
+/* A FOLHA DE UMA OS CANCELADA, carimbada de ponta a ponta.
+
+   POSITION E OVERFLOW SO AQUI, e nao na .sheet de sempre: a faixa e absoluta e
+   passa das duas pontas do papel (a diagonal de uma A4 e 364mm, mais larga que
+   os 210mm da folha), entao o papel precisa recortar o que sobra. Ligar isso em
+   toda folha seria mexer numa geometria que ja esta medida ao milimetro.
+
+   O ANGULO E O DA DIAGONAL DE VERDADE: atan(297/210) = 54,7 graus. Nao e um
+   angulo escolhido por gosto — e o que faz a faixa sair de um canto e chegar no
+   outro, que foi o pedido.
+
+   E ela e TRANSLUCIDA de proposito. A folha cancelada continua sendo consultada
+   (o que ja foi cortado, o que ja foi ensacado, quanto de pano saiu): um
+   carimbo opaco apagaria justamente a informacao que faz alguem ir buscar a
+   folha de um lote desistido. */
+.sheet.folha-cancelada { position: relative; overflow: hidden; }
+.sheet-carimbo-cancelado {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 190%;
+  transform: translate(-50%, -50%) rotate(-54.7deg);
+  transform-origin: center center;
+  pointer-events: none;   /* a folha continua clicavel: o checklist esta embaixo */
+  z-index: 40;
+  text-align: center;
+  background: rgba(200, 30, 30, .10);
+  border-top: 2.5px solid rgba(200, 30, 30, .55);
+  border-bottom: 2.5px solid rgba(200, 30, 30, .55);
+  padding: 6px 0;
+}
+.sheet-carimbo-cancelado span {
+  font-family: 'IBM Plex Sans', sans-serif;
+  /* O TAMANHO E O QUE FAZ A PALAVRA CRUZAR A FOLHA, e nao so a faixa: a 96px
+     com este espacamento ela ocupa uns dois tercos da diagonal, que e o que se
+     le da outra ponta da mesa de corte. */
+  font-size: 96px;
+  font-weight: 800;
+  letter-spacing: .22em;
+  /* o espacamento entre letras sobra do lado direito e descentra a palavra */
+  text-indent: .22em;
+  color: rgba(200, 30, 30, .62);
+  white-space: nowrap;
+}
+/* NO PAPEL TAMBEM. O navegador descarta cor de fundo ao imprimir, a menos que
+   se peca o contrario — e o carimbo sem a faixa vermelha perde metade da forca.
+   Mesma regra que a caixa do checklist ja usa mais abaixo. */
+@media print {
+  .sheet-carimbo-cancelado, .sheet-carimbo-cancelado span {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 /* Cabeçalho da ficha */
 .sheet-header {
   display: grid;

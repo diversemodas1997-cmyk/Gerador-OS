@@ -19071,16 +19071,25 @@ function _dashPorStatusHtml(escala) {
   const nPer = periodos.length;
   const cab = periodos.map(w => `<span class="dash-st-per${w.atual ? ' atual' : ''}${w.futuro ? ' futuro' : ''}" title="${esc(w.nome)}">${esc(w.rot)}${w.sub ? `<i>${esc(w.sub)}</i>` : ''}${w.atual ? '<em>em curso</em>' : ''}</span>`).join('');
   const linhas = _dashPorStatus();
-  const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH);
+  /* O QUE ESTÁ EM PRODUÇÃO não é "tudo menos o estoque" desde que o Cancelado
+     existe (17/09/2026): uma OS cancelada não está sendo feita, e somá-la ao
+     total faria a fábrica parecer maior do que é. Ela aparece na lista, com a
+     barra e os números dela, e fica fora da conta e da régua. */
+  const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH && !x.st.foraDaProducao);
   const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
   const totOS = emProducao.reduce((s, x) => s + x.os, 0);
   const max = Math.max(1, ...emProducao.map(x => x.produtos));
   const pct = v => totProd > 0 ? (v / totProd * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
   const corpo = linhas.map(x => {
     const fim = x.st.k === STATUS_TERMINAL_DASH;
-    const w = fim ? 100 : (x.produtos > 0 ? Math.max(0.6, x.produtos / max * 100) : 0);
+    const fora = !fim && !!x.st.foraDaProducao;
+    // A barra da cancelada usa a régua da produção, mas não pode estourá-la:
+    // ela não entrou no `max`.
+    const w = fim ? 100 : (x.produtos > 0 ? Math.min(100, Math.max(0.6, x.produtos / max * 100)) : 0);
     const dica = `${x.st.rotulo}: ${_dashFmt(x.produtos)} produtos em ${_dashFmt(x.os)} OS`
-      + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras' : ` — ${pct(x.produtos)} do que está em produção`)
+      + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras'
+             : fora ? ' — lotes desistidos, fora da conta do que está em produção'
+             : ` — ${pct(x.produtos)} do que está em produção`)
       + (x.os ? '. Clique para ver estas OS na lista.' : '');
     const entradas = por.get(x.st.k) || [];
     const celulas = entradas.map((c, i) => `<span class="dash-st-ent${c.produtos ? '' : ' zero'}${periodos[i].futuro ? ' futuro' : ''}" title="${esc(periodos[i].futuro ? `${periodos[i].nome} ainda não chegou` : `Entraram em ${x.st.rotulo} em ${periodos[i].nome}: ${_dashFmt(c.produtos)} produtos, ${_dashFmt(c.os)} OS`)}">
@@ -19092,7 +19101,7 @@ function _dashPorStatusHtml(escala) {
         <span class="dash-st-trilho"><span class="dash-st-barra" style="width:${w.toFixed(1)}%;"></span>${fim ? '<span class="dash-st-corte" aria-hidden="true"></span>' : ''}</span>
         <span class="dash-st-num"><b>${_dashFmt(x.produtos)}</b> <em>produtos</em></span>
         <span class="dash-st-num"><b>${_dashFmt(x.os)}</b> <em>OS</em></span>
-        <span class="dash-st-pct">${fim ? 'fora da escala' : (x.produtos ? pct(x.produtos) : '')}</span>
+        <span class="dash-st-pct">${fim ? 'fora da escala' : fora ? 'fora da conta' : (x.produtos ? pct(x.produtos) : '')}</span>
       </div>`;
   }).join('');
   return `<div class="dash-status">
@@ -25439,8 +25448,25 @@ const STATUS_OS = [
      regra que o campo do fluxo já usava — agora as duas concordam. */
   { k: 'fios',            cor: '#7b3fb5', bg: '#eee6f8', bd: '#c0a6e0', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
     re: /fios|recebido em descalvado/i },
-  // Fora da fila: não nasce do checklist, só do carimbo.
+  // Fora da fila: não nascem do checklist, só do carimbo.
   { k: 'parado',          cor: '#d92b2b', bg: '#fbe6e6', bd: '#eeaaaa', rotulo: 'Parado',                                                baixa: true },
+  /* CANCELADO (17/09/2026, Junior: "crie um novo status com nome Cancelado").
+
+     É o fim que não produziu nada: o lote foi desistido. Por isso ele não tem
+     `ordem` — não é um degrau do caminho, é a saída dele — e não tem `re`: não
+     há etapa de checklist que se marque para cancelar, só o carimbo à mão.
+
+     E NÃO TEM `baixa`. Cancelar não consome pano: quem cancela está dizendo que
+     aquele pano NÃO virou peça. O que acontece com o estoque está em
+     _estoqueSeguirStatusOS — a reserva que ainda era reserva é devolvida à
+     prateleira, e o que já tinha sido cortado fica como está, porque cortado
+     não volta a ser rolo.
+
+     A COR É O GRAFITE, quase preto: as outras dez cores são a produção
+     acontecendo, e esta é a única que diz que não vai acontecer. Cinza claro já
+     é o "Não iniciado" — que é o oposto disto: um ainda não começou, o outro
+     não vai começar mais. */
+  { k: 'cancelado',       cor: '#3f4750', bg: '#e9ebee', bd: '#b6bcc4', rotulo: 'Cancelado',              foraDaProducao: true },
   { k: 'estoque',         cor: '#17a06a', bg: '#e2f5ec', bd: '#92cfb4', rotulo: 'Estoque',                  ordem: 7, baixa: true,
     re: /estoque/i }
 ];
@@ -25691,11 +25717,37 @@ function renderStatusFolhaOS() {
     if (novo) {
       foco.dataset.st = novo.dataset.st;
       foco.title = novo.title;
+      // O fundo e a borda do status vêm INLINE desde 17/09/2026 (ver
+      // _statusEstilo): sem copiar o style, a caixa ficava com a cor do estado
+      // anterior até alguém sair e voltar na folha.
+      foco.setAttribute('style', novo.getAttribute('style') || '');
       if (foco.value !== undefined) foco.value = novo.dataset.st;
     }
+    _carimboCanceladoNaFolha(o);
     return;
   }
   box.innerHTML = html;
+  _carimboCanceladoNaFolha(o);
+}
+
+/* A FAIXA DE CANCELADO APARECE NA HORA (17/09/2026). Quem carimba "Cancelado"
+   está quase sempre com a FOLHA aberta — é lá que está o botão. A folha inteira
+   não é redesenhada a cada carimbo (redesenhar apagaria o que a pessoa está
+   digitando no checklist), então a faixa é posta e tirada aqui, sozinha.
+   É o mesmo desenho que renderPrintSheet escreve: se um dia mudar, muda nos
+   dois — daí o HTML estar em _carimboCanceladoHtml. */
+function _carimboCanceladoHtml() {
+  return '<div class="sheet-carimbo-cancelado" aria-hidden="true"><span>CANCELADO</span></div>';
+}
+
+function _carimboCanceladoNaFolha(o) {
+  const folha = document.getElementById('print-sheet');
+  if (!folha) return;
+  const cancelada = !!o && _statusOS(o) === 'cancelado';
+  folha.classList.toggle('folha-cancelada', cancelada);
+  const jaTem = folha.querySelector(':scope > .sheet-carimbo-cancelado');
+  if (cancelada && !jaTem) folha.insertAdjacentHTML('afterbegin', _carimboCanceladoHtml());
+  else if (!cancelada && jaTem) jaTem.remove();
 }
 
 /* CONJUGAR OS À MÃO (10/09/2026, Junior: "o usuário deve ser capaz de conjugar
@@ -25883,11 +25935,30 @@ const _STATUS_QUE_BAIXAM = STATUS_OS.filter(s => s.baixa).map(s => s.k);
 
 async function _estoqueSeguirStatusOS(o, alvo) {
   if (!o || !o.id) return;
-  const temMov = (STATE.estoqueMov || []).some(m => m.origem === 'os' && m.osId === o.id);
-  if (!temMov) return;                       // OS sem consumo calculado: nada a mexer
+  const meus = (STATE.estoqueMov || []).filter(m => m.origem === 'os' && m.osId === o.id);
+  if (!meus.length) return;                  // OS sem consumo calculado: nada a mexer
   try {
-    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) await darBaixaMaterialOS(o.id);
-    else if (alvo === 'nao-iniciado') await estornarBaixaMaterialOS(o.id);
+    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) { await darBaixaMaterialOS(o.id); return; }
+    if (alvo === 'nao-iniciado') { await estornarBaixaMaterialOS(o.id); return; }
+    /* CANCELADA: A RESERVA VOLTA PARA A PRATELEIRA (17/09/2026).
+
+       Reservado quer dizer "pano comprometido por uma OS que ainda não começou"
+       (ver aplicarBaixaEstoqueOS). Uma OS cancelada não vai começar nunca mais —
+       manter a reserva seria segurar metro de pano para um lote que ninguém vai
+       cortar, e o saldo disponível continuaria mentindo para quem compra.
+
+       Mas só o que AINDA É RESERVA volta. Se qualquer movimento desta OS já
+       estiver como consumido, o pano foi para a mesa e virou peça cortada: nada
+       é devolvido, porque cortado não volta a ser rolo. O caso existe — cancela-
+       se um lote no meio, depois do enfesto. */
+    if (alvo === 'cancelado') {
+      if (meus.some(m => m.status === 'consumido')) {
+        toast('OS cancelada. O pano dela já tinha sido baixado e continua baixado — cortado não volta para a prateleira.', '');
+        return;
+      }
+      await estornarBaixaEstoqueOS(o.id);
+      toast('OS cancelada. O pano que estava reservado voltou para a prateleira.', 'ok');
+    }
   } catch (e) { console.warn('_estoqueSeguirStatusOS', e); }
 }
 
@@ -30624,6 +30695,23 @@ function renderPrintSheet(o) {
   const folhaEl = document.getElementById('print-sheet');
   folhaEl.classList.toggle('sheet-densa', ehMoletomTricolor);
 
+  /* A FOLHA DE UMA OS CANCELADA SAI CARIMBADA (17/09/2026, Junior: "as OS com
+     status cancelado devem receber uma faixa de texto em vermelho cruzando a
+     folha de ponta a ponta escrito CANCELADO").
+
+     A folha é o papel que anda pela fábrica, e ela sobrevive ao cancelamento:
+     está impressa na prancheta, na mesa de corte, dentro do saco. Quem a pega
+     não tem a lista do programa na frente para conferir o status — então o
+     papel tem de dizer sozinho que aquele lote foi desistido, e dizer de longe.
+
+     A faixa é DESENHADA NA PRÓPRIA FOLHA, e não numa camada de impressão: o PDF
+     sai por html2canvas, que fotografa a tela e ignora as regras de @media
+     print (ver salvarPdfDaOS). Carimbo que só existisse na impressão não
+     apareceria no PDF que fica na pasta — que é justamente a cópia que alguém
+     vai abrir daqui a seis meses. */
+  const osCancelada = _statusOS(o) === 'cancelado';
+  folhaEl.classList.toggle('folha-cancelada', osCancelada);
+
   // OS CONJUGADA NA FOLHA (14/09/2026, pedido do Junior). A filha guarda
   // conjugadaPaiId; a mae nao guarda nada, entao a mae se descobre procurando
   // quem aponta para ela. Vai logo abaixo do numero, em preto (a folha sai em
@@ -30660,6 +30748,7 @@ function renderPrintSheet(o) {
   const linhaConj = marcasConj.join('');
 
   folhaEl.innerHTML = `
+    ${osCancelada ? _carimboCanceladoHtml() : ''}
     <!-- CABEÇALHO -->
     <div class="sheet-header">
       <div class="cell brand-cell">${esc(o.griffeNome || o.griffe || 'MARCA')}</div>

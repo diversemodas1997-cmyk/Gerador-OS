@@ -312,14 +312,15 @@ console.log('-- o que fica gravado --');
      leitura({ 'Corte': true, 'Costura': true, 'Ensaque': true }, {}));
 
   // A ORDEM DO SELETOR e a que o Junior escreveu, e nao a do fluxo: "Ensacado"
-  // vem antes das costuras, e "Parado" antes de "Estoque". E o que a pessoa le
-  // no seletor, entao esta escrita aqui por inteiro — mudar a lista sem querer
-  // tem de derrubar o teste.
+  // vem antes das costuras, e os dois de fora da fila (Parado e Cancelado, este
+  // desde 17/09/2026) vem antes de "Estoque". E o que a pessoa le no seletor,
+  // entao esta escrita aqui por inteiro — mudar a lista sem querer tem de
+  // derrubar o teste.
   ok('12s. a fila do seletor esta na ordem pedida',
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
      ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando', 'Ensacado',
       'Costurando | Descalvado', 'Costurando | São Carlos', 'Retirando fio',
-      'Parado', 'Estoque'].join(' / '),
+      'Parado', 'Cancelado', 'Estoque'].join(' / '),
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / '));
 
   console.log('');
