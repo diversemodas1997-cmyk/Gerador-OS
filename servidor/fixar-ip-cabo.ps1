@@ -41,14 +41,17 @@ function AcharPlacaDoCabo {
   $c = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
        Where-Object { $_.MediaConnectionState -eq 'Connected' -and
                       # LOOPBACK FICA DE FORA, e isto custou caro em 31/08/2026:
-                      # o 'Microsoft KM-TEST Loopback Adapter' (o do Audaces) e
-                      # reportado como FISICO, aparece 'Connected' a 1,2 Gbps e
-                      # por isso ganhou a ordenacao por velocidade. O .200 foi
-                      # parar nele -- que nao esta em fio nenhum --, o loopback
-                      # perdeu o proprio endereco (54.232.189.113, de onde a
-                      # licenca do CAD depende), e todas as conferencias
-                      # PASSARAM: daqui de dentro respondia tudo. A fabrica e
-                      # que nao alcancaria.
+                      # o 'Microsoft KM-TEST Loopback Adapter' e reportado como
+                      # FISICO, aparece 'Connected' a 1,2 Gbps e por isso ganhou
+                      # a ordenacao por velocidade da placa de verdade. O .200
+                      # foi parar nele -- que nao esta em fio nenhum --, o
+                      # loopback perdeu o proprio endereco (54.232.189.113), e
+                      # todas as conferencias PASSARAM: daqui de dentro respondia
+                      # tudo. A fabrica e que nao alcancaria.
+                      # De quem e o loopback: do Warsaw/Topaz, dos bancos, e nao
+                      # do Audaces como ficou escrito em 31/08. Conferido em
+                      # 17/09/2026: quem escuta no 54.232.189.113:443 e o
+                      # core.exe do Warsaw, por um portproxy para 127.0.0.1:30900.
                       $_.InterfaceDescription -notmatch 'Wireless|Wi-Fi|802\.11|Loopback|Virtual|TAP|VPN' -and
                       $_.Name -notmatch '^(vEthernet|Wi-Fi|Topaz|Loopback)' } |
        # Ordena por velocidade so para desempatar entre placas de verdade.

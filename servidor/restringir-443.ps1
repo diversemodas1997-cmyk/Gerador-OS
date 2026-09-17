@@ -14,21 +14,33 @@
 
       failed to bind host port 127.0.0.1:32787/tcp: address already in use
 
-  Para cada publicacao com endereco FIXO, o Docker Desktop reserva uma porta
-  interna sua em 127.0.0.1:32xxx -- e o Windows desta maquina recusa. Reproduzido
-  fora da producao, com containers descartaveis em portas livres:
+  Para cada publicacao em endereco de REDE o Docker Desktop reserva um auxiliar
+  seu em 127.0.0.1:32xxx, e o segundo auxiliar da mesma porta de container bate
+  no primeiro. Medido fora da producao, com containers descartaveis em portas
+  livres, depois do reinicio de 17/09 (tres tentativas de cada, sempre igual):
 
-      1 publicacao com endereco fixo  ->  funciona
-      2 ou mais                       ->  falha, sempre
+      .200 + 127.0.0.1   na 80 e na 443   ->  sobe
+      .200 + .158        na 80 e na 443   ->  address already in use
+      .200 + .158 + 127.0.0.1             ->  address already in use
+      .200 duas vezes na mesma porta 80   ->  address already in use
 
-  A porta que ele pede esta LIVRE (conferida uma a uma) e fica FORA da faixa
-  dinamica do Windows, que aqui comeca em 49152. E desencontro entre o Docker
-  Desktop e a configuracao de portas da maquina, nao erro de configuracao nossa.
+  Ou seja: cabe UM SO endereco de rede por porta de container, e 127.0.0.1 nao
+  conta. Nao e a faixa de portas do Windows -- a porta pedida esta livre e fica
+  fora da faixa dinamica, que aqui comeca em 49152 -- nem estado sujo do motor:
+  o reinicio de 17/09/2026 nao mudou nada disto.
 
-  Como o app precisa de 80 E 443, qualquer versao da mudanca precisa de pelo
-  menos dois binds. Por isso o script COMECA testando, com um container
-  descartavel, se esta maquina aceita dois binds AGORA -- e so mexe na producao
-  se aceitar. A aposta e que um reinicio limpe o estado do motor do Docker.
+  O QUE ISTO CUSTA
+  Os tres enderecos de uma vez (.200, .158 e 127.0.0.1) nao cabem. Restringir a
+  443 hoje obriga a escolher entre servir o app pelo cabo ou pelo Wi-Fi -- quem
+  entra pelo endereco que ficar de fora perde a pagina. Por isso o padrao deste
+  script continua sendo os tres, que reprovam na conferencia: e para a escolha
+  ser feita a mao, sabendo o que se perde, e nao por um script decidindo.
+  Enquanto a escolha nao vale a pena, deixar o curinga e o certo -- a disputa
+  pela 443 nao esta acontecendo: o Warsaw tem o endereco dele e funciona.
+
+  Por isso o script COMECA testando, com um container descartavel, a MESMA forma
+  que vai escrever no compose -- os enderecos pedidos, na 80 e na 443 -- e so
+  mexe na producao se ela subir.
 
   USO
 
@@ -41,8 +53,10 @@
         sobe de novo, sozinho.
 
     .\servidor\restringir-443.ps1 -Aplicar -Enderecos '193.168.0.200','127.0.0.1'
-        O mesmo, sem o Wi-Fi -- e o que fazer se a maquina voltar de um reboot
-        com o Wi-Fi desconectado (ja aconteceu).
+        A UNICA forma que passa na conferencia hoje: o app fica servido pelo cabo
+        e por localhost, e PARA de responder pelo Wi-Fi (192.168.1.158). So faz
+        sentido no dia em que alguem precisar da 443 num endereco de rede que
+        hoje o curinga ocupa; enquanto ninguem precisa, nao rode.
 
   QUANDO RODAR
   Fora do expediente, depois do backup completo do dia e depois do reinicio
@@ -93,27 +107,61 @@ if ($faltando.Count) {
 }
 
 Diz ''
-Diz '2) ESTA MAQUINA ACEITA DOIS BINDS COM ENDERECO FIXO?'
-Diz '   (container descartavel, em portas livres -- nao toca na producao)'
+Diz '2) ESTA MAQUINA ACEITA A PUBLICACAO QUE ESTE SCRIPT VAI ESCREVER?'
+Diz '   (container descartavel, nas mesmas portas de container -- 80 e 443 --'
+Diz '    que a producao usa, mas em portas de host livres)'
+# O TESTE PRECISA TER A FORMA DO QUE VAI SER ESCRITO, e nao uma forma parecida.
+# Ate 17/09/2026 ele subia dois binds no MESMO endereco apontando os dois para a
+# porta 80 do container -- uma forma que nao existe no compose e que falha por
+# conta propria. Media coisa errada: reprovava tambem a variante que FUNCIONA
+# (cabo + 127.0.0.1), a mesma que o cabecalho recomenda.
+#
+# O QUE DE FATO LIMITA, medido nesta maquina em 17/09/2026 com containers
+# descartaveis: cabe UM SO endereco que nao seja 127.0.0.1 por porta de
+# container. Para cada publicacao em endereco de rede o Docker Desktop reserva
+# um auxiliar seu em 127.0.0.1:32xxx, e o segundo do mesmo par bate no primeiro:
+#
+#   .200 + 127.0.0.1  na 80 e na 443      -> sobe (3 tentativas)
+#   .200 + .158       na 80 e na 443      -> 'address already in use' (2)
+#   .200 + .158 + 127.0.0.1               -> 'address already in use' (3)
+#   .200 duas vezes na mesma porta 80     -> 'address already in use' (3)
+#
+# Nao e estado sujo do motor: o reinicio de 17/09 nao mudou nada disto.
 $nome = 'teste-bind-443'
 $lixo = Join-Path $env:TEMP 'restringir-443-docker.txt'
 & docker rm -f $nome 2>$lixo | Out-Null
-$ip1 = $Enderecos[0]
-& docker run -d --rm --name $nome -p "${ip1}:18080:80" -p "${ip1}:18443:80" nginx:alpine 2>$lixo | Out-Null
+$publica = @()
+foreach ($ip in $Enderecos) { $publica += '-p'; $publica += "${ip}:18080:80" }
+foreach ($ip in $Enderecos) { $publica += '-p'; $publica += "${ip}:18443:443" }
+& docker run -d --rm --name $nome @publica nginx:alpine 2>$lixo | Out-Null
 $passou = ($LASTEXITCODE -eq 0)
-$motivo = if (Test-Path $lixo) { (Get-Content $lixo -Raw).Trim() } else { '' }
+# -Raw num arquivo vazio devolve $null, e .Trim() em $null grita: o teste que
+# PASSA nao escreve nada aqui, e era ele quem levantava o erro vermelho.
+$bruto  = Get-Content $lixo -Raw -ErrorAction SilentlyContinue
+$motivo = if ($bruto) { $bruto.Trim() } else { '' }
 & docker rm -f $nome 2>$lixo | Out-Null
 if (-not $passou) {
-  Mau 'o Docker ainda recusa dois binds com endereco fixo'
+  $deRede = @($Enderecos | Where-Object { $_ -ne '127.0.0.1' })
+  Mau "o Docker recusa esta publicacao: $($Enderecos -join ', ')"
   if ($motivo) { Diz ''; Diz "   $motivo" }
   Diz ''
-  Diz 'PARADO, e nada foi tocado. O reinicio nao resolveu o estado do Docker.'
-  Diz 'Deixe como esta: a disputa pela 443 nao esta acontecendo hoje (o Warsaw'
-  Diz 'tem o endereco dele e funciona). Tentar de novo so depois de atualizar o'
-  Diz 'Docker Desktop, ou de acertar a faixa de portas dinamicas do Windows.'
+  if ($deRede.Count -gt 1) {
+    Diz "PARADO, e nada foi tocado. Sao $($deRede.Count) enderecos de rede na mesma"
+    Diz 'porta de container, e aqui cabe um so. Repita com um deles:'
+    Diz ''
+    Diz "    .\servidor\restringir-443.ps1 -Aplicar -Enderecos '$($deRede[0])','127.0.0.1'"
+    Diz ''
+    Diz "O custo de escolher: o endereco que ficar de fora ($($deRede[1..($deRede.Count-1)] -join ', '))"
+    Diz 'para de servir o app -- quem entra por ele perde a pagina.'
+  } else {
+    Diz 'PARADO, e nada foi tocado. Nem com um endereco de rede so o Docker aceita'
+    Diz 'a publicacao hoje. Deixe como esta: a disputa pela 443 nao esta'
+    Diz 'acontecendo (o Warsaw tem o endereco dele e funciona). Tentar de novo so'
+    Diz 'depois de atualizar o Docker Desktop.'
+  }
   exit 1
 }
-Bom 'dois binds com endereco fixo funcionam -- da para aplicar'
+Bom "a publicacao em $($Enderecos -join ', ') sobe -- da para aplicar"
 
 if (-not $Aplicar) {
   Diz ''
