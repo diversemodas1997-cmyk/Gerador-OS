@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-17d">
+<link rel="stylesheet" href="styles.css?v=2026-09-17e">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1372,6 +1372,21 @@
   </div>
 </div>
 
+<!-- ============ MODAL: NUMEROS QUE FALTAM NA CONTAGEM ============ -->
+<!-- Quais numeros de OS faltam na contagem, agrupados em faixas, e o que se
+     sabe de cada faixa. Numero que falta E tem PDF na pasta e OS perdida: o
+     papel ficou e o registro nao. Montado em app.js
+     (abrirNumerosFaltandoOS). -->
+<div class="modal-backdrop" id="modal-numeros">
+  <div class="modal">
+    <h2>Numeros que faltam na contagem das OS</h2>
+    <div id="modal-numeros-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-numeros')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================== MODAL: CONJUGAR OS ================== -->
 <!-- Amarrar OS que JÁ existem, para o status andar junto. Não gera OS, não
      mexe em tecido e não toca no cadastro da grade — os campos são montados
@@ -1537,6 +1552,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-17i"></script>
+<script src="app.js?v=2026-09-17j"></script>
 </body>
 </html>

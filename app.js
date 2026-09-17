@@ -491,6 +491,41 @@ let _opPinoLoteSoltoAgora = null;
 // Sem a base, uma chave suja subia inteira: quem tinha uma cópia velha de
 // `ordens` apagava a OS que outro dispositivo tinha acabado de criar.
 let _baseline = {};
+/* OS IDS QUE ESTE APARELHO APAGOU DE PROPÓSITO, por chave, desde a última
+   gravação bem-sucedida. É a lista que o merge obedece (ver
+   _mergeListaPorRegistro): sem ela, "sumiu da minha lista" era lido como
+   "apague no servidor", e bastava o STATE estar velho para uma OS de outro
+   aparelho desaparecer. Vive só nesta sessão — recarregar a página com uma
+   exclusão ainda não gravada faz o registro voltar, que é o lado certo de
+   errar. */
+let _apagadosAqui = {};
+
+/* O QUE SAIU DA LISTA NESTA GRAVAÇÃO. Roda dentro de saveState, que já tem em
+   mãos o valor de antes (é o mesmo que alimenta o desfazer) e o de depois.
+   Id que sumiu entra na lista de apagados; id que voltou (um desfazer, uma
+   reimportação) sai dela. Chave que não é lista de registros com id não tem o
+   que anotar. */
+function _apagadosLocaisRegistrar(chave, antesStr, depoisStr) {
+  const ids = txt => {
+    if (typeof txt !== 'string') return null;
+    try {
+      const v = JSON.parse(txt);
+      if (!Array.isArray(v)) return null;
+      return v.every(r => r && typeof r === 'object' && !Array.isArray(r) && r.id != null)
+        ? v.map(r => String(r.id)) : null;
+    } catch (e) { return null; }
+  };
+  const antes = ids(antesStr), depois = ids(depoisStr);
+  if (!antes || !depois) return;
+  const agora = new Set(depois);
+  const sumiram = antes.filter(id => !agora.has(id));
+  const lista = _apagadosAqui[chave];
+  if (!sumiram.length && !lista) return;
+  const set = lista || (_apagadosAqui[chave] = new Set());
+  sumiram.forEach(id => set.add(id));
+  agora.forEach(id => set.delete(id));   // voltou a existir aqui: não está apagado
+  if (!set.size) delete _apagadosAqui[chave];
+}
 // O `updated_at` que ESTE dispositivo acabou de gravar. É por ele que o realtime
 // e o polling reconhecem o próprio eco: o `_device` carimbado dentro do blob não
 // serve para isso, porque o payload do realtime vem TRUNCADO num blob deste
@@ -555,15 +590,42 @@ function _adotarServidorPreservandoEdicoes(srvData, chavesDoServidor) {
   });
 }
 
+/* APAGAR SÓ O QUE FOI APAGADO AQUI — DE PROPÓSITO, E NÃO POR AUSÊNCIA.
+
+   (17/09/2026, Junior: "olhei na pasta de OS e descobri que algumas OS que
+   foram geradas e salvas na pasta não estão no programa" — a 0509, a 0536 e a
+   0537 estavam na pasta, em PDF, e não estavam na lista.)
+
+   O merge apagava do servidor todo registro que estivesse na BASE e não na
+   lista local, lendo essa ausência como "excluído aqui". A leitura é uma
+   aposta, e ela erra sempre que a base fica mais nova que o STATE — e ficava:
+   o polling adotava o servidor para dentro do cache e da base e, quando o
+   último a gravar tinha sido este próprio aparelho, voltava SEM refazer o
+   STATE (ver o cloudLoad do polling, corrigido junto com isto). Daí em diante,
+   a OS que outro aparelho tinha criado existia na base e não no STATE, e a
+   gravação seguinte — marcar uma etapa, mudar um status — a apagava do
+   servidor para todo mundo. O PDF ficava na pasta, o número ficava consumido,
+   e a OS sumia sem deixar rastro.
+
+   Agora a exclusão é DECLARADA: saveState anota, a cada gravação, quais ids
+   saíram da lista NESTE aparelho (_apagadosLocaisRegistrar), e o merge só apaga
+   esses. O que este dispositivo não apagou, ele não pode fazer sumir — nem com
+   a base errada, nem com o STATE velho, nem com um cache de ontem. É a diferença
+   entre deduzir uma intenção e registrá-la.
+
+   O preço, quando algo dá errado, mudou de lado: antes uma dúvida APAGAVA uma
+   OS; agora uma dúvida faz uma exclusão não pegar, e o registro volta na
+   próxima leitura. Errar para o lado de conservar é o certo aqui. */
+
 // Merge de três vias de uma LISTA DE REGISTROS (base × nosso × servidor), por id.
 // Parte do que está no servidor e aplica por cima só o que ESTE dispositivo
-// mudou de verdade: registro criado ou editado aqui entra; registro que sumiu
-// daqui (exclusão intencional) sai; registro que este dispositivo nem tocou fica
-// como está no servidor — inclusive os que ele nunca viu, que é o caso da OS
-// criada em outro aparelho enquanto esta aba estava aberta com a lista velha.
+// mudou de verdade: registro criado ou editado aqui entra; registro apagado aqui
+// (`apagados`, a lista declarada) sai; registro que este dispositivo nem tocou
+// fica como está no servidor — inclusive os que ele nunca viu, que é o caso da
+// OS criada em outro aparelho enquanto esta aba estava aberta com a lista velha.
 // Devolve a lista mesclada em JSON, ou null quando não é lista de registros com
 // id (aí quem chama mantém o comportamento antigo).
-function _mergeListaPorRegistro(baseStr, localStr, srvStr) {
+function _mergeListaPorRegistro(baseStr, localStr, srvStr, apagados) {
   const parse = s => {
     if (typeof s !== 'string') return null;
     try { const v = JSON.parse(s); return Array.isArray(v) ? v : null; } catch (e) { return null; }
@@ -576,13 +638,16 @@ function _mergeListaPorRegistro(baseStr, localStr, srvStr) {
   const porId = new Map();
   srv.forEach(r => porId.set(String(r.id), r));            // ponto de partida: o servidor
   const baseTxt = new Map(base.map(r => [String(r.id), JSON.stringify(r)]));
-  const idsLocais = new Set(local.map(r => String(r.id)));
   local.forEach(r => {                                     // criado ou editado aqui: manda
     const id = String(r.id);
     const antes = baseTxt.get(id);
     if (antes === undefined || antes !== JSON.stringify(r)) porId.set(id, r);
   });
-  baseTxt.forEach((_, id) => { if (!idsLocais.has(id)) porId.delete(id); });   // apagado aqui: sai
+  // Apagado aqui, de propósito: sai. Só estes — ver o bloco acima.
+  const idsLocais = new Set(local.map(r => String(r.id)));
+  (apagados ? [...apagados] : []).forEach(id => {
+    if (!idsLocais.has(String(id))) porId.delete(String(id));
+  });
   // Ordem: a da lista local (é a que o usuário vê); o que só existe no servidor
   // entra no fim, preservado.
   const saida = [];
@@ -919,7 +984,7 @@ async function cloudFlush() {
           // dispositivo apagaria o que outro criou enquanto esta aba estava
           // aberta. Não sendo lista de registros, vale o nosso, como antes.
           if (cloudCache[k] === servidor[k]) return;
-          const mesclado = _mergeListaPorRegistro(_baseline[k], cloudCache[k], servidor[k]);
+          const mesclado = _mergeListaPorRegistro(_baseline[k], cloudCache[k], servidor[k], _apagadosAqui[k]);
           if (mesclado != null && mesclado !== cloudCache[k]) {
             cloudCache[k] = mesclado;
             mescladas.push(k);
@@ -1007,6 +1072,10 @@ async function cloudFlush() {
     // número do tom recém-digitado, e obrigava a clicar de novo até pegar uma
     // janela em que nenhuma gravação estivesse no ar.
     enviadas.forEach(k => { if (cloudCache[k] === enviado[k]) _dirtyKeys.delete(k); });
+    // As exclusões destas chaves já foram aplicadas no servidor: a lista zera.
+    // O que o usuário apagar durante a subida entra numa lista nova e sobe na
+    // próxima — do mesmo jeito que a bandeira de chave suja acima.
+    enviadas.forEach(k => { if (cloudCache[k] === enviado[k]) delete _apagadosAqui[k]; });
     // O que acabou de subir vira a nova BASE: daqui pra frente, só o que mudar
     // em relação a isto é considerado edição deste dispositivo. Tem que ser a
     // FOTO, não o cache: a edição feita durante a subida entraria na base como se
@@ -1287,14 +1356,28 @@ async function verificarServidor() {
     // realtime, que já cuida de sessão expirada e de _cloudLoadErro.
     await cloudLoad();
     if (_cloudLoadErro) return;   // leitura falhou: não marca como visto, tenta de novo
-    // O `_device` mora DENTRO do blob, então só é conhecido depois de baixá-lo.
-    // Era ele que evitava tratar a gravação da própria aba como novidade — o
-    // teste continua valendo, apenas mudou de lugar.
+    /* O STATE SEMPRE ACOMPANHA O CACHE (17/09/2026). O cloudLoad acima já trocou
+       o cloudCache E a base do merge pelo que está no servidor; o STATE, não —
+       ele só se refaz no loadState. Aqui embaixo havia um atalho: quando o
+       último a gravar tinha sido ESTE aparelho (`_device`), o polling voltava
+       sem chamar loadState, por entender que não havia novidade para a tela.
+
+       Havia. A gravação deste aparelho sobe só as chaves que ELE sujou — as
+       outras ficam como outro aparelho as deixou. Então "eu fui o último a
+       gravar" não quer dizer "o servidor é o que eu tenho": a OS que o outro PC
+       criou estava no servidor, entrou no cache e na BASE por este cloudLoad, e
+       não entrava no STATE. Na gravação seguinte, o STATE velho ia para o cache
+       e o merge lia a diferença como exclusão. Foi assim que a 0509, a 0536 e a
+       0537 sumiram do programa e ficaram só em PDF na pasta.
+
+       Agora o loadState roda sempre, e o `_device` decide só o que ele sempre
+       teve autoridade para decidir: se a TELA se redesenha e se o aviso
+       aparece — porque aí, sim, a mudança é minha e eu já a estou vendo. */
+    await loadState();
     if (cloudCache && cloudCache._device === DEVICE_ID) {
       lastSeenUpdatedAt = data.updated_at;
       return;
     }
-    await loadState();
     // Mesma logica do realtime: print pronta atualiza so checkboxes;
     // demais paginas re-renderizam normalmente.
     const ativa = document.querySelector('section.page:not(.hidden)');
@@ -2962,13 +3045,17 @@ async function saveState(key) {
     // O ESTADO ANTERIOR, para o desfazer: o que está gravado neste instante é
     // exatamente o que havia antes da mexida que está sendo salva. Ler daqui
     // dispensa cada botão do programa tirar foto antes de agir (ver DESFAZER).
+    // Lido SEMPRE (e não só fora do desfazer): além do desfazer, é deste "antes"
+    // que sai a lista de ids apagados aqui, e um desfazer que remove registros é
+    // uma exclusão local como outra qualquer.
     let _antes = null;
-    if (!_desfazendo) {
-      try { const r = await DB.get(key); _antes = r ? r.value : null; } catch (e) { }
-    }
+    try { const r = await DB.get(key); _antes = r ? r.value : null; } catch (e) { }
     const _depois = JSON.stringify(STATE[key]);
     await DB.set(key, _depois);
-    try { _desfazerRegistrar(key, _antes, _depois); } catch (e) { console.warn('desfazer', e); }
+    try { _apagadosLocaisRegistrar(key, _antes, _depois); } catch (e) { console.warn('apagados locais', e); }
+    if (!_desfazendo) {
+      try { _desfazerRegistrar(key, _antes, _depois); } catch (e) { console.warn('desfazer', e); }
+    }
     // Republica o snapshot de estoque p/ a Contabilidade quando muda algo
     // que altera os saldos. Best-effort; não bloqueia nem quebra o save.
     if (_CHAVES_CONTAB_SNAPSHOT.includes(key) && typeof construirContabSnapshot === 'function') {
@@ -21703,6 +21790,164 @@ function calcularAlvoDeCamadas() {
   calcularCamadasParaProducao();
 }
 
+
+/* ========================================================= */
+/*     A CONTAGEM DAS OS — o que falta e por que faltou      */
+/* ========================================================= */
+/* (17/09/2026, Junior: "analise porque o programa está gerando OS fora da ordem
+   numérica" e, depois, "olhei na pasta de OS e descobri que os números estão
+   sendo ordenados corretamente, mas algumas OS que foram geradas e salvas na
+   pasta não estão no programa".)
+
+   A NUMERAÇÃO NUNCA ESTEVE FORA DE ORDEM: o que houve foi PERDA. Três OS foram
+   criadas, gravadas e imprimiram PDF na pasta, e depois desapareceram da lista
+   — a 0509 (01/09) e a 0536 e a 0537 (10/09). O número delas ficou consumido,
+   porque as seguintes já tinham nascido por cima, e a contagem ficou com
+   buraco. A causa está consertada em _mergeListaPorRegistro e no polling; isto
+   aqui é a vigia, para o próximo buraco não levar duas semanas para ser visto.
+
+   A PASTA É A TESTEMUNHA. Foi ela que resolveu o caso: o PDF continua lá mesmo
+   quando a OS some do programa, porque o arquivo é escrito no disco da máquina
+   e não no blob. Então o relatório pergunta a ela — número que falta na
+   contagem E tem PDF na pasta é OS perdida, com prova; número que falta e não
+   tem PDF nunca chegou a existir.
+
+   E UMA FAIXA LARGA DE NÚMEROS QUE FALTAM NÃO É BURACO: é o arquivo de papel
+   que ainda não foi digitado (0221–0281, em 17/09/2026). Por isso o relatório
+   agrupa em faixas, e a conta da lista só conta as faixas curtas. */
+
+// A casa numera com quatro dígitos (formatarNumeroOS). Acima disso não é OS
+// desta fábrica: é dígito a mais, digitado por engano.
+const NUMERO_OS_MAX = 9999;
+// Distância a partir da qual o número de cima deixa de ser "o próximo da fila"
+// e passa a ser um número solto. Cem: o maior vão real da numeração da casa é o
+// do arquivo de papel (0220 para 0282, 62 números), e ele não pode ser lido
+// como engano.
+const OS_SALTO_ESTRANHO = 100;
+// Faixa de números faltando a partir da qual aquilo é arquivo, e não buraco.
+const OS_FAIXA_ARQUIVO = 10;
+
+// Os números de OS que existem hoje, em ordem e sem repetição. Fora ficam o que
+// não é número ('sem-numero') e o que não cabe na numeração da casa.
+function _numerosOSExistentes() {
+  const vistos = new Set();
+  (STATE.ordens || []).forEach(o => {
+    const n = parseInt(_numeroOSCanonico(o.os), 10);
+    if (n > 0 && n <= NUMERO_OS_MAX) vistos.add(n);
+  });
+  return [...vistos].sort((a, b) => a - b);
+}
+
+/* O TOPO DA FILA — o número de onde sai o próximo. É o maior existente MENOS o
+   que está solto lá em cima: um 5412 digitado no lugar de 0542 não é o topo da
+   fila, é um engano, e tomá-lo como topo faria toda OS seguinte nascer na casa
+   dos cinco mil — para sempre, porque o maior sempre ganha. Desce enquanto o de
+   cima estiver a mais de OS_SALTO_ESTRANHO do vizinho de baixo. */
+function _topoDaFilaOS() {
+  const nums = _numerosOSExistentes();
+  for (let i = nums.length - 1; i > 0; i--) {
+    if (nums[i] - nums[i - 1] <= OS_SALTO_ESTRANHO) return nums[i];
+  }
+  return nums.length ? nums[0] : 0;
+}
+
+/* OS NÚMEROS QUE FALTAM NA CONTAGEM, agrupados em faixas seguidas.
+   `buracos` são os números das faixas curtas — os que se perderam no meio da
+   produção, que é o que interessa vigiar todo dia. `arquivo` são os das faixas
+   largas: papel que ainda não foi digitado. */
+function _osNumerosFaltando() {
+  const nums = _numerosOSExistentes();
+  if (nums.length < 2) return { faltando: [], faixas: [], buracos: [], arquivo: [], de: 0, ate: 0 };
+  const tem = new Set(nums);
+  const de = nums[0], ate = nums[nums.length - 1];
+  const faltando = [];
+  for (let k = de; k <= ate; k++) if (!tem.has(k)) faltando.push(k);
+  const faixas = [];
+  faltando.forEach(n => {
+    const ult = faixas[faixas.length - 1];
+    if (ult && n === ult.ate + 1) ult.ate = n; else faixas.push({ de: n, ate: n });
+  });
+  faixas.forEach(f => { f.n = f.ate - f.de + 1; f.arquivo = f.n > OS_FAIXA_ARQUIVO; });
+  const numerosDa = f => { const v = []; for (let k = f.de; k <= f.ate; k++) v.push(k); return v; };
+  return {
+    faltando, faixas, de, ate,
+    buracos: faixas.filter(f => !f.arquivo).reduce((a, f) => a.concat(numerosDa(f)), []),
+    arquivo: faixas.filter(f => f.arquivo).reduce((a, f) => a.concat(numerosDa(f)), [])
+  };
+}
+
+function _osFaixaRotulo(f) {
+  return f.de === f.ate ? formatarNumeroOS(f.de)
+    : formatarNumeroOS(f.de) + '–' + formatarNumeroOS(f.ate);
+}
+
+/* OS PDFs QUE ESTÃO NA PASTA E CUJA OS NÃO ESTÁ NO PROGRAMA — a prova da perda.
+   Lê a pasta de PDFs já conectada (a mesma de sempre, sem pedir nada de novo) e
+   devolve o número de cada arquivo OS-<numero>.pdf sem OS correspondente. Sem
+   pasta conectada devolve null, que é diferente de lista vazia: uma diz "não
+   consegui olhar", a outra diz "olhei e não há". */
+async function _osPdfsOrfaosNaPasta() {
+  const dir = pdfFolderHandle;
+  if (!dir || typeof dir.entries !== 'function') return null;
+  try {
+    if (!(await ensureFolderPermission(dir, 'read'))) return null;
+  } catch (e) { return null; }
+  try {
+    const existem = new Set(_numerosOSExistentes());
+    const orfaos = new Set();
+    for await (const [nome, h] of dir.entries()) {
+      if (h.kind !== 'file') continue;
+      const m = /^OS-0*(\d{1,4})(?:-\d{2}-\d{2}-\d{4})?\.pdf$/i.exec(nome);
+      if (!m) continue;
+      const n = parseInt(m[1], 10);
+      if (n > 0 && !existem.has(n)) orfaos.add(n);
+    }
+    return [...orfaos].sort((a, b) => a - b);
+  } catch (e) { console.warn('conferência da pasta de OS', e); return null; }
+}
+
+/* O RELATÓRIO DOS NÚMEROS QUE FALTAM. Abre pela conta da lista de OS. */
+async function abrirNumerosFaltandoOS() {
+  const box = document.getElementById('modal-numeros-fields');
+  if (!box) return;
+  const { faltando, faixas, de, ate } = _osNumerosFaltando();
+  const pintar = (orfaos) => {
+    const linhas = faixas.map(f => {
+      let comPdf = null;
+      if (orfaos) {
+        comPdf = [];
+        for (let k = f.de; k <= f.ate; k++) if (orfaos.indexOf(k) >= 0) comPdf.push(k);
+      }
+      const oQueSeSabe = f.arquivo
+        ? 'faixa antiga — OS de papel que ainda não foram digitadas'
+        : (comPdf === null
+            ? 'conecte a pasta de PDFs (Configurações) para saber se o PDF ficou lá'
+            : (comPdf.length
+                ? `<b>PDF na pasta</b>: ${comPdf.map(formatarNumeroOS).join(', ')} — a OS foi criada e depois sumiu do programa`
+                : 'sem PDF na pasta: este número nunca chegou a virar OS'));
+      return `<tr><td><b>${esc(_osFaixaRotulo(f))}</b></td>`
+        + `<td style="text-align:right;">${f.n}</td><td>${oQueSeSabe}</td></tr>`;
+    }).join('');
+    box.innerHTML = faltando.length
+      ? `<p>Entre a <b>${formatarNumeroOS(de)}</b> e a <b>${formatarNumeroOS(ate)}</b> faltam
+           <b>${faltando.length}</b> números na contagem. O próximo livre é <b>${proximoNumeroOS()}</b>.</p>
+         <table class="table"><thead><tr><th>Números</th>
+           <th style="text-align:right;">Quantos</th><th>O que se sabe</th></tr></thead>
+           <tbody>${linhas}</tbody></table>
+         <p>Número com PDF na pasta é OS perdida: o papel está lá e o registro não.
+            Para refazê-la, abra o PDF e digite o número dela no campo <b>Número OS</b>
+            da folha nova — o programa só recusa número que já esteja em uso.</p>`
+      : `<p>A contagem está fechada: da <b>${formatarNumeroOS(de)}</b> à
+           <b>${formatarNumeroOS(ate)}</b>, sem buraco.</p>`;
+  };
+  pintar(null);
+  openModal('modal-numeros');
+  // A pasta é lida depois de a janela abrir: ela pode demorar, e a tabela já
+  // serve sem ela.
+  try { const orfaos = await _osPdfsOrfaosNaPasta(); if (orfaos) pintar(orfaos); }
+  catch (e) { console.warn('pasta de OS', e); }
+}
+
 /* ========================================================= */
 /*           NÚMERO DA OS — sequencial automático            */
 /* ========================================================= */
@@ -21717,11 +21962,11 @@ function proximoNumeroOS() {
   // apenas como piso de seguranca pra numeros muito antigos ja usados
   // que podem nao estar mais visiveis (ex.: backups), mas o maior
   // existente sempre ganha quando ha qualquer OS salva.
-  const numeros = STATE.ordens
-    .map(o => parseInt(o.os))
-    .filter(n => !isNaN(n));
-  const maxExistente = numeros.length ? Math.max(...numeros) : 0;
-  if (maxExistente > 0) return formatarNumeroOS(maxExistente + 1);
+  // O topo da fila IGNORA o número solto muito acima do resto (ver
+  // _topoDaFilaOS): um dígito a mais numa OS não pode reger toda a numeração
+  // que vem depois dela.
+  const maxExistente = _topoDaFilaOS();
+  if (maxExistente > 0) return formatarNumeroOS(Math.min(maxExistente + 1, NUMERO_OS_MAX));
   // Sem nenhuma OS existente, cai pro counter (caso tenha sido salvo
   // previamente em uma execucao anterior com OSs ja deletadas).
   const counterAtual = parseInt(STATE.osCounter) || 0;
@@ -25876,9 +26121,20 @@ function _contaListaOS(mostradas, total) {
   const n = x => Number(x || 0).toLocaleString('pt-BR');
   const filtrando = mostradas !== total;
   el.classList.toggle('filtrando', filtrando);
-  el.innerHTML = filtrando
-    ? `<b>${n(mostradas)}</b> de ${n(total)} OS`
-    : `<b>${n(total)}</b> OS`;
+  /* E QUANTOS NÚMEROS FALTAM NA CONTAGEM (17/09/2026). Fica ao lado da conta
+     porque é a mesma pergunta vista de outro lado: a lista diz quantas OS
+     existem, isto diz quantas deveriam existir e não estão. Só as faixas
+     curtas contam — a faixa larga do arquivo de papel não é buraco (ver
+     _osNumerosFaltando). */
+  const buracos = _osNumerosFaltando().buracos;
+  el.innerHTML = (filtrando
+      ? `<b>${n(mostradas)}</b> de ${n(total)} OS`
+      : `<b>${n(total)}</b> OS`)
+    + (buracos.length
+        ? ` · <a href="#" class="lista-os-falta" onclick="abrirNumerosFaltandoOS(); return false;"
+             title="${esc(buracos.map(formatarNumeroOS).join(', '))} — clique para ver o relatório">`
+          + `faltam ${buracos.length} número${buracos.length > 1 ? 's' : ''}</a>`
+        : '');
   el.title = filtrando
     ? `A lista tem ${n(total)} OS; os filtros estão mostrando ${n(mostradas)}.`
     : `Todas as ${n(total)} OS da lista.`;
@@ -35050,6 +35306,7 @@ window.limparFiltrosListaOS = limparFiltrosListaOS;
 window.filtrarDesenhosOS = filtrarDesenhosOS;
 window.limparBuscaDesenhoOS = limparBuscaDesenhoOS;
 window.desfazerUltimaAcao = desfazerUltimaAcao;
+window.abrirNumerosFaltandoOS = abrirNumerosFaltandoOS;
 window.deleteGradeFolder = deleteGradeFolder;
 window.deleteGradeSubfolder = deleteGradeSubfolder;
 window.alternarAcessos = alternarAcessos;

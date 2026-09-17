@@ -2413,6 +2413,10 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .busca-desenho { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .busca-desenho input[type="search"] { flex: 1 1 auto; min-width: 0; }
 .lista-os-conta.filtrando { color: var(--accent-dark); }
+/* "faltam 3 numeros": o buraco na contagem das OS, ao lado da conta. Vermelho
+   porque numero que falta no meio da producao e quase sempre OS perdida. */
+.lista-os-falta { color: var(--alert); text-decoration: underline; cursor: pointer; }
+.lista-os-falta:hover { color: var(--alert); text-decoration: none; }
 /* O STATUS DA OS, no topo da coluna AÇÕES da lista de OS Salvas.
 
    Mesma caixa nos dois casos — seletor para quem pode mudar (admin e
