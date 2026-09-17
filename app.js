@@ -19082,18 +19082,41 @@ function _dashPorStatusHtml(escala) {
   const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH && !x.st.foraDaProducao);
   const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
   const totOS = emProducao.reduce((s, x) => s + x.os, 0);
-  const max = Math.max(1, ...emProducao.map(x => x.produtos));
+  /* A BARRA DESENHA A FATIA DA PRODUÇÃO, e não a comparação com a maior barra
+     (17/09/2026, Junior: "muda a escala de preenchimento das barras de volume
+     do gráfico de volume por status, pois a barra ensacado está cheia, mas isso
+     não representa a capacidade total de ensacados a serem guardados").
+
+     A régua era o MAIOR status: quem tivesse mais produtos ficava com a barra
+     cheia, os outros se mediam por ele. Isso faz a barra cheia dizer uma coisa
+     que ela não sabe — "está no limite", "a prateleira encheu" —, quando o que
+     ela dizia era só "este é o maior dos onze". Não existe capacidade cadastrada
+     em lugar nenhum do programa: o ensaque não tem um teto de quantos sacos
+     cabem, e desenhar 100% sem teto é inventar um.
+
+     Agora a régua é o TOTAL EM PRODUÇÃO, que é o assunto do quadro. A barra
+     passa a ser a mesma coisa que o número na ponta da linha (a %), e as duas
+     param de se contradizer — antes o traço dizia 100% e o número ao lado
+     dizia 24%, na mesma linha. Cheia, a barra passa a significar o que ela
+     parece significar: toda a produção está naquele status.
+
+     O preço é que as barras ficam menores e mais parecidas entre si. É o preço
+     certo: quem quer comparar dois status tem os números exatos na mesma linha,
+     e o desenho não pode mentir para facilitar a comparação. */
   const pct = v => totProd > 0 ? (v / totProd * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
   const corpo = linhas.map(x => {
     const fim = x.st.k === STATUS_TERMINAL_DASH;
     const fora = !fim && !!x.st.foraDaProducao;
-    // A barra da cancelada usa a régua da produção, mas não pode estourá-la:
-    // ela não entrou no `max`.
-    const w = fim ? 100 : (x.produtos > 0 ? Math.min(100, Math.max(0.6, x.produtos / max * 100)) : 0);
+    /* O Estoque segue fora da escala (é o acumulado de tudo o que a fábrica já
+       terminou, e numa régua com ele todas as outras viram um risco de um
+       pixel). A cancelada usa a régua da produção sem ter entrado no total,
+       então pode passar de 100% — daí o teto. */
+    const fatia = totProd > 0 ? x.produtos / totProd * 100 : 0;
+    const w = fim ? 100 : (x.produtos > 0 ? Math.min(100, Math.max(0.6, fatia)) : 0);
     const dica = `${x.st.rotulo}: ${_dashFmt(x.produtos)} produtos em ${_dashFmt(x.os)} OS`
       + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras'
              : fora ? ' — lotes desistidos, fora da conta do que está em produção'
-             : ` — ${pct(x.produtos)} do que está em produção`)
+             : ` — ${pct(x.produtos)} do que está em produção, e é isso que a barra desenha`)
       + (x.os ? '. Clique para ver estas OS na lista.' : '');
     const entradas = por.get(x.st.k) || [];
     const celulas = entradas.map((c, i) => `<span class="dash-st-ent${c.produtos ? '' : ' zero'}${periodos[i].futuro ? ' futuro' : ''}" title="${esc(periodos[i].futuro ? `${periodos[i].nome} ainda não chegou` : `Entraram em ${x.st.rotulo} em ${periodos[i].nome}: ${_dashFmt(c.produtos)} produtos, ${_dashFmt(c.os)} OS`)}">
@@ -19113,7 +19136,7 @@ function _dashPorStatusHtml(escala) {
         <b>Volume das OS por status</b>
         <span>${escala === 'dia' ? 'colunas: produtos que <b>entraram</b> em cada status <b>hoje</b>, de <b>manhã</b> (até 12h) e à <b>tarde</b>'
           : escala === 'semana' ? 'colunas: produtos que <b>entraram</b> em cada status em cada dia <b>desta semana</b> (segunda a sexta)'
-          : 'colunas: produtos que <b>entraram</b> em cada status, por ' + esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
+          : 'colunas: produtos que <b>entraram</b> em cada status, por ' + esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · a barra é a <b>fatia da produção</b> naquele status, não uma medida de lotação · clique num status para ver as OS</span>
       </div>
       <div class="dash-st-linha dash-st-titulos" style="--nper:${nPer};">
         <span class="dash-st-nome">Status</span>${cab}

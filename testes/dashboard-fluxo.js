@@ -423,5 +423,33 @@ ok('todo cartão existe mesmo vazio, com peças e OS em zero',
   CAMPOS.every(k => d[k] && typeof d[k].pecas === 'number' && typeof d[k].os === 'number'),
   Object.keys(d));
 
+/* A BARRA DO QUADRO "Volume das OS por status" DESENHA A FATIA DA PRODUCAO
+   (17/09/2026, Junior: "a barra ensacado esta cheia, mas isso nao representa a
+   capacidade total de ensacados a serem guardados").
+
+   A regua era o MAIOR status, entao o maior ficava sempre com a barra cheia — e
+   barra cheia se le como "encheu", "chegou no limite". Nao ha capacidade
+   cadastrada em lugar nenhum do programa: o ensaque nao tem teto de quantos
+   sacos cabem. Pior, o desenho contradizia o numero da propria linha: o traco
+   dizia 100% e a porcentagem ao lado dizia 24%.
+
+   Este teste le o CODIGO porque a funcao monta HTML e depende do DOM. O que ele
+   guarda e a REGRA: a largura sai do total em producao, e nao do maior. */
+const painelStatus = src.slice(src.indexOf('function _dashPorStatusHtml'),
+                               src.indexOf('const STATUS_TERMINAL_DASH'));
+ok('a barra do status mede pela FATIA da producao',
+  painelStatus.includes('const fatia = totProd > 0 ? x.produtos / totProd * 100 : 0;')
+  && painelStatus.includes('Math.max(0.6, fatia)'),
+  'nao achei a fatia da producao na largura da barra');
+ok('e nao existe mais regua pelo MAIOR status (era ela que enchia a barra)',
+  !painelStatus.includes('Math.max(1, ...emProducao.map')
+  && !painelStatus.includes('x.produtos / max * 100'),
+  'a regua pelo maior status voltou');
+/* O Estoque continua fora da escala: e o acumulado de tudo o que a fabrica ja
+   terminou (80 mil produtos contra 8 mil em producao), e numa regua com ele
+   todas as outras barras virariam um risco de um pixel. */
+ok('o Estoque segue fora da escala, com a barra cheia de proposito',
+  painelStatus.includes('const w = fim ? 100 :'), 'o Estoque saiu do fora-de-escala');
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
