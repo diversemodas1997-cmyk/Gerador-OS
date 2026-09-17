@@ -4,9 +4,13 @@
  * A 0509 (01/09), a 0536 e a 0537 (10/09) foram criadas, gravadas e imprimiram
  * PDF na pasta do Setor Corte — e depois desapareceram da lista. A causa está
  * consertada no app (ver _mergeListaPorRegistro e o polling); isto aqui é o
- * resgate das três, que nenhum backup tem: os pacotes diários de 01/09 (16:48)
+ * resgate delas, que nenhum backup tem: os pacotes diários de 01/09 (16:48)
  * e de 10/09 (20:26) já não as continham, e a folha em PDF é a única cópia que
  * restou.
+ *
+ * Depois vieram mais três, da mesma família e bem mais antigas — a 0292
+ * (03/06), a 0293 (05/05) e a 0296 (07/05) —, achadas pela conferência da
+ * pasta contra a lista (servidor/conferir-pasta-os.js). Seis ao todo.
  *
  * DE ONDE VEM CADA CAMPO. Não há adivinhação silenciosa aqui:
  *   - o que a FOLHA mostra (número, data, coleção, desenho, grade, cores,
@@ -20,9 +24,21 @@
  * de onde elas vieram.
  *
  * O QUE NASCE VAZIO, de propósito: o checklist (progresso), o status, a data de
- * finalização e o carimbo de etiqueta. A folha em PDF foi tirada no dia em que
- * a OS nasceu e não sabe o que aconteceu depois; inventar progresso seria pior
- * do que não ter.
+ * finalização e o carimbo de etiqueta — QUANDO a folha nada diz sobre eles. A
+ * folha em PDF costuma ser tirada no dia em que a OS nasce e não sabe o que
+ * aconteceu depois; inventar progresso seria pior do que não ter.
+ *
+ * MAS QUANDO A FOLHA DIZ, ela manda. A da 0292 foi regravada em 06/08, com o
+ * checklist inteiro marcado, as camadas de cada fase e a divisão por tonalidade
+ * — e tudo isso entra, porque está escrito no papel.
+ *
+ * E HÁ UM TERCEIRO CASO, o das folhas antigas (0293 e 0296, de maio): elas
+ * foram tiradas no dia do corte e mostram só o começo do checklist. Recriá-las
+ * assim poria um lote de maio no painel de produção como se estivesse sendo
+ * cortado hoje. Para essas, o status vai CARIMBADO como Estoque — que é onde um
+ * lote de quatro meses atrás está — e a OS leva uma observação dizendo que o
+ * status é do resgate e não do checklist. É inferência, e por isso ela é
+ * escrita na própria OS em vez de ficar só aqui.
  *
  * Roda NO SERVIDOR da fábrica, pela mesma conta de serviço dos outros scripts
  * de reparo (read-modify-write do shared_data), e copia o blob inteiro para
@@ -80,6 +96,44 @@ const FOLHAS = [
     notaEm: '2026-09-10T19:56:00.000Z',
     tricolorDe: '0538',
     coresDasFases: { 1: 'Preto Malha Algodão', 2: 'Preto Ribana Malha Algodão', 3: 'Caqui Malha Algodão' }
+  },
+  {
+    /* A 0292 É GÊMEA DA 0410 — mesmo dia (03/06), mesmo desenho 001, mesma
+       grade G-G3 | CM.LISA, as mesmas 59 camadas, os mesmos tons (26/16/17) e
+       as mesmas fases marcadas (1 e 3, a gola não). O que a folha regravada em
+       06/08 mostra bate campo a campo com o que está gravado na 0410; só as
+       MEDIDAS das fases diferem, porque a folha saiu depois de a grade ser
+       mexida. Valem as da folha. */
+    os: '0292', data: '2026-06-03', criadoEm: '2026-06-03T12:00:00.000Z', molde: '0410',
+    fases: { 1: { comp: '2.91', larg: '1.17' }, 2: { comp: '0.40', larg: '0.67' }, 3: { comp: '3', larg: '1.17' } },
+    camadas: { 1: 59, 2: 11, 3: 1 },
+    // O checklist inteiro marcado: o status sai dele, sem carimbo nenhum.
+    progressoDoMolde: true
+  },
+  {
+    /* A 0293 tem a estrutura da 0285 (mesma grade M-2G-GG, as mesmas duas fases
+       e as mesmas medidas — 4,22×1,17 e 0,80×0,64) e as CORES da 0332, que é a
+       OS do desenho 002, o branco. Os componentes vêm da 0285 porque a grade é
+       a dela: as quantidades da folha (640/640/1.280/640/640, total 3.840) são
+       exatamente as que estão lá. */
+    os: '0293', data: '2026-05-05', criadoEm: '2026-05-05T12:00:00.000Z', molde: '0285',
+    camadas: { 1: 80, 2: 16 },
+    desenhoDe: '0332', corDe: '0332',
+    carimbar: 'estoque',
+    nota: 'OS refeita em 17/09/2026 pela folha em PDF da pasta, depois de ter sumido do programa. '
+        + 'A folha é do dia do corte e mostra só o começo do checklist: o status foi carimbado como '
+        + 'Estoque por ser um lote de maio, e não veio do checklist.'
+  },
+  {
+    /* A 0296 é da 0332: mesmo desenho 002, mesma grade M-GG-G3, as mesmas duas
+       fases com as mesmas medidas (3,85×1,17 e 0,50×0,67) e as mesmas 80
+       camadas. Molde exato. */
+    os: '0296', data: '2026-05-07', criadoEm: '2026-05-07T12:00:00.000Z', molde: '0332',
+    camadas: { 1: 80, 2: 16 },
+    carimbar: 'estoque',
+    nota: 'OS refeita em 17/09/2026 pela folha em PDF da pasta, depois de ter sumido do programa. '
+        + 'A folha é do dia em que a OS nasceu e não traz nada marcado: o status foi carimbado como '
+        + 'Estoque por ser um lote de maio, e não veio do checklist.'
   }
 ];
 
@@ -130,12 +184,33 @@ function refazer(folha, ordens, i) {
   nova.criadoEm = folha.criadoEm;
   nova.criadoPor = POR;
 
-  // A folha foi tirada quando a OS nasceu: nada do que veio depois é dela.
-  delete nova.progresso;
+  /* A folha foi tirada quando a OS nasceu: nada do que veio depois é dela — a
+     não ser quando ela MOSTRA o que veio depois (`progressoDoMolde`, o caso da
+     0292, cuja folha foi regravada com o checklist inteiro marcado). */
+  if (!folha.progressoDoMolde) delete nova.progresso;
   delete nova.statusOS; delete nova.statusOSPor; delete nova.statusOSEm;
   delete nova.finalizadaEm;
   delete nova.etiquetaEm; delete nova.etiquetaPor;
   delete nova.conjugadaStatusPaiId;
+
+  // As medidas de cada fase, quando a folha mostra outras (a grade foi mexida
+  // entre a OS e a folha).
+  if (folha.fases) {
+    (nova.fases || []).forEach(f => {
+      const m = folha.fases[f.ordem];
+      if (!m) return;
+      f.comp = m.comp; f.larg = m.larg;
+    });
+    if (nova.enfesto && Array.isArray(nova.enfesto.blocos)) {
+      nova.enfesto.blocos.forEach(b => {
+        const m = folha.fases[b.ordem];
+        if (!m) return;
+        b.comp = Number(m.comp); b.larg = Number(m.larg);
+      });
+      const prim = folha.fases[1];
+      if (prim) { nova.enfesto.comprimento = Number(prim.comp); nova.enfesto.largura = Number(prim.larg); }
+    }
+  }
 
   // As camadas que a folha mostra (vazio = fase ainda não enfestada).
   if (nova.enfesto && Array.isArray(nova.enfesto.blocos)) {
@@ -173,6 +248,60 @@ function refazer(folha, ordens, i) {
     if (nova.enfesto && Array.isArray(nova.enfesto.blocos)) {
       nova.enfesto.blocos.forEach(b => { if (folha.coresDasFases[b.ordem]) b.nomeCor = folha.coresDasFases[b.ordem]; });
     }
+  }
+
+  /* AS CORES VÊM DE OUTRA OS, casadas por TECIDO (o caso da 0293: a estrutura é
+     da 0285, que é preta, e a folha é branca). Casar por tecido e não por
+     posição é o que faz a ribana receber o branco DA RIBANA, e não o branco da
+     malha — são dois cadastros de cor diferentes. */
+  if (folha.corDe) {
+    const fonte = ordens.find(o => String(o.os) === folha.corDe);
+    if (!fonte) return { erro: `não achei a OS ${folha.corDe}, de onde vêm as cores` };
+    const porTecido = new Map((fonte.tecidos || []).map(t => [String(t.tecidoId), t]));
+    const porMaterial = new Map((fonte.componentes || []).map(c => [String(c.material || ''), c]));
+    (nova.tecidos || []).forEach(t => {
+      const f = porTecido.get(String(t.tecidoId));
+      if (f) { t.corId = f.corId; t.corNome = f.corNome; }
+    });
+    (nova.componentes || []).forEach(c => {
+      const f = porMaterial.get(String(c.material || ''))
+        || porTecido.get(String(c.material || '').replace(/^T:/, ''));
+      if (f) { c.cor = f.cor || f.corId || ''; c.corNome = f.corNome; }
+    });
+    nova.variantes = JSON.parse(JSON.stringify(fonte.variantes || nova.variantes || []));
+    // O aviamento traz a cor no campo de APLICAÇÃO ("Preto"): é rótulo, e
+    // acompanha a peça.
+    const corPrincipal = (nova.tecidos && nova.tecidos[0] && nova.tecidos[0].corNome) || '';
+    (nova.aviamentos || []).forEach(a => {
+      const eraCor = (base.tecidos || []).some(t => t.corNome === a.app);
+      if (eraCor && corPrincipal) a.app = corPrincipal;
+    });
+    if (nova.enfesto && Array.isArray(nova.enfesto.blocos)) {
+      nova.enfesto.blocos.forEach(b => {
+        const f = (nova.fases || []).find(x => x.ordem === b.ordem);
+        const t = f && porTecido.get(String(f.tecidoId));
+        if (t) b.nomeCor = t.corNome;
+      });
+    }
+  }
+
+  // O DESENHO vem de outra OS (a 0293 usa o 002, o branco, e a estrutura é de
+  // uma OS do 001).
+  if (folha.desenhoDe) {
+    const fonte = ordens.find(o => String(o.os) === folha.desenhoDe);
+    if (!fonte) return { erro: `não achei a OS ${folha.desenhoDe}, de onde vem o desenho` };
+    nova.desenhoId = fonte.desenhoId;
+    nova.codigo = fonte.codigo;
+    nova.modeloId = fonte.modeloId; nova.modeloNome = fonte.modeloNome;
+  }
+
+  /* O CARIMBO DE STATUS, quando a folha não tem como dizer. Vai assinado pelo
+     resgate e não por uma pessoa: quem olhar a dica na lista tem de ver que
+     aquele status foi posto na recuperação. */
+  if (folha.carimbar) {
+    nova.statusOS = folha.carimbar;
+    nova.statusOSPor = POR;
+    nova.statusOSEm = new Date().toISOString();
   }
 
   // As observações: a da folha, ou as do molde quando a folha traz as mesmas.
