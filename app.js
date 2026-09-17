@@ -25498,6 +25498,25 @@ const STATUS_OS = [
      é o "Não iniciado" — que é o oposto disto: um ainda não começou, o outro
      não vai começar mais. */
   { k: 'cancelado',       cor: '#3f4750', bg: '#e9ebee', bd: '#b6bcc4', rotulo: 'Cancelado',              foraDaProducao: true },
+  /* O ESTOQUE NAO SE DIVIDE EM DUAS UNIDADES, e a pergunta ja foi feita
+     (17/09/2026, Junior: "divida tambem o status Estoque em Descalvado e Sao
+     Carlos" — e, ao detalhar: "Estoque e apenas de produto acabado, que fica em
+     Descalvado. Ensacado sao produtos cortados esperando costurar, que podem
+     estar tanto em Descalvado quanto em Sao Carlos").
+
+     Sao duas coisas diferentes com uma palavra so, e e dai que vem a confusao:
+
+       ESTOQUE (este status)          produto ACABADO, e so em Descalvado
+       "Estoque corte · Unidade ..."  o painel do CORTE ensacado, que tem os
+                                      dois lados e cujo status e o Ensacado
+
+     O fluxo cadastrado termina com a peca de volta — costura la, Expedicao Sao
+     Carlos X Desc., Recebido em Descalvado, Retirada de fios, Estoque — e o
+     dado confirma: em 17/09/2026, as 261 OS em Estoque tinham TODAS a caixa
+     "Recebido em Descalvado" marcada, sem uma excecao. Um lado Sao Carlos aqui
+     nasceria vazio e continuaria vazio.
+
+     Quem tem dois lados e o ENSACADO, logo acima. */
   { k: 'estoque',         cor: '#17a06a', bg: '#e2f5ec', bd: '#92cfb4', rotulo: 'Estoque',                  ordem: 7, baixa: true,
     re: /estoque/i }
 ];
