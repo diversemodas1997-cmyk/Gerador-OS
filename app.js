@@ -19000,7 +19000,7 @@ function _dashPorStatusHtml(escala) {
           <span class="dash-st-ent-barra" style="width:${(c.produtos / maxEnt * 100).toFixed(1)}%;"></span>
           <b>${c.produtos ? _dashFmt(c.produtos) : '·'}</b>${c.os ? `<em>${c.os} OS</em>` : ''}</span>`).join('');
     return `<div class="dash-st-linha${x.os ? '' : ' vazio'}${fim ? ' fim' : ''}" style="--nper:${nPer};"${x.os ? ` onclick="abrirListaPorStatus('${x.st.k}')" tabindex="0"` : ''} title="${esc(dica)}">
-        <span class="dash-st-nome">${x.st.icone} ${esc(x.st.rotulo)}</span>
+        <span class="dash-st-nome">${_statusPingo(x.st)} ${esc(x.st.rotulo)}</span>
         ${celulas}
         <span class="dash-st-trilho"><span class="dash-st-barra" style="width:${w.toFixed(1)}%;"></span>${fim ? '<span class="dash-st-corte" aria-hidden="true"></span>' : ''}</span>
         <span class="dash-st-num"><b>${_dashFmt(x.produtos)}</b> <em>produtos</em></span>
@@ -25089,18 +25089,40 @@ function _renderAvisoGrupoListaOS(mostradas) {
               costuras e "Parado" antes de "Estoque" — no chão não é assim.
      baixa  = a partir deste status o pano já desceu da prateleira (ver
               _STATUS_QUE_BAIXAM) */
+/* A COR DE CADA STATUS (17/09/2026, Junior: "diversifique as cores dos status
+   para que todos tenham o ícone de mesmo formato redondo e cores únicas").
+
+   Antes o ícone era um emoji, e o emoji escolhia a forma junto com a cor: o
+   losango azul de Costurando, o quadrado azul de Retirando fio e o círculo azul
+   de Costurando | São Carlos eram três desenhos diferentes de três azuis quase
+   iguais. Formas diferentes fazem procurar pelo desenho, cores quase iguais
+   fazem confundir a etapa — as duas coisas na mesma lista.
+
+   Agora a forma é uma só, um pingo redondo, e o que separa um status do outro é
+   a COR, uma por status, dez matizes que não se repetem: cinza parado, marrom
+   do preparo, amarelo do enfesto, laranja do corte, azul e ciano das duas
+   costuras, roxo dos fios, magenta do ensaque, vermelho do travado, verde do
+   estoque. A ordem das cores acompanha o caminho da produção.
+
+   São três valores por status, e os três saem daqui — não do CSS:
+     cor = o pingo (e o texto da opção no seletor)
+     bg  = o fundo da caixa do status
+     bd  = a borda dela
+   O CSS não guarda mais uma lista paralela de cores por chave: ele desenhava a
+   caixa de um jeito e o ícone vinha de outro lugar, e as duas listas saíam do
+   lugar uma sem a outra. */
 const STATUS_OS = [
-  { k: 'nao-iniciado',   icone: '⚪', rotulo: 'Não iniciado' },
-  { k: 'materia-prima',  icone: '🟤', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1,
+  { k: 'nao-iniciado',    cor: '#98a2ae', bg: '#f2f4f7', bd: '#cfd6de', rotulo: 'Não iniciado' },
+  { k: 'materia-prima',   cor: '#8a5a2b', bg: '#f3ece2', bd: '#d7c3a5', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1,
     re: /prepar\w*\s+(d[ae]\s+)?mat[ée]ria|mat[ée]ria[\s-]?prima/i },
   /* O ENFESTO NAO E ETAPA DO CHECKLIST: ele mora na TABELA DE ENFESTOS da
      folha, uma linha por fase da grade, com a caixa de cada uma. Daí `enfesto`
      em vez de `re` — ver _marcasDoStatus. A `re` fica junto para o caso de
      alguem um dia cadastrar uma etapa chamada Enfesto: as duas acendem o mesmo
      status, e vale a marcada por ultimo. */
-  { k: 'enfestando',     icone: '🟡', rotulo: 'Enfestando',               ordem: 2, baixa: true,
+  { k: 'enfestando',      cor: '#d0a000', bg: '#fdf6d8', bd: '#e3ce7a', rotulo: 'Enfestando',               ordem: 2, baixa: true,
     enfesto: true, re: /enfest/i },
-  { k: 'cortando',       icone: '🟠', rotulo: 'Cortando',                 ordem: 3, baixa: true,
+  { k: 'cortando',        cor: '#e2661a', bg: '#fdeede', bd: '#e6bb8a', rotulo: 'Cortando',                 ordem: 3, baixa: true,
     re: /corte|cortando/i },
   /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
      etapa de trabalho, e por isso ele não tinha status — mas é ele que diz que
@@ -25120,7 +25142,7 @@ const STATUS_OS = [
 
      É o mesmo desenho do outro lado, onde "Recebido em Descalvado" já acendia o
      status de Retirada de fios desde hoje de manhã. */
-  { k: 'ensacado',       icone: '🟣', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
+  { k: 'ensacado',        cor: '#c2399c', bg: '#fae6f4', bd: '#e2a6d0', rotulo: 'Ensacado',                 ordem: 6, baixa: true,
     re: /ensaqu|ensacad|recebido em s[ãa]o carlos/i },
   /* A UNIDADE SAI DO NOME DA ETAPA, e não da caixa de recebimento (15/09/2026,
      Junior: "alguns produtos são costurados em etapas fracionadas em diferentes
@@ -25150,7 +25172,7 @@ const STATUS_OS = [
      ordem decidir faria o volume pular de uma unidade para a outra conforme a
      ordem em que alguém lembrasse de marcar, que é o que menos importa nesta
      pergunta (ver _osCosturaEmSC). */
-  { k: 'costurando',     icone: '🔷', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
+  { k: 'costurando',      cor: '#2a6fd0', bg: '#e4eefc', bd: '#9dbdf0', rotulo: 'Costurando | Descalvado',  curto: 'Costurando | DESC',  ordem: 4, baixa: true,
     re: /^(?!.*s[ãa]o\s+carlos).*costura/i, cond: o => !_osCosturaEmSC(o) },
   /* A regex vai literal, e não pela constante COSTURA_SC_RE: a tabela é montada
      na carga do arquivo, e uma constante declarada depois dela ainda não existe
@@ -25164,19 +25186,33 @@ const STATUS_OS = [
      que não tem nada a ver com o que se mexeu. Este parágrafo mesmo já custou
      uma rodada: ele explicava a regra escrevendo a regex, com os dois sinais
      dentro. */
-  { k: 'costurando-sc',  icone: '🔵', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
+  { k: 'costurando-sc',   cor: '#0d94a6', bg: '#ddf1f4', bd: '#86c8d4', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
     re: /costura.*s[ãa]o\s+carlos/i },
   /* "Recebido em Descalvado" acende este status junto com a retirada de fios:
      o que volta de São Carlos cai aqui, e sem isso a OS voltava da outra
      unidade e a lista continuava dizendo "Costurando | São Carlos". É a mesma
      regra que o campo do fluxo já usava — agora as duas concordam. */
-  { k: 'fios',           icone: '🟦', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
+  { k: 'fios',            cor: '#7b3fb5', bg: '#eee6f8', bd: '#c0a6e0', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
     re: /fios|recebido em descalvado/i },
   // Fora da fila: não nasce do checklist, só do carimbo.
-  { k: 'parado',         icone: '🔴', rotulo: 'Parado',                                                baixa: true },
-  { k: 'estoque',        icone: '🟢', rotulo: 'Estoque',                  ordem: 7, baixa: true,
+  { k: 'parado',          cor: '#d92b2b', bg: '#fbe6e6', bd: '#eeaaaa', rotulo: 'Parado',                                                baixa: true },
+  { k: 'estoque',         cor: '#17a06a', bg: '#e2f5ec', bd: '#92cfb4', rotulo: 'Estoque',                  ordem: 7, baixa: true,
     re: /estoque/i }
 ];
+
+/* O PINGO REDONDO DO STATUS: a forma é sempre a mesma, quem fala é a cor. Vai
+   inline, e não por classe, porque a cor mora na tabela acima — uma folha de
+   estilo com uma cor por chave seria uma segunda lista para manter. */
+function _statusPingo(s) {
+  return `<i class="st-pingo" style="background:${(s && s.cor) || '#98a2ae'};" aria-hidden="true"></i>`;
+}
+// O fundo e a borda da caixa do status, da mesma tabela.
+function _statusEstilo(s) {
+  return s && s.bg ? `background:${s.bg};border-color:${s.bd};` : '';
+}
+/* O pingo em TEXTO, para dentro de <option>: ali não entra elemento nenhum, só
+   texto — a cor da opção é que carrega o status. */
+const STATUS_PONTO = '●';
 
 /* O FIM DA PRODUÇÃO É O ENSAQUE (15/09/2026, Junior: "o carimbo de data de
    Finalização deve ser feito sempre que o status da OS for alterado para
@@ -25354,12 +25390,12 @@ function _statusCelulaOS(o, extra) {
           + ' · vale até a próxima etapa ser marcada no checklist'
         : ' · vem do checklist da folha (a etapa marcada por último)');
   if (!podeMudarStatusOS()) {
-    return `<span class="${cls} ro" data-st="${s.k}" title="${esc(dica)}">${s.icone} ${esc(rot(s))}</span>`;
+    return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rot(s))}</span>`;
   }
-  return `<select class="${cls}" data-st="${s.k}" title="${esc(dica)}"`
+  return `<select class="${cls}" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
-    + STATUS_OS.map(x => `<option value="${x.k}"${x.k === s.k ? ' selected' : ''}>`
-        + `${x.icone} ${esc(rot(x))}</option>`).join('')
+    + STATUS_OS.map(x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
+        + `${STATUS_PONTO} ${esc(rot(x))}</option>`).join('')
     + `</select>`;
 }
 
@@ -25765,8 +25801,8 @@ function _filtroStatusListaOS(base, id) {
   const opcoes = [{ k: '', rotulo: `Todos os status (${(base || []).length})` }]
     .concat(STATUS_OS
       .filter(x => (conta[x.k] || 0) > 0 || x.k === escolhido)
-      .map(x => ({ k: x.k, rotulo: `${x.icone} ${x.rotulo} (${conta[x.k] || 0})` })));
-  const novo = opcoes.map(x => `<option value="${x.k}"${x.k === escolhido ? ' selected' : ''}>`
+      .map(x => ({ k: x.k, cor: x.cor, rotulo: `${STATUS_PONTO} ${x.rotulo} (${conta[x.k] || 0})` })));
+  const novo = opcoes.map(x => `<option value="${x.k}"${x.cor ? ` style="color:${x.cor};"` : ''}${x.k === escolhido ? ' selected' : ''}>`
     + `${esc(x.rotulo)}</option>`).join('');
   // Só toca no DOM quando algo mudou: reescrever o <select> a cada tecla da
   // busca fecharia a listinha aberta e faria o campo piscar.
@@ -27594,13 +27630,13 @@ function renderAvisos() {
       let icone, titulo, cabec, corpo = '', abrir;
       if (e.tipo === 'status') {
         const s = STATUS_OS.find(x => x.k === e.status) || STATUS_OS[0];
-        icone = s.icone;
+        icone = _statusPingo(s);
         titulo = `OS ${esc(e.os)}`;
         cabec = `${esc(meu ? 'você' : quem)} marcou como <b>${esc(s.rotulo)}</b>`;
         abrir = `fecharAvisos(); verOS('${esc(e.osId)}')`;
       } else if (e.tipo === 'status-lote') {
         const s = STATUS_OS.find(x => x.k === e.status) || STATUS_OS[0];
-        icone = s.icone;
+        icone = _statusPingo(s);
         titulo = `${e.n} OS`;
         cabec = `marcadas como <b>${esc(s.rotulo)}</b>${porQuem}`;
         corpo = `<div class="aviso-txt">${esc(_avisosListaOSs(e.oss))}</div>`;

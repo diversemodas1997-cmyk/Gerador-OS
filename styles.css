@@ -2437,19 +2437,9 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .table .col-actions.row-actions .os-status.ro { cursor: default; }
 /* A FILA DA PRODUCAO tem uma cor por etapa desde 15/09/2026, quando o status
    passou a dizer ONDE a OS esta (Cortando, Costurando | Sao Carlos...) em vez
-   de so que ela anda. As cores acompanham o caminho -- o preparo em terra, o
-   enfesto e o corte em amarelo/laranja (a mesa), as costuras em azul, o estoque
-   em verde -- e os dois de fora da fila ficam com o vermelho de travado e o
-   verde de pronto, que e como a casa ja os lia. */
-.table .col-actions.row-actions .os-status[data-st="materia-prima"]  { background: #f3ece2; border-color: #d7c3a5; }
-.table .col-actions.row-actions .os-status[data-st="enfestando"]     { background: #fdf6d8; border-color: #e3ce7a; }
-.table .col-actions.row-actions .os-status[data-st="cortando"]       { background: #fdeede; border-color: #e6bb8a; }
-.table .col-actions.row-actions .os-status[data-st="ensacado"]       { background: #f1e8f8; border-color: #c4a9de; }
-.table .col-actions.row-actions .os-status[data-st="costurando-sc"]  { background: #e7f0ff; border-color: #9dbdf0; }
-.table .col-actions.row-actions .os-status[data-st="costurando"]     { background: #e3f1f6; border-color: #8fc2d4; }
-.table .col-actions.row-actions .os-status[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
-.table .col-actions.row-actions .os-status[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
-.table .col-actions.row-actions .os-status[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
+   de so que ela anda. O fundo e a borda de cada uma vem INLINE, de STATUS_OS
+   (ver _statusEstilo): desde 17/09/2026 e uma cor por status, uma so lista, a
+   mesma que pinta o pingo redondo do icone. Aqui ficou so a caixa. */
 /* O MESMO STATUS, no cabecalho da janela da folha de OS. Ali ele nao divide
    coluna com nada, entao ganha o tamanho dos botoes ao lado (mesma altura,
    mesma fonte) em vez dos 11px apertados da tabela. As cores dos quatro
@@ -2457,6 +2447,7 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 .page-header .actions .os-status.folha {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   padding: 8px 12px;
   font-family: inherit;
   font-size: 13px;
@@ -2469,15 +2460,25 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   cursor: pointer;
 }
 .page-header .actions .os-status.folha.ro { cursor: default; }
-.page-header .actions .os-status.folha[data-st="materia-prima"]  { background: #f3ece2; border-color: #d7c3a5; }
-.page-header .actions .os-status.folha[data-st="enfestando"]     { background: #fdf6d8; border-color: #e3ce7a; }
-.page-header .actions .os-status.folha[data-st="cortando"]       { background: #fdeede; border-color: #e6bb8a; }
-.page-header .actions .os-status.folha[data-st="ensacado"]       { background: #f1e8f8; border-color: #c4a9de; }
-.page-header .actions .os-status.folha[data-st="costurando-sc"]  { background: #e7f0ff; border-color: #9dbdf0; }
-.page-header .actions .os-status.folha[data-st="costurando"]     { background: #e3f1f6; border-color: #8fc2d4; }
-.page-header .actions .os-status.folha[data-st="fios"]           { background: #e8eef7; border-color: #a9bcd8; }
-.page-header .actions .os-status.folha[data-st="estoque"]        { background: var(--ok-bg); border-color: #9c9; }
-.page-header .actions .os-status.folha[data-st="parado"]     { background: var(--alert-bg); border-color: #eaa; }
+/* As cores desta caixa tambem vem inline, da tabela STATUS_OS. */
+
+/* O PINGO REDONDO DO STATUS. Uma forma so em toda a casa -- a lista de OS, a
+   folha, o painel do Inicio e o sino dos avisos --, e a cor, que vem inline de
+   STATUS_OS, e quem diz qual status e. Como e desenhado e nao escrito, ele tem
+   o mesmo tamanho em qualquer fonte, coisa que o emoji nao tinha. */
+.st-pingo {
+  display: inline-block;
+  width: .62em;
+  height: .62em;
+  border-radius: 50%;
+  vertical-align: middle;
+  /* a sombra por dentro fecha o contorno dos tons mais claros, que no fundo
+     branco da lista sumiriam pela borda */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+}
+/* No sino dos avisos ele divide a coluna com os emojis das outras linhas (o
+   papel da OS, a etiqueta, o caminhao): ali vai no tamanho deles. */
+.aviso-icone .st-pingo { width: 11px; height: 11px; }
 
 /* O rotulo mais longo nao cabe na coluna junto com a seta do seletor; a lista
    de OS ganha alguns pixels a mais so nessa coluna. Em 15/09/2026 o status

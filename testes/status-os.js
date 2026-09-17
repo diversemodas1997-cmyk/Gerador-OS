@@ -103,6 +103,9 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
   ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
   ${recorte('function _statusOS', 'a leitura do status')}
+  ${constante('STATUS_PONTO')}
+  ${recorte('function _statusPingo', 'o pingo do status')}
+  ${recorte('function _statusEstilo', 'o fundo da caixa do status')}
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
   ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
@@ -366,13 +369,28 @@ console.log('-- o que fica gravado --');
   ok('20b. e o rotulo da lista vai ABREVIADO, que e o que cabe na coluna',
      /Costurando \| SC</.test(cel) && !/Costurando \| São Carlos</.test(cel), cel);
   ok('21. com o estado gravado ja escolhido',
-     /value="parado" selected/.test(cel), cel);
+     /value="parado"[^>]* selected/.test(cel), cel);
   ok('22. e a dica diz quem mexeu por ultimo',
      /enfesto\.corte/.test(cel) && /Parado/.test(cel), cel);
   cel = ctxDe('usuario', 'costura@diverse.local', true, [osParado]).api._statusCelulaOS(osParado);
   ok('23. quem so olha ve etiqueta, sem seletor',
      /^<span class="os-status ro"/.test(cel) && !/<select/.test(cel), cel);
-  ok('24. e o icone do estado aparece nos dois casos', cel.includes('\u{1F534}'), cel);
+  /* O ICONE E UM PINGO REDONDO NA COR DO STATUS (17/09/2026). Era um emoji, e
+     o emoji escolhia a forma junto com a cor -- losango, quadrado e circulo em
+     tres azuis parecidos. Aqui se prova o que mudou: a etiqueta traz o pingo
+     pintado com a cor que a TABELA da para 'parado', e dentro do seletor, onde
+     so cabe texto, vai o mesmo circulo em caractere, com a cor na opcao. */
+  const tabela = ctxDe('admin', 'a@b', true, []).api.STATUS_OS;
+  const corParado = tabela.find(x => x.k === 'parado').cor;
+  ok('24. a etiqueta traz o pingo redondo na cor do status',
+     cel.includes('class="st-pingo"') && cel.includes('background:' + corParado), cel);
+  const celSel = ctxDe('admin', 'admin@diverse.local', true, [osParado]).api._statusCelulaOS(osParado);
+  ok('24b. e o seletor leva o mesmo circulo, com uma cor por opcao',
+     (celSel.match(/●/g) || []).length === tabela.length
+     && celSel.includes('style="color:' + corParado + ';"'), celSel);
+  ok('24c. e as cores da tabela nao se repetem',
+     new Set(tabela.map(x => x.cor)).size === tabela.length,
+     tabela.map(x => x.k + '=' + x.cor).join(' '));
 
   console.log('');
   console.log('-- a data de finalizacao (coluna Data, segunda linha) --');
@@ -960,6 +978,7 @@ console.log('-- o que fica gravado --');
       ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
       ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
       ${recorte('function _statusOS', 'a leitura do status')}
+      ${constante('STATUS_PONTO')}
       ${recorte('function _filtroStatusListaOS', 'o filtro por status')}
       return { _filtroStatusListaOS };
     `)(ctx);
@@ -988,7 +1007,7 @@ console.log('-- o que fica gravado --');
   f = comSelect('estoque', osDoFiltro);
   ok('30. o escolhido volta como chave e continua marcado',
      f.api._filtroStatusListaOS(osDoFiltro) === 'estoque'
-     && /value="estoque" selected/.test(f.sel.innerHTML), f.sel.innerHTML);
+     && /value="estoque"[^>]* selected/.test(f.sel.innerHTML), f.sel.innerHTML);
 
   console.log('');
   console.log('-- o status mora em DOIS lugares, e monta num so --');
