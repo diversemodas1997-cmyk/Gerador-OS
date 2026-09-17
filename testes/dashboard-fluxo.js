@@ -214,12 +214,23 @@ confere('Costura depois de São Carlos: Costurando · São Carlos',
                      { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 }), [])),
   { costurandoSC: 200, recSC: 200 });
 
-// A volta cai na Retirada de fios, e o cartão de Recebido em Descalvado é a
-// fatia dela que chegou pela caixa de recebimento.
-confere('Recebido em Descalvado: Retirada de fios E o cartão de recebido',
+/* A VOLTA CAI NO ESTOQUE COM FIO, E NAO NA RETIRADA (17/09/2026, Junior:
+   "insira ... Estoque com fio, derivado das OS que sao preenchidas o check box
+   Recebido em Descalvado. Esse volume migra para Retirando fio quando essa
+   check box e preenchida").
+
+   Ate aqui a caixa de chegada caia direto na Retirada de fios: a OS que tinha
+   acabado de descer do caminhao aparecia como se ja estivesse na mesa sendo
+   limpa, e o volume PARADO se somava ao volume EM TRABALHO. Agora sao dois
+   campos, como no ensaque e nas costuras — a caixa de chegada acende onde a
+   peca espera, a caixa do trabalho acende o trabalho.
+
+   O cartao de Recebido em Descalvado segue sendo o carimbo de passagem, e por
+   isso continua marcando 200 junto com o campo. */
+confere('Recebido em Descalvado: Estoque com fio E o cartão de recebido',
   dash(estado(osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true, 'Recebido em Descalvado': true },
                      { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3, 'Recebido em Descalvado': 4 }), [])),
-  { fios: 200, recDesc: 200, recSC: 200 });
+  { estoqueFio: 200, recDesc: 200, recSC: 200 });
 
 // Os dois recebimentos continuam carimbados: a OS passou pelos dois.
 confere('Retirada de fios marcada por último: fios, e os dois recebidos carimbados',

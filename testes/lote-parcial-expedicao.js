@@ -239,12 +239,18 @@ confere('a ida não mexe na OS que já está em São Carlos',
   saldos(estado(emSC(), [cargaIda()])),
   { costurandoSC: 200 });
 
-confere('a volta acaba em "Recebido em Descalvado": 200 pç na Retirada de fios',
+/* CHEGAR NAO E LIMPAR (17/09/2026). A caixa "Recebido em Descalvado" passou a
+   acender o campo ESTOQUE COM FIO — a peca voltou costurada, com fio solto, e
+   espera a mesa. So a caixa "Retirada de fios" poe a OS no campo do trabalho.
+   O que este teste guarda continua sendo o mesmo: chegando, a carga de volta
+   nao segura mais nada, e o lote inteiro aparece de uma vez no campo de
+   destino. Mudou qual e o campo de destino. */
+confere('a volta acaba em "Recebido em Descalvado": 200 pç no Estoque com fio',
   saldos(estado(osU({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true,
     'Recebido em Descalvado': true },
     { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3, 'Recebido em Descalvado': 4 }),
     [cargaVolta()])),
-  { fios: 200 });
+  { estoqueFio: 200 });
 
 /* ---------- 4. os campos que NÃO despacham ---------- */
 

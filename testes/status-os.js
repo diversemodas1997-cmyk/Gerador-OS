@@ -230,9 +230,12 @@ console.log('-- o que fica gravado --');
 // AS DUAS — "Costura CM.LISA | Descalvado" e "| São Carlos" —, e quem está no
 // chão marca a que fez. A "Costura" pura é a etapa das OS antigas, de antes de
 // a segunda unidade existir, e conta como Descalvado.
+  // "Recebido em Descalvado" entrou na lista em 17/09/2026, quando ela passou a
+  // acender um status proprio (Estoque com fio). Sem estar aqui, a caixa era
+  // ignorada pelo `leitura` e os testes dela passavam sem provar nada.
   const FLUXO = ['Preparo de matéria-prima', 'Enfesto', 'Corte',
                  'Recebido em São Carlos', 'Costura', 'Costura CM.LISA | São Carlos',
-                 'Retirada de fios', 'Ensaque', 'Estoque'];
+                 'Recebido em Descalvado', 'Retirada de fios', 'Ensaque', 'Estoque'];
   const leitura = (check, seq) => {
     const o = osCheck(FLUXO, check, seq);
     return ctxDe('admin', 'admin@diverse.local', true, [o]).api._statusOS(o);
@@ -341,6 +344,32 @@ console.log('-- o que fica gravado --');
      leitura({ 'Recebido em São Carlos': true, 'Ensaque': true },
              { 'Recebido em São Carlos': 4, 'Ensaque': 9 }));
 
+  /* CHEGAR NAO E LIMPAR (17/09/2026, Junior: "Estoque com fio, derivado das OS
+     que sao preenchidas o check box Recebido em Descalvado. Esse volume migra
+     para Retirando fio quando essa check box e preenchida").
+
+     A peca volta de Sao Carlos costurada, com os fios soltos, e FICA parada
+     esperando a mesa de limpeza. Ate aqui "Recebido em Descalvado" acendia
+     direto o "Retirando fio": a OS que tinha acabado de descer do caminhao
+     aparecia como se ja estivesse sendo limpa, e o volume parado se somava ao
+     volume em trabalho. */
+  ok('12y. "Recebido em Descalvado" acende Estoque com fio',
+     leitura({ 'Corte': true, 'Recebido em Descalvado': true },
+             { 'Corte': 3, 'Recebido em Descalvado': 8 }) === 'estoque-fio',
+     leitura({ 'Corte': true, 'Recebido em Descalvado': true },
+             { 'Corte': 3, 'Recebido em Descalvado': 8 }));
+  ok('12z. e a caixa da RETIRADA e que move para Retirando fio',
+     leitura({ 'Recebido em Descalvado': true, 'Retirada de fios': true },
+             { 'Recebido em Descalvado': 8, 'Retirada de fios': 9 }) === 'fios',
+     leitura({ 'Recebido em Descalvado': true, 'Retirada de fios': true },
+             { 'Recebido em Descalvado': 8, 'Retirada de fios': 9 }));
+  /* O `re` da retirada nao pode voltar a pegar a chegada: era
+     /fios|recebido em descalvado/i, e e essa volta que este teste barra. */
+  const reFios = ctxDe('admin', 'a@b', true, []).api.STATUS_OS.find(x => x.k === 'fios').re;
+  ok('12z-b. o `re` da retirada ignora a caixa de chegada',
+     reFios.test('Retirada de fios') && !reFios.test('Recebido em Descalvado'),
+     String(reFios));
+
   // A ORDEM DO SELETOR e a que o Junior escreveu, e nao a do fluxo: "Ensacado"
   // vem antes das costuras, e os dois de fora da fila (Parado e Cancelado, este
   // desde 17/09/2026) vem antes de "Estoque". E o que a pessoa le no seletor,
@@ -350,7 +379,8 @@ console.log('-- o que fica gravado --');
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
      ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
-      'Costurando | Descalvado', 'Costurando | São Carlos', 'Retirando fio',
+      'Costurando | Descalvado', 'Costurando | São Carlos',
+      'Estoque com fio', 'Retirando fio',
       'Parado', 'Cancelado', 'Estoque'].join(' / '),
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / '));
 

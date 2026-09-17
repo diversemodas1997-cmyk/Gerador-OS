@@ -131,6 +131,11 @@
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
         <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
+        <!-- ESTOQUE COM FIO fica aqui, e não em Operações, porque é peça
+             PARADA: voltou de São Carlos costurada e espera a mesa de limpeza,
+             do mesmo jeito que o corte ensacado espera a costura. A Retirada de
+             fios, que é o trabalho, continua em Operações. -->
+        <a class="nav-btn" href="#estoque-fio" data-page="estoque-fio" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque com fio</a>
       </div>
     </div>
 
@@ -418,6 +423,20 @@
         </div>
       </div>
       <div id="costurando-painel"></div>
+    </section>
+
+    <!-- ESTOQUE COM FIO: o que voltou de São Carlos e ainda não foi limpo. -->
+    <section class="page hidden" data-page="estoque-fio">
+      <div class="page-header">
+        <div>
+          <h1>Estoque com fio</h1>
+          <div class="desc">O que voltou da costura e ainda tem fio solto, esperando a mesa de limpeza. A OS entra aqui quando <b>Recebido em Descalvado</b> é marcada no checklist, e sai para <b>Retirada de fios</b> quando essa caixa é marcada.</div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="estoque-fio-painel"></div>
     </section>
 
     <section class="page hidden" data-page="transito-ida">
@@ -1552,6 +1571,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-17q"></script>
+<script src="app.js?v=2026-09-17r"></script>
 </body>
 </html>

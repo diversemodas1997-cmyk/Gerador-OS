@@ -3978,6 +3978,7 @@ function goto(page) {
   if (page === 'corte-sc') renderFasePorId('corteSC');
   if (page === 'costurando-sc') renderFasePorId('costurandoSC');
   if (page === 'transito-volta') renderFasePorId('transitoVolta');
+  if (page === 'estoque-fio') renderFasePorId('estoqueFio');
   if (page === 'fios') renderFasePorId('fios');
   if (page === 'expedicao') { renderFasePorId('expedicao'); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
@@ -8053,9 +8054,17 @@ const FASES_ESTOQUE = [
     vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui quando a caixa <b>Expedição São Carlos X Desc.</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>volta</b>), e sai quando <b>Recebido em Descalvado</b> é marcada.',
     cond: o => !osEtapaMarcada(o, ETAPA_DESC_RE),
     entrada: { tipo: 'etapa', re: /expedi\S*\s+s[ãa]o\s+carlos/i, label: 'Expedição São Carlos X Desc.' } },   // \S: ver a de ida
+  /* O QUE VOLTOU DE SÃO CARLOS E AINDA TEM FIO. Peça parada, esperando a mesa
+     de limpeza — entra pela caixa "Recebido em Descalvado" e sai quando
+     "Retirada de fios" é marcada. Ver o status `estoque-fio`, que é quem
+     manda aqui. */
+  { id: 'estoqueFio',   titulo: 'Estoque com fio',                                               painelId: 'estoque-fio-painel',    semContagem: true, soOS: true,
+    vazioMsg: 'Nada esperando limpeza agora. A OS entra aqui quando <b>Recebido em Descalvado</b> é marcada no checklist, e sai quando <b>Retirada de fios</b> é marcada.',
+    cond: o => _statusOS(o) === 'estoque-fio',
+    entrada: { tipo: 'etapa', re: /recebido em descalvado/i, label: 'status Estoque com fio' } },
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'fios',
-    entrada: { tipo: 'etapa', re: /fios|recebido em descalvado/i, label: 'status Retirando fio' } },
+    entrada: { tipo: 'etapa', re: /fios/i, label: 'status Retirando fio' } },
   /* EXPEDIÇÃO É O FIM DO FLUXO, e não a viagem entre as unidades. A `re` casa só
      a etapa "Expedição" PURA: as duas direcionais ("Expedição Desc X São
      Carlos" e "Expedição São Carlos X Desc.") são viagem interna e pertencem
@@ -18393,7 +18402,7 @@ function _dashCartoesDaOS(o, opts) {
 function _dashChavePorIdx() {
   const m = new Map();
   [['corte', 'corte'], ['corteSC', 'corteSC'], ['costurando', 'costurando'],
-   ['costurandoSC', 'costurandoSC'], ['fios', 'fios']].forEach(([faseId, k]) => {
+   ['costurandoSC', 'costurandoSC'], ['estoqueFio', 'estoqueFio'], ['fios', 'fios']].forEach(([faseId, k]) => {
     const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
     if (i >= 0) m.set(i, k);
   });
@@ -18412,7 +18421,7 @@ function _dashFluxoDados() {
     costurando: zero(), costurandoSC: zero(),
     idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
     recDesc: zero(), recSC: zero(),
-    fios: zero(), estoque: zero()
+    estoqueFio: zero(), fios: zero(), estoque: zero()
   };
   const somar = (k, pecas, o) => {
     if (!(pecas > 0)) return;
@@ -18745,7 +18754,12 @@ function _dashFluxoPassos(d) {
       { k: 'recSC', nome: 'Recebido em São Carlos', v: d.recSC, rota: 'corte-sc',
         dica: 'Toda OS ainda em produção com a caixa "Recebido em São Carlos" marcada. É um carimbo de passagem: a mesma OS também conta no campo em que está agora.' },
     ] },
+    /* O QUE VOLTOU E AINDA TEM FIO fica ao lado de quem o limpa: sao dois
+       momentos da mesma peca, e ler os dois juntos responde a pergunta do chao
+       ("quanto tem para limpar, e quanto ja esta na mesa?"). */
     { nome: 'Retirada de fios', cards: [
+      { k: 'estoqueFio', nome: 'Estoque com fio', v: d.estoqueFio, rota: 'estoque-fio',
+        dica: 'O que voltou da costura e ainda tem fio solto, esperando a mesa. Entra pela caixa "Recebido em Descalvado" e sai quando "Retirada de fios" e marcada.' },
       { k: 'fios', nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
     ] },
     { nome: 'Estoque', cards: [
@@ -25496,12 +25510,31 @@ const STATUS_OS = [
      dentro. */
   { k: 'costurando-sc',   cor: '#0d94a6', bg: '#ddf1f4', bd: '#86c8d4', rotulo: 'Costurando | São Carlos',  curto: 'Costurando | SC',    ordem: 4, baixa: true,
     re: /costura.*s[ãa]o\s+carlos/i },
-  /* "Recebido em Descalvado" acende este status junto com a retirada de fios:
-     o que volta de São Carlos cai aqui, e sem isso a OS voltava da outra
-     unidade e a lista continuava dizendo "Costurando | São Carlos". É a mesma
-     regra que o campo do fluxo já usava — agora as duas concordam. */
+  /* ESTOQUE COM FIO: O QUE VOLTOU E AINDA NÃO FOI LIMPO (17/09/2026, Junior:
+     "insira no campo Estoque na barra lateral, Estoque com fio, derivado das OS
+     que são preenchidas o check box Recebido em Descalvado. Esse volume migra
+     para Retirando fio quando essa check box é preenchida").
+
+     São dois momentos, e eles estavam num só. A peça volta de São Carlos
+     costurada, com os fios soltos, e FICA — parada, esperando alguém limpar.
+     Limpar é outra coisa, e acontece depois. Até aqui "Recebido em Descalvado"
+     acendia direto o "Retirando fio": a OS que tinha acabado de descer do
+     caminhão aparecia como se já estivesse na mesa, sendo limpa. O volume
+     parado e o volume em trabalho eram o mesmo número.
+
+     A DIVISÃO É A MESMA DAS OUTRAS: a caixa de CHEGADA acende o campo onde a
+     peça espera, e a caixa do TRABALHO acende o trabalho. É o desenho do
+     ensaque (Ensacado | Descalvado e | São Carlos) e o das costuras.
+
+     E por isso o campo mora em ESTOQUES, e não em Operações: o que está com
+     fio é peça PARADA, como o corte ensacado esperando a costura. Retirada de
+     fios continua em Operações, porque ali há gente trabalhando. */
+  { k: 'estoque-fio',     cor: '#6f8f1f', bg: '#eff4de', bd: '#bcc98c', rotulo: 'Estoque com fio',          ordem: 5, baixa: true,
+    re: /recebido em descalvado/i },
+  /* A RETIRADA DE FIOS FICOU SÓ COM A CAIXA DELA. O `re` era
+     /fios|recebido em descalvado/i — a chegada e a limpeza no mesmo status. */
   { k: 'fios',            cor: '#7b3fb5', bg: '#eee6f8', bd: '#c0a6e0', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
-    re: /fios|recebido em descalvado/i },
+    re: /fios/i },
   // Fora da fila: não nascem do checklist, só do carimbo.
   { k: 'parado',          cor: '#d92b2b', bg: '#fbe6e6', bd: '#eeaaaa', rotulo: 'Parado',                                                baixa: true },
   /* CANCELADO (17/09/2026, Junior: "crie um novo status com nome Cancelado").
