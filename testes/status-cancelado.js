@@ -103,7 +103,7 @@ ok('12. e o texto e CANCELADO', /<span>CANCELADO<\/span>/.test(src), 'texto dife
 /* O PDF sai por html2canvas, que fotografa a TELA. Um carimbo que morasse
    dentro de @media print nao apareceria no PDF que fica na pasta. */
 const iRegra = css.indexOf('.sheet-carimbo-cancelado {');
-const iPrint = css.indexOf('@media print', iRegra);
+const iPrint = css.indexOf('@media print', css.indexOf('.sheet-carimbo-cancelado span'));
 ok('13. a faixa e estilo de TELA, nao de @media print (senao sumiria do PDF)',
    iRegra > 0 && css.lastIndexOf('@media print', iRegra) < css.lastIndexOf('}', iRegra) - 0
    && /position:\s*absolute/.test(css.slice(iRegra, iRegra + 400)),
@@ -114,13 +114,36 @@ ok('14. cruza na diagonal REAL da A4 (atan 297/210 = 54,7 graus)',
 ok('15. passa das duas pontas do papel',
    /width:\s*1[5-9]\d%/.test(css.slice(iRegra, iRegra + 400)),
    css.slice(iRegra, iRegra + 400));
-ok('16. e o papel recorta o que sobra',
-   /\.sheet\.folha-cancelada\s*\{[^}]*overflow:\s*hidden/.test(css)
-   && /\.sheet\.folha-cancelada\s*\{[^}]*position:\s*relative/.test(css),
-   'faltou position/overflow na .sheet.folha-cancelada');
+/* QUEM RECORTA E A AREA, E NAO A FOLHA (17/09/2026, Junior: "a folha de OS
+   diminui o tamanho quando recebe a faixa cancelado").
+
+   `overflow: hidden` na .sheet escondia o transbordo da faixa, mas nao o tirava
+   do scrollWidth/scrollHeight — e e deles que ajustarImpressaoParaA4 tira a
+   escala com que a folha entra no papel. Medido no Chrome, a mesma folha:
+     sem carimbo              210,1 x 297,1mm  ->  escala 0,9995
+     com o carimbo na .sheet  234,2 x 321,2mm  ->  escala 0,8967
+     com a area que recorta   210,1 x 297,1mm  ->  escala 0,9995
+   A folha nao diminuia: ela era encaixada na A4 como se fosse 24mm maior.
+
+   Entao a .sheet NAO pode levar overflow, e a faixa tem de morar dentro de uma
+   area do tamanho exato dela. Estes dois testes sao um par: um exige a area, o
+   outro proibe o atalho que parecia funcionar. */
+const iArea = css.indexOf('.sheet-carimbo-area {');
+ok('16. quem recorta e uma area do tamanho da folha',
+   iArea > 0 && /overflow:\s*hidden/.test(css.slice(iArea, iArea + 300))
+   && /top:\s*0;\s*right:\s*0;\s*bottom:\s*0;\s*left:\s*0/.test(css.slice(iArea, iArea + 300)),
+   css.slice(iArea, iArea + 300));
+ok('16b. e a .sheet NAO leva overflow: e isso que a fazia encolher na impressao',
+   /\.sheet\.folha-cancelada\s*\{[^}]*position:\s*relative[^}]*\}/.test(css)
+   && !/\.sheet\.folha-cancelada\s*\{[^}]*overflow/.test(css),
+   (css.match(/\.sheet\.folha-cancelada\s*\{[^}]*\}/) || [''])[0]);
+ok('16c. e a faixa vai DENTRO da area, nao solta na folha',
+   /sheet-carimbo-area[^<]*>\s*'\s*\+\s*'<div class="sheet-carimbo-cancelado"/.test(src)
+   || /<div class="sheet-carimbo-area"[\s\S]{0,120}sheet-carimbo-cancelado/.test(src),
+   'a faixa nao esta dentro da area');
 ok('17. nao rouba o clique do checklist que esta embaixo',
-   /pointer-events:\s*none/.test(css.slice(iRegra, iRegra + 500)),
-   css.slice(iRegra, iRegra + 500));
+   /pointer-events:\s*none/.test(css.slice(iArea, iArea + 300)),
+   css.slice(iArea, iArea + 300));
 ok('18. e sai colorida tambem no papel', iPrint > iRegra
    && /print-color-adjust:\s*exact/.test(css.slice(iPrint, iPrint + 300)),
    'sem print-color-adjust');

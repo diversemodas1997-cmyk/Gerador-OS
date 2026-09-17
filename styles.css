@@ -1716,11 +1716,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 
 /* A FOLHA DE UMA OS CANCELADA, carimbada de ponta a ponta.
 
-   POSITION E OVERFLOW SO AQUI, e nao na .sheet de sempre: a faixa e absoluta e
-   passa das duas pontas do papel (a diagonal de uma A4 e 364mm, mais larga que
-   os 210mm da folha), entao o papel precisa recortar o que sobra. Ligar isso em
-   toda folha seria mexer numa geometria que ja esta medida ao milimetro.
-
    O ANGULO E O DA DIAGONAL DE VERDADE: atan(297/210) = 54,7 graus. Nao e um
    angulo escolhido por gosto — e o que faz a faixa sair de um canto e chegar no
    outro, que foi o pedido.
@@ -1728,8 +1723,41 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
    E ela e TRANSLUCIDA de proposito. A folha cancelada continua sendo consultada
    (o que ja foi cortado, o que ja foi ensacado, quanto de pano saiu): um
    carimbo opaco apagaria justamente a informacao que faz alguem ir buscar a
-   folha de um lote desistido. */
-.sheet.folha-cancelada { position: relative; overflow: hidden; }
+   folha de um lote desistido.
+
+   A AREA QUE RECORTA, e por que ela nao e um `overflow: hidden` na propria
+   .sheet (17/09/2026, Junior: "a folha de OS diminui o tamanho quando recebe a
+   faixa cancelado").
+
+   A faixa passa das duas pontas do papel — a diagonal de uma A4 tem 364mm e a
+   folha, 210. Alguem precisa recortar o que sobra, e a primeira versao pos o
+   `overflow: hidden` na .sheet. Recortava na tela, e mesmo assim a folha saia
+   10% menor na impressao.
+
+   O motivo: `overflow: hidden` esconde o transbordo, mas NAO o tira do
+   scrollWidth/scrollHeight — e e deles que ajustarImpressaoParaA4 tira a escala
+   com que a folha entra no papel. Medido no Chrome, a mesma folha:
+
+     sem carimbo                210,1 x 297,1mm   ->  escala 0,9995
+     com o carimbo na .sheet    234,2 x 321,2mm   ->  escala 0,8967
+     com a area que recorta     210,1 x 297,1mm   ->  escala 0,9995
+
+   Os 24mm a mais em cada lado sao a caixa da faixa girada. A folha nao estava
+   "diminuindo": ela estava sendo encaixada numa A4 como se fosse 24mm maior do
+   que e.
+
+   A area resolve porque ela mesma tem o tamanho exato da folha (as quatro
+   bordas em zero) e leva o `overflow: hidden`: o transbordo da faixa morre
+   dentro dela e nao sobe para a .sheet. A .sheet fica com a geometria que
+   sempre teve — so ganha o `position: relative`, que nao muda tamanho nenhum. */
+.sheet.folha-cancelada { position: relative; }
+.sheet-carimbo-area {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  overflow: hidden;
+  pointer-events: none;   /* a folha continua clicavel: o checklist esta embaixo */
+  z-index: 40;
+}
 .sheet-carimbo-cancelado {
   position: absolute;
   top: 50%;
@@ -1737,8 +1765,6 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   width: 190%;
   transform: translate(-50%, -50%) rotate(-54.7deg);
   transform-origin: center center;
-  pointer-events: none;   /* a folha continua clicavel: o checklist esta embaixo */
-  z-index: 40;
   text-align: center;
   background: rgba(200, 30, 30, .10);
   border-top: 2.5px solid rgba(200, 30, 30, .55);

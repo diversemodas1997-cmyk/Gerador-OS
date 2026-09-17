@@ -25737,7 +25737,12 @@ function renderStatusFolhaOS() {
    É o mesmo desenho que renderPrintSheet escreve: se um dia mudar, muda nos
    dois — daí o HTML estar em _carimboCanceladoHtml. */
 function _carimboCanceladoHtml() {
-  return '<div class="sheet-carimbo-cancelado" aria-hidden="true"><span>CANCELADO</span></div>';
+  // A faixa vai DENTRO de uma área do tamanho exato da folha, que é quem
+  // recorta o que passa das pontas. Sem ela, o transbordo da faixa entrava no
+  // scrollWidth/scrollHeight da folha e a impressão encaixava na A4 uma folha
+  // 24mm maior do que a de verdade — saía 10% menor. Ver .sheet-carimbo-area.
+  return '<div class="sheet-carimbo-area" aria-hidden="true">'
+    + '<div class="sheet-carimbo-cancelado"><span>CANCELADO</span></div></div>';
 }
 
 function _carimboCanceladoNaFolha(o) {
@@ -25745,7 +25750,7 @@ function _carimboCanceladoNaFolha(o) {
   if (!folha) return;
   const cancelada = !!o && _statusOS(o) === 'cancelado';
   folha.classList.toggle('folha-cancelada', cancelada);
-  const jaTem = folha.querySelector(':scope > .sheet-carimbo-cancelado');
+  const jaTem = folha.querySelector(':scope > .sheet-carimbo-area');
   if (cancelada && !jaTem) folha.insertAdjacentHTML('afterbegin', _carimboCanceladoHtml());
   else if (!cancelada && jaTem) jaTem.remove();
 }
