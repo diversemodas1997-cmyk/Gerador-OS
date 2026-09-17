@@ -18914,23 +18914,75 @@ function _dashEntradasPorStatus(periodos) {
   return { por, foraDoPeriodo };
 }
 
+/* OS CINCO DIAS DA SEMANA CORRENTE (17/09/2026, Junior: "deve mostrar apenas os
+   dias correspondentes à semana com início na segunda-feira e fim na
+   sexta-feira"). Uma coluna por dia útil da semana em que estamos — segunda a
+   sexta, sempre as cinco, mesmo as que ainda não chegaram (marcadas como
+   futuras). No sábado e no domingo vale a semana que acabou de terminar, que é
+   a que a fábrica trabalhou. */
+function _dashDiasDaSemana(hoje) {
+  const p2 = n => String(n).padStart(2, '0');
+  const dm = d => p2(d.getDate()) + '/' + p2(d.getMonth() + 1);
+  const longos = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+  const seg = new Date(hoje);
+  seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7));   // volta até a segunda
+  const out = [];
+  for (let i = 0; i < 5; i++) {
+    const de = new Date(seg); de.setDate(seg.getDate() + i);
+    const ate = new Date(de); ate.setDate(de.getDate() + 1);
+    out.push({ de: de.getTime(), ate: ate.getTime(),
+      rot: _DASH_DIAS_SEM[de.getDay()], sub: dm(de),
+      nome: longos[de.getDay()] + ', ' + dm(de),
+      atual: de.getTime() === hoje.getTime(),
+      futuro: de.getTime() > hoje.getTime() });
+  }
+  return out;
+}
+
+/* O DIA EM DUAS METADES (17/09/2026, Junior: "no dia, mostre o andamento da
+   produção em duas metades do dia: manhã e tarde"). A manhã vai de 00:00 a
+   12:00 e a tarde de 12:00 à virada — o corte é o meio-dia, que é onde a
+   fábrica para para almoçar. A metade que ainda não chegou vai marcada como
+   futura, e a que está correndo, como em curso. */
+function _dashMetadesDoDia(hoje) {
+  const p2 = n => String(n).padStart(2, '0');
+  const dm = d => p2(d.getDate()) + '/' + p2(d.getMonth() + 1);
+  const meio = new Date(hoje); meio.setHours(12, 0, 0, 0);
+  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
+  const agora = Date.now();
+  return [
+    { de: hoje.getTime(), ate: meio.getTime(), rot: 'manhã', sub: 'até 12h',
+      nome: 'hoje de manhã, ' + dm(hoje) + ', das 00:00 às 12:00',
+      atual: agora < meio.getTime(), futuro: false },
+    { de: meio.getTime(), ate: amanha.getTime(), rot: 'tarde', sub: 'das 12h',
+      nome: 'hoje à tarde, ' + dm(hoje) + ', das 12:00 às 24:00',
+      atual: agora >= meio.getTime(), futuro: agora < meio.getTime() }
+  ];
+}
+
 function _dashPorStatusHtml(escala) {
   /* NO DIA, SÓ HOJE (16/09/2026, Junior: "o volume de OS por status deve mostrar
-     apenas o dia de hoje quando o filtro dia está selecionado"). Os gráficos
-     seguem com os 10 dias úteis; aqui é uma coluna só, de hoje 00:00 até agora —
-     mesmo num sábado ou domingo, porque hoje é hoje. */
+     apenas o dia de hoje quando o filtro dia está selecionado"), em duas
+     metades: manhã e tarde (_dashMetadesDoDia). Os gráficos seguem com os 10
+     dias úteis; aqui é só hoje, mesmo num sábado ou domingo, porque hoje é hoje.
+     NA SEMANA, os cinco dias dela (_dashDiasDaSemana), não quatro semanas. */
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1);
   const p2 = n => String(n).padStart(2, '0');
-  const { periodos } = escala === 'dia'
-    ? { periodos: [{ de: hoje.getTime(), ate: amanha.getTime(), rot: 'hoje ' + p2(hoje.getDate()) + '/' + p2(hoje.getMonth() + 1),
-        nome: 'hoje, ' + p2(hoje.getDate()) + '/' + p2(hoje.getMonth() + 1) }] }
-    : _dashPeriodos(Date.now(), escala || 'semana');
+  const dm = d => p2(d.getDate()) + '/' + p2(d.getMonth() + 1);
+  let periodos;
+  if (escala === 'dia') {
+    periodos = _dashMetadesDoDia(hoje);
+  } else if (escala === 'semana') {
+    periodos = _dashDiasDaSemana(hoje);
+  } else {
+    periodos = _dashPeriodos(Date.now(), escala).periodos;
+    periodos[periodos.length - 1].atual = true;
+  }
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const { por, foraDoPeriodo } = _dashEntradasPorStatus(periodos);
   const maxEnt = Math.max(1, ...[...por.values()].flat().map(c => c.produtos));
   const nPer = periodos.length;
-  const cab = periodos.map((w, i) => `<span class="dash-st-per${i === nPer - 1 ? ' atual' : ''}" title="${esc(w.nome)}">${i === nPer - 1 && escala !== 'dia' ? esc(w.rot) + ' <em>em curso</em>' : esc(w.rot)}</span>`).join('');
+  const cab = periodos.map(w => `<span class="dash-st-per${w.atual ? ' atual' : ''}${w.futuro ? ' futuro' : ''}" title="${esc(w.nome)}">${esc(w.rot)}${w.sub ? `<i>${esc(w.sub)}</i>` : ''}${w.atual ? '<em>em curso</em>' : ''}</span>`).join('');
   const linhas = _dashPorStatus();
   const emProducao = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH);
   const totProd = emProducao.reduce((s, x) => s + x.produtos, 0);
@@ -18944,7 +18996,7 @@ function _dashPorStatusHtml(escala) {
       + (fim ? ' — o acumulado do que já foi terminado, fora da escala das barras' : ` — ${pct(x.produtos)} do que está em produção`)
       + (x.os ? '. Clique para ver estas OS na lista.' : '');
     const entradas = por.get(x.st.k) || [];
-    const celulas = entradas.map((c, i) => `<span class="dash-st-ent${c.produtos ? '' : ' zero'}" title="${esc(`Entraram em ${x.st.rotulo} em ${periodos[i].nome}: ${_dashFmt(c.produtos)} produtos, ${_dashFmt(c.os)} OS`)}">
+    const celulas = entradas.map((c, i) => `<span class="dash-st-ent${c.produtos ? '' : ' zero'}${periodos[i].futuro ? ' futuro' : ''}" title="${esc(periodos[i].futuro ? `${periodos[i].nome} ainda não chegou` : `Entraram em ${x.st.rotulo} em ${periodos[i].nome}: ${_dashFmt(c.produtos)} produtos, ${_dashFmt(c.os)} OS`)}">
           <span class="dash-st-ent-barra" style="width:${(c.produtos / maxEnt * 100).toFixed(1)}%;"></span>
           <b>${c.produtos ? _dashFmt(c.produtos) : '·'}</b>${c.os ? `<em>${c.os} OS</em>` : ''}</span>`).join('');
     return `<div class="dash-st-linha${x.os ? '' : ' vazio'}${fim ? ' fim' : ''}" style="--nper:${nPer};"${x.os ? ` onclick="abrirListaPorStatus('${x.st.k}')" tabindex="0"` : ''} title="${esc(dica)}">
@@ -18959,7 +19011,9 @@ function _dashPorStatusHtml(escala) {
   return `<div class="dash-status">
       <div class="dash-status-cab">
         <b>Volume das OS por status</b>
-        <span>${escala === 'dia' ? 'coluna: produtos que <b>entraram</b> em cada status <b>hoje</b>' : 'colunas: produtos que <b>entraram</b> em cada status, por ' + esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
+        <span>${escala === 'dia' ? 'colunas: produtos que <b>entraram</b> em cada status <b>hoje</b>, de <b>manhã</b> (até 12h) e à <b>tarde</b>'
+          : escala === 'semana' ? 'colunas: produtos que <b>entraram</b> em cada status em cada dia <b>desta semana</b> (segunda a sexta)'
+          : 'colunas: produtos que <b>entraram</b> em cada status, por ' + esc(cfg.rot.toLowerCase())} (o filtro Analisar por) · <b>Agora</b>: o que está em cada status neste momento — em produção, <b>${_dashFmt(totProd)}</b> produtos em <b>${_dashFmt(totOS)}</b> OS · clique num status para ver as OS</span>
       </div>
       <div class="dash-st-linha dash-st-titulos" style="--nper:${nPer};">
         <span class="dash-st-nome">Status</span>${cab}

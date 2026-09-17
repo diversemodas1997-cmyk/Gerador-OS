@@ -1135,10 +1135,12 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-status-cab span b { color: var(--ink-2); }
 .dash-st-linha {
   display: grid;
-  /* status · uma coluna por periodo (entradas) · Agora: barra, produtos, OS, % */
-  grid-template-columns: minmax(150px, 210px) repeat(var(--nper, 4), minmax(56px, 1fr)) minmax(60px, 1fr) 110px 60px 90px;
+  /* status · uma coluna por periodo (entradas) · Agora: barra, produtos, OS, %
+     Os periodos podem ser 5 (os dias da semana): a coluna do nome e o bloco do
+     Agora cedem espaco para que as cinco caibam sem apertar o numero. */
+  grid-template-columns: minmax(126px, 190px) repeat(var(--nper, 4), minmax(50px, 1fr)) minmax(54px, 1fr) 96px 54px 74px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 3px 4px;
   border-radius: 2px;
   font-size: 12px;
@@ -1184,13 +1186,27 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-st-ent.zero b { color: var(--ink-3); font-weight: 400; }
 .dash-st-titulos { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); cursor: default; border-bottom: 1px solid var(--line-2); }
 .dash-st-titulos:hover { background: none !important; }
-.dash-st-per { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dash-st-per em { font-style: normal; text-transform: none; letter-spacing: 0; }
+/* O titulo de cada periodo em ate tres linhas curtas (seg / 14/09 / em curso):
+   empilhado, cinco colunas de dia cabem onde uma so linha nao caberia. */
+.dash-st-per {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dash-st-per i, .dash-st-per em { font-style: normal; text-transform: none; letter-spacing: 0; }
+.dash-st-per i { font-size: 10px; }
+.dash-st-per em { font-size: 9px; }
 .dash-st-per.atual { color: var(--ink-2); font-weight: 600; }
+.dash-st-per.futuro { opacity: .5; }
+.dash-st-ent.futuro { opacity: .45; }
 .dash-st-agora-tit { color: var(--ink-2); font-weight: 600; border-left: 1px solid var(--line-2); padding-left: 6px; }
 @media (max-width: 640px) {
-  .dash-st-linha { grid-template-columns: 1fr repeat(var(--nper, 4), 44px) 70px 50px; }
-  .dash-st-trilho, .dash-st-pct, .dash-st-ent em, .dash-st-agora-tit { display: none; }
+  .dash-st-linha { grid-template-columns: 1fr repeat(var(--nper, 4), 40px) 64px 46px; gap: 6px; }
+  .dash-st-trilho, .dash-st-pct, .dash-st-ent em, .dash-st-agora-tit, .dash-st-per em { display: none; }
 }
 
 /* O SELETOR DO PERIODO DE ANALISE (Dia, Semana, Mes, Ano), no alto do painel. */
