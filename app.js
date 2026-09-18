@@ -9989,7 +9989,17 @@ function irParaOeDia(data) {
 
 /* ---------------- estado da tela ---------------- */
 
-let expPlanoModo = 'semana';
+/* O PLANEJAMENTO ABRE NO DIÁRIO (18/09/2026, Junior).
+
+   Quem abre esta aba está perguntando o que sai HOJE — é a carga que vai ser
+   separada agora. A semana responde outra pergunta, a de planejar, e ela está
+   a um clique no mesmo seletor.
+
+   Isto é só o PADRÃO do arranque: a escolha feita durante o uso continua
+   guardada em sessionStorage (`gos:exp:modo`, logo abaixo) e vale até a janela
+   ser fechada. Quem trocar para semanal no meio do dia não é jogado de volta
+   para o diário a cada visita à tela. */
+let expPlanoModo = 'dia';
 let expPlanoAncora = _expHoje();
 let expAbaAtiva = 'estoque';
 // Em que ORDEM as expedições do período aparecem. 'asc' é a do calendário — a
