@@ -1101,13 +1101,21 @@ console.log('-- o que fica gravado --');
   ];
   let f = comSelect('', osDoFiltro);
   ok('27. sem escolha, o filtro nao corta nada', f.api._filtroStatusListaOS(osDoFiltro) === '');
-  // "Todos" mais SÓ os estados que alguma OS da lista tem: aqui, nao iniciado,
-  // parado e finalizado. Os outros oito da fila nao aparecem — eles nao existem
-  // nesta lista, e oferecer oito linhas "(0)" e procurar no meio do que nao ha.
-  ok('28. as opcoes sao "todos" mais os estados que EXISTEM na lista',
-     (f.sel.innerHTML.match(/<option/g) || []).length === 4, f.sel.innerHTML);
-  ok('28b. status sem nenhuma OS fica de fora',
-     !/Enfestando/.test(f.sel.innerHTML) && !/Cortando/.test(f.sel.innerHTML), f.sel.innerHTML);
+  /* "Todos" MAIS A FILA INTEIRA, inclusive quem esta com zero (18/09/2026,
+     Junior: "corrija o status que desaparece quando nao existe OS com o
+     status"). Ate aqui so apareciam os estados que alguma OS a vista tinha, e
+     foi assim que os status novos ficaram invisiveis no dia em que nasceram.
+     Os status sao treze e fixos: sao o vocabulario da fabrica, nao um valor que
+     nasce do cadastro como a cor. Quem responde "nao tem ninguem ali" e o (0)
+     ao lado, nao a ausencia da linha. */
+  ok('28. as opcoes sao "todos" mais a fila INTEIRA de status',
+     (f.sel.innerHTML.match(/<option/g) || []).length === ctxDe('admin', 'a@b', true, []).api.STATUS_OS.length + 1,
+     (f.sel.innerHTML.match(/<option/g) || []).length + ' opcoes');
+  ok('28b. status sem nenhuma OS aparece, com o (0) na frente',
+     /Enfestando \(0\)/.test(f.sel.innerHTML) && /Cortando \(0\)/.test(f.sel.innerHTML), f.sel.innerHTML);
+  ok('28c. e os status novos entram mesmo com a lista sem nenhum deles',
+     /Estoque em trânsito \| Desc x São Carlos \(0\)/.test(f.sel.innerHTML)
+     && /Estoque com fio \| São Carlos \(0\)/.test(f.sel.innerHTML), f.sel.innerHTML);
   ok('29. cada opcao ja diz quantas OS tem naquele estado',
      /Todos os status \(4\)/.test(f.sel.innerHTML)
      && /Estoque \(2\)/.test(f.sel.innerHTML)

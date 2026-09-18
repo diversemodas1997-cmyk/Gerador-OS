@@ -26581,16 +26581,24 @@ function _filtroStatusListaOS(base, id) {
   const escolhido = sel.value || '';
   const conta = {};
   (base || []).forEach(o => { const k = _statusOS(o); conta[k] = (conta[k] || 0) + 1; });
-  /* SÓ OS STATUS QUE EXISTEM NA LISTA. Enquanto eram quatro, oferecer os quatro
-     sempre não custava nada. Agora são onze — a fila inteira da produção —, e
-     uma lista em que oito linhas dizem "(0)" faz procurar a que interessa no
-     meio do que não existe. É a mesma regra do filtro de cor e de grade ao lado
-     (ver _filtroListaOS): a opção é um valor que alguma OS à vista tem.
-     O escolhido fica mesmo zerado, senão o <select> perderia o próprio valor e
-     a lista voltaria a mostrar tudo no meio da consulta. */
+  /* TODOS OS STATUS, SEMPRE — inclusive os que estão com zero (18/09/2026,
+     Junior: "corrija o status que desaparece quando não existe OS com o
+     status").
+
+     Até aqui o seletor só oferecia os estados que alguma OS à vista tinha, pela
+     mesma regra do filtro de cor e de grade ao lado: a opção é um valor que
+     existe. Para COR aquilo está certo — a lista de cores é infinita e nasce do
+     cadastro. Para STATUS não: eles são treze, fixos, e são o VOCABULÁRIO da
+     fábrica. Esconder o que está zerado transforma a pergunta "quantas estão
+     paradas?" em "esse estado existe?", e foi assim que os status novos de
+     trânsito e de estoque com fio ficaram invisíveis no dia em que nasceram —
+     ninguém os viu para saber que podia usá-los.
+
+     A contagem continua ao lado de cada um, e é ela que faz o trabalho que a
+     filtragem fazia: "(0)" diz na cara que ali não tem ninguém, sem obrigar
+     quem procura a descobrir isso pela ausência. */
   const opcoes = [{ k: '', rotulo: `Todos os status (${(base || []).length})` }]
     .concat(STATUS_OS
-      .filter(x => (conta[x.k] || 0) > 0 || x.k === escolhido)
       .map(x => ({ k: x.k, cor: x.cor, rotulo: `${STATUS_PONTO} ${x.rotulo} (${conta[x.k] || 0})` })));
   const novo = opcoes.map(x => `<option value="${x.k}"${x.cor ? ` style="color:${x.cor};"` : ''}${x.k === escolhido ? ' selected' : ''}>`
     + `${esc(x.rotulo)}</option>`).join('');
