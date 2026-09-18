@@ -8058,10 +8058,10 @@ const FASES_ESTOQUE = [
      de limpeza — entra pela caixa "Recebido em Descalvado" e sai quando
      "Retirada de fios" é marcada. Ver o status `estoque-fio`, que é quem
      manda aqui. */
-  { id: 'estoqueFio',   titulo: 'Estoque com fio',                                               painelId: 'estoque-fio-painel',    semContagem: true, soOS: true,
+  { id: 'estoqueFio',   titulo: 'Estoque com fio | Descalvado',                                  painelId: 'estoque-fio-painel',    semContagem: true, soOS: true,
     vazioMsg: 'Nada esperando limpeza agora. A OS entra aqui quando <b>Recebido em Descalvado</b> é marcada no checklist, e sai quando <b>Retirada de fios</b> é marcada.',
     cond: o => _statusOS(o) === 'estoque-fio',
-    entrada: { tipo: 'etapa', re: /recebido em descalvado/i, label: 'status Estoque com fio' } },
+    entrada: { tipo: 'etapa', re: /recebido em descalvado/i, label: 'status Estoque com fio | Descalvado' } },
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
     cond: o => _statusOS(o) === 'fios',
     entrada: { tipo: 'etapa', re: /fios/i, label: 'status Retirando fio' } },
@@ -18996,7 +18996,7 @@ function _dashFluxoPassos(d) {
        momentos da mesma peca, e ler os dois juntos responde a pergunta do chao
        ("quanto tem para limpar, e quanto ja esta na mesa?"). */
     { nome: 'Retirada de fios', cards: [
-      { k: 'estoqueFio', nome: 'Estoque com fio', v: d.estoqueFio, rota: 'estoque-fio',
+      { k: 'estoqueFio', nome: 'Estoque com fio | Descalvado', v: d.estoqueFio, rota: 'estoque-fio',
         dica: 'O que voltou da costura e ainda tem fio solto, esperando a mesa. Entra pela caixa "Recebido em Descalvado" e sai quando "Retirada de fios" e marcada.' },
       { k: 'fios', nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
     ] },
@@ -25767,7 +25767,13 @@ const STATUS_OS = [
      E por isso o campo mora em ESTOQUES, e não em Operações: o que está com
      fio é peça PARADA, como o corte ensacado esperando a costura. Retirada de
      fios continua em Operações, porque ali há gente trabalhando. */
-  { k: 'estoque-fio',     cor: '#6f8f1f', bg: '#eff4de', bd: '#bcc98c', rotulo: 'Estoque com fio',          ordem: 5, baixa: true,
+  /* O NOME GANHOU A UNIDADE (18/09/2026, Junior). "Estoque com fio" sozinho
+     era de quando so Descalvado existia. Com as duas unidades, todo campo que
+     existe nas duas diz em qual esta -- Ensacado, Costurando, Estoque corte --,
+     e este ficou sendo o unico sem sobrenome. A CHAVE nao muda: `estoque-fio`
+     segue gravado em centenas de OS, e renomear chave para arrumar rotulo e
+     trocar o pneu andando. */
+  { k: 'estoque-fio',     cor: '#6f8f1f', bg: '#eff4de', bd: '#bcc98c', rotulo: 'Estoque com fio | Descalvado', curto: 'Est. c/ fio | DESC', ordem: 5, baixa: true,
     re: /recebido em descalvado/i },
   /* A RETIRADA DE FIOS FICOU SÓ COM A CAIXA DELA. O `re` era
      /fios|recebido em descalvado/i — a chegada e a limpeza no mesmo status. */
