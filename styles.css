@@ -4005,9 +4005,10 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 /* O resto da mesma OS, nos outros dias (lote repartido). Nao e recado nem
    conferencia do que esta no caminhao: e o que costura ESTE quadro aos outros
-   quadros do mesmo lote. Por isso fica entre os dois — cinza como as notas de
-   rodape, mas com barra a esquerda, porque e para ser achado de relance por
-   quem recebe e quer saber se falta alguma coisa vindo. */
+   quadros do mesmo lote. Fecha o quadro, ABAIXO da tarja amarela: o recado foi
+   escrito por alguem para esta carga e le-se primeiro; isto aqui e referencia.
+   Cinza como as notas de rodape, mas com barra a esquerda, porque ainda assim e
+   para ser achado de relance por quem recebe. */
 .exp-print-os > .fracoes {
   font-size: 7pt; color: #333; margin-top: 1.5pt;
   padding: 1pt 3pt; background: #f1f1f1; border-left: 2pt solid #999;

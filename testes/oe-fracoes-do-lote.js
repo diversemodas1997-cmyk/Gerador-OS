@@ -157,9 +157,11 @@ ok('15. sai na classe propria da folha (.fracoes), fora da tarja do recado',
 
 // O quadro da folha tem TRES formatos (sem grade, carga parcial, lote cheio) e
 // o recado tem de sair nos tres — pela mesma razao da observacao da alocacao.
+// E sai por ULTIMO, depois da tarja amarela: o recado e de alguem para esta
+// carga e le-se primeiro; o resto do lote e referencia, e fecha o quadro.
 const quadro = recorte('const osPrint = (i) =>', '\n  };', 'o quadro da folha de OE');
-ok('16. a linha entra nos tres formatos do quadro',
-   (quadro.match(/\$\{fasesHtml\}\$\{fracHtml\}\$\{obsHtml\}/g) || []).length === 3,
+ok('16. a linha entra nos tres formatos do quadro, sempre ABAIXO da observacao',
+   (quadro.match(/\$\{fasesHtml\}\$\{obsHtml\}\$\{fracHtml\}/g) || []).length === 3,
    String((quadro.match(/\$\{fracHtml\}/g) || []).length));
 ok('17. e a folha calcula a linha a partir da carga do quadro',
    /const fracHtml = _expOutrasFracoesTexto\(o, i\.carga\)/.test(quadro));

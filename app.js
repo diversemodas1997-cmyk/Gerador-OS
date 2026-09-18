@@ -16957,6 +16957,9 @@ function renderPrintPlanoExpedicao() {
     // O rodapé que costura as frações do mesmo lote (ver _expOutrasFracoesOS).
     // Entra nos TRÊS formatos do quadro pela mesma razão do recado: quem confere
     // precisa saber do resto da OS tendo ela grade, carga parcial ou lote cheio.
+    // VAI POR ÚLTIMO, DEPOIS DA TARJA AMARELA (18/09/2026, Junior): o recado é o
+    // que alguém escreveu para esta carga e continua sendo a primeira coisa a
+    // ler; o resto do lote é referência, e referência fecha o quadro.
     const fracHtml = _expOutrasFracoesTexto(o, i.carga);
     // A carga leva só PARTE da peça? Então a folha diz quais fases do enfesto
     // embarcam. Carga da peça inteira não escreve nada — o silêncio aqui quer
@@ -16973,7 +16976,7 @@ function renderPrintPlanoExpedicao() {
       : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${fracHtml}${obsHtml}</div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${obsHtml}${fracHtml}</div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -17008,7 +17011,7 @@ function renderPrintPlanoExpedicao() {
               : `<b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}`}
           </div>
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
-          ${fasesHtml}${fracHtml}${obsHtml}
+          ${fasesHtml}${obsHtml}${fracHtml}
         </div>`;
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
@@ -17072,7 +17075,7 @@ function renderPrintPlanoExpedicao() {
           </tbody>
         </table>${indef ? `
         <div class="pe">A divisão entre as tonalidades ainda não foi repartida na OS.</div>` : ''}
-        ${fasesHtml}${fracHtml}${obsHtml}
+        ${fasesHtml}${obsHtml}${fracHtml}
       </div>`;
   };
 
