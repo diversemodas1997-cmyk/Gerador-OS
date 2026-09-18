@@ -9396,6 +9396,8 @@ function ocorrenciasExpedicao(ini, fim) {
         horaVolta: (exc && exc.horaVolta) || j.horaVolta || '',
         cancelada: false,
         remarcada: !!(exc && exc.tipo === 'remarcada'),
+        // Mesma data, hora própria: a expedição acontece, só que em outra hora.
+        horaAlterada: !!(exc && exc.tipo === 'horario'),
         motivo: (exc && exc.motivo) || ''
       });
     });
@@ -10298,12 +10300,13 @@ function renderExpedicaoPlano() {
             ${esc(oc.janela.nome) || 'Janela sem nome'}
             ${oc.janela.tipo === 'data' ? ' · <span class="exp-badge info">data fixa</span>' : ''}
             ${oc.remarcada ? ` · <span class="exp-badge baixo">remarcada de ${esc(formatDate(oc.dataOrig))}</span>` : ''}
+            ${oc.horaAlterada ? ` · <span class="exp-badge info" title="O horário deste dia foi ajustado à mão. A janela ${esc(oc.janela.nome) || ''} segue com o horário dela nos outros dias.">horário deste dia</span>` : ''}
             ${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}
             ${oc.motivo ? ' · ' + esc(oc.motivo) : ''}
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">Cancelar / remarcar</button>
+          <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">Horário / cancelar / remarcar</button>
           <button class="btn" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')">Editar janela</button>
         </div>
       </div>
@@ -11131,7 +11134,24 @@ function abrirModalExpOcorrencia(janelaId, dataOrig) {
   if (!j) return;
   _expModalCtx = { tipo: 'ocorrencia', janelaId, dataOrig };
   const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === janelaId && e.data === dataOrig);
-  const situacao = exc ? exc.tipo : 'ativa';
+  /* SÓ O HORÁRIO, SEM REMARCAR (18/09/2026, Junior: "preciso editar o horário
+     de uma OE em específico").
+
+     O horário de um dia só era editável dentro de "Remarcada" — e remarcar
+     exige data nova. Quem queria mudar o caminhão das 16h para as 14h naquela
+     quinta tinha de declarar a expedição remarcada e redigitar a MESMA data,
+     o que deixava o plano com um selo de "remarcada de 17/09" mentindo sobre o
+     que aconteceu: ela não mudou de dia, mudou de hora.
+
+     Agora a exceção tem um terceiro tipo, `horario`: mesma data, hora própria.
+     Ela não precisou de nenhuma mudança em quem lê as exceções — a hora da
+     ocorrência já saía de `exc.horaIda`/`exc.horaVolta` seja qual for o tipo, e
+     cancelada/remarcada são testadas pelo nome. O tipo novo passa batido por
+     essas duas e muda só o relógio.
+
+     Na tela a situação continua sendo "Acontece normalmente": para quem planeja,
+     uma expedição com hora ajustada acontece — ela só acontece mais cedo. */
+  const situacao = exc ? (exc.tipo === 'horario' ? 'ativa' : exc.tipo) : 'ativa';
   document.getElementById('modal-exp-title').textContent = 'Expedição de ' + formatDate(dataOrig);
   document.getElementById('modal-exp-fields').innerHTML = `
     <div class="form-grid cols-2">
@@ -11145,25 +11165,27 @@ function abrirModalExpOcorrencia(janelaId, dataOrig) {
       </div>
       <div class="field" id="eo-wrap-data"><label>Nova data *</label><input type="date" id="eo-data" value="${esc((exc && exc.novaData) || dataOrig)}"></div>
       <div class="field" id="eo-wrap-horas">
-        <label>Novos horários</label>
+        <label>Horário deste dia</label>
         <div style="display:flex;gap:6px;">
           <input type="time" id="eo-hora-ida" value="${esc((exc && exc.horaIda) || j.horaIda || '')}" title="Ida">
           <input type="time" id="eo-hora-volta" value="${esc((exc && exc.horaVolta) || j.horaVolta || '')}" title="Volta">
         </div>
-        <div class="field-hint">Ida e volta. Em branco mantém o horário da janela.</div>
+        <div class="field-hint">Ida e volta. Mudar aqui vale <b>só neste dia</b>; a janela <b>${esc(j.nome) || 'sem nome'}</b> (${esc(j.horaIda) || '—'} / ${esc(j.horaVolta) || '—'}) continua como está nos outros dias. Em branco volta para o horário da janela.</div>
       </div>
       <div class="field full"><label>Motivo</label><input type="text" id="eo-motivo" value="${esc((exc && exc.motivo) || '')}" placeholder="Ex.: feriado / veículo em manutenção"></div>
     </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">Muda só <b>este dia</b> — a janela <b>${esc(j.nome) || 'sem nome'}</b> continua valendo nos demais. As OSs já alocadas acompanham a remarcação.</div>`;
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Muda só <b>este dia</b> — a janela <b>${esc(j.nome) || 'sem nome'}</b> continua valendo nos demais. As OSs já alocadas acompanham a remarcação e o horário novo. Para mudar o horário de <b>todos</b> os dias, edite a janela; para mudar o <b>padrão de novas janelas</b>, use <b>Unidades e carga</b>.</div>`;
   _expToggleSituacaoOcorrencia();
   openModal('modal-exp');
 }
 
 function _expToggleSituacaoOcorrencia() {
   const s = document.getElementById('eo-situacao')?.value || 'ativa';
-  const remarcada = s === 'remarcada';
-  document.getElementById('eo-wrap-data')?.classList.toggle('hidden', !remarcada);
-  document.getElementById('eo-wrap-horas')?.classList.toggle('hidden', !remarcada);
+  // A data nova só existe na remarcação. O HORÁRIO existe sempre que a expedição
+  // acontece — é ele que deixa mudar a hora de um dia sem inventar remarcação.
+  // Cancelada esconde os dois: expedição que não sai não tem hora de sair.
+  document.getElementById('eo-wrap-data')?.classList.toggle('hidden', s !== 'remarcada');
+  document.getElementById('eo-wrap-horas')?.classList.toggle('hidden', s === 'cancelada');
 }
 
 async function salvarModalExpedicao() {
@@ -11369,6 +11391,7 @@ async function salvarModalExpedicao() {
     const situacao = v('eo-situacao');
     if (!Array.isArray(STATE.expedicaoExcecoes)) STATE.expedicaoExcecoes = [];
     STATE.expedicaoExcecoes = STATE.expedicaoExcecoes.filter(e => !(e.janelaId === ctx.janelaId && e.data === ctx.dataOrig));
+    let soHora = false;
     if (situacao === 'cancelada') {
       STATE.expedicaoExcecoes.push({ id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, tipo: 'cancelada', motivo: v('eo-motivo').trim() });
     } else if (situacao === 'remarcada') {
@@ -11378,9 +11401,29 @@ async function salvarModalExpedicao() {
         id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, tipo: 'remarcada',
         novaData, horaIda: v('eo-hora-ida'), horaVolta: v('eo-hora-volta'), motivo: v('eo-motivo').trim()
       });
+    } else {
+      /* ACONTECE NORMALMENTE, MAS EM OUTRA HORA. A exceção só é gravada quando o
+         horário digitado DIFERE do da janela: igual ao da janela é o caso comum,
+         e guardar uma exceção que repete o cadastro encheria a lista de linhas
+         que não excetuam nada — e cada uma delas ainda teria de ser apagada à mão
+         no dia em que a janela mudasse de horário.
+         Campo em branco também não grava: é o "volta para o horário da janela". */
+      const jan = (STATE.expedicaoJanelas || []).find(x => x.id === ctx.janelaId) || {};
+      const hi = v('eo-hora-ida'), hv = v('eo-hora-volta');
+      const mudou = (hi && hi !== (jan.horaIda || '')) || (hv && hv !== (jan.horaVolta || ''));
+      if (mudou) {
+        STATE.expedicaoExcecoes.push({
+          id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, tipo: 'horario',
+          horaIda: hi || jan.horaIda || '', horaVolta: hv || jan.horaVolta || '',
+          motivo: v('eo-motivo').trim()
+        });
+        soHora = true;
+      }
     }
     await saveState('expedicaoExcecoes');
-    toast(situacao === 'ativa' ? 'Expedição restabelecida' : (situacao === 'cancelada' ? 'Expedição cancelada' : 'Expedição remarcada'), 'ok');
+    toast(situacao === 'cancelada' ? 'Expedição cancelada'
+          : (situacao === 'remarcada' ? 'Expedição remarcada'
+          : (soHora ? 'Horário desta expedição alterado' : 'Expedição restabelecida')), 'ok');
 
   } else if (ctx.tipo === 'folha') {
     if (!exigirEdicao('editar a folha de OE')) return;
@@ -17082,6 +17125,15 @@ function renderPrintPlanoExpedicao() {
   const pernaPrint = (oc, perna) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
+    /* O ✎ DA HORA, só na tela (18/09/2026, Junior: "não consigo editar a hora da
+       folha de OE"). A folha é onde o horário errado aparece — é ela que a doca
+       lê —, então é dela que se corrige, sem voltar ao planejamento e procurar a
+       linha do dia. Abre a mesma janela do plano, e a mudança vale só neste dia.
+       `.no-print` some do papel E da foto do PDF (ver body.pdf-capture). */
+    const btnHora = (oc.janela && oc.janela.id && !oc.cancelada)
+      ? `<button type="button" class="exp-print-edit no-print" title="Mudar o horário desta expedição — vale só neste dia"
+          onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">✎</button>`
+      : '';
     const linhas = r.itens.length
       ? r.itens.map(osPrint).join('')
       : '<div class="vazia">Sem OS alocada.</div>';
@@ -17094,7 +17146,7 @@ function renderPrintPlanoExpedicao() {
             <span class="t">${perna === 'ida' ? 'IDA' : 'VOLTA'}</span>
             <span class="r"> ${esc(_expRotaTexto(perna))}</span>
           </div>
-          <span class="h">${esc(hora) || '—'}</span>
+          <span class="h">${esc(hora) || '—'}${btnHora}</span>
         </div>
         ${linhas}
         <div class="tot">
@@ -17112,6 +17164,7 @@ function renderPrintPlanoExpedicao() {
         <span class="j">
           ${esc(oc.janela.nome) || 'Janela sem nome'}
           ${oc.remarcada ? ` · remarcada de ${esc(formatDate(oc.dataOrig))}` : ''}
+          ${oc.horaAlterada ? ' · horário ajustado neste dia' : ''}
         </span>
       </div>
       <div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>

@@ -44,6 +44,24 @@ const motor = [
   corta('function _expUsarTurnoJanela')
 ].join('\n');
 
+// O motor das ocorrencias, para a parte do horario de UM dia.
+const motorOcor = [
+  corta('function _expIso'),
+  corta('function _expData'),
+  corta('function _expAddDias'),
+  corta('function ocorrenciasExpedicao'),
+  corta('function _expCancelSet'),
+  corta('function _expDataEfetivaCarga'),
+  corta('function _dashTurnoDaCarga')
+].join('\n');
+function comOcorrencias(estado) {
+  const fn = new Function('STATE', `
+    ${motorOcor}
+    return { ocorrenciasExpedicao, _expCancelSet, _expDataEfetivaCarga, _dashTurnoDaCarga };
+  `);
+  return fn(estado);
+}
+
 // Os dois campos de hora do formulário da janela, dublados.
 function comMotor(estado) {
   const campos = { 'ej-hora-ida': { value: '' }, 'ej-hora-volta': { value: '' } };
@@ -140,6 +158,71 @@ ok('21. os dois botoes de turno estao no formulario',
 const salvarJanela = recorte("const horaIda = v('ej-hora-ida')", 'saveState(\'expedicaoJanelas\')', 'o salvar da janela');
 ok('22. a janela grava horaIda/horaVolta e nao guarda turno nenhum',
    /horaIda, horaVolta/.test(salvarJanela) && !/turno/i.test(salvarJanela), salvarJanela.slice(0, 200));
+
+console.log('');
+console.log('-- mudar a hora de UM dia, sem remarcar --');
+/* Junior, 18/09/2026: "preciso editar o horario de uma OE em especifico". O
+   horario de um dia so era editavel dentro de "Remarcada", e remarcar exige
+   data nova: quem queria antecipar o caminhao de uma quinta tinha de declarar a
+   expedicao remarcada e redigitar a MESMA data, deixando o plano com um selo
+   dizendo que ela mudou de dia. O tipo novo de excecao, `horario`, muda so o
+   relogio. */
+const janela = { id: 'j1', nome: 'Tarde', tipo: 'semanal', diasSemana: [4], horaIda: '16:00', horaVolta: '16:00', ativo: true };
+const estadoCom = (exc) => ({ expedicaoJanelas: [janela], expedicaoExcecoes: exc ? [exc] : [] });
+
+let o = comOcorrencias(estadoCom(null)).ocorrenciasExpedicao('2026-09-17', '2026-09-17')[0];
+ok('23. sem excecao, a hora e a da janela', o && o.horaIda === '16:00' && o.horaAlterada === false,
+   JSON.stringify(o && { h: o.horaIda, alt: o.horaAlterada }));
+
+const excHora = { id: 'e1', janelaId: 'j1', data: '2026-09-17', tipo: 'horario', horaIda: '14:00', horaVolta: '14:30' };
+let api2 = comOcorrencias(estadoCom(excHora));
+o = api2.ocorrenciasExpedicao('2026-09-17', '2026-09-17')[0];
+ok('24. com a excecao de horario, a hora do dia muda', o && o.horaIda === '14:00' && o.horaVolta === '14:30',
+   JSON.stringify(o && { i: o.horaIda, v: o.horaVolta }));
+ok('25. e a DATA continua a mesma', o && o.data === '2026-09-17' && o.dataOrig === '2026-09-17',
+   JSON.stringify(o && { d: o.data, o: o.dataOrig }));
+ok('26. a ocorrencia NAO e marcada como remarcada', o && o.remarcada === false, String(o && o.remarcada));
+ok('27. e ganha a marca propria de horario ajustado', o && o.horaAlterada === true, String(o && o.horaAlterada));
+ok('28. a expedicao continua acontecendo (nao entra no cancelamento)',
+   o && o.cancelada === false && api2._expCancelSet().size === 0, String(api2._expCancelSet().size));
+ok('29. e a data efetiva de uma carga daquele dia nao se mexe',
+   api2._expDataEfetivaCarga({ janelaId: 'j1', data: '2026-09-17' }) === '2026-09-17',
+   api2._expDataEfetivaCarga({ janelaId: 'j1', data: '2026-09-17' }));
+ok('30. o turno do painel segue a hora nova (tarde -> manha)',
+   api2._dashTurnoDaCarga({ janelaId: 'j1', data: '2026-09-17', perna: 'ida' }) === 'tarde'
+   && comOcorrencias(estadoCom({ ...excHora, horaIda: '09:00' }))._dashTurnoDaCarga({ janelaId: 'j1', data: '2026-09-17', perna: 'ida' }) === 'manha',
+   api2._dashTurnoDaCarga({ janelaId: 'j1', data: '2026-09-17', perna: 'ida' }));
+// Cancelar e remarcar continuam inteiros: o tipo novo passa ao largo dos dois.
+let apiC = comOcorrencias(estadoCom({ id: 'e2', janelaId: 'j1', data: '2026-09-17', tipo: 'cancelada' }));
+ok('31. cancelada continua cancelando', apiC.ocorrenciasExpedicao('2026-09-17', '2026-09-17')[0].cancelada === true);
+let apiR = comOcorrencias(estadoCom({ id: 'e3', janelaId: 'j1', data: '2026-09-17', tipo: 'remarcada', novaData: '2026-09-18', horaIda: '10:00' }));
+let oR = apiR.ocorrenciasExpedicao('2026-09-18', '2026-09-18')[0];
+ok('32. remarcada continua mudando a data e a hora',
+   oR && oR.data === '2026-09-18' && oR.horaIda === '10:00' && oR.remarcada === true, JSON.stringify(oR && { d: oR.data, h: oR.horaIda }));
+
+console.log('');
+console.log('-- onde se edita a hora de um dia --');
+const modalOc = recorte('function abrirModalExpOcorrencia', '\n}', 'o modal da ocorrencia');
+ok('33. o campo de horario nao fala mais em "novos horarios" da remarcacao',
+   /Horário deste dia/.test(modalOc), modalOc.slice(0, 120));
+const toggle = recorte('function _expToggleSituacaoOcorrencia', '\n}', 'o toggle da situacao');
+ok('34. o horario some so quando a expedicao e CANCELADA',
+   /eo-wrap-horas'\)\?\.classList\.toggle\('hidden', s === 'cancelada'\)/.test(toggle), toggle);
+ok('35. e a data nova continua so na remarcacao',
+   /eo-wrap-data'\)\?\.classList\.toggle\('hidden', s !== 'remarcada'\)/.test(toggle), toggle);
+const salvarOc = recorte("} else if (ctx.tipo === 'ocorrencia')", "} else if (ctx.tipo === 'folha')", 'o salvar da ocorrencia');
+ok('36. "acontece normalmente" grava excecao de horario quando a hora difere da janela',
+   /tipo: 'horario'/.test(salvarOc) && /hi !== \(jan\.horaIda \|\| ''\)/.test(salvarOc), salvarOc.slice(-400));
+ok('37. e nao grava nada quando o horario e o mesmo da janela',
+   /if \(mudou\) \{/.test(salvarOc), salvarOc.slice(-400));
+
+const folha = recorte('const pernaPrint = (oc, perna) =>', '\n  };', 'a perna na folha de OE');
+ok('38. a folha tem o lapis da hora, so na tela',
+   /class="exp-print-edit no-print"/.test(folha) && /abrirModalExpOcorrencia/.test(folha), folha.slice(0, 200));
+ok('39. e ele nao aparece em expedicao cancelada', /!oc\.cancelada/.test(folha));
+const css2 = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+ok('40. com estilo proprio na faixa escura do cabecalho',
+   /\.exp-print-perna \.ph \.exp-print-edit\s*\{/.test(css2));
 
 console.log('');
 if (falhas) { console.log(falhas + ' teste(s) falharam'); process.exit(1); }

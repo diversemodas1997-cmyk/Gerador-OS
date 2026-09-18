@@ -4081,6 +4081,21 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   align-self: center;
 }
 .exp-print-os > .cab .exp-print-edit:hover { color: #000; }
+/* O mesmo lápis ao lado da HORA da perna, na faixa do cabeçalho. Ali o fundo é
+   escuro, então ele não pode herdar o cinza do lápis da OS — ficaria invisível
+   justamente onde alguém vai procurá-lo. Sem margin-left:auto: aqui ele anda
+   colado no número, não encostado na borda. */
+.exp-print-perna .ph .exp-print-edit {
+  background: none;
+  border: none;
+  padding: 0 0 0 3pt;
+  line-height: 1;
+  font-size: 9pt;
+  color: inherit;
+  opacity: .65;
+  cursor: pointer;
+}
+.exp-print-perna .ph .exp-print-edit:hover { opacity: 1; }
 .exp-print-box.ok::after {
   content: '';
   position: absolute;
