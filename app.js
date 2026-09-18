@@ -8025,19 +8025,19 @@ const FASES_ESTOQUE = [
      está, e a condição aqui volta a ser o que ela deveria ter sido desde o
      começo — uma leitura do status, como nas duas costuras logo abaixo. */
   { id: 'corte',        titulo: 'Estoque corte · Unidade Descalvado', movKey: 'corteMov',        painelId: 'corte-painel',          semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'ensacado',
+    status: 'ensacado', cond: o => _statusOS(o) === 'ensacado',
     entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad/i, label: 'status Ensacado | Descalvado' } },
   /* AS COSTURAS MOSTRAM SÓ A LISTA DE OS (16/09/2026, Junior: "no campo
      costurando, retire o quadro por tecido + cor"). É o mesmo `soOS` do estoque
      de corte e do trânsito. O `porTipoDeProduto` fica: é ele que monta as
      tabelas por tipo se um dia o quadro voltar — basta tirar o `soOS`. */
   { id: 'costurando',   titulo: 'Costurando · Unidade Descalvado',    movKey: 'costurandoMov',   painelId: 'costurando-painel',     semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
-    cond: o => _statusOS(o) === 'costurando',
+    status: 'costurando', cond: o => _statusOS(o) === 'costurando',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | Descalvado' } },
   // A viagem de Descalvado para São Carlos: a caixa da expedição de ida põe a OS
   // na estrada, e "Recebido em São Carlos" a tira. A fração alocada numa OE
   // entra aqui também, por fora do checklist (_transitoDaOS).
-  { id: 'transitoIda',  titulo: 'Em trânsito · IDA',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
+  { id: 'transitoIda',  titulo: 'Em trânsito · IDA',  status: 'transito-ida',                                             painelId: 'transito-ida-painel',   semContagem: true, soOS: true,
     vazioMsg: 'Nada a caminho de São Carlos agora. A OS entra aqui quando a caixa <b>Expedição Desc X São Carlos</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>ida</b>), e sai quando <b>Recebido em São Carlos</b> é marcada.',
     cond: o => !osEtapaMarcada(o, ETAPA_SC_RE),
     /* \S, e não \w (16/09/2026): em JavaScript \w não casa letra acentuada, e
@@ -8045,10 +8045,10 @@ const FASES_ESTOQUE = [
        ou não, a OS não entrava na estrada pelo checklist, só pela carga. */
     entrada: { tipo: 'etapa', re: /expedi\S*\s+desc/i, label: 'Expedição Desc X São Carlos' } },
   { id: 'corteSC',      titulo: 'Estoque corte · Unidade São Carlos', movKey: 'corteScMov',      painelId: 'corte-sc-painel',       semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'ensacado-sc',
+    status: 'ensacado-sc', cond: o => _statusOS(o) === 'ensacado-sc',
     entrada: { tipo: 'etapa', re: /corte|ensaqu|ensacad|recebido em s[ãa]o carlos/i, label: 'status Ensacado | São Carlos' } },
   { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
-    cond: o => _statusOS(o) === 'costurando-sc',
+    status: 'costurando-sc', cond: o => _statusOS(o) === 'costurando-sc',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | São Carlos' } },
   /* O QUE FOI COSTURADO EM SÃO CARLOS E AINDA TEM FIO. Peça parada lá,
      esperando o caminhão de volta. Quem manda aqui é o STATUS carimbado — ver
@@ -8057,10 +8057,10 @@ const FASES_ESTOQUE = [
      como o corte ensacado se separa da costura na mesma unidade. */
   { id: 'estoqueFioSC', titulo: 'Estoque com fio | São Carlos',                                  painelId: 'estoque-fio-sc-painel', semContagem: true, soOS: true,
     vazioMsg: 'Nada com fio em São Carlos agora. A OS entra aqui quando alguém carimba o status <b>Estoque com fio | São Carlos</b>, e sai quando <b>Expedição São Carlos X Desc.</b> é marcada no checklist.',
-    cond: o => _statusOS(o) === 'estoque-fio-sc',
+    status: 'estoque-fio-sc', cond: o => _statusOS(o) === 'estoque-fio-sc',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Estoque com fio | São Carlos' } },
   // E a de volta. Mesma regra, do outro lado.
-  { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
+  { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA', status: 'transito-volta',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
     vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui quando a caixa <b>Expedição São Carlos X Desc.</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>volta</b>), e sai quando <b>Recebido em Descalvado</b> é marcada.',
     cond: o => !osEtapaMarcada(o, ETAPA_DESC_RE),
     entrada: { tipo: 'etapa', re: /expedi\S*\s+s[ãa]o\s+carlos/i, label: 'Expedição São Carlos X Desc.' } },   // \S: ver a de ida
@@ -8070,10 +8070,10 @@ const FASES_ESTOQUE = [
      manda aqui. */
   { id: 'estoqueFio',   titulo: 'Estoque com fio | Descalvado',                                  painelId: 'estoque-fio-painel',    semContagem: true, soOS: true,
     vazioMsg: 'Nada esperando limpeza agora. A OS entra aqui quando <b>Recebido em Descalvado</b> é marcada no checklist, e sai quando <b>Retirada de fios</b> é marcada.',
-    cond: o => _statusOS(o) === 'estoque-fio',
+    status: 'estoque-fio', cond: o => _statusOS(o) === 'estoque-fio',
     entrada: { tipo: 'etapa', re: /recebido em descalvado/i, label: 'status Estoque com fio | Descalvado' } },
   { id: 'fios',         titulo: 'Retirada de fios',                   movKey: 'fiosMov',         painelId: 'fios-painel',           semContagem: true, soOS: true,
-    cond: o => _statusOS(o) === 'fios',
+    status: 'fios', cond: o => _statusOS(o) === 'fios',
     entrada: { tipo: 'etapa', re: /fios/i, label: 'status Retirando fio' } },
   /* EXPEDIÇÃO É O FIM DO FLUXO, e não a viagem entre as unidades. A `re` casa só
      a etapa "Expedição" PURA: as duas direcionais ("Expedição Desc X São
@@ -8084,12 +8084,44 @@ const FASES_ESTOQUE = [
     entrada: { tipo: 'etapa', re: /^\s*expedi(ç|c)[ãa]o\s*$/i, label: 'Expedição' } },
 ];
 
+/* O CARIMBO TAMBÉM MOVE O VOLUME (18/09/2026, Junior: "modifiquei o status da
+   OS 0530 para Ensacado São Carlos e a OS não migrou").
+
+   O status já obedecia a esta regra desde que existe: o carimbo à mão vale ATÉ
+   a próxima etapa ser marcada (ver _statusOS). O CAMPO não obedecia — ele
+   olhava só o checklist, e escolhia o campo da etapa marcada por último. Dava
+   nisto: a lista da OS dizia "Ensacado | São Carlos", carimbado agora, e o
+   volume continuava no campo Em trânsito, porque a última CAIXA marcada era a
+   da expedição de ida. Duas telas contando histórias diferentes da mesma OS, e
+   quem carimbou ficou sem entender por que o número não andou.
+
+   Agora as duas leem a mesma regra. O carimbo só ganha enquanto for mais novo
+   que a última marca do checklist — marcar qualquer caixa depois dele devolve a
+   palavra à folha, que é o comportamento de sempre.
+
+   `status` no campo é o que liga um ao outro. Ele existe declarado em
+   FASES_ESTOQUE, ao lado da `cond` que já testava a mesma coisa: a `cond`
+   responde "esta OS pode estar aqui?", e o `status` responde "qual campo este
+   carimbo quer dizer?" — a pergunta inversa, que não dá para fazer a uma
+   função. Status sem campo (Parado, Cancelado, Não iniciado) devolve -1 e não
+   move nada, que é o certo: eles não são lugar. */
+function _faseCarimbadaOS(o) {
+  if (!o || !o.statusOS) return -1;
+  const carimbo = Date.parse(o.statusOSEm || '') || 0;
+  if (!carimbo || carimbo <= _ultimaMarcacaoChecklist(o)) return -1;
+  return FASES_ESTOQUE.findIndex(f => f.status === o.statusOS);
+}
+
 // A OS entrou nesta fase? Etapa da fase marcada no checklist E a condição da
 // fase satisfeita (é a `cond` que separa Costurando Descalvado de São Carlos).
 function _faseEntrouOS(o, fase) {
   if (!fase) return false;
   const entrada = fase.entrada || fase;   // compat: aceita também a própria entrada
   if (!entrada) return false;
+  // Carimbo fresco apontando para ESTE campo é entrada por si só: quem carimbou
+  // está dizendo onde a OS está, e pode estar dizendo isso antes de a caixa
+  // correspondente existir no checklist daquela OS.
+  if (fase.status && _faseCarimbadaOS(o) === FASES_ESTOQUE.indexOf(fase)) return true;
   if (fase.cond && !fase.cond(o)) return false;
   if (entrada.tipo === 'oscriada') return true;
   /* O TRÂNSITO PASSOU A ENTRAR POR ETAPA (15/09/2026). Antes ele só recebia a
@@ -8347,6 +8379,9 @@ const TERMINAL_ETAPA_RE = /estoque/i;
 // campo (Acabamento de mangas, Ensaque…) não contam. Retorna o índice da fase, ou
 // -1 quando a OS está FORA do fluxo (terminal "Estoque", ou nenhuma etapa de fase).
 function faseAtualOS(o) {
+  // O carimbo mais novo que a folha manda no lugar do volume (_faseCarimbadaOS).
+  const carimbada = _faseCarimbadaOS(o);
+  if (carimbada >= 0) return carimbada;
   const seqs = (o.progresso && o.progresso.etapasSeq) || {};
   let achouSeq = false, idxSeq = -1, melhorSeq = -Infinity; // por etapasSeq
   let idxOrd = -1, melhorOrd = -1;                           // fallback canônico

@@ -58,6 +58,9 @@ const motor = [
   corta('function _statusDoChecklistOS'),
   corta('function _ultimaMarcacaoChecklist'),
   corta('function _statusOS'),
+  // O carimbo do status tambem decide o campo desde 18/09/2026, e _faseEntrouOS
+  // passou a perguntar por ele.
+  corta('function _faseCarimbadaOS'),
   corta('function _faseEntrouOS'),
   corta('function _nomeEtapaDaFase'),
   cortaLinha('function _faseIdxPorId'),
