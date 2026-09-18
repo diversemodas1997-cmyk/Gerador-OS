@@ -10032,8 +10032,18 @@ function _tarefasDaEtapaOS(os, etapaNome) {
   return nomes;
 }
 
-function _expMarcarExpedicaoIdaOS(os) {
-  const fase = (FASES_ESTOQUE || []).find(f => f.id === 'transitoIda');
+/* A CAIXA DA PERNA, MARCADA PELA ALOCAÇÃO (16/09/2026 na ida; a volta entrou em
+   18/09/2026, quando os dois status de trânsito nasceram — Junior: "esse status
+   deve ser alterado automaticamente quando a OS é alocada no plano de
+   expedição").
+
+   Alocar é dizer que aquele lote vai naquele caminhão, e a caixa da expedição é
+   o que põe a OS na estrada — no campo e, desde os status novos, também no
+   estado que a lista mostra. Deixar a volta de fora faria a OS trazida de São
+   Carlos continuar anunciada como se estivesse lá. */
+function _expMarcarExpedicaoOS(os, perna) {
+  const faseId = perna === 'volta' ? 'transitoVolta' : 'transitoIda';
+  const fase = (FASES_ESTOQUE || []).find(f => f.id === faseId);
   const re = fase && fase.entrada && fase.entrada.re;
   if (!os || !re) return '';
   const nome = (os.etapas || []).find(n => re.test(n));
@@ -10057,6 +10067,10 @@ function _expMarcarExpedicaoIdaOS(os) {
   }
   return nome;
 }
+
+// O nome de antes, quando só a ida marcava. Mantido porque é curto no lugar em
+// que é lido ("marcou a ida?") e porque não há razão para reescrever a chamada.
+function _expMarcarExpedicaoIdaOS(os) { return _expMarcarExpedicaoOS(os, 'ida'); }
 
 function moverCargaExp(cargaId) {
   const c = (STATE.expedicaoCargas || []).find(x => x.id === cargaId);
@@ -11353,12 +11367,14 @@ async function salvarModalExpedicao() {
     await saveState('expedicaoCargas');
     // Alocada numa IDA: a caixa "Expedição Desc X São Carlos" da OS é marcada
     // (ver _expMarcarExpedicaoIdaOS).
+    // A caixa da PERNA em que a OS foi alocada — ida ou volta. Ver
+    // _expMarcarExpedicaoOS.
     let marcou = '';
-    if (perna !== 'volta') {
+    {
       const osAloc = (STATE.ordens || []).find(o => o.id === osId);
-      marcou = _expMarcarExpedicaoIdaOS(osAloc);
+      marcou = _expMarcarExpedicaoOS(osAloc, perna === 'volta' ? 'volta' : 'ida');
       if (marcou) {
-        try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição de ida', e); }
+        try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição', e); }
       }
     }
     toast((ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição')
@@ -11401,7 +11417,18 @@ async function salvarModalExpedicao() {
     });
     if (!n) return toast('Essas OSs já estão na volta', 'err');
     await saveState('expedicaoCargas');
-    toast(`${n} OS trazida(s) para a volta`, 'ok');
+    // Mesma regra da ida: alocar na volta marca "Expedição São Carlos X Desc."
+    // em cada OS trazida, e é essa caixa que acende o status do trânsito.
+    let marcadasVolta = 0;
+    marcadas.forEach(el => {
+      const osVolta = (STATE.ordens || []).find(o => o.id === el.value);
+      if (osVolta && _expMarcarExpedicaoOS(osVolta, 'volta')) marcadasVolta++;
+    });
+    if (marcadasVolta) {
+      try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição de volta', e); }
+    }
+    toast(`${n} OS trazida(s) para a volta`
+      + (marcadasVolta ? ` · "Expedição São Carlos X Desc." marcada em ${marcadasVolta}` : ''), 'ok');
 
   } else if (ctx.tipo === 'config') {
     if (!exigirEdicao('configurar a expedição')) return;
@@ -25717,6 +25744,34 @@ const STATUS_OS = [
     re: /^(?!.*s[ãa]o\s+carlos).*(ensaqu|ensacad)/i },
   { k: 'ensacado-sc',     cor: '#d8456b', bg: '#fce7ec', bd: '#eeabbd', rotulo: 'Ensacado | São Carlos',   curto: 'Ensacado | SC',      ordem: 6, baixa: true,
     re: /recebido em s[ãa]o carlos|(ensaqu|ensacad).*s[ãa]o\s+carlos/i },
+  /* O QUE ESTÁ NA ESTRADA (18/09/2026, Junior: "insira status Estoque em
+     trânsito | Desc x São Carlos e Estoque em trânsito | São Carlos X Desc.").
+
+     Os dois campos de trânsito existiam desde 15/09 e não tinham status: a OS
+     no caminhão continuava dizendo "Ensacado | Descalvado", porque a caixa da
+     expedição não acendia estado nenhum e a última que acendia era a do
+     Ensaque. A lista dizia que o pano estava na prateleira daqui com o pano já
+     em Rodovia.
+
+     ELES NASCEM DA CAIXA, como quase todos: as mesmas regex dos campos
+     (transitoIda/transitoVolta), e por isso alocar a OS numa OE já os acende —
+     a alocação marca a caixa da perna (_expMarcarExpedicaoOS), e a caixa acende
+     o status. Um carimbo à mão continua valendo por cima, até a etapa seguinte.
+
+     SEM `ordem` DE PROPÓSITO: ela só desempata OS ANTIGA sem `etapasSeq`, e
+     dar um número a estes dois reescreveria o estado de centenas de OS de
+     antes de agosto/2026 — que estão paradas na história, não na estrada. Sem
+     ele, a OS velha continua lendo o que lia, e a nova, que tem hora em cada
+     marca, lê o trânsito.
+
+     (E NADA DE PONTO E VIRGULA dentro desta lista, nem em comentario: os
+     testes recortam o array com uma expressao que para no primeiro deles, e o
+     array chega cortado ao meio. Custou tres suites para eu aprender, e a
+     primeira versao deste aviso trazia o sinal dentro.) */
+  { k: 'transito-ida',    cor: '#4f7f8f', bg: '#e3eff2', bd: '#a8c8d2', rotulo: 'Estoque em trânsito | Desc x São Carlos', curto: 'Em trânsito | IDA',   baixa: true,
+    re: /expedi\S*\s+desc/i },
+  { k: 'transito-volta',  cor: '#8f6f4f', bg: '#f5ece2', bd: '#d8bfa3', rotulo: 'Estoque em trânsito | São Carlos X Desc.', curto: 'Em trânsito | VOLTA', baixa: true,
+    re: /expedi\S*\s+s[ãa]o\s+carlos/i },
   /* A UNIDADE SAI DO NOME DA ETAPA, e não da caixa de recebimento (15/09/2026,
      Junior: "alguns produtos são costurados em etapas fracionadas em diferentes
      unidades").

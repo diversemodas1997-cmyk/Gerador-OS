@@ -125,11 +125,16 @@
          OPERAÇÕES é o que está ANDANDO: a costura e a retirada de fios — o que
          alguém está FAZENDO com a peça. A viagem saiu daqui em 18/09/2026: peça
          em caminhão está parada, ninguém trabalha nela enquanto ela anda, e é
-         estoque como o corte ensacado. -->
+         estoque como o corte ensacado.
+
+         E no mesmo dia entraram COMPRA e EXPEDIÇÃO, que também são trabalho de
+         gente e não pano guardado: comprar é decidir o que vai ser pedido, e a
+         Expedição é onde se aloca OS em carga, se muda horário e se imprime a
+         folha da doca. As duas se mexem todo dia, e é por isso que ficam no
+         topo do grupo. -->
     <div class="nav-group" data-group="estoques">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
       <div class="nav-items">
-        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
         <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
@@ -169,6 +174,8 @@
     <div class="nav-group" data-group="operacoes">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Operações</button>
       <div class="nav-items">
+        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Expedição</a>
+        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
         <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
@@ -197,7 +204,6 @@
     <div class="nav-group" data-group="cadastros">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
       <div class="nav-items">
-        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Expedição</a>
         <a class="nav-btn" href="#cad-marcas" data-page="cad-marcas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="marcas"></span>Marcas</a>
         <a class="nav-btn" href="#cad-colecoes" data-page="cad-colecoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="colecoes"></span>Coleções</a>
         <a class="nav-btn" href="#cad-modelos" data-page="cad-modelos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="modelos"></span>Modelos</a>

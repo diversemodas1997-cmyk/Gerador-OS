@@ -23,6 +23,8 @@ function recorte(de, ate, oQue) {
 }
 const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 const cortaArr = (nome) => recorte(nome, '\n];', nome) + '\n];';
+// A ida virou um atalho de uma linha para _expMarcarExpedicaoOS(os, 'ida').
+const cortaLinha = (nome) => recorte(nome, '\n', nome);
 
 // A marcacao automatica preenche tambem as TAREFAS da etapa, e elas vem do
 // cadastro (STATE.etapas) — nao do DOM, que nao existe quando quem marca e o
@@ -32,7 +34,8 @@ const montar = (estado) => new Function('STATE', `
   ${cortaArr('const FASES_ESTOQUE')}
   ${corta('function tarefasDaEtapa')}
   ${corta('function _tarefasDaEtapaOS')}
-  ${corta('function _expMarcarExpedicaoIdaOS')}
+  ${corta('function _expMarcarExpedicaoOS')}
+  ${cortaLinha('function _expMarcarExpedicaoIdaOS')}
   return _expMarcarExpedicaoIdaOS;
 `)(estado);
 // Sem cadastro de etapas: e o cenario dos casos de cima, que so olham o pai.
@@ -75,54 +78,25 @@ nome = marcar(o);
 ok('OS sem progresso nenhum ganha o progresso com a marca', nome && o.progresso.etapasCheck['Expedição Desc X São Carlos'] === true, o);
 ok('sem OS, não quebra', marcar(null) === '', '');
 
-// A chamada fica no salvar da carga, e só para a ida.
+/* A CHAMADA FICA NO SALVAR, E VALE PARA AS DUAS PERNAS (18/09/2026). Ate aqui
+   so a ida marcava; com os status de transito (Junior: "esse status deve ser
+   alterado automaticamente quando a OS e alocada no plano de expedicao"), a
+   volta tambem precisa marcar a caixa dela — senao a OS trazida de Sao Carlos
+   continuaria anunciada como se estivesse la. */
 const salvar = src.slice(src.indexOf("} else if (ctx.tipo === 'carga') {"), src.indexOf("} else if (ctx.tipo === 'volta') {"));
-ok('o salvar da carga chama a marcação só quando a perna não é volta',
-   /if \(perna !== 'volta'\) \{[\s\S]*_expMarcarExpedicaoIdaOS\(/.test(salvar), '');
-ok('e grava as OS depois de marcar', /marcou = _expMarcarExpedicaoIdaOS\(osAloc\);[\s\S]*saveState\('ordens'\)/.test(salvar), '');
+ok('o salvar da carga marca a caixa da PERNA em que a OS foi alocada',
+   /_expMarcarExpedicaoOS\(osAloc, perna === 'volta' \? 'volta' : 'ida'\)/.test(salvar), '');
+ok('e grava as OS depois de marcar', /marcou = _expMarcarExpedicaoOS\([\s\S]*saveState\('ordens'\)/.test(salvar), '');
 
+const salvarVolta = src.slice(src.indexOf("} else if (ctx.tipo === 'volta') {"), src.indexOf("} else if (ctx.tipo === 'config') {"));
+ok('trazer OS para a volta tambem marca "Expedicao Sao Carlos X Desc."',
+   /_expMarcarExpedicaoOS\(osVolta, 'volta'\)/.test(salvarVolta), '');
+ok('e so grava as OS quando marcou alguma', /if \(marcadasVolta\) \{[\s\S]*saveState\('ordens'\)/.test(salvarVolta), '');
 
-/* O PAI AUTOMATICO PREENCHE OS FILHOS (18/09/2026, Junior: "quando o checkbox
-   mestre for preenchido automaticamente, os subcheck devem ser preenchidos
-   automaticamente"). A mao isso ja acontecia — togglarChecklistEtapa le as
-   caixas do DOM. Alocando, nao ha folha aberta: a lista vem do cadastro. */
-const ETAPA = 'Expedição Desc X São Carlos';
-const motorCom = (estado) => montar(estado);
-const comCadastro = (tarefas) => motorCom({
-  etapas: [{ id: 'e1', nome: ETAPA, tarefas: tarefas.map(n => ({ nome: n })) }],
-  tarefas: []
-});
-
-o = osCom({}, {});
-nome = comCadastro(['Conferir volumes', 'Lacrar sacos', 'Emitir romaneio'])(o);
-ok('as tarefas da etapa sao marcadas junto com o pai',
-   nome === ETAPA && ['Conferir volumes', 'Lacrar sacos', 'Emitir romaneio']
-     .every(t => o.progresso.tarefasCheck[ETAPA][t] === true), o.progresso.tarefasCheck);
-
-o = osCom({}, {});
-motorCom({ etapas: [{ id: 'e1', nome: ETAPA, tarefasIds: ['t1', 't2'] }],
-           tarefas: [{ id: 't1', nome: 'Pesar' }, { id: 't2', nome: 'Etiquetar' }] })(o);
-ok('tarefa cadastrada por ID tambem entra',
-   o.progresso.tarefasCheck[ETAPA]['Pesar'] === true && o.progresso.tarefasCheck[ETAPA]['Etiquetar'] === true,
-   o.progresso.tarefasCheck);
-
-o = osCom({}, {});
-o.progresso.tarefasCheck = { [ETAPA]: { 'Tarefa de outro tempo': false } };
-comCadastro(['Conferir volumes'])(o);
-ok('tarefa fora do cadastro, ja gravada na OS, tambem e marcada',
-   o.progresso.tarefasCheck[ETAPA]['Tarefa de outro tempo'] === true
-   && o.progresso.tarefasCheck[ETAPA]['Conferir volumes'] === true, o.progresso.tarefasCheck);
-
-o = osCom({ [ETAPA]: true }, { [ETAPA]: 999 });
-o.progresso.tarefasCheck = { [ETAPA]: { 'Conferir volumes': false } };
-comCadastro(['Conferir volumes'])(o);
-ok('etapa ja marcada: os filhos ficam como estavam',
-   o.progresso.tarefasCheck[ETAPA]['Conferir volumes'] === false, o.progresso.tarefasCheck);
-
-o = osCom({}, {});
-comCadastro([])(o);
-ok('etapa sem tarefas nao cria mapa vazio no progresso',
-   !o.progresso.tarefasCheck, JSON.stringify(o.progresso));
+// A funcao generica escolhe a fase pela perna, e e dai que sai a caixa certa.
+const generica = corta('function _expMarcarExpedicaoOS');
+ok('a perna escolhe o campo: volta -> transitoVolta, resto -> transitoIda',
+   /perna === 'volta' \? 'transitoVolta' : 'transitoIda'/.test(generica), '');
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);

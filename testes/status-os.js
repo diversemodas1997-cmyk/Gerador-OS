@@ -379,6 +379,7 @@ console.log('-- o que fica gravado --');
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
      ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
+      'Estoque em trânsito | Desc x São Carlos', 'Estoque em trânsito | São Carlos X Desc.',
       'Costurando | Descalvado', 'Costurando | São Carlos',
       'Estoque com fio | Descalvado', 'Estoque com fio | São Carlos', 'Retirando fio',
       'Parado', 'Cancelado', 'Estoque'].join(' / '),
