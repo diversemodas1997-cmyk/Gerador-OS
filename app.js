@@ -9265,8 +9265,32 @@ const EXP_CFG_PADRAO = {
   unidadeA: 'Unidade 1',
   unidadeB: 'Unidade 2',
   volMin: 0,
-  volMax: 0
+  volMax: 0,
+  /* OS HORÁRIOS PADRÃO DA EXPEDIÇÃO (18/09/2026, Junior).
+
+     A fábrica tem dois turnos de caminhão — o matinal e o da tarde —, e cada um
+     vai e volta. São quatro horários, e até aqui eles não existiam em lugar
+     nenhum: o formulário da janela nascia com 08:00 e 17:00 escritos no meio do
+     HTML, números que não vieram desta fábrica e que ninguém podia mudar sem
+     mexer no código. Quem criava uma janela apagava os dois e digitava os de
+     verdade, toda vez.
+
+     Agora eles moram na configuração, ao lado das unidades e do limite de
+     carga, e os valores abaixo são os que a fábrica usa hoje. Isto é o PADRÃO,
+     não uma trava: cada janela continua com os horários dela, e é assim que uma
+     expedição extra às 11h convive com o turno da manhã. */
+  horaIdaManha: '09:30',
+  horaVoltaManha: '09:30',
+  horaIdaTarde: '16:00',
+  horaVoltaTarde: '16:00'
 };
+
+// Hora no formato do <input type="time"> ('HH:MM'), ou o padrão. Em branco cai
+// no padrão pelo mesmo motivo do _expNum: campo vazio é pergunta, não zero.
+function _expHora(v, padrao) {
+  const s = String(v == null ? '' : v).trim();
+  return /^\d{2}:\d{2}$/.test(s) ? s : padrao;
+}
 
 function expCfg() {
   return { ...EXP_CFG_PADRAO, ...((STATE.meta && STATE.meta.expedicao) || {}) };
@@ -10453,14 +10477,44 @@ function abrirModalExpJanela(editId = null) {
         </div>
       </div>
       <div class="field" id="ej-wrap-data"><label>Data *</label><input type="date" id="ej-data" value="${esc(j ? (j.data || '') : _expHoje())}"></div>
-      <div class="field"><label>Hora da ida *</label><input type="time" id="ej-hora-ida" value="${esc(j ? (j.horaIda || '') : '08:00')}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
-      <div class="field"><label>Hora da volta *</label><input type="time" id="ej-hora-volta" value="${esc(j ? (j.horaVolta || '') : '17:00')}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
+      <div class="field full">
+        <label>Turno</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="btn" onclick="_expUsarTurnoJanela('manha')">Manhã · ${esc(_expHora(cfg.horaIdaManha, EXP_CFG_PADRAO.horaIdaManha))} / ${esc(_expHora(cfg.horaVoltaManha, EXP_CFG_PADRAO.horaVoltaManha))}</button>
+          <button type="button" class="btn" onclick="_expUsarTurnoJanela('tarde')">Tarde · ${esc(_expHora(cfg.horaIdaTarde, EXP_CFG_PADRAO.horaIdaTarde))} / ${esc(_expHora(cfg.horaVoltaTarde, EXP_CFG_PADRAO.horaVoltaTarde))}</button>
+        </div>
+        <div class="field-hint">Preenche os dois horários abaixo com o padrão cadastrado em <b>Unidades e carga</b>. É atalho, não amarra: depois de preencher, os horários desta janela são editáveis e valem só para ela.</div>
+      </div>
+      <div class="field"><label>Hora da ida *</label><input type="time" id="ej-hora-ida" value="${esc(j ? (j.horaIda || '') : _expHora(cfg.horaIdaManha, EXP_CFG_PADRAO.horaIdaManha))}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
+      <div class="field"><label>Hora da volta *</label><input type="time" id="ej-hora-volta" value="${esc(j ? (j.horaVolta || '') : _expHora(cfg.horaVoltaManha, EXP_CFG_PADRAO.horaVoltaManha))}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
       <div class="field"><label>Situação</label><select id="ej-ativo"><option value="1" ${!j || j.ativo !== false ? 'selected' : ''}>Ativa</option><option value="0" ${j && j.ativo === false ? 'selected' : ''}>Inativa (não gera expedições)</option></select></div>
       <div class="field full"><label>Observação</label><input type="text" id="ej-obs" value="${esc(j ? (j.obs || '') : '')}" placeholder="Ex.: motorista da tarde"></div>
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">Toda expedição é interna, de <b>ida e volta</b> entre ${esc(cfg.unidadeA)} e ${esc(cfg.unidadeB)}. O limite de volume (mín/máx) é único, cadastrado em <b>Unidades e carga</b> (hoje: ${esc(_expLimitesTexto(_expNum(cfg.volMin, 0), _expNum(cfg.volMax, 0)))}) e vale para todas as janelas.</div>`;
   _expToggleTipoJanela();
   openModal('modal-exp');
+}
+
+/* Os botões de turno do formulário da janela. Escrevem nos dois campos de hora
+   o par cadastrado em Unidades e carga — e só isso: não guardam "esta janela é
+   da manhã" em lugar nenhum.
+
+   POR QUE NÃO GUARDAR O TURNO: se a janela apontasse para o turno, mudar o
+   horário padrão mudaria em silêncio o dia de trabalho de expedições que já
+   estão no plano, com OS alocada e folha impressa. O horário tem de ser um
+   número escrito NA janela, que só muda quando alguém edita aquela janela. O
+   padrão serve para não digitar de novo, não para mandar depois. */
+function _expUsarTurnoJanela(turno) {
+  const cfg = expCfg();
+  const manha = turno !== 'tarde';
+  const ida = _expHora(manha ? cfg.horaIdaManha : cfg.horaIdaTarde,
+                       manha ? EXP_CFG_PADRAO.horaIdaManha : EXP_CFG_PADRAO.horaIdaTarde);
+  const volta = _expHora(manha ? cfg.horaVoltaManha : cfg.horaVoltaTarde,
+                         manha ? EXP_CFG_PADRAO.horaVoltaManha : EXP_CFG_PADRAO.horaVoltaTarde);
+  const ei = document.getElementById('ej-hora-ida');
+  const ev = document.getElementById('ej-hora-volta');
+  if (ei) ei.value = ida;
+  if (ev) ev.value = volta;
 }
 
 function _expToggleTipoJanela() {
@@ -11058,6 +11112,14 @@ function abrirModalExpConfig() {
       ${_expCampoNum('ex-vol-min', 'Volume mínimo padrão', _expNum(cfg.volMin, 0) || '', 'Carga planejada abaixo disso é sinalizada. 0 ou vazio = sem mínimo.')}
       ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
     </div>
+    <div class="form-grid cols-2" style="margin-top:10px;">
+      <div class="field full"><label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Horários padrão da expedição</label></div>
+      <div class="field"><label>Ida — manhã</label><input type="time" id="ex-hora-ida-manha" value="${esc(_expHora(cfg.horaIdaManha, EXP_CFG_PADRAO.horaIdaManha))}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
+      <div class="field"><label>Volta — manhã</label><input type="time" id="ex-hora-volta-manha" value="${esc(_expHora(cfg.horaVoltaManha, EXP_CFG_PADRAO.horaVoltaManha))}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
+      <div class="field"><label>Ida — tarde</label><input type="time" id="ex-hora-ida-tarde" value="${esc(_expHora(cfg.horaIdaTarde, EXP_CFG_PADRAO.horaIdaTarde))}"><div class="field-hint">${esc(cfg.unidadeA)} → ${esc(cfg.unidadeB)}</div></div>
+      <div class="field"><label>Volta — tarde</label><input type="time" id="ex-hora-volta-tarde" value="${esc(_expHora(cfg.horaVoltaTarde, EXP_CFG_PADRAO.horaVoltaTarde))}"><div class="field-hint">${esc(cfg.unidadeB)} → ${esc(cfg.unidadeA)}</div></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">São os horários dos <b>dois turnos de caminhão</b>. Valem como <b>padrão</b>: cada janela nasce com eles e continua podendo ter o seu próprio horário (em <b>+ Janela</b>, botões <b>Manhã</b> e <b>Tarde</b> preenchem a partir daqui). Mudar aqui <b>não</b> reescreve as janelas já cadastradas — para mudar o horário de uma expedição que já acontece, edite a janela; para mudar só um dia, use <b>remarcar</b> naquela data.</div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">O <b>volume</b> de cada OS é calculado pela grade: <b>1 pacote por tamanho, por tonalidade, + 1 de reposição</b> — cada tonalidade é ensacada separada. Ex.: grade de 7 tamanhos em 1 tom = 8 volumes; a mesma grade em 2 tons = 15.</div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">Este é o limite <b>único</b> de volume por <b>perna</b> (ida e volta contam separado), válido para <b>todas as janelas</b> — é o que aparece na folha de OE. A expedição é sempre interna, entre estas duas unidades.</div>`;
   openModal('modal-exp');
@@ -11283,8 +11345,15 @@ async function salvarModalExpedicao() {
     const volMin = parseInt(v('ex-vol-min')) || 0;
     const volMax = parseInt(v('ex-vol-max')) || 0;
     if (volMax > 0 && volMin > volMax) return toast('O volume mínimo não pode ser maior que o máximo', 'err');
+    // Horário em branco ou digitado pela metade volta ao padrão de fábrica, em
+    // vez de gravar '' e fazer a próxima janela nascer com o campo vazio.
+    const horaIdaManha = _expHora(v('ex-hora-ida-manha'), EXP_CFG_PADRAO.horaIdaManha);
+    const horaVoltaManha = _expHora(v('ex-hora-volta-manha'), EXP_CFG_PADRAO.horaVoltaManha);
+    const horaIdaTarde = _expHora(v('ex-hora-ida-tarde'), EXP_CFG_PADRAO.horaIdaTarde);
+    const horaVoltaTarde = _expHora(v('ex-hora-volta-tarde'), EXP_CFG_PADRAO.horaVoltaTarde);
     if (!STATE.meta || typeof STATE.meta !== 'object') STATE.meta = {};
-    STATE.meta.expedicao = { ...(STATE.meta.expedicao || {}), unidadeA, unidadeB, volMin, volMax };
+    STATE.meta.expedicao = { ...(STATE.meta.expedicao || {}), unidadeA, unidadeB, volMin, volMax,
+                             horaIdaManha, horaVoltaManha, horaIdaTarde, horaVoltaTarde };
     await saveState('meta');
     // Estes valores aparecem na folha (limite por perna, nomes das unidades),
     // mas moram em `meta` — que não está em _CHAVES_OE, a lista que dispara a
