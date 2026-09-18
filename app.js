@@ -3890,6 +3890,28 @@ window.ajustarFolhaAoCelular = ajustarFolhaAoCelular;
 window.addEventListener('resize', ajustarFolhaAoCelular);
 window.addEventListener('orientationchange', ajustarFolhaAoCelular);
 
+/* QUAL ITEM DO MENU ACENDE (18/09/2026, Junior).
+
+   Uma página, dois itens de menu: a Expedição aparece em Cadastros (a tela
+   inteira, na última aba usada) e em Estoques como "Estoque em trânsito", que é
+   a primeira aba dela. Quem acende é a ABA aberta — sem isto, o querySelector
+   pegaria sempre o primeiro do HTML e a barra diria "Estoque em trânsito" com o
+   Planejamento na tela.
+
+   Para toda página que tem um item só, que é a regra, nada muda. */
+function _acenderNavDaPagina(page) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  let btn = null;
+  if (page === 'expedicao') {
+    const seletor = (typeof expAbaAtiva !== 'undefined' && expAbaAtiva === 'estoque')
+      ? '.nav-btn[data-page="expedicao"][data-exptab="estoque"]'
+      : '.nav-btn[data-page="expedicao"]:not([data-exptab])';
+    btn = document.querySelector(seletor);
+  }
+  if (!btn) btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+  if (btn) btn.classList.add('active');
+}
+
 function goto(page) {
   const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
   // As telas de CADASTRO são de LEITURA para todo mundo — aqui não há rota
@@ -3914,9 +3936,7 @@ function goto(page) {
   document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`section.page[data-page="${page}"]`);
   if (target) target.classList.remove('hidden');
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
-  if (btn) btn.classList.add('active');
+  _acenderNavDaPagina(page);
   _restaurarScrollPagina(page);  // restaura o scroll salvo desta pagina (ou 0 na 1a visita)
   fecharMenuMobile();  // mobile: fecha o overlay do menu quando entra na pagina
   ajustarFolhaAoCelular();  // a folha de OS cabe inteira na tela do telefone
@@ -4080,6 +4100,9 @@ document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', e
   if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   goto(b.dataset.page);
+  // Item que pede uma ABA (o "Estoque em trânsito" da barra lateral): o goto
+  // acima abriu a página na última aba usada, e aqui ela vai para a pedida.
+  if (b.dataset.exptab && typeof trocarAbaExpedicao === 'function') trocarAbaExpedicao(b.dataset.exptab);
 }));
 
 // Injeta o botao "≡ Menu" no topo de cada .page-header. Visivel apenas no
@@ -10111,6 +10134,8 @@ try {
 function trocarAbaExpedicao(aba) {
   expAbaAtiva = (aba === 'plano') ? 'plano' : 'estoque';
   try { sessionStorage.setItem('gos:exp:aba', expAbaAtiva); } catch (e) {}
+  // A barra lateral tem um item por aba: trocar de aba troca quem está aceso.
+  if (document.querySelector('section.page[data-page="expedicao"]:not(.hidden)')) _acenderNavDaPagina('expedicao');
   document.querySelectorAll('.exp-tab').forEach(b => b.classList.toggle('active', b.dataset.exptab === expAbaAtiva));
   const est = document.getElementById('expedicao-aba-estoque');
   const plano = document.getElementById('expedicao-aba-plano');
