@@ -380,7 +380,7 @@ console.log('-- o que fica gravado --');
      ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
       'Costurando | Descalvado', 'Costurando | São Carlos',
-      'Estoque com fio | Descalvado', 'Retirando fio',
+      'Estoque com fio | Descalvado', 'Estoque com fio | São Carlos', 'Retirando fio',
       'Parado', 'Cancelado', 'Estoque'].join(' / '),
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / '));
 

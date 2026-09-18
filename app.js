@@ -3979,6 +3979,7 @@ function goto(page) {
   if (page === 'costurando-sc') renderFasePorId('costurandoSC');
   if (page === 'transito-volta') renderFasePorId('transitoVolta');
   if (page === 'estoque-fio') renderFasePorId('estoqueFio');
+  if (page === 'estoque-fio-sc') renderFasePorId('estoqueFioSC');
   if (page === 'fios') renderFasePorId('fios');
   if (page === 'expedicao') { renderFasePorId('expedicao'); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
@@ -8049,6 +8050,15 @@ const FASES_ESTOQUE = [
   { id: 'costurandoSC', titulo: 'Costurando · Unidade São Carlos',    movKey: 'costurandoScMov', painelId: 'costurando-sc-painel',  semContagem: true, soOS: true, osTodasEntradas: true, porTipoDeProduto: true,
     cond: o => _statusOS(o) === 'costurando-sc',
     entrada: { tipo: 'etapa', re: /costura/i, label: 'status Costurando | São Carlos' } },
+  /* O QUE FOI COSTURADO EM SÃO CARLOS E AINDA TEM FIO. Peça parada lá,
+     esperando o caminhão de volta. Quem manda aqui é o STATUS carimbado — ver
+     `estoque-fio-sc` —, e a etapa de entrada é a mesma costura de São Carlos:
+     é o par status+etapa que separa este campo do Costurando de lá, exatamente
+     como o corte ensacado se separa da costura na mesma unidade. */
+  { id: 'estoqueFioSC', titulo: 'Estoque com fio | São Carlos',                                  painelId: 'estoque-fio-sc-painel', semContagem: true, soOS: true,
+    vazioMsg: 'Nada com fio em São Carlos agora. A OS entra aqui quando alguém carimba o status <b>Estoque com fio | São Carlos</b>, e sai quando <b>Expedição São Carlos X Desc.</b> é marcada no checklist.',
+    cond: o => _statusOS(o) === 'estoque-fio-sc',
+    entrada: { tipo: 'etapa', re: /costura/i, label: 'status Estoque com fio | São Carlos' } },
   // E a de volta. Mesma regra, do outro lado.
   { id: 'transitoVolta', titulo: 'Em trânsito · VOLTA',                                          painelId: 'transito-volta-painel', semContagem: true, soOS: true,
     vazioMsg: 'Nada a caminho de Descalvado agora. A OS entra aqui quando a caixa <b>Expedição São Carlos X Desc.</b> é marcada no checklist (ou quando parte do lote é alocada numa expedição de <b>volta</b>), e sai quando <b>Recebido em Descalvado</b> é marcada.',
@@ -18640,7 +18650,8 @@ function _dashCartoesDaOS(o, opts) {
 function _dashChavePorIdx() {
   const m = new Map();
   [['corte', 'corte'], ['corteSC', 'corteSC'], ['costurando', 'costurando'],
-   ['costurandoSC', 'costurandoSC'], ['estoqueFio', 'estoqueFio'], ['fios', 'fios']].forEach(([faseId, k]) => {
+   ['costurandoSC', 'costurandoSC'], ['estoqueFio', 'estoqueFio'], ['estoqueFioSC', 'estoqueFioSC'],
+   ['fios', 'fios']].forEach(([faseId, k]) => {
     const i = FASES_ESTOQUE.findIndex(f => f.id === faseId);
     if (i >= 0) m.set(i, k);
   });
@@ -18659,7 +18670,7 @@ function _dashFluxoDados() {
     costurando: zero(), costurandoSC: zero(),
     idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
     recDesc: zero(), recSC: zero(),
-    estoqueFio: zero(), fios: zero(), estoque: zero()
+    estoqueFio: zero(), estoqueFioSC: zero(), fios: zero(), estoque: zero()
   };
   const somar = (k, pecas, o) => {
     if (!(pecas > 0)) return;
@@ -18996,6 +19007,8 @@ function _dashFluxoPassos(d) {
        momentos da mesma peca, e ler os dois juntos responde a pergunta do chao
        ("quanto tem para limpar, e quanto ja esta na mesa?"). */
     { nome: 'Retirada de fios', cards: [
+      { k: 'estoqueFioSC', nome: 'Estoque com fio | São Carlos', v: d.estoqueFioSC, rota: 'estoque-fio-sc',
+        dica: 'Costurado em Sao Carlos, com fio, esperando o caminhao de volta. Entra pelo CARIMBO do status "Estoque com fio | Sao Carlos" (nao ha caixa no checklist que diga isso) e sai quando "Expedicao Sao Carlos X Desc." e marcada.' },
       { k: 'estoqueFio', nome: 'Estoque com fio | Descalvado', v: d.estoqueFio, rota: 'estoque-fio',
         dica: 'O que voltou da costura e ainda tem fio solto, esperando a mesa. Entra pela caixa "Recebido em Descalvado" e sai quando "Retirada de fios" e marcada.' },
       { k: 'fios', nome: 'Retirada de fios', v: d.fios, rota: 'fios' },
@@ -25775,6 +25788,20 @@ const STATUS_OS = [
      trocar o pneu andando. */
   { k: 'estoque-fio',     cor: '#6f8f1f', bg: '#eff4de', bd: '#bcc98c', rotulo: 'Estoque com fio | Descalvado', curto: 'Est. c/ fio | DESC', ordem: 5, baixa: true,
     re: /recebido em descalvado/i },
+  /* ESTOQUE COM FIO | SÃO CARLOS (18/09/2026, Junior: "o fato de o status mudar
+     para Estoque com fio | SC faz com que o volume migre para lá").
+
+     É a peça costurada em São Carlos, com os fios soltos, esperando o caminhão
+     de volta. Ao contrário de todos os outros da fila, este NÃO nasce de caixa
+     nenhuma do checklist — não existe uma que diga isso: "Costura … | São
+     Carlos" já acende o Costurando de lá, e "Expedição São Carlos X Desc." põe
+     a OS na estrada. Quem o acende é o CARIMBO, como em Parado e Cancelado.
+
+     E carimbo vale até a próxima etapa ser marcada (ver _statusOS): marcar a
+     expedição de volta tira a OS daqui sozinha, que é exatamente o caminho da
+     peça. Por isso ele não precisa de `re` — e ter um seria pior, porque o
+     único candidato é a caixa da costura, que é de outro estado. */
+  { k: 'estoque-fio-sc',  cor: '#7a6f1f', bg: '#f2efd9', bd: '#cfc48c', rotulo: 'Estoque com fio | São Carlos', curto: 'Est. c/ fio | SC', ordem: 5, baixa: true },
   /* A RETIRADA DE FIOS FICOU SÓ COM A CAIXA DELA. O `re` era
      /fios|recebido em descalvado/i — a chegada e a limpeza no mesmo status. */
   { k: 'fios',            cor: '#7b3fb5', bg: '#eee6f8', bd: '#c0a6e0', rotulo: 'Retirando fio',            ordem: 5, baixa: true,
