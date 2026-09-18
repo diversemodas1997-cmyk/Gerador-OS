@@ -117,13 +117,15 @@
          procurava "Costurando · São Carlos" passava por "Compra" no caminho.
 
          ESTOQUES é o que está PARADO esperando, na ordem do material: compra-se
-         o pano, ele chega (estoque de tecidos, em quilos) e vira peça cortada
-         (estoque de corte, em peças, uma unidade em cada linha). O Ranking morou
-         aqui até 16/09/2026; hoje fica solto no topo da barra.
+         o pano, ele chega (estoque de tecidos, em quilos), vira peça cortada
+         (estoque de corte, em peças, uma unidade em cada linha) e viaja entre as
+         unidades (estoque em trânsito, ida e volta). O Ranking morou aqui até
+         16/09/2026; hoje fica solto no topo da barra.
 
-         OPERAÇÕES é o que está ANDANDO: a costura, a viagem, a retirada de
-         fios. Na mesma ordem do dashboard, com as duas unidades juntas em cada
-         passo, e não intercaladas como eram antes. -->
+         OPERAÇÕES é o que está ANDANDO: a costura e a retirada de fios — o que
+         alguém está FAZENDO com a peça. A viagem saiu daqui em 18/09/2026: peça
+         em caminhão está parada, ninguém trabalha nela enquanto ela anda, e é
+         estoque como o corte ensacado. -->
     <div class="nav-group" data-group="estoques">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
       <div class="nav-items">
@@ -136,15 +138,14 @@
              do mesmo jeito que o corte ensacado espera a costura. A Retirada de
              fios, que é o trabalho, continua em Operações. -->
         <a class="nav-btn" href="#estoque-fio" data-page="estoque-fio" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque com fio</a>
-        <!-- ESTOQUE EM TRÂNSITO (18/09/2026, Junior). É a primeira aba da tela de
-             Expedição, e estava alcançável só por lá — dentro de Cadastros, que é
-             onde a Expedição mora desde 15/09 por ser lista que se mantém. Só que
-             a aba não é lista de cadastro: é CAMPO, peça parada esperando o
-             caminhão, irmã do corte ensacado e do estoque com fio. Por isso ela
-             aparece aqui também, apontando para a mesma tela na aba certa.
-             O item "Expedição", nos Cadastros, continua existindo e abre a tela
-             na última aba usada. -->
-        <a class="nav-btn" href="#expedicao" data-page="expedicao" data-exptab="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito</a>
+        <!-- O TRÂNSITO É ESTOQUE, e não operação (18/09/2026, Junior: "o estoque
+             em trânsito deve mostrar o volume das OS que tem checkbox Expedição
+             Descalvado preenchido; quando Recebido em São Carlos for preenchido
+             esse volume migra para Estoque corte São Carlos"). É peça PARADA num
+             caminhão: ninguém trabalha nela enquanto viaja. Estava em Operações
+             junto da costura, que é trabalho de verdade. -->
+        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · IDA</a>
+        <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · VOLTA</a>
       </div>
     </div>
 
@@ -169,8 +170,6 @@
       <div class="nav-items">
         <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
         <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
-        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · IDA</a>
-        <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Em trânsito · VOLTA</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
       </div>
     </div>
@@ -552,7 +551,7 @@
         </div>
       </div>
       <div class="exp-tabs no-print">
-        <button type="button" class="exp-tab active" data-exptab="estoque" onclick="trocarAbaExpedicao('estoque')">Estoque em trânsito</button>
+        <button type="button" class="exp-tab active" data-exptab="estoque" onclick="trocarAbaExpedicao('estoque')">Expedição · fim do fluxo</button>
         <button type="button" class="exp-tab" data-exptab="plano" onclick="trocarAbaExpedicao('plano')">Planejamento de expedição</button>
       </div>
       <div id="expedicao-aba-estoque">
@@ -1586,6 +1585,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-18g"></script>
+<script src="app.js?v=2026-09-18f"></script>
 </body>
 </html>
