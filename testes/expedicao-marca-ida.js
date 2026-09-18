@@ -24,12 +24,19 @@ function recorte(de, ate, oQue) {
 const corta = (nome) => recorte(nome, '\n}', nome) + '\n}';
 const cortaArr = (nome) => recorte(nome, '\n];', nome) + '\n];';
 
-const marcar = new Function(`
+// A marcacao automatica preenche tambem as TAREFAS da etapa, e elas vem do
+// cadastro (STATE.etapas) — nao do DOM, que nao existe quando quem marca e o
+// programa. Por isso o motor agora recebe um STATE.
+const montar = (estado) => new Function('STATE', `
   ${recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades')}
   ${cortaArr('const FASES_ESTOQUE')}
+  ${corta('function tarefasDaEtapa')}
+  ${corta('function _tarefasDaEtapaOS')}
   ${corta('function _expMarcarExpedicaoIdaOS')}
   return _expMarcarExpedicaoIdaOS;
-`)();
+`)(estado);
+// Sem cadastro de etapas: e o cenario dos casos de cima, que so olham o pai.
+const marcar = montar({ etapas: [], tarefas: [] });
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -73,6 +80,49 @@ const salvar = src.slice(src.indexOf("} else if (ctx.tipo === 'carga') {"), src.
 ok('o salvar da carga chama a marcação só quando a perna não é volta',
    /if \(perna !== 'volta'\) \{[\s\S]*_expMarcarExpedicaoIdaOS\(/.test(salvar), '');
 ok('e grava as OS depois de marcar', /marcou = _expMarcarExpedicaoIdaOS\(osAloc\);[\s\S]*saveState\('ordens'\)/.test(salvar), '');
+
+
+/* O PAI AUTOMATICO PREENCHE OS FILHOS (18/09/2026, Junior: "quando o checkbox
+   mestre for preenchido automaticamente, os subcheck devem ser preenchidos
+   automaticamente"). A mao isso ja acontecia — togglarChecklistEtapa le as
+   caixas do DOM. Alocando, nao ha folha aberta: a lista vem do cadastro. */
+const ETAPA = 'Expedição Desc X São Carlos';
+const motorCom = (estado) => montar(estado);
+const comCadastro = (tarefas) => motorCom({
+  etapas: [{ id: 'e1', nome: ETAPA, tarefas: tarefas.map(n => ({ nome: n })) }],
+  tarefas: []
+});
+
+o = osCom({}, {});
+nome = comCadastro(['Conferir volumes', 'Lacrar sacos', 'Emitir romaneio'])(o);
+ok('as tarefas da etapa sao marcadas junto com o pai',
+   nome === ETAPA && ['Conferir volumes', 'Lacrar sacos', 'Emitir romaneio']
+     .every(t => o.progresso.tarefasCheck[ETAPA][t] === true), o.progresso.tarefasCheck);
+
+o = osCom({}, {});
+motorCom({ etapas: [{ id: 'e1', nome: ETAPA, tarefasIds: ['t1', 't2'] }],
+           tarefas: [{ id: 't1', nome: 'Pesar' }, { id: 't2', nome: 'Etiquetar' }] })(o);
+ok('tarefa cadastrada por ID tambem entra',
+   o.progresso.tarefasCheck[ETAPA]['Pesar'] === true && o.progresso.tarefasCheck[ETAPA]['Etiquetar'] === true,
+   o.progresso.tarefasCheck);
+
+o = osCom({}, {});
+o.progresso.tarefasCheck = { [ETAPA]: { 'Tarefa de outro tempo': false } };
+comCadastro(['Conferir volumes'])(o);
+ok('tarefa fora do cadastro, ja gravada na OS, tambem e marcada',
+   o.progresso.tarefasCheck[ETAPA]['Tarefa de outro tempo'] === true
+   && o.progresso.tarefasCheck[ETAPA]['Conferir volumes'] === true, o.progresso.tarefasCheck);
+
+o = osCom({ [ETAPA]: true }, { [ETAPA]: 999 });
+o.progresso.tarefasCheck = { [ETAPA]: { 'Conferir volumes': false } };
+comCadastro(['Conferir volumes'])(o);
+ok('etapa ja marcada: os filhos ficam como estavam',
+   o.progresso.tarefasCheck[ETAPA]['Conferir volumes'] === false, o.progresso.tarefasCheck);
+
+o = osCom({}, {});
+comCadastro([])(o);
+ok('etapa sem tarefas nao cria mapa vazio no progresso',
+   !o.progresso.tarefasCheck, JSON.stringify(o.progresso));
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);

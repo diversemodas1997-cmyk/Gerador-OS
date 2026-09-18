@@ -10000,6 +10000,28 @@ async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
    caixa (desmarcar é gesto de quem sabe que a viagem não aconteceu). OS cujo
    checklist não tem essa etapa fica como está. Devolve o nome da etapa marcada,
    ou '' quando não havia o que marcar. */
+/* AS TAREFAS DE UMA ETAPA, SEM A FOLHA ABERTA (18/09/2026, Junior).
+
+   Quando é a PESSOA que marca a etapa, os filhos saem do DOM: são exatamente as
+   caixas que ela está vendo, inclusive as fases do Corte e as tarefas "fora do
+   cadastro" que a OS carrega de quando aquela etapa era outra (ver
+   togglarChecklistEtapa). Quando quem marca é o PROGRAMA — alocar numa OE marca
+   a caixa da expedição de ida —, não há folha aberta: a OS pode estar sendo
+   alocada de outra tela, de outra máquina, com a folha fechada.
+
+   Então aqui a lista vem de onde ela nasce: o cadastro da etapa, mais o que já
+   estiver gravado em tarefasCheck daquela etapa (as órfãs, que existem na OS e
+   não no cadastro). As fases do Corte ficam de fora de propósito — elas são
+   derivadas do enfesto na hora de desenhar a folha, e nenhuma marcação
+   automática toca no Corte. */
+function _tarefasDaEtapaOS(os, etapaNome) {
+  const cad = (STATE.etapas || []).find(e => e.nome === etapaNome);
+  const nomes = cad ? tarefasDaEtapa(cad).map(t => t && t.nome).filter(Boolean) : [];
+  const jaGravadas = Object.keys(((os && os.progresso && os.progresso.tarefasCheck) || {})[etapaNome] || {});
+  jaGravadas.forEach(n => { if (!nomes.includes(n)) nomes.push(n); });
+  return nomes;
+}
+
 function _expMarcarExpedicaoIdaOS(os) {
   const fase = (FASES_ESTOQUE || []).find(f => f.id === 'transitoIda');
   const re = fase && fase.entrada && fase.entrada.re;
@@ -10012,6 +10034,17 @@ function _expMarcarExpedicaoIdaOS(os) {
   if (os.progresso.etapasCheck[nome]) return '';          // já marcada: a hora dela fica
   os.progresso.etapasCheck[nome] = true;
   os.progresso.etapasSeq[nome] = Date.now();
+  /* O PAI AUTOMÁTICO TAMBÉM PREENCHE OS FILHOS (18/09/2026, Junior). A regra é a
+     mesma de quando alguém marca à mão: etapa marcada quer dizer que ela ACABOU,
+     e etapa que acabou tem as tarefas dela feitas. Sem isto, a folha da OS
+     alocada saía com o pai marcado e os filhos em branco — e quem lê o papel
+     acredita na parte errada. */
+  const tarefas = _tarefasDaEtapaOS(os, nome);
+  if (tarefas.length) {
+    os.progresso.tarefasCheck = os.progresso.tarefasCheck || {};
+    const mapa = os.progresso.tarefasCheck[nome] = os.progresso.tarefasCheck[nome] || {};
+    tarefas.forEach(t => { mapa[t] = true; });
+  }
   return nome;
 }
 
