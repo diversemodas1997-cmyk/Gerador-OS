@@ -4003,6 +4003,15 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   font-size: 7.5pt; color: #000; margin-top: 1.5pt;
   padding: 1pt 3pt; border: .5pt solid #000;
 }
+/* O resto da mesma OS, nos outros dias (lote repartido). Nao e recado nem
+   conferencia do que esta no caminhao: e o que costura ESTE quadro aos outros
+   quadros do mesmo lote. Por isso fica entre os dois — cinza como as notas de
+   rodape, mas com barra a esquerda, porque e para ser achado de relance por
+   quem recebe e quer saber se falta alguma coisa vindo. */
+.exp-print-os > .fracoes {
+  font-size: 7pt; color: #333; margin-top: 1.5pt;
+  padding: 1pt 3pt; background: #f1f1f1; border-left: 2pt solid #999;
+}
 /* O ".fic" (o que fica para depois) saiu da FOLHA em 27/08/2026 — ali so
    interessa o que esta dentro do caminhao. A regra continua valendo para a
    linha da OS no planejamento, que ainda escreve "ficam: ...". */

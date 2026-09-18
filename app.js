@@ -9721,6 +9721,72 @@ function _expFaltamTexto(rem) {
   return partes.join(' · ') || '—';
 }
 
+/* ---- O RESTO DA MESMA OS, NOS OUTROS DIAS (18/09/2026, Junior) ----
+
+   Um lote repartido vira duas ou três cargas em dias diferentes, e cada uma
+   ganha o SEU quadro na folha de OE — quadros que, até aqui, não sabiam um do
+   outro. Quem recebia em São Carlos lia "OS 0537 · G, GG" e não tinha como
+   saber se o P e o M já tinham chegado na semana passada ou se ainda viriam: a
+   folha descrevia o caminhão e calava sobre o lote.
+
+   Agora cada quadro traz o rodapé que costura as frações: em que DIA saiu (ou
+   sai) a outra parte da mesma OS e QUAIS PACOTES foram naquela. O quadro
+   continua descrevendo a SUA carga — a tabela acima é só o que está neste
+   caminhão —, e é justamente por isso que a linha precisa existir.
+
+   Três cuidados que a conta tem de ter:
+
+     · expedição CANCELADA não entra. Aquele lote não saiu nem vai sair, e
+       anunciá-lo mandaria a doca procurar um pacote que não existe.
+     · a data é a EFETIVA (_expDataEfetivaCarga). A carga guarda o dia ORIGINAL
+       da ocorrência; remarcar muda o dia em que a fração viaja de verdade, e é
+       esse que vale para quem confere.
+     · carga ANTIGA, sem composição por pacote, é o lote inteiro (a mesma
+       leitura de _expEmbarcadoOS) — e é isso que ela diz, em vez de listar
+       tamanho nenhum e parecer vazia. */
+function _expOutrasFracoesOS(os, cargaAtual) {
+  if (!os || !Array.isArray(STATE.expedicaoCargas)) return [];
+  const cancel = _expCancelSet();
+  const atualId = (cargaAtual && cargaAtual.id) || '';
+  const pernaAtual = (cargaAtual && cargaAtual.perna === 'volta') ? 'volta' : 'ida';
+  return STATE.expedicaoCargas
+    .filter(c => c && c.osId === os.id && c.id !== atualId && !cancel.has(c.janelaId + '|' + c.data))
+    .map(c => {
+      const partes = [];
+      if (Array.isArray(c.pacotes)) {
+        _expContarPacotes(c.pacotes).forEach(e => partes.push(`${e.qtd > 1 ? e.qtd + '× ' : ''}${_expRotuloPacote(e)}`));
+        if (c.reposicao) partes.push('reposição');
+      }
+      const perna = c.perna === 'volta' ? 'volta' : 'ida';
+      return {
+        data: _expDataEfetivaCarga(c),
+        pacotes: Array.isArray(c.pacotes) ? (partes.join(', ') || '—') : 'lote inteiro',
+        feita: !!c.feita,
+        perna,
+        outraPerna: perna !== pernaAtual
+      };
+    })
+    .sort((a, b) => String(a.data).localeCompare(String(b.data)));
+}
+
+// A linha que vai na folha. Vazia quando a OS não foi repartida — o silêncio
+// aqui quer dizer "esta carga é a OS inteira", que é a maioria dos quadros, e
+// uma linha dizendo "não há outras frações" só tomaria papel.
+// "feita" é o quadrinho marcado na própria folha: é o que separa o que JÁ
+// embarcou do que ainda vai — melhor do que comparar datas, que não sabem se a
+// carga do dia realmente saiu.
+function _expOutrasFracoesTexto(os, cargaAtual) {
+  const outras = _expOutrasFracoesOS(os, cargaAtual);
+  if (!outras.length) return '';
+  const itens = outras.map(f => {
+    const marcas = [];
+    if (f.feita) marcas.push('feita');
+    if (f.outraPerna) marcas.push(f.perna);
+    return `<b>${esc(formatDate(f.data))}</b>${marcas.length ? ` (${esc(marcas.join(', '))})` : ''}: ${esc(f.pacotes)}`;
+  }).join(' · ');
+  return `<div class="fracoes"><b>O resto desta OS ${outras.length > 1 ? 'sai em outros dias' : 'sai em outro dia'}:</b> ${itens}</div>`;
+}
+
 /* ---- peças de cada pacote: a ponte entre o lote parcial e o estoque ---- */
 
 const _EXP_TAM_KEY = { P: 'p', M: 'm', G: 'g', GG: 'gg', G1: 'g1', G2: 'g2', G3: 'g3' };
@@ -16819,6 +16885,10 @@ function renderPrintPlanoExpedicao() {
     // como a OS foi repartida. Destacado, não em nota de rodapé: é justamente o
     // que não está em nenhum outro lugar do papel.
     const obsHtml = i.obs ? `<div class="obs">${esc(i.obs)}</div>` : '';
+    // O rodapé que costura as frações do mesmo lote (ver _expOutrasFracoesOS).
+    // Entra nos TRÊS formatos do quadro pela mesma razão do recado: quem confere
+    // precisa saber do resto da OS tendo ela grade, carga parcial ou lote cheio.
+    const fracHtml = _expOutrasFracoesTexto(o, i.carga);
     // A carga leva só PARTE da peça? Então a folha diz quais fases do enfesto
     // embarcam. Carga da peça inteira não escreve nada — o silêncio aqui quer
     // dizer "vai tudo", que é o caso da grande maioria.
@@ -16834,7 +16904,7 @@ function renderPrintPlanoExpedicao() {
       : '';
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
-    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${obsHtml}</div>`;
+    if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${fracHtml}${obsHtml}</div>`;
 
     // A conta do volume, escrita por extenso: é a mesma regra do planejamento
     // (nº de tamanhos × tonalidades + 1 de reposição). Divergência contra o que
@@ -16869,7 +16939,7 @@ function renderPrintPlanoExpedicao() {
               : `<b>${fmt(nestaCarga)} volume${nestaCarga === 1 ? '' : 's'}</b> nesta carga${i.carga.reposicao ? ' (com o de reposição e ribana)' : ''}`}
           </div>
           ${tab || `<div class="pe">${soRep ? 'Só o pacote de reposição e ribana nesta carga.' : 'Nenhum pacote de tamanho nesta carga.'}</div>`}
-          ${fasesHtml}${obsHtml}
+          ${fasesHtml}${fracHtml}${obsHtml}
         </div>`;
     }
     // O volume extra não é só reposição: é o pacote que leva junto a ribana.
@@ -16933,7 +17003,7 @@ function renderPrintPlanoExpedicao() {
           </tbody>
         </table>${indef ? `
         <div class="pe">A divisão entre as tonalidades ainda não foi repartida na OS.</div>` : ''}
-        ${fasesHtml}${obsHtml}
+        ${fasesHtml}${fracHtml}${obsHtml}
       </div>`;
   };
 
