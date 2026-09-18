@@ -13,6 +13,19 @@
   211 MB. Depois do enxugamento de 19/08 (ver enxugar-inicializacao.ps1) o
   esperado e mais ar e menos tempo - e e esta janelinha que diz se pegou.
 
+  A SEGUNDA PERGUNTA DA MANHA, desde 18/09/2026: o Audaces tem licenca?
+  A licenca do Audaces venceu em 04/09/2026 e a fabrica so descobriu no dia 17,
+  quando alguem foi abrir um encaixe. Treze dias de silencio - porque o unico
+  aviso de vencimento que o programa da e um popup que ele mostrou UMA vez, em
+  08/08, numa maquina que trabalha sozinha com autologon e ninguem olha.
+  E quando falta licenca, nenhuma tela diz "licenca": o Encaixe diz "Erro fatal:
+  Problemas de comunicacao com servidor: localhost", que manda todo mundo cacar
+  rede, porta e firewall. Custou uma manha inteira.
+  Aqui a pergunta e feita todo dia, e em portugues: o servidor de licenca do
+  Audaces Go responde em 127.0.0.1:5556? Enquanto responder, esta e uma linha
+  mansa no meio do relatorio; no dia em que parar, e um ATENCAO com a data da
+  ultima licenca servida, que e o que diz ha quanto tempo a coisa esta parada.
+
   A janela se fecha sozinha em 2 minutos. Um aviso que fica esperando clique
   num servidor e um aviso que trava o servidor.
 
@@ -43,6 +56,82 @@ function Anotar($texto) {
     catch { Start-Sleep -Milliseconds 200 }
   }
   Write-Host $linha
+}
+
+# ------------------------------------------------------- a licenca do Audaces
+# O visor da bandeja (pserver.exe) fala com o servidor de licenca por HTTP em
+# 127.0.0.1:5556 - e a mesma porta que o proprio programa usa, a cada 30 s.
+# Se ela responde, ha licenca sendo servida. Se recusa conexao, nao ha, e dai em
+# diante nenhuma tela do Audaces diz a palavra "licenca".
+# Devolve as linhas do relatorio, ou nada quando nao ha Audaces nesta maquina.
+function ConferirLicencaDoAudaces {
+  $pasta = Join-Path $env:LOCALAPPDATA 'Audaces\pserver'
+  if (-not (Test-Path $pasta)) { return @() }
+
+  $responde = $false
+  try {
+    $cliente   = New-Object Net.Sockets.TcpClient
+    $tentativa = $cliente.ConnectAsync('127.0.0.1', 5556)
+    $responde  = ($tentativa.Wait(1500) -and $cliente.Connected)
+    $cliente.Close()
+  } catch { $responde = $false }
+
+  # ---------------------------------------------------------- nao responde
+  if (-not $responde) {
+    # Quando parou esta no go.db, o banco do proprio servidor: uma linha por
+    # sessao de licenca, com inicio e fim. Ler as datas cruas de um arquivo de
+    # 8 KB basta - abrir SQLite aqui exigiria carregar driver so para isto.
+    $ultima = ''
+    $go = Join-Path $pasta 'go.db'
+    if (Test-Path $go) {
+      try {
+        $cru   = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($go))
+        $datas = @([regex]::Matches($cru, '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}') | ForEach-Object { $_.Value })
+        if ($datas.Count -gt 0) { $ultima = ($datas | Sort-Object)[-1] }
+      } catch { }
+    }
+    $recado = 'ATENCAO - o Audaces esta SEM LICENCA: o servidor de licenca nao responde.'
+    if ($ultima) {
+      $quando = [datetime]::ParseExact($ultima, 'yyyy-MM-dd HH:mm:ss', $null)
+      $parado = [int]((Get-Date) - $quando).TotalDays
+      $recado += ' A ultima licenca servida foi em ' + $quando.ToString('dd/MM/yyyy') + ", ha $parado dia(s)."
+    }
+    return @(
+      $recado
+      '  O Encaixe vai dizer "Erro fatal: Problemas de comunicacao com servidor:'
+      '  localhost". Nao e rede: e licenca. Renovar com a Audaces.'
+    )
+  }
+
+  # ------------------------------------------------------------- responde
+  # Com licenca viva o /info traz a data de vencimento. O formato pode mudar de
+  # versao para versao, entao aqui e melhor nao achar a data do que errar o dia:
+  # sem data legivel, a linha apenas diz que a licenca esta no ar.
+  $vence = $null
+  try {
+    $info = Invoke-WebRequest -Uri 'http://127.0.0.1:5556/info' -TimeoutSec 4 -UseBasicParsing
+    $achou = [regex]::Match([string]$info.Content, '(?i)"[^"]*expir[^"]*"\s*:\s*"([^"]{8,40})"')
+    if ($achou.Success) {
+      # -as devolve nulo quando nao entende, em vez de estourar. TryParse aqui
+      # nao serve: o [ref] de uma variavel vazia e erro em PowerShell, e o erro
+      # cairia no catch fingindo que a data nao existe.
+      $vence = $achou.Groups[1].Value -as [datetime]
+    }
+  } catch { }
+
+  if (-not $vence) { return @('Audaces: licenca no ar.') }
+
+  $faltam = [int]($vence - (Get-Date)).TotalDays
+  # Trinta dias e o prazo para renovar sem parar a fabrica; dai para baixo o
+  # aviso sobe de tom todo dia, porque um aviso dado uma vez so ja falhou aqui.
+  if ($faltam -gt 30) {
+    return @('Audaces: licenca no ar, vence em ' + $vence.ToString('dd/MM/yyyy') + ".")
+  }
+  return @(
+    "ATENCAO - a licenca do Audaces vence em $faltam dia(s), em " + $vence.ToString('dd/MM/yyyy') + '.'
+    '  Renovar antes: vencida, ela derruba o Encaixe e a mensagem fala em rede,'
+    '  nao em licenca.'
+  )
 }
 
 # ------------------------------------------------------------------- agendar
@@ -104,6 +193,14 @@ if ($ruim.Count -gt 0) {
     if ($curta.Length -gt 200) { $curta = $curta.Substring(0, 200) + '...' }
     $partes += "  - $curta"
   }
+}
+
+# A licenca do Audaces entra antes do "Agora": e a unica linha do relatorio que
+# nao fala do Gerador-OS, e e a que ninguem ia procurar sozinho.
+$licenca = @(ConferirLicencaDoAudaces)
+if ($licenca.Count -gt 0) {
+  $partes += ''
+  $partes += $licenca
 }
 
 # O estado de agora, que e o que a pessoa vai querer saber em seguida.
