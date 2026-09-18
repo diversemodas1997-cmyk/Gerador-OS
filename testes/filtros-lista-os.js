@@ -153,9 +153,29 @@ ok('20. escolha que sumiu da lista volta sozinha para "todas"',
 
 console.log('');
 console.log('-- a conta ao lado da busca --');
-const contaCtx = { el: { classList: { toggle: (c, v) => { contaCtx.classe = v; } }, innerHTML: '', title: '' } };
+/* A CONTA GANHOU UM VIZINHO em 17/09/2026: ao lado do "228 OS" ela diz quantos
+   NÚMEROS faltam na numeração (_osNumerosFaltando). O teste não sabia disso e
+   quebrava inteiro no `_osNumerosFaltando is not defined` — falha de harness,
+   não de programa, e por isso ela passava despercebida: o arquivo morria antes
+   do primeiro `ok`. Agora o motor traz a conta dos buracos junto, e os casos
+   abaixo cobrem também esse pedaço. */
+const contaCtx = { el: { classList: { toggle: (c, v) => { contaCtx.classe = v; } }, innerHTML: '', title: '' }, ordens: [] };
 const conta = new Function('ctx', `
+  // Getter, e nao uma copia da lista: o motor e montado UMA vez e os casos
+  // abaixo trocam a lista inteira. Preso ao array do inicio, ele leria para
+  // sempre a lista vazia da montagem — e o teste passaria sem provar nada.
+  const STATE = { get ordens() { return ctx.ordens; } };
   const document = { getElementById: () => ctx.el };
+  // 'function esc' sozinho casa com esconderAlertaSalvamento, que vem antes no
+  // arquivo: o indexOf pega o primeiro que comeca igual.
+  ${recorte('function esc(s)', 'o escape de HTML')}
+  ${constante('NUMERO_OS_MAX')}
+  ${constante('OS_FAIXA_ARQUIVO')}
+  ${recorte('function formatarNumeroOS', 'o numero com zeros a esquerda')}
+  ${recorte('function sanitizeForFilename', 'o nome de arquivo limpo')}
+  ${recorte('function _numeroOSCanonico', 'o numero canonico da OS')}
+  ${recorte('function _numerosOSExistentes', 'os numeros que existem')}
+  ${recorte('function _osNumerosFaltando', 'os numeros que faltam')}
   ${recorte('function _contaListaOS', 'a conta da lista')}
   return _contaListaOS;
 `)(contaCtx);
@@ -171,6 +191,20 @@ ok('28. zero tambem conta (e o "de 228" que diz que nada sumiu)',
    /<b>0<\/b> de 228 OS/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
 conta(1200, 1200);
 ok('29. milhar sai com o ponto do portugues', /1\.200/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+
+// Os NUMEROS QUE FALTAM, ao lado da conta. Faixa curta e buraco; faixa larga e
+// o arquivo de papel, que nao se cobra de ninguem (OS_FAIXA_ARQUIVO).
+contaCtx.ordens = [{ os: '0001' }, { os: '0002' }, { os: '0003' }];
+conta(3, 3);
+ok('29b. numeracao inteira nao fala em falta', !/faltam/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+contaCtx.ordens = [{ os: '0001' }, { os: '0003' }, { os: '0004' }];
+conta(3, 3);
+ok('29c. um numero pulado vira "faltam 1 numero", com o numero na dica',
+   /faltam 1 n[uú]mero/.test(contaCtx.el.innerHTML) && /0002/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+contaCtx.ordens = [{ os: '0001' }, { os: '0100' }];
+conta(2, 2);
+ok('29d. vao largo e arquivo de papel, nao buraco', !/faltam/.test(contaCtx.el.innerHTML), contaCtx.el.innerHTML);
+contaCtx.ordens = [];
 
 /* ----------------------------------------------------------------------
    O SKU NAO EXIGE COR (10/09/2026, Junior: "o cruzamento entre sku e cor deve
