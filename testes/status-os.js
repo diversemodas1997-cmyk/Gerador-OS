@@ -795,6 +795,52 @@ console.log('-- o que fica gravado --');
   ok('83. conjugada ja no estado pedido nao e recarimbada',
      d.ctx.STATE.ordens[1].statusOSEm === 'ontem', JSON.stringify(d.ctx.STATE.ordens[1]));
 
+  /* CARIMBAR O MESMO STATUS DE NOVO CONSERTA O GRUPO (18/09/2026, Junior: "a
+     alteracao de status de OS conjugada deve ser idempotente").
+
+     Antes, escolher o status que a OS ja tinha saia na primeira linha da
+     funcao, e um grupo desencontrado nao tinha gesto que o juntasse: o clique
+     que deveria consertar era exatamente o que nao fazia nada. Foi o caso da
+     0557 (manda) com a 0554 (segue) — a amarra foi feita DEPOIS do carimbo da
+     mestre, entao a seguidora nunca recebeu aquele status.
+
+     Idempotente aqui quer dizer as duas coisas: repetir CONVERGE (quem esta
+     atrasado sobe) e repetir NAO ACUMULA (quem ja chegou nao e recarimbado,
+     nao grava e nao mexe no estoque). */
+  d = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0557', statusOS: 'ensacado-sc', statusOSEm: 'ontem' },
+    { id: 'pa', os: '0554', conjugadaStatusPaiId: 'at', statusOS: 'enfestando' }
+  ]);
+  await d.api.mudarStatusOS('at', 'ensacado-sc');
+  ok('83b. repetir o status da que manda alinha a seguidora atrasada',
+     d.ctx.STATE.ordens[1].statusOS === 'ensacado-sc', JSON.stringify(d.ctx.STATE.ordens[1]));
+  ok('83c. e a data de quem ja estava no alvo NAO e reescrita',
+     d.ctx.STATE.ordens[0].statusOSEm === 'ontem', JSON.stringify(d.ctx.STATE.ordens[0]));
+  ok('83d. isso vale uma gravacao — o conserto precisa chegar ao servidor',
+     d.ctx.salvou === 1, String(d.ctx.salvou));
+  ok('83e. e o aviso diz que quem foi alinhada foi a conjugada, nao a clicada',
+     d.ctx.toasts.some(t => /0554/.test(t) && /alinhada/i.test(t)),
+     JSON.stringify(d.ctx.toasts));
+
+  // Grupo inteiro no alvo: repetir continua sendo clique sem efeito nenhum.
+  d = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0557', statusOS: 'ensacado-sc', statusOSEm: 'ontem' },
+    { id: 'pa', os: '0554', conjugadaStatusPaiId: 'at', statusOS: 'ensacado-sc', statusOSEm: 'ontem' }
+  ]);
+  await d.api.mudarStatusOS('at', 'ensacado-sc');
+  ok('83f. grupo ja alinhado: repetir nao grava nada',
+     d.ctx.salvou === 0 && d.ctx.STATE.ordens[1].statusOSEm === 'ontem',
+     String(d.ctx.salvou) + ' ' + JSON.stringify(d.ctx.STATE.ordens[1]));
+
+  // A mesma convergencia na amarra da GRADE, que e o outro caminho.
+  d = ctxDe('admin', 'admin@diverse.local', true, [
+    { id: 'at', os: '0498', conjugadaId: 'pa', statusOS: 'cortando' },
+    { id: 'pa', os: '0497', conjugadaPaiId: 'at', statusOS: 'enfestando' }
+  ]);
+  await d.api.mudarStatusOS('at', 'cortando');
+  ok('83g. na amarra da grade tambem: repetir alinha a que ficou para tras',
+     d.ctx.STATE.ordens[1].statusOS === 'cortando', JSON.stringify(d.ctx.STATE.ordens[1]));
+
   /* ----------------------------------------------------------------------
      CONJUGAR OS À MÃO (10/09/2026, Junior: "o usuário deve ser capaz de
      conjugar duas ou mais OS, sem interferir no cadastro das grades de cada

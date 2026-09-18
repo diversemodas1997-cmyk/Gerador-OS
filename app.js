@@ -25980,32 +25980,65 @@ async function mudarStatusOS(id, valor) {
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); renderStatusFolhaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
-  if (_statusOS(o) === alvo) return;
   const agora = new Date().toISOString();
   const quem = _obsQuemSou();
-  _carimbarStatusOS(o, alvo, agora, quem);
+  /* CARIMBAR É IDEMPOTENTE, E POR ISSO CONSERTA (18/09/2026, Junior).
+
+     Até aqui, escolher o status que a OS já tinha saía pela porta na primeira
+     linha — e isso estava certo para uma OS sozinha, mas deixava um grupo
+     conjugado preso: se a seguidora ficasse para trás por qualquer motivo, não
+     havia gesto nenhum que a trouxesse de volta. Carimbar de novo não fazia
+     nada, e quem olhava a lista via a dupla desencontrada sem ter o que clicar.
+
+     Aconteceu com a 0557 (manda) e a 0554 (segue): a 0557 em "Ensacado | SC" e
+     a 0554 em "Enfestando", porque a amarra foi feita DEPOIS do carimbo da
+     mestre — conjugar amarra as mudanças seguintes, não copia o estado de
+     agora. Escolher "Ensacado | SC" na 0557 de novo era um clique que não
+     mudava nada.
+
+     Agora a conta é sobre o GRUPO, não sobre a OS clicada: repetir o status
+     alinha quem estiver atrasado e não repete nada em quem já está lá. Duas
+     travas seguram isso:
+
+       · a OS carimbada não é recarimbada quando já está no alvo — a data dela
+         é o dia em que ELA mudou, e não o dia em que alguém clicou de novo;
+       · `_conjugadasQueSeguemStatus` já devolve só as que estão fora do alvo,
+         pelo mesmo motivo.
+
+     Com o grupo inteiro no alvo não há o que fazer, e a saída continua sendo
+     não gravar nada — repetir o clique não pode gerar gravação nem movimento
+     de estoque. */
+  const jaEstava = _statusOS(o) === alvo;
   // A conjugada vai junto — mesmo enfesto, mesmo corte —, e volta junto quando
   // a ativa sai de finalizada. Carimbada ANTES do saveState: as duas viajam na
   // mesma gravação, senão uma pode ir e a outra ficar para trás se a rede cair
   // no meio.
   const juntas = _conjugadasQueSeguemStatus(o, alvo);
+  if (jaEstava && !juntas.length) return;
+  if (!jaEstava) _carimbarStatusOS(o, alvo, agora, quem);
   juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
   renderListaOS();
   renderStatusFolhaOS();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
+  const nomesJuntas = juntas.map(c => c.os || '').join(', ');
+  const plural = juntas.length > 1;
   try {
     await saveState('ordens');
-    toast(`OS ${o.os || ''} · ${rot}`
-      + (juntas.length
-          ? ` — e ${juntas.length > 1 ? 'as conjugadas' : 'a conjugada'} ${juntas.map(c => c.os || '').join(', ')}`
-          : ''), 'ok');
+    // Quando a OS clicada já estava no alvo, quem mudou foi só a conjugada — e
+    // o aviso diz isso, senão parece que o clique mexeu numa OS que não mexeu.
+    toast(jaEstava
+      ? `${plural ? 'Conjugadas alinhadas' : 'Conjugada alinhada'} · ${rot} — OS ${nomesJuntas}`
+      : `OS ${o.os || ''} · ${rot}`
+        + (juntas.length ? ` — e ${plural ? 'as conjugadas' : 'a conjugada'} ${nomesJuntas}` : ''), 'ok');
   } catch (e) {
     console.warn('mudarStatusOS', e);
     toast('Não deu para salvar o status — tente de novo', 'err');
   }
   // E o pano sai (ou volta para) o estoque conforme o status. Ver
   // _estoqueSeguirStatusOS: é ele que diz por que "em andamento" é a hora.
-  await _estoqueSeguirStatusOS(o, alvo);
+  // Só para quem MUDOU: a OS que já estava no alvo não tem movimento novo a
+  // fazer, e repetir o clique não pode mexer no estoque dela.
+  if (!jaEstava) await _estoqueSeguirStatusOS(o, alvo);
   // A conjugada não reserva pano (ver aplicarBaixaEstoqueOS), então aqui não há
   // o que baixar. Passa mesmo assim: OS antiga, de antes daquela guarda, pode
   // ter movimento gravado — e ela também tem de ser baixada ao terminar.
