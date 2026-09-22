@@ -32,10 +32,24 @@ function recorte(de, oQue) {
   if (j < 0) { console.error('nao achei o fim de ' + oQue); process.exit(1); }
   return src.slice(i, j + 2);
 }
+/* Recorta uma constante ATE O FIM DA DECLARACAO.
+
+   Era `[^;]+;` — "do `const` ate o primeiro ponto-e-virgula" —, e isso quebrou
+   em 22/09/2026, quando um COMENTARIO dentro de ACOES_POR_AREA ganhou um
+   ponto-e-virgula no meio da frase: a relacao de acoes chegava aqui cortada ao
+   meio e o arquivo nem compilava. Agora o corte anda por LINHA e para na
+   primeira que termina em ponto-e-virgula (descontado o comentario do fim),
+   que e como a declaracao de verdade acaba. */
 const constante = (nome) => {
-  const m = src.match(new RegExp('^const ' + nome + ' = [^;]+;', 'm'));
-  if (!m) { console.error('nao achei a constante ' + nome); process.exit(1); }
-  return m[0];
+  const i = src.search(new RegExp('^const ' + nome + ' = ', 'm'));
+  if (i < 0) { console.error('nao achei a constante ' + nome); process.exit(1); }
+  const out = [];
+  for (const l of src.slice(i).split('\n')) {
+    out.push(l);
+    if (l.replace(/\/\/.*$/, '').trimEnd().endsWith(';')) return out.join('\n');
+  }
+  console.error('nao achei o fim da constante ' + nome);
+  process.exit(1);
 };
 
 const monta = (ctx) => new Function('ctx', `

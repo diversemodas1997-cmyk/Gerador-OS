@@ -2004,6 +2004,9 @@ const ACOES_POR_AREA = {
   'corrigir os horários das operações': 'operacoes',
   // Compra
   'limpar a lista de compra': 'compra',
+  // Apagar a OC é da mesma área de limpar a lista, e pelo mesmo motivo: somar e
+  // emitir é de quem monta a compra; jogar fora o pedido do outro é outra coisa.
+  'apagar uma ordem de compra': 'compra',
   // Fila de produção
   'definir a ordem da fila de produção': 'fila-os',
   'limpar a ordem da fila de produção': 'fila-os',
@@ -2447,7 +2450,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3025,6 +3028,20 @@ const STATE = {
   // Nada aqui mexe em estoque: a lista é uma PREVISÃO de compra, e reserva de
   // material continua sendo coisa de OS salva.
   compraPlano: [],
+  /* AS ORDENS DE COMPRA (22/09/2026, Junior: "no campo compra, insira uma ordem
+     de compra - OC... preenchida com os tipos de tecidos, através de um botão
+     na janela itens de compra").
+
+     A lista de compra é RASCUNHO — muda a cada conta refeita, some quando
+     alguém limpa. A OC é o contrário: um documento, com número próprio, que sai
+     da casa e vai para o fornecedor. Por isso ela guarda os NÚMEROS COPIADOS no
+     instante em que nasceu, e não um ponteiro para a lista: o pedido que se fez
+     é o que está no papel, mesmo que amanhã a necessidade mude.
+
+     { id, numero ('OC-0001'), data, fornecedorId, obs, status,
+       itens: [{ tecidoNome, corNome, bobinas, kg, kgBruto, disponivel }],
+       criadoPor, criadoEm } */
+  compraOCs: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -3145,6 +3162,7 @@ const DESFAZER_NOMES = {
   componentes: ['componente', 'componentes'],
   operacoes: ['operação do plano', 'operações do plano'],
   compraPlano: ['item da lista de compra', 'itens da lista de compra'],
+  compraOCs: ['ordem de compra', 'ordens de compra'],
   expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
   expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
@@ -3309,7 +3327,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -36462,6 +36480,351 @@ function compraDetalhe(id) {
   renderCompra();
 }
 
+/* ==================== A ORDEM DE COMPRA (OC) ====================
+
+   22/09/2026, Junior: "no campo compra, insira uma ordem de compra - OC. Essa
+   ordem de compra deve ser preenchida com os tipos de tecidos alocados na OC,
+   através de um botão na janela itens de compra".
+
+   A LISTA DE COMPRA É RASCUNHO: ela se refaz do cadastro a cada desenho da
+   tela, muda quando alguém corrige uma camada e some quando alguém a limpa. A
+   OC é o contrário — um documento com número próprio, que sai da casa e vai
+   para o fornecedor. Por isso ela COPIA os números no instante em que nasce, em
+   vez de apontar para a lista: o que se pediu é o que está no papel, mesmo que
+   amanhã a necessidade mude.
+
+   O QUE ELA LEVA É O "A COMPRAR", e não o bruto: a necessidade bruta é o que a
+   produção gasta, e parte disso já está na prateleira. Mandar o bruto ao
+   fornecedor seria comprar de novo o pano que a casa tem. O bruto e o
+   disponível viajam junto em cada linha, para a OC saber explicar de onde saiu
+   o número que ela pede.
+
+   A QUANTIDADE É EDITÁVEL depois de gerada, e tem de ser: o fornecedor vende
+   bobina inteira, o pedido se arredonda para o preço fechar, e às vezes se pede
+   um pouco a mais porque o caminhão é o mesmo. Editar aqui não mexe na lista de
+   compra nem no estoque — a OC é um papel, não um lançamento.
+
+   QUEM PODE: gerar e editar é de quem monta a compra (a mesma conta que soma
+   item na lista — ver exigirEdicaoCompra); apagar uma OC é da área "Lista de
+   compra", como limpar a lista inteira. Somar é acrescentar; jogar fora o
+   pedido do outro é outra coisa. */
+const OC_STATUS = [
+  { k: 'aberta',    rotulo: 'Aberta',                bg: '#fde9c8' },
+  { k: 'enviada',   rotulo: 'Enviada ao fornecedor', bg: '#dfe7f7' },
+  { k: 'recebida',  rotulo: 'Recebida',              bg: '#d6f0db' },
+  { k: 'cancelada', rotulo: 'Cancelada',             bg: '#f6dcda' }
+];
+const _ocStatusDef = k => OC_STATUS.find(s => s.k === k) || OC_STATUS[0];
+
+function _ocLista() {
+  if (!Array.isArray(STATE.compraOCs)) STATE.compraOCs = [];
+  return STATE.compraOCs;
+}
+function _ocPorId(id) { return _ocLista().find(o => o.id === id) || null; }
+
+/* O NÚMERO DA OC nunca se repete, e por isso ele tem CONTADOR além do maior
+   existente. Só olhar as OCs que estão na tela faria o número voltar atrás:
+   apagada a OC-0002, a próxima nasceria 0002 de novo — duas ordens com o mesmo
+   número em duas semanas diferentes, uma delas já na mão do fornecedor. O
+   contador (meta.ocCounter) lembra o que já foi emitido; o maior existente fica
+   junto como rede, para um blob importado de fora não recomeçar do zero. */
+function _ocNumeroNovo() {
+  const maior = _ocLista().reduce((mx, o) =>
+    Math.max(mx, parseInt(String(o.numero || '').replace(/\D/g, ''), 10) || 0), 0);
+  STATE.meta = STATE.meta || {};
+  const n = Math.max(maior, Number(STATE.meta.ocCounter) || 0) + 1;
+  return 'OC-' + String(n).padStart(4, '0');
+}
+
+// Os totais de uma OC, para a linha da lista e para o papel.
+function _ocTotais(oc) {
+  const itens = (oc && oc.itens) || [];
+  return {
+    linhas: itens.length,
+    bobinas: itens.reduce((s, i) => s + (Number(i.bobinas) || 0), 0),
+    kg: itens.reduce((s, i) => s + (Number(i.kg) || 0), 0)
+  };
+}
+
+/* O BOTÃO da janela "Itens da compra". Ele lê a NECESSIDADE BRUTA da lista —
+   a mesma tabela que está logo abaixo, sem conta nova — e leva para a OC as
+   linhas que têm o que comprar. Tecido que a conta não sabe prever (ribana sem
+   gramatura, fase sem bobina cadastrada) entra com o que se sabe e é marcado,
+   em vez de ficar de fora calado: quem monta o pedido precisa saber que aquele
+   pano está na lista e a conta não fechou. */
+async function gerarOCdaCompra() {
+  if (!exigirEdicaoCompra('gerar a ordem de compra')) return;
+  const itens = STATE.compraPlano || [];
+  if (!itens.length) return toast('A lista de compra está vazia — some ao menos um item', 'err');
+  const totais = compraNecessidadeBruta(itens) || [];
+  const linhas = totais
+    .filter(t => (Number(t.kgComprar) || 0) > 0.0005 || (Number(t.bobinasComprar) || 0) > 0)
+    .map(t => ({
+      tecidoNome: t.tecidoNome || '', corNome: t.corNome || '',
+      bobinas: Number(t.bobinasComprar) || 0,
+      kg: Math.round((Number(t.kgComprar) || 0) * 1000) / 1000,
+      kgBruto: Math.round((Number(t.kg) || 0) * 1000) / 1000,
+      disponivel: Math.round((Number(t.disponivel) || 0) * 1000) / 1000,
+      semPrevisao: (t.semPrevisao || []).join(', ')
+    }));
+  if (!linhas.length) {
+    return toast('Nada a comprar: o estoque disponível cobre a lista inteira', 'err');
+  }
+  const numero = _ocNumeroNovo();
+  // O contador anda JUNTO com a emissão: é ele que impede o número de voltar
+  // atrás quando uma OC é apagada.
+  STATE.meta = STATE.meta || {};
+  STATE.meta.ocCounter = parseInt(numero.replace(/\D/g, ''), 10) || 0;
+  const oc = {
+    id: uid(),
+    numero,
+    data: new Date().toISOString().slice(0, 10),
+    fornecedorId: '',
+    obs: '',
+    status: 'aberta',
+    itens: linhas,
+    criadoPor: _cpQuemSou(),
+    criadoEm: new Date().toISOString()
+  };
+  _ocLista().unshift(oc);
+  _ocAbertas.add(oc.id);
+  desfazerNomearAcao('ordem de compra ' + oc.numero);
+  await saveState('compraOCs');
+  await saveState('meta');
+  renderCompra();
+  toast(`${oc.numero} gerada com ${linhas.length} tecido(s)`, 'ok');
+}
+window.gerarOCdaCompra = gerarOCdaCompra;
+
+const _ocAbertas = new Set();   // OCs com o detalhe aberto
+
+function ocDetalhe(id) {
+  if (_ocAbertas.has(id)) _ocAbertas.delete(id); else _ocAbertas.add(id);
+  renderCompra();
+}
+window.ocDetalhe = ocDetalhe;
+
+// Um campo do cabeçalho da OC: fornecedor, data, status, observação.
+async function ocCampo(id, campo, valor) {
+  if (!exigirEdicaoCompra('editar a ordem de compra')) { renderCompra(); return; }
+  const oc = _ocPorId(id);
+  if (!oc) return;
+  if (['fornecedorId', 'data', 'status', 'obs'].indexOf(campo) < 0) return;
+  oc[campo] = String(valor == null ? '' : valor);
+  desfazerNomearAcao('ordem de compra ' + oc.numero);
+  await saveState('compraOCs');
+  renderCompra();
+}
+window.ocCampo = ocCampo;
+
+// A quantidade de uma linha. Vazio vira zero; número negativo não existe em
+// pedido nenhum.
+async function ocItemCampo(id, idx, campo, valor) {
+  if (!exigirEdicaoCompra('editar a ordem de compra')) { renderCompra(); return; }
+  const oc = _ocPorId(id);
+  const it = oc && oc.itens && oc.itens[idx];
+  if (!it) return;
+  const n = parseFloat(String(valor).replace(',', '.'));
+  it[campo] = isFinite(n) && n > 0 ? (campo === 'bobinas' ? Math.round(n) : Math.round(n * 1000) / 1000) : 0;
+  desfazerNomearAcao('ordem de compra ' + oc.numero);
+  await saveState('compraOCs');
+  renderCompra();
+}
+window.ocItemCampo = ocItemCampo;
+
+async function ocItemRemover(id, idx) {
+  if (!exigirEdicaoCompra('editar a ordem de compra')) return;
+  const oc = _ocPorId(id);
+  if (!oc || !oc.itens || !oc.itens[idx]) return;
+  oc.itens.splice(idx, 1);
+  desfazerNomearAcao('ordem de compra ' + oc.numero);
+  await saveState('compraOCs');
+  renderCompra();
+}
+window.ocItemRemover = ocItemRemover;
+
+async function ocRemover(id) {
+  if (!exigirEdicao('apagar uma ordem de compra')) return;
+  const oc = _ocPorId(id);
+  if (!oc) return;
+  if (!confirm(`Apagar a ${oc.numero}?\n\nO pedido some do programa. A lista de compra e o estoque não são tocados.`)) return;
+  STATE.compraOCs = _ocLista().filter(o => o.id !== id);
+  _ocAbertas.delete(id);
+  desfazerNomearAcao('ordem de compra ' + oc.numero);
+  await saveState('compraOCs');
+  renderCompra();
+  toast(`${oc.numero} apagada`, 'ok');
+}
+window.ocRemover = ocRemover;
+
+/* O PAPEL DA OC, numa janela que já abre no diálogo de impressão.
+
+   Mesmo caminho das etiquetas: uma página INTEIRA E SOZINHA, escrita na janela
+   nova, em vez de um bloco escondido com @media print. A folha de OS e a de OE
+   já disputam as regras de impressão desta página entre si; entrar de terceiro
+   ali faria a OC sair com a margem de uma e a fonte da outra, e mexer nisso
+   arriscaria as duas folhas que a fábrica usa todo dia. */
+function imprimirOC(id) {
+  const oc = _ocPorId(id);
+  if (!oc) return;
+  const e = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const kg = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const forn = (STATE.fornecedores || []).find(f => f.id === oc.fornecedorId) || null;
+  const t = _ocTotais(oc);
+  const linhas = (oc.itens || []).map((i, n) => `
+    <tr>
+      <td class="num">${n + 1}</td>
+      <td><b>${e(i.tecidoNome)}</b></td>
+      <td>${e(corSemTecido(i.corNome, i.tecidoNome) || '—')}</td>
+      <td class="num">${Number(i.bobinas) > 0 ? Number(i.bobinas) : '—'}</td>
+      <td class="num">${kg(i.kg)}</td>
+    </tr>`).join('');
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>${e(oc.numero)}</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm 14mm 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-size: 12pt; margin: 0; padding: 18px; background: #fff; }
+  .toolbar { margin-bottom: 14px; }
+  .toolbar button { font: inherit; padding: 6px 12px; margin-right: 6px; cursor: pointer; }
+  h1 { font-size: 20pt; letter-spacing: .06em; margin: 0 0 2mm; }
+  .sub { color: #555; font-size: 10pt; margin-bottom: 6mm; }
+  .cab { display: flex; gap: 10mm; flex-wrap: wrap; border: 1px solid #000; padding: 3mm 4mm; margin-bottom: 5mm; }
+  .cab div { font-size: 10.5pt; }
+  .cab b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #000; padding: 2mm 3mm; text-align: left; font-size: 11pt; }
+  th { background: #eee; font-size: 9pt; letter-spacing: .08em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tfoot td { font-weight: 700; background: #f5f5f5; }
+  .obs { margin-top: 5mm; border: 1px solid #000; padding: 3mm 4mm; font-size: 10.5pt; white-space: pre-wrap; min-height: 18mm; }
+  .obs b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
+  .assina { margin-top: 14mm; display: flex; gap: 14mm; }
+  .assina div { flex: 1; border-top: 1px solid #000; padding-top: 2mm; font-size: 9.5pt; text-align: center; color: #555; }
+  @media print { .toolbar { display: none !important; } body { padding: 0; } }
+</style></head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+    <button onclick="window.close()">Fechar</button>
+  </div>
+  <h1>ORDEM DE COMPRA ${e(oc.numero)}</h1>
+  <div class="sub">Tecidos · emitida pelo Gerador-OS</div>
+  <div class="cab">
+    <div><b>Data</b>${e(_ocDataBr(oc.data))}</div>
+    <div><b>Fornecedor</b>${e(forn ? forn.nome : '—')}</div>
+    ${forn && forn.cnpj ? `<div><b>CNPJ</b>${e(forn.cnpj)}</div>` : ''}
+    ${forn && forn.cidadeUf ? `<div><b>Cidade / UF</b>${e(forn.cidadeUf)}</div>` : ''}
+    <div><b>Situação</b>${e(_ocStatusDef(oc.status).rotulo)}</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="width:8mm;" class="num">#</th><th>Tecido</th><th>Cor</th>
+      <th class="num" style="width:24mm;">Bobinas</th><th class="num" style="width:28mm;">Quilos</th>
+    </tr></thead>
+    <tbody>${linhas || '<tr><td colspan="5">Sem itens.</td></tr>'}</tbody>
+    <tfoot><tr>
+      <td colspan="3">Total — ${t.linhas} tecido(s)</td>
+      <td class="num">${t.bobinas || '—'}</td><td class="num">${kg(t.kg)}</td>
+    </tr></tfoot>
+  </table>
+  <div class="obs"><b>Observações</b>${e(oc.obs || '')}</div>
+  <div class="assina"><div>Comprador</div><div>Fornecedor</div></div>
+  <script>window.addEventListener('load', () => { setTimeout(() => window.print(), 300); });<\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=900,height=1100');
+  if (!w) return toast('Popup bloqueado pelo navegador. Permita popups deste site.', 'err');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+window.imprimirOC = imprimirOC;
+
+// A data como a casa escreve. Função declarada (e não const de seta) porque ela
+// é usada acima, no papel da OC: declaração sobe, const não.
+function _ocDataBr(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
+}
+
+// O quadro das OCs, embaixo da necessidade bruta — a ordem da tela é a ordem do
+// trabalho: monta a lista, lê quanto falta comprar, emite o pedido.
+function _ocQuadroHtml() {
+  const ocs = _ocLista();
+  const kg = n => _cpKg(n);
+  const linhaDetalhe = (oc) => {
+    const itens = (oc.itens || []).map((i, idx) => `
+      <tr>
+        <td><b>${esc(i.tecidoNome)}</b> · ${esc(corSemTecido(i.corNome, i.tecidoNome)) || '<span style="color:var(--ink-3)">(sem cor)</span>'}
+          ${i.semPrevisao ? `<span title="Sem previsão de bobinas: ${esc(i.semPrevisao)}. O quilo está na conta; a bobina não dá para prever." style="color:#c0392b;cursor:help;"> ⚠</span>` : ''}
+          <div class="muted" style="font-size:11px;">bruto ${kg(i.kgBruto)} kg · disponível ${kg(i.disponivel)} kg</div></td>
+        <td style="text-align:right;"><input class="oc-qtd" type="number" min="0" step="1" value="${Number(i.bobinas) || 0}"
+          title="Bobinas a pedir" onchange="ocItemCampo('${esc(oc.id)}',${idx},'bobinas',this.value)"></td>
+        <td style="text-align:right;"><input class="oc-qtd" type="number" min="0" step="0.001" value="${Number(i.kg) || 0}"
+          title="Quilos a pedir" onchange="ocItemCampo('${esc(oc.id)}',${idx},'kg',this.value)"></td>
+        <td class="col-actions row-actions"><button onclick="ocItemRemover('${esc(oc.id)}',${idx})">tirar</button></td>
+      </tr>`).join('');
+    return `<tr><td colspan="8" style="background:var(--line-2);">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+        <div class="field" style="margin:0;"><label>Fornecedor</label>
+          <select onchange="ocCampo('${esc(oc.id)}','fornecedorId',this.value)">${fornecedorOptions(oc.fornecedorId)}</select></div>
+        <div class="field" style="margin:0;"><label>Data</label>
+          <input type="date" value="${esc(oc.data)}" onchange="ocCampo('${esc(oc.id)}','data',this.value)"></div>
+        <div class="field" style="margin:0;"><label>Situação</label>
+          <select onchange="ocCampo('${esc(oc.id)}','status',this.value)">
+            ${OC_STATUS.map(s => `<option value="${s.k}" ${s.k === (oc.status || 'aberta') ? 'selected' : ''}>${esc(s.rotulo)}</option>`).join('')}
+          </select></div>
+      </div>
+      <table class="table">
+        <thead><tr><th>Tecido + cor</th><th style="text-align:right;width:110px;">Bobinas</th>
+          <th style="text-align:right;width:130px;">Quilos</th><th class="col-actions">Ações</th></tr></thead>
+        <tbody>${itens || '<tr><td colspan="4" class="empty">Sem itens nesta OC.</td></tr>'}</tbody>
+      </table>
+      <div class="field" style="margin:8px 0 0;"><label>Observações (saem no papel)</label>
+        <textarea rows="2" onchange="ocCampo('${esc(oc.id)}','obs',this.value)">${esc(oc.obs || '')}</textarea></div>
+    </td></tr>`;
+  };
+  const linhas = ocs.map(oc => {
+    const t = _ocTotais(oc);
+    const st = _ocStatusDef(oc.status);
+    const aberto = _ocAbertas.has(oc.id);
+    return `<tr>
+      <td class="col-actions row-actions">
+        <button onclick="ocDetalhe('${esc(oc.id)}')">${aberto ? 'fechar' : 'abrir'}</button>
+        <button class="edit" onclick="imprimirOC('${esc(oc.id)}')">imprimir</button>
+        <button class="admin-only" onclick="ocRemover('${esc(oc.id)}')">apagar</button>
+      </td>
+      <td><strong>${esc(oc.numero)}</strong>${oc.criadoPor ? `<div class="muted" style="font-size:11px;">${esc(oc.criadoPor)}</div>` : ''}</td>
+      <td style="white-space:nowrap;">${esc(_ocDataBr(oc.data))}</td>
+      <td>${esc(fornecedorNome(oc.fornecedorId)) || '<span style="color:var(--ink-3)">— a definir —</span>'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${t.linhas}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${t.bobinas || '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_cpKg(t.kg)}</td>
+      <td><span class="badge" style="background:${st.bg};">${esc(st.rotulo)}</span></td>
+    </tr>${aberto ? linhaDetalhe(oc) : ''}`;
+  }).join('');
+  return `
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:14px;">Ordens de compra (OC)</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">
+        O pedido que vai para o fornecedor. Nasce do botão <b>Gerar OC</b>, lá em cima, com os
+        tecidos da lista de compra — <b>o que falta comprar</b>, já descontado o que está na
+        prateleira. Os números são <b>copiados</b> na hora: mexer na lista depois não muda uma OC
+        já emitida. A quantidade de cada linha pode ser ajustada aqui (bobina inteira, pedido
+        arredondado), e <b>imprimir</b> abre o papel com fornecedor, itens e assinaturas.
+        Nada disto mexe em estoque — a entrada se lança quando o pano chega.
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th class="col-actions">Ações</th><th>OC</th><th>Data</th><th>Fornecedor</th>
+          <th style="text-align:right;">Tecidos</th><th style="text-align:right;">Bobinas</th>
+          <th style="text-align:right;">Quilos</th><th>Situação</th>
+        </tr></thead>
+        <tbody>${ocs.length ? linhas : `<tr><td colspan="8" class="empty">Nenhuma OC ainda. Monte a lista acima e clique em <b>Gerar OC</b>.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderCompra() {
   // Os seletores ficam no HTML fixo (fora do painel que se redesenha), então o
   // que o usuário escolheu sobrevive a uma sincronização chegando do servidor.
@@ -36581,7 +36944,16 @@ function renderCompra() {
         </tr></thead>
         <tbody>${itens.length ? linhasItens : `<tr><td colspan="6" class="empty">Nenhum item ainda. Preencha a grade e o desenho técnico acima.</td></tr>`}</tbody>
       </table>
-      ${itens.length ? `<div style="margin-top:8px;"><button class="btn small danger admin-only" onclick="compraLimparLista()">Limpar a lista</button></div>` : ''}
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${/* O BOTAO QUE VIRA PEDIDO (22/09/2026, Junior). Ele fica aqui, na janela
+             dos itens, e nao na tabela da necessidade bruta, porque e a lista que
+             a pessoa acabou de montar — e "gerar OC" e o gesto seguinte a montar.
+             Sem itens ele nao aparece: botao que so serve para dizer "a lista
+             esta vazia" e um aviso disfarcado de botao. */''}
+        ${itens.length ? `<button class="btn small primary registro-only" onclick="gerarOCdaCompra()"
+          title="Cria uma ordem de compra com os tecidos que faltam comprar desta lista">📄 Gerar OC</button>` : ''}
+        ${itens.length ? `<button class="btn small danger admin-only" onclick="compraLimparLista()">Limpar a lista</button>` : ''}
+      </div>
     </div>
 
     <div class="card">
@@ -36606,7 +36978,8 @@ function renderCompra() {
         </tr></thead>
         <tbody>${totais.length ? linhasTotais : `<tr><td colspan="7" class="empty">Sem itens na lista — nada a comprar ainda.</td></tr>`}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${_ocQuadroHtml()}`;
 }
 
 // Deixar disponível globalmente

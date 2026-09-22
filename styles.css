@@ -4595,3 +4595,19 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   color: var(--ink);
 }
 .fila-pos-input:focus { border-color: var(--accent); outline: none; }
+
+/* ============ ORDEM DE COMPRA - OC (22/09/2026) ============
+   O campinho da quantidade de cada linha do pedido. Estreito e alinhado a
+   direita: o que se digita ali e numero de bobina ou quilo, nunca texto. */
+.oc-qtd {
+  width: 92px;
+  padding: 3px 6px;
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.oc-qtd:focus { border-color: var(--accent); outline: none; }
