@@ -7666,6 +7666,21 @@ function renderEstoque() {
     return `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;`
       + `color:var(--ink-2);white-space:nowrap;">${esc(lista.join(' / '))}</div>`;
   };
+  /* A GRADE NA COLUNA DO MODELO (22/09/2026, Junior: "no quadro material
+     reservado, apresente os dados da grade da OS na coluna modelo").
+
+     "Camiseta Básica" não diz quanto pano a OS segura: quem segura pano é a
+     GRADE — a faixa de tamanhos, a linha e a largura do enfesto. Duas OS do
+     mesmo modelo, uma em 2X P ao G3 e outra em 1X P ao GG, aparecem lado a
+     lado aqui reservando quantidades que não se parecem, e a coluna não
+     explicava a diferença.
+
+     É a MESMA célula da lista de Ordens de Serviço, `_gradeCelulaLista`: os
+     tamanhos em cima, linha e largura embaixo, e a distribuição por tamanho
+     ("P 2 · M 2 · G 2 = 6 pç por camada") na dica do mouse. Uma segunda versão
+     aqui faria as duas telas chamarem a mesma grade por nomes diferentes. */
+  const _gradeCelula = (os) => os
+    ? `<div style="margin-top:2px;font-size:11px;">${_gradeCelulaLista(os)}</div>` : '';
 
   const linhaOS = (o) => {
     const os = (STATE.ordens || []).find(x => x.id === o.osId);
@@ -7680,7 +7695,7 @@ function renderEstoque() {
     return `
     <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
-      <td>${esc(o.modelo) || '—'}${_skuCelula(os)}</td>
+      <td>${esc(o.modelo) || '—'}${_skuCelula(os)}${_gradeCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i], fatias)).join('')}
       ${temForro ? celFase(forro, fatias) : ''}
@@ -7700,7 +7715,7 @@ function renderEstoque() {
   const linhaConjugada = (o, pai) => `
     <tr>
       <td style="padding-left:18px;"><span style="color:var(--ink-2);">↳</span> <strong>${esc(o.os) || '—'}</strong></td>
-      <td>${esc(o.modeloNome) || '—'}${_skuCelula(o)}</td>
+      <td>${esc(o.modeloNome) || '—'}${_skuCelula(o)}${_gradeCelula(o)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       <td colspan="${nCorpos + (temForro ? 1 : 0) + (temRibana ? 1 : 0)}" style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);">—</td>
       <td><span class="badge" style="background:#dfe7f7;">Conjugada</span>
@@ -7749,7 +7764,7 @@ function renderEstoque() {
         não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
       ${reservadas.length ? `<table class="table">
-        <thead><tr><th>OS</th><th>Modelo</th><th>Data</th>
+        <thead><tr><th>OS</th><th>Modelo · grade</th><th>Data</th>
           ${Array.from({ length: nCorpos }, (_, i) =>
             `<th style="text-align:right;">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
           ${temForro ? '<th style="text-align:right;">Forro de capuz</th>' : ''}
