@@ -4566,3 +4566,32 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
      este bloco e `screen and`. */
   .sheet-scaler { zoom: var(--folha-zoom, 1); }
 }
+
+/* ============ FILA DE PRODUÇÃO (22/09/2026) ============
+   A ordem das OS não iniciadas. O quadro reaproveita o título-botão do Ranking
+   (.rank-toggle), e o que é próprio daqui são duas coisas: o selo da posição na
+   linha da lista de OS e o campinho onde se escreve a posição. */
+.fila-os-card .table th, .fila-os-card .table td { padding-top: 5px; padding-bottom: 5px; }
+/* O selo "1ª" ao lado do número da OS. Verde do programa, para não se confundir
+   com os badges cinza de código e cor — ele não descreve a OS, diz o lugar dela
+   na fila. */
+.badge.fila-pos {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  color: var(--ok);
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+}
+/* Estreito de propósito: cabe "12" e não convida a digitar outra coisa. */
+.fila-pos-input {
+  width: 52px;
+  padding: 2px 4px;
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.fila-pos-input:focus { border-color: var(--accent); outline: none; }

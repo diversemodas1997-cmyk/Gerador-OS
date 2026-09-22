@@ -1952,6 +1952,15 @@ const AREAS_ACESSO = [
     desc: 'A jornada dos postos: criar, mover, duplicar e excluir operações' },
   { k: 'compra', rotulo: 'Lista de compra',
     desc: 'Limpar a lista inteira (somar já é de toda conta)' },
+  /* A FILA DE PRODUÇÃO (22/09/2026, Junior: "insira a capacidade do usuário
+     determinar a ordem das OS com status não iniciado em 1ª, 2ª, 3ª... Essa
+     capacidade deve ser concedida para o usuário pelo admin").
+
+     Área própria de propósito: dizer o que se corta primeiro não é criar nem
+     editar OS — é decidir a ordem do trabalho, que é de quem está no chão. O
+     admin concede a quem planeja sem ter de abrir junto a edição das OS. */
+  { k: 'fila-os', rotulo: 'Fila de produção',
+    desc: 'Definir a ordem (1ª, 2ª, 3ª…) das OS que ainda não começaram' },
   { k: 'dados', rotulo: 'Dados, backup e pastas',
     desc: 'Snapshots, importação, exportação e as pastas do computador' },
   { k: 'contas', rotulo: 'Contas de acesso', soAdmin: true,
@@ -1995,6 +2004,9 @@ const ACOES_POR_AREA = {
   'corrigir os horários das operações': 'operacoes',
   // Compra
   'limpar a lista de compra': 'compra',
+  // Fila de produção
+  'definir a ordem da fila de produção': 'fila-os',
+  'limpar a ordem da fila de produção': 'fila-os',
   // Dados
   'ver os snapshots do servidor': 'dados', 'ver os snapshots de contingência': 'dados',
   'restaurar snapshots': 'dados', 'baixar snapshots': 'dados', 'importar dados': 'dados',
@@ -27046,6 +27058,241 @@ function _contaListaOS(mostradas, total) {
     : `Todas as ${n(total)} OS da lista.`;
 }
 
+/* ==================== A FILA DE PRODUÇÃO ====================
+
+   22/09/2026, Junior: "insira a capacidade do usuário determinar a ordem das OS
+   com status não iniciado em 1ª, 2ª, 3ª, 4ª, 5ª, etc. Essa capacidade deve ser
+   concedida para o usuário pelo admin".
+
+   A lista de OS sempre saiu pelo NÚMERO, do maior para o menor — que é a ordem
+   em que as OS nasceram, não a ordem em que elas vão ser cortadas. Quem decide
+   o que entra primeiro no enfesto decidia no papel, ou de cabeça, e quem chegava
+   depois não tinha onde ler.
+
+   SÓ AS NÃO INICIADAS entram na fila. OS que já começou não tem ordem a definir
+   — ela está acontecendo —, e enfileirar o que já saiu da mesa encheria a tela
+   de decisões vencidas. Quem diz quais são é `_statusOS`, o mesmo status que a
+   lista mostra e que o checklist da folha acende.
+
+   O QUE SE GRAVA É UMA LISTA DE IDs, em `STATE.meta.filaOS`, e não um número
+   dentro de cada OS. Dois motivos: mexer na ordem de uma OS não pode reescrever
+   a chave `ordens` inteira (é o maior pedaço do blob, e o que mais custa
+   sincronizar), e a posição é uma propriedade da FILA, não da OS — a mesma OS
+   é 3ª hoje e 1ª amanhã sem nada ter mudado nela.
+
+   A OS QUE SAI DO "não iniciado" GUARDA O LUGAR: o id continua na lista, só não
+   aparece na fila. É o que faz uma OS devolvida para "não iniciada" voltar para
+   onde estava, em vez de cair no fim. Some só o id de OS que não existe mais.
+
+   QUEM NÃO FOI ENFILEIRADO VEM DEPOIS, na ordem natural da casa — número menor
+   primeiro, que é a OS mais antiga. Assim a fila já nasce com uma ordem
+   defensável antes de alguém arrastar a primeira linha, e uma OS nova entra no
+   fim sem empurrar ninguém.
+
+   QUEM PODE MEXER é o admin e a conta a quem ele conceder a área "Fila de
+   produção" (ver AREAS_ACESSO). Quem não pode continua LENDO a fila inteira:
+   esconder a ordem de quem executa seria esconder justamente de quem precisa
+   dela. */
+const FILA_OS_ABERTA_CHAVE = 'filaOsAberta';
+
+function _filaLista() {
+  STATE.meta = STATE.meta || {};
+  if (!Array.isArray(STATE.meta.filaOS)) STATE.meta.filaOS = [];
+  return STATE.meta.filaOS;
+}
+
+function _osNaoIniciadas() {
+  return (STATE.ordens || []).filter(o => _statusOS(o) === 'nao-iniciado');
+}
+
+function podeMexerFilaOS() {
+  return temAcesso('fila-os');
+}
+
+// A fila, na ordem: primeiro quem tem lugar marcado, depois o resto pela ordem
+// natural (OS mais antiga primeiro).
+function filaDeProducao() {
+  const pos = new Map();
+  _filaLista().forEach((id, i) => pos.set(id, i));
+  return _osNaoIniciadas().slice().sort((a, b) => {
+    const ia = pos.has(a.id) ? pos.get(a.id) : Infinity;
+    const ib = pos.has(b.id) ? pos.get(b.id) : Infinity;
+    if (ia !== ib) return ia - ib;
+    const na = numeroOSordenacao(a), nb = numeroOSordenacao(b);
+    if (na !== nb) return na - nb;
+    return String(a.os || '').localeCompare(String(b.os || ''), undefined, { numeric: true });
+  });
+}
+
+// Id → posição (1, 2, 3…). Uma volta só, para a lista de OS não recalcular a
+// fila inteira em cada linha.
+function _filaPosicoes() {
+  const m = new Map();
+  filaDeProducao().forEach((o, i) => m.set(o.id, i + 1));
+  return m;
+}
+
+const _filaOrdinal = n => n + 'ª';
+
+/* Grava a nova ordem SEM PERDER O LUGAR DE QUEM SAIU.
+
+   A lista guardada tem duas espécies de id: os que estão na fila agora e os
+   GUARDADOS — OS que já começou, que foi cancelada. A nova ordem só fala dos
+   primeiros, e é por isso que ela não pode simplesmente substituir a lista:
+   jogar os guardados para o fim faria a OS que era 1ª voltar como última no dia
+   em que fosse devolvida para "não iniciada", que é exatamente o contrário do
+   que esta lista existe para fazer.
+
+   Então a gravação ANDA PELA LISTA VELHA: cada guardado fica onde está, e cada
+   lugar que era de uma OS da fila recebe o próximo da ordem nova. OS que ainda
+   não estava na lista (recém-criada, ou nunca ordenada) entra no fim. Só o id de
+   OS que não existe mais some de vez. */
+async function _filaGravar(idsNaOrdem) {
+  const naFila = new Set(idsNaOrdem);
+  const existem = new Set((STATE.ordens || []).map(o => o.id));
+  const fora = _filaLista().filter(id => existem.has(id) && !naFila.has(id));
+  const guardado = new Set(fora);
+  const fresta = idsNaOrdem.slice();
+  const nova = [];
+  _filaLista().forEach(id => {
+    if (!existem.has(id)) return;                 // OS apagada: sai de vez
+    if (guardado.has(id)) { nova.push(id); return; }
+    if (fresta.length) nova.push(fresta.shift()); // lugar de quem está na fila
+  });
+  STATE.meta = STATE.meta || {};
+  STATE.meta.filaOS = nova.concat(fresta);        // quem ainda não tinha lugar
+  await saveState('meta');
+}
+
+async function moverNaFila(id, delta) {
+  if (!exigirEdicao('definir a ordem da fila de produção')) return;
+  const ids = filaDeProducao().map(o => o.id);
+  const i = ids.indexOf(id);
+  const j = i + (Number(delta) || 0);
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  ids.splice(j, 0, ids.splice(i, 1)[0]);
+  desfazerNomearAcao('ordem da fila de produção');
+  await _filaGravar(ids);
+  renderListaOS();
+}
+window.moverNaFila = moverNaFila;
+
+/* Pôr uma OS numa posição escrita à mão. É o gesto que o Junior descreveu — "1ª,
+   2ª, 3ª" —, e é o único que serve quando a fila tem trinta linhas: subir uma de
+   28ª para 1ª daria 27 cliques na seta.
+
+   Número fora da fila não recusa, ACOMODA: 0 e negativo viram a primeira, maior
+   que a fila vira a última. Quem digita "1" querendo "a primeira" está certo, e
+   quem digita "99" quer dizer "por último". */
+async function definirPosicaoFila(id, valor) {
+  if (!exigirEdicao('definir a ordem da fila de produção')) { renderListaOS(); return; }
+  const ids = filaDeProducao().map(o => o.id);
+  const i = ids.indexOf(id);
+  if (i < 0) return;
+  const n = parseInt(String(valor).replace(/\D/g, ''), 10);
+  if (!isFinite(n)) { renderListaOS(); return; }          // apagou o campo: nada muda
+  const j = Math.max(0, Math.min(ids.length - 1, n - 1));
+  if (j === i) { renderListaOS(); return; }
+  ids.splice(j, 0, ids.splice(i, 1)[0]);
+  desfazerNomearAcao('ordem da fila de produção');
+  await _filaGravar(ids);
+  renderListaOS();
+  toast(`OS na ${_filaOrdinal(j + 1)} posição da fila`, 'ok');
+}
+window.definirPosicaoFila = definirPosicaoFila;
+
+// Desfaz a ordem escrita e devolve a fila à ordem natural (a mais antiga
+// primeiro). Não toca em OS nenhuma: a fila é só a ordem.
+async function limparFilaOS() {
+  if (!exigirEdicao('limpar a ordem da fila de produção')) return;
+  if (!_filaLista().length) return;
+  if (!confirm('Desfazer a ordem da fila?\n\nAs OS voltam a aparecer da mais antiga para a mais nova. Nenhuma OS é alterada.')) return;
+  STATE.meta = STATE.meta || {};
+  STATE.meta.filaOS = [];
+  desfazerNomearAcao('ordem da fila de produção');
+  await saveState('meta');
+  renderListaOS();
+  toast('Fila na ordem natural', 'ok');
+}
+window.limparFilaOS = limparFilaOS;
+
+// Recolher e estender, lembrado NESTE computador: a fila fica no alto da lista
+// de OS, e quem não está planejando quer a lista, não a fila.
+function alternarFilaOS() {
+  const aberta = _filaAberta();
+  try { localStorage.setItem(FILA_OS_ABERTA_CHAVE, aberta ? '0' : '1'); } catch (e) { /* sem armazenamento */ }
+  renderListaOS();
+}
+window.alternarFilaOS = alternarFilaOS;
+
+function _filaAberta() {
+  try { return localStorage.getItem(FILA_OS_ABERTA_CHAVE) !== '0'; } catch (e) { return true; }
+}
+
+function renderFilaOS() {
+  const box = document.getElementById('fila-os-painel');
+  if (!box) return;
+  const fila = filaDeProducao();
+  if (!fila.length) { box.innerHTML = ''; return; }
+  const pode = podeMexerFilaOS();
+  const aberta = _filaAberta();
+  const escrita = _filaLista().length > 0;
+  const linhas = fila.map((o, i) => {
+    const n = i + 1;
+    const controles = pode ? `
+      <button class="btn small ghost" title="Subir uma posição" ${i === 0 ? 'disabled' : ''}
+        onclick="moverNaFila('${esc(o.id)}', -1)">↑</button>
+      <button class="btn small ghost" title="Descer uma posição" ${i === fila.length - 1 ? 'disabled' : ''}
+        onclick="moverNaFila('${esc(o.id)}', 1)">↓</button>
+      <input class="fila-pos-input" type="number" min="1" max="${fila.length}" value="${n}"
+        title="Escreva a posição e tecle Enter: a OS vai para esse lugar e as outras se acomodam"
+        onchange="definirPosicaoFila('${esc(o.id)}', this.value)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">` : '';
+    return `<tr>
+      <td style="width:54px;text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_filaOrdinal(n)}</td>
+      <td style="white-space:nowrap;"><strong>${esc(o.os) || '—'}</strong></td>
+      <td>${esc(o.modeloNome) || '—'}</td>
+      <td>${(coresDaPecaOS(o) || []).map(c => `<span class="badge">${esc(c)}</span>`).join(' ') || '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${_gradeCelulaLista(o)}</td>
+      <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
+      <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
+      <td class="col-actions row-actions" style="white-space:nowrap;">
+        ${controles}
+        <button class="edit" onclick="verOS('${esc(o.id)}')">visualizar</button>
+      </td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="card fila-os-card" style="margin-bottom:12px;">
+      <button type="button" class="rank-toggle card-title" aria-expanded="${aberta}"
+        onclick="alternarFilaOS()" title="Clique para recolher ou estender a fila">
+        <span class="rank-seta" aria-hidden="true">${aberta ? '▼' : '▶'}</span>Fila de produção
+        <span class="rank-acao">${aberta ? '− recolher' : '+ estender'}</span>
+        <span class="rank-resumo">${fila.length} OS não iniciada${fila.length === 1 ? '' : 's'}</span>
+      </button>
+      ${aberta ? `
+      <div class="desc" style="margin:8px 0;">
+        A ordem em que as OS <b>que ainda não começaram</b> devem entrar no enfesto — a
+        <b>1ª</b> é a próxima. ${pode
+          ? 'Use as setas para mover uma casa, ou escreva a posição no campo e tecle Enter.'
+          : 'Só o admin e quem recebeu a área <b>Fila de produção</b> podem mudar a ordem.'}
+        A OS que começa sai da fila sozinha e <b>guarda o lugar</b>: se voltar para "não
+        iniciada", volta para onde estava. ${escrita ? '' : 'Ainda ninguém ordenou esta fila — ela está na ordem natural, da OS mais antiga para a mais nova.'}
+      </div>
+      <table class="table">
+        <thead><tr>
+          <th style="text-align:right;">#</th><th>OS</th><th>Modelo</th><th>Cor</th>
+          <th>Grade</th><th>Data</th><th style="text-align:right;">Produtos</th>
+          <th class="col-actions">Ações</th>
+        </tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+      ${pode && escrita ? `<div style="margin-top:8px;">
+        <button class="btn small ghost" onclick="limparFilaOS()">Desfazer a ordem</button>
+      </div>` : ''}` : ''}
+    </div>`;
+}
+
 function renderListaOS() {
   // A lista vai ser redesenhada: o botao que abriu o menu pode nem existir
   // depois disto, e um menu pendurado apontando para uma linha que sumiu age
@@ -27109,6 +27356,11 @@ function renderListaOS() {
     && _osFinalizadaNoDia(o, diaFim));
   _renderAvisoGrupoListaOS(noGrupo.length);
   _contaListaOS(filtradas.length, noGrupo.length);
+  // A FILA no alto, e o lugar de cada OS na própria linha: quem abre a lista
+  // por qualquer caminho (busca, filtro, grupo do Ranking) vê a ordem sem ter
+  // de subir até o quadro.
+  renderFilaOS();
+  const filaPos = _filaPosicoes();
   if (!filtradas.length) {
     const sRot = (STATUS_OS.find(x => x.k === statusEscolhido) || {}).rotulo || '';
     const oQue = [termos.length ? `"${esc(termos.join(' '))}"` : '',
@@ -27144,7 +27396,9 @@ function renderListaOS() {
           onclick="abrirMenuAcoesOS('${o.id}', this)">⋯</button>
       </td>
       <td>${thumb}</td>
-      <td><strong>${esc(o.os)||'—'}</strong>${_conjugadaCelulaOS(o)}</td>
+      <td><strong>${esc(o.os)||'—'}</strong>${filaPos.has(o.id)
+        ? ` <span class="badge fila-pos" title="${esc(_filaOrdinal(filaPos.get(o.id)) + ' da fila de producao (OS nao iniciadas). A ordem se muda no quadro Fila de producao, no alto desta tela.')}">${_filaOrdinal(filaPos.get(o.id))}</span>`
+        : ''}${_conjugadaCelulaOS(o)}</td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
       <td>${cores.length
