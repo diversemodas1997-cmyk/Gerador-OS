@@ -8515,7 +8515,9 @@ let _rankAno = '', _rankMes = '';
    na tela. */
 let _rankGrupos = [];
 
-/* RECOLHER E ESTENDER OS QUADROS (16/09/2026, Junior).
+/* RECOLHER E ESTENDER O QUADRO (16/09/2026, Junior; o Ranking virou um quadro
+   so em 22/09, e o recolher ficou: a tabela cruzada passa de cem linhas quando
+   a variavel escolhida e o SKU, e quem quer so os filtros na tela recolhe).
 
    VISÍVEL (mesmo dia): a primeira versão funcionava e ninguém achava — o título
    seguia cinza como antes, com uma seta de 9 px, e os botões gerais moravam na
@@ -8546,20 +8548,6 @@ function _rankAlternar(botao) {
   if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
   _rankGuardarRecolhidos(mapa);
 }
-function _rankTodos(recolher) {
-  const mapa = _rankRecolhidos();
-  document.querySelectorAll('#ranking-painel .rank-card').forEach(card => {
-    card.classList.toggle('recolhido', recolher);
-    const b = card.querySelector('.rank-toggle');
-    if (b) b.setAttribute('aria-expanded', String(!recolher));
-    const acao = b && b.querySelector('.rank-acao');
-    if (acao) acao.textContent = recolher ? '+ estender' : '− recolher';
-    if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
-  });
-  _rankGuardarRecolhidos(mapa);
-}
-window._rankAlternar = _rankAlternar;
-window._rankTodos = _rankTodos;
 
 // O cabeçalho clicável de um quadro. `chave` é fixa por quadro ("Por período"
 // vale para Por ano e Por mês); `resumo` aparece ao lado, útil com ele recolhido.
@@ -8641,7 +8629,69 @@ function _rankingPeriodos() {
   };
 }
 
-function _rankingProducao(ano, mes) {
+/* ====================== O RANKING: UM QUADRO SÓ ======================
+
+   22/09/2026, Junior: "transforme todos os quadros do ranking de produção em um
+   único quadro, mas com as variáveis de grade, tipo, tamanho, cor e sku em
+   filtros para o usuário escolher o que deseja ver no quadro com as variáveis
+   cruzadas".
+
+   Eram SEIS quadros fixos, cada um com um cruzamento decidido no código: Grade,
+   SKU · grade, Tipo · cor · grade, Tipo · cor, Cor e Tamanho × cor. Quem
+   precisava de outro corte — "o tamanho G, por grade" — não tinha como pedir, e
+   quem queria comparar dois quadros rolava nove telas.
+
+   Agora há UMA tabela e quem escolhe é quem lê: o que vai nas LINHAS, o que vai
+   nas COLUNAS, e quais valores ficam de fora. Os seis quadros antigos continuam
+   todos possíveis — Cor é linhas=Cor sem coluna; Tipo · cor é linhas=Tipo,
+   colunas=Cor; Tamanho × cor é o que vem escolhido de fábrica; Tipo · cor ·
+   grade é linhas=Tipo, colunas=Cor com uma grade escolhida no filtro. O período
+   (ano e mês) continua sendo o filtro separado que sempre foi.
+
+   O FATO É A MENOR UNIDADE. Em vez de cinco mapas somando cada um do seu jeito,
+   cada OS vira N FATOS — um por SKU × tamanho —, e todo quadro é o mesmo monte
+   de fatos agrupado de outra maneira. Foi isso que permitiu jogar fora as cinco
+   contas paralelas: elas divergiriam com o tempo, e a conta certa passa a ser
+   uma só.
+
+   COMO OS PRODUTOS SE REPARTEM, e é aqui que um quadro cruzado pode mentir:
+
+     · a OS de duas cores produz os DOIS produtos, então entra uma vez em cada,
+       com os produtos repartidos. Contar o lote inteiro nas duas dobraria a
+       fábrica no total;
+     · dentro da OS, os produtos se repartem pelos TAMANHOS na proporção da
+       folha (`totaisPorTamanhoTomOS`: grade × camadas × multiplicador da peça,
+       o mesmo "Total por tamanho" impresso, que já inclui o dobro do pano
+       tubular). Contar `grade.p` direto daria a distribuição por camada, que
+       não é produção;
+     · somando TODOS os fatos de uma OS volta-se ao total dela. É isso que faz
+       qualquer agrupamento fechar com o mesmo total geral.
+
+   A CONTAGEM DE OS NÃO SE SOMA, e a tabela diz isso: uma OS aparece em várias
+   células (ela tem vários tamanhos), então somar as células daria mais OS do que
+   existem. Por isso o total de OS é contado à parte, por número distinto. */
+const RANK_VARS = [
+  { k: 'grade',   rotulo: 'Grade',   plural: 'grades' },
+  { k: 'tipo',    rotulo: 'Tipo',    plural: 'tipos' },
+  { k: 'tamanho', rotulo: 'Tamanho', plural: 'tamanhos' },
+  { k: 'cor',     rotulo: 'Cor',     plural: 'cores' },
+  { k: 'sku',     rotulo: 'SKU',     plural: 'SKUs' },
+  // O período entra como EIXO, não como filtro: quem filtra período são o ano e
+  // o mês lá em cima. Nas linhas ele devolve a antiga série do tempo.
+  { k: 'periodo', rotulo: 'Período', plural: 'períodos', soEixo: true }
+];
+const _rankRotuloVar = k => (RANK_VARS.find(v => v.k === k) || {}).rotulo || '';
+
+// O que está escolhido agora. Vive só nesta sessão, como o ano e o mês: é uma
+// pergunta que se faz, não um cadastro que se guarda.
+let _rankLinha = 'tamanho', _rankColuna = 'cor';
+let _rankFiltros = { grade: '', tipo: '', tamanho: '', cor: '', sku: '' };
+
+// A ordem dos tamanhos é a da GRADE, não a alfabética: "G1" antes de "GG" seria
+// alfabético e nenhum tamanho da casa se lê assim.
+const _RANK_ORDEM_TAM = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+
+function _rankingFatos(ano, mes) {
   // OS SEM DATA fica de fora de qualquer recorte com período: ela não pertence a
   // mês nenhum, e contá-la em todos faria as somas dos meses passarem do total.
   const dentro = o => {
@@ -8651,30 +8701,9 @@ function _rankingProducao(ano, mes) {
     return true;
   };
   const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim()).filter(dentro);
-  const linhas = new Map();
-  // Cada linha guarda TAMBEM quais OS a formaram. E o que transforma o ranking de
-  // um placar numa lista de trabalho: ver que "CM.LISA · Preto · P ao G3" saiu 22
-  // vezes so vale se der para ir olhar quais 22 foram essas.
-  //
-  // `n` conta PARES (uma OS de duas cores entra uma vez em cada), e o conjunto de
-  // OS e por numero: a mesma OS que cai duas vezes na mesma linha aparece uma vez
-  // so na lista. Por isso os dois numeros podem nao bater, e a coluna diz o que
-  // cada um e.
-  const somar = (mapa, chave, pecas, osNum) => {
-    if (!mapa.has(chave)) mapa.set(chave, { n: 0, pecas: 0, os: new Set() });
-    const e = mapa.get(chave); e.n++; e.pecas += pecas;
-    if (osNum) e.os.add(osNum);
-  };
-  // Numero de OS ordenado como a casa le: "0099" antes de "0100", e nao pela
-  // ordem alfabetica, que poria "0100" antes de "0099" quando os zeros a esquerda
-  // variam.
-  const ordenarOS = arr => [...arr].sort(
-    (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-  const porCor = new Map(), porSkuCor = new Map(), porGrade = new Map(), porSkuGrade = new Map();
   // A série do tempo: por MÊS quando se está dentro de um ano, por ANO quando se
   // olha a fábrica inteira. É o mesmo gesto — abrir o período em foco na fatia
   // imediatamente menor.
-  const porPeriodo = new Map();
   const fatia = o => {
     const d = String(o.data || '');
     if (!/^\d{4}-\d{2}/.test(d)) return '';
@@ -8692,64 +8721,30 @@ function _rankingProducao(ano, mes) {
     // Vira Capitulada para a coluna não misturar "Preto" com "MARINHO".
     return s.charAt(0) + s.slice(1).toLowerCase();
   };
-  /* O CRUZAMENTO TAMANHO × COR (22/09/2026, Junior: "insira no campo ranking de
-     producao um quadro cruzando as variaveis tamanho + cor").
-
-     As tabelas do ranking contam OS e produtos por tipo, cor e grade — nenhuma
-     responde "quantas camisetas PRETAS TAMANHO G a casa produziu". E essa é a
-     pergunta de quem compra malha e de quem monta grade nova: a cor manda no
-     pano, o tamanho manda na distribuição da grade, e os dois juntos dizem onde
-     o volume está de verdade.
-
-     O TAMANHO VEM DA FOLHA, não da grade crua: `totaisPorTamanhoTomOS` já sabe
-     que a coluna de um tamanho é grade × camadas × multiplicador da peça — o
-     mesmo número do "Total por tamanho" impresso, que inclui o dobro do pano
-     tubular. Contar `grade.p` direto daria a distribuição por camada, que não é
-     produção nenhuma.
-
-     A OS DE DUAS CORES reparte, como no resto do ranking: ela produz os dois
-     produtos, e contar o lote inteiro em cada cor dobraria a fábrica.
-
-     OS sem distribuição por tamanho (grade apagada, OS antiga sem enfesto
-     lançado) não some da conta: vai para a linha "(sem tamanho)", com o total
-     dela. Sumir calado faria a soma do quadro não bater com a do resto da
-     tela, e quem lê não teria como saber por quê. */
-  const TAMS_RANK = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
-  const cruz = new Map();
-  const somarCruz = (tam, cor, pecas, osNum) => {
-    const k = JSON.stringify([tam, cor]);
-    if (!cruz.has(k)) cruz.set(k, { pecas: 0, os: new Set() });
-    const e = cruz.get(k);
-    e.pecas += pecas;
-    if (osNum) e.os.add(osNum);
-  };
-
+  const fatos = [];
   let semSku = 0, pares = 0;
   const datas = [];
   ord.forEach(o => {
     // A FONTE É O SKU DO PRODUTO — o mesmo que sai impresso no cabeçalho da OS e
     // que a Contabilidade usa (`CM.LISA-PRE`). Ele já traz tipo E cor, decididos
-    // no cadastro do desenho/modelo mais a sigla da cor da variante.
-    //
-    // Antes o tipo vinha do nome da GRADE e a cor do primeiro bloco do enfesto.
-    // Os dois eram frágeis: grade renomeada trocava o tipo de todas as OS
-    // antigas (a 0295 está impressa como CM.BÁSICA e hoje é CM.LISA), e a cor
-    // dependia de qual pano por acaso é a primeira fase. A OS cuja grade foi
-    // apagada ficava fora do ranking inteiro; pelo SKU ela entra normalmente.
+    // no cadastro do desenho/modelo mais a sigla da cor da variante. O tipo pelo
+    // nome da GRADE era frágil: grade renomeada trocava o tipo de todas as OS
+    // antigas, e a OS de grade apagada ficava fora do ranking inteiro.
     const skus = skusDaOS(o);
     if (!skus.length) { semSku++; return; }
     const g = (STATE.grades || []).find(x => x.id === _gradeIdDaOS(o));
-    const grade = g ? (String(g.nome || '').split('|')[0].trim() || '—') : '(grade apagada)';
-    // PRODUTOS da OS, o Total geral da folha (16/09/2026). Antes era
-    // `enfesto.totalPecas` (grade × camadas), que esquece o multiplicador da
-    // peça: a camiseta de malha tubular saía com a METADE do que foi produzido.
+    // Espaços em sequência viram um só: "P  ao G3" (BM.LISA) e "P ao G3"
+    // (CM.LISA) são a mesma grade, cadastradas com digitação diferente.
+    const grade = (g ? (String(g.nome || '').split('|')[0].trim() || '—') : '(grade apagada)')
+      .replace(/\s+/g, ' ');
+    // PRODUTOS da OS, o Total geral da folha (16/09/2026). `enfesto.totalPecas`
+    // (grade × camadas) esquece o multiplicador da peça: a camiseta de malha
+    // tubular saía com a METADE do que foi produzido.
     const totalPecas = produtosOS(o);
     if (o.data) datas.push(o.data);
-    // OS de mais de uma cor entra em CADA uma — ela produz mesmo os dois
-    // produtos. As peças são repartidas entre elas, senão o mesmo lote seria
-    // contado inteiro duas vezes e o total do dia dobraria.
-    const pecas = skus.length ? totalPecas / skus.length : 0;
-    // A coluna de cada tamanho na folha desta OS. Sem distribuição, uma linha só.
+    // A repartição por tamanho desta OS. Sem distribuição (grade apagada, OS
+    // antiga sem enfesto lançado) fica uma linha só, "(sem tamanho)": sumir
+    // calada faria a soma do quadro não bater com o total da tela.
     let porTam = [];
     try {
       const tt = totaisPorTamanhoTomOS(o);
@@ -8760,78 +8755,115 @@ function _rankingProducao(ano, mes) {
       }
     } catch (e) { porTam = []; }
     if (!porTam.length) porTam = [['(sem tamanho)', totalPecas]];
+    const somaTam = porTam.reduce((a, x) => a + x[1], 0) || 1;
+    const periodo = fatia(o);
     skus.forEach(sku => {
       pares++;
       const i = sku.indexOf('-');
       const tipo = i > 0 ? sku.slice(0, i) : sku;
       const sigla = i > 0 ? sku.slice(i + 1) : '';
       const cor = nomeDaSigla(sigla) || sigla || '—';
-      // A chave e a LISTA em JSON, nao um texto emendado: "P ao G3" e "CM.LISA"
-      // tem espacos e pontos, e qualquer separador escolhido a mao acabaria
-      // aparecendo dentro de um nome e cortando a chave no lugar errado.
-      somar(linhas, JSON.stringify([tipo, cor, grade]), pecas, o.os);
-      somar(porCor, JSON.stringify([cor]), pecas, o.os);
-      somar(porSkuCor, JSON.stringify([sku]), pecas, o.os);
-      porTam.forEach(([tam, v]) => somarCruz(tam, cor, v / skus.length, o.os));
+      porTam.forEach(([tamanho, v]) => {
+        fatos.push({
+          os: o.os, grade, tipo, cor, sku, tamanho, periodo,
+          // O produto se reparte duas vezes: entre as cores da OS e entre os
+          // tamanhos da folha. O somatório volta a ser o total da OS.
+          produtos: (totalPecas / skus.length) * (v / somaTam)
+        });
+      });
     });
-    // SÓ A GRADE (16/09/2026, Junior). A grade não depende da cor: a OS de duas
-    // cores entra UMA vez, com o lote inteiro — diferente das tabelas acima.
-    // Espaços em sequência viram um só: "P  ao G3" (BM.LISA) e "P ao G3"
-    // (CM.LISA) são a mesma grade, cadastradas com digitação diferente.
-    somar(porGrade, JSON.stringify([grade.replace(/\s+/g, ' ')]), totalPecas, o.os);
-    /* SKU + GRADE (16/09/2026, Junior). O SKU aqui é a LINHA do produto
-       (CM.LISA, BM.TRI), sem a cor: com a cor ele já é a tabela Tipo · cor ·
-       grade. A OS entra uma vez por linha — a de duas cores do mesmo produto
-       conta uma vez, com o lote inteiro. */
-    const linhasDaOS = [...new Set(skus.map(k => { const j = k.indexOf('-'); return j > 0 ? k.slice(0, j) : k; }))];
-    linhasDaOS.forEach(t => somar(porSkuGrade, JSON.stringify([t, grade.replace(/\s+/g, ' ')]),
-      totalPecas / linhasDaOS.length, o.os));
-    const f = fatia(o);
-    if (f) somar(porPeriodo, JSON.stringify([f]), totalPecas, o.os);
   });
-  const ordenar = m => [...m.entries()]
-    .map(([k, e]) => ({ partes: JSON.parse(k), n: e.n, pecas: e.pecas, os: ordenarOS(e.os) }))
-    .sort((a, b) => b.n - a.n || b.pecas - a.pecas);
   datas.sort();
-  // A série do tempo sai em ordem CRONOLÓGICA, não por tamanho: aqui o que se lê
-  // é a evolução, e ordenar por volume embaralharia justamente isso.
-  const serie = [...porPeriodo.entries()]
-    .map(([k, e]) => ({ periodo: JSON.parse(k)[0], n: e.n, pecas: e.pecas, os: ordenarOS(e.os) }))
-    .sort((a, b) => a.periodo.localeCompare(b.periodo));
-  /* A MATRIZ, pronta para a tela: linhas na ordem da grade (P, M, G, GG, G1,
-     G2, G3) e colunas por VOLUME, a maior cor primeiro — ordem alfabética poria
-     o Amarelo de 200 peças antes do Preto de 20 mil. */
-  const cruzTam = new Map(), cruzCor = new Map();
-  const cruzCel = new Map();
-  let cruzTotal = 0;
-  cruz.forEach((e, k) => {
-    const [tam, cor] = JSON.parse(k);
-    const pecas = Math.round(e.pecas);
-    cruzTam.set(tam, (cruzTam.get(tam) || 0) + pecas);
-    cruzCor.set(cor, (cruzCor.get(cor) || 0) + pecas);
-    cruzCel.set(tam + '||' + cor, { pecas, os: ordenarOS(e.os) });
-    cruzTotal += pecas;
-  });
-  const ordemTam = TAMS_RANK.map(k => k.toUpperCase());
-  const cruzamento = {
-    tams: [...cruzTam.entries()]
-      .map(([tam, total]) => ({ tam, total }))
-      .sort((a, b) => {
-        const ia = ordemTam.indexOf(a.tam), ib = ordemTam.indexOf(b.tam);
-        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-      }),
-    cores: [...cruzCor.entries()].map(([cor, total]) => ({ cor, total }))
-      .sort((a, b) => b.total - a.total || a.cor.localeCompare(b.cor)),
-    cel: (tam, cor) => cruzCel.get(tam + '||' + cor) || null,
-    maior: Math.max(0, ...[...cruzCel.values()].map(c => c.pecas)),
-    total: cruzTotal
-  };
   return {
-    cruz: cruzamento,
-    total: ord.length, semGrade: semSku, pares, de: datas[0] || '', ate: datas[datas.length - 1] || '',
-    linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor), porGrade: ordenar(porGrade), porSkuGrade: ordenar(porSkuGrade),
-    serie, porMes: !!(ano || mes)
+    fatos, total: ord.length, semSku, pares,
+    de: datas[0] || '', ate: datas[datas.length - 1] || '',
+    porMes: !!(ano || mes)
   };
+}
+
+// Os valores que cada variável tem no período — é o que cada filtro oferece.
+// Filtro só mostra o que existe: escolher um valor e não ver nada é a pior
+// resposta que uma tela pode dar.
+function _rankingValores(fatos) {
+  const out = {};
+  RANK_VARS.filter(v => !v.soEixo).forEach(v => {
+    const s = new Set();
+    fatos.forEach(f => { if (f[v.k]) s.add(f[v.k]); });
+    out[v.k] = _rankOrdenarValores(v.k, [...s]);
+  });
+  return out;
+}
+
+function _rankOrdenarValores(campo, valores) {
+  if (campo === 'tamanho') {
+    return valores.slice().sort((a, b) => {
+      const ia = _RANK_ORDEM_TAM.indexOf(a), ib = _RANK_ORDEM_TAM.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a).localeCompare(String(b));
+    });
+  }
+  if (campo === 'periodo') return valores.slice().sort();
+  return valores.slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+}
+
+/* O QUADRO: os fatos agrupados em duas entradas.
+
+   `lin` e `col` são nomes de variável; `col` vazio devolve uma lista simples —
+   que é o formato dos quadros antigos, com OS, % e barra. Uma OS entra na
+   contagem de cada célula em que aparece, e o total de OS é por número
+   DISTINTO: somar as células daria mais OS do que existem. */
+function _rankingQuadro(fatos, lin, col) {
+  const cels = new Map();       // "linha\u0000coluna" -> { produtos, os:Set }
+  const linhas = new Map();     // rótulo -> { produtos, os:Set }
+  const colunas = new Map();
+  const osTudo = new Set();
+  let total = 0;
+  fatos.forEach(f => {
+    const l = f[lin] || '—';
+    const c = col ? (f[col] || '—') : '';
+    const p = f.produtos || 0;
+    const põe = (mapa, chave) => {
+      if (!mapa.has(chave)) mapa.set(chave, { produtos: 0, os: new Set() });
+      const e = mapa.get(chave);
+      e.produtos += p;
+      if (f.os) e.os.add(f.os);
+    };
+    põe(linhas, l);
+    if (col) põe(colunas, c);
+    põe(cels, l + '\u0000' + c);
+    if (f.os) osTudo.add(f.os);
+    total += p;
+  });
+  const arruma = (mapa, campo) => _rankOrdenarValores(campo, [...mapa.keys()])
+    .map(rot => ({ rotulo: rot, produtos: Math.round(mapa.get(rot).produtos),
+                   os: _rankOrdenarOS(mapa.get(rot).os) }));
+  // Variável sem ordem própria (cor, grade, tipo, sku) sai pelo VOLUME: a maior
+  // primeiro. Alfabético poria o Amarelo de 200 peças antes do Preto de 20 mil.
+  const porVolume = arr => arr.slice().sort((a, b) => b.produtos - a.produtos
+    || String(a.rotulo).localeCompare(String(b.rotulo)));
+  const ordenado = (mapa, campo) => (campo === 'tamanho' || campo === 'periodo')
+    ? arruma(mapa, campo) : porVolume(arruma(mapa, campo));
+  const listaLinhas = ordenado(linhas, lin);
+  const listaColunas = col ? ordenado(colunas, col) : [];
+  let maior = 0;
+  cels.forEach(e => { maior = Math.max(maior, Math.round(e.produtos)); });
+  return {
+    linhas: listaLinhas,
+    colunas: listaColunas,
+    cel: (l, c) => {
+      const e = cels.get(l + '\u0000' + (c == null ? '' : c));
+      return e ? { produtos: Math.round(e.produtos), os: _rankOrdenarOS(e.os) } : null;
+    },
+    maior,
+    total: Math.round(total),
+    totalOS: osTudo.size
+  };
+}
+
+// Numero de OS ordenado como a casa le: "0099" antes de "0100", e nao pela
+// ordem alfabetica, que poria "0100" antes de "0099" quando os zeros a esquerda
+// variam.
+function _rankOrdenarOS(conjunto) {
+  return [...conjunto].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
 }
 
 // Troca o período em foco. O mês só existe dentro de um ano: escolher outro ano
@@ -8842,6 +8874,32 @@ function _rankingFiltrar(campo, valor) {
   renderRanking();
 }
 
+// O eixo. Pôr a mesma variável nos dois lados cruzaria uma coisa com ela mesma
+// (a diagonal e o resto vazio), então a coluna se apaga quando isso aconteceria.
+function _rankEixo(qual, valor) {
+  if (qual === 'linha') {
+    _rankLinha = valor || 'cor';
+    if (_rankColuna === _rankLinha) _rankColuna = '';
+  } else {
+    _rankColuna = valor || '';
+    if (_rankColuna === _rankLinha) _rankLinha = RANK_VARS.find(v => v.k !== _rankColuna).k;
+  }
+  renderRanking();
+}
+window._rankEixo = _rankEixo;
+
+function _rankFiltroVar(campo, valor) {
+  _rankFiltros[campo] = valor || '';
+  renderRanking();
+}
+window._rankFiltroVar = _rankFiltroVar;
+
+function _rankLimparVars() {
+  RANK_VARS.forEach(v => { if (!v.soEixo) _rankFiltros[v.k] = ''; });
+  renderRanking();
+}
+window._rankLimparVars = _rankLimparVars;
+
 function renderRanking() {
   const box = document.getElementById('ranking-painel');
   if (!box) return;
@@ -8850,8 +8908,34 @@ function renderRanking() {
   // "toda a fábrica" em vez de mostrar uma tela vazia sem explicação.
   if (_rankAno && !per.anos.includes(_rankAno)) { _rankAno = ''; _rankMes = ''; }
   if (_rankMes && !per.meses.includes(_rankMes)) _rankMes = '';
-  const r = _rankingProducao(_rankAno, _rankMes);
+  const base = _rankingFatos(_rankAno, _rankMes);
+  const valores = _rankingValores(base.fatos);
+  // Filtro que aponta para um valor que não existe mais neste período (mudou o
+  // mês e aquela cor não foi produzida) se desfaz sozinho: ficar preso a ele
+  // mostraria um quadro vazio sem dizer por quê.
+  RANK_VARS.filter(v => !v.soEixo).forEach(v => {
+    if (_rankFiltros[v.k] && !(valores[v.k] || []).includes(_rankFiltros[v.k])) _rankFiltros[v.k] = '';
+  });
+  const fatos = base.fatos.filter(f =>
+    RANK_VARS.filter(v => !v.soEixo).every(v => !_rankFiltros[v.k] || f[v.k] === _rankFiltros[v.k]));
   const mesesDoAno = per.meses.filter(m => !_rankAno || m.slice(0, 4) === _rankAno);
+  const num = n => Number(n || 0).toLocaleString('pt-BR');
+  const rotPeriodo = v => /^\d{4}-\d{2}$/.test(v) ? _rankRotuloMes(v) : String(v);
+
+  const opcoesEixo = (sel, comNenhuma) => (comNenhuma
+    ? `<option value="">— nenhuma (lista simples) —</option>` : '')
+    + RANK_VARS.map(v => `<option value="${esc(v.k)}" ${v.k === sel ? 'selected' : ''}>${esc(v.rotulo)}</option>`).join('');
+
+  const filtrosVar = RANK_VARS.filter(v => !v.soEixo).map(v => `
+      <div class="field" style="margin:0;">
+        <label>${esc(v.rotulo)}</label>
+        <select onchange="_rankFiltroVar('${esc(v.k)}', this.value)">
+          <option value="">Tod${v.k === 'cor' || v.k === 'grade' ? 'as' : 'os'} — ${esc(v.plural)}</option>
+          ${(valores[v.k] || []).map(x => `<option value="${esc(x)}" ${x === _rankFiltros[v.k] ? 'selected' : ''}>${esc(x)}</option>`).join('')}
+        </select>
+      </div>`).join('');
+  const temFiltroVar = RANK_VARS.some(v => !v.soEixo && _rankFiltros[v.k]);
+
   const filtro = `
     <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
       <div class="field" style="margin:0;">
@@ -8869,169 +8953,144 @@ function renderRanking() {
         </select>
       </div>
       ${(_rankAno || _rankMes)
-        ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar filtro</button>` : ''}
-      <div style="display:flex;gap:6px;">
-        <button type="button" class="btn small ghost" onclick="_rankTodos(true)">▶ Recolher todos</button>
-        <button type="button" class="btn small ghost" onclick="_rankTodos(false)">▼ Estender todos</button>
+        ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar período</button>` : ''}
+    </div>
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="field" style="margin:0;">
+        <label>Linhas</label>
+        <select onchange="_rankEixo('linha', this.value)">${opcoesEixo(_rankLinha, false)}</select>
       </div>
+      <div class="field" style="margin:0;">
+        <label>Colunas</label>
+        <select onchange="_rankEixo('coluna', this.value)">${opcoesEixo(_rankColuna, true)}</select>
+      </div>
+      <div style="width:1px;align-self:stretch;background:var(--line);"></div>
+      ${filtrosVar}
+      ${temFiltroVar ? `<button class="btn small ghost" onclick="_rankLimparVars()">Limpar variáveis</button>` : ''}
     </div>`;
-  if (!r.total) {
+
+  if (!base.total) {
     box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankMes ? _rankRotuloMes(_rankMes) : _rankAno)}.</div>`;
     return;
   }
-  const contadas = r.total - r.semGrade;   // OS com SKU de produto resolvido
-  const pct = n => contadas ? (n * 100 / contadas).toFixed(1).replace('.', ',') + '%' : '—';
-  const num = n => Number(n || 0).toLocaleString('pt-BR');
-  const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
-    + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
-  // Cada linha do ranking guarda o grupo de OS dela num balcao, e a celula da
-  // contagem vira o atalho para ele. O indice viaja no onclick porque uma lista
-  // de numeros dentro de um atributo HTML e caso classico de aspas que quebram.
+
+  const q = _rankingQuadro(fatos, _rankLinha, _rankColuna);
+  const contadas = base.total - base.semSku;   // OS com SKU de produto resolvido
+  // Cada linha do quadro guarda o grupo de OS dela num balcao, e a celula vira o
+  // atalho para ele. O indice viaja no onclick porque uma lista de numeros dentro
+  // de um atributo HTML e caso classico de aspas que quebram.
   _rankGrupos = [];
-  const atalhoOS = (n, os, rotulo) => {
-    if (!(os && os.length)) return String(n);
+  const atalhoOS = (texto, os, rotulo) => {
+    if (!(os && os.length)) return String(texto);
     const i = _rankGrupos.push({ os, rotulo }) - 1;
     return `<button type="button" class="rank-os-link" onclick="_rankingAbrirGrupo(${i})"`
-      + ` title="Ver as ${os.length} OS de ${esc(rotulo)}">${n}</button>`;
+      + ` title="Ver as ${os.length} OS de ${esc(rotulo)}">${texto}</button>`;
   };
-  const maxL = r.linhas[0] ? r.linhas[0].n : 0;
-  const maxC = r.porCor[0] ? r.porCor[0].n : 0;
-  const maxS = r.porSkuCor[0] ? r.porSkuCor[0].n : 0;
-  const maxG = r.porGrade[0] ? r.porGrade[0].n : 0;
-  const maxSG = r.porSkuGrade[0] ? r.porSkuGrade[0].n : 0;
+  const pct = n => q.total ? (n * 100 / q.total).toFixed(1).replace('.', ',') + '%' : '—';
+  const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
+    + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
+  // O fundo dá o peso de cada célula sem obrigar a comparar número a número.
+  const fundo = (v) => (!(v > 0) || !(q.maior > 0)) ? 'transparent'
+    : `rgba(46,125,80,${(0.06 + 0.34 * (v / q.maior)).toFixed(3)})`;
+  const rotLinha = v => _rankLinha === 'periodo' ? rotPeriodo(v) : v;
+  const rotCol = v => _rankColuna === 'periodo' ? rotPeriodo(v) : v;
+  // Na antiga série do tempo, clicar no período entrava nele. Continua valendo
+  // quando o período está nas linhas: é o mesmo gesto de abrir uma pasta.
+  const celLinha = (x) => _rankLinha === 'periodo'
+    ? `<td style="cursor:pointer;" title="Ver só este período"
+         onclick="_rankingFiltrar('${base.porMes ? 'mes' : 'ano'}','${esc(x.rotulo)}')"><strong>${esc(rotPeriodo(x.rotulo))}</strong></td>`
+    : `<td><strong>${esc(x.rotulo)}</strong></td>`;
+
+  const maiorLinha = q.linhas.reduce((mx, x) => Math.max(mx, x.produtos), 0);
+  const lista = `
+    <table class="table">
+      <thead><tr>
+        <th style="width:44px;text-align:right;">#</th>
+        <th>${esc(_rankRotuloVar(_rankLinha))}</th>
+        <th style="width:64px;text-align:right;">OS</th>
+        <th style="width:90px;text-align:right;">produtos</th>
+        <th style="width:64px;text-align:right;">%</th>
+        <th style="width:110px;"></th>
+      </tr></thead>
+      <tbody>${q.linhas.map((x, i) => `
+        <tr>
+          <td style="text-align:right;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${i + 1}</td>
+          ${celLinha(x)}
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${atalhoOS(x.os.length, x.os, rotLinha(x.rotulo))}</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(x.produtos)}</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">${pct(x.produtos)}</td>
+          <td>${barra(x.produtos, maiorLinha)}</td>
+        </tr>`).join('')}
+        <tr style="background:#eef6f0;">
+          <td></td>
+          <td style="font-weight:700;color:var(--ink-2);">total</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(q.totalOS)}</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(q.total)}</td>
+          <td></td><td></td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  const cruzada = `
+    <div style="overflow-x:auto;">
+    <table class="table" style="min-width:100%;width:auto;">
+      <thead><tr>
+        <th style="text-align:left;white-space:nowrap;">${esc(_rankRotuloVar(_rankLinha))} \\ ${esc(_rankRotuloVar(_rankColuna))}</th>
+        ${q.colunas.map(c => `<th style="text-align:right;white-space:nowrap;">${esc(rotCol(c.rotulo))}</th>`).join('')}
+        <th style="text-align:right;white-space:nowrap;background:#eef6f0;">total</th>
+      </tr></thead>
+      <tbody>
+        ${q.linhas.map(x => `<tr>
+          ${celLinha(x)}
+          ${q.colunas.map(c => {
+            const cel = q.cel(x.rotulo, c.rotulo);
+            const v = cel ? cel.produtos : 0;
+            const rot = rotLinha(x.rotulo) + ' · ' + rotCol(c.rotulo);
+            return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:${fundo(v)};"
+              title="${esc(rot)}${cel && cel.os.length ? ' — ' + cel.os.length + ' OS' : ''}">${
+              v > 0 ? atalhoOS(num(v), cel.os, rot) : '<span style="color:var(--ink-3);">—</span>'}</td>`;
+          }).join('')}
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;">${num(x.produtos)}</td>
+        </tr>`).join('')}
+        <tr style="background:#eef6f0;">
+          <td style="font-weight:700;color:var(--ink-2);">total</td>
+          ${q.colunas.map(c => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(c.produtos)}</td>`).join('')}
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(q.total)}</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>`;
+
+  const titulo = _rankColuna
+    ? _rankRotuloVar(_rankLinha) + ' × ' + _rankRotuloVar(_rankColuna)
+    : 'Por ' + _rankRotuloVar(_rankLinha).toLowerCase();
+  const resumo = q.linhas.length + ' linha' + (q.linhas.length === 1 ? '' : 's')
+    + (_rankColuna ? ' × ' + q.colunas.length + ' coluna' + (q.colunas.length === 1 ? '' : 's') : '');
   const recolhidos = _rankRecolhidos();
-  const tabela = (titulo, desc, itens, max, rotulo) => `
-    <div class="card rank-card${recolhidos[titulo] ? ' recolhido' : ''}" data-rank="${esc(titulo)}" style="margin-bottom:14px;">
-      ${_rankCabecalho(titulo, titulo, itens.length + (itens.length === 1 ? ' linha' : ' linhas'), recolhidos)}
-      <div class="rank-corpo">
-      <div class="desc" style="margin-bottom:8px;">${desc}</div>
-      <table class="table">
-        <thead><tr>
-          <th style="width:44px;text-align:right;">#</th>
-          <th>${esc(rotulo)}</th>
-          <th style="width:64px;text-align:right;">OS</th>
-          <th style="width:64px;text-align:right;">%</th>
-          <th style="width:90px;text-align:right;">produtos</th>
-          <th style="width:110px;"></th>
-        </tr></thead>
-        <tbody>${itens.map((x, i) => `
-          <tr>
-            <td style="text-align:right;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;">${i + 1}</td>
-            <td><strong>${esc(x.partes.join(' · '))}</strong></td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${atalhoOS(x.n, x.os, x.partes.join(' · '))}</td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);">${pct(x.n)}</td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
-            <td>${barra(x.n, max)}</td>
-          </tr>`).join('')}</tbody>
-      </table>
-      </div>
-    </div>`;
-  /* O QUADRO TAMANHO × COR (22/09/2026, Junior). As outras tabelas do ranking
-     são listas: uma linha, um número. Esta é a única que cruza duas variáveis,
-     e por isso é tabela de duas entradas mesmo — tamanho nas linhas, cor nas
-     colunas, produtos na célula.
-
-     A CÉLULA É CLICÁVEL como o resto do ranking: abre a lista de Ordens de
-     Serviço com as OS daquele cruzamento. Uma OS aparece em várias células (ela
-     tem vários tamanhos), o que está certo — o que se pergunta ali é "quais OS
-     fizeram camiseta preta G", não "quantas OS são só disso".
-
-     O fundo esverdeado dá o peso de cada célula sem precisar comparar número a
-     número; a coluna e a linha de total fecham a conta dos dois lados. Com
-     muitas cores a tabela rola na horizontal em vez de espremer as colunas até
-     o número não caber. */
-  const cruz = r.cruz || { tams: [], cores: [], cel: () => null, maior: 0, total: 0 };
-  const _cruzFundo = (v) => {
-    if (!(v > 0) || !(cruz.maior > 0)) return 'transparent';
-    // Do quase-branco ao verde do programa, na proporção do maior cruzamento.
-    return `rgba(46,125,80,${(0.06 + 0.34 * (v / cruz.maior)).toFixed(3)})`;
-  };
-  const cruzHtml = !(cruz.tams.length && cruz.cores.length) ? '' : `
-    <div class="card rank-card${recolhidos['Tamanho × cor'] ? ' recolhido' : ''}" data-rank="Tamanho × cor" style="margin-bottom:14px;">
-      ${_rankCabecalho('Tamanho × cor',
-        'Tamanho × cor',
-        cruz.tams.length + ' tamanho(s) × ' + cruz.cores.length + ' cor(es)', recolhidos)}
-      <div class="rank-corpo">
-      <div class="desc" style="margin-bottom:8px;">
-        Quantos <b>produtos</b> saíram de cada tamanho em cada cor — o cruzamento que
-        nenhuma das listas abaixo responde. O tamanho vem do <b>Total por tamanho</b> da folha
-        (grade × camadas × multiplicador da peça), e a OS de mais de uma cor reparte os
-        produtos entre elas. Clique num número para ver as OS daquele cruzamento.
-      </div>
-      <div style="overflow-x:auto;">
-      <table class="table" style="min-width:100%;width:auto;">
-        <thead><tr>
-          <th style="text-align:left;">tamanho</th>
-          ${cruz.cores.map(c => `<th style="text-align:right;white-space:nowrap;">${esc(c.cor)}</th>`).join('')}
-          <th style="text-align:right;white-space:nowrap;background:#eef6f0;">total</th>
-        </tr></thead>
-        <tbody>
-          ${cruz.tams.map(t => `<tr>
-            <td><strong>${esc(t.tam)}</strong></td>
-            ${cruz.cores.map(c => {
-              const cel = cruz.cel(t.tam, c.cor);
-              const v = cel ? cel.pecas : 0;
-              return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:${_cruzFundo(v)};"
-                title="${esc(t.tam + ' · ' + c.cor)}${cel && cel.os.length ? ' — ' + cel.os.length + ' OS' : ''}">${
-                v > 0 ? atalhoOS(num(v), cel.os, t.tam + ' · ' + c.cor) : '<span style="color:var(--ink-3);">—</span>'}</td>`;
-            }).join('')}
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;">${num(t.total)}</td>
-          </tr>`).join('')}
-          <tr style="background:#eef6f0;">
-            <td style="font-weight:700;color:var(--ink-2);">total</td>
-            ${cruz.cores.map(c => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(c.total)}</td>`).join('')}
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(cruz.total)}</td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-      </div>
-    </div>`;
-
-  // A SÉRIE DO TEMPO. Clicar na linha entra naquele período — é o mesmo gesto de
-  // abrir uma pasta, e evita ter de achar o mês no seletor.
-  const maxP = r.serie.reduce((mx, x) => Math.max(mx, x.n), 0);
-  const serieHtml = !r.serie.length ? '' : `
-    <div class="card rank-card${recolhidos['Por período'] ? ' recolhido' : ''}" data-rank="Por período" style="margin-bottom:14px;">
-      ${_rankCabecalho('Por período', r.porMes ? 'Por mês' : 'Por ano', r.serie.length + (r.serie.length === 1 ? ' linha' : ' linhas'), recolhidos)}
-      <div class="rank-corpo">
-      <div class="desc" style="margin-bottom:8px;">${r.porMes
-        ? 'Os meses do período em foco, em ordem. Clique num mês para ver o ranking só dele.'
-        : 'Os anos com produção, em ordem. Clique num ano para abri-lo em meses.'}</div>
-      <table class="table">
-        <thead><tr>
-          <th>${r.porMes ? 'mês' : 'ano'}</th>
-          <th style="width:64px;text-align:right;">OS</th>
-          <th style="width:90px;text-align:right;">produtos</th>
-          <th style="width:150px;"></th>
-        </tr></thead>
-        <tbody>${r.serie.map(x => `
-          <tr style="cursor:pointer;" title="Ver só este período"
-              onclick="_rankingFiltrar('${r.porMes ? 'mes' : 'ano'}', '${esc(x.periodo)}')">
-            <td><strong>${esc(r.porMes ? _rankRotuloMes(x.periodo) : x.periodo)}</strong></td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;"
-                onclick="event.stopPropagation()">${atalhoOS(x.n, x.os, r.porMes ? _rankRotuloMes(x.periodo) : x.periodo)}</td>
-            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${num(x.pecas)}</td>
-            <td>${barra(x.n, maxP)}</td>
-          </tr>`).join('')}</tbody>
-      </table>
-      </div>
-    </div>`;
   const foco = _rankMes ? _rankRotuloMes(_rankMes) : (_rankAno || '');
+  const recorte = RANK_VARS.filter(v => !v.soEixo && _rankFiltros[v.k])
+    .map(v => `<b>${esc(v.rotulo.toLowerCase())}</b> ${esc(_rankFiltros[v.k])}`).join(' · ');
+
   box.innerHTML = filtro + `
     <div class="info-box" style="margin-bottom:14px;">
-      <b>${num(contadas)} OS</b> ${foco ? `em <b>${esc(foco)}</b>` : 'no ranking'}${r.de ? `, de <b>${esc(formatDate(r.de))}</b> a <b>${esc(formatDate(r.ate))}</b>` : ''}
-      · <b>${r.linhas.length}</b> combinações distintas de tipo × cor × grade
-      ${r.semGrade ? `<br><b>${r.semGrade} OS</b> ficaram de fora: sem SKU de produto resolvido (falta a linha de SKU no desenho/modelo, ou a sigla da cor da variante).` : ''}
-      ${r.pares > contadas ? `<br><b>${r.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — os produtos são repartidos entre elas.` : ''}
+      <b>${num(q.totalOS)} OS</b> ${foco ? `em <b>${esc(foco)}</b>` : 'no quadro'}${base.de ? `, de <b>${esc(formatDate(base.de))}</b> a <b>${esc(formatDate(base.ate))}</b>` : ''}
+      · <b>${num(q.total)}</b> produtos${recorte ? ` · recortado por ${recorte}` : ''}
+      ${base.semSku ? `<br><b>${base.semSku} OS</b> ficaram de fora: sem SKU de produto resolvido (falta a linha de SKU no desenho/modelo, ou a sigla da cor da variante).` : ''}
+      ${base.pares > contadas ? `<br><b>${base.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — os produtos são repartidos entre elas.` : ''}
     </div>
-    ${serieHtml}
-    ${tabela('Grade', 'Só a grade, independente do tipo e da cor. A OS de mais de uma cor entra uma vez, com o lote inteiro. Fica no alto de propósito: é curta, e as tabelas de baixo passam de cem linhas.', r.porGrade, maxG, 'grade')}
-    ${tabela('SKU · grade', 'A linha do produto (o SKU sem a cor: CM.LISA, BM.TRI) com a grade. É a leitura do que se enfesta: a mesma grade no mesmo produto, em qualquer cor.', r.porSkuGrade, maxSG, 'SKU · grade')}
-    ${cruzHtml}
-    ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
-    ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
-    ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
+    <div class="card rank-card${recolhidos['quadro'] ? ' recolhido' : ''}" data-rank="quadro">
+      ${_rankCabecalho('quadro', titulo, resumo, recolhidos)}
+      <div class="rank-corpo">
+      <div class="desc" style="margin-bottom:8px;">
+        O número de cada célula é <b>produtos</b> — o Total geral da folha, repartido entre as
+        cores da OS e entre os tamanhos da grade. Clique num número para ver as OS daquele
+        cruzamento. A contagem de <b>OS</b> é por número distinto e <b>não se soma</b>: a mesma OS
+        aparece em vários tamanhos.${_rankColuna ? '' : ' Escolha uma variável em <b>Colunas</b> para cruzar.'}
+      </div>
+      ${q.linhas.length ? (_rankColuna ? cruzada : lista)
+        : '<div class="empty" style="padding:14px;">Nada neste recorte — tire um dos filtros.</div>'}
+      </div>
+    </div>`;
 }
 
 function renderFasePainel(faseIdx) {
