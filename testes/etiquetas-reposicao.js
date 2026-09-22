@@ -54,6 +54,12 @@ const motor = [
   listaConst('ETIQUETA_COMPOSICAO_MOLETOM'),
   corta('function _composicaoPacoteMoletom'),
   corta('function totaisPorTamanhoTomOS'),
+  listaConst('_PECAS_ETIQUETA_BMTRI'),
+  corta('function _normNome'),
+  corta('function _normSku'),
+  corta('function _skuDaGrade'),
+  corta('function _osEhBmTri'),
+  corta('function _coresDaPecaOS'),
   corta('function _tamanhosDaGradeExpandido'),
   corta('function dadosEtiquetaParaOS'),
   corta('function gerarPdfEtiquetas')
@@ -86,6 +92,8 @@ function etiquetasDe(o, { tons = [], moletom = false } = {}) {
     const tonsEfetivos = () => tons;
     const _osEhMoletom = () => moletom;
     const multiplicadorPecaOS = () => (moletom ? 1 : 2);
+    // Sem grade no cadastro: o tipo (BM.TRI…) é lido do nome copiado na OS.
+    const _skuDaOS = () => '';
     ${motor}
     const dados = dadosEtiquetaParaOS(o);
     gerarPdfEtiquetas(dados);
@@ -197,6 +205,51 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], grade: { g: 8, total: 8 },
   progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2], moletom: true });
 ok('2 tons sem divisão: a composição sai sem número, não com chute',
    r.paginas[0].includes('Frente · Costa · Bolso · Barra'), r.paginas[0]);
+
+/* ---------- 7. BM.TRI: uma etiqueta por PEÇA (pedido de 22/09/2026) ----------
+   Cada tamanho × tom rende sete etiquetas: Frente, Costa, Capuz, Forro de capuz,
+   Barra/Punhos, Mangas e Bolso — cada uma com a cor e a quantidade da peça.
+   Os componentes são os da OS 0547 como estão gravados. */
+
+const comps547 = [
+  ['Capuz', 'Preto'], ['Forro do capuz', 'Preto'], ['Bolso canguru', 'Off-White'],
+  ['Punho', 'Off-White'], ['Barra', 'Off-White'], ['Viés', 'Preto'],
+  ['Frente PARTE 3 Blusa Moletom Tricolor', 'Off-White'], ['Frente PARTE 1 Blusa Moletom Tricolor', 'Preto'],
+  ['Frente PARTE 2 Blusa Moletom Tricolor', 'Mostarda'], ['Costa parte 1', 'Preto'],
+  ['Costa parte 2', 'Mostarda'], ['Costa parte 3', 'Off-White'],
+  ['Mangas parte 1', 'Preto'], ['Mangas parte 2', 'Mostarda'], ['Mangas parte 3', 'Off-White']
+].map(([nome, corNome]) => ({ nome, corNome }));
+const tri547 = osBase({
+  os: '0547', fases: [{ tecidoId: 't1' }], componentes: comps547,
+  grade: { descricao: '8G | BM.TRI | 179cm', g: 8, total: 8 }, enfesto: { camadas: 28 },
+  progresso: { totalTamanhoTons: { 1: true, 2: true }, totalTamanhoTomValor: { 1: 144 } }
+});
+r = etiquetasDe(tri547, { tons: [1, 2], moletom: true });
+eq('BM.TRI: etiquetas (1 tamanho × 2 tons × 7 peças + 2 de reposição)', r.dados.numEtiquetas, 16);
+eq('BM.TRI: pacotes no LOTE (14 peças + reposição)', r.dados.totalPacotes, 15);
+const ordem = r.paginas.slice(0, 7).map(pg => pg[pg.length - 1]);
+eq('BM.TRI: a ordem das peças no G tom 1', ordem.join(' | '),
+   'FRENTE | COSTA | CAPUZ | FORRO DE CAPUZ | BARRA/PUNHOS | MANGAS | BOLSO');
+ok('BM.TRI: G tom 1 — Frente, 144, nas três cores em ordem de parte',
+   r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE: 144') &&
+   r.paginas[0].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[0]);
+ok('BM.TRI: G tom 1 — Capuz é preto e vai em dobro',
+   r.paginas[2].includes('QTDE: 288') && r.paginas[2].includes('COR: PRETO'), r.paginas[2]);
+ok('BM.TRI: G tom 1 — Barra/Punhos diz as duas contas',
+   r.paginas[4].includes('QTDE: Barra 144 · Punhos 288') && r.paginas[4].includes('COR: OFF-WHITE'), r.paginas[4]);
+ok('BM.TRI: G tom 2 — Mangas com as 80 blusas do tom',
+   r.paginas[12].includes('G tom 2') && r.paginas[12].includes('MANGAS') && r.paginas[12].includes('QTDE: 160'), r.paginas[12]);
+ok('BM.TRI: a etiqueta de peça não traz a lista de composição nem a grade inteira',
+   !r.paginas[0].some(l => /Punhos d+ ·|^TAM:/.test(l)), r.paginas[0]);
+ok('BM.TRI: a reposição continua no fim, sem peça',
+   ehRep(r.paginas[14]) && ehRep(r.paginas[15]) && !r.paginas[14].includes('FRENTE'), r.paginas[14]);
+
+// Outro moletom que não é BM.TRI segue com uma etiqueta por tamanho.
+r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547,
+  grade: { descricao: 'P ao G3 | BM.LISA | 177cm', g: 8, total: 8 }, enfesto: { camadas: 28 } }),
+  { tons: [1], moletom: true });
+eq('BM.LISA: uma etiqueta por tamanho, como antes', r.dados.numEtiquetas, 3);
+ok('BM.LISA: sem etiqueta por peça', r.dados.pecasPacotes == null, r.dados.pecasPacotes);
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
