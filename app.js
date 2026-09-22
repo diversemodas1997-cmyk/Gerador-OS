@@ -7579,12 +7579,29 @@ function renderEstoque() {
      de qual prateleira — e é justamente o tecido+cor que identifica a
      prateleira no estoque, logo acima. A cor sai por corSemTecido porque o
      tecido já está na linha de cima da própria célula. */
-  const celFase = (f) => {
+  /* O NÚMERO DIZ AS DUAS COISAS: PRECISA / FALTA (22/09/2026, Junior: "mostrar
+     no mesmo número a quantidade necessárias/quantidade que falta... 10/2, ou
+     seja, precisa de 10 bobinas, mas faltam 2").
+
+     Até aqui a célula dizia só quantas bobinas separar, e o que falta vivia no
+     fim da linha, somado em quilos: quem lia a coluna via 10 bobinas de um pano
+     que a prateleira não tem e ia buscá-las assim mesmo. Com o "/2" ao lado, a
+     coluna que manda separar material é a mesma que avisa quanto daquilo não
+     existe — e avisa na fase certa, que é onde se separa.
+
+     A segunda metade só aparece quando falta: "10/0" em toda fase com pano seria
+     ruído em cima da leitura principal, que é o 10. */
+  const celFase = (f, fatias) => {
     if (!f) return '<td style="text-align:right;color:var(--ink-3);">—</td>';
     const cor = corSemTecido(f.cor, f.tecido);
-    return `<td style="text-align:right;white-space:nowrap;" title="${esc(f.nome)}">
+    const faltaBob = bobinasQueFaltamNaFase(f, fatias);
+    const dicaFase = esc(f.nome) + (faltaBob > 0
+      ? ' — precisa de ' + f.bobinas + ' bobina(s) e ' + faltaBob
+        + ' delas não estão na prateleira (o disponível deste pano não cobre esta fase).'
+      : '');
+    return `<td style="text-align:right;white-space:nowrap;" title="${dicaFase}">
       <div style="font-family:'IBM Plex Mono',monospace;">
-        ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
+        ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span>${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">/${faltaBob}</span>` : ''} <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
         <span style="font-size:10px;color:var(--ink-2);">· ${fmt(f.kg)} kg</span>
       </div>
       <div style="font-size:10px;color:var(--ink-2);">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
@@ -7617,14 +7634,17 @@ function renderEstoque() {
     const rib = ribanaDoMaterialOS(os);
     const falta = faltaPorOS.get(o.osId) || null;
     const dica = falta ? esc(_tituloFalta(falta, os)) : '';
+    // A falta desce da prateleira (tecido+cor) para a fase — ver
+    // fatiaQueFaltaPorTecidoCor. Uma conta só por linha, usada nas três colunas.
+    const fatias = falta ? fatiaQueFaltaPorTecidoCor(os, falta) : null;
     return `
     <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}${_skuCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i])).join('')}
-      ${temForro ? celFase(forro) : ''}
-      ${temRibana ? celFase(rib) : ''}
+      ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i], fatias)).join('')}
+      ${temForro ? celFase(forro, fatias) : ''}
+      ${temRibana ? celFase(rib, fatias) : ''}
       <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
         ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ ${esc(_resumoFalta(os, falta))}</span>`
         : ''}</td>
@@ -7682,7 +7702,9 @@ function renderEstoque() {
         A OS <b style="color:#c0392b;">em vermelho</b> está reservando pano que a prateleira
         <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. A coluna <b>Situação</b> diz
         <b>quanto</b> falta, em quilos e em bobinas; passe o mouse para ver de qual tecido e
-        quanto falta para fechar a OS inteira. <b>Repare no tamanho:</b> uma falta de poucos
+        quanto falta para fechar a OS inteira. Nas colunas das fases o número sai
+        <b>precisa/falta</b> — <b>10<span style="color:#c0392b;">/2</span></b> quer dizer
+        "separe 10 bobinas, e 2 delas não estão na prateleira". <b>Repare no tamanho:</b> uma falta de poucos
         quilos é o saldo raspando o zero depois de meses de entradas e saídas, e não pano que
         não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
@@ -22797,6 +22819,52 @@ function faltaParaCompletarOS(os, faltando) {
     faltaBob: somar(itens, f => f.faltaBob),
     temBobina: fases.some(f => f.bobinas != null) && itens.some(f => f.faltaBob != null)
   };
+}
+
+/* AS BOBINAS QUE FALTAM, FASE A FASE (22/09/2026, Junior: "na coluna que mostra
+   quantidade de bobinas necessárias... mostrar no mesmo número a quantidade
+   necessárias/quantidade que falta... 10/2").
+
+   A conta da falta é POR PRATELEIRA — tecido + cor —, porque é assim que o
+   estoque existe: o saldo é de "Malha Algodão · Preto", não da fase Corpo 2. A
+   coluna, porém, é por FASE, e uma prateleira costuma servir a mais de uma
+   (Corpo 1 e Corpo 3 do mesmo preto). Então a falta desce para a fase pela
+   MESMA PROPORÇÃO que `faltaParaCompletarOS` já usa: se falta 40% do quilo
+   daquele pano, faltam 40% das bobinas de cada fase que o usa.
+
+   A fatia para no 1: quando falta mais do que a OS inteira prevê — que é o caso
+   do saldo já negativo, pano baixado sem entrada correspondente —, o que se pode
+   dizer da FASE é que ela falta inteira. Dizer "precisa de 1 e faltam 21" seria
+   pôr na coluna da fase a dívida da prateleira, que é outra conta e mora no kg.
+
+   Para cima, como todo arredondamento de bobina aqui: meia bobina que falta
+   obriga a comprar uma inteira. */
+function fatiaQueFaltaPorTecidoCor(os, faltando) {
+  const m = new Map();
+  if (!os || !Array.isArray(faltando) || !faltando.length) return m;
+  let t = null;
+  try { t = faltaParaCompletarOS(os, faltando); } catch (e) { t = null; }
+  const itens = (t && t.itens && t.itens.length) ? t.itens : faltando;
+  itens.forEach(i => {
+    const falta = Number(i.falta) || 0;
+    if (!(falta > 0.0005)) return;
+    const prev = Number(i.previstoKg) || 0;
+    m.set(_normNome(i.tecidoNome) + '||' + _normNome(i.corNome),
+          prev > 0 ? Math.min(1, falta / prev) : 1);
+  });
+  return m;
+}
+
+// Quantas das bobinas DESTA fase estão faltando. Zero quando a prateleira dela
+// tem pano, e zero também na fase sem bobina prevista (viés, ribana sem
+// cadastro): inventar bobina que falta é pior do que não dizer.
+function bobinasQueFaltamNaFase(fase, fatias) {
+  if (!fase || !fatias || !fatias.size) return 0;
+  const bob = Number(fase.bobinas);
+  if (!isFinite(bob) || bob <= 0) return 0;
+  const fatia = fatias.get(_normNome(fase.tecido) + '||' + _normNome(fase.cor)) || 0;
+  if (!(fatia > 0)) return 0;
+  return Math.min(bob, Math.ceil(bob * fatia - CEIL_BOBINA_EPS));
 }
 
 // O texto do aviso. Separado da conta para poder ser lido por teste sem DOM, e
