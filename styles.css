@@ -1499,10 +1499,9 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   color: var(--ink-2);
 }
 .rank-toggle:hover .rank-acao { border-color: var(--accent); color: var(--ink); background: var(--paper); }
-.rank-card.recolhido .rank-corpo { display: none; }
-.rank-card.recolhido .rank-toggle { border-bottom-color: transparent; margin-bottom: 0; padding-bottom: 0; }
-.rank-card.recolhido .rank-acao { border-color: var(--accent); }
-.rank-card.recolhido .rank-seta { transform: rotate(-90deg); }
+/* O .rank-card saiu com o recolher do Ranking (22/09/2026). O titulo-botao
+   ficou: quem o usa agora e a Fila de producao, que desenha o proprio corpo
+   conforme esta aberta ou recolhida. */
 
 /* ============ FORMULÁRIO OS ============ */
 .os-section { margin-bottom: 18px; }
@@ -4611,3 +4610,10 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   color: var(--ink);
 }
 .oc-qtd:focus { border-color: var(--accent); outline: none; }
+
+/* A ficha da OS dentro de outro quadro (a linha automatica da lista de compra):
+   as mesmas colunas da lista de Ordens de Servico, encolhidas para caber numa
+   celula. Sem margem em cima porque ela vem logo abaixo do selo da falta. */
+.os-ficha-compacta { margin-top: 6px; }
+.os-ficha-compacta th { font-size: 9px; letter-spacing: .08em; }
+.os-ficha-compacta th, .os-ficha-compacta td { padding: 4px 6px; font-size: 12px; }

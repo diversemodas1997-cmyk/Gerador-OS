@@ -8545,83 +8545,22 @@ let _rankAno = '', _rankMes = '';
    na tela. */
 let _rankGrupos = [];
 
-/* RECOLHER E ESTENDER O QUADRO (16/09/2026, Junior; o Ranking virou um quadro
-   so em 22/09, e o recolher ficou: a tabela cruzada passa de cem linhas quando
-   a variavel escolhida e o SKU, e quem quer so os filtros na tela recolhe).
+/* SEM RECOLHER (22/09/2026, Junior: "retire o recolher/estender do quadro
+   ranking de produção").
 
-   VISÍVEL (mesmo dia): a primeira versão funcionava e ninguém achava — o título
-   seguia cinza como antes, com uma seta de 9 px, e os botões gerais moravam na
-   ponta direita de um monitor de 2.560 px. Agora cada quadro tem a etiqueta
-   "− recolher / + estender" e os botões gerais ficam junto dos filtros.
- O Ranking tem quadros de
-   160 linhas; quem quer comparar a tabela Grade com a Cor rolava nove telas.
-   Clicar no título recolhe o quadro, e a escolha fica lembrada NESTE computador
-   (localStorage), por quadro — cada máquina da fábrica olha o ranking do seu
-   jeito. Recolher só esconde: nada é recalculado, e a rolagem não pula. */
-const RANK_RECOLHIDOS_CHAVE = 'rankingRecolhidos';
-function _rankRecolhidos() {
-  try { return JSON.parse(localStorage.getItem(RANK_RECOLHIDOS_CHAVE) || '{}') || {}; }
-  catch (e) { return {}; }
-}
-function _rankGuardarRecolhidos(mapa) {
-  try { localStorage.setItem(RANK_RECOLHIDOS_CHAVE, JSON.stringify(mapa)); } catch (e) { /* sem armazenamento: vale só nesta tela */ }
-}
-function _rankAlternar(botao) {
-  const card = botao && botao.closest('.rank-card');
-  if (!card) return;
-  const recolher = !card.classList.contains('recolhido');
-  card.classList.toggle('recolhido', recolher);
-  botao.setAttribute('aria-expanded', String(!recolher));
-  const acao = botao.querySelector('.rank-acao');
-  if (acao) acao.textContent = recolher ? '+ estender' : '− recolher';
-  const mapa = _rankRecolhidos();
-  if (recolher) mapa[card.dataset.rank] = true; else delete mapa[card.dataset.rank];
-  _rankGuardarRecolhidos(mapa);
-}
+   O recolher nasceu em 16/09, quando o Ranking tinha SEIS quadros de até 160
+   linhas e comparar dois deles era rolar nove telas. Com um quadro só ele
+   perdeu a razão de ser: o que estava sendo escondido era a única tabela da
+   tela, e um clique para ver a tela que se acabou de abrir é um passo a mais
+   sem nada em troca. O título volta a ser título.
 
-// O cabeçalho clicável de um quadro. `chave` é fixa por quadro ("Por período"
-// vale para Por ano e Por mês); `resumo` aparece ao lado, útil com ele recolhido.
-function _rankCabecalho(chave, titulo, resumo, recolhidos) {
-  const aberto = !recolhidos[chave];
-  return `<button type="button" class="rank-toggle card-title" aria-expanded="${aberto}"
-      onclick="_rankAlternar(this)" title="Clique para recolher ou estender este quadro">
-      <span class="rank-seta" aria-hidden="true">▼</span>${esc(titulo)}
-      <span class="rank-acao">${aberto ? '− recolher' : '+ estender'}</span>${resumo ? `<span class="rank-resumo">${esc(resumo)}</span>` : ''}
-    </button>`;
-}
+   A ESCOLHA GUARDADA NAQUELE COMPUTADOR fica para trás junto (a chave
+   `rankingRecolhidos` do localStorage): ela não tem mais o que dizer, e quem
+   tinha o quadro recolhido não pode abrir o Ranking e não ver nada.
 
-// O grupo escolhido viaja num campo PENDENTE, que o `goto` consome ao abrir a
-// lista. Assim o recorte vale so para a viagem que o trouxe: chegar em Ordens de Serviço
-// por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
-// um clique dado meia hora antes.
-let _listaOsGrupoPendente = null;
-
-/* O CARTAO SEM TELA PROPRIA ABRE A LISTA FILTRADA (15/09/2026, Junior: "o
-   quadro Cortando e Estoque nao permitem clicar para abrir o quadro").
-
-   E os dois nao permitiam mesmo, e nao por engano: nenhum tem tela no menu.
-   Nao ha campo "Cortando" — cortar e trabalho em curso na mesa, nao e lugar
-   onde o pano fica —, e o "Estoque" do fim do fluxo e o de PRODUTO ACABADO,
-   que nao e a tela Estoque do menu (aquela e a de tecidos, em quilos). Sem
-   destino, o cartao nascia sem onclick.
-
-   Mas clicar e o gesto natural de quem ve um numero e quer saber QUAIS. A lista
-   de Ordens de Servico ja sabe filtrar por status desde que o status virou a
-   etapa — entao o destino existia, faltava o caminho. Mesma mecanica do atalho
-   do Ranking logo acima: o pedido viaja num campo PENDENTE que o `goto` consome,
-   e vale so para a viagem que o trouxe. */
-let _listaOsStatusPendente = null;
-
-function abrirListaPorStatus(k) {
-  if (!k) return;
-  _listaOsStatusPendente = k;
-  // A busca por texto e o filtro respondem a mesma pergunta de dois jeitos;
-  // deixar as duas ligadas mostraria "nenhuma OS" sem dizer por que.
-  const busca = document.getElementById('busca-os');
-  if (busca) busca.value = '';
-  goto('lista-os');
-}
-window.abrirListaPorStatus = abrirListaPorStatus;
+   As classes `.rank-toggle`, `.rank-seta` e `.rank-acao` continuam no CSS —
+   quem as usa agora é a Fila de produção, que tem muitas linhas e recolhe pelo
+   mesmo desenho. */
 
 function _rankingAbrirGrupo(i) {
   const g = _rankGrupos[i];
@@ -9096,7 +9035,6 @@ function renderRanking() {
     : 'Por ' + _rankRotuloVar(_rankLinha).toLowerCase();
   const resumo = q.linhas.length + ' linha' + (q.linhas.length === 1 ? '' : 's')
     + (_rankColuna ? ' × ' + q.colunas.length + ' coluna' + (q.colunas.length === 1 ? '' : 's') : '');
-  const recolhidos = _rankRecolhidos();
   const foco = _rankMes ? _rankRotuloMes(_rankMes) : (_rankAno || '');
   const recorte = RANK_VARS.filter(v => !v.soEixo && _rankFiltros[v.k])
     .map(v => `<b>${esc(v.rotulo.toLowerCase())}</b> ${esc(_rankFiltros[v.k])}`).join(' · ');
@@ -9108,9 +9046,11 @@ function renderRanking() {
       ${base.semSku ? `<br><b>${base.semSku} OS</b> ficaram de fora: sem SKU de produto resolvido (falta a linha de SKU no desenho/modelo, ou a sigla da cor da variante).` : ''}
       ${base.pares > contadas ? `<br><b>${base.pares - contadas} OS</b> saem em mais de uma cor e entram uma vez em cada — os produtos são repartidos entre elas.` : ''}
     </div>
-    <div class="card rank-card${recolhidos['quadro'] ? ' recolhido' : ''}" data-rank="quadro">
-      ${_rankCabecalho('quadro', titulo, resumo, recolhidos)}
-      <div class="rank-corpo">
+    <div class="card">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">${esc(titulo)}</h2>
+        <span class="muted" style="font-size:11px;">${esc(resumo)}</span>
+      </div>
       <div class="desc" style="margin-bottom:8px;">
         O número de cada célula é <b>produtos</b> — o Total geral da folha, repartido entre as
         cores da OS e entre os tamanhos da grade. Clique num número para ver as OS daquele
@@ -9119,7 +9059,6 @@ function renderRanking() {
       </div>
       ${q.linhas.length ? (_rankColuna ? cruzada : lista)
         : '<div class="empty" style="padding:14px;">Nada neste recorte — tire um dos filtros.</div>'}
-      </div>
     </div>`;
 }
 
@@ -27120,6 +27059,68 @@ function _contaListaOS(mostradas, total) {
     : `Todas as ${n(total)} OS da lista.`;
 }
 
+/* A MINIATURA DO DESENHO DA OS. Mesma da lista de desenhos: acha o desenho
+   técnico por `desenhoId` (padrão) ou, para OS antigas sem esse vínculo, pelo
+   código. Vive fora da lista de OS desde 22/09/2026, porque a ficha compacta da
+   OS (ver `_osFichaCompactaHtml`) mostra a mesma coisa — e duas cópias do mesmo
+   quadrinho acabariam mostrando desenhos diferentes para a mesma OS. */
+function _osThumbHtml(o) {
+  const des = (o && o.desenhoId && (STATE.desenhos || []).find(d => d.id === o.desenhoId))
+    || (o && o.codigo && (STATE.desenhos || []).find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
+    || null;
+  return `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;`
+    + `justify-content:center;border:1px solid var(--line);overflow:hidden">`
+    + (des && des.img ? `<img src="${urlDesenho(des.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—')
+    + `</div>`;
+}
+
+/* A FICHA DA OS, DO JEITO DA LISTA (22/09/2026, Junior: "insira todos os
+   detalhes sobre a OS no quadro itens da compra, da mesma forma como é mostrado
+   na janela OS cadastradas").
+
+   A linha automática da lista de compra dizia só o número da OS e o pano que
+   falta — e quem está montando a compra precisa reconhecer a OS ali mesmo: qual
+   desenho, que cor, qual grade, quantos produtos, se tem risco. Ir até a lista
+   de Ordens de Serviço para descobrir isso é sair da tela onde se decide.
+
+   As MESMAS colunas e as mesmas funções da lista de Ordens de Serviço —
+   `_osThumbHtml`, `_gradeCelulaLista`, `_dataCelulaListaOS`, `coresDaPecaOS`,
+   `produtosOS`, `_riscoCellOS`. Não é uma segunda leitura da OS: é a mesma,
+   numa tabela de uma linha só. */
+function _osFichaCompactaHtml(o) {
+  if (!o) return '';
+  const cores = coresDaPecaOS(o) || [];
+  return `<table class="table os-ficha-compacta">
+    <thead><tr>
+      <th>Desenho</th><th>OS</th><th>Código</th><th>Modelo</th><th>Cor</th>
+      <th>Coleção</th><th>Grade</th><th>Data</th>
+      <th style="text-align:right;">Produtos</th><th>Riscos</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>${_osThumbHtml(o)}</td>
+      <td><strong>${esc(o.os) || '—'}</strong>${_conjugadaCelulaOS(o)}</td>
+      <td><span class="badge">${esc(o.codigo) || '—'}</span></td>
+      <td>${esc(o.modeloNome) || '—'}${_skuCelulaOS(o)}</td>
+      <td>${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
+                         : '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${esc(o.colecaoNome) || '—'}</td>
+      <td>${_gradeCelulaLista(o)}</td>
+      <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
+      <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
+      <td style="text-align:center;">${_riscoCellOS(o)}</td>
+    </tr></tbody>
+  </table>`;
+}
+
+// O SKU da OS embaixo do modelo, como no quadro do material reservado. Função
+// própria porque aquela outra mora dentro de renderEstoque.
+function _skuCelulaOS(o) {
+  const lista = o ? (skusDaOS(o) || []) : [];
+  if (!lista.length) return '';
+  return `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;`
+    + `color:var(--ink-2);white-space:nowrap;">${esc(lista.join(' / '))}</div>`;
+}
+
 /* ==================== A FILA DE PRODUÇÃO ====================
 
    22/09/2026, Junior: "insira a capacidade do usuário determinar a ordem das OS
@@ -27437,12 +27438,7 @@ function renderListaOS() {
     return;
   }
   tb.innerHTML = filtradas.map(o => {
-    // Mesma miniatura da lista de desenhos: acha o desenho técnico da OS por
-    // desenhoId (padrão) ou, para OS antigas sem esse vínculo, pelo código.
-    const des = (o.desenhoId && STATE.desenhos.find(d => d.id === o.desenhoId))
-      || (o.codigo && STATE.desenhos.find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
-      || null;
-    const thumb = `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden">${des && des.img ? `<img src="${urlDesenho(des.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—'}</div>`;
+    const thumb = _osThumbHtml(o);
     // A COR DA PEÇA, da mesma fonte do banner da folha impressa e da folha de OE
     // (`coresDaPecaOS`): as cores das variantes, sem o tecido no nome e limitadas
     // a quantas cores o desenho realmente tem. Ler daqui é o que impede a lista
@@ -36863,20 +36859,25 @@ function renderCompra() {
     const dica = 'Esta linha entrou sozinha: a OS ' + (it.osNumero || '')
       + ' esta segurando pano que a prateleira nao tem. Ela sai da lista quando a '
       + 'entrada desse tecido for lancada no estoque.';
+    /* A OS INTEIRA NA LINHA (22/09/2026, Junior: "insira todos os detalhes sobre
+       a OS no quadro itens da compra, da mesma forma como é mostrado na janela
+       OS cadastradas"). A linha dizia só o número e o pano que falta, e quem
+       monta a compra precisa reconhecer a OS ali mesmo — desenho, cor, grade,
+       produtos, risco. É a mesma ficha da lista de Ordens de Serviço, nas
+       mesmas colunas (ver _osFichaCompactaHtml), e por isso ela ocupa a linha
+       inteira: as colunas desta tabela são de produção planejada (camadas,
+       enfestos, peças), que uma OS já existente não tem para mostrar. */
+    const os = (STATE.ordens || []).find(x => x.id === it.osId);
     return `<tr style="background:#fdf4f3;">
       <td class="col-actions row-actions">
         <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
         <span class="muted" style="font-size:11px;" title="${esc(dica)}">automático</span>
       </td>
-      <td>
+      <td colspan="5">
         <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${esc(dica)}">⚠ OS ${esc(it.osNumero) || '—'} sem pano</span>
-        <div style="font-size:11px;margin-top:2px;">${panos || '<span class="muted">—</span>'}</div>
-        ${c && c.grade ? `<div class="muted" style="font-size:11px;">${esc(c.grade.nome || '')}</div>` : ''}
+        <span style="font-size:11px;margin-left:6px;">${panos || '<span class="muted">—</span>'}</span>
+        ${os ? _osFichaCompactaHtml(os) : ''}
       </td>
-      <td>${c && c.desenho ? esc(c.desenho.codigo || '') : '<span style="color:var(--ink-3)">—</span>'}</td>
-      <td style="text-align:right;color:var(--ink-3);">—</td>
-      <td style="text-align:right;color:var(--ink-3);">—</td>
-      <td style="text-align:right;color:var(--ink-3);">—</td>
     </tr>${detalhe}`;
   };
 
