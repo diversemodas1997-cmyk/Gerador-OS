@@ -24613,8 +24613,9 @@ function gerarPdfEtiquetas(dados) {
     if (!ehViaExtra) linhas.push({ t: `LOTE: ${i + 1}/${totalPacotes}`, s: 1 });
     linhas.push(destaque);
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
-    if (!ehReposicao && dados.composicao) {
-      dados.composicao.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
+    const compDoPacote = !ehReposicao && dados.composicaoPacotes && dados.composicaoPacotes[i];
+    if (compDoPacote) {
+      compDoPacote.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
     }
 
     // Mede a 10pt e escala linearmente pra achar o maior fontSize base que cabe
@@ -25234,13 +25235,29 @@ const ETIQUETA_CONTEUDO_REPOSICAO = 'Viés/Reposição/Ribana';
 // colada por fora e a outra vai dentro, junto do conteúdo.
 const ETIQUETAS_REPOSICAO_POR_OS = 2;
 
-// Composição de um pacote de blusa de MOLETOM (360 peças = 36 blusas). Sai em
-// cada etiqueta de pacote de moletom (não na de reposição). Duas linhas,
-// agrupadas por quantidade (as de 36 e as de 72). Camiseta não recebe lista.
+// Composição de um pacote de blusa de MOLETOM: quantas de cada peça vão numa
+// BLUSA. Sai em cada etiqueta de pacote de moletom (não na de reposição), em duas
+// linhas — as peças de 1 por blusa e as de 2. Camiseta não recebe lista.
+//
+// Até 22/09/2026 aqui estavam os NÚMEROS prontos ("Frente 36 · … / Mangas 72 · …"),
+// de um pacote típico de 36 blusas, e toda etiqueta de moletom saía com eles. A
+// OS 0547 (8G, 28 camadas: 18 no Tom 1 e 10 no Tom 2) tem 144 blusas no pacote
+// "G tom 1" e 80 no "G tom 2" — e as duas etiquetas diziam 36. Agora o número é
+// blusas do pacote × peças por blusa (ver _composicaoPacoteMoletom).
 const ETIQUETA_COMPOSICAO_MOLETOM = [
-  'Frente 36 · Costa 36 · Bolso 36 · Barra 36',
-  'Mangas 72 · Capuz 72 · Punhos 72'
+  [['Frente', 1], ['Costa', 1], ['Bolso', 1], ['Barra', 1]],
+  [['Mangas', 2], ['Capuz', 2], ['Punhos', 2]]
 ];
+
+// As linhas de composição de UM pacote de moletom com `blusas` blusas. Sem o
+// número (null), sai a lista sem quantidade: é o caso da OS com dois tons ou
+// mais em que ninguém disse ainda quanto vai em cada um — imprimir um chute na
+// etiqueta seria pior do que deixar a conta para quem ensaca.
+function _composicaoPacoteMoletom(blusas) {
+  return ETIQUETA_COMPOSICAO_MOLETOM.map(linha => linha
+    .map(([peca, porBlusa]) => blusas == null ? peca : `${peca} ${blusas * porBlusa}`)
+    .join(' · '));
+}
 
 // Tamanhos da grade expandidos em PACOTES: um item por vaga de tamanho, na
 // ordem P..G3. Segue a mesma regra por tipo de _expTotalTamanhosGrade:
@@ -25363,12 +25380,31 @@ function dadosEtiquetaParaOS(o) {
     ? (tonsAtivos.length > 1 ? 'TONS: ' : 'TOM: ') + tonsAtivos.join(' · ')
     : '';
 
-  // Moletom: cada etiqueta de pacote (de tamanho) recebe a lista de composição.
-  const composicao = temMoletom ? ETIQUETA_COMPOSICAO_MOLETOM : null;
+  // Moletom: cada etiqueta de pacote (de tamanho) recebe a composição DAQUELE
+  // pacote. No moletom o pacote é um tamanho inteiro de um tom, então as blusas
+  // dele são a célula tamanho × tom do "Total por tamanho" da folha — a mesma
+  // fonte que a folha imprime, para a etiqueta e a folha não discordarem.
+  // Com um tom só (ou nenhum marcado), o pacote leva a coluna inteira.
+  let composicaoPacotes = null;
+  if (temMoletom) {
+    const tt = totaisPorTamanhoTomOS(o);
+    const chave = t => String(t || '').toLowerCase();
+    composicaoPacotes = tamanhosPacotes.map((t, i) => {
+      const k = chave(t);
+      let blusas;
+      if (tt.tons.length <= 1) blusas = tt.colTotal(k);
+      else if (tt.semDigitacao) blusas = null;
+      else {
+        const linha = tt.linhas.find(l => l.tom === tonsPacotes[i]);
+        blusas = linha ? (linha.cels[k] || 0) : null;
+      }
+      return _composicaoPacoteMoletom(blusas);
+    });
+  }
 
   return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
            tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
-           totalPacotes, tonsTexto, composicao };
+           totalPacotes, tonsTexto, composicaoPacotes };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
@@ -25451,7 +25487,7 @@ function imprimirEtiquetas(osId) {
   const dados = dadosEtiquetaParaOS(o);
   const { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
           tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
-          totalPacotes, tonsTexto, composicao } = dados;
+          totalPacotes, tonsTexto, composicaoPacotes } = dados;
   const nRep = temReposicao ? (nReposicao || 1) : 0;
   const totPac = totalPacotes || numEtiquetas;
 
@@ -25462,7 +25498,8 @@ function imprimirEtiquetas(osId) {
   // (fonte dobrada); as duas últimas são o pacote de reposição, com o conteúdo
   // (etiquetas iguais, uma por fora e uma por dentro do saco). Moletom:
   // as etiquetas de tamanho recebem a lista de composição do pacote.
-  const compHtml = composicao ? composicao.map(c => `<div class="comp">${escEt(c)}</div>`).join('') : '';
+  const compHtml = i => ((composicaoPacotes && composicaoPacotes[i]) || [])
+    .map(c => `<div class="comp">${escEt(c)}</div>`).join('');
   const corpo = Array.from({ length: numEtiquetas }, (_, i) => {
     const ehRep = nRep > 0 && i >= numEtiquetas - nRep;
     // A via extra da reposição é a mesma etiqueta, sem lote (ver o comentário
@@ -25474,7 +25511,7 @@ function imprimirEtiquetas(osId) {
     const tomSuf = (nTons > 1 && !ehRep && tonsPacotes[i] != null) ? ` tom ${tonsPacotes[i]}` : '';
     const destaque = ehRep
       ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
-      : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>${compHtml}`;
+      : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>${compHtml(i)}`;
     return `
     <div class="page">
       <div class="label">
@@ -25628,7 +25665,7 @@ function imprimirEtiquetas(osId) {
   // conectada — nao bloqueia o popup de impressao.
   //
   // `dados` INTEIRO. Aqui se montava um objeto novo com sete campos, sem
-  // tamanhosPacotes/tonsPacotes/nTons/temReposicao/composicao — e o
+  // tamanhosPacotes/tonsPacotes/nTons/temReposicao/composicaoPacotes — e o
   // gerarPdfEtiquetas, sem esses campos, cai nos defaults: o destaque de toda
   // etiqueta vira a lista inteira de tamanhos ("P-M-G-GG-G1-G2-G3") em vez do
   // tamanho daquele pacote, a última deixa de ser a de reposição e a composição

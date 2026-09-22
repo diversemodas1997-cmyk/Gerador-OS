@@ -52,6 +52,8 @@ const motor = [
   constante('ETIQUETA_CONTEUDO_REPOSICAO'),
   constante('ETIQUETAS_REPOSICAO_POR_OS'),
   listaConst('ETIQUETA_COMPOSICAO_MOLETOM'),
+  corta('function _composicaoPacoteMoletom'),
+  corta('function totaisPorTamanhoTomOS'),
   corta('function _tamanhosDaGradeExpandido'),
   corta('function dadosEtiquetaParaOS'),
   corta('function gerarPdfEtiquetas')
@@ -83,6 +85,7 @@ function etiquetasDe(o, { tons = [], moletom = false } = {}) {
     const corNomeCurto = (n) => String(n == null ? '' : n).trim();
     const tonsEfetivos = () => tons;
     const _osEhMoletom = () => moletom;
+    const multiplicadorPecaOS = () => (moletom ? 1 : 2);
     ${motor}
     const dados = dadosEtiquetaParaOS(o);
     gerarPdfEtiquetas(dados);
@@ -162,10 +165,38 @@ ok('sem tom: a via extra segue sem lote', !temLote(r.paginas[4]), r.paginas[4]);
 
 r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }] }), { tons: [1], moletom: true });
 eq('moletom: 1 pacote por tamanho + reposição', r.dados.totalPacotes, 4);
-ok('moletom: a etiqueta de tamanho traz a composição',
-   r.paginas[0].some(l => /Frente 36/.test(l)), r.paginas[0]);
+ok('moletom: a etiqueta de tamanho traz a composição do pacote (1 blusa × 10 camadas)',
+   r.paginas[0].includes('Frente 10 · Costa 10 · Bolso 10 · Barra 10') &&
+   r.paginas[0].includes('Mangas 20 · Capuz 20 · Punhos 20'), r.paginas[0]);
 ok('moletom: a reposição não traz composição',
-   !r.paginas[4].some(l => /Frente 36/.test(l)), r.paginas[4]);
+   !r.paginas[4].some(l => /Frente/.test(l)), r.paginas[4]);
+
+/* ---------- 6. OS 0547: a composição acompanha a tonalidade ----------
+   8G, 28 camadas, Tom 1 com 144 (18 camadas) e o Tom 2 balanceando 80 (10).
+   Até 22/09/2026 as duas etiquetas diziam "Frente 36 … Mangas 72", um número
+   fixo que não vinha da OS. */
+
+const os547 = osBase({
+  os: '0547', fases: [{ tecidoId: 't1' }],
+  grade: { g: 8, total: 8 }, enfesto: { camadas: 28 },
+  progresso: { totalTamanhoTons: { 1: true, 2: true }, totalTamanhoTomValor: { 1: 144 } }
+});
+r = etiquetasDe(os547, { tons: [1, 2], moletom: true });
+eq('0547: pacotes (G × 2 tons + reposição)', r.dados.totalPacotes, 3);
+ok('0547: G tom 1 leva 144 blusas',
+   r.paginas[0].includes('G tom 1') &&
+   r.paginas[0].includes('Frente 144 · Costa 144 · Bolso 144 · Barra 144') &&
+   r.paginas[0].includes('Mangas 288 · Capuz 288 · Punhos 288'), r.paginas[0]);
+ok('0547: G tom 2 leva as 80 que sobram',
+   r.paginas[1].includes('G tom 2') &&
+   r.paginas[1].includes('Frente 80 · Costa 80 · Bolso 80 · Barra 80') &&
+   r.paginas[1].includes('Mangas 160 · Capuz 160 · Punhos 160'), r.paginas[1]);
+
+// Dois tons sem a divisão digitada: não há número certo a imprimir.
+r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], grade: { g: 8, total: 8 }, enfesto: { camadas: 28 },
+  progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2], moletom: true });
+ok('2 tons sem divisão: a composição sai sem número, não com chute',
+   r.paginas[0].includes('Frente · Costa · Bolso · Barra'), r.paginas[0]);
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
