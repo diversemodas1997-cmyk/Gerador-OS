@@ -35523,7 +35523,60 @@ function compraCamadasDePecas(o, pecas) {
 // O consumo de UM item da lista, fase por fase, já multiplicado pelas
 // repetições. As bobinas saem CRUAS (sem arredondar) — quem arredonda é o total
 // por tecido, mais adiante.
+/* O PANO QUE FALTA VIRA LINHA DA COMPRA (22/09/2026, Junior: "insira
+   automaticamente no quadro itens da compra todos os tecidos que sao apontados
+   como faltantes no quadro reserva de material").
+
+   Item de compra comum é uma produção que ainda não existe: grade + desenho +
+   camadas, e o programa SIMULA a OS. Aqui a OS existe — está na lista de
+   material reservado, em vermelho, segurando pano que a prateleira não tem.
+   Então não há nada a simular: as fases vêm da OS de verdade
+   (`consumoEnfestoOS`), pelo mesmo caminho da folha e do quadro do reservado.
+
+   SÓ AS FASES DO PANO QUE FALTA entram. Uma tricolor em que só o preto está em
+   falta traz a fase do preto e deixa as outras duas de fora — foi isso o
+   pedido ("todos os tecidos que são apontados como faltantes"), e é o que evita
+   pedir ao fornecedor pano que está na prateleira.
+
+   Sem repetição e sem peça: esta linha não é uma produção a mais, é o buraco de
+   uma produção que já foi lançada. Contar peça aqui somaria à conta de quem
+   planeja um lote que já está contado na OS. */
+function compraConsumoItemDaFalta(item) {
+  const os = (STATE.ordens || []).find(x => x.id === (item && item.osId));
+  if (!os) return null;
+  const g = (STATE.grades || []).find(x => x.id === os.gradeId);
+  const bobPorOrdem = {};
+  let temPrev = false;
+  ((g && g.fases) || []).forEach(f => {
+    const b = parseBobinas(f.bobinas);
+    if (b != null) { bobPorOrdem[f.ordem] = b; if (b > 0) temPrev = true; }
+  });
+  const chaves = new Set((item.tecidos || [])
+    .map(t => _normNome(t.tecidoNome) + '||' + _normNome(t.corNome)));
+  let linhas = [];
+  try { linhas = consumoEnfestoOS(os) || []; } catch (e) { return null; }
+  return {
+    os,
+    grade: g,
+    desenho: os.desenhoId ? (STATE.desenhos || []).find(d => d.id === os.desenhoId) : null,
+    linhas: linhas
+      .filter(L => chaves.has(_normNome(L.tecidoReal || L.nomeEnf || '') + '||' + _normNome(L.corReal || '')))
+      .map(L => {
+        const prev = (temPrev && bobPorOrdem[L.ordem] != null) ? bobPorOrdem[L.ordem] : null;
+        // `cru` como no item comum: as fases se somam antes de virar bobina,
+        // senão três fases de 0,2 bobina virariam três bobinas.
+        const bruto = bobinasEfetivasFase(os, prev, L.ordem, L, true);
+        return { ...L, kgTotal: L.kg || 0,
+                 bobinas: (typeof bruto === 'number' && isFinite(bruto)) ? bruto : null };
+      }),
+    repeticoes: 1,
+    pecas: 0,
+    daFalta: true
+  };
+}
+
 function compraConsumoItem(item) {
+  if (item && item.origem === 'falta') return compraConsumoItemDaFalta(item);
   const o = compraOsSimulada(item && item.gradeId, item && item.desenhoId, item && item.camadas);
   if (!o) return null;
   const g = (STATE.grades || []).find(x => x.id === item.gradeId);
@@ -35787,6 +35840,77 @@ function _cpPodeRemover(item, papel, quem) {
   return !!dono && !!quem && dono === quem;
 }
 
+/* AS FALTAS ABERTAS, do jeito que o quadro do material reservado as mostra.
+   Mesma conta (faltaDeTecidoParaOS), mesma lista de OS (as reservadas): duas
+   contas para a mesma pergunta acabariam dizendo coisas diferentes na mesma
+   tela. */
+function compraFaltasAbertas() {
+  if (!Array.isArray(STATE.estoqueMov) || !STATE.estoqueMov.length) return [];
+  const out = [];
+  osComMaterialReservado().filter(o => o.kg > 0 && !o.consumido).forEach(r => {
+    const os = (STATE.ordens || []).find(x => x.id === r.osId);
+    if (!os) return;
+    let fs = [];
+    try { fs = faltaDeTecidoParaOS(os) || []; } catch (e) { fs = []; }
+    if (!fs.length) return;
+    out.push({
+      osId: r.osId,
+      osNumero: r.osNumero || os.os || '',
+      tecidos: fs.map(f => ({
+        tecidoNome: f.tecidoNome || '',
+        corNome: f.corNome || '',
+        falta: Math.round((Number(f.falta) || 0) * 1000) / 1000
+      }))
+    });
+  });
+  return out;
+}
+
+const _cpChaveFalta = ts => (ts || [])
+  .map(t => _normNome(t.tecidoNome) + '||' + _normNome(t.corNome))
+  .sort().join(' ; ');
+
+/* PÕE A LISTA EM DIA COM AS FALTAS. Uma linha automática por OS sem pano, e ela
+   SE DESFAZ SOZINHA — lançada a entrada daquele tecido, a falta deixa de
+   existir e a linha sai na próxima vez que a tela for montada. É a mesma regra
+   do vermelho no quadro do reservado, e pelo mesmo motivo: marca gravada teria
+   de ser apagada à mão e ficaria para sempre numa compra já resolvida.
+
+   Nada de gravar duas vezes a mesma OS: a linha é chaveada por `osId`. Se a
+   falta mudou de tecido (entrou o preto, saiu o branco), a linha existente é
+   corrigida em vez de nascer outra.
+
+   Devolve true quando mexeu — quem chama é que decide gravar. */
+function compraAplicarFaltas() {
+  if (!Array.isArray(STATE.compraPlano)) STATE.compraPlano = [];
+  const faltas = compraFaltasAbertas();
+  const porOS = new Map(faltas.map(f => [f.osId, f]));
+  let mudou = false;
+
+  const antes = STATE.compraPlano.length;
+  STATE.compraPlano = STATE.compraPlano.filter(it => it.origem !== 'falta' || porOS.has(it.osId));
+  if (STATE.compraPlano.length !== antes) mudou = true;
+
+  faltas.forEach(f => {
+    const it = STATE.compraPlano.find(x => x.origem === 'falta' && x.osId === f.osId);
+    if (!it) {
+      STATE.compraPlano.push({
+        id: uid(),
+        origem: 'falta',
+        osId: f.osId,
+        osNumero: f.osNumero,
+        tecidos: f.tecidos,
+        criadoEm: new Date().toISOString()
+      });
+      mudou = true;
+      return;
+    }
+    if (_cpChaveFalta(it.tecidos) !== _cpChaveFalta(f.tecidos)) { it.tecidos = f.tecidos; mudou = true; }
+    if (it.osNumero !== f.osNumero) { it.osNumero = f.osNumero; mudou = true; }
+  });
+  return mudou;
+}
+
 async function compraAdicionar() {
   if (!exigirEdicaoCompra('montar a lista de compra')) return;
   const item = _cpItemDoFormulario();
@@ -35828,7 +35952,11 @@ async function compraLimparLista() {
   if (!exigirEdicao('limpar a lista de compra')) return;
   const n = (STATE.compraPlano || []).length;
   if (!n) return;
-  if (!confirm(`Tirar os ${n} itens da lista de compra?\n\nO cálculo se perde; os cadastros e as OSs não são tocados.`)) return;
+  const auto = (STATE.compraPlano || []).filter(x => x.origem === 'falta').length;
+  if (!confirm(`Tirar os ${n} itens da lista de compra?\n\nO cálculo se perde; os cadastros e as OSs não são tocados.`
+    + (auto ? `
+
+${auto} dele(s) entraram sozinhos (OS sem pano) e voltam assim que a tela for montada de novo — o que tira essas linhas é lançar a entrada do tecido.` : ''))) return;
   STATE.compraPlano = [];
   _compraAbertos.clear();
   await saveState('compraPlano');
@@ -35852,11 +35980,54 @@ function renderCompra() {
 
   const cont = _cpEl('compra-painel');
   if (!cont) return;
+  /* A LISTA SE PÕE EM DIA SOZINHA, antes de ser desenhada: cada OS que está
+     segurando pano que a prateleira não tem entra como linha, e sai quando a
+     entrada do tecido for lançada (ver compraAplicarFaltas).
+
+     Só grava quem pode gravar. Quem está em consulta — e o celular, que nunca
+     grava — vê as linhas na tela do mesmo jeito, porque elas já estão no STATE;
+     o que não acontece é a gravação, que numa tela de consulta seria escrita
+     vinda de quem só estava olhando. */
+  const _mexeu = compraAplicarFaltas();
+  if (_mexeu && podeGravar() && _contaPodeRegistrar()) {
+    Promise.resolve(saveState('compraPlano')).catch(e => console.warn('compra/faltas', e));
+  }
   const itens = STATE.compraPlano || [];
+
+  /* A LINHA QUE VEIO DA FALTA se lê diferente da que alguém somou: ela não tem
+     camadas nem enfestos para mostrar — a produção dela já existe, está na OS —
+     e não tem botão de remover, porque ela volta sozinha enquanto a OS estiver
+     sem pano. O que tira a linha da lista é a ENTRADA do tecido no estoque, que
+     é também o que apaga o vermelho no quadro do material reservado. */
+  const _cpLinhaFalta = (it, c, aberto) => {
+    const detalhe = aberto && c ? `<tr><td colspan="6" style="background:var(--line-2);">${_cpTabelaFases(c)}</td></tr>` : '';
+    const panos = (it.tecidos || []).map(t =>
+      `${esc(t.tecidoNome)} · <b>${esc(corSemTecido(t.corNome, t.tecidoNome)) || '(sem cor)'}</b>`
+      + (t.falta > 0 ? ` <span style="color:#c0392b;">(${_cpKg(t.falta)} kg)</span>` : '')).join('<br>');
+    const dica = 'Esta linha entrou sozinha: a OS ' + (it.osNumero || '')
+      + ' esta segurando pano que a prateleira nao tem. Ela sai da lista quando a '
+      + 'entrada desse tecido for lancada no estoque.';
+    return `<tr style="background:#fdf4f3;">
+      <td class="col-actions row-actions">
+        <button onclick="compraDetalhe('${esc(it.id)}')">${aberto ? 'fechar' : 'por fase'}</button>
+        <span class="muted" style="font-size:11px;" title="${esc(dica)}">automático</span>
+      </td>
+      <td>
+        <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${esc(dica)}">⚠ OS ${esc(it.osNumero) || '—'} sem pano</span>
+        <div style="font-size:11px;margin-top:2px;">${panos || '<span class="muted">—</span>'}</div>
+        ${c && c.grade ? `<div class="muted" style="font-size:11px;">${esc(c.grade.nome || '')}</div>` : ''}
+      </td>
+      <td>${c && c.desenho ? esc(c.desenho.codigo || '') : '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td style="text-align:right;color:var(--ink-3);">—</td>
+      <td style="text-align:right;color:var(--ink-3);">—</td>
+      <td style="text-align:right;color:var(--ink-3);">—</td>
+    </tr>${detalhe}`;
+  };
 
   const linhasItens = itens.map(it => {
     const c = compraConsumoItem(it);
     const aberto = _compraAbertos.has(it.id);
+    if (it.origem === 'falta') return _cpLinhaFalta(it, c, aberto);
     const detalhe = aberto && c ? `<tr><td colspan="6" style="background:var(--line-2);">${_cpTabelaFases(c)}</td></tr>` : '';
     return `<tr>
       <td class="col-actions row-actions">
@@ -35904,6 +36075,10 @@ function renderCompra() {
       <div class="muted" style="font-size:12px;margin-bottom:8px;">
         Cada linha é uma produção que ainda não virou OS. A lista é compartilhada,
         como qualquer cadastro — e não mexe em estoque: só a OS salva reserva material.
+        As linhas em <b style="color:#c0392b;">vermelho claro</b> entram <b>sozinhas</b>: são as OS
+        que estão segurando pano que a prateleira não tem (o mesmo aviso do quadro
+        <b>OSs · material reservado</b>), e delas só entram na conta <b>as fases do tecido que
+        falta</b>. Cada uma sai da lista quando a entrada daquele tecido for lançada no estoque.
       </div>
       <table class="table">
         <thead><tr>
