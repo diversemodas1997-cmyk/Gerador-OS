@@ -8692,6 +8692,38 @@ function _rankingProducao(ano, mes) {
     // Vira Capitulada para a coluna não misturar "Preto" com "MARINHO".
     return s.charAt(0) + s.slice(1).toLowerCase();
   };
+  /* O CRUZAMENTO TAMANHO × COR (22/09/2026, Junior: "insira no campo ranking de
+     producao um quadro cruzando as variaveis tamanho + cor").
+
+     As tabelas do ranking contam OS e produtos por tipo, cor e grade — nenhuma
+     responde "quantas camisetas PRETAS TAMANHO G a casa produziu". E essa é a
+     pergunta de quem compra malha e de quem monta grade nova: a cor manda no
+     pano, o tamanho manda na distribuição da grade, e os dois juntos dizem onde
+     o volume está de verdade.
+
+     O TAMANHO VEM DA FOLHA, não da grade crua: `totaisPorTamanhoTomOS` já sabe
+     que a coluna de um tamanho é grade × camadas × multiplicador da peça — o
+     mesmo número do "Total por tamanho" impresso, que inclui o dobro do pano
+     tubular. Contar `grade.p` direto daria a distribuição por camada, que não é
+     produção nenhuma.
+
+     A OS DE DUAS CORES reparte, como no resto do ranking: ela produz os dois
+     produtos, e contar o lote inteiro em cada cor dobraria a fábrica.
+
+     OS sem distribuição por tamanho (grade apagada, OS antiga sem enfesto
+     lançado) não some da conta: vai para a linha "(sem tamanho)", com o total
+     dela. Sumir calado faria a soma do quadro não bater com a do resto da
+     tela, e quem lê não teria como saber por quê. */
+  const TAMS_RANK = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const cruz = new Map();
+  const somarCruz = (tam, cor, pecas, osNum) => {
+    const k = JSON.stringify([tam, cor]);
+    if (!cruz.has(k)) cruz.set(k, { pecas: 0, os: new Set() });
+    const e = cruz.get(k);
+    e.pecas += pecas;
+    if (osNum) e.os.add(osNum);
+  };
+
   let semSku = 0, pares = 0;
   const datas = [];
   ord.forEach(o => {
@@ -8717,6 +8749,17 @@ function _rankingProducao(ano, mes) {
     // produtos. As peças são repartidas entre elas, senão o mesmo lote seria
     // contado inteiro duas vezes e o total do dia dobraria.
     const pecas = skus.length ? totalPecas / skus.length : 0;
+    // A coluna de cada tamanho na folha desta OS. Sem distribuição, uma linha só.
+    let porTam = [];
+    try {
+      const tt = totaisPorTamanhoTomOS(o);
+      if (tt && tt.totalGeral > 0) {
+        porTam = (tt.tamanhos || [])
+          .map(k => [k.toUpperCase(), Number(tt.colTotal(k)) || 0])
+          .filter(x => x[1] > 0);
+      }
+    } catch (e) { porTam = []; }
+    if (!porTam.length) porTam = [['(sem tamanho)', totalPecas]];
     skus.forEach(sku => {
       pares++;
       const i = sku.indexOf('-');
@@ -8729,6 +8772,7 @@ function _rankingProducao(ano, mes) {
       somar(linhas, JSON.stringify([tipo, cor, grade]), pecas, o.os);
       somar(porCor, JSON.stringify([cor]), pecas, o.os);
       somar(porSkuCor, JSON.stringify([sku]), pecas, o.os);
+      porTam.forEach(([tam, v]) => somarCruz(tam, cor, v / skus.length, o.os));
     });
     // SÓ A GRADE (16/09/2026, Junior). A grade não depende da cor: a OS de duas
     // cores entra UMA vez, com o lote inteiro — diferente das tabelas acima.
@@ -8754,7 +8798,36 @@ function _rankingProducao(ano, mes) {
   const serie = [...porPeriodo.entries()]
     .map(([k, e]) => ({ periodo: JSON.parse(k)[0], n: e.n, pecas: e.pecas, os: ordenarOS(e.os) }))
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
+  /* A MATRIZ, pronta para a tela: linhas na ordem da grade (P, M, G, GG, G1,
+     G2, G3) e colunas por VOLUME, a maior cor primeiro — ordem alfabética poria
+     o Amarelo de 200 peças antes do Preto de 20 mil. */
+  const cruzTam = new Map(), cruzCor = new Map();
+  const cruzCel = new Map();
+  let cruzTotal = 0;
+  cruz.forEach((e, k) => {
+    const [tam, cor] = JSON.parse(k);
+    const pecas = Math.round(e.pecas);
+    cruzTam.set(tam, (cruzTam.get(tam) || 0) + pecas);
+    cruzCor.set(cor, (cruzCor.get(cor) || 0) + pecas);
+    cruzCel.set(tam + '||' + cor, { pecas, os: ordenarOS(e.os) });
+    cruzTotal += pecas;
+  });
+  const ordemTam = TAMS_RANK.map(k => k.toUpperCase());
+  const cruzamento = {
+    tams: [...cruzTam.entries()]
+      .map(([tam, total]) => ({ tam, total }))
+      .sort((a, b) => {
+        const ia = ordemTam.indexOf(a.tam), ib = ordemTam.indexOf(b.tam);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      }),
+    cores: [...cruzCor.entries()].map(([cor, total]) => ({ cor, total }))
+      .sort((a, b) => b.total - a.total || a.cor.localeCompare(b.cor)),
+    cel: (tam, cor) => cruzCel.get(tam + '||' + cor) || null,
+    maior: Math.max(0, ...[...cruzCel.values()].map(c => c.pecas)),
+    total: cruzTotal
+  };
   return {
+    cruz: cruzamento,
     total: ord.length, semGrade: semSku, pares, de: datas[0] || '', ate: datas[datas.length - 1] || '',
     linhas: ordenar(linhas), porCor: ordenar(porCor), porSkuCor: ordenar(porSkuCor), porGrade: ordenar(porGrade), porSkuGrade: ordenar(porSkuGrade),
     serie, porMes: !!(ano || mes)
@@ -8853,6 +8926,68 @@ function renderRanking() {
       </table>
       </div>
     </div>`;
+  /* O QUADRO TAMANHO × COR (22/09/2026, Junior). As outras tabelas do ranking
+     são listas: uma linha, um número. Esta é a única que cruza duas variáveis,
+     e por isso é tabela de duas entradas mesmo — tamanho nas linhas, cor nas
+     colunas, produtos na célula.
+
+     A CÉLULA É CLICÁVEL como o resto do ranking: abre a lista de Ordens de
+     Serviço com as OS daquele cruzamento. Uma OS aparece em várias células (ela
+     tem vários tamanhos), o que está certo — o que se pergunta ali é "quais OS
+     fizeram camiseta preta G", não "quantas OS são só disso".
+
+     O fundo esverdeado dá o peso de cada célula sem precisar comparar número a
+     número; a coluna e a linha de total fecham a conta dos dois lados. Com
+     muitas cores a tabela rola na horizontal em vez de espremer as colunas até
+     o número não caber. */
+  const cruz = r.cruz || { tams: [], cores: [], cel: () => null, maior: 0, total: 0 };
+  const _cruzFundo = (v) => {
+    if (!(v > 0) || !(cruz.maior > 0)) return 'transparent';
+    // Do quase-branco ao verde do programa, na proporção do maior cruzamento.
+    return `rgba(46,125,80,${(0.06 + 0.34 * (v / cruz.maior)).toFixed(3)})`;
+  };
+  const cruzHtml = !(cruz.tams.length && cruz.cores.length) ? '' : `
+    <div class="card rank-card${recolhidos['Tamanho × cor'] ? ' recolhido' : ''}" data-rank="Tamanho × cor" style="margin-bottom:14px;">
+      ${_rankCabecalho('Tamanho × cor',
+        'Tamanho × cor',
+        cruz.tams.length + ' tamanho(s) × ' + cruz.cores.length + ' cor(es)', recolhidos)}
+      <div class="rank-corpo">
+      <div class="desc" style="margin-bottom:8px;">
+        Quantos <b>produtos</b> saíram de cada tamanho em cada cor — o cruzamento que
+        nenhuma das listas abaixo responde. O tamanho vem do <b>Total por tamanho</b> da folha
+        (grade × camadas × multiplicador da peça), e a OS de mais de uma cor reparte os
+        produtos entre elas. Clique num número para ver as OS daquele cruzamento.
+      </div>
+      <div style="overflow-x:auto;">
+      <table class="table" style="min-width:100%;width:auto;">
+        <thead><tr>
+          <th style="text-align:left;">tamanho</th>
+          ${cruz.cores.map(c => `<th style="text-align:right;white-space:nowrap;">${esc(c.cor)}</th>`).join('')}
+          <th style="text-align:right;white-space:nowrap;background:#eef6f0;">total</th>
+        </tr></thead>
+        <tbody>
+          ${cruz.tams.map(t => `<tr>
+            <td><strong>${esc(t.tam)}</strong></td>
+            ${cruz.cores.map(c => {
+              const cel = cruz.cel(t.tam, c.cor);
+              const v = cel ? cel.pecas : 0;
+              return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:${_cruzFundo(v)};"
+                title="${esc(t.tam + ' · ' + c.cor)}${cel && cel.os.length ? ' — ' + cel.os.length + ' OS' : ''}">${
+                v > 0 ? atalhoOS(num(v), cel.os, t.tam + ' · ' + c.cor) : '<span style="color:var(--ink-3);">—</span>'}</td>`;
+            }).join('')}
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eef6f0;">${num(t.total)}</td>
+          </tr>`).join('')}
+          <tr style="background:#eef6f0;">
+            <td style="font-weight:700;color:var(--ink-2);">total</td>
+            ${cruz.cores.map(c => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(c.total)}</td>`).join('')}
+            <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${num(cruz.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      </div>
+    </div>`;
+
   // A SÉRIE DO TEMPO. Clicar na linha entra naquele período — é o mesmo gesto de
   // abrir uma pasta, e evita ter de achar o mês no seletor.
   const maxP = r.serie.reduce((mx, x) => Math.max(mx, x.n), 0);
@@ -8893,6 +9028,7 @@ function renderRanking() {
     ${serieHtml}
     ${tabela('Grade', 'Só a grade, independente do tipo e da cor. A OS de mais de uma cor entra uma vez, com o lote inteiro. Fica no alto de propósito: é curta, e as tabelas de baixo passam de cem linhas.', r.porGrade, maxG, 'grade')}
     ${tabela('SKU · grade', 'A linha do produto (o SKU sem a cor: CM.LISA, BM.TRI) com a grade. É a leitura do que se enfesta: a mesma grade no mesmo produto, em qualquer cor.', r.porSkuGrade, maxSG, 'SKU · grade')}
+    ${cruzHtml}
     ${tabela('Tipo · cor · grade', 'As três variáveis juntas. É a leitura mais fina — e a que mais se pulveriza: cada combinação costuma repetir poucas vezes.', r.linhas, maxL, 'tipo · cor · grade')}
     ${tabela('Tipo · cor', 'O corte mais útil para compra de tecido: junta todas as grades do mesmo produto na mesma cor.', r.porSkuCor, maxS, 'tipo · cor')}
     ${tabela('Cor', 'Quanto de cada cor a fábrica consome, independente do produto.', r.porCor, maxC, 'cor')}`;
