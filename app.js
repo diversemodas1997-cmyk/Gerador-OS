@@ -7383,7 +7383,42 @@ function renderEstoque() {
   if (!cont) return;
   const { detalhe } = calcularSaldosEstoque();
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
-  const dispCell = s => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};">${fmt(s)} kg</td>`;
+  /* O QUILO E A BOBINA, JUNTOS (22/09/2026, Junior: "em cada quadro que mostra
+     o estoque de tecido por tipo, mostre a quantidade de tecido como kg/bobina,
+     por exemplo, 18kg/1 bob, 36kg/2 bobinas").
+
+     O quadro falava só em quilo, que é a unidade do razão — e ninguém vai à
+     prateleira buscar quilo: busca-se bobina. Quem lia "disponível 36,4 kg" não
+     sabia se aquilo eram dois rolos ou meio rolo, e é essa a pergunta que se faz
+     de pé na frente da estante.
+
+     PARA BAIXO, sempre: meia bobina na prateleira ninguém vai buscar, então
+     36,4 kg de um pano de 18 kg por bobina são "2 bob" e não 3. No saldo
+     NEGATIVO o mesmo arredondamento diz a coisa certa por outro caminho — −59
+     kg de um pano de 18 kg dão −4 bob, que são as quatro bobinas que precisam
+     entrar para a prateleira voltar ao zero (três não fechariam o buraco).
+
+     Pano sem peso de bobina conhecido (cadastro zerado e sem entrada com kg e
+     fechados juntos) sai só em quilo, como antes — ver pesoBobinaEstimado.
+     Inventar bobina viraria compra errada. */
+  const bobDoKg = (kg, tecidoNome) => {
+    const base = pesoBobinaEstimado(tecidoNome);
+    if (!base || !(base.kg > 0)) return null;
+    const n = (Number(kg) || 0) / base.kg;
+    return isFinite(n) ? Math.floor(n) : null;
+  };
+  const bobTxt = (kg, tecidoNome) => {
+    const b = bobDoKg(kg, tecidoNome);
+    return b == null ? '' : `<span style="font-size:10px;color:var(--ink-2);">/${b} bob</span>`;
+  };
+  const dicaBob = (tecidoNome) => {
+    const base = pesoBobinaEstimado(tecidoNome);
+    if (!base || !(base.kg > 0)) return 'Peso da bobina deste pano ainda não conhecido: a coluna sai só em quilos.';
+    return `A bobina de ${tecidoNome} pesa ${fmt(base.kg)} kg `
+      + (base.origem === 'cadastro' ? '(cadastro do tecido)' : `(mediana de ${base.n} entrada(s) com kg e fechados)`)
+      + '. A conta arredonda para baixo: meia bobina na prateleira ninguém vai buscar.';
+  };
+  const dispCell = (s, tec) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(tec))}">${fmt(s)} kg${bobTxt(s, tec)}</td>`;
   const semNada = !movimentacoesEstoque().length;
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
   // ficam agrupadas e ordenadas juntas, com subtotal por tipo de tecido.
@@ -7411,13 +7446,15 @@ function renderEstoque() {
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
   // cor ("Preto Malha Algodão") sai — evita "Malha Algodão · Preto Malha Algodão".
   const corLabel = (nome, tecido) => esc(corSemTecido(nome, tecido)) || '<span style="color:var(--ink-2)">(sem cor)</span>';
-  const numCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${fmt(n)}</td>`;
+  const numCell = (n, bold, tec) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}" title="${esc(dicaBob(tec))}">${fmt(n)}${bobTxt(n, tec)}</td>`;
   // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
   const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
   // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
-  const cellsVals = (o, bold) =>
-    numCell(o.entrada, bold) + numCell(o.reservado, bold) + numCell(o.saida, bold) +
-    dispCell(o.entrada - o.reservado - o.saida) +
+  // O tecido vem junto porque a bobina é DELE: cada pano tem o seu peso por
+  // bobina, e é ele que transforma o quilo da coluna em rolo de prateleira.
+  const cellsVals = (o, bold, tec) =>
+    numCell(o.entrada, bold, tec) + numCell(o.reservado, bold, tec) + numCell(o.saida, bold, tec) +
+    dispCell(o.entrada - o.reservado - o.saida, tec) +
     uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
   /* UM QUADRO POR MATÉRIA-PRIMA (14/09/2026, Junior).
 
@@ -7444,14 +7481,14 @@ function renderEstoque() {
     const cores = g.linhas.map(c => `
       <tr>
         <td><strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
-        ${cellsVals(c, false)}
+        ${cellsVals(c, false, g.tecidoNome)}
       </tr>`).join('');
     // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
     // única linha logo acima.
     const total = g.linhas.length > 1 ? `
       <tr style="background:#eef6f0;">
         <td style="text-align:right;font-weight:700;color:var(--ink-2);">Total ${esc(g.tecidoNome)}</td>
-        ${cellsVals(g, true)}
+        ${cellsVals(g, true, g.tecidoNome)}
       </tr>` : '';
     const disp = g.entrada - g.reservado - g.saida;
     return `
@@ -7460,7 +7497,7 @@ function renderEstoque() {
         <h2 style="margin:0;font-size:14px;">${esc(g.tecidoNome)}</h2>
         <div class="muted" style="font-size:12px;">
           ${g.linhas.length} cor${g.linhas.length === 1 ? '' : 'es'} · disponível
-          <b style="font-family:'IBM Plex Mono',monospace;color:${disp < 0 ? '#c0392b' : 'inherit'};">${fmt(disp)} kg</b>
+          <b style="font-family:'IBM Plex Mono',monospace;color:${disp < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(g.tecidoNome))}">${fmt(disp)} kg${bobTxt(disp, g.tecidoNome)}</b>
         </div>
       </div>
       <table class="table">
@@ -7476,7 +7513,10 @@ function renderEstoque() {
       <div class="muted" style="font-size:12px;">
         Um quadro por matéria-prima, cada pano seguido da <b>ribana</b> dele.
         Colunas em <b>kg</b>: Entradas, Reservado (OSs não produzidas), Saídas (baixa definitiva),
-        Disponível (= Entradas − Reservado − Saídas). Colunas em <b>unidades</b> (lançamento manual):
+        Disponível (= Entradas − Reservado − Saídas). Cada quilo vem com a <b>bobina</b> ao lado
+        (<b>36,000 kg<span style="font-size:10px;">/2 bob</span></b>), arredondada <b>para baixo</b> —
+        meia bobina na prateleira ninguém vai buscar. Saldo negativo mostra as bobinas que
+        precisam <b>entrar</b> para zerar. O pano sem peso de bobina conhecido sai só em quilos. Colunas em <b>unidades</b> (lançamento manual):
         <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso).
       </div>
     </div>`;
