@@ -41,11 +41,14 @@ function pegaAsync(nome) {
 function pegaConst(nome) {
   const i = src.search(new RegExp('^const ' + nome + ' = ', 'm'));
   if (i < 0) { console.error('nao achei a constante ' + nome); process.exit(1); }
-  const linhas = src.slice(i).split('\n');
+  /* Quebra por /\r?\n/ e descarta o comentario com [^\r\n]*: o app.js e gravado
+     ora com LF, ora com CRLF (o git converte no checkout), e com CRLF o "." do
+     regex nao passa pelo \r — o comentario nao era descartado, a linha nao
+     terminava em ponto-e-virgula e o corte engolia o resto do arquivo. */
   const out = [];
-  for (const l of linhas) {
+  for (const l of src.slice(i).split(/\r?\n/)) {
     out.push(l);
-    if (l.replace(/\/\/.*$/, '').trimEnd().endsWith(';')) return out.join('\n');
+    if (l.replace(/\/\/[^\r\n]*$/, '').trimEnd().endsWith(';')) return out.join('\n');
   }
   console.error('nao achei o fim da constante ' + nome); process.exit(1);
 }

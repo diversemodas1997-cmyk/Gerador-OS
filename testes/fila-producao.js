@@ -35,10 +35,22 @@ function pegaAsync(nome) {
   if (ini < 0) { console.error('nao achei a funcao async ' + nome); process.exit(1); }
   return src.slice(ini, src.indexOf('\n}', ini) + 2);
 }
+/* Anda por LINHA ate o fim da declaracao, e nao ate o primeiro ";" com quebra
+   colada: o app.js e gravado ora com LF, ora com CRLF (o git converte no
+   checkout), e um corte que procura ";\n" devolve VAZIO no dia em que o arquivo
+   esta com CRLF — a constante some do motor e o teste morre dizendo que ela nao
+   existe. O comentario do fim da linha tambem sai, que ele pode ter
+   ponto-e-virgula no meio da frase. */
 function pegaConst(nome) {
   const i = src.search(new RegExp('^const ' + nome + ' = ', 'm'));
   if (i < 0) { console.error('nao achei a constante ' + nome); process.exit(1); }
-  return src.slice(i, src.indexOf(';\n', i) + 1);
+  const out = [];
+  for (const l of src.slice(i).split(/\r?\n/)) {
+    out.push(l);
+    if (l.replace(/\/\/[^\r\n]*$/, '').trimEnd().endsWith(';')) return out.join('\n');
+  }
+  console.error('nao achei o fim da constante ' + nome);
+  process.exit(1);
 }
 
 /* O status da OS entra DUBLADO (ele vem do checklist da folha, com teste

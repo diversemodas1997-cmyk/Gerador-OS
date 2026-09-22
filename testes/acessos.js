@@ -43,10 +43,14 @@ function recorte(de, oQue) {
 const constante = (nome) => {
   const i = src.search(new RegExp('^const ' + nome + ' = ', 'm'));
   if (i < 0) { console.error('nao achei a constante ' + nome); process.exit(1); }
+  /* Quebra por /\r?\n/ e descarta o comentario com [^\r\n]*: o app.js e gravado
+     ora com LF, ora com CRLF (o git converte no checkout), e com CRLF o "." do
+     regex nao passa pelo \r — o comentario ficava, a linha nao terminava em
+     ponto-e-virgula e o corte seguia engolindo o arquivo. */
   const out = [];
-  for (const l of src.slice(i).split('\n')) {
+  for (const l of src.slice(i).split(/\r?\n/)) {
     out.push(l);
-    if (l.replace(/\/\/.*$/, '').trimEnd().endsWith(';')) return out.join('\n');
+    if (l.replace(/\/\/[^\r\n]*$/, '').trimEnd().endsWith(';')) return out.join('\n');
   }
   console.error('nao achei o fim da constante ' + nome);
   process.exit(1);

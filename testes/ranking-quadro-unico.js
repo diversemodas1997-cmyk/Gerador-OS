@@ -32,10 +32,19 @@ function pegaFuncao(nome) {
   if (ini < 0) { console.error('nao achei a funcao ' + nome); process.exit(1); }
   return src.slice(ini, src.indexOf('\n}', ini) + 2);
 }
+/* Anda por LINHA ate o fim da declaracao: o app.js e gravado ora com LF, ora
+   com CRLF (o git converte no checkout), e um corte que procura ";\n" devolve
+   vazio no dia em que o arquivo esta com CRLF. */
 function pegaConst(nome) {
   const i = src.search(new RegExp('^const ' + nome + ' = ', 'm'));
   if (i < 0) { console.error('nao achei a constante ' + nome); process.exit(1); }
-  return src.slice(i, src.indexOf(';\n', i) + 1);
+  const out = [];
+  for (const l of src.slice(i).split(/\r?\n/)) {
+    out.push(l);
+    if (l.replace(/\/\/[^\r\n]*$/, '').trimEnd().endsWith(';')) return out.join('\n');
+  }
+  console.error('nao achei o fim da constante ' + nome);
+  process.exit(1);
 }
 
 /* O que resolve SKU, produtos e a distribuicao por tamanho entra DUBLADO: cada

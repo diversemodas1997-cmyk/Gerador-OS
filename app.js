@@ -8562,6 +8562,46 @@ let _rankGrupos = [];
    quem as usa agora é a Fila de produção, que tem muitas linhas e recolhe pelo
    mesmo desenho. */
 
+/* ATENÇÃO, QUEM FOR MEXER AQUI: o que vem abaixo NÃO é do Ranking.
+
+   Em 22/09/2026 o recolher/estender do Ranking foi retirado, e o corte levou
+   junto estas trinta linhas, que moravam logo depois dele — `abrirListaPorStatus`
+   sumiu do programa e o quadro "Volume das OS por status" deixou de abrir a
+   lista ao ser clicado. O atalho do dashboard e o do Ranking são vizinhos de
+   arquivo por acaso, não por parentesco. */
+// O grupo escolhido viaja num campo PENDENTE, que o `goto` consome ao abrir a
+// lista. Assim o recorte vale so para a viagem que o trouxe: chegar em Ordens de Serviço
+// por qualquer outro caminho mostra tudo, em vez de a lista aparecer cortada por
+// um clique dado meia hora antes.
+let _listaOsGrupoPendente = null;
+
+/* O CARTAO SEM TELA PROPRIA ABRE A LISTA FILTRADA (15/09/2026, Junior: "o
+   quadro Cortando e Estoque nao permitem clicar para abrir o quadro").
+
+   E os dois nao permitiam mesmo, e nao por engano: nenhum tem tela no menu.
+   Nao ha campo "Cortando" — cortar e trabalho em curso na mesa, nao e lugar
+   onde o pano fica —, e o "Estoque" do fim do fluxo e o de PRODUTO ACABADO,
+   que nao e a tela Estoque do menu (aquela e a de tecidos, em quilos). Sem
+   destino, o cartao nascia sem onclick.
+
+   Mas clicar e o gesto natural de quem ve um numero e quer saber QUAIS. A lista
+   de Ordens de Servico ja sabe filtrar por status desde que o status virou a
+   etapa — entao o destino existia, faltava o caminho. Mesma mecanica do atalho
+   do Ranking logo acima: o pedido viaja num campo PENDENTE que o `goto` consome,
+   e vale so para a viagem que o trouxe. */
+let _listaOsStatusPendente = null;
+
+function abrirListaPorStatus(k) {
+  if (!k) return;
+  _listaOsStatusPendente = k;
+  // A busca por texto e o filtro respondem a mesma pergunta de dois jeitos;
+  // deixar as duas ligadas mostraria "nenhuma OS" sem dizer por que.
+  const busca = document.getElementById('busca-os');
+  if (busca) busca.value = '';
+  goto('lista-os');
+}
+window.abrirListaPorStatus = abrirListaPorStatus;
+
 function _rankingAbrirGrupo(i) {
   const g = _rankGrupos[i];
   if (!g || !g.os || !g.os.length) return;
