@@ -27196,8 +27196,6 @@ function _skuCelulaOS(o) {
    produção" (ver AREAS_ACESSO). Quem não pode continua LENDO a fila inteira:
    esconder a ordem de quem executa seria esconder justamente de quem precisa
    dela. */
-const FILA_OS_ABERTA_CHAVE = 'filaOsAberta';
-
 function _filaLista() {
   STATE.meta = STATE.meta || {};
   if (!Array.isArray(STATE.meta.filaOS)) STATE.meta.filaOS = [];
@@ -27319,80 +27317,44 @@ async function limparFilaOS() {
 }
 window.limparFilaOS = limparFilaOS;
 
-// Recolher e estender, lembrado NESTE computador: a fila fica no alto da lista
-// de OS, e quem não está planejando quer a lista, não a fila.
-function alternarFilaOS() {
-  const aberta = _filaAberta();
-  try { localStorage.setItem(FILA_OS_ABERTA_CHAVE, aberta ? '0' : '1'); } catch (e) { /* sem armazenamento */ }
-  renderListaOS();
-}
-window.alternarFilaOS = alternarFilaOS;
+/* A FILA MORA DENTRO DA LISTA DE OS (22/09/2026, Junior: "integre o quadro fila
+   de produção com o quadro que já era antes da OS cadastradas. As OS com status
+   não iniciado continuam a receber um número ordinal de produção, mas só
+   aparecem em sequência quando o filtrado por status Não iniciado").
 
-function _filaAberta() {
-  try { return localStorage.getItem(FILA_OS_ABERTA_CHAVE) !== '0'; } catch (e) { return true; }
-}
+   O quadro separado, no alto da tela, era uma segunda lista das mesmas OS: a
+   pessoa lia a fila em cima, a lista embaixo, e as duas diziam a mesma coisa de
+   jeitos diferentes — uma ordenada pela fila, a outra pelo número da OS.
 
-function renderFilaOS() {
+   Agora há UMA tabela. O selo da posição (1ª, 2ª…) segue em toda OS não
+   iniciada, onde quer que ela apareça, porque a posição é dela e não da
+   listagem. O que muda com o FILTRO é a ORDEM e os controles: filtrando por
+   "Não iniciado", a lista sai na ordem da fila e ganha as setas e o campo de
+   posição; em qualquer outra vista ela segue pelo número da OS, do maior para
+   o menor, como sempre — ordenar pela fila uma lista que também mostra OS
+   finalizadas misturaria duas ordens sem dizer qual é qual.
+
+   Esta barra fininha explica isso e guarda o "desfazer a ordem". Ela só existe
+   quando o filtro está no "Não iniciado" — é a única vista em que a ordem da
+   fila está à mostra. */
+function renderFilaOS(statusEscolhido) {
   const box = document.getElementById('fila-os-painel');
   if (!box) return;
+  if (statusEscolhido !== 'nao-iniciado') { box.innerHTML = ''; return; }
   const fila = filaDeProducao();
   if (!fila.length) { box.innerHTML = ''; return; }
   const pode = podeMexerFilaOS();
-  const aberta = _filaAberta();
   const escrita = _filaLista().length > 0;
-  const linhas = fila.map((o, i) => {
-    const n = i + 1;
-    const controles = pode ? `
-      <button class="btn small ghost" title="Subir uma posição" ${i === 0 ? 'disabled' : ''}
-        onclick="moverNaFila('${esc(o.id)}', -1)">↑</button>
-      <button class="btn small ghost" title="Descer uma posição" ${i === fila.length - 1 ? 'disabled' : ''}
-        onclick="moverNaFila('${esc(o.id)}', 1)">↓</button>
-      <input class="fila-pos-input" type="number" min="1" max="${fila.length}" value="${n}"
-        title="Escreva a posição e tecle Enter: a OS vai para esse lugar e as outras se acomodam"
-        onchange="definirPosicaoFila('${esc(o.id)}', this.value)"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">` : '';
-    return `<tr>
-      <td style="width:54px;text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_filaOrdinal(n)}</td>
-      <td style="white-space:nowrap;"><strong>${esc(o.os) || '—'}</strong></td>
-      <td>${esc(o.modeloNome) || '—'}</td>
-      <td>${(coresDaPecaOS(o) || []).map(c => `<span class="badge">${esc(c)}</span>`).join(' ') || '<span style="color:var(--ink-3)">—</span>'}</td>
-      <td>${_gradeCelulaLista(o)}</td>
-      <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
-      <td class="col-actions row-actions" style="white-space:nowrap;">
-        ${controles}
-        <button class="edit" onclick="verOS('${esc(o.id)}')">visualizar</button>
-      </td>
-    </tr>`;
-  }).join('');
   box.innerHTML = `
-    <div class="card fila-os-card" style="margin-bottom:12px;">
-      <button type="button" class="rank-toggle card-title" aria-expanded="${aberta}"
-        onclick="alternarFilaOS()" title="Clique para recolher ou estender a fila">
-        <span class="rank-seta" aria-hidden="true">${aberta ? '▼' : '▶'}</span>Fila de produção
-        <span class="rank-acao">${aberta ? '− recolher' : '+ estender'}</span>
-        <span class="rank-resumo">${fila.length} OS não iniciada${fila.length === 1 ? '' : 's'}</span>
-      </button>
-      ${aberta ? `
-      <div class="desc" style="margin:8px 0;">
-        A ordem em que as OS <b>que ainda não começaram</b> devem entrar no enfesto — a
-        <b>1ª</b> é a próxima. ${pode
-          ? 'Use as setas para mover uma casa, ou escreva a posição no campo e tecle Enter.'
+    <div class="fila-os-barra">
+      <b>Fila de produção</b>
+      <span>${fila.length} OS não iniciada${fila.length === 1 ? '' : 's'}, na ordem em que devem entrar no
+        enfesto — a <b>1ª</b> é a próxima. ${pode
+          ? 'Use <b>↑ ↓</b> para mover uma casa, ou escreva a posição no campo e tecle Enter.'
           : 'Só o admin e quem recebeu a área <b>Fila de produção</b> podem mudar a ordem.'}
-        A OS que começa sai da fila sozinha e <b>guarda o lugar</b>: se voltar para "não
-        iniciada", volta para onde estava. ${escrita ? '' : 'Ainda ninguém ordenou esta fila — ela está na ordem natural, da OS mais antiga para a mais nova.'}
-      </div>
-      <table class="table">
-        <thead><tr>
-          <th style="text-align:right;">#</th><th>OS</th><th>Modelo</th><th>Cor</th>
-          <th>Grade</th><th>Data</th><th style="text-align:right;">Produtos</th>
-          <th class="col-actions">Ações</th>
-        </tr></thead>
-        <tbody>${linhas}</tbody>
-      </table>
-      ${pode && escrita ? `<div style="margin-top:8px;">
-        <button class="btn small ghost" onclick="limparFilaOS()">Desfazer a ordem</button>
-      </div>` : ''}` : ''}
+        A OS que começa sai da fila e <b>guarda o lugar</b>.${escrita ? ''
+          : ' Ainda ninguém ordenou esta fila: ela está na ordem natural, da OS mais antiga para a mais nova.'}</span>
+      ${pode && escrita ? `<button class="btn small ghost" onclick="limparFilaOS()">Desfazer a ordem</button>` : ''}
     </div>`;
 }
 
@@ -27459,11 +27421,19 @@ function renderListaOS() {
     && _osFinalizadaNoDia(o, diaFim));
   _renderAvisoGrupoListaOS(noGrupo.length);
   _contaListaOS(filtradas.length, noGrupo.length);
-  // A FILA no alto, e o lugar de cada OS na própria linha: quem abre a lista
-  // por qualquer caminho (busca, filtro, grupo do Ranking) vê a ordem sem ter
-  // de subir até o quadro.
-  renderFilaOS();
+  /* A FILA DENTRO DA LISTA. O selo da posição vai em toda OS não iniciada, em
+     qualquer vista — a posição é dela. A ORDEM da fila, porém, só manda na
+     lista quando o filtro está em "Não iniciado": é a única vista em que todas
+     as linhas têm posição, e ordenar pela fila uma lista que também mostra OS
+     finalizadas misturaria duas ordens sem dizer qual é qual. */
+  const naFila = statusEscolhido === 'nao-iniciado';
+  renderFilaOS(statusEscolhido);
   const filaPos = _filaPosicoes();
+  const nFila = filaPos.size;
+  if (naFila) {
+    filtradas.sort((a, b) => (filaPos.get(a.id) || Infinity) - (filaPos.get(b.id) || Infinity));
+  }
+  const podeFila = naFila && podeMexerFilaOS();
   if (!filtradas.length) {
     const sRot = (STATUS_OS.find(x => x.k === statusEscolhido) || {}).rotulo || '';
     const oQue = [termos.length ? `"${esc(termos.join(' '))}"` : '',
@@ -27495,7 +27465,18 @@ function renderListaOS() {
       </td>
       <td>${thumb}</td>
       <td><strong>${esc(o.os)||'—'}</strong>${filaPos.has(o.id)
-        ? ` <span class="badge fila-pos" title="${esc(_filaOrdinal(filaPos.get(o.id)) + ' da fila de producao (OS nao iniciadas). A ordem se muda no quadro Fila de producao, no alto desta tela.')}">${_filaOrdinal(filaPos.get(o.id))}</span>`
+        ? ` <span class="badge fila-pos" title="${esc(_filaOrdinal(filaPos.get(o.id))
+            + ' da fila de producao. Para mexer na ordem, filtre a lista por status "Nao iniciado".')}">${_filaOrdinal(filaPos.get(o.id))}</span>`
+          + (podeFila ? `<span class="fila-controles">
+              <button class="btn small ghost" title="Subir uma posição" ${filaPos.get(o.id) === 1 ? 'disabled' : ''}
+                onclick="moverNaFila('${esc(o.id)}', -1)">↑</button>
+              <button class="btn small ghost" title="Descer uma posição" ${filaPos.get(o.id) === nFila ? 'disabled' : ''}
+                onclick="moverNaFila('${esc(o.id)}', 1)">↓</button>
+              <input class="fila-pos-input" type="number" min="1" max="${nFila}" value="${filaPos.get(o.id)}"
+                title="Escreva a posição e tecle Enter: a OS vai para esse lugar e as outras se acomodam"
+                onchange="definirPosicaoFila('${esc(o.id)}', this.value)"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+            </span>` : '')
         : ''}${_conjugadaCelulaOS(o)}</td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>

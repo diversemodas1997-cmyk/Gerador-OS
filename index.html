@@ -990,11 +990,11 @@
       </div>
       <div class="card">
         <div id="lista-os-grupo" class="hidden"></div>
-        <!-- A FILA DE PRODUÇÃO: a ordem das OS que ainda não começaram (1ª, 2ª,
-             3ª…). Fica no alto da lista porque é a primeira pergunta de quem
-             abre esta tela para trabalhar — "qual é a próxima?" — e porque a
-             lista abaixo sai pelo NÚMERO da OS, que é outra ordem. O quadro é
-             montado em app.js (renderFilaOS) e recolhe com um clique. -->
+        <!-- A FILA DE PRODUÇÃO vive DENTRO da lista (22/09/2026): o selo da
+             posição (1ª, 2ª…) vai na linha de cada OS não iniciada, e a lista
+             sai na ordem da fila quando o filtro está em "Não iniciado". Aqui
+             fica só a barra que explica a fila e guarda o "desfazer a ordem" —
+             montada em app.js (renderFilaOS), e vazia nas outras vistas. -->
         <div id="fila-os-painel"></div>
         <!-- Buscar por número e filtrar por status são duas perguntas diferentes
              e valem juntas: "das que estão paradas, cadê a 483?". As opções do
@@ -1614,6 +1614,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-22k"></script>
+<script src="app.js?v=2026-09-22l"></script>
 </body>
 </html>

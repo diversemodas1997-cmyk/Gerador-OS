@@ -68,7 +68,6 @@ function monta(M) {
     function toast() {}
     function temAcesso() { return !!M.pode; }
     function esc(s) { return String(s == null ? '' : s); }
-    ${pegaConst('FILA_OS_ABERTA_CHAVE')}
     ${pegaFuncao('numeroOSordenacao')}
     ${pegaFuncao('_filaLista')}
     ${pegaFuncao('_osNaoIniciadas')}
@@ -170,6 +169,29 @@ const numeros = api => api.filaDeProducao().map(o => o.os).join(' ');
      M.pedidos.every(a => a.includes('fila de produção')) && M.pedidos.length === 2, M.pedidos);
   ok('21. quem nao tem a area continua LENDO a fila inteira',
      api.filaDeProducao().length === 4 && api.podeMexerFilaOS() === false, numeros(api));
+
+  /* ---------- 6. a fila dentro da lista de OS ----------
+     22/09/2026, Junior: "integre o quadro fila de producao com o quadro que ja
+     era antes da OS cadastradas. As OS com status nao iniciado continuam a
+     receber um numero ordinal de producao, mas so aparecem em sequencia quando
+     o filtrado por status Nao iniciado".
+
+     Estes dois leem o CODIGO de renderListaOS: ela monta HTML e depende do DOM
+     inteiro da tela. O que se guarda aqui e a REGRA — a ordem da fila so manda
+     na lista sob o filtro, e o selo da posicao nao depende dele. */
+  const iniLista = src.indexOf('function renderListaOS()');
+  const lista = src.slice(iniLista, src.indexOf('function abrirModalConjugarOS', iniLista));
+  ok('22. a lista so se ordena pela fila quando o filtro e "nao-iniciado"',
+     /const naFila = statusEscolhido === 'nao-iniciado';/.test(lista)
+     && /if \(naFila\) \{\s*[\r\n]+\s*filtradas\.sort/.test(lista),
+     'nao achei a ordenacao presa ao filtro');
+  ok('23. o selo da posicao sai em toda OS da fila, com filtro ou sem ele',
+     /filaPos\.has\(o\.id\)/.test(lista) && /badge fila-pos/.test(lista),
+     'nao achei o selo da posicao na linha da OS');
+  ok('24. as setas e o campo de posicao so aparecem sob o filtro e com permissao',
+     /const podeFila = naFila && podeMexerFilaOS\(\);/.test(lista)
+     && /podeFila \?/.test(lista),
+     'os controles nao estao presos ao filtro e a permissao');
 
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
   process.exit(falhas ? 1 : 0);

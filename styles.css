@@ -4570,7 +4570,31 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    A ordem das OS não iniciadas. O quadro reaproveita o título-botão do Ranking
    (.rank-toggle), e o que é próprio daqui são duas coisas: o selo da posição na
    linha da lista de OS e o campinho onde se escreve a posição. */
-.fila-os-card .table th, .fila-os-card .table td { padding-top: 5px; padding-bottom: 5px; }
+/* A barra fininha que explica a fila, acima da lista de OS. So aparece com o
+   filtro no "Nao iniciado", que e a unica vista em que a ordem esta a mostra. */
+.fila-os-barra {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--ok);
+  background: var(--ok-bg);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.fila-os-barra > span { flex: 1 1 320px; }
+/* As setas e o campo de posicao, colados no selo da posicao dentro da linha da
+   OS. Em linha (e nao em bloco) para nao empurrar o numero da OS para baixo. */
+.fila-controles {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.fila-controles .btn.small { padding: 1px 5px; line-height: 1.2; }
 /* O selo "1ª" ao lado do número da OS. Verde do programa, para não se confundir
    com os badges cinza de código e cor — ele não descreve a OS, diz o lugar dela
    na fila. */
