@@ -18859,12 +18859,17 @@ function _dashTurnoDaCarga(c) {
 // sobrando em lugar nenhum.
 // Carga cheia ANTIGA (só o número de volumes, sem composição por pacote) pesa o
 // lote inteiro — é o mesmo tratamento que ela recebe em _expEmbarcadoOS.
-function _dashPesoTurnos(o, perna) {
+/* `filtro` recorta quais cargas pesam (22/09/2026). Uma OS pode ter uma carga
+   que já saiu e outra marcada para a semana que vem: a fatia que está NA
+   ESTRADA é só a da segunda, e pesá-la com a hora da primeira poria o volume no
+   turno errado. Sem filtro, todas as cargas da perna pesam, como sempre. */
+function _dashPesoTurnos(o, perna, filtro) {
   const out = { manha: 0, tarde: 0 };
   const alvo = perna === 'volta' ? 'volta' : 'ida';
   const cancel = _expCancelSet();
   const cargas = (STATE.expedicaoCargas || []).filter(c =>
-    c.osId === o.id && (c.perna === 'volta' ? 'volta' : 'ida') === alvo && !cancel.has(c.janelaId + '|' + c.data));
+    c.osId === o.id && (c.perna === 'volta' ? 'volta' : 'ida') === alvo && !cancel.has(c.janelaId + '|' + c.data)
+    && (!filtro || filtro(c)));
   if (!cargas.length) return out;
   const pp = _expPecasPacoteOS(o);
   cargas.forEach(c => {
@@ -18951,18 +18956,57 @@ function _dashCartoesDaOS(o, opts) {
       poe(perna === 'volta' ? 'voltaTarde' : 'idaTarde', total - manha);
       return;
     }
-    // A fatia embarcada sai do campo de origem e entra no trânsito da perna.
-    const tr = (opts && opts.semTransito) ? null : _transitoDaOS(o);
-    const viajando = tr ? Math.round(total * tr.fracao) : 0;
-    if (viajando > 0) {
-      const perna = (FASES_ESTOQUE[tr.faseIdx] || {}).id === 'transitoVolta' ? 'volta' : 'ida';
-      const peso = _dashPesoTurnos(o, perna);
-      const soma = peso.manha + peso.tarde;
-      const manha = soma > 0 ? Math.round(viajando * peso.manha / soma) : viajando;
-      poe(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
-      poe(perna === 'volta' ? 'voltaTarde' : 'idaTarde', viajando - manha);
-    }
-    const resta = Math.max(0, total - viajando);
+    /* A FATIA QUE SAIU DO CAMPO DE ORIGEM — e ela pode ter ido para dois lugares
+       diferentes (22/09/2026). Alocar pacotes numa OE move peça sem ninguém
+       marcar etapa, e a DATA da carga decide para onde (ver _fracoesMovidasOS):
+
+         · carga ainda por acontecer → a fatia está EM TRÂNSITO, e o painel a
+           divide em manhã e tarde pela hora da janela;
+         · carga cuja data já chegou → a fatia MIGROU para o campo do outro
+           lado (o Estoque de corte de São Carlos).
+
+       O painel lia só o trânsito (`_transitoDaOS`), e por isso no dia em que a
+       carga saía a fatia voltava calada para o campo de origem: a tela de
+       Estoque de corte mostrava 100 em Descalvado e 100 em São Carlos, e o
+       cartão do Início mostrava 200 em Descalvado. Dois números para a mesma
+       pergunta — exatamente o que este painel existe para não ser.
+
+       As duas coexistem: parte do lote foi na carga de ontem, parte vai na de
+       amanhã. Por isso a lista inteira, e não o `find` de uma delas. */
+    const movs = (opts && opts.semTransito) ? [] : _fracoesMovidasOS(o);
+    const _hoje = _expHoje();
+    /* QUAIS CARGAS PESAM NO TURNO de quem está viajando. Onde há migração (a
+       IDA, que tem campo do outro lado), quem já saiu não está mais na estrada:
+       o turno é o das cargas que ainda vão acontecer. Onde NÃO há (a volta, que
+       não tem para onde migrar), a fatia viaja mesmo com a data vencida — e aí
+       todas as cargas pesam, senão a volta ficaria sem turno nenhum e o volume
+       cairia todo na manhã por falta de peso. */
+    const _temMigracao = movs.some(m => m.motivo === 'migrou');
+    const _pesamNoTurno = _temMigracao ? (c => _expDataEfetivaCarga(c) > _hoje) : null;
+    let saiu = 0;
+    movs.forEach(m => {
+      const pecas = Math.round(total * m.fracao);
+      if (!(pecas > 0)) return;
+      if (m.motivo === 'viagem') {
+        saiu += pecas;
+        const perna = (FASES_ESTOQUE[m.faseIdx] || {}).id === 'transitoVolta' ? 'volta' : 'ida';
+        // Só as cargas que ainda não saíram pesam neste turno: ver _dashPesoTurnos.
+        const peso = _dashPesoTurnos(o, perna, _pesamNoTurno);
+        const soma = peso.manha + peso.tarde;
+        const manha = soma > 0 ? Math.round(pecas * peso.manha / soma) : pecas;
+        poe(perna === 'volta' ? 'voltaManha' : 'idaManha', manha);
+        poe(perna === 'volta' ? 'voltaTarde' : 'idaTarde', pecas - manha);
+        return;
+      }
+      // Migrou: conta no campo de destino, como a tela daquele campo já conta.
+      // Destino sem cartão no painel (não existe hoje) deixaria o volume sem
+      // lugar nenhum — aí ele continua na origem, que é o mal menor.
+      const kDestino = chavePorIdx.get(m.faseIdx);
+      if (!kDestino) return;
+      saiu += pecas;
+      poe(kDestino, pecas);
+    });
+    const resta = Math.max(0, total - saiu);
     const k = chavePorIdx.get(atual);
     if (!k) return;                       // Expedição: campo fora desta leitura
     poe(k, resta);

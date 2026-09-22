@@ -64,7 +64,18 @@ const motor = [
   corta('function _fracaoRecebida'),
   corta('function _fracaoPerdida'),
   corta('function _expIso'),
-  corta('function _expHoje'),
+  /* O DIA DE HOJE ENTRA CONGELADO (22/09/2026).
+
+     `_expHoje` lê o relógio, e a DATA da carga decide se a fatia está na
+     estrada ou se já migrou para o outro lado. Com o dia de hoje vindo do
+     relógio, este arquivo mudava de resposta sozinho: as cargas do fixture
+     estão em 22/09/2026, e no dia 22 de setembro todos os casos de trânsito
+     viraram casos de migração — cinco falhas num teste que ninguém tinha
+     tocado. Teste que depende do calendário não prova nada no dia seguinte.
+
+     Agora HOJE é 15/09/2026: as cargas de 22/09 estão no FUTURO (trânsito), e
+     os casos de migração dizem a data deles em voz alta. */
+  'function _expHoje() { return HOJE; }',
   corta('function _expDataEfetivaCarga'),
   cortaLinha('const TERMINAL_ETAPA_RE'),
   corta('function faseAtualOS'),
@@ -78,8 +89,13 @@ const motor = [
 ].join('\n');
 
 // O resumo do painel com o STATE dado.
+// O dia em que este teste vive. As cargas do fixture são de 22/09/2026 — uma
+// semana à frente —, então "carga ainda por acontecer" continua sendo verdade
+// para sempre.
+const HOJE = '2026-09-15';
+
 function dash(estado) {
-  const fn = new Function('STATE', `
+  const fn = new Function('STATE', 'HOJE', `
     const corCanonicaPorTecido = (cor) => cor || '';
     // Sem grade no fixture a folha nao tem Total geral, e os produtos saem dos
     // componentes (qtdTotal / qtdPorPeca) — ver produtosOS.
@@ -93,7 +109,7 @@ function dash(estado) {
     ${motor}
     return _dashFluxoDados();
   `);
-  return fn(estado);
+  return fn(estado, HOJE);
 }
 
 let falhas = 0;
@@ -389,6 +405,45 @@ confere('Volta da janela das 17h: cai em Volta · tarde, saindo de São Carlos',
 confere('Carga antiga sem pacotes: as 200 pç inteiras no turno da janela',
   dash(estado(noCorte(), [carga({ pacotes: undefined, volumes: 5 })])),
   { idaManha: 200 });
+
+/* ---------- 2b. a carga que JÁ SAIU: a fatia migra ----------
+   A data da carga decide para onde vai a fatia alocada (ver _fracoesMovidasOS):
+   por acontecer, ela está na estrada; chegado o dia, ela MIGROU para o campo do
+   outro lado — o caminhão saiu, e o pano está em São Carlos sem ninguém ter de
+   marcar nada.
+
+   O PAINEL NÃO ENXERGAVA A MIGRAÇÃO (corrigido em 22/09/2026). Ele lia só o
+   trânsito, então no dia em que a carga saía a fatia voltava calada para o
+   campo de origem: a tela do Estoque de corte mostrava 100 em Descalvado e 100
+   em São Carlos, e o cartão do Início mostrava 200 em Descalvado. Este teste é
+   o que não deixa os dois números se separarem de novo. */
+
+confere('carga cuja data já chegou: a fatia migra para o corte de São Carlos',
+  dash(estado(noCorte(), [carga({ data: '2026-09-10' })])),
+  { corte: 100, corteSC: 100 });
+
+/* Uma que já saiu e outra por vir, e é o caso que separa as duas contas: 50
+   chegaram lá, 50 estão na estrada e 100 continuam na prateleira daqui. O turno
+   dos que viajam é o da carga QUE AINDA NÃO SAIU (j2, tarde) — pesar o turno
+   com a carga de ontem junto poria metade do volume na manhã, num caminhão que
+   já foi. */
+confere('uma carga já saiu e outra está por vir: migrado, na estrada e parado, cada um no seu lugar',
+  dash(estado(noCorte(), [
+    carga({ id: 'c1', data: '2026-09-10', pacotes: [{ tam: 'P', tom: null }] }),
+    carga({ id: 'c2', janelaId: 'j2', pacotes: [{ tam: 'M', tom: null }] })
+  ])),
+  { corte: 100, corteSC: 50, idaTarde: 50 });
+
+/* A VOLTA NÃO TEM PARA ONDE MIGRAR (o caminho de volta não tem campo de destino
+   do outro lado), então lá a fatia continua indo para o trânsito mesmo depois
+   de a data passar — é o que o `else` de _fracoesMovidasOS faz, e o painel tem
+   de acompanhar. */
+confere('na volta, carga com data passada continua na estrada (não há campo para onde migrar)',
+  dash(estado(
+    osBase({ 'Corte': true, 'Recebido em São Carlos': true, 'Costura CM.LISA | São Carlos': true },
+           { 'Corte': 1, 'Recebido em São Carlos': 2, 'Costura CM.LISA | São Carlos': 3 }),
+    [carga({ perna: 'volta', data: '2026-09-10' })])),
+  { costurandoSC: 100, voltaTarde: 100, recSC: 200 });
 
 /* ---------- na estrada pela CAIXA (16/09/2026) ----------
    Alocar numa ida marca "Expedição Desc X São Carlos", e com a caixa marcada a
