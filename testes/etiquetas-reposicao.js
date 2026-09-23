@@ -61,6 +61,7 @@ const motor = [
   corta('function _osEhBmTri'),
   corta('function _coresDaPecaOS'),
   corta('function _tamanhosDaGradeExpandido'),
+  corta('function _qtdePacoteEtiqueta'),
   corta('function dadosEtiquetaParaOS'),
   corta('function gerarPdfEtiquetas')
 ].join('\n');
@@ -231,14 +232,14 @@ const ordem = r.paginas.slice(0, 7).map(pg => pg[pg.length - 1]);
 eq('BM.TRI: a ordem das peças no G tom 1', ordem.join(' | '),
    'FRENTE | COSTA | CAPUZ | FORRO DE CAPUZ | BARRA/PUNHOS | MANGAS | BOLSO');
 ok('BM.TRI: G tom 1 — Frente, 144, nas três cores em ordem de parte',
-   r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE: 144') &&
+   r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE PACOTE: 144') &&
    r.paginas[0].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[0]);
 ok('BM.TRI: G tom 1 — Capuz é preto e vai em dobro',
-   r.paginas[2].includes('QTDE: 288') && r.paginas[2].includes('COR: PRETO'), r.paginas[2]);
+   r.paginas[2].includes('QTDE PACOTE: 288') && r.paginas[2].includes('COR: PRETO'), r.paginas[2]);
 ok('BM.TRI: G tom 1 — Barra/Punhos diz as duas contas',
-   r.paginas[4].includes('QTDE: Barra 144 · Punhos 288') && r.paginas[4].includes('COR: OFF-WHITE'), r.paginas[4]);
+   r.paginas[4].includes('QTDE PACOTE: Barra 144 · Punhos 288') && r.paginas[4].includes('COR: OFF-WHITE'), r.paginas[4]);
 ok('BM.TRI: G tom 2 — Mangas com as 80 blusas do tom',
-   r.paginas[12].includes('G tom 2') && r.paginas[12].includes('MANGAS') && r.paginas[12].includes('QTDE: 160'), r.paginas[12]);
+   r.paginas[12].includes('G tom 2') && r.paginas[12].includes('MANGAS') && r.paginas[12].includes('QTDE PACOTE: 160'), r.paginas[12]);
 ok('BM.TRI: a etiqueta de peça não traz a lista de composição nem a grade inteira',
    !r.paginas[0].some(l => /Punhos d+ ·|^TAM:/.test(l)), r.paginas[0]);
 ok('BM.TRI: a reposição continua no fim, sem peça',
@@ -250,6 +251,24 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547,
   { tons: [1], moletom: true });
 eq('BM.LISA: uma etiqueta por tamanho, como antes', r.dados.numEtiquetas, 3);
 ok('BM.LISA: sem etiqueta por peça', r.dados.pecasPacotes == null, r.dados.pecasPacotes);
+
+/* ---------- OS 0563: total da OS + quantidade do pacote ---------- */
+// Camiseta 2G-G2, 65 camadas, malha (2 por camada) = 390 peças. Tom 1 com 50
+// camadas (V = 100 no G2), Tom 2 balanceia. O G tem 2 vagas: 2 pacotes por tom,
+// e a célula do tom se reparte entre eles. Antes todas diziam só "QTDE: 390".
+r = etiquetasDe(osBase({ os: '0563', grade: { g: 2, g2: 1, total: 3 }, enfesto: { camadas: 65 },
+  progresso: { totalTamanhoTons: { 1: true, 2: true }, totalTamanhoTomValor: { 1: 100 } } }),
+  { tons: [1, 2] });
+const qPac = pg => (pg.find(l => /^QTDE PACOTE:/.test(l)) || '').replace('QTDE PACOTE: ', '');
+eq('0563: pacotes (G, G, G2 × 2 tons + reposição)', r.dados.totalPacotes, 7);
+ok('0563: todas levam o total da OS', r.paginas.every(pg => pg.includes('QTDE OS: 390')), r.paginas);
+eq('0563: pacotes do Tom 1 (G, G, G2)', r.paginas.slice(0, 3).map(qPac).join(','), '100,100,100');
+eq('0563: pacotes do Tom 2 (G, G, G2)', r.paginas.slice(3, 6).map(qPac).join(','), '30,30,30');
+ok('0563: a reposição não tem QTDE PACOTE', !r.paginas[6].some(l => /^QTDE PACOTE/.test(l)), r.paginas[6]);
+
+r = etiquetasDe(osBase({ grade: { g: 2, g2: 1, total: 3 }, enfesto: { camadas: 65 },
+  progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2] });
+eq('2 tons sem divisão: o pacote sai com "—", não com chute', qPac(r.paginas[0]), '—');
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);

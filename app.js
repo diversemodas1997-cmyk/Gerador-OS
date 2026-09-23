@@ -24607,7 +24607,10 @@ function gerarPdfEtiquetas(dados) {
       { t: String(dados.marca || ''), s: 1, c: true },
       { t: `OS: ${dados.os}`, s: 1 },
       { t: `MODELO: ${dados.modelo}`, s: 1 },
-      { t: `QTDE: ${peca ? dados.qtdePacotes[i] : dados.qtde}`, s: 1 },
+      // QTDE OS = o total da OS; QTDE PACOTE = o tamanho × tom desta etiqueta
+      // (na BM.TRI, a peça). A reposição só leva o total.
+      { t: `QTDE OS: ${dados.qtde}`, s: 1 },
+      ...(ehReposicao ? [] : [{ t: `QTDE PACOTE: ${_qtdePacoteEtiqueta(dados, i, peca)}`, s: 1 }]),
       ...(peca ? [] : [{ t: `TAM: ${dados.tam}`, s: 1 }]),    // TODOS os tamanhos da grade, normal
       { t: `COR: ${peca ? dados.corPacotes[i] : dados.cor}`, s: 1 }
     ];
@@ -25336,6 +25339,15 @@ function _coresDaPecaOS(o, re) {
 // Calcula os dados que vao para cada etiqueta a partir de uma OS. Centralizado
 // num helper porque tambem e usado pelos auto-saves silenciosos de
 // salvarOS/salvarEImprimir, fora do fluxo de impressao.
+// O texto da linha QTDE PACOTE da etiqueta i: na BM.TRI a quantidade da peça,
+// nas demais a do tamanho × tom do pacote ("—" quando a divisão dos tons não
+// foi digitada).
+function _qtdePacoteEtiqueta(dados, i, peca) {
+  if (peca) return dados.qtdePacotes[i];
+  const q = (dados.qtdeTamPacotes || [])[i];
+  return q == null ? '—' : q;
+}
+
 function dadosEtiquetaParaOS(o) {
   const os = o.os || o.codigo || '—';
   const marca = (o.griffeNome || o.griffe || 'MARCA').toUpperCase();
@@ -25349,18 +25361,13 @@ function dadosEtiquetaParaOS(o) {
     const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
     return tec && categoriaEfetivaTecido(tec) === 'moletom';
   });
-  const temMalha = !temMoletom && (
-    fasesP.some(f => {
-      const t = STATE.tecidos.find(x => x.id === f.tecidoId);
-      return t && categoriaEfetivaTecido(t) === 'malha';
-    }) || tecsP.some(t => {
-      const tec = STATE.tecidos.find(x => x.id === t.tecidoId);
-      return tec && categoriaEfetivaTecido(tec) === 'malha';
-    })
-  );
-  const multPrincipal = temMoletom ? 1 : (temMalha ? 2 : 1);
+  // QTDE total da OS = o "Total geral" da folha, pela MESMA conta
+  // (totaisPorTamanhoTomOS): grade × camadas × unidades por camada do pano.
+  // Antes a etiqueta tinha a sua própria regra de malha = 2, que não conhecia a
+  // forma do pano (tubular/aberto) e podia discordar da folha.
+  const tt = totaisPorTamanhoTomOS(o);
   const totalGrade = o.grade?.total || 0;
-  const qtde = (totalGrade > 0 && camadas > 0) ? (totalGrade * camadas * multPrincipal) : totalGrade;
+  const qtde = (totalGrade > 0 && camadas > 0) ? tt.totalGeral : totalGrade;
   const sizesAtivos = ['p','m','g','gg','g1','g2','g3']
     .filter(k => (o.grade?.[k] || 0) > 0)
     .map(s => s.toUpperCase());
@@ -25427,22 +25434,42 @@ function dadosEtiquetaParaOS(o) {
     ? (tonsAtivos.length > 1 ? 'TONS: ' : 'TOM: ') + tonsAtivos.join(' · ')
     : '';
 
-  // Moletom: quantas BLUSAS cabem em cada pacote. No moletom o pacote é um
-  // tamanho inteiro de um tom, então as blusas dele são a célula tamanho × tom
-  // do "Total por tamanho" da folha — a mesma fonte que a folha imprime, para a
-  // etiqueta e a folha não discordarem. Com um tom só (ou nenhum marcado), o
-  // pacote leva a coluna inteira; com dois ou mais sem a divisão digitada, null.
+  // Quantas peças o tamanho × tom DESTE pacote tem: a célula do "Total por
+  // tamanho" da folha — a mesma fonte que a folha imprime, para a etiqueta e a
+  // folha não discordarem. Com um tom só (ou nenhum marcado), a coluna inteira;
+  // com dois ou mais sem a divisão digitada, null (sai "—": um chute impresso
+  // seria pior do que deixar a conta para quem ensaca).
+  const celDe = i => {
+    const k = String(tamanhosPacotes[i] || '').toLowerCase();
+    if (tt.tons.length <= 1) return tt.colTotal(k);
+    if (tt.semDigitacao) return null;
+    const linha = tt.linhas.find(l => l.tom === tonsPacotes[i]);
+    return linha ? (linha.cels[k] || 0) : null;
+  };
+  // QTDE do PACOTE (pedido do Junior, OS 0563): a etiqueta dizia só o total da
+  // OS — 390 em todas —, e o pacote "G tom 1" não dizia quanto ele mesmo leva.
+  // Na camiseta o tamanho com 2 vagas na grade rende 2 pacotes (2G → G, G), e a
+  // célula se reparte entre eles; a sobra da divisão vai para os primeiros.
+  // Ex. 0563: 2G-G2, 65 camadas, Tom 1 = 50 → G tom 1 = 200 = 100 + 100.
+  const qtdeTamPacotes = tamanhosPacotes.map((t, i) => {
+    const cel = celDe(i);
+    if (cel == null) return null;
+    let n = 0, j = 0;
+    tamanhosPacotes.forEach((t2, i2) => {
+      if (t2 !== t || tonsPacotes[i2] !== tonsPacotes[i]) return;
+      if (pecasPacotes && pecasPacotes[i2] !== pecasPacotes[i]) return;
+      if (i2 < i) j++;
+      n++;
+    });
+    return Math.floor(cel / n) + (j < cel % n ? 1 : 0);
+  });
+
+  // Moletom: o pacote é um tamanho inteiro de um tom, então as blusas dele são
+  // a célula tamanho × tom inteira.
   let composicaoPacotes = null;
   let corPacotes = null, qtdePacotes = null;
   if (temMoletom) {
-    const tt = totaisPorTamanhoTomOS(o);
-    const blusasDe = i => {
-      const k = String(tamanhosPacotes[i] || '').toLowerCase();
-      if (tt.tons.length <= 1) return tt.colTotal(k);
-      if (tt.semDigitacao) return null;
-      const linha = tt.linhas.find(l => l.tom === tonsPacotes[i]);
-      return linha ? (linha.cels[k] || 0) : null;
-    };
+    const blusasDe = celDe;
     if (pecasPacotes) {
       // Na etiqueta por peça, a COR e a QTDE são as DAQUELA peça: a frente da
       // tricolor é Preto/Mostarda/Off-white, o bolso é só Off-white.
@@ -25461,7 +25488,8 @@ function dadosEtiquetaParaOS(o) {
   return { marca, os, qtde, tam, cor, modelo: desenhoNome, numEtiquetas,
            tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
            totalPacotes, tonsTexto, composicaoPacotes,
-           pecasPacotes: pecasPacotes && pecasPacotes.map(p => p.nome), corPacotes, qtdePacotes };
+           pecasPacotes: pecasPacotes && pecasPacotes.map(p => p.nome), corPacotes, qtdePacotes,
+           qtdeTamPacotes };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
@@ -25579,7 +25607,8 @@ function imprimirEtiquetas(osId) {
         <div class="head">${escEt(marca)}</div>
         <div class="row">OS: ${escEt(os)}</div>
         <div class="row">MODELO: ${escEt(desenhoNome)}</div>
-        <div class="row">QTDE: ${escEt(peca ? qtdePacotes[i] : qtde)}</div>
+        <div class="row">QTDE OS: ${escEt(qtde)}</div>
+        ${ehRep ? '' : `<div class="row">QTDE PACOTE: ${escEt(_qtdePacoteEtiqueta(dados, i, peca))}</div>`}
         ${peca ? '' : `<div class="row">TAM: ${escEt(tam)}</div>`}
         <div class="row">COR: ${escEt(peca ? corPacotes[i] : cor)}</div>
         ${ehRep && tonsTexto ? `<div class="row">${escEt(tonsTexto)}</div>` : ''}
