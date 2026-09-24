@@ -7442,7 +7442,10 @@ function renderEstoque() {
     const base = pesoBobinaEstimado(tecidoNome);
     if (!base || !(base.kg > 0)) return null;
     const n = (Number(kg) || 0) / base.kg;
-    return isFinite(n) ? Math.floor(n) : null;
+    // A folga é a do arredondamento para cima (CEIL_BOBINA_EPS), do outro lado:
+    // 23 bobinas de 19,026 kg são 437,598 kg, e 437,598 ÷ 19,026 dá
+    // 22,99999… no ponto flutuante — o chão seco mostrava 22 (24/09/2026).
+    return isFinite(n) ? Math.floor(n + CEIL_BOBINA_EPS) : null;
   };
   const bobTxt = (kg, tecidoNome) => {
     const b = bobDoKg(kg, tecidoNome);
