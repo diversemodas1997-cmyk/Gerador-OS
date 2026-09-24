@@ -125,7 +125,9 @@ ok('17. e a rota desenha o campo certo',
 ok('18. os dois estao na barra lateral, dentro de Estoques',
    /nav-btn[^>]*data-page="estoque-fio"[^>]*>Estoque com fio \| Descalvado</.test(html)
    && /nav-btn[^>]*data-page="estoque-fio-sc"[^>]*>Estoque com fio \| São Carlos</.test(html));
-const grupoEstoques = html.slice(html.indexOf('data-group="estoques"'), html.indexOf('data-group="operacoes"'));
+// O grupo Estoques vai ate o grupo seguinte (Operacoes saiu da barra em 24/09/2026).
+const _iniEst = html.indexOf('data-group="estoques"');
+const grupoEstoques = html.slice(_iniEst, html.indexOf('data-group=', _iniEst + 1));
 ok('19. e e o grupo ESTOQUES mesmo, nao Operacoes',
    grupoEstoques.includes('data-page="estoque-fio-sc"'));
 ok('20. o Inicio tem o cartao dos dois', /k: 'estoqueFioSC'/.test(src) && /k: 'estoqueFio'/.test(src));

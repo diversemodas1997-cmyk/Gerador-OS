@@ -4074,8 +4074,13 @@ function goto(page) {
    aberta dependem de qual OS está na mão: `#print-os` numa aba nova abriria uma
    folha sem OS. Quem não tem item de menu não escreve no endereço, e um
    endereço desconhecido cai no Início. */
+/* Telas que saíram do menu e continuam com endereço (24/09/2026): o grupo
+   Operações deixou a barra lateral, mas as telas seguem abrindo pelos cartões
+   do Início — e o F5 ou a aba nova nelas não pode cair no Início. */
+const _PAGINAS_FORA_DO_MENU = ['costurando', 'costurando-sc', 'fios'];
 function _paginaTemEndereco(page) {
-  return !!(page && document.querySelector(`.nav-btn[data-page="${page}"]`));
+  return !!(page && (_PAGINAS_FORA_DO_MENU.indexOf(page) >= 0
+    || document.querySelector(`.nav-btn[data-page="${page}"]`)));
 }
 
 // A área pedida no endereço, se for uma que existe. Senão, nada.

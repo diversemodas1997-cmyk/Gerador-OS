@@ -164,29 +164,14 @@
       </div>
     </div>
 
-    <!-- OPERAÇÕES: a peça em MOVIMENTO, campo a campo, na ordem do chão. As duas
-         unidades vêm juntas em cada passo — é assim que a pergunta se faz
-         ("quanto tem costurando?"), e é assim que o dashboard do Início mostra.
+    <!-- O GRUPO OPERAÇÕES SAIU DA BARRA (24/09/2026, Junior: "retire os itens
+         Costurando unidade Descalvado e Costurando unidade São Carlos e
+         Retirando fios da barra lateral e retire a pasta Operações").
 
-         O QUE SAIU DAQUI, e por quê (15/09/2026, Junior):
-
-           · "Operações" e "Expedição" foram para os Cadastros. Nenhuma das duas
-             é um campo onde peça fica parada — são listas que se mantêm (a
-             jornada de cada posto, as janelas e as cargas), e é isso que as põe
-             junto das outras listas.
-           · os dois "Estoque corte" foram para ESTOQUES. Corte ensacado é pano
-             PARADO esperando a costura, e é isso que a seção de cima reúne.
-
-         Ficou o que anda: a costura, a viagem e a retirada de fios. -->
-    <!-- ↑ Os campos do fluxo continuam todos existindo e contando igual: mudou
-         onde o menu os mostra, e nada na conta de nenhum deles. -->
-    <div class="nav-group" data-group="operacoes">
-      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Operações</button>
-      <div class="nav-items">
-        <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
-        <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
-        <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
-      </div>
+         As três telas continuam existindo e contando igual: abrem pelos cartões
+         do Início (Costurando, Recebido em Descalvado, Retirada de fios) e pelo
+         endereço (#costurando, #costurando-sc, #fios) — ver
+         _PAGINAS_FORA_DO_MENU. Saiu só o atalho do menu. -->
     </div>
 
     <!-- Sem admin-only: os cadastros são de CONSULTA para todo mundo. Quem lê a
@@ -1631,6 +1616,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-24b"></script>
+<script src="app.js?v=2026-09-24c"></script>
 </body>
 </html>

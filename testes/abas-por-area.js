@@ -68,6 +68,7 @@ const monta = (hash, paginaNaTela) => {
     }
   };
   const f = new Function('ctx', 'document', 'location', 'goto', `
+    ${(src.match(/const _PAGINAS_FORA_DO_MENU = [^\n]*/) || ['const _PAGINAS_FORA_DO_MENU = []'])[0]}
     ${recorte('function _paginaTemEndereco', 'quem tem endereco')}
     ${recorte('function _paginaDoEndereco', 'a area do endereco')}
     ${recorte('function _paginaInicial', 'a area de abertura')}
@@ -103,6 +104,16 @@ ok('9. ir para a area em que ja se esta nao mexe no historico',
 A = monta('#estoque', 'estoque');
 A.ctx.escreveu = undefined;
 A._enderecoDaPagina('print-os');
+// As telas do grupo Operacoes sairam do menu em 24/09/2026 e seguem com
+// endereco: abrem pelos cartoes do Inicio, e o F5 nelas nao cai no Inicio.
+{
+  const B = monta('#costurando-sc', 'home');
+  ok('9b. tela que saiu do menu (Costurando SC) continua abrindo pelo endereco',
+     B._paginaInicial() === 'costurando-sc' && monta('#fios', 'home')._paginaInicial() === 'fios',
+     B._paginaInicial());
+  ok('9c. e o menu nao tem mais o grupo Operacoes nem os tres itens',
+     !/data-group="operacoes"/.test(html) && !/nav-btn[^>]*data-page="(costurando|costurando-sc|fios)"/.test(html));
+}
 ok('10. area sem menu nao escreve endereco nenhum',
   A.ctx.escreveu === undefined && A.ctx.hash === '#estoque', A.ctx.hash);
 
