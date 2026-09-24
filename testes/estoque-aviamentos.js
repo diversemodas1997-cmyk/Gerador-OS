@@ -15,6 +15,7 @@ function pegaFuncao(nome) {
   return src.slice(ini, src.indexOf('\n}', ini) + 2);
 }
 const tiposLinha = (src.match(/const AVIAMENTO_TIPOS = [^\n]*/) || [''])[0];
+const unidadeDe = (src.match(/const _aviUnidadeDe = [^\n]*/) || [''])[0];
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -24,6 +25,7 @@ const ok = (nome, cond, extra) => {
 
 const api = new Function(`
   ${tiposLinha}
+  ${unidadeDe}
   ${pegaFuncao('_normNome')}
   ${pegaFuncao('calcularEstoqueAviamentos')}
   return { calcularEstoqueAviamentos, AVIAMENTO_TIPOS };
@@ -59,6 +61,25 @@ ok('7. lancamento com data futura nao entra no corrente', botao.corrente === 1.2
 ok('8. com o periodo terminando hoje, residual e corrente se encontram',
    (() => { const x = api.calcularEstoqueAviamentos(mov, '2026-09-01', '2026-10-15', '2026-10-15').find(y => y.item === 'Linha');
      return x.residual === x.corrente && x.corrente === 8; })());
+
+console.log('-- as duas unidades --');
+/* 24/09/2026: "separe por Unidade Descalvado e Unidade Sao Carlos". A mesma
+   linha preta tem 6 kg em Descalvado (lancamento sem unidade = Descalvado) e
+   4 kg em Sao Carlos, e 1 kg sai de Sao Carlos. */
+const mu = [
+  { tipo: 'entrada', item: 'Linha', cor: 'Preto', kg: 6, data: '2026-09-02' },
+  { tipo: 'entrada', unidade: 'sc', item: 'Linha', cor: 'Preto', kg: 4, data: '2026-09-03' },
+  { tipo: 'saida', unidade: 'sc', item: 'Linha', cor: 'Preto', kg: 1, data: '2026-09-04' }
+];
+const ud = api.calcularEstoqueAviamentos(mu, '2026-09-01', '2026-09-30', '2026-09-30', 'desc')[0];
+const us = api.calcularEstoqueAviamentos(mu, '2026-09-01', '2026-09-30', '2026-09-30', 'sc')[0];
+ok('9a. Descalvado conta so o dele (sem unidade = Descalvado): 6 kg', ud.corrente === 6 && ud.saida === 0, ud);
+ok('9b. Sao Carlos conta so o dele: 4 - 1 = 3 kg', us.entrada === 4 && us.saida === 1 && us.corrente === 3, us);
+ok('9c. sem unidade pedida, as duas somam (6 + 3 = 9)',
+   api.calcularEstoqueAviamentos(mu, '2026-09-01', '2026-09-30', '2026-09-30')[0].corrente === 9);
+ok('9d. o lancamento grava a unidade escolhida', /unidade: v\('ma-unidade'\) === 'sc' \? 'sc' : 'desc'/.test(src));
+ok('9e. a tela tem as abas das duas unidades',
+   /rotulo: 'Unidade Descalvado'/.test(src) && /rotulo: 'Unidade São Carlos'/.test(src) && /_aviTrocarUnidade\('\$\{u\.k\}'\)/.test(src));
 
 console.log('-- a tela --');
 ok('9. o item de menu fica logo abaixo do Estoque de tecidos',

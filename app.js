@@ -8035,6 +8035,20 @@ async function excluirMovEstoque(id) {
    outra caixa ou acento cai na mesma linha (_normNome). */
 const AVIAMENTO_TIPOS = ['Fio', 'Linha', 'Etiqueta', 'Botão', 'Viés'];
 
+/* AS DUAS UNIDADES (24/09/2026, Junior: "no estoque de aviamentos, separe por
+   Unidade Descalvado e Unidade São Carlos"). Cada lançamento diz de que
+   unidade é, e a tela mostra uma de cada vez, em abas — cada uma com os seus
+   cinco quadros e os seus lançamentos. As chaves são as do resto do programa
+   (Descalvado 'desc', São Carlos 'sc'). Lançamento sem unidade é de
+   Descalvado: é onde a fábrica começou, e é o que o campo diz quando ninguém
+   escolheu outra. */
+const AVIAMENTO_UNIDADES = [
+  { k: 'desc', rotulo: 'Unidade Descalvado' },
+  { k: 'sc', rotulo: 'Unidade São Carlos' }
+];
+const _aviUnidadeDe = m => (m && m.unidade === 'sc') ? 'sc' : 'desc';
+let _aviUnidade = 'desc';
+
 // O período em foco: do primeiro dia do mês até hoje, até alguém mudar.
 let _aviDe = '', _aviAte = '';
 function _aviHoje() {
@@ -8052,9 +8066,11 @@ function _aviPeriodo() {
    lançamentos; datas em AAAA-MM-DD (comparar texto é comparar data). Um
    lançamento sem data conta como de hoje. Lançamento com data futura não
    entra no corrente — ainda não aconteceu. */
-function calcularEstoqueAviamentos(mov, de, ate, hoje) {
+function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade) {
   const linhas = new Map();
   (mov || []).forEach(m => {
+    // Sem unidade pedida, conta as duas juntas.
+    if (unidade && _aviUnidadeDe(m) !== unidade) return;
     const item = AVIAMENTO_TIPOS.find(t => _normNome(t) === _normNome(m.item)) || String(m.item || '').trim();
     if (!item) return;
     const cor = String(m.cor || '').trim();
@@ -8083,7 +8099,8 @@ function renderEstoqueAviamentos() {
   if (!cont) return;
   const { de, ate, hoje } = _aviPeriodo();
   const mov = Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : [];
-  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje);
+  const unidade = _aviUnidade;
+  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade);
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const num = (n, forte) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${forte ? 'font-weight:700;' : ''}color:${n < -0.0005 ? '#c0392b' : 'inherit'};">${fmt(n)} kg</td>`;
   const cab = `<thead><tr><th>Cor</th>
@@ -8112,10 +8129,10 @@ function renderEstoqueAviamentos() {
   };
   // Tipo fora dos cinco (lançamento importado de algum lugar) não some calado.
   const outros = [...new Set(linhas.map(l => l.item))].filter(t => AVIAMENTO_TIPOS.indexOf(t) < 0);
-  const noPeriodo = mov.filter(m => { const d = String(m.data || hoje); return d >= de && d <= ate; })
+  const noPeriodo = mov.filter(m => { const d = String(m.data || hoje); return _aviUnidadeDe(m) === unidade && d >= de && d <= ate; })
     .slice().sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
   const lancHtml = `<div class="card">
-    <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos do período</h2>
+    <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos do período · ${esc(((AVIAMENTO_UNIDADES.find(u => u.k === unidade)) || {}).rotulo || '')}</h2>
     <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Data</th><th>Tipo</th><th>Item</th><th>Cor</th>
       <th style="text-align:right;">Peso</th><th>Observação</th></tr></thead><tbody>
       ${noPeriodo.length ? noPeriodo.map(m => `<tr>
@@ -8127,7 +8144,10 @@ function renderEstoqueAviamentos() {
         <td>${esc(m.obs) || ''}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">Nenhum lançamento neste período.</td></tr>'}
     </tbody></table></div>`;
+  const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
+    `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_aviTrocarUnidade('${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
   cont.innerHTML = `
+    ${abas}
     <div class="card">
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
         <div class="field" style="margin:0;"><label>De</label><input type="date" value="${esc(de)}" onchange="_aviMudarPeriodo('de', this.value)"></div>
@@ -8142,6 +8162,11 @@ function renderEstoqueAviamentos() {
     </div>
     ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
     ${lancHtml}`;
+}
+
+function _aviTrocarUnidade(k) {
+  _aviUnidade = k === 'sc' ? 'sc' : 'desc';
+  renderEstoqueAviamentos();
 }
 
 function _aviMudarPeriodo(campo, valor) {
@@ -8163,6 +8188,8 @@ function abrirMovAviamento(tipo) {
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
   document.getElementById('modal-aviamento-fields').innerHTML = `
     <div class="form-grid cols-2">
+      <div class="field"><label>Unidade *</label><select id="ma-unidade">${AVIAMENTO_UNIDADES.map(u =>
+        `<option value="${u.k}"${u.k === _aviUnidade ? ' selected' : ''}>${esc(u.rotulo)}</option>`).join('')}</select></div>
       <div class="field"><label>Item *</label><select id="ma-item">
         <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
       <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto">
@@ -8185,6 +8212,7 @@ async function salvarMovAviamento() {
   STATE.aviamentosMov.push({
     id: uid(),
     tipo: movAviamentoTipo,
+    unidade: v('ma-unidade') === 'sc' ? 'sc' : 'desc',
     item,
     cor: v('ma-cor').trim(),
     kg: Math.round(kg * 1000) / 1000,
@@ -8196,6 +8224,7 @@ async function salvarMovAviamento() {
   await saveState('aviamentosMov');
   closeModal('modal-aviamento');
   toast(movAviamentoTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  _aviUnidade = v('ma-unidade') === 'sc' ? 'sc' : 'desc';
   renderEstoqueAviamentos();
 }
 
@@ -8213,6 +8242,7 @@ window.abrirMovAviamento = abrirMovAviamento;
 window.salvarMovAviamento = salvarMovAviamento;
 window.excluirMovAviamento = excluirMovAviamento;
 window._aviMudarPeriodo = _aviMudarPeriodo;
+window._aviTrocarUnidade = _aviTrocarUnidade;
 
 /* ========================================================= */
 /*           ESTOQUE DE CORTE (peças cortadas)               */
