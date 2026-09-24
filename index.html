@@ -106,12 +106,16 @@
 
          ORDENS DE EXPEDICAO (a antiga "Expedicao") subiu de Operacoes para ca,
          logo abaixo de Ordens de Servico (24/09/2026, Junior): OS e OE sao as
-         duas ordens que a fabrica emite, e ficam lado a lado. -->
+         duas ordens que a fabrica emite, e ficam lado a lado.
+
+         ORDENS DE COMPRA (a antiga "Compra") veio no mesmo dia, logo abaixo
+         da Ordens de Expedicao: as tres ordens juntas. -->
     <div class="nav-solto">
         <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
         <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Ordens de Expedição</a>
+        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
     </div>
 
@@ -179,7 +183,6 @@
     <div class="nav-group" data-group="operacoes">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Operações</button>
       <div class="nav-items">
-        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Compra</a>
         <a class="nav-btn" href="#costurando" data-page="costurando" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade Descalvado</a>
         <a class="nav-btn" href="#costurando-sc" data-page="costurando-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Costurando · Unidade São Carlos</a>
         <a class="nav-btn" href="#fios" data-page="fios" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Retirada de fios</a>
@@ -341,7 +344,7 @@
     <section class="page hidden" data-page="compra">
       <div class="page-header">
         <div>
-          <h1>Compra</h1>
+          <h1>Ordens de Compra</h1>
           <div class="desc">A necessidade <b>bruta</b> de tecido de uma produção que ainda não virou OS, em <b>bobinas</b> e em <b>quilos</b>. Você preenche a <b>grade</b> (que sabe as medidas de cada fase e quantas bobinas o enfesto gasta) e o <b>desenho técnico</b> (que sabe a cor de cada fase, e a gramatura é cadastrada por cor); o tamanho do lote entra em camadas ou em peças. É a mesma conta da folha de OS, feita antes de existir OS.</div>
         </div>
       </div>
