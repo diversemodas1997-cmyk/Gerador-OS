@@ -114,6 +114,24 @@ A._enderecoDaPagina('print-os');
   ok('9c. e o menu nao tem mais o grupo Operacoes nem os tres itens',
      !/data-group="operacoes"/.test(html) && !/nav-btn[^>]*data-page="(costurando|costurando-sc|fios)"/.test(html));
 }
+// UM </div> A MAIS DESMONTA A TELA INTEIRA (24/09/2026). Ao tirar o grupo
+// Operacoes, o fechamento dele ficou para tras: a barra lateral fechava antes
+// de Cadastros e o conteudo caia para baixo da barra, com o Inicio em branco.
+// Os testes do menu passavam, porque os itens estavam todos la.
+{
+  const semRuido = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script\b[\s\S]*?<\/script>/g, '');
+  const abre = (semRuido.match(/<div\b/g) || []).length, fecha = (semRuido.match(/<\/div>/g) || []).length;
+  ok('9d. toda <div> do index.html fecha, nem uma a mais nem uma a menos', abre === fecha, { abre, fecha });
+  // Os grupos do menu moram DENTRO da lista rolavel da barra: o ultimo deles
+  // vem antes do fim dela.
+  const nav = semRuido.indexOf('class="sidebar-nav"');
+  let prof = 0, fim = -1;
+  const re = /<div\b|<\/div>/g; re.lastIndex = semRuido.lastIndexOf('<div', nav);
+  for (let m; (m = re.exec(semRuido));) { prof += m[0] === '</div>' ? -1 : 1; if (prof === 0) { fim = m.index; break; } }
+  ok('9e. Estoques, Cadastros e Sistema ficam dentro da barra lateral',
+     nav > 0 && fim > 0 && ['estoques', 'cadastros', 'sistema'].every(g => {
+       const i = semRuido.indexOf('data-group="' + g + '"'); return i > nav && i < fim; }), { nav, fim });
+}
 ok('10. area sem menu nao escreve endereco nenhum',
   A.ctx.escreveu === undefined && A.ctx.hash === '#estoque', A.ctx.hash);
 
