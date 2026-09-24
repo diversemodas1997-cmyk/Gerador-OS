@@ -16,6 +16,10 @@
  * Cada argumento e "tecido|pedaco da cor=bobinas". O pedaco da cor tem de
  * casar UMA prateleira so daquele tecido, senao o script para e lista.
  *
+ * --apagar=id1,id2 tira lancamentos MANUAIS antes da conta (entrada lancada
+ * duas vezes, ajuste velho que vai ser refeito). Lancamento de OS nao se apaga
+ * por aqui: ele sai da propria OS.
+ *
  * Depois de gravar: F5 no programa, senao aba aberta regrava o estoque velho.
  */
 const fs = require('fs');
@@ -28,6 +32,8 @@ const SUPA = 'http://localhost:8000';
 const GRAVAR = process.argv.includes('--gravar');
 const HOJE = new Date().toISOString().slice(0, 10);
 const PEDIDOS = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const APAGAR = ((process.argv.find(a => a.startsWith('--apagar=')) || '').slice(9))
+  .split(',').map(x => x.trim()).filter(Boolean);
 
 /* ---- a conta vem do app.js, recortada: uma so versao dela ---- */
 function contaDoApp(STATE, comprasCache) {
@@ -120,6 +126,15 @@ const norm = s => String(s || '').trim().toLowerCase();
   ['cores', 'tecidos', 'grades', 'ordens', 'desenhos', 'estoqueMov'].forEach(k => {
     if (!Array.isArray(base[k])) base[k] = [];
   });
+  // Os apagados saem ANTES da conta: o ajuste e calculado sem eles.
+  APAGAR.forEach(id => {
+    const m = base.estoqueMov.find(x => x.id === id);
+    if (!m) throw new Error('lancamento ' + id + ' nao existe');
+    if (m.origem !== 'manual') throw new Error('lancamento ' + id + ' nao e manual (origem ' + m.origem + ')');
+    console.log('apagar: ' + m.data + ' ' + m.tipo + ' ' + m.kg + ' kg  ' + m.tecidoNome + ' :: ' + m.corNome
+      + '  fech ' + (m.fechados || 0) + ' abr ' + (m.abertos || 0) + (m.obs ? '  "' + m.obs + '"' : ''));
+  });
+  base.estoqueMov = base.estoqueMov.filter(x => APAGAR.indexOf(x.id) < 0);
   const conta = mov => contaDoApp({ ...base, estoqueMov: mov }, compras);
   const C = conta(base.estoqueMov);
   const detalhe = C.calcularSaldosEstoque().detalhe;
@@ -168,7 +183,7 @@ const norm = s => String(s || '').trim().toLowerCase();
     if (bob !== n) throw new Error('conferencia falhou para ' + d.corNome);
   });
 
-  if (!novos.length) { console.log('\nNada a fazer.'); return; }
+  if (!novos.length && !APAGAR.length) { console.log('\nNada a fazer.'); return; }
   if (!GRAVAR) { console.log('\nSIMULACAO -- nada foi gravado. Rode com --gravar para aplicar.'); return; }
 
   const arq = path.join(RAIZ, 'backups',
@@ -179,5 +194,5 @@ const norm = s => String(s || '').trim().toLowerCase();
 
   data.estoqueMov = JSON.stringify(movF);
   await gravarBlob(cab, data, updatedAt);
-  console.log('gravado no servidor: ' + novos.length + ' lancamento(s) manual(is).');
+  console.log('gravado no servidor: ' + novos.length + ' lancamento(s) manual(is)' + (APAGAR.length ? ', ' + APAGAR.length + ' apagado(s)' : '') + '.');
 })().catch(e => { console.error('\nFALHOU: ' + e.message); process.exit(1); });
