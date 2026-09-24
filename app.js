@@ -1996,6 +1996,7 @@ const ACOES_POR_AREA = {
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
   // Expedição
   'alocar OS na expedição': 'expedicao', 'configurar a expedição': 'expedicao',
+  'alocar aviamento na expedição': 'expedicao', 'tirar aviamento da expedição': 'expedicao',
   'cadastrar janelas de expedição': 'expedicao', 'cancelar ou remarcar expedições': 'expedicao',
   'editar a folha de OE': 'expedicao', 'marcar a carga como feita': 'expedicao',
   'recalcular volumes': 'expedicao', 'remover OS da expedição': 'expedicao',
@@ -3070,7 +3071,8 @@ const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos',
 // chamada por cada função que mexe no plano (alocar, mover, excluir, cancelar,
 // remarcar, recalcular volumes, marcar Ensaque na OS…): todo caminho passa por
 // aqui, inclusive os que vierem depois.
-const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes'];
+// aviamentosMov entra porque o aviamento alocado numa perna sai na folha de OE.
+const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 'aviamentosMov'];
 
 async function saveState(key) {
   try {
@@ -8066,9 +8068,45 @@ function _aviPeriodo() {
    lançamentos; datas em AAAA-MM-DD (comparar texto é comparar data). Um
    lançamento sem data conta como de hoje. Lançamento com data futura não
    entra no corrente — ainda não aconteceu. */
-function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade) {
+/* O AVIAMENTO VIAJA NA OE (24/09/2026, Junior: "os volumes de entrada da
+   Unidade Descalvado são expedidos para Unidade São Carlos. Logo, o programa
+   precisa migrar os volumes de uma unidade para outra, através da Ordem de
+   expedição").
+
+   Um lançamento `tipo: 'expedicao'` é o aviamento alocado numa perna de uma
+   OE. A IDA leva de Descalvado para São Carlos, e a VOLTA traz de volta. É a
+   mesma regra do corte ensacado (ver _fracoesMovidasOS):
+
+     · ao ser ALOCADO, ele sai da unidade de origem (`dataSaida`, o dia em que
+       foi alocado) — está prometido ao caminhão, e não se aloca duas vezes;
+     · até a data da carga ele está EM TRÂNSITO, em nenhuma das duas;
+     · na DATA DA CARGA (a efetiva, se a ocorrência foi remarcada) ele ENTRA
+       na unidade de destino.
+
+   Tirar o aviamento da OE apaga o lançamento, e ele volta à origem. */
+const _aviOrigemDe = m => (m && m.perna === 'volta') ? 'sc' : 'desc';
+const _aviDestinoDe = m => (m && m.perna === 'volta') ? 'desc' : 'sc';
+
+// As duas pernas de um lançamento de expedição, como se fossem uma saída e uma
+// entrada comuns. `dataEfetiva` resolve a remarcação da ocorrência.
+function _aviPernasDaExpedicao(m, dataEfetiva) {
+  const chegada = String((dataEfetiva ? dataEfetiva(m) : m.data) || '');
+  const saida = String(m.dataSaida || chegada);
+  return [
+    { tipo: 'saida', unidade: _aviOrigemDe(m), item: m.item, cor: m.cor, kg: m.kg,
+      data: saida < chegada ? saida : chegada },
+    { tipo: 'entrada', unidade: _aviDestinoDe(m), item: m.item, cor: m.cor, kg: m.kg, data: chegada }
+  ];
+}
+
+function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
   const linhas = new Map();
+  const planos = [];
   (mov || []).forEach(m => {
+    if (m && m.tipo === 'expedicao') planos.push(..._aviPernasDaExpedicao(m, dataEfetiva));
+    else planos.push(m);
+  });
+  planos.forEach(m => {
     // Sem unidade pedida, conta as duas juntas.
     if (unidade && _aviUnidadeDe(m) !== unidade) return;
     const item = AVIAMENTO_TIPOS.find(t => _normNome(t) === _normNome(m.item)) || String(m.item || '').trim();
@@ -8100,7 +8138,7 @@ function renderEstoqueAviamentos() {
   const { de, ate, hoje } = _aviPeriodo();
   const mov = Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : [];
   const unidade = _aviUnidade;
-  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade);
+  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, _aviDataCarga);
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const num = (n, forte) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${forte ? 'font-weight:700;' : ''}color:${n < -0.0005 ? '#c0392b' : 'inherit'};">${fmt(n)} kg</td>`;
   const cab = `<thead><tr><th>Cor</th>
@@ -8129,21 +8167,64 @@ function renderEstoqueAviamentos() {
   };
   // Tipo fora dos cinco (lançamento importado de algum lugar) não some calado.
   const outros = [...new Set(linhas.map(l => l.item))].filter(t => AVIAMENTO_TIPOS.indexOf(t) < 0);
-  const noPeriodo = mov.filter(m => { const d = String(m.data || hoje); return _aviUnidadeDe(m) === unidade && d >= de && d <= ate; })
-    .slice().sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+  /* Os lançamentos desta unidade no período. A expedição aparece nas DUAS
+     unidades — como saída na origem, no dia em que foi alocada, e como entrada
+     no destino, no dia da carga — e não se apaga daqui: ela é tirada da OE,
+     onde foi posta. */
+  const rotuloUn = k => (((AVIAMENTO_UNIDADES.find(u => u.k === k)) || {}).rotulo || '').replace('Unidade ', '');
+  const noPeriodo = [];
+  mov.forEach(m => {
+    if (m.tipo === 'expedicao') {
+      _aviPernasDaExpedicao(m, _aviDataCarga).forEach(p => {
+        if (p.unidade === unidade && p.data >= de && p.data <= ate) noPeriodo.push({ ...p, id: m.id, exp: m });
+      });
+    } else {
+      const d = String(m.data || hoje);
+      if (_aviUnidadeDe(m) === unidade && d >= de && d <= ate) noPeriodo.push(m);
+    }
+  });
+  noPeriodo.sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+  const tipoCel = m => {
+    if (m.exp) {
+      const dCarga = formatDate(_aviDataCarga(m.exp));
+      return m.tipo === 'saida'
+        ? `<span class="badge" style="background:#e3eff2;">Expedida → ${esc(rotuloUn(_aviDestinoDe(m.exp)))}</span><div class="muted" style="font-size:10px;">OE de ${esc(dCarga)}</div>`
+        : `<span class="badge" style="background:#e3eff2;">Recebida de ${esc(rotuloUn(_aviOrigemDe(m.exp)))}</span><div class="muted" style="font-size:10px;">OE de ${esc(dCarga)}</div>`;
+    }
+    return m.tipo === 'saida' ? '<span class="badge" style="background:#f6dcda;">Saída</span>' : '<span class="badge" style="background:#d6f0db;">Entrada</span>';
+  };
   const lancHtml = `<div class="card">
     <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos do período · ${esc(((AVIAMENTO_UNIDADES.find(u => u.k === unidade)) || {}).rotulo || '')}</h2>
     <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Data</th><th>Tipo</th><th>Item</th><th>Cor</th>
       <th style="text-align:right;">Peso</th><th>Observação</th></tr></thead><tbody>
       ${noPeriodo.length ? noPeriodo.map(m => `<tr>
-        <td class="col-actions row-actions estoque-tecidos-only"><button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button></td>
+        <td class="col-actions row-actions estoque-tecidos-only">${m.exp
+          ? '<span class="muted" style="font-size:11px;" title="Para tirar, use o × da linha na Ordem de Expedição">na OE</span>'
+          : `<button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
-        <td>${m.tipo === 'saida' ? '<span class="badge" style="background:#f6dcda;">Saída</span>' : '<span class="badge" style="background:#d6f0db;">Entrada</span>'}</td>
+        <td>${tipoCel(m)}</td>
         <td>${esc(m.item)}</td><td>${esc(m.cor) || '—'}</td>
         <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
-        <td>${esc(m.obs) || ''}</td></tr>`).join('')
+        <td>${esc((m.exp ? m.exp.obs : m.obs) || '')}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">Nenhum lançamento neste período.</td></tr>'}
     </tbody></table></div>`;
+  /* EM TRÂNSITO: o que já saiu de uma unidade numa OE cuja data ainda não
+     chegou. Não está em nenhuma das duas, e é por isso que aparece à parte —
+     sem este quadro, o aviamento alocado para amanhã sumiria das duas abas. */
+  const transito = mov.filter(m => m.tipo === 'expedicao' && _aviDataCarga(m) > hoje
+    && (_aviOrigemDe(m) === unidade || _aviDestinoDe(m) === unidade))
+    .sort((a, b) => String(_aviDataCarga(a)).localeCompare(String(_aviDataCarga(b))));
+  const transitoHtml = transito.length ? `<div class="card">
+    <h2 style="margin:0 0 8px;font-size:14px;">Em trânsito</h2>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">Alocado numa Ordem de Expedição cuja data ainda não chegou: já saiu da origem e ainda não entrou no destino.</div>
+    <table class="table"><thead><tr><th>Carga</th><th>Sentido</th><th>Item</th><th>Cor</th><th style="text-align:right;">Peso</th><th style="text-align:right;">Volumes</th></tr></thead><tbody>
+      ${transito.map(m => `<tr>
+        <td style="white-space:nowrap;">${esc(formatDate(_aviDataCarga(m)))}</td>
+        <td>${_aviOrigemDe(m) === unidade ? 'Saindo para ' + esc(rotuloUn(_aviDestinoDe(m))) : 'Chegando de ' + esc(rotuloUn(_aviOrigemDe(m)))}</td>
+        <td>${esc(m.item)}</td><td>${esc(m.cor) || '—'}</td>
+        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
+        <td style="text-align:right;">${Number(m.volumes) > 0 ? Number(m.volumes) : '—'}</td></tr>`).join('')}
+    </tbody></table></div>` : '';
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_aviTrocarUnidade('${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
   cont.innerHTML = `
@@ -8161,7 +8242,14 @@ function renderEstoqueAviamentos() {
       </div>
     </div>
     ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
+    ${transitoHtml}
     ${lancHtml}`;
+}
+
+// A data em que a carga do aviamento acontece de fato (a ocorrência pode ter
+// sido remarcada — a mesma regra das cargas de OS).
+function _aviDataCarga(m) {
+  return _expDataEfetivaCarga({ janelaId: m.janelaId, data: m.data });
 }
 
 function _aviTrocarUnidade(k) {
@@ -8179,8 +8267,11 @@ function _aviMudarPeriodo(campo, valor) {
 }
 
 let movAviamentoTipo = 'entrada';
+// null = lançamento comum do estoque; {janelaId, dataOrig, perna} = alocação numa OE.
+let _aviExpCtx = null;
 function abrirMovAviamento(tipo) {
   if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
+  _aviExpCtx = null;
   movAviamentoTipo = tipo === 'saida' ? 'saida' : 'entrada';
   document.getElementById('modal-aviamento-title').textContent =
     movAviamentoTipo === 'entrada' ? 'Entrada de aviamento' : 'Saída de aviamento';
@@ -8202,6 +8293,7 @@ function abrirMovAviamento(tipo) {
 }
 
 async function salvarMovAviamento() {
+  if (_aviExpCtx) return salvarAviamentoExp();
   if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
   const v = id => (document.getElementById(id) || {}).value || '';
   const item = v('ma-item');
@@ -8232,6 +8324,7 @@ async function excluirMovAviamento(id) {
   if (!exigirEstoqueTecidos('apagar um lançamento de aviamentos')) return;
   const m = (STATE.aviamentosMov || []).find(x => x.id === id);
   if (!m) return;
+  if (m.tipo === 'expedicao') return toast('Este aviamento está numa Ordem de Expedição: tire-o de lá, no ×.', 'err');
   if (!confirm('Apagar este lançamento de ' + m.item + (m.cor ? ' ' + m.cor : '') + '?')) return;
   STATE.aviamentosMov = STATE.aviamentosMov.filter(x => x.id !== id);
   await saveState('aviamentosMov');
@@ -8243,6 +8336,105 @@ window.salvarMovAviamento = salvarMovAviamento;
 window.excluirMovAviamento = excluirMovAviamento;
 window._aviMudarPeriodo = _aviMudarPeriodo;
 window._aviTrocarUnidade = _aviTrocarUnidade;
+
+/* ---------- O AVIAMENTO NA ORDEM DE EXPEDIÇÃO ---------- */
+
+// Os aviamentos alocados numa perna de uma ocorrência (a data é a ORIGINAL da
+// ocorrência, como nas cargas de OS: remarcar leva o aviamento junto).
+function _aviDaPerna(janelaId, dataOrig, perna) {
+  return (STATE.aviamentosMov || []).filter(m => m.tipo === 'expedicao'
+    && m.janelaId === janelaId && m.data === dataOrig && m.perna === perna);
+}
+
+// O que a unidade tem HOJE de cada item+cor — o limite do que pode embarcar.
+// `semId` tira da conta a própria alocação (ao editar, ela não concorre consigo).
+function _aviSaldosNaUnidade(unidade, semId) {
+  const hoje = _aviHoje();
+  const mov = (STATE.aviamentosMov || []).filter(m => m.id !== semId);
+  return calcularEstoqueAviamentos(mov, hoje, hoje, hoje, unidade, _aviDataCarga)
+    .filter(l => l.corrente > 0.0005);
+}
+
+function abrirModalExpAviamento(janelaId, dataOrig, perna) {
+  if (!exigirEdicao('alocar aviamento na expedição')) return;
+  _aviExpCtx = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida' };
+  const origem = _aviOrigemDe(_aviExpCtx);
+  const nomeOrigem = ((AVIAMENTO_UNIDADES.find(u => u.k === origem)) || {}).rotulo || '';
+  const saldos = _aviSaldosNaUnidade(origem);
+  const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
+  document.getElementById('modal-aviamento-title').textContent =
+    'Alocar aviamento · ' + (_aviExpCtx.perna === 'ida' ? 'Ida' : 'Volta') + ' de ' + formatDate(dataOrig);
+  document.getElementById('modal-aviamento-fields').innerHTML = saldos.length ? `
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Sai da <b>${esc(nomeOrigem)}</b> agora e entra na outra unidade na data desta carga. Até lá fica <b>em trânsito</b>.</div>
+    <div class="form-grid cols-2">
+      <div class="field full"><label>Aviamento *</label><select id="mae-linha">
+        <option value="">— selecione —</option>
+        ${saldos.map((l, i) => `<option value="${i}">${esc(l.item)} · ${esc(l.cor || '(sem cor)')} — ${fmt(l.corrente)} kg na unidade</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Peso (kg) *</label><input type="number" min="0" step="0.001" id="mae-kg" placeholder="Ex.: 2,500"></div>
+      <div class="field"><label>Volumes</label><input type="number" min="0" step="1" id="mae-vol" placeholder="0"></div>
+      <div class="field full"><label>Observação (sai na folha de OE)</label><input type="text" id="mae-obs" placeholder="Ex.: caixa de linhas pretas"></div>
+    </div>` : `<div class="info-box">A <b>${esc(nomeOrigem)}</b> não tem aviamento em estoque hoje. Lance a entrada no <b>Estoque de aviamentos</b> primeiro.</div>`;
+  _aviExpSaldos = saldos;
+  openModal('modal-aviamento');
+}
+let _aviExpSaldos = [];
+
+async function salvarAviamentoExp() {
+  if (!exigirEdicao('alocar aviamento na expedição')) return;
+  const ctx = _aviExpCtx;
+  if (!ctx) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const linha = _aviExpSaldos[parseInt(v('mae-linha'), 10)];
+  if (!linha) return toast('Escolha o aviamento', 'err');
+  const kg = parseFloat(String(v('mae-kg')).replace(',', '.')) || 0;
+  if (!(kg > 0)) return toast('Informe o peso em kg', 'err');
+  // Não embarca o que a unidade não tem: o saldo é relido na hora de gravar,
+  // porque outra pessoa pode ter alocado o mesmo aviamento enquanto o modal
+  // estava aberto.
+  const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx))
+    .find(l => _normNome(l.item) === _normNome(linha.item) && _normNome(l.cor) === _normNome(linha.cor));
+  const tem = agora ? agora.corrente : 0;
+  if (kg > tem + 0.0005) {
+    return toast(`Só há ${tem.toFixed(3).replace('.', ',')} kg de ${linha.item} ${linha.cor} nesta unidade`, 'err');
+  }
+  if (!Array.isArray(STATE.aviamentosMov)) STATE.aviamentosMov = [];
+  STATE.aviamentosMov.push({
+    id: uid(),
+    tipo: 'expedicao',
+    janelaId: ctx.janelaId,
+    data: ctx.dataOrig,
+    perna: ctx.perna,
+    item: linha.item,
+    cor: linha.cor,
+    kg: Math.round(kg * 1000) / 1000,
+    volumes: Math.max(0, parseInt(v('mae-vol'), 10) || 0),
+    obs: v('mae-obs').trim(),
+    dataSaida: _aviHoje(),
+    por: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
+    em: new Date().toISOString()
+  });
+  _aviExpCtx = null;
+  await saveState('aviamentosMov');
+  closeModal('modal-aviamento');
+  toast('Aviamento alocado na expedição', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+
+async function excluirAviamentoExp(id) {
+  if (!exigirEdicao('tirar aviamento da expedição')) return;
+  const m = (STATE.aviamentosMov || []).find(x => x.id === id && x.tipo === 'expedicao');
+  if (!m) return;
+  if (!confirm(`Tirar ${m.item}${m.cor ? ' ' + m.cor : ''} (${Number(m.kg).toFixed(3).replace('.', ',')} kg) desta expedição?\n\nO aviamento volta para a unidade de origem.`)) return;
+  STATE.aviamentosMov = STATE.aviamentosMov.filter(x => x.id !== id);
+  await saveState('aviamentosMov');
+  toast('Aviamento tirado da expedição', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+window.abrirModalExpAviamento = abrirModalExpAviamento;
+window.excluirAviamentoExp = excluirAviamentoExp;
 
 /* ========================================================= */
 /*           ESTOQUE DE CORTE (peças cortadas)               */
@@ -10909,6 +11101,20 @@ function renderExpedicaoPlano() {
       <div class="exp-os-fases" title="Fases do enfesto que esta carga leva. Escolhidas no checklist de fases, em ⇄. Sai na folha de OE."><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}${fi.ficam.length ? ` · <span class="fic">ficam: ${esc(_expFasesTexto(fi.ficam))}</span>` : ''}</div>` : ''}${i.obs ? `
       <div class="exp-os-obs" title="Observação escrita ao alocar esta OS na expedição. Também sai na folha de OE.">${esc(i.obs)}</div>` : ''}`;
     }).join('') : '<div class="exp-vazio">Nenhuma OS alocada.</div>';
+    // Os aviamentos da perna, abaixo das OS (24/09/2026).
+    const avis = _aviDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const aviVol = avis.reduce((s, a) => s + (Number(a.volumes) || 0), 0);
+    const aviHtml = avis.length ? `
+      <div class="exp-avi-tit" style="margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);">Aviamentos</div>
+      ${avis.map(a => `
+      <div class="exp-os-row">
+        <span class="num" style="font-size:11px;">${esc(a.item)}</span>
+        <span class="mod">${esc(a.cor) || '—'}</span>
+        <span class="qtd">${Number(a.kg).toFixed(3).replace('.', ',')} kg</span>
+        <span class="vol">${Number(a.volumes) > 0 ? fmt(a.volumes) + ' vol' : ''}</span>
+        <span><button class="admin-only" title="Tirar este aviamento da carga (ele volta para a unidade de origem)" onclick="excluirAviamentoExp('${esc(a.id)}')">×</button></span>
+      </div>${a.obs ? `
+      <div class="exp-os-obs">${esc(a.obs)}</div>` : ''}`).join('')}` : '';
     return `
       <div class="exp-perna">
         <div class="exp-perna-head">
@@ -10918,10 +11124,10 @@ function renderExpedicaoPlano() {
           </div>
           <div class="exp-perna-hora">${esc(hora) || '—'}</div>
         </div>
-        <div class="exp-os-list">${linhas}</div>
+        <div class="exp-os-list">${linhas}${aviHtml}</div>
         <div class="exp-perna-total">
           <span>
-            <span class="vol">${fmt(r.volumes)}</span> vol
+            <span class="vol">${fmt(r.volumes)}</span> vol${aviVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(aviVol)} de aviamentos</span>` : ''}
             <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} un. · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
             ${r.semVolumes ? `<br><span style="color:var(--accent-dark);font-size:11px;">${r.semVolumes} OS sem volumes definidos — o total está incompleto</span>` : ''}
           </span>
@@ -10929,6 +11135,7 @@ function renderExpedicaoPlano() {
         </div>
         ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
+          <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar fio, linha, etiqueta, botão ou viés nesta carga: sai do estoque de aviamentos desta unidade e entra no da outra na data da carga" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Aviamento</button>
           ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou os produtos." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
       </div>`;
@@ -17508,7 +17715,9 @@ function renderPrintPlanoExpedicao() {
   const ocs = ocorrenciasExpedicao(ini, fim).filter(oc =>
     !oc.cancelada &&
     resumoPernaExpedicao(oc, 'ida').itens.length +
-    resumoPernaExpedicao(oc, 'volta').itens.length > 0);
+    resumoPernaExpedicao(oc, 'volta').itens.length +
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
@@ -17792,9 +18001,31 @@ function renderPrintPlanoExpedicao() {
       ? `<button type="button" class="exp-print-edit no-print" title="Mudar o horário desta expedição — vale só neste dia"
           onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">✎</button>`
       : '';
+    const avis = _aviDaPerna(oc.janela.id, oc.dataOrig, perna);
     const linhas = r.itens.length
       ? r.itens.map(osPrint).join('')
-      : '<div class="vazia">Sem OS alocada.</div>';
+      : (avis.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
+    /* OS AVIAMENTOS DA CARGA (24/09/2026): o que embarca de fio, linha,
+       etiqueta, botão e viés, com o peso — é o que a doca confere. */
+    const aviVol = avis.reduce((s, a) => s + (Number(a.volumes) || 0), 0);
+    const aviPrint = avis.length ? `
+      <div class="exp-print-os">
+        <div class="cab"><b>AVIAMENTOS</b></div>
+        <table style="width:100%;border-collapse:collapse;font-size:inherit;">
+          <thead><tr>
+            <th style="padding:0 2px;text-align:left;border-bottom:.5pt solid #999;">Item</th>
+            <th style="padding:0 2px;text-align:left;border-bottom:.5pt solid #999;">Cor</th>
+            <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Peso</th>
+            <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Vol</th>
+          </tr></thead>
+          <tbody>${avis.map(a => `<tr>
+            <td style="padding:0 2px;">${esc(a.item)}</td>
+            <td style="padding:0 2px;">${esc(a.cor) || '—'}</td>
+            <td style="padding:0 2px;text-align:right;font-family:'IBM Plex Mono',monospace;">${Number(a.kg).toFixed(3).replace('.', ',')} kg</td>
+            <td style="padding:0 2px;text-align:right;">${Number(a.volumes) > 0 ? fmt(a.volumes) : '—'}</td>
+          </tr>${a.obs ? `<tr><td colspan="4" style="padding:0 2px;font-style:italic;">${esc(a.obs)}</td></tr>` : ''}`).join('')}</tbody>
+        </table>
+      </div>` : '';
     // Cada perna ocupa metade da folha, cheia ou vazia — a largura fixa é o que
     // mantém a ida sempre na mesma metade, folha após folha.
     return `
@@ -17806,9 +18037,9 @@ function renderPrintPlanoExpedicao() {
           </div>
           <span class="h">${esc(hora) || '—'}${btnHora}</span>
         </div>
-        ${linhas}
+        ${linhas}${aviPrint}
         <div class="tot">
-          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.</span>
+          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.${aviVol > 0 ? ` · + ${fmt(aviVol)} vol de aviamentos` : ''}</span>
           <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
         </div>
       </div>`;
@@ -25329,7 +25560,9 @@ function oeTemConteudo() {
   return ocorrenciasExpedicao(ini, fim).some(oc =>
     !oc.cancelada &&
     resumoPernaExpedicao(oc, 'ida').itens.length +
-    resumoPernaExpedicao(oc, 'volta').itens.length > 0);
+    resumoPernaExpedicao(oc, 'volta').itens.length +
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
 }
 
 async function salvarPdfOeNaPasta({ silent = false } = {}) {

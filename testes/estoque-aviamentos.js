@@ -16,6 +16,8 @@ function pegaFuncao(nome) {
 }
 const tiposLinha = (src.match(/const AVIAMENTO_TIPOS = [^\n]*/) || [''])[0];
 const unidadeDe = (src.match(/const _aviUnidadeDe = [^\n]*/) || [''])[0];
+const origemDe = (src.match(/const _aviOrigemDe = [^\n]*/) || [''])[0];
+const destinoDe = (src.match(/const _aviDestinoDe = [^\n]*/) || [''])[0];
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -26,6 +28,9 @@ const ok = (nome, cond, extra) => {
 const api = new Function(`
   ${tiposLinha}
   ${unidadeDe}
+  ${origemDe}
+  ${destinoDe}
+  ${pegaFuncao('_aviPernasDaExpedicao')}
   ${pegaFuncao('_normNome')}
   ${pegaFuncao('calcularEstoqueAviamentos')}
   return { calcularEstoqueAviamentos, AVIAMENTO_TIPOS };
@@ -80,6 +85,34 @@ ok('9c. sem unidade pedida, as duas somam (6 + 3 = 9)',
 ok('9d. o lancamento grava a unidade escolhida', /unidade: v\('ma-unidade'\) === 'sc' \? 'sc' : 'desc'/.test(src));
 ok('9e. a tela tem as abas das duas unidades',
    /rotulo: 'Unidade Descalvado'/.test(src) && /rotulo: 'Unidade São Carlos'/.test(src) && /_aviTrocarUnidade\('\$\{u\.k\}'\)/.test(src));
+
+console.log('-- a migracao pela Ordem de Expedicao --');
+/* 24/09/2026: "os volumes de entrada da Unidade Descalvado sao expedidos para
+   Unidade Sao Carlos ... atraves da Ordem de expedicao". Descalvado tem 10 kg
+   de linha preta. Em 20/09 alocam-se 4 kg na IDA da carga de 25/09. */
+const base = [{ tipo: 'entrada', unidade: 'desc', item: 'Linha', cor: 'Preto', kg: 10, data: '2026-09-01' }];
+const ida = { tipo: 'expedicao', janelaId: 'j1', data: '2026-09-25', perna: 'ida', item: 'Linha', cor: 'Preto', kg: 4, dataSaida: '2026-09-20' };
+const em = (hoje, un, mv, efetiva) => api.calcularEstoqueAviamentos(mv || base.concat(ida), '2026-09-01', hoje, hoje, un, efetiva)
+  .find(x => x.item === 'Linha') || { corrente: 0, entrada: 0, saida: 0 };
+ok('14. antes de alocar, Descalvado tem os 10 kg', em('2026-09-19', 'desc').corrente === 10);
+ok('15. alocado (22/09): sai de Descalvado na hora (10 - 4 = 6)', em('2026-09-22', 'desc').corrente === 6, em('2026-09-22', 'desc'));
+ok('16. e ainda NAO chegou a Sao Carlos: esta em transito', em('2026-09-22', 'sc').corrente === 0, em('2026-09-22', 'sc'));
+ok('17. na data da carga (25/09) entra em Sao Carlos: 4 kg', em('2026-09-25', 'sc').corrente === 4, em('2026-09-25', 'sc'));
+ok('18. Descalvado segue com 6, e a soma das duas volta aos 10', em('2026-09-25', 'desc').corrente === 6 && em('2026-09-25').corrente === 10);
+ok('19. em Sao Carlos a expedicao conta como ENTRADA no periodo', em('2026-09-30', 'sc').entrada === 4);
+ok('20. em Descalvado ela conta como SAIDA no periodo', em('2026-09-30', 'desc').saida === 4);
+// Ocorrencia remarcada de 25/09 para 28/09: a chegada vai junto.
+const remarcada = m => (m.janelaId === 'j1' && m.data === '2026-09-25') ? '2026-09-28' : m.data;
+ok('21. carga remarcada (25 -> 28/09): em 26/09 ainda esta em transito',
+   em('2026-09-26', 'sc', null, remarcada).corrente === 0 && em('2026-09-28', 'sc', null, remarcada).corrente === 4);
+// A VOLTA traz de Sao Carlos para Descalvado.
+const volta = { tipo: 'expedicao', janelaId: 'j1', data: '2026-09-29', perna: 'volta', item: 'Linha', cor: 'Preto', kg: 1, dataSaida: '2026-09-29' };
+const mvv = base.concat(ida, volta);
+ok('22. a VOLTA tira de Sao Carlos e poe em Descalvado (SC 4 - 1 = 3, DESC 6 + 1 = 7)',
+   em('2026-09-30', 'sc', mvv).corrente === 3 && em('2026-09-30', 'desc', mvv).corrente === 7);
+ok('23. a OE tem o botao de alocar aviamento em cada perna, e a folha o imprime',
+   /onclick="abrirModalExpAviamento\(/.test(src) && /\$\{linhas\}\$\{aviPrint\}/.test(src));
+ok('24. nao embarca mais do que a unidade tem', /if \(kg > tem \+ 0\.0005\)/.test(src));
 
 console.log('-- a tela --');
 ok('9. o item de menu fica logo abaixo do Estoque de tecidos',
