@@ -8037,6 +8037,17 @@ async function excluirMovEstoque(id) {
    outra caixa ou acento cai na mesma linha (_normNome). */
 const AVIAMENTO_TIPOS = ['Fio', 'Linha', 'Etiqueta', 'Botão', 'Viés'];
 
+/* O TAMANHO DA ETIQUETA (24/09/2026, Junior: "insira na janela de entrada de
+   estoque de aviamento o tamanho da etiqueta (P, M, G, GG, G1, G2, G3)"). A
+   etiqueta de tamanho não serve para outro tamanho: 500 etiquetas M não cobrem
+   uma OS de G. Por isso o tamanho separa a linha do estoque (item + cor +
+   tamanho) e viaja com ela na OE. É opcional — etiqueta de marca e de
+   composição não têm tamanho — e só existe para a Etiqueta. */
+const AVIAMENTO_TAMANHOS = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+const _aviTamDe = m => (m && _normNome(m.item) === 'etiqueta' && AVIAMENTO_TAMANHOS.indexOf(m.tam) >= 0) ? m.tam : '';
+// "Etiqueta M", ou só o item quando não há tamanho.
+const _aviItemTexto = m => (m && m.item ? m.item : '') + (_aviTamDe(m) ? ' ' + _aviTamDe(m) : '');
+
 /* AS DUAS UNIDADES (24/09/2026, Junior: "no estoque de aviamentos, separe por
    Unidade Descalvado e Unidade São Carlos"). Cada lançamento diz de que
    unidade é, e a tela mostra uma de cada vez, em abas — cada uma com os seus
@@ -8093,9 +8104,9 @@ function _aviPernasDaExpedicao(m, dataEfetiva) {
   const chegada = String((dataEfetiva ? dataEfetiva(m) : m.data) || '');
   const saida = String(m.dataSaida || chegada);
   return [
-    { tipo: 'saida', unidade: _aviOrigemDe(m), item: m.item, cor: m.cor, kg: m.kg, qtd: m.qtd,
+    { tipo: 'saida', unidade: _aviOrigemDe(m), item: m.item, cor: m.cor, tam: m.tam, kg: m.kg, qtd: m.qtd,
       data: saida < chegada ? saida : chegada },
-    { tipo: 'entrada', unidade: _aviDestinoDe(m), item: m.item, cor: m.cor, kg: m.kg, qtd: m.qtd, data: chegada }
+    { tipo: 'entrada', unidade: _aviDestinoDe(m), item: m.item, cor: m.cor, tam: m.tam, kg: m.kg, qtd: m.qtd, data: chegada }
   ];
 }
 
@@ -8112,9 +8123,10 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
     const item = AVIAMENTO_TIPOS.find(t => _normNome(t) === _normNome(m.item)) || String(m.item || '').trim();
     if (!item) return;
     const cor = String(m.cor || '').trim();
-    const k = _normNome(item) + '||' + _normNome(cor);
+    const tam = _aviTamDe({ item, tam: m.tam });
+    const k = _normNome(item) + '||' + _normNome(cor) + '||' + tam;
     const zero = () => ({ anterior: 0, entrada: 0, saida: 0, corrente: 0 });
-    const cur = linhas.get(k) || { item, cor, kg: zero(), un: zero(), temKg: false, temUn: false };
+    const cur = linhas.get(k) || { item, cor, tam, kg: zero(), un: zero(), temKg: false, temUn: false };
     /* PESO E UNIDADE, lado a lado (24/09/2026, Junior: "deve haver entrada por
        quantidade de unidade"). Botão e etiqueta se contam; fio e linha se
        pesam. Cada lançamento traz um, o outro ou os dois, e as duas contas
@@ -8141,8 +8153,9 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
   // Os cinco volumes em kg ficam no topo (entrada, saida…), como sempre foram;
   // os em unidades moram em `un`.
   return Array.from(linhas.values()).map(l => ({
-    item: l.item, cor: l.cor, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
-  })).sort((a, b) => a.cor.localeCompare(b.cor, 'pt-BR'));
+    item: l.item, cor: l.cor, tam: l.tam, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
+  })).sort((a, b) => a.cor.localeCompare(b.cor, 'pt-BR')
+    || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
 }
 
 function renderEstoqueAviamentos() {
@@ -8178,7 +8191,7 @@ function renderEstoqueAviamentos() {
   const quadro = (tipo) => {
     const ls = linhas.filter(l => l.item === tipo);
     const corpo = ls.length
-      ? ls.map(l => linhaHtml(l, l.cor)).join('') + (ls.length > 1 ? linhaHtml(somar(ls), 'Total ' + tipo, true) : '')
+      ? ls.map(l => linhaHtml(l, [l.cor || '(sem cor)', l.tam ? 'tam. ' + l.tam : ''].filter(Boolean).join(' · '))).join('') + (ls.length > 1 ? linhaHtml(somar(ls), 'Total ' + tipo, true) : '')
       : `<tr><td colspan="6" class="empty">Nenhum lançamento de ${esc(tipo.toLowerCase())}.</td></tr>`;
     const t = somar(ls);
     return `<div class="card">
@@ -8228,7 +8241,7 @@ function renderEstoqueAviamentos() {
           : `<button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
         <td>${tipoCel(m)}</td>
-        <td>${esc(m.item)}</td><td>${esc(m.cor) || '—'}</td>
+        <td>${esc(_aviItemTexto(m))}</td><td>${esc(m.cor) || '—'}</td>
         <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(m))}</td>
         <td>${esc((m.exp ? m.exp.obs : m.obs) || '')}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">Nenhum lançamento neste período.</td></tr>'}
@@ -8246,7 +8259,7 @@ function renderEstoqueAviamentos() {
       ${transito.map(m => `<tr>
         <td style="white-space:nowrap;">${esc(formatDate(_aviDataCarga(m)))}</td>
         <td>${_aviOrigemDe(m) === unidade ? 'Saindo para ' + esc(rotuloUn(_aviDestinoDe(m))) : 'Chegando de ' + esc(rotuloUn(_aviOrigemDe(m)))}</td>
-        <td>${esc(m.item)}</td><td>${esc(m.cor) || '—'}</td>
+        <td>${esc(_aviItemTexto(m))}</td><td>${esc(m.cor) || '—'}</td>
         <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(m))}</td>
         <td style="text-align:right;">${Number(m.volumes) > 0 ? Number(m.volumes) : '—'}</td></tr>`).join('')}
     </tbody></table></div>` : '';
@@ -8315,8 +8328,10 @@ function abrirMovAviamento(tipo) {
     <div class="form-grid cols-2">
       <div class="field"><label>Unidade *</label><select id="ma-unidade">${AVIAMENTO_UNIDADES.map(u =>
         `<option value="${u.k}"${u.k === _aviUnidade ? ' selected' : ''}>${esc(u.rotulo)}</option>`).join('')}</select></div>
-      <div class="field"><label>Item *</label><select id="ma-item">
+      <div class="field"><label>Item *</label><select id="ma-item" onchange="_aviMostrarTamanho()">
         <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+      <div class="field" id="ma-tam-campo" style="display:none;"><label>Tamanho da etiqueta</label><select id="ma-tam">
+        <option value="">— sem tamanho —</option>${AVIAMENTO_TAMANHOS.map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>
       <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto">
         <datalist id="ma-cores">${cores.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
       <div class="field"><label>Quantidade (un)</label><input type="number" min="0" step="1" id="ma-qtd" placeholder="Ex.: 500"></div>
@@ -8327,6 +8342,17 @@ function abrirMovAviamento(tipo) {
     </div>`;
   openModal('modal-aviamento');
 }
+
+// O campo do tamanho só aparece para a Etiqueta.
+function _aviMostrarTamanho() {
+  const it = document.getElementById('ma-item');
+  const campo = document.getElementById('ma-tam-campo');
+  if (!it || !campo) return;
+  const eEtiqueta = _normNome(it.value) === 'etiqueta';
+  campo.style.display = eEtiqueta ? '' : 'none';
+  if (!eEtiqueta) { const t = document.getElementById('ma-tam'); if (t) t.value = ''; }
+}
+window._aviMostrarTamanho = _aviMostrarTamanho;
 
 async function salvarMovAviamento() {
   if (_aviExpCtx) return salvarAviamentoExp();
@@ -8343,6 +8369,7 @@ async function salvarMovAviamento() {
     tipo: movAviamentoTipo,
     unidade: v('ma-unidade') === 'sc' ? 'sc' : 'desc',
     item,
+    tam: _aviTamDe({ item, tam: v('ma-tam') }),
     cor: v('ma-cor').trim(),
     kg: Math.round(kg * 1000) / 1000,
     qtd,
@@ -8407,7 +8434,7 @@ function abrirModalExpAviamento(janelaId, dataOrig, perna) {
     <div class="form-grid cols-2">
       <div class="field full"><label>Aviamento *</label><select id="mae-linha">
         <option value="">— selecione —</option>
-        ${saldos.map((l, i) => `<option value="${i}">${esc(l.item)} · ${esc(l.cor || '(sem cor)')} — ${esc([
+        ${saldos.map((l, i) => `<option value="${i}">${esc(_aviItemTexto(l))} · ${esc(l.cor || '(sem cor)')} — ${esc([
           l.corrente > 0.0005 ? fmt(l.corrente) + ' kg' : '', l.un.corrente > 0 ? Math.round(l.un.corrente).toLocaleString('pt-BR') + ' un' : ''
         ].filter(Boolean).join(' · '))} na unidade</option>`).join('')}
       </select></div>
@@ -8435,14 +8462,14 @@ async function salvarAviamentoExp() {
   // porque outra pessoa pode ter alocado o mesmo aviamento enquanto o modal
   // estava aberto.
   const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx))
-    .find(l => _normNome(l.item) === _normNome(linha.item) && _normNome(l.cor) === _normNome(linha.cor));
+    .find(l => _normNome(l.item) === _normNome(linha.item) && _normNome(l.cor) === _normNome(linha.cor) && l.tam === linha.tam);
   const tem = agora ? agora.corrente : 0;
   const temUn = agora ? agora.un.corrente : 0;
   if (kg > tem + 0.0005) {
-    return toast(`Só há ${tem.toFixed(3).replace('.', ',')} kg de ${linha.item} ${linha.cor} nesta unidade`, 'err');
+    return toast(`Só há ${tem.toFixed(3).replace('.', ',')} kg de ${_aviItemTexto(linha)} ${linha.cor} nesta unidade`, 'err');
   }
   if (qtd > temUn) {
-    return toast(`Só há ${Math.round(temUn).toLocaleString('pt-BR')} un de ${linha.item} ${linha.cor} nesta unidade`, 'err');
+    return toast(`Só há ${Math.round(temUn).toLocaleString('pt-BR')} un de ${_aviItemTexto(linha)} ${linha.cor} nesta unidade`, 'err');
   }
   if (!Array.isArray(STATE.aviamentosMov)) STATE.aviamentosMov = [];
   STATE.aviamentosMov.push({
@@ -8452,6 +8479,7 @@ async function salvarAviamentoExp() {
     data: ctx.dataOrig,
     perna: ctx.perna,
     item: linha.item,
+    tam: linha.tam || '',
     cor: linha.cor,
     kg: Math.round(kg * 1000) / 1000,
     qtd,
@@ -8473,7 +8501,7 @@ async function excluirAviamentoExp(id) {
   if (!exigirEdicao('tirar aviamento da expedição')) return;
   const m = (STATE.aviamentosMov || []).find(x => x.id === id && x.tipo === 'expedicao');
   if (!m) return;
-  if (!confirm(`Tirar ${m.item}${m.cor ? ' ' + m.cor : ''} (${_aviQtdTexto(m)}) desta expedição?\n\nO aviamento volta para a unidade de origem.`)) return;
+  if (!confirm(`Tirar ${_aviItemTexto(m)}${m.cor ? ' ' + m.cor : ''} (${_aviQtdTexto(m)}) desta expedição?\n\nO aviamento volta para a unidade de origem.`)) return;
   STATE.aviamentosMov = STATE.aviamentosMov.filter(x => x.id !== id);
   await saveState('aviamentosMov');
   toast('Aviamento tirado da expedição', 'ok');
@@ -11155,7 +11183,7 @@ function renderExpedicaoPlano() {
       <div class="exp-avi-tit" style="margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);">Aviamentos</div>
       ${avis.map(a => `
       <div class="exp-os-row">
-        <span class="num" style="font-size:11px;">${esc(a.item)}</span>
+        <span class="num" style="font-size:11px;">${esc(_aviItemTexto(a))}</span>
         <span class="mod">${esc(a.cor) || '—'}</span>
         <span class="qtd">${esc(_aviQtdTexto(a))}</span>
         <span class="vol">${Number(a.volumes) > 0 ? fmt(a.volumes) + ' vol' : ''}</span>
@@ -18066,7 +18094,7 @@ function renderPrintPlanoExpedicao() {
             <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Vol</th>
           </tr></thead>
           <tbody>${avis.map(a => `<tr>
-            <td style="padding:0 2px;">${esc(a.item)}</td>
+            <td style="padding:0 2px;">${esc(_aviItemTexto(a))}</td>
             <td style="padding:0 2px;">${esc(a.cor) || '—'}</td>
             <td style="padding:0 2px;text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(a))}</td>
             <td style="padding:0 2px;text-align:right;">${Number(a.volumes) > 0 ? fmt(a.volumes) : '—'}</td>

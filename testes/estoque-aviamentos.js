@@ -16,6 +16,8 @@ function pegaFuncao(nome) {
 }
 const tiposLinha = (src.match(/const AVIAMENTO_TIPOS = [^\n]*/) || [''])[0];
 const unidadeDe = (src.match(/const _aviUnidadeDe = [^\n]*/) || [''])[0];
+const tamanhosLinha = (src.match(/const AVIAMENTO_TAMANHOS = [^\n]*/) || [''])[0];
+const tamDe = (src.match(/const _aviTamDe = [^\n]*/) || [''])[0];
 const origemDe = (src.match(/const _aviOrigemDe = [^\n]*/) || [''])[0];
 const destinoDe = (src.match(/const _aviDestinoDe = [^\n]*/) || [''])[0];
 
@@ -28,6 +30,8 @@ const ok = (nome, cond, extra) => {
 const api = new Function(`
   ${tiposLinha}
   ${unidadeDe}
+  ${tamanhosLinha}
+  ${tamDe}
   ${origemDe}
   ${destinoDe}
   ${pegaFuncao('_aviPernasDaExpedicao')}
@@ -135,6 +139,30 @@ ok('28. peso e quantidade no mesmo lancamento contam os dois', ambos.corrente ==
 ok('29. a janela tem o campo de quantidade e aceita so ela',
    /id="ma-qtd"/.test(src) && /if \(!\(kg > 0\) && !\(qtd > 0\)\) return toast\('Informe a quantidade \(un\) ou o peso \(kg\)'/.test(src));
 ok('30. a OE nao embarca mais unidades do que a unidade tem', /if \(qtd > temUn\)/.test(src));
+
+console.log('-- o tamanho da etiqueta --');
+/* 24/09/2026: "insira na janela de entrada de estoque de aviamento o tamanho
+   da etiqueta (P,M,G,GG,G1,G2,G3)". Etiqueta M nao serve para G: o tamanho
+   separa a linha. 300 M e 200 G pretas em Descalvado; 50 G embarcam na ida. */
+const met = [
+  { tipo: 'entrada', unidade: 'desc', item: 'Etiqueta', cor: 'Preto', tam: 'M', qtd: 300, data: '2026-09-02' },
+  { tipo: 'entrada', unidade: 'desc', item: 'Etiqueta', cor: 'Preto', tam: 'G', qtd: 200, data: '2026-09-02' },
+  { tipo: 'expedicao', janelaId: 'j1', data: '2026-09-25', perna: 'ida', item: 'Etiqueta', cor: 'Preto', tam: 'G', qtd: 50, dataSaida: '2026-09-20' },
+  // Tamanho em item que nao e etiqueta nao vale: o botao continua uma linha so.
+  { tipo: 'entrada', unidade: 'desc', item: 'Botão', cor: 'Preto', tam: 'M', qtd: 10, data: '2026-09-02' }
+];
+const et = api.calcularEstoqueAviamentos(met, '2026-09-01', '2026-09-30', '2026-09-30', 'desc');
+const etM = et.find(x => x.item === 'Etiqueta' && x.tam === 'M');
+const etG = et.find(x => x.item === 'Etiqueta' && x.tam === 'G');
+ok('31. a etiqueta M e a G sao linhas separadas', etM && etG && etM.un.corrente === 300, et);
+ok('32. a G que embarcou sai so da G (200 - 50 = 150)', etG && etG.un.corrente === 150, etG);
+ok('33. e chega a Sao Carlos como etiqueta G',
+   (api.calcularEstoqueAviamentos(met, '2026-09-01', '2026-09-30', '2026-09-30', 'sc').find(x => x.tam === 'G') || {}).un.corrente === 50);
+ok('34. tamanho em item que nao e etiqueta e ignorado', (et.find(x => x.item === 'Botão') || {}).tam === '', et.find(x => x.item === 'Botão'));
+ok('35. a ordem das linhas segue os tamanhos (M antes de G)', et.indexOf(etM) < et.indexOf(etG));
+ok('36. a janela tem o campo de tamanho, so para a etiqueta, com os sete tamanhos',
+   /id="ma-tam"/.test(src) && /campo\.style\.display = eEtiqueta \? '' : 'none'/.test(src)
+   && /const AVIAMENTO_TAMANHOS = \['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'\];/.test(src));
 
 console.log('-- a tela --');
 ok('9. o item de menu fica logo abaixo do Estoque de tecidos',
