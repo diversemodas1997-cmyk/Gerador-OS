@@ -8332,7 +8332,7 @@ function abrirMovAviamento(tipo) {
         <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
       <div class="field" id="ma-tam-campo" style="display:none;"><label>Tamanho da etiqueta</label><select id="ma-tam">
         <option value="">— sem tamanho —</option>${AVIAMENTO_TAMANHOS.map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>
-      <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto">
+      <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto" oninput="this.dataset.auto = ''">
         <datalist id="ma-cores">${cores.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
       <div class="field"><label>Quantidade (un)</label><input type="number" min="0" step="1" id="ma-qtd" placeholder="Ex.: 500"></div>
       <div class="field"><label>Peso (kg)</label><input type="number" min="0" step="0.001" id="ma-kg" placeholder="Ex.: 2,500"></div>
@@ -8344,6 +8344,12 @@ function abrirMovAviamento(tipo) {
 }
 
 // O campo do tamanho só aparece para a Etiqueta.
+/* E A ETIQUETA JÁ VEM PRETA (24/09/2026, Junior: "insira a cor preto como
+   automático para Etiquetas na entrada de estoque de aviamentos"). Só enche a
+   cor se ela estiver vazia — não apaga o que alguém já escreveu — e marca que
+   foi o programa (`data-auto`). Trocar a Etiqueta por outro item tira o Preto
+   que o programa pôs, mas não o que a pessoa digitou: digitar desmarca. */
+const AVIAMENTO_COR_ETIQUETA = 'Preto';
 function _aviMostrarTamanho() {
   const it = document.getElementById('ma-item');
   const campo = document.getElementById('ma-tam-campo');
@@ -8351,6 +8357,11 @@ function _aviMostrarTamanho() {
   const eEtiqueta = _normNome(it.value) === 'etiqueta';
   campo.style.display = eEtiqueta ? '' : 'none';
   if (!eEtiqueta) { const t = document.getElementById('ma-tam'); if (t) t.value = ''; }
+  const cor = document.getElementById('ma-cor');
+  if (cor) {
+    if (eEtiqueta && !cor.value.trim()) { cor.value = AVIAMENTO_COR_ETIQUETA; cor.dataset.auto = '1'; }
+    else if (!eEtiqueta && cor.dataset.auto === '1') { cor.value = ''; cor.dataset.auto = ''; }
+  }
 }
 window._aviMostrarTamanho = _aviMostrarTamanho;
 

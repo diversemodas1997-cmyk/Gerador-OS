@@ -164,6 +164,13 @@ ok('36. a janela tem o campo de tamanho, so para a etiqueta, com os sete tamanho
    /id="ma-tam"/.test(src) && /campo\.style\.display = eEtiqueta \? '' : 'none'/.test(src)
    && /const AVIAMENTO_TAMANHOS = \['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'\];/.test(src));
 
+// 24/09/2026: "insira a cor preto como automatico para Etiquetas".
+ok('37. a etiqueta ja vem Preto, so com a cor vazia, e o Preto automatico sai ao trocar de item',
+   /const AVIAMENTO_COR_ETIQUETA = 'Preto';/.test(src)
+   && /if \(eEtiqueta && !cor\.value\.trim\(\)\) \{ cor\.value = AVIAMENTO_COR_ETIQUETA; cor\.dataset\.auto = '1'; \}/.test(src)
+   && /else if \(!eEtiqueta && cor\.dataset\.auto === '1'\) \{ cor\.value = ''/.test(src)
+   && /id="ma-cor"[^>]*oninput="this\.dataset\.auto = ''"/.test(src));
+
 console.log('-- a tela --');
 ok('9. o item de menu fica logo abaixo do Estoque de tecidos',
    /data-page="estoque"[^>]*>Estoque de tecidos<\/a>\s*<a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos"[^>]*>Estoque de aviamentos<\/a>/.test(html));
