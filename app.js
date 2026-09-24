@@ -18933,6 +18933,8 @@ function _dashCartoesDaOS(o, opts) {
        do corte que ficou para trás — apareceria na mesa de corte E no campo
        Expedição ao mesmo tempo. */
     if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
+    // Separando (24/09/2026): o passo seguinte, também sem campo, com a mesma guarda.
+    if (atual < 0 && _statusOS(o) === 'separando') poe('separando', total);
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
@@ -19052,7 +19054,7 @@ function _dashFluxoDados() {
      lista responde "quais", que é a pergunta seguinte de quem olha o número. */
   const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
-    cortando: zero(),
+    cortando: zero(), separando: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
     idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
@@ -19367,6 +19369,10 @@ function _dashFluxoPassos(d) {
     { nome: 'Cortando', cards: [
       { k: 'cortando', nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
         dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
+    ] },
+    { nome: 'Separando', cards: [
+      { k: 'separando', nome: 'Na separação', v: d.separando, statusFiltro: 'separando',
+        dica: 'OS com o status Separando: saiu da mesa de corte e as unidades estão sendo separadas antes de ensacar. Ao marcar o Ensaque, o volume migra para Ensacado.' },
     ] },
     { nome: 'Estoque de corte', cards: [
       { k: 'corte', nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
@@ -26231,6 +26237,27 @@ const STATUS_OS = [
     enfesto: true, re: /enfest/i },
   { k: 'cortando',        cor: '#e2661a', bg: '#fdeede', bd: '#e6bb8a', rotulo: 'Cortando',                 ordem: 3, baixa: true,
     re: /corte|cortando/i },
+  /* SEPARANDO (24/09/2026, Junior: "insira a status Separando. Esse status
+     recebe o volume que migra do status Cortando" e "o status Ensacado recebe o
+     volume que migra do status Separando").
+
+     É o passo entre a mesa de corte e o saco: as unidades cortadas sendo
+     separadas por tamanho e tom antes de ensacar. O caminho fica
+     Cortando → Separando → Ensacado.
+
+     Como o Cortando, é trabalho em curso e não pano guardado — por isso não
+     tem campo no menu, e o cartão dele no Início é lido do status.
+
+     QUEM ACENDE: o carimbo à mão, e também uma etapa do checklist cujo nome
+     traga "separa" (Separação, Separar unidades…), se um dia ela for
+     cadastrada. Hoje nenhum desenho tem essa etapa, e o carimbo é o caminho.
+     Vale até a próxima etapa ser marcada: marcar o Ensaque leva a OS para
+     Ensacado sozinha, que é exatamente a migração pedida.
+
+     `ordem` 3.5 põe o separar entre o corte (3) e o ensaque na leitura de OS
+     antiga sem `etapasSeq`. A cor é o salmão, que ainda não tinha dono. */
+  { k: 'separando',       cor: '#f08a73', bg: '#fdece8', bd: '#f2b9ab', rotulo: 'Separando',                ordem: 3.5, baixa: true,
+    re: /separa/i },
   /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
      etapa de trabalho, e por isso ele não tinha status — mas é ele que diz que
      o pano está na prateleira DE LÁ, esperando a máquina, que é exatamente o

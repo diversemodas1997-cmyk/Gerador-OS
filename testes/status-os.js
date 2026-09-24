@@ -377,7 +377,7 @@ console.log('-- o que fica gravado --');
   // derrubar o teste.
   ok('12s. a fila do seletor esta na ordem pedida',
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
-     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando',
+     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando', 'Separando',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
       'Estoque em trânsito | Desc x São Carlos', 'Estoque em trânsito | São Carlos X Desc.',
       'Costurando | Descalvado', 'Costurando | São Carlos',
@@ -406,6 +406,12 @@ console.log('-- o que fica gravado --');
      comCarimbo('parado', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
   ok('12o. e para "Finalizado"',
      comCarimbo('estoque', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
+  // SEPARANDO (24/09/2026): Cortando -> Separando -> Ensacado. Carimbado depois
+  // do Corte, a OS sai da mesa de corte; marcado o Ensaque, migra para Ensacado.
+  ok('12o-1. Separando carimbado depois do Corte: sai de Cortando',
+     comCarimbo('separando', 5000, { 'Corte': true }, { 'Corte': 1000 }) === 'separando');
+  ok('12o-2. Ensaque marcado depois do Separando: vai para Ensacado',
+     comCarimbo('separando', 5000, { 'Corte': true, 'Ensaque': true }, { 'Corte': 1000, 'Ensaque': 9000 }) === 'ensacado');
   ok('12p. sem etapa marcada nenhuma, o carimbo vale sozinho',
      comCarimbo('parado', 1000, {}, {}) === 'parado');
   // As OS gravadas antes de 15/09/2026 tem a chave 'andamento', que saiu da
