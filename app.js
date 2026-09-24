@@ -7606,10 +7606,15 @@ function renderEstoque() {
      para cima — é o que se compra —, e para 270 gramas ela dá "1 bobina":
      começar por ela faria o selo exagerar justamente no caso em que não há
      problema. O quilo é o número exato; a bobina é o que pedir. */
+  /* O SELO DIZ QUAL PANO (24/09/2026, Junior). "faltam 5,253 kg" numa
+     linha de camiseta fazia pensar na malha do corpo, que estava sobrando — o
+     que faltava era a ribana da gola. O nome do pano vem antes do número. */
   const _resumoFalta = (os, fs) => {
     const t = faltaParaCompletarOS(os, fs);
     const kgTxt = fmt(t.faltaKg || fs.reduce((s, f) => s + (Number(f.falta) || 0), 0));
-    return `faltam ${kgTxt} kg` + (t.temBobina && t.faltaBob > 0 ? ` (${t.faltaBob} bob)` : '');
+    const panos = fs.map(f => (f.tecidoNome || '') + ' · '
+      + (corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)')).join(', ');
+    return `falta ${panos}: ${kgTxt} kg` + (t.temBobina && t.faltaBob > 0 ? ` (${t.faltaBob} bob)` : '');
   };
 
   /* O AVISO FECHA A CONTA DA OS (15/09/2026, Junior). Antes ele listava o que
@@ -7668,20 +7673,28 @@ function renderEstoque() {
 
      A segunda metade só aparece quando falta: "10/0" em toda fase com pano seria
      ruído em cima da leitura principal, que é o 10. */
+  /* SÓ A COLUNA DO PANO QUE FALTA FICA VERMELHA (24/09/2026, Junior: "pintar
+     só a coluna que falta"). A linha inteira era pintada, e com ela a coluna
+     do Corpo — as OS rosa 0571 e 0573 pareciam sem malha, com 37 kg de malha
+     rosa livres na prateleira. O que faltava era a ribana da gola. Agora a
+     célula da fase cujo tecido+cor está na falta ganha o fundo e o número
+     vermelhos, e as outras ficam como numa OS sem falta. Vale também para a
+     fase sem bobina prevista, que não tem o "/N" para avisar. */
   const celFase = (f, fatias) => {
     if (!f) return '<td style="text-align:right;color:var(--ink-3);">—</td>';
     const cor = corSemTecido(f.cor, f.tecido);
     const faltaBob = bobinasQueFaltamNaFase(f, fatias);
+    const emFalta = !!(fatias && fatias.get(_normNome(f.tecido) + '||' + _normNome(f.cor)) > 0);
     const dicaFase = esc(f.nome) + (faltaBob > 0
       ? ' — precisa de ' + f.bobinas + ' bobina(s) e ' + faltaBob
         + ' delas não estão na prateleira (o disponível deste pano não cobre esta fase).'
-      : '');
-    return `<td style="text-align:right;white-space:nowrap;" title="${dicaFase}">
+      : emFalta ? ' — o disponível deste pano não cobre esta fase.' : '');
+    return `<td style="text-align:right;white-space:nowrap;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
       <div style="font-family:'IBM Plex Mono',monospace;">
         ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span>${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">/${faltaBob}</span>` : ''} <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
-        <span style="font-size:10px;color:var(--ink-2);">· ${fmt(f.kg)} kg</span>
+        <span style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">· ${fmt(f.kg)} kg</span>
       </div>
-      <div style="font-size:10px;color:var(--ink-2);">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
+      <div style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
     </td>`;
   };
   /* O SKU COMPLETO NA COLUNA DO MODELO (14/09/2026, Junior).
@@ -7730,7 +7743,7 @@ function renderEstoque() {
     // fatiaQueFaltaPorTecidoCor. Uma conta só por linha, usada nas três colunas.
     const fatias = falta ? fatiaQueFaltaPorTecidoCor(os, falta) : null;
     return `
-    <tr${falta ? ' style="color:#c0392b;" title="' + dica + '"' : ''}>
+    <tr${falta ? ' title="' + dica + '"' : ''}>
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}${_skuCelula(os)}${_gradeCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>

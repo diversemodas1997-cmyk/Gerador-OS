@@ -246,8 +246,14 @@ console.log('-- o vermelho na lista de material reservado --');
   const tela = recorte('function renderEstoque', 'a tela do estoque de tecidos');
   ok('26. a lista de material reservado pergunta a falta por OS',
      /faltaPorOS\.set\(r\.osId, f\)/.test(tela) && /faltaDeTecidoParaOS\(os\)/.test(tela), '');
-  ok('27. e pinta a linha de vermelho quando ha falta',
-     /falta \? ' style="color:#c0392b;"/.test(tela), '');
+  // Desde 24/09/2026 a linha NAO e pintada inteira: so a celula da fase cujo
+  // pano falta (a ribana da gola das OS rosa parecia falta de malha).
+  ok('27. a linha nao e mais pintada inteira de vermelho',
+     !/falta \? ' style="color:#c0392b;"/.test(tela), '');
+  ok('27b. a celula da fase cujo pano falta e que fica vermelha',
+     /emFalta \? 'background:#fbe6e6;color:#c0392b;'/.test(tela), '');
+  ok('27c. e o selo diz qual pano falta',
+     /falta \$\{panos\}/.test(tela), '');
   ok('28. a falta NAO e gravada na OS — nada de marca a limpar depois',
      !/\.faltaPano\s*=/.test(tela) && !/o\.semPano\s*=/.test(tela), '');
 }
