@@ -1269,6 +1269,7 @@ function iniciarRealtimeCompras() {
         await carregarComprasMateriais();
         const ativa = document.querySelector('section.page:not(.hidden)');
         if ((ativa?.dataset?.page || '') === 'estoque') renderEstoque();
+        if ((ativa?.dataset?.page || '') === 'estoque-aviamentos') renderEstoqueAviamentos();
       })
     .subscribe();
 }
@@ -1988,6 +1989,8 @@ const ACOES_POR_AREA = {
   // Estoque de tecidos
   'lançar no estoque de tecidos': 'estoque-tecidos',
   'apagar um lançamento de estoque': 'estoque-tecidos',
+  'lançar no estoque de aviamentos': 'estoque-tecidos',
+  'apagar um lançamento de aviamentos': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -2451,7 +2454,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -2982,6 +2985,8 @@ const STATE = {
   costurandoScMov: [],
   fiosMov: [],
   expedicaoMov: [],
+  // Estoque de aviamentos (24/09/2026): lancamentos manuais em kg, por tipo e cor.
+  aviamentosMov: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3174,6 +3179,7 @@ const DESFAZER_NOMES = {
   costurandoScMov: ['lançamento da costura em São Carlos', 'lançamentos da costura em São Carlos'],
   fiosMov: ['lançamento de fios', 'lançamentos de fios'],
   expedicaoMov: ['lançamento da expedição', 'lançamentos da expedição'],
+  aviamentosMov: ['lançamento de aviamento', 'lançamentos de aviamento'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3328,7 +3334,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4000,6 +4006,7 @@ function goto(page) {
     renderListaOS();
   }
   if (page === 'estoque') renderEstoque();
+  if (page === 'estoque-aviamentos') renderEstoqueAviamentos();
   if (page === 'compra') renderCompra();
   // Sempre por ID da fase: a ordem de FASES_ESTOQUE muda quando entra campo novo
   // (as unidades entraram no meio), e índice fixo aqui abriria o painel errado.
@@ -7994,6 +8001,218 @@ async function excluirMovEstoque(id) {
   toast('Movimentação excluída', 'ok');
   renderEstoque();
 }
+
+/* ========================================================= */
+/*                ESTOQUE DE AVIAMENTOS (kg)                  */
+/* ========================================================= */
+/* 24/09/2026, Junior: "Insira um Estoque de aviamentos na barra lateral abaixo
+   de Estoque de tecidos. O Estoque de aviamentos deve contabilizar volume de
+   entrada, volume de saída, volume residual (estocado), volume corrente e
+   volume total. Os itens devem ter quadro para cada tipo: Fio, linha,
+   etiqueta, botão, viés. Esses itens devem contemplar cor e peso".
+
+   A MEDIDA É O PESO (kg), para todos os tipos — foi o pedido. Cada lançamento
+   diz o tipo, a cor e o peso, e é entrada ou saída. Nada aqui é automático:
+   a OS não consome aviamento sozinha, porque nenhum cadastro diz quanto fio ou
+   quantos botões uma peça leva. Lança-se à mão, como o ajuste do tecido.
+
+   OS CINCO VOLUMES são os do painel do Início, com as mesmas palavras e a
+   mesma conta, num período que quem olha escolhe (de … até):
+     ENTRADA    o que entrou no período
+     SAÍDA      o que saiu no período
+     RESIDUAL   o que ficou estocado no FIM do período:
+                o de antes do período + entrada − saída
+     CORRENTE   o que há HOJE, qualquer que seja o período escolhido
+     TOTAL      tudo o que esteve no estoque no período: o que já havia
+                quando ele começou + o que entrou
+   Com o período terminando hoje, residual e corrente dão o mesmo número; eles
+   se separam quando se olha um mês que já passou.
+
+   A COR É TEXTO LIVRE, com sugestões. O cadastro de cores é por TECIDO
+   ("Preto Malha Algodão"), e fio ou botão não é malha: forçar aquela lista
+   aqui faria o botão preto sair como "Preto Moletom". As sugestões são as
+   cores do cadastro sem o tecido (Preto, Bege…), e a mesma cor escrita com
+   outra caixa ou acento cai na mesma linha (_normNome). */
+const AVIAMENTO_TIPOS = ['Fio', 'Linha', 'Etiqueta', 'Botão', 'Viés'];
+
+// O período em foco: do primeiro dia do mês até hoje, até alguém mudar.
+let _aviDe = '', _aviAte = '';
+function _aviHoje() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _aviPeriodo() {
+  const hoje = _aviHoje();
+  if (!_aviAte) _aviAte = hoje;
+  if (!_aviDe) _aviDe = hoje.slice(0, 8) + '01';
+  return { de: _aviDe, ate: _aviAte, hoje };
+}
+
+/* A CONTA, sem tela: por tipo e cor, os cinco volumes. `mov` é a lista de
+   lançamentos; datas em AAAA-MM-DD (comparar texto é comparar data). Um
+   lançamento sem data conta como de hoje. Lançamento com data futura não
+   entra no corrente — ainda não aconteceu. */
+function calcularEstoqueAviamentos(mov, de, ate, hoje) {
+  const linhas = new Map();
+  (mov || []).forEach(m => {
+    const item = AVIAMENTO_TIPOS.find(t => _normNome(t) === _normNome(m.item)) || String(m.item || '').trim();
+    if (!item) return;
+    const cor = String(m.cor || '').trim();
+    const k = _normNome(item) + '||' + _normNome(cor);
+    const cur = linhas.get(k) || { item, cor, anterior: 0, entrada: 0, saida: 0, corrente: 0 };
+    const kg = Number(m.kg) || 0;
+    const sinal = m.tipo === 'saida' ? -1 : 1;
+    const data = String(m.data || hoje);
+    if (data < de) cur.anterior += sinal * kg;
+    else if (data <= ate) { if (sinal > 0) cur.entrada += kg; else cur.saida += kg; }
+    if (data <= hoje) cur.corrente += sinal * kg;
+    linhas.set(k, cur);
+  });
+  const r3 = n => Math.round(n * 1000) / 1000;
+  return Array.from(linhas.values()).map(l => ({
+    item: l.item, cor: l.cor,
+    entrada: r3(l.entrada), saida: r3(l.saida),
+    residual: r3(l.anterior + l.entrada - l.saida),
+    corrente: r3(l.corrente),
+    total: r3(l.anterior + l.entrada)
+  })).sort((a, b) => a.cor.localeCompare(b.cor, 'pt-BR'));
+}
+
+function renderEstoqueAviamentos() {
+  const cont = document.getElementById('aviamentos-painel');
+  if (!cont) return;
+  const { de, ate, hoje } = _aviPeriodo();
+  const mov = Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : [];
+  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje);
+  const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const num = (n, forte) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${forte ? 'font-weight:700;' : ''}color:${n < -0.0005 ? '#c0392b' : 'inherit'};">${fmt(n)} kg</td>`;
+  const cab = `<thead><tr><th>Cor</th>
+    <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th>
+    <th style="text-align:right;" title="O que ficou estocado no fim do período: o de antes + entrada − saída">Residual (estocado)</th>
+    <th style="text-align:right;" title="O que há hoje, qualquer que seja o período">Corrente</th>
+    <th style="text-align:right;" title="O que já havia no início do período + o que entrou">Total</th></tr></thead>`;
+  const linhaHtml = (l, rotulo, total) => `<tr${total ? ' style="background:#eef6f0;"' : ''}>
+    <td>${total ? `<span style="font-weight:700;color:var(--ink-2);">${esc(rotulo)}</span>` : `<strong>${esc(rotulo) || '<span style="color:var(--ink-3)">(sem cor)</span>'}</strong>`}</td>
+    ${num(l.entrada)}${num(l.saida)}${num(l.residual, true)}${num(l.corrente, true)}${num(l.total)}</tr>`;
+  const somar = ls => ['entrada', 'saida', 'residual', 'corrente', 'total']
+    .reduce((o, k) => (o[k] = ls.reduce((s, l) => s + l[k], 0), o), {});
+  const quadro = (tipo) => {
+    const ls = linhas.filter(l => l.item === tipo);
+    const corpo = ls.length
+      ? ls.map(l => linhaHtml(l, l.cor)).join('') + (ls.length > 1 ? linhaHtml(somar(ls), 'Total ' + tipo, true) : '')
+      : `<tr><td colspan="6" class="empty">Nenhum lançamento de ${esc(tipo.toLowerCase())}.</td></tr>`;
+    const t = somar(ls);
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">${esc(tipo)}</h2>
+        <div class="muted" style="font-size:12px;">${ls.length} cor${ls.length === 1 ? '' : 'es'} · corrente <b style="font-family:'IBM Plex Mono',monospace;">${fmt(t.corrente)} kg</b></div>
+      </div>
+      <table class="table">${cab}<tbody>${corpo}</tbody></table>
+    </div>`;
+  };
+  // Tipo fora dos cinco (lançamento importado de algum lugar) não some calado.
+  const outros = [...new Set(linhas.map(l => l.item))].filter(t => AVIAMENTO_TIPOS.indexOf(t) < 0);
+  const noPeriodo = mov.filter(m => { const d = String(m.data || hoje); return d >= de && d <= ate; })
+    .slice().sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+  const lancHtml = `<div class="card">
+    <h2 style="margin:0 0 8px;font-size:14px;">Lançamentos do período</h2>
+    <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Data</th><th>Tipo</th><th>Item</th><th>Cor</th>
+      <th style="text-align:right;">Peso</th><th>Observação</th></tr></thead><tbody>
+      ${noPeriodo.length ? noPeriodo.map(m => `<tr>
+        <td class="col-actions row-actions estoque-tecidos-only"><button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button></td>
+        <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
+        <td>${m.tipo === 'saida' ? '<span class="badge" style="background:#f6dcda;">Saída</span>' : '<span class="badge" style="background:#d6f0db;">Entrada</span>'}</td>
+        <td>${esc(m.item)}</td><td>${esc(m.cor) || '—'}</td>
+        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
+        <td>${esc(m.obs) || ''}</td></tr>`).join('')
+        : '<tr><td colspan="7" class="empty">Nenhum lançamento neste período.</td></tr>'}
+    </tbody></table></div>`;
+  cont.innerHTML = `
+    <div class="card">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="field" style="margin:0;"><label>De</label><input type="date" value="${esc(de)}" onchange="_aviMudarPeriodo('de', this.value)"></div>
+        <div class="field" style="margin:0;"><label>Até</label><input type="date" value="${esc(ate)}" onchange="_aviMudarPeriodo('ate', this.value)"></div>
+        <button class="btn small ghost" onclick="_aviMudarPeriodo('mes')">Este mês</button>
+        <div class="muted" style="font-size:12px;flex:1 1 320px;">
+          <b>Entrada</b> e <b>saída</b>: o que entrou e saiu no período. <b>Residual (estocado)</b>: o que ficou no fim
+          do período (o de antes + entrada − saída). <b>Corrente</b>: o que há hoje. <b>Total</b>: o que já havia no
+          início do período + o que entrou. Tudo em <b>kg</b>.
+        </div>
+      </div>
+    </div>
+    ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
+    ${lancHtml}`;
+}
+
+function _aviMudarPeriodo(campo, valor) {
+  if (campo === 'mes') { _aviDe = ''; _aviAte = ''; }
+  else if (campo === 'de' && valor) _aviDe = valor;
+  else if (campo === 'ate' && valor) _aviAte = valor;
+  // De depois de Até não é período: os dois trocam de lugar.
+  if (_aviDe && _aviAte && _aviDe > _aviAte) { const x = _aviDe; _aviDe = _aviAte; _aviAte = x; }
+  renderEstoqueAviamentos();
+}
+
+let movAviamentoTipo = 'entrada';
+function abrirMovAviamento(tipo) {
+  if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
+  movAviamentoTipo = tipo === 'saida' ? 'saida' : 'entrada';
+  document.getElementById('modal-aviamento-title').textContent =
+    movAviamentoTipo === 'entrada' ? 'Entrada de aviamento' : 'Saída de aviamento';
+  const cores = [...new Set((STATE.cores || []).map(c => corNomeCurto(c.nome)).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  document.getElementById('modal-aviamento-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Item *</label><select id="ma-item">
+        <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto">
+        <datalist id="ma-cores">${cores.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="field"><label>Peso (kg) *</label><input type="number" min="0" step="0.001" id="ma-kg" placeholder="Ex.: 2,500"></div>
+      <div class="field"><label>Data</label><input type="date" id="ma-data" value="${_aviHoje()}"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="ma-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
+    </div>`;
+  openModal('modal-aviamento');
+}
+
+async function salvarMovAviamento() {
+  if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const item = v('ma-item');
+  if (!item) return toast('Selecione o item', 'err');
+  const kg = parseFloat(String(v('ma-kg')).replace(',', '.')) || 0;
+  if (!(kg > 0)) return toast('Informe o peso em kg', 'err');
+  if (!Array.isArray(STATE.aviamentosMov)) STATE.aviamentosMov = [];
+  STATE.aviamentosMov.push({
+    id: uid(),
+    tipo: movAviamentoTipo,
+    item,
+    cor: v('ma-cor').trim(),
+    kg: Math.round(kg * 1000) / 1000,
+    data: v('ma-data') || _aviHoje(),
+    obs: v('ma-obs').trim(),
+    por: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
+    em: new Date().toISOString()
+  });
+  await saveState('aviamentosMov');
+  closeModal('modal-aviamento');
+  toast(movAviamentoTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  renderEstoqueAviamentos();
+}
+
+async function excluirMovAviamento(id) {
+  if (!exigirEstoqueTecidos('apagar um lançamento de aviamentos')) return;
+  const m = (STATE.aviamentosMov || []).find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('Apagar este lançamento de ' + m.item + (m.cor ? ' ' + m.cor : '') + '?')) return;
+  STATE.aviamentosMov = STATE.aviamentosMov.filter(x => x.id !== id);
+  await saveState('aviamentosMov');
+  toast('Lançamento apagado', 'ok');
+  renderEstoqueAviamentos();
+}
+window.abrirMovAviamento = abrirMovAviamento;
+window.salvarMovAviamento = salvarMovAviamento;
+window.excluirMovAviamento = excluirMovAviamento;
+window._aviMudarPeriodo = _aviMudarPeriodo;
 
 /* ========================================================= */
 /*           ESTOQUE DE CORTE (peças cortadas)               */

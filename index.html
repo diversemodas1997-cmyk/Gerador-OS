@@ -145,6 +145,7 @@
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
       <div class="nav-items">
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
+        <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
         <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
         <!-- ESTOQUE COM FIO fica aqui, e não em Operações, porque é peça
@@ -392,6 +393,22 @@
         </div>
       </div>
       <div id="estoque-painel"></div>
+    </section>
+
+    <!-- ESTOQUE DE AVIAMENTOS (24/09/2026): fio, linha, etiqueta, botão e viés,
+         em kg, por cor. Quem lança é quem lança no estoque de tecidos. -->
+    <section class="page hidden" data-page="estoque-aviamentos">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de aviamentos</h1>
+          <div class="desc">Fio, linha, etiqueta, botão e viés, em kg e por cor. Entrada, saída, residual (estocado), corrente e total no período escolhido. Os lançamentos são manuais.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirMovAviamento('entrada')">+ Entrada</button>
+          <button class="btn" onclick="abrirMovAviamento('saida')">− Saída</button>
+        </div>
+      </div>
+      <div id="aviamentos-painel"></div>
     </section>
 
     <!-- RANKING DE PRODUÇÃO: o que a fábrica mais faz, cruzando SKU, cor e grade -->
@@ -1393,6 +1410,18 @@
   </div>
 </div>
 
+<!-- ============= MODAL MOVIMENTAÇÃO DE AVIAMENTOS ============= -->
+<div class="modal-backdrop" id="modal-aviamento">
+  <div class="modal">
+    <h2 id="modal-aviamento-title">Entrada de aviamento</h2>
+    <div id="modal-aviamento-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-aviamento')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovAviamento()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL MOVIMENTAÇÃO DE ESTOQUE DE CORTE ============= -->
 <div class="modal-backdrop" id="modal-corte">
   <div class="modal">
@@ -1615,6 +1644,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-24f"></script>
+<script src="app.js?v=2026-09-24g"></script>
 </body>
 </html>
