@@ -2018,6 +2018,7 @@ const ACOES_POR_AREA = {
   'conectar a pasta de PDFs': 'dados', 'desconectar a pasta de PDFs': 'dados',
   'conectar a pasta de backup': 'dados', 'desconectar a pasta de backup': 'dados',
   'conectar a pasta das OE': 'dados', 'desconectar a pasta das OE': 'dados',
+  'conectar a pasta das OC': 'dados', 'desconectar a pasta das OC': 'dados',
   'conectar a pasta das exportações': 'dados', 'desconectar a pasta das exportações': 'dados'
 };
 
@@ -4037,6 +4038,7 @@ function goto(page) {
     atualizarPdfFolderStatus();
     atualizarBackupFolderStatus();
     atualizarOeFolderStatus();
+    atualizarOcFolderStatus();
     atualizarExportFolderStatus();
     // A lista de contas se carrega sozinha ao abrir a tela: quem entra aqui
     // para criar uma conta precisa antes ver quem já tem — senão cria repetida.
@@ -36764,6 +36766,7 @@ async function gerarOCdaCompra() {
   await saveState('compraOCs');
   await saveState('meta');
   renderCompra();
+  agendarAutoSaveOC(oc.id);
   toast(`${oc.numero} gerada com ${linhas.length} tecido(s)`, 'ok');
 }
 window.gerarOCdaCompra = gerarOCdaCompra;
@@ -36786,6 +36789,7 @@ async function ocCampo(id, campo, valor) {
   desfazerNomearAcao('ordem de compra ' + oc.numero);
   await saveState('compraOCs');
   renderCompra();
+  agendarAutoSaveOC(oc.id);
 }
 window.ocCampo = ocCampo;
 
@@ -36801,6 +36805,7 @@ async function ocItemCampo(id, idx, campo, valor) {
   desfazerNomearAcao('ordem de compra ' + oc.numero);
   await saveState('compraOCs');
   renderCompra();
+  agendarAutoSaveOC(oc.id);
 }
 window.ocItemCampo = ocItemCampo;
 
@@ -36812,6 +36817,7 @@ async function ocItemRemover(id, idx) {
   desfazerNomearAcao('ordem de compra ' + oc.numero);
   await saveState('compraOCs');
   renderCompra();
+  agendarAutoSaveOC(oc.id);
 }
 window.ocItemRemover = ocItemRemover;
 
@@ -36836,9 +36842,30 @@ window.ocRemover = ocRemover;
    já disputam as regras de impressão desta página entre si; entrar de terceiro
    ali faria a OC sair com a margem de uma e a fonte da outra, e mexer nisso
    arriscaria as duas folhas que a fábrica usa todo dia. */
-function imprimirOC(id) {
-  const oc = _ocPorId(id);
-  if (!oc) return;
+/* O PAPEL E UM SO, e sai por dois caminhos (24/09/2026): a janela de
+   impressao e o PDF gravado na pasta das OC. O CSS vai todo debaixo de
+   `.oc-papel` para poder ser desenhado DENTRO desta pagina na hora do PDF sem
+   vazar para o resto da tela nem herdar dela. */
+const _OC_PAPEL_CSS = `
+  .oc-papel { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-size: 12pt; background: #fff; }
+  .oc-papel * { box-sizing: border-box; }
+  .oc-papel h1 { font-size: 20pt; letter-spacing: .06em; margin: 0 0 2mm; color: #111; }
+  .oc-papel .sub { color: #555; font-size: 10pt; margin-bottom: 6mm; }
+  .oc-papel .cab { display: flex; gap: 10mm; flex-wrap: wrap; border: 1px solid #000; padding: 3mm 4mm; margin-bottom: 5mm; }
+  .oc-papel .cab div { font-size: 10.5pt; }
+  .oc-papel .cab b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; font-weight: 700; }
+  .oc-papel table { width: 100%; border-collapse: collapse; background: #fff; }
+  .oc-papel th, .oc-papel td { border: 1px solid #000; padding: 2mm 3mm; text-align: left; font-size: 11pt; color: #111; }
+  .oc-papel th { background: #eee; font-size: 9pt; letter-spacing: .08em; text-transform: uppercase; }
+  .oc-papel td.num, .oc-papel th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .oc-papel tfoot td { font-weight: 700; background: #f5f5f5; }
+  .oc-papel .obs { margin-top: 5mm; border: 1px solid #000; padding: 3mm 4mm; font-size: 10.5pt; white-space: pre-wrap; min-height: 18mm; }
+  .oc-papel .obs b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
+  .oc-papel .assina { margin-top: 14mm; display: flex; gap: 14mm; }
+  .oc-papel .assina div { flex: 1; border-top: 1px solid #000; padding-top: 2mm; font-size: 9.5pt; text-align: center; color: #555; }`;
+
+// O miolo do papel (sem <html>, sem barra de botões).
+function _ocPapelHtml(oc) {
   const e = (v) => String(v == null ? '' : v)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const kg = n => Number(n || 0).toFixed(3).replace('.', ',');
@@ -36852,36 +36879,7 @@ function imprimirOC(id) {
       <td class="num">${Number(i.bobinas) > 0 ? Number(i.bobinas) : '—'}</td>
       <td class="num">${kg(i.kg)}</td>
     </tr>`).join('');
-  const html = `<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="utf-8">
-<title>${e(oc.numero)}</title>
-<style>
-  @page { size: A4 portrait; margin: 14mm 14mm 16mm 14mm; }
-  * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; font-size: 12pt; margin: 0; padding: 18px; background: #fff; }
-  .toolbar { margin-bottom: 14px; }
-  .toolbar button { font: inherit; padding: 6px 12px; margin-right: 6px; cursor: pointer; }
-  h1 { font-size: 20pt; letter-spacing: .06em; margin: 0 0 2mm; }
-  .sub { color: #555; font-size: 10pt; margin-bottom: 6mm; }
-  .cab { display: flex; gap: 10mm; flex-wrap: wrap; border: 1px solid #000; padding: 3mm 4mm; margin-bottom: 5mm; }
-  .cab div { font-size: 10.5pt; }
-  .cab b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; font-weight: 700; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #000; padding: 2mm 3mm; text-align: left; font-size: 11pt; }
-  th { background: #eee; font-size: 9pt; letter-spacing: .08em; text-transform: uppercase; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  tfoot td { font-weight: 700; background: #f5f5f5; }
-  .obs { margin-top: 5mm; border: 1px solid #000; padding: 3mm 4mm; font-size: 10.5pt; white-space: pre-wrap; min-height: 18mm; }
-  .obs b { display: block; font-size: 8.5pt; letter-spacing: .1em; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
-  .assina { margin-top: 14mm; display: flex; gap: 14mm; }
-  .assina div { flex: 1; border-top: 1px solid #000; padding-top: 2mm; font-size: 9.5pt; text-align: center; color: #555; }
-  @media print { .toolbar { display: none !important; } body { padding: 0; } }
-</style></head>
-<body>
-  <div class="toolbar">
-    <button onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
-    <button onclick="window.close()">Fechar</button>
-  </div>
+  return `<div class="oc-papel">
   <h1>ORDEM DE COMPRA ${e(oc.numero)}</h1>
   <div class="sub">Tecidos · emitida pelo Gerador-OS</div>
   <div class="cab">
@@ -36904,13 +36902,259 @@ function imprimirOC(id) {
   </table>
   <div class="obs"><b>Observações</b>${e(oc.obs || '')}</div>
   <div class="assina"><div>Comprador</div><div>Fornecedor</div></div>
+</div>`;
+}
+
+function imprimirOC(id) {
+  const oc = _ocPorId(id);
+  if (!oc) return;
+  const e = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>${e(oc.numero)}</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm 14mm 16mm 14mm; }
+  body { margin: 0; padding: 18px; background: #fff; }
+  .toolbar { margin-bottom: 14px; font-family: 'Segoe UI', Arial, sans-serif; }
+  .toolbar button { font: inherit; padding: 6px 12px; margin-right: 6px; cursor: pointer; }
+  ${_OC_PAPEL_CSS}
+  @media print { .toolbar { display: none !important; } body { padding: 0; } }
+</style></head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+    <button onclick="window.close()">Fechar</button>
+  </div>
+  ${_ocPapelHtml(oc)}
   <script>window.addEventListener('load', () => { setTimeout(() => window.print(), 300); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=900,height=1100');
   if (!w) return toast('Popup bloqueado pelo navegador. Permita popups deste site.', 'err');
   w.document.open(); w.document.write(html); w.document.close();
+  // Quem imprime está dizendo que o papel está pronto: a cópia da pasta acompanha.
+  agendarAutoSaveOC(oc.id);
 }
 window.imprimirOC = imprimirOC;
+
+/* A PASTA DAS ORDENS DE COMPRA (24/09/2026, Junior: "insira campo nas
+   configurações para conectar pasta que salva as Ordens de compra").
+
+   Mesmo desenho da pasta das OE: a pasta mora no IndexedDB DESTE navegador
+   (chave própria no mesmo banco), e cada máquina conecta a sua. O arquivo é
+   `OC-0001.pdf`, pelo número — o número nunca se repete (ver _ocNumeroNovo),
+   então editar a OC reescreve o mesmo arquivo em vez de encher a pasta.
+
+   QUANDO GRAVA: ao gerar a OC, a cada edição (fornecedor, data, situação,
+   quantidade, observação) e ao imprimir — sempre em segundo plano, com um
+   pequeno atraso para juntar vários cliques seguidos numa gravação só. E o
+   botão "pasta" da linha grava na hora.
+
+   SEM PASTA CONECTADA, O AUTOMÁTICO FICA CALADO. A OC é montada também pela
+   conta de compra, numa máquina que não precisa ter pasta nenhuma — avisar ali
+   seria um erro vermelho sobre algo que aquela pessoa não usa. Quem aperta o
+   botão "pasta" recebe o aviso, porque pediu.
+
+   APAGAR A OC NÃO APAGA O PDF: um pedido que já foi ao fornecedor é papel que
+   existiu, e a pasta é o arquivo dele. */
+const OC_DB_KEY = 'oc-folder';
+let ocFolderHandle = null;
+
+async function _ocFolderGuardar(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    if (handle) tx.objectStore(PDF_DB_STORE).put(handle, OC_DB_KEY);
+    else tx.objectStore(PDF_DB_STORE).delete(OC_DB_KEY);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+async function loadOcFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(OC_DB_KEY);
+      req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) { console.warn('loadOcFolderHandle', e); return null; }
+}
+
+async function conectarPastaOc() {
+  if (!exigirEdicao('conectar a pasta das OC')) return;
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await _ocFolderGuardar(handle);
+    ocFolderHandle = handle;
+    toast(`Pasta das OC conectada: ${handle.name}`, 'ok');
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    console.error('conectarPastaOc', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+  }
+  atualizarOcFolderStatus();
+}
+window.conectarPastaOc = conectarPastaOc;
+
+async function desconectarPastaOc() {
+  if (!exigirEdicao('desconectar a pasta das OC')) return;
+  await _ocFolderGuardar(null);
+  ocFolderHandle = null;
+  toast('Pasta das OC desconectada', '');
+  atualizarOcFolderStatus();
+}
+window.desconectarPastaOc = desconectarPastaOc;
+
+// Grava TODAS as OC na pasta — para a primeira conexão não começar vazia.
+async function salvarTodasOcNaPasta() {
+  const ocs = _ocLista();
+  if (!ocs.length) return toast('Nenhuma OC para salvar.', '');
+  let ok = 0;
+  for (const oc of ocs) { if (await salvarPdfOcNaPasta(oc.id, { silent: ok > 0 })) ok++; else if (!ok) return; }
+  toast(`${ok} OC salva(s) na pasta`, 'ok');
+}
+window.salvarTodasOcNaPasta = salvarTodasOcNaPasta;
+
+async function atualizarOcFolderStatus() {
+  const el = document.getElementById('ocFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = ocFolderHandle || (await loadOcFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada. As OC não serão salvas em PDF até você conectar uma pasta.</span>';
+    return;
+  }
+  ocFolderHandle = handle;
+  let permLabel = 'pronta — cada OC é salva ao ser gerada, editada ou impressa';
+  let perm = 'granted';
+  try {
+    perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (_) {}
+  if (perm === 'granted') {
+    const sumiu = await _statusPastaSumidaHtml(handle);
+    if (sumiu) { el.innerHTML = sumiu; return; }
+  }
+  el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
+}
+
+function ocFilename(oc) {
+  return sanitizeForFilename(String(oc.numero || 'OC')) + '.pdf';
+}
+
+/* O PDF é o mesmo papel da impressão, desenhado fora da vista dentro desta
+   página e fotografado pelo html2canvas (o caminho da folha de OS e da OE).
+   Uma OC cabe quase sempre numa folha; se passar, o corte cai no fim de uma
+   linha da tabela, nunca no meio dela. */
+async function gerarPdfDaOC(oc) {
+  const _html2canvas = window.html2canvas;
+  const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof _html2canvas !== 'function') throw new Error('html2canvas não carregada');
+  if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
+  const box = document.createElement('div');
+  box.setAttribute('aria-hidden', 'true');
+  box.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;padding:14mm;background:#fff;z-index:-1;pointer-events:none;';
+  box.innerHTML = `<style>${_OC_PAPEL_CSS}</style>${_ocPapelHtml(oc)}`;
+  document.body.appendChild(box);
+  try {
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const canvas = await _html2canvas(box, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    const rect = box.getBoundingClientRect();
+    const ratio = canvas.width / rect.width;
+    const cortes = Array.from(box.querySelectorAll('tr, .obs, .assina'))
+      .map(el => (el.getBoundingClientRect().bottom - rect.top) * ratio)
+      .filter(v => v > 0 && v <= canvas.height).sort((a, b) => a - b);
+    const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pxPorMm = canvas.width / 210;
+    const pageHpx = Math.floor(297 * pxPorMm);
+    let y = 0, pagina = 0;
+    while (y < canvas.height - 1) {
+      const maxY = y + pageHpx;
+      let cut = canvas.height;
+      if (maxY < canvas.height) {
+        const cand = cortes.filter(v => v > y + 1 && v <= maxY);
+        cut = cand.length ? Math.max(...cand) : maxY;
+      }
+      const sliceH = Math.max(1, Math.round(cut - y));
+      const tmp = document.createElement('canvas');
+      tmp.width = canvas.width; tmp.height = sliceH;
+      const ctx = tmp.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      if (pagina > 0) pdf.addPage();
+      pdf.addImage(tmp.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, sliceH / pxPorMm, undefined, 'FAST');
+      y += sliceH; pagina++;
+    }
+    return pdf.output('blob');
+  } finally {
+    box.remove();
+  }
+}
+
+// silent = gravação automática: sem pasta ou sem permissão, não diz nada.
+async function salvarPdfOcNaPasta(id, { silent = false } = {}) {
+  const oc = _ocPorId(id);
+  if (!oc) return false;
+  const handle = ocFolderHandle || (await loadOcFolderHandle());
+  if (!handle) {
+    if (!silent) toast('Conecte a pasta das OC em Configurações primeiro.', 'err');
+    return false;
+  }
+  // O automático só CONSULTA a permissão: pedir exige um clique, que um timer não tem.
+  if (silent) {
+    let ok = false;
+    try { ok = (await handle.queryPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) {}
+    if (!ok) return false;
+  } else if (!(await ensureFolderPermission(handle, 'readwrite'))) {
+    toast('Permissão da pasta das OC negada', 'err');
+    return false;
+  }
+  if (!(await pastaAcessivel(handle))) {
+    if (!silent) {
+      toast(`Pasta das OC "${handle.name}" não encontrada — o Google Drive está aberto? Se a pasta mudou de lugar, reconecte em Configurações.`, 'err');
+      pedirGoogleDrive({ handle, oQue: 'salvar a OC na pasta', retomar: () => salvarPdfOcNaPasta(id) });
+    }
+    return false;
+  }
+  ocFolderHandle = handle;
+  const filename = ocFilename(oc);
+  try {
+    const blob = await gerarPdfDaOC(oc);
+    const fh = await handle.getFileHandle(filename, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+    if (!silent) toast(`OC salva: ${filename}`, 'ok');
+    return true;
+  } catch (e) {
+    console.error('salvarPdfOcNaPasta', e);
+    if (tratarErroPastaSumiu(e, handle, { oQue: 'salvar a OC na pasta', retomar: () => salvarPdfOcNaPasta(id), silent })) return false;
+    if (!silent) toast('Falha ao salvar a OC: ' + (e.message || e), 'err');
+    return false;
+  }
+}
+window.salvarPdfOcNaPasta = salvarPdfOcNaPasta;
+
+// Vários cliques seguidos (quantidade, fornecedor, data) viram uma gravação só.
+const _ocAutoTimers = new Map();
+function agendarAutoSaveOC(id) {
+  if (!id) return;
+  clearTimeout(_ocAutoTimers.get(id));
+  _ocAutoTimers.set(id, setTimeout(() => {
+    _ocAutoTimers.delete(id);
+    salvarPdfOcNaPasta(id, { silent: true }).catch(e => console.warn('auto-save OC', e));
+  }, 1500));
+}
 
 // A data como a casa escreve. Função declarada (e não const de seta) porque ela
 // é usada acima, no papel da OC: declaração sobe, const não.
@@ -36964,6 +37208,7 @@ function _ocQuadroHtml() {
       <td class="col-actions row-actions">
         <button onclick="ocDetalhe('${esc(oc.id)}')">${aberto ? 'fechar' : 'abrir'}</button>
         <button class="edit" onclick="imprimirOC('${esc(oc.id)}')">imprimir</button>
+        <button onclick="salvarPdfOcNaPasta('${esc(oc.id)}')" title="Grava o PDF desta OC na pasta das OC (Configurações)">pasta</button>
         <button class="admin-only" onclick="ocRemover('${esc(oc.id)}')">apagar</button>
       </td>
       <td><strong>${esc(oc.numero)}</strong>${oc.criadoPor ? `<div class="muted" style="font-size:11px;">${esc(oc.criadoPor)}</div>` : ''}</td>

@@ -1172,6 +1172,16 @@
         </div>
       </div>
       <div class="card admin-only">
+        <div class="card-title">Pasta das Ordens de Compra (OC)</div>
+        <div class="info-box">Cada ordem de compra é salva em PDF nesta pasta, sozinha, quando é <b>gerada</b>, <b>editada</b> (fornecedor, data, situação, quantidades, observação) ou <b>impressa</b>. O botão <b>pasta</b> na linha da OC (menu Ordens de Compra) grava na hora. O arquivo leva o número da OC (ex.: <code>OC-0001.pdf</code>): editar a mesma OC reescreve o mesmo arquivo. Apagar a OC no programa <b>não</b> apaga o PDF. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
+        <div id="ocFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="conectarPastaOc()">Conectar pasta</button>
+          <button class="btn" onclick="salvarTodasOcNaPasta()">Salvar todas as OC agora</button>
+          <button class="btn" onclick="desconectarPastaOc()">Desconectar</button>
+        </div>
+      </div>
+      <div class="card admin-only">
         <div class="card-title">Pasta das exportações (JSON)</div>
         <div class="info-box">Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.</div>
         <div id="exportFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
@@ -1621,6 +1631,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-24a"></script>
+<script src="app.js?v=2026-09-24b"></script>
 </body>
 </html>

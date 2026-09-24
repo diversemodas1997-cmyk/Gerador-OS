@@ -70,6 +70,7 @@ function monta(M) {
     function toast(msg, tipo) { M.toasts.push([tipo, msg]); }
     function _cpQuemSou() { return 'quem@fabrica'; }
     function confirm() { return M.confirma !== false; }
+    function agendarAutoSaveOC(id) { (M.autoSave = M.autoSave || []).push(id); }
     ${pegaConst('OC_STATUS')}
     ${pegaConst('_ocStatusDef')}
     ${pegaFuncao('_ocLista')}
@@ -198,6 +199,16 @@ const mundo = (pode) => ({
      Array.isArray(api.ocs()[0].itens), api.ocs()[0].itens);
   await api.ocItemRemover(id, 1);
   ok('22. da para tirar uma linha do pedido', api.ocs()[0].itens.length === 1, api.ocs()[0].itens);
+
+  /* ---------- 7. a pasta das OC (24/09/2026) ---------- */
+  // Gerar e cada edicao que passou pela permissao pedem a gravacao do PDF,
+  // sempre da OC que mudou: 1 geracao + 4 itens + 2 cabecalhos + 1 remocao. O
+  // campo recusado (itens) nao grava nada, entao tambem nao agenda.
+  ok('23. gerar e editar agendam o PDF da OC na pasta',
+     (M.autoSave || []).length === 8 && M.autoSave.every(x => x === id), M.autoSave);
+  M = mundo(false); api = monta(M);
+  await api.gerarOCdaCompra();
+  ok('24. recusado pela permissao, nada vai para a pasta', !(M.autoSave || []).length, M.autoSave);
 
   console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
   process.exit(falhas ? 1 : 0);
