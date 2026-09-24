@@ -114,6 +114,28 @@ ok('23. a OE tem o botao de alocar aviamento em cada perna, e a folha o imprime'
    /onclick="abrirModalExpAviamento\(/.test(src) && /\$\{linhas\}\$\{aviPrint\}/.test(src));
 ok('24. nao embarca mais do que a unidade tem', /if \(kg > tem \+ 0\.0005\)/.test(src));
 
+console.log('-- entrada por quantidade de unidade --');
+/* 24/09/2026: "deve haver entrada por quantidade de unidade". Botao se conta:
+   entram 500 un em Descalvado, saem 120, e 100 un embarcam na ida de 25/09. */
+const mun = [
+  { tipo: 'entrada', unidade: 'desc', item: 'Botão', cor: 'Bege', qtd: 500, data: '2026-09-02' },
+  { tipo: 'saida', unidade: 'desc', item: 'Botão', cor: 'Bege', qtd: 120, data: '2026-09-03' },
+  { tipo: 'expedicao', janelaId: 'j1', data: '2026-09-25', perna: 'ida', item: 'Botão', cor: 'Bege', qtd: 100, dataSaida: '2026-09-20' }
+];
+const bd = api.calcularEstoqueAviamentos(mun, '2026-09-01', '2026-09-30', '2026-09-30', 'desc')[0];
+const bs = api.calcularEstoqueAviamentos(mun, '2026-09-01', '2026-09-30', '2026-09-30', 'sc')[0];
+ok('25. a linha lancada so em unidades conta em unidades, e nao em kg', bd.temUn && !bd.temKg && bd.corrente === 0, bd);
+ok('26. os cinco volumes em unidades: entrada 500, saida 120 + 100 = 220, residual e corrente 280',
+   bd.un.entrada === 500 && bd.un.saida === 220 && bd.un.residual === 280 && bd.un.corrente === 280 && bd.un.total === 500, bd.un);
+ok('27. as unidades viajam na OE: Sao Carlos recebe as 100 un', bs.un.entrada === 100 && bs.un.corrente === 100, bs.un);
+// Peso e unidade juntos no mesmo lancamento: as duas contas andam.
+const ambos = api.calcularEstoqueAviamentos([{ tipo: 'entrada', unidade: 'desc', item: 'Etiqueta', cor: '', kg: 1.5, qtd: 1000, data: '2026-09-02' }],
+  '2026-09-01', '2026-09-30', '2026-09-30', 'desc')[0];
+ok('28. peso e quantidade no mesmo lancamento contam os dois', ambos.corrente === 1.5 && ambos.un.corrente === 1000 && ambos.temKg && ambos.temUn, ambos);
+ok('29. a janela tem o campo de quantidade e aceita so ela',
+   /id="ma-qtd"/.test(src) && /if \(!\(kg > 0\) && !\(qtd > 0\)\) return toast\('Informe a quantidade \(un\) ou o peso \(kg\)'/.test(src));
+ok('30. a OE nao embarca mais unidades do que a unidade tem', /if \(qtd > temUn\)/.test(src));
+
 console.log('-- a tela --');
 ok('9. o item de menu fica logo abaixo do Estoque de tecidos',
    /data-page="estoque"[^>]*>Estoque de tecidos<\/a>\s*<a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos"[^>]*>Estoque de aviamentos<\/a>/.test(html));
