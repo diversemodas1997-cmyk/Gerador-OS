@@ -10798,30 +10798,39 @@ const _OE_ITENS_BM = [
   _OE_ITEM('Viés', 'vies', /^vies/),
 ];
 const _OE_REPOSICAO = _OE_ITEM('Tecido de reposição', 'reposicao', null);
+/* A ORDEM DOS ITENS (25/09/2026, Junior: "primeiro frente, depois costa,
+   depois mangas, depois capuz, depois barra, depois punhos, depois viés,
+   depois reposição"). É a ordem destas listas, e é ela — e não a ordem das
+   fases da OS — que manda na folha: dentro de cada bloco e entre os blocos. As
+   partes 2 e 3 vêm logo depois da parte 1 da mesma peça; a ribana da camiseta
+   e o forro do capuz, logo depois do que eles acompanham. */
 const ITENS_OE_POR_LINHA = {
   'CM.LISA': _OE_ITENS_CM,
-  'CM.REC': _OE_ITENS_CM.concat([_OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/)]),
-  'CM.TRI': _OE_ITENS_CM.concat([
+  'CM.REC': [_OE_ITENS_CM[0], _OE_ITENS_CM[1], _OE_ITENS_CM[2],
     _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
-    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/)]),
+    _OE_ITENS_CM[3], _OE_ITENS_CM[4]],
+  'CM.TRI': [_OE_ITENS_CM[0], _OE_ITENS_CM[1], _OE_ITENS_CM[2],
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
+    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/),
+    _OE_ITENS_CM[3], _OE_ITENS_CM[4]],
   'BM.LISA': _OE_ITENS_BM,
   /* BM.TRI PEÇA POR PEÇA (25/09/2026, Junior: "manga deve ser mostrada como
      parte 1, parte 2, parte 3, frente parte 1, frente parte 2, frente parte 3,
      costa parte 1, costa parte 2, costa parte 3"). As três partes do corpo são
      três fases do enfesto (uma por cor), mas quem separa confere PEÇA: as três
-     mangas juntas, as três frentes juntas, as três costas juntas. Por isso as
-     nove ficam num bloco só ("Corpo"), nessa ordem, cada uma com a cor da sua
-     fase. A fase continua mandando no que embarca numa carga parcial. */
+     frentes juntas, as três costas juntas, as três mangas juntas. Por isso as
+     nove ficam num bloco só ("Corpo"), cada uma com a cor da sua fase. A fase
+     continua mandando no que embarca numa carga parcial. */
   'BM.TRI': [
-    _OE_ITEM('Mangas parte 1', 'corpo1', /^manga(?!.*parte [23])/, 2, 'corpo'),
-    _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2, 'corpo'),
-    _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2, 'corpo'),
     _OE_ITEM('Frente parte 1', 'corpo1', /^frente(?!.*parte [23])/, 1, 'corpo'),
     _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/, 1, 'corpo'),
     _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/, 1, 'corpo'),
     _OE_ITEM('Costa parte 1', 'corpo1', /^costa(?!.*parte [23])/, 1, 'corpo'),
     _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/, 1, 'corpo'),
     _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/, 1, 'corpo'),
+    _OE_ITEM('Mangas parte 1', 'corpo1', /^manga(?!.*parte [23])/, 2, 'corpo'),
+    _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2, 'corpo'),
+    _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2, 'corpo'),
     // (25/09/2026, Junior: "bm.tri falta item capuz"). O capuz sai do pano da
     // Corpo Parte 1 (é onde o relatório de componentes das OS o põe), dois
     // lados por peça — o componente "Capuz" das OS diz 2.
@@ -10893,26 +10902,26 @@ function _expItensPorFase(o, carga, fi) {
       if (!g) { g = { chave, titulo, ordem, itens: [] }; grupos.push(g); }
       return g;
     };
-    lista.forEach(it => {
+    // O bloco fica na posição do seu PRIMEIRO item na lista (ver a ordem acima).
+    lista.forEach((it, pos) => {
       const fase = fasesOS.find(f => _oeGruposDaFase(f.nome).includes(it.grupo));
       // Carga parcial: só o que é de uma fase que embarca.
       if (!todas && !(fase && levam.some(l => l.ordem === fase.ordem))) return;
       if (it.junto) {
-        // Bloco de várias fases: o título é o do bloco, a ordem é a da primeira
-        // fase dele, e a cor vai no item (cada parte tem a sua).
-        const g = grupoDe('j' + it.junto, 'Corpo', fase ? fase.ordem : 90);
-        if (fase) g.ordem = Math.min(g.ordem, fase.ordem);
+        // Bloco de várias fases: o título é o do bloco, e a cor vai no item
+        // (cada parte tem a sua).
+        const g = grupoDe('j' + it.junto, 'Corpo', pos);
         g.itens.push({ nome: it.nome + (fase && fase.cor ? ` (${fase.cor})` : ''), porPeca: porPecaDe(it) });
         return;
       }
       const g = fase
-        ? grupoDe('f' + fase.ordem, fase.rotulo, fase.ordem)
-        : grupoDe('g' + it.grupo, _OE_GRUPO_ROTULO[it.grupo] || it.grupo, 90);
+        ? grupoDe('f' + fase.ordem, fase.rotulo, pos)
+        : grupoDe('g' + it.grupo, _OE_GRUPO_ROTULO[it.grupo] || it.grupo, pos);
       g.itens.push({ nome: it.nome, porPeca: porPecaDe(it) });
     });
     // O tecido de reposição vai no pacote de reposição.
     const levaRepos = !(carga && Array.isArray(carga.pacotes)) || !!(carga && carga.reposicao);
-    if (levaRepos) grupoDe('reposicao', 'Reposição', 99).itens.push({ nome: _OE_REPOSICAO.nome, semQtd: true });
+    if (levaRepos) grupoDe('reposicao', 'Reposição', lista.length).itens.push({ nome: _OE_REPOSICAO.nome, semQtd: true });
     return grupos.sort((a, b) => a.ordem - b.ordem);
   }
   // Linha fora da tabela: os componentes da OS, pela fase em que são cortados.

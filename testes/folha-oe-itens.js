@@ -52,8 +52,8 @@ const bmLisa = lista(os('BM.LISA-PRE', ['Corpo', 'Barra/Punhos', 'Viés']));
 ok('4. BM.LISA: frente, costa, mangas, barra, punhos, viés e tecido de reposição',
    bmLisa === '[Corpo] Frente, Costa, Mangasx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', bmLisa);
 const bmTri = lista(os('BM.TRI-BEGE', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés']));
-ok('5. BM.TRI: peça por peça — mangas 1, 2, 3; frente 1, 2, 3; costa 1, 2, 3 — num bloco só',
-   /^\[Corpo\] Mangas parte 1x2, Mangas parte 2x2, Mangas parte 3x2, Frente parte 1, Frente parte 2, Frente parte 3, Costa parte 1, Costa parte 2, Costa parte 3, Capuzx2 \[Forro de capuz\]/.test(bmTri), bmTri);
+ok('5. BM.TRI: peça por peça — frente 1, 2, 3; costa 1, 2, 3; mangas 1, 2, 3; capuz — num bloco só',
+   /^\[Corpo\] Frente parte 1, Frente parte 2, Frente parte 3, Costa parte 1, Costa parte 2, Costa parte 3, Mangas parte 1x2, Mangas parte 2x2, Mangas parte 3x2, Capuzx2 \[Forro de capuz\]/.test(bmTri), bmTri);
 ok('5d. o capuz nao engole o forro do capuz (componente "Forro do capuz" fica no Forro)',
    (bmTri.match(/Capuz/g) || []).length === 1 && /Forro de capuzx2/.test(bmTri), bmTri);
 {
@@ -61,11 +61,16 @@ ok('5d. o capuz nao engole o forro do capuz (componente "Forro do capuz" fica no
   o.fases[1].corNome = 'Mostarda';
   const soParte2 = lista(o, { osId: 'x', fases: [2], pacotes: [{ tam: 'M', tom: null }] });
   ok('5a. BM.TRI em carga só da Corpo Parte 2: só as três peças da parte 2, com a cor dela',
-     soParte2 === '[Corpo] Mangas parte 2 (Mostarda)x2, Frente parte 2 (Mostarda), Costa parte 2 (Mostarda)', soParte2);
+     soParte2 === '[Corpo] Frente parte 2 (Mostarda), Costa parte 2 (Mostarda), Mangas parte 2 (Mostarda)x2', soParte2);
 }
 ok('5b. BM.TRI: o forro de capuz, na fase Forro de capuz, 2 por peça',
    /\[Forro de capuz\] Forro de capuzx2 \[Barra\/Punhos\]/.test(bmTri), bmTri);
 ok('5c. a BM.LISA nao ganha forro de capuz', !/Forro/.test(bmLisa), bmLisa);
+{
+  const trocada = lista(os('BM.LISA-PRE', ['Viés', 'Barra/Punhos', 'Corpo']));
+  ok('5e. a ordem e a da lista (frente, costa, mangas, barra, punhos, viés, reposição), e nao a das fases da OS',
+     trocada === '[Corpo] Frente, Costa, Mangasx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', trocada);
+}
 ok('6. o nome e FRENTE parte 2/3, nao corpo parte 2/3', !/Corpo parte [23]/.test(cmTri + bmTri + cmRec));
 
 console.log('-- o que muda a lista --');
