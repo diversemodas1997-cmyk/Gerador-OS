@@ -10960,6 +10960,12 @@ function _expFasesTexto(lista) {
    que não está na tabela (COT.*, por exemplo) cai nos componentes da OS. */
 // `junto`: itens de fases diferentes que a folha mostra num bloco só (ver BM.TRI).
 const _OE_ITEM = (nome, grupo, re, porPeca, junto) => ({ nome, grupo, re, porPeca: porPeca || 1, junto: junto || '' });
+/* CAPUZ E FORRO SÃO UMA PEÇA INTEIRA (25/09/2026, Junior: "a quantidade de
+   capuz e forro de capuz deve ser a unidade inteira, pois é formada por duas
+   peças, direita e esquerda — igual às blusas completas" e "forro de capuz
+   também segue a regra"). O componente das OS diz 2 (os dois lados); na folha
+   de OE, como na etiqueta, conta 1 por blusa, sem olhar o componente. */
+const _OE_INTEIRO = it => Object.assign(it, { inteiro: true, porPeca: 1 });
 const _OE_ITENS_CM = [
   _OE_ITEM('Frente', 'corpo1', /^frente(?!.*parte [23])/),
   _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/),
@@ -10973,8 +10979,8 @@ const _OE_ITENS_BM = [
   _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2),
   // A blusa lisa também tem capuz (25/09/2026, Junior: "corrija a ordem dos
   // itens na BM.LISA também" — a ordem é frente, costa, mangas, CAPUZ, barra…).
-  // Todas as OS de BM.LISA cadastram "Capuz", 2 por peça, no pano do corpo.
-  _OE_ITEM('Capuz', 'corpo1', /^capuz/, 2),
+  // Todas as OS de BM.LISA cadastram "Capuz" no pano do corpo.
+  _OE_INTEIRO(_OE_ITEM('Capuz', 'corpo1', /^capuz/)),
   _OE_ITEM('Barra', 'barra', /^barra/),
   _OE_ITEM('Punhos', 'barra', /^punho/, 2),
   _OE_ITEM('Viés', 'vies', /^vies/),
@@ -11026,12 +11032,12 @@ const ITENS_OE_POR_LINHA = {
     _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2, 'corpo'),
     _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2, 'corpo'),
     // (25/09/2026, Junior: "bm.tri falta item capuz"). O capuz sai do pano da
-    // Corpo Parte 1 (é onde o relatório de componentes das OS o põe), dois
-    // lados por peça — o componente "Capuz" das OS diz 2.
-    _OE_ITEM('Capuz', 'corpo1', /^capuz/, 2, 'corpo'),
-    // (25/09/2026, Junior: "insira forro de capuz na lista da BM.TRI"). São dois
-    // lados por capuz — o componente "Forro do capuz" das OS diz 2 por peça.
-    _OE_ITEM('Forro de capuz', 'forro', /^forro/, 2),
+    // Corpo Parte 1 (é onde o relatório de componentes das OS o põe). Conta
+    // inteiro, 1 por blusa (ver _OE_INTEIRO).
+    _OE_INTEIRO(_OE_ITEM('Capuz', 'corpo1', /^capuz/, 1, 'corpo')),
+    // (25/09/2026, Junior: "insira forro de capuz na lista da BM.TRI"). Também
+    // inteiro, 1 por blusa.
+    _OE_INTEIRO(_OE_ITEM('Forro de capuz', 'forro', /^forro/)),
     _OE_ITEM('Barra', 'barra', /^barra/),
     _OE_ITEM('Punhos', 'barra', /^punho/, 2),
     _OE_ITEM('Viés', 'vies', /^vies/)]
@@ -11090,6 +11096,7 @@ function _expItensPorFase(o, carga, fi) {
     // "Mangas" (1) e "Mangas Blusa Moletom Básica" (2) — o par de mangas é 2, e
     // o 1 é o cadastro antigo que ficou junto (conferido nas OS de 24/09/2026).
     const porPecaDe = it => {
+      if (it.inteiro) return 1;
       const qs = it.re ? comps.filter(x => it.re.test(x.n)).map(x => Number(x.c.qtdPorPeca) || 0).filter(q => q > 0) : [];
       return qs.length ? Math.max(...qs) : it.porPeca;
     };
