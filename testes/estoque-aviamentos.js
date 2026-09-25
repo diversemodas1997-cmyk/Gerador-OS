@@ -181,5 +181,22 @@ ok('12. a chave aviamentosMov e sincronizada e carregada (as duas listas de chav
    (src.match(/'compraOCs','aviamentosMov'/g) || []).length === 2, (src.match(/'compraOCs','aviamentosMov'/g) || []).length);
 ok('13. o lancamento guarda cor e peso', /cor: v\('ma-cor'\)\.trim\(\),\s*kg: Math\.round/.test(src));
 
+/* CORRIGIR O ALOCADO (25/09/2026, Junior: "insira capacidade de correcao dos
+   aviamentos alocados em ordens de expedicao"). Descalvado tem 10 kg; a OE leva
+   8. Corrigir para 9 so passa porque o saldo e lido SEM a propria alocacao. */
+console.log('-- correcao do alocado --');
+{
+  const ent = { tipo: 'entrada', unidade: 'desc', item: 'Linha', cor: 'Azul', kg: 10, data: '2026-09-01' };
+  const aloc = { id: 'x1', tipo: 'expedicao', janelaId: 'j1', data: '2026-09-30', perna: 'ida', item: 'Linha', cor: 'Azul', kg: 8, dataSaida: '2026-09-20' };
+  const saldo = mov => (api.calcularEstoqueAviamentos(mov, '2026-09-21', '2026-09-21', '2026-09-21', 'desc').find(l => l.cor === 'Azul') || { corrente: 0 }).corrente;
+  ok('38. com a alocacao, sobram 2 kg na origem', saldo([ent, aloc]) === 2, saldo([ent, aloc]));
+  ok('39. sem a propria alocacao, o limite da correcao e 10 kg', saldo([ent, aloc].filter(m => m.id !== 'x1')) === 10);
+  ok('40. o lapis da linha reabre o modal com o id do lancamento',
+     /onclick="abrirModalExpAviamento\('\$\{esc\(oc\.janela\.id\)\}','\$\{esc\(oc\.dataOrig\)\}','\$\{perna\}','\$\{esc\(a\.id\)\}'\)">✎/.test(src));
+  ok('41. corrigir le o saldo sem a propria alocacao e altera no lugar (mesmo id)',
+     /_aviSaldosNaUnidade\(_aviOrigemDe\(ctx\), ctx\.editId \|\| undefined\)/.test(src)
+     && /if \(ctx\.editId\) \{\s*const m = STATE\.aviamentosMov\.find\(x => x\.id === ctx\.editId/.test(src));
+}
+
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

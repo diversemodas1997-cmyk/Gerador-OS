@@ -8431,28 +8431,41 @@ function _aviSaldosNaUnidade(unidade, semId) {
     .filter(l => l.corrente > 0.0005 || l.un.corrente > 0);
 }
 
-function abrirModalExpAviamento(janelaId, dataOrig, perna) {
+/* CORRIGIR O ALOCADO (25/09/2026, Junior: "insira capacidade de correção dos
+   aviamentos alocados em ordens de expedição"). O ✎ da linha reabre o mesmo
+   modal com o lançamento preenchido: troca o aviamento, a quantidade, o peso,
+   os volumes e a observação. Corrigir não é tirar e pôr de novo: o lançamento
+   guarda o mesmo id, a mesma perna e o mesmo dia de saída (`dataSaida`). O
+   limite é o saldo da origem SEM esta alocação — o que ela já levou volta à
+   conta, senão não daria para aumentar 10 un quando a unidade tem 5 sobrando. */
+function abrirModalExpAviamento(janelaId, dataOrig, perna, editId) {
   if (!exigirEdicao('alocar aviamento na expedição')) return;
-  _aviExpCtx = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida' };
+  const ed = editId ? (STATE.aviamentosMov || []).find(x => x.id === editId && x.tipo === 'expedicao') : null;
+  if (editId && !ed) return toast('Este aviamento não está mais na expedição', 'err');
+  _aviExpCtx = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida', editId: ed ? ed.id : '' };
   const origem = _aviOrigemDe(_aviExpCtx);
   const nomeOrigem = ((AVIAMENTO_UNIDADES.find(u => u.k === origem)) || {}).rotulo || '';
-  const saldos = _aviSaldosNaUnidade(origem);
+  const saldos = _aviSaldosNaUnidade(origem, ed ? ed.id : undefined);
+  const mesma = l => ed && _normNome(l.item) === _normNome(ed.item) && _normNome(l.cor) === _normNome(ed.cor) && l.tam === (_aviTamDe(ed) || '');
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
+  const val = (n, casas) => (Number(n) > 0 ? String(casas ? Math.round(Number(n) * 1000) / 1000 : Math.round(Number(n))) : '');
   document.getElementById('modal-aviamento-title').textContent =
-    'Alocar aviamento · ' + (_aviExpCtx.perna === 'ida' ? 'Ida' : 'Volta') + ' de ' + formatDate(dataOrig);
+    (ed ? 'Corrigir aviamento · ' : 'Alocar aviamento · ') + (_aviExpCtx.perna === 'ida' ? 'Ida' : 'Volta') + ' de ' + formatDate(dataOrig);
   document.getElementById('modal-aviamento-fields').innerHTML = saldos.length ? `
-    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Sai da <b>${esc(nomeOrigem)}</b> agora e entra na outra unidade na data desta carga. Até lá fica <b>em trânsito</b>.</div>
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">${ed
+      ? `Corrigindo o que já está nesta carga. O saldo mostrado já inclui o que esta alocação tinha levado da <b>${esc(nomeOrigem)}</b>.`
+      : `Sai da <b>${esc(nomeOrigem)}</b> agora e entra na outra unidade na data desta carga. Até lá fica <b>em trânsito</b>.`}</div>
     <div class="form-grid cols-2">
       <div class="field full"><label>Aviamento *</label><select id="mae-linha">
         <option value="">— selecione —</option>
-        ${saldos.map((l, i) => `<option value="${i}">${esc(_aviItemTexto(l))} · ${esc(l.cor || '(sem cor)')} — ${esc([
+        ${saldos.map((l, i) => `<option value="${i}"${mesma(l) ? ' selected' : ''}>${esc(_aviItemTexto(l))} · ${esc(l.cor || '(sem cor)')} — ${esc([
           l.corrente > 0.0005 ? fmt(l.corrente) + ' kg' : '', l.un.corrente > 0 ? Math.round(l.un.corrente).toLocaleString('pt-BR') + ' un' : ''
         ].filter(Boolean).join(' · '))} na unidade</option>`).join('')}
       </select></div>
-      <div class="field"><label>Quantidade (un)</label><input type="number" min="0" step="1" id="mae-qtd" placeholder="Ex.: 500"></div>
-      <div class="field"><label>Peso (kg)</label><input type="number" min="0" step="0.001" id="mae-kg" placeholder="Ex.: 2,500"></div>
-      <div class="field"><label>Volumes</label><input type="number" min="0" step="1" id="mae-vol" placeholder="0"></div>
-      <div class="field full"><label>Observação (sai na folha de OE)</label><input type="text" id="mae-obs" placeholder="Ex.: caixa de linhas pretas"></div>
+      <div class="field"><label>Quantidade (un)</label><input type="number" min="0" step="1" id="mae-qtd" placeholder="Ex.: 500" value="${ed ? val(ed.qtd) : ''}"></div>
+      <div class="field"><label>Peso (kg)</label><input type="number" min="0" step="0.001" id="mae-kg" placeholder="Ex.: 2,500" value="${ed ? val(ed.kg, true) : ''}"></div>
+      <div class="field"><label>Volumes</label><input type="number" min="0" step="1" id="mae-vol" placeholder="0" value="${ed ? val(ed.volumes) : ''}"></div>
+      <div class="field full"><label>Observação (sai na folha de OE)</label><input type="text" id="mae-obs" placeholder="Ex.: caixa de linhas pretas" value="${ed ? esc(ed.obs || '') : ''}"></div>
     </div>` : `<div class="info-box">A <b>${esc(nomeOrigem)}</b> não tem aviamento em estoque hoje. Lance a entrada no <b>Estoque de aviamentos</b> primeiro.</div>`;
   _aviExpSaldos = saldos;
   openModal('modal-aviamento');
@@ -8472,7 +8485,7 @@ async function salvarAviamentoExp() {
   // Não embarca o que a unidade não tem: o saldo é relido na hora de gravar,
   // porque outra pessoa pode ter alocado o mesmo aviamento enquanto o modal
   // estava aberto.
-  const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx))
+  const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx), ctx.editId || undefined)
     .find(l => _normNome(l.item) === _normNome(linha.item) && _normNome(l.cor) === _normNome(linha.cor) && l.tam === linha.tam);
   const tem = agora ? agora.corrente : 0;
   const temUn = agora ? agora.un.corrente : 0;
@@ -8483,6 +8496,28 @@ async function salvarAviamentoExp() {
     return toast(`Só há ${Math.round(temUn).toLocaleString('pt-BR')} un de ${_aviItemTexto(linha)} ${linha.cor} nesta unidade`, 'err');
   }
   if (!Array.isArray(STATE.aviamentosMov)) STATE.aviamentosMov = [];
+  if (ctx.editId) {
+    const m = STATE.aviamentosMov.find(x => x.id === ctx.editId && x.tipo === 'expedicao');
+    if (!m) { _aviExpCtx = null; closeModal('modal-aviamento'); return toast('Este aviamento não está mais na expedição', 'err'); }
+    Object.assign(m, {
+      item: linha.item,
+      tam: linha.tam || '',
+      cor: linha.cor,
+      kg: Math.round(kg * 1000) / 1000,
+      qtd,
+      volumes: Math.max(0, parseInt(v('mae-vol'), 10) || 0),
+      obs: v('mae-obs').trim(),
+      corrigidoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
+      corrigidoEm: new Date().toISOString()
+    });
+    _aviExpCtx = null;
+    await saveState('aviamentosMov');
+    closeModal('modal-aviamento');
+    toast('Aviamento corrigido', 'ok');
+    if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+    _oeRerenderFolhaSeAberta();
+    return;
+  }
   STATE.aviamentosMov.push({
     id: uid(),
     tipo: 'expedicao',
@@ -11198,7 +11233,7 @@ function renderExpedicaoPlano() {
         <span class="mod">${esc(a.cor) || '—'}</span>
         <span class="qtd">${esc(_aviQtdTexto(a))}</span>
         <span class="vol">${Number(a.volumes) > 0 ? fmt(a.volumes) + ' vol' : ''}</span>
-        <span><button class="admin-only" title="Tirar este aviamento da carga (ele volta para a unidade de origem)" onclick="excluirAviamentoExp('${esc(a.id)}')">×</button></span>
+        <span><button class="admin-only" title="Corrigir este aviamento: item, quantidade, peso, volumes e observação" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(a.id)}')">✎</button><button class="admin-only" title="Tirar este aviamento da carga (ele volta para a unidade de origem)" onclick="excluirAviamentoExp('${esc(a.id)}')">×</button></span>
       </div>${a.obs ? `
       <div class="exp-os-obs">${esc(a.obs)}</div>` : ''}`).join('')}` : '';
     return `
