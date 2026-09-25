@@ -241,8 +241,8 @@ eq('BM.TRI: os três grupos no G tom 1', ordem.join(' | '),
 ok('BM.TRI: G tom 1 — Frente/Bolso/Costa, 144 de cada, nas três cores',
    r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE PACOTE: Frente 144 · Bolso 144 · Costa 144') &&
    r.paginas[0].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[0]);
-ok('BM.TRI: G tom 1 — Capuz/Forro/Mangas, 2 por blusa',
-   r.paginas[1].includes('QTDE PACOTE: Capuz 288 · Forro 288 · Mangas 288') && r.paginas[1].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[1]);
+ok('BM.TRI: G tom 1 — capuz e forro inteiros (1 por blusa), mangas 2',
+   r.paginas[1].includes('QTDE PACOTE: Capuz 144 · Forro 144 · Mangas 288') && r.paginas[1].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[1]);
 ok('BM.TRI: G tom 1 — Barra/Punhos diz as duas contas',
    r.paginas[2].includes('QTDE PACOTE: Barra 144 · Punhos 288') && r.paginas[2].includes('COR: OFF-WHITE'), r.paginas[2]);
 ok('BM.TRI: G tom 2 — as quantidades do tom 2 (80 blusas)',

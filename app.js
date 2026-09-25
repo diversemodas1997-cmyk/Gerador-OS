@@ -26802,7 +26802,10 @@ const _PECAS_ETIQUETA_BMTRI = [
   { nome: 'Frente/Bolso/Costa', partes: [/^frente\b/, /^bolsos?\b/, /^costas?\b/],
     porBlusa: [['Frente', 1], ['Bolso', 1], ['Costa', 1]] },
   { nome: 'Capuz/Forro de capuz/Mangas', partes: [/^capuz\b/, /^forro\b/, /^mangas?\b/],
-    porBlusa: [['Capuz', 2], ['Forro', 2], ['Mangas', 2]] },
+    // Capuz e forro contam a PEÇA INTEIRA (25/09/2026, Junior: "o capuz é
+    // formado por duas peças, direita e esquerda — a quantidade de capuz deve
+    // ser igual à de blusas completas"): 1 por blusa. Mangas seguem 2.
+    porBlusa: [['Capuz', 1], ['Forro', 1], ['Mangas', 2]] },
   { nome: 'Barra/Punhos', partes: [/^barra\b/, /^punhos?\b/],
     porBlusa: [['Barra', 1], ['Punhos', 2]] }
 ];
