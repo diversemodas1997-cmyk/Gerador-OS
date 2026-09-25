@@ -4016,6 +4016,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    interessa o que esta dentro do caminhao. A regra continua valendo para a
    linha da OS no planejamento, que ainda escreve "ficam: ...". */
 .exp-print-os > table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
+/* Itens de cada fase, como checklist (25/09/2026): um quadrinho por componente,
+   agrupados pela fase do enfesto que embarca. Moldura fina como a das fases,
+   que é o que ele substitui. */
+.exp-print-os > .itens-fase { margin-top: 2pt; border: .5pt solid #000; padding: 1pt 2pt; }
+.exp-print-os > .itens-fase .itens-tit { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 1pt; }
+.exp-print-os > .itens-fase table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
+.exp-print-os > .itens-fase td { vertical-align: middle; }
 
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
 .exp-print-perna td { padding: 1px 2px; vertical-align: top; }

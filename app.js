@@ -10749,6 +10749,199 @@ function _expFasesTexto(lista) {
   return (lista || []).map(f => f.rotulo).join(' · ');
 }
 
+/* OS ITENS DE CADA FASE, COMO CHECKLIST (25/09/2026, Junior: "Corrija o formato
+   que o relatório de itens é apresentado na folha de ordem de expedição. Os
+   itens de cada fase devem ser mostrados para que sirvam de checklist. Utilize
+   as informações do relatório do rodapé da folha de ordem de serviço").
+
+   Antes a folha dizia, numa linha corrida, só o NOME das fases ("Só estas
+   fases: Corpo (Preto) · Ribana (Preto)") — e só quando a carga levava parte
+   da peça. Quem separa não tinha o que conferir. Agora cada fase que embarca
+   vira um bloco com os seus itens, cada um com o quadrinho e a quantidade que
+   vai NESTA carga, tamanho a tamanho.
+
+   A LISTA É A DA LINHA DO PRODUTO (25/09/2026, Junior: "quando a OS for
+   CM.LISA deve mostrar os itens frente, costa, mangas, ribana, viés, tecido de
+   reposição. CM.REC igual a CM.LISA mais corpo parte 2. CM.TRI igual a CM.LISA
+   mais corpo parte 2, corpo parte 3. BM.LISA frente, costa, mangas, barra,
+   punhos, viés, tecido de reposição. BM.TRI igual BM.LISA mais corpo parte 2,
+   corpo parte 3, manga parte 2, mangas parte 3, costa parte 2, costa parte 3").
+   Na mesma hora: "corrija corpo parte 2, corpo parte 3 por frente parte 2,
+   frente parte 3" — o item se chama FRENTE parte 2/3; o grupo continua sendo
+   o da fase Corpo Parte 2/3 do enfesto.
+   Os componentes cadastrados nas OS não servem de lista: há OS com "Frente" e
+   "Frente Camiseta" ao mesmo tempo, e a gola cadastrada dentro do corpo. Eles
+   entram só para dizer QUANTAS de cada item há por peça (as mangas são 2) — o
+   relatório "Componentes — totais por tamanho" do rodapé da folha de OS; sem
+   componente que responda, vale o padrão da tabela abaixo.
+
+   Cada item diz a que parte da peça pertence (`grupo`), e o grupo acha a fase
+   do enfesto da OS pelo nome (Corpo Parte 2, Gola, Barra/Punhos, Viés…). Numa
+   carga que leva só algumas fases, só os itens delas aparecem. O tecido de
+   reposição vai no pacote de reposição: aparece quando a carga o leva. Linha
+   que não está na tabela (COT.*, por exemplo) cai nos componentes da OS. */
+const _OE_ITEM = (nome, grupo, re, porPeca) => ({ nome, grupo, re, porPeca: porPeca || 1 });
+const _OE_ITENS_CM = [
+  _OE_ITEM('Frente', 'corpo1', /^frente(?!.*parte [23])/),
+  _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/),
+  _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2),
+  _OE_ITEM('Ribana', 'ribana', /gola|ribana/),
+  _OE_ITEM('Viés', 'vies', /^vies/),
+];
+const _OE_ITENS_BM = [
+  _OE_ITEM('Frente', 'corpo1', /^frente(?!.*parte [23])/),
+  _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/),
+  _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2),
+  _OE_ITEM('Barra', 'barra', /^barra/),
+  _OE_ITEM('Punhos', 'barra', /^punho/, 2),
+  _OE_ITEM('Viés', 'vies', /^vies/),
+];
+const _OE_REPOSICAO = _OE_ITEM('Tecido de reposição', 'reposicao', null);
+const ITENS_OE_POR_LINHA = {
+  'CM.LISA': _OE_ITENS_CM,
+  'CM.REC': _OE_ITENS_CM.concat([_OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/)]),
+  'CM.TRI': _OE_ITENS_CM.concat([
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
+    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/)]),
+  'BM.LISA': _OE_ITENS_BM,
+  'BM.TRI': _OE_ITENS_BM.concat([
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
+    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/),
+    _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2),
+    _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2),
+    _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/),
+    _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/)])
+};
+// O rótulo do grupo quando a OS não tem fase com aquele nome.
+const _OE_GRUPO_ROTULO = { corpo1: 'Corpo', corpo2: 'Corpo parte 2', corpo3: 'Corpo parte 3',
+  ribana: 'Ribana', barra: 'Barra/Punhos', vies: 'Viés', reposicao: 'Reposição' };
+
+// A linha do produto: o SKU sem a cor ("CM.LISA-PRE" → "CM.LISA").
+function _oeLinhaDaOS(o) {
+  return String(_skuBaseDaOS(o) || '').split('-')[0].trim().toUpperCase();
+}
+
+// Os grupos a que uma fase do enfesto responde, pelo nome dela. "Corpo + Gola"
+// responde por dois; "Corpo" sozinho é a parte 1.
+function _oeGruposDaFase(nome) {
+  const n = _normNome(nome);
+  const g = [];
+  if (/corpo/.test(n)) {
+    const m = n.match(/corpo(?: parte)? ?([123])/);
+    g.push('corpo' + (m ? m[1] : '1'));
+  }
+  if (/gola|ribana/.test(n)) g.push('ribana');
+  if (/barra|punho/.test(n)) g.push('barra');
+  if (/vies/.test(n)) g.push('vies');
+  return g;
+}
+
+function _expProdutosDaCargaPorTam(o, carga) {
+  const TT = totaisPorTamanhoTomOS(o);
+  const out = {};
+  if (carga && Array.isArray(carga.pacotes)) {
+    const pp = _expPecasPacoteOS(o);
+    carga.pacotes.forEach(p => {
+      const k = _EXP_TAM_KEY[p.tam];
+      if (k) out[k] = (out[k] || 0) + pp.de(p);
+    });
+  } else {
+    (TT.tamanhos || []).forEach(k => { out[k] = Number(TT.colTotal(k)) || 0; });
+  }
+  return { porTam: out, tamanhos: (TT.tamanhos || []).slice() };
+}
+
+// [{ titulo, itens: [{ nome, porPeca, semQtd }] }] na ordem das fases da OS.
+function _expItensPorFase(o, carga, fi) {
+  if (!o) return null;
+  const todas = !fi || !fi.temFases || fi.todas;
+  const levam = (fi && fi.temFases) ? fi.levam : [];
+  const fasesOS = _expFasesDaOS(o);
+  const lista = ITENS_OE_POR_LINHA[_oeLinhaDaOS(o)];
+  if (lista) {
+    const comps = (o.componentes || []).map(c => ({ c, n: _normNome(c.nome) }));
+    // Quantas por peça: o componente da OS que responde pelo item, senão o padrão.
+    const porPecaDe = it => {
+      const achou = it.re && comps.find(x => it.re.test(x.n) && Number(x.c.qtdPorPeca) > 0);
+      return achou ? Number(achou.c.qtdPorPeca) : it.porPeca;
+    };
+    const grupos = [];
+    const grupoDe = (chave, titulo, ordem) => {
+      let g = grupos.find(x => x.chave === chave);
+      if (!g) { g = { chave, titulo, ordem, itens: [] }; grupos.push(g); }
+      return g;
+    };
+    lista.forEach(it => {
+      const fase = fasesOS.find(f => _oeGruposDaFase(f.nome).includes(it.grupo));
+      // Carga parcial: só o que é de uma fase que embarca.
+      if (!todas && !(fase && levam.some(l => l.ordem === fase.ordem))) return;
+      const g = fase
+        ? grupoDe('f' + fase.ordem, fase.rotulo, fase.ordem)
+        : grupoDe('g' + it.grupo, _OE_GRUPO_ROTULO[it.grupo] || it.grupo, 90);
+      g.itens.push({ nome: it.nome, porPeca: porPecaDe(it) });
+    });
+    // O tecido de reposição vai no pacote de reposição.
+    const levaRepos = !(carga && Array.isArray(carga.pacotes)) || !!(carga && carga.reposicao);
+    if (levaRepos) grupoDe('reposicao', 'Reposição', 99).itens.push({ nome: _OE_REPOSICAO.nome, semQtd: true });
+    return grupos.sort((a, b) => a.ordem - b.ordem);
+  }
+  // Linha fora da tabela: os componentes da OS, pela fase em que são cortados.
+  const comps = ordenarComponentesPorFase(o.componentes || [], o, true);
+  if (!comps.length) return null;
+  const grupos = [];
+  comps.forEach(({ c, fase }) => {
+    const idx = fase ? (o.fases || []).indexOf(fase) : -1;
+    const fc = fase ? fasesOS.find(x => x.ordem === (Number(fase.ordem) || (idx + 1))) : null;
+    if (!todas && !(fc && levam.some(l => l.ordem === fc.ordem))) return;
+    const chave = fc ? 'f' + fc.ordem : 'outros';
+    let g = grupos.find(x => x.chave === chave);
+    if (!g) { g = { chave, titulo: fc ? fc.rotulo : 'Outros itens', ordem: fc ? fc.ordem : 99, itens: [] }; grupos.push(g); }
+    g.itens.push({ nome: c.nome || '—', porPeca: Number(c.qtdPorPeca) > 0 ? Number(c.qtdPorPeca) : 1 });
+  });
+  return grupos.sort((a, b) => a.ordem - b.ordem);
+}
+
+function _expItensFaseHtml(o, carga, fi) {
+  const grupos = o ? _expItensPorFase(o, carga, fi) : null;
+  if (!grupos || !grupos.some(g => g.itens.length)) return '';
+  const fmt = n => (Math.round(Number(n) || 0)).toLocaleString('pt-BR');
+  const { porTam, tamanhos } = _expProdutosDaCargaPorTam(o, carga);
+  const TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const TH = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
+  const TD = "padding:0 2px;text-align:center;font-family:'IBM Plex Mono',monospace;";
+  const nCols = 2 + tamanhos.length + 1;
+  const parcial = fi && fi.temFases && !fi.todas;
+  const linhaItem = it => {
+    if (it.semQtd) return `<tr>
+      <td style="padding:0 2px;width:9pt;"><span class="exp-print-box"></span></td>
+      <td colspan="${nCols - 1}" style="padding:0 2px;text-align:left;">${esc(it.nome)}</td></tr>`;
+    const vals = tamanhos.map(k => Math.round(it.porPeca * (porTam[k] || 0)));
+    const total = vals.reduce((s, v) => s + v, 0);
+    return `<tr>
+      <td style="padding:0 2px;width:9pt;"><span class="exp-print-box"></span></td>
+      <td style="padding:0 2px;text-align:left;">${esc(it.nome)}${it.porPeca !== 1 ? ` <span style="color:#555;">(${fmt(it.porPeca)}/pç)</span>` : ''}</td>
+      ${vals.map(v => `<td style="${TD}${v > 0 ? '' : 'color:#999;'}">${fmt(v)}</td>`).join('')}
+      <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(total)}</td>
+    </tr>`;
+  };
+  const corpo = grupos.filter(g => g.itens.length).map(g => `
+      <tr><td colspan="${nCols}" style="padding:1pt 2px 0;border-top:.5pt solid #999;background:#f4f4f4;font-weight:700;">${esc(g.titulo)}</td></tr>
+      ${g.itens.map(linhaItem).join('')}`).join('');
+  return `
+    <div class="itens-fase">
+      <div class="itens-tit">${parcial ? 'Itens desta carga — só estas fases' : 'Itens por fase'}</div>
+      <table>
+        <thead><tr>
+          <th style="${TH}width:9pt;"></th>
+          <th style="${TH}text-align:left;">Item</th>
+          ${tamanhos.map(k => `<th style="${TH}text-align:center;">${TAM[k] || esc(k)}</th>`).join('')}
+          <th style="${TH}text-align:center;background:#eef3ee;">Total</th>
+        </tr></thead>
+        <tbody>${corpo}</tbody>
+      </table>
+    </div>`;
+}
+
 /* ---- O que o usuário reescreveu à mão na folha de OE, por OS alocada ----
    A folha de OE nasce toda calculada: o nome da peça vem do desenho, as cores
    das variantes, as peças dos componentes e os volumes dos pacotes da carga. É
@@ -18374,9 +18567,10 @@ function renderPrintPlanoExpedicao() {
     // é assunto do PLANEJAMENTO, e continua lá — na linha da OS, no plano de
     // expedição, com "ficam: …" e o painel de remanescentes.
     const fi = i.fases || { temFases: false, todas: true, levam: [], ficam: [] };
-    const fasesHtml = (fi.temFases && !fi.todas && fi.levam.length)
+    const itensHtml = _expItensFaseHtml(o, i.carga, fi);
+    const fasesHtml = itensHtml || ((fi.temFases && !fi.todas && fi.levam.length)
       ? `<div class="fases"><b>Só estas fases:</b> ${esc(_expFasesTexto(fi.levam))}</div>`
-      : '';
+      : '');
     const TT = o ? totaisPorTamanhoTomOS(o) : null;
     // Sem grade: ao menos o volume abaixo da 1ª linha.
     if (!TT || !TT.tamanhos.length) return `<div class="exp-print-os">${cab}<div class="sub">${fmt(i.pecas)} un. · ${volTxt}</div>${fasesHtml}${obsHtml}${fracHtml}</div>`;
@@ -31772,7 +31966,11 @@ async function duplicarOS(id) {
 /* ========================================================= */
 /*               RENDER DA FOLHA PARA IMPRESSÃO              */
 /* ========================================================= */
-function ordenarComponentesPorFase(comps, o) {
+// `comFase`: em vez dos componentes, devolve [{ c, fase }] — a fase do enfesto
+// (o objeto de o.fases) em que cada componente é cortado, ou null quando nenhuma
+// responde por ele. É a mesma decisão que ordena o relatório do rodapé da folha
+// de OS, e a folha de OE a usa para listar os itens de cada fase (25/09/2026).
+function ordenarComponentesPorFase(comps, o, comFase) {
   const fases = (o?.fases || []).slice().sort((a,b) => (a.ordem||0) - (b.ordem||0));
 
   // Sem fases (OS sem grade): usa ordem canônica
@@ -31793,7 +31991,7 @@ function ordenarComponentesPorFase(comps, o) {
       }
       return 50;
     };
-    return [...comps].map((c,i)=>({c,i,p:canon(c)})).sort((a,b)=>a.p-b.p||a.i-b.i).map(x=>x.c);
+    return [...comps].map((c,i)=>({c,i,p:canon(c)})).sort((a,b)=>a.p-b.p||a.i-b.i).map(x => comFase ? { c: x.c, fase: null } : x.c);
   }
 
   // Determina a posição de cada fase pelo índice no array ordenado
@@ -31845,7 +32043,7 @@ function ordenarComponentesPorFase(comps, o) {
 
   return [...comps].map((c, i) => ({ c, i, p: prioridade(c) }))
     .sort((a, b) => a.p - b.p || a.i - b.i)
-    .map(x => x.c);
+    .map(x => comFase ? { c: x.c, fase: x.p < fases.length ? fases[x.p] : null } : x.c);
 }
 
 function renderComponentesDetalheBox(o) {
