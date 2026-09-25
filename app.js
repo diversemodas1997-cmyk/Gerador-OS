@@ -1993,6 +1993,7 @@ const ACOES_POR_AREA = {
   'apagar um lançamento de aviamentos': 'estoque-tecidos',
   'cadastrar no estoque de peças': 'estoque-tecidos', 'apagar do estoque de peças': 'estoque-tecidos',
   'cadastrar no estoque de ferramentas': 'estoque-tecidos', 'apagar do estoque de ferramentas': 'estoque-tecidos',
+  'lançar no estoque de peças': 'estoque-tecidos', 'lançar no estoque de ferramentas': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -2457,7 +2458,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','pecasMov','ferramentasMov','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -2994,6 +2995,9 @@ const STATE = {
   // que está em uso e o que está guardado, por unidade.
   pecasCad: [],
   ferramentasCad: [],
+  // e o histórico de entradas, saídas e ajustes de cada um.
+  pecasMov: [],
+  ferramentasMov: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3190,6 +3194,8 @@ const DESFAZER_NOMES = {
   aviamentosMov: ['lançamento de aviamento', 'lançamentos de aviamento'],
   pecasCad: ['peça do estoque', 'peças do estoque'],
   ferramentasCad: ['ferramenta do estoque', 'ferramentas do estoque'],
+  pecasMov: ['lançamento de peças', 'lançamentos de peças'],
+  ferramentasMov: ['lançamento de ferramentas', 'lançamentos de ferramentas'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3344,7 +3350,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','pecasMov','ferramentasMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -8574,20 +8580,55 @@ window.excluirAviamentoExp = excluirAviamentoExp;
    de peças e Estoque de ferramentas. Esses estoques devem receber o cadastro
    dos tipos de peças e ferramentas em uso e em estoque.")
 
-   Não é estoque de lançamentos, como o de aviamentos: é um CADASTRO. Cada
-   linha é um tipo (agulha, lançadeira, tesoura, régua…) e diz, naquela
-   unidade, quantos estão EM USO (na máquina, na mão de alguém) e quantos
-   estão EM ESTOQUE (guardados). Corrigir é editar a linha. As duas telas são
-   a mesma, com chaves separadas; as unidades são as do aviamento. */
+   É um CADASTRO: cada linha é um tipo (agulha, lançadeira, tesoura, régua…)
+   e diz, naquela unidade, quantos estão EM USO (na máquina, na mão de alguém)
+   e quantos estão EM ESTOQUE (guardados). As duas telas são a mesma, com
+   chaves separadas; as unidades são as do aviamento.
+
+   O HISTÓRICO (25/09/2026, Junior: "insira histórico de entradas e saídas nas
+   peças e ferramentas"). As quantidades da linha continuam sendo o retrato de
+   hoje, e cada mudança fica registrada em `pecasMov` / `ferramentasMov`:
+
+     · ENTRADA  — chegou (compra): estoque +N;
+                  voltou do uso: uso −N, estoque +N.
+     · SAÍDA    — posta em uso: estoque −N, uso +N;
+                  baixa (quebrou, gastou, sumiu): sai do estoque ou do uso.
+     · AJUSTE   — o cadastro foi criado ou corrigido à mão (contagem).
+
+   Cada lançamento guarda o quanto mexeu em cada coluna (`dUso`, `dEstoque`),
+   e apagar um lançamento desfaz exatamente isso. Não se tira do estoque nem
+   do uso mais do que há. */
 const ESTOQUE_ITENS = {
-  pecas: { chave: 'pecasCad', titulo: 'Estoque de peças', um: 'peça', uns: 'peças',
+  pecas: { chave: 'pecasCad', mov: 'pecasMov', titulo: 'Estoque de peças', um: 'peça', uns: 'peças',
     exemplo: 'Ex.: Agulha DBx1 nº 11', painel: 'pecas-painel' },
-  ferramentas: { chave: 'ferramentasCad', titulo: 'Estoque de ferramentas', um: 'ferramenta', uns: 'ferramentas',
+  ferramentas: { chave: 'ferramentasCad', mov: 'ferramentasMov', titulo: 'Estoque de ferramentas', um: 'ferramenta', uns: 'ferramentas',
     exemplo: 'Ex.: Tesoura de corte 10"', painel: 'ferramentas-painel' }
 };
+// Os motivos de cada lançamento, e o que cada um faz nas duas colunas.
+const ESTOQUE_ITENS_MOTIVOS = {
+  entrada: [
+    { k: 'compra', rotulo: 'Chegou (compra / reposição)', uso: 0, estoque: +1 },
+    { k: 'voltou', rotulo: 'Voltou do uso para o estoque', uso: -1, estoque: +1 }
+  ],
+  saida: [
+    { k: 'uso', rotulo: 'Posta em uso (sai do estoque)', uso: +1, estoque: -1 },
+    { k: 'baixa-estoque', rotulo: 'Baixa do estoque (quebrou, venceu, sumiu)', uso: 0, estoque: -1 },
+    { k: 'baixa-uso', rotulo: 'Baixa do que estava em uso (quebrou, gastou)', uso: -1, estoque: 0 }
+  ]
+};
+const _estItensMotivo = k => ESTOQUE_ITENS_MOTIVOS.entrada.concat(ESTOQUE_ITENS_MOTIVOS.saida).find(m => m.k === k);
 const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc' };
 const _estItensBusca = { pecas: '', ferramentas: '' };
-let _estItensCtx = null;   // { tipo, id } do cadastro aberto no modal
+const _estItensPeriodo = { pecas: { de: '', ate: '' }, ferramentas: { de: '', ate: '' } };
+let _estItensCtx = null;   // { tipo, id, mov? } do que está aberto no modal
+
+// O histórico de uma unidade no período, do mais novo para o mais velho.
+function _estItensHistorico(movs, unidade, de, ate, busca) {
+  return (movs || []).filter(m => _aviUnidadeDe(m) === unidade)
+    .filter(m => { const d = String(m.data || ''); return (!de || d >= de) && (!ate || d <= ate); })
+    .filter(m => !busca || _normNome((m.nome || '') + ' ' + (m.desc || '') + ' ' + (m.obs || '')).includes(busca))
+    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.em || '').localeCompare(String(a.em || '')));
+}
 
 function renderEstoqueItens(tipo) {
   const cfg = ESTOQUE_ITENS[tipo];
@@ -8607,7 +8648,7 @@ function renderEstoqueItens(tipo) {
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_estItensTrocarUnidade('${tipo}','${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
   const corpo = linhas.length ? linhas.map(x => `<tr>
-      <td class="col-actions row-actions estoque-tecidos-only"><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
+      <td class="col-actions row-actions estoque-tecidos-only"><button title="Registrar o que chegou ou voltou do uso" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','entrada')">+ entrada</button><button title="Registrar o que foi posto em uso ou deu baixa" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','saida')">− saída</button><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
       <td style="${mono}">${fmt(x.emUso)}</td>
       <td style="${mono}font-weight:700;">${fmt(x.emEstoque)}</td>
@@ -8619,6 +8660,48 @@ function renderEstoqueItens(tipo) {
       <td style="${mono}font-weight:700;">${fmt(tEst)}</td>
       <td style="${mono}font-weight:700;">${fmt(tUso + tEst)}</td><td></td><td></td></tr>` : '')
     : `<tr><td colspan="7" class="empty">${busca ? 'Nada encontrado na busca.' : `Nenhuma ${esc(cfg.um)} cadastrada nesta unidade.`}</td></tr>`;
+  // O histórico: o mês corrente, até alguém mudar o período.
+  const per = _estItensPeriodo[tipo];
+  const hoje = _aviHoje();
+  if (!per.ate) per.ate = hoje;
+  if (!per.de) per.de = hoje.slice(0, 8) + '01';
+  const hist = _estItensHistorico(STATE[cfg.mov], unidade, per.de, per.ate, busca);
+  const tEnt = hist.filter(m => m.tipo === 'entrada').reduce((s, m) => s + n(m.qtd), 0);
+  const tSai = hist.filter(m => m.tipo === 'saida').reduce((s, m) => s + n(m.qtd), 0);
+  const sinal = v => (n(v) > 0 ? '+' : '') + fmt(v);
+  const tipoCel = m => {
+    const cor = m.tipo === 'entrada' ? '#d6f0db' : m.tipo === 'saida' ? '#f6dcda' : '#e8e4f3';
+    const nome = m.tipo === 'entrada' ? 'Entrada' : m.tipo === 'saida' ? 'Saída' : 'Ajuste';
+    const mot = _estItensMotivo(m.motivo);
+    return `<span class="badge" style="background:${cor};">${nome}</span><div class="muted" style="font-size:10px;">${esc(mot ? mot.rotulo : (m.motivo === 'cadastro' ? 'Cadastro inicial' : 'Correção do cadastro'))}</div>`;
+  };
+  const histHtml = `<div class="card">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+      <h2 style="margin:0;font-size:14px;flex:1 1 auto;">Histórico de entradas e saídas</h2>
+      <div class="field" style="margin:0;"><label>De</label><input type="date" value="${esc(per.de)}" onchange="_estItensMudarPeriodo('${tipo}','de',this.value)"></div>
+      <div class="field" style="margin:0;"><label>Até</label><input type="date" value="${esc(per.ate)}" onchange="_estItensMudarPeriodo('${tipo}','ate',this.value)"></div>
+      <button class="btn small ghost" onclick="_estItensMudarPeriodo('${tipo}','mes')">Este mês</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">${hist.length} lançamento${hist.length === 1 ? '' : 's'} ·
+      entradas <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEnt)}</b> ·
+      saídas <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tSai)}</b></div>
+    <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Data</th><th>Tipo</th><th>${esc(cfg.um[0].toUpperCase() + cfg.um.slice(1))}</th>
+      <th style="text-align:right;">Qtd</th>
+      <th style="text-align:right;" title="Quanto este lançamento mexeu no que está em uso">Em uso</th>
+      <th style="text-align:right;" title="Quanto este lançamento mexeu no que está em estoque">Em estoque</th>
+      <th>Observação</th><th>Por</th></tr></thead><tbody>
+      ${hist.length ? hist.map(m => `<tr>
+        <td class="col-actions row-actions estoque-tecidos-only"><button title="Apagar este lançamento e desfazer o que ele mexeu nas quantidades" onclick="excluirMovEstoqueItem('${tipo}','${esc(m.id)}')">apagar</button></td>
+        <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
+        <td>${tipoCel(m)}</td>
+        <td>${esc(m.nome)}${m.desc ? `<div class="muted" style="font-size:11px;">${esc(m.desc)}</div>` : ''}</td>
+        <td style="${mono}">${m.tipo === 'ajuste' ? '—' : fmt(m.qtd)}</td>
+        <td style="${mono}">${n(m.dUso) ? sinal(m.dUso) : ''}</td>
+        <td style="${mono}">${n(m.dEstoque) ? sinal(m.dEstoque) : ''}</td>
+        <td>${esc(m.obs || '')}</td>
+        <td class="muted" style="font-size:11px;">${esc(m.por || '')}</td></tr>`).join('')
+        : '<tr><td colspan="9" class="empty">Nenhum lançamento neste período.</td></tr>'}
+    </tbody></table></div>`;
   cont.innerHTML = `
     ${abas}
     <div class="card">
@@ -8633,11 +8716,23 @@ function renderEstoqueItens(tipo) {
         <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>
         <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>
         <tbody>${corpo}</tbody></table>
-    </div>`;
+    </div>
+    ${histHtml}`;
 }
 
 function _estItensTrocarUnidade(tipo, k) {
   _estItensUnidade[tipo] = k === 'sc' ? 'sc' : 'desc';
+  renderEstoqueItens(tipo);
+}
+
+function _estItensMudarPeriodo(tipo, campo, valor) {
+  const per = _estItensPeriodo[tipo];
+  if (!per) return;
+  if (campo === 'mes') { per.de = ''; per.ate = ''; }
+  else if (campo === 'de' && valor) per.de = valor;
+  else if (campo === 'ate' && valor) per.ate = valor;
+  // De depois de Até não é período: os dois trocam de lugar.
+  if (per.de && per.ate && per.de > per.ate) { const x = per.de; per.de = per.ate; per.ate = x; }
   renderEstoqueItens(tipo);
 }
 
@@ -8648,6 +8743,17 @@ function _estItensBuscar(tipo, valor) {
   renderEstoqueItens(tipo);
   const inp = document.querySelector('#' + cfg.painel + ' input[type="text"]');
   if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+// Registra um lançamento no histórico (quem chama grava as duas chaves).
+function _estItensRegistrar(cfg, x, mov) {
+  if (!Array.isArray(STATE[cfg.mov])) STATE[cfg.mov] = [];
+  STATE[cfg.mov].push({
+    id: uid(), itemId: x.id, nome: x.nome, desc: x.desc || '', unidade: _aviUnidadeDe(x),
+    data: _aviHoje(), obs: '', ...mov,
+    por: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
+    em: new Date().toISOString()
+  });
 }
 
 function abrirEstoqueItem(tipo, id) {
@@ -8672,16 +8778,68 @@ function abrirEstoqueItem(tipo, id) {
       <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="Marca, medida, máquina em que serve…" value="${x ? esc(x.desc || '') : ''}"></div>
       <div class="field"><label>Em uso (un)</label><input type="number" min="0" step="1" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
       <div class="field"><label>Em estoque (un)</label><input type="number" min="0" step="1" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
+      ${x ? `<div class="field full"><div class="field-hint">Para o que chegou, foi posto em uso ou deu baixa, prefira <b>+ entrada</b> e <b>− saída</b> na linha. Mudar as quantidades aqui fica no histórico como <b>ajuste</b> (contagem).</div></div>` : ''}
       <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="Ex.: prateleira 3 / pedir mais em outubro" value="${x ? esc(x.obs || '') : ''}"></div>
     </div>`;
   openModal('modal-estoque-item');
   setTimeout(() => { const e = document.getElementById('mei-nome'); if (e) e.focus(); }, 50);
 }
 
+// Entrada ou saída de uma linha do cadastro.
+function abrirMovEstoqueItem(tipo, id, sentido) {
+  const cfg = ESTOQUE_ITENS[tipo];
+  if (!cfg || !exigirEstoqueTecidos('lançar no estoque de ' + cfg.uns)) return;
+  const x = (STATE[cfg.chave] || []).find(i => i.id === id);
+  if (!x) return toast('Este cadastro não existe mais', 'err');
+  const s = sentido === 'saida' ? 'saida' : 'entrada';
+  _estItensCtx = { tipo, id: x.id, mov: s };
+  const n = v => Math.round(Number(v) || 0).toLocaleString('pt-BR');
+  document.getElementById('modal-estoque-item-title').textContent =
+    (s === 'entrada' ? 'Entrada · ' : 'Saída · ') + x.nome + (x.desc ? ' ' + x.desc : '');
+  document.getElementById('modal-estoque-item-fields').innerHTML = `
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Hoje: <b>${n(x.emUso)}</b> em uso e <b>${n(x.emEstoque)}</b> em estoque (${esc(((AVIAMENTO_UNIDADES.find(u => u.k === _aviUnidadeDe(x))) || {}).rotulo || '')}).</div>
+    <div class="form-grid cols-2">
+      <div class="field full"><label>${s === 'entrada' ? 'De onde veio' : 'Para onde foi'} *</label><select id="mei-motivo">${ESTOQUE_ITENS_MOTIVOS[s].map((m, i) =>
+        `<option value="${m.k}"${i === 0 ? ' selected' : ''}>${esc(m.rotulo)}</option>`).join('')}</select></div>
+      <div class="field"><label>Quantidade (un) *</label><input type="number" min="1" step="1" id="mei-qtd" placeholder="Ex.: 10"></div>
+      <div class="field"><label>Data</label><input type="date" id="mei-data" value="${_aviHoje()}"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="${s === 'entrada' ? 'Ex.: NF 1234 / fornecedor' : 'Ex.: máquina 7 / reta da Maria'}"></div>
+    </div>`;
+  openModal('modal-estoque-item');
+  setTimeout(() => { const e = document.getElementById('mei-qtd'); if (e) e.focus(); }, 50);
+}
+
+async function _salvarMovEstoqueItem(ctx, cfg) {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const x = (STATE[cfg.chave] || []).find(i => i.id === ctx.id);
+  if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
+  const mot = ESTOQUE_ITENS_MOTIVOS[ctx.mov].find(m => m.k === v('mei-motivo'));
+  if (!mot) return toast('Escolha ' + (ctx.mov === 'entrada' ? 'de onde veio' : 'para onde foi'), 'err');
+  const qtd = Math.max(0, Math.round(parseFloat(String(v('mei-qtd')).replace(',', '.')) || 0));
+  if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
+  const uso = Math.round(Number(x.emUso) || 0), est = Math.round(Number(x.emEstoque) || 0);
+  if (mot.estoque < 0 && qtd > est) return toast(`Só há ${est} em estoque`, 'err');
+  if (mot.uso < 0 && qtd > uso) return toast(`Só há ${uso} em uso`, 'err');
+  const dUso = mot.uso * qtd, dEstoque = mot.estoque * qtd;
+  x.emUso = uso + dUso;
+  x.emEstoque = est + dEstoque;
+  x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+  x.atualizadoEm = new Date().toISOString();
+  _estItensRegistrar(cfg, x, { tipo: ctx.mov, motivo: mot.k, qtd, dUso, dEstoque,
+    data: v('mei-data') || _aviHoje(), obs: v('mei-obs').trim() });
+  _estItensCtx = null;
+  await saveState(cfg.chave);
+  await saveState(cfg.mov);
+  closeModal('modal-estoque-item');
+  toast(ctx.mov === 'entrada' ? 'Entrada registrada' : 'Saída registrada', 'ok');
+  renderEstoqueItens(ctx.tipo);
+}
+
 async function salvarEstoqueItem() {
   const ctx = _estItensCtx;
   const cfg = ctx && ESTOQUE_ITENS[ctx.tipo];
   if (!cfg || !exigirEstoqueTecidos('cadastrar no estoque de ' + cfg.uns)) return;
+  if (ctx.mov) return _salvarMovEstoqueItem(ctx, cfg);
   const v = id => (document.getElementById(id) || {}).value || '';
   const nome = v('mei-nome').trim();
   if (!nome) return toast('Informe o tipo de ' + cfg.um, 'err');
@@ -8702,19 +8860,51 @@ async function salvarEstoqueItem() {
     atualizadoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
     atualizadoEm: new Date().toISOString()
   };
+  let x;
   if (ctx.id) {
-    const x = lista.find(i => i.id === ctx.id);
+    x = lista.find(i => i.id === ctx.id);
     if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
+    const dUso = dados.emUso - Math.round(Number(x.emUso) || 0);
+    const dEstoque = dados.emEstoque - Math.round(Number(x.emEstoque) || 0);
     Object.assign(x, dados);
+    // A quantidade mudada à mão entra no histórico como ajuste.
+    if (dUso || dEstoque) _estItensRegistrar(cfg, x, { tipo: 'ajuste', motivo: 'correcao', qtd: 0, dUso, dEstoque });
   } else {
-    lista.push({ id: uid(), ...dados, em: dados.atualizadoEm, por: dados.atualizadoPor });
+    x = { id: uid(), ...dados, em: dados.atualizadoEm, por: dados.atualizadoPor };
+    lista.push(x);
+    if (x.emUso || x.emEstoque) _estItensRegistrar(cfg, x, { tipo: 'ajuste', motivo: 'cadastro', qtd: 0, dUso: x.emUso, dEstoque: x.emEstoque });
   }
   _estItensCtx = null;
   await saveState(cfg.chave);
+  await saveState(cfg.mov);
   closeModal('modal-estoque-item');
   toast(ctx.id ? 'Cadastro corrigido' : 'Cadastrado no ' + cfg.titulo.toLowerCase(), 'ok');
   _estItensUnidade[ctx.tipo] = unidade;
   renderEstoqueItens(ctx.tipo);
+}
+
+// Apagar um lançamento desfaz o que ele mexeu — se a linha ainda existe e
+// desfazer não deixa nenhuma coluna negativa.
+async function excluirMovEstoqueItem(tipo, id) {
+  const cfg = ESTOQUE_ITENS[tipo];
+  if (!cfg || !exigirEstoqueTecidos('apagar do estoque de ' + cfg.uns)) return;
+  const m = (STATE[cfg.mov] || []).find(i => i.id === id);
+  if (!m) return;
+  const x = (STATE[cfg.chave] || []).find(i => i.id === m.itemId);
+  const dUso = Math.round(Number(m.dUso) || 0), dEst = Math.round(Number(m.dEstoque) || 0);
+  if (x) {
+    const uso = Math.round(Number(x.emUso) || 0) - dUso, est = Math.round(Number(x.emEstoque) || 0) - dEst;
+    if (uso < 0 || est < 0) return toast('Desfazer este lançamento deixaria a quantidade negativa — as quantidades já mudaram depois dele', 'err');
+    if (!confirm(`Apagar este lançamento de "${m.nome}"?\n\nAs quantidades voltam: em uso ${x.emUso} → ${uso}, em estoque ${x.emEstoque} → ${est}.`)) return;
+    x.emUso = uso; x.emEstoque = est;
+    x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+    x.atualizadoEm = new Date().toISOString();
+  } else if (!confirm(`Apagar este lançamento de "${m.nome}" do histórico?\n\nO cadastro dele já foi apagado; nenhuma quantidade muda.`)) return;
+  STATE[cfg.mov] = STATE[cfg.mov].filter(i => i.id !== id);
+  if (x) await saveState(cfg.chave);
+  await saveState(cfg.mov);
+  toast('Lançamento apagado', 'ok');
+  renderEstoqueItens(tipo);
 }
 
 async function excluirEstoqueItem(tipo, id) {
@@ -8722,7 +8912,8 @@ async function excluirEstoqueItem(tipo, id) {
   if (!cfg || !exigirEstoqueTecidos('apagar do estoque de ' + cfg.uns)) return;
   const x = (STATE[cfg.chave] || []).find(i => i.id === id);
   if (!x) return;
-  if (!confirm(`Apagar "${x.nome}" do ${cfg.titulo.toLowerCase()}?`)) return;
+  // O histórico fica: ele diz o que aconteceu, mesmo sem o cadastro.
+  if (!confirm(`Apagar "${x.nome}" do ${cfg.titulo.toLowerCase()}?\n\nO histórico de entradas e saídas dele continua guardado.`)) return;
   STATE[cfg.chave] = STATE[cfg.chave].filter(i => i.id !== id);
   await saveState(cfg.chave);
   toast('Cadastro apagado', 'ok');
@@ -8730,9 +8921,12 @@ async function excluirEstoqueItem(tipo, id) {
 }
 window.renderEstoqueItens = renderEstoqueItens;
 window._estItensTrocarUnidade = _estItensTrocarUnidade;
+window._estItensMudarPeriodo = _estItensMudarPeriodo;
 window._estItensBuscar = _estItensBuscar;
 window.abrirEstoqueItem = abrirEstoqueItem;
+window.abrirMovEstoqueItem = abrirMovEstoqueItem;
 window.salvarEstoqueItem = salvarEstoqueItem;
+window.excluirMovEstoqueItem = excluirMovEstoqueItem;
 window.excluirEstoqueItem = excluirEstoqueItem;
 
 /* ========================================================= */
