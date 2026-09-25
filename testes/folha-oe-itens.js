@@ -54,6 +54,9 @@ ok('4. BM.LISA: frente, costa, mangas, barra, punhos, viés e tecido de reposiç
 const bmTri = lista(os('BM.TRI-BEGE', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés']));
 ok('5. BM.TRI: a BM.LISA + frente, mangas e costa das partes 2 e 3',
    /\[Corpo Parte 2\] Frente parte 2, Mangas parte 2x2, Costa parte 2 \[Corpo Parte 3\] Frente parte 3, Mangas parte 3x2, Costa parte 3/.test(bmTri), bmTri);
+ok('5b. BM.TRI: o forro de capuz, na fase Forro de capuz, 2 por peça',
+   /\[Forro de capuz\] Forro de capuzx2 \[Barra\/Punhos\]/.test(bmTri), bmTri);
+ok('5c. a BM.LISA nao ganha forro de capuz', !/Forro/.test(bmLisa), bmLisa);
 ok('6. o nome e FRENTE parte 2/3, nao corpo parte 2/3', !/Corpo parte [23]/.test(cmTri + bmTri + cmRec));
 
 console.log('-- o que muda a lista --');

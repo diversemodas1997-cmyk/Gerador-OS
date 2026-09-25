@@ -10810,11 +10810,14 @@ const ITENS_OE_POR_LINHA = {
     _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2),
     _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2),
     _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/),
-    _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/)])
+    _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/),
+    // (25/09/2026, Junior: "insira forro de capuz na lista da BM.TRI"). São dois
+    // lados por capuz — o componente "Forro do capuz" das OS diz 2 por peça.
+    _OE_ITEM('Forro de capuz', 'forro', /^forro/, 2)])
 };
 // O rótulo do grupo quando a OS não tem fase com aquele nome.
 const _OE_GRUPO_ROTULO = { corpo1: 'Corpo', corpo2: 'Corpo parte 2', corpo3: 'Corpo parte 3',
-  ribana: 'Ribana', barra: 'Barra/Punhos', vies: 'Viés', reposicao: 'Reposição' };
+  ribana: 'Ribana', barra: 'Barra/Punhos', vies: 'Viés', forro: 'Forro de capuz', reposicao: 'Reposição' };
 
 // A linha do produto: o SKU sem a cor ("CM.LISA-PRE" → "CM.LISA").
 function _oeLinhaDaOS(o) {
@@ -10833,6 +10836,7 @@ function _oeGruposDaFase(nome) {
   if (/gola|ribana/.test(n)) g.push('ribana');
   if (/barra|punho/.test(n)) g.push('barra');
   if (/vies/.test(n)) g.push('vies');
+  if (/forro/.test(n)) g.push('forro');
   return g;
 }
 
