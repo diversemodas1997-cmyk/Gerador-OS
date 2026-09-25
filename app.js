@@ -10793,6 +10793,10 @@ const _OE_ITENS_BM = [
   _OE_ITEM('Frente', 'corpo1', /^frente(?!.*parte [23])/),
   _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/),
   _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2),
+  // A blusa lisa também tem capuz (25/09/2026, Junior: "corrija a ordem dos
+  // itens na BM.LISA também" — a ordem é frente, costa, mangas, CAPUZ, barra…).
+  // Todas as OS de BM.LISA cadastram "Capuz", 2 por peça, no pano do corpo.
+  _OE_ITEM('Capuz', 'corpo1', /^capuz/, 2),
   _OE_ITEM('Barra', 'barra', /^barra/),
   _OE_ITEM('Punhos', 'barra', /^punho/, 2),
   _OE_ITEM('Viés', 'vies', /^vies/),
@@ -10904,9 +10908,12 @@ function _expItensPorFase(o, carga, fi) {
   if (lista) {
     const comps = (o.componentes || []).map(c => ({ c, n: _normNome(c.nome) }));
     // Quantas por peça: o componente da OS que responde pelo item, senão o padrão.
+    // Com MAIS DE UM componente respondendo, vale o maior: há OS que cadastram
+    // "Mangas" (1) e "Mangas Blusa Moletom Básica" (2) — o par de mangas é 2, e
+    // o 1 é o cadastro antigo que ficou junto (conferido nas OS de 24/09/2026).
     const porPecaDe = it => {
-      const achou = it.re && comps.find(x => it.re.test(x.n) && Number(x.c.qtdPorPeca) > 0);
-      return achou ? Number(achou.c.qtdPorPeca) : it.porPeca;
+      const qs = it.re ? comps.filter(x => it.re.test(x.n)).map(x => Number(x.c.qtdPorPeca) || 0).filter(q => q > 0) : [];
+      return qs.length ? Math.max(...qs) : it.porPeca;
     };
     const grupos = [];
     const grupoDe = (chave, titulo, ordem) => {

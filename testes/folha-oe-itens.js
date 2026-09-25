@@ -49,8 +49,8 @@ const cmTri = lista(os('CM.TRI-CAQUI', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo
 ok('3. CM.TRI: peça por peça — frente 1, 2, 3; costa; mangas — num bloco só, depois ribana e viés',
    cmTri === '[Corpo] Frente parte 1, Frente parte 2, Frente parte 3, Costa, Mangasx2 [Gola] Ribana [Viés] Viés [Reposição] Tecido de reposição', cmTri);
 const bmLisa = lista(os('BM.LISA-PRE', ['Corpo', 'Barra/Punhos', 'Viés']));
-ok('4. BM.LISA: frente, costa, mangas, barra, punhos, viés e tecido de reposição',
-   bmLisa === '[Corpo] Frente, Costa, Mangasx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', bmLisa);
+ok('4. BM.LISA: frente, costa, mangas, capuz, barra, punhos, viés e tecido de reposição',
+   bmLisa === '[Corpo] Frente, Costa, Mangasx2, Capuzx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', bmLisa);
 const bmTri = lista(os('BM.TRI-BEGE', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés']));
 ok('5. BM.TRI: peça por peça — frente 1, 2, 3; costa 1, 2, 3; mangas 1, 2, 3; capuz — num bloco só',
    /^\[Corpo\] Frente parte 1, Frente parte 2, Frente parte 3, Costa parte 1, Costa parte 2, Costa parte 3, Mangas parte 1x2, Mangas parte 2x2, Mangas parte 3x2, Capuzx2 \[Forro de capuz\]/.test(bmTri), bmTri);
@@ -67,9 +67,14 @@ ok('5b. BM.TRI: o forro de capuz, na fase Forro de capuz, 2 por peça',
    /\[Forro de capuz\] Forro de capuzx2 \[Barra\/Punhos\]/.test(bmTri), bmTri);
 ok('5c. a BM.LISA nao ganha forro de capuz', !/Forro/.test(bmLisa), bmLisa);
 {
+  const dup = lista(os('BM.LISA-PRE', ['Corpo', 'Barra/Punhos', 'Viés'],
+    [{ nome: 'Mangas', qtdPorPeca: 1 }, { nome: 'Mangas Blusa Moletom Básica', qtdPorPeca: 2 }]));
+  ok('5f. dois componentes de manga (1 e 2 por peça): vale o maior', /Mangasx2/.test(dup), dup);
+}
+{
   const trocada = lista(os('BM.LISA-PRE', ['Viés', 'Barra/Punhos', 'Corpo']));
-  ok('5e. a ordem e a da lista (frente, costa, mangas, barra, punhos, viés, reposição), e nao a das fases da OS',
-     trocada === '[Corpo] Frente, Costa, Mangasx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', trocada);
+  ok('5e. a ordem e a da lista (frente, costa, mangas, capuz, barra, punhos, viés, reposição), e nao a das fases da OS',
+     trocada === '[Corpo] Frente, Costa, Mangasx2, Capuzx2 [Barra/Punhos] Barra, Punhosx2 [Viés] Viés [Reposição] Tecido de reposição', trocada);
 }
 ok('6. o nome e FRENTE parte 2/3, nao corpo parte 2/3', !/Corpo parte [23]/.test(cmTri + bmTri + cmRec));
 
