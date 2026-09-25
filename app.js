@@ -26103,7 +26103,10 @@ function gerarPdfEtiquetas(dados) {
     ];
     // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
     if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
-    if (!ehViaExtra) linhas.push({ t: `LOTE: ${i + 1}/${totalPacotes}`, s: 1 });
+    /* SEM LOTE (25/09/2026, Junior: "retire das etiquetas de todas as OS a
+       informação de lote"). A linha "LOTE: 3/19" saiu do papel; o que diz qual
+       pacote é cada etiqueta continua sendo o tamanho (+ tom) em destaque e, na
+       blusa, o grupo de peças. */
     linhas.push(destaque);
     // O grupo de peças em destaque; o nome comprido ("CAPUZ/FORRO DE CAPUZ/
     // MANGAS") vai menor, senão ele sozinho encolheria a etiqueta inteira.
@@ -27146,7 +27149,6 @@ function imprimirEtiquetas(osId) {
         ${peca ? '' : `<div class="row">TAM: ${escEt(tam)}</div>`}
         <div class="row">COR: ${escEt(peca ? corPacotes[i] : cor)}</div>
         ${ehRep && tonsTexto ? `<div class="row">${escEt(tonsTexto)}</div>` : ''}
-        ${ehViaExtra ? '' : `<div class="row">LOTE: ${i + 1}/${totPac}</div>`}
         ${destaque}
       </div>
     </div>`;
@@ -27261,7 +27263,7 @@ function imprimirEtiquetas(osId) {
     <button class="primary" onclick="window.print()">🖨 Imprimir</button>
     <button onclick="window.close()">Fechar</button>
     <button onclick="window.opener && window.opener.imprimirEtiquetasPdf && window.opener.imprimirEtiquetasPdf('${escEt(osId)}')">📄 Abrir PDF 10×5cm</button>
-    <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''} · LOTE 1${totPac>1?'..'+totPac:''}${nRep>1?' + '+(nRep-1)+' via da reposição (sem lote)':''} · 10×5cm</span>
+    <span style="margin-left:12px;color:#555;font-size:13px;">${numEtiquetas} etiqueta${numEtiquetas>1?'s':''}${nRep>1?' (a reposição em '+nRep+' vias)':''} · 10×5cm</span>
     <div style="margin-top:8px;font-size:12px;color:#555;line-height:1.45;max-width:760px;">
       Esta janela imprime pelo navegador, e aí o <b>tamanho da folha é o da impressora</b>: numa laser A4 a etiqueta sai
       pequena no canto da folha. Para a <b>impressora de etiquetas 10×5cm</b>, use o <b>PDF</b> — ele carrega a página de
