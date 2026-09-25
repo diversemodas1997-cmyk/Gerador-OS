@@ -146,6 +146,8 @@
       <div class="nav-items">
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
+        <a class="nav-btn" href="#estoque-pecas" data-page="estoque-pecas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de peças</a>
+        <a class="nav-btn" href="#estoque-ferramentas" data-page="estoque-ferramentas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de ferramentas</a>
         <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
         <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
         <!-- ESTOQUE COM FIO fica aqui, e não em Operações, porque é peça
@@ -409,6 +411,35 @@
         </div>
       </div>
       <div id="aviamentos-painel"></div>
+    </section>
+
+    <!-- ESTOQUE DE PEÇAS e ESTOQUE DE FERRAMENTAS (25/09/2026): cadastro dos
+         tipos, com o que está em uso e o que está em estoque, por unidade.
+         Quem cadastra é quem lança no estoque de tecidos. -->
+    <section class="page hidden" data-page="estoque-pecas">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de peças</h1>
+          <div class="desc">Cadastro dos tipos de peças, com a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Para corrigir uma quantidade, edite a linha.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirEstoqueItem('pecas')">+ Cadastrar peça</button>
+        </div>
+      </div>
+      <div id="pecas-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="estoque-ferramentas">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de ferramentas</h1>
+          <div class="desc">Cadastro dos tipos de ferramentas, com a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Para corrigir uma quantidade, edite a linha.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirEstoqueItem('ferramentas')">+ Cadastrar ferramenta</button>
+        </div>
+      </div>
+      <div id="ferramentas-painel"></div>
     </section>
 
     <!-- RANKING DE PRODUÇÃO: o que a fábrica mais faz, cruzando SKU, cor e grade -->
@@ -1422,6 +1453,17 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="modal-estoque-item">
+  <div class="modal">
+    <h2 id="modal-estoque-item-title">Cadastrar</h2>
+    <div id="modal-estoque-item-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-estoque-item')">Cancelar</button>
+      <button class="btn primary" onclick="salvarEstoqueItem()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL MOVIMENTAÇÃO DE ESTOQUE DE CORTE ============= -->
 <div class="modal-backdrop" id="modal-corte">
   <div class="modal">
@@ -1644,6 +1686,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-25a"></script>
+<script src="app.js?v=2026-09-25b"></script>
 </body>
 </html>

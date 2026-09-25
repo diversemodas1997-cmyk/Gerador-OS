@@ -1991,6 +1991,8 @@ const ACOES_POR_AREA = {
   'apagar um lançamento de estoque': 'estoque-tecidos',
   'lançar no estoque de aviamentos': 'estoque-tecidos',
   'apagar um lançamento de aviamentos': 'estoque-tecidos',
+  'cadastrar no estoque de peças': 'estoque-tecidos', 'apagar do estoque de peças': 'estoque-tecidos',
+  'cadastrar no estoque de ferramentas': 'estoque-tecidos', 'apagar do estoque de ferramentas': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -2455,7 +2457,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -2988,6 +2990,10 @@ const STATE = {
   expedicaoMov: [],
   // Estoque de aviamentos (24/09/2026): lancamentos manuais em kg, por tipo e cor.
   aviamentosMov: [],
+  // Estoque de peças e de ferramentas (25/09/2026): cadastro dos tipos, com o
+  // que está em uso e o que está guardado, por unidade.
+  pecasCad: [],
+  ferramentasCad: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3182,6 +3188,8 @@ const DESFAZER_NOMES = {
   fiosMov: ['lançamento de fios', 'lançamentos de fios'],
   expedicaoMov: ['lançamento da expedição', 'lançamentos da expedição'],
   aviamentosMov: ['lançamento de aviamento', 'lançamentos de aviamento'],
+  pecasCad: ['peça do estoque', 'peças do estoque'],
+  ferramentasCad: ['ferramenta do estoque', 'ferramentas do estoque'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3336,7 +3344,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4009,6 +4017,8 @@ function goto(page) {
   }
   if (page === 'estoque') renderEstoque();
   if (page === 'estoque-aviamentos') renderEstoqueAviamentos();
+  if (page === 'estoque-pecas') renderEstoqueItens('pecas');
+  if (page === 'estoque-ferramentas') renderEstoqueItens('ferramentas');
   if (page === 'compra') renderCompra();
   // Sempre por ID da fase: a ordem de FASES_ESTOQUE muda quando entra campo novo
   // (as unidades entraram no meio), e índice fixo aqui abriria o painel errado.
@@ -8556,6 +8566,174 @@ async function excluirAviamentoExp(id) {
 }
 window.abrirModalExpAviamento = abrirModalExpAviamento;
 window.excluirAviamentoExp = excluirAviamentoExp;
+
+/* ========================================================= */
+/*          ESTOQUE DE PEÇAS E ESTOQUE DE FERRAMENTAS         */
+/* ========================================================= */
+/* (25/09/2026, Junior: "Insira na barra lateral na pasta estoque, item Estoque
+   de peças e Estoque de ferramentas. Esses estoques devem receber o cadastro
+   dos tipos de peças e ferramentas em uso e em estoque.")
+
+   Não é estoque de lançamentos, como o de aviamentos: é um CADASTRO. Cada
+   linha é um tipo (agulha, lançadeira, tesoura, régua…) e diz, naquela
+   unidade, quantos estão EM USO (na máquina, na mão de alguém) e quantos
+   estão EM ESTOQUE (guardados). Corrigir é editar a linha. As duas telas são
+   a mesma, com chaves separadas; as unidades são as do aviamento. */
+const ESTOQUE_ITENS = {
+  pecas: { chave: 'pecasCad', titulo: 'Estoque de peças', um: 'peça', uns: 'peças',
+    exemplo: 'Ex.: Agulha DBx1 nº 11', painel: 'pecas-painel' },
+  ferramentas: { chave: 'ferramentasCad', titulo: 'Estoque de ferramentas', um: 'ferramenta', uns: 'ferramentas',
+    exemplo: 'Ex.: Tesoura de corte 10"', painel: 'ferramentas-painel' }
+};
+const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc' };
+const _estItensBusca = { pecas: '', ferramentas: '' };
+let _estItensCtx = null;   // { tipo, id } do cadastro aberto no modal
+
+function renderEstoqueItens(tipo) {
+  const cfg = ESTOQUE_ITENS[tipo];
+  const cont = cfg && document.getElementById(cfg.painel);
+  if (!cont) return;
+  const unidade = _estItensUnidade[tipo];
+  const busca = _normNome(_estItensBusca[tipo]);
+  const todos = Array.isArray(STATE[cfg.chave]) ? STATE[cfg.chave] : [];
+  const linhas = todos.filter(x => _aviUnidadeDe(x) === unidade)
+    .filter(x => !busca || _normNome((x.nome || '') + ' ' + (x.desc || '') + ' ' + (x.obs || '')).includes(busca))
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  const n = v => Math.round(Number(v) || 0);
+  const fmt = v => n(v).toLocaleString('pt-BR');
+  const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
+  const tEst = linhas.reduce((s, x) => s + n(x.emEstoque), 0);
+  const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;";
+  const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
+    `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_estItensTrocarUnidade('${tipo}','${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
+  const corpo = linhas.length ? linhas.map(x => `<tr>
+      <td class="col-actions row-actions estoque-tecidos-only"><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
+      <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
+      <td style="${mono}">${fmt(x.emUso)}</td>
+      <td style="${mono}font-weight:700;">${fmt(x.emEstoque)}</td>
+      <td style="${mono}">${fmt(n(x.emUso) + n(x.emEstoque))}</td>
+      <td>${esc(x.obs || '')}</td>
+      <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 ? `
+    <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>
+      <td style="${mono}font-weight:700;">${fmt(tUso)}</td>
+      <td style="${mono}font-weight:700;">${fmt(tEst)}</td>
+      <td style="${mono}font-weight:700;">${fmt(tUso + tEst)}</td><td></td><td></td></tr>` : '')
+    : `<tr><td colspan="7" class="empty">${busca ? 'Nada encontrado na busca.' : `Nenhuma ${esc(cfg.um)} cadastrada nesta unidade.`}</td></tr>`;
+  cont.innerHTML = `
+    ${abas}
+    <div class="card">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+        <div class="field" style="margin:0;flex:0 1 280px;"><label>Buscar</label><input type="text" value="${esc(_estItensBusca[tipo])}" placeholder="Tipo, descrição ou observação" oninput="_estItensBuscar('${tipo}', this.value)"></div>
+        <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'} ·
+          em uso <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tUso)}</b> ·
+          em estoque <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEst)}</b></div>
+      </div>
+      <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>
+        <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
+        <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>
+        <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>
+        <tbody>${corpo}</tbody></table>
+    </div>`;
+}
+
+function _estItensTrocarUnidade(tipo, k) {
+  _estItensUnidade[tipo] = k === 'sc' ? 'sc' : 'desc';
+  renderEstoqueItens(tipo);
+}
+
+// A busca redesenha a tabela sem perder o cursor do campo.
+function _estItensBuscar(tipo, valor) {
+  _estItensBusca[tipo] = valor || '';
+  const cfg = ESTOQUE_ITENS[tipo];
+  renderEstoqueItens(tipo);
+  const inp = document.querySelector('#' + cfg.painel + ' input[type="text"]');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function abrirEstoqueItem(tipo, id) {
+  const cfg = ESTOQUE_ITENS[tipo];
+  if (!cfg || !exigirEstoqueTecidos('cadastrar no estoque de ' + cfg.uns)) return;
+  const x = id ? (STATE[cfg.chave] || []).find(i => i.id === id) : null;
+  if (id && !x) return toast('Este cadastro não existe mais', 'err');
+  _estItensCtx = { tipo, id: x ? x.id : '' };
+  const un = x ? _aviUnidadeDe(x) : _estItensUnidade[tipo];
+  // Os tipos já cadastrados (nas duas unidades) viram sugestão do campo.
+  const nomes = [...new Set((STATE[cfg.chave] || []).map(i => String(i.nome || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const val = v => (x ? String(Math.max(0, Math.round(Number(v) || 0))) : '');
+  document.getElementById('modal-estoque-item-title').textContent =
+    (x ? 'Editar ' : 'Cadastrar ') + cfg.um;
+  document.getElementById('modal-estoque-item-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Unidade *</label><select id="mei-unidade">${AVIAMENTO_UNIDADES.map(u =>
+        `<option value="${u.k}"${u.k === un ? ' selected' : ''}>${esc(u.rotulo)}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo de ${esc(cfg.um)} *</label><input type="text" id="mei-nome" list="mei-nomes" placeholder="${esc(cfg.exemplo)}" value="${x ? esc(x.nome || '') : ''}">
+        <datalist id="mei-nomes">${nomes.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
+      <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="Marca, medida, máquina em que serve…" value="${x ? esc(x.desc || '') : ''}"></div>
+      <div class="field"><label>Em uso (un)</label><input type="number" min="0" step="1" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
+      <div class="field"><label>Em estoque (un)</label><input type="number" min="0" step="1" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="Ex.: prateleira 3 / pedir mais em outubro" value="${x ? esc(x.obs || '') : ''}"></div>
+    </div>`;
+  openModal('modal-estoque-item');
+  setTimeout(() => { const e = document.getElementById('mei-nome'); if (e) e.focus(); }, 50);
+}
+
+async function salvarEstoqueItem() {
+  const ctx = _estItensCtx;
+  const cfg = ctx && ESTOQUE_ITENS[ctx.tipo];
+  if (!cfg || !exigirEstoqueTecidos('cadastrar no estoque de ' + cfg.uns)) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const nome = v('mei-nome').trim();
+  if (!nome) return toast('Informe o tipo de ' + cfg.um, 'err');
+  const inteiro = id => Math.max(0, Math.round(parseFloat(String(v(id)).replace(',', '.')) || 0));
+  const unidade = v('mei-unidade') === 'sc' ? 'sc' : 'desc';
+  const desc = v('mei-desc').trim();
+  if (!Array.isArray(STATE[cfg.chave])) STATE[cfg.chave] = [];
+  const lista = STATE[cfg.chave];
+  // O mesmo tipo com a mesma descrição, na mesma unidade, é uma linha só.
+  const chaveDe = i => _normNome(i.nome) + '||' + _normNome(i.desc || '') + '||' + _aviUnidadeDe(i);
+  const dup = lista.find(i => i.id !== ctx.id && chaveDe(i) === chaveDe({ nome, desc, unidade }));
+  if (dup) return toast(`"${nome}" já está cadastrado nesta unidade — edite a linha que existe`, 'err');
+  const dados = {
+    nome, desc, unidade,
+    emUso: inteiro('mei-uso'),
+    emEstoque: inteiro('mei-estoque'),
+    obs: v('mei-obs').trim(),
+    atualizadoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
+    atualizadoEm: new Date().toISOString()
+  };
+  if (ctx.id) {
+    const x = lista.find(i => i.id === ctx.id);
+    if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
+    Object.assign(x, dados);
+  } else {
+    lista.push({ id: uid(), ...dados, em: dados.atualizadoEm, por: dados.atualizadoPor });
+  }
+  _estItensCtx = null;
+  await saveState(cfg.chave);
+  closeModal('modal-estoque-item');
+  toast(ctx.id ? 'Cadastro corrigido' : 'Cadastrado no ' + cfg.titulo.toLowerCase(), 'ok');
+  _estItensUnidade[ctx.tipo] = unidade;
+  renderEstoqueItens(ctx.tipo);
+}
+
+async function excluirEstoqueItem(tipo, id) {
+  const cfg = ESTOQUE_ITENS[tipo];
+  if (!cfg || !exigirEstoqueTecidos('apagar do estoque de ' + cfg.uns)) return;
+  const x = (STATE[cfg.chave] || []).find(i => i.id === id);
+  if (!x) return;
+  if (!confirm(`Apagar "${x.nome}" do ${cfg.titulo.toLowerCase()}?`)) return;
+  STATE[cfg.chave] = STATE[cfg.chave].filter(i => i.id !== id);
+  await saveState(cfg.chave);
+  toast('Cadastro apagado', 'ok');
+  renderEstoqueItens(tipo);
+}
+window.renderEstoqueItens = renderEstoqueItens;
+window._estItensTrocarUnidade = _estItensTrocarUnidade;
+window._estItensBuscar = _estItensBuscar;
+window.abrirEstoqueItem = abrirEstoqueItem;
+window.salvarEstoqueItem = salvarEstoqueItem;
+window.excluirEstoqueItem = excluirEstoqueItem;
 
 /* ========================================================= */
 /*           ESTOQUE DE CORTE (peças cortadas)               */
