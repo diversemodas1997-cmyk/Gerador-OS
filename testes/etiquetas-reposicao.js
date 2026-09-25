@@ -123,6 +123,9 @@ const osBase = (extra) => Object.assign({
 }, extra || {});
 
 const temLote = (pag) => pag.some(l => /^LOTE:/.test(l));
+// O quadrado do lote à mão (25/09/2026): "LOTE" + a barra, no pé de toda etiqueta.
+const temQuadro = (pag) => pag.includes('LOTE') && pag.includes('/');
+const semQuadro = (pag) => pag.filter(l => l !== 'LOTE' && l !== '/');
 const loteDe = (pag) => (pag.find(l => /^LOTE:/.test(l)) || '').replace('LOTE: ', '');
 const linhaTons = (pag) => pag.find(l => /^(TOM|TONS):/.test(l)) || '';
 const ehRep = (pag) => pag.some(l => l.includes('Viés/Reposição/Ribana'));
@@ -134,6 +137,7 @@ eq('1 tom: pacotes contados', r.dados.totalPacotes, 4);
 eq('1 tom: etiquetas impressas (a via extra da reposição)', r.dados.numEtiquetas, 5);
 eq('1 tom: páginas no PDF', r.paginas.length, 5);
 ok('1 tom: nenhuma etiqueta traz LOTE (retirado em 25/09/2026)', !r.paginas.some(temLote), r.paginas.map(temLote));
+ok('1 tom: toda etiqueta tem o quadrado do lote para escrever à mão', r.paginas.every(temQuadro), r.paginas.map(temQuadro));
 ok('1 tom: as duas últimas são a reposição', ehRep(r.paginas[3]) && ehRep(r.paginas[4]), r.paginas.map(ehRep));
 ok('1 tom: a via extra não leva lote', !temLote(r.paginas[4]), r.paginas[4]);
 eq('1 tom: o tom sai resumido numa linha', linhaTons(r.paginas[3]), 'TOM: 1');
@@ -235,7 +239,7 @@ const ehRepBM = (pag) => pag.some(l => l.includes('Tecido de reposição/Viés')
 r = etiquetasDe(tri547, { tons: [1, 2], moletom: true });
 eq('BM.TRI: etiquetas (1 tamanho × 2 tons × 3 grupos + 2 de reposição)', r.dados.numEtiquetas, 8);
 eq('BM.TRI: pacotes no LOTE (6 + reposição)', r.dados.totalPacotes, 7);
-const ordem = r.paginas.slice(0, 3).map(pg => pg[pg.length - 1]);
+const ordem = r.paginas.slice(0, 3).map(pg => semQuadro(pg)[semQuadro(pg).length - 1]);
 eq('BM.TRI: os três grupos no G tom 1', ordem.join(' | '),
    'FRENTE/BOLSO/COSTA | CAPUZ/FORRO DE CAPUZ/MANGAS | BARRA/PUNHOS');
 ok('BM.TRI: G tom 1 — Frente/Bolso/Costa, 144 de cada, nas três cores',
@@ -256,7 +260,7 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547.filt
   grade: { descricao: 'P ao G3 | BM.LISA | 177cm', g: 8, total: 8 }, enfesto: { camadas: 28 } }),
   { tons: [1], moletom: true });
 eq('BM.LISA: três etiquetas por tamanho × tom + 2 de reposição', r.dados.numEtiquetas, 5);
-eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(pg => pg[pg.length - 1]).join(' | '),
+eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(pg => semQuadro(pg)[semQuadro(pg).length - 1]).join(' | '),
    'FRENTE/BOLSO/COSTA | CAPUZ/MANGAS | BARRA/PUNHOS');
 ok('BM.LISA: capuz inteiro (1 por blusa), mangas 2', r.paginas[1].includes('QTDE PACOTE: Capuz 224 · Mangas 448'), r.paginas[1]);
 ok('BM.LISA: reposição "Tecido de reposição/Viés"', ehRepBM(r.paginas[3]) && ehRepBM(r.paginas[4]), r.paginas[3]);

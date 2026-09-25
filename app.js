@@ -26042,7 +26042,14 @@ function gerarPdfEtiquetas(dados) {
   const boxTop = 2;
   const boxHeight = 46;
   const verticalPad = 1.5;
-  const innerHeight = boxHeight - 2 * verticalPad; // 43mm
+  /* O LOTE À MÃO (25/09/2026, Junior: "para substituir a informação do lote,
+     insira um quadrado para ser escrito o número x/x à mão"). Uma faixa no pé
+     da etiqueta fica reservada para ele: o quadrado no canto direito, com a
+     barra no meio e "LOTE" ao lado. O texto sobe e encolhe o que for preciso
+     para não encostar nele. */
+  const faixaLote = 9.5;                       // mm reservados no pé
+  const loteBox = { w: 24, h: 8 };             // o quadrado
+  const innerHeight = boxHeight - 2 * verticalPad - faixaLote; // ~33.5mm
   const lineFactor = 1.18;   // espacamento entre linhas (relativo ao fontSize)
   const ptToMm = 0.3527778;
 
@@ -26128,7 +26135,7 @@ function gerarPdfEtiquetas(dados) {
     const fontSize = Math.min(sizeByWidth, sizeByHeight, 22);
     const lh = fontSize * ptToMm * lineFactor; // mm (altura de 1 linha na escala 1)
 
-    let y = boxTop + (boxHeight - sumEscala * lh) / 2; // centraliza vertical
+    let y = boxTop + (boxHeight - faixaLote - sumEscala * lh) / 2; // centraliza acima da faixa do lote
     linhas.forEach((L, idx) => {
       pdf.setFontSize(fontSize * L.s);
       const x = L.c ? xCenter : xLeft;
@@ -26140,6 +26147,15 @@ function gerarPdfEtiquetas(dados) {
         pdf.line(4, y - lh * 0.12, 96, y - lh * 0.12);
       }
     });
+
+    // O quadrado do lote, vazio, para escrever "3/19" à caneta.
+    const bx = 98 - 1.5 - loteBox.w, by = boxTop + boxHeight - 1.2 - loteBox.h;
+    pdf.setLineWidth(0.35);
+    pdf.rect(bx, by, loteBox.w, loteBox.h);
+    pdf.setFontSize(16);
+    pdf.text('/', bx + loteBox.w / 2, by + loteBox.h / 2, { align: 'center', baseline: 'middle' });
+    pdf.setFontSize(8);
+    pdf.text('LOTE', bx - 1.5, by + loteBox.h / 2, { align: 'right', baseline: 'middle' });
   }
 
   return pdf.output('blob');
@@ -27150,6 +27166,7 @@ function imprimirEtiquetas(osId) {
         <div class="row">COR: ${escEt(peca ? corPacotes[i] : cor)}</div>
         ${ehRep && tonsTexto ? `<div class="row">${escEt(tonsTexto)}</div>` : ''}
         ${destaque}
+        <div class="lote-mao"><span>LOTE</span><span class="q">/</span></div>
       </div>
     </div>`;
   }).join('');
@@ -27199,6 +27216,9 @@ function imprimirEtiquetas(osId) {
     background: #fff;
   }
   .page:last-child { page-break-after: auto; }
+  /* O quadrado do lote, para escrever à mão (ver gerarPdfEtiquetas). */
+  .lote-mao { align-self: flex-end; display: flex; align-items: center; gap: 1.5mm; font-size: 8pt; font-weight: 800; }
+  .lote-mao .q { width: 24mm; height: 7mm; border: 1.3px solid #000; display: flex; align-items: center; justify-content: center; font-size: 14pt; font-weight: 400; }
   .label {
     width: 100%;
     height: 100%;
