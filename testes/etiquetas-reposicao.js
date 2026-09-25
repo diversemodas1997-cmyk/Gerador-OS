@@ -76,9 +76,10 @@ const jsPdfDuble = `
     this.paginas = [[]];
     const cur = () => this.paginas[this.paginas.length - 1];
     this.addPage = () => { this.paginas.push([]); };
-    this.setFont = () => {}; this.setFontSize = () => {};
+    this.setFont = () => {}; this.setFontSize = (n) => { this._fs = n; };
     this.setLineWidth = () => {}; this.rect = () => {}; this.line = () => {};
-    this.getTextWidth = (s) => String(s).length * 1.6;   // largura plausível em mm
+    // Largura plausível em mm, proporcional à fonte como no jsPDF (1,6 mm/letra a 10pt).
+    this.getTextWidth = (s) => String(s).length * 0.16 * (this._fs || 10);
     this.text = (t) => { cur().push(String(t)); };
     this.output = () => 'BLOB';
   }`;
@@ -126,6 +127,8 @@ const temLote = (pag) => pag.some(l => /^LOTE:/.test(l));
 // O quadrado do lote à mão (25/09/2026): "LOTE" + a barra, no pé de toda etiqueta.
 const temQuadro = (pag) => pag.includes('LOTE') && pag.includes('/');
 const semQuadro = (pag) => pag.filter(l => l !== 'LOTE' && l !== '/');
+// O grupo de peças da etiqueta da blusa ("FRENTE/BOLSO/COSTA"…), onde quer que ele esteja.
+const grupoDaEtiqueta = (pag) => pag.find(l => l.length > 1 && /^[A-Z/ ]+$/.test(l) && l.includes('/'));
 const loteDe = (pag) => (pag.find(l => /^LOTE:/.test(l)) || '').replace('LOTE: ', '');
 const linhaTons = (pag) => pag.find(l => /^(TOM|TONS):/.test(l)) || '';
 const ehRep = (pag) => pag.some(l => l.includes('Viés/Reposição/Ribana'));
@@ -239,7 +242,7 @@ const ehRepBM = (pag) => pag.some(l => l.includes('Tecido de reposição/Viés')
 r = etiquetasDe(tri547, { tons: [1, 2], moletom: true });
 eq('BM.TRI: etiquetas (1 tamanho × 2 tons × 3 grupos + 2 de reposição)', r.dados.numEtiquetas, 8);
 eq('BM.TRI: pacotes no LOTE (6 + reposição)', r.dados.totalPacotes, 7);
-const ordem = r.paginas.slice(0, 3).map(pg => semQuadro(pg)[semQuadro(pg).length - 1]);
+const ordem = r.paginas.slice(0, 3).map(grupoDaEtiqueta);
 eq('BM.TRI: os três grupos no G tom 1', ordem.join(' | '),
    'FRENTE/BOLSO/COSTA | CAPUZ/FORRO DE CAPUZ/MANGAS | BARRA/PUNHOS');
 ok('BM.TRI: G tom 1 — Frente/Bolso/Costa, 144 de cada, nas três cores',
@@ -260,7 +263,7 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547.filt
   grade: { descricao: 'P ao G3 | BM.LISA | 177cm', g: 8, total: 8 }, enfesto: { camadas: 28 } }),
   { tons: [1], moletom: true });
 eq('BM.LISA: três etiquetas por tamanho × tom + 2 de reposição', r.dados.numEtiquetas, 5);
-eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(pg => semQuadro(pg)[semQuadro(pg).length - 1]).join(' | '),
+eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(grupoDaEtiqueta).join(' | '),
    'FRENTE/BOLSO/COSTA | CAPUZ/MANGAS | BARRA/PUNHOS');
 ok('BM.LISA: capuz inteiro (1 por blusa), mangas 2', r.paginas[1].includes('QTDE PACOTE: Capuz 224 · Mangas 448'), r.paginas[1]);
 ok('BM.LISA: reposição "Tecido de reposição/Viés"', ehRepBM(r.paginas[3]) && ehRepBM(r.paginas[4]), r.paginas[3]);

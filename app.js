@@ -26043,13 +26043,18 @@ function gerarPdfEtiquetas(dados) {
   const boxHeight = 46;
   const verticalPad = 1.5;
   /* O LOTE À MÃO (25/09/2026, Junior: "para substituir a informação do lote,
-     insira um quadrado para ser escrito o número x/x à mão"). Uma faixa no pé
-     da etiqueta fica reservada para ele: o quadrado no canto direito, com a
-     barra no meio e "LOTE" ao lado. O texto sobe e encolhe o que for preciso
-     para não encostar nele. */
-  const faixaLote = 9.5;                       // mm reservados no pé
-  const loteBox = { w: 24, h: 8 };             // o quadrado
-  const innerHeight = boxHeight - 2 * verticalPad - faixaLote; // ~33.5mm
+     insira um quadrado para ser escrito o número x/x à mão").
+
+     NO CANTO, E SÓ NO CANTO ("desloque o quadrado do lote para o canto
+     inferior direito e aumente a fonte do texto"). A primeira versão reservava
+     uma faixa de 9,5 mm na largura INTEIRA do pé para um quadrado de 24 mm: o
+     texto todo encolhia para cima dela, e 70 mm da faixa ficavam em branco. Agora
+     o quadrado é o próprio canto da borda (a borda da etiqueta faz dois lados
+     dele), o "LOTE" vai dentro, e o texto volta a ter a altura inteira: só a
+     linha que passa na altura do quadrado fica mais estreita (e a centralizada
+     se centra no espaço à esquerda dele). */
+  const loteBox = { w: 26, h: 10.5 };          // o quadrado, no canto
+  const innerHeight = boxHeight - 2 * verticalPad; // 43mm
   const lineFactor = 1.18;   // espacamento entre linhas (relativo ao fontSize)
   const ptToMm = 0.3527778;
 
@@ -26092,7 +26097,7 @@ function gerarPdfEtiquetas(dados) {
     const tomDoPacote = (dados.tonsPacotes || [])[i];
     const tomSuf = (!ehReposicao && (dados.nTons || 1) > 1 && tomDoPacote != null) ? ` tom ${tomDoPacote}` : '';
     const destaque = ehReposicao
-      ? { t: dados.conteudoReposicao || ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
+      ? { t: dados.conteudoReposicao || ETIQUETA_CONTEUDO_REPOSICAO, s: 1.3, c: true }   // conteúdo (texto longo: 1,3 e não o dobro, senão ele sozinho encolhe a etiqueta)
       : { t: (tams[i] || dados.tam) + tomSuf, s: 2, c: true };// tamanho (+ tom) do pacote, dobro
     // Etiqueta por PEÇA (BM.TRI): a QTDE e a COR são as da peça, e a linha TAM
     // com a grade inteira sai — o tamanho do pacote já está no destaque.
@@ -26109,53 +26114,81 @@ function gerarPdfEtiquetas(dados) {
       { t: `COR: ${peca ? dados.corPacotes[i] : dados.cor}`, s: 1 }
     ];
     // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
-    if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
     /* SEM LOTE (25/09/2026, Junior: "retire das etiquetas de todas as OS a
        informação de lote"). A linha "LOTE: 3/19" saiu do papel; o que diz qual
        pacote é cada etiqueta continua sendo o tamanho (+ tom) em destaque e, na
-       blusa, o grupo de peças. */
-    linhas.push(destaque);
-    // O grupo de peças em destaque; o nome comprido ("CAPUZ/FORRO DE CAPUZ/
-    // MANGAS") vai menor, senão ele sozinho encolheria a etiqueta inteira.
+       blusa, o grupo de peças.
+
+       A ÚLTIMA LINHA FICA AO LADO DO QUADRADO DO LOTE, e por isso tem de ser
+       curta: linha comprida ali estreita e encolhe a etiqueta inteira. Na de
+       tamanho, a última é o tamanho ("M tom 1"), e o grupo de peças e a
+       composição vêm antes dele; na reposição, o conteúdo vem antes e a linha
+       curta dos tons fecha. */
+    // O grupo de peças; o nome comprido ("CAPUZ/FORRO DE CAPUZ/MANGAS") vai
+    // menor, senão ele sozinho encolheria a etiqueta inteira.
     if (peca) linhas.push({ t: peca.toUpperCase(), s: peca.length > 14 ? 1.15 : 1.6, c: true });
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     const compDoPacote = !ehReposicao && dados.composicaoPacotes && dados.composicaoPacotes[i];
     if (compDoPacote) {
       compDoPacote.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
     }
+    linhas.push(destaque);
+    // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
+    if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
 
-    // Mede a 10pt e escala linearmente pra achar o maior fontSize base que cabe
-    // em largura (cada linha ocupa largura × sua escala) e altura (soma das
-    // escalas × altura de linha).
-    pdf.setFontSize(10);
-    const maxWAt10 = Math.max(...linhas.map(L => pdf.getTextWidth(L.t) * L.s), 0.1);
+    // O MAIOR fontSize que cabe: pela altura (a soma das linhas), e linha a
+    // linha pela largura — a que cai na altura do quadrado tem só o espaço à
+    // esquerda dele. Começa no limite da altura e desce de 0,2 em 0,2 pt.
+    const bx = 98 - loteBox.w, by = boxTop + boxHeight - loteBox.h;
+    const larguraAoLado = bx - 1.2 - xLeft;
     const sumEscala = linhas.reduce((a, L) => a + L.s, 0);
-    const sizeByWidth  = (10 * innerWidth) / maxWAt10;
-    const sizeByHeight = innerHeight / (sumEscala * ptToMm * lineFactor);
-    const fontSize = Math.min(sizeByWidth, sizeByHeight, 22);
-    const lh = fontSize * ptToMm * lineFactor; // mm (altura de 1 linha na escala 1)
+    pdf.setFontSize(10);
+    const w10 = linhas.map(L => pdf.getTextWidth(L.t) * L.s);   // largura a 10pt
+    const disposicao = fs => {
+      const lh = fs * ptToMm * lineFactor;
+      let y = boxTop + (boxHeight - sumEscala * lh) / 2;
+      const pos = [];
+      for (let k = 0; k < linhas.length; k++) {
+        const L = linhas[k], alt = L.s * lh;
+        // A letra ocupa ~0,8 da altura da linha: é essa faixa que não pode
+        // entrar no quadrado.
+        const aoLado = y + alt * 0.85 > by - 0.3;
+        const cabe = aoLado ? larguraAoLado : innerWidth;
+        if (w10[k] * fs / 10 > cabe) return null;
+        pos.push({ y, aoLado });
+        y += alt;
+      }
+      return { lh, pos };
+    };
+    let fontSize = Math.min(innerHeight / (sumEscala * ptToMm * lineFactor), 22);
+    let lay = disposicao(fontSize);
+    while (!lay && fontSize > 5) { fontSize -= 0.2; lay = disposicao(fontSize); }
+    if (!lay) { fontSize = 5; lay = disposicao(5) || { lh: 5 * ptToMm * lineFactor, pos: linhas.map((L, k) => ({ y: boxTop + 1.5 + k * 2, aoLado: true })) }; }
+    const lh = lay.lh;
 
-    let y = boxTop + (boxHeight - faixaLote - sumEscala * lh) / 2; // centraliza acima da faixa do lote
     linhas.forEach((L, idx) => {
       pdf.setFontSize(fontSize * L.s);
-      const x = L.c ? xCenter : xLeft;
-      pdf.text(fitText(L.t, innerWidth), x, y, { align: L.c ? 'center' : 'left', baseline: 'top' });
-      y += L.s * lh;
+      const { y, aoLado } = lay.pos[idx];
+      const largura = aoLado ? larguraAoLado : innerWidth;
+      const x = L.c ? (aoLado ? xLeft + larguraAoLado / 2 : xCenter) : xLeft;
+      pdf.text(fitText(L.t, largura), x, y, { align: L.c ? 'center' : 'left', baseline: 'top' });
       // Separador fino logo abaixo da MARCA (1a linha).
       if (idx === 0) {
+        const ySep = y + L.s * lh - lh * 0.12;
         pdf.setLineWidth(0.18);
-        pdf.line(4, y - lh * 0.12, 96, y - lh * 0.12);
+        pdf.line(4, ySep, 96, ySep);
       }
     });
 
-    // O quadrado do lote, vazio, para escrever "3/19" à caneta.
-    const bx = 98 - 1.5 - loteBox.w, by = boxTop + boxHeight - 1.2 - loteBox.h;
+    // O quadrado do lote, no canto: a borda da etiqueta faz o lado de baixo e o
+    // da direita. Vazio, para escrever "3/19" à caneta.
     pdf.setLineWidth(0.35);
-    pdf.rect(bx, by, loteBox.w, loteBox.h);
-    pdf.setFontSize(16);
-    pdf.text('/', bx + loteBox.w / 2, by + loteBox.h / 2, { align: 'center', baseline: 'middle' });
-    pdf.setFontSize(8);
-    pdf.text('LOTE', bx - 1.5, by + loteBox.h / 2, { align: 'right', baseline: 'middle' });
+    pdf.line(bx, by, 98, by);
+    pdf.line(bx, by, bx, boxTop + boxHeight);
+    pdf.setFontSize(18);
+    pdf.text('/', bx + loteBox.w / 2, by + loteBox.h / 2 + 0.6, { align: 'center', baseline: 'middle' });
+    pdf.setFontSize(6);
+    pdf.text('LOTE', bx + 1, by + 0.8, { align: 'left', baseline: 'top' });
   }
 
   return pdf.output('blob');
@@ -27217,8 +27250,12 @@ function imprimirEtiquetas(osId) {
   }
   .page:last-child { page-break-after: auto; }
   /* O quadrado do lote, para escrever à mão (ver gerarPdfEtiquetas). */
-  .lote-mao { align-self: flex-end; display: flex; align-items: center; gap: 1.5mm; font-size: 8pt; font-weight: 800; }
-  .lote-mao .q { width: 24mm; height: 7mm; border: 1.3px solid #000; display: flex; align-items: center; justify-content: center; font-size: 14pt; font-weight: 400; }
+  /* No canto: a borda da etiqueta faz o lado de baixo e o da direita. */
+  .label { position: relative; }
+  .lote-mao { position: absolute; right: 0; bottom: 0; width: 26mm; height: 10.5mm;
+    border-left: 1.3px solid #000; border-top: 1.3px solid #000; }
+  .lote-mao span:first-child { position: absolute; left: 1mm; top: .6mm; font-size: 6pt; font-weight: 800; }
+  .lote-mao .q { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 400; }
   .label {
     width: 100%;
     height: 100%;
