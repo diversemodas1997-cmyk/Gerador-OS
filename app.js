@@ -26053,7 +26053,7 @@ function gerarPdfEtiquetas(dados) {
      dele), o "LOTE" vai dentro, e o texto volta a ter a altura inteira: só a
      linha que passa na altura do quadrado fica mais estreita (e a centralizada
      se centra no espaço à esquerda dele). */
-  const loteBox = { w: 26, h: 10.5 };          // o quadrado, no canto
+  const loteBox = { w: 26 };                   // o quadrado, no canto (a altura é a da faixa)
   const innerHeight = boxHeight - 2 * verticalPad; // 43mm
   const lineFactor = 1.18;   // espacamento entre linhas (relativo ao fontSize)
   const ptToMm = 0.3527778;
@@ -26113,82 +26113,82 @@ function gerarPdfEtiquetas(dados) {
       ...(peca ? [] : [{ t: `TAM: ${dados.tam}`, s: 1 }]),    // TODOS os tamanhos da grade, normal
       { t: `COR: ${peca ? dados.corPacotes[i] : dados.cor}`, s: 1 }
     ];
-    // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
     /* SEM LOTE (25/09/2026, Junior: "retire das etiquetas de todas as OS a
-       informação de lote"). A linha "LOTE: 3/19" saiu do papel; o que diz qual
-       pacote é cada etiqueta continua sendo o tamanho (+ tom) em destaque e, na
-       blusa, o grupo de peças.
+       informação de lote"): a linha "LOTE: 3/19" saiu do papel, e no lugar dela
+       há o quadrado para escrever à mão.
 
-       A ÚLTIMA LINHA FICA AO LADO DO QUADRADO DO LOTE, e por isso tem de ser
-       curta: linha comprida ali estreita e encolhe a etiqueta inteira. Na de
-       tamanho, a última é o tamanho ("M tom 1"), e o grupo de peças e a
-       composição vêm antes dele; na reposição, o conteúdo vem antes e a linha
-       curta dos tons fecha. */
+       A FAIXA DO PÉ (25/09/2026, Junior: "coloque as informações de tamanho,
+       tonalidade e itens dentro de um retângulo ao lado do quadrado do lote").
+       O pé da etiqueta é uma faixa na largura inteira, partida em dois: à
+       esquerda um retângulo com o que IDENTIFICA o pacote — o tamanho e o tom
+       em destaque ("M tom 1") e, abaixo, os itens ("FRENTE/BOLSO/COSTA"); na
+       reposição, o conteúdo ("Tecido de reposição/Viés") e os tons; à direita
+       o quadrado do lote, da mesma altura. As linhas de cima (OS, modelo,
+       quantidades, cor) ficam acima da faixa. */
+    const faixa = [destaque];
     // O grupo de peças; o nome comprido ("CAPUZ/FORRO DE CAPUZ/MANGAS") vai
     // menor, senão ele sozinho encolheria a etiqueta inteira.
-    if (peca) linhas.push({ t: peca.toUpperCase(), s: peca.length > 14 ? 1.15 : 1.6, c: true });
+    if (peca) faixa.push({ t: peca.toUpperCase(), s: peca.length > 14 ? 1 : 1.5, c: true });
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     const compDoPacote = !ehReposicao && dados.composicaoPacotes && dados.composicaoPacotes[i];
-    if (compDoPacote) {
-      compDoPacote.forEach(c => linhas.push({ t: c, s: 0.7, c: true }));
-    }
-    linhas.push(destaque);
+    if (compDoPacote) compDoPacote.forEach(c => faixa.push({ t: c, s: 0.7, c: true }));
     // Resumo dos tons: só na reposição (a de tamanho já leva o tom no destaque).
-    if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
+    if (ehReposicao && dados.tonsTexto) faixa.push({ t: dados.tonsTexto, s: 1, c: true });
 
-    // O MAIOR fontSize que cabe: pela altura (a soma das linhas), e linha a
-    // linha pela largura — a que cai na altura do quadrado tem só o espaço à
-    // esquerda dele. Começa no limite da altura e desce de 0,2 em 0,2 pt.
-    const bx = 98 - loteBox.w, by = boxTop + boxHeight - loteBox.h;
-    const larguraAoLado = bx - 1.2 - xLeft;
-    const sumEscala = linhas.reduce((a, L) => a + L.s, 0);
+    // O MAIOR fontSize que cabe: a altura das linhas de cima + a da faixa, e
+    // linha a linha pela largura (a de cima tem a etiqueta inteira; a da faixa,
+    // só o retângulo). Começa no limite da altura e desce de 0,2 em 0,2 pt.
+    const bx = 98 - loteBox.w;                       // onde o quadrado começa
+    const padF = 1.2;                                // respiro dentro da faixa
+    const larguraFaixa = bx - 2 - 2 * 1.5;           // o retângulo, menos as margens
+    const sumTopo = linhas.reduce((a, L) => a + L.s, 0);
+    const sumFaixa = faixa.reduce((a, L) => a + L.s, 0);
     pdf.setFontSize(10);
-    const w10 = linhas.map(L => pdf.getTextWidth(L.t) * L.s);   // largura a 10pt
-    const disposicao = fs => {
+    const cabeEm = (L, larg, fs) => pdf.getTextWidth(L.t) * L.s * fs / 10 <= larg;
+    const alturaUtil = boxHeight - verticalPad - 0.8;  // do topo até a borda de baixo
+    const cabe = fs => {
       const lh = fs * ptToMm * lineFactor;
-      let y = boxTop + (boxHeight - sumEscala * lh) / 2;
-      const pos = [];
-      for (let k = 0; k < linhas.length; k++) {
-        const L = linhas[k], alt = L.s * lh;
-        // A letra ocupa ~0,8 da altura da linha: é essa faixa que não pode
-        // entrar no quadrado.
-        const aoLado = y + alt * 0.85 > by - 0.3;
-        const cabe = aoLado ? larguraAoLado : innerWidth;
-        if (w10[k] * fs / 10 > cabe) return null;
-        pos.push({ y, aoLado });
-        y += alt;
-      }
-      return { lh, pos };
+      if ((sumTopo + sumFaixa) * lh + 2 * padF > alturaUtil) return false;
+      return linhas.every(L => cabeEm(L, innerWidth, fs)) && faixa.every(L => cabeEm(L, larguraFaixa, fs));
     };
-    let fontSize = Math.min(innerHeight / (sumEscala * ptToMm * lineFactor), 22);
-    let lay = disposicao(fontSize);
-    while (!lay && fontSize > 5) { fontSize -= 0.2; lay = disposicao(fontSize); }
-    if (!lay) { fontSize = 5; lay = disposicao(5) || { lh: 5 * ptToMm * lineFactor, pos: linhas.map((L, k) => ({ y: boxTop + 1.5 + k * 2, aoLado: true })) }; }
-    const lh = lay.lh;
+    let fontSize = Math.min((alturaUtil - 2 * padF) / ((sumTopo + sumFaixa) * ptToMm * lineFactor), 22);
+    while (!cabe(fontSize) && fontSize > 5) fontSize -= 0.2;
+    const lh = fontSize * ptToMm * lineFactor;
 
+    // A faixa: a altura do que ela leva + o respiro, no pé da etiqueta, e no
+    // mínimo a de um quadrado onde dá para escrever.
+    const hFaixa = Math.max(sumFaixa * lh + 2 * padF, 10);
+    const yFaixa = boxTop + boxHeight - hFaixa;
+    // As linhas de cima, centradas no espaço acima da faixa.
+    let y = boxTop + (yFaixa - boxTop - sumTopo * lh) / 2;
     linhas.forEach((L, idx) => {
       pdf.setFontSize(fontSize * L.s);
-      const { y, aoLado } = lay.pos[idx];
-      const largura = aoLado ? larguraAoLado : innerWidth;
-      const x = L.c ? (aoLado ? xLeft + larguraAoLado / 2 : xCenter) : xLeft;
-      pdf.text(fitText(L.t, largura), x, y, { align: L.c ? 'center' : 'left', baseline: 'top' });
+      pdf.text(fitText(L.t, innerWidth), L.c ? xCenter : xLeft, y, { align: L.c ? 'center' : 'left', baseline: 'top' });
+      y += L.s * lh;
       // Separador fino logo abaixo da MARCA (1a linha).
       if (idx === 0) {
-        const ySep = y + L.s * lh - lh * 0.12;
         pdf.setLineWidth(0.18);
-        pdf.line(4, ySep, 96, ySep);
+        pdf.line(4, y - lh * 0.12, 96, y - lh * 0.12);
       }
     });
 
-    // O quadrado do lote, no canto: a borda da etiqueta faz o lado de baixo e o
-    // da direita. Vazio, para escrever "3/19" à caneta.
+    // O retângulo e o quadrado: uma linha na largura inteira em cima da faixa e
+    // outra separando os dois; a borda da etiqueta fecha os outros lados.
     pdf.setLineWidth(0.35);
-    pdf.line(bx, by, 98, by);
-    pdf.line(bx, by, bx, boxTop + boxHeight);
+    pdf.line(2, yFaixa, 98, yFaixa);
+    pdf.line(bx, yFaixa, bx, boxTop + boxHeight);
+    const xFaixa = (2 + bx) / 2;
+    y = yFaixa + (hFaixa - sumFaixa * lh) / 2;
+    faixa.forEach(L => {
+      pdf.setFontSize(fontSize * L.s);
+      pdf.text(fitText(L.t, larguraFaixa), xFaixa, y, { align: 'center', baseline: 'top' });
+      y += L.s * lh;
+    });
+    // O quadrado do lote, vazio, para escrever "3/19" à caneta.
     pdf.setFontSize(18);
-    pdf.text('/', bx + loteBox.w / 2, by + loteBox.h / 2 + 0.6, { align: 'center', baseline: 'middle' });
+    pdf.text('/', bx + loteBox.w / 2, yFaixa + hFaixa / 2 + 0.6, { align: 'center', baseline: 'middle' });
     pdf.setFontSize(6);
-    pdf.text('LOTE', bx + 1, by + 0.8, { align: 'left', baseline: 'top' });
+    pdf.text('LOTE', bx + 1, yFaixa + 0.8, { align: 'left', baseline: 'top' });
   }
 
   return pdf.output('blob');
@@ -27185,8 +27185,8 @@ function imprimirEtiquetas(osId) {
     const tomSuf = (nTons > 1 && !ehRep && tonsPacotes[i] != null) ? ` tom ${tonsPacotes[i]}` : '';
     const destaque = ehRep
       ? `<div class="big rep">${escEt(dados.conteudoReposicao || ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
-      : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>${compHtml(i)}`
-        + (peca ? `<div class="big peca">${escEt(peca.toUpperCase())}</div>` : '');
+      : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>`
+        + (peca ? `<div class="big peca">${escEt(peca.toUpperCase())}</div>` : '') + compHtml(i);
     return `
     <div class="page">
       <div class="label">
@@ -27197,9 +27197,10 @@ function imprimirEtiquetas(osId) {
         ${ehRep ? '' : `<div class="row">QTDE PACOTE: ${escEt(_qtdePacoteEtiqueta(dados, i, peca))}</div>`}
         ${peca ? '' : `<div class="row">TAM: ${escEt(tam)}</div>`}
         <div class="row">COR: ${escEt(peca ? corPacotes[i] : cor)}</div>
-        ${ehRep && tonsTexto ? `<div class="row">${escEt(tonsTexto)}</div>` : ''}
-        ${destaque}
-        <div class="lote-mao"><span>LOTE</span><span class="q">/</span></div>
+        <div class="faixa">
+          <div class="ident">${destaque}${ehRep && tonsTexto ? `<div class="row tons">${escEt(tonsTexto)}</div>` : ''}</div>
+          <div class="lote-mao"><span>LOTE</span><span class="q">/</span></div>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -27250,10 +27251,13 @@ function imprimirEtiquetas(osId) {
   }
   .page:last-child { page-break-after: auto; }
   /* O quadrado do lote, para escrever à mão (ver gerarPdfEtiquetas). */
-  /* No canto: a borda da etiqueta faz o lado de baixo e o da direita. */
+  /* A faixa do pé: o retângulo com tamanho, tom e itens, e o quadrado do lote
+     ao lado, da mesma altura. A borda da etiqueta fecha os lados de fora. */
   .label { position: relative; }
-  .lote-mao { position: absolute; right: 0; bottom: 0; width: 26mm; height: 10.5mm;
-    border-left: 1.3px solid #000; border-top: 1.3px solid #000; }
+  .faixa { display: flex; align-items: stretch; margin: 0 -3.5mm -1.5mm; border-top: 1.3px solid #000; }
+  .faixa .ident { flex: 1; min-width: 0; padding: .8mm 1.5mm; display: flex; flex-direction: column; justify-content: center; }
+  .faixa .ident .tons { text-align: center; }
+  .lote-mao { position: relative; flex: 0 0 26mm; min-height: 10mm; border-left: 1.3px solid #000; }
   .lote-mao span:first-child { position: absolute; left: 1mm; top: .6mm; font-size: 6pt; font-weight: 800; }
   .lote-mao .q { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 400; }
   .label {
