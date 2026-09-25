@@ -10780,7 +10780,8 @@ function _expFasesTexto(lista) {
    carga que leva só algumas fases, só os itens delas aparecem. O tecido de
    reposição vai no pacote de reposição: aparece quando a carga o leva. Linha
    que não está na tabela (COT.*, por exemplo) cai nos componentes da OS. */
-const _OE_ITEM = (nome, grupo, re, porPeca) => ({ nome, grupo, re, porPeca: porPeca || 1 });
+// `junto`: itens de fases diferentes que a folha mostra num bloco só (ver BM.TRI).
+const _OE_ITEM = (nome, grupo, re, porPeca, junto) => ({ nome, grupo, re, porPeca: porPeca || 1, junto: junto || '' });
 const _OE_ITENS_CM = [
   _OE_ITEM('Frente', 'corpo1', /^frente(?!.*parte [23])/),
   _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/),
@@ -10804,16 +10805,29 @@ const ITENS_OE_POR_LINHA = {
     _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
     _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/)]),
   'BM.LISA': _OE_ITENS_BM,
-  'BM.TRI': _OE_ITENS_BM.concat([
-    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
-    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/),
-    _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2),
-    _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2),
-    _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/),
-    _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/),
+  /* BM.TRI PEÇA POR PEÇA (25/09/2026, Junior: "manga deve ser mostrada como
+     parte 1, parte 2, parte 3, frente parte 1, frente parte 2, frente parte 3,
+     costa parte 1, costa parte 2, costa parte 3"). As três partes do corpo são
+     três fases do enfesto (uma por cor), mas quem separa confere PEÇA: as três
+     mangas juntas, as três frentes juntas, as três costas juntas. Por isso as
+     nove ficam num bloco só ("Corpo"), nessa ordem, cada uma com a cor da sua
+     fase. A fase continua mandando no que embarca numa carga parcial. */
+  'BM.TRI': [
+    _OE_ITEM('Mangas parte 1', 'corpo1', /^manga(?!.*parte [23])/, 2, 'corpo'),
+    _OE_ITEM('Mangas parte 2', 'corpo2', /^manga.*parte 2/, 2, 'corpo'),
+    _OE_ITEM('Mangas parte 3', 'corpo3', /^manga.*parte 3/, 2, 'corpo'),
+    _OE_ITEM('Frente parte 1', 'corpo1', /^frente(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/, 1, 'corpo'),
+    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/, 1, 'corpo'),
+    _OE_ITEM('Costa parte 1', 'corpo1', /^costa(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/, 1, 'corpo'),
+    _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/, 1, 'corpo'),
     // (25/09/2026, Junior: "insira forro de capuz na lista da BM.TRI"). São dois
     // lados por capuz — o componente "Forro do capuz" das OS diz 2 por peça.
-    _OE_ITEM('Forro de capuz', 'forro', /^forro/, 2)])
+    _OE_ITEM('Forro de capuz', 'forro', /^forro/, 2),
+    _OE_ITEM('Barra', 'barra', /^barra/),
+    _OE_ITEM('Punhos', 'barra', /^punho/, 2),
+    _OE_ITEM('Viés', 'vies', /^vies/)]
 };
 // O rótulo do grupo quando a OS não tem fase com aquele nome.
 const _OE_GRUPO_ROTULO = { corpo1: 'Corpo', corpo2: 'Corpo parte 2', corpo3: 'Corpo parte 3',
@@ -10879,6 +10893,14 @@ function _expItensPorFase(o, carga, fi) {
       const fase = fasesOS.find(f => _oeGruposDaFase(f.nome).includes(it.grupo));
       // Carga parcial: só o que é de uma fase que embarca.
       if (!todas && !(fase && levam.some(l => l.ordem === fase.ordem))) return;
+      if (it.junto) {
+        // Bloco de várias fases: o título é o do bloco, a ordem é a da primeira
+        // fase dele, e a cor vai no item (cada parte tem a sua).
+        const g = grupoDe('j' + it.junto, 'Corpo', fase ? fase.ordem : 90);
+        if (fase) g.ordem = Math.min(g.ordem, fase.ordem);
+        g.itens.push({ nome: it.nome + (fase && fase.cor ? ` (${fase.cor})` : ''), porPeca: porPecaDe(it) });
+        return;
+      }
       const g = fase
         ? grupoDe('f' + fase.ordem, fase.rotulo, fase.ordem)
         : grupoDe('g' + it.grupo, _OE_GRUPO_ROTULO[it.grupo] || it.grupo, 90);
