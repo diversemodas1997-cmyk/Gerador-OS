@@ -50,15 +50,19 @@ const listaConst = (nome) => {
 
 const motor = [
   constante('ETIQUETA_CONTEUDO_REPOSICAO'),
+  constante('ETIQUETA_CONTEUDO_REPOSICAO_BM'),
   constante('ETIQUETAS_REPOSICAO_POR_OS'),
   listaConst('ETIQUETA_COMPOSICAO_MOLETOM'),
   corta('function _composicaoPacoteMoletom'),
   corta('function totaisPorTamanhoTomOS'),
   listaConst('_PECAS_ETIQUETA_BMTRI'),
+  listaConst('_PECAS_ETIQUETA_BMLISA'),
   corta('function _normNome'),
   corta('function _normSku'),
   corta('function _skuDaGrade'),
   corta('function _osEhBmTri'),
+  corta('function _osEhBmLisa'),
+  corta('function _pecasEtiquetaOS'),
   corta('function _coresDaPecaOS'),
   corta('function _tamanhosDaGradeExpandido'),
   corta('function _qtdePacoteEtiqueta'),
@@ -207,10 +211,12 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], grade: { g: 8, total: 8 },
 ok('2 tons sem divisão: a composição sai sem número, não com chute',
    r.paginas[0].includes('Frente · Costa · Bolso · Barra'), r.paginas[0]);
 
-/* ---------- 7. BM.TRI: uma etiqueta por PEÇA (pedido de 22/09/2026) ----------
-   Cada tamanho × tom rende sete etiquetas: Frente, Costa, Capuz, Forro de capuz,
-   Barra/Punhos, Mangas e Bolso — cada uma com a cor e a quantidade da peça.
-   Os componentes são os da OS 0547 como estão gravados. */
+/* ---------- 7. BM.TRI e BM.LISA: três etiquetas por tamanho × tom ----------
+   Pedido de 25/09/2026 (antes: 22/09, uma por peça na BM.TRI): cada tamanho ×
+   tom rende Frente/Bolso/Costa, Capuz/Forro de capuz/Mangas (BM.LISA: Capuz/
+   Mangas) e Barra/Punhos; a quarta é a reposição do fim da OS, "Tecido de
+   reposição/Viés". Tons e quantidades por tom seguem iguais. Os componentes
+   são os da OS 0547 como estão gravados. */
 
 const comps547 = [
   ['Capuz', 'Preto'], ['Forro do capuz', 'Preto'], ['Bolso canguru', 'Off-White'],
@@ -225,32 +231,37 @@ const tri547 = osBase({
   grade: { descricao: '8G | BM.TRI | 179cm', g: 8, total: 8 }, enfesto: { camadas: 28 },
   progresso: { totalTamanhoTons: { 1: true, 2: true }, totalTamanhoTomValor: { 1: 144 } }
 });
+const ehRepBM = (pag) => pag.some(l => l.includes('Tecido de reposição/Viés'));
 r = etiquetasDe(tri547, { tons: [1, 2], moletom: true });
-eq('BM.TRI: etiquetas (1 tamanho × 2 tons × 7 peças + 2 de reposição)', r.dados.numEtiquetas, 16);
-eq('BM.TRI: pacotes no LOTE (14 peças + reposição)', r.dados.totalPacotes, 15);
-const ordem = r.paginas.slice(0, 7).map(pg => pg[pg.length - 1]);
-eq('BM.TRI: a ordem das peças no G tom 1', ordem.join(' | '),
-   'FRENTE | COSTA | CAPUZ | FORRO DE CAPUZ | BARRA/PUNHOS | MANGAS | BOLSO');
-ok('BM.TRI: G tom 1 — Frente, 144, nas três cores em ordem de parte',
-   r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE PACOTE: 144') &&
+eq('BM.TRI: etiquetas (1 tamanho × 2 tons × 3 grupos + 2 de reposição)', r.dados.numEtiquetas, 8);
+eq('BM.TRI: pacotes no LOTE (6 + reposição)', r.dados.totalPacotes, 7);
+const ordem = r.paginas.slice(0, 3).map(pg => pg[pg.length - 1]);
+eq('BM.TRI: os três grupos no G tom 1', ordem.join(' | '),
+   'FRENTE/BOLSO/COSTA | CAPUZ/FORRO DE CAPUZ/MANGAS | BARRA/PUNHOS');
+ok('BM.TRI: G tom 1 — Frente/Bolso/Costa, 144 de cada, nas três cores',
+   r.paginas[0].includes('G tom 1') && r.paginas[0].includes('QTDE PACOTE: Frente 144 · Bolso 144 · Costa 144') &&
    r.paginas[0].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[0]);
-ok('BM.TRI: G tom 1 — Capuz é preto e vai em dobro',
-   r.paginas[2].includes('QTDE PACOTE: 288') && r.paginas[2].includes('COR: PRETO'), r.paginas[2]);
+ok('BM.TRI: G tom 1 — Capuz/Forro/Mangas, 2 por blusa',
+   r.paginas[1].includes('QTDE PACOTE: Capuz 288 · Forro 288 · Mangas 288') && r.paginas[1].includes('COR: PRETO/MOSTARDA/OFF-WHITE'), r.paginas[1]);
 ok('BM.TRI: G tom 1 — Barra/Punhos diz as duas contas',
-   r.paginas[4].includes('QTDE PACOTE: Barra 144 · Punhos 288') && r.paginas[4].includes('COR: OFF-WHITE'), r.paginas[4]);
-ok('BM.TRI: G tom 2 — Mangas com as 80 blusas do tom',
-   r.paginas[12].includes('G tom 2') && r.paginas[12].includes('MANGAS') && r.paginas[12].includes('QTDE PACOTE: 160'), r.paginas[12]);
-ok('BM.TRI: a etiqueta de peça não traz a lista de composição nem a grade inteira',
-   !r.paginas[0].some(l => /Punhos d+ ·|^TAM:/.test(l)), r.paginas[0]);
-ok('BM.TRI: a reposição continua no fim, sem peça',
-   ehRep(r.paginas[14]) && ehRep(r.paginas[15]) && !r.paginas[14].includes('FRENTE'), r.paginas[14]);
+   r.paginas[2].includes('QTDE PACOTE: Barra 144 · Punhos 288') && r.paginas[2].includes('COR: OFF-WHITE'), r.paginas[2]);
+ok('BM.TRI: G tom 2 — as quantidades do tom 2 (80 blusas)',
+   r.paginas[3].includes('G tom 2') && r.paginas[5].includes('QTDE PACOTE: Barra 80 · Punhos 160'), [r.paginas[3], r.paginas[5]]);
+ok('BM.TRI: a etiqueta de grupo não traz a lista de composição nem a grade inteira',
+   !r.paginas[0].some(l => /^TAM:/.test(l)), r.paginas[0]);
+ok('BM.TRI: a quarta é a reposição, "Tecido de reposição/Viés", em duas vias no fim',
+   ehRepBM(r.paginas[6]) && ehRepBM(r.paginas[7]) && !ehRep(r.paginas[6]), r.paginas[6]);
 
-// Outro moletom que não é BM.TRI segue com uma etiqueta por tamanho.
-r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547,
+r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547.filter(c => !/forro/i.test(c.nome)),
   grade: { descricao: 'P ao G3 | BM.LISA | 177cm', g: 8, total: 8 }, enfesto: { camadas: 28 } }),
   { tons: [1], moletom: true });
-eq('BM.LISA: uma etiqueta por tamanho, como antes', r.dados.numEtiquetas, 3);
-ok('BM.LISA: sem etiqueta por peça', r.dados.pecasPacotes == null, r.dados.pecasPacotes);
+eq('BM.LISA: três etiquetas por tamanho × tom + 2 de reposição', r.dados.numEtiquetas, 5);
+eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(pg => pg[pg.length - 1]).join(' | '),
+   'FRENTE/BOLSO/COSTA | CAPUZ/MANGAS | BARRA/PUNHOS');
+ok('BM.LISA: Capuz/Mangas, 2 por blusa', r.paginas[1].includes('QTDE PACOTE: Capuz 448 · Mangas 448'), r.paginas[1]);
+ok('BM.LISA: reposição "Tecido de reposição/Viés"', ehRepBM(r.paginas[3]) && ehRepBM(r.paginas[4]), r.paginas[3]);
+r = etiquetasDe(osBase(), { tons: [1] });
+ok('camiseta: a reposição continua "Viés/Reposição/Ribana"', ehRep(r.paginas[3]), r.paginas[3]);
 
 /* ---------- OS 0563: total da OS + quantidade do pacote ---------- */
 // Camiseta 2G-G2, 65 camadas, malha (2 por camada) = 390 peças. Tom 1 com 50

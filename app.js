@@ -26078,7 +26078,7 @@ function gerarPdfEtiquetas(dados) {
     const tomDoPacote = (dados.tonsPacotes || [])[i];
     const tomSuf = (!ehReposicao && (dados.nTons || 1) > 1 && tomDoPacote != null) ? ` tom ${tomDoPacote}` : '';
     const destaque = ehReposicao
-      ? { t: ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
+      ? { t: dados.conteudoReposicao || ETIQUETA_CONTEUDO_REPOSICAO, s: 1.6, c: true }   // conteúdo (texto longo)
       : { t: (tams[i] || dados.tam) + tomSuf, s: 2, c: true };// tamanho (+ tom) do pacote, dobro
     // Etiqueta por PEÇA (BM.TRI): a QTDE e a COR são as da peça, e a linha TAM
     // com a grade inteira sai — o tamanho do pacote já está no destaque.
@@ -26098,7 +26098,9 @@ function gerarPdfEtiquetas(dados) {
     if (ehReposicao && dados.tonsTexto) linhas.push({ t: dados.tonsTexto, s: 1 });
     if (!ehViaExtra) linhas.push({ t: `LOTE: ${i + 1}/${totalPacotes}`, s: 1 });
     linhas.push(destaque);
-    if (peca) linhas.push({ t: peca.toUpperCase(), s: 1.6, c: true });
+    // O grupo de peças em destaque; o nome comprido ("CAPUZ/FORRO DE CAPUZ/
+    // MANGAS") vai menor, senão ele sozinho encolheria a etiqueta inteira.
+    if (peca) linhas.push({ t: peca.toUpperCase(), s: peca.length > 14 ? 1.15 : 1.6, c: true });
     // Moletom: composição do pacote (só nas etiquetas de tamanho, não na reposição).
     const compDoPacote = !ehReposicao && dados.composicaoPacotes && dados.composicaoPacotes[i];
     if (compDoPacote) {
@@ -26782,15 +26784,36 @@ function _tamanhosDaGradeExpandido(o) {
 // mesma etiqueta, como no exemplo dele ("Barra/Punhos"): é uma fase só de ribana.
 // `re` acha a peça pelo nome do componente da OS; `porBlusa` diz quantas vão
 // numa blusa (a quantidade da etiqueta = blusas do pacote × isso).
+/* AGRUPADAS EM TRÊS POR PACOTE (25/09/2026, Junior: "a primeira etiqueta
+   deve informar sobre itens Frente/Bolso/Costa. A segunda Capuz, Forro de
+   capuz/Mangas. A terceira Barra/Punhos. A quarta Tecidos de reposição/Viés" —
+   para a BM.TRI e a BM.LISA; "as variações de tonalidade e quantidades por
+   tonalidade continuam iguais"). Cada tamanho × tom rende TRÊS etiquetas, e a
+   quarta é a de reposição do fim da OS, com o conteúdo "Tecido de
+   reposição/Viés" (ETIQUETA_CONTEUDO_REPOSICAO_BM). Até aqui a BM.TRI saía com
+   sete (uma por peça) e a BM.LISA com uma só, com a lista de composição.
+
+   `partes` acha cada peça pelo nome do componente da OS, na ordem do rótulo —
+   é por ela que a COR sai ("Frente/Bolso/Costa" da tricolor = as cores das
+   frentes, do bolso e das costas, sem repetir). `porBlusa` diz quantas de cada
+   vão numa blusa: a QTDE PACOTE = blusas do tamanho × tom × isso. A BM.LISA não
+   tem forro de capuz. */
 const _PECAS_ETIQUETA_BMTRI = [
-  { nome: 'Frente',         re: /^frente\b/,         porBlusa: [['Frente', 1]] },
-  { nome: 'Costa',          re: /^costas?\b/,        porBlusa: [['Costa', 1]] },
-  { nome: 'Capuz',          re: /^capuz\b/,          porBlusa: [['Capuz', 2]] },
-  { nome: 'Forro de capuz', re: /^forro\b/,          porBlusa: [['Forro', 2]] },
-  { nome: 'Barra/Punhos',   re: /^(barra|punhos?)\b/, porBlusa: [['Barra', 1], ['Punhos', 2]] },
-  { nome: 'Mangas',         re: /^mangas?\b/,        porBlusa: [['Mangas', 2]] },
-  { nome: 'Bolso',          re: /^bolsos?\b/,        porBlusa: [['Bolso', 1]] }
+  { nome: 'Frente/Bolso/Costa', partes: [/^frente\b/, /^bolsos?\b/, /^costas?\b/],
+    porBlusa: [['Frente', 1], ['Bolso', 1], ['Costa', 1]] },
+  { nome: 'Capuz/Forro de capuz/Mangas', partes: [/^capuz\b/, /^forro\b/, /^mangas?\b/],
+    porBlusa: [['Capuz', 2], ['Forro', 2], ['Mangas', 2]] },
+  { nome: 'Barra/Punhos', partes: [/^barra\b/, /^punhos?\b/],
+    porBlusa: [['Barra', 1], ['Punhos', 2]] }
 ];
+const _PECAS_ETIQUETA_BMLISA = [
+  _PECAS_ETIQUETA_BMTRI[0],
+  { nome: 'Capuz/Mangas', partes: [/^capuz\b/, /^mangas?\b/],
+    porBlusa: [['Capuz', 2], ['Mangas', 2]] },
+  _PECAS_ETIQUETA_BMTRI[2]
+];
+// O pacote de reposição da blusa: a ribana já foi na etiqueta de Barra/Punhos.
+const ETIQUETA_CONTEUDO_REPOSICAO_BM = 'Tecido de reposição/Viés';
 
 // A OS é de BM.TRI? O tipo mora no meio do nome da grade ("8G | BM.TRI |
 // 179cm"); sem a grade no cadastro, lê do nome copiado para a OS. Pega também
@@ -26798,6 +26821,17 @@ const _PECAS_ETIQUETA_BMTRI = [
 function _osEhBmTri(o) {
   const sku = _skuDaOS(o) || _skuDaGrade({ descricao: o && o.grade && o.grade.descricao });
   return /^bm\.tri/.test(_normSku(sku));
+}
+// A BM.LISA, pelo mesmo caminho.
+function _osEhBmLisa(o) {
+  const sku = _skuDaOS(o) || _skuDaGrade({ descricao: o && o.grade && o.grade.descricao });
+  return /^bm\.lisa/.test(_normSku(sku));
+}
+// As etiquetas por grupo de peças da OS (BM.TRI ou BM.LISA), ou null.
+function _pecasEtiquetaOS(o) {
+  if (_osEhBmTri(o)) return _PECAS_ETIQUETA_BMTRI;
+  if (_osEhBmLisa(o)) return _PECAS_ETIQUETA_BMLISA;
+  return null;
 }
 
 // As cores de uma peça, lidas dos componentes da OS cujo nome casa com `re`, na
@@ -26886,9 +26920,9 @@ function dadosEtiquetaParaOS(o) {
   const tamanhosBase = _tamanhosDaGradeExpandido(o);
   const tonsAtivos = tonsEfetivos((o.progresso || {}).totalTamanhoTons || {});
   const nTons = Math.max(1, tonsAtivos.length);
-  // BM.TRI: uma etiqueta por PEÇA dentro de cada tamanho × tom ("P tom 1 —
-  // Frente", "P tom 1 — Costa"…), e não uma por tamanho. Ver _PECAS_ETIQUETA_BMTRI.
-  const pecasBmTri = temMoletom && _osEhBmTri(o) ? _PECAS_ETIQUETA_BMTRI : null;
+  // BM.TRI e BM.LISA: três etiquetas por tamanho × tom, uma por GRUPO de peças
+  // ("P tom 1 — Frente/Bolso/Costa"…), e não uma por tamanho. Ver _PECAS_ETIQUETA_BMTRI.
+  const pecasBmTri = temMoletom ? _pecasEtiquetaOS(o) : null;
   const tamanhosPacotes = [];
   const tonsPacotes = [];
   const pecasPacotes = pecasBmTri ? [] : null;
@@ -26956,7 +26990,12 @@ function dadosEtiquetaParaOS(o) {
       // Na etiqueta por peça, a COR e a QTDE são as DAQUELA peça: a frente da
       // tricolor é Preto/Mostarda/Off-white, o bolso é só Off-white.
       const coresPeca = {};
-      _PECAS_ETIQUETA_BMTRI.forEach(p => { coresPeca[p.nome] = _coresDaPecaOS(o, p.re) || cor; });
+      // As cores do grupo, peça por peça na ordem do rótulo, sem repetir.
+      pecasBmTri.forEach(p => {
+        const cs = [];
+        p.partes.forEach(re => _coresDaPecaOS(o, re).split('/').filter(Boolean).forEach(c => { if (cs.indexOf(c) < 0) cs.push(c); }));
+        coresPeca[p.nome] = cs.join('/') || cor;
+      });
       corPacotes = pecasPacotes.map(p => coresPeca[p.nome]);
       qtdePacotes = pecasPacotes.map((p, i) => {
         const b = blusasDe(i);
@@ -26971,7 +27010,8 @@ function dadosEtiquetaParaOS(o) {
            tamanhosPacotes, tonsPacotes, nTons, temReposicao, nReposicao,
            totalPacotes, tonsTexto, composicaoPacotes,
            pecasPacotes: pecasPacotes && pecasPacotes.map(p => p.nome), corPacotes, qtdePacotes,
-           qtdeTamPacotes };
+           qtdeTamPacotes,
+           conteudoReposicao: pecasBmTri ? ETIQUETA_CONTEUDO_REPOSICAO_BM : ETIQUETA_CONTEUDO_REPOSICAO };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
@@ -27080,7 +27120,7 @@ function imprimirEtiquetas(osId) {
     // indistinguíveis no ensaque. A linha "TOM:" separada some: viraria repetição.
     const tomSuf = (nTons > 1 && !ehRep && tonsPacotes[i] != null) ? ` tom ${tonsPacotes[i]}` : '';
     const destaque = ehRep
-      ? `<div class="big rep">${escEt(ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
+      ? `<div class="big rep">${escEt(dados.conteudoReposicao || ETIQUETA_CONTEUDO_REPOSICAO)}</div>`
       : `<div class="big">${escEt(((tamanhosPacotes && tamanhosPacotes[i]) || tam) + tomSuf)}</div>${compHtml(i)}`
         + (peca ? `<div class="big peca">${escEt(peca.toUpperCase())}</div>` : '');
     return `
