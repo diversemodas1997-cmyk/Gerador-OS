@@ -26812,7 +26812,9 @@ const _PECAS_ETIQUETA_BMTRI = [
 const _PECAS_ETIQUETA_BMLISA = [
   _PECAS_ETIQUETA_BMTRI[0],
   { nome: 'Capuz/Mangas', partes: [/^capuz\b/, /^mangas?\b/],
-    porBlusa: [['Capuz', 2], ['Mangas', 2]] },
+    // Capuz inteiro, 1 por blusa, como na BM.TRI (25/09/2026, Junior: "corrija
+    // bm.lisa também").
+    porBlusa: [['Capuz', 1], ['Mangas', 2]] },
   _PECAS_ETIQUETA_BMTRI[2]
 ];
 // O pacote de reposição da blusa: a ribana já foi na etiqueta de Barra/Punhos.

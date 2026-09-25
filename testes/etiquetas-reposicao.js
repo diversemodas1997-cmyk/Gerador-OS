@@ -258,7 +258,7 @@ r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], componentes: comps547.filt
 eq('BM.LISA: três etiquetas por tamanho × tom + 2 de reposição', r.dados.numEtiquetas, 5);
 eq('BM.LISA: os grupos, sem forro de capuz', r.paginas.slice(0, 3).map(pg => pg[pg.length - 1]).join(' | '),
    'FRENTE/BOLSO/COSTA | CAPUZ/MANGAS | BARRA/PUNHOS');
-ok('BM.LISA: Capuz/Mangas, 2 por blusa', r.paginas[1].includes('QTDE PACOTE: Capuz 448 · Mangas 448'), r.paginas[1]);
+ok('BM.LISA: capuz inteiro (1 por blusa), mangas 2', r.paginas[1].includes('QTDE PACOTE: Capuz 224 · Mangas 448'), r.paginas[1]);
 ok('BM.LISA: reposição "Tecido de reposição/Viés"', ehRepBM(r.paginas[3]) && ehRepBM(r.paginas[4]), r.paginas[3]);
 r = etiquetasDe(osBase(), { tons: [1] });
 ok('camiseta: a reposição continua "Viés/Reposição/Ribana"', ehRep(r.paginas[3]), r.paginas[3]);
