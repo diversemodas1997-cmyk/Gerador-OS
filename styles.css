@@ -3939,12 +3939,23 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    altura da outra, e uma volta com 1 OS ficava com um trecho enorme de coluna
    riscada e vazia ao lado de 4 quadros da ida. */
 .exp-print-pernas { display: flex; align-items: flex-start; }
-/* Metade da folha para cada perna, sempre — inclusive quando uma delas está
-   vazia. A largura fixa mantém o quadro da ida no mesmo lugar em todas as
-   folhas: quem confere a carga lê sempre na mesma metade, sem ter que
-   reencontrar a coluna a cada página. */
+/* Metade da folha para cada perna quando as DUAS levam carga: a ida fica
+   sempre na mesma metade. Quando só uma leva, a vazia vira uma linha e a cheia
+   ocupa a largura toda (.uma-so, abaixo — 25/09/2026, Junior: "retire os
+   espaços excedentes da folha de OE"). */
 .exp-print-perna { flex: 0 0 50%; max-width: 50%; min-width: 0; padding: 4px 6px; border-right: 1px solid #000; }
 .exp-print-perna:last-child { border-right: none; }
+/* Só uma perna leva carga (25/09/2026): ela ocupa a largura inteira, com os
+   quadros das OS em duas colunas, e a vazia é uma linha só. */
+.exp-print-pernas.uma-so { flex-direction: column; align-items: stretch; }
+.exp-print-pernas.uma-so > .exp-print-perna { flex: none; max-width: none; width: 100%; border-right: none; box-sizing: border-box; }
+.exp-print-pernas.uma-so > .exp-print-perna + .exp-print-perna { border-top: 1px solid #000; }
+.exp-print-lista.duas-col { display: flex; align-items: flex-start; gap: 6pt; }
+.exp-print-lista.duas-col > .col { flex: 1 1 0; min-width: 0; }
+
+.exp-print-perna.sem-carga { padding-top: 2px; padding-bottom: 2px; }
+.exp-print-perna.sem-carga .ph { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+.exp-print-perna.sem-carga .vazia { font-size: 8pt; font-style: italic; color: #555; }
 .exp-print-perna .ph {
   display: flex;
   justify-content: space-between;
@@ -4021,7 +4032,7 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    que é o que ele substitui. */
 .exp-print-os > .itens-fase { margin-top: 2pt; border: .5pt solid #000; padding: 1pt 2pt; }
 .exp-print-os > .itens-fase .itens-tit { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 1pt; }
-.exp-print-os > .itens-fase table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.25; }
+.exp-print-os > .itens-fase table { width: 100%; border-collapse: collapse; font-size: 7.5pt; line-height: 1.1; }
 .exp-print-os > .itens-fase td { vertical-align: middle; }
 
 .exp-print-perna table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }

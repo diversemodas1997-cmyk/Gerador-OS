@@ -216,7 +216,7 @@ ok('36. "acontece normalmente" grava excecao de horario quando a hora difere da 
 ok('37. e nao grava nada quando o horario e o mesmo da janela',
    /if \(mudou\) \{/.test(salvarOc), salvarOc.slice(-400));
 
-const folha = recorte('const pernaPrint = (oc, perna) =>', '\n  };', 'a perna na folha de OE');
+const folha = recorte('const pernaPrint = (oc, perna', '\n  };', 'a perna na folha de OE');
 ok('38. a folha tem o lapis da hora, so na tela',
    /class="exp-print-edit no-print"/.test(folha) && /abrirModalExpOcorrencia/.test(folha), folha.slice(0, 200));
 ok('39. e ele nao aparece em expedicao cancelada', /!oc\.cancelada/.test(folha));

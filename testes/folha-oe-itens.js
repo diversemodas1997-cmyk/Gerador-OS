@@ -83,5 +83,20 @@ ok('11. "Corpo + Gola" responde pelo corpo e pela ribana; "Corpo 2" é a parte 2
 ok('12. a folha de OE usa o checklist no lugar da linha corrida das fases',
    /const itensHtml = _expItensFaseHtml\(o, i\.carga, fi\);\s*const fasesHtml = itensHtml \|\|/.test(src));
 
+console.log('-- sem espaco excedente --');
+{
+  const duas = new Function(pegaFuncao('_expDuasColunas') + 'return _expDuasColunas;')();
+  const q = n => '<div>' + '<tr>'.repeat(n) + '</div>';
+  const h = duas([q(20), q(8), q(8)]);
+  const cols = h.split('<div class="col">').slice(1);
+  ok('13. perna larga: o quadro grande numa coluna, os dois menores na outra',
+     cols.length === 2 && (cols[0].match(/<tr>/g) || []).length === 20 && (cols[1].match(/<tr>/g) || []).length === 16, h);
+  ok('14. um quadro so nao se divide', !/duas-col/.test(duas([q(5)])));
+  ok('15. perna vazia ao lado de cheia vira uma linha, e a cheia ocupa a largura toda',
+     /if \(vIda === vVolta\) return/.test(src) && /exp-print-pernas uma-so/.test(src) && /exp-print-perna sem-carga/.test(src));
+  ok('16. a observacao do aviamento vai na mesma linha do item',
+     /_aviItemTexto\(a\)\)\}\$\{a\.obs \? ` <span/.test(src));
+}
+
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

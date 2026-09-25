@@ -18702,7 +18702,10 @@ function renderPrintPlanoExpedicao() {
       </div>`;
   };
 
-  const pernaPrint = (oc, perna) => {
+  // Perna sem OS e sem aviamento: não leva nada, e não ocupa espaço (ver blocos).
+  const pernaVazia = (oc, perna) => !resumoPernaExpedicao(oc, perna).itens.length
+    && !_aviDaPerna(oc.janela.id, oc.dataOrig, perna).length;
+  const pernaPrint = (oc, perna, fina, larga) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
     /* O ✎ DA HORA, só na tela (18/09/2026, Junior: "não consigo editar a hora da
@@ -18714,9 +18717,23 @@ function renderPrintPlanoExpedicao() {
       ? `<button type="button" class="exp-print-edit no-print" title="Mudar o horário desta expedição — vale só neste dia"
           onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">✎</button>`
       : '';
+    // A perna vazia ao lado de uma cheia vira UMA linha: o nome, a rota, a hora
+    // e o aviso. Antes ela guardava meia folha em branco (ver blocos).
+    if (fina) return `
+      <div class="exp-print-perna sem-carga">
+        <div class="ph">
+          <div>
+            <span class="t">${perna === 'ida' ? 'IDA' : 'VOLTA'}</span>
+            <span class="r"> ${esc(_expRotaTexto(perna))}</span>
+            <span class="vazia"> — sem OS alocada</span>
+          </div>
+          <span class="h">${esc(hora) || '—'}${btnHora}</span>
+        </div>
+      </div>`;
     const avis = _aviDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const quadros = r.itens.map(osPrint);
     const linhas = r.itens.length
-      ? r.itens.map(osPrint).join('')
+      ? quadros.join('')
       : (avis.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
     /* OS AVIAMENTOS DA CARGA (24/09/2026): o que embarca de fio, linha,
        etiqueta, botão e viés, com o peso — é o que a doca confere. */
@@ -18732,11 +18749,11 @@ function renderPrintPlanoExpedicao() {
             <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Vol</th>
           </tr></thead>
           <tbody>${avis.map(a => `<tr>
-            <td style="padding:0 2px;">${esc(_aviItemTexto(a))}</td>
+            <td style="padding:0 2px;">${esc(_aviItemTexto(a))}${a.obs ? ` <span style="font-style:italic;color:#555;">· ${esc(a.obs)}</span>` : ''}</td>
             <td style="padding:0 2px;">${esc(a.cor) || '—'}</td>
             <td style="padding:0 2px;text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(a))}</td>
             <td style="padding:0 2px;text-align:right;">${Number(a.volumes) > 0 ? fmt(a.volumes) : '—'}</td>
-          </tr>${a.obs ? `<tr><td colspan="4" style="padding:0 2px;font-style:italic;">${esc(a.obs)}</td></tr>` : ''}`).join('')}</tbody>
+          </tr>`).join('')}</tbody>
         </table>
       </div>` : '';
     // Cada perna ocupa metade da folha, cheia ou vazia — a largura fixa é o que
@@ -18750,7 +18767,7 @@ function renderPrintPlanoExpedicao() {
           </div>
           <span class="h">${esc(hora) || '—'}${btnHora}</span>
         </div>
-        ${linhas}${aviPrint}
+        ${larga ? _expDuasColunas(quadros.concat(aviPrint ? [aviPrint] : [])) : `<div class="exp-print-lista">${linhas}${aviPrint}</div>`}
         <div class="tot">
           <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.${aviVol > 0 ? ` · + ${fmt(aviVol)} vol de aviamentos` : ''}</span>
           <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
@@ -18758,6 +18775,18 @@ function renderPrintPlanoExpedicao() {
       </div>`;
   };
 
+  /* SEM ESPAÇO EXCEDENTE (25/09/2026, Junior: "Retire os espaços excedentes da
+     folha de OE"). Cada perna ocupava metade da folha mesmo vazia: a volta sem
+     nada guardava uma coluna em branco ao lado de uma ida que descia duas
+     páginas numa coluna estreita (medido em 25/09: ida 258 mm, volta 19 mm,
+     folha de 338 mm). Agora, quando só UMA perna leva carga, a vazia vira uma
+     linha e a cheia ocupa a largura inteira, com os quadros das OS em duas
+     colunas. Com as duas pernas carregadas continua metade para cada uma. */
+  const pernasHtml = oc => {
+    const vIda = pernaVazia(oc, 'ida'), vVolta = pernaVazia(oc, 'volta');
+    if (vIda === vVolta) return `<div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>`;
+    return `<div class="exp-print-pernas uma-so">${pernaPrint(oc, 'ida', vIda, !vIda)}${pernaPrint(oc, 'volta', vVolta, !vVolta)}</div>`;
+  };
   // Sem tratamento de cancelada aqui: o filtro acima já as tirou da folha.
   const blocos = ocs.map(oc => `
     <div class="exp-print-bloco">
@@ -18769,7 +18798,7 @@ function renderPrintPlanoExpedicao() {
           ${oc.horaAlterada ? ' · horário ajustado neste dia' : ''}
         </span>
       </div>
-      <div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>
+      ${pernasHtml(oc)}
     </div>`).join('');
 
   const emissao = new Date();
@@ -18822,6 +18851,25 @@ function renderPrintPlanoExpedicao() {
            quando a folha ocupa várias páginas. A altura vem do @media print. -->
       <tfoot><tr><td></td></tr></tfoot>
     </table>`;
+}
+
+// Os quadros de uma perna em duas colunas de altura parecida, na ordem: a
+// esquerda leva os primeiros até passar da metade do peso. O peso é o número de
+// linhas de tabela do quadro (+ o cabeçalho) — é o que dá a altura dele. Duas
+// colunas em flex, e não `column-count`, porque o PDF da pasta das OE sai pelo
+// html2canvas, que não desenha colunas de CSS.
+function _expDuasColunas(quadros) {
+  const lista = (quadros || []).filter(Boolean);
+  if (lista.length < 2) return `<div class="exp-print-lista">${lista.join('')}</div>`;
+  const peso = h => 3 + (h.match(/<tr[\s>]/g) || []).length;
+  const total = lista.reduce((s, h) => s + peso(h), 0);
+  let acc = 0, corte = 0;
+  while (corte < lista.length - 1 && acc + peso(lista[corte]) / 2 < total / 2) { acc += peso(lista[corte]); corte++; }
+  if (corte === 0) corte = 1;
+  return `<div class="exp-print-lista duas-col">
+      <div class="col">${lista.slice(0, corte).join('')}</div>
+      <div class="col">${lista.slice(corte).join('')}</div>
+    </div>`;
 }
 
 /* O SKU BASE de uma OS, antes de a cor entrar: override da OS > SKU do desenho
