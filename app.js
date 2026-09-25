@@ -10822,6 +10822,10 @@ const ITENS_OE_POR_LINHA = {
     _OE_ITEM('Costa parte 1', 'corpo1', /^costa(?!.*parte [23])/, 1, 'corpo'),
     _OE_ITEM('Costa parte 2', 'corpo2', /^costa.*parte 2/, 1, 'corpo'),
     _OE_ITEM('Costa parte 3', 'corpo3', /^costa.*parte 3/, 1, 'corpo'),
+    // (25/09/2026, Junior: "bm.tri falta item capuz"). O capuz sai do pano da
+    // Corpo Parte 1 (é onde o relatório de componentes das OS o põe), dois
+    // lados por peça — o componente "Capuz" das OS diz 2.
+    _OE_ITEM('Capuz', 'corpo1', /^capuz/, 2, 'corpo'),
     // (25/09/2026, Junior: "insira forro de capuz na lista da BM.TRI"). São dois
     // lados por capuz — o componente "Forro do capuz" das OS diz 2 por peça.
     _OE_ITEM('Forro de capuz', 'forro', /^forro/, 2),
