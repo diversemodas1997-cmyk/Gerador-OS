@@ -10806,8 +10806,13 @@ const _OE_REPOSICAO = _OE_ITEM('Tecido de reposição', 'reposicao', null);
    e o forro do capuz, logo depois do que eles acompanham. */
 const ITENS_OE_POR_LINHA = {
   'CM.LISA': _OE_ITENS_CM,
-  'CM.REC': [_OE_ITENS_CM[0], _OE_ITENS_CM[1], _OE_ITENS_CM[2],
-    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
+  // CM.REC no mesmo formato da CM.TRI (25/09/2026, Junior: "sim, deixe a
+  // CM.REC no mesmo formato"): as duas frentes juntas, depois costa e mangas.
+  'CM.REC': [
+    _OE_ITEM('Frente parte 1', 'corpo1', /^frente(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/, 1, 'corpo'),
+    _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2, 'corpo'),
     _OE_ITENS_CM[3], _OE_ITENS_CM[4]],
   /* CM.TRI PEÇA POR PEÇA, como a BM.TRI (25/09/2026, Junior: "corrija a ordem
      dos itens na CM.TRI também"). Na camiseta tricolor só a frente é em três

@@ -43,8 +43,8 @@ const cmLisa = lista(os('CM.LISA-PRE', ['Corpo', 'Gola', 'Viés']));
 ok('1. CM.LISA: frente, costa, mangas, ribana, viés e tecido de reposição',
    cmLisa === '[Corpo] Frente, Costa, Mangasx2 [Gola] Ribana [Viés] Viés [Reposição] Tecido de reposição', cmLisa);
 const cmRec = lista(os('CM.REC-VERM', ['Corpo Parte 1', 'Corpo Parte 2', 'Gola', 'Viés']));
-ok('2. CM.REC: a CM.LISA + frente parte 2, na fase Corpo Parte 2',
-   /\[Corpo Parte 2\] Frente parte 2 /.test(cmRec) && /\[Corpo Parte 1\] Frente, Costa, Mangasx2/.test(cmRec) && !/parte 3/.test(cmRec), cmRec);
+ok('2. CM.REC: no formato da CM.TRI — frente 1 e 2, costa, mangas — num bloco só, sem parte 3',
+   cmRec === '[Corpo] Frente parte 1, Frente parte 2, Costa, Mangasx2 [Gola] Ribana [Viés] Viés [Reposição] Tecido de reposição', cmRec);
 const cmTri = lista(os('CM.TRI-CAQUI', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Gola', 'Viés']));
 ok('3. CM.TRI: peça por peça — frente 1, 2, 3; costa; mangas — num bloco só, depois ribana e viés',
    cmTri === '[Corpo] Frente parte 1, Frente parte 2, Frente parte 3, Costa, Mangasx2 [Gola] Ribana [Viés] Viés [Reposição] Tecido de reposição', cmTri);
