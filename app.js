@@ -8174,11 +8174,146 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
     || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
 }
 
+/* ---------- O AVIAMENTO DAS OS: RESERVA E BAIXA AUTOMÁTICA ----------
+   (25/09/2026, Junior: "Programa deve dar baixa automaticamente na quantidade
+   de estoque de aviamentos de acordo com as quantidades utilizadas em cada OS"
+   e "a regra de aviamentos reservado deve funcionar igual a de tecidos
+   reservados para cada OS não iniciada". Perguntado quando e de onde sai,
+   escolheu: "na costura".)
+
+   QUANTO: o que a própria OS diz no quadro "Aviamentos aplicados" (o relatório
+   do rodapé da folha de OS) — quantidade por peça × os produtos de cada
+   tamanho ("Total por tamanho" da OS). A "Etiqueta de tamanho", 1 por peça,
+   vira Etiqueta P, M, G… na cor Preto, que é a linha em que o estoque a guarda.
+   Material que não tem quadro no estoque (Cordão, Ilhós) não reserva nem baixa.
+
+   COMO O TECIDO, RESERVADO ANTES E BAIXADO DEPOIS:
+     · RESERVADO — a OS ainda não foi costurada (não iniciada, cortando,
+       ensacada, em trânsito de ida, parada). O aviamento está na prateleira,
+       mas é dela. A reserva não tem unidade: só se sabe onde a OS vai ser
+       costurada quando a costura é marcada. Por isso ela aparece num quadro
+       próprio, contra o que há nas duas unidades juntas.
+     · SAÍDA — a costura foi marcada: a etapa "Costura … | Descalvado" ou
+       "… | São Carlos" do checklist (ou o status Costurando carimbado à mão).
+       Sai do estoque DAQUELA unidade, na data em que foi marcada. É quando a
+       etiqueta é pregada, e é por isso que ela acompanha as etiquetas que a OE
+       levou para São Carlos.
+     · NADA — OS cancelada, e OS costurada ANTES de AVI_BAIXA_DESDE: essas já
+       estão dentro da contagem física lançada em 24/09/2026, e baixá-las de
+       novo deixaria o estoque negativo.
+
+   Nada disto é gravado: a reserva e a saída são LIDAS das OS a cada conta,
+   como as entradas do Estoque de corte. Desmarcar a costura devolve a
+   etiqueta; corrigir a grade da OS corrige a quantidade. */
+const AVI_BAIXA_DESDE = '2026-09-25';
+// Antes da costura: o aviamento da OS está reservado.
+const AVI_STATUS_RESERVA = ['nao-iniciado', 'materia-prima', 'enfestando', 'cortando', 'separando',
+  'ensacado', 'ensacado-sc', 'transito-ida', 'parado'];
+
+// O quadro do estoque a que um material da OS pertence ("003 · Etiqueta de
+// tamanho" → Etiqueta), ou '' quando não há quadro para ele.
+function _aviTipoDoMaterial(nome) {
+  const n = _normNome(nome);
+  return AVIAMENTO_TIPOS.find(t => new RegExp('\\b' + _normNome(t) + '\\b').test(n)) || '';
+}
+
+// O que a OS usa de cada linha do estoque: [{ item, tam, cor, qtd }].
+function _aviNecessidadeOS(o) {
+  const TT = totaisPorTamanhoTomOS(o);
+  const MAPA_TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const porTam = {};
+  (TT.tamanhos || []).forEach(k => { porTam[k] = Number(TT.colTotal(k)) || 0; });
+  const out = new Map();
+  (o.aviamentos || []).forEach(a => {
+    const mat = (STATE.materiais || []).find(m => m.id === a.material);
+    const item = _aviTipoDoMaterial(mat ? mat.desc : a.materialNome);
+    if (!item) return;
+    const porPeca = Number(a.qtdPorPeca) || 0;
+    if (!(porPeca > 0)) return;
+    // Produtos por tamanho: o "Total por tamanho" da OS; sem ele, o que a
+    // própria OS guardou na linha do aviamento (qtd ÷ por peça).
+    const prod = Object.keys(porTam).length ? porTam
+      : Object.fromEntries(Object.entries(a.qtdPorTamanho || {}).map(([k, v]) => [k, (Number(v) || 0) / porPeca]));
+    const soma = (tam, cor, q) => {
+      if (!(q > 0)) return;
+      const k = item + '|' + tam + '|' + _normNome(cor);
+      const cur = out.get(k) || { item, tam, cor, qtd: 0 };
+      cur.qtd += q;
+      out.set(k, cur);
+    };
+    if (_normNome(item) === 'etiqueta') {
+      Object.keys(prod).forEach(k => soma(MAPA_TAM[k] || '', AVIAMENTO_COR_ETIQUETA, Math.round(porPeca * prod[k])));
+    } else {
+      soma('', '', Math.round(porPeca * Object.values(prod).reduce((s, v) => s + v, 0)));
+    }
+  });
+  return Array.from(out.values());
+}
+
+// A data (AAAA-MM-DD) de um carimbo de marcação, ou '' quando ele não é hora
+// de verdade (as marcações antigas guardavam só um número de ordem).
+function _aviDiaDoCarimbo(v) {
+  const n = typeof v === 'number' ? v : Date.parse(v || '');
+  if (!(n > 1e12)) return '';
+  const d = new Date(n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Onde e quando a OS foi costurada: { unidade, data } ou null. Com as duas
+// costuras marcadas, vale a marcada por último (a correção de quem errou a
+// unidade).
+function _aviCosturaDaOS(o) {
+  const prog = o.progresso || {};
+  const checks = prog.etapasCheck || {}, seq = prog.etapasSeq || {};
+  let melhor = null;
+  (o.etapas || []).forEach(n => {
+    if (!/costura/i.test(n) || !checks[n]) return;
+    const s = Number(seq[n]) || 0;
+    if (!melhor || s > melhor.s) melhor = { s, unidade: /s[ãa]o\s+carlos/i.test(n) ? 'sc' : 'desc', data: _aviDiaDoCarimbo(seq[n]) };
+  });
+  if (melhor) return { unidade: melhor.unidade, data: melhor.data };
+  const st = _statusOS(o);
+  if (st === 'costurando' || st === 'costurando-sc') {
+    return { unidade: st === 'costurando-sc' ? 'sc' : 'desc', data: _aviDiaDoCarimbo(o.statusOSEm) };
+  }
+  return null;
+}
+
+// As saídas (lançamentos lidos, não gravados) e as reservas de todas as OS.
+function _aviDasOS() {
+  const baixas = [], reservas = [];
+  (STATE.ordens || []).forEach(o => {
+    if (!o || !(o.aviamentos || []).length) return;
+    const st = _statusOS(o);
+    if (st === 'cancelado') return;
+    const cost = _aviCosturaDaOS(o);
+    const reserva = !cost && AVI_STATUS_RESERVA.indexOf(st) >= 0;
+    const baixa = cost && cost.data && cost.data >= AVI_BAIXA_DESDE;
+    if (!reserva && !baixa) return;
+    _aviNecessidadeOS(o).forEach(n => {
+      if (baixa) {
+        baixas.push({ id: 'os:' + o.id + ':' + n.item + ':' + n.tam + ':' + n.cor, tipo: 'saida', auto: true,
+          unidade: cost.unidade, item: n.item, tam: n.tam, cor: n.cor, qtd: n.qtd, kg: 0, data: cost.data,
+          osId: o.id, osNumero: o.os || '', obs: 'Costura da OS ' + (o.os || '') });
+      } else {
+        reservas.push({ osId: o.id, osNumero: o.os || '', status: st, item: n.item, tam: n.tam, cor: n.cor, qtd: n.qtd });
+      }
+    });
+  });
+  return { baixas, reservas };
+}
+
+// Todos os lançamentos do estoque de aviamentos: os gravados + as baixas das OS.
+function _aviMovTodos() {
+  return (Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : []).concat(_aviDasOS().baixas);
+}
+
 function renderEstoqueAviamentos() {
   const cont = document.getElementById('aviamentos-painel');
   if (!cont) return;
   const { de, ate, hoje } = _aviPeriodo();
-  const mov = Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : [];
+  // Os lançamentos gravados + as baixas das OS costuradas (ver _aviDasOS).
+  const mov = _aviMovTodos();
   const unidade = _aviUnidade;
   const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, _aviDataCarga);
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
@@ -8245,6 +8380,7 @@ function renderEstoqueAviamentos() {
         ? `<span class="badge" style="background:#e3eff2;">Expedida → ${esc(rotuloUn(_aviDestinoDe(m.exp)))}</span><div class="muted" style="font-size:10px;">OE de ${esc(dCarga)}</div>`
         : `<span class="badge" style="background:#e3eff2;">Recebida de ${esc(rotuloUn(_aviOrigemDe(m.exp)))}</span><div class="muted" style="font-size:10px;">OE de ${esc(dCarga)}</div>`;
     }
+    if (m.auto) return `<span class="badge" style="background:#f6dcda;">Baixa da OS</span><div class="muted" style="font-size:10px;">costura marcada</div>`;
     return m.tipo === 'saida' ? '<span class="badge" style="background:#f6dcda;">Saída</span>' : '<span class="badge" style="background:#d6f0db;">Entrada</span>';
   };
   const lancHtml = `<div class="card">
@@ -8252,7 +8388,9 @@ function renderEstoqueAviamentos() {
     <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Data</th><th>Tipo</th><th>Item</th><th>Cor</th>
       <th style="text-align:right;">Quantidade</th><th>Observação</th></tr></thead><tbody>
       ${noPeriodo.length ? noPeriodo.map(m => `<tr>
-        <td class="col-actions row-actions estoque-tecidos-only">${m.exp
+        <td class="col-actions row-actions estoque-tecidos-only">${m.auto
+          ? '<span class="muted" style="font-size:11px;" title="Baixa lida da OS: desmarcar a costura da OS devolve o aviamento">da OS</span>'
+          : m.exp
           ? '<span class="muted" style="font-size:11px;" title="Para tirar, use o × da linha na Ordem de Expedição">na OE</span>'
           : `<button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
@@ -8281,6 +8419,45 @@ function renderEstoqueAviamentos() {
     </tbody></table></div>` : '';
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_aviTrocarUnidade('${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
+  /* RESERVADO PARA AS OS AINDA NÃO COSTURADAS (ver _aviDasOS). A reserva não
+     tem unidade — só a costura diz onde a OS vai ser feita —, então o quadro
+     compara com o que há HOJE nas duas unidades juntas, e é o mesmo nas duas
+     abas. Disponível = corrente das duas − reservado, como o do tecido. */
+  const reservas = _aviDasOS().reservas;
+  const nosDois = calcularEstoqueAviamentos(mov, hoje, hoje, hoje, undefined, _aviDataCarga);
+  const resMap = new Map();
+  reservas.forEach(r => {
+    const k = _normNome(r.item) + '||' + _normNome(r.cor) + '||' + (r.tam || '');
+    const cur = resMap.get(k) || { item: r.item, tam: r.tam, cor: r.cor, qtd: 0, os: new Set() };
+    cur.qtd += r.qtd; cur.os.add(r.osNumero);
+    resMap.set(k, cur);
+  });
+  const resLinhas = Array.from(resMap.values()).sort((a, b) =>
+    a.item.localeCompare(b.item, 'pt-BR') || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
+  const nOsRes = new Set(reservas.map(r => r.osId)).size;
+  const reservaHtml = `<div class="card">
+    <h2 style="margin:0 0 4px;font-size:14px;">Reservado para OS ainda não costuradas</h2>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">O aviamento de cada OS fica <b>reservado</b> até a costura ser marcada;
+      aí ele sai do estoque da unidade que costurou. Como o tecido: o reservado ainda está na prateleira, mas já tem dono.
+      Conta com o que há hoje nas <b>duas unidades</b>.</div>
+    <table class="table"><thead><tr><th>Item</th><th>Cor</th>
+      <th style="text-align:right;">Reservado</th>
+      <th style="text-align:right;" title="O que há hoje em Descalvado + São Carlos">Corrente (2 unidades)</th>
+      <th style="text-align:right;" title="Corrente − reservado">Disponível</th><th>OS</th></tr></thead><tbody>
+      ${resLinhas.length ? resLinhas.map(r => {
+        const l = nosDois.find(x => _normNome(x.item) === _normNome(r.item) && _normNome(x.cor) === _normNome(r.cor) && (x.tam || '') === (r.tam || ''));
+        const corr = l ? l.un.corrente : 0;
+        const disp = corr - r.qtd;
+        const os = Array.from(r.os).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+        return `<tr><td>${esc(_aviItemTexto(r))}</td><td>${esc(r.cor) || '—'}</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmtUn(r.qtd)} un</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmtUn(corr)} un</td>
+          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${disp < 0 ? '#c0392b' : 'inherit'};">${fmtUn(disp)} un</td>
+          <td class="muted" style="font-size:11px;">${os.length} OS: ${esc(os.slice(0, 12).join(', '))}${os.length > 12 ? '…' : ''}</td></tr>`;
+      }).join('') : `<tr><td colspan="6" class="empty">Nenhuma OS com aviamento reservado.</td></tr>`}
+    </tbody></table>
+    ${nOsRes ? `<div class="muted" style="font-size:11px;margin-top:6px;">${nOsRes} OS reservando. Só entra aviamento que tem quadro aqui (a "Etiqueta de tamanho" das OS vira Etiqueta P…G3 Preto); cordão e ilhós não reservam.</div>` : ''}
+  </div>`;
   cont.innerHTML = `
     ${abas}
     <div class="card">
@@ -8296,6 +8473,7 @@ function renderEstoqueAviamentos() {
       </div>
     </div>
     ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
+    ${reservaHtml}
     ${transitoHtml}
     ${lancHtml}`;
 }
@@ -8442,7 +8620,7 @@ function _aviDaPerna(janelaId, dataOrig, perna) {
 // `semId` tira da conta a própria alocação (ao editar, ela não concorre consigo).
 function _aviSaldosNaUnidade(unidade, semId) {
   const hoje = _aviHoje();
-  const mov = (STATE.aviamentosMov || []).filter(m => m.id !== semId);
+  const mov = _aviMovTodos().filter(m => m.id !== semId);
   return calcularEstoqueAviamentos(mov, hoje, hoje, hoje, unidade, _aviDataCarga)
     .filter(l => l.corrente > 0.0005 || l.un.corrente > 0);
 }
