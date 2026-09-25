@@ -10809,9 +10809,16 @@ const ITENS_OE_POR_LINHA = {
   'CM.REC': [_OE_ITENS_CM[0], _OE_ITENS_CM[1], _OE_ITENS_CM[2],
     _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
     _OE_ITENS_CM[3], _OE_ITENS_CM[4]],
-  'CM.TRI': [_OE_ITENS_CM[0], _OE_ITENS_CM[1], _OE_ITENS_CM[2],
-    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/),
-    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/),
+  /* CM.TRI PEÇA POR PEÇA, como a BM.TRI (25/09/2026, Junior: "corrija a ordem
+     dos itens na CM.TRI também"). Na camiseta tricolor só a frente é em três
+     partes: as três frentes juntas e depois costa e mangas, num bloco só
+     ("Corpo"), cada peça com a cor da sua fase. */
+  'CM.TRI': [
+    _OE_ITEM('Frente parte 1', 'corpo1', /^frente(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Frente parte 2', 'corpo2', /(corpo|frente).*parte 2/, 1, 'corpo'),
+    _OE_ITEM('Frente parte 3', 'corpo3', /(corpo|frente).*parte 3/, 1, 'corpo'),
+    _OE_ITEM('Costa', 'corpo1', /^costa(?!.*parte [23])/, 1, 'corpo'),
+    _OE_ITEM('Mangas', 'corpo1', /^manga(?!.*parte [23])/, 2, 'corpo'),
     _OE_ITENS_CM[3], _OE_ITENS_CM[4]],
   'BM.LISA': _OE_ITENS_BM,
   /* BM.TRI PEÇA POR PEÇA (25/09/2026, Junior: "manga deve ser mostrada como
