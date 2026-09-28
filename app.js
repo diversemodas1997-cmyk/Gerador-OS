@@ -7276,6 +7276,12 @@ function renderMateriais() {
       <tr>${acoesCell('material', m.id)}<td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
       <td>${esc(m.tipo)||'—'}</td></tr>`).join('');
   });
+  /* OS FIOS E LINHAS MORAM AQUI (28/09/2026, Junior: "No estoque de
+     aviamentos, não é necessário mostrar os cadastros, pois eles devem
+     permanecer no campo Cadastros/Aviamentos"). Um por cor; o Estoque de
+     aviamentos só os usa, na entrada. */
+  const fl = document.getElementById('cad-fios-linhas');
+  if (fl) fl.innerHTML = _aviTiposCardHtml();
 }
 /* ========================================================= */
 /*                ESTOQUE DE TECIDOS (kg)                     */
@@ -8526,7 +8532,6 @@ function renderEstoqueAviamentos() {
         </div>
       </div>
     </div>
-    ${_aviTiposCardHtml()}
     ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
     ${reservaHtml}
     ${transitoHtml}
@@ -8694,7 +8699,7 @@ function _aviTiposCardHtml() {
       <h2 style="margin:0;font-size:14px;">Tipos de fio e linha <span class="muted" style="font-size:12px;font-weight:400;">· ${tipos.length} cadastro${tipos.length === 1 ? '' : 's'}</span></h2>
       <button class="btn small estoque-tecidos-only" onclick="abrirAviamentoTipo('')">+ Cadastrar</button>
     </div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px;">Um cadastro por cor, como vem na etiqueta do cone. Na entrada de fio ou linha, escolha o tipo: ele separa a linha do estoque, e as cores dele viram sugestão.</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">Um cadastro por cor, como vem na etiqueta do cone. No <b>Estoque de aviamentos</b>, a entrada de fio ou linha escolhe o tipo: ele separa a linha do estoque, e as cores dele viram sugestão.</div>
     <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Item</th><th>Tipo</th><th>Cor</th><th>Código da cor</th><th>Especificação</th></tr></thead><tbody>
       ${tipos.length ? tipos.map(t => `<tr>
         <td class="col-actions row-actions estoque-tecidos-only"><button onclick="abrirAviamentoTipo('${esc(t.id)}')">editar</button><button onclick="excluirAviamentoTipo('${esc(t.id)}')">apagar</button></td>
@@ -8777,7 +8782,7 @@ async function salvarAviamentoTipo() {
   await saveState('aviamentoTipos');
   closeModal('modal-aviamento');
   toast(ctx.id ? 'Cadastro corrigido' : 'Cadastrado', 'ok');
-  renderEstoqueAviamentos();
+  renderMateriais(); renderEstoqueAviamentos();
 }
 
 async function excluirAviamentoTipo(id) {
@@ -8791,7 +8796,7 @@ async function excluirAviamentoTipo(id) {
   STATE.aviamentoTipos = STATE.aviamentoTipos.filter(x => x.id !== id);
   await saveState('aviamentoTipos');
   toast('Cadastro apagado', 'ok');
-  renderEstoqueAviamentos();
+  renderMateriais(); renderEstoqueAviamentos();
 }
 window.abrirAviamentoTipo = abrirAviamentoTipo;
 window.excluirAviamentoTipo = excluirAviamentoTipo;
