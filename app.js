@@ -4005,7 +4005,7 @@ function goto(page) {
   if (page === 'cad-tecidos') renderTecidos();
   if (page === 'cad-cores') renderCores();
   if (page === 'cad-fornecedores') renderFornecedores();
-  if (page === 'cad-materiais') renderMateriais();
+  if (page === 'cad-materiais' || page === 'cad-materiais-prod') renderMateriais();
   if (page === 'cad-modelos') renderModelos();
   if (page === 'cad-colecoes') renderColecoes();
   if (page === 'cad-grades') renderGrades();
@@ -4269,7 +4269,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   const box = document.getElementById('modal-cad-fields');
 
   const titles = {
-    tecido: 'Tecido', cor: 'Cor', fornecedor: 'Fornecedor', material: 'Material / Aviamento',
+    tecido: 'Tecido', cor: 'Cor', fornecedor: 'Fornecedor', material: 'Material ou aviamento',
     modelo: 'Modelo', colecao: 'Coleção', grade: 'Grade de tamanhos',
     desenho: 'Desenho técnico',
     marca: 'Marca / Griffe', linha: 'Linha', base: 'Base', bloco: 'Bloco / Revisão',
@@ -4371,6 +4371,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'material') {
     box.innerHTML = `
       <div class="form-grid cols-2">
+        <div class="field"><label>Categoria *</label><select id="m-categoria">${MATERIAL_CATEGORIAS.map(c =>
+          `<option value="${c.k}" ${(editId ? _matCategoria(item) : _matCategoriaNova) === c.k ? 'selected' : ''}>${esc(c.rotulo)}</option>`).join('')}</select>
+          <div class="field-hint">Aviamento vai na peça e aparece na OS; material é gasto na produção.</div></div>
         <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.IN.848"></div>
         <div class="field"><label>Tipo</label><input type="text" id="m-tipo" value="${esc(item.tipo||'')}" placeholder="Ex.: Cordão, Ilhós, Tag"></div>
         <div class="field full"><label>Descrição *</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Cordão 1,30m palha"></div>
@@ -4619,7 +4622,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
                   <th>Aplicação</th>
                 </tr></thead>
                 <tbody>
-                ${STATE.materiais.map(m => {
+                ${STATE.materiais.filter(m => _matCategoria(m) === 'aviamento' || porId.has(m.id)).map(m => {
                   const atual = porId.get(m.id) || {};
                   const marcado = porId.has(m.id);
                   return `<tr class="desenho-comp-row">
@@ -6436,6 +6439,7 @@ async function salvarCadastro() {
     item.codigo = v('m-codigo');
     item.tipo = v('m-tipo');
     item.desc = v('m-desc');
+    item.categoria = v('m-categoria') === 'material' ? 'material' : 'aviamento';
   }
   else if (tipo === 'modelo') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -7241,12 +7245,37 @@ function renderCores() {
       c.nomeFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">${esc(c.nomeFornecedor)}</div>` : ''}</td>
     <td>${esc(((STATE.tecidos || []).find(t => t.id === c.tecidoId) || {}).nome || '') || '—'}</td></tr>`).join('');
 }
+/* MATERIAIS SEPARADOS DE AVIAMENTOS (28/09/2026, Junior: "Mostre em cadastros
+   materiais separado de aviamentos"). Era um cadastro só, "Materiais /
+   Aviamentos". Continua sendo uma lista só (`STATE.materiais`) — é ela que a OS
+   e o desenho técnico leem nos "Aviamentos aplicados" —, e cada item ganhou a
+   CATEGORIA: aviamento (vai na peça: cordão, ilhós, etiqueta, botão) ou
+   material (gasto na produção: papel de enfesto, fita, cola). Cadastro sem
+   categoria é aviamento: os quatro que existiam são. Cada categoria tem a sua
+   tela em Cadastros, e só o aviamento é oferecido na OS e no desenho. */
+const MATERIAL_CATEGORIAS = [
+  { k: 'aviamento', rotulo: 'Aviamento', plural: 'aviamentos' },
+  { k: 'material', rotulo: 'Material', plural: 'materiais' }
+];
+const _matCategoria = m => (m && m.categoria === 'material') ? 'material' : 'aviamento';
+let _matCategoriaNova = 'aviamento';   // a tela de onde veio o "+ Novo"
+function novoMaterialCad(categoria) {
+  _matCategoriaNova = categoria === 'material' ? 'material' : 'aviamento';
+  openCadastroModal('material');
+}
+window.novoMaterialCad = novoMaterialCad;
+
 function renderMateriais() {
-  const tb = document.getElementById('tbl-materiais');
-  if (!STATE.materiais.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum material cadastrado.</td></tr>`; return; }
-  tb.innerHTML = STATE.materiais.map(m => `
-    <tr>${acoesCell('material', m.id)}<td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
-    <td>${esc(m.tipo)||'—'}</td></tr>`).join('');
+  [['tbl-materiais', 'aviamento', 'Nenhum aviamento cadastrado.'],
+   ['tbl-materiais-prod', 'material', 'Nenhum material cadastrado.']].forEach(([id, cat, vazio]) => {
+    const tb = document.getElementById(id);
+    if (!tb) return;
+    const lista = (STATE.materiais || []).filter(m => _matCategoria(m) === cat);
+    if (!lista.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">${vazio}</td></tr>`; return; }
+    tb.innerHTML = lista.map(m => `
+      <tr>${acoesCell('material', m.id)}<td><span class="badge">${esc(m.codigo)}</span></td><td>${esc(m.desc)}</td>
+      <td>${esc(m.tipo)||'—'}</td></tr>`).join('');
+  });
 }
 /* ========================================================= */
 /*                ESTOQUE DE TECIDOS (kg)                     */
@@ -9147,7 +9176,10 @@ function abrirEstoqueItem(tipo, id) {
   _estItensCtx = { tipo, id: x ? x.id : '' };
   const un = x ? _aviUnidadeDe(x) : _estItensUnidade[tipo];
   // Os tipos já cadastrados (nas duas unidades) viram sugestão do campo.
-  const nomes = [...new Set((STATE[cfg.chave] || []).map(i => String(i.nome || '').trim()).filter(Boolean))]
+  // No estoque de materiais, os materiais do cadastro também.
+  const doCadastro = tipo === 'materiais'
+    ? (STATE.materiais || []).filter(m => _matCategoria(m) === 'material').map(m => String(m.desc || '').trim()) : [];
+  const nomes = [...new Set((STATE[cfg.chave] || []).map(i => String(i.nome || '').trim()).concat(doCadastro).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const val = v => (x ? String(Math.max(0, Math.round(Number(v) || 0))) : '');
   document.getElementById('modal-estoque-item-title').textContent =
@@ -21909,6 +21941,8 @@ function _contagensNav() {
     equipe: n('equipe'), funcoes: n('funcoes'), etapas: n('etapas'),
     componentes: n('componentes'), tecidos: n('tecidos'), cores: n('cores'),
     fornecedores: n('fornecedores'), materiais: n('materiais'),
+    aviamentosCad: (STATE.materiais || []).filter(m => _matCategoria(m) === 'aviamento').length,
+    materiaisCad: (STATE.materiais || []).filter(m => _matCategoria(m) === 'material').length,
     grades: n('grades'), desenhos: n('desenhos')
   };
 }
@@ -22801,7 +22835,7 @@ function addAviamentoRow(data = {}) {
   const cont = document.getElementById('aviamentos-rows');
   const row = document.createElement('div');
   row.className = 'componente-row';
-  const matOpts = '<option value="">—</option>' + STATE.materiais.map(m =>
+  const matOpts = '<option value="">—</option>' + STATE.materiais.filter(m => _matCategoria(m) === 'aviamento' || data.material === m.id).map(m =>
     `<option value="${esc(m.id)}" ${data.material===m.id?'selected':''}>${esc(m.codigo)} · ${esc(m.desc)}</option>`).join('');
   row.innerHTML = `
     <div class="field"><select class="av-mat">${matOpts}</select></div>
