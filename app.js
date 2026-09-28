@@ -9109,14 +9109,19 @@ const _estMetrosTxt = (x, v) => _estConv(x) ? _estArred(x, v).toLocaleString('pt
 const MAT_BAIXA_DESDE = '2026-09-28';
 
 // As fases de uma OS que gastam papel e filme: [{ ordem, fase, comp }].
-function _matFasesEnfestoOS(o) {
+/* A RESERVA SOMA TODAS AS FASES (28/09/2026, Junior: "Todas essas fases devem
+   estar somadas para estar reservados"). O checkbox da gola vale para a BAIXA
+   — só marcada ela prova que a gola foi enfestada. Para a RESERVA não: a OS
+   não iniciada nunca tem a caixa marcada, e a gola ficava sempre de fora do
+   que ia ser gasto. `paraReserva` inclui a gola. */
+function _matFasesEnfestoOS(o, paraReserva) {
   if (!o || o.conjugadaPaiId) return [];
   const checks = (o.progresso && o.progresso.enfestosCheck) || {};
   let linhas = [];
   try { linhas = consumoEnfestoOS(o); } catch (e) { return []; }
   return linhas
     .filter(L => !L.viesPuro && (L.camadas || 0) > 0 && (L.comp || 0) > 0)
-    .filter(L => !(L.faseNome && _faseSoDe(L.faseNome, _PAL_GOLA)) || !!checks[L.ordem] || !!checks[String(L.ordem)])
+    .filter(L => paraReserva || !(L.faseNome && _faseSoDe(L.faseNome, _PAL_GOLA)) || !!checks[L.ordem] || !!checks[String(L.ordem)])
     .map(L => ({ ordem: L.ordem, fase: L.faseNome || L.nomeEnf || '', comp: Number(L.comp) || 0 }));
 }
 
@@ -9144,10 +9149,10 @@ function _matDasOS() {
     if (!o || !String(o.os || '').trim()) return;
     const st = _statusOS(o);
     if (st === 'cancelado') return;
-    const fases = _matFasesEnfestoOS(o);
+    const andou = _STATUS_QUE_BAIXAM.indexOf(st) >= 0;
+    const fases = _matFasesEnfestoOS(o, !andou);
     const metros = Math.round(fases.reduce((a, f) => a + f.comp, 0) * 100) / 100;
     if (!(metros > 0)) return;
-    const andou = _STATUS_QUE_BAIXAM.indexOf(st) >= 0;
     const data = andou ? _matDataBaixaOS(o) : '';
     if (andou && (!data || data < MAT_BAIXA_DESDE)) return;
     const obs = `Enfesto da OS ${o.os}: ${fases.length} fase${fases.length === 1 ? '' : 's'} (${fases.map(f => f.fase || 'fase ' + f.ordem).join(', ')})`;

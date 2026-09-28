@@ -82,7 +82,9 @@ const api = new Function('STATE', 'ENFESTO', `
 
 console.log('-- as fases que gastam --');
 const fa = api._matFasesEnfestoOS(STATE.ordens[0]);
-ok('1. todas as fases menos o vies; a gola sem o checkbox fica de fora', fa.map(f => f.fase).join(',') === 'Corpo,Ribana', fa);
+ok('1. na baixa: todas as fases menos o vies; a gola sem o checkbox fica de fora', fa.map(f => f.fase).join(',') === 'Corpo,Ribana', fa);
+const faR = api._matFasesEnfestoOS(STATE.ordens[0], true);
+ok('1b. na reserva: todas as fases menos o vies, gola incluida (o checkbox so vale para a baixa)', faR.map(f => f.fase).join(',') === 'Corpo,Ribana,Gola', faR);
 const fb = api._matFasesEnfestoOS(STATE.ordens[1]);
 ok('2. gola marcada entra; "Corpo + Gola" e corpo e entra sempre; fase com 0 camadas nao', fb.map(f => f.fase).join(',') === 'Corpo + Gola,Gola', fb);
 ok('3. a conjugada passiva nao gasta', api._matFasesEnfestoOS(STATE.ordens[4]).length === 0);
@@ -91,8 +93,8 @@ console.log('-- reserva e baixa --');
 const r = api._matDasOS();
 const baixa = (item, os) => r.baixas.filter(b => b.itemId === item && b.osNumero === os).reduce((a, b) => a + b.qtd, 0);
 const reserva = (item, os) => r.reservas.filter(b => b.itemId === item && b.osNumero === os).reduce((a, b) => a + b.qtd, 0);
-ok('4. OS nao iniciada reserva 1x o comprimento (6,2 + 2,5 = 8,7 m) de papel e de filme',
-   reserva('kraft', '0600') === 8.7 && reserva('filme', '0600') === 8.7, r.reservas);
+ok('4. OS nao iniciada reserva 1x o comprimento de todas as fases menos o vies (6,2 + 2,5 + 1,3 = 10 m)',
+   reserva('kraft', '0600') === 10 && reserva('filme', '0600') === 10, r.reservas);
 ok('5. OS andando baixa (4 + 1 = 5 m) de cada, na data da primeira marca',
    baixa('kraft', '0601') === 5 && baixa('filme', '0601') === 5 && r.baixas.find(b => b.osNumero === '0601').data === '2026-09-29', r.baixas);
 ok('6. OS que andou antes da contagem nao baixa', baixa('kraft', '0590') === 0);
@@ -103,12 +105,12 @@ ok('9. a baixa entra no historico como saida do estoque, lida da OS',
 
 console.log('-- a falta prevista --');
 ok('10. com estoque de sobra, nenhuma falta', api._matFaltas().length === 0, api._matFaltas());
-STATE.materiaisEstCad[1].emEstoque = 10;   // filme: 10 - 5 baixados = 5 em estoque, 8,7 reservados
+STATE.materiaisEstCad[1].emEstoque = 10;   // filme: 10 - 5 baixados = 5 em estoque, 10 reservados
 const fl = api._matFaltas();
-ok('11. reservado alem do estoque vira falta (8,7 - 5 = 3,7 m), com as OS que reservam',
-   fl.length === 1 && fl[0].itemId === 'filme' && fl[0].falta === 3.7 && fl[0].estoque === 5 && fl[0].os.join() === '0600', fl);
+ok('11. reservado alem do estoque vira falta (10 - 5 = 5 m), com as OS que reservam',
+   fl.length === 1 && fl[0].itemId === 'filme' && fl[0].falta === 5 && fl[0].estoque === 5 && fl[0].os.join() === '0600', fl);
 STATE.materiaisEstCad[1].emEstoque = 2;    // estoque negativo (-3): falta e o reservado inteiro
-ok('12. estoque ja negativo: falta e o reservado inteiro, sem somar o negativo', api._matFaltas()[0].falta === 8.7, api._matFaltas());
+ok('12. estoque ja negativo: falta e o reservado inteiro, sem somar o negativo', api._matFaltas()[0].falta === 10, api._matFaltas());
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
