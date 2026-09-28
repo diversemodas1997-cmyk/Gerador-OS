@@ -57,6 +57,10 @@ const api = new Function('document', 'STATE', `
   const _estItensSetor = { materiais: '' };
   ${linha(/const ESTOQUE_SETORES = [^\n]*/)}
   ${bloco('const _estItensSetores = ', "'pt-BR'));")}
+  ${bloco('const _estItemMedida = ', "\n")}
+  ${bloco('const _estArred = ', "Math.round(Number(v) || 0);")}
+  ${bloco('const _estFmtQtd = ', "toLocaleString('pt-BR');")}
+  const _matDasOS = () => ({ baixas: [], reservas: [] });
   let _estItensCtx = null;
   const _aviHoje = () => '2026-09-25';
   let _n = 0; const uid = () => 'm' + (++_n);

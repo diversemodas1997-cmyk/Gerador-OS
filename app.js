@@ -9001,6 +9001,106 @@ const ESTOQUE_ITENS = {
 const ESTOQUE_SETORES = ['Corte', 'Costura', 'Acabamento', 'Expedição', 'Manutenção', 'Escritório'];
 const _estItensSetores = cfg => [...new Set(ESTOQUE_SETORES.concat((STATE[cfg.chave] || [])
   .map(i => String(i.setor || '').trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+/* A MEDIDA DO ITEM (28/09/2026). Peça e ferramenta se contam inteiras; o
+   material pode ser medido em METROS (o papel kraft e o filme do enfesto), e
+   metro vem com vírgula. Tudo o que arredonda quantidade passa por aqui. */
+const _estItemMedida = x => (x && x.medida === 'm') ? 'm' : 'un';
+const _estArred = (x, v) => _estItemMedida(x) === 'm'
+  ? Math.round((Number(v) || 0) * 100) / 100 : Math.round(Number(v) || 0);
+const _estFmtQtd = (x, v) => _estItemMedida(x) === 'm'
+  ? _estArred(x, v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m'
+  : Math.round(Number(v) || 0).toLocaleString('pt-BR');
+
+/* O MATERIAL DO ENFESTO SAI COM A OS (28/09/2026, Junior: "Faça os ajustes
+   necessários para que o programa faça as baixas desses materiais junto com
+   cada OS, inclusive seguindo a estimativa de gastos de materiais de acordo com
+   as dimensões de comprimento do enfesto"; e, perguntado: "todas as fases,
+   exceto viés. Mas, a baixa da fase gola só deve acontecer caso o checkbox na
+   fase enfesto estiver preenchido", "sempre uma camada de papel e filme",
+   "papel e filme em metros", "igual ao tecido").
+
+   QUANTO: cada fase enfestada leva UMA folha de papel embaixo e UMA de filme
+   em cima, do comprimento da fase — o mesmo comprimento que dá o kg do tecido
+   (o excedente já está nele). As camadas não mudam nada. Ficam de fora:
+     · o VIÉS puro, que sai da sobra das outras fases e não tem enfesto próprio;
+     · a fase não enfestada (tom escrito com 0 na folha);
+     · a OS CONJUGADA passiva, que é o mesmo enfesto da ativa;
+     · a GOLA cujo checkbox do enfesto, na folha da OS, não está marcado — a
+       gola nem sempre é enfestada, e só a marca diz que foi.
+   Que material gasta assim é o CADASTRO que diz ("Baixa automática nas OS"),
+   não o código: hoje o papel kraft e o filme.
+
+   QUANDO, igual ao tecido: OS que ainda não andou RESERVA; OS que andou
+   (enfestando, cortando… — os status que baixam o tecido) BAIXA, na data da
+   primeira marca dela. OS cancelada não conta.
+
+   DE ONDE: da Unidade Descalvado, onde a mesa de corte está.
+
+   NADA DISTO É GRAVADO, como o aviamento das OS: a reserva e a baixa são LIDAS
+   das OS a cada conta. Corrigir o comprimento ou desmarcar a gola corrige o
+   estoque. O que fica gravado no item é só a contagem (entradas, saídas e
+   ajustes à mão); o "em estoque" da tela é ela menos o que as OS baixaram.
+
+   OS que andou ANTES de MAT_BAIXA_DESDE fica de fora: o papel dela já tinha
+   sido gasto quando a contagem foi feita, e baixá-lo de novo daria negativo. */
+const MAT_BAIXA_DESDE = '2026-09-28';
+
+// As fases de uma OS que gastam papel e filme: [{ ordem, fase, comp }].
+function _matFasesEnfestoOS(o) {
+  if (!o || o.conjugadaPaiId) return [];
+  const checks = (o.progresso && o.progresso.enfestosCheck) || {};
+  let linhas = [];
+  try { linhas = consumoEnfestoOS(o); } catch (e) { return []; }
+  return linhas
+    .filter(L => !L.viesPuro && (L.camadas || 0) > 0 && (L.comp || 0) > 0)
+    .filter(L => !(L.faseNome && _faseSoDe(L.faseNome, _PAL_GOLA)) || !!checks[L.ordem] || !!checks[String(L.ordem)])
+    .map(L => ({ ordem: L.ordem, fase: L.faseNome || L.nomeEnf || '', comp: Number(L.comp) || 0 }));
+}
+
+// O dia em que a OS andou: a marca mais antiga dela (enfesto, etapa ou status
+// carimbado). '' quando nenhuma marca tem hora de verdade.
+function _matDataBaixaOS(o) {
+  const prog = (o && o.progresso) || {};
+  const dias = [];
+  [prog.enfestosSeq, prog.etapasSeq].forEach(mapa => Object.values(mapa || {}).forEach(v => {
+    const d = _aviDiaDoCarimbo(v); if (d) dias.push(d);
+  }));
+  const dSt = _aviDiaDoCarimbo(o && o.statusOSEm);
+  if (dSt) dias.push(dSt);
+  return dias.sort()[0] || '';
+}
+
+// A baixa (como lançamento lido, no formato do histórico) e a reserva de cada
+// material com "Baixa automática nas OS".
+function _matDasOS() {
+  const itens = (Array.isArray(STATE.materiaisEstCad) ? STATE.materiaisEstCad : [])
+    .filter(x => x.baixaOS && _estItemMedida(x) === 'm' && _aviUnidadeDe(x) === 'desc');
+  const baixas = [], reservas = [];
+  if (!itens.length) return { baixas, reservas };
+  (STATE.ordens || []).forEach(o => {
+    if (!o || !String(o.os || '').trim()) return;
+    const st = _statusOS(o);
+    if (st === 'cancelado') return;
+    const fases = _matFasesEnfestoOS(o);
+    const metros = Math.round(fases.reduce((a, f) => a + f.comp, 0) * 100) / 100;
+    if (!(metros > 0)) return;
+    const andou = _STATUS_QUE_BAIXAM.indexOf(st) >= 0;
+    const data = andou ? _matDataBaixaOS(o) : '';
+    if (andou && (!data || data < MAT_BAIXA_DESDE)) return;
+    const obs = `Enfesto da OS ${o.os}: ${fases.length} fase${fases.length === 1 ? '' : 's'} (${fases.map(f => f.fase || 'fase ' + f.ordem).join(', ')})`;
+    itens.forEach(x => {
+      if (andou) {
+        baixas.push({ id: 'os:' + o.id + ':' + x.id, auto: true, itemId: x.id, osId: o.id, osNumero: o.os,
+          nome: x.nome, desc: x.desc || '', setor: x.setor || '', unidade: 'desc',
+          tipo: 'saida', motivo: 'os', qtd: metros, dUso: 0, dEstoque: -metros, data, obs, por: '' });
+      } else {
+        reservas.push({ itemId: x.id, osId: o.id, osNumero: o.os, status: st, qtd: metros });
+      }
+    });
+  });
+  return { baixas, reservas };
+}
 // Os motivos de cada lançamento, e o que cada um faz nas duas colunas.
 const ESTOQUE_ITENS_MOTIVOS = {
   entrada: [
@@ -9042,10 +9142,21 @@ function renderEstoqueItens(tipo) {
     .sort((a, b) => (cfg.comSetor ? String(a.setor || '').localeCompare(String(b.setor || ''), 'pt-BR') : 0)
       || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
   const colSetor = x => cfg.comSetor ? `<td>${esc(x.setor || '') || '<span class="muted">—</span>'}</td>` : '';
-  const n = v => Math.round(Number(v) || 0);
-  const fmt = v => n(v).toLocaleString('pt-BR');
+  // Metro vem com vírgula; o resto é inteiro (ver _estArred).
+  const n = v => Math.round((Number(v) || 0) * 100) / 100;
+  const fmt = v => n(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  // O que as OS já baixaram e o que reservaram de cada material (_matDasOS).
+  const osMat = tipo === 'materiais' ? _matDasOS() : { baixas: [], reservas: [] };
+  const somaOS = (lista, id) => lista.filter(b => b.itemId === id).reduce((a, b) => a + b.qtd, 0);
+  const estoqueDe = x => n(n(x.emEstoque) - somaOS(osMat.baixas, x.id));
   const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
-  const tEst = linhas.reduce((s, x) => s + n(x.emEstoque), 0);
+  const tEst = linhas.reduce((s, x) => s + estoqueDe(x), 0);
+  const notaOS = x => {
+    if (!x.baixaOS) return '';
+    const b = somaOS(osMat.baixas, x.id), r = somaOS(osMat.reservas, x.id);
+    return `<div class="muted" style="font-size:10px;font-weight:400;" title="Baixa pelo comprimento do enfesto de cada OS">${
+      b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}${r ? ' · ' + _estFmtQtd(x, r) + ' reservado' : ''}</div>`;
+  };
   const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;";
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_estItensTrocarUnidade('${tipo}','${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
@@ -9053,9 +9164,9 @@ function renderEstoqueItens(tipo) {
       <td class="col-actions row-actions estoque-tecidos-only"><button title="Registrar o que chegou ou voltou do uso" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','entrada')">+ entrada</button><button title="Registrar o que foi posto em uso ou deu baixa" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','saida')">− saída</button><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
       ${colSetor(x)}
-      <td style="${mono}">${fmt(x.emUso)}</td>
-      <td style="${mono}font-weight:700;">${fmt(x.emEstoque)}</td>
-      <td style="${mono}">${fmt(n(x.emUso) + n(x.emEstoque))}</td>
+      <td style="${mono}">${_estFmtQtd(x, x.emUso)}</td>
+      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 ? 'color:#c0392b;' : ''}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
+      <td style="${mono}">${_estFmtQtd(x, n(x.emUso) + estoqueDe(x))}</td>
       <td>${esc(x.obs || '')}</td>
       <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 ? `
     <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${cfg.comSetor ? '<td></td>' : ''}
@@ -9068,7 +9179,7 @@ function renderEstoqueItens(tipo) {
   const hoje = _aviHoje();
   if (!per.ate) per.ate = hoje;
   if (!per.de) per.de = hoje.slice(0, 8) + '01';
-  const hist = _estItensHistorico(STATE[cfg.mov], unidade, per.de, per.ate, busca);
+  const hist = _estItensHistorico((STATE[cfg.mov] || []).concat(osMat.baixas), unidade, per.de, per.ate, busca);
   const tEnt = hist.filter(m => m.tipo === 'entrada').reduce((s, m) => s + n(m.qtd), 0);
   const tSai = hist.filter(m => m.tipo === 'saida').reduce((s, m) => s + n(m.qtd), 0);
   const sinal = v => (n(v) > 0 ? '+' : '') + fmt(v);
@@ -9076,7 +9187,7 @@ function renderEstoqueItens(tipo) {
     const cor = m.tipo === 'entrada' ? '#d6f0db' : m.tipo === 'saida' ? '#f6dcda' : '#e8e4f3';
     const nome = m.tipo === 'entrada' ? 'Entrada' : m.tipo === 'saida' ? 'Saída' : 'Ajuste';
     const mot = _estItensMotivo(m.motivo);
-    return `<span class="badge" style="background:${cor};">${nome}</span><div class="muted" style="font-size:10px;">${esc(mot ? mot.rotulo : (m.motivo === 'cadastro' ? 'Cadastro inicial' : 'Correção do cadastro'))}</div>`;
+    return `<span class="badge" style="background:${cor};">${m.auto ? 'Baixa da OS' : nome}</span><div class="muted" style="font-size:10px;">${esc(mot ? mot.rotulo : (m.motivo === 'os' ? 'enfesto (comprimento)' : m.motivo === 'cadastro' ? 'Cadastro inicial' : 'Correção do cadastro'))}</div>`;
   };
   const histHtml = `<div class="card">
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
@@ -9094,7 +9205,9 @@ function renderEstoqueItens(tipo) {
       <th style="text-align:right;" title="Quanto este lançamento mexeu no que está em estoque">Em estoque</th>
       <th>Observação</th><th>Por</th></tr></thead><tbody>
       ${hist.length ? hist.map(m => `<tr>
-        <td class="col-actions row-actions estoque-tecidos-only"><button title="Apagar este lançamento e desfazer o que ele mexeu nas quantidades" onclick="excluirMovEstoqueItem('${tipo}','${esc(m.id)}')">apagar</button></td>
+        <td class="col-actions row-actions estoque-tecidos-only">${m.auto
+          ? '<span class="muted" style="font-size:11px;" title="Baixa lida da OS: corrigir o enfesto da OS corrige a baixa">da OS</span>'
+          : `<button title="Apagar este lançamento e desfazer o que ele mexeu nas quantidades" onclick="excluirMovEstoqueItem('${tipo}','${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
         <td>${tipoCel(m)}</td>
         <td>${esc(m.nome)}${m.setor ? ` <span class="muted" style="font-size:11px;">· ${esc(m.setor)}</span>` : ''}${m.desc ? `<div class="muted" style="font-size:11px;">${esc(m.desc)}</div>` : ''}</td>
@@ -9181,7 +9294,7 @@ function abrirEstoqueItem(tipo, id) {
     ? (STATE.materiais || []).filter(m => _matCategoria(m) === 'material').map(m => String(m.desc || '').trim()) : [];
   const nomes = [...new Set((STATE[cfg.chave] || []).map(i => String(i.nome || '').trim()).concat(doCadastro).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const val = v => (x ? String(Math.max(0, Math.round(Number(v) || 0))) : '');
+  const val = v => (x ? String(Math.max(0, _estArred(x, v))) : '');
   document.getElementById('modal-estoque-item-title').textContent =
     (x ? 'Editar ' : 'Cadastrar ') + cfg.um;
   document.getElementById('modal-estoque-item-fields').innerHTML = `
@@ -9191,10 +9304,17 @@ function abrirEstoqueItem(tipo, id) {
       <div class="field"><label>Tipo de ${esc(cfg.um)} *</label><input type="text" id="mei-nome" list="mei-nomes" placeholder="${esc(cfg.exemplo)}" value="${x ? esc(x.nome || '') : ''}">
         <datalist id="mei-nomes">${nomes.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
       ${cfg.comSetor ? `<div class="field"><label>Setor *</label><input type="text" id="mei-setor" list="mei-setores" placeholder="Ex.: Corte" value="${x ? esc(x.setor || '') : esc(_estItensSetor[tipo] || '')}">
-        <datalist id="mei-setores">${_estItensSetores(cfg).map(st => `<option value="${esc(st)}">`).join('')}</datalist></div>` : ''}
+        <datalist id="mei-setores">${_estItensSetores(cfg).map(st => `<option value="${esc(st)}">`).join('')}</datalist></div>
+      <div class="field"><label>Medida</label><select id="mei-medida">
+        <option value="un"${_estItemMedida(x) === 'un' ? ' selected' : ''}>Unidade (un)</option>
+        <option value="m"${_estItemMedida(x) === 'm' ? ' selected' : ''}>Metro (m)</option></select></div>
+      <div class="field full"><label style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:13px;">
+        <input type="checkbox" id="mei-baixaos" ${x && x.baixaOS ? 'checked' : ''} style="width:auto;margin:0;">
+        Baixa automática nas OS: gasta 1 × o comprimento de cada enfesto</label>
+        <div class="field-hint">Para o papel e o filme da mesa de corte, em metros. Todas as fases menos o viés; a gola só com o checkbox do enfesto marcado na folha. Reserva enquanto a OS não começou e baixa quando ela anda, como o tecido.</div></div>` : ''}
       <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="${cfg.comSetor ? 'Marca, medida, onde é usado…' : 'Marca, medida, máquina em que serve…'}" value="${x ? esc(x.desc || '') : ''}"></div>
-      <div class="field"><label>Em uso (un)</label><input type="number" min="0" step="1" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
-      <div class="field"><label>Em estoque (un)</label><input type="number" min="0" step="1" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
+      <div class="field"><label>Em uso</label><input type="number" min="0" step="any" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
+      <div class="field"><label>Em estoque</label><input type="number" min="0" step="any" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
       ${x ? `<div class="field full"><div class="field-hint">Para o que chegou, foi posto em uso ou deu baixa, prefira <b>+ entrada</b> e <b>− saída</b> na linha. Mudar as quantidades aqui fica no histórico como <b>ajuste</b> (contagem).</div></div>` : ''}
       <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="Ex.: prateleira 3 / pedir mais em outubro" value="${x ? esc(x.obs || '') : ''}"></div>
     </div>`;
@@ -9218,7 +9338,7 @@ function abrirMovEstoqueItem(tipo, id, sentido) {
     <div class="form-grid cols-2">
       <div class="field full"><label>${s === 'entrada' ? 'De onde veio' : 'Para onde foi'} *</label><select id="mei-motivo">${ESTOQUE_ITENS_MOTIVOS[s].map((m, i) =>
         `<option value="${m.k}"${i === 0 ? ' selected' : ''}>${esc(m.rotulo)}</option>`).join('')}</select></div>
-      <div class="field"><label>Quantidade (un) *</label><input type="number" min="1" step="1" id="mei-qtd" placeholder="Ex.: 10"></div>
+      <div class="field"><label>Quantidade (${_estItemMedida(x)}) *</label><input type="number" min="0" step="${_estItemMedida(x) === 'm' ? 'any' : '1'}" id="mei-qtd" placeholder="${_estItemMedida(x) === 'm' ? 'Ex.: 250 (1 rolo de kraft)' : 'Ex.: 10'}"></div>
       <div class="field"><label>Data</label><input type="date" id="mei-data" value="${_aviHoje()}"></div>
       <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="${s === 'entrada' ? 'Ex.: NF 1234 / fornecedor' : 'Ex.: máquina 7 / reta da Maria'}"></div>
     </div>`;
@@ -9232,14 +9352,14 @@ async function _salvarMovEstoqueItem(ctx, cfg) {
   if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
   const mot = ESTOQUE_ITENS_MOTIVOS[ctx.mov].find(m => m.k === v('mei-motivo'));
   if (!mot) return toast('Escolha ' + (ctx.mov === 'entrada' ? 'de onde veio' : 'para onde foi'), 'err');
-  const qtd = Math.max(0, Math.round(parseFloat(String(v('mei-qtd')).replace(',', '.')) || 0));
+  const qtd = Math.max(0, _estArred(x, parseFloat(String(v('mei-qtd')).replace(',', '.')) || 0));
   if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
-  const uso = Math.round(Number(x.emUso) || 0), est = Math.round(Number(x.emEstoque) || 0);
+  const uso = _estArred(x, x.emUso), est = _estArred(x, x.emEstoque);
   if (mot.estoque < 0 && qtd > est) return toast(`Só há ${est} em estoque`, 'err');
   if (mot.uso < 0 && qtd > uso) return toast(`Só há ${uso} em uso`, 'err');
   const dUso = mot.uso * qtd, dEstoque = mot.estoque * qtd;
-  x.emUso = uso + dUso;
-  x.emEstoque = est + dEstoque;
+  x.emUso = _estArred(x, uso + dUso);
+  x.emEstoque = _estArred(x, est + dEstoque);
   x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
   x.atualizadoEm = new Date().toISOString();
   _estItensRegistrar(cfg, x, { tipo: ctx.mov, motivo: mot.k, qtd, dUso, dEstoque,
@@ -9260,7 +9380,10 @@ async function salvarEstoqueItem() {
   const v = id => (document.getElementById(id) || {}).value || '';
   const nome = v('mei-nome').trim();
   if (!nome) return toast('Informe o tipo de ' + cfg.um, 'err');
-  const inteiro = id => Math.max(0, Math.round(parseFloat(String(v(id)).replace(',', '.')) || 0));
+  const medida = cfg.comSetor && v('mei-medida') === 'm' ? 'm' : 'un';
+  const baixaOS = !!(cfg.comSetor && (document.getElementById('mei-baixaos') || {}).checked);
+  if (baixaOS && medida !== 'm') return toast('A baixa pelas OS conta em metros: escolha a medida Metro', 'err');
+  const inteiro = id => Math.max(0, _estArred({ medida }, parseFloat(String(v(id)).replace(',', '.')) || 0));
   const unidade = v('mei-unidade') === 'sc' ? 'sc' : 'desc';
   const desc = v('mei-desc').trim();
   const setor = cfg.comSetor ? v('mei-setor').trim() : '';
@@ -9275,7 +9398,7 @@ async function salvarEstoqueItem() {
   if (dup) return toast(`"${nome}" já está cadastrado nesta unidade — edite a linha que existe`, 'err');
   const dados = {
     nome, desc, unidade,
-    ...(cfg.comSetor ? { setor } : {}),
+    ...(cfg.comSetor ? { setor, medida, baixaOS } : {}),
     emUso: inteiro('mei-uso'),
     emEstoque: inteiro('mei-estoque'),
     obs: v('mei-obs').trim(),
@@ -9286,8 +9409,8 @@ async function salvarEstoqueItem() {
   if (ctx.id) {
     x = lista.find(i => i.id === ctx.id);
     if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
-    const dUso = dados.emUso - Math.round(Number(x.emUso) || 0);
-    const dEstoque = dados.emEstoque - Math.round(Number(x.emEstoque) || 0);
+    const dUso = _estArred(dados, dados.emUso - (Number(x.emUso) || 0));
+    const dEstoque = _estArred(dados, dados.emEstoque - (Number(x.emEstoque) || 0));
     Object.assign(x, dados);
     // A quantidade mudada à mão entra no histórico como ajuste.
     if (dUso || dEstoque) _estItensRegistrar(cfg, x, { tipo: 'ajuste', motivo: 'correcao', qtd: 0, dUso, dEstoque });
@@ -9313,9 +9436,9 @@ async function excluirMovEstoqueItem(tipo, id) {
   const m = (STATE[cfg.mov] || []).find(i => i.id === id);
   if (!m) return;
   const x = (STATE[cfg.chave] || []).find(i => i.id === m.itemId);
-  const dUso = Math.round(Number(m.dUso) || 0), dEst = Math.round(Number(m.dEstoque) || 0);
+  const dUso = _estArred(x, m.dUso), dEst = _estArred(x, m.dEstoque);
   if (x) {
-    const uso = Math.round(Number(x.emUso) || 0) - dUso, est = Math.round(Number(x.emEstoque) || 0) - dEst;
+    const uso = _estArred(x, (Number(x.emUso) || 0) - dUso), est = _estArred(x, (Number(x.emEstoque) || 0) - dEst);
     if (uso < 0 || est < 0) return toast('Desfazer este lançamento deixaria a quantidade negativa — as quantidades já mudaram depois dele', 'err');
     if (!confirm(`Apagar este lançamento de "${m.nome}"?\n\nAs quantidades voltam: em uso ${x.emUso} → ${uso}, em estoque ${x.emEstoque} → ${est}.`)) return;
     x.emUso = uso; x.emEstoque = est;
