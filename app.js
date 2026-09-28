@@ -8186,9 +8186,9 @@ function _aviPernasDaExpedicao(m, dataEfetiva) {
   const chegada = String((dataEfetiva ? dataEfetiva(m) : m.data) || '');
   const saida = String(m.dataSaida || chegada);
   return [
-    { tipo: 'saida', unidade: _aviOrigemDe(m), item: m.item, cor: m.cor, tam: m.tam, kg: m.kg, qtd: m.qtd,
+    { tipo: 'saida', unidade: _aviOrigemDe(m), item: m.item, modelo: m.modelo || '', cor: m.cor, corCodigo: m.corCodigo || '', tam: m.tam, kg: m.kg, qtd: m.qtd,
       data: saida < chegada ? saida : chegada },
-    { tipo: 'entrada', unidade: _aviDestinoDe(m), item: m.item, cor: m.cor, tam: m.tam, kg: m.kg, qtd: m.qtd, data: chegada }
+    { tipo: 'entrada', unidade: _aviDestinoDe(m), item: m.item, modelo: m.modelo || '', cor: m.cor, corCodigo: m.corCodigo || '', tam: m.tam, kg: m.kg, qtd: m.qtd, data: chegada }
   ];
 }
 
@@ -8207,9 +8207,12 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
     const cor = String(m.cor || '').trim();
     const tam = _aviTamDe({ item, tam: m.tam });
     const modelo = _aviModeloDe({ item, modelo: m.modelo });
-    const k = _normNome(item) + '||' + _normNome(modelo) + '||' + _normNome(cor) + '||' + tam;
+    // O código da cor separa a linha (28/09/2026): "Off White" 000484 e
+    // "Off White" 002484 são dois cones diferentes com o mesmo nome.
+    const corCodigo = modelo ? String(m.corCodigo || '').trim() : '';
+    const k = _normNome(item) + '||' + _normNome(modelo) + '||' + _normNome(cor) + '||' + _normNome(corCodigo) + '||' + tam;
     const zero = () => ({ anterior: 0, entrada: 0, saida: 0, corrente: 0 });
-    const cur = linhas.get(k) || { item, modelo, cor, tam, kg: zero(), un: zero(), temKg: false, temUn: false };
+    const cur = linhas.get(k) || { item, modelo, cor, corCodigo, tam, kg: zero(), un: zero(), temKg: false, temUn: false };
     /* PESO E UNIDADE, lado a lado (24/09/2026, Junior: "deve haver entrada por
        quantidade de unidade"). Botão e etiqueta se contam; fio e linha se
        pesam. Cada lançamento traz um, o outro ou os dois, e as duas contas
@@ -8236,8 +8239,8 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
   // Os cinco volumes em kg ficam no topo (entrada, saida…), como sempre foram;
   // os em unidades moram em `un`.
   return Array.from(linhas.values()).map(l => ({
-    item: l.item, modelo: l.modelo, cor: l.cor, tam: l.tam, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
-  })).sort((a, b) => a.modelo.localeCompare(b.modelo, 'pt-BR') || a.cor.localeCompare(b.cor, 'pt-BR')
+    item: l.item, modelo: l.modelo, cor: l.cor, corCodigo: l.corCodigo, tam: l.tam, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
+  })).sort((a, b) => a.modelo.localeCompare(b.modelo, 'pt-BR') || a.cor.localeCompare(b.cor, 'pt-BR') || a.corCodigo.localeCompare(b.corCodigo, 'pt-BR')
     || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
 }
 
@@ -8462,7 +8465,7 @@ function renderEstoqueAviamentos() {
           : `<button onclick="excluirMovAviamento('${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
         <td>${tipoCel(m)}</td>
-        <td>${esc(_aviItemTexto(m))}</td><td>${esc(m.cor) || '—'}</td>
+        <td>${esc(_aviItemTexto(m))}</td><td>${esc(_aviCorTexto(m)) || '—'}</td>
         <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(m))}</td>
         <td>${esc((m.exp ? m.exp.obs : m.obs) || '')}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">Nenhum lançamento neste período.</td></tr>'}
@@ -8480,7 +8483,7 @@ function renderEstoqueAviamentos() {
       ${transito.map(m => `<tr>
         <td style="white-space:nowrap;">${esc(formatDate(_aviDataCarga(m)))}</td>
         <td>${_aviOrigemDe(m) === unidade ? 'Saindo para ' + esc(rotuloUn(_aviDestinoDe(m))) : 'Chegando de ' + esc(rotuloUn(_aviOrigemDe(m)))}</td>
-        <td>${esc(_aviItemTexto(m))}</td><td>${esc(m.cor) || '—'}</td>
+        <td>${esc(_aviItemTexto(m))}</td><td>${esc(_aviCorTexto(m)) || '—'}</td>
         <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(m))}</td>
         <td style="text-align:right;">${Number(m.volumes) > 0 ? Number(m.volumes) : '—'}</td></tr>`).join('')}
     </tbody></table></div>` : '';
@@ -8593,6 +8596,7 @@ function abrirMovAviamento(tipo) {
       <div class="field"><label>Item *</label><select id="ma-item" onchange="_aviMostrarTamanho()">
         <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
       <div class="field" id="ma-modelo-campo" style="display:none;"><label>Tipo</label><select id="ma-modelo" onchange="_aviMostrarCoresDoTipo()"></select></div>
+      <div class="field" id="ma-corcad-campo" style="display:none;"><label>Cor *</label><select id="ma-corcad"></select></div>
       <div class="field" id="ma-tam-campo" style="display:none;"><label>Tamanho da etiqueta</label><select id="ma-tam">
         <option value="">— sem tamanho —</option>${AVIAMENTO_TAMANHOS.map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>
       <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto" oninput="this.dataset.auto = ''">
@@ -8640,13 +8644,24 @@ function _aviMostrarTamanho() {
 }
 window._aviMostrarTamanho = _aviMostrarTamanho;
 
-// Com um tipo escolhido, as sugestões da cor são as cores cadastradas dele;
-// sem tipo, as cores do cadastro de cores.
+// Com um tipo escolhido, a cor é escolhida numa lista dos cadastros dele — com
+// o código, porque dois cadastros podem ter o mesmo nome (28/09/2026); sem tipo,
+// a cor é texto livre com as cores do cadastro de cores como sugestão.
 function _aviMostrarCoresDoTipo() {
   const it = document.getElementById('ma-item'), mSel = document.getElementById('ma-modelo');
   const lista = document.getElementById('ma-cores');
   if (!it || !lista) return;
   const mod = mSel ? mSel.value : '';
+  const campoLivre = (document.getElementById('ma-cor') || {}).closest ? document.getElementById('ma-cor').closest('.field') : null;
+  const campoCad = document.getElementById('ma-corcad-campo');
+  const selCad = document.getElementById('ma-corcad');
+  const doTipo = mod ? _aviTiposDoItem(it.value).filter(t => _normNome(t.codigo) === _normNome(mod)) : [];
+  if (campoLivre) campoLivre.style.display = doTipo.length ? 'none' : '';
+  if (campoCad && selCad) {
+    campoCad.style.display = doTipo.length ? '' : 'none';
+    selCad.innerHTML = '<option value="">— escolha a cor —</option>' + doTipo.map(t =>
+      `<option value="${esc(t.id)}">${esc(t.corNome || '')} · cód.${t.corCodigo ? ' ' + esc(t.corCodigo) : ''}</option>`).join('');
+  }
   const cores = mod
     ? _aviTiposDoItem(it.value).filter(t => _normNome(t.codigo) === _normNome(mod)).map(t => t.corNome || t.corCodigo).filter(Boolean)
     : [...new Set((STATE.cores || []).map(c => corNomeCurto(c.nome)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -8688,6 +8703,12 @@ function _aviCadDaCor(m) {
   const mod = _aviModeloDe(m);
   const cor = _normNome(m && m.cor);
   if (!mod || !cor) return null;
+  // Com o código da cor gravado, é ele que decide: dois cadastros podem ter o mesmo nome.
+  const cod = _normNome(m && m.corCodigo);
+  if (cod) {
+    const porCod = _aviTiposDoItem(m.item).find(t => _normNome(t.codigo) === _normNome(mod) && _normNome(t.corCodigo) === cod);
+    if (porCod) return porCod;
+  }
   return _aviTiposDoItem(m.item).find(t => _normNome(t.codigo) === _normNome(mod)
     && (_normNome(t.corNome) === cor || (t.corCodigo && _normNome(t.corCodigo) === cor))) || null;
 }
@@ -8695,8 +8716,12 @@ function _aviCadDaCor(m) {
 function _aviCorTexto(m) {
   const cor = String((m && m.cor) || '').trim();
   const c = _aviCadDaCor(m);
-  if (!c || !c.corCodigo || _normNome(c.corCodigo) === _normNome(cor)) return cor;
-  return cor + ' · cód. ' + c.corCodigo;
+  const cod = String((m && m.corCodigo) || (c && c.corCodigo) || '').trim();
+  // Fio e linha sem código mostram o "cód." vazio (28/09/2026, Junior: "Linhas
+  // e fios sem código, deixe o texto cod. sem número"): a falta fica à vista.
+  if (!cod) return cor && _aviModeloDe(m) ? cor + ' · cód.' : cor;
+  if (_normNome(cod) === _normNome(cor)) return cor;
+  return cor + ' · cód. ' + cod;
 }
 
 function _aviTiposCardHtml() {
@@ -8741,6 +8766,14 @@ function abrirAviamentoTipo(id) {
     </div>`;
   openModal('modal-aviamento');
 }
+// O lançamento é deste cadastro? Mesmo item e tipo; e o mesmo código da cor
+// quando o lançamento o tem, senão o mesmo nome.
+function _aviMovDoCad(m, t) {
+  if (_normNome(m.item) !== _normNome(t.item) || _normNome(m.modelo) !== _normNome(t.codigo)) return false;
+  if (m.corCodigo || t.corCodigo) return _normNome(m.corCodigo) === _normNome(t.corCodigo) && _normNome(m.cor) === _normNome(t.corNome);
+  return _normNome(m.cor) === _normNome(t.corNome);
+}
+
 // Tipo que já existe: a especificação vem dele, para não se digitar de novo.
 function _aviTipoPreencherDesc() {
   const cod = (document.getElementById('mat-codigo') || {}).value || '';
@@ -8763,9 +8796,9 @@ async function salvarAviamentoTipo() {
   if (!corNome) return toast('Informe a cor', 'err');
   if (!Array.isArray(STATE.aviamentoTipos)) STATE.aviamentoTipos = [];
   const lista = STATE.aviamentoTipos;
-  const chave = x => _normNome(x.item) + '||' + _normNome(x.codigo) + '||' + _normNome(x.corNome);
-  if (lista.some(t => t.id !== ctx.id && chave(t) === chave({ item, codigo, corNome }))) {
-    return toast(`${item} ${codigo} ${corNome} já está cadastrado`, 'err');
+  const chave = x => _normNome(x.item) + '||' + _normNome(x.codigo) + '||' + _normNome(x.corNome) + '||' + _normNome(x.corCodigo);
+  if (lista.some(t => t.id !== ctx.id && chave(t) === chave({ item, codigo, corNome, corCodigo }))) {
+    return toast(`${item} ${codigo} ${corNome}${corCodigo ? ' cód. ' + corCodigo : ''} já está cadastrado`, 'err');
   }
   const dados = { item, codigo, corNome, corCodigo, desc: v('mat-desc'),
     atualizadoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''), atualizadoEm: new Date().toISOString() };
@@ -8776,8 +8809,7 @@ async function salvarAviamentoTipo() {
     // eles ficariam numa linha órfã do estoque.
     if (chave(t) !== chave(dados)) {
       (STATE.aviamentosMov || []).forEach(m => {
-        if (_normNome(m.item) === _normNome(t.item) && _normNome(m.modelo) === _normNome(t.codigo)
-          && _normNome(m.cor) === _normNome(t.corNome)) { m.item = item; m.modelo = codigo; m.cor = corNome; }
+        if (_aviMovDoCad(m, t)) { m.item = item; m.modelo = codigo; m.cor = corNome; m.corCodigo = corCodigo; }
       });
       await saveState('aviamentosMov');
     }
@@ -8796,8 +8828,7 @@ async function excluirAviamentoTipo(id) {
   if (!exigirEstoqueTecidos('apagar tipo de fio ou linha')) return;
   const t = (STATE.aviamentoTipos || []).find(x => x.id === id);
   if (!t) return;
-  const usos = (STATE.aviamentosMov || []).filter(m => _normNome(m.item) === _normNome(t.item)
-    && _normNome(m.modelo) === _normNome(t.codigo) && _normNome(m.cor) === _normNome(t.corNome)).length;
+  const usos = (STATE.aviamentosMov || []).filter(m => _aviMovDoCad(m, t)).length;
   if (usos) return toast(`${t.item} ${t.codigo} ${t.corNome || ''} tem ${usos} lançamento${usos === 1 ? '' : 's'} no estoque — apague-os antes, ou só corrija o cadastro`, 'err');
   if (!confirm(`Apagar ${t.item} ${t.codigo}${t.corNome ? ' · ' + t.corNome : ''}?`)) return;
   STATE.aviamentoTipos = STATE.aviamentoTipos.filter(x => x.id !== id);
@@ -8818,15 +8849,20 @@ async function salvarMovAviamento() {
   const kg = Math.max(0, parseFloat(String(v('ma-kg')).replace(',', '.')) || 0);
   const qtd = Math.max(0, Math.round(parseFloat(String(v('ma-qtd')).replace(',', '.')) || 0));
   if (!(kg > 0) && !(qtd > 0)) return toast('Informe a quantidade (un) ou o peso (kg)', 'err');
+  const modeloSel = _aviModeloDe({ item, modelo: v('ma-modelo') });
+  const temCad = modeloSel && _aviTiposDoItem(item).some(t => _normNome(t.codigo) === _normNome(modeloSel));
+  const cadSel = temCad ? (STATE.aviamentoTipos || []).find(t => t.id === v('ma-corcad')) : null;
+  if (temCad && !cadSel) return toast('Escolha a cor do tipo', 'err');
   if (!Array.isArray(STATE.aviamentosMov)) STATE.aviamentosMov = [];
   STATE.aviamentosMov.push({
     id: uid(),
     tipo: movAviamentoTipo,
     unidade: v('ma-unidade') === 'sc' ? 'sc' : 'desc',
     item,
-    modelo: _aviModeloDe({ item, modelo: v('ma-modelo') }),
+    modelo: modeloSel,
     tam: _aviTamDe({ item, tam: v('ma-tam') }),
-    cor: v('ma-cor').trim(),
+    cor: cadSel ? (cadSel.corNome || '') : v('ma-cor').trim(),
+    corCodigo: cadSel ? (cadSel.corCodigo || '') : '',
     kg: Math.round(kg * 1000) / 1000,
     qtd,
     data: v('ma-data') || _aviHoje(),
@@ -8892,7 +8928,7 @@ function abrirModalExpAviamento(janelaId, dataOrig, perna, editId) {
   const origem = _aviOrigemDe(_aviExpCtx);
   const nomeOrigem = ((AVIAMENTO_UNIDADES.find(u => u.k === origem)) || {}).rotulo || '';
   const saldos = _aviSaldosNaUnidade(origem, ed ? ed.id : undefined);
-  const mesma = l => ed && _normNome(l.item) === _normNome(ed.item) && l.modelo === _aviModeloDe(ed) && _normNome(l.cor) === _normNome(ed.cor) && l.tam === (_aviTamDe(ed) || '');
+  const mesma = l => ed && _normNome(l.item) === _normNome(ed.item) && l.modelo === _aviModeloDe(ed) && _normNome(l.cor) === _normNome(ed.cor) && (l.corCodigo || '') === (ed.corCodigo || '') && l.tam === (_aviTamDe(ed) || '');
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const val = (n, casas) => (Number(n) > 0 ? String(casas ? Math.round(Number(n) * 1000) / 1000 : Math.round(Number(n))) : '');
   document.getElementById('modal-aviamento-title').textContent =
@@ -8904,7 +8940,7 @@ function abrirModalExpAviamento(janelaId, dataOrig, perna, editId) {
     <div class="form-grid cols-2">
       <div class="field full"><label>Aviamento *</label><select id="mae-linha">
         <option value="">— selecione —</option>
-        ${saldos.map((l, i) => `<option value="${i}"${mesma(l) ? ' selected' : ''}>${esc(_aviItemTexto(l))} · ${esc(l.cor || '(sem cor)')} — ${esc([
+        ${saldos.map((l, i) => `<option value="${i}"${mesma(l) ? ' selected' : ''}>${esc(_aviItemTexto(l))} · ${esc(_aviCorTexto(l) || '(sem cor)')} — ${esc([
           l.corrente > 0.0005 ? fmt(l.corrente) + ' kg' : '', l.un.corrente > 0 ? Math.round(l.un.corrente).toLocaleString('pt-BR') + ' un' : ''
         ].filter(Boolean).join(' · '))} na unidade</option>`).join('')}
       </select></div>
@@ -8932,7 +8968,7 @@ async function salvarAviamentoExp() {
   // porque outra pessoa pode ter alocado o mesmo aviamento enquanto o modal
   // estava aberto.
   const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx), ctx.editId || undefined)
-    .find(l => _normNome(l.item) === _normNome(linha.item) && l.modelo === linha.modelo && _normNome(l.cor) === _normNome(linha.cor) && l.tam === linha.tam);
+    .find(l => _normNome(l.item) === _normNome(linha.item) && l.modelo === linha.modelo && _normNome(l.cor) === _normNome(linha.cor) && (l.corCodigo || '') === (linha.corCodigo || '') && l.tam === linha.tam);
   const tem = agora ? agora.corrente : 0;
   const temUn = agora ? agora.un.corrente : 0;
   if (kg > tem + 0.0005) {
@@ -8950,6 +8986,7 @@ async function salvarAviamentoExp() {
       modelo: linha.modelo || '',
       tam: linha.tam || '',
       cor: linha.cor,
+      corCodigo: linha.corCodigo || '',
       kg: Math.round(kg * 1000) / 1000,
       qtd,
       volumes: Math.max(0, parseInt(v('mae-vol'), 10) || 0),
@@ -8975,6 +9012,7 @@ async function salvarAviamentoExp() {
     modelo: linha.modelo || '',
     tam: linha.tam || '',
     cor: linha.cor,
+    corCodigo: linha.corCodigo || '',
     kg: Math.round(kg * 1000) / 1000,
     qtd,
     volumes: Math.max(0, parseInt(v('mae-vol'), 10) || 0),
@@ -12826,7 +12864,7 @@ function renderExpedicaoPlano() {
       ${avis.map(a => `
       <div class="exp-os-row">
         <span class="num" style="font-size:11px;">${esc(_aviItemTexto(a))}</span>
-        <span class="mod">${esc(a.cor) || '—'}</span>
+        <span class="mod">${esc(_aviCorTexto(a)) || '—'}</span>
         <span class="qtd">${esc(_aviQtdTexto(a))}</span>
         <span class="vol">${Number(a.volumes) > 0 ? fmt(a.volumes) + ' vol' : ''}</span>
         <span><button class="admin-only" title="Corrigir este aviamento: item, quantidade, peso, volumes e observação" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(a.id)}')">✎</button><button class="admin-only" title="Tirar este aviamento da carga (ele volta para a unidade de origem)" onclick="excluirAviamentoExp('${esc(a.id)}')">×</button></span>
@@ -19755,7 +19793,7 @@ function renderPrintPlanoExpedicao() {
           </tr></thead>
           <tbody>${avis.map(a => `<tr>
             <td style="padding:0 2px;">${esc(_aviItemTexto(a))}${a.obs ? ` <span style="font-style:italic;color:#555;">· ${esc(a.obs)}</span>` : ''}</td>
-            <td style="padding:0 2px;">${esc(a.cor) || '—'}</td>
+            <td style="padding:0 2px;">${esc(_aviCorTexto(a)) || '—'}</td>
             <td style="padding:0 2px;text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(_aviQtdTexto(a))}</td>
             <td style="padding:0 2px;text-align:right;">${Number(a.volumes) > 0 ? fmt(a.volumes) : '—'}</td>
           </tr>`).join('')}</tbody>

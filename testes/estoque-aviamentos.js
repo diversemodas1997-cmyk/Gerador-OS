@@ -185,7 +185,7 @@ ok('10. a pagina e o modal existem',
 ok('11. a rota desenha a tela', /if \(page === 'estoque-aviamentos'\) renderEstoqueAviamentos\(\);/.test(src));
 ok('12. a chave aviamentosMov e sincronizada e carregada (as duas listas de chaves)',
    (src.match(/'compraOCs','aviamentosMov'/g) || []).length === 2, (src.match(/'compraOCs','aviamentosMov'/g) || []).length);
-ok('13. o lancamento guarda cor e peso', /cor: v\('ma-cor'\)\.trim\(\),\s*kg: Math\.round/.test(src));
+ok('13. o lancamento guarda cor (com o codigo do cadastro, quando ha tipo) e peso', /v\('ma-cor'\)\.trim\(\),\s*corCodigo: cadSel[^,]*,\s*kg: Math\.round/.test(src));
 
 /* CORRIGIR O ALOCADO (25/09/2026, Junior: "insira capacidade de correcao dos
    aviamentos alocados em ordens de expedicao"). Descalvado tem 10 kg; a OE leva
