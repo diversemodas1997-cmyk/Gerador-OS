@@ -9243,10 +9243,23 @@ function renderEstoqueItens(tipo) {
   const faltaDe = x => x.baixaOS ? Math.max(0, n(somaOS(osMat.reservas, x.id) - Math.max(0, estoqueDe(x)))) : 0;
   const notaOS = x => {
     if (!x.baixaOS) return '';
-    const b = somaOS(osMat.baixas, x.id), r = somaOS(osMat.reservas, x.id), f = faltaDe(x);
+    const b = somaOS(osMat.baixas, x.id);
     return `<div class="muted" style="font-size:10px;font-weight:400;" title="Baixa pelo comprimento do enfesto de cada OS">${
-      b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}${r ? ' · ' + _estFmtQtd(x, r) + ' reservado' : ''}</div>${f > 0
-      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;" title="As OS ainda não iniciadas reservam mais do que há em estoque. A falta já está na lista de compra.">⚠ falta ${_estFmtQtd(x, f)}</div>` : ''}`;
+      b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}</div>`;
+  };
+  /* O RESERVADO EM COLUNA PRÓPRIA (28/09/2026, Junior: "O material papel e
+     plástico reservados para OS, devem ser mostrados em uma coluna própria").
+     É o que as OS ainda não iniciadas vão gastar; a falta (reservado além do
+     estoque) aparece aqui, em vermelho, porque é deste número que ela nasce. */
+  const temReserva = tipo === 'materiais';
+  const celReserva = x => {
+    if (!temReserva) return '';
+    if (!x.baixaOS) return `<td style="${mono}color:var(--ink-3);">—</td>`;
+    const r = somaOS(osMat.reservas, x.id), f = faltaDe(x);
+    const nOS = new Set(osMat.reservas.filter(b => b.itemId === x.id).map(b => b.osNumero)).size;
+    return `<td style="${mono}${f > 0 ? 'color:#c0392b;background:#fdecea;' : ''}" title="${esc(_estMetrosTxt(x, r))}">${r ? _estFmtQtd(x, r) : '0'}${
+      nOS ? `<div class="muted" style="font-size:10px;">${nOS} OS não iniciada${nOS === 1 ? '' : 's'}</div>` : ''}${f > 0
+      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;" title="As OS ainda não iniciadas reservam mais do que há em estoque. A falta já está na lista de compra.">⚠ falta ${_estFmtQtd(x, f)}</div>` : ''}</td>`;
   };
   const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;";
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
@@ -9256,15 +9269,16 @@ function renderEstoqueItens(tipo) {
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
       ${colSetor(x)}
       <td style="${mono}">${_estFmtQtd(x, x.emUso)}</td>
-      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 || faltaDe(x) > 0 ? 'color:#c0392b;background:#fdecea;' : ''}" title="${esc(_estMetrosTxt(x, estoqueDe(x)))}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
+      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 ? 'color:#c0392b;background:#fdecea;' : ''}" title="${esc(_estMetrosTxt(x, estoqueDe(x)))}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
+      ${celReserva(x)}
       <td style="${mono}">${_estFmtQtd(x, n(x.emUso) + estoqueDe(x))}</td>
       <td>${esc(x.obs || '')}</td>
       <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 && !linhas.some(_estConv) ? `
     <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${cfg.comSetor ? '<td></td>' : ''}
       <td style="${mono}font-weight:700;">${fmt(tUso)}</td>
-      <td style="${mono}font-weight:700;">${fmt(tEst)}</td>
+      <td style="${mono}font-weight:700;">${fmt(tEst)}</td>${temReserva ? '<td></td>' : ''}
       <td style="${mono}font-weight:700;">${fmt(tUso + tEst)}</td><td></td><td></td></tr>` : '')
-    : `<tr><td colspan="${cfg.comSetor ? 8 : 7}" class="empty">${busca || setorSel ? 'Nada encontrado na busca.' : `${cfg.masculino ? 'Nenhum' : 'Nenhuma'} ${esc(cfg.um)} ${cfg.masculino ? 'cadastrado' : 'cadastrada'} nesta unidade.`}</td></tr>`;
+    : `<tr><td colspan="${(cfg.comSetor ? 8 : 7) + (temReserva ? 1 : 0)}" class="empty">${busca || setorSel ? 'Nada encontrado na busca.' : `${cfg.masculino ? 'Nenhum' : 'Nenhuma'} ${esc(cfg.um)} ${cfg.masculino ? 'cadastrado' : 'cadastrada'} nesta unidade.`}</td></tr>`;
   // O histórico: o mês corrente, até alguém mudar o período.
   const per = _estItensPeriodo[tipo];
   const hoje = _aviHoje();
@@ -9326,7 +9340,8 @@ function renderEstoqueItens(tipo) {
       </div>
       <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>${cfg.comSetor ? '<th>Setor</th>' : ''}
         <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
-        <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>
+        <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>${temReserva
+          ? '<th style="text-align:right;" title="O que as OS ainda não iniciadas vão gastar">Reservado (OS)</th>' : ''}
         <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>
         <tbody>${corpo}</tbody></table>
     </div>
