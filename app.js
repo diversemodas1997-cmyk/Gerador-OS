@@ -9101,6 +9101,32 @@ function _matDasOS() {
   });
   return { baixas, reservas };
 }
+
+/* A FALTA PREVISTA (28/09/2026, Junior: "faça o aviso em vermelho. O programa
+   deve ainda alocar os materiais reservados faltantes na lista de planejamento
+   de compra, para serem alocados na folha de ordem de compra").
+
+   Falta = o que as OS ainda não iniciadas reservam − o que há em estoque
+   (a contagem menos o que as OS já baixaram). O "em uso" não conta: a meia
+   bobina na mesa está sendo gasta agora e não cobre o enfesto de amanhã.
+   É a mesma conta do vermelho na tela do estoque e da linha automática na
+   lista de compra — uma conta só, para as duas nunca discordarem. */
+function _matFaltas() {
+  const r = _matDasOS();
+  const soma = (lista, id) => lista.filter(b => b.itemId === id).reduce((a, b) => a + b.qtd, 0);
+  const r2 = v => Math.round(v * 100) / 100;
+  return (Array.isArray(STATE.materiaisEstCad) ? STATE.materiaisEstCad : [])
+    .filter(x => x.baixaOS && _estItemMedida(x) === 'm' && _aviUnidadeDe(x) === 'desc')
+    .map(x => {
+      const estoque = r2((Number(x.emEstoque) || 0) - soma(r.baixas, x.id));
+      const reservado = r2(soma(r.reservas, x.id));
+      const os = [...new Set(r.reservas.filter(b => b.itemId === x.id).map(b => b.osNumero))]
+        .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+      return { itemId: x.id, nome: x.nome || '', desc: x.desc || '', estoque, reservado, os,
+               falta: r2(Math.max(0, reservado - Math.max(0, estoque))) };
+    })
+    .filter(f => f.falta > 0);
+}
 // Os motivos de cada lançamento, e o que cada um faz nas duas colunas.
 const ESTOQUE_ITENS_MOTIVOS = {
   entrada: [
@@ -9151,11 +9177,14 @@ function renderEstoqueItens(tipo) {
   const estoqueDe = x => n(n(x.emEstoque) - somaOS(osMat.baixas, x.id));
   const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
   const tEst = linhas.reduce((s, x) => s + estoqueDe(x), 0);
+  // A previsão: o que as OS não iniciadas reservam passa do que há em estoque.
+  const faltaDe = x => x.baixaOS ? Math.max(0, n(somaOS(osMat.reservas, x.id) - Math.max(0, estoqueDe(x)))) : 0;
   const notaOS = x => {
     if (!x.baixaOS) return '';
-    const b = somaOS(osMat.baixas, x.id), r = somaOS(osMat.reservas, x.id);
+    const b = somaOS(osMat.baixas, x.id), r = somaOS(osMat.reservas, x.id), f = faltaDe(x);
     return `<div class="muted" style="font-size:10px;font-weight:400;" title="Baixa pelo comprimento do enfesto de cada OS">${
-      b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}${r ? ' · ' + _estFmtQtd(x, r) + ' reservado' : ''}</div>`;
+      b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}${r ? ' · ' + _estFmtQtd(x, r) + ' reservado' : ''}</div>${f > 0
+      ? `<div style="font-size:11px;font-weight:700;color:#c0392b;" title="As OS ainda não iniciadas reservam mais do que há em estoque. A falta já está na lista de compra.">⚠ falta ${_estFmtQtd(x, f)}</div>` : ''}`;
   };
   const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;";
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
@@ -9165,7 +9194,7 @@ function renderEstoqueItens(tipo) {
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
       ${colSetor(x)}
       <td style="${mono}">${_estFmtQtd(x, x.emUso)}</td>
-      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 ? 'color:#c0392b;' : ''}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
+      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 || faltaDe(x) > 0 ? 'color:#c0392b;background:#fdecea;' : ''}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
       <td style="${mono}">${_estFmtQtd(x, n(x.emUso) + estoqueDe(x))}</td>
       <td>${esc(x.obs || '')}</td>
       <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 ? `
@@ -38517,6 +38546,8 @@ function compraConsumoItemDaFalta(item) {
 
 function compraConsumoItem(item) {
   if (item && item.origem === 'falta') return compraConsumoItemDaFalta(item);
+  // Material não é pano: não tem fase, camada nem quilo (ver compraAplicarFaltas).
+  if (item && item.origem === 'falta-material') return null;
   const o = compraOsSimulada(item && item.gradeId, item && item.desenhoId, item && item.camadas);
   if (!o) return null;
   const g = (STATE.grades || []).find(x => x.id === item.gradeId);
@@ -38848,6 +38879,32 @@ function compraAplicarFaltas() {
     if (_cpChaveFalta(it.tecidos) !== _cpChaveFalta(f.tecidos)) { it.tecidos = f.tecidos; mudou = true; }
     if (it.osNumero !== f.osNumero) { it.osNumero = f.osNumero; mudou = true; }
   });
+
+  /* E O MATERIAL QUE FALTA (28/09/2026): uma linha por material, chaveada pelo
+     item do estoque de materiais, com os metros que faltam — a mesma conta do
+     vermelho na tela do estoque (_matFaltas). Some sozinha quando a entrada do
+     material for lançada, como a do pano. */
+  let faltasMat = [];
+  try { faltasMat = _matFaltas(); } catch (e) { faltasMat = []; }
+  const porItem = new Map(faltasMat.map(f => [f.itemId, f]));
+  const antesMat = STATE.compraPlano.length;
+  STATE.compraPlano = STATE.compraPlano.filter(it => it.origem !== 'falta-material' || porItem.has(it.itemId));
+  if (STATE.compraPlano.length !== antesMat) mudou = true;
+  faltasMat.forEach(f => {
+    const it = STATE.compraPlano.find(x => x.origem === 'falta-material' && x.itemId === f.itemId);
+    const os = f.os.join(', ');
+    if (!it) {
+      STATE.compraPlano.push({ id: uid(), origem: 'falta-material', itemId: f.itemId, nome: f.nome, desc: f.desc,
+        metros: f.falta, reservado: f.reservado, estoque: f.estoque, os, criadoEm: new Date().toISOString() });
+      mudou = true;
+      return;
+    }
+    ['nome', 'desc'].forEach(k => { if (it[k] !== f[k]) { it[k] = f[k]; mudou = true; } });
+    if (it.metros !== f.falta) { it.metros = f.falta; mudou = true; }
+    if (it.reservado !== f.reservado) { it.reservado = f.reservado; mudou = true; }
+    if (it.estoque !== f.estoque) { it.estoque = f.estoque; mudou = true; }
+    if (it.os !== os) { it.os = os; mudou = true; }
+  });
   return mudou;
 }
 
@@ -38967,7 +39024,8 @@ function _ocNumeroNovo() {
 
 // Os totais de uma OC, para a linha da lista e para o papel.
 function _ocTotais(oc) {
-  const itens = (oc && oc.itens) || [];
+  // Os totais de bobina e quilo são de pano; o material (metros) fica de fora.
+  const itens = ((oc && oc.itens) || []).filter(i => i.tipo !== 'material');
   return {
     linhas: itens.length,
     bobinas: itens.reduce((s, i) => s + (Number(i.bobinas) || 0), 0),
@@ -38996,6 +39054,11 @@ async function gerarOCdaCompra() {
       disponivel: Math.round((Number(t.disponivel) || 0) * 1000) / 1000,
       semPrevisao: (t.semPrevisao || []).join(', ')
     }));
+  // O material que falta entra como linha própria, em metros.
+  itens.filter(it => it.origem === 'falta-material' && Number(it.metros) > 0).forEach(it => {
+    linhas.push({ tipo: 'material', itemId: it.itemId || '', materialNome: it.nome || '', desc: it.desc || '',
+      metros: Math.round((Number(it.metros) || 0) * 100) / 100 });
+  });
   if (!linhas.length) {
     return toast('Nada a comprar: o estoque disponível cobre a lista inteira', 'err');
   }
@@ -39022,7 +39085,8 @@ async function gerarOCdaCompra() {
   await saveState('meta');
   renderCompra();
   agendarAutoSaveOC(oc.id);
-  toast(`${oc.numero} gerada com ${linhas.length} tecido(s)`, 'ok');
+  const nMat = linhas.filter(l => l.tipo === 'material').length;
+  toast(`${oc.numero} gerada com ${linhas.length - nMat} tecido(s)${nMat ? ' e ' + nMat + ' material(is)' : ''}`, 'ok');
 }
 window.gerarOCdaCompra = gerarOCdaCompra;
 
@@ -39056,7 +39120,7 @@ async function ocItemCampo(id, idx, campo, valor) {
   const it = oc && oc.itens && oc.itens[idx];
   if (!it) return;
   const n = parseFloat(String(valor).replace(',', '.'));
-  it[campo] = isFinite(n) && n > 0 ? (campo === 'bobinas' ? Math.round(n) : Math.round(n * 1000) / 1000) : 0;
+  it[campo] = isFinite(n) && n > 0 ? (campo === 'bobinas' ? Math.round(n) : campo === 'metros' ? Math.round(n * 100) / 100 : Math.round(n * 1000) / 1000) : 0;
   desfazerNomearAcao('ordem de compra ' + oc.numero);
   await saveState('compraOCs');
   renderCompra();
@@ -39126,7 +39190,18 @@ function _ocPapelHtml(oc) {
   const kg = n => Number(n || 0).toFixed(3).replace('.', ',');
   const forn = (STATE.fornecedores || []).find(f => f.id === oc.fornecedorId) || null;
   const t = _ocTotais(oc);
-  const linhas = (oc.itens || []).map((i, n) => `
+  const mats = (oc.itens || []).filter(i => i.tipo === 'material');
+  const mt = n => Number(n || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  const tabMat = mats.length ? `
+  <table style="margin-top:5mm;">
+    <thead><tr>
+      <th style="width:8mm;" class="num">#</th><th>Material</th><th class="num" style="width:28mm;">Metros</th>
+    </tr></thead>
+    <tbody>${mats.map((i, n) => `
+      <tr><td class="num">${n + 1}</td><td><b>${e(i.materialNome)}</b>${i.desc ? `<div style="font-size:9.5pt;color:#555;">${e(i.desc)}</div>` : ''}</td>
+        <td class="num">${mt(i.metros)}</td></tr>`).join('')}</tbody>
+  </table>` : '';
+  const linhas = (oc.itens || []).filter(i => i.tipo !== 'material').map((i, n) => `
     <tr>
       <td class="num">${n + 1}</td>
       <td><b>${e(i.tecidoNome)}</b></td>
@@ -39136,7 +39211,7 @@ function _ocPapelHtml(oc) {
     </tr>`).join('');
   return `<div class="oc-papel">
   <h1>ORDEM DE COMPRA ${e(oc.numero)}</h1>
-  <div class="sub">Tecidos · emitida pelo Gerador-OS</div>
+  <div class="sub">${t.linhas && mats.length ? 'Tecidos e materiais' : mats.length ? 'Materiais' : 'Tecidos'} · emitida pelo Gerador-OS</div>
   <div class="cab">
     <div><b>Data</b>${e(_ocDataBr(oc.data))}</div>
     <div><b>Fornecedor</b>${e(forn ? forn.nome : '—')}</div>
@@ -39144,7 +39219,7 @@ function _ocPapelHtml(oc) {
     ${forn && forn.cidadeUf ? `<div><b>Cidade / UF</b>${e(forn.cidadeUf)}</div>` : ''}
     <div><b>Situação</b>${e(_ocStatusDef(oc.status).rotulo)}</div>
   </div>
-  <table>
+  ${!t.linhas && mats.length ? '' : `<table>
     <thead><tr>
       <th style="width:8mm;" class="num">#</th><th>Tecido</th><th>Cor</th>
       <th class="num" style="width:24mm;">Bobinas</th><th class="num" style="width:28mm;">Quilos</th>
@@ -39154,7 +39229,7 @@ function _ocPapelHtml(oc) {
       <td colspan="3">Total — ${t.linhas} tecido(s)</td>
       <td class="num">${t.bobinas || '—'}</td><td class="num">${kg(t.kg)}</td>
     </tr></tfoot>
-  </table>
+  </table>`}${tabMat}
   <div class="obs"><b>Observações</b>${e(oc.obs || '')}</div>
   <div class="assina"><div>Comprador</div><div>Fornecedor</div></div>
 </div>`;
@@ -39424,7 +39499,15 @@ function _ocQuadroHtml() {
   const ocs = _ocLista();
   const kg = n => _cpKg(n);
   const linhaDetalhe = (oc) => {
-    const itens = (oc.itens || []).map((i, idx) => `
+    const itens = (oc.itens || []).map((i, idx) => i.tipo === 'material' ? `
+      <tr>
+        <td><b>${esc(i.materialNome)}</b> <span class="badge">material</span>
+          ${i.desc ? `<div class="muted" style="font-size:11px;">${esc(i.desc)}</div>` : ''}</td>
+        <td style="text-align:right;color:var(--ink-3);">—</td>
+        <td style="text-align:right;white-space:nowrap;"><input class="oc-qtd" type="number" min="0" step="0.01" value="${Number(i.metros) || 0}"
+          title="Metros a pedir" onchange="ocItemCampo('${esc(oc.id)}',${idx},'metros',this.value)"> m</td>
+        <td class="col-actions row-actions"><button onclick="ocItemRemover('${esc(oc.id)}',${idx})">tirar</button></td>
+      </tr>` : `
       <tr>
         <td><b>${esc(i.tecidoNome)}</b> · ${esc(corSemTecido(i.corNome, i.tecidoNome)) || '<span style="color:var(--ink-3)">(sem cor)</span>'}
           ${i.semPrevisao ? `<span title="Sem previsão de bobinas: ${esc(i.semPrevisao)}. O quilo está na conta; a bobina não dá para prever." style="color:#c0392b;cursor:help;"> ⚠</span>` : ''}
@@ -39447,8 +39530,8 @@ function _ocQuadroHtml() {
           </select></div>
       </div>
       <table class="table">
-        <thead><tr><th>Tecido + cor</th><th style="text-align:right;width:110px;">Bobinas</th>
-          <th style="text-align:right;width:130px;">Quilos</th><th class="col-actions">Ações</th></tr></thead>
+        <thead><tr><th>Tecido + cor / material</th><th style="text-align:right;width:110px;">Bobinas</th>
+          <th style="text-align:right;width:130px;">Quilos / metros</th><th class="col-actions">Ações</th></tr></thead>
         <tbody>${itens || '<tr><td colspan="4" class="empty">Sem itens nesta OC.</td></tr>'}</tbody>
       </table>
       <div class="field" style="margin:8px 0 0;"><label>Observações (saem no papel)</label>
@@ -39469,7 +39552,7 @@ function _ocQuadroHtml() {
       <td><strong>${esc(oc.numero)}</strong>${oc.criadoPor ? `<div class="muted" style="font-size:11px;">${esc(oc.criadoPor)}</div>` : ''}</td>
       <td style="white-space:nowrap;">${esc(_ocDataBr(oc.data))}</td>
       <td>${esc(fornecedorNome(oc.fornecedorId)) || '<span style="color:var(--ink-3)">— a definir —</span>'}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${t.linhas}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${t.linhas}${(oc.itens || []).some(i => i.tipo === 'material') ? ` <span class="muted" style="font-size:11px;">+ ${(oc.itens || []).filter(i => i.tipo === 'material').length} mat.</span>` : ''}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${t.bobinas || '—'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${_cpKg(t.kg)}</td>
       <td><span class="badge" style="background:${st.bg};">${esc(st.rotulo)}</span></td>
@@ -39557,7 +39640,23 @@ function renderCompra() {
     </tr>${detalhe}`;
   };
 
+  // A linha do material que falta: o que falta, o que as OS reservam e o que há.
+  const _cpLinhaFaltaMaterial = it => {
+    const m = v => (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m';
+    const dica = 'Esta linha entrou sozinha: as OS ainda nao iniciadas reservam mais '
+      + (it.nome || 'material') + ' do que ha no estoque de materiais. Ela sai da lista quando a entrada for lancada.';
+    return `<tr style="background:#fdf4f3;">
+      <td class="col-actions row-actions"><span class="muted" style="font-size:11px;" title="${esc(dica)}">automático</span></td>
+      <td colspan="5">
+        <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${esc(dica)}">⚠ ${esc(it.nome)}: falta ${m(it.metros)}</span>
+        <span style="font-size:11px;margin-left:6px;">reservado ${m(it.reservado)} · em estoque ${m(it.estoque)}${it.os ? ` · OS ${esc(it.os)}` : ''}</span>
+        ${it.desc ? `<div class="muted" style="font-size:11px;">${esc(it.desc)}</div>` : ''}
+      </td>
+    </tr>`;
+  };
+
   const linhasItens = itens.map(it => {
+    if (it.origem === 'falta-material') return _cpLinhaFaltaMaterial(it);
     const c = compraConsumoItem(it);
     const aberto = _compraAbertos.has(it.id);
     if (it.origem === 'falta') return _cpLinhaFalta(it, c, aberto);
@@ -39611,7 +39710,8 @@ function renderCompra() {
         As linhas em <b style="color:#c0392b;">vermelho claro</b> entram <b>sozinhas</b>: são as OS
         que estão segurando pano que a prateleira não tem (o mesmo aviso do quadro
         <b>OSs · material reservado</b>), e delas só entram na conta <b>as fases do tecido que
-        falta</b>. Cada uma sai da lista quando a entrada daquele tecido for lançada no estoque.
+        falta</b>; e os <b>materiais</b> (papel, filme) que as OS reservam além do que há no
+        estoque de materiais. Cada uma sai da lista quando a entrada for lançada no estoque.
       </div>
       <table class="table">
         <thead><tr>
@@ -39628,7 +39728,7 @@ function renderCompra() {
              Sem itens ele nao aparece: botao que so serve para dizer "a lista
              esta vazia" e um aviso disfarcado de botao. */''}
         ${itens.length ? `<button class="btn small primary registro-only" onclick="gerarOCdaCompra()"
-          title="Cria uma ordem de compra com os tecidos que faltam comprar desta lista">📄 Gerar OC</button>` : ''}
+          title="Cria uma ordem de compra com os tecidos e os materiais que faltam comprar desta lista">📄 Gerar OC</button>` : ''}
         ${itens.length ? `<button class="btn small danger admin-only" onclick="compraLimparLista()">Limpar a lista</button>` : ''}
       </div>
     </div>
