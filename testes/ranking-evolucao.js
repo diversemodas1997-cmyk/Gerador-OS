@@ -24,6 +24,7 @@ const ok = (nome, cond, extra) => {
 const api = new Function(`
   ${linha(/const RANK_CORES_SERIE = [^\n]*/)}
   ${linha(/const _rankEscalaDoFiltro = [^\n]*/)}
+  ${linha(/const RANK_COR_OUTROS = [^\n]*/)}
   ${pegaFuncao('_rankSomaDias')}
   ${pegaFuncao('_rankBalde')}
   ${pegaFuncao('_rankBaldes')}

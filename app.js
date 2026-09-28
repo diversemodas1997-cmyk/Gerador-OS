@@ -10217,10 +10217,18 @@ window._rankLimparVars = _rankLimparVars;
    de cada resultado da tabela de acordo com o tempo, mostrando em dias,
    semanas, meses ou ano de acordo com o filtro").
 
-   CADA LINHA DA TABELA VIRA UMA LINHA DO GRÁFICO: com Tamanho nas linhas, uma
-   linha para P, outra para M… — o mesmo recorte, os mesmos filtros e os mesmos
-   produtos do quadro, só que espalhados pelo tempo. Com Período nas linhas o
-   tempo já está lá; aí quem vira série é a coluna (ou o total, sem coluna).
+   CADA CÉLULA DO QUADRO VIRA UMA LINHA DO GRÁFICO (28/09/2026, Junior: "O
+   gráfico mostra apenas a evolução do volume por tamanho, mas precisa mostrar
+   tamanho x cor, o mesmo número que mostra no quadro acima do gráfico").
+   A primeira versão fazia uma linha por LINHA da tabela e perdia a coluna.
+   Com as duas variáveis, o quadro tem até 8 × 15 células, e 120 linhas num
+   gráfico só não se leem. Por isso vira um gráfico PEQUENO POR LINHA da
+   tabela (um para P, um para M…), cada um com uma linha por COLUNA (as cores),
+   todos na mesma escala — P ao lado de G mostra a diferença de verdade. A
+   soma de cada linha no tempo é o número da célula do quadro.
+
+   Sem coluna, é um gráfico só com uma linha por resultado; com Período num dos
+   eixos, o tempo já está na tabela e quem vira série é a outra variável.
 
    O TEMPO É A DATA DA OS (a mesma que decide o ano e o mês do filtro), e a
    escala acompanha o filtro: um mês se lê por DIA, um ano por MÊS, a fábrica
@@ -10228,15 +10236,18 @@ window._rankLimparVars = _rankLimparVars;
    intervalos sem OS entram com zero: pular o dia vazio desenharia uma subida
    contínua onde houve uma parada.
 
-   NO MÁXIMO OITO LINHAS, uma por cor fixa: com mais resultados, os sete maiores
-   ficam e o resto vira "Outros" — a nona cor já não se distingue das outras. */
+   NO MÁXIMO OITO CORES DE LINHA, fixas por resultado em todos os gráficos
+   pequenos: com mais resultados, os sete maiores ficam e o resto vira
+   "Outros" — a nona cor já não se distingue das outras. O quadrinho do mouse,
+   esse, lista TODOS, inclusive os que o "Outros" juntou. */
 const RANK_CORES_SERIE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
+const RANK_COR_OUTROS = '#8a8983';
 const RANK_ESCALAS = [
   { k: 'dia', rotulo: 'Dia' }, { k: 'semana', rotulo: 'Semana' },
   { k: 'mes', rotulo: 'Mês' }, { k: 'ano', rotulo: 'Ano' }
 ];
 let _rankEscala = '';     // '' = a que o filtro de período pede
-let _rankGraf = null;     // o que o gráfico na tela desenhou (para o tooltip)
+let _rankGraf = [];       // os gráficos na tela (para o quadrinho do mouse)
 
 const _rankEscalaDoFiltro = (ano, mes) => mes ? 'dia' : 'mes';
 
@@ -10284,17 +10295,18 @@ function _rankRotuloBalde(b, escala, longo) {
   return d + '/' + m + (longo ? '/' + a : '');
 }
 
-/* As séries do gráfico: [{ rotulo, cor, valores[] }] sobre `baldes`. `ordem` é
-   a ordem dos resultados na tabela — a cor segue ela, e "Outros" fica por
-   último, cinza. */
-function _rankingSeries(fatos, serieVar, ordem, baldes, escala) {
+/* As séries de um gráfico: [{ rotulo, cor, valores[] }] sobre `baldes`.
+   `ordem` é a ordem dos resultados na tabela — a cor segue ela, e "Outros"
+   fica por último, cinza. `max` é quantas linhas cabem (oito, ou todas para o
+   quadrinho do mouse). */
+function _rankingSeries(fatos, serieVar, ordem, baldes, escala, max) {
   const idx = new Map(baldes.map((b, i) => [b, i]));
-  const MAX = RANK_CORES_SERIE.length;
+  const MAX = max || RANK_CORES_SERIE.length;
   const nomes = serieVar ? ordem.slice() : ['Total'];
   const ficam = nomes.length > MAX ? nomes.slice(0, MAX - 1) : nomes;
   const outros = nomes.length > MAX;
-  const series = ficam.map((r, i) => ({ rotulo: r, cor: RANK_CORES_SERIE[i], valores: baldes.map(() => 0) }));
-  if (outros) series.push({ rotulo: 'Outros (' + (nomes.length - ficam.length) + ')', cor: '#8a8983', valores: baldes.map(() => 0), outros: true });
+  const series = ficam.map((r, i) => ({ rotulo: r, cor: RANK_CORES_SERIE[i] || RANK_COR_OUTROS, valores: baldes.map(() => 0) }));
+  if (outros) series.push({ rotulo: 'Outros (' + (nomes.length - ficam.length) + ')', cor: RANK_COR_OUTROS, valores: baldes.map(() => 0), outros: true });
   const qual = new Map(ficam.map((r, i) => [r, i]));
   fatos.forEach(f => {
     const d = String(f.data || '');
@@ -10323,11 +10335,58 @@ function _rankDivisoesEixo(topo) {
   return Math.abs(n - 2) < 1e-9 ? 4 : 5;
 }
 
-function _rankingGraficoHtml(fatos, q, rotSerie) {
-  // Quem vira série: as linhas da tabela; com Período nas linhas, a coluna.
-  const serieVar = _rankLinha !== 'periodo' ? _rankLinha : (_rankColuna || '');
-  const ordem = serieVar === _rankLinha ? q.linhas.map(x => x.rotulo)
-    : (serieVar ? q.colunas.map(x => x.rotulo) : []);
+// As medidas de cada tamanho de gráfico: o grande (um só) e o pequeno (um por
+// linha da tabela). O quadrinho do mouse relê daqui onde fica cada ponto.
+const RANK_GRAF_MEDIDAS = {
+  grande: { W: 900, H: 280, ML: 56, MR: 16, MT: 12, MB: 34, fonte: 11, maxRot: 12 },
+  pequeno: { W: 520, H: 210, ML: 50, MR: 12, MT: 10, MB: 28, fonte: 12, maxRot: 7 }
+};
+const _rankGrafX = (m, n, i) => m.ML + (n === 1 ? (m.W - m.ML - m.MR) / 2 : i * (m.W - m.ML - m.MR) / (n - 1));
+
+// Um gráfico: `p` é o índice dele em _rankGraf.
+function _rankSvgGrafico(p, g, topo, medidas) {
+  const m = medidas;
+  const { W, H, ML, MR, MT, MB } = m;
+  const iw = W - ML - MR, ih = H - MT - MB;
+  const n = g.baldes.length;
+  const x = i => _rankGrafX(m, n, i);
+  const y = v => MT + ih - (v / topo) * ih;
+  const num = v => Number(v || 0).toLocaleString('pt-BR');
+  const div = _rankDivisoesEixo(topo);
+  const grade = Array.from({ length: div + 1 }, (_, k) => k / div).map(f => {
+    const v = topo * f, yy = y(v).toFixed(1);
+    return `<line x1="${ML}" x2="${W - MR}" y1="${yy}" y2="${yy}" stroke="#e6e3db" stroke-width="1"/>
+      <text x="${ML - 8}" y="${yy}" dy="0.32em" text-anchor="end" font-size="${m.fonte}" fill="#6b6b6b">${num(Math.round(v))}</text>`;
+  }).join('');
+  // Rótulos do eixo X espaçados por igual, sem se atropelar.
+  const passo = Math.max(1, Math.ceil(n / m.maxRot));
+  const eixoX = g.baldes.map((b, i) => i % passo === 0
+    ? `<text x="${x(i).toFixed(1)}" y="${H - MB + 18}" text-anchor="middle" font-size="${m.fonte}" fill="#6b6b6b">${esc(_rankRotuloBalde(b, g.escala))}</text>` : '').join('');
+  const marcas = n <= 45;
+  const linhas = g.series.map(s => {
+    const pts = s.valores.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      + (marcas ? s.valores.map((v, i) => v > 0 ? `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.cor}" stroke="#fff" stroke-width="1.5"/>` : '').join('') : '');
+  }).join('');
+  // A faixa de cada intervalo é o alvo do mouse (maior que o ponto).
+  const faixa = n === 1 ? iw : iw / (n - 1);
+  const alvos = g.baldes.map((b, i) => `<rect x="${(x(i) - faixa / 2).toFixed(1)}" y="${MT}" width="${faixa.toFixed(1)}" height="${ih}"
+    fill="transparent" onmouseenter="_rankGrafHover(${p}, ${i})"/>`).join('');
+  return `<div id="rank-graf-${p}" style="position:relative;" onmouseleave="_rankGrafHover(${p}, -1)">
+      <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(g.titulo || 'Evolução dos produtos no tempo')}" style="display:block;">
+        ${grade}
+        <line x1="${ML}" x2="${W - MR}" y1="${MT + ih}" y2="${MT + ih}" stroke="#bdb9ae" stroke-width="1"/>
+        ${eixoX}
+        <line id="rank-graf-mira-${p}" x1="0" x2="0" y1="${MT}" y2="${MT + ih}" stroke="#9a978e" stroke-width="1" visibility="hidden"/>
+        ${linhas}
+        ${alvos}
+      </svg>
+      <div id="rank-graf-tip-${p}" style="position:absolute;display:none;pointer-events:none;background:#fff;border:1px solid var(--line);
+        border-radius:6px;padding:8px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12);min-width:150px;z-index:5;"></div>
+    </div>`;
+}
+
+function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
   const escala = _rankEscala || _rankEscalaDoFiltro(_rankAno, _rankMes);
   // O eixo do tempo: o período do filtro (até hoje), ou da primeira à última OS.
   const hoje = _aviHoje();
@@ -10339,50 +10398,59 @@ function _rankingGraficoHtml(fatos, q, rotSerie) {
   if (ate > hoje && hoje >= de) ate = hoje;
   if (datas[datas.length - 1] > ate) ate = datas[datas.length - 1];
   const baldes = _rankBaldes(de, ate, escala);
-  const series = _rankingSeries(fatos, serieVar, ordem, baldes, escala);
-  const topo = _rankTopoEixo(Math.max(0, ...series.flatMap(s => s.valores)));
-  _rankGraf = { baldes, series, escala };
 
-  const W = 900, H = 280, ML = 56, MR = 16, MT = 12, MB = 34;
-  const iw = W - ML - MR, ih = H - MT - MB;
-  const n = baldes.length;
-  const x = i => ML + (n === 1 ? iw / 2 : i * iw / (n - 1));
-  const y = v => MT + ih - (v / topo) * ih;
+  // Tamanho × cor: um gráfico por linha da tabela, uma linha por coluna. Com
+  // Período num dos eixos (ou sem coluna), um gráfico só.
+  const cruzado = _rankColuna && _rankLinha !== 'periodo' && _rankColuna !== 'periodo';
+  const serieVar = cruzado ? _rankColuna : (_rankLinha !== 'periodo' ? _rankLinha : (_rankColuna || ''));
+  const rotSerie = serieVar === _rankColuna ? rotCol : rotLinha;
+  const ordem = serieVar === _rankLinha ? q.linhas.map(x => x.rotulo)
+    : (serieVar ? q.colunas.map(x => x.rotulo) : []);
+  const paineis = (cruzado ? q.linhas : [null]).map(lin => {
+    const fs = lin ? fatos.filter(f => (f[_rankLinha] || '—') === lin.rotulo) : fatos;
+    return {
+      titulo: lin ? rotLinha(lin.rotulo) : '', total: lin ? lin.produtos : q.total,
+      baldes, escala, rotSerie,
+      series: _rankingSeries(fs, serieVar, ordem, baldes, escala),
+      // Para o quadrinho do mouse: todos os resultados, sem juntar em "Outros".
+      // Quem o "Outros" juntou aparece em cinza, a cor da linha em que está.
+      todas: _rankingSeries(fs, serieVar, ordem, baldes, escala, Infinity).map((s, i) =>
+        (ordem.length > RANK_CORES_SERIE.length && i >= RANK_CORES_SERIE.length - 1) ? { ...s, cor: RANK_COR_OUTROS, emOutros: true } : s)
+    };
+  });
+  _rankGraf = paineis;
+  // A mesma escala em todos: P ao lado de G mostra a diferença de verdade.
+  const topo = _rankTopoEixo(Math.max(0, ...paineis.flatMap(g => g.series.flatMap(s => s.valores))));
   const num = v => Number(v || 0).toLocaleString('pt-BR');
-  const div = _rankDivisoesEixo(topo);
-  const grade = Array.from({ length: div + 1 }, (_, k) => k / div).map(f => {
-    const v = topo * f, yy = y(v).toFixed(1);
-    return `<line x1="${ML}" x2="${W - MR}" y1="${yy}" y2="${yy}" stroke="#e6e3db" stroke-width="1"/>
-      <text x="${ML - 8}" y="${yy}" dy="0.32em" text-anchor="end" font-size="11" fill="#6b6b6b">${num(Math.round(v))}</text>`;
-  }).join('');
-  // Rótulos do eixo X: no máximo uns 12, espaçados por igual.
-  const passo = Math.max(1, Math.ceil(n / 12));
-  const eixoX = baldes.map((b, i) => i % passo === 0
-    ?`<text x="${x(i).toFixed(1)}" y="${H - MB + 18}" text-anchor="middle" font-size="11" fill="#6b6b6b">${esc(_rankRotuloBalde(b, escala))}</text>` : '').join('');
-  const marcas = n <= 45;
-  const linhas = series.map(s => {
-    const pts = s.valores.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
-    return `<polyline points="${pts}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
-      + (marcas ? s.valores.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.cor}" stroke="#fff" stroke-width="1.5"/>`).join('') : '');
-  }).join('');
-  // A faixa de cada intervalo é o alvo do mouse (maior que o ponto).
-  const faixa = n === 1 ? iw : iw / (n - 1);
-  const alvos = baldes.map((b, i) => `<rect x="${(x(i) - faixa / 2).toFixed(1)}" y="${MT}" width="${faixa.toFixed(1)}" height="${ih}"
-    fill="transparent" onmouseenter="_rankGrafHover(${i})" onmousemove="_rankGrafHover(${i}, event)"/>`).join('');
-  const legenda = series.map(s => {
+
+  // A legenda é uma só: a cor de cada resultado é a mesma em todos os gráficos.
+  const leg = _rankingSeries(fatos, serieVar, ordem, baldes, escala);
+  const legenda = leg.map(s => {
     const tot = s.valores.reduce((a, v) => a + v, 0);
     return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:12px;white-space:nowrap;">
       <span style="width:14px;height:3px;border-radius:2px;background:${s.cor};"></span>${esc(rotSerie(s.rotulo))}
       <span class="muted" style="font-family:'IBM Plex Mono',monospace;">${num(tot)}</span></span>`;
   }).join('');
-  const nomeSerie = serieVar ? _rankRotuloVar(serieVar).toLowerCase() : 'total';
+  const corpo = cruzado
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:10px 18px;">${paineis.map((g, p) => `
+        <div style="border-top:1px solid var(--line);padding-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:2px;">
+            <b>${esc(g.titulo)}</b><span class="muted" style="font-family:'IBM Plex Mono',monospace;font-size:12px;">${num(g.total)}</span></div>
+          ${_rankSvgGrafico(p, g, topo, RANK_GRAF_MEDIDAS.pequeno)}
+        </div>`).join('')}</div>`
+    : _rankSvgGrafico(0, paineis[0], topo, RANK_GRAF_MEDIDAS.grande);
+  const nomeVar = v => _rankRotuloVar(v).toLowerCase();
+  const titulo = cruzado ? `${esc(_rankRotuloVar(_rankLinha))} × ${esc(nomeVar(_rankColuna))}`
+    : (serieVar ? 'por ' + esc(nomeVar(serieVar)) : 'total');
+  const nomeEscala = (RANK_ESCALAS.find(e => e.k === escala) || {}).rotulo.toLowerCase();
   return `
     <div class="card" style="margin-top:14px;">
       <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
         <div style="flex:1 1 280px;">
-          <h2 style="margin:0;font-size:14px;">Evolução no tempo${serieVar ? ' · por ' + esc(nomeSerie) : ''}</h2>
-          <div class="muted" style="font-size:11px;">Produtos por ${esc((RANK_ESCALAS.find(e => e.k === escala) || {}).rotulo.toLowerCase())}, pela data da OS — o mesmo recorte do quadro acima.${
-            series.some(s => s.outros) ? ' Os sete maiores têm linha própria; o resto soma em "Outros".' : ''}</div>
+          <h2 style="margin:0;font-size:14px;">Evolução no tempo · ${titulo}</h2>
+          <div class="muted" style="font-size:11px;">Produtos por ${esc(nomeEscala)}, pela data da OS — o mesmo recorte do quadro acima.${
+            cruzado ? ` Um gráfico para cada ${esc(nomeVar(_rankLinha))}, uma linha para cada ${esc(nomeVar(_rankColuna))}, todos na mesma escala: a soma de cada linha é o número da célula do quadro.` : ''}${
+            leg.some(s => s.outros) ? ` As sete ${esc(RANK_VARS.find(v => v.k === serieVar).plural)} maiores têm linha própria; o resto soma em "Outros" (o quadrinho do mouse mostra todas).` : ''}</div>
         </div>
         <div class="field" style="margin:0;">
           <label>Escala</label>
@@ -10393,48 +10461,40 @@ function _rankingGraficoHtml(fatos, q, rotSerie) {
         </div>
       </div>
       <div style="margin-bottom:6px;">${legenda}</div>
-      <div id="rank-graf" style="position:relative;" onmouseleave="_rankGrafHover(-1)">
-        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Evolução dos produtos no tempo" style="display:block;">
-          ${grade}
-          <line x1="${ML}" x2="${W - MR}" y1="${MT + ih}" y2="${MT + ih}" stroke="#bdb9ae" stroke-width="1"/>
-          ${eixoX}
-          <line id="rank-graf-mira" x1="0" x2="0" y1="${MT}" y2="${MT + ih}" stroke="#9a978e" stroke-width="1" visibility="hidden"/>
-          ${linhas}
-          ${alvos}
-        </svg>
-        <div id="rank-graf-tip" style="position:absolute;display:none;pointer-events:none;background:#fff;border:1px solid var(--line);
-          border-radius:6px;padding:8px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12);min-width:150px;z-index:5;"></div>
-      </div>
+      ${corpo}
     </div>`;
 }
 
-// A mira e o quadrinho do intervalo sob o mouse (-1 esconde).
-function _rankGrafHover(i, ev) {
-  const g = _rankGraf;
-  const box = document.getElementById('rank-graf');
-  const tip = document.getElementById('rank-graf-tip');
-  const mira = document.getElementById('rank-graf-mira');
+// A mira e o quadrinho do intervalo sob o mouse (i = -1 esconde).
+function _rankGrafHover(p, i) {
+  const g = _rankGraf[p];
+  const box = document.getElementById('rank-graf-' + p);
+  const tip = document.getElementById('rank-graf-tip-' + p);
+  const mira = document.getElementById('rank-graf-mira-' + p);
   if (!g || !box || !tip || !mira) return;
   if (!(i >= 0) || i >= g.baldes.length) { tip.style.display = 'none'; mira.setAttribute('visibility', 'hidden'); return; }
-  const svg = box.querySelector('svg');
-  const W = 900, ML = 56, MR = 16, n = g.baldes.length;
-  const xv = ML + (n === 1 ? (W - ML - MR) / 2 : i * (W - ML - MR) / (n - 1));
+  const m = _rankGraf.length > 1 ? RANK_GRAF_MEDIDAS.pequeno : RANK_GRAF_MEDIDAS.grande;
+  const xv = _rankGrafX(m, g.baldes.length, i);
   mira.setAttribute('x1', xv); mira.setAttribute('x2', xv); mira.setAttribute('visibility', 'visible');
   const num = v => Number(v || 0).toLocaleString('pt-BR');
-  const tot = g.series.reduce((a, s) => a + s.valores[i], 0);
-  const linhas = g.series.slice().sort((a, b) => b.valores[i] - a.valores[i]).map(s => `
-    <div style="display:flex;align-items:center;gap:6px;justify-content:space-between;">
-      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${s.cor};"></span>${esc(s.rotulo)}</span>
+  const tot = g.todas.reduce((a, s) => a + s.valores[i], 0);
+  // Todos os resultados daquele intervalo, até os que o "Outros" juntou; os
+  // zerados ficam de fora para o quadrinho não virar uma lista de traços.
+  const itens = g.todas.filter(s => s.valores[i] > 0).sort((a, b) => b.valores[i] - a.valores[i]);
+  const linhas = itens.map(s => `
+    <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;">
+      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${s.cor};"></span>${esc(g.rotSerie(s.rotulo))}${s.emOutros ? ' <span class="muted" style="font-size:10px;">em Outros</span>' : ''}</span>
       <b style="font-family:'IBM Plex Mono',monospace;">${num(s.valores[i])}</b></div>`).join('');
-  tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">${esc(_rankRotuloBalde(g.baldes[i], g.escala, true))}</div>${linhas}
-    ${g.series.length > 1 ? `<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding-top:4px;"><span>total</span><b style="font-family:'IBM Plex Mono',monospace;">${num(tot)}</b></div>` : ''}`;
+  tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">${g.titulo ? esc(g.titulo) + ' · ' : ''}${esc(_rankRotuloBalde(g.baldes[i], g.escala, true))}</div>
+    ${linhas || '<div class="muted">Nenhuma OS.</div>'}
+    ${itens.length > 1 ? `<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding-top:4px;"><span>total</span><b style="font-family:'IBM Plex Mono',monospace;">${num(tot)}</b></div>` : ''}`;
   tip.style.display = 'block';
-  // O quadrinho fica do lado com mais espaço, para não sair da tela.
-  const escalaPx = svg.getBoundingClientRect().width / W;
-  const px = xv * escalaPx;
+  // O quadrinho fica do lado com mais espaço, para não sair do gráfico.
+  const svg = box.querySelector('svg');
+  const px = xv * svg.getBoundingClientRect().width / m.W;
   const larg = tip.offsetWidth;
   tip.style.left = (px + 14 + larg > box.clientWidth ? Math.max(0, px - 14 - larg) : px + 14) + 'px';
-  tip.style.top = '8px';
+  tip.style.top = '6px';
 }
 window._rankGrafHover = _rankGrafHover;
 
@@ -10635,7 +10695,7 @@ function renderRanking() {
       ${q.linhas.length ? (_rankColuna ? cruzada : lista)
         : '<div class="empty" style="padding:14px;">Nada neste recorte — tire um dos filtros.</div>'}
     </div>
-    ${q.linhas.length ? _rankingGraficoHtml(fatos, q, v => (_rankLinha === 'periodo' ? rotCol(v) : rotLinha(v))) : ''}`;
+    ${q.linhas.length ? _rankingGraficoHtml(fatos, q, rotLinha, rotCol) : ''}`;
 }
 
 function renderFasePainel(faseIdx) {
