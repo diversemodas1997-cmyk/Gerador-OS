@@ -59,7 +59,7 @@ const api = new Function('document', 'STATE', `
   ${bloco('const _estItensSetores = ', "'pt-BR'));")}
   ${bloco('const _estItemMedida = ', "\n")}
   ${bloco('const _estArred = ', "Math.round(Number(v) || 0);")}
-  ${bloco('const _estFmtQtd = ', "toLocaleString('pt-BR');")}
+  ${bloco('const _estConv = ', "maximumFractionDigits: 2 }) + ' m' : '';")}
   const _matDasOS = () => ({ baixas: [], reservas: [] });
   let _estItensCtx = null;
   const _aviHoje = () => '2026-09-25';
@@ -73,7 +73,7 @@ const api = new Function('document', 'STATE', `
   ${pegaFuncao('_salvarMovEstoqueItem', true)}
   ${pegaFuncao('excluirMovEstoqueItem', true)}
   ${pegaFuncao('renderEstoqueItens')}
-  return { renderEstoqueItens, _estItensUnidade, _estItensBusca, _estItensSetor, _salvarMovEstoqueItem, excluirMovEstoqueItem, ESTOQUE_ITENS, toasts };
+  return { renderEstoqueItens, _estItensUnidade, _estItensBusca, _estItensSetor, _salvarMovEstoqueItem, excluirMovEstoqueItem, ESTOQUE_ITENS, toasts, _estFmtQtd };
 `)(documento, STATE);
 
 (async () => {
@@ -157,6 +157,11 @@ ok('25. o item de menu fica logo abaixo do Estoque de tecidos',
 ok('26. pagina, rota e chaves', /data-page="estoque-materiais"/.test(html) && /id="materiais-painel"/.test(html)
    && /if \(page === 'estoque-materiais'\) renderEstoqueItens\('materiais'\);/.test(src)
    && (src.match(/'materiaisEstCad','materiaisEstMov'/g) || []).length === 2);
+console.log('-- bobinas e kg (28/09/2026) --');
+const kraft = { medida: 'm', mPorBobina: 250, kgPorM: 0.0512 };
+ok('28. metros viram bobinas e kg (1.125 m de kraft = 4,50 bob. = 57,6 kg)', api._estFmtQtd(kraft, 1125) === '4,50 bob. · 57,6 kg', api._estFmtQtd(kraft, 1125));
+ok('29. sem metros por bobina, continua em metros', api._estFmtQtd({ medida: 'm' }, 7.05) === '7,05 m', api._estFmtQtd({ medida: 'm' }, 7.05));
+ok('30. peca inteira continua inteira', api._estFmtQtd({}, 9) === '9');
 ok('27. quem lanca no estoque de tecidos tambem lanca no de materiais',
    /'cadastrar no estoque de materiais': 'estoque-tecidos'/.test(src) && /'lançar no estoque de materiais': 'estoque-tecidos'/.test(src));
 

@@ -9056,9 +9056,23 @@ const _estItensSetores = cfg => [...new Set(ESTOQUE_SETORES.concat((STATE[cfg.ch
 const _estItemMedida = x => (x && x.medida === 'm') ? 'm' : 'un';
 const _estArred = (x, v) => _estItemMedida(x) === 'm'
   ? Math.round((Number(v) || 0) * 100) / 100 : Math.round(Number(v) || 0);
-const _estFmtQtd = (x, v) => _estItemMedida(x) === 'm'
-  ? _estArred(x, v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m'
-  : Math.round(Number(v) || 0).toLocaleString('pt-BR');
+/* BOBINAS E KG NA TELA (28/09/2026, Junior: "estoque materiais deve mostrar
+   plástico e papel no formato de kg/bobinas"). A conta continua em METROS —
+   é o comprimento do enfesto que dá a baixa —, e a tela converte: o item diz
+   quantos metros tem uma bobina (`mPorBobina`) e quanto pesa um metro
+   (`kgPorM`). Sem esses dois, segue em metros. */
+const _estConv = x => _estItemMedida(x) === 'm' && Number(x.mPorBobina) > 0;
+const _estFmtQtd = (x, v) => {
+  if (_estItemMedida(x) !== 'm') return Math.round(Number(v) || 0).toLocaleString('pt-BR');
+  const m = _estArred(x, v);
+  if (!_estConv(x)) return m.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m';
+  const bob = m / Number(x.mPorBobina);
+  const kg = Number(x.kgPorM) > 0 ? m * Number(x.kgPorM) : null;
+  return bob.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' bob.'
+    + (kg != null ? ' · ' + kg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' kg' : '');
+};
+// Os metros por trás do número convertido, para a dica da célula.
+const _estMetrosTxt = (x, v) => _estConv(x) ? _estArred(x, v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m' : '';
 
 /* O MATERIAL DO ENFESTO SAI COM A OS (28/09/2026, Junior: "Faça os ajustes
    necessários para que o programa faça as baixas desses materiais junto com
@@ -9242,10 +9256,10 @@ function renderEstoqueItens(tipo) {
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
       ${colSetor(x)}
       <td style="${mono}">${_estFmtQtd(x, x.emUso)}</td>
-      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 || faltaDe(x) > 0 ? 'color:#c0392b;background:#fdecea;' : ''}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
+      <td style="${mono}font-weight:700;${estoqueDe(x) < 0 || faltaDe(x) > 0 ? 'color:#c0392b;background:#fdecea;' : ''}" title="${esc(_estMetrosTxt(x, estoqueDe(x)))}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
       <td style="${mono}">${_estFmtQtd(x, n(x.emUso) + estoqueDe(x))}</td>
       <td>${esc(x.obs || '')}</td>
-      <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 ? `
+      <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 && !linhas.some(_estConv) ? `
     <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${cfg.comSetor ? '<td></td>' : ''}
       <td style="${mono}font-weight:700;">${fmt(tUso)}</td>
       <td style="${mono}font-weight:700;">${fmt(tEst)}</td>
@@ -9260,6 +9274,10 @@ function renderEstoqueItens(tipo) {
   const tEnt = hist.filter(m => m.tipo === 'entrada').reduce((s, m) => s + n(m.qtd), 0);
   const tSai = hist.filter(m => m.tipo === 'saida').reduce((s, m) => s + n(m.qtd), 0);
   const sinal = v => (n(v) > 0 ? '+' : '') + fmt(v);
+  // O lançamento no formato do item dele (bobinas e kg, quando o item converte).
+  const itemDe = m => todos.find(x => x.id === m.itemId);
+  const qtdMov = (m, v) => { const x = itemDe(m); return x && _estConv(x) ? _estFmtQtd(x, v) : fmt(v); };
+  const sinalMov = (m, v) => (n(v) > 0 ? '+' : '−') + qtdMov(m, Math.abs(v));
   const tipoCel = m => {
     const cor = m.tipo === 'entrada' ? '#d6f0db' : m.tipo === 'saida' ? '#f6dcda' : '#e8e4f3';
     const nome = m.tipo === 'entrada' ? 'Entrada' : m.tipo === 'saida' ? 'Saída' : 'Ajuste';
@@ -9288,9 +9306,9 @@ function renderEstoqueItens(tipo) {
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
         <td>${tipoCel(m)}</td>
         <td>${esc(m.nome)}${m.setor ? ` <span class="muted" style="font-size:11px;">· ${esc(m.setor)}</span>` : ''}${m.desc ? `<div class="muted" style="font-size:11px;">${esc(m.desc)}</div>` : ''}</td>
-        <td style="${mono}">${m.tipo === 'ajuste' ? '—' : fmt(m.qtd)}</td>
-        <td style="${mono}">${n(m.dUso) ? sinal(m.dUso) : ''}</td>
-        <td style="${mono}">${n(m.dEstoque) ? sinal(m.dEstoque) : ''}</td>
+        <td style="${mono}">${m.tipo === 'ajuste' ? '—' : qtdMov(m, m.qtd)}</td>
+        <td style="${mono}">${n(m.dUso) ? sinalMov(m, m.dUso) : ''}</td>
+        <td style="${mono}">${n(m.dEstoque) ? sinalMov(m, m.dEstoque) : ''}</td>
         <td>${esc(m.obs || '')}</td>
         <td class="muted" style="font-size:11px;">${esc(m.por || '')}</td></tr>`).join('')
         : '<tr><td colspan="9" class="empty">Nenhum lançamento neste período.</td></tr>'}
@@ -9302,9 +9320,9 @@ function renderEstoqueItens(tipo) {
         <div class="field" style="margin:0;flex:0 1 280px;"><label>Buscar</label><input type="text" value="${esc(_estItensBusca[tipo])}" placeholder="Tipo, descrição${cfg.comSetor ? ', setor' : ''} ou observação" oninput="_estItensBuscar('${tipo}', this.value)"></div>
         ${cfg.comSetor ? `<div class="field" style="margin:0;"><label>Setor</label><select onchange="_estItensMudarSetor('${tipo}', this.value)">
           <option value="">Todos os setores</option>${_estItensSetores(cfg).map(st => `<option value="${esc(st)}"${_normNome(st) === _normNome(setorSel) ? ' selected' : ''}>${esc(st)}</option>`).join('')}</select></div>` : ''}
-        <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'} ·
+        <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'}${linhas.some(_estConv) ? '' : ` ·
           em uso <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tUso)}</b> ·
-          em estoque <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEst)}</b></div>
+          em estoque <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEst)}</b>`}</div>
       </div>
       <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>${cfg.comSetor ? '<th>Setor</th>' : ''}
         <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
@@ -9386,6 +9404,9 @@ function abrirEstoqueItem(tipo, id) {
       <div class="field"><label>Medida</label><select id="mei-medida">
         <option value="un"${_estItemMedida(x) === 'un' ? ' selected' : ''}>Unidade (un)</option>
         <option value="m"${_estItemMedida(x) === 'm' ? ' selected' : ''}>Metro (m)</option></select></div>
+      <div class="field"><label>Metros por bobina</label><input type="number" min="0" step="any" id="mei-mbob" placeholder="Ex.: 250" value="${x && x.mPorBobina ? esc(x.mPorBobina) : ''}"></div>
+      <div class="field"><label>Peso por metro (kg)</label><input type="number" min="0" step="any" id="mei-kgm" placeholder="Ex.: 0,0512" value="${x && x.kgPorM ? esc(x.kgPorM) : ''}">
+        <div class="field-hint">Com os dois, o estoque em metros aparece em bobinas e kg.</div></div>
       <div class="field full"><label style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:13px;">
         <input type="checkbox" id="mei-baixaos" ${x && x.baixaOS ? 'checked' : ''} style="width:auto;margin:0;">
         Baixa automática nas OS: gasta 1 × o comprimento de cada enfesto</label>
@@ -9416,7 +9437,10 @@ function abrirMovEstoqueItem(tipo, id, sentido) {
     <div class="form-grid cols-2">
       <div class="field full"><label>${s === 'entrada' ? 'De onde veio' : 'Para onde foi'} *</label><select id="mei-motivo">${ESTOQUE_ITENS_MOTIVOS[s].map((m, i) =>
         `<option value="${m.k}"${i === 0 ? ' selected' : ''}>${esc(m.rotulo)}</option>`).join('')}</select></div>
-      <div class="field"><label>Quantidade (${_estItemMedida(x)}) *</label><input type="number" min="0" step="${_estItemMedida(x) === 'm' ? 'any' : '1'}" id="mei-qtd" placeholder="${_estItemMedida(x) === 'm' ? 'Ex.: 250 (1 rolo de kraft)' : 'Ex.: 10'}"></div>
+      <div class="field"><label>Quantidade *</label><div style="display:flex;gap:6px;">
+        <input type="number" min="0" step="${_estItemMedida(x) === 'm' ? 'any' : '1'}" id="mei-qtd" placeholder="${_estConv(x) ? 'Ex.: 2' : _estItemMedida(x) === 'm' ? 'Ex.: 250' : 'Ex.: 10'}" style="flex:1;">
+        ${_estConv(x) ? `<select id="mei-qtd-un" style="width:auto;"><option value="bob">bobinas</option>${Number(x.kgPorM) > 0 ? '<option value="kg">kg</option>' : ''}<option value="m">metros</option></select>`
+          : `<span style="align-self:center;">${_estItemMedida(x)}</span>`}</div></div>
       <div class="field"><label>Data</label><input type="date" id="mei-data" value="${_aviHoje()}"></div>
       <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="${s === 'entrada' ? 'Ex.: NF 1234 / fornecedor' : 'Ex.: máquina 7 / reta da Maria'}"></div>
     </div>`;
@@ -9430,11 +9454,15 @@ async function _salvarMovEstoqueItem(ctx, cfg) {
   if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
   const mot = ESTOQUE_ITENS_MOTIVOS[ctx.mov].find(m => m.k === v('mei-motivo'));
   if (!mot) return toast('Escolha ' + (ctx.mov === 'entrada' ? 'de onde veio' : 'para onde foi'), 'err');
-  const qtd = Math.max(0, _estArred(x, parseFloat(String(v('mei-qtd')).replace(',', '.')) || 0));
+  // Em bobinas ou kg, a quantidade vira metros, que é como o item conta.
+  const bruto = parseFloat(String(v('mei-qtd')).replace(',', '.')) || 0;
+  const un = _estConv(x) ? v('mei-qtd-un') : '';
+  const emMetros = un === 'bob' ? bruto * Number(x.mPorBobina) : un === 'kg' && Number(x.kgPorM) > 0 ? bruto / Number(x.kgPorM) : bruto;
+  const qtd = Math.max(0, _estArred(x, emMetros));
   if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
   const uso = _estArred(x, x.emUso), est = _estArred(x, x.emEstoque);
-  if (mot.estoque < 0 && qtd > est) return toast(`Só há ${est} em estoque`, 'err');
-  if (mot.uso < 0 && qtd > uso) return toast(`Só há ${uso} em uso`, 'err');
+  if (mot.estoque < 0 && qtd > est) return toast(`Só há ${_estFmtQtd(x, est)} em estoque`, 'err');
+  if (mot.uso < 0 && qtd > uso) return toast(`Só há ${_estFmtQtd(x, uso)} em uso`, 'err');
   const dUso = mot.uso * qtd, dEstoque = mot.estoque * qtd;
   x.emUso = _estArred(x, uso + dUso);
   x.emEstoque = _estArred(x, est + dEstoque);
@@ -9476,7 +9504,9 @@ async function salvarEstoqueItem() {
   if (dup) return toast(`"${nome}" já está cadastrado nesta unidade — edite a linha que existe`, 'err');
   const dados = {
     nome, desc, unidade,
-    ...(cfg.comSetor ? { setor, medida, baixaOS } : {}),
+    ...(cfg.comSetor ? { setor, medida, baixaOS,
+      mPorBobina: medida === 'm' ? Math.max(0, parseFloat(String(v('mei-mbob')).replace(',', '.')) || 0) : 0,
+      kgPorM: medida === 'm' ? Math.max(0, parseFloat(String(v('mei-kgm')).replace(',', '.')) || 0) : 0 } : {}),
     emUso: inteiro('mei-uso'),
     emEstoque: inteiro('mei-estoque'),
     obs: v('mei-obs').trim(),
