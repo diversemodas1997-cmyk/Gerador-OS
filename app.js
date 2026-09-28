@@ -8388,6 +8388,19 @@ function renderEstoqueAviamentos() {
   const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, _aviDataCarga);
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const fmtUn = n => (Math.round(Number(n) || 0)).toLocaleString('pt-BR');
+  /* A COLUNA CORRENTE É O CONSUMO (28/09/2026, Junior: "Esse volume corrente
+     deve ser baseado no volume de unidades dividida pelo tempo de uso. Ainda não
+     há informações para determinar esse volume, então deve ser igual a zero").
+     Era o que há hoje — que, com o período terminando hoje, repetia o residual.
+     Passa a ser unidades ÷ tempo de uso; sem o tempo de uso cadastrado, zero.
+     O saldo de hoje (`corrente` da conta) continua valendo por trás: é ele que
+     limita o que a OE embarca e que o quadro do reservado compara. */
+  const consumo = l => {
+    const partes = [];
+    if (l.temKg || !l.temUn) partes.push(`${fmt(0)} kg`);
+    if (l.temUn) partes.push(`${fmtUn(0)} un`);
+    return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Consumo: unidades ÷ tempo de uso. Ainda sem o tempo de uso, fica em zero.">${partes.join('<br>')}</td>`;
+  };
   // A célula diz o peso e/ou a quantidade — o que a linha tiver lançado.
   const num = (l, k, forte) => {
     const partes = [];
@@ -8398,11 +8411,11 @@ function renderEstoqueAviamentos() {
   const cab = `<thead><tr><th>Tipo · cor</th>
     <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th>
     <th style="text-align:right;" title="O que ficou estocado no fim do período: o de antes + entrada − saída">Residual (estocado)</th>
-    <th style="text-align:right;" title="O que há hoje, qualquer que seja o período">Corrente</th>
+    <th style="text-align:right;" title="Consumo: unidades ÷ tempo de uso (ainda sem dados: zero)">Corrente</th>
     <th style="text-align:right;" title="O que já havia no início do período + o que entrou">Total</th></tr></thead>`;
   const linhaHtml = (l, rotulo, total) => `<tr${total ? ' style="background:#eef6f0;"' : ''}>
     <td>${total ? `<span style="font-weight:700;color:var(--ink-2);">${esc(rotulo)}</span>` : `<strong>${esc(rotulo) || '<span style="color:var(--ink-3)">(sem cor)</span>'}</strong>`}</td>
-    ${num(l, 'entrada')}${num(l, 'saida')}${num(l, 'residual', true)}${num(l, 'corrente', true)}${num(l, 'total')}</tr>`;
+    ${num(l, 'entrada')}${num(l, 'saida')}${num(l, 'residual', true)}${consumo(l)}${num(l, 'total')}</tr>`;
   const CINCO = ['entrada', 'saida', 'residual', 'corrente', 'total'];
   const somar = ls => {
     const o = { un: {}, temKg: ls.some(l => l.temKg), temUn: ls.some(l => l.temUn) };
@@ -8418,8 +8431,8 @@ function renderEstoqueAviamentos() {
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <h2 style="margin:0;font-size:14px;">${esc(tipo)}</h2>
-        <div class="muted" style="font-size:12px;">${ls.length} cor${ls.length === 1 ? '' : 'es'} · corrente <b style="font-family:'IBM Plex Mono',monospace;">${[
-          (t.temKg || !t.temUn) ? fmt(t.corrente) + ' kg' : '', t.temUn ? fmtUn(t.un.corrente) + ' un' : ''].filter(Boolean).join(' · ')}</b></div>
+        <div class="muted" style="font-size:12px;">${ls.length} cor${ls.length === 1 ? '' : 'es'} · estocado <b style="font-family:'IBM Plex Mono',monospace;">${[
+          (t.temKg || !t.temUn) ? fmt(t.residual) + ' kg' : '', t.temUn ? fmtUn(t.un.residual) + ' un' : ''].filter(Boolean).join(' · ')}</b></div>
       </div>
       <table class="table">${cab}<tbody>${corpo}</tbody></table>
     </div>`;
@@ -8512,7 +8525,7 @@ function renderEstoqueAviamentos() {
       Conta com o que há hoje nas <b>duas unidades</b>.</div>
     <table class="table"><thead><tr><th>Item</th><th>Cor</th>
       <th style="text-align:right;">Reservado</th>
-      <th style="text-align:right;" title="O que há hoje em Descalvado + São Carlos">Corrente (2 unidades)</th>
+      <th style="text-align:right;" title="O que há hoje em Descalvado + São Carlos">Em estoque (2 unidades)</th>
       <th style="text-align:right;" title="Corrente − reservado">Disponível</th><th>OS</th></tr></thead><tbody>
       ${resLinhas.length ? resLinhas.map(r => {
         const l = nosDois.find(x => _normNome(x.item) === _normNome(r.item) && !x.modelo && _normNome(x.cor) === _normNome(r.cor) && (x.tam || '') === (r.tam || ''));
@@ -8537,7 +8550,7 @@ function renderEstoqueAviamentos() {
         <button class="btn small ghost" onclick="_aviMudarPeriodo('mes')">Este mês</button>
         <div class="muted" style="font-size:12px;flex:1 1 320px;">
           <b>Entrada</b> e <b>saída</b>: o que entrou e saiu no período. <b>Residual (estocado)</b>: o que ficou no fim
-          do período (o de antes + entrada − saída). <b>Corrente</b>: o que há hoje. <b>Total</b>: o que já havia no
+          do período (o de antes + entrada − saída). <b>Corrente</b>: o consumo, unidades divididas pelo tempo de uso — ainda sem o tempo de uso, fica em zero. <b>Total</b>: o que já havia no
           início do período + o que entrou. Tudo em <b>kg</b>.
         </div>
       </div>
