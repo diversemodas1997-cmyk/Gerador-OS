@@ -1994,6 +1994,8 @@ const ACOES_POR_AREA = {
   'cadastrar no estoque de peças': 'estoque-tecidos', 'apagar do estoque de peças': 'estoque-tecidos',
   'cadastrar no estoque de ferramentas': 'estoque-tecidos', 'apagar do estoque de ferramentas': 'estoque-tecidos',
   'lançar no estoque de peças': 'estoque-tecidos', 'lançar no estoque de ferramentas': 'estoque-tecidos',
+  'cadastrar no estoque de materiais': 'estoque-tecidos', 'apagar do estoque de materiais': 'estoque-tecidos',
+  'lançar no estoque de materiais': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -2458,7 +2460,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3001,6 +3003,10 @@ const STATE = {
   // e o histórico de entradas, saídas e ajustes de cada um.
   pecasMov: [],
   ferramentasMov: [],
+  // Estoque de materiais (28/09/2026): o mesmo cadastro, com o setor que usa.
+  // A chave não é `materiais`: essa é o cadastro dos aviamentos da OS.
+  materiaisEstCad: [],
+  materiaisEstMov: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3200,6 +3206,8 @@ const DESFAZER_NOMES = {
   ferramentasCad: ['ferramenta do estoque', 'ferramentas do estoque'],
   pecasMov: ['lançamento de peças', 'lançamentos de peças'],
   ferramentasMov: ['lançamento de ferramentas', 'lançamentos de ferramentas'],
+  materiaisEstCad: ['material do estoque', 'materiais do estoque'],
+  materiaisEstMov: ['lançamento de materiais', 'lançamentos de materiais'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3354,7 +3362,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4028,6 +4036,7 @@ function goto(page) {
   if (page === 'estoque') renderEstoque();
   if (page === 'estoque-aviamentos') renderEstoqueAviamentos();
   if (page === 'estoque-pecas') renderEstoqueItens('pecas');
+  if (page === 'estoque-materiais') renderEstoqueItens('materiais');
   if (page === 'estoque-ferramentas') renderEstoqueItens('ferramentas');
   if (page === 'compra') renderCompra();
   // Sempre por ID da fase: a ordem de FASES_ESTOQUE muda quando entra campo novo
@@ -8948,8 +8957,21 @@ const ESTOQUE_ITENS = {
   pecas: { chave: 'pecasCad', mov: 'pecasMov', titulo: 'Estoque de peças', um: 'peça', uns: 'peças',
     exemplo: 'Ex.: Agulha DBx1 nº 11', painel: 'pecas-painel' },
   ferramentas: { chave: 'ferramentasCad', mov: 'ferramentasMov', titulo: 'Estoque de ferramentas', um: 'ferramenta', uns: 'ferramentas',
-    exemplo: 'Ex.: Tesoura de corte 10"', painel: 'ferramentas-painel' }
+    exemplo: 'Ex.: Tesoura de corte 10"', painel: 'ferramentas-painel' },
+  /* ESTOQUE DE MATERIAIS (28/09/2026, Junior: "Insira um Estoque de materiais
+     na barra lateral, abaixo de Estoque de tecidos. Esse estoque receberá
+     cadastros dos tipos de materiais utilizados na produção, em diversos
+     setores"). É o mesmo cadastro das peças e ferramentas — tipo, em uso, em
+     estoque, unidade e histórico —, com uma coisa a mais: o SETOR que usa o
+     material (corte, costura, expedição…). O setor separa a linha: o mesmo
+     papel no corte e na expedição são duas prateleiras. */
+  materiais: { chave: 'materiaisEstCad', mov: 'materiaisEstMov', titulo: 'Estoque de materiais', um: 'material', uns: 'materiais',
+    exemplo: 'Ex.: Papel de enfesto (bobina)', painel: 'materiais-painel', masculino: true, comSetor: true }
 };
+// Os setores oferecidos no campo, além dos que já foram escritos em algum cadastro.
+const ESTOQUE_SETORES = ['Corte', 'Costura', 'Acabamento', 'Expedição', 'Manutenção', 'Escritório'];
+const _estItensSetores = cfg => [...new Set(ESTOQUE_SETORES.concat((STATE[cfg.chave] || [])
+  .map(i => String(i.setor || '').trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 // Os motivos de cada lançamento, e o que cada um faz nas duas colunas.
 const ESTOQUE_ITENS_MOTIVOS = {
   entrada: [
@@ -8963,9 +8985,10 @@ const ESTOQUE_ITENS_MOTIVOS = {
   ]
 };
 const _estItensMotivo = k => ESTOQUE_ITENS_MOTIVOS.entrada.concat(ESTOQUE_ITENS_MOTIVOS.saida).find(m => m.k === k);
-const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc' };
-const _estItensBusca = { pecas: '', ferramentas: '' };
-const _estItensPeriodo = { pecas: { de: '', ate: '' }, ferramentas: { de: '', ate: '' } };
+const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc', materiais: 'desc' };
+const _estItensBusca = { pecas: '', ferramentas: '', materiais: '' };
+const _estItensPeriodo = { pecas: { de: '', ate: '' }, ferramentas: { de: '', ate: '' }, materiais: { de: '', ate: '' } };
+const _estItensSetor = { materiais: '' };   // '' = todos os setores
 let _estItensCtx = null;   // { tipo, id, mov? } do que está aberto no modal
 
 // O histórico de uma unidade no período, do mais novo para o mais velho.
@@ -8983,9 +9006,13 @@ function renderEstoqueItens(tipo) {
   const unidade = _estItensUnidade[tipo];
   const busca = _normNome(_estItensBusca[tipo]);
   const todos = Array.isArray(STATE[cfg.chave]) ? STATE[cfg.chave] : [];
+  const setorSel = cfg.comSetor ? (_estItensSetor[tipo] || '') : '';
   const linhas = todos.filter(x => _aviUnidadeDe(x) === unidade)
-    .filter(x => !busca || _normNome((x.nome || '') + ' ' + (x.desc || '') + ' ' + (x.obs || '')).includes(busca))
-    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    .filter(x => !setorSel || _normNome(x.setor) === _normNome(setorSel))
+    .filter(x => !busca || _normNome((x.nome || '') + ' ' + (x.desc || '') + ' ' + (x.setor || '') + ' ' + (x.obs || '')).includes(busca))
+    .sort((a, b) => (cfg.comSetor ? String(a.setor || '').localeCompare(String(b.setor || ''), 'pt-BR') : 0)
+      || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  const colSetor = x => cfg.comSetor ? `<td>${esc(x.setor || '') || '<span class="muted">—</span>'}</td>` : '';
   const n = v => Math.round(Number(v) || 0);
   const fmt = v => n(v).toLocaleString('pt-BR');
   const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
@@ -8996,16 +9023,17 @@ function renderEstoqueItens(tipo) {
   const corpo = linhas.length ? linhas.map(x => `<tr>
       <td class="col-actions row-actions estoque-tecidos-only"><button title="Registrar o que chegou ou voltou do uso" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','entrada')">+ entrada</button><button title="Registrar o que foi posto em uso ou deu baixa" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','saida')">− saída</button><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
+      ${colSetor(x)}
       <td style="${mono}">${fmt(x.emUso)}</td>
       <td style="${mono}font-weight:700;">${fmt(x.emEstoque)}</td>
       <td style="${mono}">${fmt(n(x.emUso) + n(x.emEstoque))}</td>
       <td>${esc(x.obs || '')}</td>
       <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 ? `
-    <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>
+    <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${cfg.comSetor ? '<td></td>' : ''}
       <td style="${mono}font-weight:700;">${fmt(tUso)}</td>
       <td style="${mono}font-weight:700;">${fmt(tEst)}</td>
       <td style="${mono}font-weight:700;">${fmt(tUso + tEst)}</td><td></td><td></td></tr>` : '')
-    : `<tr><td colspan="7" class="empty">${busca ? 'Nada encontrado na busca.' : `Nenhuma ${esc(cfg.um)} cadastrada nesta unidade.`}</td></tr>`;
+    : `<tr><td colspan="${cfg.comSetor ? 8 : 7}" class="empty">${busca || setorSel ? 'Nada encontrado na busca.' : `${cfg.masculino ? 'Nenhum' : 'Nenhuma'} ${esc(cfg.um)} ${cfg.masculino ? 'cadastrado' : 'cadastrada'} nesta unidade.`}</td></tr>`;
   // O histórico: o mês corrente, até alguém mudar o período.
   const per = _estItensPeriodo[tipo];
   const hoje = _aviHoje();
@@ -9040,7 +9068,7 @@ function renderEstoqueItens(tipo) {
         <td class="col-actions row-actions estoque-tecidos-only"><button title="Apagar este lançamento e desfazer o que ele mexeu nas quantidades" onclick="excluirMovEstoqueItem('${tipo}','${esc(m.id)}')">apagar</button></td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
         <td>${tipoCel(m)}</td>
-        <td>${esc(m.nome)}${m.desc ? `<div class="muted" style="font-size:11px;">${esc(m.desc)}</div>` : ''}</td>
+        <td>${esc(m.nome)}${m.setor ? ` <span class="muted" style="font-size:11px;">· ${esc(m.setor)}</span>` : ''}${m.desc ? `<div class="muted" style="font-size:11px;">${esc(m.desc)}</div>` : ''}</td>
         <td style="${mono}">${m.tipo === 'ajuste' ? '—' : fmt(m.qtd)}</td>
         <td style="${mono}">${n(m.dUso) ? sinal(m.dUso) : ''}</td>
         <td style="${mono}">${n(m.dEstoque) ? sinal(m.dEstoque) : ''}</td>
@@ -9052,12 +9080,14 @@ function renderEstoqueItens(tipo) {
     ${abas}
     <div class="card">
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
-        <div class="field" style="margin:0;flex:0 1 280px;"><label>Buscar</label><input type="text" value="${esc(_estItensBusca[tipo])}" placeholder="Tipo, descrição ou observação" oninput="_estItensBuscar('${tipo}', this.value)"></div>
+        <div class="field" style="margin:0;flex:0 1 280px;"><label>Buscar</label><input type="text" value="${esc(_estItensBusca[tipo])}" placeholder="Tipo, descrição${cfg.comSetor ? ', setor' : ''} ou observação" oninput="_estItensBuscar('${tipo}', this.value)"></div>
+        ${cfg.comSetor ? `<div class="field" style="margin:0;"><label>Setor</label><select onchange="_estItensMudarSetor('${tipo}', this.value)">
+          <option value="">Todos os setores</option>${_estItensSetores(cfg).map(st => `<option value="${esc(st)}"${_normNome(st) === _normNome(setorSel) ? ' selected' : ''}>${esc(st)}</option>`).join('')}</select></div>` : ''}
         <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'} ·
           em uso <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tUso)}</b> ·
           em estoque <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEst)}</b></div>
       </div>
-      <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>
+      <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>${cfg.comSetor ? '<th>Setor</th>' : ''}
         <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
         <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>
         <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>
@@ -9065,6 +9095,12 @@ function renderEstoqueItens(tipo) {
     </div>
     ${histHtml}`;
 }
+
+function _estItensMudarSetor(tipo, valor) {
+  _estItensSetor[tipo] = valor || '';
+  renderEstoqueItens(tipo);
+}
+window._estItensMudarSetor = _estItensMudarSetor;
 
 function _estItensTrocarUnidade(tipo, k) {
   _estItensUnidade[tipo] = k === 'sc' ? 'sc' : 'desc';
@@ -9096,6 +9132,7 @@ function _estItensRegistrar(cfg, x, mov) {
   if (!Array.isArray(STATE[cfg.mov])) STATE[cfg.mov] = [];
   STATE[cfg.mov].push({
     id: uid(), itemId: x.id, nome: x.nome, desc: x.desc || '', unidade: _aviUnidadeDe(x),
+    ...(x.setor ? { setor: x.setor } : {}),
     data: _aviHoje(), obs: '', ...mov,
     por: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''),
     em: new Date().toISOString()
@@ -9121,7 +9158,9 @@ function abrirEstoqueItem(tipo, id) {
         `<option value="${u.k}"${u.k === un ? ' selected' : ''}>${esc(u.rotulo)}</option>`).join('')}</select></div>
       <div class="field"><label>Tipo de ${esc(cfg.um)} *</label><input type="text" id="mei-nome" list="mei-nomes" placeholder="${esc(cfg.exemplo)}" value="${x ? esc(x.nome || '') : ''}">
         <datalist id="mei-nomes">${nomes.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
-      <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="Marca, medida, máquina em que serve…" value="${x ? esc(x.desc || '') : ''}"></div>
+      ${cfg.comSetor ? `<div class="field"><label>Setor *</label><input type="text" id="mei-setor" list="mei-setores" placeholder="Ex.: Corte" value="${x ? esc(x.setor || '') : esc(_estItensSetor[tipo] || '')}">
+        <datalist id="mei-setores">${_estItensSetores(cfg).map(st => `<option value="${esc(st)}">`).join('')}</datalist></div>` : ''}
+      <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="${cfg.comSetor ? 'Marca, medida, onde é usado…' : 'Marca, medida, máquina em que serve…'}" value="${x ? esc(x.desc || '') : ''}"></div>
       <div class="field"><label>Em uso (un)</label><input type="number" min="0" step="1" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
       <div class="field"><label>Em estoque (un)</label><input type="number" min="0" step="1" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
       ${x ? `<div class="field full"><div class="field-hint">Para o que chegou, foi posto em uso ou deu baixa, prefira <b>+ entrada</b> e <b>− saída</b> na linha. Mudar as quantidades aqui fica no histórico como <b>ajuste</b> (contagem).</div></div>` : ''}
@@ -9192,14 +9231,19 @@ async function salvarEstoqueItem() {
   const inteiro = id => Math.max(0, Math.round(parseFloat(String(v(id)).replace(',', '.')) || 0));
   const unidade = v('mei-unidade') === 'sc' ? 'sc' : 'desc';
   const desc = v('mei-desc').trim();
+  const setor = cfg.comSetor ? v('mei-setor').trim() : '';
+  if (cfg.comSetor && !setor) return toast('Informe o setor que usa o ' + cfg.um, 'err');
   if (!Array.isArray(STATE[cfg.chave])) STATE[cfg.chave] = [];
   const lista = STATE[cfg.chave];
-  // O mesmo tipo com a mesma descrição, na mesma unidade, é uma linha só.
-  const chaveDe = i => _normNome(i.nome) + '||' + _normNome(i.desc || '') + '||' + _aviUnidadeDe(i);
-  const dup = lista.find(i => i.id !== ctx.id && chaveDe(i) === chaveDe({ nome, desc, unidade }));
+  // O mesmo tipo com a mesma descrição, na mesma unidade (e no mesmo setor,
+  // quando há setor), é uma linha só.
+  const chaveDe = i => _normNome(i.nome) + '||' + _normNome(i.desc || '') + '||' + _aviUnidadeDe(i)
+    + (cfg.comSetor ? '||' + _normNome(i.setor || '') : '');
+  const dup = lista.find(i => i.id !== ctx.id && chaveDe(i) === chaveDe({ nome, desc, unidade, setor }));
   if (dup) return toast(`"${nome}" já está cadastrado nesta unidade — edite a linha que existe`, 'err');
   const dados = {
     nome, desc, unidade,
+    ...(cfg.comSetor ? { setor } : {}),
     emUso: inteiro('mei-uso'),
     emEstoque: inteiro('mei-estoque'),
     obs: v('mei-obs').trim(),

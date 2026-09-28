@@ -35,7 +35,12 @@ const STATE = {
   ],
   ferramentasCad: [],
   pecasMov: [],
-  ferramentasMov: []
+  ferramentasMov: [],
+  materiaisEstCad: [
+    { id: 'm1', nome: 'Papel de enfesto', setor: 'Corte', unidade: 'desc', emUso: 1, emEstoque: 6 },
+    { id: 'm2', nome: 'Fita adesiva', setor: 'Expedição', unidade: 'desc', emUso: 2, emEstoque: 30 }
+  ],
+  materiaisEstMov: []
 };
 const api = new Function('document', 'STATE', `
   const esc = s => String(s == null ? '' : s);
@@ -46,9 +51,12 @@ const api = new Function('document', 'STATE', `
   ${bloco('const ESTOQUE_ITENS = {', '\n};')}
   ${bloco('const ESTOQUE_ITENS_MOTIVOS = {', '\n};')}
   ${linha(/const _estItensMotivo = [^\n]*/)}
-  const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc' };
-  const _estItensBusca = { pecas: '', ferramentas: '' };
-  const _estItensPeriodo = { pecas: { de: '2026-09-01', ate: '2026-09-30' }, ferramentas: { de: '', ate: '' } };
+  const _estItensUnidade = { pecas: 'desc', ferramentas: 'desc', materiais: 'desc' };
+  const _estItensBusca = { pecas: '', ferramentas: '', materiais: '' };
+  const _estItensPeriodo = { pecas: { de: '2026-09-01', ate: '2026-09-30' }, ferramentas: { de: '', ate: '' }, materiais: { de: '', ate: '' } };
+  const _estItensSetor = { materiais: '' };
+  ${linha(/const ESTOQUE_SETORES = [^\n]*/)}
+  ${bloco('const _estItensSetores = ', "'pt-BR'));")}
   let _estItensCtx = null;
   const _aviHoje = () => '2026-09-25';
   let _n = 0; const uid = () => 'm' + (++_n);
@@ -61,7 +69,7 @@ const api = new Function('document', 'STATE', `
   ${pegaFuncao('_salvarMovEstoqueItem', true)}
   ${pegaFuncao('excluirMovEstoqueItem', true)}
   ${pegaFuncao('renderEstoqueItens')}
-  return { renderEstoqueItens, _estItensUnidade, _estItensBusca, _salvarMovEstoqueItem, excluirMovEstoqueItem, ESTOQUE_ITENS, toasts };
+  return { renderEstoqueItens, _estItensUnidade, _estItensBusca, _estItensSetor, _salvarMovEstoqueItem, excluirMovEstoqueItem, ESTOQUE_ITENS, toasts };
 `)(documento, STATE);
 
 (async () => {
@@ -128,6 +136,25 @@ ok('19. cadastro e historico sao sincronizados e carregados (as duas listas de c
 ok('20. corrigir altera a linha no lugar, o mesmo tipo na mesma unidade nao duplica, e a correcao vira ajuste',
    /if \(ctx\.id\) \{\s*x = lista\.find\(i => i\.id === ctx\.id\)/.test(src) && /já está cadastrado nesta unidade/.test(src)
    && /_estItensRegistrar\(cfg, x, \{ tipo: 'ajuste', motivo: 'correcao'/.test(src));
+
+console.log('-- o estoque de materiais (28/09/2026) --');
+api.renderEstoqueItens('materiais');
+const mat = paineis['materiais-painel'].innerHTML;
+ok('21. a tela de materiais tem a coluna Setor e mostra o setor de cada linha',
+   /<th>Setor<\/th>/.test(mat) && /<td>Corte<\/td>/.test(mat) && /<td>Expedição<\/td>/.test(mat));
+ok('22. o filtro de setor oferece os padroes e os ja escritos', /<option value="Manutenção">/.test(mat) && /Todos os setores/.test(mat));
+api._estItensSetor.materiais = 'Corte';
+api.renderEstoqueItens('materiais');
+const soCorte = paineis['materiais-painel'].innerHTML;
+ok('23. filtrar o setor deixa so as linhas dele', /Papel de enfesto/.test(soCorte) && !/Fita adesiva/.test(soCorte));
+ok('24. pecas continuam sem a coluna Setor', !/<th>Setor<\/th>/.test(paineis['pecas-painel'].innerHTML));
+ok('25. o item de menu fica logo abaixo do Estoque de tecidos',
+   /Estoque de tecidos<\/a>\s*<a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais"[^>]*>Estoque de materiais<\/a>/.test(html));
+ok('26. pagina, rota e chaves', /data-page="estoque-materiais"/.test(html) && /id="materiais-painel"/.test(html)
+   && /if \(page === 'estoque-materiais'\) renderEstoqueItens\('materiais'\);/.test(src)
+   && (src.match(/'materiaisEstCad','materiaisEstMov'/g) || []).length === 2);
+ok('27. quem lanca no estoque de tecidos tambem lanca no de materiais',
+   /'cadastrar no estoque de materiais': 'estoque-tecidos'/.test(src) && /'lançar no estoque de materiais': 'estoque-tecidos'/.test(src));
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

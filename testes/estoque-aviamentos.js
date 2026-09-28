@@ -176,8 +176,10 @@ ok('37. a etiqueta ja vem Preto, so com a cor vazia, e o Preto automatico sai ao
    && /id="ma-cor"[^>]*oninput="this\.dataset\.auto = ''"/.test(src));
 
 console.log('-- a tela --');
-ok('9. o item de menu fica logo abaixo do Estoque de tecidos',
-   /data-page="estoque"[^>]*>Estoque de tecidos<\/a>\s*<a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos"[^>]*>Estoque de aviamentos<\/a>/.test(html));
+// Desde 28/09/2026 o Estoque de materiais entra entre os dois (pedido do Junior:
+// "abaixo de Estoque de tecidos"); os aviamentos vêm logo depois dele.
+ok('9. o item de menu fica abaixo do Estoque de tecidos, depois do de materiais',
+   /data-page="estoque"[^>]*>Estoque de tecidos<\/a>\s*<a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais"[^>]*>Estoque de materiais<\/a>\s*<a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos"[^>]*>Estoque de aviamentos<\/a>/.test(html));
 ok('10. a pagina e o modal existem',
    /<section class="page hidden" data-page="estoque-aviamentos">/.test(html) && /id="modal-aviamento"/.test(html));
 ok('11. a rota desenha a tela', /if \(page === 'estoque-aviamentos'\) renderEstoqueAviamentos\(\);/.test(src));

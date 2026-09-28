@@ -145,6 +145,7 @@
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
       <div class="nav-items">
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
+        <a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de materiais</a>
         <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
         <a class="nav-btn" href="#estoque-pecas" data-page="estoque-pecas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de peças</a>
         <a class="nav-btn" href="#estoque-ferramentas" data-page="estoque-ferramentas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de ferramentas</a>
@@ -416,6 +417,21 @@
     <!-- ESTOQUE DE PEÇAS e ESTOQUE DE FERRAMENTAS (25/09/2026): cadastro dos
          tipos, com o que está em uso e o que está em estoque, por unidade.
          Quem cadastra é quem lança no estoque de tecidos. -->
+    <!-- ESTOQUE DE MATERIAIS (28/09/2026): o mesmo cadastro das peças e
+         ferramentas, com o setor que usa o material. -->
+    <section class="page hidden" data-page="estoque-materiais">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de materiais</h1>
+          <div class="desc">Cadastro dos tipos de materiais usados na produção, com o setor que os usa e a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Cada linha tem <b>+ entrada</b> (chegou ou voltou do uso) e <b>− saída</b> (posto em uso ou baixa); tudo fica no histórico abaixo.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirEstoqueItem('materiais')">+ Cadastrar material</button>
+        </div>
+      </div>
+      <div id="materiais-painel"></div>
+    </section>
+
     <section class="page hidden" data-page="estoque-pecas">
       <div class="page-header">
         <div>
@@ -1686,6 +1702,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-09-28c"></script>
+<script src="app.js?v=2026-09-28d"></script>
 </body>
 </html>
