@@ -18,6 +18,8 @@ const tiposLinha = (src.match(/const AVIAMENTO_TIPOS = [^\n]*/) || [''])[0];
 const unidadeDe = (src.match(/const _aviUnidadeDe = [^\n]*/) || [''])[0];
 const tamanhosLinha = (src.match(/const AVIAMENTO_TAMANHOS = [^\n]*/) || [''])[0];
 const tamDe = (src.match(/const _aviTamDe = [^\n]*/) || [''])[0];
+const comModelo = (src.match(/const AVIAMENTO_COM_MODELO = [^\n]*/) || [''])[0];
+const modeloDe = (src.match(/const _aviModeloDe = [^\n]*/) || [''])[0];
 const origemDe = (src.match(/const _aviOrigemDe = [^\n]*/) || [''])[0];
 const destinoDe = (src.match(/const _aviDestinoDe = [^\n]*/) || [''])[0];
 
@@ -32,6 +34,8 @@ const api = new Function(`
   ${unidadeDe}
   ${tamanhosLinha}
   ${tamDe}
+  ${comModelo}
+  ${modeloDe}
   ${origemDe}
   ${destinoDe}
   ${pegaFuncao('_aviPernasDaExpedicao')}
@@ -196,6 +200,24 @@ console.log('-- correcao do alocado --');
   ok('41. corrigir le o saldo sem a propria alocacao e altera no lugar (mesmo id)',
      /_aviSaldosNaUnidade\(_aviOrigemDe\(ctx\), ctx\.editId \|\| undefined\)/.test(src)
      && /if \(ctx\.editId\) \{\s*const m = STATE\.aviamentosMov\.find\(x => x\.id === ctx\.editId/.test(src));
+}
+
+console.log('-- o tipo do fio e da linha (28/09/2026) --');
+{
+  const r = api.calcularEstoqueAviamentos([
+    { tipo: 'entrada', item: 'Fio', modelo: 'TP200', cor: 'Preto', kg: 2, data: '2026-09-28' },
+    { tipo: 'entrada', item: 'Fio', modelo: 'tp200', cor: 'preto', kg: 1, data: '2026-09-28' },
+    { tipo: 'entrada', item: 'Fio', modelo: 'XY9', cor: 'Preto', kg: 5, data: '2026-09-28' },
+    { tipo: 'entrada', item: 'Fio', cor: 'Preto', kg: 7, data: '2026-09-28' },
+    // Tipo so vale para fio e linha: no botao e ignorado.
+    { tipo: 'entrada', item: 'Botão', modelo: 'TP200', cor: 'Bege', qtd: 10, data: '2026-09-28' }
+  ], '2026-09-01', '2026-09-30', '2026-09-30');
+  const fio = m => r.find(l => l.item === 'Fio' && l.modelo.toUpperCase() === m);
+  ok('T1. o mesmo tipo (caixa diferente) e uma linha so', fio('TP200') && fio('TP200').corrente === 3, r);
+  ok('T2. tipos diferentes da mesma cor sao linhas separadas', fio('XY9') && fio('XY9').corrente === 5, r);
+  ok('T3. o lancamento antigo, sem tipo, fica na sua linha', fio('') && fio('').corrente === 7, r);
+  const botao = r.find(l => l.item === 'Botão');
+  ok('T4. botao nao tem tipo', botao && botao.modelo === '' && botao.un.corrente === 10, botao);
 }
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');

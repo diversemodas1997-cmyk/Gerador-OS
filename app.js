@@ -2458,7 +2458,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','pecasMov','ferramentasMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -2991,6 +2991,9 @@ const STATE = {
   expedicaoMov: [],
   // Estoque de aviamentos (24/09/2026): lancamentos manuais em kg, por tipo e cor.
   aviamentosMov: [],
+  // e o cadastro dos tipos de fio e de linha (28/09/2026): código,
+  // especificação e as cores (código da etiqueta → nome).
+  aviamentoTipos: [],
   // Estoque de peças e de ferramentas (25/09/2026): cadastro dos tipos, com o
   // que está em uso e o que está guardado, por unidade.
   pecasCad: [],
@@ -3192,6 +3195,7 @@ const DESFAZER_NOMES = {
   fiosMov: ['lançamento de fios', 'lançamentos de fios'],
   expedicaoMov: ['lançamento da expedição', 'lançamentos da expedição'],
   aviamentosMov: ['lançamento de aviamento', 'lançamentos de aviamento'],
+  aviamentoTipos: ['tipo de fio ou linha', 'tipos de fio e linha'],
   pecasCad: ['peça do estoque', 'peças do estoque'],
   ferramentasCad: ['ferramenta do estoque', 'ferramentas do estoque'],
   pecasMov: ['lançamento de peças', 'lançamentos de peças'],
@@ -3350,7 +3354,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','pecasCad','ferramentasCad','pecasMov','ferramentasMov','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -8061,8 +8065,19 @@ const AVIAMENTO_TIPOS = ['Fio', 'Linha', 'Etiqueta', 'Botão', 'Viés'];
    composição não têm tamanho — e só existe para a Etiqueta. */
 const AVIAMENTO_TAMANHOS = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
 const _aviTamDe = m => (m && _normNome(m.item) === 'etiqueta' && AVIAMENTO_TAMANHOS.indexOf(m.tam) >= 0) ? m.tam : '';
-// "Etiqueta M", ou só o item quando não há tamanho.
-const _aviItemTexto = m => (m && m.item ? m.item : '') + (_aviTamDe(m) ? ' ' + _aviTamDe(m) : '');
+/* O TIPO DO FIO E DA LINHA (28/09/2026, Junior, sobre as etiquetas dos cones:
+   "Essas informações devem servir para cadastro do tipo de linha e fio").
+   Fio não é um só: o fio TP200 (poliéster 150, Tex 27) e a linha BR02C (120,
+   1828 m, Tex 29) são coisas diferentes na prateleira. O tipo mora num
+   cadastro próprio (`STATE.aviamentoTipos`: item, código, especificação e as
+   cores — o código que vem na etiqueta e o nome que a fábrica usa), e o
+   lançamento guarda o código em `modelo`. Como o tamanho da etiqueta, o tipo
+   separa a linha do estoque (item + tipo + cor + tamanho) e viaja com ela na
+   OE. É opcional: lançamento antigo, sem tipo, continua na sua linha. */
+const AVIAMENTO_COM_MODELO = ['Fio', 'Linha'];
+const _aviModeloDe = m => (m && m.modelo && AVIAMENTO_COM_MODELO.some(t => _normNome(t) === _normNome(m.item))) ? String(m.modelo).trim() : '';
+// "Etiqueta M", "Fio TP200", ou só o item quando não há tamanho nem tipo.
+const _aviItemTexto = m => [m && m.item ? m.item : '', _aviModeloDe(m), _aviTamDe(m)].filter(Boolean).join(' ');
 
 /* AS DUAS UNIDADES (24/09/2026, Junior: "no estoque de aviamentos, separe por
    Unidade Descalvado e Unidade São Carlos"). Cada lançamento diz de que
@@ -8140,9 +8155,10 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
     if (!item) return;
     const cor = String(m.cor || '').trim();
     const tam = _aviTamDe({ item, tam: m.tam });
-    const k = _normNome(item) + '||' + _normNome(cor) + '||' + tam;
+    const modelo = _aviModeloDe({ item, modelo: m.modelo });
+    const k = _normNome(item) + '||' + _normNome(modelo) + '||' + _normNome(cor) + '||' + tam;
     const zero = () => ({ anterior: 0, entrada: 0, saida: 0, corrente: 0 });
-    const cur = linhas.get(k) || { item, cor, tam, kg: zero(), un: zero(), temKg: false, temUn: false };
+    const cur = linhas.get(k) || { item, modelo, cor, tam, kg: zero(), un: zero(), temKg: false, temUn: false };
     /* PESO E UNIDADE, lado a lado (24/09/2026, Junior: "deve haver entrada por
        quantidade de unidade"). Botão e etiqueta se contam; fio e linha se
        pesam. Cada lançamento traz um, o outro ou os dois, e as duas contas
@@ -8169,8 +8185,8 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
   // Os cinco volumes em kg ficam no topo (entrada, saida…), como sempre foram;
   // os em unidades moram em `un`.
   return Array.from(linhas.values()).map(l => ({
-    item: l.item, cor: l.cor, tam: l.tam, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
-  })).sort((a, b) => a.cor.localeCompare(b.cor, 'pt-BR')
+    item: l.item, modelo: l.modelo, cor: l.cor, tam: l.tam, ...cinco(l.kg), un: cinco(l.un), temKg: l.temKg, temUn: l.temUn
+  })).sort((a, b) => a.modelo.localeCompare(b.modelo, 'pt-BR') || a.cor.localeCompare(b.cor, 'pt-BR')
     || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
 }
 
@@ -8325,7 +8341,7 @@ function renderEstoqueAviamentos() {
     if (l.temUn) partes.push(`<span style="color:${l.un[k] < -0.0005 ? '#c0392b' : 'inherit'};">${fmtUn(l.un[k])} un</span>`);
     return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${forte ? 'font-weight:700;' : ''}">${partes.join('<br>')}</td>`;
   };
-  const cab = `<thead><tr><th>Cor</th>
+  const cab = `<thead><tr><th>Tipo · cor</th>
     <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th>
     <th style="text-align:right;" title="O que ficou estocado no fim do período: o de antes + entrada − saída">Residual (estocado)</th>
     <th style="text-align:right;" title="O que há hoje, qualquer que seja o período">Corrente</th>
@@ -8342,7 +8358,7 @@ function renderEstoqueAviamentos() {
   const quadro = (tipo) => {
     const ls = linhas.filter(l => l.item === tipo);
     const corpo = ls.length
-      ? ls.map(l => linhaHtml(l, [l.cor || '(sem cor)', l.tam ? 'tam. ' + l.tam : ''].filter(Boolean).join(' · '))).join('') + (ls.length > 1 ? linhaHtml(somar(ls), 'Total ' + tipo, true) : '')
+      ? ls.map(l => linhaHtml(l, [l.modelo, _aviCorTexto(l) || '(sem cor)', l.tam ? 'tam. ' + l.tam : ''].filter(Boolean).join(' · '))).join('') + (ls.length > 1 ? linhaHtml(somar(ls), 'Total ' + tipo, true) : '')
       : `<tr><td colspan="6" class="empty">Nenhum lançamento de ${esc(tipo.toLowerCase())}.</td></tr>`;
     const t = somar(ls);
     return `<div class="card">
@@ -8445,7 +8461,7 @@ function renderEstoqueAviamentos() {
       <th style="text-align:right;" title="O que há hoje em Descalvado + São Carlos">Corrente (2 unidades)</th>
       <th style="text-align:right;" title="Corrente − reservado">Disponível</th><th>OS</th></tr></thead><tbody>
       ${resLinhas.length ? resLinhas.map(r => {
-        const l = nosDois.find(x => _normNome(x.item) === _normNome(r.item) && _normNome(x.cor) === _normNome(r.cor) && (x.tam || '') === (r.tam || ''));
+        const l = nosDois.find(x => _normNome(x.item) === _normNome(r.item) && !x.modelo && _normNome(x.cor) === _normNome(r.cor) && (x.tam || '') === (r.tam || ''));
         const corr = l ? l.un.corrente : 0;
         const disp = corr - r.qtd;
         const os = Array.from(r.os).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
@@ -8472,6 +8488,7 @@ function renderEstoqueAviamentos() {
         </div>
       </div>
     </div>
+    ${_aviTiposCardHtml()}
     ${AVIAMENTO_TIPOS.concat(outros).map(quadro).join('')}
     ${reservaHtml}
     ${transitoHtml}
@@ -8513,6 +8530,7 @@ let _aviExpCtx = null;
 function abrirMovAviamento(tipo) {
   if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
   _aviExpCtx = null;
+  _aviTipoCtx = null;
   movAviamentoTipo = tipo === 'saida' ? 'saida' : 'entrada';
   document.getElementById('modal-aviamento-title').textContent =
     movAviamentoTipo === 'entrada' ? 'Entrada de aviamento' : 'Saída de aviamento';
@@ -8524,6 +8542,7 @@ function abrirMovAviamento(tipo) {
         `<option value="${u.k}"${u.k === _aviUnidade ? ' selected' : ''}>${esc(u.rotulo)}</option>`).join('')}</select></div>
       <div class="field"><label>Item *</label><select id="ma-item" onchange="_aviMostrarTamanho()">
         <option value="">— selecione —</option>${AVIAMENTO_TIPOS.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+      <div class="field" id="ma-modelo-campo" style="display:none;"><label>Tipo</label><select id="ma-modelo" onchange="_aviMostrarCoresDoTipo()"></select></div>
       <div class="field" id="ma-tam-campo" style="display:none;"><label>Tamanho da etiqueta</label><select id="ma-tam">
         <option value="">— sem tamanho —</option>${AVIAMENTO_TAMANHOS.map(t => `<option value="${t}">${t}</option>`).join('')}</select></div>
       <div class="field"><label>Cor</label><input type="text" id="ma-cor" list="ma-cores" placeholder="Ex.: Preto" oninput="this.dataset.auto = ''">
@@ -8551,6 +8570,18 @@ function _aviMostrarTamanho() {
   const eEtiqueta = _normNome(it.value) === 'etiqueta';
   campo.style.display = eEtiqueta ? '' : 'none';
   if (!eEtiqueta) { const t = document.getElementById('ma-tam'); if (t) t.value = ''; }
+  // Fio e linha: o campo do tipo, com os tipos cadastrados para o item.
+  const mCampo = document.getElementById('ma-modelo-campo');
+  const mSel = document.getElementById('ma-modelo');
+  if (mCampo && mSel) {
+    const tipos = _aviTiposDoItem(it.value);
+    const comModelo = AVIAMENTO_COM_MODELO.some(t => _normNome(t) === _normNome(it.value));
+    mCampo.style.display = comModelo ? '' : 'none';
+    mSel.innerHTML = `<option value="">— sem tipo —</option>` + tipos.map(t =>
+      `<option value="${esc(t.codigo)}">${esc(t.codigo)}${t.desc ? ' · ' + esc(t.desc) : ''}</option>`).join('');
+    if (comModelo && tipos.length === 1) mSel.value = tipos[0].codigo;
+    _aviMostrarCoresDoTipo();
+  }
   const cor = document.getElementById('ma-cor');
   if (cor) {
     if (eEtiqueta && !cor.value.trim()) { cor.value = AVIAMENTO_COR_ETIQUETA; cor.dataset.auto = '1'; }
@@ -8559,7 +8590,140 @@ function _aviMostrarTamanho() {
 }
 window._aviMostrarTamanho = _aviMostrarTamanho;
 
+// Com um tipo escolhido, as sugestões da cor são as cores dele (o nome, ou o
+// código enquanto a cor não tem nome); sem tipo, as cores do cadastro.
+function _aviMostrarCoresDoTipo() {
+  const it = document.getElementById('ma-item'), mSel = document.getElementById('ma-modelo');
+  const lista = document.getElementById('ma-cores');
+  if (!it || !lista) return;
+  const t = _aviTipoCad({ item: it.value, modelo: mSel ? mSel.value : '' });
+  const cores = t ? (t.cores || []).map(c => c.nome || c.codigo).filter(Boolean)
+    : [...new Set((STATE.cores || []).map(c => corNomeCurto(c.nome)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  lista.innerHTML = cores.map(c => `<option value="${esc(c)}">`).join('');
+}
+window._aviMostrarCoresDoTipo = _aviMostrarCoresDoTipo;
+
+/* ---------- O CADASTRO DOS TIPOS DE FIO E DE LINHA ---------- */
+let _aviTipoCtx = null;   // { id } do tipo aberto no modal ('' = novo)
+const _aviTiposDoItem = item => (Array.isArray(STATE.aviamentoTipos) ? STATE.aviamentoTipos : [])
+  .filter(t => _normNome(t.item) === _normNome(item))
+  .sort((a, b) => String(a.codigo || '').localeCompare(String(b.codigo || ''), 'pt-BR'));
+// O cadastro do tipo de um lançamento ou de uma linha do estoque, ou null.
+function _aviTipoCad(m) {
+  const mod = _aviModeloDe(m);
+  return mod ? _aviTiposDoItem(m.item).find(t => _normNome(t.codigo) === _normNome(mod)) || null : null;
+}
+// "Preto · cód. 1500": a cor e o código da etiqueta, quando o tipo o conhece.
+function _aviCorTexto(m) {
+  const cor = String((m && m.cor) || '').trim();
+  const t = _aviTipoCad(m);
+  const c = t && cor ? (t.cores || []).find(x => _normNome(x.nome) === _normNome(cor) || _normNome(x.codigo) === _normNome(cor)) : null;
+  if (!c || !c.codigo || _normNome(c.codigo) === _normNome(cor)) return cor;
+  return cor + ' · cód. ' + c.codigo;
+}
+
+function _aviTiposCardHtml() {
+  const tipos = AVIAMENTO_COM_MODELO.flatMap(_aviTiposDoItem);
+  const coresTxt = t => (t.cores || []).map(c => c.nome
+    ? `${esc(c.codigo)} <span class="muted">→</span> ${esc(c.nome)}`
+    : `${esc(c.codigo)} <span class="muted">(sem nome)</span>`).join('<br>');
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <h2 style="margin:0;font-size:14px;">Tipos de fio e linha</h2>
+      <button class="btn small estoque-tecidos-only" onclick="abrirAviamentoTipo('')">+ Tipo</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">O que vem na etiqueta do cone. Na entrada de fio ou linha, escolha o tipo: ele separa a linha do estoque, e as cores dele viram sugestão.</div>
+    <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Item</th><th>Tipo</th><th>Especificação</th><th>Cores (código → nome)</th></tr></thead><tbody>
+      ${tipos.length ? tipos.map(t => `<tr>
+        <td class="col-actions row-actions estoque-tecidos-only"><button onclick="abrirAviamentoTipo('${esc(t.id)}')">editar</button><button onclick="excluirAviamentoTipo('${esc(t.id)}')">apagar</button></td>
+        <td>${esc(t.item)}</td><td><strong>${esc(t.codigo)}</strong></td>
+        <td>${esc(t.desc || '')}</td>
+        <td style="font-family:'IBM Plex Mono',monospace;font-size:12px;">${coresTxt(t) || '—'}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="empty">Nenhum tipo cadastrado.</td></tr>'}
+    </tbody></table></div>`;
+}
+
+function abrirAviamentoTipo(id) {
+  if (!exigirEstoqueTecidos('cadastrar tipo de fio ou linha')) return;
+  const t = id ? (STATE.aviamentoTipos || []).find(x => x.id === id) : null;
+  if (id && !t) return toast('Este tipo não existe mais', 'err');
+  _aviExpCtx = null;
+  _aviTipoCtx = { id: t ? t.id : '' };
+  document.getElementById('modal-aviamento-title').textContent =
+    t ? 'Editar tipo · ' + t.item + ' ' + t.codigo : 'Cadastrar tipo de fio ou linha';
+  const cores = t ? (t.cores || []).map(c => c.codigo + (c.nome ? ' = ' + c.nome : '')).join('\n') : '';
+  document.getElementById('modal-aviamento-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Item *</label><select id="mat-item">${AVIAMENTO_COM_MODELO.map(i =>
+        `<option value="${esc(i)}"${t && _normNome(t.item) === _normNome(i) ? ' selected' : ''}>${esc(i)}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo (código da etiqueta) *</label><input type="text" id="mat-codigo" placeholder="Ex.: TP200" value="${t ? esc(t.codigo) : ''}"></div>
+      <div class="field full"><label>Especificação</label><input type="text" id="mat-desc" placeholder="Ex.: 100% poliéster 150 · Tex 27 · fabricante" value="${t ? esc(t.desc || '') : ''}"></div>
+      <div class="field full"><label>Cores — uma por linha, código = nome</label><textarea id="mat-cores" rows="6" placeholder="1500 = Preto&#10;9900 = Branco">${esc(cores)}</textarea>
+        <div class="field-hint">O nome pode ficar para depois: só o código também vale.</div></div>
+    </div>`;
+  openModal('modal-aviamento');
+}
+
+async function salvarAviamentoTipo() {
+  const ctx = _aviTipoCtx;
+  if (!ctx || !exigirEstoqueTecidos('cadastrar tipo de fio ou linha')) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const item = AVIAMENTO_COM_MODELO.find(i => _normNome(i) === _normNome(v('mat-item')));
+  const codigo = v('mat-codigo').trim();
+  if (!item) return toast('Escolha o item', 'err');
+  if (!codigo) return toast('Informe o código do tipo', 'err');
+  if (!Array.isArray(STATE.aviamentoTipos)) STATE.aviamentoTipos = [];
+  const lista = STATE.aviamentoTipos;
+  if (lista.some(t => t.id !== ctx.id && _normNome(t.item) === _normNome(item) && _normNome(t.codigo) === _normNome(codigo))) {
+    return toast(`${item} ${codigo} já está cadastrado`, 'err');
+  }
+  const cores = [];
+  String(v('mat-cores')).split(/\r?\n/).forEach(l => {
+    const i = l.indexOf('=');
+    const cod = (i >= 0 ? l.slice(0, i) : l).trim(), nome = i >= 0 ? l.slice(i + 1).trim() : '';
+    if (cod && !cores.some(c => _normNome(c.codigo) === _normNome(cod))) cores.push({ codigo: cod, nome });
+  });
+  const dados = { item, codigo, desc: v('mat-desc').trim(), cores,
+    atualizadoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''), atualizadoEm: new Date().toISOString() };
+  if (ctx.id) {
+    const t = lista.find(x => x.id === ctx.id);
+    if (!t) { _aviTipoCtx = null; closeModal('modal-aviamento'); return toast('Este tipo não existe mais', 'err'); }
+    // Trocar o item ou o código leva junto os lançamentos que usam o tipo,
+    // senão eles ficariam numa linha órfã.
+    if (_normNome(t.codigo) !== _normNome(codigo) || _normNome(t.item) !== _normNome(item)) {
+      (STATE.aviamentosMov || []).forEach(m => {
+        if (_normNome(m.item) === _normNome(t.item) && _normNome(m.modelo) === _normNome(t.codigo)) { m.item = item; m.modelo = codigo; }
+      });
+      await saveState('aviamentosMov');
+    }
+    Object.assign(t, dados);
+  } else {
+    lista.push({ id: uid(), ...dados });
+  }
+  _aviTipoCtx = null;
+  await saveState('aviamentoTipos');
+  closeModal('modal-aviamento');
+  toast(ctx.id ? 'Tipo corrigido' : 'Tipo cadastrado', 'ok');
+  renderEstoqueAviamentos();
+}
+
+async function excluirAviamentoTipo(id) {
+  if (!exigirEstoqueTecidos('apagar tipo de fio ou linha')) return;
+  const t = (STATE.aviamentoTipos || []).find(x => x.id === id);
+  if (!t) return;
+  const usos = (STATE.aviamentosMov || []).filter(m => _normNome(m.item) === _normNome(t.item) && _normNome(m.modelo) === _normNome(t.codigo)).length;
+  if (usos) return toast(`${t.item} ${t.codigo} tem ${usos} lançamento${usos === 1 ? '' : 's'} no estoque — apague-os antes, ou só corrija o tipo`, 'err');
+  if (!confirm(`Apagar o tipo ${t.item} ${t.codigo}?`)) return;
+  STATE.aviamentoTipos = STATE.aviamentoTipos.filter(x => x.id !== id);
+  await saveState('aviamentoTipos');
+  toast('Tipo apagado', 'ok');
+  renderEstoqueAviamentos();
+}
+window.abrirAviamentoTipo = abrirAviamentoTipo;
+window.excluirAviamentoTipo = excluirAviamentoTipo;
+
 async function salvarMovAviamento() {
+  if (_aviTipoCtx) return salvarAviamentoTipo();
   if (_aviExpCtx) return salvarAviamentoExp();
   if (!exigirEstoqueTecidos('lançar no estoque de aviamentos')) return;
   const v = id => (document.getElementById(id) || {}).value || '';
@@ -8574,6 +8738,7 @@ async function salvarMovAviamento() {
     tipo: movAviamentoTipo,
     unidade: v('ma-unidade') === 'sc' ? 'sc' : 'desc',
     item,
+    modelo: _aviModeloDe({ item, modelo: v('ma-modelo') }),
     tam: _aviTamDe({ item, tam: v('ma-tam') }),
     cor: v('ma-cor').trim(),
     kg: Math.round(kg * 1000) / 1000,
@@ -8634,13 +8799,14 @@ function _aviSaldosNaUnidade(unidade, semId) {
    conta, senão não daria para aumentar 10 un quando a unidade tem 5 sobrando. */
 function abrirModalExpAviamento(janelaId, dataOrig, perna, editId) {
   if (!exigirEdicao('alocar aviamento na expedição')) return;
+  _aviTipoCtx = null;
   const ed = editId ? (STATE.aviamentosMov || []).find(x => x.id === editId && x.tipo === 'expedicao') : null;
   if (editId && !ed) return toast('Este aviamento não está mais na expedição', 'err');
   _aviExpCtx = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida', editId: ed ? ed.id : '' };
   const origem = _aviOrigemDe(_aviExpCtx);
   const nomeOrigem = ((AVIAMENTO_UNIDADES.find(u => u.k === origem)) || {}).rotulo || '';
   const saldos = _aviSaldosNaUnidade(origem, ed ? ed.id : undefined);
-  const mesma = l => ed && _normNome(l.item) === _normNome(ed.item) && _normNome(l.cor) === _normNome(ed.cor) && l.tam === (_aviTamDe(ed) || '');
+  const mesma = l => ed && _normNome(l.item) === _normNome(ed.item) && l.modelo === _aviModeloDe(ed) && _normNome(l.cor) === _normNome(ed.cor) && l.tam === (_aviTamDe(ed) || '');
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const val = (n, casas) => (Number(n) > 0 ? String(casas ? Math.round(Number(n) * 1000) / 1000 : Math.round(Number(n))) : '');
   document.getElementById('modal-aviamento-title').textContent =
@@ -8680,7 +8846,7 @@ async function salvarAviamentoExp() {
   // porque outra pessoa pode ter alocado o mesmo aviamento enquanto o modal
   // estava aberto.
   const agora = _aviSaldosNaUnidade(_aviOrigemDe(ctx), ctx.editId || undefined)
-    .find(l => _normNome(l.item) === _normNome(linha.item) && _normNome(l.cor) === _normNome(linha.cor) && l.tam === linha.tam);
+    .find(l => _normNome(l.item) === _normNome(linha.item) && l.modelo === linha.modelo && _normNome(l.cor) === _normNome(linha.cor) && l.tam === linha.tam);
   const tem = agora ? agora.corrente : 0;
   const temUn = agora ? agora.un.corrente : 0;
   if (kg > tem + 0.0005) {
@@ -8695,6 +8861,7 @@ async function salvarAviamentoExp() {
     if (!m) { _aviExpCtx = null; closeModal('modal-aviamento'); return toast('Este aviamento não está mais na expedição', 'err'); }
     Object.assign(m, {
       item: linha.item,
+      modelo: linha.modelo || '',
       tam: linha.tam || '',
       cor: linha.cor,
       kg: Math.round(kg * 1000) / 1000,
@@ -8719,6 +8886,7 @@ async function salvarAviamentoExp() {
     data: ctx.dataOrig,
     perna: ctx.perna,
     item: linha.item,
+    modelo: linha.modelo || '',
     tam: linha.tam || '',
     cor: linha.cor,
     kg: Math.round(kg * 1000) / 1000,
