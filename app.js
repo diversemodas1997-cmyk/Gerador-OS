@@ -8662,8 +8662,11 @@ function _aviCorTexto(m) {
 
 function _aviTiposCardHtml() {
   const tipos = AVIAMENTO_COM_MODELO.flatMap(_aviTiposDoItem);
-  const coresTxt = t => (t.cores || []).map(c => c.nome
+  // A cor pode ter só o código (o nome vem depois) ou só o nome (a cor que a
+  // fábrica usa e cujo código ninguém anotou — 28/09/2026, a lista do Junior).
+  const coresTxt = t => (t.cores || []).map(c => c.nome && c.codigo
     ? `${esc(c.codigo)} <span class="muted">→</span> ${esc(c.nome)}`
+    : c.nome ? `<span class="muted">(sem código)</span> ${esc(c.nome)}`
     : `${esc(c.codigo)} <span class="muted">(sem nome)</span>`).join('<br>');
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -8689,7 +8692,7 @@ function abrirAviamentoTipo(id) {
   _aviTipoCtx = { id: t ? t.id : '' };
   document.getElementById('modal-aviamento-title').textContent =
     t ? 'Editar tipo · ' + t.item + ' ' + t.codigo : 'Cadastrar tipo de fio ou linha';
-  const cores = t ? (t.cores || []).map(c => c.codigo + (c.nome ? ' = ' + c.nome : '')).join('\n') : '';
+  const cores = t ? (t.cores || []).map(c => (c.codigo || '') + (c.nome ? ' = ' + c.nome : '')).join('\n') : '';
   document.getElementById('modal-aviamento-fields').innerHTML = `
     <div class="form-grid cols-2">
       <div class="field"><label>Item *</label><select id="mat-item">${AVIAMENTO_COM_MODELO.map(i =>
@@ -8697,7 +8700,7 @@ function abrirAviamentoTipo(id) {
       <div class="field"><label>Tipo (código da etiqueta) *</label><input type="text" id="mat-codigo" placeholder="Ex.: TP200" value="${t ? esc(t.codigo) : ''}"></div>
       <div class="field full"><label>Especificação</label><input type="text" id="mat-desc" placeholder="Ex.: 100% poliéster 150 · Tex 27 · fabricante" value="${t ? esc(t.desc || '') : ''}"></div>
       <div class="field full"><label>Cores — uma por linha, código = nome</label><textarea id="mat-cores" rows="6" placeholder="1500 = Preto&#10;9900 = Branco">${esc(cores)}</textarea>
-        <div class="field-hint">O nome pode ficar para depois: só o código também vale.</div></div>
+        <div class="field-hint">O nome pode ficar para depois: só o código também vale. Sem código, escreva só <b>= nome</b>.</div></div>
     </div>`;
   openModal('modal-aviamento');
 }
@@ -8719,7 +8722,11 @@ async function salvarAviamentoTipo() {
   String(v('mat-cores')).split(/\r?\n/).forEach(l => {
     const i = l.indexOf('=');
     const cod = (i >= 0 ? l.slice(0, i) : l).trim(), nome = i >= 0 ? l.slice(i + 1).trim() : '';
-    if (cod && !cores.some(c => _normNome(c.codigo) === _normNome(cod))) cores.push({ codigo: cod, nome });
+    // Vale a cor com código, com nome, ou com os dois; repetida (mesmo código,
+    // ou mesmo nome sem código) entra uma vez.
+    const chave = c => c.codigo ? 'c:' + _normNome(c.codigo) : 'n:' + _normNome(c.nome);
+    const nova = { codigo: cod, nome };
+    if ((cod || nome) && !cores.some(c => chave(c) === chave(nova))) cores.push(nova);
   });
   const dados = { item, codigo, desc: v('mat-desc').trim(), cores,
     atualizadoPor: (typeof _cpQuemSou === 'function' ? _cpQuemSou() : ''), atualizadoEm: new Date().toISOString() };
