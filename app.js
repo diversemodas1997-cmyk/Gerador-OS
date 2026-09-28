@@ -9157,7 +9157,7 @@ function renderEstoqueItens(tipo) {
     return `<div class="muted" style="font-size:10px;font-weight:400;" title="Baixa pelo comprimento do enfesto de cada OS">${
       b ? '−' + _estFmtQtd(x, b) + ' nas OS' : 'baixa pelas OS'}${r ? ' · ' + _estFmtQtd(x, r) + ' reservado' : ''}</div>`;
   };
-  const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;";
+  const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;";
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_estItensTrocarUnidade('${tipo}','${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
   const corpo = linhas.length ? linhas.map(x => `<tr>
