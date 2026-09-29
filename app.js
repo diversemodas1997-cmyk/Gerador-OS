@@ -7755,6 +7755,7 @@ function renderEstoque() {
      prateleira no estoque, logo acima. A cor sai por corSemTecido porque o
      tecido já está na linha de cima da própria célula. */
   /* O NÚMERO DIZ AS DUAS COISAS: PRECISA / FALTA (22/09/2026, Junior: "mostrar
+     [29/09/2026: a ordem virou FALTA/PREVISTO, "2/10", a pedido do Junior]
      no mesmo número a quantidade necessárias/quantidade que falta... 10/2, ou
      seja, precisa de 10 bobinas, mas faltam 2").
 
@@ -7777,7 +7778,7 @@ function renderEstoque() {
      quantidade de tipo de tecido que é previsto/quantidade faltante para atingir
      o previsto, mas não é mostrado a quantidade total disponível de tecido").
 
-     "10/2" diz o que a OS precisa e o que falta, e esconde o número que liga os
+     "2/10" diz o que falta e o que a OS precisa, e esconde o número que liga os
      dois: quanto daquele tecido+cor existe para ela. É o disponível DA
      PRATELEIRA com a reserva desta própria OS devolvida — a mesma conta de
      faltaDeTecidoParaOS, em que a OS não concorre consigo mesma. Assim a célula
@@ -7817,7 +7818,7 @@ function renderEstoque() {
         + ' − ' + fmt(disp.outras) + ' kg reservados para outras OS.');
     return `<td style="text-align:right;white-space:nowrap;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
       <div style="font-family:'IBM Plex Mono',monospace;">
-        ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span>${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">/${faltaBob}</span>` : ''} <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
+        ${f.bobinas != null ? `${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">${faltaBob}/</span>` : ''}<span style="font-weight:700;">${f.bobinas}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
         <span style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">· ${fmt(f.kg)} kg</span>
       </div>
       <div style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
@@ -7963,8 +7964,8 @@ function renderEstoque() {
         <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. A coluna <b>Situação</b> diz
         <b>quanto</b> falta, em quilos e em bobinas; passe o mouse para ver de qual tecido e
         quanto falta para fechar a OS inteira. Nas colunas das fases o número sai
-        <b>precisa/falta</b> — <b>10<span style="color:#c0392b;">/2</span></b> quer dizer
-        "separe 10 bobinas, e 2 delas não estão na prateleira". <b>Repare no tamanho:</b> uma falta de poucos
+        <b>falta/previsto</b> — <b><span style="color:#c0392b;">2/</span>10</b> quer dizer
+        "faltam 2 das 10 bobinas previstas para esta fase". <b>Repare no tamanho:</b> uma falta de poucos
         quilos é o saldo raspando o zero depois de meses de entradas e saídas, e não pano que
         não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
