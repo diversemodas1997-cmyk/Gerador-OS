@@ -10677,20 +10677,46 @@ function _rankRotuloBalde(b, escala, longo) {
    `ordem` é a ordem dos resultados na tabela — a cor segue ela, e "Outros"
    fica por último, cinza. `max` é quantas linhas cabem (oito, ou todas para o
    quadrinho do mouse). */
-/* O PONTO NA COR DO PRODUTO (29/09/2026, Junior: "pintar os pontos do gráfico
-   de acordo com a cor do produto"). Quando cada linha do gráfico é uma COR, o
-   ponto sai na cor do cadastro (Cadastros › Cores, o `hex`): o ponto do Preto é
-   preto. A LINHA continua na cor da paleta — é ela que separa uma série da
-   outra quando duas cores do cadastro são parecidas (dois azuis, branco e
-   off-white). Nome sem hex no cadastro: o ponto fica na cor da linha.
+/* LINHA E PONTO NA COR DO PRODUTO (29/09/2026, Junior: "pintar os pontos do
+   gráfico de acordo com a cor do produto" e, no mesmo dia, "os pontos devem ter
+   contorno igual à própria cor"). Quando cada linha do gráfico é uma COR, a
+   linha e o ponto saem na cor do cadastro (Cadastros › Cores, o `hex`): a
+   linha do Preto é preta. A paleta só fica para cor que o cadastro não
+   responde, e para as linhas que não são cor (tamanho, grade...).
+
    O nome do gráfico é o curto ("Preto"), e o cadastro tem um por tecido
-   ("Preto Malha Algodão", "Preto Moletom"): vale o primeiro que tiver hex. */
+   ("Preto Malha Algodão", "Preto Moletom"): vale o primeiro que tiver hex. O
+   nome também casa pela SIGLA do SKU, que é de onde ele veio.
+
+   O MARINHO NÃO ESTÁ NO CADASTRO: o desenho "Camiseta Básica | Azul" traz o SKU
+   pronto, "CM.LISA-MARINHO", e o cadastro só tem "Azul" (#005494, um azul
+   médio). Nome sem cadastro cai no nome comum da cor — marinho é azul-escuro
+   em qualquer lugar —, e só depois na paleta. Cadastrar uma cor com esse nome
+   ou sigla passa na frente desta lista. */
+const RANK_HEX_NOME_COMUM = {
+  'marinho': '#1b2a4a', 'azul marinho': '#1b2a4a', 'navy': '#1b2a4a',
+  'preto': '#2e2e2d', 'branco': '#ffffff', 'cinza': '#b0b0b0', 'grafite': '#707070',
+  'vinho': '#6d1a2a', 'bordo': '#6d1a2a', 'bordô': '#6d1a2a'
+};
 function _rankHexDaCor(nome) {
   const alvo = String(nome || '').trim().toLowerCase();
   if (!alvo) return '';
-  const c = (STATE.cores || []).find(x => /^#[0-9a-f]{3,8}$/i.test(String(x.hex || '').trim())
-    && [corNomeCurto(x.nome), x.nome].some(n => String(n || '').trim().toLowerCase() === alvo));
-  return c ? String(c.hex).trim() : '';
+  const temHex = x => /^#[0-9a-f]{3,8}$/i.test(String(x.hex || '').trim());
+  const c = (STATE.cores || []).find(x => temHex(x)
+    && [corNomeCurto(x.nome), x.nome, x.siglaSku].some(n => String(n || '').trim().toLowerCase() === alvo));
+  if (c) return String(c.hex).trim();
+  return RANK_HEX_NOME_COMUM[alvo] || '';
+}
+
+// Cor clara demais para o fundo branco (branco, off-white, cru, bege): a linha e
+// o ponto ganham um halo cinza POR BAIXO, senão somem. O contorno do ponto
+// continua da própria cor.
+function _rankCorClara(hex) {
+  const h = String(hex || '').replace('#', '');
+  const f = h.length === 3 ? h.split('').map(x => x + x).join('') : h.slice(0, 6);
+  if (!/^[0-9a-f]{6}$/i.test(f)) return false;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(f.slice(i, i + 2), 16));
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 225;
 }
 
 function _rankingSeries(fatos, serieVar, ordem, baldes, escala, max) {
@@ -10699,10 +10725,13 @@ function _rankingSeries(fatos, serieVar, ordem, baldes, escala, max) {
   const nomes = serieVar ? ordem.slice() : ['Total'];
   const ficam = nomes.length > MAX ? nomes.slice(0, MAX - 1) : nomes;
   const outros = nomes.length > MAX;
-  const series = ficam.map((r, i) => ({
-    rotulo: r, cor: RANK_CORES_SERIE[i] || RANK_COR_OUTROS, valores: baldes.map(() => 0),
-    ponto: serieVar === 'cor' ? _rankHexDaCor(r) : ''
-  }));
+  const series = ficam.map((r, i) => {
+    const produto = serieVar === 'cor' ? _rankHexDaCor(r) : '';
+    return {
+      rotulo: r, cor: produto || RANK_CORES_SERIE[i] || RANK_COR_OUTROS, valores: baldes.map(() => 0),
+      produto: !!produto, clara: _rankCorClara(produto)
+    };
+  });
   if (outros) series.push({ rotulo: 'Outros (' + (nomes.length - ficam.length) + ')', cor: RANK_COR_OUTROS, valores: baldes.map(() => 0), outros: true });
   const qual = new Map(ficam.map((r, i) => [r, i]));
   fatos.forEach(f => {
@@ -10762,12 +10791,20 @@ function _rankSvgGrafico(p, g, topo, medidas) {
   const marcas = n <= 45;
   const linhas = g.series.map(s => {
     const pts = s.valores.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
-    return `<polyline points="${pts}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
-      // Ponto na cor do produto: maior, com contorno na cor da linha — um ponto
-      // branco num fundo branco sumiria, e o contorno diz de que linha ele é.
-      + (marcas ? s.valores.map((v, i) => v > 0 ? (s.ponto
-        ? `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4.5" fill="${esc(s.ponto)}" stroke="${s.cor}" stroke-width="1.8"/>`
-        : `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.cor}" stroke="#fff" stroke-width="1.5"/>`) : '').join('') : '');
+    const cor = esc(s.cor);
+    // Cor clara (branco, off-white): halo cinza por baixo da linha e do ponto.
+    const halo = s.clara
+      ? `<polyline points="${pts}" fill="none" stroke="#9a978e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+    return halo + `<polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      // O ponto da cor do produto tem o contorno da PRÓPRIA cor (Junior,
+      // 29/09/2026). O da paleta mantém o aro branco de sempre.
+      + (marcas ? s.valores.map((v, i) => {
+        if (!(v > 0)) return '';
+        const cx = x(i).toFixed(1), cy = y(v).toFixed(1);
+        if (!s.produto) return `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${cor}" stroke="#fff" stroke-width="1.5"/>`;
+        return (s.clara ? `<circle cx="${cx}" cy="${cy}" r="5.5" fill="#9a978e"/>` : '')
+          + `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${cor}" stroke="${cor}" stroke-width="1.5"/>`;
+      }).join('') : '');
   }).join('');
   // A faixa de cada intervalo é o alvo do mouse (maior que o ponto).
   const faixa = n === 1 ? iw : iw / (n - 1);
@@ -10816,7 +10853,9 @@ function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
       // Para o quadrinho do mouse: todos os resultados, sem juntar em "Outros".
       // Quem o "Outros" juntou aparece em cinza, a cor da linha em que está.
       todas: _rankingSeries(fs, serieVar, ordem, baldes, escala, Infinity).map((s, i) =>
-        (ordem.length > RANK_CORES_SERIE.length && i >= RANK_CORES_SERIE.length - 1) ? { ...s, cor: RANK_COR_OUTROS, emOutros: true } : s)
+        (ordem.length > RANK_CORES_SERIE.length && i >= RANK_CORES_SERIE.length - 1)
+          // A cor do produto continua a dele mesmo em "Outros"; só a da paleta vira cinza.
+          ? (s.produto ? { ...s, emOutros: true } : { ...s, cor: RANK_COR_OUTROS, clara: false, emOutros: true }) : s)
     };
   });
   _rankGraf = paineis;
@@ -10829,8 +10868,7 @@ function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
   const legenda = leg.map(s => {
     const tot = s.valores.reduce((a, v) => a + v, 0);
     return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:12px;white-space:nowrap;">
-      <span style="width:14px;height:3px;border-radius:2px;background:${s.cor};"></span>${s.ponto
-        ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.ponto)};border:1.8px solid ${s.cor};margin-left:-4px;"></span>` : ''}${esc(rotSerie(s.rotulo))}
+      <span style="width:14px;height:3px;border-radius:2px;background:${esc(s.cor)};${s.clara ? 'box-shadow:0 0 0 1px #9a978e;' : ''}"></span>${esc(rotSerie(s.rotulo))}
       <span class="muted" style="font-family:'IBM Plex Mono',monospace;">${num(tot)}</span></span>`;
   }).join('');
   const corpo = cruzado
@@ -10885,7 +10923,7 @@ function _rankGrafHover(p, i) {
   const itens = g.todas.filter(s => s.valores[i] > 0).sort((a, b) => b.valores[i] - a.valores[i]);
   const linhas = itens.map(s => `
     <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;">
-      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;box-sizing:border-box;background:${esc(s.ponto || s.cor)};${s.ponto ? `border:2px solid ${s.cor};` : ''}"></span>${esc(g.rotSerie(s.rotulo))}${s.emOutros ? ' <span class="muted" style="font-size:10px;">em Outros</span>' : ''}</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${esc(s.cor)};${s.clara ? 'box-shadow:0 0 0 1px #9a978e;' : ''}"></span>${esc(g.rotSerie(s.rotulo))}${s.emOutros ? ' <span class="muted" style="font-size:10px;">em Outros</span>' : ''}</span>
       <b style="font-family:'IBM Plex Mono',monospace;">${num(s.valores[i])}</b></div>`).join('');
   tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">${g.titulo ? esc(g.titulo) + ' · ' : ''}${esc(_rankRotuloBalde(g.baldes[i], g.escala, true))}</div>
     ${linhas || '<div class="muted">Nenhuma OS.</div>'}

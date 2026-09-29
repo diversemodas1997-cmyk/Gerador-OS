@@ -38,7 +38,9 @@ const api = new Function('STATE', `
   ${pegaFuncao('_rankSomaDias')}
   ${pegaFuncao('_rankBalde')}
   ${pegaFuncao('_rankBaldes')}
+  ${(() => { const i = src.indexOf('const RANK_HEX_NOME_COMUM = {'); return src.slice(i, src.indexOf('};', i) + 2); })()}
   ${pegaFuncao('_rankHexDaCor')}
+  ${pegaFuncao('_rankCorClara')}
   ${pegaFuncao('_rankingSeries')}
   ${pegaFuncao('_rankTopoEixo')}
   ${pegaFuncao('_rankDivisoesEixo')}
@@ -82,19 +84,23 @@ ok('14. mais de oito: sete ficam e o resto vira Outros', sm.length === 8 && sm[7
 ok('15. Outros soma o que sobrou (93+92+91)', sm[7].valores[0] === 276, sm[7].valores);
 ok('16. a soma das linhas bate com o total', sm.reduce((a, x) => a + x.valores[0], 0) === fm.reduce((a, f) => a + f.produtos, 0));
 
-console.log('-- o ponto na cor do produto (29/09/2026) --');
+console.log('-- linha e ponto na cor do produto (29/09/2026) --');
 const fc = [
   { cor: 'Preto', data: '2026-09-01', produtos: 5 },
   { cor: 'Branco', data: '2026-09-01', produtos: 4 },
-  { cor: 'Marinho', data: '2026-09-01', produtos: 3 }
+  { cor: 'Marinho', data: '2026-09-01', produtos: 3 },
+  { cor: 'Lilas', data: '2026-09-01', produtos: 2 }
 ];
-const sc = api._rankingSeries(fc, 'cor', ['Preto', 'Branco', 'Marinho'], ['2026-09-01'], 'dia');
-ok('19. o ponto do Preto sai na cor do cadastro (o primeiro Preto com hex)', sc[0].ponto === '#111111', sc[0]);
-ok('20. o Branco sai branco', sc[1].ponto === '#ffffff', sc[1]);
-ok('21. cor sem hex no cadastro: sem ponto proprio (fica a cor da linha)', sc[2].ponto === '', sc[2]);
-ok('22. a LINHA continua na paleta, separando as series', sc[0].cor === '#2a78d6' && sc[1].cor === '#eb6834', sc.map(x => x.cor));
+const sc = api._rankingSeries(fc, 'cor', ['Preto', 'Branco', 'Marinho', 'Lilas'], ['2026-09-01'], 'dia');
+ok('19. a linha do Preto sai na cor do cadastro (o primeiro Preto com hex)', sc[0].cor === '#111111' && sc[0].produto, sc[0]);
+ok('20. o Branco sai branco, e marcado como claro (ganha o halo cinza)', sc[1].cor === '#ffffff' && sc[1].clara, sc[1]);
+ok('21. Marinho fora do cadastro (sem hex) cai no azul-escuro do nome comum',
+   sc[2].cor === '#1b2a4a' && sc[2].produto && !sc[2].clara, sc[2]);
+ok('22. cor que ninguem responde fica na paleta, pela posicao', sc[3].cor === '#eda100' && !sc[3].produto, sc[3]);
 const st = api._rankingSeries(fatos, 'tamanho', ['M', 'P', 'G'], b3, 'dia');
-ok('23. serie que nao e cor (tamanho) nao ganha ponto de produto', st.every(x => !x.ponto), st.map(x => x.ponto));
+ok('23. serie que nao e cor (tamanho) segue na paleta', st.every(x => !x.produto) && st[0].cor === '#2a78d6', st.map(x => x.cor));
+STATE.cores.push({ nome: 'Marinho Malha Algodão', siglaSku: 'MARINHO', hex: '#0a1030' });
+ok('24. cadastrar o Marinho passa na frente do nome comum', api._rankingSeries(fc, 'cor', ['Marinho'], ['2026-09-01'], 'dia')[0].cor === '#0a1030');
 
 console.log('-- o eixo --');
 ok('17. topo redondo acima do maior', api._rankTopoEixo(2370) === 2500 && api._rankTopoEixo(11400) === 20000, [api._rankTopoEixo(2370), api._rankTopoEixo(11400)]);
