@@ -10972,8 +10972,38 @@ function renderRanking() {
   const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
     + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
   // O fundo dá o peso de cada célula sem obrigar a comparar número a número.
-  const fundo = (v) => (!(v > 0) || !(q.maior > 0)) ? 'transparent'
-    : `rgba(46,125,80,${(0.06 + 0.34 * (v / q.maior)).toFixed(3)})`;
+  // Cinco faixas de cor sólida (29/09/2026): o verde translúcido de antes ia de
+  // quase branco a verde fraco e as células do meio ficavam iguais. As faixas
+  // são por POSIÇÃO entre as células preenchidas (quintis), não por fração do
+  // maior: uma célula gigante não joga todas as outras na primeira faixa.
+  const RANK_FAIXAS = ['#fff1b8', '#ffc94d', '#8fd07a', '#2e9b52', '#12592f'];
+  const valoresCel = [];
+  q.linhas.forEach(x => q.colunas.forEach(c => {
+    const cel = q.cel(x.rotulo, c.rotulo);
+    if (cel && cel.produtos > 0) valoresCel.push(cel.produtos);
+  }));
+  valoresCel.sort((a, b) => a - b);
+  // faixa 0..4: quantas células preenchidas ficam abaixo de v, em quintos
+  const faixa = (v) => {
+    if (!(v > 0) || !valoresCel.length) return -1;
+    let abaixo = 0;
+    while (abaixo < valoresCel.length && valoresCel[abaixo] < v) abaixo++;
+    return Math.min(4, Math.floor(abaixo * 5 / valoresCel.length));
+  };
+  const fundo = (v) => { const f = faixa(v); return f < 0 ? 'transparent' : RANK_FAIXAS[f]; };
+  const escura = (v) => faixa(v) >= 3;
+  // Legenda: o menor e o maior valor de cada faixa que existe no quadro.
+  const legenda = (() => {
+    const lim = [[], [], [], [], []];
+    valoresCel.forEach(v => lim[faixa(v)].push(v));
+    const itens = lim.map((vs, f) => vs.length
+      ? `<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">`
+        + `<span style="display:inline-block;width:16px;height:12px;border-radius:2px;background:${RANK_FAIXAS[f]};border:1px solid rgba(0,0,0,.15);"></span>`
+        + `${vs[0] === vs[vs.length - 1] ? num(vs[0]) : num(vs[0]) + '–' + num(vs[vs.length - 1])}</span>`
+      : '').filter(Boolean);
+    return itens.length ? `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--ink-2);margin:0 0 8px;">`
+      + `<span>menos</span>${itens.join('')}<span>mais produtos</span></div>` : '';
+  })();
   const rotLinha = v => _rankLinha === 'periodo' ? rotPeriodo(v) : v;
   const rotCol = v => _rankColuna === 'periodo' ? rotPeriodo(v) : v;
   // Na antiga série do tempo, clicar no período entrava nele. Continua valendo
@@ -11013,7 +11043,7 @@ function renderRanking() {
       </tbody>
     </table>`;
 
-  const cruzada = `
+  const cruzada = legenda + `
     <div style="overflow-x:auto;">
     <table class="table" style="min-width:100%;width:auto;">
       <thead><tr>
@@ -11028,7 +11058,7 @@ function renderRanking() {
             const cel = q.cel(x.rotulo, c.rotulo);
             const v = cel ? cel.produtos : 0;
             const rot = rotLinha(x.rotulo) + ' · ' + rotCol(c.rotulo);
-            return `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;background:${fundo(v)};"
+            return `<td${escura(v) ? ' class="rank-cel-escura"' : ''} style="text-align:right;font-family:'IBM Plex Mono',monospace;background:${fundo(v)};"
               title="${esc(rot)}${cel && cel.os.length ? ' — ' + cel.os.length + ' OS' : ''}">${
               v > 0 ? atalhoOS(num(v), cel.os, rot) : '<span style="color:var(--ink-3);">—</span>'}</td>`;
           }).join('')}
