@@ -7705,7 +7705,7 @@ function renderEstoque() {
     return itens.map(f => {
       const pano = esc(f.tecidoNome || '') + ' · ' + esc(corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)');
       const bob = f.faltaBob > 0 ? ` · ${f.faltaBob} bob` : '';
-      return `<div style="white-space:nowrap;">⚠ <b>falta ${fmt(f.falta)} kg${bob}</b> <span style="font-weight:400;">${pano}</span></div>`;
+      return `<div style="margin-bottom:2px;">⚠ <b style="white-space:nowrap;">falta ${fmt(f.falta)} kg${bob}</b><div style="font-weight:400;font-size:10px;">${pano}</div></div>`;
     }).join('');
   };
 
@@ -7918,8 +7918,11 @@ function renderEstoque() {
       const kgTxt = temFalta ? `${fmt(kgRes)} de ${fmt(kgPrev)} kg` : `${fmt(kgRes)} kg`;
       const bobTxtF = f.bobinas == null ? ''
         : ` · <b>${temFalta ? (f.bobinas - bobFalta) + ' de ' + f.bobinas : f.bobinas} bob</b>`;
-      return `<div style="margin-bottom:2px;"><span class="badge" style="background:${temFalta ? '#f6dcda' : '#fde9c8'};white-space:nowrap;" title="${esc(dicaTotal)}">`
-        + `Reservado · ${esc(f.nome || '')} <span style="color:var(--ink-2);">(${esc(f.tecido || '—')})</span> · <b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtF}</span></div>`;
+      // Duas linhas curtas em vez de uma comprida: a coluna Situação era a que
+      // mais alargava a tabela (29/09/2026, "otimize os espaços vazios").
+      return `<div class="badge" style="display:block;margin-bottom:3px;padding:3px 6px;line-height:1.35;background:${temFalta ? '#f6dcda' : '#fde9c8'};" title="${esc(dicaTotal)}">`
+        + `<div style="white-space:nowrap;">Reservado · <b>${esc(f.nome || '')}</b> <span style="color:var(--ink-2);">${esc(f.tecido || '—')}</span></div>`
+        + `<div style="white-space:nowrap;"><b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtF}</div></div>`;
     }).join('');
   };
   const _seloReservado = (o, os, falta, fatias, soDica) => {
@@ -8030,7 +8033,7 @@ function renderEstoque() {
   // coluna corpo 3 o tamanho da coluna está desproporcional"). A tabela media
   // cada coluna pelo conteúdo: o Corpo 3, quase só de "0 bob · 0,000 kg",
   // saía estreito ao lado de corpos com tecido, cor e disponível.
-  const _thFase = 'text-align:right;width:160px;min-width:160px;';
+  const _thFase = 'text-align:right;min-width:112px;';
   const temForro = _osRes.some(os => !!forroDoMaterialOS(os));
   const temRibana = _osRes.some(os => !!ribanaDoMaterialOS(os));
   const apontarHtml = osMat.length ? `
@@ -8056,7 +8059,7 @@ function renderEstoque() {
         quilos é o saldo raspando o zero depois de meses de entradas e saídas, e não pano que
         não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
-      ${reservadas.length ? `<table class="table">
+      ${reservadas.length ? `<table class="table mat-res">
         <thead><tr><th>OS</th><th>Modelo · grade</th><th>Data</th>
           ${Array.from({ length: nCorpos }, (_, i) =>
             `<th style="${_thFase}">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
