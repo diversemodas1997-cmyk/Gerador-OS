@@ -7859,6 +7859,27 @@ function renderEstoque() {
   const _gradeCelula = (os) => os
     ? `<div style="margin-top:2px;font-size:11px;">${_gradeCelulaLista(os)}</div>` : '';
 
+  /* O SELO "RESERVADO" DIZ QUANTO (29/09/2026, Junior: "a coluna situação
+     mostra reservado, mas não mostra quanto tem reservado"). O quilo é a soma
+     das reservas da OS no estoque (o mesmo número que entra na coluna Reservado
+     do quadro de cima); a bobina é a soma das fases, pelo cadastro da grade,
+     como nas colunas ao lado. Na dica do mouse, o quilo de cada pano. */
+  const _seloReservado = (o, os) => {
+    let bob = null;
+    try {
+      (materialPorFaseOS(os) || []).forEach(f => { if (f.bobinas != null) bob = (bob || 0) + f.bobinas; });
+    } catch (e) { bob = null; }
+    const porPano = new Map();
+    (STATE.estoqueMov || []).forEach(m => {
+      if (m.origem !== 'os' || m.osId !== o.osId || m.status === 'consumido' || m.tipo === 'entrada') return;
+      const nome = (m.tecidoNome || '') + ' · ' + (corSemTecido(m.corNome, m.tecidoNome) || '(sem cor)');
+      porPano.set(nome, (porPano.get(nome) || 0) + (parseFloat(m.kg) || 0));
+    });
+    const dica = 'Reservado por esta OS:\n' + [...porPano.entries()].map(([n, kg]) => '  · ' + n + ': ' + fmt(kg) + ' kg').join('\n');
+    return `<span class="badge" style="background:#fde9c8;white-space:nowrap;" title="${esc(dica)}">Reservado · `
+      + `<b style="font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</b>${bob != null ? ` · <b>${bob} bob</b>` : ''}</span>`;
+  };
+
   const linhaOS = (o) => {
     const os = (STATE.ordens || []).find(x => x.id === o.osId);
     const corpos = corposDoMaterialOS(os);
@@ -7878,7 +7899,7 @@ function renderEstoque() {
         : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
       ${temForro ? celFase(forro, fatias, o.osId) : ''}
       ${temRibana ? celFase(rib, fatias, o.osId) : ''}
-      <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
+      <td>${_seloReservado(o, os)}${falta
         ? `<div style="margin-top:4px;padding:4px 7px;border-radius:5px;background:#f6dcda;color:#c0392b;font-size:11px;line-height:1.5;display:inline-block;" title="${dica}">${_resumoFalta(os, falta)}</div>`
         : ''}</td>
     </tr>`;
