@@ -7738,7 +7738,8 @@ function renderEstoque() {
 
      Quantas colunas de corpo aparecem é o maior número de fases de corpo entre
      as OS da lista: CM.TRI traz 3 (+ ribana = 4), CM.REC traz 2 (+ ribana = 3),
-     a camiseta básica traz 1. Coluna que ninguém usa não é desenhada. */
+     a camiseta básica traz 1. Desde 29/09/2026 as três colunas de corpo saem
+     sempre (ver nCorpos); forro e ribana só aparecem se alguém usar. */
   /* A CÉLULA DIZ O PANO INTEIRO (28/08/2026, Junior: "o material reservado deve
      informar tipo de tecido e cor"). Sem isso a coluna dava um número sem dizer
      de qual prateleira — e é justamente o tecido+cor que identifica a
@@ -7763,21 +7764,55 @@ function renderEstoque() {
      célula da fase cujo tecido+cor está na falta ganha o fundo e o número
      vermelhos, e as outras ficam como numa OS sem falta. Vale também para a
      fase sem bobina prevista, que não tem o "/N" para avisar. */
-  const celFase = (f, fatias) => {
+  /* O DISPONÍVEL DO PANO NA PRÓPRIA CÉLULA (29/09/2026, Junior: "é mostrado a
+     quantidade de tipo de tecido que é previsto/quantidade faltante para atingir
+     o previsto, mas não é mostrado a quantidade total disponível de tecido").
+
+     "10/2" diz o que a OS precisa e o que falta, e esconde o número que liga os
+     dois: quanto daquele tecido+cor existe para ela. É o disponível DA
+     PRATELEIRA com a reserva desta própria OS devolvida — a mesma conta de
+     faltaDeTecidoParaOS, em que a OS não concorre consigo mesma. Assim a célula
+     fecha sozinha: precisa − disponível = falta. O físico (entradas − saídas) e
+     o que as outras OS já seguram ficam na dica do mouse. */
+  const _saldoPrateleira = new Map(calcularSaldosEstoque().detalhe
+    .map(c => [_normNome(c.tecidoNome) + '||' + _normNome(c.corNome), c]));
+  const _reservaDaOS = new Map();   // osId → (tecido+cor → kg reservado por ela)
+  (STATE.estoqueMov || []).forEach(m => {
+    if (m.origem !== 'os' || m.status === 'consumido' || m.tipo === 'entrada') return;
+    const k = _normNome(m.tecidoNome || '') + '||' + _normNome(m.corNome || '');
+    const daOS = _reservaDaOS.get(m.osId) || new Map();
+    daOS.set(k, (daOS.get(k) || 0) + (parseFloat(m.kg) || 0));
+    _reservaDaOS.set(m.osId, daOS);
+  });
+  const _dispParaOS = (f, osId) => {
+    const k = _normNome(f.tecido) + '||' + _normNome(f.cor);
+    const c = _saldoPrateleira.get(k);
+    const propria = (_reservaDaOS.get(osId) || new Map()).get(k) || 0;
+    const fisico = c ? c.entrada - c.saida : 0;
+    const outras = c ? c.reservado - propria : 0;
+    return { kg: fisico - outras, fisico, outras };
+  };
+  const celFase = (f, fatias, osId) => {
     if (!f) return '<td style="text-align:right;color:var(--ink-3);">—</td>';
     const cor = corSemTecido(f.cor, f.tecido);
     const faltaBob = bobinasQueFaltamNaFase(f, fatias);
     const emFalta = !!(fatias && fatias.get(_normNome(f.tecido) + '||' + _normNome(f.cor)) > 0);
+    const disp = _dispParaOS(f, osId);
+    const bobDisp = bobDoKg(disp.kg, f.tecido);
     const dicaFase = esc(f.nome) + (faltaBob > 0
       ? ' — precisa de ' + f.bobinas + ' bobina(s) e ' + faltaBob
         + ' delas não estão na prateleira (o disponível deste pano não cobre esta fase).'
-      : emFalta ? ' — o disponível deste pano não cobre esta fase.' : '');
+      : emFalta ? ' — o disponível deste pano não cobre esta fase.' : '')
+      + esc('\nDisponível para esta OS: ' + fmt(disp.kg) + ' kg' + (bobDisp != null ? ' (' + bobDisp + ' bob)' : '')
+        + ' = na prateleira ' + fmt(disp.fisico) + ' kg (entradas − saídas)'
+        + ' − ' + fmt(disp.outras) + ' kg reservados para outras OS.');
     return `<td style="text-align:right;white-space:nowrap;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
       <div style="font-family:'IBM Plex Mono',monospace;">
         ${f.bobinas != null ? `<span style="font-weight:700;">${f.bobinas}</span>${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">/${faltaBob}</span>` : ''} <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
         <span style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">· ${fmt(f.kg)} kg</span>
       </div>
       <div style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
+      <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:${disp.kg < 0 ? '#c0392b' : 'var(--ink-2)'};">disp. <b>${fmt(disp.kg)} kg</b>${bobDisp != null ? ' · ' + bobDisp + ' bob' : ''}</div>
     </td>`;
   };
   /* O SKU COMPLETO NA COLUNA DO MODELO (14/09/2026, Junior).
@@ -7830,9 +7865,10 @@ function renderEstoque() {
       <td><strong>${esc(o.osNumero) || '—'}</strong></td>
       <td>${esc(o.modelo) || '—'}${_skuCelula(os)}${_gradeCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
-      ${Array.from({ length: nCorpos }, (_, i) => celFase(corpos[i], fatias)).join('')}
-      ${temForro ? celFase(forro, fatias) : ''}
-      ${temRibana ? celFase(rib, fatias) : ''}
+      ${Array.from({ length: nCorpos }, (_, i) => corpos[i] ? celFase(corpos[i], fatias, o.osId)
+        : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
+      ${temForro ? celFase(forro, fatias, o.osId) : ''}
+      ${temRibana ? celFase(rib, fatias, o.osId) : ''}
       <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
         ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ ${esc(_resumoFalta(os, falta))}</span>`
         : ''}</td>
@@ -7873,7 +7909,11 @@ function renderEstoque() {
   // Quantas colunas de fase a lista precisa: o maior número de fases de corpo
   // entre as OS listadas, e a da ribana só se alguém tiver ribana.
   const _osRes = reservadas.map(o => (STATE.ordens || []).find(x => x.id === o.osId)).filter(Boolean);
-  const nCorpos = Math.max(1, ..._osRes.map(os => corposDoMaterialOS(os).length));
+  // Corpo 1, 2 e 3 SEMPRE (29/09/2026, Junior: "mostra no quadro material
+  // reservado a coluna de corpo 3, mesmo que com zero na OS que não tenha essa
+  // etapa"): as colunas não mudam de lugar conforme as OS da lista, e a OS sem
+  // aquela fase mostra zero. Grade com mais de 3 corpos ainda ganha a coluna dela.
+  const nCorpos = Math.max(3, ..._osRes.map(os => corposDoMaterialOS(os).length));
   const temForro = _osRes.some(os => !!forroDoMaterialOS(os));
   const temRibana = _osRes.some(os => !!ribanaDoMaterialOS(os));
   const apontarHtml = osMat.length ? `
@@ -7883,7 +7923,9 @@ function renderEstoque() {
         O pano de uma OS fica <b>reservado</b> enquanto ela não começa, e sai do estoque
         sozinho quando a OS chega a <b>Enfestando</b> — que é quando o rolo desce da
         prateleira. O status vem do checklist da folha (marcar <b>Enfesto</b> basta) e pode
-        ser carimbado à mão na lista de Ordens de Serviço. Aqui ficam só as que ainda seguram material.${temConjugada ? `
+        ser carimbado à mão na lista de Ordens de Serviço. Aqui ficam só as que ainda seguram material.
+        Embaixo de cada fase, <b>disp.</b> é quanto daquele tecido e cor existe <b>para esta OS</b>:
+        o que está na prateleira menos o que as <b>outras</b> OS já reservaram (passe o mouse para ver a conta).${temConjugada ? `
         A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
         então o pano dela já está reservado lá — contar de novo seria contar duas vezes o
         mesmo metro na mesa.` : ''}${faltaPorOS.size ? `
