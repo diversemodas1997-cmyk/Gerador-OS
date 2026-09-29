@@ -29828,12 +29828,63 @@ function podeMexerFilaOS() {
   return temAcesso('fila-os');
 }
 
+/* AS CONJUGADAS ANDAM JUNTAS NA FILA (29/09/2026, Junior: "as OS conjugadas,
+   além de seguir o status da OS matriz, devem seguir a mudança de ordenamento
+   da sequência das OS não iniciadas. Dessa forma, se qualquer OS conjugada
+   tiver sua ordem alterada, todas as OS conjugadas devem continuar como
+   sequência de ordenamento entre elas").
+
+   São o mesmo enfesto na mesa: entram juntas no corte, então ficam juntas na
+   fila. O grupo junta as DUAS amarras — a da grade (`conjugadaId` /
+   `conjugadaPaiId`) e a da mão (`conjugadaStatusPaiId`) — e, diferente do
+   status, vale nos DOIS sentidos: mexer na passiva leva a ativa junto. Quem
+   pediu foi "qualquer OS conjugada".
+
+   Id → id do grupo (o primeiro id do conjunto que a ligação alcançou). OS sem
+   conjugada é grupo dela mesma. */
+function _gruposConjugadosFila() {
+  const ordens = STATE.ordens || [];
+  const existe = new Set(ordens.map(o => o.id));
+  const pai = new Map(ordens.map(o => [o.id, o.id]));
+  const raiz = id => { while (pai.get(id) !== id) { pai.set(id, pai.get(pai.get(id))); id = pai.get(id); } return id; };
+  const liga = (a, b) => {
+    if (!a || !b || a === b || !existe.has(a) || !existe.has(b)) return;
+    const ra = raiz(a), rb = raiz(b);
+    if (ra !== rb) pai.set(rb, ra);
+  };
+  ordens.forEach(o => {
+    liga(o.id, o.conjugadaId);
+    liga(o.id, o.conjugadaPaiId);
+    liga(o.id, o.conjugadaStatusPaiId);
+  });
+  const grupo = new Map();
+  ordens.forEach(o => grupo.set(o.id, raiz(o.id)));
+  return grupo;
+}
+
+// A fila em BLOCOS: cada grupo de conjugadas vira um bloco no lugar da primeira
+// dela, com as outras logo atrás, na ordem em que já estavam entre si. OS sem
+// conjugada é um bloco de uma.
+function _filaEmBlocos(lista) {
+  const grupo = _gruposConjugadosFila();
+  const blocos = [];
+  const doGrupo = new Map();
+  lista.forEach(o => {
+    const g = grupo.get(o.id) || o.id;
+    if (doGrupo.has(g)) { doGrupo.get(g).push(o); return; }
+    const b = [o];
+    doGrupo.set(g, b);
+    blocos.push(b);
+  });
+  return blocos;
+}
+
 // A fila, na ordem: primeiro quem tem lugar marcado, depois o resto pela ordem
-// natural (OS mais antiga primeiro).
+// natural (OS mais antiga primeiro). As conjugadas saem juntas, em sequência.
 function filaDeProducao() {
   const pos = new Map();
   _filaLista().forEach((id, i) => pos.set(id, i));
-  return _osNaoIniciadas().slice().sort((a, b) => {
+  const ordenada = _osNaoIniciadas().slice().sort((a, b) => {
     const ia = pos.has(a.id) ? pos.get(a.id) : Infinity;
     const ib = pos.has(b.id) ? pos.get(b.id) : Infinity;
     if (ia !== ib) return ia - ib;
@@ -29841,6 +29892,7 @@ function filaDeProducao() {
     if (na !== nb) return na - nb;
     return String(a.os || '').localeCompare(String(b.os || ''), undefined, { numeric: true });
   });
+  return _filaEmBlocos(ordenada).flat();
 }
 
 // Id → posição (1, 2, 3…). Uma volta só, para a lista de OS não recalcular a
@@ -29883,15 +29935,18 @@ async function _filaGravar(idsNaOrdem) {
   await saveState('meta');
 }
 
+// A seta anda um BLOCO: a OS com as conjugadas dela passa por cima do bloco
+// vizinho inteiro. Andar uma OS só separaria o grupo, e o grupo se juntaria de
+// novo no mesmo lugar — a seta pareceria morta.
 async function moverNaFila(id, delta) {
   if (!exigirEdicao('definir a ordem da fila de produção')) return;
-  const ids = filaDeProducao().map(o => o.id);
-  const i = ids.indexOf(id);
+  const blocos = _filaEmBlocos(filaDeProducao());
+  const i = blocos.findIndex(b => b.some(o => o.id === id));
   const j = i + (Number(delta) || 0);
-  if (i < 0 || j < 0 || j >= ids.length) return;
-  ids.splice(j, 0, ids.splice(i, 1)[0]);
+  if (i < 0 || j < 0 || j >= blocos.length) return;
+  blocos.splice(j, 0, blocos.splice(i, 1)[0]);
   desfazerNomearAcao('ordem da fila de produção');
-  await _filaGravar(ids);
+  await _filaGravar(blocos.flat().map(o => o.id));
   renderListaOS();
 }
 window.moverNaFila = moverNaFila;
@@ -29912,11 +29967,23 @@ async function definirPosicaoFila(id, valor) {
   if (!isFinite(n)) { renderListaOS(); return; }          // apagou o campo: nada muda
   const j = Math.max(0, Math.min(ids.length - 1, n - 1));
   if (j === i) { renderListaOS(); return; }
-  ids.splice(j, 0, ids.splice(i, 1)[0]);
+  // O bloco da OS (ela e as conjugadas) vai para ANTES do bloco que está na
+  // posição escrita, se sobe, ou para DEPOIS dele, se desce. Numa OS sem
+  // conjugada é o mesmo que tirar e pôr na posição.
+  const blocos = _filaEmBlocos(filaDeProducao());
+  const bi = blocos.findIndex(b => b.some(o => o.id === id));
+  const bj = blocos.findIndex(b => b.some(o => o.id === ids[j]));
+  if (bi < 0 || bj < 0 || bi === bj) { renderListaOS(); return; }
+  const meu = blocos.splice(bi, 1)[0];
+  const alvo = blocos.findIndex(b => b.some(o => o.id === ids[j]));
+  blocos.splice(j < i ? alvo : alvo + 1, 0, meu);
+  const nova = blocos.flat().map(o => o.id);
   desfazerNomearAcao('ordem da fila de produção');
-  await _filaGravar(ids);
+  await _filaGravar(nova);
   renderListaOS();
-  toast(`OS na ${_filaOrdinal(j + 1)} posição da fila`, 'ok');
+  toast(meu.length > 1
+    ? `OS na ${_filaOrdinal(nova.indexOf(id) + 1)} posição da fila, junto com ${meu.length - 1} conjugada${meu.length > 2 ? 's' : ''} em sequência`
+    : `OS na ${_filaOrdinal(nova.indexOf(id) + 1)} posição da fila`, 'ok');
 }
 window.definirPosicaoFila = definirPosicaoFila;
 

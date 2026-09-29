@@ -72,6 +72,8 @@ function monta(M) {
     ${pegaFuncao('_filaLista')}
     ${pegaFuncao('_osNaoIniciadas')}
     ${pegaFuncao('podeMexerFilaOS')}
+    ${pegaFuncao('_gruposConjugadosFila')}
+    ${pegaFuncao('_filaEmBlocos')}
     ${pegaFuncao('filaDeProducao')}
     ${pegaFuncao('_filaPosicoes')}
     ${pegaConst('_filaOrdinal')}
@@ -169,6 +171,48 @@ const numeros = api => api.filaDeProducao().map(o => o.os).join(' ');
      M.pedidos.every(a => a.includes('fila de produção')) && M.pedidos.length === 2, M.pedidos);
   ok('21. quem nao tem a area continua LENDO a fila inteira',
      api.filaDeProducao().length === 4 && api.podeMexerFilaOS() === false, numeros(api));
+
+  /* ---------- 7. as conjugadas andam juntas (29/09/2026) ----------
+     Junior: "se qualquer OS conjugada tiver sua ordem alterada, todas as OS
+     conjugadas devem continuar como sequencia de ordenamento entre elas".
+     0101 e 0104 conjugadas pela GRADE (a 0104 e a passiva); 0102 conjugada a
+     0104 a MAO. As tres sao um grupo; a 0103 e sozinha. */
+  const mundoConj = () => ({
+    pode: true, pedidos: [], salvou: [],
+    STATE: {
+      meta: {},
+      ordens: [
+        { id: 'a', os: '0103' },
+        { id: 'b', os: '0101', conjugadaId: 'c' },
+        { id: 'c', os: '0104', conjugadaPaiId: 'b' },
+        { id: 'd', os: '0102', conjugadaStatusPaiId: 'c' },
+        { id: 'f', os: '0105' },
+        { id: 'e', os: '0099' }
+      ]
+    },
+    status: { e: 'cortando' }
+  });
+  M = mundoConj(); api = monta(M);
+  ok('25. sem ordem escrita, o grupo ja sai junto, no lugar da primeira dele',
+     numeros(api) === '0101 0102 0104 0103 0105', numeros(api));
+  await api.moverNaFila('a', -1);                  // a 0103 sobe: passa o grupo inteiro
+  ok('26. a seta passa por cima do grupo inteiro, nao o parte',
+     numeros(api) === '0103 0101 0102 0104 0105', numeros(api));
+  await api.moverNaFila('c', 1);                   // mexe na PASSIVA: o grupo desce
+  ok('27. mexer em qualquer conjugada (aqui a passiva) leva o grupo junto',
+     numeros(api) === '0103 0105 0101 0102 0104', numeros(api));
+  await api.definirPosicaoFila('d', 1);            // a 0102 (conjugada a mao) para a 1a
+  ok('28. escrever a posicao leva o grupo, na ordem que ele ja tinha entre si',
+     numeros(api) === '0101 0102 0104 0103 0105', numeros(api));
+  await api.definirPosicaoFila('b', 99);
+  ok('29. para o fim, o grupo inteiro fica por ultimo',
+     numeros(api) === '0103 0105 0101 0102 0104', numeros(api));
+  await api.definirPosicaoFila('f', 5);            // a 0105 para a ultima: passa o grupo
+  ok('30. uma OS sozinha que desce passa o grupo inteiro',
+     numeros(api) === '0103 0101 0102 0104 0105', numeros(api));
+  M.status.c = 'enfestando';                       // uma do grupo comecou
+  ok('31. a conjugada que ja comecou sai da fila, e as outras seguem juntas',
+     numeros(api) === '0103 0101 0102 0105', numeros(api));
 
   /* ---------- 6. a fila dentro da lista de OS ----------
      22/09/2026, Junior: "integre o quadro fila de producao com o quadro que ja
