@@ -252,8 +252,9 @@ console.log('-- o vermelho na lista de material reservado --');
      !/falta \? ' style="color:#c0392b;"/.test(tela), '');
   ok('27b. a celula da fase cujo pano falta e que fica vermelha',
      /emFalta \? 'background:#fbe6e6;color:#c0392b;'/.test(tela), '');
-  ok('27c. e o selo diz qual pano falta',
-     /falta \$\{panos\}/.test(tela), '');
+  // Desde 29/09/2026: uma linha por pano, com o QUANTO primeiro e o pano depois.
+  ok('27c. e o selo diz quanto falta de cada pano, e qual',
+     /falta \$\{fmt\(f\.falta\)\} kg\$\{bob\}/.test(tela) && /\$\{pano\}/.test(tela), '');
   ok('28. a falta NAO e gravada na OS — nada de marca a limpar depois',
      !/\.faltaPano\s*=/.test(tela) && !/o\.semPano\s*=/.test(tela), '');
 }
