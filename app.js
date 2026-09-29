@@ -7816,13 +7816,16 @@ function renderEstoque() {
       + esc('\nDisponível para esta OS: ' + fmt(disp.kg) + ' kg' + (bobDisp != null ? ' (' + bobDisp + ' bob)' : '')
         + ' = na prateleira ' + fmt(disp.fisico) + ' kg (entradas − saídas)'
         + ' − ' + fmt(disp.outras) + ' kg reservados para outras OS.');
-    return `<td style="text-align:right;white-space:nowrap;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
-      <div style="font-family:'IBM Plex Mono',monospace;">
+    // Só a linha do número não quebra; o nome do pano pode ir para a linha de
+    // baixo, senão um tecido de nome comprido alarga a coluna dele e desfaz a
+    // largura igual das fases (_thFase).
+    return `<td style="text-align:right;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
+      <div style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;">
         ${f.bobinas != null ? `${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">${faltaBob}/</span>` : ''}<span style="font-weight:700;">${f.bobinas}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
         <span style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">· ${fmt(f.kg)} kg</span>
       </div>
       <div style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
-      <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:${disp.kg < 0 ? '#c0392b' : 'var(--ink-2)'};">disp. <b>${fmt(disp.kg)} kg</b>${bobDisp != null ? ' · ' + bobDisp + ' bob' : ''}</div>
+      <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;color:${disp.kg < 0 ? '#c0392b' : 'var(--ink-2)'};">disp. <b>${fmt(disp.kg)} kg</b>${bobDisp != null ? ' · ' + bobDisp + ' bob' : ''}</div>
     </td>`;
   };
   /* O SKU COMPLETO NA COLUNA DO MODELO (14/09/2026, Junior).
@@ -7945,6 +7948,11 @@ function renderEstoque() {
   // etapa"): as colunas não mudam de lugar conforme as OS da lista, e a OS sem
   // aquela fase mostra zero. Grade com mais de 3 corpos ainda ganha a coluna dela.
   const nCorpos = Math.max(3, ..._osRes.map(os => corposDoMaterialOS(os).length));
+  // TODAS AS COLUNAS DE FASE COM A MESMA LARGURA (29/09/2026, Junior: "na
+  // coluna corpo 3 o tamanho da coluna está desproporcional"). A tabela media
+  // cada coluna pelo conteúdo: o Corpo 3, quase só de "0 bob · 0,000 kg",
+  // saía estreito ao lado de corpos com tecido, cor e disponível.
+  const _thFase = 'text-align:right;width:160px;min-width:160px;';
   const temForro = _osRes.some(os => !!forroDoMaterialOS(os));
   const temRibana = _osRes.some(os => !!ribanaDoMaterialOS(os));
   const apontarHtml = osMat.length ? `
@@ -7972,9 +7980,9 @@ function renderEstoque() {
       ${reservadas.length ? `<table class="table">
         <thead><tr><th>OS</th><th>Modelo · grade</th><th>Data</th>
           ${Array.from({ length: nCorpos }, (_, i) =>
-            `<th style="text-align:right;">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
-          ${temForro ? '<th style="text-align:right;">Forro de capuz</th>' : ''}
-          ${temRibana ? '<th style="text-align:right;">Ribana</th>' : ''}
+            `<th style="${_thFase}">${nCorpos > 1 ? 'Corpo ' + (i + 1) : 'Corpo'}</th>`).join('')}
+          ${temForro ? `<th style="${_thFase}">Forro de capuz</th>` : ''}
+          ${temRibana ? `<th style="${_thFase}">Ribana</th>` : ''}
           <th>Situação</th></tr></thead>
         <tbody>${parConjugado.map(p => linhaOS(p.pai)
           + p.filhas.map(c => linhaConjugada(c, p.pai)).join('')
