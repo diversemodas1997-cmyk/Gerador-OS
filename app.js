@@ -10677,13 +10677,32 @@ function _rankRotuloBalde(b, escala, longo) {
    `ordem` é a ordem dos resultados na tabela — a cor segue ela, e "Outros"
    fica por último, cinza. `max` é quantas linhas cabem (oito, ou todas para o
    quadrinho do mouse). */
+/* O PONTO NA COR DO PRODUTO (29/09/2026, Junior: "pintar os pontos do gráfico
+   de acordo com a cor do produto"). Quando cada linha do gráfico é uma COR, o
+   ponto sai na cor do cadastro (Cadastros › Cores, o `hex`): o ponto do Preto é
+   preto. A LINHA continua na cor da paleta — é ela que separa uma série da
+   outra quando duas cores do cadastro são parecidas (dois azuis, branco e
+   off-white). Nome sem hex no cadastro: o ponto fica na cor da linha.
+   O nome do gráfico é o curto ("Preto"), e o cadastro tem um por tecido
+   ("Preto Malha Algodão", "Preto Moletom"): vale o primeiro que tiver hex. */
+function _rankHexDaCor(nome) {
+  const alvo = String(nome || '').trim().toLowerCase();
+  if (!alvo) return '';
+  const c = (STATE.cores || []).find(x => /^#[0-9a-f]{3,8}$/i.test(String(x.hex || '').trim())
+    && [corNomeCurto(x.nome), x.nome].some(n => String(n || '').trim().toLowerCase() === alvo));
+  return c ? String(c.hex).trim() : '';
+}
+
 function _rankingSeries(fatos, serieVar, ordem, baldes, escala, max) {
   const idx = new Map(baldes.map((b, i) => [b, i]));
   const MAX = max || RANK_CORES_SERIE.length;
   const nomes = serieVar ? ordem.slice() : ['Total'];
   const ficam = nomes.length > MAX ? nomes.slice(0, MAX - 1) : nomes;
   const outros = nomes.length > MAX;
-  const series = ficam.map((r, i) => ({ rotulo: r, cor: RANK_CORES_SERIE[i] || RANK_COR_OUTROS, valores: baldes.map(() => 0) }));
+  const series = ficam.map((r, i) => ({
+    rotulo: r, cor: RANK_CORES_SERIE[i] || RANK_COR_OUTROS, valores: baldes.map(() => 0),
+    ponto: serieVar === 'cor' ? _rankHexDaCor(r) : ''
+  }));
   if (outros) series.push({ rotulo: 'Outros (' + (nomes.length - ficam.length) + ')', cor: RANK_COR_OUTROS, valores: baldes.map(() => 0), outros: true });
   const qual = new Map(ficam.map((r, i) => [r, i]));
   fatos.forEach(f => {
@@ -10744,7 +10763,11 @@ function _rankSvgGrafico(p, g, topo, medidas) {
   const linhas = g.series.map(s => {
     const pts = s.valores.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
     return `<polyline points="${pts}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
-      + (marcas ? s.valores.map((v, i) => v > 0 ? `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.cor}" stroke="#fff" stroke-width="1.5"/>` : '').join('') : '');
+      // Ponto na cor do produto: maior, com contorno na cor da linha — um ponto
+      // branco num fundo branco sumiria, e o contorno diz de que linha ele é.
+      + (marcas ? s.valores.map((v, i) => v > 0 ? (s.ponto
+        ? `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4.5" fill="${esc(s.ponto)}" stroke="${s.cor}" stroke-width="1.8"/>`
+        : `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.cor}" stroke="#fff" stroke-width="1.5"/>`) : '').join('') : '');
   }).join('');
   // A faixa de cada intervalo é o alvo do mouse (maior que o ponto).
   const faixa = n === 1 ? iw : iw / (n - 1);
@@ -10806,7 +10829,8 @@ function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
   const legenda = leg.map(s => {
     const tot = s.valores.reduce((a, v) => a + v, 0);
     return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:12px;white-space:nowrap;">
-      <span style="width:14px;height:3px;border-radius:2px;background:${s.cor};"></span>${esc(rotSerie(s.rotulo))}
+      <span style="width:14px;height:3px;border-radius:2px;background:${s.cor};"></span>${s.ponto
+        ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${esc(s.ponto)};border:1.8px solid ${s.cor};margin-left:-4px;"></span>` : ''}${esc(rotSerie(s.rotulo))}
       <span class="muted" style="font-family:'IBM Plex Mono',monospace;">${num(tot)}</span></span>`;
   }).join('');
   const corpo = cruzado
@@ -10861,7 +10885,7 @@ function _rankGrafHover(p, i) {
   const itens = g.todas.filter(s => s.valores[i] > 0).sort((a, b) => b.valores[i] - a.valores[i]);
   const linhas = itens.map(s => `
     <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;">
-      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${s.cor};"></span>${esc(g.rotSerie(s.rotulo))}${s.emOutros ? ' <span class="muted" style="font-size:10px;">em Outros</span>' : ''}</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;box-sizing:border-box;background:${esc(s.ponto || s.cor)};${s.ponto ? `border:2px solid ${s.cor};` : ''}"></span>${esc(g.rotSerie(s.rotulo))}${s.emOutros ? ' <span class="muted" style="font-size:10px;">em Outros</span>' : ''}</span>
       <b style="font-family:'IBM Plex Mono',monospace;">${num(s.valores[i])}</b></div>`).join('');
   tip.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">${g.titulo ? esc(g.titulo) + ' · ' : ''}${esc(_rankRotuloBalde(g.baldes[i], g.escala, true))}</div>
     ${linhas || '<div class="muted">Nenhuma OS.</div>'}

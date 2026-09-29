@@ -21,18 +21,29 @@ const ok = (nome, cond, extra) => {
   if (!cond) falhas++;
 };
 
-const api = new Function(`
+// O cadastro de cores de mentira: o nome longo (com tecido) e o curto que o
+// grafico usa. corNomeCurto entra dublado: tira o " Malha"/" Moletom" do fim.
+const STATE = { cores: [
+  { nome: 'Preto Malha Algodão', hex: '#111111' },
+  { nome: 'Preto Moletom', hex: '#222222' },
+  { nome: 'Branco Malha Algodão', hex: '#ffffff' },
+  { nome: 'Marinho Malha Algodão' }             // sem hex
+] };
+const api = new Function('STATE', `
+  function corNomeCurto(n) { return String(n || '').replace(/ (Malha Algodão|Moletom)$/, ''); }
+  function esc(s) { return String(s); }
   ${linha(/const RANK_CORES_SERIE = [^\n]*/)}
   ${linha(/const _rankEscalaDoFiltro = [^\n]*/)}
   ${linha(/const RANK_COR_OUTROS = [^\n]*/)}
   ${pegaFuncao('_rankSomaDias')}
   ${pegaFuncao('_rankBalde')}
   ${pegaFuncao('_rankBaldes')}
+  ${pegaFuncao('_rankHexDaCor')}
   ${pegaFuncao('_rankingSeries')}
   ${pegaFuncao('_rankTopoEixo')}
   ${pegaFuncao('_rankDivisoesEixo')}
   return { _rankEscalaDoFiltro, _rankBalde, _rankBaldes, _rankingSeries, _rankTopoEixo, _rankDivisoesEixo };
-`)();
+`)(STATE);
 
 console.log('-- a escala segue o filtro --');
 ok('1. um mes se le por dia', api._rankEscalaDoFiltro('2026', '2026-09') === 'dia');
@@ -70,6 +81,20 @@ const sm = api._rankingSeries(fm, 'cor', muitos, ['2026-09-01'], 'dia');
 ok('14. mais de oito: sete ficam e o resto vira Outros', sm.length === 8 && sm[7].outros && /Outros \(3\)/.test(sm[7].rotulo), sm.map(x => x.rotulo));
 ok('15. Outros soma o que sobrou (93+92+91)', sm[7].valores[0] === 276, sm[7].valores);
 ok('16. a soma das linhas bate com o total', sm.reduce((a, x) => a + x.valores[0], 0) === fm.reduce((a, f) => a + f.produtos, 0));
+
+console.log('-- o ponto na cor do produto (29/09/2026) --');
+const fc = [
+  { cor: 'Preto', data: '2026-09-01', produtos: 5 },
+  { cor: 'Branco', data: '2026-09-01', produtos: 4 },
+  { cor: 'Marinho', data: '2026-09-01', produtos: 3 }
+];
+const sc = api._rankingSeries(fc, 'cor', ['Preto', 'Branco', 'Marinho'], ['2026-09-01'], 'dia');
+ok('19. o ponto do Preto sai na cor do cadastro (o primeiro Preto com hex)', sc[0].ponto === '#111111', sc[0]);
+ok('20. o Branco sai branco', sc[1].ponto === '#ffffff', sc[1]);
+ok('21. cor sem hex no cadastro: sem ponto proprio (fica a cor da linha)', sc[2].ponto === '', sc[2]);
+ok('22. a LINHA continua na paleta, separando as series', sc[0].cor === '#2a78d6' && sc[1].cor === '#eb6834', sc.map(x => x.cor));
+const st = api._rankingSeries(fatos, 'tamanho', ['M', 'P', 'G'], b3, 'dia');
+ok('23. serie que nao e cor (tamanho) nao ganha ponto de produto', st.every(x => !x.ponto), st.map(x => x.ponto));
 
 console.log('-- o eixo --');
 ok('17. topo redondo acima do maior', api._rankTopoEixo(2370) === 2500 && api._rankTopoEixo(11400) === 20000, [api._rankTopoEixo(2370), api._rankTopoEixo(11400)]);
