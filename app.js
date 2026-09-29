@@ -7882,7 +7882,34 @@ function renderEstoque() {
      ninguém. Então o selo tira a falta de cada pano (sem passar de zero) e, nas
      bobinas, soma o segundo número das colunas das fases (previsto − falta da
      fase, a mesma conta das células). Com falta, mostra "X de Y". */
-  const _seloReservado = (o, os, falta, fatias) => {
+  /* UMA LINHA "RESERVADO" POR FASE DO ENFESTO (29/09/2026, Junior: "a coluna
+     situação deve mostrar linha de texto Reservado para todas as fases de
+     enfesto da OS. Se a OS for BM.TRI deve aparecer 5 linhas"). As fases são as
+     de materialPorFaseOS — as mesmas das colunas ao lado. Em cada uma, o que ela
+     de fato segura: o previsto da fase menos a falta do pano dela, na MESMA
+     proporção das células (fatiaQueFaltaPorTecidoCor → bobinasQueFaltamNaFase).
+     A soma das linhas é a do selo único que existia antes (_seloReservadoTotal,
+     que fica na dica do mouse). */
+  const _selosReservadoPorFase = (o, os, falta, fatias) => {
+    let fases = [];
+    try { fases = materialPorFaseOS(os) || []; } catch (e) { fases = []; }
+    if (!fases.length) return _seloReservado(o, os, falta, fatias);
+    const dicaTotal = _seloReservado(o, os, falta, fatias, true);
+    return fases.map(f => {
+      const k = _normNome(f.tecido) + '||' + _normNome(f.cor);
+      const fatia = (fatias && fatias.get(k)) || 0;
+      const kgPrev = Number(f.kg) || 0;
+      const kgRes = Math.max(0, kgPrev * (1 - fatia));
+      const temFalta = fatia > 0;
+      const bobFalta = bobinasQueFaltamNaFase(f, fatias);
+      const kgTxt = temFalta ? `${fmt(kgRes)} de ${fmt(kgPrev)} kg` : `${fmt(kgRes)} kg`;
+      const bobTxtF = f.bobinas == null ? ''
+        : ` · <b>${temFalta ? (f.bobinas - bobFalta) + ' de ' + f.bobinas : f.bobinas} bob</b>`;
+      return `<div style="margin-bottom:2px;"><span class="badge" style="background:${temFalta ? '#f6dcda' : '#fde9c8'};white-space:nowrap;" title="${esc(dicaTotal)}">`
+        + `Reservado · ${esc(f.nome || '')} · <b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtF}</span></div>`;
+    }).join('');
+  };
+  const _seloReservado = (o, os, falta, fatias, soDica) => {
     let bob = null, bobPrev = null;
     try {
       (materialPorFaseOS(os) || []).forEach(f => {
@@ -7914,6 +7941,8 @@ function renderEstoque() {
     });
     const temFalta = kgRes < kgPrev - 0.0005 || (bob != null && bob < bobPrev);
     const dica = 'Reservado por esta OS (o que existe na prateleira para ela):\n' + linhas.join('\n');
+    if (soDica) return dica + '\nTotal: ' + (temFalta ? fmt(kgRes) + ' de ' + fmt(kgPrev) : fmt(kgRes)) + ' kg'
+      + (bob == null ? '' : ' · ' + (temFalta ? bob + ' de ' + bobPrev : bob) + ' bob');
     const kgTxt = temFalta ? `${fmt(kgRes)} de ${fmt(kgPrev)} kg` : `${fmt(kgRes)} kg`;
     const bobTxtSelo = bob == null ? '' : (temFalta ? ` · <b>${bob} de ${bobPrev} bob</b>` : ` · <b>${bob} bob</b>`);
     return `<span class="badge" style="background:#fde9c8;white-space:nowrap;" title="${esc(dica)}">Reservado · `
@@ -7939,7 +7968,7 @@ function renderEstoque() {
         : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0/0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
       ${temForro ? celFase(forro, fatias, o.osId) : ''}
       ${temRibana ? celFase(rib, fatias, o.osId) : ''}
-      <td>${_seloReservado(o, os, falta, fatias)}${falta
+      <td>${_selosReservadoPorFase(o, os, falta, fatias)}${falta
         ? `<div style="margin-top:4px;padding:4px 7px;border-radius:5px;background:#f6dcda;color:#c0392b;font-size:11px;line-height:1.5;display:inline-block;" title="${dica}">${_resumoFalta(os, falta)}</div>`
         : ''}</td>
     </tr>`;
