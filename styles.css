@@ -2641,8 +2641,9 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 }
 .rank-os-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .rank-os-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* As duas faixas mais escuras do quadro cruzado (verde e verde-escuro) levam o
-   numero em branco; em tinta escura ele sumiria no fundo. */
+/* As faixas escuras do quadro cruzado (de 4.001 produtos para cima, ver
+   RANK_FAIXAS no app.js) levam o numero em branco; em tinta escura ele sumiria
+   no fundo. */
 td.rank-cel-escura, td.rank-cel-escura .rank-os-link { color: #fff; font-weight: 700; }
 td.rank-cel-escura .rank-os-link { border-bottom-color: rgba(255,255,255,.6); }
 td.rank-cel-escura .rank-os-link:hover { color: #fff; border-bottom-color: #fff; }

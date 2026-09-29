@@ -10972,37 +10972,45 @@ function renderRanking() {
   const barra = (n, max) => `<span style="display:inline-block;height:8px;border-radius:2px;background:var(--ink-3);`
     + `width:${max ? Math.max(3, Math.round(n * 100 / max)) : 0}%;"></span>`;
   // O fundo dá o peso de cada célula sem obrigar a comparar número a número.
-  // Cinco faixas de cor sólida (29/09/2026): o verde translúcido de antes ia de
-  // quase branco a verde fraco e as células do meio ficavam iguais. As faixas
-  // são por POSIÇÃO entre as células preenchidas (quintis), não por fração do
-  // maior: uma célula gigante não joga todas as outras na primeira faixa.
-  const RANK_FAIXAS = ['#fff1b8', '#ffc94d', '#8fd07a', '#2e9b52', '#12592f'];
-  const valoresCel = [];
-  q.linhas.forEach(x => q.colunas.forEach(c => {
-    const cel = q.cel(x.rotulo, c.rotulo);
-    if (cel && cel.produtos > 0) valoresCel.push(cel.produtos);
-  }));
-  valoresCel.sort((a, b) => a - b);
-  // faixa 0..4: quantas células preenchidas ficam abaixo de v, em quintos
-  const faixa = (v) => {
-    if (!(v > 0) || !valoresCel.length) return -1;
-    let abaixo = 0;
-    while (abaixo < valoresCel.length && valoresCel[abaixo] < v) abaixo++;
-    return Math.min(4, Math.floor(abaixo * 5 / valoresCel.length));
-  };
-  const fundo = (v) => { const f = faixa(v); return f < 0 ? 'transparent' : RANK_FAIXAS[f]; };
-  const escura = (v) => faixa(v) >= 3;
-  // Legenda: o menor e o maior valor de cada faixa que existe no quadro.
+  // FAIXAS DE MIL PRODUTOS (29/09/2026, Junior: "até mil unidades uma cor, até
+  // 2000 outra cor, até 3000 outra cor, assim por diante"). A cor diz o volume
+  // de verdade, igual em todo quadro e todo período: 2.500 é laranja aqui e em
+  // qualquer outro recorte. Cada faixa troca de matiz, não só de tom, para a
+  // vizinha não parecer a mesma. Acima de 11.000 fica a última cor.
+  // [fundo, número em branco?]
+  const RANK_FAIXAS = [
+    ['#fff3b0', false],   // até 1.000        amarelo claro
+    ['#ffd54f', false],   // 1.001 a 2.000    amarelo
+    ['#ffa94d', false],   // 2.001 a 3.000    laranja
+    ['#a5dc86', false],   // 3.001 a 4.000    verde claro
+    ['#3fae5a', true],    // 4.001 a 5.000    verde
+    ['#1f7a43', true],    // 5.001 a 6.000    verde escuro
+    ['#2a9d9d', true],    // 6.001 a 7.000    turquesa
+    ['#2f6fb5', true],    // 7.001 a 8.000    azul
+    ['#4b3fa8', true],    // 8.001 a 9.000    anil
+    ['#7b2d9b', true],    // 9.001 a 10.000   roxo
+    ['#b0226b', true],    // 10.001 a 11.000  magenta
+    ['#7a1020', true]     // acima de 11.000  vinho
+  ];
+  const faixa = (v) => !(v > 0) ? -1 : Math.min(RANK_FAIXAS.length - 1, Math.ceil(v / 1000) - 1);
+  const fundo = (v) => { const f = faixa(v); return f < 0 ? 'transparent' : RANK_FAIXAS[f][0]; };
+  const escura = (v) => { const f = faixa(v); return f >= 0 && RANK_FAIXAS[f][1]; };
+  const rotFaixa = (f) => f === 0 ? 'até ' + num(1000)
+    : f === RANK_FAIXAS.length - 1 ? 'acima de ' + num(f * 1000)
+    : num(f * 1000 + 1) + '–' + num((f + 1) * 1000);
+  // Legenda: só as faixas que aparecem no quadro.
   const legenda = (() => {
-    const lim = [[], [], [], [], []];
-    valoresCel.forEach(v => lim[faixa(v)].push(v));
-    const itens = lim.map((vs, f) => vs.length
-      ? `<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">`
-        + `<span style="display:inline-block;width:16px;height:12px;border-radius:2px;background:${RANK_FAIXAS[f]};border:1px solid rgba(0,0,0,.15);"></span>`
-        + `${vs[0] === vs[vs.length - 1] ? num(vs[0]) : num(vs[0]) + '–' + num(vs[vs.length - 1])}</span>`
-      : '').filter(Boolean);
+    const tem = new Set();
+    q.linhas.forEach(x => q.colunas.forEach(c => {
+      const cel = q.cel(x.rotulo, c.rotulo);
+      if (cel && cel.produtos > 0) tem.add(faixa(cel.produtos));
+    }));
+    const itens = [...tem].sort((a, b) => a - b).map(f =>
+      `<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">`
+      + `<span style="display:inline-block;width:16px;height:12px;border-radius:2px;background:${RANK_FAIXAS[f][0]};border:1px solid rgba(0,0,0,.15);"></span>`
+      + `${rotFaixa(f)}</span>`);
     return itens.length ? `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--ink-2);margin:0 0 8px;">`
-      + `<span>menos</span>${itens.join('')}<span>mais produtos</span></div>` : '';
+      + `<span>produtos:</span>${itens.join('')}</div>` : '';
   })();
   const rotLinha = v => _rankLinha === 'periodo' ? rotPeriodo(v) : v;
   const rotCol = v => _rankColuna === 'periodo' ? rotPeriodo(v) : v;
