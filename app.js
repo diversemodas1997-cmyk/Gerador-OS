@@ -7755,7 +7755,9 @@ function renderEstoque() {
      prateleira no estoque, logo acima. A cor sai por corSemTecido porque o
      tecido já está na linha de cima da própria célula. */
   /* O NÚMERO DIZ AS DUAS COISAS: PRECISA / FALTA (22/09/2026, Junior: "mostrar
-     [29/09/2026: a ordem virou FALTA/PREVISTO, "2/10", a pedido do Junior]
+     [29/09/2026: virou FALTA/RESERVADO, "2/8" — o que falta para completar e
+     o que já está disponível e reservado (previsto − falta), sempre os dois,
+     "0/10" quando não falta nada. Pedido do Junior, depois de um "2/10".]
      no mesmo número a quantidade necessárias/quantidade que falta... 10/2, ou
      seja, precisa de 10 bobinas, mas faltam 2").
 
@@ -7778,7 +7780,7 @@ function renderEstoque() {
      quantidade de tipo de tecido que é previsto/quantidade faltante para atingir
      o previsto, mas não é mostrado a quantidade total disponível de tecido").
 
-     "2/10" diz o que falta e o que a OS precisa, e esconde o número que liga os
+     "2/8" diz o que falta e o que já está reservado, e esconde o número que liga os
      dois: quanto daquele tecido+cor existe para ela. É o disponível DA
      PRATELEIRA com a reserva desta própria OS devolvida — a mesma conta de
      faltaDeTecidoParaOS, em que a OS não concorre consigo mesma. Assim a célula
@@ -7809,10 +7811,12 @@ function renderEstoque() {
     const emFalta = !!(fatias && fatias.get(_normNome(f.tecido) + '||' + _normNome(f.cor)) > 0);
     const disp = _dispParaOS(f, osId);
     const bobDisp = bobDoKg(disp.kg, f.tecido);
-    const dicaFase = esc(f.nome) + (faltaBob > 0
-      ? ' — precisa de ' + f.bobinas + ' bobina(s) e ' + faltaBob
-        + ' delas não estão na prateleira (o disponível deste pano não cobre esta fase).'
-      : emFalta ? ' — o disponível deste pano não cobre esta fase.' : '')
+    const dicaFase = esc(f.nome) + (f.bobinas != null
+      ? ' — ' + f.bobinas + ' bobina(s) previstas: faltam ' + faltaBob + ', ' + (f.bobinas - faltaBob)
+        + ' disponível(is) e reservada(s).' : '')
+      + (faltaBob > 0
+      ? ' O disponível deste pano não cobre esta fase.'
+      : emFalta ? ' O disponível deste pano não cobre esta fase.' : '')
       + esc('\nDisponível para esta OS: ' + fmt(disp.kg) + ' kg' + (bobDisp != null ? ' (' + bobDisp + ' bob)' : '')
         + ' = na prateleira ' + fmt(disp.fisico) + ' kg (entradas − saídas)'
         + ' − ' + fmt(disp.outras) + ' kg reservados para outras OS.');
@@ -7821,7 +7825,7 @@ function renderEstoque() {
     // largura igual das fases (_thFase).
     return `<td style="text-align:right;${emFalta ? 'background:#fbe6e6;color:#c0392b;' : ''}" title="${dicaFase}">
       <div style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;">
-        ${f.bobinas != null ? `${faltaBob > 0 ? `<span style="font-weight:700;color:#c0392b;">${faltaBob}/</span>` : ''}<span style="font-weight:700;">${f.bobinas}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
+        ${f.bobinas != null ? `<span style="font-weight:700;color:${faltaBob > 0 ? '#c0392b' : 'var(--ink-3)'};">${faltaBob}/</span><span style="font-weight:700;">${f.bobinas - faltaBob}</span> <span style="font-size:10px;color:var(--ink-2);">bob</span>` : '<span style="color:var(--ink-3);">—</span>'}
         <span style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">· ${fmt(f.kg)} kg</span>
       </div>
       <div style="font-size:10px;color:${emFalta ? '#c0392b' : 'var(--ink-2)'};">${esc(f.tecido) || '—'}${cor ? ' · <b>' + esc(cor) + '</b>' : ''}</div>
@@ -7900,7 +7904,7 @@ function renderEstoque() {
       <td>${esc(o.modelo) || '—'}${_skuCelula(os)}${_gradeCelula(os)}</td>
       <td style="white-space:nowrap;">${esc(formatDate(o.data))}</td>
       ${Array.from({ length: nCorpos }, (_, i) => corpos[i] ? celFase(corpos[i], fatias, o.osId)
-        : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
+        : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0/0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
       ${temForro ? celFase(forro, fatias, o.osId) : ''}
       ${temRibana ? celFase(rib, fatias, o.osId) : ''}
       <td>${_seloReservado(o, os)}${falta
@@ -7963,6 +7967,9 @@ function renderEstoque() {
         sozinho quando a OS chega a <b>Enfestando</b> — que é quando o rolo desce da
         prateleira. O status vem do checklist da folha (marcar <b>Enfesto</b> basta) e pode
         ser carimbado à mão na lista de Ordens de Serviço. Aqui ficam só as que ainda seguram material.
+        Nas colunas das fases as bobinas saem <b>falta/reservado</b>:
+        <b><span style="color:#c0392b;">2/</span>8</b> quer dizer "das 10 bobinas previstas para esta fase,
+        faltam 2 e 8 estão disponíveis e reservadas"; <b>0/10</b> é a fase completa.
         Embaixo de cada fase, <b>disp.</b> é quanto daquele tecido e cor existe <b>para esta OS</b>:
         o que está na prateleira menos o que as <b>outras</b> OS já reservaram (passe o mouse para ver a conta).${temConjugada ? `
         A OS marcada com <b>↳</b> é <b>conjugada</b>: ela sai do mesmo enfesto da OS logo acima,
@@ -7971,9 +7978,7 @@ function renderEstoque() {
         A OS <b style="color:#c0392b;">em vermelho</b> está reservando pano que a prateleira
         <b>não tem</b> — é o mesmo aviso que apareceu ao salvar. A coluna <b>Situação</b> diz
         <b>quanto</b> falta, em quilos e em bobinas; passe o mouse para ver de qual tecido e
-        quanto falta para fechar a OS inteira. Nas colunas das fases o número sai
-        <b>falta/previsto</b> — <b><span style="color:#c0392b;">2/</span>10</b> quer dizer
-        "faltam 2 das 10 bobinas previstas para esta fase". <b>Repare no tamanho:</b> uma falta de poucos
+        quanto falta para fechar a OS inteira. <b>Repare no tamanho:</b> uma falta de poucos
         quilos é o saldo raspando o zero depois de meses de entradas e saídas, e não pano que
         não existe. O vermelho <b>sai sozinho</b> assim que a entrada desse tecido for lançada.` : ''}
       </div>
