@@ -7891,9 +7891,22 @@ function renderEstoque() {
      A soma das linhas é a do selo único que existia antes (_seloReservadoTotal,
      que fica na dica do mouse). */
   const _selosReservadoPorFase = (o, os, falta, fatias) => {
-    let fases = [];
-    try { fases = materialPorFaseOS(os) || []; } catch (e) { fases = []; }
-    if (!fases.length) return _seloReservado(o, os, falta, fatias);
+    let todas = [];
+    try { todas = materialPorFaseOS(os) || []; } catch (e) { todas = []; }
+    if (!todas.length) return _seloReservado(o, os, falta, fatias);
+    /* O VIÉS NÃO GANHA LINHA (Junior, no mesmo dia: "para CM.LISA deve aparecer
+       duas linhas reservado, uma para malha algodão, outra para ribana"). Ele
+       não é enfestado — sai da sobra das outras fases —, mas reserva pano de
+       verdade: o quilo e a bobina dele entram na linha da fase do MESMO tecido
+       e cor. Sem fase irmã (caso que não existe hoje), fica com linha própria. */
+    const chaveF = f => _normNome(f.tecido) + '||' + _normNome(f.cor);
+    const fases = todas.filter(f => !f.vies).map(f => ({ ...f }));
+    todas.filter(f => f.vies).forEach(v => {
+      const irma = fases.find(f => chaveF(f) === chaveF(v));
+      if (!irma) { fases.push({ ...v }); return; }
+      irma.kg = (Number(irma.kg) || 0) + (Number(v.kg) || 0);
+      if (v.bobinas != null) irma.bobinas = (irma.bobinas || 0) + v.bobinas;
+    });
     const dicaTotal = _seloReservado(o, os, falta, fatias, true);
     return fases.map(f => {
       const k = _normNome(f.tecido) + '||' + _normNome(f.cor);
@@ -7906,7 +7919,7 @@ function renderEstoque() {
       const bobTxtF = f.bobinas == null ? ''
         : ` · <b>${temFalta ? (f.bobinas - bobFalta) + ' de ' + f.bobinas : f.bobinas} bob</b>`;
       return `<div style="margin-bottom:2px;"><span class="badge" style="background:${temFalta ? '#f6dcda' : '#fde9c8'};white-space:nowrap;" title="${esc(dicaTotal)}">`
-        + `Reservado · ${esc(f.nome || '')} · <b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtF}</span></div>`;
+        + `Reservado · ${esc(f.nome || '')} <span style="color:var(--ink-2);">(${esc(f.tecido || '—')})</span> · <b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtF}</span></div>`;
     }).join('');
   };
   const _seloReservado = (o, os, falta, fatias, soDica) => {
