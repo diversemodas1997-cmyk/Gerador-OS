@@ -78,6 +78,11 @@ const CREDS = path.join(REPO, 'supa-creds.json');
 const OUT = path.join(REPO, 'dados-supabase.json');
 const IMGDIR = path.join(REPO, 'desenhos-imagens');
 const LOG = path.join(REPO, 'backup.log');
+// Pastas que moram SO dentro deste repositorio e entram no versionamento junto
+// com os dados (29/09/2026, Junior: "inclua a pasta grades audace no backup").
+// A pasta ja estava no Drive, mas fora do git: sem historico e sem a copia no
+// GitHub. Pasta que nao existir e pulada, sem derrubar o backup.
+const PASTAS_EXTRAS = ['Desenhos técnicos - grades audace'];
 
 function log(m) {
   fs.appendFileSync(LOG, `${new Date().toISOString()}  ${m}\n`);
@@ -186,7 +191,8 @@ function git(args) {
     }
 
     // 4) Commit/push so se mudou
-    git(['add', 'dados-supabase.json', 'desenhos-imagens']);
+    git(['add', 'dados-supabase.json', 'desenhos-imagens',
+      ...PASTAS_EXTRAS.filter(p => fs.existsSync(path.join(REPO, p)))]);
     let changed = true;
     try { git(['diff', '--cached', '--quiet']); changed = false; } catch (e) { changed = true; }
     const sufImg = `, imagens novas=${novas}${falhas ? `, falhas=${falhas}` : ''}`;
