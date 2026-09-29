@@ -7872,20 +7872,52 @@ function renderEstoque() {
      das reservas da OS no estoque (o mesmo número que entra na coluna Reservado
      do quadro de cima); a bobina é a soma das fases, pelo cadastro da grade,
      como nas colunas ao lado. Na dica do mouse, o quilo de cada pano. */
-  const _seloReservado = (o, os) => {
-    let bob = null;
+  /* O RESERVADO É O QUE EXISTE, NÃO O PREVISTO (29/09/2026, Junior: "a coluna
+     situação mostra quantidade reservada igual à quantidade total prevista, mas
+     esse número não está certo, pois é impossível reservar a quantidade total de
+     uma OS que está sendo mostrada com material faltante").
+     O movimento de reserva no estoque é gravado pelo PREVISTO inteiro — é ele
+     que o disponível da prateleira desconta. Mas o que a OS de fato segura é o
+     previsto menos a falta: pano que não existe não está reservado para
+     ninguém. Então o selo tira a falta de cada pano (sem passar de zero) e, nas
+     bobinas, soma o segundo número das colunas das fases (previsto − falta da
+     fase, a mesma conta das células). Com falta, mostra "X de Y". */
+  const _seloReservado = (o, os, falta, fatias) => {
+    let bob = null, bobPrev = null;
     try {
-      (materialPorFaseOS(os) || []).forEach(f => { if (f.bobinas != null) bob = (bob || 0) + f.bobinas; });
-    } catch (e) { bob = null; }
-    const porPano = new Map();
+      (materialPorFaseOS(os) || []).forEach(f => {
+        if (f.bobinas == null) return;
+        bobPrev = (bobPrev || 0) + f.bobinas;
+        bob = (bob || 0) + (f.bobinas - bobinasQueFaltamNaFase(f, fatias));
+      });
+    } catch (e) { bob = null; bobPrev = null; }
+    const faltaPorPano = new Map();
+    (falta || []).forEach(f => {
+      const k = _normNome(f.tecidoNome || '') + '||' + _normNome(f.corNome || '');
+      faltaPorPano.set(k, (faltaPorPano.get(k) || 0) + (Number(f.falta) || 0));
+    });
+    const porPano = new Map();   // chave → { nome, prev }
     (STATE.estoqueMov || []).forEach(m => {
       if (m.origem !== 'os' || m.osId !== o.osId || m.status === 'consumido' || m.tipo === 'entrada') return;
-      const nome = (m.tecidoNome || '') + ' · ' + (corSemTecido(m.corNome, m.tecidoNome) || '(sem cor)');
-      porPano.set(nome, (porPano.get(nome) || 0) + (parseFloat(m.kg) || 0));
+      const k = _normNome(m.tecidoNome || '') + '||' + _normNome(m.corNome || '');
+      const cur = porPano.get(k) || { nome: (m.tecidoNome || '') + ' · ' + (corSemTecido(m.corNome, m.tecidoNome) || '(sem cor)'), prev: 0 };
+      cur.prev += parseFloat(m.kg) || 0;
+      porPano.set(k, cur);
     });
-    const dica = 'Reservado por esta OS:\n' + [...porPano.entries()].map(([n, kg]) => '  · ' + n + ': ' + fmt(kg) + ' kg').join('\n');
+    let kgRes = 0, kgPrev = 0;
+    const linhas = [];
+    porPano.forEach((p, k) => {
+      const res = Math.max(0, p.prev - (faltaPorPano.get(k) || 0));
+      kgRes += res; kgPrev += p.prev;
+      linhas.push('  · ' + p.nome + ': ' + fmt(res) + ' kg reservados'
+        + (res < p.prev - 0.0005 ? ' de ' + fmt(p.prev) + ' previstos' : ''));
+    });
+    const temFalta = kgRes < kgPrev - 0.0005 || (bob != null && bob < bobPrev);
+    const dica = 'Reservado por esta OS (o que existe na prateleira para ela):\n' + linhas.join('\n');
+    const kgTxt = temFalta ? `${fmt(kgRes)} de ${fmt(kgPrev)} kg` : `${fmt(kgRes)} kg`;
+    const bobTxtSelo = bob == null ? '' : (temFalta ? ` · <b>${bob} de ${bobPrev} bob</b>` : ` · <b>${bob} bob</b>`);
     return `<span class="badge" style="background:#fde9c8;white-space:nowrap;" title="${esc(dica)}">Reservado · `
-      + `<b style="font-family:'IBM Plex Mono',monospace;">${fmt(o.kg)} kg</b>${bob != null ? ` · <b>${bob} bob</b>` : ''}</span>`;
+      + `<b style="font-family:'IBM Plex Mono',monospace;">${kgTxt}</b>${bobTxtSelo}</span>`;
   };
 
   const linhaOS = (o) => {
@@ -7907,7 +7939,7 @@ function renderEstoque() {
         : `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-3);" title="Esta OS não tem a fase Corpo ${i + 1}">0/0 <span style="font-size:10px;">bob</span> <span style="font-size:10px;">· 0,000 kg</span></td>`).join('')}
       ${temForro ? celFase(forro, fatias, o.osId) : ''}
       ${temRibana ? celFase(rib, fatias, o.osId) : ''}
-      <td>${_seloReservado(o, os)}${falta
+      <td>${_seloReservado(o, os, falta, fatias)}${falta
         ? `<div style="margin-top:4px;padding:4px 7px;border-radius:5px;background:#f6dcda;color:#c0392b;font-size:11px;line-height:1.5;display:inline-block;" title="${dica}">${_resumoFalta(os, falta)}</div>`
         : ''}</td>
     </tr>`;
