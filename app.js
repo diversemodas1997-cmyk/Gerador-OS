@@ -7692,12 +7692,21 @@ function renderEstoque() {
   /* O SELO DIZ QUAL PANO (24/09/2026, Junior). "faltam 5,253 kg" numa
      linha de camiseta fazia pensar na malha do corpo, que estava sobrando — o
      que faltava era a ribana da gola. O nome do pano vem antes do número. */
+  /* UMA LINHA POR PANO, COM O QUANTO NA FRENTE (29/09/2026, Junior: "na coluna
+     situação deve ser mostrado de forma objetiva o que falta e quanto falta").
+     O selo era uma frase só — "falta Malha Algodão · Preto, Ribana · Preto:
+     12,4 kg" — e o número ficava no fim, depois dos nomes, somado de todos os
+     panos: com dois tecidos não dava para saber quanto era de cada um, e o
+     selo estreito cortava justamente o número. Agora cada pano que falta é uma
+     linha: o QUANTO em negrito primeiro, o pano depois. */
   const _resumoFalta = (os, fs) => {
     const t = faltaParaCompletarOS(os, fs);
-    const kgTxt = fmt(t.faltaKg || fs.reduce((s, f) => s + (Number(f.falta) || 0), 0));
-    const panos = fs.map(f => (f.tecidoNome || '') + ' · '
-      + (corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)')).join(', ');
-    return `falta ${panos}: ${kgTxt} kg` + (t.temBobina && t.faltaBob > 0 ? ` (${t.faltaBob} bob)` : '');
+    const itens = t.itens.length ? t.itens : fs;
+    return itens.map(f => {
+      const pano = esc(f.tecidoNome || '') + ' · ' + esc(corSemTecido(f.corNome, f.tecidoNome) || '(sem cor)');
+      const bob = f.faltaBob > 0 ? ` · ${f.faltaBob} bob` : '';
+      return `<div style="white-space:nowrap;">⚠ <b>falta ${fmt(f.falta)} kg${bob}</b> <span style="font-weight:400;">${pano}</span></div>`;
+    }).join('');
   };
 
   /* O AVISO FECHA A CONTA DA OS (15/09/2026, Junior). Antes ele listava o que
@@ -7870,7 +7879,7 @@ function renderEstoque() {
       ${temForro ? celFase(forro, fatias, o.osId) : ''}
       ${temRibana ? celFase(rib, fatias, o.osId) : ''}
       <td><span class="badge" style="background:#fde9c8;">Reservado</span>${falta
-        ? ` <span class="badge" style="background:#f6dcda;color:#c0392b;font-weight:700;" title="${dica}">⚠ ${esc(_resumoFalta(os, falta))}</span>`
+        ? `<div style="margin-top:4px;padding:4px 7px;border-radius:5px;background:#f6dcda;color:#c0392b;font-size:11px;line-height:1.5;display:inline-block;" title="${dica}">${_resumoFalta(os, falta)}</div>`
         : ''}</td>
     </tr>`;
   };
