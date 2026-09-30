@@ -30351,60 +30351,167 @@ function renderFilaOS(statusEscolhido) {
    discordam. E como lá, só entra OS com pano AINDA reservado (a que já foi
    cortada baixou o pano, e não tem mais o que faltar).
 
-   A conta relê o estoque inteiro por OS, e a lista se redesenha a cada tecla
-   da busca. Por isso o resultado fica guardado enquanto a ASSINATURA do
-   estoque e das OS não muda (quantos movimentos, quanto somam, quantos já
-   consumidos, quantas OS) — mudou qualquer uma, refaz. */
+   AVIAMENTOS E MATERIAIS ENTRAM PELA MESMA REGRA (30/09/2026, Junior: "Inclua
+   também os aviamentos e materiais na coluna"). A do tecido é: tira a reserva
+   DESTA OS, vê quanto sobra no estoque depois das reservas de TODAS AS OUTRAS,
+   e falta o que a OS precisa além disso. Aplicada igual aqui:
+     · aviamento (fio, linha, etiqueta, botão, viés…): a reserva de _aviDasOS
+       contra o que há HOJE nas duas unidades juntas — a mesma base do quadro
+       "Reservado para OS ainda não costuradas", em unidades;
+     · material (kraft, filme): a reserva de _matDasOS (metros do enfesto)
+       contra o estoque menos o que as OS já baixaram — a mesma base de
+       _matFaltas e da lista de compra.
+   Com isso a falta de uma prateleira aparece em CADA OS que depende dela: é a
+   resposta a "esta OS, sozinha, tem com o que ser feita?", e não uma divisão
+   da falta total entre as OS — essa divisão exigiria dizer qual OS vai
+   primeiro, e é pergunta da fila, não do estoque.
+
+   Só OS NÃO INICIADA entra na conta (ver _faltaCelulaOS). As outras seguem
+   reservando e contam como "as outras" — é o pano e o aviamento que já têm
+   dono.
+
+   A conta relê os estoques, e a lista se redesenha a cada tecla da busca. Por
+   isso o resultado fica guardado enquanto a ASSINATURA dos estoques e das OS
+   não muda — mudou qualquer uma, refaz. A das OS leva o status, a última
+   marcação e o tamanho dos aviamentos de cada uma: é o que muda a reserva. */
 let _faltasListaOSCache = null;
 function _faltasListaOS() {
   const movs = Array.isArray(STATE.estoqueMov) ? STATE.estoqueMov : [];
+  const aviMov = Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : [];
+  const matCad = Array.isArray(STATE.materiaisEstCad) ? STATE.materiaisEstCad : [];
   let kg = 0, cons = 0;
   movs.forEach(m => { kg += parseFloat(m.kg) || 0; if (m.status === 'consumido') cons++; });
-  const assin = [movs.length, Math.round(kg * 1000), cons, (STATE.ordens || []).length,
-                 (STATE.tecidos || []).length, (STATE.grades || []).length].join('|');
+  let aviSoma = 0;
+  aviMov.forEach(m => { aviSoma += (Number(m.qtd) || 0) + (Number(m.kg) || 0); });
+  const ordens = STATE.ordens || [];
+  const assinOS = ordens.map(o => (o.statusOS || '') + (o.statusOSEm || '') + _ultimaMarcacaoChecklist(o)
+    + ':' + JSON.stringify(o.aviamentos || '').length).join(',');
+  const assin = [movs.length, Math.round(kg * 1000), cons, aviMov.length, Math.round(aviSoma * 1000),
+                 JSON.stringify(matCad).length, ordens.length, assinOS,
+                 (STATE.tecidos || []).length, (STATE.grades || []).length, _aviHoje()].join('|');
   if (_faltasListaOSCache && _faltasListaOSCache.assin === assin) return _faltasListaOSCache.mapa;
+
   const mapa = new Map();
+  const naoIniciadas = ordens.filter(o => o && _statusOS(o) === 'nao-iniciado');
+  const daOS = id => {
+    if (!mapa.has(id)) mapa.set(id, { itens: [], total: null, avi: [], mat: [] });
+    return mapa.get(id);
+  };
+
+  // 1) TECIDO: a conta de sempre (faltaDeTecidoParaOS).
   if (movs.length) {
-    osComMaterialReservado().filter(o => o.kg > 0 && !o.consumido).forEach(r => {
-      const os = (STATE.ordens || []).find(x => x.id === r.osId);
-      if (!os) return;
+    const comReserva = new Set(osComMaterialReservado().filter(o => o.kg > 0 && !o.consumido).map(o => o.osId));
+    naoIniciadas.filter(o => comReserva.has(o.id)).forEach(os => {
       let fs = [];
       try { fs = faltaDeTecidoParaOS(os) || []; } catch (e) { fs = []; }
       if (!fs.length) return;
       let t = null;
       try { t = faltaParaCompletarOS(os, fs); } catch (e) { t = null; }
-      mapa.set(r.osId, { itens: (t && t.itens.length) ? t.itens : fs, total: t });
+      const f = daOS(os.id);
+      f.itens = (t && t.itens.length) ? t.itens : fs;
+      f.total = t;
     });
   }
+
+  // 2) AVIAMENTOS: reserva desta OS contra o que há hoje − as reservas das outras.
+  try {
+    const av = _aviDasOS();
+    if (av.reservas.length) {
+      const hoje = _aviHoje();
+      const linhas = calcularEstoqueAviamentos(aviMov.concat(av.baixas), hoje, hoje, hoje, undefined, _aviDataCarga);
+      const chave = r => _normNome(r.item) + '||' + _normNome(r.cor) + '||' + (r.tam || '');
+      const corrente = new Map();
+      linhas.forEach(l => { if (!l.modelo) corrente.set(chave(l), (l.un && Number(l.un.corrente)) || 0); });
+      const resTotal = new Map();
+      av.reservas.forEach(r => resTotal.set(chave(r), (resTotal.get(chave(r)) || 0) + r.qtd));
+      const ids = new Set(naoIniciadas.map(o => o.id));
+      const porOSChave = new Map();
+      av.reservas.filter(r => ids.has(r.osId)).forEach(r => {
+        const k = r.osId + '##' + chave(r);
+        const cur = porOSChave.get(k) || { osId: r.osId, k: chave(r), r, qtd: 0 };
+        cur.qtd += r.qtd;
+        porOSChave.set(k, cur);
+      });
+      porOSChave.forEach(x => {
+        const corr = corrente.get(x.k) || 0;
+        const outras = (resTotal.get(x.k) || 0) - x.qtd;
+        const disponivel = Math.max(0, corr - outras);
+        const falta = Math.round(x.qtd - disponivel);
+        if (!(falta > 0)) return;
+        daOS(x.osId).avi.push({ nome: _aviItemTexto(x.r), cor: x.r.cor || '', precisa: x.qtd,
+                                disponivel: Math.round(disponivel), falta });
+      });
+    }
+  } catch (e) { console.warn('falta de aviamentos na lista de OS', e); }
+
+  // 3) MATERIAIS: metros do enfesto desta OS contra o estoque − as outras OS.
+  try {
+    const md = _matDasOS();
+    if (md.reservas.length) {
+      const r2 = v => Math.round(v * 100) / 100;
+      const soma = (lista, fn) => lista.reduce((a, b) => a + (fn(b) ? b.qtd : 0), 0);
+      const ids = new Set(naoIniciadas.map(o => o.id));
+      matCad.filter(x => x.baixaOS && _estItemMedida(x) === 'm' && _aviUnidadeDe(x) === 'desc').forEach(x => {
+        const estoque = (Number(x.emEstoque) || 0) - soma(md.baixas, b => b.itemId === x.id);
+        const resTotal = soma(md.reservas, b => b.itemId === x.id);
+        const porOS = new Map();
+        md.reservas.filter(b => b.itemId === x.id && ids.has(b.osId))
+          .forEach(b => porOS.set(b.osId, (porOS.get(b.osId) || 0) + b.qtd));
+        porOS.forEach((qtd, osId) => {
+          const disponivel = Math.max(0, estoque - (resTotal - qtd));
+          const falta = r2(qtd - disponivel);
+          if (!(falta > 0.005)) return;
+          daOS(osId).mat.push({ item: x, nome: x.nome || '', precisa: r2(qtd), disponivel: r2(disponivel), falta });
+        });
+      });
+    }
+  } catch (e) { console.warn('falta de materiais na lista de OS', e); }
+
   _faltasListaOSCache = { assin, mapa };
   return mapa;
 }
 
-// Uma linha por pano que falta, com o QUANTO na frente — o mesmo desenho do
-// selo da coluna Situação do Material reservado.
+// Uma linha por item que falta, com o QUANTO na frente — o mesmo desenho do
+// selo da coluna Situação do Material reservado. Tecido, depois aviamento,
+// depois material.
 /* SÓ NA OS NÃO INICIADA (30/09/2026, Junior: "Essa informação deve ser nula em
    OS com status diferente de Não iniciado"). Começada a OS, o pano dela já está
-   na mesa ou a caminho dela — a falta deixa de ser pergunta de compra. O teste
-   é feito aqui, na célula, e não no cache: o status muda sem mexer no estoque,
-   e a assinatura do cache não enxergaria. */
+   na mesa ou a caminho dela — a falta deixa de ser pergunta de compra. Conferido
+   de novo aqui, e não só na conta: é o que a célula promete. */
 function _faltaCelulaOS(o, faltas) {
   const f = _statusOS(o) === 'nao-iniciado' ? faltas.get(o.id) : null;
-  if (!f) return '<span style="color:var(--ink-3)">—</span>';
+  if (!f || !(f.itens.length || f.avi.length || f.mat.length)) return '<span style="color:var(--ink-3)">—</span>';
   const kg = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const un = n => Math.round(Number(n) || 0).toLocaleString('pt-BR');
   const pano = i => (i.tecidoNome || '') + ' · ' + (corSemTecido(i.corNome, i.tecidoNome) || '(sem cor)');
+  const avi = a => a.nome + (a.cor ? ' · ' + a.cor : '');
   const t = f.total;
-  const dica = 'Reservando pano que não existe:\n'
-    + f.itens.map(i => '  · ' + pano(i) + ': precisa ' + kg(i.precisa) + ' kg, disponível '
+  const blocos = [];
+  if (f.itens.length) {
+    blocos.push('TECIDO\n' + f.itens.map(i => '  · ' + pano(i) + ': precisa ' + kg(i.precisa) + ' kg, disponível '
       + kg(i.disponivel) + ' kg, faltam ' + kg(i.falta) + ' kg'
       + (i.faltaBob > 0 ? ' (' + i.faltaBob + ' bob)' : '')).join('\n')
-    + (t && t.previstoKg > 0
-      ? '\n\nPara completar esta OS faltam ' + (t.temBobina ? t.faltaBob + ' de ' + t.previstoBob + ' bobinas e ' : '')
-        + kg(t.faltaKg) + ' de ' + kg(t.previstoKg) + ' kg previstos.' : '')
-    + '\n\nSai sozinho quando a entrada desse tecido for lançada no estoque.';
+      + (t && t.previstoKg > 0
+        ? '\n  Para completar esta OS faltam ' + (t.temBobina ? t.faltaBob + ' de ' + t.previstoBob + ' bobinas e ' : '')
+          + kg(t.faltaKg) + ' de ' + kg(t.previstoKg) + ' kg previstos.' : ''));
+  }
+  if (f.avi.length) {
+    blocos.push('AVIAMENTOS (estoque das duas unidades)\n' + f.avi.map(a => '  · ' + avi(a) + ': precisa ' + un(a.precisa)
+      + ' un, disponível ' + un(a.disponivel) + ' un, faltam ' + un(a.falta) + ' un').join('\n'));
+  }
+  if (f.mat.length) {
+    blocos.push('MATERIAIS\n' + f.mat.map(m => '  · ' + m.nome + ': precisa ' + _estFmtQtd(m.item, m.precisa)
+      + ', disponível ' + _estFmtQtd(m.item, m.disponivel) + ', faltam ' + _estFmtQtd(m.item, m.falta)).join('\n'));
+  }
+  const dica = 'O que esta OS reserva e o estoque não tem, depois das reservas das outras OS:\n\n'
+    + blocos.join('\n\n')
+    + '\n\nSai sozinho quando a entrada for lançada no estoque.';
+  const linha = (qtd, nome) => `<div style="margin-bottom:2px;">⚠ <b style="white-space:nowrap;">${qtd}</b>`
+    + `<div style="font-size:10px;color:var(--ink-2);">${esc(nome)}</div></div>`;
   return `<div class="falta-os" title="${esc(dica)}" style="color:#c0392b;font-size:11px;line-height:1.25;">`
-    + f.itens.map(i => `<div style="margin-bottom:2px;">⚠ <b style="white-space:nowrap;">${kg(i.falta)} kg`
-      + `${i.faltaBob > 0 ? ' · ' + i.faltaBob + ' bob' : ''}</b>`
-      + `<div style="font-size:10px;color:var(--ink-2);">${esc(pano(i))}</div></div>`).join('')
+    + f.itens.map(i => linha(`${kg(i.falta)} kg${i.faltaBob > 0 ? ' · ' + i.faltaBob + ' bob' : ''}`, pano(i))).join('')
+    + f.avi.map(a => linha(`${un(a.falta)} un`, avi(a))).join('')
+    + f.mat.map(m => linha(esc(_estFmtQtd(m.item, m.falta)), m.nome)).join('')
     + `</div>`;
 }
 
