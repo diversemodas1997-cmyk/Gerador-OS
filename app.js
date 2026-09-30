@@ -28922,16 +28922,16 @@ function _renderAvisoGrupoListaOS(mostradas) {
    lugar uma sem a outra. */
 const STATUS_OS = [
   { k: 'nao-iniciado',    cor: '#98a2ae', bg: '#f2f4f7', bd: '#cfd6de', rotulo: 'Não iniciado' },
-  { k: 'materia-prima',   cor: '#8a5a2b', bg: '#f3ece2', bd: '#d7c3a5', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1,
+  { k: 'materia-prima',   cor: '#8a5a2b', bg: '#f3ece2', bd: '#d7c3a5', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1, preIda: true,
     re: /prepar\w*\s+(d[ae]\s+)?mat[ée]ria|mat[ée]ria[\s-]?prima/i },
   /* O ENFESTO NAO E ETAPA DO CHECKLIST: ele mora na TABELA DE ENFESTOS da
      folha, uma linha por fase da grade, com a caixa de cada uma. Daí `enfesto`
      em vez de `re` — ver _marcasDoStatus. A `re` fica junto para o caso de
      alguem um dia cadastrar uma etapa chamada Enfesto: as duas acendem o mesmo
      status, e vale a marcada por ultimo. */
-  { k: 'enfestando',      cor: '#d0a000', bg: '#fdf6d8', bd: '#e3ce7a', rotulo: 'Enfestando',               ordem: 2, baixa: true,
+  { k: 'enfestando',      cor: '#d0a000', bg: '#fdf6d8', bd: '#e3ce7a', rotulo: 'Enfestando',               ordem: 2, baixa: true, preIda: true,
     enfesto: true, re: /enfest/i },
-  { k: 'cortando',        cor: '#e2661a', bg: '#fdeede', bd: '#e6bb8a', rotulo: 'Cortando',                 ordem: 3, baixa: true,
+  { k: 'cortando',        cor: '#e2661a', bg: '#fdeede', bd: '#e6bb8a', rotulo: 'Cortando',                 ordem: 3, baixa: true, preIda: true,
     re: /corte|cortando/i },
   /* SEPARANDO (24/09/2026, Junior: "insira a status Separando. Esse status
      recebe o volume que migra do status Cortando" e "o status Ensacado recebe o
@@ -28952,7 +28952,7 @@ const STATUS_OS = [
 
      `ordem` 3.5 põe o separar entre o corte (3) e o ensaque na leitura de OS
      antiga sem `etapasSeq`. A cor é o salmão, que ainda não tinha dono. */
-  { k: 'separando',       cor: '#f08a73', bg: '#fdece8', bd: '#f2b9ab', rotulo: 'Separando',                ordem: 3.5, baixa: true,
+  { k: 'separando',       cor: '#f08a73', bg: '#fdece8', bd: '#f2b9ab', rotulo: 'Separando',                ordem: 3.5, baixa: true, preIda: true,
     re: /separa/i },
   /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
      etapa de trabalho, e por isso ele não tinha status — mas é ele que diz que
@@ -28997,7 +28997,7 @@ const STATUS_OS = [
      O LOOKAHEAD NEGATIVO é o que impede o ensaque daqui de casar com uma etapa
      de São Carlos, do mesmo jeito que na costura. Sem ele, "Recebido em São
      Carlos" acenderia os DOIS. */
-  { k: 'ensacado',        cor: '#c2399c', bg: '#fae6f4', bd: '#e2a6d0', rotulo: 'Ensacado | Descalvado',   curto: 'Ensacado | DESC',    ordem: 6, baixa: true,
+  { k: 'ensacado',        cor: '#c2399c', bg: '#fae6f4', bd: '#e2a6d0', rotulo: 'Ensacado | Descalvado',   curto: 'Ensacado | DESC',    ordem: 6, baixa: true, preIda: true,
     re: /^(?!.*s[ãa]o\s+carlos).*(ensaqu|ensacad)/i },
   { k: 'ensacado-sc',     cor: '#d8456b', bg: '#fce7ec', bd: '#eeabbd', rotulo: 'Ensacado | São Carlos',   curto: 'Ensacado | SC',      ordem: 6, baixa: true,
     re: /recebido em s[ãa]o carlos|(ensaqu|ensacad).*s[ãa]o\s+carlos/i },
@@ -29240,10 +29240,31 @@ function _marcasDoStatus(o, s) {
   return achou ? { seq } : null;            // parado: sem fonte, nunca acende
 }
 
+/* DEPOIS DA IDA, O CHECKLIST DE DESCALVADO NÃO PUXA A OS DE VOLTA (30/09/2026,
+   Junior: "OS que foram alocadas em OE e o status não foi alterado para Em
+   trânsito | IDA").
+
+   A alocação marca "Expedição Desc X São Carlos" na hora, e quem ensaca muitas
+   vezes marca o Ensaque minutos depois — pondo em dia o que já tinha feito. Pela
+   regra da última marca, a OS voltava para "Ensacado | Descalvado" com a carga
+   já na OE: foi o que aconteceu com a 0565 (alocada 08:16, Ensaque 08:22 de
+   25/09).
+
+   Então, com a ida marcada, os status de ANTES dela (os `preIda`: preparo,
+   enfesto, corte, separação, ensaque daqui) saem da disputa. O que vem depois
+   (recebido, costura, volta, estoque) segue disputando pela última marca.
+
+   Só vale quando a ida tem CARIMBO de hora. OS antiga, sem etapasSeq, continua
+   lendo pela `ordem` o que sempre leu (ver o comentário do trânsito em
+   STATUS_OS). */
 function _statusDoChecklistOS(o) {
   let achouSeq = false, kSeq = '', melhorSeq = -Infinity;
   let kOrd = '', melhorOrd = -1;
+  const ida = STATUS_OS.find(s => s.k === 'transito-ida');
+  const mIda = ida ? _marcasDoStatus(o, ida) : null;
+  const idaMarcada = !!(mIda && mIda.seq > -Infinity);
   STATUS_OS.forEach(s => {
+    if (idaMarcada && s.preIda) return;
     if (s.cond && !s.cond(o)) return;
     const m = _marcasDoStatus(o, s);
     if (!m) return;
