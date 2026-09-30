@@ -20868,7 +20868,14 @@ function _riscoItemDoCaminho(rel) {
   const arq = p[p.length - 1] || '';
   const meio = p.slice(1, -1);                       // entre a linha e o arquivo
   const iCm = meio.findIndex(seg => _riscoCmDoTexto(seg));
-  const tams = meio.filter((_, i) => i !== iCm);
+  /* TAMANHOS SEPARADOS POR ESPAÇO (30/09/2026). A pasta da CLM chegou como
+     "CLM/177cm/P M G GG", e não "P-M-G-GG": a grade "P-M-G-GG | CLM | 177cm"
+     ficava sem o PDF na coluna Riscos. Segmento que é SÓ tamanhos separados
+     por espaço vira a forma com hífen — um segmento com qualquer outra
+     palavra ("177 cm - MAPAS IMPRESSOS") não casa e fica como está. */
+  const soTams = /^(?:\d*[xX]?(?:GG|G[123]|[PMG]))(?:\s+\d*[xX]?(?:GG|G[123]|[PMG]))+$/i;
+  const tams = meio.filter((_, i) => i !== iCm)
+    .map(seg => soTams.test(seg.trim()) ? seg.trim().split(/\s+/).join('-') : seg);
   const doNome = _riscoTamsDoTexto(arq.replace(/\.pdf$/i, ''));
   const pastaDizTamanho = tams.some(seg => _riscoTamsDoTexto(seg));
   if (doNome && !pastaDizTamanho) tams.push(doNome);

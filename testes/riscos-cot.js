@@ -114,6 +114,12 @@ ok('a grade de 200cm é avisada de que o PDF é de outra largura',
 ok('PM.LISA (LINHA/TAM/TAM/CM — "Malha Piquet/Piquet Dry")',
    acha(grade('M-G-GG-G1-G3 | PM.LISA | 175cm', { m: 1, g: 1, gg: 1, g1: 1, g3: 1 }),
         'PM.LISA/Malha Piquet/Piquet Dry/'));
+// CLM (30/09/2026): a pasta separa os tamanhos por ESPAÇO — "P M G GG".
+ok('CLM (tamanhos separados por espaço — "P M G GG")',
+   acha(grade('P-M-G-GG | CLM | 177cm', { p: 1, m: 1, g: 1, gg: 1 }), 'CLM/177cm/P M G GG/'));
+// Só vira hífen o segmento que é SÓ tamanhos: com outra palavra, fica como está.
+eq('segmento com palavra junto fica como está',
+   itemDe('CM.LISA/P M G ribana/177 cm/X.pdf').tams[0], 'P M G ribana');
 
 /* ---------- 4. o que já funcionava continua funcionando ---------- */
 
