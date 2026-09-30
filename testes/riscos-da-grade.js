@@ -69,18 +69,17 @@ const motor = [
 
 const indice = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'dados', 'riscos-pdf.json'), 'utf8'));
 
-// Monta o _riscosIdx do mesmo jeito que _riscosIndice monta no app.
-const itens = indice.arquivos.map(rel => {
-  const p = rel.split('/');
-  return {
-    rel,
-    linha: p[0] || '',
-    tam: p.length > 2 ? p[1] : '',
-    cm: p.length > 3 ? (String(p[2]).match(/(\d+[.,]?\d*)\s*cm/i) || ['', ''])[1].replace(',', '.') : '',
-    pasta: p.slice(0, -1).join('/'),
-    arq: p[p.length - 1]
-  };
-});
+// Monta o _riscosIdx do mesmo jeito que _riscosIndice monta no app: pelo
+// _riscoItemDoCaminho DE VERDADE. Até 30/09/2026 este teste tinha um leitor
+// próprio, cópia do de maio — e quando a pasta ganhou o nível "LINHA ADULTO/",
+// ele quebrou por ser velho, não por o app estar errado.
+const itens = new Function('caminhos', `
+  ${recorte('const _riscoCmDoTexto = s =>', '\n};', '_riscoCmDoTexto')}\n};
+  ${recorte('const _RISCO_TAM_RE', '\n', '_RISCO_TAM_RE')}
+  ${recorte('function _riscoTamsDoTexto', '\n}', '_riscoTamsDoTexto')}\n}
+  ${recorte('function _riscoItemDoCaminho', '\n}', '_riscoItemDoCaminho')}\n}
+  return caminhos.map(_riscoItemDoCaminho);
+`)(indice.arquivos);
 
 function rodar(codigo, grade) {
   const fn = new Function('IDX', 'GRADE', `

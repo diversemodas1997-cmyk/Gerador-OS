@@ -164,9 +164,10 @@ ok('33. e chega a Sao Carlos como etiqueta G',
    (api.calcularEstoqueAviamentos(met, '2026-09-01', '2026-09-30', '2026-09-30', 'sc').find(x => x.tam === 'G') || {}).un.corrente === 50);
 ok('34. tamanho em item que nao e etiqueta e ignorado', (et.find(x => x.item === 'Botão') || {}).tam === '', et.find(x => x.item === 'Botão'));
 ok('35. a ordem das linhas segue os tamanhos (M antes de G)', et.indexOf(etM) < et.indexOf(etG));
-ok('36. a janela tem o campo de tamanho, so para a etiqueta, com os sete tamanhos',
+// Os sete adultos e, desde 30/09/2026, os oito infantis (2 ao 16).
+ok('36. a janela tem o campo de tamanho, so para a etiqueta, com os tamanhos adultos e infantis',
    /id="ma-tam"/.test(src) && /campo\.style\.display = eEtiqueta \? '' : 'none'/.test(src)
-   && /const AVIAMENTO_TAMANHOS = \['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'\];/.test(src));
+   && /const AVIAMENTO_TAMANHOS = \['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'\];/.test(src));
 
 // 24/09/2026: "insira a cor preto como automatico para Etiquetas".
 ok('37. a etiqueta ja vem Preto, so com a cor vazia, e o Preto automatico sai ao trocar de item',

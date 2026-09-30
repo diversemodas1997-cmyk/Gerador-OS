@@ -4486,11 +4486,21 @@ function openCadastroModal(tipo, editId = null, origin = null) {
       </div>
       <div style="margin-top:10px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
+        <!-- DUAS LINHAS DE TAMANHO (30/09/2026, Junior: "uma linha paralela de
+             tamanhos, logo abaixo da linha de tamanhos P ao G3, com os tamanhos
+             2-4-6-8-10-12-14-16"). A grade usa uma OU outra — a infantil guarda
+             as chaves t2…t16, e o rótulo mostra só o número. -->
         <div class="grade-inputs" style="margin-top:6px;">
           ${['p','m','g','gg','g1','g2','g3'].map(t => `
             <div class="field"><label>${t.toUpperCase()}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
           `).join('')}
         </div>
+        <div class="grade-inputs grade-inputs-infantil" style="margin-top:6px;">
+          ${['t2','t4','t6','t8','t10','t12','t14','t16'].map(t => `
+            <div class="field"><label>${t.slice(1)}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
+          `).join('')}
+        </div>
+        <div class="field-hint" style="margin-top:4px;">Preencha <b>uma</b> das duas linhas: P ao G3 (adulto) ou 2 ao 16 (infantil).</div>
       </div>
       <div style="margin-top:14px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Fases do enfesto</label>
@@ -6517,9 +6527,17 @@ async function salvarCadastro() {
     }
     item.conjugadaDesenhoId = v('m-grade-conjugada-desenho');
     item.tamanhos = {};
-    ['p','m','g','gg','g1','g2','g3'].forEach(t => {
+    ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].forEach(t => {
       item.tamanhos[t] = parseInt(v('m-gr-'+t)) || 0;
     });
+    // Uma linha OU outra (decidido com o Junior): a folha, as etiquetas e os
+    // pacotes da expedição mostram as colunas de UMA linha, e uma grade com as
+    // duas sairia pela metade em todos eles.
+    const _temAdulto = ['p','m','g','gg','g1','g2','g3'].some(t => item.tamanhos[t] > 0);
+    const _temInfantil = ['t2','t4','t6','t8','t10','t12','t14','t16'].some(t => item.tamanhos[t] > 0);
+    if (_temAdulto && _temInfantil) {
+      return toast('A grade usa uma linha só: P ao G3 ou 2 ao 16. Zere a outra linha antes de salvar.', 'err');
+    }
     item.fases = Array.from(document.querySelectorAll('#m-fases-container .fase-grade-bloco')).map((b, i) => {
       const pb = parseBobinas(b.querySelector('.fase-bobinas')?.value);
       // Excedente de enfesto em CENTÍMETROS, como se fala no chão. Vazio é
@@ -6569,7 +6587,7 @@ async function salvarCadastro() {
     // significar alguma coisa — sem tamanhos ou sem largura, a assinatura de uma
     // grade pela metade casaria com toda grade pela metade.
     const _larg = parseFloat(String(f1.larg || '').replace(',', '.')) || 0;
-    const _totTam = ['p','m','g','gg','g1','g2','g3'].reduce((s, t) => s + (item.tamanhos[t] || 0), 0);
+    const _totTam = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].reduce((s, t) => s + (item.tamanhos[t] || 0), 0);
     if (_totTam > 0 && _larg > 0) {
       const _sku = _normNome(_skuDaGrade(item));
       const iguais = (STATE.grades || []).filter(g => {
@@ -6578,7 +6596,7 @@ async function salvarCadastro() {
         if (_normNome(_skuDaGrade(g)) !== _sku) return false;
         const gl = parseFloat(String((g.fases || [])[0]?.larg || '').replace(',', '.')) || 0;
         if (!gl || Math.abs(gl - _larg) > 0.005) return false;
-        return ['p','m','g','gg','g1','g2','g3']
+        return ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
           .every(t => (parseInt((g.tamanhos || {})[t], 10) || 0) === (item.tamanhos[t] || 0));
       });
       if (iguais.length) {
@@ -8525,7 +8543,7 @@ const AVIAMENTO_TIPOS = ['Fio', 'Linha', 'Etiqueta', 'Botão', 'Viés'];
    uma OS de G. Por isso o tamanho separa a linha do estoque (item + cor +
    tamanho) e viaja com ela na OE. É opcional — etiqueta de marca e de
    composição não têm tamanho — e só existe para a Etiqueta. */
-const AVIAMENTO_TAMANHOS = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+const AVIAMENTO_TAMANHOS = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'];
 const _aviTamDe = m => (m && _normNome(m.item) === 'etiqueta' && AVIAMENTO_TAMANHOS.indexOf(m.tam) >= 0) ? m.tam : '';
 /* O TIPO DO FIO E DA LINHA (28/09/2026, Junior, sobre as etiquetas dos cones:
    "Essas informações devem servir para cadastro do tipo de linha e fio").
@@ -8701,7 +8719,7 @@ function _aviTipoDoMaterial(nome) {
 // O que a OS usa de cada linha do estoque: [{ item, tam, cor, qtd }].
 function _aviNecessidadeOS(o) {
   const TT = totaisPorTamanhoTomOS(o);
-  const MAPA_TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const MAPA_TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3', t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
   const porTam = {};
   (TT.tamanhos || []).forEach(k => { porTam[k] = Number(TT.colTotal(k)) || 0; });
   const out = new Map();
@@ -10790,7 +10808,7 @@ let _rankFiltros = { grade: '', tipo: '', tamanho: '', cor: '', sku: '' };
 
 // A ordem dos tamanhos é a da GRADE, não a alfabética: "G1" antes de "GG" seria
 // alfabético e nenhum tamanho da casa se lê assim.
-const _RANK_ORDEM_TAM = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+const _RANK_ORDEM_TAM = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'];
 
 function _rankingFatos(ano, mes) {
   // OS SEM DATA fica de fora de qualquer recorte com período: ela não pertence a
@@ -10851,7 +10869,7 @@ function _rankingFatos(ano, mes) {
       const tt = totaisPorTamanhoTomOS(o);
       if (tt && tt.totalGeral > 0) {
         porTam = (tt.tamanhos || [])
-          .map(k => [k.toUpperCase(), Number(tt.colTotal(k)) || 0])
+          .map(k => [(String(k).charAt(0) === 't' ? String(k).slice(1) : String(k).toUpperCase()), Number(tt.colTotal(k)) || 0])
           .filter(x => x[1] > 0);
       }
     } catch (e) { porTam = []; }
@@ -12499,7 +12517,7 @@ function _expItensFaseHtml(o, carga, fi) {
   if (!grupos || !grupos.some(g => g.itens.length)) return '';
   const fmt = n => (Math.round(Number(n) || 0)).toLocaleString('pt-BR');
   const { porTam, tamanhos } = _expProdutosDaCargaPorTam(o, carga);
-  const TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const TAM = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3', t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
   const TH = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
   const TD = "padding:0 2px;text-align:center;font-family:'IBM Plex Mono',monospace;";
   const nCols = 2 + tamanhos.length + 1;
@@ -12661,7 +12679,7 @@ function _osEhMoletom(o) {
 //     multiplica os pacotes — ex.: "2X P ao G3" = 7, não 14).
 // Prefere a grade viva (como a folha impressa), caindo no snapshot salvo na OS.
 function _expTotalTamanhosGrade(o) {
-  const keys = ['p','m','g','gg','g1','g2','g3'];
+  const keys = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'];
   let tam = null;
   if (o && o.gradeId) {
     const g = (STATE.grades || []).find(x => x.id === o.gradeId);
@@ -12884,7 +12902,7 @@ function _expOutrasFracoesTexto(os, cargaAtual) {
 
 /* ---- peças de cada pacote: a ponte entre o lote parcial e o estoque ---- */
 
-const _EXP_TAM_KEY = { P: 'p', M: 'm', G: 'g', GG: 'gg', G1: 'g1', G2: 'g2', G3: 'g3' };
+const _EXP_TAM_KEY = { P: 'p', M: 'm', G: 'g', GG: 'gg', G1: 'g1', G2: 'g2', G3: 'g3', '2': 't2', '4': 't4', '6': 't6', '8': 't8', '10': 't10', '12': 't12', '14': 't14', '16': 't16' };
 
 // Quantas peças tem UM pacote de cada chave tamanho|tom. O pacote é uma VAGA de
 // tamanho: na camiseta o mesmo tamanho pode ter várias vagas e as peças daquele
@@ -20020,7 +20038,7 @@ function renderPrintPlanoExpedicao() {
   // pacote por tamanho de cada tonalidade, mais um de reposição. A tabela
   // detalha quantas peças vão em cada pacote — é o que a pessoa que ensaca lê.
   // Os números saem de totaisPorTamanhoTomOS, a mesma fonte da folha de OS.
-  const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
+  const TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3', t2:'2', t4:'4', t6:'6', t8:'8', t10:'10', t12:'12', t14:'14', t16:'16' };
   const TH = 'padding:0 2px;font-weight:700;border-bottom:.5pt solid #999;';
   const TD = 'padding:0 2px;text-align:center;font-family:\'IBM Plex Mono\',monospace;';
 
@@ -20034,7 +20052,7 @@ function renderPrintPlanoExpedicao() {
     const cont = _expContarPacotes(carga.pacotes);
     if (!cont.size) return '';    // carga sem pacote de tamanho: quem chama escreve o aviso
     const pp = _expPecasPacoteOS(o);
-    const ordem = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+    const ordem = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'];
     const vals = Array.from(cont.values());
     // Colunas: os tamanhos da grade da OS + qualquer tamanho que esteja na carga
     // e não esteja mais na grade (grade alterada depois de alocar).
@@ -20556,7 +20574,7 @@ function construirContabSnapshot() {
   // Por OS: produção (camisetas + por tamanho), material, modelo/cor e fase.
   // O Estoque-Confeccao usa `estoque` (etapa terminal "Estoque" marcada) como
   // gatilho para lançar a entrada de produtos acabados, casando pelo SKU da OS.
-  const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   const ordens = (STATE.ordens || []).map(o => {
     const tamanhos = {};
     // Por tamanho, a mesma coluna "Total por tamanho" da folha.
@@ -20944,7 +20962,7 @@ function onSelectGradeFolder(sel, kind) {
 // tamanhos. Grades com EXATAMENTE os mesmos tamanhos ficam vizinhas, e aí a
 // quantidade desempata (1x antes de 2x), com o nome como último critério para a
 // ordem não dançar entre uma abertura e outra.
-const _ORDEM_TAM = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+const _ORDEM_TAM = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
 function _gradeChaveSemelhanca(tamanhos) {
   let mascara = 0, total = 0;
   _ORDEM_TAM.forEach((k, i) => {
@@ -21074,9 +21092,22 @@ function _riscoTamsDoTexto(txt) {
 // pasta; com a mudança, 134 grades não mudam nada, 2 param de mostrar pasta
 // alheia e NENHUMA fica sem risco.
 function _riscoItemDoCaminho(rel) {
-  const p = String(rel || '').split('/');
+  /* A PASTA GANHOU UM NÍVEL POR LINHA DE TAMANHO (30/09/2026): o acervo foi
+     reorganizado em "LINHA ADULTO/BM.LISA/…" e "LINHA INFANTIL/…", junto com a
+     linha de tamanhos 2 ao 16. Esse primeiro nível não é a linha de SKU — lido
+     como linha, fazia TODA grade perder os PDFs na coluna Riscos. Ele é pulado.
+
+     E NA INFANTIL A LINHA VEM DO ARQUIVO: a pasta é "LINHA INFANTIL/2-4-6-8-10-
+     12-14-16/117cm/CM.LISA - CORPO - ….pdf" — os tamanhos no primeiro nível, e
+     o SKU só no começo do nome do arquivo. Quando o primeiro nível é só número e
+     hífen, a linha é o que vem antes do " - " no nome, e o nível conta como
+     tamanhos. */
+  const cheio = String(rel || '').split('/');
+  const p = /^linha\s+(adulto|infantil)$/i.test(String(cheio[0] || '').trim()) ? cheio.slice(1) : cheio;
   const arq = p[p.length - 1] || '';
-  const meio = p.slice(1, -1);                       // entre a linha e o arquivo
+  const linhaNoArquivo = /^[\d\s-]+$/.test(String(p[0] || '').trim()) && p.length > 1;
+  const linha = linhaNoArquivo ? (arq.split(' - ')[0] || '').trim() : (p[0] || '');
+  const meio = linhaNoArquivo ? p.slice(0, -1) : p.slice(1, -1);   // entre a linha e o arquivo
   const iCm = meio.findIndex(seg => _riscoCmDoTexto(seg));
   /* TAMANHOS SEPARADOS POR ESPAÇO (30/09/2026). A pasta da CLM chegou como
      "CLM/177cm/P M G GG", e não "P-M-G-GG": a grade "P-M-G-GG | CLM | 177cm"
@@ -21091,11 +21122,11 @@ function _riscoItemDoCaminho(rel) {
   if (doNome && !pastaDizTamanho) tams.push(doNome);
   return {
     rel,
-    linha: p[0] || '',
+    linha,
     tam: tams[0] || '',
     tams,
     cm: iCm >= 0 ? _riscoCmDoTexto(meio[iCm]) : '',
-    pasta: p.slice(0, -1).join('/'),
+    pasta: cheio.slice(0, -1).join('/'),
     arq
   };
 }
@@ -21317,8 +21348,8 @@ function renderGrades() {
 
   const renderGradeRow = (g) => {
     const t = g.tamanhos || {};
-    const dist = ['p','m','g','gg','g1','g2','g3']
-      .filter(x => t[x] > 0).map(x => `${x.toUpperCase()}:${t[x]}`).join(' · ');
+    const dist = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
+      .filter(x => t[x] > 0).map(x => `${(String(x).charAt(0) === 't' ? String(x).slice(1) : String(x).toUpperCase())}:${t[x]}`).join(' · ');
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
     const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
@@ -23681,7 +23712,7 @@ function _aplicarCamadasMaximasDefault() {
   if (!campoCam || (campoCam.value || '').trim() !== '') return;  // já definido: não mexe
   const { limite } = calcularLimiteCamadas();
   if (!(limite > 0) || limite === Infinity) return;         // tecido sem limite conhecido
-  const temGrade = ['p','m','g','gg','g1','g2','g3'].some(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0);
+  const temGrade = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].some(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0);
   if (!temGrade) return;                                     // sem grade não dá pra derivar as peças
   campoCam.value = limite;                                   // camadas = máx do tecido
   calcularAlvoDeCamadas();                                   // deriva peças-alvo = camadas × grade × mult
@@ -23792,7 +23823,7 @@ function aplicarGradePreset() {
   }
 
   const t = g.tamanhos || {};
-  ['p','m','g','gg','g1','g2','g3'].forEach(k => {
+  ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
     document.getElementById('f-gr-'+k).value = t[k] || 0;
   });
   document.getElementById('f-grade-desc').value = g.nome;
@@ -24774,7 +24805,7 @@ function calcularLimiteCamadas() {
 }
 
 function atualizarCalculosEnfesto() {
-  const gradeTotal = ['p','m','g','gg','g1','g2','g3']
+  const gradeTotal = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
   const camadas = parseInt(document.getElementById('f-enf-camadas')?.value) || 0;
   const { limite, categoriaRestritiva } = calcularLimiteCamadas();
@@ -24965,7 +24996,7 @@ function atualizarCalculosEnfesto() {
           // Regra de ribana:
           // - Ribana moletom: escala com unidade media da grade (2 cam moletom = 1 cam ribana).
           // - Outras ribanas (malha algodao, gola polo): so camadasPrincipal × multPrincipal / unidades.
-          const qtdsGradeForm = ['p','m','g','gg','g1','g2','g3']
+          const qtdsGradeForm = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
             .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0);
           const multPrincipalEnf = unidadesPorCamadaPrincipal(tecidosUsados);
           // Mapa label → escalaComGrade (para diferenciar moletom de outras ribanas no calculo)
@@ -25040,7 +25071,7 @@ function atualizarCalculosEnfesto() {
             </div>`);
         }
         if (ribanaPorFase.length) {
-          const nTamHint = ['p','m','g','gg','g1','g2','g3']
+          const nTamHint = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
             .filter(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0).length;
           ribanaPorFase.forEach(rf => {
             const hint = rf.detalhes.length
@@ -25061,10 +25092,10 @@ function atualizarCalculosEnfesto() {
           });
         }
 
-        const porTamanho = ['p','m','g','gg','g1','g2','g3']
+        const porTamanho = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
           .map(k => ({ t: k, qtd: parseInt(document.getElementById('f-gr-'+k)?.value) || 0 }))
           .filter(x => x.qtd > 0)
-          .map(x => `${x.t.toUpperCase()}: ${x.qtd}×${camadas}`)
+          .map(x => `${(String(x.t).charAt(0) === 't' ? String(x.t).slice(1) : String(x.t).toUpperCase())}: ${x.qtd}×${camadas}`)
           .join(' · ');
         calcBox.innerHTML = `${blocos.join('')}
           <div style="margin-top:8px;font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>`;
@@ -25082,7 +25113,7 @@ function atualizarCalculosEnfesto() {
 function calcularCamadasParaProducao() {
   const target = parseInt(document.getElementById('f-enf-target')?.value) || 0;
   if (target <= 0) { atualizarCalculosEnfesto(); return; }
-  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3']
+  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
     .filter(q => q > 0);
   if (qtdsPorTamanho.length === 0) {
@@ -25287,7 +25318,7 @@ function calcularAlvoDeCamadas() {
   // Sem camadas: nada a inferir — só atualiza o display e preserva o alvo
   // atual (o usuário pode estar apagando para redigitar).
   if (camadas <= 0) { atualizarCalculosEnfesto(); return; }
-  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3']
+  const qtdsPorTamanho = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .map(k => parseInt(document.getElementById('f-gr-'+k)?.value) || 0)
     .filter(q => q > 0);
   // Sem grade não há minQtd: não dá para inferir o alvo. Silencioso (roda a
@@ -25683,6 +25714,11 @@ function coletaOS() {
     g2: gG2 * camadasN * multPrincipal,
     g3: gG3 * camadasN * multPrincipal
   };
+  // A LINHA INFANTIL (2 ao 16, 30/09/2026) entra pelo mesmo caminho: grade do
+  // formulário × camadas × unidades por camada. Na grade adulta ela vale zero.
+  ['t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
+    pecasPorTamanho[k] = (parseInt(v('f-gr-' + k)) || 0) * camadasN * multPrincipal;
+  });
 
   const componentes = Array.from(document.querySelectorAll('#componentes-rows .componente-row')).map(r => {
     const nomeEl = r.querySelector('.comp-nome');
@@ -25693,7 +25729,7 @@ function coletaOS() {
     const qtdPorPeca = parseFloat(qtdEl?.value) || 0;
     const qtdPorTamanho = {};
     let qtdTotal = 0;
-    for (const t of ['p','m','g','gg','g1','g2','g3']) {
+    for (const t of ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']) {
       const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
       qtdPorTamanho[t] = v;
       qtdTotal += v;
@@ -25712,7 +25748,7 @@ function coletaOS() {
     const qtdPorPeca = parseFloat(r.querySelector('.av-qtd')?.value) || 0;
     const qtdPorTamanho = {};
     let qtdTotal = 0;
-    for (const t of ['p','m','g','gg','g1','g2','g3']) {
+    for (const t of ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']) {
       const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
       qtdPorTamanho[t] = v;
       qtdTotal += v;
@@ -25734,7 +25770,14 @@ function coletaOS() {
     g: parseInt(v('f-gr-g'))||0, gg: parseInt(v('f-gr-gg'))||0, g1: parseInt(v('f-gr-g1'))||0,
     g2: parseInt(v('f-gr-g2'))||0, g3: parseInt(v('f-gr-g3'))||0
   };
-  grade.total = grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3;
+  // A linha infantil (2 ao 16) só é gravada quando tem quantidade: a OS adulta
+  // fica exatamente como sempre foi, sem oito chaves zeradas a mais.
+  ['t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
+    const q = parseInt(v('f-gr-' + k)) || 0;
+    if (q > 0) grade[k] = q;
+  });
+  grade.total = grade.p+grade.m+grade.g+grade.gg+grade.g1+grade.g2+grade.g3
+    + ['t2','t4','t6','t8','t10','t12','t14','t16'].reduce((a, k) => a + (grade[k] || 0), 0);
 
   const blocosEnfesto = lerEnfestoBlocos();
   // Re-deriva a COR de cada bloco pela linha de Tecidos (canônica, do desenho),
@@ -26070,6 +26113,15 @@ function _textoFaltaDeTecido(faltando) {
 }
 
 function validarAntesDeSalvar(data) {
+  // UMA LINHA DE TAMANHO OU OUTRA (30/09/2026): P ao G3 ou 2 ao 16. A folha, as
+  // etiquetas e os pacotes mostram as colunas de uma linha só — uma OS com as
+  // duas sairia pela metade em todos eles.
+  const _g = (data && data.grade) || {};
+  if (['p','m','g','gg','g1','g2','g3'].some(k => _g[k] > 0)
+      && ['t2','t4','t6','t8','t10','t12','t14','t16'].some(k => _g[k] > 0)) {
+    toast('A grade da OS usa uma linha só: P ao G3 ou 2 ao 16. Zere a outra linha antes de salvar.', 'err');
+    return false;
+  }
   // A PROVA DA MEDIDA. Barra a gravação e mostra o que falta — mas quem está
   // com a OS na mão pode seguir assim mesmo: hoje 53 das 111 grades em uso
   // ainda não têm o relatório exportado, e uma trava sem saída pararia a
@@ -26278,7 +26330,7 @@ async function gerarConjugada(osAtiva) {
 
   const target = parseInt(osAtiva.enfesto?.target) || 0;
   const tamanhos = grAlvo.tamanhos || {};
-  const qtdsValidos = ['p','m','g','gg','g1','g2','g3']
+  const qtdsValidos = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .map(k => parseInt(tamanhos[k]) || 0)
     .filter(q => q > 0);
   const minQtd = qtdsValidos.length ? Math.min(...qtdsValidos) : 0;
@@ -26310,8 +26362,13 @@ async function gerarConjugada(osAtiva) {
     g2: parseInt(tamanhos.g2) || 0,
     g3: parseInt(tamanhos.g3) || 0
   };
+  ['t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
+    const q = parseInt(tamanhos[k]) || 0;
+    if (q > 0) novaOs.grade[k] = q;
+  });
   novaOs.grade.total = novaOs.grade.p + novaOs.grade.m + novaOs.grade.g
-                     + novaOs.grade.gg + novaOs.grade.g1 + novaOs.grade.g2 + novaOs.grade.g3;
+                     + novaOs.grade.gg + novaOs.grade.g1 + novaOs.grade.g2 + novaOs.grade.g3
+                     + ['t2','t4','t6','t8','t10','t12','t14','t16'].reduce((a, k) => a + (novaOs.grade[k] || 0), 0);
 
   // Fases do enfesto a partir da grade nova
   novaOs.fases = Array.isArray(grAlvo.fases) ? grAlvo.fases.map(f => ({
@@ -26394,12 +26451,15 @@ async function gerarConjugada(osAtiva) {
       g2: novaOs.grade.g2 * camadas,
       g3: novaOs.grade.g3 * camadas
     };
+    ['t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
+      pecasPorTamanho[k] = (novaOs.grade[k] || 0) * camadas;
+    });
     novaOs.componentes = compsDes.map(c => {
       const cad = STATE.componentes.find(x => x.id === c.componenteId);
       const qtdPorPeca = c.qtdPorPeca != null ? c.qtdPorPeca : 1;
       const qtdPorTamanho = {};
       let qtdTotal = 0;
-      for (const t of ['p','m','g','gg','g1','g2','g3']) {
+      for (const t of ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']) {
         const v = (pecasPorTamanho[t] || 0) * qtdPorPeca;
         qtdPorTamanho[t] = v;
         qtdTotal += v;
@@ -28177,8 +28237,8 @@ function _composicaoPacoteMoletom(blusas) {
 // Ex. moletom : 2X P ao G3 → ['P','M','G','GG','G1','G2','G3'].
 // Prefere a grade viva (como a folha e o volume), caindo no snapshot da OS.
 function _tamanhosDaGradeExpandido(o) {
-  const ordem = ['p','m','g','gg','g1','g2','g3'];
-  const rotulo = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3' };
+  const ordem = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'];
+  const rotulo = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3', t2:'2', t4:'4', t6:'6', t8:'8', t10:'10', t12:'12', t14:'14', t16:'16' };
   let tam = null;
   if (o && o.gradeId) {
     const g = (STATE.grades || []).find(x => x.id === o.gradeId);
@@ -28308,9 +28368,9 @@ function dadosEtiquetaParaOS(o) {
   const tt = totaisPorTamanhoTomOS(o);
   const totalGrade = o.grade?.total || 0;
   const qtde = (totalGrade > 0 && camadas > 0) ? tt.totalGeral : totalGrade;
-  const sizesAtivos = ['p','m','g','gg','g1','g2','g3']
+  const sizesAtivos = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .filter(k => (o.grade?.[k] || 0) > 0)
-    .map(s => s.toUpperCase());
+    .map(s => (String(s).charAt(0) === 't' ? String(s).slice(1) : String(s).toUpperCase()));
   const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
 
   const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
@@ -28936,10 +28996,10 @@ window.limparGrupoListaOS = limparGrupoListaOS;
    sido ajustado a mao depois de aplicar a grade. */
 function _gradeDetalheDaOS(o) {
   const g = (o && o.grade) || {};
-  const partes = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+  const partes = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16']
     .map(k => ({ k, q: parseInt(g[k], 10) || 0 }))
     .filter(x => x.q > 0)
-    .map(x => `${x.k.toUpperCase()} ${x.q}`);
+    .map(x => `${(String(x.k).charAt(0) === 't' ? String(x.k).slice(1) : String(x.k).toUpperCase())} ${x.q}`);
   return partes.length ? partes.join(' · ') + ` = ${g.total || 0} pç por camada` : '';
 }
 
@@ -32911,7 +32971,7 @@ async function recalcularDeCamadasPorTom(osId) {
   if (!(camadas > 0)) return;
   const mult = multiplicadorPecaOS(o);
   const g = o.grade || {};
-  const qtds = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => parseInt(g[k], 10) || 0).filter(q => q > 0);
+  const qtds = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].map(k => parseInt(g[k], 10) || 0).filter(q => q > 0);
   const minQtd = qtds.length ? Math.min(...qtds) : 1;
 
   o.enfesto = o.enfesto || {};
@@ -33342,7 +33402,7 @@ function multiplicadorPecaOS(o) {
 // Devolve true quando alguma quantidade mudou.
 function recomputarQuantidadesOS(o) {
   if (!o) return false;
-  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   const g = o.grade || {};
   const camadas = parseInt((o.enfesto || {}).camadas, 10) || 0;
   const mult = multiplicadorPecaOS(o);
@@ -33389,8 +33449,12 @@ function recomputarQuantidadesOS(o) {
 // (96 em vez de 72). A soma da coluna continuava fechando — por isso passava
 // despercebido —, mas o quanto cabia a cada tonalidade estava trocado.
 function totaisPorTamanhoTomOS(o) {
-  const keys = ['p','m','g','gg','g1','g2','g3'];
   const g = (o && o.grade) || {};
+  // AS COLUNAS SÃO AS DA LINHA DA GRADE (30/09/2026): P ao G3 na adulta, 2 ao 16
+  // na infantil — uma grade usa uma linha só. A folha monta as colunas por esta
+  // lista, então a adulta continua com as mesmas 7 de sempre.
+  const INF = ['t2','t4','t6','t8','t10','t12','t14','t16'];
+  const keys = INF.some(k => (g[k] || 0) > 0) ? INF : ['p','m','g','gg','g1','g2','g3'];
   const cam = (o && o.enfesto && o.enfesto.camadas) || 0;
   const mult = multiplicadorPecaOS(o);
   const prog = (o && o.progresso) || {};
@@ -33546,7 +33610,7 @@ function _sincronizarTonsDoEnfestoPeloTotal(os) {
   const valores = prog.totalTamanhoTomValor || {};
   const cam = parseInt((os.enfesto || {}).camadas, 10) || 0;
   const g = os.grade || {};
-  const visiveis = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).filter(q => q > 0);
+  const visiveis = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].map(k => g[k] || 0).filter(q => q > 0);
   const qtdMin = visiveis.length ? Math.min(...visiveis) : 0;
   const unidade = qtdMin * calcularMultPrincipalImpressao(os);   // peças que 1 camada rende no limitante
   // Tom desmarcado não deixa número para trás na linha do enfesto.
@@ -33613,7 +33677,7 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
   // grade[k]/qtdMin. Com isso a trava vira a mesma em todas as colunas —
   // V × g[k]/qtdMin ≤ g[k] × cam × mult ⟺ V ≤ qtdMin × cam × mult —, então
   // basta o teto do tamanho limitante em vez de varrer as colunas.
-  const visiveis = ['p','m','g','gg','g1','g2','g3'].map(k => g[k] || 0).filter(q => q > 0);
+  const visiveis = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].map(k => g[k] || 0).filter(q => q > 0);
   const qtdMin = visiveis.length ? Math.min(...visiveis) : 0;
   const max = Math.max(0, qtdMin * cam * mult - somaOutros);
   // O número digitado é do tamanho `size`; converte para a unidade do limitante.
@@ -33628,7 +33692,7 @@ async function salvarValorTotalTamanhoTom(osId, tom, valor, size) {
   // pessoa digitava de novo esperando outro resultado.
   if (n !== bruto) {
     const noTamanho = v => qtdMin > 0 ? Math.round(v * qtdSize / qtdMin) : v;
-    toast(`Tom ${tNum}: ${digitado} não cabe — o tamanho ${String(size || '').toUpperCase()} tem `
+    toast(`Tom ${tNum}: ${digitado} não cabe — o tamanho ${(String(size || '').charAt(0) === 't' ? String(size || '').slice(1) : String(size || '').toUpperCase())} tem `
       + `${noTamanho(qtdMin * cam * mult)} peça(s) no total`
       + (somaOutros > 0 ? ` e os outros tons já levam ${noTamanho(somaOutros)}` : '')
       + `. Ficou ${noTamanho(n) || 'em branco'}.`, 'err');
@@ -33912,7 +33976,7 @@ function editarOS(id) {
       preencherDropdownGradesOS(o.gradeId || '');
     }
     document.getElementById('f-grade-desc').value = o.grade?.descricao || '';
-    ['p','m','g','gg','g1','g2','g3'].forEach(k => {
+    ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
       document.getElementById('f-gr-'+k).value = o.grade?.[k] || 0;
     });
     // enfesto — blocos (novo) ou legado (comprimento/largura único)
@@ -34098,7 +34162,7 @@ function renderComponentesDetalheBox(o) {
   const comps = ordenarComponentesPorFase(o.componentes || [], o);
   if (!comps.length) return '';
   // Quais tamanhos mostrar? Só os que têm peças > 0 em alguma linha (ou que estão na grade)
-  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
+  const tamanhos = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'];
   const grade = o.grade || {};
   const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
   const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg']; // default
@@ -34130,7 +34194,7 @@ function renderComponentesDetalheBox(o) {
           <th>Tecido / Material</th>
           <th>Cor</th>
           <th style="width:36px;">/pç</th>
-          ${colsTam.map(t => `<th style="width:36px;">${t.toUpperCase()}</th>`).join('')}
+          ${colsTam.map(t => `<th style="width:36px;">${(String(t).charAt(0) === 't' ? String(t).slice(1) : String(t).toUpperCase())}</th>`).join('')}
           <th style="width:48px;background:#fff59d;">Total</th>
         </tr>
       </thead>
@@ -34148,7 +34212,7 @@ function renderComponentesDetalheBox(o) {
 function renderAviamentosDetalheBox(o) {
   const avs = o.aviamentos || [];
   if (!avs.length) return '';
-  const tamanhos = ['p','m','g','gg','g1','g2','g3'];
+  const tamanhos = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'];
   const grade = o.grade || {};
   const tamanhosUsados = tamanhos.filter(t => (grade[t] || 0) > 0);
   const colsTam = tamanhosUsados.length ? tamanhosUsados : ['p','m','g','gg'];
@@ -34180,7 +34244,7 @@ function renderAviamentosDetalheBox(o) {
           <th>Aviamento</th>
           <th>Aplicação</th>
           <th style="width:36px;">/pç</th>
-          ${colsTam.map(t => `<th style="width:36px;">${t.toUpperCase()}</th>`).join('')}
+          ${colsTam.map(t => `<th style="width:36px;">${(String(t).charAt(0) === 't' ? String(t).slice(1) : String(t).toUpperCase())}</th>`).join('')}
           <th style="width:60px;background:#fff59d;">Total</th>
         </tr>
       </thead>
@@ -34335,7 +34399,7 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
     return camadasDaFaseForro({
       camadasPrincipal: cam,
       unidades: faseGrade.unidades,
-      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0)
+      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].map(k => parseInt(g[k], 10) || 0)
     });
   }
   if (papel.indexOf('ribana_') === 0 && isTecidoRibana(tec)) {
@@ -34343,7 +34407,7 @@ function camadasPadraoDaFase(o, ordem, camadasPrincipal) {
     return camadasDaFaseRibana({
       camadasPrincipal: cam,
       multPrincipal: multiplicadorPecaOS(o),
-      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3'].map(k => parseInt(g[k], 10) || 0),
+      qtdsPorTamanho: ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].map(k => parseInt(g[k], 10) || 0),
       unidades: faseGrade.unidades,
       escalaComGrade: _ribanaEscalaComGrade(tec)
     });
@@ -34642,7 +34706,12 @@ function _osGradeKey(o) {
   let viva = (o && o.gradeId) ? (STATE.grades || []).find(x => x.id === o.gradeId) : null;
   if (!viva && txt) viva = (STATE.grades || []).find(x => _normNome(x.nome || x.descricao || '') === txt);
   if (viva) return 'g:' + viva.id;
-  return txt || ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).join('-');
+  if (txt) return txt;
+  // A chave da grade ADULTA fica como sempre foi (P ao G3); a infantil (2 ao 16)
+  // só entra quando existe, para não mudar a chave das OS que já estão agrupadas.
+  const inf = ['t2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
+  return ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].map(k => g[k] || 0).join('-')
+    + (inf.some(k => g[k] > 0) ? '|' + inf.map(k => g[k] || 0).join('-') : '');
 }
 
 // Nome de fase normalizado para COMPARAR entre OSs. Além do que _normNome já faz
@@ -35129,8 +35198,13 @@ function renderPrintSheet(o) {
         g2: tamanhos.g2 != null ? tamanhos.g2 : (o.grade?.g2 || 0),
         g3: tamanhos.g3 != null ? tamanhos.g3 : (o.grade?.g3 || 0)
       };
+      ['t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => {
+        const q = tamanhos[k] != null ? tamanhos[k] : (o.grade?.[k] || 0);
+        if (q) gradeAtualizada[k] = q; else delete gradeAtualizada[k];
+      });
       gradeAtualizada.total = gradeAtualizada.p + gradeAtualizada.m + gradeAtualizada.g
-        + gradeAtualizada.gg + gradeAtualizada.g1 + gradeAtualizada.g2 + gradeAtualizada.g3;
+        + gradeAtualizada.gg + gradeAtualizada.g1 + gradeAtualizada.g2 + gradeAtualizada.g3
+        + ['t2','t4','t6','t8','t10','t12','t14','t16'].reduce((a, k) => a + (Number(gradeAtualizada[k]) || 0), 0);
       o = { ...o, fases: fasesAtualizadas, grade: gradeAtualizada };
     }
   }
@@ -35389,26 +35463,33 @@ function renderPrintSheet(o) {
                espremiam em ~31px e o Total sobrava estreito. Larguras explícitas
                devolvem esse espaço: rótulo no tamanho do texto, tamanhos iguais
                entre si e Total com folga para "504" e para o cabeçalho. -->
-          <colgroup>
+          <!-- AS COLUNAS SÃO AS DA LINHA DA GRADE (30/09/2026): P ao G3 (7 de
+               40px) na adulta, 2 ao 16 (8 de 35px) na infantil — a mesma
+               largura total, então a folha não muda de tamanho. A lista vem de
+               totaisPorTamanhoTomOS, a mesma das linhas de tom logo abaixo. -->
+          ${(() => {
+            const _cols = totaisPorTamanhoTomOS(o).keys;
+            const _w = _cols.length > 7 ? 35 : 40;
+            const _rot = k => k.charAt(0) === 't' ? k.slice(1) : k.toUpperCase();
+            return `<colgroup>
             <col style="width:48px;">
-            <col style="width:40px;"><col style="width:40px;"><col style="width:40px;"><col style="width:40px;">
-            <col style="width:40px;"><col style="width:40px;"><col style="width:40px;">
+            ${_cols.map(() => `<col style="width:${_w}px;">`).join('')}
             <col style="width:78px;">
           </colgroup>
           <thead>
-            <tr><th colspan="9" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
+            <tr><th colspan="${_cols.length + 2}" class="subhead">Grade ${o.grade?.descricao?'· '+esc(o.grade.descricao):''}</th></tr>
             <tr>
               <th></th>
-              <th>P</th><th>M</th><th>G</th><th>GG</th><th>G1</th><th>G2</th><th>G3</th><th>Total</th>
+              ${_cols.map(k => `<th>${_rot(k)}</th>`).join('')}<th>Total</th>
             </tr>
           </thead>
           <tbody>
             <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;">
               <td></td>
-              <td>${g.p>0?g.p:''}</td><td>${g.m>0?g.m:''}</td><td>${g.g>0?g.g:''}</td>
-              <td>${g.gg>0?g.gg:''}</td><td>${g.g1>0?g.g1:''}</td><td>${g.g2>0?g.g2:''}</td><td>${g.g3>0?g.g3:''}</td>
+              ${_cols.map(k => `<td>${g[k]>0?g[k]:''}</td>`).join('')}
               <td style="background:#fff59d;">${g.total>0?g.total:''}</td>
-            </tr>
+            </tr>`;
+          })()}
             ${(() => {
               const cam = o.enfesto?.camadas || 0;
               // Todos os números vêm de totaisPorTamanhoTomOS — a mesma função
@@ -35489,15 +35570,14 @@ function renderPrintSheet(o) {
                 </tr>`;
               };
               return `
-                <tr><th colspan="9" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
+                <tr><th colspan="${sizeKeys.length + 2}" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
                 <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td></td>
-                  <td>${t(g.p)}</td><td>${t(g.m)}</td><td>${t(g.g)}</td>
-                  <td>${t(g.gg)}</td><td>${t(g.g1)}</td><td>${t(g.g2)}</td><td>${t(g.g3)}</td>
+                  ${sizeKeys.map(k => `<td>${t(g[k])}</td>`).join('')}
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
                 </tr>
                 ${Array.from({ length: nLinhas }, (_, i) => tomRow(i + 1)).join('')}
-                <tr class="no-print"><td colspan="9" style="background:#f4faf5;padding:1px 4px;">${btnsBloco}</td></tr>`;
+                <tr class="no-print"><td colspan="${sizeKeys.length + 2}" style="background:#f4faf5;padding:1px 4px;">${btnsBloco}</td></tr>`;
             })()}
           </tbody>
         </table>
@@ -36247,7 +36327,7 @@ async function _riscoLerPdf(file) {
 // que existe aqui: aplicar o risco na grade errada trocaria 2,51 m por 4,55 m e
 // dobraria o consumo de tecido.
 function _riscoGradesQueCasam(tamanhos) {
-  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   const alvo = {};
   keys.forEach(k => { const n = parseInt((tamanhos || {})[k], 10) || 0; if (n > 0) alvo[k] = n; });
   if (!Object.keys(alvo).length) return [];
@@ -36298,7 +36378,7 @@ function _riscoGradesQueCasam(tamanhos) {
 // coisa nas unidades da fase: no primeiro uma camada rende N grades; no segundo
 // uma camada precisa render N vezes mais para fechar uma grade.
 function _riscoGradesProporcionais(tamanhos) {
-  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   const alvo = {};
   keys.forEach(k => { const n = parseInt((tamanhos || {})[k], 10) || 0; if (n > 0) alvo[k] = n; });
   const usados = Object.keys(alvo);
@@ -36548,8 +36628,8 @@ function _riscoTecidos() {
 //   todos iguais a N e contíguos  -> "2X P ao G3"
 //   diferentes entre si           -> "2M-4G-2GG"
 function _riscoNomeTamanhos(tamanhos) {
-  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
-  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3', t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
   const presentes = ordem.filter(k => (parseInt(tamanhos[k], 10) || 0) > 0);
   if (!presentes.length) return '';
   const qtds = presentes.map(k => parseInt(tamanhos[k], 10));
@@ -36601,7 +36681,7 @@ function _riscoNomeSugerido(tamanhos, sku, largura) {
 // Assinatura dos tamanhos, para juntar num só grupo os riscos que são da mesma
 // grade nova. Cinco PDFs da mesma peça viram UMA grade de cinco fases.
 function _riscoAssinatura(tamanhos) {
-  return ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+  return ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16']
     .map(k => (parseInt((tamanhos || {})[k], 10) || 0)).join('-');
 }
 
@@ -36834,7 +36914,7 @@ function previsaoFases(tipoPeca, variacao, sku) {
    que existe de verdade — a mesma razao de o casamento exato vir sempre antes
    da proporcao. */
 function _riscoDivisorDoGrupo(G) {
-  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   const qs = keys.map(k => parseInt(G.tamanhos[k], 10) || 0).filter(n => n > 0);
   if (!qs.length) return 1;
   // A trava aqui e "nenhum item e reconhecidamente CORPO", e nao "todos sao
@@ -36862,7 +36942,7 @@ function _riscoDivisorDoGrupo(G) {
 
 const _riscoTamanhosDivididos = (tamanhos, d) => {
   const out = {};
-  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => {
+  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].forEach(k => {
     const n = parseInt(tamanhos[k], 10) || 0;
     if (n > 0) out[k] = n / d;
   });
@@ -36932,9 +37012,9 @@ function _riscoHtmlGradesNovas() {
     const modelo = (G.itens[0].L.modelo || '').trim();
     const d = _riscoNovaDraft(G);
     const nomeTam = _riscoNomeTamanhos(G.tamanhos);
-    const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+    const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16']
       .filter(k => (parseInt(G.tamanhos[k], 10) || 0) > 0)
-      .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
+      .map(k => `${(String(k).charAt(0) === 't' ? String(k).slice(1) : String(k).toUpperCase())}=${G.tamanhos[k]}`).join(' · ');
     const previstas = previsaoFases(d.tipoPeca, d.variacao, d.sku);
     const previstasTxt = previstas.length
       ? `Fases previstas para este produto: <b>${esc(previstas.join(' · '))}</b>.`
@@ -37070,7 +37150,7 @@ async function criarGradeDoRisco(gi) {
   // grades no mesmo pano, e o dez vai para as Unidades da fase. Ver
   // _riscoDivisorDoGrupo.
   const tamanhos = {};
-  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhosGrade[k], 10) || 0; });
+  ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].forEach(k => { tamanhos[k] = parseInt(G.tamanhosGrade[k], 10) || 0; });
   tamanhos.total = Object.keys(tamanhos).reduce((s, k) => s + (k === 'total' ? 0 : tamanhos[k]), 0);
   tamanhos.descricao = nome;
 
@@ -37176,7 +37256,7 @@ async function lerRiscosEscolhidos(ev) {
 // Os tamanhos que o PDF declarou, em uma linha ("M 1 · G 1"). É o que explica a
 // escolha do programa — e, quando ela está errada, é o que mostra por quê.
 function _riscoTamanhosTexto(tamanhos) {
-  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3', t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
   const ps = Object.keys(rot).filter(k => (parseInt((tamanhos || {})[k], 10) || 0) > 0)
     .map(k => `${rot[k]} ${parseInt(tamanhos[k], 10)}`);
   return ps.length ? ps.join(' · ') : 'nenhum';
@@ -37898,8 +37978,8 @@ function _pastaPastaDaGrade(L) {
 // faixa ("P ao G3") e a extensa ("P-M-G-GG-G1-G2-G3"). A pasta usa uma, o nome
 // da grade pode usar a outra.
 function _riscoFormasDoNome(tamanhos) {
-  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
-  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3' };
+  const ordem = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
+  const rot = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3', t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
   const presentes = ordem.filter(k => (parseInt((tamanhos || {})[k], 10) || 0) > 0);
   const extensa = presentes
     .map(k => { const q = parseInt(tamanhos[k], 10); return (q === 1 ? '' : q) + rot[k]; }).join('-');
@@ -38229,9 +38309,9 @@ function _pastaHtmlPasso() {
   const G = _pastaWiz.grupos[_pastaWiz.idx];
   const tot = _pastaWiz.grupos.length, pos = _pastaWiz.idx + 1;
   const nomeTam = _riscoNomeTamanhos(G.tamanhos);
-  const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3']
+  const tamTxt = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16']
     .filter(k => (parseInt(G.tamanhos[k], 10) || 0) > 0)
-    .map(k => `${k.toUpperCase()}=${G.tamanhos[k]}`).join(' · ');
+    .map(k => `${(String(k).charAt(0) === 't' ? String(k).slice(1) : String(k).toUpperCase())}=${G.tamanhos[k]}`).join(' · ');
 
   // As candidatas são refeitas a cada passo, e não uma vez no começo: a grade
   // criada no risco anterior já existe quando o próximo aparece, e é justamente
@@ -38587,8 +38667,8 @@ async function pastaSalvarPasso() {
     if (semTec && !confirm(`${semTec} fase(s) sem tecido escolhido.\n\nFase sem tecido não entra no cálculo de consumo nem na baixa de estoque. Criar mesmo assim?`)) return;
 
     const tamanhos = {};
-    ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].forEach(k => { tamanhos[k] = parseInt(G.tamanhos[k], 10) || 0; });
-    tamanhos.total = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].reduce((s, k) => s + tamanhos[k], 0);
+    ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].forEach(k => { tamanhos[k] = parseInt(G.tamanhos[k], 10) || 0; });
+    tamanhos.total = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].reduce((s, k) => s + tamanhos[k], 0);
     tamanhos.descricao = nome;
 
     const nova = {
@@ -38899,7 +38979,7 @@ ${abas.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxm
 const _SKU_VAZIO = '(sem SKU no nome)';
 
 function _linhasPlanilhaGrades() {
-  const tamKeys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+  const tamKeys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
   // Ordenadas por SKU e, dentro dele, por nome: as semelhantes ficam juntas, uma
   // embaixo da outra, que é como se confere em lote. Ordenar só pelo nome punha
   // "2G-2G1 | CM.BICOLOR" ao lado de "2G-2G1 | CM.TRICOLOR" — vizinhas pela
@@ -38919,7 +38999,7 @@ function _linhasPlanilhaGrades() {
 
   const abaGrades = [[
     'SKU', 'Grade', 'Tipo de peça', 'Variação',
-    'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', 'Total da grade',
+    'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16', 'Total da grade',
     'Peças por pacote', 'Nº de fases', 'Fases (nomes)',
     'Comprimento 1ª fase (m)', 'Largura 1ª fase (m)', 'Medidas por fase (comp x larg)',
     'Fases sem medida',
@@ -39422,7 +39502,7 @@ function compraOsSimulada(gradeId, desenhoId, camadas) {
   };
 }
 
-const _COMPRA_TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'];
+const _COMPRA_TAMS = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
 
 // Quantas unidades da grade cada camada rende: o MENOR pedido da grade vezes o
 // multiplicador do tecido (camiseta corta em camada dupla, moletom não). Mesma

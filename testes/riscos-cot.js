@@ -117,6 +117,16 @@ ok('PM.LISA (LINHA/TAM/TAM/CM — "Malha Piquet/Piquet Dry")',
 // CLM (30/09/2026): a pasta separa os tamanhos por ESPAÇO — "P M G GG".
 ok('CLM (tamanhos separados por espaço — "P M G GG")',
    acha(grade('P-M-G-GG | CLM | 177cm', { p: 1, m: 1, g: 1, gg: 1 }), 'CLM/177cm/P M G GG/'));
+// A PASTA POR LINHA DE TAMANHO (30/09/2026): "LINHA ADULTO/…" e "LINHA
+// INFANTIL/…" são pulados — senão toda grade perdia os PDFs. E na infantil a
+// linha de SKU vem do nome do arquivo, porque a pasta começa pelos tamanhos.
+eq('o nível "LINHA ADULTO" não vira linha de SKU',
+   itemDe('LINHA ADULTO/BM.LISA/2G-G1/182 cm/BM.LISA - CORPO 2G-G1.pdf').linha, 'BM.LISA');
+ok('infantil: 2-4-6-8-10-12-14-16 | CM.LISA | 117cm acha o PDF da pasta infantil',
+   acha(grade('2-4-6-8-10-12-14-16 | CM.LISA | 117cm',
+     { t2: 1, t4: 1, t6: 1, t8: 1, t10: 1, t12: 1, t14: 1, t16: 1 }), 'LINHA INFANTIL/2-4-6-8-10-12-14-16/117cm/'));
+eq('infantil: a linha sai do nome do arquivo',
+   itemDe('LINHA INFANTIL/2-4-6-8-10-12-14-16/117cm/CM.LISA - CORPO - 2-4-6-8-10-12-14-16.pdf').linha, 'CM.LISA');
 // Só vira hífen o segmento que é SÓ tamanhos: com outra palavra, fica como está.
 eq('segmento com palavra junto fica como está',
    itemDe('CM.LISA/P M G ribana/177 cm/X.pdf').tams[0], 'P M G ribana');
@@ -142,7 +152,9 @@ ok('a linha nunca entra como candidato de tamanho',
 /* ---------- 6. o acervo inteiro: quantos caminhos ninguém consegue ler ---------- */
 
 // Cara de lista de tamanhos: é o que a coluna Riscos consegue casar com uma grade.
-const cara = t => /^(?:\d*\s*[xX]?\s*(?:GG|G[123]|[PMG]))(?:\s*-\s*\d*\s*[xX]?\s*(?:GG|G[123]|[PMG]))*$/i.test(String(t).trim());
+// A sequência infantil (2-4-6…16, desde 30/09/2026) também é lista de tamanhos.
+const cara = t => /^(?:\d*\s*[xX]?\s*(?:GG|G[123]|[PMG]))(?:\s*-\s*\d*\s*[xX]?\s*(?:GG|G[123]|[PMG]))*$/i.test(String(t).trim())
+  || /^\d+(?:\s*-\s*\d+)+$/.test(String(t).trim());
 const orfaos = idx.arquivos.filter(rel => !itemDe(rel).tams.some(cara));
 // Os 4 que sobram são de "BM.TRI/2PP-2G2" — pasta e arquivos falam de um
 // tamanho "PP" que não existe no cadastro. É dado sujo, não leitura: consertar
