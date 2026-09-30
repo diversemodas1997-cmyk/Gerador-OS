@@ -29981,7 +29981,7 @@ function _textoBuscaOS(o) {
 // caminho mais curto para a pessoa achar que a OS sumiu.
 function limparFiltrosListaOS() {
   ['busca-os', 'filtro-status-os', 'filtro-cor-os', 'filtro-grade-os', 'filtro-sku-os',
-   'filtro-fim']
+   'filtro-falta-os', 'filtro-fim']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderListaOS();
 }
@@ -30471,6 +30471,23 @@ function _faltasListaOS() {
   return mapa;
 }
 
+/* O FILTRO "MATERIAL FALTANTE" (30/09/2026, Junior: "Inclua um filtro de OS
+   com material faltante"). As chaves de uma OS para o filtro: "Com material
+   faltante" quando falta qualquer coisa, e o TIPO do que falta — Tecido,
+   Aviamento, Material — para quem vai comprar uma coisa só. Lê a mesma conta
+   da coluna, então o filtro e a célula nunca discordam; e, como a célula, só
+   a OS Não iniciada tem chave. */
+const FALTA_FILTRO_TODAS = 'Com material faltante';
+function _chavesFaltaOS(o, faltas) {
+  const f = _statusOS(o) === 'nao-iniciado' ? faltas.get(o.id) : null;
+  if (!f) return [];
+  const tipos = [];
+  if (f.itens.length) tipos.push('Falta tecido');
+  if (f.avi.length) tipos.push('Falta aviamento');
+  if (f.mat.length) tipos.push('Falta material (kraft/filme)');
+  return tipos.length ? [FALTA_FILTRO_TODAS].concat(tipos) : [];
+}
+
 // Uma linha por item que falta, com o QUANTO na frente — o mesmo desenho do
 // selo da coluna Situação do Material reservado. Tecido, depois aviamento,
 // depois material.
@@ -30570,7 +30587,11 @@ function renderListaOS() {
   // neste dia?" — uma data só, e o calendário do navegador já sabe pedi-la.
   // Vale junto com os outros filtros e com a busca por texto.
   const diaFim = _diaFiltroFinalizacaoListaOS();
+  const faltas = _faltasListaOS();
+  const faltaEscolhida = _filtroListaOS('filtro-falta-os', noGrupo, 'Material: todas',
+    o => _chavesFaltaOS(o, faltas));
   const filtradas = porTexto.filter(o =>
+    (!faltaEscolhida || _chavesFaltaOS(o, faltas).includes(faltaEscolhida)) &&
     (!statusEscolhido || _statusOS(o) === statusEscolhido)
     && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
@@ -30598,13 +30619,13 @@ function renderListaOS() {
                   corEscolhida ? `cor <b>${esc(corEscolhida)}</b>` : '',
                   gradeEscolhida ? `grade <b>${esc(gradeEscolhida)}</b>` : '',
                   skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '',
+                  faltaEscolhida ? `<b>${esc(faltaEscolhida.toLowerCase())}</b>` : '',
                   diaFim ? `finalizadas em <b>${esc(formatDate(diaFim))}</b>` : '']
       .filter(Boolean).join(' e ');
     tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
       + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;
     return;
   }
-  const faltas = _faltasListaOS();
   tb.innerHTML = filtradas.map(o => {
     const thumb = _osThumbHtml(o);
     // A COR DA PEÇA, da mesma fonte do banner da folha impressa e da folha de OE
