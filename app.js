@@ -7703,12 +7703,12 @@ function renderEstoque() {
      nessa cor deve ser diferenciado entre 7 bobinas com 1,19m, 4 bobinas com
      1,17m, 3 bobinas com 1,15m, 54 bobinas com 80cm").
 
-     UMA LINHA INTEIRA POR LARGURA, com a largura na frente da cor (mesmo dia,
+     UMA LINHA INTEIRA POR LARGURA, a cor e depois a largura (mesmo dia,
      Junior: "as linhas devem ser repetidas quatro vezes, uma para cada
-     largura" e "Inclua na frente do nome da cor algodão cru a largura de cada
-     bobina"). Era uma linha somada da cor com sublinhas de kg embaixo; agora a
-     cor que tem bobina lançada com largura se abre em "119 cm · Algodão cru",
-     "117 cm · Algodão cru"…, cada uma com entradas, saídas, disponível e
+     largura", e depois "colocando primeiro o texto do nome da cor e a medida
+     da largura na frente do nome"). Era uma linha somada da cor com sublinhas
+     de kg embaixo; agora a cor que tem bobina lançada com largura se abre em
+     "Algodão cru · 119 cm", "Algodão cru · 117 cm"…, cada uma com entradas, saídas, disponível e
      bobinas da própria largura — e a bobina estimada pelo peso DAQUELA
      largura (18 kg a larga, 13 kg a de 80 cm), não pela média da cor.
 
@@ -7730,7 +7730,7 @@ function renderEstoque() {
     const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
     const html = larguras.map(([larg, v]) => linha(
       { corNome: c.corNome, largura: larg, entrada: v.entrada, reservado: 0, saida: v.saida, fechados: v.fechados, abertos: v.abertos },
-      `<span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span> · ${corLabel(c.corNome, tec)}`,
+      `${corLabel(c.corNome, tec)} · <span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span>`,
       'Bobinas de ' + _cmTxt(larg) + ': entradas e saídas lançadas com esta largura.')).join('');
     // O resto da cor, que nenhuma largura explica.
     const soma = k => larguras.reduce((a, [, v]) => a + (Number(v[k]) || 0), 0);
@@ -7739,7 +7739,7 @@ function renderEstoque() {
                     abertos: (c.abertos || 0) - soma('abertos') };
     const temResto = ['entrada', 'reservado', 'saida', 'fechados', 'abertos']
       .some(k => Math.abs(Number(resto[k]) || 0) > 0.0005);
-    return html + (temResto ? linha(resto, `<span style="color:var(--ink-2);">sem largura</span> · ${corLabel(c.corNome, tec)}`,
+    return html + (temResto ? linha(resto, `${corLabel(c.corNome, tec)} · <span style="color:var(--ink-2);">sem largura</span>`,
       'O que esta cor tem sem largura: a reserva e a baixa das OS (a OS não diz de qual largura tirou) e entradas lançadas sem largura.') : '');
   };
   const quadroTecido = (g) => {
