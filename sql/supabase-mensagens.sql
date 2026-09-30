@@ -110,30 +110,23 @@ create policy "mensagens: apagar a propria"
 -- O `with check` repete o dono e o prazo porque a linha e conferida DEPOIS da
 -- alteracao: sem ele, um update poderia trocar `autor_id` ou empurrar
 -- `criado_em` para a frente e renovar o proprio prazo.
+-- TODO MUNDO SEM PRAZO (30/09/2026, Junior: "A correcao de mensagem deve estar
+-- disponivel para todos os tipos de usuarios"). A dispensa do prazo, que era so
+-- do admin desde 27/08, vale agora para qualquer conta: cada um corrige o
+-- PROPRIO recado a qualquer momento. O que segue valendo para todos: so o
+-- proprio (autor_id = auth.uid()), e o recado corrigido leva a marca
+-- "(editado)" (editado_em, pelo gatilho abaixo) -- e e ela que avisa quem ja
+-- tinha lido que o texto mudou.
+--
+-- O `with check` repete o dono porque a linha e conferida DEPOIS da alteracao:
+-- sem ele, um update poderia trocar `autor_id`.
 drop policy if exists "mensagens: corrigir a propria em 5 min" on mensagens;
-create policy "mensagens: corrigir a propria em 5 min"
+drop policy if exists "mensagens: corrigir a propria" on mensagens;
+create policy "mensagens: corrigir a propria"
   on mensagens for update
   to authenticated
-  using (
-    autor_id = auth.uid()
-    and (
-      criado_em > now() - interval '5 minutes'
-      or exists (
-        select 1 from public.user_roles
-         where user_id = auth.uid() and role = 'admin'
-      )
-    )
-  )
-  with check (
-    autor_id = auth.uid()
-    and (
-      criado_em > now() - interval '5 minutes'
-      or exists (
-        select 1 from public.user_roles
-         where user_id = auth.uid() and role = 'admin'
-      )
-    )
-  );
+  using (autor_id = auth.uid())
+  with check (autor_id = auth.uid());
 
 -- NUM UPDATE, SO O TEXTO MUDA.
 --

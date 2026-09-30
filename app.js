@@ -31192,7 +31192,12 @@ function _msgPrazoRestante(m) {
    Como o resto do programa, a trava é no RLS e não na tela — a política de
    UPDATE em sql/supabase-mensagens.sql dispensa o prazo para quem está em
    user_roles como admin, e o gatilho segue deixando mudar só o texto. */
-function _msgSemPrazo() { return currentRole === 'admin'; }
+/* TODO MUNDO SEM PRAZO (30/09/2026, Junior: "A correção de mensagem deve estar
+   disponível para todos os tipos de usuários"). O que era dispensa do admin
+   vale agora para qualquer conta — e o RLS acompanha (política "mensagens:
+   corrigir a propria", sem o intervalo). Segue valendo para todos: só o
+   PRÓPRIO recado, e o corrigido leva a marca "(editado)". */
+function _msgSemPrazo() { return true; }
 
 function _msgPossoEditar(m) {
   return !!m && m.autor_id === _msgQuemSou() && (_msgSemPrazo() || _msgPrazoRestante(m) > 0);
@@ -31436,7 +31441,7 @@ function renderMensagens() {
       // "editado" sem hora: o que importa é avisar que o texto de cima não é
       // exatamente o que foi lido antes. A hora do recado continua sendo a do
       // envio — é por ela que a conversa se ordena.
-      const marca = m.editado_em ? ` <span class="msg-editado" title="Corrigido por quem escreveu, dentro dos 5 minutos">(editado)</span>` : '';
+      const marca = m.editado_em ? ` <span class="msg-editado" title="Corrigido por quem escreveu">(editado)</span>` : '';
       const lapis = (meu && _msgPossoEditar(m) && !editando)
         ? `<button type="button" class="msg-edit" title="${esc(_msgPrazoTexto(m))}"
              onclick="editarMensagem('${esc(m.id)}')">✎</button>` : '';
