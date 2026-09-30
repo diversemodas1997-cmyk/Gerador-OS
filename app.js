@@ -7405,11 +7405,43 @@ function movimentacoesEstoque() {
    de qual bobina tiraram e entram aqui como 120 cm, na mesma linha. Assim toda
    linha do quadro tem a largura no nome e não sobra linha "sem largura". */
 const LARGURA_BOBINA_PADRAO_CM = 120;
+/* A RESERVA DA OS VAI PARA A LARGURA DA GRADE DELA (30/09/2026, Junior: "Coloque
+   as reservas do algodão cru na largura de 80 cm, caso as OS sejam com grade de
+   80 cm"). A OS não diz de qual bobina tirou, mas a fase dela diz a largura do
+   enfesto (larg, em metros): uma OS de grade 80 cm enfesta bobina de 80 cm.
+   Então a reserva e a baixa dela entram na linha dessa largura — desde que a
+   cor TENHA bobina lançada com ela. Se não tem (a malha preta só tem 120), fica
+   nos 120 cm, como antes: não se abre linha de uma bobina que nunca entrou. */
+function _larguraDaOSNoTecido(o, tecidoNome) {
+  if (!o) return 0;
+  const cm = v => Math.round((parseFloat(String(v || '').replace(',', '.')) || 0) * 100);
+  const f = (o.fases || []).find(x => _normNome(x.tecidoNome) === _normNome(tecidoNome) && cm(x.larg) > 0);
+  if (f) return cm(f.larg);
+  // OS sem largura na fase: a do nome da grade ("… | 80cm").
+  const m = String((o.grade && o.grade.descricao) || '').split('|')[2];
+  const n = m ? parseFloat(String(m).replace(',', '.')) : 0;
+  return n > 0 ? Math.round(n) : 0;
+}
+
 function estoquePorLargura() {
   const mapa = new Map();
-  movimentacoesEstoque().forEach(m => {
-    const larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
+  const todos = movimentacoesEstoque();
+  // As larguras que cada cor tem lançadas (fora das OS).
+  const lancadas = new Map();
+  todos.forEach(m => {
+    if (m.origem === 'os' || !(Number(m.largura) > 0)) return;
     const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
+    if (!lancadas.has(k)) lancadas.set(k, new Set());
+    lancadas.get(k).add(Number(m.largura));
+  });
+  const osPorId = new Map((STATE.ordens || []).map(o => [o.id, o]));
+  todos.forEach(m => {
+    const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
+    let larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
+    if (m.origem === 'os' && !(Number(m.largura) > 0)) {
+      const daGrade = _larguraDaOSNoTecido(osPorId.get(m.osId), m.tecidoNome);
+      if (daGrade > 0 && lancadas.has(k) && lancadas.get(k).has(daGrade)) larg = daGrade;
+    }
     const porLarg = mapa.get(k) || new Map();
     const cur = porLarg.get(larg) || { kg: 0, entrada: 0, reservado: 0, saida: 0, fechados: 0, abertos: 0 };
     const kg = parseFloat(m.kg) || 0;
@@ -7757,7 +7789,7 @@ function renderEstoque() {
     return larguras.map(([larg, v]) => linha(
       { corNome: c.corNome, largura: larg, entrada: v.entrada, reservado: v.reservado, saida: v.saida, fechados: v.fechados, abertos: v.abertos },
       `${corLabel(c.corNome, tec)} · <span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span>`,
-      'Bobinas de ' + _cmTxt(larg) + '. Lançamento sem largura e reserva/baixa de OS (que não dizem a bobina) contam como '
+      'Bobinas de ' + _cmTxt(larg) + '. A reserva e a baixa das OS entram na largura da grade da OS, quando a cor tem bobina dessa largura; senão, em '
         + LARGURA_BOBINA_PADRAO_CM + ' cm.')).join('');
   };
   const quadroTecido = (g) => {
