@@ -7635,12 +7635,51 @@ function renderEstoque() {
       <th style="text-align:right;">Abertos (un)</th>
     </tr></thead>`;
 
+  /* A LARGURA DA BOBINA, POR COR (30/09/2026, Junior: "Os tecidos disponíveis
+     nessa cor deve ser diferenciado entre 7 bobinas com 1,19m, 4 bobinas com
+     1,17m, 3 bobinas com 1,15m, 54 bobinas com 80cm").
+
+     O lançamento guarda a largura (cm) e, quando alguma prateleira da cor tem
+     largura informada, a linha da cor ganha uma sublinha por largura: o kg
+     (entradas − saídas manuais daquela largura) e as bobinas fechadas.
+
+     A RESERVA E A BAIXA DAS OS FICAM SÓ NA LINHA DA COR: a OS reserva por
+     tecido + cor, e o enfesto não diz de qual largura tirou. Por isso a
+     sublinha é o que ENTROU por largura, e não um saldo — o que a OS gastou
+     aparece no total da cor, logo acima. */
+  const _largMovs = new Map();
+  movimentacoesEstoque().forEach(m => {
+    const larg = Number(m.largura) || 0;
+    if (!(larg > 0) || m.origem === 'os') return;
+    const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
+    const porLarg = _largMovs.get(k) || new Map();
+    const cur = porLarg.get(larg) || { kg: 0, fechados: 0 };
+    const sinal = m.tipo === 'entrada' ? 1 : -1;
+    cur.kg += sinal * (parseFloat(m.kg) || 0);
+    cur.fechados += sinal * (parseInt(m.fechados) || 0);
+    porLarg.set(larg, cur);
+    _largMovs.set(k, porLarg);
+  });
+  const _cmTxt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR') + ' cm';
+  const linhasLargura = (c) => {
+    const porLarg = _largMovs.get(_normNome(c.tecidoNome) + '||' + _normNome(c.corNome));
+    if (!porLarg || !porLarg.size) return '';
+    const vazio = '<td></td>';
+    return Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]).map(([larg, v]) => `
+      <tr class="linha-largura" style="font-size:11px;color:var(--ink-2);">
+        <td style="padding-left:22px;" title="Entrou com esta largura de bobina (entradas − saídas manuais desta largura). A reserva e a baixa das OS ficam na linha da cor: a OS não diz de qual largura tirou.">↳ bobina de <b>${_cmTxt(larg)}</b></td>
+        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(v.kg)} kg</td>
+        ${vazio}${vazio}${vazio}
+        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${Number(v.fechados) || 0}</td>
+        ${vazio}
+      </tr>`).join('');
+  };
   const quadroTecido = (g) => {
     const cores = g.linhas.map(c => `
       <tr>
         <td><strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
         ${cellsVals(c, false, g.tecidoNome)}
-      </tr>`).join('');
+      </tr>${linhasLargura(c)}`).join('');
     // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
     // única linha logo acima.
     const total = g.linhas.length > 1 ? `
@@ -8141,7 +8180,7 @@ function renderEstoque() {
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}${Number(m.largura) > 0 ? `<div style="font-size:10px;color:var(--ink-2);">${esc(String(m.largura).replace('.', ','))} cm</div>` : ''}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.abertos ? Number(m.abertos) : '—'}</td>
               <td>${origemLabel(m)}</td>
 
@@ -8173,7 +8212,7 @@ function abrirMovEstoque(tipo) {
       <div class="field"><label>Tecido *</label><select id="me-tecido" onchange="_meAtualizarEstimativa()">${tecOpts}</select></div>
       <div class="field"><label>Cor</label><select id="me-cor">${corOpts}</select></div>
       <div class="field"><label>Bobinas fechadas (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0" oninput="_meAtualizarEstimativa()"></div>
-      <div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Só quando a carga vier em bobina <b>fora do padrão</b> do pano. Em branco, usa a largura de ficha técnica do tecido.</div></div>
+      <div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Fica gravada no lançamento e divide o quadro da cor por largura. Em branco, usa a largura de ficha técnica do tecido.</div></div>
       <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000" oninput="_meMarcarKgManual()"></div>
       <div class="field"><label>Itens abertos em uso (un)</label><input type="number" min="0" step="1" id="me-abertos" placeholder="0"></div>
       <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
@@ -8243,6 +8282,9 @@ async function salvarMovEstoque() {
   if (!(kg > 0)) return toast('Informe a quantidade em kg', 'err');
   const fechados = parseInt(v('me-fechados')) || 0;
   const abertos = parseInt(v('me-abertos')) || 0;
+  // A largura agora fica no lançamento (30/09/2026): antes ela só servia para
+  // estimar o kg e se perdia ao salvar. Em branco = a largura de ficha do pano.
+  const largura = parseFloat(String(v('me-largura')).replace(',', '.')) || 0;
   if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
   STATE.estoqueMov.push({
     id: uid(),
@@ -8252,6 +8294,7 @@ async function salvarMovEstoque() {
     kg: Math.round(kg * 1000) / 1000,
     fechados,
     abertos,
+    ...(largura > 0 ? { largura } : {}),
     data: v('me-data') || new Date().toISOString().slice(0, 10),
     origem: 'manual',
     osId: '',
