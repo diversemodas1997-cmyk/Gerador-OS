@@ -30342,6 +30342,72 @@ function renderFilaOS(statusEscolhido) {
     </div>`;
 }
 
+/* A COLUNA "FALTA" DA LISTA DE OS (30/09/2026, Junior: "Na lista de ordens de
+   serviço, inclua coluna que mostre material faltante").
+
+   A CONTA É A MESMA do Material reservado e da lista de compra —
+   faltaDeTecidoParaOS, com o fecho de faltaParaCompletarOS para a bobina. Uma
+   conta só para a mesma pergunta: a lista, a tela do estoque e a compra nunca
+   discordam. E como lá, só entra OS com pano AINDA reservado (a que já foi
+   cortada baixou o pano, e não tem mais o que faltar).
+
+   A conta relê o estoque inteiro por OS, e a lista se redesenha a cada tecla
+   da busca. Por isso o resultado fica guardado enquanto a ASSINATURA do
+   estoque e das OS não muda (quantos movimentos, quanto somam, quantos já
+   consumidos, quantas OS) — mudou qualquer uma, refaz. */
+let _faltasListaOSCache = null;
+function _faltasListaOS() {
+  const movs = Array.isArray(STATE.estoqueMov) ? STATE.estoqueMov : [];
+  let kg = 0, cons = 0;
+  movs.forEach(m => { kg += parseFloat(m.kg) || 0; if (m.status === 'consumido') cons++; });
+  const assin = [movs.length, Math.round(kg * 1000), cons, (STATE.ordens || []).length,
+                 (STATE.tecidos || []).length, (STATE.grades || []).length].join('|');
+  if (_faltasListaOSCache && _faltasListaOSCache.assin === assin) return _faltasListaOSCache.mapa;
+  const mapa = new Map();
+  if (movs.length) {
+    osComMaterialReservado().filter(o => o.kg > 0 && !o.consumido).forEach(r => {
+      const os = (STATE.ordens || []).find(x => x.id === r.osId);
+      if (!os) return;
+      let fs = [];
+      try { fs = faltaDeTecidoParaOS(os) || []; } catch (e) { fs = []; }
+      if (!fs.length) return;
+      let t = null;
+      try { t = faltaParaCompletarOS(os, fs); } catch (e) { t = null; }
+      mapa.set(r.osId, { itens: (t && t.itens.length) ? t.itens : fs, total: t });
+    });
+  }
+  _faltasListaOSCache = { assin, mapa };
+  return mapa;
+}
+
+// Uma linha por pano que falta, com o QUANTO na frente — o mesmo desenho do
+// selo da coluna Situação do Material reservado.
+/* SÓ NA OS NÃO INICIADA (30/09/2026, Junior: "Essa informação deve ser nula em
+   OS com status diferente de Não iniciado"). Começada a OS, o pano dela já está
+   na mesa ou a caminho dela — a falta deixa de ser pergunta de compra. O teste
+   é feito aqui, na célula, e não no cache: o status muda sem mexer no estoque,
+   e a assinatura do cache não enxergaria. */
+function _faltaCelulaOS(o, faltas) {
+  const f = _statusOS(o) === 'nao-iniciado' ? faltas.get(o.id) : null;
+  if (!f) return '<span style="color:var(--ink-3)">—</span>';
+  const kg = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const pano = i => (i.tecidoNome || '') + ' · ' + (corSemTecido(i.corNome, i.tecidoNome) || '(sem cor)');
+  const t = f.total;
+  const dica = 'Reservando pano que não existe:\n'
+    + f.itens.map(i => '  · ' + pano(i) + ': precisa ' + kg(i.precisa) + ' kg, disponível '
+      + kg(i.disponivel) + ' kg, faltam ' + kg(i.falta) + ' kg'
+      + (i.faltaBob > 0 ? ' (' + i.faltaBob + ' bob)' : '')).join('\n')
+    + (t && t.previstoKg > 0
+      ? '\n\nPara completar esta OS faltam ' + (t.temBobina ? t.faltaBob + ' de ' + t.previstoBob + ' bobinas e ' : '')
+        + kg(t.faltaKg) + ' de ' + kg(t.previstoKg) + ' kg previstos.' : '')
+    + '\n\nSai sozinho quando a entrada desse tecido for lançada no estoque.';
+  return `<div class="falta-os" title="${esc(dica)}" style="color:#c0392b;font-size:11px;line-height:1.25;">`
+    + f.itens.map(i => `<div style="margin-bottom:2px;">⚠ <b style="white-space:nowrap;">${kg(i.falta)} kg`
+      + `${i.faltaBob > 0 ? ' · ' + i.faltaBob + ' bob' : ''}</b>`
+      + `<div style="font-size:10px;color:var(--ink-2);">${esc(pano(i))}</div></div>`).join('')
+    + `</div>`;
+}
+
 function renderListaOS() {
   // A lista vai ser redesenhada: o botao que abriu o menu pode nem existir
   // depois disto, e um menu pendurado apontando para uma linha que sumiu age
@@ -30354,7 +30420,7 @@ function renderListaOS() {
   if (!STATE.ordens.length) {
     _renderAvisoGrupoListaOS(0);
     _contaListaOS(0, 0);
-    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
     return;
   }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
@@ -30427,10 +30493,11 @@ function renderListaOS() {
                   skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '',
                   diaFim ? `finalizadas em <b>${esc(formatDate(diaFim))}</b>` : '']
       .filter(Boolean).join(' e ');
-    tb.innerHTML = `<tr><td colspan="11" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
+    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
       + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;
     return;
   }
+  const faltas = _faltasListaOS();
   tb.innerHTML = filtradas.map(o => {
     const thumb = _osThumbHtml(o);
     // A COR DA PEÇA, da mesma fonte do banner da folha impressa e da folha de OE
@@ -30473,6 +30540,7 @@ function renderListaOS() {
       <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
           title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
+      <td>${_faltaCelulaOS(o, faltas)}</td>
 
     </tr>`;
   }).join('');
