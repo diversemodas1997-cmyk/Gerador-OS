@@ -7375,6 +7375,31 @@ function movimentacoesEstoque() {
 //   reservado = consumo de OSs salvas mas AINDA NÃO baixadas (status reservado)
 //   saida     = baixa definitiva: OSs apontadas como produzidas + saídas manuais
 //   disponivel (livre) = entrada − reservado − saida
+/* O ESTOQUE POR LARGURA DE BOBINA, por tecido + cor: Map "tecido||cor" ->
+   Map largura(cm) -> { kg, fechados }. Entradas somam e saídas manuais
+   subtraem, só dos lançamentos com largura; a OS não diz a largura e fica de
+   fora. É a conta das sublinhas do quadro e das opções da saída manual — uma
+   só, para as duas nunca discordarem. */
+function estoquePorLargura() {
+  const mapa = new Map();
+  movimentacoesEstoque().forEach(m => {
+    const larg = Number(m.largura) || 0;
+    if (!(larg > 0) || m.origem === 'os') return;
+    const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
+    const porLarg = mapa.get(k) || new Map();
+    const cur = porLarg.get(larg) || { kg: 0, entrada: 0, saida: 0, fechados: 0, abertos: 0 };
+    const sinal = m.tipo === 'entrada' ? 1 : -1;
+    const kg = parseFloat(m.kg) || 0;
+    cur.kg += sinal * kg;
+    if (m.tipo === 'entrada') cur.entrada += kg; else cur.saida += kg;
+    cur.fechados += sinal * (parseInt(m.fechados) || 0);
+    cur.abertos += sinal * (parseInt(m.abertos) || 0);
+    porLarg.set(larg, cur);
+    mapa.set(k, porLarg);
+  });
+  return mapa;
+}
+
 function calcularSaldosEstoque() {
   const key = (t, c) => _normNome(t) + '||' + _normNome(c);
   const detMap = new Map();
@@ -7575,21 +7600,25 @@ function renderEstoque() {
     if (m.tipo !== 'entrada' || m.origem === 'os') return;
     const kg = parseFloat(m.kg) || 0, bob = parseInt(m.fechados) || 0;
     if (!(kg > 0 && bob > 0)) return;
-    [_normNome(m.tecidoNome) + '||' + _normNome(m.corNome), _normNome(m.tecidoNome)].forEach(k => {
+    const chaves = [_normNome(m.tecidoNome) + '||' + _normNome(m.corNome), _normNome(m.tecidoNome)];
+    if (Number(m.largura) > 0) chaves.push(chaves[0] + '||' + Number(m.largura));
+    chaves.forEach(k => {
       const cur = _pesoContado.get(k) || { kg: 0, bob: 0 };
       cur.kg += kg; cur.bob += bob;
       _pesoContado.set(k, cur);
     });
   });
   // O peso contado da cor (ou do tecido inteiro, sem cor), ou null.
-  const pesoDaContagem = (tecidoNome, corNome) => {
-    const k = corNome == null ? _normNome(tecidoNome) : _normNome(tecidoNome) + '||' + _normNome(corNome);
+  const pesoDaContagem = (tecidoNome, corNome, largura) => {
+    const k = corNome == null ? _normNome(tecidoNome)
+      : _normNome(tecidoNome) + '||' + _normNome(corNome) + (Number(largura) > 0 ? '||' + Number(largura) : '');
     const c = _pesoContado.get(k);
     return c && c.bob > 0 ? { kg: c.kg / c.bob, n: c.bob, origem: 'contagem' } : null;
   };
-  const baseBobina = (tecidoNome, corNome) => pesoDaContagem(tecidoNome, corNome) || pesoBobinaEstimado(tecidoNome);
-  const bobDoKg = (kg, tecidoNome, corNome) => {
-    const base = baseBobina(tecidoNome, corNome);
+  const baseBobina = (tecidoNome, corNome, largura) => pesoDaContagem(tecidoNome, corNome, largura)
+    || pesoDaContagem(tecidoNome, corNome) || pesoBobinaEstimado(tecidoNome);
+  const bobDoKg = (kg, tecidoNome, corNome, largura) => {
+    const base = baseBobina(tecidoNome, corNome, largura);
     if (!base || !(base.kg > 0)) return null;
     const n = (Number(kg) || 0) / base.kg;
     // A folga é a do arredondamento para cima (CEIL_BOBINA_EPS), do outro lado:
@@ -7597,20 +7626,20 @@ function renderEstoque() {
     // 22,99999… no ponto flutuante — o chão seco mostrava 22 (24/09/2026).
     return isFinite(n) ? Math.floor(n + CEIL_BOBINA_EPS) : null;
   };
-  const bobTxt = (kg, tecidoNome, corNome) => {
-    const b = bobDoKg(kg, tecidoNome, corNome);
+  const bobTxt = (kg, tecidoNome, corNome, largura) => {
+    const b = bobDoKg(kg, tecidoNome, corNome, largura);
     return b == null ? '' : `<span style="font-size:10px;color:var(--ink-2);">/${b} bob</span>`;
   };
-  const dicaBob = (tecidoNome, corNome) => {
-    const base = baseBobina(tecidoNome, corNome);
+  const dicaBob = (tecidoNome, corNome, largura) => {
+    const base = baseBobina(tecidoNome, corNome, largura);
     if (!base || !(base.kg > 0)) return 'Peso da bobina deste pano ainda não conhecido: a coluna sai só em quilos.';
     return `A bobina de ${tecidoNome} pesa ${fmt(base.kg)} kg `
       + (base.origem === 'contagem'
-        ? `(média das entradas contadas ${corNome == null ? 'de todas as cores' : 'desta cor'}: kg ÷ ${base.n} bobinas lançadas)`
+        ? `(média das entradas contadas ${corNome == null ? 'de todas as cores' : (Number(largura) > 0 ? 'desta largura' : 'desta cor')}: kg ÷ ${base.n} bobinas lançadas)`
         : base.origem === 'cadastro' ? '(cadastro do tecido)' : `(mediana de ${base.n} entrada(s) com kg e fechados)`)
       + '. A conta arredonda para baixo: meia bobina na prateleira ninguém vai buscar.';
   };
-  const dispCell = (s, tec, cor) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(tec, cor))}">${fmt(s)} kg${bobTxt(s, tec, cor)}</td>`;
+  const dispCell = (s, tec, cor, larg) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(tec, cor, larg))}">${fmt(s)} kg${bobTxt(s, tec, cor, larg)}</td>`;
   const semNada = !movimentacoesEstoque().length;
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
   // ficam agrupadas e ordenadas juntas, com subtotal por tipo de tecido.
@@ -7638,15 +7667,16 @@ function renderEstoque() {
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
   // cor ("Preto Malha Algodão") sai — evita "Malha Algodão · Preto Malha Algodão".
   const corLabel = (nome, tecido) => esc(corSemTecido(nome, tecido)) || '<span style="color:var(--ink-2)">(sem cor)</span>';
-  const numCell = (n, bold, tec, cor) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}" title="${esc(dicaBob(tec, cor))}">${fmt(n)}${bobTxt(n, tec, cor)}</td>`;
+  const numCell = (n, bold, tec, cor, larg) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}" title="${esc(dicaBob(tec, cor, larg))}">${fmt(n)}${bobTxt(n, tec, cor, larg)}</td>`;
   // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
   const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
   // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
   // O tecido vem junto porque a bobina é DELE: cada pano tem o seu peso por
   // bobina, e é ele que transforma o quilo da coluna em rolo de prateleira.
   const cellsVals = (o, bold, tec) =>
-    numCell(o.entrada, bold, tec, o.corNome) + numCell(o.reservado, bold, tec, o.corNome) + numCell(o.saida, bold, tec, o.corNome) +
-    dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome) +
+    numCell(o.entrada, bold, tec, o.corNome, o.largura) + numCell(o.reservado, bold, tec, o.corNome, o.largura)
+    + numCell(o.saida, bold, tec, o.corNome, o.largura) +
+    dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome, o.largura) +
     uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
   /* UM QUADRO POR MATÉRIA-PRIMA (14/09/2026, Junior).
 
@@ -7673,47 +7703,47 @@ function renderEstoque() {
      nessa cor deve ser diferenciado entre 7 bobinas com 1,19m, 4 bobinas com
      1,17m, 3 bobinas com 1,15m, 54 bobinas com 80cm").
 
-     O lançamento guarda a largura (cm) e, quando alguma prateleira da cor tem
-     largura informada, a linha da cor ganha uma sublinha por largura: o kg
-     (entradas − saídas manuais daquela largura) e as bobinas fechadas.
+     UMA LINHA INTEIRA POR LARGURA, com a largura na frente da cor (mesmo dia,
+     Junior: "as linhas devem ser repetidas quatro vezes, uma para cada
+     largura" e "Inclua na frente do nome da cor algodão cru a largura de cada
+     bobina"). Era uma linha somada da cor com sublinhas de kg embaixo; agora a
+     cor que tem bobina lançada com largura se abre em "119 cm · Algodão cru",
+     "117 cm · Algodão cru"…, cada uma com entradas, saídas, disponível e
+     bobinas da própria largura — e a bobina estimada pelo peso DAQUELA
+     largura (18 kg a larga, 13 kg a de 80 cm), não pela média da cor.
 
-     A RESERVA E A BAIXA DAS OS FICAM SÓ NA LINHA DA COR: a OS reserva por
-     tecido + cor, e o enfesto não diz de qual largura tirou. Por isso a
-     sublinha é o que ENTROU por largura, e não um saldo — o que a OS gastou
-     aparece no total da cor, logo acima. */
-  const _largMovs = new Map();
-  movimentacoesEstoque().forEach(m => {
-    const larg = Number(m.largura) || 0;
-    if (!(larg > 0) || m.origem === 'os') return;
-    const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
-    const porLarg = _largMovs.get(k) || new Map();
-    const cur = porLarg.get(larg) || { kg: 0, fechados: 0 };
-    const sinal = m.tipo === 'entrada' ? 1 : -1;
-    cur.kg += sinal * (parseFloat(m.kg) || 0);
-    cur.fechados += sinal * (parseInt(m.fechados) || 0);
-    porLarg.set(larg, cur);
-    _largMovs.set(k, porLarg);
-  });
+     A RESERVA E A BAIXA DAS OS NÃO TÊM LARGURA: a OS reserva por tecido + cor,
+     e o enfesto não diz de qual largura tirou. O que a cor tem e nenhuma
+     largura explica — a reserva das OS, a baixa delas, uma entrada antiga sem
+     largura — vai para uma linha "sem largura" da mesma cor. Assim as linhas
+     da cor continuam somando o que a cor tem, e nada some do quadro. */
+  const _largMovs = estoquePorLargura();
   const _cmTxt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR') + ' cm';
-  const linhasLargura = (c) => {
+  const linhasDaCor = (c, tec) => {
     const porLarg = _largMovs.get(_normNome(c.tecidoNome) + '||' + _normNome(c.corNome));
-    if (!porLarg || !porLarg.size) return '';
-    const vazio = '<td></td>';
-    return Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]).map(([larg, v]) => `
-      <tr class="linha-largura" style="font-size:11px;color:var(--ink-2);">
-        <td style="padding-left:22px;" title="Entrou com esta largura de bobina (entradas − saídas manuais desta largura). A reserva e a baixa das OS ficam na linha da cor: a OS não diz de qual largura tirou.">↳ bobina de <b>${_cmTxt(larg)}</b></td>
-        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(v.kg)} kg</td>
-        ${vazio}${vazio}${vazio}
-        <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${Number(v.fechados) || 0}</td>
-        ${vazio}
-      </tr>`).join('');
+    const linha = (o, rotulo, dica) => `
+      <tr>
+        <td${dica ? ` title="${esc(dica)}"` : ''}><strong>${rotulo}</strong></td>
+        ${cellsVals(o, false, tec)}
+      </tr>`;
+    if (!porLarg || !porLarg.size) return linha(c, corLabel(c.corNome, tec));
+    const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
+    const html = larguras.map(([larg, v]) => linha(
+      { corNome: c.corNome, largura: larg, entrada: v.entrada, reservado: 0, saida: v.saida, fechados: v.fechados, abertos: v.abertos },
+      `<span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span> · ${corLabel(c.corNome, tec)}`,
+      'Bobinas de ' + _cmTxt(larg) + ': entradas e saídas lançadas com esta largura.')).join('');
+    // O resto da cor, que nenhuma largura explica.
+    const soma = k => larguras.reduce((a, [, v]) => a + (Number(v[k]) || 0), 0);
+    const resto = { corNome: c.corNome, entrada: c.entrada - soma('entrada'), reservado: c.reservado,
+                    saida: c.saida - soma('saida'), fechados: (c.fechados || 0) - soma('fechados'),
+                    abertos: (c.abertos || 0) - soma('abertos') };
+    const temResto = ['entrada', 'reservado', 'saida', 'fechados', 'abertos']
+      .some(k => Math.abs(Number(resto[k]) || 0) > 0.0005);
+    return html + (temResto ? linha(resto, `<span style="color:var(--ink-2);">sem largura</span> · ${corLabel(c.corNome, tec)}`,
+      'O que esta cor tem sem largura: a reserva e a baixa das OS (a OS não diz de qual largura tirou) e entradas lançadas sem largura.') : '');
   };
   const quadroTecido = (g) => {
-    const cores = g.linhas.map(c => `
-      <tr>
-        <td><strong>${corLabel(c.corNome, g.tecidoNome)}</strong></td>
-        ${cellsVals(c, false, g.tecidoNome)}
-      </tr>${linhasLargura(c)}`).join('');
+    const cores = g.linhas.map(c => linhasDaCor(c, g.tecidoNome)).join('');
     // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
     // única linha logo acima.
     const total = g.linhas.length > 1 ? `
@@ -8290,10 +8320,12 @@ function abrirMovEstoque(tipo) {
   const hoje = new Date().toISOString().slice(0, 10);
   box.innerHTML = `
     <div class="form-grid cols-2">
-      <div class="field"><label>Tecido *</label><select id="me-tecido" onchange="_meAtualizarEstimativa()">${tecOpts}</select></div>
-      <div class="field"><label>Cor</label><select id="me-cor">${corOpts}</select></div>
+      <div class="field"><label>Tecido *</label><select id="me-tecido" onchange="_meAtualizarEstimativa();_meCoresDaSaida();_meAtualizarLarguras()">${tecOpts}</select></div>
+      <div class="field"><label>Cor</label><select id="me-cor" onchange="_meAtualizarLarguras()">${corOpts}</select></div>
       <div class="field"><label>Bobinas fechadas (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0" oninput="_meAtualizarEstimativa()"></div>
-      <div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Fica gravada no lançamento e divide o quadro da cor por largura. Em branco, usa a largura de ficha técnica do tecido.</div></div>
+      ${movEstoqueTipo === 'saida'
+        ? `<div class="field"><label>Largura da bobina</label><select id="me-largura"></select><div class="field-hint" id="me-largura-dica">De qual largura sai: as que esta cor tem no estoque, com o que resta de cada uma.</div></div>`
+        : `<div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Fica gravada no lançamento e divide o quadro da cor por largura. Em branco, usa a largura de ficha técnica do tecido.</div></div>`}
       <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000" oninput="_meMarcarKgManual()"></div>
       <div class="field"><label>Itens abertos em uso (un)</label><input type="number" min="0" step="1" id="me-abertos" placeholder="0"></div>
       <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
@@ -8305,6 +8337,60 @@ function abrirMovEstoque(tipo) {
   openModal('modal-estoque');
   _meKgManual = false;
   _meAtualizarEstimativa();
+  _meCoresDaSaida();
+  _meAtualizarLarguras();
+}
+
+/* A LARGURA NA SAÍDA MANUAL (30/09/2026, Junior: "Mostre a largura também no
+   formulário de saída manual"). Na entrada a largura é digitada — é a bobina
+   que está chegando. Na saída ela é ESCOLHIDA entre as que a cor tem, cada uma
+   com o que resta dela (estoquePorLargura): quem tira 3 bobinas de 80 cm do
+   algodão cru não precisa lembrar a medida, e o quadro desconta da largura
+   certa. Cor sem largura lançada fica com "sem largura", como antes. */
+/* NA SAÍDA, AS CORES VÊM DO ESTOQUE DO TECIDO (30/09/2026). O formulário listava
+   o cadastro de cores, e o nome ali nem sempre é o do estoque: o algodão cru
+   entrou como "Algodão cru" e o cadastro o chama "Malha Algodão cru". Para o
+   programa são duas prateleiras — a saída escolhida pelo cadastro abria uma
+   linha nova no quadro e não descontava das bobinas que existem. Saída só tira
+   o que existe: a lista é a das cores que este tecido tem lançadas, com o nome
+   exato do estoque. A entrada segue com o cadastro. */
+function _meCoresDaSaida() {
+  const corSel = document.getElementById('me-cor');
+  const sel = document.getElementById('me-largura');
+  if (!corSel || !sel || sel.tagName !== 'SELECT') return;
+  const tec = document.getElementById('me-tecido')?.value || '';
+  const antes = corSel.value;
+  const cores = new Map();
+  if (tec) movimentacoesEstoque().forEach(m => {
+    if (_normNome(m.tecidoNome) !== _normNome(tec) || !m.corNome) return;
+    const k = _normNome(m.corNome);
+    if (!cores.has(k)) cores.set(k, m.corNome);
+  });
+  const lista = Array.from(cores.values())
+    .sort((a, b) => corSemTecido(a, tec).localeCompare(corSemTecido(b, tec), 'pt-BR'));
+  corSel.innerHTML = `<option value="">${tec ? (lista.length ? '— escolha a cor —' : 'este tecido não tem estoque lançado') : '— escolha o tecido —'}</option>`
+    + lista.map(c => `<option value="${esc(c)}">${esc(corSemTecido(c, tec) || c)}</option>`).join('');
+  if (antes && lista.includes(antes)) corSel.value = antes;
+}
+
+function _meAtualizarLarguras() {
+  const sel = document.getElementById('me-largura');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  const tec = document.getElementById('me-tecido')?.value || '';
+  const cor = document.getElementById('me-cor')?.value || '';
+  const dica = document.getElementById('me-largura-dica');
+  const porLarg = (tec ? estoquePorLargura().get(_normNome(tec) + '||' + _normNome(cor)) : null) || new Map();
+  const kgTxt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const cm = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR') + ' cm';
+  const antes = sel.value;
+  const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
+  sel.innerHTML = `<option value="">${larguras.length ? '— sem largura —' : (tec ? 'esta cor não tem largura lançada' : 'escolha o tecido e a cor')}</option>`
+    + larguras.map(([l, v]) => `<option value="${l}">${cm(l)} — ${Number(v.fechados) || 0} bob · ${kgTxt(v.kg)} kg</option>`).join('');
+  if (antes && porLarg.has(Number(antes))) sel.value = antes;
+  else if (larguras.length === 1) sel.value = String(larguras[0][0]);
+  if (dica) dica.textContent = larguras.length
+    ? 'De qual largura sai: as que esta cor tem no estoque, com o que resta de cada uma.'
+    : 'Esta cor não tem bobina lançada com largura — a saída fica sem largura, como sempre foi.';
 }
 
 /* O KG SAI DAS BOBINAS (14/09/2026). Quem recebe a carga conta bobina; o quilo
