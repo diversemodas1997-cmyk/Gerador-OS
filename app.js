@@ -637,11 +637,49 @@ function _mergeListaPorRegistro(baseStr, localStr, srvStr, apagados) {
   const base = parse(baseStr) || [];
   const porId = new Map();
   srv.forEach(r => porId.set(String(r.id), r));            // ponto de partida: o servidor
-  const baseTxt = new Map(base.map(r => [String(r.id), JSON.stringify(r)]));
+  const baseReg = new Map(base.map(r => [String(r.id), r]));
+  /* O MESMO REGISTRO MEXIDO NAS DUAS PONTAS: JUNTA CAMPO A CAMPO (30/09/2026,
+     Junior: "Faça a correção 3").
+
+     Antes, registro editado aqui ia INTEIRO por cima do servidor. Foi assim que
+     a caixa "Expedição Desc X São Carlos" sumiu de 10 OS: a alocação marcou a
+     caixa numa máquina, outra máquina — com a OS de antes da alocação na
+     memória — marcou o Ensaque minutos depois, e a OS dela, sem a caixa,
+     substituiu a do servidor (0571 a 0574, alocadas 07:32 de 28/09, Ensaque
+     08:24-08:30).
+
+     Agora, quando o servidor TAMBÉM mudou o registro desde a nossa base, desce
+     pelos campos: o que mudou só aqui vem daqui, o que mudou só lá fica como
+     está lá, e objeto mudado dos dois lados desce mais um nível. Assim o
+     Ensaque marcado aqui e a caixa marcada lá convivem na mesma OS.
+
+     Só o conflito de verdade — o MESMO campo mudado nas duas pontas, com
+     valores diferentes — decide pelo daqui, que é a regra de antes. Lista
+     (etapas, enfestos, pacotes) é um valor só: não se junta item a item, porque
+     a ordem e a posição dizem coisa nela. */
+  const txt = v => JSON.stringify(v);
+  const ehObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
+  const juntar = (b, n, s) => {
+    const saida = {};
+    const chaves = new Set([...Object.keys(n), ...Object.keys(s)]);
+    chaves.forEach(k => {
+      const bk = b[k], nk = n[k], sk = s[k];
+      let v;
+      if (txt(nk) === txt(bk)) v = sk;                     // não mexemos: vale o servidor
+      else if (txt(sk) === txt(bk) || txt(sk) === txt(nk)) v = nk;  // só nós mexemos
+      else if (ehObj(nk) && ehObj(sk)) v = juntar(ehObj(bk) ? bk : {}, nk, sk);
+      else v = nk;                                         // conflito real: o daqui
+      if (v !== undefined) saida[k] = v;
+    });
+    return saida;
+  };
   local.forEach(r => {                                     // criado ou editado aqui: manda
     const id = String(r.id);
-    const antes = baseTxt.get(id);
-    if (antes === undefined || antes !== JSON.stringify(r)) porId.set(id, r);
+    const antes = baseReg.get(id);
+    if (antes === undefined) { porId.set(id, r); return; }
+    if (txt(antes) === txt(r)) return;                     // não mexemos: fica o do servidor
+    const noSrv = porId.get(id);
+    porId.set(id, (ehObj(noSrv) && txt(noSrv) !== txt(antes)) ? juntar(antes, r, noSrv) : r);
   });
   // Apagado aqui, de propósito: sai. Só estes — ver o bloco acima.
   const idsLocais = new Set(local.map(r => String(r.id)));
