@@ -7556,8 +7556,40 @@ function renderEstoque() {
      Pano sem peso de bobina conhecido (cadastro zerado e sem entrada com kg e
      fechados juntos) sai só em quilo, como antes — ver pesoBobinaEstimado.
      Inventar bobina viraria compra errada. */
-  const bobDoKg = (kg, tecidoNome) => {
-    const base = pesoBobinaEstimado(tecidoNome);
+  /* A BOBINA DA COR SAI DA CONTAGEM DELA (30/09/2026, Junior: "Faça a
+     estimativa usar a contagem de bobinas").
+
+     O peso da bobina era um só por TECIDO (cadastro, ou a mediana das
+     entradas). No Algodão cru, com bobinas largas de 18 kg e de 80 cm com 13
+     kg, a linha dizia "954 kg/50 bob" ao lado de 68 bobinas contadas — a
+     mediana do pano inteiro não é o peso de nenhuma das duas.
+
+     Agora, quando a cor tem entradas com bobinas CONTADAS (kg e fechados no
+     mesmo lançamento), a bobina dela pesa a média dessas entradas: kg ÷
+     bobinas. As entradas passam a dar exatamente a contagem, e reservado,
+     saídas e disponível se convertem pelo peso real daquela prateleira. A
+     linha de total do tecido usa a média de todas as cores contadas. Cor sem
+     contagem continua na estimativa do tecido, como antes. */
+  const _pesoContado = new Map();
+  movimentacoesEstoque().forEach(m => {
+    if (m.tipo !== 'entrada' || m.origem === 'os') return;
+    const kg = parseFloat(m.kg) || 0, bob = parseInt(m.fechados) || 0;
+    if (!(kg > 0 && bob > 0)) return;
+    [_normNome(m.tecidoNome) + '||' + _normNome(m.corNome), _normNome(m.tecidoNome)].forEach(k => {
+      const cur = _pesoContado.get(k) || { kg: 0, bob: 0 };
+      cur.kg += kg; cur.bob += bob;
+      _pesoContado.set(k, cur);
+    });
+  });
+  // O peso contado da cor (ou do tecido inteiro, sem cor), ou null.
+  const pesoDaContagem = (tecidoNome, corNome) => {
+    const k = corNome == null ? _normNome(tecidoNome) : _normNome(tecidoNome) + '||' + _normNome(corNome);
+    const c = _pesoContado.get(k);
+    return c && c.bob > 0 ? { kg: c.kg / c.bob, n: c.bob, origem: 'contagem' } : null;
+  };
+  const baseBobina = (tecidoNome, corNome) => pesoDaContagem(tecidoNome, corNome) || pesoBobinaEstimado(tecidoNome);
+  const bobDoKg = (kg, tecidoNome, corNome) => {
+    const base = baseBobina(tecidoNome, corNome);
     if (!base || !(base.kg > 0)) return null;
     const n = (Number(kg) || 0) / base.kg;
     // A folga é a do arredondamento para cima (CEIL_BOBINA_EPS), do outro lado:
@@ -7565,18 +7597,20 @@ function renderEstoque() {
     // 22,99999… no ponto flutuante — o chão seco mostrava 22 (24/09/2026).
     return isFinite(n) ? Math.floor(n + CEIL_BOBINA_EPS) : null;
   };
-  const bobTxt = (kg, tecidoNome) => {
-    const b = bobDoKg(kg, tecidoNome);
+  const bobTxt = (kg, tecidoNome, corNome) => {
+    const b = bobDoKg(kg, tecidoNome, corNome);
     return b == null ? '' : `<span style="font-size:10px;color:var(--ink-2);">/${b} bob</span>`;
   };
-  const dicaBob = (tecidoNome) => {
-    const base = pesoBobinaEstimado(tecidoNome);
+  const dicaBob = (tecidoNome, corNome) => {
+    const base = baseBobina(tecidoNome, corNome);
     if (!base || !(base.kg > 0)) return 'Peso da bobina deste pano ainda não conhecido: a coluna sai só em quilos.';
     return `A bobina de ${tecidoNome} pesa ${fmt(base.kg)} kg `
-      + (base.origem === 'cadastro' ? '(cadastro do tecido)' : `(mediana de ${base.n} entrada(s) com kg e fechados)`)
+      + (base.origem === 'contagem'
+        ? `(média das entradas contadas ${corNome == null ? 'de todas as cores' : 'desta cor'}: kg ÷ ${base.n} bobinas lançadas)`
+        : base.origem === 'cadastro' ? '(cadastro do tecido)' : `(mediana de ${base.n} entrada(s) com kg e fechados)`)
       + '. A conta arredonda para baixo: meia bobina na prateleira ninguém vai buscar.';
   };
-  const dispCell = (s, tec) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(tec))}">${fmt(s)} kg${bobTxt(s, tec)}</td>`;
+  const dispCell = (s, tec, cor) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${s < 0 ? '#c0392b' : 'inherit'};" title="${esc(dicaBob(tec, cor))}">${fmt(s)} kg${bobTxt(s, tec, cor)}</td>`;
   const semNada = !movimentacoesEstoque().length;
   // Tecido + cor são UMA categoria combinada. As variações de um mesmo tecido
   // ficam agrupadas e ordenadas juntas, com subtotal por tipo de tecido.
@@ -7604,15 +7638,15 @@ function renderEstoque() {
   // A linha já mostra o tecido antes do "·", então o sufixo do tecido no nome da
   // cor ("Preto Malha Algodão") sai — evita "Malha Algodão · Preto Malha Algodão".
   const corLabel = (nome, tecido) => esc(corSemTecido(nome, tecido)) || '<span style="color:var(--ink-2)">(sem cor)</span>';
-  const numCell = (n, bold, tec) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}" title="${esc(dicaBob(tec))}">${fmt(n)}${bobTxt(n, tec)}</td>`;
+  const numCell = (n, bold, tec, cor) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}" title="${esc(dicaBob(tec, cor))}">${fmt(n)}${bobTxt(n, tec, cor)}</td>`;
   // Célula de UNIDADES (inteiro, sem kg). Fundo levemente diferente p/ destacar.
   const uniCell = (n, bold) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}">${Number(n) || 0}</td>`;
   // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
   // O tecido vem junto porque a bobina é DELE: cada pano tem o seu peso por
   // bobina, e é ele que transforma o quilo da coluna em rolo de prateleira.
   const cellsVals = (o, bold, tec) =>
-    numCell(o.entrada, bold, tec) + numCell(o.reservado, bold, tec) + numCell(o.saida, bold, tec) +
-    dispCell(o.entrada - o.reservado - o.saida, tec) +
+    numCell(o.entrada, bold, tec, o.corNome) + numCell(o.reservado, bold, tec, o.corNome) + numCell(o.saida, bold, tec, o.corNome) +
+    dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome) +
     uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
   /* UM QUADRO POR MATÉRIA-PRIMA (14/09/2026, Junior).
 
@@ -7887,7 +7921,7 @@ function renderEstoque() {
     const faltaBob = bobinasQueFaltamNaFase(f, fatias);
     const emFalta = !!(fatias && fatias.get(_normNome(f.tecido) + '||' + _normNome(f.cor)) > 0);
     const disp = _dispParaOS(f, osId);
-    const bobDisp = bobDoKg(disp.kg, f.tecido);
+    const bobDisp = bobDoKg(disp.kg, f.tecido, f.cor);
     const dicaFase = esc(f.nome) + (f.bobinas != null
       ? ' — ' + f.bobinas + ' bobina(s) previstas: faltam ' + faltaBob + ', ' + (f.bobinas - faltaBob)
         + ' disponível(is) e reservada(s).' : '')
