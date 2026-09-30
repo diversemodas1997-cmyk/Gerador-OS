@@ -379,7 +379,10 @@ ok('34. a conta fica ao lado da busca na barra de filtros',
    some sem explicacao. */
 {
   ok('55. o campo esta na barra de filtros da lista',
-     /class="lista-os-filtros"[\s\S]{0,2600}id="filtro-fim"/.test(html), 'campo de data fora da barra');
+     // Entre o início da barra e a tabela da lista — e não a N caracteres dela:
+     // a barra cresce a cada filtro novo (o de material faltante, 30/09/2026,
+     // empurrou o campo além dos 2600 que o teste dava).
+     /class="lista-os-filtros"(?:(?!<table)[\s\S])*id="filtro-fim"/.test(html), 'campo de data fora da barra');
   ok('56. e e um so — o intervalo de duas datas nao voltou',
      !/filtro-fim-de|filtro-fim-ate/.test(html) && !/filtro-fim-de|filtro-fim-ate/.test(src),
      'sobrou campo do intervalo');
