@@ -8188,17 +8188,50 @@ function renderEstoque() {
       </div>` : ''}
     </div>` : '';
 
-  const movs = movimentacoesEstoque().slice()
+  /* FILTROS NAS MOVIMENTAÇÕES (30/09/2026, Junior: "Inclua a largura da bobina
+     em uma coluna de cada linha do algodão cru cadastrado como entrada"). A
+     lista mostra os 60 lançamentos mais novos, e as entradas do algodão cru
+     (04/09) estavam na posição 320 — a coluna de largura não teria onde
+     aparecer. Tecido, cor e tipo filtram ANTES do corte dos 60: filtrado o
+     pano, as entradas dele aparecem todas, com a largura de cada uma. */
+  const _fMov = _estoqueMovFiltro;
+  const todosMovs = movimentacoesEstoque();
+  const tipoDoMov = m => m.tipo === 'entrada' ? 'entrada' : (m.origem === 'os' ? (m.status === 'consumido' ? 'saida-os' : 'reserva') : 'saida');
+  const movsFiltrados = todosMovs.filter(m =>
+    (!_fMov.tecido || _normNome(m.tecidoNome) === _fMov.tecido)
+    && (!_fMov.cor || _normNome(m.corNome) === _fMov.cor)
+    && (!_fMov.tipo || tipoDoMov(m) === _fMov.tipo));
+  const movs = movsFiltrados.slice()
     .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
     .slice(0, 60);
+  const opcoesDe = (lista, campo) => {
+    const m = new Map();
+    lista.forEach(x => { const k = _normNome(x[campo]); if (k && !m.has(k)) m.set(k, x[campo]); });
+    return Array.from(m.entries()).sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+  };
+  const selMov = (campo, rotulo, opcoes) => `<select onchange="_filtrarMovEstoque('${campo}', this.value)" title="${esc(rotulo)}">
+      <option value="">${esc(rotulo)}</option>
+      ${opcoes.map(([k, v]) => `<option value="${esc(k)}"${_fMov[campo] === k ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+    </select>`;
+  // A cor segue o tecido escolhido: só as cores que aquele pano tem.
+  const baseCor = _fMov.tecido ? todosMovs.filter(m => _normNome(m.tecidoNome) === _fMov.tecido) : todosMovs;
+  const filtrosMovHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      ${selMov('tecido', 'Todos os tecidos', opcoesDe(todosMovs, 'tecidoNome'))}
+      ${selMov('cor', 'Todas as cores', opcoesDe(baseCor, 'corNome'))}
+      ${selMov('tipo', 'Todos os tipos', [['entrada', 'Entrada'], ['saida', 'Saída manual'], ['saida-os', 'Saída (OS)'], ['reserva', 'Reserva']])}
+      <span class="muted" style="font-size:12px;">${movsFiltrados.length > 60
+        ? `mostrando as 60 mais novas de ${movsFiltrados.length}` : `${movsFiltrados.length} lançamento${movsFiltrados.length === 1 ? '' : 's'}`}</span>
+      ${(_fMov.tecido || _fMov.cor || _fMov.tipo) ? `<button class="btn small ghost" onclick="_filtrarMovEstoque('limpar')">Limpar</button>` : ''}
+    </div>`;
   const origemLabel = m => m.origem === 'os' ? `OS ${esc(m.osNumero || '')}`
     : m.origem === 'nf' ? `NF ${esc(m.osNumero || '')}${m.obs ? ' · ' + esc(m.obs) : ''}`
     : 'Manual';
   const movHtml = `
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:14px;">Movimentações recentes</h2>
+      ${filtrosMovHtml}
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;">Abertos</th><th>Origem</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;" title="Largura da bobina lançada. Em branco: a largura de ficha técnica do tecido">Largura</th><th style="text-align:right;">Abertos</th><th>Origem</th></tr></thead>
         <tbody>
           ${movs.length ? movs.map(m => `
             <tr>
@@ -8214,11 +8247,12 @@ function renderEstoque() {
               <td>${esc(m.tecidoNome) || '—'}</td>
               <td>${esc(m.corNome) || '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(m.kg)} kg</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}${Number(m.largura) > 0 ? `<div style="font-size:10px;color:var(--ink-2);">${esc(String(m.largura).replace('.', ','))} cm</div>` : ''}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.fechados ? Number(m.fechados) : '—'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${Number(m.largura) > 0 ? esc(String(m.largura).replace('.', ',')) + ' cm' : '—'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${m.abertos ? Number(m.abertos) : '—'}</td>
               <td>${origemLabel(m)}</td>
 
-            </tr>`).join('') : `<tr><td colspan="9" class="empty">Nenhuma movimentação.</td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="10" class="empty">Nenhuma movimentação${(_fMov.tecido || _fMov.cor || _fMov.tipo) ? ' com estes filtros' : ''}.</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -8229,6 +8263,19 @@ function renderEstoque() {
     ${estoqueHtml}
     ${movHtml}
   `;
+}
+
+// O filtro das Movimentações do estoque de tecidos (chaves normalizadas).
+// Vive fora da tela para sobreviver ao redesenho, que acontece a cada save.
+const _estoqueMovFiltro = { tecido: '', cor: '', tipo: '' };
+function _filtrarMovEstoque(campo, valor) {
+  if (campo === 'limpar') { _estoqueMovFiltro.tecido = _estoqueMovFiltro.cor = _estoqueMovFiltro.tipo = ''; }
+  else {
+    _estoqueMovFiltro[campo] = valor || '';
+    // Trocou o tecido: a cor escolhida pode nem existir no pano novo.
+    if (campo === 'tecido') _estoqueMovFiltro.cor = '';
+  }
+  renderEstoque();
 }
 
 let movEstoqueTipo = 'entrada';
