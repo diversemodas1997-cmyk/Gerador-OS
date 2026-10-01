@@ -595,6 +595,24 @@ console.log('-- o que fica gravado --');
   e = comMov();
   await e.api.mudarStatusOS('e1', 'parado');
   ok('48. parado idem: parou DEPOIS de comecar', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  // CORTANDO GRAVA A BAIXA (01/10/2026): o consumo e refeito das camadas de
+  // agora — a reserva antiga de 15 kg vira a baixa de 9 kg que o corte gastou.
+  e = comMov();
+  e.ctx.consumo = [{ tecidoNome: 'Moletom', corNome: 'Preto Moletom', kg: 9 }];
+  await e.api.mudarStatusOS('e1', 'cortando');
+  {
+    const os_ = e.ctx.STATE.estoqueMov.filter(m => m.origem === 'os');
+    ok('48a. "cortando" refaz e grava a baixa com o consumo de agora',
+       os_.length === 1 && os_[0].kg === 9 && os_[0].status === 'consumido',
+       JSON.stringify(os_.map(m => [m.kg, m.status])));
+  }
+  // OS sem movimento nenhum: antes nada acontecia; agora a baixa nasce.
+  e = comMov();
+  e.ctx.STATE.estoqueMov = e.ctx.STATE.estoqueMov.filter(m => m.origem !== 'os');
+  e.ctx.consumo = [{ tecidoNome: 'Moletom', corNome: 'Preto Moletom', kg: 7 }];
+  await e.api.mudarStatusOS('e1', 'enfestando');
+  ok('48b. OS sem reserva que comeca a andar ganha a baixa',
+     situacao(e.ctx) === 'consumido', situacao(e.ctx));
   e = comMov('enfestando');
   e.ctx.STATE.estoqueMov.forEach(m => { if (m.origem === 'os') m.status = 'consumido'; });
   await e.api.mudarStatusOS('e1', 'nao-iniciado');

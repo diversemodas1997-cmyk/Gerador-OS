@@ -47,6 +47,10 @@ const monta = (ctx) => new Function('ctx', `
   const saveState = async () => { ctx.salvou++; };
   const exigirEdicaoFolha = () => ctx.podeEditar;
   const sincronizarPlanoExpedicaoDaOS = async () => { ctx.sincronizou++; };
+  // O estoque que segue o status tem teste proprio (status-os.js); aqui so o
+  // checklist.
+  const _statusOS = () => 'nao-iniciado';
+  const _estoqueSeguirChecklistOS = async () => {};
   ${corta('async function togglarChecklistEtapa')}
   ${corta('async function togglarChecklistTarefa')}
   return { togglarChecklistEtapa, togglarChecklistTarefa };

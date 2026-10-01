@@ -30182,9 +30182,28 @@ const _STATUS_QUE_BAIXAM = STATUS_OS.filter(s => s.baixa).map(s => s.k);
 async function _estoqueSeguirStatusOS(o, alvo) {
   if (!o || !o.id) return;
   const meus = (STATE.estoqueMov || []).filter(m => m.origem === 'os' && m.osId === o.id);
-  if (!meus.length) return;                  // OS sem consumo calculado: nada a mexer
   try {
-    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) { await darBaixaMaterialOS(o.id); return; }
+    /* CORTANDO GRAVA A BAIXA (01/10/2026, Junior: "considere guardar a baixa de
+       tecido sempre que a OS tiver seu status alterado para cortando").
+
+       No corte o enfesto já foi feito e as camadas reais estão na folha: é a
+       hora de o estoque guardar o que de fato saiu. Em vez de só virar a
+       reserva para consumido (que carregaria o kg do momento em que a OS foi
+       salva), o consumo é REFEITO das camadas de agora e gravado como baixa —
+       também quando a OS ainda não tinha movimento nenhum, caso em que antes
+       nada acontecia. */
+    if (alvo === 'cortando') {
+      await aplicarBaixaEstoqueOS(o);
+      _estoqueRedesenharSeAberto();
+      return;
+    }
+    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) {
+      // Sem movimento ainda (OS salva antes de existir a reserva, ou que nunca
+      // teve consumo calculado): calcula agora, já nascendo baixado.
+      if (!meus.length) { await aplicarBaixaEstoqueOS(o); _estoqueRedesenharSeAberto(); return; }
+      await darBaixaMaterialOS(o.id); return;
+    }
+    if (!meus.length) return;                // OS sem consumo calculado: nada a mexer
     if (alvo === 'nao-iniciado') { await estornarBaixaMaterialOS(o.id); return; }
     /* CANCELADA: A RESERVA VOLTA PARA A PRATELEIRA (17/09/2026).
 
@@ -32879,10 +32898,22 @@ let printOsAtual = null;
 
 // Marca/desmarca etapa do checklist da OS pronta. Persiste em o.progresso e
 // salva STATE.ordens — outros usuarios veem a evolucao ao reabrir a OS.
+/* O CHECKLIST TAMBÉM MOVE O ESTOQUE (01/10/2026). Desde 15/09 o status nasce
+   do checklist da folha — marcar o Corte põe a OS em Cortando —, mas só o
+   seletor de status avisava o estoque. Marcar pela folha mudava o status e o
+   pano ficava como estava: a OS 0592 entrou em corte assim e só foi baixada
+   quando alguém salvou a OS de novo. Os três cliques da folha passam por aqui. */
+async function _estoqueSeguirChecklistOS(os, antes) {
+  const depois = _statusOS(os);
+  if (depois === antes) return;
+  await _estoqueSeguirStatusOS(os, depois);
+}
+
 async function togglarChecklistEtapa(osId, etapaNome, checked) {
   if (!exigirEdicaoFolha('marcar etapas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
+  const statusAntes = _statusOS(os);
   os.progresso = os.progresso || {};
   os.progresso.etapasCheck = os.progresso.etapasCheck || {};
   os.progresso.etapasSeq = os.progresso.etapasSeq || {};
@@ -32928,6 +32959,7 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
     });
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEtapa', e); }
+  try { await _estoqueSeguirChecklistOS(os, statusAntes); } catch (e) { console.warn('estoque pelo checklist', e); }
   // Marcar "Ensaque" diz que o lote está PRONTO para expedir — só isso. Entrar
   // numa OE é ato do planejamento da expedição, feito pelo usuário.
   try { await sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked); }
@@ -32938,12 +32970,14 @@ async function togglarChecklistTarefa(osId, etapaNome, tarefaNome, checked) {
   if (!exigirEdicaoFolha('marcar tarefas da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
+  const statusAntes = _statusOS(os);
   os.progresso = os.progresso || {};
   os.progresso.tarefasCheck = os.progresso.tarefasCheck || {};
   os.progresso.tarefasCheck[etapaNome] = os.progresso.tarefasCheck[etapaNome] || {};
   if (checked) os.progresso.tarefasCheck[etapaNome][tarefaNome] = true;
   else delete os.progresso.tarefasCheck[etapaNome][tarefaNome];
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistTarefa', e); }
+  try { await _estoqueSeguirChecklistOS(os, statusAntes); } catch (e) { console.warn('estoque pelo checklist', e); }
 }
 
 // TEMPO TOTAL DO CORTE de uma OS, em minutos: a soma do Ini→Fim lançado em cada
@@ -33000,6 +33034,7 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
   if (!exigirEdicaoFolha('marcar o enfesto da OS')) return;
   const os = STATE.ordens.find(x => x.id === osId);
   if (!os) return;
+  const statusAntes = _statusOS(os);
   os.progresso = os.progresso || {};
   os.progresso.enfestosCheck = os.progresso.enfestosCheck || {};
   /* O CARIMBO DE QUANDO, como nas etapas (15/09/2026). Desde que marcar uma fase
@@ -33019,6 +33054,7 @@ async function togglarChecklistEnfesto(osId, ordem, checked) {
     delete os.progresso.enfestosSeq[ordem];
   }
   try { await saveState('ordens'); } catch (e) { console.warn('togglarChecklistEnfesto', e); }
+  try { await _estoqueSeguirChecklistOS(os, statusAntes); } catch (e) { console.warn('estoque pelo checklist', e); }
   /* A LISTA E A FOLHA MOSTRAM O STATUS, e ele acabou de mudar. Sem redesenhar,
      quem marca a primeira fase do enfesto na folha continua vendo "Não
      iniciado" no cabeçalho até trocar de tela. */
