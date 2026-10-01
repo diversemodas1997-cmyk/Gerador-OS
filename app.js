@@ -7732,7 +7732,35 @@ function renderEstoque() {
   // kg: Entradas | Reservado | Saídas | Disponível ; unidades: Fechados | Abertos
   // O tecido vem junto porque a bobina é DELE: cada pano tem o seu peso por
   // bobina, e é ele que transforma o quilo da coluna em rolo de prateleira.
+  /* A DATA DA ENTRADA (01/10/2026, Junior: "insira uma coluna que informe a
+     data da entrada de tecidos cadastrados"). A mais recente da linha: o
+     quadro soma várias compras, e a pergunta da prateleira é "quando chegou o
+     último rolo desta cor?". As baixas e reservas das OS não são entrada e
+     ficam de fora. A largura segue a regra do quadro: sem largura é 120 cm. */
+  const _ultEntrada = new Map();
+  const _marcaEntrada = (k, d) => {
+    const cur = _ultEntrada.get(k) || { data: '', n: 0 };
+    cur.n++;
+    if (d > cur.data) cur.data = d;
+    _ultEntrada.set(k, cur);
+  };
+  movimentacoesEstoque().forEach(m => {
+    if (m.tipo !== 'entrada' || m.origem === 'os') return;
+    const d = String(m.data || '').slice(0, 10);
+    const t = _normNome(m.tecidoNome), c = t + '||' + _normNome(m.corNome);
+    const larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
+    [t, c, c + '||' + larg].forEach(k => _marcaEntrada(k, d));
+  });
+  const dataEntradaCell = (tec, cor, larg) => {
+    let k = _normNome(tec);
+    if (cor != null) k += '||' + _normNome(cor) + (Number(larg) > 0 ? '||' + Number(larg) : '');
+    const e = _ultEntrada.get(k);
+    if (!e || !e.data) return `<td style="white-space:nowrap;color:var(--ink-2);" title="Nenhuma entrada lançada">—</td>`;
+    return `<td style="white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
+      title="${esc('Data da entrada mais recente — ' + e.n + ' entrada' + (e.n === 1 ? '' : 's') + ' lançada' + (e.n === 1 ? '' : 's') + '. O detalhe de cada uma está em Movimentações recentes.')}">${formatDate(e.data)}</td>`;
+  };
   const cellsVals = (o, bold, tec) =>
+    dataEntradaCell(tec, o.corNome, o.largura) +
     numCell(o.entrada, bold, tec, o.corNome, o.largura) + numCell(o.reservado, bold, tec, o.corNome, o.largura)
     + numCell(o.saida, bold, tec, o.corNome, o.largura) +
     dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome, o.largura) +
@@ -7752,6 +7780,7 @@ function renderEstoque() {
   const cabecalhoEstoque = `
     <thead><tr>
       <th>Cor</th>
+      <th title="Data da entrada mais recente desta cor (e largura). Reservas e baixas das OS não contam">Última entrada</th>
       <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
       <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
       <th style="text-align:right;">Fechados (un)</th>
