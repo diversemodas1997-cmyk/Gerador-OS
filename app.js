@@ -8379,7 +8379,7 @@ function renderEstoque() {
         ? `mostrando as 60 mais novas de ${movsFiltrados.length}` : `${movsFiltrados.length} lançamento${movsFiltrados.length === 1 ? '' : 's'}`}</span>
       ${(_fMov.tecido || _fMov.cor || _fMov.tipo) ? `<button class="btn small ghost" onclick="_filtrarMovEstoque('limpar')">Limpar</button>` : ''}
     </div>`;
-  const origemLabel = m => m.origem === 'os' ? `OS ${esc(m.osNumero || '')}`
+  const origemLabel = m => m.origem === 'os' ? `OS ${esc(m.osNumero || '')}${m.faseNome ? ' · ' + esc(m.faseNome) : ''}`
     : m.origem === 'nf' ? `NF ${esc(m.osNumero || '')}${m.obs ? ' · ' + esc(m.obs) : ''}`
     : 'Manual';
   const movHtml = `
@@ -30183,28 +30183,34 @@ async function _estoqueSeguirStatusOS(o, alvo) {
   if (!o || !o.id) return;
   const meus = (STATE.estoqueMov || []).filter(m => m.origem === 'os' && m.osId === o.id);
   try {
-    /* CORTANDO GRAVA A BAIXA (01/10/2026, Junior: "considere guardar a baixa de
-       tecido sempre que a OS tiver seu status alterado para cortando").
-
-       No corte o enfesto já foi feito e as camadas reais estão na folha: é a
-       hora de o estoque guardar o que de fato saiu. Em vez de só virar a
-       reserva para consumido (que carregaria o kg do momento em que a OS foi
-       salva), o consumo é REFEITO das camadas de agora e gravado como baixa —
-       também quando a OS ainda não tinha movimento nenhum, caso em que antes
-       nada acontecia. */
+    /* CORTANDO BAIXA A FASE QUE ACABOU DE SER ENFESTADA (01/10/2026). Ver
+       aplicarBaixaEstoqueOS: o consumo é refeito das camadas de agora e só a
+       fase que passou pela mesa vira baixa; as outras seguem reservadas até o
+       próprio ciclo Enfestando → Cortando delas. */
     if (alvo === 'cortando') {
+      _marcarFasesCortadasOS(o);
+      try { await saveState('ordens'); } catch (e) { console.warn('fases baixadas', e); }
       await aplicarBaixaEstoqueOS(o);
       _estoqueRedesenharSeAberto();
       return;
     }
-    if (_STATUS_QUE_BAIXAM.indexOf(alvo) >= 0) {
-      // Sem movimento ainda (OS salva antes de existir a reserva, ou que nunca
-      // teve consumo calculado): calcula agora, já nascendo baixado.
-      if (!meus.length) { await aplicarBaixaEstoqueOS(o); _estoqueRedesenharSeAberto(); return; }
-      await darBaixaMaterialOS(o.id); return;
+    if (alvo === 'nao-iniciado') {
+      if (o.progresso && o.progresso.fasesBaixadas) {
+        delete o.progresso.fasesBaixadas;
+        try { await saveState('ordens'); } catch (e) { console.warn('fases baixadas', e); }
+      }
+      if (meus.length) { await aplicarBaixaEstoqueOS(o); _estoqueRedesenharSeAberto(); }
+      return;
     }
-    if (!meus.length) return;                // OS sem consumo calculado: nada a mexer
-    if (alvo === 'nao-iniciado') { await estornarBaixaMaterialOS(o.id); return; }
+    // Os demais (Enfestando, Separando, Parado, e o fim do corte em diante): o
+    // estado de cada fase sai de _faseBaixadaOS. Refaz quando há o que mexer.
+    // Sem movimento ainda, só o fim do corte cria (a reserva nasce ao salvar a OS).
+    const fimDoCorte = _STATUS_QUE_BAIXAM.indexOf(alvo) >= 0 && _STATUS_CICLO_ENFESTO.indexOf(alvo) < 0;
+    if (alvo !== 'cancelado' && (meus.length || fimDoCorte)) {
+      await aplicarBaixaEstoqueOS(o);
+      _estoqueRedesenharSeAberto();
+      return;
+    }
     /* CANCELADA: A RESERVA VOLTA PARA A PRATELEIRA (17/09/2026).
 
        Reservado quer dizer "pano comprometido por uma OS que ainda não começou"
@@ -30218,7 +30224,16 @@ async function _estoqueSeguirStatusOS(o, alvo) {
        se um lote no meio, depois do enfesto. */
     if (alvo === 'cancelado') {
       if (meus.some(m => m.status === 'consumido')) {
-        toast('OS cancelada. O pano dela já tinha sido baixado e continua baixado — cortado não volta para a prateleira.', '');
+        // Por fase (01/10/2026): o que já passou pela mesa fica baixado; as
+        // fases ainda reservadas não vão ser enfestadas — voltam para a prateleira.
+        const reservados = meus.filter(m => m.status !== 'consumido');
+        if (reservados.length) {
+          STATE.estoqueMov = STATE.estoqueMov.filter(m => reservados.indexOf(m) < 0);
+          try { await saveState('estoqueMov'); } catch (e) { console.warn('cancelar reserva', e); }
+          _estoqueRedesenharSeAberto();
+        }
+        toast('OS cancelada. O pano já cortado continua baixado — cortado não volta para a prateleira'
+          + (reservados.length ? '; o das fases que não foram enfestadas voltou.' : '.'), '');
         return;
       }
       await estornarBaixaEstoqueOS(o.id);
@@ -34861,70 +34876,116 @@ function consumoAgregadoPorTecidoCor(o) {
 // só acontece quando o usuário aponta a OS como produzida (darBaixaMaterialOS).
 // Idempotente por osId: remove os movimentos anteriores desta OS e recria do
 // consumo atual — preservando o status 'consumido' se a OS já tinha sido baixada.
+/* A BAIXA É POR FASE DO ENFESTO (01/10/2026, Junior).
+
+   "É esperado que uma OS mude seu status de não iniciado para Enfestando e em
+   seguida Cortando, pois a baixa referente é da primeira fase. (...) Caso a
+   próxima fase necessite outro enfesto (CM.REC, CM.TRI, BM.LISA, BM.TRI), a OS
+   terá seu status alterado de Separando para Enfestando, pois a próxima baixa
+   de tecido deve ser feita em relação à próxima fase (corpo 2, corpo 3, forro
+   de capuz, barra/punhos)."
+
+   Então o pano de cada fase é um movimento próprio, e cada um é reservado ou
+   baixado por conta própria. A fase é baixada quando a OS chega em CORTANDO
+   depois de enfestá-la (ver _marcarFasesCortadasOS, que grava a fase em
+   progresso.fasesBaixadas). As fases que ainda não passaram pela mesa ficam
+   reservadas — a OS em Separando entre um enfesto e outro tem parte baixada e
+   parte reservada, que é o que está na prateleira.
+
+   Saindo do ciclo enfesto/corte (ensacado, costura, estoque...), o corte
+   acabou: toda fase é baixada. Voltando a Não iniciado, tudo volta a reserva. */
+const _STATUS_CICLO_ENFESTO = ['enfestando', 'cortando', 'separando', 'parado'];
+
+function _faseBaixadaOS(o, ord, legadoConsumido) {
+  const st = _statusOS(o);
+  const fb = (o.progresso || {}).fasesBaixadas;
+  if (st === 'cancelado') return fb ? !!fb[ord] : !!legadoConsumido;
+  if (_STATUS_QUE_BAIXAM.indexOf(st) < 0) return false;          // não começou
+  if (_STATUS_CICLO_ENFESTO.indexOf(st) < 0) return true;         // corte acabou
+  if (fb) return !!fb[ord];
+  // Sem registro de fase e sem baixa anterior: OS nova no ciclo, nada cortado.
+  if (!legadoConsumido) return false;
+  // OS de antes da baixa por fase (sem fasesBaixadas): as fases com a caixa do
+  // enfesto marcada já passaram pela mesa; sem caixa nenhuma, a regra antiga —
+  // a OS inteira estava baixada.
+  const chk = (o.progresso || {}).enfestosCheck || {};
+  if (Object.keys(chk).some(k => chk[k])) return !!chk[ord];
+  return true;
+}
+
+// Chegou em CORTANDO: as fases que acabaram de ser enfestadas são baixadas. São
+// as que têm a caixa do enfesto marcada e ainda não foram baixadas; se ninguém
+// marcou caixa nenhuma, a próxima fase da fila (a primeira ainda reservada, na
+// ordem da grade). Devolve as ordens baixadas agora.
+function _marcarFasesCortadasOS(o) {
+  o.progresso = o.progresso || {};
+  if (!o.progresso.fasesBaixadas) o.progresso.fasesBaixadas = {};
+  const fb = o.progresso.fasesBaixadas;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const chk = o.progresso.enfestosCheck || {};
+  const linhas = consumoEnfestoOS(o);
+  let novas = linhas.filter(L => chk[L.ordem] && !fb[L.ordem]).map(L => L.ordem);
+  if (!novas.length) {
+    const prox = linhas.find(L => !fb[L.ordem] && !L.ehVies && L.kg > 0);
+    if (prox) novas = [prox.ordem];
+  }
+  novas.forEach(ord => { fb[ord] = hoje; });
+  return novas;
+}
+
+// Reserva/baixa de tecido da OS, refeita do consumo de agora. Idempotente por
+// osId: apaga os movimentos desta OS e recria um por fase, cada um com o
+// estado da fase (ver _faseBaixadaOS).
 async function aplicarBaixaEstoqueOS(data) {
   if (!data || !data.id) return;
   if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
-  // Se a OS já estava baixada (produzida), mantém o status ao recalcular.
-  const jaConsumida = STATE.estoqueMov.some(
-    m => m.origem === 'os' && m.osId === data.id && m.status === 'consumido');
-  /* SÓ OS NÃO INICIADA TEM PANO RESERVADO (27/08/2026, Junior).
-
-     Quem baixa é o status (ver _estoqueSeguirStatusOS), mas o status muda numa
-     tela e o consumo é recalculado em OUTRA: salvar de novo uma OS que já está
-     em andamento apagava os movimentos dela e criava movimentos novos — e os
-     novos nasciam "reservado", desfazendo a baixa sem ninguém pedir. Bastava
-     corrigir uma camada na folha de uma OS em produção.
-
-     Então o status da OS decide também aqui, no nascimento do movimento: em
-     andamento, parada ou finalizada, o pano nasce baixado. Reservado fica sendo
-     o que ele diz ser — pano comprometido por OS que ainda não começou. */
-  const jaAndando = _STATUS_QUE_BAIXAM.indexOf(_statusOS(data)) >= 0;
-  const status = (jaConsumida || jaAndando) ? 'consumido' : 'reservado';
-  // As bobinas fechadas acompanham a baixa (ver _fechadosDaBaixa) quando a
-  // baixa é desta regra: já descontava antes, ou está nascendo agora. Baixa
-  // antiga, sem a marca, continua sem descontar bobina.
-  const fechadosAuto = status === 'consumido' && (!jaConsumida || STATE.estoqueMov.some(
-    m => m.origem === 'os' && m.osId === data.id && m.fechadosAuto));
+  const meus = STATE.estoqueMov.filter(m => m.origem === 'os' && m.osId === data.id);
+  const legadoConsumido = meus.some(m => m.status === 'consumido');
+  // As bobinas fechadas acompanham a baixa (ver _fechadosDaBaixa), menos nas
+  // baixas antigas — de antes dessa regra, sem a marca — que ficam como estão.
+  const semFechados = legadoConsumido && !meus.some(m => m.fechadosAuto)
+    && !((data.progresso || {}).fasesBaixadas);
   const antes = STATE.estoqueMov.length;
   STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
-  /* A OS CONJUGADA NÃO RESERVA PANO (28/08/2026, Junior).
-
-     A passiva não é outro enfesto: ela é a fase "Corpo 2" da ativa, separada em
-     OS própria só porque sai numa cor/grade diferente. O pano dela JÁ está
-     reservado na ativa — cobrar de novo é contar duas vezes o mesmo metro
-     estendido na mesa. É a mesma razão pela qual o viés não entra na conta.
-
-     Até hoje isso funcionava por acidente: as grades conjugadas não tinham
-     comprimento nem largura cadastrados, então `gerarConjugada` copiava 0 × 0 e
-     o kg dava zero. Quatro das cinco já foram medidas desde então — sem esta
-     guarda, a próxima OS conjugada salva dobraria a reserva do tecido (na grade
-     da OS 0498: 113,8 kg de Branco na ativa mais 106,7 kg na passiva).
-
-     Fica DEPOIS do filtro de propósito: se alguma passiva já tiver movimento
-     gravado, salvar de novo o apaga em vez de só deixar de criar. */
-  const itens = data.conjugadaPaiId ? [] : consumoAgregadoPorTecidoCor(data);
+  /* A OS CONJUGADA NÃO RESERVA PANO (28/08/2026, Junior): a passiva é a fase
+     "Corpo 2" da ativa em OS própria; o pano dela já está na ativa. Fica DEPOIS
+     do filtro: movimento antigo de passiva é apagado, não só deixa de nascer. */
+  const linhas = data.conjugadaPaiId ? [] : consumoEnfestoOS(data).filter(L => L.kg > 0);
   const hoje = new Date().toISOString().slice(0, 10);
-  itens.forEach(it => {
-    STATE.estoqueMov.push({
+  const fb = (data.progresso || {}).fasesBaixadas || {};
+  linhas.forEach(L => {
+    const baixada = _faseBaixadaOS(data, L.ordem, legadoConsumido);
+    // OS cancelada não reserva: só o que já foi cortado continua lançado.
+    if (!baixada && _statusOS(data) === 'cancelado') return;
+    const novo = {
       id: uid(),
       tipo: 'saida',
-      tecidoNome: it.tecidoNome,
-      corNome: it.corNome,
-      kg: Math.round(it.kg * 1000) / 1000,
+      tecidoNome: L.tecidoReal || L.nomeEnf || '',
+      corNome: L.corReal || '',
+      kg: Math.round(L.kg * 1000) / 1000,
       data: hoje,
       origem: 'os',
       osId: data.id,
       osNumero: data.os || '',
-      status,
-      consumidoEm: status === 'consumido' ? hoje : '',
+      fase: L.ordem,
+      faseNome: L.faseNome || L.nomeEnf || '',
+      status: baixada ? 'consumido' : 'reservado',
+      consumidoEm: baixada ? (fb[L.ordem] || hoje) : '',
       obs: ''
-    });
-    const novo = STATE.estoqueMov[STATE.estoqueMov.length - 1];
-    if (fechadosAuto) { novo.fechados = _fechadosDaBaixa(novo); novo.fechadosAuto = true; }
+    };
+    if (baixada && !semFechados) { novo.fechados = _fechadosDaBaixa(novo); novo.fechadosAuto = true; }
+    STATE.estoqueMov.push(novo);
   });
-  if (STATE.estoqueMov.length !== antes || itens.length) {
-    try { await saveState('estoqueMov'); } catch (e) { console.warn('reserva estoque', e); }
+  // Nada mudou (mesmas fases, mesmos kg, mesmo estado): devolve os movimentos
+  // de antes, com os ids deles, e não grava — trocar de status sem mexer no
+  // pano não pode virar gravação.
+  const assinatura = l => l.map(m => [m.fase, m.tecidoNome, m.corNome, m.kg, m.status, m.fechados || 0].join('|')).sort().join('#');
+  const novos = STATE.estoqueMov.filter(m => m.origem === 'os' && m.osId === data.id);
+  if (assinatura(novos) === assinatura(meus)) {
+    STATE.estoqueMov = STATE.estoqueMov.filter(m => novos.indexOf(m) < 0).concat(meus);
+    return;
   }
+  try { await saveState('estoqueMov'); } catch (e) { console.warn('reserva estoque', e); }
 }
 
 /* A BAIXA DA OS DESCONTA TAMBÉM AS BOBINAS FECHADAS (01/10/2026, Junior: "faça

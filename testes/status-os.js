@@ -113,6 +113,9 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _tituloFinalizacaoOS', 'a dica da data de finalizacao')}
   ${recorte('function _dataCelulaListaOS', 'a celula da coluna Data')}
   ${constante('_STATUS_QUE_BAIXAM')}
+  ${constante('_STATUS_CICLO_ENFESTO')}
+  ${recorte('function _faseBaixadaOS', 'a fase ja baixada')}
+  ${recorte('function _marcarFasesCortadasOS', 'as fases que o corte baixa')}
   ${recorte('async function aplicarBaixaEstoqueOS', 'a reserva ao salvar a OS')}
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
   // As bobinas que a baixa desconta tem teste proprio (fechados-baixa-os.js);
@@ -142,7 +145,10 @@ const monta = (ctx) => new Function('ctx', `
   };
   // aplicarBaixaEstoqueOS pergunta o consumo da OS ao cadastro; aqui ele vem
   // pronto pelo ctx, que e o que este teste tem a dizer sobre o assunto.
-  const consumoAgregadoPorTecidoCor = () => ctx.consumo || [];
+  // O consumo POR FASE vem pronto pelo ctx: ctx.fases, ou ctx.consumo (uma
+  // linha por tecido, como os testes antigos escrevem) virando uma fase cada.
+  const consumoEnfestoOS = () => ctx.fases
+    || (ctx.consumo || []).map((c, i) => ({ ordem: i + 1, kg: c.kg, tecidoReal: c.tecidoNome, corReal: c.corNome }));
   const uid = () => 'm' + (++ctx.seq);
   const _estoqueRedesenharSeAberto = () => {};
   const renderEstoque = () => {};
@@ -574,92 +580,115 @@ console.log('-- o que fica gravado --');
   console.log('-- o pano sai do estoque quando a OS comeca a andar --');
   // A reserva nasce ao salvar a OS (aplicarBaixaEstoqueOS, fora deste teste);
   // aqui o que se prova e o que o STATUS faz com ela.
+  /* A BAIXA E POR FASE (01/10/2026, Junior): cada chegada em CORTANDO baixa a
+     fase que acabou de ser enfestada; as outras ficam reservadas ate o ciclo
+     Enfestando -> Cortando delas. Fora do ciclo (ensacado em diante) o corte
+     acabou e tudo esta baixado; "nao iniciado" devolve tudo. */
+  const DUAS = [
+    { ordem: 1, kg: 10, tecidoReal: 'Moletom', corReal: 'Preto', faseNome: 'Corpo' },
+    { ordem: 2, kg: 5, tecidoReal: 'Ribana Moletom', corReal: 'Preto', faseNome: 'Barra/Punhos' }];
   const comMov = (st) => {
     const t2 = ctxDe('admin', 'admin@diverse.local', true,
                      [{ id: 'e1', os: '900', data: '2026-03-10', statusOS: st }]);
+    t2.ctx.fases = DUAS;
     t2.ctx.STATE.estoqueMov = [
-      { id: 'm1', origem: 'os', osId: 'e1', kg: 10, status: 'reservado' },
-      { id: 'm2', origem: 'os', osId: 'e1', kg: 5, status: 'reservado' },
+      { id: 'm1', origem: 'os', osId: 'e1', kg: 10, fase: 1, status: 'reservado' },
+      { id: 'm2', origem: 'os', osId: 'e1', kg: 5, fase: 2, status: 'reservado' },
       { id: 'm3', origem: 'nf', kg: 99, tipo: 'entrada' }
     ];
     return t2;
   };
-  const situacao = ctx => ctx.STATE.estoqueMov.filter(m => m.origem === 'os').map(m => m.status).join('+');
+  const situacao = ctx => ctx.STATE.estoqueMov.filter(m => m.origem === 'os')
+    .sort((a, b) => (a.fase || 0) - (b.fase || 0)).map(m => m.status).join('+');
   let e = comMov();
   await e.api.mudarStatusOS('e1', 'enfestando');
-  ok('46. "enfestando" baixa o pano sozinho', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  e = comMov();
-  await e.api.mudarStatusOS('e1', 'estoque');
-  ok('47. finalizado tambem baixa (quem pulou o enfesto ja gastou o pano)',
+  ok('46. "enfestando" ainda nao baixa: o pano esta na mesa, nao cortado',
+     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'cortando');
+  ok('47. "cortando" baixa a PRIMEIRA fase; a ribana segue reservada',
+     situacao(e.ctx) === 'consumido+reservado', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'separando');
+  ok('48. "separando" entre um enfesto e outro: nada muda',
+     situacao(e.ctx) === 'consumido+reservado', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'enfestando');
+  ok('48a. de volta a "enfestando" (proxima fase): ainda reservada',
+     situacao(e.ctx) === 'consumido+reservado', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'cortando');
+  ok('48b. segundo "cortando": baixa a segunda fase',
      situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  e = comMov();
-  await e.api.mudarStatusOS('e1', 'parado');
-  ok('48. parado idem: parou DEPOIS de comecar', situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  // CORTANDO GRAVA A BAIXA (01/10/2026): o consumo e refeito das camadas de
-  // agora — a reserva antiga de 15 kg vira a baixa de 9 kg que o corte gastou.
-  e = comMov();
-  e.ctx.consumo = [{ tecidoNome: 'Moletom', corNome: 'Preto Moletom', kg: 9 }];
+
+  // A caixa do enfesto diz QUAL fase foi enfestada, fora da ordem da grade.
+  e = comMov('enfestando');
+  e.ctx.STATE.ordens[0].progresso = { enfestosCheck: { 2: true } };
+  await e.api.mudarStatusOS('e1', 'cortando');
+  ok('48c. com a caixa da fase 2 marcada, o corte baixa a fase 2',
+     situacao(e.ctx) === 'reservado+consumido', situacao(e.ctx));
+
+  // O consumo e refeito das camadas de agora a cada corte.
+  e = comMov('enfestando');
+  e.ctx.fases = [{ ordem: 1, kg: 9, tecidoReal: 'Moletom', corReal: 'Preto', faseNome: 'Corpo' }];
   await e.api.mudarStatusOS('e1', 'cortando');
   {
     const os_ = e.ctx.STATE.estoqueMov.filter(m => m.origem === 'os');
-    ok('48a. "cortando" refaz e grava a baixa com o consumo de agora',
+    ok('48d. "cortando" grava a baixa com o consumo de agora',
        os_.length === 1 && os_[0].kg === 9 && os_[0].status === 'consumido',
        JSON.stringify(os_.map(m => [m.kg, m.status])));
   }
-  // OS sem movimento nenhum: antes nada acontecia; agora a baixa nasce.
-  e = comMov();
-  e.ctx.STATE.estoqueMov = e.ctx.STATE.estoqueMov.filter(m => m.origem !== 'os');
-  e.ctx.consumo = [{ tecidoNome: 'Moletom', corNome: 'Preto Moletom', kg: 7 }];
-  await e.api.mudarStatusOS('e1', 'enfestando');
-  ok('48b. OS sem reserva que comeca a andar ganha a baixa',
-     situacao(e.ctx) === 'consumido', situacao(e.ctx));
+  // OS sem movimento nenhum: a baixa nasce no corte.
   e = comMov('enfestando');
-  e.ctx.STATE.estoqueMov.forEach(m => { if (m.origem === 'os') m.status = 'consumido'; });
-  await e.api.mudarStatusOS('e1', 'nao-iniciado');
-  ok('49. voltar para "nao iniciado" estorna: a OS nao gastou pano nenhum',
-     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+  e.ctx.STATE.estoqueMov = e.ctx.STATE.estoqueMov.filter(m => m.origem !== 'os');
+  await e.api.mudarStatusOS('e1', 'cortando');
+  ok('48e. OS sem reserva ganha a baixa da fase no corte',
+     situacao(e.ctx) === 'consumido+reservado', situacao(e.ctx));
+
   e = comMov();
-  await e.api.mudarStatusOS('e1', 'enfestando');
+  await e.api.mudarStatusOS('e1', 'estoque');
+  ok('49. pulou direto para o fim do corte (estoque): tudo baixado',
+     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'nao-iniciado');
+  ok('49a. voltar para "nao iniciado" devolve tudo',
+     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+  e = comMov('enfestando');
+  await e.api.mudarStatusOS('e1', 'cortando');
+  await e.api.mudarStatusOS('e1', 'nao-iniciado');
+  ok('49b. e apaga o registro das fases cortadas',
+     !(e.ctx.STATE.ordens[0].progresso || {}).fasesBaixadas, JSON.stringify(e.ctx.STATE.ordens[0].progresso));
+  e = comMov();
+  await e.api.mudarStatusOS('e1', 'cortando');
   ok('50. a entrada de NF nao e tocada por nada disso',
      e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').status === undefined
      && e.ctx.STATE.estoqueMov.find(m => m.id === 'm3').kg === 99);
 
-  // E o outro lado da mesma regra: o movimento NASCE conforme o status, porque o
-  // consumo e recalculado toda vez que a OS e salva — e uma OS em producao pode
-  // ser salva a qualquer momento (corrigir uma camada na folha, por exemplo).
-  const salvando = async (st) => {
+  // Salvar a OS recalcula o consumo e respeita o estado de cada fase.
+  const salvando = async (st, prog, legado) => {
     const t3 = ctxDe('admin', 'admin@diverse.local', true,
-                     [{ id: 's1', os: '901', data: '2026-03-10', statusOS: st }]);
-    t3.ctx.STATE.estoqueMov = [];
-    t3.ctx.consumo = [{ tecidoNome: 'Malha', corNome: 'Preto', kg: 12 }];
+                     [{ id: 's1', os: '901', data: '2026-03-10', statusOS: st, progresso: prog }]);
+    t3.ctx.fases = DUAS;
+    t3.ctx.STATE.estoqueMov = legado ? [{ id: 'x', origem: 'os', osId: 's1', kg: 1, status: 'consumido' }] : [];
     await t3.api.aplicarBaixaEstoqueOS(t3.ctx.STATE.ordens[0]);
-    return t3.ctx.STATE.estoqueMov.map(m => m.status).join('+');
+    return t3.ctx.STATE.estoqueMov.sort((a, b) => a.fase - b.fase).map(m => m.status).join('+');
   };
-  ok('51. OS nao iniciada: o pano nasce RESERVADO', await salvando(undefined) === 'reservado');
-  ok('52. OS enfestando salva de novo: o pano nasce ja BAIXADO',
-     await salvando('enfestando') === 'consumido', await salvando('enfestando'));
-  ok('53. e finalizada tambem — corrigir a folha nao desfaz a baixa',
-     await salvando('estoque') === 'consumido', await salvando('estoque'));
+  ok('51. OS nao iniciada: tudo nasce RESERVADO', await salvando(undefined) === 'reservado+reservado');
+  ok('52. OS enfestando com a fase 1 cortada: so ela nasce baixada',
+     await salvando('separando', { fasesBaixadas: { 1: '2026-10-01' } }) === 'consumido+reservado',
+     await salvando('separando', { fasesBaixadas: { 1: '2026-10-01' } }));
+  ok('53. finalizada: corrigir a folha nao desfaz a baixa',
+     await salvando('estoque') === 'consumido+consumido', await salvando('estoque'));
+  ok('53a. OS de ANTES da regra, ja baixada e sem caixa de enfesto: continua toda baixada',
+     await salvando('cortando', undefined, true) === 'consumido+consumido', await salvando('cortando', undefined, true));
+  ok('53b. OS de antes da regra com a caixa da fase 1: so a fase 1 baixada',
+     await salvando('cortando', { enfestosCheck: { 1: true } }, true) === 'consumido+reservado',
+     await salvando('cortando', { enfestosCheck: { 1: true } }, true));
 
-  /* O PANO NAO VOLTA PARA A PRATELEIRA NO MEIO DO CAMINHO (Junior, 27/08/2026):
-     "se as OS mudam para status parado ou voltam para em andamento, isso nao faz
-     os tecidos reservados voltarem para o estoque reservado". E o que a fabrica
-     ve: o rolo foi cortado no enfesto; a OS parar depois disso nao remonta o
-     rolo. So "nao iniciado" — a OS que nao comecou — devolve a reserva. */
-  e = comMov();
-  await e.api.mudarStatusOS('e1', 'enfestando');
+  // Parar no meio nao remonta o rolo: o que foi cortado continua baixado.
+  e = comMov('enfestando');
+  await e.api.mudarStatusOS('e1', 'cortando');
   await e.api.mudarStatusOS('e1', 'parado');
-  ok('54. enfestando -> parado: o pano continua baixado',
-     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  await e.api.mudarStatusOS('e1', 'enfestando');
-  ok('55. e voltando a andar tambem — nada volta para reservado',
-     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  await e.api.mudarStatusOS('e1', 'estoque');
-  ok('56. ate o fim da OS, um caminho so: baixado continua baixado',
-     situacao(e.ctx) === 'consumido+consumido', situacao(e.ctx));
-  await e.api.mudarStatusOS('e1', 'nao-iniciado');
-  ok('57. e so "nao iniciado" devolve a reserva',
-     situacao(e.ctx) === 'reservado+reservado', situacao(e.ctx));
+  ok('54. cortando -> parado: a fase cortada continua baixada, a outra reservada',
+     situacao(e.ctx) === 'consumido+reservado', situacao(e.ctx));
+  await e.api.mudarStatusOS('e1', 'cancelado');
+  ok('55. cancelada no meio: o cortado fica, a reserva da fase nao enfestada volta',
+     situacao(e.ctx) === 'consumido', situacao(e.ctx));
 
   console.log('');
   console.log('-- a OS conjugada nao reserva pano (o enfesto e o mesmo) --');
