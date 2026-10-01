@@ -23810,7 +23810,7 @@ function addAviamentoRow(data = {}) {
 // atropelar valor do usuário nem o carregado. É chamado ao aplicar a grade,
 // quando o tecido e a grade já estão conhecidos.
 function _aplicarCamadasMaximasDefault() {
-  if (osEditId) return;                                     // edição: respeita o salvo
+  if (osEditId || document.getElementById('f-id')?.value) return;  // edição: respeita o salvo (ver aplicarGradePreset)
   const campoCam = document.getElementById('f-enf-camadas');
   if (!campoCam || (campoCam.value || '').trim() !== '') return;  // já definido: não mexe
   const { limite } = calcularLimiteCamadas();
@@ -23917,7 +23917,14 @@ function aplicarGradePreset() {
   // Grade que conjuga: a segunda OS vai levar o número ANTERIOR, então esta sobe
   // um degrau e deixa a vaga de baixo livre. Só mexe no número ainda automático
   // de uma OS nova — número digitado à mão, ou OS em edição, ficam como estão.
-  if (!osEditId) {
+  //
+  // "OS em edição" é o f-id preenchido, e NÃO o osEditId (01/10/2026): o
+  // editarOS zera o osEditId 60 ms depois de abrir o formulário. A OS 0575 foi
+  // criada às 15:03 de 24/09, aberta de novo na mesma sessão às 15:29 e a grade
+  // reescolhida — o número na tela ainda era igual ao _osNumeroAuto da criação,
+  // o guarda deixou passar, e o próximo livre (0576) foi gravado por cima. O
+  // registro virou 0576 e o PDF da 0575 ficou na pasta, com o mesmo conteúdo.
+  if (!osEditId && !document.getElementById('f-id')?.value) {
     const campoOS = document.getElementById('f-os');
     if (campoOS && (!campoOS.value || campoOS.value === _osNumeroAuto)) {
       _osNumeroAuto = proximoNumeroOSParaGrade(id);
@@ -34097,6 +34104,8 @@ function editarOS(id) {
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
   osEditId = id;
+  // O número automático é da OS NOVA da sessão; editar não pode herdá-lo.
+  _osNumeroAuto = '';
   goto('nova-os');
   // precisa de timeout curto pra select options já estarem renderizadas
   setTimeout(() => {
