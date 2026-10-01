@@ -30963,7 +30963,7 @@ function renderListaOS() {
   if (!STATE.ordens.length) {
     _renderAvisoGrupoListaOS(0);
     _contaListaOS(0, 0);
-    tb.innerHTML = `<tr><td colspan="13" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
     return;
   }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
@@ -31046,7 +31046,7 @@ function renderListaOS() {
                   faltaEscolhida ? `<b>${esc(faltaEscolhida.toLowerCase())}</b>` : '',
                   diaFim ? `finalizadas em <b>${esc(formatDate(diaFim))}</b>` : '']
       .filter(Boolean).join(' e ');
-    tb.innerHTML = `<tr><td colspan="13" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
+    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
       + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;
     return;
   }
@@ -31082,7 +31082,6 @@ function renderListaOS() {
             </span>` : '')
         : ''}${_conjugadaCelulaOS(o)}</td>
       <td style="white-space:nowrap;">${esc(linhaTipoOS(o))}</td>
-      <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
       <td>${cores.length
         ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
