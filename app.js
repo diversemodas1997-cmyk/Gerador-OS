@@ -14189,7 +14189,7 @@ function abrirModalExpFolhaOS(cargaId) {
     </div>
     <div class="info-box" style="margin-top:8px;font-size:12px;">
       Isto muda <b>só a folha de OE desta OS nesta carga</b>. A OS, o desenho, a grade, os pacotes e o estoque não são tocados — e a mesma OS em outra expedição continua com o texto calculado.
-      A tabela de quantidades continua vindo do <b>Total por tamanho</b> da OS: é lá que se corrigem os números por tamanho e tonalidade.
+      A tabela de quantidades continua vindo dos <b>Produtos completos por tamanho</b> da folha de OS: é lá que se corrigem os números por tamanho e tonalidade.
     </div>
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
       <!-- O QUE FOI EXPEDIDO DE VERDADE se corrige aqui do lado, e não só no
@@ -35734,7 +35734,7 @@ function renderPrintSheet(o) {
                 </tr>`;
               };
               return `
-                <tr><th colspan="${sizeKeys.length + 2}" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
+                <tr><th colspan="${sizeKeys.length + 2}" class="subhead" style="background:#c9e8d0;font-size:6.5pt;" title="Produtos completos (uma camiseta = 1) que a OS produz em cada tamanho — os mesmos números da lista de OS, da Nova OS e da folha de OE">Produtos completos por tamanho</th></tr>
                 ${umTom ? '' : `<tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td></td>
                   ${sizeKeys.map(k => `<td>${t(g[k])}</td>`).join('')}
