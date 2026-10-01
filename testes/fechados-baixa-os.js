@@ -24,9 +24,12 @@ const monta = (ctx) => new Function('ctx', `
   const movimentacoesEstoque = () => STATE.estoqueMov;
   const _larguraDaOSNoTecido = (o) => (o && o.larg) || 0;
   const pesoBobinaEstimado = () => ctx.estimado || null;
+  const CEIL_BOBINA_EPS = 1e-9;
+  ${recorte('function pesoBobinaDaLinha')}
+  ${recorte('function bobinasDoSaldo')}
   ${recorte('function _pesoBobinaDaBaixa')}
   ${recorte('function _fechadosDaBaixa')}
-  return { _fechadosDaBaixa, _pesoBobinaDaBaixa };
+  return { _fechadosDaBaixa, _pesoBobinaDaBaixa, bobinasDoSaldo };
 `)(ctx);
 
 let falhas = 0;
@@ -55,6 +58,16 @@ const baixa = (kg, osId = 'os1') => ({ tipo: 'saida', origem: 'os', osId, tecido
 {
   const api = monta({ STATE: { ordens: [{ id: 'os1' }], estoqueMov: [ent(100, 0, 120)] } });
   ok('sem peso nenhum: nao desconta', api._fechadosDaBaixa(baixa(60)), 0);
+}
+{
+  const api = monta({ STATE: { ordens: [], estoqueMov: [] } });
+  const b = (kg, p) => { const r = api.bobinasDoSaldo(kg, p); return r.fechados + '+' + r.abertos; };
+  ok('Bege 79,7 kg em bobinas de 18: 4 fechadas + 1 aberta', b(79.7, 18), '4+1');
+  ok('36 kg exatos: 2 fechadas, nenhuma aberta', b(36, 18), '2+0');
+  ok('6,4 kg: so uma aberta', b(6.4, 18), '0+1');
+  ok('saldo zero: nada', b(0, 18), '0+0');
+  ok('saldo negativo: nada', b(-6, 18), '0+0');
+  ok('sem peso de bobina: o quilo fica numa aberta', b(10, 0), '0+1');
 }
 if (falhas) { console.log(falhas + ' falha(s)'); process.exit(1); }
 console.log('tudo certo');

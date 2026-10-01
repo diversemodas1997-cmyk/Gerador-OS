@@ -7423,6 +7423,47 @@ function _larguraDaOSNoTecido(o, tecidoNome) {
   return n > 0 ? Math.round(n) : 0;
 }
 
+/* AS BOBINAS SAEM DO QUILO (01/10/2026, Junior: "é impossível ter qualquer
+   quilo disponível sem que as bobinas estejam nem abertas nem fechadas").
+
+   Fechados e Abertos eram uma contagem À PARTE: só o que se digitava nas
+   entradas e saídas manuais. Os quilos vinham de tudo — entradas sem bobina
+   (os saldos iniciais de 27/08), baixas das OS — e as duas contas se
+   descolaram: Moletom Bege com 79,7 kg e 0 bobinas; Off-White com 61,9 kg e
+   12 fechadas (≈ 216 kg).
+
+   Agora as duas colunas são o PRÓPRIO SALDO em bobinas: fechadas = quantas
+   bobinas inteiras o disponível enche; aberta = 1 quando sobra um pedaço. O
+   saldo positivo sempre está em alguma bobina, e as colunas nunca mais
+   discordam do quilo. É estimativa — o programa não vê se a última está
+   lacrada —, e o peso da bobina é o que a decide (pesoBobinaDaLinha). */
+function pesoBobinaDaLinha(tecidoNome, corNome, largura, movs) {
+  const t = _normNome(tecidoNome);
+  const c = corNome == null ? null : _normNome(corNome);
+  const contadas = (movs || movimentacoesEstoque()).filter(e => e.tipo === 'entrada' && e.origem !== 'os'
+    && _normNome(e.tecidoNome) === t && (c == null || _normNome(e.corNome) === c)
+    && (Number(e.kg) || 0) > 0 && (parseInt(e.fechados) || 0) > 0);
+  const media = lista => {
+    const kg = lista.reduce((s, e) => s + (Number(e.kg) || 0), 0);
+    const n = lista.reduce((s, e) => s + (parseInt(e.fechados) || 0), 0);
+    return n > 0 ? { kg: kg / n, n, origem: 'contagem' } : null;
+  };
+  // A largura primeiro: a bobina de 80 cm pesa menos que a de 120.
+  const daLargura = (c != null && Number(largura) > 0)
+    ? media(contadas.filter(e => Number(e.largura) === Number(largura))) : null;
+  return daLargura || media(contadas) || pesoBobinaEstimado(tecidoNome);
+}
+function bobinasDoSaldo(kg, pesoBobina) {
+  const k = Number(kg) || 0;
+  if (!(k > 0.0005)) return { fechados: 0, abertos: 0 };
+  const p = Number(pesoBobina) || 0;
+  // Sem peso de bobina conhecido não dá para dividir — mas o quilo está em
+  // ALGUMA bobina: conta uma aberta, e a dica diz que o peso falta.
+  if (!(p > 0)) return { fechados: 0, abertos: 1, semPeso: true };
+  const f = Math.floor(k / p + CEIL_BOBINA_EPS);
+  return { fechados: f, abertos: (k - f * p) > 0.0005 ? 1 : 0 };
+}
+
 function estoquePorLargura() {
   const mapa = new Map();
   const todos = movimentacoesEstoque();
@@ -7654,28 +7695,16 @@ function renderEstoque() {
      saídas e disponível se convertem pelo peso real daquela prateleira. A
      linha de total do tecido usa a média de todas as cores contadas. Cor sem
      contagem continua na estimativa do tecido, como antes. */
-  const _pesoContado = new Map();
-  movimentacoesEstoque().forEach(m => {
-    if (m.tipo !== 'entrada' || m.origem === 'os') return;
-    const kg = parseFloat(m.kg) || 0, bob = parseInt(m.fechados) || 0;
-    if (!(kg > 0 && bob > 0)) return;
-    const chaves = [_normNome(m.tecidoNome) + '||' + _normNome(m.corNome), _normNome(m.tecidoNome)];
-    if (Number(m.largura) > 0) chaves.push(chaves[0] + '||' + Number(m.largura));
-    chaves.forEach(k => {
-      const cur = _pesoContado.get(k) || { kg: 0, bob: 0 };
-      cur.kg += kg; cur.bob += bob;
-      _pesoContado.set(k, cur);
-    });
-  });
-  // O peso contado da cor (ou do tecido inteiro, sem cor), ou null.
-  const pesoDaContagem = (tecidoNome, corNome, largura) => {
-    const k = corNome == null ? _normNome(tecidoNome)
-      : _normNome(tecidoNome) + '||' + _normNome(corNome) + (Number(largura) > 0 ? '||' + Number(largura) : '');
-    const c = _pesoContado.get(k);
-    return c && c.bob > 0 ? { kg: c.kg / c.bob, n: c.bob, origem: 'contagem' } : null;
+  // O peso da bobina de cada linha vem de pesoBobinaDaLinha — a mesma conta
+  // que transforma o saldo em Fechados/Abertos (bobinasDoSaldo). Memorizado:
+  // cada célula do quadro pergunta, e a resposta da linha é uma só.
+  const _movsPeso = movimentacoesEstoque();
+  const _memoPeso = new Map();
+  const baseBobina = (tecidoNome, corNome, largura) => {
+    const k = [tecidoNome, corNome == null ? '(tecido)' : corNome, largura || ''].join('|');
+    if (!_memoPeso.has(k)) _memoPeso.set(k, pesoBobinaDaLinha(tecidoNome, corNome, largura, _movsPeso));
+    return _memoPeso.get(k);
   };
-  const baseBobina = (tecidoNome, corNome, largura) => pesoDaContagem(tecidoNome, corNome, largura)
-    || pesoDaContagem(tecidoNome, corNome) || pesoBobinaEstimado(tecidoNome);
   const bobDoKg = (kg, tecidoNome, corNome, largura) => {
     const base = baseBobina(tecidoNome, corNome, largura);
     if (!base || !(base.kg > 0)) return null;
@@ -7759,12 +7788,23 @@ function renderEstoque() {
     return `<td style="white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
       title="${esc('Data da entrada mais recente — ' + e.n + ' entrada' + (e.n === 1 ? '' : 's') + ' lançada' + (e.n === 1 ? '' : 's') + '. O detalhe de cada uma está em Movimentações recentes.')}">${formatDate(e.data)}</td>`;
   };
-  const cellsVals = (o, bold, tec) =>
-    dataEntradaCell(tec, o.corNome, o.largura) +
-    numCell(o.entrada, bold, tec, o.corNome, o.largura) + numCell(o.reservado, bold, tec, o.corNome, o.largura)
-    + numCell(o.saida, bold, tec, o.corNome, o.largura) +
-    dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome, o.largura) +
-    uniCell(o.fechados, bold) + uniCell(o.abertos, bold);
+  // As bobinas DA LINHA, saídas do disponível dela (ver bobinasDoSaldo). A
+  // linha de total do pano traz `_bob` já somado das linhas — somar quilo de
+  // cores diferentes e dividir por um peso só daria bobina que não existe.
+  const bobDaLinha = (o, tec) => o._bob
+    || bobinasDoSaldo(o.entrada - o.reservado - o.saida, (baseBobina(tec, o.corNome, o.largura) || {}).kg);
+  const bobCell = (n, bold, b, tec, o) => `<td style="text-align:right;font-family:'IBM Plex Mono',monospace;${bold ? 'font-weight:700;' : ''}"
+    title="${esc(b.semPeso
+      ? 'Peso da bobina deste pano ainda não conhecido: o saldo conta como uma bobina aberta. Lance uma entrada com kg e bobinas para o programa aprender o peso.'
+      : 'Estimado pelo disponível: bobinas inteiras = fechadas; o que sobra = 1 aberta. ' + (o._bob ? 'Soma das cores.' : dicaBob(tec, o.corNome, o.largura)))}">${Number(n) || 0}</td>`;
+  const cellsVals = (o, bold, tec) => {
+    const b = bobDaLinha(o, tec);
+    return dataEntradaCell(tec, o.corNome, o.largura) +
+      numCell(o.entrada, bold, tec, o.corNome, o.largura) + numCell(o.reservado, bold, tec, o.corNome, o.largura)
+      + numCell(o.saida, bold, tec, o.corNome, o.largura) +
+      dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome, o.largura) +
+      bobCell(b.fechados, bold, b, tec, o) + bobCell(b.abertos, bold, b, tec, o);
+  };
   /* UM QUADRO POR MATÉRIA-PRIMA (14/09/2026, Junior).
 
      Era UMA tabela com todos os panos e um subtotal no fim de cada bloco. Na
@@ -7806,13 +7846,16 @@ function renderEstoque() {
      "sem largura" deixou de existir. */
   const _largMovs = estoquePorLargura();
   const _cmTxt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR') + ' cm';
-  const linhasDaCor = (c, tec) => {
+  const linhasDaCor = (c, tec, acc) => {
     const porLarg = _largMovs.get(_normNome(c.tecidoNome) + '||' + _normNome(c.corNome));
-    const linha = (o, rotulo, dica) => `
+    const linha = (o, rotulo, dica) => {
+      if (acc) { const b = bobDaLinha(o, tec); acc.fechados += b.fechados; acc.abertos += b.abertos; }
+      return `
       <tr>
         <td${dica ? ` title="${esc(dica)}"` : ''}><strong>${rotulo}</strong></td>
         ${cellsVals(o, false, tec)}
       </tr>`;
+    };
     if (!porLarg || !porLarg.size) return linha(c, corLabel(c.corNome, tec));
     const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
     return larguras.map(([larg, v]) => linha(
@@ -7822,7 +7865,9 @@ function renderEstoque() {
         + LARGURA_BOBINA_PADRAO_CM + ' cm.')).join('');
   };
   const quadroTecido = (g) => {
-    const cores = g.linhas.map(c => linhasDaCor(c, g.tecidoNome)).join('');
+    const acc = { fechados: 0, abertos: 0 };
+    const cores = g.linhas.map(c => linhasDaCor(c, g.tecidoNome, acc)).join('');
+    g._bob = acc;
     // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
     // única linha logo acima.
     const total = g.linhas.length > 1 ? `
@@ -7857,9 +7902,9 @@ function renderEstoque() {
         (<b>36,000 kg<span style="font-size:10px;">/2 bob</span></b>), arredondada <b>para baixo</b> —
         meia bobina na prateleira ninguém vai buscar. Saldo negativo mostra as bobinas que
         precisam <b>entrar</b> para zerar. O pano sem peso de bobina conhecido sai só em quilos. Colunas em <b>unidades</b>:
-        <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso), lançados à mão — e a
-        <b>baixa de cada OS desconta dos Fechados</b> as bobinas que o kg dela representa
-        (kg ÷ peso da bobina da cor). Baixas de antes de 01/10/2026 não descontam.
+        <b>Fechados</b> e <b>Abertos</b> saem do <b>Disponível</b>: as bobinas inteiras que ele enche são as
+        fechadas, e o pedaço que sobra é <b>1 aberta</b> — todo quilo disponível está em alguma bobina.
+        O peso da bobina vem das entradas lançadas com kg e bobinas juntos (passe o mouse para ver).
       </div>
     </div>`;
 
@@ -8466,7 +8511,10 @@ function _meAtualizarLarguras() {
   const antes = sel.value;
   const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
   sel.innerHTML = `<option value="">${larguras.length ? '— escolha a largura —' : (tec ? 'esta cor não tem estoque lançado' : 'escolha o tecido e a cor')}</option>`
-    + larguras.map(([l, v]) => `<option value="${l}">${cm(l)} — ${Number(v.fechados) || 0} bob · ${kgTxt(v.kg)} kg</option>`).join('');
+    + larguras.map(([l, v]) => {
+        const b = bobinasDoSaldo(v.kg, (pesoBobinaDaLinha(tec, cor, l) || {}).kg);
+        return `<option value="${l}">${cm(l)} — ${b.fechados} fech.${b.abertos ? ' + 1 aberta' : ''} · ${kgTxt(v.kg)} kg</option>`;
+      }).join('');
   if (antes && porLarg.has(Number(antes))) sel.value = antes;
   else if (larguras.length === 1) sel.value = String(larguras[0][0]);
   if (dica) dica.textContent = larguras.length
@@ -34833,22 +34881,9 @@ async function aplicarBaixaEstoqueOS(data) {
    já foram absorvidas pelos inventários e descontá-las agora derrubaria a
    contagem de todas as cores de uma vez. */
 function _pesoBobinaDaBaixa(m) {
-  const t = _normNome(m.tecidoNome), c = _normNome(m.corNome);
-  const contadas = movimentacoesEstoque().filter(e => e.tipo === 'entrada' && e.origem !== 'os'
-    && _normNome(e.tecidoNome) === t && _normNome(e.corNome) === c
-    && (Number(e.kg) || 0) > 0 && (parseInt(e.fechados) || 0) > 0);
-  const media = lista => {
-    const kg = lista.reduce((s, e) => s + (Number(e.kg) || 0), 0);
-    const n = lista.reduce((s, e) => s + (parseInt(e.fechados) || 0), 0);
-    return n > 0 ? kg / n : 0;
-  };
   const o = (STATE.ordens || []).find(x => x.id === m.osId);
-  const larg = _larguraDaOSNoTecido(o, m.tecidoNome);
-  const daLargura = larg > 0 ? contadas.filter(e => Number(e.largura) === larg) : [];
-  const peso = media(daLargura) || media(contadas);
-  if (peso > 0) return peso;
-  const est = pesoBobinaEstimado(m.tecidoNome);
-  return est && est.kg > 0 ? est.kg : 0;
+  const p = pesoBobinaDaLinha(m.tecidoNome, m.corNome, _larguraDaOSNoTecido(o, m.tecidoNome));
+  return p && p.kg > 0 ? p.kg : 0;
 }
 function _fechadosDaBaixa(m) {
   const peso = _pesoBobinaDaBaixa(m);
