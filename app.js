@@ -30923,6 +30923,20 @@ function linhaTipoOS(o) {
   return inf ? 'Infantil Unissex' : 'Adulto Unissex';
 }
 
+// PRODUTOS POR TAMANHO NA LISTA (01/10/2026, Junior: "mostre também os
+// produtos completos por tamanho na lista de OS"). Embaixo do total, miúdo: a
+// mesma conta do Total por tamanho da folha (totaisPorTamanhoTomOS), a mesma
+// do cálculo da Nova OS. OS sem grade ou sem camadas fica só com o total.
+function _produtosPorTamanhoListaOS(o) {
+  let TT;
+  try { TT = totaisPorTamanhoTomOS(o); } catch (e) { return ''; }
+  if (!TT || !(TT.totalGeral > 0) || !TT.tamanhos.length) return '';
+  const rot = k => k.charAt(0) === 't' ? k.slice(1) : k.toUpperCase();
+  return `<div style="font-size:10px;color:var(--ink-2);font-weight:400;margin-top:2px;">`
+    + TT.tamanhos.map(k => `${rot(k)} ${TT.colTotal(k).toLocaleString('pt-BR')}`).join(' · ')
+    + `</div>`;
+}
+
 function renderListaOS() {
   // A lista vai ser redesenhada: o botao que abriu o menu pode nem existir
   // depois disto, e um menu pendurado apontando para uma linha que sumiu age
@@ -31063,7 +31077,7 @@ function renderListaOS() {
       <td style="white-space:nowrap;">${esc(linhaTipoOS(o))}</td>
       <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
       <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
-          title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
+          title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(o)}</td>
       <td style="text-align:center;">${_riscoCellOS(o)}</td>
       <td>${_faltaCelulaOS(o, faltas)}</td>
 
