@@ -30835,6 +30835,15 @@ function _faltaCelulaOS(o, faltas) {
     + `</div>`;
 }
 
+// A LINHA DA OS (01/10/2026): a grade usa uma linha de tamanhos só — 2 ao 16
+// é a infantil, P ao G3 a adulta. Lida da grade gravada na OS, a mesma que a
+// folha imprime, e não do nome da grade.
+function linhaTipoOS(o) {
+  const g = (o && o.grade) || {};
+  const inf = ['t2','t4','t6','t8','t10','t12','t14','t16'].some(k => (parseInt(g[k], 10) || 0) > 0);
+  return inf ? 'Infantil Unissex' : 'Adulto Unissex';
+}
+
 function renderListaOS() {
   // A lista vai ser redesenhada: o botao que abriu o menu pode nem existir
   // depois disto, e um menu pendurado apontando para uma linha que sumiu age
@@ -30847,7 +30856,7 @@ function renderListaOS() {
   if (!STATE.ordens.length) {
     _renderAvisoGrupoListaOS(0);
     _contaListaOS(0, 0);
-    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="13" class="empty">Nenhuma OS cadastrada ainda.</td></tr>`;
     return;
   }
   // Ordem decrescente pelo número da OS (maior primeiro); OS sem número no fim.
@@ -30925,7 +30934,7 @@ function renderListaOS() {
                   faltaEscolhida ? `<b>${esc(faltaEscolhida.toLowerCase())}</b>` : '',
                   diaFim ? `finalizadas em <b>${esc(formatDate(diaFim))}</b>` : '']
       .filter(Boolean).join(' e ');
-    tb.innerHTML = `<tr><td colspan="12" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
+    tb.innerHTML = `<tr><td colspan="13" class="empty">Nenhuma OS encontrada${oQue ? ' para ' + oQue : ''}.`
       + ` <button class="btn small" style="margin-left:8px;" onclick="limparFiltrosListaOS()">Limpar os filtros</button></td></tr>`;
     return;
   }
@@ -30967,6 +30976,7 @@ function renderListaOS() {
         : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(o.colecaoNome)||'—'}</td>
       <td>${_gradeCelulaLista(o)}</td>
+      <td style="white-space:nowrap;">${esc(linhaTipoOS(o))}</td>
       <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
       <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
           title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.</td>
