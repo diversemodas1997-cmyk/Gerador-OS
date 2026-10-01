@@ -33078,7 +33078,14 @@ async function salvarTempoEnfesto(osId, ordem, campo, valor) {
 // As tonalidades podem variar em qualquer fase, então cada fase tem seus campos
 // de Tom 1/2/3. Na fase PRINCIPAL esses campos são as CAMADAS REAIS por tom: ao
 // digitá-los, camadas/peças-alvo e o "Total por tamanho" são recalculados (ver
-// recalcularDeCamadasPorTom). Nas demais fases é anotação livre.
+// recalcularDeCamadasPorTom).
+//
+// NAS DEMAIS FASES O DIGITADO TAMBÉM É REAL (01/10/2026, Junior). Era anotação
+// livre: a ribana, o forro, a gola e os corpos 2/3 seguiam a PROPORÇÃO do corpo
+// e o estoque baixava esse previsto — 18 fases tinham na folha um número e no
+// estoque outro (a gola da OS 0453 enfestou 33 e baixou 62). Agora a soma dos
+// tons digitados é a camada da fase, e o estoque baixa o que foi enfestado.
+// Apagou todos os tons: a fase volta para a proporção do corpo.
 async function salvarTomEnfesto(osId, ordem, tom, valor) {
   if (!exigirEdicaoFolha('lançar as camadas por tonalidade')) return;
   const os = STATE.ordens.find(x => x.id === osId);
@@ -33095,8 +33102,27 @@ async function salvarTomEnfesto(osId, ordem, tom, valor) {
   if (String(ordem) === String(_ordemFasePrincipal(os))) {
     await recalcularDeCamadasPorTom(osId);
   } else {
+    _aplicarCamadasReaisDaFase(os, Number(ordem));
     try { await saveState('ordens'); } catch (e) { console.warn('salvarTomEnfesto', e); }
+    // O consumo da fase mudou: a reserva/baixa de tecido acompanha.
+    try { await aplicarBaixaEstoqueOS(os); } catch (e) { console.warn('estoque por tom', e); }
+    if (printOsAtual && printOsAtual.id === osId) renderPrintSheet(os);
   }
+}
+
+// A camada de uma fase SECUNDÁRIA a partir dos tons digitados nela. Soma
+// positiva = o que foi enfestado; nada digitado = a proporção do corpo
+// (camadasPadraoDaFase). O zero ("não enfestada") não passa por aqui: quem o
+// lê é _faseNaoEnfestadaPorTom, direto no consumo. O viés é sempre 1.
+function _aplicarCamadasReaisDaFase(o, ord) {
+  const b = ((o.enfesto || {}).blocos || []).find(x => (x.ordem || 0) === ord);
+  if (!b) return;
+  const fase = (o.fases || []).find(f => f.ordem === ord) || {};
+  if (/vi[eé]s/i.test(fase.nome || b.nomeTecido || '')) { b.camadas = 1; return; }
+  const porTom = _camadasPorTomFase(o, ord);
+  const soma = Object.keys(porTom).reduce((s, k) => s + porTom[k], 0);
+  b.camadas = soma > 0 ? soma
+    : (camadasPadraoDaFase(o, ord, (o.enfesto || {}).camadas) || b.camadas);
 }
 
 // Camadas reais por tom de uma fase (parse numérico de enfestosTons[ord]).
@@ -33196,6 +33222,11 @@ async function recalcularDeCamadasPorTom(osId) {
       const ehVies = /vi[eé]s/i.test(nomeFaseDe(b.ordem) || b.nomeTecido || '');
       if (ehVies) { b.camadas = 1; return; }
       if ((b.ordem || 0) === ordP) { b.camadas = camadas; return; }
+      // Fase com tons digitados: vale o que foi enfestado nela, não a proporção
+      // (ver _aplicarCamadasReaisDaFase).
+      const reais = _camadasPorTomFase(o, b.ordem || 0);
+      const somaReal = Object.keys(reais).reduce((s, k) => s + reais[k], 0);
+      if (somaReal > 0) { b.camadas = somaReal; return; }
       const cur = parseInt(b.camadas, 10) || 0;
       b.camadas = (antes > 0 && cur > 0) ? Math.max(1, Math.round(cur * camadas / antes)) : camadas;
     });
