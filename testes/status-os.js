@@ -115,6 +115,9 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('_STATUS_QUE_BAIXAM')}
   ${recorte('async function aplicarBaixaEstoqueOS', 'a reserva ao salvar a OS')}
   ${recorte('async function _estoqueSeguirStatusOS', 'a baixa de estoque pelo status')}
+  // As bobinas que a baixa desconta tem teste proprio (fechados-baixa-os.js);
+  // aqui o que se testa e o status mandando no pano.
+  const _fechadosDaBaixa = () => 0;
   ${recorte('async function darBaixaMaterialOS', 'a baixa de material')}
   ${recorte('async function estornarBaixaMaterialOS', 'o estorno da baixa')}
   ${recorte('function _ativaStatusDaOS', 'a ativa de quem foi conjugada a mao')}

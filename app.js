@@ -7856,8 +7856,10 @@ function renderEstoque() {
         Disponível (= Entradas − Reservado − Saídas). Cada quilo vem com a <b>bobina</b> ao lado
         (<b>36,000 kg<span style="font-size:10px;">/2 bob</span></b>), arredondada <b>para baixo</b> —
         meia bobina na prateleira ninguém vai buscar. Saldo negativo mostra as bobinas que
-        precisam <b>entrar</b> para zerar. O pano sem peso de bobina conhecido sai só em quilos. Colunas em <b>unidades</b> (lançamento manual):
-        <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso).
+        precisam <b>entrar</b> para zerar. O pano sem peso de bobina conhecido sai só em quilos. Colunas em <b>unidades</b>:
+        <b>Fechados</b> (rolos/peças lacrados) e <b>Abertos</b> (em uso), lançados à mão — e a
+        <b>baixa de cada OS desconta dos Fechados</b> as bobinas que o kg dela representa
+        (kg ÷ peso da bobina da cor). Baixas de antes de 01/10/2026 não descontam.
       </div>
     </div>`;
 
@@ -34763,6 +34765,11 @@ async function aplicarBaixaEstoqueOS(data) {
      o que ele diz ser — pano comprometido por OS que ainda não começou. */
   const jaAndando = _STATUS_QUE_BAIXAM.indexOf(_statusOS(data)) >= 0;
   const status = (jaConsumida || jaAndando) ? 'consumido' : 'reservado';
+  // As bobinas fechadas acompanham a baixa (ver _fechadosDaBaixa) quando a
+  // baixa é desta regra: já descontava antes, ou está nascendo agora. Baixa
+  // antiga, sem a marca, continua sem descontar bobina.
+  const fechadosAuto = status === 'consumido' && (!jaConsumida || STATE.estoqueMov.some(
+    m => m.origem === 'os' && m.osId === data.id && m.fechadosAuto));
   const antes = STATE.estoqueMov.length;
   STATE.estoqueMov = STATE.estoqueMov.filter(m => !(m.origem === 'os' && m.osId === data.id));
   /* A OS CONJUGADA NÃO RESERVA PANO (28/08/2026, Junior).
@@ -34797,10 +34804,56 @@ async function aplicarBaixaEstoqueOS(data) {
       consumidoEm: status === 'consumido' ? hoje : '',
       obs: ''
     });
+    const novo = STATE.estoqueMov[STATE.estoqueMov.length - 1];
+    if (fechadosAuto) { novo.fechados = _fechadosDaBaixa(novo); novo.fechadosAuto = true; }
   });
   if (STATE.estoqueMov.length !== antes || itens.length) {
     try { await saveState('estoqueMov'); } catch (e) { console.warn('reserva estoque', e); }
   }
+}
+
+/* A BAIXA DA OS DESCONTA TAMBÉM AS BOBINAS FECHADAS (01/10/2026, Junior: "faça
+   a baixa da OS descontar também os fechados").
+
+   A coluna Fechados só mexia por lançamento manual: o Moletom Preto entrou com
+   11 bobinas em 17/09, quatro OS cortaram 164 kg (≈ 9 bobinas de 18 kg) e o
+   quadro seguia dizendo 11. Agora o movimento da OS, ao virar consumido, leva
+   as bobinas que o kg dela representa: kg ÷ peso da bobina daquela cor,
+   arredondado para o inteiro mais perto (uma OS de 5,1 bobinas tirou 5 da
+   prateleira; a sobra de uma, a falta de outra, se compensam na soma).
+
+   O PESO DA BOBINA é o das entradas CONTADAS da cor (kg e fechados no mesmo
+   lançamento) — de preferência as da largura da grade da OS, porque a bobina
+   estreita pesa menos —; sem contagem na cor, o peso estimado do tecido
+   (cadastro ou mediana das entradas). Sem peso nenhum, nada é descontado:
+   inventar bobina seria pior do que não descontar.
+
+   Marcado com `fechadosAuto`: só o que esta regra escreveu é refeito ou
+   desfeito depois. As baixas antigas, de antes da regra, ficam com 0 — elas
+   já foram absorvidas pelos inventários e descontá-las agora derrubaria a
+   contagem de todas as cores de uma vez. */
+function _pesoBobinaDaBaixa(m) {
+  const t = _normNome(m.tecidoNome), c = _normNome(m.corNome);
+  const contadas = movimentacoesEstoque().filter(e => e.tipo === 'entrada' && e.origem !== 'os'
+    && _normNome(e.tecidoNome) === t && _normNome(e.corNome) === c
+    && (Number(e.kg) || 0) > 0 && (parseInt(e.fechados) || 0) > 0);
+  const media = lista => {
+    const kg = lista.reduce((s, e) => s + (Number(e.kg) || 0), 0);
+    const n = lista.reduce((s, e) => s + (parseInt(e.fechados) || 0), 0);
+    return n > 0 ? kg / n : 0;
+  };
+  const o = (STATE.ordens || []).find(x => x.id === m.osId);
+  const larg = _larguraDaOSNoTecido(o, m.tecidoNome);
+  const daLargura = larg > 0 ? contadas.filter(e => Number(e.largura) === larg) : [];
+  const peso = media(daLargura) || media(contadas);
+  if (peso > 0) return peso;
+  const est = pesoBobinaEstimado(m.tecidoNome);
+  return est && est.kg > 0 ? est.kg : 0;
+}
+function _fechadosDaBaixa(m) {
+  const peso = _pesoBobinaDaBaixa(m);
+  const kg = Number(m.kg) || 0;
+  return peso > 0 && kg > 0 ? Math.round(kg / peso) : 0;
 }
 
 // Aponta a OS como produzida → converte a RESERVA em SAÍDA definitiva (baixa real).
@@ -34815,6 +34868,7 @@ async function darBaixaMaterialOS(osId) {
   (STATE.estoqueMov || []).forEach(m => {
     if (m.origem === 'os' && m.osId === osId && m.status !== 'consumido') {
       m.status = 'consumido'; m.consumidoEm = hoje; mudou = true;
+      m.fechados = _fechadosDaBaixa(m); m.fechadosAuto = true;
     }
   });
   if (!mudou) return;
@@ -34830,6 +34884,8 @@ async function estornarBaixaMaterialOS(osId) {
   (STATE.estoqueMov || []).forEach(m => {
     if (m.origem === 'os' && m.osId === osId && m.status === 'consumido') {
       m.status = 'reservado'; m.consumidoEm = ''; mudou = true;
+      // As bobinas voltam junto com o pano — só as que a regra nova tirou.
+      if (m.fechadosAuto) { m.fechados = 0; delete m.fechadosAuto; }
     }
   });
   if (!mudou) return;
