@@ -1106,7 +1106,7 @@
                Ações — os botões de status, visualizar e "⋯" ficam atrás de uma
                janela que o programa não desenhou e não consegue mover. Todos os
                outros campos de busca do app já nascem assim. -->
-          <input type="search" id="busca-os" placeholder="Buscar: número, código, modelo, coleção, cor, grade ou SKU…"
+          <input type="search" id="busca-os" placeholder="Buscar: número, código, modelo, coleção, cor, grade, linha ou SKU…"
                  autocomplete="off" spellcheck="false"
                  title="Busca em tudo o que a linha mostra, mais o SKU. Vários termos valem juntos: &quot;preto tricolor&quot;." oninput="renderListaOS()">
           <!-- Quantas OS a lista está mostrando agora. Ao lado da busca porque é
@@ -1116,6 +1116,7 @@
           <select id="filtro-cor-os" title="Mostrar só as OS de uma cor" onchange="renderListaOS()"></select>
           <select id="filtro-grade-os" title="Mostrar só as OS de uma grade" onchange="renderListaOS()"></select>
           <select id="filtro-sku-os" title="Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos" onchange="renderListaOS()"></select>
+          <select id="filtro-linha-os" title="Mostrar só as OS da linha Adulto Unissex (P ao G3) ou Infantil Unissex (2 ao 16)" onchange="renderListaOS()"></select>
           <select id="filtro-falta-os" title="Mostrar só as OS Não iniciadas com material faltante — qualquer um, ou só tecido, aviamento ou material (kraft/filme). A mesma conta da coluna Material faltante" onchange="renderListaOS()"></select>
           <!-- O DIA EM QUE O CORTE TERMINOU. Uma data só: a pergunta do chão é
                "o que saiu do corte neste dia?". Só entram OS que chegaram ao
@@ -1749,6 +1750,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-01a"></script>
+<script src="app.js?v=2026-10-01b"></script>
 </body>
 </html>

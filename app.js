@@ -30273,7 +30273,7 @@ function _filtroListaOS(id, base, rotuloTodos, chaves) {
 function _textoBuscaOS(o) {
   return [o.os, o.codigo, o.modeloNome, o.colecaoNome,
           coresDaPecaOS(o).join(' '), _gradeNomeDaOS(o),
-          skusDaOS(o).join(' '), linhasSkuDaOS(o).join(' ')]
+          skusDaOS(o).join(' '), linhasSkuDaOS(o).join(' '), linhaTipoOS(o)]
     .filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -30284,7 +30284,7 @@ function _textoBuscaOS(o) {
 // caminho mais curto para a pessoa achar que a OS sumiu.
 function limparFiltrosListaOS() {
   ['busca-os', 'filtro-status-os', 'filtro-cor-os', 'filtro-grade-os', 'filtro-sku-os',
-   'filtro-falta-os', 'filtro-fim']
+   'filtro-linha-os', 'filtro-falta-os', 'filtro-fim']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderListaOS();
 }
@@ -30895,6 +30895,9 @@ function renderListaOS() {
   // linhasSkuDaOS). Os dois cruzam quando alguém escolhe os dois.
   const skuEscolhido = _filtroListaOS('filtro-sku-os', noGrupo, 'Todos os SKUs',
     o => linhasSkuDaOS(o));
+  // Adulto ou infantil: a mesma leitura da coluna Linha.
+  const linhaEscolhida = _filtroListaOS('filtro-linha-os', noGrupo, 'Adulto e infantil',
+    o => [linhaTipoOS(o)]);
   // O DIA EM QUE A OS TERMINOU. A pergunta do chão é "o que foi finalizado
   // neste dia?" — uma data só, e o calendário do navegador já sabe pedi-la.
   // Vale junto com os outros filtros e com a busca por texto.
@@ -30908,6 +30911,7 @@ function renderListaOS() {
     && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
     && (!skuEscolhido || linhasSkuDaOS(o).includes(skuEscolhido))
+    && (!linhaEscolhida || linhaTipoOS(o) === linhaEscolhida)
     && _osFinalizadaNoDia(o, diaFim));
   _renderAvisoGrupoListaOS(noGrupo.length);
   _contaListaOS(filtradas.length, noGrupo.length);
@@ -30931,6 +30935,7 @@ function renderListaOS() {
                   corEscolhida ? `cor <b>${esc(corEscolhida)}</b>` : '',
                   gradeEscolhida ? `grade <b>${esc(gradeEscolhida)}</b>` : '',
                   skuEscolhido ? `SKU <b>${esc(skuEscolhido)}</b>` : '',
+                  linhaEscolhida ? `linha <b>${esc(linhaEscolhida)}</b>` : '',
                   faltaEscolhida ? `<b>${esc(faltaEscolhida.toLowerCase())}</b>` : '',
                   diaFim ? `finalizadas em <b>${esc(formatDate(diaFim))}</b>` : '']
       .filter(Boolean).join(' e ');

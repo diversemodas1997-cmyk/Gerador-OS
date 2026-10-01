@@ -54,6 +54,7 @@ const monta = (ctx) => new Function('ctx', `
   // A LINHA de SKU e o SKU sem a cor. Duble proprio porque desde 10/09/2026 o
   // filtro le a linha, e a busca le as duas.
   const linhasSkuDaOS = (o) => o.linhasSku || [];
+  const linhaTipoOS = (o) => o.linhaTipo || '';
   ${recorte('function _filtroListaOS', 'o seletor de filtro')}
   ${recorte('function _textoBuscaOS', 'o texto que a busca varre')}
   return { _filtroListaOS, _textoBuscaOS };
