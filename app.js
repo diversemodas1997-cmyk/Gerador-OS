@@ -31081,6 +31081,7 @@ function renderListaOS() {
                 onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
             </span>` : '')
         : ''}${_conjugadaCelulaOS(o)}</td>
+      <td style="white-space:nowrap;">${esc(linhaTipoOS(o))}</td>
       <td><span class="badge">${esc(o.codigo)||'—'}</span></td>
       <td>${esc(o.modeloNome)||'—'}</td>
       <td>${cores.length
@@ -31088,7 +31089,6 @@ function renderListaOS() {
         : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(o.colecaoNome)||'—'}</td>
       <td>${_gradeCelulaLista(o)}</td>
-      <td style="white-space:nowrap;">${esc(linhaTipoOS(o))}</td>
       <td style="white-space:nowrap;">${_dataCelulaListaOS(o)}</td>
       <td style="text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
           title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(o)}</td>
