@@ -12597,7 +12597,21 @@ function _expItensFaseHtml(o, carga, fi) {
       <td style="${TD}font-weight:700;background:#eef3ee;">${fmt(total)}</td>
     </tr>`;
   };
-  const corpo = grupos.filter(g => g.itens.length).map(g => `
+  /* PRODUTOS COMPLETOS POR TAMANHO (01/10/2026, Junior: "mostre também os
+     produtos completos por tamanho na folha de OE"). Primeira linha da tabela,
+     acima dos itens: quantos produtos (uma camiseta = 1) a carga leva em cada
+     tamanho. Vem de _expProdutosDaCargaPorTam — o lote parcial conta só os
+     pacotes da carga; a carga cheia é o Total por tamanho da folha de OS. */
+  const valsProd = tamanhos.map(k => Math.round(porTam[k] || 0));
+  const totProd = valsProd.reduce((s, v) => s + v, 0);
+  const linhaProdutos = totProd > 0 ? `
+      <tr style="background:#eef3ee;">
+        <td style="padding:0 2px;width:9pt;"></td>
+        <td style="padding:0 2px;text-align:left;font-weight:700;">Produtos completos</td>
+        ${valsProd.map(v => `<td style="${TD}font-weight:700;${v > 0 ? '' : 'color:#999;'}">${fmt(v)}</td>`).join('')}
+        <td style="${TD}font-weight:700;">${fmt(totProd)}</td>
+      </tr>` : '';
+  const corpo = linhaProdutos + grupos.filter(g => g.itens.length).map(g => `
       <tr><td colspan="${nCols}" style="padding:1pt 2px 0;border-top:.5pt solid #999;background:#f4f4f4;font-weight:700;">${esc(g.titulo)}</td></tr>
       ${g.itens.map(linhaItem).join('')}`).join('');
   return `
