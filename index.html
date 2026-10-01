@@ -946,11 +946,12 @@
 
         <!-- DESENHO -->
         <div class="card">
-          <div class="card-title">Desenho técnico</div>
+          <div class="card-title">Desenho técnico · grade · camadas</div>
           <div class="form-grid cols-2">
             <!-- São mais de cem desenhos numa lista só: a busca recorta a lista
                  enquanto se digita (código, descrição, modelo, cor ou SKU). O
                  desenho já escolhido nunca sai da lista. -->
+            <div>
             <div class="field"><label>Selecionar desenho cadastrado</label>
               <div class="busca-desenho">
                 <!-- Mesma razão do busca-os: a lista do navegador cobriria a
@@ -962,6 +963,23 @@
                 <span id="f-desenho-conta" class="lista-os-conta"></span>
               </div>
               <select id="f-desenho" onchange="previewDesenhoSelecionado(); sincCodigoDesenho('desenho')"></select>
+            </div>
+            <!-- GRADE E CAMADAS LOGO ABAIXO DO DESENHO (01/10/2026, Junior: "para
+                 que os campos de busca e seleção estejam próximos um do outro").
+                 São as três escolhas de toda OS nova; moram aqui, na coluna da
+                 esquerda, e a prévia do desenho fica à direita. Os ids são os
+                 mesmos de antes — só mudou o lugar. -->
+            <div class="field" style="margin-top:10px;">
+              <label>Grade</label>
+              <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="margin-bottom:6px;">
+              <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
+              <div class="field-hint" id="f-grade-info"></div>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
+              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()">
+              <div class="field-hint">Informar as camadas calcula as peças-alvo automaticamente</div>
+            </div>
             </div>
             <div class="field"><label>Preview</label><div class="desenho-preview" id="f-desenho-preview"><span>Nenhum desenho selecionado</span></div></div>
           </div>
@@ -977,19 +995,11 @@
         <!-- GRADE -->
         <div class="card">
           <div class="card-title">Grade de tamanhos</div>
-          <div class="form-grid cols-2" style="margin-bottom:10px">
-            <!-- A busca fica ACIMA do select: com mais de cem grades cadastradas,
-                 rolar o dropdown até achar "P ao G3 | CM.LISA | 117cm" é pior que
-                 digitar "cm.lisa g3". A linha de baixo (#f-grade-info) diz quantas
-                 grades a lista tem e quantas o filtro do desenho/modelo escondeu —
-                 e por quê. -->
-            <div class="field">
-              <label>Carregar grade pré-cadastrada (opcional)</label>
-              <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="margin-bottom:6px;">
-              <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
-              <div class="field-hint" id="f-grade-info"></div>
-            </div>
-            <div class="field os-detalhe"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
+          <!-- A busca e a lista de grades moraram aqui até 01/10/2026; subiram
+               para o card do desenho, junto com as camadas. Ficam a descrição e
+               os tamanhos. -->
+          <div class="form-grid cols-2 os-detalhe" style="margin-bottom:10px">
+            <div class="field"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
           </div>
           <div class="grade-inputs">
             <div class="field"><label>P</label><input type="number" id="f-gr-p" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
@@ -1023,11 +1033,6 @@
               <label>Peças-alvo por tamanho</label>
               <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()">
               <div class="field-hint">Quantidade desejada de cada tamanho — calcula camadas automaticamente</div>
-            </div>
-            <div class="field">
-              <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
-              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()">
-              <div class="field-hint">Informar as camadas calcula as peças-alvo automaticamente</div>
             </div>
           </div>
           <div id="f-enf-alerta" class="hidden" style="margin-top:10px; padding: 8px 12px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 12px; border-radius: 2px;"></div>
@@ -1762,6 +1767,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-01e"></script>
+<script src="app.js?v=2026-10-01f"></script>
 </body>
 </html>
