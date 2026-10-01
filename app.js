@@ -35579,6 +35579,14 @@ function renderPrintSheet(o) {
               // Quantas linhas de tom esta folha mostra hoje. Não é mais uma
               // constante: o + e o − do rótulo da última linha mexem nela.
               const nLinhas = nLinhasTomOS(o);
+              // UM TOM SÓ (01/10/2026, Junior: "quando apenas for um tom,
+              // mostrar apenas a quantidade por tamanho por tom"). A linha do
+              // Tom 1 e a do total por tamanho diziam os mesmos números, uma
+              // embaixo da outra. Com um tom a linha de totais sai, e o Tom 1
+              // carrega a coluna inteira — também quando nenhum tom foi
+              // marcado (o Tom 1 implícito vinha vazio, à espera de divisão
+              // que não existe com uma tonalidade).
+              const umTom = nLinhas <= 1;
               // Tons marcados em ordem (prefixo: 1, 1+2 ou 1+2+3). O ultimo
               // vira o "balanceador": cada celula dele recebe colTotal menos a
               // soma dos V dos editaveis, mantendo as somas das colunas iguais
@@ -35614,7 +35622,8 @@ function renderPrintSheet(o) {
                 // usa. O Tom 1 aparece mesmo sem checkbox marcado (tonalidade
                 // implícita) e, enquanto nada foi digitado, carrega a quantidade
                 // cheia; nesse estado ele é só leitura, como o balanceador.
-                const linhaTT = TT.linhas.find(L => L.tom === tom);
+                const linhaTT = TT.linhas.find(L => L.tom === tom)
+                  || (umTom ? { tom, cels: Object.fromEntries(sizeKeys.map(k => [k, TT.colTotal(k)])), editavel: false } : null);
                 const mostra = !!linhaTT;
                 // O Tom 1 continua DIGITÁVEL no estado inicial — é digitar nele
                 // que reparte a diferença pro balanceador. Só o balanceador e o
@@ -35648,11 +35657,11 @@ function renderPrintSheet(o) {
               };
               return `
                 <tr><th colspan="${sizeKeys.length + 2}" class="subhead" style="background:#c9e8d0;font-size:6.5pt;">Total por tamanho</th></tr>
-                <tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
+                ${umTom ? '' : `<tr style="text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;background:#eaf6ed;">
                   <td></td>
                   ${sizeKeys.map(k => `<td>${t(g[k])}</td>`).join('')}
                   <td style="background:#c9e8d0;">${totalGeral > 0 ? totalGeral : ''}</td>
-                </tr>
+                </tr>`}
                 ${Array.from({ length: nLinhas }, (_, i) => tomRow(i + 1)).join('')}
                 <tr class="no-print"><td colspan="${sizeKeys.length + 2}" style="background:#f4faf5;padding:1px 4px;">${btnsBloco}</td></tr>`;
             })()}
