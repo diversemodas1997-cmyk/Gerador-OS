@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-01b">
+<link rel="stylesheet" href="styles.css?v=2026-10-01c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -946,7 +946,7 @@
 
         <!-- DESENHO -->
         <div class="card">
-          <div class="card-title">Desenho técnico · grade · camadas</div>
+          <div class="card-title">Desenho técnico · grade · enfesto</div>
           <div class="form-grid cols-2">
             <!-- São mais de cem desenhos numa lista só: a busca recorta a lista
                  enquanto se digita (código, descrição, modelo, cor ou SKU). O
@@ -978,10 +978,23 @@
             <!-- AS FASES DO ENFESTO, uma linha cada, logo abaixo da grade que as
                  define (01/10/2026). Montadas em renderEnfestoBlocos. -->
             <div id="f-enfestos-blocos" class="enf-tab" style="margin-top:8px;"></div>
-            <div class="field" style="margin-top:10px;">
-              <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
-              <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()">
-              <div class="field-hint">Informar as camadas calcula as peças-alvo automaticamente</div>
+            <!-- O ENFESTO INTEIRO AQUI (01/10/2026, Junior: "o campo enfesto deve
+                 ser compactado também para estar junto dos campos de seleção").
+                 Era um card próprio mais abaixo; camadas, peças-alvo, alerta e
+                 cálculo de peças agora moram na coluna da seleção. -->
+            <div class="form-grid cols-2" style="margin-top:10px;gap:8px;">
+              <div class="field">
+                <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
+                <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()" title="Informar as camadas calcula as peças-alvo automaticamente">
+              </div>
+              <div class="field os-detalhe">
+                <label>Peças-alvo por tamanho</label>
+                <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()" title="Quantidade desejada de cada tamanho — calcula camadas automaticamente">
+              </div>
+            </div>
+            <div id="f-enf-alerta" class="hidden" style="margin-top:6px; padding: 5px 8px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 11px; border-radius: 2px;"></div>
+            <div id="f-enf-calculo" class="enf-calculo-compacto">
+              <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
             </div>
             </div>
             <div class="field"><label>Preview</label><div class="desenho-preview" id="f-desenho-preview"><span>Nenhum desenho selecionado</span></div></div>
@@ -1026,22 +1039,6 @@
             <div class="field"><label>12</label><input type="number" id="f-gr-t12" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
             <div class="field"><label>14</label><input type="number" id="f-gr-t14" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
             <div class="field"><label>16</label><input type="number" id="f-gr-t16" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
-          </div>
-        </div>
-
-        <!-- ENFESTO -->
-        <div class="card">
-          <div class="card-title">Enfesto</div>
-          <div class="form-grid cols-2">
-            <div class="field os-detalhe">
-              <label>Peças-alvo por tamanho</label>
-              <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()">
-              <div class="field-hint">Quantidade desejada de cada tamanho — calcula camadas automaticamente</div>
-            </div>
-          </div>
-          <div id="f-enf-alerta" class="hidden" style="margin-top:10px; padding: 8px 12px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 12px; border-radius: 2px;"></div>
-          <div id="f-enf-calculo" style="margin-top:12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2);">
-            <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
           </div>
         </div>
 
@@ -1771,6 +1768,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-01h"></script>
+<script src="app.js?v=2026-10-01i"></script>
 </body>
 </html>
