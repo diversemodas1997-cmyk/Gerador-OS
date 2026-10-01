@@ -4695,3 +4695,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .enf-calculo-compacto > div { padding: 2px 0 !important; }
 .enf-calculo-compacto div[style*="font-size:11px"] { font-size: 10px !important; margin-top: 0 !important; }
 .enf-calculo-compacto div[style*="margin-top:8px"] { margin-top: 3px !important; font-size: 10px !important; }
+
+/* Nova OS: campos numa metade, desenho técnico na outra, alto e preso na tela. */
+.os-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
+.os-split-desenho { position: sticky; top: 12px; }
+.os-split-desenho .desenho-preview { aspect-ratio: auto; height: calc(100vh - 160px); min-height: 320px; }
+@media (max-width: 760px) {
+  .os-split { grid-template-columns: 1fr; }
+  .os-split-desenho { position: static; }
+  .os-split-desenho .desenho-preview { height: auto; aspect-ratio: 4/3; min-height: 0; }
+}
