@@ -23117,9 +23117,32 @@ function aplicarVinculosDesenho() {
   }
 }
 
+// O FORMULÁRIO ENXUTO DA OS (01/10/2026). Compacto: só desenho técnico, grade
+// e camadas — o resto já vem preenchido pelo desenho e pela grade, e fica
+// escondido. "Edição completa" revela tudo. Só esconde: os campos seguem no
+// formulário e o salvar lê todos, visíveis ou não.
+function definirModoFormOS(compacto) {
+  const form = document.getElementById('os-form');
+  if (!form) return;
+  form.classList.toggle('os-compacto', !!compacto);
+  const btn = document.getElementById('os-modo-btn');
+  if (btn) btn.textContent = compacto ? '✎ Edição completa' : '− Edição simplificada';
+  const desc = document.getElementById('os-modo-desc');
+  if (desc) desc.textContent = compacto
+    ? 'Mostrando só desenho técnico, grade e camadas. O resto vem preenchido pelo desenho e pela grade.'
+    : 'Todos os campos da OS.';
+}
+function alternarModoFormOS() {
+  const form = document.getElementById('os-form');
+  definirModoFormOS(!(form && form.classList.contains('os-compacto')));
+}
+
 function initOSForm() {
   // presence: marca o canal da OS sendo editada
   iniciarPresenceOS(osEditId || 'nova');
+  // OS nova abre enxuta; editar uma OS salva abre completa — quem edita quase
+  // sempre vem mexer justamente no que a criação esconde.
+  definirModoFormOS(!osEditId);
 
   // A busca de grade e o "mostrar todas" são da SESSÃO do formulário: abrir uma
   // OS nova com o filtro desligado da vez anterior faria a lista parecer errada.
@@ -26620,6 +26643,7 @@ function _prepararOSParaSalvar() {
   const data = _mesclarComOSExistente(coletaOS());
   if (!data.os && !data.codigo) {
     toast('Preencha ao menos número da OS ou código do desenho', 'err');
+    definirModoFormOS(false);
     return null;
   }
   // NÚMERO CANÔNICO: sempre quatro dígitos. Sem isto, "340" e "0340" eram duas
@@ -26636,10 +26660,13 @@ function _prepararOSParaSalvar() {
     if (conflito) {
       toast(`A OS ${data.os} já existe (${conflito.modeloNome || 'sem modelo'} · ${formatDate(conflito.data)}). `
         + `Use outro número — o próximo livre é ${proximoNumeroOS()}.`, 'err');
+      // O número fica no cabeçalho, que a criação enxuta esconde.
+      definirModoFormOS(false);
       return null;
     }
   }
-  if (!validarAntesDeSalvar(data)) return null;
+  // Recusou: o campo do problema pode estar escondido — mostra tudo.
+  if (!validarAntesDeSalvar(data)) { definirModoFormOS(false); return null; }
   return data;
 }
 

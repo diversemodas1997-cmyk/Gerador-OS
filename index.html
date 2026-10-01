@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-09-29b">
+<link rel="stylesheet" href="styles.css?v=2026-10-01a">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -910,9 +910,21 @@
         <span><strong id="presenceCount">0</strong> pessoa(s) editando esta OS agora: <span id="presenceUsers"></span></span>
       </div>
 
+      <!-- CRIAÇÃO ENXUTA (01/10/2026, Junior: "deve aparecer apenas os campos
+           que são frequentemente selecionados, como desenho técnico, grade e
+           quantidade de camadas"). A OS nova abre só com eles; o resto — que o
+           desenho e a grade já preenchem sozinhos — fica escondido (classe
+           os-detalhe) e volta com "Edição completa". Editar uma OS salva abre
+           completa. Os campos escondidos continuam no formulário e são
+           gravados do mesmo jeito: esconder não é apagar. -->
+      <div class="os-modo-barra">
+        <span id="os-modo-desc" class="field-hint"></span>
+        <button type="button" class="btn small" id="os-modo-btn" onclick="alternarModoFormOS()"></button>
+      </div>
+
       <form id="os-form" onsubmit="return false;">
         <!-- CABEÇALHO -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Cabeçalho da ficha</div>
           <div class="form-grid cols-4">
             <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
@@ -956,7 +968,7 @@
         </div>
 
         <!-- TECIDOS -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Tecidos (até 5)</div>
           <div id="tecidos-rows"></div>
           <button type="button" class="add-row-btn" onclick="addTecidoRow()">+ Adicionar tecido</button>
@@ -977,7 +989,7 @@
               <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
               <div class="field-hint" id="f-grade-info"></div>
             </div>
-            <div class="field"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
+            <div class="field os-detalhe"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
           </div>
           <div class="grade-inputs">
             <div class="field"><label>P</label><input type="number" id="f-gr-p" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
@@ -1005,9 +1017,9 @@
         <!-- ENFESTO -->
         <div class="card">
           <div class="card-title">Enfesto</div>
-          <div id="f-enfestos-blocos" style="margin-bottom:10px;"></div>
+          <div id="f-enfestos-blocos" class="os-detalhe" style="margin-bottom:10px;"></div>
           <div class="form-grid cols-2">
-            <div class="field">
+            <div class="field os-detalhe">
               <label>Peças-alvo por tamanho</label>
               <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()">
               <div class="field-hint">Quantidade desejada de cada tamanho — calcula camadas automaticamente</div>
@@ -1025,7 +1037,7 @@
         </div>
 
         <!-- RESPONSABILIDADES DA EQUIPE -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Responsabilidades da equipe nesta OS</div>
           <div id="resp-resumo" style="font-size:12px; color: var(--ink-2);">
             <em style="color:var(--ink-3);">Selecione Designer, Ficha técnica ou Coordenador acima para ver responsabilidades da equipe.</em>
@@ -1033,7 +1045,7 @@
         </div>
 
         <!-- ETAPAS DE PRODUÇÃO -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Etapas de produção</div>
           <div class="etapas-checks" id="etapas-container"></div>
           <button type="button" class="add-row-btn" onclick="addEtapaCustomizada()">+ Adicionar etapa customizada</button>
@@ -1043,7 +1055,7 @@
         <div id="variantes-rows" style="display:none;"></div>
 
         <!-- COMPONENTES -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Componentes do produto</div>
           <div class="componente-row" style="font-weight:600; font-size: 11px; color: var(--ink-3); border:none;">
             <div>Componente</div><div>Tecido / Material</div><div>Cor</div><div>Qtd/peça</div>
@@ -1054,7 +1066,7 @@
         </div>
 
         <!-- AVIAMENTOS -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Aviamentos aplicados</div>
           <div class="componente-row" style="font-weight:600; font-size: 11px; color: var(--ink-3); border:none;">
             <div>Material cadastrado</div><div>Aplicação (variante/cor)</div><div>Qtd/peça</div><div>Un.</div>
@@ -1064,7 +1076,7 @@
         </div>
 
         <!-- OBSERVAÇÕES -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Observações</div>
           <div class="field">
             <textarea id="f-obs" rows="3" placeholder="Anotações manuais, cuidados especiais…"></textarea>
@@ -1072,7 +1084,7 @@
         </div>
 
         <!-- ATENÇÃO -->
-        <div class="card">
+        <div class="card os-detalhe">
           <div class="card-title">Atenção</div>
           <div class="field">
             <textarea id="f-atencao" rows="2" placeholder="Alertas específicos da produção (aparece no rodapé da folha impressa). Em branco por padrão."></textarea>
@@ -1750,6 +1762,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-01d"></script>
+<script src="app.js?v=2026-10-01e"></script>
 </body>
 </html>

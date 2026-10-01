@@ -4673,3 +4673,7 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .os-ficha-compacta { margin-top: 6px; }
 .os-ficha-compacta th { font-size: 9px; letter-spacing: .08em; }
 .os-ficha-compacta th, .os-ficha-compacta td { padding: 4px 6px; font-size: 12px; }
+
+/* Formulário de OS enxuto: só desenho, grade e camadas (ver os-modo-barra). */
+#os-form.os-compacto .os-detalhe { display: none !important; }
+.os-modo-barra { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
