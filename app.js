@@ -25190,6 +25190,25 @@ function atualizarCalculosEnfesto() {
           <div style="margin-top:8px;font-size:12px; color: var(--ink-3); font-family:'IBM Plex Mono', monospace;">${porTamanho}</div>`;
       }
     }
+    /* PRODUTOS COMPLETOS POR TAMANHO (01/10/2026, Junior: "insira linha no
+       cálculo de peças que informe a quantidade de produtos completos que a OS
+       produz por tamanho"). Sai de totaisPorTamanhoTomOS sobre a OS montada do
+       próprio formulário — a mesma conta do "Total por tamanho" da folha e da
+       coluna Produtos da lista. Refazer a conta aqui seria uma segunda fonte
+       de verdade. */
+    try {
+      const TTf = totaisPorTamanhoTomOS(coletaOS());
+      const rot = k => k.charAt(0) === 't' ? k.slice(1) : k.toUpperCase();
+      const partes = TTf.tamanhos.map(k => `${rot(k)}: <b>${TTf.colTotal(k).toLocaleString('pt-BR')}</b>`);
+      if (partes.length && TTf.totalGeral > 0) {
+        calcBox.insertAdjacentHTML('beforeend', `
+          <div class="enf-produtos-tam" style="margin-top:6px;padding-top:4px;border-top:1px dashed var(--line);"
+               title="Produtos completos (uma camiseta = 1) que a OS produz em cada tamanho: grade × camadas × unidades por camada. É o Total por tamanho da folha.">
+            <span>Produtos completos por tamanho:</span>
+            <span style="font-family:'IBM Plex Mono',monospace;">${partes.join(' · ')} · Total: <b>${TTf.totalGeral.toLocaleString('pt-BR')}</b></span>
+          </div>`);
+      }
+    } catch (e) { /* formulário pela metade: a linha só não aparece */ }
   } else {
     calcBox.innerHTML = '<em style="color:var(--ink-3);">Preencha grade e camadas (ou peças-alvo) para ver o cálculo.</em>';
   }
