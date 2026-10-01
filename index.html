@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-01a">
+<link rel="stylesheet" href="styles.css?v=2026-10-01b">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -975,6 +975,9 @@
               <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
               <div class="field-hint" id="f-grade-info"></div>
             </div>
+            <!-- AS FASES DO ENFESTO, uma linha cada, logo abaixo da grade que as
+                 define (01/10/2026). Montadas em renderEnfestoBlocos. -->
+            <div id="f-enfestos-blocos" class="enf-tab" style="margin-top:8px;"></div>
             <div class="field" style="margin-top:10px;">
               <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
               <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()">
@@ -1029,7 +1032,6 @@
         <!-- ENFESTO -->
         <div class="card">
           <div class="card-title">Enfesto</div>
-          <div id="f-enfestos-blocos" class="os-detalhe" style="margin-bottom:10px;"></div>
           <div class="form-grid cols-2">
             <div class="field os-detalhe">
               <label>Peças-alvo por tamanho</label>
@@ -1769,6 +1771,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-01g"></script>
+<script src="app.js?v=2026-10-01h"></script>
 </body>
 </html>

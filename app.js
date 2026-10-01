@@ -23440,7 +23440,13 @@ function renderEnfestoBlocos(n, prefills = []) {
   const cont = document.getElementById('f-enfestos-blocos');
   if (!cont) return;
   const qtd = Math.max(1, n || 1);
-  cont.innerHTML = '';
+  // UMA LINHA POR FASE (01/10/2026, Junior: "mostre os detalhes do cálculo de
+  // camadas por fase do enfesto. Compacte o tamanho dessa sessão para caber
+  // logo abaixo do campo de seleção da grade"). Era um quadro de quatro campos
+  // largos por fase; virou uma tabela de cabeçalho único, com a fase à
+  // esquerda e os quatro números na mesma linha. As classes dos campos são as
+  // de sempre — quem lê (lerEnfestoBlocos, o recálculo de camadas) não mudou.
+  cont.innerHTML = `<div class="enf-tab-cab"><span>Fase</span><span>Comp. (m)</span><span>Larg. (m)</span><span>Camadas</span><span>Bobinas</span></div>`;
   for (let i = 0; i < qtd; i++) {
     const p = prefills[i] || {};
     // Retrocompat: se tinha "Tecido · Cor" salvo em nomeTecido sem nomeCor, separa
@@ -23452,10 +23458,9 @@ function renderEnfestoBlocos(n, prefills = []) {
       nomeCor = rest.join(' · ');
     }
     const bloco = document.createElement('div');
-    bloco.className = 'enfesto-bloco';
+    bloco.className = 'enfesto-bloco enf-tab-linha';
     bloco.dataset.nomeTecido = nomeTecido;
     bloco.dataset.nomeCor = nomeCor;
-    bloco.style.cssText = 'margin-bottom:8px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);';
     const labelDisplay = [nomeTecido, nomeCor].filter(Boolean).join(' · ');
     // Regra: fase Viés sempre tem 1 camada
     const ehVies = /vi[eé]s/i.test(nomeTecido);
@@ -23467,15 +23472,12 @@ function renderEnfestoBlocos(n, prefills = []) {
     const bobinasValue = p.bobinas != null && p.bobinas !== ''
       ? String(p.bobinas).replace('.', ',') : '';
     bloco.innerHTML = `
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:6px;letter-spacing:.08em;">
-        ENFESTO ${i+1}${labelDisplay ? ` · <span style="color:var(--ink-2);font-weight:500;">${esc(labelDisplay)}</span>` : ''}
-      </div>
-      <div class="form-grid cols-4">
-        <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="Ex.: 6,50"></div>
-        <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="Ex.: 1,80"></div>
-        <div class="field"><label>Camadas</label><input type="number" min="0" step="1" class="enf-camadas" data-idx="${i}" value="${esc(camadasValue)}" ${camadasAttrs} placeholder="—" oninput="atualizarCalculosEnfesto()"></div>
-        <div class="field"><label>Bobinas previstas</label><input type="text" class="enf-bobinas" data-idx="${i}" value="${esc(bobinasValue)}" placeholder="auto" oninput="atualizarBobinasPrevistasForm()"><div class="field-hint enf-bobinas-hint"></div></div>
-      </div>`;
+      <span class="enf-tab-fase" title="${esc('Enfesto ' + (i + 1) + (labelDisplay ? ' · ' + labelDisplay : ''))}"><b>${i+1}</b>${labelDisplay ? ' · ' + esc(labelDisplay) : ''}</span>
+      <input type="number" step="0.01" class="enf-comp" data-idx="${i}" value="${esc(p.comp||'')}" placeholder="6,50" title="Comprimento do enfesto (m)">
+      <input type="number" step="0.01" class="enf-larg" data-idx="${i}" value="${esc(p.larg||'')}" placeholder="1,80" title="Largura do enfesto (m)">
+      <input type="number" min="0" step="1" class="enf-camadas" data-idx="${i}" value="${esc(camadasValue)}" ${camadasAttrs} placeholder="—" oninput="atualizarCalculosEnfesto()">
+      <input type="text" class="enf-bobinas" data-idx="${i}" value="${esc(bobinasValue)}" placeholder="auto" oninput="atualizarBobinasPrevistasForm()">
+      <div class="field-hint enf-bobinas-hint"></div>`;
     cont.appendChild(bloco);
   }
   atualizarBobinasPrevistasForm();
@@ -23554,6 +23556,8 @@ function atualizarBobinasPrevistasForm() {
         ? 'Em branco: a grade não prevê bobinas nesta fase, e a folha mostra —.'
         : `Em branco: segue a grade, que prevê ${n} para este enfesto.`;
     }
+    // Na tabela compacta a dica não cabe na linha: vai no passar do mouse.
+    inp.title = 'Bobinas previstas. ' + dica.textContent;
   });
 }
 window.atualizarBobinasPrevistasForm = atualizarBobinasPrevistasForm;

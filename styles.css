@@ -4677,3 +4677,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 /* Formulário de OS enxuto: só desenho, grade e camadas (ver os-modo-barra). */
 #os-form.os-compacto .os-detalhe { display: none !important; }
 .os-modo-barra { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+
+/* Fases do enfesto na Nova OS: uma linha por fase, cabeçalho único. */
+.enf-tab-cab, .enf-tab-linha { display: grid; grid-template-columns: minmax(0, 1fr) 58px 58px 58px 58px; gap: 4px; align-items: center; }
+.enf-tab-cab { font-size: 10px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; padding: 0 0 3px; border-bottom: 1px solid var(--line); }
+.enf-tab-cab span:not(:first-child) { text-align: center; }
+.enf-tab-linha { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.enf-tab-fase { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.enf-tab-fase b { color: var(--ink); }
+.enf-tab-linha input { width: 100%; box-sizing: border-box; padding: 2px 4px; font-size: 12px; text-align: center; min-width: 0; }
+.enf-tab-linha .enf-bobinas-hint { display: none; }
