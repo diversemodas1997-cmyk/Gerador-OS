@@ -47,6 +47,7 @@ const motor = new Function('STATE', `
   ${corta('function _statusOS')}
   ${cortaArr('const FASES_ESTOQUE')}
   ${corta('function _faseCarimbadaOS')}
+  ${corta('function _carimboTerminalOS')}
   ${corta('function _faseEntrouOS')}
   ${corta('function _nomeEtapaDaFase')}
   ${cortaLinha('function _faseIdxPorId')}
@@ -115,6 +116,17 @@ console.log('-- status que nao sao lugar --');
   ok((9 + i) + '. "' + k + '" nao tem campo, entao nao move o volume',
      motor._faseCarimbadaOS(x) === -1, motor._faseCarimbadaOS(x));
 });
+
+console.log('');
+console.log('-- carimbo "Estoque" tira a OS do fluxo (0553/0559/0564/0565, 02/10/2026) --');
+{
+  const x = os0530('estoque', new Date(IDA + 60000).toISOString());
+  ok('11a. carimbada Estoque depois da ida, ela SAI do transito (fora do fluxo)',
+     campoDe(x) === '(fora do fluxo)', campoDe(x));
+  const y = os0530('estoque', new Date(T0 - 60000).toISOString());
+  ok('11b. carimbo de Estoque mais velho que a folha nao manda: segue no transito',
+     campoDe(y) === 'Em trânsito · IDA', campoDe(y));
+}
 
 console.log('');
 console.log('-- os outros carimbos, um a um --');

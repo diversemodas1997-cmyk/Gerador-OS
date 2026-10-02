@@ -10523,6 +10523,14 @@ function _faseCarimbadaOS(o) {
   return FASES_ESTOQUE.findIndex(f => f.status === o.statusOS);
 }
 
+// Carimbo à mão de Estoque ainda valendo (mais novo que a última marca do
+// checklist — a mesma regra de _faseCarimbadaOS).
+function _carimboTerminalOS(o) {
+  if (!o || o.statusOS !== 'estoque') return false;
+  const carimbo = Date.parse(o.statusOSEm || '') || 0;
+  return !!carimbo && carimbo > _ultimaMarcacaoChecklist(o);
+}
+
 // A OS entrou nesta fase? Etapa da fase marcada no checklist E a condição da
 // fase satisfeita (é a `cond` que separa Costurando Descalvado de São Carlos).
 function _faseEntrouOS(o, fase) {
@@ -10793,6 +10801,15 @@ function faseAtualOS(o) {
   // O carimbo mais novo que a folha manda no lugar do volume (_faseCarimbadaOS).
   const carimbada = _faseCarimbadaOS(o);
   if (carimbada >= 0) return carimbada;
+  /* O CARIMBO "ESTOQUE" TIRA A OS DO FLUXO (02/10/2026, Junior: "a lista de OS
+     com status Em trânsito mostra OS com status Estoque"). Estoque não tem
+     campo em FASES_ESTOQUE — é o terminal, o mesmo -1 que a caixa de estoque
+     do checklist dá. _faseCarimbadaOS devolvia -1 também para ele, e -1 ali
+     quer dizer "carimbo não manda": a conta seguia para o checklist, achava a
+     Expedição Desc X São Carlos marcada e punha a OS na estrada. Foi o que
+     aconteceu com 0553, 0559, 0564 e 0565, carimbadas Estoque em 30/09. Carimbo
+     fresco de Estoque agora é terminal, como a caixa. */
+  if (_carimboTerminalOS(o)) return -1;
   const seqs = (o.progresso && o.progresso.etapasSeq) || {};
   let achouSeq = false, idxSeq = -1, melhorSeq = -Infinity; // por etapasSeq
   let idxOrd = -1, melhorOrd = -1;                           // fallback canônico
