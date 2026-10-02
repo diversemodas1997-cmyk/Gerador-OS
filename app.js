@@ -7890,10 +7890,22 @@ function renderEstoque() {
        Movimentações —, e as de mesma data ficam juntas — sem faixa de data, ao contrário
        das Movimentações. No mesmo dia: cor, depois a largura maior. Linha sem
        entrada lançada (só reserva/baixa de OS) vai para o fim. */
-    const cores = g.linhas.flatMap(c => linhasDaCor(c, g.tecidoNome, acc))
-      .sort((a, b) => (!a.data) - (!b.data)
-        || b.data.localeCompare(a.data)
+    /* A COR FICA JUNTA (02/10/2026, Junior escolheu: "Cor junta, pela data
+       mais nova"). Por linha solta, as larguras de uma cor se espalhavam —
+       Off-White 120 cm em 30/09 e as 119/117/115/80 de 04/09 lá no fundo. Agora
+       a COR entra na posição da data mais nova dela, e as larguras vêm juntas
+       logo abaixo, também da mais nova para a mais antiga (empate: largura
+       maior primeiro). */
+    const linhasTodas = g.linhas.flatMap(c => linhasDaCor(c, g.tecidoNome, acc));
+    const dataDaCor = new Map();
+    linhasTodas.forEach(l => { if (l.data > (dataDaCor.get(l.cor) || '')) dataDaCor.set(l.cor, l.data); });
+    const dc = l => dataDaCor.get(l.cor) || '';
+    const cores = linhasTodas
+      .sort((a, b) => (!dc(a)) - (!dc(b))
+        || dc(b).localeCompare(dc(a))
         || a.cor.localeCompare(b.cor, 'pt-BR')
+        || (!a.data) - (!b.data)
+        || b.data.localeCompare(a.data)
         || b.largura - a.largura)
       .map(l => l.html).join('');
     g._bob = acc;
