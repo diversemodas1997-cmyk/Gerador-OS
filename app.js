@@ -7773,8 +7773,18 @@ function renderEstoque() {
     if (d > cur.data) cur.data = d;
     _ultEntrada.set(k, cur);
   };
+  /* ACERTO NÃO É CHEGADA DE PANO (02/10/2026, Junior). A transferência que
+     zerou o Off-White 117 cm entrou como "entrada" de 02/10 e levou a linha
+     para o topo, separada das outras bobinas de 04/09 — e as zeragens de
+     10, 11, 22 e 23/09 faziam o mesmo em várias cores. Lançamento cuja
+     observação começa com Ajuste, Acerto ou Transferência (ou marcado
+     `ajuste`) não conta como entrada aqui; o saldo inicial de 27/08 conta,
+     porque é o pano que já estava na prateleira. O SALDO não muda: isto é só
+     a data da coluna e a ordem do quadro. */
+  const _ehAcerto = m => m.ajuste === true
+    || /^(ajuste|acerto|transfer[eê]ncia)/i.test(String(m.obs || '').trim());
   movimentacoesEstoque().forEach(m => {
-    if (m.tipo !== 'entrada' || m.origem === 'os') return;
+    if (m.tipo !== 'entrada' || m.origem === 'os' || _ehAcerto(m)) return;
     const d = String(m.data || '').slice(0, 10);
     const t = _normNome(m.tecidoNome), c = t + '||' + _normNome(m.corNome);
     const larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
@@ -7788,7 +7798,7 @@ function renderEstoque() {
   const dataEntradaDe = (tec, cor, larg) => (_ultEntrada.get(_chaveEntrada(tec, cor, larg)) || {}).data || '';
   const dataEntradaCell = (tec, cor, larg) => {
     const e = _ultEntrada.get(_chaveEntrada(tec, cor, larg));
-    if (!e || !e.data) return `<td style="white-space:nowrap;color:var(--ink-2);" title="Nenhuma entrada lançada">—</td>`;
+    if (!e || !e.data) return `<td style="white-space:nowrap;color:var(--ink-2);" title="Nenhuma compra lançada (acertos e transferências não contam como entrada de pano)">—</td>`;
     return `<td style="white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
       title="${esc('Data da entrada mais recente — ' + e.n + ' entrada' + (e.n === 1 ? '' : 's') + ' lançada' + (e.n === 1 ? '' : 's') + '. O detalhe de cada uma está em Movimentações recentes.')}">${formatDate(e.data)}</td>`;
   };
@@ -7824,7 +7834,7 @@ function renderEstoque() {
   const cabecalhoEstoque = `
     <thead><tr>
       <th>Cor</th>
-      <th title="Data da entrada mais recente desta cor (e largura). Reservas e baixas das OS não contam">Última entrada</th>
+      <th title="Data da entrada mais recente desta cor (e largura). Reservas e baixas das OS, acertos e transferências não contam">Última entrada</th>
       <th style="text-align:right;">Entradas</th><th style="text-align:right;">Reservado</th>
       <th style="text-align:right;">Saídas</th><th style="text-align:right;">Disponível</th>
       <th style="text-align:right;">Fechados (un)</th>
