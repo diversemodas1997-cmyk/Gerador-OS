@@ -7780,10 +7780,14 @@ function renderEstoque() {
     const larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
     [t, c, c + '||' + larg].forEach(k => _marcaEntrada(k, d));
   });
-  const dataEntradaCell = (tec, cor, larg) => {
+  const _chaveEntrada = (tec, cor, larg) => {
     let k = _normNome(tec);
     if (cor != null) k += '||' + _normNome(cor) + (Number(larg) > 0 ? '||' + Number(larg) : '');
-    const e = _ultEntrada.get(k);
+    return k;
+  };
+  const dataEntradaDe = (tec, cor, larg) => (_ultEntrada.get(_chaveEntrada(tec, cor, larg)) || {}).data || '';
+  const dataEntradaCell = (tec, cor, larg) => {
+    const e = _ultEntrada.get(_chaveEntrada(tec, cor, larg));
     if (!e || !e.data) return `<td style="white-space:nowrap;color:var(--ink-2);" title="Nenhuma entrada lançada">—</td>`;
     return `<td style="white-space:nowrap;font-family:'IBM Plex Mono',monospace;"
       title="${esc('Data da entrada mais recente — ' + e.n + ' entrada' + (e.n === 1 ? '' : 's') + ' lançada' + (e.n === 1 ? '' : 's') + '. O detalhe de cada uma está em Movimentações recentes.')}">${formatDate(e.data)}</td>`;
@@ -7848,25 +7852,39 @@ function renderEstoque() {
   const _cmTxt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR') + ' cm';
   const linhasDaCor = (c, tec, acc) => {
     const porLarg = _largMovs.get(_normNome(c.tecidoNome) + '||' + _normNome(c.corNome));
+    // Cada linha volta com a data da última entrada dela: é por ela que o
+    // quadro ordena (ver quadroTecido).
     const linha = (o, rotulo, dica) => {
       if (acc) { const b = bobDaLinha(o, tec); acc.fechados += b.fechados; acc.abertos += b.abertos; }
-      return `
+      return { data: dataEntradaDe(tec, o.corNome, o.largura), cor: corSemTecido(o.corNome, tec) || '', largura: Number(o.largura) || 0, html: `
       <tr>
         <td${dica ? ` title="${esc(dica)}"` : ''}><strong>${rotulo}</strong></td>
         ${cellsVals(o, false, tec)}
-      </tr>`;
+      </tr>` };
     };
-    if (!porLarg || !porLarg.size) return linha(c, corLabel(c.corNome, tec));
+    if (!porLarg || !porLarg.size) return [linha(c, corLabel(c.corNome, tec))];
     const larguras = Array.from(porLarg.entries()).sort((a, b) => b[0] - a[0]);
     return larguras.map(([larg, v]) => linha(
       { corNome: c.corNome, largura: larg, entrada: v.entrada, reservado: v.reservado, saida: v.saida, fechados: v.fechados, abertos: v.abertos },
       `${corLabel(c.corNome, tec)} · <span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span>`,
       'Bobinas de ' + _cmTxt(larg) + '. A reserva e a baixa das OS entram na largura da grade da OS, quando a cor tem bobina dessa largura; senão, em '
-        + LARGURA_BOBINA_PADRAO_CM + ' cm.')).join('');
+        + LARGURA_BOBINA_PADRAO_CM + ' cm.'));
   };
   const quadroTecido = (g) => {
     const acc = { fechados: 0, abertos: 0 };
-    const cores = g.linhas.map(c => linhasDaCor(c, g.tecidoNome, acc)).join('');
+    /* EM ORDEM CRONOLÓGICA DE ENTRADA (02/10/2026, Junior: "organize também
+       de forma cronológica as datas de entrada dos tecidos disponíveis, mas
+       sem separá-los por data. Apenas organize por datas iguais"). As linhas
+       do quadro seguem a coluna Última entrada, da mais antiga para a mais
+       nova, e as de mesma data ficam juntas — sem faixa de data, ao contrário
+       das Movimentações. No mesmo dia: cor, depois a largura maior. Linha sem
+       entrada lançada (só reserva/baixa de OS) vai para o fim. */
+    const cores = g.linhas.flatMap(c => linhasDaCor(c, g.tecidoNome, acc))
+      .sort((a, b) => (!a.data) - (!b.data)
+        || a.data.localeCompare(b.data)
+        || a.cor.localeCompare(b.cor, 'pt-BR')
+        || b.largura - a.largura)
+      .map(l => l.html).join('');
     g._bob = acc;
     // Total do pano — só com mais de uma cor; com uma cor só ele repetiria a
     // única linha logo acima.
