@@ -7874,14 +7874,15 @@ function renderEstoque() {
     const acc = { fechados: 0, abertos: 0 };
     /* EM ORDEM CRONOLÓGICA DE ENTRADA (02/10/2026, Junior: "organize também
        de forma cronológica as datas de entrada dos tecidos disponíveis, mas
-       sem separá-los por data. Apenas organize por datas iguais"). As linhas
-       do quadro seguem a coluna Última entrada, da mais antiga para a mais
-       nova, e as de mesma data ficam juntas — sem faixa de data, ao contrário
+       sem separá-los por data. Apenas organize por datas iguais"; e depois:
+       "Altere a ordem do mais recente no topo"). As linhas do quadro seguem a
+       coluna Última entrada, da mais nova para a mais antiga — como as
+       Movimentações —, e as de mesma data ficam juntas — sem faixa de data, ao contrário
        das Movimentações. No mesmo dia: cor, depois a largura maior. Linha sem
        entrada lançada (só reserva/baixa de OS) vai para o fim. */
     const cores = g.linhas.flatMap(c => linhasDaCor(c, g.tecidoNome, acc))
       .sort((a, b) => (!a.data) - (!b.data)
-        || a.data.localeCompare(b.data)
+        || b.data.localeCompare(a.data)
         || a.cor.localeCompare(b.cor, 'pt-BR')
         || b.largura - a.largura)
       .map(l => l.html).join('');
