@@ -144,8 +144,14 @@ ok('20. corrigir altera a linha no lugar, o mesmo tipo na mesma unidade nao dupl
 console.log('-- o estoque de materiais (28/09/2026) --');
 api.renderEstoqueItens('materiais');
 const mat = paineis['materiais-painel'].innerHTML;
-ok('21. a tela de materiais tem a coluna Setor e mostra o setor de cada linha',
-   /<th>Setor<\/th>/.test(mat) && /<td>Corte<\/td>/.test(mat) && /<td>Expedição<\/td>/.test(mat));
+// UM QUADRO POR SETOR (02/10/2026, Junior): o setor vira titulo do quadro e
+// sai das linhas; Corte vem antes de Expedicao (alfabetico).
+ok('21. a tela de materiais tem um quadro por setor, com o nome no titulo',
+   /<h2[^>]*>Corte<\/h2>/.test(mat) && /<h2[^>]*>Expedição<\/h2>/.test(mat)
+   && mat.indexOf('>Corte</h2>') < mat.indexOf('>Expedição</h2>')
+   && mat.indexOf('Papel de enfesto') > mat.indexOf('>Corte</h2>') && mat.indexOf('Papel de enfesto') < mat.indexOf('>Expedição</h2>')
+   && mat.indexOf('Fita adesiva') > mat.indexOf('>Expedição</h2>'), mat.slice(0, 300));
+ok('21b. sem a coluna Setor nas linhas (o titulo ja diz)', !/<th>Setor<\/th>/.test(mat));
 ok('22. o filtro de setor oferece os padroes e os ja escritos', /<option value="Manutenção">/.test(mat) && /Todos os setores/.test(mat));
 api._estItensSetor.materiais = 'Corte';
 api.renderEstoqueItens('materiais');

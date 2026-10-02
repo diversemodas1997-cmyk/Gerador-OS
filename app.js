@@ -9947,21 +9947,60 @@ function renderEstoqueItens(tipo) {
   const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;";
   const abas = `<div class="exp-tabs" style="margin-bottom:12px;">${AVIAMENTO_UNIDADES.map(u =>
     `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_estItensTrocarUnidade('${tipo}','${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
-  const corpo = linhas.length ? linhas.map(x => `<tr>
+  /* UM QUADRO POR SETOR (02/10/2026, Junior: "em estoque de materiais, separe
+     os setores por quadro"). Era uma tabela só, com a coluna Setor. Agora cada
+     setor tem o seu quadro, com o nome no título e o total dele — como o
+     estoque de tecidos, um quadro por pano. A coluna Setor sai das linhas: o
+     título já diz. Peças e ferramentas, que não têm setor, seguem numa tabela. */
+  const linhaHtml = (x, comColSetor) => `<tr>
       <td class="col-actions row-actions estoque-tecidos-only"><button title="Registrar o que chegou ou voltou do uso" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','entrada')">+ entrada</button><button title="Registrar o que foi posto em uso ou deu baixa" onclick="abrirMovEstoqueItem('${tipo}','${esc(x.id)}','saida')">− saída</button><button onclick="abrirEstoqueItem('${tipo}','${esc(x.id)}')">editar</button><button onclick="excluirEstoqueItem('${tipo}','${esc(x.id)}')">apagar</button></td>
       <td><strong>${esc(x.nome)}</strong>${x.desc ? `<div class="muted" style="font-size:11px;">${esc(x.desc)}</div>` : ''}</td>
-      ${colSetor(x)}
+      ${comColSetor ? colSetor(x) : ''}
       <td style="${mono}">${_estFmtQtd(x, x.emUso)}</td>
       <td style="${mono}font-weight:700;${estoqueDe(x) < 0 ? 'color:#c0392b;background:#fdecea;' : ''}" title="${esc(_estMetrosTxt(x, estoqueDe(x)))}">${_estFmtQtd(x, estoqueDe(x))}${notaOS(x)}</td>
       ${celReserva(x)}
       <td style="${mono}">${_estFmtQtd(x, n(x.emUso) + estoqueDe(x))}</td>
       <td>${esc(x.obs || '')}</td>
-      <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`).join('') + (linhas.length > 1 && !linhas.some(_estConv) ? `
-    <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${cfg.comSetor ? '<td></td>' : ''}
-      <td style="${mono}font-weight:700;">${fmt(tUso)}</td>
-      <td style="${mono}font-weight:700;">${fmt(tEst)}</td>${temReserva ? '<td></td>' : ''}
-      <td style="${mono}font-weight:700;">${fmt(tUso + tEst)}</td><td></td><td></td></tr>` : '')
-    : `<tr><td colspan="${(cfg.comSetor ? 8 : 7) + (temReserva ? 1 : 0)}" class="empty">${busca || setorSel ? 'Nada encontrado na busca.' : `${cfg.masculino ? 'Nenhum' : 'Nenhuma'} ${esc(cfg.um)} ${cfg.masculino ? 'cadastrado' : 'cadastrada'} nesta unidade.`}</td></tr>`;
+      <td class="muted" style="font-size:11px;white-space:nowrap;">${x.atualizadoEm ? esc(formatDate(String(x.atualizadoEm).slice(0, 10))) : ''}</td></tr>`;
+  // O total só soma medida igual: quilo de bobina com metro e ml não é número.
+  const totalHtml = (ls, comColSetor) => {
+    if (ls.length < 2 || ls.some(_estConv) || new Set(ls.map(_estItemMedida)).size > 1) return '';
+    const u = ls.reduce((a, x) => a + n(x.emUso), 0), e = ls.reduce((a, x) => a + estoqueDe(x), 0);
+    return `
+    <tr style="background:#eef6f0;"><td class="estoque-tecidos-only"></td><td><span style="font-weight:700;color:var(--ink-2);">Total</span></td>${comColSetor ? '<td></td>' : ''}
+      <td style="${mono}font-weight:700;">${_estFmtQtd(ls[0], u)}</td>
+      <td style="${mono}font-weight:700;">${_estFmtQtd(ls[0], e)}</td>${temReserva ? '<td></td>' : ''}
+      <td style="${mono}font-weight:700;">${_estFmtQtd(ls[0], u + e)}</td><td></td><td></td></tr>`;
+  };
+  const cabecalho = comColSetor => `<thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>${comColSetor ? '<th>Setor</th>' : ''}
+        <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
+        <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>${temReserva
+          ? '<th style="text-align:right;" title="O que as OS ainda não iniciadas vão gastar">Reservado (OS)</th>' : ''}
+        <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>`;
+  const tabelaHtml = (ls, comColSetor) => `<table class="table">${cabecalho(comColSetor)}
+        <tbody>${ls.map(x => linhaHtml(x, comColSetor)).join('')}${totalHtml(ls, comColSetor)}</tbody></table>`;
+  const vazioHtml = `<div class="info-box">${busca || setorSel ? 'Nada encontrado na busca.' : `${cfg.masculino ? 'Nenhum' : 'Nenhuma'} ${esc(cfg.um)} ${cfg.masculino ? 'cadastrado' : 'cadastrada'} nesta unidade.`}</div>`;
+  const gruposSetor = [];
+  if (cfg.comSetor) {
+    const porSetor = new Map();
+    linhas.forEach(x => {
+      const k = _normNome(x.setor);
+      if (!porSetor.has(k)) porSetor.set(k, { nome: String(x.setor || '').trim(), itens: [] });
+      porSetor.get(k).itens.push(x);
+    });
+    // Alfabético, e o que não tem setor por último.
+    gruposSetor.push(...[...porSetor.values()].sort((a, b) => (!a.nome) - (!b.nome) || a.nome.localeCompare(b.nome, 'pt-BR')));
+  }
+  const quadrosHtml = !linhas.length ? `<div class="card">${vazioHtml}</div>`
+    : cfg.comSetor
+      ? gruposSetor.map(g => `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">${g.nome ? esc(g.nome) : '<span class="muted">(sem setor)</span>'}</h2>
+        <div class="muted" style="font-size:12px;">${g.itens.length} tipo${g.itens.length === 1 ? '' : 's'}</div>
+      </div>
+      ${tabelaHtml(g.itens, false)}
+    </div>`).join('')
+      : `<div class="card">${tabelaHtml(linhas, false)}</div>`;
   // O histórico: o mês corrente, até alguém mudar o período.
   const per = _estItensPeriodo[tipo];
   const hoje = _aviHoje();
@@ -10017,17 +10056,12 @@ function renderEstoqueItens(tipo) {
         <div class="field" style="margin:0;flex:0 1 280px;"><label>Buscar</label><input type="text" value="${esc(_estItensBusca[tipo])}" placeholder="Tipo, descrição${cfg.comSetor ? ', setor' : ''} ou observação" oninput="_estItensBuscar('${tipo}', this.value)"></div>
         ${cfg.comSetor ? `<div class="field" style="margin:0;"><label>Setor</label><select onchange="_estItensMudarSetor('${tipo}', this.value)">
           <option value="">Todos os setores</option>${_estItensSetores(cfg).map(st => `<option value="${esc(st)}"${_normNome(st) === _normNome(setorSel) ? ' selected' : ''}>${esc(st)}</option>`).join('')}</select></div>` : ''}
-        <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'}${linhas.some(_estConv) ? '' : ` ·
+        <div class="muted" style="font-size:12px;flex:1 1 280px;">${linhas.length} tipo${linhas.length === 1 ? '' : 's'}${cfg.comSetor ? ` em ${gruposSetor.length} setor${gruposSetor.length === 1 ? '' : 'es'}` : ''}${linhas.some(_estConv) || new Set(linhas.map(_estItemMedida)).size > 1 ? '' : ` ·
           em uso <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tUso)}</b> ·
           em estoque <b style="font-family:'IBM Plex Mono',monospace;">${fmt(tEst)}</b>`}</div>
       </div>
-      <table class="table"><thead><tr><th class="col-actions estoque-tecidos-only">Ações</th><th>Tipo</th>${cfg.comSetor ? '<th>Setor</th>' : ''}
-        <th style="text-align:right;" title="Na máquina ou na mão de alguém">Em uso</th>
-        <th style="text-align:right;" title="Guardado, pronto para usar">Em estoque</th>${temReserva
-          ? '<th style="text-align:right;" title="O que as OS ainda não iniciadas vão gastar">Reservado (OS)</th>' : ''}
-        <th style="text-align:right;">Total</th><th>Observação</th><th>Atualizado</th></tr></thead>
-        <tbody>${corpo}</tbody></table>
     </div>
+    ${quadrosHtml}
     ${histHtml}`;
 }
 
