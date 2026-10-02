@@ -71,6 +71,8 @@ const monta = (ctx) => new Function('ctx', `
   // mudarStatusOS redesenha os dois. Aqui e so um contador: quem prova a caixa
   // da folha e o bloco "a folha mostra o status" la embaixo.
   const renderStatusFolhaOS = () => { ctx.redesenhouFolha = (ctx.redesenhouFolha || 0) + 1; };
+  // E o campo de estoque aberto (02/10/2026): contador, como os outros dois.
+  const _redesenharCampoAtivo = () => { ctx.redesenhouCampo = (ctx.redesenhouCampo || 0) + 1; };
   ${constante('STATUS_OS')}
   ${constante('STATUS_FIM')}
   ${constante('LOGINS_STATUS_OS')}
@@ -200,6 +202,8 @@ console.log('-- o que fica gravado --');
   const os = t.ctx.STATE.ordens[0];
   ok('12. OS que ninguem tocou le "nao iniciado"', t.api._statusOS(os) === 'nao-iniciado');
   await t.api.mudarStatusOS('a1', 'enfestando');
+  ok('13a. o campo de estoque aberto e redesenhado junto (a OS migra na hora)',
+     t.ctx.redesenhouCampo === 1, t.ctx.redesenhouCampo);
   ok('13. mudar grava a chave, quem e quando',
      os.statusOS === 'enfestando' && os.statusOSPor === 'admin@diverse.local'
      && !isNaN(new Date(os.statusOSEm)), JSON.stringify(os));
