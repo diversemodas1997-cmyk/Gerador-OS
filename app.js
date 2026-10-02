@@ -9726,9 +9726,12 @@ const _estItensSetores = cfg => [...new Set(ESTOQUE_SETORES.concat((STATE[cfg.ch
 
 /* A MEDIDA DO ITEM (28/09/2026). Peça e ferramenta se contam inteiras; o
    material pode ser medido em METROS (o papel kraft e o filme do enfesto), e
-   metro vem com vírgula. Tudo o que arredonda quantidade passa por aqui. */
-const _estItemMedida = x => (x && x.medida === 'm') ? 'm' : 'un';
-const _estArred = (x, v) => _estItemMedida(x) === 'm'
+   metro vem com vírgula. Tudo o que arredonda quantidade passa por aqui.
+   MILILITRO (02/10/2026, Junior: "inclua a opção na seleção de medida por
+   unidade, ml para líquidos"): óleo de máquina, cola, produto de limpeza.
+   Como o metro, aceita vírgula; não tem bobina nem baixa pelas OS. */
+const _estItemMedida = x => (x && (x.medida === 'm' || x.medida === 'ml')) ? x.medida : 'un';
+const _estArred = (x, v) => _estItemMedida(x) !== 'un'
   ? Math.round((Number(v) || 0) * 100) / 100 : Math.round(Number(v) || 0);
 /* BOBINAS E KG NA TELA (28/09/2026, Junior: "estoque materiais deve mostrar
    plástico e papel no formato de kg/bobinas"). A conta continua em METROS —
@@ -9737,6 +9740,7 @@ const _estArred = (x, v) => _estItemMedida(x) === 'm'
    (`kgPorM`). Sem esses dois, segue em metros. */
 const _estConv = x => _estItemMedida(x) === 'm' && Number(x.mPorBobina) > 0;
 const _estFmtQtd = (x, v) => {
+  if (_estItemMedida(x) === 'ml') return _estArred(x, v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' ml';
   if (_estItemMedida(x) !== 'm') return Math.round(Number(v) || 0).toLocaleString('pt-BR');
   const m = _estArred(x, v);
   if (!_estConv(x)) return m.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' m';
@@ -10097,7 +10101,8 @@ function abrirEstoqueItem(tipo, id) {
         <datalist id="mei-setores">${_estItensSetores(cfg).map(st => `<option value="${esc(st)}">`).join('')}</datalist></div>
       <div class="field"><label>Medida</label><select id="mei-medida">
         <option value="un"${_estItemMedida(x) === 'un' ? ' selected' : ''}>Unidade (un)</option>
-        <option value="m"${_estItemMedida(x) === 'm' ? ' selected' : ''}>Metro (m)</option></select></div>
+        <option value="m"${_estItemMedida(x) === 'm' ? ' selected' : ''}>Metro (m)</option>
+        <option value="ml"${_estItemMedida(x) === 'ml' ? ' selected' : ''}>Mililitro (ml) — líquidos</option></select></div>
       <div class="field"><label>Metros por bobina</label><input type="number" min="0" step="any" id="mei-mbob" placeholder="Ex.: 250" value="${x && x.mPorBobina ? esc(x.mPorBobina) : ''}"></div>
       <div class="field"><label>Peso por metro (kg)</label><input type="number" min="0" step="any" id="mei-kgm" placeholder="Ex.: 0,0512" value="${x && x.kgPorM ? esc(x.kgPorM) : ''}">
         <div class="field-hint">Com os dois, o estoque em metros aparece em bobinas e kg.</div></div>
@@ -10132,7 +10137,7 @@ function abrirMovEstoqueItem(tipo, id, sentido) {
       <div class="field full"><label>${s === 'entrada' ? 'De onde veio' : 'Para onde foi'} *</label><select id="mei-motivo">${ESTOQUE_ITENS_MOTIVOS[s].map((m, i) =>
         `<option value="${m.k}"${i === 0 ? ' selected' : ''}>${esc(m.rotulo)}</option>`).join('')}</select></div>
       <div class="field"><label>Quantidade *</label><div style="display:flex;gap:6px;">
-        <input type="number" min="0" step="${_estItemMedida(x) === 'm' ? 'any' : '1'}" id="mei-qtd" placeholder="${_estConv(x) ? 'Ex.: 2' : _estItemMedida(x) === 'm' ? 'Ex.: 250' : 'Ex.: 10'}" style="flex:1;">
+        <input type="number" min="0" step="${_estItemMedida(x) !== 'un' ? 'any' : '1'}" id="mei-qtd" placeholder="${_estConv(x) ? 'Ex.: 2' : _estItemMedida(x) === 'm' ? 'Ex.: 250' : _estItemMedida(x) === 'ml' ? 'Ex.: 500' : 'Ex.: 10'}" style="flex:1;">
         ${_estConv(x) ? `<select id="mei-qtd-un" style="width:auto;"><option value="bob">bobinas</option>${Number(x.kgPorM) > 0 ? '<option value="kg">kg</option>' : ''}<option value="m">metros</option></select>`
           : `<span style="align-self:center;">${_estItemMedida(x)}</span>`}</div></div>
       <div class="field"><label>Data</label><input type="date" id="mei-data" value="${_aviHoje()}"></div>
@@ -10180,7 +10185,7 @@ async function salvarEstoqueItem() {
   const v = id => (document.getElementById(id) || {}).value || '';
   const nome = v('mei-nome').trim();
   if (!nome) return toast('Informe o tipo de ' + cfg.um, 'err');
-  const medida = cfg.comSetor && v('mei-medida') === 'm' ? 'm' : 'un';
+  const medida = cfg.comSetor && ['m', 'ml'].includes(v('mei-medida')) ? v('mei-medida') : 'un';
   const baixaOS = !!(cfg.comSetor && (document.getElementById('mei-baixaos') || {}).checked);
   if (baixaOS && medida !== 'm') return toast('A baixa pelas OS conta em metros: escolha a medida Metro', 'err');
   const inteiro = id => Math.max(0, _estArred({ medida }, parseFloat(String(v(id)).replace(',', '.')) || 0));

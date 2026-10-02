@@ -162,6 +162,7 @@ const kraft = { medida: 'm', mPorBobina: 250, kgPorM: 0.0512 };
 ok('28. metros viram bobinas e kg (1.125 m de kraft = 4,50 bob. = 57,6 kg)', api._estFmtQtd(kraft, 1125) === '4,50 bob. · 57,6 kg', api._estFmtQtd(kraft, 1125));
 ok('29. sem metros por bobina, continua em metros', api._estFmtQtd({ medida: 'm' }, 7.05) === '7,05 m', api._estFmtQtd({ medida: 'm' }, 7.05));
 ok('30. peca inteira continua inteira', api._estFmtQtd({}, 9) === '9');
+ok('30a. liquido em ml aceita virgula e mostra a medida (02/10/2026)', api._estFmtQtd({ medida: 'ml' }, 1250.5) === '1.250,5 ml', api._estFmtQtd({ medida: 'ml' }, 1250.5));
 ok('27. quem lanca no estoque de tecidos tambem lanca no de materiais',
    /'cadastrar no estoque de materiais': 'estoque-tecidos'/.test(src) && /'lançar no estoque de materiais': 'estoque-tecidos'/.test(src));
 
