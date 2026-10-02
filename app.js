@@ -8357,9 +8357,38 @@ function renderEstoque() {
     (!_fMov.tecido || _normNome(m.tecidoNome) === _fMov.tecido)
     && (!_fMov.cor || _normNome(m.corNome) === _fMov.cor)
     && (!_fMov.tipo || tipoDoMov(m) === _fMov.tipo));
-  const movs = movsFiltrados.slice()
-    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.id).localeCompare(String(a.id)))
-    .slice(0, 60);
+  /* AGRUPADO POR DATA (02/10/2026, Junior: "Organize as entradas de tecido no
+     estoque de tecido por datas iguais"). Dentro do mesmo dia as entradas
+     vinham salpicadas entre reservas e baixas das OS, na ordem do id. Agora
+     cada dia abre com um cabeçalho (quantas entradas, quantos kg), as entradas
+     vêm primeiro e juntas por tecido e cor, e o resto do dia depois. O corte
+     dos 60 não parte um dia no meio: o dia do 60º vai inteiro. */
+  const _diaMov = m => String(m.data || '').slice(0, 10);
+  const _ordemNoDia = m => tipoDoMov(m) === 'entrada' ? 0 : 1;
+  const _ordenados = movsFiltrados.slice()
+    .sort((a, b) => _diaMov(b).localeCompare(_diaMov(a))
+      || _ordemNoDia(a) - _ordemNoDia(b)
+      || String(a.tecidoNome || '').localeCompare(String(b.tecidoNome || ''), 'pt-BR')
+      || String(a.corNome || '').localeCompare(String(b.corNome || ''), 'pt-BR')
+      || (Number(b.largura) || 0) - (Number(a.largura) || 0)
+      || String(b.id).localeCompare(String(a.id)));
+  let _corte = Math.min(60, _ordenados.length);
+  while (_corte > 0 && _corte < _ordenados.length && _diaMov(_ordenados[_corte]) === _diaMov(_ordenados[_corte - 1])) _corte++;
+  const movs = _ordenados.slice(0, _corte);
+  const _resumoDia = new Map();
+  movs.forEach(m => {
+    const r = _resumoDia.get(_diaMov(m)) || { ent: 0, kgEnt: 0, outros: 0 };
+    if (tipoDoMov(m) === 'entrada') { r.ent++; r.kgEnt += Number(m.kg) || 0; } else r.outros++;
+    _resumoDia.set(_diaMov(m), r);
+  });
+  const cabecalhoDia = d => {
+    const r = _resumoDia.get(d);
+    const partes = [];
+    if (r.ent) partes.push(`${r.ent} entrada${r.ent === 1 ? '' : 's'} · ${fmt(r.kgEnt)} kg`);
+    if (r.outros) partes.push(`${r.outros} outro${r.outros === 1 ? '' : 's'} lançamento${r.outros === 1 ? '' : 's'}`);
+    return `<tr><td colspan="10" style="background:var(--bg);font-weight:700;padding-top:10px;">
+        ${d ? formatDate(d) : 'Sem data'} <span class="muted" style="font-weight:400;font-size:12px;margin-left:8px;">${partes.join(' · ')}</span></td></tr>`;
+  };
   const opcoesDe = (lista, campo) => {
     const m = new Map();
     lista.forEach(x => { const k = _normNome(x[campo]); if (k && !m.has(k)) m.set(k, x[campo]); });
@@ -8375,8 +8404,8 @@ function renderEstoque() {
       ${selMov('tecido', 'Todos os tecidos', opcoesDe(todosMovs, 'tecidoNome'))}
       ${selMov('cor', 'Todas as cores', opcoesDe(baseCor, 'corNome'))}
       ${selMov('tipo', 'Todos os tipos', [['entrada', 'Entrada'], ['saida', 'Saída manual'], ['saida-os', 'Saída (OS)'], ['reserva', 'Reserva']])}
-      <span class="muted" style="font-size:12px;">${movsFiltrados.length > 60
-        ? `mostrando as 60 mais novas de ${movsFiltrados.length}` : `${movsFiltrados.length} lançamento${movsFiltrados.length === 1 ? '' : 's'}`}</span>
+      <span class="muted" style="font-size:12px;">${movsFiltrados.length > movs.length
+        ? `mostrando as ${movs.length} mais novas de ${movsFiltrados.length}` : `${movsFiltrados.length} lançamento${movsFiltrados.length === 1 ? '' : 's'}`}</span>
       ${(_fMov.tecido || _fMov.cor || _fMov.tipo) ? `<button class="btn small ghost" onclick="_filtrarMovEstoque('limpar')">Limpar</button>` : ''}
     </div>`;
   const origemLabel = m => m.origem === 'os' ? `OS ${esc(m.osNumero || '')}${m.faseNome ? ' · ' + esc(m.faseNome) : ''}`
@@ -8389,7 +8418,8 @@ function renderEstoque() {
       <table class="table">
         <thead><tr><th class="col-actions">Ações</th><th>Data</th><th>Tipo</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Qtd (kg)</th><th style="text-align:right;">Fech.</th><th style="text-align:right;" title="Largura da bobina lançada. Em branco: a largura de ficha técnica do tecido">Largura</th><th style="text-align:right;">Abertos</th><th>Origem</th></tr></thead>
         <tbody>
-          ${movs.length ? movs.map(m => `
+          ${movs.length ? movs.map((m, i) => `
+            ${i === 0 || _diaMov(m) !== _diaMov(movs[i - 1]) ? cabecalhoDia(_diaMov(m)) : ''}
             <tr>
       <td class="col-actions row-actions">${m.origem === 'manual' ? `<button onclick="excluirMovEstoque('${esc(m.id)}')">excluir</button>` : '<span style="color:var(--ink-2);font-size:11px;">auto</span>'}</td>
               <td style="white-space:nowrap;">${esc(m.data) || '—'}</td>
