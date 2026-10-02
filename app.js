@@ -7811,9 +7811,11 @@ function renderEstoque() {
     title="${esc(b.semPeso
       ? 'Peso da bobina deste pano ainda não conhecido: o saldo conta como uma bobina aberta. Lance uma entrada com kg e bobinas para o programa aprender o peso.'
       : 'Estimado pelo disponível: bobinas inteiras = fechadas; o que sobra = 1 aberta. ' + (o._bob ? 'Soma das cores.' : dicaBob(tec, o.corNome, o.largura)))}">${Number(n) || 0}</td>`;
-  const cellsVals = (o, bold, tec) => {
+  // semData: a linha de Total do pano deixa a coluna Última entrada em branco
+  // (02/10/2026, Junior: "retire a data da linha do total").
+  const cellsVals = (o, bold, tec, semData) => {
     const b = bobDaLinha(o, tec);
-    return dataEntradaCell(tec, o.corNome, o.largura) +
+    return (semData ? '<td></td>' : dataEntradaCell(tec, o.corNome, o.largura)) +
       numCell(o.entrada, bold, tec, o.corNome, o.largura) + numCell(o.reservado, bold, tec, o.corNome, o.largura)
       + numCell(o.saida, bold, tec, o.corNome, o.largura) +
       dispCell(o.entrada - o.reservado - o.saida, tec, o.corNome, o.largura) +
@@ -7914,7 +7916,7 @@ function renderEstoque() {
     const total = g.linhas.length > 1 ? `
       <tr style="background:#eef6f0;">
         <td style="text-align:right;font-weight:700;color:var(--ink-2);">Total ${esc(g.tecidoNome)}</td>
-        ${cellsVals(g, true, g.tecidoNome)}
+        ${cellsVals(g, true, g.tecidoNome, true)}
       </tr>` : '';
     const disp = g.entrada - g.reservado - g.saida;
     return `
