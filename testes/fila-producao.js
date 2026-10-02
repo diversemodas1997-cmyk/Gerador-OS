@@ -70,6 +70,7 @@ function monta(M) {
     function esc(s) { return String(s == null ? '' : s); }
     ${pegaFuncao('numeroOSordenacao')}
     ${pegaFuncao('_filaLista')}
+    ${pegaFuncao('_naListaNaoIniciadas')}
     ${pegaFuncao('_osNaoIniciadas')}
     ${pegaFuncao('podeMexerFilaOS')}
     ${pegaFuncao('_gruposConjugadosFila')}
@@ -115,6 +116,15 @@ const numeros = api => api.filaDeProducao().map(o => o.os).join(' ');
      numeros(api) === '0101 0102 0103 0104', numeros(api));
   ok('2. sem ninguem ter ordenado, a ordem e a natural: a OS mais antiga primeiro',
      api.filaDeProducao()[0].os === '0101', numeros(api));
+  /* PREPARANDO MATERIA-PRIMA FICA NA FILA (02/10/2026, Junior): a OS so sai
+     da lista de nao iniciadas no Enfestando, e mantem o lugar dela. */
+  M.status.a = 'materia-prima';
+  ok('3a. OS em Preparando materia-prima continua na fila, no mesmo lugar',
+     numeros(api) === '0101 0102 0103 0104', numeros(api));
+  M.status.a = 'enfestando';
+  ok('3b. em Enfestando ela sai da fila',
+     numeros(api) === '0101 0102 0104', numeros(api));
+  delete M.status.a;
   ok('3. as posicoes sao 1, 2, 3, 4', [...api._filaPosicoes().values()].join(',') === '1,2,3,4',
      [...api._filaPosicoes().entries()]);
   ok('4. o ordinal sai em portugues (1a, 2a)',

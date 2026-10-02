@@ -1144,6 +1144,7 @@ console.log('-- o que fica gravado --');
       ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
       ${recorte('function _statusOS', 'a leitura do status')}
       ${constante('STATUS_PONTO')}
+      ${recorte('function _naListaNaoIniciadas', 'a lista de nao iniciadas')}
       ${recorte('function _filtroStatusListaOS', 'o filtro por status')}
       return { _filtroStatusListaOS };
     `)(ctx);
@@ -1172,6 +1173,19 @@ console.log('-- o que fica gravado --');
   ok('28c. e os status novos entram mesmo com a lista sem nenhum deles',
      /Estoque em trânsito \| Desc x São Carlos \(0\)/.test(f.sel.innerHTML)
      && /Estoque com fio \| São Carlos \(0\)/.test(f.sel.innerHTML), f.sel.innerHTML);
+  {
+    // PREPARANDO MATERIA-PRIMA CONTA EM "NAO INICIADO" na lista de OS (02/10/2026,
+    // Junior): a OS so migra de lista no Enfestando. Nos campos (com id), nao.
+    const comMP = osDoFiltro.concat([{ id: '5', os: '0487', statusOS: 'materia-prima' }]);
+    const g = comSelect('', comMP);
+    g.api._filtroStatusListaOS(comMP);
+    ok('28d. "Nao iniciado" conta tambem a OS em Preparando materia-prima',
+       /Não iniciado \(2\)/.test(g.sel.innerHTML) && /Preparando matéria-prima \(1\)/.test(g.sel.innerHTML), g.sel.innerHTML);
+    const h = comSelect('', comMP);
+    h.api._filtroStatusListaOS(comMP, 'campo-x');
+    ok('28e. nas telas dos campos a contagem segue o status real',
+       /Não iniciado \(1\)/.test(h.sel.innerHTML), h.sel.innerHTML);
+  }
   ok('29. cada opcao ja diz quantas OS tem naquele estado',
      /Todos os status \(4\)/.test(f.sel.innerHTML)
      && /Estoque \(2\)/.test(f.sel.innerHTML)

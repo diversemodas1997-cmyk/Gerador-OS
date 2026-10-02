@@ -30473,6 +30473,10 @@ function _filtroStatusListaOS(base, id) {
   const escolhido = sel.value || '';
   const conta = {};
   (base || []).forEach(o => { const k = _statusOS(o); conta[k] = (conta[k] || 0) + 1; });
+  // Na lista de OS, "Não iniciado" conta também quem está preparando a
+  // matéria-prima: é o que ela mostra nesse filtro (ver _naListaNaoIniciadas).
+  // As telas dos campos (com `id`) filtram pelo status real e contam assim.
+  if (!id) conta['nao-iniciado'] = (base || []).filter(_naListaNaoIniciadas).length;
   /* TODOS OS STATUS, SEMPRE — inclusive os que estão com zero (18/09/2026,
      Junior: "corrija o status que desaparece quando não existe OS com o
      status").
@@ -30688,8 +30692,24 @@ function _filaLista() {
   return STATE.meta.filaOS;
 }
 
+/* A LISTA DE NÃO INICIADAS VAI ATÉ O ENFESTO (02/10/2026, Junior: "as OS com
+   status não iniciada devem continuar a serem mostradas na lista de OS não
+   iniciadas, mesmo após alteração do status para Preparando matéria-prima. A
+   OS migra de lista quando o status for alterado para enfestando").
+
+   Preparar a matéria-prima é a véspera do corte (o preparo roda no dia útil
+   anterior): a OS ainda não foi para a mesa e continua disputando a vez na
+   fila. Então o filtro "Não iniciado" da lista e a fila de produção pegam os
+   dois status, e a OS segue com o lugar dela na fila. A linha continua
+   mostrando o status real (Preparando matéria-prima), e o filtro próprio desse
+   status segue existindo. Só esta lista muda: a regra de status, o estoque e a
+   coluna Material faltante continuam lendo o status real. */
+function _naListaNaoIniciadas(o) {
+  const st = _statusOS(o);
+  return st === 'nao-iniciado' || st === 'materia-prima';
+}
 function _osNaoIniciadas() {
-  return (STATE.ordens || []).filter(o => _statusOS(o) === 'nao-iniciado');
+  return (STATE.ordens || []).filter(_naListaNaoIniciadas);
 }
 
 function podeMexerFilaOS() {
@@ -31187,7 +31207,8 @@ function renderListaOS() {
     o => _chavesFaltaOS(o, faltas));
   const filtradas = porTexto.filter(o =>
     (!faltaEscolhida || _chavesFaltaOS(o, faltas).includes(faltaEscolhida)) &&
-    (!statusEscolhido || _statusOS(o) === statusEscolhido)
+    (!statusEscolhido || _statusOS(o) === statusEscolhido
+      || (statusEscolhido === 'nao-iniciado' && _naListaNaoIniciadas(o)))
     && (!corEscolhida || coresDaPecaOS(o).includes(corEscolhida))
     && (!gradeEscolhida || _gradeNomeDaOS(o) === gradeEscolhida)
     && (!skuEscolhido || linhasSkuDaOS(o).includes(skuEscolhido))
