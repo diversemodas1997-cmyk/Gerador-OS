@@ -30174,6 +30174,28 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
   else if (alvo === 'nao-iniciado') delete os.finalizadaEm;
 }
 
+/* O CAMPO EM QUE A PESSOA ESTÁ TAMBÉM SE REDESENHA (02/10/2026, Junior: "OS
+   modificadas seu status de em trânsito não foram migradas assim que o status
+   foi alterado para Ensacado | SC").
+
+   A regra já movia o volume (o carimbo manda no campo — _faseCarimbadaOS), mas
+   o seletor de status da linha só redesenhava a lista de Ordens de Serviço e a
+   folha. Quem carimbava DENTRO de "Em trânsito · IDA" continuava vendo a OS lá
+   até sair da tela e voltar, e parecia que ela não tinha migrado. Agora o campo
+   aberto (lista e saldo) é refeito na hora, com a mesma conta. */
+const _PAGINA_DO_CAMPO = {
+  'corte': 'corte', 'costurando': 'costurando', 'transito-ida': 'transitoIda',
+  'corte-sc': 'corteSC', 'costurando-sc': 'costurandoSC', 'transito-volta': 'transitoVolta',
+  'estoque-fio': 'estoqueFio', 'estoque-fio-sc': 'estoqueFioSC', 'fios': 'fios', 'expedicao': 'expedicao'
+};
+function _redesenharCampoAtivo() {
+  try {
+    const ativa = document.querySelector('.page:not(.hidden)');
+    const faseId = _PAGINA_DO_CAMPO[(ativa && ativa.dataset && ativa.dataset.page) || ''];
+    if (faseId) renderFasePorId(faseId);
+  } catch (e) { console.warn('redesenhar campo', e); }
+}
+
 async function mudarStatusOS(id, valor) {
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
@@ -30220,6 +30242,7 @@ async function mudarStatusOS(id, valor) {
   juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
   renderListaOS();
   renderStatusFolhaOS();
+  _redesenharCampoAtivo();
   const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
   const nomesJuntas = juntas.map(c => c.os || '').join(', ');
   const plural = juntas.length > 1;
