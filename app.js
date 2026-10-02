@@ -7405,6 +7405,15 @@ function movimentacoesEstoque() {
    de qual bobina tiraram e entram aqui como 120 cm, na mesma linha. Assim toda
    linha do quadro tem a largura no nome e não sobra linha "sem largura". */
 const LARGURA_BOBINA_PADRAO_CM = 120;
+/* RIBANA É 60 CM (02/10/2026, Junior: "todas as bobinas com 60cm são ribana" e
+   "as bobinas com 120cm... todas são malha algodão, não são ribana"). A
+   ribana sem largura — saldo inicial, acertos, reserva e baixa das OS — caía
+   na linha de 120 cm e parecia malha. Agora, num pano cujo nome começa por
+   "Ribana", sem largura vale 60 cm; nos demais, 120 cm como antes. */
+const LARGURA_RIBANA_PADRAO_CM = 60;
+function larguraPadraoDoTecido(tecidoNome) {
+  return /^\s*ribana/i.test(String(tecidoNome || '')) ? LARGURA_RIBANA_PADRAO_CM : LARGURA_BOBINA_PADRAO_CM;
+}
 /* A RESERVA DA OS VAI PARA A LARGURA DA GRADE DELA (30/09/2026, Junior: "Coloque
    as reservas do algodão cru na largura de 80 cm, caso as OS sejam com grade de
    80 cm"). A OS não diz de qual bobina tirou, mas a fase dela diz a largura do
@@ -7478,7 +7487,7 @@ function estoquePorLargura() {
   const osPorId = new Map((STATE.ordens || []).map(o => [o.id, o]));
   todos.forEach(m => {
     const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
-    let larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
+    let larg = Number(m.largura) > 0 ? Number(m.largura) : larguraPadraoDoTecido(m.tecidoNome);
     if (m.origem === 'os' && !(Number(m.largura) > 0)) {
       const daGrade = _larguraDaOSNoTecido(osPorId.get(m.osId), m.tecidoNome);
       if (daGrade > 0 && lancadas.has(k) && lancadas.get(k).has(daGrade)) larg = daGrade;
@@ -7787,7 +7796,7 @@ function renderEstoque() {
     if (m.tipo !== 'entrada' || m.origem === 'os' || _ehAcerto(m)) return;
     const d = String(m.data || '').slice(0, 10);
     const t = _normNome(m.tecidoNome), c = t + '||' + _normNome(m.corNome);
-    const larg = Number(m.largura) > 0 ? Number(m.largura) : LARGURA_BOBINA_PADRAO_CM;
+    const larg = Number(m.largura) > 0 ? Number(m.largura) : larguraPadraoDoTecido(m.tecidoNome);
     [t, c, c + '||' + larg].forEach(k => _marcaEntrada(k, d));
   });
   const _chaveEntrada = (tec, cor, larg) => {
@@ -7880,7 +7889,7 @@ function renderEstoque() {
       { corNome: c.corNome, largura: larg, entrada: v.entrada, reservado: v.reservado, saida: v.saida, fechados: v.fechados, abertos: v.abertos },
       `${corLabel(c.corNome, tec)} · <span style="font-family:'IBM Plex Mono',monospace;">${_cmTxt(larg)}</span>`,
       'Bobinas de ' + _cmTxt(larg) + '. A reserva e a baixa das OS entram na largura da grade da OS, quando a cor tem bobina dessa largura; senão, em '
-        + LARGURA_BOBINA_PADRAO_CM + ' cm.'));
+        + larguraPadraoDoTecido(tec) + ' cm.'));
   };
   const quadroTecido = (g) => {
     const acc = { fechados: 0, abertos: 0 };
@@ -8524,7 +8533,7 @@ function abrirMovEstoque(tipo) {
       <div class="field"><label>Bobinas fechadas (un)</label><input type="number" min="0" step="1" id="me-fechados" placeholder="0" oninput="_meAtualizarEstimativa()"></div>
       ${movEstoqueTipo === 'saida'
         ? `<div class="field"><label>Largura da bobina</label><select id="me-largura"></select><div class="field-hint" id="me-largura-dica">De qual largura sai: as que esta cor tem no estoque, com o que resta de cada uma.</div></div>`
-        : `<div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Fica gravada no lançamento e divide o quadro da cor por largura. Em branco, grava 120 cm.</div></div>`}
+        : `<div class="field"><label>Largura da bobina (cm)</label><input type="number" min="0" step="0.5" id="me-largura" placeholder="cm" oninput="_meAtualizarEstimativa()"><div class="field-hint">Fica gravada no lançamento e divide o quadro da cor por largura. Em branco, grava 120 cm (ribana: 60 cm).</div></div>`}
       <div class="field"><label>Quantidade (kg) *</label><input type="number" min="0" step="0.001" id="me-kg" placeholder="Ex.: 50,000" oninput="_meMarcarKgManual()"></div>
       <div class="field"><label>Itens abertos em uso (un)</label><input type="number" min="0" step="1" id="me-abertos" placeholder="0"></div>
       <div class="field"><label>Data</label><input type="date" id="me-data" value="${hoje}"></div>
@@ -8592,7 +8601,7 @@ function _meAtualizarLarguras() {
   else if (larguras.length === 1) sel.value = String(larguras[0][0]);
   if (dica) dica.textContent = larguras.length
     ? 'De qual largura sai: as que esta cor tem no estoque, com o disponível de cada uma.'
-    : 'Sem largura, a saída conta como bobina de ' + LARGURA_BOBINA_PADRAO_CM + ' cm.';
+    : 'Sem largura, a saída conta como bobina de ' + larguraPadraoDoTecido(tec) + ' cm.';
 }
 
 /* O KG SAI DAS BOBINAS (14/09/2026). Quem recebe a carga conta bobina; o quilo
@@ -8654,7 +8663,7 @@ async function salvarMovEstoque() {
   // A largura agora fica no lançamento (30/09/2026): antes ela só servia para
   // estimar o kg e se perdia ao salvar. Em branco = a largura de ficha do pano.
   // Em branco, 120 cm (30/09/2026): é a largura de toda bobina que não diz a sua.
-  const largura = parseFloat(String(v('me-largura')).replace(',', '.')) || LARGURA_BOBINA_PADRAO_CM;
+  const largura = parseFloat(String(v('me-largura')).replace(',', '.')) || larguraPadraoDoTecido(tecidoNome);
   if (!Array.isArray(STATE.estoqueMov)) STATE.estoqueMov = [];
   STATE.estoqueMov.push({
     id: uid(),

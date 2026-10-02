@@ -31,6 +31,8 @@ function porLargura(movs, ordens) {
     const movimentacoesEstoque = () => MOVS;
     ${corta('function _normNome')}
     ${cortaLinha('const LARGURA_BOBINA_PADRAO_CM')}
+    ${cortaLinha('const LARGURA_RIBANA_PADRAO_CM')}
+    ${corta('function larguraPadraoDoTecido')}
     ${corta('function _larguraDaOSNoTecido')}
     ${corta('function estoquePorLargura')}
     return estoquePorLargura();
@@ -73,6 +75,17 @@ ok('preto: OS de 117 cm fica nos 120 (a cor não tem bobina de 117)', preto.get(
 ok('preto: lançamento sem largura conta como 120 cm', preto.get(120).entrada === 510, preto.get(120));
 const soma = (mp, k) => [...mp.values()].reduce((a, v) => a + v[k], 0);
 ok('a soma das larguras é o total da cor (algodão cru)', soma(cru, 'entrada') === 828 && soma(cru, 'reservado') === 35 && soma(cru, 'saida') === 20);
+
+// RIBANA É 60 CM (02/10/2026): sem largura, a ribana cai na linha de 60, não na de 120.
+const RIB = { tecidoNome: 'Ribana Malha Algodão', corNome: 'Preto Ribana Malha Algodão' };
+const mr = porLargura([
+  ent(RIB, 60, 96, 12),
+  Object.assign({ tipo: 'entrada', origem: 'manual', kg: 30 }, RIB),          // saldo inicial sem largura
+  os(RIB, 'osRib', 7)
+], [{ id: 'osRib', fases: [{ tecidoNome: 'Ribana Malha Algodão', larg: '' }] }]);
+const rib = mr.get([...mr.keys()].find(k => /ribana/.test(k)));
+ok('ribana: sem largura e OS caem na linha de 60 cm', rib.get(60).entrada === 126 && rib.get(60).reservado === 7, [...rib.entries()]);
+ok('ribana: não abre linha de 120 cm', !rib.has(120), [...rib.keys()]);
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
