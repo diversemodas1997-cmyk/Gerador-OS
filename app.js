@@ -23355,6 +23355,7 @@ function initOSForm() {
   if (buscaGrade) buscaGrade.value = '';
   const linhaGrade = document.getElementById('f-linha-tipo');
   if (linhaGrade) linhaGrade.value = '';
+  _travarTamanhosAdultoOS();   // _osGradeLinha acabou de zerar: destrava P ao G3
   // O mesmo vale para a busca do desenho: o que foi procurado na OS anterior
   // não pode chegar recortando a lista da OS seguinte.
   const buscaDes = document.getElementById('f-desenho-busca');
@@ -25048,7 +25049,27 @@ function filtrarGradesOS(v) {
 
 function filtrarLinhaGradesOS(v) {
   _osGradeLinha = v || '';
+  _travarTamanhosAdultoOS();
   preencherDropdownGradesOS();
+}
+
+/* LINHA INFANTIL TRAVA P AO G3 (05/10/2026, Junior: "grade de linha infantil
+   são determinadas por tamanhos de 2 até 16"). Com Infantil escolhido, os
+   campos adultos ficam bloqueados e zerados — um número esquecido ali faria a
+   OS infantil sair com peça adulta na folha. Voltar para Adulto ou para as
+   duas linhas destrava; o zero fica, porque o valor antigo já não é desta OS. */
+const _TAMANHOS_ADULTO_OS = ['p','m','g','gg','g1','g2','g3'];
+function _travarTamanhosAdultoOS() {
+  const travar = _osGradeLinha === 'Infantil Unissex';
+  let zerou = false;
+  _TAMANHOS_ADULTO_OS.forEach(k => {
+    const el = document.getElementById('f-gr-' + k);
+    if (!el) return;
+    if (travar && (parseInt(el.value, 10) || 0) !== 0) { el.value = 0; zerou = true; }
+    el.disabled = travar;
+    el.title = travar ? 'Linha infantil: só os tamanhos 2 ao 16' : '';
+  });
+  if (zerou && typeof atualizarCalculosEnfesto === 'function') atualizarCalculosEnfesto();
 }
 
 function alternarTodasGradesOS() {
