@@ -23350,12 +23350,12 @@ function initOSForm() {
   // OS nova com o filtro desligado da vez anterior faria a lista parecer errada.
   _osGradeBusca = '';
   _osGradeMostrarTodas = false;
-  _osGradeLinha = '';
+  _osGradeLinha = _OS_GRADE_LINHA_PADRAO;
   const buscaGrade = document.getElementById('f-grade-busca');
   if (buscaGrade) buscaGrade.value = '';
   const linhaGrade = document.getElementById('f-linha-tipo');
-  if (linhaGrade) linhaGrade.value = '';
-  _travarTamanhosAdultoOS();   // _osGradeLinha acabou de zerar: destrava P ao G3
+  if (linhaGrade) linhaGrade.value = _osGradeLinha;
+  _travarTamanhosAdultoOS();   // volta ao Adulto: destrava P ao G3
   // O mesmo vale para a busca do desenho: o que foi procurado na OS anterior
   // não pode chegar recortando a lista da OS seguinte.
   const buscaDes = document.getElementById('f-desenho-busca');
@@ -24932,9 +24932,11 @@ function gradesParaDropdownOS(extraIds = []) {
    nome/SKU e tem como ver todas. */
 let _osGradeBusca = '';
 let _osGradeMostrarTodas = false;
-// Linha escolhida no seletor ao lado da busca: '' (as duas), 'Adulto Unissex'
-// ou 'Infantil Unissex' — os mesmos rótulos de linhaTipoOS.
-let _osGradeLinha = '';
+// Linha escolhida no seletor ao lado da busca: 'Adulto Unissex' ou 'Infantil
+// Unissex' — os mesmos rótulos de linhaTipoOS. Sem opção "as duas" (05/10/2026,
+// Junior): toda OS é de uma linha. '' só sobra se o seletor não existir.
+const _OS_GRADE_LINHA_PADRAO = 'Adulto Unissex';
+let _osGradeLinha = _OS_GRADE_LINHA_PADRAO;
 
 // A linha de uma grade do CADASTRO, pela mesma regra da OS: tamanho infantil
 // com quantidade é infantil.
@@ -25056,8 +25058,8 @@ function filtrarLinhaGradesOS(v) {
 /* LINHA INFANTIL TRAVA P AO G3 (05/10/2026, Junior: "grade de linha infantil
    são determinadas por tamanhos de 2 até 16"). Com Infantil escolhido, os
    campos adultos ficam bloqueados e zerados — um número esquecido ali faria a
-   OS infantil sair com peça adulta na folha. Voltar para Adulto ou para as
-   duas linhas destrava; o zero fica, porque o valor antigo já não é desta OS. */
+   OS infantil sair com peça adulta na folha. Voltar para Adulto destrava; o
+   zero fica, porque o valor antigo já não é desta OS. */
 const _TAMANHOS_ADULTO_OS = ['p','m','g','gg','g1','g2','g3'];
 function _travarTamanhosAdultoOS() {
   const travar = _osGradeLinha === 'Infantil Unissex';
@@ -34496,6 +34498,12 @@ function editarOS(id) {
     // tipoPeca do modelo + variacao). A grade ja selecionada e preservada
     // via extraIds, mesmo que nao case com o filtro atual — isso garante que
     // o usuario continua vendo a opcao salva.
+    // A linha do seletor é a da OS aberta: editar uma infantil com o seletor no
+    // Adulto esconderia as grades dela e deixaria P ao G3 destravados.
+    _osGradeLinha = linhaTipoOS(o);
+    const linhaSel = document.getElementById('f-linha-tipo');
+    if (linhaSel) linhaSel.value = _osGradeLinha;
+    _travarTamanhosAdultoOS();
     const gradeEl = document.getElementById('f-grade-preset');
     if (gradeEl) {
       // Mesmo caminho do resto da tela (busca + linha de diagnóstico), em vez de
