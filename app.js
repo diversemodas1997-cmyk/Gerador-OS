@@ -33136,9 +33136,8 @@ async function togglarChecklistEtapa(osId, etapaNome, checked) {
 
      Os filhos saem do DOM, não de uma segunda derivação da lista de tarefas:
      assim são exatamente as caixas que a pessoa está vendo — inclusive as fases
-     do Corte, que não vêm do cadastro da etapa, e as tarefas "fora do cadastro"
-     que a OS carrega de quando aquela etapa era outra. Derivar de novo aqui
-     deixaria justamente essas de fora. */
+     do Corte, que não vêm do cadastro da etapa. Derivar de novo aqui deixaria
+     justamente essas de fora. */
   const filhos = (typeof document !== 'undefined')
     ? Array.from(document.querySelectorAll('.os-check.sub'))
         .filter(inp => inp.dataset && inp.dataset.etapa === etapaNome && inp.dataset.tarefa)
@@ -36182,16 +36181,11 @@ function renderPrintSheet(o) {
               hint: '',
               ordem: L.ordem                                 // liga os campos de horário
             }));
-            // RESGATE DAS MARCAÇÕES ÓRFÃS. O check de tarefa é gravado pelo NOME
-            // (progresso.tarefasCheck[etapa][tarefa]) mas a LISTA exibida vem do
-            // cadastro global. Renomear ou excluir uma tarefa no cadastro não
-            // apaga nada da OS — só tira da folha a linha que mostrava a marca,
-            // e quem preencheu lê isso como "o checklist que eu marquei sumiu".
-            // Aqui toda tarefa com marca NESTA OS volta para a lista, mesmo que
-            // não exista mais no cadastro, sinalizada como fora dele.
-            const marcadasDaEtapa = (nomeEtapa) =>
-              Object.entries(((o.progresso || {}).tarefasCheck || {})[nomeEtapa] || {})
-                .filter(([, v]) => !!v).map(([t]) => t);
+            // A lista de tarefas é SÓ a do cadastro (mais as fases do Corte).
+            // Tarefa excluída ou renomeada no cadastro sai da folha, mesmo que a
+            // OS tenha marca nela (Junior, 05/10/2026: tirar as "fora do
+            // cadastro"). A marca antiga continua gravada em
+            // progresso.tarefasCheck — só não é mais desenhada.
             // Mantém a ordem salva na OS; busca as tarefas embutidas na etapa cadastrada
             const ordenadas = o.etapas.map(nome => {
               const cad = STATE.etapas.find(e => e.nome === nome);
@@ -36206,10 +36200,6 @@ function renderPrintSheet(o) {
               } else {
                 tarefas = cadTarefas.map(t => ({ nome: t, hint: '' }));
               }
-              const naLista = new Set(tarefas.map(t => t.nome));
-              marcadasDaEtapa(nome).forEach(t => {
-                if (!naLista.has(t)) tarefas.push({ nome: t, hint: 'fora do cadastro', orfa: true });
-              });
               return { nome, tarefas };
             });
             const prog = o.progresso || {};

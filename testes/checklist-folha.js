@@ -15,9 +15,8 @@
      · desmarcar limpa — etapa desmarcada com as tarefas todas marcadas e uma
        folha que se contradiz, e quem le acredita na parte errada;
      · os filhos saem do DOM, nao de uma segunda derivacao da lista de tarefas:
-       assim entram tambem as FASES DO CORTE (que nao vem do cadastro da etapa)
-       e as tarefas "fora do cadastro" que a OS carrega de quando aquela etapa
-       era outra. Derivar de novo deixaria justamente essas de fora;
+       assim entram tambem as FASES DO CORTE (que nao vem do cadastro da
+       etapa). Derivar de novo deixaria justamente essas de fora;
      · tudo numa gravacao so — o pai e os filhos nao podem ir em duas viagens;
      · sem permissao de editar a folha, nada e marcado.
 
@@ -116,14 +115,13 @@ const tarefas = (os, etapa) => Object.keys(((os.progresso || {}).tarefasCheck ||
   console.log('-- o que so o DOM sabe --');
   {
     // A fase do Corte nao vem do cadastro da etapa (e derivada do enfesto da
-    // OS), e a tarefa "fora do cadastro" veio de quando aquela etapa era outra.
-    // As duas so existem no que a folha desenhou.
+    // OS): so existe no que a folha desenhou.
     const t = ctxDe([
       caixa('Corte', 'Fase 3 · Viés'),
-      caixa('Corte', 'Tarefa antiga que saiu do cadastro')
+      caixa('Corte', 'Conferir molde')
     ]);
     await t.api.togglarChecklistEtapa('os1', 'Corte', true);
-    ok('9. fase do corte e tarefa orfa entram na conta',
+    ok('9. fase do corte e tarefa do cadastro entram na conta',
        tarefas(t.os(), 'Corte').length === 2, JSON.stringify(tarefas(t.os(), 'Corte')));
   }
   {
