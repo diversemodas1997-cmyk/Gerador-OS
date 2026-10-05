@@ -975,7 +975,16 @@
                  mesmos de antes — só mudou o lugar. -->
             <div class="field" style="margin-top:10px;">
               <label>Grade</label>
-              <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="margin-bottom:6px;">
+              <!-- LINHA ADULTO / INFANTIL (05/10/2026): recorta a lista de grades
+                   pelos tamanhos — 2 ao 16 é infantil, P ao G3 adulta (linhaTipoOS). -->
+              <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <select id="f-linha-tipo" onchange="filtrarLinhaGradesOS(this.value)" title="Linha da grade: adulto (P ao G3) ou infantil (2 ao 16)" style="flex:0 0 150px;width:150px;">
+                  <option value="">Adulto e infantil</option>
+                  <option value="Adulto Unissex">Adulto</option>
+                  <option value="Infantil Unissex">Infantil</option>
+                </select>
+                <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="flex:1;min-width:0;">
+              </div>
               <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
               <div class="field-hint" id="f-grade-info"></div>
             </div>
@@ -1772,6 +1781,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-05c"></script>
+<script src="app.js?v=2026-10-05d"></script>
 </body>
 </html>

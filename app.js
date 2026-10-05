@@ -23350,8 +23350,11 @@ function initOSForm() {
   // OS nova com o filtro desligado da vez anterior faria a lista parecer errada.
   _osGradeBusca = '';
   _osGradeMostrarTodas = false;
+  _osGradeLinha = '';
   const buscaGrade = document.getElementById('f-grade-busca');
   if (buscaGrade) buscaGrade.value = '';
+  const linhaGrade = document.getElementById('f-linha-tipo');
+  if (linhaGrade) linhaGrade.value = '';
   // O mesmo vale para a busca do desenho: o que foi procurado na OS anterior
   // não pode chegar recortando a lista da OS seguinte.
   const buscaDes = document.getElementById('f-desenho-busca');
@@ -24928,6 +24931,15 @@ function gradesParaDropdownOS(extraIds = []) {
    nome/SKU e tem como ver todas. */
 let _osGradeBusca = '';
 let _osGradeMostrarTodas = false;
+// Linha escolhida no seletor ao lado da busca: '' (as duas), 'Adulto Unissex'
+// ou 'Infantil Unissex' — os mesmos rótulos de linhaTipoOS.
+let _osGradeLinha = '';
+
+// A linha de uma grade do CADASTRO, pela mesma regra da OS: tamanho infantil
+// com quantidade é infantil.
+function _linhaTipoGrade(g) {
+  return linhaTipoOS({ grade: (g && g.tamanhos) || {} });
+}
 
 const _MOTIVO_GRADE_LABEL = {
   sku: 'SKU diferente do desenho',
@@ -24963,7 +24975,10 @@ function preencherDropdownGradesOS(idAlvo = '') {
   const base = _osGradeMostrarTodas
     ? dentro.concat(fora.filter(x => x.motivo !== 'conjugada').map(x => x.g))
     : dentro;
-  const lista = base.filter(g => _gradeBuscaCasa(g, termos));
+  // A linha vale também com "mostrar todas": é uma escolha explícita, não o
+  // filtro automático pelo desenho.
+  const lista = base.filter(g => _gradeBuscaCasa(g, termos)
+    && (!_osGradeLinha || _linhaTipoGrade(g) === _osGradeLinha));
   // A grade já escolhida nunca sai da lista, mesmo com busca escrita: perder a
   // seleção por causa de uma letra digitada seria trocar a grade da OS sem querer.
   if (cur && !lista.some(g => g.id === cur)) {
@@ -24997,6 +25012,7 @@ function _atualizarInfoGradesOS({ dentro, fora, lista, termos, ctx }) {
   } else {
     partes.push(`<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} na lista`);
   }
+  if (_osGradeLinha) partes.push(`só a linha <b>${_osGradeLinha === 'Infantil Unissex' ? 'infantil' : 'adulta'}</b>`);
   // Quando a regra do SKU está no ar, dizer isso é meia resposta pronta: quem vê
   // "filtrando pelo SKU COT.PR" já sabe onde olhar se a grade não aparecer (o
   // nome da grade, que é onde o SKU dela mora).
@@ -25027,6 +25043,11 @@ function _atualizarInfoGradesOS({ dentro, fora, lista, termos, ctx }) {
 
 function filtrarGradesOS(v) {
   _osGradeBusca = v == null ? (document.getElementById('f-grade-busca')?.value || '') : v;
+  preencherDropdownGradesOS();
+}
+
+function filtrarLinhaGradesOS(v) {
+  _osGradeLinha = v || '';
   preencherDropdownGradesOS();
 }
 
