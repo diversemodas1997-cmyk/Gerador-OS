@@ -23356,6 +23356,12 @@ function initOSForm() {
   // não pode chegar recortando a lista da OS seguinte.
   const buscaDes = document.getElementById('f-desenho-busca');
   if (buscaDes) buscaDes.value = '';
+  // OS NOVA COMEÇA SEM DESENHO (05/10/2026, OS 0616). O select guardava o
+  // desenho da OS anterior; filtrarDesenhosOS o redesenha com o atributo
+  // `selected`, e o form.reset() lá embaixo volta a ESSE padrão — o desenho
+  // ficava escolhido na tela sem o onchange ter rodado, e a OS saía sem
+  // modelo, coleção, código e cor (os vínculos só se aplicam no onchange).
+  if (!osEditId) { const selDes = document.getElementById('f-desenho'); if (selDes) selDes.value = ''; }
 
   // popula dropdowns
   fillSelect('f-colecao', STATE.colecoes, 'nome', '— selecione —');
