@@ -29412,7 +29412,9 @@ function _gradeCelulaLista(o) {
   const det = _gradeDetalheDaOS(o);
   return `<span${det ? ` title="${esc(det)}"` : ''}>`
     + `<strong style="white-space:nowrap;">${esc(tams)}</strong>`
-    + (resto ? `<br><span style="color:var(--ink-3);font-size:11px;white-space:nowrap;">${esc(resto)}</span>` : '')
+    // O resto do nome quebra: nas conjugadas ele traz a outra grade inteira
+    // entre parênteses (340px numa linha só) e alargava o quadro.
+    + (resto ? `<br><span style="color:var(--ink-3);font-size:11px;display:inline-block;max-width:200px;">${esc(resto)}</span>` : '')
     + `</span>`;
 }
 
@@ -31218,8 +31220,10 @@ function _produtosPorTamanhoListaOS(o) {
   try { TT = totaisPorTamanhoTomOS(o); } catch (e) { return ''; }
   if (!TT || !(TT.totalGeral > 0) || !TT.tamanhos.length) return '';
   const rot = k => k.charAt(0) === 't' ? k.slice(1) : k.toUpperCase();
-  return `<div style="font-size:10px;color:var(--ink-2);font-weight:400;margin-top:2px;">`
-    + TT.tamanhos.map(k => `${rot(k)} ${TT.colTotal(k).toLocaleString('pt-BR')}`).join(' · ')
+  // Quebra entre tamanhos, nunca dentro de um: em linha única "P 160 · M 160 ·
+  // … · G3 160" eram 340px numa célula nowrap, e o quadro passava da tela.
+  return `<div style="font-size:10px;color:var(--ink-2);font-weight:400;margin-top:2px;white-space:normal;max-width:190px;margin-left:auto;">`
+    + TT.tamanhos.map(k => `<span style="white-space:nowrap;">${rot(k)} ${TT.colTotal(k).toLocaleString('pt-BR')}</span>`).join(' · ')
     + `</div>`;
 }
 
