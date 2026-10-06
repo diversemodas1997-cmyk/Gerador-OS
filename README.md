@@ -22,13 +22,13 @@ para a raiz, e `index.html` chama os outros dois ao lado dele.
 | `docs/` | [Backup e restauração](docs/RESTORE.md) — como voltar atrás quando algo se perde, e o histórico dos pontos de restauração. |
 | `sql/` | Scripts do Supabase, para rodar no SQL Editor: papéis de admin, políticas de RLS e a tabela de compras da Contabilidade. |
 | `dados/` | JSONs avulsos de reparo e restauração pontual, e a leitura de um relatório de risco guardada como referência. Não são backup — são remendos datados. |
-| `backups/` | Exportações completas dos dados (`BACKUP-COMPLETO-<data>.json`) e as cópias automáticas do app. Fora do git, por tamanho. |
-| `backups-codigo/` | Cópia do `app.js`/`index.html`/`styles.css` de cada ponto de restauração. |
+| `backups/` | Cópias `shared_data-antes-<correção>-<data>.json`, gravadas pelos scripts de `servidor/` antes de mexer nos dados. Fora do git, por tamanho. O backup diário apaga as com mais de 14 dias. As exportações completas antigas (`BACKUP-COMPLETO-*.json`) ficam no Drive, em `Backup ERP Diverse\Gerador-OS`. |
+| `servidor/` | Instalação e manutenção do servidor da fábrica, os backups diários e os scripts de correção de dados. |
 | `Desenhos técnicos -grades de corte/` | Os riscos em PDF, por linha (BM.LISA, BM.TRI, CM.LISA, CM.TRI, PM.LISA), depois por grade e por largura do tecido. Nome do arquivo: `<LINHA> - <PEÇA> <GRADE>.pdf`. |
 
 ## Onde estão os dados
 
-Não estão aqui. Todo o estado do programa vive numa única linha do Supabase
-(`shared_data`, `id = 'main'`), compartilhada por todos os usuários. O que há
-neste repositório é o código e as cópias de segurança — ver
-[docs/RESTORE.md](docs/RESTORE.md).
+Não estão aqui. Todo o estado do programa vive numa única linha do Supabase do
+servidor da fábrica (`shared_data`, `id = 'main'`), compartilhada por todos os
+usuários. Os backups diários vão para o Google Drive — o que existe, onde e
+como restaurar está em [docs/RESTORE.md](docs/RESTORE.md).

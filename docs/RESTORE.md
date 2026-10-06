@@ -6,6 +6,38 @@ backup próprio.
 
 ---
 
+## Como o backup funciona hoje (atualizado em 06/10/2026)
+
+Desde 10/08/2026 os dados moram no **servidor da fábrica** (Supabase local em
+`https://193.168.0.200`), não mais na nuvem. As camadas, da mais completa para a
+mais pontual:
+
+| O quê | Onde fica | Quando | Guarda | Serve para |
+|---|---|---|---|---|
+| **Pacote cifrado do servidor** (`servidor-gerador-os-<data>.bkp`: banco inteiro, contas, imagens, `.env`) | `J:\Meu Drive\Backup Gerador-OS` | todo dia 12:30 (`servidor\backup-diario.ps1`) | os 14 últimos pacotes | levantar o servidor inteiro em outra máquina |
+| **PDFs dos desenhos e riscos** | `J:\Meu Drive\Backup Gerador-OS\Desenhos` | junto com o pacote | tudo (sem `/MIR`, nada é apagado lá) | recuperar um PDF |
+| **JSON dos dados** (`gerador-os-dados.json`, versionado em git) | `J:\Meu Drive\Backup ERP Diverse\Gerador-OS-backup-dados` | todo dia 16:00 (`servidor\backup-dados-json.js`) | histórico do git | recuperar UMA coisa (uma OS, um desenho) e ver o que mudou |
+| **Snapshots do navegador** (por alteração) | `J:\Meu Drive\Backup Gerador-OS\snapshots` + IndexedDB | a cada save | ~30 estados | voltar alguns minutos/horas |
+| **Cópia "antes de"** de cada correção feita por script (`shared_data-antes-<correção>-<data>.json`) | `backups\` nesta pasta (fora do git) | quando um script de `servidor\` mexe nos dados | **14 dias** — o backup diário apaga as mais velhas, só se o pacote do dia deu certo | desfazer aquela correção |
+
+- **Restaurar o servidor inteiro:** ver `servidor\README.md`, seção
+  "Recuperação: trocar o servidor por outro computador"
+  (`node servidor\restaurar-servidor.js`). Conferir um pacote sem escrever nada:
+  `--conferir`.
+- **Desfazer uma correção de script:** gravar de volta o
+  `backups\shared_data-antes-*.json` daquela correção — só faz sentido logo
+  depois dela; com dias de uso em cima, desfazer apaga o que foi lançado depois.
+- **Último backup bom:** `servidor\tls\backup-diario.log` (uma linha por
+  execução, deu certo ou não).
+
+> **Os pontos de restauração abaixo são HISTÓRICOS** (julho/agosto, ainda na
+> nuvem). As exportações `BACKUP-COMPLETO-*.json` citadas neles **não estão mais
+> em `backups\`**: as cópias moram em `J:\Meu Drive\Backup ERP Diverse\Gerador-OS`.
+> A pasta `backups-codigo/` também não existe mais — o código de cada ponto está
+> na tag git `restore-*` correspondente.
+
+---
+
 ## Ponto de restauração deste backup
 
 - **CÓDIGO:** tag `restore-2026-08-07-y` (cache-buster `app.js ?v=2026-08-07y`,
@@ -489,10 +521,14 @@ estoque, meta, osCounter…).
 
 ### Camadas de backup dos dados (redundância)
 
-1. **Backup manual completo (este):**
+> Lista da época da nuvem (julho/2026). O retrato atual está em
+> "Como o backup funciona hoje", no topo.
+
+1. **Backup manual completo:**
    - `J:\Meu Drive\Backup ERP Diverse\Gerador-OS\os-gen-backup-1785184261956.json`
-     (exportado em 27/07/2026 17:31 — é o mesmo arquivo abaixo)
-   - `C:\Users\Pichau\Desktop\Gerador-OS\backups\BACKUP-COMPLETO-2026-07-27T17-31-01.json`
+     (exportado em 27/07/2026 17:31)
+   - As exportações `BACKUP-COMPLETO-*.json` ficam na mesma pasta do Drive (a
+     cópia que existia em `backups\` desta pasta saiu).
    - Formato **pronto pra importar** (chaves = arrays reais).
    - Anteriores na mesma pasta: `BACKUP-COMPLETO-2026-07-23T20-25-51.json` e a
      cópia bruta do snapshot ao lado (`snapshot-bruto-...json`).
