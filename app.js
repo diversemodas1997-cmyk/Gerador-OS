@@ -21620,11 +21620,14 @@ function renderGrades() {
       .filter(x => t[x] > 0).map(x => `${(String(x).charAt(0) === 't' ? String(x).slice(1) : String(x).toUpperCase())}:${t[x]}`).join(' · ');
     const total = Object.values(t).reduce((a,b)=>a+(b||0),0);
     const nFases = Array.isArray(g.fases) ? g.fases.length : 0;
-    const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1">${nFases} fase${nFases>1?'s':''}</span>` : '';
+    // user-select:none nos dois selos: copiar o nome da grade (três cliques +
+    // Ctrl+C) levava junto "3 FASES 8 VOL", e colado na busca — que exige o nome
+    // INTEIRO igual — não achava a própria grade de onde saiu (06/10/2026).
+    const fasesBadge = nFases > 0 ? ` <span class="badge" style="background:#fff8e1;user-select:none">${nFases} fase${nFases>1?'s':''}</span>` : '';
     // Volume de expedição da grade, para UMA tonalidade: 1 pacote por tamanho
     // + 1 de reposição. Na OS o número é multiplicado pelo nº de tonalidades
     // marcadas (ver _expSugestaoVolumes) — aqui ainda não se sabe quantas são.
-    const volBadge = total > 0 ? ` <span class="badge" title="Volume na expedição com 1 tonalidade: 1 pacote por tamanho + 1 de reposição. Com 2 tons dobra (${total * 2 + 1}), com 3 triplica (${total * 3 + 1}).">${total + 1} vol</span>` : '';
+    const volBadge = total > 0 ? ` <span class="badge" style="user-select:none" title="Volume na expedição com 1 tonalidade: 1 pacote por tamanho + 1 de reposição. Com 2 tons dobra (${total * 2 + 1}), com 3 triplica (${total * 3 + 1}).">${total + 1} vol</span>` : '';
     return `<tr>${acoesCell('grade', g.id)}<td style="padding-left:48px;"><strong>${esc(g.nome)}</strong>${fasesBadge}${volBadge}</td>
       <td><code style="font-size:11px">${dist||'—'}</code></td>
       <td><span class="badge">${total}</span></td>
