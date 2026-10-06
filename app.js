@@ -21471,10 +21471,16 @@ function _riscosIndice() {
 }
 
 // Os três dados que o NOME da grade carrega: faixa de tamanhos, linha e largura.
+// A linha é o pedaço com cara de SKU (_skuDaGrade), e a largura vem do pedaço
+// seguinte — não sempre do 2º e do 3º: "2x | 2 ao 16 | CM.LISA | 117cm" lia a
+// linha "2 ao 16" e ficava sem PDF (06/10/2026).
 function _gradeNomePartes(g) {
   const ps = String((g && g.nome) || '').split('|').map(s => s.trim());
-  const mCm = ps.length > 2 ? ps[2].replace(',', '.').match(/(\d+\.?\d*)/) : null;
-  return { faixa: ps[0] || '', linha: ps[1] || '', cm: mCm ? parseFloat(mCm[1]) : 0 };
+  const linha = _skuDaGrade(g);
+  const iL = linha ? ps.indexOf(linha, 1) : -1;
+  const segCm = iL >= 0 ? ps[iL + 1] : ps[2];
+  const mCm = segCm ? segCm.replace(',', '.').match(/(\d+\.?\d*)/) : null;
+  return { faixa: ps[0] || '', linha, cm: mCm ? parseFloat(mCm[1]) : 0 };
 }
 
 function _riscosDaGrade(g) {
@@ -21482,6 +21488,11 @@ function _riscosDaGrade(g) {
   const { faixa, linha, cm } = _gradeNomePartes(g);
   const toks = new Set(_riscoFormasDoNome(g.tamanhos || {}).map(_chaveTam));
   if (faixa) toks.add(_chaveTam(faixa));
+  // INFANTIL: a pasta diz só QUAIS tamanhos ("2-4-6-8-10-12-14-16"), nunca
+  // quantos — "2x" na frente de número viraria "22", que não se lê. A grade
+  // "2x | 2 ao 16" (2 de cada) não casava com a pasta do próprio encaixe.
+  const tInf = ['t2','t4','t6','t8','t10','t12','t14','t16'].filter(k => (parseInt((g.tamanhos || {})[k], 10) || 0) > 0);
+  if (tInf.length) toks.add(_chaveTam(tInf.map(k => k.slice(1)).join('-')));
   toks.delete('');
   if (!linha || !toks.size) return { itens: [], aviso: '' };
 
