@@ -4458,6 +4458,9 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   else if (tipo === 'grade') {
     const optsTp = opcoesPastaGrade('pasta', item.tipoPeca);
     const optsVr = opcoesPastaGrade('subpasta', item.variacao);
+    // Linha da grade (06/10/2026, Junior): a gravada manda; grade antiga, sem
+    // o campo, abre na linha que os tamanhos dela dizem; grade nova, em Adulto.
+    const linhaGr = item.id ? _linhaTipoGrade(item) : 'Adulto Unissex';
     // Grade conjugada: a lista traz todas menos ela mesma — uma grade que se
     // conjugasse consigo geraria OS sem parar.
     const optsConjGr = '<option value="">— nenhuma —</option>'
@@ -4483,6 +4486,12 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             ${optsVr}
           </select>
         </div>
+        <div class="field full"><label>Linha</label>
+          <select id="m-grade-linha" onchange="travarTamanhosLinhaGrade(true)" style="max-width:220px;">
+            <option value="Adulto Unissex" ${linhaGr === 'Adulto Unissex' ? 'selected' : ''}>Adulto (P ao G3)</option>
+            <option value="Infantil Unissex" ${linhaGr === 'Infantil Unissex' ? 'selected' : ''}>Infantil (2 ao 16)</option>
+          </select>
+        </div>
       </div>
       <div style="margin-top:10px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Distribuição por tamanho</label>
@@ -4500,7 +4509,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             <div class="field"><label>${t.slice(1)}</label><input type="number" min="0" id="m-gr-${t}" value="${item.tamanhos?.[t]||0}"></div>
           `).join('')}
         </div>
-        <div class="field-hint" style="margin-top:4px;">Preencha <b>uma</b> das duas linhas: P ao G3 (adulto) ou 2 ao 16 (infantil).</div>
+        <div class="field-hint" style="margin-top:4px;">A <b>Linha</b> escolhida acima libera a sua fileira: Adulto → P ao G3, Infantil → 2 ao 16. A outra fica travada em zero.</div>
       </div>
       <div style="margin-top:14px;">
         <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Fases do enfesto</label>
@@ -4886,10 +4895,36 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   if (btnSalvar) { btnSalvar.disabled = false; btnSalvar.title = ''; }
   // Grade aberta já acusa o nome repetido na hora, antes de a pessoa preencher
   // fases e tamanhos — barrar só no fim seria jogar fora o trabalho todo.
-  if (tipo === 'grade') conferirNomeGrade();
+  if (tipo === 'grade') { conferirNomeGrade(); travarTamanhosLinhaGrade(false); }
   // Recarrega o catálogo de SKUs na hora ao abrir Desenho/Modelo, pra o dropdown
   // não depender do que foi lido no login (auto-cura se o catálogo subiu depois).
   if (tipo === 'desenho' || tipo === 'modelo') refreshDatalistSkus();
+}
+
+// LINHA DA GRADE TRAVA A FILEIRA DA OUTRA (06/10/2026, Junior): Adulto deixa
+// só P ao G3, Infantil só 2 ao 16 — a fileira que não é da linha fica travada
+// e em zero, que é o que a gravação já exigia ("uma linha só"). `aoTrocar` diz
+// que foi o usuário que mudou o seletor: só então um número na fileira travada
+// é apagado com aviso; ao abrir a ficha a linha já bate com os tamanhos.
+function travarTamanhosLinhaGrade(aoTrocar) {
+  const sel = document.getElementById('m-grade-linha');
+  if (!sel) return;
+  const infantil = sel.value === 'Infantil Unissex';
+  const travadas = infantil ? ['p','m','g','gg','g1','g2','g3'] : ['t2','t4','t6','t8','t10','t12','t14','t16'];
+  const livres = infantil ? ['t2','t4','t6','t8','t10','t12','t14','t16'] : ['p','m','g','gg','g1','g2','g3'];
+  let zerou = false;
+  travadas.forEach(k => {
+    const el = document.getElementById('m-gr-' + k);
+    if (!el) return;
+    if ((parseInt(el.value, 10) || 0) !== 0) { el.value = 0; zerou = true; }
+    el.disabled = true;
+    el.title = infantil ? 'Linha infantil: só os tamanhos 2 ao 16' : 'Linha adulta: só os tamanhos P ao G3';
+  });
+  livres.forEach(k => {
+    const el = document.getElementById('m-gr-' + k);
+    if (el) { el.disabled = false; el.title = ''; }
+  });
+  if (zerou && aoTrocar) toast(`Tamanhos ${infantil ? 'P ao G3' : '2 ao 16'} zerados: a grade agora é da linha ${infantil ? 'infantil' : 'adulta'}`);
 }
 
 // A trava do nome repetido, na tela: campo em vermelho, o nome de quem já usa e
@@ -5037,9 +5072,17 @@ function _opsDaFuncao(f) {
 // diferentes: uma camiseta lisa de 117 cm numa fase só não é uma blusa moletom
 // tricolor de 177 cm em cinco. Um número por posto obrigava a escolher entre
 // planejar a lisa com folga demais ou a tricolor com folga de menos.
+//
+// O pedaço do meio nem sempre é o SEGUNDO (06/10/2026): "2x | 2 ao 16 | CM.LISA
+// | 117cm" tem um pedaço a mais na frente, e lido como "2 ao 16" a grade virava
+// de outro SKU e sumia da Nova OS de todo desenho CM.LISA. Vale o primeiro
+// pedaço depois do primeiro "|" com cara de SKU (letras, ponto, letras:
+// CM.LISA, COT.PR, SM. ESPARTANA); sem nenhum assim, o segundo, como sempre
+// (é o caso de "P-M-G-GG | CLM | 177cm").
 function _skuDaGrade(g) {
   const partes = String((g && (g.nome || g.descricao)) || '').split('|').map(s => s.trim());
-  return partes.length >= 2 ? partes[1] : '';
+  if (partes.length < 2) return '';
+  return partes.slice(1).find(s => /^[a-z]{2,4}\.\s*[a-z]/i.test(s)) || partes[1];
 }
 
 // NOME DE GRADE É ÚNICO, E ESTA É A ÚNICA REGRA QUE DIZ ISSO.
@@ -6518,6 +6561,7 @@ async function salvarCadastro() {
     }
     item.tipoPeca = v('m-grade-tipopeca');
     item.variacao = v('m-grade-variacao');
+    item.linha = v('m-grade-linha') || 'Adulto Unissex';
     // Grade conjugada: quem gera a segunda OS. A checagem de "consigo mesma" é
     // repetida aqui, e não só na montagem da lista, porque o dado pode chegar de
     // uma importação — e um ciclo aqui vira OS gerando OS sem fim.
@@ -24953,9 +24997,11 @@ let _osGradeMostrarTodas = false;
 const _OS_GRADE_LINHA_PADRAO = 'Adulto Unissex';
 let _osGradeLinha = _OS_GRADE_LINHA_PADRAO;
 
-// A linha de uma grade do CADASTRO, pela mesma regra da OS: tamanho infantil
-// com quantidade é infantil.
+// A linha de uma grade do CADASTRO. Desde 06/10/2026 ela é um campo da grade
+// (`linha`, escolhido na ficha); grade sem o campo cai na regra da OS: tamanho
+// infantil com quantidade é infantil.
 function _linhaTipoGrade(g) {
+  if (g && (g.linha === 'Adulto Unissex' || g.linha === 'Infantil Unissex')) return g.linha;
   return linhaTipoOS({ grade: (g && g.tamanhos) || {} });
 }
 
