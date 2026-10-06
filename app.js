@@ -7012,8 +7012,12 @@ function _cadBuscaGarantir(page) {
   if (!header) return;
   const box = document.createElement('div');
   box.className = 'cad-busca no-print';
+  // Grades buscam pelo nome INTEIRO (ver renderGrades); o aviso do campo diz isso.
+  const dica = page === 'cad-grades'
+    ? 'Buscar grade — digite o nome completo, exatamente igual'
+    : 'Buscar neste cadastro — parte do nome basta';
   box.innerHTML = `<span class="lupa" aria-hidden="true">🔎</span>`
-    + `<input type="search" placeholder="Buscar neste cadastro — parte do nome basta" autocomplete="off" spellcheck="false" aria-label="Buscar neste cadastro">`
+    + `<input type="search" placeholder="${dica}" autocomplete="off" spellcheck="false" aria-label="Buscar neste cadastro">`
     + `<span class="n"></span>`;
   const input = box.querySelector('input');
   const digitou = () => { _CAD_BUSCA[page] = input.value; _cadBuscaAplicar(page); };
@@ -21631,13 +21635,18 @@ function renderGrades() {
   // pastas e vira lista chata das grades que casam — inclusive as que estão
   // dentro de pasta FECHADA, que esconder linha nunca alcançaria, porque a
   // linha delas nem chega a ser desenhada.
-  const termosBusca = _cadBuscaTermos('cad-grades');
-  if (termosBusca.length) {
-    const achadas = STATE.grades.filter(g => _cadBuscaCasa(termosBusca,
-      [g.nome, labelTp(g.tipoPeca), labelVr(g.variacao)].join(' ')));
+  //
+  // NOME INTEIRO IGUAL (06/10/2026, pedido do Junior): a busca por palavras
+  // soltas trazia "2X P ao G3 | CM.LISA" e as de outra largura junto da grade
+  // procurada — nomes que se diferenciam por um "2X" ou por "116.5cm" x "117cm".
+  // Agora só fica a grade cujo nome é o texto do campo, inteiro; caixa, acento e
+  // espaço repetido não contam (`_normNome`). Parte do nome não acha nada.
+  const textoBusca = _normNome(_CAD_BUSCA['cad-grades'] || '');
+  if (textoBusca) {
+    const achadas = STATE.grades.filter(g => _normNome(g.nome) === textoBusca);
     tb.innerHTML = achadas.length
       ? achadas.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('')
-      : `<tr><td colspan="5" class="empty">Nenhuma grade encontrada.</td></tr>`;
+      : `<tr><td colspan="5" class="empty">Nenhuma grade com o nome exatamente igual ao digitado.</td></tr>`;
     return;
   }
 
