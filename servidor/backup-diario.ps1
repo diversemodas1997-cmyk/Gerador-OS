@@ -283,5 +283,35 @@ foreach ($pasta in $Desenhos) {
   }
 }
 
+# ------------------------------- 3) limpar as copias "antes-de" de backups\
+#
+# POR QUE AQUI (06/10/2026, pedido do Junior).
+#
+# Cada script de correcao em servidor\ grava o blob inteiro em
+# backups\shared_data-antes-<correcao>-<data>.json antes de mexer nos dados
+# (~4 MB cada). Em 6 semanas foram 67 arquivos, 247 MB. Elas so servem para
+# desfazer AQUELA correcao, e depois de semanas desfazer apagaria tudo o que foi
+# lancado em cima. O mesmo prazo do pacote no Drive ($Manter dias) vale aqui:
+# passou dele, a copia nao volta mais atras de nada.
+#
+# So depois de um pacote bom HOJE: se o Drive falhou, a copia local pode ser a
+# unica coisa de pe, e ela fica. E so o padrao "shared_data-antes-*": qualquer
+# outra coisa em backups\ (um BACKUP-COMPLETO tirado a mao) e decisao de gente.
+if (-not $falhou) {
+  $pastaBackups = Join-Path $Raiz 'backups'
+  $limite = (Get-Date).AddDays(-$Manter)
+  $velhas = @(Get-ChildItem $pastaBackups -File -Filter 'shared_data-antes-*.json' -ErrorAction SilentlyContinue |
+              Where-Object { $_.LastWriteTime -lt $limite })
+  if ($velhas.Count -gt 0) {
+    $mbV = [math]::Round((($velhas | Measure-Object Length -Sum).Sum) / 1MB, 1)
+    try {
+      $velhas | Remove-Item -Force -ErrorAction Stop
+      Anotar "ok  limpeza: $($velhas.Count) copias antes-de com mais de $Manter dias apagadas de backups ($mbV MB)"
+    } catch {
+      Anotar "ATENCAO: limpeza de backups falhou: $($_.Exception.Message)"
+    }
+  }
+}
+
 if ($falhou) { exit 1 }
 exit 0
