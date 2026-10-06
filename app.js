@@ -7012,9 +7012,9 @@ function _cadBuscaGarantir(page) {
   if (!header) return;
   const box = document.createElement('div');
   box.className = 'cad-busca no-print';
-  // Grades buscam pelo nome INTEIRO (ver renderGrades); o aviso do campo diz isso.
+  // Grades buscam pelo COMEÇO do nome (ver renderGrades); o aviso do campo diz isso.
   const dica = page === 'cad-grades'
-    ? 'Buscar grade — digite o nome completo, exatamente igual'
+    ? 'Buscar grade pelo começo do nome — ex.: p ao g3 cm.lisa 117'
     : 'Buscar neste cadastro — parte do nome basta';
   box.innerHTML = `<span class="lupa" aria-hidden="true">🔎</span>`
     + `<input type="search" placeholder="${dica}" autocomplete="off" spellcheck="false" aria-label="Buscar neste cadastro">`
@@ -21639,17 +21639,19 @@ function renderGrades() {
   // dentro de pasta FECHADA, que esconder linha nunca alcançaria, porque a
   // linha delas nem chega a ser desenhada.
   //
-  // NOME INTEIRO IGUAL (06/10/2026, pedido do Junior): a busca por palavras
-  // soltas trazia "2X P ao G3 | CM.LISA" e as de outra largura junto da grade
-  // procurada — nomes que se diferenciam por um "2X" ou por "116.5cm" x "117cm".
-  // Agora só fica a grade cujo nome é o texto do campo, inteiro; caixa, acento e
-  // espaço repetido não contam (`_normNome`). Parte do nome não acha nada.
-  const textoBusca = _normNome(_CAD_BUSCA['cad-grades'] || '');
+  // NOME QUE COMEÇA COM O TEXTO (06/10/2026, pedido do Junior): a busca por
+  // palavras soltas trazia "2X P ao G3 | CM.LISA" e "M ao G3" junto de "P ao G3".
+  // Agora o texto é o COMEÇO do nome, na ordem digitada, e cada palavra a mais
+  // estreita: "p ao g3" → todas as P ao G3; "p ao g3 cm.lisa" → as CM.LISA
+  // delas; "p ao g3 cm.lisa 117" → a de 117cm. As barras "|" do nome não
+  // precisam ser digitadas, e caixa, acento e espaço repetido não contam.
+  const _normBuscaGrade = s => _normNome(s).replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const textoBusca = _normBuscaGrade(_CAD_BUSCA['cad-grades'] || '');
   if (textoBusca) {
-    const achadas = STATE.grades.filter(g => _normNome(g.nome) === textoBusca);
+    const achadas = STATE.grades.filter(g => _normBuscaGrade(g.nome).startsWith(textoBusca));
     tb.innerHTML = achadas.length
       ? achadas.slice().sort(compararGradesPorSemelhanca).map(renderGradeRow).join('')
-      : `<tr><td colspan="5" class="empty">Nenhuma grade com o nome exatamente igual ao digitado.</td></tr>`;
+      : `<tr><td colspan="5" class="empty">Nenhuma grade cujo nome comece com o texto digitado.</td></tr>`;
     return;
   }
 
