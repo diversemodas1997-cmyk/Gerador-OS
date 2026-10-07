@@ -22648,6 +22648,31 @@ function _dashIntervalos() {
         if (!e.cartoes.has(k)) { aberto.get(k).ate = e.t; aberto.delete(k); }
       });
     });
+    /* A SAÍDA DA MESA DE CORTE É A SEGUNDA DATA DA FOLHA (07/10/2026, Junior:
+       "o quadro na mesa de corte aparece OS com segunda data de ontem, sendo
+       que hoje é dia 07/10, deveria aparecer OS que foram cortadas hoje").
+
+       A reconstrução pelas caixas e carimbos pode errar o dia em que a OS saiu
+       da mesa, e erra sempre para DEPOIS:
+         · o carimbo à mão de ontem (Ensacado, Separando) foi reescrito por
+           outro hoje — antes do diário de status, só o último tinha hora —, e
+           sem ele a OS parecia Cortando até o carimbo de hoje;
+         · a caixa Corte marcada hoje, pondo o checklist em dia, numa OS já
+           ensacada ontem: a última marca acende Cortando de novo, e a OS
+           parecia entrar e sair da mesa hoje.
+       A segunda data é gravada na OS no momento do fim do corte (STATUS_FIM)
+       e não depende de reconstrução nenhuma. Então, na mesa de corte, a OS
+       que já saiu sai NA SEGUNDA DATA — e as passagens dela pela mesa viram
+       uma só. A OS que está na mesa agora segue como está. */
+    const fimCorte = Date.parse((typeof _dataFinalizacaoOS === 'function' && _dataFinalizacaoOS(o)) || '');
+    if (Number.isFinite(fimCorte) && por.cortando) {
+      const saidas = por.cortando.filter(iv => iv.id === id && iv.de != null && iv.ate != null);
+      if (saidas.length) {
+        por.cortando = por.cortando.filter(iv => !saidas.includes(iv));
+        add('cortando', { os, id, pecas: Math.max(...saidas.map(iv => iv.pecas)),
+          de: Math.min(fimCorte, ...saidas.map(iv => iv.de)), ate: fimCorte });
+      }
+    }
   });
   return por;
 }

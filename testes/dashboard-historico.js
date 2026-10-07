@@ -42,6 +42,7 @@ const motor = [
   cortaArr('const STATUS_OS'),
   cortaLinha('const STATUS_FIM'),
   cortaLinha('const STATUS_FIM_RESERVA'),
+  corta('function _dataFinalizacaoOS'),
   corta('function _marcasDoStatus'),
   corta('function _statusDoChecklistOS'),
   corta('function _ultimaMarcacaoChecklist'),
@@ -275,6 +276,8 @@ console.log('-- o diário de status: cada carimbo à mão vale desde a hora dele
 // 09:00 e Ensacado qua 16/09 10:00. O carimbo de agora é o do Ensacado.
 const comDiario = Object.assign(os('0050', { 'Corte': em(14, 8) }), {
   statusOS: 'ensacado', statusOSEm: new Date(em(16, 10)).toISOString(),
+  // O carimbo Separando grava a segunda data (STATUS_FIM), e o Ensacado depois não a troca.
+  finalizadaEm: new Date(em(15, 9)).toISOString(),
   statusHist: [{ k: 'cortando', em: em(14, 8) },
                { k: 'separando', em: em(15, 9), c: 'separando' },
                { k: 'ensacado', em: em(16, 10), c: 'ensacado' }]
@@ -298,6 +301,27 @@ ok('sem o diário (OS de antes), só o último carimbo é conhecido: a mesa vai 
 const limpa = Object.assign(os('0052', { 'Corte': em(14, 8) }), {
   statusHist: [{ k: 'separando', em: em(15, 9), c: 'separando' }, { k: 'cortando', em: em(16, 9), c: '' }]
 });
+console.log('');
+console.log('-- a saída da mesa de corte é a SEGUNDA DATA (07/10/2026) --');
+// A 0060 foi carimbada Ensacado ontem (ter 15/09 17:00: a segunda data). Hoje
+// (qua 16/09) alguém pôs o checklist em dia: Corte 09:00 e Ensaque 10:00. Pela
+// reconstrução, ela entrava e saía da mesa HOJE.
+const emDia = Object.assign(os('0060', { 'Corte': em(16, 9), 'Ensaque': em(16, 10) }),
+  { finalizadaEm: new Date(em(15, 17)).toISOString() });
+const hsd = rodar([emDia], 'dia').h;
+ok('a OS cortada ONTEM (segunda data) não aparece no Dia de hoje da mesa de corte',
+   hsd.cortando.listaOS.every(r => !(r.saida > 0)), hsd.cortando.listaOS);
+const hss = rodar([emDia], 'semana').h;
+ok('na semana, a saída dela é contada uma vez, na terça (a segunda data)',
+   hss.cortando.periodos[3].saida === 200 && hss.cortando.listaOS.filter(r => r.saida > 0).length === 1,
+   hss.cortando.periodos[3]);
+// A 0061 tem a segunda data HOJE: aparece no Dia.
+const hoje61 = Object.assign(os('0061', { 'Corte': em(15, 9), 'Ensaque': em(16, 8) }),
+  { finalizadaEm: new Date(em(16, 8)).toISOString() });
+const h61 = rodar([hoje61], 'dia').h;
+ok('a OS com a segunda data de hoje aparece no Dia, com a saída',
+   (h61.cortando.listaOS[0] || {}).saida === 200, h61.cortando.listaOS);
+
 const hl = rodar([limpa], 'dia').h;
 ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
    ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);
