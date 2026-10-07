@@ -4719,5 +4719,6 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .dash-ls tfoot td:first-child { font-family: inherit; color: var(--ink-2); }
 .dash-ls tbody tr:hover td { background: rgba(0,0,0,.03); }
 .dash-ls-zero { color: var(--ink-3); }
+.dash-ls-hora { display: block; font-style: normal; font-size: 10px; color: var(--ink-3); line-height: 1.1; }
 .dash-parte.ligada[data-parte="cor"] i { background: var(--ink); }
 .dash-parte.ligada[data-parte="tot"] i { background: #8a8983; }

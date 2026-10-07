@@ -350,6 +350,33 @@ ok('a OS cortada hoje que a reconstrução nunca viu na mesa sai nela pela segun
 ok('e sem hora de entrada, não pesa no residual nem no tempo médio',
    h62.cortando.residual === 0 && h62.cortando.tempoMedio == null, [h62.cortando.residual, h62.cortando.tempoMedio]);
 
+console.log('');
+console.log('-- a OS que passou por tudo no dia consta em todos os quadros, com a hora (07/10/2026) --');
+// A 0070 andou a manhã inteira de hoje (qua 16/09): matéria-prima 07:00,
+// enfesto 08:00, corte 09:00, Separando à mão 10:00, ensaque 10:30, costura
+// 11:00. Ontem (15/09) a 0071 entrou e saiu do enfesto: não é do Dia de hoje.
+const passou = Object.assign(os('0070', { 'Preparar matéria-prima': em(16, 7), 'Corte': em(16, 9),
+  'Ensaque': em(16, 10, 30), 'Costura': em(16, 11) }), {
+  statusHist: [{ k: 'separando', em: em(16, 10), c: 'separando' }],
+  finalizadaEm: new Date(em(16, 10)).toISOString() });
+passou.etapas = ['Preparar matéria-prima'].concat(passou.etapas);
+passou.progresso.enfestosCheck = { F1: true }; passou.progresso.enfestosSeq = { F1: em(16, 8) };
+const ontem = Object.assign(os('0071', { 'Preparar matéria-prima': em(15, 7), 'Corte': em(15, 9) }));
+ontem.etapas = ['Preparar matéria-prima'].concat(ontem.etapas);
+ontem.progresso.enfestosCheck = { F1: true }; ontem.progresso.enfestosSeq = { F1: em(15, 8) };
+const hp = rodar([passou, ontem], 'dia').h;
+const linha70 = k => (hp[k].listaOS.find(r => r.os === '0070') || {});
+const hora = t => t ? new Date(t).getHours() + ':' + String(new Date(t).getMinutes()).padStart(2, '0') : null;
+[['materiaPrima', '7:00', '8:00'], ['enfestando', '8:00', '9:00'], ['cortando', '9:00', '10:00'],
+ ['separando', '10:00', '10:30'], ['corte', '10:30', '11:00'], ['costurando', '11:00', null]].forEach(([k, ent, sai]) => {
+  const r = linha70(k);
+  ok(`0070 consta em ${k}, entrada ${ent}${sai ? ', saída ' + sai : ' e segue lá'}`,
+     r.entrada === 200 && hora(r.entrouEm) === ent && (sai ? r.saida === 200 && hora(r.saiuEm) === sai : !r.saida), r);
+});
+ok('a 0071, que andou ontem, não entra na lista de nenhum quadro do Dia de hoje',
+   Object.keys(hp).every(k => hp[k].listaOS.every(r => r.os !== '0071' || !(r.entrada || r.saida))),
+   Object.keys(hp).map(k => [k, hp[k].listaOS.filter(r => r.os === '0071')]));
+
 const hl = rodar([limpa], 'dia').h;
 ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
    ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);

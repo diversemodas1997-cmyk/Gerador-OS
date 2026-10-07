@@ -22350,6 +22350,13 @@ function _dashCartoesDaOS(o, opts) {
        Expedição marcada — que não acende status e por isso deriva "Cortando"
        do corte que ficou para trás — apareceria na mesa de corte E no campo
        Expedição ao mesmo tempo. */
+    /* PREPARANDO MATÉRIA-PRIMA E ENFESTANDO GANHAM QUADRO (07/10/2026, Junior:
+       a OS que passou por "preparando matéria-prima, enfestando, cortando,
+       separando, ensacado..." deve constar em todos esses quadros). Como o
+       Cortando, são trabalho em curso sem campo: lidos do status, com a
+       mesma guarda de não estar em campo nenhum. */
+    if (atual < 0 && _statusOS(o) === 'materia-prima') poe('materiaPrima', total);
+    if (atual < 0 && _statusOS(o) === 'enfestando') poe('enfestando', total);
     if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
     // Separando (24/09/2026): o passo seguinte, também sem campo, com a mesma guarda.
     if (atual < 0 && _statusOS(o) === 'separando') poe('separando', total);
@@ -22473,6 +22480,7 @@ function _dashFluxoDados() {
      lista responde "quais", que é a pergunta seguinte de quem olha o número. */
   const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
+    materiaPrima: zero(), enfestando: zero(),
     cortando: zero(), separando: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
@@ -22541,8 +22549,17 @@ const DASH_SEM_HISTORICO = new Set([]);
    que começou a ser cortada hoje e só vai para a separação amanhã aparecia no
    Dia de hoje com a segunda data de amanhã (ou sem nenhuma). Aqui só a SAÍDA
    conta: o instante em que a OS foi para Separando, que é a segunda data da
-   folha (STATUS_FIM). Quem ainda está na mesa vai para a linha de aviso. */
-const DASH_LISTA_SO_SAIDA = new Set(['cortando']);
+   folha (STATUS_FIM). Quem ainda está na mesa vai para a linha de aviso.
+
+   SUBSTITUÍDO EM 07/10/2026, mesmo dia (Junior: "As OS movimentadas no dia não
+   devem ser migradas de quadro com a alteração do status, mas devem ficar
+   registrada que naquele dia aconteceu a movimentação [...] essa OS deve
+   constar em todos esses quadros, de acordo com o horário da alteração do
+   status"). Entrar na mesa é uma movimentação do dia como qualquer outra: a
+   mesa de corte volta a listar quem entrou e quem saiu, cada um com a hora. A
+   saída continua sendo a segunda data (ver _dashIntervalos). O conjunto fica,
+   vazio, para algum quadro que um dia precise listar só a saída. */
+const DASH_LISTA_SO_SAIDA = new Set([]);
 
 // As etapas marcadas COM hora de verdade, em ordem. null = a OS só tem a ordem
 // das etapas (carimbo sintético da migração), e o passado dela não se sabe.
@@ -22891,15 +22908,16 @@ function _dashHistorico(d, agora, escala) {
     const noPeriodo = t => dentro(t, atual.de, atual.ate);
     const porOS = new Map();
     const linhaOS = (os, id) => {
-      if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null });
+      if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null, entrouEm: null, saiuEm: null });
       const r = porOS.get(os);
       if (!r.id && id) r.id = id;
       return r;
     };
     lista.forEach(x => {
       const r = linhaOS(x.os, x.id);
-      if (noPeriodo(x.de)) r.entrada += x.pecas;
-      if (noPeriodo(x.ate)) r.saida += x.pecas;
+      // A hora da troca de status fica com a linha: a última do período.
+      if (noPeriodo(x.de)) { r.entrada += x.pecas; r.entrouEm = Math.max(r.entrouEm || 0, x.de); }
+      if (noPeriodo(x.ate)) { r.saida += x.pecas; r.saiuEm = Math.max(r.saiuEm || 0, x.ate); }
       if (x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) r.residual += x.pecas;
       if ((x.semData || (x.de != null && x.de <= atual.de)) && (x.ate == null || x.ate > atual.de)) r.jaEstava += x.pecas;
     });
@@ -22950,6 +22968,14 @@ function _dashHistorico(d, agora, escala) {
 // tela própria — a OS saiu do fluxo em processo).
 function _dashFluxoPassos(d) {
   return [
+    { nome: 'Preparando matéria-prima', cards: [
+      { k: 'materiaPrima', nome: 'Matéria-prima', v: d.materiaPrima, statusFiltro: 'materia-prima',
+        dica: 'OS com o status Preparando matéria-prima: o pano está sendo preparado para o enfesto. Não tem campo próprio no menu — é trabalho em curso.' },
+    ] },
+    { nome: 'Enfestando', cards: [
+      { k: 'enfestando', nome: 'No enfesto', v: d.enfestando, statusFiltro: 'enfestando',
+        dica: 'OS com o status Enfestando: alguma fase da tabela de enfestos já foi marcada e o corte ainda não começou. Não tem campo próprio no menu — é trabalho em curso.' },
+    ] },
     { nome: 'Cortando', cards: [
       { k: 'cortando', nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
         dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
@@ -23123,6 +23149,15 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
     .filter(r => cols.some(k => r[k.campo]));
   const parados = semMov ? [] : todas.filter(r => !moveu(r) && r.corrente > 0);
   const num = v => v ? _dashFmt(v) : '<span class="dash-ls-zero">—</span>';
+  /* A HORA DA MOVIMENTAÇÃO ao lado da entrada e da saída (07/10/2026, Junior:
+     "de acordo com o horário da alteração do status"). No Dia, só a hora; nos
+     outros períodos, dia e hora. */
+  const hhmm = t => { const z = new Date(t); return String(z.getHours()).padStart(2, '0') + ':' + String(z.getMinutes()).padStart(2, '0'); };
+  const horaDe = (r, campo) => {
+    const t = campo === 'entrada' ? r.entrouEm : campo === 'saida' ? r.saiuEm : null;
+    if (!t || !r[campo]) return '';
+    return `<i class="dash-ls-hora">${cfg.k === 'dia' ? hhmm(t) : esc(_dashDataHora(t))}</i>`;
+  };
   const somas = {};
   cols.forEach(k => { somas[k.campo] = linhas.reduce((s, r) => s + (r[k.campo] || 0), 0); });
   const nomePer = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
@@ -23132,7 +23167,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
       <thead><tr><th>OS</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
       <tbody>${linhas.map(r => `<tr${r.desde != null ? ` title="Na operação desde ${esc(_dashDataHora(r.desde))}"` : ''}>
         <td>${r.id ? `<button type="button" class="rank-os-link" onclick="verOS('${esc(r.id)}')">${esc(r.os)}</button>` : esc(r.os)}</td>
-        ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
+        ${cols.map(k => `<td>${num(r[k.campo])}${horaDe(r, k.campo)}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><td>total · ${linhas.length} OS</td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
     </table></div>`
     : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : soSaida ? 'Nenhuma OS teve o corte concluído (foi para Separando) ' + nomePer + '.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
@@ -23450,7 +23485,7 @@ function renderFluxoDash() {
   cont.innerHTML = `
     <div class="dash-fluxo-topo">
       <h2>Por onde o produto passa</h2>
-      <span class="dash-desc">Do corte ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
+      <span class="dash-desc">Da matéria-prima ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
     </div>
     ${_dashPorStatusHtml(escala)}
     <div class="dash-escala" role="group" aria-label="Período de análise dos gráficos">
