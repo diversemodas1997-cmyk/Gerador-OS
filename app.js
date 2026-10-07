@@ -22695,12 +22695,25 @@ function _dashIntervalos() {
        que já saiu sai NA SEGUNDA DATA — e as passagens dela pela mesa viram
        uma só. A OS que está na mesa agora segue como está. */
     const fimCorte = Date.parse((typeof _dataFinalizacaoOS === 'function' && _dataFinalizacaoOS(o)) || '');
-    if (Number.isFinite(fimCorte) && por.cortando) {
-      const saidas = por.cortando.filter(iv => iv.id === id && iv.de != null && iv.ate != null);
+    const agoraMs = typeof _expAgora === 'function' ? _expAgora() : Date.now();
+    if (Number.isFinite(fimCorte) && fimCorte <= agoraMs) {
+      const daOS = (por.cortando || []).filter(iv => iv.id === id);
+      const saidas = daOS.filter(iv => iv.de != null && iv.ate != null);
       if (saidas.length) {
         por.cortando = por.cortando.filter(iv => !saidas.includes(iv));
         add('cortando', { os, id, pecas: Math.max(...saidas.map(iv => iv.pecas)),
           de: Math.min(fimCorte, ...saidas.map(iv => iv.de)), ate: fimCorte });
+      } else if (!daOS.length) {
+        /* A OS CORTADA QUE NUNCA ESTEVE NA MESA PARA A RECONSTRUÇÃO (07/10/2026,
+           Junior: "as OS que foram cortadas hoje não aparecem no quadro cortando
+           em Início com o filtro Dia"). Com a segunda data e sem passagem
+           nenhuma pela mesa: o Cortando foi carimbado À MÃO antes do diário de
+           status existir, e o carimbo Separando escreveu por cima dele — sem a
+           caixa Corte marcada, nada mais diz que a OS esteve na mesa. Ela foi
+           cortada, e a segunda data diz quando: sai da mesa nela. A hora em que
+           entrou não se sabe (`de` null): não entra no residual nem no tempo
+           médio, e na barra conta como "sem data". */
+        add('cortando', { os, id, pecas: produtosOS(o), de: null, ate: fimCorte });
       }
     }
   });
@@ -30753,6 +30766,12 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
      intocada não tem por que pesar nele. Numa OS com etapa marcada, o status
      volta a ser o que a folha diz — que é informação melhor do que um carimbo
      dizendo que não começou o que já começou. */
+  /* O STATUS DE ANTES FICA ANOTADO ANTES DO CARIMBO (07/10/2026). O carimbo
+     reescreve `statusOSEm`; se o status que ele substitui não estava no diário
+     (OS carimbada antes do diário existir, ou mudada sem gravação no meio),
+     a hora dele se perdia — o Cortando carimbado de manhã sumia quando o
+     Separando era carimbado à tarde, e a OS nunca tinha passado pela mesa. */
+  _statusHistAnotar(os, Date.parse(agora) || Date.now());
   if (alvo === 'nao-iniciado') {
     delete os.statusOS; delete os.statusOSPor; delete os.statusOSEm;
   } else {

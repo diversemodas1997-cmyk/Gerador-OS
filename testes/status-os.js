@@ -548,6 +548,17 @@ console.log('-- o que fica gravado --');
   H._statusHistAnotar(intocada, 9000000);
   ok('36k. OS que ninguem tocou nao ganha diario', !('statusHist' in intocada), JSON.stringify(intocada));
 
+  /* O CORTANDO CARIMBADO ANTES DO DIARIO (07/10/2026): o carimbo Separando
+     anota primeiro o status que vai substituir, com a hora dele. */
+  t = ctxDe('admin', 'admin@diverse.local', true, [{ id: 's2', os: '1236', data: '2026-03-10',
+    statusOS: 'cortando', statusOSEm: '2026-10-07T11:00:00.000Z' }]);
+  const os4 = t.ctx.STATE.ordens[0];
+  await t.api.mudarStatusOS('s2', 'separando');
+  const hist4 = os4.statusHist || [];
+  ok('36l. o Cortando de antes do diario fica anotado na hora dele, antes do Separando',
+     hist4.length === 2 && hist4[0].k === 'cortando' && hist4[0].em === Date.parse('2026-10-07T11:00:00.000Z')
+       && hist4[1].k === 'separando' && hist4[1].c === 'separando', JSON.stringify(hist4));
+
   const A = ctxDe('admin', 'admin@diverse.local', true, []).api;
   let cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10' });
   ok('37. OS sem status mostra so a data em que foi feita',

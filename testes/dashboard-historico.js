@@ -338,6 +338,18 @@ const h61 = rodar([hoje61], 'dia').h;
 ok('a OS com a segunda data de hoje aparece no Dia, com a saída',
    (h61.cortando.listaOS[0] || {}).saida === 200, h61.cortando.listaOS);
 
+// A 0062 foi carimbada Cortando à mão antes do diário existir, e Separando
+// hoje às 11:00 por cima: sem a caixa Corte, a reconstrução nunca a vê na mesa.
+// A segunda data diz que ela foi cortada hoje.
+const soCarimbo = Object.assign(os('0062', {}), { statusOS: 'separando',
+  statusOSEm: new Date(em(16, 11)).toISOString(), finalizadaEm: new Date(em(16, 11)).toISOString(),
+  statusHist: [{ k: 'separando', em: em(16, 11), c: 'separando' }] });
+const h62 = rodar([soCarimbo], 'dia').h;
+ok('a OS cortada hoje que a reconstrução nunca viu na mesa sai nela pela segunda data',
+   (h62.cortando.listaOS[0] || {}).saida === 200 && (h62.cortando.listaOS[0] || {}).entrada === 0, h62.cortando.listaOS);
+ok('e sem hora de entrada, não pesa no residual nem no tempo médio',
+   h62.cortando.residual === 0 && h62.cortando.tempoMedio == null, [h62.cortando.residual, h62.cortando.tempoMedio]);
+
 const hl = rodar([limpa], 'dia').h;
 ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
    ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);
