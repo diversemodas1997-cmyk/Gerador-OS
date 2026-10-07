@@ -55,6 +55,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _marcasDoStatus', 'as marcas de um status')}
   ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
   ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
+  ${recorte('const FLUXO_STATUS_OS', 'a validade do carimbo')}
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _avisosNascimento', 'o nascimento de um registro')}
   ${recorte('function _expCancelSet', 'as expedicoes canceladas')}

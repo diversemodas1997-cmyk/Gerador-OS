@@ -105,6 +105,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _marcasDoStatus', 'as marcas de um status')}
   ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
   ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
+  ${recorte('const FLUXO_STATUS_OS', 'a validade do carimbo')}
   ${recorte('function _statusOS', 'a leitura do status')}
   ${constante('STATUS_PONTO')}
   ${recorte('function _statusPingo', 'o pingo do status')}
@@ -421,8 +422,15 @@ console.log('-- o que fica gravado --');
      comCarimbo('enfestando', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
   ok('12n. vale tambem para "Parado": etapa nova quer dizer que a OS voltou a andar',
      comCarimbo('parado', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
-  ok('12o. e para "Finalizado"',
-     comCarimbo('estoque', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'cortando');
+  /* REGRA NOVA (07/10/2026, Junior: "Aplique a regra nova"): a caixa de uma
+     etapa que ficou PARA TRAS do carimbo e o checklist sendo posto em dia, e
+     nao derruba o carimbo. Estoque carimbado e depois o Corte marcado: segue
+     Estoque. Carimbo errado se corrige com outro carimbo. */
+  ok('12o. caixa de etapa para tras do carimbo nao derruba o carimbo (Estoque segue)',
+     comCarimbo('estoque', 1000, { 'Corte': true }, { 'Corte': 5000 }) === 'estoque',
+     comCarimbo('estoque', 1000, { 'Corte': true }, { 'Corte': 5000 }));
+  ok('12o-0. Ensacado | Sao Carlos carimbado e o Ensaque marcado depois: segue em Sao Carlos',
+     comCarimbo('ensacado-sc', 1000, { 'Corte': true, 'Ensaque': true }, { 'Corte': 500, 'Ensaque': 5000 }) === 'ensacado-sc');
   // SEPARANDO (24/09/2026): Cortando -> Separando -> Ensacado. Carimbado depois
   // do Corte, a OS sai da mesa de corte; marcado o Ensaque, migra para Ensacado.
   ok('12o-1. Separando carimbado depois do Corte: sai de Cortando',
@@ -1210,7 +1218,8 @@ console.log('-- o que fica gravado --');
       ${recorte('function _marcasDoStatus', 'as marcas de um status')}
       ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
       ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
-      ${recorte('function _statusOS', 'a leitura do status')}
+      ${recorte('const FLUXO_STATUS_OS', 'a validade do carimbo')}
+  ${recorte('function _statusOS', 'a leitura do status')}
       ${constante('STATUS_PONTO')}
       ${recorte('function _naListaNaoIniciadas', 'a lista de nao iniciadas')}
       ${recorte('function _filtroStatusListaOS', 'o filtro por status')}

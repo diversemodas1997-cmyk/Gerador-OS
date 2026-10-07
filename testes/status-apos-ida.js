@@ -32,6 +32,7 @@ const _statusOS = new Function('STATE', `
   ${corta('function _marcasDoStatus')}
   ${corta('function _statusDoChecklistOS')}
   ${corta('function _ultimaMarcacaoChecklist')}
+  ${corta('const FLUXO_STATUS_OS')}
   ${corta('function _statusOS')}
   return _statusOS;
 `)({});

@@ -45,6 +45,7 @@ const motor = new Function('STATE', `
   ${corta('function _marcasDoStatus')}
   ${corta('function _statusDoChecklistOS')}
   ${corta('function _ultimaMarcacaoChecklist')}
+  ${corta('const FLUXO_STATUS_OS')}
   ${corta('function _statusOS')}
   ${cortaArr('const FASES_ESTOQUE')}
   ${corta('function _faseCarimbadaOS')}
@@ -106,8 +107,14 @@ ok('6. marcada uma caixa depois, quem manda e a folha',
 ok('7. e ela continua no campo certo, agora pela caixa de chegada',
    campoDe(o) === 'Estoque corte · Unidade São Carlos', campoDe(o));
 
+// REGRA NOVA (07/10/2026): as caixas marcadas depois do carimbo (Corte, ida)
+// ficaram PARA TRAS de Ensacado | Sao Carlos no caminho — e o checklist posto
+// em dia, e o carimbo segue valendo.
 o = os0530('ensacado-sc', new Date(T0 - 60000).toISOString());     // carimbo ANTERIOR as marcas
-ok('8. carimbo mais velho que a folha nao move nada',
+ok('8. carimbo mais velho que caixas que ficaram para tras dele continua valendo',
+   campoDe(o) === 'Estoque corte · Unidade São Carlos', campoDe(o));
+o = os0530('enfestando', new Date(T0 - 60000).toISOString());
+ok('8b. carimbo mais velho que uma caixa que leva a OS PARA A FRENTE: manda a folha',
    campoDe(o) === 'Em trânsito · IDA', campoDe(o));
 
 console.log('');
@@ -125,8 +132,9 @@ console.log('-- carimbo "Estoque" tira a OS do fluxo (0553/0559/0564/0565, 02/10
   ok('11a. carimbada Estoque depois da ida, ela SAI do transito (fora do fluxo)',
      campoDe(x) === '(fora do fluxo)', campoDe(x));
   const y = os0530('estoque', new Date(T0 - 60000).toISOString());
-  ok('11b. carimbo de Estoque mais velho que a folha nao manda: segue no transito',
-     campoDe(y) === 'Em trânsito · IDA', campoDe(y));
+  // REGRA NOVA (07/10/2026): o transito ficou para tras do Estoque no caminho.
+  ok('11b. carimbo de Estoque mais velho que caixas que ficaram para tras: segue fora do fluxo',
+     campoDe(y) === '(fora do fluxo)', campoDe(y));
 }
 
 console.log('');

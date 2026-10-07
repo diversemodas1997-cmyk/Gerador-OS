@@ -50,6 +50,7 @@ const motor = new Function(`
   ${corta('function _marcasDoStatus')}
   ${corta('function _statusDoChecklistOS')}
   ${corta('function _ultimaMarcacaoChecklist')}
+  ${corta('const FLUXO_STATUS_OS')}
   ${corta('function _statusOS')}
   ${cortaArr('const FASES_ESTOQUE')}
   return { STATUS_OS, FASES_ESTOQUE, _statusOS };

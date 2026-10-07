@@ -10639,8 +10639,8 @@ const FASES_ESTOQUE = [
    move nada, que é o certo: eles não são lugar. */
 function _faseCarimbadaOS(o) {
   if (!o || !o.statusOS) return -1;
-  const carimbo = Date.parse(o.statusOSEm || '') || 0;
-  if (!carimbo || carimbo <= _ultimaMarcacaoChecklist(o)) return -1;
+  // A mesma validade do status (ver _carimboValeOS); aqui o carimbo precisa de data.
+  if (!(Date.parse(o.statusOSEm || '') > 0) || !_carimboValeOS(o)) return -1;
   return FASES_ESTOQUE.findIndex(f => f.status === o.statusOS);
 }
 
@@ -10648,8 +10648,7 @@ function _faseCarimbadaOS(o) {
 // checklist — a mesma regra de _faseCarimbadaOS).
 function _carimboTerminalOS(o) {
   if (!o || o.statusOS !== 'estoque') return false;
-  const carimbo = Date.parse(o.statusOSEm || '') || 0;
-  return !!carimbo && carimbo > _ultimaMarcacaoChecklist(o);
+  return Date.parse(o.statusOSEm || '') > 0 && _carimboValeOS(o);
 }
 
 // A OS entrou nesta fase? Etapa da fase marcada no checklist E a condição da
@@ -30604,11 +30603,36 @@ function exigirStatusOS(acao) {
    Chave que não existe mais na lista (as OS carimbadas como 'andamento', da
    versão antiga) cai no checklist, que é informação melhor do que a que ela
    carregava. */
+/* PÔR O CHECKLIST EM DIA NÃO FAZ A OS VOLTAR (07/10/2026, Junior: "o mesmo
+   problema do quadro preparando matéria-prima tem ocorrido com os demais
+   quadros"). O carimbo à mão valia até a próxima caixa marcada — QUALQUER
+   caixa. A OS 0621 foi carimbada Ensacado | São Carlos às 11:08; às 14:18
+   alguém marcou a caixa Ensaque, que ficou para trás, e a OS voltou a Em
+   trânsito. No Início ela entrava e saía de quadros que já tinha passado.
+
+   Agora a caixa marcada depois do carimbo só derruba o carimbo quando leva a
+   OS para a FRENTE no caminho (ou para fora dele). A caixa de uma etapa que a
+   OS já passou é só o checklist sendo posto em dia. O caminho é o que o Junior
+   descreveu, na ordem da folha: */
+const FLUXO_STATUS_OS = ['materia-prima', 'enfestando', 'cortando', 'separando', 'ensacado',
+  'costurando', 'transito-ida', 'ensacado-sc', 'costurando-sc', 'estoque-fio-sc',
+  'transito-volta', 'estoque-fio', 'fios', 'estoque'];
+// O carimbo à mão ainda vale? Mais novo que a última caixa, ou mais velho só
+// que de caixas de etapas que ficaram para trás dele.
+function _carimboValeOS(o) {
+  const k = String((o && o.statusOS) || '').trim();
+  const carimbo = Date.parse((o && o.statusOSEm) || '') || 0;
+  if (!k) return false;
+  // Carimbo sem data (OS antiga) vale enquanto nenhuma caixa tiver hora.
+  if (_ultimaMarcacaoChecklist(o) <= carimbo) return true;
+  const ondeCarimbo = FLUXO_STATUS_OS.indexOf(k);
+  const ondeFolha = FLUXO_STATUS_OS.indexOf(_statusDoChecklistOS(o));
+  return ondeCarimbo >= 0 && ondeFolha >= 0 && ondeFolha < ondeCarimbo;
+}
 function _statusOS(o) {
   const k = String((o && o.statusOS) || '').trim();
   if (!STATUS_OS.some(x => x.k === k)) return _statusDoChecklistOS(o);
-  const carimbo = Date.parse((o && o.statusOSEm) || '') || 0;
-  if (_ultimaMarcacaoChecklist(o) > carimbo) return _statusDoChecklistOS(o);
+  if (!_carimboValeOS(o)) return _statusDoChecklistOS(o);
   return k;
 }
 

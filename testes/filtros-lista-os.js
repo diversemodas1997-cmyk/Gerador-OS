@@ -293,7 +293,8 @@ console.log('-- a busca por data de finalizacao --');
     ${recorte('function _marcasDoStatus', 'as marcas de um status')}
     ${recorte('function _statusDoChecklistOS', 'o status que o checklist diz')}
     ${recorte('function _ultimaMarcacaoChecklist', 'a ultima etapa marcada')}
-    ${recorte('function _statusOS', 'a leitura do status')}
+    ${recorte('const FLUXO_STATUS_OS', 'a validade do carimbo')}
+  ${recorte('function _statusOS', 'a leitura do status')}
     ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
     ${recorte('function _diaFinalizacaoOS', 'o dia da finalizacao')}
     ${recorte('function _osFinalizadaNoDia', 'a OS no dia pedido')}
