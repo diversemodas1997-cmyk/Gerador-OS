@@ -52,6 +52,7 @@ const motorOcor = [
   corta('function ocorrenciasExpedicao'),
   corta('function _expCancelSet'),
   corta('function _expDataEfetivaCarga'),
+  corta('function _expInstanteCarga'),
   corta('function _dashTurnoDaCarga')
 ].join('\n');
 function comOcorrencias(estado) {

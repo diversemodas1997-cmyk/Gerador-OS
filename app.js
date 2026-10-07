@@ -1453,6 +1453,9 @@ function iniciarPolling() {
     // dois momentos a checagem é imediata — traz de uma vez tudo o que mudou.
     if (!_abaAtiva()) return;
     verificarServidor();
+    // O caminhão que chegou na hora: a caixa da viagem é marcada (ver
+    // _expMarcarViagensVencidas).
+    if (typeof _expRodarViagensVencidas === 'function') _expRodarViagensVencidas();
   }, 15000);
 }
 
@@ -10759,29 +10762,25 @@ function _fracoesMovidasOS(o) {
   const atual = faseAtualOS(o);
   if (atual < 0) return out;                       // terminal "Estoque": fora do fluxo
   const idAtual = (FASES_ESTOQUE[atual] || {}).id;
-  const hoje = _expHoje();
-  const jaSaiu = c => _expDataEfetivaCarga(c) <= hoje;
+  /* SEM ATALHO PARA SÃO CARLOS, E NADA SAI ANTES DO CAMINHÃO (07/10/2026,
+     Junior: "não pode chegar em São Carlos com status ensacado sem passar pelo
+     status em trânsito"). Eram duas regras: carga por acontecer já punha a
+     fração na estrada, e carga com data vencida a punha DIRETO no Estoque de
+     corte de São Carlos (a 'migrou' de 15/09). Agora:
+       · carga que ainda não saiu (dia e hora, _expInstanteCarga) → a fração
+         fica onde está;
+       · carga que já saiu → a fração está EM TRÂNSITO, até a caixa de chegada.
+     O `migra` de _TRANSITO_PERNAS fica sem uso: chegar é sempre marcar a
+     chegada. */
+  const agora = _expAgora();
+  const jaSaiu = c => _expInstanteCarga(c) <= agora;
   for (const t of _TRANSITO_PERNAS) {
     if (!t.origens.includes(idAtual)) continue;
     if (osEtapaMarcada(o, t.chegouRe)) continue;   // já chegou: a viagem acabou
     const viagem = _faseIdxPorId(t.faseId);
-    // O destino de quem já saiu, quando existe para este campo de origem.
-    const destino = (t.migra && t.migra[idAtual]) ? _faseIdxPorId(t.migra[idAtual]) : -1;
-    const fracao = (filtro) => _expEmbarcadoOS(o, t.perna, filtro).fracao || 0;
-    if (destino >= 0) {
-      const f = fracao(jaSaiu);
-      if (f > 0) out.push({ faseIdx: destino, origemIdx: atual, fracao: f,
-                            parcial: f < 1, motivo: 'migrou' });
-      const fv = fracao(c => !jaSaiu(c));
-      if (fv > 0 && viagem >= 0) out.push({ faseIdx: viagem, origemIdx: atual, fracao: fv,
-                                            parcial: fv < 1, motivo: 'viagem' });
-    } else {
-      // Sem destino de migração (a costura): tudo o que está alocado viaja,
-      // como sempre foi.
-      const f = fracao(null);
-      if (f > 0 && viagem >= 0) out.push({ faseIdx: viagem, origemIdx: atual, fracao: f,
-                                           parcial: f < 1, motivo: 'viagem' });
-    }
+    const f = _expEmbarcadoOS(o, t.perna, jaSaiu).fracao || 0;
+    if (f > 0 && viagem >= 0) out.push({ faseIdx: viagem, origemIdx: atual, fracao: f,
+                                         parcial: f < 1, motivo: 'viagem' });
     break;   // uma OS está numa perna só — a origem já decidiu qual
   }
   return out;
@@ -12533,6 +12532,8 @@ function _expData(iso) {
   return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
 function _expHoje() { return _expIso(new Date()); }
+// O relógio da expedição em milissegundos: a hora da carga é comparada com ele.
+function _expAgora() { return Date.now(); }
 function _expAddDias(iso, n) {
   const d = _expData(iso);
   d.setDate(d.getDate() + n);
@@ -13476,6 +13477,10 @@ async function sincronizarPlanoExpedicaoDaOS(os, etapaNome, checked) {
    que são alocadas em plano de expedição devem receber o preenchimento
    automático do check box Expedição Desc x São Carlos").
 
+   SUBSTITUÍDO EM 07/10/2026: a caixa passou a ser marcada no dia e hora da
+   CARGA, e não na alocação — ver _expMarcarViagensVencidas. O texto abaixo é a
+   regra de 16/09, guardado para a história.
+
    Decidido com ele, e dito aqui porque é o contrário do que o cuidado pediria:
      · marca NA HORA DA ALOCAÇÃO, com a hora da alocação — mesmo que a viagem
        seja dias depois;
@@ -13518,7 +13523,7 @@ function _tarefasDaEtapaOS(os, etapaNome) {
    o que põe a OS na estrada — no campo e, desde os status novos, também no
    estado que a lista mostra. Deixar a volta de fora faria a OS trazida de São
    Carlos continuar anunciada como se estivesse lá. */
-function _expMarcarExpedicaoOS(os, perna) {
+function _expMarcarExpedicaoOS(os, perna, quandoMs) {
   const faseId = perna === 'volta' ? 'transitoVolta' : 'transitoIda';
   const fase = (FASES_ESTOQUE || []).find(f => f.id === faseId);
   const re = fase && fase.entrada && fase.entrada.re;
@@ -13530,7 +13535,7 @@ function _expMarcarExpedicaoOS(os, perna) {
   os.progresso.etapasSeq = os.progresso.etapasSeq || {};
   if (os.progresso.etapasCheck[nome]) return '';          // já marcada: a hora dela fica
   os.progresso.etapasCheck[nome] = true;
-  os.progresso.etapasSeq[nome] = Date.now();
+  os.progresso.etapasSeq[nome] = Number.isFinite(quandoMs) ? quandoMs : Date.now();
   /* O PAI AUTOMÁTICO TAMBÉM PREENCHE OS FILHOS (18/09/2026, Junior). A regra é a
      mesma de quando alguém marca à mão: etapa marcada quer dizer que ela ACABOU,
      e etapa que acabou tem as tarefas dela feitas. Sem isto, a folha da OS
@@ -13543,6 +13548,139 @@ function _expMarcarExpedicaoOS(os, perna) {
     tarefas.forEach(t => { mapa[t] = true; });
   }
   return nome;
+}
+
+/* A CAIXA DA VIAGEM É MARCADA NO DIA E HORA DA CARGA, E NÃO NA ALOCAÇÃO
+   (07/10/2026, Junior, escolhendo o caminho 1: "a OS ainda precisa receber o
+   status em trânsito antes de receber o status Ensacado São Carlos. A OS
+   precisa ser registrada pelas etapas lógicas e não pode chegar em São Carlos
+   com status ensacado sem passar pelo status em trânsito").
+
+   POR QUÊ. Desde 16/09 a alocação marcava a caixa "Expedição Desc X São Carlos"
+   na hora, com o relógio da alocação. A OS alocada hoje para o caminhão da
+   semana que vem virava "Em trânsito" hoje, e o Início — que data cada troca
+   pela hora da caixa — contava a saída do Estoque de corte no dia da alocação:
+   no filtro Dia, a lista trazia OS de caminhões de dias diferentes, e a que
+   embarcou hoje, alocada antes, não aparecia.
+
+   AGORA. Alocar não marca nada. A caixa é marcada quando chega o dia e a hora
+   da carga (_expInstanteCarga), e com ESSA hora — por quem estiver com o
+   programa aberto, na verificação periódica. Até lá a OS segue Ensacado |
+   Descalvado, no cartão, na lista e no status. Depois dela fica Em trânsito
+   até "Recebido em São Carlos" (ou "Recebido em Descalvado", na volta) ser
+   marcado. O caminho é sempre Ensacado → Em trânsito → Recebido.
+
+   As OS alocadas ANTES desta regra são acertadas pela mesma rotina (ver
+   _expAcertarCaixaAntiga): a caixa marcada pela alocação para uma carga que
+   ainda não saiu volta a ficar desmarcada; a de carga que já saiu passa a ter
+   a hora da carga. A conta é a mesma em toda máquina, então duas máquinas que
+   acertem a mesma OS escrevem a mesma coisa. */
+
+// O instante da carga: o dia efetivo (remarcação vale) e a hora da janela
+// daquela perna. Sem hora cadastrada, o começo do dia.
+function _expInstanteCarga(c) {
+  if (!c) return NaN;
+  const dia = _expDataEfetivaCarga(c);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dia || ''));
+  if (!m) return NaN;
+  const perna = c.perna === 'volta' ? 'volta' : 'ida';
+  const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === c.janelaId && e.data === c.data);
+  const j = (STATE.expedicaoJanelas || []).find(x => x.id === c.janelaId);
+  const hora = String((exc && (perna === 'volta' ? exc.horaVolta : exc.horaIda))
+            || (j && (perna === 'volta' ? j.horaVolta : j.horaIda)) || '');
+  const hm = /^(\d{1,2}):?(\d{2})?/.exec(hora.trim());
+  const h = hm ? Math.min(23, parseInt(hm[1], 10)) : 0;
+  const mi = hm && hm[2] ? Math.min(59, parseInt(hm[2], 10)) : 0;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), h, mi).getTime();
+}
+
+// As cargas não canceladas da OS naquela perna, da mais cedo para a mais tarde.
+function _expCargasDaPernaOS(os, perna) {
+  const cancel = _expCancelSet();
+  return (STATE.expedicaoCargas || [])
+    .filter(c => c.osId === os.id && (c.perna === 'volta' ? 'volta' : 'ida') === perna
+      && !cancel.has(c.janelaId + '|' + c.data))
+    .map(c => ({ c, t: _expInstanteCarga(c) }))
+    .filter(x => Number.isFinite(x.t))
+    .sort((a, b) => a.t - b.t);
+}
+
+/* A OS ALOCADA ANTES DESTA REGRA: a caixa foi marcada pela alocação, com a hora
+   dela. Reconhece-se assim: a hora da caixa bate (até 1 minuto) com o
+   nascimento (`criadaEm`) de uma carga da mesma perna. Caixa marcada por GENTE
+   não bate com isso, e fica como está. Devolve true se mexeu. */
+function _expAcertarCaixaAntiga(os, perna, agoraMs) {
+  const fase = (FASES_ESTOQUE || []).find(f => f.id === (perna === 'volta' ? 'transitoVolta' : 'transitoIda'));
+  const re = fase && fase.entrada && fase.entrada.re;
+  const nome = re ? (os.etapas || []).find(n => re.test(n)) : null;
+  const prog = os.progresso || {};
+  const ck = prog.etapasCheck || {}, sq = prog.etapasSeq || {};
+  if (!nome || !ck[nome]) return false;
+  const marca = Number(sq[nome]);
+  if (!Number.isFinite(marca)) return false;
+  const cargas = _expCargasDaPernaOS(os, perna);
+  if (!cargas.length) return false;
+  const daAlocacao = cargas.some(x => Math.abs((Date.parse(x.c.criadaEm || '') || -1e15) - marca) <= 60000);
+  if (!daAlocacao) return false;
+  const primeira = cargas[0].t;
+  if (primeira === marca) return false;
+  const chegouRe = perna === 'volta' ? ETAPA_DESC_RE : ETAPA_SC_RE;
+  const chegou = (os.etapas || []).find(n => chegouRe.test(n) && ck[n]);
+  const horaChegou = chegou ? Number(sq[chegou]) : NaN;
+  if (primeira > agoraMs) {
+    // O caminhão ainda não saiu: a OS volta para onde estava. Se alguém já
+    // marcou a chegada, a viagem aconteceu de fato — não se desfaz.
+    if (chegou) return false;
+    delete ck[nome]; delete sq[nome];
+    if (prog.tarefasCheck) delete prog.tarefasCheck[nome];
+    return true;
+  }
+  // Já saiu: a hora da caixa passa a ser a da carga — nunca depois da chegada.
+  const nova = Number.isFinite(horaChegou) && horaChegou <= primeira ? horaChegou - 1 : primeira;
+  if (nova === marca) return false;
+  sq[nome] = nova;
+  return true;
+}
+
+/* A ROTINA: marca a caixa das cargas cujo dia e hora já chegaram, com a hora da
+   carga, e acerta as OS da regra antiga. Devolve quantas OS mudaram. */
+function _expMarcarViagensVencidas(agoraMs) {
+  const agora = Number.isFinite(agoraMs) ? agoraMs : Date.now();
+  let n = 0;
+  const vistas = new Set();
+  (STATE.expedicaoCargas || []).forEach(c => {
+    const perna = c.perna === 'volta' ? 'volta' : 'ida';
+    const chave = c.osId + '|' + perna;
+    if (vistas.has(chave)) return;
+    vistas.add(chave);
+    const os = (STATE.ordens || []).find(o => o.id === c.osId);
+    if (!os || _osCanceladaParaExpedicao(os)) return;
+    let mexeu = _expAcertarCaixaAntiga(os, perna, agora);
+    const cargas = _expCargasDaPernaOS(os, perna);
+    if (cargas.length && cargas[0].t <= agora && _expMarcarExpedicaoOS(os, perna, cargas[0].t)) mexeu = true;
+    if (mexeu) n++;
+  });
+  return n;
+}
+
+// OS cancelada não viaja: a rotina não marca nada nela.
+function _osCanceladaParaExpedicao(os) {
+  return typeof _statusOS === 'function' && _statusOS(os) === 'cancelado';
+}
+
+let _expViagensRodando = false;
+async function _expRodarViagensVencidas() {
+  if (_expViagensRodando) return;
+  if (typeof podeGravar === 'function' && !podeGravar()) return;
+  if (typeof currentUser !== 'undefined' && !currentUser) return;
+  _expViagensRodando = true;
+  try {
+    if (_expMarcarViagensVencidas(Date.now()) > 0) {
+      await saveState('ordens');
+      if (typeof renderListaOS === 'function') { try { renderListaOS(); } catch (e) {} }
+    }
+  } catch (e) { console.warn('viagens vencidas', e); }
+  finally { _expViagensRodando = false; }
 }
 
 // O nome de antes, quando só a ida marcava. Mantido porque é curto no lugar em
@@ -14861,16 +14999,11 @@ async function salvarModalExpedicao() {
     // (ver _expMarcarExpedicaoIdaOS).
     // A caixa da PERNA em que a OS foi alocada — ida ou volta. Ver
     // _expMarcarExpedicaoOS.
-    let marcou = '';
-    {
-      const osAloc = (STATE.ordens || []).find(o => o.id === osId);
-      marcou = _expMarcarExpedicaoOS(osAloc, perna === 'volta' ? 'volta' : 'ida');
-      if (marcou) {
-        try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição', e); }
-      }
-    }
+    // A caixa da perna NÃO é marcada agora: só no dia e hora da carga (ver
+    // _expMarcarViagensVencidas). Carga com hora já passada marca na hora.
+    await _expRodarViagensVencidas();
     toast((ctx.editId ? 'Expedição da OS alterada' : 'OS alocada na expedição')
-      + (marcou ? ` · "${marcou}" marcada no checklist` : ''), 'ok');
+      + ' · a OS passa a Em trânsito no dia e hora da carga', 'ok');
 
   } else if (ctx.tipo === 'volta') {
     if (!exigirEdicao('alocar OS na expedição')) return;
@@ -14909,18 +15042,10 @@ async function salvarModalExpedicao() {
     });
     if (!n) return toast('Essas OSs já estão na volta', 'err');
     await saveState('expedicaoCargas');
-    // Mesma regra da ida: alocar na volta marca "Expedição São Carlos X Desc."
-    // em cada OS trazida, e é essa caixa que acende o status do trânsito.
-    let marcadasVolta = 0;
-    marcadas.forEach(el => {
-      const osVolta = (STATE.ordens || []).find(o => o.id === el.value);
-      if (osVolta && _expMarcarExpedicaoOS(osVolta, 'volta')) marcadasVolta++;
-    });
-    if (marcadasVolta) {
-      try { await saveState('ordens'); } catch (e) { console.warn('marcar expedição de volta', e); }
-    }
-    toast(`${n} OS trazida(s) para a volta`
-      + (marcadasVolta ? ` · "Expedição São Carlos X Desc." marcada em ${marcadasVolta}` : ''), 'ok');
+    // Mesma regra da ida: "Expedição São Carlos X Desc." é marcada no dia e
+    // hora da carga, e não agora (ver _expMarcarViagensVencidas).
+    await _expRodarViagensVencidas();
+    toast(`${n} OS trazida(s) para a volta · passam a Em trânsito no dia e hora da carga`, 'ok');
 
   } else if (ctx.tipo === 'config') {
     if (!exigirEdicao('configurar a expedição')) return;
@@ -22264,15 +22389,16 @@ function _dashCartoesDaOS(o, opts) {
        As duas coexistem: parte do lote foi na carga de ontem, parte vai na de
        amanhã. Por isso a lista inteira, e não o `find` de uma delas. */
     const movs = (opts && opts.semTransito) ? [] : _fracoesMovidasOS(o);
-    const _hoje = _expHoje();
     /* QUAIS CARGAS PESAM NO TURNO de quem está viajando. Onde há migração (a
        IDA, que tem campo do outro lado), quem já saiu não está mais na estrada:
        o turno é o das cargas que ainda vão acontecer. Onde NÃO há (a volta, que
        não tem para onde migrar), a fatia viaja mesmo com a data vencida — e aí
        todas as cargas pesam, senão a volta ficaria sem turno nenhum e o volume
        cairia todo na manhã por falta de peso. */
-    const _temMigracao = movs.some(m => m.motivo === 'migrou');
-    const _pesamNoTurno = _temMigracao ? (c => _expDataEfetivaCarga(c) > _hoje) : null;
+    // Desde 07/10/2026 só a carga que já saiu está na estrada (ver
+    // _fracoesMovidasOS): é ela que pesa no turno.
+    const _agoraTurno = _expAgora();
+    const _pesamNoTurno = c => _expInstanteCarga(c) <= _agoraTurno;
     let saiu = 0;
     movs.forEach(m => {
       const pecas = Math.round(total * m.fracao);

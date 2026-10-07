@@ -78,7 +78,11 @@ const motor = [
      Agora HOJE é 15/09/2026: as cargas de 22/09 estão no FUTURO (trânsito), e
      os casos de migração dizem a data deles em voz alta. */
   'function _expHoje() { return HOJE; }',
+  // O relógio em ms anda junto com o HOJE fixo do teste: o fim do dia dele,
+  // quando os caminhões das duas janelas de hoje (8h e 14h) já saíram.
+  'function _expAgora() { return new Date(HOJE + "T23:00:00").getTime(); }',
   corta('function _expDataEfetivaCarga'),
+  corta('function _expInstanteCarga'),
   cortaLinha('const TERMINAL_ETAPA_RE'),
   corta('function faseAtualOS'),
   corta('function _expCancelSet'),
@@ -171,8 +175,10 @@ const estado = (os, cargas, janelas, excecoes) => ({
 // o status ENSACADO, e por isso a OS deste teste marca o Ensaque depois do
 // Corte — é o que a fábrica faz quando fecha o saco.
 const noCorte = () => osBase({ 'Corte': true, 'Ensaque': true }, { 'Corte': 1, 'Ensaque': 2 });
+/* Desde 07/10/2026 só a carga que JÁ SAIU (dia e hora da janela) move peça, e
+   para o trânsito. A carga padrão é a de HOJE, com o relógio no fim do dia. */
 const carga = (extra) => Object.assign({
-  id: 'c1', osId: 'os_1', janelaId: 'j1', data: '2026-09-22', perna: 'ida',
+  id: 'c1', osId: 'os_1', janelaId: 'j1', data: HOJE, perna: 'ida',
   pacotes: [{ tam: 'P', tom: null }, { tam: 'M', tom: null }], volumes: 5
 }, extra || {});
 
@@ -386,12 +392,12 @@ confere('Duas cargas de ida, uma de manhã e outra à tarde: 50 em cada turno',
 // A hora da EXCEÇÃO manda: expedição remarcada para a tarde é caminhão da tarde.
 confere('Ocorrência remarcada com hora nova: o turno segue a exceção',
   dash(estado(noCorte(), [carga()], undefined,
-    [{ janelaId: 'j1', data: '2026-09-22', tipo: 'remarcada', novaData: '2026-09-23', horaIda: '15:30' }])),
+    [{ janelaId: 'j1', data: HOJE, tipo: 'remarcada', novaData: '2026-09-14', horaIda: '15:30' }])),
   { corte: 100, idaTarde: 100 });
 
 confere('Expedição cancelada: nada viaja, o lote inteiro fica no corte',
   dash(estado(noCorte(), [carga()], undefined,
-    [{ janelaId: 'j1', data: '2026-09-22', tipo: 'cancelada' }])),
+    [{ janelaId: 'j1', data: HOJE, tipo: 'cancelada' }])),
   { corte: 200 });
 
 // A volta usa a hora da VOLTA da janela (17h), não a da ida (8h).
@@ -420,21 +426,28 @@ confere('Carga antiga sem pacotes: as 200 pç inteiras no turno da janela',
    em São Carlos, e o cartão do Início mostrava 200 em Descalvado. Este teste é
    o que não deixa os dois números se separarem de novo. */
 
-confere('carga cuja data já chegou: a fatia migra para o corte de São Carlos',
+/* 07/10/2026 (Junior: "não pode chegar em São Carlos com status ensacado sem
+   passar pelo status em trânsito"): a carga que já saiu não migra mais direto
+   para São Carlos — fica na estrada até a caixa de chegada. */
+confere('carga cuja data já chegou: a fatia está na estrada, não em São Carlos',
   dash(estado(noCorte(), [carga({ data: '2026-09-10' })])),
-  { corte: 100, corteSC: 100 });
+  { corte: 100, idaManha: 100 });
+
+confere('carga que ainda vai sair: nada sai do Estoque de corte',
+  dash(estado(noCorte(), [carga({ data: '2026-09-22' })])),
+  { corte: 200 });
 
 /* Uma que já saiu e outra por vir, e é o caso que separa as duas contas: 50
    chegaram lá, 50 estão na estrada e 100 continuam na prateleira daqui. O turno
    dos que viajam é o da carga QUE AINDA NÃO SAIU (j2, tarde) — pesar o turno
    com a carga de ontem junto poria metade do volume na manhã, num caminhão que
    já foi. */
-confere('uma carga já saiu e outra está por vir: migrado, na estrada e parado, cada um no seu lugar',
+confere('uma carga já saiu e outra está por vir: a que saiu na estrada, o resto parado',
   dash(estado(noCorte(), [
     carga({ id: 'c1', data: '2026-09-10', pacotes: [{ tam: 'P', tom: null }] }),
-    carga({ id: 'c2', janelaId: 'j2', pacotes: [{ tam: 'M', tom: null }] })
+    carga({ id: 'c2', janelaId: 'j2', data: '2026-09-22', pacotes: [{ tam: 'M', tom: null }] })
   ])),
-  { corte: 100, corteSC: 50, idaTarde: 50 });
+  { corte: 150, idaManha: 50 });
 
 /* A VOLTA NÃO TEM PARA ONDE MIGRAR (o caminho de volta não tem campo de destino
    do outro lado), então lá a fatia continua indo para o trânsito mesmo depois

@@ -43,6 +43,7 @@ const motor = [
   corta('function _expRotuloPacote'),
   corta('function _expCancelSet'),
   corta('function _expDataEfetivaCarga'),
+  corta('function _expInstanteCarga'),
   corta('function _expOutrasFracoesOS'),
   corta('function _expOutrasFracoesTexto')
 ].join('\n');
