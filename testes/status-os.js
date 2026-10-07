@@ -75,6 +75,7 @@ const monta = (ctx) => new Function('ctx', `
   const _redesenharCampoAtivo = () => { ctx.redesenhouCampo = (ctx.redesenhouCampo || 0) + 1; };
   ${constante('STATUS_OS')}
   ${constante('STATUS_FIM')}
+  ${constante('STATUS_FIM_RESERVA')}
   ${constante('LOGINS_STATUS_OS')}
   ${constante('AREAS_ACESSO')}
   ${constante('ACESSO_PADRAO')}
@@ -501,6 +502,22 @@ console.log('-- o que fica gravado --');
      typeof os2.finalizadaEm === 'string' && os2.finalizadaEm !== primeira,
      os2.finalizadaEm + ' vs ' + primeira);
 
+  /* O FIM DO CORTE E O SEPARANDO (07/10/2026, Junior: "carimbar a segunda data
+     na folha de OS quando a OS tiver seu status alterado para separando"). O
+     ensaque so carimba a OS que pulou o Separando. */
+  t = ctxDe('admin', 'admin@diverse.local', true, [{ id: 's1', os: '1235', data: '2026-03-10' }]);
+  const os3 = t.ctx.STATE.ordens[0];
+  await t.api.mudarStatusOS('s1', 'cortando');
+  ok('36b. cortando nao carimba', !('finalizadaEm' in os3), JSON.stringify(os3));
+  await t.api.mudarStatusOS('s1', 'separando');
+  ok('36c. SEPARANDO carimba a segunda data',
+     typeof os3.finalizadaEm === 'string' && !isNaN(new Date(os3.finalizadaEm)), JSON.stringify(os3));
+  const doSeparando = os3.finalizadaEm;
+  await new Promise(r => setTimeout(r, 5));
+  await t.api.mudarStatusOS('s1', 'ensacado');
+  ok('36d. ensacar depois NAO troca a data do Separando', os3.finalizadaEm === doSeparando,
+     os3.finalizadaEm + ' vs ' + doSeparando);
+
   const A = ctxDe('admin', 'admin@diverse.local', true, []).api;
   let cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10' });
   ok('37. OS sem status mostra so a data em que foi feita',
@@ -541,9 +558,9 @@ console.log('-- o que fica gravado --');
      ensacada segue para a costura — chamar aquilo de "OS finalizada" fazia a
      folha mentir para quem a pegava na expedicao. */
   ok('45. a dica separa a hora REAL da hora do carimbo em lote',
-     A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que o corte foi finalizado (OS ensacada)'
+     A._tituloFinalizacaoOS(finalizada) === 'Dia e hora em que o corte foi finalizado (OS foi para Separando, ou ensacada direto da mesa)'
      && A._tituloFinalizacaoOS({ statusOS: 'estoque', statusOSEm: instante.toISOString() })
-        === 'Dia e hora em que a OS foi marcada como Ensacado — o fim do corte',
+        === 'Dia e hora em que a OS foi marcada como Separando (ou Ensacado, se pulou o Separando) — o fim do corte',
      A._tituloFinalizacaoOS(finalizada));
   ok('45e. e nenhuma das dicas diz que a OS inteira terminou',
      ![A._tituloFinalizacaoOS(finalizada),
@@ -568,7 +585,7 @@ console.log('-- o que fica gravado --');
      A._dataHoraFinalizacaoOS(terminouNaFolha));
   ok('45c. a dica diz que a hora veio da folha, e nao de um carimbo',
      A._tituloFinalizacaoOS(terminouNaFolha)
-       === 'Dia e hora em que a caixa do Ensaque foi marcada no checklist da folha',
+       === 'Dia e hora em que a caixa do fim do corte (Separação, ou o Ensaque se não houve Separação) foi marcada no checklist da folha',
      A._tituloFinalizacaoOS(terminouNaFolha));
   // Desmarcar a caixa tira a OS do fim: a data some junto, pelo mesmo motivo
   // que apagar o carimbo apaga — OS que voltou a andar nao terminou.
@@ -1137,6 +1154,7 @@ console.log('-- o que fica gravado --');
       const esc = (s) => String(s == null ? '' : s);
       ${constante('STATUS_OS')}
       ${constante('STATUS_FIM')}
+      ${constante('STATUS_FIM_RESERVA')}
       // O status le o checklist antes do carimbo: sem estas, _statusOS nao roda.
       ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}
       ${src.match(/^const ETAPA_SC_RE = .+$/m)[0]}

@@ -44,6 +44,7 @@ const cortaLinha = (nome) => recorte(nome, '\n', nome);
 const motor = new Function(`
   ${cortaArr('const STATUS_OS')}
   ${cortaLinha('const STATUS_FIM')}
+  ${cortaLinha('const STATUS_FIM_RESERVA')}
   ${recorte('const ETAPA_SC_NOME', 'const FASES_ESTOQUE', 'constantes das unidades')}
   ${corta('function osEtapaMarcada')}
   ${corta('function _marcasDoStatus')}

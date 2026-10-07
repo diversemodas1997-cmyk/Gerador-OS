@@ -41,6 +41,7 @@ const motor = [
   cortaArr('const FASES_ESTOQUE'),
   cortaArr('const STATUS_OS'),
   cortaLinha('const STATUS_FIM'),
+  cortaLinha('const STATUS_FIM_RESERVA'),
   corta('function _marcasDoStatus'),
   corta('function _statusDoChecklistOS'),
   corta('function _ultimaMarcacaoChecklist'),

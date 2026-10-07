@@ -282,6 +282,7 @@ console.log('-- a busca por data de finalizacao --');
   const api = new Function(`
     ${constante('STATUS_OS')}
     ${constante('STATUS_FIM')}
+    ${constante('STATUS_FIM_RESERVA')}
     // Desde 15/09/2026 o status nasce do CHECKLIST: _statusOS le a etapa
     // marcada por ultimo antes de olhar o carimbo a mao. Sem estas, ela nao roda.
     ${recorte('function osEtapaMarcada', 'a etapa marcada no checklist')}

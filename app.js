@@ -22383,6 +22383,15 @@ function _dashFluxoDados() {
        aqui (os cartões dele mostram só o agora). */
 const DASH_DIA_MS = 86400000;
 const DASH_SEM_HISTORICO = new Set(['idaManha', 'idaTarde', 'voltaManha', 'voltaTarde']);
+/* A MESA DE CORTE LISTA SÓ O QUE FOI CORTADO NO PERÍODO (07/10/2026, Junior: "o
+   filtro dia deveria mostrar apenas OS que foram cortadas no mesmo dia, sendo
+   que essa data coincide com a data de ensacamento"). A lista dos quadros traz
+   quem ENTROU ou SAIU; na mesa de corte, entrar é a etapa Corte marcada — a OS
+   que começou a ser cortada hoje e só vai para a separação amanhã aparecia no
+   Dia de hoje com a segunda data de amanhã (ou sem nenhuma). Aqui só a SAÍDA
+   conta: o instante em que a OS foi para Separando, que é a segunda data da
+   folha (STATUS_FIM). Quem ainda está na mesa vai para a linha de aviso. */
+const DASH_LISTA_SO_SAIDA = new Set(['cortando']);
 
 // As etapas marcadas COM hora de verdade, em ordem. null = a OS só tem a ordem
 // das etapas (carimbo sintético da migração), e o passado dela não se sabe.
@@ -22670,7 +22679,7 @@ function _dashHistorico(d, agora, escala) {
       { rot: 'até 2 dias', v: 0 }, { rot: '3 a 7 dias', v: 0 },
       { rot: '8 a 14 dias', v: 0 }, { rot: 'mais de 14 dias', v: 0 }, { rot: 'sem data', v: 0 }
     ];
-    lista.filter(x => noPeriodo(x.de) || noPeriodo(x.ate)).forEach(x => {
+    lista.filter(x => noPeriodo(x.ate) || (!DASH_LISTA_SO_SAIDA.has(k) && noPeriodo(x.de))).forEach(x => {
       const dias = x.de == null ? null : ((x.ate != null ? x.ate : agora) - x.de) / DASH_DIA_MS;
       const f = dias == null ? 4 : (dias <= 2 ? 0 : dias <= 7 ? 1 : dias <= 14 ? 2 : 3);
       faixas[f].v += x.pecas;
@@ -22859,16 +22868,18 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
      numa linha à parte embaixo; o número do cartão continua com todos. O
      trânsito não tem entrada/saída datada: lá a lista é quem está agora. */
   const semMov = !x || x.semHistorico;
+  const soSaida = DASH_LISTA_SO_SAIDA.has(c.k);
+  const moveu = r => r.saida > 0 || (!soSaida && r.entrada > 0);
   const todas = (x && x.listaOS) || [];
-  const linhas = todas.filter(r => semMov ? r.corrente > 0 : (r.entrada > 0 || r.saida > 0))
+  const linhas = todas.filter(r => semMov ? r.corrente > 0 : moveu(r))
     .filter(r => cols.some(k => r[k.campo]));
-  const parados = semMov ? [] : todas.filter(r => !(r.entrada > 0 || r.saida > 0) && r.corrente > 0);
+  const parados = semMov ? [] : todas.filter(r => !moveu(r) && r.corrente > 0);
   const num = v => v ? _dashFmt(v) : '<span class="dash-ls-zero">—</span>';
   const somas = {};
   cols.forEach(k => { somas[k.campo] = linhas.reduce((s, r) => s + (r[k.campo] || 0), 0); });
   const nomePer = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
   const notaParados = parados.length
-    ? `<div class="dash-an-aviso">Paradas desde antes, sem movimento ${nomePer}: <b>${parados.length} OS</b>, ${_dashFmt(parados.reduce((s, r) => s + r.corrente, 0))} produtos (estão no número do cartão).</div>` : '';
+    ? `<div class="dash-an-aviso">${soSaida ? `Ainda na mesa, corte não concluído ${nomePer}` : `Paradas desde antes, sem movimento ${nomePer}`}: <b>${parados.length} OS</b>, ${_dashFmt(parados.reduce((s, r) => s + r.corrente, 0))} produtos (estão no número do cartão).</div>` : '';
   const tabela = linhas.length ? `<div class="dash-ls-box"><table class="dash-ls">
       <thead><tr><th>OS</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
       <tbody>${linhas.map(r => `<tr${r.desde != null ? ` title="Na operação desde ${esc(_dashDataHora(r.desde))}"` : ''}>
@@ -22876,7 +22887,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
         ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><td>total · ${linhas.length} OS</td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
     </table></div>`
-    : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
+    : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : soSaida ? 'Nenhuma OS teve o corte concluído (foi para Separando) ' + nomePer + '.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
 
   if (!x || x.semHistorico) {
     return `<div class="dash-an-cel">${nome}${tabela}
@@ -30070,7 +30081,17 @@ const STATUS_PONTO = '●';
 
    Mora numa constante porque duas funções precisam concordar sobre qual é o
    fim: _carimbarStatusOS escreve, _dataFinalizacaoOS lê. */
-const STATUS_FIM = 'ensacado';
+/* O FIM DO CORTE PASSA A SER O SEPARANDO (07/10/2026, Junior: "altere a regra
+   para carimbar a segunda data na folha de OS, para ser carimbada quando a OS
+   tiver seu status alterado para separando"). É o instante em que a OS sai da
+   mesa de corte — o mesmo em que ela sai do quadro "Na mesa de corte" do
+   Início, e por isso a segunda data e aquele quadro passam a contar o mesmo dia.
+
+   O ENSAQUE FICA DE RESERVA (STATUS_FIM_RESERVA): a OS que pulou o Separando
+   (ensacada direto da mesa) e as centenas ensacadas antes desta regra continuam
+   com a data que já tinham, em vez de ficar sem nenhuma. */
+const STATUS_FIM = 'separando';
+const STATUS_FIM_RESERVA = 'ensacado';
 
 /* O STATUS QUE O CHECKLIST DIZ. Mesma regra de faseAtualOS, aplicada à lista
    acima: vence a etapa marcada com o maior `etapasSeq` (o carimbo de QUANDO
@@ -30458,6 +30479,9 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
      saco foi fechado. Só "Não iniciado" limpa, logo acima, junto com o resto —
      OS que voltou ao começo não tem dia de término. */
   if (alvo === STATUS_FIM) os.finalizadaEm = agora;
+  // O ensaque só carimba a OS que não passou pelo Separando: quem já tem o
+  // dia do fim do corte não o perde quando o saco é fechado depois.
+  else if (alvo === STATUS_FIM_RESERVA && !os.finalizadaEm) os.finalizadaEm = agora;
   else if (alvo === 'nao-iniciado') delete os.finalizadaEm;
 }
 
@@ -30673,21 +30697,28 @@ function _dataFinalizacaoOS(o) {
      "quando esta OS ficou pronta?" continua tendo resposta o caminho todo.
      Exigir o status atual faria a data aparecer por um instante e sumir. */
   if (o && o.finalizadaEm) return o.finalizadaEm;
-  const fim = STATUS_OS.find(s => s.k === STATUS_FIM);
   const checks = (o && o.progresso && o.progresso.etapasCheck) || {};
   const seqs = (o && o.progresso && o.progresso.etapasSeq) || {};
-  let quando = 0;
-  if (fim && fim.re) {
-    ((o && o.etapas) || []).forEach(n => {
-      if (!fim.re.test(n) || !checks[n]) return;
-      const v = Number(seqs[n]) || 0;
-      if (v > quando) quando = v;
-    });
-  }
+  // A etapa do checklist que acende o status `k`: a hora em que foi marcada.
+  const horaDaEtapa = k => {
+    const st = STATUS_OS.find(s => s.k === k);
+    let quando = 0;
+    if (st && st.re) {
+      ((o && o.etapas) || []).forEach(n => {
+        if (!st.re.test(n) || !checks[n]) return;
+        const v = Number(seqs[n]) || 0;
+        if (v > quando) quando = v;
+      });
+    }
+    return quando;
+  };
+  // Primeiro o Separando; sem ele, o ensaque (ver STATUS_FIM_RESERVA).
+  const quando = horaDaEtapa(STATUS_FIM) || horaDaEtapa(STATUS_FIM_RESERVA);
   if (quando > 0) return new Date(quando).toISOString();
   // O dia do carimbo só vale se o status AINDA for o fim: numa OS que já andou,
-  // `statusOSEm` é a data de outro carimbo qualquer, e não do ensaque.
-  return (_statusOS(o) === STATUS_FIM && o && o.statusOSEm) || '';
+  // `statusOSEm` é a data de outro carimbo qualquer, e não do fim do corte.
+  const st = _statusOS(o);
+  return ((st === STATUS_FIM || st === STATUS_FIM_RESERVA) && o && o.statusOSEm) || '';
 }
 
 /* DIA E HORA, e não só o dia (27/08/2026, pedido do Junior).
@@ -30723,15 +30754,15 @@ function _dataHoraFinalizacaoOS(o) {
    expedição via "finalizada" numa peça que ainda tinha metade do caminho pela
    frente. */
 function _tituloFinalizacaoOS(o) {
-  if (o && o.finalizadaEm) return 'Dia e hora em que o corte foi finalizado (OS ensacada)';
+  if (o && o.finalizadaEm) return 'Dia e hora em que o corte foi finalizado (OS foi para Separando, ou ensacada direto da mesa)';
   const carimbada = _statusOS(o) === String((o && o.statusOS) || '').trim();
   return carimbada
-    ? 'Dia e hora em que a OS foi marcada como Ensacado — o fim do corte'
+    ? 'Dia e hora em que a OS foi marcada como Separando (ou Ensacado, se pulou o Separando) — o fim do corte'
     /* A caixa que carimba o fim é a do ENSAQUE quando o status do fim é o
        ensacado — e o rótulo dele passou a dizer a unidade (Ensacado |
        Descalvado), então a comparação é pela CHAVE e não pelo texto. Pelo
        texto, ela quebrou calada no dia em que o rótulo mudou. */
-    : `Dia e hora em que a caixa ${STATUS_FIM === 'ensacado' ? 'do Ensaque' : 'do fim do corte'} foi marcada no checklist da folha`;
+    : 'Dia e hora em que a caixa do fim do corte (Separação, ou o Ensaque se não houve Separação) foi marcada no checklist da folha';
 }
 
 /* A CÉLULA DA COLUNA DATA: em cima o dia em que a OS foi feita, embaixo o dia

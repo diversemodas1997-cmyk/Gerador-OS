@@ -45,6 +45,7 @@ const api = new Function(`
   ${constante('STATUS_OS')}
   ${constante('_STATUS_QUE_BAIXAM')}
   ${constante('STATUS_FIM')}
+  ${constante('STATUS_FIM_RESERVA')}
   return { STATUS_OS, _STATUS_QUE_BAIXAM };
 `)();
 
