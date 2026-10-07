@@ -109,6 +109,8 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('STATUS_PONTO')}
   ${recorte('function _statusPingo', 'o pingo do status')}
   ${recorte('function _statusEstilo', 'o fundo da caixa do status')}
+  ${recorte('function _statusHistDe', 'a leitura do diario')}
+  ${recorte('function _statusHistDica', 'a dica do diario')}
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
   ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
@@ -129,6 +131,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _ativaStatusDaOS', 'a ativa de quem foi conjugada a mao')}
   ${recorte('function _conjugadasManuaisDaOS', 'as OS conjugadas a mao')}
   ${recorte('function _conjugadasQueSeguemStatus', 'a conjugada que vai junto')}
+  ${recorte('function _statusHistAnotar', 'o diario de status')}
   ${recorte('function _carimbarStatusOS', 'a escrita do status numa OS')}
   ${recorte('async function mudarStatusOS', 'a mudanca do status')}
   ${recorte('function conjugadasSemPanoDaOS', 'as conjugadas da lista de reservados')}
@@ -157,7 +160,7 @@ const monta = (ctx) => new Function('ctx', `
   const renderEstoque = () => {};
   return { podeMudarStatusOS, _statusOS, _statusDoChecklistOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
-           _dataFinalizacaoOS, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
+           _dataFinalizacaoOS, _statusHistAnotar, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
            conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus,
            _ativaStatusDaOS, _conjugadasManuaisDaOS, salvarConjugarOS,
            conjugarNaOS: (id) => { _conjugarOsId = id; } };
@@ -517,6 +520,33 @@ console.log('-- o que fica gravado --');
   await t.api.mudarStatusOS('s1', 'ensacado');
   ok('36d. ensacar depois NAO troca a data do Separando', os3.finalizadaEm === doSeparando,
      os3.finalizadaEm + ' vs ' + doSeparando);
+
+  /* O DIARIO DE STATUS (07/10/2026): cada troca fica anotada com a hora. O
+     carimbo a mao leva `c`, que e o que o Inicio usa para reconstruir o passado. */
+  const hist3 = os3.statusHist || [];
+  ok('36e. o diario guardou as tres trocas, na ordem, todas a mao',
+     hist3.map(x => x.k).join(',') === 'cortando,separando,ensacado' && hist3.every(x => x.c === x.k && x.em > 0),
+     JSON.stringify(hist3));
+  ok('36f. a hora do Separando no diario e a mesma da segunda data',
+     hist3[1] && hist3[1].em === Date.parse(doSeparando), JSON.stringify(hist3));
+  const H = t.api;
+  const pelaFolha = { id: 'f1', os: '9', etapas: ['Corte', 'Ensaque'],
+    progresso: { etapasCheck: { Corte: true }, etapasSeq: { Corte: 1000000 } } };
+  H._statusHistAnotar(pelaFolha, 5000000);
+  ok('36g. a primeira anotacao de OS antiga pega a hora da marca que a pos ali',
+     JSON.stringify(pelaFolha.statusHist) === JSON.stringify([{ k: 'cortando', em: 1000000 }]), JSON.stringify(pelaFolha.statusHist));
+  ok('36h. sem mudanca, nao anota de novo', H._statusHistAnotar(pelaFolha, 6000000) === false && pelaFolha.statusHist.length === 1);
+  pelaFolha.progresso.etapasCheck.Ensaque = true; pelaFolha.progresso.etapasSeq.Ensaque = 2000000;
+  H._statusHistAnotar(pelaFolha, 7000000);
+  ok('36i. a caixa marcada anota com a hora DA CAIXA, nao a da gravacao',
+     pelaFolha.statusHist[1] && pelaFolha.statusHist[1].k === 'ensacado' && pelaFolha.statusHist[1].em === 2000000, JSON.stringify(pelaFolha.statusHist));
+  delete pelaFolha.progresso.etapasCheck.Ensaque; delete pelaFolha.progresso.etapasSeq.Ensaque;
+  H._statusHistAnotar(pelaFolha, 8000000);
+  ok('36j. desmarcar a caixa volta o status, e a volta anota a hora de agora',
+     pelaFolha.statusHist[2] && pelaFolha.statusHist[2].k === 'cortando' && pelaFolha.statusHist[2].em === 8000000, JSON.stringify(pelaFolha.statusHist));
+  const intocada = { id: 'n1', os: '10', etapas: ['Corte'], progresso: {} };
+  H._statusHistAnotar(intocada, 9000000);
+  ok('36k. OS que ninguem tocou nao ganha diario', !('statusHist' in intocada), JSON.stringify(intocada));
 
   const A = ctxDe('admin', 'admin@diverse.local', true, []).api;
   let cel2 = A._dataCelulaListaOS({ os: '1', data: '2026-03-10' });

@@ -86,5 +86,14 @@ const nova = { id: 'c', os: '0600' }, soLa = { id: 'd', os: '0601' };
 const lista = roda([os0], [os0, nova], [os0, soLa]);
 ok('registro novo daqui entra e o que só existe lá fica', lista.some(x => x.id === 'c') && lista.some(x => x.id === 'd'), lista.map(x => x.id));
 
+// O diário de status (07/10/2026): as duas pontas anotaram trocas diferentes na
+// mesma OS. As anotações das duas ficam, sem repetir, pela hora.
+const h0 = { id: 'h', os: '7', statusHist: [{ k: 'cortando', em: 100 }] };
+const hAqui = { id: 'h', os: '7', statusHist: [{ k: 'cortando', em: 100 }, { k: 'separando', em: 300, c: 'separando' }] };
+const hLa = { id: 'h', os: '7', statusHist: [{ k: 'cortando', em: 100 }, { k: 'enfestando', em: 200 }] };
+const hj = roda([h0], [hAqui], [hLa]).find(x => x.id === 'h') || {};
+ok('o diário de status junta as anotações das duas pontas, pela hora',
+   (hj.statusHist || []).map(x => x.k).join(',') === 'cortando,enfestando,separando', hj.statusHist);
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

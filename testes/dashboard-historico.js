@@ -267,5 +267,38 @@ ok('a linha da OS sabe o id, para abrir a folha', l2 && l2.id === 'id_0002', l2)
 const l3 = h.costurando.listaOS.find(o => o.os === '0003') || {};
 ok('a OS antiga sem data aparece no corrente, não no residual', l3.corrente === 200 && l3.residual === 0, l3);
 
+console.log('');
+console.log('-- o diário de status: cada carimbo à mão vale desde a hora dele (07/10/2026) --');
+// A 0050: Corte marcado seg 14/09 08:00; carimbada à mão Separando ter 15/09
+// 09:00 e Ensacado qua 16/09 10:00. O carimbo de agora é o do Ensacado.
+const comDiario = Object.assign(os('0050', { 'Corte': em(14, 8) }), {
+  statusOS: 'ensacado', statusOSEm: new Date(em(16, 10)).toISOString(),
+  statusHist: [{ k: 'cortando', em: em(14, 8) },
+               { k: 'separando', em: em(15, 9), c: 'separando' },
+               { k: 'ensacado', em: em(16, 10), c: 'ensacado' }]
+});
+const semDiario = Object.assign(os('0051', { 'Corte': em(14, 8) }), {
+  statusOS: 'ensacado', statusOSEm: new Date(em(16, 10)).toISOString()
+});
+const hd = rodar([comDiario], 'dia').h;
+const hs = rodar([semDiario], 'dia').h;
+const ivDe = (hh, k) => (hh[k].listaOS[0] || {});
+ok('com o diário, a 0050 saiu da mesa de corte ter 15/09 (o carimbo Separando), não qua 16/09',
+   rodar([comDiario], 'semana').h.cortando.periodos[3].saida === 200
+   && hd.cortando.listaOS.length === 0, [rodar([comDiario], 'semana').h.cortando.periodos, hd.cortando.listaOS]);
+ok('e esteve em Separando de ter 15/09 09:00 a qua 16/09 10:00: no Dia de hoje, saiu',
+   ivDe(hd, 'separando').saida === 200 && ivDe(hd, 'separando').entrada === 0, hd.separando.listaOS);
+ok('o tempo médio na separação é o de verdade: 1 dia e 1 hora',
+   Math.abs(hd.separando.tempoMedio - (1 + 1 / 24)) < 1e-9, hd.separando.tempoMedio);
+ok('sem o diário (OS de antes), só o último carimbo é conhecido: a mesa vai até qua 16/09 10:00',
+   ivDe(hs, 'cortando').saida === 200 && hs.separando.listaOS.length === 0, [hs.cortando.listaOS, hs.separando.listaOS]);
+// O "Não iniciado" à mão apaga o carimbo: dali em diante vale a folha.
+const limpa = Object.assign(os('0052', { 'Corte': em(14, 8) }), {
+  statusHist: [{ k: 'separando', em: em(15, 9), c: 'separando' }, { k: 'cortando', em: em(16, 9), c: '' }]
+});
+const hl = rodar([limpa], 'dia').h;
+ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
+   ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);

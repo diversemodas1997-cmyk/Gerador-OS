@@ -668,6 +668,14 @@ function _mergeListaPorRegistro(baseStr, localStr, srvStr, apagados) {
       if (txt(nk) === txt(bk)) v = sk;                     // não mexemos: vale o servidor
       else if (txt(sk) === txt(bk) || txt(sk) === txt(nk)) v = nk;  // só nós mexemos
       else if (ehObj(nk) && ehObj(sk)) v = juntar(ehObj(bk) ? bk : {}, nk, sk);
+      /* O DIÁRIO DE STATUS (statusHist, 07/10/2026) é a exceção às listas: é
+         um registro de fatos, e as duas pontas anotam fatos verdadeiros. Junta
+         as anotações das duas, sem repetir, pela hora. */
+      else if (k === 'statusHist' && Array.isArray(nk) && Array.isArray(sk)) {
+        const vistos = new Set();
+        v = sk.concat(nk).filter(x => { const c = txt(x); if (vistos.has(c)) return false; vistos.add(c); return true; })
+          .sort((x, y) => (Number(x && x.em) || 0) - (Number(y && y.em) || 0));
+      }
       else v = nk;                                         // conflito real: o daqui
       if (v !== undefined) saida[k] = v;
     });
@@ -3144,6 +3152,11 @@ async function saveState(key) {
     // uma exclusão local como outra qualquer.
     let _antes = null;
     try { const r = await DB.get(key); _antes = r ? r.value : null; } catch (e) { }
+    // O diário de status (ver _statusHistAnotar): toda mudança de status de OS
+    // passa por uma gravação das ordens, e é aqui que ela é anotada.
+    if (key === 'ordens' && typeof _statusHistVarrer === 'function') {
+      try { _statusHistVarrer(STATE.ordens, Date.now()); } catch (e) { console.warn('diário de status', e); }
+    }
     const _depois = JSON.stringify(STATE[key]);
     await DB.set(key, _depois);
     try { _apagadosLocaisRegistrar(key, _antes, _depois); } catch (e) { console.warn('apagados locais', e); }
@@ -22414,23 +22427,64 @@ function _dashHorasReais(o) {
 /* A OS COMO ELA ERA em cada instante com hora de verdade: [{t, clone}]. É a
    reconstrução do passado numa função só — o histórico dos cartões e o dos
    status perguntam coisas diferentes ao mesmo clone. null = OS sem hora real. */
+/* O DIÁRIO DE STATUS DA OS (07/10/2026, Junior: "o programa deve registrar a
+   data e hora da alteração de status de cada OS. Esses volumes devem ser
+   mostrados de acordo com a data de alteração do status").
+
+   `o.statusHist` = [{k, em, c?}]: o status que passou a valer (k) e quando (em,
+   milissegundos). `c` existe só no status escrito À MÃO, e guarda o carimbo
+   ('' = o "Não iniciado", que apaga o carimbo). Quem escreve é
+   _statusHistAnotar. Aqui só se lê: as entradas com hora, em ordem. */
+function _statusHistDe(o) {
+  const h = (o && Array.isArray(o.statusHist)) ? o.statusHist : [];
+  return h.filter(x => x && x.em != null && Number.isFinite(Number(x.em)))
+    .map(x => Object.assign({}, x, { em: Number(x.em) }))
+    .sort((a, b) => a.em - b.em);
+}
+
+/* O PASSADO SAI DE TRÊS RELÓGIOS, e não só das etapas: as caixas do checklist
+   (etapasSeq), as fases do enfesto (enfestosSeq) e o diário de status. Antes
+   só o ÚLTIMO carimbo à mão era conhecido — `statusOSEm` é reescrito a cada
+   troca —, então a OS carimbada Cortando, depois Separando, depois Ensacado
+   perdia as duas primeiras horas: no Início ela pulava da mesa direto para o
+   saco, no instante do último carimbo. Com o diário, cada carimbo vale desde a
+   hora em que foi dado até o seguinte. A fase do enfesto também passa a valer
+   desde a hora dela (antes valia desde o primeiro instante da OS). */
 function _dashClonesNoTempoOS(o) {
-  const marcas = _dashHorasReais(o);
-  if (!marcas) return null;
+  const marcas = _dashHorasReais(o) || [];
   const prog = o.progresso || {};
-  const checks = prog.etapasCheck || {}, seq = prog.etapasSeq || {};
-  const semHora = Object.keys(checks).filter(n => checks[n] && !Number.isFinite(Number(seq[n])));
-  const carimboStatus = Date.parse(o.statusOSEm || '') || 0;
-  // A hora do status escrito à mão também é um momento: sem ela, a OS carimbada
-  // Ensacado depois da última etapa ficaria para sempre no passo anterior.
-  const instantes = [...new Set(marcas.map(m => m.t).concat(carimboStatus ? [carimboStatus] : []))]
+  const checks = prog.etapasCheck || {};
+  const reais = new Set(marcas.map(m => m.n));
+  const semHora = Object.keys(checks).filter(n => checks[n] && !reais.has(n));
+  const ckE = prog.enfestosCheck || {}, sqE = prog.enfestosSeq || {};
+  const enf = Object.keys(ckE).filter(f => ckE[f] && Number.isFinite(Number(sqE[f])))
+    .map(f => ({ f, t: Number(sqE[f]) }));
+  const enfSemHora = Object.keys(ckE).filter(f => ckE[f] && !Number.isFinite(Number(sqE[f])));
+  const hist = _statusHistDe(o);
+  const carimbos = hist.filter(x => 'c' in x).map(x => ({ t: x.em, c: x.c || '' }));
+  // O carimbo de agora, se foi dado antes do diário existir.
+  const carimboAtual = Date.parse(o.statusOSEm || '') || 0;
+  if (o.statusOS && carimboAtual && !carimbos.some(x => x.t === carimboAtual)) {
+    carimbos.push({ t: carimboAtual, c: o.statusOS });
+    carimbos.sort((a, b) => a.t - b.t);
+  }
+  const instantes = [...new Set(marcas.map(m => m.t)
+    .concat(enf.map(x => x.t), carimbos.map(x => x.t), hist.map(x => x.em)))]
     .sort((x, y) => x - y);
+  if (!instantes.length) return null;
   return instantes.map(t => {
-    const ck = {}, sq = {};
+    const ck = {}, sq = {}, ckEnf = {}, sqEnf = {};
     semHora.forEach(n => { ck[n] = true; });
     marcas.forEach(m => { if (m.t <= t) { ck[m.n] = true; sq[m.n] = m.t; } });
-    const clone = Object.assign({}, o, { progresso: Object.assign({}, prog, { etapasCheck: ck, etapasSeq: sq }) });
-    if (carimboStatus > t) clone.statusOS = '';
+    enfSemHora.forEach(f => { ckEnf[f] = true; });
+    enf.forEach(x => { if (x.t <= t) { ckEnf[x.f] = true; sqEnf[x.f] = x.t; } });
+    const clone = Object.assign({}, o, { progresso: Object.assign({}, prog,
+      { etapasCheck: ck, etapasSeq: sq, enfestosCheck: ckEnf, enfestosSeq: sqEnf }) });
+    // O carimbo à mão que valia naquele instante: o último dado até ali.
+    let vale = null;
+    carimbos.forEach(x => { if (x.t <= t) vale = x; });
+    if (vale && vale.c) { clone.statusOS = vale.c; clone.statusOSEm = new Date(vale.t).toISOString(); }
+    else { clone.statusOS = ''; delete clone.statusOSEm; }
     return { t, clone };
   });
 }
@@ -30251,6 +30305,18 @@ function _statusOS(o) {
 // por último e quando.
 // `extra` é a classe do lugar onde o controle está sendo posto (a folha usa
 // "folha"): a caixa é a mesma, o que muda é o tamanho que cada tela dá a ela.
+// As últimas trocas do diário de status (ver _statusHistAnotar), para a dica.
+function _statusHistDica(o) {
+  const h = _statusHistDe(o).slice(-6);
+  if (!h.length) return '';
+  const p = n => String(n).padStart(2, '0');
+  return '\nTrocas de status:' + h.map(x => {
+    const d = new Date(x.em);
+    const s = STATUS_OS.find(y => y.k === x.k);
+    return `\n  ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())} · ${s ? s.rotulo : x.k}${'c' in x ? ' (à mão)' : ''}`;
+  }).join('');
+}
+
 function _statusCelulaOS(o, extra) {
   const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
   const quem = _obsNomeLogin(o.statusOSPor || '');
@@ -30274,7 +30340,8 @@ function _statusCelulaOS(o, extra) {
     + (carimbado
         ? ` · escrito à mão${quem ? ' por ' + quem : ''}${quando ? ' em ' + quando : ''}`
           + ' · vale até a próxima etapa ser marcada no checklist'
-        : ' · vem do checklist da folha (a etapa marcada por último)');
+        : ' · vem do checklist da folha (a etapa marcada por último)')
+    + _statusHistDica(o);
   if (!podeMudarStatusOS()) {
     return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rot(s))}</span>`;
   }
@@ -30448,6 +30515,52 @@ function _conjugadasQueSeguemStatus(os, alvo) {
 // Escreve o status numa OS. Um lugar só, usado pela OS que o usuário carimbou e
 // pela conjugada que vai junto — se as duas escrevessem por caminhos
 // diferentes, um dia uma ganharia um campo que a outra não tem.
+/* ANOTA NO DIÁRIO (ver _statusHistDe) o status que vale AGORA, se ele mudou
+   desde a última anotação. `mao` = o carimbo à mão que acabou de ser dado: ele
+   é anotado sempre, com `c`, porque é dele que o passado reconstrói o status
+   escrito por cima da folha.
+
+   A HORA. O carimbo usa a dele. Fora dele, a mudança veio de uma caixa (etapa,
+   fase do enfesto, expedição): vale a hora da marca mais recente da OS, que é
+   o instante exato em que o status mudou, e não o da gravação. Só quando essa
+   marca é mais velha que a última anotação — uma caixa DESMARCADA, que faz o
+   status voltar — vale o relógio de agora.
+
+   A PRIMEIRA ANOTAÇÃO de uma OS que já existia antes do diário pega a mesma
+   hora (a da marca que pôs a OS onde ela está); sem marca nenhuma, fica sem
+   hora e não entra no passado. Como a conta é a mesma em todo computador, duas
+   máquinas que anotem a mesma OS escrevem a mesma coisa. */
+function _statusHistAnotar(o, agoraMs, mao) {
+  if (!o) return false;
+  const k = _statusOS(o);
+  const h = Array.isArray(o.statusHist) ? o.statusHist : [];
+  const ult = h.length ? h[h.length - 1] : null;
+  if (mao) {
+    h.push({ k, em: mao.em, c: mao.c });
+    o.statusHist = h;
+    return true;
+  }
+  if (ult && ult.k === k) return false;
+  if (!ult && k === 'nao-iniciado') return false;     // OS intocada não pesa no blob
+  const prog = o.progresso || {};
+  let marca = _ultimaMarcacaoChecklist(o);
+  const ckE = prog.enfestosCheck || {}, sqE = prog.enfestosSeq || {};
+  Object.keys(ckE).forEach(f => { const v = Number(sqE[f]); if (ckE[f] && v > marca) marca = v; });
+  const carimbo = Date.parse(o.statusOSEm || '') || 0;
+  if (String(o.statusOS || '').trim() === k && carimbo > marca) marca = carimbo;
+  const ultEm = ult ? Number(ult.em) || 0 : 0;
+  const em = !ult ? (marca || null) : (marca > ultEm ? marca : agoraMs);
+  h.push({ k, em });
+  o.statusHist = h;
+  return true;
+}
+
+// A varredura de toda gravação das OS: pega a mudança que veio por qualquer
+// caminho (checklist, enfesto, alocação na expedição, conjugada, desfazer).
+function _statusHistVarrer(ordens, agoraMs) {
+  (ordens || []).forEach(o => { try { _statusHistAnotar(o, agoraMs); } catch (e) { /* uma OS não trava as outras */ } });
+}
+
 function _carimbarStatusOS(os, alvo, agora, quem) {
   /* "NÃO INICIADO" APAGA O CARIMBO, e é assim que se volta a SEGUIR O
      CHECKLIST. Os outros status escrevem por cima da folha até a próxima etapa
@@ -30478,6 +30591,8 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
      Passar pelo ensaque de novo recarimba: o dia que vale é o último em que o
      saco foi fechado. Só "Não iniciado" limpa, logo acima, junto com o resto —
      OS que voltou ao começo não tem dia de término. */
+  _statusHistAnotar(os, Date.parse(agora) || Date.now(),
+    { em: Date.parse(agora) || Date.now(), c: alvo === 'nao-iniciado' ? '' : alvo });
   if (alvo === STATUS_FIM) os.finalizadaEm = agora;
   // O ensaque só carimba a OS que não passou pelo Separando: quem já tem o
   // dia do fim do corte não o perde quando o saco é fechado depois.
