@@ -147,7 +147,11 @@ ok('tempo médio no quadro: a 0002 ficou 5 dias e 5 horas',
 ok('a mais antiga é a 0001, desde 07/09 08:00',
    h.corte.maisAntiga && h.corte.maisAntiga.os === '0001' && h.corte.maisAntiga.desde === em(7, 8), h.corte.maisAntiga);
 ok('a última entrada foi qua 09/09 10:00', h.corte.ultimaEntrada === em(9, 10), h.corte.ultimaEntrada);
-ok('a idade cai na faixa "8 a 14 dias"', h.corte.faixas[2].v === 200 && h.corte.faixas[0].v === 0, h.corte.faixas);
+// A barra é das OS que se moveram NA SEMANA EM CURSO (07/10/2026): só a 0002,
+// que saiu seg 14/09 depois de 5 dias e 5 horas. A 0001, parada desde 07/09,
+// não se moveu na semana e fica fora da barra.
+ok('a barra de tempo é só da 0002, que ficou 5 dias (faixa "3 a 7 dias")',
+   h.corte.faixas[1].v === 200 && h.corte.faixas.reduce((s, f) => s + f.v, 0) === 200, h.corte.faixas);
 ok('nada aconteceu em fim de semana', h.corte.foraDoPeriodo === 0, h.corte.foraDoPeriodo);
 ok('residual de cada semana (anterior + entrada − saída): 0, 0, 400 e 200',
    h.corte.periodos.map(w => w.residual).join(' ') === '0 0 400 200', h.corte.periodos.map(w => w.residual));
@@ -161,7 +165,9 @@ console.log('-- costurando, com uma OS sem data --');
 ok('agora: 0002 e 0003 (400)', h.costurando.agora === 400, h.costurando.agora);
 ok('só a 0002 tem data de entrada: 200 na 4ª semana', h.costurando.entrada === 200
    && h.costurando.periodos[3].entrada === 200, h.costurando.periodos);
-ok('a 0003 conta, mas SEM DATA', h.costurando.semData === 200 && h.costurando.faixas[4].v === 200, h.costurando.faixas);
+ok('a 0003 conta no cartão, mas SEM DATA', h.costurando.semData === 200, h.costurando.semData);
+ok('a barra de tempo é só da 0002 (entrou seg 14/09, está há menos de 2 dias); a 0003, sem movimento, fica fora',
+   h.costurando.faixas[0].v === 200 && h.costurando.faixas[4].v === 0, h.costurando.faixas);
 ok('a OS sem data NÃO entra no residual (não tem entrada datada), mas está no cartão',
    h.costurando.periodos[3].residual === 200 && h.costurando.agora === 400, [h.costurando.periodos.map(w => w.residual), h.costurando.agora]);
 const residualDia = rodar([os('0020', { 'Corte': em(3, 9), 'Ensaque': em(4, 10) }), os('0021', { 'Corte': em(4, 8) })], 'dia').h.cortando;

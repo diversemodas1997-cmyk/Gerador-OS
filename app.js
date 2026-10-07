@@ -22653,18 +22653,26 @@ function _dashHistorico(d, agora, escala) {
       // A OS mais nova primeiro: é a que está andando.
       .sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }));
     const semData = atuais.filter(x => x.desde == null).reduce((s, x) => s + x.pecas, 0);
-    const saidas = lista.filter(x => dentro(x.ate, inicio, agora) && x.de != null);
+    /* A BARRA E O TEMPO MÉDIO SEGUEM O FILTRO (07/10/2026, Junior: "a barra de
+       porcentagem abaixo de cada quadro continua mostrando números que não
+       condizem com o filtro dia, semana, mês, ano"). A barra media a idade de
+       TUDO o que está no quadro agora, e o tempo médio olhava a janela inteira
+       do antigo gráfico (10 dias úteis, 4 semanas...). Agora os dois são das
+       mesmas OS da lista: as que entraram ou saíram no período em curso. */
+    const saidas = lista.filter(x => noPeriodo(x.ate) && x.de != null);
     const tempoMedio = saidas.length
       ? saidas.reduce((s, x) => s + (x.ate - x.de), 0) / saidas.length / DASH_DIA_MS : null;
     const datados = atuais.filter(x => x.desde != null).sort((a, b) => a.desde - b.desde);
     const entradas = lista.filter(x => x.de != null).map(x => x.de);
-    // Idade do que está agora, em faixas.
+    // Tempo na operação das OS que se moveram no período: a que saiu, quanto
+    // ficou (da entrada à saída); a que entrou e segue lá, há quanto está.
     const faixas = [
       { rot: 'até 2 dias', v: 0 }, { rot: '3 a 7 dias', v: 0 },
       { rot: '8 a 14 dias', v: 0 }, { rot: 'mais de 14 dias', v: 0 }, { rot: 'sem data', v: 0 }
     ];
-    atuais.forEach(x => {
-      const f = x.dias == null ? 4 : (x.dias <= 2 ? 0 : x.dias <= 7 ? 1 : x.dias <= 14 ? 2 : 3);
+    lista.filter(x => noPeriodo(x.de) || noPeriodo(x.ate)).forEach(x => {
+      const dias = x.de == null ? null : ((x.ate != null ? x.ate : agora) - x.de) / DASH_DIA_MS;
+      const f = dias == null ? 4 : (dias <= 2 ? 0 : dias <= 7 ? 1 : dias <= 14 ? 2 : 3);
       faixas[f].v += x.pecas;
     });
     out[k] = {
@@ -22878,11 +22886,11 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const faixasTotal = x.faixas.reduce((s, f) => s + f.v, 0);
   const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
   const idade = faixasTotal > 0
-    ? `<div class="dash-tp-barra" title="Há quanto tempo o que está na operação agora chegou nela">${x.faixas.map((f, i) => f.v > 0
+    ? `<div class="dash-tp-barra" title="Tempo na operação das OS da lista: a que saiu, quanto ficou; a que entrou e segue lá, há quanto está">${x.faixas.map((f, i) => f.v > 0
         ? `<span class="dash-tp-seg ${FAIXA_CLS[i]}" style="flex:${f.v} 1 0;" tabindex="0"><em>${Math.round(f.v / faixasTotal * 100)}%</em>
              <span class="dash-gr-tip" role="tooltip">${esc(f.rot)}: ${_dashFmt(f.v)} produtos</span></span>` : '').join('')}</div>`
     : '';
-  const noPeriodo = `em ${cfg.n} ${({ dia: 'dias úteis', semana: 'semanas', mes: 'meses', ano: 'anos' })[cfg.k]}`;
+  const noPeriodo = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
   const tempos = [
     x.tempoMedio != null
       ? `Tempo médio na operação: <b>${_dashDuracao(x.tempoMedio)}</b> <span>(${x.nSaidas} OS saíram ${noPeriodo})</span>`
@@ -22916,7 +22924,7 @@ function _dashAnalisePasso(p, h, escala, oc) {
   return `<div class="dash-analise">
     <div class="dash-an-leg">
       <span>Uma linha por OS; a última é o total delas. Corrente = o que a OS tem no quadro agora; Residual = o que ficou no fim do período (só OS com data). Clique no número da OS para abrir a folha.</span>
-      ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
+      ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação das OS da lista: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
     <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora, oc)).join('')}</div>
