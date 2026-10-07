@@ -44,6 +44,7 @@ const motor = [
   corta('function _expCancelSet'),
   corta('function _expDataEfetivaCarga'),
   corta('function _expInstanteCarga'),
+  corta('function _dashTurnoDaCarga'),
   corta('function _expOutrasFracoesOS'),
   corta('function _expOutrasFracoesTexto')
 ].join('\n');
@@ -67,6 +68,7 @@ const OS = { id: 'os1', os: '0537' };
 // Três cargas da mesma OS: a de hoje (a do quadro) e duas outras.
 const estadoBase = () => ({
   expedicaoExcecoes: [],
+  expedicaoJanelas: [{ id: 'j1', horaIda: '08:00', horaVolta: '15:00' }, { id: 'j2', horaIda: '14:00', horaVolta: '17:00' }],
   expedicaoCargas: [
     { id: 'c1', osId: 'os1', janelaId: 'j1', data: '2026-09-10', perna: 'ida',
       pacotes: [{ tam: 'P', tom: 1 }, { tam: 'M', tom: 1 }], reposicao: true, feita: true },
@@ -151,7 +153,8 @@ api = comMotor(st);
 let txt = api._expOutrasFracoesTexto(OS, cargaDe(st, 'c2'));
 ok('12. traz o dia e os tamanhos de cada outra fracao',
    /10\/09\/2026/.test(txt) && /24\/09\/2026/.test(txt) && /G1/.test(txt) && /P · tom 1/.test(txt), txt);
-ok('13. diz quem ja foi feita', /10\/09\/2026<\/b> \(feita\)/.test(txt), txt);
+ok('13. diz quem ja foi feita', /10\/09\/2026 - manhã<\/b> \(feita\)/.test(txt), txt);
+ok('13b. em outros dias, o titulo diz outros dias', /sai em outros dias:/.test(txt), txt);
 ok('14. e nao repete a carga deste quadro', !/17\/09\/2026/.test(txt), txt);
 ok('15. sai na classe propria da folha (.fracoes), fora da tarja do recado',
    /^<div class="fracoes">/.test(txt), txt);
@@ -169,6 +172,24 @@ ok('17. e a folha calcula a linha a partir da carga do quadro',
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 ok('18. a classe existe no styles.css', /\.exp-print-os > \.fracoes\s*\{/.test(css));
+
+console.log('');
+console.log('-- no mesmo dia, outro periodo (07/10/2026) --');
+st = { expedicaoExcecoes: [], expedicaoJanelas: estadoBase().expedicaoJanelas, expedicaoCargas: [
+  { id: 'm1', osId: 'os1', janelaId: 'j1', data: '2026-10-07', perna: 'ida', pacotes: [{ tam: 'P', tom: 1 }] },
+  { id: 't1', osId: 'os1', janelaId: 'j2', data: '2026-10-07', perna: 'ida', pacotes: [{ tam: 'M', tom: 1 }] }
+] };
+api = comMotor(st);
+txt = api._expOutrasFracoesTexto(OS, cargaDe(st, 't1'));
+ok('19. o quadro da tarde diz que o resto sai em outro periodo: 07/10/2026 - manha',
+   /O resto desta OS sai em outro período:<\/b> <b>07\/10\/2026 - manhã<\/b>/.test(txt), txt);
+txt = api._expOutrasFracoesTexto(OS, cargaDe(st, 'm1'));
+ok('20. e o da manha aponta a tarde', /sai em outro período:<\/b> <b>07\/10\/2026 - tarde<\/b>/.test(txt), txt);
+st.expedicaoCargas.push({ id: 'd1', osId: 'os1', janelaId: 'j1', data: '2026-10-09', perna: 'ida', pacotes: [{ tam: 'G', tom: 1 }] });
+api = comMotor(st);
+txt = api._expOutrasFracoesTexto(OS, cargaDe(st, 't1'));
+ok('21. mesmo dia e outro dia juntos: outros dias e periodos',
+   /sai em outros dias e períodos:/.test(txt) && /07\/10\/2026 - manhã/.test(txt) && /09\/10\/2026 - manhã/.test(txt), txt);
 
 console.log('');
 if (falhas) { console.log(falhas + ' teste(s) falharam'); process.exit(1); }

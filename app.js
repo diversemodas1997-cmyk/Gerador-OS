@@ -13265,6 +13265,7 @@ function _expOutrasFracoesOS(os, cargaAtual) {
   const cancel = _expCancelSet();
   const atualId = (cargaAtual && cargaAtual.id) || '';
   const pernaAtual = (cargaAtual && cargaAtual.perna === 'volta') ? 'volta' : 'ida';
+  const diaAtual = cargaAtual ? _expDataEfetivaCarga(cargaAtual) : '';
   return STATE.expedicaoCargas
     .filter(c => c && c.osId === os.id && c.id !== atualId && !cancel.has(c.janelaId + '|' + c.data))
     .map(c => {
@@ -13274,15 +13275,21 @@ function _expOutrasFracoesOS(os, cargaAtual) {
         if (c.reposicao) partes.push('reposição');
       }
       const perna = c.perna === 'volta' ? 'volta' : 'ida';
+      const data = _expDataEfetivaCarga(c);
       return {
-        data: _expDataEfetivaCarga(c),
+        data,
+        // O turno do caminhão (manhã/tarde, pela hora da janela): a mesma OS
+        // pode sair em dois caminhões do MESMO dia (07/10/2026).
+        turno: typeof _dashTurnoDaCarga === 'function' ? _dashTurnoDaCarga(c) : '',
+        mesmoDia: !!diaAtual && data === diaAtual,
         pacotes: Array.isArray(c.pacotes) ? (partes.join(', ') || '—') : 'lote inteiro',
         feita: !!c.feita,
         perna,
         outraPerna: perna !== pernaAtual
       };
     })
-    .sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    .sort((a, b) => String(a.data).localeCompare(String(b.data))
+      || (a.turno === b.turno ? 0 : a.turno === 'manha' ? -1 : 1));
 }
 
 // A linha que vai na folha. Vazia quando a OS não foi repartida — o silêncio
@@ -13298,9 +13305,19 @@ function _expOutrasFracoesTexto(os, cargaAtual) {
     const marcas = [];
     if (f.feita) marcas.push('feita');
     if (f.outraPerna) marcas.push(f.perna);
-    return `<b>${esc(formatDate(f.data))}</b>${marcas.length ? ` (${esc(marcas.join(', '))})` : ''}: ${esc(f.pacotes)}`;
+    const turno = f.turno === 'tarde' ? 'tarde' : f.turno === 'manha' ? 'manhã' : '';
+    return `<b>${esc(formatDate(f.data))}${turno ? ' - ' + turno : ''}</b>${marcas.length ? ` (${esc(marcas.join(', '))})` : ''}: ${esc(f.pacotes)}`;
   }).join(' · ');
-  return `<div class="fracoes"><b>O resto desta OS ${outras.length > 1 ? 'sai em outros dias' : 'sai em outro dia'}:</b> ${itens}</div>`;
+  /* NO MESMO DIA É OUTRO PERÍODO, e não outro dia (07/10/2026, Junior: "se a
+     OS tiver saído no mesmo dia, mas em período diferente (manhã, tarde), o
+     texto deve informar que O resto desta OS sai em outro período: 07/10/2026
+     - manhã"). Cada fração leva o dia e o turno do caminhão dela. */
+  const n = outras.length;
+  const doDia = outras.filter(f => f.mesmoDia).length;
+  const onde = doDia === n ? (n > 1 ? 'sai em outros períodos' : 'sai em outro período')
+    : doDia === 0 ? (n > 1 ? 'sai em outros dias' : 'sai em outro dia')
+    : 'sai em outros dias e períodos';
+  return `<div class="fracoes"><b>O resto desta OS ${onde}:</b> ${itens}</div>`;
 }
 
 /* ---- peças de cada pacote: a ponte entre o lote parcial e o estoque ---- */
