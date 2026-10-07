@@ -58,6 +58,11 @@ function monta(mundo) {
     function totaisPorTamanhoTomOS(o) { return M.tam[o.id] || { totalGeral: 0, tamanhos: [], colTotal: () => 0 }; }
     function corNomeCurto(n) { return n; }
     function _gradeIdDaOS(o) { return o.gradeId || ''; }
+    var STATUS_OS = [{ k: 'nao-iniciado', rotulo: 'Não iniciado' }, { k: 'cortando', rotulo: 'Cortando' },
+                     { k: 'costurando', rotulo: 'Costurando' }];
+    function _statusOS(o) { return o.status || 'nao-iniciado'; }
+    ${pegaFuncao('_rankSomaDias')}
+    ${pegaFuncao('_rankBalde')}
     ${pegaConst('RANK_VARS')}
     ${pegaConst('_RANK_ORDEM_TAM')}
     ${pegaFuncao('_rankingFatos')}
@@ -84,8 +89,8 @@ const perto = (a, b) => Math.abs(Number(a) - Number(b)) < 0.001;
 const mundo = () => ({
   STATE: {
     ordens: [
-      { id: 'a', os: '0001', data: '2026-03-10', gradeId: 'g1' },
-      { id: 'b', os: '0002', data: '2026-04-11', gradeId: 'g1' },
+      { id: 'a', os: '0001', data: '2026-03-10', gradeId: 'g1', status: 'costurando' },
+      { id: 'b', os: '0002', data: '2026-04-11', gradeId: 'g1', status: 'cortando' },
       { id: 'c', os: '0003', data: '2026-04-20', gradeId: 'g2' }
     ],
     grades: [{ id: 'g1', nome: 'P ao G3 | CM.LISA | 117cm' },
@@ -125,7 +130,7 @@ ok('5. a OS sem distribuicao cai em "(sem tamanho)" e nao some',
    base.fatos.filter(f => f.os === '0003'));
 
 /* ---------- 3. todo agrupamento fecha o mesmo total ---------- */
-['grade', 'tipo', 'tamanho', 'cor', 'sku', 'periodo'].forEach(eixo => {
+['grade', 'tipo', 'tamanho', 'cor', 'sku', 'status', 'periodo'].forEach(eixo => {
   const q = api._rankingQuadro(base.fatos, eixo, '');
   ok('6. linhas=' + eixo + ' fecha em 1.100 produtos e 3 OS',
      q.total === 1100 && q.totalOS === 3, { total: q.total, os: q.totalOS });
@@ -168,6 +173,25 @@ ok('15. a grade chega sem o espaco duplo da digitacao ("GG  ao G3" = "GG ao G3")
    v.grade.includes('GG ao G3'), v.grade);
 ok('16. o periodo nao vira filtro de variavel (quem filtra periodo e o ano/mes)',
    v.periodo === undefined, Object.keys(v));
+
+/* ---------- 9. status (07/10/2026) ---------- */
+ok('17. o status oferece os tres, na ordem do fluxo, mesmo sem OS em algum',
+   v.status.join(' | ') === 'Não iniciado | Cortando | Costurando', v.status);
+const qs = api._rankingQuadro(base.fatos, 'status', '');
+ok('18. linhas=status saem na ordem do fluxo, com os produtos de cada',
+   qs.linhas.map(l => l.rotulo + '=' + l.produtos).join(' ') === 'Não iniciado=100 Cortando=400 Costurando=600',
+   qs.linhas.map(l => l.rotulo + '=' + l.produtos));
+
+/* ---------- 10. semana e dia (07/10/2026) ---------- */
+// 11/04/2026 é sábado: a semana dele começa na segunda 06/04.
+const sem = api._rankingFatos('2026', '', '2026-04-06', '');
+ok('19. a semana de 06/04 traz so a 0002',
+   [...new Set(sem.fatos.map(f => f.os))].join(',') === '0002', sem.fatos.map(f => f.os));
+const dia = api._rankingFatos('2026', '2026-04', '', '2026-04-20');
+ok('20. o dia 20/04 traz so a 0003, mesmo com o mes inteiro escolhido',
+   [...new Set(dia.fatos.map(f => f.os))].join(',') === '0003' && dia.total === 1, dia.fatos.map(f => f.os));
+ok('21. dentro de um mes o periodo abre por dia',
+   api._rankingFatos('2026', '2026-04').fatos.every(f => /^\d{4}-\d{2}-\d{2}$/.test(f.periodo)), null);
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

@@ -10937,8 +10937,11 @@ function faseAtualOS(o) {
 // O TIPO e a GRADE saem da grade CADASTRADA, nunca do texto guardado na OS: a
 // OS guarda o nome que a grade tinha no dia em que foi emitida, e grade
 // renomeada faria o mesmo produto aparecer duas vezes no ranking.
-// O período em foco. '' nos dois = a fábrica inteira, desde a primeira OS.
-let _rankAno = '', _rankMes = '';
+// O período em foco. '' em todos = a fábrica inteira, desde a primeira OS.
+// Semana (a segunda-feira, "AAAA-MM-DD") e dia (07/10/2026, Junior: "no filtro
+// de tempo, além do mês, inclua filtro por semana e por dia") vivem dentro do
+// ano e do mês: o mais estreito escolhido é o que recorta.
+let _rankAno = '', _rankMes = '', _rankSemana = '', _rankDia = '';
 
 /* O BALCAO DOS GRUPOS DE OS.
 
@@ -11033,17 +11036,27 @@ function _rankRotuloMes(aaaaMm) {
 // Os anos e meses que EXISTEM nas OS. O filtro não oferece período vazio: mês
 // sem nenhuma OS na lista só faria escolher e não ver nada.
 function _rankingPeriodos() {
-  const anos = new Set(), meses = new Set();
+  const anos = new Set(), meses = new Set(), dias = new Set();
   (STATE.ordens || []).forEach(o => {
     const d = String(o.data || '');
     if (!/^\d{4}-\d{2}/.test(d)) return;
     anos.add(d.slice(0, 4));
     meses.add(d.slice(0, 7));
+    if (/^\d{4}-\d{2}-\d{2}/.test(d)) dias.add(d.slice(0, 10));
   });
   return {
     anos: [...anos].sort().reverse(),
-    meses: [...meses].sort().reverse()
+    meses: [...meses].sort().reverse(),
+    dias: [...dias].sort().reverse()
   };
+}
+
+// O nome do período em foco, do mais estreito ao mais largo ('' = tudo).
+function _rankFocoRotulo() {
+  if (_rankDia) return formatDate(_rankDia);
+  if (_rankSemana) return 'semana de ' + formatDate(_rankSemana) + ' a ' + formatDate(_rankSomaDias(_rankSemana, 6));
+  if (_rankMes) return _rankRotuloMes(_rankMes);
+  return _rankAno || '';
 }
 
 /* ====================== O RANKING: UM QUADRO SÓ ======================
@@ -11093,6 +11106,11 @@ const RANK_VARS = [
   { k: 'tamanho', rotulo: 'Tamanho', plural: 'tamanhos' },
   { k: 'cor',     rotulo: 'Cor',     plural: 'cores' },
   { k: 'sku',     rotulo: 'SKU',     plural: 'SKUs' },
+  // O STATUS ATUAL da OS (07/10/2026, Junior: "no ranking de produção, inclua
+  // filtro por status"). É o mesmo status da lista de Ordens de Serviço
+  // (_statusOS), e os treze aparecem sempre, na ordem do fluxo: é o vocabulário
+  // da fábrica, como no filtro da lista.
+  { k: 'status',  rotulo: 'Status',  plural: 'status' },
   // O período entra como EIXO, não como filtro: quem filtra período são o ano e
   // o mês lá em cima. Nas linhas ele devolve a antiga série do tempo.
   { k: 'periodo', rotulo: 'Período', plural: 'períodos', soEixo: true }
@@ -11102,30 +11120,37 @@ const _rankRotuloVar = k => (RANK_VARS.find(v => v.k === k) || {}).rotulo || '';
 // O que está escolhido agora. Vive só nesta sessão, como o ano e o mês: é uma
 // pergunta que se faz, não um cadastro que se guarda.
 let _rankLinha = 'tamanho', _rankColuna = 'cor';
-let _rankFiltros = { grade: '', tipo: '', tamanho: '', cor: '', sku: '' };
+let _rankFiltros = { grade: '', tipo: '', tamanho: '', cor: '', sku: '', status: '' };
 
 // A ordem dos tamanhos é a da GRADE, não a alfabética: "G1" antes de "GG" seria
 // alfabético e nenhum tamanho da casa se lê assim.
 const _RANK_ORDEM_TAM = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'];
 
-function _rankingFatos(ano, mes) {
+function _rankingFatos(ano, mes, semana, dia) {
   // OS SEM DATA fica de fora de qualquer recorte com período: ela não pertence a
   // mês nenhum, e contá-la em todos faria as somas dos meses passarem do total.
+  // Vale o recorte mais estreito: a semana que atravessa a virada do mês entra
+  // inteira, de segunda a domingo.
   const dentro = o => {
     const d = String(o.data || '');
+    if (dia) return d.slice(0, 10) === dia;
+    if (semana) return /^\d{4}-\d{2}-\d{2}/.test(d) && _rankBalde(d.slice(0, 10), 'semana') === semana;
     if (mes) return d.slice(0, 7) === mes;
     if (ano) return d.slice(0, 4) === ano;
     return true;
   };
   const ord = (STATE.ordens || []).filter(o => String(o.os || '').trim()).filter(dentro);
   // A série do tempo: por MÊS quando se está dentro de um ano, por ANO quando se
-  // olha a fábrica inteira. É o mesmo gesto — abrir o período em foco na fatia
-  // imediatamente menor.
+  // olha a fábrica inteira, por DIA dentro de um mês, semana ou dia. É o mesmo
+  // gesto — abrir o período em foco na fatia imediatamente menor.
+  const fatiaCampo = (semana || dia || mes) ? 'dia' : (ano ? 'mes' : 'ano');
   const fatia = o => {
     const d = String(o.data || '');
     if (!/^\d{4}-\d{2}/.test(d)) return '';
-    return (ano || mes) ? d.slice(0, 7) : d.slice(0, 4);
+    if (fatiaCampo === 'dia') return /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : '';
+    return fatiaCampo === 'mes' ? d.slice(0, 7) : d.slice(0, 4);
   };
+  const rotStatus = k => (STATUS_OS.find(x => x.k === k) || {}).rotulo || '';
   // A cor pelo nome, a partir da SIGLA do SKU ("PRE" → "Preto"). O SKU é o que
   // se lê na Contabilidade; o nome é o que se lê na prateleira.
   const nomeDaSigla = sigla => {
@@ -11174,6 +11199,7 @@ function _rankingFatos(ano, mes) {
     if (!porTam.length) porTam = [['(sem tamanho)', totalPecas]];
     const somaTam = porTam.reduce((a, x) => a + x[1], 0) || 1;
     const periodo = fatia(o);
+    const status = rotStatus(_statusOS(o));
     skus.forEach(sku => {
       pares++;
       const i = sku.indexOf('-');
@@ -11182,7 +11208,7 @@ function _rankingFatos(ano, mes) {
       const cor = nomeDaSigla(sigla) || sigla || '—';
       porTam.forEach(([tamanho, v]) => {
         fatos.push({
-          os: o.os, grade, tipo, cor, sku, tamanho, periodo, data: String(o.data || ''),
+          os: o.os, grade, tipo, cor, sku, tamanho, status, periodo, data: String(o.data || ''),
           // O produto se reparte duas vezes: entre as cores da OS e entre os
           // tamanhos da folha. O somatório volta a ser o total da OS.
           produtos: (totalPecas / skus.length) * (v / somaTam)
@@ -11194,7 +11220,7 @@ function _rankingFatos(ano, mes) {
   return {
     fatos, total: ord.length, semSku, pares,
     de: datas[0] || '', ate: datas[datas.length - 1] || '',
-    porMes: !!(ano || mes)
+    fatiaCampo
   };
 }
 
@@ -11205,6 +11231,8 @@ function _rankingValores(fatos) {
   const out = {};
   RANK_VARS.filter(v => !v.soEixo).forEach(v => {
     const s = new Set();
+    // Status são fixos: todos entram, inclusive os que não têm OS no período.
+    if (v.k === 'status') STATUS_OS.forEach(x => s.add(x.rotulo));
     fatos.forEach(f => { if (f[v.k]) s.add(f[v.k]); });
     out[v.k] = _rankOrdenarValores(v.k, [...s]);
   });
@@ -11212,6 +11240,13 @@ function _rankingValores(fatos) {
 }
 
 function _rankOrdenarValores(campo, valores) {
+  if (campo === 'status') {
+    const ordem = STATUS_OS.map(x => x.rotulo);
+    return valores.slice().sort((a, b) => {
+      const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || String(a).localeCompare(String(b));
+    });
+  }
   if (campo === 'tamanho') {
     return valores.slice().sort((a, b) => {
       const ia = _RANK_ORDEM_TAM.indexOf(a), ib = _RANK_ORDEM_TAM.indexOf(b);
@@ -11257,7 +11292,7 @@ function _rankingQuadro(fatos, lin, col) {
   // primeiro. Alfabético poria o Amarelo de 200 peças antes do Preto de 20 mil.
   const porVolume = arr => arr.slice().sort((a, b) => b.produtos - a.produtos
     || String(a.rotulo).localeCompare(String(b.rotulo)));
-  const ordenado = (mapa, campo) => (campo === 'tamanho' || campo === 'periodo')
+  const ordenado = (mapa, campo) => (campo === 'tamanho' || campo === 'periodo' || campo === 'status')
     ? arruma(mapa, campo) : porVolume(arruma(mapa, campo));
   const listaLinhas = ordenado(linhas, lin);
   const listaColunas = col ? ordenado(colunas, col) : [];
@@ -11284,10 +11319,14 @@ function _rankOrdenarOS(conjunto) {
 }
 
 // Troca o período em foco. O mês só existe dentro de um ano: escolher outro ano
-// zera o mês, senão ficaria "agosto" pendurado num ano que não o tem.
+// zera o mês, senão ficaria "agosto" pendurado num ano que não o tem. Do mesmo
+// jeito, trocar ano ou mês zera semana e dia, e trocar a semana zera o dia.
 function _rankingFiltrar(campo, valor) {
-  if (campo === 'ano') { _rankAno = valor || ''; _rankMes = ''; }
-  else { _rankMes = valor || ''; if (_rankMes) _rankAno = _rankMes.slice(0, 4); }
+  const v = valor || '';
+  if (campo === 'ano') { _rankAno = v; _rankMes = ''; _rankSemana = ''; _rankDia = ''; }
+  else if (campo === 'mes') { _rankMes = v; if (v) _rankAno = v.slice(0, 4); _rankSemana = ''; _rankDia = ''; }
+  else if (campo === 'semana') { _rankSemana = v; _rankDia = ''; }
+  else if (campo === 'dia') { _rankDia = v; }
   renderRanking();
 }
 
@@ -11354,7 +11393,7 @@ const RANK_ESCALAS = [
 let _rankEscala = '';     // '' = a que o filtro de período pede
 let _rankGraf = [];       // os gráficos na tela (para o quadrinho do mouse)
 
-const _rankEscalaDoFiltro = (ano, mes) => mes ? 'dia' : 'mes';
+const _rankEscalaDoFiltro = (ano, mes, semana, dia) => (mes || semana || dia) ? 'dia' : 'mes';
 
 // "AAAA-MM-DD" ± dias, sem fuso: meia-noite UTC não pula dia no horário de verão.
 function _rankSomaDias(d, n) {
@@ -11552,13 +11591,15 @@ function _rankSvgGrafico(p, g, topo, medidas) {
 }
 
 function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
-  const escala = _rankEscala || _rankEscalaDoFiltro(_rankAno, _rankMes);
+  const escala = _rankEscala || _rankEscalaDoFiltro(_rankAno, _rankMes, _rankSemana, _rankDia);
   // O eixo do tempo: o período do filtro (até hoje), ou da primeira à última OS.
   const hoje = _aviHoje();
   const datas = fatos.map(f => String(f.data || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   if (!datas.length) return '';
   let de = datas[0], ate = datas[datas.length - 1];
-  if (_rankMes) { de = _rankMes + '-01'; ate = _rankSomaDias(_rankSomaDias(de, 31).slice(0, 7) + '-01', -1); }
+  if (_rankDia) { de = _rankDia; ate = _rankDia; }
+  else if (_rankSemana) { de = _rankSemana; ate = _rankSomaDias(_rankSemana, 6); }
+  else if (_rankMes) { de = _rankMes + '-01'; ate = _rankSomaDias(_rankSomaDias(de, 31).slice(0, 7) + '-01', -1); }
   else if (_rankAno) { de = _rankAno + '-01-01'; ate = _rankAno + '-12-31'; }
   if (ate > hoje && hoje >= de) ate = hoje;
   if (datas[datas.length - 1] > ate) ate = datas[datas.length - 1];
@@ -11622,7 +11663,7 @@ function _rankingGraficoHtml(fatos, q, rotLinha, rotCol) {
         <div class="field" style="margin:0;">
           <label>Escala</label>
           <select onchange="_rankTrocarEscala(this.value)">
-            <option value="">Automática (${esc((RANK_ESCALAS.find(e => e.k === _rankEscalaDoFiltro(_rankAno, _rankMes)) || {}).rotulo)})</option>
+            <option value="">Automática (${esc((RANK_ESCALAS.find(e => e.k === _rankEscalaDoFiltro(_rankAno, _rankMes, _rankSemana, _rankDia)) || {}).rotulo)})</option>
             ${RANK_ESCALAS.map(e => `<option value="${e.k}" ${e.k === _rankEscala ? 'selected' : ''}>${esc(e.rotulo)}</option>`).join('')}
           </select>
         </div>
@@ -11679,19 +11720,39 @@ function renderRanking() {
   // "toda a fábrica" em vez de mostrar uma tela vazia sem explicação.
   if (_rankAno && !per.anos.includes(_rankAno)) { _rankAno = ''; _rankMes = ''; }
   if (_rankMes && !per.meses.includes(_rankMes)) _rankMes = '';
-  const base = _rankingFatos(_rankAno, _rankMes);
+  // As semanas e os dias que têm OS dentro do ano/mês escolhidos (os dias,
+  // também dentro da semana). A semana se mostra pela segunda-feira.
+  const diasDoMes = per.dias.filter(d => (!_rankAno || d.slice(0, 4) === _rankAno) && (!_rankMes || d.slice(0, 7) === _rankMes));
+  const semanas = [...new Set(diasDoMes.map(d => _rankBalde(d, 'semana')))].sort().reverse();
+  if (_rankSemana && !semanas.includes(_rankSemana)) { _rankSemana = ''; _rankDia = ''; }
+  const dias = diasDoMes.filter(d => !_rankSemana || _rankBalde(d, 'semana') === _rankSemana);
+  if (_rankDia && !dias.includes(_rankDia)) _rankDia = '';
+  const base = _rankingFatos(_rankAno, _rankMes, _rankSemana, _rankDia);
   const valores = _rankingValores(base.fatos);
   // Filtro que aponta para um valor que não existe mais neste período (mudou o
   // mês e aquela cor não foi produzida) se desfaz sozinho: ficar preso a ele
-  // mostraria um quadro vazio sem dizer por quê.
-  RANK_VARS.filter(v => !v.soEixo).forEach(v => {
+  // mostraria um quadro vazio sem dizer por quê. O status não: os treze estão
+  // sempre no seletor, e o quadro vazio diz que ninguém está naquele status.
+  RANK_VARS.filter(v => !v.soEixo && v.k !== 'status').forEach(v => {
     if (_rankFiltros[v.k] && !(valores[v.k] || []).includes(_rankFiltros[v.k])) _rankFiltros[v.k] = '';
   });
   const fatos = base.fatos.filter(f =>
     RANK_VARS.filter(v => !v.soEixo).every(v => !_rankFiltros[v.k] || f[v.k] === _rankFiltros[v.k]));
   const mesesDoAno = per.meses.filter(m => !_rankAno || m.slice(0, 4) === _rankAno);
   const num = n => Number(n || 0).toLocaleString('pt-BR');
-  const rotPeriodo = v => /^\d{4}-\d{2}$/.test(v) ? _rankRotuloMes(v) : String(v);
+  const DIA_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const rotDia = d => formatDate(d) + ' (' + DIA_SEM[new Date(d + 'T00:00:00Z').getUTCDay()] + ')';
+  const rotPeriodo = v => /^\d{4}-\d{2}-\d{2}$/.test(v) ? rotDia(v)
+    : /^\d{4}-\d{2}$/.test(v) ? _rankRotuloMes(v) : String(v);
+  // Quantas OS cada status tem no período, para o seletor (com os outros
+  // filtros de variável aplicados, menos o próprio status).
+  const contaStatus = {};
+  const osPorStatus = {};
+  base.fatos.forEach(f => {
+    if (!RANK_VARS.filter(v => !v.soEixo && v.k !== 'status').every(v => !_rankFiltros[v.k] || f[v.k] === _rankFiltros[v.k])) return;
+    (osPorStatus[f.status] = osPorStatus[f.status] || new Set()).add(f.os);
+  });
+  Object.keys(osPorStatus).forEach(k => { contaStatus[k] = osPorStatus[k].size; });
 
   const opcoesEixo = (sel, comNenhuma) => (comNenhuma
     ? `<option value="">— nenhuma (lista simples) —</option>` : '')
@@ -11702,7 +11763,7 @@ function renderRanking() {
         <label>${esc(v.rotulo)}</label>
         <select onchange="_rankFiltroVar('${esc(v.k)}', this.value)">
           <option value="">Tod${v.k === 'cor' || v.k === 'grade' ? 'as' : 'os'} — ${esc(v.plural)}</option>
-          ${(valores[v.k] || []).map(x => `<option value="${esc(x)}" ${x === _rankFiltros[v.k] ? 'selected' : ''}>${esc(x)}</option>`).join('')}
+          ${(valores[v.k] || []).map(x => `<option value="${esc(x)}" ${x === _rankFiltros[v.k] ? 'selected' : ''}>${esc(x)}${v.k === 'status' ? ' (' + (contaStatus[x] || 0) + ')' : ''}</option>`).join('')}
         </select>
       </div>`).join('');
   const temFiltroVar = RANK_VARS.some(v => !v.soEixo && _rankFiltros[v.k]);
@@ -11723,7 +11784,21 @@ function renderRanking() {
           ${mesesDoAno.map(m => `<option value="${esc(m)}" ${m === _rankMes ? 'selected' : ''}>${esc(_rankRotuloMes(m))}</option>`).join('')}
         </select>
       </div>
-      ${(_rankAno || _rankMes)
+      <div class="field" style="margin:0;">
+        <label>Semana</label>
+        <select onchange="_rankingFiltrar('semana', this.value)">
+          <option value="">Todas as semanas</option>
+          ${semanas.map(s => `<option value="${esc(s)}" ${s === _rankSemana ? 'selected' : ''}>${esc(formatDate(s) + ' a ' + formatDate(_rankSomaDias(s, 6)))}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label>Dia</label>
+        <select onchange="_rankingFiltrar('dia', this.value)">
+          <option value="">Todos os dias</option>
+          ${dias.map(d => `<option value="${esc(d)}" ${d === _rankDia ? 'selected' : ''}>${esc(rotDia(d))}</option>`).join('')}
+        </select>
+      </div>
+      ${(_rankAno || _rankMes || _rankSemana || _rankDia)
         ? `<button class="btn small ghost" onclick="_rankingFiltrar('ano','')">Limpar período</button>` : ''}
     </div>
     <div class="card" style="margin-bottom:14px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
@@ -11741,7 +11816,7 @@ function renderRanking() {
     </div>`;
 
   if (!base.total) {
-    box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankMes ? _rankRotuloMes(_rankMes) : _rankAno)}.</div>`;
+    box.innerHTML = filtro + `<div class="info-box">Nenhuma OS em ${esc(_rankFocoRotulo())}.</div>`;
     return;
   }
 
@@ -11807,7 +11882,7 @@ function renderRanking() {
   // quando o período está nas linhas: é o mesmo gesto de abrir uma pasta.
   const celLinha = (x) => _rankLinha === 'periodo'
     ? `<td style="cursor:pointer;" title="Ver só este período"
-         onclick="_rankingFiltrar('${base.porMes ? 'mes' : 'ano'}','${esc(x.rotulo)}')"><strong>${esc(rotPeriodo(x.rotulo))}</strong></td>`
+         onclick="_rankingFiltrar('${base.fatiaCampo}','${esc(x.rotulo)}')"><strong>${esc(rotPeriodo(x.rotulo))}</strong></td>`
     : `<td><strong>${esc(x.rotulo)}</strong></td>`;
 
   const maiorLinha = q.linhas.reduce((mx, x) => Math.max(mx, x.produtos), 0);
@@ -11875,7 +11950,7 @@ function renderRanking() {
     : 'Por ' + _rankRotuloVar(_rankLinha).toLowerCase();
   const resumo = q.linhas.length + ' linha' + (q.linhas.length === 1 ? '' : 's')
     + (_rankColuna ? ' × ' + q.colunas.length + ' coluna' + (q.colunas.length === 1 ? '' : 's') : '');
-  const foco = _rankMes ? _rankRotuloMes(_rankMes) : (_rankAno || '');
+  const foco = _rankFocoRotulo();
   const recorte = RANK_VARS.filter(v => !v.soEixo && _rankFiltros[v.k])
     .map(v => `<b>${esc(v.rotulo.toLowerCase())}</b> ${esc(_rankFiltros[v.k])}`).join(' · ');
 
