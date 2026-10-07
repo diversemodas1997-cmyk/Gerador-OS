@@ -242,7 +242,23 @@ ok('o último estado reconstruído da 0001 é o cartão de hoje', fim(r.linha[0]
 ok('e o da 0002 também', fim(r.linha[1]) === 'costurando', fim(r.linha[1]));
 ok('os números de agora são os mesmos do cartão',
    h.corte.agora === d.corte.pecas && h.costurando.agora === d.costurando.pecas, [d.corte.pecas, d.costurando.pecas]);
-ok('o trânsito não tem histórico', h.idaManha.semHistorico === true && h.corte.semHistorico === false, '');
+/* O TRÂNSITO TEM HISTÓRICO desde 07/10/2026 (Junior: "os quadros no Início
+   devem mostrar o que foi movimentado apenas no dia atual, quando o filtro
+   estiver selecionado Dia"). A caixa da viagem tem a hora da carga, e o
+   trânsito segue o filtro como os outros. */
+ok('o trânsito tem histórico, como os outros quadros', h.idaManha.semHistorico === false && h.corte.semHistorico === false, '');
+const osViagem = (num, marcas) => Object.assign(os(num, marcas), {
+  etapas: ['Corte', 'Ensaque', 'Expedição Desc X São Carlos', 'Recebido em São Carlos', 'Estoque'] });
+const hv = rodar([
+  // Saiu de Descalvado ONTEM (ter 15/09 14:00) e segue na estrada.
+  osViagem('0070', { 'Corte': em(14, 8), 'Ensaque': em(14, 10), 'Expedição Desc X São Carlos': em(15, 14) }),
+  // Saiu HOJE (qua 16/09 08:00).
+  osViagem('0071', { 'Corte': em(15, 8), 'Ensaque': em(15, 10), 'Expedição Desc X São Carlos': em(16, 8) })
+], 'dia').h;
+const naLista = hv.idaManha.listaOS.filter(r => r.entrada > 0 || r.saida > 0).map(r => r.os);
+ok('no Dia, o trânsito lista só a OS que entrou na estrada hoje', naLista.join(',') === '0071', hv.idaManha.listaOS);
+ok('a que está na estrada desde ontem segue no número do cartão (corrente)',
+   (hv.idaManha.listaOS.find(r => r.os === '0070') || {}).corrente === 200, hv.idaManha.listaOS);
 
 console.log('');
 console.log('-- a lista de OS do quadro (07/10/2026) --');

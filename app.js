@@ -12533,7 +12533,9 @@ function _expData(iso) {
 }
 function _expHoje() { return _expIso(new Date()); }
 // O relógio da expedição em milissegundos: a hora da carga é comparada com ele.
-function _expAgora() { return Date.now(); }
+// `_expAgora.fixo` congela o relógio num instante do passado — é assim que o
+// histórico do Início pergunta "o que estava na estrada naquela hora?".
+function _expAgora() { return _expAgora.fixo != null ? _expAgora.fixo : Date.now(); }
 function _expAddDias(iso, n) {
   const d = _expData(iso);
   d.setDate(d.getDate() + n);
@@ -22521,7 +22523,17 @@ function _dashFluxoDados() {
      · O TRÂNSITO segue a DATA da carga, e não o checklist: não tem histórico
        aqui (os cartões dele mostram só o agora). */
 const DASH_DIA_MS = 86400000;
-const DASH_SEM_HISTORICO = new Set(['idaManha', 'idaTarde', 'voltaManha', 'voltaTarde']);
+/* O TRÂNSITO GANHOU HISTÓRICO (07/10/2026, Junior: "o quadro Estoque em
+   trânsito mostra OS que foram alocadas em outro dia diferente de 07/10 sendo
+   que o filtro está em dia"). Os quatro cartões de trânsito ficavam fora do
+   histórico e listavam quem estava na estrada AGORA, em qualquer filtro: a
+   entrada na estrada era a hora da alocação, que não diz quando o caminhão
+   saiu. Desde a mesma data a caixa da viagem é marcada na hora DA CARGA (ver
+   _expMarcarViagensVencidas), e a fração alocada anda pela hora da carga —
+   então o trânsito tem data de entrada (a carga) e de saída (o Recebido), e
+   segue o filtro como os outros quadros. O conjunto fica, vazio, para o dia em
+   que algum cartão voltar a não ter passado. */
+const DASH_SEM_HISTORICO = new Set([]);
 /* A MESA DE CORTE LISTA SÓ O QUE FOI CORTADO NO PERÍODO (07/10/2026, Junior: "o
    filtro dia deveria mostrar apenas OS que foram cortadas no mesmo dia, sendo
    que essa data coincide com a data de ensacamento"). A lista dos quadros traz
@@ -22594,8 +22606,18 @@ function _dashClonesNoTempoOS(o) {
     carimbos.push({ t: carimboAtual, c: o.statusOS });
     carimbos.sort((a, b) => a.t - b.t);
   }
+  // A hora de cada carga desta OS também é um momento: é quando a fração
+  // alocada sai para a estrada, sem ninguém marcar nada.
+  const cancel = typeof _expCancelSet === 'function' ? _expCancelSet() : new Set();
+  const cargas = typeof _expInstanteCarga === 'function'
+    ? (STATE.expedicaoCargas || []).filter(c => c.osId === o.id && !cancel.has(c.janelaId + '|' + c.data))
+        .map(_expInstanteCarga).filter(Number.isFinite)
+    : [];
+  // Nada do futuro: a carga da semana que vem ainda não aconteceu.
+  const agoraReal = typeof _expAgora === 'function' ? _expAgora() : Date.now();
   const instantes = [...new Set(marcas.map(m => m.t)
-    .concat(enf.map(x => x.t), carimbos.map(x => x.t), hist.map(x => x.em)))]
+    .concat(enf.map(x => x.t), carimbos.map(x => x.t), hist.map(x => x.em), cargas))]
+    .filter(t => t <= agoraReal)
     .sort((x, y) => x - y);
   if (!instantes.length) return null;
   return instantes.map(t => {
@@ -22618,11 +22640,19 @@ function _dashClonesNoTempoOS(o) {
 function _dashLinhaDoTempoOS(o) {
   const clones = _dashClonesNoTempoOS(o);
   if (!clones) return null;
-  return clones.map(({ t, clone }) => {
-    const cartoes = new Map();
-    _dashCartoesDaOS(clone, { semTransito: true }).forEach(c => cartoes.set(c.k, c.pecas));
-    return { t, cartoes };
-  });
+  // O relógio da expedição parado em cada instante: a fração alocada e o
+  // turno do trânsito são os daquela hora, e não os de agora.
+  const antes = typeof _expAgora === 'function' ? _expAgora.fixo : undefined;
+  try {
+    return clones.map(({ t, clone }) => {
+      const cartoes = new Map();
+      if (typeof _expAgora === 'function') _expAgora.fixo = t;
+      _dashCartoesDaOS(clone).forEach(c => cartoes.set(c.k, c.pecas));
+      return { t, cartoes };
+    });
+  } finally {
+    if (typeof _expAgora === 'function') _expAgora.fixo = antes;
+  }
 }
 
 // Os intervalos de cada cartão: {os, pecas, de, ate}. `de` null = sem data (OS
