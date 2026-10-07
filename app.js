@@ -22843,13 +22843,24 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   // O trânsito não tem histórico: só a coluna Corrente faz sentido nele.
   const cols = (!x || x.semHistorico) ? DASH_COLUNAS_LISTA.filter(k => k.k === 'cor')
     : DASH_COLUNAS_LISTA.filter(k => ver(k.k));
-  const linhas = (x && x.listaOS || []).filter(r => cols.some(k => r[k.campo]));
+  /* SÓ AS OS QUE SE MOVERAM NO PERÍODO (07/10/2026, Junior: "o programa deve
+     mostrar no campo Início as OS de mesma data"; escolhido: "só o que se
+     moveu"). Uma linha é uma OS que ENTROU ou SAIU deste quadro no período —
+     no Dia, naquele dia —, pela hora da etapa no checklist, nunca pela data de
+     produção da OS. Quem está parado aqui desde antes sai da lista e é contado
+     numa linha à parte embaixo; o número do cartão continua com todos. O
+     trânsito não tem entrada/saída datada: lá a lista é quem está agora. */
+  const semMov = !x || x.semHistorico;
+  const todas = (x && x.listaOS) || [];
+  const linhas = todas.filter(r => semMov ? r.corrente > 0 : (r.entrada > 0 || r.saida > 0))
+    .filter(r => cols.some(k => r[k.campo]));
+  const parados = semMov ? [] : todas.filter(r => !(r.entrada > 0 || r.saida > 0) && r.corrente > 0);
   const num = v => v ? _dashFmt(v) : '<span class="dash-ls-zero">—</span>';
   const somas = {};
-  cols.forEach(k => {
-    somas[k.campo] = k.campo === 'corrente' ? (x ? x.agora : 0)
-      : linhas.reduce((s, r) => s + (r[k.campo] || 0), 0);
-  });
+  cols.forEach(k => { somas[k.campo] = linhas.reduce((s, r) => s + (r[k.campo] || 0), 0); });
+  const nomePer = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
+  const notaParados = parados.length
+    ? `<div class="dash-an-aviso">Paradas desde antes, sem movimento ${nomePer}: <b>${parados.length} OS</b>, ${_dashFmt(parados.reduce((s, r) => s + r.corrente, 0))} produtos (estão no número do cartão).</div>` : '';
   const tabela = linhas.length ? `<div class="dash-ls-box"><table class="dash-ls">
       <thead><tr><th>OS</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
       <tbody>${linhas.map(r => `<tr${r.desde != null ? ` title="Na operação desde ${esc(_dashDataHora(r.desde))}"` : ''}>
@@ -22857,7 +22868,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
         ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><td>total · ${linhas.length} OS</td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
     </table></div>`
-    : `<div class="dash-an-aviso">Nenhuma OS nesta operação no período.</div>`;
+    : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
 
   if (!x || x.semHistorico) {
     return `<div class="dash-an-cel">${nome}${tabela}
@@ -22883,6 +22894,7 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
 
   return `<div class="dash-an-cel">${nome}
     ${tabela}
+    ${notaParados}
     ${ver('idade') ? idade : ''}
     ${ver('tempos') ? `<div class="dash-tp-info">${tempos}</div>` : ''}
     ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora da entrada e da saída.</div>` : ''}
@@ -22900,10 +22912,10 @@ function _dashAnalisePasso(p, h, escala, oc) {
   // A lista é do período EM CURSO (ver `listaOS` em _dashHistorico).
   const atual = _dashPeriodos(agora, escala).periodos.slice(-1)[0];
   const alcance = 'Entrada e saída ' + ({ dia: 'do dia', semana: 'da semana', mes: 'do mês', ano: 'do ano' })[cfg.k] + ' em curso (' + atual.nome + ')'
-    + '; corrente e residual = quem está lá agora, mesmo que tenha chegado antes';
+    + ': a lista traz só as OS que entraram ou saíram do quadro no período, pela hora da etapa no checklist (não pela data de produção)';
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      <span>Uma linha por OS; a última é o total do quadro. Residual = o que já estava + entrada − saída (só OS com data); Corrente = o cartão agora. Clique no número da OS para abrir a folha.</span>
+      <span>Uma linha por OS; a última é o total delas. Corrente = o que a OS tem no quadro agora; Residual = o que ficou no fim do período (só OS com data). Clique no número da OS para abrir a folha.</span>
       ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
