@@ -22330,7 +22330,13 @@ function _dashCartoesDaOS(o, opts) {
        Por isso ele pode repetir peça que também conta noutro cartão, como já
        fazem os dois de Recebido. A soma dos cartões não é o total da fábrica;
        cada um responde à sua pergunta. */
-    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE)) poe('estoque', total);
+    /* O STATUS ESTOQUE TAMBÉM ENTRA (07/10/2026, Junior: "No quadro Estoque
+       no Início mostre as OS que foram finalizadas no dia com o status
+       Estoque quando o filtro for Dia"). Só a caixa contava: a OS carimbada
+       Estoque à mão, sem a caixa marcada, não estava em quadro nenhum — e não
+       aparecia no Dia em que foi finalizada. Agora vale a caixa OU o status;
+       a hora da entrada é a da caixa ou a do carimbo (diário de status). */
+    if (osEtapaMarcada(o, TERMINAL_ETAPA_RE) || _statusOS(o) === 'estoque') poe('estoque', total);
     /* CORTANDO NÃO TEM CAMPO, E PRECISAVA DE CARTÃO (15/09/2026, Junior).
 
        Os campos do fluxo guardam pano PARADO: o corte ensacado esperando a
@@ -23018,7 +23024,7 @@ function _dashFluxoPassos(d) {
     ] },
     { nome: 'Estoque', cards: [
       { k: 'estoque', nome: 'Produto acabado', v: d.estoque, statusFiltro: 'estoque',
-        dica: 'Toda OS com a caixa Estoque marcada no checklist — mesmo que outra etapa tenha sido marcada depois dela.' },
+        dica: 'Toda OS com o status Estoque ou com a caixa Estoque marcada no checklist — mesmo que outra etapa tenha sido marcada depois dela. No filtro Dia, a lista traz as OS finalizadas naquele dia, com a hora.' },
     ] },
   ];
 }

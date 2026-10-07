@@ -377,6 +377,23 @@ ok('a 0071, que andou ontem, não entra na lista de nenhum quadro do Dia de hoje
    Object.keys(hp).every(k => hp[k].listaOS.every(r => r.os !== '0071' || !(r.entrada || r.saida))),
    Object.keys(hp).map(k => [k, hp[k].listaOS.filter(r => r.os === '0071')]));
 
+console.log('');
+console.log('-- o quadro Estoque lista as OS finalizadas no dia (07/10/2026) --');
+// A 0080 foi carimbada Estoque À MÃO hoje às 11:00, sem a caixa; a 0081 teve
+// a caixa Estoque marcada hoje às 10:00; a 0082 foi para o estoque ontem.
+const est80 = Object.assign(os('0080', { 'Corte': em(15, 9), 'Ensaque': em(15, 15) }), {
+  statusOS: 'estoque', statusOSEm: new Date(em(16, 11)).toISOString(),
+  statusHist: [{ k: 'estoque', em: em(16, 11), c: 'estoque' }] });
+const est81 = os('0081', { 'Corte': em(14, 9), 'Ensaque': em(14, 15), 'Estoque': em(16, 10) });
+const est82 = os('0082', { 'Corte': em(14, 9), 'Ensaque': em(14, 15), 'Estoque': em(15, 10) });
+const he = rodar([est80, est81, est82], 'dia');
+const le = o => he.h.estoque.listaOS.find(r => r.os === o) || {};
+ok('a OS carimbada Estoque à mão conta no cartão Estoque', he.d.estoque.pecas === 600, he.d.estoque);
+ok('e aparece no Dia em que foi finalizada, com a hora do carimbo',
+   le('0080').entrada === 200 && new Date(le('0080').entrouEm).getHours() === 11, le('0080'));
+ok('a da caixa Estoque marcada hoje também', le('0081').entrada === 200 && new Date(le('0081').entrouEm).getHours() === 10, le('0081'));
+ok('a finalizada ontem não entra na lista de hoje', !le('0082').entrada, le('0082'));
+
 const hl = rodar([limpa], 'dia').h;
 ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
    ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);
