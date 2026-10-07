@@ -22702,7 +22702,12 @@ function _dashClonesNoTempoOS(o) {
      de hoje, e a "saída" da matéria-prima caía hoje. Cada anotação diz o status
      verdadeiro daquela hora: quando a folha sozinha não chega nele, a anotação
      vale como carimbo, até a próxima marca, como qualquer carimbo. */
-  hist.filter(x => !('c' in x) && x.k && x.em <= agoraReal).forEach(x => {
+  /* Só a PRIMEIRA anotação: é ela que registra o estado de antes do diário
+     (o carimbo perdido). As seguintes sem `c` vieram de caixa, enfesto ou
+     expedição — ou de uma regra do programa que mudou, como a da viagem em
+     07/10 às 11:46 (OS 0513 e 0514, que "entravam" hoje na estrada por um
+     caminhão de 09/09) —, e essas a folha explica sozinha. */
+  hist.filter((x, i) => i === 0 && !('c' in x) && x.k && x.em <= agoraReal).forEach(x => {
     const antes = typeof _expAgora === 'function' ? _expAgora.fixo : undefined;
     try {
       if (typeof _expAgora === 'function') _expAgora.fixo = x.em;
