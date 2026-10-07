@@ -22621,8 +22621,17 @@ function _dashHistorico(d, agora, escala) {
          corrente         o que está no cartão agora (inclui OS sem data)
          residual         o que está na operação no fim do período, só OS com data
          total            o que já estava no início + o que entrou */
-    const fimRes = Math.min(periodos[periodos.length - 1].ate, agora) - 1;
-    const noPeriodo = t => periodos.some(w => dentro(t, w.de, w.ate));
+    /* SÓ O PERÍODO EM CURSO (07/10/2026, Junior: "a lista de OS mostrada no
+       campo Início mostra OS de dias diferentes quando o filtro está em Dia").
+       A primeira versão somava a JANELA inteira do antigo gráfico — no Dia, os
+       últimos 10 dias úteis —, então "Dia" listava entradas e saídas de duas
+       semanas. A lista agora é do período em que se está: Dia = hoje (o último
+       dia útil, no fim de semana), Semana = esta semana, Mês = este mês, Ano =
+       este ano. Corrente e residual continuam listando quem está lá agora, que
+       pode ter chegado antes — a data de chegada está na dica da linha. */
+    const atual = periodos[periodos.length - 1];
+    const fimRes = Math.min(atual.ate, agora) - 1;
+    const noPeriodo = t => dentro(t, atual.de, atual.ate);
     const porOS = new Map();
     const linhaOS = (os, id) => {
       if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null });
@@ -22635,7 +22644,7 @@ function _dashHistorico(d, agora, escala) {
       if (noPeriodo(x.de)) r.entrada += x.pecas;
       if (noPeriodo(x.ate)) r.saida += x.pecas;
       if (x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) r.residual += x.pecas;
-      if ((x.semData || (x.de != null && x.de <= inicio)) && (x.ate == null || x.ate > inicio)) r.jaEstava += x.pecas;
+      if ((x.semData || (x.de != null && x.de <= atual.de)) && (x.ate == null || x.ate > atual.de)) r.jaEstava += x.pecas;
     });
     atuais.forEach(x => { const r = linhaOS(x.os, x.id); r.corrente += x.pecas; if (x.desde != null) r.desde = x.desde; });
     const listaOS = [...porOS.values()]
@@ -22662,7 +22671,7 @@ function _dashHistorico(d, agora, escala) {
       semHistorico: DASH_SEM_HISTORICO.has(k),
       periodos: sem, entrada, saida, total: jaEstava + entrada, foraDoPeriodo,
       residual: sem[sem.length - 1].residual, residualInicial,
-      agora: (d[k] && d[k].pecas) || 0, semData, atuais, faixas, listaOS,
+      agora: (d[k] && d[k].pecas) || 0, semData, atuais, faixas, listaOS, periodoLista: atual,
       tempoMedio, nSaidas: saidas.length,
       maisAntiga: datados[0] || null,
       ultimaEntrada: entradas.length ? Math.max(...entradas) : null
@@ -22888,7 +22897,10 @@ function _dashAnalisePasso(p, h, escala, oc) {
   if (!temAlgo) return '';
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const agora = Date.now();
-  const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
+  // A lista é do período EM CURSO (ver `listaOS` em _dashHistorico).
+  const atual = _dashPeriodos(agora, escala).periodos.slice(-1)[0];
+  const alcance = 'Entrada e saída ' + ({ dia: 'do dia', semana: 'da semana', mes: 'do mês', ano: 'do ano' })[cfg.k] + ' em curso (' + atual.nome + ')'
+    + '; corrente e residual = quem está lá agora, mesmo que tenha chegado antes';
   return `<div class="dash-analise">
     <div class="dash-an-leg">
       <span>Uma linha por OS; a última é o total do quadro. Residual = o que já estava + entrada − saída (só OS com data); Corrente = o cartão agora. Clique no número da OS para abrir a folha.</span>

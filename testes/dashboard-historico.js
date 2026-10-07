@@ -236,20 +236,26 @@ ok('o trânsito não tem histórico', h.idaManha.semHistorico === true && h.cort
 
 console.log('');
 console.log('-- a lista de OS do quadro (07/10/2026) --');
-// As colunas abertas por OS somam os números do quadro inteiro.
+// A lista é do período EM CURSO: as colunas somam a última coluna do quadro.
 const confere = (nome, x) => {
   const soma = c => x.listaOS.reduce((s, o) => s + o[c], 0);
-  ok(nome + ': entrada, saída, residual e total da lista = os do quadro',
-     soma('entrada') === x.entrada && soma('saida') === x.saida && soma('residual') === x.residual && soma('total') === x.total,
-     { lista: ['entrada', 'saida', 'residual', 'total'].map(soma), quadro: [x.entrada, x.saida, x.residual, x.total] });
+  const w = x.periodos[x.periodos.length - 1];
+  ok(nome + ': entrada, saída e residual da lista = os do período em curso',
+     soma('entrada') === w.entrada && soma('saida') === w.saida && soma('residual') === w.residual,
+     { lista: ['entrada', 'saida', 'residual'].map(soma), periodo: [w.entrada, w.saida, w.residual] });
   ok(nome + ': corrente da lista = cartão agora', soma('corrente') === x.agora, [soma('corrente'), x.agora]);
 };
 confere('corte', h.corte);
 confere('costurando', h.costurando);
 confere('cortando com anterior', comAnterior);
 const l2 = h.corte.listaOS.find(o => o.os === '0002');
-ok('a 0002 entrou e saiu do estoque de corte no período (200 / 200), e não está mais lá',
-   l2 && l2.entrada === 200 && l2.saida === 200 && l2.corrente === 0 && l2.residual === 0, l2);
+ok('a 0002 entrou no estoque de corte na semana passada e saiu nesta: entrada 0, saída 200, total 200',
+   l2 && l2.entrada === 0 && l2.saida === 200 && l2.corrente === 0 && l2.residual === 0 && l2.total === 200, l2);
+// No DIA, a entrada é só a de hoje (qua 16/09): quem entrou ontem não aparece em Entrada.
+const hojeDia = rodar([os('0040', { 'Corte': em(15, 9) }), os('0041', { 'Corte': em(16, 9) })], 'dia').h.cortando;
+const e40 = hojeDia.listaOS.find(o => o.os === '0040') || {}, e41 = hojeDia.listaOS.find(o => o.os === '0041') || {};
+ok('DIA: só a OS cortada hoje tem entrada; a de ontem está em corrente, sem entrada',
+   e41.entrada === 200 && e40.entrada === 0 && e40.corrente === 200, hojeDia.listaOS);
 ok('a linha da OS sabe o id, para abrir a folha', l2 && l2.id === 'id_0002', l2);
 const l3 = h.costurando.listaOS.find(o => o.os === '0003') || {};
 ok('a OS antiga sem data aparece no corrente, não no residual', l3.corrente === 200 && l3.residual === 0, l3);
