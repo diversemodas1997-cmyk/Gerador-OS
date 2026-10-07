@@ -1336,7 +1336,7 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 /* Entrada x saida: um pequeno grafico por quadro, na mesma grade dos cartoes. */
 .dash-an-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 10px;
 }
 .dash-an-cel {
@@ -4705,3 +4705,19 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   .os-split-desenho { position: static; }
   .os-split-desenho .desenho-preview { height: auto; aspect-ratio: 4/3; min-height: 0; }
 }
+
+/* O QUADRO DE LISTA DE OS do Inicio (07/10/2026): uma linha por OS, a ultima
+   e o total. A caixa rola por dentro, com o cabecalho e o total presos, para
+   o Estoque (centenas de OS) nao esticar o painel. */
+.dash-ls-box { max-height: 280px; overflow: auto; margin-top: 4px; border-top: 1px solid var(--line); }
+.dash-ls { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dash-ls th, .dash-ls td { padding: 3px 6px; text-align: right; white-space: nowrap; }
+.dash-ls th:first-child, .dash-ls td:first-child { text-align: left; }
+.dash-ls td { font-family: 'IBM Plex Mono', monospace; border-bottom: 1px solid var(--line-2); }
+.dash-ls thead th { position: sticky; top: 0; background: var(--paper); color: var(--ink-2); font-weight: 600; font-size: 11px; border-bottom: 1px solid var(--line); cursor: help; }
+.dash-ls tfoot td { position: sticky; bottom: 0; background: #eef6f0; font-weight: 700; border-bottom: 0; border-top: 1px solid var(--line); }
+.dash-ls tfoot td:first-child { font-family: inherit; color: var(--ink-2); }
+.dash-ls tbody tr:hover td { background: rgba(0,0,0,.03); }
+.dash-ls-zero { color: var(--ink-3); }
+.dash-parte.ligada[data-parte="cor"] i { background: var(--ink); }
+.dash-parte.ligada[data-parte="tot"] i { background: #8a8983; }

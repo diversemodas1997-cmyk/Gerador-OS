@@ -22343,7 +22343,7 @@ function _dashFluxoDados() {
     if (!(pecas > 0)) return;
     d[k].pecas += pecas;
     d[k].os++;
-    d[k].lista.push({ os: String((o && o.os) || '').trim() || '—', pecas });
+    d[k].lista.push({ os: String((o && o.os) || '').trim() || '—', id: o && o.id, pecas });
   };
 
   (STATE.ordens || []).forEach(o => {
@@ -22443,16 +22443,17 @@ function _dashIntervalos() {
   const add = (k, iv) => { (por[k] = por[k] || []).push(iv); };
   (STATE.ordens || []).forEach(o => {
     const os = String(o.os || '').trim() || '—';
+    const id = o.id;
     const linha = _dashLinhaDoTempoOS(o);
     if (!linha) {
       _dashCartoesDaOS(o, { semTransito: true })
-        .forEach(c => add(c.k, { os, pecas: c.pecas, de: null, ate: null, semData: true }));
+        .forEach(c => add(c.k, { os, id, pecas: c.pecas, de: null, ate: null, semData: true }));
       return;
     }
     const aberto = new Map();   // k -> intervalo em curso
     linha.forEach(e => {
       e.cartoes.forEach((pecas, k) => {
-        if (!aberto.has(k)) { const iv = { os, pecas, de: e.t, ate: null }; aberto.set(k, iv); add(k, iv); }
+        if (!aberto.has(k)) { const iv = { os, id, pecas, de: e.t, ate: null }; aberto.set(k, iv); add(k, iv); }
       });
       [...aberto.keys()].forEach(k => {
         if (!e.cartoes.has(k)) { aberto.get(k).ate = e.t; aberto.delete(k); }
@@ -22609,8 +22610,39 @@ function _dashHistorico(d, agora, escala) {
     const atuais = ((d[k] && d[k].lista) || []).map(x => {
       const iv = abertos.get(x.os);
       const desde = iv && iv.de != null ? iv.de : null;
-      return { os: x.os, pecas: x.pecas, desde, dias: desde != null ? (agora - desde) / DASH_DIA_MS : null };
+      return { os: x.os, id: x.id, pecas: x.pecas, desde, dias: desde != null ? (agora - desde) / DASH_DIA_MS : null };
     });
+    /* A LISTA DE OS DO QUADRO (07/10/2026, Junior: "transforme os quadros de
+       gráficos em quadro de lista de OS, mostrando os volumes de entrada,
+       saída, corrente, residual e total, da mesma forma como já é calculado").
+       São as MESMAS contas de cima, só que abertas por OS: a soma de cada
+       coluna é o número do quadro inteiro.
+         entrada / saída  o que entrou / saiu dentro das colunas do período
+         corrente         o que está no cartão agora (inclui OS sem data)
+         residual         o que está na operação no fim do período, só OS com data
+         total            o que já estava no início + o que entrou */
+    const fimRes = Math.min(periodos[periodos.length - 1].ate, agora) - 1;
+    const noPeriodo = t => periodos.some(w => dentro(t, w.de, w.ate));
+    const porOS = new Map();
+    const linhaOS = (os, id) => {
+      if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null });
+      const r = porOS.get(os);
+      if (!r.id && id) r.id = id;
+      return r;
+    };
+    lista.forEach(x => {
+      const r = linhaOS(x.os, x.id);
+      if (noPeriodo(x.de)) r.entrada += x.pecas;
+      if (noPeriodo(x.ate)) r.saida += x.pecas;
+      if (x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) r.residual += x.pecas;
+      if ((x.semData || (x.de != null && x.de <= inicio)) && (x.ate == null || x.ate > inicio)) r.jaEstava += x.pecas;
+    });
+    atuais.forEach(x => { const r = linhaOS(x.os, x.id); r.corrente += x.pecas; if (x.desde != null) r.desde = x.desde; });
+    const listaOS = [...porOS.values()]
+      .map(r => Object.assign(r, { total: r.jaEstava + r.entrada }))
+      .filter(r => r.entrada || r.saida || r.corrente || r.residual || r.total)
+      // A OS mais nova primeiro: é a que está andando.
+      .sort((a, b) => String(b.os).localeCompare(String(a.os), undefined, { numeric: true }));
     const semData = atuais.filter(x => x.desde == null).reduce((s, x) => s + x.pecas, 0);
     const saidas = lista.filter(x => dentro(x.ate, inicio, agora) && x.de != null);
     const tempoMedio = saidas.length
@@ -22630,7 +22662,7 @@ function _dashHistorico(d, agora, escala) {
       semHistorico: DASH_SEM_HISTORICO.has(k),
       periodos: sem, entrada, saida, total: jaEstava + entrada, foraDoPeriodo,
       residual: sem[sem.length - 1].residual, residualInicial,
-      agora: (d[k] && d[k].pecas) || 0, semData, atuais, faixas,
+      agora: (d[k] && d[k].pecas) || 0, semData, atuais, faixas, listaOS,
       tempoMedio, nSaidas: saidas.length,
       maisAntiga: datados[0] || null,
       ultimaEntrada: entradas.length ? Math.max(...entradas) : null
@@ -22740,11 +22772,14 @@ const _dashCurto = n => n >= 1000
    todos os quadros e ficam lembrados neste computador. A ESCALA acompanha o que
    está ligado: desligar entrada e saída faz o residual ocupar a altura toda,
    em vez de ficar achatado contra um pico que nem aparece mais. */
+// Desde 07/10/2026 (quadro de lista de OS) as cinco primeiras são as COLUNAS
+// da tabela; "Números" saiu, porque a linha de total da tabela é ele.
 const DASH_PARTES = [
   { k: 'ent', rot: 'Entrada' },
   { k: 'sai', rot: 'Saída' },
+  { k: 'cor', rot: 'Corrente' },
   { k: 'res', rot: 'Residual' },
-  { k: 'numeros', rot: 'Números' },
+  { k: 'tot', rot: 'Total' },
   { k: 'idade', rot: 'Tempo' },
   { k: 'tempos', rot: 'Tempo médio e datas' }
 ];
@@ -22758,77 +22793,68 @@ function _dashOcultas() {
 function _dashAlternarParte(k) {
   const oc = _dashOcultas();
   if (oc.has(k)) oc.delete(k); else oc.add(k);
-  // O gráfico nunca fica sem nada: das três colunas, pelo menos uma fica ligada.
-  if (['ent', 'sai', 'res'].every(x => oc.has(x))) oc.delete(k === 'res' ? 'ent' : 'res');
+  // A tabela nunca fica sem nada: das cinco colunas, pelo menos uma fica ligada.
+  const COLS = ['ent', 'sai', 'cor', 'res', 'tot'];
+  if (COLS.every(x => oc.has(x))) oc.delete(k === 'cor' ? 'tot' : 'cor');
   try { localStorage.setItem(DASH_PARTES_CHAVE, JSON.stringify([...oc])); } catch (e) { /* vale só nesta tela */ }
   _dashFluxoAssinatura = '';
   renderFluxoDash();
 }
 window._dashAlternarParte = _dashAlternarParte;
 
+/* O QUADRO DE LISTA DE OS (07/10/2026, Junior: "no campo Início, transforme os
+   quadros de gráficos em quadro de lista de OS, mostrando os volumes de
+   entrada, saída, corrente, residual e total, da mesma forma como já é
+   calculado").
+
+   Cada quadro deixa de ser um gráfico de colunas por período e vira uma
+   tabela: uma linha por OS que passou pela operação no período escolhido
+   (Dia · Semana · Mês · Ano), e a última linha é o total do quadro — os
+   mesmos Entrou/Saiu/Residual/Total que ficavam embaixo do gráfico, mais o
+   Corrente, que é o número do cartão. As contas são as de _dashHistorico,
+   abertas por OS (ver `listaOS` lá). Clicar no número da OS abre a folha. */
+const DASH_COLUNAS_LISTA = [
+  { k: 'ent', campo: 'entrada',  rot: 'Entrada',
+    dica: 'Produtos desta OS que entraram na operação dentro do período' },
+  { k: 'sai', campo: 'saida',    rot: 'Saída',
+    dica: 'Produtos desta OS que saíram da operação para o passo seguinte dentro do período' },
+  { k: 'cor', campo: 'corrente', rot: 'Corrente',
+    dica: 'O que está na operação agora — o número do cartão, inclusive OS antigas sem data' },
+  { k: 'res', campo: 'residual', rot: 'Residual',
+    dica: 'O que ficou na operação no fim do período: o que já estava + entrada − saída. Só OS com data' },
+  { k: 'tot', campo: 'total',    rot: 'Total',
+    dica: 'Tudo o que esteve na operação no período: o que já estava no início, mais o que entrou' }
+];
 function _dashGraficoQuadro(c, x, escala, agora, oc) {
   oc = oc || new Set();
   const ver = k => !oc.has(k);
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
   const nome = `<div class="dash-an-nome">${esc(c.nome)}</div>`;
   const quando = _dashDataHora(agora);
+  // O trânsito não tem histórico: só a coluna Corrente faz sentido nele.
+  const cols = (!x || x.semHistorico) ? DASH_COLUNAS_LISTA.filter(k => k.k === 'cor')
+    : DASH_COLUNAS_LISTA.filter(k => ver(k.k));
+  const linhas = (x && x.listaOS || []).filter(r => cols.some(k => r[k.campo]));
+  const num = v => v ? _dashFmt(v) : '<span class="dash-ls-zero">—</span>';
+  const somas = {};
+  cols.forEach(k => {
+    somas[k.campo] = k.campo === 'corrente' ? (x ? x.agora : 0)
+      : linhas.reduce((s, r) => s + (r[k.campo] || 0), 0);
+  });
+  const tabela = linhas.length ? `<div class="dash-ls-box"><table class="dash-ls">
+      <thead><tr><th>OS</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
+      <tbody>${linhas.map(r => `<tr${r.desde != null ? ` title="Na operação desde ${esc(_dashDataHora(r.desde))}"` : ''}>
+        <td>${r.id ? `<button type="button" class="rank-os-link" onclick="verOS('${esc(r.id)}')">${esc(r.os)}</button>` : esc(r.os)}</td>
+        ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td>total · ${linhas.length} OS</td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
+    </table></div>`
+    : `<div class="dash-an-aviso">Nenhuma OS nesta operação no período.</div>`;
+
   if (!x || x.semHistorico) {
-    return `<div class="dash-an-cel">${nome}
-      <div class="dash-an-aviso">Agora (${quando}): <b>${_dashFmt(x ? x.agora : 0)}</b> produtos. O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu.</div></div>`;
+    return `<div class="dash-an-cel">${nome}${tabela}
+      <div class="dash-an-aviso">Agora (${quando}). O trânsito segue a <b>data da carga</b>, e não o checklist: não há como saber quando cada lote entrou e saiu.</div></div>`;
   }
-  const per = x.periodos;
-  const n = per.length;
-  // O residual do período em curso é o AGORA: o número do cartão.
-  const residual = per.map(w => w.residual);
-  const max = Math.max(1,
-    ...(ver('ent') ? per.map(w => w.entrada) : []),
-    ...(ver('sai') ? per.map(w => w.saida) : []),
-    ...(ver('res') ? residual.map(Math.abs) : []));
-  const alt = v => (v > 0 ? Math.max(1.5, v / max * 100) : 0);
-  const muitos = n > 6;
 
-  // As OS que estão no quadro agora, as maiores primeiro, para a dica do Agora.
-  const atuais = (x.atuais || []).slice().sort((a, b) => b.pecas - a.pecas);
-  const listaAgora = atuais.slice(0, 8).map(o => `OS ${o.os}: ${_dashFmt(o.pecas)}`
-    + (o.desde != null ? ` · desde ${_dashDataHora(o.desde)} (${_dashDuracao(o.dias)})` : ' · sem data'))
-    .join('<br>') + (atuais.length > 8 ? `<br>+ ${atuais.length - 8} OS` : '');
-
-  // A conta de cada coluna, na dica: anterior + entrada − saída. Quando algo
-  // entrou ou saiu no fim de semana (fora das colunas), a soma não fecha sozinha
-  // e a dica diz por quê.
-  const contaResidual = i => {
-    const ant = i === 0 ? x.residualInicial : residual[i - 1];
-    const w = per[i];
-    const conta = ant + w.entrada - w.saida;
-    return `<span class="dash-tip-os">(anterior ${_dashFmt(ant)} + entrada ${_dashFmt(w.entrada)} − saída ${_dashFmt(w.saida)}`
-      + (conta !== residual[i] ? ` · ${_dashFmt(residual[i] - conta)} movimentado no sábado/domingo` : '') + ')</span>';
-  };
-  const grupos = per.map((w, i) => {
-    const ultimo = i === n - 1;
-    const dica = `<b>${esc(w.nome)}${ultimo ? ' · em curso' : ''}</b><br>`
-      + `Entrada: ${_dashFmt(w.entrada)} · Saída: ${_dashFmt(w.saida)}<br>`
-      + (ultimo
-        ? `<b>Residual agora (${quando}): ${_dashFmt(residual[i])}</b> ${contaResidual(i)}`
-          + (x.agora !== residual[i] ? `<br><span class="dash-tip-os">No cartão: ${_dashFmt(x.agora)} — inclui OS antigas, sem data</span>` : '')
-          + (listaAgora ? `<br><span class="dash-tip-os">${listaAgora}</span>` : '')
-        : `Residual: ${_dashFmt(residual[i])} ${contaResidual(i)}`);
-    const topo = Math.max(ver('ent') ? w.entrada : 0, ver('sai') ? w.saida : 0, ver('res') ? Math.abs(residual[i]) : 0);
-    const linhasVal = [ver('ent') ? `<i class="ent"></i>${_dashCurto(w.entrada)}` : '', ver('sai') ? `<i class="sai"></i>${_dashCurto(w.saida)}` : '', ver('res') ? `<i class="res${residual[i] < 0 ? ' neg' : ''}"></i>${residual[i] < 0 ? '−' + _dashCurto(-residual[i]) : _dashCurto(residual[i])}` : ''].filter(Boolean);
-    const vals = !muitos && topo > 0 && linhasVal.length
-      ? `<span class="dash-an-val" style="bottom:${alt(topo).toFixed(1)}%;">${linhasVal.join('<br>')}</span>` : '';
-    return `<div class="dash-an-grupo${ultimo ? ' agora' : ''}" tabindex="0">${vals}
-        ${ver('ent') ? `<div class="dash-an-bar"><span class="dash-an-fill ent" style="height:${alt(w.entrada).toFixed(1)}%;"></span></div>` : ''}
-        ${ver('sai') ? `<div class="dash-an-bar"><span class="dash-an-fill sai" style="height:${alt(w.saida).toFixed(1)}%;"></span></div>` : ''}
-        ${ver('res') ? `<div class="dash-an-bar"><span class="dash-an-fill res${residual[i] < 0 ? ' neg' : ''}" style="height:${alt(Math.abs(residual[i])).toFixed(1)}%;"></span></div>` : ''}
-        <span class="dash-gr-tip" role="tooltip">${dica}</span>
-      </div>`;
-  }).join('');
-
-  const eixo = per.map((w, i) => `<span${i === n - 1 ? ' class="agora"' : ''}>${
-    i === n - 1 ? 'agora ' + quando.slice(0, 5) : (muitos && i % 2 ? '' : esc(w.rot))}</span>`).join('');
-
-  const kpi = (rot, v, dica, cls) =>
-    `<div class="dash-an-kpi${cls ? ' ' + cls : ''}" title="${esc(dica)}"><span>${rot}</span><b>${_dashFmt(v)}</b></div>`;
   const faixasTotal = x.faixas.reduce((s, f) => s + f.v, 0);
   const FAIXA_CLS = ['f0', 'f1', 'f2', 'f3', 'fsd'];
   const idade = faixasTotal > 0
@@ -22847,19 +22873,10 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   ].filter(Boolean).join(' · ');
 
   return `<div class="dash-an-cel">${nome}
-    <div class="dash-an-plot${muitos ? ' muitos' : ''}">
-      <div class="dash-an-grupos">${grupos}</div>
-    </div>
-    <div class="dash-an-eixo">${eixo}</div>
-    ${ver('numeros') ? `<div class="dash-an-kpis">
-      ${kpi('Entrou', x.entrada, `Produtos que entraram nesta operação no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-      ${kpi('Saiu', x.saida, `Produtos que saíram desta operação para o passo seguinte no período (${cfg.n} × ${cfg.rot.toLowerCase()})`)}
-      ${kpi('Residual', x.residual, `O que ficou na operação: o que já estava em ${per[0].nome} (${_dashFmt(x.residualInicial)}) + o que entrou − o que saiu. Só OS com data` + (x.agora !== x.residual ? `; o cartão mostra ${_dashFmt(x.agora)}, com as OS antigas` : ''))}
-      ${kpi('Total', x.total, `Tudo o que esteve na operação no período: o que já estava em ${per[0].nome}, mais o que entrou`)}
-    </div>` : ''}
+    ${tabela}
     ${ver('idade') ? idade : ''}
     ${ver('tempos') ? `<div class="dash-tp-info">${tempos}</div>` : ''}
-    ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora das colunas.</div>` : ''}
+    ${x.foraDoPeriodo > 0 ? `<div class="dash-an-aviso">${_dashFmt(x.foraDoPeriodo)} produtos entraram ou saíram num sábado ou domingo e ficaram fora da entrada e da saída.</div>` : ''}
   </div>`;
 }
 
@@ -22874,7 +22891,7 @@ function _dashAnalisePasso(p, h, escala, oc) {
   const alcance = ({ dia: 'os últimos 10 dias úteis (segunda a sexta)', semana: 'semanas de segunda a sexta: a atual e as 3 anteriores', mes: 'o mês atual e os 5 anteriores', ano: 'o ano atual e os 2 anteriores' })[cfg.k];
   return `<div class="dash-analise">
     <div class="dash-an-leg">
-      ${ver('ent') ? '<span><i class="ent"></i>Entrada</span>' : ''}${ver('sai') ? '<span><i class="sai"></i>Saída</span>' : ''}${ver('res') ? '<span><i class="res"></i>Residual (o do período anterior + entrada − saída)</span>' : ''}
+      <span>Uma linha por OS; a última é o total do quadro. Residual = o que já estava + entrada − saída (só OS com data); Corrente = o cartão agora. Clique no número da OS para abrir a folha.</span>
       ${ver('idade') ? '<span><i class="f0"></i><i class="f1"></i><i class="f2"></i><i class="f3"></i>tempo na operação: até 2 · 3–7 · 8–14 · +14 dias</span>' : ''}
       <em>${alcance}</em>
     </div>
@@ -23149,9 +23166,9 @@ function renderFluxoDash() {
       <span>Analisar por</span>
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"
         onclick="_dashTrocarEscala('${e.k}')" aria-pressed="${e.k === escala}">${e.rot}</button>`).join('')}
-      <em>vale para o volume por status e para os gráficos de todos os passos</em>
+      <em>vale para o volume por status e para as listas de OS de todos os passos</em>
     </div>
-    <div class="dash-escala" role="group" aria-label="O que mostrar nos gráficos">
+    <div class="dash-escala" role="group" aria-label="O que mostrar nas listas de OS">
       <span>Mostrar</span>
       ${DASH_PARTES.map(pt => `<button type="button" class="dash-parte${oc.has(pt.k) ? '' : ' ligada'}" data-parte="${pt.k}"
         onclick="_dashAlternarParte('${pt.k}')" aria-pressed="${!oc.has(pt.k)}"><i></i>${pt.rot}</button>`).join('')}

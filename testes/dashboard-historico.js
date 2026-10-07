@@ -234,5 +234,25 @@ ok('os números de agora são os mesmos do cartão',
    h.corte.agora === d.corte.pecas && h.costurando.agora === d.costurando.pecas, [d.corte.pecas, d.costurando.pecas]);
 ok('o trânsito não tem histórico', h.idaManha.semHistorico === true && h.corte.semHistorico === false, '');
 
+console.log('');
+console.log('-- a lista de OS do quadro (07/10/2026) --');
+// As colunas abertas por OS somam os números do quadro inteiro.
+const confere = (nome, x) => {
+  const soma = c => x.listaOS.reduce((s, o) => s + o[c], 0);
+  ok(nome + ': entrada, saída, residual e total da lista = os do quadro',
+     soma('entrada') === x.entrada && soma('saida') === x.saida && soma('residual') === x.residual && soma('total') === x.total,
+     { lista: ['entrada', 'saida', 'residual', 'total'].map(soma), quadro: [x.entrada, x.saida, x.residual, x.total] });
+  ok(nome + ': corrente da lista = cartão agora', soma('corrente') === x.agora, [soma('corrente'), x.agora]);
+};
+confere('corte', h.corte);
+confere('costurando', h.costurando);
+confere('cortando com anterior', comAnterior);
+const l2 = h.corte.listaOS.find(o => o.os === '0002');
+ok('a 0002 entrou e saiu do estoque de corte no período (200 / 200), e não está mais lá',
+   l2 && l2.entrada === 200 && l2.saida === 200 && l2.corrente === 0 && l2.residual === 0, l2);
+ok('a linha da OS sabe o id, para abrir a folha', l2 && l2.id === 'id_0002', l2);
+const l3 = h.costurando.listaOS.find(o => o.os === '0003') || {};
+ok('a OS antiga sem data aparece no corrente, não no residual', l3.corrente === 200 && l3.residual === 0, l3);
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
