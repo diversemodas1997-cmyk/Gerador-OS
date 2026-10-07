@@ -7537,16 +7537,33 @@ function bobinasDoSaldo(kg, pesoBobina) {
   return { fechados: f, abertos: (k - f * p) > 0.0005 ? 1 : 0 };
 }
 
+/* A LARGURA NOVA NÃO PUXA O PASSADO (07/10/2026, Junior: "Analise por que o
+   estoque de tecido malha algodão branco está desatualizado, com saldo
+   negativo, sendo que houve entrada dessa cor hoje").
+
+   A primeira bobina de 117 cm do Branco Malha Algodão entrou hoje. Até ali a
+   cor só tinha 120, e o consumo das camisetas de grade 117 ficava nos 120. A
+   entrada fez TODO esse consumo, de agosto para cá (3.897 kg), mudar de linha
+   de uma vez: 117 cm −3.422 kg, 120 cm +3.801 kg, com a cor inteira positiva
+   (+379 kg). O mesmo já tinha acontecido com o Off-White 117 (02/10, acertado
+   por transferência) e estava acontecendo com o Grafite e o Marrom.
+
+   Agora a OS vai para a linha da largura da grade só se o movimento dela é do
+   dia da PRIMEIRA entrada dessa largura em diante. O que foi reservado ou
+   cortado antes fica na linha em que estava. Movimento sem data (lançamento
+   antigo) segue a regra de antes. */
 function estoquePorLargura() {
   const mapa = new Map();
   const todos = movimentacoesEstoque();
-  // As larguras que cada cor tem lançadas (fora das OS).
+  // As larguras que cada cor tem lançadas (fora das OS), com o dia da primeira
+  // entrada de cada uma ('' = alguma sem data: vale desde sempre).
   const lancadas = new Map();
   todos.forEach(m => {
     if (m.origem === 'os' || !(Number(m.largura) > 0)) return;
     const k = _normNome(m.tecidoNome) + '||' + _normNome(m.corNome);
-    if (!lancadas.has(k)) lancadas.set(k, new Set());
-    lancadas.get(k).add(Number(m.largura));
+    if (!lancadas.has(k)) lancadas.set(k, new Map());
+    const desde = lancadas.get(k), l = Number(m.largura), d = String(m.data || '');
+    if (!desde.has(l) || d < desde.get(l)) desde.set(l, d);
   });
   const osPorId = new Map((STATE.ordens || []).map(o => [o.id, o]));
   todos.forEach(m => {
@@ -7554,7 +7571,8 @@ function estoquePorLargura() {
     let larg = Number(m.largura) > 0 ? Number(m.largura) : larguraPadraoDoTecido(m.tecidoNome);
     if (m.origem === 'os' && !(Number(m.largura) > 0)) {
       const daGrade = _larguraDaOSNoTecido(osPorId.get(m.osId), m.tecidoNome);
-      if (daGrade > 0 && lancadas.has(k) && lancadas.get(k).has(daGrade)) larg = daGrade;
+      const desde = lancadas.has(k) ? lancadas.get(k).get(daGrade) : undefined;
+      if (daGrade > 0 && desde !== undefined && (!desde || !m.data || String(m.data) >= desde)) larg = daGrade;
     }
     const porLarg = mapa.get(k) || new Map();
     const cur = porLarg.get(larg) || { kg: 0, entrada: 0, reservado: 0, saida: 0, fechados: 0, abertos: 0 };

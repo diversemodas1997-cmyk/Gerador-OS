@@ -87,5 +87,22 @@ const rib = mr.get([...mr.keys()].find(k => /ribana/.test(k)));
 ok('ribana: sem largura e OS caem na linha de 60 cm', rib.get(60).entrada === 126 && rib.get(60).reservado === 7, [...rib.entries()]);
 ok('ribana: não abre linha de 120 cm', !rib.has(120), [...rib.keys()]);
 
+// A LARGURA NOVA NÃO PUXA O PASSADO (07/10/2026): o Branco só tinha 120 cm, e a
+// primeira bobina de 117 entrou hoje. A OS de 117 cortada em setembro fica nos
+// 120; a reservada hoje vai para os 117.
+const BRANCO = { tecidoNome: 'Malha Algodão', corNome: 'Branco Malha Algodão' };
+const mb = porLargura([
+  Object.assign(ent(BRANCO, 120, 500, 25), { data: '2026-09-23' }),
+  Object.assign(os(BRANCO, 'osSet', 300, 'consumido'), { data: '2026-09-25' }),
+  Object.assign(ent(BRANCO, 117, 475, 25), { data: '2026-10-07' }),
+  Object.assign(os(BRANCO, 'osHoje', 200), { data: '2026-10-07' })
+], [{ id: 'osSet', fases: [{ tecidoNome: 'Malha Algodão', larg: '1.17' }] },
+    { id: 'osHoje', fases: [{ tecidoNome: 'Malha Algodão', larg: '1.17' }] }]);
+const br = mb.get([...mb.keys()].find(k => /branco/.test(k)));
+ok('branco: a OS de 117 cortada ANTES da primeira bobina de 117 fica nos 120',
+   br.get(120).saida === 300 && br.get(120).kg === 200, [...br.entries()]);
+ok('branco: a OS reservada no dia da entrada de 117 vai para os 117',
+   br.get(117).reservado === 200 && br.get(117).kg === 275, [...br.entries()]);
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
