@@ -394,6 +394,28 @@ ok('e aparece no Dia em que foi finalizada, com a hora do carimbo',
 ok('a da caixa Estoque marcada hoje também', le('0081').entrada === 200 && new Date(le('0081').entrouEm).getHours() === 10, le('0081'));
 ok('a finalizada ontem não entra na lista de hoje', !le('0082').entrada, le('0082'));
 
+console.log('');
+console.log('-- carimbo de ontem perdido não faz a OS sair hoje de um quadro anterior (07/10/2026) --');
+// A 0090 (a 0628 real): Preparo marcado ontem 14:00 e carimbada Separando à mão
+// ontem 17:00. O diário nasceu depois e anotou o Separando SEM o `c`; hoje às
+// 11:00 ela foi carimbada Ensacado. Antes ela "saía" da matéria-prima hoje.
+const est90 = Object.assign(os('0090', { 'Preparar matéria-prima': em(15, 14) }), {
+  statusOS: 'ensacado', statusOSEm: new Date(em(16, 11)).toISOString(),
+  statusHist: [{ k: 'separando', em: em(15, 17) }, { k: 'ensacado', em: em(16, 11), c: 'ensacado' }] });
+est90.etapas = ['Preparar matéria-prima'].concat(est90.etapas);
+// A 0091 (a 0621 real): enfesto ontem 11:00, carimbada Ensacado ontem 15:00 (a
+// segunda data) e esse carimbo se perdeu; hoje a caixa Corte foi marcada às 09:00.
+const est91 = Object.assign(os('0091', { 'Corte': em(16, 9) }), {
+  finalizadaEm: new Date(em(15, 15)).toISOString() });
+est91.progresso.enfestosCheck = { F1: true }; est91.progresso.enfestosSeq = { F1: em(15, 11) };
+const h9 = rodar([est90, est91], 'dia').h;
+const mov9 = (k, n) => h9[k].listaOS.filter(r => r.os === n && (r.entrada || r.saida));
+ok('0090 não sai hoje da matéria-prima (o Separando anotado de ontem vale como carimbo)',
+   !mov9('materiaPrima', '0090').length, h9.materiaPrima.listaOS);
+ok('0090 sai hoje do Separando, que é o que o carimbo de hoje fez', (mov9('separando', '0090')[0] || {}).saida === 200, h9.separando.listaOS);
+ok('0091 não sai hoje do enfesto (a segunda data de ontem vale como carimbo)',
+   !mov9('enfestando', '0091').length, h9.enfestando.listaOS);
+
 const hl = rodar([limpa], 'dia').h;
 ok('o "Não iniciado" à mão devolve a OS à folha (Cortando) na hora em que foi dado',
    ivDe(hl, 'separando').saida === 200 && ivDe(hl, 'cortando').entrada === 200, [hl.separando.listaOS, hl.cortando.listaOS]);

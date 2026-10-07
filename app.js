@@ -22678,7 +22678,7 @@ function _dashClonesNoTempoOS(o) {
     .filter(t => t <= agoraReal)
     .sort((x, y) => x - y);
   if (!instantes.length) return null;
-  return instantes.map(t => {
+  const montar = t => {
     const ck = {}, sq = {}, ckEnf = {}, sqEnf = {};
     semHora.forEach(n => { ck[n] = true; });
     marcas.forEach(m => { if (m.t <= t) { ck[m.n] = true; sq[m.n] = m.t; } });
@@ -22691,8 +22691,45 @@ function _dashClonesNoTempoOS(o) {
     carimbos.forEach(x => { if (x.t <= t) vale = x; });
     if (vale && vale.c) { clone.statusOS = vale.c; clone.statusOSEm = new Date(vale.t).toISOString(); }
     else { clone.statusOS = ''; delete clone.statusOSEm; }
-    return { t, clone };
+    return clone;
+  };
+  /* O DIÁRIO MANDA NO STATUS DO INSTANTE DELE (07/10/2026, Junior: "aparece
+     OS com data de finalização do dia 06/10" no quadro Preparando matéria-prima
+     do Dia de hoje). A OS 0628 foi carimbada à mão em 06/10; o diário, que
+     nasceu hoje, anotou aquele status sem o `c` de carimbo (a anotação era
+     de quem já estava no status). Sem saber do carimbo, a reconstrução punha a
+     OS no status da folha — Preparando matéria-prima — de 06/10 até o carimbo
+     de hoje, e a "saída" da matéria-prima caía hoje. Cada anotação diz o status
+     verdadeiro daquela hora: quando a folha sozinha não chega nele, a anotação
+     vale como carimbo, até a próxima marca, como qualquer carimbo. */
+  hist.filter(x => !('c' in x) && x.k && x.em <= agoraReal).forEach(x => {
+    const antes = typeof _expAgora === 'function' ? _expAgora.fixo : undefined;
+    try {
+      if (typeof _expAgora === 'function') _expAgora.fixo = x.em;
+      if (_statusOS(montar(x.em)) === x.k) return;
+    } finally {
+      if (typeof _expAgora === 'function') _expAgora.fixo = antes;
+    }
+    carimbos.push({ t: x.em, c: x.k });
+    carimbos.sort((a, b) => a.t - b.t);
   });
+  /* A SEGUNDA DATA TAMBÉM É UM CARIMBO (07/10/2026). A OS 0621 foi carimbada
+     Ensacado em 06/10 às 15:22, antes do diário, e o carimbo de hoje escreveu
+     por cima: nada mais lembrava daquele dia além de `finalizadaEm`, que só o
+     carimbo à mão grava. Sem ele, a OS parecia Enfestando de 06/10 até a caixa
+     Corte marcada hoje, e saía do enfesto hoje. O status daquela hora é o do
+     fim do corte da época: Ensacado até 06/10 (a regra antiga), Separando
+     daí em diante (STATUS_FIM). */
+  const fim = Date.parse(o.finalizadaEm || '');
+  if (Number.isFinite(fim) && fim <= agoraReal && !carimbos.some(x => x.t === fim)) {
+    const k = fim < new Date(2026, 9, 7).getTime() ? STATUS_FIM_RESERVA : STATUS_FIM;
+    if (_statusOS(montar(fim)) !== k) {
+      carimbos.push({ t: fim, c: k });
+      carimbos.sort((a, b) => a.t - b.t);
+      if (!instantes.includes(fim)) { instantes.push(fim); instantes.sort((x, y) => x - y); }
+    }
+  }
+  return instantes.map(t => ({ t, clone: montar(t) }));
 }
 
 function _dashLinhaDoTempoOS(o) {
@@ -30817,10 +30854,14 @@ function _statusHistAnotar(o, agoraMs, mao) {
   const ckE = prog.enfestosCheck || {}, sqE = prog.enfestosSeq || {};
   Object.keys(ckE).forEach(f => { const v = Number(sqE[f]); if (ckE[f] && v > marca) marca = v; });
   const carimbo = Date.parse(o.statusOSEm || '') || 0;
-  if (String(o.statusOS || '').trim() === k && carimbo > marca) marca = carimbo;
+  const doCarimbo = String(o.statusOS || '').trim() === k && carimbo > marca;
+  if (doCarimbo) marca = carimbo;
   const ultEm = ult ? Number(ult.em) || 0 : 0;
   const em = !ult ? (marca || null) : (marca > ultEm ? marca : agoraMs);
-  h.push({ k, em });
+  // O status que vem de um carimbo à mão é anotado COMO carimbo (07/10/2026):
+  // sem o `c`, o Início não sabia que ele valia, e a OS carimbada ontem
+  // voltava ao status da folha até o carimbo seguinte.
+  h.push(doCarimbo && em === carimbo ? { k, em, c: k } : { k, em });
   o.statusHist = h;
   return true;
 }

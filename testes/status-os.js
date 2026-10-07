@@ -544,6 +544,11 @@ console.log('-- o que fica gravado --');
   H._statusHistAnotar(pelaFolha, 8000000);
   ok('36j. desmarcar a caixa volta o status, e a volta anota a hora de agora',
      pelaFolha.statusHist[2] && pelaFolha.statusHist[2].k === 'cortando' && pelaFolha.statusHist[2].em === 8000000, JSON.stringify(pelaFolha.statusHist));
+  const carimbadaAntes = { id: 'c9', os: '11', etapas: ['Corte'], statusOS: 'separando', statusOSEm: new Date(3000000).toISOString(),
+    progresso: { etapasCheck: { Corte: true }, etapasSeq: { Corte: 1000000 } } };
+  H._statusHistAnotar(carimbadaAntes, 9000000);
+  ok('36m. a 1a anotacao de status que veio de carimbo a mao leva o c',
+     JSON.stringify(carimbadaAntes.statusHist) === JSON.stringify([{ k: 'separando', em: 3000000, c: 'separando' }]), JSON.stringify(carimbadaAntes.statusHist));
   const intocada = { id: 'n1', os: '10', etapas: ['Corte'], progresso: {} };
   H._statusHistAnotar(intocada, 9000000);
   ok('36k. OS que ninguem tocou nao ganha diario', !('statusHist' in intocada), JSON.stringify(intocada));
