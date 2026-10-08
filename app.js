@@ -22990,7 +22990,7 @@ function _dashHistorico(d, agora, escala) {
     const noPeriodo = t => dentro(t, atual.de, atual.ate);
     const porOS = new Map();
     const linhaOS = (os, id) => {
-      if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null, entrouEm: null, saiuEm: null });
+      if (!porOS.has(os)) porOS.set(os, { os, id, entrada: 0, saida: 0, corrente: 0, residual: 0, jaEstava: 0, desde: null, entrouEm: null, saiuEm: null, entrouDaSaida: null });
       const r = porOS.get(os);
       if (!r.id && id) r.id = id;
       return r;
@@ -22999,7 +22999,13 @@ function _dashHistorico(d, agora, escala) {
       const r = linhaOS(x.os, x.id);
       // A hora da troca de status fica com a linha: a última do período.
       if (noPeriodo(x.de)) { r.entrada += x.pecas; r.entrouEm = Math.max(r.entrouEm || 0, x.de); }
-      if (noPeriodo(x.ate)) { r.saida += x.pecas; r.saiuEm = Math.max(r.saiuEm || 0, x.ate); }
+      if (noPeriodo(x.ate)) {
+        r.saida += x.pecas;
+        // A entrada da passagem que saiu agora, mesmo que tenha sido antes do
+        // período: é a data que a coluna Entrou mostra quando a OS só saiu.
+        if (x.ate >= (r.saiuEm || 0)) r.entrouDaSaida = x.de;
+        r.saiuEm = Math.max(r.saiuEm || 0, x.ate);
+      }
       if (x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) r.residual += x.pecas;
       if ((x.semData || (x.de != null && x.de <= atual.de)) && (x.ate == null || x.ate > atual.de)) r.jaEstava += x.pecas;
     });
@@ -23231,26 +23237,33 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
     .filter(r => cols.some(k => r[k.campo]));
   const parados = semMov ? [] : todas.filter(r => !moveu(r) && r.corrente > 0);
   const num = v => v ? _dashFmt(v) : '<span class="dash-ls-zero">—</span>';
-  /* A HORA DA MOVIMENTAÇÃO ao lado da entrada e da saída (07/10/2026, Junior:
-     "de acordo com o horário da alteração do status"). No Dia, só a hora; nos
-     outros períodos, dia e hora. */
-  const hhmm = t => { const z = new Date(t); return String(z.getHours()).padStart(2, '0') + ':' + String(z.getMinutes()).padStart(2, '0'); };
-  const horaDe = (r, campo) => {
-    const t = campo === 'entrada' ? r.entrouEm : campo === 'saida' ? r.saiuEm : null;
-    if (!t || !r[campo]) return '';
-    return `<i class="dash-ls-hora">${cfg.k === 'dia' ? hhmm(t) : esc(_dashDataHora(t))}</i>`;
-  };
+  /* AS COLUNAS ENTROU E SAIU (08/10/2026, Junior: "insira as colunas das datas
+     e horários que o programa registra sobre alteração de status, nos quadros
+     de todos os status", escolhido: entrou e saiu). Substituem a hora miúda
+     que ia ao lado da Entrada e da Saída. Sempre dia e hora, em qualquer
+     período: a OS que sai hoje pode ter entrado na semana passada.
+       Entrou  quando a OS entrou neste quadro — a do período, ou a da passagem
+               que saiu no período, ou a de quem está aqui agora
+       Saiu    quando saiu; "—" = ainda está no quadro */
+  const celData = (t, vazio, dica) => t
+    ? `<td class="dash-ls-data" title="${esc(dica)}">${esc(_dashDataHora(t))}</td>`
+    : `<td class="dash-ls-data"><span class="dash-ls-zero">${vazio}</span></td>`;
+  const entrouDe = r => r.entrouEm || r.entrouDaSaida || r.desde || null;
+  const celEntrou = r => celData(entrouDe(r), r.saida || r.corrente ? 'sem data' : '—',
+    'Dia e hora em que a OS entrou neste quadro (alteração de status)');
+  const celSaiu = r => celData(r.saiuEm, '—', 'Dia e hora em que a OS saiu deste quadro (alteração de status)');
   const somas = {};
   cols.forEach(k => { somas[k.campo] = linhas.reduce((s, r) => s + (r[k.campo] || 0), 0); });
   const nomePer = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
   const notaParados = parados.length
     ? `<div class="dash-an-aviso">${soSaida ? `Ainda na mesa, corte não concluído ${nomePer}` : `Paradas desde antes, sem movimento ${nomePer}`}: <b>${parados.length} OS</b>, ${_dashFmt(parados.reduce((s, r) => s + r.corrente, 0))} produtos (estão no número do cartão).</div>` : '';
   const tabela = linhas.length ? `<div class="dash-ls-box"><table class="dash-ls">
-      <thead><tr><th>OS</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
-      <tbody>${linhas.map(r => `<tr${r.desde != null ? ` title="Na operação desde ${esc(_dashDataHora(r.desde))}"` : ''}>
+      <thead><tr><th>OS</th><th class="dash-ls-data" title="Dia e hora em que a OS entrou neste quadro (alteração de status)">Entrou</th><th class="dash-ls-data" title="Dia e hora em que a OS saiu deste quadro (alteração de status); — = ainda está aqui">Saiu</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
+      <tbody>${linhas.map(r => `<tr>
         <td>${r.id ? `<button type="button" class="rank-os-link" onclick="verOS('${esc(r.id)}')">${esc(r.os)}</button>` : esc(r.os)}</td>
-        ${cols.map(k => `<td>${num(r[k.campo])}${horaDe(r, k.campo)}</td>`).join('')}</tr>`).join('')}</tbody>
-      <tfoot><tr><td>total · ${linhas.length} OS</td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
+        ${celEntrou(r)}${celSaiu(r)}
+        ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td>total · ${linhas.length} OS</td><td></td><td></td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
     </table></div>`
     : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : soSaida ? 'Nenhuma OS teve o corte concluído (foi para Separando) ' + nomePer + '.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
 
