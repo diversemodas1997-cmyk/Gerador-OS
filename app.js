@@ -4132,6 +4132,7 @@ function goto(page) {
     atualizarBackupFolderStatus();
     atualizarOeFolderStatus();
     atualizarOcFolderStatus();
+    atualizarRelFolderStatus();
     atualizarExportFolderStatus();
     // A lista de contas se carrega sozinha ao abrir a tela: quem entra aqui
     // para criar uma conta precisa antes ver quem já tem — senão cria repetida.
@@ -23551,6 +23552,207 @@ function _relProdAndar(dir) {
   renderRelatorioProducao();
 }
 window._relProdAndar = _relProdAndar;
+
+/* A PASTA DOS RELATÓRIOS DE PRODUÇÃO (08/10/2026, Junior: "nas configurações,
+   insira campo para conectar pasta onde as folhas de relatório de produção
+   serão salvas"). Mesmo molde da pasta das OC: File System Access, a pasta
+   guardada no IndexedDB desta máquina (cada computador conecta a sua), e o PDF
+   fotografado pelo html2canvas.
+
+   QUANDO GRAVA: no botão "Salvar na pasta" e, calado, ao imprimir. O nome do
+   arquivo é o período ("Relatorio-producao-Semanal-05-10-2026_a_09-10-2026"):
+   gerar o mesmo período de novo reescreve o mesmo arquivo, com os números de
+   agora — o do período em curso muda até o período acabar. Sem pasta, o
+   automático fica calado; quem aperta o botão recebe o aviso. */
+const REL_DB_KEY = 'rel-prod-folder';
+let relFolderHandle = null;
+
+async function _relFolderGuardar(handle) {
+  const db = await _openPdfDb();
+  await new Promise((res, rej) => {
+    const tx = db.transaction(PDF_DB_STORE, 'readwrite');
+    if (handle) tx.objectStore(PDF_DB_STORE).put(handle, REL_DB_KEY);
+    else tx.objectStore(PDF_DB_STORE).delete(REL_DB_KEY);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+  db.close();
+}
+async function loadRelFolderHandle() {
+  try {
+    const db = await _openPdfDb();
+    const handle = await new Promise((res, rej) => {
+      const tx = db.transaction(PDF_DB_STORE, 'readonly');
+      const req = tx.objectStore(PDF_DB_STORE).get(REL_DB_KEY);
+      req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+    });
+    db.close();
+    return handle;
+  } catch (e) { console.warn('loadRelFolderHandle', e); return null; }
+}
+
+async function conectarPastaRel() {
+  if (!('showDirectoryPicker' in window)) {
+    toast('Navegador não suporta seleção de pasta. Use Chrome ou Edge no desktop.', 'err');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await _relFolderGuardar(handle);
+    relFolderHandle = handle;
+    toast(`Pasta dos relatórios conectada: ${handle.name}`, 'ok');
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    console.error('conectarPastaRel', e);
+    toast('Falha ao selecionar pasta: ' + (e.message || e), 'err');
+  }
+  atualizarRelFolderStatus();
+}
+window.conectarPastaRel = conectarPastaRel;
+
+async function desconectarPastaRel() {
+  await _relFolderGuardar(null);
+  relFolderHandle = null;
+  toast('Pasta dos relatórios desconectada', '');
+  atualizarRelFolderStatus();
+}
+window.desconectarPastaRel = desconectarPastaRel;
+
+async function atualizarRelFolderStatus() {
+  const el = document.getElementById('relFolderStatus');
+  if (!el) return;
+  if (!('showDirectoryPicker' in window)) {
+    el.innerHTML = '<span style="color: var(--alert);">Este navegador não suporta a API de pasta. Use Chrome ou Edge no desktop.</span>';
+    return;
+  }
+  const handle = relFolderHandle || (await loadRelFolderHandle());
+  if (!handle) {
+    el.innerHTML = '<span style="color: var(--ink-3);">Nenhuma pasta conectada. Os relatórios não serão salvos em PDF até você conectar uma pasta.</span>';
+    return;
+  }
+  relFolderHandle = handle;
+  let permLabel = 'pronta — o relatório é salvo pelo botão "Salvar na pasta" e ao imprimir';
+  let perm = 'granted';
+  try {
+    perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') permLabel = 'precisa renovar permissão (clique em "Conectar pasta")';
+  } catch (_) {}
+  if (perm === 'granted') {
+    const sumiu = await _statusPastaSumidaHtml(handle);
+    if (sumiu) { el.innerHTML = sumiu; return; }
+  }
+  el.innerHTML = `<strong>Conectada:</strong> <code>${esc(handle.name)}</code> — ${permLabel}`;
+}
+
+// O nome do arquivo: escala e período, estável para o mesmo período.
+function _relProdArquivo() {
+  const escala = _relProdEscala();
+  const per = _relProdPeriodo(escala, _relProdData);
+  const p2 = n => String(n).padStart(2, '0');
+  const br = t => { const d = new Date(t); return `${p2(d.getDate())}-${p2(d.getMonth() + 1)}-${d.getFullYear()}`; };
+  const rot = (REL_PROD_ESCALAS.find(e => e.k === escala) || {}).rot || '';
+  const ultimo = per.ate - DASH_DIA_MS;   // o último dia do período (na semana, a sexta)
+  const fim = br(ultimo), ini = br(per.de);
+  return sanitizeForFilename(`Relatorio-producao-${rot}-${ini === fim ? ini : ini + '_a_' + fim}`) + '.pdf';
+}
+
+// O PDF é a folha da tela, fotografada fora da vista (o caminho da OC).
+async function _gerarPdfRelProd() {
+  const _html2canvas = window.html2canvas;
+  const _jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (typeof _html2canvas !== 'function') throw new Error('html2canvas não carregada');
+  if (typeof _jsPDF !== 'function') throw new Error('jsPDF não carregada');
+  const folha = document.querySelector('#rel-prod-folha .rel-folha');
+  if (!folha) throw new Error('a folha do relatório não está na tela');
+  const box = document.createElement('div');
+  box.setAttribute('aria-hidden', 'true');
+  box.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;padding:10mm;background:#fff;z-index:-1;pointer-events:none;';
+  box.innerHTML = folha.outerHTML;
+  const f = box.firstElementChild;
+  if (f) { f.style.border = '0'; f.style.maxWidth = 'none'; f.style.padding = '0'; }
+  document.body.appendChild(box);
+  try {
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const canvas = await _html2canvas(box, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+    const rect = box.getBoundingClientRect();
+    const ratio = canvas.width / rect.width;
+    const cortes = Array.from(box.querySelectorAll('tr, .rel-rodape'))
+      .map(el => (el.getBoundingClientRect().bottom - rect.top) * ratio)
+      .filter(v => v > 0 && v <= canvas.height).sort((a, b) => a - b);
+    const pdf = new _jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pxPorMm = canvas.width / 210;
+    const pageHpx = Math.floor(297 * pxPorMm);
+    let y = 0, pagina = 0;
+    while (y < canvas.height - 1) {
+      const maxY = y + pageHpx;
+      let cut = canvas.height;
+      if (maxY < canvas.height) {
+        const cand = cortes.filter(v => v > y + 1 && v <= maxY);
+        cut = cand.length ? Math.max(...cand) : maxY;
+      }
+      const sliceH = Math.max(1, Math.round(cut - y));
+      const tmp = document.createElement('canvas');
+      tmp.width = canvas.width; tmp.height = sliceH;
+      const ctx = tmp.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      if (pagina > 0) pdf.addPage();
+      pdf.addImage(tmp.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, sliceH / pxPorMm, undefined, 'FAST');
+      y += sliceH; pagina++;
+    }
+    return pdf.output('blob');
+  } finally {
+    box.remove();
+  }
+}
+
+// silent = gravação automática (ao imprimir): sem pasta ou sem permissão, cala.
+async function salvarRelProdNaPasta({ silent = false } = {}) {
+  const handle = relFolderHandle || (await loadRelFolderHandle());
+  if (!handle) {
+    if (!silent) toast('Conecte a pasta dos relatórios de produção em Configurações primeiro.', 'err');
+    return false;
+  }
+  if (silent) {
+    let ok = false;
+    try { ok = (await handle.queryPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) {}
+    if (!ok) return false;
+  } else if (!(await ensureFolderPermission(handle, 'readwrite'))) {
+    toast('Permissão da pasta dos relatórios negada', 'err');
+    return false;
+  }
+  if (!(await pastaAcessivel(handle))) {
+    if (!silent) {
+      toast(`Pasta dos relatórios "${handle.name}" não encontrada — o Google Drive está aberto? Se a pasta mudou de lugar, reconecte em Configurações.`, 'err');
+      pedirGoogleDrive({ handle, oQue: 'salvar o relatório na pasta', retomar: () => salvarRelProdNaPasta() });
+    }
+    return false;
+  }
+  relFolderHandle = handle;
+  const filename = _relProdArquivo();
+  try {
+    const blob = await _gerarPdfRelProd();
+    const fh = await handle.getFileHandle(filename, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+    if (!silent) toast(`Relatório salvo: ${filename}`, 'ok');
+    return true;
+  } catch (e) {
+    console.error('salvarRelProdNaPasta', e);
+    if (tratarErroPastaSumiu(e, handle, { oQue: 'salvar o relatório na pasta', retomar: () => salvarRelProdNaPasta(), silent })) return false;
+    if (!silent) toast('Falha ao salvar o relatório: ' + (e.message || e), 'err');
+    return false;
+  }
+}
+window.salvarRelProdNaPasta = salvarRelProdNaPasta;
+
+// Imprimir também grava na pasta, calado.
+function imprimirRelProd() {
+  salvarRelProdNaPasta({ silent: true }).catch(e => console.warn('auto-save relatório', e));
+  window.print();
+}
+window.imprimirRelProd = imprimirRelProd;
+
 
 /* O VOLUME DAS OS POR STATUS (16/09/2026, Junior: "insira o volume das OS por
    status"). Uma barra por status, na ordem do fluxo (a de STATUS_OS), com os

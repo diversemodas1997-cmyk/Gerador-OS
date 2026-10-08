@@ -490,7 +490,8 @@
           <button type="button" class="btn small ghost" onclick="_relProdAndar(-1)" title="Período anterior">◀</button>
           <label>Data de referência <input type="date" id="rel-prod-data" onchange="_relProdTrocar()"></label>
           <button type="button" class="btn small ghost" onclick="_relProdAndar(1)" title="Período seguinte">▶</button>
-          <button type="button" class="btn primary" onclick="window.print()">Imprimir / PDF</button>
+          <button type="button" class="btn" onclick="salvarRelProdNaPasta()" title="Grava a folha em PDF na pasta dos relatórios (Configurações)">💾 Salvar na pasta</button>
+          <button type="button" class="btn primary" onclick="imprimirRelProd()" title="Imprime a folha; com a pasta conectada, grava também o PDF nela">Imprimir / PDF</button>
         </div>
       </div>
       <div id="rel-prod-folha"></div>
@@ -1332,6 +1333,15 @@
           <button class="btn" onclick="desconectarPastaOc()">Desconectar</button>
         </div>
       </div>
+      <div class="card">
+        <div class="card-title">Pasta dos Relatórios de produção</div>
+        <div class="info-box">A folha do <b>Relatório produção</b> (barra lateral) é salva em PDF nesta pasta pelo botão <b>💾 Salvar na pasta</b> e, sozinha, ao <b>imprimir</b>. O arquivo leva o período (ex.: <code>Relatorio-producao-Semanal-05-10-2026_a_09-10-2026.pdf</code>): gerar o mesmo período de novo reescreve o mesmo arquivo, com os números daquela hora. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
+        <div id="relFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="conectarPastaRel()">Conectar pasta</button>
+          <button class="btn" onclick="desconectarPastaRel()">Desconectar</button>
+        </div>
+      </div>
       <div class="card admin-only">
         <div class="card-title">Pasta das exportações (JSON)</div>
         <div class="info-box">Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.</div>
@@ -1805,6 +1815,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-08j"></script>
+<script src="app.js?v=2026-10-08k"></script>
 </body>
 </html>
