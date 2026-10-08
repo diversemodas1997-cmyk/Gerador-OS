@@ -23245,6 +23245,41 @@ const DASH_COLUNAS_LISTA = [
   { k: 'tot', campo: 'total',    rot: 'Total',
     dica: 'Tudo o que esteve na operação no período: o que já estava no início, mais o que entrou' }
 ];
+/* AS COLUNAS DA LISTA DE OS NOS QUADROS (08/10/2026, Junior: "corrija os
+   quadros no Início, para que as colunas mostrem exatamente as mesmas
+   informações da lista de OS"; escolhido: as mesmas colunas, além de
+   Entrou/Saiu e dos volumes). Cada célula sai da MESMA função que desenha a
+   lista de Ordens de Serviço (renderListaOS), então as duas telas não têm
+   como dizer coisas diferentes da mesma OS. O status vai como etiqueta: mudar
+   status é na lista ou na folha, não no painel. */
+const DASH_COLUNAS_OS = [
+  { rot: 'Status' }, { rot: 'Desenho' }, { rot: 'OS' },
+  { rot: 'Linha', dica: 'Adulto (P ao G3) ou Infantil (2 ao 16), pelos tamanhos da grade da OS' },
+  { rot: 'Modelo' }, { rot: 'Cor' }, { rot: 'Coleção' }, { rot: 'Grade' }, { rot: 'Data' },
+  { rot: 'Produtos', dica: 'Produtos completos da OS (uma camiseta = 1), o Total geral da folha — e não as peças cortadas' },
+  { rot: 'Riscos' },
+  { rot: 'Material faltante', dica: 'Tecido, aviamento e material que a OS (Não iniciada) reserva e que o estoque não tem — a mesma coluna da lista de OS' }
+];
+function _dashCelulasDaOS(r, faltas) {
+  const o = r.id ? (STATE.ordens || []).find(x => x.id === r.id) : null;
+  if (!o) return `<td class="dash-ls-c"></td><td class="dash-ls-c"></td><td class="dash-ls-c">${esc(r.os)}</td>`
+    + DASH_COLUNAS_OS.slice(3).map(() => '<td class="dash-ls-c"></td>').join('');
+  const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
+  const cores = coresDaPecaOS(o);
+  return `<td class="dash-ls-c"><span class="os-status ro" data-st="${s.k}" style="${_statusEstilo(s)}">${_statusPingo(s)} ${esc(s.curto || s.rotulo)}</span></td>
+    <td class="dash-ls-c">${_osThumbHtml(o)}</td>
+    <td class="dash-ls-c"><button type="button" class="rank-os-link" onclick="verOS('${esc(o.id)}')">${esc(o.os) || '—'}</button>${_conjugadaCelulaOS(o)}</td>
+    <td class="dash-ls-c">${esc(linhaTipoOS(o))}</td>
+    <td class="dash-ls-c">${esc(o.modeloNome) || '—'}</td>
+    <td class="dash-ls-c">${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ') : '<span style="color:var(--ink-3)">—</span>'}</td>
+    <td class="dash-ls-c">${esc(o.colecaoNome) || '—'}</td>
+    <td class="dash-ls-c">${_gradeCelulaLista(o)}</td>
+    <td class="dash-ls-c">${_dataCelulaListaOS(o)}</td>
+    <td title="${o.grade?.total || 0} peças por camada na grade">${produtosOS(o).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(o)}</td>
+    <td class="dash-ls-c" style="text-align:center;">${_riscoCellOS(o)}</td>
+    <td class="dash-ls-c">${_faltaCelulaOS(o, faltas)}</td>`;
+}
+
 function _dashGraficoQuadro(c, x, escala, agora, oc) {
   oc = oc || new Set();
   const ver = k => !oc.has(k);
@@ -23289,13 +23324,14 @@ function _dashGraficoQuadro(c, x, escala, agora, oc) {
   const nomePer = ({ dia: 'no dia', semana: 'na semana', mes: 'no mês', ano: 'no ano' })[cfg.k];
   const notaParados = parados.length
     ? `<div class="dash-an-aviso">${soSaida ? `Ainda na mesa, corte não concluído ${nomePer}` : `Paradas desde antes, sem movimento ${nomePer}`}: <b>${parados.length} OS</b>, ${_dashFmt(parados.reduce((s, r) => s + r.corrente, 0))} produtos (estão no número do cartão).</div>` : '';
+  const faltas = linhas.length ? _faltasListaOS() : null;
   const tabela = linhas.length ? `<div class="dash-ls-box"><table class="dash-ls">
-      <thead><tr><th>OS</th><th class="dash-ls-data" title="Dia e hora em que a OS entrou neste quadro (alteração de status)">Entrou</th><th class="dash-ls-data" title="Dia e hora em que a OS saiu deste quadro (alteração de status); — = ainda está aqui">Saiu</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
+      <thead><tr>${DASH_COLUNAS_OS.map(c => `<th class="dash-ls-c"${c.dica ? ` title="${esc(c.dica)}"` : ''}>${c.rot}</th>`).join('')}<th class="dash-ls-data" title="Dia e hora em que a OS entrou neste quadro (alteração de status)">Entrou</th><th class="dash-ls-data" title="Dia e hora em que a OS saiu deste quadro (alteração de status); — = ainda está aqui">Saiu</th>${cols.map(k => `<th title="${esc(k.dica)}">${k.rot}</th>`).join('')}</tr></thead>
       <tbody>${linhas.map(r => `<tr>
-        <td>${r.id ? `<button type="button" class="rank-os-link" onclick="verOS('${esc(r.id)}')">${esc(r.os)}</button>` : esc(r.os)}</td>
+        ${_dashCelulasDaOS(r, faltas)}
         ${celEntrou(r)}${celSaiu(r)}
         ${cols.map(k => `<td>${num(r[k.campo])}</td>`).join('')}</tr>`).join('')}</tbody>
-      <tfoot><tr><td>total · ${linhas.length} OS</td><td></td><td></td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
+      <tfoot><tr><td colspan="${DASH_COLUNAS_OS.length}">total · ${linhas.length} OS</td><td></td><td></td>${cols.map(k => `<td>${_dashFmt(somas[k.campo])}</td>`).join('')}</tr></tfoot>
     </table></div>`
     : `<div class="dash-an-aviso">${semMov ? 'Nenhuma OS nesta operação agora.' : soSaida ? 'Nenhuma OS teve o corte concluído (foi para Separando) ' + nomePer + '.' : 'Nenhuma OS entrou ou saiu desta operação ' + nomePer + '.'}</div>`;
 

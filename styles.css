@@ -1336,7 +1336,9 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 /* Entrada x saida: um pequeno grafico por quadro, na mesma grade dos cartoes. */
 .dash-an-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  /* Um quadro por linha desde 08/10/2026: a tabela leva as colunas da lista
+     de OS e não cabe em 340px. */
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 .dash-an-cel {
@@ -4720,5 +4722,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .dash-ls tbody tr:hover td { background: rgba(0,0,0,.03); }
 .dash-ls-zero { color: var(--ink-3); }
 .dash-ls th.dash-ls-data, .dash-ls td.dash-ls-data { text-align: center; color: var(--ink-2); font-size: 11px; }
+.dash-ls th.dash-ls-c, .dash-ls td.dash-ls-c { text-align: left; font-family: inherit; white-space: normal; vertical-align: middle; }
+.dash-ls td.dash-ls-c:nth-child(-n+3) { white-space: nowrap; }
+.dash-ls tfoot td[colspan] { text-align: left; font-family: inherit; color: var(--ink-2); }
 .dash-parte.ligada[data-parte="cor"] i { background: var(--ink); }
 .dash-parte.ligada[data-parte="tot"] i { background: #8a8983; }
