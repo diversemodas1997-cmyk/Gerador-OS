@@ -12190,7 +12190,7 @@ function renderFasePainel(faseIdx) {
       </div>
       <table class="table">
         <thead><tr>
-          <th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Cor</th><th>Grade</th><th>Data</th><th style="text-align:right;">Produtos</th>
+          <th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th>Cor</th><th>Grade</th><th title="Dia e hora em que a OS passou para o status em que está agora">Status</th><th style="text-align:right;">Produtos</th>
         </tr></thead>
         <tbody id="fase-tbl-${fase.id}"></tbody>
       </table>
@@ -12400,7 +12400,7 @@ function renderFaseOsLista(faseId) {
       <td>${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ')
                          : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${_gradeCelulaLista(o)}</td>
-      <td style="white-space:nowrap;">${esc(formatDate(p.data))}</td>
+      <td style="white-space:nowrap;">${_statusDesdeCelulaOS(o)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(p.pecas)} un.</td>
     </tr>`;
   }).join('');
@@ -30664,6 +30664,34 @@ function _statusHistDica(o) {
     const s = STATUS_OS.find(y => y.k === x.k);
     return `\n  ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())} · ${s ? s.rotulo : x.k}${'c' in x ? ' (à mão)' : ''}`;
   }).join('');
+}
+
+/* DESDE QUANDO A OS ESTÁ NO STATUS DE AGORA (08/10/2026, Junior: a coluna das
+   listas dos campos passa a ser "Status", com a data e hora da alteração de
+   status). Lida do diário: o começo da última sequência de anotações com o
+   status de agora. Sem anotação que bata com ele, vale o carimbo à mão, se é
+   ele que manda; senão null — a troca foi antes do diário e a hora se perdeu. */
+function _statusDesdeOS(o) {
+  const st = _statusOS(o);
+  const h = _statusHistDe(o);
+  let desde = null;
+  for (let i = h.length - 1; i >= 0 && h[i].k === st; i--) desde = h[i].em;
+  if (desde != null) return desde;
+  const carimbo = Date.parse((o && o.statusOSEm) || '');
+  return st === String((o && o.statusOS) || '').trim() && Number.isFinite(carimbo) ? carimbo : null;
+}
+
+// A célula da coluna Status das listas dos campos: dia e hora da troca.
+function _statusDesdeCelulaOS(o) {
+  const t = _statusDesdeOS(o);
+  const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
+  if (t == null) {
+    return `<span style="color:var(--ink-3)" title="${esc('Status ' + s.rotulo + ': a troca foi antes do registro de alterações de status (07/10/2026), a hora não se sabe')}">—</span>`;
+  }
+  const d = new Date(t);
+  const p = n => String(n).padStart(2, '0');
+  const txt = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `<span title="${esc('Dia e hora em que a OS passou para ' + s.rotulo + _statusHistDica(o))}">${txt}</span>`;
 }
 
 function _statusCelulaOS(o, extra) {
