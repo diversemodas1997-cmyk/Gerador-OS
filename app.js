@@ -23506,7 +23506,7 @@ function renderRelatorioProducao() {
     : `<table class="rel-tab">
         <thead><tr>
           <th>Status</th>
-          <th title="O que estava no status quando o período começou, inclusive OS antigas sem data">Já estava no início</th>
+          <th title="O que estava no status quando o período começou, inclusive OS antigas sem data">Início</th>
           <th title="Produtos que entraram no status dentro do período">Entrou</th>
           <th title="Produtos que saíram do status para o passo seguinte dentro do período">Saiu</th>
           <th title="O que ficou no status no fim do período (só OS com data, como nos quadros do Início)">${emCurso ? 'Residual agora' : 'Residual no fim'}</th>
@@ -23527,7 +23527,7 @@ function renderRelatorioProducao() {
       </div>
       ${corpo}
       <div class="rel-rodape">Volumes em <b>produtos</b> (unidades completas). Mesmas contas dos quadros do Início, pela hora da alteração de status de cada OS.
-        ${escala === 'semana' ? 'Semana de segunda a sexta: o que entrou ou saiu no sábado ou no domingo fica fora de Entrou e Saiu. ' : ''}OS antigas, de antes do registro com hora, contam em "Já estava no início", mas não têm entrada nem saída datada.</div>
+        ${escala === 'semana' ? 'Semana de segunda a sexta: o que entrou ou saiu no sábado ou no domingo fica fora de Entrou e Saiu. ' : ''}OS antigas, de antes do registro com hora, contam em "Início", mas não têm entrada nem saída datada.</div>
     </div>`;
 }
 
