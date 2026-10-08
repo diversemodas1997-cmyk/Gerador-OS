@@ -4780,3 +4780,12 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .exp-obj-barra .cheio { height: 100%; background: #e0a526; transition: width .2s; }
 .exp-obj-barra.ok .cheio { background: #2e9d5b; }
 .exp-obj-barra .txt { font-size: 11px; color: var(--ink-2); margin-top: 2px; }
+
+/* PLANEJAMENTO DE PRODUÇÃO (08/10/2026). O formulário da Nova OS em modo
+   planejamento troca os botões e a descrição (os-only / plan-only); o Aprovar
+   da lista é só do admin, sem a porta das áreas concedidas (admin-estrito). */
+section[data-page="nova-os"]:not(.modo-plan) .plan-only { display: none !important; }
+section[data-page="nova-os"].modo-plan .os-only { display: none !important; }
+.admin-estrito { display: none !important; }
+body.is-admin .admin-estrito { display: revert !important; }
+body.pode-os [data-page="planejamento-producao"] .admin-only { display: revert !important; }

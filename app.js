@@ -2509,7 +2509,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3117,6 +3117,10 @@ const STATE = {
        itens: [{ tecidoNome, corNome, bobinas, kg, kgBruto, disponivel }],
        criadoPor, criadoEm } */
   compraOCs: [],
+  /* O PLANEJAMENTO DE PRODUÇÃO (08/10/2026): OS pré-programadas, sem número,
+     no mesmo formato de uma OS. Viram OS de verdade ao serem aprovadas pelo
+     admin (ver PLANEJAMENTO DE PRODUÇÃO). Nada aqui reserva material. */
+  osPlanejadas: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -3244,6 +3248,7 @@ const DESFAZER_NOMES = {
   operacoes: ['operação do plano', 'operações do plano'],
   compraPlano: ['item da lista de compra', 'itens da lista de compra'],
   compraOCs: ['ordem de compra', 'ordens de compra'],
+  osPlanejadas: ['planejamento de produção', 'planejamentos de produção'],
   expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
   expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
@@ -3416,7 +3421,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4125,7 +4130,14 @@ function goto(page) {
     // não dispara gravação nenhuma (ver salvarPdfOeNaPasta).
     salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE', e));
   }
-  if (page === 'nova-os') initOSForm();
+  if (page === 'nova-os') {
+    // Modo planejamento só quando quem abriu pediu (novoPlanejamento,
+    // editarPlanejamento); qualquer outro caminho até aqui é a Nova OS.
+    _osPlanModo = _osPlanAbrir;
+    _osPlanAbrir = false;
+    initOSForm();
+  }
+  if (page === 'planejamento-producao') renderPlanejamentoProducao();
   if (page === 'config') {
     renderExcedenteCfg();
     atualizarServidorLocalStatus();
@@ -24218,6 +24230,7 @@ function _contagensNav() {
   const n = k => (STATE[k] || []).length;
   return {
     ordens: n('ordens'),
+    planejadas: n('osPlanejadas'),
     oes: new Set((STATE.expedicaoCargas || []).map(c => (c.janelaId || '') + '|' + (c.data || ''))).size,
     operacoes: n('operacoes'),
     marcas: n('marcas'), colecoes: n('colecoes'), modelos: n('modelos'),
@@ -24584,6 +24597,7 @@ function initOSForm() {
   renderEtapas();
   atualizarCalculosEnfesto();
   atualizarResponsabilidadesOS();
+  _aplicarModoPlanForm();
 }
 
 /* A BUSCA DO DESENHO TÉCNICO, no formulário da OS.
@@ -25324,7 +25338,8 @@ function aplicarGradePreset() {
   // reescolhida — o número na tela ainda era igual ao _osNumeroAuto da criação,
   // o guarda deixou passar, e o próximo livre (0576) foi gravado por cima. O
   // registro virou 0576 e o PDF da 0575 ficou na pasta, com o mesmo conteúdo.
-  if (!osEditId && !document.getElementById('f-id')?.value) {
+  // O planejamento não tem número (ver PLANEJAMENTO DE PRODUÇÃO).
+  if (!osEditId && !document.getElementById('f-id')?.value && !_osPlanModo) {
     const campoOS = document.getElementById('f-os');
     if (campoOS && (!campoOS.value || campoOS.value === _osNumeroAuto)) {
       _osNumeroAuto = proximoNumeroOSParaGrade(id);
@@ -27683,7 +27698,7 @@ function _textoFaltaDeTecido(faltando) {
     + `Gerar a OS assim mesmo?`;
 }
 
-function validarAntesDeSalvar(data) {
+function validarAntesDeSalvar(data, opts) {
   // UMA LINHA DE TAMANHO OU OUTRA (30/09/2026): P ao G3 ou 2 ao 16. A folha, as
   // etiquetas e os pacotes mostram as colunas de uma linha só — uma OS com as
   // duas sairia pela metade em todos eles.
@@ -27723,6 +27738,8 @@ function validarAntesDeSalvar(data) {
      propósito o pano de um lote que mudou. Barrar pararia a produção por causa
      do cadastro; avisar põe a decisão na frente de quem pode tomá-la — que é a
      mesma escolha da prova da medida, logo acima. */
+  // O planejamento de produção pula esta: o pano dele ainda pode ser comprado.
+  if (opts && opts.semFaltaDeTecido) return true;
   const faltando = faltaDeTecidoParaOS(data);
   if (faltando.length) return confirm(_textoFaltaDeTecido(faltando));
   return true;
@@ -28184,6 +28201,226 @@ async function _salvarOSConfirmada(data) {
   salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
   goto('lista-os');
 }
+
+/* ========================================================= */
+/*               PLANEJAMENTO DE PRODUÇÃO                    */
+/* ========================================================= */
+/* (08/10/2026, Junior: "Duplique o campo Nova OS, como nome planejamento de
+   produção... vai gerar OS sem número, pois são apenas o planejamento de
+   produção. Esse campo gera uma lista de OS pré-programada que se tornará uma
+   OS com número, a partir de um botão aprovar. Esse botão aparece apenas para
+   admin.")
+
+   O FORMULÁRIO É O MESMO da Nova OS — a mesma página, em "modo planejamento"
+   (classe modo-plan na seção): desenho, grade, camadas e tudo o que eles
+   preenchem sozinhos. Duas cópias do formulário acabariam fazendo contas
+   diferentes para a mesma peça. O que muda é para onde a gravação vai: para
+   STATE.osPlanejadas, e não para STATE.ordens.
+
+   Por isso o planejamento NÃO EXISTE para o resto do programa: não tem
+   número, não reserva tecido nem aviamento, não entra no Início, nos campos,
+   na expedição nem no relatório, não gera conjugada nem etiqueta. É uma lista
+   de intenções.
+
+   APROVAR (só o admin — o botão e a função) faz com o planejamento o que o
+   "Salvar OS" faz com uma OS nova: o próximo número livre (com a vaga da
+   conjugada, se a grade conjugar), gravação em ordens, reserva do material,
+   conjugada e etiqueta. A OS NASCE NA APROVAÇÃO: criadoEm é essa hora (é dela
+   que o Início conta o Não iniciado), e a data da OS vira o dia da aprovação
+   quando a planejada já passou. O planejamento sai da lista; a OS guarda de
+   onde veio em `planejamento` (quem planejou, quando, quem aprovou). */
+let _osPlanModo = false;   // o formulário aberto agora é de planejamento
+let _osPlanAbrir = false;  // pedido de modo planejamento para o próximo goto('nova-os')
+
+function _planLista() {
+  if (!Array.isArray(STATE.osPlanejadas)) STATE.osPlanejadas = [];
+  return STATE.osPlanejadas;
+}
+
+// Liga ou desliga o modo planejamento no formulário (chamada por initOSForm).
+function _aplicarModoPlanForm() {
+  const sec = document.querySelector('section.page[data-page="nova-os"]');
+  if (sec) sec.classList.toggle('modo-plan', !!_osPlanModo);
+  const campoOS = document.getElementById('f-os');
+  if (campoOS) {
+    campoOS.disabled = !!_osPlanModo;
+    campoOS.placeholder = _osPlanModo ? 'Sem número — recebe ao ser aprovado' : 'Ex.: 3063012';
+    if (_osPlanModo) campoOS.value = '';
+  }
+  if (_osPlanModo) {
+    _osNumeroAuto = '';
+    // Editar um planejamento põe o título dele logo depois (_abrirOSNoForm).
+    if (!osEditId) document.getElementById('os-form-title').textContent = 'Novo planejamento de produção';
+  }
+}
+
+function cancelarFormOS() {
+  goto(_osPlanModo ? 'planejamento-producao' : 'home');
+}
+
+function novoPlanejamento() {
+  if (!exigirEdicao('criar ou editar OS')) return;
+  osEditId = null;
+  _osPlanAbrir = true;
+  goto('nova-os');
+}
+
+function editarPlanejamento(id) {
+  if (!exigirEdicao('criar ou editar OS')) return;
+  const p = _planLista().find(x => x.id === id);
+  if (!p) return toast('Planejamento não encontrado', 'err');
+  _osPlanAbrir = true;
+  _abrirOSNoForm(p, 'Editar planejamento de produção');
+}
+
+async function salvarPlanejamento() {
+  if (!_osPlanModo) return;
+  if (!exigirEdicao('criar ou editar OS')) return;
+  const data = coletaOS();
+  data.os = '';
+  if (!data.desenhoId && !data.codigo && !data.gradeId) {
+    toast('Escolha ao menos o desenho técnico ou a grade', 'err');
+    return;
+  }
+  // As mesmas provas da OS (linha de tamanho, medida da grade, camadas), menos
+  // a falta de tecido: o pano de um planejamento ainda pode ser comprado. Ela é
+  // conferida na aprovação, que é quando o material passa a ser reservado.
+  if (!validarAntesDeSalvar(data, { semFaltaDeTecido: true })) { definirModoFormOS(false); return; }
+  await _comTravaDeSalvar(async () => {
+    const lista = _planLista();
+    const i = lista.findIndex(p => p.id === data.id);
+    if (i >= 0) {
+      const ant = lista[i];
+      lista[i] = { ...ant, ...data,
+        criadoEm: ant.criadoEm || data.criadoEm, criadoPor: ant.criadoPor || data.criadoPor,
+        editadoEm: new Date().toISOString(), editadoPor: _obsQuemSou() };
+    } else {
+      // As tonalidades padrão de OS nova, já agora: os produtos da lista são
+      // os mesmos que a OS terá ao ser aprovada.
+      lista.push(_aplicarTonsPadrao(data));
+    }
+    await saveState('osPlanejadas');
+    osEditId = null;
+    atualizarContagensNav();
+    toast(i >= 0 ? 'Planejamento atualizado' : 'Planejamento salvo — sem número até ser aprovado', 'ok');
+    goto('planejamento-producao');
+  });
+}
+
+async function excluirPlanejamento(id) {
+  if (!exigirEdicao('criar ou editar OS')) return;
+  const p = _planLista().find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Excluir este planejamento?\n\n${_planResumo(p)}`)) return;
+  STATE.osPlanejadas = _planLista().filter(x => x.id !== id);
+  await saveState('osPlanejadas');
+  atualizarContagensNav();
+  toast('Planejamento excluído', 'ok');
+  renderPlanejamentoProducao();
+}
+
+function _planResumo(p) {
+  const des = (STATE.desenhos || []).find(d => d.id === p.desenhoId);
+  return [des ? _rotuloDesenhoOS(des) : (p.codigo || ''), p.grade && p.grade.descricao,
+    produtosOS(p).toLocaleString('pt-BR') + ' produtos'].filter(Boolean).join(' · ');
+}
+
+async function aprovarPlanejamento(id) {
+  // Só o admin, e de propósito sem a porta das áreas concedidas: quem recebeu
+  // "OS" planeja, mas transformar o plano em ordem de produção é do admin.
+  if (_recusarSomenteLeitura('aprovar planejamento')) return;
+  if (currentRole !== 'admin') return toast('Só o admin aprova o planejamento', 'err');
+  const p = _planLista().find(x => x.id === id);
+  if (!p) return toast('Planejamento não encontrado', 'err');
+  const numero = proximoNumeroOSParaGrade(p.gradeId || '');
+  if (!confirm(`Aprovar o planejamento e gerar a OS ${numero}?\n\n${_planResumo(p)}\n\n`
+    + `A OS entra na lista de Ordens de Serviço como Não iniciado e reserva o material.`)) return;
+  const agora = new Date();
+  const hoje = agora.toISOString().slice(0, 10);
+  const os = JSON.parse(JSON.stringify(p));
+  os.id = uid();
+  os.os = numero;
+  if (!os.data || os.data < hoje) os.data = hoje;
+  os.criadoEm = agora.toISOString();
+  os.criadoPor = _obsQuemSou();
+  os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
+    aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou() };
+  delete os.editadoEm; delete os.editadoPor;
+  const faltando = faltaDeTecidoParaOS(os);
+  if (faltando.length && !confirm(_textoFaltaDeTecido(faltando))) return;
+  const data = _aplicarTonsPadrao(os);
+  await _comTravaDeSalvar(async () => {
+    STATE.ordens.push(data);
+    STATE.osPlanejadas = _planLista().filter(x => x.id !== p.id);
+    await saveState('ordens');
+    await saveState('osPlanejadas');
+    await atualizarCounterOS(data.os);
+    await aplicarBaixaEstoqueOS(data);
+    await aplicarRegraConjugadaSeAplicavel(data);
+    toast(`Planejamento aprovado: OS ${data.os}`, 'ok');
+    salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
+    atualizarContagensNav();
+    renderPlanejamentoProducao();
+  });
+}
+
+function renderPlanejamentoProducao() {
+  const box = document.getElementById('plan-prod-lista');
+  if (!box) return;
+  const lista = _planLista();
+  if (!lista.length) {
+    box.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.</div>`;
+    return;
+  }
+  const quando = t => {
+    if (!t) return '';
+    const d = new Date(t);
+    return isNaN(d) ? '' : formatDate(_expIso(d)) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  };
+  const total = lista.reduce((s, p) => s + produtosOS(p), 0);
+  const linhas = lista.map((p, i) => {
+    const cores = coresDaPecaOS(p);
+    const id = esc(p.id);
+    return `<tr>
+      <td class="col-actions" style="white-space:nowrap;">
+        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre">✔ Aprovar</button>
+        <span class="admin-only">
+          <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
+          <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
+        </span>
+      </td>
+      <td style="text-align:right;color:var(--ink-3);">${i + 1}</td>
+      <td>${_osThumbHtml(p)}</td>
+      <td>${esc(linhaTipoOS(p))}</td>
+      <td>${esc(p.modeloNome) || '—'}</td>
+      <td>${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ') : '<span style="color:var(--ink-3)">—</span>'}</td>
+      <td>${esc(p.colecaoNome) || '—'}</td>
+      <td>${_gradeCelulaLista(p)}</td>
+      <td style="text-align:right;">${esc(String((p.enfesto && p.enfesto.camadas) || '—'))}</td>
+      <td>${esc(formatDate(p.data))}</td>
+      <td style="text-align:right;" title="${(p.grade && p.grade.total) || 0} peças por camada na grade">${produtosOS(p).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(p)}</td>
+      <td style="text-align:center;">${_riscoCellOS(p)}</td>
+      <td style="font-size:11px;color:var(--ink-2);">${esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px;">
+      <b>${lista.length}</b> ${lista.length === 1 ? 'OS planejada' : 'OS planejadas'} · <b>${total.toLocaleString('pt-BR')}</b> produtos
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th class="col-actions">Ações</th><th style="text-align:right;">#</th><th>Desenho</th><th>Linha</th><th>Modelo</th><th>Cor</th><th>Coleção</th><th>Grade</th>
+        <th style="text-align:right;">Camadas</th><th>Data</th><th style="text-align:right;">Produtos</th><th>Riscos</th><th>Planejado por</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>`;
+}
+window.novoPlanejamento = novoPlanejamento;
+window.editarPlanejamento = editarPlanejamento;
+window.salvarPlanejamento = salvarPlanejamento;
+window.excluirPlanejamento = excluirPlanejamento;
+window.aprovarPlanejamento = aprovarPlanejamento;
+window.cancelarFormOS = cancelarFormOS;
 
 /* ========================================================= */
 /*           PASTA DE PDFs (File System Access API)          */
@@ -35965,13 +36202,19 @@ function editarOS(id) {
   if (!exigirEdicao('editar OS')) return;
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return;
-  osEditId = id;
+  _abrirOSNoForm(o, 'Editar OS ' + (o.os || o.codigo || ''));
+}
+
+// Põe uma OS no formulário para editar. Serve também ao planejamento de
+// produção, que tem o mesmo formato (ver editarPlanejamento).
+function _abrirOSNoForm(o, titulo) {
+  osEditId = o.id;
   // O número automático é da OS NOVA da sessão; editar não pode herdá-lo.
   _osNumeroAuto = '';
   goto('nova-os');
   // precisa de timeout curto pra select options já estarem renderizadas
   setTimeout(() => {
-    document.getElementById('os-form-title').textContent = 'Editar OS ' + (o.os || o.codigo || '');
+    document.getElementById('os-form-title').textContent = titulo;
     document.getElementById('f-id').value = o.id;
     document.getElementById('f-os').value = o.os || '';
     document.getElementById('f-codigo').value = o.codigo || '';

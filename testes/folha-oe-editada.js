@@ -46,6 +46,7 @@ const motor = [
 function resumo(estado) {
   const fn = new Function('STATE', `
     const expCfg = () => ({ unidadeA: 'Fabrica', unidadeB: 'Loja', volMin: 0, volMax: 0 });
+    const EXP_CFG_PADRAO = { objetivoProdutos: 0 };   // sem objetivo: o aviso tem teste à parte
     const _expNum = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
     const _expCargasDa = (janelaId, data, perna) =>
       (STATE.expedicaoCargas || []).filter(c => c.janelaId === janelaId && c.data === data && c.perna === perna);

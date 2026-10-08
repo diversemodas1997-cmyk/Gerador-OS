@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-08f">
+<link rel="stylesheet" href="styles.css?v=2026-10-08g">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -123,6 +123,7 @@
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
         <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
+        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
     </div>
 
     <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
@@ -920,15 +921,30 @@
       </div>
     </section>
 
+    <!-- ============ PLANEJAMENTO DE PRODUÇÃO (08/10/2026) ============ -->
+    <!-- A lista das OS pré-programadas, sem número. "+ Novo planejamento" abre
+         o formulário da Nova OS em modo planejamento; "Aprovar" (só admin)
+         transforma o planejamento em OS numerada. -->
+    <section class="page hidden" data-page="planejamento-producao">
+      <div class="page-header">
+        <div><h1>Planejamento de produção</h1><div class="desc">OS pré-programadas, ainda sem número e sem reservar material. Cada uma vira uma OS numerada quando o admin a aprova.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novoPlanejamento()">+ Novo planejamento</button></div>
+      </div>
+      <div class="card">
+        <div id="plan-prod-lista"></div>
+      </div>
+    </section>
+
     <!-- ================= NOVA OS ================= -->
     <section class="page hidden" data-page="nova-os">
       <div class="page-header">
-        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div></div>
+        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div></div>
         <div class="actions">
-          <button class="btn" onclick="goto('home')">Cancelar</button>
-          <button class="btn primary admin-only" onclick="salvarOS()">Salvar OS</button>
-          <button class="btn admin-only" onclick="salvarEImprimirEtiquetas()" title="Salva a OS e abre as etiquetas em PDF, com a página de 100 × 50 mm.">Imprimir Etiquetas</button>
-          <button class="btn accent admin-only" onclick="salvarEImprimir()">Salvar e Gerar PDF</button>
+          <button class="btn" onclick="cancelarFormOS()">Cancelar</button>
+          <button class="btn primary admin-only os-only" onclick="salvarOS()">Salvar OS</button>
+          <button class="btn admin-only os-only" onclick="salvarEImprimirEtiquetas()" title="Salva a OS e abre as etiquetas em PDF, com a página de 100 × 50 mm.">Imprimir Etiquetas</button>
+          <button class="btn accent admin-only os-only" onclick="salvarEImprimir()">Salvar e Gerar PDF</button>
+          <button class="btn primary admin-only plan-only" onclick="salvarPlanejamento()">Salvar planejamento</button>
         </div>
       </div>
 
@@ -1834,6 +1850,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-08q"></script>
+<script src="app.js?v=2026-10-08r"></script>
 </body>
 </html>
