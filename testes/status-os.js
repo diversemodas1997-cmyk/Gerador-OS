@@ -1350,13 +1350,24 @@ console.log('-- o que fica gravado --');
     const api = monta(sq.ctx);
     const q = sq.ctx.STATE.ordens[0];
     const op = () => api._statusOpcoesOS(q).join(',');
-    ok('39. nao iniciado: materia-prima ou enfestando (o preparo pode ser pulado), parado, cancelado',
+    ok('39. nao iniciado: so materia-prima (OS comum nao pula o preparo), parado, cancelado',
+       op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
+    q.conjugadaPaiId = 'mae';
+    ok('39a. OS criada conjugada (segue outra) pula o preparo: materia-prima ou enfestando',
        op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+    q.conjugadaStatusPaiId = 'mae'; delete q.conjugadaPaiId;
+    ok('39b. a conjugada a mao (tem pano) nao pula', op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
+    sq.ctx.STATE.desenhos[0].statusSeq = [{ k: 'materia-prima', pula: true }].concat(STATUS_SEQ_PADRAO_TESTE.slice(1));
+    ok('39c. nem com "pode pular" marcado no desenho', op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
+    sq.ctx.STATE.desenhos[0].statusSeq = STATUS_SEQ_PADRAO_TESTE; delete q.conjugadaStatusPaiId;
+    await api.mudarStatusOS('q1', 'enfestando');
+    ok('39d. e o salto e recusado na OS comum', api._statusOS(q) === 'nao-iniciado', api._statusOS(q));
+    q.conjugadaPaiId = 'mae';
     await api.mudarStatusOS('q1', 'cortando');
     ok('40. pular etapa e recusado, e nada e gravado', api._statusOS(q) === 'nao-iniciado' && !q.statusOS
        && sq.ctx.toasts.some(m => /nao pode ir direto|não pode ir direto/.test(m)), sq.ctx.toasts.join(' | '));
     await api.mudarStatusOS('q1', 'enfestando');
-    ok('41. a seguinte passa', api._statusOS(q) === 'enfestando', api._statusOS(q));
+    ok('41. a seguinte passa (conjugada criada, pulando o preparo)', api._statusOS(q) === 'enfestando', api._statusOS(q));
     ok('42a. enfestando sem saber de onde veio: os dois anteriores, segue para cortando',
        op() === 'nao-iniciado,materia-prima,enfestando,cortando,parado,cancelado', op());
     q.statusHist = [{ k: 'materia-prima', em: 1 }, { k: 'enfestando', em: 2 }];

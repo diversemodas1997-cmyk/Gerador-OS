@@ -4746,7 +4746,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Sequência de status deste desenho</label>
           <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
-            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. Nada marcado = seletor livre, com todos os status.
+            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. A <b>Prep. matéria-prima</b> só é pulada pela OS criada conjugada (que segue outra OS), em qualquer desenho. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. Nada marcado = seletor livre, com todos os status.
           </div>
           <button type="button" class="btn small" style="margin-bottom:6px;" onclick="desenhoStatusSeqPadrao()">Usar o caminho padrão</button>
           <div id="m-desenho-status-seq" style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
@@ -24229,7 +24229,7 @@ function _desenhoStatusSeqHtml(seq) {
       <input type="checkbox" class="m-status-chk" value="${esc(k)}" ${marcada ? 'checked' : ''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
       <span style="flex:1;">${_statusPingo(s)} ${esc(s.rotulo)}</span>
       <label style="font-size:11px;white-space:nowrap;cursor:pointer;" title="O seletor oferece também o status seguinte a este">
-        <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}> pode pular</label>
+        <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}${k === 'materia-prima' ? ' disabled' : ''}> pode pular</label>
     </div>`;
   };
   return (seq || []).map(x => linha(x.k, true, !!x.pula)).join('')
@@ -30759,8 +30759,8 @@ function _statusDesdeCelulaOS(o) {
    três entra na lista. Desenho sem sequência = seletor LIVRE, todos os
    status (escolha do Junior).
 
-     pula   o seletor oferece também o status seguinte a este (o preparo da
-            matéria-prima, no caminho padrão)
+     pula   o seletor oferece também o status seguinte a este (menos o
+            preparo da matéria-prima: ver _statusGrafoSeq)
      desvio os status de São Carlos juntos na lista (trânsito de ida, ensacado,
             costurando e estoque com fio SC, trânsito de volta) são um caminho
             que DEPENDE DA OS: quem vem antes deles pode entrar no desvio ou
@@ -30769,7 +30769,8 @@ function _statusDesdeCelulaOS(o) {
    O caminho padrão (o botão "Usar o caminho padrão" do desenho), confirmado
    pelo Junior:
 
-     Não iniciado → Prep. matéria-prima (pode pular) → Enfestando → Cortando
+     Não iniciado → Prep. matéria-prima (só a OS criada conjugada pula)
+       → Enfestando → Cortando
        → Separando → Ensacado | DESC → Costurando | DESC
           ├─ Estoque com fio | DESC → Retirando fio → Estoque
           └─ Em trânsito | IDA → Ensacado | SC → Costurando | SC
@@ -30783,7 +30784,7 @@ function _statusDesdeCelulaOS(o) {
    acertada. Vale só para o carimbo À MÃO: as caixas do checklist continuam
    movendo a OS sozinhas. */
 const STATUS_SEQ_PADRAO = [
-  { k: 'materia-prima', pula: true }, { k: 'enfestando' }, { k: 'cortando' },
+  { k: 'materia-prima' }, { k: 'enfestando' }, { k: 'cortando' },
   { k: 'separando' }, { k: 'ensacado' }, { k: 'costurando' },
   { k: 'transito-ida' }, { k: 'ensacado-sc' }, { k: 'costurando-sc' },
   { k: 'estoque-fio-sc' }, { k: 'transito-volta' },
@@ -30809,8 +30810,17 @@ function _statusSeqDoDesenho(d) {
 }
 
 // {k: [seguintes]} a partir da sequência, com o Não iniciado na frente.
-function _statusGrafoSeq(seq) {
-  const lista = [{ k: 'nao-iniciado' }].concat(seq);
+/* SÓ A OS CRIADA CONJUGADA PULA O PREPARO DA MATÉRIA-PRIMA (08/10/2026,
+   Junior: "as únicas OS que podem pular etapa prep matéria-prima são OS
+   criadas conjugadas (segue outra OS)"). É a OS que a grade gerou junto com
+   outra (`conjugadaPaiId`): ela não tem pano próprio, então não há matéria-
+   prima a preparar. Nela o preparo pode ser pulado sempre; em qualquer outra,
+   nunca — o "pode pular" do desenho não vale para esse status. A conjugada à
+   mão (`conjugadaStatusPaiId`) não conta: ela tem pano. */
+function _statusGrafoSeq(seq, o) {
+  const conjugadaCriada = !!(o && o.conjugadaPaiId);
+  const lista = [{ k: 'nao-iniciado' }].concat((seq || []).map(x => x.k === 'materia-prima'
+    ? Object.assign({}, x, { pula: conjugadaCriada }) : x));
   const prox = {};
   lista.forEach(x => { prox[x.k] = prox[x.k] || []; });
   const add = (a, b) => { if (a !== b && !prox[a].includes(b)) prox[a].push(b); };
@@ -30849,7 +30859,7 @@ function _statusOpcoesOS(o) {
   const todas = STATUS_OS.map(x => x.k);
   const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
   if (!seq) return todas;
-  const prox = _statusGrafoSeq(seq);
+  const prox = _statusGrafoSeq(seq, o);
   const st = _statusOS(o);
   const ok = new Set([st, ...STATUS_SEMPRE_OS]);
   if (STATUS_SEMPRE_OS.includes(st)) {
