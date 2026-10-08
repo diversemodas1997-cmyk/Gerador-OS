@@ -30694,6 +30694,85 @@ function _statusDesdeCelulaOS(o) {
   return `<span title="${esc('Dia e hora em que a OS passou para ' + s.rotulo + _statusHistDica(o))}">${txt}</span>`;
 }
 
+/* O SELETOR SÓ OFERECE A ETAPA ANTERIOR E A SEGUINTE (08/10/2026, Junior: "o
+   botão dropdown deve mostrar apenas como opção a próxima etapa lógica do
+   processo de produção, antes e depois", mantendo Parado e Cancelado). O
+   caminho, como ele confirmou no mesmo dia:
+
+     Não iniciado → Prep. matéria-prima → Enfestando → Cortando → Separando
+       → Ensacado | DESC → Costurando | DESC
+          ├─ Estoque com fio | DESC → Retirando fio → Estoque
+          └─ Em trânsito | IDA → Ensacado | SC → Costurando | SC
+               → Estoque com fio | SC → Em trânsito | VOLTA
+               → Estoque com fio | DESC → Retirando fio → Estoque
+
+   O preparo da matéria-prima pode ser pulado (Não iniciado → Enfestando);
+   nenhuma outra etapa. A ida para São Carlos sai da costura daqui, e não do
+   ensaque. O ANTERIOR é o status de onde a OS veio, pelo diário, quando ele
+   é um dos anteriores possíveis — o Estoque com fio | DESC tem dois. Parado e
+   Cancelado ficam sempre; saindo deles, a OS volta ao status em que estava
+   antes de parar (ou segue para o seguinte a ele).
+
+   Vale só para o carimbo À MÃO: as caixas do checklist continuam movendo a
+   OS sozinhas, como sempre. */
+const STATUS_SEGUINTES_OS = {
+  'nao-iniciado':   ['materia-prima', 'enfestando'],
+  'materia-prima':  ['enfestando'],
+  'enfestando':     ['cortando'],
+  'cortando':       ['separando'],
+  'separando':      ['ensacado'],
+  'ensacado':       ['costurando'],
+  'costurando':     ['estoque-fio', 'transito-ida'],
+  'transito-ida':   ['ensacado-sc'],
+  'ensacado-sc':    ['costurando-sc'],
+  'costurando-sc':  ['estoque-fio-sc'],
+  'estoque-fio-sc': ['transito-volta'],
+  'transito-volta': ['estoque-fio'],
+  'estoque-fio':    ['fios'],
+  'fios':           ['estoque'],
+  'estoque':        []
+};
+const STATUS_SEMPRE_OS = ['parado', 'cancelado'];
+const _statusAnterioresOS = k => Object.keys(STATUS_SEGUINTES_OS)
+  .filter(a => STATUS_SEGUINTES_OS[a].includes(k));
+
+// O status em que a OS estava antes do de agora, pelo diário (sem Parado e
+// Cancelado, quando `foraDoCaminho`). null = o diário não sabe.
+function _statusDeOndeVeioOS(o, foraDoCaminho) {
+  const st = _statusOS(o);
+  const h = _statusHistDe(o);
+  for (let i = h.length - 1; i >= 0; i--) {
+    const k = h[i].k;
+    if (k === st) continue;
+    if (foraDoCaminho && STATUS_SEMPRE_OS.includes(k)) continue;
+    return k;
+  }
+  return null;
+}
+
+// As chaves que o seletor oferece, na ordem de STATUS_OS: a de agora, a(s)
+// anterior(es), a(s) seguinte(s), Parado e Cancelado.
+function _statusOpcoesOS(o) {
+  const st = _statusOS(o);
+  const ok = new Set([st, ...STATUS_SEMPRE_OS]);
+  const vizinhos = k => {
+    (STATUS_SEGUINTES_OS[k] || []).forEach(x => ok.add(x));
+    const ant = _statusAnterioresOS(k);
+    const veio = _statusDeOndeVeioOS(o, false);
+    if (ant.includes(veio)) ok.add(veio); else ant.forEach(x => ok.add(x));
+  };
+  if (STATUS_SEMPRE_OS.includes(st)) {
+    // Parado / Cancelado: volta para onde estava, ou segue dali. O diário não
+    // sabendo, vale o que a folha diz.
+    const antes = _statusDeOndeVeioOS(o, true) || _statusDoChecklistOS(o) || 'nao-iniciado';
+    ok.add(antes);
+    (STATUS_SEGUINTES_OS[antes] || []).forEach(x => ok.add(x));
+  } else {
+    vizinhos(st);
+  }
+  return STATUS_OS.map(x => x.k).filter(k => ok.has(k));
+}
+
 function _statusCelulaOS(o, extra) {
   const s = STATUS_OS.find(x => x.k === _statusOS(o)) || STATUS_OS[0];
   const quem = _obsNomeLogin(o.statusOSPor || '');
@@ -30722,9 +30801,10 @@ function _statusCelulaOS(o, extra) {
   if (!podeMudarStatusOS()) {
     return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rot(s))}</span>`;
   }
+  const opcoes = _statusOpcoesOS(o);
   return `<select class="${cls}" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
-    + STATUS_OS.map(x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
+    + STATUS_OS.filter(x => opcoes.includes(x.k)).map(x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
         + `${STATUS_PONTO} ${esc(rot(x))}</option>`).join('')
     + `</select>`;
 }
@@ -31016,6 +31096,13 @@ async function mudarStatusOS(id, valor) {
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); renderStatusFolhaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
+  // Só a etapa anterior, a seguinte, Parado e Cancelado (ver STATUS_SEGUINTES_OS).
+  if (!_statusOpcoesOS(o).includes(alvo)) {
+    const r = (STATUS_OS.find(x => x.k === alvo) || {}).rotulo || alvo;
+    toast(`A OS ${o.os || ''} não pode ir direto para ${r}: só a etapa anterior ou a seguinte`, 'err');
+    renderListaOS(); renderStatusFolhaOS();
+    return;
+  }
   const agora = new Date().toISOString();
   const quem = _obsQuemSou();
   /* CARIMBAR É IDEMPOTENTE, E POR ISSO CONSERTA (18/09/2026, Junior).

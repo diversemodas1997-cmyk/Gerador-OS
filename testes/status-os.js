@@ -112,6 +112,16 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusEstilo', 'o fundo da caixa do status')}
   ${recorte('function _statusHistDe', 'a leitura do diario')}
   ${recorte('function _statusHistDica', 'a dica do diario')}
+  // A SEQUENCIA DO SELETOR (08/10/2026): so a etapa anterior, a seguinte,
+  // Parado e Cancelado. Os testes antigos pulam etapas para chegar depressa ao
+  // que provam (estoque, conjugadas); eles rodam sem a sequencia, e quem liga
+  // e o bloco proprio dela (ctx.sequencia).
+  ${recorte('const STATUS_SEGUINTES_OS', 'o caminho do seletor')};
+  ${constante('STATUS_SEMPRE_OS')}
+  ${src.match(/^const _statusAnterioresOS = [\s\S]+?\);$/m)[0]}
+  ${recorte('function _statusDeOndeVeioOS', 'de onde a OS veio')}
+  ${recorte('function _statusOpcoesOS', 'as opcoes do seletor')}
+  if (!ctx.sequencia) _statusOpcoesOS = () => STATUS_OS.map(x => x.k);
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
   ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
@@ -159,7 +169,7 @@ const monta = (ctx) => new Function('ctx', `
   const uid = () => 'm' + (++ctx.seq);
   const _estoqueRedesenharSeAberto = () => {};
   const renderEstoque = () => {};
-  return { podeMudarStatusOS, _statusOS, _statusDoChecklistOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
+  return { _statusOpcoesOS, podeMudarStatusOS, _statusOS, _statusDoChecklistOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _statusHistAnotar, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
            conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus,
@@ -1328,6 +1338,39 @@ console.log('-- o que fica gravado --');
      folha.indexOf("print-conjugar-os") < folha.indexOf("if (!box) return;"),
      'o toggle ficou depois do return');
 
+  console.log('');
+  console.log('-- o seletor so oferece a etapa anterior e a seguinte (08/10/2026) --');
+  {
+    const sq = ctxDe('admin', 'admin@diverse.local', true, [{ id: 'q1', os: '0700' }]);
+    sq.ctx.sequencia = true;
+    const api = monta(sq.ctx);
+    const q = sq.ctx.STATE.ordens[0];
+    const op = () => api._statusOpcoesOS(q).join(',');
+    ok('39. nao iniciado: materia-prima ou enfestando (o preparo pode ser pulado), parado, cancelado',
+       op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+    await api.mudarStatusOS('q1', 'cortando');
+    ok('40. pular etapa e recusado, e nada e gravado', api._statusOS(q) === 'nao-iniciado' && !q.statusOS
+       && sq.ctx.toasts.some(m => /nao pode ir direto|não pode ir direto/.test(m)), sq.ctx.toasts.join(' | '));
+    await api.mudarStatusOS('q1', 'enfestando');
+    ok('41. a seguinte passa', api._statusOS(q) === 'enfestando', api._statusOS(q));
+    ok('42a. enfestando sem saber de onde veio: os dois anteriores, segue para cortando',
+       op() === 'nao-iniciado,materia-prima,enfestando,cortando,parado,cancelado', op());
+    q.statusHist = [{ k: 'materia-prima', em: 1 }, { k: 'enfestando', em: 2 }];
+    ok('42b. sabendo pelo diario, volta so para de onde veio (materia-prima)',
+       op() === 'materia-prima,enfestando,cortando,parado,cancelado', op());
+    delete q.statusHist;
+    q.statusOS = 'ensacado'; q.statusOSEm = new Date(Date.now() + 1000).toISOString();
+    ok('43. ensacado | DESC segue so para a costura daqui (a ida e pela expedicao)',
+       op() === 'separando,ensacado,costurando,parado,cancelado', op());
+    q.statusOS = 'costurando';
+    ok('44. costurando | DESC: estoque com fio DESC ou em transito IDA',
+       /transito-ida/.test(op()) && /estoque-fio(,|$)/.test(op()) && !/costurando-sc/.test(op()), op());
+    q.statusOS = 'estoque';
+    ok('45. estoque: so volta para retirando fio', op() === 'fios,parado,cancelado,estoque', op());
+    q.statusOS = 'parado';
+    q.statusHist = [{ k: 'cortando', em: 1 }, { k: 'parado', em: 2 }];
+    ok('46. parado volta para onde estava (cortando) ou segue dali', op() === 'cortando,separando,parado,cancelado', op());
+  }
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
   console.log('todos os testes passaram');
