@@ -4743,6 +4743,16 @@ function openCadastroModal(tipo, editId = null, origin = null) {
             })()}
           </div>
         </div>
+        <div style="margin-top:14px;">
+          <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Sequência de status deste desenho</label>
+          <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
+            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. Nada marcado = seletor livre, com todos os status.
+          </div>
+          <button type="button" class="btn small" style="margin-bottom:6px;" onclick="desenhoStatusSeqPadrao()">Usar o caminho padrão</button>
+          <div id="m-desenho-status-seq" style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
+            ${_desenhoStatusSeqHtml(_statusSeqDoDesenho(item) || [])}
+          </div>
+        </div>
       </div>`;
   }
   else if (tipo === 'marca') {
@@ -6752,6 +6762,17 @@ async function salvarCadastro() {
     item.etapasNomes = Array.from(document.querySelectorAll('#m-desenho-etapas .etapa-check'))
       .filter(l => l.querySelector('input:checked'))
       .map(l => l.querySelector('input').value);
+
+    // A sequência de status (ver STATUS_SEQ_PADRAO): só as marcadas, na ordem
+    // da tela. Vazia = seletor livre, e o campo nem é gravado.
+    const seq = Array.from(document.querySelectorAll('#m-desenho-status-seq .etapa-check'))
+      .filter(l => l.querySelector('.m-status-chk:checked'))
+      .map(l => {
+        const x = { k: l.querySelector('.m-status-chk').value };
+        if (l.querySelector('.m-status-pula:checked')) x.pula = true;
+        return x;
+      });
+    if (seq.length) item.statusSeq = seq; else delete item.statusSeq;
   }
   else if (tipo === 'marca' || tipo === 'linha' || tipo === 'base' || tipo === 'bloco') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
@@ -24187,6 +24208,39 @@ function renderEtapas() {
   }).join('');
 }
 
+/* A LISTA DA SEQUÊNCIA DE STATUS na janela do desenho (ver STATUS_SEQ_PADRAO):
+   as marcadas na ordem gravada, depois as outras na ordem do caminho padrão.
+   O ▲▼ é o mesmo das etapas (moverEtapaDesenho). Linha em <div>, e não em
+   <label>: são duas caixas por linha, e o label marcaria só a primeira. */
+function _desenhoStatusSeqHtml(seq) {
+  const marcadas = (seq || []).map(x => x.k);
+  const ordemPadrao = STATUS_SEQ_PADRAO.map(x => x.k);
+  const resto = STATUS_OS.map(s => s.k)
+    .filter(k => !STATUS_FORA_SEQ.includes(k) && !marcadas.includes(k))
+    .sort((a, b) => (ordemPadrao.indexOf(a) + 1 || 99) - (ordemPadrao.indexOf(b) + 1 || 99));
+  const linha = (k, marcada, pula) => {
+    const s = STATUS_OS.find(x => x.k === k);
+    if (!s) return '';
+    return `<div class="etapa-check ${marcada ? 'checked' : ''}" style="margin-bottom:4px;">
+      <span class="etapa-reorder">
+        <button type="button" class="etapa-move" onclick="moverEtapaDesenho(this, -1)" title="Mover para cima">▲</button>
+        <button type="button" class="etapa-move" onclick="moverEtapaDesenho(this, 1)" title="Mover para baixo">▼</button>
+      </span>
+      <input type="checkbox" class="m-status-chk" value="${esc(k)}" ${marcada ? 'checked' : ''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
+      <span style="flex:1;">${_statusPingo(s)} ${esc(s.rotulo)}</span>
+      <label style="font-size:11px;white-space:nowrap;cursor:pointer;" title="O seletor oferece também o status seguinte a este">
+        <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}> pode pular</label>
+    </div>`;
+  };
+  return (seq || []).map(x => linha(x.k, true, !!x.pula)).join('')
+    + resto.map(k => linha(k, false, false)).join('');
+}
+function desenhoStatusSeqPadrao() {
+  const box = document.getElementById('m-desenho-status-seq');
+  if (box) box.innerHTML = _desenhoStatusSeqHtml(STATUS_SEQ_PADRAO);
+}
+window.desenhoStatusSeqPadrao = desenhoStatusSeqPadrao;
+
 function moverEtapaDesenho(btn, dir) {
   const label = btn.closest('.etapa-check');
   if (!label) return;
@@ -30696,45 +30750,84 @@ function _statusDesdeCelulaOS(o) {
 
 /* O SELETOR SÓ OFERECE A ETAPA ANTERIOR E A SEGUINTE (08/10/2026, Junior: "o
    botão dropdown deve mostrar apenas como opção a próxima etapa lógica do
-   processo de produção, antes e depois", mantendo Parado e Cancelado). O
-   caminho, como ele confirmou no mesmo dia:
+   processo de produção, antes e depois", mantendo Parado e Cancelado).
 
-     Não iniciado → Prep. matéria-prima → Enfestando → Cortando → Separando
-       → Ensacado | DESC → Costurando | DESC
+   A SEQUÊNCIA É DO DESENHO TÉCNICO (mesmo dia: "cada desenho técnico seguirá
+   sequência de status personalizado"). Ela mora em `desenho.statusSeq` =
+   [{k, pula?}], na ordem, editada na janela do desenho. O Não iniciado é
+   sempre o começo, e Parado e Cancelado estão sempre no seletor — nenhum dos
+   três entra na lista. Desenho sem sequência = seletor LIVRE, todos os
+   status (escolha do Junior).
+
+     pula   o seletor oferece também o status seguinte a este (o preparo da
+            matéria-prima, no caminho padrão)
+     desvio os status de São Carlos juntos na lista (trânsito de ida, ensacado,
+            costurando e estoque com fio SC, trânsito de volta) são um caminho
+            que DEPENDE DA OS: quem vem antes deles pode entrar no desvio ou
+            seguir direto para o primeiro status depois dele
+
+   O caminho padrão (o botão "Usar o caminho padrão" do desenho), confirmado
+   pelo Junior:
+
+     Não iniciado → Prep. matéria-prima (pode pular) → Enfestando → Cortando
+       → Separando → Ensacado | DESC → Costurando | DESC
           ├─ Estoque com fio | DESC → Retirando fio → Estoque
           └─ Em trânsito | IDA → Ensacado | SC → Costurando | SC
                → Estoque com fio | SC → Em trânsito | VOLTA
                → Estoque com fio | DESC → Retirando fio → Estoque
 
-   O preparo da matéria-prima pode ser pulado (Não iniciado → Enfestando);
-   nenhuma outra etapa. A ida para São Carlos sai da costura daqui, e não do
-   ensaque. O ANTERIOR é o status de onde a OS veio, pelo diário, quando ele
-   é um dos anteriores possíveis — o Estoque com fio | DESC tem dois. Parado e
-   Cancelado ficam sempre; saindo deles, a OS volta ao status em que estava
-   antes de parar (ou segue para o seguinte a ele).
-
-   Vale só para o carimbo À MÃO: as caixas do checklist continuam movendo a
-   OS sozinhas, como sempre. */
-const STATUS_SEGUINTES_OS = {
-  'nao-iniciado':   ['materia-prima', 'enfestando'],
-  'materia-prima':  ['enfestando'],
-  'enfestando':     ['cortando'],
-  'cortando':       ['separando'],
-  'separando':      ['ensacado'],
-  'ensacado':       ['costurando'],
-  'costurando':     ['estoque-fio', 'transito-ida'],
-  'transito-ida':   ['ensacado-sc'],
-  'ensacado-sc':    ['costurando-sc'],
-  'costurando-sc':  ['estoque-fio-sc'],
-  'estoque-fio-sc': ['transito-volta'],
-  'transito-volta': ['estoque-fio'],
-  'estoque-fio':    ['fios'],
-  'fios':           ['estoque'],
-  'estoque':        []
-};
+   O ANTERIOR é o status de onde a OS veio, pelo diário, quando ele é um dos
+   anteriores possíveis (o Estoque com fio | DESC tem dois). Saindo de Parado
+   ou Cancelado, a OS volta ao status em que estava antes ou segue dali. A OS
+   num status que a sequência do desenho não tem fica livre, para poder ser
+   acertada. Vale só para o carimbo À MÃO: as caixas do checklist continuam
+   movendo a OS sozinhas. */
+const STATUS_SEQ_PADRAO = [
+  { k: 'materia-prima', pula: true }, { k: 'enfestando' }, { k: 'cortando' },
+  { k: 'separando' }, { k: 'ensacado' }, { k: 'costurando' },
+  { k: 'transito-ida' }, { k: 'ensacado-sc' }, { k: 'costurando-sc' },
+  { k: 'estoque-fio-sc' }, { k: 'transito-volta' },
+  { k: 'estoque-fio' }, { k: 'fios' }, { k: 'estoque' }
+];
+const STATUS_DESVIO_SC = ['transito-ida', 'ensacado-sc', 'costurando-sc', 'estoque-fio-sc', 'transito-volta'];
 const STATUS_SEMPRE_OS = ['parado', 'cancelado'];
-const _statusAnterioresOS = k => Object.keys(STATUS_SEGUINTES_OS)
-  .filter(a => STATUS_SEGUINTES_OS[a].includes(k));
+const STATUS_FORA_SEQ = ['nao-iniciado', 'parado', 'cancelado'];
+
+// O desenho técnico da OS: pelo vínculo, ou pelo código nas OS antigas.
+function _desenhoDaOS(o) {
+  const ds = STATE.desenhos || [];
+  return (o && o.desenhoId && ds.find(d => d.id === o.desenhoId))
+    || (o && o.codigo && ds.find(d => (d.codigo || '').trim() === String(o.codigo).trim()))
+    || null;
+}
+
+// A sequência limpa de um desenho; null = não configurada (seletor livre).
+function _statusSeqDoDesenho(d) {
+  const seq = (d && Array.isArray(d.statusSeq) ? d.statusSeq : [])
+    .filter(x => x && STATUS_OS.some(s => s.k === x.k) && !STATUS_FORA_SEQ.includes(x.k));
+  return seq.length ? seq : null;
+}
+
+// {k: [seguintes]} a partir da sequência, com o Não iniciado na frente.
+function _statusGrafoSeq(seq) {
+  const lista = [{ k: 'nao-iniciado' }].concat(seq);
+  const prox = {};
+  lista.forEach(x => { prox[x.k] = prox[x.k] || []; });
+  const add = (a, b) => { if (a !== b && !prox[a].includes(b)) prox[a].push(b); };
+  const desvio = i => STATUS_DESVIO_SC.includes(lista[i].k);
+  for (let i = 0; i < lista.length - 1; i++) {
+    add(lista[i].k, lista[i + 1].k);
+    // O que pode ser pulado leva também ao seguinte dele (e assim por diante).
+    for (let j = i + 1; j < lista.length - 1 && lista[j].pula; j++) add(lista[i].k, lista[j + 1].k);
+    // A entrada do desvio de São Carlos também segue direto para depois dele.
+    if (!desvio(i) && desvio(i + 1)) {
+      let j = i + 1;
+      while (j < lista.length && desvio(j)) j++;
+      if (j < lista.length) add(lista[i].k, lista[j].k);
+    }
+  }
+  return prox;
+}
 
 // O status em que a OS estava antes do de agora, pelo diário (sem Parado e
 // Cancelado, quando `foraDoCaminho`). null = o diário não sabe.
@@ -30753,24 +30846,27 @@ function _statusDeOndeVeioOS(o, foraDoCaminho) {
 // As chaves que o seletor oferece, na ordem de STATUS_OS: a de agora, a(s)
 // anterior(es), a(s) seguinte(s), Parado e Cancelado.
 function _statusOpcoesOS(o) {
+  const todas = STATUS_OS.map(x => x.k);
+  const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
+  if (!seq) return todas;
+  const prox = _statusGrafoSeq(seq);
   const st = _statusOS(o);
   const ok = new Set([st, ...STATUS_SEMPRE_OS]);
-  const vizinhos = k => {
-    (STATUS_SEGUINTES_OS[k] || []).forEach(x => ok.add(x));
-    const ant = _statusAnterioresOS(k);
-    const veio = _statusDeOndeVeioOS(o, false);
-    if (ant.includes(veio)) ok.add(veio); else ant.forEach(x => ok.add(x));
-  };
   if (STATUS_SEMPRE_OS.includes(st)) {
     // Parado / Cancelado: volta para onde estava, ou segue dali. O diário não
     // sabendo, vale o que a folha diz.
     const antes = _statusDeOndeVeioOS(o, true) || _statusDoChecklistOS(o) || 'nao-iniciado';
+    if (!prox[antes]) return todas;
     ok.add(antes);
-    (STATUS_SEGUINTES_OS[antes] || []).forEach(x => ok.add(x));
+    prox[antes].forEach(x => ok.add(x));
   } else {
-    vizinhos(st);
+    if (!prox[st]) return todas;
+    prox[st].forEach(x => ok.add(x));
+    const ant = Object.keys(prox).filter(a => prox[a].includes(st));
+    const veio = _statusDeOndeVeioOS(o, false);
+    if (ant.includes(veio)) ok.add(veio); else ant.forEach(x => ok.add(x));
   }
-  return STATUS_OS.map(x => x.k).filter(k => ok.has(k));
+  return todas.filter(k => ok.has(k));
 }
 
 function _statusCelulaOS(o, extra) {
@@ -31096,7 +31192,7 @@ async function mudarStatusOS(id, valor) {
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); renderStatusFolhaOS(); return; }
   const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
-  // Só a etapa anterior, a seguinte, Parado e Cancelado (ver STATUS_SEGUINTES_OS).
+  // Só a etapa anterior, a seguinte, Parado e Cancelado (ver STATUS_SEQ_PADRAO e a sequência do desenho).
   if (!_statusOpcoesOS(o).includes(alvo)) {
     const r = (STATUS_OS.find(x => x.k === alvo) || {}).rotulo || alvo;
     toast(`A OS ${o.os || ''} não pode ir direto para ${r}: só a etapa anterior ou a seguinte`, 'err');

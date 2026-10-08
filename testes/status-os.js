@@ -112,16 +112,18 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusEstilo', 'o fundo da caixa do status')}
   ${recorte('function _statusHistDe', 'a leitura do diario')}
   ${recorte('function _statusHistDica', 'a dica do diario')}
-  // A SEQUENCIA DO SELETOR (08/10/2026): so a etapa anterior, a seguinte,
-  // Parado e Cancelado. Os testes antigos pulam etapas para chegar depressa ao
-  // que provam (estoque, conjugadas); eles rodam sem a sequencia, e quem liga
-  // e o bloco proprio dela (ctx.sequencia).
-  ${recorte('const STATUS_SEGUINTES_OS', 'o caminho do seletor')};
+  // A SEQUENCIA DO SELETOR (08/10/2026): vem do desenho tecnico da OS; sem
+  // sequencia no desenho, o seletor e livre. Os testes antigos nao tem
+  // desenho, entao continuam pulando etapas a vontade.
+  ${src.match(/^const STATUS_SEQ_PADRAO = \[[\s\S]+?\n\];/m)[0]}
+  ${constante('STATUS_DESVIO_SC')}
   ${constante('STATUS_SEMPRE_OS')}
-  ${src.match(/^const _statusAnterioresOS = [\s\S]+?\);$/m)[0]}
+  ${constante('STATUS_FORA_SEQ')}
+  ${recorte('function _desenhoDaOS', 'o desenho da OS')}
+  ${recorte('function _statusSeqDoDesenho', 'a sequencia do desenho')}
+  ${recorte('function _statusGrafoSeq', 'o grafo da sequencia')}
   ${recorte('function _statusDeOndeVeioOS', 'de onde a OS veio')}
   ${recorte('function _statusOpcoesOS', 'as opcoes do seletor')}
-  if (!ctx.sequencia) _statusOpcoesOS = () => STATUS_OS.map(x => x.k);
   ${recorte('function _statusCelulaOS', 'a celula do status')}
   ${recorte('function formatDate', 'a data em dd/mm/aaaa')}
   ${recorte('function _dataFinalizacaoOS', 'a data de finalizacao')}
@@ -1340,9 +1342,11 @@ console.log('-- o que fica gravado --');
 
   console.log('');
   console.log('-- o seletor so oferece a etapa anterior e a seguinte (08/10/2026) --');
+  const STATUS_SEQ_PADRAO_TESTE = new Function(src.match(/^const STATUS_SEQ_PADRAO = \[[\s\S]+?\n\];/m)[0] + ' return STATUS_SEQ_PADRAO;')();
   {
-    const sq = ctxDe('admin', 'admin@diverse.local', true, [{ id: 'q1', os: '0700' }]);
-    sq.ctx.sequencia = true;
+    const sq = ctxDe('admin', 'admin@diverse.local', true, [{ id: 'q1', os: '0700', desenhoId: 'd1' }]);
+    // O caminho padrao, gravado no desenho como o botao da janela grava.
+    sq.ctx.STATE.desenhos = [{ id: 'd1', statusSeq: STATUS_SEQ_PADRAO_TESTE }];
     const api = monta(sq.ctx);
     const q = sq.ctx.STATE.ordens[0];
     const op = () => api._statusOpcoesOS(q).join(',');
@@ -1370,6 +1374,14 @@ console.log('-- o que fica gravado --');
     q.statusOS = 'parado';
     q.statusHist = [{ k: 'cortando', em: 1 }, { k: 'parado', em: 2 }];
     ok('46. parado volta para onde estava (cortando) ou segue dali', op() === 'cortando,separando,parado,cancelado', op());
+    q.statusOS = 'costurando';
+    sq.ctx.STATE.desenhos[0].statusSeq = [{ k: 'enfestando' }, { k: 'cortando', pula: true }, { k: 'ensacado' }, { k: 'estoque' }];
+    delete q.statusHist;
+    ok('47. status fora da sequencia do desenho: livre, para poder acertar', op().split(',').length === api.STATUS_OS.length, op());
+    q.statusOS = 'enfestando';
+    ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'nao-iniciado,enfestando,cortando,ensacado,parado,cancelado', op());
+    sq.ctx.STATE.desenhos[0].statusSeq = [];
+    ok('49. desenho sem sequencia: seletor livre', op().split(',').length === api.STATUS_OS.length, op());
   }
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
