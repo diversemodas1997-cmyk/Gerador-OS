@@ -4772,3 +4772,6 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   #print-sheet-avi .exp-print-bloco { page-break-inside: auto; break-inside: auto; }
   .avi-print-tab tr { page-break-inside: avoid; break-inside: avoid; }
 }
+
+/* Aviso de expedição abaixo do objetivo de produtos (08/10/2026). */
+.exp-objetivo-aviso { margin-top: 6px; padding: 4px 8px; font-size: 12px; background: #fdf0d5; border: 1px solid #e8c37a; border-radius: 2px; color: #7a4b00; }

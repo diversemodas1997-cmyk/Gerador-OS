@@ -12624,6 +12624,12 @@ const EXP_CFG_PADRAO = {
   unidadeB: 'Unidade 2',
   volMin: 0,
   volMax: 0,
+  /* O OBJETIVO DE PRODUTOS POR EXPEDIÇÃO (08/10/2026, Junior: "insira um aviso
+     quando o volume de produtos prontos for menor que 1000 unidades. Insira
+     campo de configuração para esse objetivo"; escolhido: cada expedição).
+     É em PRODUTOS (unidades da peça), não em volumes: o mínimo/máximo acima
+     fala do espaço no caminhão; este, de quanto a viagem rende. 0 = sem aviso. */
+  objetivoProdutos: 1000,
   /* OS HORÁRIOS PADRÃO DA EXPEDIÇÃO (18/09/2026, Junior).
 
      A fábrica tem dois turnos de caminhão — o matinal e o da tarde —, e cada um
@@ -13181,11 +13187,15 @@ function resumoPernaExpedicao(oc, perna) {
   // OS que entrou no plano pelo checklist sem "peças por volume" configurado
   // chega com 0 volumes: conta como carga, mas ninguém disse quanto ocupa.
   const semVolumes = itens.filter(i => !(i.volumes > 0)).length;
+  // Abaixo do objetivo de produtos (ver EXP_CFG_PADRAO): só perna com carga —
+  // a vazia já diz "sem carga", e a volta costuma ir vazia.
+  const objetivo = _expNum(cfg.objetivoProdutos, EXP_CFG_PADRAO.objetivoProdutos);
+  const abaixoObjetivo = itens.length > 0 && objetivo > 0 && pecas < objetivo;
   let situacao = 'ok';
   if (!itens.length) situacao = 'vazio';
   else if (volMax > 0 && volumes > volMax) situacao = 'alto';
   else if (volMin > 0 && volumes < volMin) situacao = 'baixo';
-  return { itens, volumes, pecas, volMin, volMax, situacao, semVolumes };
+  return { itens, volumes, pecas, volMin, volMax, situacao, semVolumes, objetivo, abaixoObjetivo };
 }
 
 const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
@@ -14131,6 +14141,7 @@ function renderExpedicaoPlano() {
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
+        ${r.abaixoObjetivo ? `<div class="exp-objetivo-aviso" title="Objetivo de produtos por expedição, em Unidades e carga">⚠ <b>${fmt(r.pecas)} produtos</b> — abaixo do objetivo de ${fmt(r.objetivo)} por expedição (faltam ${fmt(r.objetivo - r.pecas)})</div>` : ''}
         ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar fio, linha, etiqueta, botão ou viés nesta carga: sai do estoque de aviamentos desta unidade e entra no da outra na data da carga" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Aviamento</button>
@@ -14964,6 +14975,7 @@ function abrirModalExpConfig() {
       <div class="field"><label>Unidade B (destino da ida) *</label><input type="text" id="ex-uni-b" value="${esc(cfg.unidadeB)}" placeholder="Ex.: Loja / Depósito"></div>
       ${_expCampoNum('ex-vol-min', 'Volume mínimo padrão', _expNum(cfg.volMin, 0) || '', 'Carga planejada abaixo disso é sinalizada. 0 ou vazio = sem mínimo.')}
       ${_expCampoNum('ex-vol-max', 'Volume máximo padrão', _expNum(cfg.volMax, 0) || '', 'Capacidade do transporte. Acima disso a carga é sinalizada. 0 ou vazio = sem máximo.')}
+      ${_expCampoNum('ex-obj-prod', 'Objetivo de produtos por expedição (un.)', _expNum(cfg.objetivoProdutos, EXP_CFG_PADRAO.objetivoProdutos), 'Expedição com carga e menos produtos que isso recebe um aviso no planejamento. 0 = sem aviso.')}
     </div>
     <div class="form-grid cols-2" style="margin-top:10px;">
       <div class="field full"><label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Horários padrão da expedição</label></div>
@@ -15217,6 +15229,7 @@ async function salvarModalExpedicao() {
     const volMin = parseInt(v('ex-vol-min')) || 0;
     const volMax = parseInt(v('ex-vol-max')) || 0;
     if (volMax > 0 && volMin > volMax) return toast('O volume mínimo não pode ser maior que o máximo', 'err');
+    const objetivoProdutos = Math.max(0, parseInt(v('ex-obj-prod')) || 0);
     // Horário em branco ou digitado pela metade volta ao padrão de fábrica, em
     // vez de gravar '' e fazer a próxima janela nascer com o campo vazio.
     const horaIdaManha = _expHora(v('ex-hora-ida-manha'), EXP_CFG_PADRAO.horaIdaManha);
@@ -15224,7 +15237,7 @@ async function salvarModalExpedicao() {
     const horaIdaTarde = _expHora(v('ex-hora-ida-tarde'), EXP_CFG_PADRAO.horaIdaTarde);
     const horaVoltaTarde = _expHora(v('ex-hora-volta-tarde'), EXP_CFG_PADRAO.horaVoltaTarde);
     if (!STATE.meta || typeof STATE.meta !== 'object') STATE.meta = {};
-    STATE.meta.expedicao = { ...(STATE.meta.expedicao || {}), unidadeA, unidadeB, volMin, volMax,
+    STATE.meta.expedicao = { ...(STATE.meta.expedicao || {}), unidadeA, unidadeB, volMin, volMax, objetivoProdutos,
                              horaIdaManha, horaVoltaManha, horaIdaTarde, horaVoltaTarde };
     await saveState('meta');
     // Estes valores aparecem na folha (limite por perna, nomes das unidades),
