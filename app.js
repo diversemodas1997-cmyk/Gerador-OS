@@ -24582,6 +24582,7 @@ function initOSForm() {
     // Só no formulário NOVO: editar uma OS existente carrega o valor salvo dela,
     // mais abaixo. Continua editável — é só o ponto de partida.
     document.getElementById('f-enf-target').value = PECAS_ALVO_PADRAO;
+    _osCamadasAuto = '';   // o máximo automático é da OS que está nascendo agora
     // linhas iniciais
     document.getElementById('tecidos-rows').innerHTML = '';
     document.getElementById('variantes-rows').innerHTML = '';
@@ -25223,15 +25224,27 @@ function addAviamentoRow(data = {}) {
 // ainda não foram definidas (campo vazio) e não é edição de OS salva, pra não
 // atropelar valor do usuário nem o carregado. É chamado ao aplicar a grade,
 // quando o tecido e a grade já estão conhecidos.
+//
+// TROCAR A GRADE REFAZ O MÁXIMO (08/10/2026, Junior: "o preenchimento
+// automático do máximo de camadas deve acontecer na criação de OS no
+// planejamento de OS"). Só o campo vazio recebia o máximo: escolher uma grade
+// de malha (80) e trocar por uma de moletom deixava 80 camadas, acima do
+// limite de 36. Agora o valor que o PRÓPRIO programa pôs (_osCamadasAuto) é
+// refeito a cada grade; o que foi digitado à mão continua intocado. Vale para
+// a Nova OS e para o planejamento, que usam o mesmo formulário.
+let _osCamadasAuto = '';
 function _aplicarCamadasMaximasDefault() {
   if (osEditId || document.getElementById('f-id')?.value) return;  // edição: respeita o salvo (ver aplicarGradePreset)
   const campoCam = document.getElementById('f-enf-camadas');
-  if (!campoCam || (campoCam.value || '').trim() !== '') return;  // já definido: não mexe
+  if (!campoCam) return;
+  const atual = (campoCam.value || '').trim();
+  if (atual !== '' && atual !== _osCamadasAuto) return;    // digitado à mão: não mexe
   const { limite } = calcularLimiteCamadas();
   if (!(limite > 0) || limite === Infinity) return;         // tecido sem limite conhecido
   const temGrade = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].some(k => (parseInt(document.getElementById('f-gr-'+k)?.value) || 0) > 0);
   if (!temGrade) return;                                     // sem grade não dá pra derivar as peças
   campoCam.value = limite;                                   // camadas = máx do tecido
+  _osCamadasAuto = String(limite);
   calcularAlvoDeCamadas();                                   // deriva peças-alvo = camadas × grade × mult
 }
 
