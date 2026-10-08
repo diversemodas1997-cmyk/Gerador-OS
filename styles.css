@@ -4775,3 +4775,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 
 /* Aviso de expedição abaixo do objetivo de produtos (08/10/2026). */
 .exp-objetivo-aviso { margin-top: 6px; padding: 4px 8px; font-size: 12px; background: #fdf0d5; border: 1px solid #e8c37a; border-radius: 2px; color: #7a4b00; }
+.exp-obj-barra { margin-top: 6px; }
+.exp-obj-barra .trilho { height: 10px; background: var(--line-2); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.exp-obj-barra .cheio { height: 100%; background: #e0a526; transition: width .2s; }
+.exp-obj-barra.ok .cheio { background: #2e9d5b; }
+.exp-obj-barra .txt { font-size: 11px; color: var(--ink-2); margin-top: 2px; }

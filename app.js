@@ -13198,6 +13198,24 @@ function resumoPernaExpedicao(oc, perna) {
   return { itens, volumes, pecas, volMin, volMax, situacao, semVolumes, objetivo, abaixoObjetivo };
 }
 
+/* A BARRA DO OBJETIVO DE EXPEDIÇÃO (08/10/2026, Junior: "insira uma barra de
+   progresso em porcentagem que indique o objetivo de expedição de 1000
+   unidades"). Os produtos da perna contra o objetivo de Unidades e carga:
+   amarela até chegar, verde ao bater, e a porcentagem passa de 100 quando a
+   viagem leva mais. Na ida ela aparece sempre — a ida vazia é 0%, e é isso
+   que se quer ver ao planejar; na volta, só quando há carga (a volta costuma
+   ir vazia). Sem objetivo (0), não há barra. */
+function _expBarraObjetivo(r, perna) {
+  if (!(r.objetivo > 0)) return '';
+  if (perna !== 'ida' && !r.itens.length) return '';
+  const pct = Math.round(r.pecas / r.objetivo * 100);
+  const n = v => (Number(v) || 0).toLocaleString('pt-BR');
+  return `<div class="exp-obj-barra${pct >= 100 ? ' ok' : ''}" title="Objetivo de produtos por expedição (Unidades e carga): ${n(r.pecas)} de ${n(r.objetivo)}">
+    <div class="trilho"><div class="cheio" style="width:${Math.min(100, pct)}%;"></div></div>
+    <div class="txt"><b>${pct}%</b> do objetivo · ${n(r.pecas)} de ${n(r.objetivo)} un.</div>
+  </div>`;
+}
+
 const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
 
 // Como a folha impressa se refere ao período quando não há nenhuma OE produzida.
@@ -14141,6 +14159,7 @@ function renderExpedicaoPlano() {
           </span>
           <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>
         </div>
+        ${_expBarraObjetivo(r, perna)}
         ${r.abaixoObjetivo ? `<div class="exp-objetivo-aviso" title="Objetivo de produtos por expedição, em Unidades e carga">⚠ <b>${fmt(r.pecas)} produtos</b> — abaixo do objetivo de ${fmt(r.objetivo)} por expedição (faltam ${fmt(r.objetivo - r.pecas)})</div>` : ''}
         ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
