@@ -471,7 +471,9 @@ console.log('-- o que fica gravado --');
   // so o seletor que deixasse de oferecer o que a tabela tem.
   ok('20. quem muda ve um seletor com a fila inteira',
      /^<select/.test(cel)
-     && (cel.match(/<option/g) || []).length === ctxDe('admin', 'a@b', true, []).api.STATUS_OS.length, cel);
+     && (cel.match(/<option value=/g) || []).length === ctxDe('admin', 'a@b', true, []).api.STATUS_OS.length, cel);
+  ok('20a. Parado e Cancelado no fim, depois de um separador que nao se escolhe (08/10/2026)',
+     /<option disabled>[^<]*<\/option><option value="parado"[^>]*>[^<]*<\/option><option value="cancelado"[^>]*>[^<]*<\/option><\/select>$/.test(cel), cel);
   ok('20b. e o rotulo da lista vai ABREVIADO, que e o que cabe na coluna',
      /Costurando \| SC</.test(cel) && !/Costurando \| São Carlos</.test(cel), cel);
   ok('21. com o estado gravado ja escolhido',

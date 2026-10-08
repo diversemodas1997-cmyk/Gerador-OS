@@ -30955,10 +30955,18 @@ function _statusCelulaOS(o, extra) {
     return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rot(s))}</span>`;
   }
   const opcoes = _statusOpcoesOS(o);
+  /* PARADO E CANCELADO SEPARADOS (08/10/2026, Junior: "insira separador para
+     diferenciar status parado e cancelado"). Os dois não são etapa do caminho:
+     vão sempre no fim, depois de uma linha que não se escolhe. */
+  const opcao = x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
+    + `${STATUS_PONTO} ${esc(rot(x))}</option>`;
+  const doCaminho = STATUS_OS.filter(x => opcoes.includes(x.k) && !STATUS_SEMPRE_OS.includes(x.k));
+  const foraDele = STATUS_OS.filter(x => opcoes.includes(x.k) && STATUS_SEMPRE_OS.includes(x.k));
   return `<select class="${cls}" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
-    + STATUS_OS.filter(x => opcoes.includes(x.k)).map(x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
-        + `${STATUS_PONTO} ${esc(rot(x))}</option>`).join('')
+    + doCaminho.map(opcao).join('')
+    + (doCaminho.length && foraDele.length ? '<option disabled>──────────</option>' : '')
+    + foraDele.map(opcao).join('')
     + `</select>`;
 }
 
