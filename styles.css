@@ -4752,3 +4752,23 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
   .rel-folha { border: 0; max-width: none; padding: 12mm; }
   .rel-tab th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* FOLHA DOS AVIAMENTOS (08/10/2026): a tabela de cada tipo, dentro do bloco da
+   folha de OE. Contagem e observação vão em branco, para a caneta. */
+.avi-print-tab { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8pt; }
+.avi-print-tab col.bx { width: 7mm; }
+.avi-print-tab col.it { width: 42%; }
+.avi-print-tab col.q { width: 22%; }
+.avi-print-tab col.cont { width: 16%; }
+.avi-print-tab th { font-size: 7pt; font-weight: 600; text-align: left; padding: 2px 4px; border-bottom: 1px solid #999; }
+.avi-print-tab td { padding: 3px 4px; border-bottom: 1px dotted #bbb; vertical-align: middle; height: 6mm; }
+.avi-print-tab tr:last-child td { border-bottom: none; }
+.avi-print-tab td.q { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+.avi-print-tab td.cont { border-left: 1px dotted #bbb; border-right: 1px dotted #bbb; }
+.avi-print-tab tr.neg td.q { color: #c0392b; }
+@media print {
+  /* Um tipo de aviamento pode ter muitas cores: o bloco parte entre páginas,
+     a linha não. */
+  #print-sheet-avi .exp-print-bloco { page-break-inside: auto; break-inside: auto; }
+  .avi-print-tab tr { page-break-inside: avoid; break-inside: avoid; }
+}

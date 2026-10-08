@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-08c">
+<link rel="stylesheet" href="styles.css?v=2026-10-08d">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -413,9 +413,10 @@
           <h1>Estoque de aviamentos</h1>
           <div class="desc">Fio, linha, etiqueta, botão e viés, em unidades e/ou kg, por cor, separados por unidade (Descalvado e São Carlos). Entrada, saída, residual (estocado), corrente e total no período escolhido. Entradas e saídas avulsas são lançadas à mão; o aviamento de cada OS fica reservado até a costura e sai sozinho quando ela é marcada, do estoque da unidade que costurou.</div>
         </div>
-        <div class="actions estoque-tecidos-only">
-          <button class="btn primary" onclick="abrirMovAviamento('entrada')">+ Entrada</button>
-          <button class="btn" onclick="abrirMovAviamento('saida')">− Saída</button>
+        <div class="actions">
+          <button class="btn accent" onclick="goto('print-aviamentos')" title="A folha dos aviamentos com saldo da unidade aberta, no formato da folha de OE, para conferir a prateleira">🖨 Folha dos aviamentos</button>
+          <button class="btn primary estoque-tecidos-only" onclick="abrirMovAviamento('entrada')">+ Entrada</button>
+          <button class="btn estoque-tecidos-only" onclick="abrirMovAviamento('saida')">− Saída</button>
         </div>
       </div>
       <div id="aviamentos-painel"></div>
@@ -1272,6 +1273,24 @@
       </div>
     </section>
 
+    <!-- ============ FOLHA DOS AVIAMENTOS (IMPRESSÃO, 08/10/2026) ============ -->
+    <!-- A moldura da folha de OE (.sheet-exp): o que há de aviamento na unidade
+         aberta, para conferir a prateleira com a folha na mão. -->
+    <section class="page hidden" data-page="print-aviamentos">
+      <div class="page-header no-print">
+        <div><h1>Folha dos aviamentos</h1><div class="desc">Os aviamentos com saldo na unidade aberta no Estoque de aviamentos, com espaço para a contagem. Revise e clique em Imprimir.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('estoque-aviamentos')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-avi">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
     <!-- ================= CONFIGURAÇÕES ================= -->
     <section class="page hidden" data-page="config">
       <div class="page-header">
@@ -1815,6 +1834,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-08k"></script>
+<script src="app.js?v=2026-10-08l"></script>
 </body>
 </html>

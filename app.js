@@ -4117,6 +4117,7 @@ function goto(page) {
      desenham. */
   if (page === 'print') _obsRemedirFolha();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
+  if (page === 'print-aviamentos') renderPrintAviamentos();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
@@ -9298,6 +9299,98 @@ function renderEstoqueAviamentos() {
     ${reservaHtml}
     ${transitoHtml}
     ${lancHtml}`;
+}
+
+/* A FOLHA DOS AVIAMENTOS (08/10/2026, Junior: "no campo de estoque de
+   aviamentos, insira botão de impressão da lista de aviamentos, em layout
+   igual da folha de OE. Essa folha servirá para acompanhamento da folha
+   impressa dos aviamentos disponíveis").
+
+   A moldura é a da folha de OE (.sheet-exp, .exp-print-head/-resumo/-bloco/
+   -rodape): o título repete no alto de cada página pelo <thead>, e a margem de
+   cada folha vem do <thead>/<tfoot>. Um bloco por tipo de aviamento, uma linha
+   por item · cor com o que há HOJE na unidade da aba aberta, e duas colunas em
+   branco — a contagem e a observação — para quem confere a prateleira com a
+   folha na mão. Só entra o que tem saldo (positivo ou negativo): o item zerado
+   não está na prateleira para ser conferido. */
+function renderPrintAviamentos() {
+  const sheet = document.getElementById('print-sheet-avi');
+  if (!sheet) return;
+  const { hoje } = _aviPeriodo();
+  const unidade = _aviUnidade;
+  const rotUn = ((AVIAMENTO_UNIDADES.find(u => u.k === unidade)) || {}).rotulo || '';
+  const linhas = calcularEstoqueAviamentos(_aviMovTodos(), hoje, hoje, hoje, unidade, _aviDataCarga)
+    .filter(l => Math.abs(l.corrente) > 0.0005 || Math.abs(l.un.corrente) > 0.0005);
+  const fmtKg = n => Number(n || 0).toFixed(3).replace('.', ',') + ' kg';
+  const fmtUn = n => Math.round(Number(n) || 0).toLocaleString('pt-BR') + ' un';
+  const qtd = l => [
+    (l.temKg || !l.temUn) ? fmtKg(l.corrente) : '',
+    l.temUn ? fmtUn(l.un.corrente) : ''
+  ].filter(Boolean).join(' · ');
+  const tipos = AVIAMENTO_TIPOS.concat([...new Set(linhas.map(l => l.item))].filter(t => AVIAMENTO_TIPOS.indexOf(t) < 0));
+  const blocos = tipos.map(tipo => {
+    const ls = linhas.filter(l => l.item === tipo);
+    if (!ls.length) return '';
+    const somaUn = ls.reduce((s, l) => s + (l.temUn ? l.un.corrente : 0), 0);
+    const somaKg = ls.reduce((s, l) => s + ((l.temKg || !l.temUn) ? l.corrente : 0), 0);
+    return `
+      <div class="exp-print-bloco">
+        <div class="cab">
+          <span class="d">${esc(tipo)}</span>
+          <span class="j">${ls.length} ${ls.length === 1 ? 'item' : 'itens'} · ${[
+            ls.some(l => l.temKg || !l.temUn) ? fmtKg(somaKg) : '', ls.some(l => l.temUn) ? fmtUn(somaUn) : ''].filter(Boolean).join(' · ')}</span>
+        </div>
+        <table class="avi-print-tab">
+          <colgroup><col class="bx"><col class="it"><col class="q"><col class="cont"><col class="obs"></colgroup>
+          <thead><tr><th></th><th>Item · cor</th><th>Em estoque</th><th>Contagem</th><th>Observação</th></tr></thead>
+          <tbody>${ls.map(l => `<tr${(l.corrente < -0.0005 || l.un.corrente < -0.0005) ? ' class="neg"' : ''}>
+            <td class="bx"><span class="exp-print-box"></span></td>
+            <td>${esc([l.modelo, _aviCorTexto(l) || '(sem cor)', l.tam ? 'tam. ' + l.tam : ''].filter(Boolean).join(' · '))}</td>
+            <td class="q">${esc(qtd(l))}</td>
+            <td class="cont"></td><td></td></tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+  const nTipos = tipos.filter(t => linhas.some(l => l.item === t)).length;
+  const totUn = linhas.reduce((s, l) => s + (l.temUn ? l.un.corrente : 0), 0);
+  const totKg = linhas.reduce((s, l) => s + ((l.temKg || !l.temUn) ? l.corrente : 0), 0);
+  const emissao = new Date();
+  const emissaoTxt = formatDate(_expIso(emissao)) + ' '
+    + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
+  sheet.innerHTML = `
+    <table class="exp-print-folha">
+      <thead>
+        <tr><td>
+          <div class="exp-print-head">
+            <div>
+              <div class="tit">ESTOQUE DE AVIAMENTOS</div>
+              <div class="sub">${esc(rotUn)} · posição em ${esc(formatDate(hoje))} · conferência da prateleira</div>
+            </div>
+            <div class="meta">
+              <div>Emitido em ${esc(emissaoTxt)}</div>
+            </div>
+          </div>
+        </td></tr>
+      </thead>
+      <tbody><tr><td>
+    <div class="exp-print-resumo">
+      <div class="item"><div class="n">${nTipos}</div><div class="l">Tipos</div></div>
+      <div class="item"><div class="n">${linhas.length}</div><div class="l">Itens com saldo</div></div>
+      <div class="item"><div class="n">${Math.round(totUn).toLocaleString('pt-BR')}</div><div class="l">Unidades</div></div>
+      ${linhas.some(l => l.temKg || !l.temUn) ? `<div class="item"><div class="n">${totKg.toFixed(3).replace('.', ',')}</div><div class="l">Quilos</div></div>` : ''}
+    </div>
+    <div style="font-size:7pt;color:#555;margin:3pt 0 5pt;">
+      <b>Em estoque</b> = o que o programa tem hoje nesta unidade (entradas − saídas, com a baixa das OS costuradas e a expedição).
+      Confira na prateleira: marque o quadrinho, escreva a <b>contagem</b> e a diferença, se houver, em <b>observação</b>. Itens zerados não entram.
+    </div>
+    ${blocos || `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhum aviamento com saldo nesta unidade.</div>`}
+        <div class="exp-print-rodape">
+          <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
+          <div class="ass"><div class="linha"></div><div class="lbl">Data da conferência</div></div>
+        </div>
+      </td></tr></tbody>
+      <tfoot><tr><td></td></tr></tfoot>
+    </table>`;
 }
 
 // "2,500 kg · 120 un", só com o que o lançamento trouxe.
