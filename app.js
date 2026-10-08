@@ -22522,6 +22522,11 @@ function _dashCartoesDaOS(o, opts) {
        separando, ensacado..." deve constar em todos esses quadros). Como o
        Cortando, são trabalho em curso sem campo: lidos do status, com a
        mesma guarda de não estar em campo nenhum. */
+    /* NÃO INICIADO TAMBÉM (08/10/2026, Junior: "insira o status não iniciado
+       na folha de relatório de produção e quadro no Início"). A fila antes do
+       preparo: lido do status, com a mesma guarda. A entrada é a hora em que a
+       OS foi criada (ver _dashIntervalos). */
+    if (atual < 0 && _statusOS(o) === 'nao-iniciado') poe('naoIniciado', total);
     if (atual < 0 && _statusOS(o) === 'materia-prima') poe('materiaPrima', total);
     if (atual < 0 && _statusOS(o) === 'enfestando') poe('enfestando', total);
     if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
@@ -22647,7 +22652,7 @@ function _dashFluxoDados() {
      lista responde "quais", que é a pergunta seguinte de quem olha o número. */
   const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
-    materiaPrima: zero(), enfestando: zero(),
+    naoIniciado: zero(), materiaPrima: zero(), enfestando: zero(),
     cortando: zero(), separando: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
@@ -22890,10 +22895,26 @@ function _dashIntervalos() {
     const os = String(o.os || '').trim() || '—';
     const id = o.id;
     const linha = _dashLinhaDoTempoOS(o);
+    // O Não iniciado começa quando a OS foi CRIADA: é a única hora que ele tem.
+    const criada = Date.parse(o.criadoEm || '');
     if (!linha) {
-      _dashCartoesDaOS(o, { semTransito: true })
-        .forEach(c => add(c.k, { os, id, pecas: c.pecas, de: null, ate: null, semData: true }));
+      _dashCartoesDaOS(o, { semTransito: true }).forEach(c => {
+        if (c.k === 'naoIniciado' && Number.isFinite(criada)) add(c.k, { os, id, pecas: c.pecas, de: criada, ate: null });
+        else add(c.k, { os, id, pecas: c.pecas, de: null, ate: null, semData: true });
+      });
       return;
+    }
+    /* Antes da primeira marca a OS estava Não iniciada, desde a criação: sem
+       isto ela "entraria" no Não iniciado só na primeira marca (ou nunca, se a
+       primeira marca já a tirou de lá). */
+    if (Number.isFinite(criada) && criada < linha[0].t) {
+      const pecasNI = produtosOS(o);
+      if (linha[0].cartoes.has('naoIniciado')) {
+        // O primeiro instante já é Não iniciado: o intervalo dele começa antes.
+        linha.unshift({ t: criada, cartoes: new Map([['naoIniciado', linha[0].cartoes.get('naoIniciado')]]) });
+      } else if (pecasNI > 0) {
+        add('naoIniciado', { os, id, pecas: pecasNI, de: criada, ate: linha[0].t });
+      }
     }
     const aberto = new Map();   // k -> intervalo em curso
     linha.forEach(e => {
@@ -23183,6 +23204,10 @@ function _dashHistorico(d, agora, escala) {
 // tela própria — a OS saiu do fluxo em processo).
 function _dashFluxoPassos(d) {
   return [
+    { nome: 'Não iniciado', cards: [
+      { k: 'naoIniciado', nome: 'Não iniciado', v: d.naoIniciado, statusFiltro: 'nao-iniciado',
+        dica: 'OS com o status Não iniciado: emitida, esperando o preparo da matéria-prima. Entra quando a OS é criada.' },
+    ] },
     { nome: 'Preparando matéria-prima', cards: [
       { k: 'materiaPrima', nome: 'Matéria-prima', v: d.materiaPrima, statusFiltro: 'materia-prima',
         dica: 'OS com o status Preparando matéria-prima: o pano está sendo preparado para o enfesto. Não tem campo próprio no menu — é trabalho em curso.' },
