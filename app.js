@@ -23236,7 +23236,9 @@ function _dashHistorico(d, agora, escala) {
 // tela própria — a OS saiu do fluxo em processo).
 function _dashFluxoPassos(d) {
   return [
-    { nome: 'Não iniciado', cards: [
+    /* Só no Relatório produção (08/10/2026, Junior: "retire o quadro de status
+       não iniciado em Início, mas mantenha na folha de relatório de produção"). */
+    { nome: 'Não iniciado', soRelatorio: true, cards: [
       { k: 'naoIniciado', nome: 'Não iniciado', v: d.naoIniciado, statusFiltro: 'nao-iniciado',
         dica: 'OS com o status Não iniciado: emitida, esperando o preparo da matéria-prima. Entra quando a OS é criada.' },
     ] },
@@ -24131,7 +24133,7 @@ function renderFluxoDash() {
   _dashFluxoAssinatura = ass;
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const h = _dashHistorico(d, Date.now(), escala);
-  const passos = _dashFluxoPassos(d).map((p, i) => {
+  const passos = _dashFluxoPassos(d).filter(p => !p.soRelatorio).map((p, i) => {
     const cards = p.cards.map(c => {
       const pecas = (c.v && c.v.pecas) || 0;
       const nOS = (c.v && c.v.os) || 0;
