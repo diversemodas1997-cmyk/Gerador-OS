@@ -4107,6 +4107,7 @@ function goto(page) {
   if (page === 'expedicao') { renderFasePorId('expedicao'); trocarAbaExpedicao(expAbaAtiva); }
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
+  if (page === 'relatorio-producao') renderRelatorioProducao();
   /* A CAIXA DE OBSERVAÇÕES SÓ PODE SER MEDIDA AGORA. A folha de OS é desenhada
      ANTES desta chamada (verOS e _salvarEImprimirConfirmada fazem
      renderPrintSheet e só então goto), e naquele instante a seção ainda está
@@ -23387,6 +23388,169 @@ function _dashAnalisePasso(p, h, escala, oc) {
     <div class="dash-an-grid">${(p.cards || []).map(c => _dashGraficoQuadro(c, h[c.k], escala, agora, oc)).join('')}</div>
   </div>`;
 }
+
+/* ==================== RELATÓRIO DE PRODUÇÃO ====================
+
+   08/10/2026, Junior: "insira na barra lateral item com nome Relatório
+   produção. Esse item é um campo que gera uma folha de relatório de produção,
+   podendo ser escolhido como diário, semanal, mensal ou anual"; conteúdo
+   escolhido: o RESUMO POR STATUS.
+
+   Uma linha por quadro do Início, na ordem do caminho, com as MESMAS contas
+   dos quadros (ver _dashHistorico), só que para o período escolhido, e não
+   só para o período em curso:
+     já estava  o que estava no status quando o período começou (inclui OS
+                antigas sem data, como o Total dos quadros)
+     entrou     produtos e OS que entraram no status dentro do período
+     saiu       produtos e OS que saíram dele para o passo seguinte
+     residual   o que ficou no status no fim do período (ou agora, se o
+                período está em curso); só OS com data, como nos quadros
+
+   O período é o que contém a DATA DE REFERÊNCIA escolhida:
+     diário   o dia, 00:00 a 24:00
+     semanal  de SEGUNDA a SEXTA, como os quadros (sábado e domingo ficam fora)
+     mensal   o mês de calendário
+     anual    o ano de calendário
+   A folha imprime pelo botão Imprimir / Ctrl+P (o menu e os controles somem
+   no papel: são .page-header). */
+const REL_PROD_ESCALAS = [
+  { k: 'dia', rot: 'Diário' }, { k: 'semana', rot: 'Semanal' },
+  { k: 'mes', rot: 'Mensal' }, { k: 'ano', rot: 'Anual' }
+];
+const REL_PROD_CHAVE = 'relProdEscala';
+let _relProdData = '';
+
+function _relProdEscala() {
+  try {
+    const k = localStorage.getItem(REL_PROD_CHAVE);
+    if (REL_PROD_ESCALAS.some(e => e.k === k)) return k;
+  } catch (e) { /* sem armazenamento: vale o padrão */ }
+  return 'semana';
+}
+
+// {de, ate, nome} do período da escala que contém o dia `ref` (aaaa-mm-dd).
+function _relProdPeriodo(escala, ref) {
+  const p2 = n => String(n).padStart(2, '0');
+  const br = d => `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const m = String(ref || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+  d.setHours(0, 0, 0, 0);
+  if (escala === 'dia') {
+    const ate = new Date(d); ate.setDate(d.getDate() + 1);
+    return { de: d.getTime(), ate: ate.getTime(), nome: _DASH_DIAS_SEM[d.getDay()] + ' ' + br(d) };
+  }
+  if (escala === 'mes') {
+    const de = new Date(d.getFullYear(), d.getMonth(), 1);
+    const ate = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return { de: de.getTime(), ate: ate.getTime(), nome: _DASH_MESES_LONGOS[de.getMonth()] + ' de ' + de.getFullYear() };
+  }
+  if (escala === 'ano') {
+    return { de: new Date(d.getFullYear(), 0, 1).getTime(), ate: new Date(d.getFullYear() + 1, 0, 1).getTime(),
+      nome: 'ano de ' + d.getFullYear() };
+  }
+  const seg = new Date(d); seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sex = new Date(seg); sex.setDate(seg.getDate() + 4);
+  const sab = new Date(seg); sab.setDate(seg.getDate() + 5);
+  return { de: seg.getTime(), ate: sab.getTime(), nome: br(seg) + ' a ' + br(sex) };
+}
+
+// As linhas do resumo: uma por quadro do Início.
+function _relProdLinhas(de, ate, agora) {
+  const ivs = _dashIntervalos();
+  const fimRes = Math.min(ate, agora) - 1;
+  const dentro = t => t != null && t >= de && t < ate;
+  const soma = arr => arr.reduce((s, x) => s + (x.pecas || 0), 0);
+  const nOS = arr => new Set(arr.map(x => x.id || x.os)).size;
+  const linhas = [];
+  _dashFluxoPassos({}).forEach(p => (p.cards || []).forEach(c => {
+    const lista = ivs[c.k] || [];
+    const nome = p.cards.length > 1 ? `${p.nome} · ${c.nome}` : p.nome;
+    if (DASH_SEM_HISTORICO.has(c.k)) { linhas.push({ k: c.k, nome, semHistorico: true }); return; }
+    const ent = lista.filter(x => dentro(x.de));
+    const sai = lista.filter(x => dentro(x.ate));
+    const jaEstava = lista.filter(x => (x.semData || (x.de != null && x.de <= de)) && (x.ate == null || x.ate > de));
+    const ficou = de <= fimRes
+      ? lista.filter(x => x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) : [];
+    linhas.push({ k: c.k, nome,
+      jaEstava: soma(jaEstava), jaEstavaOS: nOS(jaEstava),
+      entrou: soma(ent), entrouOS: nOS(ent),
+      saiu: soma(sai), saiuOS: nOS(sai),
+      ficou: soma(ficou), ficouOS: nOS(ficou) });
+  }));
+  return linhas;
+}
+
+function renderRelatorioProducao() {
+  const box = document.getElementById('rel-prod-folha');
+  if (!box) return;
+  const escala = _relProdEscala();
+  const selE = document.getElementById('rel-prod-escala');
+  if (selE) selE.innerHTML = REL_PROD_ESCALAS.map(e => `<option value="${e.k}"${e.k === escala ? ' selected' : ''}>${e.rot}</option>`).join('');
+  const inp = document.getElementById('rel-prod-data');
+  const p2 = n => String(n).padStart(2, '0');
+  const hoje = new Date();
+  const hojeTxt = `${hoje.getFullYear()}-${p2(hoje.getMonth() + 1)}-${p2(hoje.getDate())}`;
+  if (!_relProdData) _relProdData = hojeTxt;
+  if (inp && inp.value !== _relProdData) inp.value = _relProdData;
+  const agora = Date.now();
+  const per = _relProdPeriodo(escala, _relProdData);
+  const rotEscala = (REL_PROD_ESCALAS.find(e => e.k === escala) || {}).rot || '';
+  const geradoEm = `${p2(hoje.getDate())}/${p2(hoje.getMonth() + 1)}/${hoje.getFullYear()} ${p2(hoje.getHours())}:${p2(hoje.getMinutes())}`;
+  const futuro = per.de > agora;
+  const emCurso = !futuro && per.ate > agora;
+  const linhas = futuro ? [] : _relProdLinhas(per.de, per.ate, agora);
+  const n = v => v ? _dashFmt(v) : '<span class="rel-zero">—</span>';
+  const os = v => v ? `<i>${_dashFmt(v)} OS</i>` : '';
+  const corpo = futuro
+    ? `<div class="rel-aviso">O período escolhido ainda não começou.</div>`
+    : `<table class="rel-tab">
+        <thead><tr>
+          <th>Status</th>
+          <th title="O que estava no status quando o período começou, inclusive OS antigas sem data">Já estava no início</th>
+          <th title="Produtos que entraram no status dentro do período">Entrou</th>
+          <th title="Produtos que saíram do status para o passo seguinte dentro do período">Saiu</th>
+          <th title="O que ficou no status no fim do período (só OS com data, como nos quadros do Início)">${emCurso ? 'Residual agora' : 'Residual no fim'}</th>
+        </tr></thead>
+        <tbody>${linhas.map(r => r.semHistorico
+          ? `<tr><td>${esc(r.nome)}</td><td colspan="4" class="rel-nota">sem histórico (segue a data da carga)</td></tr>`
+          : `<tr><td>${esc(r.nome)}</td>
+              <td>${n(r.jaEstava)}${os(r.jaEstavaOS)}</td>
+              <td>${n(r.entrou)}${os(r.entrouOS)}</td>
+              <td>${n(r.saiu)}${os(r.saiuOS)}</td>
+              <td>${n(r.ficou)}${os(r.ficouOS)}</td></tr>`).join('')}</tbody>
+      </table>`;
+  box.innerHTML = `<div class="rel-folha">
+      <div class="rel-cab">
+        <div><div class="rel-tit">Relatório de produção</div>
+          <div class="rel-per">${esc(rotEscala)} · ${esc(per.nome)}${emCurso ? ' <span class="rel-curso">período em curso</span>' : ''}</div></div>
+        <div class="rel-gerado">Gerado em ${geradoEm}</div>
+      </div>
+      ${corpo}
+      <div class="rel-rodape">Volumes em <b>produtos</b> (unidades completas). Mesmas contas dos quadros do Início, pela hora da alteração de status de cada OS.
+        ${escala === 'semana' ? 'Semana de segunda a sexta: o que entrou ou saiu no sábado ou no domingo fica fora de Entrou e Saiu. ' : ''}OS antigas, de antes do registro com hora, contam em "Já estava no início", mas não têm entrada nem saída datada.</div>
+    </div>`;
+}
+
+function _relProdTrocar() {
+  const e = document.getElementById('rel-prod-escala');
+  const d = document.getElementById('rel-prod-data');
+  if (e) { try { localStorage.setItem(REL_PROD_CHAVE, e.value); } catch (x) { /* vale só nesta tela */ } }
+  if (d && d.value) _relProdData = d.value;
+  renderRelatorioProducao();
+}
+window._relProdTrocar = _relProdTrocar;
+
+// ◀ ▶: o período anterior ou o seguinte, na mesma escala.
+function _relProdAndar(dir) {
+  const escala = _relProdEscala();
+  const per = _relProdPeriodo(escala, _relProdData);
+  // Na semana o fim é o sábado 00:00: o seguinte começa dois dias depois.
+  const d = new Date(dir < 0 ? per.de - 1 : per.ate + (escala === 'semana' ? 2 * DASH_DIA_MS : 0));
+  const p2 = n => String(n).padStart(2, '0');
+  _relProdData = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  renderRelatorioProducao();
+}
+window._relProdAndar = _relProdAndar;
 
 /* O VOLUME DAS OS POR STATUS (16/09/2026, Junior: "insira o volume das OS por
    status"). Uma barra por status, na ordem do fluxo (a de STATUS_OS), com os

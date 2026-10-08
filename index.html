@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-08b">
+<link rel="stylesheet" href="styles.css?v=2026-10-08c">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -122,6 +122,7 @@
         <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Ordens de Expedição</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
+        <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
     </div>
 
     <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
@@ -473,6 +474,26 @@
         </div>
       </div>
       <div id="ranking-painel"></div>
+    </section>
+
+    <!-- RELATORIO DE PRODUCAO (08/10/2026, Junior): a folha do resumo por
+         status, diaria, semanal, mensal ou anual. Os controles moram no
+         page-header, que some no papel. -->
+    <section class="page hidden" data-page="relatorio-producao">
+      <div class="page-header">
+        <div>
+          <h1>Relatório de produção</h1>
+          <div class="desc">Resumo por status do período escolhido: o que já estava, o que entrou, o que saiu e o que ficou em cada status — as mesmas contas dos quadros do Início, pela hora da alteração de status de cada OS.</div>
+        </div>
+        <div class="rel-ctrl">
+          <label>Período <select id="rel-prod-escala" onchange="_relProdTrocar()"></select></label>
+          <button type="button" class="btn small ghost" onclick="_relProdAndar(-1)" title="Período anterior">◀</button>
+          <label>Data de referência <input type="date" id="rel-prod-data" onchange="_relProdTrocar()"></label>
+          <button type="button" class="btn small ghost" onclick="_relProdAndar(1)" title="Período seguinte">▶</button>
+          <button type="button" class="btn primary" onclick="window.print()">Imprimir / PDF</button>
+        </div>
+      </div>
+      <div id="rel-prod-folha"></div>
     </section>
 
     <section class="page hidden" data-page="corte">
@@ -1784,6 +1805,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-08h"></script>
+<script src="app.js?v=2026-10-08i"></script>
 </body>
 </html>
