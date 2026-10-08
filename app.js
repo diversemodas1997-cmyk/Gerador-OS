@@ -5985,7 +5985,12 @@ async function rodarCopiarEtapasParaTodos() {
   const origem = STATE.desenhos.find(d => (d.codigo || '').trim() === codigo);
   if (!origem) { toast(`Desenho "${codigo}" nao encontrado`, 'err'); return; }
   const etapas = Array.isArray(origem.etapasNomes) ? origem.etapasNomes : [];
-  if (!etapas.length) { toast(`Desenho "${codigo}" nao tem etapas configuradas`, 'err'); return; }
+  // A SEQUÊNCIA DE STATUS VAI JUNTO (08/10/2026, Junior: "corrija, copiando a
+  // sequência só no mesmo modelo"). Copia-se o que a origem tem: sem etapas,
+  // as etapas dos outros ficam; sem sequência, a sequência dos outros fica.
+  const seqStatus = _statusSeqDoDesenho(origem) || [];
+  if (!etapas.length && !seqStatus.length) { toast(`Desenho "${codigo}" nao tem etapas nem sequencia de status configuradas`, 'err'); return; }
+  const rotSeq = seqStatus.map(x => (STATUS_OS.find(st => st.k === x.k) || {}).rotulo || x.k).join(' → ');
   const chaveOrigem = chaveModeloDesenho(origem);
   const modeloLabel = rotuloModeloDesenho(origem);
   const alvos = STATE.desenhos.filter(d => d.id !== origem.id && chaveModeloDesenho(d) === chaveOrigem);
@@ -5997,7 +6002,7 @@ async function rodarCopiarEtapasParaTodos() {
   // as OSs dele. Dizer isso ANTES é a diferença entre uma cópia consentida e uma
   // surpresa em 60 ordens de serviço.
   let osAfetadas = 0;
-  alvos.forEach(d => {
+  if (etapas.length) alvos.forEach(d => {
     osAfetadas += _osDoDesenho(d).filter(o => {
       const final = _etapasFinaisOS(o, etapas);
       const atual = o.etapas || [];
@@ -6006,8 +6011,9 @@ async function rodarCopiarEtapasParaTodos() {
   });
 
   const ok = confirm(
-    `Copiar as ${etapas.length} etapas do desenho "${codigo}" para os outros ${alvos.length} desenhos do modelo "${modeloLabel}"?\n\n`
-    + `Etapas: ${etapas.join(', ')}\n\n`
+    `Copiar ${[etapas.length ? `as ${etapas.length} etapas` : '', seqStatus.length ? `a sequência de ${seqStatus.length} status` : ''].filter(Boolean).join(' e ')} do desenho "${codigo}" para os outros ${alvos.length} desenhos do modelo "${modeloLabel}"?\n\n`
+    + (etapas.length ? `Etapas: ${etapas.join(', ')}\n\n` : '')
+    + (seqStatus.length ? `Sequência de status: ${rotSeq}\n\n` : '')
     + (osAfetadas
       ? `Junto com os desenhos, ${osAfetadas} OS já emitida(s) recebem essa lista de etapas. Nenhuma marcação é removida: etapa já marcada que não estiver na lista continua na OS, no fim.\n\n`
       : `Nenhuma OS já emitida muda com isso.\n\n`)
@@ -6289,8 +6295,10 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
     return;
   }
   const etapasNomes = Array.isArray(origem.etapasNomes) ? [...origem.etapasNomes] : [];
-  if (!etapasNomes.length) {
-    toast(`Desenho "${codigoOrigem}" nao tem etapas configuradas`, 'err');
+  // A sequência de status vai junto (ver rodarCopiarEtapasParaTodos).
+  const seqStatus = _statusSeqDoDesenho(origem) || [];
+  if (!etapasNomes.length && !seqStatus.length) {
+    toast(`Desenho "${codigoOrigem}" nao tem etapas nem sequencia de status configuradas`, 'err');
     return;
   }
   const chaveOrigem = chaveModeloDesenho(origem);
@@ -6301,8 +6309,11 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
     if (d.id === origem.id) return;
     if (chaveModeloDesenho(d) !== chaveOrigem) return;   // só mesmo modelo/variação
     const antes = Array.isArray(d.etapasNomes) ? [...d.etapasNomes] : null;
-    d.etapasNomes = [...etapasNomes];
-    mudados.push({ desenho: d, antes });
+    if (etapasNomes.length) {
+      d.etapasNomes = [...etapasNomes];
+      mudados.push({ desenho: d, antes });
+    }
+    if (seqStatus.length) d.statusSeq = seqStatus.map(x => Object.assign({}, x));
     alteradas++;
   });
   await saveState('desenhos');
@@ -6313,10 +6324,10 @@ async function copiarEtapasEntreDesenhos(codigoOrigem) {
     try { osTocadas += await propagarEtapasDesenhoParaOS(m.desenho, m.antes); }
     catch (e) { console.warn('propagarEtapasDesenhoParaOS', e); }
   }
-  toast(`Etapas de "${codigoOrigem}" aplicadas a ${alteradas} desenho(s) do modelo "${modeloLabel}"`
+  toast(`${etapasNomes.length ? 'Etapas' + (seqStatus.length ? ' e sequência de status' : '') : 'Sequência de status'} de "${codigoOrigem}" aplicadas a ${alteradas} desenho(s) do modelo "${modeloLabel}"`
         + (osTocadas ? ` e a ${osTocadas} OS já emitida(s)` : ''), 'ok');
   if (typeof renderDesenhos === 'function') renderDesenhos();
-  return { origem: codigoOrigem, modelo: modeloLabel, etapas: etapasNomes, alteradas };
+  return { origem: codigoOrigem, modelo: modeloLabel, etapas: etapasNomes, statusSeq: seqStatus, alteradas };
 }
 
 // Ordem CANÔNICA das cores de um desenho = a sequência escrita no desc, após o

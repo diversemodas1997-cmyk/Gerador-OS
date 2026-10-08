@@ -1332,13 +1332,13 @@
       </div>
       <div class="card admin-only">
         <div class="card-title">Operações em massa nos desenhos</div>
-        <div class="info-box">Copia as etapas (e a ordem) configuradas no desenho de origem para os demais desenhos <b>do mesmo modelo e variação</b>. Ex.: Camiseta Básica só copia para outras Camisetas Básicas — não para Camiseta Bicolor nem Tricolor; Blusa Moletom Básica não copia para Blusa Moletom Tricolor. Apenas o campo de etapas é alterado — imagem, vínculos, componentes e demais campos ficam intactos.</div>
+        <div class="info-box">Copia as etapas (e a ordem) e a <b>sequência de status</b> configuradas no desenho de origem para os demais desenhos <b>do mesmo modelo e variação</b>. Ex.: Camiseta Básica só copia para outras Camisetas Básicas — não para Camiseta Bicolor nem Tricolor; Blusa Moletom Básica não copia para Blusa Moletom Tricolor. Apenas as etapas e a sequência de status são alteradas (o que a origem não tiver configurado fica como está nos outros) — imagem, vínculos, componentes e demais campos ficam intactos.</div>
         <div style="display:flex; gap:8px; flex-wrap: wrap; align-items: end;">
           <div class="field" style="flex:0 0 200px;">
             <label for="copyEtapasOrigem">Código do desenho de origem</label>
             <input type="text" id="copyEtapasOrigem" value="001" placeholder="Ex.: 001">
           </div>
-          <button class="btn primary" onclick="rodarCopiarEtapasParaTodos()">Copiar etapas para todos</button>
+          <button class="btn primary" onclick="rodarCopiarEtapasParaTodos()">Copiar etapas e status para todos</button>
         </div>
       </div>
       <div class="card admin-only">
@@ -1784,6 +1784,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-08e"></script>
+<script src="app.js?v=2026-10-08f"></script>
 </body>
 </html>
