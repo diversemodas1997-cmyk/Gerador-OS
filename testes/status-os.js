@@ -118,7 +118,7 @@ const monta = (ctx) => new Function('ctx', `
   ${src.match(/^const STATUS_SEQ_PADRAO = \[[\s\S]+?\n\];/m)[0]}
   ${constante('STATUS_DESVIO_SC')}
   ${constante('STATUS_SEMPRE_OS')}
-  ${constante('STATUS_SO_SEGUE')}
+  ${constante('STATUS_VOLTA_PERMITIDA')}
   ${constante('STATUS_FORA_SEQ')}
   ${recorte('function _desenhoDaOS', 'o desenho da OS')}
   ${recorte('function _statusSeqDoDesenho', 'a sequencia do desenho')}
@@ -1384,25 +1384,28 @@ console.log('-- o que fica gravado --');
        && sq.ctx.toasts.some(m => /nao pode ir direto|não pode ir direto/.test(m)), sq.ctx.toasts.join(' | '));
     await api.mudarStatusOS('q1', 'enfestando');
     ok('41. a seguinte passa (conjugada criada, pulando o preparo)', api._statusOS(q) === 'enfestando', api._statusOS(q));
-    ok('42a. enfestando sem saber de onde veio: os dois anteriores, segue para cortando',
-       op() === 'nao-iniciado,materia-prima,enfestando,cortando,parado,cancelado', op());
+    ok('42a. enfestando: so segue para cortando, nao volta (so cortando volta)',
+       op() === 'enfestando,cortando,parado,cancelado', op());
     q.statusHist = [{ k: 'materia-prima', em: 1 }, { k: 'enfestando', em: 2 }];
-    ok('42b. sabendo pelo diario, volta so para de onde veio (materia-prima)',
-       op() === 'materia-prima,enfestando,cortando,parado,cancelado', op());
+    ok('42b. nem sabendo pelo diario de onde veio',
+       op() === 'enfestando,cortando,parado,cancelado', op());
     delete q.statusHist;
     q.statusOS = 'ensacado'; q.statusOSEm = new Date(Date.now() + 1000).toISOString();
     ok('43. ensacado | DESC segue so para a costura daqui (a ida e pela expedicao)',
-       op() === 'separando,ensacado,costurando,parado,cancelado', op());
+       op() === 'ensacado,costurando,parado,cancelado', op());
     q.statusOS = 'costurando';
     ok('44. costurando | DESC: estoque com fio DESC ou em transito IDA',
        /transito-ida/.test(op()) && /estoque-fio(,|$)/.test(op()) && !/costurando-sc/.test(op()), op());
+    q.statusOS = 'cortando';
+    ok('44a. cortando: a unica volta permitida, para enfestando; segue para separando',
+       op() === 'enfestando,cortando,separando,parado,cancelado', op());
     q.statusOS = 'estoque-fio-sc';
     q.statusHist = [{ k: 'costurando-sc', em: 1 }, { k: 'estoque-fio-sc', em: 2 }];
     ok('44b. estoque com fio | SC: so segue para em transito VOLTA (nao volta a costura SC)',
        op() === 'transito-volta,estoque-fio-sc,parado,cancelado', op());
     delete q.statusHist;
     q.statusOS = 'estoque';
-    ok('45. estoque: so volta para retirando fio', op() === 'fios,parado,cancelado,estoque', op());
+    ok('45. estoque: fim, sem volta para retirando fio', op() === 'parado,cancelado,estoque', op());
     q.statusOS = 'parado';
     q.statusHist = [{ k: 'cortando', em: 1 }, { k: 'parado', em: 2 }];
     ok('46. parado volta para onde estava (cortando) ou segue dali', op() === 'cortando,separando,parado,cancelado', op());
@@ -1411,7 +1414,7 @@ console.log('-- o que fica gravado --');
     delete q.statusHist;
     ok('47. status fora da sequencia do desenho: livre, para poder acertar', op().split(',').length === api.STATUS_OS.length, op());
     q.statusOS = 'enfestando';
-    ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'nao-iniciado,enfestando,cortando,ensacado,parado,cancelado', op());
+    ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'enfestando,cortando,ensacado,parado,cancelado', op());
     sq.ctx.STATE.desenhos[0].statusSeq = [];
     ok('49. desenho sem sequencia: seletor livre', op().split(',').length === api.STATUS_OS.length, op());
   }
@@ -1441,8 +1444,8 @@ console.log('-- o que fica gravado --');
     ok('53. enfestando 2/3 gravado com a volta, e o diario anota p:2',
        q.statusOS === 'enfestando' && q.statusPasso === 2 && q.statusHist[q.statusHist.length - 1].p === 2,
        JSON.stringify(q.statusHist));
-    ok('54. de enfestando 2/3: volta para cortando 1/3, segue para cortando 2/3',
-       op() === 'cortando,enfestando#2,cortando#2,parado,cancelado', op());
+    ok('54. de enfestando 2/3: segue para cortando 2/3, sem voltar a cortando 1/3',
+       op() === 'enfestando#2,cortando#2,parado,cancelado', op());
     const cel = api._statusCelulaOS(q, 'folha');
     ok('55. o seletor mostra a volta no rotulo', /Enfestando 2\/3/.test(cel) && /value="cortando#2"/.test(cel)
        && /value="enfestando#2"[^>]*selected/.test(cel), cel);
