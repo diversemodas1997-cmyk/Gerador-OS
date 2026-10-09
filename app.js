@@ -1231,6 +1231,8 @@ function iniciarRealtime() {
         await cloudLoad();
         if (_cloudLoadErro) return; // leitura falhou: cloudLoad já avisou
         await loadState();
+        // As concessões de acesso chegam junto (STATE.meta.acessos): ver o polling.
+        aplicarPermissoesUI();
         // Atualiza o marcador do polling pra evitar reload duplo
         if (payload.new.updated_at) lastSeenUpdatedAt = payload.new.updated_at;
         // Nao re-renderiza nova-os em edicao pra preservar o que o usuario
@@ -1421,6 +1423,16 @@ async function verificarServidor() {
        teve autoridade para decidir: se a TELA se redesenha e se o aviso
        aparece — porque aí, sim, a mudança é minha e eu já a estou vendo. */
     await loadState();
+    /* A CONCESSÃO DE ACESSO VALE NA HORA (09/10/2026, Junior: "as concessões aos
+       usuários não estão sendo concedidas instantaneamente, como no caso da
+       Natali"). O admin marca a área em Configurações, isso viaja em
+       STATE.meta.acessos e chegava aqui — mas os BOTÕES de cada área dependem
+       das classes body.pode-… e .is-admin, postas por aplicarPermissoesUI só no
+       login. As funções já deixavam (temAcesso lê o STATE na hora); a tela
+       continuava escondendo "+ Novo planejamento", "Salvar planejamento" etc.
+       até a pessoa recarregar a página. Agora a tela se veste de novo a cada
+       dado novo — e a área retirada some na hora também. */
+    aplicarPermissoesUI();
     if (cloudCache && cloudCache._device === DEVICE_ID) {
       lastSeenUpdatedAt = data.updated_at;
       return;
