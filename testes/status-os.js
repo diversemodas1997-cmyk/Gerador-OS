@@ -118,6 +118,7 @@ const monta = (ctx) => new Function('ctx', `
   ${src.match(/^const STATUS_SEQ_PADRAO = \[[\s\S]+?\n\];/m)[0]}
   ${constante('STATUS_DESVIO_SC')}
   ${constante('STATUS_SEMPRE_OS')}
+  ${constante('STATUS_SO_SEGUE')}
   ${constante('STATUS_FORA_SEQ')}
   ${recorte('function _desenhoDaOS', 'o desenho da OS')}
   ${recorte('function _statusSeqDoDesenho', 'a sequencia do desenho')}
@@ -1395,6 +1396,11 @@ console.log('-- o que fica gravado --');
     q.statusOS = 'costurando';
     ok('44. costurando | DESC: estoque com fio DESC ou em transito IDA',
        /transito-ida/.test(op()) && /estoque-fio(,|$)/.test(op()) && !/costurando-sc/.test(op()), op());
+    q.statusOS = 'estoque-fio-sc';
+    q.statusHist = [{ k: 'costurando-sc', em: 1 }, { k: 'estoque-fio-sc', em: 2 }];
+    ok('44b. estoque com fio | SC: so segue para em transito VOLTA (nao volta a costura SC)',
+       op() === 'transito-volta,estoque-fio-sc,parado,cancelado', op());
+    delete q.statusHist;
     q.statusOS = 'estoque';
     ok('45. estoque: so volta para retirando fio', op() === 'fios,parado,cancelado,estoque', op());
     q.statusOS = 'parado';

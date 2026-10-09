@@ -31807,6 +31807,10 @@ const STATUS_SEQ_PADRAO = [
 ];
 const STATUS_DESVIO_SC = ['transito-ida', 'ensacado-sc', 'costurando-sc', 'estoque-fio-sc', 'transito-volta'];
 const STATUS_SEMPRE_OS = ['parado', 'cancelado'];
+/* SÓ PARA A FRENTE (09/10/2026, Junior: "estoque com fio SC só pode ter como
+   opção a seguinte que é Em trânsito VOLTA"). Nestes status o seletor não
+   oferece o anterior: a OS só segue (Parado e Cancelado continuam). */
+const STATUS_SO_SEGUE = ['estoque-fio-sc'];
 const STATUS_FORA_SEQ = ['nao-iniciado', 'parado', 'cancelado'];
 
 // O desenho técnico da OS: pelo vínculo, ou pelo código nas OS antigas.
@@ -31988,6 +31992,7 @@ function _statusOpcoesOS(o) {
   } else {
     if (!prox[atual]) return todas;
     prox[atual].forEach(x => ok.add(x));
+    if (STATUS_SO_SEGUE.includes(st)) return _statusIdsOrdenados(Array.from(ok), seq);
     const ant = Object.keys(prox).filter(a => prox[a].includes(atual));
     const veio = _statusDeOndeVeioOS(o, false);
     if (ant.includes(veio)) ok.add(veio); else ant.forEach(x => ok.add(x));
