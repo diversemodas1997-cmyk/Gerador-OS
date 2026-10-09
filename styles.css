@@ -4880,6 +4880,10 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 :root[data-tema="escuro"] :is(.msg-linha.editando, .msg-mencao.eu, .presence-bar) { background: #3a3420; color: var(--ink); }
 :root[data-tema="escuro"] :is(.msg-editar textarea, .msg-mencoes, .dash-gr-tip, .os-check) { background-color: var(--paper); color: var(--ink); }
 :root[data-tema="escuro"] .os-check:checked { background-color: #1d3326; }
+/* Painéis de mensagens e avisos: o recado para mim e o aviso novo. */
+:root[data-tema="escuro"] :is(.msg-linha.pra-mim, .aviso-linha.novo) { background: #29261c; }
+:root[data-tema="escuro"] :is(.auth-icone, .avisos-sino):hover { background: rgba(255,255,255,.08); }
+:root[data-tema="escuro"] .avisos-painel { box-shadow: 0 8px 28px rgba(0,0,0,.6); }
 :root[data-tema="escuro"] .warn-box { background: #3b2020; color: var(--ink); }
 :root[data-tema="escuro"] .alerta-salvamento.erro { background: #3a2a16; color: var(--ink); }
 :root[data-tema="escuro"] .exp-objetivo-aviso { background: #3a2f16; border-color: #7a5f1e; color: #f0d9a8; }
