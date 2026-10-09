@@ -31903,10 +31903,13 @@ function _statusIdsOrdenados(ids, seq) {
    criadas conjugadas (segue outra OS)"). É a OS que a grade gerou junto com
    outra (`conjugadaPaiId`): ela não tem pano próprio, então não há matéria-
    prima a preparar. Nela o preparo pode ser pulado sempre; em qualquer outra,
-   nunca — o "pode pular" do desenho não vale para esse status. A conjugada à
-   mão (`conjugadaStatusPaiId`) não conta: ela tem pano. */
+   nunca — o "pode pular" do desenho não vale para esse status.
+   A SEGUIDORA À MÃO TAMBÉM PULA (09/10/2026, Junior: "a OS que pode pular essa
+   etapa é a OS conjugada que segue outra OS"): quem segue pela amarra da mão
+   (`conjugadaStatusPaiId`) vai para a mesa junto com a que manda, e a 0653
+   ficava presa no preparo com a 0648 já enfestando. A que MANDA não pula. */
 function _statusGrafoSeq(seq, o) {
-  const conjugadaCriada = !!(o && o.conjugadaPaiId);
+  const conjugadaCriada = !!(o && (o.conjugadaPaiId || o.conjugadaStatusPaiId));
   // Os nós são os ids (a volta do enfesto/corte conta: ver _statusSeqExpandida).
   const lista = [{ k: 'nao-iniciado', id: 'nao-iniciado' }].concat(_statusSeqExpandida(seq).map(x => x.k === 'materia-prima'
     ? Object.assign({}, x, { pula: conjugadaCriada }) : x));

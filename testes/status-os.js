@@ -1368,9 +1368,11 @@ console.log('-- o que fica gravado --');
     ok('39a. OS criada conjugada (segue outra) pula o preparo: materia-prima ou enfestando',
        op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
     q.conjugadaStatusPaiId = 'mae'; delete q.conjugadaPaiId;
-    ok('39b. a conjugada a mao (tem pano) nao pula', op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
+    ok('39b. a que segue outra pela amarra da mao tambem pula (09/10, Junior)',
+       op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+    delete q.conjugadaStatusPaiId;
     sq.ctx.STATE.desenhos[0].statusSeq = [{ k: 'materia-prima', pula: true }].concat(STATUS_SEQ_PADRAO_TESTE.slice(1));
-    ok('39c. nem com "pode pular" marcado no desenho', op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
+    ok('39c. OS comum nao pula nem com "pode pular" marcado no desenho', op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
     sq.ctx.STATE.desenhos[0].statusSeq = STATUS_SEQ_PADRAO_TESTE; delete q.conjugadaStatusPaiId;
     await api.mudarStatusOS('q1', 'enfestando');
     ok('39d. e o salto e recusado na OS comum', api._statusOS(q) === 'nao-iniciado', api._statusOS(q));
