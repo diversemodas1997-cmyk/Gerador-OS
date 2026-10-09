@@ -4761,7 +4761,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Sequência de status deste desenho</label>
           <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
-            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. A <b>Prep. matéria-prima</b> só é pulada pela OS criada conjugada (que segue outra OS), em qualquer desenho. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. Nada marcado = seletor livre, com todos os status.
+            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. A <b>Prep. matéria-prima</b> só é pulada pela OS criada conjugada (que segue outra OS), em qualquer desenho. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. <b>Enfesto/corte 2x a 5x</b> (na linha do Enfestando) = modelo que volta à mesa uma vez por fase: o seletor anda Enfestando 1/2 → Cortando 1/2 → Enfestando 2/2 → Cortando 2/2 → o seguinte, e cada Cortando baixa o pano de uma fase. Nada marcado = seletor livre, com todos os status.
           </div>
           <button type="button" class="btn small" style="margin-bottom:6px;" onclick="desenhoStatusSeqPadrao()">Usar o caminho padrão</button>
           <div id="m-desenho-status-seq" style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
@@ -6796,6 +6796,9 @@ async function salvarCadastro() {
       .map(l => {
         const x = { k: l.querySelector('.m-status-chk').value };
         if (l.querySelector('.m-status-pula:checked')) x.pula = true;
+        // Enfesto/corte repetido (ver _statusSeqExpandida): só grava de 2x para cima.
+        const rep = Number((l.querySelector('.m-status-rep') || {}).value) || 1;
+        if (rep > 1) x.rep = rep;
         return x;
       });
     if (seq.length) item.statusSeq = seq; else delete item.statusSeq;
@@ -24798,9 +24801,17 @@ function _desenhoStatusSeqHtml(seq) {
   const resto = STATUS_OS.map(s => s.k)
     .filter(k => !STATUS_FORA_SEQ.includes(k) && !marcadas.includes(k))
     .sort((a, b) => (ordemPadrao.indexOf(a) + 1 || 99) - (ordemPadrao.indexOf(b) + 1 || 99));
+  const rep = _statusRepSeq(seq);
   const linha = (k, marcada, pula) => {
     const s = STATUS_OS.find(x => x.k === k);
     if (!s) return '';
+    /* A REPETIÇÃO DO ENFESTO/CORTE (09/10/2026, ver _statusSeqExpandida): mora
+       na linha do Enfestando e vale para ele e o Cortando logo abaixo. */
+    const repSel = k !== 'enfestando' ? '' : `<label style="font-size:11px;white-space:nowrap;cursor:pointer;margin-right:8px;" title="Quantas vezes a OS passa por Enfestando → Cortando (uma por fase do enfesto). Cada Cortando baixa o pano de uma fase.">
+        enfesto/corte <select class="m-status-rep" style="font-size:11px;padding:0 2px;">${
+          Array.from({ length: STATUS_REP_MAX }, (_, i) => i + 1)
+            .map(n => `<option value="${n}"${n === rep ? ' selected' : ''}>${n}x</option>`).join('')
+        }</select></label>`;
     return `<div class="etapa-check ${marcada ? 'checked' : ''}" style="margin-bottom:4px;">
       <span class="etapa-reorder">
         <button type="button" class="etapa-move" onclick="moverEtapaDesenho(this, -1)" title="Mover para cima">▲</button>
@@ -24808,6 +24819,7 @@ function _desenhoStatusSeqHtml(seq) {
       </span>
       <input type="checkbox" class="m-status-chk" value="${esc(k)}" ${marcada ? 'checked' : ''} onchange="this.parentElement.classList.toggle('checked', this.checked)">
       <span style="flex:1;">${_statusPingo(s)} ${esc(s.rotulo)}</span>
+      ${repSel}
       <label style="font-size:11px;white-space:nowrap;cursor:pointer;" title="O seletor oferece também o status seguinte a este">
         <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}${k === 'materia-prima' ? ' disabled' : ''}> pode pular</label>
     </div>`;
@@ -31624,6 +31636,95 @@ function _statusSeqDoDesenho(d) {
   return seq.length ? seq : null;
 }
 
+/* ENFESTO E CORTE QUE SE REPETEM (09/10/2026, Junior: "as etapas de status
+   cadastradas no desenho técnico devem receber a repetição 2x, 3x, 4x, para
+   modelos que a etapa corte/enfesto se repetem para dar baixa em materiais e
+   aviamentos").
+
+   O modelo de várias fases (CM.REC, CM.TRI, BM.LISA, BM.TRI) volta à mesa para
+   cada fase, e cada volta Enfestando → Cortando baixa o pano de uma fase (ver
+   _marcarFasesCortadasOS). Com o seletor preso ao anterior/seguinte, a OS em
+   Cortando não tinha como voltar a Enfestando. Agora o desenho diz quantas
+   voltas são (`rep` no Enfestando da sequência, 1 a 5) e o seletor anda por
+   elas: 2x = enfesto/corte/enfesto/corte, 3x = três pares, e assim por diante.
+
+   O BLOCO é o Enfestando e, logo depois dele na lista, o Cortando. A volta em
+   que a OS está mora em `o.statusPasso` (só a partir da 2ª), e cada volta tem
+   um id no seletor: a chave na 1ª, "chave#n" a partir da 2ª. Desenho sem
+   repetição continua com as mesmas chaves de sempre. */
+const STATUS_REP_MAX = 5;
+function _statusIdPasso(k, p) {
+  return (Number(p) || 1) > 1 ? k + '#' + Number(p) : k;
+}
+function _statusDoId(id) {
+  const m = String(id || '').match(/^(.+)#(\d+)$/);
+  return m ? { k: m[1], p: Number(m[2]) } : { k: String(id || ''), p: 1 };
+}
+// Quantas voltas de enfesto/corte a sequência tem (1 = sem repetição).
+function _statusRepSeq(seq) {
+  const e = (seq || []).find(x => x && x.k === 'enfestando');
+  const n = Math.round(Number(e && e.rep) || 1);
+  return Math.max(1, Math.min(STATUS_REP_MAX, n));
+}
+// A sequência com o bloco enfesto/corte repetido: [{k, p, id, pula?}].
+function _statusSeqExpandida(seq) {
+  const s = seq || [];
+  const n = _statusRepSeq(s);
+  const out = [];
+  for (let i = 0; i < s.length; i++) {
+    const x = s[i];
+    if (x.k !== 'enfestando' || n < 2) { out.push(Object.assign({}, x, { p: 1, id: x.k })); continue; }
+    const bloco = [x];
+    if (s[i + 1] && s[i + 1].k === 'cortando') { bloco.push(s[i + 1]); i++; }
+    for (let p = 1; p <= n; p++) bloco.forEach(b => out.push(Object.assign({}, b, { p, id: _statusIdPasso(b.k, p) })));
+  }
+  return out;
+}
+// As chaves que se repetem na sequência ([] = nenhuma).
+function _statusRepetidosSeq(seq) {
+  return _statusSeqExpandida(seq).filter(x => x.p > 1).map(x => x.k)
+    .filter((k, i, a) => a.indexOf(k) === i);
+}
+/* A VOLTA EM QUE A OS ESTÁ: a do carimbo, se é ele que manda; senão a do
+   diário — a última anotação do bloco (o Enfestando que vem depois de um
+   Cortando já é a volta seguinte). */
+function _statusPassoOS(o, seq) {
+  const n = _statusRepSeq(seq);
+  const ks = _statusRepetidosSeq(seq);
+  const st = _statusOS(o);
+  if (n < 2 || !ks.includes(st)) return 1;
+  let p = 0;
+  if (String((o && o.statusOS) || '').trim() === st) p = Number(o.statusPasso) || 1;
+  else {
+    const h = _statusHistDe(o);
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (!ks.includes(h[i].k)) continue;
+      p = (Number(h[i].p) || 1) + (h[i].k === 'cortando' && st === 'enfestando' ? 1 : 0);
+      break;
+    }
+  }
+  return Math.max(1, Math.min(n, p || 1));
+}
+// O id da OS no seletor (a chave, com a volta quando o desenho repete).
+function _statusNoOS(o, seq) {
+  return _statusIdPasso(_statusOS(o), _statusPassoOS(o, seq));
+}
+// Os ids na ordem do seletor: a de STATUS_OS; as voltas do enfesto/corte, todas
+// no lugar do Enfestando, na ordem do caminho (Enfestando 2/3 antes de Cortando 2/3).
+function _statusIdsOrdenados(ids, seq) {
+  const ordem = STATUS_OS.map(x => x.k);
+  const rep = _statusRepetidosSeq(seq);
+  const caminho = _statusSeqExpandida(seq).map(x => x.id);
+  const pos = id => {
+    const d = _statusDoId(id);
+    return rep.includes(d.k) ? [ordem.indexOf('enfestando'), caminho.indexOf(id)] : [ordem.indexOf(d.k), 0];
+  };
+  return ids.slice().sort((a, b) => {
+    const A = pos(a), B = pos(b);
+    return (A[0] - B[0]) || (A[1] - B[1]);
+  });
+}
+
 // {k: [seguintes]} a partir da sequência, com o Não iniciado na frente.
 /* SÓ A OS CRIADA CONJUGADA PULA O PREPARO DA MATÉRIA-PRIMA (08/10/2026,
    Junior: "as únicas OS que podem pular etapa prep matéria-prima são OS
@@ -31634,49 +31735,55 @@ function _statusSeqDoDesenho(d) {
    mão (`conjugadaStatusPaiId`) não conta: ela tem pano. */
 function _statusGrafoSeq(seq, o) {
   const conjugadaCriada = !!(o && o.conjugadaPaiId);
-  const lista = [{ k: 'nao-iniciado' }].concat((seq || []).map(x => x.k === 'materia-prima'
+  // Os nós são os ids (a volta do enfesto/corte conta: ver _statusSeqExpandida).
+  const lista = [{ k: 'nao-iniciado', id: 'nao-iniciado' }].concat(_statusSeqExpandida(seq).map(x => x.k === 'materia-prima'
     ? Object.assign({}, x, { pula: conjugadaCriada }) : x));
   const prox = {};
-  lista.forEach(x => { prox[x.k] = prox[x.k] || []; });
+  lista.forEach(x => { prox[x.id] = prox[x.id] || []; });
   const add = (a, b) => { if (a !== b && !prox[a].includes(b)) prox[a].push(b); };
   const desvio = i => STATUS_DESVIO_SC.includes(lista[i].k);
   for (let i = 0; i < lista.length - 1; i++) {
-    add(lista[i].k, lista[i + 1].k);
+    add(lista[i].id, lista[i + 1].id);
     // O que pode ser pulado leva também ao seguinte dele (e assim por diante).
-    for (let j = i + 1; j < lista.length - 1 && lista[j].pula; j++) add(lista[i].k, lista[j + 1].k);
+    for (let j = i + 1; j < lista.length - 1 && lista[j].pula; j++) add(lista[i].id, lista[j + 1].id);
     // A entrada do desvio de São Carlos também segue direto para depois dele.
     if (!desvio(i) && desvio(i + 1)) {
       let j = i + 1;
       while (j < lista.length && desvio(j)) j++;
-      if (j < lista.length) add(lista[i].k, lista[j].k);
+      if (j < lista.length) add(lista[i].id, lista[j].id);
     }
   }
   return prox;
 }
 
 // O status em que a OS estava antes do de agora, pelo diário (sem Parado e
-// Cancelado, quando `foraDoCaminho`). null = o diário não sabe.
+// Cancelado, quando `foraDoCaminho`). null = o diário não sabe. Devolve o id
+// (com a volta do enfesto/corte, quando o desenho repete).
 function _statusDeOndeVeioOS(o, foraDoCaminho) {
-  const st = _statusOS(o);
+  const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const atual = _statusNoOS(o, seq);
   const h = _statusHistDe(o);
   for (let i = h.length - 1; i >= 0; i--) {
     const k = h[i].k;
-    if (k === st) continue;
+    const id = _statusIdPasso(k, h[i].p);
+    if (id === atual) continue;
     if (foraDoCaminho && STATUS_SEMPRE_OS.includes(k)) continue;
-    return k;
+    return id;
   }
   return null;
 }
 
-// As chaves que o seletor oferece, na ordem de STATUS_OS: a de agora, a(s)
-// anterior(es), a(s) seguinte(s), Parado e Cancelado.
+// Os ids que o seletor oferece, na ordem de STATUS_OS: o de agora, o(s)
+// anterior(es), o(s) seguinte(s), Parado e Cancelado. Sem repetição no
+// desenho, o id é a própria chave.
 function _statusOpcoesOS(o) {
   const todas = STATUS_OS.map(x => x.k);
   const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
   if (!seq) return todas;
   const prox = _statusGrafoSeq(seq, o);
   const st = _statusOS(o);
-  const ok = new Set([st, ...STATUS_SEMPRE_OS]);
+  const atual = _statusNoOS(o, seq);
+  const ok = new Set([atual, ...STATUS_SEMPRE_OS]);
   if (STATUS_SEMPRE_OS.includes(st)) {
     // Parado / Cancelado: volta para onde estava, ou segue dali. O diário não
     // sabendo, vale o que a folha diz.
@@ -31685,13 +31792,13 @@ function _statusOpcoesOS(o) {
     ok.add(antes);
     prox[antes].forEach(x => ok.add(x));
   } else {
-    if (!prox[st]) return todas;
-    prox[st].forEach(x => ok.add(x));
-    const ant = Object.keys(prox).filter(a => prox[a].includes(st));
+    if (!prox[atual]) return todas;
+    prox[atual].forEach(x => ok.add(x));
+    const ant = Object.keys(prox).filter(a => prox[a].includes(atual));
     const veio = _statusDeOndeVeioOS(o, false);
     if (ant.includes(veio)) ok.add(veio); else ant.forEach(x => ok.add(x));
   }
-  return todas.filter(k => ok.has(k));
+  return _statusIdsOrdenados(Array.from(ok), seq);
 }
 
 function _statusCelulaOS(o, extra) {
@@ -31708,6 +31815,17 @@ function _statusCelulaOS(o, extra) {
      Na folha, onde o controle tem a largura dos botões ao lado, vai inteiro. */
   const naFolha = String(extra || '').includes('folha');
   const rot = x => (!naFolha && x.curto) ? x.curto : x.rotulo;
+  /* A VOLTA DO ENFESTO/CORTE NO RÓTULO (09/10/2026): no desenho que repete,
+     "Enfestando 2/3" — senão as voltas seriam opções de mesmo nome. */
+  const seqDes = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const nRep = _statusRepSeq(seqDes);
+  const repetidos = nRep > 1 ? _statusRepetidosSeq(seqDes) : [];
+  const atualId = seqDes ? _statusNoOS(o, seqDes) : s.k;
+  const rotId = id => {
+    const d = _statusDoId(id);
+    const x = STATUS_OS.find(y => y.k === d.k) || STATUS_OS[0];
+    return rot(x) + (repetidos.includes(d.k) ? ` ${d.p}/${nRep}` : '');
+  };
   /* A DICA CONTA DE ONDE O STATUS VEIO. Ele nasce do checklist e pode estar
      escrito por cima à mão — e quem lê a lista precisa saber qual dos dois está
      vendo, senão "por que a OS 0501 diz Enfestando se ninguém marcou Enfesto?"
@@ -31720,16 +31838,20 @@ function _statusCelulaOS(o, extra) {
         : ' · vem do checklist da folha (a etapa marcada por último)')
     + _statusHistDica(o);
   if (!podeMudarStatusOS()) {
-    return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rot(s))}</span>`;
+    return `<span class="${cls} ro" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}">${_statusPingo(s)} ${esc(rotId(atualId))}</span>`;
   }
   const opcoes = _statusOpcoesOS(o);
+  const selId = opcoes.includes(atualId) ? atualId : s.k;
   /* PARADO E CANCELADO SEPARADOS (08/10/2026, Junior: "insira separador para
      diferenciar status parado e cancelado"). Os dois não são etapa do caminho:
      vão sempre no fim, depois de uma linha que não se escolhe. */
-  const opcao = x => `<option value="${x.k}" style="color:${x.cor};"${x.k === s.k ? ' selected' : ''}>`
-    + `${STATUS_PONTO} ${esc(rot(x))}</option>`;
-  const doCaminho = STATUS_OS.filter(x => opcoes.includes(x.k) && !STATUS_SEMPRE_OS.includes(x.k));
-  const foraDele = STATUS_OS.filter(x => opcoes.includes(x.k) && STATUS_SEMPRE_OS.includes(x.k));
+  const opcao = id => {
+    const x = STATUS_OS.find(y => y.k === _statusDoId(id).k) || STATUS_OS[0];
+    return `<option value="${esc(id)}" style="color:${x.cor};"${id === selId ? ' selected' : ''}>`
+      + `${STATUS_PONTO} ${esc(rotId(id))}</option>`;
+  };
+  const doCaminho = opcoes.filter(id => !STATUS_SEMPRE_OS.includes(_statusDoId(id).k));
+  const foraDele = opcoes.filter(id => STATUS_SEMPRE_OS.includes(_statusDoId(id).k));
   return `<select class="${cls}" data-st="${s.k}" style="${_statusEstilo(s)}" title="${esc(dica)}"`
     + ` onchange="mudarStatusOS('${o.id}', this.value)">`
     + doCaminho.map(opcao).join('')
@@ -31789,7 +31911,8 @@ function renderStatusFolhaOS() {
       // _statusEstilo): sem copiar o style, a caixa ficava com a cor do estado
       // anterior até alguém sair e voltar na folha.
       foco.setAttribute('style', novo.getAttribute('style') || '');
-      if (foco.value !== undefined) foco.value = novo.dataset.st;
+      // O valor do seletor novo (com a volta do enfesto/corte, "enfestando#2").
+      if (foco.value !== undefined) foco.value = novo.value !== undefined ? novo.value : novo.dataset.st;
     }
     _carimboCanceladoNaFolha(o);
     return;
@@ -31921,8 +32044,11 @@ function _statusHistAnotar(o, agoraMs, mao) {
   const k = _statusOS(o);
   const h = Array.isArray(o.statusHist) ? o.statusHist : [];
   const ult = h.length ? h[h.length - 1] : null;
+  // A volta do enfesto/corte vai junto (só a partir da 2ª, ver _statusPassoOS).
+  const passo = _statusPassoOS(o, _statusSeqDoDesenho(_desenhoDaOS(o)));
+  const comPasso = x => (passo > 1 ? Object.assign(x, { p: passo }) : x);
   if (mao) {
-    h.push({ k, em: mao.em, c: mao.c });
+    h.push(comPasso({ k, em: mao.em, c: mao.c }));
     o.statusHist = h;
     return true;
   }
@@ -31940,7 +32066,7 @@ function _statusHistAnotar(o, agoraMs, mao) {
   // O status que vem de um carimbo à mão é anotado COMO carimbo (07/10/2026):
   // sem o `c`, o Início não sabia que ele valia, e a OS carimbada ontem
   // voltava ao status da folha até o carimbo seguinte.
-  h.push(doCarimbo && em === carimbo ? { k, em, c: k } : { k, em });
+  h.push(comPasso(doCarimbo && em === carimbo ? { k, em, c: k } : { k, em }));
   o.statusHist = h;
   return true;
 }
@@ -31951,7 +32077,7 @@ function _statusHistVarrer(ordens, agoraMs) {
   (ordens || []).forEach(o => { try { _statusHistAnotar(o, agoraMs); } catch (e) { /* uma OS não trava as outras */ } });
 }
 
-function _carimbarStatusOS(os, alvo, agora, quem) {
+function _carimbarStatusOS(os, alvo, agora, quem, passo) {
   /* "NÃO INICIADO" APAGA O CARIMBO, e é assim que se volta a SEGUIR O
      CHECKLIST. Os outros status escrevem por cima da folha até a próxima etapa
      ser marcada; escolher este desfaz isso na hora, sem esperar etapa nenhuma —
@@ -31975,6 +32101,9 @@ function _carimbarStatusOS(os, alvo, agora, quem) {
     os.statusOSPor = quem;
     os.statusOSEm = agora;
   }
+  // A volta do enfesto/corte (ver _statusSeqExpandida): só a partir da 2ª.
+  if (alvo !== 'nao-iniciado' && Number(passo) > 1) os.statusPasso = Number(passo);
+  else delete os.statusPasso;
   /* A DATA DE FINALIZAÇÃO. Chegar ao fim da produção — o ENSAQUE, ver
      STATUS_FIM — carimba o dia, e ele FICA.
 
@@ -32024,10 +32153,18 @@ async function mudarStatusOS(id, valor) {
   // Sem permissão: redesenha para o seletor voltar ao valor que está gravado —
   // senão a tela fica mostrando um status que ninguém salvou.
   if (!exigirStatusOS('mudar o status da OS')) { renderListaOS(); renderStatusFolhaOS(); return; }
-  const alvo = STATUS_OS.some(x => x.k === valor) ? valor : 'nao-iniciado';
+  // O valor é o id do seletor: a chave, com "#n" na 2ª volta em diante do
+  // enfesto/corte (ver _statusSeqExpandida).
+  const pedido = _statusDoId(valor);
+  const alvo = STATUS_OS.some(x => x.k === pedido.k) ? pedido.k : 'nao-iniciado';
+  const passo = alvo === pedido.k ? pedido.p : 1;
+  const alvoId = _statusIdPasso(alvo, passo);
+  const seqDes = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const nRep = _statusRepSeq(seqDes);
+  const voltaTxt = (nRep > 1 && _statusRepetidosSeq(seqDes).includes(alvo)) ? ` ${passo}/${nRep}` : '';
   // Só a etapa anterior, a seguinte, Parado e Cancelado (ver STATUS_SEQ_PADRAO e a sequência do desenho).
-  if (!_statusOpcoesOS(o).includes(alvo)) {
-    const r = (STATUS_OS.find(x => x.k === alvo) || {}).rotulo || alvo;
+  if (!_statusOpcoesOS(o).includes(alvoId)) {
+    const r = ((STATUS_OS.find(x => x.k === alvo) || {}).rotulo || alvo) + voltaTxt;
     toast(`A OS ${o.os || ''} não pode ir direto para ${r}: só a etapa anterior ou a seguinte`, 'err');
     renderListaOS(); renderStatusFolhaOS();
     return;
@@ -32060,19 +32197,19 @@ async function mudarStatusOS(id, valor) {
      Com o grupo inteiro no alvo não há o que fazer, e a saída continua sendo
      não gravar nada — repetir o clique não pode gerar gravação nem movimento
      de estoque. */
-  const jaEstava = _statusOS(o) === alvo;
+  const jaEstava = _statusNoOS(o, seqDes) === alvoId;
   // A conjugada vai junto — mesmo enfesto, mesmo corte —, e volta junto quando
   // a ativa sai de finalizada. Carimbada ANTES do saveState: as duas viajam na
   // mesma gravação, senão uma pode ir e a outra ficar para trás se a rede cair
   // no meio.
   const juntas = _conjugadasQueSeguemStatus(o, alvo);
   if (jaEstava && !juntas.length) return;
-  if (!jaEstava) _carimbarStatusOS(o, alvo, agora, quem);
-  juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem));
+  if (!jaEstava) _carimbarStatusOS(o, alvo, agora, quem, passo);
+  juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem, passo));
   renderListaOS();
   renderStatusFolhaOS();
   _redesenharCampoAtivo();
-  const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo;
+  const rot = (STATUS_OS.find(x => x.k === alvo) || STATUS_OS[0]).rotulo + voltaTxt;
   const nomesJuntas = juntas.map(c => c.os || '').join(', ');
   const plural = juntas.length > 1;
   try {

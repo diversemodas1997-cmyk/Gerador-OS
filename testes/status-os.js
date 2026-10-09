@@ -121,6 +121,16 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('STATUS_FORA_SEQ')}
   ${recorte('function _desenhoDaOS', 'o desenho da OS')}
   ${recorte('function _statusSeqDoDesenho', 'a sequencia do desenho')}
+  // Enfesto/corte repetido 2x a 5x (09/10/2026).
+  ${constante('STATUS_REP_MAX')}
+  ${recorte('function _statusIdPasso', 'o id da volta')}
+  ${recorte('function _statusDoId', 'a volta do id')}
+  ${recorte('function _statusRepSeq', 'quantas voltas')}
+  ${recorte('function _statusSeqExpandida', 'a sequencia expandida')}
+  ${recorte('function _statusRepetidosSeq', 'os status repetidos')}
+  ${recorte('function _statusPassoOS', 'a volta da OS')}
+  ${recorte('function _statusNoOS', 'o id da OS')}
+  ${recorte('function _statusIdsOrdenados', 'a ordem dos ids')}
   ${recorte('function _statusGrafoSeq', 'o grafo da sequencia')}
   ${recorte('function _statusDeOndeVeioOS', 'de onde a OS veio')}
   ${recorte('function _statusOpcoesOS', 'as opcoes do seletor')}
@@ -1395,6 +1405,49 @@ console.log('-- o que fica gravado --');
     ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'nao-iniciado,enfestando,cortando,ensacado,parado,cancelado', op());
     sq.ctx.STATE.desenhos[0].statusSeq = [];
     ok('49. desenho sem sequencia: seletor livre', op().split(',').length === api.STATUS_OS.length, op());
+  }
+  console.log('');
+  console.log('-- enfesto/corte repetido 2x a 5x no desenho (09/10/2026) --');
+  {
+    const sq = ctxDe('admin', 'admin@diverse.local', true, [{ id: 'q1', os: '0701', desenhoId: 'd1' }]);
+    const seq3 = STATUS_SEQ_PADRAO_TESTE.map(x => x.k === 'enfestando' ? Object.assign({}, x, { rep: 3 }) : x);
+    sq.ctx.STATE.desenhos = [{ id: 'd1', statusSeq: seq3 }];
+    // Tres fases de pano: cada Cortando baixa uma.
+    sq.ctx.fases = [{ ordem: 1, kg: 10, tecidoReal: 'Moletom', corReal: 'Preto' },
+                    { ordem: 2, kg: 8, tecidoReal: 'Moletom', corReal: 'Preto' },
+                    { ordem: 3, kg: 2, tecidoReal: 'Ribana', corReal: 'Preto' }];
+    const api = monta(sq.ctx);
+    const q = sq.ctx.STATE.ordens[0];
+    const op = () => api._statusOpcoesOS(q).join(',');
+    const baixadas = () => Object.keys((q.progresso || {}).fasesBaixadas || {}).sort().join(',');
+    await api.mudarStatusOS('q1', 'materia-prima');
+    await api.mudarStatusOS('q1', 'enfestando');
+    ok('50. enfestando 1/3 segue para cortando 1/3', /enfestando,cortando,/.test(op()) && !/#/.test(op()), op());
+    await api.mudarStatusOS('q1', 'cortando');
+    ok('51. cortando 1/3: baixa a fase 1 e segue para enfestando 2/3 (nao para separando)',
+       baixadas() === '1' && /enfestando#2/.test(op()) && !/separando/.test(op()), baixadas() + ' | ' + op());
+    await api.mudarStatusOS('q1', 'separando');
+    ok('52. pular para separando e recusado', api._statusOS(q) === 'cortando', api._statusOS(q));
+    await api.mudarStatusOS('q1', 'enfestando#2');
+    ok('53. enfestando 2/3 gravado com a volta, e o diario anota p:2',
+       q.statusOS === 'enfestando' && q.statusPasso === 2 && q.statusHist[q.statusHist.length - 1].p === 2,
+       JSON.stringify(q.statusHist));
+    ok('54. de enfestando 2/3: volta para cortando 1/3, segue para cortando 2/3',
+       op() === 'cortando,enfestando#2,cortando#2,parado,cancelado', op());
+    const cel = api._statusCelulaOS(q, 'folha');
+    ok('55. o seletor mostra a volta no rotulo', /Enfestando 2\/3/.test(cel) && /value="cortando#2"/.test(cel)
+       && /value="enfestando#2"[^>]*selected/.test(cel), cel);
+    await api.mudarStatusOS('q1', 'cortando#2');
+    ok('56. cortando 2/3 baixa a fase 2', baixadas() === '1,2' && q.statusPasso === 2, baixadas());
+    await api.mudarStatusOS('q1', 'enfestando#3');
+    await api.mudarStatusOS('q1', 'cortando#3');
+    ok('57. cortando 3/3 baixa a fase 3 e so entao segue para separando',
+       baixadas() === '1,2,3' && /separando/.test(op()) && !/enfestando#4/.test(op()), baixadas() + ' | ' + op());
+    await api.mudarStatusOS('q1', 'separando');
+    ok('58. separando apaga a volta', api._statusOS(q) === 'separando' && !('statusPasso' in q), JSON.stringify(q));
+    sq.ctx.STATE.desenhos[0].statusSeq = STATUS_SEQ_PADRAO_TESTE;
+    q.statusOS = 'cortando'; q.statusOSEm = new Date(Date.now() + 5000).toISOString();
+    ok('59. sem repeticao no desenho, cortando segue para separando como antes', /separando/.test(op()) && !/#/.test(op()), op());
   }
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
