@@ -187,8 +187,16 @@ ok('acabado o dia, o Recebido em Sao Carlos e marcado com o fim do dia (23:59:59
    R.rodar(H(10, 0, 1)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(9), est.ordens[0].progresso.etapasSeq);
 ok('rodar de novo nao mexe', R.rodar(H(10, 9)) === 0, '');
 
+est.ordens = [osCom({ [IDA]: true, [REC_SC]: true }, { [IDA]: H(9, 14, 30), [REC_SC]: H(9, 17) })];
+ok('a chegada marcada a mao NO DIA da viagem vale, com a hora dela', R.rodar(H(11, 9)) === 0 && est.ordens[0].progresso.etapasSeq[REC_SC] === H(9, 17), est.ordens[0].progresso.etapasSeq);
+// 09/10/2026, Junior: "e impossivel comecar qualquer periodo com numero maior
+// que zero no Inicio em transito" -- a 0513 saiu em 09/09 e foi "recebida" em 07/10.
 est.ordens = [osCom({ [IDA]: true, [REC_SC]: true }, { [IDA]: H(9, 14, 30), [REC_SC]: H(10, 8) })];
-ok('a chegada marcada a mao vale, com a hora dela', R.rodar(H(11, 9)) === 0 && est.ordens[0].progresso.etapasSeq[REC_SC] === H(10, 8), est.ordens[0].progresso.etapasSeq);
+ok('marcada a mao DEPOIS do dia da viagem: trazida para o fim do dia da viagem',
+   R.rodar(H(11, 9)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(9), est.ordens[0].progresso.etapasSeq);
+est.ordens = [Object.assign(osCom({ [IDA]: true, [REC_SC]: true }, { [IDA]: H(2, 9, 30), [REC_SC]: H(7, 17) }), { statusOS: 'ensacado', statusOSEm: new Date(H(5, 8)).toISOString() })];
+ok('a marcada a mao foi declarada: mesmo com carimbo para tras, fica (so a hora e trazida)',
+   R.rodar(H(9, 9)) === 1 && est.ordens[0].progresso.etapasCheck[REC_SC] && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(2), est.ordens[0].progresso.etapasSeq);
 
 est.ordens = [Object.assign(osCom({ [IDA]: true }, { [IDA]: H(2, 11) }), { statusOS: 'estoque', statusOSEm: new Date(H(5, 13, 48)).toISOString() })];
 ok('OS carimbada adiante dias depois (caso 0557): chega no fim do dia da viagem',

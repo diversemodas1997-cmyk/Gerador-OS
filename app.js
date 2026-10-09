@@ -13944,8 +13944,14 @@ function _expMarcarViagensVencidas(agoraMs) {
    marcada sozinha COM A HORA DO FIM DAQUELE DIA (23:59:59). A OS continua
    passando pelo trânsito (regra de 07/10): Ensacado → Em trânsito → Recebido.
 
-   A CHEGADA MARCADA À MÃO VALE (Junior, mesmo dia: "vale a hora marcada à
-   mão"): caixa já marcada não é tocada, com a hora que tiver.
+   A CHEGADA MARCADA À MÃO VALE SÓ NO DIA DA VIAGEM (09/10/2026, Junior,
+   depois de ver o relatório: "é impossível começar qualquer período com
+   qualquer número maior que zero na coluna Início em trânsito"). A primeira
+   versão respeitava qualquer hora à mão, e o Início da semana ficou com 2.098
+   produtos: 0513 e 0514 saíram em 09 e 11/09 e o Recebido foi marcado em
+   07/10, pondo a folha em dia; a 0594 saiu em 30/09 e foi recebida em 05/10.
+   Agora a hora à mão vale quando cai no mesmo dia da saída; marcada depois, a
+   chegada é trazida para o fim do dia da viagem, como a automática.
 
    NUNCA DEPOIS DO QUE VEIO DEPOIS. Se, ainda no dia da viagem, a OS já foi
    adiante — um carimbo à mão, ou a caixa de uma etapa que fica depois da
@@ -13960,12 +13966,16 @@ function _expMarcarChegadaVencidaOS(os, perna, agoraMs) {
   const etapas = os.etapas || [];
   const saiu = reSaiu ? etapas.find(n => reSaiu.test(n) && ck[n]) : null;
   const chegada = etapas.find(n => reChegou.test(n));
-  if (!saiu || !chegada || ck[chegada]) return false;
+  if (!saiu || !chegada) return false;
   const tSaiu = Number(sq[saiu]);
   if (!Number.isFinite(tSaiu)) return false;
   const d = new Date(tSaiu);
   const fimDoDia = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - 1000;
   if (fimDoDia > agoraMs) return false;            // o dia da viagem ainda não acabou
+  // Já marcada: fica como está se foi no dia da viagem; depois dele, é trazida.
+  const jaMarcada = !!ck[chegada];
+  const tChegou = Number(sq[chegada]);
+  if (jaMarcada && !(Number.isFinite(tChegou) && tChegou > fimDoDia)) return false;
   // O que veio depois da chegada, ainda naquele dia: a chegada fica antes.
   const kTransito = perna === 'volta' ? 'transito-volta' : 'transito-ida';
   const ondeTransito = FLUXO_STATUS_OS.indexOf(kTransito);
@@ -13974,18 +13984,24 @@ function _expMarcarChegadaVencidaOS(os, perna, agoraMs) {
   if (os.statusOS && Number.isFinite(carimbo) && carimbo > tSaiu) {
     const ondeCarimbo = FLUXO_STATUS_OS.indexOf(os.statusOS);
     // Carimbada de volta para ANTES da viagem: alguém disse que ela não foi —
-    // não se inventa chegada. O carimbo do próprio trânsito não segura nada.
-    if (ondeCarimbo >= 0 && ondeCarimbo < ondeTransito) return false;
+    // não se inventa chegada (a marcada à mão, essa foi declarada: fica).
+    // O carimbo do próprio trânsito não segura nada.
+    if (!jaMarcada && ondeCarimbo >= 0 && ondeCarimbo < ondeTransito) return false;
     // Adiante (ou Parado/Cancelado, fora do caminho): a chegada fica antes dele.
-    if (ondeCarimbo !== ondeTransito) limite = Math.min(limite, carimbo);
+    if (ondeCarimbo > ondeTransito || ondeCarimbo < 0) limite = Math.min(limite, carimbo);
   }
   etapas.forEach(n => {
     const t = Number(sq[n]);
-    if (!ck[n] || n === saiu || !Number.isFinite(t) || t <= tSaiu) return;
+    if (!ck[n] || n === saiu || n === chegada || !Number.isFinite(t) || t <= tSaiu) return;
     const s = STATUS_OS.find(x => x.re && x.re.test(n));
     if (s && FLUXO_STATUS_OS.indexOf(s.k) > ondeTransito) limite = Math.min(limite, t);
   });
   const quando = Math.max(tSaiu + 1, Math.min(fimDoDia, limite - 1));
+  if (jaMarcada) {
+    if (quando === tChegou) return false;
+    sq[chegada] = quando;
+    return true;
+  }
   return !!_expMarcarEtapaOS(os, chegada, quando);
 }
 
@@ -23053,6 +23069,9 @@ function _dashLinhaDoTempoOS(o) {
   }
 }
 
+// Os quatro cartões de Estoque em trânsito (ver o fecho da meia-noite em _dashIntervalos).
+const DASH_CARTOES_TRANSITO = new Set(['idaManha', 'idaTarde', 'voltaManha', 'voltaTarde']);
+
 // Os intervalos de cada cartão: {os, pecas, de, ate}. `de` null = sem data (OS
 // sem hora de verdade); `ate` null = ainda está no cartão.
 function _dashIntervalos() {
@@ -23084,7 +23103,28 @@ function _dashIntervalos() {
       }
     }
     const aberto = new Map();   // k -> intervalo em curso
+    /* O TRÂNSITO NÃO ATRAVESSA A MEIA-NOITE (09/10/2026, Junior: "é impossível
+       começar qualquer período com qualquer número maior que zero na coluna
+       Início em trânsito"). O caminhão vai e volta no mesmo dia. A chegada
+       automática (_expMarcarChegadaVencidaOS) acerta quase tudo, mas sobram
+       casos que a folha não explica: a carga que saiu dias antes de a caixa ser
+       marcada (0517: carga 04/09, checklist inteiro preenchido em 14/09), ou a
+       OS carimbada de volta para Ensacado com a carga ainda alocada (0632).
+       Aqui é a garantia: o intervalo de trânsito fecha às 23:59:59 do dia em
+       que começou. Se a OS ainda estiver na estrada num instante de outro dia
+       (outra carga), abre um intervalo novo NAQUELE instante — nunca à
+       meia-noite. */
+    const fimDoDia = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - 1000; };
+    const fecharTransitoVencido = (ate) => {
+      [...aberto.keys()].forEach(k => {
+        if (!DASH_CARTOES_TRANSITO.has(k)) return;
+        const iv = aberto.get(k);
+        const fim = fimDoDia(iv.de);
+        if (fim < ate) { iv.ate = fim; aberto.delete(k); }
+      });
+    };
     linha.forEach(e => {
+      fecharTransitoVencido(e.t);
       e.cartoes.forEach((pecas, k) => {
         if (!aberto.has(k)) { const iv = { os, id, pecas, de: e.t, ate: null }; aberto.set(k, iv); add(k, iv); }
       });
@@ -23092,6 +23132,8 @@ function _dashIntervalos() {
         if (!e.cartoes.has(k)) { aberto.get(k).ate = e.t; aberto.delete(k); }
       });
     });
+    // O que segue na estrada depois do último instante: fecha no fim do dia, se ele já passou.
+    fecharTransitoVencido(typeof _expAgora === 'function' ? _expAgora() : Date.now());
     /* A SAÍDA DA MESA DE CORTE É A SEGUNDA DATA DA FOLHA (07/10/2026, Junior:
        "o quadro na mesa de corte aparece OS com segunda data de ontem, sendo
        que hoje é dia 07/10, deveria aparecer OS que foram cortadas hoje").
