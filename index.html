@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-09a">
+<link rel="stylesheet" href="styles.css?v=2026-10-09d">
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1310,108 +1310,115 @@
     <!-- ================= CONFIGURAÇÕES ================= -->
     <section class="page hidden" data-page="config">
       <div class="page-header">
-        <div><h1>Configurações</h1><div class="desc">Exportar, importar e limpar dados</div></div>
+        <div><h1>Configurações</h1><div class="desc">Servidor, pastas, grades, backups e contas</div></div>
       </div>
-      <div class="card">
-        <div class="card-title">Servidor da fábrica (rede local)</div>
-        <div class="info-box">Com um servidor na rede da fábrica, o programa fala com ele em vez da internet: fica instantâneo, não gasta tráfego e continua funcionando com a internet fora. A nuvem passa a ser espelho — se o servidor local não responder, o programa abre a cópia da nuvem em <b>modo consulta</b>: dá para ver e imprimir, mas não editar. Isso é proposital, para que os dois lados nunca fiquem diferentes. Este endereço vale <b>só nesta máquina</b> — configure em cada computador. Deixando em branco, tudo funciona pela nuvem como antes.</div>
-        <div id="servidorLocalStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
+      <!-- CONFIGURAÇÕES EM QUADROS (09/10/2026, Junior: "as configurações
+           semelhantes aglomeradas em mesmo quadro, mais compacto"). Cinco
+           quadros por assunto; a explicação longa de cada item fica recolhida
+           em "como funciona". Os ids e os onclick são os de sempre. -->
+      <div class="card cfg-quadro">
+        <div class="card-title">Servidor e sincronização</div>
+        <div id="servidorLocalStatus" class="cfg-status" style="margin-bottom:8px;">Carregando…</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
-          <label style="flex:1 1 260px;">Endereço
+          <label style="flex:1 1 220px;">Endereço do servidor
             <input type="text" id="servidorLocalUrl" placeholder="http://192.168.0.50:8000" autocomplete="off">
           </label>
-          <label style="flex:2 1 340px;">Chave pública (anon) do servidor local
+          <label style="flex:2 1 300px;">Chave pública (anon) do servidor local
             <input type="text" id="servidorLocalKey" placeholder="eyJhbGciOi..." autocomplete="off">
           </label>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+        <div class="cfg-botoes" style="margin-top:8px;">
           <button class="btn primary" onclick="testarServidorLocal()">Testar conexão</button>
           <button class="btn" onclick="salvarServidorLocal()">Salvar e recarregar</button>
           <button class="btn" onclick="limparServidorLocal()">Usar só a nuvem</button>
+          <button class="btn admin-only" onclick="recarregarDadosDoServidor()">↻ Recarregar dados do servidor</button>
         </div>
+        <details class="cfg-ajuda"><summary>como funciona</summary><div>Com um servidor na rede da fábrica, o programa fala com ele em vez da internet: fica instantâneo, não gasta tráfego e continua funcionando com a internet fora. A nuvem passa a ser espelho — se o servidor local não responder, o programa abre a cópia da nuvem em <b>modo consulta</b>: dá para ver e imprimir, mas não editar. Isso é proposital, para que os dois lados nunca fiquem diferentes. Este endereço vale <b>só nesta máquina</b> — configure em cada computador. Deixando em branco, tudo funciona pela nuvem como antes.<br><br><b>Recarregar dados do servidor</b>: Se você cadastrou itens em outra aba/sessão e eles não estão aparecendo aqui (ex.: etapas ou tarefas novas que não surgem nas opções dos desenhos), force uma releitura completa do servidor.</div></details>
       </div>
-      <div class="card admin-only">
-        <div class="card-title">Pasta de backup automático (JSON)</div>
-        <div class="info-box">A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div>
-        <div id="backupFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaBackup()">Conectar pasta</button>
-          <button class="btn" onclick="escreverBackupJsonAgora()">Salvar backup agora</button>
-          <button class="btn" onclick="desconectarPastaBackup()">Desconectar</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Pasta de PDFs gerados</div>
-        <div class="info-box">Cada OS gerada salva o PDF nesta pasta automaticamente. Funciona apenas no Chrome ou Edge no desktop. Conecte uma vez — o navegador lembra entre sessões. Em outro computador, navegador ou no celular, é preciso conectar de novo (ou nada será salvo).</div>
-        <div id="pdfFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaPdf()">Conectar pasta</button>
-          <button class="btn" onclick="desconectarPastaPdf()">Desconectar</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Pasta das Ordens de Expedição (OE)</div>
-        <div class="info-box">A folha do plano de expedição no modo <b>diário</b> é salva em PDF nesta pasta automaticamente quando você a abre (menu Ordens de Expedição → "Folha do plano"). As <b>semanais</b> e <b>mensais</b> não são gravadas sozinhas — use o botão "💾 Salvar OE na pasta" para gravá-las quando quiser. O arquivo é nomeado pelo período do plano (ex.: <code>OE-19-07-2026_a_25-07-2026.pdf</code>) — reabrir o mesmo período reescreve o mesmo arquivo. Funciona no Chrome/Edge no desktop. Conecte uma vez; para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
-        <div id="oeFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaOe()">Conectar pasta</button>
-          <button class="btn" onclick="desconectarPastaOe()">Desconectar</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Pasta das Ordens de Compra (OC)</div>
-        <div class="info-box">Cada ordem de compra é salva em PDF nesta pasta, sozinha, quando é <b>gerada</b>, <b>editada</b> (fornecedor, data, situação, quantidades, observação) ou <b>impressa</b>. O botão <b>pasta</b> na linha da OC (menu Ordens de Compra) grava na hora. O arquivo leva o número da OC (ex.: <code>OC-0001.pdf</code>): editar a mesma OC reescreve o mesmo arquivo. Apagar a OC no programa <b>não</b> apaga o PDF. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
-        <div id="ocFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaOc()">Conectar pasta</button>
-          <button class="btn" onclick="salvarTodasOcNaPasta()">Salvar todas as OC agora</button>
-          <button class="btn" onclick="desconectarPastaOc()">Desconectar</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Pasta dos Relatórios de produção</div>
-        <div class="info-box">A folha do <b>Relatório produção</b> (barra lateral) é salva em PDF nesta pasta pelo botão <b>💾 Salvar na pasta</b> e, sozinha, ao <b>imprimir</b>. O arquivo leva o período (ex.: <code>Relatorio-producao-Semanal-05-10-2026_a_09-10-2026.pdf</code>): gerar o mesmo período de novo reescreve o mesmo arquivo, com os números daquela hora. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
-        <div id="relFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaRel()">Conectar pasta</button>
-          <button class="btn" onclick="desconectarPastaRel()">Desconectar</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Pasta das exportações (JSON)</div>
-        <div class="info-box">Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.</div>
-        <div id="exportFolderStatus" style="margin-bottom:10px; font-size:13px; color: var(--ink-2);">Carregando…</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="conectarPastaExport()">Conectar pasta</button>
-          <button class="btn" onclick="exportarDados()">⬇ Exportar tudo agora</button>
-          <button class="btn" onclick="desconectarPastaExport()">Desconectar</button>
-          <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
-        </div>
-        <div class="field-hint" style="margin-top:6px;">O <b>Importar JSON</b> é o caminho de volta: lê um arquivo exportado e traz os dados dele. Não existe botão de apagar tudo — dado desta base se corrige restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Planilha das grades (Excel)</div>
-        <div class="info-box">Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, configurada no primeiro cartão desta página (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Tudo agrupado por <b>SKU</b> (o que vem depois do "|" no nome da grade), porque é por ele que as grades se parecem. Três abas: <b>Resumo por SKU</b> — uma linha por SKU, apontando o que <b>diverge</b> entre grades que deveriam ser iguais (nº de fases, peças por pacote, tecido ou medida faltando); <b>Grades</b> — uma linha por grade, com tamanhos, medidas de cada fase e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap;">
-          <button class="btn primary" onclick="exportarGradesExcel()">📊 Gerar planilha das grades</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Operações em massa nos desenhos</div>
-        <div class="info-box">Copia as etapas (e a ordem) e a <b>sequência de status</b> configuradas no desenho de origem para os demais desenhos <b>do mesmo modelo e variação</b>. Ex.: Camiseta Básica só copia para outras Camisetas Básicas — não para Camiseta Bicolor nem Tricolor; Blusa Moletom Básica não copia para Blusa Moletom Tricolor. Apenas as etapas e a sequência de status são alteradas (o que a origem não tiver configurado fica como está nos outros) — imagem, vínculos, componentes e demais campos ficam intactos.</div>
-        <div style="display:flex; gap:8px; flex-wrap: wrap; align-items: end;">
-          <div class="field" style="flex:0 0 200px;">
-            <label for="copyEtapasOrigem">Código do desenho de origem</label>
-            <input type="text" id="copyEtapasOrigem" value="001" placeholder="Ex.: 001">
-          </div>
-          <button class="btn primary" onclick="rodarCopiarEtapasParaTodos()">Copiar etapas e status para todos</button>
-        </div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Regra do excedente de enfesto</div>
-        <div class="info-box">O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.<br><br>São <b>quatro linhas</b> de faixa, e usar todas é opcional: <b>linha em branco é linha que não existe</b>, então quem trabalha com três deixa a última vazia e nada muda.</div>
 
-        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
+      <div class="card cfg-quadro">
+        <div class="card-title">Pastas deste computador</div>
+        <div class="cfg-nota">Cada computador conecta as suas pastas, e o navegador lembra entre sessões. Só funciona no Chrome ou Edge no desktop. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Backup automático (JSON)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div></details><div id="backupFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaBackup()">Conectar</button>
+                <button class="btn small" onclick="escreverBackupJsonAgora()">Salvar agora</button>
+                <button class="btn small" onclick="desconectarPastaBackup()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>PDFs das OS</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Cada OS gerada salva o PDF nesta pasta automaticamente. Funciona apenas no Chrome ou Edge no desktop. Conecte uma vez — o navegador lembra entre sessões. Em outro computador, navegador ou no celular, é preciso conectar de novo (ou nada será salvo).</div></details><div id="pdfFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaPdf()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaPdf()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Ordens de Expedição (OE)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A folha do plano de expedição no modo <b>diário</b> é salva em PDF nesta pasta automaticamente quando você a abre (menu Ordens de Expedição → "Folha do plano"). As <b>semanais</b> e <b>mensais</b> não são gravadas sozinhas — use o botão "💾 Salvar OE na pasta" para gravá-las quando quiser. O arquivo é nomeado pelo período do plano (ex.: <code>OE-19-07-2026_a_25-07-2026.pdf</code>) — reabrir o mesmo período reescreve o mesmo arquivo. Funciona no Chrome/Edge no desktop. Conecte uma vez; para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="oeFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaOe()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaOe()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Ordens de Compra (OC)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Cada ordem de compra é salva em PDF nesta pasta, sozinha, quando é <b>gerada</b>, <b>editada</b> (fornecedor, data, situação, quantidades, observação) ou <b>impressa</b>. O botão <b>pasta</b> na linha da OC (menu Ordens de Compra) grava na hora. O arquivo leva o número da OC (ex.: <code>OC-0001.pdf</code>): editar a mesma OC reescreve o mesmo arquivo. Apagar a OC no programa <b>não</b> apaga o PDF. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="ocFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaOc()">Conectar</button>
+                <button class="btn small" onclick="salvarTodasOcNaPasta()">Salvar todas agora</button>
+                <button class="btn small" onclick="desconectarPastaOc()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Relatórios de produção</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A folha do <b>Relatório produção</b> (barra lateral) é salva em PDF nesta pasta pelo botão <b>💾 Salvar na pasta</b> e, sozinha, ao <b>imprimir</b>. O arquivo leva o período (ex.: <code>Relatorio-producao-Semanal-05-10-2026_a_09-10-2026.pdf</code>): gerar o mesmo período de novo reescreve o mesmo arquivo, com os números daquela hora. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="relFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaRel()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaRel()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Exportações (JSON)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.<br><br>O <b>Importar JSON</b> é o caminho de volta: lê um arquivo exportado e traz os dados dele. Não existe botão de apagar tudo — dado desta base se corrige restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div></details><div id="exportFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaExport()">Conectar</button>
+                <button class="btn small" onclick="exportarDados()">⬇ Exportar tudo agora</button>
+                <button class="btn small" onclick="desconectarPastaExport()">Desconectar</button>
+                <label class="file-label btn small">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Grades e desenhos</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Planilha das grades (Excel)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, a "Backup automático" do quadro <b>Pastas deste computador</b> (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Tudo agrupado por <b>SKU</b> (o que vem depois do "|" no nome da grade), porque é por ele que as grades se parecem. Três abas: <b>Resumo por SKU</b> — uma linha por SKU, apontando o que <b>diverge</b> entre grades que deveriam ser iguais (nº de fases, peças por pacote, tecido ou medida faltando); <b>Grades</b> — uma linha por grade, com tamanhos, medidas de cada fase e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div></details><div class="cfg-status">grades-cadastradas.xlsx na pasta de backup automático</div></div>
+            <div class="cfg-botoes"><button class="btn small primary" onclick="exportarGradesExcel()">📊 Gerar planilha</button></div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Copiar etapas e status entre desenhos</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Copia as etapas (e a ordem) e a <b>sequência de status</b> configuradas no desenho de origem para os demais desenhos <b>do mesmo modelo e variação</b>. Ex.: Camiseta Básica só copia para outras Camisetas Básicas — não para Camiseta Bicolor nem Tricolor; Blusa Moletom Básica não copia para Blusa Moletom Tricolor. Apenas as etapas e a sequência de status são alteradas (o que a origem não tiver configurado fica como está nos outros) — imagem, vínculos, componentes e demais campos ficam intactos.</div></details><div class="cfg-status">do desenho de origem para os do mesmo modelo e variação</div></div>
+            <div class="cfg-botoes">
+              <input type="text" id="copyEtapasOrigem" value="001" placeholder="Ex.: 001" title="Código do desenho de origem" style="width:90px;">
+              <button class="btn small primary" onclick="rodarCopiarEtapasParaTodos()">Copiar para todos</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Regra do excedente de enfesto</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.<br><br>São <b>quatro linhas</b> de faixa, e usar todas é opcional: <b>linha em branco é linha que não existe</b>, então quem trabalha com três deixa a última vazia e nada muda.</div></details></div>
+          <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
           <div>
             <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Faixas de comprimento</label>
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
@@ -1481,37 +1488,38 @@
         </div>
         <div id="exc-cfg-origem" class="field-hint" style="margin-top:8px;"></div>
         <div class="field-hint" style="margin-top:4px;">Salvar muda a regra <b>daqui para a frente</b> — não mexe nas grades já cadastradas. Para reescrever o que já existe, use "Aplicar em todas as grades": ele mostra quantas fases mudam, de quanto para quanto, e <b>quantas tinham valor digitado à mão</b> que será substituído. Um snapshot é gravado automaticamente antes, e fica em "Snapshots de contingência".</div>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Sincronização</div>
-        <div class="info-box">Se você cadastrou itens em outra aba/sessão e eles não estão aparecendo aqui (ex.: etapas ou tarefas novas que não surgem nas opções dos desenhos), force uma releitura completa do servidor.</div>
-        <button class="btn primary" onclick="recarregarDadosDoServidor()">Recarregar dados do servidor</button>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Snapshots automáticos (últimos 30 dias)</div>
-        <div class="info-box">Uma cópia completa dos dados é gravada automaticamente uma vez por dia. Se algo der errado, você pode restaurar um dia anterior.</div>
-        <div style="display:flex; gap:8px; margin-bottom: 10px;">
-          <button class="btn small" onclick="listarSnapshots()">Atualizar lista</button>
         </div>
-        <div id="snapshotsList"><div class="empty" style="padding:20px;">Clique em "Atualizar lista" para carregar.</div></div>
       </div>
-      <div class="card admin-only">
-        <div class="card-title">Snapshots de contingência (automáticos)</div>
-        <div class="info-box">A cada alteração no programa, uma cópia completa dos dados é guardada automaticamente — no navegador (últimos 30) e, se houver pasta de backup conectada, também em arquivos na pasta (Google Drive). Se algo apagar os dados, restaure aqui o estado logo antes — nada se perde. Uma trava também impede o programa de gravar dados vazios por cima dos bons.</div>
-        <div style="display:flex; gap:8px; margin-bottom: 10px;">
-          <button class="btn small" onclick="listarSnapshotsLocais()">Atualizar lista</button>
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Backups e restauração</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Snapshots automáticos</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Uma cópia completa dos dados é gravada automaticamente uma vez por dia. Se algo der errado, você pode restaurar um dia anterior.</div></details><div class="cfg-status">um por dia, últimos 30 dias</div></div>
+            <div class="cfg-botoes"><button class="btn small" onclick="listarSnapshots()">Atualizar lista</button></div>
+          </div>
+          <div id="snapshotsList"></div>
         </div>
-        <div id="snapshotsLocaisList"><div class="empty" style="padding:20px;">Clique em "Atualizar lista" para carregar.</div></div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Snapshots de contingência</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A cada alteração no programa, uma cópia completa dos dados é guardada automaticamente — no navegador (últimos 30) e, se houver pasta de backup conectada, também em arquivos na pasta (Google Drive). Se algo apagar os dados, restaure aqui o estado logo antes — nada se perde. Uma trava também impede o programa de gravar dados vazios por cima dos bons.</div></details><div class="cfg-status">a cada alteração, no navegador e na pasta de backup</div></div>
+            <div class="cfg-botoes"><button class="btn small" onclick="listarSnapshotsLocais()">Atualizar lista</button></div>
+          </div>
+          <div id="snapshotsLocaisList"></div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Restaurar só as OEs de um snapshot</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Recupera as <b>cargas/alocações de expedição (OEs)</b> de um arquivo de snapshot, <b>sem reverter</b> as OSs e cadastros. Baixe um snapshot de <b>antes da perda</b> (botão "Baixar" nos cards de snapshot acima), depois escolha o arquivo aqui. Só <b>adiciona o que falta</b> — nada do atual é apagado. Ele mostra quantas OEs vai restaurar antes de aplicar; se der 0, o snapshot é posterior à perda — tente um mais antigo.</div></details><div class="cfg-status">só adiciona o que falta; OS e cadastros não voltam</div></div>
+            <div class="cfg-botoes"><label class="file-label btn small">⬆ Escolher snapshot<input type="file" accept="application/json" onchange="restaurarExpedicaoDeArquivo(event)"></label></div>
+          </div>
+        </div>
       </div>
-      <div class="card admin-only">
-        <div class="card-title">Restaurar só as OEs (expedição) de um snapshot</div>
-        <div class="info-box">Recupera as <b>cargas/alocações de expedição (OEs)</b> de um arquivo de snapshot, <b>sem reverter</b> as OSs e cadastros. Baixe um snapshot de <b>antes da perda</b> (botão "Baixar" nos cards de snapshot acima), depois escolha o arquivo aqui. Só <b>adiciona o que falta</b> — nada do atual é apagado. Ele mostra quantas OEs vai restaurar antes de aplicar; se der 0, o snapshot é posterior à perda — tente um mais antigo.</div>
-        <label class="file-label" style="font-size:13px; font-weight:500;">⬆ Escolher snapshot e restaurar só as OEs<input type="file" accept="application/json" onchange="restaurarExpedicaoDeArquivo(event)"></label>
-      </div>
-      <div class="card admin-only">
-        <div class="card-title">Contas de acesso</div>
-        <div class="info-box">Crie aqui a conta de cada pessoa que vai usar o programa. <b>Sem conta ninguém entra</b> — e sem entrar não vê cadastro, OS nem OE nenhuma. A conta já nasce válida: não há e-mail de confirmação para esperar.</div>
-        <div class="form-grid cols-3" style="margin-bottom: 12px;">
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Contas e permissões</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Contas de acesso</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Crie aqui a conta de cada pessoa que vai usar o programa. <b>Sem conta ninguém entra</b> — e sem entrar não vê cadastro, OS nem OE nenhuma. A conta já nasce válida: não há e-mail de confirmação para esperar.</div></details></div>
+          <div class="form-grid cols-3" style="margin-bottom: 12px;">
           <div class="field">
             <label for="novoUsuarioEmail">Nome</label>
             <input type="text" id="novoUsuarioEmail" placeholder="maria" autocomplete="off">
@@ -1557,24 +1565,17 @@
           </div>
           <div id="editarContaStatus" style="margin-top:10px; font-size:13px; color:var(--ink-2);"></div>
         </div>
-      </div>
-
-      <div class="card admin-only">
-        <div class="card-title">Usuários e permissões</div>
-        <div class="info-box">Somente <b>admin</b> gerencia papéis. Quem não é admin usa o programa em <b>modo leitura</b>: consulta e imprime OS, agenda e expedição, mas não cadastra nem edita nada.</div>
-        <div class="info-box" style="border-color:var(--alert);">A tranca de verdade fica no <b>Supabase</b>, não nesta tela: a função <code>set_user_role</code> confere sozinha se quem chamou é admin. Esconder o painel não basta — o navegador é da pessoa que usa, e o papel guardado nele pode ser alterado por quem souber. Se ainda não rodou, aplique uma vez o script <b>sql/supabase-admin-roles.sql</b> (que está no repositório) no SQL Editor do Supabase.</div>
-        <div class="form-grid cols-3" style="margin-bottom: 12px;">
-          <div class="field full">
-            <label for="roleEmail">Nome do usuário</label>
-            <input type="text" id="roleEmail" placeholder="maria">
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Papéis (admin ou consulta)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Somente <b>admin</b> gerencia papéis. Quem não é admin usa o programa em <b>modo leitura</b>: consulta e imprime OS, agenda e expedição, mas não cadastra nem edita nada.<br><br>A tranca de verdade fica no <b>Supabase</b>, não nesta tela: a função <code>set_user_role</code> confere sozinha se quem chamou é admin. Esconder o painel não basta — o navegador é da pessoa que usa, e o papel guardado nele pode ser alterado por quem souber. Se ainda não rodou, aplique uma vez o script <b>sql/supabase-admin-roles.sql</b> (que está no repositório) no SQL Editor do Supabase.</div></details></div>
+          <div class="cfg-botoes">
+            <input type="text" id="roleEmail" placeholder="Nome do usuário (ex.: maria)" style="flex:1 1 200px;max-width:280px;">
+            <button class="btn small primary" onclick="setUserRole('admin')">Promover a admin</button>
+            <button class="btn small" onclick="setUserRole('usuario')">Rebaixar a usuário</button>
+            <button class="btn small" onclick="listarUsuariosComPapel()">Atualizar lista</button>
           </div>
+          <div id="usersList" style="margin-top: 8px;"></div>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn primary" onclick="setUserRole('admin')">Promover a admin</button>
-          <button class="btn" onclick="setUserRole('usuario')">Rebaixar a usuário</button>
-          <button class="btn small" onclick="listarUsuariosComPapel()">Atualizar lista</button>
-        </div>
-        <div id="usersList" style="margin-top: 12px;"></div>
       </div>
     </section>
   </main>
