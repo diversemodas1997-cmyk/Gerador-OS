@@ -56,6 +56,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _numerosOSExistentes', 'os numeros existentes')}
   ${recorte('function _topoDaFilaOS', 'o topo da fila')}
   ${recorte('function _osNumerosFaltando', 'os numeros que faltam')}
+  ${recorte('function _juntarCampos', 'o juntar campo a campo')}
   ${recorte('function _mergeListaPorRegistro', 'o merge por registro')}
   ${recorte('function _apagadosLocaisRegistrar', 'o registro das exclusoes locais')}
   ${recorte('function proximoNumeroOS', 'o proximo numero')}

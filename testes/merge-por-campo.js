@@ -21,7 +21,11 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const i = src.indexOf('function _mergeListaPorRegistro');
 const j = src.indexOf('\n}', i);
 if (i < 0 || j < 0) { console.error('nao achei _mergeListaPorRegistro no app.js'); process.exit(1); }
-const merge = new Function(src.slice(i, j + 2) + '\nreturn _mergeListaPorRegistro;')();
+// O juntar campo a campo saiu para uma funcao propria em 09/10/2026 (o `meta`
+// usa a mesma regra): entra junto.
+const corta = (de) => { const a = src.indexOf(de), b = src.indexOf('\n}', a); return src.slice(a, b + 2); };
+const merge = new Function(corta('function _juntarCampos') + '\n' + src.slice(i, j + 2) + '\nreturn _mergeListaPorRegistro;')();
+const mergeObj = new Function(corta('function _juntarCampos') + '\n' + corta('function _mergeObjetoPorCampo') + '\nreturn _mergeObjetoPorCampo;')();
 
 let falhas = 0;
 const ok = (nome, cond, extra) => {
@@ -95,5 +99,16 @@ const hj = roda([h0], [hAqui], [hLa]).find(x => x.id === 'h') || {};
 ok('o diário de status junta as anotações das duas pontas, pela hora',
    (hj.statusHist || []).map(x => x.k).join(',') === 'cortando,enfestando,separando', hj.statusHist);
 
+/* O META JUNTA CAMPO A CAMPO (09/10/2026, caso Nathaly): a tela dela, sem a
+   concessao que o admin acabou de dar, grava a fila — e a concessao fica. */
+{
+  const base = JSON.stringify({ acessos: { nathaly: { compra: true } }, filaOS: ['a', 'b'] });
+  const srv  = JSON.stringify({ acessos: { nathaly: { compra: true, planejamento: true } }, filaOS: ['a', 'b'] });
+  const nos  = JSON.stringify({ acessos: { nathaly: { compra: true } }, filaOS: ['b', 'a'] });
+  const r = JSON.parse(mergeObj(base, nos, srv));
+  ok('meta: a fila reordenada aqui sobe, e a concessao dada la fica',
+     r.filaOS.join() === 'b,a' && r.acessos.nathaly.planejamento === true, r);
+  ok('meta: lista nao e objeto -> null (quem chama segue a regra antiga)', mergeObj('[]', '[]', '[]') === null, '');
+}
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

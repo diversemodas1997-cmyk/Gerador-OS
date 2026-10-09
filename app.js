@@ -617,6 +617,52 @@ function _adotarServidorPreservandoEdicoes(srvData, chavesDoServidor) {
    OS; agora uma dúvida faz uma exclusão não pegar, e o registro volta na
    próxima leitura. Errar para o lado de conservar é o certo aqui. */
 
+// Junta um registro mexido nas duas pontas, campo a campo (base × nosso ×
+// servidor): o que mudou só aqui vem daqui, o que mudou só lá fica como lá, e
+// objeto mudado dos dois lados desce um nível. Ver _mergeListaPorRegistro.
+function _juntarCampos(b, n, s) {
+  const txt = v => JSON.stringify(v);
+  const ehObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
+  const saida = {};
+  const chaves = new Set([...Object.keys(n), ...Object.keys(s)]);
+  chaves.forEach(k => {
+    const bk = b[k], nk = n[k], sk = s[k];
+    let v;
+    if (txt(nk) === txt(bk)) v = sk;                     // não mexemos: vale o servidor
+    else if (txt(sk) === txt(bk) || txt(sk) === txt(nk)) v = nk;  // só nós mexemos
+    else if (ehObj(nk) && ehObj(sk)) v = _juntarCampos(ehObj(bk) ? bk : {}, nk, sk);
+    /* O DIÁRIO DE STATUS (statusHist, 07/10/2026) é a exceção às listas: é
+       um registro de fatos, e as duas pontas anotam fatos verdadeiros. Junta
+       as anotações das duas, sem repetir, pela hora. */
+    else if (k === 'statusHist' && Array.isArray(nk) && Array.isArray(sk)) {
+      const vistos = new Set();
+      v = sk.concat(nk).filter(x => { const c = txt(x); if (vistos.has(c)) return false; vistos.add(c); return true; })
+        .sort((x, y) => (Number(x && x.em) || 0) - (Number(y && y.em) || 0));
+    }
+    else v = nk;                                         // conflito real: o daqui
+    if (v !== undefined) saida[k] = v;
+  });
+  return saida;
+}
+
+/* O `meta` TAMBÉM SE JUNTA CAMPO A CAMPO (09/10/2026, Junior: "as concessões
+   aos usuários não estão sendo concedidas instantaneamente, como no caso da
+   Nathaly"). Chave que não é lista de registros subia INTEIRA por cima do
+   servidor. O `meta` guarda ao mesmo tempo a tabela de acessos (que o admin
+   grava) e a fila de produção (que a Nathaly grava): a tela dela, ainda sem a
+   concessão que o admin acabara de dar, reordenava a fila e devolvia ao
+   servidor o `meta` inteiro de antes — e a concessão sumia. Agora, objeto com
+   objeto, cada campo vale de quem o mudou. Devolve JSON ou null (não é objeto). */
+function _mergeObjetoPorCampo(baseStr, localStr, srvStr) {
+  const parse = x => {
+    if (typeof x !== 'string') return null;
+    try { const v = JSON.parse(x); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; } catch (e) { return null; }
+  };
+  const local = parse(localStr), srv = parse(srvStr);
+  if (!local || !srv) return null;
+  return JSON.stringify(_juntarCampos(parse(baseStr) || {}, local, srv));
+}
+
 // Merge de três vias de uma LISTA DE REGISTROS (base × nosso × servidor), por id.
 // Parte do que está no servidor e aplica por cima só o que ESTE dispositivo
 // mudou de verdade: registro criado ou editado aqui entra; registro apagado aqui
@@ -659,28 +705,7 @@ function _mergeListaPorRegistro(baseStr, localStr, srvStr, apagados) {
      a ordem e a posição dizem coisa nela. */
   const txt = v => JSON.stringify(v);
   const ehObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
-  const juntar = (b, n, s) => {
-    const saida = {};
-    const chaves = new Set([...Object.keys(n), ...Object.keys(s)]);
-    chaves.forEach(k => {
-      const bk = b[k], nk = n[k], sk = s[k];
-      let v;
-      if (txt(nk) === txt(bk)) v = sk;                     // não mexemos: vale o servidor
-      else if (txt(sk) === txt(bk) || txt(sk) === txt(nk)) v = nk;  // só nós mexemos
-      else if (ehObj(nk) && ehObj(sk)) v = juntar(ehObj(bk) ? bk : {}, nk, sk);
-      /* O DIÁRIO DE STATUS (statusHist, 07/10/2026) é a exceção às listas: é
-         um registro de fatos, e as duas pontas anotam fatos verdadeiros. Junta
-         as anotações das duas, sem repetir, pela hora. */
-      else if (k === 'statusHist' && Array.isArray(nk) && Array.isArray(sk)) {
-        const vistos = new Set();
-        v = sk.concat(nk).filter(x => { const c = txt(x); if (vistos.has(c)) return false; vistos.add(c); return true; })
-          .sort((x, y) => (Number(x && x.em) || 0) - (Number(y && y.em) || 0));
-      }
-      else v = nk;                                         // conflito real: o daqui
-      if (v !== undefined) saida[k] = v;
-    });
-    return saida;
-  };
+  const juntar = _juntarCampos;
   local.forEach(r => {                                     // criado ou editado aqui: manda
     const id = String(r.id);
     const antes = baseReg.get(id);
@@ -1030,7 +1055,8 @@ async function cloudFlush() {
           // dispositivo apagaria o que outro criou enquanto esta aba estava
           // aberta. Não sendo lista de registros, vale o nosso, como antes.
           if (cloudCache[k] === servidor[k]) return;
-          const mesclado = _mergeListaPorRegistro(_baseline[k], cloudCache[k], servidor[k], _apagadosAqui[k]);
+          let mesclado = _mergeListaPorRegistro(_baseline[k], cloudCache[k], servidor[k], _apagadosAqui[k]);
+          if (mesclado == null) mesclado = _mergeObjetoPorCampo(_baseline[k], cloudCache[k], servidor[k]);
           if (mesclado != null && mesclado !== cloudCache[k]) {
             cloudCache[k] = mesclado;
             mescladas.push(k);
@@ -2000,6 +2026,13 @@ function exigirEstoqueTecidos(acao) {
 const AREAS_ACESSO = [
   { k: 'os', rotulo: 'Ordens de Serviço',
     desc: 'Criar, editar, duplicar e excluir OS' },
+  /* PLANEJAMENTO DE PRODUÇÃO COM ÁREA PRÓPRIA (09/10/2026, Junior: "crie uma
+     opção de acesso ao usuário para planejamento de OS"). Antes ele vinha
+     pendurado em "Ordens de Serviço", e quem procurava "planejamento" na lista
+     marcava o de operações, que é outra tela — foi o caso da Nathaly. Quem tem
+     "Ordens de Serviço" continua planejando também. Aprovar segue só do admin. */
+  { k: 'planejamento', rotulo: 'Planejamento de produção',
+    desc: 'Criar, editar e excluir OS planejadas, sem número (aprovar é só do admin)' },
   { k: 'os-status', rotulo: 'Status da OS',
     desc: 'Carimbar por cima do status que vem do checklist (Enfestando, Cortando, Parado…)' },
   { k: 'cadastros', rotulo: 'Cadastros',
@@ -2038,6 +2071,8 @@ const ACOES_POR_AREA = {
   // OS
   'criar ou editar OS': 'os', 'editar OS': 'os', 'duplicar OS': 'os',
   'excluir OS': 'os', 'editar a observação antiga da OS': 'os',
+  // Planejamento de produção (ver exigirPlanejamento: "Ordens de Serviço" também vale)
+  'planejar a produção': 'planejamento',
   // Cadastros
   'criar ou editar cadastros': 'cadastros', 'criar cadastros': 'cadastros',
   'duplicar cadastros': 'cadastros', 'excluir cadastros': 'cadastros',
@@ -4041,7 +4076,9 @@ function goto(page) {
   // card do Início, pelo "+ Nova OS" da lista, pelo "editar" de uma OS e pelo
   // endereço. Fechar aqui, na rota, fecha todos os caminhos de uma vez — e
   // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
-  if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')) {
+  // O formulário em modo planejamento abre também para a área Planejamento de produção.
+  if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')
+      && !(_osPlanAbrir && temAcesso('planejamento'))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
@@ -28366,15 +28403,25 @@ function cancelarFormOS() {
   goto(_osPlanModo ? 'planejamento-producao' : 'home');
 }
 
+// Quem planeja: o admin, a área Planejamento de produção ou a de Ordens de
+// Serviço (quem cria OS de verdade também planeja). Aprovar não passa por aqui.
+function exigirPlanejamento() {
+  const acao = 'planejar a produção';
+  if (_recusarSomenteLeitura(acao)) return false;
+  if (temAcesso('planejamento') || temAcesso('os')) return true;
+  toast('Seu acesso não inclui o Planejamento de produção — peça ao admin', 'err');
+  return false;
+}
+
 function novoPlanejamento() {
-  if (!exigirEdicao('criar ou editar OS')) return;
+  if (!exigirPlanejamento()) return;
   osEditId = null;
   _osPlanAbrir = true;
   goto('nova-os');
 }
 
 function editarPlanejamento(id) {
-  if (!exigirEdicao('criar ou editar OS')) return;
+  if (!exigirPlanejamento()) return;
   const p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
   _osPlanAbrir = true;
@@ -28383,7 +28430,7 @@ function editarPlanejamento(id) {
 
 async function salvarPlanejamento() {
   if (!_osPlanModo) return;
-  if (!exigirEdicao('criar ou editar OS')) return;
+  if (!exigirPlanejamento()) return;
   const data = coletaOS();
   data.os = '';
   if (!data.desenhoId && !data.codigo && !data.gradeId) {
@@ -28416,7 +28463,7 @@ async function salvarPlanejamento() {
 }
 
 async function excluirPlanejamento(id) {
-  if (!exigirEdicao('criar ou editar OS')) return;
+  if (!exigirPlanejamento()) return;
   const p = _planLista().find(x => x.id === id);
   if (!p) return;
   if (!confirm(`Excluir este planejamento?\n\n${_planResumo(p)}`)) return;
