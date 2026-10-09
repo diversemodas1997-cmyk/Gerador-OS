@@ -4897,6 +4897,27 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 :root[data-tema="escuro"] .modal-backdrop { background: rgba(0,0,0,.65); }
 :root[data-tema="escuro"] img { opacity: .95; }
 :root[data-tema="escuro"] .sheet img, :root[data-tema="escuro"] .papel-claro img { opacity: 1; }
+/* TODOS OS DESTAQUES CLAREIAM (09/10/2026, Junior: "corrija todos os
+   destaques do programa usando cores invertidas no modo escuro"). No claro, o
+   passar do mouse e o item escolhido usam um tom um pouco mais escuro que o
+   papel (--bg, --line-2, preto translúcido); no escuro esse mesmo tom fica
+   MAIS ESCURO que o painel e o destacado parece apagado. Aqui ele vira um véu
+   claro. E os fundos creme/verde fixos ganham a versão escura, senão o texto
+   claro do modo escuro some neles. */
+:root[data-tema="escuro"] :is(.avisos-limpar:hover, .dash-st-linha[onclick]:hover, .dash-st-linha[onclick]:focus,
+  .olho-senha:hover, .oe-busca-item:hover, .exp-seg button:hover, .ev-item:hover, .desaloc-row:hover,
+  .op-mover button:hover:not(:disabled), .alerta-salvamento .btn.ghost:hover, .menu-acoes button:hover) {
+  background: rgba(255,255,255,.08);
+}
+:root[data-tema="escuro"] .dash-ls tbody tr:hover td { background: rgba(255,255,255,.05); }
+:root[data-tema="escuro"] .dash-st-titulos:hover { background: none !important; }
+:root[data-tema="escuro"] .dash-escala-btn.ativa { color: var(--paper); }
+:root[data-tema="escuro"] :is(.exp-badge.baixo, .op-prio.urgente) { background: rgba(201,169,97,.20); color: var(--accent-dark); }
+:root[data-tema="escuro"] .dash-ls tfoot td { background: #22332a; }
+/* O botão dourado: no claro, texto escuro sobre o ouro; o --ink do escuro é
+   claro e apagava o texto. O dia do extrato de tecidos (faixa --bg) clareia. */
+:root[data-tema="escuro"] :is(.btn.accent, .btn.accent:hover) { color: #1a1a1a; }
+:root[data-tema="escuro"] td.est-dia-titulo { background: #2a2d32 !important; }
 /* Impressão: sempre o papel claro, seja qual for o modo da tela. */
 @media print {
   :root[data-tema="escuro"] {

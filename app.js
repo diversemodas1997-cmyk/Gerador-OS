@@ -8619,7 +8619,7 @@ function renderEstoque() {
     const partes = [];
     if (r.ent) partes.push(`${r.ent} entrada${r.ent === 1 ? '' : 's'} · ${fmt(r.kgEnt)} kg`);
     if (r.outros) partes.push(`${r.outros} outro${r.outros === 1 ? '' : 's'} lançamento${r.outros === 1 ? '' : 's'}`);
-    return `<tr><td colspan="10" style="background:var(--bg);font-weight:700;padding-top:10px;">
+    return `<tr><td colspan="10" class="est-dia-titulo" style="background:var(--bg);font-weight:700;padding-top:10px;">
         ${d ? formatDate(d) : 'Sem data'} <span class="muted" style="font-weight:400;font-size:12px;margin-left:8px;">${partes.join(' · ')}</span></td></tr>`;
   };
   const opcoesDe = (lista, campo) => {
