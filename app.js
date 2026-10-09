@@ -34665,6 +34665,18 @@ function _avisosEventos() {
               em: new Date(g.ms).toISOString(), dataOe: data,
               janela: (jan && jan.nome) || '', n: g.n });
   });
+  /* O PLANEJAMENTO À ESPERA DO ADMIN (09/10/2026, Junior). Um aviso por
+     planejamento enquanto ele estiver na lista: aprovado, ele vira OS (e o
+     aviso "OS gerada" toma o lugar); excluído, some. Não passa pelo limite de
+     dias: um plano esquecido há seis semanas é justamente o que precisa ser
+     lembrado. A hora é a do NASCIMENTO — editar não faz o aviso voltar a
+     ser novo. */
+  _planLista().forEach(p => {
+    const t = p.criadoEm || p.editadoEm || '';
+    if (!t || isNaN(Date.parse(t))) return;
+    ev.push({ tipo: 'plan', osId: '', planId: p.id, os: '', quem: p.criadoPor || '', em: t,
+              texto: _planResumo(p) });
+  });
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
   const vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
@@ -34733,7 +34745,7 @@ function _avisosChaveAbertos() {
 // A chave de um aviso. `osId` para os da OS, a data para a OE, o tamanho para a
 // linha de lote — mais o instante, que é o que muda quando o aviso é outro.
 function _avisoChave(e) {
-  return [e.tipo, e.osId || e.dataOe || e.n || '', e.em].join('|');
+  return [e.tipo, e.osId || e.planId || e.dataOe || e.n || '', e.em].join('|');
 }
 
 // Lê do zero a cada chamada de propósito: sair de uma conta e entrar em outra
@@ -35115,6 +35127,12 @@ function renderAvisos() {
         cabec = `com as <b>etiquetas impressas</b>${porQuem}`;
         corpo = `<div class="aviso-txt">${esc(_avisosListaOSs(e.oss))}</div>`;
         abrir = `fecharAvisos(); goto('lista-os')`;
+      } else if (e.tipo === 'plan') {
+        icone = '🗓️';
+        titulo = 'Planejamento de produção';
+        cabec = `<b>aguardando aprovação</b>${porQuem}`;
+        if (e.texto) corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); goto('planejamento-producao')`;
       } else if (e.tipo === 'oe') {
         icone = '🚚';
         titulo = `OE ${esc(formatDate(e.dataOe))}`;
@@ -35136,6 +35154,7 @@ function renderAvisos() {
       // que dá para clicar.
       return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}${aberta ? ' aberta' : ''}"
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
+                    : e.tipo === 'plan' ? 'Abrir o Planejamento de produção'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
            onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}; atualizarBadgeAvisos()">
         <span class="aviso-icone">${icone}</span>

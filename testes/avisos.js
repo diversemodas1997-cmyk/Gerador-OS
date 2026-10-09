@@ -59,6 +59,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusOS', 'a leitura do status')}
   ${recorte('function _avisosNascimento', 'o nascimento de um registro')}
   ${recorte('function _expCancelSet', 'as expedicoes canceladas')}
+  ${recorte('function _planLista', 'a lista de planejamentos')}
+  const _planResumo = (p) => p.codigo || '';
   ${recorte('function _avisosEventos', 'a lista de eventos')}
   ${constante('AVISOS_LOTE')}
   ${recorte('function _avisosAgrupar', 'o agrupamento do lote')}
@@ -83,7 +85,7 @@ const monta = (ctx) => new Function('ctx', `
 
 const diasAtras = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
 const ctxDe = (login, ordens, ls = {}, exp = {}) => {
-  const ctx = { login, ls, STATE: { ordens,
+  const ctx = { login, ls, STATE: { ordens, osPlanejadas: exp.planejadas || [],
     expedicaoCargas: exp.cargas || [], expedicaoJanelas: exp.janelas || [],
     expedicaoExcecoes: exp.excecoes || [] } };
   return { ctx, api: monta(ctx) };
@@ -360,6 +362,26 @@ ok('56. a linha por abrir ganha bolinha, e a aberta fica apagada',
 ok('57. clicar num aviso atualiza o numero do sino na hora',
    /marcarAvisoAberto\('\$\{esc\(chave\)\}'\);[\s\S]{0,80}atualizarBadgeAvisos\(\)/.test(src),
    'o numero so cairia na proxima gravacao');
+
+console.log('-- planejamento aguardando aprovacao --');
+t = ctxDe('admin@diverse.local', [], {}, { planejadas: [
+  { id: 'p1', codigo: 'BM.TRI', criadoEm: diasAtras(1), criadoPor: 'nathaly@diverse.local' },
+  { id: 'p2', codigo: 'CM.LISA', criadoEm: diasAtras(50), criadoPor: 'nathaly@diverse.local' }
+] });
+ev = t.api._avisosEventos().filter(e => e.tipo === 'plan');
+ok('58. cada planejamento na lista vira um aviso, com quem planejou e o resumo',
+   ev.length === 2 && ev[0].planId === 'p1' && ev[0].quem === 'nathaly@diverse.local' && ev[0].texto === 'BM.TRI',
+   JSON.stringify(ev));
+ok('59. o plano esquecido ha 50 dias continua avisando (ainda espera o admin)',
+   ev.some(e => e.planId === 'p2'), JSON.stringify(ev));
+ok('60. e conta como novo para o admin',
+   (t.api._avisosVistos(), t.api._avisosMarcarVistos(diasAtras(3)), t.api._avisosNaoLidos().some(e => e.tipo === 'plan')),
+   JSON.stringify(t.api._avisosNaoLidos()));
+t.ctx.STATE.osPlanejadas = [];
+ok('61. aprovado ou excluido (saiu da lista), o aviso some',
+   !t.api._avisosEventos().some(e => e.tipo === 'plan'), 'sobrou aviso de planejamento');
+ok('62. a chave do aviso e a do planejamento, nao vazia',
+   t.api._avisoChave({ tipo: 'plan', planId: 'p1', em: 'x' }) === 'plan|p1|x', 'chave sem o id');
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
