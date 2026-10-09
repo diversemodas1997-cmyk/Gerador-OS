@@ -4810,7 +4810,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
         <div style="margin-top:14px;">
           <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Sequência de status deste desenho</label>
           <div class="field-hint" style="margin-top:4px;margin-bottom:6px;">
-            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. A <b>Prep. matéria-prima</b> só é pulada pela OS criada conjugada (que segue outra OS), em qualquer desenho. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. <b>Enfesto/corte 2x a 5x</b> (na linha do Enfestando) = modelo que volta à mesa uma vez por fase: o seletor anda Enfestando 1/2 → Cortando 1/2 → Enfestando 2/2 → Cortando 2/2 → o seguinte, e cada Cortando baixa o pano de uma fase. Nada marcado = seletor livre, com todos os status.
+            Marque os status por onde as OS deste desenho passam e use ▲▼ para pôr na ordem. No seletor de status da OS aparecem só o status anterior e o seguinte desta lista, mais <b>Parado</b> e <b>Cancelado</b> (sempre). <b>Pode pular</b> = o seletor oferece também o status depois dele. A <b>Prep. matéria-prima</b> é pulada pela OS conjugada que segue outra OS em qualquer desenho, e pelas outras OS só quando o "pode pular" dela está marcado aqui. Os status de São Carlos juntos na lista são um desvio: a OS pode passar por eles ou seguir direto. <b>Enfesto/corte 2x a 5x</b> (na linha do Enfestando) = modelo que volta à mesa uma vez por fase: o seletor anda Enfestando 1/2 → Cortando 1/2 → Enfestando 2/2 → Cortando 2/2 → o seguinte, e cada Cortando baixa o pano de uma fase. Nada marcado = seletor livre, com todos os status.
           </div>
           <button type="button" class="btn small" style="margin-bottom:6px;" onclick="desenhoStatusSeqPadrao()">Usar o caminho padrão</button>
           <div id="m-desenho-status-seq" style="padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--line-2);">
@@ -24983,7 +24983,7 @@ function _desenhoStatusSeqHtml(seq) {
       <span style="flex:1;">${_statusPingo(s)} ${esc(s.rotulo)}</span>
       ${repSel}
       <label style="font-size:11px;white-space:nowrap;cursor:pointer;" title="O seletor oferece também o status seguinte a este">
-        <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}${k === 'materia-prima' ? ' disabled' : ''}> pode pular</label>
+        <input type="checkbox" class="m-status-pula" ${pula ? 'checked' : ''}> pode pular</label>
     </div>`;
   };
   return (seq || []).map(x => linha(x.k, true, !!x.pula)).join('')
@@ -31768,7 +31768,7 @@ function _statusDesdeCelulaOS(o) {
    O caminho padrão (o botão "Usar o caminho padrão" do desenho), confirmado
    pelo Junior:
 
-     Não iniciado → Prep. matéria-prima (só a OS criada conjugada pula)
+     Não iniciado → Prep. matéria-prima (pula a conjugada que segue outra, e o desenho com "pode pular")
        → Enfestando → Cortando
        → Separando → Ensacado | DESC → Costurando | DESC
           ├─ Estoque com fio | DESC → Retirando fio → Estoque
@@ -31904,6 +31904,9 @@ function _statusIdsOrdenados(ids, seq) {
    outra (`conjugadaPaiId`): ela não tem pano próprio, então não há matéria-
    prima a preparar. Nela o preparo pode ser pulado sempre; em qualquer outra,
    nunca — o "pode pular" do desenho não vale para esse status.
+   O DESENHO TAMBÉM LIBERA (09/10/2026, Junior: "libere a opção de configurar
+   o desenho tecnico para pular a etapa prep mat prima"): o "pode pular" da
+   linha da matéria-prima vale para TODA OS daquele desenho.
    A SEGUIDORA À MÃO TAMBÉM PULA (09/10/2026, Junior: "a OS que pode pular essa
    etapa é a OS conjugada que segue outra OS"): quem segue pela amarra da mão
    (`conjugadaStatusPaiId`) vai para a mesa junto com a que manda, e a 0653
@@ -31912,7 +31915,7 @@ function _statusGrafoSeq(seq, o) {
   const conjugadaCriada = !!(o && (o.conjugadaPaiId || o.conjugadaStatusPaiId));
   // Os nós são os ids (a volta do enfesto/corte conta: ver _statusSeqExpandida).
   const lista = [{ k: 'nao-iniciado', id: 'nao-iniciado' }].concat(_statusSeqExpandida(seq).map(x => x.k === 'materia-prima'
-    ? Object.assign({}, x, { pula: conjugadaCriada }) : x));
+    ? Object.assign({}, x, { pula: conjugadaCriada || !!x.pula }) : x));
   const prox = {};
   lista.forEach(x => { prox[x.id] = prox[x.id] || []; });
   const add = (a, b) => { if (a !== b && !prox[a].includes(b)) prox[a].push(b); };
