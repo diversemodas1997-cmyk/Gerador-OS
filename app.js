@@ -13736,6 +13736,12 @@ function _expMarcarExpedicaoOS(os, perna, quandoMs) {
   if (!os || !re) return '';
   const nome = (os.etapas || []).find(n => re.test(n));
   if (!nome) return '';
+  return _expMarcarEtapaOS(os, nome, quandoMs);
+}
+
+// Marca a etapa `nome` da OS pelo programa, com a hora dada (e as tarefas dela).
+// Já marcada, a hora dela fica. Devolve o nome, ou '' quando não marcou.
+function _expMarcarEtapaOS(os, nome, quandoMs) {
   os.progresso = os.progresso || {};
   os.progresso.etapasCheck = os.progresso.etapasCheck || {};
   os.progresso.etapasSeq = os.progresso.etapasSeq || {};
@@ -13852,7 +13858,7 @@ function _expAcertarCaixaAntiga(os, perna, agoraMs) {
    carga, e acerta as OS da regra antiga. Devolve quantas OS mudaram. */
 function _expMarcarViagensVencidas(agoraMs) {
   const agora = Number.isFinite(agoraMs) ? agoraMs : Date.now();
-  let n = 0;
+  const mudaram = new Set();   // cada OS conta uma vez, mesmo mexida duas
   const vistas = new Set();
   (STATE.expedicaoCargas || []).forEach(c => {
     const perna = c.perna === 'volta' ? 'volta' : 'ida';
@@ -13864,9 +13870,74 @@ function _expMarcarViagensVencidas(agoraMs) {
     let mexeu = _expAcertarCaixaAntiga(os, perna, agora);
     const cargas = _expCargasDaPernaOS(os, perna);
     if (cargas.length && cargas[0].t <= agora && _expMarcarExpedicaoOS(os, perna, cargas[0].t)) mexeu = true;
-    if (mexeu) n++;
+    if (mexeu) mudaram.add(os.id);
   });
-  return n;
+  // E a chegada de quem viajou num dia que já acabou (ver _expMarcarChegadaVencidaOS).
+  (STATE.ordens || []).forEach(os => {
+    if (_osCanceladaParaExpedicao(os)) return;
+    if (['ida', 'volta'].filter(p => _expMarcarChegadaVencidaOS(os, p, agora)).length) mudaram.add(os.id);
+  });
+  return mudaram.size;
+}
+
+/* A VIAGEM ACABA NO DIA DELA (09/10/2026, Junior: "é impossível ter começado a
+   semana com estoque em trânsito maior que zero, pois esse volume é o
+   acumulado durante a semana").
+
+   O caminhão vai e volta no mesmo dia, mas a chegada só era registrada pela
+   caixa "Recebido em São Carlos" (ou "Recebido em Descalvado"), e ninguém a
+   marca: no backup de 06/10, 35 OS tinham a ida marcada e nenhuma o Recebido.
+   Para o programa elas seguiam na estrada até alguém carimbá-las mais adiante
+   — a 0557 "viajou" de 18/09 a 05/10 —, e o Relatório produção abria a semana
+   com trânsito no Início.
+
+   Agora, terminado o dia da saída sem a chegada marcada, a caixa da chegada é
+   marcada sozinha COM A HORA DO FIM DAQUELE DIA (23:59:59). A OS continua
+   passando pelo trânsito (regra de 07/10): Ensacado → Em trânsito → Recebido.
+
+   A CHEGADA MARCADA À MÃO VALE (Junior, mesmo dia: "vale a hora marcada à
+   mão"): caixa já marcada não é tocada, com a hora que tiver.
+
+   NUNCA DEPOIS DO QUE VEIO DEPOIS. Se, ainda no dia da viagem, a OS já foi
+   adiante — um carimbo à mão, ou a caixa de uma etapa que fica depois da
+   chegada (costura de lá, a volta) —, a chegada fica um instante antes disso.
+   Às 23:59 ela seria a última marca da folha e puxaria o status de volta. */
+function _expMarcarChegadaVencidaOS(os, perna, agoraMs) {
+  if (!os || !os.progresso) return false;
+  const fase = (FASES_ESTOQUE || []).find(f => f.id === (perna === 'volta' ? 'transitoVolta' : 'transitoIda'));
+  const reSaiu = fase && fase.entrada && fase.entrada.re;
+  const reChegou = perna === 'volta' ? ETAPA_DESC_RE : ETAPA_SC_RE;
+  const ck = os.progresso.etapasCheck || {}, sq = os.progresso.etapasSeq || {};
+  const etapas = os.etapas || [];
+  const saiu = reSaiu ? etapas.find(n => reSaiu.test(n) && ck[n]) : null;
+  const chegada = etapas.find(n => reChegou.test(n));
+  if (!saiu || !chegada || ck[chegada]) return false;
+  const tSaiu = Number(sq[saiu]);
+  if (!Number.isFinite(tSaiu)) return false;
+  const d = new Date(tSaiu);
+  const fimDoDia = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() - 1000;
+  if (fimDoDia > agoraMs) return false;            // o dia da viagem ainda não acabou
+  // O que veio depois da chegada, ainda naquele dia: a chegada fica antes.
+  const kTransito = perna === 'volta' ? 'transito-volta' : 'transito-ida';
+  const ondeTransito = FLUXO_STATUS_OS.indexOf(kTransito);
+  let limite = fimDoDia + 1;
+  const carimbo = Date.parse(os.statusOSEm || '');
+  if (os.statusOS && Number.isFinite(carimbo) && carimbo > tSaiu) {
+    const ondeCarimbo = FLUXO_STATUS_OS.indexOf(os.statusOS);
+    // Carimbada de volta para ANTES da viagem: alguém disse que ela não foi —
+    // não se inventa chegada. O carimbo do próprio trânsito não segura nada.
+    if (ondeCarimbo >= 0 && ondeCarimbo < ondeTransito) return false;
+    // Adiante (ou Parado/Cancelado, fora do caminho): a chegada fica antes dele.
+    if (ondeCarimbo !== ondeTransito) limite = Math.min(limite, carimbo);
+  }
+  etapas.forEach(n => {
+    const t = Number(sq[n]);
+    if (!ck[n] || n === saiu || !Number.isFinite(t) || t <= tSaiu) return;
+    const s = STATUS_OS.find(x => x.re && x.re.test(n));
+    if (s && FLUXO_STATUS_OS.indexOf(s.k) > ondeTransito) limite = Math.min(limite, t);
+  });
+  const quando = Math.max(tSaiu + 1, Math.min(fimDoDia, limite - 1));
+  return !!_expMarcarEtapaOS(os, chegada, quando);
 }
 
 // OS cancelada não viaja: a rotina não marca nada nela.

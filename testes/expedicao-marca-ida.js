@@ -35,6 +35,7 @@ const montar = (estado) => new Function('STATE', `
   ${corta('function tarefasDaEtapa')}
   ${corta('function _tarefasDaEtapaOS')}
   ${corta('function _expMarcarExpedicaoOS')}
+  ${corta('function _expMarcarEtapaOS')}
   ${cortaLinha('function _expMarcarExpedicaoIdaOS')}
   return _expMarcarExpedicaoIdaOS;
 `)(estado);
@@ -95,6 +96,10 @@ const montarRotina = (estado) => new Function('STATE', `
   ${corta('function tarefasDaEtapa')}
   ${corta('function _tarefasDaEtapaOS')}
   ${corta('function _expMarcarExpedicaoOS')}
+  ${corta('function _expMarcarEtapaOS')}
+  ${cortaArr('const STATUS_OS')}
+  ${recorte('const FLUXO_STATUS_OS', ';', 'o caminho dos status')};
+  ${corta('function _expMarcarChegadaVencidaOS')}
   ${corta('function _expCancelSet')}
   ${corta('function _expDataEfetivaCarga')}
   ${corta('function _expInstanteCarga')}
@@ -153,8 +158,11 @@ est = { etapas: [], tarefas: [], expedicaoJanelas: janelas, expedicaoExcecoes: [
   ordens: [osCom({ [IDA]: true }, { [IDA]: H(5, 8) })],
   expedicaoCargas: [cargaDe('a', '2026-10-09', { criadaEm: new Date(alocadaEm).toISOString() })] };
 R = montarRotina(est);
+// (A chegada dela e marcada no fim do dia 05 — ver o bloco da viagem que acaba
+// no dia dela, la embaixo —, mas a caixa da SAIDA fica com a hora de gente.)
+R.rodar(H(8, 9));
 ok('caixa marcada por GENTE (hora que nao e a da alocacao) fica como esta',
-   R.rodar(H(8, 9)) === 0 && est.ordens[0].progresso.etapasSeq[IDA] === H(5, 8), est.ordens[0].progresso.etapasSeq);
+   est.ordens[0].progresso.etapasSeq[IDA] === H(5, 8), est.ordens[0].progresso.etapasSeq);
 
 est = { etapas: [], tarefas: [], expedicaoJanelas: janelas, expedicaoExcecoes: [{ janelaId: 'j1', data: '2026-10-09', tipo: 'cancelada' }],
   ordens: [osCom({}, {})], expedicaoCargas: [cargaDe('a', '2026-10-09')] };
@@ -165,6 +173,46 @@ ok('carga cancelada nao marca nada', R.rodar(H(10, 9)) === 0 && !est.ordens[0].p
 const generica = corta('function _expMarcarExpedicaoOS');
 ok('a perna escolhe o campo: volta -> transitoVolta, resto -> transitoIda',
    /perna === 'volta' \? 'transitoVolta' : 'transitoIda'/.test(generica), '');
+
+/* A VIAGEM ACABA NO DIA DELA (09/10/2026, Junior: "e impossivel ter comecado a
+   semana com estoque em transito maior que zero"). Terminado o dia da saida sem
+   a chegada marcada, a rotina marca o Recebido com a hora do fim daquele dia. */
+const REC_SC = 'Recebido em São Carlos', VOLTA = 'Expedição São Carlos X Desc.', REC_D = 'Recebido em Descalvado';
+const FIM = d => new Date(2026, 9, d + 1).getTime() - 1000;
+est = { etapas: [], tarefas: [], expedicaoJanelas: janelas, expedicaoExcecoes: [],
+  ordens: [osCom({ [IDA]: true }, { [IDA]: H(9, 14, 30) })], expedicaoCargas: [] };
+R = montarRotina(est);
+ok('no dia da viagem a OS segue em transito', R.rodar(H(9, 20)) === 0 && !est.ordens[0].progresso.etapasCheck[REC_SC], est.ordens[0].progresso);
+ok('acabado o dia, o Recebido em Sao Carlos e marcado com o fim do dia (23:59:59)',
+   R.rodar(H(10, 0, 1)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(9), est.ordens[0].progresso.etapasSeq);
+ok('rodar de novo nao mexe', R.rodar(H(10, 9)) === 0, '');
+
+est.ordens = [osCom({ [IDA]: true, [REC_SC]: true }, { [IDA]: H(9, 14, 30), [REC_SC]: H(10, 8) })];
+ok('a chegada marcada a mao vale, com a hora dela', R.rodar(H(11, 9)) === 0 && est.ordens[0].progresso.etapasSeq[REC_SC] === H(10, 8), est.ordens[0].progresso.etapasSeq);
+
+est.ordens = [Object.assign(osCom({ [IDA]: true }, { [IDA]: H(2, 11) }), { statusOS: 'estoque', statusOSEm: new Date(H(5, 13, 48)).toISOString() })];
+ok('OS carimbada adiante dias depois (caso 0557): chega no fim do dia da viagem',
+   R.rodar(H(9, 9)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(2), est.ordens[0].progresso.etapasSeq);
+
+est.ordens = [Object.assign(osCom({ [IDA]: true }, { [IDA]: H(9, 11) }), { statusOS: 'costurando-sc', statusOSEm: new Date(H(9, 16)).toISOString() })];
+ok('carimbo adiante no mesmo dia: a chegada fica antes dele',
+   R.rodar(H(10, 9)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === H(9, 16) - 1, est.ordens[0].progresso.etapasSeq);
+
+est.ordens = [osCom({ [IDA]: true, [VOLTA]: true }, { [IDA]: H(9, 8), [VOLTA]: H(9, 17) })];
+R.rodar(H(10, 9));
+const sqv = est.ordens[0].progresso.etapasSeq;
+ok('ida e volta no mesmo dia: chega em SC antes da volta sair, e em Descalvado no fim do dia',
+   sqv[REC_SC] === H(9, 17) - 1 && sqv[REC_D] === FIM(9), sqv);
+
+est.ordens = [osCom({ 'Ensaque': true }, { 'Ensaque': H(1, 9) })];
+ok('OS que nao viajou nao ganha chegada', R.rodar(H(10, 9)) === 0 && !est.ordens[0].progresso.etapasCheck[REC_SC], est.ordens[0].progresso);
+
+est.ordens = [Object.assign(osCom({ [IDA]: true }, { [IDA]: H(9, 11) }), { statusOS: 'transito-ida', statusOSEm: new Date(H(9, 12)).toISOString() })];
+ok('o carimbo do proprio transito nao segura a chegada: fim do dia',
+   R.rodar(H(10, 9)) === 1 && est.ordens[0].progresso.etapasSeq[REC_SC] === FIM(9), est.ordens[0].progresso.etapasSeq);
+est.ordens = [Object.assign(osCom({ [IDA]: true }, { [IDA]: H(9, 11) }), { statusOS: 'ensacado', statusOSEm: new Date(H(9, 12)).toISOString() })];
+ok('carimbada de volta para Ensacado | DESC depois da saida: nao ganha chegada',
+   R.rodar(H(10, 9)) === 0 && !est.ordens[0].progresso.etapasCheck[REC_SC], est.ordens[0].progresso);
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
