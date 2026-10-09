@@ -24995,6 +24995,22 @@ function desenhoStatusSeqPadrao() {
 }
 window.desenhoStatusSeqPadrao = desenhoStatusSeqPadrao;
 
+/* MODO ESCURO (09/10/2026, Junior). A escolha mora no navegador
+   (localStorage 'tema'): é preferência de quem olha a tela, não dado da
+   fábrica — não vai para o blob. O <head> do index.html aplica antes de
+   pintar; aqui só se liga, desliga e acerta a caixinha da Aparência. As cores
+   estão no styles.css (MODO ESCURO), e o papel fica sempre claro. */
+function alternarModoEscuro(ligar) {
+  if (ligar) document.documentElement.setAttribute('data-tema', 'escuro');
+  else document.documentElement.removeAttribute('data-tema');
+  try { localStorage.setItem('tema', ligar ? 'escuro' : 'claro'); } catch (e) {}
+}
+window.alternarModoEscuro = alternarModoEscuro;
+(function () {
+  const chk = document.getElementById('cfgModoEscuro');
+  if (chk) chk.checked = document.documentElement.getAttribute('data-tema') === 'escuro';
+})();
+
 function moverEtapaDesenho(btn, dir) {
   const label = btn.closest('.etapa-check');
   if (!label) return;

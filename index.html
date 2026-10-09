@@ -35,7 +35,10 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-09d">
+<link rel="stylesheet" href="styles.css?v=2026-10-09f">
+<!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
+     ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
+<script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
 <script src="vendor/supabase-js-2.112.2.min.js"></script>
 <script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="vendor/jspdf-2.5.2.umd.min.js"></script>
@@ -1317,6 +1320,14 @@
            quadros por assunto; a explicação longa de cada item fica recolhida
            em "como funciona". Os ids e os onclick são os de sempre. -->
       <div class="card cfg-quadro">
+        <div class="card-title">Aparência</div>
+        <div class="cfg-linha-topo">
+          <label class="cfg-tema"><input type="checkbox" id="cfgModoEscuro" onchange="alternarModoEscuro(this.checked)"> <b>Modo escuro</b></label>
+          <div class="cfg-status">Vale só para este navegador. A folha de OS, os PDFs e a impressão continuam em papel branco.</div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro">
         <div class="card-title">Servidor e sincronização</div>
         <div id="servidorLocalStatus" class="cfg-status" style="margin-bottom:8px;">Carregando…</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
@@ -1851,6 +1862,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-09i"></script>
+<script src="app.js?v=2026-10-09j"></script>
 </body>
 </html>

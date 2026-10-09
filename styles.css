@@ -4820,3 +4820,83 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 .cfg-quadro > div > label { font-size: 12px; color: var(--ink-3); }
 .cfg-linha-nome > .cfg-ajuda { display: inline; margin: 0 0 0 8px; }
 .cfg-linha-nome > .cfg-ajuda[open] > div { display: block; font-weight: normal; }
+
+/* ============ MODO ESCURO (09/10/2026, Junior) ============
+   Liga em Configurações → Aparência e vale para ESTE navegador
+   (localStorage 'tema', aplicado no <head> antes de pintar a tela).
+
+   A tela troca as variáveis de cor. O PAPEL NÃO: a folha de OS, as folhas
+   de expedição, o relatório e as caixas que o html2canvas fotografa
+   (.papel-claro) continuam com a paleta clara — o PDF e a impressão são os
+   mesmos nos dois modos. Também ficam claras as faixas que o app.js pinta
+   com fundo claro inline (verde/vermelho/amarelo de situação): são "ilhas"
+   claras, legíveis, em vez de texto claro sobre fundo claro. */
+:root[data-tema="escuro"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --paper: #1f2226;
+  --ink: #e7e4dd;
+  --ink-2: #c8c4bb;
+  --ink-3: #9b978e;
+  --line: #3a3e44;
+  --line-2: #2a2d32;
+  --accent: #c9a961;
+  --accent-dark: #e2c47e;
+  --alert: #ff6b6b;
+  --alert-bg: #3b2020;
+  --ok: #5cc27a;
+  --ok-bg: #1d3326;
+  --yellow: #f4d03f;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
+}
+/* As ilhas claras: a paleta de sempre, de volta. */
+:root[data-tema="escuro"] :is(.sheet, .rel-folha, .papel-claro, aside.sidebar,
+  [style*="background:#"], [style*="background: #"]) {
+  color-scheme: light;
+  --bg: #f5f2ea; --paper: #ffffff; --ink: #1a1a1a; --ink-2: #3a3a3a; --ink-3: #6b6b6b;
+  --line: #d4d0c5; --line-2: #e8e4d9; --accent: #c9a961; --accent-dark: #9a7c3a;
+  --alert: #c81e1e; --alert-bg: #fde8e8; --ok: #2d7d46; --ok-bg: #e6f4ea;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+}
+:root[data-tema="escuro"] :is(.sheet, .rel-folha, .papel-claro,
+  [style*="background:#"], [style*="background: #"]) { color: var(--ink); }
+/* A barra lateral já era escura: com a paleta clara ela fica igual a antes. */
+:root[data-tema="escuro"] aside.sidebar { border-right: 1px solid #000; }
+/* O bloco do perfil (fundo de papel) volta à paleta escura. */
+:root[data-tema="escuro"] aside.sidebar .auth-bar {
+  color-scheme: dark;
+  --bg: #15171a; --paper: #1f2226; --ink: #e7e4dd; --ink-2: #c8c4bb; --ink-3: #9b978e;
+  --line: #3a3e44; --line-2: #2a2d32; --accent-dark: #e2c47e;
+  --alert: #ff6b6b; --alert-bg: #3b2020; --ok: #5cc27a; --ok-bg: #1d3326;
+  color: var(--ink);
+}
+/* Cabeçalhos escuros de tabela: continuam faixa escura, um tom acima do fundo. */
+:root[data-tema="escuro"] :is(.table th, .desenho-comp-table th, .grade-folder-top td, .grade-folder-sub td) {
+  background: #2e3238; color: var(--ink);
+}
+:root[data-tema="escuro"] .rel-folha .table th { background: #1a1a1a; color: #fff; }
+/* Fundos claros fixos da tela (fora do papel). */
+:root[data-tema="escuro"] :is(.msg-linha.meu, .msg-reagir.eu, .msg-respondendo, .msg-mencao-item.sel, .msg-mencao-item:hover) { background: #2a2a22; }
+:root[data-tema="escuro"] :is(.msg-linha.editando, .msg-mencao.eu, .presence-bar) { background: #3a3420; color: var(--ink); }
+:root[data-tema="escuro"] :is(.msg-editar textarea, .msg-mencoes, .dash-gr-tip, .os-check) { background-color: var(--paper); color: var(--ink); }
+:root[data-tema="escuro"] .os-check:checked { background-color: #1d3326; }
+:root[data-tema="escuro"] .warn-box { background: #3b2020; color: var(--ink); }
+:root[data-tema="escuro"] .alerta-salvamento.erro { background: #3a2a16; color: var(--ink); }
+:root[data-tema="escuro"] .exp-objetivo-aviso { background: #3a2f16; border-color: #7a5f1e; color: #f0d9a8; }
+:root[data-tema="escuro"] .tt-tom-btn:hover { background: #1d3326; color: #cfe9d6; border-color: #3f6b4c; }
+:root[data-tema="escuro"] .table tr:hover td { background: rgba(201,169,97,.10); }
+:root[data-tema="escuro"] .modal-backdrop { background: rgba(0,0,0,.65); }
+:root[data-tema="escuro"] img { opacity: .95; }
+:root[data-tema="escuro"] .sheet img, :root[data-tema="escuro"] .papel-claro img { opacity: 1; }
+/* Impressão: sempre o papel claro, seja qual for o modo da tela. */
+@media print {
+  :root[data-tema="escuro"] {
+    color-scheme: light;
+    --bg: #f5f2ea; --paper: #ffffff; --ink: #1a1a1a; --ink-2: #3a3a3a; --ink-3: #6b6b6b;
+    --line: #d4d0c5; --line-2: #e8e4d9; --accent-dark: #9a7c3a;
+    --alert: #c81e1e; --alert-bg: #fde8e8; --ok: #2d7d46; --ok-bg: #e6f4ea;
+  }
+}
+/* O interruptor da Aparência. */
+.cfg-tema { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; user-select: none; }
+.cfg-tema input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
