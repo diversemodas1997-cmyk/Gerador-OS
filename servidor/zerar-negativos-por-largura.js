@@ -15,6 +15,11 @@
  *
  *   node servidor/zerar-negativos-por-largura.js            (so mostra)
  *   node servidor/zerar-negativos-por-largura.js --gravar   (grava)
+ *
+ * SO UMA LINHA (10/10/2026, Junior: "zere o saldo negativo do off-white 120
+ * cm"): --cor e --largura restringem a conta a essa cor/largura; as outras
+ * linhas negativas ficam como estao.
+ *   node servidor/zerar-negativos-por-largura.js --cor "Off-White Malha Algodão" --largura 120
  */
 const fs = require('fs');
 const path = require('path');
@@ -26,6 +31,10 @@ const CREDS = ['J:', 'I:', 'G:'].map(d => d + '/Meu Drive/Backup ERP Diverse/Ger
 const LOCAL = path.join(__dirname, 'tls', 'servidor-local.json');
 const SUPA = 'http://localhost:8000';
 const GRAVAR = process.argv.includes('--gravar');
+const opt = n => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : null; };
+const SO_COR = opt('--cor'), SO_LARG = Number(opt('--largura')) || 0;
+const semAcento = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const naLinha = (c, l) => (!SO_COR || semAcento(c.corNome) === semAcento(SO_COR)) && (!SO_LARG || Number(l) === SO_LARG);
 
 async function conectar() {
   if (!CREDS) throw new Error('nao achei supa-creds.json no Google Drive');
@@ -87,7 +96,7 @@ function saldos(data) {
       .map(([l, v]) => ({ l, kg: v.kg })) }));
 }
 const kg3 = n => Math.round(n * 1000) / 1000;
-const HOJE = '2026-10-02';
+const HOJE = new Date().toISOString().slice(0, 10);
 
 (async () => {
   const cab = await conectar();
@@ -101,7 +110,7 @@ const HOJE = '2026-10-02';
   let kgEntrada = 0;
   saldos(data).forEach(c => {
     const pos = c.larg.filter(x => kg3(x.kg) > 0).sort((a, b) => b.kg - a.kg);
-    c.larg.filter(x => kg3(x.kg) < 0).forEach(neg => {
+    c.larg.filter(x => kg3(x.kg) < 0 && naLinha(c, x.l)).forEach(neg => {
       let falta = kg3(-neg.kg);
       // 1o: transferir do que a MESMA cor tem sobrando em outra largura.
       pos.forEach(p => {
@@ -124,7 +133,7 @@ const HOJE = '2026-10-02';
   console.log(`\n${novos.length} lancamentos; entrada nova de pano: ${kg3(kgEntrada)} kg`);
 
   const novo = Object.assign({}, data, { estoqueMov: JSON.stringify(movs.concat(novos)) });
-  const sobra = saldos(novo).flatMap(c => c.larg.filter(x => kg3(x.kg) < 0).map(x => c.corNome + ' ' + x.l));
+  const sobra = saldos(novo).flatMap(c => c.larg.filter(x => kg3(x.kg) < 0 && naLinha(c, x.l)).map(x => c.corNome + ' ' + x.l));
   if (sobra.length) throw new Error('conferencia: ainda negativos: ' + sobra.join(', '));
   console.log('conferencia: nenhuma linha negativa depois do ajuste');
   if (!GRAVAR) { console.log('\nNada gravado (rode com --gravar).'); return; }
@@ -134,7 +143,7 @@ const HOJE = '2026-10-02';
   fs.writeFileSync(arq, JSON.stringify(data), 'utf8');
   console.log('\nbackup: ' + path.relative(RAIZ, arq));
   await gravarBlob(cab, novo, updatedAt);
-  const resto = saldos((await lerBlob(cab)).data).flatMap(c => c.larg.filter(x => kg3(x.kg) < 0));
+  const resto = saldos((await lerBlob(cab)).data).flatMap(c => c.larg.filter(x => kg3(x.kg) < 0 && naLinha(c, x.l)));
   console.log(`gravado. Linhas negativas no servidor agora: ${resto.length}.`);
   console.log('\nAgora: F5 em todas as abas do programa.');
 })().catch(e => { console.error('ERRO: ' + e.message); process.exit(1); });
