@@ -14180,6 +14180,41 @@ function expHoje() {
 
 /* ---------------- render do planejamento ---------------- */
 
+/* O NÚMERO DA OE (14/10/2026, Junior: "cada OE deve conter um número, igual a
+   OS"). A OE é a EXPEDIÇÃO — uma janela numa data (a mesma chave
+   janelaId|data com que o menu conta as OE) —, com a ida e a volta. Ela não é
+   um registro à parte: são as cargas daquela janela naquele dia. Então o número
+   mora nas CARGAS (`oe`), todas as da expedição com o mesmo, e é lido de
+   qualquer uma delas. Assim ele viaja no merge registro a registro das cargas,
+   sem um mapa único que duas máquinas pudessem gravar uma por cima da outra.
+
+   NASCE quando a primeira OS é alocada na expedição (as duas portas por onde
+   uma carga nasce: alocar OS e trazer de uma OE para a volta) e NÃO SE REPETE:
+   como a OC (ver _ocNumeroNovo), o contador meta.oeCounter lembra o que já foi
+   emitido, e o maior número existente fica junto como rede. Expedição sem
+   carga (só agendada, ou só com aviamento) ainda não tem número. As que já
+   existiam em 14/10/2026 foram numeradas em ordem de data pelo script
+   servidor/numerar-oe-1410.js. */
+const _oeFmt = n => (Number(n) > 0 ? String(Number(n)).padStart(4, '0') : '');
+
+function _oeNumeroDe(janelaId, data) {
+  const c = (STATE.expedicaoCargas || []).find(c => c && c.janelaId === janelaId && c.data === data && Number(c.oe) > 0);
+  return c ? Number(c.oe) : 0;
+}
+
+// O número da expedição; sem número ainda, emite o próximo (e avança o contador).
+// Devolve { n, novo } — `novo` diz a quem chama que o contador mudou e tem de
+// ser gravado (saveState('meta')).
+function _oeNumeroGarantir(janelaId, data) {
+  const ja = _oeNumeroDe(janelaId, data);
+  if (ja) return { n: ja, novo: false };
+  const maior = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0);
+  STATE.meta = STATE.meta || {};
+  const n = Math.max(maior, Number(STATE.meta.oeCounter) || 0) + 1;
+  STATE.meta.oeCounter = n;
+  return { n, novo: true };
+}
+
 function renderExpedicaoPlano() {
   const cont = document.getElementById('expedicao-plano');
   if (!cont) return;
@@ -14346,7 +14381,7 @@ function renderExpedicaoPlano() {
       <div class="exp-ocor-head">
         <div>
           <div class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">
-            ${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}
+            ${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `<span class="exp-oe-num">OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))}</span> · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}
           </div>
           <div class="exp-ocor-nome">
             ${esc(oc.janela.nome) || 'Janela sem nome'}
@@ -15346,7 +15381,8 @@ async function salvarModalExpedicao() {
     const fases = (selFases.length && fasesMarcadas.length && fasesMarcadas.length < selFases.length)
       ? fasesMarcadas
       : null;
-    const campos = { janelaId, data, perna, osId, volumes, fases, obs: v('ec-obs').trim() };
+    const oe = _oeNumeroGarantir(janelaId, data);
+    const campos = { janelaId, data, perna, osId, volumes, fases, obs: v('ec-obs').trim(), oe: oe.n };
     // Guarda (ou limpa) a composição por pacote. Sem seletor, remove qualquer
     // composição antiga pra não ficar incoerente com o número manual.
     if (temSeletor) { campos.pacotes = pacotes; campos.reposicao = reposicao; }
@@ -15361,6 +15397,7 @@ async function salvarModalExpedicao() {
                                    criadaEm: new Date().toISOString(), criadaPor: _obsQuemSou() });
     }
     await saveState('expedicaoCargas');
+    if (oe.novo) await saveState('meta');
     // Alocada numa IDA: a caixa "Expedição Desc X São Carlos" da OS é marcada
     // (ver _expMarcarExpedicaoIdaOS).
     // A caixa da PERNA em que a OS foi alocada — ida ou volta. Ver
@@ -15380,6 +15417,7 @@ async function salvarModalExpedicao() {
       .filter(c => c.janelaId === ctx.janelaId && c.data === ctx.dataOrig && c.perna === 'volta')
       .map(c => c.osId));
     let n = 0;
+    const oe = _oeNumeroGarantir(ctx.janelaId, ctx.dataOrig);
     marcadas.forEach(el => {
       const osId = el.value;
       if (!osId || jaLa.has(osId)) return;   // repetida: a checagem no salvar também vale
@@ -15388,7 +15426,7 @@ async function salvarModalExpedicao() {
       // origem, quando ela tem uma (o que veio, volta).
       const origem = (STATE.expedicaoCargas || []).find(c => c.id === el.dataset.carga);
       const nova = {
-        id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, perna: 'volta',
+        id: uid(), janelaId: ctx.janelaId, data: ctx.dataOrig, perna: 'volta', oe: oe.n,
         osId, volumes: parseInt(el.dataset.vol, 10) || 0, obs: '',
         criadaEm: new Date().toISOString(), criadaPor: _obsQuemSou()
       };
@@ -15408,6 +15446,7 @@ async function salvarModalExpedicao() {
     });
     if (!n) return toast('Essas OSs já estão na volta', 'err');
     await saveState('expedicaoCargas');
+    if (oe.novo) await saveState('meta');
     // Mesma regra da ida: "Expedição São Carlos X Desc." é marcada no dia e
     // hora da carga, e não agora (ver _expMarcarViagensVencidas).
     await _expRodarViagensVencidas();
@@ -21268,7 +21307,7 @@ function renderPrintPlanoExpedicao() {
   const blocos = ocs.map(oc => `
     <div class="exp-print-bloco">
       <div class="cab">
-        <span class="d">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
+        <span class="d">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))} · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
         <span class="j">
           ${esc(oc.janela.nome) || 'Janela sem nome'}
           ${oc.remarcada ? ` · remarcada de ${esc(formatDate(oc.dataOrig))}` : ''}
