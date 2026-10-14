@@ -4870,6 +4870,14 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Marcelo"></div>
+        <div class="field"><label>Unidade</label>
+          <select id="m-unidade">${AVIAMENTO_UNIDADES.map(u => {
+            // Pessoa nova nasce na unidade da aba aberta.
+            const atual = item.id ? _equipeUnidadeDe(item) : _equipeUnidade;
+            return `<option value="${u.k}"${u.k === atual ? ' selected' : ''}>${esc(u.rotulo)}</option>`;
+          }).join('')}</select>
+          <div class="field-hint">Em qual unidade a pessoa trabalha. Separa as abas da Equipe e as costureiras do Relatório de costura.</div>
+        </div>
         <div class="field"><label>Função principal</label>
           <select id="m-funcao" onchange="mostrarResponsabilidadesFuncao()">
             <option value="">— sem função —</option>
@@ -6872,6 +6880,7 @@ async function salvarCadastro() {
   else if (tipo === 'equipe') {
     if (!v('m-nome')) return toast('Nome obrigatório', 'err');
     item.nome = v('m-nome');
+    item.unidade = v('m-unidade') === 'sc' ? 'sc' : 'desc';
     item.funcao = v('m-funcao');
     // Vincula a função por ID também — assim se o nome da função for renomeado, reflete aqui
     const funcaoMatch = (STATE.funcoes || []).find(f => (f.nome || '').trim().toLowerCase() === (item.funcao || '').trim().toLowerCase());
@@ -22376,10 +22385,36 @@ function renderBlocos() {
   tb.innerHTML = STATE.blocos.map(b => `
     <tr>${acoesCell('bloco', b.id)}<td><strong>${esc(b.nome)}</strong></td><td>${esc(b.desc)||'—'}</td></tr>`).join('');
 }
+/* A EQUIPE POR UNIDADE (14/10/2026, Junior: "O campo cadastro de Equipe deve
+   conter essas duas abas, também, para separar as equipes das duas unidades").
+   Cada pessoa tem `unidade` ('desc' | 'sc'); quem foi cadastrado antes do campo
+   é de Descalvado, onde a fábrica sempre esteve. É pela unidade que o Relatório
+   de costura oferece as costureiras de cada aba. */
+const _equipeUnidadeDe = p => ((p && p.unidade === 'sc') ? 'sc' : 'desc');
+let _equipeUnidade = 'desc';
+try { if (sessionStorage.getItem('gos:equipe:unidade') === 'sc') _equipeUnidade = 'sc'; } catch (e) { /* vale o padrão */ }
+
+function _equipeTrocarUnidade(k) {
+  _equipeUnidade = k === 'sc' ? 'sc' : 'desc';
+  try { sessionStorage.setItem('gos:equipe:unidade', _equipeUnidade); } catch (e) { /* vale só nesta aba */ }
+  renderEquipe();
+}
+window._equipeTrocarUnidade = _equipeTrocarUnidade;
+
 function renderEquipe() {
   const tb = document.getElementById('tbl-equipe');
-  if (!STATE.equipe.length) { tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada.</td></tr>`; return; }
-  tb.innerHTML = STATE.equipe.map(p => `
+  const abas = document.getElementById('equipe-abas');
+  if (abas) abas.innerHTML = `<div class="exp-tabs">${AVIAMENTO_UNIDADES.map(u => {
+    const n = (STATE.equipe || []).filter(p => _equipeUnidadeDe(p) === u.k).length;
+    return `<button type="button" class="exp-tab${u.k === _equipeUnidade ? ' active' : ''}" onclick="_equipeTrocarUnidade('${u.k}')">${esc(u.rotulo)} (${n})</button>`;
+  }).join('')}</div>`;
+  const lista = (STATE.equipe || []).filter(p => _equipeUnidadeDe(p) === _equipeUnidade);
+  if (!lista.length) {
+    const rot = (AVIAMENTO_UNIDADES.find(u => u.k === _equipeUnidade) || {}).rotulo || '';
+    tb.innerHTML = `<tr><td colspan="3" class="empty">Nenhuma pessoa cadastrada na ${esc(rot)}.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = lista.map(p => `
     <tr>${acoesCell('equipe', p.id)}<td><strong>${esc(p.nome)}</strong></td><td><span class="badge">${esc(p.funcao)||'—'}</span></td></tr>`).join('');
 }
 function etapasOrdenadas() {
@@ -24103,35 +24138,45 @@ window.imprimirRelProd = imprimirRelProd;
    função costureira cadastrada o que é produzido em cada OS. Por exemplo,
    Costureira Vanda, em OS659 uniu ombro de 300 unidades, das 14:00 às 15:00."
 
-   CADA LANÇAMENTO É UMA FRASE DAQUELAS: quem (pessoa da Equipe com função de
-   costura), em qual OS, qual operação, quantas unidades, de que hora a que
-   hora. Mora em STATE.costuraProd:
-     { id, osId, osNumero, etapa, operacao, pessoaId, pessoaNome, funcao,
-       qtd, data:'aaaa-mm-dd', inicio:'HH:MM', fim:'HH:MM', criadoPor, criadoEm }
+   E no mesmo dia: "O campo lançar produção deve ser baseado na OS. Dessa forma,
+   as OS que tem seu status alterado para Costurando Descalvado devem constar no
+   campo Relatório de costura. Da mesma forma, as OS que tem seu status alterado
+   para Costurando São Carlos. Deve haver duas abas no campo Relatório de
+   costura, uma para cada Unidade."
 
-   AS OPERAÇÕES NÃO SE INVENTAM AQUI: são as tarefas da etapa de costura da OS,
-   no cadastro de Etapas de produção ("Costura CM.LISA | Descalvado" → União de
-   ombro, União de gola com frente…). A OS diz quais etapas de costura ela tem
-   (o.etapas), e só essas aparecem — escolher a OS 0659 de CM.LISA não oferece
-   operação de moletom.
+   DUAS ABAS, UMA POR UNIDADE. Cada aba lista as OS que ESTÃO costurando lá
+   agora — o status da lista de OS (_statusOS): `costurando` em Descalvado,
+   `costurando-sc` em São Carlos. A OS entra sozinha quando o status muda para
+   Costurando e sai quando ele segue adiante; o que foi lançado nela fica no
+   relatório do período, porque o lançamento é que é o registro.
 
-   QUEM APARECE é quem está na Equipe com função que fala em costura
-   (Costureira, Auxiliar de costura #1…). O nome da pessoa e o da função são
-   GRAVADOS no lançamento: renomear ou tirar alguém da Equipe depois não
-   apaga o que ela produziu.
+   CADA OS TEM O SEU LANÇAMENTO: costureira, operação, unidades, data, início e
+   fim. As costureiras são as da Equipe DAQUELA unidade (Cadastros › Equipe, aba
+   da unidade) com função que fala em costura. As operações são as tarefas da
+   etapa de costura da OS NAQUELA unidade, em Cadastros › Etapas de produção
+   ("Costura CM.LISA | Descalvado" na aba de Descalvado, "… | São Carlos" na de
+   São Carlos) — a OS 0659 de CM.LISA não oferece operação de moletom. Sobre
+   cada OS, o que já foi lançado de cada operação contra os produtos da OS.
 
-   O RELATÓRIO é a folha do período (mesma régua do Relatório de produção, com
-   uma diferença: a semana aqui vai de segunda a DOMINGO, porque sábado de
-   costura existe e um lançamento não pode sumir da semana em que foi feito):
-     · por OS: cada lançamento, e o total de cada operação contra os produtos
-       da OS — dá para ver que o ombro já está todo unido e a gola não;
+   O LANÇAMENTO mora em STATE.costuraProd:
+     { id, unidade:'desc'|'sc', osId, osNumero, etapa, operacao, pessoaId,
+       pessoaNome, funcao, qtd, data:'aaaa-mm-dd', inicio:'HH:MM', fim:'HH:MM',
+       criadoPor, criadoEm }
+   O nome da pessoa e o da função são GRAVADOS: renomear ou tirar alguém da
+   Equipe depois não apaga o que ela produziu.
+
+   O RELATÓRIO é a folha do período e da unidade da aba (mesma régua do
+   Relatório de produção, com a semana de segunda a DOMINGO — sábado de costura
+   existe e um lançamento não pode sumir da semana em que foi feito):
+     · por OS: cada lançamento, e o total de cada operação contra os produtos;
      · por costureira: unidades e horas por operação, e o ritmo (un/h).
 
    QUEM LANÇA: o admin e quem recebeu a área "Relatório de costura" em
-   Configurações. Ler é de todo mundo. O formulário e a lista de lançamentos
-   são .no-print: no papel sai só a folha. */
+   Configurações. Ler é de todo mundo. As abas, as OS com o lançamento e a lista
+   de conferência são .no-print: no papel sai só a folha. */
 const REL_COST_CHAVE = 'relCostEscala';
 const REL_COST_PESSOA_CHAVE = 'relCostPessoa';
+const REL_COST_UNIDADE_CHAVE = 'relCostUnidade';
 let _relCostData = '';
 
 function _relCostEscala() {
@@ -24145,6 +24190,25 @@ function _relCostEscala() {
 function _relCostPessoaFiltro() {
   try { return localStorage.getItem(REL_COST_PESSOA_CHAVE) || ''; } catch (e) { return ''; }
 }
+
+// A aba aberta: 'desc' (padrão) ou 'sc'. Guardada por navegador.
+function _relCostUnidade() {
+  try { return localStorage.getItem(REL_COST_UNIDADE_CHAVE) === 'sc' ? 'sc' : 'desc'; } catch (e) { return 'desc'; }
+}
+function _relCostTrocarUnidade(k) {
+  try {
+    localStorage.setItem(REL_COST_UNIDADE_CHAVE, k === 'sc' ? 'sc' : 'desc');
+    localStorage.removeItem(REL_COST_PESSOA_CHAVE);   // a costureira de uma aba não existe na outra
+  } catch (e) { /* vale só nesta tela */ }
+  renderRelatorioCostura();
+}
+window._relCostTrocarUnidade = _relCostTrocarUnidade;
+
+const _relCostStatusDaUnidade = u => (u === 'sc' ? 'costurando-sc' : 'costurando');
+const _relCostEtapaEhDaUnidade = (nome, u) => (u === 'sc') === COSTURA_SC_RE.test(String(nome || ''));
+// A unidade de um lançamento. Sem o campo, a etapa diz.
+const _relCostUnidadeDe = l => ((l && (l.unidade === 'sc' || (!l.unidade && COSTURA_SC_RE.test(String(l.etapa || ''))))) ? 'sc' : 'desc');
+const _relCostRotuloUnidade = u => ((AVIAMENTO_UNIDADES.find(x => x.k === u) || {}).rotulo || '');
 
 // O período do Relatório de produção, com a semana inteira (segunda a domingo).
 function _relCostPeriodo(escala, ref) {
@@ -24161,18 +24225,19 @@ function _relCostLista() {
   return STATE.costuraProd;
 }
 
-// Pessoas da Equipe cuja função é de costura.
-function _relCostPessoas() {
+// Pessoas da Equipe cuja função é de costura — da unidade pedida, se houver.
+function _relCostPessoas(unidade) {
   return (STATE.equipe || [])
-    .filter(p => /costur/i.test(String(p.funcao || '')))
+    .filter(p => /costur/i.test(String(p.funcao || '')) && (!unidade || _equipeUnidadeDe(p) === unidade))
     .slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
 }
 
-// As etapas de costura da OS, na ordem da OS, com as operações do cadastro.
-function _relCostEtapasDaOS(o) {
+// As etapas de costura da OS, na ordem da OS, com as operações do cadastro —
+// só as da unidade pedida, se houver.
+function _relCostEtapasDaOS(o, unidade) {
   if (!o) return [];
   return (o.etapas || [])
-    .filter(n => /^costura/i.test(String(n || '').trim()))
+    .filter(n => /^costura/i.test(String(n || '').trim()) && (!unidade || _relCostEtapaEhDaUnidade(n, unidade)))
     .map(nome => {
       const cad = (STATE.etapas || []).find(e => String(e.nome || '').trim() === String(nome).trim());
       const ops = ((cad && cad.tarefas) || []).slice()
@@ -24188,6 +24253,14 @@ function _relCostAcharOS(txt) {
   if (!dig) return null;
   const n = parseInt(dig, 10);
   return (STATE.ordens || []).find(o => parseInt(String(o.os || '').replace(/\D/g, ''), 10) === n) || null;
+}
+
+// As OS que estão costurando na unidade agora, pelo status da lista de OS.
+function _relCostOSDaUnidade(unidade) {
+  const st = _relCostStatusDaUnidade(unidade);
+  return (STATE.ordens || [])
+    .filter(o => o && o.os && _statusOS(o) === st)
+    .slice().sort((a, b) => String(a.os).localeCompare(String(b.os), 'pt-BR', { numeric: true }));
 }
 
 const _relCostMin = hhmm => {
@@ -24212,128 +24285,90 @@ function _relCostHojeTxt() {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 }
 
-/* ---- O formulário de lançamento -------------------------------------------
-   Desenhado UMA vez. O polling redesenha a página a cada mudança de outro
-   usuário (goto da página ativa), e refazer o formulário apagaria o que a
-   pessoa está digitando — então ele só é montado se ainda não existe, e depois
-   só as listas de opção é que se atualizam, preservando o escolhido. */
-function _relCostMontarForm() {
-  const box = document.getElementById('rel-cost-form');
-  if (!box) return;
-  if (!box.dataset.montado) {
-    const hoje = _relCostHojeTxt();
-    box.innerHTML = `<div class="rc-form">
-        <div class="rc-form-tit">Lançar produção</div>
-        <div class="form-grid fit-cols">
-          <div class="field"><label>Costureira *</label><select id="rc-pessoa"></select></div>
-          <div class="field"><label>OS *</label><input type="text" id="rc-os" list="rc-os-lista" placeholder="Ex.: 659" autocomplete="off" oninput="_relCostOSMudou()"><datalist id="rc-os-lista"></datalist></div>
-          <div class="field"><label>Etapa de costura *</label><select id="rc-etapa" onchange="_relCostEtapaMudou()"></select></div>
-          <div class="field"><label>Operação *</label><select id="rc-op"></select></div>
-          <div class="field"><label>Unidades *</label><input type="number" id="rc-qtd" min="1" step="1" inputmode="numeric"></div>
-          <div class="field"><label>Data *</label><input type="date" id="rc-data" value="${hoje}"></div>
-          <div class="field"><label>Início *</label><input type="time" id="rc-ini"></div>
-          <div class="field"><label>Fim *</label><input type="time" id="rc-fim"></div>
-        </div>
-        <div class="rc-form-pe">
-          <span id="rc-os-info" class="rc-dica"></span>
-          <button type="button" class="btn primary" onclick="lancarProducaoCostura()">Lançar</button>
-        </div>
-      </div>
-      <div id="rc-ultimos"></div>`;
-    box.dataset.montado = '1';
-  }
-  // Costureiras: refaz as opções, mantém a escolhida.
-  const selP = document.getElementById('rc-pessoa');
-  if (selP) {
-    const v = selP.value;
-    const ps = _relCostPessoas();
-    selP.innerHTML = ps.length
-      ? '<option value="">— escolha —</option>' + ps.map(p => `<option value="${esc(p.id)}">${esc(p.nome)} · ${esc(p.funcao || '')}</option>`).join('')
-      : '<option value="">Nenhuma pessoa com função de costura na Equipe</option>';
-    if (v && ps.some(p => p.id === v)) selP.value = v;
-  }
-  // As OS que têm etapa de costura, da mais nova para a mais antiga.
-  const dl = document.getElementById('rc-os-lista');
-  if (dl) {
-    dl.innerHTML = (STATE.ordens || [])
-      .filter(o => o.os && _relCostEtapasDaOS(o).length)
-      .slice().sort((a, b) => String(b.os).localeCompare(String(a.os), 'pt-BR', { numeric: true }))
-      .slice(0, 300)
-      .map(o => `<option value="${esc(o.os)}">${esc([o.modeloNome, o.grade].filter(Boolean).join(' · '))}</option>`).join('');
-  }
-  _relCostOSMudou(true);
+/* ---- As OS da aba, cada uma com o seu lançamento ---------------------------
+   O polling redesenha a página a cada mudança de outro usuário (goto da página
+   ativa). Para não apagar o que a pessoa está digitando, os valores dos campos
+   são guardados antes de redesenhar e devolvidos depois, campo a campo (o id do
+   campo leva o id da OS). */
+function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
+  const ets = _relCostEtapasDaOS(o, unidade);
+  const prod = produtosOS(o);
+  const fmt = v => _dashFmt(v);
+  // O que já foi lançado nesta OS, nesta unidade, por operação (todo o tempo).
+  const feito = new Map();
+  _relCostLista().forEach(l => {
+    if (l.osId !== o.id || _relCostUnidadeDe(l) !== unidade) return;
+    const k = l.etapa + '\u0000' + l.operacao;
+    feito.set(k, (feito.get(k) || 0) + (Number(l.qtd) || 0));
+  });
+  const varias = ets.length > 1;
+  const prog = ets.flatMap(e => e.ops.map(op => {
+    const q = feito.get(e.nome + '\u0000' + op) || 0;
+    const pct = prod ? Math.min(100, Math.round(q * 100 / prod)) : 0;
+    return `<span class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}" title="${esc(e.nome)}">${esc(op)}${varias ? ' <i>(' + esc(e.nome) + ')</i>' : ''}: <b>${fmt(q)}</b>${prod ? ` de ${fmt(prod)} · ${pct}%` : ''}</span>`;
+  })).join('');
+  const id = esc(o.id);
+  const opts = ets.map(e => (varias ? `<optgroup label="${esc(e.nome)}">` : '')
+    + e.ops.map(op => `<option value="${esc(op)}" data-etapa="${esc(e.nome)}">${esc(op)}</option>`).join('')
+    + (varias ? '</optgroup>' : '')).join('');
+  const temOps = ets.some(e => e.ops.length);
+  const form = !podeLancar ? '' : !ets.length
+    ? `<div class="rc-dica">Esta OS não tem etapa de costura de ${esc(_relCostRotuloUnidade(unidade))} no desenho.</div>`
+    : !temOps
+      ? `<div class="rc-dica">A etapa "${esc(ets[0].nome)}" não tem tarefas em Cadastros › Etapas de produção — cadastre as operações lá.</div>`
+      : `<div class="rc-os-form">
+          <select id="rc-p-${id}" title="Costureira">${pessoas.length
+            ? '<option value="">— costureira —</option>' + pessoas.map(p => `<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join('')
+            : '<option value="">sem costureira na Equipe desta unidade</option>'}</select>
+          <select id="rc-op-${id}" title="Operação"><option value="">— operação —</option>${opts}</select>
+          <input type="number" id="rc-q-${id}" min="1" step="1" inputmode="numeric" placeholder="un" title="Unidades">
+          <input type="date" id="rc-d-${id}" value="${_relCostHojeTxt()}" title="Data">
+          <input type="time" id="rc-i-${id}" title="Início">
+          <span class="rc-dica">às</span>
+          <input type="time" id="rc-f-${id}" title="Fim">
+          <button type="button" class="btn primary small" onclick="lancarProducaoCostura('${id}')">Lançar</button>
+        </div>`;
+  return `<div class="rc-os">
+      <div class="rc-os-cab"><b>OS ${esc(o.os)}</b> · ${esc([o.modeloNome, o.grade].filter(Boolean).join(' · '))}${prod ? ` · <span>${fmt(prod)} produtos</span>` : ''}</div>
+      ${prog ? `<div class="rc-os-prog">${prog}</div>` : ''}
+      ${form}
+    </div>`;
 }
 
-// Trocou a OS: refaz as etapas (e por elas as operações) e mostra os produtos.
-function _relCostOSMudou(manter) {
-  const o = _relCostAcharOS((document.getElementById('rc-os') || {}).value);
-  const selE = document.getElementById('rc-etapa');
-  const info = document.getElementById('rc-os-info');
-  if (!selE) return;
-  const vE = manter ? selE.value : '';
-  const ets = _relCostEtapasDaOS(o);
-  selE.innerHTML = !o ? '<option value="">— escolha a OS —</option>'
-    : ets.length ? ets.map(e => `<option value="${esc(e.nome)}">${esc(e.nome)}</option>`).join('')
-    : '<option value="">Esta OS não tem etapa de costura</option>';
-  if (vE && ets.some(e => e.nome === vE)) selE.value = vE;
-  if (info) {
-    if (!o) info.textContent = '';
-    else {
-      const prod = produtosOS(o);
-      info.textContent = `OS ${o.os} · ${[o.modeloNome, o.grade].filter(Boolean).join(' · ')}${prod ? ' · ' + _dashFmt(prod) + ' produtos' : ''}`;
-    }
-  }
-  const q = document.getElementById('rc-qtd');
-  if (q && !manter && o && !q.value) { const prod = produtosOS(o); if (prod) q.placeholder = String(prod); }
-  _relCostEtapaMudou(manter);
-}
-window._relCostOSMudou = _relCostOSMudou;
-
-function _relCostEtapaMudou(manter) {
-  const o = _relCostAcharOS((document.getElementById('rc-os') || {}).value);
-  const selE = document.getElementById('rc-etapa');
-  const selO = document.getElementById('rc-op');
-  if (!selO) return;
-  const vO = manter ? selO.value : '';
-  const et = _relCostEtapasDaOS(o).find(e => e.nome === (selE && selE.value));
-  const ops = et ? et.ops : [];
-  selO.innerHTML = !et ? '<option value="">—</option>'
-    : ops.length ? '<option value="">— escolha —</option>' + ops.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
-    : '<option value="">Etapa sem operações no cadastro</option>';
-  if (vO && ops.includes(vO)) selO.value = vO;
-}
-window._relCostEtapaMudou = _relCostEtapaMudou;
-
-async function lancarProducaoCostura() {
+async function lancarProducaoCostura(osId) {
   if (!exigirEdicao('lançar produção de costura')) return;
-  const val = id => String((document.getElementById(id) || {}).value || '').trim();
-  const pessoa = _relCostPessoas().find(p => p.id === val('rc-pessoa'));
-  const o = _relCostAcharOS(val('rc-os'));
-  const etapa = val('rc-etapa'), operacao = val('rc-op');
-  const qtd = parseInt(val('rc-qtd'), 10);
-  const data = val('rc-data'), inicio = val('rc-ini'), fim = val('rc-fim');
-  if (!pessoa) { toast('Escolha a costureira', 'err'); return; }
+  const unidade = _relCostUnidade();
+  const o = (STATE.ordens || []).find(x => x.id === osId);
   if (!o) { toast('OS não encontrada', 'err'); return; }
-  if (!etapa || !operacao) { toast('Escolha a etapa e a operação', 'err'); return; }
+  const el = k => document.getElementById(`rc-${k}-${osId}`);
+  const val = k => String((el(k) || {}).value || '').trim();
+  const pessoa = _relCostPessoas(unidade).find(p => p.id === val('p'));
+  const operacao = val('op');
+  const etapa = String(el('op')?.selectedOptions?.[0]?.dataset?.etapa || '').trim();
+  const qtd = parseInt(val('q'), 10);
+  const data = val('d'), inicio = val('i'), fim = val('f');
+  if (!pessoa) { toast('Escolha a costureira', 'err'); return; }
+  if (!operacao || !etapa) { toast('Escolha a operação', 'err'); return; }
   if (!(qtd > 0)) { toast('Informe as unidades', 'err'); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { toast('Informe a data', 'err'); return; }
   const a = _relCostMin(inicio), b = _relCostMin(fim);
   if (a == null || b == null) { toast('Informe a hora de início e a de fim', 'err'); return; }
   if (b <= a) { toast('A hora de fim tem de ser depois da de início', 'err'); return; }
   _relCostLista().push({
-    id: uid(), osId: o.id, osNumero: o.os, etapa, operacao,
+    id: uid(), unidade, osId: o.id, osNumero: o.os, etapa, operacao,
     pessoaId: pessoa.id, pessoaNome: pessoa.nome || '', funcao: pessoa.funcao || '',
     qtd, data, inicio, fim, criadoPor: _obsQuemSou(), criadoEm: new Date().toISOString()
   });
   desfazerNomearAcao(`lançamento de costura (${pessoa.nome}, OS ${o.os})`);
   await saveState('costuraProd');
   toast(`${pessoa.nome} · OS ${o.os} · ${operacao} · ${qtd} un · ${inicio} às ${fim}`, 'ok');
-  // Mantém pessoa, OS, etapa e data (o próximo lançamento quase sempre é da
-  // mesma costureira, no mesmo dia); limpa o que muda de um para o outro. O
-  // início seguinte é o fim deste.
-  ['rc-qtd', 'rc-fim'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const ini = document.getElementById('rc-ini'); if (ini) ini.value = fim;
-  const op = document.getElementById('rc-op'); if (op) op.value = '';
+  // Mantém a costureira e a data (o próximo lançamento quase sempre é da mesma
+  // pessoa, no mesmo dia); limpa o que muda. O início seguinte é o fim deste.
+  // Os campos são acertados ANTES do redesenho, que os guarda e devolve.
+  if (el('q')) el('q').value = '';
+  if (el('f')) el('f').value = '';
+  if (el('op')) el('op').value = '';
+  if (el('i')) el('i').value = fim;
   renderRelatorioCostura();
 }
 window.lancarProducaoCostura = lancarProducaoCostura;
@@ -24351,41 +24386,41 @@ async function apagarProducaoCostura(id) {
 window.apagarProducaoCostura = apagarProducaoCostura;
 
 // Os lançamentos do período, para conferir e apagar (só na tela).
-function _relCostUltimosHtml(lista) {
+function _relCostUltimosHtml(lista, pode) {
   if (!lista.length) return '';
-  const pode = currentRole === 'admin' || temAcesso('costura');
   const ord = lista.slice().sort((a, b) => String(b.data + b.inicio).localeCompare(String(a.data + a.inicio)));
   return `<details class="rc-ult"><summary>${lista.length} lançamento(s) no período — conferir ou apagar</summary>
     <table class="rel-tab"><thead><tr><th>Data</th><th>Costureira</th><th>OS</th><th>Operação</th><th>Un</th><th>Horário</th>${pode ? '<th></th>' : ''}</tr></thead>
     <tbody>${ord.map(l => `<tr><td>${_relCostDataBr(l.data)}</td><td>${esc(l.pessoaNome)}</td><td>${esc(l.osNumero)}</td>
-      <td>${esc(l.operacao)}</td><td>${_dashFmt(l.qtd)}</td><td>${esc(l.inicio)}–${esc(l.fim)}</td>
+      <td class="rc-txt">${esc(l.operacao)}</td><td>${_dashFmt(l.qtd)}</td><td>${esc(l.inicio)}–${esc(l.fim)}</td>
       ${pode ? `<td><button type="button" class="btn small ghost" onclick="apagarProducaoCostura('${esc(l.id)}')" title="Apagar este lançamento">✕</button></td>` : ''}</tr>`).join('')}</tbody></table></details>`;
 }
 
 function renderRelatorioCostura() {
   const box = document.getElementById('rel-cost-folha');
   if (!box) return;
+  const unidade = _relCostUnidade();
+  const abas = document.getElementById('rel-cost-abas');
+  if (abas) abas.innerHTML = `<div class="exp-tabs">${AVIAMENTO_UNIDADES.map(u =>
+    `<button type="button" class="exp-tab${u.k === unidade ? ' active' : ''}" onclick="_relCostTrocarUnidade('${u.k}')">${esc(u.rotulo)}</button>`).join('')}</div>`;
   const escala = _relCostEscala();
   const selE = document.getElementById('rel-cost-escala');
   if (selE) selE.innerHTML = REL_PROD_ESCALAS.map(e => `<option value="${e.k}"${e.k === escala ? ' selected' : ''}>${e.rot}</option>`).join('');
   if (!_relCostData) _relCostData = _relCostHojeTxt();
   const inp = document.getElementById('rel-cost-data');
   if (inp && inp.value !== _relCostData) inp.value = _relCostData;
-  // Filtro por costureira: as pessoas de hoje mais as que já lançaram (quem
-  // saiu da Equipe continua aparecendo no histórico).
+  const daUnidade = _relCostLista().filter(l => _relCostUnidadeDe(l) === unidade);
+  // Filtro por costureira: as pessoas da unidade hoje mais as que já lançaram
+  // nela (quem saiu da Equipe continua aparecendo no histórico).
   const filtro = _relCostPessoaFiltro();
   const selP = document.getElementById('rel-cost-pessoa');
   if (selP) {
     const nomes = new Map();
-    _relCostPessoas().forEach(p => nomes.set(p.id, p.nome));
-    _relCostLista().forEach(l => { if (!nomes.has(l.pessoaId)) nomes.set(l.pessoaId, l.pessoaNome); });
+    _relCostPessoas(unidade).forEach(p => nomes.set(p.id, p.nome));
+    daUnidade.forEach(l => { if (!nomes.has(l.pessoaId)) nomes.set(l.pessoaId, l.pessoaNome); });
     selP.innerHTML = '<option value="">Todas</option>' + [...nomes].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
       .map(([id, nome]) => `<option value="${esc(id)}"${id === filtro ? ' selected' : ''}>${esc(nome)}</option>`).join('');
   }
-  const podeLancar = podeGravar() && (currentRole === 'admin' || temAcesso('costura'));
-  const formBox = document.getElementById('rel-cost-form');
-  if (formBox) formBox.classList.toggle('hidden', !podeLancar);
-  if (podeLancar) _relCostMontarForm();
 
   const per = _relCostPeriodo(escala, _relCostData);
   const noPer = l => {
@@ -24394,10 +24429,33 @@ function renderRelatorioCostura() {
     const t = new Date(+m[1], +m[2] - 1, +m[3]).getTime();
     return t >= per.de && t < per.ate;
   };
-  const doPeriodo = _relCostLista().filter(noPer);
-  const lista = doPeriodo.filter(l => !filtro || l.pessoaId === filtro);
-  const ult = document.getElementById('rc-ultimos');
-  if (ult) ult.innerHTML = _relCostUltimosHtml(lista);
+  const lista = daUnidade.filter(noPer).filter(l => !filtro || l.pessoaId === filtro);
+
+  // ---- As OS costurando na unidade, com o lançamento ----
+  const formBox = document.getElementById('rel-cost-form');
+  if (formBox) {
+    const guardados = {};
+    formBox.querySelectorAll('input[id], select[id]').forEach(c => { if (c.value) guardados[c.id] = c.value; });
+    const podeLancar = podeGravar() && (currentRole === 'admin' || temAcesso('costura'));
+    const oss = _relCostOSDaUnidade(unidade);
+    const pessoas = _relCostPessoas(unidade);
+    const rot = _relCostRotuloUnidade(unidade);
+    const statusRot = ((STATUS_OS.find(s => s.k === _relCostStatusDaUnidade(unidade)) || {}).rotulo) || '';
+    formBox.innerHTML = `<div class="rc-form">
+        <div class="rc-form-tit">${podeLancar ? 'Lançar produção' : 'OS costurando'} · ${esc(rot)}
+          <span class="rc-dica">${oss.length} OS com status <b>${esc(statusRot)}</b></span></div>
+        ${podeLancar && !pessoas.length ? `<div class="rc-dica rc-aviso">Nenhuma pessoa com função de costura na Equipe de ${esc(rot)} — cadastre em Cadastros › Equipe, aba ${esc(rot)}.</div>` : ''}
+        ${oss.length ? oss.map(o => _relCostOSHtml(o, unidade, pessoas, podeLancar)).join('')
+          : `<div class="rc-dica">Nenhuma OS com status ${esc(statusRot)} agora. A OS aparece aqui quando o status dela muda para Costurando.</div>`}
+      </div>
+      ${_relCostUltimosHtml(lista, podeLancar)}`;
+    Object.keys(guardados).forEach(id => {
+      const c = document.getElementById(id);
+      if (!c || !formBox.contains(c)) return;
+      if (c.tagName === 'SELECT' && !Array.from(c.options).some(op => op.value === guardados[id])) return;
+      c.value = guardados[id];
+    });
+  }
 
   const p2 = n => String(n).padStart(2, '0');
   const hoje = new Date();
@@ -24421,7 +24479,7 @@ function renderRelatorioCostura() {
         const prod = o ? produtosOS(o) : 0;
         const cab = o ? [o.modeloNome, o.grade].filter(Boolean).join(' · ') : '';
         // Total de cada operação na OS, na ordem do cadastro da etapa.
-        const ordemOps = o ? _relCostEtapasDaOS(o).flatMap(e => e.ops.map(n => e.nome + '\u0000' + n)) : [];
+        const ordemOps = o ? _relCostEtapasDaOS(o, unidade).flatMap(e => e.ops.map(n => e.nome + '\u0000' + n)) : [];
         const tot = new Map();
         ls.forEach(l => { const k = l.etapa + '\u0000' + l.operacao; tot.set(k, (tot.get(k) || 0) + (Number(l.qtd) || 0)); });
         const chaves = [...tot.keys()].sort((a, b) => {
@@ -24484,12 +24542,12 @@ function renderRelatorioCostura() {
 
   box.innerHTML = `<div class="rel-folha">
       <div class="rel-cab">
-        <div><div class="rel-tit">Relatório de costura</div>
+        <div><div class="rel-tit">Relatório de costura · ${esc(_relCostRotuloUnidade(unidade))}</div>
           <div class="rel-per">${esc(rotEscala)} · ${esc(per.nome)}${nomeFiltro ? ' · ' + esc(nomeFiltro) : ''}</div></div>
         <div class="rel-gerado">Gerado em ${geradoEm}</div>
       </div>
       ${corpo}
-      <div class="rel-rodape">Cada linha é um lançamento: quem costurou, a operação, as unidades e o horário. As operações são as da etapa de costura de cada OS (Cadastros › Etapas de produção). Ritmo = unidades por hora do horário lançado. Na OS, cada operação soma contra os produtos da OS.</div>
+      <div class="rel-rodape">Cada linha é um lançamento: quem costurou, a operação, as unidades e o horário. As operações são as da etapa de costura de cada OS nesta unidade (Cadastros › Etapas de produção). Ritmo = unidades por hora do horário lançado. Na OS, cada operação soma contra os produtos da OS.</div>
     </div>`;
 }
 

@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-14a">
+<link rel="stylesheet" href="styles.css?v=2026-10-14b">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -510,7 +510,7 @@
       <div class="page-header">
         <div>
           <h1>Relatório de costura</h1>
-          <div class="desc">A produção de cada costureira em cada OS: a operação da etapa de costura, as unidades e o horário. Lançado aqui, somado por OS e por costureira no período escolhido.</div>
+          <div class="desc">Uma aba por unidade. As OS com status Costurando daquela unidade aparecem aqui, cada uma com o seu lançamento: costureira, operação da etapa de costura, unidades e horário. Somado por OS e por costureira no período escolhido.</div>
         </div>
         <div class="rel-ctrl">
           <label>Período <select id="rel-cost-escala" onchange="_relCostTrocar()"></select></label>
@@ -521,6 +521,7 @@
           <button type="button" class="btn primary" onclick="window.print()" title="Imprime a folha do relatório">Imprimir / PDF</button>
         </div>
       </div>
+      <div id="rel-cost-abas" class="no-print"></div>
       <div id="rel-cost-form" class="no-print"></div>
       <div id="rel-cost-folha"></div>
     </section>
@@ -936,9 +937,10 @@
     <!-- EQUIPE -->
     <section class="page hidden" data-page="cad-equipe">
       <div class="page-header">
-        <div><h1>Equipe</h1><div class="desc">Pessoas que aparecem como Designer ou responsável pela Ficha Técnica</div></div>
+        <div><h1>Equipe</h1><div class="desc">As pessoas de cada unidade e a função de cada uma — Designer, responsável pela Ficha Técnica, costureira…</div></div>
         <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('equipe')">+ Nova pessoa</button></div>
       </div>
+      <div id="equipe-abas"></div>
       <div class="card">
         <table class="table">
           <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Função principal</th></tr></thead>
@@ -1885,6 +1887,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-14a"></script>
+<script src="app.js?v=2026-10-14b"></script>
 </body>
 </html>

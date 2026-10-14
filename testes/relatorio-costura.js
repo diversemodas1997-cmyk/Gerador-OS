@@ -8,7 +8,10 @@
        ordem do cadastro — a OS de CM.LISA não oferece operação de moletom;
      · só quem tem função de costura entra na lista de costureiras;
      · tempo e ritmo saem do horário (14:00 às 15:00 = 1h, 300 un/h);
-     · a semana vai de segunda a DOMINGO (sábado de costura não some).
+     · a semana vai de segunda a DOMINGO (sábado de costura não some);
+     · cada unidade (aba) tem as suas OS — pelo status Costurando de lá —, as
+       suas costureiras (Equipe da unidade) e as operações da etapa de costura
+       daquela unidade.
 
    Recorta do app.js as funções reais. */
 const fs = require('fs');
@@ -28,6 +31,11 @@ const cortaArrow = (nome) => recorte(nome, '};\n', nome) + '};';
 
 const motor = [
   'const DASH_DIA_MS = 86400000;',
+  cortaLinha('const COSTURA_SC_RE'),
+  cortaLinha('const _equipeUnidadeDe'),
+  cortaLinha('const _relCostStatusDaUnidade'),
+  cortaLinha('const _relCostEtapaEhDaUnidade'),
+  cortaLinha('const _relCostUnidadeDe'),
   "const _DASH_DIAS_SEM = ['dom','seg','ter','qua','qui','sex','sáb'];",
   "const _DASH_MESES_LONGOS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];",
   recorte('const REL_PROD_ESCALAS', 'const REL_PROD_CHAVE', 'escalas'),
@@ -37,6 +45,7 @@ const motor = [
   corta('function _relCostPessoas'),
   corta('function _relCostEtapasDaOS'),
   corta('function _relCostAcharOS'),
+  corta('function _relCostOSDaUnidade'),
   cortaArrow('const _relCostMin'),
   corta('function _relCostDuracao'),
   corta('function _relCostFmtMin'),
@@ -47,21 +56,25 @@ const STATE = {
   equipe: [
     { id: 'p1', nome: 'Vanda', funcao: 'Costureira' },
     { id: 'p2', nome: 'Roseane', funcao: 'Auxiliar de costura #1' },
-    { id: 'p3', nome: 'João', funcao: 'Operador de enfestadeira' }
+    { id: 'p3', nome: 'João', funcao: 'Operador de enfestadeira' },
+    { id: 'p4', nome: 'Neide', funcao: 'Costureira', unidade: 'sc' }
   ],
   etapas: [
     { nome: 'Costura CM.LISA | Descalvado', tarefas: [
       { nome: 'União de gola com frente', ordem: 3 }, { nome: 'União de ombro', ordem: 2 }, { nome: 'Acabamento de mangas', ordem: 1 }] },
-    { nome: 'Costura BM.TRI | Descalvado', tarefas: [{ nome: 'Fixação de bolso', ordem: 1 }] }
+    { nome: 'Costura BM.TRI | Descalvado', tarefas: [{ nome: 'Fixação de bolso', ordem: 1 }] },
+    { nome: 'Costura CM.LISA | São Carlos', tarefas: [{ nome: 'Costura ombro a ombro', ordem: 1 }] }
   ],
   ordens: [
-    { id: 'o659', os: '0659', etapas: ['Corte', 'Costura CM.LISA | Descalvado', 'Estoque'] },
-    { id: 'o660', os: '0660', etapas: ['Corte', 'Estoque'] }
+    { id: 'o659', os: '0659', st: 'costurando', etapas: ['Corte', 'Costura CM.LISA | Descalvado', 'Costura CM.LISA | São Carlos', 'Estoque'] },
+    { id: 'o660', os: '0660', st: 'ensacado', etapas: ['Corte', 'Estoque'] },
+    { id: 'o617', os: '0617', st: 'costurando-sc', etapas: ['Costura CM.LISA | Descalvado', 'Costura CM.LISA | São Carlos'] }
   ]
 };
-const api = new Function('STATE', motor + `
-  return { _relCostPeriodo, _relCostPessoas, _relCostEtapasDaOS, _relCostAcharOS,
-           _relCostDuracao, _relCostFmtMin, _relCostRitmo };`)(STATE);
+const _statusOS = o => o.st;
+const api = new Function('STATE', '_statusOS', motor + `
+  return { _relCostPeriodo, _relCostPessoas, _relCostEtapasDaOS, _relCostAcharOS, _relCostOSDaUnidade, _relCostUnidadeDe,
+           _relCostDuracao, _relCostFmtMin, _relCostRitmo };`)(STATE, _statusOS);
 
 let n = 0;
 const ok = (c, msg) => { assert.ok(c, msg); n++; };
@@ -73,8 +86,10 @@ ok(api._relCostAcharOS('') === null, 'vazio não acha OS');
 ok(api._relCostAcharOS('999') === null, 'OS inexistente');
 
 // As operações da etapa da OS, na ordem do cadastro.
-const ets = api._relCostEtapasDaOS(api._relCostAcharOS('659'));
-ok(ets.length === 1 && ets[0].nome === 'Costura CM.LISA | Descalvado', 'só a etapa de costura da OS');
+const ets = api._relCostEtapasDaOS(api._relCostAcharOS('659'), 'desc');
+ok(ets.length === 1 && ets[0].nome === 'Costura CM.LISA | Descalvado', 'só a etapa de costura da OS em Descalvado');
+const etsSC = api._relCostEtapasDaOS(api._relCostAcharOS('659'), 'sc');
+ok(etsSC.length === 1 && etsSC[0].ops[0] === 'Costura ombro a ombro', 'em São Carlos, a etapa de São Carlos');
 ok(JSON.stringify(ets[0].ops) === JSON.stringify(['Acabamento de mangas', 'União de ombro', 'União de gola com frente']), 'operações na ordem do cadastro');
 ok(!ets[0].ops.includes('Fixação de bolso'), 'operação de outra linha não aparece');
 ok(api._relCostEtapasDaOS(api._relCostAcharOS('660')).length === 0, 'OS sem costura não tem etapa');
@@ -82,6 +97,16 @@ ok(api._relCostEtapasDaOS(api._relCostAcharOS('660')).length === 0, 'OS sem cost
 // Só funções de costura.
 const nomes = api._relCostPessoas().map(p => p.nome);
 ok(nomes.includes('Vanda') && nomes.includes('Roseane') && !nomes.includes('João'), 'só função de costura');
+// Por unidade: quem não tem unidade é de Descalvado.
+const desc = api._relCostPessoas('desc').map(p => p.nome), sc = api._relCostPessoas('sc').map(p => p.nome);
+ok(desc.includes('Vanda') && !desc.includes('Neide'), 'Descalvado: Vanda, sem a Neide');
+ok(sc.length === 1 && sc[0] === 'Neide', 'São Carlos: só a Neide');
+
+// As OS de cada aba, pelo status.
+ok(api._relCostOSDaUnidade('desc').map(o => o.os).join() === '0659', 'aba Descalvado: OS com status Costurando | Descalvado');
+ok(api._relCostOSDaUnidade('sc').map(o => o.os).join() === '0617', 'aba São Carlos: OS com status Costurando | São Carlos');
+ok(api._relCostUnidadeDe({ unidade: 'sc' }) === 'sc' && api._relCostUnidadeDe({ etapa: 'Costura CM.LISA | São Carlos' }) === 'sc'
+   && api._relCostUnidadeDe({ etapa: 'Costura CM.LISA | Descalvado' }) === 'desc', 'unidade do lançamento');
 
 // Tempo e ritmo do exemplo do Junior.
 const l = { qtd: 300, inicio: '14:00', fim: '15:00' };
