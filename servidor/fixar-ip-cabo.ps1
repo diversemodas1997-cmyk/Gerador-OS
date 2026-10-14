@@ -1,4 +1,9 @@
-# Fixa o IP do CABO desta maquina em 193.168.0.200.
+# Fixa o IP do CABO desta maquina em 192.168.1.50.
+#
+# 14/10/2026: o roteador 193.168.0.1 (rede Diverse001) foi trocado. O novo
+# atende o cabo em 192.168.1.x (gateway 192.168.1.1, o mesmo aparelho do
+# Wi-Fi) e distribui de .100 para cima -- por isso .50, fora da faixa.
+# O historico abaixo fala do .200 da rede antiga.
 #
 # Por que: o .200 nunca foi fixo de verdade. A placa estava em DHCP e o .200
 # era uma concessao que se renovava enquanto a maquina ficava ligada. O cabo
@@ -63,10 +68,10 @@ function AcharPlacaDoCabo {
 }
 
 $PLACA    = if ($Placa) { $Placa } else { AcharPlacaDoCabo }
-$IP       = '193.168.0.200'
+$IP       = '192.168.1.50'
 $MASCARA  = '255.255.255.0'
-$GATEWAY  = '193.168.0.1'
-$DNS      = @('132.255.216.26','132.255.216.27')   # os que o DHCP ja entregava
+$GATEWAY  = '192.168.1.1'
+$DNS      = @('192.168.1.1','8.8.8.8')   # o roteador novo + um de reserva
 
 function Passo($t) { Write-Host "`n>> $t" -ForegroundColor Cyan }
 function Ok($t)    { Write-Host "   OK - $t" -ForegroundColor Green }

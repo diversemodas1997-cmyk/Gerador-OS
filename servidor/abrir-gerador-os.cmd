@@ -8,7 +8,7 @@ REM  Abre o Gerador-OS procurando o servidor, em vez de decorar um numero.
 REM
 REM  POR QUE ISTO EXISTE
 REM  Um atalho comum guarda UM endereco. O servidor da fabrica tem dois --
-REM  o cabo (193.168.0.200) e o Wi-Fi (192.168.1.158) -- e troca de um para
+REM  o cabo (192.168.1.50) e o Wi-Fi (192.168.1.158) -- e troca de um para
 REM  o outro quando o cabo cai. Em 31/08/2026 isso deixou a fabrica inteira
 REM  sem o app numa segunda-feira: o atalho apontava para um endereco que
 REM  ninguem mais atendia, e a mensagem era "tempo esgotado", que nao diz
@@ -32,7 +32,7 @@ REM
 REM  PARA MUDAR OS CAMINHOS: edite a linha ALVOS abaixo, so ela.
 REM ======================================================================
 
-set "ALVOS=DESKTOP-SOV61AF 193.168.0.200 192.168.1.158"
+set "ALVOS=DESKTOP-SOV61AF 192.168.1.50 192.168.1.158"
 
 echo.
 echo   Gerador-OS - procurando o servidor...

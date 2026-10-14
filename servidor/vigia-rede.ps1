@@ -20,7 +20,8 @@
 
     a) toda rede conectada esta como PARTICULAR (senao as regras nao valem);
     b) as portas 80 e 443 tem regra de entrada;
-    c) o cabo, quando tem link, esta no 193.168.0.200 fixo;
+    c) o cabo, quando tem link, esta no 192.168.1.50 fixo (era 193.168.0.200
+       ate a troca do roteador em 14/10/2026);
     d) o Wi-Fi esta ASSOCIADO ao SSID que ele ja conhece.
 
   O (a) e o (b) nao tem risco: nao mexem em endereco nem derrubam conexao. O
@@ -62,7 +63,7 @@ $Raiz    = Split-Path -Parent $PSScriptRoot
 $LogDir  = Join-Path $PSScriptRoot 'tls'
 $Log     = Join-Path $LogDir 'vigia-rede.log'
 $PLACA_CABO = 'Ethernet 3'
-$IP_CABO    = '193.168.0.200'
+$IP_CABO    = '192.168.1.50'
 $PLACA_WIFI = 'Wi-Fi'
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
