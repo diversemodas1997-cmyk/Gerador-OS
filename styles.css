@@ -4748,6 +4748,22 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .rel-zero { color: var(--ink-3); }
 .rel-aviso { padding: 16px 0; color: var(--ink-3); }
 .rel-rodape { font-size: 10px; color: var(--ink-3); margin-top: 8px; line-height: 1.4; }
+/* RELATÓRIO DE COSTURA (14/10/2026): o lançamento (só na tela) e a folha. */
+.rc-form { border: 1px solid var(--line); padding: 12px 14px; margin-bottom: 12px; max-width: 980px; }
+.rc-form-tit { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.rc-form-pe { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.rc-dica { font-size: 12px; color: var(--ink-3); }
+.rc-ult { max-width: 980px; margin-bottom: 12px; font-size: 12px; }
+.rc-ult summary { cursor: pointer; color: var(--ink-2); padding: 4px 0; }
+.rc-ult .rel-tab { margin-top: 6px; }
+.rc-sec { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 6px; }
+.rc-bloco { margin-bottom: 12px; break-inside: avoid; }
+.rc-bloco-cab { font-size: 13px; margin-bottom: 4px; }
+.rc-bloco-cab span { color: var(--ink-3); }
+.rel-tab td.rc-txt { font-family: inherit; text-align: left; }
+.rc-tot { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 11px; margin-top: 4px; color: var(--ink-2); }
+.rel-tab tr.rc-sub td { font-weight: 700; background: #f6f7f8; }
+.rel-tab tr.rc-pessoa-ini td { border-top: 2px solid #888; }
 @media print {
   .rel-folha { border: 0; max-width: none; padding: 12mm; }
   .rel-tab th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

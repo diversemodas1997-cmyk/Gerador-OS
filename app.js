@@ -2045,6 +2045,11 @@ const AREAS_ACESSO = [
     desc: 'Alocar OS nas cargas, janelas, cancelamentos e a folha de OE' },
   { k: 'operacoes', rotulo: 'Planejamento de operações',
     desc: 'A jornada dos postos: criar, mover, duplicar e excluir operações' },
+  /* O RELATÓRIO DE COSTURA (14/10/2026): lançar quem costurou o quê é
+     registro do chão, como a folha de OS, mas fica numa área própria para o
+     admin escolher quem aponta a produção das costureiras. Ler é de todos. */
+  { k: 'costura', rotulo: 'Relatório de costura',
+    desc: 'Lançar e apagar a produção das costureiras por OS e operação' },
   { k: 'compra', rotulo: 'Lista de compra',
     desc: 'Limpar a lista inteira (somar já é de toda conta)' },
   /* A FILA DE PRODUÇÃO (22/09/2026, Junior: "insira a capacidade do usuário
@@ -2107,6 +2112,8 @@ const ACOES_POR_AREA = {
   'excluir operações': 'operacoes', 'duplicar operações': 'operacoes',
   'mudar o status das operações': 'operacoes', 'mudar o horário das operações': 'operacoes',
   'corrigir os horários das operações': 'operacoes',
+  // Relatório de costura
+  'lançar produção de costura': 'costura', 'apagar produção de costura': 'costura',
   // Compra
   'limpar a lista de compra': 'compra',
   // Apagar a OC é da mesma área de limpar a lista, e pelo mesmo motivo: somar e
@@ -2556,7 +2563,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','costuraProd','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3168,6 +3175,9 @@ const STATE = {
      no mesmo formato de uma OS. Viram OS de verdade ao serem aprovadas pelo
      admin (ver PLANEJAMENTO DE PRODUÇÃO). Nada aqui reserva material. */
   osPlanejadas: [],
+  // O RELATÓRIO DE COSTURA (14/10/2026): quem costurou o quê, em qual OS, de
+  // que hora a que hora. Ver RELATÓRIO DE COSTURA.
+  costuraProd: [],
   osCounter: 0,
   // Flags/metadados internos persistidos (ex.: migrações já executadas).
   meta: {},
@@ -3296,6 +3306,7 @@ const DESFAZER_NOMES = {
   compraPlano: ['item da lista de compra', 'itens da lista de compra'],
   compraOCs: ['ordem de compra', 'ordens de compra'],
   osPlanejadas: ['planejamento de produção', 'planejamentos de produção'],
+  costuraProd: ['lançamento de costura', 'lançamentos de costura'],
   expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
   expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
@@ -3468,7 +3479,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','costuraProd','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4162,6 +4173,7 @@ function goto(page) {
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
   if (page === 'relatorio-producao') renderRelatorioProducao();
+  if (page === 'relatorio-costura') renderRelatorioCostura();
   /* A CAIXA DE OBSERVAÇÕES SÓ PODE SER MEDIDA AGORA. A folha de OS é desenhada
      ANTES desta chamada (verOS e _salvarEImprimirConfirmada fazem
      renderPrintSheet e só então goto), e naquele instante a seção ainda está
@@ -24081,6 +24093,428 @@ function imprimirRelProd() {
   window.print();
 }
 window.imprimirRelProd = imprimirRelProd;
+
+
+/* ==================== RELATÓRIO DE COSTURA ====================
+
+   14/10/2026, Junior: "Insira campo com nome Relatório de costura, abaixo do
+   relatório de produção na barra lateral. Esse campo deve conter os elementos
+   das etapas costura, detalhada para cada OS, para que seja contabilizada por
+   função costureira cadastrada o que é produzido em cada OS. Por exemplo,
+   Costureira Vanda, em OS659 uniu ombro de 300 unidades, das 14:00 às 15:00."
+
+   CADA LANÇAMENTO É UMA FRASE DAQUELAS: quem (pessoa da Equipe com função de
+   costura), em qual OS, qual operação, quantas unidades, de que hora a que
+   hora. Mora em STATE.costuraProd:
+     { id, osId, osNumero, etapa, operacao, pessoaId, pessoaNome, funcao,
+       qtd, data:'aaaa-mm-dd', inicio:'HH:MM', fim:'HH:MM', criadoPor, criadoEm }
+
+   AS OPERAÇÕES NÃO SE INVENTAM AQUI: são as tarefas da etapa de costura da OS,
+   no cadastro de Etapas de produção ("Costura CM.LISA | Descalvado" → União de
+   ombro, União de gola com frente…). A OS diz quais etapas de costura ela tem
+   (o.etapas), e só essas aparecem — escolher a OS 0659 de CM.LISA não oferece
+   operação de moletom.
+
+   QUEM APARECE é quem está na Equipe com função que fala em costura
+   (Costureira, Auxiliar de costura #1…). O nome da pessoa e o da função são
+   GRAVADOS no lançamento: renomear ou tirar alguém da Equipe depois não
+   apaga o que ela produziu.
+
+   O RELATÓRIO é a folha do período (mesma régua do Relatório de produção, com
+   uma diferença: a semana aqui vai de segunda a DOMINGO, porque sábado de
+   costura existe e um lançamento não pode sumir da semana em que foi feito):
+     · por OS: cada lançamento, e o total de cada operação contra os produtos
+       da OS — dá para ver que o ombro já está todo unido e a gola não;
+     · por costureira: unidades e horas por operação, e o ritmo (un/h).
+
+   QUEM LANÇA: o admin e quem recebeu a área "Relatório de costura" em
+   Configurações. Ler é de todo mundo. O formulário e a lista de lançamentos
+   são .no-print: no papel sai só a folha. */
+const REL_COST_CHAVE = 'relCostEscala';
+const REL_COST_PESSOA_CHAVE = 'relCostPessoa';
+let _relCostData = '';
+
+function _relCostEscala() {
+  try {
+    const k = localStorage.getItem(REL_COST_CHAVE);
+    if (REL_PROD_ESCALAS.some(e => e.k === k)) return k;
+  } catch (e) { /* sem armazenamento: vale o padrão */ }
+  return 'dia';
+}
+
+function _relCostPessoaFiltro() {
+  try { return localStorage.getItem(REL_COST_PESSOA_CHAVE) || ''; } catch (e) { return ''; }
+}
+
+// O período do Relatório de produção, com a semana inteira (segunda a domingo).
+function _relCostPeriodo(escala, ref) {
+  const per = _relProdPeriodo(escala, ref);
+  if (escala !== 'semana') return per;
+  const p2 = n => String(n).padStart(2, '0');
+  const br = t => { const d = new Date(t); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const ate = new Date(per.de); ate.setDate(ate.getDate() + 7);
+  return { de: per.de, ate: ate.getTime(), nome: br(per.de) + ' a ' + br(ate.getTime() - DASH_DIA_MS) };
+}
+
+function _relCostLista() {
+  if (!Array.isArray(STATE.costuraProd)) STATE.costuraProd = [];
+  return STATE.costuraProd;
+}
+
+// Pessoas da Equipe cuja função é de costura.
+function _relCostPessoas() {
+  return (STATE.equipe || [])
+    .filter(p => /costur/i.test(String(p.funcao || '')))
+    .slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+}
+
+// As etapas de costura da OS, na ordem da OS, com as operações do cadastro.
+function _relCostEtapasDaOS(o) {
+  if (!o) return [];
+  return (o.etapas || [])
+    .filter(n => /^costura/i.test(String(n || '').trim()))
+    .map(nome => {
+      const cad = (STATE.etapas || []).find(e => String(e.nome || '').trim() === String(nome).trim());
+      const ops = ((cad && cad.tarefas) || []).slice()
+        .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0))
+        .map(t => String(t.nome || '').trim()).filter(Boolean);
+      return { nome, ops };
+    });
+}
+
+// "659", "0659", "OS659", "OS 0659" → a OS. O número da OS é texto com zeros.
+function _relCostAcharOS(txt) {
+  const dig = String(txt || '').replace(/\D/g, '');
+  if (!dig) return null;
+  const n = parseInt(dig, 10);
+  return (STATE.ordens || []).find(o => parseInt(String(o.os || '').replace(/\D/g, ''), 10) === n) || null;
+}
+
+const _relCostMin = hhmm => {
+  const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? (+m[1]) * 60 + (+m[2]) : null;
+};
+function _relCostDuracao(l) {
+  const a = _relCostMin(l.inicio), b = _relCostMin(l.fim);
+  return (a != null && b != null && b > a) ? b - a : 0;
+}
+function _relCostFmtMin(min) {
+  if (!min) return '—';
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}h${m ? String(m).padStart(2, '0') : ''}` : `${m} min`;
+}
+const _relCostRitmo = (qtd, min) => (min > 0 ? Math.round(qtd / (min / 60)) : 0);
+const _relCostDataBr = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}` : ''; };
+
+function _relCostHojeTxt() {
+  const p2 = n => String(n).padStart(2, '0');
+  const d = new Date();
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+}
+
+/* ---- O formulário de lançamento -------------------------------------------
+   Desenhado UMA vez. O polling redesenha a página a cada mudança de outro
+   usuário (goto da página ativa), e refazer o formulário apagaria o que a
+   pessoa está digitando — então ele só é montado se ainda não existe, e depois
+   só as listas de opção é que se atualizam, preservando o escolhido. */
+function _relCostMontarForm() {
+  const box = document.getElementById('rel-cost-form');
+  if (!box) return;
+  if (!box.dataset.montado) {
+    const hoje = _relCostHojeTxt();
+    box.innerHTML = `<div class="rc-form">
+        <div class="rc-form-tit">Lançar produção</div>
+        <div class="form-grid fit-cols">
+          <div class="field"><label>Costureira *</label><select id="rc-pessoa"></select></div>
+          <div class="field"><label>OS *</label><input type="text" id="rc-os" list="rc-os-lista" placeholder="Ex.: 659" autocomplete="off" oninput="_relCostOSMudou()"><datalist id="rc-os-lista"></datalist></div>
+          <div class="field"><label>Etapa de costura *</label><select id="rc-etapa" onchange="_relCostEtapaMudou()"></select></div>
+          <div class="field"><label>Operação *</label><select id="rc-op"></select></div>
+          <div class="field"><label>Unidades *</label><input type="number" id="rc-qtd" min="1" step="1" inputmode="numeric"></div>
+          <div class="field"><label>Data *</label><input type="date" id="rc-data" value="${hoje}"></div>
+          <div class="field"><label>Início *</label><input type="time" id="rc-ini"></div>
+          <div class="field"><label>Fim *</label><input type="time" id="rc-fim"></div>
+        </div>
+        <div class="rc-form-pe">
+          <span id="rc-os-info" class="rc-dica"></span>
+          <button type="button" class="btn primary" onclick="lancarProducaoCostura()">Lançar</button>
+        </div>
+      </div>
+      <div id="rc-ultimos"></div>`;
+    box.dataset.montado = '1';
+  }
+  // Costureiras: refaz as opções, mantém a escolhida.
+  const selP = document.getElementById('rc-pessoa');
+  if (selP) {
+    const v = selP.value;
+    const ps = _relCostPessoas();
+    selP.innerHTML = ps.length
+      ? '<option value="">— escolha —</option>' + ps.map(p => `<option value="${esc(p.id)}">${esc(p.nome)} · ${esc(p.funcao || '')}</option>`).join('')
+      : '<option value="">Nenhuma pessoa com função de costura na Equipe</option>';
+    if (v && ps.some(p => p.id === v)) selP.value = v;
+  }
+  // As OS que têm etapa de costura, da mais nova para a mais antiga.
+  const dl = document.getElementById('rc-os-lista');
+  if (dl) {
+    dl.innerHTML = (STATE.ordens || [])
+      .filter(o => o.os && _relCostEtapasDaOS(o).length)
+      .slice().sort((a, b) => String(b.os).localeCompare(String(a.os), 'pt-BR', { numeric: true }))
+      .slice(0, 300)
+      .map(o => `<option value="${esc(o.os)}">${esc([o.modeloNome, o.grade].filter(Boolean).join(' · '))}</option>`).join('');
+  }
+  _relCostOSMudou(true);
+}
+
+// Trocou a OS: refaz as etapas (e por elas as operações) e mostra os produtos.
+function _relCostOSMudou(manter) {
+  const o = _relCostAcharOS((document.getElementById('rc-os') || {}).value);
+  const selE = document.getElementById('rc-etapa');
+  const info = document.getElementById('rc-os-info');
+  if (!selE) return;
+  const vE = manter ? selE.value : '';
+  const ets = _relCostEtapasDaOS(o);
+  selE.innerHTML = !o ? '<option value="">— escolha a OS —</option>'
+    : ets.length ? ets.map(e => `<option value="${esc(e.nome)}">${esc(e.nome)}</option>`).join('')
+    : '<option value="">Esta OS não tem etapa de costura</option>';
+  if (vE && ets.some(e => e.nome === vE)) selE.value = vE;
+  if (info) {
+    if (!o) info.textContent = '';
+    else {
+      const prod = produtosOS(o);
+      info.textContent = `OS ${o.os} · ${[o.modeloNome, o.grade].filter(Boolean).join(' · ')}${prod ? ' · ' + _dashFmt(prod) + ' produtos' : ''}`;
+    }
+  }
+  const q = document.getElementById('rc-qtd');
+  if (q && !manter && o && !q.value) { const prod = produtosOS(o); if (prod) q.placeholder = String(prod); }
+  _relCostEtapaMudou(manter);
+}
+window._relCostOSMudou = _relCostOSMudou;
+
+function _relCostEtapaMudou(manter) {
+  const o = _relCostAcharOS((document.getElementById('rc-os') || {}).value);
+  const selE = document.getElementById('rc-etapa');
+  const selO = document.getElementById('rc-op');
+  if (!selO) return;
+  const vO = manter ? selO.value : '';
+  const et = _relCostEtapasDaOS(o).find(e => e.nome === (selE && selE.value));
+  const ops = et ? et.ops : [];
+  selO.innerHTML = !et ? '<option value="">—</option>'
+    : ops.length ? '<option value="">— escolha —</option>' + ops.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    : '<option value="">Etapa sem operações no cadastro</option>';
+  if (vO && ops.includes(vO)) selO.value = vO;
+}
+window._relCostEtapaMudou = _relCostEtapaMudou;
+
+async function lancarProducaoCostura() {
+  if (!exigirEdicao('lançar produção de costura')) return;
+  const val = id => String((document.getElementById(id) || {}).value || '').trim();
+  const pessoa = _relCostPessoas().find(p => p.id === val('rc-pessoa'));
+  const o = _relCostAcharOS(val('rc-os'));
+  const etapa = val('rc-etapa'), operacao = val('rc-op');
+  const qtd = parseInt(val('rc-qtd'), 10);
+  const data = val('rc-data'), inicio = val('rc-ini'), fim = val('rc-fim');
+  if (!pessoa) { toast('Escolha a costureira', 'err'); return; }
+  if (!o) { toast('OS não encontrada', 'err'); return; }
+  if (!etapa || !operacao) { toast('Escolha a etapa e a operação', 'err'); return; }
+  if (!(qtd > 0)) { toast('Informe as unidades', 'err'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { toast('Informe a data', 'err'); return; }
+  const a = _relCostMin(inicio), b = _relCostMin(fim);
+  if (a == null || b == null) { toast('Informe a hora de início e a de fim', 'err'); return; }
+  if (b <= a) { toast('A hora de fim tem de ser depois da de início', 'err'); return; }
+  _relCostLista().push({
+    id: uid(), osId: o.id, osNumero: o.os, etapa, operacao,
+    pessoaId: pessoa.id, pessoaNome: pessoa.nome || '', funcao: pessoa.funcao || '',
+    qtd, data, inicio, fim, criadoPor: _obsQuemSou(), criadoEm: new Date().toISOString()
+  });
+  desfazerNomearAcao(`lançamento de costura (${pessoa.nome}, OS ${o.os})`);
+  await saveState('costuraProd');
+  toast(`${pessoa.nome} · OS ${o.os} · ${operacao} · ${qtd} un · ${inicio} às ${fim}`, 'ok');
+  // Mantém pessoa, OS, etapa e data (o próximo lançamento quase sempre é da
+  // mesma costureira, no mesmo dia); limpa o que muda de um para o outro. O
+  // início seguinte é o fim deste.
+  ['rc-qtd', 'rc-fim'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const ini = document.getElementById('rc-ini'); if (ini) ini.value = fim;
+  const op = document.getElementById('rc-op'); if (op) op.value = '';
+  renderRelatorioCostura();
+}
+window.lancarProducaoCostura = lancarProducaoCostura;
+
+async function apagarProducaoCostura(id) {
+  if (!exigirEdicao('apagar produção de costura')) return;
+  const l = _relCostLista().find(x => x.id === id);
+  if (!l) return;
+  if (!confirm(`Apagar o lançamento de ${l.pessoaNome}: OS ${l.osNumero}, ${l.operacao}, ${l.qtd} un, ${_relCostDataBr(l.data)} ${l.inicio} às ${l.fim}?`)) return;
+  STATE.costuraProd = _relCostLista().filter(x => x.id !== id);
+  desfazerNomearAcao(`exclusão do lançamento de costura (${l.pessoaNome}, OS ${l.osNumero})`);
+  await saveState('costuraProd');
+  renderRelatorioCostura();
+}
+window.apagarProducaoCostura = apagarProducaoCostura;
+
+// Os lançamentos do período, para conferir e apagar (só na tela).
+function _relCostUltimosHtml(lista) {
+  if (!lista.length) return '';
+  const pode = currentRole === 'admin' || temAcesso('costura');
+  const ord = lista.slice().sort((a, b) => String(b.data + b.inicio).localeCompare(String(a.data + a.inicio)));
+  return `<details class="rc-ult"><summary>${lista.length} lançamento(s) no período — conferir ou apagar</summary>
+    <table class="rel-tab"><thead><tr><th>Data</th><th>Costureira</th><th>OS</th><th>Operação</th><th>Un</th><th>Horário</th>${pode ? '<th></th>' : ''}</tr></thead>
+    <tbody>${ord.map(l => `<tr><td>${_relCostDataBr(l.data)}</td><td>${esc(l.pessoaNome)}</td><td>${esc(l.osNumero)}</td>
+      <td>${esc(l.operacao)}</td><td>${_dashFmt(l.qtd)}</td><td>${esc(l.inicio)}–${esc(l.fim)}</td>
+      ${pode ? `<td><button type="button" class="btn small ghost" onclick="apagarProducaoCostura('${esc(l.id)}')" title="Apagar este lançamento">✕</button></td>` : ''}</tr>`).join('')}</tbody></table></details>`;
+}
+
+function renderRelatorioCostura() {
+  const box = document.getElementById('rel-cost-folha');
+  if (!box) return;
+  const escala = _relCostEscala();
+  const selE = document.getElementById('rel-cost-escala');
+  if (selE) selE.innerHTML = REL_PROD_ESCALAS.map(e => `<option value="${e.k}"${e.k === escala ? ' selected' : ''}>${e.rot}</option>`).join('');
+  if (!_relCostData) _relCostData = _relCostHojeTxt();
+  const inp = document.getElementById('rel-cost-data');
+  if (inp && inp.value !== _relCostData) inp.value = _relCostData;
+  // Filtro por costureira: as pessoas de hoje mais as que já lançaram (quem
+  // saiu da Equipe continua aparecendo no histórico).
+  const filtro = _relCostPessoaFiltro();
+  const selP = document.getElementById('rel-cost-pessoa');
+  if (selP) {
+    const nomes = new Map();
+    _relCostPessoas().forEach(p => nomes.set(p.id, p.nome));
+    _relCostLista().forEach(l => { if (!nomes.has(l.pessoaId)) nomes.set(l.pessoaId, l.pessoaNome); });
+    selP.innerHTML = '<option value="">Todas</option>' + [...nomes].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
+      .map(([id, nome]) => `<option value="${esc(id)}"${id === filtro ? ' selected' : ''}>${esc(nome)}</option>`).join('');
+  }
+  const podeLancar = podeGravar() && (currentRole === 'admin' || temAcesso('costura'));
+  const formBox = document.getElementById('rel-cost-form');
+  if (formBox) formBox.classList.toggle('hidden', !podeLancar);
+  if (podeLancar) _relCostMontarForm();
+
+  const per = _relCostPeriodo(escala, _relCostData);
+  const noPer = l => {
+    const m = String(l.data || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return false;
+    const t = new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+    return t >= per.de && t < per.ate;
+  };
+  const doPeriodo = _relCostLista().filter(noPer);
+  const lista = doPeriodo.filter(l => !filtro || l.pessoaId === filtro);
+  const ult = document.getElementById('rc-ultimos');
+  if (ult) ult.innerHTML = _relCostUltimosHtml(lista);
+
+  const p2 = n => String(n).padStart(2, '0');
+  const hoje = new Date();
+  const geradoEm = `${p2(hoje.getDate())}/${p2(hoje.getMonth() + 1)}/${hoje.getFullYear()} ${p2(hoje.getHours())}:${p2(hoje.getMinutes())}`;
+  const rotEscala = (REL_PROD_ESCALAS.find(e => e.k === escala) || {}).rot || '';
+  const nomeFiltro = filtro ? ((lista[0] && lista[0].pessoaNome) || (_relCostPessoas().find(p => p.id === filtro) || {}).nome || '') : '';
+  const fmt = v => _dashFmt(v);
+  const ordHora = (a, b) => String(a.data + a.inicio).localeCompare(String(b.data + b.inicio));
+
+  let corpo;
+  if (!lista.length) {
+    corpo = `<div class="rel-aviso">Nenhuma produção de costura lançada neste período${nomeFiltro ? ' para ' + esc(nomeFiltro) : ''}.</div>`;
+  } else {
+    // ---- POR OS ----
+    const porOS = new Map();
+    lista.forEach(l => { const k = l.osId || l.osNumero; if (!porOS.has(k)) porOS.set(k, []); porOS.get(k).push(l); });
+    const blocosOS = [...porOS.values()]
+      .sort((a, b) => String(a[0].osNumero).localeCompare(String(b[0].osNumero), 'pt-BR', { numeric: true }))
+      .map(ls => {
+        const o = (STATE.ordens || []).find(x => x.id === ls[0].osId) || _relCostAcharOS(ls[0].osNumero);
+        const prod = o ? produtosOS(o) : 0;
+        const cab = o ? [o.modeloNome, o.grade].filter(Boolean).join(' · ') : '';
+        // Total de cada operação na OS, na ordem do cadastro da etapa.
+        const ordemOps = o ? _relCostEtapasDaOS(o).flatMap(e => e.ops.map(n => e.nome + '\u0000' + n)) : [];
+        const tot = new Map();
+        ls.forEach(l => { const k = l.etapa + '\u0000' + l.operacao; tot.set(k, (tot.get(k) || 0) + (Number(l.qtd) || 0)); });
+        const chaves = [...tot.keys()].sort((a, b) => {
+          const ia = ordemOps.indexOf(a), ib = ordemOps.indexOf(b);
+          return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b, 'pt-BR');
+        });
+        const varias = new Set(ls.map(l => l.etapa)).size > 1;
+        return `<div class="rc-bloco">
+          <div class="rc-bloco-cab"><b>OS ${esc(ls[0].osNumero)}</b>${cab ? ' · ' + esc(cab) : ''}${prod ? ` · <span>${fmt(prod)} produtos</span>` : ''}</div>
+          <table class="rel-tab">
+            <thead><tr><th>Costureira</th><th>Operação</th><th>Unidades</th><th>Data</th><th>Horário</th><th>Tempo</th><th title="Unidades por hora">Ritmo</th></tr></thead>
+            <tbody>${ls.slice().sort(ordHora).map(l => {
+              const min = _relCostDuracao(l);
+              return `<tr><td>${esc(l.pessoaNome)}<i>${esc(l.funcao || '')}</i></td>
+                <td class="rc-txt">${esc(l.operacao)}${varias ? `<i>${esc(l.etapa)}</i>` : ''}</td>
+                <td>${fmt(l.qtd)}</td><td>${_relCostDataBr(l.data)}</td><td>${esc(l.inicio)} às ${esc(l.fim)}</td>
+                <td>${_relCostFmtMin(min)}</td><td>${min ? fmt(_relCostRitmo(l.qtd, min)) + ' un/h' : '—'}</td></tr>`;
+            }).join('')}</tbody>
+          </table>
+          <div class="rc-tot">${chaves.map(k => {
+            const [et, op] = k.split('\u0000');
+            const q = tot.get(k);
+            const pct = prod ? Math.round(q * 100 / prod) : 0;
+            return `<span><b>${esc(op)}</b>${varias ? ' (' + esc(et) + ')' : ''}: ${fmt(q)}${prod ? ` de ${fmt(prod)} · ${pct}%` : ''}</span>`;
+          }).join('')}</div>
+        </div>`;
+      }).join('');
+
+    // ---- POR COSTUREIRA ----
+    const porPessoa = new Map();
+    lista.forEach(l => { if (!porPessoa.has(l.pessoaId)) porPessoa.set(l.pessoaId, []); porPessoa.get(l.pessoaId).push(l); });
+    const linhasP = [...porPessoa.values()]
+      .sort((a, b) => String(a[0].pessoaNome).localeCompare(String(b[0].pessoaNome), 'pt-BR'))
+      .map(ls => {
+        const porOp = new Map();
+        ls.forEach(l => {
+          const r = porOp.get(l.operacao) || { qtd: 0, min: 0, os: new Set() };
+          r.qtd += Number(l.qtd) || 0; r.min += _relCostDuracao(l); r.os.add(l.osNumero);
+          porOp.set(l.operacao, r);
+        });
+        const totQ = ls.reduce((s, l) => s + (Number(l.qtd) || 0), 0);
+        const totM = ls.reduce((s, l) => s + _relCostDuracao(l), 0);
+        const ops = [...porOp].sort((a, b) => b[1].qtd - a[1].qtd);
+        return ops.map(([op, r], i) => `<tr${i === 0 ? ' class="rc-pessoa-ini"' : ''}>
+            ${i === 0 ? `<td rowspan="${ops.length + 1}">${esc(ls[0].pessoaNome)}<i>${esc(ls[0].funcao || '')}</i></td>` : ''}
+            <td class="rc-txt">${esc(op)}</td><td>${fmt(r.qtd)}</td><td>${_relCostFmtMin(r.min)}</td>
+            <td>${r.min ? fmt(_relCostRitmo(r.qtd, r.min)) + ' un/h' : '—'}</td>
+            <td class="rc-txt">${[...r.os].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true })).map(esc).join(', ')}</td></tr>`).join('')
+          + `<tr class="rc-sub"><td class="rc-txt">Total</td><td>${fmt(totQ)}</td><td>${_relCostFmtMin(totM)}</td>
+            <td>${totM ? fmt(_relCostRitmo(totQ, totM)) + ' un/h' : '—'}</td><td></td></tr>`;
+      }).join('');
+
+    corpo = `<div class="rc-sec">Por OS</div>${blocosOS}
+      <div class="rc-sec">Por costureira</div>
+      <table class="rel-tab">
+        <thead><tr><th>Costureira</th><th>Operação</th><th>Unidades</th><th>Tempo</th><th title="Unidades por hora">Ritmo</th><th>OS</th></tr></thead>
+        <tbody>${linhasP}</tbody>
+      </table>`;
+  }
+
+  box.innerHTML = `<div class="rel-folha">
+      <div class="rel-cab">
+        <div><div class="rel-tit">Relatório de costura</div>
+          <div class="rel-per">${esc(rotEscala)} · ${esc(per.nome)}${nomeFiltro ? ' · ' + esc(nomeFiltro) : ''}</div></div>
+        <div class="rel-gerado">Gerado em ${geradoEm}</div>
+      </div>
+      ${corpo}
+      <div class="rel-rodape">Cada linha é um lançamento: quem costurou, a operação, as unidades e o horário. As operações são as da etapa de costura de cada OS (Cadastros › Etapas de produção). Ritmo = unidades por hora do horário lançado. Na OS, cada operação soma contra os produtos da OS.</div>
+    </div>`;
+}
+
+function _relCostTrocar() {
+  const e = document.getElementById('rel-cost-escala');
+  const d = document.getElementById('rel-cost-data');
+  const p = document.getElementById('rel-cost-pessoa');
+  try {
+    if (e) localStorage.setItem(REL_COST_CHAVE, e.value);
+    if (p) localStorage.setItem(REL_COST_PESSOA_CHAVE, p.value);
+  } catch (x) { /* vale só nesta tela */ }
+  if (d && d.value) _relCostData = d.value;
+  renderRelatorioCostura();
+}
+window._relCostTrocar = _relCostTrocar;
+
+function _relCostAndar(dir) {
+  const escala = _relCostEscala();
+  const per = _relCostPeriodo(escala, _relCostData);
+  const d = new Date(dir < 0 ? per.de - 1 : per.ate);
+  const p2 = n => String(n).padStart(2, '0');
+  _relCostData = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  renderRelatorioCostura();
+}
+window._relCostAndar = _relCostAndar;
 
 
 /* O VOLUME DAS OS POR STATUS (16/09/2026, Junior: "insira o volume das OS por

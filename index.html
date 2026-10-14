@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-09j">
+<link rel="stylesheet" href="styles.css?v=2026-10-14a">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -126,6 +126,7 @@
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
         <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
+        <a class="nav-btn" href="#relatorio-costura" data-page="relatorio-costura" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório de costura</a>
         <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
     </div>
 
@@ -500,6 +501,28 @@
         </div>
       </div>
       <div id="rel-prod-folha"></div>
+    </section>
+
+    <!-- RELATORIO DE COSTURA (14/10/2026, Junior): quem costurou o que, em
+         qual OS, de que hora a que hora. O formulario de lancamento e a lista
+         de conferencia sao .no-print: no papel sai so a folha. -->
+    <section class="page hidden" data-page="relatorio-costura">
+      <div class="page-header">
+        <div>
+          <h1>Relatório de costura</h1>
+          <div class="desc">A produção de cada costureira em cada OS: a operação da etapa de costura, as unidades e o horário. Lançado aqui, somado por OS e por costureira no período escolhido.</div>
+        </div>
+        <div class="rel-ctrl">
+          <label>Período <select id="rel-cost-escala" onchange="_relCostTrocar()"></select></label>
+          <button type="button" class="btn small ghost" onclick="_relCostAndar(-1)" title="Período anterior">◀</button>
+          <label>Data de referência <input type="date" id="rel-cost-data" onchange="_relCostTrocar()"></label>
+          <button type="button" class="btn small ghost" onclick="_relCostAndar(1)" title="Período seguinte">▶</button>
+          <label>Costureira <select id="rel-cost-pessoa" onchange="_relCostTrocar()"></select></label>
+          <button type="button" class="btn primary" onclick="window.print()" title="Imprime a folha do relatório">Imprimir / PDF</button>
+        </div>
+      </div>
+      <div id="rel-cost-form" class="no-print"></div>
+      <div id="rel-cost-folha"></div>
     </section>
 
     <section class="page hidden" data-page="corte">
@@ -1862,6 +1885,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-09m"></script>
+<script src="app.js?v=2026-10-14a"></script>
 </body>
 </html>
