@@ -9171,6 +9171,19 @@ function _aviCosturaDaOS(o) {
   if (st === 'costurando' || st === 'costurando-sc') {
     return { unidade: st === 'costurando-sc' ? 'sc' : 'desc', data: _aviDiaDoCarimbo(o.statusOSEm) };
   }
+  /* A COSTURA QUE SÓ O DIÁRIO LEMBRA (14/10/2026, Junior: "analise se as
+     quantidades de etiqueta … São Carlos estão sendo dadas baixa"). Carimbada
+     Costurando | São Carlos sem a caixa da costura marcada, a OS baixava a
+     etiqueta só ENQUANTO estava no status: carimbada adiante (Estoque com fio |
+     SC, Fios…), `statusOSEm` passava a ser o do carimbo novo, a costura sumia
+     e a etiqueta voltava à prateleira — 15 OS de 09/10 assim. A costura que o
+     diário de status registrou continua valendo depois dela: a última passagem
+     por Costurando dá a unidade e o dia. OS de volta a um status de antes da
+     costura (reserva) não entra: ali alguém disse que ela não foi costurada. */
+  if (st !== 'cancelado' && AVI_STATUS_RESERVA.indexOf(st) < 0 && typeof _statusHistDe === 'function') {
+    const h = _statusHistDe(o).filter(x => x.k === 'costurando' || x.k === 'costurando-sc').pop();
+    if (h) return { unidade: h.k === 'costurando-sc' ? 'sc' : 'desc', data: _aviDiaDoCarimbo(h.em) };
+  }
   return null;
 }
 

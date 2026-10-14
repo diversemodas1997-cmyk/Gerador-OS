@@ -34,7 +34,7 @@ const api = new Function('STATE', 'totaisPorTamanhoTomOS', '_statusOS', `
   ${linha(/const AVIAMENTO_COR_ETIQUETA = [^\n]*/)}
   ${linha(/const AVI_BAIXA_DESDE = [^\n]*/)}
   ${linha(/const AVI_STATUS_RESERVA = \[[\s\S]*?\];/)}
-  ${['_normNome', '_aviTipoDoMaterial', '_aviNecessidadeOS', '_aviDiaDoCarimbo', '_aviCosturaDaOS', '_aviDasOS'].map(pegaFuncao).join('\n')}
+  ${['_normNome', '_statusHistDe', '_aviTipoDoMaterial', '_aviNecessidadeOS', '_aviDiaDoCarimbo', '_aviCosturaDaOS', '_aviDasOS'].map(pegaFuncao).join('\n')}
   return { _aviDasOS, _aviNecessidadeOS, _aviTipoDoMaterial, _aviCosturaDaOS };
 `)(STATE, TT, o => o.st || 'nao-iniciado');
 
@@ -87,6 +87,19 @@ STATE.ordens = [os('0050', { etapas, progresso: { etapasCheck: {
   'Costura CM.LISA | Descalvado': ts('2026-09-25'), 'Costura CM.LISA | São Carlos': ts('2026-09-26') } } })];
 d = api._aviDasOS();
 ok('10. as duas costuras marcadas: vale a marcada por último (a correção)', d.baixas.every(b => b.unidade === 'sc'), d);
+
+STATE.ordens = [
+  // Carimbada Costurando | SC em 09/10 e, depois, Estoque com fio | SC (sem a caixa da costura).
+  os('0060', { st: 'estoque-fio-sc', statusOSEm: '2026-10-14T12:00:00Z',
+    statusHist: [{ k: 'ensacado-sc', em: ts('2026-10-08') }, { k: 'costurando-sc', em: ts('2026-10-09'), c: 'costurando-sc' },
+                 { k: 'estoque-fio-sc', em: ts('2026-10-14'), c: 'estoque-fio-sc' }] }),
+  // Passou por Costurando e foi carimbada de volta a Ensacado: reserva, não baixa.
+  os('0061', { st: 'ensacado-sc', statusHist: [{ k: 'costurando-sc', em: ts('2026-10-09') }, { k: 'ensacado-sc', em: ts('2026-10-10') }] })];
+d = api._aviDasOS();
+ok('10b. passou da costura sem a caixa: a baixa fica, da unidade e do dia do diário',
+   d.baixas.filter(b => b.osNumero === '0060').length === 2 && d.baixas.filter(b => b.osNumero === '0060').every(b => b.unidade === 'sc' && b.data === '2026-10-09'), d.baixas);
+ok('10c. carimbada de volta para antes da costura: reserva, sem baixa',
+   !d.baixas.some(b => b.osNumero === '0061') && d.reservas.some(r => r.osNumero === '0061'), d);
 
 console.log('-- a tela --');
 ok('11. o saldo da tela e o limite da OE contam as baixas das OS',
