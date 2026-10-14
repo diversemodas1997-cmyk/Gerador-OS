@@ -24372,12 +24372,22 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
     feito.set(k, (feito.get(k) || 0) + (Number(l.qtd) || 0));
   });
   const varias = ets.length > 1;
-  // Uma linha por etapa, com o nome dela na frente e as operações em seguida.
-  const prog = ets.filter(e => e.ops.length).map(e => `<div class="rc-os-prog">${varias ? `<span class="rc-et">${esc(e.nome)}</span>` : ''}${e.ops.map(op => {
-    const q = feito.get(e.nome + '\u0000' + op) || 0;
-    const pct = prod ? Math.min(100, Math.round(q * 100 / prod)) : 0;
-    return `<span class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}" title="${esc(e.nome)}">${esc(op)}: <b>${fmt(q)}</b>${prod ? ` de ${fmt(prod)} · ${pct}%` : ''}</span>`;
-  }).join('')}</div>`).join('');
+  /* CADA ETAPA, UMA TABELA (14/10/2026, Junior: "separe cada OS em quadrados
+     diferentes que contenham todas as etapas de costura da OS"). As operações
+     iam numa linha corrida, miúda e cinza, e passavam por ausentes: agora cada
+     etapa tem o nome em cima e uma linha por operação, com o feito, o total da
+     OS e a barra do andamento — inclusive as que ainda estão em zero. */
+  const prog = ets.map(e => `<table class="rc-et-tab">
+      <thead><tr><th colspan="3">${esc(e.nome)}</th></tr></thead>
+      <tbody>${e.ops.length ? e.ops.map(op => {
+        const q = feito.get(e.nome + ' ' + op) || 0;
+        const pct = prod ? Math.min(100, Math.round(q * 100 / prod)) : 0;
+        return `<tr class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}">
+          <td>${esc(op)}</td>
+          <td class="rc-num"><b>${fmt(q)}</b>${prod ? ` <span>de ${fmt(prod)}</span>` : ''}</td>
+          <td class="rc-pct">${prod ? `<span class="rc-barra"><i style="width:${pct}%"></i></span> ${pct}%` : ''}</td></tr>`;
+      }).join('') : `<tr><td colspan="3" class="rc-dica">Sem operações cadastradas em Cadastros › Etapas de produção.</td></tr>`}</tbody>
+    </table>`).join('');
   const id = esc(o.id);
   const opts = ets.map(e => (varias ? `<optgroup label="${esc(e.nome)}">` : '')
     + e.ops.map(op => {
@@ -24404,7 +24414,7 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
           <button type="button" class="btn primary small" onclick="lancarProducaoCostura('${id}')">Lançar</button>
         </div>`;
   return `<div class="rc-os">
-      <div class="rc-os-cab"><b>OS ${esc(o.os)}</b> · ${esc([o.modeloNome, o.grade].filter(Boolean).join(' · '))}${prod ? ` · <span>${fmt(prod)} produtos</span>` : ''}</div>
+      <div class="rc-os-cab"><b>OS ${esc(o.os)}</b> · ${esc([o.modeloNome, _gradeNomeDaOS(o)].filter(Boolean).join(' · '))}${prod ? ` · <span>${fmt(prod)} produtos</span>` : ''}</div>
       ${prog}
       ${form}
     </div>`;
@@ -24532,7 +24542,7 @@ function renderRelatorioCostura() {
         <div class="rc-form-tit">${podeLancar ? 'Lançar produção' : 'OS costurando'} · ${esc(rot)}
           <span class="rc-dica">${oss.length} OS com status <b>${esc(statusRot)}</b></span></div>
         ${podeLancar && !pessoas.length ? `<div class="rc-dica rc-aviso">Nenhuma pessoa com função de costura na Equipe de ${esc(rot)} — cadastre em Cadastros › Equipe, aba ${esc(rot)}.</div>` : ''}
-        ${oss.length ? oss.map(o => _relCostOSHtml(o, unidade, pessoas, podeLancar)).join('')
+        ${oss.length ? `<div class="rc-os-grade">${oss.map(o => _relCostOSHtml(o, unidade, pessoas, podeLancar)).join('')}</div>`
           : `<div class="rc-dica">Nenhuma OS com status ${esc(statusRot)} agora. A OS aparece aqui quando o status dela muda para Costurando.</div>`}
       </div>
       ${_relCostUltimosHtml(lista, podeLancar)}`;
