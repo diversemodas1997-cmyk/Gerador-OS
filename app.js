@@ -9229,6 +9229,39 @@ function _aviMovTodos() {
   return (Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : []).concat(_aviDasOS().baixas);
 }
 
+/* AS DUAS UNIDADES COM O MESMO CADASTRO (14/10/2026, Junior: "cadastre as
+   linhas, fios e etiquetas que não estiverem na unidade São Carlos"). A
+   tabela de uma unidade nascia só dos lançamentos DELA: cor que nunca entrou
+   em São Carlos não tinha linha lá, e não havia onde ver que ela está em zero
+   nem onde lançar a primeira entrada. Agora a unidade mostra também, zeradas,
+   as linhas que existem na outra unidade e os fios e linhas do cadastro
+   (STATE.aviamentoTipos). Nada é gravado: são linhas de tela. */
+function _aviLinhasDaUnidadeCompletas(linhas, mov, de, ate, hoje, unidade) {
+  if (!unidade) return linhas;
+  const chave = l => [_normNome(l.item), _normNome(l.modelo), _normNome(l.cor), _normNome(l.corCodigo), l.tam || ''].join('||');
+  const ja = new Set(linhas.map(chave));
+  const zero = () => ({ entrada: 0, saida: 0, residual: 0, corrente: 0, total: 0 });
+  const extra = [];
+  const somar = (item, modelo, cor, corCodigo, tam) => {
+    const l = Object.assign({ item, modelo: modelo || '', cor: cor || '', corCodigo: corCodigo || '', tam: tam || '' }, zero(),
+      { un: zero(), temKg: false, temUn: true });
+    const k = chave(l);
+    if (ja.has(k)) return;
+    ja.add(k);
+    extra.push(l);
+  };
+  const outra = unidade === 'sc' ? 'desc' : 'sc';
+  calcularEstoqueAviamentos(mov, de, ate, hoje, outra, _aviDataCarga)
+    .forEach(l => somar(l.item, l.modelo, l.cor, l.corCodigo, l.tam));
+  (Array.isArray(STATE.aviamentoTipos) ? STATE.aviamentoTipos : []).forEach(t => {
+    const item = AVIAMENTO_TIPOS.find(x => _normNome(x) === _normNome(t.item));
+    if (item) somar(item, String(t.codigo || '').trim(), String(t.corNome || '').trim(), String(t.corCodigo || '').trim(), '');
+  });
+  if (!extra.length) return linhas;
+  return linhas.concat(extra).sort((a, b) => a.modelo.localeCompare(b.modelo, 'pt-BR') || a.cor.localeCompare(b.cor, 'pt-BR')
+    || a.corCodigo.localeCompare(b.corCodigo, 'pt-BR') || (AVIAMENTO_TAMANHOS.indexOf(a.tam) - AVIAMENTO_TAMANHOS.indexOf(b.tam)));
+}
+
 function renderEstoqueAviamentos() {
   const cont = document.getElementById('aviamentos-painel');
   if (!cont) return;
@@ -9236,7 +9269,7 @@ function renderEstoqueAviamentos() {
   // Os lançamentos gravados + as baixas das OS costuradas (ver _aviDasOS).
   const mov = _aviMovTodos();
   const unidade = _aviUnidade;
-  const linhas = calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, _aviDataCarga);
+  const linhas = _aviLinhasDaUnidadeCompletas(calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, _aviDataCarga), mov, de, ate, hoje, unidade);
   const fmt = n => Number(n || 0).toFixed(3).replace('.', ',');
   const fmtUn = n => (Math.round(Number(n) || 0)).toLocaleString('pt-BR');
   /* A COLUNA CORRENTE É O CONSUMO (28/09/2026, Junior: "Esse volume corrente
