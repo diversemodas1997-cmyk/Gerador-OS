@@ -24349,7 +24349,11 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
   })).join('');
   const id = esc(o.id);
   const opts = ets.map(e => (varias ? `<optgroup label="${esc(e.nome)}">` : '')
-    + e.ops.map(op => `<option value="${esc(op)}" data-etapa="${esc(e.nome)}">${esc(op)}</option>`).join('')
+    + e.ops.map(op => {
+      // O que falta desta operação na OS: é o que o campo Unidades recebe ao escolhê-la.
+      const resta = prod ? Math.max(0, prod - (feito.get(e.nome + ' ' + op) || 0)) : '';
+      return `<option value="${esc(op)}" data-etapa="${esc(e.nome)}" data-resta="${resta}">${esc(op)}</option>`;
+    }).join('')
     + (varias ? '</optgroup>' : '')).join('');
   const temOps = ets.some(e => e.ops.length);
   const form = !podeLancar ? '' : !ets.length
@@ -24360,8 +24364,8 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
           <select id="rc-p-${id}" title="Costureira">${pessoas.length
             ? '<option value="">— costureira —</option>' + pessoas.map(p => `<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join('')
             : '<option value="">sem costureira na Equipe desta unidade</option>'}</select>
-          <select id="rc-op-${id}" title="Operação"><option value="">— operação —</option>${opts}</select>
-          <input type="number" id="rc-q-${id}" min="1" step="1" inputmode="numeric" placeholder="un" title="Unidades">
+          <select id="rc-op-${id}" title="Operação" onchange="_relCostPreencherQtd('${id}')"><option value="">— operação —</option>${opts}</select>
+          <input type="number" id="rc-q-${id}" min="1" step="1" inputmode="numeric" placeholder="un" title="Unidades (vem da OS: o que falta da operação; dá para trocar)" value="${prod || ''}">
           <input type="date" id="rc-d-${id}" value="${_relCostHojeTxt()}" title="Data">
           <input type="time" id="rc-i-${id}" title="Início">
           <span class="rc-dica">às</span>
@@ -24374,6 +24378,18 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
       ${form}
     </div>`;
 }
+
+// As unidades vêm da OS (14/10/2026, Junior: "toda OS traz esses números"):
+// ao escolher a operação, o campo recebe o que falta dela na OS — a OS inteira
+// se nada foi lançado. Continua editável, para quem fez só uma parte.
+function _relCostPreencherQtd(osId) {
+  const op = document.getElementById(`rc-op-${osId}`);
+  const q = document.getElementById(`rc-q-${osId}`);
+  if (!op || !q) return;
+  const resta = op.selectedOptions && op.selectedOptions[0] ? op.selectedOptions[0].dataset.resta : '';
+  if (resta !== undefined && resta !== '') q.value = Number(resta) > 0 ? resta : '';
+}
+window._relCostPreencherQtd = _relCostPreencherQtd;
 
 async function lancarProducaoCostura(osId) {
   if (!exigirEdicao('lançar produção de costura')) return;
@@ -24405,7 +24421,7 @@ async function lancarProducaoCostura(osId) {
   // Mantém a costureira e a data (o próximo lançamento quase sempre é da mesma
   // pessoa, no mesmo dia); limpa o que muda. O início seguinte é o fim deste.
   // Os campos são acertados ANTES do redesenho, que os guarda e devolve.
-  if (el('q')) el('q').value = '';
+  if (el('q')) el('q').value = '';   // o redesenho devolve as unidades da OS
   if (el('f')) el('f').value = '';
   if (el('op')) el('op').value = '';
   if (el('i')) el('i').value = fim;
