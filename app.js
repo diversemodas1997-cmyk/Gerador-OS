@@ -9190,6 +9190,18 @@ function _aviCosturaDaOS(o) {
 // As saídas (lançamentos lidos, não gravados) e as reservas de todas as OS.
 function _aviDasOS() {
   const baixas = [], reservas = [];
+  /* A BAIXA LANÇADA À MÃO PARA UMA OS MANDA (14/10/2026, Junior: "corrija a
+     falha de contagem dupla da baixa de linha, fio e etiqueta se alguém marcar
+     no checklist"). Uma saída gravada com `osId` (o ajuste de 14/10 das OS
+     costuradas em São Carlos sem a costura marcada, ou qualquer outra) já é a
+     baixa daquela OS naquele item e tamanho. Se depois alguém marcar a costura,
+     a baixa automática do mesmo item e tamanho não entra de novo — nem fica
+     reservada: a OS já gastou o aviamento. Os outros itens da OS seguem a
+     regra de sempre. */
+  const jaBaixado = new Set();
+  (Array.isArray(STATE.aviamentosMov) ? STATE.aviamentosMov : []).forEach(m => {
+    if (m && m.tipo === 'saida' && m.osId) jaBaixado.add(m.osId + '|' + _normNome(m.item) + '|' + String(m.tam || ''));
+  });
   (STATE.ordens || []).forEach(o => {
     if (!o || !(o.aviamentos || []).length) return;
     const st = _statusOS(o);
@@ -9199,6 +9211,7 @@ function _aviDasOS() {
     const baixa = cost && cost.data && cost.data >= AVI_BAIXA_DESDE;
     if (!reserva && !baixa) return;
     _aviNecessidadeOS(o).forEach(n => {
+      if (jaBaixado.has(o.id + '|' + _normNome(n.item) + '|' + String(n.tam || ''))) return;
       if (baixa) {
         baixas.push({ id: 'os:' + o.id + ':' + n.item + ':' + n.tam + ':' + n.cor, tipo: 'saida', auto: true,
           unidade: cost.unidade, item: n.item, tam: n.tam, cor: n.cor, qtd: n.qtd, kg: 0, data: cost.data,

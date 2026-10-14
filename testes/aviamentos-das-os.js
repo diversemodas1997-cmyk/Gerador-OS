@@ -101,6 +101,18 @@ ok('10b. passou da costura sem a caixa: a baixa fica, da unidade e do dia do di�
 ok('10c. carimbada de volta para antes da costura: reserva, sem baixa',
    !d.baixas.some(b => b.osNumero === '0061') && d.reservas.some(r => r.osNumero === '0061'), d);
 
+// Ajuste à mão da OS (saída com osId) e, depois, a costura marcada no checklist.
+STATE.aviamentosMov = [{ tipo: 'saida', unidade: 'sc', item: 'Etiqueta', tam: 'M', cor: 'Preto', qtd: 100, data: '2026-10-05', osId: 'o0070' }];
+STATE.ordens = [os('0070', costurada('São Carlos', '2026-10-15')), os('0071', { st: 'cortando' })];
+STATE.aviamentosMov.push({ tipo: 'saida', unidade: 'sc', item: 'Etiqueta', tam: 'G', cor: 'Preto', qtd: 50, data: '2026-10-05', osId: 'o0071' });
+d = api._aviDasOS();
+const b70 = d.baixas.filter(b => b.osNumero === '0070');
+ok('10d. saída à mão da OS + costura marcada: o tamanho já lançado não baixa de novo, o outro baixa',
+   b70.length === 1 && b70[0].tam === 'G' && b70[0].qtd === 50, b70);
+ok('10e. o que já saiu à mão também não fica reservado',
+   !d.reservas.some(r => r.osNumero === '0071' && r.tam === 'G') && d.reservas.some(r => r.osNumero === '0071' && r.tam === 'M'), d.reservas);
+STATE.aviamentosMov = [];
+
 console.log('-- a tela --');
 ok('11. o saldo da tela e o limite da OE contam as baixas das OS',
    /const mov = _aviMovTodos\(\);/.test(src) && /const mov = _aviMovTodos\(\)\.filter\(m => m\.id !== semId\);/.test(src));
