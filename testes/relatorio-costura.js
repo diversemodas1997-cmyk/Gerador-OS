@@ -44,6 +44,8 @@ const motor = [
   corta('function _relCostLista'),
   corta('function _relCostPessoas'),
   corta('function _relCostEtapasDaOS'),
+  "const _normSku = s => String(s || '').toLowerCase().split('.').map(x => x.trim()).join('.').split(' ').join('');",
+  "const linhasSkuDaOS = o => (o.sku ? [o.sku] : []);",
   corta('function _relCostAcharOS'),
   corta('function _relCostOSDaUnidade'),
   cortaArrow('const _relCostMin'),
@@ -68,7 +70,9 @@ const STATE = {
   ordens: [
     { id: 'o659', os: '0659', st: 'costurando', etapas: ['Corte', 'Costura CM.LISA | Descalvado', 'Costura CM.LISA | São Carlos', 'Estoque'] },
     { id: 'o660', os: '0660', st: 'ensacado', etapas: ['Corte', 'Estoque'] },
-    { id: 'o617', os: '0617', st: 'costurando-sc', etapas: ['Costura CM.LISA | Descalvado', 'Costura CM.LISA | São Carlos'] }
+    { id: 'o617', os: '0617', st: 'costurando-sc', etapas: ['Costura CM.LISA | Descalvado', 'Costura CM.LISA | São Carlos'] },
+    // CM.LISA sem nenhuma etapa de costura gravada na OS: vêm as do cadastro.
+    { id: 'o700', os: '0700', st: 'enfestando', sku: 'cm. lisa', etapas: ['Corte', 'Estoque'] }
   ]
 };
 const _statusOS = o => o.st;
@@ -93,6 +97,10 @@ ok(etsSC.length === 1 && etsSC[0].ops[0] === 'Costura ombro a ombro', 'em São C
 ok(JSON.stringify(ets[0].ops) === JSON.stringify(['Acabamento de mangas', 'União de ombro', 'União de gola com frente']), 'operações na ordem do cadastro');
 ok(!ets[0].ops.includes('Fixação de bolso'), 'operação de outra linha não aparece');
 ok(api._relCostEtapasDaOS(api._relCostAcharOS('660')).length === 0, 'OS sem costura não tem etapa');
+const ets700 = api._relCostEtapasDaOS(api._relCostAcharOS('700')).map(e => e.nome);
+ok(ets700.length === 2 && ets700.includes('Costura CM.LISA | Descalvado') && ets700.includes('Costura CM.LISA | São Carlos'),
+   'OS CM.LISA traz as etapas de costura de CM.LISA do cadastro');
+ok(!ets700.some(n => /BM\.TRI/.test(n)), 'e não as de outra linha');
 
 // Só funções de costura.
 const nomes = api._relCostPessoas().map(p => p.nome);

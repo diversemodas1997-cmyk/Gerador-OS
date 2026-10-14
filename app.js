@@ -24274,10 +24274,23 @@ function _relCostPessoas(unidade) {
 
 // As etapas de costura da OS, na ordem da OS, com as operações do cadastro —
 // só as da unidade pedida, se houver.
+// Além das etapas gravadas na OS, entram TODAS as etapas de costura cadastradas
+// para a linha de SKU dela (14/10/2026, Junior: "se uma OS é cm.lisa, as etapas
+// de costura cadastradas em Etapas de produção para cm.lisa devem aparecer"):
+// "Costura CM.LISA | Descalvado" e "Costura CM.LISA | São Carlos" para CM.LISA.
 function _relCostEtapasDaOS(o, unidade) {
   if (!o) return [];
-  return (o.etapas || [])
-    .filter(n => /^costura/i.test(String(n || '').trim()) && (!unidade || _relCostEtapaEhDaUnidade(n, unidade)))
+  const ehCostura = n => /^costura/i.test(String(n || '').trim());
+  const nomes = (o.etapas || []).filter(ehCostura).map(n => String(n).trim());
+  const linhas = linhasSkuDaOS(o).map(_normSku).filter(Boolean);
+  if (linhas.length) (STATE.etapas || []).forEach(e => {
+    const nome = String((e && e.nome) || '').trim();
+    if (!ehCostura(nome) || nomes.includes(nome)) return;
+    const linhaEt = _normSku(nome.replace(/^costura\s*/i, '').split('|')[0]);
+    if (linhas.includes(linhaEt)) nomes.push(nome);
+  });
+  return nomes
+    .filter(n => !unidade || _relCostEtapaEhDaUnidade(n, unidade))
     .map(nome => {
       const cad = (STATE.etapas || []).find(e => String(e.nome || '').trim() === String(nome).trim());
       const ops = ((cad && cad.tarefas) || []).slice()
