@@ -24267,7 +24267,8 @@ function _relCostLista() {
 // Pessoas da Equipe cuja função é de costura — da unidade pedida, se houver.
 function _relCostPessoas(unidade) {
   return (STATE.equipe || [])
-    .filter(p => /costur/i.test(String(p.funcao || '')) && (!unidade || _equipeUnidadeDe(p) === unidade))
+    // Só a função Costureira (ou Costureiro) — "Auxiliar de costura" fica de fora.
+    .filter(p => /^\s*costureir[ao]s?\s*$/i.test(String(p.funcao || '')) && (!unidade || _equipeUnidadeDe(p) === unidade))
     .slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
 }
 

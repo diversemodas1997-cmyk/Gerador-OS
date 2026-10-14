@@ -96,7 +96,7 @@ ok(api._relCostEtapasDaOS(api._relCostAcharOS('660')).length === 0, 'OS sem cost
 
 // Só funções de costura.
 const nomes = api._relCostPessoas().map(p => p.nome);
-ok(nomes.includes('Vanda') && nomes.includes('Roseane') && !nomes.includes('João'), 'só função de costura');
+ok(nomes.includes('Vanda') && !nomes.includes('Roseane') && !nomes.includes('João'), 'só a função Costureira (sem a auxiliar de costura)');
 // Por unidade: quem não tem unidade é de Descalvado.
 const desc = api._relCostPessoas('desc').map(p => p.nome), sc = api._relCostPessoas('sc').map(p => p.nome);
 ok(desc.includes('Vanda') && !desc.includes('Neide'), 'Descalvado: Vanda, sem a Neide');
