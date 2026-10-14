@@ -4773,6 +4773,7 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .rc-os-cab span { color: var(--ink-3); }
 .rc-os-prog { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 11px; color: var(--ink-3); margin-bottom: 6px; }
 .rc-os-prog .rc-op.feito { color: var(--ink-2); }
+.rc-os-prog .rc-et { font-weight: 700; color: var(--ink-2); flex-basis: 100%; }
 .rc-os-prog .rc-op.completo b { color: #1f7a3a; }
 .rc-os-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rc-os-form select { max-width: 230px; }

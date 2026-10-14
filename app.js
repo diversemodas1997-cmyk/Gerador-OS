@@ -24331,22 +24331,27 @@ function _relCostHojeTxt() {
    são guardados antes de redesenhar e devolvidos depois, campo a campo (o id do
    campo leva o id da OS). */
 function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
-  const ets = _relCostEtapasDaOS(o, unidade);
+  // TODAS as etapas de costura da OS, das duas unidades (14/10/2026, Junior:
+  // "deve apresentar todas as etapas de costura de uma mesma OS"). A aba diz
+  // onde a OS está e quem lança; a etapa escolhida vai junto no lançamento.
+  const ets = _relCostEtapasDaOS(o);
   const prod = produtosOS(o);
   const fmt = v => _dashFmt(v);
-  // O que já foi lançado nesta OS, nesta unidade, por operação (todo o tempo).
+  // O que já foi lançado nesta OS, por etapa + operação (todo o tempo, as duas
+  // unidades: a etapa já diz de qual unidade é).
   const feito = new Map();
   _relCostLista().forEach(l => {
-    if (l.osId !== o.id || _relCostUnidadeDe(l) !== unidade) return;
+    if (l.osId !== o.id) return;
     const k = l.etapa + '\u0000' + l.operacao;
     feito.set(k, (feito.get(k) || 0) + (Number(l.qtd) || 0));
   });
   const varias = ets.length > 1;
-  const prog = ets.flatMap(e => e.ops.map(op => {
+  // Uma linha por etapa, com o nome dela na frente e as operações em seguida.
+  const prog = ets.filter(e => e.ops.length).map(e => `<div class="rc-os-prog">${varias ? `<span class="rc-et">${esc(e.nome)}</span>` : ''}${e.ops.map(op => {
     const q = feito.get(e.nome + '\u0000' + op) || 0;
     const pct = prod ? Math.min(100, Math.round(q * 100 / prod)) : 0;
-    return `<span class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}" title="${esc(e.nome)}">${esc(op)}${varias ? ' <i>(' + esc(e.nome) + ')</i>' : ''}: <b>${fmt(q)}</b>${prod ? ` de ${fmt(prod)} · ${pct}%` : ''}</span>`;
-  })).join('');
+    return `<span class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}" title="${esc(e.nome)}">${esc(op)}: <b>${fmt(q)}</b>${prod ? ` de ${fmt(prod)} · ${pct}%` : ''}</span>`;
+  }).join('')}</div>`).join('');
   const id = esc(o.id);
   const opts = ets.map(e => (varias ? `<optgroup label="${esc(e.nome)}">` : '')
     + e.ops.map(op => {
@@ -24357,7 +24362,7 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
     + (varias ? '</optgroup>' : '')).join('');
   const temOps = ets.some(e => e.ops.length);
   const form = !podeLancar ? '' : !ets.length
-    ? `<div class="rc-dica">Esta OS não tem etapa de costura de ${esc(_relCostRotuloUnidade(unidade))} no desenho.</div>`
+    ? `<div class="rc-dica">Esta OS não tem etapa de costura no desenho.</div>`
     : !temOps
       ? `<div class="rc-dica">A etapa "${esc(ets[0].nome)}" não tem tarefas em Cadastros › Etapas de produção — cadastre as operações lá.</div>`
       : `<div class="rc-os-form">
@@ -24374,7 +24379,7 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
         </div>`;
   return `<div class="rc-os">
       <div class="rc-os-cab"><b>OS ${esc(o.os)}</b> · ${esc([o.modeloNome, o.grade].filter(Boolean).join(' · '))}${prod ? ` · <span>${fmt(prod)} produtos</span>` : ''}</div>
-      ${prog ? `<div class="rc-os-prog">${prog}</div>` : ''}
+      ${prog}
       ${form}
     </div>`;
 }
