@@ -4971,3 +4971,8 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 /* O interruptor da Aparência. */
 .cfg-tema { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; user-select: none; }
 .cfg-tema input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+
+/* Aviso da foto do desenho na edição da OS (ver previewDesenhoSelecionado). */
+.desenho-preview { position: relative; }
+.desenho-foto-aviso { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1; margin: 0; font-size: 12px; line-height: 1.4; color: var(--ink); }
+.desenho-foto-aviso .btn { margin-top: 6px; display: block; }

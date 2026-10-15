@@ -24,7 +24,7 @@ const ok = (nome, cond, extra) => {
 const api = new Function('STATE', `
   const corNomeCurto = s => String(s || '');
   ${bloco('const _OE_ITEM =', "reposicao: 'Reposição' };")}
-  ${['_normNome', '_skuBaseDaOS', '_oeLinhaDaOS', '_oeGruposDaFase', '_expFasesDaOS', '_expFasesDaCarga', '_expItensPorFase'].map(pegaFuncao).join('\n')}
+  ${['_normNome', 'desenhoDaOS', '_skuBaseDaOS', '_oeLinhaDaOS', '_oeGruposDaFase', '_expFasesDaOS', '_expFasesDaCarga', '_expItensPorFase'].map(pegaFuncao).join('\n')}
   const ordenarComponentesPorFase = () => [];
   return { _expItensPorFase, _expFasesDaCarga, _oeGruposDaFase };
 `)({ desenhos: [], modelos: [] });

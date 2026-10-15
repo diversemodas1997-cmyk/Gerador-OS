@@ -48,7 +48,10 @@ const motor = [
   'function ordenarCoresIdsPorDesc',
   'function _normNome',
   'function _sufixoTecidoNorm',
-  'function corBaseNome'
+  'function corBaseNome',
+  'function desenhoDaOS',
+  'function _fotoDoDesenho',
+  'function _congelarDesenhoNaOS'
 ].map(corta).join('\n');
 
 // O motor mexe em STATE e chama a vizinhanca inteira do app; os dublês abaixo

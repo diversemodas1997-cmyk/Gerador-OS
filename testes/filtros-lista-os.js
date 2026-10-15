@@ -222,6 +222,7 @@ console.log('-- o SKU nao exige cor --');
   // A regra que separa a linha da cor, recortada do app de verdade.
   const linhaDe = new Function('STATE', `
     ${recorte('function _skuBaseDaOS', 'o SKU base da OS')}
+    ${recorte('function desenhoDaOS', 'o desenho da OS')}
     ${recorte('function linhasSkuDaOS', 'a linha de SKU da OS')}
     return linhasSkuDaOS;
   `)({ desenhos: [], modelos: [] });
@@ -241,6 +242,7 @@ console.log('-- o SKU nao exige cor --');
   const semSigla = new Function('STATE', `
     const _normNome = (x) => String(x || '').toLowerCase().trim();
     ${recorte('function _skuBaseDaOS', 'o SKU base da OS')}
+    ${recorte('function desenhoDaOS', 'o desenho da OS')}
     ${recorte('function linhasSkuDaOS', 'a linha de SKU da OS')}
     ${recorte('function skusDaOS', 'o SKU completo da OS')}
     return { linhasSkuDaOS, skusDaOS };

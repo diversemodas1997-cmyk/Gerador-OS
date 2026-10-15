@@ -39,6 +39,9 @@ const monta = (STATE) => new Function('STATE', `
   ${recorte('function tonsEfetivos', 'os tons efetivos')}
   ${recorte('function nLinhasTomOS', 'as linhas de tom')}
   ${recorte('function _mesclarComOSExistente', 'a mescla com a OS existente')}
+  ${recorte('function _fotoDoDesenho', 'a foto do desenho')}
+  ${recorte('function _congelarDesenhoNaOS', 'o congelamento do desenho')}
+  const _osDesenhoUsarAtual = null;
   return { _mesclarComOSExistente, nLinhasTomOS, _aplicarTonsPadrao,
            MAX_TONS, TONS_PADRAO_NOVA_OS };
 `)(STATE);

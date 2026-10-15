@@ -24,7 +24,8 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const i = src.indexOf('function nomePecaOS');
 const j = src.indexOf('\n}', i);
 if (i < 0 || j < 0) { console.error('nao achei nomePecaOS no app.js'); process.exit(1); }
-const motor = src.slice(i, j) + '\n}';
+const k = src.indexOf('function desenhoDaOS');
+const motor = src.slice(i, j) + '\n}\n' + src.slice(k, src.indexOf('\n}', k) + 2);
 
 const nome = (STATE, os) => new Function('STATE', 'os', `${motor}\nreturn nomePecaOS(os);`)(STATE, os);
 

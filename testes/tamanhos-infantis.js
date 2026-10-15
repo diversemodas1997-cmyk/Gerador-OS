@@ -47,6 +47,7 @@ const motor = [
   listaConst('_PECAS_ETIQUETA_BMTRI'),
   listaConst('_PECAS_ETIQUETA_BMLISA'),
   corta('function _normNome'),
+  corta('function desenhoDaOS'),
   corta('function _normSku'),
   corta('function _skuDaGrade'),
   corta('function _osEhBmTri'),

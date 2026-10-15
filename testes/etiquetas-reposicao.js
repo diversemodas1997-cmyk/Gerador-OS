@@ -49,6 +49,7 @@ const listaConst = (nome) => {
 };
 
 const motor = [
+  corta('function desenhoDaOS'),
   constante('ETIQUETA_CONTEUDO_REPOSICAO'),
   constante('ETIQUETA_CONTEUDO_REPOSICAO_BM'),
   constante('ETIQUETAS_REPOSICAO_POR_OS'),

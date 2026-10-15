@@ -3016,6 +3016,7 @@ async function submeterAuth() {
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
+    await migrarFotoDesenhoNasOS();  // OS sem a foto do desenho ganham a de agora (todo login, admin)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -4665,7 +4666,16 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     const optSel = (list, fld, id) => '<option value="">— selecione —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(x[fld])}</option>`).join('');
     const optNada = (list, fld, id, labelFn) => '<option value="">— nenhum —</option>' + list.map(x => `<option value="${esc(x.id)}" ${id===x.id?'selected':''}>${esc(labelFn ? labelFn(x) : x[fld])}</option>`).join('');
     const equipeLabel = p => p.nome + (p.funcao ? ' ('+p.funcao+')' : '');
-    box.innerHTML = `
+    // QUEM É ESTE DESENHO: a cópia diz de onde veio; o que tem OS diz que elas
+    // não acompanham a edição (ver desenhoDaOS).
+    const nOS = editId ? (STATE.ordens || []).filter(o => o.desenhoId === editId).length : 0;
+    const avisoDesenho = (item.copiaDe
+        ? `<div class="info-box" style="margin-bottom:10px;">Esta é a <b>CÓPIA</b> do desenho <b>${esc(item.copiaDe.codigo)}</b>. Editar aqui não mexe no original nem nas OS dele.</div>`
+        : '')
+      + (nOS
+        ? `<div class="info-box" style="margin-bottom:10px;"><b>${nOS} OS</b> usa${nOS > 1 ? 'm' : ''} este desenho e guarda${nOS > 1 ? 'm' : ''} a versão com que ${nOS > 1 ? 'foram emitidas' : 'foi emitida'}: o que mudar aqui vale só para as OS novas. Para uma peça diferente, use <b>duplicar</b>.</div>`
+        : '');
+    box.innerHTML = avisoDesenho + `
       <div class="form-grid cols-2">
         <div class="field"><label>Código *</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: Dx7282"></div>
         <div class="field"><label>Descrição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: Camiseta básica preta"></div>
@@ -6040,6 +6050,98 @@ function rotuloModeloDesenho(d) {
   return (m && m.nome) || d.modeloId || 'mesmo modelo';
 }
 
+/* A FOTO DO DESENHO NA OS (15/10/2026).
+
+   Junior: "As OS que usaram um desenho técnico não devem ser alteradas
+   automaticamente, caso o desenho de origem seja modificado. A OS só pode
+   modificar o desenho técnico se for feita a alteração manualmente."
+
+   Até aqui a OS guardava só `desenhoId`, e a folha, a miniatura, o nome da
+   peça, o SKU e as cores liam o cadastro AO VIVO. Em 14/10 o 0025 (Preto/
+   Mostarda/Off-White) foi duplicado e o ORIGINAL foi editado para 0050 Azul/
+   Branco/Preto: as 14 OS dele (0211 ... 0548) passaram a mostrar o desenho
+   Azul e o SKU BM.TRI-AZUL. Corrigido por servidor/desenho-0025-0050-1510.js.
+
+   Agora a OS grava `desenhoFoto` — o que identifica o desenho na folha: código,
+   descrição, imagem, SKU e as três cores. Quem lê o desenho de uma OS lê por
+   desenhoDaOS(), que põe a foto por cima do cadastro vivo. O resto do cadastro
+   (etapas, sequência de status, componentes) segue vindo de lá, como antes.
+
+   A foto nasce com a OS (salvar nova, aprovar planejamento, duplicar OS, gerar
+   conjugada) e só é trocada À MÃO: escolhendo outro desenho no formulário da
+   OS, ou no botão "Usar a versão atual do desenho" que aparece na edição quando
+   o cadastro mudou. Editar e salvar a OS sem mexer no desenho mantém a foto.
+
+   A imagem antiga continua existindo: o upload sempre grava um arquivo com nome
+   novo (uploadDesenhoImagem, upsert:false) e nada apaga arquivo do Storage. */
+function _fotoDoDesenho(d) {
+  return {
+    id: d.id, codigo: d.codigo || '', desc: d.desc || '', img: d.img || '',
+    skuLinha: d.skuLinha || '',
+    corPrincipalId: d.corPrincipalId || '', corSecundariaId: d.corSecundariaId || '',
+    corTerciariaId: d.corTerciariaId || '', em: new Date().toISOString()
+  };
+}
+
+// O desenho de uma OS: o cadastro vivo com a foto da OS por cima. Sem foto
+// (OS gravada por uma aba com o programa antigo) cai no cadastro vivo — e
+// migrarFotoDesenhoNasOS() a fotografa no próximo login do admin.
+// `porCodigo`: as OS muito antigas não têm desenhoId e casam pelo código.
+function desenhoDaOS(o, porCodigo) {
+  if (!o) return null;
+  const ds = STATE.desenhos || [];
+  const vivo = (o.desenhoId && ds.find(d => d.id === o.desenhoId))
+    || (porCodigo && !o.desenhoId && o.codigo && ds.find(d => (d.codigo || '').trim() === String(o.codigo).trim()))
+    || null;
+  const f = o.desenhoFoto;
+  if (f && f.id && f.id === o.desenhoId) return Object.assign({}, vivo || {}, f);
+  return vivo;
+}
+
+// A foto que a OS `os` deve gravar. `ant` é o registro anterior (null = OS que
+// nasce agora). Mesmo desenho do registro anterior → a foto de antes fica,
+// salvo `trocar` (o botão "Usar a versão atual do desenho").
+function _congelarDesenhoNaOS(os, ant, trocar) {
+  if (!os) return os;
+  if (!os.desenhoId) { delete os.desenhoFoto; return os; }
+  if (!trocar && ant && ant.desenhoFoto && ant.desenhoFoto.id === os.desenhoId) {
+    os.desenhoFoto = ant.desenhoFoto;
+    return os;
+  }
+  const vivo = (STATE.desenhos || []).find(d => d.id === os.desenhoId);
+  if (vivo) os.desenhoFoto = _fotoDoDesenho(vivo);
+  else if (!(os.desenhoFoto && os.desenhoFoto.id === os.desenhoId)) delete os.desenhoFoto;
+  return os;
+}
+
+// A foto difere do cadastro atual? É o que acende, na edição da OS, o aviso e o
+// botão de trocar pela versão atual.
+function _desenhoMudouDesdeAOS(o) {
+  const f = o && o.desenhoFoto;
+  const vivo = f && (STATE.desenhos || []).find(d => d.id === f.id);
+  if (!vivo) return false;
+  const atual = _fotoDoDesenho(vivo);
+  return ['codigo', 'desc', 'img', 'skuLinha', 'corPrincipalId', 'corSecundariaId', 'corTerciariaId']
+    .some(k => String(atual[k] || '') !== String(f[k] || ''));
+}
+
+// Fotografa o desenho das OS que ainda não têm foto (todo login do admin; não
+// é de uma vez só, porque uma aba com o programa antigo ainda pode gravar OS
+// sem ela). A foto é do cadastro de AGORA — é o que a OS mostrava até aqui.
+async function migrarFotoDesenhoNasOS() {
+  if (currentRole !== 'admin' || !podeGravar() || !Array.isArray(STATE.ordens)) return;
+  let n = 0;
+  STATE.ordens.forEach(o => {
+    if (!o.desenhoId || (o.desenhoFoto && o.desenhoFoto.id === o.desenhoId)) return;
+    if (!(STATE.desenhos || []).some(d => d.id === o.desenhoId)) return;
+    _congelarDesenhoNaOS(o, null);
+    n++;
+  });
+  if (!n) return;
+  try { await saveState('ordens'); console.log(`Foto do desenho gravada em ${n} OS`); }
+  catch (e) { console.warn('migrarFotoDesenhoNasOS', e); }
+}
+
 // Nome da PEÇA como a fábrica a chama: a descrição do desenho antes do "|"
 // ("Camiseta Recortada | Preto/Branco" → "Camiseta Recortada").
 //
@@ -6050,13 +6152,12 @@ function rotuloModeloDesenho(d) {
 // fábrica inteira chama de recortada — o desenho já trazia o nome certo, e
 // ninguém o lia. A grade dela dizia CM.REC e o SKU também; só a folha não.
 //
-// Lê o desenho ao vivo, então corrigir a descrição no cadastro corrige as OSs
-// já emitidas — ao contrário de `modeloNome`, que é cópia gravada na OS. Cai
-// nele quando o desenho não tem descrição ou saiu do cadastro: é exatamente o
-// que a folha fazia antes, então nenhuma OS antiga fica sem nome.
+// Lê o desenho DA OS (desenhoDaOS): a versão com que ela foi emitida. Cai em
+// `modeloNome` quando o desenho não tem descrição ou saiu do cadastro: é
+// exatamente o que a folha fazia antes, então nenhuma OS antiga fica sem nome.
 function nomePecaOS(o) {
   if (!o) return '';
-  const d = (STATE.desenhos || []).find(x => x.id === o.desenhoId);
+  const d = desenhoDaOS(o);
   const nome = (((d && d.desc) || '').split('|')[0] || '').trim();
   return nome || o.modeloNome || '';
 }
@@ -6465,7 +6566,7 @@ function ordenarCoresNomesPorDesc(nomes, desenho) {
 // Ponto único de verdade: o banner da folha de OS e a linha da OS na folha de OE
 // leem daqui, então as duas folhas dizem a mesma cor.
 function coresDaPecaOS(o) {
-  const desenho = (o && o.desenhoId) ? (STATE.desenhos || []).find(x => x.id === o.desenhoId) : null;
+  const desenho = desenhoDaOS(o);
   const nCores = desenho
     ? (ordemCoresPorDesc(desenho).length
         || [desenho.corPrincipalId, desenho.corSecundariaId, desenho.corTerciariaId].filter(Boolean).length
@@ -6780,9 +6881,12 @@ async function salvarCadastro() {
     delete item.enfestos;
   }
   else if (tipo === 'desenho') {
-    if (!v('m-codigo')) return toast('Código obrigatório', 'err');
+    if (!v('m-codigo').trim()) return toast('Código obrigatório', 'err');
     if (!v('m-img-data')) return toast('Imagem obrigatória', 'err');
-    item.codigo = v('m-codigo');
+    // Código é a identidade do desenho: dois iguais é não saber qual é qual.
+    const mesmoCod = (STATE.desenhos || []).find(d => d.id !== item.id && _mesmoCodigoDesenho(d.codigo, v('m-codigo')));
+    if (mesmoCod) return toast(`O código ${v('m-codigo').trim()} já é do desenho "${mesmoCod.desc || mesmoCod.codigo}"`, 'err');
+    item.codigo = v('m-codigo').trim();
     item.desc = v('m-desc');
     item.skuLinha = (v('m-desenho-sku') || '').trim().toUpperCase();
     const imgInput = v('m-img-data');
@@ -7136,6 +7240,25 @@ function acoesCell(tipo, id) {
   </td>`;
 }
 
+// O próximo código de desenho livre: o maior número já usado + 1, em quatro
+// dígitos ("0051").
+function _proximoCodigoDesenho() {
+  const n = (STATE.desenhos || []).reduce((mx, d) => {
+    const c = String(d.codigo || '').trim();
+    return /^\d+$/.test(c) ? Math.max(mx, parseInt(c, 10)) : mx;
+  }, 0);
+  return String(n + 1).padStart(4, '0');
+}
+
+// Dois códigos são o mesmo desenho para quem trabalha: sem espaço nas pontas,
+// sem diferença de maiúscula, e "035" = "0035".
+function _mesmoCodigoDesenho(a, b) {
+  const x = String(a || '').trim().toLowerCase(), y = String(b || '').trim().toLowerCase();
+  if (!x || !y) return false;
+  if (/^\d+$/.test(x) && /^\d+$/.test(y)) return parseInt(x, 10) === parseInt(y, 10);
+  return x === y;
+}
+
 async function duplicarCadastro(tipo, id) {
   if (!exigirEdicao('duplicar cadastros')) return;
   const list = pluralize(tipo);
@@ -7147,12 +7270,28 @@ async function duplicarCadastro(tipo, id) {
   // duplicava duas vezes a mesma grade em duas "X (cópia)" indistinguíveis. Aqui
   // sai "X (cópia)", "X (cópia) 2", ... — o primeiro nome que ainda não existe.
   if (tipo === 'grade') copia.nome = _gradeNomeLivre((copia.nome || 'Grade') + ' (cópia)');
+  // DESENHO (15/10/2026): a cópia nasce com CÓDIGO PRÓPRIO (o próximo número
+  // livre) e a marca de quem é a origem, e abre na hora para editar — é ela, e
+  // não o original, que a pessoa vai transformar. Antes a cópia era "0025
+  // (cópia)": apagando o "(cópia)" ficavam dois 0025, e o original foi editado
+  // para 0050 Azul no lugar dela, levando junto as 14 OS que o usavam.
+  else if (tipo === 'desenho') {
+    copia.codigo = _proximoCodigoDesenho();
+    copia.desc = (original.desc || '') + ` (cópia do ${String(original.codigo || '').trim()})`;
+    copia.copiaDe = { id: original.id, codigo: String(original.codigo || '').trim() };
+  }
   // Marca algum campo identificador com "(cópia)" para distinguir
   else if (copia.nome)   copia.nome   = copia.nome + ' (cópia)';
   else if (copia.codigo) copia.codigo = copia.codigo + ' (cópia)';
   else if (copia.desc)   copia.desc   = copia.desc + ' (cópia)';
   STATE[list].push(copia);
   await saveState(list);
+  if (tipo === 'desenho') {
+    toast(`Cópia criada: desenho ${copia.codigo}. Você está editando a CÓPIA — o ${copia.copiaDe.codigo} original não muda`, 'ok');
+    goto('cad-desenhos');
+    openCadastroModal('desenho', copia.id);
+    return;
+  }
   toast('Cadastro duplicado', 'ok');
   // Re-renderiza a página atual
   const activeBtn = document.querySelector('.nav-btn.active');
@@ -21453,7 +21592,7 @@ function _expDuasColunas(quadros) {
    completo desta peça" (a folha, a Contabilidade) e "de que linha ela é" (o
    filtro da lista). */
 function _skuBaseDaOS(o) {
-  const desenhoObj = (STATE.desenhos || []).find(d => d.id === o.desenhoId);
+  const desenhoObj = desenhoDaOS(o);
   const modeloObj = (STATE.modelos || []).find(m => m.id === o.modeloId);
   return ((o.skuOverride || (desenhoObj && desenhoObj.skuLinha)
           || (modeloObj && modeloObj.skuLinha)) || '').trim().toUpperCase();
@@ -28019,12 +28158,40 @@ async function atualizarCounterOS(numeroUsado) {
   }
 }
 
+// "Usar a versão atual do desenho", clicado na edição de uma OS: { osId,
+// desenhoId } até salvar (ver _mesclarComOSExistente) ou abrir outra OS.
+let _osDesenhoUsarAtual = null;
+
+// Na EDIÇÃO, o quadro mostra o desenho que a OS guardou (desenhoFoto), não o
+// cadastro de hoje — é o que a folha dela imprime. Se o cadastro mudou desde a
+// emissão, diz o quê e oferece a troca; trocar é sempre um clique de alguém.
 function previewDesenhoSelecionado() {
   const id = document.getElementById('f-desenho').value;
   const pv = document.getElementById('f-desenho-preview');
   if (!id) { pv.innerHTML = '<span>Nenhum desenho selecionado</span>'; return; }
   const d = STATE.desenhos.find(x => x.id === id);
-  pv.innerHTML = d?.img ? `<img src="${urlDesenho(d.img)}">` : '<span>Sem imagem</span>';
+  const ant = osEditId ? (STATE.ordens || []).find(o => o.id === osEditId) : null;
+  const usarAtual = !!(ant && _osDesenhoUsarAtual
+    && _osDesenhoUsarAtual.osId === ant.id && _osDesenhoUsarAtual.desenhoId === id);
+  const foto = (ant && ant.desenhoFoto && ant.desenhoFoto.id === id && !usarAtual) ? ant.desenhoFoto : null;
+  const img = foto ? foto.img : d?.img;
+  let aviso = '';
+  if (foto && d && _desenhoMudouDesdeAOS(ant)) {
+    aviso = `<div class="info-box desenho-foto-aviso">Esta OS guarda o desenho como ele era na emissão: `
+      + `<b>${esc(foto.codigo)}</b> ${esc(foto.desc)}. O cadastro mudou depois `
+      + `(hoje: <b>${esc(d.codigo)}</b> ${esc(d.desc)}). `
+      + `<button type="button" class="btn" onclick="usarDesenhoAtualNaOS(true)">Usar a versão atual do desenho</button></div>`;
+  } else if (usarAtual) {
+    aviso = `<div class="info-box desenho-foto-aviso">Ao salvar, esta OS passa a usar a versão atual do desenho. `
+      + `<button type="button" class="btn" onclick="usarDesenhoAtualNaOS(false)">Manter a versão da OS</button></div>`;
+  }
+  pv.innerHTML = aviso + (img ? `<img src="${urlDesenho(img)}">` : '<span>Sem imagem</span>');
+}
+
+function usarDesenhoAtualNaOS(sim) {
+  const id = document.getElementById('f-desenho')?.value;
+  _osDesenhoUsarAtual = (sim && osEditId && id) ? { osId: osEditId, desenhoId: id } : null;
+  previewDesenhoSelecionado();
 }
 
 // Componentes de um desenho, normalizados: a estrutura nova (d.componentes, com
@@ -28773,6 +28940,8 @@ async function gerarConjugada(osAtiva) {
     novaOs.codigo = desAlvo.codigo || '';
     novaOs.desenhoId = desAlvo.id;
   }
+  // Mesmo desenho da OS que a puxou: a mesma foto. Outro desenho: a de agora.
+  _congelarDesenhoNaOS(novaOs, osAtiva);
   novaOs.gradeId = grAlvo.id;
   novaOs.conjugadaPaiId = osAtiva.id;
   delete novaOs.conjugadaId;
@@ -28938,7 +29107,7 @@ async function aplicarRegraConjugadaSeAplicavel(osAtiva) {
   if (conjugada) {
     // Diz QUAL peça saiu: com a regra em cadastro, a dupla deixou de ser uma só
     // e "OS conjugada gerada" sozinho não diria mais o que foi para o chão.
-    const nome = (STATE.desenhos || []).find(d => d.id === conjugada.desenhoId)?.desc
+    const nome = desenhoDaOS(conjugada)?.desc
               || conjugada.grade?.descricao || '';
     toast(`OS conjugada gerada: OS ${conjugada.os}${nome ? ' (' + nome + ')' : ''}`, 'ok');
   }
@@ -28959,8 +29128,13 @@ function _mesclarComOSExistente(data) {
   // OS NOVA nasce com as tonalidades padrão já abertas (ver TONS_PADRAO_NOVA_OS):
   // é aqui que se sabe que é nova, e não numa reedição. Quem enfesta em menos
   // recolhe as linhas no − da própria folha.
-  if (!ant) return _aplicarTonsPadrao(data);
+  if (!ant) return _aplicarTonsPadrao(_congelarDesenhoNaOS(data, null));
   const juntos = { ...ant, ...data };
+  // A FOTO DO DESENHO fica a de antes, a não ser que a troca tenha sido feita à
+  // mão: outro desenho escolhido, ou o botão "Usar a versão atual do desenho".
+  _congelarDesenhoNaOS(juntos, ant,
+    !!(_osDesenhoUsarAtual && _osDesenhoUsarAtual.osId === data.id
+       && _osDesenhoUsarAtual.desenhoId === data.desenhoId));
   // `criadoEm` é quando a OS NASCEU. coletaOS carimba a hora a cada gravação, e
   // sem isto uma OS de março reeditada hoje diria que foi criada hoje — e o
   // aviso de "OS gerada" dispararia de novo a cada correção de vírgula.
@@ -29194,6 +29368,8 @@ async function aprovarPlanejamento(id) {
   os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
     aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou() };
   delete os.editadoEm; delete os.editadoPor;
+  // A OS nasce agora: a foto é do desenho de agora.
+  _congelarDesenhoNaOS(os, null);
   const faltando = faltaDeTecidoParaOS(os);
   if (faltando.length && !confirm(_textoFaltaDeTecido(faltando))) return;
   const data = _aplicarTonsPadrao(os);
@@ -31033,7 +31209,7 @@ function dadosEtiquetaParaOS(o) {
     .map(s => (String(s).charAt(0) === 't' ? String(s).slice(1) : String(s).toUpperCase()));
   const tam = sizesAtivos.join('-') || (o.grade?.descricao || '—');
 
-  const desenho = o.desenhoId ? STATE.desenhos.find(x => x.id === o.desenhoId) : null;
+  const desenho = desenhoDaOS(o);
   // Cor da PEÇA: corNomeCurto tira o tecido do nome da cor e o Set colapsa as
   // repetições — preto na malha + preto na ribana é "PRETO", não "PRETO/PRETO".
   const _corNome = id => id ? corNomeCurto(STATE.cores.find(c => c.id === id)?.nome || '') : '';
@@ -33445,9 +33621,7 @@ function _contaListaOS(mostradas, total) {
    OS (ver `_osFichaCompactaHtml`) mostra a mesma coisa — e duas cópias do mesmo
    quadrinho acabariam mostrando desenhos diferentes para a mesma OS. */
 function _osThumbHtml(o) {
-  const des = (o && o.desenhoId && (STATE.desenhos || []).find(d => d.id === o.desenhoId))
-    || (o && o.codigo && (STATE.desenhos || []).find(d => (d.codigo || '').trim() === (o.codigo || '').trim()))
-    || null;
+  const des = desenhoDaOS(o, true);
   return `<div style="width:60px;height:45px;background:#f5f2ea;display:flex;align-items:center;`
     + `justify-content:center;border:1px solid var(--line);overflow:hidden">`
     + (des && des.img ? `<img src="${urlDesenho(des.img)}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '—')
@@ -37181,6 +37355,7 @@ function editarOS(id) {
 // produção, que tem o mesmo formato (ver editarPlanejamento).
 function _abrirOSNoForm(o, titulo) {
   osEditId = o.id;
+  _osDesenhoUsarAtual = null;
   // O número automático é da OS NOVA da sessão; editar não pode herdá-lo.
   _osNumeroAuto = '';
   goto('nova-os');
@@ -37314,6 +37489,8 @@ async function duplicarOS(id) {
      (`obs`) sai pela mesma razão: ele se anuncia como "anterior a 20/08/2026",
      o que é impossível numa OS criada agora. */
   delete copia.obsNotas; delete copia.obs;
+  // O desenho também é o de agora: a cópia é um lote novo, não a OS de antes.
+  _congelarDesenhoNaOS(copia, null);
   STATE.ordens.push(copia);
   await saveState('ordens');
   await atualizarCounterOS(copia.os);
@@ -38541,7 +38718,7 @@ function renderPrintSheet(o) {
       o = { ...o, fases: fasesAtualizadas, grade: gradeAtualizada };
     }
   }
-  const desenho = STATE.desenhos.find(d => d.id === o.desenhoId);
+  const desenho = desenhoDaOS(o);
   const imgHtml = desenho?.img
     ? `<img src="${urlDesenho(desenho.img)}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
@@ -42682,6 +42859,7 @@ async function limparTudo() {
     await migrarLimpezaDesenho0023();  // remove componentes duplicados do 0023 (1×, admin)
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
+    await migrarFotoDesenhoNasOS();  // OS sem a foto do desenho ganham a de agora (todo login, admin)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload). Hoje o papel já chega antes do loadState — então o republish do
     // fim do loadState também o enxerga —, mas a chamada fica: ela é o que garante
