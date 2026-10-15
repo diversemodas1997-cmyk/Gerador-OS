@@ -137,6 +137,7 @@ ok(dia.ate - dia.de === 86400000, 'diário = um dia');
 // Mangas: duas por produto (15/10/2026). OS de 670 produtos = 1340 mangas.
 ok(api._relCostTotalOp(670, 'Acabamento de mangas') === 1340, 'acabamento de mangas = o dobro dos produtos');
 ok(api._relCostTotalOp(670, 'União de mangas 1/2/3') === 1340, 'união de mangas = o dobro dos produtos');
+ok(api._relCostTotalOp(670, 'Fechamento de barra/punho') === 1340, 'punhos = o dobro dos produtos');
 ok(api._relCostTotalOp(670, 'União de ombro') === 670, 'as outras operações = os produtos');
 ok(api._relCostTotalOp(0, 'Acabamento de mangas') === 0, 'OS sem produtos = 0');
 

@@ -24539,9 +24539,12 @@ function _relCostHojeTxt() {
 /* O TOTAL DE UMA OPERAÇÃO NA OS (15/10/2026, Junior: "a quantidade de mangas
    sempre é o dobro de unidades completas"). A operação é feita em cada PEÇA que
    ela costura, e o produto tem duas mangas: "União de mangas 1/2/3" e
-   "Acabamento de mangas" passam duas vezes por produto. O resto, uma. */
+   "Acabamento de mangas" passam duas vezes por produto. Os punhos também
+   (15/10/2026, Junior: "inclua os punhos também"): "Fechamento de barra/punho"
+   conta duas. O resto, uma. O total é o teto da OS, não o lançamento: o campo
+   Unidades segue aberto para quem fez menos. */
 function _relCostPorProduto(op) {
-  return /manga/i.test(String(op || '')) ? 2 : 1;
+  return /manga|punho/i.test(String(op || '')) ? 2 : 1;
 }
 function _relCostTotalOp(prod, op) {
   return (Number(prod) || 0) * _relCostPorProduto(op);
