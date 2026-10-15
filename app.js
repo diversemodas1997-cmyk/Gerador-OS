@@ -24536,6 +24536,17 @@ function _relCostHojeTxt() {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 }
 
+/* O TOTAL DE UMA OPERAÇÃO NA OS (15/10/2026, Junior: "a quantidade de mangas
+   sempre é o dobro de unidades completas"). A operação é feita em cada PEÇA que
+   ela costura, e o produto tem duas mangas: "União de mangas 1/2/3" e
+   "Acabamento de mangas" passam duas vezes por produto. O resto, uma. */
+function _relCostPorProduto(op) {
+  return /manga/i.test(String(op || '')) ? 2 : 1;
+}
+function _relCostTotalOp(prod, op) {
+  return (Number(prod) || 0) * _relCostPorProduto(op);
+}
+
 /* ---- As OS da aba, cada uma com o seu lançamento ---------------------------
    O polling redesenha a página a cada mudança de outro usuário (goto da página
    ativa). Para não apagar o que a pessoa está digitando, os valores dos campos
@@ -24566,10 +24577,11 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
       <thead><tr><th colspan="3">${esc(e.nome)}</th></tr></thead>
       <tbody>${e.ops.length ? e.ops.map(op => {
         const q = feito.get(e.nome + ' ' + op) || 0;
-        const pct = prod ? Math.min(100, Math.round(q * 100 / prod)) : 0;
-        return `<tr class="rc-op${q ? ' feito' : ''}${prod && q >= prod ? ' completo' : ''}">
+        const tot = _relCostTotalOp(prod, op);
+        const pct = tot ? Math.min(100, Math.round(q * 100 / tot)) : 0;
+        return `<tr class="rc-op${q ? ' feito' : ''}${tot && q >= tot ? ' completo' : ''}">
           <td>${esc(op)}</td>
-          <td class="rc-num"><b>${fmt(q)}</b>${prod ? ` <span>de ${fmt(prod)}</span>` : ''}</td>
+          <td class="rc-num"><b>${fmt(q)}</b>${tot ? ` <span>de ${fmt(tot)}</span>` : ''}</td>
           <td class="rc-pct">${prod ? `<span class="rc-barra"><i style="width:${pct}%"></i></span> ${pct}%` : ''}</td></tr>`;
       }).join('') : `<tr><td colspan="3" class="rc-dica">Sem operações cadastradas em Cadastros › Etapas de produção.</td></tr>`}</tbody>
     </table>`).join('');
@@ -24577,7 +24589,7 @@ function _relCostOSHtml(o, unidade, pessoas, podeLancar) {
   const opts = ets.map(e => (varias ? `<optgroup label="${esc(e.nome)}">` : '')
     + e.ops.map(op => {
       // O que falta desta operação na OS: é o que o campo Unidades recebe ao escolhê-la.
-      const resta = prod ? Math.max(0, prod - (feito.get(e.nome + ' ' + op) || 0)) : '';
+      const resta = prod ? Math.max(0, _relCostTotalOp(prod, op) - (feito.get(e.nome + ' ' + op) || 0)) : '';
       return `<option value="${esc(op)}" data-etapa="${esc(e.nome)}" data-resta="${resta}">${esc(op)}</option>`;
     }).join('')
     + (varias ? '</optgroup>' : '')).join('');

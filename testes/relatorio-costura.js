@@ -41,6 +41,8 @@ const motor = [
   recorte('const REL_PROD_ESCALAS', 'const REL_PROD_CHAVE', 'escalas'),
   corta('function _relProdPeriodo'),
   corta('function _relCostPeriodo'),
+  corta('function _relCostPorProduto'),
+  corta('function _relCostTotalOp'),
   corta('function _relCostLista'),
   corta('function _relCostPessoas'),
   corta('function _relCostEtapasDaOS'),
@@ -78,7 +80,7 @@ const STATE = {
 const _statusOS = o => o.st;
 const api = new Function('STATE', '_statusOS', motor + `
   return { _relCostPeriodo, _relCostPessoas, _relCostEtapasDaOS, _relCostAcharOS, _relCostOSDaUnidade, _relCostUnidadeDe,
-           _relCostDuracao, _relCostFmtMin, _relCostRitmo };`)(STATE, _statusOS);
+           _relCostDuracao, _relCostFmtMin, _relCostRitmo, _relCostTotalOp };`)(STATE, _statusOS);
 
 let n = 0;
 const ok = (c, msg) => { assert.ok(c, msg); n++; };
@@ -131,5 +133,11 @@ ok(d(per.ate).getDay() === 1 && d(per.ate).getDate() === 19, 'e acaba antes da s
 ok(per.nome === '12/10/2026 a 18/10/2026', 'nome da semana: ' + per.nome);
 const dia = api._relCostPeriodo('dia', '2026-10-14');
 ok(dia.ate - dia.de === 86400000, 'diário = um dia');
+
+// Mangas: duas por produto (15/10/2026). OS de 670 produtos = 1340 mangas.
+ok(api._relCostTotalOp(670, 'Acabamento de mangas') === 1340, 'acabamento de mangas = o dobro dos produtos');
+ok(api._relCostTotalOp(670, 'União de mangas 1/2/3') === 1340, 'união de mangas = o dobro dos produtos');
+ok(api._relCostTotalOp(670, 'União de ombro') === 670, 'as outras operações = os produtos');
+ok(api._relCostTotalOp(0, 'Acabamento de mangas') === 0, 'OS sem produtos = 0');
 
 console.log(`relatorio-costura: ${n} verificações ok`);
