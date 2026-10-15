@@ -4185,6 +4185,7 @@ function goto(page) {
   if (page === 'print') _obsRemedirFolha();
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-aviamentos') renderPrintAviamentos();
+  if (page === 'print-pecas') renderPrintPecas();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
@@ -10555,6 +10556,82 @@ function renderEstoqueItens(tipo) {
     </div>
     ${quadrosHtml}
     ${histHtml}`;
+}
+
+/* A FOLHA DAS PEÇAS (15/10/2026, Junior: "insira função de folha de impressão
+   no campo estoque de peças"). A moldura da folha dos aviamentos (a da folha
+   de OE): todas as peças cadastradas na unidade da aba aberta, com o que o
+   programa tem EM USO e EM ESTOQUE, e duas colunas em branco — a contagem e a
+   observação — para conferir com a folha na mão. Entra também a peça zerada:
+   é cadastro, e a contagem pode achar uma que o programa não tem. */
+function renderPrintPecas() {
+  const sheet = document.getElementById('print-sheet-pecas');
+  if (!sheet) return;
+  const cfg = ESTOQUE_ITENS.pecas;
+  const unidade = _estItensUnidade.pecas;
+  const rotUn = ((AVIAMENTO_UNIDADES.find(u => u.k === unidade)) || {}).rotulo || '';
+  const linhas = (Array.isArray(STATE[cfg.chave]) ? STATE[cfg.chave] : [])
+    .filter(x => _aviUnidadeDe(x) === unidade)
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  const n = v => _estArred({}, v);
+  const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
+  const tEst = linhas.reduce((s, x) => s + n(x.emEstoque), 0);
+  const fmt = v => n(v).toLocaleString('pt-BR');
+  const hoje = _aviHoje();
+  const emissao = new Date();
+  const emissaoTxt = formatDate(_expIso(emissao)) + ' '
+    + String(emissao.getHours()).padStart(2, '0') + ':' + String(emissao.getMinutes()).padStart(2, '0');
+  const bloco = linhas.length ? `
+      <div class="exp-print-bloco">
+        <div class="cab">
+          <span class="d">Peças</span>
+          <span class="j">${linhas.length} ${linhas.length === 1 ? 'tipo' : 'tipos'} · em uso ${fmt(tUso)} · em estoque ${fmt(tEst)}</span>
+        </div>
+        <table class="avi-print-tab pec">
+          <colgroup><col class="bx"><col class="it"><col class="q"><col class="q"><col class="cont"><col class="obs"></colgroup>
+          <thead><tr><th></th><th>Peça</th><th class="q">Em uso</th><th class="q">Em estoque</th><th>Contagem</th><th>Observação</th></tr></thead>
+          <tbody>${linhas.map(x => `<tr${n(x.emEstoque) < 0 || n(x.emUso) < 0 ? ' class="neg"' : ''}>
+            <td class="bx"><span class="exp-print-box"></span></td>
+            <td><b>${esc(x.nome || '')}</b>${x.desc ? ` · ${esc(x.desc)}` : ''}</td>
+            <td class="q">${fmt(x.emUso)}</td>
+            <td class="q">${fmt(x.emEstoque)}</td>
+            <td class="cont"></td><td>${esc(x.obs || '')}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>` : `<div style="padding:20px 0;text-align:center;font-size:9pt;font-style:italic;">Nenhuma peça cadastrada nesta unidade.</div>`;
+  sheet.innerHTML = `
+    <table class="exp-print-folha">
+      <thead>
+        <tr><td>
+          <div class="exp-print-head">
+            <div>
+              <div class="tit">ESTOQUE DE PEÇAS</div>
+              <div class="sub">${esc(rotUn)} · posição em ${esc(formatDate(hoje))} · conferência da prateleira</div>
+            </div>
+            <div class="meta">
+              <div>Emitido em ${esc(emissaoTxt)}</div>
+            </div>
+          </div>
+        </td></tr>
+      </thead>
+      <tbody><tr><td>
+    <div class="exp-print-resumo">
+      <div class="item"><div class="n">${linhas.length}</div><div class="l">Tipos</div></div>
+      <div class="item"><div class="n">${fmt(tUso)}</div><div class="l">Em uso</div></div>
+      <div class="item"><div class="n">${fmt(tEst)}</div><div class="l">Em estoque</div></div>
+      <div class="item"><div class="n">${fmt(tUso + tEst)}</div><div class="l">Total</div></div>
+    </div>
+    <div style="font-size:7pt;color:#555;margin:3pt 0 5pt;">
+      <b>Em uso</b> = na máquina ou na mão de alguém; <b>em estoque</b> = guardado. É o que o programa tem hoje nesta unidade.
+      Confira na prateleira: marque o quadrinho, escreva a <b>contagem</b> e a diferença, se houver, em <b>observação</b>.
+    </div>
+    ${bloco}
+        <div class="exp-print-rodape">
+          <div class="ass"><div class="linha"></div><div class="lbl">Conferido por</div></div>
+          <div class="ass"><div class="linha"></div><div class="lbl">Data da conferência</div></div>
+        </div>
+      </td></tr></tbody>
+      <tfoot><tr><td></td></tr></tfoot>
+    </table>`;
 }
 
 function _estItensMudarSetor(tipo, valor) {

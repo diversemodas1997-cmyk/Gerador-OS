@@ -4807,7 +4807,13 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .avi-print-tab td.q { font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
 .avi-print-tab td.cont { border-left: 1px dotted #bbb; border-right: 1px dotted #bbb; }
 .avi-print-tab tr.neg td.q { color: #c0392b; }
+/* Folha das peças (15/10/2026): duas quantidades (em uso e em estoque). */
+.avi-print-tab.pec col.it { width: 36%; }
+.avi-print-tab.pec col.q { width: 13%; }
+.avi-print-tab.pec col.cont { width: 14%; }
+.avi-print-tab.pec td.q, .avi-print-tab.pec th.q { text-align: right; }
 @media print {
+  #print-sheet-pecas .exp-print-bloco { page-break-inside: auto; break-inside: auto; }
   /* Um tipo de aviamento pode ter muitas cores: o bloco parte entre páginas,
      a linha não. */
   #print-sheet-avi .exp-print-bloco { page-break-inside: auto; break-inside: auto; }

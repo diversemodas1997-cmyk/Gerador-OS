@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-15a">
+<link rel="stylesheet" href="styles.css?v=2026-10-15b">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -451,8 +451,9 @@
           <h1>Estoque de peças</h1>
           <div class="desc">Cadastro dos tipos de peças, com a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Cada linha tem <b>+ entrada</b> (chegou ou voltou do uso) e <b>− saída</b> (posta em uso ou baixa); tudo fica no histórico abaixo.</div>
         </div>
-        <div class="actions estoque-tecidos-only">
-          <button class="btn primary" onclick="abrirEstoqueItem('pecas')">+ Cadastrar peça</button>
+        <div class="actions">
+          <button class="btn accent" onclick="goto('print-pecas')" title="A folha das peças da unidade aberta, no formato da folha de OE, para conferir a prateleira">🖨 Folha das peças</button>
+          <button class="btn primary estoque-tecidos-only" onclick="abrirEstoqueItem('pecas')">+ Cadastrar peça</button>
         </div>
       </div>
       <div id="pecas-painel"></div>
@@ -1335,6 +1336,24 @@
       </div>
     </section>
 
+    <!-- ============ FOLHA DAS PEÇAS (IMPRESSÃO, 15/10/2026) ============ -->
+    <!-- A mesma moldura: as peças cadastradas na unidade aberta no Estoque de
+         peças, em uso e em estoque, com espaço para a contagem. -->
+    <section class="page hidden" data-page="print-pecas">
+      <div class="page-header no-print">
+        <div><h1>Folha das peças</h1><div class="desc">As peças cadastradas na unidade aberta no Estoque de peças, com espaço para a contagem. Revise e clique em Imprimir.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('estoque-pecas')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-pecas">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
     <!-- ================= CONFIGURAÇÕES ================= -->
     <section class="page hidden" data-page="config">
       <div class="page-header">
@@ -1887,6 +1906,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-15c"></script>
+<script src="app.js?v=2026-10-15d"></script>
 </body>
 </html>
