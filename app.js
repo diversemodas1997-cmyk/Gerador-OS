@@ -4402,7 +4402,8 @@ let cadastroContext = null;
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-function openCadastroModal(tipo, editId = null, origin = null) {
+// `pre`: a ficha NOVA já preenchida (a grade sugerida pelo Relatório de demanda).
+function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
   // Este modal é a FICHA do cadastro, e a ficha é de leitura para todo mundo:
   // é onde se vê a composição de um desenho, os tamanhos de uma grade, a
   // gramatura de um tecido. Para quem não é admin ele abre inerte (CSS em
@@ -4430,6 +4431,8 @@ function openCadastroModal(tipo, editId = null, origin = null) {
   if (editId) {
     const list = pluralize(tipo);
     item = STATE[list].find(x => x.id === editId) || {};
+  } else if (pre) {
+    item = pre;
   }
 
   if (tipo === 'tecido') {
@@ -4567,7 +4570,7 @@ function openCadastroModal(tipo, editId = null, origin = null) {
     const optsVr = opcoesPastaGrade('subpasta', item.variacao);
     // Linha da grade (06/10/2026, Junior): a gravada manda; grade antiga, sem
     // o campo, abre na linha que os tamanhos dela dizem; grade nova, em Adulto.
-    const linhaGr = item.id ? _linhaTipoGrade(item) : 'Adulto Unissex';
+    const linhaGr = (item.id || item.linha) ? _linhaTipoGrade(item) : 'Adulto Unissex';
     // Grade conjugada: a lista traz todas menos ela mesma — uma grade que se
     // conjugasse consigo geraria OS sem parar.
     const optsConjGr = '<option value="">— nenhuma —</option>'
@@ -29441,7 +29444,7 @@ async function salvarPlanejamento() {
     if (ag) {
       const novo = lista[lista.length - 1];
       const tirar = new Set(ag.ids);
-      novo.demanda = { ids: ag.ids.slice(), pedidas: ag.pedidas,
+      novo.demanda = { ids: ag.ids.slice(), pedidas: ag.pedidas, sugerida: ag.sugerida || null,
         aprovadoEm: new Date().toISOString(), aprovadoPor: _obsQuemSou() };
       STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
       await saveState('osDemandas');
@@ -29522,14 +29525,47 @@ function renderPlanejamentoProducao() {
   _renderListaPlanOS(document.getElementById('plan-prod-lista'), _planLista(), {
     vazio: 'Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.',
     um: 'OS planejada', varios: 'OS planejadas', quem: 'Planejado por',
-    acoes: id => `
+    acoes: (id, p) => `
         <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre">✔ Aprovar</button>
         <span class="admin-only">
           <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
           <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
-        </span>`,
+        </span>${_planGradeSugeridaPendente(p) ? `
+        <div style="margin-top:4px;"><button type="button" class="btn small accent admin-only" onclick="cadastrarGradeSugerida('${id}')"
+          title="Abre o cadastro da grade ${esc(p.demanda.sugerida.nome)} já preenchido">＋ Cadastrar grade sugerida</button></div>` : ''}`,
   });
 }
+
+/* A GRADE SUGERIDA PELO RELATÓRIO DE DEMANDA (16/10/2026, Junior: "coloque o
+   botão cadastrar grade sugerida já preenchido no Planejamento de produção").
+   O planejamento que nasceu de um agrupamento guarda a sugestão em
+   demanda.sugerida; enquanto não houver grade com aquele nome, a linha mostra
+   o botão. A ficha abre com nome, linha, tamanhos, pasta e subpasta e as fases
+   (tecido e cor) da grade do mesmo SKU que serviu de base — comprimento e
+   largura ficam em branco: saem do risco da grade nova. */
+function _planGradeSugeridaPendente(p) {
+  const su = p && p.demanda && p.demanda.sugerida;
+  if (!su || !su.nome) return false;
+  const n = _normNome(su.nome);
+  return !(STATE.grades || []).some(g => _normNome(g.nome).startsWith(n));
+}
+
+function cadastrarGradeSugerida(id) {
+  const p = _planLista().find(x => x.id === id);
+  const su = p && p.demanda && p.demanda.sugerida;
+  if (!su) return toast('Este planejamento não tem grade sugerida', 'err');
+  const base = (STATE.grades || []).find(g => g.id === su.baseGradeId) || {};
+  const tamanhos = {};
+  ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'].forEach(k => { tamanhos[k] = (su.tamanhos || {})[k] || 0; });
+  openCadastroModal('grade', null, null, {
+    nome: su.nome, linha: su.linha || 'Adulto Unissex', tamanhos,
+    tipoPeca: base.tipoPeca || '', variacao: base.variacao || '',
+    pecasPorPacote: base.pecasPorPacote,
+    fases: (base.fases || []).map(f => ({ ordem: f.ordem, nome: f.nome || '', tecidoId: f.tecidoId || '', corId: f.corId || '', comp: '', larg: '' }))
+  });
+  setTimeout(() => { try { travarTamanhosLinhaGrade(false); conferirNomeGrade(); } catch (e) { /* ignora */ } }, 0);
+}
+window.cadastrarGradeSugerida = cadastrarGradeSugerida;
 
 // A tabela da lista é a mesma no planejamento e na demanda: só mudam os botões
 // da coluna Ações e os rótulos.
@@ -29549,7 +29585,7 @@ function _renderListaPlanOS(box, lista, cfg) {
     const cores = coresDaPecaOS(p);
     const id = esc(p.id);
     return `<tr>
-      <td class="col-actions" style="white-space:nowrap;">${cfg.acoes(id)}
+      <td class="col-actions" style="white-space:nowrap;">${cfg.acoes(id, p)}
       </td>
       <td style="text-align:right;color:var(--ink-3);">${i + 1}</td>
       <td>${_osThumbHtml(p)}</td>
@@ -29824,15 +29860,20 @@ async function aprovarAgrupamento(chave) {
   if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
   const gr = _demGrupos().find(x => x.chave === chave);
   if (!gr) return toast('Agrupamento não encontrado', 'err');
-  if (!gr.existe) return toast('Não há grade cadastrada para este SKU — cadastre a grade sugerida primeiro', 'err');
   const d = _demDesenho(gr.desenhoId);
-  const { g, c, erro } = gr.existe;
+  const ex = gr.existe, su = gr.sugerida;
+  const g = ex && ex.g, c = ex && ex.c;
   if (!confirm(`Aprovar a demanda e montar o planejamento?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
     + `Pedido: ${_demTamTexto(gr.q)}\n`
-    + `Grade: ${g.nome} × ${c} camadas → ${_demProduzTexto(g.tamanhos || {}, c)}`
-    + (erro ? `\n(diferença de ${erro} peças do pedido)` : '')
+    + (ex ? `Grade: ${g.nome} × ${c} camadas → ${_demProduzTexto(g.tamanhos || {}, c)}`
+          + (ex.erro ? `\n(diferença de ${ex.erro} peças do pedido)` : '')
+          : `Ainda não há grade cadastrada para este SKU: o planejamento sai sem grade.`)
+    + (su ? `\n\nGrade sugerida: ${su.nome} × ${su.c} camadas. O planejamento leva o botão `
+          + `"Cadastrar grade sugerida", já preenchido.` : '')
     + `\n\nO formulário do planejamento abre preenchido; ao salvar, estas demandas saem do relatório.`)) return;
-  _demAgrupando = { ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q) };
+  _demAgrupando = { ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q),
+    sugerida: su ? { nome: su.nome, tamanhos: Object.assign({}, su.tams), camadas: su.c,
+      linha: gr.linha, baseGradeId: g ? g.id : ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '') } : null };
   osEditId = null;
   _osPlanAbrir = true;
   goto('nova-os');
@@ -29845,12 +29886,15 @@ async function aprovarAgrupamento(chave) {
     }
     const ls = document.getElementById('f-linha-tipo');
     if (ls) { ls.value = gr.linha; filtrarLinhaGradesOS(gr.linha); }
-    preencherDropdownGradesOS(g.id);
-    const gs = document.getElementById('f-grade-preset');
-    if (gs) { gs.value = g.id; aplicarGradePreset(); }
-    const cam = document.getElementById('f-enf-camadas');
-    if (cam) { cam.value = c; calcularAlvoDeCamadas(); }
-    toast('Confira e salve o planejamento', 'ok');
+    if (g) {
+      preencherDropdownGradesOS(g.id);
+      const gs = document.getElementById('f-grade-preset');
+      if (gs) { gs.value = g.id; aplicarGradePreset(); }
+      const cam = document.getElementById('f-enf-camadas');
+      if (cam) { cam.value = c; calcularAlvoDeCamadas(); }
+    }
+    toast(g ? 'Confira e salve o planejamento'
+            : 'Sem grade cadastrada: salve o planejamento e use "Cadastrar grade sugerida" nele', 'ok');
   }, 80);
 }
 
@@ -29910,11 +29954,11 @@ function renderRelatorioDemanda() {
         const celSu = su
           ? `<b>${esc(su.nome)}</b> × ${su.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(su.tams, su.c)}</span>`
             + (su.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${su.erro} peças do pedido</span>` : '')
-            + `<br><button type="button" class="btn small ghost admin-only" onclick="goto('cad-grades')" title="Cadastrar a grade sugerida em Grades">Abrir Grades</button>`
+            + `<br><span style="font-size:11px;color:var(--ink-2);">Aprovada, vai para o planejamento com o botão "Cadastrar grade sugerida".</span>`
           : `<span style="color:var(--ink-3);">—</span>`;
         return `<tr>
           <td class="col-actions" style="white-space:nowrap;">
-            <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')"${ex ? '' : ' disabled'} title="Abre o planejamento com o desenho, a grade e as camadas">✔ Aprovar</button>
+            <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')" title="Abre o planejamento com o desenho, a grade e as camadas">✔ Aprovar</button>
           </td>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
           <td>${_demTamTexto(gr.q)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
