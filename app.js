@@ -29962,7 +29962,7 @@ function _demChaveProduto(desenhoId) {
 // Por produto: as peças a caminho por tamanho e de onde vêm.
 function _demEmProcesso() {
   const mapa = new Map();
-  const somar = (o, rotulo) => {
+  const somar = (o, rotulo, st) => {
     if (!o || !o.desenhoId) return;
     let t;
     try { t = totaisPorTamanhoTomOS(o); } catch (e) { return; }
@@ -29973,12 +29973,11 @@ function _demEmProcesso() {
     if (!mapa.has(chave)) mapa.set(chave, { q: {}, fontes: [] });
     const e = mapa.get(chave);
     Object.keys(q).forEach(k => { e.q[k] = (e.q[k] || 0) + q[k]; });
-    e.fontes.push({ rotulo, q });
+    e.fontes.push({ rotulo, st, q });
   };
   (STATE.ordens || []).forEach(o => {
     if (_DEM_FORA_DO_WIP.has(_statusOS(o))) return;
-    const st = (STATUS_OS.find(x => x.k === _statusOS(o)) || {}).rotulo || '';
-    somar(o, `OS ${o.os || '?'}${st ? ' (' + st + ')' : ''}`);
+    somar(o, `OS ${o.os || '?'}`, STATUS_OS.find(x => x.k === _statusOS(o)) || null);
   });
   return mapa;
 }
@@ -30291,7 +30290,7 @@ async function encerrarDemandaCoberta(chave) {
   const d = _demDesenho(gr.desenhoId);
   if (!confirm(`Encerrar a demanda sem nova produção?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
     + `Lançado: ${_demTamTexto(gr.pedido)}\n\nTudo isso já está em progresso:\n`
-    + gr.fontesWip.map(f => `  ${f.rotulo}: ${_demTamTexto(f.q)}`).join('\n'))) return;
+    + gr.fontesWip.map(f => `  ${f.rotulo}${f.st ? ' (' + f.st.rotulo + ')' : ''}: ${_demTamTexto(f.q)}`).join('\n'))) return;
   const tirar = new Set(gr.ids);
   STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
   await saveState('osDemandas');
@@ -30370,7 +30369,7 @@ function renderAgrupamentoDemanda() {
       <tbody>${_demGrupos().map(gr => {
         const d = _demDesenho(gr.desenhoId);
         const celWip = Object.keys(gr.wip).length
-          ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => esc(f.rotulo)).join('<br>')}</span>`
+          ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => `<span title="${esc((f.st ? f.st.rotulo + ' · ' : '') + _demTamTexto(f.q))}">${_statusPingo(f.st)} ${esc(f.rotulo)}</span>`).join('<br>')}</span>`
           : `<span style="color:var(--ink-3);">—</span>`;
         let celComb;
         if (gr.coberta) {
