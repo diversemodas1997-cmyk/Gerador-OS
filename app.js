@@ -2238,7 +2238,7 @@ async function definirVisao(emailOuNome, area, permitido) {
   desfazerNomearAcao(`visão de ${login} em "${def.rotulo}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirVisao', e); }
   aplicarPermissoesUI();
-  listarContasAcesso();
+  _redesenharAcessosConta(emailOuNome);
   toast(`${login}: ${permitido ? 'vê' : 'não vê'} ${def.rotulo.toLowerCase()}`, 'ok');
 }
 window.definirVisao = definirVisao;
@@ -2304,8 +2304,28 @@ async function definirAcesso(emailOuNome, area, permitido) {
   desfazerNomearAcao(`acesso de ${login} a "${def.rotulo}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirAcesso', e); }
   aplicarPermissoesUI();
-  listarContasAcesso();
+  _redesenharAcessosConta(emailOuNome);
   toast(`${login}: ${permitido ? 'pode' : 'não pode'} ${def.rotulo.toLowerCase()}`, 'ok');
+}
+
+/* O MENU DE ACESSOS FICA ABERTO ao marcar uma caixinha (16/10/2026). Antes
+   cada marcação chamava listarContasAcesso, que busca as contas de novo no
+   servidor e redesenha a tabela inteira — e todo menu nasce fechado, então ele
+   fechava a cada clique. Agora só o menu daquela conta é redesenhado, no
+   lugar, com o estado aberto e o número do botão atualizados. */
+function _redesenharAcessosConta(emailOuNome) {
+  const login = _acessoChaveConta(emailOuNome);
+  const u = (_contasAcessoCache || []).find(x => _acessoChaveConta(x.email) === login);
+  const box = u && document.getElementById('acessos-' + u.id);
+  if (!box) { listarContasAcesso(); return; }
+  const aberto = !box.classList.contains('hidden');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = _acessosMenuHtml(u);
+  const novo = tmp.firstElementChild;
+  if (aberto) novo.classList.remove('hidden');
+  box.replaceWith(novo);
+  const badge = novo.previousElementSibling && novo.previousElementSibling.querySelector('.badge');
+  if (badge) badge.textContent = _acessosQuantas(u.email);
 }
 
 // Abre e fecha a listinha de áreas de uma conta.

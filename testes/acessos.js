@@ -179,7 +179,8 @@ ok('27. a lista de contas tem o botao de acesso e a listinha de areas',
    'sem o botao na lista de contas');
 ok('28. marcar uma area grava e redesenha',
    /await saveState\('meta'\)/.test(recorte('async function definirAcesso', 'a concessao'))
-   && /listarContasAcesso\(\)/.test(recorte('async function definirAcesso', 'a concessao')),
+   // Redesenha só o menu da conta, que fica aberto (16/10/2026).
+   && /_redesenharAcessosConta\(emailOuNome\)/.test(recorte('async function definirAcesso', 'a concessao')),
    'a concessao nao grava');
 ok('29. e o contador do botao conta so o que da para conceder',
    ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local') === 1,
