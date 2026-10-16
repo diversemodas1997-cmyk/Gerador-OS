@@ -30112,8 +30112,11 @@ function _demCamadasATentar(ate) {
   return Array.from(set).sort((a, b) => a - b);
 }
 
-// No máximo tantas combinações por agrupamento (as melhores).
-const _DEM_MAX_COMBOS = 40;
+/* SÓ A SOLUÇÃO MAIS EFICIENTE (16/10/2026, Junior: "o programa deve mostrar a
+   solução mais eficiente para produzir a demanda registrada. Não deve mostrar
+   milhares de combinações"). A busca continua comparando todas; o quadro
+   mostra a primeira da ordem acima. */
+const _DEM_MAX_COMBOS = 1;
 
 function _demCombinacoes(gr) {
   const q = gr.q || {};
@@ -30336,13 +30339,12 @@ function renderAgrupamentoDemanda() {
     boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda no Relatório de demanda.</div>`;
     return;
   }
-  const VISIVEIS = 5;
-  const opcao = (gr, cb, i) => `
-    <div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-top:${i ? '1px solid var(--line)' : '0'};">
-      <button type="button" class="btn small ${i ? '' : 'primary '}admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
-        title="Abre o planejamento com esta combinação (um planejamento por grade)">✔ Aprovar</button>
+  const opcao = (gr, cb) => `
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+      <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',0)"
+        title="Abre o planejamento com esta solução (um planejamento por grade)">✔ Aprovar</button>
       <div>
-        <b>${i + 1}.</b> ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}
+        ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}
         <br><span style="font-size:11px;color:var(--ink-2);">produz ${_demTamTexto(cb.prod)}</span>
         ${cb.sobra ? `<span style="font-size:11px;color:var(--alert);"> · ${cb.sobra} ${cb.sobra === 1 ? 'peça' : 'peças'} a mais</span>`
                    : `<span style="font-size:11px;color:#2e9d5b;"> · exata</span>`}
@@ -30350,7 +30352,7 @@ function renderAgrupamentoDemanda() {
     </div>`;
   boxAg.innerHTML = `
     <table class="table">
-      <thead><tr><th>Desenho</th><th>Pedido somado</th><th>Em progresso (abatido)</th><th>A produzir</th><th>Combinações que completam a demanda</th></tr></thead>
+      <thead><tr><th>Desenho</th><th>Pedido somado</th><th>Em progresso (abatido)</th><th>A produzir</th><th>Solução mais eficiente</th></tr></thead>
       <tbody>${_demGrupos().map(gr => {
         const d = _demDesenho(gr.desenhoId);
         const celWip = Object.keys(gr.wip).length
@@ -30361,12 +30363,9 @@ function renderAgrupamentoDemanda() {
           celComb = `<span style="color:#2e9d5b;"><b>Nada a produzir</b>: o trabalho em progresso repõe o estoque</span><br>
             <button type="button" class="btn small admin-estrito" style="margin-top:4px;" onclick="encerrarDemandaCoberta('${esc(gr.chave)}')" title="Tira a demanda do relatório: as OS em andamento já repõem o estoque">✔ Encerrar</button>`;
         } else if (!gr.combos.length) {
-          celComb = `<span style="color:var(--ink-3);">Nenhuma combinação encontrada</span>`;
+          celComb = `<span style="color:var(--ink-3);">Nenhuma solução encontrada</span>`;
         } else {
-          const ok = gr.combos.slice(0, VISIVEIS), resto = gr.combos.slice(VISIVEIS);
-          celComb = ok.map((cb, i) => opcao(gr, cb, i)).join('')
-            + (resto.length ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:12px;">Ver as outras ${resto.length} ${resto.length === 1 ? 'combinação' : 'combinações'}</summary>
-                ${resto.map((cb, i) => opcao(gr, cb, i + VISIVEIS)).join('')}</details>` : '');
+          celComb = opcao(gr, gr.combos[0]);
         }
         return `<tr>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
