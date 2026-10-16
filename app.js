@@ -28681,6 +28681,8 @@ function coletaOS() {
       }));
     })(),
     tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
+    // Só o planejamento escolhe (ver o campo no index.html); OS comum não leva.
+    ...(_osPlanModo ? { tipoProducao: v('f-tipo-producao') || 'empurrada' } : {}),
     obs: v('f-obs'),
     atencao: v('f-atencao'),
     criadoEm: new Date().toISOString(),
@@ -29723,6 +29725,7 @@ function _renderListaPlanOS(box, lista, cfg) {
       <td>${_gradeCelulaLista(p)}</td>
       <td style="text-align:right;">${esc(String((p.enfesto && p.enfesto.camadas) || '—'))}</td>
       <td>${esc(formatDate(p.data))}</td>
+      <td>${p.tipoProducao === 'puxada' ? '<span class="badge">Puxada</span>' : 'Empurrada'}</td>
       <td style="text-align:right;" title="${(p.grade && p.grade.total) || 0} peças por camada na grade">${produtosOS(p).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(p)}</td>
       <td style="text-align:center;">${_riscoCellOS(p)}</td>
       <td style="font-size:11px;color:var(--ink-2);">${esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
@@ -29735,7 +29738,7 @@ function _renderListaPlanOS(box, lista, cfg) {
     <table class="table">
       <thead><tr>
         <th class="col-actions">Ações</th><th style="text-align:right;">#</th><th>Desenho</th><th>Linha</th><th>Modelo</th><th>Cor</th><th>Coleção</th><th>Grade</th>
-        <th style="text-align:right;">Camadas</th><th>Data</th><th style="text-align:right;">Produtos</th><th>Riscos</th><th>${cfg.quem}</th>
+        <th style="text-align:right;">Camadas</th><th>Data</th><th>Produção</th><th style="text-align:right;">Produtos</th><th>Riscos</th><th>${cfg.quem}</th>
       </tr></thead>
       <tbody>${linhas}</tbody>
     </table>`;
@@ -38040,6 +38043,8 @@ function _abrirOSNoForm(o, titulo) {
     document.getElementById('f-os').value = o.os || '';
     document.getElementById('f-codigo').value = o.codigo || '';
     document.getElementById('f-data').value = o.data || '';
+    const tipoProd = document.getElementById('f-tipo-producao');
+    if (tipoProd) tipoProd.value = o.tipoProducao === 'puxada' ? 'puxada' : 'empurrada';
     // coordenado agora é select de desenho
     document.getElementById('f-coordenado').value = o.coordenadoId || '';
     document.getElementById('f-colecao').value = o.colecaoId || '';

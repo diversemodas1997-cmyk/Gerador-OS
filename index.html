@@ -1149,6 +1149,16 @@
                 <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()" title="Quantidade desejada de cada tamanho — calcula camadas automaticamente">
               </div>
             </div>
+            <!-- PRODUCAO PUXADA OU EMPURRADA (16/10/2026, Junior): so no
+                 planejamento, e fora do os-detalhe para aparecer na edicao
+                 simplificada. Empurrada e o padrao. -->
+            <div class="field plan-only" style="margin-top:8px;">
+              <label>Tipo de produção</label>
+              <select id="f-tipo-producao" title="Empurrada: a fábrica produz pelo plano, para estoque. Puxada: a produção é puxada pela demanda (reposição do que saiu).">
+                <option value="empurrada" selected>Produção empurrada</option>
+                <option value="puxada">Produção puxada</option>
+              </select>
+            </div>
             <div id="f-enf-alerta" class="hidden" style="margin-top:6px; padding: 5px 8px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 11px; border-radius: 2px;"></div>
             <div id="f-enf-calculo" class="enf-calculo-compacto">
               <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
