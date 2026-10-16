@@ -2572,6 +2572,13 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 /* No sino dos avisos ele divide a coluna com os emojis das outras linhas (o
    papel da OS, a etiqueta, o caminhao): ali vai no tamanho deles. */
 .aviso-icone .st-pingo { width: 11px; height: 11px; }
+/* O status de cada OS na coluna Em progresso (abatido) do Relatório de demanda:
+   a mesma caixa da lista de OS (cor inline de STATUS_OS), em tamanho de linha. */
+.dem-wip-os { margin-top: 3px; white-space: nowrap; }
+.os-status.dem-wip-st {
+  display: inline-block; padding: 1px 5px; font-size: 10px; line-height: 1.3;
+  border: 1px solid var(--line); border-radius: 2px; color: var(--ink); cursor: default;
+}
 
 /* O rotulo mais longo nao cabe na coluna junto com a seta do seletor; a lista
    de OS ganha alguns pixels a mais so nessa coluna. Em 15/09/2026 o status

@@ -30369,7 +30369,9 @@ function renderAgrupamentoDemanda() {
       <tbody>${_demGrupos().map(gr => {
         const d = _demDesenho(gr.desenhoId);
         const celWip = Object.keys(gr.wip).length
-          ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => `<span title="${esc((f.st ? f.st.rotulo + ' · ' : '') + _demTamTexto(f.q))}">${_statusPingo(f.st)} ${esc(f.rotulo)}</span>`).join('<br>')}</span>`
+          ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => `<div class="dem-wip-os" title="${esc((f.st ? f.st.rotulo + ' · ' : '') + _demTamTexto(f.q))}">`
+            + (f.st ? `<span class="os-status ro dem-wip-st" data-st="${f.st.k}" style="${_statusEstilo(f.st)}">${_statusPingo(f.st)} ${esc(f.st.curto || f.st.rotulo)}</span> ` : '')
+            + `${esc(f.rotulo)}</div>`).join('')}</span>`
           : `<span style="color:var(--ink-3);">—</span>`;
         let celComb;
         if (gr.coberta) {
