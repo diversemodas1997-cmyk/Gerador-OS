@@ -484,7 +484,7 @@
          "Aprovar" dele (so admin) abre o planejamento ja preenchido. -->
     <section class="page hidden" data-page="relatorio-demanda">
       <div class="page-header">
-        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição: escolha o desenho técnico (SKU e cor), o tamanho e a quantidade. O programa soma as demandas do mesmo desenho e mostra a grade cadastrada que melhor as atende — ou sugere uma que ainda não existe. Aprovada pelo admin, a demanda vira um planejamento de produção.</div></div>
+        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição: escolha o desenho técnico (SKU e cor), o tamanho e a quantidade. As demandas do mesmo desenho são somadas no quadro <b>Agrupamento em grades</b>, no Planejamento de produção, com a grade que melhor as atende — e, aprovadas pelo admin, viram planejamento.</div></div>
       </div>
       <div class="card admin-only" id="dem-form">
         <div class="card-title" id="dem-form-titulo">Nova demanda</div>
@@ -522,10 +522,6 @@
       <div class="card">
         <div class="card-title">Demandas</div>
         <div id="rel-demanda-lista"></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Agrupamento em grades</div>
-        <div id="rel-demanda-agrup"></div>
       </div>
     </section>
 
@@ -1031,6 +1027,13 @@
       </div>
       <div class="card">
         <div id="plan-prod-lista"></div>
+      </div>
+      <!-- AGRUPAMENTO EM GRADES (16/10/2026): veio do Relatorio de demanda. As
+           demandas somadas por desenho, com a grade que as atende; o Aprovar
+           (so admin) abre o planejamento ja preenchido. -->
+      <div class="card">
+        <div class="card-title">Agrupamento em grades · Relatório de demanda</div>
+        <div id="plan-demanda-agrup"></div>
       </div>
     </section>
 

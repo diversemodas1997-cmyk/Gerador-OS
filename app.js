@@ -29379,7 +29379,7 @@ function _aplicarModoPlanForm() {
 }
 
 function cancelarFormOS() {
-  const voltar = !_osPlanModo ? 'home' : _demAgrupando ? 'relatorio-demanda' : 'planejamento-producao';
+  const voltar = _osPlanModo ? 'planejamento-producao' : 'home';
   _demAgrupando = null;
   goto(voltar);
 }
@@ -29522,6 +29522,7 @@ async function aprovarPlanejamento(id) {
 }
 
 function renderPlanejamentoProducao() {
+  renderAgrupamentoDemanda();
   _renderListaPlanOS(document.getElementById('plan-prod-lista'), _planLista(), {
     vazio: 'Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.',
     um: 'OS planejada', varios: 'OS planejadas', quem: 'Planejado por',
@@ -29902,8 +29903,7 @@ function renderRelatorioDemanda() {
   const selDes = document.getElementById('dem-desenho');
   if (selDes && selDes.options.length <= 1) _demFiltrarDesenhos();
   const box = document.getElementById('rel-demanda-lista');
-  const boxAg = document.getElementById('rel-demanda-agrup');
-  if (!box || !boxAg) return;
+  if (!box) return;
   const lista = _demLista();
   const quando = t => {
     if (!t) return '';
@@ -29912,7 +29912,6 @@ function renderRelatorioDemanda() {
   };
   if (!lista.length) {
     box.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda cadastrada.</div>`;
-    boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">O agrupamento aparece quando houver demandas.</div>`;
     return;
   }
   const total = lista.reduce((s, p) => s + Object.values(_demQtds(p)).reduce((a, b) => a + b, 0), 0);
@@ -29938,6 +29937,19 @@ function renderRelatorioDemanda() {
         </tr>`;
       }).join('')}</tbody>
     </table>`;
+}
+
+/* O QUADRO DO AGRUPAMENTO MORA NO PLANEJAMENTO DE PRODUÇÃO (16/10/2026, Junior:
+   "migre o quadro agrupamento em grades para o campo planejamento de
+   produção"). Quem pede reposição só lança a demanda; quem planeja vê ali,
+   junto da lista do planejamento, as demandas somadas e a grade de cada uma. */
+function renderAgrupamentoDemanda() {
+  const boxAg = document.getElementById('plan-demanda-agrup');
+  if (!boxAg) return;
+  if (!_demLista().length) {
+    boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda no Relatório de demanda.</div>`;
+    return;
+  }
   const grupos = _demGrupos();
   boxAg.innerHTML = `
     <table class="table">
@@ -29954,7 +29966,7 @@ function renderRelatorioDemanda() {
         const celSu = su
           ? `<b>${esc(su.nome)}</b> × ${su.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(su.tams, su.c)}</span>`
             + (su.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${su.erro} peças do pedido</span>` : '')
-            + `<br><span style="font-size:11px;color:var(--ink-2);">Aprovada, vai para o planejamento com o botão "Cadastrar grade sugerida".</span>`
+            + `<br><span style="font-size:11px;color:var(--ink-2);">Aprovada, entra na lista acima com o botão "Cadastrar grade sugerida".</span>`
           : `<span style="color:var(--ink-3);">—</span>`;
         return `<tr>
           <td class="col-actions" style="white-space:nowrap;">
