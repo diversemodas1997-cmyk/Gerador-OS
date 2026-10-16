@@ -121,6 +121,8 @@
         <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
         <a class="nav-btn" href="#cad-grades" data-page="cad-grades" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="grades"></span>Grades</a>
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
+        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
+        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
     </div>
 
     <!-- A PASTA ORDENS (16/10/2026): as tres ordens que a fabrica emite (OS,
@@ -135,11 +137,6 @@
       </div>
     </div>
 
-    <div class="nav-solto">
-        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
-        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
-    </div>
-
     <!-- A PASTA RELATORIOS (16/10/2026): os relatorios de producao e de
          costura sairam do bloco solto e moram juntos neste grupo. -->
     <div class="nav-group" data-group="relatorios">
@@ -147,6 +144,7 @@
       <div class="nav-items">
         <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
         <a class="nav-btn" href="#relatorio-costura" data-page="relatorio-costura" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório de costura</a>
+        <a class="nav-btn" href="#relatorio-demanda" data-page="relatorio-demanda" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="demandas"></span>Relatório de demanda</a>
       </div>
     </div>
 
@@ -175,8 +173,6 @@
     <div class="nav-group" data-group="estoques">
       <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
       <div class="nav-items">
-        <!-- RELATORIO DE DEMANDA e o primeiro item de Estoques (16/10/2026). -->
-        <a class="nav-btn" href="#relatorio-demanda" data-page="relatorio-demanda" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório de demanda</a>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de materiais</a>
         <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
@@ -481,16 +477,18 @@
       <div id="pecas-painel"></div>
     </section>
 
-    <!-- RELATORIO DE DEMANDA (16/10/2026): primeiro item do grupo Estoques.
-         Por enquanto so a tela; o conteudo do relatorio entra depois. -->
+    <!-- RELATORIO DE DEMANDA (16/10/2026, Junior): o degrau ANTES do
+         planejamento. Mesma lista e mesmo formulario do Planejamento de
+         producao; "+ Nova demanda" abre a Nova OS em modo demanda e "Aprovar"
+         (so admin) manda a demanda para o planejamento, ainda sem numero. -->
     <section class="page hidden" data-page="relatorio-demanda">
       <div class="page-header">
-        <div>
-          <h1>Relatório de demanda</h1>
-          <div class="desc">Relatório de demanda dos estoques.</div>
-        </div>
+        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição de cada tipo de produto, preenchidas como uma OS. Sem número e sem reservar material: cada demanda aprovada pelo admin vai para o Planejamento de produção.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novaDemanda()">+ Nova demanda</button></div>
       </div>
-      <div id="rel-demanda-painel"><div class="empty">Relatório em construção.</div></div>
+      <div class="card">
+        <div id="rel-demanda-lista"></div>
+      </div>
     </section>
 
     <section class="page hidden" data-page="estoque-ferramentas">
@@ -1001,13 +999,14 @@
     <!-- ================= NOVA OS ================= -->
     <section class="page hidden" data-page="nova-os">
       <div class="page-header">
-        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div></div>
+        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only dem-nao">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div><div class="desc plan-only dem-only">Relatório de demanda: a reposição fica sem número e sem reservar material; aprovada pelo admin, vai para o Planejamento de produção.</div></div>
         <div class="actions">
           <button class="btn" onclick="cancelarFormOS()">Cancelar</button>
           <button class="btn primary admin-only os-only" onclick="salvarOS()">Salvar OS</button>
           <button class="btn admin-only os-only" onclick="salvarEImprimirEtiquetas()" title="Salva a OS e abre as etiquetas em PDF, com a página de 100 × 50 mm.">Imprimir Etiquetas</button>
           <button class="btn accent admin-only os-only" onclick="salvarEImprimir()">Salvar e Gerar PDF</button>
-          <button class="btn primary admin-only plan-only" onclick="salvarPlanejamento()">Salvar planejamento</button>
+          <button class="btn primary admin-only plan-only dem-nao" onclick="salvarPlanejamento()">Salvar planejamento</button>
+          <button class="btn primary admin-only plan-only dem-only" onclick="salvarPlanejamento()">Salvar demanda</button>
         </div>
       </div>
 

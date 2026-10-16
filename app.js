@@ -2563,7 +2563,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','costuraProd','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3176,6 +3176,10 @@ const STATE = {
      no mesmo formato de uma OS. Viram OS de verdade ao serem aprovadas pelo
      admin (ver PLANEJAMENTO DE PRODUÇÃO). Nada aqui reserva material. */
   osPlanejadas: [],
+  /* O RELATÓRIO DE DEMANDA (16/10/2026): o que precisa de reposição, no mesmo
+     formato do planejamento. Aprovada, a demanda vai para osPlanejadas (ver
+     RELATÓRIO DE DEMANDA). Nada aqui reserva material. */
+  osDemandas: [],
   // O RELATÓRIO DE COSTURA (14/10/2026): quem costurou o quê, em qual OS, de
   // que hora a que hora. Ver RELATÓRIO DE COSTURA.
   costuraProd: [],
@@ -3307,6 +3311,7 @@ const DESFAZER_NOMES = {
   compraPlano: ['item da lista de compra', 'itens da lista de compra'],
   compraOCs: ['ordem de compra', 'ordens de compra'],
   osPlanejadas: ['planejamento de produção', 'planejamentos de produção'],
+  osDemandas: ['demanda de reposição', 'demandas de reposição'],
   costuraProd: ['lançamento de costura', 'lançamentos de costura'],
   expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
@@ -3480,7 +3485,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','costuraProd','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4197,10 +4202,13 @@ function goto(page) {
     // Modo planejamento só quando quem abriu pediu (novoPlanejamento,
     // editarPlanejamento); qualquer outro caminho até aqui é a Nova OS.
     _osPlanModo = _osPlanAbrir;
+    _osDemModo = _osPlanAbrir && _osDemAbrir;
     _osPlanAbrir = false;
+    _osDemAbrir = false;
     initOSForm();
   }
   if (page === 'planejamento-producao') renderPlanejamentoProducao();
+  if (page === 'relatorio-demanda') renderRelatorioDemanda();
   if (page === 'config') {
     renderExcedenteCfg();
     atualizarServidorLocalStatus();
@@ -25262,6 +25270,7 @@ function _contagensNav() {
   return {
     ordens: n('ordens'),
     planejadas: n('osPlanejadas'),
+    demandas: n('osDemandas'),
     oes: new Set((STATE.expedicaoCargas || []).map(c => (c.janelaId || '') + '|' + (c.data || ''))).size,
     operacoes: n('operacoes'),
     marcas: n('marcas'), colecoes: n('colecoes'), modelos: n('modelos'),
@@ -29335,16 +29344,27 @@ async function _salvarOSConfirmada(data) {
    onde veio em `planejamento` (quem planejou, quando, quem aprovou). */
 let _osPlanModo = false;   // o formulário aberto agora é de planejamento
 let _osPlanAbrir = false;  // pedido de modo planejamento para o próximo goto('nova-os')
+/* O RELATÓRIO DE DEMANDA (16/10/2026, Junior) usa o MESMO formulário: é o modo
+   planejamento com destino STATE.osDemandas. _osDemModo só vale com _osPlanModo
+   ligado. Ver RELATÓRIO DE DEMANDA, logo abaixo da lista do planejamento. */
+let _osDemModo = false;    // o formulário aberto agora é de demanda
+let _osDemAbrir = false;   // pedido de modo demanda para o próximo goto('nova-os')
 
 function _planLista() {
   if (!Array.isArray(STATE.osPlanejadas)) STATE.osPlanejadas = [];
   return STATE.osPlanejadas;
 }
 
+function _demLista() {
+  if (!Array.isArray(STATE.osDemandas)) STATE.osDemandas = [];
+  return STATE.osDemandas;
+}
+
 // Liga ou desliga o modo planejamento no formulário (chamada por initOSForm).
 function _aplicarModoPlanForm() {
   const sec = document.querySelector('section.page[data-page="nova-os"]');
   if (sec) sec.classList.toggle('modo-plan', !!_osPlanModo);
+  if (sec) sec.classList.toggle('modo-dem', !!(_osPlanModo && _osDemModo));
   const campoOS = document.getElementById('f-os');
   if (campoOS) {
     campoOS.disabled = !!_osPlanModo;
@@ -29354,12 +29374,13 @@ function _aplicarModoPlanForm() {
   if (_osPlanModo) {
     _osNumeroAuto = '';
     // Editar um planejamento põe o título dele logo depois (_abrirOSNoForm).
-    if (!osEditId) document.getElementById('os-form-title').textContent = 'Novo planejamento de produção';
+    if (!osEditId) document.getElementById('os-form-title').textContent =
+      _osDemModo ? 'Nova demanda de reposição' : 'Novo planejamento de produção';
   }
 }
 
 function cancelarFormOS() {
-  goto(_osPlanModo ? 'planejamento-producao' : 'home');
+  goto(!_osPlanModo ? 'home' : _osDemModo ? 'relatorio-demanda' : 'planejamento-producao');
 }
 
 // Quem planeja: o admin, a área Planejamento de produção ou a de Ordens de
@@ -29400,8 +29421,9 @@ async function salvarPlanejamento() {
   // a falta de tecido: o pano de um planejamento ainda pode ser comprado. Ela é
   // conferida na aprovação, que é quando o material passa a ser reservado.
   if (!validarAntesDeSalvar(data, { semFaltaDeTecido: true })) { definirModoFormOS(false); return; }
+  const dem = !!_osDemModo;
   await _comTravaDeSalvar(async () => {
-    const lista = _planLista();
+    const lista = dem ? _demLista() : _planLista();
     const i = lista.findIndex(p => p.id === data.id);
     if (i >= 0) {
       const ant = lista[i];
@@ -29413,9 +29435,14 @@ async function salvarPlanejamento() {
       // os mesmos que a OS terá ao ser aprovada.
       lista.push(_aplicarTonsPadrao(data));
     }
-    await saveState('osPlanejadas');
+    await saveState(dem ? 'osDemandas' : 'osPlanejadas');
     osEditId = null;
     atualizarContagensNav();
+    if (dem) {
+      toast(i >= 0 ? 'Demanda atualizada' : 'Demanda salva — vai para o planejamento quando for aprovada', 'ok');
+      goto('relatorio-demanda');
+      return;
+    }
     toast(i >= 0 ? 'Planejamento atualizado' : 'Planejamento salvo — sem número até ser aprovado', 'ok');
     goto('planejamento-producao');
   });
@@ -29481,11 +29508,24 @@ async function aprovarPlanejamento(id) {
 }
 
 function renderPlanejamentoProducao() {
-  const box = document.getElementById('plan-prod-lista');
+  _renderListaPlanOS(document.getElementById('plan-prod-lista'), _planLista(), {
+    vazio: 'Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.',
+    um: 'OS planejada', varios: 'OS planejadas', quem: 'Planejado por',
+    acoes: id => `
+        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre">✔ Aprovar</button>
+        <span class="admin-only">
+          <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
+          <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
+        </span>`,
+  });
+}
+
+// A tabela da lista é a mesma no planejamento e na demanda: só mudam os botões
+// da coluna Ações e os rótulos.
+function _renderListaPlanOS(box, lista, cfg) {
   if (!box) return;
-  const lista = _planLista();
   if (!lista.length) {
-    box.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.</div>`;
+    box.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">${cfg.vazio}</div>`;
     return;
   }
   const quando = t => {
@@ -29498,12 +29538,7 @@ function renderPlanejamentoProducao() {
     const cores = coresDaPecaOS(p);
     const id = esc(p.id);
     return `<tr>
-      <td class="col-actions" style="white-space:nowrap;">
-        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre">✔ Aprovar</button>
-        <span class="admin-only">
-          <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
-          <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
-        </span>
+      <td class="col-actions" style="white-space:nowrap;">${cfg.acoes(id)}
       </td>
       <td style="text-align:right;color:var(--ink-3);">${i + 1}</td>
       <td>${_osThumbHtml(p)}</td>
@@ -29521,16 +29556,102 @@ function renderPlanejamentoProducao() {
   }).join('');
   box.innerHTML = `
     <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px;">
-      <b>${lista.length}</b> ${lista.length === 1 ? 'OS planejada' : 'OS planejadas'} · <b>${total.toLocaleString('pt-BR')}</b> produtos
+      <b>${lista.length}</b> ${lista.length === 1 ? cfg.um : cfg.varios} · <b>${total.toLocaleString('pt-BR')}</b> produtos
     </div>
     <table class="table">
       <thead><tr>
         <th class="col-actions">Ações</th><th style="text-align:right;">#</th><th>Desenho</th><th>Linha</th><th>Modelo</th><th>Cor</th><th>Coleção</th><th>Grade</th>
-        <th style="text-align:right;">Camadas</th><th>Data</th><th style="text-align:right;">Produtos</th><th>Riscos</th><th>Planejado por</th>
+        <th style="text-align:right;">Camadas</th><th>Data</th><th style="text-align:right;">Produtos</th><th>Riscos</th><th>${cfg.quem}</th>
       </tr></thead>
       <tbody>${linhas}</tbody>
     </table>`;
 }
+
+/* ========================================================= */
+/*                  RELATÓRIO DE DEMANDA                     */
+/* ========================================================= */
+/* (16/10/2026, Junior: "O relatório de demanda deve parecer com o planejamento
+   de OS, pois é por lá que será informada as quantidades que precisam de
+   reposição de cada tipo de produto... a janela deve ser exatamente a mesma do
+   planejamento de OS. Cada OS cadastrada no relatório de demanda deve ter botão
+   de aprovação. Quando aprovado ele migra para o planejamento de produção e
+   permanece lá até que seja aprovado e receba número de OS.")
+
+   É o degrau ANTES do planejamento: demanda → planejamento → OS. O formulário
+   é o da Nova OS em modo planejamento com _osDemModo ligado, e a gravação vai
+   para STATE.osDemandas. Quem cria e edita é quem planeja (exigirPlanejamento).
+
+   APROVAR (só o admin, como no planejamento) move a demanda inteira para
+   STATE.osPlanejadas, sem número e sem reservar material — isso continua sendo
+   a aprovação do planejamento. O planejamento guarda de onde veio em `demanda`
+   (quem pediu, quando, quem aprovou). */
+function novaDemanda() {
+  if (!exigirPlanejamento()) return;
+  osEditId = null;
+  _osPlanAbrir = true;
+  _osDemAbrir = true;
+  goto('nova-os');
+}
+
+function editarDemanda(id) {
+  if (!exigirPlanejamento()) return;
+  const p = _demLista().find(x => x.id === id);
+  if (!p) return toast('Demanda não encontrada', 'err');
+  _osPlanAbrir = true;
+  _osDemAbrir = true;
+  _abrirOSNoForm(p, 'Editar demanda de reposição');
+}
+
+async function excluirDemanda(id) {
+  if (!exigirPlanejamento()) return;
+  const p = _demLista().find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Excluir esta demanda?\n\n${_planResumo(p)}`)) return;
+  STATE.osDemandas = _demLista().filter(x => x.id !== id);
+  await saveState('osDemandas');
+  atualizarContagensNav();
+  toast('Demanda excluída', 'ok');
+  renderRelatorioDemanda();
+}
+
+async function aprovarDemanda(id) {
+  if (_recusarSomenteLeitura('aprovar demanda')) return;
+  if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
+  const p = _demLista().find(x => x.id === id);
+  if (!p) return toast('Demanda não encontrada', 'err');
+  if (!confirm(`Aprovar a demanda e mandar para o Planejamento de produção?\n\n${_planResumo(p)}\n\n`
+    + `Ela sai daqui e fica no planejamento, sem número, até ser aprovada lá.`)) return;
+  const agora = new Date().toISOString();
+  const plan = JSON.parse(JSON.stringify(p));
+  plan.demanda = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
+    aprovadoEm: agora, aprovadoPor: _obsQuemSou() };
+  await _comTravaDeSalvar(async () => {
+    _planLista().push(plan);
+    STATE.osDemandas = _demLista().filter(x => x.id !== p.id);
+    await saveState('osPlanejadas');
+    await saveState('osDemandas');
+    toast('Demanda aprovada: está no Planejamento de produção', 'ok');
+    atualizarContagensNav();
+    renderRelatorioDemanda();
+  });
+}
+
+function renderRelatorioDemanda() {
+  _renderListaPlanOS(document.getElementById('rel-demanda-lista'), _demLista(), {
+    vazio: 'Nenhuma demanda cadastrada. Use <b>+ Nova demanda</b>.',
+    um: 'demanda', varios: 'demandas', quem: 'Pedido por',
+    acoes: id => `
+        <button type="button" class="btn small primary admin-estrito" onclick="aprovarDemanda('${id}')" title="Manda a demanda para o Planejamento de produção">✔ Aprovar</button>
+        <span class="admin-only">
+          <button type="button" class="btn small ghost" onclick="editarDemanda('${id}')">Editar</button>
+          <button type="button" class="btn small ghost" onclick="excluirDemanda('${id}')" title="Excluir a demanda">✕</button>
+        </span>`,
+  });
+}
+window.novaDemanda = novaDemanda;
+window.editarDemanda = editarDemanda;
+window.excluirDemanda = excluirDemanda;
+window.aprovarDemanda = aprovarDemanda;
 window.novoPlanejamento = novoPlanejamento;
 window.editarPlanejamento = editarPlanejamento;
 window.salvarPlanejamento = salvarPlanejamento;
