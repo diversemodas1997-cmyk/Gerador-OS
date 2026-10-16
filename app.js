@@ -27648,11 +27648,15 @@ function atualizarCalculosEnfesto() {
   const orienta = document.getElementById('f-enf-orienta');
   if (orienta) {
     const falta = limite !== Infinity ? limite - camadas : 0;
-    const mostrar = _osPlanModo && camadas > 0 && falta > 0;
+    const vezes = Math.max(1, parseInt(document.getElementById('f-plan-vezes')?.value, 10) || 1);
+    const mostrar = _osPlanModo && camadas > 0 && (falta > 0 || vezes > 1);
     orienta.classList.toggle('hidden', !mostrar);
-    if (mostrar) orienta.innerHTML = `Enfesto com <b>${camadas}</b> de <b>${limite}</b> camadas: preencha o máximo — `
-      + `faltam ${falta} ${falta === 1 ? 'camada' : 'camadas'} no mesmo enfesto. `
-      + `<button type="button" class="btn small" onclick="_planEnfestoCheio()">Usar ${limite} camadas</button>`;
+    if (mostrar) orienta.innerHTML = (falta > 0
+        ? `Enfesto com <b>${camadas}</b> de <b>${limite}</b> camadas: preencha o máximo — `
+          + `faltam ${falta} ${falta === 1 ? 'camada' : 'camadas'} no mesmo enfesto. `
+          + `<button type="button" class="btn small" onclick="_planEnfestoCheio()">Usar ${limite} camadas</button>`
+        : `Enfesto cheio: <b>${camadas}</b> camadas.`)
+      + (vezes > 1 ? ` <br>Este planejamento leva <b>${vezes} grades iguais</b>: na aprovação, vira ${vezes} OS de ${camadas} camadas.` : '');
   }
 
   // Área de cálculo — separado por categoria de tecido
@@ -28723,7 +28727,8 @@ function coletaOS() {
     })(),
     tecidos, grade, enfesto, etapas, variantes, componentes, aviamentos,
     // Só o planejamento escolhe (ver o campo no index.html); OS comum não leva.
-    ...(_osPlanModo ? { tipoProducao: v('f-tipo-producao') || 'empurrada' } : {}),
+    ...(_osPlanModo ? { tipoProducao: v('f-tipo-producao') || 'empurrada',
+      repeticoes: Math.max(1, parseInt(v('f-plan-vezes'), 10) || 1) } : {}),
     obs: v('f-obs'),
     atencao: v('f-atencao'),
     criadoEm: new Date().toISOString(),
@@ -29542,6 +29547,8 @@ function _aplicarModoPlanForm() {
   }
   if (_osPlanModo) {
     _osNumeroAuto = '';
+    const vezesEl = document.getElementById('f-plan-vezes');
+    if (vezesEl && !osEditId) vezesEl.value = 1;   // a edição põe o salvo (_abrirOSNoForm)
     // Editar um planejamento põe o título dele logo depois (_abrirOSNoForm).
     if (!osEditId) document.getElementById('os-form-title').textContent = 'Novo planejamento de produção';
   }
@@ -29624,18 +29631,6 @@ async function salvarPlanejamento() {
       // As partes que faltam passam do planejamento anterior para este.
       const origem = ag.origemPlanId && lista.find(x => x.id === ag.origemPlanId);
       if (origem && origem.demanda) origem.demanda.pendentes = [];
-      // A grade 2x, 3x…: um planejamento por enfesto cheio, iguais ao salvo.
-      const vezes = Math.max(1, Number(ag.vezes) || 1);
-      if (vezes > 1) {
-        novo.demanda.vez = `1 de ${vezes}`;
-        for (let n = 2; n <= vezes; n++) {
-          const copia = JSON.parse(JSON.stringify(novo));
-          copia.id = uid();
-          copia.demanda.pendentes = [];
-          copia.demanda.vez = `${n} de ${vezes}`;
-          lista.push(copia);
-        }
-      }
       if (ag.ids.length) {
         const tirar = new Set(ag.ids);
         STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
@@ -29673,10 +29668,23 @@ async function excluirPlanejamento(id) {
   renderPlanejamentoProducao();
 }
 
+/* AS GRADES IGUAIS DO PLANEJAMENTO (16/10/2026, Junior: "essa lógica deve ser
+   mostrada no momento do planejamento e não no momento da criação da OS. O
+   planejamento deve saber que serão necessárias 3 grades iguais").
+   Um planejamento é UMA grade num enfesto (no máximo o limite de camadas do
+   tecido) repetida `repeticoes` vezes. Ele aparece como um só, com o "×3" e os
+   produtos das três; ao ser aprovado, vira três OS iguais, cada uma com o seu
+   número. Planejamento sem o campo vale 1. */
+function _planVezes(p) {
+  return Math.max(1, parseInt(p && p.repeticoes, 10) || 1);
+}
+
 function _planResumo(p) {
   const des = (STATE.desenhos || []).find(d => d.id === p.desenhoId);
+  const n = _planVezes(p);
   return [des ? _rotuloDesenhoOS(des) : (p.codigo || ''), p.grade && p.grade.descricao,
-    produtosOS(p).toLocaleString('pt-BR') + ' produtos'].filter(Boolean).join(' · ');
+    n > 1 ? `${n} grades iguais (${n} OS)` : '',
+    (produtosOS(p) * n).toLocaleString('pt-BR') + ' produtos'].filter(Boolean).join(' · ');
 }
 
 async function aprovarPlanejamento(id) {
@@ -29687,35 +29695,48 @@ async function aprovarPlanejamento(id) {
   const p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
   if (_planAguardando(p)) return toast('Este planejamento da demanda ainda aguarda aprovação', 'err');
+  const vezes = _planVezes(p);
   const numero = proximoNumeroOSParaGrade(p.gradeId || '');
-  if (!confirm(`Aprovar o planejamento e gerar a OS ${numero}?\n\n${_planResumo(p)}\n\n`
-    + `A OS entra na lista de Ordens de Serviço como Não iniciado e reserva o material.`)) return;
+  if (!confirm(`Aprovar o planejamento e gerar ${vezes > 1 ? `${vezes} OS iguais, a partir da ${numero}` : `a OS ${numero}`}?\n\n${_planResumo(p)}\n\n`
+    + `${vezes > 1 ? 'As OS entram' : 'A OS entra'} na lista de Ordens de Serviço como Não iniciado e reserva${vezes > 1 ? 'm' : ''} o material.`)) return;
   const agora = new Date();
   const hoje = agora.toISOString().slice(0, 10);
-  const os = JSON.parse(JSON.stringify(p));
-  os.id = uid();
-  os.os = numero;
-  if (!os.data || os.data < hoje) os.data = hoje;
-  os.criadoEm = agora.toISOString();
-  os.criadoPor = _obsQuemSou();
-  os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
-    aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou() };
-  delete os.editadoEm; delete os.editadoPor;
-  // A OS nasce agora: a foto é do desenho de agora.
-  _congelarDesenhoNaOS(os, null);
-  const faltando = faltaDeTecidoParaOS(os);
+  // Uma OS por grade igual: cada uma pega o próximo número livre depois da
+  // anterior, confere o tecido que sobrou e dá a sua baixa.
+  const montar = (n) => {
+    const os = JSON.parse(JSON.stringify(p));
+    os.id = uid();
+    os.os = proximoNumeroOSParaGrade(p.gradeId || '');
+    delete os.repeticoes;
+    if (!os.data || os.data < hoje) os.data = hoje;
+    os.criadoEm = agora.toISOString();
+    os.criadoPor = _obsQuemSou();
+    os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
+      aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou(),
+      ...(vezes > 1 ? { vez: `${n} de ${vezes}` } : {}) };
+    delete os.editadoEm; delete os.editadoPor;
+    // A OS nasce agora: a foto é do desenho de agora.
+    _congelarDesenhoNaOS(os, null);
+    return os;
+  };
+  const primeira = montar(1);
+  const faltando = faltaDeTecidoParaOS(primeira);
   if (faltando.length && !confirm(_textoFaltaDeTecido(faltando))) return;
-  const data = _aplicarTonsPadrao(os);
   await _comTravaDeSalvar(async () => {
-    STATE.ordens.push(data);
-    STATE.osPlanejadas = _planLista().filter(x => x.id !== p.id);
-    await saveState('ordens');
-    await saveState('osPlanejadas');
-    await atualizarCounterOS(data.os);
-    await aplicarBaixaEstoqueOS(data);
-    await aplicarRegraConjugadaSeAplicavel(data);
-    toast(`Planejamento aprovado: OS ${data.os}`, 'ok');
-    salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
+    const feitas = [];
+    for (let n = 1; n <= vezes; n++) {
+      const data = _aplicarTonsPadrao(n === 1 ? primeira : montar(n));
+      STATE.ordens.push(data);
+      if (n === 1) STATE.osPlanejadas = _planLista().filter(x => x.id !== p.id);
+      await saveState('ordens');
+      if (n === 1) await saveState('osPlanejadas');
+      await atualizarCounterOS(data.os);
+      await aplicarBaixaEstoqueOS(data);
+      await aplicarRegraConjugadaSeAplicavel(data);
+      salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
+      feitas.push(data.os);
+    }
+    toast(`Planejamento aprovado: ${feitas.length > 1 ? 'OS ' + feitas.join(', ') : 'OS ' + feitas[0]}`, 'ok');
     atualizarContagensNav();
     renderPlanejamentoProducao();
   });
@@ -29833,8 +29854,9 @@ function _renderListaPlanOS(box, lista, cfg) {
     const d = new Date(t);
     return isNaN(d) ? '' : formatDate(_expIso(d)) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   };
-  const total = lista.reduce((s, p) => s + produtosOS(p), 0);
+  const total = lista.reduce((s, p) => s + produtosOS(p) * _planVezes(p), 0);
   const linhas = lista.map((p, i) => {
+    const vezes = _planVezes(p);
     const cores = coresDaPecaOS(p);
     const id = esc(p.id);
     return `<tr>
@@ -29847,10 +29869,11 @@ function _renderListaPlanOS(box, lista, cfg) {
       <td>${cores.length ? cores.map(c => `<span class="badge">${esc(c)}</span>`).join(' ') : '<span style="color:var(--ink-3)">—</span>'}</td>
       <td>${esc(p.colecaoNome) || '—'}</td>
       <td>${_gradeCelulaLista(p)}</td>
-      <td style="text-align:right;">${esc(String((p.enfesto && p.enfesto.camadas) || '—'))}</td>
+      <td style="text-align:right;">${esc(String((p.enfesto && p.enfesto.camadas) || '—'))}${vezes > 1
+        ? `<br><span class="badge" title="${vezes} grades iguais: na aprovação, ${vezes} OS de ${(p.enfesto && p.enfesto.camadas) || '?'} camadas">×${vezes}</span>` : ''}</td>
       <td>${esc(formatDate(p.data))}</td>
       <td>${p.tipoProducao === 'puxada' ? '<span class="badge">Puxada</span>' : 'Empurrada'}</td>
-      <td style="text-align:right;" title="${(p.grade && p.grade.total) || 0} peças por camada na grade">${produtosOS(p).toLocaleString('pt-BR')} un.${_produtosPorTamanhoListaOS(p)}</td>
+      <td style="text-align:right;" title="${(p.grade && p.grade.total) || 0} peças por camada na grade">${(produtosOS(p) * vezes).toLocaleString('pt-BR')} un.${vezes > 1 ? `<br><span style="font-size:10px;color:var(--ink-2);">${vezes} × ${produtosOS(p).toLocaleString('pt-BR')}</span>` : ''}${_produtosPorTamanhoListaOS(p)}</td>
       <td style="text-align:center;">${_riscoCellOS(p)}</td>
       <td style="font-size:11px;color:var(--ink-2);">${esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
     </tr>`;
@@ -30109,17 +30132,30 @@ function _demGrupos() {
 
 
 
+/* SÓ GRADES DE 117 CM (16/10/2026, Junior: "o programa não deve sugerir grades
+   diferentes de 117 cm"). A largura é a que o nome da grade traz ("… | 117cm");
+   grade sem largura no nome vale pela largura da primeira fase (1,170 m). */
+const _DEM_LARGURA_CM = 117;
+function _demLarguraGradeCm(g) {
+  const m = String((g && g.nome) || '').match(/(\d+(?:[.,]\d+)?)\s*cm/i);
+  if (m) return parseFloat(m[1].replace(',', '.'));
+  const f = ((g && g.fases) || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0))[0];
+  const l = parseFloat(String((f && f.larg) || '').replace(',', '.'));
+  return l > 0 ? Math.round(l * (l < 10 ? 100 : 1) * 10) / 10 : 0;
+}
+
 function _demGradesDoDesenho(d, linha) {
   const sku = _skuLinhaNorm((d && d.skuLinha) || '');
   if (!sku) return [];
   const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
   return (STATE.grades || []).filter(g => !alvos.has(g.id) && !/conjug/i.test(g.nome || '')
-    && _skuLinhaNorm(_skuDaGrade(g)) === sku && _linhaTipoGrade(g) === linha);
+    && _skuLinhaNorm(_skuDaGrade(g)) === sku && _linhaTipoGrade(g) === linha
+    && _demLarguraGradeCm(g) === _DEM_LARGURA_CM);
 }
 
 function _demNomeGrade(tams, sku) {
   const t = _DEM_TAMANHOS.filter(k => tams[k] > 0).map(k => (tams[k] > 1 ? tams[k] : '') + _DEM_TAM_LABEL[k]).join('-');
-  return sku ? `${t} | ${sku}` : t;
+  return (sku ? `${t} | ${sku}` : t) + ` | ${_DEM_LARGURA_CM}cm`;
 }
 
 
@@ -30342,7 +30378,7 @@ async function aprovarAgrupamento(chave, idx) {
     + `\nCombinação: ${_demCombTexto(cb)}\nProduz: ${_demTamTexto(cb.prod)}`
     + (cb.sobra ? ` (${cb.sobra} peças a mais)` : '')
     + `\n\n${cb.partes.length > 1 ? `São ${cb.partes.length} grades: o formulário abre uma de cada vez.` : 'O formulário do planejamento abre preenchido.'}`
-    + (cb.partes.some(p => (p.cam || 1) > 1 && p.c > 1) ? ` A grade de 2x ou mais é salva uma vez e repetida: um planejamento por enfesto cheio.` : '')
+    + (cb.partes.some(p => (p.cam || 1) > 1 && p.c > 1) ? ` A grade de 2x ou mais vai num planejamento só, que sabe quantas grades iguais leva; na aprovação, vira uma OS por enfesto cheio.` : '')
     + ` Ao salvar o primeiro, estas demandas saem do relatório.`
     + `\n\nO planejamento fica aguardando a aprovação do admin antes de entrar na lista.`)) return;
   const baseGradeId = ((cb.partes.find(p => p.tipo === 'existe') || {}).gradeId) || ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '');
@@ -30386,9 +30422,11 @@ function _demAbrirParte(ag) {
       try { atualizarCalculosEnfesto(); } catch (e) { /* ignora */ }
     }
     const cam = document.getElementById('f-enf-camadas');
+    const vezesEl = document.getElementById('f-plan-vezes');
+    if (vezesEl) vezesEl.value = ag.vezes;
     if (cam) { cam.value = porEnfesto ? p.cam : p.c; calcularAlvoDeCamadas(); }
     const de = (ag.partes.length > 1 ? ` (parte ${ag.parte + 1} de ${ag.partes.length})` : '')
-      + (ag.vezes > 1 ? ` — salvo, vira ${ag.vezes} planejamentos de ${p.cam} camadas` : '');
+      + (ag.vezes > 1 ? ` — ${ag.vezes} grades iguais de ${p.cam} camadas` : '');
     toast(p.tipo === 'existe' ? `Confira e salve o planejamento${de}`
       : `Grade nova ${p.nome}${de}: salve e use "Cadastrar grade sugerida" no planejamento`, 'ok');
   }, 80);
@@ -38459,6 +38497,8 @@ function _abrirOSNoForm(o, titulo) {
     document.getElementById('f-data').value = o.data || '';
     const tipoProd = document.getElementById('f-tipo-producao');
     if (tipoProd) tipoProd.value = o.tipoProducao === 'puxada' ? 'puxada' : 'empurrada';
+    const vezesEl = document.getElementById('f-plan-vezes');
+    if (vezesEl) vezesEl.value = _planVezes(o);
     // coordenado agora é select de desenho
     document.getElementById('f-coordenado').value = o.coordenadoId || '';
     document.getElementById('f-colecao').value = o.colecaoId || '';

@@ -1167,6 +1167,13 @@
                 <option value="puxada">Produção puxada</option>
               </select>
             </div>
+            <!-- GRADES IGUAIS (16/10/2026): o planejamento sabe quantas vezes a
+                 mesma grade vai, cada vez um enfesto; a aprovacao gera uma OS por vez. -->
+            <div class="field plan-only" style="margin-top:8px;">
+              <label>Grades iguais (enfestos)</label>
+              <input type="number" id="f-plan-vezes" min="1" value="1" oninput="atualizarCalculosEnfesto()"
+                     title="Quantas vezes esta grade vai, cada uma num enfesto até o limite de camadas. Na aprovação, vira uma OS por vez.">
+            </div>
             <!-- ENFESTO CHEIO (16/10/2026): so no planejamento, quando as camadas
                  ficam abaixo do limite do tecido. Montado em atualizarCalculosEnfesto. -->
             <div id="f-enf-orienta" class="hidden plan-only" style="margin-top:6px;padding:5px 8px;background:var(--bg);border-left:3px solid var(--accent, #2a6fd0);font-size:11px;border-radius:2px;"></div>
