@@ -27603,6 +27603,15 @@ function calcularLimiteCamadas() {
   return { limite, categoriaRestritiva };
 }
 
+function _planEnfestoCheio() {
+  const { limite } = calcularLimiteCamadas();
+  const cam = document.getElementById('f-enf-camadas');
+  if (!cam || !(limite > 0) || limite === Infinity) return;
+  cam.value = limite;
+  calcularAlvoDeCamadas();
+}
+window._planEnfestoCheio = _planEnfestoCheio;
+
 function atualizarCalculosEnfesto() {
   const gradeTotal = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16']
     .reduce((s, k) => s + (parseInt(document.getElementById('f-gr-'+k)?.value) || 0), 0);
@@ -27632,6 +27641,18 @@ function atualizarCalculosEnfesto() {
     alerta.classList.add('hidden');
     campoCamadas.style.borderColor = '';
     campoCamadas.style.background = '';
+  }
+  // O ENFESTO CHEIO NO PLANEJAMENTO (16/10/2026, Junior: "o programa deve
+  // orientar a produção que preencha o máximo de camadas de um enfesto no
+  // momento do planejamento"). Abaixo do limite, o aviso diz quanto falta.
+  const orienta = document.getElementById('f-enf-orienta');
+  if (orienta) {
+    const falta = limite !== Infinity ? limite - camadas : 0;
+    const mostrar = _osPlanModo && camadas > 0 && falta > 0;
+    orienta.classList.toggle('hidden', !mostrar);
+    if (mostrar) orienta.innerHTML = `Enfesto com <b>${camadas}</b> de <b>${limite}</b> camadas: preencha o máximo — `
+      + `faltam ${falta} ${falta === 1 ? 'camada' : 'camadas'} no mesmo enfesto. `
+      + `<button type="button" class="btn small" onclick="_planEnfestoCheio()">Usar ${limite} camadas</button>`;
   }
 
   // Área de cálculo — separado por categoria de tecido
@@ -29603,6 +29624,18 @@ async function salvarPlanejamento() {
       // As partes que faltam passam do planejamento anterior para este.
       const origem = ag.origemPlanId && lista.find(x => x.id === ag.origemPlanId);
       if (origem && origem.demanda) origem.demanda.pendentes = [];
+      // A grade 2x, 3x…: um planejamento por enfesto cheio, iguais ao salvo.
+      const vezes = Math.max(1, Number(ag.vezes) || 1);
+      if (vezes > 1) {
+        novo.demanda.vez = `1 de ${vezes}`;
+        for (let n = 2; n <= vezes; n++) {
+          const copia = JSON.parse(JSON.stringify(novo));
+          copia.id = uid();
+          copia.demanda.pendentes = [];
+          copia.demanda.vez = `${n} de ${vezes}`;
+          lista.push(copia);
+        }
+      }
       if (ag.ids.length) {
         const tirar = new Set(ag.ids);
         STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
@@ -30106,7 +30139,32 @@ function _demNomeGrade(tams, sku) {
    menos camadas. A mesma grade duas vezes vira uma parte só.
    A grade nova é a menor que cobre o pedido sem passar do maior número de
    peças por camada que o SKU já usa (7 — P ao G3 — quando não há nenhuma). Se
-   ela tiver os mesmos tamanhos de uma grade que já existe, é aquela grade. */
+   ela tiver os mesmos tamanhos de uma grade que já existe, é aquela grade.
+
+   O ENFESTO CHEIO (16/10/2026, Junior: "o programa deve orientar a produção que
+   preencha o máximo de camadas de um enfesto no momento do planejamento" e
+   "esse limite de camadas não deve ser ultrapassado em uma sugestão; caso
+   ultrapasse, deve ser sugerida a produção da mesma grade 2x, 3x, 4x").
+   A conta não é mais por camada: é por ENFESTO. Cada grade rende, num enfesto,
+   peças por camada × limite de camadas do tecido (moletom 36, malha 80) ×
+   multiplicador (a malha corta em camada dupla) — e a parte é essa grade
+   repetida N vezes, cada vez um planejamento no limite de camadas. Grade sem
+   tecido de limite conhecido continua contada por camada (`cam` = 1). */
+// O que uma parte rende por vez: por camada × camadas do enfesto × multiplicador.
+function _demRende(p) {
+  const r = {};
+  const f = (p.cam || 1) * (p.mult || 1);
+  _DEM_TAMANHOS.forEach(k => { if ((p.tams[k] || 0) > 0) r[k] = p.tams[k] * f; });
+  return r;
+}
+
+// O enfesto de uma grade cadastrada: o limite de camadas e o multiplicador.
+function _demEnfestoDaGrade(g) {
+  let cam = 0, mult = 1;
+  try { cam = compraLimiteCamadasGrade(g); } catch (e) { cam = 0; }
+  try { mult = multiplicadorPecaOS({ fases: (g && g.fases) || [] }) || 1; } catch (e) { mult = 1; }
+  return { cam: cam > 0 && cam !== Infinity ? cam : 1, mult };
+}
 function _demCamadasParaCobrir(tams, q) {
   let c = 0;
   for (const k of Object.keys(q)) {
@@ -30130,20 +30188,23 @@ function _demMesmosTamanhos(a, b) {
 // A grade nova que cobre `r` com a menor sobra. Abaixo de soma/limite camadas
 // a grade passaria do limite de peças por camada, então a busca começa ali, e
 // para na primeira exata ou depois de 400 tentativas.
-function _demGradeNovaQueCobre(r, limite) {
+// `un` = peças que UMA camada da grade nova rende por unidade da grade, vezes
+// as camadas de um enfesto: `c` é então o número de enfestos.
+function _demGradeNovaQueCobre(r, limite, un) {
   const ks = Object.keys(r).filter(k => r[k] > 0);
   if (!ks.length) return null;
+  un = un > 0 ? un : 1;
   const lim = Math.max(limite, ks.length);
   const soma = ks.reduce((s, k) => s + r[k], 0);
-  const de = Math.max(1, Math.floor(soma / lim));
-  const ate = Math.min(Math.max(...ks.map(k => r[k])), de + 400);
+  const de = Math.max(1, Math.floor(soma / (lim * un)));
+  const ate = Math.max(de, Math.min(Math.ceil(Math.max(...ks.map(k => r[k])) / un), de + 400));
   let melhor = null;
   for (let c = de; c <= ate && !(melhor && melhor.sobra === 0); c++) {
     const tams = {};
-    ks.forEach(k => { tams[k] = Math.ceil(r[k] / c); });
+    ks.forEach(k => { tams[k] = Math.ceil(r[k] / (c * un)); });
     const total = ks.reduce((s, k) => s + tams[k], 0);
     if (total > lim) continue;
-    const sobra = ks.reduce((s, k) => s + tams[k] * c - r[k], 0);
+    const sobra = ks.reduce((s, k) => s + tams[k] * c * un - r[k], 0);
     if (!melhor || sobra < melhor.sobra) melhor = { tams, c, sobra };
   }
   return melhor;
@@ -30174,13 +30235,16 @@ function _demCamadasATentar(ate) {
        demanda (com ou sem peças a mais); se nenhuma completa, a melhor de
        todas, mesmo com grade nova;
      - a SUGESTÃO de grade nova: só quando a solução tem peças a mais e uma
-       combinação com grade nova acerta a demanda em cheio. */
+       combinação com grade nova acerta a demanda em cheio — ou, desde que a
+       conta é por enfesto cheio (ver O ENFESTO CHEIO), quando ela deixa MENOS
+       peças a mais: com enfesto cheio a produção vem em degraus de um
+       enfesto, e a grade exata quase nunca existe. */
 function _demEscolherSolucoes(combos) {
   const cadastradas = combos.filter(c => !c.novas);
   const solucao = cadastradas[0] || combos[0];
   if (!solucao) return [];
-  const exataNova = solucao.sobra > 0 ? combos.find(c => c.novas && c.sobra === 0) : null;
-  return exataNova ? [solucao, exataNova] : [solucao];
+  const nova = solucao.sobra > 0 ? combos.find(c => c.novas && c.sobra < solucao.sobra) : null;
+  return nova && nova !== solucao ? [solucao, nova] : [solucao];
 }
 
 function _demCombinacoes(gr) {
@@ -30191,16 +30255,21 @@ function _demCombinacoes(gr) {
   const grades = _demGradesDoDesenho(d, gr.linha);
   const limite = Math.max(0, ...grades.map(g => _DEM_TAMANHOS.reduce((s, k) => s + ((g.tamanhos || {})[k] || 0), 0))) || 7;
   const lista = [], vistas = new Set();
-  const parteExiste = (g, c) => ({ tipo: 'existe', gradeId: g.id, nome: g.nome, tams: g.tamanhos || {}, c });
+  const enf = new Map(grades.map(g => [g.id, _demEnfestoDaGrade(g)]));
+  // A grade nova enfesta no pano das grades do SKU (a primeira delas).
+  const enfNova = grades.length ? enf.get(grades[0].id) : { cam: 1, mult: 1 };
+  const parteExiste = (g, c) => Object.assign({ tipo: 'existe', gradeId: g.id, nome: g.nome, tams: g.tamanhos || {}, c }, enf.get(g.id));
   // A grade nova para `r`; se ela já existe com aqueles tamanhos, é a existente.
   const memo = new Map();
   const parteNova = r => {
     const mk = _DEM_TAMANHOS.map(k => r[k] || 0).join(',');
-    if (!memo.has(mk)) memo.set(mk, _demGradeNovaQueCobre(r, limite));
+    if (!memo.has(mk)) memo.set(mk, _demGradeNovaQueCobre(r, limite, enfNova.cam * enfNova.mult));
     const n = memo.get(mk);
     if (!n) return null;
-    const ig = grades.find(g => _demMesmosTamanhos(g.tamanhos || {}, n.tams));
-    return ig ? parteExiste(ig, n.c) : { tipo: 'sugerida', nome: _demNomeGrade(n.tams, sku), tams: n.tams, c: n.c };
+    const ig = grades.find(g => _demMesmosTamanhos(g.tamanhos || {}, n.tams)
+      && enf.get(g.id).cam === enfNova.cam && enf.get(g.id).mult === enfNova.mult);
+    return ig ? parteExiste(ig, n.c)
+      : Object.assign({ tipo: 'sugerida', nome: _demNomeGrade(n.tams, sku), tams: n.tams, c: n.c }, enfNova);
   };
   const somar = partes => {
     // A mesma grade duas vezes é uma parte só, com as camadas somadas.
@@ -30212,17 +30281,17 @@ function _demCombinacoes(gr) {
     partes = Array.from(por.values());
     if (!partes.length) return;
     const prod = {};
-    partes.forEach(p => _DEM_TAMANHOS.forEach(k => { const x = (p.tams[k] || 0) * p.c; if (x > 0) prod[k] = (prod[k] || 0) + x; }));
+    partes.forEach(p => { const u = _demRende(p); Object.keys(u).forEach(k => { prod[k] = (prod[k] || 0) + u[k] * p.c; }); });
     if (Object.keys(q).some(k => (prod[k] || 0) < q[k])) return;   // não completa
     const chave = partes.map(p => (p.gradeId || p.nome) + '×' + p.c).sort().join('+');
     if (vistas.has(chave)) return;
     vistas.add(chave);
     const sobra = Object.keys(prod).reduce((s, k) => s + prod[k] - (q[k] || 0), 0);
-    lista.push({ partes, prod, sobra, camadas: partes.reduce((s, p) => s + p.c, 0),
+    lista.push({ partes, prod, sobra, camadas: partes.reduce((s, p) => s + p.c * (p.cam || 1), 0),
       novas: partes.filter(p => p.tipo === 'sugerida').length });
   };
   grades.forEach((g, i) => {
-    const t = g.tamanhos || {};
+    const t = _demRende(parteExiste(g, 1));   // o que um enfesto da grade rende
     const cobre = _demCamadasParaCobrir(t, q);
     if (cobre) somar([parteExiste(g, cobre)]);                                   // 1
     const ate = cobre ? cobre - 1 : Math.max(0, ...Object.keys(q).map(k => (t[k] > 0 ? Math.floor(q[k] / t[k]) : 0)));
@@ -30232,7 +30301,7 @@ function _demCombinacoes(gr) {
       grades.forEach((g2, j) => {                                                 // 2
         if (j <= i && cobre) return;
         if (j === i) return;
-        const c2 = _demCamadasParaCobrir(g2.tamanhos || {}, r);
+        const c2 = _demCamadasParaCobrir(_demRende(parteExiste(g2, 1)), r);
         if (c2) somar([parteExiste(g, c), parteExiste(g2, c2)]);
       });
       somar([parteExiste(g, c), parteNova(r)]);                                  // 3
@@ -30242,8 +30311,13 @@ function _demCombinacoes(gr) {
   return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas);
 }
 
+// "3x de 36 camadas" (enfesto cheio) ou "× 12 camadas" (pano sem limite).
+function _demVezesTexto(p) {
+  return (p.cam || 1) > 1 ? `${p.c}x de ${p.cam} camadas` : `× ${p.c} camadas`;
+}
+
 function _demCombTexto(cb) {
-  return cb.partes.map(p => `${p.nome}${p.tipo === 'sugerida' ? ' (nova)' : ''} × ${p.c}`).join(' + ');
+  return cb.partes.map(p => `${p.nome}${p.tipo === 'sugerida' ? ' (nova)' : ''} ${_demVezesTexto(p)}`).join(' + ');
 }
 
 /* APROVAR UMA COMBINAÇÃO: cada parte vira um planejamento. O formulário abre
@@ -30267,7 +30341,8 @@ async function aprovarAgrupamento(chave, idx) {
         : `Pedido: ${_demTamTexto(gr.q)}\n`)
     + `\nCombinação: ${_demCombTexto(cb)}\nProduz: ${_demTamTexto(cb.prod)}`
     + (cb.sobra ? ` (${cb.sobra} peças a mais)` : '')
-    + `\n\n${cb.partes.length > 1 ? `São ${cb.partes.length} planejamentos: o formulário abre um de cada vez.` : 'O formulário do planejamento abre preenchido.'}`
+    + `\n\n${cb.partes.length > 1 ? `São ${cb.partes.length} grades: o formulário abre uma de cada vez.` : 'O formulário do planejamento abre preenchido.'}`
+    + (cb.partes.some(p => (p.cam || 1) > 1 && p.c > 1) ? ` A grade de 2x ou mais é salva uma vez e repetida: um planejamento por enfesto cheio.` : '')
     + ` Ao salvar o primeiro, estas demandas saem do relatório.`
     + `\n\nO planejamento fica aguardando a aprovação do admin antes de entrar na lista.`)) return;
   const baseGradeId = ((cb.partes.find(p => p.tipo === 'existe') || {}).gradeId) || ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '');
@@ -30280,8 +30355,10 @@ async function aprovarAgrupamento(chave, idx) {
 // Abre o formulário do planejamento com a parte `ag.parte` da combinação.
 function _demAbrirParte(ag) {
   const p = ag.partes[ag.parte];
+  const porEnfesto = (p.cam || 1) > 1;
+  ag.vezes = porEnfesto ? p.c : 1;   // salvar repete o planejamento (ver salvarPlanejamento)
   ag.sugerida = p.tipo === 'sugerida'
-    ? { nome: p.nome, tamanhos: Object.assign({}, p.tams), camadas: p.c, linha: ag.linha, baseGradeId: ag.baseGradeId }
+    ? { nome: p.nome, tamanhos: Object.assign({}, p.tams), camadas: porEnfesto ? p.cam : p.c, linha: ag.linha, baseGradeId: ag.baseGradeId }
     : null;
   osEditId = null;
   _osPlanAbrir = true;
@@ -30309,8 +30386,9 @@ function _demAbrirParte(ag) {
       try { atualizarCalculosEnfesto(); } catch (e) { /* ignora */ }
     }
     const cam = document.getElementById('f-enf-camadas');
-    if (cam) { cam.value = p.c; calcularAlvoDeCamadas(); }
-    const de = ag.partes.length > 1 ? ` (parte ${ag.parte + 1} de ${ag.partes.length})` : '';
+    if (cam) { cam.value = porEnfesto ? p.cam : p.c; calcularAlvoDeCamadas(); }
+    const de = (ag.partes.length > 1 ? ` (parte ${ag.parte + 1} de ${ag.partes.length})` : '')
+      + (ag.vezes > 1 ? ` — salvo, vira ${ag.vezes} planejamentos de ${p.cam} camadas` : '');
     toast(p.tipo === 'existe' ? `Confira e salve o planejamento${de}`
       : `Grade nova ${p.nome}${de}: salve e use "Cadastrar grade sugerida" no planejamento`, 'ok');
   }, 80);
@@ -30407,8 +30485,9 @@ function renderAgrupamentoDemanda() {
       <button type="button" class="btn small ${i ? '' : 'primary '}admin-only" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
         title="Monta o planejamento com esta solução (um por grade); ele aguarda a aprovação do admin">▶ Planejar</button>
       <div>
-        ${i ? '<span style="font-size:11px;color:var(--ink-2);">Sugestão de grade nova (exata):</span><br>' : ''}
-        ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}
+        ${i ? `<span style="font-size:11px;color:var(--ink-2);">Sugestão de grade nova (${cb.sobra ? 'menos peças a mais' : 'exata'}):</span><br>` : ''}
+        ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} `
+          + `<span title="${(p.cam || 1) > 1 ? `${p.c} ${p.c === 1 ? 'enfesto cheio' : 'enfestos cheios'} de ${p.cam} camadas — o limite do tecido` : 'Tecido sem limite de camadas conhecido'}">${esc(_demVezesTexto(p))}</span>`).join(' <b>+</b> ')}
         <br><span style="font-size:11px;color:var(--ink-2);">produz ${_demTamTexto(cb.prod)}</span>
         ${cb.sobra ? `<span style="font-size:11px;color:var(--alert);"> · ${cb.sobra} ${cb.sobra === 1 ? 'peça' : 'peças'} a mais</span>`
                    : `<span style="font-size:11px;color:#2e9d5b;"> · exata</span>`}

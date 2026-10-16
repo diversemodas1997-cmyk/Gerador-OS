@@ -1040,7 +1040,7 @@
            (so admin) abre o planejamento ja preenchido. -->
       <div class="card">
         <div class="card-title">Agrupamento em grades · Relatório de demanda</div>
-        <div style="font-size:12px;color:var(--ink-2);margin:-4px 0 8px;">O que já está em produção (OS que ainda não chegaram ao Estoque; planejamento sem OS não conta) do mesmo SKU, cor e tamanho é abatido do pedido; para o que sobra, o programa mostra a solução mais eficiente com grades já cadastradas (menos peças a mais, menos planejamentos, menos camadas). Grade nova só aparece quando nenhuma cadastrada completa a demanda, ou como sugestão quando acerta a demanda em cheio.</div>
+        <div style="font-size:12px;color:var(--ink-2);margin:-4px 0 8px;">O que já está em produção (OS que ainda não chegaram ao Estoque; planejamento sem OS não conta) do mesmo SKU, cor e tamanho é abatido do pedido; para o que sobra, o programa mostra a solução mais eficiente com grades já cadastradas (menos peças a mais, menos planejamentos, menos camadas). Cada grade vai em enfestos cheios (o limite de camadas do tecido), repetida 2x, 3x… quando precisa de mais. Grade nova só aparece quando nenhuma cadastrada completa a demanda, ou como sugestão quando deixa menos peças a mais.</div>
         <div id="plan-demanda-agrup"></div>
       </div>
     </section>
@@ -1167,6 +1167,9 @@
                 <option value="puxada">Produção puxada</option>
               </select>
             </div>
+            <!-- ENFESTO CHEIO (16/10/2026): so no planejamento, quando as camadas
+                 ficam abaixo do limite do tecido. Montado em atualizarCalculosEnfesto. -->
+            <div id="f-enf-orienta" class="hidden plan-only" style="margin-top:6px;padding:5px 8px;background:var(--bg);border-left:3px solid var(--accent, #2a6fd0);font-size:11px;border-radius:2px;"></div>
             <div id="f-enf-alerta" class="hidden" style="margin-top:6px; padding: 5px 8px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 11px; border-radius: 2px;"></div>
             <div id="f-enf-calculo" class="enf-calculo-compacto">
               <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
