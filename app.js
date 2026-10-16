@@ -29593,6 +29593,7 @@ async function salvarPlanejamento() {
       const novo = lista[lista.length - 1];
       const tirar = new Set(ag.ids);
       novo.demanda = { ids: ag.ids.slice(), pedidas: ag.pedidas, sugerida: ag.sugerida || null,
+        lancadas: ag.lancadas || ag.pedidas, abatidas: ag.abatidas || {},
         aprovadoEm: new Date().toISOString(), aprovadoPor: _obsQuemSou() };
       STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
       await saveState('osDemandas');
@@ -29917,9 +29918,57 @@ async function excluirDemanda(id) {
   renderRelatorioDemanda();
 }
 
+/* ---- o trabalho em progresso abate a demanda ----
+   (16/10/2026, Junior: "a demanda registrada seja abatida no planejamento
+   quando a quantidade de produto de mesmo SKU, cor e tamanho esteja prevista
+   como trabalho em progresso — o que está faltando no estoque será reposto
+   pelos produtos que estão sendo acabados")
+
+   A demanda diz o que FALTA NO ESTOQUE. O que já está a caminho dele não
+   precisa de produção nova. Conta como a caminho:
+     - toda OS que ainda não chegou ao Estoque nem foi Cancelada (Parado e
+       Não iniciado contam: a OS existe e vai ser acabada).
+   O planejamento sem número de OS NÃO abate (Junior: "os planejamentos sem OS
+   não abate"): ainda não é produção, só intenção.
+   O produto é o mesmo quando o SKU do desenho (que traz a cor, "CM.LISA-PRE")
+   é o mesmo; desenho sem SKU casa só com ele mesmo. A quantidade por tamanho é
+   a da folha (grade × camadas × multiplicador, a mesma de produtosOS). */
+const _DEM_FORA_DO_WIP = new Set(['estoque', 'cancelado']);
+
+function _demChaveProduto(desenhoId) {
+  const d = _demDesenho(desenhoId);
+  const sku = _normSku((d && d.skuLinha) || '');
+  return sku ? 'sku:' + sku : 'id:' + (desenhoId || '');
+}
+
+// Por produto: as peças a caminho por tamanho e de onde vêm.
+function _demEmProcesso() {
+  const mapa = new Map();
+  const somar = (o, rotulo) => {
+    if (!o || !o.desenhoId) return;
+    let t;
+    try { t = totaisPorTamanhoTomOS(o); } catch (e) { return; }
+    const q = {};
+    (t.tamanhos || []).forEach(k => { const n = Math.round(t.colTotal(k)) || 0; if (n > 0) q[k] = n; });
+    if (!Object.keys(q).length) return;
+    const chave = _demChaveProduto(o.desenhoId);
+    if (!mapa.has(chave)) mapa.set(chave, { q: {}, fontes: [] });
+    const e = mapa.get(chave);
+    Object.keys(q).forEach(k => { e.q[k] = (e.q[k] || 0) + q[k]; });
+    e.fontes.push({ rotulo, q });
+  };
+  (STATE.ordens || []).forEach(o => {
+    if (_DEM_FORA_DO_WIP.has(_statusOS(o))) return;
+    const st = (STATUS_OS.find(x => x.k === _statusOS(o)) || {}).rotulo || '';
+    somar(o, `OS ${o.os || '?'}${st ? ' (' + st + ')' : ''}`);
+  });
+  return mapa;
+}
+
 /* ---- o agrupamento ---- */
 // As demandas somadas por desenho e linha (adulto/infantil): uma OS é de uma
-// linha só (ver validarAntesDeSalvar).
+// linha só (ver validarAntesDeSalvar). `pedido` é o que foi lançado; `q` é o
+// que sobra para produzir depois de abatido o trabalho em progresso (`wip`).
 function _demGrupos() {
   const mapa = new Map();
   _demLista().forEach(p => {
@@ -29934,7 +29983,25 @@ function _demGrupos() {
       if (gr.ids.indexOf(p.id) < 0) gr.ids.push(p.id);
     });
   });
-  return Array.from(mapa.values()).map(gr => Object.assign(gr, _demMelhorGrade(gr)));
+  // O que está a caminho é repartido entre os grupos do mesmo produto, na
+  // ordem da lista: a mesma peça não abate duas demandas.
+  const wip = _demEmProcesso();
+  const resta = new Map(Array.from(wip.entries()).map(([k, e]) => [k, Object.assign({}, e.q)]));
+  return Array.from(mapa.values()).map(gr => {
+    const chave = _demChaveProduto(gr.desenhoId);
+    const r = resta.get(chave) || {};
+    gr.pedido = gr.q;
+    gr.wip = {};
+    gr.q = {};
+    Object.keys(gr.pedido).forEach(k => {
+      const abate = Math.min(gr.pedido[k], r[k] || 0);
+      if (abate > 0) { gr.wip[k] = abate; r[k] -= abate; }
+      if (gr.pedido[k] - abate > 0) gr.q[k] = gr.pedido[k] - abate;
+    });
+    gr.fontesWip = Object.keys(gr.wip).length ? ((wip.get(chave) || {}).fontes || []) : [];
+    gr.coberta = !Object.keys(gr.q).length;
+    return Object.assign(gr, gr.coberta ? { existe: null, sugerida: null } : _demMelhorGrade(gr));
+  });
 }
 
 // Quanto uma grade com `c` camadas erra o pedido `q`: peças a mais + a menos.
@@ -30010,11 +30077,14 @@ async function aprovarAgrupamento(chave) {
   if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
   const gr = _demGrupos().find(x => x.chave === chave);
   if (!gr) return toast('Agrupamento não encontrado', 'err');
+  if (gr.coberta) return encerrarDemandaCoberta(chave);
   const d = _demDesenho(gr.desenhoId);
   const ex = gr.existe, su = gr.sugerida;
   const g = ex && ex.g, c = ex && ex.c;
   if (!confirm(`Aprovar a demanda e montar o planejamento?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
-    + `Pedido: ${_demTamTexto(gr.q)}\n`
+    + (Object.keys(gr.wip).length
+        ? `Lançado: ${_demTamTexto(gr.pedido)}\nEm progresso (abatido): ${_demTamTexto(gr.wip)}\nA produzir: ${_demTamTexto(gr.q)}\n`
+        : `Pedido: ${_demTamTexto(gr.q)}\n`)
     + (ex ? `Grade: ${g.nome} × ${c} camadas → ${_demProduzTexto(g.tamanhos || {}, c)}`
           + (ex.erro ? `\n(diferença de ${ex.erro} peças do pedido)` : '')
           : `Ainda não há grade cadastrada para este SKU: o planejamento sai sem grade.`)
@@ -30022,6 +30092,7 @@ async function aprovarAgrupamento(chave) {
           + `"Cadastrar grade sugerida", já preenchido.` : '')
     + `\n\nO formulário do planejamento abre preenchido; ao salvar, estas demandas saem do relatório.`)) return;
   _demAgrupando = { ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q),
+    lancadas: Object.assign({}, gr.pedido), abatidas: Object.assign({}, gr.wip),
     sugerida: su ? { nome: su.nome, tamanhos: Object.assign({}, su.tams), camadas: su.c,
       linha: gr.linha, baseGradeId: g ? g.id : ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '') } : null };
   osEditId = null;
@@ -30046,6 +30117,28 @@ async function aprovarAgrupamento(chave) {
     toast(g ? 'Confira e salve o planejamento'
             : 'Sem grade cadastrada: salve o planejamento e use "Cadastrar grade sugerida" nele', 'ok');
   }, 80);
+}
+
+// Toda a demanda do agrupamento já está a caminho do estoque: ela sai do
+// relatório sem planejamento. Se ficasse, voltaria a pedir produção no dia em
+// que aquelas OS chegassem ao Estoque — e o estoque já estaria reposto.
+async function encerrarDemandaCoberta(chave) {
+  if (_recusarSomenteLeitura('encerrar demanda')) return;
+  if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
+  const gr = _demGrupos().find(x => x.chave === chave);
+  if (!gr) return toast('Agrupamento não encontrado', 'err');
+  if (!gr.coberta) return toast('Ainda falta produzir parte desta demanda', 'err');
+  const d = _demDesenho(gr.desenhoId);
+  if (!confirm(`Encerrar a demanda sem nova produção?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
+    + `Lançado: ${_demTamTexto(gr.pedido)}\n\nTudo isso já está em progresso:\n`
+    + gr.fontesWip.map(f => `  ${f.rotulo}: ${_demTamTexto(f.q)}`).join('\n'))) return;
+  const tirar = new Set(gr.ids);
+  STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
+  await saveState('osDemandas');
+  atualizarContagensNav();
+  toast('Demanda encerrada: o trabalho em progresso repõe o estoque', 'ok');
+  renderAgrupamentoDemanda();
+  renderRelatorioDemanda();
 }
 
 function renderRelatorioDemanda() {
@@ -30102,12 +30195,19 @@ function renderAgrupamentoDemanda() {
   const grupos = _demGrupos();
   boxAg.innerHTML = `
     <table class="table">
-      <thead><tr><th class="col-actions">Ações</th><th>Desenho</th><th>Pedido somado</th><th>Grade existente</th><th>Grade sugerida (ainda não existe)</th></tr></thead>
+      <thead><tr><th class="col-actions">Ações</th><th>Desenho</th><th>Pedido somado</th><th>Em progresso (abatido)</th><th>A produzir</th><th>Grade existente</th><th>Grade sugerida (ainda não existe)</th></tr></thead>
       <tbody>${grupos.map(gr => {
         const d = _demDesenho(gr.desenhoId);
         const ex = gr.existe;
         const su = gr.sugerida;
-        const celEx = ex
+        const temWip = Object.keys(gr.wip).length > 0;
+        const celWip = temWip
+          ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => esc(f.rotulo)).join('<br>')}</span>`
+          : `<span style="color:var(--ink-3);">—</span>`;
+        const celProd = gr.coberta
+          ? `<span style="color:#2e9d5b;"><b>Nada</b>: o trabalho em progresso repõe o estoque</span>`
+          : _demTamTexto(gr.q);
+        const celEx = gr.coberta ? `<span style="color:var(--ink-3);">—</span>` : ex
           ? `<b>${esc(ex.g.nome)}</b> × ${ex.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(ex.g.tamanhos || {}, ex.c)}</span>`
             + (ex.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${ex.erro} peças do pedido</span>`
                        : `<br><span style="font-size:11px;color:#2e9d5b;">atende o pedido em cheio</span>`)
@@ -30119,10 +30219,14 @@ function renderAgrupamentoDemanda() {
           : `<span style="color:var(--ink-3);">—</span>`;
         return `<tr>
           <td class="col-actions" style="white-space:nowrap;">
-            <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')" title="Abre o planejamento com o desenho, a grade e as camadas">✔ Aprovar</button>
+            ${gr.coberta
+              ? `<button type="button" class="btn small admin-estrito" onclick="encerrarDemandaCoberta('${esc(gr.chave)}')" title="Tira a demanda do relatório: as OS em andamento já repõem o estoque">✔ Encerrar</button>`
+              : `<button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')" title="Abre o planejamento com o desenho, a grade e as camadas do que sobra a produzir">✔ Aprovar</button>`}
           </td>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
-          <td>${_demTamTexto(gr.q)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
+          <td>${_demTamTexto(gr.pedido)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
+          <td>${celWip}</td>
+          <td>${celProd}</td>
           <td>${celEx}</td>
           <td>${celSu}</td>
         </tr>`;
@@ -30134,6 +30238,7 @@ window.editarDemanda = editarDemanda;
 window.salvarDemanda = salvarDemanda;
 window.excluirDemanda = excluirDemanda;
 window.aprovarAgrupamento = aprovarAgrupamento;
+window.encerrarDemandaCoberta = encerrarDemandaCoberta;
 window._demFiltrarDesenhos = _demFiltrarDesenhos;
 window._demLimparForm = _demLimparForm;
 window.novoPlanejamento = novoPlanejamento;
