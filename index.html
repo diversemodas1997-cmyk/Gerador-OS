@@ -478,16 +478,54 @@
     </section>
 
     <!-- RELATORIO DE DEMANDA (16/10/2026, Junior): o degrau ANTES do
-         planejamento. Mesma lista e mesmo formulario do Planejamento de
-         producao; "+ Nova demanda" abre a Nova OS em modo demanda e "Aprovar"
-         (so admin) manda a demanda para o planejamento, ainda sem numero. -->
+         planejamento. Quem pede reposicao preenche so o desenho tecnico (SKU
+         e cor), o tamanho e a quantidade — sem grade, fase nem camada. O
+         agrupamento soma as demandas do mesmo desenho e acha a grade; o
+         "Aprovar" dele (so admin) abre o planejamento ja preenchido. -->
     <section class="page hidden" data-page="relatorio-demanda">
       <div class="page-header">
-        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição de cada tipo de produto, preenchidas como uma OS. Sem número e sem reservar material: cada demanda aprovada pelo admin vai para o Planejamento de produção.</div></div>
-        <div class="actions admin-only"><button class="btn primary" onclick="novaDemanda()">+ Nova demanda</button></div>
+        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição: escolha o desenho técnico (SKU e cor), o tamanho e a quantidade. O programa soma as demandas do mesmo desenho e mostra a grade cadastrada que melhor as atende — ou sugere uma que ainda não existe. Aprovada pelo admin, a demanda vira um planejamento de produção.</div></div>
+      </div>
+      <div class="card admin-only" id="dem-form">
+        <div class="card-title" id="dem-form-titulo">Nova demanda</div>
+        <input type="hidden" id="dem-id">
+        <div class="form-grid cols-3" style="gap:8px;align-items:end;">
+          <div class="field">
+            <label>Desenho técnico (SKU e cor)</label>
+            <input type="search" id="dem-desenho-busca" placeholder="Buscar: código, descrição, cor ou SKU…" autocomplete="off" spellcheck="false" oninput="_demFiltrarDesenhos()" style="margin-bottom:6px;">
+            <select id="dem-desenho"></select>
+          </div>
+          <div class="field">
+            <label>Tamanho</label>
+            <select id="dem-tam">
+              <option value="">— selecione —</option>
+              <optgroup label="Adulto">
+                <option value="p">P</option><option value="m">M</option><option value="g">G</option><option value="gg">GG</option>
+                <option value="g1">G1</option><option value="g2">G2</option><option value="g3">G3</option>
+              </optgroup>
+              <optgroup label="Infantil">
+                <option value="t2">2</option><option value="t4">4</option><option value="t6">6</option><option value="t8">8</option>
+                <option value="t10">10</option><option value="t12">12</option><option value="t14">14</option><option value="t16">16</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="field">
+            <label>Quantidade (peças)</label>
+            <input type="number" id="dem-qtd" min="1" placeholder="Ex.: 40">
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+          <button type="button" class="btn hidden" id="dem-cancelar" onclick="_demLimparForm()">Cancelar edição</button>
+          <button type="button" class="btn primary" onclick="salvarDemanda()">Salvar demanda</button>
+        </div>
       </div>
       <div class="card">
+        <div class="card-title">Demandas</div>
         <div id="rel-demanda-lista"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Agrupamento em grades</div>
+        <div id="rel-demanda-agrup"></div>
       </div>
     </section>
 
@@ -999,14 +1037,13 @@
     <!-- ================= NOVA OS ================= -->
     <section class="page hidden" data-page="nova-os">
       <div class="page-header">
-        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only dem-nao">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div><div class="desc plan-only dem-only">Relatório de demanda: a reposição fica sem número e sem reservar material; aprovada pelo admin, vai para o Planejamento de produção.</div></div>
+        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div></div>
         <div class="actions">
           <button class="btn" onclick="cancelarFormOS()">Cancelar</button>
           <button class="btn primary admin-only os-only" onclick="salvarOS()">Salvar OS</button>
           <button class="btn admin-only os-only" onclick="salvarEImprimirEtiquetas()" title="Salva a OS e abre as etiquetas em PDF, com a página de 100 × 50 mm.">Imprimir Etiquetas</button>
           <button class="btn accent admin-only os-only" onclick="salvarEImprimir()">Salvar e Gerar PDF</button>
-          <button class="btn primary admin-only plan-only dem-nao" onclick="salvarPlanejamento()">Salvar planejamento</button>
-          <button class="btn primary admin-only plan-only dem-only" onclick="salvarPlanejamento()">Salvar demanda</button>
+          <button class="btn primary admin-only plan-only" onclick="salvarPlanejamento()">Salvar planejamento</button>
         </div>
       </div>
 

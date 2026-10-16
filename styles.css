@@ -4836,16 +4836,9 @@ section[data-page="nova-os"].modo-plan .os-only { display: none !important; }
 .admin-estrito { display: none !important; }
 body.is-admin .admin-estrito { display: revert !important; }
 body.pode-os [data-page="planejamento-producao"] .admin-only { display: revert !important; }
-/* O RELATÓRIO DE DEMANDA (16/10/2026) é o mesmo formulário em modo planejamento
-   com a classe modo-dem: troca a descrição e o botão de salvar (dem-only /
-   dem-nao), e a lista e o formulário abrem para a área Relatório de demanda. */
-section[data-page="nova-os"]:not(.modo-dem) .dem-only { display: none !important; }
-section[data-page="nova-os"].modo-dem .dem-nao { display: none !important; }
-/* E por cima do revert do pode-planejamento, que é mais específico. */
-html body section[data-page="nova-os"].modo-plan:not(.modo-dem) .admin-only.dem-only,
-html body section[data-page="nova-os"].modo-plan.modo-dem .admin-only.dem-nao { display: none !important; }
-body.pode-demanda [data-page="relatorio-demanda"] .admin-only,
-body.pode-demanda section[data-page="nova-os"].modo-plan.modo-dem .admin-only:not(.os-only) { display: revert !important; }
+/* O RELATÓRIO DE DEMANDA (16/10/2026): o formulário curto e os botões da lista
+   abrem para a área Relatório de demanda. Aprovar segue admin-estrito. */
+body.pode-demanda [data-page="relatorio-demanda"] .admin-only { display: revert !important; }
 /* A ÁREA PRÓPRIA DO PLANEJAMENTO (09/10/2026, Junior: "crie uma opção de acesso
    ao usuário para planejamento de OS"). Libera a lista e o formulário só em
    modo planejamento — os botões de OS de verdade (os-only) seguem fechados. */

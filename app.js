@@ -4102,7 +4102,7 @@ function goto(page) {
   // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
   // O formulário em modo planejamento abre também para a área Planejamento de produção.
   if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')
-      && !(_osPlanAbrir && (temAcesso('planejamento') || (_osDemAbrir && temAcesso('demanda'))))) {
+      && !(_osPlanAbrir && temAcesso('planejamento'))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
@@ -4209,9 +4209,7 @@ function goto(page) {
     // Modo planejamento só quando quem abriu pediu (novoPlanejamento,
     // editarPlanejamento); qualquer outro caminho até aqui é a Nova OS.
     _osPlanModo = _osPlanAbrir;
-    _osDemModo = _osPlanAbrir && _osDemAbrir;
     _osPlanAbrir = false;
-    _osDemAbrir = false;
     initOSForm();
   }
   if (page === 'planejamento-producao') renderPlanejamentoProducao();
@@ -29351,27 +29349,19 @@ async function _salvarOSConfirmada(data) {
    onde veio em `planejamento` (quem planejou, quando, quem aprovou). */
 let _osPlanModo = false;   // o formulário aberto agora é de planejamento
 let _osPlanAbrir = false;  // pedido de modo planejamento para o próximo goto('nova-os')
-/* O RELATÓRIO DE DEMANDA (16/10/2026, Junior) usa o MESMO formulário: é o modo
-   planejamento com destino STATE.osDemandas. _osDemModo só vale com _osPlanModo
-   ligado. Ver RELATÓRIO DE DEMANDA, logo abaixo da lista do planejamento. */
-let _osDemModo = false;    // o formulário aberto agora é de demanda
-let _osDemAbrir = false;   // pedido de modo demanda para o próximo goto('nova-os')
+/* As demandas que o planejamento aberto agora vai substituir (ver RELATÓRIO DE
+   DEMANDA, "Aprovar" de um agrupamento). Vazio = planejamento comum. */
+let _demAgrupando = null;
 
 function _planLista() {
   if (!Array.isArray(STATE.osPlanejadas)) STATE.osPlanejadas = [];
   return STATE.osPlanejadas;
 }
 
-function _demLista() {
-  if (!Array.isArray(STATE.osDemandas)) STATE.osDemandas = [];
-  return STATE.osDemandas;
-}
-
 // Liga ou desliga o modo planejamento no formulário (chamada por initOSForm).
 function _aplicarModoPlanForm() {
   const sec = document.querySelector('section.page[data-page="nova-os"]');
   if (sec) sec.classList.toggle('modo-plan', !!_osPlanModo);
-  if (sec) sec.classList.toggle('modo-dem', !!(_osPlanModo && _osDemModo));
   const campoOS = document.getElementById('f-os');
   if (campoOS) {
     campoOS.disabled = !!_osPlanModo;
@@ -29381,13 +29371,14 @@ function _aplicarModoPlanForm() {
   if (_osPlanModo) {
     _osNumeroAuto = '';
     // Editar um planejamento põe o título dele logo depois (_abrirOSNoForm).
-    if (!osEditId) document.getElementById('os-form-title').textContent =
-      _osDemModo ? 'Nova demanda de reposição' : 'Novo planejamento de produção';
+    if (!osEditId) document.getElementById('os-form-title').textContent = 'Novo planejamento de produção';
   }
 }
 
 function cancelarFormOS() {
-  goto(!_osPlanModo ? 'home' : _osDemModo ? 'relatorio-demanda' : 'planejamento-producao');
+  const voltar = !_osPlanModo ? 'home' : _demAgrupando ? 'relatorio-demanda' : 'planejamento-producao';
+  _demAgrupando = null;
+  goto(voltar);
 }
 
 // Quem planeja: o admin, a área Planejamento de produção ou a de Ordens de
@@ -29402,6 +29393,7 @@ function exigirPlanejamento() {
 
 function novoPlanejamento() {
   if (!exigirPlanejamento()) return;
+  _demAgrupando = null;
   osEditId = null;
   _osPlanAbrir = true;
   goto('nova-os');
@@ -29409,6 +29401,7 @@ function novoPlanejamento() {
 
 function editarPlanejamento(id) {
   if (!exigirPlanejamento()) return;
+  _demAgrupando = null;
   const p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
   _osPlanAbrir = true;
@@ -29417,7 +29410,7 @@ function editarPlanejamento(id) {
 
 async function salvarPlanejamento() {
   if (!_osPlanModo) return;
-  if (!(_osDemModo ? exigirDemanda() : exigirPlanejamento())) return;
+  if (!exigirPlanejamento()) return;
   const data = coletaOS();
   data.os = '';
   if (!data.desenhoId && !data.codigo && !data.gradeId) {
@@ -29428,9 +29421,8 @@ async function salvarPlanejamento() {
   // a falta de tecido: o pano de um planejamento ainda pode ser comprado. Ela é
   // conferida na aprovação, que é quando o material passa a ser reservado.
   if (!validarAntesDeSalvar(data, { semFaltaDeTecido: true })) { definirModoFormOS(false); return; }
-  const dem = !!_osDemModo;
   await _comTravaDeSalvar(async () => {
-    const lista = dem ? _demLista() : _planLista();
+    const lista = _planLista();
     const i = lista.findIndex(p => p.id === data.id);
     if (i >= 0) {
       const ant = lista[i];
@@ -29442,12 +29434,24 @@ async function salvarPlanejamento() {
       // os mesmos que a OS terá ao ser aprovada.
       lista.push(_aplicarTonsPadrao(data));
     }
-    await saveState(dem ? 'osDemandas' : 'osPlanejadas');
+    // Planejamento nascido de um agrupamento do Relatório de demanda: as
+    // demandas que ele cobre saem de lá, e ele guarda de onde veio.
+    const ag = i < 0 ? _demAgrupando : null;
+    _demAgrupando = null;
+    if (ag) {
+      const novo = lista[lista.length - 1];
+      const tirar = new Set(ag.ids);
+      novo.demanda = { ids: ag.ids.slice(), pedidas: ag.pedidas,
+        aprovadoEm: new Date().toISOString(), aprovadoPor: _obsQuemSou() };
+      STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
+      await saveState('osDemandas');
+    }
+    await saveState('osPlanejadas');
     osEditId = null;
     atualizarContagensNav();
-    if (dem) {
-      toast(i >= 0 ? 'Demanda atualizada' : 'Demanda salva — vai para o planejamento quando for aprovada', 'ok');
-      goto('relatorio-demanda');
+    if (ag) {
+      toast('Demanda aprovada: está no Planejamento de produção', 'ok');
+      goto('planejamento-producao');
       return;
     }
     toast(i >= 0 ? 'Planejamento atualizado' : 'Planejamento salvo — sem número até ser aprovado', 'ok');
@@ -29577,22 +29581,32 @@ function _renderListaPlanOS(box, lista, cfg) {
 /* ========================================================= */
 /*                  RELATÓRIO DE DEMANDA                     */
 /* ========================================================= */
-/* (16/10/2026, Junior: "O relatório de demanda deve parecer com o planejamento
-   de OS, pois é por lá que será informada as quantidades que precisam de
-   reposição de cada tipo de produto... a janela deve ser exatamente a mesma do
-   planejamento de OS. Cada OS cadastrada no relatório de demanda deve ter botão
-   de aprovação. Quando aprovado ele migra para o planejamento de produção e
-   permanece lá até que seja aprovado e receba número de OS.")
+/* (16/10/2026, Junior) O degrau ANTES do planejamento: demanda → planejamento
+   → OS. "As únicas informações a serem preenchidas são SKU do desenho técnico
+   com cor e tamanho único": quem pede reposição não precisa saber de grade,
+   fase nem camada. Cada demanda é UM desenho (que já traz o SKU e a cor), UM
+   tamanho e a quantidade. Mora em STATE.osDemandas:
 
-   É o degrau ANTES do planejamento: demanda → planejamento → OS. O formulário
-   é o da Nova OS em modo planejamento com _osDemModo ligado, e a gravação vai
-   para STATE.osDemandas. Quem cria e edita é o admin ou quem recebeu a área Relatório de demanda
-   (exigirDemanda).
+     { id, desenhoId, tam ('p'…'g3', 't2'…'t16'), qtd, criadoEm, criadoPor }
 
-   APROVAR (só o admin, como no planejamento) move a demanda inteira para
-   STATE.osPlanejadas, sem número e sem reservar material — isso continua sendo
-   a aprovação do planejamento. O planejamento guarda de onde veio em `demanda`
-   (quem pediu, quando, quem aprovou). */
+   O AGRUPAMENTO é quem fala de grade: as demandas do mesmo desenho (e da mesma
+   linha, adulto ou infantil) somam-se tamanho a tamanho, e o programa procura,
+   entre as grades cadastradas do SKU do desenho, a que com algum número de
+   camadas chega mais perto do pedido. Quando nenhuma acerta em cheio, sugere
+   também a grade que acertaria e ainda não existe.
+
+   APROVAR (só o admin) é por agrupamento: abre o formulário do planejamento já
+   com o desenho, a grade e as camadas. Salvo o planejamento, as demandas que ele
+   cobre saem daqui (ver salvarPlanejamento e _demAgrupando). */
+const _DEM_TAMANHOS = ['p','m','g','gg','g1','g2','g3','t2','t4','t6','t8','t10','t12','t14','t16'];
+const _DEM_TAM_LABEL = { p:'P', m:'M', g:'G', gg:'GG', g1:'G1', g2:'G2', g3:'G3', t2:'2', t4:'4', t6:'6', t8:'8', t10:'10', t12:'12', t14:'14', t16:'16' };
+const _DEM_INFANTIL = new Set(['t2','t4','t6','t8','t10','t12','t14','t16']);
+
+function _demLista() {
+  if (!Array.isArray(STATE.osDemandas)) STATE.osDemandas = [];
+  return STATE.osDemandas;
+}
+
 // Quem cadastra demanda: o admin ou a área Relatório de demanda. Aprovar não
 // passa por aqui.
 function exigirDemanda() {
@@ -29603,28 +29617,113 @@ function exigirDemanda() {
   return false;
 }
 
+// As quantidades por tamanho de uma demanda. A forma antiga (feita no
+// formulário da OS, antes de 16/10/2026) trazia grade e camadas.
+function _demQtds(d) {
+  const r = {};
+  if (d && d.tam) { r[d.tam] = Number(d.qtd) || 0; return r; }
+  const g = (d && d.grade) || {};
+  const c = Number(d && d.enfesto && d.enfesto.camadas) || 0;
+  _DEM_TAMANHOS.forEach(k => { if (g[k] > 0 && c > 0) r[k] = g[k] * c; });
+  return r;
+}
+
+function _demTamTexto(q) {
+  return _DEM_TAMANHOS.filter(k => q[k] > 0).map(k => `${_DEM_TAM_LABEL[k]}: ${q[k].toLocaleString('pt-BR')}`).join(' · ') || '—';
+}
+
+function _demDesenho(id) {
+  return (STATE.desenhos || []).find(x => x.id === id) || null;
+}
+
+/* ---- o formulário curto ---- */
+function _demFiltrarDesenhos() {
+  const sel = document.getElementById('dem-desenho');
+  if (!sel) return;
+  const termos = (document.getElementById('dem-desenho-busca')?.value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const todos = STATE.desenhos || [];
+  const escolhido = sel.value;
+  const casam = termos.length
+    ? todos.filter(d => { const alvo = _textoBuscaDesenho(d); return termos.every(t => alvo.includes(t)); })
+    : todos;
+  const lista = (escolhido && !casam.some(d => d.id === escolhido))
+    ? todos.filter(d => d.id === escolhido).concat(casam) : casam;
+  sel.innerHTML = `<option value="">— selecione —</option>`
+    + _desenhosAgrupados(lista).map(g =>
+        `<optgroup label="${esc(_rotuloGrupoDesenho(g))}">`
+        + g.itens.map(d => `<option value="${esc(d.id)}"${d.id === escolhido ? ' selected' : ''}>`
+            + `${esc(_rotuloDesenhoNoGrupo(d, g))}</option>`).join('')
+        + `</optgroup>`).join('');
+}
+
+function _demLimparForm() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('dem-id', ''); set('dem-desenho-busca', ''); set('dem-tam', ''); set('dem-qtd', '');
+  const sel = document.getElementById('dem-desenho');
+  if (sel) sel.value = '';
+  _demFiltrarDesenhos();
+  const t = document.getElementById('dem-form-titulo');
+  if (t) t.textContent = 'Nova demanda';
+  document.getElementById('dem-cancelar')?.classList.add('hidden');
+}
+
 function novaDemanda() {
   if (!exigirDemanda()) return;
-  osEditId = null;
-  _osPlanAbrir = true;
-  _osDemAbrir = true;
-  goto('nova-os');
+  _demLimparForm();
+  document.getElementById('dem-desenho-busca')?.focus();
 }
 
 function editarDemanda(id) {
   if (!exigirDemanda()) return;
   const p = _demLista().find(x => x.id === id);
   if (!p) return toast('Demanda não encontrada', 'err');
-  _osPlanAbrir = true;
-  _osDemAbrir = true;
-  _abrirOSNoForm(p, 'Editar demanda de reposição');
+  const q = _demQtds(p);
+  const tam = p.tam || Object.keys(q)[0] || '';
+  document.getElementById('dem-id').value = p.id;
+  document.getElementById('dem-desenho-busca').value = '';
+  document.getElementById('dem-desenho').value = p.desenhoId || '';
+  _demFiltrarDesenhos();
+  document.getElementById('dem-desenho').value = p.desenhoId || '';
+  document.getElementById('dem-tam').value = tam;
+  document.getElementById('dem-qtd').value = q[tam] || '';
+  document.getElementById('dem-form-titulo').textContent = 'Editar demanda';
+  document.getElementById('dem-cancelar')?.classList.remove('hidden');
+  document.getElementById('dem-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function salvarDemanda() {
+  if (!exigirDemanda()) return;
+  const id = document.getElementById('dem-id').value;
+  const desenhoId = document.getElementById('dem-desenho').value;
+  const tam = document.getElementById('dem-tam').value;
+  const qtd = parseInt(document.getElementById('dem-qtd').value, 10) || 0;
+  if (!desenhoId) return toast('Escolha o desenho técnico (SKU e cor)', 'err');
+  if (!_DEM_TAM_LABEL[tam]) return toast('Escolha o tamanho', 'err');
+  if (qtd <= 0) return toast('Informe a quantidade', 'err');
+  const lista = _demLista();
+  const i = id ? lista.findIndex(x => x.id === id) : -1;
+  if (i >= 0) {
+    const ant = lista[i];
+    lista[i] = { id: ant.id, desenhoId, tam, qtd,
+      criadoEm: ant.criadoEm || '', criadoPor: ant.criadoPor || '',
+      editadoEm: new Date().toISOString(), editadoPor: _obsQuemSou() };
+  } else {
+    lista.push({ id: uid(), desenhoId, tam, qtd,
+      criadoEm: new Date().toISOString(), criadoPor: _obsQuemSou() });
+  }
+  await saveState('osDemandas');
+  atualizarContagensNav();
+  toast(i >= 0 ? 'Demanda atualizada' : 'Demanda salva', 'ok');
+  _demLimparForm();
+  renderRelatorioDemanda();
 }
 
 async function excluirDemanda(id) {
   if (!exigirDemanda()) return;
   const p = _demLista().find(x => x.id === id);
   if (!p) return;
-  if (!confirm(`Excluir esta demanda?\n\n${_planResumo(p)}`)) return;
+  const d = _demDesenho(p.desenhoId);
+  if (!confirm(`Excluir esta demanda?\n\n${d ? _rotuloDesenhoOS(d) : ''} · ${_demTamTexto(_demQtds(p))}`)) return;
   STATE.osDemandas = _demLista().filter(x => x.id !== id);
   await saveState('osDemandas');
   atualizarContagensNav();
@@ -29632,44 +29731,206 @@ async function excluirDemanda(id) {
   renderRelatorioDemanda();
 }
 
-async function aprovarDemanda(id) {
+/* ---- o agrupamento ---- */
+// As demandas somadas por desenho e linha (adulto/infantil): uma OS é de uma
+// linha só (ver validarAntesDeSalvar).
+function _demGrupos() {
+  const mapa = new Map();
+  _demLista().forEach(p => {
+    const q = _demQtds(p);
+    Object.keys(q).forEach(k => {
+      if (!(q[k] > 0)) return;
+      const linha = _DEM_INFANTIL.has(k) ? 'Infantil Unissex' : 'Adulto Unissex';
+      const chave = (p.desenhoId || '') + '|' + linha;
+      if (!mapa.has(chave)) mapa.set(chave, { chave, desenhoId: p.desenhoId || '', linha, q: {}, ids: [] });
+      const gr = mapa.get(chave);
+      gr.q[k] = (gr.q[k] || 0) + q[k];
+      if (gr.ids.indexOf(p.id) < 0) gr.ids.push(p.id);
+    });
+  });
+  return Array.from(mapa.values()).map(gr => Object.assign(gr, _demMelhorGrade(gr)));
+}
+
+// Quanto uma grade com `c` camadas erra o pedido `q`: peças a mais + a menos.
+function _demErro(tams, c, q) {
+  return _DEM_TAMANHOS.reduce((s, k) => s + Math.abs((q[k] || 0) - (tams[k] || 0) * c), 0);
+}
+
+// O melhor número de camadas para uma grade: o que menos erra; empate, o que
+// produz menos.
+function _demMelhorCamadas(tams, q) {
+  const pedido = _DEM_TAMANHOS.reduce((s, k) => s + ((tams[k] || 0) > 0 ? (q[k] || 0) : 0), 0);
+  if (!pedido) return null;
+  const maxC = Math.max(1, ..._DEM_TAMANHOS.map(k => (tams[k] > 0 ? Math.ceil((q[k] || 0) / tams[k]) : 0)));
+  let melhor = null;
+  for (let c = 1; c <= maxC; c++) {
+    const erro = _demErro(tams, c, q);
+    if (!melhor || erro < melhor.erro) melhor = { c, erro };
+  }
+  return melhor;
+}
+
+function _demGradesDoDesenho(d, linha) {
+  const sku = _skuLinhaNorm((d && d.skuLinha) || '');
+  if (!sku) return [];
+  const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
+  return (STATE.grades || []).filter(g => !alvos.has(g.id) && !/conjug/i.test(g.nome || '')
+    && _skuLinhaNorm(_skuDaGrade(g)) === sku && _linhaTipoGrade(g) === linha);
+}
+
+function _demNomeGrade(tams, sku) {
+  const t = _DEM_TAMANHOS.filter(k => tams[k] > 0).map(k => (tams[k] > 1 ? tams[k] : '') + _DEM_TAM_LABEL[k]).join('-');
+  return sku ? `${t} | ${sku}` : t;
+}
+
+function _demMelhorGrade(gr) {
+  const d = _demDesenho(gr.desenhoId);
+  const grades = _demGradesDoDesenho(d, gr.linha);
+  let existe = null;
+  grades.forEach(g => {
+    const m = _demMelhorCamadas(g.tamanhos || {}, gr.q);
+    if (!m) return;
+    if (!existe || m.erro < existe.erro || (m.erro === existe.erro && m.c < existe.c)) existe = { g, c: m.c, erro: m.erro };
+  });
+  // A grade que acertaria: o pedido dividido por um número de camadas, sem
+  // passar do maior número de peças por camada que o SKU já usa (7 — P ao G3 —
+  // quando o SKU ainda não tem grade nenhuma).
+  let sugerida = null;
+  if (!existe || existe.erro > 0) {
+    const limite = Math.max(0, ...grades.map(g => _DEM_TAMANHOS.reduce((s, k) => s + ((g.tamanhos || {})[k] || 0), 0))) || 7;
+    const maxQ = Math.max(...Object.values(gr.q));
+    for (let c = 1; c <= maxQ; c++) {
+      const tams = {};
+      _DEM_TAMANHOS.forEach(k => { if (gr.q[k] > 0) tams[k] = Math.round(gr.q[k] / c); });
+      const total = Object.values(tams).reduce((s, x) => s + x, 0);
+      if (!total || total > limite) continue;
+      const erro = _demErro(tams, c, gr.q);
+      if (!sugerida || erro < sugerida.erro) sugerida = { tams, c, erro };
+    }
+    if (sugerida && existe && sugerida.erro >= existe.erro) sugerida = null;
+    if (sugerida) sugerida.nome = _demNomeGrade(sugerida.tams, _desenhoSkuProduto(d) || '');
+  }
+  return { existe, sugerida };
+}
+
+function _demProduzTexto(tams, c) {
+  const q = {};
+  _DEM_TAMANHOS.forEach(k => { if (tams[k] > 0) q[k] = tams[k] * c; });
+  return _demTamTexto(q);
+}
+
+async function aprovarAgrupamento(chave) {
   if (_recusarSomenteLeitura('aprovar demanda')) return;
   if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
-  const p = _demLista().find(x => x.id === id);
-  if (!p) return toast('Demanda não encontrada', 'err');
-  if (!confirm(`Aprovar a demanda e mandar para o Planejamento de produção?\n\n${_planResumo(p)}\n\n`
-    + `Ela sai daqui e fica no planejamento, sem número, até ser aprovada lá.`)) return;
-  const agora = new Date().toISOString();
-  const plan = JSON.parse(JSON.stringify(p));
-  plan.demanda = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
-    aprovadoEm: agora, aprovadoPor: _obsQuemSou() };
-  await _comTravaDeSalvar(async () => {
-    _planLista().push(plan);
-    STATE.osDemandas = _demLista().filter(x => x.id !== p.id);
-    await saveState('osPlanejadas');
-    await saveState('osDemandas');
-    toast('Demanda aprovada: está no Planejamento de produção', 'ok');
-    atualizarContagensNav();
-    renderRelatorioDemanda();
-  });
+  const gr = _demGrupos().find(x => x.chave === chave);
+  if (!gr) return toast('Agrupamento não encontrado', 'err');
+  if (!gr.existe) return toast('Não há grade cadastrada para este SKU — cadastre a grade sugerida primeiro', 'err');
+  const d = _demDesenho(gr.desenhoId);
+  const { g, c, erro } = gr.existe;
+  if (!confirm(`Aprovar a demanda e montar o planejamento?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
+    + `Pedido: ${_demTamTexto(gr.q)}\n`
+    + `Grade: ${g.nome} × ${c} camadas → ${_demProduzTexto(g.tamanhos || {}, c)}`
+    + (erro ? `\n(diferença de ${erro} peças do pedido)` : '')
+    + `\n\nO formulário do planejamento abre preenchido; ao salvar, estas demandas saem do relatório.`)) return;
+  _demAgrupando = { ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q) };
+  osEditId = null;
+  _osPlanAbrir = true;
+  goto('nova-os');
+  setTimeout(() => {
+    const sel = document.getElementById('f-desenho');
+    if (sel) {
+      sel.value = gr.desenhoId;
+      previewDesenhoSelecionado();
+      sincCodigoDesenho('desenho');
+    }
+    const ls = document.getElementById('f-linha-tipo');
+    if (ls) { ls.value = gr.linha; filtrarLinhaGradesOS(gr.linha); }
+    preencherDropdownGradesOS(g.id);
+    const gs = document.getElementById('f-grade-preset');
+    if (gs) { gs.value = g.id; aplicarGradePreset(); }
+    const cam = document.getElementById('f-enf-camadas');
+    if (cam) { cam.value = c; calcularAlvoDeCamadas(); }
+    toast('Confira e salve o planejamento', 'ok');
+  }, 80);
 }
 
 function renderRelatorioDemanda() {
-  _renderListaPlanOS(document.getElementById('rel-demanda-lista'), _demLista(), {
-    vazio: 'Nenhuma demanda cadastrada. Use <b>+ Nova demanda</b>.',
-    um: 'demanda', varios: 'demandas', quem: 'Pedido por',
-    acoes: id => `
-        <button type="button" class="btn small primary admin-estrito" onclick="aprovarDemanda('${id}')" title="Manda a demanda para o Planejamento de produção">✔ Aprovar</button>
-        <span class="admin-only">
-          <button type="button" class="btn small ghost" onclick="editarDemanda('${id}')">Editar</button>
-          <button type="button" class="btn small ghost" onclick="excluirDemanda('${id}')" title="Excluir a demanda">✕</button>
-        </span>`,
-  });
+  const selDes = document.getElementById('dem-desenho');
+  if (selDes && selDes.options.length <= 1) _demFiltrarDesenhos();
+  const box = document.getElementById('rel-demanda-lista');
+  const boxAg = document.getElementById('rel-demanda-agrup');
+  if (!box || !boxAg) return;
+  const lista = _demLista();
+  const quando = t => {
+    if (!t) return '';
+    const d = new Date(t);
+    return isNaN(d) ? '' : formatDate(_expIso(d)) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  };
+  if (!lista.length) {
+    box.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda cadastrada.</div>`;
+    boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">O agrupamento aparece quando houver demandas.</div>`;
+    return;
+  }
+  const total = lista.reduce((s, p) => s + Object.values(_demQtds(p)).reduce((a, b) => a + b, 0), 0);
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px;">
+      <b>${lista.length}</b> ${lista.length === 1 ? 'demanda' : 'demandas'} · <b>${total.toLocaleString('pt-BR')}</b> peças
+    </div>
+    <table class="table">
+      <thead><tr><th class="col-actions">Ações</th><th>Desenho</th><th>SKU</th><th>Descrição</th><th>Tamanho e quantidade</th><th>Pedido por</th></tr></thead>
+      <tbody>${lista.map(p => {
+        const d = _demDesenho(p.desenhoId);
+        const id = esc(p.id);
+        return `<tr>
+          <td class="col-actions" style="white-space:nowrap;"><span class="admin-only">
+            <button type="button" class="btn small ghost" onclick="editarDemanda('${id}')">Editar</button>
+            <button type="button" class="btn small ghost" onclick="excluirDemanda('${id}')" title="Excluir a demanda">✕</button>
+          </span></td>
+          <td>${_osThumbHtml({ desenhoId: p.desenhoId })}</td>
+          <td>${esc((d && d.skuLinha) || '—')}</td>
+          <td>${esc(d ? _rotuloDesenhoOS(d) : '(desenho excluído)')}</td>
+          <td>${_demTamTexto(_demQtds(p))}</td>
+          <td style="font-size:11px;color:var(--ink-2);">${esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  const grupos = _demGrupos();
+  boxAg.innerHTML = `
+    <table class="table">
+      <thead><tr><th class="col-actions">Ações</th><th>Desenho</th><th>Pedido somado</th><th>Grade existente</th><th>Grade sugerida (ainda não existe)</th></tr></thead>
+      <tbody>${grupos.map(gr => {
+        const d = _demDesenho(gr.desenhoId);
+        const ex = gr.existe;
+        const su = gr.sugerida;
+        const celEx = ex
+          ? `<b>${esc(ex.g.nome)}</b> × ${ex.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(ex.g.tamanhos || {}, ex.c)}</span>`
+            + (ex.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${ex.erro} peças do pedido</span>`
+                       : `<br><span style="font-size:11px;color:#2e9d5b;">atende o pedido em cheio</span>`)
+          : `<span style="color:var(--ink-3);">Nenhuma grade cadastrada para ${esc(_desenhoSkuProduto(d) || 'este desenho')} (${gr.linha === 'Infantil Unissex' ? 'infantil' : 'adulto'})</span>`;
+        const celSu = su
+          ? `<b>${esc(su.nome)}</b> × ${su.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(su.tams, su.c)}</span>`
+            + (su.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${su.erro} peças do pedido</span>` : '')
+            + `<br><button type="button" class="btn small ghost admin-only" onclick="goto('cad-grades')" title="Cadastrar a grade sugerida em Grades">Abrir Grades</button>`
+          : `<span style="color:var(--ink-3);">—</span>`;
+        return `<tr>
+          <td class="col-actions" style="white-space:nowrap;">
+            <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')"${ex ? '' : ' disabled'} title="Abre o planejamento com o desenho, a grade e as camadas">✔ Aprovar</button>
+          </td>
+          <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
+          <td>${_demTamTexto(gr.q)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
+          <td>${celEx}</td>
+          <td>${celSu}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
 }
 window.novaDemanda = novaDemanda;
 window.editarDemanda = editarDemanda;
+window.salvarDemanda = salvarDemanda;
 window.excluirDemanda = excluirDemanda;
-window.aprovarDemanda = aprovarDemanda;
+window.aprovarAgrupamento = aprovarAgrupamento;
+window._demFiltrarDesenhos = _demFiltrarDesenhos;
+window._demLimparForm = _demLimparForm;
 window.novoPlanejamento = novoPlanejamento;
 window.editarPlanejamento = editarPlanejamento;
 window.salvarPlanejamento = salvarPlanejamento;
