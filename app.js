@@ -1842,6 +1842,8 @@ function aplicarPermissoesUI() {
   AREAS_ACESSO.forEach(a => {
     if (!a.soAdmin && temAcesso(a.k)) body.classList.add('pode-' + a.k);
   });
+  // As telas que a conta não VÊ saem do menu (ver VISÃO POR ÁREA).
+  _aplicarVisaoMenu();
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
   // admin já usam há tempo. Reaproveitar isso esconde os botões de cadastro e
   // edição sem precisar de uma segunda regra de CSS para o mesmo efeito.
@@ -2149,6 +2151,109 @@ const ACESSO_PADRAO = {
   'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login)
 };
 
+/* ========================================================= */
+/*                 VISÃO POR ÁREA (16/10/2026)               */
+/* ========================================================= */
+/* (Junior: "em configurações, insira coluna para conceder visão aos usuários,
+   de forma que os acessos de visão concedida permitem o usuário enxergar
+   aqueles campos do programa")
+
+   Até aqui todo mundo VIA tudo e a lista de áreas dizia só quem ESCREVE. Agora
+   cada área tem duas colunas: VER e EDITAR. Sem o "Ver", a conta não enxerga as
+   telas daquela área — somem os itens do menu, e o endereço (aba nova, F5,
+   cartão do Início) cai no Início.
+
+   O PADRÃO É VER. Conta que o admin nunca marcou continua enxergando tudo, como
+   sempre foi: ligar esta coluna não pode apagar a tela de ninguém de um dia para
+   o outro. Quem EDITA uma área também a vê — não há como escrever no que não se
+   enxerga —, por isso o "Ver" fica marcado e travado enquanto o "Editar" estiver.
+
+   Mora em STATE.meta.acessosVisao, ao lado de STATE.meta.acessos, e é a mesma
+   tranca de TELA do resto (ver a nota em `_ehAdminNoServidor`).
+
+   As telas de cada área. Tela que não está aqui (Início, Configurações, as
+   folhas avulsas) é de todos. Ranking e Relatório de produção não têm o que
+   editar, mas têm o que esconder: entram como áreas só de visão. */
+const VISAO_PAGINAS = {
+  'os': ['lista-os', 'nova-os', 'print'],
+  'planejamento': ['planejamento-producao'],
+  'demanda': ['relatorio-demanda'],
+  'cadastros': ['cad-*'],
+  'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
+  'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
+  'expedicao': ['expedicao', 'print-expedicao'],
+  'operacoes': ['operacoes', 'print-operacoes'],
+  'costura': ['relatorio-costura'],
+  'compra': ['compra'],
+  'ranking': ['ranking'],
+  'relatorio-producao': ['relatorio-producao']
+};
+const AREAS_SO_VISAO = [
+  { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
+  { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' }
+];
+
+function _visaoTabela() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.acessosVisao || typeof STATE.meta.acessosVisao !== 'object') STATE.meta.acessosVisao = {};
+  return STATE.meta.acessosVisao;
+}
+
+// A área dona de uma tela ('' = tela de todos).
+function _areaDaPagina(page) {
+  const p = String(page || '');
+  for (const k of Object.keys(VISAO_PAGINAS)) {
+    if (VISAO_PAGINAS[k].some(x => x.endsWith('*') ? p.startsWith(x.slice(0, -1)) : x === p)) return k;
+  }
+  return '';
+}
+
+/* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê. */
+function contaVeArea(area, emailOuNome, papel) {
+  if ((papel !== undefined ? papel : currentRole) === 'admin') return true;
+  if (!area) return true;
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) return true;
+  if (contaTemAcesso(area, emailOuNome, 'usuario')) return true;
+  const marcado = (_visaoTabela()[login] || {})[area];
+  return typeof marcado === 'boolean' ? marcado : true;
+}
+
+// A mesma pergunta para quem está logado agora, por tela.
+function podeVerPagina(page) {
+  if (!currentUser) return true;
+  return contaVeArea(_areaDaPagina(page), _obsQuemSou());
+}
+
+// Marca (ou desmarca) a visão de uma área para uma conta. Só o admin.
+async function definirVisao(emailOuNome, area, permitido) {
+  if (!exigirAdmin('conceder acesso')) return;
+  const def = AREAS_ACESSO.concat(AREAS_SO_VISAO).find(a => a.k === area);
+  if (!def || !VISAO_PAGINAS[area]) { toast('Esta área não tem tela para esconder', 'err'); return; }
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) { toast('Conta inválida', 'err'); return; }
+  const tab = _visaoTabela();
+  tab[login] = tab[login] || {};
+  tab[login][area] = !!permitido;
+  desfazerNomearAcao(`visão de ${login} em "${def.rotulo}"`);
+  try { await saveState('meta'); } catch (e) { console.warn('definirVisao', e); }
+  aplicarPermissoesUI();
+  listarContasAcesso();
+  toast(`${login}: ${permitido ? 'vê' : 'não vê'} ${def.rotulo.toLowerCase()}`, 'ok');
+}
+window.definirVisao = definirVisao;
+
+// Esconde do menu as telas que a conta não vê, e o grupo que ficar vazio.
+function _aplicarVisaoMenu() {
+  document.querySelectorAll('.sidebar .nav-btn[data-page]').forEach(a => {
+    a.classList.toggle('sem-visao', !podeVerPagina(a.dataset.page));
+  });
+  document.querySelectorAll('.sidebar .nav-group').forEach(g => {
+    const itens = Array.from(g.querySelectorAll('.nav-btn[data-page]'));
+    g.classList.toggle('sem-visao', itens.length > 0 && itens.every(a => a.classList.contains('sem-visao')));
+  });
+}
+
 function _acessosTabela() {
   STATE.meta = STATE.meta || {};
   if (!STATE.meta.acessos || typeof STATE.meta.acessos !== 'object') STATE.meta.acessos = {};
@@ -2213,19 +2318,34 @@ function alternarAcessos(id) {
 function _acessosMenuHtml(u) {
   const email = u.email || '';
   const login = _acessoChaveConta(email);
-  const linhas = AREAS_ACESSO.map(a => {
-    const marcado = contaTemAcesso(a.k, email, 'usuario');
+  // Duas colunas por área (16/10/2026): VER (as telas aparecem) e EDITAR (o
+  // que já existia). Área sem tela própria não tem "Ver"; área só de consulta
+  // não tem "Editar".
+  const linhas = AREAS_ACESSO.concat(AREAS_SO_VISAO.map(a => Object.assign({ soVisao: true }, a))).map(a => {
+    const edita = !a.soVisao && contaTemAcesso(a.k, email, 'usuario');
     const id = `ac-${esc(u.id)}-${a.k}`;
-    return `<label class="acesso-linha${a.soAdmin ? ' fixa' : ''}" for="${id}" title="${esc(a.desc)}">
-      <input type="checkbox" id="${id}" ${marcado ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
-             onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">
-      <span><b>${esc(a.rotulo)}</b><br><span class="acesso-desc">${esc(a.desc)}</span></span>
-    </label>`;
+    const temVisao = !!VISAO_PAGINAS[a.k];
+    const ve = contaVeArea(a.k, email, 'usuario');
+    const celVer = temVisao
+      ? `<input type="checkbox" title="${edita ? 'Quem edita também vê' : 'Ver as telas desta área'}" ${ve ? 'checked' : ''} ${edita ? 'disabled' : ''}
+               onchange="definirVisao('${esc(email)}','${a.k}',this.checked)">`
+      : `<span class="acesso-nada" title="Esta área não tem tela própria">—</span>`;
+    const celEditar = a.soVisao
+      ? `<span class="acesso-nada" title="Só consulta: não há o que editar">—</span>`
+      : `<input type="checkbox" id="${id}" title="Editar nesta área" ${edita ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
+               onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">`;
+    return `<div class="acesso-linha${a.soAdmin ? ' fixa' : ''}" title="${esc(a.desc)}">
+      <span class="acesso-col">${celVer}</span>
+      <span class="acesso-col">${celEditar}</span>
+      <label for="${id}"><b>${esc(a.rotulo)}</b><br><span class="acesso-desc">${esc(a.desc)}</span></label>
+    </div>`;
   }).join('');
   return `<div class="acessos-menu hidden" id="acessos-${esc(u.id)}">
     <div class="acesso-topo">A que <b>${esc(_obsNomeLogin(email) || email)}</b> tem acesso</div>
+    <div class="acesso-linha acesso-cab"><span class="acesso-col">Ver</span><span class="acesso-col">Editar</span><span>Área</span></div>
     ${linhas}
-    <div class="acesso-rodape">O admin entra em tudo — a marcação vale para as demais contas.
+    <div class="acesso-rodape">Sem o <b>Ver</b>, as telas da área somem do menu desta conta. Quem edita também vê.
+      O admin entra em tudo — a marcação vale para as demais contas.
       É a tranca da TELA: ela evita o engano, não substitui o cuidado de quem administra.</div>
   </div>`;
 }
@@ -4105,6 +4225,12 @@ function goto(page) {
       && !(_osPlanAbrir && temAcesso('planejamento'))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
+  }
+  // A tela de uma área que a conta não VÊ fecha na rota — o menu já a esconde,
+  // mas dá para chegar pelo endereço, pela aba nova e pelos cartões do Início.
+  if (!podeVerPagina(page)) {
+    toast('Seu acesso não inclui ver esta área — peça ao admin', 'err');
+    page = 'home';
   }
   _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
   _enderecoDaPagina(page);     // a area vira endereco: aba nova, F5 e voltar funcionam

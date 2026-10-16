@@ -2917,6 +2917,16 @@ body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !impor
 .acesso-linha.fixa { opacity: .55; cursor: default; }
 .acesso-linha input { margin-top: 2px; }
 .acesso-desc { color: var(--ink-3); font-size: 11px; }
+/* VER e EDITAR (16/10/2026): duas colunas de caixinha antes do nome da área. */
+.acesso-col { flex: 0 0 38px; text-align: center; }
+.acesso-cab { cursor: default; font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.acesso-cab:hover { background: none; }
+.acesso-nada { color: var(--ink-3); }
+.acesso-linha label { cursor: pointer; flex: 1; }
+/* A tela sem VISÃO some do menu, e o grupo que ficar vazio some junto. */
+html body .sidebar .nav-btn.sem-visao,
+html body .sidebar .nav-group.sem-visao { display: none !important; }
 .acesso-rodape { font-size: 11px; color: var(--ink-3); margin-top: 8px; font-style: italic; }
 
 /* REGISTRAR é a exceção: quem tem conta soma na lista de compra e marca a folha
