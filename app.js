@@ -30018,7 +30018,7 @@ function _demGrupos() {
     });
     gr.fontesWip = Object.keys(gr.wip).length ? ((wip.get(chave) || {}).fontes || []) : [];
     gr.coberta = !Object.keys(gr.q).length;
-    gr.combos = gr.coberta ? [] : _demCombinacoes(gr);
+    gr.combos = gr.coberta ? [] : _demEscolherSolucoes(_demCombinacoes(gr));
     return gr;
   });
 }
@@ -30114,9 +30114,23 @@ function _demCamadasATentar(ate) {
 
 /* SÓ A SOLUÇÃO MAIS EFICIENTE (16/10/2026, Junior: "o programa deve mostrar a
    solução mais eficiente para produzir a demanda registrada. Não deve mostrar
-   milhares de combinações"). A busca continua comparando todas; o quadro
-   mostra a primeira da ordem acima. */
-const _DEM_MAX_COMBOS = 1;
+   milhares de combinações"; e depois: "prefira as grades já cadastradas
+   quando fecharem a demanda, mas sugira as grades novas quando forem a
+   solução exata").
+
+   A busca compara todas as combinações; o quadro mostra no máximo duas:
+     - a SOLUÇÃO: a melhor só com grades cadastradas, quando alguma completa a
+       demanda (com ou sem peças a mais); se nenhuma completa, a melhor de
+       todas, mesmo com grade nova;
+     - a SUGESTÃO de grade nova: só quando a solução tem peças a mais e uma
+       combinação com grade nova acerta a demanda em cheio. */
+function _demEscolherSolucoes(combos) {
+  const cadastradas = combos.filter(c => !c.novas);
+  const solucao = cadastradas[0] || combos[0];
+  if (!solucao) return [];
+  const exataNova = solucao.sobra > 0 ? combos.find(c => c.novas && c.sobra === 0) : null;
+  return exataNova ? [solucao, exataNova] : [solucao];
+}
 
 function _demCombinacoes(gr) {
   const q = gr.q || {};
@@ -30174,8 +30188,7 @@ function _demCombinacoes(gr) {
     }
   });
   somar([parteNova(q)]);                                                        // 4
-  return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas)
-    .slice(0, _DEM_MAX_COMBOS);
+  return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas);
 }
 
 function _demCombTexto(cb) {
@@ -30339,11 +30352,12 @@ function renderAgrupamentoDemanda() {
     boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda no Relatório de demanda.</div>`;
     return;
   }
-  const opcao = (gr, cb) => `
-    <div style="display:flex;gap:8px;align-items:flex-start;">
-      <button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',0)"
+  const opcao = (gr, cb, i) => `
+    <div style="display:flex;gap:8px;align-items:flex-start;${i ? 'margin-top:6px;padding-top:6px;border-top:1px solid var(--line);' : ''}">
+      <button type="button" class="btn small ${i ? '' : 'primary '}admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
         title="Abre o planejamento com esta solução (um planejamento por grade)">✔ Aprovar</button>
       <div>
+        ${i ? '<span style="font-size:11px;color:var(--ink-2);">Sugestão de grade nova (exata):</span><br>' : ''}
         ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}
         <br><span style="font-size:11px;color:var(--ink-2);">produz ${_demTamTexto(cb.prod)}</span>
         ${cb.sobra ? `<span style="font-size:11px;color:var(--alert);"> · ${cb.sobra} ${cb.sobra === 1 ? 'peça' : 'peças'} a mais</span>`
@@ -30365,7 +30379,7 @@ function renderAgrupamentoDemanda() {
         } else if (!gr.combos.length) {
           celComb = `<span style="color:var(--ink-3);">Nenhuma solução encontrada</span>`;
         } else {
-          celComb = opcao(gr, gr.combos[0]);
+          celComb = gr.combos.map((cb, i) => opcao(gr, cb, i)).join('');
         }
         return `<tr>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
