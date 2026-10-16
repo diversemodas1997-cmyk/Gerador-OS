@@ -29589,18 +29589,34 @@ async function salvarPlanejamento() {
     // demandas que ele cobre saem de lá, e ele guarda de onde veio.
     const ag = i < 0 ? _demAgrupando : null;
     _demAgrupando = null;
+    let proxima = null;
     if (ag) {
       const novo = lista[lista.length - 1];
-      const tirar = new Set(ag.ids);
+      const partes = ag.partes || [];
+      const resto = partes.slice((ag.parte || 0) + 1);
       novo.demanda = { ids: ag.ids.slice(), pedidas: ag.pedidas, sugerida: ag.sugerida || null,
         lancadas: ag.lancadas || ag.pedidas, abatidas: ag.abatidas || {},
+        combinacao: ag.combinacao || '', parte: (ag.parte || 0) + 1, partes: partes.length || 1,
+        pendentes: resto,
         aprovadoEm: new Date().toISOString(), aprovadoPor: _obsQuemSou() };
-      STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
-      await saveState('osDemandas');
+      // As partes que faltam passam do planejamento anterior para este.
+      const origem = ag.origemPlanId && lista.find(x => x.id === ag.origemPlanId);
+      if (origem && origem.demanda) origem.demanda.pendentes = [];
+      if (ag.ids.length) {
+        const tirar = new Set(ag.ids);
+        STATE.osDemandas = _demLista().filter(x => !tirar.has(x.id));
+        await saveState('osDemandas');
+      }
+      if (resto.length) proxima = Object.assign({}, ag, { ids: [], parte: (ag.parte || 0) + 1, origemPlanId: novo.id });
     }
     await saveState('osPlanejadas');
     osEditId = null;
     atualizarContagensNav();
+    if (proxima) {
+      toast(`Parte ${proxima.parte} de ${proxima.partes.length} salva — abrindo a próxima`, 'ok');
+      _demAbrirParte(proxima);
+      return;
+    }
     if (ag) {
       toast('Demanda aprovada: está no Planejamento de produção', 'ok');
       goto('planejamento-producao');
@@ -29682,7 +29698,9 @@ function renderPlanejamentoProducao() {
           <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
         </span>${_planGradeSugeridaPendente(p) ? `
         <div style="margin-top:4px;"><button type="button" class="btn small accent admin-only" onclick="cadastrarGradeSugerida('${id}')"
-          title="Abre o cadastro da grade ${esc(p.demanda.sugerida.nome)} já preenchido">＋ Cadastrar grade sugerida</button></div>` : ''}`,
+          title="Abre o cadastro da grade ${esc(p.demanda.sugerida.nome)} já preenchido">＋ Cadastrar grade sugerida</button></div>` : ''}${(p.demanda && (p.demanda.pendentes || []).length) ? `
+        <div style="margin-top:4px;"><button type="button" class="btn small admin-estrito" onclick="planejarProximaParte('${id}')"
+          title="${esc(p.demanda.combinacao || '')}">▶ Planejar próxima parte (${p.demanda.pendentes.length} ${p.demanda.pendentes.length === 1 ? 'falta' : 'faltam'})</button></div>` : ''}`,
   });
 }
 
@@ -30000,28 +30018,12 @@ function _demGrupos() {
     });
     gr.fontesWip = Object.keys(gr.wip).length ? ((wip.get(chave) || {}).fontes || []) : [];
     gr.coberta = !Object.keys(gr.q).length;
-    return Object.assign(gr, gr.coberta ? { existe: null, sugerida: null } : _demMelhorGrade(gr));
+    gr.combos = gr.coberta ? [] : _demCombinacoes(gr);
+    return gr;
   });
 }
 
-// Quanto uma grade com `c` camadas erra o pedido `q`: peças a mais + a menos.
-function _demErro(tams, c, q) {
-  return _DEM_TAMANHOS.reduce((s, k) => s + Math.abs((q[k] || 0) - (tams[k] || 0) * c), 0);
-}
 
-// O melhor número de camadas para uma grade: o que menos erra; empate, o que
-// produz menos.
-function _demMelhorCamadas(tams, q) {
-  const pedido = _DEM_TAMANHOS.reduce((s, k) => s + ((tams[k] || 0) > 0 ? (q[k] || 0) : 0), 0);
-  if (!pedido) return null;
-  const maxC = Math.max(1, ..._DEM_TAMANHOS.map(k => (tams[k] > 0 ? Math.ceil((q[k] || 0) / tams[k]) : 0)));
-  let melhor = null;
-  for (let c = 1; c <= maxC; c++) {
-    const erro = _demErro(tams, c, q);
-    if (!melhor || erro < melhor.erro) melhor = { c, erro };
-  }
-  return melhor;
-}
 
 function _demGradesDoDesenho(d, linha) {
   const sku = _skuLinhaNorm((d && d.skuLinha) || '');
@@ -30036,88 +30038,204 @@ function _demNomeGrade(tams, sku) {
   return sku ? `${t} | ${sku}` : t;
 }
 
-function _demMelhorGrade(gr) {
-  const d = _demDesenho(gr.desenhoId);
-  const grades = _demGradesDoDesenho(d, gr.linha);
-  let existe = null;
-  grades.forEach(g => {
-    const m = _demMelhorCamadas(g.tamanhos || {}, gr.q);
-    if (!m) return;
-    if (!existe || m.erro < existe.erro || (m.erro === existe.erro && m.c < existe.c)) existe = { g, c: m.c, erro: m.erro };
-  });
-  // A grade que acertaria: o pedido dividido por um número de camadas, sem
-  // passar do maior número de peças por camada que o SKU já usa (7 — P ao G3 —
-  // quando o SKU ainda não tem grade nenhuma).
-  let sugerida = null;
-  if (!existe || existe.erro > 0) {
-    const limite = Math.max(0, ...grades.map(g => _DEM_TAMANHOS.reduce((s, k) => s + ((g.tamanhos || {})[k] || 0), 0))) || 7;
-    const maxQ = Math.max(...Object.values(gr.q));
-    for (let c = 1; c <= maxQ; c++) {
-      const tams = {};
-      _DEM_TAMANHOS.forEach(k => { if (gr.q[k] > 0) tams[k] = Math.round(gr.q[k] / c); });
-      const total = Object.values(tams).reduce((s, x) => s + x, 0);
-      if (!total || total > limite) continue;
-      const erro = _demErro(tams, c, gr.q);
-      if (!sugerida || erro < sugerida.erro) sugerida = { tams, c, erro };
-    }
-    if (sugerida && existe && sugerida.erro >= existe.erro) sugerida = null;
-    if (sugerida) sugerida.nome = _demNomeGrade(sugerida.tams, _desenhoSkuProduto(d) || '');
+
+/* AS COMBINAÇÕES QUE COMPLETAM A DEMANDA (16/10/2026, Junior: "o programa deve
+   sugerir todas as combinações que completem a demanda de produtos com grades
+   existentes ou com sugestão de grades ainda inexistentes").
+
+   Uma combinação é um conjunto de PARTES — cada parte é uma grade com um
+   número de camadas, e vira um planejamento. Ela COMPLETA a demanda quando, em
+   todo tamanho pedido, o que as partes produzem chega ao que falta (o que
+   sobra é peça a mais, que fica no estoque). O programa monta:
+     1. uma grade existente sozinha;
+     2. duas grades existentes juntas;
+     3. uma grade existente + uma grade nova para o resto;
+     4. uma grade nova sozinha.
+   E ordena: menos sobra primeiro; empate, menos partes, menos grades novas e
+   menos camadas. A mesma grade duas vezes vira uma parte só.
+   A grade nova é a menor que cobre o pedido sem passar do maior número de
+   peças por camada que o SKU já usa (7 — P ao G3 — quando não há nenhuma). Se
+   ela tiver os mesmos tamanhos de uma grade que já existe, é aquela grade. */
+function _demCamadasParaCobrir(tams, q) {
+  let c = 0;
+  for (const k of Object.keys(q)) {
+    if (!(q[k] > 0)) continue;
+    if (!((tams[k] || 0) > 0)) return 0;
+    c = Math.max(c, Math.ceil(q[k] / tams[k]));
   }
-  return { existe, sugerida };
+  return c;
 }
 
-function _demProduzTexto(tams, c) {
-  const q = {};
-  _DEM_TAMANHOS.forEach(k => { if (tams[k] > 0) q[k] = tams[k] * c; });
-  return _demTamTexto(q);
+function _demResto(q, tams, c) {
+  const r = {};
+  Object.keys(q).forEach(k => { const x = q[k] - (tams[k] || 0) * c; if (x > 0) r[k] = x; });
+  return r;
 }
 
-async function aprovarAgrupamento(chave) {
+function _demMesmosTamanhos(a, b) {
+  return _DEM_TAMANHOS.every(k => (a[k] || 0) === (b[k] || 0));
+}
+
+// A grade nova que cobre `r` com a menor sobra.
+function _demGradeNovaQueCobre(r, limite) {
+  const ks = Object.keys(r).filter(k => r[k] > 0);
+  if (!ks.length) return null;
+  const lim = Math.max(limite, ks.length);
+  let melhor = null;
+  for (let c = 1; c <= Math.max(...ks.map(k => r[k])); c++) {
+    const tams = {};
+    ks.forEach(k => { tams[k] = Math.ceil(r[k] / c); });
+    const total = ks.reduce((s, k) => s + tams[k], 0);
+    if (total > lim) continue;
+    const sobra = ks.reduce((s, k) => s + tams[k] * c - r[k], 0);
+    if (!melhor || sobra < melhor.sobra) melhor = { tams, c, sobra };
+  }
+  return melhor;
+}
+
+function _demCombinacoes(gr) {
+  const q = gr.q || {};
+  if (!Object.keys(q).length) return [];
+  const d = _demDesenho(gr.desenhoId);
+  const sku = _desenhoSkuProduto(d) || '';
+  const grades = _demGradesDoDesenho(d, gr.linha);
+  const limite = Math.max(0, ...grades.map(g => _DEM_TAMANHOS.reduce((s, k) => s + ((g.tamanhos || {})[k] || 0), 0))) || 7;
+  const lista = [], vistas = new Set();
+  const parteExiste = (g, c) => ({ tipo: 'existe', gradeId: g.id, nome: g.nome, tams: g.tamanhos || {}, c });
+  // A grade nova para `r`; se ela já existe com aqueles tamanhos, é a existente.
+  const parteNova = r => {
+    const n = _demGradeNovaQueCobre(r, limite);
+    if (!n) return null;
+    const ig = grades.find(g => _demMesmosTamanhos(g.tamanhos || {}, n.tams));
+    return ig ? parteExiste(ig, n.c) : { tipo: 'sugerida', nome: _demNomeGrade(n.tams, sku), tams: n.tams, c: n.c };
+  };
+  const somar = partes => {
+    // A mesma grade duas vezes é uma parte só, com as camadas somadas.
+    const por = new Map();
+    partes.filter(Boolean).forEach(p => {
+      const k = p.gradeId || p.nome;
+      if (por.has(k)) por.get(k).c += p.c; else por.set(k, Object.assign({}, p));
+    });
+    partes = Array.from(por.values());
+    if (!partes.length) return;
+    const prod = {};
+    partes.forEach(p => _DEM_TAMANHOS.forEach(k => { const x = (p.tams[k] || 0) * p.c; if (x > 0) prod[k] = (prod[k] || 0) + x; }));
+    if (Object.keys(q).some(k => (prod[k] || 0) < q[k])) return;   // não completa
+    const chave = partes.map(p => (p.gradeId || p.nome) + '×' + p.c).sort().join('+');
+    if (vistas.has(chave)) return;
+    vistas.add(chave);
+    const sobra = Object.keys(prod).reduce((s, k) => s + prod[k] - (q[k] || 0), 0);
+    lista.push({ partes, prod, sobra, camadas: partes.reduce((s, p) => s + p.c, 0),
+      novas: partes.filter(p => p.tipo === 'sugerida').length });
+  };
+  grades.forEach((g, i) => {
+    const t = g.tamanhos || {};
+    const cobre = _demCamadasParaCobrir(t, q);
+    if (cobre) somar([parteExiste(g, cobre)]);                                   // 1
+    const ate = cobre ? cobre - 1 : Math.max(0, ...Object.keys(q).map(k => (t[k] > 0 ? Math.floor(q[k] / t[k]) : 0)));
+    for (let c = 1; c <= ate; c++) {
+      const r = _demResto(q, t, c);
+      if (!Object.keys(r).length) break;
+      grades.forEach((g2, j) => {                                                 // 2
+        if (j <= i && cobre) return;
+        if (j === i) return;
+        const c2 = _demCamadasParaCobrir(g2.tamanhos || {}, r);
+        if (c2) somar([parteExiste(g, c), parteExiste(g2, c2)]);
+      });
+      somar([parteExiste(g, c), parteNova(r)]);                                  // 3
+    }
+  });
+  somar([parteNova(q)]);                                                        // 4
+  return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas);
+}
+
+function _demCombTexto(cb) {
+  return cb.partes.map(p => `${p.nome}${p.tipo === 'sugerida' ? ' (nova)' : ''} × ${p.c}`).join(' + ');
+}
+
+/* APROVAR UMA COMBINAÇÃO: cada parte vira um planejamento. O formulário abre
+   com a primeira; ao salvar, as demandas saem do relatório e as partes que
+   faltam ficam guardadas naquele planejamento (demanda.pendentes) — o
+   formulário já abre a próxima, e se alguém fechar, o botão "Planejar próxima
+   parte" fica na linha dele. A parte de grade nova abre sem grade escolhida,
+   com os tamanhos e as camadas preenchidos e o botão "Cadastrar grade
+   sugerida". */
+async function aprovarAgrupamento(chave, idx) {
   if (_recusarSomenteLeitura('aprovar demanda')) return;
   if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
   const gr = _demGrupos().find(x => x.chave === chave);
   if (!gr) return toast('Agrupamento não encontrado', 'err');
   if (gr.coberta) return encerrarDemandaCoberta(chave);
+  const cb = (gr.combos || [])[Number(idx) || 0];
+  if (!cb) return toast('Nenhuma combinação completa esta demanda', 'err');
   const d = _demDesenho(gr.desenhoId);
-  const ex = gr.existe, su = gr.sugerida;
-  const g = ex && ex.g, c = ex && ex.c;
   if (!confirm(`Aprovar a demanda e montar o planejamento?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
     + (Object.keys(gr.wip).length
         ? `Lançado: ${_demTamTexto(gr.pedido)}\nEm progresso (abatido): ${_demTamTexto(gr.wip)}\nA produzir: ${_demTamTexto(gr.q)}\n`
         : `Pedido: ${_demTamTexto(gr.q)}\n`)
-    + (ex ? `Grade: ${g.nome} × ${c} camadas → ${_demProduzTexto(g.tamanhos || {}, c)}`
-          + (ex.erro ? `\n(diferença de ${ex.erro} peças do pedido)` : '')
-          : `Ainda não há grade cadastrada para este SKU: o planejamento sai sem grade.`)
-    + (su ? `\n\nGrade sugerida: ${su.nome} × ${su.c} camadas. O planejamento leva o botão `
-          + `"Cadastrar grade sugerida", já preenchido.` : '')
-    + `\n\nO formulário do planejamento abre preenchido; ao salvar, estas demandas saem do relatório.`)) return;
-  _demAgrupando = { ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q),
+    + `\nCombinação: ${_demCombTexto(cb)}\nProduz: ${_demTamTexto(cb.prod)}`
+    + (cb.sobra ? ` (${cb.sobra} peças a mais)` : '')
+    + `\n\n${cb.partes.length > 1 ? `São ${cb.partes.length} planejamentos: o formulário abre um de cada vez.` : 'O formulário do planejamento abre preenchido.'}`
+    + ` Ao salvar o primeiro, estas demandas saem do relatório.`)) return;
+  const baseGradeId = ((cb.partes.find(p => p.tipo === 'existe') || {}).gradeId) || ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '');
+  _demAbrirParte({ ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q),
     lancadas: Object.assign({}, gr.pedido), abatidas: Object.assign({}, gr.wip),
-    sugerida: su ? { nome: su.nome, tamanhos: Object.assign({}, su.tams), camadas: su.c,
-      linha: gr.linha, baseGradeId: g ? g.id : ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '') } : null };
+    desenhoId: gr.desenhoId, linha: gr.linha, baseGradeId,
+    combinacao: _demCombTexto(cb), partes: cb.partes.map(p => Object.assign({}, p, { tams: Object.assign({}, p.tams) })), parte: 0 });
+}
+
+// Abre o formulário do planejamento com a parte `ag.parte` da combinação.
+function _demAbrirParte(ag) {
+  const p = ag.partes[ag.parte];
+  ag.sugerida = p.tipo === 'sugerida'
+    ? { nome: p.nome, tamanhos: Object.assign({}, p.tams), camadas: p.c, linha: ag.linha, baseGradeId: ag.baseGradeId }
+    : null;
   osEditId = null;
   _osPlanAbrir = true;
   goto('nova-os');
+  // goto('nova-os') zera o _demAgrupando (novoPlanejamento); ele volta depois.
+  _demAgrupando = ag;
   setTimeout(() => {
+    _demAgrupando = ag;
     const sel = document.getElementById('f-desenho');
     if (sel) {
-      sel.value = gr.desenhoId;
+      sel.value = ag.desenhoId;
       previewDesenhoSelecionado();
       sincCodigoDesenho('desenho');
     }
     const ls = document.getElementById('f-linha-tipo');
-    if (ls) { ls.value = gr.linha; filtrarLinhaGradesOS(gr.linha); }
-    if (g) {
-      preencherDropdownGradesOS(g.id);
+    if (ls) { ls.value = ag.linha; filtrarLinhaGradesOS(ag.linha); }
+    if (p.tipo === 'existe') {
+      preencherDropdownGradesOS(p.gradeId);
       const gs = document.getElementById('f-grade-preset');
-      if (gs) { gs.value = g.id; aplicarGradePreset(); }
-      const cam = document.getElementById('f-enf-camadas');
-      if (cam) { cam.value = c; calcularAlvoDeCamadas(); }
+      if (gs) { gs.value = p.gradeId; aplicarGradePreset(); }
+    } else {
+      _DEM_TAMANHOS.forEach(k => { const el = document.getElementById('f-gr-' + k); if (el) el.value = p.tams[k] || 0; });
+      const desc = document.getElementById('f-grade-desc');
+      if (desc) desc.value = p.nome;
+      try { atualizarCalculosEnfesto(); } catch (e) { /* ignora */ }
     }
-    toast(g ? 'Confira e salve o planejamento'
-            : 'Sem grade cadastrada: salve o planejamento e use "Cadastrar grade sugerida" nele', 'ok');
+    const cam = document.getElementById('f-enf-camadas');
+    if (cam) { cam.value = p.c; calcularAlvoDeCamadas(); }
+    const de = ag.partes.length > 1 ? ` (parte ${ag.parte + 1} de ${ag.partes.length})` : '';
+    toast(p.tipo === 'existe' ? `Confira e salve o planejamento${de}`
+      : `Grade nova ${p.nome}${de}: salve e use "Cadastrar grade sugerida" no planejamento`, 'ok');
   }, 80);
 }
+
+// O botão da linha do planejamento que guardou partes ainda não planejadas.
+function planejarProximaParte(planId) {
+  if (_recusarSomenteLeitura('planejar')) return;
+  if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
+  const pl = _planLista().find(x => x.id === planId);
+  const pend = pl && pl.demanda && pl.demanda.pendentes;
+  if (!pend || !pend.length) return toast('Não há parte pendente', 'err');
+  const dm = pl.demanda;
+  _demAbrirParte({ ids: [], pedidas: dm.pedidas || {}, lancadas: dm.lancadas || {}, abatidas: dm.abatidas || {},
+    desenhoId: pl.desenhoId, linha: linhaTipoOS(pl) || 'Adulto Unissex', baseGradeId: (dm.sugerida && dm.sugerida.baseGradeId) || pl.gradeId || '',
+    combinacao: dm.combinacao || '', partes: pend.slice(), parte: 0, origemPlanId: pl.id });
+}
+window.planejarProximaParte = planejarProximaParte;
 
 // Toda a demanda do agrupamento já está a caminho do estoque: ela sai do
 // relatório sem planejamento. Se ficasse, voltaria a pedir produção no dia em
@@ -30192,43 +30310,44 @@ function renderAgrupamentoDemanda() {
     boxAg.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:var(--ink-3);">Nenhuma demanda no Relatório de demanda.</div>`;
     return;
   }
-  const grupos = _demGrupos();
+  const VISIVEIS = 5;
+  const opcao = (gr, cb, i) => `
+    <div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-top:${i ? '1px solid var(--line)' : '0'};">
+      <button type="button" class="btn small ${i ? '' : 'primary '}admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
+        title="Abre o planejamento com esta combinação (um planejamento por grade)">✔ Aprovar</button>
+      <div>
+        <b>${i + 1}.</b> ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}
+        <br><span style="font-size:11px;color:var(--ink-2);">produz ${_demTamTexto(cb.prod)}</span>
+        ${cb.sobra ? `<span style="font-size:11px;color:var(--alert);"> · ${cb.sobra} ${cb.sobra === 1 ? 'peça' : 'peças'} a mais</span>`
+                   : `<span style="font-size:11px;color:#2e9d5b;"> · exata</span>`}
+      </div>
+    </div>`;
   boxAg.innerHTML = `
     <table class="table">
-      <thead><tr><th class="col-actions">Ações</th><th>Desenho</th><th>Pedido somado</th><th>Em progresso (abatido)</th><th>A produzir</th><th>Grade existente</th><th>Grade sugerida (ainda não existe)</th></tr></thead>
-      <tbody>${grupos.map(gr => {
+      <thead><tr><th>Desenho</th><th>Pedido somado</th><th>Em progresso (abatido)</th><th>A produzir</th><th>Combinações que completam a demanda</th></tr></thead>
+      <tbody>${_demGrupos().map(gr => {
         const d = _demDesenho(gr.desenhoId);
-        const ex = gr.existe;
-        const su = gr.sugerida;
-        const temWip = Object.keys(gr.wip).length > 0;
-        const celWip = temWip
+        const celWip = Object.keys(gr.wip).length
           ? `${_demTamTexto(gr.wip)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.fontesWip.map(f => esc(f.rotulo)).join('<br>')}</span>`
           : `<span style="color:var(--ink-3);">—</span>`;
-        const celProd = gr.coberta
-          ? `<span style="color:#2e9d5b;"><b>Nada</b>: o trabalho em progresso repõe o estoque</span>`
-          : _demTamTexto(gr.q);
-        const celEx = gr.coberta ? `<span style="color:var(--ink-3);">—</span>` : ex
-          ? `<b>${esc(ex.g.nome)}</b> × ${ex.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(ex.g.tamanhos || {}, ex.c)}</span>`
-            + (ex.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${ex.erro} peças do pedido</span>`
-                       : `<br><span style="font-size:11px;color:#2e9d5b;">atende o pedido em cheio</span>`)
-          : `<span style="color:var(--ink-3);">Nenhuma grade cadastrada para ${esc(_desenhoSkuProduto(d) || 'este desenho')} (${gr.linha === 'Infantil Unissex' ? 'infantil' : 'adulto'})</span>`;
-        const celSu = su
-          ? `<b>${esc(su.nome)}</b> × ${su.c} camadas<br><span style="font-size:11px;color:var(--ink-2);">produz ${_demProduzTexto(su.tams, su.c)}</span>`
-            + (su.erro ? `<br><span style="font-size:11px;color:var(--alert);">diferença de ${su.erro} peças do pedido</span>` : '')
-            + `<br><span style="font-size:11px;color:var(--ink-2);">Aprovada, entra na lista acima com o botão "Cadastrar grade sugerida".</span>`
-          : `<span style="color:var(--ink-3);">—</span>`;
+        let celComb;
+        if (gr.coberta) {
+          celComb = `<span style="color:#2e9d5b;"><b>Nada a produzir</b>: o trabalho em progresso repõe o estoque</span><br>
+            <button type="button" class="btn small admin-estrito" style="margin-top:4px;" onclick="encerrarDemandaCoberta('${esc(gr.chave)}')" title="Tira a demanda do relatório: as OS em andamento já repõem o estoque">✔ Encerrar</button>`;
+        } else if (!gr.combos.length) {
+          celComb = `<span style="color:var(--ink-3);">Nenhuma combinação encontrada</span>`;
+        } else {
+          const ok = gr.combos.slice(0, VISIVEIS), resto = gr.combos.slice(VISIVEIS);
+          celComb = ok.map((cb, i) => opcao(gr, cb, i)).join('')
+            + (resto.length ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:12px;">Ver as outras ${resto.length} ${resto.length === 1 ? 'combinação' : 'combinações'}</summary>
+                ${resto.map((cb, i) => opcao(gr, cb, i + VISIVEIS)).join('')}</details>` : '');
+        }
         return `<tr>
-          <td class="col-actions" style="white-space:nowrap;">
-            ${gr.coberta
-              ? `<button type="button" class="btn small admin-estrito" onclick="encerrarDemandaCoberta('${esc(gr.chave)}')" title="Tira a demanda do relatório: as OS em andamento já repõem o estoque">✔ Encerrar</button>`
-              : `<button type="button" class="btn small primary admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}')" title="Abre o planejamento com o desenho, a grade e as camadas do que sobra a produzir">✔ Aprovar</button>`}
-          </td>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
           <td>${_demTamTexto(gr.pedido)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
           <td>${celWip}</td>
-          <td>${celProd}</td>
-          <td>${celEx}</td>
-          <td>${celSu}</td>
+          <td>${gr.coberta ? '—' : _demTamTexto(gr.q)}</td>
+          <td style="min-width:320px;">${celComb}</td>
         </tr>`;
       }).join('')}</tbody>
     </table>`;
