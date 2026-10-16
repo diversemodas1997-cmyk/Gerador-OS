@@ -2033,6 +2033,11 @@ const AREAS_ACESSO = [
      "Ordens de Serviço" continua planejando também. Aprovar segue só do admin. */
   { k: 'planejamento', rotulo: 'Planejamento de produção',
     desc: 'Criar, editar e excluir OS planejadas, sem número (aprovar é só do admin)' },
+  /* O RELATÓRIO DE DEMANDA (16/10/2026, Junior: "insira o Relatório de demanda
+     como opção de atribuição aos usuários em configurações"). Área própria:
+     quem pede reposição não precisa planejar a produção. Aprovar é do admin. */
+  { k: 'demanda', rotulo: 'Relatório de demanda',
+    desc: 'Criar, editar e excluir demandas de reposição (aprovar é só do admin)' },
   { k: 'os-status', rotulo: 'Status da OS',
     desc: 'Carimbar por cima do status que vem do checklist (Enfestando, Cortando, Parado…)' },
   { k: 'cadastros', rotulo: 'Cadastros',
@@ -2078,6 +2083,8 @@ const ACOES_POR_AREA = {
   'excluir OS': 'os', 'editar a observação antiga da OS': 'os',
   // Planejamento de produção (ver exigirPlanejamento: "Ordens de Serviço" também vale)
   'planejar a produção': 'planejamento',
+  // Relatório de demanda (ver exigirDemanda)
+  'cadastrar demanda': 'demanda',
   // Cadastros
   'criar ou editar cadastros': 'cadastros', 'criar cadastros': 'cadastros',
   'duplicar cadastros': 'cadastros', 'excluir cadastros': 'cadastros',
@@ -4095,7 +4102,7 @@ function goto(page) {
   // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
   // O formulário em modo planejamento abre também para a área Planejamento de produção.
   if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')
-      && !(_osPlanAbrir && temAcesso('planejamento'))) {
+      && !(_osPlanAbrir && (temAcesso('planejamento') || (_osDemAbrir && temAcesso('demanda'))))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
@@ -29410,7 +29417,7 @@ function editarPlanejamento(id) {
 
 async function salvarPlanejamento() {
   if (!_osPlanModo) return;
-  if (!exigirPlanejamento()) return;
+  if (!(_osDemModo ? exigirDemanda() : exigirPlanejamento())) return;
   const data = coletaOS();
   data.os = '';
   if (!data.desenhoId && !data.codigo && !data.gradeId) {
@@ -29579,14 +29586,25 @@ function _renderListaPlanOS(box, lista, cfg) {
 
    É o degrau ANTES do planejamento: demanda → planejamento → OS. O formulário
    é o da Nova OS em modo planejamento com _osDemModo ligado, e a gravação vai
-   para STATE.osDemandas. Quem cria e edita é quem planeja (exigirPlanejamento).
+   para STATE.osDemandas. Quem cria e edita é o admin ou quem recebeu a área Relatório de demanda
+   (exigirDemanda).
 
    APROVAR (só o admin, como no planejamento) move a demanda inteira para
    STATE.osPlanejadas, sem número e sem reservar material — isso continua sendo
    a aprovação do planejamento. O planejamento guarda de onde veio em `demanda`
    (quem pediu, quando, quem aprovou). */
+// Quem cadastra demanda: o admin ou a área Relatório de demanda. Aprovar não
+// passa por aqui.
+function exigirDemanda() {
+  const acao = 'cadastrar demanda';
+  if (_recusarSomenteLeitura(acao)) return false;
+  if (temAcesso('demanda')) return true;
+  toast('Seu acesso não inclui o Relatório de demanda — peça ao admin', 'err');
+  return false;
+}
+
 function novaDemanda() {
-  if (!exigirPlanejamento()) return;
+  if (!exigirDemanda()) return;
   osEditId = null;
   _osPlanAbrir = true;
   _osDemAbrir = true;
@@ -29594,7 +29612,7 @@ function novaDemanda() {
 }
 
 function editarDemanda(id) {
-  if (!exigirPlanejamento()) return;
+  if (!exigirDemanda()) return;
   const p = _demLista().find(x => x.id === id);
   if (!p) return toast('Demanda não encontrada', 'err');
   _osPlanAbrir = true;
@@ -29603,7 +29621,7 @@ function editarDemanda(id) {
 }
 
 async function excluirDemanda(id) {
-  if (!exigirPlanejamento()) return;
+  if (!exigirDemanda()) return;
   const p = _demLista().find(x => x.id === id);
   if (!p) return;
   if (!confirm(`Excluir esta demanda?\n\n${_planResumo(p)}`)) return;
