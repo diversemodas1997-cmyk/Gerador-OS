@@ -29598,7 +29598,8 @@ async function salvarPlanejamento() {
         lancadas: ag.lancadas || ag.pedidas, abatidas: ag.abatidas || {},
         combinacao: ag.combinacao || '', parte: (ag.parte || 0) + 1, partes: partes.length || 1,
         pendentes: resto,
-        aprovadoEm: new Date().toISOString(), aprovadoPor: _obsQuemSou() };
+        // Aguarda o admin (ver PLANEJAMENTO DA DEMANDA AGUARDANDO APROVAÇÃO).
+        aguardando: true, planejadoEm: new Date().toISOString(), planejadoPor: _obsQuemSou() };
       // As partes que faltam passam do planejamento anterior para este.
       const origem = ag.origemPlanId && lista.find(x => x.id === ag.origemPlanId);
       if (origem && origem.demanda) origem.demanda.pendentes = [];
@@ -29618,7 +29619,7 @@ async function salvarPlanejamento() {
       return;
     }
     if (ag) {
-      toast('Demanda aprovada: está no Planejamento de produção', 'ok');
+      toast('Planejamento salvo: aguarda a aprovação do admin no Planejamento de produção', 'ok');
       goto('planejamento-producao');
       return;
     }
@@ -29652,6 +29653,7 @@ async function aprovarPlanejamento(id) {
   if (currentRole !== 'admin') return toast('Só o admin aprova o planejamento', 'err');
   const p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
+  if (_planAguardando(p)) return toast('Este planejamento da demanda ainda aguarda aprovação', 'err');
   const numero = proximoNumeroOSParaGrade(p.gradeId || '');
   if (!confirm(`Aprovar o planejamento e gerar a OS ${numero}?\n\n${_planResumo(p)}\n\n`
     + `A OS entra na lista de Ordens de Serviço como Não iniciado e reserva o material.`)) return;
@@ -29686,9 +29688,63 @@ async function aprovarPlanejamento(id) {
   });
 }
 
+/* PLANEJAMENTO DA DEMANDA AGUARDANDO APROVAÇÃO (16/10/2026, Junior: "deve haver
+   uma etapa antes da demanda se tornar planejamento para o admin aprovar" e "o
+   planejamento vindo da demanda deve receber aprovação para aparecer para o
+   admin aprovar").
+
+   O caminho fica: demanda → agrupamento (▶ Planejar) → planejamento AGUARDANDO
+   APROVAÇÃO → (✔ Aprovar, admin) → lista do Planejamento de produção →
+   (✔ Aprovar, admin) → OS com número. Quem tem a área Planejamento de produção
+   pode planejar a demanda; só o admin tira o planejamento da espera.
+   Mora no próprio planejamento: demanda.aguardando. O planejamento feito antes
+   desta etapa não tem a marca e fica onde estava. */
+function _planAguardando(p) {
+  return !!(p && p.demanda && p.demanda.aguardando);
+}
+
+async function aprovarPlanDemanda(id) {
+  if (_recusarSomenteLeitura('aprovar planejamento')) return;
+  if (currentRole !== 'admin') return toast('Só o admin aprova o planejamento', 'err');
+  const p = _planLista().find(x => x.id === id);
+  if (!p || !_planAguardando(p)) return toast('Planejamento não encontrado', 'err');
+  if (!confirm(`Aprovar o planejamento vindo da demanda?\n\n${_planResumo(p)}\n\n`
+    + `Ele passa para a lista do Planejamento de produção, onde a aprovação seguinte gera a OS.`)) return;
+  delete p.demanda.aguardando;
+  p.demanda.aprovadoEm = new Date().toISOString();
+  p.demanda.aprovadoPor = _obsQuemSou();
+  await saveState('osPlanejadas');
+  atualizarContagensNav();
+  toast('Planejamento aprovado: está na lista do Planejamento de produção', 'ok');
+  renderPlanejamentoProducao();
+}
+window.aprovarPlanDemanda = aprovarPlanDemanda;
+
+// Os botões que o planejamento da demanda leva nas duas listas.
+function _planBotoesDemanda(id, p) {
+  return `${_planGradeSugeridaPendente(p) ? `
+        <div style="margin-top:4px;"><button type="button" class="btn small accent admin-only" onclick="cadastrarGradeSugerida('${id}')"
+          title="Abre o cadastro da grade ${esc(p.demanda.sugerida.nome)} já preenchido">＋ Cadastrar grade sugerida</button></div>` : ''}${(p.demanda && (p.demanda.pendentes || []).length) ? `
+        <div style="margin-top:4px;"><button type="button" class="btn small admin-only" onclick="planejarProximaParte('${id}')"
+          title="${esc(p.demanda.combinacao || '')}">▶ Planejar próxima parte (${p.demanda.pendentes.length} ${p.demanda.pendentes.length === 1 ? 'falta' : 'faltam'})</button></div>` : ''}`;
+}
+
 function renderPlanejamentoProducao() {
   renderAgrupamentoDemanda();
-  _renderListaPlanOS(document.getElementById('plan-prod-lista'), _planLista(), {
+  const espera = _planLista().filter(_planAguardando);
+  const cardEspera = document.getElementById('plan-demanda-espera-card');
+  if (cardEspera) cardEspera.classList.toggle('hidden', !espera.length);
+  _renderListaPlanOS(document.getElementById('plan-demanda-espera'), espera, {
+    vazio: 'Nenhum planejamento da demanda aguardando aprovação.',
+    um: 'planejamento aguardando aprovação', varios: 'planejamentos aguardando aprovação', quem: 'Planejado por',
+    acoes: (id, p) => `
+        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanDemanda('${id}')" title="Passa o planejamento para a lista do Planejamento de produção">✔ Aprovar</button>
+        <span class="admin-only">
+          <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
+          <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
+        </span>${_planBotoesDemanda(id, p)}`,
+  });
+  _renderListaPlanOS(document.getElementById('plan-prod-lista'), _planLista().filter(p => !_planAguardando(p)), {
     vazio: 'Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.',
     um: 'OS planejada', varios: 'OS planejadas', quem: 'Planejado por',
     acoes: (id, p) => `
@@ -29696,11 +29752,7 @@ function renderPlanejamentoProducao() {
         <span class="admin-only">
           <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
           <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
-        </span>${_planGradeSugeridaPendente(p) ? `
-        <div style="margin-top:4px;"><button type="button" class="btn small accent admin-only" onclick="cadastrarGradeSugerida('${id}')"
-          title="Abre o cadastro da grade ${esc(p.demanda.sugerida.nome)} já preenchido">＋ Cadastrar grade sugerida</button></div>` : ''}${(p.demanda && (p.demanda.pendentes || []).length) ? `
-        <div style="margin-top:4px;"><button type="button" class="btn small admin-estrito" onclick="planejarProximaParte('${id}')"
-          title="${esc(p.demanda.combinacao || '')}">▶ Planejar próxima parte (${p.demanda.pendentes.length} ${p.demanda.pendentes.length === 1 ? 'falta' : 'faltam'})</button></div>` : ''}`,
+        </span>${_planBotoesDemanda(id, p)}`,
   });
 }
 
@@ -30202,22 +30254,22 @@ function _demCombTexto(cb) {
    com os tamanhos e as camadas preenchidos e o botão "Cadastrar grade
    sugerida". */
 async function aprovarAgrupamento(chave, idx) {
-  if (_recusarSomenteLeitura('aprovar demanda')) return;
-  if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
+  if (!exigirPlanejamento()) return;
   const gr = _demGrupos().find(x => x.chave === chave);
   if (!gr) return toast('Agrupamento não encontrado', 'err');
   if (gr.coberta) return encerrarDemandaCoberta(chave);
   const cb = (gr.combos || [])[Number(idx) || 0];
   if (!cb) return toast('Nenhuma combinação completa esta demanda', 'err');
   const d = _demDesenho(gr.desenhoId);
-  if (!confirm(`Aprovar a demanda e montar o planejamento?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
+  if (!confirm(`Montar o planejamento desta demanda?\n\n${d ? _rotuloDesenhoOS(d) : ''}\n`
     + (Object.keys(gr.wip).length
         ? `Lançado: ${_demTamTexto(gr.pedido)}\nEm progresso (abatido): ${_demTamTexto(gr.wip)}\nA produzir: ${_demTamTexto(gr.q)}\n`
         : `Pedido: ${_demTamTexto(gr.q)}\n`)
     + `\nCombinação: ${_demCombTexto(cb)}\nProduz: ${_demTamTexto(cb.prod)}`
     + (cb.sobra ? ` (${cb.sobra} peças a mais)` : '')
     + `\n\n${cb.partes.length > 1 ? `São ${cb.partes.length} planejamentos: o formulário abre um de cada vez.` : 'O formulário do planejamento abre preenchido.'}`
-    + ` Ao salvar o primeiro, estas demandas saem do relatório.`)) return;
+    + ` Ao salvar o primeiro, estas demandas saem do relatório.`
+    + `\n\nO planejamento fica aguardando a aprovação do admin antes de entrar na lista.`)) return;
   const baseGradeId = ((cb.partes.find(p => p.tipo === 'existe') || {}).gradeId) || ((_demGradesDoDesenho(d, gr.linha)[0] || {}).id || '');
   _demAbrirParte({ ids: gr.ids.slice(), pedidas: Object.assign({}, gr.q),
     lancadas: Object.assign({}, gr.pedido), abatidas: Object.assign({}, gr.wip),
@@ -30266,8 +30318,7 @@ function _demAbrirParte(ag) {
 
 // O botão da linha do planejamento que guardou partes ainda não planejadas.
 function planejarProximaParte(planId) {
-  if (_recusarSomenteLeitura('planejar')) return;
-  if (currentRole !== 'admin') return toast('Só o admin aprova a demanda', 'err');
+  if (!exigirPlanejamento()) return;
   const pl = _planLista().find(x => x.id === planId);
   const pend = pl && pl.demanda && pl.demanda.pendentes;
   if (!pend || !pend.length) return toast('Não há parte pendente', 'err');
@@ -30353,8 +30404,8 @@ function renderAgrupamentoDemanda() {
   }
   const opcao = (gr, cb, i) => `
     <div style="display:flex;gap:8px;align-items:flex-start;${i ? 'margin-top:6px;padding-top:6px;border-top:1px solid var(--line);' : ''}">
-      <button type="button" class="btn small ${i ? '' : 'primary '}admin-estrito" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
-        title="Abre o planejamento com esta solução (um planejamento por grade)">✔ Aprovar</button>
+      <button type="button" class="btn small ${i ? '' : 'primary '}admin-only" onclick="aprovarAgrupamento('${esc(gr.chave)}',${i})"
+        title="Monta o planejamento com esta solução (um por grade); ele aguarda a aprovação do admin">▶ Planejar</button>
       <div>
         ${i ? '<span style="font-size:11px;color:var(--ink-2);">Sugestão de grade nova (exata):</span><br>' : ''}
         ${cb.partes.map(p => `<b>${esc(p.nome)}</b>${p.tipo === 'sugerida' ? ' <span class="badge" title="Grade ainda não cadastrada">nova</span>' : ''} × ${p.c} camadas`).join(' <b>+</b> ')}

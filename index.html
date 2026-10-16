@@ -1028,6 +1028,13 @@
       <div class="card">
         <div id="plan-prod-lista"></div>
       </div>
+      <!-- PLANEJAMENTO DA DEMANDA AGUARDANDO APROVACAO (16/10/2026): o que foi
+           planejado a partir do agrupamento espera o admin antes de entrar na
+           lista acima. O cartao some quando nao ha nenhum. -->
+      <div class="card hidden" id="plan-demanda-espera-card">
+        <div class="card-title">Planejamentos da demanda · aguardando aprovação</div>
+        <div id="plan-demanda-espera"></div>
+      </div>
       <!-- AGRUPAMENTO EM GRADES (16/10/2026): veio do Relatorio de demanda. As
            demandas somadas por desenho, com a grade que as atende; o Aprovar
            (so admin) abre o planejamento ja preenchido. -->
