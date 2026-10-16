@@ -22,7 +22,8 @@
     b) as portas 80 e 443 tem regra de entrada;
     c) o cabo, quando tem link, esta no 192.168.1.50 fixo (era 193.168.0.200
        ate a troca do roteador em 14/10/2026);
-    d) o Wi-Fi esta ASSOCIADO ao SSID que ele ja conhece.
+    d) o Wi-Fi esta ASSOCIADO ao SSID que ele ja conhece;
+    e) o 192.168.1.50 nunca some: com o cabo sem link, ele vai para o Wi-Fi.
 
   O (a) e o (b) nao tem risco: nao mexem em endereco nem derrubam conexao. O
   (c) mexe, e por isso e delegado ao `fixar-ip-cabo.ps1`, que confere se o
@@ -41,6 +42,29 @@
   denunciava: o .200 respondia, os 12 conteineres de pe, o resto verde.
   Reassociar a uma rede que a maquina ja conhece nao mexe em endereco nem
   derruba conexao -- e da mesma classe do (a) e do (b).
+
+  O (e) nasceu em 16/10/2026 (Junior: "quando a rede por cabo cair, migrar
+  para o endereco IP do Wi-Fi"). As maquinas da fabrica e os celulares abrem
+  o https://192.168.1.50, e com o cabo fora esse endereco morria junto: o
+  servidor continuava de pe no .158, mas ninguem ia ate la. Trocar o
+  endereco nas maquinas nao serve -- para o navegador o .158 e outro site,
+  com outro login e outro icone. Entao quem muda de lugar e o ENDERECO:
+
+    - cabo sem link e Wi-Fi de pe -> o .50 entra no Wi-Fi como SEGUNDO
+      endereco (o .158 continua la). Vai so na memoria (ActiveStore): um
+      reboot nao o deixa preso no Wi-Fi. E SkipAsSource: a maquina continua
+      SAINDO pelo .158 -- internet, backup e espelho nao mudam. Antes, um
+      ping confere que nenhum outro aparelho responde no .50; depois, um
+      ping a partir do .50 ensina o roteador onde ele mora agora.
+    - o cabo voltou -> o .50 sai do Wi-Fi. Se o cabo acordou com o endereco
+      marcado como DUPLICADO (ele testou a rede enquanto o Wi-Fi ainda
+      segurava o .50), a placa do cabo e reiniciada para testar de novo.
+
+  A porta 443 escuta em todos os enderecos (0.0.0.0) e o .50 esta no
+  certificado: nada mais precisa mudar para ele ser atendido pelo Wi-Fi.
+  A tarefa (-Agendar) dispara tambem quando uma rede CAI ou VOLTA (eventos
+  10000/10001 do NetworkProfile), e nao so a cada 15 min: um minuto sem o
+  .50 ja e a fabrica parada.
 
   COMO USAR
     .\servidor\vigia-rede.ps1              conferir e consertar agora
@@ -65,6 +89,7 @@ $Log     = Join-Path $LogDir 'vigia-rede.log'
 $PLACA_CABO = 'Ethernet 3'
 $IP_CABO    = '192.168.1.50'
 $PLACA_WIFI = 'Wi-Fi'
+$GATEWAY    = '192.168.1.1'
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
@@ -93,17 +118,29 @@ sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -File ""$ps""", 0, False
   $repetindo = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(2) `
                  -RepetitionInterval (New-TimeSpan -Minutes $CadaMinutos) `
                  -RepetitionDuration (New-TimeSpan -Days 3650)
+  # A REDE CAIU OU VOLTOU: o NetworkProfile grava 10001 quando uma rede some e
+  # 10000 quando conecta. E o gatilho que faz o .50 mudar de placa em
+  # segundos, e nao no proximo quarto de hora.
+  $classe = Get-CimClass -ClassName MSFT_TaskEventTrigger -Namespace Root/Microsoft/Windows/TaskScheduler
+  $naRede = New-CimInstance -CimClass $classe -ClientOnly
+  $naRede.Subscription = '<QueryList><Query Id="0" Path="Microsoft-Windows-NetworkProfile/Operational">' +
+    '<Select Path="Microsoft-Windows-NetworkProfile/Operational">*[System[(EventID=10000 or EventID=10001)]]</Select>' +
+    '</Query></QueryList>'
+  $naRede.Enabled = $true
+  # Queue: um evento que chega com o vigia rodando espera a vez, em vez de ser
+  # descartado -- o cabo que volta no meio da passagem do "caiu" nao se perde.
   $conf = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
-            -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+            -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+            -MultipleInstances Queue
   try {
     Unregister-ScheduledTask -TaskName $nome -Confirm:$false -ErrorAction SilentlyContinue
     # -RunLevel Highest: sem isto a tarefa roda sem administrador, e tudo o
     # que este script conserta exige administrador. Falharia em silencio.
-    Register-ScheduledTask -TaskName $nome -Action $acao -Trigger @($noLogon, $repetindo) `
+    Register-ScheduledTask -TaskName $nome -Action $acao -Trigger @($noLogon, $repetindo, $naRede) `
       -Settings $conf -RunLevel Highest `
-      -Description 'Mantem as redes do servidor como Particular, as portas abertas e o cabo no IP fixo.' `
+      -Description 'Mantem as redes do servidor como Particular, as portas abertas, o cabo no IP fixo e o 192.168.1.50 no Wi-Fi quando o cabo cai.' `
       -ErrorAction Stop | Out-Null
-    Anotar "tarefa '$nome' registrada: no logon e a cada $CadaMinutos min"
+    Anotar "tarefa '$nome' registrada: no logon, a cada $CadaMinutos min e quando uma rede cai ou volta"
   } catch {
     Anotar "FALHA ao registrar a tarefa: $($_.Exception.Message)"
     exit 1
@@ -196,13 +233,104 @@ if (-not $cabo) {
           Select-Object -First 1
   if ($cabo) { Anotar "a placa '$PLACA_CABO' nao existe mais; usando '$($cabo.Name)'"; $PLACA_CABO = $cabo.Name }
 }
+# ---- e) o .50 acompanha a placa que estiver de pe -------------------------
+# Ver o cabecalho. Vem ANTES do (c): quando o cabo volta, o .50 tem de sair do
+# Wi-Fi primeiro, senao o cabo enxerga o proprio endereco "em uso".
+$caboComLink = $cabo -and $cabo.MediaConnectionState -eq 'Connected'
+$wifiAgora   = Get-NetAdapter -Name $PLACA_WIFI -ErrorAction SilentlyContinue
+$wifiDePe    = $wifiAgora -and $wifiAgora.Status -eq 'Up'
+$noWifi      = Get-NetIPAddress -InterfaceAlias $PLACA_WIFI -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+               Where-Object { $_.IPAddress -eq $IP_CABO }
+if ($caboComLink -and $noWifi) {
+  if ($Somente) {
+    Anotar "o cabo tem link e o $IP_CABO ainda esta emprestado ao Wi-Fi"
+  } else {
+    try {
+      Remove-NetIPAddress -InterfaceAlias $PLACA_WIFI -IPAddress $IP_CABO -Confirm:$false -ErrorAction Stop
+      Anotar "o cabo voltou - $IP_CABO saiu do Wi-Fi e volta para o cabo"
+    } catch {
+      Anotar "FALHA ao tirar $IP_CABO do Wi-Fi: $($_.Exception.Message)"
+    }
+  }
+} elseif (-not $caboComLink -and $wifiDePe -and -not $noWifi) {
+  if ($Somente) {
+    Anotar "cabo sem link: o $IP_CABO esta fora do ar (o Wi-Fi atende so no proprio endereco)"
+  } else {
+    # Nenhum OUTRO aparelho pode estar no .50. Se o endereco ainda consta ativo
+    # nesta maquina (placa do cabo sem link mas com ele preso), o ping responde
+    # daqui mesmo e nao prova nada -- e o New-NetIPAddress abaixo e quem diz.
+    $ativosAqui = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                   Where-Object { $_.AddressState -eq 'Preferred' }).IPAddress
+    $ocupado = ($ativosAqui -notcontains $IP_CABO) -and
+               (Test-Connection -ComputerName $IP_CABO -Count 2 -Quiet -ErrorAction SilentlyContinue)
+    if ($ocupado) {
+      Anotar "cabo sem link, mas OUTRO aparelho responde em $IP_CABO - nao emprestado ao Wi-Fi (conflito de IP)"
+    } else {
+      $erro = $null
+      try {
+        New-NetIPAddress -InterfaceAlias $PLACA_WIFI -IPAddress $IP_CABO -PrefixLength 24 `
+          -SkipAsSource $true -PolicyStore ActiveStore -ErrorAction Stop | Out-Null
+      } catch {
+        # O cmdlet ja entrou pela metade nesta maquina (ver fixar-ip-cabo.ps1);
+        # o netsh e o caminho de reserva, com as mesmas duas garantias.
+        $erro = $_.Exception.Message
+        $out = (& netsh @('interface','ipv4','add','address',"name=$PLACA_WIFI",$IP_CABO,'255.255.255.0',
+                          'store=active','skipassource=true') 2>&1 | Out-String).Trim()
+        if (-not $out) { $erro = $null } else { $erro = "$erro / netsh: $out" }
+      }
+      if ($erro) {
+        Anotar "cabo sem link - FALHA ao emprestar $IP_CABO ao Wi-Fi: $erro"
+      } else {
+        # O Windows testa o endereco na rede antes de usa-lo (Tentative).
+        $estado = ''
+        foreach ($i in 1..10) {
+          Start-Sleep -Seconds 1
+          $estado = (Get-NetIPAddress -InterfaceAlias $PLACA_WIFI -IPAddress $IP_CABO -ErrorAction SilentlyContinue).AddressState
+          if ($estado -eq 'Preferred' -or $estado -eq 'Duplicate') { break }
+        }
+        if ($estado -eq 'Duplicate') {
+          Remove-NetIPAddress -InterfaceAlias $PLACA_WIFI -IPAddress $IP_CABO -Confirm:$false -ErrorAction SilentlyContinue
+          Anotar "cabo sem link - o Wi-Fi achou $IP_CABO DUPLICADO na rede; desfeito (conflito de IP)"
+        } else {
+          # Ensina o roteador (e quem perguntar) que o .50 agora mora no Wi-Fi.
+          & ping.exe -n 2 -w 1000 -S $IP_CABO $GATEWAY 2>&1 | Out-Null
+          $ProgressPreference = 'SilentlyContinue'
+          $resp = ''
+          try {
+            $r = Invoke-WebRequest -Uri "https://$IP_CABO" -TimeoutSec 15 -UseBasicParsing
+            $resp = "o app responde em https://$IP_CABO (HTTP $($r.StatusCode))"
+          } catch { $resp = "o app NAO respondeu em https://${IP_CABO}: $($_.Exception.Message)" }
+          Anotar "cabo sem link - $IP_CABO emprestado ao Wi-Fi ($estado); $resp"
+        }
+      }
+    }
+  }
+} elseif (-not $caboComLink -and $noWifi) {
+  Dizer "cabo sem link - $IP_CABO atendendo pelo Wi-Fi - ok"
+}
+
 if (-not $cabo) {
   Dizer "nenhuma placa com fio com link nesta maquina - nada a fazer"
 } elseif ($cabo.MediaConnectionState -ne 'Connected') {
-  Dizer "cabo sem link - nada a fazer (o Wi-Fi atende sozinho)"
+  Dizer "cabo sem link - o Wi-Fi atende (ver a secao do $IP_CABO acima)"
 } else {
   $enderecos = (Get-NetIPAddress -InterfaceAlias $PLACA_CABO -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress
-  if ($enderecos -contains $IP_CABO) {
+  $estadoCabo = (Get-NetIPAddress -InterfaceAlias $PLACA_CABO -IPAddress $IP_CABO -ErrorAction SilentlyContinue).AddressState
+  # O cabo que volta com o .50 ainda no Wi-Fi testa a rede, acha o endereco "em
+  # uso" e o marca DUPLICADO -- fica com ele no papel e sem atender. Com o .50
+  # ja fora do Wi-Fi (secao e, logo acima), reiniciar a placa refaz o teste.
+  if ($enderecos -contains $IP_CABO -and $estadoCabo -eq 'Duplicate' -and -not $Somente) {
+    Restart-NetAdapter -Name $PLACA_CABO -Confirm:$false -ErrorAction SilentlyContinue
+    foreach ($i in 1..30) {
+      Start-Sleep -Seconds 1
+      $estadoCabo = (Get-NetIPAddress -InterfaceAlias $PLACA_CABO -IPAddress $IP_CABO -ErrorAction SilentlyContinue).AddressState
+      if ($estadoCabo -eq 'Preferred') { break }
+    }
+    Anotar "o cabo voltou com $IP_CABO DUPLICADO - placa reiniciada, agora: $estadoCabo"
+  }
+  if ($enderecos -contains $IP_CABO -and $estadoCabo -eq 'Duplicate') {
+    Anotar "o cabo esta com $IP_CABO DUPLICADO - outro aparelho ou o Wi-Fi ainda o segura"
+  } elseif ($enderecos -contains $IP_CABO) {
     Dizer "cabo em $IP_CABO - ok"
     # Link a 100 Mbps numa placa Gigabit e par danificado. Foi o que derrubou
     # o cabo duas vezes em quatro dias; vale registrar quando reaparecer.
