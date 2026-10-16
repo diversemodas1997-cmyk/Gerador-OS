@@ -30076,13 +30076,18 @@ function _demMesmosTamanhos(a, b) {
   return _DEM_TAMANHOS.every(k => (a[k] || 0) === (b[k] || 0));
 }
 
-// A grade nova que cobre `r` com a menor sobra.
+// A grade nova que cobre `r` com a menor sobra. Abaixo de soma/limite camadas
+// a grade passaria do limite de peças por camada, então a busca começa ali, e
+// para na primeira exata ou depois de 400 tentativas.
 function _demGradeNovaQueCobre(r, limite) {
   const ks = Object.keys(r).filter(k => r[k] > 0);
   if (!ks.length) return null;
   const lim = Math.max(limite, ks.length);
+  const soma = ks.reduce((s, k) => s + r[k], 0);
+  const de = Math.max(1, Math.floor(soma / lim));
+  const ate = Math.min(Math.max(...ks.map(k => r[k])), de + 400);
   let melhor = null;
-  for (let c = 1; c <= Math.max(...ks.map(k => r[k])); c++) {
+  for (let c = de; c <= ate && !(melhor && melhor.sobra === 0); c++) {
     const tams = {};
     ks.forEach(k => { tams[k] = Math.ceil(r[k] / c); });
     const total = ks.reduce((s, k) => s + tams[k], 0);
@@ -30092,6 +30097,23 @@ function _demGradeNovaQueCobre(r, limite) {
   }
   return melhor;
 }
+
+/* AS CAMADAS QUE A BUSCA TENTA (16/10/2026: o Planejamento de produção
+   travava). Tentar toda camada de 1 até a que cobre o pedido, e para cada uma
+   a grade nova do resto e cada segunda grade, passava de cem milhões de contas
+   com pedidos de centenas de peças. Até 24 camadas tenta todas; acima disso,
+   24 valores espalhados de 1 até o fim, mais os 6 últimos (os que deixam um
+   resto pequeno para a segunda parte). */
+function _demCamadasATentar(ate) {
+  if (ate <= 30) return Array.from({ length: ate }, (_, i) => i + 1);
+  const set = new Set();
+  for (let i = 0; i < 24; i++) set.add(1 + Math.round(i * (ate - 7) / 23));
+  for (let c = ate - 5; c <= ate; c++) set.add(c);
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+// No máximo tantas combinações por agrupamento (as melhores).
+const _DEM_MAX_COMBOS = 40;
 
 function _demCombinacoes(gr) {
   const q = gr.q || {};
@@ -30103,8 +30125,11 @@ function _demCombinacoes(gr) {
   const lista = [], vistas = new Set();
   const parteExiste = (g, c) => ({ tipo: 'existe', gradeId: g.id, nome: g.nome, tams: g.tamanhos || {}, c });
   // A grade nova para `r`; se ela já existe com aqueles tamanhos, é a existente.
+  const memo = new Map();
   const parteNova = r => {
-    const n = _demGradeNovaQueCobre(r, limite);
+    const mk = _DEM_TAMANHOS.map(k => r[k] || 0).join(',');
+    if (!memo.has(mk)) memo.set(mk, _demGradeNovaQueCobre(r, limite));
+    const n = memo.get(mk);
     if (!n) return null;
     const ig = grades.find(g => _demMesmosTamanhos(g.tamanhos || {}, n.tams));
     return ig ? parteExiste(ig, n.c) : { tipo: 'sugerida', nome: _demNomeGrade(n.tams, sku), tams: n.tams, c: n.c };
@@ -30133,7 +30158,7 @@ function _demCombinacoes(gr) {
     const cobre = _demCamadasParaCobrir(t, q);
     if (cobre) somar([parteExiste(g, cobre)]);                                   // 1
     const ate = cobre ? cobre - 1 : Math.max(0, ...Object.keys(q).map(k => (t[k] > 0 ? Math.floor(q[k] / t[k]) : 0)));
-    for (let c = 1; c <= ate; c++) {
+    for (const c of _demCamadasATentar(ate)) {
       const r = _demResto(q, t, c);
       if (!Object.keys(r).length) break;
       grades.forEach((g2, j) => {                                                 // 2
@@ -30146,7 +30171,8 @@ function _demCombinacoes(gr) {
     }
   });
   somar([parteNova(q)]);                                                        // 4
-  return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas);
+  return lista.sort((a, b) => a.sobra - b.sobra || a.partes.length - b.partes.length || a.novas - b.novas || a.camadas - b.camadas)
+    .slice(0, _DEM_MAX_COMBOS);
 }
 
 function _demCombTexto(cb) {
