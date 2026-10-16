@@ -121,13 +121,33 @@
         <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
         <a class="nav-btn" href="#cad-grades" data-page="cad-grades" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="grades"></span>Grades</a>
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
+    </div>
+
+    <!-- A PASTA ORDENS (16/10/2026): as tres ordens que a fabrica emite (OS,
+         OE e Compra) sairam do bloco solto e moram juntas neste grupo, no
+         mesmo lugar onde ficavam. -->
+    <div class="nav-group" data-group="ordens">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Ordens</button>
+      <div class="nav-items">
         <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Ordens de Expedição</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
+      </div>
+    </div>
+
+    <div class="nav-solto">
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
+        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
+    </div>
+
+    <!-- A PASTA RELATORIOS (16/10/2026): os relatorios de producao e de
+         costura sairam do bloco solto e moram juntos neste grupo. -->
+    <div class="nav-group" data-group="relatorios">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Relatórios</button>
+      <div class="nav-items">
         <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
         <a class="nav-btn" href="#relatorio-costura" data-page="relatorio-costura" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório de costura</a>
-        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
+      </div>
     </div>
 
     <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
