@@ -1,0 +1,68 @@
+COLORÍMETRO DS-01 NO PC
+=======================
+
+Programa para usar o colorímetro CHNSpec DS-01 direto no Windows, via Bluetooth,
+sem o celular. O cabo USB do DS-01 serve só para carregar.
+
+ANTES DE USAR
+-------------
+1. Conecte o adaptador Bluetooth USB no PC (Bluetooth 4.0 ou superior).
+2. Confira em Configurações > Dispositivos > Bluetooth que o Bluetooth está ATIVADO.
+   NÃO é preciso parear o DS-01 pelo Windows: o programa conecta sozinho.
+3. Feche o app ColorMeter no celular (ou desligue o Bluetooth do celular).
+   O DS-01 só aceita uma conexão de cada vez.
+
+COMO USAR
+---------
+1. Dê dois cliques em "Iniciar Colorimetro.bat".
+2. Ligue o DS-01 e clique em "Procurar aparelho". O DS-01 deve aparecer com ★
+   (o nome começa com "CM"; o número de série é CM145Y1851).
+3. Clique em "Conectar". Na próxima vez, ele já vem selecionado.
+4. Se o programa pedir, calibre no branco e depois no preto.
+5. Meça o PADRÃO (F6) e depois as AMOSTRAS (F5).
+   Também dá para medir pelo botão do próprio aparelho.
+6. O programa mostra L*a*b*, C*, h°, as diferenças, dE*ab / dE00 / dEcmc / dE94,
+   o resultado APROVADO ou REPROVADO e a curva espectral.
+
+Todas as medições são salvas sozinhas na pasta "medicoes", em um arquivo por dia,
+que abre direto no Excel. O botão "Exportar" salva a lista atual onde você quiser.
+
+Clique com o botão direito numa linha para: usar como padrão, renomear ou excluir.
+
+CONFIGURAÇÕES
+-------------
+Os valores já vêm iguais aos do app no celular:
+  Iluminante D65/10° (segundo: A/2°), modo SCI, aprovação por dE*ab
+  Tolerâncias: dL* ±0,4  da* ±0,1  db* ±0,5  dE*ab ≤ 0,6  (demais: 0,6)
+  CMC 2:1, medição simples (sem média)
+Tudo pode ser alterado em "Configurações". Também dá para fazer média de várias leituras.
+
+TESTAR SEM O APARELHO
+---------------------
+"Testar sem aparelho (simulacao).bat" abre o programa com um DS-01 simulado
+(as cores são aleatórias), para conhecer a tela.
+
+SE ALGO DER ERRADO
+------------------
+- "Não encontrei um adaptador Bluetooth": o adaptador não está ligado ou reconhecido.
+- O DS-01 não aparece na busca: confira se ele está ligado, perto do PC e
+  desconectado do celular.
+- Erro de "resposta incompleta": o aparelho pode ter entrado em repouso. Aperte
+  o botão dele e tente de novo.
+- Os valores L*a*b* são calculados com as mesmas tabelas do app oficial
+  (extraídas do app) e devem bater com o celular.
+
+Arquivos: colorimetro.py (tela), protocolo.py (comunicação e cálculos),
+iluminantes.json (tabelas de cor), config.json (suas configurações, criado ao usar).
+
+USAR O BLUETOOTH DO CELULAR COMO PONTE (sem adaptador no PC)
+  1. Celular (Android) e PC na mesma rede Wi-Fi. Feche o app da CHNSpec.
+  2. No PC, abra o programa e clique em "Procurar aparelho".
+     Se o Windows perguntar sobre o firewall, clique em "Permitir acesso".
+  3. No Chrome do celular abra  http://<IP do PC>:8765   (ex.: http://192.168.1.158:8765)
+     Na primeira vez o Chrome bloqueia o Bluetooth por não ser HTTPS. Abra
+     chrome://flags/#unsafely-treat-insecure-origin-as-secure , coloque o endereço
+     acima, mude para "Enabled", toque em "Relaunch" e abra a página de novo.
+  4. Na página, toque em "Conectar ao colorímetro" e escolha o CM145Y1851.
+  5. No PC, escolha "📱 ... pelo celular" e clique em "Conectar".
+  Deixe a página aberta e a tela do celular ligada enquanto mede.

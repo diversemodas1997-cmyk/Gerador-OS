@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ponte DS-01</title>
+<style>
+  :root { --fundo:#0f1720; --cartao:#1b2633; --texto:#e8eef5; --fraco:#93a4b8; --ok:#2ecc71; --erro:#ff6b6b; --azul:#3aa0ff; }
+  body { margin:0; padding:16px; background:var(--fundo); color:var(--texto); font:16px system-ui, sans-serif; }
+  h1 { font-size:20px; margin:4px 0 16px; }
+  .cartao { background:var(--cartao); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .linha { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:6px 0; }
+  .bola { display:inline-block; width:12px; height:12px; border-radius:50%; background:var(--fraco); margin-right:8px; vertical-align:middle; }
+  .on { background:var(--ok); } .off { background:var(--erro); }
+  button { width:100%; padding:18px; font-size:18px; font-weight:600; border:0; border-radius:12px; background:var(--azul); color:#fff; margin-top:6px; }
+  button:disabled { opacity:.45; }
+  #log { font:12px ui-monospace, monospace; color:var(--fraco); white-space:pre-wrap; max-height:40vh; overflow:auto; }
+  .aviso { color:#ffd166; font-size:14px; line-height:1.4; }
+</style>
+</head>
+<body>
+<h1>Ponte Bluetooth do Colorímetro</h1>
+
+<div class="cartao">
+  <div class="linha"><span><span id="bPc" class="bola"></span>Computador</span><span id="tPc">conectando…</span></div>
+  <div class="linha"><span><span id="bBt" class="bola"></span>Colorímetro</span><span id="tBt">desconectado</span></div>
+</div>
+
+<div id="semBt" class="cartao aviso" hidden></div>
+
+<button id="btn">Conectar ao colorímetro</button>
+<p class="aviso">Deixe esta tela aberta e o celular desbloqueado enquanto usa o programa no computador.
+  Feche o aplicativo da CHNSpec antes.</p>
+
+<div class="cartao"><div id="log"></div></div>
+
+<script>
+const SERVICO = 0xffe0, CARAC = 0xffe1;
+let ws = null, dispositivo = null, carac = null, fila = Promise.resolve(), travaTela = null;
+
+const $ = id => document.getElementById(id);
+function log(t) {
+  const l = $('log');
+  l.textContent = new Date().toLocaleTimeString() + '  ' + t + '\n' + l.textContent.slice(0, 4000);
+}
+function hex(u8) { return Array.from(u8, b => b.toString(16).padStart(2, '0')).join(' '); }
+function estado() {
+  const pcOk = ws && ws.readyState === 1, btOk = !!(dispositivo && dispositivo.gatt.connected && carac);
+  $('bPc').className = 'bola ' + (pcOk ? 'on' : 'off');
+  $('tPc').textContent = pcOk ? 'conectado' : 'sem conexão';
+  $('bBt').className = 'bola ' + (btOk ? 'on' : 'off');
+  $('tBt').textContent = btOk ? dispositivo.name : (dispositivo ? 'desconectado' : 'nenhum');
+  $('btn').textContent = btOk ? 'Desconectar colorímetro' : 'Conectar ao colorímetro';
+  return btOk;
+}
+function avisarPc() {
+  if (ws && ws.readyState === 1)
+    ws.send(JSON.stringify({ tipo: 'estado', conectado: estado(), nome: dispositivo ? dispositivo.name : null }));
+}
+
+// ---------------------------------------------------------------- computador
+function ligarPc() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { log('computador conectado'); avisarPc(); };
+  ws.onclose = () => { estado(); setTimeout(ligarPc, 2000); };
+  ws.onmessage = async ev => {
+    if (typeof ev.data !== 'string') {           // bytes para o aparelho
+      const dados = new Uint8Array(ev.data);
+      fila = fila.then(() => escrever(dados)).catch(e => log('erro ao escrever: ' + e.message));
+      return;
+    }
+    const m = JSON.parse(ev.data);
+    if (m.tipo === 'conectar') await reconectar();
+    else if (m.tipo === 'desconectar') desconectar();
+    else if (m.tipo === 'estado?') avisarPc();
+  };
+  estado();
+}
+
+async function escrever(dados) {
+  if (!carac) throw new Error('colorímetro desconectado');
+  if (carac.writeValueWithoutResponse) await carac.writeValueWithoutResponse(dados);
+  else await carac.writeValue(dados);
+}
+
+// ---------------------------------------------------------------- bluetooth
+async function abrirGatt() {
+  const srv = await dispositivo.gatt.connect();
+  const s = await srv.getPrimaryService(SERVICO);
+  carac = await s.getCharacteristic(CARAC);
+  carac.addEventListener('characteristicvaluechanged', e => {
+    const u8 = new Uint8Array(e.target.value.buffer);
+    if (ws && ws.readyState === 1) ws.send(u8);
+  });
+  await carac.startNotifications();
+  log('colorímetro conectado: ' + dispositivo.name);
+  avisarPc();
+}
+
+async function escolher() {
+  dispositivo = await navigator.bluetooth.requestDevice({
+    filters: [{ namePrefix: 'CM' }, { namePrefix: 'DS' }, { services: [SERVICO] }],
+    optionalServices: [SERVICO],
+  });
+  dispositivo.addEventListener('gattserverdisconnected', () => {
+    carac = null; log('colorímetro desconectou'); avisarPc();
+  });
+  await abrirGatt();
+}
+
+async function reconectar() {
+  if (estado()) return avisarPc();
+  if (!dispositivo) { log('o computador pediu conexão: toque em "Conectar ao colorímetro"'); return avisarPc(); }
+  for (let i = 1; i <= 3; i++) {
+    try { await abrirGatt(); return; }
+    catch (e) { log(`reconexão ${i} falhou: ${e.message}`); await new Promise(r => setTimeout(r, 1500)); }
+  }
+  avisarPc();
+}
+
+function desconectar() {
+  if (dispositivo && dispositivo.gatt.connected) dispositivo.gatt.disconnect();
+  carac = null; avisarPc();
+}
+
+$('btn').onclick = async () => {
+  try {
+    if (estado()) return desconectar();
+    if (dispositivo) await reconectar(); else await escolher();
+    if (!travaTela && navigator.wakeLock) travaTela = await navigator.wakeLock.request('screen').catch(() => null);
+  } catch (e) {
+    let msg = e.message;
+    if (/adapter not available/i.test(msg))
+      msg = 'o Chrome não consegue usar o Bluetooth do celular. Ligue o Bluetooth, permita "Dispositivos próximos" '
+          + '(Android 12+) ou ligue a Localização e permita para o Chrome (Android 11 ou anterior). Depois recarregue a página.';
+    else if (/cancel/i.test(msg)) msg = 'nenhum aparelho escolhido';
+    log('erro: ' + msg); avisarPc();
+  }
+};
+
+if (!navigator.bluetooth) {
+  $('btn').disabled = true;
+  $('semBt').hidden = false;
+  $('semBt').innerHTML = window.isSecureContext
+    ? 'Este navegador não tem Web Bluetooth. Abra esta página no <b>Google Chrome</b> do Android.'
+    : 'O Chrome bloqueia o Bluetooth em endereços sem HTTPS. Abra <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b>, '
+      + 'coloque <b>' + location.origin + '</b>, mude para <b>Enabled</b>, toque em <b>Relaunch</b> e abra esta página de novo.';
+}
+ligarPc();
+</script>
+</body>
+</html>

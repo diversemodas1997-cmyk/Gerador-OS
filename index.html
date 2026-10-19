@@ -123,6 +123,9 @@
         <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
         <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
         <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
+        <!-- COLORIMETRO (19/10/2026, Junior): o programa do CHNSpec DS-01, que
+             era Python no PC, dentro do Gerador-OS. Tela em colorimetro.js. -->
+        <a class="nav-btn" href="#colorimetro" data-page="colorimetro" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Colorímetro</a>
     </div>
 
     <!-- A PASTA ORDENS (16/10/2026): as tres ordens que a fabrica emite (OS,
@@ -539,6 +542,17 @@
     </section>
 
     <!-- RANKING DE PRODUÇÃO: o que a fábrica mais faz, cruzando SKU, cor e grade -->
+    <!-- COLORIMETRO (19/10/2026): o painel é desenhado por colorimetro.js. -->
+    <section class="page hidden" data-page="colorimetro">
+      <div class="page-header">
+        <div>
+          <h1>Colorímetro</h1>
+          <div class="desc">Mede cor com o colorímetro <b>CHNSpec DS-01</b> pelo Bluetooth do computador: L*a*b*, C*, h°, as diferenças, dE*ab / dE00 / dEcmc / dE94, <b>Aprovado</b> ou <b>Reprovado</b> e a curva espectral — as mesmas contas e tolerâncias do programa do PC. Feche o app do celular antes (o aparelho aceita uma conexão de cada vez). As medições ficam no histórico deste computador e saem em CSV para o Excel.</div>
+        </div>
+      </div>
+      <div id="colorimetro-painel"></div>
+    </section>
+
     <section class="page hidden" data-page="ranking">
       <div class="page-header">
         <div>
@@ -2009,5 +2023,6 @@
 
 <script src="app.js?v=2026-10-15d"></script>
 <script src="assistente.js?v=2026-10-19i"></script>
+<script src="colorimetro.js?v=2026-10-19a"></script>
 </body>
 </html>
