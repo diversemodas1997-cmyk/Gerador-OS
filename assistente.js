@@ -19,6 +19,13 @@
    validações e a trava de gravação são as do programa. Nada daqui muda status,
    aprova planejamento, apaga, ou mexe em conta e papel de usuário.
 
+   E A OS CONJUGADA (19/10/2026, Junior: "autonomia para criar OS com número
+   que seja conjugada seguindo outra OS... e imprimir essa OS logo em
+   seguida"): `criar_os_conjugada`, pela regra da grade ou pelo formulário +
+   salvarOS e a amarra do "⋯ → conjugar". É a única OS com número que nasce
+   daqui, sempre presa a uma OS que já existe, e a folha vai para a impressão
+   sem esperar clique.
+
    O CAMINHO DE UMA PERGUNTA
    1. A pergunta vai para /functions/v1/assistente (servidor da fábrica), que
       guarda a chave da Anthropic e fala com o Claude.
@@ -291,6 +298,10 @@
       return planejar(p);
     },
 
+    async criar_os_conjugada(p) {
+      return criarConjugada(p);
+    },
+
     tela_atual() {
       const sec = [...document.querySelectorAll('section.page')].find(s => !s.classList.contains('hidden'));
       if (!sec) return { erro: 'Não identifiquei a tela aberta.' };
@@ -383,11 +394,13 @@
   const ROTULO_CONFLITO = {
     grade_de_outro_produto: 'grade de outro produto', camadas_acima_do_limite: 'camadas acima do limite',
     medida_sem_risco: 'medida sem risco', planejamento_repetido: 'planejamento repetido',
-    os_igual_em_producao: 'OS igual em produção', data_no_passado: 'data passada'
+    os_igual_em_producao: 'OS igual em produção', data_no_passado: 'data passada',
+    ativa_encerrada: 'OS ativa encerrada', conjugada_repetida: 'conjugada repetida', falta_de_tecido: 'falta tecido'
   };
   const CONFIRMA_DO_PROGRAMA = [
     { codigo: 'medida_sem_risco', casa: /não veio de um risco/i },
-    { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i }
+    { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i },
+    { codigo: 'falta_de_tecido', casa: /Não há tecido disponível/i }
   ];
 
   function acharDesenho(texto) {
@@ -409,6 +422,254 @@
   }
 
   const opcoesDeGrade = sel => Array.from(sel.options).filter(o => o.value).map(o => o.text).slice(0, 30);
+
+  /* O formulário da Nova OS já aberto (OS ou planejamento): desenho, linha,
+     grade, camadas, data e obs nos próprios campos, com os mesmos onchange.
+     Devolve `parar` quando falta algo — é o que volta para o Claude. */
+  async function preencherFormulario(p, des, exigirGrade) {
+    const el = id => document.getElementById(id);
+    if (des) {
+      const sd = el('f-desenho');
+      sd.value = des.id;
+      if (sd.value !== des.id) return { parar: { erro: `O desenho ${des.codigo} não está na lista do formulário.` } };
+      previewDesenhoSelecionado();
+      sincCodigoDesenho('desenho');
+      preencherDropdownGradesOS();
+    }
+
+    const sg = el('f-grade-preset');
+    let grade = null;
+    if (p.grade) {
+      const t = norm(p.grade).trim();
+      const termos = t.split(/\s+/).filter(Boolean);
+      const todas = STATE.grades || [];
+      let casam = todas.filter(g => norm(g.nome).trim() === t);
+      if (!casam.length) casam = todas.filter(g => termos.every(x => norm(g.nome).includes(x)));
+      if (casam.length > 1) {
+        // Entre várias, as que o formulário oferece para este desenho primeiro.
+        const naLista = new Set(Array.from(sg.options).map(o => o.value));
+        const doDesenho = casam.filter(g => naLista.has(g.id));
+        if (doDesenho.length) casam = doDesenho;
+      }
+      if (!casam.length) return { parar: { erro: `Não achei grade com "${p.grade}".`, grades_para_este_desenho: opcoesDeGrade(sg) } };
+      if (casam.length > 1) return { parar: { pergunta: 'Mais de uma grade combina — pergunte à pessoa qual.', opcoes: casam.slice(0, 20).map(g => g.nome) } };
+      grade = casam[0];
+    } else if (exigirGrade) {
+      return { parar: { pergunta: 'Falta a grade — pergunte à pessoa qual.', preenchido_na_tela: true,
+        grades_para_este_desenho: opcoesDeGrade(sg) } };
+    }
+    if (grade) {
+      const ls = el('f-linha-tipo');
+      const linha = _linhaTipoGrade(grade);
+      if (ls && linha) { ls.value = linha; filtrarLinhaGradesOS(linha); }
+      preencherDropdownGradesOS(grade.id);
+      sg.value = grade.id;
+      aplicarGradePreset();
+    }
+
+    if (p.camadas != null) { el('f-enf-camadas').value = Math.max(1, parseInt(p.camadas, 10) || 1); calcularAlvoDeCamadas(); }
+    if (p.grades_iguais != null) { el('f-plan-vezes').value = Math.max(1, parseInt(p.grades_iguais, 10) || 1); atualizarCalculosEnfesto(); }
+    if (p.data) { const d = dataIso(p.data); if (!d) return { parar: { erro: `Não entendi a data "${p.data}".` } }; el('f-data').value = d; }
+    if (p.tipo_producao) el('f-tipo-producao').value = p.tipo_producao === 'puxada' ? 'puxada' : 'empurrada';
+    if (p.obs != null) el('f-obs').value = String(p.obs);
+    await esperar(80);
+
+    const gradeId = sg.value;
+    const g = (STATE.grades || []).find(x => x.id === gradeId);
+    const dados = coletaOS();
+    const gr = dados.grade || {};
+    if (['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].some(k => gr[k] > 0) && ['t2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].some(k => gr[k] > 0)) {
+      return { parar: { salvo: false, preenchido_na_tela: true, erro: 'A grade mistura P ao G3 com 2 ao 16 — isso o programa não aceita. Pergunte qual linha vale.' } };
+    }
+    return { des, g, gradeId, desenhoId: el('f-desenho').value, dados,
+      cam: parseInt(el('f-enf-camadas').value, 10) || 0, dataForm: el('f-data').value };
+  }
+
+  // Os conflitos de qualquer formulário preenchido. `fora` = OS que não contam
+  // como "igual em produção" (a ativa de uma conjugada é, de propósito, igual).
+  function conflitosDoFormulario(f, fora) {
+    const conflitos = [];
+    if (f.g && f.des) {
+      const motivo = _motivoGradeForaDoDropdownOS(f.g, _ctxDropdownGradesOS([]));
+      if (motivo) conflitos.push({ codigo: 'grade_de_outro_produto',
+        texto: `A grade ${f.g.nome} não é das que o formulário oferece para este desenho (${(_MOTIVO_GRADE_LABEL || {})[motivo] || motivo}).` });
+    }
+    const { limite } = calcularLimiteCamadas();
+    if (f.cam > 0 && f.cam > limite) conflitos.push({ codigo: 'camadas_acima_do_limite', texto: `${f.cam} camadas, acima do limite do tecido (${limite}).` });
+    const semProva = f.gradeId ? fasesSemProvaDeMedida(f.gradeId) : [];
+    if (semProva.length) conflitos.push({ codigo: 'medida_sem_risco',
+      texto: `A medida de enfesto destas fases foi digitada à mão, sem PDF de risco: ${semProva.map(x => x.nome).join(', ')}.` });
+    const naoConta = new Set(fora || []);
+    const emProducao = (STATE.ordens || []).filter(o => !naoConta.has(o.id) && o.desenhoId === f.desenhoId && o.gradeId === f.gradeId
+      && !['estoque', 'cancelado'].includes(statusDe(o)));
+    if (emProducao.length) conflitos.push({ codigo: 'os_igual_em_producao',
+      texto: `Já há OS do mesmo desenho e grade em produção: ${emProducao.slice(0, 10).map(o => `${o.os} (${rotuloStatus(statusDe(o))})`).join(', ')}.` });
+    if (f.dataForm && f.dataForm < dataIso('hoje')) conflitos.push({ codigo: 'data_no_passado', texto: `A data ${f.dataForm.split('-').reverse().join('/')} já passou.` });
+    return conflitos;
+  }
+
+  // As perguntas que o programa faz ao salvar: sim só para o que foi aceito;
+  // qualquer outra é "não", e o texto dela volta para o chat.
+  async function salvarRespondendo(salvar, aceitos) {
+    const confirmOriginal = window.confirm;
+    const perguntas = [];
+    window.confirm = msg => {
+      const c = CONFIRMA_DO_PROGRAMA.find(x => x.casa.test(String(msg)));
+      if (c && aceitos.has(c.codigo)) return true;
+      perguntas.push(String(msg).slice(0, 400));
+      return false;
+    };
+    try { await salvar(); }
+    finally { window.confirm = confirmOriginal; }
+    return perguntas;
+  }
+
+  /* ---------------- OS conjugada ----------------
+     (19/10/2026, Junior: "O assistente deve ter autonomia para criar OS com
+     número que seja conjugada seguindo outra OS. Ela deve ter autonomia para
+     imprimir essa OS logo em seguida.")
+
+     É a ÚNICA OS com número que o assistente cria, e sempre amarrada a uma OS
+     que já existe. Os dois caminhos são os do programa:
+     · PELA GRADE — a grade da OS ativa tem conjugada no cadastro e a segunda
+       OS ainda não existe: aplicarRegraConjugadaSeAplicavel, a mesma de quando
+       a OS é salva (número de baixo; não reserva pano, é o mesmo enfesto).
+     · À MÃO — a pessoa diz a grade (e o desenho, se não for o mesmo): a Nova
+       OS pelo formulário e pelo salvarOS (número, pano dela, etiqueta) e depois
+       a marca conjugadaStatusPaiId, a mesma do "⋯ → conjugar": o status passa
+       a seguir a ativa. Nenhum status é carimbado agora — alinhar seria mudar
+       status, e isso o assistente não faz.
+     A folha é impressa logo a seguir, sem esperar clique. */
+  async function criarConjugada(p) {
+    if (typeof contaTemAcesso !== 'function' || !contaTemAcesso('os', CONTA_ASSISTENTE, 'usuario')) {
+      return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem edição em Ordens de Serviço. O admin libera em Configurações → Contas de acesso.` };
+    }
+    if (typeof podeGravar === 'function' && !podeGravar()) {
+      return { erro: 'Esta tela não grava (celular ou fora do servidor da fábrica). Use um computador da fábrica.' };
+    }
+    if (!(ehAdmin() || temAcesso('os'))) {
+      return { sem_acesso: true, mensagem: 'Esta conta não pode criar OS. Peça ao admin.' };
+    }
+    let ativa = (STATE.ordens || []).find(x => numOS(x.os) === numOS(p.os_ativa));
+    if (!ativa) return { erro: `Não achei a OS ${p.os_ativa}.` };
+    const notas = [];
+    // Quem manda no grupo é uma só: sobe para ela, como a tela de conjugar.
+    const pai = ativa.conjugadaPaiId ? (STATE.ordens || []).find(x => x.id === ativa.conjugadaPaiId) : _ativaStatusDaOS(ativa);
+    if (pai) { notas.push(`A OS ${ativa.os} já segue a OS ${pai.os}; a nova segue a ${pai.os}, que é quem manda no grupo.`); ativa = pai; }
+
+    const aceitos = new Set((Array.isArray(p.aceitar) ? p.aceitar : []).map(String));
+    const conflitos = [];
+    const st = statusDe(ativa);
+    if (['estoque', 'cancelado'].includes(st)) conflitos.push({ codigo: 'ativa_encerrada', texto: `A OS ${ativa.os} já está em ${rotuloStatus(st)}.` });
+
+    const gAtiva = (STATE.grades || []).find(g => g.id === ativa.gradeId);
+    const gConj = gradeConjugaAlguma(ativa.gradeId) ? (STATE.grades || []).find(g => g.id === gAtiva.conjugadaGradeId) : null;
+    const termosGrade = norm(p.grade || '').trim().split(/\s+/).filter(Boolean);
+    const pelaGrade = gConj && !p.desenho && (!termosGrade.length || termosGrade.every(x => norm(gConj.nome).includes(x)));
+
+    const pendentesOuBotao = (lista, preenchido) => {
+      const pendentes = lista.filter(c => !aceitos.has(c.codigo));
+      if (!pendentes.length) return null;
+      const todos = [...aceitos, ...pendentes.map(c => c.codigo)];
+      oferecerAcao(`➕ Criar assim mesmo (${pendentes.map(c => ROTULO_CONFLITO[c.codigo] || c.codigo).join(', ')})`, async () => {
+        const r = await criarConjugada(Object.assign({}, p, { aceitar: todos }));
+        anotarNoChat(r.criada
+          ? `✔ OS ${r.os.os} criada, conjugada à OS ${r.segue_a_os}.${r.impressa ? ' A folha foi para a impressão.' : ''}`
+          : `✖ Não criei: ${r.erro || (r.conflitos || []).map(c => c.texto).join(' ') || 'o programa recusou'}`
+            + (r.perguntas_do_programa ? `\n\n${r.perguntas_do_programa.join('\n\n')}` : ''));
+      }, true);
+      return { criada: false, preenchido_na_tela: preenchido, conflitos: pendentes, botao_mostrado: 'Criar assim mesmo',
+        instrucao: 'Nada foi criado ainda. Explique os conflitos em poucas linhas e diga que a pessoa pode clicar em "Criar assim mesmo" ou responder sim. Com o sim dela por escrito, chame de novo com aceitar.' };
+    };
+    const marcar = o => { o.viaAssistente = { conta: CONTA_ASSISTENTE, pedidoPor: login(), em: new Date().toISOString(), conflitosAceitos: [...aceitos] }; };
+
+    let nova = null, caminho = '';
+    const outras = [];
+    if (pelaGrade) {
+      if (!deveGerarConjugada(ativa)) {
+        const ja = (STATE.ordens || []).find(o => o.id === ativa.conjugadaId);
+        return { criada: false, ja_existe: ja ? resumoOS(ja) : undefined,
+          pergunta: `A conjugada da grade da OS ${ativa.os}${ja ? ` já existe: OS ${ja.os}` : ' não pôde ser gerada'}. Para outra OS, à mão, pergunte à pessoa a grade (e o desenho, se não for o mesmo).` };
+      }
+      const r = pendentesOuBotao(conflitos, { pela_grade: gConj.nome });
+      if (r) return r;
+      nova = await aplicarRegraConjugadaSeAplicavel(ativa);
+      if (!nova) return { criada: false, erro: 'O programa não gerou a conjugada — veja a mensagem que apareceu na tela.' };
+      caminho = `pela grade (${gConj.nome}): mesmo enfesto, não reserva pano`;
+      marcar(nova);
+      try { await saveState('ordens'); } catch (e) { /* a OS já está salva; a marca vai no próximo */ }
+    } else {
+      if (!p.grade) {
+        return { pergunta: `A grade da OS ${ativa.os}${gAtiva ? ` (${gAtiva.nome})` : ''} não tem conjugada no cadastro. Pergunte à pessoa a grade da nova OS (e o desenho, se não for o mesmo).` };
+      }
+      let des = null;
+      if (p.desenho) {
+        const r = acharDesenho(p.desenho);
+        if (!r.desenho) return r;
+        des = r.desenho;
+      } else {
+        des = (STATE.desenhos || []).find(d => d.id === ativa.desenhoId) || null;
+        if (!des) return { pergunta: 'O desenho da OS ativa não está no cadastro — pergunte à pessoa qual desenho usar.' };
+      }
+      // A Nova OS, como o botão da tela.
+      osEditId = null;
+      _osPlanAbrir = false;
+      goto('nova-os');
+      await esperar(300);
+      if (_osPlanModo || osEditId) return { erro: 'Não consegui abrir o formulário da Nova OS.' };
+      const f = await preencherFormulario(p, des, true);
+      if (f.parar) return f.parar;
+      const grupo = [ativa.id, ..._conjugadasManuaisDaOS(ativa).map(o => o.id), ativa.conjugadaId].filter(Boolean);
+      conflitos.push(...conflitosDoFormulario(f, grupo));
+      const repetida = (STATE.ordens || []).filter(o => grupo.includes(o.id) && o.id !== ativa.id
+        && o.desenhoId === f.desenhoId && o.gradeId === f.gradeId);
+      if (repetida.length) conflitos.push({ codigo: 'conjugada_repetida',
+        texto: `A OS ${ativa.os} já tem conjugada com o mesmo desenho e a mesma grade: ${repetida.map(o => o.os).join(', ')}.` });
+      try {
+        const falta = faltaDeTecidoParaOS(f.dados);
+        if (falta.length) conflitos.push({ codigo: 'falta_de_tecido',
+          texto: `Falta tecido: ${falta.map(x => `${x.tecidoNome} ${x.corNome || ''} (faltam ${Number(x.falta || 0).toFixed(1).replace('.', ',')} kg)`).join('; ')}.` });
+      } catch (e) { /* a prova do salvarOS pergunta de novo */ }
+      const preenchido = { desenho: _rotuloDesenhoOS(des), grade: f.g ? f.g.nome : undefined, camadas: f.cam || undefined,
+        numero: document.getElementById('f-os').value, data: f.dataForm || undefined };
+      const r = pendentesOuBotao(conflitos, preenchido);
+      if (r) return r;
+
+      const antes = new Set((STATE.ordens || []).map(o => o.id));
+      const perguntas = await salvarRespondendo(salvarOS, aceitos);
+      const novas = (STATE.ordens || []).filter(o => !antes.has(o.id));
+      nova = novas.find(o => !o.conjugadaPaiId) || null;
+      if (!nova) {
+        return { criada: false, preenchido_na_tela: preenchido, perguntas_do_programa: perguntas.length ? perguntas : undefined,
+          erro: perguntas.length ? 'O programa fez uma pergunta ao salvar: leve-a para a pessoa.' : 'O programa não salvou — veja a mensagem que apareceu na tela.' };
+      }
+      // A grade da nova OS pode ter conjugada própria: o salvarOS já a gerou.
+      novas.filter(o => o !== nova).forEach(o => { marcar(o); outras.push(o.os); });
+      nova.conjugadaStatusPaiId = ativa.id;
+      marcar(nova);
+      caminho = 'à mão: reserva o pano dela, e o status segue a OS ativa';
+      try { await saveState('ordens'); }
+      catch (e) { return { criada: true, os: resumoOS(nova), erro: 'A OS foi salva, mas a amarra com a ativa não gravou. Conjugue pelo "⋯ → conjugar" da lista.' }; }
+    }
+
+    const ret = { criada: true, caminho, os: resumoOS(nova), segue_a_os: ativa.os,
+      status_da_ativa: rotuloStatus(st),
+      aviso_status: statusDe(nova) !== st
+        ? `A nova OS está em ${rotuloStatus(statusDe(nova))} e a ${ativa.os} em ${rotuloStatus(st)}: ela passa a seguir a partir da próxima mudança de status da ${ativa.os}. Alinhar agora é com quem carimba status.`
+        : undefined,
+      tambem_gerada_pela_grade: outras.length ? outras : undefined, notas: notas.length ? notas : undefined };
+    if (p.imprimir !== false) {
+      const folha = folhaDe('os', nova.os);
+      if (!folha.erro) {
+        folha.abrir();
+        await esperar(900);
+        window.print();
+        ret.impressa = true;
+        oferecerAcao(`🖨 Imprimir de novo a folha da OS ${nova.os}`, () => { fechar(); folha.abrir(); setTimeout(() => window.print(), 700); });
+      }
+    }
+    return ret;
+  }
 
   async function planejar(p) {
     const acao = p.acao === 'editar' ? 'editar' : 'novo';
@@ -444,83 +705,16 @@
     await esperar(300);
     if (!_osPlanModo) return { erro: 'Não consegui abrir o formulário de planejamento.' };
     const el = id => document.getElementById(id);
-
-    if (des) {
-      const sd = el('f-desenho');
-      sd.value = des.id;
-      if (sd.value !== des.id) return { erro: `O desenho ${des.codigo} não está na lista do formulário.` };
-      previewDesenhoSelecionado();
-      sincCodigoDesenho('desenho');
-      preencherDropdownGradesOS();
-    }
-
-    const sg = el('f-grade-preset');
-    let grade = null;
-    if (p.grade) {
-      const t = norm(p.grade).trim();
-      const termos = t.split(/\s+/).filter(Boolean);
-      const todas = STATE.grades || [];
-      let casam = todas.filter(g => norm(g.nome).trim() === t);
-      if (!casam.length) casam = todas.filter(g => termos.every(x => norm(g.nome).includes(x)));
-      if (casam.length > 1) {
-        // Entre várias, as que o formulário oferece para este desenho primeiro.
-        const naLista = new Set(Array.from(sg.options).map(o => o.value));
-        const doDesenho = casam.filter(g => naLista.has(g.id));
-        if (doDesenho.length) casam = doDesenho;
-      }
-      if (!casam.length) return { erro: `Não achei grade com "${p.grade}".`, grades_para_este_desenho: opcoesDeGrade(sg) };
-      if (casam.length > 1) return { pergunta: 'Mais de uma grade combina — pergunte à pessoa qual.', opcoes: casam.slice(0, 20).map(g => g.nome) };
-      grade = casam[0];
-    } else if (acao === 'novo') {
-      return { pergunta: 'Falta a grade — pergunte à pessoa qual.', preenchido_na_tela: true,
-        grades_para_este_desenho: opcoesDeGrade(sg) };
-    }
-    if (grade) {
-      const ls = el('f-linha-tipo');
-      const linha = _linhaTipoGrade(grade);
-      if (ls && linha) { ls.value = linha; filtrarLinhaGradesOS(linha); }
-      preencherDropdownGradesOS(grade.id);
-      sg.value = grade.id;
-      aplicarGradePreset();
-    }
-
-    if (p.camadas != null) { el('f-enf-camadas').value = Math.max(1, parseInt(p.camadas, 10) || 1); calcularAlvoDeCamadas(); }
-    if (p.grades_iguais != null) { el('f-plan-vezes').value = Math.max(1, parseInt(p.grades_iguais, 10) || 1); atualizarCalculosEnfesto(); }
-    if (p.data) { const d = dataIso(p.data); if (!d) return { erro: `Não entendi a data "${p.data}".` }; el('f-data').value = d; }
-    if (p.tipo_producao) el('f-tipo-producao').value = p.tipo_producao === 'puxada' ? 'puxada' : 'empurrada';
-    if (p.obs != null) el('f-obs').value = String(p.obs);
-    await esperar(80);
+    const f = await preencherFormulario(p, des, acao === 'novo');
+    if (f.parar) return f.parar;
+    const { g, gradeId, desenhoId, dados, cam } = f;
+    const dataPlan = f.dataForm;
 
     // ---- os conflitos ----
-    const gradeId = sg.value;
-    const g = (STATE.grades || []).find(x => x.id === gradeId);
-    const desenhoId = el('f-desenho').value;
-    const conflitos = [];
-    const dados = coletaOS();
-    const gr = dados.grade || {};
-    if (['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].some(k => gr[k] > 0) && ['t2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].some(k => gr[k] > 0)) {
-      return { salvo: false, preenchido_na_tela: true, erro: 'A grade mistura P ao G3 com 2 ao 16 — isso o programa não aceita. Pergunte qual linha vale.' };
-    }
-    if (g && des) {
-      const motivo = _motivoGradeForaDoDropdownOS(g, _ctxDropdownGradesOS([]));
-      if (motivo) conflitos.push({ codigo: 'grade_de_outro_produto',
-        texto: `A grade ${g.nome} não é das que o formulário oferece para este desenho (${(_MOTIVO_GRADE_LABEL || {})[motivo] || motivo}).` });
-    }
-    const cam = parseInt(el('f-enf-camadas').value, 10) || 0;
-    const { limite } = calcularLimiteCamadas();
-    if (cam > 0 && cam > limite) conflitos.push({ codigo: 'camadas_acima_do_limite', texto: `${cam} camadas, acima do limite do tecido (${limite}).` });
-    const semProva = gradeId ? fasesSemProvaDeMedida(gradeId) : [];
-    if (semProva.length) conflitos.push({ codigo: 'medida_sem_risco',
-      texto: `A medida de enfesto destas fases foi digitada à mão, sem PDF de risco: ${semProva.map(f => f.nome).join(', ')}.` });
+    const conflitos = conflitosDoFormulario(f);
     const iguais = _planLista().filter(x => x.id !== (plan && plan.id) && x.desenhoId === desenhoId && x.gradeId === gradeId);
     if (iguais.length) conflitos.push({ codigo: 'planejamento_repetido',
       texto: `Já existe planejamento com o mesmo desenho e a mesma grade: ${iguais.slice(0, 5).map(_planResumo).join(' / ')}.` });
-    const emProducao = (STATE.ordens || []).filter(o => o.desenhoId === desenhoId && o.gradeId === gradeId
-      && !['estoque', 'cancelado'].includes(statusDe(o)));
-    if (emProducao.length) conflitos.push({ codigo: 'os_igual_em_producao',
-      texto: `Já há OS do mesmo desenho e grade em produção: ${emProducao.slice(0, 10).map(o => `${o.os} (${rotuloStatus(statusDe(o))})`).join(', ')}.` });
-    const dataPlan = el('f-data').value;
-    if (dataPlan && dataPlan < dataIso('hoje')) conflitos.push({ codigo: 'data_no_passado', texto: `A data ${dataPlan.split('-').reverse().join('/')} já passou.` });
 
     const aceitos = new Set((Array.isArray(p.aceitar) ? p.aceitar : []).map(String));
     const pendentes = conflitos.filter(c => !aceitos.has(c.codigo));
@@ -547,16 +741,7 @@
     // ---- salvar pelo caminho do programa ----
     const antes = new Set(_planLista().map(x => x.id));
     const editadoAntes = plan ? plan.editadoEm : null;
-    const confirmOriginal = window.confirm;
-    const perguntasNovas = [];
-    window.confirm = msg => {
-      const c = CONFIRMA_DO_PROGRAMA.find(x => x.casa.test(String(msg)));
-      if (c && aceitos.has(c.codigo)) return true;
-      perguntasNovas.push(String(msg).slice(0, 400));
-      return false;
-    };
-    try { await salvarPlanejamento(); }
-    finally { window.confirm = confirmOriginal; }
+    const perguntasNovas = await salvarRespondendo(salvarPlanejamento, aceitos);
 
     const salvo = acao === 'novo'
       ? _planLista().find(x => !antes.has(x.id))
@@ -687,7 +872,7 @@
   const NOMES_FERR = {
     resumo_status: 'o resumo por status', buscar_os: 'as OS', detalhe_os: 'a OS',
     listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela',
-    preparar_folha: 'a folha', planejar: 'o planejamento'
+    preparar_folha: 'a folha', planejar: 'o planejamento', criar_os_conjugada: 'a OS conjugada'
   };
 
   /* ---------------- markdown simples (seguro) ---------------- */
