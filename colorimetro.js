@@ -474,7 +474,7 @@
     t: null, dev: null, cal: null, ocupado: false, conectando: false,
     padrao: null, leituras: [], acumulando: [], cont: { padrao: 0, amostra: 0 },
     atual: null, pagina: 0, status: 'Desconectado', aviso: '', log: [],
-    pedido: null, janela: null, os: null, rel: null, relCarregando: false, relSalvo: null, histDias: [], histDia: '', histLidas: [], semBD: false
+    pedido: null, janela: null, os: null, av: null, relSalvo: null, histDias: [], histDia: '', histLidas: [], semBD: false
   };
   let seq = 0;
   const novoId = () => 'cm_' + Date.now().toString(36) + '_' + (++seq);
@@ -523,7 +523,7 @@
   }
 
   const modoAtual = () => cfg.modo !== 'auto' ? parseInt(cfg.modo, 10) : (S.dev && S.dev.info ? modoPadrao(S.dev.info) : 0);
-  const refDe = l => l.refId ? S.leituras.find(x => x.id === l.refId) || null : null;
+  const refDe = l => l.refId ? S.leituras.find(x => x.id === l.refId) || (S.padrao && S.padrao.id === l.refId ? S.padrao : null) : null;
 
   /* ---------------- conexão ---------------- */
   function semBluetooth() {
@@ -653,6 +653,7 @@
 
   async function medir(tipo) {
     if (!S.dev || S.ocupado) return;
+    if (S.os && S.av && tipo === 'amostra' && S.av.n == null) { S.aviso = 'A rodada terminou: clique em Reavaliar ou escolha o número da amostra.'; desenhar(); return; }
     S.ocupado = true;
     status('Medindo…');
     try { chegou(await S.dev.medir(modoAtual()), tipo); } catch (e) { erroDoAparelho(e); }
@@ -663,6 +664,8 @@
     if (S.ocupado || !S.dev) return;
     let tipo = cfg.botao;
     if (tipo === 'amostra' && !S.padrao && !S.acumulando.length) tipo = 'padrao';
+    // Na avaliação de uma OS o botão mede a amostra atual (a 1ª da rodada vira a referência).
+    if (S.os && S.av) { if (S.av.n == null) return; tipo = 'amostra'; }
     S.ocupado = true;
     status('Medição feita no aparelho — baixando…');
     S.dev.baixarMedicao(modo).then(m => chegou(m, tipo), erroDoAparelho);
@@ -685,17 +688,19 @@
     } else {
       labAp = [0, 1, 2].map(i => medidas.reduce((s, x) => s + x.lab_aparelho[i], 0) / medidas.length);
     }
-    S.cont[tipo]++;
+    const naOS = !!(S.os && S.av);
+    if (!naOS) S.cont[tipo]++;
     const prefixo = tipo === 'padrao' ? cfg.nome_padrao : cfg.nome_amostra;
     const l = novaLeitura({ nome: `${prefixo} ${S.cont[tipo]}`, tipo, espectro: esp, wave_start: medidas[0].wave_start,
       lab_aparelho: labAp, horario: new Date() });
-    if (tipo === 'amostra' && S.padrao) l.refId = S.padrao.id;
-    if (S.os) { l.osId = S.os.id; l.osNumero = S.os.numero; }
+    // Com a tela ligada a uma OS, quem dá nome, referência e tom é a avaliação.
+    const msg = naOS ? avMedicao(l, tipo) : '';
+    if (!naOS && tipo === 'amostra' && S.padrao) l.refId = S.padrao.id;
     S.leituras.unshift(l);
-    if (tipo === 'padrao') S.padrao = l;
+    if (tipo === 'padrao' && !naOS) S.padrao = l;
     S.atual = l;
     guardar(l);
-    status(`${l.nome} medido às ${horaTxt(l.horario)}`);
+    status(msg || `${l.nome} medido às ${horaTxt(l.horario)}`);
   }
 
   // Cada medição vai para o histórico deste navegador na hora, como o CSV do dia do original.
@@ -704,7 +709,7 @@
     return { id: l.id, dia: diaIso(l.horario), horario: l.horario.toISOString(), nome: l.nome, tipo: l.tipo,
       espectro: l.espectro, wave_start: l.wave_start, lab_aparelho: l.lab_aparelho,
       refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1,
-      osId: l.osId || null, osNumero: l.osNumero || '' };
+      osId: l.osId || null, osNumero: l.osNumero || '', amostraN: l.amostraN || null, rodada: l.rodada || null };
   }
   function guardar(l) {
     BD.gravar(registroDe(l)).catch(e => {
@@ -904,62 +909,101 @@
   }
 
   /* ---------------- AVALIAR AMOSTRAS DE UMA OS ----------------
-     (19/10/2026, Junior: "As medições devem apontar para uma OS. O usuário deve
-     clicar numa opção na coluna de ações da lista de OS 'avaliar amostras' e
-     ser redirecionado para a área Colorímetro. Depois da medição, deve ser
-     produzido relatório conduzido pelo usuário para determinar quais cores são
-     compatíveis em conjunto numérico, onde mais de um grupo pode ser formado
-     com tonalidades compatíveis." e "Esse relatório deve constar no campo de
-     observações da OS escolhida".)
+     (19/10/2026, Junior, em três recados:
+      1. "As medições devem apontar para uma OS. O usuário deve clicar numa
+         opção na coluna de ações da lista de OS 'avaliar amostras' e ser
+         redirecionado para a área Colorímetro… relatório conduzido pelo usuário
+         para determinar quais cores são compatíveis em conjunto numérico, onde
+         mais de um grupo pode ser formado" — e "esse relatório deve constar no
+         campo de observações da OS escolhida".
+      2. "deve obedecer à sequência de amostras, iniciando na amostra número 1 e
+         passando pelas amostras número 2, 3, 4, 5…".
+      3. "deve obedecer à mudança de uma amostra para outra, pois pode exigir
+         mais de uma medição por amostra. Usuário deve clicar para mudar o número
+         da amostra que está sendo avaliada. Essa amostra deve migrar para grupo
+         de tonalidades compatíveis automaticamente conforme receba pelo menos uma
+         aprovação. Quando usuário clicar em trocar, significa que aquela amostra
+         deve ir para um grupo que deverá ser novamente avaliado para encontrar o
+         grupo de compatibilidade de tonalidade.")
 
-     · O "⋯ → avaliar amostras" da lista de OS chama Colorimetro.avaliarOS(id):
-       a tela abre com a OS escolhida, e toda medição feita a partir daí leva
-       osId/osNumero (no histórico deste navegador também).
-     · O RELATÓRIO DE TONALIDADES junta as AMOSTRAS medidas para essa OS (de
-       qualquer dia, neste computador) e propõe os grupos: duas amostras são
-       compatíveis quando o dE entre ELAS (a fórmula e a tolerância das
-       Configurações) está dentro da tolerância, e um grupo só aceita quem é
-       compatível com TODOS os que já estão nele. A proposta é só o começo — a
-       pessoa muda o tom de cada amostra, tira a amostra do relatório ("fora"),
-       e o quadro mostra em vermelho o par que ficou incompatível no mesmo tom.
-     · "Salvar nas observações da OS" grava o resumo como um recado da pessoa
-       logada em o.obsNotas, pelo mesmo salvarObsNota da folha: assinado, com
-       data, sem passar por cima do recado de ninguém. Curto de propósito — a
-       caixa de observações disputa milímetro com o desenho na folha. */
+      4. "Em casos de OS com mais de uma fase de enfesto, o programa deve gerar o
+         relatório de grupo numérico de amostras compatíveis de acordo com as
+         fases de enfesto e tipo de tecido. Logo, usuário deve seguir as fases de
+         enfesto na hora de avaliar as amostras. Caso ele tenha que repetir a
+         avaliação de amostras, ele deve apontar qual fase está sendo
+         reavaliada.")
+
+     POR FASE DE ENFESTO: cada fase da OS (Corpo · Malha Algodão, Gola · Ribana…)
+     tem a sua avaliação inteira — amostras numeradas desde 1, rodadas e tons
+     próprios. A tela anda na ORDEM das fases: só se mede a fase atual, e
+     "Concluir a fase" passa para a seguinte. Repetir uma fase já concluída é
+     escolhê-la em "Reavaliar a fase" — a avaliação dela recomeça do zero e o
+     relatório diz que ela foi reavaliada.
+
+     A DINÂMICA de cada fase, então, é por RODADAS, e cada rodada forma um tom:
+       · A AMOSTRA ATUAL é um número (1, 2, 3…). Medir mede ESSA amostra, quantas
+         vezes for preciso; o número só muda no clique (Trocar / Ir para nº).
+       · A REFERÊNCIA DO TOM: o padrão medido nesta rodada (Medir referência) ou,
+         sem ele, a primeira medição da primeira amostra da rodada — que já entra
+         no tom, porque é ela que o define. Na 1ª rodada é a Amostra 1.
+       · Cada medição da amostra atual é comparada com a referência (fórmula e
+         tolerância das Configurações). UMA aprovação basta: a amostra entra no
+         tom da rodada na hora, sozinha. Medições reprovadas depois não a tiram.
+       · TROCAR sem aprovação manda a amostra para "a reavaliar".
+       · REAVALIAR abre a rodada seguinte (Tom 2, Tom 3…) só com as que estão a
+         reavaliar, na ordem dos números; a primeira delas vira a referência do
+         tom novo. Cada rodada tira ao menos uma da fila, então ela termina.
+     O relatório mostra o resultado, deixa a pessoa corrigir o tom de qualquer
+     amostra e grava o resumo como recado nas observações da OS (salvarObsNota:
+     assinado, com data, sem passar por cima de ninguém).
+
+     O estado mora neste navegador, por OS (localStorage), junto com as medições
+     (IndexedDB): fechar a tela e voltar à OS continua de onde parou. */
+  const CHAVE_AV = id => 'gos:colorimetro:av:' + id;
   function rotuloOS(o) {
     const g = o.grade && o.grade.descricao ? ' · ' + o.grade.descricao : '';
     return `OS ${o.os || '—'}${o.modeloNome ? ' · ' + o.modeloNome : ''}${g}`;
   }
-  function avaliarOS(id) {
-    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
-    if (!o) return;
-    S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
-    S.rel = null;
-    S.janela = null;
-    S.aviso = '';
-    S.status = S.dev ? `Avaliando as amostras da OS ${S.os.numero}: meça o padrão (se houver) e as amostras` : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`;
-    if (typeof goto === 'function') goto('colorimetro');
-    desenhar();
-    // A numeração é da OS: a primeira amostra dela é a Amostra 1, mesmo que a
-    // tela já tenha medido outras coisas antes; voltar à OS continua de onde parou.
-    const osId = o.id;
-    BD.todos().then(regs => {
-      if (!S.os || S.os.id !== osId) return;
-      const daOS = regs.filter(x => x.osId === osId);
-      const maior = tipo => Math.max(0, ...daOS.filter(x => x.tipo === tipo).map(x => nDoNome(x) || 0));
-      S.cont = { padrao: maior('padrao'), amostra: maior('amostra') };
-    }).catch(() => { S.cont = { padrao: 0, amostra: 0 }; });
-    S.cont = { padrao: 0, amostra: 0 };
+  function avNovo(osId) { return { osId, n: 1, rodada: 1, tons: {}, ref: {}, medidas: {}, fila: null, fimRodada: false }; }
+  // Por OS: a fase atual, a avaliação de cada fase, as concluídas e quantas vezes cada uma foi reavaliada.
+  function avNovoOS(osId) { return { osId, versao: 2, faseAtual: 0, fases: {}, concluidas: {}, reav: {} }; }
+  function avCarregar(osId) {
+    try {
+      const v = JSON.parse(localStorage.getItem(CHAVE_AV(osId)) || 'null');
+      if (v && v.osId === osId && v.versao === 2) return Object.assign(avNovoOS(osId), v);
+      if (v && v.osId === osId && v.medidas) { const c = avNovoOS(osId); c.fases[0] = Object.assign(avNovo(osId), v); return c; }
+    } catch (e) { /* sem storage */ }
+    return avNovoOS(osId);
   }
-  function encerrarOS() { S.cont = { padrao: 0, amostra: 0 }; S.os = null; S.rel = null; if (S.janela === 'rel') S.janela = null; status('Medições sem OS'); }
-
-  // A sequência: o número do nome ("Amostra 3" → 3) e, sem número, a hora da medição.
-  const nDoNome = l => { const m = String(l.nome || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : null; };
-  const porSequencia = (a, b) => {
-    const na = nDoNome(a), nb = nDoNome(b);
-    if (na != null && nb != null && na !== nb) return na - nb;
-    return a.horario - b.horario;
-  };
+  function avGuardar() {
+    if (!S.avOS) return;
+    try { localStorage.setItem(CHAVE_AV(S.avOS.osId), JSON.stringify(S.avOS)); } catch (e) { /* sem storage */ }
+  }
+  // As fases de enfesto da OS, com o tecido e a cor de cada uma.
+  function fasesDaOS(osId) {
+    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === osId);
+    const lista = o && Array.isArray(o.fases) && o.fases.length ? o.fases : [{ nome: 'Fase única' }];
+    return lista.map((f, i) => {
+      let cor = f.corNome || (o && o.enfesto && o.enfesto.blocos && o.enfesto.blocos[i] && o.enfesto.blocos[i].nomeCor)
+        || (o && o.tecidos && o.tecidos[i] && o.tecidos[i].corNome) || '';
+      if (cor === '—') cor = '';
+      try { if (cor && typeof corSemTecido === 'function') cor = corSemTecido(cor, f.tecidoNome) || cor; } catch (e) { /* fica como está */ }
+      // "Vermelho Malha Algodão" com o tecido "Malha Algodão": a cor é só "Vermelho".
+      const tec = String(f.tecidoNome || '').trim();
+      if (cor && tec && cor.toLowerCase().endsWith(tec.toLowerCase())) cor = cor.slice(0, cor.length - tec.length).trim() || cor;
+      const tecido = [f.tecidoNome, cor].filter(Boolean).join(' ');
+      return { i, nome: f.nome || `Fase ${i + 1}`, tecido, rotulo: `Fase ${i + 1} · ${f.nome || 'sem nome'}${tecido ? ' · ' + tecido : ''}` };
+    });
+  }
+  // Põe a fase i na tela: S.av passa a ser a avaliação dela.
+  function avUsarFase(i) {
+    const c = S.avOS;
+    c.faseAtual = i;
+    if (!c.fases[i]) c.fases[i] = avNovo(c.osId);
+    S.av = c.fases[i];
+    S.padrao = refComoLeitura(S.av.rodada);
+    S.atual = null;
+  }
 
   const deDaFormula = (a, b) => {
     const f = cfg.formula;
@@ -968,163 +1012,382 @@
     if (f === 'dE94') return de94(a, b, ...cfg.k94);
     return deAb(a, b);
   };
-  const compat = (a, b) => deDaFormula(a.lab1, b.lab1) <= cfg.tol[cfg.formula] + 1e-9;
+  const tolAtual = () => cfg.tol[cfg.formula];
+  const numerosDasAmostras = (av = S.av) => Object.keys(av.medidas).map(Number).filter(n => n > 0).sort((a, b) => a - b);
+  const tomDe = (n, av = S.av) => av.tons[n];
+  const estaNumTom = (n, av = S.av) => typeof tomDe(n, av) === 'number' && tomDe(n, av) > 0;
 
-  /* A PROPOSTA SEGUE A SEQUÊNCIA DAS AMOSTRAS (19/10/2026, Junior: "deve
-     obedecer à sequência de amostras, iniciando na amostra número 1 e passando
-     pelas amostras número 2, 3, 4, 5…"). A 1 abre o Tom 1; cada uma das
-     seguintes, na ordem em que foi medida, entra no primeiro tom em que é
-     compatível com TODAS as que já estão nele; não cabendo em nenhum, abre o
-     tom seguinte. */
-  function proporGrupos(amostras) {
-    const grupos = [];
-    const g = {};
-    amostras.slice().sort(porSequencia).forEach(a => {
-      let i = grupos.findIndex(gr => gr.every(x => compat(a, x)));
-      if (i < 0) { grupos.push([]); i = grupos.length - 1; }
-      grupos[i].push(a);
-      g[a.id] = i + 1;
-    });
-    return g;
+  // A referência do tom como "leitura", para a comparação da tela (barra, blocos, lista).
+  function refComoLeitura(k) {
+    const r = S.av && S.av.ref[k];
+    if (!r) return null;
+    const ja = S.leituras.find(x => x.id === r.medId);
+    return ja || { id: r.medId, nome: r.nome, tipo: 'padrao', lab1: r.lab, lab2: r.lab2 || null, espectro: [], horario: new Date(r.em) };
   }
 
-  async function abrirRelatorio() {
-    if (!S.os) { S.aviso = 'Escolha a OS pelo "⋯ → avaliar amostras" da lista de OS.'; desenhar(); return; }
-    S.janela = 'rel';
-    S.relCarregando = true;
-    desenhar();
-    try {
-      await carregarTabelas();
-      const regs = (await BD.todos()).filter(r => r.osId === S.os.id);
-      regs.sort((a, b) => String(a.horario).localeCompare(String(b.horario)));
-      const lidas = regs.map(leituraDoRegistro);
-      const amostras = lidas.filter(l => l.tipo === 'amostra').sort(porSequencia);
-      const padroes = lidas.filter(l => l.tipo === 'padrao');
-      const antes = S.rel && S.rel.osId === S.os.id ? S.rel.grupo : null;
-      const proposta = proporGrupos(amostras);
-      const grupo = {};
-      // Reabrir mantém o que a pessoa já tinha decidido; amostra nova entra pela proposta.
-      amostras.forEach(a => { grupo[a.id] = antes && a.id in antes ? antes[a.id] : proposta[a.id]; });
-      S.rel = { osId: S.os.id, amostras, padrao: padroes[padroes.length - 1] || null, grupo };
-    } catch (e) {
-      S.aviso = 'O relatório não abriu: ' + (e && e.message);
+  function avaliarOS(id) {
+    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
+    if (!o) return;
+    S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
+    S.avOS = avCarregar(o.id);
+    S.fases = fasesDaOS(o.id);
+    avUsarFase(Math.min(S.avOS.faseAtual || 0, S.fases.length - 1));
+    S.janela = null;
+    S.aviso = '';
+    if (typeof goto === 'function') goto('colorimetro');
+    status(S.dev ? avDica() : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`);
+  }
+  function encerrarOS() {
+    S.os = null; S.av = null; S.avOS = null; S.fases = null; S.padrao = null; S.atual = null;
+    if (S.janela === 'rel') S.janela = null;
+    status('Medições sem OS');
+  }
+
+  function avDica() {
+    if (!S.av) return '';
+    const fase = S.fases && S.fases[S.avOS.faseAtual];
+    const pre = fase && S.fases.length > 1 ? fase.rotulo + ' — ' : '';
+    if (S.avOS.concluidas[S.avOS.faseAtual]) return pre + 'fase concluída. Para repetir, escolha-a em "Reavaliar a fase".';
+    return pre + avDicaFase();
+  }
+  function avDicaFase() {
+    const av = S.av;
+    if (av.fimRodada) return `Fim da rodada do Tom ${av.rodada}. ${avPendentes().length ? 'Clique em Reavaliar para formar o tom seguinte.' : 'Nenhuma amostra a reavaliar.'}`;
+    if (!av.ref[av.rodada]) return `Tom ${av.rodada}: meça a Amostra ${av.n} (ela vira a referência do tom) ou meça um padrão como referência.`;
+    return `Tom ${av.rodada}: meça a Amostra ${av.n}; uma aprovação basta. Clique em Trocar para passar à seguinte.`;
+  }
+  const avPendentes = (av = S.av) => numerosDasAmostras(av).filter(n => tomDe(n, av) === 'r');
+
+  // Uma medição chegou com a tela ligada a uma OS (chamado por chegou()).
+  function avMedicao(l, tipo) {
+    const av = S.av, k = av.rodada;
+    l.osId = S.os.id; l.osNumero = S.os.numero; l.rodada = k;
+    l.fase = S.avOS.faseAtual; l.faseNome = (S.fases[S.avOS.faseAtual] || {}).rotulo || '';
+    if (tipo === 'padrao') {
+      l.nome = `Referência do Tom ${k}`;
+      av.ref[k] = { medId: l.id, amostra: null, nome: l.nome, lab: l.lab1, lab2: l.lab2, em: l.horario.toISOString() };
+      S.padrao = l;
+      avGuardar();
+      return `${l.nome} medida. Agora meça a Amostra ${av.n}.`;
     }
-    S.relCarregando = false;
-    if (S.janela === 'rel') { desenhar(); rolarParaJanela(); }
-  }
-  function relRefazer() {
-    if (!S.rel) return;
-    S.rel.grupo = proporGrupos(S.rel.amostras);
-    desenhar();
-  }
-  function relMudar(id, v) {
-    if (!S.rel) return;
-    S.rel.grupo[id] = parseInt(v, 10) || 0;   // 0 = fora do relatório
-    desenhar();
+    if (av.fimRodada || av.n == null) {
+      return 'A rodada terminou: clique em Reavaliar (ou escolha o número da amostra) antes de medir.';
+    }
+    const n = av.n;
+    l.amostraN = n;
+    l.nome = `${cfg.nome_amostra} ${n}`;
+    const lista = av.medidas[n] = av.medidas[n] || [];
+    if (!av.ref[k]) {
+      // A primeira medição da rodada define o tom: é a referência, e a amostra já está nele.
+      av.ref[k] = { medId: l.id, amostra: n, nome: l.nome, lab: l.lab1, lab2: l.lab2, em: l.horario.toISOString() };
+      av.tons[n] = k;
+      lista.push({ id: l.id, lab: l.lab1, rodada: k, de: 0, aprovado: true, ref: true, em: l.horario.toISOString() });
+      S.padrao = l;
+      avGuardar();
+      return `Amostra ${n} é a referência do Tom ${k}. Clique em Trocar para passar à Amostra ${proximoNumero(n) || n + 1}.`;
+    }
+    const ref = refComoLeitura(k);
+    const r = comparar(ref, l);
+    l.refId = ref.id;
+    const de = r.des[cfg.formula];
+    lista.push({ id: l.id, lab: l.lab1, rodada: k, de, aprovado: r.aprovado, em: l.horario.toISOString() });
+    let msg;
+    if (r.aprovado && !estaNumTom(n)) {
+      av.tons[n] = k;
+      msg = `✔ Amostra ${n} aprovada (${cfg.formula} ${num(de)}) → entrou no Tom ${k}.`;
+    } else if (r.aprovado) {
+      msg = `✔ Amostra ${n} aprovada de novo (${cfg.formula} ${num(de)}); continua no Tom ${tomDe(n)}.`;
+    } else if (estaNumTom(n)) {
+      msg = `Amostra ${n} reprovada nesta leitura (${cfg.formula} ${num(de)}), mas já tem aprovação: continua no Tom ${tomDe(n)}.`;
+    } else {
+      msg = `✘ Amostra ${n} reprovada (${cfg.formula} ${num(de)}). Meça de novo ou clique em Trocar (ela vai para a reavaliação).`;
+    }
+    avGuardar();
+    return msg;
   }
 
-  // Os tons em uso, renumerados 1, 2, 3… na ordem em que aparecem — a pessoa
-  // pode ter esvaziado o Tom 2, e o relatório não pula número.
-  function gruposDoRelatorio() {
-    const r = S.rel;
-    const usados = [...new Set(r.amostras.map(a => r.grupo[a.id]).filter(n => n > 0))].sort((a, b) => a - b);
-    return usados.map((n, i) => {
-      const membros = r.amostras.filter(a => r.grupo[a.id] === n);
-      let pior = 0;
+  // O número seguinte: na 1ª rodada, o próximo inteiro (amostras novas); nas
+  // seguintes, a próxima da fila de reavaliação.
+  function proximoNumero(n) {
+    const av = S.av;
+    if (av.rodada === 1 && !av.fila) return n + 1;
+    const fila = av.fila || [];
+    const i = fila.indexOf(n);
+    return i >= 0 && i + 1 < fila.length ? fila[i + 1] : (i < 0 ? fila.find(x => x > n) || null : null);
+  }
+
+  function avTrocar() {
+    const av = S.av;
+    if (!av || av.n == null) return;
+    const n = av.n;
+    const medidasDaRodada = (av.medidas[n] || []).filter(m => m.rodada === av.rodada);
+    let msg = '';
+    if (!estaNumTom(n) && medidasDaRodada.length) { av.tons[n] = 'r'; msg = `Amostra ${n} foi para a reavaliação. `; }
+    const prox = proximoNumero(n);
+    if (prox == null) {
+      av.n = null; av.fimRodada = true;
+      msg += avDica();
+    } else {
+      av.n = prox;
+      msg += `Agora é a Amostra ${prox}.`;
+    }
+    S.atual = null;
+    avGuardar();
+    status(msg);
+  }
+  function avIrPara(v) {
+    const n = parseInt(v, 10);
+    if (!S.av || !(n > 0)) return;
+    S.av.n = n; S.av.fimRodada = false;
+    S.atual = null;
+    avGuardar();
+    status(`Agora é a Amostra ${n}${estaNumTom(n) ? ` (já está no Tom ${tomDe(n)})` : tomDe(n) === 'r' ? ' (está a reavaliar)' : ''}.`);
+  }
+  function avReavaliar() {
+    const av = S.av;
+    const fila = avPendentes();
+    if (!av || !fila.length) return;
+    av.rodada = Math.max(av.rodada, ...Object.keys(av.ref).map(Number)) + 1;
+    av.fila = fila;
+    av.n = fila[0];
+    av.fimRodada = false;
+    S.padrao = null; S.atual = null;
+    avGuardar();
+    status(`Rodada do Tom ${av.rodada}: ${fila.length} amostras a reavaliar (${fila.join(', ')}). Meça a Amostra ${av.n} — ela vira a referência do Tom ${av.rodada}.`);
+  }
+  // Concluir a fase atual e passar para a seguinte (as fases andam em ordem).
+  function avConcluirFase() {
+    const c = S.avOS;
+    if (!c) return;
+    const i = c.faseAtual;
+    if (!numerosDasAmostras().length) { S.aviso = 'Meça ao menos uma amostra desta fase antes de concluí-la.'; desenhar(); return; }
+    c.concluidas[i] = true;
+    const prox = S.fases.findIndex((f, j) => j > i && !c.concluidas[j]);
+    if (prox >= 0) avUsarFase(prox);
+    avGuardar();
+    status(prox >= 0 ? `${S.fases[i].rotulo} concluída. Agora é a ${S.fases[prox].rotulo}: comece pela Amostra 1.`
+      : `${S.fases[i].rotulo} concluída. Todas as fases foram avaliadas — abra o Relatório de tonalidades.`);
+  }
+  // Repetir uma fase: a pessoa aponta QUAL. A avaliação dela recomeça do zero.
+  function avReavaliarFase(v) {
+    const i = parseInt(v, 10);
+    const c = S.avOS;
+    if (!c || !(i >= 0) || !S.fases[i]) return;
+    perguntar({ titulo: `Reavaliar a ${S.fases[i].rotulo}`,
+      texto: 'Os tons desta fase serão refeitos desde a Amostra 1. As medições antigas continuam no histórico deste computador, e o relatório vai dizer que a fase foi reavaliada.',
+      sim: 'Reavaliar esta fase', executar: () => {
+        c.fases[i] = avNovo(c.osId);
+        delete c.concluidas[i];
+        c.reav[i] = (c.reav[i] || 0) + 1;
+        avUsarFase(i);
+        avGuardar();
+        status(`Reavaliação da ${S.fases[i].rotulo}: meça a Amostra 1 (ela vira a referência do Tom 1).`);
+      } });
+  }
+
+  /* ---------------- o relatório ---------------- */
+  // Os tons em uso, na ordem dos números das rodadas.
+  function tonsDoRelatorio(av = S.av) {
+    const nums = numerosDasAmostras(av);
+    const ks = [...new Set(nums.map(n => tomDe(n, av)).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => a - b);
+    return ks.map(k => {
+      const membros = nums.filter(n => tomDe(n, av) === k);
+      const ref = av.ref[k];
+      // Cada amostra pela sua melhor medição contra a referência deste tom.
+      const melhor = n => {
+        const ms = (av.medidas[n] || []).filter(m => m.rodada === k);
+        return ms.length ? ms.reduce((a, b) => (a.de <= b.de ? a : b)) : (av.medidas[n] || []).slice(-1)[0];
+      };
       const ruins = [];
-      membros.forEach((a, k) => membros.slice(k + 1).forEach(b => {
-        const d = deDaFormula(a.lab1, b.lab1);
+      let pior = 0;
+      membros.forEach(n => {
+        const m = melhor(n);
+        if (!m || !ref) return;
+        const d = deDaFormula(ref.lab, m.lab);
         pior = Math.max(pior, d);
-        if (d > cfg.tol[cfg.formula] + 1e-9) ruins.push([a, b, d]);
-      }));
-      return { n, numero: i + 1, membros, pior, ruins };
+        if (d > tolAtual() + 1e-9) ruins.push([n, d]);
+      });
+      return { k, membros, ref, pior, ruins, melhor };
     });
   }
-
-  function textoRelatorio() {
-    const fo = cfg.formula;
-    const grupos = gruposDoRelatorio();
-    const fora = S.rel.amostras.filter(a => !(S.rel.grupo[a.id] > 0));
-    const partes = grupos.map(g => `Tom ${g.numero}: ${g.membros.map(a => a.nome).join(', ')}`
-      + (g.membros.length > 1 ? ` (${fo} máx ${num(g.pior)})` : '') + (g.ruins.length ? ' ⚠ fora da tolerância' : ''));
-    if (fora.length) partes.push(`Não usar: ${fora.map(a => a.nome).join(', ')}`);
-    return `Colorímetro — ${grupos.length} ${grupos.length === 1 ? 'tom' : 'tons'} compatíveis (${fo} ≤ ${numTol(cfg.tol[fo])}, ${cfg.iluminante1}°, ${S.rel.amostras.length} amostras). `
-      + partes.join(' · ') + '.';
+  const nomeAm = n => `${cfg.nome_amostra} ${n}`;
+  // As fases que já têm medição, na ordem da OS.
+  const fasesComMedicao = () => (S.fases || []).filter(f => S.avOS.fases[f.i] && numerosDasAmostras(S.avOS.fases[f.i]).length);
+  function marcasDaFase(f) {
+    const r = S.avOS.reav[f.i];
+    return [r ? `reavaliada${r > 1 ? ' ' + r + 'x' : ''}` : '', S.avOS.concluidas[f.i] ? '' : 'em andamento'].filter(Boolean);
   }
-
+  function textoFase(f) {
+    const av = S.avOS.fases[f.i], fo = cfg.formula, tons = tonsDoRelatorio(av);
+    const pend = avPendentes(av), fora = numerosDasAmostras(av).filter(n => tomDe(n, av) === 0);
+    const partes = tons.map((t, i) => `Tom ${i + 1}${t.ref ? ` (ref. ${t.ref.amostra ? nomeAm(t.ref.amostra) : t.ref.nome})` : ''}: `
+      + `${t.membros.length > 1 ? cfg.nome_amostra + 's' : cfg.nome_amostra} ${t.membros.join(', ')}`
+      + (t.membros.length > 1 ? ` (${fo} máx ${num(t.pior)})` : '') + (t.ruins.length ? ' ⚠ fora da tolerância' : ''));
+    if (pend.length) partes.push(`A reavaliar: ${pend.join(', ')}`);
+    if (fora.length) partes.push(`Não usar: ${fora.join(', ')}`);
+    const marcas = marcasDaFase(f);
+    const nome = S.fases.length > 1 ? f.rotulo : (f.tecido || f.nome);
+    return `${nome}${marcas.length ? ' (' + marcas.join(', ') + ')' : ''}: ${tons.length} ${tons.length === 1 ? 'tom' : 'tons'}, `
+      + `${numerosDasAmostras(av).length} amostras — ` + (partes.join(' · ') || 'sem tom');
+  }
+  // Um recado só, com todas as fases medidas, na ordem do enfesto.
+  function textoRelatorio() {
+    return `Colorímetro (${cfg.formula} ≤ ${numTol(tolAtual())}, ${cfg.iluminante1}°) — ` + fasesComMedicao().map(textoFase).join(' | ') + '.';
+  }
+  function relMudar(i, n, v) {
+    const av = S.avOS && S.avOS.fases[i];
+    if (!av) return;
+    av.tons[n] = v === 'r' ? 'r' : (parseInt(v, 10) || 0);
+    avGuardar();
+    desenhar();
+  }
   async function relSalvar() {
-    if (!S.rel || !S.os) return;
-    const grupos = gruposDoRelatorio();
-    if (!grupos.length) { S.aviso = 'Nenhuma amostra está num tom: escolha os tons antes de salvar.'; desenhar(); return; }
+    if (!S.avOS || !S.os) return;
+    if (!fasesComMedicao().some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length)) { S.aviso = 'Nenhuma amostra está num tom ainda.'; desenhar(); return; }
     if (typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
     const o = (STATE.ordens || []).find(x => x.id === S.os.id);
     if (!o) { S.aviso = `A OS ${S.os.numero} não existe mais.`; desenhar(); return; }
-    const texto = textoRelatorio();
-    const antes = _obsNotasDe(o).length;
-    try { await salvarObsNota(o.id, '', texto); } catch (e) { S.aviso = 'Não deu para salvar: ' + e.message; desenhar(); return; }
-    if (_obsNotasDe(o).length <= antes) { S.aviso = 'O programa não gravou a observação (veja o aviso no canto da tela).'; desenhar(); return; }
+    const notas = () => (Array.isArray(o.obsNotas) ? o.obsNotas.length : 0);
+    const antes = notas();
+    try { await salvarObsNota(o.id, '', textoRelatorio()); } catch (e) { S.aviso = 'Não deu para salvar: ' + e.message; desenhar(); return; }
+    if (notas() <= antes) { S.aviso = 'O programa não gravou a observação (veja o aviso no canto da tela).'; desenhar(); return; }
     S.relSalvo = { osId: o.id, em: new Date() };
     S.aviso = '';
     status(`Relatório salvo nas observações da OS ${o.os}`);
   }
-  const _obsNotasDe = o => Array.isArray(o.obsNotas) ? o.obsNotas : [];
+
+  // As fases em fila, como chips: a atual destacada, as concluídas com ✔.
+  function htmlFases() {
+    if (!S.fases || S.fases.length < 2) return '';
+    const c = S.avOS;
+    const chips = S.fases.map(f => {
+      const atual = f.i === c.faseAtual, feita = !!c.concluidas[f.i];
+      const av = c.fases[f.i];
+      const tons = av ? tonsDoRelatorio(av).length : 0;
+      return `<span class="cm-fase ${atual ? 'cm-fase-atual' : ''} ${feita ? 'cm-fase-feita' : ''}">${feita ? '✔ ' : ''}${escH(f.rotulo)}`
+        + `${av && numerosDasAmostras(av).length ? ` <span class="cm-fraco">· ${tons} ${tons === 1 ? 'tom' : 'tons'}</span>` : ''}${c.reav[f.i] ? ' <span class="cm-fraco">· reavaliada</span>' : ''}</span>`;
+    }).join('');
+    const feitas = S.fases.filter(f => c.concluidas[f.i]);
+    return `<div class="cm-fases">${chips}</div>
+      ${feitas.length ? `<div class="cm-botoes" style="margin-top:6px">
+        <label class="cm-campo" style="max-width:340px"><span>Reavaliar a fase</span>
+          <select onchange="if(this.value!=='')Colorimetro.avReavaliarFase(this.value); this.value=''">
+            <option value="">— escolha a fase que vai ser reavaliada —</option>
+            ${feitas.map(f => `<option value="${f.i}">${escH(f.rotulo)}</option>`).join('')}</select></label></div>` : ''}`;
+  }
+
+  function htmlAvaliacao() {
+    if (!S.os || !S.av) return '';
+    const av = S.av, k = av.rodada, ref = av.ref[k];
+    const con = !!S.dev, livre = !S.ocupado && !S.conectando;
+    const concluida = !!S.avOS.concluidas[S.avOS.faseAtual];
+    const fase = S.fases[S.avOS.faseAtual];
+    const ultimaFase = !S.fases.some((f, j) => j > S.avOS.faseAtual && !S.avOS.concluidas[j]);
+    const ms = av.n != null ? (av.medidas[av.n] || []).filter(m => m.rodada === k) : [];
+    const ult = ms[ms.length - 1];
+    const situacao = av.n == null ? '' : estaNumTom(av.n) ? `<span class="cm-ok">no Tom ${tomDe(av.n)}</span>`
+      : tomDe(av.n) === 'r' ? '<span class="cm-fora">a reavaliar</span>' : '<span class="cm-fraco">sem aprovação ainda</span>';
+    const pend = avPendentes();
+    const tons = tonsDoRelatorio();
+    const prox = av.n != null ? proximoNumero(av.n) : null;
+    const pode = con && livre && !concluida;
+    return `<div class="card cm-os">
+      <div class="cm-botoes cm-entre">
+        <div><span class="cm-fraco">Avaliando as amostras da</span> <b>${escH(S.os.rotulo)}</b></div>
+        <div class="cm-botoes">
+          <button type="button" class="btn small ${S.janela === 'rel' ? 'primary' : ''}" onclick="Colorimetro.alternar('rel')">Relatório de tonalidades</button>
+          <button type="button" class="btn small ghost" onclick="Colorimetro.encerrarOS()">Medir sem OS</button></div></div>
+      ${htmlFases()}
+      ${concluida ? `<div class="cm-aviso" style="background:var(--ok-bg);color:var(--ok)">${escH(fase.rotulo)} concluída. Para repetir esta fase, escolha-a em "Reavaliar a fase".</div>` : `
+      <div class="cm-av">
+        <div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tom em formação</div><div class="cm-av-num">Tom ${k}</div>
+          <div class="cm-peq">${ref ? `Referência: <b>${escH(ref.amostra ? nomeAm(ref.amostra) : ref.nome)}</b> · L* ${num(ref.lab[0])} a* ${num(ref.lab[1])} b* ${num(ref.lab[2])}`
+            : 'Referência: a primeira medição da rodada'}</div></div>
+        <div class="cm-av-bloco cm-av-atual"><div class="cm-av-rot">Amostra atual</div>
+          <div class="cm-av-num">${av.n != null ? 'Nº ' + av.n : '—'}</div>
+          <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} nesta rodada${ult && !ult.ref ? ` · última ${escH(cfg.formula)} ${num(ult.de)} ${ult.aprovado ? '✔' : '✘'}` : ''} · ${situacao}` : escH(avDicaFase())}</div></div>
+        <div class="cm-av-bloco"><div class="cm-av-rot">Até agora nesta fase</div>
+          <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhum tom ainda'}
+          ${pend.length ? `<br><span class="cm-fora">A reavaliar: ${pend.join(', ')}</span>` : ''}</div></div>
+      </div>
+      <div class="cm-botoes">
+        <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}>Medir amostra ${av.n != null ? av.n : ''} (F5)</button>
+        <button type="button" class="btn primary" onclick="Colorimetro.avTrocar()" ${av.n != null ? '' : 'disabled'}
+          title="Passa para a amostra seguinte. Sem aprovação nesta rodada, esta vai para a reavaliação.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim da rodada'}</button>
+        <label class="cm-campo" style="max-width:120px"><span>Ir para a amostra nº</span>
+          <input type="number" min="1" value="${av.n != null ? av.n : ''}" onchange="Colorimetro.avIrPara(this.value)"></label>
+        <button type="button" class="btn small" onclick="Colorimetro.medir('padrao')" ${pode ? '' : 'disabled'}
+          title="Um padrão (ex.: o tecido aprovado pelo cliente) como referência deste tom, no lugar da primeira amostra">Medir referência do Tom ${k} (F6)</button>
+        ${pend.length ? `<button type="button" class="btn ${av.fimRodada ? 'primary' : ''}" onclick="Colorimetro.avReavaliar()">Reavaliar ${pend.length} → Tom ${Math.max(k, ...Object.keys(av.ref).map(Number)) + 1}</button>` : ''}
+        <button type="button" class="btn ${av.fimRodada && !pend.length ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
+          title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
+      </div>`}</div>`;
+  }
+
+  // O relatório de uma fase: amostras, tons e o seletor para corrigir.
+  function htmlRelFase(f) {
+    const av = S.avOS.fases[f.i], fo = cfg.formula;
+    const nums = numerosDasAmostras(av);
+    const tons = tonsDoRelatorio(av);
+    const ordem = {};
+    tons.forEach((t, i) => { ordem[t.k] = i + 1; });
+    const ks = Object.keys(av.ref).map(Number).sort((a, b) => a - b);
+    const linhas = nums.map(n => {
+      const t = tomDe(n, av);
+      const todas = av.medidas[n] || [];
+      const apr = todas.filter(m => m.aprovado).length;
+      const opc = ks.map(k => `<option value="${k}" ${t === k ? 'selected' : ''}>Tom ${ordem[k] || '?'}${ordem[k] ? '' : ' (vazio)'}</option>`)
+        .concat([`<option value="r" ${t === 'r' ? 'selected' : ''}>A reavaliar</option>`, `<option value="0" ${t === 0 ? 'selected' : ''}>Não usar</option>`,
+          t == null ? '<option value="" selected>—</option>' : '']);
+      const ultima = todas[todas.length - 1];
+      const semRef = todas.filter(m => !m.ref);
+      return `<tr><td>${ultima ? `<span class="cm-amostra-cor" style="background:${labHex(...ultima.lab)}"></span>` : ''}${escH(nomeAm(n))}</td>
+        <td class="cm-n">${todas.length}</td><td class="cm-n">${apr}</td>
+        <td class="cm-n">${semRef.length ? num(Math.min(...semRef.map(m => m.de))) : (todas.some(m => m.ref) ? 'ref.' : '')}</td>
+        <td><select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
+    }).join('');
+    const resumo = tons.map((t, i) => `<div class="cm-tom ${t.ruins.length ? 'cm-tom-ruim' : ''}">
+        <b>Tom ${i + 1}</b> — ${t.membros.map(nomeAm).join(', ')}
+        <span class="cm-fraco">· referência ${escH(t.ref ? (t.ref.amostra ? nomeAm(t.ref.amostra) : t.ref.nome) : '—')}${t.membros.length > 1 ? ` · ${escH(fo)} máx ${num(t.pior)}` : ''}</span>
+        ${t.ruins.length ? `<div class="cm-fora">Fora da tolerância da referência: ${t.ruins.map(([n, d]) => `${escH(nomeAm(n))} (${num(d)})`).join('; ')}</div>` : ''}
+      </div>`).join('');
+    const pend = avPendentes(av);
+    const marcas = marcasDaFase(f);
+    return `<div class="cm-rel-fase">
+      <div class="cm-sub">${escH(S.fases.length > 1 ? f.rotulo : (f.tecido || 'Amostras'))}${marcas.length ? ` <span class="cm-fraco">(${escH(marcas.join(', '))})</span>` : ''}</div>
+      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th>Aprovações</th><th>Melhor ${escH(fo)}</th><th>Tom</th></tr></thead>
+        <tbody>${linhas}</tbody></table></div>
+      ${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
+      ${pend.length ? `<div class="cm-fora" style="margin-top:6px">A reavaliar: ${pend.map(nomeAm).join(', ')}</div>` : ''}
+    </div>`;
+  }
 
   function htmlRel() {
     if (S.janela !== 'rel') return '';
     const topo = `<div class="cm-janela-topo"><div class="card-title">Relatório de tonalidades · ${escH(S.os ? S.os.rotulo : '')}</div>${botaoFechar()}</div>`;
-    if (S.relCarregando || !S.rel) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Carregando…</div></div>`;
-    const r = S.rel, fo = cfg.formula, tol = cfg.tol[fo];
-    if (!r.amostras.length) {
-      return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a OS ${escH(S.os.numero)} neste computador. Meça as amostras (Medir amostra ou o botão do aparelho) e abra o relatório de novo.</div></div>`;
-    }
-    const grupos = gruposDoRelatorio();
-    const maxTom = Math.max(1, ...r.amostras.map(a => r.grupo[a.id] || 0)) + 1;
-    const numeroDe = {};
-    grupos.forEach(g => { numeroDe[g.n] = g.numero; });
-    const linhas = r.amostras.map(a => {
-      const opcoes = ['<option value="0"' + (!(r.grupo[a.id] > 0) ? ' selected' : '') + '>Não usar</option>']
-        .concat(Array.from({ length: maxTom }, (_, i) => i + 1).map(n =>
-          `<option value="${n}" ${r.grupo[a.id] === n ? 'selected' : ''}>Tom ${numeroDe[n] || (grupos.length + 1)}${numeroDe[n] ? '' : ' (novo)'}</option>`));
-      const dp = r.padrao ? num(deDaFormula(r.padrao.lab1, a.lab1)) : '';
-      return `<tr><td><span class="cm-amostra-cor" style="background:${labHex(...a.lab1)}"></span>${escH(a.nome)}</td>
-        <td>${dataTxt(a.horario).slice(0, 5)} ${horaTxt(a.horario).slice(0, 5)}</td>
-        ${a.lab1.map(v => `<td class="cm-n">${num(v)}</td>`).join('')}${r.padrao ? `<td class="cm-n">${dp}</td>` : ''}
-        <td><select onchange="Colorimetro.relMudar('${a.id}', this.value)">${opcoes.join('')}</select></td></tr>`;
-    }).join('');
-    // A matriz: o dE de cada par, verde dentro e vermelho fora da tolerância.
-    const ord = r.amostras.slice().sort(porSequencia);
-    const matriz = r.amostras.length <= 30 ? `<div class="cm-sub">${escH(fo)} entre as amostras (dentro de ${numTol(tol)} = verde)</div>
-      <div class="cm-rolar"><table class="cm-matriz"><thead><tr><th></th>${ord.map(a => `<th title="${escH(a.nome)}">${escH(a.nome)}</th>`).join('')}</tr></thead>
-      <tbody>${ord.map(a => `<tr><th>${escH(a.nome)}</th>${ord.map(b => {
-        if (a === b) return '<td class="cm-mz-eu">—</td>';
-        const d = deDaFormula(a.lab1, b.lab1);
-        const mesmo = r.grupo[a.id] > 0 && r.grupo[a.id] === r.grupo[b.id];
-        return `<td class="${d <= tol + 1e-9 ? 'cm-mz-ok' : 'cm-mz-fora'}${mesmo ? ' cm-mz-mesmo' : ''}">${num(d)}</td>`;
-      }).join('')}</tr>`).join('')}</tbody></table></div>` : '';
-    const resumo = grupos.map(g => `<div class="cm-tom ${g.ruins.length ? 'cm-tom-ruim' : ''}">
-        <b>Tom ${g.numero}</b> — ${g.membros.map(a => escH(a.nome)).join(', ')}
-        <span class="cm-fraco">${g.membros.length > 1 ? `· ${fo} máx ${num(g.pior)}` : '· sozinha'}</span>
-        ${g.ruins.length ? `<div class="cm-fora">Incompatível no mesmo tom: ${g.ruins.map(([a, b, d]) => `${escH(a.nome)} × ${escH(b.nome)} (${num(d)})`).join('; ')}</div>` : ''}
-      </div>`).join('');
-    const salvo = S.relSalvo && S.relSalvo.osId === r.osId
+    if (!S.avOS) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Escolha a OS pelo "⋯ → avaliar amostras" da lista de OS.</div></div>`;
+    const fo = cfg.formula, tol = tolAtual();
+    const fases = fasesComMedicao();
+    if (!fases.length) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a OS ${escH(S.os.numero)}.</div></div>`;
+    const faltam = S.fases.filter(f => !S.avOS.concluidas[f.i]);
+    const algumTom = fases.some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length);
+    const salvo = S.relSalvo && S.relSalvo.osId === S.os.id
       ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
-         <button type="button" class="btn small ghost" onclick="verOS('${escH(r.osId)}')">Ver a folha da OS</button>` : '';
+         <button type="button" class="btn small ghost" onclick="verOS('${escH(S.os.id)}')">Ver a folha da OS</button>` : '';
     return `<div class="card cm-rel">${topo}
-      <div class="cm-fraco" style="margin-bottom:8px">Duas amostras são compatíveis quando o <b>${escH(fo)}</b> entre elas fica em até <b>${numTol(tol)}</b>
-        (${escH(cfg.iluminante1)}°; muda em Configurações). A proposta abaixo pôs cada amostra no primeiro tom em que ela combina com todas;
-        mude o tom de qualquer uma, ou marque "Não usar", e o quadro refaz as contas.</div>
-      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medida</th><th>L*</th><th>a*</th><th>b*</th>
-        ${r.padrao ? `<th title="${escH(r.padrao.nome)}">${escH(fo)} ao padrão</th>` : ''}<th>Tom</th></tr></thead><tbody>${linhas}</tbody></table></div>
-      <div class="cm-sub">Tons</div>${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
-      ${matriz}
+      <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Cada amostra entrou no tom da rodada em que teve a primeira aprovação contra a referência
+        (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b>, ${escH(cfg.iluminante1)}°). Corrija o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
+      ${fases.map(htmlRelFase).join('')}
+      ${faltam.length && S.fases.length > 1 ? `<div class="cm-fora" style="margin-top:8px">Fases ainda não concluídas: ${faltam.map(f => escH(f.rotulo)).join('; ')}</div>` : ''}
       <div class="cm-sub">Vai para as observações da OS ${escH(S.os.numero)}</div>
-      <div class="cm-previa">${escH(grupos.length ? textoRelatorio() : '—')}</div>
+      <div class="cm-previa">${escH(algumTom ? textoRelatorio() : '—')}</div>
       <div class="cm-botoes">
-        <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${grupos.length ? '' : 'disabled'}>Salvar nas observações da OS</button>
-        <button type="button" class="btn" onclick="Colorimetro.relRefazer()">Refazer a proposta</button>
+        <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${algumTom ? '' : 'disabled'}>Salvar nas observações da OS</button>
         ${salvo}
       </div></div>`;
   }
+
+  function abrirRelatorio() { S.janela = 'rel'; desenhar(); rolarParaJanela(); }
 
   /* ---------------- configurações ---------------- */
   function aplicarCfg() {
@@ -1334,12 +1597,7 @@
     const cal = S.cal ? `Branco: ${fmtCal(S.cal.branco_ok, S.cal.branco_data)}<br>Preto: ${fmtCal(S.cal.preto_ok, S.cal.preto_data)}` : '—';
     const motivo = semBluetooth();
     p.innerHTML = `
-      ${S.os ? `<div class="card cm-os"><div class="cm-botoes cm-entre">
-        <div><span class="cm-fraco">Avaliando as amostras da</span> <b>${escH(S.os.rotulo)}</b>
-          <span class="cm-fraco">· as medições daqui em diante ficam ligadas a esta OS</span></div>
-        <div class="cm-botoes">
-          <button type="button" class="btn small ${S.janela === 'rel' ? 'primary' : 'accent'}" onclick="Colorimetro.alternar('rel')">Relatório de tonalidades</button>
-          <button type="button" class="btn small ghost" onclick="Colorimetro.encerrarOS()">Medir sem OS</button></div></div></div>` : ''}
+      ${htmlAvaliacao()}
       <div class="card cm-barra">
         <div class="cm-botoes">
           ${con
@@ -1497,6 +1755,16 @@
     .cm-sub{margin:12px 0 6px;font-weight:600;font-size:13px}
     .cm-cfg,.cm-hist,.cm-pedido,.cm-rel{margin-top:12px}
     .cm-os{border-left:3px solid var(--accent);margin-bottom:12px}
+    .cm-av{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
+    .cm-av-bloco{padding:8px 10px;background:var(--line-2);border-radius:2px}
+    .cm-av-atual{outline:2px solid var(--accent)}
+    .cm-av-rot{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+    .cm-av-num{font-size:24px;font-weight:700;margin:2px 0}
+    .cm-fases{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .cm-fase{padding:4px 10px;border:1px solid var(--line);border-radius:2px;font-size:12px;color:var(--ink-3)}
+    .cm-fase-atual{border-color:var(--accent);color:var(--ink);font-weight:600;outline:1px solid var(--accent)}
+    .cm-fase-feita{color:var(--ok)}
+    .cm-rel-fase{margin-top:10px;padding-top:6px;border-top:1px solid var(--line-2)}
     .cm-amostra-cor{display:inline-block;width:14px;height:14px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
     .cm-tom{padding:6px 8px;border-left:3px solid var(--ok);margin:4px 0;background:var(--line-2);font-size:13px}
     .cm-tom-ruim{border-left-color:var(--alert)}
@@ -1551,12 +1819,12 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relRefazer, relSalvar,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avReavaliar, avConcluirFase, avReavaliarFase,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     simularBotao: () => { if (S.t && S.t.apertarBotao) S.t.apertarBotao(modoAtual()); },
     // para os testes: as contas, sem tela
-    _contas: { proporGrupos, carregarTabelas, espectroParaLab, deAb, de2000, de94, deCmc, labHex, comparar, arred, num, pacote, checksumOk }
+    _contas: { carregarTabelas, espectroParaLab, deAb, de2000, de94, deCmc, labHex, comparar, arred, num, pacote, checksumOk }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', instalar);
