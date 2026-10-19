@@ -62,6 +62,8 @@ const motor = [
   cortaAte('const _riscoCmDoTexto = s =>', '\n};'),
   cortaAte('const _riscoUrl = rel =>', ".join('/');"),
   cortaLinha('const _riscoCaminhoDoPdf = L =>'),
+  // _gradeNomePartes lê a linha por _skuDaGrade desde 06/10/2026.
+  corta('function _skuDaGrade'),
   corta('function _gradeNomePartes'),
   corta('function _riscosDaGrade'),
   corta('function _riscosRegistrados')

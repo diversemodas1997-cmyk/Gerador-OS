@@ -59,6 +59,8 @@ const motor = [
   corta('function _riscoNomeTamanhos'),
   corta('function _riscoFormasDoNome'),
   linhaConst('_chaveTam'),
+  // _gradeNomePartes lê a linha por _skuDaGrade desde 06/10/2026.
+  corta('function _skuDaGrade'),
   corta('function _gradeNomePartes'),
   corta('function _riscosDaGrade')
 ].join('\n');
@@ -122,9 +124,10 @@ ok('CLM (tamanhos separados por espaço — "P M G GG")',
 // linha de SKU vem do nome do arquivo, porque a pasta começa pelos tamanhos.
 eq('o nível "LINHA ADULTO" não vira linha de SKU',
    itemDe('LINHA ADULTO/BM.LISA/2G-G1/182 cm/BM.LISA - CORPO 2G-G1.pdf').linha, 'BM.LISA');
+// Desde 14/10/2026 a pasta infantil voltou a ter a linha de SKU na raiz.
 ok('infantil: 2-4-6-8-10-12-14-16 | CM.LISA | 117cm acha o PDF da pasta infantil',
    acha(grade('2-4-6-8-10-12-14-16 | CM.LISA | 117cm',
-     { t2: 1, t4: 1, t6: 1, t8: 1, t10: 1, t12: 1, t14: 1, t16: 1 }), 'LINHA INFANTIL/2-4-6-8-10-12-14-16/117cm/'));
+     { t2: 1, t4: 1, t6: 1, t8: 1, t10: 1, t12: 1, t14: 1, t16: 1 }), 'CM.LISA/2-4-6-8-10-12-14-16/117cm/'));
 eq('infantil: a linha sai do nome do arquivo',
    itemDe('LINHA INFANTIL/2-4-6-8-10-12-14-16/117cm/CM.LISA - CORPO - 2-4-6-8-10-12-14-16.pdf').linha, 'CM.LISA');
 // Só vira hífen o segmento que é SÓ tamanhos: com outra palavra, fica como está.
