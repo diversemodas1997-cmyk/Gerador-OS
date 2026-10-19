@@ -380,6 +380,11 @@
      salvar (medida sem risco, camadas acima do limite) são respondidas com o
      que a pessoa aceitou no chat — e qualquer OUTRA pergunta que aparecer é
      respondida "não": o salvamento para e a pergunta volta para o chat. */
+  const ROTULO_CONFLITO = {
+    grade_de_outro_produto: 'grade de outro produto', camadas_acima_do_limite: 'camadas acima do limite',
+    medida_sem_risco: 'medida sem risco', planejamento_repetido: 'planejamento repetido',
+    os_igual_em_producao: 'OS igual em produção', data_no_passado: 'data passada'
+  };
   const CONFIRMA_DO_PROGRAMA = [
     { codigo: 'medida_sem_risco', casa: /não veio de um risco/i },
     { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i }
@@ -523,8 +528,20 @@
       camadas: cam || undefined, grades_iguais: parseInt(el('f-plan-vezes').value, 10) || 1, data: dataPlan || undefined,
       produtos: (() => { try { return produtosOS(dados) * (parseInt(el('f-plan-vezes').value, 10) || 1); } catch (e) { return undefined; } })() };
     if (pendentes.length) {
+      // A PERGUNTA TAMBÉM É UM BOTÃO (19/10/2026, Junior: "falta o assistente,
+      // além de preencher, salvar"). Esperar o "sim" voltar pela conversa
+      // deixava o planejamento só preenchido na tela; o clique é a resposta.
+      const todos = [...aceitos, ...pendentes.map(c => c.codigo)];
+      oferecerAcao(`💾 Salvar assim mesmo (${pendentes.map(c => ROTULO_CONFLITO[c.codigo] || c.codigo).join(', ')})`, async () => {
+        const r = await planejar(Object.assign({}, p, { aceitar: todos }));
+        anotarNoChat(r.salvo
+          ? `✔ Planejamento salvo: ${r.resumo}. Aguarda a aprovação do admin no Planejamento de produção.`
+          : `✖ Não salvei: ${r.erro || (r.conflitos || []).map(c => c.texto).join(' ') || 'o programa recusou'}`
+            + (r.perguntas_do_programa ? `\n\n${r.perguntas_do_programa.join('\n\n')}` : ''));
+      }, true);
       return { salvo: false, preenchido_na_tela: preenchido, conflitos: pendentes,
-        instrucao: 'Nada foi salvo. Explique os conflitos e pergunte se a pessoa quer salvar assim; com o sim dela, chame de novo com aceitar.' };
+        botao_mostrado: 'Salvar assim mesmo',
+        instrucao: 'Nada foi salvo ainda. Explique os conflitos em poucas linhas e diga que a pessoa pode clicar em "Salvar assim mesmo" ou responder sim. Com o sim dela por escrito, chame de novo com aceitar.' };
     }
 
     // ---- salvar pelo caminho do programa ----
@@ -562,8 +579,11 @@
      para abrir janela nova (OC, PDF das etiquetas) sem bloquear o pop-up. */
   let acoesPendentes = [];
   let seqAcao = 0;
-  function oferecerAcao(rotulo, executar) {
-    acoesPendentes.push({ id: 'a' + (++seqAcao), rotulo, executar, feita: false });
+  // O resultado de um botão clicado: fica embaixo dos botões até a próxima pergunta.
+  let notasDoChat = [];
+  function anotarNoChat(t) { notasDoChat.push(String(t)); desenhar(); }
+  function oferecerAcao(rotulo, executar, umaVez) {
+    acoesPendentes.push({ id: 'a' + (++seqAcao), rotulo, executar, feita: false, umaVez: !!umaVez });
   }
 
   async function rodarFerramenta(nome, entrada) {
@@ -625,6 +645,7 @@
     if (ocupado || !texto.trim()) return;
     ocupado = true; atualizarBotao();
     acoesPendentes = [];
+    notasDoChat = [];
     historico.push({ role: 'user', content: texto.trim() });
     guardar(); desenhar();
     const pensando = mostrarPensando('Pensando…');
@@ -811,10 +832,11 @@
       if (a) {
         const acao = acoesPendentes.find(x => x.id === a.getAttribute('data-acao'));
         if (!acao) return;
+        if (acao.feita && acao.umaVez) return;
         acao.feita = true;
         a.classList.add('feita');
-        try { acao.executar(); }
-        catch (err) { mostrarErro('Não consegui abrir: ' + (err && err.message ? err.message : err)); }
+        Promise.resolve().then(() => acao.executar())
+          .catch(err => mostrarErro('Não consegui: ' + (err && err.message ? err.message : err)));
       }
     });
 
@@ -856,6 +878,7 @@
       partes.push('<div class="assist-acoes">' + acoesPendentes.map(a =>
         `<button type="button" data-acao="${a.id}" class="${a.feita ? 'feita' : ''}">${escH(a.rotulo)}</button>`).join('') + '</div>');
     }
+    notasDoChat.forEach(t => partes.push(`<div class="assist-m assist-ele">${markdown(t)}</div>`));
     if (!partes.length) {
       partes.push(`<div class="assist-vazio">Olá! Eu consulto os dados do Gerador de OS, preparo folhas de OS, etiquetas, OE e ordens de compra para imprimir e monto planejamentos de produção. Exemplos:
         ${SUGESTOES.map(s => `<button type="button" data-sug="${escH(s)}">${escH(s)}</button>`).join('')}</div>`);
