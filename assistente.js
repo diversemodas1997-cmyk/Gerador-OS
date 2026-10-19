@@ -251,7 +251,7 @@
       return { base: nome, encontrados: total, pulados: pular, mostrando: fatia.length, registros: fatia };
     },
 
-    preparar_folha(p) {
+    async preparar_folha(p) {
       const tipo = String(p.tipo || '').toLowerCase();
       const AREA = { os: 'os', etiquetas: 'os', oe: 'expedicao', oc: 'compra' };
       if (!AREA[tipo]) return { erro: 'tipo deve ser os, etiquetas, oe ou oc' };
@@ -266,6 +266,19 @@
       const achadas = [], erros = [];
       alvos.forEach(a => { const f = folhaDe(tipo, a); if (f.erro) erros.push(f.erro); else achadas.push(f); });
       if (!achadas.length) return { erro: erros.join(' ') };
+
+      // IMPRIMIR É DIRETO (19/10/2026, Junior: autonomia para imprimir). A
+      // folha da OS e a da OE moram numa tela do programa: o assistente abre e
+      // manda para o diálogo de impressão sem esperar clique. Etiquetas e OC
+      // abrem janela nova, que o navegador só deixa abrir no clique da pessoa —
+      // essas continuam botão.
+      if (p.imprimir && achadas.every(f => !f.janelaPropria)) {
+        const r = await imprimirEmSequencia(achadas, true);
+        oferecerAcao(`🖨 Imprimir de novo (${achadas.length > 1 ? achadas.length + ' folhas' : achadas[0].nome})`, () => imprimirEmSequencia(achadas));
+        return { impresso_agora: r.impressas, nao_impressas: r.falharam.length ? r.falharam : undefined,
+          nao_achadas: erros.length ? erros : undefined,
+          aviso: 'O diálogo de impressão abriu uma vez por folha; a pessoa escolhe a impressora e confirma lá. Se ela cancelou, há o botão "Imprimir de novo".' };
+      }
 
       if (achadas.length === 1) {
         const f = achadas[0];
@@ -344,7 +357,8 @@
           abrir: () => imprimirEtiquetasPdf(o.id),
           info: { os: resumoOS(o), aviso: 'As etiquetas abrem como PDF numa aba nova; a impressão é feita por lá.' } };
       }
-      return { nome: `folha da OS ${o.os}`, curto: o.os, abrir: () => verOS(o.id), info: { os: resumoOS(o) } };
+      return { nome: `folha da OS ${o.os}`, curto: o.os, abrir: () => verOS(o.id), info: { os: resumoOS(o) },
+        pagina: 'print', confere: () => typeof printOsAtual !== 'undefined' && printOsAtual && printOsAtual.id === o.id };
     }
     if (tipo === 'oe') {
       const data = dataIso(alvo);
@@ -357,6 +371,7 @@
           try { sessionStorage.setItem('gos:exp:modo', 'dia'); sessionStorage.setItem('gos:exp:ancora', data); } catch (e) { /* sem storage */ }
           goto('print-expedicao');
         },
+        pagina: 'print-expedicao',
         info: { data, aviso: 'A folha só traz as expedições com carga alocada; dia sem carga sai vazio.' } };
     }
     // oc — a janela da OC já abre o diálogo de impressão sozinha.
@@ -370,14 +385,29 @@
 
   // window.print() segura o código até a pessoa fechar o diálogo; então é só
   // abrir a próxima folha, dar tempo de ela se desenhar e imprimir de novo.
-  async function imprimirEmSequencia(folhas) {
-    fechar();
+  async function imprimirEmSequencia(folhas, manterChat) {
+    if (!manterChat) fechar();
+    const impressas = [], falharam = [];
     for (const f of folhas) {
-      f.abrir();
-      await esperar(900);
-      window.print();
+      if (await imprimirNaTela(f)) impressas.push(f.curto); else falharam.push(f.curto);
       await esperar(200);
     }
+    return { impressas, falharam };
+  }
+
+  // Abre a folha e imprime SÓ se for ela que está na tela. Um goto anterior
+  // (o salvarOS termina em goto('lista-os')) deixa um hashchange a caminho;
+  // como a folha não tem endereço, ele voltava para a lista e a impressão saía
+  // da lista de OS (19/10/2026). A espera deixa o evento passar.
+  async function imprimirNaTela(f) {
+    await esperar(400);
+    f.abrir();
+    await esperar(900);
+    const naTela = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
+    if (f.pagina && naTela !== f.pagina) return false;
+    if (f.confere && !f.confere()) return false;
+    window.print();
+    return true;
   }
 
   /* ---------------- planejamento ----------------
@@ -664,19 +694,14 @@
         // O salvarOS termina em goto('lista-os'), que escreve #lista-os no
         // endereço; o hashchange chega DEPOIS e, como a folha (print) não tem
         // endereço, voltava para a lista — e a impressão saía da lista de OS
-        // (19/10/2026). Espera esse evento passar, e só imprime com a folha na tela.
-        await esperar(400);
-        folha.abrir();
-        await esperar(900);
-        const naTela = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
-        if (naTela === 'print' && printOsAtual && printOsAtual.id === nova.id) {
-          window.print();
+        // (19/10/2026). imprimirNaTela espera esse evento passar.
+        if (await imprimirNaTela(folha)) {
           ret.impressa = true;
         } else {
           ret.impressa = false;
           ret.aviso_impressao = 'A folha não ficou na tela; nada foi impresso. Diga à pessoa para clicar no botão "Imprimir de novo".';
         }
-        oferecerAcao(`🖨 Imprimir de novo a folha da OS ${nova.os}`, () => { fechar(); folha.abrir(); setTimeout(() => window.print(), 700); });
+        oferecerAcao(`🖨 Imprimir de novo a folha da OS ${nova.os}`, () => imprimirEmSequencia([folha]));
       }
     }
     return ret;
