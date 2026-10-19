@@ -474,7 +474,7 @@
     t: null, dev: null, cal: null, ocupado: false, conectando: false,
     padrao: null, leituras: [], acumulando: [], cont: { padrao: 0, amostra: 0 },
     atual: null, pagina: 0, status: 'Desconectado', aviso: '', log: [],
-    pedido: null, mostrarCfg: false, mostrarHist: false, histDias: [], histDia: '', histLidas: [], semBD: false
+    pedido: null, janela: null, histDias: [], histDia: '', histLidas: [], semBD: false
   };
   let seq = 0;
   const novoId = () => 'cm_' + Date.now().toString(36) + '_' + (++seq);
@@ -834,14 +834,21 @@
     return l;
   }
   async function abrirHistorico(manter) {
+    // O quadro troca NA HORA do clique ("Carregando…"); esperar a leitura para
+    // trocar deixava o quadro anterior na tela, e o clique seguinte agia nele.
+    S.janela = 'hist';
+    S.histCarregando = true;
+    desenhar();
     try {
       await carregarTabelas();
       const todos = await BD.todos();
       S.histDias = [...new Set(todos.map(r => r.dia))].sort().reverse();
       if (!manter || !S.histDias.includes(S.histDia)) S.histDia = S.histDias[0] || '';
-      S.mostrarHist = true;
+      S.histCarregando = false;
+      if (S.janela !== 'hist') return;   // fechado enquanto carregava
       await carregarDia(S.histDia);
     } catch (e) {
+      S.histCarregando = false;
       S.aviso = 'O histórico deste navegador não abriu: ' + (e && e.message);
       desenhar();
     }
@@ -860,7 +867,7 @@
       lab_aparelho: r.lab_aparelho, horario: r.horario });
     S.leituras.unshift(l);
     S.padrao = l; S.atual = l;
-    S.mostrarHist = false;
+    S.janela = null;
     status(`${r.nome} de ${dataTxt(r.horario).slice(0, 5)} ${horaTxt(r.horario).slice(0, 5)} virou o padrão. Agora meça a amostra`);
   }
   function histExportar() {
@@ -868,6 +875,29 @@
     const porId = {};
     S.histLidas.forEach(l => { porId[l.id] = l; });
     baixarCsv(`medicoes_${S.histDia}.csv`, [cabecalhoCsv(), ...S.histLidas.map(l => linhaCsv(l, porId[l.refId]))]);
+  }
+
+  /* UMA JANELA DE CADA VEZ (19/10/2026, Junior: "as janelas de configuração e
+     histórico são abertas, mas não podem ser fechadas. Elas se acumulam").
+     Configurações e Histórico dividem o mesmo lugar no topo da tela: abrir uma
+     fecha a outra, o botão que abriu fecha de novo, o ✕ do título fecha e o Esc
+     também. Antes cada uma tinha o seu "mostrar", abrir o Histórico deixava as
+     Configurações abertas, e o único Fechar ficava no fim do quadro. */
+  function botaoFechar() {
+    return '<button type="button" class="btn small ghost cm-fechar" title="Fechar (Esc)" onclick="Colorimetro.fecharJanela()">✕ Fechar</button>';
+  }
+  function fecharJanela() { S.janela = null; desenhar(); }
+  function alternar(qual, abrir) {
+    if (S.janela === qual && !abrir) { fecharJanela(); return; }
+    S.pedido = null;
+    if (qual === 'hist') { abrirHistorico(false); rolarParaJanela(); return; }
+    S.janela = qual;
+    desenhar();
+    rolarParaJanela();
+  }
+  function rolarParaJanela() {
+    const j = document.querySelector('#colorimetro-painel .cm-cfg, #colorimetro-painel .cm-hist');
+    if (j && j.scrollIntoView) j.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   /* ---------------- configurações ---------------- */
@@ -896,7 +926,7 @@
     cfg = novo;
     salvarCfg();
     S.leituras.forEach(recalcular);
-    S.mostrarCfg = false;
+    S.janela = null;
     S.aviso = '';
     status('Configurações aplicadas');
   }
@@ -992,13 +1022,13 @@
   }
 
   function htmlCfg() {
-    if (!S.mostrarCfg) return '';
+    if (S.janela !== 'cfg') return '';
     const ils = T ? Object.keys(T.illuminants) : [cfg.iluminante1, cfg.iluminante2];
     const opt = (lista, atual) => lista.map(x => `<option value="${escH(x[0])}" ${String(atual) === String(x[0]) ? 'selected' : ''}>${escH(x[1])}</option>`).join('');
     const campo = (id, rot, val, larg) => `<label class="cm-campo" style="${larg ? 'max-width:' + larg : ''}"><span>${rot}</span><input id="${id}" value="${escH(numTol(val))}" inputmode="decimal"></label>`;
     const tolRot = { dL: 'dL* ±', da: 'da* ±', db: 'db* ±', 'dE*ab': 'dE*ab ≤', dC: 'dC* ±', dH: 'dH* ±', "dL'": "dL' ±", "dC'": "dC' ±", "dH'": "dH' ±", dE00: 'dE00 ≤', dEcmc: 'dEcmc ≤', dE94: 'dE94 ≤' };
     return `<div class="card cm-cfg">
-      <div class="card-title">Configurações do colorímetro <span class="cm-fraco">(valem neste computador)</span></div>
+      <div class="cm-janela-topo"><div class="card-title">Configurações do colorímetro <span class="cm-fraco">(valem neste computador)</span></div>${botaoFechar()}</div>
       <div class="cm-grade">
         <label class="cm-campo"><span>Iluminante principal</span><select id="cm-il1">${opt(ils.map(x => [x, x + '°']), cfg.iluminante1)}</select></label>
         <label class="cm-campo"><span>Segundo iluminante (metamerismo)</span><select id="cm-il2">${opt(ils.map(x => [x, x + '°']), cfg.iluminante2)}</select></label>
@@ -1024,7 +1054,7 @@
   }
 
   function htmlHist() {
-    if (!S.mostrarHist) return '';
+    if (S.janela !== 'hist') return '';
     const fo = cfg.formula;
     let aprov = 0, reprov = 0;
     const porId = {};
@@ -1044,8 +1074,8 @@
         <td><button type="button" class="btn small ghost" onclick="Colorimetro.histUsarPadrao('${l.id}')">Usar como padrão</button></td></tr>`;
     }).join('');
     return `<div class="card cm-hist">
-      <div class="card-title">Histórico deste computador</div>
-      ${S.histDias.length ? `<div class="cm-botoes">
+      <div class="cm-janela-topo"><div class="card-title">Histórico deste computador</div>${botaoFechar()}</div>
+      ${S.histCarregando ? '<div class="cm-fraco">Carregando…</div>' : S.histDias.length ? `<div class="cm-botoes">
         <label class="cm-campo" style="max-width:180px"><span>Dia</span><select onchange="Colorimetro.carregarDia(this.value)">${S.histDias.map(d =>
           `<option value="${d}" ${d === S.histDia ? 'selected' : ''}>${d.split('-').reverse().join('/')}</option>`).join('')}</select></label>
         <button type="button" class="btn" onclick="Colorimetro.histExportar()">Exportar este dia (CSV)</button>
@@ -1125,11 +1155,11 @@
             <div class="cm-botoes cm-entre">
               <div class="card-title" style="margin:0">Medições desta sessão</div>
               <div class="cm-botoes">
-                <button type="button" class="btn small" onclick="Colorimetro.abrirHistorico()">Histórico</button>
+                <button type="button" class="btn small ${S.janela === 'hist' ? 'primary' : ''}" onclick="Colorimetro.alternar('hist')">Histórico</button>
                 <button type="button" class="btn small" onclick="Colorimetro.exportar()">Exportar CSV</button>
                 <label class="btn small" title="Os arquivos medicoes_AAAA-MM-DD.csv do programa antigo">Importar CSV
                   <input type="file" accept=".csv,text/csv" hidden onchange="Colorimetro.importar(this.files[0]); this.value=''"></label>
-                <button type="button" class="btn small" onclick="Colorimetro.abrirCfg()">Configurações</button>
+                <button type="button" class="btn small ${S.janela === 'cfg' ? 'primary' : ''}" onclick="Colorimetro.alternar('cfg')">Configurações</button>
                 <button type="button" class="btn small ghost" onclick="Colorimetro.limpar()">Limpar lista</button>
               </div>
             </div>
@@ -1234,6 +1264,8 @@
     .cm-campo input,.cm-campo select{font-size:14px}
     .cm-sub{margin:12px 0 6px;font-weight:600;font-size:13px}
     .cm-cfg,.cm-hist,.cm-pedido{margin-top:12px}
+    .cm-janela-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+    .cm-janela-topo .card-title{flex:1}
     .cm-pedido{border-left:3px solid var(--accent)}
     .cm-pedido-campo{margin-top:8px;width:100%;max-width:320px;font-size:14px}
     .cm-pedido .cm-botoes{margin-top:12px}
@@ -1262,6 +1294,7 @@
     // F5 amostra / F6 padrão, como no original — só nesta tela e com o aparelho
     // conectado (fora dela, e com Ctrl, o F5 continua recarregando a página).
     document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && visivel() && (S.janela || S.pedido)) { S.janela = null; S.pedido = null; desenhar(); return; }
       if (!visivel() || !S.dev || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
       if (e.key === 'F5' || e.key === 'F6') {
         e.preventDefault();
@@ -1272,9 +1305,9 @@
 
   window.Colorimetro = {
     conectar, desconectar, calibrar, medir, selecionar, usarPadrao, renomear, excluir, limpar, exportar, importar,
-    abrirHistorico: () => abrirHistorico(false), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
-    histUsarPadrao, histExportar, fecharHist: () => { S.mostrarHist = false; desenhar(); },
-    abrirCfg: () => { S.mostrarCfg = true; S.mostrarHist = false; desenhar(); }, fecharCfg: () => { S.mostrarCfg = false; desenhar(); },
+    abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
+    histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
+    abrirCfg: () => alternar('cfg', true),
     aplicarCfg, resetarCfg, responder,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
