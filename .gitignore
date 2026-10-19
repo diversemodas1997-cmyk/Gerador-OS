@@ -10,3 +10,8 @@ os-gen-backup-*.json
 # Certificados do servidor da fabrica. As CHAVES PRIVADAS moram aqui: quem tem
 # o ca.key emite certificado em nome da nossa CA. Nunca versionar.
 servidor/tls/
+
+# Chave da API da Anthropic do assistente: mora so em C:\supabase (ver
+# servidor/deploy-funcao-assistente.ps1). Se alguem copiar para ca, nao sobe.
+servidor/funcoes/assistente/chave.txt
+servidor/funcoes/assistente/modelo.txt
