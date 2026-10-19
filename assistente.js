@@ -51,12 +51,14 @@
      ordens de compra...").
 
      As FOLHAS (OS, etiquetas, OE, OC) precisam de DUAS licenças: a visão da
-     conta "assistente" (que o admin cria e ajusta em Configurações → Contas de
+     conta "claude.assistent" (que o admin cria e ajusta em Configurações → Contas de
      acesso, como qualquer outra; sem marcação ela vê tudo) E a visão de quem
      está logado. A conta do assistente funciona como um limite a mais do que o
      chat pode fazer — nunca como atalho para alguém abrir pelo chat uma folha
      que a própria conta não abre. Nada aqui grava dados nem usa senha. */
-  const CONTA_ASSISTENTE = 'assistente';
+  // A conta que o Junior criou em 19/10/2026 (login claude.assistent@diverse.local).
+  // Precisa ter só VISÃO: edição marcada também conta como visão em contaVeArea.
+  const CONTA_ASSISTENTE = 'claude.assistent';
   function assistenteVe(area) {
     try { return typeof contaVeArea === 'function' ? contaVeArea(area, CONTA_ASSISTENTE, 'usuario') : false; }
     catch (e) { return false; }
