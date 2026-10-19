@@ -46,6 +46,22 @@
   };
   const BASES_NUNCA = new Set(['_device']);
 
+  /* A CONTA DO ASSISTENTE (19/10/2026, Junior: "configure uma conta de acesso
+     para que o Assistente, por meio dessa conta, possa gerar folhas de OS, OE,
+     ordens de compra...").
+
+     As FOLHAS (OS, etiquetas, OE, OC) precisam de DUAS licenças: a visão da
+     conta "assistente" (que o admin cria e ajusta em Configurações → Contas de
+     acesso, como qualquer outra; sem marcação ela vê tudo) E a visão de quem
+     está logado. A conta do assistente funciona como um limite a mais do que o
+     chat pode fazer — nunca como atalho para alguém abrir pelo chat uma folha
+     que a própria conta não abre. Nada aqui grava dados nem usa senha. */
+  const CONTA_ASSISTENTE = 'assistente';
+  function assistenteVe(area) {
+    try { return typeof contaVeArea === 'function' ? contaVeArea(area, CONTA_ASSISTENTE, 'usuario') : false; }
+    catch (e) { return false; }
+  }
+
   const ehAdmin = () => typeof currentRole !== 'undefined' && currentRole === 'admin';
   const login = () => (typeof _obsQuemSou === 'function' ? _obsQuemSou() : '');
 
@@ -218,6 +234,58 @@
       return { base: nome, encontrados: total, pulados: pular, mostrando: fatia.length, registros: fatia };
     },
 
+    preparar_folha(p) {
+      const tipo = String(p.tipo || '').toLowerCase();
+      const imprimir = !!p.imprimir;
+      const AREA = { os: 'os', etiquetas: 'os', oe: 'expedicao', oc: 'compra' };
+      if (!AREA[tipo]) return { erro: 'tipo deve ser os, etiquetas, oe ou oc' };
+      if (!assistenteVe(AREA[tipo])) {
+        return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem visão da área "${AREA[tipo]}". O admin libera em Configurações → Contas de acesso.` };
+      }
+      if (!veArea(AREA[tipo])) return SEM_ACESSO(AREA[tipo]);
+      const verbo = imprimir ? '🖨 Imprimir' : '📄 Abrir';
+
+      if (tipo === 'os' || tipo === 'etiquetas') {
+        const n = numOS(p.alvo);
+        const o = (STATE.ordens || []).find(x => numOS(x.os) === n);
+        if (!o) return { erro: `Não achei a OS ${p.alvo}.` };
+        const nome = tipo === 'os' ? `folha da OS ${o.os}` : `etiquetas da OS ${o.os}`;
+        oferecerAcao(`${verbo} ${nome}`, () => {
+          if (tipo === 'etiquetas') { imprimirEtiquetasPdf(o.id); return; }
+          fechar();
+          verOS(o.id);
+          if (imprimir) setTimeout(() => window.print(), 700);
+        });
+        return { botao_mostrado: `${verbo} ${nome}`, os: resumoOS(o),
+          aviso: tipo === 'etiquetas' ? 'As etiquetas abrem como PDF numa aba nova; a impressão é feita por lá.' : undefined };
+      }
+
+      if (tipo === 'oe') {
+        const data = dataIso(p.alvo);
+        if (!data) return { erro: `Não entendi a data "${p.alvo}". Use AAAA-MM-DD, DD/MM, "hoje" ou "amanhã".` };
+        const rot = data.split('-').reverse().join('/');
+        oferecerAcao(`${verbo} folha de OE de ${rot}`, () => {
+          fechar();
+          expPlanoModo = 'dia';
+          expPlanoAncora = data;
+          try { sessionStorage.setItem('gos:exp:modo', 'dia'); sessionStorage.setItem('gos:exp:ancora', data); } catch (e) { /* sem storage */ }
+          goto('print-expedicao');
+          if (imprimir) setTimeout(() => window.print(), 700);
+        });
+        return { botao_mostrado: `${verbo} folha de OE de ${rot}`, data,
+          aviso: 'A folha só traz as expedições com carga alocada; dia sem carga sai vazio.' };
+      }
+
+      // oc
+      const alvo = String(p.alvo || '').replace(/\D/g, '').replace(/^0+/, '');
+      const ocs = Array.isArray(STATE.compraOCs) ? STATE.compraOCs : [];
+      const oc = ocs.find(x => String(x.numero || '').replace(/\D/g, '').replace(/^0+/, '') === alvo);
+      if (!oc) return { erro: `Não achei a ordem de compra ${p.alvo}.`, existentes: ocs.slice(-15).map(x => x.numero) };
+      // A janela da OC já abre o diálogo de impressão sozinha.
+      oferecerAcao(`🖨 Abrir e imprimir ${oc.numero}`, () => imprimirOC(oc.id));
+      return { botao_mostrado: `Abrir e imprimir ${oc.numero}`, oc: enxugar(oc, 1, 200, 20) };
+    },
+
     tela_atual() {
       const sec = [...document.querySelectorAll('section.page')].find(s => !s.classList.contains('hidden'));
       if (!sec) return { erro: 'Não identifiquei a tela aberta.' };
@@ -225,6 +293,33 @@
       return { pagina: sec.getAttribute('data-page'), texto: texto.slice(0, 9000) + (texto.length > 9000 ? ' …[cortado]' : '') };
     }
   };
+
+  // "hoje", "amanhã", "ontem", DD/MM, DD/MM/AAAA ou AAAA-MM-DD → AAAA-MM-DD
+  function dataIso(v) {
+    const t = norm(v).trim();
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    if (!t || t === 'hoje') return iso(d);
+    if (t === 'amanha') { d.setDate(d.getDate() + 1); return iso(d); }
+    if (t === 'ontem') { d.setDate(d.getDate() - 1); return iso(d); }
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return t;
+    m = t.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (m) {
+      const ano = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : d.getFullYear();
+      return `${ano}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+    }
+    return null;
+  }
+
+  /* As ações não rodam sozinhas: viram um botão no chat e só acontecem no
+     clique da pessoa. É a confirmação — e é também o que o navegador exige
+     para abrir janela nova (OC, PDF das etiquetas) sem bloquear o pop-up. */
+  let acoesPendentes = [];
+  let seqAcao = 0;
+  function oferecerAcao(rotulo, executar) {
+    acoesPendentes.push({ id: 'a' + (++seqAcao), rotulo, executar, feita: false });
+  }
 
   function rodarFerramenta(nome, entrada) {
     const f = FERRAMENTAS[nome];
@@ -284,6 +379,7 @@
   async function perguntar(texto) {
     if (ocupado || !texto.trim()) return;
     ocupado = true; atualizarBotao();
+    acoesPendentes = [];
     historico.push({ role: 'user', content: texto.trim() });
     guardar(); desenhar();
     const pensando = mostrarPensando('Pensando…');
@@ -322,7 +418,8 @@
   }
   const NOMES_FERR = {
     resumo_status: 'o resumo por status', buscar_os: 'as OS', detalhe_os: 'a OS',
-    listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela'
+    listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela',
+    preparar_folha: 'a folha'
   };
 
   /* ---------------- markdown simples (seguro) ---------------- */
@@ -393,6 +490,11 @@
   .assist-tab table{border-collapse:collapse;font-size:12px}
   .assist-tab th,.assist-tab td{border:1px solid var(--assist-bd);padding:3px 6px;text-align:left;white-space:nowrap}
   .assist-tab th{background:var(--assist-cab)}
+  .assist-acoes{align-self:flex-start;display:flex;flex-direction:column;gap:6px}
+  .assist-acoes button{padding:8px 12px;border-radius:8px;border:1px solid var(--assist-acento);background:var(--assist-fundo);
+    color:var(--assist-acento);font:600 13px 'IBM Plex Sans',system-ui,sans-serif;cursor:pointer;text-align:left}
+  .assist-acoes button:hover{background:var(--assist-acento);color:#fff}
+  .assist-acoes button.feita{opacity:.55}
   .assist-vazio{opacity:.8;font-size:13px}
   .assist-vazio button{display:block;width:100%;text-align:left;margin:6px 0 0;padding:7px 9px;border-radius:8px;cursor:pointer;
     border:1px solid var(--assist-bd);background:var(--assist-bolha);color:var(--assist-txt);font:13px 'IBM Plex Sans',system-ui,sans-serif}
@@ -411,7 +513,7 @@
   const SUGESTOES = [
     'Quantas OS e peças estão em cada status agora?',
     'Quais OS estão cortando neste momento?',
-    'Me explique o que estou vendo nesta tela.',
+    'Imprima a folha de OE de hoje.',
     'Quais OS da coleção Inverno 2026 ainda não começaram?'
   ];
 
@@ -438,7 +540,7 @@
       <div class="assist-msgs" id="assist-msgs"></div>
       <div class="assist-pe"><textarea id="assist-entrada" placeholder="Pergunte sobre OS, status, estoque…"></textarea>
         <button type="button" id="assist-enviar">Enviar</button></div>
-      <div class="assist-nota">Só consulta — não altera nada no sistema. Confira números importantes na tela.</div>`;
+      <div class="assist-nota">Consulta e prepara folhas para imprimir — não altera dados. Confira números importantes na tela.</div>`;
     document.body.appendChild(painel);
 
     msgs = painel.querySelector('#assist-msgs');
@@ -457,7 +559,16 @@
     });
     msgs.addEventListener('click', e => {
       const b = e.target.closest('button[data-sug]');
-      if (b) { entrada.value = b.getAttribute('data-sug'); enviar(); }
+      if (b) { entrada.value = b.getAttribute('data-sug'); enviar(); return; }
+      const a = e.target.closest('button[data-acao]');
+      if (a) {
+        const acao = acoesPendentes.find(x => x.id === a.getAttribute('data-acao'));
+        if (!acao) return;
+        acao.feita = true;
+        a.classList.add('feita');
+        try { acao.executar(); }
+        catch (err) { mostrarErro('Não consegui abrir: ' + (err && err.message ? err.message : err)); }
+      }
     });
 
     desenhar();
@@ -494,8 +605,12 @@
         if (txt) partes.push(`<div class="assist-m assist-ele">${markdown(txt)}</div>`);
       }
     });
+    if (acoesPendentes.length) {
+      partes.push('<div class="assist-acoes">' + acoesPendentes.map(a =>
+        `<button type="button" data-acao="${a.id}" class="${a.feita ? 'feita' : ''}">${escH(a.rotulo)}</button>`).join('') + '</div>');
+    }
     if (!partes.length) {
-      partes.push(`<div class="assist-vazio">Olá! Eu consulto os dados do Gerador de OS para você — status, OS, cadastros, estoques, expedição. Exemplos:
+      partes.push(`<div class="assist-vazio">Olá! Eu consulto os dados do Gerador de OS e preparo folhas de OS, etiquetas, OE e ordens de compra para imprimir. Exemplos:
         ${SUGESTOES.map(s => `<button type="button" data-sug="${escH(s)}">${escH(s)}</button>`).join('')}</div>`);
     }
     msgs.innerHTML = partes.join('');
