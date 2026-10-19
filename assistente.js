@@ -5,11 +5,19 @@
    CONSULTA.)
 
    Arquivo separado do app.js de propósito: o app.js tem 2,4 MB e mexer nele
-   para pendurar uma janela seria arriscar o resto. Este arquivo só LÊ o que o
+   para pendurar uma janela seria arriscar o resto. Este arquivo LÊ o que o
    app.js já deixou carregado (STATE, currentUser, currentRole, supa,
-   _servidorUrlAtivo, _statusOS, produtosOS, STATUS_OS, contaVeArea) e nunca
-   grava nada: nenhuma ferramenta daqui chama cloudFlush, scheduleCloudSave ou
-   altera STATE.
+   _servidorUrlAtivo, _statusOS, produtosOS, STATUS_OS, contaVeArea).
+
+   A ÚNICA GRAVAÇÃO É O PLANEJAMENTO (19/10/2026, Junior: "o Assistente deve
+   ser capaz de imprimir todas as Ordens, preencher e salvar todos os
+   planejamentos, perguntar ao usuário quando perceber conflitos. O Assistente
+   não pode alterar status ou alterar condições de usuários como eleger admin
+   ou rebaixar admin"). E ela não tem caminho próprio: a ferramenta `planejar`
+   abre o MESMO formulário do Novo planejamento, preenche os campos como uma
+   pessoa e chama o MESMO salvarPlanejamento — as contas de camadas, as
+   validações e a trava de gravação são as do programa. Nada daqui muda status,
+   aprova planejamento, apaga, ou mexe em conta e papel de usuário.
 
    O CAMINHO DE UMA PERGUNTA
    1. A pergunta vai para /functions/v1/assistente (servidor da fábrica), que
@@ -238,54 +246,49 @@
 
     preparar_folha(p) {
       const tipo = String(p.tipo || '').toLowerCase();
-      const imprimir = !!p.imprimir;
       const AREA = { os: 'os', etiquetas: 'os', oe: 'expedicao', oc: 'compra' };
       if (!AREA[tipo]) return { erro: 'tipo deve ser os, etiquetas, oe ou oc' };
       if (!assistenteVe(AREA[tipo])) {
         return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem visão da área "${AREA[tipo]}". O admin libera em Configurações → Contas de acesso.` };
       }
       if (!veArea(AREA[tipo])) return SEM_ACESSO(AREA[tipo]);
-      const verbo = imprimir ? '🖨 Imprimir' : '📄 Abrir';
+      const alvos = (Array.isArray(p.alvos) && p.alvos.length ? p.alvos : [p.alvo]).map(String).filter(Boolean);
+      if (!alvos.length) return { erro: 'Diga qual folha: alvo ou alvos.' };
+      if (alvos.length > FOLHAS_MAX) return { erro: `São ${alvos.length} folhas; o máximo por pedido é ${FOLHAS_MAX}. Divida em partes.` };
 
-      if (tipo === 'os' || tipo === 'etiquetas') {
-        const n = numOS(p.alvo);
-        const o = (STATE.ordens || []).find(x => numOS(x.os) === n);
-        if (!o) return { erro: `Não achei a OS ${p.alvo}.` };
-        const nome = tipo === 'os' ? `folha da OS ${o.os}` : `etiquetas da OS ${o.os}`;
-        oferecerAcao(`${verbo} ${nome}`, () => {
-          if (tipo === 'etiquetas') { imprimirEtiquetasPdf(o.id); return; }
-          fechar();
-          verOS(o.id);
+      const achadas = [], erros = [];
+      alvos.forEach(a => { const f = folhaDe(tipo, a); if (f.erro) erros.push(f.erro); else achadas.push(f); });
+      if (!achadas.length) return { erro: erros.join(' ') };
+
+      if (achadas.length === 1) {
+        const f = achadas[0];
+        const imprimir = !!p.imprimir || f.sempreImprime;
+        const rotulo = `${imprimir ? '🖨 Imprimir' : '📄 Abrir'} ${f.nome}`;
+        oferecerAcao(rotulo, () => {
+          if (f.janelaPropria) { f.abrir(); return; }
+          fechar(); f.abrir();
           if (imprimir) setTimeout(() => window.print(), 700);
         });
-        return { botao_mostrado: `${verbo} ${nome}`, os: resumoOS(o),
-          aviso: tipo === 'etiquetas' ? 'As etiquetas abrem como PDF numa aba nova; a impressão é feita por lá.' : undefined };
+        return { botao_mostrado: rotulo, ...f.info, nao_achadas: erros.length ? erros : undefined };
       }
 
-      if (tipo === 'oe') {
-        const data = dataIso(p.alvo);
-        if (!data) return { erro: `Não entendi a data "${p.alvo}". Use AAAA-MM-DD, DD/MM, "hoje" ou "amanhã".` };
-        const rot = data.split('-').reverse().join('/');
-        oferecerAcao(`${verbo} folha de OE de ${rot}`, () => {
-          fechar();
-          expPlanoModo = 'dia';
-          expPlanoAncora = data;
-          try { sessionStorage.setItem('gos:exp:modo', 'dia'); sessionStorage.setItem('gos:exp:ancora', data); } catch (e) { /* sem storage */ }
-          goto('print-expedicao');
-          if (imprimir) setTimeout(() => window.print(), 700);
-        });
-        return { botao_mostrado: `${verbo} folha de OE de ${rot}`, data,
-          aviso: 'A folha só traz as expedições com carga alocada; dia sem carga sai vazio.' };
+      // VÁRIAS. A folha da OS e a da OE moram numa tela do próprio programa: um
+      // botão só abre uma e imprime, abre a seguinte e imprime, até a última.
+      // Etiquetas e OC abrem janela nova, e o navegador só deixa abrir janela no
+      // clique da pessoa — por isso é um botão para cada uma.
+      if (achadas.every(f => !f.janelaPropria)) {
+        const rotulo = `🖨 Imprimir todas (${achadas.length}) — ${achadas.map(f => f.curto).join(', ')}`;
+        oferecerAcao(rotulo, () => imprimirEmSequencia(achadas));
+        return { botao_mostrado: rotulo, folhas: achadas.map(f => f.nome), nao_achadas: erros.length ? erros : undefined,
+          aviso: 'Abre o diálogo de impressão uma vez por folha, na ordem da lista.' };
       }
+      achadas.forEach(f => oferecerAcao(`🖨 ${f.nome}`, () => f.abrir()));
+      return { botoes_mostrados: achadas.map(f => f.nome), nao_achadas: erros.length ? erros : undefined,
+        aviso: 'Cada uma abre numa janela própria: um clique por folha.' };
+    },
 
-      // oc
-      const alvo = String(p.alvo || '').replace(/\D/g, '').replace(/^0+/, '');
-      const ocs = Array.isArray(STATE.compraOCs) ? STATE.compraOCs : [];
-      const oc = ocs.find(x => String(x.numero || '').replace(/\D/g, '').replace(/^0+/, '') === alvo);
-      if (!oc) return { erro: `Não achei a ordem de compra ${p.alvo}.`, existentes: ocs.slice(-15).map(x => x.numero) };
-      // A janela da OC já abre o diálogo de impressão sozinha.
-      oferecerAcao(`🖨 Abrir e imprimir ${oc.numero}`, () => imprimirOC(oc.id));
-      return { botao_mostrado: `Abrir e imprimir ${oc.numero}`, oc: enxugar(oc, 1, 200, 20) };
+    async planejar(p) {
+      return planejar(p);
     },
 
     tela_atual() {
@@ -314,6 +317,246 @@
     return null;
   }
 
+  const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+  /* ---------------- folhas ---------------- */
+  const FOLHAS_MAX = 60;
+
+  // Uma folha pedida → o que abrir e como chamar. Erro se não existir.
+  function folhaDe(tipo, alvo) {
+    if (tipo === 'os' || tipo === 'etiquetas') {
+      const n = numOS(alvo);
+      const o = (STATE.ordens || []).find(x => numOS(x.os) === n);
+      if (!o) return { erro: `Não achei a OS ${alvo}.` };
+      if (tipo === 'etiquetas') {
+        return { nome: `etiquetas da OS ${o.os}`, curto: o.os, janelaPropria: true, sempreImprime: true,
+          abrir: () => imprimirEtiquetasPdf(o.id),
+          info: { os: resumoOS(o), aviso: 'As etiquetas abrem como PDF numa aba nova; a impressão é feita por lá.' } };
+      }
+      return { nome: `folha da OS ${o.os}`, curto: o.os, abrir: () => verOS(o.id), info: { os: resumoOS(o) } };
+    }
+    if (tipo === 'oe') {
+      const data = dataIso(alvo);
+      if (!data) return { erro: `Não entendi a data "${alvo}". Use AAAA-MM-DD, DD/MM, "hoje" ou "amanhã".` };
+      const rot = data.split('-').reverse().join('/');
+      return { nome: `folha de OE de ${rot}`, curto: rot.slice(0, 5),
+        abrir: () => {
+          expPlanoModo = 'dia';
+          expPlanoAncora = data;
+          try { sessionStorage.setItem('gos:exp:modo', 'dia'); sessionStorage.setItem('gos:exp:ancora', data); } catch (e) { /* sem storage */ }
+          goto('print-expedicao');
+        },
+        info: { data, aviso: 'A folha só traz as expedições com carga alocada; dia sem carga sai vazio.' } };
+    }
+    // oc — a janela da OC já abre o diálogo de impressão sozinha.
+    const n = String(alvo || '').replace(/\D/g, '').replace(/^0+/, '');
+    const ocs = Array.isArray(STATE.compraOCs) ? STATE.compraOCs : [];
+    const oc = ocs.find(x => String(x.numero || '').replace(/\D/g, '').replace(/^0+/, '') === n);
+    if (!oc) return { erro: `Não achei a ordem de compra ${alvo} (as últimas: ${ocs.slice(-8).map(x => x.numero).join(', ')}).` };
+    return { nome: `${oc.numero}`, curto: oc.numero, janelaPropria: true, sempreImprime: true,
+      abrir: () => imprimirOC(oc.id), info: { oc: enxugar(oc, 1, 200, 20) } };
+  }
+
+  // window.print() segura o código até a pessoa fechar o diálogo; então é só
+  // abrir a próxima folha, dar tempo de ela se desenhar e imprimir de novo.
+  async function imprimirEmSequencia(folhas) {
+    fechar();
+    for (const f of folhas) {
+      f.abrir();
+      await esperar(900);
+      window.print();
+      await esperar(200);
+    }
+  }
+
+  /* ---------------- planejamento ----------------
+     Pelo formulário de verdade, como o "Planejar" do Relatório de demanda
+     (_demAbrirParte): escolhe desenho, linha e grade nos próprios selects,
+     dispara os mesmos onchange, e salva por salvarPlanejamento.
+
+     OS CONFLITOS SÃO CONFERIDOS ANTES, e com eles nada é salvo: o formulário
+     fica preenchido na tela e o Claude pergunta. Só com o sim da pessoa ele
+     chama de novo com `aceitar`. As perguntas que o próprio programa faz ao
+     salvar (medida sem risco, camadas acima do limite) são respondidas com o
+     que a pessoa aceitou no chat — e qualquer OUTRA pergunta que aparecer é
+     respondida "não": o salvamento para e a pergunta volta para o chat. */
+  const CONFIRMA_DO_PROGRAMA = [
+    { codigo: 'medida_sem_risco', casa: /não veio de um risco/i },
+    { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i }
+  ];
+
+  function acharDesenho(texto) {
+    const t = norm(texto).trim();
+    const ds = STATE.desenhos || [];
+    const exato = ds.filter(d => norm(d.codigo) === t);
+    if (exato.length === 1) return { desenho: exato[0] };
+    const termos = t.split(/\s+/).filter(Boolean);
+    const casam = ds.filter(d => {
+      const h = norm(typeof _textoBuscaDesenho === 'function' ? _textoBuscaDesenho(d) : [d.codigo, d.desc].join(' '));
+      return termos.every(x => h.includes(x));
+    });
+    if (!casam.length) return { erro: `Não achei desenho com "${texto}".` };
+    if (casam.length > 1) {
+      return { pergunta: 'Mais de um desenho combina — pergunte à pessoa qual.',
+        opcoes: casam.slice(0, 20).map(d => _rotuloDesenhoOS(d)) };
+    }
+    return { desenho: casam[0] };
+  }
+
+  const opcoesDeGrade = sel => Array.from(sel.options).filter(o => o.value).map(o => o.text).slice(0, 30);
+
+  async function planejar(p) {
+    const acao = p.acao === 'editar' ? 'editar' : 'novo';
+    // Duas licenças, como nas folhas: a conta do assistente precisa de EDIÇÃO no
+    // Planejamento, e quem pede precisa poder planejar.
+    if (typeof contaTemAcesso !== 'function' || !contaTemAcesso('planejamento', CONTA_ASSISTENTE, 'usuario')) {
+      return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem edição no Planejamento de produção. O admin libera em Configurações → Contas de acesso.` };
+    }
+    if (typeof podeGravar === 'function' && !podeGravar()) {
+      return { erro: 'Esta tela não grava (celular ou fora do servidor da fábrica). Use um computador da fábrica.' };
+    }
+    if (!(ehAdmin() || temAcesso('planejamento') || temAcesso('os'))) {
+      return { sem_acesso: true, mensagem: 'Esta conta não pode planejar a produção. Peça ao admin.' };
+    }
+
+    let plan = null;
+    if (acao === 'editar') {
+      plan = _planLista().find(x => x.id === p.planejamento_id);
+      if (!plan) return { erro: 'Não achei esse planejamento.',
+        existentes: _planLista().slice(-15).map(x => ({ id: x.id, resumo: _planResumo(x) })) };
+    }
+    let des = null;
+    if (p.desenho) {
+      const r = acharDesenho(p.desenho);
+      if (!r.desenho) return r;
+      des = r.desenho;
+    } else if (acao === 'novo') {
+      return { pergunta: 'Falta o desenho técnico — pergunte à pessoa qual (código ou descrição).' };
+    }
+
+    // Abre o formulário, como os botões da tela.
+    if (acao === 'novo') novoPlanejamento(); else editarPlanejamento(plan.id);
+    await esperar(300);
+    if (!_osPlanModo) return { erro: 'Não consegui abrir o formulário de planejamento.' };
+    const el = id => document.getElementById(id);
+
+    if (des) {
+      const sd = el('f-desenho');
+      sd.value = des.id;
+      if (sd.value !== des.id) return { erro: `O desenho ${des.codigo} não está na lista do formulário.` };
+      previewDesenhoSelecionado();
+      sincCodigoDesenho('desenho');
+      preencherDropdownGradesOS();
+    }
+
+    const sg = el('f-grade-preset');
+    let grade = null;
+    if (p.grade) {
+      const t = norm(p.grade).trim();
+      const termos = t.split(/\s+/).filter(Boolean);
+      const todas = STATE.grades || [];
+      let casam = todas.filter(g => norm(g.nome).trim() === t);
+      if (!casam.length) casam = todas.filter(g => termos.every(x => norm(g.nome).includes(x)));
+      if (casam.length > 1) {
+        // Entre várias, as que o formulário oferece para este desenho primeiro.
+        const naLista = new Set(Array.from(sg.options).map(o => o.value));
+        const doDesenho = casam.filter(g => naLista.has(g.id));
+        if (doDesenho.length) casam = doDesenho;
+      }
+      if (!casam.length) return { erro: `Não achei grade com "${p.grade}".`, grades_para_este_desenho: opcoesDeGrade(sg) };
+      if (casam.length > 1) return { pergunta: 'Mais de uma grade combina — pergunte à pessoa qual.', opcoes: casam.slice(0, 20).map(g => g.nome) };
+      grade = casam[0];
+    } else if (acao === 'novo') {
+      return { pergunta: 'Falta a grade — pergunte à pessoa qual.', preenchido_na_tela: true,
+        grades_para_este_desenho: opcoesDeGrade(sg) };
+    }
+    if (grade) {
+      const ls = el('f-linha-tipo');
+      const linha = _linhaTipoGrade(grade);
+      if (ls && linha) { ls.value = linha; filtrarLinhaGradesOS(linha); }
+      preencherDropdownGradesOS(grade.id);
+      sg.value = grade.id;
+      aplicarGradePreset();
+    }
+
+    if (p.camadas != null) { el('f-enf-camadas').value = Math.max(1, parseInt(p.camadas, 10) || 1); calcularAlvoDeCamadas(); }
+    if (p.grades_iguais != null) { el('f-plan-vezes').value = Math.max(1, parseInt(p.grades_iguais, 10) || 1); atualizarCalculosEnfesto(); }
+    if (p.data) { const d = dataIso(p.data); if (!d) return { erro: `Não entendi a data "${p.data}".` }; el('f-data').value = d; }
+    if (p.tipo_producao) el('f-tipo-producao').value = p.tipo_producao === 'puxada' ? 'puxada' : 'empurrada';
+    if (p.obs != null) el('f-obs').value = String(p.obs);
+    await esperar(80);
+
+    // ---- os conflitos ----
+    const gradeId = sg.value;
+    const g = (STATE.grades || []).find(x => x.id === gradeId);
+    const desenhoId = el('f-desenho').value;
+    const conflitos = [];
+    const dados = coletaOS();
+    const gr = dados.grade || {};
+    if (['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].some(k => gr[k] > 0) && ['t2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'].some(k => gr[k] > 0)) {
+      return { salvo: false, preenchido_na_tela: true, erro: 'A grade mistura P ao G3 com 2 ao 16 — isso o programa não aceita. Pergunte qual linha vale.' };
+    }
+    if (g && des) {
+      const motivo = _motivoGradeForaDoDropdownOS(g, _ctxDropdownGradesOS([]));
+      if (motivo) conflitos.push({ codigo: 'grade_de_outro_produto',
+        texto: `A grade ${g.nome} não é das que o formulário oferece para este desenho (${(_MOTIVO_GRADE_LABEL || {})[motivo] || motivo}).` });
+    }
+    const cam = parseInt(el('f-enf-camadas').value, 10) || 0;
+    const { limite } = calcularLimiteCamadas();
+    if (cam > 0 && cam > limite) conflitos.push({ codigo: 'camadas_acima_do_limite', texto: `${cam} camadas, acima do limite do tecido (${limite}).` });
+    const semProva = gradeId ? fasesSemProvaDeMedida(gradeId) : [];
+    if (semProva.length) conflitos.push({ codigo: 'medida_sem_risco',
+      texto: `A medida de enfesto destas fases foi digitada à mão, sem PDF de risco: ${semProva.map(f => f.nome).join(', ')}.` });
+    const iguais = _planLista().filter(x => x.id !== (plan && plan.id) && x.desenhoId === desenhoId && x.gradeId === gradeId);
+    if (iguais.length) conflitos.push({ codigo: 'planejamento_repetido',
+      texto: `Já existe planejamento com o mesmo desenho e a mesma grade: ${iguais.slice(0, 5).map(_planResumo).join(' / ')}.` });
+    const emProducao = (STATE.ordens || []).filter(o => o.desenhoId === desenhoId && o.gradeId === gradeId
+      && !['estoque', 'cancelado'].includes(statusDe(o)));
+    if (emProducao.length) conflitos.push({ codigo: 'os_igual_em_producao',
+      texto: `Já há OS do mesmo desenho e grade em produção: ${emProducao.slice(0, 10).map(o => `${o.os} (${rotuloStatus(statusDe(o))})`).join(', ')}.` });
+    const dataPlan = el('f-data').value;
+    if (dataPlan && dataPlan < dataIso('hoje')) conflitos.push({ codigo: 'data_no_passado', texto: `A data ${dataPlan.split('-').reverse().join('/')} já passou.` });
+
+    const aceitos = new Set((Array.isArray(p.aceitar) ? p.aceitar : []).map(String));
+    const pendentes = conflitos.filter(c => !aceitos.has(c.codigo));
+    const preenchido = { desenho: des ? _rotuloDesenhoOS(des) : undefined, grade: g ? g.nome : undefined,
+      camadas: cam || undefined, grades_iguais: parseInt(el('f-plan-vezes').value, 10) || 1, data: dataPlan || undefined,
+      produtos: (() => { try { return produtosOS(dados) * (parseInt(el('f-plan-vezes').value, 10) || 1); } catch (e) { return undefined; } })() };
+    if (pendentes.length) {
+      return { salvo: false, preenchido_na_tela: preenchido, conflitos: pendentes,
+        instrucao: 'Nada foi salvo. Explique os conflitos e pergunte se a pessoa quer salvar assim; com o sim dela, chame de novo com aceitar.' };
+    }
+
+    // ---- salvar pelo caminho do programa ----
+    const antes = new Set(_planLista().map(x => x.id));
+    const editadoAntes = plan ? plan.editadoEm : null;
+    const confirmOriginal = window.confirm;
+    const perguntasNovas = [];
+    window.confirm = msg => {
+      const c = CONFIRMA_DO_PROGRAMA.find(x => x.casa.test(String(msg)));
+      if (c && aceitos.has(c.codigo)) return true;
+      perguntasNovas.push(String(msg).slice(0, 400));
+      return false;
+    };
+    try { await salvarPlanejamento(); }
+    finally { window.confirm = confirmOriginal; }
+
+    const salvo = acao === 'novo'
+      ? _planLista().find(x => !antes.has(x.id))
+      : (_planLista().find(x => x.id === plan.id && x.editadoEm && x.editadoEm !== editadoAntes) || null);
+    if (!salvo) {
+      return { salvo: false, preenchido_na_tela: preenchido,
+        perguntas_do_programa: perguntasNovas.length ? perguntasNovas : undefined,
+        erro: perguntasNovas.length ? 'O programa fez uma pergunta ao salvar: leve-a para a pessoa.' : 'O programa não salvou — veja a mensagem que apareceu na tela.' };
+    }
+    // Quem fez pelo chat fica escrito no próprio planejamento.
+    salvo.viaAssistente = { conta: CONTA_ASSISTENTE, pedidoPor: login(), em: new Date().toISOString(),
+      conflitosAceitos: [...aceitos] };
+    try { await saveState('osPlanejadas'); } catch (e) { /* o planejamento já está salvo; a marca vai no próximo */ }
+    return { salvo: true, acao, id: salvo.id, resumo: _planResumo(salvo), ...preenchido,
+      proximo_passo: 'Fica na lista do Planejamento de produção até o admin aprovar (a aprovação gera a OS com número).' };
+  }
+
   /* As ações não rodam sozinhas: viram um botão no chat e só acontecem no
      clique da pessoa. É a confirmação — e é também o que o navegador exige
      para abrir janela nova (OC, PDF das etiquetas) sem bloquear o pop-up. */
@@ -323,14 +566,14 @@
     acoesPendentes.push({ id: 'a' + (++seqAcao), rotulo, executar, feita: false });
   }
 
-  function rodarFerramenta(nome, entrada) {
+  async function rodarFerramenta(nome, entrada) {
     const f = FERRAMENTAS[nome];
     if (!f) return { erro: `Ferramenta desconhecida: ${nome}` };
     try {
       if (typeof STATE === 'undefined' || !STATE) return { erro: 'Os dados ainda não carregaram nesta tela.' };
-      return f(entrada || {});
+      return await f(entrada || {});
     } catch (e) {
-      return { erro: 'Falhou ao consultar: ' + (e && e.message ? e.message : e) };
+      return { erro: 'Falhou: ' + (e && e.message ? e.message : e) };
     }
   }
 
@@ -393,9 +636,11 @@
         const usos = (d.content || []).filter(b => b.type === 'tool_use');
         if (d.stop_reason !== 'tool_use' || !usos.length) break;
         pensando.textContent = 'Consultando ' + usos.map(u => NOMES_FERR[u.name] || u.name).join(', ') + '…';
-        const resultados = usos.map(u => ({
-          type: 'tool_result', tool_use_id: u.id, content: limitar(rodarFerramenta(u.name, u.input))
-        }));
+        // Uma de cada vez: o planejamento usa o formulário, que é um só.
+        const resultados = [];
+        for (const u of usos) {
+          resultados.push({ type: 'tool_result', tool_use_id: u.id, content: limitar(await rodarFerramenta(u.name, u.input)) });
+        }
         historico.push({ role: 'user', content: resultados });
         if (rodada === RODADAS_MAX - 1) mostrarErro('A pergunta exigiu consultas demais. Tente algo mais específico.');
       }
@@ -421,7 +666,7 @@
   const NOMES_FERR = {
     resumo_status: 'o resumo por status', buscar_os: 'as OS', detalhe_os: 'a OS',
     listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela',
-    preparar_folha: 'a folha'
+    preparar_folha: 'a folha', planejar: 'o planejamento'
   };
 
   /* ---------------- markdown simples (seguro) ---------------- */
@@ -542,7 +787,7 @@
       <div class="assist-msgs" id="assist-msgs"></div>
       <div class="assist-pe"><textarea id="assist-entrada" placeholder="Pergunte sobre OS, status, estoque…"></textarea>
         <button type="button" id="assist-enviar">Enviar</button></div>
-      <div class="assist-nota">Consulta e prepara folhas para imprimir — não altera dados. Confira números importantes na tela.</div>`;
+      <div class="assist-nota">Consulta, prepara folhas e salva planejamentos quando você pede — pergunta antes se houver conflito. Não muda status nem contas.</div>`;
     document.body.appendChild(painel);
 
     msgs = painel.querySelector('#assist-msgs');
@@ -612,7 +857,7 @@
         `<button type="button" data-acao="${a.id}" class="${a.feita ? 'feita' : ''}">${escH(a.rotulo)}</button>`).join('') + '</div>');
     }
     if (!partes.length) {
-      partes.push(`<div class="assist-vazio">Olá! Eu consulto os dados do Gerador de OS e preparo folhas de OS, etiquetas, OE e ordens de compra para imprimir. Exemplos:
+      partes.push(`<div class="assist-vazio">Olá! Eu consulto os dados do Gerador de OS, preparo folhas de OS, etiquetas, OE e ordens de compra para imprimir e monto planejamentos de produção. Exemplos:
         ${SUGESTOES.map(s => `<button type="button" data-sug="${escH(s)}">${escH(s)}</button>`).join('')}</div>`);
     }
     msgs.innerHTML = partes.join('');
