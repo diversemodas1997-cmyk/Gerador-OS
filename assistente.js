@@ -433,7 +433,7 @@
     { codigo: 'falta_de_tecido', casa: /Não há tecido disponível/i }
   ];
 
-  function acharDesenho(texto) {
+  function acharDesenho(texto, preferido) {
     const t = norm(texto).trim();
     const ds = STATE.desenhos || [];
     const exato = ds.filter(d => norm(d.codigo) === t);
@@ -444,6 +444,8 @@
       return termos.every(x => h.includes(x));
     });
     if (!casam.length) return { erro: `Não achei desenho com "${texto}".` };
+    // Entre vários, o da OS de referência é o óbvio — não se pergunta.
+    if (casam.length > 1 && preferido && casam.includes(preferido)) return { desenho: preferido, deduzido: true };
     if (casam.length > 1) {
       return { pergunta: 'Mais de um desenho combina — pergunte à pessoa qual.',
         opcoes: casam.slice(0, 20).map(d => _rotuloDesenhoOS(d)) };
@@ -629,14 +631,39 @@
       marcar(nova);
       try { await saveState('ordens'); } catch (e) { /* a OS já está salva; a marca vai no próximo */ }
     } else {
-      if (!p.grade) {
-        return { pergunta: `A grade da OS ${ativa.os}${gAtiva ? ` (${gAtiva.nome})` : ''} não tem conjugada no cadastro. Pergunte à pessoa a grade da nova OS (e o desenho, se não for o mesmo).` };
+      /* NÃO PERGUNTAR O ÓBVIO (19/10/2026, Junior: "o assistente não deve
+         perguntar o óbvio, pois a orientação é objetiva" — ao pedido "crie OS
+         conjugada cm.lisa vermelha com a OS 667" ele perguntou grade e desenho).
+         O que não foi dito vem da OS ativa, e o que foi dito e casa com mais de
+         um vale o da ativa se ela estiver entre eles. O que foi deduzido vai
+         escrito na resposta, para a pessoa conferir na folha. */
+      const desAtiva = (STATE.desenhos || []).find(d => d.id === ativa.desenhoId) || null;
+      const pg = Object.assign({}, p);
+      if (!pg.grade) {
+        if (!gAtiva) return { pergunta: `A OS ${ativa.os} não tem grade do cadastro — pergunte à pessoa a grade da nova OS.` };
+        pg.grade = gAtiva.nome;
+        notas.push(`Sem grade no pedido: usei a mesma da OS ${ativa.os} (${gAtiva.nome}).`);
+      } else if (gAtiva) {
+        const termos = norm(pg.grade).trim().split(/s+/).filter(Boolean);
+        const casam = (STATE.grades || []).filter(g => termos.every(x => norm(g.nome).includes(x)));
+        if (casam.length > 1 && casam.includes(gAtiva) && norm(gAtiva.nome).trim() !== norm(pg.grade).trim()) {
+          pg.grade = gAtiva.nome;
+          notas.push(`"${p.grade}" casa com ${casam.length} grades: usei a da OS ${ativa.os} (${gAtiva.nome}).`);
+        }
       }
+      p = pg;
       let des = null;
       if (p.desenho) {
-        const r = acharDesenho(p.desenho);
+        let r = acharDesenho(p.desenho, desAtiva);
+        // Palavras da LINHA (cm.lisa) vêm junto com a cor; elas são da grade.
+        if (!r.desenho && desAtiva) {
+          const daGrade = norm(gAtiva ? gAtiva.nome : '');
+          const resto = norm(p.desenho).split(/s+/).filter(x => x && !daGrade.includes(x)).join(' ');
+          if (resto && resto !== norm(p.desenho).trim()) r = acharDesenho(resto, desAtiva);
+        }
         if (!r.desenho) return r;
         des = r.desenho;
+        if (r.deduzido) notas.push(`"${p.desenho}" casa com mais de um desenho: usei o da OS ${ativa.os} (${_rotuloDesenhoOS(des)}).`);
       } else {
         des = (STATE.desenhos || []).find(d => d.id === ativa.desenhoId) || null;
         if (!des) return { pergunta: 'O desenho da OS ativa não está no cadastro — pergunte à pessoa qual desenho usar.' };
