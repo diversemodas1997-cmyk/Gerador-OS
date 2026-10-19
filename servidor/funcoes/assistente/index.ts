@@ -37,9 +37,23 @@ function resposta(corpo: unknown, status = 200) {
   return new Response(JSON.stringify(corpo), { status, headers: CABECALHOS });
 }
 
+// O edge-runtime pode rodar a função a partir de um pacote, e aí import.meta.url
+// não aponta para a pasta de verdade: tenta também o caminho absoluto do volume.
+// Na falha da chave, o log diz o MOTIVO (nunca o conteúdo do arquivo); o
+// modelo.txt é opcional e faltar é normal.
+//
+// O edge-runtime só enxerga os .txt porque o functions/main/index.ts do
+// servidor passa staticPatterns ao criar a função (19/10/2026). Sem essa linha,
+// os dois caminhos dão NotFound mesmo com o arquivo na pasta.
+const PASTA_FUNCAO = '/home/deno/functions/assistente/';
 async function lerArquivo(nome: string): Promise<string> {
-  try { return (await Deno.readTextFile(new URL('./' + nome, import.meta.url))).trim(); }
-  catch { return ''; }
+  const motivos: string[] = [];
+  for (const onde of [new URL('./' + nome, import.meta.url), PASTA_FUNCAO + nome]) {
+    try { return (await Deno.readTextFile(onde)).trim(); }
+    catch (e) { motivos.push(`${onde}: ${(e as Error)?.name || e}`); }
+  }
+  if (nome === 'chave.txt') console.error(`assistente: nao li ${nome} (import.meta.url=${import.meta.url}) -> ${motivos.join(' | ')}`);
+  return '';
 }
 
 async function chaveApi(): Promise<string> {
