@@ -35983,6 +35983,8 @@ function abrirMenuAcoesOS(id, botao) {
       title="Abre a grade que esta OS usa — tamanhos, fases e medidas.">grade</button>
     <button class="edit" onclick="fecharMenuAcoesOS(); imprimirEtiquetasPdf('${esc(id)}')"
       title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
+    ${window.Colorimetro ? `<button class="edit" onclick="fecharMenuAcoesOS(); Colorimetro.avaliarOS('${esc(id)}')"
+      title="Abre o Colorímetro com esta OS: as amostras medidas ficam ligadas a ela, e o relatório de tonalidades vai para as observações da OS.">avaliar amostras</button>` : ''}
     ${podeMudarStatusOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); abrirModalConjugarOS('${esc(id)}')"
       title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Nao mexe em tecido nem no cadastro da grade.">conjugar</button>` : ''}
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>

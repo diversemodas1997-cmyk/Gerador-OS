@@ -474,7 +474,7 @@
     t: null, dev: null, cal: null, ocupado: false, conectando: false,
     padrao: null, leituras: [], acumulando: [], cont: { padrao: 0, amostra: 0 },
     atual: null, pagina: 0, status: 'Desconectado', aviso: '', log: [],
-    pedido: null, janela: null, histDias: [], histDia: '', histLidas: [], semBD: false
+    pedido: null, janela: null, os: null, rel: null, relCarregando: false, relSalvo: null, histDias: [], histDia: '', histLidas: [], semBD: false
   };
   let seq = 0;
   const novoId = () => 'cm_' + Date.now().toString(36) + '_' + (++seq);
@@ -690,6 +690,7 @@
     const l = novaLeitura({ nome: `${prefixo} ${S.cont[tipo]}`, tipo, espectro: esp, wave_start: medidas[0].wave_start,
       lab_aparelho: labAp, horario: new Date() });
     if (tipo === 'amostra' && S.padrao) l.refId = S.padrao.id;
+    if (S.os) { l.osId = S.os.id; l.osNumero = S.os.numero; }
     S.leituras.unshift(l);
     if (tipo === 'padrao') S.padrao = l;
     S.atual = l;
@@ -702,7 +703,8 @@
     const ref = refDe(l);
     return { id: l.id, dia: diaIso(l.horario), horario: l.horario.toISOString(), nome: l.nome, tipo: l.tipo,
       espectro: l.espectro, wave_start: l.wave_start, lab_aparelho: l.lab_aparelho,
-      refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1 };
+      refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1,
+      osId: l.osId || null, osNumero: l.osNumero || '' };
   }
   function guardar(l) {
     BD.gravar(registroDe(l)).catch(e => {
@@ -830,7 +832,7 @@
   function leituraDoRegistro(r) {
     const l = novaLeitura({ id: r.id, nome: r.nome, tipo: r.tipo, espectro: r.espectro || [], wave_start: r.wave_start || 400,
       lab_aparelho: r.lab_aparelho, horario: new Date(r.horario) });
-    l.refId = r.refId; l.refNome = r.refNome;
+    l.refId = r.refId; l.refNome = r.refNome; l.osId = r.osId || null; l.osNumero = r.osNumero || '';
     return l;
   }
   async function abrirHistorico(manter) {
@@ -891,13 +893,237 @@
     if (S.janela === qual && !abrir) { fecharJanela(); return; }
     S.pedido = null;
     if (qual === 'hist') { abrirHistorico(false); rolarParaJanela(); return; }
+    if (qual === 'rel') { abrirRelatorio(); return; }
     S.janela = qual;
     desenhar();
     rolarParaJanela();
   }
   function rolarParaJanela() {
-    const j = document.querySelector('#colorimetro-painel .cm-cfg, #colorimetro-painel .cm-hist');
+    const j = document.querySelector('#colorimetro-painel .cm-cfg, #colorimetro-painel .cm-hist, #colorimetro-painel .cm-rel');
     if (j && j.scrollIntoView) j.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* ---------------- AVALIAR AMOSTRAS DE UMA OS ----------------
+     (19/10/2026, Junior: "As medições devem apontar para uma OS. O usuário deve
+     clicar numa opção na coluna de ações da lista de OS 'avaliar amostras' e
+     ser redirecionado para a área Colorímetro. Depois da medição, deve ser
+     produzido relatório conduzido pelo usuário para determinar quais cores são
+     compatíveis em conjunto numérico, onde mais de um grupo pode ser formado
+     com tonalidades compatíveis." e "Esse relatório deve constar no campo de
+     observações da OS escolhida".)
+
+     · O "⋯ → avaliar amostras" da lista de OS chama Colorimetro.avaliarOS(id):
+       a tela abre com a OS escolhida, e toda medição feita a partir daí leva
+       osId/osNumero (no histórico deste navegador também).
+     · O RELATÓRIO DE TONALIDADES junta as AMOSTRAS medidas para essa OS (de
+       qualquer dia, neste computador) e propõe os grupos: duas amostras são
+       compatíveis quando o dE entre ELAS (a fórmula e a tolerância das
+       Configurações) está dentro da tolerância, e um grupo só aceita quem é
+       compatível com TODOS os que já estão nele. A proposta é só o começo — a
+       pessoa muda o tom de cada amostra, tira a amostra do relatório ("fora"),
+       e o quadro mostra em vermelho o par que ficou incompatível no mesmo tom.
+     · "Salvar nas observações da OS" grava o resumo como um recado da pessoa
+       logada em o.obsNotas, pelo mesmo salvarObsNota da folha: assinado, com
+       data, sem passar por cima do recado de ninguém. Curto de propósito — a
+       caixa de observações disputa milímetro com o desenho na folha. */
+  function rotuloOS(o) {
+    const g = o.grade && o.grade.descricao ? ' · ' + o.grade.descricao : '';
+    return `OS ${o.os || '—'}${o.modeloNome ? ' · ' + o.modeloNome : ''}${g}`;
+  }
+  function avaliarOS(id) {
+    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
+    if (!o) return;
+    S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
+    S.rel = null;
+    S.janela = null;
+    S.aviso = '';
+    S.status = S.dev ? `Avaliando as amostras da OS ${S.os.numero}: meça o padrão (se houver) e as amostras` : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`;
+    if (typeof goto === 'function') goto('colorimetro');
+    desenhar();
+    // A numeração é da OS: a primeira amostra dela é a Amostra 1, mesmo que a
+    // tela já tenha medido outras coisas antes; voltar à OS continua de onde parou.
+    const osId = o.id;
+    BD.todos().then(regs => {
+      if (!S.os || S.os.id !== osId) return;
+      const daOS = regs.filter(x => x.osId === osId);
+      const maior = tipo => Math.max(0, ...daOS.filter(x => x.tipo === tipo).map(x => nDoNome(x) || 0));
+      S.cont = { padrao: maior('padrao'), amostra: maior('amostra') };
+    }).catch(() => { S.cont = { padrao: 0, amostra: 0 }; });
+    S.cont = { padrao: 0, amostra: 0 };
+  }
+  function encerrarOS() { S.cont = { padrao: 0, amostra: 0 }; S.os = null; S.rel = null; if (S.janela === 'rel') S.janela = null; status('Medições sem OS'); }
+
+  // A sequência: o número do nome ("Amostra 3" → 3) e, sem número, a hora da medição.
+  const nDoNome = l => { const m = String(l.nome || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : null; };
+  const porSequencia = (a, b) => {
+    const na = nDoNome(a), nb = nDoNome(b);
+    if (na != null && nb != null && na !== nb) return na - nb;
+    return a.horario - b.horario;
+  };
+
+  const deDaFormula = (a, b) => {
+    const f = cfg.formula;
+    if (f === 'dE00') return de2000(a, b, ...cfg.k00);
+    if (f === 'dEcmc') return deCmc(a, b, cfg.cmc_l, cfg.cmc_c);
+    if (f === 'dE94') return de94(a, b, ...cfg.k94);
+    return deAb(a, b);
+  };
+  const compat = (a, b) => deDaFormula(a.lab1, b.lab1) <= cfg.tol[cfg.formula] + 1e-9;
+
+  /* A PROPOSTA SEGUE A SEQUÊNCIA DAS AMOSTRAS (19/10/2026, Junior: "deve
+     obedecer à sequência de amostras, iniciando na amostra número 1 e passando
+     pelas amostras número 2, 3, 4, 5…"). A 1 abre o Tom 1; cada uma das
+     seguintes, na ordem em que foi medida, entra no primeiro tom em que é
+     compatível com TODAS as que já estão nele; não cabendo em nenhum, abre o
+     tom seguinte. */
+  function proporGrupos(amostras) {
+    const grupos = [];
+    const g = {};
+    amostras.slice().sort(porSequencia).forEach(a => {
+      let i = grupos.findIndex(gr => gr.every(x => compat(a, x)));
+      if (i < 0) { grupos.push([]); i = grupos.length - 1; }
+      grupos[i].push(a);
+      g[a.id] = i + 1;
+    });
+    return g;
+  }
+
+  async function abrirRelatorio() {
+    if (!S.os) { S.aviso = 'Escolha a OS pelo "⋯ → avaliar amostras" da lista de OS.'; desenhar(); return; }
+    S.janela = 'rel';
+    S.relCarregando = true;
+    desenhar();
+    try {
+      await carregarTabelas();
+      const regs = (await BD.todos()).filter(r => r.osId === S.os.id);
+      regs.sort((a, b) => String(a.horario).localeCompare(String(b.horario)));
+      const lidas = regs.map(leituraDoRegistro);
+      const amostras = lidas.filter(l => l.tipo === 'amostra').sort(porSequencia);
+      const padroes = lidas.filter(l => l.tipo === 'padrao');
+      const antes = S.rel && S.rel.osId === S.os.id ? S.rel.grupo : null;
+      const proposta = proporGrupos(amostras);
+      const grupo = {};
+      // Reabrir mantém o que a pessoa já tinha decidido; amostra nova entra pela proposta.
+      amostras.forEach(a => { grupo[a.id] = antes && a.id in antes ? antes[a.id] : proposta[a.id]; });
+      S.rel = { osId: S.os.id, amostras, padrao: padroes[padroes.length - 1] || null, grupo };
+    } catch (e) {
+      S.aviso = 'O relatório não abriu: ' + (e && e.message);
+    }
+    S.relCarregando = false;
+    if (S.janela === 'rel') { desenhar(); rolarParaJanela(); }
+  }
+  function relRefazer() {
+    if (!S.rel) return;
+    S.rel.grupo = proporGrupos(S.rel.amostras);
+    desenhar();
+  }
+  function relMudar(id, v) {
+    if (!S.rel) return;
+    S.rel.grupo[id] = parseInt(v, 10) || 0;   // 0 = fora do relatório
+    desenhar();
+  }
+
+  // Os tons em uso, renumerados 1, 2, 3… na ordem em que aparecem — a pessoa
+  // pode ter esvaziado o Tom 2, e o relatório não pula número.
+  function gruposDoRelatorio() {
+    const r = S.rel;
+    const usados = [...new Set(r.amostras.map(a => r.grupo[a.id]).filter(n => n > 0))].sort((a, b) => a - b);
+    return usados.map((n, i) => {
+      const membros = r.amostras.filter(a => r.grupo[a.id] === n);
+      let pior = 0;
+      const ruins = [];
+      membros.forEach((a, k) => membros.slice(k + 1).forEach(b => {
+        const d = deDaFormula(a.lab1, b.lab1);
+        pior = Math.max(pior, d);
+        if (d > cfg.tol[cfg.formula] + 1e-9) ruins.push([a, b, d]);
+      }));
+      return { n, numero: i + 1, membros, pior, ruins };
+    });
+  }
+
+  function textoRelatorio() {
+    const fo = cfg.formula;
+    const grupos = gruposDoRelatorio();
+    const fora = S.rel.amostras.filter(a => !(S.rel.grupo[a.id] > 0));
+    const partes = grupos.map(g => `Tom ${g.numero}: ${g.membros.map(a => a.nome).join(', ')}`
+      + (g.membros.length > 1 ? ` (${fo} máx ${num(g.pior)})` : '') + (g.ruins.length ? ' ⚠ fora da tolerância' : ''));
+    if (fora.length) partes.push(`Não usar: ${fora.map(a => a.nome).join(', ')}`);
+    return `Colorímetro — ${grupos.length} ${grupos.length === 1 ? 'tom' : 'tons'} compatíveis (${fo} ≤ ${numTol(cfg.tol[fo])}, ${cfg.iluminante1}°, ${S.rel.amostras.length} amostras). `
+      + partes.join(' · ') + '.';
+  }
+
+  async function relSalvar() {
+    if (!S.rel || !S.os) return;
+    const grupos = gruposDoRelatorio();
+    if (!grupos.length) { S.aviso = 'Nenhuma amostra está num tom: escolha os tons antes de salvar.'; desenhar(); return; }
+    if (typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
+    const o = (STATE.ordens || []).find(x => x.id === S.os.id);
+    if (!o) { S.aviso = `A OS ${S.os.numero} não existe mais.`; desenhar(); return; }
+    const texto = textoRelatorio();
+    const antes = _obsNotasDe(o).length;
+    try { await salvarObsNota(o.id, '', texto); } catch (e) { S.aviso = 'Não deu para salvar: ' + e.message; desenhar(); return; }
+    if (_obsNotasDe(o).length <= antes) { S.aviso = 'O programa não gravou a observação (veja o aviso no canto da tela).'; desenhar(); return; }
+    S.relSalvo = { osId: o.id, em: new Date() };
+    S.aviso = '';
+    status(`Relatório salvo nas observações da OS ${o.os}`);
+  }
+  const _obsNotasDe = o => Array.isArray(o.obsNotas) ? o.obsNotas : [];
+
+  function htmlRel() {
+    if (S.janela !== 'rel') return '';
+    const topo = `<div class="cm-janela-topo"><div class="card-title">Relatório de tonalidades · ${escH(S.os ? S.os.rotulo : '')}</div>${botaoFechar()}</div>`;
+    if (S.relCarregando || !S.rel) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Carregando…</div></div>`;
+    const r = S.rel, fo = cfg.formula, tol = cfg.tol[fo];
+    if (!r.amostras.length) {
+      return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a OS ${escH(S.os.numero)} neste computador. Meça as amostras (Medir amostra ou o botão do aparelho) e abra o relatório de novo.</div></div>`;
+    }
+    const grupos = gruposDoRelatorio();
+    const maxTom = Math.max(1, ...r.amostras.map(a => r.grupo[a.id] || 0)) + 1;
+    const numeroDe = {};
+    grupos.forEach(g => { numeroDe[g.n] = g.numero; });
+    const linhas = r.amostras.map(a => {
+      const opcoes = ['<option value="0"' + (!(r.grupo[a.id] > 0) ? ' selected' : '') + '>Não usar</option>']
+        .concat(Array.from({ length: maxTom }, (_, i) => i + 1).map(n =>
+          `<option value="${n}" ${r.grupo[a.id] === n ? 'selected' : ''}>Tom ${numeroDe[n] || (grupos.length + 1)}${numeroDe[n] ? '' : ' (novo)'}</option>`));
+      const dp = r.padrao ? num(deDaFormula(r.padrao.lab1, a.lab1)) : '';
+      return `<tr><td><span class="cm-amostra-cor" style="background:${labHex(...a.lab1)}"></span>${escH(a.nome)}</td>
+        <td>${dataTxt(a.horario).slice(0, 5)} ${horaTxt(a.horario).slice(0, 5)}</td>
+        ${a.lab1.map(v => `<td class="cm-n">${num(v)}</td>`).join('')}${r.padrao ? `<td class="cm-n">${dp}</td>` : ''}
+        <td><select onchange="Colorimetro.relMudar('${a.id}', this.value)">${opcoes.join('')}</select></td></tr>`;
+    }).join('');
+    // A matriz: o dE de cada par, verde dentro e vermelho fora da tolerância.
+    const ord = r.amostras.slice().sort(porSequencia);
+    const matriz = r.amostras.length <= 30 ? `<div class="cm-sub">${escH(fo)} entre as amostras (dentro de ${numTol(tol)} = verde)</div>
+      <div class="cm-rolar"><table class="cm-matriz"><thead><tr><th></th>${ord.map(a => `<th title="${escH(a.nome)}">${escH(a.nome)}</th>`).join('')}</tr></thead>
+      <tbody>${ord.map(a => `<tr><th>${escH(a.nome)}</th>${ord.map(b => {
+        if (a === b) return '<td class="cm-mz-eu">—</td>';
+        const d = deDaFormula(a.lab1, b.lab1);
+        const mesmo = r.grupo[a.id] > 0 && r.grupo[a.id] === r.grupo[b.id];
+        return `<td class="${d <= tol + 1e-9 ? 'cm-mz-ok' : 'cm-mz-fora'}${mesmo ? ' cm-mz-mesmo' : ''}">${num(d)}</td>`;
+      }).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+    const resumo = grupos.map(g => `<div class="cm-tom ${g.ruins.length ? 'cm-tom-ruim' : ''}">
+        <b>Tom ${g.numero}</b> — ${g.membros.map(a => escH(a.nome)).join(', ')}
+        <span class="cm-fraco">${g.membros.length > 1 ? `· ${fo} máx ${num(g.pior)}` : '· sozinha'}</span>
+        ${g.ruins.length ? `<div class="cm-fora">Incompatível no mesmo tom: ${g.ruins.map(([a, b, d]) => `${escH(a.nome)} × ${escH(b.nome)} (${num(d)})`).join('; ')}</div>` : ''}
+      </div>`).join('');
+    const salvo = S.relSalvo && S.relSalvo.osId === r.osId
+      ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
+         <button type="button" class="btn small ghost" onclick="verOS('${escH(r.osId)}')">Ver a folha da OS</button>` : '';
+    return `<div class="card cm-rel">${topo}
+      <div class="cm-fraco" style="margin-bottom:8px">Duas amostras são compatíveis quando o <b>${escH(fo)}</b> entre elas fica em até <b>${numTol(tol)}</b>
+        (${escH(cfg.iluminante1)}°; muda em Configurações). A proposta abaixo pôs cada amostra no primeiro tom em que ela combina com todas;
+        mude o tom de qualquer uma, ou marque "Não usar", e o quadro refaz as contas.</div>
+      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medida</th><th>L*</th><th>a*</th><th>b*</th>
+        ${r.padrao ? `<th title="${escH(r.padrao.nome)}">${escH(fo)} ao padrão</th>` : ''}<th>Tom</th></tr></thead><tbody>${linhas}</tbody></table></div>
+      <div class="cm-sub">Tons</div>${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
+      ${matriz}
+      <div class="cm-sub">Vai para as observações da OS ${escH(S.os.numero)}</div>
+      <div class="cm-previa">${escH(grupos.length ? textoRelatorio() : '—')}</div>
+      <div class="cm-botoes">
+        <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${grupos.length ? '' : 'disabled'}>Salvar nas observações da OS</button>
+        <button type="button" class="btn" onclick="Colorimetro.relRefazer()">Refazer a proposta</button>
+        ${salvo}
+      </div></div>`;
   }
 
   /* ---------------- configurações ---------------- */
@@ -1108,6 +1334,12 @@
     const cal = S.cal ? `Branco: ${fmtCal(S.cal.branco_ok, S.cal.branco_data)}<br>Preto: ${fmtCal(S.cal.preto_ok, S.cal.preto_data)}` : '—';
     const motivo = semBluetooth();
     p.innerHTML = `
+      ${S.os ? `<div class="card cm-os"><div class="cm-botoes cm-entre">
+        <div><span class="cm-fraco">Avaliando as amostras da</span> <b>${escH(S.os.rotulo)}</b>
+          <span class="cm-fraco">· as medições daqui em diante ficam ligadas a esta OS</span></div>
+        <div class="cm-botoes">
+          <button type="button" class="btn small ${S.janela === 'rel' ? 'primary' : 'accent'}" onclick="Colorimetro.alternar('rel')">Relatório de tonalidades</button>
+          <button type="button" class="btn small ghost" onclick="Colorimetro.encerrarOS()">Medir sem OS</button></div></div></div>` : ''}
       <div class="card cm-barra">
         <div class="cm-botoes">
           ${con
@@ -1130,7 +1362,7 @@
         ${S.pedido.campo != null ? `<input id="cm-pedido-valor" class="cm-pedido-campo" value="${escH(S.pedido.campo)}" onkeydown="if(event.key==='Enter')Colorimetro.responder(true)">` : ''}
         <div class="cm-botoes"><button type="button" class="btn primary" onclick="Colorimetro.responder(true)">${escH(S.pedido.sim)}</button>
         <button type="button" class="btn" onclick="Colorimetro.responder(false)">Cancelar</button></div></div>` : ''}
-      ${htmlCfg()}${htmlHist()}
+      ${htmlRel()}${htmlCfg()}${htmlHist()}
       <div class="cm-colunas">
         <div class="cm-esq">
           <div class="card">${tabelaPagina(ref, amo, r)}</div>
@@ -1263,7 +1495,18 @@
     .cm-campo{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-3)}
     .cm-campo input,.cm-campo select{font-size:14px}
     .cm-sub{margin:12px 0 6px;font-weight:600;font-size:13px}
-    .cm-cfg,.cm-hist,.cm-pedido{margin-top:12px}
+    .cm-cfg,.cm-hist,.cm-pedido,.cm-rel{margin-top:12px}
+    .cm-os{border-left:3px solid var(--accent);margin-bottom:12px}
+    .cm-amostra-cor{display:inline-block;width:14px;height:14px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
+    .cm-tom{padding:6px 8px;border-left:3px solid var(--ok);margin:4px 0;background:var(--line-2);font-size:13px}
+    .cm-tom-ruim{border-left-color:var(--alert)}
+    .cm-matriz{border-collapse:collapse;font-size:11px}
+    .cm-matriz th,.cm-matriz td{padding:3px 6px;border:1px solid var(--line-2);text-align:right;white-space:nowrap}
+    .cm-matriz thead th{font-weight:500;color:var(--ink-3)}
+    .cm-matriz tbody th{text-align:left;font-weight:500}
+    .cm-mz-ok{color:var(--ok)}.cm-mz-fora{color:var(--alert)}.cm-mz-eu{color:var(--ink-3);text-align:center}
+    .cm-mz-mesmo{font-weight:700;background:var(--line-2)}
+    .cm-previa{padding:8px 10px;border:1px dashed var(--line);font-size:13px;margin-bottom:4px}
     .cm-janela-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
     .cm-janela-topo .card-title{flex:1}
     .cm-pedido{border-left:3px solid var(--accent)}
@@ -1308,12 +1551,12 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relRefazer, relSalvar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     simularBotao: () => { if (S.t && S.t.apertarBotao) S.t.apertarBotao(modoAtual()); },
     // para os testes: as contas, sem tela
-    _contas: { carregarTabelas, espectroParaLab, deAb, de2000, de94, deCmc, labHex, comparar, arred, num, pacote, checksumOk }
+    _contas: { proporGrupos, carregarTabelas, espectroParaLab, deAb, de2000, de94, deCmc, labHex, comparar, arred, num, pacote, checksumOk }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', instalar);
