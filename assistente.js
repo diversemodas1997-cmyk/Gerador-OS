@@ -661,10 +661,21 @@
     if (p.imprimir !== false) {
       const folha = folhaDe('os', nova.os);
       if (!folha.erro) {
+        // O salvarOS termina em goto('lista-os'), que escreve #lista-os no
+        // endereço; o hashchange chega DEPOIS e, como a folha (print) não tem
+        // endereço, voltava para a lista — e a impressão saía da lista de OS
+        // (19/10/2026). Espera esse evento passar, e só imprime com a folha na tela.
+        await esperar(400);
         folha.abrir();
         await esperar(900);
-        window.print();
-        ret.impressa = true;
+        const naTela = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
+        if (naTela === 'print' && printOsAtual && printOsAtual.id === nova.id) {
+          window.print();
+          ret.impressa = true;
+        } else {
+          ret.impressa = false;
+          ret.aviso_impressao = 'A folha não ficou na tela; nada foi impresso. Diga à pessoa para clicar no botão "Imprimir de novo".';
+        }
         oferecerAcao(`🖨 Imprimir de novo a folha da OS ${nova.os}`, () => { fechar(); folha.abrir(); setTimeout(() => window.print(), 700); });
       }
     }
