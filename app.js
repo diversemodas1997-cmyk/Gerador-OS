@@ -13920,16 +13920,36 @@ function _expCancelSet() {
 // pacotes que ficaram para trás desapareciam da lista "a alocar". Com `perna`,
 // a conta olha só aquela perna (é o que o seletor de pacotes precisa: a volta
 // pode levar de novo exatamente o que a ida levou).
+/* O PACOTE SÓ ACABA QUANDO TODAS AS FASES DELE FORAM (20/10/2026, Junior:
+   "analise porque não consigo alocar na OE a OS661, sendo que pela manhã não
+   alocou partes frente parte 1 parte 2 parte 3 e à tarde não consigo alocar as
+   partes que não foram").
+   A carga da manhã levou Forro, Barra/Punhos e Viés com os 21 pacotes marcados,
+   e a conta tratava o pacote como inteiro: à tarde todos apareciam 0/0,
+   travados, e as partes do corpo não tinham como embarcar. Agora, numa OS com
+   fases, cada carga conta os pacotes só para as fases que ela leva, e o pacote
+   (tamanho × tom) está alocado na medida em que TODAS as fases já foram com ele
+   — o menor entre as fases (só nas cargas gravadas com `fasesComItens`; as
+   antigas valem inteiras, como foram lançadas). A carga "só fase" (pacotes vazios, o caso da barra
+   que ficou para depois) cobre as fases dela por inteiro: os pacotes já tinham
+   ido nas outras, que é como ela sempre foi lançada. */
 function _expAlocadoOS(osId, exceptCargaId, perna = null) {
   const cancel = _expCancelSet();
   const pernas = new Map();
+  let o = null, ordensOS = [], totKey = null, preparado = false;
   (STATE.expedicaoCargas || []).forEach(c => {
     if (c.osId !== osId || c.id === exceptCargaId) return;
+    if (!preparado) {   // só monta as fases da OS quando ela tem carga
+      preparado = true;
+      o = (STATE.ordens || []).find(x => x.id === osId) || null;
+      ordensOS = o ? _expFasesDaOS(o).map(f => f.ordem) : [];
+      totKey = ordensOS.length ? _expContarPacotes(_expPacotesCanonicos(o).itens) : null;
+    }
     if (cancel.has(c.janelaId + '|' + c.data)) return;
     const pn = c.perna === 'volta' ? 'volta' : 'ida';
     if (perna && pn !== perna) return;
     let e = pernas.get(pn);
-    if (!e) { e = { contagem: new Map(), reposicao: false, legacyFull: false }; pernas.set(pn, e); }
+    if (!e) { e = { contagem: new Map(), porFase: new Map(), reposicao: false, legacyFull: false }; pernas.set(pn, e); }
     if (Array.isArray(c.pacotes)) {
       c.pacotes.forEach(p => {
         const k = _expChavePacote(p);
@@ -13937,9 +13957,39 @@ function _expAlocadoOS(osId, exceptCargaId, perna = null) {
         x.qtd++; e.contagem.set(k, x);
       });
       if (c.reposicao) e.reposicao = true;
+      if (totKey) {
+        // Carga parcial anterior a este formato (sem `fasesComItens`): foi lançada
+        // quando o pacote valia inteiro, e continua lida assim — senão a 0493, a
+        // 0497 e a 0503 (ago-set) voltariam como "a alocar" sem nada ter mudado.
+        const levam = c.fasesComItens || !c.pacotes.length ? _expFasesDaCarga(c, o).levam.map(f => f.ordem) : ordensOS;
+        const soFase = !c.pacotes.length && !c.reposicao && levam.length < ordensOS.length;
+        const daCarga = soFase ? totKey : _expContarPacotes(c.pacotes);
+        levam.forEach(f => {
+          const m = e.porFase.get(f) || new Map();
+          daCarga.forEach((x, k) => {
+            const cur = m.get(k) || { tam: x.tam, tom: x.tom, qtd: 0 };
+            cur.qtd += x.qtd; m.set(k, cur);
+          });
+          e.porFase.set(f, m);
+        });
+      }
     } else if ((Number(c.volumes) || 0) > 0) {
       e.legacyFull = true;   // carga antiga (só número): cobre a OS inteira
     }
+  });
+  // Com fases: o alocado de cada pacote é o da fase que menos foi. E a fase que
+  // já foi com todos os pacotes fica em `fasesFeitas` (o checklist de uma carga
+  // nova vem com ela desmarcada).
+  const fasesFeitas = new Set();
+  if (totKey) pernas.forEach(e => {
+    const qtdDe = (f, k) => ((e.porFase.get(f) || new Map()).get(k) || {}).qtd || 0;
+    const m = new Map();
+    totKey.forEach((x, k) => {
+      const qtd = Math.min(...ordensOS.map(f => qtdDe(f, k)));
+      if (qtd > 0) m.set(k, { tam: x.tam, tom: x.tom, qtd: Math.min(qtd, x.qtd) });
+    });
+    e.contagem = m;
+    ordensOS.forEach(f => { if ([...totKey].every(([k, x]) => qtdDe(f, k) >= x.qtd)) fasesFeitas.add(f); });
   });
   const contagem = new Map();
   let reposicao = false, legacyFull = false;
@@ -13951,7 +14001,7 @@ function _expAlocadoOS(osId, exceptCargaId, perna = null) {
       if (!cur || x.qtd > cur.qtd) contagem.set(k, { tam: x.tam, tom: x.tom, qtd: x.qtd });
     });
   });
-  return { contagem, reposicao, legacyFull };
+  return { contagem, reposicao, legacyFull, fasesFeitas };
 }
 
 // Remanescente de uma OS: quanto do lote total ainda não foi para NENHUMA
@@ -15245,6 +15295,12 @@ function _expMontarSeletorFases(o) {
     return;
   }
   const marcadas = new Set(info.levam.map(f => f.ordem));
+  // Carga nova de OS que já mandou fases inteiras em outra carga desta perna
+  // (a OS 0661: Forro, Barra/Punhos e Viés de manhã): vêm marcadas só as que faltam.
+  if (!cargaEdit && o) {
+    const feitas = _expAlocadoOS(o.id, '', _expPernaDoForm()).fasesFeitas;
+    if (feitas.size && info.fases.some(f => !feitas.has(f.ordem))) feitas.forEach(f => marcadas.delete(f));
+  }
   box.innerHTML = info.fases.map(f => `
     <label class="ec-fase-cel">
       <input type="checkbox" class="ec-fase-in" value="${f.ordem}" ${marcadas.has(f.ordem) ? 'checked' : ''} onchange="_expResumoFases()">
