@@ -1019,9 +1019,30 @@
       if (cor && tec && cor.toLowerCase().endsWith(tec.toLowerCase())) cor = cor.slice(0, cor.length - tec.length).trim() || cor;
       const tecido = [f.tecidoNome, cor].filter(Boolean).join(' ');
       return { i, nome: f.nome || `Fase ${i + 1}`, tecido, rotulo: `Fase ${i + 1} · ${f.nome || 'sem nome'}${tecido ? ' · ' + tecido : ''}`,
-        corDe: ehRibana(f) ? faseDeCorDaRibana(o, lista) : -1 };
+        corDe: ehRibana(f) ? faseDeCorDaRibana(o, lista) : -1, semAval: faseSemAvaliacao(o, f) };
     });
   }
+  /* FASE QUE NÃO PRECISA DE AVALIAÇÃO (20/10/2026, Junior: "cm.rec fase corpo 2
+     não necessita ter tecidos compatíveis em cor, pois não há outras peças do
+     produto que são unidas para que as cores sejam compatíveis com branco").
+     Avaliar amostras serve para casar a cor de peças costuradas juntas; a fase
+     cujas peças não se unem a nenhuma outra da mesma cor fica fora: aparece na
+     lista como "não precisa avaliar", a tela pula por ela e o relatório não a
+     cita. Os índices das fases continuam os da OS (a avaliação guardada é por
+     índice), então nada que já foi medido muda de lugar.
+     Depois: "CM.TRI apenas a fase corpo 1 precisa receber avaliação de
+     amostras" — Corpo 2 e Corpo 3 saem; ribana e viés seguem como estão. */
+  const CORPO_N = n => new RegExp(`^corpo\\s*(parte\\s*)?${n}\\b`, 'i');
+  const FASES_SEM_AVALIACAO = {
+    'CM.REC': [CORPO_N(2)],
+    'CM.TRI': [CORPO_N(2), CORPO_N(3)], 'CM.TRICOLOR': [CORPO_N(2), CORPO_N(3)]
+  };
+  function faseSemAvaliacao(o, f) {
+    const linha = ((o && o.grade && o.grade.descricao || '').toUpperCase().match(/\b(CM|BM)\.[A-Z]+/) || [''])[0];
+    return (FASES_SEM_AVALIACAO[linha] || []).some(re => re.test(String(f.nome || '').trim()));
+  }
+  // Fase que a tela não precisa mais medir: concluída ou sem avaliação.
+  const faseFeita = (c, j) => !!(c.concluidas[j] || (S.fases && S.fases[j] && S.fases[j].semAval));
   /* A RIBANA VAI JUNTO DA FASE DE COR DELA (20/10/2026, Junior: "A fase ribana
      deve sempre ser conjugada no relatório de acordo com a fase de cor
      correspondente. Quando cm.lisa, ribana igual a corpo, quando cm.rec, ribana
@@ -1082,7 +1103,13 @@
     S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
     S.avOS = avCarregar(o.id);
     S.fases = fasesDaOS(o.id);
-    avUsarFase(Math.min(S.avOS.faseAtual || 0, S.fases.length - 1));
+    let i = Math.min(S.avOS.faseAtual || 0, S.fases.length - 1);
+    // Parou numa fase que não precisa de avaliação: vai para a primeira que falta.
+    if (S.fases[i] && S.fases[i].semAval) {
+      const j = S.fases.findIndex(f => !faseFeita(S.avOS, f.i));
+      i = j >= 0 ? j : Math.max(0, S.fases.findIndex(f => !f.semAval));
+    }
+    avUsarFase(i);
     try { localStorage.setItem(CHAVE_OS, o.id); } catch (e) { /* sem storage */ }
   }
   function restaurarOS() {
@@ -1278,7 +1305,7 @@
     const i = c.faseAtual;
     if (!numerosDasAmostras().length) { S.aviso = 'Meça ao menos uma amostra desta fase antes de concluí-la.'; desenhar(); return; }
     c.concluidas[i] = true;
-    const prox = S.fases.findIndex((f, j) => j > i && !c.concluidas[j]);
+    const prox = S.fases.findIndex((f, j) => j > i && !faseFeita(c, j));
     if (prox >= 0) avUsarFase(prox);
     avGuardar();
     status(prox >= 0 ? `${S.fases[i].rotulo} concluída. Agora é a ${S.fases[prox].rotulo}: comece pela Amostra 1.`
@@ -1328,7 +1355,7 @@
   }
   const nomeAm = n => `${cfg.nome_amostra} ${n}`;
   // As fases que já têm medição, na ordem da OS.
-  const fasesComMedicao = () => (S.fases || []).filter(f => S.avOS.fases[f.i] && numerosDasAmostras(S.avOS.fases[f.i]).length);
+  const fasesComMedicao = () => (S.fases || []).filter(f => !f.semAval && S.avOS.fases[f.i] && numerosDasAmostras(S.avOS.fases[f.i]).length);
   function marcasDaFase(f) {
     const r = S.avOS.reav[f.i];
     return [r ? `reavaliada${r > 1 ? ' ' + r + 'x' : ''}` : '', S.avOS.concluidas[f.i] ? '' : 'em andamento'].filter(Boolean);
@@ -1423,13 +1450,14 @@
     if (!S.fases || S.fases.length < 2) return '';
     const c = S.avOS;
     const chips = S.fases.map(f => {
+      if (f.semAval) return `<span class="cm-fase cm-fase-sem" title="As peças desta fase não são unidas a outras da mesma cor">${escH(f.rotulo)} <span class="cm-fraco">· não precisa avaliar</span></span>`;
       const atual = f.i === c.faseAtual, feita = !!c.concluidas[f.i];
       const av = c.fases[f.i];
       const tons = av ? tonsDoRelatorio(av).length : 0;
       return `<span class="cm-fase ${atual ? 'cm-fase-atual' : ''} ${feita ? 'cm-fase-feita' : ''}">${feita ? '✔ ' : ''}${escH(f.rotulo)}`
         + `${av && numerosDasAmostras(av).length ? ` <span class="cm-fraco">· ${tons} ${tons === 1 ? 'tom' : 'tons'}</span>` : ''}${c.reav[f.i] ? ' <span class="cm-fraco">· reavaliada</span>' : ''}</span>`;
     }).join('');
-    const feitas = S.fases.filter(f => c.concluidas[f.i]);
+    const feitas = S.fases.filter(f => c.concluidas[f.i] && !f.semAval);
     return `<div class="cm-fases">${chips}</div>
       ${feitas.length ? `<div class="cm-botoes" style="margin-top:6px">
         <label class="cm-campo" style="max-width:340px"><span>Reavaliar a fase</span>
@@ -1444,7 +1472,7 @@
     const con = !!S.dev, livre = !S.ocupado && !S.conectando;
     const concluida = !!S.avOS.concluidas[S.avOS.faseAtual];
     const fase = S.fases[S.avOS.faseAtual];
-    const ultimaFase = !S.fases.some((f, j) => j > S.avOS.faseAtual && !S.avOS.concluidas[j]);
+    const ultimaFase = !S.fases.some((f, j) => j > S.avOS.faseAtual && !faseFeita(S.avOS, j));
     const ms = av.n != null ? (av.medidas[av.n] || []).filter(m => m.rodada === k) : [];
     const ult = ms[ms.length - 1];
     const situacao = av.n == null ? '' : estaNumTom(av.n) ? `<span class="cm-ok">no Tom ${tomDe(av.n)}</span>`
@@ -1536,7 +1564,7 @@
     const fo = cfg.formula, tol = tolAtual();
     const fases = fasesComMedicao();
     if (!fases.length) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a OS ${escH(S.os.numero)}.</div></div>`;
-    const faltam = S.fases.filter(f => !S.avOS.concluidas[f.i]);
+    const faltam = S.fases.filter(f => !faseFeita(S.avOS, f.i));
     const algumTom = fases.some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length);
     const salvo = S.relSalvo && S.relSalvo.osId === S.os.id
       ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
@@ -1908,6 +1936,7 @@
     .cm-fase{padding:4px 10px;border:1px solid var(--line);border-radius:2px;font-size:12px;color:var(--ink-3)}
     .cm-fase-atual{border-color:var(--accent);color:var(--ink);font-weight:600;outline:1px solid var(--accent)}
     .cm-fase-feita{color:var(--ok)}
+    .cm-fase-sem{border-style:dashed;opacity:.6}
     .cm-rel-fase{margin-top:10px;padding-top:6px;border-top:1px solid var(--line-2)}
     .cm-amostra-cor{display:inline-block;width:14px;height:14px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
     .cm-tom{padding:6px 8px;border-left:3px solid var(--ok);margin:4px 0;background:var(--line-2);font-size:13px}
