@@ -1031,7 +1031,10 @@
     'CM.REC': [CORPO_N(2)],
     'CM.TRI': [CORPO_N(2), CORPO_N(3)], 'CM.TRICOLOR': [CORPO_N(2), CORPO_N(3)]
   };
+  // Viés não precisa avaliar em linha nenhuma (20/10/2026, Junior: "viés não precisa avaliar").
+  const VIES_PURO = /^vi[eé]s\b/i;
   function faseSemAvaliacao(o, f) {
+    if (VIES_PURO.test(String(f.nome || '').trim())) return true;
     const linha = ((o && o.grade && o.grade.descricao || '').toUpperCase().match(/\b(CM|BM)\.[A-Z]+/) || [''])[0];
     return (FASES_SEM_AVALIACAO[linha] || []).some(re => re.test(String(f.nome || '').trim()));
   }
