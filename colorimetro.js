@@ -673,7 +673,7 @@
 
   async function medir(tipo) {
     if (!S.dev || S.ocupado) return;
-    if (S.os && S.av && tipo === 'amostra' && S.av.n == null) { S.aviso = 'A rodada terminou: clique em Reavaliar ou escolha o número da amostra.'; desenhar(); return; }
+    if (S.os && S.av && S.av.n == null) { S.aviso = 'A rodada terminou: clique em Reavaliar ou escolha o número da amostra.'; desenhar(); return; }
     S.ocupado = true;
     status('Medindo…');
     try { chegou(await S.dev.medir(modoAtual()), tipo); } catch (e) { erroDoAparelho(e); }
@@ -969,8 +969,8 @@
      A DINÂMICA de cada fase, então, é por RODADAS, e cada rodada forma um tom:
        · A AMOSTRA ATUAL é um número (1, 2, 3…). Medir mede ESSA amostra, quantas
          vezes for preciso; o número só muda no clique (Trocar / Ir para nº).
-       · A REFERÊNCIA DO TOM: o padrão medido nesta rodada (Medir referência) ou,
-         sem ele, a primeira medição da primeira amostra da rodada — que já entra
+       · A REFERÊNCIA DO TOM é sempre uma AMOSTRA: a primeira medição da rodada,
+         ou a amostra atual medida como referência (avReferencia) — que já entra
          no tom, porque é ela que o define. Na 1ª rodada é a Amostra 1.
        · Cada medição da amostra atual é comparada com a referência (fórmula e
          tolerância das Configurações). UMA aprovação basta: a amostra entra no
@@ -1079,7 +1079,7 @@
   function avDicaFase() {
     const av = S.av;
     if (av.fimRodada) return `Fim da rodada do Tom ${av.rodada}. ${avPendentes().length ? 'Clique em Reavaliar para formar o tom seguinte.' : 'Nenhuma amostra a reavaliar.'}`;
-    if (!av.ref[av.rodada]) return `Tom ${av.rodada}: meça a Amostra ${av.n} (ela vira a referência do tom) ou meça um padrão como referência.`;
+    if (!av.ref[av.rodada]) return `Tom ${av.rodada}: meça a Amostra ${av.n} (ela vira a referência do tom) ou vá ao número da amostra que vai ser a referência.`;
     return `Tom ${av.rodada}: meça a Amostra ${av.n}; uma aprovação basta. Clique em Trocar para passar à seguinte.`;
   }
   const avPendentes = (av = S.av) => numerosDasAmostras(av).filter(n => tomDe(n, av) === 'r');
@@ -1089,16 +1089,10 @@
     const av = S.av, k = av.rodada;
     l.osId = S.os.id; l.osNumero = S.os.numero; l.rodada = k;
     l.fase = S.avOS.faseAtual; l.faseNome = (S.fases[S.avOS.faseAtual] || {}).rotulo || '';
-    if (tipo === 'padrao') {
-      l.nome = `Referência do Tom ${k}`;
-      av.ref[k] = { medId: l.id, amostra: null, nome: l.nome, lab: l.lab1, lab2: l.lab2, em: l.horario.toISOString() };
-      S.padrao = l;
-      avGuardar();
-      return `${l.nome} medida. Agora meça a Amostra ${av.n}.`;
-    }
     if (av.fimRodada || av.n == null) {
       return 'A rodada terminou: clique em Reavaliar (ou escolha o número da amostra) antes de medir.';
     }
+    if (tipo === 'padrao') return avReferencia(l);
     const n = av.n;
     l.amostraN = n;
     l.nome = `${cfg.nome_amostra} ${n}`;
@@ -1132,14 +1126,54 @@
     return msg;
   }
 
+  /* A REFERÊNCIA É UMA AMOSTRA (20/10/2026, Junior: "as amostras são usadas
+     como referência. Logo, se a amostra n1 é utilizada como referência as
+     demais amostras devem ser definidas como tom 1. Se selecionar amostra n5
+     como referência, as amostras compatíveis devem ser definidas como tom 2,
+     pois houve repescagem das amostras que não foram compatíveis com Tom 1").
+     "Medir referência" media um padrão sem número ("Referência do Tom 2"),
+     solto das amostras. Agora mede a AMOSTRA ATUAL e ela vira a referência:
+       · o tom em formação ainda sem referência de amostra → é a dele (Amostra 1
+         na 1ª rodada = Tom 1; na repescagem, a escolhida = Tom 2…);
+       · o tom já tem a referência em OUTRA amostra → é repescagem: abre o tom
+         seguinte com ela, e a fila são as que não entraram em tom nenhum;
+       · a mesma amostra de novo → só troca a leitura da referência. */
+  function avReferencia(l) {
+    const av = S.av, n = av.n;
+    const atual = av.ref[av.rodada];
+    const repescagem = !!(atual && atual.amostra != null && atual.amostra !== n);
+    if (repescagem) {
+      const fora = numerosDasAmostras(av).filter(x => x !== n && !estaNumTom(x) && tomDe(x) !== 0);
+      av.rodada = tomNovoDe(av);
+      av.fila = [n, ...fora].sort((a, b) => a - b);
+      av.fimRodada = false;
+    }
+    const k = av.rodada;
+    l.tipo = 'amostra'; l.amostraN = n; l.rodada = k;
+    l.nome = `${cfg.nome_amostra} ${n}`;
+    const em = l.horario.toISOString();
+    av.ref[k] = { medId: l.id, amostra: n, nome: l.nome, lab: l.lab1, lab2: l.lab2, em };
+    av.tons[n] = k;
+    (av.medidas[n] = av.medidas[n] || []).push({ id: l.id, lab: l.lab1, rodada: k, de: 0, aprovado: true, ref: true, em });
+    S.padrao = l;
+    avGuardar();
+    const prox = proximoNumero(n);
+    return `Amostra ${n} é a referência do Tom ${k}${repescagem ? ` (repescagem: ${av.fila.filter(x => x !== n).join(', ') || 'nenhuma outra'})` : ''}.`
+      + (prox != null ? ` Clique em Trocar para passar à Amostra ${prox}.` : '');
+  }
+
   // O número seguinte: na 1ª rodada, o próximo inteiro (amostras novas); nas
-  // seguintes, a próxima da fila de reavaliação.
+  // seguintes, a próxima da fila de reavaliação ainda não medida nesta rodada —
+  // dando a volta, porque a referência escolhida pode estar no meio da fila
+  // (Amostra 5 com 3 e 4 antes dela).
   function proximoNumero(n) {
     const av = S.av;
     if (av.rodada === 1 && !av.fila) return n + 1;
     const fila = av.fila || [];
+    const medida = x => (av.medidas[x] || []).some(m => m.rodada === av.rodada);
     const i = fila.indexOf(n);
-    return i >= 0 && i + 1 < fila.length ? fila[i + 1] : (i < 0 ? fila.find(x => x > n) || null : null);
+    const depois = i >= 0 ? fila.slice(i + 1) : fila.filter(x => x > n);
+    return depois.find(x => !medida(x)) || fila.find(x => x !== n && !medida(x)) || null;
   }
 
   function avTrocar() {
@@ -1179,7 +1213,7 @@
     av.fimRodada = false;
     S.padrao = null; S.atual = null;
     avGuardar();
-    status(`Rodada do Tom ${av.rodada}: ${fila.length} amostras a reavaliar (${fila.join(', ')}). Meça a Amostra ${av.n} — ela vira a referência do Tom ${av.rodada}.`);
+    status(`Rodada do Tom ${av.rodada}: ${fila.length} amostras a reavaliar (${fila.join(', ')}). Meça a Amostra ${av.n} — ela vira a referência do Tom ${av.rodada} — ou vá ao número que vai ser a referência.`);
   }
   // Concluir a fase atual e passar para a seguinte (as fases andam em ordem).
   function avConcluirFase() {
@@ -1372,8 +1406,8 @@
           title="Passa para a amostra seguinte. Sem aprovação nesta rodada, esta vai para a reavaliação.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim da rodada'}</button>
         <label class="cm-campo" style="max-width:120px"><span>Ir para a amostra nº</span>
           <input type="number" min="1" value="${av.n != null ? av.n : ''}" onchange="Colorimetro.avIrPara(this.value)"></label>
-        <button type="button" class="btn small" onclick="Colorimetro.medir('padrao')" ${pode ? '' : 'disabled'}
-          title="Um padrão (ex.: o tecido aprovado pelo cliente) como referência deste tom, no lugar da primeira amostra">Medir referência do Tom ${k} (F6)</button>
+        <button type="button" class="btn small" onclick="Colorimetro.medir('padrao')" ${pode && av.n != null ? '' : 'disabled'}
+          title="A amostra atual vira a referência: as compatíveis com ela entram no tom dela. Se o tom em formação já tem a referência em outra amostra, abre o tom seguinte (repescagem das que não entraram em tom nenhum).">Amostra ${av.n != null ? av.n : ''} como referência do Tom ${ref && ref.amostra != null && ref.amostra !== av.n ? tomNovoDe(av) : k} (F6)</button>
         ${pend.length ? `<button type="button" class="btn ${av.fimRodada ? 'primary' : ''}" onclick="Colorimetro.avReavaliar()">Reavaliar ${pend.length} → Tom ${Math.max(k, ...Object.keys(av.ref).map(Number)) + 1}</button>` : ''}
         <button type="button" class="btn ${av.fimRodada && !pend.length ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
           title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
