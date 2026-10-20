@@ -1072,19 +1072,54 @@
     return ja || { id: r.medId, nome: r.nome, tipo: 'padrao', lab1: r.lab, lab2: r.lab2 || null, espectro: [], horario: new Date(r.em) };
   }
 
-  function avaliarOS(id) {
-    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
-    if (!o) return;
+  /* A OS EM AVALIAÇÃO SOBREVIVE AO F5 (20/10/2026). Ela só se escolhia pelo
+     "⋯ → avaliar amostras" e ficava só na memória: depois de um F5 a tela
+     voltava no modo sem OS (Medir padrão / Medir amostra) e o quadro da
+     avaliação, com o número da amostra, sumia. Agora a OS fica guardada neste
+     navegador até o "Medir sem OS". */
+  const CHAVE_OS = 'gos:colorimetro:os';
+  function abrirOS(o) {
     S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
     S.avOS = avCarregar(o.id);
     S.fases = fasesDaOS(o.id);
     avUsarFase(Math.min(S.avOS.faseAtual || 0, S.fases.length - 1));
+    try { localStorage.setItem(CHAVE_OS, o.id); } catch (e) { /* sem storage */ }
+  }
+  function restaurarOS() {
+    if (S.os || S.osRestaurada) return;
+    const ordens = typeof STATE !== 'undefined' && STATE && STATE.ordens || [];
+    if (!ordens.length) return; // os dados ainda não chegaram: tenta no próximo desenho
+    S.osRestaurada = true;
+    let id = null;
+    try { id = localStorage.getItem(CHAVE_OS); } catch (e) { /* sem storage */ }
+    const o = id && ordens.find(x => x.id === id);
+    if (!o) return;
+    abrirOS(o);
+    S.status = S.dev ? avDica() : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`;
+  }
+  // Sem OS: a OS também se escolhe aqui, não só pelo "⋯ → avaliar amostras" da lista.
+  function htmlEscolherOS() {
+    const ordens = (typeof STATE !== 'undefined' && STATE && STATE.ordens || [])
+      .filter(o => o && o.id && o.os)
+      .slice().sort((a, b) => String(b.os).localeCompare(String(a.os), 'pt-BR', { numeric: true }))
+      .slice(0, 80);
+    if (!ordens.length) return '';
+    return `<label class="cm-campo" style="max-width:520px;margin-bottom:10px"><span>Avaliar as amostras da OS</span>
+      <select onchange="if(this.value)Colorimetro.avaliarOS(this.value)">
+        <option value="">— escolha a OS —</option>
+        ${ordens.map(o => `<option value="${escH(o.id)}">${escH(rotuloOS(o))}</option>`).join('')}</select></label>`;
+  }
+  function avaliarOS(id) {
+    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
+    if (!o) return;
+    abrirOS(o);
     S.janela = null;
     S.aviso = '';
     if (typeof goto === 'function') goto('colorimetro');
     status(S.dev ? avDica() : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`);
   }
   function encerrarOS() {
+    try { localStorage.removeItem(CHAVE_OS); } catch (e) { /* sem storage */ }
     S.os = null; S.av = null; S.avOS = null; S.fases = null; S.padrao = null; S.atual = null;
     if (S.janela === 'rel') S.janela = null;
     status('Medições sem OS');
@@ -1430,9 +1465,6 @@
         <div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tom em formação</div><div class="cm-av-num">Tom ${k}</div>
           <div class="cm-peq">${ref ? `Referência: <b>${escH(ref.amostra ? nomeAm(ref.amostra) : ref.nome)}</b> · L* ${num(ref.lab[0])} a* ${num(ref.lab[1])} b* ${num(ref.lab[2])}`
             : 'Referência: a primeira medição da rodada'}</div></div>
-        <div class="cm-av-bloco cm-av-atual"><div class="cm-av-rot">Amostra atual</div>
-          <div class="cm-av-num">${av.n != null ? 'Nº ' + av.n : '—'}</div>
-          <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} nesta rodada${ult && !ult.ref ? ` · última ${escH(cfg.formula)} ${num(ult.de)} ${ult.aprovado ? '✔' : '✘'}` : ''} · ${situacao}` : escH(avDicaFase())}</div></div>
         <div class="cm-av-bloco"><div class="cm-av-rot">Até agora nesta fase</div>
           <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhum tom ainda'}
           ${pend.length ? `<br><span class="cm-fora">A reavaliar: ${pend.join(', ')}</span>` : ''}</div></div>
@@ -1450,7 +1482,11 @@
           title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
       </div>`}
       ${aparelho}</div>
-      <div class="cm-os-dir">${comparacao}</div></div></div>`;
+      <div class="cm-os-dir">
+        ${concluida ? '' : `<div class="cm-av-bloco cm-av-atual cm-av-topo"><div class="cm-av-rot">Amostra atual</div>
+          <div class="cm-av-num cm-av-num-grande">${av.n != null ? 'Nº ' + av.n : '—'}</div>
+          <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} nesta rodada${ult && !ult.ref ? ` · última ${escH(cfg.formula)} ${num(ult.de)} ${ult.aprovado ? '✔' : '✘'}` : ''} · ${situacao}` : escH(avDicaFase())}</div></div>`}
+        ${comparacao}</div></div></div>`;
   }
 
   // O relatório de uma fase: amostras, tons e o seletor para corrigir.
@@ -1713,6 +1749,7 @@
   function desenhar() {
     const p = painel();
     if (!p || !visivel()) return;
+    restaurarOS();
     const ref = S.padrao;
     const amo = S.atual && S.atual !== ref ? S.atual : null;
     const r = ref && amo ? comparar(ref, amo) : null;
@@ -1764,20 +1801,13 @@
           <div class="cm-tab-caixa">${tabelaPagina(ref, amo, r)}</div>
           <div class="cm-fraco cm-centro cm-peq">${escH(MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>`;
     const sec = p.closest('section');
-    if (sec) sec.classList.toggle('cm-modo-os', naOS);
+    if (sec) sec.classList.add('cm-modo-os'); // a apresentação da página some: o quadro precisa caber sem rolar
     p.innerHTML = `
-      ${naOS ? htmlAvaliacao(aparelho, comparacao) : `<div class="card cm-barra">${aparelho}</div>`}
+      ${naOS ? htmlAvaliacao(aparelho, comparacao)
+        : `<div class="card cm-barra"><div class="cm-os-grade"><div class="cm-os-esq">${htmlEscolherOS()}${aparelho}</div><div class="cm-os-dir">${comparacao}</div></div></div>`}
       ${S.pedido && !S.pedido.lugar ? htmlPedido() : ''}
       ${htmlRel()}${htmlCfg()}${htmlHist()}
-      <div class="cm-colunas ${naOS ? 'cm-colunas-os' : ''}">
-        ${naOS ? '' : `<div class="cm-esq">
-          <div class="card">${tabelaPagina(ref, amo, r)}</div>
-          <div class="card">
-            <div class="cm-centro">${escH(MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>
-            ${barra}
-            <div class="cm-blocos">${blocoCor(ref, 'Padrão', 'padrao')}${blocoCor(amo, 'Amostra', 'amostra')}</div>
-          </div>
-        </div>`}
+      <div class="cm-colunas cm-colunas-os">
         <div class="cm-dir">
           <div class="card cm-aparelho">
             <div><div class="card-title">Aparelho</div><div class="cm-peq">${info}</div></div>
@@ -1855,6 +1885,8 @@
     .cm-os-esq{min-width:0}
     .cm-os-dir{border-left:1px solid var(--line);padding-left:16px}
     .cm-os-dir .cm-blocos{margin-top:0;gap:8px}
+    .cm-av-topo{margin-bottom:8px}
+    .cm-av-num-grande{font-size:30px;line-height:1.1}
     .cm-os-dir .cm-bloco{height:72px;font-size:13px;padding:6px}
     .cm-os-dir .cm-de{font-size:17px;padding:6px;margin:8px 0 2px}
     .cm-os-dir .cm-tab-caixa{margin-top:8px}
