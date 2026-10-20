@@ -639,16 +639,10 @@
     p.executar(valor);
   }
 
-  function calibrar(tipo) {
-    if (!S.dev || S.ocupado) return;
-    perguntar({
-      titulo: `Calibrar ${tipo}`,
-      texto: tipo === 'branco'
-        ? 'Coloque o aparelho sobre a placa de calibração BRANCA e clique em Calibrar.'
-        : 'Coloque o aparelho sobre a cavidade/placa de calibração PRETA (ou aponte para o vazio) e clique em Calibrar.',
-      sim: 'Calibrar', executar: () => calibrarAgora(tipo)
-    });
-  }
+  /* O clique já calibra (20/10/2026, Junior: "não precisa desse painel, pois
+     usuário deve clicar no botão e disparar calibração"). O quadro de
+     confirmação saiu; a instrução da placa ficou na dica do botão. */
+  function calibrar(tipo) { return calibrarAgora(tipo); }
   async function calibrarAgora(tipo) {
     if (!S.dev || S.ocupado) return;
     S.ocupado = true;
@@ -1809,8 +1803,8 @@
                <button type="button" class="btn ghost" onclick="Colorimetro.conectar(true)" ${livre ? '' : 'disabled'} title="Um DS-01 de mentira, com cores aleatórias, para conhecer a tela">Testar sem aparelho</button>`}
           ${naOS ? '' : `<button type="button" class="btn accent" onclick="Colorimetro.medir('padrao')" ${con && livre ? '' : 'disabled'}>Medir padrão (F6)</button>
           <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${con && livre ? '' : 'disabled'}>Medir amostra (F5)</button>`}
-          <button type="button" class="btn small" onclick="Colorimetro.calibrar('branco')" ${con && livre ? '' : 'disabled'}>Calibrar branco</button>
-          <button type="button" class="btn small" onclick="Colorimetro.calibrar('preto')" ${con && livre ? '' : 'disabled'}>Calibrar preto</button>
+          <button type="button" class="btn small" onclick="Colorimetro.calibrar('branco')" ${con && livre ? '' : 'disabled'} title="Com o aparelho sobre a placa de calibração BRANCA">Calibrar branco</button>
+          <button type="button" class="btn small" onclick="Colorimetro.calibrar('preto')" ${con && livre ? '' : 'disabled'} title="Com o aparelho sobre a cavidade/placa PRETA (ou apontado para o vazio)">Calibrar preto</button>
           ${S.simulado && con ? `<button type="button" class="btn small ghost" onclick="Colorimetro.simularBotao()">Simular botão do aparelho</button>` : ''}
         </div>
         <div class="cm-status"><b>${escH(S.status)}</b>${S.conectando || S.ocupado ? ' <span class="cm-fraco">…</span>' : ''}</div>
