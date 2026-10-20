@@ -1018,8 +1018,29 @@
       const tec = String(f.tecidoNome || '').trim();
       if (cor && tec && cor.toLowerCase().endsWith(tec.toLowerCase())) cor = cor.slice(0, cor.length - tec.length).trim() || cor;
       const tecido = [f.tecidoNome, cor].filter(Boolean).join(' ');
-      return { i, nome: f.nome || `Fase ${i + 1}`, tecido, rotulo: `Fase ${i + 1} · ${f.nome || 'sem nome'}${tecido ? ' · ' + tecido : ''}` };
+      return { i, nome: f.nome || `Fase ${i + 1}`, tecido, rotulo: `Fase ${i + 1} · ${f.nome || 'sem nome'}${tecido ? ' · ' + tecido : ''}`,
+        corDe: ehRibana(f) ? faseDeCorDaRibana(o, lista) : -1 };
     });
+  }
+  /* A RIBANA VAI JUNTO DA FASE DE COR DELA (20/10/2026, Junior: "A fase ribana
+     deve sempre ser conjugada no relatório de acordo com a fase de cor
+     correspondente. Quando cm.lisa, ribana igual a corpo, quando cm.rec, ribana
+     igual a corpo 1, quando bm.lisa, ribana igual a corpo, quando bm.tri ribana
+     igual a corpo 3"). A ribana é tinta na cor de UMA das fases de corpo; no
+     relatório ela não sai sozinha, sai dentro dessa fase, tom a tom (o Tom 1 da
+     ribana com o Tom 1 do corpo). Linha fora da lista e com um corpo só (CM.B,
+     BM.B…): esse corpo; mais de um corpo e linha fora da lista (CM.TRI): a
+     ribana fica separada, como antes. */
+  const ehRibana = f => /ribana/i.test(String(f.tecidoNome || '') + ' ' + String(f.nome || ''));
+  const CORPO_DA_RIBANA = { 'CM.LISA': 0, 'BM.LISA': 0, 'CM.REC': 1, 'BM.TRI': 3, 'BM.TRICOLOR': 3 };
+  function faseDeCorDaRibana(o, lista) {
+    const linha = ((o && o.grade && o.grade.descricao || '').toUpperCase().match(/\b(CM|BM)\.[A-Z]+/) || [''])[0];
+    const corpos = lista.map((f, i) => ({ i, nome: String(f.nome || '') })).filter(x => /^corpo/i.test(x.nome) && !ehRibana(lista[x.i]));
+    const p = CORPO_DA_RIBANA[linha];
+    if (p === 0 || (p == null && corpos.length === 1)) return corpos.length ? corpos[0].i : -1;
+    if (p == null) return -1;
+    const c = corpos.find(x => new RegExp(`^corpo\\s*(parte\\s*)?${p}\\b`, 'i').test(x.nome));
+    return c ? c.i : -1;
   }
   // Põe a fase i na tela: S.av passa a ser a avaliação dela.
   function avUsarFase(i) {
@@ -1290,18 +1311,34 @@
      fase, curtas, porque ficar de fora também é informação para o corte.
        Tecidos compatíveis em cor
        Corpo · Malha Algodão Vermelho (1,2,3,4,5,6) - Gola · Ribana (1) */
-  function textoFaseCurto(f) {
+  // A ribana conjugada nesta fase (já medida), ou nenhuma.
+  const ribanasDe = (f, medidas) => medidas.filter(r => r.corDe === f.i);
+  function textoFaseCurto(f, medidas = fasesComMedicao()) {
     const av = S.avOS.fases[f.i];
-    const grupos = tonsDoRelatorio(av).map(t => `(${t.membros.join(',')})`).join(' ');
-    const pend = avPendentes(av), fora = numerosDasAmostras(av).filter(n => tomDe(n, av) === 0);
+    const rib = ribanasDe(f, medidas).map(r => ({ r, av: S.avOS.fases[r.i], tons: tonsDoRelatorio(S.avOS.fases[r.i]) }));
+    const tons = tonsDoRelatorio(av);
+    const nGrupos = Math.max(tons.length, ...rib.map(x => x.tons.length));
+    // Tom a tom: (corpo - ribana); a ribana com mais tons que o corpo sai só ela.
+    const grupos = Array.from({ length: nGrupos }, (_, j) => {
+      const partes = [tons[j] ? tons[j].membros.join(',') : '',
+        ...rib.map(x => x.tons[j] ? `ribana ${x.tons[j].membros.join(',')}` : '')].filter(Boolean);
+      return `(${partes.join(' - ')})`;
+    }).join(' ');
+    const sobra = (a, rotulo) => {
+      const pend = avPendentes(a), fora = numerosDasAmostras(a).filter(n => tomDe(n, a) === 0);
+      return (pend.length ? `, ${rotulo}a reavaliar ${pend.join(',')}` : '') + (fora.length ? `, ${rotulo}não usar ${fora.join(',')}` : '');
+    };
     const nome = [f.nome, f.tecido].filter(Boolean).join(' · ');
-    return `${nome}${S.avOS.reav[f.i] ? ' [reavaliada]' : ''} ${grupos || '(nenhuma)'}`
-      + (pend.length ? `, a reavaliar ${pend.join(',')}` : '')
-      + (fora.length ? `, não usar ${fora.join(',')}` : '');
+    const reav = S.avOS.reav[f.i] || rib.some(x => S.avOS.reav[x.r.i]);
+    return `${nome}${reav ? ' [reavaliada]' : ''} ${grupos || '(nenhuma)'}`
+      + sobra(av, '') + rib.map(x => sobra(x.av, 'ribana ')).join('');
   }
-  // Um recado só, com todas as fases medidas, na ordem do enfesto.
+  // Um recado só, com todas as fases medidas, na ordem do enfesto; a ribana
+  // conjugada vai dentro da fase de cor dela, não sozinha.
   function textoRelatorio() {
-    return 'Tecidos compatíveis em cor\n' + fasesComMedicao().map(textoFaseCurto).join(' - ');
+    const medidas = fasesComMedicao();
+    const soltas = medidas.filter(f => !(f.corDe >= 0 && medidas.some(c => c.i === f.corDe)));
+    return 'Tecidos compatíveis em cor\n' + soltas.map(f => textoFaseCurto(f, medidas)).join(' - ');
   }
   /* "TOM NOVO" (20/10/2026, Junior: "corrija as opções na coluna Tom do
      relatório de tonalidade, para que tenha como escolher apenas uma amostra
@@ -1444,6 +1481,7 @@
       </div>`).join('');
     const pend = avPendentes(av);
     const marcas = marcasDaFase(f);
+    if (f.corDe >= 0 && S.fases[f.corDe]) marcas.push(`no recado vai com ${S.fases[f.corDe].nome}, tom a tom`);
     return `<div class="cm-rel-fase">
       <div class="cm-sub">${escH(S.fases.length > 1 ? f.rotulo : (f.tecido || 'Amostras'))}${marcas.length ? ` <span class="cm-fraco">(${escH(marcas.join(', '))})</span>` : ''}</div>
       <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th>Aprovações</th><th>Melhor ${escH(fo)}</th><th>Tom</th></tr></thead>
