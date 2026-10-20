@@ -1217,22 +1217,31 @@
     const r = S.avOS.reav[f.i];
     return [r ? `reavaliada${r > 1 ? ' ' + r + 'x' : ''}` : '', S.avOS.concluidas[f.i] ? '' : 'em andamento'].filter(Boolean);
   }
-  function textoFase(f) {
-    const av = S.avOS.fases[f.i], fo = cfg.formula, tons = tonsDoRelatorio(av);
+
+  /* O RECADO NAS OBSERVAÇÕES, SIMPLIFICADO (20/10/2026, Junior: "deve aparecer
+     de forma simplificada o conjunto de números das amostras compatíveis, por
+     exemplo, como título do relatório: Tecidos compatíveis em cor, Tecido: Fase
+     corpo (1,2,3,4,5,6 - ribana 1)").
+     Quem lê a folha quer saber QUAIS amostras podem ir juntas, e não o dE, a
+     referência nem a fórmula — isso fica na tela do relatório. Então: o título,
+     e por fase do enfesto (na ordem dela) o tecido e os números de cada grupo
+     compatível entre parênteses; mais de um grupo, um parêntese por grupo. As
+     que ainda esperam reavaliação ou foram marcadas "Não usar" vão no fim da
+     fase, curtas, porque ficar de fora também é informação para o corte.
+       Tecidos compatíveis em cor
+       Corpo · Malha Algodão Vermelho (1,2,3,4,5,6) - Gola · Ribana (1) */
+  function textoFaseCurto(f) {
+    const av = S.avOS.fases[f.i];
+    const grupos = tonsDoRelatorio(av).map(t => `(${t.membros.join(',')})`).join(' ');
     const pend = avPendentes(av), fora = numerosDasAmostras(av).filter(n => tomDe(n, av) === 0);
-    const partes = tons.map((t, i) => `Tom ${i + 1}${t.ref ? ` (ref. ${t.ref.amostra ? nomeAm(t.ref.amostra) : t.ref.nome})` : ''}: `
-      + `${t.membros.length > 1 ? cfg.nome_amostra + 's' : cfg.nome_amostra} ${t.membros.join(', ')}`
-      + (t.membros.length > 1 ? ` (${fo} máx ${num(t.pior)})` : '') + (t.ruins.length ? ' ⚠ fora da tolerância' : ''));
-    if (pend.length) partes.push(`A reavaliar: ${pend.join(', ')}`);
-    if (fora.length) partes.push(`Não usar: ${fora.join(', ')}`);
-    const marcas = marcasDaFase(f);
-    const nome = S.fases.length > 1 ? f.rotulo : (f.tecido || f.nome);
-    return `${nome}${marcas.length ? ' (' + marcas.join(', ') + ')' : ''}: ${tons.length} ${tons.length === 1 ? 'tom' : 'tons'}, `
-      + `${numerosDasAmostras(av).length} amostras — ` + (partes.join(' · ') || 'sem tom');
+    const nome = [f.nome, f.tecido].filter(Boolean).join(' · ');
+    return `${nome}${S.avOS.reav[f.i] ? ' [reavaliada]' : ''} ${grupos || '(nenhuma)'}`
+      + (pend.length ? `, a reavaliar ${pend.join(',')}` : '')
+      + (fora.length ? `, não usar ${fora.join(',')}` : '');
   }
   // Um recado só, com todas as fases medidas, na ordem do enfesto.
   function textoRelatorio() {
-    return `Colorímetro (${cfg.formula} ≤ ${numTol(tolAtual())}, ${cfg.iluminante1}°) — ` + fasesComMedicao().map(textoFase).join(' | ') + '.';
+    return 'Tecidos compatíveis em cor\n' + fasesComMedicao().map(textoFaseCurto).join(' - ');
   }
   function relMudar(i, n, v) {
     const av = S.avOS && S.avOS.fases[i];
@@ -1774,7 +1783,7 @@
     .cm-matriz tbody th{text-align:left;font-weight:500}
     .cm-mz-ok{color:var(--ok)}.cm-mz-fora{color:var(--alert)}.cm-mz-eu{color:var(--ink-3);text-align:center}
     .cm-mz-mesmo{font-weight:700;background:var(--line-2)}
-    .cm-previa{padding:8px 10px;border:1px dashed var(--line);font-size:13px;margin-bottom:4px}
+    .cm-previa{padding:8px 10px;border:1px dashed var(--line);font-size:13px;margin-bottom:4px;white-space:pre-wrap}
     .cm-janela-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
     .cm-janela-topo .card-title{flex:1}
     .cm-pedido{border-left:3px solid var(--accent)}
