@@ -610,7 +610,27 @@
      ao estilo do Gerador OS... sem janelas pop-up, mas sim janelas normais").
      Calibrar, renomear, limpar e voltar ao padrão abrem este quadro no topo da
      tela, com o texto e os botões; nada de confirm()/prompt() do navegador. */
-  function perguntar(pedido) { S.pedido = pedido; desenhar(); }
+  /* O QUADRO APARECE ONDE SE CLICOU (20/10/2026, Junior: "corrija a função
+     limpar lista na avaliação de amostras, pois o botão não funciona, a lista
+     não fica limpa depois de clicar"). A pergunta do Limpar saía no topo da
+     tela, e o botão fica embaixo, na coluna da lista — na avaliação de uma OS,
+     abaixo ainda do quadro da avaliação. Quem clicava não via a pergunta, e sem
+     a resposta a lista não era limpa. Agora o pedido pode dizer o lugar
+     (`lugar: 'lista'` = em cima da lista) e a tela rola até ele. */
+  function perguntar(pedido) {
+    S.pedido = pedido;
+    desenhar();
+    const q = document.querySelector('#colorimetro-painel .cm-pedido');
+    if (q && q.scrollIntoView) q.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function htmlPedido() {
+    const p = S.pedido;
+    return `<div class="card cm-pedido"><div class="card-title">${escH(p.titulo)}</div>
+        <div>${escH(p.texto)}</div>
+        ${p.campo != null ? `<input id="cm-pedido-valor" class="cm-pedido-campo" value="${escH(p.campo)}" onkeydown="if(event.key==='Enter')Colorimetro.responder(true)">` : ''}
+        <div class="cm-botoes"><button type="button" class="btn primary" onclick="Colorimetro.responder(true)">${escH(p.sim)}</button>
+        <button type="button" class="btn" onclick="Colorimetro.responder(false)">Cancelar</button></div></div>`;
+  }
   function responder(sim) {
     const p = S.pedido;
     S.pedido = null;
@@ -749,8 +769,14 @@
   }
   function limpar() {
     if (!S.leituras.length) return;
-    perguntar({ titulo: 'Limpar a lista', texto: 'Apagar a lista da tela? O histórico do dia continua guardado.', sim: 'Limpar',
-      executar: () => { S.leituras = []; S.padrao = null; S.atual = null; S.cont = { padrao: 0, amostra: 0 }; desenhar(); } });
+    perguntar({ titulo: 'Limpar a lista', texto: 'Apagar a lista da tela? O histórico do dia continua guardado.', sim: 'Limpar', lugar: 'lista',
+      executar: () => {
+        S.leituras = []; S.atual = null; S.cont = { padrao: 0, amostra: 0 };
+        // Na avaliação de uma OS a referência do tom é da avaliação, não da
+        // lista: continua valendo depois de limpar.
+        S.padrao = S.os && S.av ? refComoLeitura(S.av.rodada) : null;
+        desenhar();
+      } });
   }
 
   /* ---------------- CSV (o mesmo formato do original) ---------------- */
@@ -1624,11 +1650,7 @@
         ${S.aviso ? `<div class="cm-aviso">${escH(S.aviso)}</div>` : ''}
         ${S.semBD ? `<div class="cm-aviso">Este navegador não deixou guardar o histórico. Exporte o CSV antes de fechar a tela.</div>` : ''}
       </div>
-      ${S.pedido ? `<div class="card cm-pedido"><div class="card-title">${escH(S.pedido.titulo)}</div>
-        <div>${escH(S.pedido.texto)}</div>
-        ${S.pedido.campo != null ? `<input id="cm-pedido-valor" class="cm-pedido-campo" value="${escH(S.pedido.campo)}" onkeydown="if(event.key==='Enter')Colorimetro.responder(true)">` : ''}
-        <div class="cm-botoes"><button type="button" class="btn primary" onclick="Colorimetro.responder(true)">${escH(S.pedido.sim)}</button>
-        <button type="button" class="btn" onclick="Colorimetro.responder(false)">Cancelar</button></div></div>` : ''}
+      ${S.pedido && !S.pedido.lugar ? htmlPedido() : ''}
       ${htmlRel()}${htmlCfg()}${htmlHist()}
       <div class="cm-colunas">
         <div class="cm-esq">
@@ -1662,6 +1684,7 @@
                 <button type="button" class="btn small ghost" onclick="Colorimetro.limpar()">Limpar lista</button>
               </div>
             </div>
+            ${S.pedido && S.pedido.lugar === 'lista' ? htmlPedido() : ''}
             <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Nome</th><th>Hora</th><th>L*</th><th>a*</th><th>b*</th><th>C*</th><th>h°</th>
               <th>dE*ab</th><th>dE00</th><th>Resultado</th><th></th></tr></thead>
               <tbody>${S.leituras.length ? S.leituras.map(linhaLista).join('')
