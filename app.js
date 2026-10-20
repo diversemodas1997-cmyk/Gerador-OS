@@ -27369,6 +27369,22 @@ function _skuLinhaDesenhoOS() {
   return bruto.split('-')[0].trim();
 }
 
+/* A GRADE QUE NÃO SE PEDE SOZINHA some do seletor de grades da OS (e das
+   sugestões da demanda): a PASSIVA, que nasce a reboque da ativa. É passiva a
+   grade que alguma outra aponta como conjugada; o nome com "conjug" é a rede de
+   antes do campo existir.
+   A rede pelo nome NÃO vale para a grade que conjuga outra (20/10/2026, Junior:
+   "analise por que as grades com texto conjugada no nome não aparecem como opção
+   de grades na janela de criação de OS"). "M ao G3 | CM.REC (CONJUGADO | M e G |
+   CM.LISA)" diz no nome COM QUEM se conjuga — é a ATIVA, a que se pede para a
+   CM.LISA sair junto —, e a rede a escondia: M ao G3, 2G-2GG e M-G-G1-G3 CM.REC
+   não podiam ser escolhidas. */
+function _gradeConjugadaOcultaNaOS(g, alvos) {
+  if (alvos.has(g.id)) return true;
+  if (g.conjugadaGradeId) return false;
+  return /conjug/i.test(g.nome || '');
+}
+
 // O contexto do filtro: o que o desenho e o modelo escolhidos exigem da grade.
 function _ctxDropdownGradesOS(extraIds = []) {
   // Grades conjugadas ficam ocultas do dropdown: elas não se pedem sozinhas,
@@ -27394,7 +27410,7 @@ function _ctxDropdownGradesOS(extraIds = []) {
     tipoModelo: tipoModelo === 'outro' ? '' : tipoModelo,
     variacao: variacaoDesenhoOS(),
     keep: new Set(extraIds.filter(Boolean)),
-    ocultaConjugada: (g) => alvos.has(g.id) || /conjug/i.test(g.nome || '')
+    ocultaConjugada: (g) => _gradeConjugadaOcultaNaOS(g, alvos)
   };
 }
 
@@ -30208,7 +30224,7 @@ function _demGradesDoDesenho(d, linha) {
   const sku = _skuLinhaNorm((d && d.skuLinha) || '');
   if (!sku) return [];
   const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
-  return (STATE.grades || []).filter(g => !alvos.has(g.id) && !/conjug/i.test(g.nome || '')
+  return (STATE.grades || []).filter(g => !_gradeConjugadaOcultaNaOS(g, alvos)
     && _skuLinhaNorm(_skuDaGrade(g)) === sku && _linhaTipoGrade(g) === linha
     && _demLarguraGradeCm(g) === _DEM_LARGURA_CM);
 }

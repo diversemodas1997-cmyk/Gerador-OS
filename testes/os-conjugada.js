@@ -93,7 +93,10 @@ function rodarMigracao(estado, papel = 'admin') {
 // aqui interessa so o pedaco que decide quem some.
 function ocultas(grades) {
   const alvos = new Set(grades.map(g => g.conjugadaGradeId).filter(Boolean));
-  return grades.filter(g => alvos.has(g.id) || /conjug/i.test(g.nome || '')).map(g => g.id);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const i = src.indexOf('\nfunction _gradeConjugadaOcultaNaOS(');
+  const fn = new Function(src.slice(i, src.indexOf('\n}', i) + 2) + 'return _gradeConjugadaOcultaNaOS;')();
+  return grades.filter(g => fn(g, alvos)).map(g => g.id);
 }
 
 let falhas = 0;
@@ -327,6 +330,16 @@ console.log('-- a OS que sai --');
     const e = estadoBase();
     ok('27. o casamento por nome continua valendo como rede',
        ocultas(e.grades).includes('g_passiva'));
+  }
+  {
+    // 20/10/2026: a ATIVA com "CONJUGADO" no nome (diz com quem se conjuga)
+    // aparece; a passiva continua sumindo.
+    const e = estadoBase();
+    e.grades[0].nome = 'M ao G3 | CM.REC | 117cm (CONJUGADO | M e G | CM.LISA | BRANCO | 117cm)';
+    e.grades[0].conjugadaGradeId = 'g_passiva';
+    const some = ocultas(e.grades);
+    ok('27a. a ativa com CONJUGADO no nome aparece no seletor', !some.includes('g_ativa'), some);
+    ok('27b. e a passiva dela continua oculta', some.includes('g_passiva'), some);
   }
 
   console.log('');

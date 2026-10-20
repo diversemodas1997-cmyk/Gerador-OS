@@ -39,6 +39,7 @@ const motor = [
   cortaLinha('const _GRADE_VARIACOES_CONHECIDAS'),
   corta('function categoriaEfetivaTecido'),
   corta('function categoriaPrincipalGrade'),
+  corta('function _gradeConjugadaOcultaNaOS'),
   corta('function _ctxDropdownGradesOS'),
   corta('function _motivoGradeForaDoDropdownOS')
 ].join('\n');
