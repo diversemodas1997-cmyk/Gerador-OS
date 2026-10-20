@@ -39147,7 +39147,10 @@ function consumoEnfestoOS(o) {
   return linhas.map(({ b, i }) => {
     const ord = b.ordem || (i + 1);
     const fase = fasesPorOrdem[ord] || {};
-    let nomeEnf = b.nomeTecido || fase.tecidoNome || '';
+    // Bloco sem nome (o das conjugadas nasce só com comp/larg/camadas) mostra o
+    // nome da FASE, como o formulário da OS já faz — não o do tecido, que tem
+    // coluna própria e deixava a 0668 com "Malha Algodão" no lugar do Viés.
+    let nomeEnf = b.nomeTecido || fase.nome || fase.tecidoNome || '';
     // A cor CANÔNICA da fase vem da linha de Tecidos da OS (derivada do desenho e
     // mantida em dia). O nomeCor do bloco é um snapshot que pode ficar VELHO —
     // ex.: desenho copiado e a ribana trocada depois: a linha de tecido vira
