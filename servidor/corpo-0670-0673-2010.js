@@ -19,7 +19,10 @@ const GRAVAR = process.argv.includes('--gravar');
 const BASE = 'http://localhost:8000';
 const KEY = fs.readFileSync('C:/supabase/docker/.env', 'utf8')
   .match(/^(?:SUPABASE_)?SERVICE_ROLE_KEY=(.+)$/m)[1].trim();
-const OSS = ['0670', '0673'];
+// A conjugada da 0669 era a 0673 e foi renumerada para 0672 no app (20/10); a
+// 0673 de agora é uma CM.TRI. A trava abaixo (conjugadaPaiId) para se o número
+// apontar outra OS.
+const OSS = ['0670', '0672'];
 const COMP = '2.33';
 
 async function req(method, caminho, body) {
