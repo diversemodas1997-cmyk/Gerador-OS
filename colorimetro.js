@@ -1033,9 +1033,12 @@
   };
   // Viés não precisa avaliar em linha nenhuma (20/10/2026, Junior: "viés não precisa avaliar").
   const VIES_PURO = /^vi[eé]s\b/i;
+  // BM.TRI avalia TODAS as fases, viés inclusive (20/10/2026, Junior: "bm.t todas as fases precisam ser avaliadas").
+  const LINHAS_AVALIA_TUDO = ['BM.TRI', 'BM.TRICOLOR'];
   function faseSemAvaliacao(o, f) {
-    if (VIES_PURO.test(String(f.nome || '').trim())) return true;
     const linha = ((o && o.grade && o.grade.descricao || '').toUpperCase().match(/\b(CM|BM)\.[A-Z]+/) || [''])[0];
+    if (LINHAS_AVALIA_TUDO.includes(linha)) return false;
+    if (VIES_PURO.test(String(f.nome || '').trim())) return true;
     return (FASES_SEM_AVALIACAO[linha] || []).some(re => re.test(String(f.nome || '').trim()));
   }
   // Fase que a tela não precisa mais medir: concluída ou sem avaliação.
