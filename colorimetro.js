@@ -1403,7 +1403,7 @@
             ${feitas.map(f => `<option value="${f.i}">${escH(f.rotulo)}</option>`).join('')}</select></label></div>` : ''}`;
   }
 
-  function htmlAvaliacao() {
+  function htmlAvaliacao(aparelho = '') {
     if (!S.os || !S.av) return '';
     const av = S.av, k = av.rodada, ref = av.ref[k];
     const con = !!S.dev, livre = !S.ocupado && !S.conectando;
@@ -1448,7 +1448,8 @@
         ${pend.length ? `<button type="button" class="btn ${av.fimRodada ? 'primary' : ''}" onclick="Colorimetro.avReavaliar()">Reavaliar ${pend.length} → Tom ${Math.max(k, ...Object.keys(av.ref).map(Number)) + 1}</button>` : ''}
         <button type="button" class="btn ${av.fimRodada && !pend.length ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
           title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
-      </div>`}</div>`;
+      </div>`}
+      ${aparelho}</div>`;
   }
 
   // O relatório de uma fase: amostras, tons e o seletor para corrigir.
@@ -1725,16 +1726,22 @@
     const fmtCal = (ok, ts) => (ok ? '✔ ' : '✘ ') + (ts ? new Date(ts * 1000).toLocaleString('pt-BR').slice(0, 17) : 'nunca');
     const cal = S.cal ? `Branco: ${fmtCal(S.cal.branco_ok, S.cal.branco_data)}<br>Preto: ${fmtCal(S.cal.preto_ok, S.cal.preto_data)}` : '—';
     const motivo = semBluetooth();
-    p.innerHTML = `
-      ${htmlAvaliacao()}
-      <div class="card cm-barra">
-        <div class="cm-botoes">
+    const naOS = !!(S.os && S.av);
+    /* UM QUADRO SÓ (20/10/2026, Junior: "todos os botões de testar cor, medir
+       referência e mudar de amostra devem estar no mesmo quadro. Retire o
+       gráfico de comparação de cores"). Na avaliação de uma OS, conectar,
+       calibrar e o recado da última medição entram no fim do quadro dela, numa
+       linha só; os "Medir padrão / Medir amostra" soltos saem, porque lá quem
+       mede é o "Medir amostra N" e o "Amostra N como referência". O gráfico de
+       refletância espectral saiu de vez. */
+    const aparelho = `
+        <div class="cm-botoes ${naOS ? 'cm-aparelho-linha' : ''}">
           ${con
             ? `<button type="button" class="btn" onclick="Colorimetro.desconectar()" ${livre ? '' : 'disabled'}>Desconectar</button>`
             : `<button type="button" class="btn primary" onclick="Colorimetro.conectar(false)" ${livre && !motivo ? '' : 'disabled'}>⇄ Conectar aparelho</button>
                <button type="button" class="btn ghost" onclick="Colorimetro.conectar(true)" ${livre ? '' : 'disabled'} title="Um DS-01 de mentira, com cores aleatórias, para conhecer a tela">Testar sem aparelho</button>`}
-          <button type="button" class="btn accent" onclick="Colorimetro.medir('padrao')" ${con && livre ? '' : 'disabled'}>Medir padrão (F6)</button>
-          <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${con && livre ? '' : 'disabled'}>Medir amostra (F5)</button>
+          ${naOS ? '' : `<button type="button" class="btn accent" onclick="Colorimetro.medir('padrao')" ${con && livre ? '' : 'disabled'}>Medir padrão (F6)</button>
+          <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${con && livre ? '' : 'disabled'}>Medir amostra (F5)</button>`}
           <button type="button" class="btn small" onclick="Colorimetro.calibrar('branco')" ${con && livre ? '' : 'disabled'}>Calibrar branco</button>
           <button type="button" class="btn small" onclick="Colorimetro.calibrar('preto')" ${con && livre ? '' : 'disabled'}>Calibrar preto</button>
           ${S.simulado && con ? `<button type="button" class="btn small ghost" onclick="Colorimetro.simularBotao()">Simular botão do aparelho</button>` : ''}
@@ -1742,8 +1749,9 @@
         <div class="cm-status"><b>${escH(S.status)}</b>${S.conectando || S.ocupado ? ' <span class="cm-fraco">…</span>' : ''}</div>
         ${motivo && !con ? `<div class="cm-aviso">${escH(motivo)} O "Testar sem aparelho" funciona assim mesmo.</div>` : ''}
         ${S.aviso ? `<div class="cm-aviso">${escH(S.aviso)}</div>` : ''}
-        ${S.semBD ? `<div class="cm-aviso">Este navegador não deixou guardar o histórico. Exporte o CSV antes de fechar a tela.</div>` : ''}
-      </div>
+        ${S.semBD ? `<div class="cm-aviso">Este navegador não deixou guardar o histórico. Exporte o CSV antes de fechar a tela.</div>` : ''}`;
+    p.innerHTML = `
+      ${naOS ? htmlAvaliacao(aparelho) : `<div class="card cm-barra">${aparelho}</div>`}
       ${S.pedido && !S.pedido.lugar ? htmlPedido() : ''}
       ${htmlRel()}${htmlCfg()}${htmlHist()}
       <div class="cm-colunas">
@@ -1765,7 +1773,6 @@
               ${cfg.media > 1 ? `<span class="cm-fraco"> · média de ${cfg.media} leituras</span>` : ''}
             </div>
           </div>
-          <div class="card"><canvas id="cm-espectro" class="cm-espectro"></canvas></div>
           <div class="card">
             <div class="cm-botoes cm-entre">
               <div class="card-title" style="margin:0">Medições desta sessão</div>
@@ -1787,57 +1794,6 @@
           ${S.log.length ? `<details class="cm-log"><summary>Registro da conexão</summary><pre>${escH(S.log.join('\n'))}</pre></details>` : ''}
         </div>
       </div>`;
-    desenharEspectro();
-  }
-
-  function desenharEspectro() {
-    const cv = document.getElementById('cm-espectro');
-    if (!cv) return;
-    const css = getComputedStyle(document.documentElement);
-    const tinta = (css.getPropertyValue('--ink-3') || '#6b6b6b').trim();
-    const linha = (css.getPropertyValue('--line') || '#d4d0c5').trim();
-    const texto = (css.getPropertyValue('--ink') || '#1a1a1a').trim();
-    const dpr = window.devicePixelRatio || 1;
-    const w = cv.clientWidth || 600, h = 220;
-    cv.width = w * dpr; cv.height = h * dpr; cv.style.height = h + 'px';
-    const g = cv.getContext('2d');
-    g.scale(dpr, dpr);
-    g.clearRect(0, 0, w, h);
-    const my = 26, x0 = 44, y1 = h - 24, x1 = w - 16;
-    g.font = '12px system-ui, sans-serif'; g.fillStyle = texto; g.textBaseline = 'middle';
-    g.fillText('Refletância espectral', 6, 10);
-    const series = [[S.padrao, '#2a9fd6'], [S.atual !== S.padrao ? S.atual : null, '#eb6834']].filter(([s]) => s && s.espectro && s.espectro.length);
-    let maxv = 100;
-    series.forEach(([s]) => { maxv = Math.max(maxv, Math.max(...s.espectro) * 1.05); });
-    const X = wl => x0 + (wl - 400) / 300 * (x1 - x0);
-    const Y = v => y1 - v / maxv * (y1 - my);
-    g.font = '10px system-ui, sans-serif';
-    for (let v = 0; v <= maxv; v += 20) {
-      g.strokeStyle = linha; g.beginPath(); g.moveTo(x0, Y(v)); g.lineTo(x1, Y(v)); g.stroke();
-      g.fillStyle = tinta; g.textAlign = 'right'; g.fillText(v + '%', x0 - 6, Y(v));
-    }
-    g.textAlign = 'center';
-    for (let wl = 400; wl <= 700; wl += 50) g.fillText(wl + ' nm', X(wl), y1 + 12);
-    series.forEach(([s, cor]) => {
-      g.strokeStyle = cor; g.lineWidth = 2.5; g.beginPath();
-      let primeiro = true;
-      s.espectro.forEach((v, i) => {
-        const wl = s.wave_start + 10 * i;
-        if (wl < 400 || wl > 700) return;
-        if (primeiro) { g.moveTo(X(wl), Y(v)); primeiro = false; } else g.lineTo(X(wl), Y(v));
-      });
-      g.stroke(); g.lineWidth = 1;
-    });
-    g.textAlign = 'left';
-    series.forEach(([s, cor], k) => {
-      const xl = x1 - 220 + 110 * k;
-      g.strokeStyle = cor; g.lineWidth = 3; g.beginPath(); g.moveTo(xl, 10); g.lineTo(xl + 18, 10); g.stroke(); g.lineWidth = 1;
-      g.fillStyle = texto; g.fillText(s.nome, xl + 24, 10);
-    });
-    if (!series.length) {
-      g.fillStyle = tinta; g.textAlign = 'center';
-      g.fillText('A curva aparece depois da primeira medição', (x0 + x1) / 2, (my + y1) / 2);
-    }
   }
 
   const ESTILO = `
@@ -1865,7 +1821,6 @@
     .cm-aparelho{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .cm-peq{font-size:12px;line-height:1.6}
     .cm-peq label{margin-left:10px}
-    .cm-espectro{width:100%;display:block}
     .cm-rolar{max-height:46vh;overflow:auto}
     .cm-lista{width:100%;border-collapse:collapse;font-size:12px}
     .cm-lista th{position:sticky;top:0;background:var(--paper);text-align:left;font-weight:500;color:var(--ink-3);padding:4px 6px;border-bottom:1px solid var(--line)}
@@ -1881,11 +1836,13 @@
     .cm-sub{margin:12px 0 6px;font-weight:600;font-size:13px}
     .cm-cfg,.cm-hist,.cm-pedido,.cm-rel{margin-top:12px}
     .cm-os{border-left:3px solid var(--accent);margin-bottom:12px}
-    .cm-av{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
-    .cm-av-bloco{padding:8px 10px;background:var(--line-2);border-radius:2px}
+    .cm-av{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:8px 0}
+    .cm-av-bloco{padding:6px 10px;background:var(--line-2);border-radius:2px}
+    .cm-aparelho-linha{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
+    .cm-aparelho-linha .btn{padding:4px 10px;font-size:12px}
     .cm-av-atual{outline:2px solid var(--accent)}
     .cm-av-rot{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-    .cm-av-num{font-size:24px;font-weight:700;margin:2px 0}
+    .cm-av-num{font-size:20px;font-weight:700;margin:0}
     .cm-fases{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
     .cm-fase{padding:4px 10px;border:1px solid var(--line);border-radius:2px;font-size:12px;color:var(--ink-3)}
     .cm-fase-atual{border-color:var(--accent);color:var(--ink);font-weight:600;outline:1px solid var(--accent)}
@@ -1927,7 +1884,6 @@
       estava = agora;
     }).observe(sec, { attributes: true, attributeFilter: ['class'] });
     if (estava) { desenhar(); carregarTabelas().then(desenhar).catch(() => {}); }
-    window.addEventListener('resize', () => { if (visivel()) desenharEspectro(); });
     // F5 amostra / F6 padrão, como no original — só nesta tela e com o aparelho
     // conectado (fora dela, e com Ctrl, o F5 continua recarregando a página).
     document.addEventListener('keydown', e => {
