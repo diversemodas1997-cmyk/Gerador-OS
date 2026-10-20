@@ -1269,9 +1269,30 @@
   function textoRelatorio() {
     return 'Tecidos compatíveis em cor\n' + fasesComMedicao().map(textoFaseCurto).join(' - ');
   }
+  /* "TOM NOVO" (20/10/2026, Junior: "corrija as opções na coluna Tom do
+     relatório de tonalidade, para que tenha como escolher apenas uma amostra
+     como sendo Tom 2"). O seletor só oferecia os tons que já tinham rodada:
+     com todas as amostras aprovadas no Tom 1, não havia Tom 2 para escolher, e
+     separar UMA amostra exigia medir de novo. Agora há sempre o tom seguinte
+     ao último, e a amostra escolhida para ele é a referência dele (pela última
+     medição dela) — o tom nasce com ela sozinha. Reavaliar depois abre a
+     rodada seguinte a esse, sem reaproveitar o número. */
+  function tomNovoDe(av) {
+    const usados = Object.values(av.tons).filter(t => typeof t === 'number' && t > 0);
+    return Math.max(av.rodada || 1, ...Object.keys(av.ref).map(Number), ...usados) + 1;
+  }
   function relMudar(i, n, v) {
     const av = S.avOS && S.avOS.fases[i];
     if (!av) return;
+    if (v === 'novo') {
+      const k = tomNovoDe(av);
+      const m = (av.medidas[n] || []).slice(-1)[0];
+      if (m) av.ref[k] = { medId: m.id, amostra: n, nome: nomeAm(n), lab: m.lab, em: m.em };
+      av.tons[n] = k;
+      avGuardar();
+      desenhar();
+      return;
+    }
     av.tons[n] = v === 'r' ? 'r' : (parseInt(v, 10) || 0);
     avGuardar();
     desenhar();
@@ -1372,7 +1393,8 @@
       const todas = av.medidas[n] || [];
       const apr = todas.filter(m => m.aprovado).length;
       const opc = ks.map(k => `<option value="${k}" ${t === k ? 'selected' : ''}>Tom ${ordem[k] || '?'}${ordem[k] ? '' : ' (vazio)'}</option>`)
-        .concat([`<option value="r" ${t === 'r' ? 'selected' : ''}>A reavaliar</option>`, `<option value="0" ${t === 0 ? 'selected' : ''}>Não usar</option>`,
+        .concat([`<option value="novo">Tom ${tons.length + 1} (novo, só esta amostra)</option>`,
+          `<option value="r" ${t === 'r' ? 'selected' : ''}>A reavaliar</option>`, `<option value="0" ${t === 0 ? 'selected' : ''}>Não usar</option>`,
           t == null ? '<option value="" selected>—</option>' : '']);
       const ultima = todas[todas.length - 1];
       const semRef = todas.filter(m => !m.ref);
