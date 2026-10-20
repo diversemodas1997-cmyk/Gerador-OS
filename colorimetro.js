@@ -1403,7 +1403,7 @@
             ${feitas.map(f => `<option value="${f.i}">${escH(f.rotulo)}</option>`).join('')}</select></label></div>` : ''}`;
   }
 
-  function htmlAvaliacao(aparelho = '') {
+  function htmlAvaliacao(aparelho = '', comparacao = '') {
     if (!S.os || !S.av) return '';
     const av = S.av, k = av.rodada, ref = av.ref[k];
     const con = !!S.dev, livre = !S.ocupado && !S.conectando;
@@ -1418,7 +1418,7 @@
     const tons = tonsDoRelatorio();
     const prox = av.n != null ? proximoNumero(av.n) : null;
     const pode = con && livre && !concluida;
-    return `<div class="card cm-os">
+    return `<div class="card cm-os"><div class="cm-os-grade"><div class="cm-os-esq">
       <div class="cm-botoes cm-entre">
         <div><span class="cm-fraco">Avaliando as amostras da</span> <b>${escH(S.os.rotulo)}</b></div>
         <div class="cm-botoes">
@@ -1449,7 +1449,8 @@
         <button type="button" class="btn ${av.fimRodada && !pend.length ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
           title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
       </div>`}
-      ${aparelho}</div>`;
+      ${aparelho}</div>
+      <div class="cm-os-dir">${comparacao}</div></div></div>`;
   }
 
   // O relatório de uma fase: amostras, tons e o seletor para corrigir.
@@ -1574,18 +1575,19 @@
     const f = (v, sinal) => v == null ? '-' : ((sinal && v > 0 ? '+' : '') + num(v));
     const ct = (v, k) => v == null ? '' : (dentro(v, tol[k]) ? 'cm-ok' : 'cm-fora');
     const vazio3 = [null, null, null];
+    const P = S.os && S.av ? 'Referência' : 'Padrão';
     let titulo, cab, linhas;
     if (S.pagina === 0) {
       titulo = `L*a*b* · ${il1}°`; cab = ['L*', 'a*', 'b*'];
       const d = r ? r.d1 : vazio3;
-      linhas = [['Padrão', (ref ? ref.lab1 : vazio3).map(v => f(v))], ['Amostra', (amo ? amo.lab1 : vazio3).map(v => f(v))],
+      linhas = [[P, (ref ? ref.lab1 : vazio3).map(v => f(v))], ['Amostra', (amo ? amo.lab1 : vazio3).map(v => f(v))],
         ['Diferença', d.map(v => f(v, true))]];
       if (r) linhas.push(['', r.dicas.map(x => x[0]), r.dicas.map(x => x[1] ? 'cm-ok' : 'cm-fora')]);
     } else if (S.pagina === 1) {
       titulo = `L*C*h° · ${il1}°`; cab = ['L*', 'C*', 'h°'];
       const lc = x => x ? [x.lab1[0], ...lch(...x.lab1)] : vazio3;
       const d = r ? r.d : [null, null, null, null, null];
-      linhas = [['Padrão', lc(ref).map(v => f(v))], ['Amostra', lc(amo).map(v => f(v))],
+      linhas = [[P, lc(ref).map(v => f(v))], ['Amostra', lc(amo).map(v => f(v))],
         ['Diferença', [f(d[0], true), f(d[3], true), r ? 'ΔH ' + f(d[4], true) : '-'], [ct(d[0], 'dL'), ct(d[3], 'dC'), ct(d[4], 'dH')]]];
     } else if (S.pagina === 2) {
       titulo = `Diferença de cor · ${il1}°`; cab = ['ΔE', 'Tolerância', 'Resultado'];
@@ -1598,7 +1600,7 @@
       titulo = `Segundo iluminante · ${il2}° (metamerismo)`; cab = ['L*', 'a*', 'b*'];
       const a = ref && ref.lab2, b = amo && amo.lab2;
       const dif = a && b ? [0, 1, 2].map(i => b[i] - a[i]) : vazio3;
-      linhas = [['Padrão', (a || vazio3).map(v => f(v))], ['Amostra', (b || vazio3).map(v => f(v))],
+      linhas = [[P, (a || vazio3).map(v => f(v))], ['Amostra', (b || vazio3).map(v => f(v))],
         ['Diferença', dif.map(v => f(v, true)), dif.map((v, i) => ct(v, ['dL', 'da', 'db'][i]))]];
       if (a && b) linhas.push(['ΔE*ab', [num(deAb(a, b)), '', '']]);
     }
@@ -1719,7 +1721,7 @@
     const barra = r
       ? `<div class="cm-de ${r.aprovado ? 'cm-de-ok' : 'cm-de-fora'}">${fo}=${num(r.des[fo])} ${r.aprovado ? 'Aprovado' : 'Reprovado'}</div>
          <div class="cm-fraco cm-centro">${r.desc.length ? 'Amostra ' + r.desc.join(', ') : 'Dentro da tolerância em L*, a* e b*'}</div>`
-      : `<div class="cm-de">${fo}=**</div><div class="cm-fraco cm-centro">${con ? 'Meça o padrão e depois a amostra' : 'Conecte o aparelho para medir'}</div>`;
+      : `<div class="cm-de">${fo}=**</div><div class="cm-fraco cm-centro">${!con ? 'Conecte o aparelho para medir' : (S.os && S.av ? 'Meça a referência e depois a amostra' : 'Meça o padrão e depois a amostra')}</div>`;
     const info = con && S.dev.info
       ? `Modelo: ${escH(S.dev.info.modelo || '?')} · Série: ${escH(S.dev.info.serie)}<br>Firmware: ${escH(S.dev.info.firmware)} · Código ${S.dev.info.codigo} · Modo ${MODOS[modoAtual()] || modoAtual()}`
       : '—';
@@ -1750,19 +1752,32 @@
         ${motivo && !con ? `<div class="cm-aviso">${escH(motivo)} O "Testar sem aparelho" funciona assim mesmo.</div>` : ''}
         ${S.aviso ? `<div class="cm-aviso">${escH(S.aviso)}</div>` : ''}
         ${S.semBD ? `<div class="cm-aviso">Este navegador não deixou guardar o histórico. Exporte o CSV antes de fechar a tela.</div>` : ''}`;
+    /* A COMPARAÇÃO DENTRO DO QUADRO DA OS (20/10/2026, Junior: "usuário não
+       consegue visualizar comparação de cores sem rolar a página para baixo").
+       Na avaliação, o resultado (dE, Aprovado/Reprovado), as duas cores e a
+       tabela L*a*b* vão numa coluna à direita do quadro da OS, ao lado dos
+       botões; o texto de apresentação da página some. Aparelho, calibração e a
+       lista da sessão continuam abaixo — são consulta, não o passo a passo. */
+    const comparacao = `
+          <div class="cm-blocos">${blocoCor(ref, naOS ? 'Referência' : 'Padrão', 'padrao')}${blocoCor(amo, 'Amostra', 'amostra')}</div>
+          ${barra}
+          <div class="cm-tab-caixa">${tabelaPagina(ref, amo, r)}</div>
+          <div class="cm-fraco cm-centro cm-peq">${escH(MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>`;
+    const sec = p.closest('section');
+    if (sec) sec.classList.toggle('cm-modo-os', naOS);
     p.innerHTML = `
-      ${naOS ? htmlAvaliacao(aparelho) : `<div class="card cm-barra">${aparelho}</div>`}
+      ${naOS ? htmlAvaliacao(aparelho, comparacao) : `<div class="card cm-barra">${aparelho}</div>`}
       ${S.pedido && !S.pedido.lugar ? htmlPedido() : ''}
       ${htmlRel()}${htmlCfg()}${htmlHist()}
-      <div class="cm-colunas">
-        <div class="cm-esq">
+      <div class="cm-colunas ${naOS ? 'cm-colunas-os' : ''}">
+        ${naOS ? '' : `<div class="cm-esq">
           <div class="card">${tabelaPagina(ref, amo, r)}</div>
           <div class="card">
             <div class="cm-centro">${escH(MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>
             ${barra}
             <div class="cm-blocos">${blocoCor(ref, 'Padrão', 'padrao')}${blocoCor(amo, 'Amostra', 'amostra')}</div>
           </div>
-        </div>
+        </div>`}
         <div class="cm-dir">
           <div class="card cm-aparelho">
             <div><div class="card-title">Aparelho</div><div class="cm-peq">${info}</div></div>
@@ -1836,6 +1851,20 @@
     .cm-sub{margin:12px 0 6px;font-weight:600;font-size:13px}
     .cm-cfg,.cm-hist,.cm-pedido,.cm-rel{margin-top:12px}
     .cm-os{border-left:3px solid var(--accent);margin-bottom:12px}
+    .cm-os-grade{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:16px;align-items:start}
+    .cm-os-esq{min-width:0}
+    .cm-os-dir{border-left:1px solid var(--line);padding-left:16px}
+    .cm-os-dir .cm-blocos{margin-top:0;gap:8px}
+    .cm-os-dir .cm-bloco{height:72px;font-size:13px;padding:6px}
+    .cm-os-dir .cm-de{font-size:17px;padding:6px;margin:8px 0 2px}
+    .cm-os-dir .cm-tab-caixa{margin-top:8px}
+    .cm-os-dir .cm-abas .btn{padding:2px 6px;font-size:11px}
+    .cm-os-dir .cm-tab{font-size:13px}
+    .cm-os-dir .cm-tab td,.cm-os-dir .cm-tab th{padding:2px 4px}
+    @media (max-width:1100px){.cm-os-grade{grid-template-columns:1fr}.cm-os-dir{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:10px}}
+    .cm-colunas-os{grid-template-columns:1fr}
+    .cm-modo-os .page-header .desc{display:none}
+    .cm-modo-os .page-header{margin-bottom:8px;padding-bottom:6px}
     .cm-av{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:8px 0}
     .cm-av-bloco{padding:6px 10px;background:var(--line-2);border-radius:2px}
     .cm-aparelho-linha{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
