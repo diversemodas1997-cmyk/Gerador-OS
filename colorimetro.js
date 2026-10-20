@@ -1026,13 +1026,13 @@
      deve sempre ser conjugada no relatório de acordo com a fase de cor
      correspondente. Quando cm.lisa, ribana igual a corpo, quando cm.rec, ribana
      igual a corpo 1, quando bm.lisa, ribana igual a corpo, quando bm.tri ribana
-     igual a corpo 3"). A ribana é tinta na cor de UMA das fases de corpo; no
-     relatório ela não sai sozinha, sai dentro dessa fase, tom a tom (o Tom 1 da
-     ribana com o Tom 1 do corpo). Linha fora da lista e com um corpo só (CM.B,
-     BM.B…): esse corpo; mais de um corpo e linha fora da lista (CM.TRI): a
-     ribana fica separada, como antes. */
+     igual a corpo 3"; e depois "Na CM.TRI, ribana igual a corpo 1"). A ribana
+     é tinta na cor de UMA das fases de corpo; no relatório ela não sai sozinha,
+     sai dentro dessa fase, tom a tom (o Tom 1 da ribana com o Tom 1 do corpo).
+     Linha fora da lista e com um corpo só (CM.B, BM.B…): esse corpo; mais de um
+     corpo e linha fora da lista: a ribana fica separada, como antes. */
   const ehRibana = f => /ribana/i.test(String(f.tecidoNome || '') + ' ' + String(f.nome || ''));
-  const CORPO_DA_RIBANA = { 'CM.LISA': 0, 'BM.LISA': 0, 'CM.REC': 1, 'BM.TRI': 3, 'BM.TRICOLOR': 3 };
+  const CORPO_DA_RIBANA = { 'CM.LISA': 0, 'BM.LISA': 0, 'CM.REC': 1, 'CM.TRI': 1, 'CM.TRICOLOR': 1, 'BM.TRI': 3, 'BM.TRICOLOR': 3 };
   function faseDeCorDaRibana(o, lista) {
     const linha = ((o && o.grade && o.grade.descricao || '').toUpperCase().match(/\b(CM|BM)\.[A-Z]+/) || [''])[0];
     const corpos = lista.map((f, i) => ({ i, nome: String(f.nome || '') })).filter(x => /^corpo/i.test(x.nome) && !ehRibana(lista[x.i]));
