@@ -24,7 +24,7 @@ const ok = (nome, cond, extra) => {
 const api = new Function('STATE', `
   const corNomeCurto = s => String(s || '');
   ${bloco('const _OE_ITEM =', "reposicao: 'Reposição' };")}
-  ${['_normNome', 'desenhoDaOS', '_skuBaseDaOS', '_oeLinhaDaOS', '_oeGruposDaFase', '_expFasesDaOS', '_expFasesDaCarga', '_expItensPorFase'].map(pegaFuncao).join('\n')}
+  ${['_normNome', 'desenhoDaOS', '_skuBaseDaOS', '_oeLinhaDaOS', '_oeGruposDaFase', '_expOSTemItem', '_expItemDaPeca', '_expFasesDaOS', '_expFasesDaCarga', '_expItensPorFase'].map(pegaFuncao).join('\n')}
   const ordenarComponentesPorFase = () => [];
   return { _expItensPorFase, _expFasesDaCarga, _oeGruposDaFase };
 `)({ desenhos: [], modelos: [] });
@@ -108,6 +108,32 @@ console.log('-- sem espaco excedente --');
      /if \(vIda === vVolta\) return/.test(src) && /exp-print-pernas uma-so/.test(src) && /exp-print-perna sem-carga/.test(src));
   ok('16. a observacao do aviamento vai na mesma linha do item',
      /_aviItemTexto\(a\)\)\}\$\{a\.obs \? ` <span/.test(src));
+}
+
+console.log('-- mangas e capuz no checklist da carga (20/10/2026) --');
+{
+  const fasesDe = o => api._expFasesDaCarga({ osId: 'x' }, o).fases.map(f => f.nome + '@' + f.ordem).join(' ');
+  const bmL = os('BM.LISA-PRE', ['Corpo', 'Barra/Punhos', 'Viés']);
+  ok('17. BM.LISA: Mangas e Capuz entram logo depois do Corpo',
+     fasesDe(bmL) === 'Corpo@1 Mangas@1.3 Capuz@1.6 Barra/Punhos@2 Viés@3', fasesDe(bmL));
+  const cmL = os('CM.LISA-PRE', ['Corpo', 'Gola', 'Viés']);
+  ok('18. CM.LISA: so Mangas (camiseta nao tem capuz)', fasesDe(cmL) === 'Corpo@1 Mangas@1.3 Gola@2 Viés@3', fasesDe(cmL));
+  const bmT = os('BM.TRI-BEGE', ['Corpo Parte 1', 'Corpo Parte 2', 'Corpo Parte 3', 'Forro de capuz', 'Barra/Punhos', 'Viés']);
+  ok('19. BM.TRI: depois da ultima parte do corpo, antes do forro',
+     fasesDe(bmT) === 'Corpo Parte 1@1 Corpo Parte 2@2 Corpo Parte 3@3 Mangas@3.3 Capuz@3.6 Forro de capuz@4 Barra/Punhos@5 Viés@6', fasesDe(bmT));
+  const n = { osId: 'x', pacotes: [], fasesComItens: true };
+  const soCorpoSemCapuz = lista(bmL, Object.assign({ fases: [1, 1.3] }, n));
+  ok('20. Corpo e Mangas sem o Capuz: o capuz fica', soCorpoSemCapuz === '[Corpo] Frente, Costa, Mangasx2', soCorpoSemCapuz);
+  const soCapuz = lista(bmL, Object.assign({ fases: [1.6] }, n));
+  ok('21. so o Capuz: vai no bloco dele', soCapuz === '[Capuz] Capuz', soCapuz);
+  const triMangas = lista(bmT, Object.assign({ fases: [3.3] }, n));
+  ok('22. BM.TRI so Mangas: as tres partes das mangas', triMangas === '[Corpo] Mangas parte 1x2, Mangas parte 2x2, Mangas parte 3x2', triMangas);
+  const legado = lista(bmL, { osId: 'x', pacotes: [], fases: [1] });
+  ok('23. carga antiga so com o Corpo: mangas e capuz continuam indo com ele',
+     legado === '[Corpo] Frente, Costa, Mangasx2, Capuz', legado);
+  const fiL = api._expFasesDaCarga({ osId: 'x', fases: [1] }, bmL);
+  ok('24. e o checklist dela abre com Mangas e Capuz marcados', fiL.levam.map(f => f.nome).join() === 'Corpo,Mangas,Capuz', fiL.levam.map(f => f.nome));
+  ok('25. a carga gravada com o checklist novo marca fasesComItens', /if \(fases\) campos\.fasesComItens = true;/.test(src));
 }
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S)' : '\ntudo certo');

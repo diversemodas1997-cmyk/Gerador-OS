@@ -13324,7 +13324,7 @@ function _expCargasDa(janelaId, dataOrig, perna) {
    composição por pacote (tamanho × tonalidade), que é outra pergunta. Aqui se diz
    QUE PARTE DA PEÇA vai no caminhão — a informação que faltava na doca. */
 function _expFasesDaOS(o) {
-  return ((o && o.fases) || [])
+  const fases = ((o && o.fases) || [])
     .map((f, i) => {
       const ordem = Number(f.ordem) || (i + 1);
       const nome = String(f.nome || '').trim() || `Fase ${ordem}`;
@@ -13336,6 +13336,47 @@ function _expFasesDaOS(o) {
       };
     })
     .sort((a, b) => a.ordem - b.ordem);
+  /* MANGAS E CAPUZ COMO ITENS DO CHECKLIST (20/10/2026, Junior: "insira no
+     campo fases da peça que vão nesta fase, em planejamento de expedição, o
+     item capuz" e "insira também item manga").
+     Mangas e capuz saem do pano do Corpo (não são fases do enfesto), mas podem
+     viajar separados dele. Entram logo depois da última fase de corpo, com
+     ordem fracionária (+0,3 e +0,6) — assim cabem em `carga.fases` como as
+     outras, sem colidir com fase de verdade. O item manda SOZINHO nas suas
+     peças: "Mangas" leva as mangas de todas as partes (BM.TRI), e desmarcar o
+     Corpo não leva junto as mangas nem o capuz. Mangas: toda peça cujo
+     checklist da OE tem mangas (ou OS com componente Manga). Capuz: só a que
+     tem capuz. */
+  const corpos = fases.filter(f => _oeGruposDaFase(f.nome).some(g => /^corpo/.test(g)));
+  const corpo1 = corpos.find(f => _oeGruposDaFase(f.nome).includes('corpo1'));
+  if (corpo1) {
+    const ult = corpos[corpos.length - 1];
+    let pos = fases.indexOf(ult) + 1;
+    const cor = corpos.length === 1 ? corpo1.cor : '';
+    [['Mangas', 'mangas', /^manga/, 0.3], ['Capuz', 'capuz', /^capuz/, 0.6]].forEach(([nome, item, re, d]) => {
+      if (!_expOSTemItem(o, re)) return;
+      fases.splice(pos++, 0, {
+        ordem: ult.ordem + d, nome, cor, tecido: corpo1.tecido,
+        rotulo: nome + (cor ? ` (${cor})` : ''), item, corpoOrdem: corpo1.ordem
+      });
+    });
+  }
+  return fases;
+}
+
+// A peça tem o item (mangas, capuz)? Pelo checklist da linha na OE; linha fora
+// da tabela, pelos componentes da OS.
+function _expOSTemItem(o, re) {
+  const lista = ITENS_OE_POR_LINHA[_oeLinhaDaOS(o)];
+  if (lista) return lista.some(it => re.test(_normNome(it.nome)));
+  return ((o && o.componentes) || []).some(c => re.test(_normNome(c.nome)));
+}
+
+// O item do checklist (Mangas, Capuz) que responde por uma peça, pelo nome dela.
+function _expItemDaPeca(fases, nome) {
+  const n = _normNome(nome);
+  return (fases || []).find(f => f.item === 'mangas' && /^manga/.test(n)
+                              || f.item === 'capuz' && /^capuz/.test(n)) || null;
 }
 
 // As fases que embarcam nesta carga e as que ficam. `todas` diz se a carga leva a
@@ -13344,11 +13385,19 @@ function _expFasesDaCarga(c, o) {
   const fases = _expFasesDaOS(o);
   const grav = Array.isArray(c && c.fases) ? c.fases.map(Number).filter(n => Number.isFinite(n)) : null;
   if (!fases.length) return { fases: [], levam: [], ficam: [], todas: true, temFases: false };
+  // Carga gravada antes dos itens Mangas e Capuz (sem `fasesComItens`): cada
+  // manga/capuz ia com a fase dele, e continua indo (`legado`, ver
+  // _expItensPorFase). O checklist, ao editá-la, mostra os itens marcados se o
+  // Corpo vai.
+  const legado = !!(grav && grav.length && !c.fasesComItens);
+  if (legado) {
+    fases.filter(f => f.item && grav.includes(f.corpoOrdem)).forEach(f => grav.push(f.ordem));
+  }
   // Ordem gravada que não existe mais na OS (fase renomeada/removida na grade
   // depois de alocar) simplesmente não aparece: a OS manda no que existe.
   const levam = (grav && grav.length) ? fases.filter(f => grav.includes(f.ordem)) : fases.slice();
   const ficam = fases.filter(f => !levam.includes(f));
-  return { fases, levam, ficam, todas: !ficam.length, temFases: true };
+  return { fases, levam, ficam, todas: !ficam.length, temFases: true, legado };
 }
 
 // Texto curto das fases que vão: "Corpo (Preto) · Manga (Preto)".
@@ -13537,9 +13586,13 @@ function _expItensPorFase(o, carga, fi) {
     };
     // O bloco fica na posição do seu PRIMEIRO item na lista (ver a ordem acima).
     lista.forEach((it, pos) => {
-      const fase = fasesOS.find(f => _oeGruposDaFase(f.nome).includes(it.grupo));
-      // Carga parcial: só o que é de uma fase que embarca.
-      if (!todas && !(fase && levam.some(l => l.ordem === fase.ordem))) return;
+      const fase = fasesOS.find(f => !f.item && _oeGruposDaFase(f.nome).includes(it.grupo));
+      // Quem decide se a peça embarca: o item Mangas/Capuz, se a peça for dele;
+      // senão a fase do enfesto.
+      const dono = (!(fi && fi.legado) && _expItemDaPeca(fasesOS, it.nome)) || fase;
+      const vai = f => !!f && levam.some(l => l.ordem === f.ordem);
+      // Carga parcial: só o que embarca.
+      if (!todas && !vai(dono)) return;
       if (it.junto) {
         // Bloco de várias fases: o título é o do bloco, e a cor vai no item
         // (cada parte tem a sua).
@@ -13547,8 +13600,11 @@ function _expItensPorFase(o, carga, fi) {
         g.itens.push({ nome: it.nome + (fase && fase.cor ? ` (${fase.cor})` : ''), porPeca: porPecaDe(it) });
         return;
       }
-      const g = fase
-        ? grupoDe('f' + fase.ordem, fase.rotulo, pos)
+      // A manga/capuz que viaja sem o Corpo vai no bloco dela, e não num
+      // "Corpo" que a carga não leva.
+      const casa = (!todas && dono !== fase && !vai(fase)) ? dono : fase;
+      const g = casa
+        ? grupoDe('f' + casa.ordem, casa.rotulo, pos)
         : grupoDe('g' + it.grupo, _OE_GRUPO_ROTULO[it.grupo] || it.grupo, pos);
       g.itens.push({ nome: it.nome, porPeca: porPecaDe(it) });
     });
@@ -13564,7 +13620,8 @@ function _expItensPorFase(o, carga, fi) {
   comps.forEach(({ c, fase }) => {
     const idx = fase ? (o.fases || []).indexOf(fase) : -1;
     const fc = fase ? fasesOS.find(x => x.ordem === (Number(fase.ordem) || (idx + 1))) : null;
-    if (!todas && !(fc && levam.some(l => l.ordem === fc.ordem))) return;
+    const dono = (!(fi && fi.legado) && _expItemDaPeca(fasesOS, c.nome)) || fc;
+    if (!todas && !(dono && levam.some(l => l.ordem === dono.ordem))) return;
     const chave = fc ? 'f' + fc.ordem : 'outros';
     let g = grupos.find(x => x.chave === chave);
     if (!g) { g = { chave, titulo: fc ? fc.rotulo : 'Outros itens', ordem: fc ? fc.ordem : 99, itens: [] }; grupos.push(g); }
@@ -15142,7 +15199,7 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
         <label>Fases da peça que vão nesta carga</label>
         <div id="ec-fases" class="ec-fases"></div>
         <div id="ec-fases-acoes" class="ec-fase-acoes"></div>
-        <div class="field-hint">São as fases do <b>enfesto</b> desta OS. A expedição pode levar só parte da peça — corpo e manga vão costurar e a ribana espera o próximo caminhão. Desmarque o que <b>não</b> vai: a folha de OE passa a dizer, no quadro desta OS, quais fases embarcam e quais ficam. Isto não muda pacote, volume nem estoque — só o que a doca precisa separar e conferir.</div>
+        <div class="field-hint">São as fases do <b>enfesto</b> desta OS, mais as <b>Mangas</b> e o <b>Capuz</b>, que saem do pano do Corpo mas podem viajar separados dele. A expedição pode levar só parte da peça — corpo e manga vão costurar e a ribana espera o próximo caminhão. Desmarque o que <b>não</b> vai: a folha de OE passa a dizer, no quadro desta OS, quais fases embarcam e quais ficam. Isto não muda pacote, volume nem estoque — só o que a doca precisa separar e conferir.</div>
       </div>
       ${_expCampoNum('ec-volumes', 'Volumes (sacos / caixas) *',
         cargaEdit ? (cargaEdit.volumes || '') : (osPre ? _expSugestaoVolumes(osPre) : ''),
@@ -15193,7 +15250,7 @@ function _expMontarSeletorFases(o) {
       <input type="checkbox" class="ec-fase-in" value="${f.ordem}" ${marcadas.has(f.ordem) ? 'checked' : ''} onchange="_expResumoFases()">
       <span class="n">${esc(f.nome)}</span>
       ${f.cor ? `<span class="c">${esc(f.cor)}</span>` : ''}
-      ${f.tecido ? `<span class="t">${esc(f.tecido)}</span>` : ''}
+      ${f.item ? '<span class="t">peça do Corpo</span>' : f.tecido ? `<span class="t">${esc(f.tecido)}</span>` : ''}
     </label>`).join('');
   // Os botões e o resumo ficam FORA da caixa que rola: numa OS de muitas fases
   // eles sairiam da vista justamente quando são mais úteis.
@@ -15820,6 +15877,9 @@ async function salvarModalExpedicao() {
       : null;
     const oe = _oeNumeroGarantir(janelaId, data);
     const campos = { janelaId, data, perna, osId, volumes, fases, obs: v('ec-obs').trim(), oe: oe.n };
+    // Gravada já com os itens Mangas/Capuz no checklist: eles valem por si, e
+    // não seguem mais o Corpo (ver _expFasesDaCarga).
+    if (fases) campos.fasesComItens = true;
     // Guarda (ou limpa) a composição por pacote. Sem seletor, remove qualquer
     // composição antiga pra não ficar incoerente com o número manual.
     if (temSeletor) { campos.pacotes = pacotes; campos.reposicao = reposicao; }

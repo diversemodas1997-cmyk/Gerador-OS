@@ -57,6 +57,7 @@ function resumo(estado) {
     // Dublê: tirar o tecido do nome da cor tem teste próprio; aqui a cor entra
     // já curta ("Preto") e o que se mede é o rótulo da fase.
     const corNomeCurto = (n) => String(n == null ? '' : n).trim();
+    const _oeGruposDaFase = () => [];   // dublê: itens Mangas/Capuz têm teste em folha-oe-itens.js
     ${motor}
     const oc = { janela: { id: 'j1' }, dataOrig: '2026-08-20' };
     return resumoPernaExpedicao(oc, 'ida');
@@ -193,6 +194,7 @@ ok('OS sem fases: temFases false e nada a comentar', f.temFases === false && f.t
 eq('texto das fases junta com ponto do meio',
   (() => { const fn = new Function('l', `
     const corNomeCurto = (n) => String(n == null ? '' : n).trim();
+    const _oeGruposDaFase = () => [];   // dublê: itens Mangas/Capuz têm teste em folha-oe-itens.js
     ${motor}
     return _expFasesTexto(l);`);
     return fn([{ rotulo: 'Corpo (Preto)' }, { rotulo: 'Manga (Preto)' }]); })(),
