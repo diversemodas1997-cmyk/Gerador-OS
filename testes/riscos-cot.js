@@ -116,9 +116,9 @@ ok('a grade de 200cm é avisada de que o PDF é de outra largura',
 ok('PM.LISA (LINHA/TAM/TAM/CM — "Malha Piquet/Piquet Dry")',
    acha(grade('M-G-GG-G1-G3 | PM.LISA | 175cm', { m: 1, g: 1, gg: 1, g1: 1, g3: 1 }),
         'PM.LISA/Malha Piquet/Piquet Dry/'));
-// CLM (30/09/2026): a pasta separa os tamanhos por ESPAÇO — "P M G GG".
-ok('CLM (tamanhos separados por espaço — "P M G GG")',
-   acha(grade('P-M-G-GG | CLM | 177cm', { p: 1, m: 1, g: 1, gg: 1 }), 'CLM/177cm/P M G GG/'));
+// CJM (antes CLM, 30/09/2026; SKU trocado para CJM em 21/10/2026): a pasta separa os tamanhos por ESPAÇO — "P M G GG".
+ok('CJM (tamanhos separados por espaço — "P M G GG")',
+   acha(grade('P-M-G-GG | CJM | 177cm', { p: 1, m: 1, g: 1, gg: 1 }), 'CJM/177cm/P M G GG/'));
 // A PASTA POR LINHA DE TAMANHO (30/09/2026): "LINHA ADULTO/…" e "LINHA
 // INFANTIL/…" são pulados — senão toda grade perdia os PDFs. E na infantil a
 // linha de SKU vem do nome do arquivo, porque a pasta começa pelos tamanhos.
