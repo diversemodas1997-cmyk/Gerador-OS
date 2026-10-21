@@ -17,7 +17,8 @@
    nunca mostra a alguém o que a tela dele não mostraria, e o status de cada OS
    é calculado pela mesma função do programa (_statusOS), sem cópia que divirja.
 
-   Nenhuma ferramenta grava nada. As ferramentas são definidas AQUI, no servidor:
+   As únicas gravações são as do planejamento, da OS conjugada e da grade, todas
+   pelo formulário do programa. As ferramentas são definidas AQUI, no servidor:
    o navegador não consegue inventar uma ferramenta nova para o Claude.
 
    SEM NENHUM IMPORT, como a função `usuarios`: só fetch.
@@ -193,6 +194,22 @@ const FERRAMENTAS = [
     },
   },
   {
+    name: 'criar_grade',
+    description: 'Cadastra uma GRADE nova pela ficha de Nova grade do programa (Cadastros → Grades), com as mesmas travas da tela. As fases (tecido, comprimento, largura, bobinas), a pasta (tipo de peça) e a subpasta (variação) vêm de uma grade-MODELO que já existe; pasta ou subpasta com nome novo vira pasta nova. Só funciona se a conta do assistente E a conta de quem pede tiverem edição na tela Grades; senão devolve sem_acesso. Sem modelo claro, a ferramenta devolve sugestões em vez de salvar: pergunte à pessoa. Se devolver conflitos (grade igual a outra com outro nome), NADA foi salvo: explique e só com o sim explícito dela chame de novo com aceitar. Uma chamada por grade.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nome: { type: 'string', description: 'Nome no padrão das existentes: "tamanhos | linha | largura" (ex.: "2M-2GG | CM.LISA | 117cm").' },
+        tamanhos: { type: 'string', description: 'Quantidade por tamanho, ex.: "2M-2GG", "M-G-G1-G2-G3", "P ao G3", "2 4 6 8". Sem ele, vale a primeira parte do nome.' },
+        modelo: { type: 'string', description: 'Nome (ou palavras do nome) da grade já cadastrada de onde vêm as fases e a pasta — em geral a da mesma linha e largura.' },
+        pasta: { type: 'string', description: 'Opcional: tipo de peça (pasta) se for diferente da do modelo. Nome novo cria a pasta.' },
+        subpasta: { type: 'string', description: 'Opcional: variação (subpasta) se for diferente da do modelo. Nome novo cria a subpasta.' },
+        aceitar: { type: 'array', items: { type: 'string' }, description: 'Códigos dos conflitos que a PESSOA aceitou explicitamente nesta conversa.' },
+      },
+      required: ['nome'],
+    },
+  },
+  {
     name: 'tela_atual',
     description: 'O texto que a pessoa está vendo agora na tela do programa (qual página e o conteúdo visível). Use quando ela perguntar sobre "esta tela", "isto aqui", um número que está vendo etc.',
     input_schema: { type: 'object', properties: {} },
@@ -209,7 +226,8 @@ Quem está falando com você: ${nome || 'uma pessoa da equipe'} (${papel}). Agor
 COMO TRABALHAR
 - Responda em português do Brasil, curto e direto, como um colega da fábrica. Números com separador de milhar (1.234).
 - Para qualquer número, OS, estoque ou status, use as ferramentas. Nunca invente nem estime um dado que não veio delas. Se a ferramenta não trouxe, diga que não encontrou.
-- Você CONSULTA, PREPARA FOLHAS, PLANEJA e CRIA OS CONJUGADA.
+- Você CONSULTA, PREPARA FOLHAS, PLANEJA, CRIA OS CONJUGADA e CADASTRA GRADES.
+- Grades: com criar_grade você cadastra grade nova (e, com ela, pasta ou subpasta nova) pela ficha do programa, copiando as fases e a pasta de uma grade-modelo já cadastrada — em geral a da mesma linha e largura. Nome no padrão "tamanhos | linha | largura". Uma chamada por grade. Se faltar o modelo, mostre as sugestões e pergunte. Se a ferramenta disser sem_acesso, explique que o admin libera em Configurações → Contas de acesso → Cadastros (tela Grades), na conta do assistente e na da pessoa. Conflito → pare e pergunte, como no planejamento.
 - Folhas: com preparar_folha você imprime folhas de OS e de OE na hora (imprimir=true): o diálogo de impressão abre sozinho e a pessoa só confirma a impressora. Diga em uma frase quais foram para a impressão (impresso_agora) e que, se cancelou, há o botão "Imprimir de novo". Etiquetas e OC, e o "só abrir", viram botão no chat: diga qual clicar. Não diga que o papel já saiu da impressora — você abre o diálogo, quem confirma é a pessoa.
 - Planejamentos: com planejar você preenche e salva planejamentos de produção (novos ou editados). Antes, confirme com a pessoa o que não estiver claro (desenho, grade, camadas, grades iguais). Quando perceber um conflito — a ferramenta devolveu conflitos, o pedido contradiz o que os dados mostram (já existe planejamento ou OS igual em andamento, quantidade estranha, grade de outro produto) ou duas pessoas pediram coisas diferentes — PARE e pergunte à pessoa antes de salvar. Depois de salvar, diga o que ficou salvo e que o admin aprova no Planejamento de produção.
 - OS conjugada: com criar_os_conjugada você cria uma OS com número que segue outra OS já existente e ela vai direto para a impressão. NÃO pergunte o que dá para deduzir: chame direto com a OS ativa e com as palavras que a pessoa disse (grade em "grade", cor/descrição do desenho em "desenho"; a linha, como "cm.lisa", é da grade). O que ela não disser a ferramenta tira da OS ativa (conjugada do cadastro, ou a mesma grade e o mesmo desenho) e devolve em "notas" o que deduziu — conte isso em uma linha. Pergunte só quando a ferramenta devolver "pergunta". Conflito → pare e pergunte, como no planejamento. Depois, diga o número criado, qual OS ela segue e o aviso de status, se vier.

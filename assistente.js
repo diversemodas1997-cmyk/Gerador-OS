@@ -315,6 +315,10 @@
       return criarConjugada(p);
     },
 
+    async criar_grade(p) {
+      return criarGrade(p);
+    },
+
     tela_atual() {
       const sec = [...document.querySelectorAll('section.page')].find(s => !s.classList.contains('hidden'));
       if (!sec) return { erro: 'Não identifiquei a tela aberta.' };
@@ -430,7 +434,8 @@
   const CONFIRMA_DO_PROGRAMA = [
     { codigo: 'medida_sem_risco', casa: /não veio de um risco/i },
     { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i },
-    { codigo: 'falta_de_tecido', casa: /Não há tecido disponível/i }
+    { codigo: 'falta_de_tecido', casa: /Não há tecido disponível/i },
+    { codigo: 'grade_repetida', casa: /parece ser a MESMA que já está cadastrada/i }
   ];
 
   function acharDesenho(texto, preferido) {
@@ -822,6 +827,144 @@
       proximo_passo: 'Fica na lista do Planejamento de produção até o admin aprovar (a aprovação gera a OS com número).' };
   }
 
+  /* ---------------- grade ----------------
+     (21/10/2026, Junior: "corrija a forma como o assistente pelo usuário
+     configurado dele consegue criar grades" — o assistente respondia "não
+     consigo criar grades nem pastas".)
+
+     Duas licenças, como no planejamento: a conta do assistente precisa de
+     EDIÇÃO na tela Grades (Configurações → Contas de acesso → Cadastros →
+     Grades), e quem pede também. O caminho é o da tela: abre a ficha de Nova
+     grade, preenche e chama o MESMO salvarCadastro — a trava de nome repetido,
+     a linha única (P ao G3 ou 2 ao 16) e o aviso de "grade igual com outro
+     nome" são os do programa.
+
+     As fases (tecido, comprimento, largura, bobinas) vêm de uma GRADE-MODELO
+     que já existe — é assim que se cadastra na fábrica: a grade nova é a de
+     sempre com outros tamanhos. A PASTA e a SUBPASTA vêm do modelo, ou do que
+     a pessoa disser; um nome que ainda não existe vira pasta nova (é o mesmo
+     "+ Nova pasta…" da ficha). */
+  const TAMS_GRADE = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
+  function tamanhosDoTexto(v) {
+    // Aceita { m: 2, g: 1 } ou "2M-2GG", "M-G-G1", "P ao G3", "2 4 6".
+    const out = {};
+    TAMS_GRADE.forEach(t => { out[t] = 0; });
+    if (v && typeof v === 'object') {
+      Object.keys(v).forEach(k => {
+        const kk = String(k).toLowerCase().replace(/^(\d)/, 't$1');
+        if (kk in out) out[kk] = Math.max(0, parseInt(v[k], 10) || 0);
+      });
+      return out;
+    }
+    const s = String(v || '').toUpperCase().replace(/\s+AO\s+/g, ' AO ');
+    const ordem = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+    const faixa = s.match(/\b(P|M|G|GG|G1|G2|G3)\s+AO\s+(P|M|G|GG|G1|G2|G3)\b/);
+    if (faixa) {
+      const a = ordem.indexOf(faixa[1]), b = ordem.indexOf(faixa[2]);
+      ordem.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(t => { out[t.toLowerCase()] = 1; });
+      return out;
+    }
+    s.split(/[\s\-–,;/]+/).filter(Boolean).forEach(tok => {
+      const m = tok.match(/^(\d+)?(PP|P|M|GG|G1|G2|G3|G)$/) || tok.match(/^(\d+)X(PP|P|M|GG|G1|G2|G3|G)$/);
+      if (m) { const k = m[2].toLowerCase(); if (k in out) out[k] += m[1] ? parseInt(m[1], 10) : 1; return; }
+      const inf = tok.match(/^(\d+)?\(?(2|4|6|8|10|12|14|16)\)?$/);
+      if (inf && !m) { const k = 't' + inf[2]; if (k in out) out[k] += inf[1] && inf[1] !== inf[2] ? parseInt(inf[1], 10) : 1; }
+    });
+    return out;
+  }
+
+  function acharGradeModelo(texto) {
+    const t = norm(texto).trim();
+    const termos = t.split(/\s+/).filter(Boolean);
+    const todas = STATE.grades || [];
+    let casam = todas.filter(g => norm(g.nome).trim() === t);
+    if (!casam.length) casam = todas.filter(g => termos.every(x => norm(g.nome).includes(x)));
+    if (!casam.length) return { erro: `Não achei grade-modelo com "${texto}".` };
+    if (casam.length > 1) return { pergunta: 'Mais de uma grade serve de modelo — pergunte à pessoa qual (as fases e a pasta vêm dela).', opcoes: casam.slice(0, 20).map(g => g.nome) };
+    return { grade: casam[0] };
+  }
+
+  async function criarGrade(p) {
+    const telaGrades = 'cad-grades';
+    const podeTela = (conta, papel) => typeof contaEditaTela === 'function' ? contaEditaTela(telaGrades, conta, papel)
+      : (typeof contaTemAcesso === 'function' && contaTemAcesso('cadastros', conta, papel));
+    if (!podeTela(CONTA_ASSISTENTE, 'usuario')) {
+      return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem edição na tela Grades. O admin libera em Configurações → Contas de acesso → Cadastros (ou só a tela Grades).` };
+    }
+    if (typeof podeGravar === 'function' && !podeGravar()) {
+      return { erro: 'Esta tela não grava (celular ou fora do servidor da fábrica). Use um computador da fábrica.' };
+    }
+    if (!(ehAdmin() || podeTela(login()))) {
+      return { sem_acesso: true, mensagem: 'Esta conta não pode cadastrar grades. Peça ao admin a edição em Cadastros → Grades.' };
+    }
+    const nome = String(p.nome || '').trim();
+    if (!nome) return { pergunta: 'Falta o nome da grade, no padrão "tamanhos | linha | largura" (ex.: "2M-2GG | CM.LISA | 117cm").' };
+    if (typeof _gradeComNome === 'function') {
+      const ja = _gradeComNome(nome, null);
+      if (ja) return { erro: `Já existe a grade "${ja.nome}" — o nome tem que ser outro.` };
+    }
+    const tamanhos = tamanhosDoTexto(p.tamanhos != null ? p.tamanhos : nome.split('|')[0]);
+    const total = TAMS_GRADE.reduce((s, t) => s + tamanhos[t], 0);
+    if (!total) return { pergunta: 'Não entendi os tamanhos — pergunte à pessoa a quantidade de cada tamanho (ex.: 2M-2GG, ou P ao G3).' };
+    const adulto = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3'].some(t => tamanhos[t] > 0);
+    const infantil = TAMS_GRADE.slice(7).some(t => tamanhos[t] > 0);
+    if (adulto && infantil) return { erro: 'A grade usa uma linha só: P ao G3 ou 2 ao 16.' };
+
+    let modelo = null;
+    if (p.modelo) {
+      const r = acharGradeModelo(p.modelo);
+      if (!r.grade) return r;
+      modelo = r.grade;
+    } else {
+      return { pergunta: 'Falta a grade-modelo: de qual grade já cadastrada vêm as fases (tecido, comprimento, largura) e a pasta? Pergunte à pessoa.',
+        sugestoes: (STATE.grades || []).filter(g => {
+          const partes = nome.split('|').map(x => norm(x).trim());
+          return partes.slice(1).some(x => x && norm(g.nome).includes(x));
+        }).slice(0, 15).map(g => g.nome) };
+    }
+
+    // A ficha nasce da grade-modelo: fases, pasta, subpasta e linha dela.
+    const pre = JSON.parse(JSON.stringify(modelo));
+    delete pre.id;
+    pre.nome = nome;
+    pre.tamanhos = tamanhos;
+    pre.linha = infantil ? 'Infantil Unissex' : 'Adulto Unissex';
+    pre.conjugadaGradeId = '';
+    pre.conjugadaDesenhoId = '';
+    if (p.pasta) pre.tipoPeca = String(p.pasta).trim();
+    if (p.subpasta) pre.variacao = String(p.subpasta).trim();
+
+    if (typeof goto === 'function') goto(telaGrades);   // a ficha abre na tela dela, com a permissão dela
+    openCadastroModal('grade', null, null, pre);
+    await esperar(250);
+    const el = id => document.getElementById(id);
+    if (!el('m-nome') || !el('m-grade-tipopeca')) return { erro: 'Não consegui abrir a ficha de Nova grade.' };
+    // A ficha monta a linha pelos tamanhos; garante a do pedido e os números.
+    const sl = el('m-grade-linha');
+    if (sl) { sl.value = pre.linha; }
+    TAMS_GRADE.forEach(t => { const i = el('m-gr-' + t); if (i) i.value = tamanhos[t]; });
+    if (typeof conferirNomeGrade === 'function') conferirNomeGrade();
+
+    const aceitos = new Set((Array.isArray(p.aceitar) ? p.aceitar : []).map(String));
+    const antes = new Set((STATE.grades || []).map(g => g.id));
+    const perguntas = await salvarRespondendo(salvarCadastro, aceitos);
+    const nova = (STATE.grades || []).find(g => !antes.has(g.id) && g.nome === nome);
+    if (!nova) {
+      if (perguntas.length) {
+        const codigo = 'grade_repetida';
+        return { salvo: false, conflitos: [{ codigo, texto: perguntas[0] }],
+          instrucao: 'Nada foi salvo. Explique o aviso do programa e, só com o sim explícito da pessoa, chame de novo com aceitar = ["grade_repetida"].' };
+      }
+      return { salvo: false, erro: 'O programa não salvou — veja a mensagem que apareceu na tela. A ficha ficou aberta.' };
+    }
+    nova.viaAssistente = { conta: CONTA_ASSISTENTE, pedidoPor: login(), em: new Date().toISOString(), modelo: modelo.nome };
+    try { await saveState('grades'); } catch (e) { /* a grade já está salva; a marca vai no próximo */ }
+    const lbl = (k, v) => (typeof (k === 'pasta' ? labelTp : labelVr) === 'function' ? (k === 'pasta' ? labelTp : labelVr)(v) : v);
+    return { salvo: true, nome: nova.nome, modelo: modelo.nome, pasta: lbl('pasta', nova.tipoPeca || ''), subpasta: lbl('subpasta', nova.variacao || ''),
+      tamanhos: TAMS_GRADE.filter(t => tamanhos[t]).map(t => (tamanhos[t] > 1 ? tamanhos[t] : '') + t.replace(/^t/, '').toUpperCase()).join('-'),
+      fases: (nova.fases || []).map(f => f.nome).filter(Boolean) };
+  }
+
   /* As ações não rodam sozinhas: viram um botão no chat e só acontecem no
      clique da pessoa. É a confirmação — e é também o que o navegador exige
      para abrir janela nova (OC, PDF das etiquetas) sem bloquear o pop-up. */
@@ -935,7 +1078,7 @@
   const NOMES_FERR = {
     resumo_status: 'o resumo por status', buscar_os: 'as OS', detalhe_os: 'a OS',
     listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela',
-    preparar_folha: 'a folha', planejar: 'o planejamento', criar_os_conjugada: 'a OS conjugada'
+    preparar_folha: 'a folha', planejar: 'o planejamento', criar_os_conjugada: 'a OS conjugada', criar_grade: 'a grade'
   };
 
   /* ---------------- markdown simples (seguro) ---------------- */
