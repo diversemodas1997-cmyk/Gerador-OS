@@ -128,6 +128,9 @@ ok('18. a folha de OS (print) segue a tela da lista de OS', t.api.temAcesso('os'
 t = novo({ acessosVisao: { nathaly: { colorimetro: false } } });
 ok('19. Colorimetro tem o seu Ver', t.api.podeVerPagina('colorimetro') === false);
 ok('20. area so de consulta nao se edita', t.api.contaEditaTela('ranking', N, 'usuario') === false);
+t = novo({ acessosVisao: { nathaly: { inicio: false } } });
+ok('21a. o Inicio tem o seu Ver', t.api.podeVerPagina('home') === false && t.api.podeVerPagina('lista-os') === true);
+ok('21b. e e so de consulta', t.api.contaEditaTela('home', N, 'usuario') === false);
 ok('21. admin edita e ve tudo', t.api.contaEditaTela('cad-equipe', N, 'admin') && t.api.contaVeTela('corte-sc', N, 'admin'));
 
 (async () => {

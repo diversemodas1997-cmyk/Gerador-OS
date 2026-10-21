@@ -141,7 +141,7 @@
       const pecas = porTam.reduce((s, x) => s + x[1], 0);
       if (!pecas) return;
       const skus = typeof skusDaOS === 'function' ? skusDaOS(o) : [];
-      const base = { osId: o.id, os: o.os || '—', modelo: o.modeloNome || '', pecas, data: dataIso, skus };
+      const base = { osId: o.id, os: o.os || '—', modelo: o.modeloNome || '', pecas, data: dataIso, em: data.toISOString(), skus };
       if (skus.length !== 1) {
         pendencias.push(Object.assign(base, { motivo: skus.length ? 'mais de uma cor (' + skus.join(', ') + ') — lance à mão' : 'a OS não tem SKU (Linha SKU do modelo/desenho e Sigla SKU da cor)' }));
         return;
@@ -153,7 +153,7 @@
       }
       porTam.forEach(([tam, q]) => entradas.push({
         id: 'os:' + o.id + ':' + tam, tipo: 'entrada', origem: 'os', produtoId: p.id, tamanho: tam,
-        data: dataIso, qtd: q, custo: 0, osId: o.id, os: o.os || '', criadoEm: data.toISOString()
+        data: dataIso, qtd: q, custo: 0, osId: o.id, os: o.os || '', sku: p.sku, criadoEm: data.toISOString()
       }));
     });
     return { entradas, pendencias, semInicio: false };
@@ -973,6 +973,41 @@
     garantirInicio().then(marcou => { if (marcou) { try { fn(); } catch (e) { } } });
   };
 
+  /* OS AVISOS DO SINO (21/10/2026): a coluna Avisar da área "Estoque
+     confecção" em Configurações. Três notícias, montadas aqui e desenhadas pelo
+     painel de avisos do app.js (_avisosEventos):
+       · acab-os   — a OS entrou no estoque (a entrada foi lançada sozinha);
+       · acab-pend — a OS entrou no estoque mas espera SKU: fica no sino
+                     enquanto estiver pendente, como o planejamento à espera;
+       · acab-erp  — saídas importadas do ERP, uma notícia por importação.
+     'quem' das OS é vazio: o carimbo da etapa não guarda quem marcou. */
+  function acabAvisos(limiteMs) {
+    const ev = [];
+    const r = _entradasDasOS();
+    const porOS = new Map();
+    r.entradas.forEach(e => {
+      const g = porOS.get(e.osId) || { e, pecas: 0 };
+      g.pecas += Number(e.qtd) || 0;
+      porOS.set(e.osId, g);
+    });
+    porOS.forEach(({ e, pecas }) => {
+      if (Date.parse(e.criadoEm) < limiteMs) return;
+      ev.push({ tipo: 'acab-os', osId: e.osId, os: e.os, quem: '', em: e.criadoEm, texto: e.sku + ' · ' + fmtN(pecas) + ' peças' });
+    });
+    r.pendencias.forEach(p => ev.push({ tipo: 'acab-pend', osId: p.osId, os: p.os, quem: '', em: p.em, texto: p.motivo }));
+    const lotes = new Map();
+    movs().filter(m => m.origem === 'erp' && m.criadoEm && Date.parse(m.criadoEm) >= limiteMs).forEach(m => {
+      const k = (m.erpArquivo || '') + '|' + String(m.criadoEm).slice(0, 16);
+      const g = lotes.get(k) || { m, n: 0, pecas: 0 };
+      g.n++; g.pecas += Number(m.qtd) || 0;
+      lotes.set(k, g);
+    });
+    lotes.forEach(({ m, n, pecas }) => ev.push({ tipo: 'acab-erp', osId: '', os: '', quem: m.criadoPor || '', em: m.criadoEm,
+      dataOe: m.data, n, texto: fmtN(n) + ' saídas · ' + fmtN(pecas) + ' peças' + (m.erpArquivo ? ' · ' + m.erpArquivo : '') }));
+    return ev;
+  }
+  window.acabAvisos = acabAvisos;
+
   // Para os testes (node): as contas, sem a tela.
-  window._acabInterno = { _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg };
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg };
 })();

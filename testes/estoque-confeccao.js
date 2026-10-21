@@ -136,6 +136,27 @@ const snap = I.acabSnapshotContab();
 ok('26. por SKU, a quantidade (lançamentos + OS), no formato do Render',
    snap.total === 14 + 188 && snap.itens.length === 1 && snap.itens[0].sku === 'CM.LISA-PRE' && snap.itens[0].codigo === 12 && 'preco' in snap.itens[0], snap);
 
+console.log('\n-- os avisos do sino --');
+{
+  const st = { meta: { acabConfig: { inicio: INICIO } }, acabProdutos: [P1], ordens: [
+      osDe('o1', '0656', '2026-10-21T13:00:00Z'),
+      osDe('o3', '0659', '2026-10-21T14:00:00Z', { skus: ['CM.LISA-BRA'] })],
+    acabMov: [
+      { id: 'e1', tipo: 'saida', origem: 'erp', produtoId: 'p1', tamanho: 'M', data: '2026-10-21', qtd: 3, erpArquivo: 'vendas.pdf', criadoEm: '2026-10-21T15:00:10Z', criadoPor: 'escritorio@diverse.local' },
+      { id: 'e2', tipo: 'saida', origem: 'erp', produtoId: 'p1', tamanho: 'G', data: '2026-10-21', qtd: 2, erpArquivo: 'vendas.pdf', criadoEm: '2026-10-21T15:00:40Z', criadoPor: 'escritorio@diverse.local' },
+      { id: 'e3', tipo: 'saida', origem: 'manual', produtoId: 'p1', tamanho: 'G', data: '2026-10-21', qtd: 1, criadoEm: '2026-10-21T15:05:00Z' }] };
+  const av = carrega(st)._acabInterno.acabAvisos(ms('2026-10-01T00:00:00Z'));
+  const tipos = av.map(e => e.tipo).sort().join(',');
+  ok('35a. a OS que entrou, a que espera SKU e a importação do ERP', tipos === 'acab-erp,acab-os,acab-pend', av);
+  ok('35b. a OS que entrou diz o SKU e as peças', av.find(e => e.tipo === 'acab-os').texto === 'CM.LISA-PRE · 188 peças', av);
+  ok('35c. a importação vira um aviso só, com quem importou', av.filter(e => e.tipo === 'acab-erp').length === 1
+     && /2 saídas · 5 peças/.test(av.find(e => e.tipo === 'acab-erp').texto) && av.find(e => e.tipo === 'acab-erp').quem === 'escritorio@diverse.local', av);
+  const velho = carrega(st)._acabInterno.acabAvisos(ms('2026-10-22T00:00:00Z'));
+  ok('35d. fora da janela de dias some, mas a OS esperando SKU continua', velho.map(e => e.tipo).join() === 'acab-pend', velho);
+  ok('35e. os três tipos são da área Estoque confecção, com a coluna Avisar', /'acab-os': 'estoque-confeccao', 'acab-pend': 'estoque-confeccao', 'acab-erp': 'estoque-confeccao'/.test(app)
+     && /'estoque-confeccao': 'OS que entrou no estoque/.test(app) && /acabAvisos\(limite\)/.test(app));
+}
+
 console.log('\n-- a ligação com o programa --');
 ok('27. as chaves entram nas duas listas do app.js', (app.match(/'costuraProd','acabProdutos','acabMov'/g) || []).length === 2);
 ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque confecção'/.test(app)

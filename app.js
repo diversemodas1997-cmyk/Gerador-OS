@@ -2196,6 +2196,10 @@ const ACESSO_PADRAO = {
    folhas avulsas) é de todos. Ranking e Relatório de produção não têm o que
    editar, mas têm o que esconder: entram como áreas só de visão. */
 const VISAO_PAGINAS = {
+  // O INÍCIO (21/10/2026, Junior: "insira também o início como item a ser
+  // configurado como concedido para perfis"). Sem o Ver, a conta abre o
+  // programa na primeira tela do menu que ela vê (ver goto).
+  'inicio': ['home'],
   'os': ['lista-os', 'nova-os', 'print'],
   'planejamento': ['planejamento-producao'],
   'demanda': ['relatorio-demanda'],
@@ -2212,6 +2216,7 @@ const VISAO_PAGINAS = {
   'colorimetro': ['colorimetro']
 };
 const AREAS_SO_VISAO = [
+  { k: 'inicio', rotulo: 'Início', desc: 'O painel de abertura: os cartões das fases, as contagens e os atalhos (só consulta)' },
   { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
   { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' },
   { k: 'colorimetro', rotulo: 'Colorímetro', desc: 'A medição de cor das amostras (CHNSpec DS-01)' }
@@ -2435,7 +2440,9 @@ const AVISOS_TIPOS_AREA = {
   os: 'os', obs: 'os', etiqueta: 'os',
   status: 'os-status',
   oe: 'expedicao',
-  plan: 'planejamento'
+  plan: 'planejamento',
+  // Estoque confecção (21/10/2026): ver acabAvisos, no estoque-confeccao.js.
+  'acab-os': 'estoque-confeccao', 'acab-pend': 'estoque-confeccao', 'acab-erp': 'estoque-confeccao'
 };
 const AREAS_SO_AVISO = [
   { k: 'mensagens-todos', rotulo: 'Mensagens para @todos',
@@ -2447,6 +2454,7 @@ const AVISOS_DA_AREA = {
   'os-status': 'mudança de status das OS',
   'expedicao': 'OE montada',
   'planejamento': 'planejamento à espera de aprovação',
+  'estoque-confeccao': 'OS que entrou no estoque, OS esperando SKU e saídas importadas do ERP',
   'mensagens-todos': 'recados para @todos'
 };
 
@@ -2484,6 +2492,14 @@ async function definirAviso(emailOuNome, area, permitido) {
   toast(`${login}: ${permitido ? 'recebe' : 'não recebe'} avisos de ${def.rotulo.toLowerCase()}`, 'ok');
 }
 window.definirAviso = definirAviso;
+
+// A primeira tela do menu que a conta vê — para onde vai quem não vê o Início.
+// Configurações é de todos, então sempre há para onde ir.
+function _primeiraPaginaVisivel() {
+  const links = Array.from(document.querySelectorAll('.sidebar .nav-btn[data-page]'));
+  const a = links.find(x => x.dataset.page !== 'home' && podeVerPagina(x.dataset.page));
+  return (a && a.dataset.page) || 'config';
+}
 
 // Esconde do menu as telas que a conta não vê, e o grupo que ficar vazio.
 function _aplicarVisaoMenu() {
@@ -4570,8 +4586,11 @@ function goto(page) {
   // A tela de uma área que a conta não VÊ fecha na rota — o menu já a esconde,
   // mas dá para chegar pelo endereço, pela aba nova e pelos cartões do Início.
   if (!podeVerPagina(page)) {
-    toast('Seu acesso não inclui ver esta área — peça ao admin', 'err');
-    page = 'home';
+    // O Início também pode ser tirado de uma conta (21/10/2026). Abrir o
+    // programa cai nele sem ninguém ter pedido, e por isso aí não há recado:
+    // a conta vai direto para a primeira tela do menu que ela vê.
+    if (page !== 'home') toast('Seu acesso não inclui ver esta área — peça ao admin', 'err');
+    page = podeVerPagina('home') ? 'home' : _primeiraPaginaVisivel();
   }
   _salvarScrollPaginaAtual();  // guarda onde o usuario estava na pagina anterior
   _enderecoDaPagina(page);     // a area vira endereco: aba nova, F5 e voltar funcionam
@@ -37163,6 +37182,12 @@ function _avisosEventos() {
     ev.push({ tipo: 'plan', osId: '', planId: p.id, os: '', quem: p.criadoPor || '', em: t,
               texto: _planResumo(p) });
   });
+  /* O ESTOQUE CONFECÇÃO (21/10/2026): a OS que entrou no estoque, a que espera
+     SKU (fica enquanto estiver pendente, como o planejamento) e as saídas
+     importadas do ERP. Montados no estoque-confeccao.js. */
+  if (typeof acabAvisos === 'function') {
+    try { acabAvisos(limite).forEach(e => ev.push(e)); } catch (e) { console.warn('avisos do estoque confecção', e); }
+  }
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
   let vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
@@ -37625,6 +37650,24 @@ function renderAvisos() {
         cabec = `<b>aguardando aprovação</b>${porQuem}`;
         if (e.texto) corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
         abrir = `fecharAvisos(); goto('planejamento-producao')`;
+      } else if (e.tipo === 'acab-os') {
+        icone = '📦';
+        titulo = `OS ${esc(e.os)}`;
+        cabec = '<b>entrou no Estoque confecção</b>';
+        corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); goto('acab-estoque')`;
+      } else if (e.tipo === 'acab-pend') {
+        icone = '🏷️';
+        titulo = `OS ${esc(e.os)}`;
+        cabec = '<b>esperando SKU no Estoque confecção</b>';
+        corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); goto('acab-estoque')`;
+      } else if (e.tipo === 'acab-erp') {
+        icone = '🧾';
+        titulo = 'Saídas do ERP';
+        cabec = `<b>importadas</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        abrir = `fecharAvisos(); goto('acab-erp')`;
       } else if (e.tipo === 'oe') {
         icone = '🚚';
         titulo = `OE ${esc(formatDate(e.dataOe))}`;
@@ -37647,6 +37690,7 @@ function renderAvisos() {
       return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}${aberta ? ' aberta' : ''}"
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
                     : e.tipo === 'plan' ? 'Abrir o Planejamento de produção'
+                    : String(e.tipo).startsWith('acab-') ? 'Abrir o Estoque confecção'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
            onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}; atualizarBadgeAvisos()">
         <span class="aviso-icone">${icone}</span>
