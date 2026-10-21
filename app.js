@@ -3787,6 +3787,15 @@ async function loadState() {
         + divergentes.join(' · '));
     }
   } catch (e) { console.warn('recomputarQuantidadesOS', e); }
+  // Reparo: OS com a grade gravada nas unidades antigas (pano dobrado) — ver
+  // alinharGradeConvertidaOS. Sem isso a folha e a OE mostram o dobro de peças.
+  try {
+    const alinhadas = (STATE.ordens || []).filter(o => alinharGradeConvertidaOS(o)).map(o => o.os);
+    if (alinhadas.length) {
+      await saveState('ordens');
+      console.info(`OS com a grade alinhada ao cadastro (estava em dobro): ${alinhadas.join(', ')}`);
+    }
+  } catch (e) { console.warn('alinharGradeConvertidaOS', e); }
   // Cadastro de operações POR FUNÇÃO: traz para cada função as operações que ela
   // já executa no planejamento (sem tempo) e converte quem ainda estava no
   // formato de texto livre.
@@ -38097,6 +38106,39 @@ function recomputarQuantidadesOS(o) {
     mudou = true;
   }
   return mudou;
+}
+
+// A GRADE GRAVADA NA OS QUE FICOU EM UNIDADES ANTIGAS (21/10/2026).
+// Junior: "a OS656 é alocada no plano de expedição com 940 peças, sendo que o
+// total é na verdade 470". A grade da camiseta tubular era cadastrada já com o
+// pano dobrado (2M-2G-2G1-2G2-2G3) e passou a ser 1 por tamanho, com a camada
+// rendendo 2 (multiplicadorPecaOS). A OS guarda a grade de quando foi criada, e
+// a folha (e a OE, que lê dela) multiplicava a grade VELHA pelo rendimento NOVO:
+// 10 × 47 × 2 = 940. Os pacotes da expedição e as etiquetas já seguiam o
+// cadastro (_tamanhosDaGradeExpandido), por isso a carga tinha 5 pacotes e 940.
+//
+// Só alinha quando a divergência é exatamente essa conversão — cada tamanho
+// gravado = cadastro × rendimento da camada —, porque aí as duas grades dizem as
+// mesmas peças e só a unidade mudou. Outra divergência (alguém mudou a grade de
+// verdade) não é adivinhada aqui. OS finalizada ou cancelada fica como está.
+// Devolve true quando alinhou.
+function alinharGradeConvertidaOS(o) {
+  if (!o || !o.gradeId || !o.grade) return false;
+  const st = typeof _statusOS === 'function' ? _statusOS(o) : o.statusOS;
+  if (st === 'finalizado' || st === 'cancelado') return false;
+  const cad = (STATE.grades || []).find(x => x.id === o.gradeId);
+  if (!cad || !cad.tamanhos) return false;
+  const mult = multiplicadorPecaOS(o);
+  if (!(mult > 1)) return false;
+  const keys = ['p', 'm', 'g', 'gg', 'g1', 'g2', 'g3', 't2', 't4', 't6', 't8', 't10', 't12', 't14', 't16'];
+  const gravada = k => parseInt(o.grade[k], 10) || 0;
+  const doCad = k => parseInt(cad.tamanhos[k], 10) || 0;
+  if (!keys.some(k => gravada(k) !== doCad(k))) return false;
+  if (!keys.every(k => gravada(k) === doCad(k) * mult)) return false;
+  keys.forEach(k => { o.grade[k] = doCad(k); });
+  o.grade.total = keys.reduce((s, k) => s + doCad(k), 0);
+  recomputarQuantidadesOS(o);
+  return true;
 }
 
 // Fonte ÚNICA dos números do "Total por tamanho": quantidade por tamanho, por
