@@ -1,0 +1,2013 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- O ATALHO NA TELA DE INICIO DO CELULAR.
+     Na fabrica o programa nao tem endereco de site: e um IP digitado a mao
+     (https://192.168.1.158). Sem icone, cada consulta no celular comeca por
+     digitar o numero — e o numero errado abre a nuvem, que e outra copia.
+     Com o manifest, quem usa toca "Adicionar a tela de inicio" UMA vez e
+     depois abre por um icone, em tela cheia, sempre no mesmo servidor.
+
+     start_url e scope sao RELATIVOS ("."): na fabrica o app mora na raiz e na
+     copia da nuvem mora em /Gerador-OS/. Um caminho absoluto acertaria um dos
+     dois e quebraria o outro em silencio — o atalho abriria fora do escopo e
+     perderia a tela cheia. -->
+<link rel="manifest" href="manifest.json?v=2026-09-04">
+<link rel="icon" type="image/png" sizes="32x32" href="icones/favicon-32.png?v=2026-09-04">
+<meta name="theme-color" content="#1a1a1a">
+<!-- O iPhone NAO le o manifest para o icone nem para o nome: essas quatro
+     linhas sao o caminho dele, e sem elas o atalho sai com um retrato borrado
+     da tela no lugar do icone. A barra de status vai "black" e nao
+     "black-translucent" de proposito — a translucida poe o conteudo POR BAIXO
+     do relogio, e o cabecalho de cada tela nasceria cortado. -->
+<link rel="apple-touch-icon" href="icones/icone-180.png?v=2026-09-04">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Gerador OS">
+<title>Gerador de Ordem de Serviço · Confecção</title>
+<!-- Tudo servido pelo proprio site. Nenhum endereco externo aqui: na fabrica, o
+     programa roda contra o servidor da rede local e precisa abrir mesmo com a
+     internet fora. Um <script src> de CDN que nao baixa deixa a pagina em
+     branco, ainda que o servidor de dados esteja funcionando perfeitamente.
+     Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
+<link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
+<link rel="stylesheet" href="styles.css?v=2026-10-15b">
+<!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
+     ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
+<script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
+<script src="vendor/supabase-js-2.112.2.min.js"></script>
+<script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="vendor/jspdf-2.5.2.umd.min.js"></script>
+<script src="vendor/pdf-3.11.174.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <button type="button" class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Recolher o menu" aria-label="Recolher ou expandir o menu">‹</button>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">OS · GEN</div>
+      <div class="sub">Gerador de Ordem de Serviço</div>
+    </div>
+
+    <div class="auth-bar">
+      <div class="auth-logged-out" id="authLoggedOut">
+        <button class="btn-auth" onclick="abrirLogin()">Entrar / Criar conta</button>
+        <div class="auth-sub">Dados só neste navegador</div>
+      </div>
+      <div class="auth-logged-in hidden" id="authLoggedIn">
+        <div class="auth-identity">
+          <div class="auth-avatar" id="authAvatar" aria-hidden="true">–</div>
+          <div class="auth-who">
+            <div class="auth-email" id="authEmail">—</div>
+            <div class="auth-role" id="authRole"></div>
+          </div>
+          <!-- O SINO e o DESFAZER ficam junto do ícone do perfil: quem está
+               logado, o que chegou para essa pessoa e o que ela acabou de fazer
+               são a mesma pergunta. O sino expande a lista acumulada (o painel
+               logo abaixo, fora da barra lateral para não ser cortado por ela);
+               o ↩ só aparece quando há o que desfazer. -->
+          <span class="auth-icones">
+            <button type="button" class="auth-icone hidden" id="btnDesfazer" onclick="desfazerUltimaAcao()"
+                    title="Desfazer a última coisa que você fez" aria-label="Desfazer">↩</button>
+            <!-- O RECADO DE TODO MUNDO: um canal só, sem conversa privada. O
+                 ícone some quando o servidor não tem a tabela de mensagens. -->
+            <button type="button" class="auth-icone hidden" id="msgBotao" onclick="toggleMensagens()"
+                    title="Mensagens: o recado de todo mundo, num canal só" aria-label="Mensagens">💬<span
+                    class="nav-badge hidden" id="msgBadge">0</span></button>
+            <button type="button" class="auth-icone avisos-sino" id="avisosSino" onclick="toggleAvisos()"
+                    title="Avisos: observações, status, etiquetas impressas, OS geradas e OE montadas" aria-label="Avisos">🔔<span
+                    class="nav-badge hidden" id="avisosBadge">0</span></button>
+          </span>
+        </div>
+        <div class="modo-servidor" id="modoServidor" hidden>☁ Nuvem</div>
+        <div class="auth-sync" id="authSync">☁ Sincronizado</div>
+        <button class="btn-auth-sm" onclick="sairConta()">Sair</button>
+      </div>
+    </div>
+
+    <!-- SO AS OPCOES ROLAM. O cabecalho da barra — a marca e a caixa de quem
+         esta logado, com o sino, os recados e o botao Sair — fica parado no
+         topo; a lista de opcoes rola dentro desta caixa. Antes a barra inteira
+         rolava junto, e descer ate "Configuracoes" levava embora justamente o
+         que diz QUEM esta logado e SE esta sincronizado. -->
+    <div class="sidebar-nav">
+    <!-- OS QUATRO DE CIMA FICAM SOLTOS, fora de qualquer grupo (15/09/2026,
+         Junior). Nao sao area de nada: sao a porta de entrada, o gesto de criar
+         e a lista do que foi criado -- o comeco de todo caminho no programa.
+
+         Postos dentro de um grupo, sumiriam com ele quando alguem o recolhesse,
+         e o estado do grupo e guardado por maquina: a pessoa perderia
+         justamente os botoes que mais usa sem entender por que.
+
+         O RANKING DE PRODUCAO saiu do grupo Estoques e fica solto aqui, logo
+         abaixo de Ordens de Servico (16/09/2026, Junior).
+
+         ORDENS DE EXPEDICAO (a antiga "Expedicao") subiu de Operacoes para ca,
+         logo abaixo de Ordens de Servico (24/09/2026, Junior): OS e OE sao as
+         duas ordens que a fabrica emite, e ficam lado a lado.
+
+         ORDENS DE COMPRA (a antiga "Compra") veio no mesmo dia, logo abaixo
+         da Ordens de Expedicao: as tres ordens juntas.
+
+         GRADES saiu de Cadastros e fica solta aqui, logo abaixo de Inicio
+         (06/10/2026, Junior). A pagina continua sendo a cad-grades: a busca e o
+         resto da tela nao mudam, so o atalho do menu. -->
+    <div class="nav-solto">
+        <a class="nav-btn" href="#home" data-page="home" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Início</a>
+        <a class="nav-btn" href="#cad-grades" data-page="cad-grades" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="grades"></span>Grades</a>
+        <a class="nav-btn admin-only" href="#nova-os" data-page="nova-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Nova OS</a>
+        <a class="nav-btn" href="#ranking" data-page="ranking" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ranking de produção</a>
+        <a class="nav-btn" href="#planejamento-producao" data-page="planejamento-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="planejadas"></span>Planejamento de produção</a>
+    </div>
+
+    <!-- A PASTA ORDENS (16/10/2026): as tres ordens que a fabrica emite (OS,
+         OE e Compra) sairam do bloco solto e moram juntas neste grupo, no
+         mesmo lugar onde ficavam. -->
+    <div class="nav-group" data-group="ordens">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Ordens</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
+        <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Ordens de Expedição</a>
+        <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
+      </div>
+    </div>
+
+    <!-- A PASTA RELATORIOS (16/10/2026): os relatorios de producao e de
+         costura sairam do bloco solto e moram juntos neste grupo. -->
+    <div class="nav-group" data-group="relatorios">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Relatórios</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#relatorio-demanda" data-page="relatorio-demanda" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="demandas"></span>Relatório de demanda</a>
+        <a class="nav-btn" href="#relatorio-producao" data-page="relatorio-producao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório produção</a>
+        <a class="nav-btn" href="#relatorio-costura" data-page="relatorio-costura" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório de costura</a>
+      </div>
+    </div>
+
+    <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
+         seção "Principal" que era, na verdade, duas coisas empilhadas: as telas
+         do dia a dia de quem emite OS e compra pano, e os CAMPOS do fluxo, que
+         são o chão de fábrica. Quinze opções seguidas, sem divisão, e quem
+         procurava "Costurando · São Carlos" passava por "Compra" no caminho.
+
+         ESTOQUES é o que está PARADO esperando, na ordem do material: compra-se
+         o pano, ele chega (estoque de tecidos, em quilos), vira peça cortada
+         (estoque de corte, em peças, uma unidade em cada linha) e viaja entre as
+         unidades (estoque em trânsito, ida e volta). O Ranking morou aqui até
+         16/09/2026; hoje fica solto no topo da barra.
+
+         OPERAÇÕES é o que está ANDANDO: a costura e a retirada de fios — o que
+         alguém está FAZENDO com a peça. A viagem saiu daqui em 18/09/2026: peça
+         em caminhão está parada, ninguém trabalha nela enquanto ela anda, e é
+         estoque como o corte ensacado.
+
+         E no mesmo dia entraram COMPRA e EXPEDIÇÃO, que também são trabalho de
+         gente e não pano guardado: comprar é decidir o que vai ser pedido, e a
+         Expedição é onde se aloca OS em carga, se muda horário e se imprime a
+         folha da doca. As duas se mexem todo dia, e é por isso que ficam no
+         topo do grupo. -->
+    <div class="nav-group" data-group="estoques">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
+        <a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de materiais</a>
+        <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
+        <a class="nav-btn" href="#estoque-pecas" data-page="estoque-pecas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de peças</a>
+        <a class="nav-btn" href="#estoque-ferramentas" data-page="estoque-ferramentas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de ferramentas</a>
+        <a class="nav-btn" href="#corte" data-page="corte" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade Descalvado</a>
+        <a class="nav-btn" href="#corte-sc" data-page="corte-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque corte · Unidade São Carlos</a>
+        <!-- ESTOQUE COM FIO fica aqui, e não em Operações, porque é peça
+             PARADA: voltou de São Carlos costurada e espera a mesa de limpeza,
+             do mesmo jeito que o corte ensacado espera a costura. A Retirada de
+             fios, que é o trabalho, continua em Operações. -->
+        <a class="nav-btn" href="#estoque-fio" data-page="estoque-fio" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque com fio | Descalvado</a>
+        <a class="nav-btn" href="#estoque-fio-sc" data-page="estoque-fio-sc" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque com fio | São Carlos</a>
+        <!-- O TRÂNSITO É ESTOQUE, e não operação (18/09/2026, Junior: "o estoque
+             em trânsito deve mostrar o volume das OS que tem checkbox Expedição
+             Descalvado preenchido; quando Recebido em São Carlos for preenchido
+             esse volume migra para Estoque corte São Carlos"). É peça PARADA num
+             caminhão: ninguém trabalha nela enquanto viaja. Estava em Operações
+             junto da costura, que é trabalho de verdade. -->
+        <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · IDA</a>
+        <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · VOLTA</a>
+      </div>
+    </div>
+
+    <!-- O GRUPO OPERAÇÕES SAIU DA BARRA (24/09/2026, Junior: "retire os itens
+         Costurando unidade Descalvado e Costurando unidade São Carlos e
+         Retirando fios da barra lateral e retire a pasta Operações").
+
+         As três telas continuam existindo e contando igual: abrem pelos cartões
+         do Início (Costurando, Recebido em Descalvado, Retirada de fios) e pelo
+         endereço (#costurando, #costurando-sc, #fios) — ver
+         _PAGINAS_FORA_DO_MENU. Saiu só o atalho do menu. -->
+
+    <!-- Sem admin-only: os cadastros são de CONSULTA para todo mundo. Quem lê a
+         OS precisa poder abrir a grade, o tecido, a etapa. Escrever segue só do
+         admin — os botões de ação de cada tela é que são admin-only.
+
+         CADASTRO AQUI É "LISTA QUE SE MANTÉM", e não só as tabelas de apoio. Por
+         isso moram nesta seção, desde 15/09/2026, as Operações (a jornada de
+         cada posto) e a Expedição (as janelas e as cargas). As duas se cadastram
+         e se editam; o que está nos campos de Operações, ao lado, não se
+         cadastra — é onde a peça está, e isso o checklist da folha é que diz.
+
+         As Ordens de Serviço passaram por aqui e subiram para o topo solto: elas
+         nao sao uma lista de apoio como as outras, sao o registro que todas as
+         outras existem para montar.
+
+         EXPEDIÇÃO É O PRIMEIRO ITEM (18/09/2026, Junior). As outras listas daqui
+         mudam de mês em mês — marca, modelo, base, etapa se cadastram uma vez e
+         ficam. A Expedição se mexe TODO DIA: é nela que se aloca a OS na carga,
+         se muda o horário de um dia e se imprime a folha da doca. Estar no fim
+         de uma lista de quinze fazia procurá-la toda vez. -->
+    <div class="nav-group" data-group="cadastros">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Cadastros</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#cad-marcas" data-page="cad-marcas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="marcas"></span>Marcas</a>
+        <a class="nav-btn" href="#cad-colecoes" data-page="cad-colecoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="colecoes"></span>Coleções</a>
+        <a class="nav-btn" href="#cad-modelos" data-page="cad-modelos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="modelos"></span>Modelos</a>
+        <a class="nav-btn" href="#cad-linhas" data-page="cad-linhas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="linhas"></span>Linhas</a>
+        <a class="nav-btn" href="#cad-bases" data-page="cad-bases" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="bases"></span>Bases</a>
+        <a class="nav-btn" href="#cad-blocos" data-page="cad-blocos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="blocos"></span>Blocos / Revisões</a>
+        <a class="nav-btn" href="#cad-equipe" data-page="cad-equipe" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="equipe"></span>Equipe</a>
+        <a class="nav-btn" href="#cad-funcoes" data-page="cad-funcoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="funcoes"></span>Funções</a>
+        <a class="nav-btn" href="#operacoes" data-page="operacoes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="operacoes"></span>Operações</a>
+        <a class="nav-btn" href="#cad-etapas" data-page="cad-etapas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="etapas"></span>Etapas de produção</a>
+        <a class="nav-btn" href="#cad-componentes" data-page="cad-componentes" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="componentes"></span>Componentes</a>
+        <a class="nav-btn" href="#cad-tecidos" data-page="cad-tecidos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="tecidos"></span>Tecidos</a>
+        <a class="nav-btn" href="#cad-cores" data-page="cad-cores" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="cores"></span>Cores</a>
+        <a class="nav-btn" href="#cad-fornecedores" data-page="cad-fornecedores" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="fornecedores"></span>Fornecedores</a>
+        <a class="nav-btn" href="#cad-materiais-prod" data-page="cad-materiais-prod" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="materiaisCad"></span>Materiais</a>
+        <a class="nav-btn" href="#cad-materiais" data-page="cad-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="aviamentosCad"></span>Aviamentos</a>
+        <a class="nav-btn" href="#cad-pecas" data-page="cad-pecas" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="pecasTiposCad"></span>Peças</a>
+        <a class="nav-btn" href="#cad-desenhos" data-page="cad-desenhos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="desenhos"></span>Desenhos técnicos</a>
+      </div>
+    </div>
+
+    <div class="nav-group" data-group="sistema">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Sistema</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#config" data-page="config" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Configurações</a>
+      </div>
+    </div>
+    </div>
+  </aside>
+
+  <!-- O PAINEL DE AVISOS. Mora fora da <aside> de propósito: dentro dela seria
+       cortado pela rolagem do menu. Fica escondido até alguém clicar no sino, e
+       a posição é calculada na hora a partir do próprio sino (o menu recolhe e
+       vira gaveta no celular). -->
+  <!-- O PAINEL DE MENSAGENS. Mesma casa do painel de avisos: fora da <aside>
+       para não ser cortado pela rolagem do menu, e posicionado a partir do
+       próprio ícone. A conversa se lê de cima para baixo; o campo de escrever
+       fica no pé, onde a mão já está. -->
+  <div class="avisos-painel msg-painel hidden" id="msgPainel" role="dialog" aria-label="Mensagens">
+    <div class="avisos-topo">
+      <b>Mensagens</b>
+      <span class="avisos-resumo">todo mundo lê o que é escrito aqui</span>
+      <button type="button" class="avisos-fechar" onclick="fecharMensagens()" title="Fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="avisos-corpo" id="msg-lista"></div>
+    <!-- A tarja de "respondendo a fulano": quem digitou e foi tomar um cafe
+         precisa ver, ao voltar, que o recado vai sair recuado embaixo do outro.
+         Quem a preenche e _msgBarraResposta, no app.js. -->
+    <div class="msg-respondendo hidden" id="msg-respondendo"></div>
+    <!-- A lista que o @ abre. Fica ACIMA do campo (o campo mora no rodape do
+         painel; lista para baixo sairia da tela). Quem a preenche e
+         _msgDesenharMencao, no app.js. -->
+    <div class="msg-mencoes hidden" id="msg-mencoes"></div>
+    <div class="msg-escrever">
+      <input type="text" id="msg-texto" maxlength="2000" placeholder="Escreva um recado para todos… (@ chama alguem)"
+             autocomplete="off" oninput="_msgAoDigitar()" onblur="setTimeout(_msgFecharMencao, 150)"
+             onkeydown="_msgTecla(event)">
+      <button type="button" class="btn small primary" onclick="enviarMensagem()">Enviar</button>
+    </div>
+  </div>
+
+  <div class="avisos-painel hidden" id="avisosPainel" role="dialog" aria-label="Avisos">
+    <div class="avisos-topo">
+      <b>Avisos</b>
+      <span class="avisos-resumo" id="avisos-resumo"></span>
+      <!-- Limpar é marca de leitura, não apagamento: os recados seguem nas OS.
+           Vale só para quem limpou, e o painel vazio oferece o desfazer. -->
+      <button type="button" class="avisos-limpar" onclick="limparAvisos()"
+              title="Limpar a lista (só para você — os recados continuam nas OS)">Limpar</button>
+      <button type="button" class="avisos-fechar" onclick="fecharAvisos()" title="Fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="avisos-corpo" id="avisos-lista"></div>
+  </div>
+
+  <main class="content">
+    <!-- Banner de aviso de salvamento: aparece quando uma gravação é
+         bloqueada (trava anti-apagamento) ou falha por qualquer motivo. -->
+    <div id="alertaSalvamento" class="alerta-salvamento hidden" role="alert">
+      <span class="alerta-icone" id="alertaSalvamentoIcone">⛔</span>
+      <div class="alerta-texto">
+        <strong id="alertaSalvamentoTitulo">Problema ao salvar</strong>
+        <div id="alertaSalvamentoMsg"></div>
+      </div>
+      <div class="alerta-acoes">
+        <button class="btn small" onclick="recarregarForcado()">Recarregar agora</button>
+        <button class="btn small ghost" onclick="esconderAlertaSalvamento()" title="Fechar">✕</button>
+      </div>
+    </div>
+    <!-- ================= HOME ================= -->
+    <section class="page" data-page="home">
+      <div class="page-header">
+        <div>
+          <h1>Início</h1>
+          <div class="desc">Gerador de Ordem de Serviço para confecção · Modelo baseado em ficha técnica DIXIE</div>
+        </div>
+        <div class="actions">
+          <button class="btn primary admin-only" onclick="goto('nova-os')">+ Nova OS</button>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <strong>Como usar:</strong> Cadastre primeiro os tecidos, cores, materiais, modelos, coleções, grades e desenhos técnicos. Depois, em <b>Nova OS</b>, monte a ordem selecionando das opções cadastradas. Ao final, clique em <b>Gerar e Imprimir</b> para ver a folha A4.
+      </div>
+
+      <!-- OS ATALHOS DOS CADASTROS SAIRAM DAQUI (15/09/2026, Junior).
+
+           Eram dezesseis quadros, um por cadastro, cada um com a contagem
+           daquela lista. Faziam duas coisas ao mesmo tempo — levar à tela e
+           dizer quantos registros ela tem — e as duas o menu ao lado já fazia
+           melhor: ele está em TODAS as telas, e o Início não. Quem queria o
+           número tinha de voltar ao Início para vê-lo.
+
+           A contagem foi para o menu, na frente do nome de cada cadastro (ver
+           `nav-num` e atualizarContagensNav no app.js). Aqui fica só o resumo
+           do fluxo, que é o que não cabe em lugar nenhum além desta tela. -->
+      <!-- ============= DASHBOARD DO FLUXO =============
+           Por onde o produto passa, do corte ao estoque, numa tela só. Os
+           números saem dos MESMOS campos das telas do menu (FASES_ESTOQUE) —
+           aqui é o resumo, para não precisar abrir sete telas para saber onde
+           está a produção. Quem o desenha é renderFluxoDash(), no app.js, e ele
+           se redesenha sozinho enquanto o Início está aberto. -->
+      <div class="dash-fluxo" id="dash-fluxo"></div>
+    </section>
+
+    <!-- ================= CADASTROS GENÉRICOS ================= -->
+    <!-- TECIDOS -->
+    <!-- ================= ESTOQUE DE TECIDOS ================= -->
+    <!-- COMPRA: quanto pano uma produção vai pedir, ANTES de ela virar OS.
+         O formulário fica aqui no HTML fixo (e não dentro de #compra-painel)
+         de propósito: o painel se redesenha sozinho quando chega dado novo do
+         servidor, e o que o usuário escolheu não pode sumir no meio. -->
+    <section class="page hidden" data-page="compra">
+      <div class="page-header">
+        <div>
+          <h1>Ordens de Compra</h1>
+          <div class="desc">A necessidade <b>bruta</b> de tecido de uma produção que ainda não virou OS, em <b>bobinas</b> e em <b>quilos</b>. Você preenche a <b>grade</b> (que sabe as medidas de cada fase e quantas bobinas o enfesto gasta) e o <b>desenho técnico</b> (que sabe a cor de cada fase, e a gramatura é cadastrada por cor); o tamanho do lote entra em camadas ou em peças. É a mesma conta da folha de OS, feita antes de existir OS.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:14px;">Nova produção a comprar</h2>
+        <div class="form-grid cols-3">
+          <div class="field">
+            <label>Grade</label>
+            <select id="cp-grade" onchange="compraGradeMudou()"></select>
+            <div class="field-hint">De onde saem as fases do enfesto, as medidas de cada uma e a previsão de bobinas.</div>
+          </div>
+          <div class="field">
+            <label>Desenho técnico</label>
+            <select id="cp-desenho" onchange="compraCamadasMudou()"></select>
+            <div class="field-hint">De onde sai a cor de cada fase — e a gramatura, que é o que transforma metro em quilo.</div>
+          </div>
+          <div class="field">
+            <label>Enfestos iguais</label>
+            <input type="number" id="cp-rep" min="1" step="1" value="1" oninput="compraPrevia()">
+            <div class="field-hint">Quantas vezes esta mesma produção se repete.</div>
+          </div>
+          <div class="field">
+            <label>Camadas do enfesto</label>
+            <input type="number" id="cp-camadas" min="0" step="1" oninput="compraCamadasMudou()" placeholder="Ex.: 80">
+            <div class="field-hint">Nasce no máximo do tecido da grade (moletom 36, malha 80). Digite por cima para um lote menor.</div>
+          </div>
+          <div class="field">
+            <label>Peças</label>
+            <input type="number" id="cp-pecas" min="0" step="1" onchange="compraPecasMudou()" placeholder="sai das camadas">
+            <div class="field-hint">O mesmo lote visto do outro lado: digitar aqui recalcula as camadas (para cima — meia camada não existe).</div>
+          </div>
+          <div class="field">
+            <label>Observação (opcional)</label>
+            <input type="text" id="cp-obs" placeholder="Ex.: reposição de agosto">
+          </div>
+        </div>
+        <div id="cp-previa"></div>
+        <div style="margin-top:10px;">
+          <!-- Não é admin-only: somar na lista de compra está aberto a quem tem
+               conta (ver exigirEdicaoCompra). Limpar a lista inteira, não. -->
+          <button class="btn primary registro-only" onclick="compraAdicionar()">+ Somar à compra</button>
+        </div>
+      </div>
+
+      <div id="compra-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="estoque">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de tecidos</h1>
+          <div class="desc">Saldo em kg por tecido e por cor. As saídas são lançadas automaticamente quando você salva uma OS (consumo do enfesto). Use os botões para registrar entradas (compras) e ajustes manuais.</div>
+        </div>
+        <!-- Quem lança no estoque de tecidos: o admin e a conta nomeada em
+             LOGINS_ESTOQUE_TECIDOS (app.js). Por isso a classe própria, e não
+             admin-only. -->
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirMovEstoque('entrada')">+ Entrada (compra)</button>
+          <button class="btn" onclick="abrirMovEstoque('saida')">− Saída / ajuste</button>
+        </div>
+      </div>
+      <div id="estoque-painel"></div>
+    </section>
+
+    <!-- ESTOQUE DE AVIAMENTOS (24/09/2026): fio, linha, etiqueta, botão e viés,
+         em kg, por cor. Quem lança é quem lança no estoque de tecidos. -->
+    <section class="page hidden" data-page="estoque-aviamentos">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de aviamentos</h1>
+          <div class="desc">Fio, linha, etiqueta, botão e viés, em unidades e/ou kg, por cor, separados por unidade (Descalvado e São Carlos). Entrada, saída, residual (estocado), corrente e total no período escolhido. Entradas e saídas avulsas são lançadas à mão; o aviamento de cada OS fica reservado até a costura e sai sozinho quando ela é marcada, do estoque da unidade que costurou.</div>
+        </div>
+        <div class="actions">
+          <button class="btn accent" onclick="goto('print-aviamentos')" title="A folha dos aviamentos com saldo da unidade aberta, no formato da folha de OE, para conferir a prateleira">🖨 Folha dos aviamentos</button>
+          <button class="btn primary estoque-tecidos-only" onclick="abrirMovAviamento('entrada')">+ Entrada</button>
+          <button class="btn estoque-tecidos-only" onclick="abrirMovAviamento('saida')">− Saída</button>
+        </div>
+      </div>
+      <div id="aviamentos-painel"></div>
+    </section>
+
+    <!-- ESTOQUE DE PEÇAS e ESTOQUE DE FERRAMENTAS (25/09/2026): cadastro dos
+         tipos, com o que está em uso e o que está em estoque, por unidade.
+         Quem cadastra é quem lança no estoque de tecidos. -->
+    <!-- ESTOQUE DE MATERIAIS (28/09/2026): o mesmo cadastro das peças e
+         ferramentas, com o setor que usa o material. -->
+    <section class="page hidden" data-page="estoque-materiais">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de materiais</h1>
+          <div class="desc">Cadastro dos tipos de materiais usados na produção, com o setor que os usa e a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Cada linha tem <b>+ entrada</b> (chegou ou voltou do uso) e <b>− saída</b> (posto em uso ou baixa); tudo fica no histórico abaixo.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirEstoqueItem('materiais')">+ Cadastrar material</button>
+        </div>
+      </div>
+      <div id="materiais-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="estoque-pecas">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de peças</h1>
+          <div class="desc">Cadastro dos tipos de peças, com a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Cada linha tem <b>+ entrada</b> (chegou ou voltou do uso) e <b>− saída</b> (posta em uso ou baixa); tudo fica no histórico abaixo.</div>
+        </div>
+        <div class="actions">
+          <button class="btn accent" onclick="goto('print-pecas')" title="A folha das peças da unidade aberta, no formato da folha de OE, para conferir a prateleira">🖨 Folha das peças</button>
+          <button class="btn primary estoque-tecidos-only" onclick="abrirEstoqueItem('pecas')">+ Cadastrar peça</button>
+        </div>
+      </div>
+      <div id="pecas-painel"></div>
+    </section>
+
+    <!-- RELATORIO DE DEMANDA (16/10/2026, Junior): o degrau ANTES do
+         planejamento. Quem pede reposicao preenche so o desenho tecnico (SKU
+         e cor), o tamanho e a quantidade — sem grade, fase nem camada. O
+         agrupamento soma as demandas do mesmo desenho e acha a grade; o
+         "Aprovar" dele (so admin) abre o planejamento ja preenchido. -->
+    <section class="page hidden" data-page="relatorio-demanda">
+      <div class="page-header">
+        <div><h1>Relatório de demanda</h1><div class="desc">As quantidades que precisam de reposição: escolha o desenho técnico (SKU e cor), o tamanho e a quantidade. As demandas do mesmo desenho são somadas no quadro <b>Agrupamento em grades</b>, no Planejamento de produção, com a grade que melhor as atende — e, aprovadas pelo admin, viram planejamento.</div></div>
+      </div>
+      <div class="card admin-only" id="dem-form">
+        <div class="card-title" id="dem-form-titulo">Nova demanda</div>
+        <input type="hidden" id="dem-id">
+        <div class="form-grid cols-3" style="gap:8px;align-items:end;">
+          <div class="field">
+            <label>Desenho técnico (SKU e cor)</label>
+            <input type="search" id="dem-desenho-busca" placeholder="Buscar: código, descrição, cor ou SKU…" autocomplete="off" spellcheck="false" oninput="_demFiltrarDesenhos()" style="margin-bottom:6px;">
+            <select id="dem-desenho"></select>
+          </div>
+          <div class="field">
+            <label>Tamanho</label>
+            <select id="dem-tam">
+              <option value="">— selecione —</option>
+              <optgroup label="Adulto">
+                <option value="p">P</option><option value="m">M</option><option value="g">G</option><option value="gg">GG</option>
+                <option value="g1">G1</option><option value="g2">G2</option><option value="g3">G3</option>
+              </optgroup>
+              <optgroup label="Infantil">
+                <option value="t2">2</option><option value="t4">4</option><option value="t6">6</option><option value="t8">8</option>
+                <option value="t10">10</option><option value="t12">12</option><option value="t14">14</option><option value="t16">16</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="field">
+            <label>Quantidade (peças)</label>
+            <input type="number" id="dem-qtd" min="1" placeholder="Ex.: 40">
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+          <button type="button" class="btn hidden" id="dem-cancelar" onclick="_demLimparForm()">Cancelar edição</button>
+          <button type="button" class="btn primary" onclick="salvarDemanda()">Salvar demanda</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Demandas</div>
+        <div id="rel-demanda-lista"></div>
+      </div>
+    </section>
+
+    <section class="page hidden" data-page="estoque-ferramentas">
+      <div class="page-header">
+        <div>
+          <h1>Estoque de ferramentas</h1>
+          <div class="desc">Cadastro dos tipos de ferramentas, com a quantidade em uso e em estoque, separados por unidade (Descalvado e São Carlos). Cada linha tem <b>+ entrada</b> (chegou ou voltou do uso) e <b>− saída</b> (posta em uso ou baixa); tudo fica no histórico abaixo.</div>
+        </div>
+        <div class="actions estoque-tecidos-only">
+          <button class="btn primary" onclick="abrirEstoqueItem('ferramentas')">+ Cadastrar ferramenta</button>
+        </div>
+      </div>
+      <div id="ferramentas-painel"></div>
+    </section>
+
+    <!-- RANKING DE PRODUÇÃO: o que a fábrica mais faz, cruzando SKU, cor e grade -->
+    <section class="page hidden" data-page="ranking">
+      <div class="page-header">
+        <div>
+          <h1>Ranking de produção</h1>
+          <div class="desc">O que a fábrica mais produz, cruzando <b>tipo de enfesto</b>, <b>cor</b> e <b>grade</b> — ex.: <b>CM.LISA · Preto · P ao G3</b>. Sai das OS emitidas: o tipo e a grade vêm da grade cadastrada, e a cor é a do <b>corpo</b> (primeira fase do enfesto), sem o nome do tecido. Serve para saber onde tempo cadastrado, gramatura e estoque de tecido rendem mais.</div>
+        </div>
+      </div>
+      <div id="ranking-painel"></div>
+    </section>
+
+    <!-- RELATORIO DE PRODUCAO (08/10/2026, Junior): a folha do resumo por
+         status, diaria, semanal, mensal ou anual. Os controles moram no
+         page-header, que some no papel. -->
+    <section class="page hidden" data-page="relatorio-producao">
+      <div class="page-header">
+        <div>
+          <h1>Relatório de produção</h1>
+          <div class="desc">Resumo por status do período escolhido: o que já estava, o que entrou, o que saiu e o que ficou em cada status — as mesmas contas dos quadros do Início, pela hora da alteração de status de cada OS.</div>
+        </div>
+        <div class="rel-ctrl">
+          <label>Período <select id="rel-prod-escala" onchange="_relProdTrocar()"></select></label>
+          <button type="button" class="btn small ghost" onclick="_relProdAndar(-1)" title="Período anterior">◀</button>
+          <label>Data de referência <input type="date" id="rel-prod-data" onchange="_relProdTrocar()"></label>
+          <button type="button" class="btn small ghost" onclick="_relProdAndar(1)" title="Período seguinte">▶</button>
+          <button type="button" class="btn" onclick="salvarRelProdNaPasta()" title="Grava a folha em PDF na pasta dos relatórios (Configurações)">💾 Salvar na pasta</button>
+          <button type="button" class="btn primary" onclick="imprimirRelProd()" title="Imprime a folha; com a pasta conectada, grava também o PDF nela">Imprimir / PDF</button>
+        </div>
+      </div>
+      <div id="rel-prod-folha"></div>
+    </section>
+
+    <!-- RELATORIO DE COSTURA (14/10/2026, Junior): quem costurou o que, em
+         qual OS, de que hora a que hora. O formulario de lancamento e a lista
+         de conferencia sao .no-print: no papel sai so a folha. -->
+    <section class="page hidden" data-page="relatorio-costura">
+      <div class="page-header">
+        <div>
+          <h1>Relatório de costura</h1>
+          <div class="desc">Uma aba por unidade. As OS com status Costurando daquela unidade aparecem aqui, cada uma com o seu lançamento: costureira, operação da etapa de costura, unidades e horário. Somado por OS e por costureira no período escolhido.</div>
+        </div>
+        <div class="rel-ctrl">
+          <label>Período <select id="rel-cost-escala" onchange="_relCostTrocar()"></select></label>
+          <button type="button" class="btn small ghost" onclick="_relCostAndar(-1)" title="Período anterior">◀</button>
+          <label>Data de referência <input type="date" id="rel-cost-data" onchange="_relCostTrocar()"></label>
+          <button type="button" class="btn small ghost" onclick="_relCostAndar(1)" title="Período seguinte">▶</button>
+          <label>Costureira <select id="rel-cost-pessoa" onchange="_relCostTrocar()"></select></label>
+          <button type="button" class="btn primary" onclick="window.print()" title="Imprime a folha do relatório">Imprimir / PDF</button>
+        </div>
+      </div>
+      <div id="rel-cost-abas" class="no-print"></div>
+      <div id="rel-cost-form" class="no-print"></div>
+      <div id="rel-cost-folha"></div>
+    </section>
+
+    <section class="page hidden" data-page="corte">
+      <div class="page-header">
+        <div>
+          <h1>Estoque corte · Unidade Descalvado</h1>
+          <div class="desc">O corte <b>ensacado</b>, esperando a costura: as OS cujo status é <b>Ensacado</b>. Peça que ainda está sendo cortada não entra aqui — enquanto o status for <b>Cortando</b>, o trabalho está na mesa, não na prateleira. Ao mudar o status (Costurando, Estoque…) a OS sai daqui e vai para o campo dela.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="corte-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="costurando">
+      <div class="page-header">
+        <div>
+          <h1>Costurando · Unidade Descalvado</h1>
+          <div class="desc">Peças em costura <b>aqui</b>, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada e a OS <b>não</b> tem <b>Recebido em São Carlos</b>; sai quando outra etapa vira a última marcada. A coluna <b>OS</b> mostra todas as OSs que já passaram por esta costura. Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="costurando-painel"></div>
+    </section>
+
+    <!-- ESTOQUE COM FIO: o que voltou de São Carlos e ainda não foi limpo. -->
+    <section class="page hidden" data-page="estoque-fio">
+      <div class="page-header">
+        <div>
+          <h1>Estoque com fio | Descalvado</h1>
+          <div class="desc">O que voltou da costura e ainda tem fio solto, esperando a mesa de limpeza. A OS entra aqui quando <b>Recebido em Descalvado</b> é marcada no checklist, e sai para <b>Retirada de fios</b> quando essa caixa é marcada.</div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="estoque-fio-painel"></div>
+    </section>
+
+    <!-- ESTOQUE COM FIO | SÃO CARLOS: costurado lá, com fio, esperando o
+         caminhão de volta. Não nasce de caixa do checklist — nenhuma diz isso —,
+         e sim do carimbo do status. Ver a constante `estoque-fio-sc`. -->
+    <section class="page hidden" data-page="estoque-fio-sc">
+      <div class="page-header">
+        <div>
+          <h1>Estoque com fio | São Carlos</h1>
+          <div class="desc">O que foi costurado em São Carlos e ainda tem fio solto, esperando o caminhão de volta. A OS entra aqui quando alguém carimba o status <b>Estoque com fio | São Carlos</b> — não há caixa no checklist que diga isso — e sai quando <b>Expedição São Carlos X Desc.</b> é marcada.</div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="estoque-fio-sc-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="transito-ida">
+      <div class="page-header">
+        <div>
+          <h1>Em trânsito · IDA</h1>
+          <div class="desc">O que saiu de Descalvado e ainda não foi recebido em São Carlos. A OS entra aqui sozinha na proporção dos pacotes alocados numa <b>expedição de ida</b>; o que não foi na carga fica no campo de origem. Sai quando <b>Recebido em São Carlos</b> é marcada no checklist.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="transito-ida-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="corte-sc">
+      <div class="page-header">
+        <div>
+          <h1>Estoque corte · Unidade São Carlos</h1>
+          <div class="desc">O corte <b>ensacado</b> que está em São Carlos. A OS chega aqui de dois jeitos: pela caixa <b>Recebido em São Carlos</b> no checklist, ou <b>sozinha</b>, quando a data de uma expedição <b>Desc × São Carlos</b> em que ela foi alocada chega — só a parte alocada migra, e o resto continua no corte de Descalvado. Mudar o status (Costurando…) tira a OS daqui.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="corte-sc-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="costurando-sc">
+      <div class="page-header">
+        <div>
+          <h1>Costurando · Unidade São Carlos</h1>
+          <div class="desc">Peças em costura <b>em São Carlos</b>, em peças por tecido e cor. Recebe a OS quando a etapa <b>Costura</b> é a última marcada e a OS <b>tem</b> <b>Recebido em São Carlos</b>. Use os botões para contagem física e ajustes manuais.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="costurando-sc-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="transito-volta">
+      <div class="page-header">
+        <div>
+          <h1>Em trânsito · VOLTA</h1>
+          <div class="desc">O que saiu de São Carlos e ainda não foi recebido em Descalvado. A OS entra aqui sozinha na proporção dos pacotes alocados numa <b>expedição de volta</b>; o que não foi na carga fica no campo de origem. Sai quando <b>Recebido em Descalvado</b> é marcada no checklist.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="transito-volta-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="fios">
+      <div class="page-header">
+        <div>
+          <h1>Retirada de fios</h1>
+          <div class="desc">OSs cuja última etapa marcada é <b>Retirada de fios</b> <i>ou</i> <b>Recebido em Descalvado</b> — o que volta de São Carlos cai aqui. Ao marcar outra etapa (Ensaque, Expedição, Estoque…) a OS sai daqui e vai para o campo dela.</div>
+        </div>
+        <!-- VOLTAR AO DASHBOARD. Quem chega aqui quase sempre veio de um
+             cartão do Início, e o caminho de volta era o menu — sete opções
+             para desfazer um clique. -->
+        <div class="actions">
+          <button class="btn" onclick="goto('home')" title="Voltar ao resumo de todos os campos, na tela de Início">← Voltar ao dashboard</button>
+        </div>
+      </div>
+      <div id="fios-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="operacoes">
+      <div class="page-header">
+        <div>
+          <h1>Operações</h1>
+          <div class="desc">Planejamento diário da <b>jornada de cada posto</b>. A operação é o processo completo de uma <b>função</b> cadastrada — hora de início e tempo total até concluir, com todas as etapas internas subentendidas. Os postos correm em paralelo, cada um na sua faixa do dia.</div>
+        </div>
+      </div>
+      <div id="operacoes-painel"></div>
+    </section>
+
+    <section class="page hidden" data-page="expedicao">
+      <div class="page-header">
+        <div>
+          <h1>Ordens de Expedição</h1>
+          <div class="desc">As OSs atualmente em expedição e o planejamento das cargas que saem nas janelas cadastradas.</div>
+        </div>
+      </div>
+      <div class="exp-tabs no-print">
+        <button type="button" class="exp-tab active" data-exptab="estoque" onclick="trocarAbaExpedicao('estoque')">Expedição · fim do fluxo</button>
+        <button type="button" class="exp-tab" data-exptab="plano" onclick="trocarAbaExpedicao('plano')">Planejamento de expedição</button>
+      </div>
+      <div id="expedicao-aba-estoque">
+        <div class="info-box">OSs cuja última etapa marcada é <b>Expedição</b>. Ao marcar outra etapa (Estoque…) a OS sai daqui e vai para o campo dela.</div>
+        <div id="expedicao-painel"></div>
+      </div>
+      <div id="expedicao-aba-plano" class="hidden">
+        <div id="expedicao-plano"></div>
+      </div>
+    </section>
+
+    <section class="page hidden" data-page="cad-tecidos">
+      <div class="page-header">
+        <div><h1>Tecidos</h1><div class="desc">Ex.: Moletom Bulk, 1/2 Malha, Ribana Bulk. A categoria define o limite de camadas no enfesto. O peso (g/m²) é usado para calcular o consumo em kg e baixar o estoque.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('tecido')">+ Novo tecido</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Composição</th><th>Categoria</th><th>Peso (g/m²)</th><th>Largura / rend.</th><th>Fornecedor</th></tr></thead>
+          <tbody id="tbl-tecidos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CORES -->
+    <section class="page hidden" data-page="cad-cores">
+      <div class="page-header">
+        <div><h1>Cores</h1><div class="desc">Paleta de cores usadas nos modelos</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('cor')">+ Nova cor</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Cor</th><th>Código</th><th>Fornecedor</th><th>Tecido vinculado</th></tr></thead>
+          <tbody id="tbl-cores"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FORNECEDORES -->
+    <section class="page hidden" data-page="cad-fornecedores">
+      <div class="page-header">
+        <div><h1>Fornecedores</h1><div class="desc">De quem vem o pano. Tecidos e cores apontam para cá; a ficha guarda o que a etiqueta e a nota não dizem — condição de indenização, contato, cidade.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('fornecedor')">+ Novo fornecedor</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Razão social</th><th>CNPJ</th><th>Cidade / UF</th><th>Telefone</th><th>Observações</th></tr></thead>
+          <tbody id="tbl-fornecedores"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MATERIAIS (28/09/2026): o que se gasta na produção e não vai na peça.
+         Mesma lista dos aviamentos (STATE.materiais), com categoria 'material'. -->
+    <section class="page hidden" data-page="cad-materiais-prod">
+      <div class="page-header">
+        <div><h1>Materiais</h1><div class="desc">Ex.: papel de enfesto, fita adesiva, cola, saco plástico — o que se gasta na produção e não vai na peça. Com código Linx/fornecedor.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novoMaterialCad('material')">+ Novo material</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Código</th><th>Descrição</th><th>Tipo</th></tr></thead>
+          <tbody id="tbl-materiais-prod"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PEÇAS (28/09/2026): peça de máquina — agulha, lançadeira… Mesma lista
+         (STATE.materiais), categoria 'peca'. Não vai na OS. -->
+    <section class="page hidden" data-page="cad-pecas">
+      <div class="page-header">
+        <div><h1>Peças</h1><div class="desc">Ex.: agulhas, lançadeiras, calcadores — as peças das máquinas. Não entram na OS; viram sugestão no Estoque de peças.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novoMaterialCad('peca')">+ Nova peça</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Código</th><th>Descrição</th><th>Tipo</th></tr></thead>
+          <tbody id="tbl-pecas-cad"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- AVIAMENTOS: o que vai na peça e aparece na OS (categoria 'aviamento'). -->
+    <section class="page hidden" data-page="cad-materiais">
+      <div class="page-header">
+        <div><h1>Aviamentos</h1><div class="desc">Ex.: cordão, ilhós, etiqueta, tag — o que vai na peça e aparece nos "Aviamentos aplicados" da OS. Com código Linx/fornecedor.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novoMaterialCad('aviamento')">+ Novo aviamento</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Código</th><th>Descrição</th><th>Tipo</th></tr></thead>
+          <tbody id="tbl-materiais"></tbody>
+        </table>
+      </div>
+      <!-- Fios e linhas, um cadastro por cor (28/09/2026) -->
+      <div id="cad-fios-linhas"></div>
+    </section>
+
+    <!-- MODELOS -->
+    <section class="page hidden" data-page="cad-modelos">
+      <div class="page-header">
+        <div><h1>Modelos</h1><div class="desc">Ex.: Moletom fechado básico, Calça jogger, Camiseta regata…</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('modelo')">+ Novo modelo</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Descrição</th><th>Tipo</th><th>Linha</th></tr></thead>
+          <tbody id="tbl-modelos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- COLEÇÕES -->
+    <section class="page hidden" data-page="cad-colecoes">
+      <div class="page-header">
+        <div><h1>Coleções</h1><div class="desc">Ex.: Inverno 2024, Primavera 2025…</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('colecao')">+ Nova coleção</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Temporada</th></tr></thead>
+          <tbody id="tbl-colecoes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- GRADES -->
+    <section class="page hidden" data-page="cad-grades">
+      <div class="page-header">
+        <div><h1>Grades</h1><div class="desc">Modelos de grade de tamanhos com quantidades-padrão</div></div>
+        <div class="actions admin-only"><button class="btn" onclick="abrirAssistentePasta()" title="Escolha uma PASTA: o programa lê todos os PDFs de encaixe que houver nela, agrupa por grade e conduz o cadastro de uma em uma, até acabar.">📁 Importar pasta de riscos</button><button class="btn" onclick="abrirModalRisco()" title="Lê os relatórios de encaixe do CAD (PDF) e traz comprimento e largura de cada fase para o cadastro, sem digitação.">📄 Importar risco (PDF)</button><button class="btn primary" onclick="openCadastroModal('grade')">+ Nova grade</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Distribuição</th><th>Total peças</th><th style="text-align:center;" title="Os relatórios de encaixe (PDF) de onde saíram o comprimento e a largura desta grade.">Riscos</th></tr></thead>
+          <tbody id="tbl-grades"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- DESENHOS -->
+    <section class="page hidden" data-page="cad-desenhos">
+      <div class="page-header">
+        <div><h1>Desenhos técnicos</h1><div class="desc">Upload de imagens (PNG/JPG) dos desenhos do produto</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('desenho')">+ Novo desenho</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Miniatura</th><th>Código</th><th>Descrição</th></tr></thead>
+          <tbody id="tbl-desenhos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MARCAS / GRIFFES -->
+    <section class="page hidden" data-page="cad-marcas">
+      <div class="page-header">
+        <div><h1>Marcas / Griffes</h1><div class="desc">Ex.: Dixie, Diverse, outras marcas da empresa</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('marca')">+ Nova marca</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Observação</th></tr></thead>
+          <tbody id="tbl-marcas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- LINHAS -->
+    <section class="page hidden" data-page="cad-linhas">
+      <div class="page-header">
+        <div><h1>Linhas</h1><div class="desc">Ex.: Adulto, Infantil, Juvenil, Plus Size</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('linha')">+ Nova linha</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Observação</th></tr></thead>
+          <tbody id="tbl-linhas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BASES -->
+    <section class="page hidden" data-page="cad-bases">
+      <div class="page-header">
+        <div><h1>Bases</h1><div class="desc">Moldes base usados como referência (ex.: BASE M, BASE P, BASE MOLETOM)</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('base')">+ Nova base</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Observação</th></tr></thead>
+          <tbody id="tbl-bases"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BLOCOS / REVISÕES -->
+    <section class="page hidden" data-page="cad-blocos">
+      <div class="page-header">
+        <div><h1>Blocos / Revisões</h1><div class="desc">Ex.: R1 BLOCO 1, R1 BLOCO 2, R2 BLOCO 1</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('bloco')">+ Novo bloco</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Observação</th></tr></thead>
+          <tbody id="tbl-blocos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- COMPONENTES -->
+    <section class="page hidden" data-page="cad-componentes">
+      <div class="page-header">
+        <div><h1>Componentes</h1><div class="desc">Partes do produto (Frente, Costas, Capuz, Mangas, etc.). Aparecem no select de "Componentes do produto" na Nova OS.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('componente')">+ Novo componente</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Gerenciar</th><th>Nome</th><th>Tipo</th><th>Variação</th><th>Cores</th><th>Observação</th></tr></thead>
+          <tbody id="tbl-componentes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ETAPAS DE PRODUÇÃO -->
+    <section class="page hidden" data-page="cad-etapas">
+      <div class="page-header">
+        <div><h1>Etapas de produção</h1><div class="desc">Cada etapa é uma pasta. As tarefas vinculadas aparecem como subitens. A ordem define a ordem na folha de OS impressa.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('etapa')">+ Nova etapa</button></div>
+      </div>
+      <div id="etapas-pastas"></div>
+    </section>
+
+    <!-- FUNÇÕES -->
+    <section class="page hidden" data-page="cad-funcoes">
+      <div class="page-header">
+        <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe (Designer, Modelista, Costureiro, etc.)</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Gerenciar</th><th>Nome</th><th>Observação</th><th>Responsabilidades</th></tr></thead>
+          <tbody id="tbl-funcoes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- EQUIPE -->
+    <section class="page hidden" data-page="cad-equipe">
+      <div class="page-header">
+        <div><h1>Equipe</h1><div class="desc">As pessoas de cada unidade e a função de cada uma — Designer, responsável pela Ficha Técnica, costureira…</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('equipe')">+ Nova pessoa</button></div>
+      </div>
+      <div id="equipe-abas"></div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th class="col-actions">Ações</th><th>Nome</th><th>Função principal</th></tr></thead>
+          <tbody id="tbl-equipe"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ PLANEJAMENTO DE PRODUÇÃO (08/10/2026) ============ -->
+    <!-- A lista das OS pré-programadas, sem número. "+ Novo planejamento" abre
+         o formulário da Nova OS em modo planejamento; "Aprovar" (só admin)
+         transforma o planejamento em OS numerada. -->
+    <section class="page hidden" data-page="planejamento-producao">
+      <div class="page-header">
+        <div><h1>Planejamento de produção</h1><div class="desc">OS pré-programadas, ainda sem número e sem reservar material. Cada uma vira uma OS numerada quando o admin a aprova.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="novoPlanejamento()">+ Novo planejamento</button></div>
+      </div>
+      <div class="card">
+        <div id="plan-prod-lista"></div>
+      </div>
+      <!-- PLANEJAMENTO DA DEMANDA AGUARDANDO APROVACAO (16/10/2026): o que foi
+           planejado a partir do agrupamento espera o admin antes de entrar na
+           lista acima. O cartao some quando nao ha nenhum. -->
+      <div class="card hidden" id="plan-demanda-espera-card">
+        <div class="card-title">Planejamentos da demanda · aguardando aprovação</div>
+        <div id="plan-demanda-espera"></div>
+      </div>
+      <!-- AGRUPAMENTO EM GRADES (16/10/2026): veio do Relatorio de demanda. As
+           demandas somadas por desenho, com a grade que as atende; o Aprovar
+           (so admin) abre o planejamento ja preenchido. -->
+      <div class="card">
+        <div class="card-title">Agrupamento em grades · Relatório de demanda</div>
+        <div style="font-size:12px;color:var(--ink-2);margin:-4px 0 8px;">O que já está em produção (OS que ainda não chegaram ao Estoque; planejamento sem OS não conta) do mesmo SKU, cor e tamanho é abatido do pedido; para o que sobra, o programa mostra a solução mais eficiente com grades já cadastradas (menos peças a mais, menos planejamentos, menos camadas). Cada grade vai em enfestos cheios (o limite de camadas do tecido), repetida 2x, 3x… quando precisa de mais. Grade nova só aparece quando nenhuma cadastrada completa a demanda, ou como sugestão quando deixa menos peças a mais.</div>
+        <div id="plan-demanda-agrup"></div>
+      </div>
+    </section>
+
+    <!-- ================= NOVA OS ================= -->
+    <section class="page hidden" data-page="nova-os">
+      <div class="page-header">
+        <div><h1 id="os-form-title">Nova Ordem de Serviço</h1><div class="desc os-only">Preencha os campos. Use os dropdowns para selecionar itens pré-cadastrados.</div><div class="desc plan-only">Planejamento de produção: a OS fica sem número e não reserva material até ser aprovada pelo admin.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="cancelarFormOS()">Cancelar</button>
+          <button class="btn primary admin-only os-only" onclick="salvarOS()">Salvar OS</button>
+          <button class="btn admin-only os-only" onclick="salvarEImprimirEtiquetas()" title="Salva a OS e abre as etiquetas em PDF, com a página de 100 × 50 mm.">Imprimir Etiquetas</button>
+          <button class="btn accent admin-only os-only" onclick="salvarEImprimir()">Salvar e Gerar PDF</button>
+          <button class="btn primary admin-only plan-only" onclick="salvarPlanejamento()">Salvar planejamento</button>
+        </div>
+      </div>
+
+      <div class="presence-bar hidden" id="presenceBar">
+        <span class="presence-dot"></span>
+        <span><strong id="presenceCount">0</strong> pessoa(s) editando esta OS agora: <span id="presenceUsers"></span></span>
+      </div>
+
+      <!-- CRIAÇÃO ENXUTA (01/10/2026, Junior: "deve aparecer apenas os campos
+           que são frequentemente selecionados, como desenho técnico, grade e
+           quantidade de camadas"). A OS nova abre só com eles; o resto — que o
+           desenho e a grade já preenchem sozinhos — fica escondido (classe
+           os-detalhe) e volta com "Edição completa". Editar uma OS salva abre
+           completa. Os campos escondidos continuam no formulário e são
+           gravados do mesmo jeito: esconder não é apagar. -->
+      <div class="os-modo-barra">
+        <span id="os-modo-desc" class="field-hint"></span>
+        <button type="button" class="btn small" id="os-modo-btn" onclick="alternarModoFormOS()"></button>
+      </div>
+
+      <form id="os-form" onsubmit="return false;">
+        <!-- CABEÇALHO -->
+        <div class="card os-detalhe">
+          <div class="card-title">Cabeçalho da ficha</div>
+          <div class="form-grid cols-4">
+            <div class="field"><label>Número OS</label><input type="text" id="f-os" placeholder="Ex.: 3063012"></div>
+            <div class="field"><label>Código desenho</label><input type="text" id="f-codigo" list="codigos-datalist" placeholder="Digite ou selecione" oninput="sincCodigoDesenho('codigo')"><datalist id="codigos-datalist"></datalist><a href="#" class="field-add-link" onclick="openCadastroModal('desenho', null, 'os-form'); return false;">+ Cadastrar novo desenho</a></div>
+            <div class="field"><label>Data</label><input type="date" id="f-data"></div>
+            <div class="field"><label>Coordenador</label><select id="f-coordenado" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-coordenador" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+
+            <div class="field"><label>Coleção</label><select id="f-colecao"></select><a href="#" class="field-add-link" onclick="openCadastroModal('colecao', null, 'os-form'); return false;">+ Cadastrar coleção</a></div>
+            <div class="field"><label>Modelo</label><select id="f-modelo" onchange="onModeloChange()"></select><a href="#" class="field-add-link" onclick="openCadastroModal('modelo', null, 'os-form'); return false;">+ Cadastrar modelo</a></div>
+            <div class="field"><label>Bloco / Revisão</label><select id="f-bloco"></select><a href="#" class="field-add-link" onclick="openCadastroModal('bloco', null, 'os-form'); return false;">+ Cadastrar bloco</a></div>
+            <div class="field"><label>Linha</label><select id="f-linha"></select><a href="#" class="field-add-link" onclick="openCadastroModal('linha', null, 'os-form'); return false;">+ Cadastrar linha</a></div>
+
+            <div class="field"><label>Griffe / Marca</label><select id="f-griffe"></select><a href="#" class="field-add-link" onclick="openCadastroModal('marca', null, 'os-form'); return false;">+ Cadastrar marca</a></div>
+            <div class="field"><label>Base</label><select id="f-base"></select><a href="#" class="field-add-link" onclick="openCadastroModal('base', null, 'os-form'); return false;">+ Cadastrar base</a></div>
+            <div class="field"><label>Designer</label><select id="f-designer" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-designer" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+            <div class="field"><label>Ficha técnica</label><select id="f-ftec" onchange="atualizarResponsabilidadesOS()"></select><div id="resp-ftec" class="field-hint"></div><a href="#" class="field-add-link" onclick="openCadastroModal('equipe', null, 'os-form'); return false;">+ Cadastrar pessoa</a></div>
+          </div>
+        </div>
+
+        <!-- DESENHO -->
+        <div class="card">
+          <div class="card-title">Desenho técnico · grade · enfesto</div>
+          <!-- METADE E METADE (01/10/2026, Junior: "mantenha metade da tela apenas
+               para mostrar o desenho técnico, a outra metade para os campos de
+               informações"). À esquerda os campos; à direita só o desenho, alto
+               e preso na tela enquanto se rola (os-split em styles.css). -->
+          <div class="form-grid cols-2 os-split">
+            <!-- São mais de cem desenhos numa lista só: a busca recorta a lista
+                 enquanto se digita (código, descrição, modelo, cor ou SKU). O
+                 desenho já escolhido nunca sai da lista. -->
+            <div>
+            <div class="field"><label>Selecionar desenho cadastrado</label>
+              <div class="busca-desenho">
+                <!-- Mesma razão do busca-os: a lista do navegador cobriria a
+                     lista de desenhos logo abaixo. -->
+                <input type="search" id="f-desenho-busca" placeholder="Buscar: código, descrição, modelo, cor ou SKU…"
+                       autocomplete="off" spellcheck="false"
+                       title="Vários termos valem juntos, cada um em qualquer campo: &quot;moletom preto&quot;."
+                       oninput="filtrarDesenhosOS()">
+                <span id="f-desenho-conta" class="lista-os-conta"></span>
+              </div>
+              <select id="f-desenho" onchange="previewDesenhoSelecionado(); sincCodigoDesenho('desenho')"></select>
+            </div>
+            <!-- GRADE E CAMADAS LOGO ABAIXO DO DESENHO (01/10/2026, Junior: "para
+                 que os campos de busca e seleção estejam próximos um do outro").
+                 São as três escolhas de toda OS nova; moram aqui, na coluna da
+                 esquerda, e a prévia do desenho fica à direita. Os ids são os
+                 mesmos de antes — só mudou o lugar. -->
+            <div class="field" style="margin-top:10px;">
+              <label>Grade</label>
+              <!-- LINHA ADULTO / INFANTIL (05/10/2026): recorta a lista de grades
+                   pelos tamanhos — 2 ao 16 é infantil, P ao G3 adulta (linhaTipoOS). -->
+              <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <select id="f-linha-tipo" onchange="filtrarLinhaGradesOS(this.value)" title="Linha da grade: adulto (P ao G3) ou infantil (2 ao 16)" style="flex:0 0 150px;width:150px;">
+                  <option value="Adulto Unissex">Adulto</option>
+                  <option value="Infantil Unissex">Infantil</option>
+                </select>
+                <input type="search" id="f-grade-busca" placeholder="🔎 Buscar grade — nome, SKU (CM.LISA) ou tamanhos" autocomplete="off" spellcheck="false" oninput="filtrarGradesOS(this.value)" style="flex:1;min-width:0;">
+              </div>
+              <select id="f-grade-preset" onchange="aplicarGradePreset()"></select>
+              <div class="field-hint" id="f-grade-info"></div>
+            </div>
+            <!-- AS FASES DO ENFESTO, uma linha cada, logo abaixo da grade que as
+                 define (01/10/2026). Montadas em renderEnfestoBlocos. -->
+            <div id="f-enfestos-blocos" class="enf-tab" style="margin-top:8px;"></div>
+            <!-- O ENFESTO INTEIRO AQUI (01/10/2026, Junior: "o campo enfesto deve
+                 ser compactado também para estar junto dos campos de seleção").
+                 Era um card próprio mais abaixo; camadas, peças-alvo, alerta e
+                 cálculo de peças agora moram na coluna da seleção. -->
+            <div class="form-grid cols-2" style="margin-top:10px;gap:8px;">
+              <div class="field">
+                <label>Nº de camadas <span id="f-enf-limite-info" style="color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:normal;"></span></label>
+                <input type="number" min="1" id="f-enf-camadas" placeholder="1" oninput="calcularAlvoDeCamadas()" title="Informar as camadas calcula as peças-alvo automaticamente">
+              </div>
+              <div class="field os-detalhe">
+                <label>Peças-alvo por tamanho</label>
+                <input type="number" min="0" id="f-enf-target" placeholder="Ex.: 180" oninput="calcularCamadasParaProducao()" title="Quantidade desejada de cada tamanho — calcula camadas automaticamente">
+              </div>
+            </div>
+            <!-- PRODUCAO PUXADA OU EMPURRADA (16/10/2026, Junior): so no
+                 planejamento, e fora do os-detalhe para aparecer na edicao
+                 simplificada. Empurrada e o padrao. -->
+            <div class="field plan-only" style="margin-top:8px;">
+              <label>Tipo de produção</label>
+              <select id="f-tipo-producao" title="Empurrada: a fábrica produz pelo plano, para estoque. Puxada: a produção é puxada pela demanda (reposição do que saiu).">
+                <option value="empurrada" selected>Produção empurrada</option>
+                <option value="puxada">Produção puxada</option>
+              </select>
+            </div>
+            <!-- GRADES IGUAIS (16/10/2026): o planejamento sabe quantas vezes a
+                 mesma grade vai, cada vez um enfesto; a aprovacao gera uma OS por vez. -->
+            <div class="field plan-only" style="margin-top:8px;">
+              <label>Grades iguais (enfestos)</label>
+              <input type="number" id="f-plan-vezes" min="1" value="1" oninput="atualizarCalculosEnfesto()"
+                     title="Quantas vezes esta grade vai, cada uma num enfesto até o limite de camadas. Na aprovação, vira uma OS por vez.">
+            </div>
+            <!-- ENFESTO CHEIO (16/10/2026): so no planejamento, quando as camadas
+                 ficam abaixo do limite do tecido. Montado em atualizarCalculosEnfesto. -->
+            <div id="f-enf-orienta" class="hidden plan-only" style="margin-top:6px;padding:5px 8px;background:var(--bg);border-left:3px solid var(--accent, #2a6fd0);font-size:11px;border-radius:2px;"></div>
+            <div id="f-enf-alerta" class="hidden" style="margin-top:6px; padding: 5px 8px; background: var(--alert-bg); border-left: 3px solid var(--alert); color: var(--alert); font-size: 11px; border-radius: 2px;"></div>
+            <div id="f-enf-calculo" class="enf-calculo-compacto">
+              <em style="color:var(--ink-3);">Preencha grade e camadas para ver o cálculo de peças.</em>
+            </div>
+            </div>
+            <div class="field os-split-desenho"><div class="desenho-preview" id="f-desenho-preview"><span>Nenhum desenho selecionado</span></div></div>
+          </div>
+        </div>
+
+        <!-- TECIDOS -->
+        <div class="card os-detalhe">
+          <div class="card-title">Tecidos (até 5)</div>
+          <div id="tecidos-rows"></div>
+          <button type="button" class="add-row-btn" onclick="addTecidoRow()">+ Adicionar tecido</button>
+        </div>
+
+        <!-- GRADE -->
+        <!-- Escondido na criação enxuta (01/10/2026, Junior: "esconda a grade de
+             tamanho"): a grade escolhida lá em cima já preenche os tamanhos. -->
+        <div class="card os-detalhe">
+          <div class="card-title">Grade de tamanhos</div>
+          <!-- A busca e a lista de grades moraram aqui até 01/10/2026; subiram
+               para o card do desenho, junto com as camadas. Ficam a descrição e
+               os tamanhos. -->
+          <div class="form-grid cols-2 os-detalhe" style="margin-bottom:10px">
+            <div class="field"><label>Descrição da grade</label><input type="text" id="f-grade-desc" placeholder="Ex.: GRADE C/ 6 PEÇAS"></div>
+          </div>
+          <div class="grade-inputs">
+            <div class="field"><label>P</label><input type="number" id="f-gr-p" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>M</label><input type="number" id="f-gr-m" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G</label><input type="number" id="f-gr-g" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>GG</label><input type="number" id="f-gr-gg" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G1</label><input type="number" id="f-gr-g1" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G2</label><input type="number" id="f-gr-g2" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>G3</label><input type="number" id="f-gr-g3" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+          </div>
+          <!-- A linha INFANTIL (2 ao 16, 30/09/2026), logo abaixo da adulta. A
+               grade usa uma ou outra; as chaves são t2…t16. -->
+          <div class="grade-inputs grade-inputs-infantil" style="margin-top:6px;">
+            <div class="field"><label>2</label><input type="number" id="f-gr-t2" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>4</label><input type="number" id="f-gr-t4" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>6</label><input type="number" id="f-gr-t6" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>8</label><input type="number" id="f-gr-t8" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>10</label><input type="number" id="f-gr-t10" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>12</label><input type="number" id="f-gr-t12" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>14</label><input type="number" id="f-gr-t14" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+            <div class="field"><label>16</label><input type="number" id="f-gr-t16" min="0" value="0" oninput="atualizarCalculosEnfesto()"></div>
+          </div>
+        </div>
+
+        <!-- RESPONSABILIDADES DA EQUIPE -->
+        <div class="card os-detalhe">
+          <div class="card-title">Responsabilidades da equipe nesta OS</div>
+          <div id="resp-resumo" style="font-size:12px; color: var(--ink-2);">
+            <em style="color:var(--ink-3);">Selecione Designer, Ficha técnica ou Coordenador acima para ver responsabilidades da equipe.</em>
+          </div>
+        </div>
+
+        <!-- ETAPAS DE PRODUÇÃO -->
+        <div class="card os-detalhe">
+          <div class="card-title">Etapas de produção</div>
+          <div class="etapas-checks" id="etapas-container"></div>
+          <button type="button" class="add-row-btn" onclick="addEtapaCustomizada()">+ Adicionar etapa customizada</button>
+        </div>
+
+        <!-- VARIANTES DE CORES — removido (informação redundante com Tecidos/Componentes) -->
+        <div id="variantes-rows" style="display:none;"></div>
+
+        <!-- COMPONENTES -->
+        <div class="card os-detalhe">
+          <div class="card-title">Componentes do produto</div>
+          <div class="componente-row" style="font-weight:600; font-size: 11px; color: var(--ink-3); border:none;">
+            <div>Componente</div><div>Tecido / Material</div><div>Cor</div><div>Qtd/peça</div>
+          </div>
+          <div id="componentes-rows"></div>
+          <button type="button" class="add-row-btn" onclick="addComponenteRow()">+ Adicionar componente</button>
+          <button type="button" class="add-row-btn" onclick="reporComponentesDoDesenho()" title="Repõe os componentes a partir do desenho técnico selecionado. Use quando o desenho ganhou componentes depois desta OS ter sido criada.">↻ Repor componentes do desenho</button>
+        </div>
+
+        <!-- AVIAMENTOS -->
+        <div class="card os-detalhe">
+          <div class="card-title">Aviamentos aplicados</div>
+          <div class="componente-row" style="font-weight:600; font-size: 11px; color: var(--ink-3); border:none;">
+            <div>Material cadastrado</div><div>Aplicação (variante/cor)</div><div>Qtd/peça</div><div>Un.</div>
+          </div>
+          <div id="aviamentos-rows"></div>
+          <button type="button" class="add-row-btn" onclick="addAviamentoRow()">+ Adicionar aviamento</button>
+        </div>
+
+        <!-- OBSERVAÇÕES -->
+        <div class="card os-detalhe">
+          <div class="card-title">Observações</div>
+          <div class="field">
+            <textarea id="f-obs" rows="3" placeholder="Anotações manuais, cuidados especiais…"></textarea>
+          </div>
+        </div>
+
+        <!-- ATENÇÃO -->
+        <div class="card os-detalhe">
+          <div class="card-title">Atenção</div>
+          <div class="field">
+            <textarea id="f-atencao" rows="2" placeholder="Alertas específicos da produção (aparece no rodapé da folha impressa). Em branco por padrão."></textarea>
+          </div>
+        </div>
+
+        <input type="hidden" id="f-id">
+      </form>
+    </section>
+
+    <!-- ================= LISTA OS ================= -->
+    <section class="page hidden" data-page="lista-os">
+      <div class="page-header">
+        <div><h1>Ordens de Serviço - OS</h1><div class="desc">Todas as OS geradas. Clique em visualizar para abrir a folha e imprimir.</div></div>
+        <div class="actions admin-only"><button class="btn primary" onclick="goto('nova-os')">+ Nova OS</button></div>
+      </div>
+      <div class="card">
+        <div id="lista-os-grupo" class="hidden"></div>
+        <!-- A FILA DE PRODUÇÃO vive DENTRO da lista (22/09/2026): o selo da
+             posição (1ª, 2ª…) vai na linha de cada OS não iniciada, e a lista
+             sai na ordem da fila quando o filtro está em "Não iniciado". Aqui
+             fica só a barra que explica a fila e guarda o "desfazer a ordem" —
+             montada em app.js (renderFilaOS), e vazia nas outras vistas. -->
+        <div id="fila-os-painel"></div>
+        <!-- Buscar por número e filtrar por status são duas perguntas diferentes
+             e valem juntas: "das que estão paradas, cadê a 483?". As opções do
+             filtro (com a contagem de cada estado) são montadas em app.js. -->
+        <div class="lista-os-filtros">
+          <!-- autocomplete="off": sem isto o navegador abre a lista dele, com os
+               números de OS já digitados antes, e ela cai POR CIMA da coluna
+               Ações — os botões de status, visualizar e "⋯" ficam atrás de uma
+               janela que o programa não desenhou e não consegue mover. Todos os
+               outros campos de busca do app já nascem assim. -->
+          <input type="search" id="busca-os" placeholder="Buscar: número, código, modelo, coleção, cor, grade, linha ou SKU…"
+                 autocomplete="off" spellcheck="false"
+                 title="Busca em tudo o que a linha mostra, mais o SKU. Vários termos valem juntos: &quot;preto tricolor&quot;." oninput="renderListaOS()">
+          <!-- Quantas OS a lista está mostrando agora. Ao lado da busca porque é
+               a resposta dela: quem digita quer saber quantas sobraram. -->
+          <span id="conta-os" class="lista-os-conta"></span>
+          <select id="filtro-status-os" title="Mostrar só as OS de um status" onchange="renderListaOS()"></select>
+          <select id="filtro-cor-os" title="Mostrar só as OS de uma cor" onchange="renderListaOS()"></select>
+          <select id="filtro-grade-os" title="Mostrar só as OS de uma grade" onchange="renderListaOS()"></select>
+          <select id="filtro-sku-os" title="Mostrar só as OS de uma linha de SKU (CM.LISA) — a cor tem filtro próprio ao lado, e os dois valem juntos" onchange="renderListaOS()"></select>
+          <select id="filtro-linha-os" title="Mostrar só as OS da linha Adulto Unissex (P ao G3) ou Infantil Unissex (2 ao 16)" onchange="renderListaOS()"></select>
+          <select id="filtro-falta-os" title="Mostrar só as OS Não iniciadas com material faltante — qualquer um, ou só tecido, aviamento ou material (kraft/filme). A mesma conta da coluna Material faltante" onchange="renderListaOS()"></select>
+          <!-- O DIA EM QUE O CORTE TERMINOU. Uma data só: a pergunta do chão é
+               "o que saiu do corte neste dia?". Só entram OS que chegaram ao
+               ENSACADO — quem não ensacou não tem dia de término.
+
+               ENSACADO, E NÃO ESTOQUE (15/09/2026, Junior: "essa data de
+               finalização é para informar que a operação de corte foi
+               finalizada"). O que acaba aqui é o CORTE, não a OS: ensacada, a
+               peça segue para a costura, volta, vai para o estoque. Este rótulo
+               dizia "Finalizada em" e a dica falava em Estoque — as duas coisas
+               apontavam para o fim errado da fila. -->
+          <span class="lista-os-datas"
+                title="Mostrar só as OS cujo corte foi finalizado nesse dia — o dia em que foram ensacadas. Vale junto com a busca e com os outros filtros.">
+            <label for="filtro-fim">Corte feito em</label>
+            <input type="date" id="filtro-fim" onchange="renderListaOS()">
+          </span>
+          <button class="btn small ghost" onclick="limparFiltrosListaOS()" title="Voltar a mostrar todas as OS">Limpar</button>
+        </div>
+        <table class="table">
+          <thead><tr>
+            <th class="col-actions">Ações</th><th>Desenho</th><th>OS</th><th title="Adulto (P ao G3) ou Infantil (2 ao 16), pelos tamanhos da grade da OS">Linha</th><th>Modelo</th><th>Cor</th><th>Coleção</th><th>Grade</th><th>Data</th><th style="text-align:right;" title="Produtos completos da OS (uma camiseta = 1), o Total geral da folha — e não as peças cortadas">Produtos</th><th>Riscos</th><th title="Tecido, aviamento e material que a OS (Não iniciada) reserva e que o estoque não tem, depois das reservas das outras OS — a mesma regra do Material reservado. Passe o mouse para ver o detalhe">Material faltante</th>
+          </tr></thead>
+          <tbody id="tbl-os"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= VISUALIZAÇÃO PARA IMPRESSÃO ================= -->
+    <section class="page hidden" data-page="print">
+      <div class="page-header no-print">
+        <div><h1>Visualização da OS</h1><div class="desc">Revise a folha e clique em Imprimir.</div></div>
+        <div class="actions">
+          <!-- O status da OS, o mesmo controle da lista de Ordens de Serviço. Fica no
+               cabeçalho (.no-print) porque status é como a produção anda, não é
+               dado do papel — a folha impressa sai igual. Conteúdo por JS
+               (renderStatusFolhaOS): seletor para quem pode mudar, etiqueta
+               para quem só olha. -->
+          <span id="print-status-os" class="print-status-os"></span>
+          <!-- Conjugar esta OS a outras, sem voltar à lista. Nasce escondido:
+               renderStatusFolhaOS o mostra para quem pode carimbar status, que
+               é a mesma permissão do seletor ao lado. -->
+          <button class="btn hidden" id="print-conjugar-os" onclick="conjugarOsAtual()"
+            title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Não mexe em tecido nem no cadastro da grade.">⇄ Conjugar</button>
+          <button class="btn" onclick="goto('lista-os')">Voltar</button>
+          <button class="btn admin-only" onclick="editarOsAtual()">Editar</button>
+          <button class="btn" onclick="imprimirEtiquetasAtual()">Imprimir Etiquetas</button>
+          <button class="btn accent" onclick="ajustarImpressaoParaA4(); setTimeout(() => window.print(), 50);">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <!-- .sheet-scaler carrega a ampliação de leitura da tela; a .sheet
+             fica com a geometria A4 real, que é o que vira PDF. -->
+        <div class="sheet-scaler">
+          <div class="sheet" id="print-sheet">
+            <!-- conteúdo gerado por JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOLHA DO PLANO DE EXPEDIÇÃO (IMPRESSÃO) ============ -->
+    <!-- Segunda folha do programa, além da folha de OS. Diferente dela, esta
+         pode ocupar mais de uma A4 (um mês de janelas não cabe em uma) — daí
+         a classe .sheet-exp, que libera a quebra de página, e a ausência do
+         .sheet-scaler (não há encolhimento pra caber em uma folha só). -->
+    <section class="page hidden" data-page="print-expedicao">
+      <div class="page-header no-print">
+        <div><h1>Folha do plano de expedição</h1><div class="desc">Revise o plano e clique em Imprimir. A folha acompanha o período aberto no planejamento.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('expedicao'); trocarAbaExpedicao('plano');">Voltar</button>
+          <button class="btn" onclick="salvarPdfOeNaPasta()">💾 Salvar OE na pasta</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-exp">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOLHA DO PLANO DE OPERAÇÕES (IMPRESSÃO) ============ -->
+    <!-- Mesma natureza da folha de expedição: pode ocupar mais de uma A4, então
+         usa .sheet-exp (quebra de página liberada) e não tem .sheet-scaler. -->
+    <section class="page hidden" data-page="print-operacoes">
+      <div class="page-header no-print">
+        <div><h1>Folha do planejamento de operações</h1><div class="desc">Revise e clique em Imprimir. A folha acompanha o período aberto em Operações.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('operacoes')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-op">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOLHA DOS AVIAMENTOS (IMPRESSÃO, 08/10/2026) ============ -->
+    <!-- A moldura da folha de OE (.sheet-exp): o que há de aviamento na unidade
+         aberta, para conferir a prateleira com a folha na mão. -->
+    <section class="page hidden" data-page="print-aviamentos">
+      <div class="page-header no-print">
+        <div><h1>Folha dos aviamentos</h1><div class="desc">Os aviamentos com saldo na unidade aberta no Estoque de aviamentos, com espaço para a contagem. Revise e clique em Imprimir.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('estoque-aviamentos')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-avi">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOLHA DAS PEÇAS (IMPRESSÃO, 15/10/2026) ============ -->
+    <!-- A mesma moldura: as peças cadastradas na unidade aberta no Estoque de
+         peças, em uso e em estoque, com espaço para a contagem. -->
+    <section class="page hidden" data-page="print-pecas">
+      <div class="page-header no-print">
+        <div><h1>Folha das peças</h1><div class="desc">As peças cadastradas na unidade aberta no Estoque de peças, com espaço para a contagem. Revise e clique em Imprimir.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('estoque-pecas')">Voltar</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-pecas">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CONFIGURAÇÕES ================= -->
+    <section class="page hidden" data-page="config">
+      <div class="page-header">
+        <div><h1>Configurações</h1><div class="desc">Servidor, pastas, grades, backups e contas</div></div>
+      </div>
+      <!-- CONFIGURAÇÕES EM QUADROS (09/10/2026, Junior: "as configurações
+           semelhantes aglomeradas em mesmo quadro, mais compacto"). Cinco
+           quadros por assunto; a explicação longa de cada item fica recolhida
+           em "como funciona". Os ids e os onclick são os de sempre. -->
+      <div class="card cfg-quadro">
+        <div class="card-title">Aparência</div>
+        <div class="cfg-linha-topo">
+          <label class="cfg-tema"><input type="checkbox" id="cfgModoEscuro" onchange="alternarModoEscuro(this.checked)"> <b>Modo escuro</b></label>
+          <div class="cfg-status">Vale só para este navegador. A folha de OS, os PDFs e a impressão continuam em papel branco.</div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro">
+        <div class="card-title">Servidor e sincronização</div>
+        <div id="servidorLocalStatus" class="cfg-status" style="margin-bottom:8px;">Carregando…</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+          <label style="flex:1 1 220px;">Endereço do servidor
+            <input type="text" id="servidorLocalUrl" placeholder="http://192.168.0.50:8000" autocomplete="off">
+          </label>
+          <label style="flex:2 1 300px;">Chave pública (anon) do servidor local
+            <input type="text" id="servidorLocalKey" placeholder="eyJhbGciOi..." autocomplete="off">
+          </label>
+        </div>
+        <div class="cfg-botoes" style="margin-top:8px;">
+          <button class="btn primary" onclick="testarServidorLocal()">Testar conexão</button>
+          <button class="btn" onclick="salvarServidorLocal()">Salvar e recarregar</button>
+          <button class="btn" onclick="limparServidorLocal()">Usar só a nuvem</button>
+          <button class="btn admin-only" onclick="recarregarDadosDoServidor()">↻ Recarregar dados do servidor</button>
+        </div>
+        <details class="cfg-ajuda"><summary>como funciona</summary><div>Com um servidor na rede da fábrica, o programa fala com ele em vez da internet: fica instantâneo, não gasta tráfego e continua funcionando com a internet fora. A nuvem passa a ser espelho — se o servidor local não responder, o programa abre a cópia da nuvem em <b>modo consulta</b>: dá para ver e imprimir, mas não editar. Isso é proposital, para que os dois lados nunca fiquem diferentes. Este endereço vale <b>só nesta máquina</b> — configure em cada computador. Deixando em branco, tudo funciona pela nuvem como antes.<br><br><b>Recarregar dados do servidor</b>: Se você cadastrou itens em outra aba/sessão e eles não estão aparecendo aqui (ex.: etapas ou tarefas novas que não surgem nas opções dos desenhos), force uma releitura completa do servidor.</div></details>
+      </div>
+
+      <div class="card cfg-quadro">
+        <div class="card-title">Pastas deste computador</div>
+        <div class="cfg-nota">Cada computador conecta as suas pastas, e o navegador lembra entre sessões. Só funciona no Chrome ou Edge no desktop. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Backup automático (JSON)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A cada mudança nos cadastros ou OS, um arquivo <code>gerador-os-dados.json</code> com TODOS os dados é gravado na pasta conectada. Aponte para a pasta do programa pra ter o JSON junto do código (ideal para versionar via git). Funciona apenas no Chrome/Edge no desktop. Backup automático silencioso — não substitui o Supabase, é cópia espelho.</div></details><div id="backupFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaBackup()">Conectar</button>
+                <button class="btn small" onclick="escreverBackupJsonAgora()">Salvar agora</button>
+                <button class="btn small" onclick="desconectarPastaBackup()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>PDFs das OS</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Cada OS gerada salva o PDF nesta pasta automaticamente. Funciona apenas no Chrome ou Edge no desktop. Conecte uma vez — o navegador lembra entre sessões. Em outro computador, navegador ou no celular, é preciso conectar de novo (ou nada será salvo).</div></details><div id="pdfFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaPdf()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaPdf()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Ordens de Expedição (OE)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A folha do plano de expedição no modo <b>diário</b> é salva em PDF nesta pasta automaticamente quando você a abre (menu Ordens de Expedição → "Folha do plano"). As <b>semanais</b> e <b>mensais</b> não são gravadas sozinhas — use o botão "💾 Salvar OE na pasta" para gravá-las quando quiser. O arquivo é nomeado pelo período do plano (ex.: <code>OE-19-07-2026_a_25-07-2026.pdf</code>) — reabrir o mesmo período reescreve o mesmo arquivo. Funciona no Chrome/Edge no desktop. Conecte uma vez; para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="oeFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaOe()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaOe()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Ordens de Compra (OC)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Cada ordem de compra é salva em PDF nesta pasta, sozinha, quando é <b>gerada</b>, <b>editada</b> (fornecedor, data, situação, quantidades, observação) ou <b>impressa</b>. O botão <b>pasta</b> na linha da OC (menu Ordens de Compra) grava na hora. O arquivo leva o número da OC (ex.: <code>OC-0001.pdf</code>): editar a mesma OC reescreve o mesmo arquivo. Apagar a OC no programa <b>não</b> apaga o PDF. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="ocFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaOc()">Conectar</button>
+                <button class="btn small" onclick="salvarTodasOcNaPasta()">Salvar todas agora</button>
+                <button class="btn small" onclick="desconectarPastaOc()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Relatórios de produção</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A folha do <b>Relatório produção</b> (barra lateral) é salva em PDF nesta pasta pelo botão <b>💾 Salvar na pasta</b> e, sozinha, ao <b>imprimir</b>. O arquivo leva o período (ex.: <code>Relatorio-producao-Semanal-05-10-2026_a_09-10-2026.pdf</code>): gerar o mesmo período de novo reescreve o mesmo arquivo, com os números daquela hora. Funciona no Chrome/Edge no desktop; cada computador conecta a sua pasta. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div></details><div id="relFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaRel()">Conectar</button>
+                <button class="btn small" onclick="desconectarPastaRel()">Desconectar</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha admin-only">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Exportações (JSON)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Onde o botão <b>Exportar tudo (JSON)</b> grava. Cada exportação é um arquivo <b>datado</b> (<code>BACKUP-COMPLETO-2026-07-28T20-00-34.json</code>) e <b>nunca substitui</b> a anterior — é o histórico, para voltar a um dia específico. Sem pasta conectada, o arquivo cai nos <b>Downloads</b> do navegador.<br>É separada da <b>pasta de backup automático</b> acima de propósito: aquela guarda um único <code>gerador-os-dados.json</code> reescrito a cada mudança (o espelho do agora, sem história); esta guarda a história. Apontar as duas para a mesma pasta funciona, mas quem for procurar "o backup de segunda" vai achar o espelho de hoje.<br><br>O <b>Importar JSON</b> é o caminho de volta: lê um arquivo exportado e traz os dados dele. Não existe botão de apagar tudo — dado desta base se corrige restaurando um snapshot ou importando um backup, nunca zerando a base inteira.</div></details><div id="exportFolderStatus" class="cfg-status">Carregando…</div></div>
+            <div class="cfg-botoes">
+                <button class="btn small primary" onclick="conectarPastaExport()">Conectar</button>
+                <button class="btn small" onclick="exportarDados()">⬇ Exportar tudo agora</button>
+                <button class="btn small" onclick="desconectarPastaExport()">Desconectar</button>
+                <label class="file-label btn small">⬆ Importar JSON<input type="file" accept="application/json" onchange="importarDados(event)"></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Grades e desenhos</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Planilha das grades (Excel)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Gera <code>grades-cadastradas.xlsx</code> na <b>pasta de backup conectada</b> — a mesma onde o programa grava o <code>gerador-os-dados.json</code>, a "Backup automático" do quadro <b>Pastas deste computador</b> (o caminho dela aparece ali). Traz <b>tudo o que está cadastrado nas grades</b>, para conferir em lote fora do sistema. Tudo agrupado por <b>SKU</b> (o que vem depois do "|" no nome da grade), porque é por ele que as grades se parecem. Três abas: <b>Resumo por SKU</b> — uma linha por SKU, apontando o que <b>diverge</b> entre grades que deveriam ser iguais (nº de fases, peças por pacote, tecido ou medida faltando); <b>Grades</b> — uma linha por grade, com tamanhos, medidas de cada fase e em quantas OS é usada; e <b>Fases das grades</b> — uma linha por fase, com tecido, unidades da grade, comprimento, largura, bobinas previstas e o tempo de enfesto já medido. O arquivo tem nome fixo: exportar de novo <b>substitui</b> o anterior. Sem pasta conectada, o arquivo é baixado. Ao gerar, o aviso mostra o <b>caminho completo</b> em que ele foi gravado.</div></details><div class="cfg-status">grades-cadastradas.xlsx na pasta de backup automático</div></div>
+            <div class="cfg-botoes"><button class="btn small primary" onclick="exportarGradesExcel()">📊 Gerar planilha</button></div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Copiar etapas e status entre desenhos</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Copia as etapas (e a ordem) e a <b>sequência de status</b> configuradas no desenho de origem para os demais desenhos <b>do mesmo modelo e variação</b>. Ex.: Camiseta Básica só copia para outras Camisetas Básicas — não para Camiseta Bicolor nem Tricolor; Blusa Moletom Básica não copia para Blusa Moletom Tricolor. Apenas as etapas e a sequência de status são alteradas (o que a origem não tiver configurado fica como está nos outros) — imagem, vínculos, componentes e demais campos ficam intactos.</div></details><div class="cfg-status">do desenho de origem para os do mesmo modelo e variação</div></div>
+            <div class="cfg-botoes">
+              <input type="text" id="copyEtapasOrigem" value="001" placeholder="Ex.: 001" title="Código do desenho de origem" style="width:90px;">
+              <button class="btn small primary" onclick="rodarCopiarEtapasParaTodos()">Copiar para todos</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Regra do excedente de enfesto</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.<br><br>São <b>quatro linhas</b> de faixa, e usar todas é opcional: <b>linha em branco é linha que não existe</b>, então quem trabalha com três deixa a última vazia e nada muda.</div></details></div>
+          <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
+          <div>
+            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Faixas de comprimento</label>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-0" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-0" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-1" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-1" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-2" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-2" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <!-- A QUARTA FAIXA (27/08/2026, pedido do Junior). Nasce vazia: o
+                   padrao da casa segue com tres, e linha em branco e linha que
+                   nao existe. Quem le as faixas CONTA as linhas que estao aqui
+                   (_excFaixasNaTela, no app.js), entao acrescentar a quinta um
+                   dia e copiar este bloco e mudar o indice. -->
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
+                <input type="number" step="0.01" min="0" id="exc-faixa-ate-3" style="width:82px;">
+                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
+                <input type="number" step="1" min="0" id="exc-faixa-cm-3" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+            </div>
+            <div class="field-hint" style="margin-top:4px;">Os limites têm que <b>subir</b> de uma linha para a outra. Deixar uma linha inteira em branco tira aquela faixa.</div>
+          </div>
+
+          <div>
+            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Exceções (não dependem do comprimento)</label>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">gola</span>
+                <input type="number" step="1" min="0" id="exc-gola" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">viés</span>
+                <input type="number" step="1" min="0" id="exc-vies" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:12px;color:var(--ink-3);width:44px;">barra/<br>punhos</span>
+                <input type="number" step="1" min="0" id="exc-barra" style="width:70px;">
+                <span style="font-size:12px;color:var(--ink-3);">cm</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <button class="btn primary" onclick="salvarExcedenteCfg()">Salvar regra</button>
+          <span style="flex:1;"></span>
+          <button class="btn accent" onclick="rodarExcedentePorFaixa()">Aplicar em todas as grades</button>
+        </div>
+        <div id="exc-cfg-origem" class="field-hint" style="margin-top:8px;"></div>
+        <div class="field-hint" style="margin-top:4px;">Salvar muda a regra <b>daqui para a frente</b> — não mexe nas grades já cadastradas. Para reescrever o que já existe, use "Aplicar em todas as grades": ele mostra quantas fases mudam, de quanto para quanto, e <b>quantas tinham valor digitado à mão</b> que será substituído. Um snapshot é gravado automaticamente antes, e fica em "Snapshots de contingência".</div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Backups e restauração</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Snapshots automáticos</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Uma cópia completa dos dados é gravada automaticamente uma vez por dia. Se algo der errado, você pode restaurar um dia anterior.</div></details><div class="cfg-status">um por dia, últimos 30 dias</div></div>
+            <div class="cfg-botoes"><button class="btn small" onclick="listarSnapshots()">Atualizar lista</button></div>
+          </div>
+          <div id="snapshotsList"></div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Snapshots de contingência</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>A cada alteração no programa, uma cópia completa dos dados é guardada automaticamente — no navegador (últimos 30) e, se houver pasta de backup conectada, também em arquivos na pasta (Google Drive). Se algo apagar os dados, restaure aqui o estado logo antes — nada se perde. Uma trava também impede o programa de gravar dados vazios por cima dos bons.</div></details><div class="cfg-status">a cada alteração, no navegador e na pasta de backup</div></div>
+            <div class="cfg-botoes"><button class="btn small" onclick="listarSnapshotsLocais()">Atualizar lista</button></div>
+          </div>
+          <div id="snapshotsLocaisList"></div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-topo">
+            <div class="cfg-linha-nome"><b>Restaurar só as OEs de um snapshot</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Recupera as <b>cargas/alocações de expedição (OEs)</b> de um arquivo de snapshot, <b>sem reverter</b> as OSs e cadastros. Baixe um snapshot de <b>antes da perda</b> (botão "Baixar" nos cards de snapshot acima), depois escolha o arquivo aqui. Só <b>adiciona o que falta</b> — nada do atual é apagado. Ele mostra quantas OEs vai restaurar antes de aplicar; se der 0, o snapshot é posterior à perda — tente um mais antigo.</div></details><div class="cfg-status">só adiciona o que falta; OS e cadastros não voltam</div></div>
+            <div class="cfg-botoes"><label class="file-label btn small">⬆ Escolher snapshot<input type="file" accept="application/json" onchange="restaurarExpedicaoDeArquivo(event)"></label></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card cfg-quadro admin-only">
+        <div class="card-title">Contas e permissões</div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Contas de acesso</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Crie aqui a conta de cada pessoa que vai usar o programa. <b>Sem conta ninguém entra</b> — e sem entrar não vê cadastro, OS nem OE nenhuma. A conta já nasce válida: não há e-mail de confirmação para esperar.</div></details></div>
+          <div class="form-grid cols-3" style="margin-bottom: 12px;">
+          <div class="field">
+            <label for="novoUsuarioEmail">Nome</label>
+            <input type="text" id="novoUsuarioEmail" placeholder="maria" autocomplete="off">
+            <div class="field-hint">É o nome com que a pessoa vai entrar. Pode ter espaço (ex.: Maria Silva); não precisa de e-mail.</div>
+          </div>
+          <div class="field">
+            <label for="novoUsuarioSenha">Senha</label>
+            <input type="text" id="novoUsuarioSenha" placeholder="mínimo 6 caracteres" autocomplete="off">
+            <div class="field-hint">Fica visível de propósito: você vai anotá-la para entregar à pessoa.</div>
+          </div>
+          <div class="field">
+            <label for="novoUsuarioPapel">Pode editar?</label>
+            <select id="novoUsuarioPapel">
+              <option value="usuario">Não — só consulta e imprime</option>
+              <option value="admin">Sim — administrador</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn primary" onclick="criarUsuario()">Criar conta</button>
+          <button class="btn" onclick="sugerirSenha()">Sugerir senha</button>
+          <button class="btn small" onclick="listarContasAcesso()">Atualizar lista</button>
+        </div>
+        <div id="contasAcessoStatus" style="margin-top:10px; font-size:13px; color:var(--ink-2);"></div>
+        <div id="contasAcessoLista" style="margin-top: 12px;"></div>
+
+        <div id="editarContaBox" class="hidden" style="margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--bg);">
+          <div style="font-weight:600; margin-bottom:8px;">Editar conta: <span id="editarContaNome">—</span></div>
+          <div class="info-box">Troque o <b>nome de login</b> e/ou a <b>senha</b> desta conta. Deixe a senha em branco para não mexer nela. O papel (admin/consulta) muda no painel de baixo. O acesso e o histórico da pessoa continuam os mesmos — só o modo de entrar muda.</div>
+          <div class="form-grid cols-3" style="margin-bottom: 12px;">
+            <div class="field">
+              <label for="editarContaEmail">Nome de login</label>
+              <input type="text" id="editarContaEmail" placeholder="maria" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="editarContaSenha">Nova senha</label>
+              <input type="text" id="editarContaSenha" placeholder="deixe em branco para manter" autocomplete="off">
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn primary" onclick="salvarEdicaoConta()">Salvar alterações</button>
+            <button class="btn" onclick="cancelarEdicaoConta()">Cancelar</button>
+          </div>
+          <div id="editarContaStatus" style="margin-top:10px; font-size:13px; color:var(--ink-2);"></div>
+        </div>
+        </div>
+        <div class="cfg-linha">
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Papéis (admin ou consulta)</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>Somente <b>admin</b> gerencia papéis. Quem não é admin usa o programa em <b>modo leitura</b>: consulta e imprime OS, agenda e expedição, mas não cadastra nem edita nada.<br><br>A tranca de verdade fica no <b>Supabase</b>, não nesta tela: a função <code>set_user_role</code> confere sozinha se quem chamou é admin. Esconder o painel não basta — o navegador é da pessoa que usa, e o papel guardado nele pode ser alterado por quem souber. Se ainda não rodou, aplique uma vez o script <b>sql/supabase-admin-roles.sql</b> (que está no repositório) no SQL Editor do Supabase.</div></details></div>
+          <div class="cfg-botoes">
+            <input type="text" id="roleEmail" placeholder="Nome do usuário (ex.: maria)" style="flex:1 1 200px;max-width:280px;">
+            <button class="btn small primary" onclick="setUserRole('admin')">Promover a admin</button>
+            <button class="btn small" onclick="setUserRole('usuario')">Rebaixar a usuário</button>
+            <button class="btn small" onclick="listarUsuariosComPapel()">Atualizar lista</button>
+          </div>
+          <div id="usersList" style="margin-top: 8px;"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ================= MODAL CADASTRO ================= -->
+<div class="modal-backdrop" id="modal-cad">
+  <div class="modal">
+    <h2 id="modal-cad-title">Novo cadastro</h2>
+    <div id="modal-cad-fields"></div>
+    <div class="actions">
+      <!-- Quem consulta abre a ficha inteira e fecha; salvar é do admin. -->
+      <button class="btn" onclick="closeModal('modal-cad')">Fechar</button>
+      <button class="btn primary admin-only" id="btn-cad-salvar" onclick="salvarCadastro()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL MOVIMENTAÇÃO DE ESTOQUE ================= -->
+<div class="modal-backdrop" id="modal-estoque">
+  <div class="modal">
+    <h2 id="modal-estoque-title">Entrada de estoque</h2>
+    <div id="modal-estoque-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-estoque')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovEstoque()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= MODAL MOVIMENTAÇÃO DE AVIAMENTOS ============= -->
+<div class="modal-backdrop" id="modal-aviamento">
+  <div class="modal">
+    <h2 id="modal-aviamento-title">Entrada de aviamento</h2>
+    <div id="modal-aviamento-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-aviamento')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovAviamento()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-estoque-item">
+  <div class="modal">
+    <h2 id="modal-estoque-item-title">Cadastrar</h2>
+    <div id="modal-estoque-item-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-estoque-item')">Cancelar</button>
+      <button class="btn primary" onclick="salvarEstoqueItem()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= MODAL MOVIMENTAÇÃO DE ESTOQUE DE CORTE ============= -->
+<div class="modal-backdrop" id="modal-corte">
+  <div class="modal">
+    <h2 id="modal-corte-title">Entrada de corte</h2>
+    <div id="modal-corte-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-corte')">Cancelar</button>
+      <button class="btn primary" onclick="salvarMovFase()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= MODAL DO PLANEJAMENTO DE EXPEDIÇÃO ============= -->
+<!-- Modal único para todas as ações do planejamento (janela, carga, unidades,
+     cancelar/remarcar). Quem monta os campos e decide o que salvar é o
+     contexto guardado em _expModalCtx (app.js). -->
+<div class="modal-backdrop" id="modal-exp">
+  <div class="modal">
+    <h2 id="modal-exp-title">Expedição</h2>
+    <div id="modal-exp-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-exp')">Cancelar</button>
+      <button class="btn primary" onclick="salvarModalExpedicao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= MODAL DAS OBSERVAÇÕES DA OS ============= -->
+<!-- A folha é uma A4 e a caixa de observações tem a altura que sobra na coluna:
+     quando os recados não cabem, os mais antigos saem da folha e é AQUI que se
+     lê tudo, com o login de quem escreveu e a hora. Só leitura — cada um edita
+     a sua na própria folha (ver _obsCaberNaFolha em app.js). -->
+<div class="modal-backdrop" id="modal-obs">
+  <div class="modal">
+    <h2 id="modal-obs-title">Observações da OS</h2>
+    <div id="modal-obs-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-obs')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: NUMEROS QUE FALTAM NA CONTAGEM ============ -->
+<!-- Quais numeros de OS faltam na contagem, agrupados em faixas, e o que se
+     sabe de cada faixa. Numero que falta E tem PDF na pasta e OS perdida: o
+     papel ficou e o registro nao. Montado em app.js
+     (abrirNumerosFaltandoOS). -->
+<div class="modal-backdrop" id="modal-numeros">
+  <div class="modal">
+    <h2>Numeros que faltam na contagem das OS</h2>
+    <div id="modal-numeros-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-numeros')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================== MODAL: CONJUGAR OS ================== -->
+<!-- Amarrar OS que JÁ existem, para o status andar junto. Não gera OS, não
+     mexe em tecido e não toca no cadastro da grade — os campos são montados
+     em app.js (renderModalConjugarOS). -->
+<div class="modal-backdrop" id="modal-conjugar">
+  <div class="modal">
+    <h2 id="modal-conjugar-title">Conjugar OS</h2>
+    <div id="modal-conjugar-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-conjugar')">Cancelar</button>
+      <button class="btn primary" onclick="salvarConjugarOS()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= MODAL DO PLANEJAMENTO DE OPERAÇÕES ============= -->
+<!-- Uma operação do dia: data, função, o que será feito, quem executa, a OS e
+     as peças. Os campos são montados em app.js (abrirModalOperacao). -->
+<div class="modal-backdrop" id="modal-op">
+  <div class="modal">
+    <h2 id="modal-op-title">Operação do dia</h2>
+    <div id="modal-op-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-op')">Cancelar</button>
+      <button class="btn primary" onclick="salvarModalOperacao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Alocar uma OS no dia: o programa monta a cascata de operações a partir das
+     operações cadastradas em cada função. -->
+<div class="modal-backdrop" id="modal-aloc-os">
+  <div class="modal">
+    <h2 id="modal-aloc-title">Alocar OS no dia</h2>
+    <div id="modal-aloc-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-aloc-os')">Cancelar</button>
+      <button class="btn primary" onclick="confirmarAlocarOSNoDia()">Montar operações</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: GOOGLE DRIVE FECHADO ================= -->
+<!-- As pastas conectadas (OE, PDFs das OS) moram no J:\ do Google Drive. Com o
+     Drive fechado o J:\ não existe, a pasta some do disco e a gravação falha —
+     foi o que aconteceu ao clicar em "Salvar OE na pasta".
+     Uma página da web não pode ligar um programa do Windows, então o app PEDE
+     que o Drive seja aberto e fica de olho na pasta: assim que ela reaparece,
+     ele mesmo retoma a gravação que tinha ficado pelo caminho. -->
+<div class="modal-backdrop" id="modal-drive">
+  <div class="modal" style="max-width:560px;">
+    <h2>⚠️ Abra o Google Drive</h2>
+    <div id="modal-drive-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="fecharPedidoDrive()">Agora não</button>
+      <button class="btn primary" onclick="tentarDriveAgora()">Já abri — tentar de novo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Retirar do dia todas as operações de uma OS alocada: é o desfazer do
+     "Alocar OS", em massa, sem ter que apagar uma a uma. -->
+<!-- Importar risco: lê os PDFs de encaixe do CAD e lança comprimento/largura
+     nas fases da grade. Um PDF = uma fase. -->
+<div class="modal-backdrop" id="modal-risco">
+  <div class="modal" style="max-width:1100px;">
+    <h2>Importar risco (PDF do encaixe)</h2>
+    <div id="modal-risco-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-risco')">Fechar</button>
+      <button class="btn primary" id="btn-risco-aplicar" onclick="aplicarRiscoNasGrades()" style="display:none;">Aplicar nas grades</button>
+    </div>
+  </div>
+</div>
+
+<!-- Os riscos de UMA grade: os PDFs de encaixe de onde saíram o comprimento e a
+     largura dela. Só links — quem abre é o leitor de PDF do navegador, em outra
+     aba, e por isso não há nada a salvar aqui. -->
+<div class="modal-backdrop" id="modal-riscos">
+  <div class="modal" style="max-width:760px;">
+    <h2 id="modal-riscos-title">Riscos da grade</h2>
+    <div id="modal-riscos-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-riscos')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assistente da PASTA de riscos: lê todos os PDFs de uma pasta, agrupa por
+     grade e conduz o cadastro de uma em uma até o último arquivo. Os botões de
+     cada passo são desenhados dentro do corpo, porque mudam a cada etapa. -->
+<div class="modal-backdrop" id="modal-risco-pasta">
+  <div class="modal" style="max-width:1200px;">
+    <h2>Cadastrar grades a partir de uma pasta de riscos</h2>
+    <div id="modal-risco-pasta-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="pastaFechar()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-desaloc-os">
+  <div class="modal">
+    <h2 id="modal-desaloc-title">Retirar OS do planejamento</h2>
+    <div id="modal-desaloc-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-desaloc-os')">Cancelar</button>
+      <button class="btn danger" onclick="confirmarDesalocarOS()">Retirar operações</button>
+    </div>
+  </div>
+</div>
+
+<!-- no-print: o toast é position:fixed e o html2canvas 1.4.1 o inclui na foto se
+     ele estiver visível. Como salvar uma OS dispara capturas em sequência (folha,
+     etiqueta, OE) e o toast fica 2,4s na tela, o aviso de um passo aparecia
+     sobreposto à folha do passo seguinte. -->
+<!-- O MENU DE ACOES DA LISTA DE OS. Um so, reaproveitado por todas as linhas:
+     255 OS x 5 botoes escondidos seriam 1275 elementos parados no DOM. Fica
+     no <body>, fora do .app, para nao ser cortado pela rolagem da tabela. -->
+<div class="menu-acoes hidden no-print" id="menuAcoesOS" role="menu"></div>
+<div class="toast no-print" id="toast"></div>
+
+<div class="modal-auth hidden" id="modalAuth" data-mode="login">
+  <div class="box">
+    <div class="title" id="authTitle">Acesso restrito</div>
+    <div class="sub" id="authSub">Faça login para usar o gerador. Seus cadastros ficam sincronizados na nuvem e acessíveis de qualquer computador.</div>
+    <div class="tabs" id="authTabs">
+      <button class="tab active" id="tabLogin" onclick="trocarAbaAuth('login')">Entrar</button>
+      <button class="tab" id="tabSignup" onclick="trocarAbaAuth('signup')">Criar conta</button>
+    </div>
+    <div id="authEmailGroup">
+      <label for="authEmailInput">Nome</label>
+      <input type="text" id="authEmailInput" autocomplete="username" placeholder="seu nome">
+    </div>
+    <div id="authSenhaGroup">
+      <label for="authSenhaInput">Senha</label>
+      <div class="campo-senha">
+        <input type="password" id="authSenhaInput" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+        <button type="button" class="olho-senha" data-alvo="authSenhaInput" aria-label="Mostrar senha" title="Mostrar senha" onclick="alternarVisibilidadeSenha(this)">
+          <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+          <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/><path d="M3.5 3.5 20.5 20.5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="authSenha2Group" class="hidden">
+      <label for="authSenha2Input">Confirmar nova senha</label>
+      <div class="campo-senha">
+        <input type="password" id="authSenha2Input" autocomplete="new-password" placeholder="repita a nova senha">
+        <button type="button" class="olho-senha" data-alvo="authSenha2Input" aria-label="Mostrar senha" title="Mostrar senha" onclick="alternarVisibilidadeSenha(this)">
+          <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+          <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 12S5.4 5.8 12 5.8 22.2 12 22.2 12 18.6 18.2 12 18.2 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/><path d="M3.5 3.5 20.5 20.5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="err" id="authErro"></div>
+    <div class="actions-auth">
+      <button class="btn-primary" id="authActionBtn" onclick="submeterAuth()">Entrar</button>
+    </div>
+    <div class="auth-extras">
+      <a href="#" id="linkEsqueci" onclick="abrirRecuperacaoSenha(); return false;">Esqueci a senha</a>
+      <a href="#" id="linkVoltar" class="hidden" onclick="trocarAbaAuth('login'); return false;">← Voltar ao login</a>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=2026-10-15d"></script>
+<script src="assistente.js?v=2026-10-19b"></script>
+</body>
+</html>
