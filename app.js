@@ -2060,6 +2060,11 @@ const AREAS_ACESSO = [
     desc: 'Entradas de compra, saídas, ajustes e baixa de material' },
   { k: 'estoque-fases', rotulo: 'Estoques de corte, costura, fios e expedição',
     desc: 'Contagem física e ajustes das fases seguintes ao corte' },
+  /* O ESTOQUE CONFECÇÃO (21/10/2026): o produto acabado que veio do programa
+     Estoque-Confeccao. Área própria: quem lança venda e conta a prateleira não
+     precisa mexer no tecido nem nas fases. Ver estoque-confeccao.js. */
+  { k: 'estoque-confeccao', rotulo: 'Estoque confecção',
+    desc: 'Produto acabado: entradas, saídas, inventário, SKUs e as vendas do ERP' },
   { k: 'expedicao', rotulo: 'Expedição',
     desc: 'Alocar OS nas cargas, janelas, cancelamentos e a folha de OE' },
   { k: 'operacoes', rotulo: 'Planejamento de operações',
@@ -2121,6 +2126,10 @@ const ACOES_POR_AREA = {
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
+  // Estoque confecção
+  'lançar no estoque confecção': 'estoque-confeccao', 'apagar lançamento do estoque confecção': 'estoque-confeccao',
+  'cadastrar SKU no estoque confecção': 'estoque-confeccao', 'importar saídas do ERP': 'estoque-confeccao',
+  'configurar o estoque confecção': 'estoque-confeccao',
   // Expedição
   'alocar OS na expedição': 'expedicao', 'configurar a expedição': 'expedicao',
   'alocar aviamento na expedição': 'expedicao', 'tirar aviamento da expedição': 'expedicao',
@@ -2193,6 +2202,7 @@ const VISAO_PAGINAS = {
   'cadastros': ['cad-*'],
   'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
+  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
   'operacoes': ['operacoes', 'print-operacoes'],
   'costura': ['relatorio-costura'],
@@ -2243,7 +2253,10 @@ const TELAS_DA_AREA = {
     ['estoque-fio', 'Estoque com fio · Descalvado'], ['estoque-fio-sc', 'Estoque com fio · São Carlos'],
     ['transito-ida', 'Estoque em trânsito · IDA'], ['transito-volta', 'Estoque em trânsito · VOLTA'],
     ['costurando', 'Costurando · Descalvado'], ['costurando-sc', 'Costurando · São Carlos'],
-    ['fios', 'Retirada de fios']]
+    ['fios', 'Retirada de fios']],
+  'estoque-confeccao': [['acab-estoque', 'Estoque atual'], ['acab-mov', 'Entradas e saídas'],
+    ['acab-inventario', 'Inventário'], ['acab-produtos', 'Produtos (SKUs)'], ['acab-erp', 'Saídas do ERP'],
+    ['acab-cmp', 'Relatório CMP']]
 };
 const _TELA_DA_FOLHA = {
   'print': 'lista-os', 'print-expedicao': 'expedicao', 'print-operacoes': 'operacoes',
@@ -2999,7 +3012,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3547,6 +3560,11 @@ const STATE = {
   // A chave não é `materiais`: essa é o cadastro dos aviamentos da OS.
   materiaisEstCad: [],
   materiaisEstMov: [],
+  // Estoque confecção (21/10/2026): o produto acabado — SKUs e os lançamentos
+  // feitos à mão ou pelo ERP. As entradas das OS não são gravadas: saem da OS
+  // (ver estoque-confeccao.js).
+  acabProdutos: [],
+  acabMov: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3635,7 +3653,7 @@ const STATE = {
 // Estoque-Confeccao. Inclui desenhos/modelos/cores porque o SKU de cada OS é
 // resolvido a partir deles (skusDaOS) — editar o SKU de um desenho precisa
 // republicar o snapshot, senão o Estoque continua com o SKU antigo.
-const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos', 'modelos', 'cores'];
+const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos', 'modelos', 'cores', 'acabProdutos', 'acabMov'];
 
 // Chaves que mudam o conteúdo da OE. Gancho no saveState em vez de espalhar a
 // chamada por cada função que mexe no plano (alocar, mover, excluir, cancelar,
@@ -3767,6 +3785,8 @@ const DESFAZER_NOMES = {
   ferramentasMov: ['lançamento de ferramentas', 'lançamentos de ferramentas'],
   materiaisEstCad: ['material do estoque', 'materiais do estoque'],
   materiaisEstMov: ['lançamento de materiais', 'lançamentos de materiais'],
+  acabProdutos: ['SKU do estoque confecção', 'SKUs do estoque confecção'],
+  acabMov: ['lançamento do estoque confecção', 'lançamentos do estoque confecção'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3921,7 +3941,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -4617,6 +4637,7 @@ function goto(page) {
   if (page === 'estoque') renderEstoque();
   if (page === 'estoque-aviamentos') renderEstoqueAviamentos();
   if (page === 'estoque-pecas') renderEstoqueItens('pecas');
+  if (page.startsWith('acab-') && typeof renderEstoqueConfeccao === 'function') renderEstoqueConfeccao(page);
   if (page === 'estoque-materiais') renderEstoqueItens('materiais');
   if (page === 'estoque-ferramentas') renderEstoqueItens('ferramentas');
   if (page === 'compra') renderCompra();
@@ -22395,7 +22416,13 @@ function construirContabSnapshot() {
     };
   }).filter(x => x.camisetas > 0 || x.material.length);
 
-  return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao, ordens };
+  // O PRODUTO ACABADO (21/10/2026): o Estoque confecção mora aqui agora, e a
+  // Contabilidade recebe o estoque dele no mesmo formato que o Render publicava
+  // em produtos_acabados ({ geradoEm, total, itens:[{codigo, sku, descricao,
+  // cor, quantidade, preco}] }). Ver estoque-confeccao.js.
+  let produtosAcabados = null;
+  try { if (typeof acabSnapshotContab === 'function') produtosAcabados = acabSnapshotContab(); } catch (e) { console.warn('produtosAcabados', e); }
+  return { geradoEm: new Date().toISOString(), materiaPrima, produtosElaboracao, ordens, produtosAcabados };
 }
 
 // Recalcula e grava o snapshot no blob (sem entrar no STATE/loadState — é só

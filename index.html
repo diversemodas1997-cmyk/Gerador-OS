@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-21a">
+<link rel="stylesheet" href="styles.css?v=2026-10-21b">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -197,6 +197,20 @@
              junto da costura, que é trabalho de verdade. -->
         <a class="nav-btn" href="#transito-ida" data-page="transito-ida" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · IDA</a>
         <a class="nav-btn" href="#transito-volta" data-page="transito-volta" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque em trânsito · VOLTA</a>
+        <!-- ESTOQUE CONFECCAO (21/10/2026, Junior): o produto acabado, que era o
+             programa Estoque-Confeccao (Render), numa pasta dentro de Estoques.
+             As telas sao desenhadas por estoque-confeccao.js. -->
+        <div class="nav-group nav-sub" data-group="estoque-confeccao">
+          <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque confecção</button>
+          <div class="nav-items">
+            <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
+            <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
+            <a class="nav-btn" href="#acab-inventario" data-page="acab-inventario" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Inventário</a>
+            <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
+            <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
+            <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -466,6 +480,32 @@
       <div id="materiais-painel"></div>
     </section>
 
+    <!-- ESTOQUE CONFECCAO (21/10/2026): o produto acabado. Os paineis sao
+         desenhados por estoque-confeccao.js (renderEstoqueConfeccao, no goto). -->
+    <section class="page hidden" data-page="acab-estoque">
+      <div class="page-header"><div><h1>Estoque confecção · Estoque atual</h1><div class="desc">O produto acabado na prateleira, por SKU e tamanho. A OS que marca a etapa <b>Estoque</b> entra sozinha; as vendas, a contagem e as compras entram pelas outras telas desta pasta.</div></div></div>
+      <div id="acab-estoque-painel"></div>
+    </section>
+    <section class="page hidden" data-page="acab-mov">
+      <div class="page-header"><div><h1>Estoque confecção · Entradas e saídas</h1><div class="desc">Entrada de compra ou de peça que chegou fora de uma OS, e saída para cliente, cancelamento, devolução ou defeito.</div></div></div>
+      <div id="acab-mov-painel"></div>
+    </section>
+    <section class="page hidden" data-page="acab-inventario">
+      <div class="page-header"><div><h1>Estoque confecção · Inventário</h1><div class="desc">A contagem física da prateleira: o número contado passa a ser o saldo, e a diferença fica registrada.</div></div></div>
+      <div id="acab-inventario-painel"></div>
+    </section>
+    <section class="page hidden" data-page="acab-produtos">
+      <div class="page-header"><div><h1>Estoque confecção · Produtos (SKUs)</h1><div class="desc">O cadastro dos SKUs (linha + cor, como a OS calcula), os tamanhos de cada um, o código do ERP, o estoque mínimo e o início do estoque.</div></div></div>
+      <div id="acab-produtos-painel"></div>
+    </section>
+    <section class="page hidden" data-page="acab-erp">
+      <div class="page-header"><div><h1>Estoque confecção · Saídas do ERP</h1><div class="desc">O relatório de vendas do ERP (PDF ou CSV) vira saídas de estoque, com prévia antes de lançar.</div></div></div>
+      <div id="acab-erp-painel"></div>
+    </section>
+    <section class="page hidden" data-page="acab-cmp">
+      <div class="page-header"><div><h1>Estoque confecção · Relatório CMP</h1><div class="desc">O custo médio ponderado de um SKU, movimento a movimento, e o custo das saídas (CMV).</div></div></div>
+      <div id="acab-cmp-painel"></div>
+    </section>
     <section class="page hidden" data-page="estoque-pecas">
       <div class="page-header">
         <div>
@@ -1788,6 +1828,18 @@
   </div>
 </div>
 
+<!-- ============= MODAL SKU DO ESTOQUE CONFECCAO ============= -->
+<div class="modal-backdrop" id="modal-acab-produto">
+  <div class="modal">
+    <h2 id="modal-acab-produto-title">Cadastrar SKU</h2>
+    <div id="modal-acab-produto-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-acab-produto')">Cancelar</button>
+      <button class="btn primary" onclick="acabSalvarProduto()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-estoque-item">
   <div class="modal">
     <h2 id="modal-estoque-item-title">Cadastrar</h2>
@@ -2021,8 +2073,9 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-21c"></script>
+<script src="app.js?v=2026-10-21d"></script>
 <script src="assistente.js?v=2026-10-19i"></script>
 <script src="colorimetro.js?v=2026-10-20p"></script>
+<script src="estoque-confeccao.js?v=2026-10-21a"></script>
 </body>
 </html>

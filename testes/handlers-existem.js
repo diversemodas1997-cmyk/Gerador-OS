@@ -37,6 +37,14 @@ for (const re of [
   for (const m of app.matchAll(re)) definidos.add(m[1]);
 }
 
+// AS TELAS EM ARQUIVO PROPRIO (21/10/2026): o estoque-confeccao.js mora fora do
+// app.js e pendura no window, de dentro de uma funcao (por isso recuado), o
+// que os botoes dele chamam — inclusive o Salvar do modal, que e do index.html.
+for (const arq of ['estoque-confeccao.js']) {
+  const txt = fs.readFileSync(path.join(raiz, arq), 'utf8');
+  for (const m of txt.matchAll(/^\s*window\.([A-Za-z0-9_$]+) =/gm)) definidos.add(m[1]);
+}
+
 // O que o navegador ja tem, e por isso nao precisa estar no app.js.
 const NATIVOS = new Set(['window', 'document', 'event', 'this', 'alert', 'confirm',
   'print', 'open', 'setTimeout', 'parseInt', 'parseFloat', 'Number', 'String',

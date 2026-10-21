@@ -1,0 +1,978 @@
+/* =====================================================================
+   ESTOQUE CONFECÇÃO — o produto acabado, dentro do Gerador-OS (21/10/2026)
+   =====================================================================
+   (Junior: "Analise uma forma de copiar o programa Estoque confecção e insira
+   os campos do programa que não forem redundantes ao programa gerador OS, de
+   forma que seja uma pasta na barra lateral, dentro da pasta Estoque".)
+
+   O original (Desktop\Estoque-Confeccao, servidor Node no Render) controla a
+   prateleira do PRODUTO ACABADO: SKU × tamanho, com entradas, saídas (venda,
+   cancelamento, devolução, defeito), contagem de inventário, custo médio
+   ponderado e a importação das vendas do ERP. Decidido com o Junior: o
+   Gerador-OS passa a valer e o estoque COMEÇA DO ZERO (sem o histórico do
+   Render); a lista de SKUs pode ser trazida do catálogo que o Render publicou.
+
+   O QUE VEIO (uma tela para cada, na pasta "Estoque confecção"):
+     · Estoque atual       — a tabela SKU × tamanho, os totais e o mínimo;
+     · Entradas e saídas   — os lançamentos à mão e a lista dos últimos;
+     · Inventário          — a contagem física que acerta o saldo;
+     · Produtos (SKUs)     — o cadastro, os limites e o início do estoque;
+     · Saídas do ERP       — o relatório de vendas (PDF ou CSV) vira saída;
+     · Relatório CMP       — o custo médio ponderado, movimento a movimento.
+
+   O QUE NÃO VEIO, porque o Gerador-OS já tem:
+     · login e usuários         → as contas do programa e as concessões
+                                  (área "Estoque confecção" em Configurações);
+     · backup, restaurar, zerar → Dados, backup e pastas (e o Desfazer);
+     · a sincronização com o Gerador-OS (o Render lia a etapa "Estoque" das
+       OS pela nuvem a cada minuto) → aqui a entrada da OS é lida DIRETO da
+       própria OS (ver _entradasDasOS): marcar a etapa Estoque lança, desmarcar
+       estorna, sem cópia nem atraso;
+     · a publicação para a Contabilidade → vai junto do contabSnapshot que o
+       Gerador-OS já grava (produtosAcabados, no mesmo formato do Render).
+
+   ONDE MORA: STATE.acabProdutos (os SKUs) e STATE.acabMov (entradas, saídas e
+   ajustes lançados aqui ou pelo ERP), mais STATE.meta.acabConfig (mínimo,
+   máximo, início). As entradas das OS NÃO são gravadas: são calculadas da OS a
+   cada desenho, e por isso não há como divergirem dela.
+
+   Arquivo separado do app.js, como o colorimetro.js. As telas são as
+   section[data-page^="acab-"] do index.html; o goto chama renderEstoqueConfeccao.
+   ===================================================================== */
+(function () {
+  'use strict';
+
+  // Os tamanhos na ordem da prateleira: adulto (com o PP, que só a bermuda
+  // feminina usa) e o infantil, que o Render não tinha e as OS têm.
+  const TAMS = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '2', '4', '6', '8', '10', '12', '14', '16'];
+  const TAMS_PADRAO = ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
+  const TAMS_INFANTIL = ['2', '4', '6', '8', '10', '12', '14', '16'];
+  const TAM_DA_GRADE = { p: 'P', m: 'M', g: 'G', gg: 'GG', g1: 'G1', g2: 'G2', g3: 'G3',
+    t2: '2', t4: '4', t6: '6', t8: '8', t10: '10', t12: '12', t14: '14', t16: '16' };
+  const DESTINOS = [
+    { k: 'cliente', rotulo: 'Estoque → Cliente' },
+    { k: 'cancelamento', rotulo: 'Estoque → Cancelamento' },
+    { k: 'devolucao', rotulo: 'Estoque → Devolução' },
+    { k: 'defeitos', rotulo: 'Estoque → Defeitos' }
+  ];
+  const ETAPA_ESTOQUE_RE = /estoque/i;
+
+  /* ---------------------------------------------------------------- base */
+  const lista = k => (Array.isArray(STATE[k]) ? STATE[k] : (STATE[k] = []));
+  const produtos = () => lista('acabProdutos');
+  const movs = () => lista('acabMov');
+  const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  const rankTam = t => { const i = TAMS.indexOf(t); return i < 0 ? 99 : i; };
+  const ordenarTams = arr => [...new Set(arr)].sort((a, b) => rankTam(a) - rankTam(b));
+  const asTam = v => { const t = norm(v); return TAMS.includes(t) ? t : ''; };
+  const quemSou = () => (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+  const hoje = () => (typeof _aviHoje === 'function' ? _aviHoje() : new Date().toISOString().slice(0, 10));
+  const fmtN = v => Math.round(Number(v) || 0).toLocaleString('pt-BR');
+  const fmtR = v => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtD = iso => (iso ? formatDate(String(iso).slice(0, 10)) : '—');
+  const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
+  const val = id => ((document.getElementById(id) || {}).value || '');
+  const mono = "text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;";
+
+  function cfg() {
+    STATE.meta = STATE.meta || {};
+    const c = STATE.meta.acabConfig && typeof STATE.meta.acabConfig === 'object' ? STATE.meta.acabConfig : {};
+    return {
+      estoqueMin: Number.isFinite(Number(c.estoqueMin)) ? Number(c.estoqueMin) : 5,
+      estoqueMax: Number.isFinite(Number(c.estoqueMax)) ? Number(c.estoqueMax) : 0,
+      inicio: c.inicio || '',
+      osDispensadas: Array.isArray(c.osDispensadas) ? c.osDispensadas : []
+    };
+  }
+  async function gravarCfg(mudar) {
+    STATE.meta = STATE.meta || {};
+    STATE.meta.acabConfig = Object.assign({}, STATE.meta.acabConfig || {}, mudar);
+    await saveState('meta');
+  }
+
+  /* O INÍCIO DO ESTOQUE. "Começar do zero" quer dizer que as OS que já tinham
+     entrado no estoque antes daqui não lançam entrada — essas peças o Render já
+     contou, e muitas já foram vendidas. O início é carimbado na primeira vez em
+     que alguém que edita a área abre estas telas, e o admin pode mudá-lo em
+     Produtos. Sem início, nenhuma OS lança: é o lado seguro. */
+  async function garantirInicio() {
+    if (cfg().inicio) return false;
+    if (!(typeof podeGravar === 'function' && podeGravar())) return false;
+    if (!(currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('estoque-confeccao')))) return false;
+    try { await gravarCfg({ inicio: new Date().toISOString() }); return true; } catch (e) { console.warn('acab início', e); return false; }
+  }
+
+  const produtoPorId = id => produtos().find(p => p.id === id);
+  const produtoPorSku = sku => { const s = norm(sku); return s ? produtos().find(p => norm(p.sku) === s) : null; };
+  const produtoPorCodigo = c => (Number(c) > 0 ? produtos().find(p => Number(p.codigo) === Number(c)) : null);
+  const rotuloProduto = p => (p ? (p.codigo ? String(p.codigo).padStart(3, '0') + ' · ' : '') + (p.sku || '?') : '(SKU apagado)');
+
+  /* ------------------------------------------- as entradas que vêm das OS */
+  /* A etapa terminal "Estoque" marcada na OS é a peça chegando à prateleira —
+     o mesmo gatilho que o Render usava. A entrada é uma por tamanho, com a
+     quantidade da coluna "Total por tamanho" da folha (totaisPorTamanhoTomOS),
+     e o SKU é o da OS (skusDaOS: Linha do modelo/desenho + Sigla da cor).
+     A data é a do carimbo da etapa; OS marcada antes do início fica de fora.
+     O que não dá para lançar sozinho (sem SKU, mais de uma cor, SKU não
+     cadastrado) vai para a lista "OS esperando SKU" da tela Estoque atual. */
+  function _entradasDasOS() {
+    const c = cfg();
+    const inicio = c.inicio ? Date.parse(c.inicio) : NaN;
+    const entradas = [], pendencias = [];
+    if (isNaN(inicio)) return { entradas, pendencias, semInicio: true };
+    const dispensadas = new Set(c.osDispensadas);
+    (STATE.ordens || []).forEach(o => {
+      if (typeof _statusOS === 'function' && _statusOS(o) === 'cancelado') return;
+      const checks = (o.progresso && o.progresso.etapasCheck) || {};
+      const seqs = (o.progresso && o.progresso.etapasSeq) || {};
+      const etapa = (o.etapas || []).find(n => ETAPA_ESTOQUE_RE.test(n) && !!checks[n]);
+      if (!etapa) return;
+      const quando = Number(seqs[etapa]);
+      if (!(quando >= inicio)) return;
+      if (dispensadas.has(o.id)) return;
+      const data = new Date(quando);
+      const dataIso = data.getFullYear() + '-' + String(data.getMonth() + 1).padStart(2, '0') + '-' + String(data.getDate()).padStart(2, '0');
+      const TT = totaisPorTamanhoTomOS(o);
+      const porTam = [];
+      Object.keys(TAM_DA_GRADE).forEach(k => {
+        const q = Math.round(TT.colTotal(k) || 0);
+        if (q > 0) porTam.push([TAM_DA_GRADE[k], q]);
+      });
+      const pecas = porTam.reduce((s, x) => s + x[1], 0);
+      if (!pecas) return;
+      const skus = typeof skusDaOS === 'function' ? skusDaOS(o) : [];
+      const base = { osId: o.id, os: o.os || '—', modelo: o.modeloNome || '', pecas, data: dataIso, skus };
+      if (skus.length !== 1) {
+        pendencias.push(Object.assign(base, { motivo: skus.length ? 'mais de uma cor (' + skus.join(', ') + ') — lance à mão' : 'a OS não tem SKU (Linha SKU do modelo/desenho e Sigla SKU da cor)' }));
+        return;
+      }
+      const p = produtoPorSku(skus[0]);
+      if (!p) {
+        pendencias.push(Object.assign(base, { motivo: 'o SKU ' + skus[0] + ' não está cadastrado', cadastrar: skus[0], tams: porTam.map(x => x[0]) }));
+        return;
+      }
+      porTam.forEach(([tam, q]) => entradas.push({
+        id: 'os:' + o.id + ':' + tam, tipo: 'entrada', origem: 'os', produtoId: p.id, tamanho: tam,
+        data: dataIso, qtd: q, custo: 0, osId: o.id, os: o.os || '', criadoEm: data.toISOString()
+      }));
+    });
+    return { entradas, pendencias, semInicio: false };
+  }
+
+  // Todos os movimentos: os lançados (STATE.acabMov) e os das OS.
+  function todosMovs(dasOS) {
+    return movs().concat((dasOS || _entradasDasOS()).entradas);
+  }
+
+  /* -------------------------------------------------------- as contas */
+  function saldos(ms) {
+    const mapa = new Map();
+    const pega = (pid, t) => {
+      const k = pid + '|' + t;
+      let e = mapa.get(k);
+      if (!e) { e = { ent: 0, entOS: 0, sai: 0, aj: 0, ult: null }; mapa.set(k, e); }
+      return e;
+    };
+    ms.forEach(m => {
+      const e = pega(m.produtoId, m.tamanho);
+      if (m.tipo === 'entrada') { e.ent += Number(m.qtd) || 0; if (m.origem === 'os') e.entOS += Number(m.qtd) || 0; }
+      else if (m.tipo === 'saida') e.sai += Number(m.qtd) || 0;
+      else if (m.tipo === 'ajuste') {
+        e.aj += Number(m.diferenca) || 0;
+        if (!e.ult || String(m.data) > String(e.ult.data) || (m.data === e.ult.data && String(m.criadoEm) > String(e.ult.criadoEm))) e.ult = m;
+      }
+    });
+    const de = (pid, t) => { const e = mapa.get(pid + '|' + t) || { ent: 0, entOS: 0, sai: 0, aj: 0, ult: null }; return Object.assign({ total: e.ent - e.sai + e.aj }, e); };
+    return { de, mapa };
+  }
+
+  /* CUSTO MÉDIO PONDERADO, como no original: a cada entrada a média é refeita
+     entre o que havia e o que entrou; a saída sai pela média e não a muda. O
+     ajuste de inventário não entra na conta de custo (também como no original).
+     Sem nenhuma entrada com custo, vale o preço do cadastro. */
+  function cmp(ms, produtoId, tamanho) {
+    const casa = m => m.produtoId === produtoId && (tamanho == null || m.tamanho === tamanho);
+    const evs = ms.filter(m => casa(m) && (m.tipo === 'entrada' || m.tipo === 'saida'))
+      .sort((a, b) => String(a.data).localeCompare(String(b.data)) || (a.tipo === b.tipo ? 0 : a.tipo === 'entrada' ? -1 : 1)
+        || String(a.criadoEm || '').localeCompare(String(b.criadoEm || '')));
+    let saldo = 0, medio = 0, cmv = 0;
+    const linhas = [];
+    evs.forEach(m => {
+      const q = Number(m.qtd) || 0;
+      if (m.tipo === 'entrada') {
+        const custo = Number(m.custo) || 0;
+        const novo = saldo + q;
+        medio = novo > 0 ? (saldo * medio + q * custo) / novo : 0;
+        saldo = novo;
+        linhas.push({ m, qtdEnt: q, custoEnt: custo, totalEnt: q * custo, saldo, medio });
+      } else {
+        const sai = Math.min(q, Math.max(0, saldo));
+        cmv += sai * medio;
+        saldo -= sai;
+        linhas.push({ m, qtdSai: q, custoSai: medio, totalSai: sai * medio, saldo, medio });
+      }
+    });
+    const p = produtoPorId(produtoId);
+    const temCusto = evs.some(m => m.tipo === 'entrada' && Number(m.custo) > 0);
+    const custoMedio = temCusto ? medio : (Number(p && p.preco) || 0);
+    return { linhas, saldo, medio: custoMedio, valor: saldo * custoMedio, cmv };
+  }
+
+  // As linhas SKU × tamanho: os tamanhos do cadastro e os que já têm movimento.
+  function linhasSkuTam(ms) {
+    const extra = new Map();
+    ms.forEach(m => { if (!extra.has(m.produtoId)) extra.set(m.produtoId, new Set()); extra.get(m.produtoId).add(m.tamanho); });
+    const out = [];
+    produtos().slice().sort((a, b) => String(a.sku).localeCompare(String(b.sku), 'pt-BR')).forEach(p => {
+      ordenarTams((p.tamanhos || []).concat([...(extra.get(p.id) || [])])).forEach(t => out.push({ p, tamanho: t }));
+    });
+    return out;
+  }
+
+  const statusDe = total => {
+    const c = cfg();
+    if (total <= c.estoqueMin) return { k: 'min', rotulo: 'Estoque mínimo', cor: '#f6dcda' };
+    if (c.estoqueMax > 0 && total > c.estoqueMax) return { k: 'max', rotulo: 'Excedente', cor: '#fbeccb' };
+    return { k: 'ok', rotulo: 'Estoque ok', cor: '#d6f0db' };
+  };
+
+  /* Para a Contabilidade: por SKU, a quantidade em estoque — o mesmo formato
+     que o Render publicava em produtos_acabados (só quantidades; a
+     Contabilidade valora ao custo). Vai dentro do contabSnapshot. */
+  function acabSnapshotContab() {
+    const ms = todosMovs();
+    const S = saldos(ms);
+    const itens = [];
+    let total = 0;
+    produtos().forEach(p => {
+      let q = 0;
+      ordenarTams((p.tamanhos || []).concat(ms.filter(m => m.produtoId === p.id).map(m => m.tamanho)))
+        .forEach(t => { q += S.de(p.id, t).total; });
+      if (!q) return;
+      total += q;
+      itens.push({ codigo: p.codigo || null, sku: p.sku || '', descricao: p.descricao || p.sku || '', cor: p.cor || '', quantidade: q, preco: Number(p.preco) || 0 });
+    });
+    return { geradoEm: new Date().toISOString(), total, itens };
+  }
+  window.acabSnapshotContab = acabSnapshotContab;
+
+  /* ------------------------------------------------------- os seletores */
+  const opcoesProdutos = sel => '<option value="">Escolha o SKU…</option>' + produtos().slice()
+    .sort((a, b) => String(a.sku).localeCompare(String(b.sku), 'pt-BR'))
+    .map(p => `<option value="${esc(p.id)}"${p.id === sel ? ' selected' : ''}>${esc(rotuloProduto(p))}${p.descricao ? ' — ' + esc(p.descricao) : ''}</option>`).join('');
+  const opcoesTams = (p, sel) => (p ? ordenarTams(p.tamanhos || []) : [])
+    .map(t => `<option value="${esc(t)}"${t === sel ? ' selected' : ''}>${esc(t)}</option>`).join('') || '<option value="">—</option>';
+  function trocarProduto(prefixo) {
+    const p = produtoPorId(val(prefixo + '-produto'));
+    const sel = document.getElementById(prefixo + '-tam');
+    if (sel) sel.innerHTML = opcoesTams(p, sel.value);
+    if (prefixo === 'acab-aj') infoAjuste();
+  }
+  window.acabTrocarProduto = trocarProduto;
+
+  const semSkus = () => `<div class="info-box">Nenhum SKU cadastrado ainda. Cadastre em <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a> — dá para trazer a lista inteira do catálogo de uma vez.</div>`;
+
+  /* ================================================= TELA: ESTOQUE ATUAL */
+  const filtro = { busca: '', linha: '', status: '' };
+  function renderEstoqueAtual() {
+    const box = document.getElementById('acab-estoque-painel');
+    if (!box) return;
+    const dasOS = _entradasDasOS();
+    const ms = todosMovs(dasOS);
+    const S = saldos(ms);
+    const linhas = linhasSkuTam(ms);
+    const busca = norm(filtro.busca);
+    let tPecas = 0, tValor = 0, tMin = 0;
+    const skusVistos = new Set();
+    const rows = [];
+    linhas.forEach(({ p, tamanho }) => {
+      if (filtro.linha && norm(p.linha) !== norm(filtro.linha)) return;
+      if (busca && !norm([p.sku, p.descricao, p.codigo, tamanho].join(' ')).includes(busca)) return;
+      const e = S.de(p.id, tamanho);
+      const st = statusDe(e.total);
+      if (filtro.status && st.k !== filtro.status) return;
+      const c = cmp(ms, p.id, tamanho);
+      skusVistos.add(p.id);
+      tPecas += e.total; tValor += Math.max(0, e.total) * c.medio;
+      if (st.k === 'min') tMin++;
+      rows.push(`<tr>
+        <td style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${esc(rotuloProduto(p))}</td>
+        <td>${esc(p.descricao || '')}</td>
+        <td><b>${esc(tamanho)}</b></td>
+        <td style="${mono}">${e.ult ? fmtN(e.ult.contado) : '—'}</td>
+        <td class="muted" style="font-size:11px;white-space:nowrap;">${e.ult ? fmtD(e.ult.data) : '—'}</td>
+        <td style="${mono}" title="${e.entOS ? fmtN(e.entOS) + ' das OS' : ''}">${fmtN(e.ent)}${e.entOS ? `<div class="muted" style="font-size:10px;">${fmtN(e.entOS)} das OS</div>` : ''}</td>
+        <td style="${mono}">${fmtN(e.sai)}</td>
+        <td style="${mono}font-weight:700;${e.total < 0 ? 'color:#c0392b;background:#fdecea;' : ''}">${fmtN(e.total)}</td>
+        <td style="${mono}">${fmtR(c.medio)}</td>
+        <td><span class="badge" style="background:${st.cor};">${esc(st.rotulo)}</span></td></tr>`);
+    });
+    const linhasCad = [...new Set(produtos().map(p => p.linha).filter(Boolean))].sort();
+    const c = cfg();
+    const pend = dasOS.pendencias;
+    const pendHtml = !pend.length ? '' : `<div class="card" style="border-left:3px solid var(--alert, #c0392b);">
+      <h2 style="margin-top:0;font-size:14px;">OS esperando SKU (${pend.length})</h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OS marcaram a etapa <b>Estoque</b>, mas a entrada não pôde ser lançada sozinha. Cadastre o SKU (a entrada aparece na hora), acerte o SKU no modelo/desenho/cor da OS, ou lance à mão em Entradas e saídas e dispense a OS daqui.</div>
+      <table class="table"><thead><tr><th>OS</th><th>Modelo</th><th style="text-align:right;">Peças</th><th>Entrou em</th><th>Por que não lançou</th><th class="col-actions admin-only">Ações</th></tr></thead><tbody>
+      ${pend.map(x => `<tr><td><b>${esc(x.os)}</b></td><td>${esc(x.modelo)}</td><td style="${mono}">${fmtN(x.pecas)}</td><td>${fmtD(x.data)}</td><td>${esc(x.motivo)}</td>
+        <td class="col-actions row-actions admin-only">${x.cadastrar ? `<button onclick="acabCadastrarSkuDaOS('${esc(x.cadastrar)}','${esc((x.tams || []).join(','))}')">cadastrar ${esc(x.cadastrar)}</button>` : ''}<button onclick="acabDispensarOS('${esc(x.osId)}')" title="Não lançar esta OS (por exemplo, já foi lançada à mão)">dispensar</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+    box.innerHTML = `
+      <div class="exp-resumo" style="margin-bottom:12px;">
+        <div class="item"><div class="num">${fmtN(skusVistos.size)}</div><div class="lbl">SKUs</div></div>
+        <div class="item"><div class="num">${fmtN(tPecas)}</div><div class="lbl">Peças em estoque</div></div>
+        <div class="item${tMin ? ' alerta' : ''}"><div class="num">${fmtN(tMin)}</div><div class="lbl">No estoque mínimo (≤ ${fmtN(c.estoqueMin)})</div></div>
+        <div class="item"><div class="num">${fmtR(tValor)}</div><div class="lbl">Valor (custo médio)</div></div>
+      </div>
+      ${dasOS.semInicio ? `<div class="info-box" style="margin-bottom:12px;">O início do estoque ainda não foi marcado: as OS que entram na etapa Estoque só lançam entrada a partir dele. Ele é marcado na primeira vez em que alguém que edita esta área abre a tela, ou em Produtos (SKUs).</div>` : ''}
+      ${pendHtml}
+      <div class="card">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <input type="search" placeholder="Buscar SKU, código, descrição ou tamanho…" value="${esc(filtro.busca)}" oninput="acabFiltro('busca',this.value)" style="flex:2;min-width:200px;">
+          <select onchange="acabFiltro('linha',this.value)" style="flex:1;min-width:140px;"><option value="">Todas as linhas</option>${linhasCad.map(l => `<option value="${esc(l)}"${l === filtro.linha ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          <select onchange="acabFiltro('status',this.value)" style="flex:1;min-width:140px;">
+            <option value="">Todos os status</option>
+            <option value="min"${filtro.status === 'min' ? ' selected' : ''}>Só estoque mínimo</option>
+            <option value="max"${filtro.status === 'max' ? ' selected' : ''}>Só excedente</option>
+            <option value="ok"${filtro.status === 'ok' ? ' selected' : ''}>Só estoque ok</option>
+          </select>
+          <button class="btn" onclick="acabExportarCsv()" title="A posição do estoque numa planilha (abre no Excel)">Exportar CSV ↓</button>
+        </div>
+        ${!produtos().length ? semSkus() : `<div style="overflow:auto;max-height:70vh;"><table class="table"><thead><tr>
+          <th>SKU</th><th>Descrição</th><th>Tam.</th><th style="text-align:right;" title="A última contagem de inventário">Contagem</th><th>Data</th>
+          <th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Estoque</th>
+          <th style="text-align:right;" title="Custo médio ponderado">Custo médio</th><th>Status</th></tr></thead>
+          <tbody>${rows.join('') || '<tr><td colspan="10" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
+      </div>`;
+  }
+  window.acabFiltro = (k, v) => {
+    filtro[k] = v;
+    renderEstoqueAtual();
+    if (k === 'busca') { const i = document.querySelector('#acab-estoque-painel input[type=search]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+  };
+
+  window.acabExportarCsv = function () {
+    const ms = todosMovs();
+    const S = saldos(ms);
+    const cel = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const linhas = [['Código', 'SKU', 'Descrição', 'Linha', 'Tamanho', 'Entradas', 'Entradas das OS', 'Saídas', 'Ajustes', 'Estoque', 'Custo médio', 'Valor', 'Status'].map(cel).join(';')];
+    linhasSkuTam(ms).forEach(({ p, tamanho }) => {
+      const e = S.de(p.id, tamanho);
+      const c = cmp(ms, p.id, tamanho);
+      const br = v => (Number(v) || 0).toFixed(2).replace('.', ',');
+      linhas.push([p.codigo || '', p.sku, p.descricao || '', p.linha || '', tamanho, e.ent, e.entOS, e.sai, e.aj, e.total, br(c.medio), br(Math.max(0, e.total) * c.medio), statusDe(e.total).rotulo].map(cel).join(';'));
+    });
+    const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'estoque-confeccao_' + hoje() + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  window.acabDispensarOS = async function (osId) {
+    if (!exigirEdicao('configurar o estoque confecção')) return;
+    const o = (STATE.ordens || []).find(x => x.id === osId);
+    if (!confirm(`Dispensar a OS ${o ? o.os : ''}?\n\nEla deixa de lançar entrada no Estoque confecção. Use quando a entrada já foi feita à mão.`)) return;
+    desfazerNomearAcao(`dispensa da OS ${o ? o.os : ''} no Estoque confecção`);
+    await gravarCfg({ osDispensadas: cfg().osDispensadas.concat([osId]) });
+    toast('OS dispensada', 'ok');
+    renderEstoqueAtual();
+  };
+
+  /* ============================================ TELA: ENTRADAS E SAÍDAS */
+  function renderMovimentos() {
+    const box = document.getElementById('acab-mov-painel');
+    if (!box) return;
+    if (!produtos().length) { box.innerHTML = `<div class="card">${semSkus()}</div>`; return; }
+    const ms = todosMovs().slice().sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+    const ent = ms.filter(m => m.tipo === 'entrada').slice(0, 150);
+    const sai = ms.filter(m => m.tipo === 'saida').slice(0, 150);
+    const pE = produtoPorId(val('acab-ent-produto')), pS = produtoPorId(val('acab-sai-produto'));
+    const origem = m => m.origem === 'os' ? `<span class="badge" style="background:#e3ecf7;" title="Etapa Estoque marcada na OS — desmarque na OS para estornar">OS ${esc(m.os)}</span>`
+      : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>' : '';
+    const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
+    box.innerHTML = `
+      <div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+        <div class="card admin-only">
+          <h2 style="margin-top:0;font-size:15px;">Registrar entrada</h2>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Compra de fornecedor ou peça que chegou fora de uma OS. A OS que marca a etapa <b>Estoque</b> já entra sozinha.</div>
+          <div class="form-grid cols-2">
+            <div class="field full"><label>SKU *</label><select id="acab-ent-produto" onchange="acabTrocarProduto('acab-ent')">${opcoesProdutos(pE && pE.id)}</select></div>
+            <div class="field"><label>Tamanho *</label><select id="acab-ent-tam">${opcoesTams(pE)}</select></div>
+            <div class="field"><label>Data *</label><input type="date" id="acab-ent-data" value="${hoje()}"></div>
+            <div class="field"><label>Quantidade *</label><input type="number" id="acab-ent-qtd" min="1" step="1"></div>
+            <div class="field"><label>Custo unitário (R$)</label><input type="text" inputmode="decimal" id="acab-ent-custo" placeholder="0,00"></div>
+            <div class="field full"><label>Observação</label><input type="text" id="acab-ent-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
+          </div>
+          <button class="btn primary" onclick="acabRegistrarEntrada()">+ Registrar entrada</button>
+        </div>
+        <div class="card admin-only">
+          <h2 style="margin-top:0;font-size:15px;">Registrar saída</h2>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Não sai mais do que há no estoque do tamanho. As vendas do ERP entram em lote pela tela Saídas do ERP.</div>
+          <div class="form-grid cols-2">
+            <div class="field full"><label>SKU *</label><select id="acab-sai-produto" onchange="acabTrocarProduto('acab-sai')">${opcoesProdutos(pS && pS.id)}</select></div>
+            <div class="field"><label>Tamanho *</label><select id="acab-sai-tam">${opcoesTams(pS)}</select></div>
+            <div class="field"><label>Destino *</label><select id="acab-sai-destino">${DESTINOS.map(d => `<option value="${d.k}">${esc(d.rotulo)}</option>`).join('')}</select></div>
+            <div class="field"><label>Data *</label><input type="date" id="acab-sai-data" value="${hoje()}"></div>
+            <div class="field"><label>Quantidade *</label><input type="number" id="acab-sai-qtd" min="1" step="1"></div>
+            <div class="field"><label>Valor unitário (R$)</label><input type="text" inputmode="decimal" id="acab-sai-valor" placeholder="0,00"></div>
+          </div>
+          <button class="btn primary" onclick="acabRegistrarSaida()">− Registrar saída</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+        <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimas entradas</h2>
+          <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Custo</th><th>Origem</th><th class="col-actions admin-only"></th></tr></thead><tbody>
+          ${ent.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td style="${mono}">${m.origem === 'os' ? '—' : fmtR(m.custo)}</td><td>${origem(m)}${m.obs ? `<div class="muted" style="font-size:10px;">${esc(m.obs)}</div>` : ''}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma entrada.</td></tr>'}
+          </tbody></table></div></div>
+        <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimas saídas</h2>
+          <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th>Destino</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Valor</th><th class="col-actions admin-only"></th></tr></thead><tbody>
+          ${sai.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td>${esc((DESTINOS.find(d => d.k === m.destino) || { rotulo: m.destino || '' }).rotulo.replace('Estoque → ', ''))} ${origem(m)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td style="${mono}">${fmtR(m.valor)}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma saída.</td></tr>'}
+          </tbody></table></div></div>
+      </div>`;
+  }
+
+  function novoMov(campos) {
+    return Object.assign({ id: uid(), origem: 'manual', criadoEm: new Date().toISOString(), criadoPor: quemSou() }, campos);
+  }
+
+  window.acabRegistrarEntrada = async function () {
+    if (!exigirEdicao('lançar no estoque confecção')) return;
+    const p = produtoPorId(val('acab-ent-produto'));
+    const tamanho = asTam(val('acab-ent-tam'));
+    const qtd = parseInt(val('acab-ent-qtd'), 10);
+    const custo = val('acab-ent-custo').trim() ? num(val('acab-ent-custo')) : 0;
+    if (!p) return toast('Escolha o SKU', 'err');
+    if (!tamanho) return toast('Escolha o tamanho', 'err');
+    if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
+    if (!(custo >= 0)) return toast('Custo inválido', 'err');
+    movs().push(novoMov({ tipo: 'entrada', produtoId: p.id, tamanho, data: val('acab-ent-data') || hoje(), qtd, custo, obs: val('acab-ent-obs').trim() }));
+    desfazerNomearAcao(`entrada de ${qtd} ${p.sku} ${tamanho}`);
+    await saveState('acabMov');
+    toast(`Entrada: ${qtd} × ${p.sku} ${tamanho}`, 'ok');
+    renderMovimentos();
+  };
+
+  window.acabRegistrarSaida = async function () {
+    if (!exigirEdicao('lançar no estoque confecção')) return;
+    const p = produtoPorId(val('acab-sai-produto'));
+    const tamanho = asTam(val('acab-sai-tam'));
+    const qtd = parseInt(val('acab-sai-qtd'), 10);
+    const valor = val('acab-sai-valor').trim() ? num(val('acab-sai-valor')) : 0;
+    const destino = DESTINOS.some(d => d.k === val('acab-sai-destino')) ? val('acab-sai-destino') : 'cliente';
+    if (!p) return toast('Escolha o SKU', 'err');
+    if (!tamanho) return toast('Escolha o tamanho', 'err');
+    if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
+    if (!(valor >= 0)) return toast('Valor inválido', 'err');
+    const disp = saldos(todosMovs()).de(p.id, tamanho).total;
+    if (qtd > disp) return toast(`Estoque insuficiente: há ${fmtN(disp)} de ${p.sku} ${tamanho}`, 'err');
+    movs().push(novoMov({ tipo: 'saida', produtoId: p.id, tamanho, data: val('acab-sai-data') || hoje(), qtd, valor, destino }));
+    desfazerNomearAcao(`saída de ${qtd} ${p.sku} ${tamanho}`);
+    await saveState('acabMov');
+    toast(`Saída: ${qtd} × ${p.sku} ${tamanho}`, 'ok');
+    renderMovimentos();
+  };
+
+  window.acabApagarMov = async function (id) {
+    if (!exigirEdicao('apagar lançamento do estoque confecção')) return;
+    const m = movs().find(x => x.id === id);
+    if (!m) return;
+    const p = produtoPorId(m.produtoId);
+    const nome = m.tipo === 'entrada' ? 'a entrada' : m.tipo === 'saida' ? 'a saída' : 'o ajuste';
+    if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?`)) return;
+    STATE.acabMov = movs().filter(x => x.id !== id);
+    desfazerNomearAcao(`${nome} de ${p ? p.sku : '?'} ${m.tamanho} apagada no Estoque confecção`);
+    await saveState('acabMov');
+    toast('Lançamento apagado', 'ok');
+    renderAtual();
+  };
+
+  /* ================================================== TELA: INVENTÁRIO */
+  function infoAjuste() {
+    const el = document.getElementById('acab-aj-info');
+    if (!el) return;
+    const p = produtoPorId(val('acab-aj-produto'));
+    const t = asTam(val('acab-aj-tam'));
+    if (!p || !t) { el.innerHTML = 'Escolha o SKU e o tamanho para ver o estoque atual.'; return; }
+    const atual = saldos(todosMovs()).de(p.id, t).total;
+    const contado = parseInt(val('acab-aj-contado'), 10);
+    const dif = Number.isFinite(contado) ? contado - atual : null;
+    el.innerHTML = `Estoque no programa: <b>${fmtN(atual)}</b>` + (dif == null ? '' : ` · diferença <b style="color:${dif > 0 ? '#2e7d4f' : dif < 0 ? '#c0392b' : 'inherit'};">${dif > 0 ? '+' : ''}${fmtN(dif)}</b>${dif === 0 ? ' (igual: nada a ajustar)' : dif > 0 ? ' (sobrou)' : ' (faltou)'}`);
+  }
+  window.acabInfoAjuste = infoAjuste;
+
+  function renderInventario() {
+    const box = document.getElementById('acab-inventario-painel');
+    if (!box) return;
+    if (!produtos().length) { box.innerHTML = `<div class="card">${semSkus()}</div>`; return; }
+    const pA = produtoPorId(val('acab-aj-produto'));
+    const ajs = movs().filter(m => m.tipo === 'ajuste').sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).slice(0, 200);
+    box.innerHTML = `
+      <div class="card admin-only">
+        <h2 style="margin-top:0;font-size:15px;">Ajuste de inventário (contagem física)</h2>
+        <div class="muted" style="font-size:12px;margin-bottom:8px;">Conte as peças na prateleira e informe o número contado: o programa lança a diferença e o saldo passa a ser o contado. É assim que o estoque começa — uma contagem por SKU e tamanho.</div>
+        <div class="form-grid cols-2">
+          <div class="field full"><label>SKU *</label><select id="acab-aj-produto" onchange="acabTrocarProduto('acab-aj')">${opcoesProdutos(pA && pA.id)}</select></div>
+          <div class="field"><label>Tamanho *</label><select id="acab-aj-tam" onchange="acabInfoAjuste()">${opcoesTams(pA)}</select></div>
+          <div class="field"><label>Data *</label><input type="date" id="acab-aj-data" value="${hoje()}"></div>
+          <div class="field"><label>Quantidade contada *</label><input type="number" id="acab-aj-contado" min="0" step="1" oninput="acabInfoAjuste()"></div>
+          <div class="field"><label>Motivo</label><input type="text" id="acab-aj-motivo" placeholder="Perda, dano, recontagem, contagem inicial…"></div>
+        </div>
+        <div class="info-box" id="acab-aj-info" style="margin-bottom:10px;"></div>
+        <button class="btn primary" onclick="acabRegistrarAjuste()">Registrar ajuste</button>
+      </div>
+      <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimos ajustes</h2>
+        <div style="overflow:auto;max-height:480px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Anterior</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferença</th><th>Motivo</th><th class="col-actions admin-only"></th></tr></thead><tbody>
+        ${ajs.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.anterior)}</td><td style="${mono}">${fmtN(m.contado)}</td>
+          <td style="${mono}font-weight:700;color:${m.diferenca > 0 ? '#2e7d4f' : '#c0392b'};">${m.diferenca > 0 ? '+' : ''}${fmtN(m.diferenca)}</td><td>${esc(m.motivo || '')}<div class="muted" style="font-size:10px;">${esc(m.criadoPor || '')}</div></td>
+          <td class="col-actions row-actions admin-only"><button onclick="acabApagarMov('${esc(m.id)}')">apagar</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Nenhum ajuste.</td></tr>'}
+        </tbody></table></div></div>`;
+    infoAjuste();
+  }
+
+  window.acabRegistrarAjuste = async function () {
+    if (!exigirEdicao('lançar no estoque confecção')) return;
+    const p = produtoPorId(val('acab-aj-produto'));
+    const tamanho = asTam(val('acab-aj-tam'));
+    const contado = parseInt(val('acab-aj-contado'), 10);
+    if (!p) return toast('Escolha o SKU', 'err');
+    if (!tamanho) return toast('Escolha o tamanho', 'err');
+    if (!(contado >= 0)) return toast('Informe a quantidade contada', 'err');
+    const anterior = saldos(todosMovs()).de(p.id, tamanho).total;
+    const diferenca = contado - anterior;
+    if (diferenca === 0) return toast('A contagem é igual ao estoque atual — nada a ajustar', 'err');
+    movs().push(novoMov({ tipo: 'ajuste', produtoId: p.id, tamanho, data: val('acab-aj-data') || hoje(), contado, anterior, diferenca, motivo: val('acab-aj-motivo').trim() }));
+    desfazerNomearAcao(`contagem de ${p.sku} ${tamanho}`);
+    await saveState('acabMov');
+    toast(`${p.sku} ${tamanho}: ${diferenca > 0 ? '+' : ''}${fmtN(diferenca)} (agora ${fmtN(contado)})`, 'ok');
+    const campo = document.getElementById('acab-aj-contado');
+    renderInventario();
+    const c2 = document.getElementById('acab-aj-contado');
+    if (c2 && campo) c2.focus();
+  };
+
+  /* ============================================== TELA: PRODUTOS (SKUs) */
+  let _buscaProd = '';
+  let _editProdId = null;
+  function renderProdutos() {
+    const box = document.getElementById('acab-produtos-painel');
+    if (!box) return;
+    const c = cfg();
+    const ms = movs();
+    const b = norm(_buscaProd);
+    const ps = produtos().slice().sort((a, b2) => String(a.sku).localeCompare(String(b2.sku), 'pt-BR'))
+      .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
+    const nCat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus.length : 0;
+    const faltamCat = nCat ? catalogoSkus.filter(s => s && s.item && !produtoPorSku(s.item)).length : 0;
+    const inicioLocal = c.inicio ? new Date(c.inicio) : null;
+    const pad = n => String(n).padStart(2, '0');
+    const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
+    box.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
+        <div class="card admin-only">
+          <h2 style="margin-top:0;font-size:15px;">Limites e início</h2>
+          <div class="form-grid cols-2">
+            <div class="field"><label>Estoque mínimo</label><input type="number" id="acab-cfg-min" min="0" step="1" value="${c.estoqueMin}"></div>
+            <div class="field"><label>Estoque máximo <span class="muted">(0 = sem aviso)</span></label><input type="number" id="acab-cfg-max" min="0" step="1" value="${c.estoqueMax}"></div>
+            <div class="field full"><label>Início do estoque</label><input type="datetime-local" id="acab-cfg-inicio" value="${inicioInput}">
+              <div class="field-hint">OS que entraram na etapa Estoque antes disto não lançam entrada (o estoque começou do zero aqui).</div></div>
+          </div>
+          <button class="btn primary" onclick="acabSalvarCfg()">Salvar</button>
+        </div>
+        <div class="card admin-only">
+          <h2 style="margin-top:0;font-size:15px;">Trazer os SKUs</h2>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">O catálogo que o Estoque-Confeccao publicou tem <b>${fmtN(nCat)}</b> SKUs${nCat ? `, dos quais <b>${fmtN(faltamCat)}</b> ainda não estão aqui` : ' (não chegou nesta sessão)'}. Trazer cria só os que faltam, com os tamanhos P ao G3 (2 ao 16 na linha infantil) e sem preço — o código do ERP entra sozinho na primeira importação de saídas.</div>
+          <button class="btn" onclick="acabImportarCatalogo()" ${faltamCat ? '' : 'disabled'}>Trazer ${fmtN(faltamCat)} SKUs do catálogo</button>
+          <button class="btn primary" onclick="acabAbrirProduto()">+ Cadastrar SKU</button>
+        </div>
+      </div>
+      <div class="card">
+        <input type="search" placeholder="Buscar SKU, código, linha, cor ou descrição…" value="${esc(_buscaProd)}" oninput="acabBuscaProd(this.value)" style="margin-bottom:10px;width:100%;">
+        <div style="overflow:auto;max-height:65vh;"><table class="table"><thead><tr><th class="col-actions admin-only">Ações</th><th>Código</th><th>SKU</th><th>Descrição</th><th>Linha</th><th>Cor</th><th>Tamanhos</th><th style="text-align:right;">Preço base</th></tr></thead><tbody>
+        ${ps.map(p => `<tr><td class="col-actions row-actions admin-only"><button onclick="acabAbrirProduto('${esc(p.id)}')">editar</button><button onclick="acabExcluirProduto('${esc(p.id)}')">apagar</button></td>
+          <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b></td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
+          <td style="font-size:11px;">${esc(ordenarTams(p.tamanhos || []).join(' '))}</td><td style="${mono}">${fmtR(p.preco)}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">${b ? 'Nada na busca.' : 'Nenhum SKU cadastrado.'}</td></tr>`}
+        </tbody></table></div>
+        <div class="muted" style="font-size:11px;margin-top:6px;">${fmtN(produtos().length)} SKUs · ${fmtN(ms.length)} lançamentos</div>
+      </div>`;
+  }
+  window.acabBuscaProd = v => {
+    _buscaProd = v;
+    renderProdutos();
+    const i = document.querySelector('#acab-produtos-painel input[type=search]');
+    if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  };
+
+  window.acabSalvarCfg = async function () {
+    if (!exigirEdicao('configurar o estoque confecção')) return;
+    const min = parseInt(val('acab-cfg-min'), 10), max = parseInt(val('acab-cfg-max'), 10);
+    if (!(min >= 0) || !(max >= 0)) return toast('Limites inválidos', 'err');
+    const ini = val('acab-cfg-inicio');
+    const inicio = ini ? new Date(ini).toISOString() : '';
+    if (!inicio) return toast('Informe o início do estoque', 'err');
+    desfazerNomearAcao('limites do Estoque confecção');
+    await gravarCfg({ estoqueMin: min, estoqueMax: max, inicio });
+    toast('Estoque confecção: configuração salva', 'ok');
+    renderProdutos();
+  };
+
+  // Os tamanhos de uma linha nova: o infantil tem a numeração própria.
+  const tamsDaLinha = linha => (/INF|KIDS/i.test(String(linha || '')) ? TAMS_INFANTIL.slice() : TAMS_PADRAO.slice());
+  // "CM.LISA-PRE" → linha CM.LISA, cor PRE (a mesma regra do traço de skusDaOS).
+  const partesSku = sku => { const s = norm(sku); const i = s.indexOf('-'); return i < 0 ? { linha: s, cor: '' } : { linha: s.slice(0, i), cor: s.slice(i + 1) }; };
+
+  window.acabImportarCatalogo = async function () {
+    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    const cat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus : [];
+    const novos = cat.filter(s => s && s.item && !produtoPorSku(s.item));
+    if (!novos.length) return toast('Nenhum SKU novo no catálogo', 'ok');
+    if (!confirm(`Cadastrar ${novos.length} SKUs do catálogo?`)) return;
+    novos.forEach(s => {
+      const pt = partesSku(s.item);
+      produtos().push({ id: uid(), codigo: null, sku: norm(s.item), linha: norm(s.tipo) || pt.linha, cor: norm(s.cor) || pt.cor,
+        descricao: s.descricao || '', tamanhos: tamsDaLinha(s.tipo || pt.linha), preco: 0,
+        criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'catalogo' });
+    });
+    desfazerNomearAcao(`${novos.length} SKUs trazidos do catálogo`);
+    await saveState('acabProdutos');
+    toast(`${novos.length} SKUs cadastrados`, 'ok');
+    renderProdutos();
+  };
+
+  window.acabCadastrarSkuDaOS = function (sku, tams) {
+    window.acabAbrirProduto(null, { sku, tamanhos: String(tams || '').split(',').filter(Boolean) });
+  };
+
+  window.acabAbrirProduto = function (id, pre) {
+    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    const p = id ? produtoPorId(id) : null;
+    _editProdId = p ? p.id : null;
+    const base = p || Object.assign({ codigo: '', sku: '', linha: '', cor: '', descricao: '', tamanhos: TAMS_PADRAO, preco: '' }, pre || {});
+    if (!p && pre && pre.sku) { const pt = partesSku(pre.sku); base.linha = pt.linha; base.cor = pt.cor; }
+    const sel = new Set(base.tamanhos || []);
+    document.getElementById('modal-acab-produto-title').textContent = p ? 'Editar SKU · ' + p.sku : 'Cadastrar SKU';
+    document.getElementById('modal-acab-produto-fields').innerHTML = `
+      <div class="form-grid cols-2">
+        <div class="field full"><label>SKU *</label><input type="text" id="acab-p-sku" value="${esc(base.sku)}" placeholder="Ex.: CM.LISA-PRE" oninput="acabSkuDigitado()">
+          <div class="field-hint">Linha + traço + sigla da cor — o mesmo SKU que a OS calcula (Linha SKU do modelo + Sigla SKU da cor).</div></div>
+        <div class="field"><label>Linha</label><input type="text" id="acab-p-linha" value="${esc(base.linha)}" placeholder="CM.LISA" oninput="this.dataset.mexido=1"></div>
+        <div class="field"><label>Cor</label><input type="text" id="acab-p-cor" value="${esc(base.cor)}" placeholder="PRE" oninput="this.dataset.mexido=1"></div>
+        <div class="field"><label>Código do ERP</label><input type="number" id="acab-p-codigo" min="1" step="1" value="${esc(base.codigo || '')}" placeholder="Ex.: 12"></div>
+        <div class="field"><label>Preço base (R$)</label><input type="text" inputmode="decimal" id="acab-p-preco" value="${base.preco !== '' && base.preco != null ? esc(String(base.preco).replace('.', ',')) : ''}" placeholder="0,00"></div>
+        <div class="field full"><label>Descrição</label><input type="text" id="acab-p-desc" value="${esc(base.descricao || '')}" placeholder="Ex.: CAMISETA BÁSICA PRETO"></div>
+        <div class="field full"><label>Tamanhos *</label><div style="display:flex;flex-wrap:wrap;gap:6px 12px;">${TAMS.map(t =>
+          `<label style="display:inline-flex;gap:4px;align-items:center;font-weight:400;"><input type="checkbox" class="acab-p-tam" value="${t}"${sel.has(t) ? ' checked' : ''}>${t}</label>`).join('')}</div></div>
+      </div>`;
+    openModal('modal-acab-produto');
+    setTimeout(() => { const e = document.getElementById('acab-p-sku'); if (e) e.focus(); }, 50);
+  };
+  window.acabSkuDigitado = function () {
+    const pt = partesSku(val('acab-p-sku'));
+    const l = document.getElementById('acab-p-linha'), c = document.getElementById('acab-p-cor');
+    if (l && !l.dataset.mexido) l.value = pt.linha;
+    if (c && !c.dataset.mexido) c.value = pt.cor;
+  };
+
+  window.acabSalvarProduto = async function () {
+    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    const sku = norm(val('acab-p-sku'));
+    if (!sku) return toast('Informe o SKU', 'err');
+    const outro = produtoPorSku(sku);
+    if (outro && outro.id !== _editProdId) return toast('Já existe o SKU ' + sku, 'err');
+    const codigo = val('acab-p-codigo') ? parseInt(val('acab-p-codigo'), 10) : null;
+    if (codigo != null && !(codigo > 0)) return toast('Código inválido', 'err');
+    const comCod = codigo ? produtoPorCodigo(codigo) : null;
+    if (comCod && comCod.id !== _editProdId) return toast(`O código ${codigo} já é do SKU ${comCod.sku}`, 'err');
+    const preco = val('acab-p-preco').trim() ? num(val('acab-p-preco')) : 0;
+    if (!(preco >= 0)) return toast('Preço inválido', 'err');
+    const tamanhos = ordenarTams([...document.querySelectorAll('.acab-p-tam:checked')].map(x => x.value));
+    if (!tamanhos.length) return toast('Marque ao menos um tamanho', 'err');
+    const campos = { codigo, sku, linha: norm(val('acab-p-linha')), cor: norm(val('acab-p-cor')), descricao: val('acab-p-desc').trim(), tamanhos, preco,
+      atualizadoEm: new Date().toISOString(), atualizadoPor: quemSou() };
+    const p = _editProdId ? produtoPorId(_editProdId) : null;
+    if (p) Object.assign(p, campos);
+    else produtos().push(Object.assign({ id: uid(), criadoEm: campos.atualizadoEm, criadoPor: campos.atualizadoPor }, campos));
+    desfazerNomearAcao(`${p ? 'edição' : 'cadastro'} do SKU ${sku}`);
+    await saveState('acabProdutos');
+    closeModal('modal-acab-produto');
+    toast(`SKU ${sku} ${p ? 'salvo' : 'cadastrado'}`, 'ok');
+    _editProdId = null;
+    renderAtual();
+  };
+
+  window.acabExcluirProduto = async function (id) {
+    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    const p = produtoPorId(id);
+    if (!p) return;
+    const nMov = todosMovs().filter(m => m.produtoId === id).length;
+    if (nMov) return toast(`${p.sku} tem ${nMov} lançamento(s): apague-os antes (ou deixe o SKU sem uso)`, 'err');
+    if (!confirm(`Apagar o SKU ${p.sku}?`)) return;
+    STATE.acabProdutos = produtos().filter(x => x.id !== id);
+    desfazerNomearAcao(`SKU ${p.sku} apagado`);
+    await saveState('acabProdutos');
+    toast('SKU apagado', 'ok');
+    renderProdutos();
+  };
+
+  /* ================================================ TELA: SAÍDAS DO ERP */
+  /* O relatório de vendas do ERP vira saídas, como no original: código do
+     produto, variação (tamanho) e quantidade. Lê PDF (pdf.js, que o programa
+     já carrega para os riscos) e CSV; a planilha do Excel entra salva como CSV.
+     O que muda do original: produto que não existe NÃO nasce com 300 peças de
+     contagem (era o semeio do Render) — só é cadastrado se a caixa pedir, e o
+     estoque dele começa pela contagem de inventário. E a venda não é barrada
+     por falta de saldo: ela já aconteceu; a linha fica negativa, em vermelho,
+     até a contagem acertar. */
+  let _erp = null;   // { rows, dataEmissao, arquivo }
+
+  function extrairTipoCor(desc) {
+    const s = String(desc || '').trim();
+    const m = s.match(/\s+(PP|P|M|G|GG|G1|G2|G3|\d{1,2})-([A-Z][A-Z0-9.]*?)-([A-Z][A-Z0-9]*)\s*$/);
+    if (m) return { tipo: m[2].toUpperCase(), cor: m[3].toUpperCase(), descricao: s.slice(0, m.index).trim() };
+    return { tipo: '', cor: '', descricao: s };
+  }
+  function dataBR(v) {
+    const s = String(v || '').trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (!m) return '';
+    let y = m[3]; if (y.length === 2) y = (parseInt(y, 10) >= 70 ? '19' : '20') + y;
+    return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  }
+
+  async function lerPdfErp(file) {
+    if (typeof pdfjsLib === 'undefined') throw new Error('o leitor de PDF não carregou');
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const linhas = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const tc = await (await pdf.getPage(i)).getTextContent();
+      const itens = tc.items.map(it => ({ x: it.transform[4], y: -it.transform[5], s: it.str }))
+        .filter(o => o.s && o.s.trim()).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      const grupos = [];
+      let atual = null;
+      itens.forEach(it => {
+        if (!atual || Math.abs(it.y - atual.y) > 3) { atual = { y: it.y, partes: [] }; grupos.push(atual); }
+        atual.partes.push(it);
+      });
+      grupos.forEach(g => { const l = g.partes.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim(); if (l) linhas.push(l); });
+    }
+    let dataEmissao = '';
+    for (let i = 0; i < linhas.length && !dataEmissao; i++) {
+      const m = linhas[i].match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+      if (m && /EMISS/i.test((linhas[i - 1] || '') + ' ' + linhas[i])) dataEmissao = dataBR(m[1]);
+    }
+    if (!dataEmissao) for (const l of linhas) { const m = l.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/); if (m && (dataEmissao = dataBR(m[1]))) break; }
+    // cód + descrição + qtd + tamanho + custo [+ total] — às vezes quebrado em duas linhas.
+    const re = /^\s*(\d{1,4})\s+(.+?)\s+([\d.]+,\d+)\s+(PP|P|M|G|GG|G1|G2|G3|\d{1,2})\s+([\d.]+,\d+)(?:\s+([\d.]+,\d+))?\s*$/;
+    const rows = [];
+    for (let i = 0; i < linhas.length; i++) {
+      let m = linhas[i].match(re);
+      if (!m && i + 1 < linhas.length) { m = (linhas[i] + ' ' + linhas[i + 1]).match(re); if (m) i++; }
+      if (!m) continue;
+      const tc = extrairTipoCor(m[2]);
+      rows.push({ codigo: parseInt(m[1], 10), tamanho: m[4], quantidade: parseInt(m[3].split(',')[0].replace(/\./g, ''), 10),
+        tipo: tc.tipo, cor: tc.cor, descricao: tc.descricao || m[2], preco: num(m[5]) || 0 });
+    }
+    return { rows, dataEmissao };
+  }
+
+  function lerCsvErp(texto) {
+    const linhas = String(texto).replace(/\r/g, '').split('\n').filter(l => l.trim());
+    if (!linhas.length) return { rows: [], dataEmissao: '' };
+    const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ';' : ',';
+    const corta = l => { const out = []; let cur = '', q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out; };
+    const cab = corta(linhas[0]).map(s => norm(s).toLowerCase());
+    const idx = (...ns) => { for (const n of ns) { const i = cab.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
+    const iCod = idx('cod.produto', 'cod produto', 'codigo', 'cod'), iSku = idx('sku'), iDesc = idx('descri', 'item', 'produto');
+    const iQtd = idx('quant', 'qtd', 'qtde'), iVar = idx('varia', 'tamanho', 'tam'), iCusto = idx('custo', 'valor unit');
+    if ((iCod < 0 && iSku < 0) || iQtd < 0 || iVar < 0) throw new Error('cabeçalho não reconhecido: precisa de código (ou SKU), quantidade e variação/tamanho');
+    const rows = [];
+    linhas.slice(1).forEach(l => {
+      const c = corta(l);
+      const codigo = iCod >= 0 ? parseInt(String(c[iCod] || '').replace(/\D/g, ''), 10) : NaN;
+      const desc = iDesc >= 0 ? String(c[iDesc] || '').trim() : '';
+      const tc = extrairTipoCor(desc);
+      const skuCol = iSku >= 0 ? norm(c[iSku]) : '';
+      const pt = skuCol ? partesSku(skuCol) : null;
+      if (!(codigo > 0) && !skuCol) return;
+      rows.push({ codigo: codigo > 0 ? codigo : null, tamanho: String(c[iVar] || '').trim().toUpperCase(),
+        quantidade: parseInt(String(c[iQtd] || '').split(',')[0].replace(/\D/g, ''), 10) || 0,
+        tipo: pt ? pt.linha : tc.tipo, cor: pt ? pt.cor : tc.cor, descricao: tc.descricao || desc,
+        preco: iCusto >= 0 ? (num(c[iCusto]) || 0) : 0 });
+    });
+    return { rows, dataEmissao: '' };
+  }
+
+  // A prévia: casa cada linha com um SKU (código do ERP, senão linha-cor) e
+  // soma as linhas repetidas do mesmo SKU e tamanho.
+  function planoErp(rows, cadastrarFaltantes) {
+    const r = { saidas: [], novos: [], codigosNovos: [], tamanhosNovos: [], problemas: [], agregadas: 0, zeradas: 0 };
+    const mapa = new Map();
+    const novosPorSku = new Map();
+    rows.forEach((row, i) => {
+      const linha = i + 1;
+      const tamanho = asTam(row.tamanho);
+      const q = parseInt(row.quantidade, 10);
+      if (!tamanho) { r.problemas.push(`Linha ${linha}: tamanho inválido (${row.tamanho})`); return; }
+      if (!(q >= 0)) { r.problemas.push(`Linha ${linha}: quantidade inválida`); return; }
+      if (q === 0) { r.zeradas++; return; }
+      const skuTxt = row.tipo && row.cor ? norm(row.tipo + '-' + row.cor) : '';
+      let p = produtoPorCodigo(row.codigo) || (skuTxt ? produtoPorSku(skuTxt) : null);
+      if (!p && skuTxt && novosPorSku.has(skuTxt)) p = novosPorSku.get(skuTxt);
+      if (!p) {
+        if (!skuTxt) { r.problemas.push(`Linha ${linha}: código ${row.codigo || '?'} sem SKU cadastrado e a descrição não diz a linha e a cor ("${row.descricao}")`); return; }
+        if (!cadastrarFaltantes) { r.problemas.push(`Linha ${linha}: SKU ${skuTxt} (código ${row.codigo || '?'}) não está cadastrado`); return; }
+        p = { id: uid(), codigo: row.codigo || null, sku: skuTxt, linha: norm(row.tipo), cor: norm(row.cor), descricao: row.descricao || '',
+          tamanhos: tamsDaLinha(row.tipo), preco: Number(row.preco) || 0, criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'erp' };
+        novosPorSku.set(skuTxt, p);
+        r.novos.push(p);
+      }
+      if (row.codigo && !p.codigo && !r.novos.includes(p) && !r.codigosNovos.some(x => x.p === p)) r.codigosNovos.push({ p, codigo: row.codigo });
+      if (!(p.tamanhos || []).includes(tamanho) && !r.tamanhosNovos.some(x => x.p === p && x.t === tamanho)) r.tamanhosNovos.push({ p, t: tamanho });
+      const k = p.id + '|' + tamanho;
+      if (mapa.has(k)) { mapa.get(k).qtd += q; r.agregadas++; }
+      else mapa.set(k, { p, tamanho, qtd: q });
+    });
+    r.saidas = [...mapa.values()];
+    return r;
+  }
+
+  function renderErp() {
+    const box = document.getElementById('acab-erp-painel');
+    if (!box) return;
+    const hist = movs().filter(m => m.origem === 'erp').sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).slice(0, 150);
+    let previa = '';
+    if (_erp) {
+      const cad = !!(document.getElementById('acab-erp-cadastrar') || {}).checked || !!_erp.cadastrar;
+      const pl = planoErp(_erp.rows, cad);
+      const data = _erp.data || _erp.dataEmissao || hoje();
+      const jaTem = movs().some(m => m.origem === 'erp' && m.data === data);
+      const S = saldos(todosMovs());
+      const negativos = pl.saidas.filter(s => S.de(s.p.id, s.tamanho).total - s.qtd < 0).length;
+      previa = `<div class="card">
+        <h2 style="margin-top:0;font-size:15px;">Prévia · ${esc(_erp.arquivo)}</h2>
+        <div class="form-grid cols-2">
+          <div class="field"><label>Data das saídas *</label><input type="date" id="acab-erp-data" value="${esc(data)}" onchange="acabErpData(this.value)"></div>
+          <div class="field"><label>Emissão do relatório</label><input type="text" value="${_erp.dataEmissao ? fmtD(_erp.dataEmissao) : '—'}" disabled></div>
+          <div class="field full"><label style="font-weight:400;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="acab-erp-cadastrar" ${cad ? 'checked' : ''} onchange="acabErpCadastrar(this.checked)"> Cadastrar os SKUs que ainda não existem (pela linha e cor da descrição)</label></div>
+        </div>
+        <div class="exp-resumo" style="margin:8px 0;">
+          <div class="item"><div class="num">${fmtN(pl.saidas.length)}</div><div class="lbl">Saídas a lançar</div></div>
+          <div class="item"><div class="num">${fmtN(pl.saidas.reduce((s, x) => s + x.qtd, 0))}</div><div class="lbl">Peças</div></div>
+          <div class="item"><div class="num">${fmtN(pl.novos.length)}</div><div class="lbl">SKUs novos</div></div>
+          <div class="item${pl.problemas.length ? ' alerta' : ''}"><div class="num">${fmtN(pl.problemas.length)}</div><div class="lbl">Linhas com problema</div></div>
+          <div class="item${negativos ? ' alerta' : ''}"><div class="num">${fmtN(negativos)}</div><div class="lbl">Ficam negativos</div></div>
+        </div>
+        ${jaTem ? `<div class="info-box" style="margin-bottom:8px;background:#fbeccb;">Já existem saídas do ERP com a data ${fmtD(data)}. Confira se este relatório não é o mesmo de antes.</div>` : ''}
+        ${pl.agregadas ? `<div class="muted" style="font-size:12px;">${fmtN(pl.agregadas)} linha(s) do mesmo SKU e tamanho foram somadas.</div>` : ''}
+        ${pl.problemas.length ? `<details style="margin:8px 0;"><summary>Ver as ${fmtN(pl.problemas.length)} linhas com problema</summary><div style="max-height:220px;overflow:auto;font-size:12px;">${pl.problemas.slice(0, 300).map(x => `<div style="padding:3px 0;border-bottom:1px solid var(--line-2);">${esc(x)}</div>`).join('')}</div></details>` : ''}
+        <div style="overflow:auto;max-height:320px;margin:8px 0;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Estoque depois</th></tr></thead><tbody>
+          ${pl.saidas.map(s => { const dep = S.de(s.p.id, s.tamanho).total - s.qtd; return `<tr><td>${esc(rotuloProduto(s.p))}${pl.novos.includes(s.p) ? ' <span class="badge" style="background:#d6f0db;">novo</span>' : ''}</td><td>${esc(s.tamanho)}</td><td style="${mono}">${fmtN(s.qtd)}</td><td style="${mono}${dep < 0 ? 'color:#c0392b;font-weight:700;' : ''}">${fmtN(dep)}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">Nada a lançar.</td></tr>'}
+        </tbody></table></div>
+        <button class="btn primary" onclick="acabErpConfirmar()" ${pl.saidas.length ? '' : 'disabled'}>Lançar ${fmtN(pl.saidas.length)} saídas</button>
+        <button class="btn" onclick="acabErpCancelar()">Cancelar</button>
+      </div>`;
+    }
+    box.innerHTML = `
+      <div class="card admin-only">
+        <h2 style="margin-top:0;font-size:15px;">Importar o relatório de vendas</h2>
+        <div class="muted" style="font-size:12px;margin-bottom:8px;">O relatório do ERP em <b>PDF</b> ou <b>CSV</b> (do Excel: Salvar como → CSV). O programa lê o <b>código do produto</b>, a <b>variação</b> (tamanho) e a <b>quantidade</b>, e mostra a prévia antes de lançar. Cada linha vira uma saída "Estoque → Cliente" com valor R$ 0,00 — o custo sai pelo custo médio.</div>
+        <input type="file" id="acab-erp-arquivo" accept=".pdf,.csv,.txt" onchange="acabErpArquivo(this.files[0])">
+      </div>
+      ${previa}
+      <div class="card"><h2 style="margin-top:0;font-size:15px;">Saídas que vieram do ERP</h2>
+        <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th>Relatório</th><th class="col-actions admin-only"></th></tr></thead><tbody>
+        ${hist.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td class="muted" style="font-size:11px;">${m.erpEmissao ? 'emitido ' + fmtD(m.erpEmissao) : ''} ${esc(m.erpArquivo || '')}</td><td class="col-actions row-actions admin-only"><button onclick="acabApagarMov('${esc(m.id)}')">apagar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhuma saída importada.</td></tr>'}
+        </tbody></table></div></div>`;
+  }
+
+  window.acabErpArquivo = async function (file) {
+    if (!file) return;
+    if (!exigirEdicao('importar saídas do ERP')) return;
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    try {
+      const r = ext === 'pdf' ? await lerPdfErp(file) : lerCsvErp(await file.text());
+      if (!r.rows.length) return toast('Nenhuma linha de produto encontrada no arquivo', 'err');
+      _erp = { rows: r.rows, dataEmissao: r.dataEmissao || '', data: r.dataEmissao || hoje(), arquivo: file.name, cadastrar: false };
+      toast(`${r.rows.length} linhas lidas — confira a prévia`, 'ok');
+      renderErp();
+    } catch (e) {
+      console.warn('acab erp', e);
+      toast('Não deu para ler o arquivo: ' + (e.message || e), 'err');
+    }
+  };
+  window.acabErpData = v => { if (_erp) _erp.data = v; renderErp(); };
+  window.acabErpCadastrar = v => { if (_erp) _erp.cadastrar = !!v; renderErp(); };
+  window.acabErpCancelar = () => { _erp = null; renderErp(); };
+  window.acabErpConfirmar = async function () {
+    if (!_erp || !exigirEdicao('importar saídas do ERP')) return;
+    const data = _erp.data;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return toast('Informe a data das saídas', 'err');
+    const pl = planoErp(_erp.rows, !!_erp.cadastrar);
+    if (!pl.saidas.length) return toast('Nada a lançar', 'err');
+    if (!confirm(`Lançar ${pl.saidas.length} saídas (${pl.saidas.reduce((s, x) => s + x.qtd, 0)} peças) com a data ${fmtD(data)}?`)) return;
+    pl.novos.forEach(p => produtos().push(p));
+    pl.codigosNovos.forEach(({ p, codigo }) => { if (!produtoPorCodigo(codigo)) p.codigo = codigo; });
+    pl.tamanhosNovos.forEach(({ p, t }) => { p.tamanhos = ordenarTams((p.tamanhos || []).concat([t])); });
+    pl.saidas.forEach(s => movs().push(novoMov({ tipo: 'saida', origem: 'erp', produtoId: s.p.id, tamanho: s.tamanho, data, qtd: s.qtd, valor: 0,
+      destino: 'cliente', erpEmissao: _erp.dataEmissao || null, erpArquivo: _erp.arquivo })));
+    desfazerNomearAcao(`importação de ${pl.saidas.length} saídas do ERP`);
+    if (pl.novos.length || pl.codigosNovos.length || pl.tamanhosNovos.length) await saveState('acabProdutos');
+    await saveState('acabMov');
+    toast(`${pl.saidas.length} saídas do ERP lançadas`, 'ok');
+    _erp = null;
+    renderErp();
+  };
+
+  /* ================================================ TELA: RELATÓRIO CMP */
+  const _cmpSel = { produto: '', tam: '' };
+  function renderCmp() {
+    const box = document.getElementById('acab-cmp-painel');
+    if (!box) return;
+    if (!produtos().length) { box.innerHTML = `<div class="card">${semSkus()}</div>`; return; }
+    const p = produtoPorId(_cmpSel.produto);
+    const ms = todosMovs();
+    const r = p ? cmp(ms, p.id, _cmpSel.tam || null) : null;
+    box.innerHTML = `<div class="card">
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">A cada entrada o custo médio é refeito como a média ponderada entre o estoque e o que entrou; a saída sai pelo custo médio do momento e não o muda. As entradas das OS entram com custo R$ 0,00 — o custo de produção fica na Contabilidade.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <select onchange="acabCmpSel('produto',this.value)" style="flex:2;min-width:220px;">${opcoesProdutos(p && p.id)}</select>
+        <select onchange="acabCmpSel('tam',this.value)" style="flex:1;min-width:120px;"><option value="">Todos os tamanhos</option>${p ? ordenarTams(p.tamanhos || []).map(t => `<option value="${t}"${t === _cmpSel.tam ? ' selected' : ''}>${t}</option>`).join('') : ''}</select>
+      </div>
+      ${!r ? '<div class="info-box">Escolha um SKU.</div>' : `
+      <div class="exp-resumo" style="margin-bottom:10px;">
+        <div class="item"><div class="num">${fmtN(r.saldo)}</div><div class="lbl">Saldo (entradas − saídas)</div></div>
+        <div class="item"><div class="num">${fmtR(r.medio)}</div><div class="lbl">Custo médio</div></div>
+        <div class="item"><div class="num">${fmtR(r.valor)}</div><div class="lbl">Valor do saldo</div></div>
+        <div class="item"><div class="num">${fmtR(r.cmv)}</div><div class="lbl">CMV acumulado</div></div>
+      </div>
+      <div style="overflow:auto;max-height:60vh;"><table class="table"><thead><tr><th>Data</th><th>Movimento</th><th style="text-align:right;">Qtd ent.</th><th style="text-align:right;">Custo ent.</th><th style="text-align:right;">Total ent.</th><th style="text-align:right;">Qtd saí.</th><th style="text-align:right;">Custo saí.</th><th style="text-align:right;">Total saí.</th><th style="text-align:right;">Saldo</th><th style="text-align:right;">Custo médio</th></tr></thead><tbody>
+      ${r.linhas.map(l => `<tr><td>${fmtD(l.m.data)}</td><td>${l.qtdEnt != null ? 'Entrada' + (l.m.origem === 'os' ? ' · OS ' + esc(l.m.os) : '') : 'Saída → ' + esc(((DESTINOS.find(d => d.k === l.m.destino) || {}).rotulo || '').replace('Estoque → ', ''))} [${esc(l.m.tamanho)}]</td>
+        <td style="${mono}">${l.qtdEnt != null ? fmtN(l.qtdEnt) : '—'}</td><td style="${mono}">${l.qtdEnt != null ? fmtR(l.custoEnt) : '—'}</td><td style="${mono}">${l.qtdEnt != null ? fmtR(l.totalEnt) : '—'}</td>
+        <td style="${mono}">${l.qtdSai != null ? fmtN(l.qtdSai) : '—'}</td><td style="${mono}">${l.qtdSai != null ? fmtR(l.custoSai) : '—'}</td><td style="${mono}">${l.qtdSai != null ? fmtR(l.totalSai) : '—'}</td>
+        <td style="${mono}font-weight:700;">${fmtN(l.saldo)}</td><td style="${mono}">${fmtR(l.medio)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Sem entradas nem saídas.</td></tr>'}
+      </tbody></table></div>`}
+    </div>`;
+  }
+  window.acabCmpSel = (k, v) => { _cmpSel[k] = v; if (k === 'produto') _cmpSel.tam = ''; renderCmp(); };
+
+  /* ------------------------------------------------------- a navegação */
+  const TELAS = { 'acab-estoque': renderEstoqueAtual, 'acab-mov': renderMovimentos, 'acab-inventario': renderInventario,
+    'acab-produtos': renderProdutos, 'acab-erp': renderErp, 'acab-cmp': renderCmp };
+  function renderAtual() {
+    const s = document.querySelector('section.page:not(.hidden)');
+    const page = s && s.dataset && s.dataset.page;
+    if (TELAS[page]) TELAS[page]();
+  }
+  window.renderEstoqueConfeccao = function (page) {
+    const fn = TELAS[page];
+    if (!fn) return;
+    try { fn(); } catch (e) { console.warn('Estoque confecção', page, e); }
+    garantirInicio().then(marcou => { if (marcou) { try { fn(); } catch (e) { } } });
+  };
+
+  // Para os testes (node): as contas, sem a tela.
+  window._acabInterno = { _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg };
+})();

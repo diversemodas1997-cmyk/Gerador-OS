@@ -231,6 +231,11 @@ aside.sidebar {
 .nav-group.collapsed .nav-items {
   display: none;
 }
+/* A PASTA DENTRO DA PASTA (21/10/2026): o Estoque confecção mora dentro de
+   Estoques. O rótulo fica no recuo dos itens, e os itens dela um degrau a mais. */
+.nav-group.nav-sub { padding: 2px 0; }
+.nav-group.nav-sub > .nav-label { padding: 7px 20px 7px 23px; font-size: 9.5px; color: rgba(255,255,255,.5); }
+.nav-group.nav-sub .nav-btn { padding-left: 36px; font-size: 12.5px; }
 /* O item do menu é um <a href="#area">, e não um <button>: é o que faz o
    Ctrl+clique, o clique do meio e o "abrir em nova aba" do botão direito
    funcionarem, deixando cada área do programa aberta na sua própria aba. Um
@@ -2894,6 +2899,7 @@ body.pode-estoque-fases [data-page="corte"] .admin-only,
 body.pode-estoque-fases [data-page="costurando"] .admin-only,
 body.pode-estoque-fases [data-page="fios"] .admin-only,
 body.pode-compra [data-page="compra"] .admin-only,
+body.pode-estoque-confeccao [data-page^="acab-"] .admin-only,
 body.pode-dados [data-page="config"] .admin-only { display: revert !important; }
 body.pode-nova-os-menu .nav-btn[data-page="nova-os"] { display: block !important; }
 body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !important; }
