@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-21b">
+<link rel="stylesheet" href="styles.css?v=2026-10-21c">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -1546,7 +1546,7 @@
         <details class="cfg-ajuda"><summary>como funciona</summary><div>Com um servidor na rede da fábrica, o programa fala com ele em vez da internet: fica instantâneo, não gasta tráfego e continua funcionando com a internet fora. A nuvem passa a ser espelho — se o servidor local não responder, o programa abre a cópia da nuvem em <b>modo consulta</b>: dá para ver e imprimir, mas não editar. Isso é proposital, para que os dois lados nunca fiquem diferentes. Este endereço vale <b>só nesta máquina</b> — configure em cada computador. Deixando em branco, tudo funciona pela nuvem como antes.<br><br><b>Recarregar dados do servidor</b>: Se você cadastrou itens em outra aba/sessão e eles não estão aparecendo aqui (ex.: etapas ou tarefas novas que não surgem nas opções dos desenhos), force uma releitura completa do servidor.</div></details>
       </div>
 
-      <div class="card cfg-quadro">
+      <div class="card cfg-quadro so-ver-dados">
         <div class="card-title">Pastas deste computador</div>
         <div class="cfg-nota">Cada computador conecta as suas pastas, e o navegador lembra entre sessões. Só funciona no Chrome ou Edge no desktop. Para salvar no Google Drive, aponte para uma pasta dentro do <code>J:\Meu Drive</code>.</div>
         <div class="cfg-linha admin-only">
@@ -1701,7 +1701,7 @@
         </div>
       </div>
 
-      <div class="card cfg-quadro admin-only">
+      <div class="card cfg-quadro admin-only so-ver-dados">
         <div class="card-title">Backups e restauração</div>
         <div class="cfg-linha">
           <div class="cfg-linha-topo">
@@ -2073,9 +2073,9 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-21f"></script>
+<script src="app.js?v=2026-10-21g"></script>
 <script src="assistente.js?v=2026-10-19i"></script>
-<script src="colorimetro.js?v=2026-10-20p"></script>
+<script src="colorimetro.js?v=2026-10-21a"></script>
 <script src="estoque-confeccao.js?v=2026-10-21b"></script>
 </body>
 </html>

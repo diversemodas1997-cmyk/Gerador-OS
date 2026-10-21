@@ -87,10 +87,14 @@ const monta = (ctx) => new Function('ctx', `
   // Quem recebe o recado (21/10/2026): so quem foi citado com @, quem escreveu,
   // o autor do recado respondido e, para @todos, quem recebe @todos.
   const contaRecebeAviso = (area, quem) => !(ctx.semTodos && area === 'mensagens-todos');
+  // Ver, Editar e Avisar do @todos (21/10/2026): ver o recado, mandar e ser chamado.
+  const contaVeArea = (area, quem) => !(ctx.semVerTodos && area === 'mensagens-todos');
+  const contaTemAcesso = (area, quem) => !(ctx.semMandarTodos && area === 'mensagens-todos');
   ${recorte('function _msgCita', 'a citacao com @')}
   ${recorte('function _msgMeMencionou', 'a mencao a mim')}
   ${recorte('function _msgParaTodos', 'o recado para todos')}
   ${recorte('function _msgParaMim', 'quem recebe o recado')}
+  ${recorte('function _msgChamaMim', 'o recado que chama')}
   ${recorte('function _msgTemDestino', 'o destino do recado')}
   // O polegar e a lista de mencao tem os seus proprios caminhos e nao sao o
   // assunto deste teste (que e ler, mandar e contar o que nao foi lido);
@@ -212,8 +216,15 @@ const antes = (min) => new Date(Date.now() - min * 60000).toISOString();
   ok('22. @costura chega a costura, e @costura.sc nao confunde', vejo() === 'q,r,s,u', vejo());
   ok('23. o numero conta so o que chega a mim',
      t.api._msgNaoLidas().map(m => m.id).join(',') === 'q,r,u', t.api._msgNaoLidas().map(m => m.id).join(','));
-  t = ctxDe({ mensagens: canal, semTodos: true });
-  ok('24. conta que nao recebe @todos fica sem o recado para todos', vejo() === 'q,s,u', vejo());
+  t = ctxDe({ mensagens: canal, semVerTodos: true });
+  ok('24. conta sem o Ver do @todos fica sem o recado para todos', vejo() === 'q,s,u', vejo());
+  t = ctxDe({ mensagens: canal, semTodos: true, ls: { 'mensagensVistas:costura@diverse.local': antes(10) } });
+  ok('24a. sem o Avisar do @todos, o recado aparece mas nao conta no numero',
+     vejo() === 'q,r,s,u' && t.api._msgNaoLidas().map(m => m.id).join(',') === 'q,u', t.api._msgNaoLidas().map(m => m.id).join(','));
+  t = ctxDe({ semMandarTodos: true, perfis: [{ login: 'corte' }] });
+  t.ctx.campo.value = '@todos parada geral';
+  await t.api.enviarMensagem();
+  ok('24b. sem o Editar do @todos, nao manda para todos e explica', !t.ctx.inserido && /@todos/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
 
   t = ctxDe({ perfis: [{ login: 'corte' }, { login: 'costura' }] });
   t.ctx.campo.value = 'faltou pano';

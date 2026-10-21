@@ -66,6 +66,7 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('AREAS_ACESSO')}
   ${constante('ACOES_POR_AREA')}
   ${constante('ACESSO_PADRAO')}
+  ${constante('AREAS_DE_TODOS')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
   ${recorte('function _obsNomeLogin', 'o nome do login')}
   ${recorte('function _chaveLogin', 'a chave do login')}
@@ -110,8 +111,13 @@ t = ctxDe('usuario', 'nathaly@diverse.local');
 ok('5. Nathaly segue com o estoque de tecidos', t.api.temAcesso('estoque-tecidos') === true);
 ok('6. e nao com os estoques das fases', t.api.temAcesso('estoque-fases') === false);
 t = ctxDe('usuario', 'costura@diverse.local');
+// O relatorio de producao (imprimir) e o @todos (mandar) sao de toda conta por
+// padrao desde 21/10/2026: era o que todo mundo ja podia, e o admin tira.
+const DE_TODOS = ['relatorio-producao', 'mensagens-todos'];
 ok('7. quem nunca recebeu nada nao tem area nenhuma',
-   t.api.AREAS_ACESSO.every(a => !t.api.temAcesso(a.k)), 'sobrou area para quem nao recebeu');
+   t.api.AREAS_ACESSO.filter(a => !DE_TODOS.includes(a.k)).every(a => !t.api.temAcesso(a.k)), 'sobrou area para quem nao recebeu');
+ok('7b. e continua imprimindo o relatorio e mandando @todos, como sempre',
+   DE_TODOS.every(k => t.api.temAcesso(k)), 'perdeu o que ja podia');
 
 console.log('');
 console.log('-- o que o admin marca vale sobre o padrao --');

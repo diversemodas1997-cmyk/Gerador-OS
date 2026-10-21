@@ -1434,12 +1434,20 @@
     if (!S.avOS || !S.os) return;
     if (!fasesComMedicao().some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length)) { S.aviso = 'Nenhuma amostra está num tom ainda.'; desenhar(); return; }
     if (typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
+    // O EDITAR DO COLORÍMETRO (21/10/2026): gravar o relatório de cor na OS é
+    // de quem o admin marcar em Configurações → contas de acesso.
+    if (typeof currentRole !== 'undefined' && currentRole !== 'admin' && typeof contaTemAcesso === 'function'
+        && !contaTemAcesso('colorimetro', typeof _obsQuemSou === 'function' ? _obsQuemSou() : '')) {
+      S.aviso = 'Seu acesso não inclui gravar o relatório do Colorímetro na OS — peça ao admin.'; desenhar(); return;
+    }
     const o = (STATE.ordens || []).find(x => x.id === S.os.id);
     if (!o) { S.aviso = `A OS ${S.os.numero} não existe mais.`; desenhar(); return; }
     const notas = () => (Array.isArray(o.obsNotas) ? o.obsNotas.length : 0);
     const antes = notas();
     try { await salvarObsNota(o.id, '', textoRelatorio()); } catch (e) { S.aviso = 'Não deu para salvar: ' + e.message; desenhar(); return; }
     if (notas() <= antes) { S.aviso = 'O programa não gravou a observação (veja o aviso no canto da tela).'; desenhar(); return; }
+    // O Avisar da área Colorímetro: a gravação vai para o diário de alterações.
+    if (typeof window._diarioAnotar === 'function') window._diarioAnotar('colorimetro', `relatório de cor da OS ${o.os}`, 'colorimetro');
     S.relSalvo = { osId: o.id, em: new Date() };
     S.aviso = '';
     status(`Relatório salvo nas observações da OS ${o.os}`);

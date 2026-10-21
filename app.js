@@ -1831,6 +1831,7 @@ function _aplicarClassesDeArea() {
   const body = document.body;
   if (!body) return;
   body.classList.remove('pode-estoque-tecidos', 'pode-nova-os-menu');
+  VISAO_SEM_TELA.forEach(k => body.classList.remove('sem-ver-' + k));
   AREAS_ACESSO.forEach(a => body.classList.remove('pode-' + a.k));
   // O estoque de tecidos tem dono próprio: admin e a conta nomeada em
   // LOGINS_ESTOQUE_TECIDOS. Sem esta classe os botões da tela ficariam
@@ -1841,6 +1842,9 @@ function _aplicarClassesDeArea() {
   AREAS_ACESSO.forEach(a => {
     if (!a.soAdmin && temAcesso(a.k)) body.classList.add('pode-' + a.k);
   });
+  // O VER DAS ÁREAS SEM TELA (ver VISAO_SEM_TELA): esconde o que delas aparece
+  // nas outras telas. Sem login (consulta), tudo aparece, como o resto.
+  VISAO_SEM_TELA.forEach(k => body.classList.toggle('sem-ver-' + k, !!currentUser && !contaVeArea(k, _obsQuemSou())));
   // O atalho "Nova OS" do menu segue a TELA do formulário, de qualquer tela.
   if (podeGravar() && currentUser && contaEditaTela('nova-os', _obsQuemSou())) body.classList.add('pode-nova-os-menu');
 }
@@ -1904,6 +1908,7 @@ function _recusarSomenteLeitura(acao) {
 
 function exigirAdmin(acao) {
   if (_recusarSomenteLeitura(acao)) return false;
+  if (typeof _diarioAcaoLiberada === 'function') _diarioAcaoLiberada(acao);
   if (currentRole === 'admin') return true;
   // A conta pode ter recebido a ÁREA desta ação em Configurações (ver
   // AREAS_ACESSO). Sem isto, conceder acesso não teria efeito nenhum nos botões
@@ -1924,6 +1929,7 @@ function exigirAdmin(acao) {
 // recusa fica no vocabulário daquela tela.
 function exigirEdicao(acao) {
   if (_recusarSomenteLeitura(acao)) return false;
+  if (typeof _diarioAcaoLiberada === 'function') _diarioAcaoLiberada(acao);
   if (currentRole === 'admin') return true;
   // Idem: a área desta ação pode ter sido concedida a esta conta.
   const area = _areaDaAcao(acao);
@@ -2074,6 +2080,14 @@ const AREAS_ACESSO = [
      admin escolher quem aponta a produção das costureiras. Ler é de todos. */
   { k: 'costura', rotulo: 'Relatório de costura',
     desc: 'Lançar e apagar a produção das costureiras por OS e operação' },
+  /* O RELATÓRIO DE PRODUÇÃO, O COLORÍMETRO E O @TODOS GANHARAM O EDITAR
+     (21/10/2026, Junior: "insira caixa de seleção para ver, editar e ser
+     notificado para todos"). Editar no relatório é imprimir e gravar o PDF (o
+     padrão é poder, como sempre foi). No Colorímetro, gravar o relatório de cor
+     nas observações da OS (só quem o admin marcar). No @todos, mandar recado
+     para a fábrica inteira (o padrão é poder). */
+  { k: 'relatorio-producao', rotulo: 'Relatório de produção',
+    desc: 'O resumo por status do período — editar é imprimir e gravar o PDF na pasta' },
   { k: 'compra', rotulo: 'Lista de compra',
     desc: 'Limpar a lista inteira (somar já é de toda conta)' },
   /* A FILA DE PRODUÇÃO (22/09/2026, Junior: "insira a capacidade do usuário
@@ -2087,6 +2101,10 @@ const AREAS_ACESSO = [
     desc: 'Definir a ordem (1ª, 2ª, 3ª…) das OS que ainda não começaram' },
   { k: 'dados', rotulo: 'Dados, backup e pastas',
     desc: 'Snapshots, importação, exportação e as pastas do computador' },
+  { k: 'colorimetro', rotulo: 'Colorímetro',
+    desc: 'A medição de cor das amostras (CHNSpec DS-01) — ver só para quem o admin marcar · editar é gravar o relatório de cor na OS' },
+  { k: 'mensagens-todos', rotulo: 'Mensagens para @todos',
+    desc: 'Ver os recados para @todos, mandar recado para @todos e ser avisado deles (o recado com @nome desta conta chega sempre)' },
   { k: 'contas', rotulo: 'Contas de acesso', soAdmin: true,
     desc: 'Criar contas e conceder acesso — sempre só do admin' }
 ];
@@ -2169,7 +2187,10 @@ const ACOES_POR_AREA = {
    elas continuam valendo sozinhas, e aparecem marcadas na lista de contas. */
 const ACESSO_PADRAO = {
   'os-status': (login) => LOGINS_STATUS_OS.includes(login),
-  'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login)
+  'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login),
+  // Imprimir o relatório e mandar @todos eram de todos: continuam, até o admin tirar.
+  'relatorio-producao': () => true,
+  'mensagens-todos': () => true
 };
 
 /* ========================================================= */
@@ -2218,8 +2239,6 @@ const VISAO_PAGINAS = {
 const AREAS_SO_VISAO = [
   { k: 'inicio', rotulo: 'Início', desc: 'O painel de abertura: os cartões das fases, as contagens e os atalhos (só consulta)' },
   { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
-  { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' },
-  { k: 'colorimetro', rotulo: 'Colorímetro', desc: 'A medição de cor das amostras (CHNSpec DS-01) — só para quem o admin marcar' }
 ];
 
 /* ========================================================= */
@@ -2324,7 +2343,7 @@ function contaVeTela(page, emailOuNome, papel) {
 // Marca (ou desmarca) Ver ou Editar de UMA tela para uma conta. Só o admin.
 async function definirTela(emailOuNome, tela, campo, permitido) {
   if (!exigirAdmin('conceder acesso')) return;
-  if (campo !== 'ver' && campo !== 'editar') return;
+  if (campo !== 'ver' && campo !== 'editar' && campo !== 'avisar') return;
   const area = _areaDaPagina(tela);
   const lista = TELAS_DA_AREA[area] || [];
   const def = lista.find(t => t[0] === tela);
@@ -2339,11 +2358,12 @@ async function definirTela(emailOuNome, tela, campo, permitido) {
   if (campo === 'editar' && permitido) aj.ver = true;
   if (campo === 'ver' && !permitido) aj.editar = false;
   tab[login][tela] = aj;
-  desfazerNomearAcao(`${campo === 'ver' ? 'visão' : 'edição'} de ${login} em "${def[1]}"`);
+  desfazerNomearAcao(`${campo === 'ver' ? 'visão' : campo === 'avisar' ? 'avisos' : 'edição'} de ${login} em "${def[1]}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirTela', e); }
   aplicarPermissoesUI();
   _redesenharAcessosConta(emailOuNome);
-  toast(`${login}: ${permitido ? '' : 'não '}${campo === 'ver' ? 'vê' : 'edita'} ${def[1]}`, 'ok');
+  if (campo === 'avisar' && typeof atualizarBadgeAvisos === 'function') atualizarBadgeAvisos();
+  toast(`${login}: ${permitido ? '' : 'não '}${campo === 'ver' ? 'vê' : campo === 'avisar' ? 'recebe avisos de' : 'edita'} ${def[1]}`, 'ok');
 }
 window.definirTela = definirTela;
 
@@ -2388,6 +2408,22 @@ function _areaDaPagina(page) {
    acesso a ele é o próprio Ver. */
 const VISAO_CONCEDIDA = ['colorimetro'];
 
+/* O VER DAS ÁREAS SEM TELA PRÓPRIA (21/10/2026). Elas não somem do menu,
+   porque não estão nele: o Ver esconde o que delas aparece nas outras telas.
+     · Status da OS     — o selo de status (lista, folha, painéis);
+     · Fila de produção — a posição 1ª, 2ª… na lista de OS;
+     · Dados            — os quadros de pastas e de backup em Configurações;
+     · @todos           — os recados mandados para @todos.
+   Ver _aplicarClassesDeArea (classes sem-ver-<área>) e _msgParaMim. */
+const VISAO_SEM_TELA = ['os-status', 'fila-os', 'dados', 'mensagens-todos'];
+
+/* AS CAIXAS TRAVADAS (21/10/2026, decidido com o Junior): a caixa aparece em
+   todas as linhas, mas onde não há o que controlar ela fica cinza, com a dica.
+   O Contas de acesso é sempre só do admin — por isso o Ver e o Editar dela
+   também travam. */
+const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)' };
+const AVISAR_TRAVADO = { ranking: 'O Ranking não gera aviso', 'relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso' };
+
 /* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
    menos nas áreas de VISAO_CONCEDIDA, em que sem marcação não vê. */
 function contaVeArea(area, emailOuNome, papel) {
@@ -2410,7 +2446,7 @@ function podeVerPagina(page) {
 async function definirVisao(emailOuNome, area, permitido) {
   if (!exigirAdmin('conceder acesso')) return;
   const def = AREAS_ACESSO.concat(AREAS_SO_VISAO).find(a => a.k === area);
-  if (!def || !VISAO_PAGINAS[area]) { toast('Esta área não tem tela para esconder', 'err'); return; }
+  if (!def || !(VISAO_PAGINAS[area] || VISAO_SEM_TELA.includes(area))) { toast('Esta área não tem o que esconder', 'err'); return; }
   const login = _acessoChaveConta(emailOuNome);
   if (!login) { toast('Conta inválida', 'err'); return; }
   const tab = _visaoTabela();
@@ -2452,18 +2488,32 @@ const AVISOS_TIPOS_AREA = {
   // Estoque confecção (21/10/2026): ver acabAvisos, no estoque-confeccao.js.
   'acab-os': 'estoque-confeccao', 'acab-pend': 'estoque-confeccao', 'acab-erp': 'estoque-confeccao'
 };
-const AREAS_SO_AVISO = [
-  { k: 'mensagens-todos', rotulo: 'Mensagens para @todos',
-    desc: 'Recebe o recado mandado para @todos (o recado com @nome desta conta chega sempre)' }
-];
+// Desde 21/10/2026 o @todos é área completa (Ver, Editar e Avisar), em AREAS_ACESSO.
+const AREAS_SO_AVISO = [];
+// A tela de cada aviso próprio — é por ela que o Avisar de uma tela vale.
+const AVISOS_TELA_DO_TIPO = { os: 'lista-os', obs: 'lista-os', etiqueta: 'lista-os',
+  'acab-os': 'acab-estoque', 'acab-pend': 'acab-estoque', 'acab-erp': 'acab-erp' };
 // O que o sino traz de cada área, para a dica da caixinha.
 const AVISOS_DA_AREA = {
   'os': 'OS gerada, observação nas OS e etiquetas impressas',
   'os-status': 'mudança de status das OS',
   'expedicao': 'OE montada',
   'planejamento': 'planejamento à espera de aprovação',
-  'estoque-confeccao': 'OS que entrou no estoque, OS esperando SKU e saídas importadas do ERP',
-  'mensagens-todos': 'recados para @todos'
+  'estoque-confeccao': 'OS que entrou no estoque, OS esperando SKU, saídas do ERP e as alterações da área',
+  // Pelo diário de alterações (ver DIÁRIO DE ALTERAÇÕES): o que os outros
+  // gravaram em cada área.
+  'demanda': 'demandas criadas, editadas ou excluídas',
+  'cadastros': 'cadastros criados, editados ou excluídos (grades, tecidos, cores, desenhos…)',
+  'estoque-tecidos': 'lançamentos nos estoques de tecidos, materiais, aviamentos, peças e ferramentas',
+  'estoque-fases': 'lançamentos nos estoques de corte, costura, fios e trânsito',
+  'operacoes': 'mudanças no planejamento de operações',
+  'costura': 'produção de costura lançada ou apagada',
+  'compra': 'mudanças na lista de compra e nas ordens de compra',
+  'fila-os': 'mudanças na ordem da fila de produção',
+  'dados': 'restauração, importação e mudanças de pastas e backup',
+  'contas': 'concessões de acesso alteradas',
+  'colorimetro': 'relatório de cor gravado numa OS',
+  'mensagens-todos': 'o número e o toast dos recados para @todos'
 };
 
 function _avisosContaTabela() {
@@ -2472,19 +2522,34 @@ function _avisosContaTabela() {
   return STATE.meta.acessosAvisos;
 }
 
-/* Esta conta recebe os avisos desta área? Sem marcação, recebe. Vale também
-   para o admin: é escolha do que chega, não tranca. */
-function contaRecebeAviso(area, emailOuNome) {
+/* AS ÁREAS QUE GANHARAM AVISO PELO DIÁRIO (21/10/2026) nascem DESLIGADAS: são
+   cada cadastro, cada lançamento de estoque, cada mudança de operação feita
+   pelos outros — ligadas para todo mundo de uma vez, o sino viraria barulho e
+   ninguém mais leria. Quem precisa saber, o admin liga na conta dela. */
+const AVISO_PADRAO_DESLIGADO = ['demanda', 'cadastros', 'estoque-tecidos', 'estoque-fases', 'operacoes',
+  'costura', 'compra', 'fila-os', 'dados', 'contas', 'colorimetro'];
+
+/* Esta conta recebe os avisos desta área? Sem marcação, recebe — menos nas de
+   AVISO_PADRAO_DESLIGADO. Vale também para o admin: é escolha do que chega,
+   não tranca. */
+function contaRecebeAviso(area, emailOuNome, tela) {
   if (!area) return true;
   const login = _acessoChaveConta(emailOuNome);
   if (!login) return true;
+  // O Avisar da TELA, quando marcado, ganha da área (ver VER E EDITAR POR TELA).
+  if (tela && typeof _ajusteTela === 'function' && (TELAS_DA_AREA[area] || []).some(t => t[0] === tela)) {
+    const aj = _ajusteTela(login, tela);
+    if (typeof aj.avisar === 'boolean') return aj.avisar;
+  }
   const marcado = (_avisosContaTabela()[login] || {})[area];
-  return typeof marcado === 'boolean' ? marcado : true;
+  return typeof marcado === 'boolean' ? marcado
+    : !(typeof AVISO_PADRAO_DESLIGADO !== 'undefined' && AVISO_PADRAO_DESLIGADO.includes(area));
 }
 
 // Marca (ou desmarca) o aviso de uma área para uma conta. Só o admin.
 async function definirAviso(emailOuNome, area, permitido) {
   if (!exigirAdmin('conceder acesso')) return;
+  if (AVISAR_TRAVADO[area]) { toast(AVISAR_TRAVADO[area], 'err'); return; }
   if (!AVISOS_DA_AREA[area]) { toast('Esta área não gera aviso', 'err'); return; }
   const def = AREAS_ACESSO.concat(AREAS_SO_VISAO, AREAS_SO_AVISO).find(a => a.k === area) || { rotulo: area };
   const login = _acessoChaveConta(emailOuNome);
@@ -2492,6 +2557,7 @@ async function definirAviso(emailOuNome, area, permitido) {
   const tab = _avisosContaTabela();
   tab[login] = tab[login] || {};
   tab[login][area] = !!permitido;
+  if (typeof _limparAjustesTelas === 'function') _limparAjustesTelas(login, area, 'avisar');
   desfazerNomearAcao(`avisos de ${login} em "${def.rotulo}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirAviso', e); }
   _redesenharAcessosConta(emailOuNome);
@@ -2500,6 +2566,81 @@ async function definirAviso(emailOuNome, area, permitido) {
   toast(`${login}: ${permitido ? 'recebe' : 'não recebe'} avisos de ${def.rotulo.toLowerCase()}`, 'ok');
 }
 window.definirAviso = definirAviso;
+
+/* ========================================================= */
+/*              DIÁRIO DE ALTERAÇÕES (21/10/2026)            */
+/* ========================================================= */
+/* O Avisar de TODAS as áreas. Os avisos que já existiam nascem dos próprios
+   registros (a nota da OS, o carimbo do status, a carga da OE…); a maioria das
+   áreas não guarda quem mexeu nem quando, e não tinha o que avisar. Aqui cada
+   gravação de uma área vira uma linha curta — de quem, quando, em que tela e o
+   nome da ação (o mesmo do Desfazer) —, e o sino de quem recebe a área mostra.
+
+   Fica de fora o que já tem aviso próprio (as OS: nota, status, etiqueta, OS
+   gerada) e o próprio diário. Mora em STATE.diario: 30 dias, até 400 linhas,
+   gravado alguns segundos depois da ação para juntar as gravações dela. */
+const DIARIO_DIAS = 30;
+const DIARIO_MAX = 400;
+const DIARIO_AREA_DA_CHAVE = {
+  tecidos: 'cadastros', cores: 'cadastros', fornecedores: 'cadastros', materiais: 'cadastros', modelos: 'cadastros',
+  colecoes: 'cadastros', grades: 'cadastros', desenhos: 'cadastros', marcas: 'cadastros', linhas: 'cadastros',
+  bases: 'cadastros', blocos: 'cadastros', equipe: 'cadastros', funcoes: 'cadastros', tarefas: 'cadastros',
+  etapas: 'cadastros', componentes: 'cadastros', aviamentoTipos: 'cadastros',
+  estoqueMov: 'estoque-tecidos', aviamentosMov: 'estoque-tecidos', pecasCad: 'estoque-tecidos', ferramentasCad: 'estoque-tecidos',
+  pecasMov: 'estoque-tecidos', ferramentasMov: 'estoque-tecidos', materiaisEstCad: 'estoque-tecidos', materiaisEstMov: 'estoque-tecidos',
+  corteMov: 'estoque-fases', costurandoMov: 'estoque-fases', corteScMov: 'estoque-fases', costurandoScMov: 'estoque-fases',
+  fiosMov: 'estoque-fases', expedicaoMov: 'estoque-fases',
+  // A Expedição e o Planejamento ficam de fora: já têm aviso próprio (OE
+  // montada, planejamento à espera) e mexem a toda hora.
+  operacoes: 'operacoes', compraPlano: 'compra', compraOCs: 'compra',
+  osDemandas: 'demanda', costuraProd: 'costura',
+  acabProdutos: 'estoque-confeccao', acabMov: 'estoque-confeccao'
+};
+// Ações que não estão em ACOES_POR_AREA (não concedem nada) mas dizem a área no diário.
+const DIARIO_AREA_DA_ACAO = { 'conceder acesso': 'contas', 'gerenciar usuários': 'contas' };
+const DIARIO_SEM = ['diario', 'ordens', 'osCounter'];
+const DIARIO_AREAS_FORA = ['os', 'os-status', 'expedicao', 'planejamento'];
+
+// A ação em curso: exigirEdicao/exigirAdmin anotam a área da ação que liberaram.
+let _diarioAcao = null;
+function _diarioAcaoLiberada(acao) {
+  const area = _areaDaAcao(acao) || DIARIO_AREA_DA_ACAO[String(acao || '').trim()] || '';
+  _diarioAcao = area ? { area, acao: String(acao || '').trim(), em: Date.now() } : null;
+}
+
+function _diarioLista() {
+  if (!Array.isArray(STATE.diario)) STATE.diario = [];
+  return STATE.diario;
+}
+
+let _diarioTimer = null;
+function _diarioAnotar(area, rotulo, tela) {
+  if (!area || !currentUser) return;
+  const quem = _obsQuemSou();
+  const agora = Date.now();
+  const lista = _diarioLista();
+  const ult = lista[lista.length - 1];
+  // A mesma ação gravando duas chaves (o SKU e o lançamento) é uma notícia só.
+  if (ult && ult.area === area && ult.rotulo === rotulo && ult.quem === quem && agora - Date.parse(ult.em) < 15000) return;
+  lista.push({ id: uid(), area, tela: tela || '', rotulo: String(rotulo || '').slice(0, 160), quem, em: new Date(agora).toISOString() });
+  const limite = agora - DIARIO_DIAS * 24 * 60 * 60 * 1000;
+  STATE.diario = lista.filter(x => Date.parse(x.em) >= limite).slice(-DIARIO_MAX);
+  clearTimeout(_diarioTimer);
+  _diarioTimer = setTimeout(() => { saveState('diario').catch(e => console.warn('diário', e)); }, 4000);
+}
+window._diarioAnotar = _diarioAnotar;
+
+// Chamado pelo saveState depois de gravar: de que área foi e com que nome.
+function _diarioDaGravacao(key, antes, depois) {
+  if (DIARIO_SEM.includes(key) || antes === depois) return;
+  const acao = _diarioAcao && Date.now() - _diarioAcao.em < 120000 ? _diarioAcao : null;
+  const area = (acao && acao.area) || DIARIO_AREA_DA_CHAVE[key] || '';
+  if (!area) return;   // meta sem ação conhecida: configuração miúda, não é notícia
+  if (DIARIO_AREAS_FORA.includes(area)) return;   // já têm aviso próprio
+  if (area === 'estoque-confeccao' && /saídas do ERP/i.test(_desfazerRotulo || '')) return;   // já tem aviso próprio
+  const rotulo = _desfazerRotulo || (acao && acao.acao) || _desfazerFrase(key, antes, depois);
+  _diarioAnotar(area, rotulo, _telaBase(_paginaAtual()));
+}
 
 // A primeira tela do menu que a conta vê — para onde vai quem não vê o Início.
 // Configurações é de todos, então sempre há para onde ir.
@@ -2630,23 +2771,26 @@ function _acessosMenuHtml(u) {
   // não tem "Editar".
   const linhas = AREAS_ACESSO.concat(AREAS_SO_VISAO.map(a => Object.assign({ soVisao: true }, a)),
     AREAS_SO_AVISO.map(a => Object.assign({ soAviso: true }, a))).map(a => {
+    /* AS TRÊS CAIXAS EM TODA LINHA (21/10/2026, Junior: "insira caixa de seleção
+       para ver, editar e ser notificado para todos"). Onde não há o que
+       controlar, a caixa aparece travada, com a dica do porquê (decidido com
+       ele): Editar no Ranking e no Início; Avisar no Ranking, no Relatório de
+       produção e no Início; Ver e Editar do Contas de acesso (só do admin). */
+    const travada = (dica, marcada) => `<input type="checkbox" class="acesso-travada" disabled ${marcada ? 'checked' : ''} title="${esc(dica)}">`;
     const edita = !a.soVisao && !a.soAviso && contaTemAcesso(a.k, email, 'usuario');
     const id = `ac-${esc(u.id)}-${a.k}`;
-    const temVisao = !!VISAO_PAGINAS[a.k];
-    // AVISAR (21/10/2026): o que o sino traz desta área para esta conta.
-    const celAvisar = AVISOS_DA_AREA[a.k]
-      ? `<input type="checkbox" title="Receber: ${esc(AVISOS_DA_AREA[a.k])}" ${contaRecebeAviso(a.k, email) ? 'checked' : ''}
-               onchange="definirAviso('${esc(email)}','${a.k}',this.checked)">`
-      : `<span class="acesso-nada" title="Esta área não gera aviso">—</span>`;
     const ve = contaVeArea(a.k, email, 'usuario');
-    const celVer = temVisao
-      ? `<input type="checkbox" title="${edita ? 'Quem edita também vê' : 'Ver as telas desta área'}" ${ve ? 'checked' : ''} ${edita ? 'disabled' : ''}
-               onchange="definirVisao('${esc(email)}','${a.k}',this.checked)">`
-      : `<span class="acesso-nada" title="Esta área não tem tela própria">—</span>`;
-    const celEditar = a.soVisao || a.soAviso
-      ? `<span class="acesso-nada" title="${a.soAviso ? 'Só aviso' : 'Só consulta'}: não há o que editar">—</span>`
-      : `<input type="checkbox" id="${id}" title="Editar nesta área" ${edita ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
+    const celVer = a.soAdmin ? travada('Contas e permissões é sempre só do admin', false)
+      : `<input type="checkbox" title="${edita ? 'Quem edita também vê' : VISAO_PAGINAS[a.k] ? 'Ver as telas desta área' : 'Ver o que esta área mostra nas outras telas'}" ${ve ? 'checked' : ''} ${edita ? 'disabled' : ''}
+               onchange="definirVisao('${esc(email)}','${a.k}',this.checked)">`;
+    const celEditar = a.soAdmin ? travada('Criar contas e conceder acesso é sempre só do admin', false)
+      : EDITAR_TRAVADO[a.k] ? travada(EDITAR_TRAVADO[a.k], false)
+      : `<input type="checkbox" id="${id}" title="Editar nesta área" ${edita ? 'checked' : ''}
                onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">`;
+    // AVISAR (21/10/2026): o que o sino traz desta área para esta conta.
+    const celAvisar = AVISAR_TRAVADO[a.k] ? travada(AVISAR_TRAVADO[a.k], false)
+      : `<input type="checkbox" title="Receber: ${esc(AVISOS_DA_AREA[a.k] || 'as alterações desta área')}" ${contaRecebeAviso(a.k, email) ? 'checked' : ''}
+               onchange="definirAviso('${esc(email)}','${a.k}',this.checked)">`;
     // AS TELAS DA ÁREA (21/10/2026): uma linha por tela, recolhidas atrás do
     // botão "N telas". A caixinha da tela mostra o que vale nela — o ajuste
     // dela, ou o da área quando não há ajuste.
@@ -2671,7 +2815,8 @@ function _acessosMenuHtml(u) {
               onchange="definirTela('${esc(email)}','${tela}','ver',this.checked)"></span>
             <span class="acesso-col"><input type="checkbox" id="${idT}" title="Editar nesta tela" ${editaTela ? 'checked' : ''}
               onchange="definirTela('${esc(email)}','${tela}','editar',this.checked)"></span>
-            <span class="acesso-col"></span>
+            <span class="acesso-col"><input type="checkbox" title="Receber os avisos desta tela" ${contaRecebeAviso(a.k, email, tela) ? 'checked' : ''}
+              onchange="definirTela('${esc(email)}','${tela}','avisar',this.checked)"></span>
             <label for="${idT}">${esc(rotulo)}${proprio ? ' <span class="acesso-ajustadas">ajustada</span>' : ''}</label>
           </div>`;
         }).join('') + `</div>`
@@ -2691,14 +2836,18 @@ function _acessosMenuHtml(u) {
       A área vale para todas as telas dela; abra <b>N telas</b> para marcar uma tela diferente da área.
       Marcar a área de novo desfaz os ajustes das telas.
       Sem o <b>Avisar</b>, o sino desta conta deixa de trazer os avisos da área. Mensagem chega a quem é citado com @usuário.
+      A caixa cinza não se marca: ali não há o que ver, editar ou avisar (passe o mouse para ver o porquê).
       O admin entra em tudo — a marcação vale para as demais contas.
       É a tranca da TELA: ela evita o engano, não substitui o cuidado de quem administra.</div>
   </div>`;
 }
 
 // Quantas áreas esta conta tem, para o botão dizer sem precisar abrir.
+// As áreas que toda conta tem por padrão (imprimir o relatório, mandar @todos)
+// não são concessão: ficam fora da conta, para o número dizer o que foi DADO.
+const AREAS_DE_TODOS = ['relatorio-producao', 'mensagens-todos'];
 function _acessosQuantas(email) {
-  return AREAS_ACESSO.filter(a => !a.soAdmin && contaTemAcesso(a.k, email, 'usuario')).length;
+  return AREAS_ACESSO.filter(a => !a.soAdmin && !AREAS_DE_TODOS.includes(a.k) && contaTemAcesso(a.k, email, 'usuario')).length;
 }
 
 // O papel guardado em `currentRole` serve à TELA — decidir o que mostrar. Ele
@@ -3036,7 +3185,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3589,6 +3738,8 @@ const STATE = {
   // (ver estoque-confeccao.js).
   acabProdutos: [],
   acabMov: [],
+  // O diário de alterações (21/10/2026): de onde o sino tira o Avisar das áreas.
+  diario: [],
   // ---------- Planejamento de expedição ----------
   // Janelas = quando a expedição acontece, cadastradas pelo usuário. Duas
   // naturezas: 'semanal' repete nos diasSemana pra sempre; 'data' acontece
@@ -3707,8 +3858,11 @@ async function saveState(key) {
     const _depois = JSON.stringify(STATE[key]);
     await DB.set(key, _depois);
     try { _apagadosLocaisRegistrar(key, _antes, _depois); } catch (e) { console.warn('apagados locais', e); }
-    if (!_desfazendo) {
+    // O diário não entra no Desfazer: o Ctrl+Z tem de voltar a ação da pessoa,
+    // e não a linha que o programa anotou sobre ela.
+    if (!_desfazendo && key !== 'diario') {
       try { _desfazerRegistrar(key, _antes, _depois); } catch (e) { console.warn('desfazer', e); }
+      try { if (typeof _diarioDaGravacao === 'function') _diarioDaGravacao(key, _antes, _depois); } catch (e) { console.warn('diário', e); }
     }
     // Republica o snapshot de estoque p/ a Contabilidade quando muda algo
     // que altera os saldos. Best-effort; não bloqueia nem quebra o save.
@@ -3811,6 +3965,7 @@ const DESFAZER_NOMES = {
   materiaisEstMov: ['lançamento de materiais', 'lançamentos de materiais'],
   acabProdutos: ['SKU do estoque confecção', 'SKUs do estoque confecção'],
   acabMov: ['lançamento do estoque confecção', 'lançamentos do estoque confecção'],
+  diario: ['linha do diário', 'linhas do diário'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
 };
@@ -3965,7 +4120,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -25031,7 +25186,15 @@ async function _gerarPdfRelProd() {
 }
 
 // silent = gravação automática (ao imprimir): sem pasta ou sem permissão, cala.
+// O Editar do Relatório de produção (21/10/2026): imprimir e gravar o PDF.
+function _podeImprimirRelProd(silent) {
+  if (currentRole === 'admin' || !currentUser || contaTemAcesso('relatorio-producao', _obsQuemSou())) return true;
+  if (!silent) toast('Seu acesso não inclui imprimir o Relatório de produção — peça ao admin', 'err');
+  return false;
+}
+
 async function salvarRelProdNaPasta({ silent = false } = {}) {
+  if (!_podeImprimirRelProd(silent)) return;
   const handle = relFolderHandle || (await loadRelFolderHandle());
   if (!handle) {
     if (!silent) toast('Conecte a pasta dos relatórios de produção em Configurações primeiro.', 'err');
@@ -25073,6 +25236,7 @@ window.salvarRelProdNaPasta = salvarRelProdNaPasta;
 
 // Imprimir também grava na pasta, calado.
 function imprimirRelProd() {
+  if (!_podeImprimirRelProd()) return;
   salvarRelProdNaPasta({ silent: true }).catch(e => console.warn('auto-save relatório', e));
   window.print();
 }
@@ -36198,7 +36362,7 @@ function iniciarRealtimeMensagens() {
           while (_mensagens.length > MSG_MAX) _mensagens.shift();
           // O recado do outro chegou com a tela em outra coisa: um toast chama
           // o olho uma vez; o número no ícone é quem guarda o recado.
-          if (payload.new.autor_id !== _msgQuemSou() && !mensagensAberto() && _msgParaMim(payload.new)) {
+          if (payload.new.autor_id !== _msgQuemSou() && !mensagensAberto() && _msgChamaMim(payload.new)) {
             const t = String(payload.new.texto || '').trim();
             toast(`💬 ${_obsNomeLogin(payload.new.autor) || 'alguém'}: `
               + (t.length > 60 ? t.slice(0, 60) + '…' : t), '');
@@ -36235,6 +36399,12 @@ async function enviarMensagem() {
   if (_recusarRecado('mandar recado')) return;
   // Recado sem @ não chega a ninguém (ver _msgParaMim): avisa antes de mandar,
   // com o texto ainda no campo.
+  // O Editar do @todos: mandar recado para a fábrica inteira.
+  if (_msgCita(texto, 'todos') && currentRole !== 'admin' && !contaTemAcesso('mensagens-todos', _obsQuemSou())) {
+    toast('Seu acesso não inclui mandar recado para @todos — cite as pessoas com @usuário', 'err');
+    if (campo) campo.focus();
+    return;
+  }
   if (!_msgTemDestino(texto, _msgRespondendoA)) {
     toast('Cite quem deve ler com @usuário (ou @todos) — sem isso o recado não chega a ninguém', 'err');
     if (campo) campo.focus();
@@ -36429,7 +36599,19 @@ function _msgParaMim(m) {
     const mae = _mensagens.find(x => x.id === m.responde_a);
     if (mae && mae.autor_id === _msgQuemSou()) return true;
   }
-  return _msgParaTodos(m) && contaRecebeAviso('mensagens-todos', _obsQuemSou());
+  return _msgParaTodos(m) && contaVeArea('mensagens-todos', _obsQuemSou());
+}
+
+// Este recado CHAMA (número e toast)? O que me cita, sempre; o que só chega por
+// ser @todos, se a conta recebe o Avisar do @todos.
+function _msgChamaMim(m) {
+  if (!_msgParaMim(m)) return false;
+  if (m.autor_id === _msgQuemSou() || _msgMeMencionou(m)) return true;
+  if (m.responde_a) {
+    const mae = _mensagens.find(x => x.id === m.responde_a);
+    if (mae && mae.autor_id === _msgQuemSou()) return true;
+  }
+  return contaRecebeAviso('mensagens-todos', _obsQuemSou());
 }
 
 // O recado tem destino? Uma citação de quem existe (ou @todos), ou é resposta a
@@ -36851,7 +37033,7 @@ function _msgMarcarVistas(quando) {
 function _msgNaoLidas() {
   const desde = _msgVistas();
   const eu = _msgQuemSou();
-  return _mensagens.filter(m => String(m.criado_em) > desde && m.autor_id !== eu && _msgParaMim(m));
+  return _mensagens.filter(m => String(m.criado_em) > desde && m.autor_id !== eu && _msgChamaMim(m));
 }
 
 function atualizarBadgeMensagens() {
@@ -37196,6 +37378,12 @@ function _avisosEventos() {
   if (typeof acabAvisos === 'function') {
     try { acabAvisos(limite).forEach(e => ev.push(e)); } catch (e) { console.warn('avisos do estoque confecção', e); }
   }
+  // O DIÁRIO DE ALTERAÇÕES: o Avisar das áreas que não têm aviso próprio.
+  (Array.isArray(STATE.diario) ? STATE.diario : []).forEach(d => {
+    const ms = Date.parse(d.em);
+    if (isNaN(ms) || ms < limite) return;
+    ev.push({ tipo: 'diario', area: d.area, tela: d.tela || '', osId: '', os: '', diarioId: d.id, quem: d.quem || '', em: d.em, texto: d.rotulo || '' });
+  });
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
   let vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
@@ -37203,7 +37391,8 @@ function _avisosEventos() {
   // esta conta não chega ao sino — nem na lista, nem no número, nem no toast.
   if (typeof contaRecebeAviso === 'function') {
     const eu = _obsQuemSou();
-    vivos = vivos.filter(e => contaRecebeAviso(AVISOS_TIPOS_AREA[e.tipo] || '', eu));
+    const telaDoTipo = typeof AVISOS_TELA_DO_TIPO !== 'undefined' ? AVISOS_TELA_DO_TIPO : {};
+    vivos = vivos.filter(e => contaRecebeAviso(e.area || AVISOS_TIPOS_AREA[e.tipo] || '', eu, e.tela || telaDoTipo[e.tipo] || ''));
   }
   return _avisosAgrupar(vivos).slice(0, AVISOS_MAX);
 }
@@ -37270,7 +37459,7 @@ function _avisosChaveAbertos() {
 // A chave de um aviso. `osId` para os da OS, a data para a OE, o tamanho para a
 // linha de lote — mais o instante, que é o que muda quando o aviso é outro.
 function _avisoChave(e) {
-  return [e.tipo, e.osId || e.planId || e.dataOe || e.n || '', e.em].join('|');
+  return [e.tipo, e.osId || e.planId || e.diarioId || e.dataOe || e.n || '', e.em].join('|');
 }
 
 // Lê do zero a cada chamada de propósito: sair de uma conta e entrar em outra
@@ -37658,6 +37847,19 @@ function renderAvisos() {
         cabec = `<b>aguardando aprovação</b>${porQuem}`;
         if (e.texto) corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
         abrir = `fecharAvisos(); goto('planejamento-producao')`;
+      } else if (e.tipo === 'diario') {
+        const defA = AREAS_ACESSO.concat(AREAS_SO_VISAO).find(a => a.k === e.area);
+        const telaA = (TELAS_DA_AREA[e.area] || []).find(t => t[0] === e.tela);
+        icone = '📝';
+        titulo = esc((defA && defA.rotulo) || e.area) + (telaA ? ' · ' + esc(telaA[1]) : '');
+        cabec = `<b>alteração</b>${porQuem}`;
+        corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
+        // A tela onde foi feito; sem ela, a primeira tela da área (Configurações
+        // para Dados e Contas, a lista de OS para a fila).
+        const primeira = ((VISAO_PAGINAS[e.area] || [])[0] || '');
+        const destino = e.tela || (primeira && !primeira.includes('*') ? primeira : '')
+          || (e.area === 'fila-os' || e.area === 'os-status' ? 'lista-os' : e.area === 'cadastros' ? 'cad-grades' : 'config');
+        abrir = `fecharAvisos(); goto('${esc(destino)}')`;
       } else if (e.tipo === 'acab-os') {
         icone = '📦';
         titulo = `OS ${esc(e.os)}`;
@@ -37699,6 +37901,7 @@ function renderAvisos() {
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
                     : e.tipo === 'plan' ? 'Abrir o Planejamento de produção'
                     : String(e.tipo).startsWith('acab-') ? 'Abrir o Estoque confecção'
+                    : e.tipo === 'diario' ? 'Abrir a tela onde foi feito'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
            onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}; atualizarBadgeAvisos()">
         <span class="aviso-icone">${icone}</span>

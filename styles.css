@@ -2937,6 +2937,13 @@ body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !impor
 .acesso-cab:hover { background: none; }
 .acesso-nada { color: var(--ink-3); }
 .acesso-linha label { cursor: pointer; flex: 1; }
+/* A CAIXA TRAVADA (21/10/2026): onde não há o que ver, editar ou avisar, a
+   caixa aparece cinza e não se marca; a dica diz o porquê. */
+.acesso-travada { opacity: .35; cursor: not-allowed; }
+/* O VER DAS ÁREAS SEM TELA (ver VISAO_SEM_TELA no app.js). */
+body.sem-ver-os-status .os-status { display: none !important; }
+body.sem-ver-fila-os .fila-pos, body.sem-ver-fila-os .fila-controles { display: none !important; }
+body.sem-ver-dados .so-ver-dados { display: none !important; }
 /* AS TELAS DE CADA ÁREA (21/10/2026): recolhidas atrás do botão "N telas",
    recuadas embaixo da área. A tela com marcação própria fica destacada. */
 .acesso-telas { margin: 0 0 4px 0; border-left: 2px solid var(--line-2); margin-left: 6px; }
