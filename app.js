@@ -2219,7 +2219,7 @@ const AREAS_SO_VISAO = [
   { k: 'inicio', rotulo: 'Início', desc: 'O painel de abertura: os cartões das fases, as contagens e os atalhos (só consulta)' },
   { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
   { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' },
-  { k: 'colorimetro', rotulo: 'Colorímetro', desc: 'A medição de cor das amostras (CHNSpec DS-01)' }
+  { k: 'colorimetro', rotulo: 'Colorímetro', desc: 'A medição de cor das amostras (CHNSpec DS-01) — só para quem o admin marcar' }
 ];
 
 /* ========================================================= */
@@ -2381,7 +2381,15 @@ function _areaDaPagina(page) {
   return '';
 }
 
-/* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê. */
+/* O VER QUE NASCE FECHADO (21/10/2026, Junior: "acesso ao colorímetro também
+   deve ser um acesso concedido"). Nestas áreas a conta que o admin nunca
+   marcou NÃO vê: a tela só aparece para quem recebeu. O Colorímetro só lê as
+   OS e grava o relatório nas observações (o que toda conta já faz), então o
+   acesso a ele é o próprio Ver. */
+const VISAO_CONCEDIDA = ['colorimetro'];
+
+/* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
+   menos nas áreas de VISAO_CONCEDIDA, em que sem marcação não vê. */
 function contaVeArea(area, emailOuNome, papel) {
   if ((papel !== undefined ? papel : currentRole) === 'admin') return true;
   if (!area) return true;
@@ -2389,7 +2397,7 @@ function contaVeArea(area, emailOuNome, papel) {
   if (!login) return true;
   if (contaTemAcesso(area, emailOuNome, 'usuario')) return true;
   const marcado = (_visaoTabela()[login] || {})[area];
-  return typeof marcado === 'boolean' ? marcado : true;
+  return typeof marcado === 'boolean' ? marcado : !VISAO_CONCEDIDA.includes(area);
 }
 
 // A mesma pergunta para quem está logado agora, por tela.

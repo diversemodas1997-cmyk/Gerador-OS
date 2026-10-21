@@ -49,6 +49,7 @@ const monta = (ctx) => new Function('ctx', `
   ];
   const AREAS_SO_VISAO = [{ k: 'ranking', rotulo: 'Ranking' }, { k: 'colorimetro', rotulo: 'Colorímetro' }];
   ${constante('VISAO_PAGINAS')}
+  ${constante('VISAO_CONCEDIDA')}
   ${constante('TELAS_DA_AREA')}
   ${constante('_TELA_DA_FOLHA')}
   ${recorte('function _obsQuemSou', 'o login de quem esta logado')}
@@ -127,6 +128,12 @@ ok('18. a folha de OS (print) segue a tela da lista de OS', t.api.temAcesso('os'
 
 t = novo({ acessosVisao: { nathaly: { colorimetro: false } } });
 ok('19. Colorimetro tem o seu Ver', t.api.podeVerPagina('colorimetro') === false);
+t = novo({});
+ok('19a. o Colorimetro nasce fechado: sem marcacao, nao ve', t.api.podeVerPagina('colorimetro') === false);
+ok('19b. e as outras areas continuam abertas por padrao', t.api.podeVerPagina('ranking') === true && t.api.podeVerPagina('cad-cores') === true);
+t = novo({ acessosVisao: { nathaly: { colorimetro: true } } });
+ok('19c. o admin concede, e a conta passa a ver', t.api.podeVerPagina('colorimetro') === true);
+ok('19d. o admin ve sem ninguem conceder', t.api.contaVeTela('colorimetro', N, 'admin') === true);
 ok('20. area so de consulta nao se edita', t.api.contaEditaTela('ranking', N, 'usuario') === false);
 t = novo({ acessosVisao: { nathaly: { inicio: false } } });
 ok('21a. o Inicio tem o seu Ver', t.api.podeVerPagina('home') === false && t.api.podeVerPagina('lista-os') === true);
