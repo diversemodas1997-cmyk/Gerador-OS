@@ -2773,10 +2773,11 @@ function _acessosMenuHtml(u) {
     AREAS_SO_AVISO.map(a => Object.assign({ soAviso: true }, a))).map(a => {
     /* AS TRÊS CAIXAS EM TODA LINHA (21/10/2026, Junior: "insira caixa de seleção
        para ver, editar e ser notificado para todos"). Onde não há o que
-       controlar, a caixa aparece travada, com a dica do porquê (decidido com
-       ele): Editar no Ranking e no Início; Avisar no Ranking, no Relatório de
-       produção e no Início; Ver e Editar do Contas de acesso (só do admin). */
-    const travada = (dica, marcada) => `<input type="checkbox" class="acesso-travada" disabled ${marcada ? 'checked' : ''} title="${esc(dica)}">`;
+       controlar, volta o traço de antes (Junior, 21/10/2026: "volte o traço
+       no lugar do quadro cinza"), com a dica do porquê: Editar no Ranking e no
+       Início; Avisar no Ranking, no Relatório de produção e no Início; Ver e
+       Editar do Contas de acesso (só do admin). */
+    const travada = (dica) => `<span class="acesso-nada" title="${esc(dica)}">—</span>`;
     const edita = !a.soVisao && !a.soAviso && contaTemAcesso(a.k, email, 'usuario');
     const id = `ac-${esc(u.id)}-${a.k}`;
     const ve = contaVeArea(a.k, email, 'usuario');

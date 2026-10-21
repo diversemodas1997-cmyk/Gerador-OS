@@ -2939,7 +2939,6 @@ body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !impor
 .acesso-linha label { cursor: pointer; flex: 1; }
 /* A CAIXA TRAVADA (21/10/2026): onde não há o que ver, editar ou avisar, a
    caixa aparece cinza e não se marca; a dica diz o porquê. */
-.acesso-travada { opacity: .35; cursor: not-allowed; }
 /* O VER DAS ÁREAS SEM TELA (ver VISAO_SEM_TELA no app.js). */
 body.sem-ver-os-status .os-status { display: none !important; }
 body.sem-ver-fila-os .fila-pos, body.sem-ver-fila-os .fila-controles { display: none !important; }

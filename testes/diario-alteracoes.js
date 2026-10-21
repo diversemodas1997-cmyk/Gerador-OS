@@ -9,8 +9,8 @@
        próprio diário não entram;
      · a mesma ação gravando duas chaves é uma notícia só;
      · o Avisar das áreas novas nasce desligado, e a tela pode ter o seu;
-     · toda linha da tela de acessos tem as três caixas, e as travadas são as
-       combinadas com o Junior.
+     · toda linha da tela de acessos tem as três caixas, e as sem efeito (traço) são
+       as combinadas com o Junior.
    Recorta as funções do app.js de verdade. */
 const fs = require('fs');
 const path = require('path');
@@ -117,10 +117,11 @@ console.log('\n-- a tela de acessos --');
 t = novo({ papel: 'admin' });
 const html = t.api._acessosMenuHtml({ id: 'u1', email: N });
 const linhas = html.split('<div class="acesso-linha').slice(2);
-ok('13. toda linha tem as três caixas', linhas.length > 15 && linhas.every(l => (l.match(/<input/g) || []).length === 3),
-   linhas.filter(l => (l.match(/<input/g) || []).length !== 3).map(l => l.slice(0, 120)));
+const celulas = l => (l.match(/<input|class="acesso-nada"/g) || []).length;
+ok('13. toda linha tem as três colunas (caixa ou traço)', linhas.length > 15 && linhas.every(l => celulas(l) === 3),
+   linhas.filter(l => celulas(l) !== 3).map(l => l.slice(0, 120)));
 const linha = nome => linhas.find(l => l.includes('<b>' + nome + '</b>')) || '';
-const caixas = l => [...l.matchAll(/<input[^>]*>/g)].map(m => /acesso-travada/.test(m[0]) ? '#' : '.').join('');
+const caixas = l => [...l.matchAll(/<input[^>]*>|<span class="acesso-nada"/g)].map(m => /acesso-nada/.test(m[0]) ? '#' : '.').join('');
 ok('14. travadas: Editar e Avisar do Ranking e do Início', caixas(linha('Ranking de produção')) === '.##' && caixas(linha('Início')) === '.##');
 ok('15. travada: Avisar do Relatório de produção (Ver e Editar livres)', caixas(linha('Relatório de produção')) === '..#');
 ok('16. Contas de acesso: Ver e Editar travados (só do admin), Avisar livre', caixas(linha('Contas de acesso')) === '##.');
