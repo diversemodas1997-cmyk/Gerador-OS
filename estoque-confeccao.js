@@ -262,12 +262,61 @@
     .map(p => `<option value="${esc(p.id)}"${p.id === sel ? ' selected' : ''}>${esc(rotuloProduto(p))}${p.descricao ? ' — ' + esc(p.descricao) : ''}</option>`).join('');
   const opcoesTams = (p, sel) => (p ? ordenarTams(p.tamanhos || []) : [])
     .map(t => `<option value="${esc(t)}"${t === sel ? ' selected' : ''}>${esc(t)}</option>`).join('') || '<option value="">—</option>';
+  /* ENTRADA E SAÍDA À MÃO (21/10/2026, Junior: "insira entrada/saída manual
+     no estoque confecção"). O estoque começou do zero e, sem SKU cadastrado, a
+     tela de Entradas e saídas nem mostrava os formulários. Agora o SKU é
+     DIGITADO (a lista sugere os cadastrados e os do catálogo) e o SKU que
+     ainda não existe nasce na própria entrada, com os tamanhos da linha. A
+     saída continua exigindo SKU cadastrado e estoque no tamanho. */
+  const catalogo = () => ((typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus : []);
+  const doCatalogo = sku => { const s = norm(sku); return s ? catalogo().find(x => x && norm(x.item) === s) || null : null; };
+  const listaSkus = () => `<datalist id="acab-skus">${[...new Set(produtos().map(p => norm(p.sku))
+    .concat(catalogo().map(x => norm(x && x.item))).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    .map(k => `<option value="${esc(k)}">`).join('')}</datalist>`;
+  const produtoDoCampo = prefixo => { const v = val(prefixo + '-produto'); return produtoPorId(v) || produtoPorSku(v); };
+  // O que a caixa de tamanho oferece: os do SKU cadastrado, ou os da linha do SKU novo.
+  function tamsDoCampo(prefixo) {
+    const p = produtoDoCampo(prefixo);
+    if (p) return p;
+    const sku = norm(val(prefixo + '-produto'));
+    if (!sku) return null;
+    const c = doCatalogo(sku);
+    return { tamanhos: tamsDaLinha((c && c.tipo) || partesSku(sku).linha) };
+  }
+  function infoSku(prefixo) {
+    const el = document.getElementById(prefixo + '-info');
+    if (!el) return;
+    const sku = norm(val(prefixo + '-produto'));
+    const p = produtoDoCampo(prefixo);
+    const t = asTam(val(prefixo + '-tam'));
+    if (!sku) { el.textContent = ''; return; }
+    if (!p) {
+      const c = doCatalogo(sku);
+      el.innerHTML = prefixo === 'acab-sai' ? '<span style="color:#c0392b;">SKU não cadastrado: não há estoque para sair.</span>'
+        : `SKU novo${c ? ' (do catálogo' + (c.descricao ? ': ' + esc(c.descricao) : '') + ')' : ''}: é cadastrado junto com a entrada.`;
+      return;
+    }
+    const disp = t ? saldos(todosMovs()).de(p.id, t).total : null;
+    el.innerHTML = esc(p.descricao || '') + (disp != null ? `${p.descricao ? ' · ' : ''}em estoque no ${esc(t)}: <b>${fmtN(disp)}</b>` : '');
+  }
+  window.acabInfoSku = infoSku;
+
   function trocarProduto(prefixo) {
-    const p = produtoPorId(val(prefixo + '-produto'));
+    const p = prefixo === 'acab-aj' ? produtoPorId(val(prefixo + '-produto')) : tamsDoCampo(prefixo);
     const sel = document.getElementById(prefixo + '-tam');
     if (sel) sel.innerHTML = opcoesTams(p, sel.value);
     if (prefixo === 'acab-aj') infoAjuste();
+    else infoSku(prefixo);
   }
+
+  // O "+ entrada" / "− saída" de uma linha do Estoque atual: abre Entradas e
+  // saídas com o SKU e o tamanho já escolhidos.
+  let _preMov = null;
+  window.acabLancar = function (tipo, produtoId, tamanho) {
+    const p = produtoPorId(produtoId);
+    _preMov = { tipo, sku: p ? p.sku : '', tamanho };
+    goto('acab-mov');
+  };
   window.acabTrocarProduto = trocarProduto;
 
   const semSkus = () => `<div class="info-box">Nenhum SKU cadastrado ainda. Cadastre em <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a> — dá para trazer a lista inteira do catálogo de uma vez.</div>`;
@@ -305,7 +354,8 @@
         <td style="${mono}">${fmtN(e.sai)}</td>
         <td style="${mono}font-weight:700;${e.total < 0 ? 'color:#c0392b;background:#fdecea;' : ''}">${fmtN(e.total)}</td>
         <td style="${mono}">${fmtR(c.medio)}</td>
-        <td><span class="badge" style="background:${st.cor};">${esc(st.rotulo)}</span></td></tr>`);
+        <td><span class="badge" style="background:${st.cor};">${esc(st.rotulo)}</span></td>
+        <td class="col-actions row-actions admin-only" style="white-space:nowrap;"><button onclick="acabLancar('ent','${esc(p.id)}','${esc(tamanho)}')" title="Entrada à mão deste SKU e tamanho">+ entrada</button><button onclick="acabLancar('sai','${esc(p.id)}','${esc(tamanho)}')" title="Saída à mão deste SKU e tamanho">− saída</button></td></tr>`);
     });
     const linhasCad = [...new Set(produtos().map(p => p.linha).filter(Boolean))].sort();
     const c = cfg();
@@ -337,12 +387,13 @@
             <option value="ok"${filtro.status === 'ok' ? ' selected' : ''}>Só estoque ok</option>
           </select>
           <button class="btn" onclick="acabExportarCsv()" title="A posição do estoque numa planilha (abre no Excel)">Exportar CSV ↓</button>
+          <button class="btn primary admin-only" onclick="acabLancar('ent','','')" title="Lançar entrada ou saída à mão">+ Entrada / − Saída</button>
         </div>
         ${!produtos().length ? semSkus() : `<div style="overflow:auto;max-height:70vh;"><table class="table"><thead><tr>
           <th>SKU</th><th>Descrição</th><th>Tam.</th><th style="text-align:right;" title="A última contagem de inventário">Contagem</th><th>Data</th>
           <th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Estoque</th>
-          <th style="text-align:right;" title="Custo médio ponderado">Custo médio</th><th>Status</th></tr></thead>
-          <tbody>${rows.join('') || '<tr><td colspan="10" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
+          <th style="text-align:right;" title="Custo médio ponderado">Custo médio</th><th>Status</th><th class="col-actions admin-only">Lançar à mão</th></tr></thead>
+          <tbody>${rows.join('') || '<tr><td colspan="11" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
       </div>`;
   }
   window.acabFiltro = (k, v) => {
@@ -384,22 +435,29 @@
   function renderMovimentos() {
     const box = document.getElementById('acab-mov-painel');
     if (!box) return;
-    if (!produtos().length) { box.innerHTML = `<div class="card">${semSkus()}</div>`; return; }
     const ms = todosMovs().slice().sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
     const ent = ms.filter(m => m.tipo === 'entrada').slice(0, 150);
     const sai = ms.filter(m => m.tipo === 'saida').slice(0, 150);
-    const pE = produtoPorId(val('acab-ent-produto')), pS = produtoPorId(val('acab-sai-produto'));
+    const pre = _preMov; _preMov = null;
+    const skuE = pre && pre.tipo === 'ent' ? pre.sku : val('acab-ent-produto');
+    const skuS = pre && pre.tipo === 'sai' ? pre.sku : val('acab-sai-produto');
+    const tamE = pre && pre.tipo === 'ent' ? pre.tamanho : val('acab-ent-tam');
+    const tamS = pre && pre.tipo === 'sai' ? pre.tamanho : val('acab-sai-tam');
+    const campoSku = (prefixo, v) => `<input type="text" id="${prefixo}-produto" list="acab-skus" value="${esc(norm(v))}" autocomplete="off"
+      placeholder="Digite ou escolha o SKU (ex.: CM.LISA-PRE)" oninput="acabTrocarProduto('${prefixo}')" style="text-transform:uppercase;">
+      <div class="field-hint" id="${prefixo}-info"></div>`;
     const origem = m => m.origem === 'os' ? `<span class="badge" style="background:#e3ecf7;" title="Etapa Estoque marcada na OS — desmarque na OS para estornar">OS ${esc(m.os)}</span>`
       : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>' : '';
     const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
-    box.innerHTML = `
+    box.innerHTML = `${listaSkus()}
+      ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU cadastrado ainda. A entrada cadastra o SKU digitado (com os tamanhos da linha); para trazer a lista inteira do catálogo de uma vez, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
       <div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Registrar entrada</h2>
           <div class="muted" style="font-size:12px;margin-bottom:8px;">Compra de fornecedor ou peça que chegou fora de uma OS. A OS que marca a etapa <b>Estoque</b> já entra sozinha.</div>
           <div class="form-grid cols-2">
-            <div class="field full"><label>SKU *</label><select id="acab-ent-produto" onchange="acabTrocarProduto('acab-ent')">${opcoesProdutos(pE && pE.id)}</select></div>
-            <div class="field"><label>Tamanho *</label><select id="acab-ent-tam">${opcoesTams(pE)}</select></div>
+            <div class="field full"><label>SKU *</label>${campoSku('acab-ent', skuE)}</div>
+            <div class="field"><label>Tamanho *</label><select id="acab-ent-tam" onchange="acabInfoSku('acab-ent')"></select></div>
             <div class="field"><label>Data *</label><input type="date" id="acab-ent-data" value="${hoje()}"></div>
             <div class="field"><label>Quantidade *</label><input type="number" id="acab-ent-qtd" min="1" step="1"></div>
             <div class="field"><label>Custo unitário (R$)</label><input type="text" inputmode="decimal" id="acab-ent-custo" placeholder="0,00"></div>
@@ -411,8 +469,8 @@
           <h2 style="margin-top:0;font-size:15px;">Registrar saída</h2>
           <div class="muted" style="font-size:12px;margin-bottom:8px;">Não sai mais do que há no estoque do tamanho. As vendas do ERP entram em lote pela tela Saídas do ERP.</div>
           <div class="form-grid cols-2">
-            <div class="field full"><label>SKU *</label><select id="acab-sai-produto" onchange="acabTrocarProduto('acab-sai')">${opcoesProdutos(pS && pS.id)}</select></div>
-            <div class="field"><label>Tamanho *</label><select id="acab-sai-tam">${opcoesTams(pS)}</select></div>
+            <div class="field full"><label>SKU *</label>${campoSku('acab-sai', skuS)}</div>
+            <div class="field"><label>Tamanho *</label><select id="acab-sai-tam" onchange="acabInfoSku('acab-sai')"></select></div>
             <div class="field"><label>Destino *</label><select id="acab-sai-destino">${DESTINOS.map(d => `<option value="${d.k}">${esc(d.rotulo)}</option>`).join('')}</select></div>
             <div class="field"><label>Data *</label><input type="date" id="acab-sai-data" value="${hoje()}"></div>
             <div class="field"><label>Quantidade *</label><input type="number" id="acab-sai-qtd" min="1" step="1"></div>
@@ -431,6 +489,15 @@
           ${sai.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td>${esc((DESTINOS.find(d => d.k === m.destino) || { rotulo: m.destino || '' }).rotulo.replace('Estoque → ', ''))} ${origem(m)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td style="${mono}">${fmtR(m.valor)}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma saída.</td></tr>'}
           </tbody></table></div></div>
       </div>`;
+    [['acab-ent', tamE], ['acab-sai', tamS]].forEach(([prefixo, t]) => {
+      const sel = document.getElementById(prefixo + '-tam');
+      if (sel) sel.innerHTML = opcoesTams(tamsDoCampo(prefixo), asTam(t));
+      infoSku(prefixo);
+    });
+    if (pre) {
+      const q = document.getElementById(pre.tipo === 'sai' ? 'acab-sai-qtd' : (pre.sku ? 'acab-ent-qtd' : 'acab-ent-produto'));
+      if (q) { q.scrollIntoView({ block: 'center' }); q.focus(); }
+    }
   }
 
   function novoMov(campos) {
@@ -439,29 +506,48 @@
 
   window.acabRegistrarEntrada = async function () {
     if (!exigirEdicao('lançar no estoque confecção')) return;
-    const p = produtoPorId(val('acab-ent-produto'));
+    const sku = norm(val('acab-ent-produto'));
+    let p = produtoDoCampo('acab-ent');
     const tamanho = asTam(val('acab-ent-tam'));
     const qtd = parseInt(val('acab-ent-qtd'), 10);
     const custo = val('acab-ent-custo').trim() ? num(val('acab-ent-custo')) : 0;
-    if (!p) return toast('Escolha o SKU', 'err');
+    if (!p && !sku) return toast('Informe o SKU', 'err');
     if (!tamanho) return toast('Escolha o tamanho', 'err');
     if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
     if (!(custo >= 0)) return toast('Custo inválido', 'err');
+    // SKU que ainda não está cadastrado nasce aqui (o do catálogo traz linha,
+    // cor e descrição; o digitado fora do catálogo pede confirmação).
+    let novo = null;
+    if (!p) {
+      if (!/^[A-Z0-9][A-Z0-9.]*(-[A-Z0-9.]+)*$/.test(sku)) return toast('SKU inválido: use linha + traço + sigla da cor (ex.: CM.LISA-PRE)', 'err');
+      const c = doCatalogo(sku);
+      if (!c && !confirm(`O SKU ${sku} não está cadastrado nem no catálogo.\n\nCadastrar agora e lançar a entrada?`)) return;
+      const pt = partesSku(sku);
+      novo = { id: uid(), codigo: null, sku, linha: norm(c && c.tipo) || pt.linha, cor: norm(c && c.cor) || pt.cor,
+        descricao: (c && c.descricao) || '', tamanhos: tamsDaLinha((c && c.tipo) || pt.linha), preco: 0,
+        criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: c ? 'catalogo' : 'entrada' };
+      if (!novo.tamanhos.includes(tamanho)) return toast(`O tamanho ${tamanho} não é da linha ${novo.linha}`, 'err');
+      produtos().push(novo);
+      p = novo;
+    }
     movs().push(novoMov({ tipo: 'entrada', produtoId: p.id, tamanho, data: val('acab-ent-data') || hoje(), qtd, custo, obs: val('acab-ent-obs').trim() }));
     desfazerNomearAcao(`entrada de ${qtd} ${p.sku} ${tamanho}`);
+    if (novo) await saveState('acabProdutos');
     await saveState('acabMov');
-    toast(`Entrada: ${qtd} × ${p.sku} ${tamanho}`, 'ok');
+    toast(`Entrada: ${qtd} × ${p.sku} ${tamanho}${novo ? ' (SKU cadastrado)' : ''}`, 'ok');
+    const q = document.getElementById('acab-ent-qtd'); if (q) q.value = '';
     renderMovimentos();
   };
 
   window.acabRegistrarSaida = async function () {
     if (!exigirEdicao('lançar no estoque confecção')) return;
-    const p = produtoPorId(val('acab-sai-produto'));
+    const sku = norm(val('acab-sai-produto'));
+    const p = produtoDoCampo('acab-sai');
     const tamanho = asTam(val('acab-sai-tam'));
     const qtd = parseInt(val('acab-sai-qtd'), 10);
     const valor = val('acab-sai-valor').trim() ? num(val('acab-sai-valor')) : 0;
     const destino = DESTINOS.some(d => d.k === val('acab-sai-destino')) ? val('acab-sai-destino') : 'cliente';
-    if (!p) return toast('Escolha o SKU', 'err');
+    if (!p) return toast(sku ? `O SKU ${sku} não está cadastrado: não há estoque para sair` : 'Informe o SKU', 'err');
     if (!tamanho) return toast('Escolha o tamanho', 'err');
     if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
     if (!(valor >= 0)) return toast('Valor inválido', 'err');
@@ -471,6 +557,7 @@
     desfazerNomearAcao(`saída de ${qtd} ${p.sku} ${tamanho}`);
     await saveState('acabMov');
     toast(`Saída: ${qtd} × ${p.sku} ${tamanho}`, 'ok');
+    const q = document.getElementById('acab-sai-qtd'); if (q) q.value = '';
     renderMovimentos();
   };
 
