@@ -70,7 +70,7 @@ const monta = (ctx) => new Function('ctx', `
   // O canal ganhou resposta (responde_a), polegar e mencao em 27/08/2026; o
   // que este teste precisa saber deles e so que existem.
   let _msgRespondendoA = null, _msgReacoes = [], _msgReacoesIndisponivel = false;
-  let _msgPerfis = [], _msgMencao = null, _msgEditando = null;
+  let _msgPerfis = ctx.perfis || [], _msgMencao = null, _msgEditando = null;
   const STATE = { ordens: [] };
   function _msgBarraResposta() {}
   function _msgFecharMencao() {}
@@ -84,6 +84,14 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _msgVistas', 'a marca de leitura')}
   ${recorte('function _msgMarcarVistas', 'a gravacao da marca')}
   ${recorte('function _msgNaoLidas', 'a conta do que nao li')}
+  // Quem recebe o recado (21/10/2026): so quem foi citado com @, quem escreveu,
+  // o autor do recado respondido e, para @todos, quem recebe @todos.
+  const contaRecebeAviso = (area, quem) => !(ctx.semTodos && area === 'mensagens-todos');
+  ${recorte('function _msgCita', 'a citacao com @')}
+  ${recorte('function _msgMeMencionou', 'a mencao a mim')}
+  ${recorte('function _msgParaTodos', 'o recado para todos')}
+  ${recorte('function _msgParaMim', 'quem recebe o recado')}
+  ${recorte('function _msgTemDestino', 'o destino do recado')}
   // O polegar e a lista de mencao tem os seus proprios caminhos e nao sao o
   // assunto deste teste (que e ler, mandar e contar o que nao foi lido);
   // carregarMensagens passa por eles, entao aqui eles existem e nao fazem nada.
@@ -92,7 +100,7 @@ const monta = (ctx) => new Function('ctx', `
   function mensagensAberto() { return false; }
   function renderMensagens() { ctx.desenhou = (ctx.desenhou || 0) + 1; }
   return {
-    carregarMensagens, enviarMensagem, _msgNaoLidas, _msgVistas, _msgMarcarVistas,
+    carregarMensagens, enviarMensagem, _msgNaoLidas, _msgParaMim, _msgVistas, _msgMarcarVistas,
     lista: () => _mensagens, indisponivel: () => _msgIndisponivel
   };
 `)(ctx);
@@ -133,12 +141,12 @@ const antes = (min) => new Date(Date.now() - min * 60000).toISOString();
   console.log('');
   console.log('-- mandar recado --');
   t = ctxDe();
-  t.ctx.campo.value = '  faltou pano na 3a fase  ';
+  t.ctx.campo.value = '  @corte faltou pano na 3a fase  ';
   await t.api.enviarMensagem();
   ok('4. o recado vai assinado por quem mandou',
      t.ctx.inserido && t.ctx.inserido.autor_id === 'u1'
      && t.ctx.inserido.autor === 'costura@diverse.local', JSON.stringify(t.ctx.inserido));
-  ok('5. sem espaco sobrando nas pontas', t.ctx.inserido.texto === 'faltou pano na 3a fase',
+  ok('5. sem espaco sobrando nas pontas', t.ctx.inserido.texto === '@corte faltou pano na 3a fase',
      JSON.stringify(t.ctx.inserido.texto));
   ok('6. e o campo esvazia para o proximo', t.ctx.campo.value === '', t.ctx.campo.value);
   ok('7. a mensagem entra na lista na hora', t.api.lista().length === 1, String(t.api.lista().length));
@@ -160,7 +168,7 @@ const antes = (min) => new Date(Date.now() - min * 60000).toISOString();
   ok('10. modo nuvem (servidor da fabrica fora do ar) nao manda', !t.ctx.inserido, '');
 
   t = ctxDe();
-  t.ctx.campo.value = 'x'.repeat(3000);
+  t.ctx.campo.value = '@todos ' + 'x'.repeat(3000);
   await t.api.enviarMensagem();
   ok('11. recado e recado: corta em 2000 caracteres', t.ctx.inserido.texto.length === 2000,
      String(t.ctx.inserido.texto.length));
@@ -168,8 +176,8 @@ const antes = (min) => new Date(Date.now() - min * 60000).toISOString();
   console.log('');
   console.log('-- o que ainda nao li --');
   const conversa = [
-    { id: 'a', criado_em: antes(30), autor_id: 'u2', autor: 'corte@diverse.local', texto: 'a' },
-    { id: 'b', criado_em: antes(2), autor_id: 'u2', autor: 'corte@diverse.local', texto: 'b' },
+    { id: 'a', criado_em: antes(30), autor_id: 'u2', autor: 'corte@diverse.local', texto: '@costura a' },
+    { id: 'b', criado_em: antes(2), autor_id: 'u2', autor: 'corte@diverse.local', texto: '@costura b' },
     { id: 'c', criado_em: antes(1), autor_id: 'u1', autor: 'costura@diverse.local', texto: 'meu' }
   ];
   t = ctxDe({ mensagens: conversa, ls: { 'mensagensVistas:costura@diverse.local': antes(10) } });
@@ -188,6 +196,34 @@ const antes = (min) => new Date(Date.now() - min * 60000).toISOString();
   ok('17. a marca de um login nao vale para o outro',
      t.api._msgNaoLidas().length === 0
      && typeof t.ctx.ls['mensagensVistas:costura@diverse.local'] === 'string', JSON.stringify(t.ctx.ls));
+
+  console.log('');
+  console.log('-- o recado chega a quem foi citado --');
+  const canal = [
+    { id: 'p', criado_em: antes(5), autor_id: 'u2', autor: 'corte@diverse.local', texto: '@expedicao separa a 0656' },
+    { id: 'q', criado_em: antes(4), autor_id: 'u2', autor: 'corte@diverse.local', texto: '@costura.sc e @costura confere' },
+    { id: 'r', criado_em: antes(3), autor_id: 'u2', autor: 'corte@diverse.local', texto: '@todos parada às 15h' },
+    { id: 's', criado_em: antes(2), autor_id: 'u1', autor: 'costura@diverse.local', texto: '@corte ok' },
+    { id: 'u', criado_em: antes(1), autor_id: 'u2', autor: 'corte@diverse.local', texto: 'feito', responde_a: 's' }
+  ];
+  t = ctxDe({ mensagens: canal, ls: { 'mensagensVistas:costura@diverse.local': antes(10) } });
+  const vejo = () => canal.filter(m => t.api._msgParaMim(m)).map(m => m.id).join(',');
+  ok('21. recado para outra pessoa nao chega', !t.api._msgParaMim(canal[0]), vejo());
+  ok('22. @costura chega a costura, e @costura.sc nao confunde', vejo() === 'q,r,s,u', vejo());
+  ok('23. o numero conta so o que chega a mim',
+     t.api._msgNaoLidas().map(m => m.id).join(',') === 'q,r,u', t.api._msgNaoLidas().map(m => m.id).join(','));
+  t = ctxDe({ mensagens: canal, semTodos: true });
+  ok('24. conta que nao recebe @todos fica sem o recado para todos', vejo() === 'q,s,u', vejo());
+
+  t = ctxDe({ perfis: [{ login: 'corte' }, { login: 'costura' }] });
+  t.ctx.campo.value = 'faltou pano';
+  await t.api.enviarMensagem();
+  ok('25. recado sem @ nao vai, e explica', !t.ctx.inserido && /@usu/.test(t.ctx.toasts.join(' ')), t.ctx.toasts.join(' | '));
+  ok('26. e o texto fica no campo', t.ctx.campo.value === 'faltou pano', t.ctx.campo.value);
+  t = ctxDe({ perfis: [{ login: 'corte' }] });
+  t.ctx.campo.value = '@ninguem faltou pano';
+  await t.api.enviarMensagem();
+  ok('27. @ de quem nao existe tambem nao vale', !t.ctx.inserido, JSON.stringify(t.ctx.inserido));
 
   console.log('');
   console.log('-- onde a mensagem mora --');

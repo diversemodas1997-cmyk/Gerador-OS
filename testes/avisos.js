@@ -61,6 +61,14 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _expCancelSet', 'as expedicoes canceladas')}
   ${recorte('function _planLista', 'a lista de planejamentos')}
   const _planResumo = (p) => p.codigo || '';
+  // A coluna AVISAR das contas de acesso (21/10/2026): o sino de cada conta
+  // traz so as areas marcadas para ela.
+  ${constante('AVISOS_TIPOS_AREA')}
+  ${recorte('function _obsNomeLogin', 'o nome do login')}
+  ${recorte('function _chaveLogin', 'a chave do login')}
+  ${recorte('function _acessoChaveConta', 'a chave da conta')}
+  ${recorte('function _avisosContaTabela', 'a tabela de avisos por conta')}
+  ${recorte('function contaRecebeAviso', 'quem recebe o aviso')}
   ${recorte('function _avisosEventos', 'a lista de eventos')}
   ${constante('AVISOS_LOTE')}
   ${recorte('function _avisosAgrupar', 'o agrupamento do lote')}
@@ -382,6 +390,27 @@ ok('61. aprovado ou excluido (saiu da lista), o aviso some',
    !t.api._avisosEventos().some(e => e.tipo === 'plan'), 'sobrou aviso de planejamento');
 ok('62. a chave do aviso e a do planejamento, nao vazia',
    t.api._avisoChave({ tipo: 'plan', planId: 'p1', em: 'x' }) === 'plan|p1|x', 'chave sem o id');
+
+console.log('');
+console.log('-- a coluna Avisar de cada conta --');
+{
+  const ords = [
+    { id: 'x', os: '0700', obsNotas: [{ login: 'costura@diverse.local', texto: 'recado', em: diasAtras(1) }] },
+    { id: 'y', os: '0701', statusOS: 'parado', statusOSPor: 'enfesto.corte@diverse.local', statusOSEm: diasAtras(1) }
+  ];
+  let a = ctxDe('expedicao@diverse.local', ords);
+  const tipos = () => a.api._avisosEventos().map(e => e.tipo).sort().join(',');
+  ok('63. sem marcacao, a conta recebe tudo (o padrao e receber)', tipos() === 'obs,status', tipos());
+  a.ctx.STATE.meta = { acessosAvisos: { expedicao: { 'os-status': false } } };
+  ok('64. Status da OS desmarcado: o carimbo de status sai do sino desta conta', tipos() === 'obs', tipos());
+  ok('65. e sai do numero junto', a.api._avisosPorAbrir().every(e => e.tipo !== 'status'), tipos());
+  a.ctx.STATE.meta = { acessosAvisos: { expedicao: { os: false, 'os-status': false } } };
+  ok('66. Ordens de Servico desmarcado: a observacao sai tambem', tipos() === '', tipos());
+  a = ctxDe('costura@diverse.local', ords);
+  a.ctx.STATE.meta = { acessosAvisos: { expedicao: { os: false, 'os-status': false } } };
+  ok('67. a marcacao de uma conta nao cala o sino da outra',
+     a.api._avisosEventos().some(e => e.tipo === 'status'), JSON.stringify(a.api._avisosEventos()));
+}
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }

@@ -2243,6 +2243,79 @@ async function definirVisao(emailOuNome, area, permitido) {
 }
 window.definirVisao = definirVisao;
 
+/* ========================================================= */
+/*            AVISOS POR CONTA E POR ÁREA (21/10/2026)       */
+/* ========================================================= */
+/* (Junior: "insira nas concessões de ver e editar para cada perfil uma coluna
+   de seleção para configurar o que cada usuário recebe nas notificações e
+   mensagens")
+
+   Terceira coluna ao lado de VER e EDITAR: AVISAR. Desmarcada, a conta deixa
+   de receber no sino (lista, número e toast) os avisos daquela área. Área que
+   não gera aviso nenhum fica com "—".
+
+   O PADRÃO É RECEBER, pelo mesmo motivo do Ver: ligar a coluna não pode calar o
+   sino de ninguém de um dia para o outro.
+
+   As MENSAGENS seguem outra regra (ver _msgParaMim): o recado chega a quem foi
+   citado com @usuário. A linha "Mensagens para @todos" diz se a conta recebe o
+   recado mandado para todo mundo de uma vez.
+
+   Mora em STATE.meta.acessosAvisos, ao lado de acessos e acessosVisao. */
+const AVISOS_TIPOS_AREA = {
+  os: 'os', obs: 'os', etiqueta: 'os',
+  status: 'os-status',
+  oe: 'expedicao',
+  plan: 'planejamento'
+};
+const AREAS_SO_AVISO = [
+  { k: 'mensagens-todos', rotulo: 'Mensagens para @todos',
+    desc: 'Recebe o recado mandado para @todos (o recado com @nome desta conta chega sempre)' }
+];
+// O que o sino traz de cada área, para a dica da caixinha.
+const AVISOS_DA_AREA = {
+  'os': 'OS gerada, observação nas OS e etiquetas impressas',
+  'os-status': 'mudança de status das OS',
+  'expedicao': 'OE montada',
+  'planejamento': 'planejamento à espera de aprovação',
+  'mensagens-todos': 'recados para @todos'
+};
+
+function _avisosContaTabela() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.acessosAvisos || typeof STATE.meta.acessosAvisos !== 'object') STATE.meta.acessosAvisos = {};
+  return STATE.meta.acessosAvisos;
+}
+
+/* Esta conta recebe os avisos desta área? Sem marcação, recebe. Vale também
+   para o admin: é escolha do que chega, não tranca. */
+function contaRecebeAviso(area, emailOuNome) {
+  if (!area) return true;
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) return true;
+  const marcado = (_avisosContaTabela()[login] || {})[area];
+  return typeof marcado === 'boolean' ? marcado : true;
+}
+
+// Marca (ou desmarca) o aviso de uma área para uma conta. Só o admin.
+async function definirAviso(emailOuNome, area, permitido) {
+  if (!exigirAdmin('conceder acesso')) return;
+  if (!AVISOS_DA_AREA[area]) { toast('Esta área não gera aviso', 'err'); return; }
+  const def = AREAS_ACESSO.concat(AREAS_SO_VISAO, AREAS_SO_AVISO).find(a => a.k === area) || { rotulo: area };
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) { toast('Conta inválida', 'err'); return; }
+  const tab = _avisosContaTabela();
+  tab[login] = tab[login] || {};
+  tab[login][area] = !!permitido;
+  desfazerNomearAcao(`avisos de ${login} em "${def.rotulo}"`);
+  try { await saveState('meta'); } catch (e) { console.warn('definirAviso', e); }
+  _redesenharAcessosConta(emailOuNome);
+  if (typeof atualizarBadgeAvisos === 'function') atualizarBadgeAvisos();
+  if (typeof atualizarBadgeMensagens === 'function') atualizarBadgeMensagens();
+  toast(`${login}: ${permitido ? 'recebe' : 'não recebe'} avisos de ${def.rotulo.toLowerCase()}`, 'ok');
+}
+window.definirAviso = definirAviso;
+
 // Esconde do menu as telas que a conta não vê, e o grupo que ficar vazio.
 function _aplicarVisaoMenu() {
   document.querySelectorAll('.sidebar .nav-btn[data-page]').forEach(a => {
@@ -2341,30 +2414,38 @@ function _acessosMenuHtml(u) {
   // Duas colunas por área (16/10/2026): VER (as telas aparecem) e EDITAR (o
   // que já existia). Área sem tela própria não tem "Ver"; área só de consulta
   // não tem "Editar".
-  const linhas = AREAS_ACESSO.concat(AREAS_SO_VISAO.map(a => Object.assign({ soVisao: true }, a))).map(a => {
-    const edita = !a.soVisao && contaTemAcesso(a.k, email, 'usuario');
+  const linhas = AREAS_ACESSO.concat(AREAS_SO_VISAO.map(a => Object.assign({ soVisao: true }, a)),
+    AREAS_SO_AVISO.map(a => Object.assign({ soAviso: true }, a))).map(a => {
+    const edita = !a.soVisao && !a.soAviso && contaTemAcesso(a.k, email, 'usuario');
     const id = `ac-${esc(u.id)}-${a.k}`;
     const temVisao = !!VISAO_PAGINAS[a.k];
+    // AVISAR (21/10/2026): o que o sino traz desta área para esta conta.
+    const celAvisar = AVISOS_DA_AREA[a.k]
+      ? `<input type="checkbox" title="Receber: ${esc(AVISOS_DA_AREA[a.k])}" ${contaRecebeAviso(a.k, email) ? 'checked' : ''}
+               onchange="definirAviso('${esc(email)}','${a.k}',this.checked)">`
+      : `<span class="acesso-nada" title="Esta área não gera aviso">—</span>`;
     const ve = contaVeArea(a.k, email, 'usuario');
     const celVer = temVisao
       ? `<input type="checkbox" title="${edita ? 'Quem edita também vê' : 'Ver as telas desta área'}" ${ve ? 'checked' : ''} ${edita ? 'disabled' : ''}
                onchange="definirVisao('${esc(email)}','${a.k}',this.checked)">`
       : `<span class="acesso-nada" title="Esta área não tem tela própria">—</span>`;
-    const celEditar = a.soVisao
-      ? `<span class="acesso-nada" title="Só consulta: não há o que editar">—</span>`
+    const celEditar = a.soVisao || a.soAviso
+      ? `<span class="acesso-nada" title="${a.soAviso ? 'Só aviso' : 'Só consulta'}: não há o que editar">—</span>`
       : `<input type="checkbox" id="${id}" title="Editar nesta área" ${edita ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
                onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">`;
     return `<div class="acesso-linha${a.soAdmin ? ' fixa' : ''}" title="${esc(a.desc)}">
       <span class="acesso-col">${celVer}</span>
       <span class="acesso-col">${celEditar}</span>
+      <span class="acesso-col">${celAvisar}</span>
       <label for="${id}"><b>${esc(a.rotulo)}</b><br><span class="acesso-desc">${esc(a.desc)}</span></label>
     </div>`;
   }).join('');
   return `<div class="acessos-menu hidden" id="acessos-${esc(u.id)}">
     <div class="acesso-topo">A que <b>${esc(_obsNomeLogin(email) || email)}</b> tem acesso</div>
-    <div class="acesso-linha acesso-cab"><span class="acesso-col">Ver</span><span class="acesso-col">Editar</span><span>Área</span></div>
+    <div class="acesso-linha acesso-cab"><span class="acesso-col">Ver</span><span class="acesso-col">Editar</span><span class="acesso-col">Avisar</span><span>Área</span></div>
     ${linhas}
     <div class="acesso-rodape">Sem o <b>Ver</b>, as telas da área somem do menu desta conta. Quem edita também vê.
+      Sem o <b>Avisar</b>, o sino desta conta deixa de trazer os avisos da área. Mensagem chega a quem é citado com @usuário.
       O admin entra em tudo — a marcação vale para as demais contas.
       É a tranca da TELA: ela evita o engano, não substitui o cuidado de quem administra.</div>
   </div>`;
@@ -35850,7 +35931,7 @@ function iniciarRealtimeMensagens() {
           while (_mensagens.length > MSG_MAX) _mensagens.shift();
           // O recado do outro chegou com a tela em outra coisa: um toast chama
           // o olho uma vez; o número no ícone é quem guarda o recado.
-          if (payload.new.autor_id !== _msgQuemSou() && !mensagensAberto()) {
+          if (payload.new.autor_id !== _msgQuemSou() && !mensagensAberto() && _msgParaMim(payload.new)) {
             const t = String(payload.new.texto || '').trim();
             toast(`💬 ${_obsNomeLogin(payload.new.autor) || 'alguém'}: `
               + (t.length > 60 ? t.slice(0, 60) + '…' : t), '');
@@ -35885,6 +35966,13 @@ async function enviarMensagem() {
   if (!texto) return;
   if (!currentUser) { toast('Entre na sua conta para mandar recado', 'err'); return; }
   if (_recusarRecado('mandar recado')) return;
+  // Recado sem @ não chega a ninguém (ver _msgParaMim): avisa antes de mandar,
+  // com o texto ainda no campo.
+  if (!_msgTemDestino(texto, _msgRespondendoA)) {
+    toast('Cite quem deve ler com @usuário (ou @todos) — sem isso o recado não chega a ninguém', 'err');
+    if (campo) campo.focus();
+    return;
+  }
   const linha = {
     autor_id: currentUser.id,
     autor: _obsQuemSou(),
@@ -35971,7 +36059,9 @@ function _msgAoDigitar() {
   const tok = _msgTokenMencao(campo);
   if (!tok) return _msgFecharMencao();
   const t = tok.termo.toLowerCase();
-  const itens = _msgPerfis
+  // @todos entra na lista como se fosse uma conta: é o recado para a fábrica
+  // inteira (ver _msgParaMim).
+  const itens = [{ login: 'todos' }].concat(_msgPerfis.filter(p => p && p.login && p.login.toLowerCase() !== 'todos'))
     .filter(p => !t || p.login.toLowerCase().indexOf(t) >= 0)
     // Quem começa com o que foi digitado vem primeiro: digitar "na" e ver
     // "nathaly" em terceiro lugar é o mesmo que não ter lista.
@@ -36028,22 +36118,64 @@ function _msgComMencoes(textoEscapado) {
     `${antes}<span class="msg-mencao${nome.toLowerCase() === meu ? ' eu' : ''}">@${nome}</span>`);
 }
 
-// Este recado chama por mim? É o que faz a linha ficar destacada na conversa.
-function _msgMeMencionou(m) {
-  const meu = (_obsNomeLogin((currentUser && currentUser.email) || '') || '').toLowerCase();
-  if (!meu) return false;
-  // Sem montar expressão com o nome dentro: o login tem ponto ("enfesto.corte"),
-  // e ponto em expressão casa com qualquer letra — "@enfestoXcorte" acenderia a
-  // linha. Procurar o texto e olhar as bordas responde a mesma pergunta sem
-  // essa armadilha.
-  const t = String(m.texto || '').toLowerCase();
-  const alvo = '@' + meu;
+// O texto cita este login com @? Sem montar expressão com o nome dentro: o login
+// tem ponto ("enfesto.corte"), e ponto em expressão casa com qualquer letra —
+// "@enfestoXcorte" acenderia a linha. Procurar o texto e olhar as bordas
+// responde a mesma pergunta sem essa armadilha.
+function _msgCita(texto, login) {
+  const nome = String(login || '').toLowerCase();
+  if (!nome) return false;
+  const t = String(texto || '').toLowerCase();
+  const alvo = '@' + nome;
   for (let i = t.indexOf(alvo); i >= 0; i = t.indexOf(alvo, i + 1)) {
     const antes = i === 0 || /\s/.test(t.charAt(i - 1));
     const depois = t.charAt(i + alvo.length);
     if (antes && (!depois || !/[\wÀ-ÿ.\-]/.test(depois))) return true;
   }
   return false;
+}
+
+// Este recado chama por mim? É o que faz a linha ficar destacada na conversa.
+function _msgMeMencionou(m) {
+  return _msgCita(m && m.texto, _obsNomeLogin((currentUser && currentUser.email) || ''));
+}
+
+/* O RECADO CHEGA A QUEM FOI CITADO (21/10/2026, Junior: "usuário deve ser
+   citado com @usuário para que a mensagem seja vista por ele e seja
+   notificado"). Até aqui o canal era um só e todo recado chegava a todo
+   mundo. Agora cada um vê:
+     · o que ele mesmo escreveu;
+     · o que o cita com @login;
+     · o que é resposta a um recado dele (responder já é chamar quem escreveu);
+     · o que é para @todos, se a conta recebe @todos (coluna Avisar, em
+       Configurações → contas de acesso).
+   O que não chega não aparece na conversa, não conta no número e não dá toast.
+   É filtro da TELA, como o resto das marcações: o banco continua entregando o
+   canal inteiro a quem pede. */
+function _msgParaTodos(m) { return _msgCita(m && m.texto, 'todos'); }
+
+function _msgParaMim(m) {
+  if (!m) return false;
+  if (m.autor_id === _msgQuemSou()) return true;
+  if (_msgMeMencionou(m)) return true;
+  if (m.responde_a) {
+    const mae = _mensagens.find(x => x.id === m.responde_a);
+    if (mae && mae.autor_id === _msgQuemSou()) return true;
+  }
+  return _msgParaTodos(m) && contaRecebeAviso('mensagens-todos', _obsQuemSou());
+}
+
+// O recado tem destino? Uma citação de quem existe (ou @todos), ou é resposta a
+// recado de OUTRA pessoa. Sem isso ele não chegaria a ninguém.
+function _msgTemDestino(texto, respondeA) {
+  if (respondeA) {
+    const mae = _mensagens.find(x => x.id === respondeA);
+    if (mae && mae.autor_id !== _msgQuemSou()) return true;
+  }
+  if (_msgCita(texto, 'todos')) return true;
+  const perfis = _msgPerfis || [];
+  if (!perfis.length) return /(^|\s)@[\wÀ-ÿ.\-]{2,40}/.test(String(texto || ''));
+  return perfis.some(p => p && p.login && _msgCita(texto, p.login));
 }
 
 /* ---- O POLEGAR ------------------------------------------------------------
@@ -36256,8 +36388,9 @@ function _msgMae(m) {
   if (!m || !m.responde_a) return null;
   const mae = _mensagens.find(x => x.id === m.responde_a);
   // Mãe fora do pedaço carregado (ou apagada, que zera o campo no banco): a
-  // resposta vira recado solto em vez de sumir da conversa.
-  return mae || null;
+  // resposta vira recado solto em vez de sumir da conversa. Mãe que não chega
+  // a esta conta (ver _msgParaMim) também: a resposta que me cita aparece solta.
+  return (mae && _msgParaMim(mae)) ? mae : null;
 }
 
 function responderMensagem(id) {
@@ -36451,7 +36584,7 @@ function _msgMarcarVistas(quando) {
 function _msgNaoLidas() {
   const desde = _msgVistas();
   const eu = _msgQuemSou();
-  return _mensagens.filter(m => String(m.criado_em) > desde && m.autor_id !== eu);
+  return _mensagens.filter(m => String(m.criado_em) > desde && m.autor_id !== eu && _msgParaMim(m));
 }
 
 function atualizarBadgeMensagens() {
@@ -36521,9 +36654,11 @@ function renderMensagens() {
   if (!box) return;
   const eu = _msgQuemSou();
   const desde = _msgVistas();
-  if (!_mensagens.length) {
-    box.innerHTML = `<div class="empty" style="padding:24px;">Nenhum recado ainda. `
-      + `O que for escrito aqui, toda a fábrica lê.</div>`;
+  // Só o que chega a esta conta (ver _msgParaMim).
+  const visiveis = _mensagens.filter(_msgParaMim);
+  if (!visiveis.length) {
+    box.innerHTML = `<div class="empty" style="padding:24px;">Nenhum recado para você. `
+      + `Cite quem deve ler com @usuário, ou @todos para a fábrica inteira.</div>`;
   } else {
     let ultimoDia = '';
     // A CONVERSA, MONTADA: cada recado solto no seu lugar de sempre (a hora
@@ -36531,13 +36666,13 @@ function renderMensagens() {
     // resposta cuja mãe não está neste pedaço da conversa entra como recado
     // solto, no lugar dela — sumir seria pior do que aparecer sem o recuo.
     const respostasDe = new Map();
-    _mensagens.forEach(m => {
+    visiveis.forEach(m => {
       if (!_msgMae(m)) return;
       const l = respostasDe.get(m.responde_a) || [];
       l.push(m); respostasDe.set(m.responde_a, l);
     });
     const emOrdem = [];
-    _mensagens.forEach(m => {
+    visiveis.forEach(m => {
       if (_msgMae(m)) return;                       // entra junto com a mãe
       emOrdem.push({ m: m, resposta: false });
       (respostasDe.get(m.id) || []).forEach(r => emOrdem.push({ m: r, resposta: true }));
@@ -36790,7 +36925,13 @@ function _avisosEventos() {
   });
   // Mais recente em cima. Data ISO compara como texto, sem passar por Date.
   ev.sort((a, b) => String(b.em).localeCompare(String(a.em)));
-  const vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
+  let vivos = limpoAte ? ev.filter(e => String(e.em) > limpoAte) : ev;
+  // A coluna AVISAR das contas de acesso (21/10/2026): área desmarcada para
+  // esta conta não chega ao sino — nem na lista, nem no número, nem no toast.
+  if (typeof contaRecebeAviso === 'function') {
+    const eu = _obsQuemSou();
+    vivos = vivos.filter(e => contaRecebeAviso(AVISOS_TIPOS_AREA[e.tipo] || '', eu));
+  }
   return _avisosAgrupar(vivos).slice(0, AVISOS_MAX);
 }
 
