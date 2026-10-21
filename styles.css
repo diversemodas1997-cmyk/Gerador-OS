@@ -2895,7 +2895,7 @@ body.pode-estoque-fases [data-page="costurando"] .admin-only,
 body.pode-estoque-fases [data-page="fios"] .admin-only,
 body.pode-compra [data-page="compra"] .admin-only,
 body.pode-dados [data-page="config"] .admin-only { display: revert !important; }
-body.pode-os .nav-btn[data-page="nova-os"] { display: block !important; }
+body.pode-nova-os-menu .nav-btn[data-page="nova-os"] { display: block !important; }
 body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !important; }
 
 /* A LISTINHA DE AREAS de uma conta, aberta pelo botao "Acesso ▾". Fica embaixo
@@ -2931,6 +2931,17 @@ body.pode-cadastros [data-page^="cad-"] .admin-only.card { display: block !impor
 .acesso-cab:hover { background: none; }
 .acesso-nada { color: var(--ink-3); }
 .acesso-linha label { cursor: pointer; flex: 1; }
+/* AS TELAS DE CADA ÁREA (21/10/2026): recolhidas atrás do botão "N telas",
+   recuadas embaixo da área. A tela com marcação própria fica destacada. */
+.acesso-telas { margin: 0 0 4px 0; border-left: 2px solid var(--line-2); margin-left: 6px; }
+.acesso-telas.hidden { display: none; }
+.acesso-tela { padding-top: 3px; padding-bottom: 3px; font-size: 11.5px; }
+.acesso-tela.ajustada label { font-weight: 600; }
+.acesso-telas-bt { font: inherit; font-size: 10.5px; padding: 0 6px; margin-left: 6px; border: 1px solid var(--line-2);
+  border-radius: 10px; background: var(--paper); color: var(--ink-2); cursor: pointer; vertical-align: 1px; }
+.acesso-telas-bt:hover { color: var(--ink); border-color: var(--ink-3); }
+.acesso-ajustadas { font-size: 10px; color: var(--accent-dark, var(--ink-2)); font-weight: 500;
+  font-family: 'IBM Plex Mono', monospace; letter-spacing: .04em; }
 /* A tela sem VISÃO some do menu, e o grupo que ficar vazio some junto. */
 html body .sidebar .nav-btn.sem-visao,
 html body .sidebar .nav-group.sem-visao { display: none !important; }

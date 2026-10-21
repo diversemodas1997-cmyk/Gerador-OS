@@ -1824,15 +1824,14 @@ function carregarPapelEmParalelo() {
   return p;
 }
 
-function aplicarPermissoesUI() {
+/* As classes `pode-<área>` dependem da TELA aberta desde 21/10/2026 (ver VER E
+   EDITAR POR TELA: temAcesso olha a tela), então são refeitas a cada troca de
+   tela — goto chama esta sozinha, sem o resto de aplicarPermissoesUI. */
+function _aplicarClassesDeArea() {
   const body = document.body;
-  body.classList.remove('is-admin', 'is-usuario', 'pode-registrar', 'pode-estoque-tecidos');
+  if (!body) return;
+  body.classList.remove('pode-estoque-tecidos', 'pode-nova-os-menu');
   AREAS_ACESSO.forEach(a => body.classList.remove('pode-' + a.k));
-  // QUEM REGISTRA — a lista de compra e o que a folha de OS anota — tem classe
-  // própria, e não `is-usuario`: essa lá é vestida também por quem não fez login
-  // e pelo modo nuvem, que só consultam. Aqui é preciso ser uma conta de
-  // verdade, com o servidor da fábrica no ar. Ver _contaPodeRegistrar.
-  if (_contaPodeRegistrar() && podeGravar()) body.classList.add('pode-registrar');
   // O estoque de tecidos tem dono próprio: admin e a conta nomeada em
   // LOGINS_ESTOQUE_TECIDOS. Sem esta classe os botões da tela ficariam
   // escondidos para quem justamente pode usá-los.
@@ -1842,6 +1841,19 @@ function aplicarPermissoesUI() {
   AREAS_ACESSO.forEach(a => {
     if (!a.soAdmin && temAcesso(a.k)) body.classList.add('pode-' + a.k);
   });
+  // O atalho "Nova OS" do menu segue a TELA do formulário, de qualquer tela.
+  if (podeGravar() && currentUser && contaEditaTela('nova-os', _obsQuemSou())) body.classList.add('pode-nova-os-menu');
+}
+
+function aplicarPermissoesUI() {
+  const body = document.body;
+  body.classList.remove('is-admin', 'is-usuario', 'pode-registrar');
+  // QUEM REGISTRA — a lista de compra e o que a folha de OS anota — tem classe
+  // própria, e não `is-usuario`: essa lá é vestida também por quem não fez login
+  // e pelo modo nuvem, que só consultam. Aqui é preciso ser uma conta de
+  // verdade, com o servidor da fábrica no ar. Ver _contaPodeRegistrar.
+  if (_contaPodeRegistrar() && podeGravar()) body.classList.add('pode-registrar');
+  _aplicarClassesDeArea();
   // As telas que a conta não VÊ saem do menu (ver VISÃO POR ÁREA).
   _aplicarVisaoMenu();
   // Modo nuvem veste a tela de quem só lê — o mesmo estado que os perfis não
@@ -2186,12 +2198,155 @@ const VISAO_PAGINAS = {
   'costura': ['relatorio-costura'],
   'compra': ['compra'],
   'ranking': ['ranking'],
-  'relatorio-producao': ['relatorio-producao']
+  'relatorio-producao': ['relatorio-producao'],
+  'colorimetro': ['colorimetro']
 };
 const AREAS_SO_VISAO = [
   { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
-  { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' }
+  { k: 'relatorio-producao', rotulo: 'Relatório de produção', desc: 'O resumo por status do período (só consulta)' },
+  { k: 'colorimetro', rotulo: 'Colorímetro', desc: 'A medição de cor das amostras (CHNSpec DS-01)' }
 ];
+
+/* ========================================================= */
+/*              VER E EDITAR POR TELA (21/10/2026)           */
+/* ========================================================= */
+/* (Junior: "insira nas concessões todos os campos do programa para que seja
+   possível configurar o que cada usuário veja e edita")
+
+   A área continua sendo o PADRÃO das telas dela: marcar "Cadastros" vale para
+   as dezoito telas de cadastro de uma vez. Abaixo da área, cada tela tem o seu
+   Ver e o seu Editar, e a marcação da tela, quando existe, ganha da área —
+   "edita Cadastros, menos Equipe", "vê os estoques, menos o de São Carlos".
+   Marcar a ÁREA de novo apaga os ajustes das telas dela: é o "vale para todas".
+
+   EDITAR NA TELA é o que a pessoa pode fazer ESTANDO nela: os botões daquela
+   tela aparecem (classe tela-edita na seção) e as travas das ações da área
+   (exigirEdicao/exigirAdmin → temAcesso) olham a tela aberta. O que é só do
+   admin, sem área, continua só do admin.
+
+   Mora em STATE.meta.acessosTelas[login][página] = { ver, editar }.
+
+   As telas na ordem do menu. Área de uma tela só não precisa de lista: a linha
+   da área já é a tela. As folhas de impressão seguem a tela de onde saem. */
+const TELAS_DA_AREA = {
+  'os': [['lista-os', 'Ordens de Serviço - OS (lista e folha)'], ['nova-os', 'Nova OS / editar OS (formulário)']],
+  'cadastros': [['cad-grades', 'Grades'], ['cad-marcas', 'Marcas'], ['cad-colecoes', 'Coleções'],
+    ['cad-modelos', 'Modelos'], ['cad-linhas', 'Linhas'], ['cad-bases', 'Bases'],
+    ['cad-blocos', 'Blocos / Revisões'], ['cad-equipe', 'Equipe'], ['cad-funcoes', 'Funções'],
+    ['cad-etapas', 'Etapas de produção'], ['cad-componentes', 'Componentes'], ['cad-tecidos', 'Tecidos'],
+    ['cad-cores', 'Cores'], ['cad-fornecedores', 'Fornecedores'], ['cad-materiais-prod', 'Materiais'],
+    ['cad-materiais', 'Aviamentos'], ['cad-pecas', 'Peças'], ['cad-desenhos', 'Desenhos técnicos']],
+  'estoque-tecidos': [['estoque', 'Estoque de tecidos'], ['estoque-materiais', 'Estoque de materiais'],
+    ['estoque-aviamentos', 'Estoque de aviamentos'], ['estoque-pecas', 'Estoque de peças'],
+    ['estoque-ferramentas', 'Estoque de ferramentas']],
+  'estoque-fases': [['corte', 'Estoque corte · Descalvado'], ['corte-sc', 'Estoque corte · São Carlos'],
+    ['estoque-fio', 'Estoque com fio · Descalvado'], ['estoque-fio-sc', 'Estoque com fio · São Carlos'],
+    ['transito-ida', 'Estoque em trânsito · IDA'], ['transito-volta', 'Estoque em trânsito · VOLTA'],
+    ['costurando', 'Costurando · Descalvado'], ['costurando-sc', 'Costurando · São Carlos'],
+    ['fios', 'Retirada de fios']]
+};
+const _TELA_DA_FOLHA = {
+  'print': 'lista-os', 'print-expedicao': 'expedicao', 'print-operacoes': 'operacoes',
+  'print-aviamentos': 'estoque-aviamentos', 'print-pecas': 'estoque-pecas'
+};
+// A tela que responde por esta página: a folha de impressão responde pela tela de onde sai.
+function _telaBase(page) {
+  const p = String(page || '');
+  return _TELA_DA_FOLHA[p] || p;
+}
+
+function _paginaAtual() {
+  try {
+    const s = document.querySelector('section.page:not(.hidden)');
+    return (s && s.dataset && s.dataset.page) || '';
+  } catch (e) { return ''; }
+}
+
+function _telasTabela() {
+  STATE.meta = STATE.meta || {};
+  if (!STATE.meta.acessosTelas || typeof STATE.meta.acessosTelas !== 'object') STATE.meta.acessosTelas = {};
+  return STATE.meta.acessosTelas;
+}
+
+// O ajuste guardado de uma tela para uma conta ({ ver, editar } ou nada).
+function _ajusteTela(login, tela) {
+  const a = ((_telasTabela()[login] || {})[tela]);
+  return (a && typeof a === 'object') ? a : {};
+}
+
+/* Esta conta EDITA nesta tela? Admin edita tudo. A tela marcada manda; sem
+   marcação, vale a área. Área só de consulta e tela sem área não se editam. */
+function contaEditaTela(page, emailOuNome, papel) {
+  if ((papel !== undefined ? papel : currentRole) === 'admin') return true;
+  const tela = _telaBase(page);
+  const area = _areaDaPagina(tela);
+  if (!area || !AREAS_ACESSO.some(a => a.k === area && !a.soAdmin)) return false;
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) return false;
+  const aj = _ajusteTela(login, tela);
+  if (typeof aj.editar === 'boolean') return aj.editar;
+  return contaTemAcesso(area, emailOuNome, 'usuario');
+}
+
+/* Esta conta VÊ esta tela? Quem edita a tela, vê. A tela marcada manda; sem
+   marcação, vale a área (que, sem marcação, é ver). */
+function contaVeTela(page, emailOuNome, papel) {
+  if ((papel !== undefined ? papel : currentRole) === 'admin') return true;
+  const tela = _telaBase(page);
+  const area = _areaDaPagina(tela);
+  if (!area) return true;
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) return true;
+  if (contaEditaTela(tela, emailOuNome, 'usuario')) return true;
+  const aj = _ajusteTela(login, tela);
+  if (typeof aj.ver === 'boolean') return aj.ver;
+  return contaVeArea(area, emailOuNome, 'usuario');
+}
+
+// Marca (ou desmarca) Ver ou Editar de UMA tela para uma conta. Só o admin.
+async function definirTela(emailOuNome, tela, campo, permitido) {
+  if (!exigirAdmin('conceder acesso')) return;
+  if (campo !== 'ver' && campo !== 'editar') return;
+  const area = _areaDaPagina(tela);
+  const lista = TELAS_DA_AREA[area] || [];
+  const def = lista.find(t => t[0] === tela);
+  if (!def) { toast('Tela desconhecida', 'err'); return; }
+  const login = _acessoChaveConta(emailOuNome);
+  if (!login) { toast('Conta inválida', 'err'); return; }
+  const tab = _telasTabela();
+  tab[login] = tab[login] || {};
+  const aj = Object.assign({}, tab[login][tela] || {});
+  aj[campo] = !!permitido;
+  // Quem edita vê: dar o Editar marca o Ver junto, e tirar o Ver tira o Editar.
+  if (campo === 'editar' && permitido) aj.ver = true;
+  if (campo === 'ver' && !permitido) aj.editar = false;
+  tab[login][tela] = aj;
+  desfazerNomearAcao(`${campo === 'ver' ? 'visão' : 'edição'} de ${login} em "${def[1]}"`);
+  try { await saveState('meta'); } catch (e) { console.warn('definirTela', e); }
+  aplicarPermissoesUI();
+  _redesenharAcessosConta(emailOuNome);
+  toast(`${login}: ${permitido ? '' : 'não '}${campo === 'ver' ? 'vê' : 'edita'} ${def[1]}`, 'ok');
+}
+window.definirTela = definirTela;
+
+// Marcar a ÁREA vale para todas as telas dela: os ajustes daquele campo saem.
+function _limparAjustesTelas(login, area, campo) {
+  const tab = _telasTabela()[login];
+  if (!tab) return;
+  (TELAS_DA_AREA[area] || []).forEach(([tela]) => {
+    const aj = tab[tela];
+    if (!aj || typeof aj !== 'object') return;
+    delete aj[campo];
+    if (campo === 'editar') delete aj.ver;   // o Ver da tela vinha preso ao Editar
+    if (!Object.keys(aj).length) delete tab[tela];
+  });
+}
+
+// Quantas telas da área têm ajuste próprio para esta conta (para a linha dizer).
+function _telasAjustadas(login, area) {
+  const tab = _telasTabela()[login] || {};
+  return (TELAS_DA_AREA[area] || []).filter(([tela]) => tab[tela] && Object.keys(tab[tela]).length).length;
+}
 
 function _visaoTabela() {
   STATE.meta = STATE.meta || {};
@@ -2222,7 +2377,7 @@ function contaVeArea(area, emailOuNome, papel) {
 // A mesma pergunta para quem está logado agora, por tela.
 function podeVerPagina(page) {
   if (!currentUser) return true;
-  return contaVeArea(_areaDaPagina(page), _obsQuemSou());
+  return contaVeTela(page, _obsQuemSou());
 }
 
 // Marca (ou desmarca) a visão de uma área para uma conta. Só o admin.
@@ -2235,6 +2390,7 @@ async function definirVisao(emailOuNome, area, permitido) {
   const tab = _visaoTabela();
   tab[login] = tab[login] || {};
   tab[login][area] = !!permitido;
+  _limparAjustesTelas(login, area, 'ver');
   desfazerNomearAcao(`visão de ${login} em "${def.rotulo}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirVisao', e); }
   aplicarPermissoesUI();
@@ -2357,6 +2513,13 @@ function contaTemAcesso(area, emailOuNome, papel) {
 // A mesma pergunta para quem está logado agora.
 function temAcesso(area) {
   if (!podeGravar()) return false;   // modo nuvem: a tela inteira é consulta
+  // ESTANDO NUMA TELA DA ÁREA, vale o Editar daquela tela (ver VER E EDITAR
+  // POR TELA): é o que faz a trava de cada ação e os botões respeitarem o
+  // "edita Cadastros, menos Equipe". Fora das telas da área, vale a área.
+  if (currentRole !== 'admin' && typeof contaEditaTela === 'function') {
+    const tela = _telaBase(_paginaAtual());
+    if (tela && (TELAS_DA_AREA[area] || []).some(t => t[0] === tela)) return contaEditaTela(tela, _obsQuemSou());
+  }
   return contaTemAcesso(area, _obsQuemSou());
 }
 
@@ -2374,6 +2537,7 @@ async function definirAcesso(emailOuNome, area, permitido) {
   const tab = _acessosTabela();
   tab[login] = tab[login] || {};
   tab[login][area] = !!permitido;
+  _limparAjustesTelas(login, area, 'editar');
   desfazerNomearAcao(`acesso de ${login} a "${def.rotulo}"`);
   try { await saveState('meta'); } catch (e) { console.warn('definirAcesso', e); }
   aplicarPermissoesUI();
@@ -2402,6 +2566,19 @@ function _redesenharAcessosConta(emailOuNome) {
 }
 
 // Abre e fecha a listinha de áreas de uma conta.
+// As listas de telas abertas no menu de acessos ("conta|área"). Ficam abertas
+// quando o menu é redesenhado por uma marcação.
+const _acessoTelasAbertas = new Set();
+function alternarTelasAcesso(contaId, area) {
+  const k = `${contaId}|${area}`;
+  if (_acessoTelasAbertas.has(k)) _acessoTelasAbertas.delete(k); else _acessoTelasAbertas.add(k);
+  const box = document.getElementById(`telas-${contaId}-${area}`);
+  if (box) box.classList.toggle('hidden', !_acessoTelasAbertas.has(k));
+  const bt = box && box.previousElementSibling && box.previousElementSibling.querySelector('.acesso-telas-bt');
+  if (bt) bt.textContent = bt.textContent.replace(/[▴▾]/, _acessoTelasAbertas.has(k) ? '▴' : '▾');
+}
+window.alternarTelasAcesso = alternarTelasAcesso;
+
 function alternarAcessos(id) {
   const box = document.getElementById('acessos-' + id);
   if (box) box.classList.toggle('hidden');
@@ -2433,18 +2610,49 @@ function _acessosMenuHtml(u) {
       ? `<span class="acesso-nada" title="${a.soAviso ? 'Só aviso' : 'Só consulta'}: não há o que editar">—</span>`
       : `<input type="checkbox" id="${id}" title="Editar nesta área" ${edita ? 'checked' : ''} ${a.soAdmin ? 'disabled' : ''}
                onchange="definirAcesso('${esc(email)}','${a.k}',this.checked)">`;
+    // AS TELAS DA ÁREA (21/10/2026): uma linha por tela, recolhidas atrás do
+    // botão "N telas". A caixinha da tela mostra o que vale nela — o ajuste
+    // dela, ou o da área quando não há ajuste.
+    const telas = TELAS_DA_AREA[a.k] || [];
+    const chaveTelas = `${u.id}|${a.k}`;
+    const telasAbertas = _acessoTelasAbertas.has(chaveTelas);
+    const ajustadas = telas.length ? _telasAjustadas(login, a.k) : 0;
+    const btTelas = telas.length
+      ? ` <button type="button" class="acesso-telas-bt" onclick="event.preventDefault(); event.stopPropagation(); alternarTelasAcesso('${esc(u.id)}','${a.k}')"
+           title="Ver e editar cada tela desta área">${telas.length} telas ${telasAbertas ? '▴' : '▾'}</button>`
+        + (ajustadas ? ` <span class="acesso-ajustadas" title="Telas com marcação própria, diferente da área">${ajustadas} ajustada${ajustadas > 1 ? 's' : ''}</span>` : '')
+      : '';
+    const linhasTelas = telas.length
+      ? `<div class="acesso-telas${telasAbertas ? '' : ' hidden'}" id="telas-${esc(u.id)}-${a.k}">` + telas.map(([tela, rotulo]) => {
+          const ajuste = _ajusteTela(login, tela);
+          const editaTela = contaEditaTela(tela, email, 'usuario');
+          const veTela = contaVeTela(tela, email, 'usuario');
+          const proprio = Object.keys(ajuste).length > 0;
+          const idT = `act-${esc(u.id)}-${tela}`;
+          return `<div class="acesso-linha acesso-tela${proprio ? ' ajustada' : ''}" title="${proprio ? 'Marcação própria desta tela' : 'Segue a área'}">
+            <span class="acesso-col"><input type="checkbox" title="${editaTela ? 'Quem edita também vê' : 'Ver esta tela'}" ${veTela ? 'checked' : ''} ${editaTela ? 'disabled' : ''}
+              onchange="definirTela('${esc(email)}','${tela}','ver',this.checked)"></span>
+            <span class="acesso-col"><input type="checkbox" id="${idT}" title="Editar nesta tela" ${editaTela ? 'checked' : ''}
+              onchange="definirTela('${esc(email)}','${tela}','editar',this.checked)"></span>
+            <span class="acesso-col"></span>
+            <label for="${idT}">${esc(rotulo)}${proprio ? ' <span class="acesso-ajustadas">ajustada</span>' : ''}</label>
+          </div>`;
+        }).join('') + `</div>`
+      : '';
     return `<div class="acesso-linha${a.soAdmin ? ' fixa' : ''}" title="${esc(a.desc)}">
       <span class="acesso-col">${celVer}</span>
       <span class="acesso-col">${celEditar}</span>
       <span class="acesso-col">${celAvisar}</span>
-      <label for="${id}"><b>${esc(a.rotulo)}</b><br><span class="acesso-desc">${esc(a.desc)}</span></label>
-    </div>`;
+      <label for="${id}"><b>${esc(a.rotulo)}</b>${btTelas}<br><span class="acesso-desc">${esc(a.desc)}</span></label>
+    </div>${linhasTelas}`;
   }).join('');
   return `<div class="acessos-menu hidden" id="acessos-${esc(u.id)}">
     <div class="acesso-topo">A que <b>${esc(_obsNomeLogin(email) || email)}</b> tem acesso</div>
     <div class="acesso-linha acesso-cab"><span class="acesso-col">Ver</span><span class="acesso-col">Editar</span><span class="acesso-col">Avisar</span><span>Área</span></div>
     ${linhas}
     <div class="acesso-rodape">Sem o <b>Ver</b>, as telas da área somem do menu desta conta. Quem edita também vê.
+      A área vale para todas as telas dela; abra <b>N telas</b> para marcar uma tela diferente da área.
+      Marcar a área de novo desfaz os ajustes das telas.
       Sem o <b>Avisar</b>, o sino desta conta deixa de trazer os avisos da área. Mensagem chega a quem é citado com @usuário.
       O admin entra em tudo — a marcação vale para as demais contas.
       É a tranca da TELA: ela evita o engano, não substitui o cuidado de quem administra.</div>
@@ -4331,7 +4539,10 @@ function goto(page) {
   // endereço. Fechar aqui, na rota, fecha todos os caminhos de uma vez — e
   // quem só consulta continua vendo a OS pela folha, que é onde ela se lê.
   // O formulário em modo planejamento abre também para a área Planejamento de produção.
-  if (page === 'nova-os' && currentRole && currentRole !== 'admin' && !temAcesso('os')
+  // A tela ainda é a anterior aqui: pergunta-se pela TELA do formulário, e não
+  // pela área (ver VER E EDITAR POR TELA).
+  if (page === 'nova-os' && currentRole && currentRole !== 'admin'
+      && !(podeGravar() && contaEditaTela('nova-os', _obsQuemSou()))
       && !(_osPlanAbrir && temAcesso('planejamento'))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
@@ -4347,6 +4558,8 @@ function goto(page) {
   document.querySelectorAll('section.page').forEach(s => s.classList.add('hidden'));
   const target = document.querySelector(`section.page[data-page="${page}"]`);
   if (target) target.classList.remove('hidden');
+  // Os botões de editar seguem a tela que acabou de abrir (ver _aplicarClassesDeArea).
+  try { _aplicarClassesDeArea(); } catch (e) { console.warn('permissões da tela', e); }
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
   if (btn) btn.classList.add('active');
