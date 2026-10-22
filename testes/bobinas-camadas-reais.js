@@ -55,7 +55,7 @@ const api = new Function(
   src.slice(ini, fim) + '\n' + src.slice(iniF, fimF + 2) + '\n'
   + 'return { PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,'
   + ' bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,'
-  + ' metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula };'
+  + ' metrosPorBobinaFase, ehFaseRibana, _tituloBobinas, _bobinasCelula, camadasPorBobinaMedia };'
 )();
 const { PESO_BOBINA_MIN_KG, PESO_BOBINA_MAX_KG,
         bobinaInteira, bobinasEfetivasFase, pesoPorBobinaFase, camadasPorBobina,
@@ -402,33 +402,31 @@ ok('71. "Gola e Vies" NAO e vies puro: continua gastando o que a grade diz',
    bobinasEfetivasFase(os(), 8, 2, golaEVies) === 8,
    bobinasEfetivasFase(os(), 8, 2, golaEVies));
 
-// +1 BOBINA QUANDO O ENFESTO FICOU ABAIXO DO MAXIMO (22/10/2026, Junior).
-// Com as camadas registradas na folha abaixo do limite da fase, a estimativa
-// proporcional ganha uma bobina. Sem tom registrado, ou com enfesto cheio, nada muda.
-console.log('\n-- +1 bobina com enfesto abaixo do maximo, pelas camadas da folha --');
+// PELA MEDIA DE CAMADAS POR BOBINA (22/10/2026, Junior): a media vem do
+// cadastro (enfesto cheio / bobinas), e so sobe uma bobina quando as camadas
+// registradas passam de um multiplo inteiro dela. Sem +1 fixo por ficar abaixo
+// do maximo.
+console.log('\n-- bobinas pela media de camadas por bobina do cadastro --');
 {
-  const curto = linha(4.25, 1.17, 452.5, 40);           // 40 de 80 camadas
-  ok('72. 40 de 80 camadas registradas: 8 x 0,5 = 4, +1 = 5',
-     bobinasEfetivasFase(os({ 2: { 1: '20', 2: '20' } }), 8, 2, curto) === 5,
-     bobinasEfetivasFase(os({ 2: { 1: '20', 2: '20' } }), 8, 2, curto));
-  ok('72b. sem tom registrado (OS planejada) segue a proporcao pura: 4',
-     bobinasEfetivasFase(os(), 8, 2, curto) === 4, bobinasEfetivasFase(os(), 8, 2, curto));
-  ok('72c. tom registrado em OUTRA fase da OS tambem conta: 5',
-     bobinasEfetivasFase(os({ 1: { 1: '40' } }), 8, 2, curto) === 5,
-     bobinasEfetivasFase(os({ 1: { 1: '40' } }), 8, 2, curto));
-  ok('72d. enfesto cheio registrado nao ganha nada: 8',
-     bobinasEfetivasFase(os({ 2: { 1: '80' } }), 8, 2, linha(4.25, 1.17, 452.5, 80)) === 8);
-  ok('72e. no cru (Compra) soma 1 ao valor sem arredondar: 4 + 1',
-     perto(bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, curto, true), 5),
-     bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, curto, true));
-  ok('72f. numero escrito na propria OS continua valendo como esta',
-     bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, Object.assign({}, curto, { bobinasOS: 3 })) === 3);
-  ok('72g. fase declarada nao enfestada continua zero',
-     bobinasEfetivasFase(os({ 2: { 1: '0' } }), 8, 2, curto) === 0);
-  ok('72h. moletom: 30 de 36 com 6 cadastradas -> 5, +1 = 6',
-     bobinasEfetivasFase(os({ 2: { 1: '30' } }), 6, 2, linha(2.5, 1.8, 300, 30, 'Preto Moletom', 36)) === 6);
-  const tit = _tituloBobinas(os({ 2: { 1: '40' } }), curto, 8, 2);
-  ok('72i. a dica explica o +1', /\+1 porque as camadas registradas/.test(tit) && /: 5\./.test(tit), tit);
+  const tons = os({ 2: { 1: '40' } });
+  ok('72. 8 bobinas p/ 80 camadas: media de 10 por bobina',
+     perto(api.camadasPorBobinaMedia(8, 80), 10), api.camadasPorBobinaMedia(8, 80));
+  ok('72b. 40 camadas registradas = 4 bobinas, sem +1',
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 40)) === 4,
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 40)));
+  ok('72c. 41 camadas passam do multiplo: 5',
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 41)) === 5,
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 41)));
+  ok('72d. 72 camadas = 8 bobinas (nao 9)',
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 72)) === 8);
+  ok('72e. 79 camadas nao passam do cadastro: 8',
+     bobinasEfetivasFase(tons, 8, 2, linha(4.25, 1.17, 452.5, 79)) === 8);
+  ok('72f. media quebrada (80/6 = 13,33): 40 camadas = 3, sem resto de conta',
+     bobinasEfetivasFase(tons, 6, 2, linha(4.25, 1.17, 452.5, 40)) === 3,
+     bobinasEfetivasFase(tons, 6, 2, linha(4.25, 1.17, 452.5, 40)));
+  const tit = _tituloBobinas(tons, linha(4.25, 1.17, 452.5, 41), 8, 2);
+  ok('72g. a dica mostra a media e a divisao',
+     /media de 10 camadas por bobina/.test(tit) && /41 ÷ 10 = 4,1/.test(tit) && /para cima: 5\./.test(tit), tit);
 }
 
 console.log('');

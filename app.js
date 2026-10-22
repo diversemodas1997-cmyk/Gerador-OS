@@ -27646,27 +27646,19 @@ function bobinasEfetivasFase(o, bobinasPrevistas, ordem, L, cru) {
   // é a medida que a casa tirou a olho — devolve ele inteiro em vez de inventar
   // uma referência. Acontece só em OS sem grade viva, que nem tem cadastro.
   if (!(ref > 0)) return arredonda(prev);
-  return arredonda(prev * (cam / ref)) + _bobinaExtraEnfestoCurto(o, ordem, cam, ref);
+  // PELA MÉDIA DE CAMADAS POR BOBINA (22/10/2026, Junior): o cadastro diz
+  // quantas camadas cada bobina rende em média (enfesto cheio ÷ bobinas), e as
+  // camadas registradas na folha dizem quantas bobinas dessa média foram
+  // precisas. Só sobe uma bobina quando as camadas passam de um múltiplo
+  // inteiro da média: com 10 camadas por bobina, 40 camadas são 4 e 41 são 5.
+  // Nada de +1 fixo por o enfesto ter ficado abaixo do máximo.
+  return arredonda(cam / camadasPorBobinaMedia(prev, ref));
 }
 
-/* +1 BOBINA QUANDO O ENFESTO FICOU ABAIXO DO MÁXIMO (22/10/2026, Junior).
-
-   A proporção acima supõe que meio enfesto gasta meia previsão. Na prática não
-   gasta: quando as camadas que a folha registrou ficam abaixo do limite máximo
-   da fase, a estimativa sai curta. Aí a casa conta uma bobina a mais.
-
-   Só vale com as camadas REGISTRADAS na folha: os tons lançados nesta fase, ou
-   em outra fase da OS (as fases sem tom seguem a proporção da que foi lançada).
-   OS ainda planejada, sem tom nenhum, segue a proporção pura. É o caso das OS
-   simuladas da Compra, que nunca têm tom. Enfesto cheio também não ganha nada:
-   ali vale o cadastro da grade como está. */
-function _bobinaExtraEnfestoCurto(o, ordem, cam, ref) {
-  if (!(cam > 0 && ref > 0 && cam < ref)) return 0;
-  const tons = ((o && o.progresso) || {}).enfestosTons || {};
-  const temPositivo = tv => Object.keys(tv || {}).some(k => parseInt(tv[k], 10) > 0);
-  const registrada = (ordem != null && temPositivo(tons[ordem]))
-    || Object.keys(tons).some(k => temPositivo(tons[k]));
-  return registrada ? 1 : 0;
+// Camadas que uma bobina rende em média nesta fase, segundo o cadastro da grade:
+// as do enfesto cheio divididas pelas bobinas cadastradas para ele.
+function camadasPorBobinaMedia(prev, ref) {
+  return Number(ref) / Number(prev);
 }
 
 // Quanto pesa cada bobina, SEGUNDO ESTA FASE. É consequência, não premissa: o
@@ -27766,16 +27758,16 @@ function _tituloBobinas(o, L, bobinasPrevistas, ordem) {
   const ref = parseInt(L && L.camadasCheias, 10) || 0;
   if (!(ref > 0)) return padrao;
 
-  const cru = prev * (cam / ref);
-  const extra = _bobinaExtraEnfestoCurto(o, ordem, cam, ref);
-  const inteiras = bobinaInteira(cru) + extra;
+  const media = camadasPorBobinaMedia(prev, ref);
+  const cru = cam / media;
+  const inteiras = bobinaInteira(cru);
   let txt = cam === ref
     ? `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para o enfesto cheio desta`
       + ` fase, que e de ${ref} camadas — e esta OS enfestou as ${cam}, cheio.`
     : `Cadastro da grade: ${prev} bobina${prev === 1 ? '' : 's'} para o enfesto cheio desta`
-      + ` fase, que e de ${ref} camadas, e esta OS tem ${cam} —`
-      + ` ${num(cru)}, arredondado para cima: ${bobinaInteira(cru)}`
-      + (extra ? ` +1 porque as camadas registradas na folha ficaram abaixo do máximo de ${ref}: ${inteiras}.` : '.');
+      + ` fase, que e de ${ref} camadas — media de ${num(media)} camadas por bobina.`
+      + ` Esta OS tem ${cam} camadas: ${cam} ÷ ${num(media)} = ${num(cru)},`
+      + ` arredondado para cima: ${inteiras}.`;
 
   // Metro e peso da bobina fecham a explicação como RESULTADO da conta, e não
   // como números de onde ela partiu.
