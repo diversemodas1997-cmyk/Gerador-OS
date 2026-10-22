@@ -34449,6 +34449,29 @@ function _statusDoId(id) {
   const m = String(id || '').match(/^(.+)#(\d+)$/);
   return m ? { k: m[1], p: Number(m[2]) } : { k: String(id || ''), p: 1 };
 }
+/* AS VOLTAS NÃO PASSAM DAS FASES DA OS (22/10/2026, Junior: "corrija o status
+   enfestando 1/2 para calça moletom pois essa grade só tem 1 fase"). A
+   repetição mora no desenho, mas o mesmo desenho serve grades de fases
+   diferentes: o 0037 (CJM) diz 2x por causa da M-2G-GG (Corpo + Viés), e a
+   P-M-G-GG e a P ao G3 têm só o Corpo. Cada volta corta uma fase, então a OS
+   anda por no máximo tantas voltas quantas fases tem (as da OS, gravadas na
+   emissão; senão as da grade). Sem fases conhecidas, vale o desenho. */
+function _statusSeqDaOS(o) {
+  const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
+  if (!seq || _statusRepSeq(seq) < 2) return seq;
+  let fases = (o && Array.isArray(o.fases) && o.fases.length) ? o.fases : null;
+  if (!fases && o && o.gradeId) {
+    const g = (STATE.grades || []).find(x => x.id === o.gradeId);
+    if (g && Array.isArray(g.fases) && g.fases.length) fases = g.fases;
+  }
+  if (!fases || fases.length >= _statusRepSeq(seq)) return seq;
+  return seq.map(x => {
+    if (x.k !== 'enfestando') return x;
+    const y = Object.assign({}, x);
+    if (fases.length > 1) y.rep = fases.length; else delete y.rep;
+    return y;
+  });
+}
 // Quantas voltas de enfesto/corte a sequência tem (1 = sem repetição).
 function _statusRepSeq(seq) {
   const e = (seq || []).find(x => x && x.k === 'enfestando');
@@ -34555,7 +34578,7 @@ function _statusGrafoSeq(seq, o) {
 // Cancelado, quando `foraDoCaminho`). null = o diário não sabe. Devolve o id
 // (com a volta do enfesto/corte, quando o desenho repete).
 function _statusDeOndeVeioOS(o, foraDoCaminho) {
-  const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const seq = _statusSeqDaOS(o);
   const atual = _statusNoOS(o, seq);
   const h = _statusHistDe(o);
   for (let i = h.length - 1; i >= 0; i--) {
@@ -34573,7 +34596,7 @@ function _statusDeOndeVeioOS(o, foraDoCaminho) {
 // desenho, o id é a própria chave.
 function _statusOpcoesOS(o) {
   const todas = STATUS_OS.map(x => x.k);
-  const seq = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const seq = _statusSeqDaOS(o);
   if (!seq) return todas;
   const prox = _statusGrafoSeq(seq, o);
   const st = _statusOS(o);
@@ -34613,7 +34636,7 @@ function _statusCelulaOS(o, extra) {
   const rot = x => (!naFolha && x.curto) ? x.curto : x.rotulo;
   /* A VOLTA DO ENFESTO/CORTE NO RÓTULO (09/10/2026): no desenho que repete,
      "Enfestando 2/3" — senão as voltas seriam opções de mesmo nome. */
-  const seqDes = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const seqDes = _statusSeqDaOS(o);
   const nRep = _statusRepSeq(seqDes);
   const repetidos = nRep > 1 ? _statusRepetidosSeq(seqDes) : [];
   const atualId = seqDes ? _statusNoOS(o, seqDes) : s.k;
@@ -34841,7 +34864,7 @@ function _statusHistAnotar(o, agoraMs, mao) {
   const h = Array.isArray(o.statusHist) ? o.statusHist : [];
   const ult = h.length ? h[h.length - 1] : null;
   // A volta do enfesto/corte vai junto (só a partir da 2ª, ver _statusPassoOS).
-  const passo = _statusPassoOS(o, _statusSeqDoDesenho(_desenhoDaOS(o)));
+  const passo = _statusPassoOS(o, _statusSeqDaOS(o));
   const comPasso = x => (passo > 1 ? Object.assign(x, { p: passo }) : x);
   if (mao) {
     h.push(comPasso({ k, em: mao.em, c: mao.c }));
@@ -34955,7 +34978,7 @@ async function mudarStatusOS(id, valor) {
   const alvo = STATUS_OS.some(x => x.k === pedido.k) ? pedido.k : 'nao-iniciado';
   const passo = alvo === pedido.k ? pedido.p : 1;
   const alvoId = _statusIdPasso(alvo, passo);
-  const seqDes = _statusSeqDoDesenho(_desenhoDaOS(o));
+  const seqDes = _statusSeqDaOS(o);
   const nRep = _statusRepSeq(seqDes);
   const voltaTxt = (nRep > 1 && _statusRepetidosSeq(seqDes).includes(alvo)) ? ` ${passo}/${nRep}` : '';
   // Só a etapa anterior, a seguinte, Parado e Cancelado (ver STATUS_SEQ_PADRAO e a sequência do desenho).

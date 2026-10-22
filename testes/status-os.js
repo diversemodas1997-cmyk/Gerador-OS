@@ -127,6 +127,7 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _statusIdPasso', 'o id da volta')}
   ${recorte('function _statusDoId', 'a volta do id')}
   ${recorte('function _statusRepSeq', 'quantas voltas')}
+  ${recorte('function _statusSeqDaOS', 'a sequencia da OS')}
   ${recorte('function _statusSeqExpandida', 'a sequencia expandida')}
   ${recorte('function _statusRepetidosSeq', 'os status repetidos')}
   ${recorte('function _statusPassoOS', 'a volta da OS')}
@@ -1460,6 +1461,28 @@ console.log('-- o que fica gravado --');
     sq.ctx.STATE.desenhos[0].statusSeq = STATUS_SEQ_PADRAO_TESTE;
     q.statusOS = 'cortando'; q.statusOSEm = new Date(Date.now() + 5000).toISOString();
     ok('59. sem repeticao no desenho, cortando segue para separando como antes', /separando/.test(op()) && !/#/.test(op()), op());
+  }
+  console.log('');
+  console.log('-- as voltas nao passam das fases da OS (22/10/2026) --');
+  {
+    // Desenho 2x (calca moletom CJM), OS de grade com uma fase so (Corpo).
+    const sq = ctxDe('admin', 'admin@diverse.local', true,
+      [{ id: 'c1', os: '0589', desenhoId: 'd1', fases: [{ ordem: 1, nome: 'Corpo' }] },
+       { id: 'c2', os: '0590', desenhoId: 'd1', gradeId: 'g2' },
+       { id: 'c3', os: '0591', desenhoId: 'd1' }]);
+    const seq2 = STATUS_SEQ_PADRAO_TESTE.map(x => x.k === 'enfestando' ? Object.assign({}, x, { rep: 2 }) : x);
+    sq.ctx.STATE.desenhos = [{ id: 'd1', statusSeq: seq2 }];
+    sq.ctx.STATE.grades = [{ id: 'g2', fases: [{ ordem: 1, nome: 'Corpo' }, { ordem: 2, nome: 'Viés' }] }];
+    const api = monta(sq.ctx);
+    const [c1, c2, c3] = sq.ctx.STATE.ordens;
+    [c1, c2, c3].forEach(o => { o.statusOS = 'enfestando'; o.statusOSEm = new Date().toISOString(); });
+    const cel1 = api._statusCelulaOS(c1, 'folha');
+    ok('60. grade de 1 fase: Enfestando sem 1/2', !/1\/2/.test(cel1) && /Enfestando/.test(cel1), cel1);
+    c1.statusOS = 'cortando';
+    const op1 = api._statusOpcoesOS(c1).join(',');
+    ok('60b. ... e cortando segue para separando, sem enfestando#2', /separando/.test(op1) && !/#2/.test(op1), op1);
+    ok('61. grade cadastrada de 2 fases: continua Enfestando 1/2', /Enfestando 1\/2/.test(api._statusCelulaOS(c2, 'folha')));
+    ok('62. sem fases conhecidas: vale o desenho (1/2)', /Enfestando 1\/2/.test(api._statusCelulaOS(c3, 'folha')));
   }
   console.log('');
   if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
