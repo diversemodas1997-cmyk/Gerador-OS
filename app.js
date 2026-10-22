@@ -6419,7 +6419,7 @@ function addFaseGradeRow(fase = {}) {
       <div class="field fase-unid-wrap"><label>Unidades da grade</label><select class="fase-unid">${unidadesOpts}</select><div class="field-hint fase-unid-hint">${esc(DICA_UNID_RIBANA)}</div></div>
       <div class="field"><label>Comprimento (m)</label><input type="number" step="0.01" class="fase-comp" value="${esc(fase.comp || '')}" oninput="this.dataset.sug=''; atualizarSugestaoBobinas(this); atualizarFaseVies()" placeholder="Ex.: 6,50"></div>
       <div class="field"><label>Largura (m)</label><input type="number" step="0.01" class="fase-larg" value="${esc(fase.larg || '')}" oninput="this.dataset.sug=''" placeholder="Ex.: 1,80"></div>
-      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, o programa decide: <b>gola ${EXCEDENTE_GOLA_CM} cm</b> e <b>viés ${EXCEDENTE_VIES_CM} cm</b> sempre; nas demais, a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 9 m → 15 cm, até 12 m → 20 cm.</div></div>
+      <div class="field full"><label>Excedente de enfesto (cm)</label><input type="number" min="0" step="1" class="fase-excedente" value="${esc(fase.excedente ?? '')}" placeholder="${EXCEDENTE_ENFESTO_PADRAO_CM}"><div class="field-hint">Quanto <b>esta fase</b> ganha de sobra no <b>comprimento</b> ao ser enfestada: a diferença entre a medida de <b>cortar</b> (a do risco do CAD) e a de <b>enfestar</b> (a que se cadastra aqui em cima). É a ponta que a enfestadeira segura e a folga para o corte não morrer na borda. A <b>largura</b> não recebe nada. Fica na fase, e não no tecido, porque depende do comprimento que ela estende — um corpo de 8 m e um viés de 1 m do mesmo pano não levam a mesma sobra. <b>Em branco</b>, o programa decide: <b>gola ${EXCEDENTE_GOLA_CM} cm</b> e <b>viés ${EXCEDENTE_VIES_CM} cm</b> sempre; nas demais, a <b>janela do comprimento</b> — ${_excFaixasTexto()}.</div></div>
       <div class="field full">
         <label>Tempo de corte desta fase</label>
         <div class="fase-enf-tempo">
@@ -6897,7 +6897,7 @@ async function rodarCopiarEtapasParaTodos() {
       pasta de backup) imediatamente antes de gravar, então o estado anterior
       fica recuperável em "Snapshots de contingência".
 
-   Fase sem comprimento e fase acima de 12 m NÃO são tocadas: a regra não opina
+   Fase sem comprimento e fase acima da última janela (11 m) NÃO são tocadas: a regra não opina
    sobre elas (devolve null), e mexer no que não se sabe é como se estraga
    cadastro bom.
    --------------------------------------------------------------------------- */
@@ -6908,36 +6908,37 @@ async function rodarCopiarEtapasParaTodos() {
    código; o que se digita aqui manda, e vale para todas as máquinas — mora no
    cadastro compartilhado, como qualquer outro cadastro.
 
-   QUANTAS FAIXAS: as que estiverem no HTML. Eram três fixas; em 27/08/2026
-   Junior pediu uma quarta, e em vez de trocar o 3 por um 4 o código passou a
-   CONTAR as linhas que existem na tela (`_excFaixasNaTela`). Acrescentar a
-   quinta um dia é acrescentar um bloco de HTML, e mais nada.
+   JANELAS DE 1 METRO (22/10/2026, pedido do Junior). Antes eram até quatro
+   faixas de limite livre ("até 1,50 m → 10 cm, até 5 m → 13 cm..."). Agora a
+   tela mostra uma linha por metro — 0 a 1 m, 1 a 2 m, ..., 10 a 11 m — e cada
+   uma tem o seu excedente. O cadastro continua no mesmo formato de antes
+   (faixas `{ ate, cm }`, com ate = 1, 2, ..., 11), então excedenteCfg() e
+   excedentePorComprimento() não mudaram: a divisa exata segue na janela de
+   baixo (2 m exatos = janela "1 a 2 m"), e acima de 11 m a regra não opina.
 
-   Linha em branco é linha que não existe: quem usa três faixas deixa a quarta
-   vazia e a regra segue com três. O padrão de fábrica continua sendo três
-   (EXCEDENTE_FAIXAS) — a quarta nasce vazia porque inventar uma faixa que
-   ninguém pediu mudaria medida em cadastro bom.
+   Ao abrir, cada janela mostra o que a regra que está valendo dá no TOPO dela
+   — é o número que aquela janela já recebia na divisa. Nada é gravado até
+   alguém apertar "Salvar regra".
    --------------------------------------------------------------------------- */
 
-// Quantas linhas de faixa a tela tem. Conta as que existem em vez de saber um
-// número: é o que faz a quarta (e a quinta) valerem só mexendo no HTML.
-function _excFaixasNaTela() {
-  let n = 0;
-  while (document.getElementById(`exc-faixa-ate-${n}`)) n++;
-  return n;
-}
+const EXCEDENTE_JANELAS_M = 11;
 
 // Escreve nos campos o que está valendo agora. Chamada ao abrir Configurações.
 function renderExcedenteCfg() {
   const cfg = excedenteCfg();
   const preencher = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  Array.from({ length: _excFaixasNaTela() }, (_, i) => i).forEach(i => {
-    const f = cfg.faixas[i];
-    // Campo `type="number"`: o valor vai com PONTO, senão o navegador o recusa
-    // e o campo aparece vazio — o usuário veria a faixa sumir sem motivo.
-    preencher(`exc-faixa-ate-${i}`, f ? f.ate : '');
-    preencher(`exc-faixa-cm-${i}`, f ? f.cm : '');
-  });
+  const caixa = document.getElementById('exc-janelas');
+  if (caixa) {
+    const rot = 'font-size:12px;color:var(--ink-3);';
+    caixa.innerHTML = Array.from({ length: EXCEDENTE_JANELAS_M }, (_, i) => {
+      const cm = excedentePorComprimento(i + 1);
+      return `<div style="display:flex;align-items:center;gap:6px;">`
+        + `<span style="${rot}width:74px;">${i} a ${i + 1} m</span>`
+        + `<span style="${rot}">→</span>`
+        + `<input type="number" step="1" min="0" id="exc-janela-cm-${i}" value="${cm == null ? '' : cm}" style="width:70px;">`
+        + `<span style="${rot}">cm</span></div>`;
+    }).join('');
+  }
   preencher('exc-gola', cfg.gola);
   preencher('exc-vies', cfg.vies);
   preencher('exc-barra', cfg.barra);
@@ -6957,25 +6958,15 @@ async function salvarExcedenteCfg() {
     const x = parseFloat(String((el && el.value) || '').replace(',', '.'));
     return isFinite(x) ? x : null;
   };
+  // Uma faixa por janela, com o limite de cima dela (1, 2, ..., 11). Janela em
+  // branco não vira "sem regra": a busca pega a primeira faixa que couber, e o
+  // pano daquela janela cairia calado no excedente da janela seguinte.
   const faixas = [];
-  for (let i = 0, n = _excFaixasNaTela(); i < n; i++) {
-    const ate = num(`exc-faixa-ate-${i}`), cm = num(`exc-faixa-cm-${i}`);
-    // Linha em branco é linha que não existe — dá para trabalhar com duas
-    // faixas se for o caso. Preenchida pela metade, não: seria adivinhar.
-    if (ate == null && cm == null) continue;
-    if (ate == null || cm == null) return toast(`Faixa ${i + 1}: preencha o limite E o excedente`, 'err');
-    if (ate <= 0) return toast(`Faixa ${i + 1}: o limite tem que ser maior que zero`, 'err');
-    if (cm < 0) return toast(`Faixa ${i + 1}: o excedente não pode ser negativo`, 'err');
-    faixas.push({ ate, cm });
-  }
-  if (!faixas.length) return toast('Cadastre ao menos uma faixa', 'err');
-  // Limites CRESCENTES. A regra pega a primeira faixa que couber, então
-  // "até 9" antes de "até 1,5" faria todo comprimento cair na primeira e a
-  // segunda nunca valer — erro que não dá sintoma, só número errado.
-  for (let i = 1; i < faixas.length; i++) {
-    if (faixas[i].ate <= faixas[i - 1].ate) {
-      return toast(`Os limites têm que subir: ${faixas[i].ate} vem depois de ${faixas[i - 1].ate}`, 'err');
-    }
+  for (let i = 0; i < EXCEDENTE_JANELAS_M; i++) {
+    const cm = num(`exc-janela-cm-${i}`);
+    if (cm == null) return toast(`Janela ${i} a ${i + 1} m: preencha o excedente`, 'err');
+    if (cm < 0) return toast(`Janela ${i} a ${i + 1} m: o excedente não pode ser negativo`, 'err');
+    faixas.push({ ate: i + 1, cm });
   }
   const gola = num('exc-gola'), vies = num('exc-vies'), barra = num('exc-barra');
   if (gola == null || gola < 0) return toast('Excedente da gola inválido', 'err');
@@ -7002,7 +6993,7 @@ async function rodarExcedentePorFaixa() {
     const novo = excedenteRegraDaFase(f);
     if (novo == null) {
       // Separar os dois motivos: "ainda não tem medida" é coisa a cadastrar,
-      // "passa de 12 m" é caso que a regra não previu. Somados viram um número
+      // "passa da última janela" é caso que a regra não previu. Somados viram um número
       // que não diz nada.
       const n = parseFloat(String(f.comp == null ? '' : f.comp).replace(',', '.'));
       if (isFinite(n) && n > 0) foraFaixa++; else semComp++;
@@ -41511,6 +41502,22 @@ function excedentePorComprimento(comp) {
   return faixa ? faixa.cm : null;
 }
 
+// A regra que está valendo, em uma linha, para os textos de ajuda. Janelas
+// vizinhas com o mesmo excedente saem juntas ("1 a 5 m → 13 cm"): onze itens
+// iguais em fila não se leem.
+function _excFaixasTexto() {
+  const fmt = m => String(m).replace('.', ',');
+  const out = [];
+  let de = 0;
+  excedenteCfg().faixas.forEach((f, i, arr) => {
+    const prox = arr[i + 1];
+    if (prox && prox.cm === f.cm) return;
+    out.push(`${fmt(de)} a ${fmt(f.ate)} m → ${f.cm} cm`);
+    de = f.ate;
+  });
+  return out.join(', ');
+}
+
 /* ---------------------------------------------------------------------------
    AS EXCEÇÕES, que vêm ANTES da faixa.
 
@@ -42700,7 +42707,7 @@ function abrirModalRisco() {
   document.getElementById('modal-risco-fields').innerHTML = `
     <div class="info-box">
       Escolha os <b>relatórios de encaixe</b> gerados pelo CAD (um PDF por fase).
-      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm: <b>gola ${EXCEDENTE_GOLA_CM} cm</b>, <b>viés ${EXCEDENTE_VIES_CM} cm</b>, e nas demais a <b>faixa do comprimento</b> — até 1,50 m → 10 cm, até 9 m → 15 cm, até 12 m → 20 cm) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
+      O programa lê o comprimento, a largura, a tabela de tamanhos e o código do tecido de cada um, soma ao comprimento o <b>excedente de enfesto cadastrado na fase</b> (nas que não têm: <b>gola ${EXCEDENTE_GOLA_CM} cm</b>, <b>viés ${EXCEDENTE_VIES_CM} cm</b>, e nas demais a <b>janela do comprimento</b> — ${_excFaixasTexto()}) — a diferença entre a medida de <b>cortar</b>, que é a do relatório, e a de <b>enfestar</b>, que é a que se cadastra; a largura não recebe nada —,
       descobre <b>a qual grade</b> pertencem (pelos tamanhos) e <b>a qual fase</b> (pelo código do tecido,
       pela medida, ou pelo nome do arquivo — nessa ordem). Nada é gravado antes de você conferir.
     </div>

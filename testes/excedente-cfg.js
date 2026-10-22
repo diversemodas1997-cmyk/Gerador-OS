@@ -50,7 +50,8 @@ function com(cfg) {
     ${recorte('function excedenteCfg', 'a regra cadastrada')}
     ${recorte('function excedentePorComprimento', 'a regra das faixas')}
     ${recorte('function excedenteRegraDaFase', 'a regra inteira da fase')}
-    return { excedenteCfg, excedentePorComprimento, excedenteRegraDaFase, EXCEDENTE_FAIXAS };
+    ${recorte('function _excFaixasTexto', 'o resumo da regra')}
+    return { excedenteCfg, excedentePorComprimento, excedenteRegraDaFase, EXCEDENTE_FAIXAS, _excFaixasTexto };
   `)({ meta: cfg === undefined ? {} : { excedenteCfg: cfg } });
 }
 
@@ -168,6 +169,25 @@ console.log('\n-- duas faixas so, que e um cadastro legitimo --');
   ok('7. 1,50 -> 10', a.excedentePorComprimento('1.50') === 10);
   ok('7b. 7 m -> 18', a.excedentePorComprimento('7') === 18);
   ok('7c. 13 m -> null', a.excedentePorComprimento('13') === null);
+}
+
+// JANELAS DE 1 M (22/10/2026): a tela grava uma faixa por metro, 0 a 11 m.
+// O formato no cadastro e o mesmo, so com os limites 1, 2, ..., 11.
+console.log('\n-- janelas de 1 metro --');
+{
+  const cms = [10, 13, 13, 13, 13, 15, 15, 15, 20, 20, 20];
+  const a = com({ faixas: cms.map((cm, i) => ({ ate: i + 1, cm })) });
+  ok('9. 0,80 m cai na janela 0 a 1', a.excedentePorComprimento('0.8') === 10);
+  ok('9b. 1 m exato fica na janela de baixo', a.excedentePorComprimento('1') === 10);
+  ok('9c. 1,20 m cai na janela 1 a 2', a.excedentePorComprimento('1.2') === 13);
+  ok('9d. 8,20 m cai na janela 8 a 9', a.excedentePorComprimento('8.2') === 20);
+  ok('9e. 11 m exato ainda tem regra', a.excedentePorComprimento('11') === 20);
+  ok('9f. acima de 11 m a regra nao opina', a.excedentePorComprimento('11.5') === null);
+  ok('9g. o resumo junta janelas vizinhas iguais',
+     a._excFaixasTexto() === '0 a 1 m → 10 cm, 1 a 5 m → 13 cm, 5 a 8 m → 15 cm, 8 a 11 m → 20 cm',
+     a._excFaixasTexto());
+  ok('9h. resumo de faixas com decimal usa virgula',
+     com({ faixas: [{ ate: 1.5, cm: 10 }, { ate: 9, cm: 15 }] })._excFaixasTexto() === '0 a 1,5 m → 10 cm, 1,5 a 9 m → 15 cm');
 }
 
 console.log(falhas ? `\n>>> ${falhas} FALHA(S)` : '\n>>> todos passaram');

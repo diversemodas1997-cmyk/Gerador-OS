@@ -1627,46 +1627,16 @@
           </div>
         </div>
         <div class="cfg-linha">
-          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Regra do excedente de enfesto</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>Os limites ficam na <b>faixa de baixo</b>: com 1,50 e 9, um pano de 1,50 m exato leva o da primeira faixa, e um de 9 m exatos o da segunda. Fase <b>sem comprimento</b> e fase <b>acima do último limite</b> não são tocadas — a menos que sejam gola ou viés, que não dependem da medida.<br><br>São <b>quatro linhas</b> de faixa, e usar todas é opcional: <b>linha em branco é linha que não existe</b>, então quem trabalha com três deixa a última vazia e nada muda.</div></details></div>
+          <div class="cfg-linha-nome" style="margin-bottom:8px;"><b>Regra do excedente de enfesto</b> <details class="cfg-ajuda"><summary>como funciona</summary><div>O <b>excedente</b> é o que se soma ao comprimento do risco para chegar na medida de <b>enfestar</b>. Quem não tem o número cadastrado na própria fase segue a regra abaixo — e é ela também que preenche as fases novas que vêm da importação de riscos.<br><br>Três <b>exceções</b> vêm antes de tudo, porque esses panos não são enfestados como os outros: <b>gola</b>, <b>viés</b> e <b>barra/punhos</b>, valha o comprimento que valer. Vale o nome <b>inteiro</b> da fase: "Corpo + Gola" é pano de corpo e segue a faixa, e "Separação de gola" também.<br><br>O comprimento é dividido em <b>janelas de 1 metro</b>, de 0 a 11 m, e cada janela tem o seu excedente. A medida exata da divisa fica na <b>janela de baixo</b>: um pano de 2 m exatos leva o da janela "1 a 2 m". Fase <b>sem comprimento</b> e fase <b>acima de 11 m</b> não são tocadas — a menos que sejam gola, viés ou barra, que não dependem da medida.</div></details></div>
           <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:12px;">
           <div>
-            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Faixas de comprimento</label>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
-                <input type="number" step="0.01" min="0" id="exc-faixa-ate-0" style="width:82px;">
-                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
-                <input type="number" step="1" min="0" id="exc-faixa-cm-0" style="width:70px;">
-                <span style="font-size:12px;color:var(--ink-3);">cm</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
-                <input type="number" step="0.01" min="0" id="exc-faixa-ate-1" style="width:82px;">
-                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
-                <input type="number" step="1" min="0" id="exc-faixa-cm-1" style="width:70px;">
-                <span style="font-size:12px;color:var(--ink-3);">cm</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
-                <input type="number" step="0.01" min="0" id="exc-faixa-ate-2" style="width:82px;">
-                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
-                <input type="number" step="1" min="0" id="exc-faixa-cm-2" style="width:70px;">
-                <span style="font-size:12px;color:var(--ink-3);">cm</span>
-              </div>
-              <!-- A QUARTA FAIXA (27/08/2026, pedido do Junior). Nasce vazia: o
-                   padrao da casa segue com tres, e linha em branco e linha que
-                   nao existe. Quem le as faixas CONTA as linhas que estao aqui
-                   (_excFaixasNaTela, no app.js), entao acrescentar a quinta um
-                   dia e copiar este bloco e mudar o indice. -->
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:12px;color:var(--ink-3);width:34px;">até</span>
-                <input type="number" step="0.01" min="0" id="exc-faixa-ate-3" style="width:82px;">
-                <span style="font-size:12px;color:var(--ink-3);">m &nbsp;→&nbsp;</span>
-                <input type="number" step="1" min="0" id="exc-faixa-cm-3" style="width:70px;">
-                <span style="font-size:12px;color:var(--ink-3);">cm</span>
-              </div>
-            </div>
-            <div class="field-hint" style="margin-top:4px;">Os limites têm que <b>subir</b> de uma linha para a outra. Deixar uma linha inteira em branco tira aquela faixa.</div>
+            <label style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);">Janelas de comprimento (a cada metro)</label>
+            <!-- JANELAS DE 1 M (22/10/2026, pedido do Junior): no lugar das
+                 faixas de limite livre, uma linha por metro, de 0 a 11 m. As
+                 linhas sao montadas pelo app.js (renderExcedenteCfg), a partir
+                 de EXCEDENTE_JANELAS_M — mudar quantas sao e mexer so la. -->
+            <div id="exc-janelas" style="display:grid;grid-template-columns:repeat(2,auto);gap:6px 18px;margin-top:6px;"></div>
+            <div class="field-hint" style="margin-top:4px;">Cada linha vale para o pano cujo comprimento cai <b>naquela janela</b>. Todas têm que estar preenchidas.</div>
           </div>
 
           <div>
@@ -2073,7 +2043,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-22b"></script>
+<script src="app.js?v=2026-10-22c"></script>
 <script src="assistente.js?v=2026-10-21a"></script>
 <script src="colorimetro.js?v=2026-10-21a"></script>
 <script src="estoque-confeccao.js?v=2026-10-22d"></script>
