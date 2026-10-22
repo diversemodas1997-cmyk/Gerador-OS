@@ -159,10 +159,10 @@ console.log('\n-- os avisos do sino --');
 
 console.log('\n-- a ligação com o programa --');
 ok('27. as chaves entram nas duas listas do app.js', (app.match(/'costuraProd','acabProdutos','acabMov'/g) || []).length === 2);
-ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque confecção'/.test(app)
+ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
    && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp'\]/.test(app));
-ok('29. as ações das telas têm área', ['lançar no estoque confecção', 'apagar lançamento do estoque confecção', 'cadastrar SKU no estoque confecção', 'importar saídas do ERP', 'configurar o estoque confecção']
-   .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque confecção', 'apagar lançamento do estoque confecção', 'cadastrar SKU no estoque confecção', 'importar saídas do ERP', 'configurar o estoque confecção']
+ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
+   .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => mod.includes(`exigirEdicao('${a}')`)));
 ok('30. o snapshot da Contabilidade leva o produto acabado', /produtosAcabados = acabSnapshotContab\(\)/.test(app) && /'acabProdutos', 'acabMov'\];/.test(app));
 const nav = html.slice(html.indexOf('data-group="estoques"'), html.indexOf('data-group="cadastros"'));

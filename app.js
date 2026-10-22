@@ -2069,7 +2069,7 @@ const AREAS_ACESSO = [
   /* O ESTOQUE CONFECÇÃO (21/10/2026): o produto acabado que veio do programa
      Estoque-Confeccao. Área própria: quem lança venda e conta a prateleira não
      precisa mexer no tecido nem nas fases. Ver estoque-confeccao.js. */
-  { k: 'estoque-confeccao', rotulo: 'Estoque confecção',
+  { k: 'estoque-confeccao', rotulo: 'Estoque de produtos',
     desc: 'Produto acabado: entradas, saídas, inventário, SKUs e as vendas do ERP' },
   { k: 'expedicao', rotulo: 'Expedição',
     desc: 'Alocar OS nas cargas, janelas, cancelamentos e a folha de OE' },
@@ -2145,9 +2145,9 @@ const ACOES_POR_AREA = {
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
   // Estoque confecção
-  'lançar no estoque confecção': 'estoque-confeccao', 'apagar lançamento do estoque confecção': 'estoque-confeccao',
-  'cadastrar SKU no estoque confecção': 'estoque-confeccao', 'importar saídas do ERP': 'estoque-confeccao',
-  'configurar o estoque confecção': 'estoque-confeccao',
+  'lançar no estoque de produtos': 'estoque-confeccao', 'apagar lançamento do estoque de produtos': 'estoque-confeccao',
+  'cadastrar SKU no estoque de produtos': 'estoque-confeccao', 'importar saídas do ERP': 'estoque-confeccao',
+  'configurar o estoque de produtos': 'estoque-confeccao', 'iniciar a contagem do estoque de produtos': 'estoque-confeccao',
   // Expedição
   'alocar OS na expedição': 'expedicao', 'configurar a expedição': 'expedicao',
   'alocar aviamento na expedição': 'expedicao', 'tirar aviamento da expedição': 'expedicao',
@@ -3964,8 +3964,8 @@ const DESFAZER_NOMES = {
   ferramentasMov: ['lançamento de ferramentas', 'lançamentos de ferramentas'],
   materiaisEstCad: ['material do estoque', 'materiais do estoque'],
   materiaisEstMov: ['lançamento de materiais', 'lançamentos de materiais'],
-  acabProdutos: ['SKU do estoque confecção', 'SKUs do estoque confecção'],
-  acabMov: ['lançamento do estoque confecção', 'lançamentos do estoque confecção'],
+  acabProdutos: ['SKU do estoque de produtos', 'SKUs do estoque de produtos'],
+  acabMov: ['lançamento do estoque de produtos', 'lançamentos do estoque de produtos'],
   diario: ['linha do diário', 'linhas do diário'],
   meta: ['configuração', 'configurações'],
   osCounter: ['contador de OS', 'contador de OS']
@@ -37400,7 +37400,7 @@ function _avisosEventos() {
      SKU (fica enquanto estiver pendente, como o planejamento) e as saídas
      importadas do ERP. Montados no estoque-confeccao.js. */
   if (typeof acabAvisos === 'function') {
-    try { acabAvisos(limite).forEach(e => ev.push(e)); } catch (e) { console.warn('avisos do estoque confecção', e); }
+    try { acabAvisos(limite).forEach(e => ev.push(e)); } catch (e) { console.warn('avisos do estoque de produtos', e); }
   }
   // O DIÁRIO DE ALTERAÇÕES: o Avisar das áreas que não têm aviso próprio.
   (Array.isArray(STATE.diario) ? STATE.diario : []).forEach(d => {
@@ -37887,13 +37887,13 @@ function renderAvisos() {
       } else if (e.tipo === 'acab-os') {
         icone = '📦';
         titulo = `OS ${esc(e.os)}`;
-        cabec = '<b>entrou no Estoque confecção</b>';
+        cabec = '<b>entrou no Estoque de produtos</b>';
         corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
         abrir = `fecharAvisos(); goto('acab-estoque')`;
       } else if (e.tipo === 'acab-pend') {
         icone = '🏷️';
         titulo = `OS ${esc(e.os)}`;
-        cabec = '<b>esperando SKU no Estoque confecção</b>';
+        cabec = '<b>esperando SKU no Estoque de produtos</b>';
         corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
         abrir = `fecharAvisos(); goto('acab-estoque')`;
       } else if (e.tipo === 'acab-erp') {
@@ -37924,7 +37924,7 @@ function renderAvisos() {
       return `<div class="aviso-linha${novo ? ' novo' : ''}${meu ? ' meu' : ''}${aberta ? ' aberta' : ''}"
            title="${e.tipo === 'oe' ? 'Abrir o plano da expedição'
                     : e.tipo === 'plan' ? 'Abrir o Planejamento de produção'
-                    : String(e.tipo).startsWith('acab-') ? 'Abrir o Estoque confecção'
+                    : String(e.tipo).startsWith('acab-') ? 'Abrir o Estoque de produtos'
                     : e.tipo === 'diario' ? 'Abrir a tela onde foi feito'
                     : (e.n ? 'Ver estas OS na lista' : 'Abrir a folha da OS ' + esc(e.os))}"
            onclick="marcarAvisoAberto('${esc(chave)}'); ${abrir}; atualizarBadgeAvisos()">

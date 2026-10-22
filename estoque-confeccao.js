@@ -12,7 +12,7 @@
    Gerador-OS passa a valer e o estoque COMEÇA DO ZERO (sem o histórico do
    Render); a lista de SKUs pode ser trazida do catálogo que o Render publicou.
 
-   O QUE VEIO (uma tela para cada, na pasta "Estoque confecção"):
+   O QUE VEIO (uma tela para cada, na pasta "Estoque confecção", hoje "Estoque de produtos"):
      · Estoque atual       — a tabela SKU × tamanho, os totais e o mínimo;
      · Entradas e saídas   — os lançamentos à mão e a lista dos últimos;
      · Inventário          — a contagem física que acerta o saldo;
@@ -22,7 +22,7 @@
 
    O QUE NÃO VEIO, porque o Gerador-OS já tem:
      · login e usuários         → as contas do programa e as concessões
-                                  (área "Estoque confecção" em Configurações);
+                                  (área "Estoque de produtos" em Configurações);
      · backup, restaurar, zerar → Dados, backup e pastas (e o Desfazer);
      · a sincronização com o Gerador-OS (o Render lia a etapa "Estoque" das
        OS pela nuvem a cada minuto) → aqui a entrada da OS é lida DIRETO da
@@ -490,7 +490,7 @@
   };
 
   window.acabIniciarContagem = async function () {
-    if (!exigirEdicao('iniciar a contagem do estoque confecção')) return;
+    if (!exigirEdicao('iniciar a contagem do estoque de produtos')) return;
     const c = cfg();
     const agora = new Date().toISOString();
     const antes = c.inicio ? todosMovs() : [];
@@ -506,17 +506,17 @@ Daqui em diante contam as OS que entrarem em Estoque e os lançamentos feitos aq
 
 ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (ficam guardados).` : ''}`;
     if (!confirm(msg)) return;
-    desfazerNomearAcao('início da contagem do Estoque confecção');
+    desfazerNomearAcao('início da contagem do Estoque de produtos');
     await gravarCfg({ inicio: agora, inicioPor: quemSou() || 'admin' });
     toast('Contagem do estoque iniciada', 'ok');
     renderAtual();
   };
 
   window.acabDispensarOS = async function (osId) {
-    if (!exigirEdicao('configurar o estoque confecção')) return;
+    if (!exigirEdicao('configurar o estoque de produtos')) return;
     const o = (STATE.ordens || []).find(x => x.id === osId);
-    if (!confirm(`Dispensar a OS ${o ? o.os : ''}?\n\nEla deixa de lançar entrada no Estoque confecção. Use quando a entrada já foi feita à mão.`)) return;
-    desfazerNomearAcao(`dispensa da OS ${o ? o.os : ''} no Estoque confecção`);
+    if (!confirm(`Dispensar a OS ${o ? o.os : ''}?\n\nEla deixa de lançar entrada no Estoque de produtos. Use quando a entrada já foi feita à mão.`)) return;
+    desfazerNomearAcao(`dispensa da OS ${o ? o.os : ''} no Estoque de produtos`);
     await gravarCfg({ osDispensadas: cfg().osDispensadas.concat([osId]) });
     toast('OS dispensada', 'ok');
     renderEstoqueAtual();
@@ -598,7 +598,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   }
 
   window.acabRegistrarEntrada = async function () {
-    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
+    if (!exigirEdicao('lançar no estoque de produtos') || !exigirInicio()) return;
     const sku = norm(val('acab-ent-produto'));
     let p = produtoDoCampo('acab-ent');
     const tamanho = asTam(val('acab-ent-tam'));
@@ -636,7 +636,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabRegistrarSaida = async function () {
-    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
+    if (!exigirEdicao('lançar no estoque de produtos') || !exigirInicio()) return;
     const sku = norm(val('acab-sai-produto'));
     const p = produtoDoCampo('acab-sai');
     const tamanho = asTam(val('acab-sai-tam'));
@@ -658,7 +658,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabApagarMov = async function (id) {
-    if (!exigirEdicao('apagar lançamento do estoque confecção')) return;
+    if (!exigirEdicao('apagar lançamento do estoque de produtos')) return;
     const m = movs().find(x => x.id === id);
     if (!m) return;
     const p = produtoPorId(m.produtoId);
@@ -666,7 +666,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const devolve = Array.isArray(m.abate) && m.abate.length ? `\n\nAs peças que ela abateu voltam para: ${textoAbate(m.abate)}.` : '';
     if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?${devolve}`)) return;
     STATE.acabMov = movs().filter(x => x.id !== id);
-    desfazerNomearAcao(`${nome} de ${p ? p.sku : '?'} ${m.tamanho} apagada no Estoque confecção`);
+    desfazerNomearAcao(`${nome} de ${p ? p.sku : '?'} ${m.tamanho} apagada no Estoque de produtos`);
     await saveState('acabMov');
     toast('Lançamento apagado', 'ok');
     renderAtual();
@@ -716,7 +716,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   }
 
   window.acabRegistrarAjuste = async function () {
-    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
+    if (!exigirEdicao('lançar no estoque de produtos') || !exigirInicio()) return;
     const p = produtoPorId(val('acab-aj-produto'));
     const tamanho = asTam(val('acab-aj-tam'));
     const contado = parseInt(val('acab-aj-contado'), 10);
@@ -789,15 +789,15 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabSalvarCfg = async function () {
-    if (!exigirEdicao('configurar o estoque confecção')) return;
+    if (!exigirEdicao('configurar o estoque de produtos')) return;
     const min = parseInt(val('acab-cfg-min'), 10), max = parseInt(val('acab-cfg-max'), 10);
     if (!(min >= 0) || !(max >= 0)) return toast('Limites inválidos', 'err');
     const ini = val('acab-cfg-inicio');
     const inicio = ini ? new Date(ini).toISOString() : '';
     if (!inicio) return toast('Informe o início do estoque', 'err');
-    desfazerNomearAcao('limites do Estoque confecção');
+    desfazerNomearAcao('limites do Estoque de produtos');
     await gravarCfg({ estoqueMin: min, estoqueMax: max, inicio });
-    toast('Estoque confecção: configuração salva', 'ok');
+    toast('Estoque de produtos: configuração salva', 'ok');
     renderProdutos();
   };
 
@@ -807,7 +807,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   const partesSku = sku => { const s = norm(sku); const i = s.indexOf('-'); return i < 0 ? { linha: s, cor: '' } : { linha: s.slice(0, i), cor: s.slice(i + 1) }; };
 
   window.acabImportarCatalogo = async function () {
-    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return;
     const cat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus : [];
     const novos = cat.filter(s => s && s.item && !produtoPorSku(s.item));
     if (!novos.length) return toast('Nenhum SKU novo no catálogo', 'ok');
@@ -829,7 +829,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabAbrirProduto = function (id, pre) {
-    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return;
     const p = id ? produtoPorId(id) : null;
     _editProdId = p ? p.id : null;
     const base = p || Object.assign({ codigo: '', sku: '', linha: '', cor: '', descricao: '', tamanhos: TAMS_PADRAO, preco: '' }, pre || {});
@@ -859,7 +859,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabSalvarProduto = async function () {
-    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return;
     const sku = norm(val('acab-p-sku'));
     if (!sku) return toast('Informe o SKU', 'err');
     const outro = produtoPorSku(sku);
@@ -886,7 +886,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   };
 
   window.acabExcluirProduto = async function (id) {
-    if (!exigirEdicao('cadastrar SKU no estoque confecção')) return;
+    if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return;
     const p = produtoPorId(id);
     if (!p) return;
     const nMov = todosMovs().filter(m => m.produtoId === id).length;
@@ -1153,7 +1153,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   window.renderEstoqueConfeccao = function (page) {
     const fn = TELAS[page];
     if (!fn) return;
-    try { fn(); } catch (e) { console.warn('Estoque confecção', page, e); }
+    try { fn(); } catch (e) { console.warn('Estoque de produtos', page, e); }
   };
 
   /* OS AVISOS DO SINO (21/10/2026): a coluna Avisar da área "Estoque

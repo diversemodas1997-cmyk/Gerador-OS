@@ -201,7 +201,7 @@
              programa Estoque-Confeccao (Render), numa pasta dentro de Estoques.
              As telas sao desenhadas por estoque-confeccao.js. -->
         <div class="nav-group nav-sub" data-group="estoque-confeccao">
-          <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque confecção</button>
+          <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque de produtos</button>
           <div class="nav-items">
             <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
             <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
@@ -483,27 +483,27 @@
     <!-- ESTOQUE CONFECCAO (21/10/2026): o produto acabado. Os paineis sao
          desenhados por estoque-confeccao.js (renderEstoqueConfeccao, no goto). -->
     <section class="page hidden" data-page="acab-estoque">
-      <div class="page-header"><div><h1>Estoque confecção · Estoque atual</h1><div class="desc">O produto acabado na prateleira, por SKU e tamanho. A OS que marca a etapa <b>Estoque</b> entra sozinha; as vendas, a contagem e as compras entram pelas outras telas desta pasta.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Estoque atual</h1><div class="desc">O produto acabado na prateleira, por SKU e tamanho. A OS que marca a etapa <b>Estoque</b> entra sozinha; as vendas, a contagem e as compras entram pelas outras telas desta pasta.</div></div></div>
       <div id="acab-estoque-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-mov">
-      <div class="page-header"><div><h1>Estoque confecção · Entradas e saídas</h1><div class="desc">Entrada de compra ou de peça que chegou fora de uma OS, e saída para cliente, cancelamento, devolução ou defeito.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Entradas e saídas</h1><div class="desc">Entrada de compra ou de peça que chegou fora de uma OS, e saída para cliente, cancelamento, devolução ou defeito.</div></div></div>
       <div id="acab-mov-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-inventario">
-      <div class="page-header"><div><h1>Estoque confecção · Inventário</h1><div class="desc">A contagem física da prateleira: o número contado passa a ser o saldo, e a diferença fica registrada.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Inventário</h1><div class="desc">A contagem física da prateleira: o número contado passa a ser o saldo, e a diferença fica registrada.</div></div></div>
       <div id="acab-inventario-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-produtos">
-      <div class="page-header"><div><h1>Estoque confecção · Produtos (SKUs)</h1><div class="desc">O cadastro dos SKUs (linha + cor, como a OS calcula), os tamanhos de cada um, o código do ERP, o estoque mínimo e o início do estoque.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Produtos (SKUs)</h1><div class="desc">O cadastro dos SKUs (linha + cor, como a OS calcula), os tamanhos de cada um, o código do ERP, o estoque mínimo e o início do estoque.</div></div></div>
       <div id="acab-produtos-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-erp">
-      <div class="page-header"><div><h1>Estoque confecção · Saídas do ERP</h1><div class="desc">O relatório de vendas do ERP (PDF ou CSV) vira saídas de estoque, com prévia antes de lançar.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Saídas do ERP</h1><div class="desc">O relatório de vendas do ERP (PDF ou CSV) vira saídas de estoque, com prévia antes de lançar.</div></div></div>
       <div id="acab-erp-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-cmp">
-      <div class="page-header"><div><h1>Estoque confecção · Relatório CMP</h1><div class="desc">O custo médio ponderado de um SKU, movimento a movimento, e o custo das saídas (CMV).</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Relatório CMP</h1><div class="desc">O custo médio ponderado de um SKU, movimento a movimento, e o custo das saídas (CMV).</div></div></div>
       <div id="acab-cmp-painel"></div>
     </section>
     <section class="page hidden" data-page="estoque-pecas">
@@ -2073,9 +2073,9 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-22a"></script>
+<script src="app.js?v=2026-10-22b"></script>
 <script src="assistente.js?v=2026-10-21a"></script>
 <script src="colorimetro.js?v=2026-10-21a"></script>
-<script src="estoque-confeccao.js?v=2026-10-22b"></script>
+<script src="estoque-confeccao.js?v=2026-10-22c"></script>
 </body>
 </html>
