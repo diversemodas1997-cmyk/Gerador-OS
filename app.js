@@ -32853,6 +32853,34 @@ function _composicaoPacoteMoletom(blusas) {
     .join(' · '));
 }
 
+/* MOLETOM QUE NÃO É BLUSA (22/10/2026, Junior, OS 0676). A lista acima é de
+   BLUSA, e saía em toda OS de moletom — a calça moletom (CJM) imprimia manga,
+   capuz, barra e punhos, que ela não tem. Agora só a blusa (SKU "BM..." ou
+   modelo "Blusa...") segue a lista fixa; as demais peças de moletom listam os
+   COMPONENTES DA PRÓPRIA OS, cada um × peças do pacote, três por linha. E o
+   pacote de reposição delas é só "Reposição": a calça não tem viés nem ribana. */
+const ETIQUETA_CONTEUDO_REPOSICAO_NAO_BLUSA = 'Reposição';
+
+function _osEhBlusaMoletom(o) {
+  const sku = _skuDaOS(o) || _skuDaGrade({ descricao: o && o.grade && o.grade.descricao });
+  return /^bm[.]/.test(_normSku(sku)) || /blusa/i.test((o && o.modeloNome) || '');
+}
+
+// As linhas de composição de um pacote com `pecas` peças, pelos componentes da
+// OS. Sem componentes, nada (melhor do que inventar uma lista); sem o número
+// (null), a lista sem quantidade — a mesma regra de _composicaoPacoteMoletom.
+function _composicaoPacotePelosComponentes(o, pecas) {
+  const itens = (o.componentes || [])
+    .filter(c => c && String(c.nome || '').trim() && (parseFloat(c.qtdPorPeca) || 0) > 0)
+    .map(c => {
+      const nome = String(c.nome).trim();
+      return pecas == null ? nome : `${nome} ${pecas * (parseFloat(c.qtdPorPeca) || 1)}`;
+    });
+  const linhas = [];
+  for (let i = 0; i < itens.length; i += 3) linhas.push(itens.slice(i, i + 3).join(' · '));
+  return linhas.length ? linhas : null;
+}
+
 // Tamanhos da grade expandidos em PACOTES: um item por vaga de tamanho, na
 // ordem P..G3. Segue a mesma regra por tipo de _expTotalTamanhosGrade:
 //   • Camiseta: repete o tamanho conforme a quantidade (2M → 'M','M').
@@ -33092,6 +33120,7 @@ function dadosEtiquetaParaOS(o) {
   // a célula tamanho × tom inteira.
   let composicaoPacotes = null;
   let corPacotes = null, qtdePacotes = null;
+  const blusa = !temMoletom || _osEhBlusaMoletom(o);
   if (temMoletom) {
     const blusasDe = celDe;
     if (pecasPacotes) {
@@ -33110,7 +33139,9 @@ function dadosEtiquetaParaOS(o) {
         return p.porBlusa.map(([n, q]) => (p.porBlusa.length > 1 ? n + ' ' : '') + (b == null ? '—' : b * q)).join(' · ');
       });
     } else {
-      composicaoPacotes = tamanhosPacotes.map((t, i) => _composicaoPacoteMoletom(blusasDe(i)));
+      composicaoPacotes = blusa
+        ? tamanhosPacotes.map((t, i) => _composicaoPacoteMoletom(blusasDe(i)))
+        : tamanhosPacotes.map((t, i) => _composicaoPacotePelosComponentes(o, blusasDe(i)));
     }
   }
 
@@ -33119,7 +33150,8 @@ function dadosEtiquetaParaOS(o) {
            totalPacotes, tonsTexto, composicaoPacotes,
            pecasPacotes: pecasPacotes && pecasPacotes.map(p => p.nome), corPacotes, qtdePacotes,
            qtdeTamPacotes,
-           conteudoReposicao: pecasBmTri ? ETIQUETA_CONTEUDO_REPOSICAO_BM : ETIQUETA_CONTEUDO_REPOSICAO };
+           conteudoReposicao: pecasBmTri ? ETIQUETA_CONTEUDO_REPOSICAO_BM
+             : (blusa ? ETIQUETA_CONTEUDO_REPOSICAO : ETIQUETA_CONTEUDO_REPOSICAO_NAO_BLUSA) };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:

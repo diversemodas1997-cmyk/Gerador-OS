@@ -52,6 +52,7 @@ const motor = [
   corta('function desenhoDaOS'),
   constante('ETIQUETA_CONTEUDO_REPOSICAO'),
   constante('ETIQUETA_CONTEUDO_REPOSICAO_BM'),
+  constante('ETIQUETA_CONTEUDO_REPOSICAO_NAO_BLUSA'),
   constante('ETIQUETAS_REPOSICAO_POR_OS'),
   listaConst('ETIQUETA_COMPOSICAO_MOLETOM'),
   corta('function _composicaoPacoteMoletom'),
@@ -63,6 +64,8 @@ const motor = [
   corta('function _skuDaGrade'),
   corta('function _osEhBmTri'),
   corta('function _osEhBmLisa'),
+  corta('function _osEhBlusaMoletom'),
+  corta('function _composicaoPacotePelosComponentes'),
   corta('function _pecasEtiquetaOS'),
   corta('function _coresDaPecaOS'),
   corta('function _tamanhosDaGradeExpandido'),
@@ -184,7 +187,7 @@ ok('sem tom: a via extra segue sem lote', !temLote(r.paginas[4]), r.paginas[4]);
 
 /* ---------- 5. moletom: 1 pacote por tamanho, composição só nas de tamanho ---------- */
 
-r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }] }), { tons: [1], moletom: true });
+r = etiquetasDe(osBase({ modeloNome: 'Blusa Moletom Básica', fases: [{ tecidoId: 't1' }] }), { tons: [1], moletom: true });
 eq('moletom: 1 pacote por tamanho + reposição', r.dados.totalPacotes, 4);
 ok('moletom: a etiqueta de tamanho traz a composição do pacote (1 blusa × 10 camadas)',
    r.paginas[0].includes('Frente 10 · Costa 10 · Bolso 10 · Barra 10') &&
@@ -198,7 +201,7 @@ ok('moletom: a reposição não traz composição',
    fixo que não vinha da OS. */
 
 const os547 = osBase({
-  os: '0547', fases: [{ tecidoId: 't1' }],
+  os: '0547', modeloNome: 'Blusa Moletom Básica', fases: [{ tecidoId: 't1' }],
   grade: { g: 8, total: 8 }, enfesto: { camadas: 28 },
   progresso: { totalTamanhoTons: { 1: true, 2: true }, totalTamanhoTomValor: { 1: 144 } }
 });
@@ -214,7 +217,7 @@ ok('0547: G tom 2 leva as 80 que sobram',
    r.paginas[1].includes('Mangas 160 · Capuz 160 · Punhos 160'), r.paginas[1]);
 
 // Dois tons sem a divisão digitada: não há número certo a imprimir.
-r = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], grade: { g: 8, total: 8 }, enfesto: { camadas: 28 },
+r = etiquetasDe(osBase({ modeloNome: 'Blusa Moletom Básica', fases: [{ tecidoId: 't1' }], grade: { g: 8, total: 8 }, enfesto: { camadas: 28 },
   progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2], moletom: true });
 ok('2 tons sem divisão: a composição sai sem número, não com chute',
    r.paginas[0].includes('Frente · Costa · Bolso · Barra'), r.paginas[0]);
@@ -288,6 +291,33 @@ ok('0563: a reposição não tem QTDE PACOTE', !r.paginas[6].some(l => /^QTDE PA
 r = etiquetasDe(osBase({ grade: { g: 2, g2: 1, total: 3 }, enfesto: { camadas: 65 },
   progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2] });
 eq('2 tons sem divisão: o pacote sai com "—", não com chute', qPac(r.paginas[0]), '—');
+
+/* ---------- 8. moletom que NAO e blusa (22/10/2026, OS 0676) ----------
+   A calca moletom (CJM) imprimia manga, capuz, barra e punhos — a lista fixa
+   da blusa. Agora lista os componentes da propria OS, e a reposicao e so
+   "Reposicao". A blusa segue com a lista fixa (casos 5 e 6). */
+{
+  const cjm = osBase({ os: '0676', modeloNome: 'Calça Moletom', fases: [{ tecidoId: 't1' }],
+    grade: { descricao: 'P ao G3 | CJM | 177cm', p: 1, m: 1, total: 2 }, enfesto: { camadas: 34 },
+    componentes: [
+      { nome: 'Frente D', qtdPorPeca: 1 }, { nome: 'Frente E', qtdPorPeca: 1 },
+      { nome: 'Costa D', qtdPorPeca: 1 }, { nome: 'Costa E', qtdPorPeca: 1 },
+      { nome: 'Bolsos Frente', qtdPorPeca: 4 }, { nome: 'Bolso costa', qtdPorPeca: 1 }
+    ] });
+  const r8 = etiquetasDe(cjm, { tons: [1], moletom: true });
+  const pag = r8.paginas[0];
+  ok('CJM: lista os componentes da OS', pag.includes('Frente D 34 · Frente E 34 · Costa D 34')
+     && pag.includes('Costa E 34 · Bolsos Frente 136 · Bolso costa 34'), pag);
+  ok('CJM: nada de manga, capuz, barra ou punhos', !pag.some(l => /Mangas|Capuz|Barra|Punhos/.test(l)), pag);
+  eq('CJM: a reposicao e so "Reposição"', r8.dados.conteudoReposicao, 'Reposição');
+  const semComp = etiquetasDe(Object.assign({}, cjm, { componentes: [] }), { tons: [1], moletom: true });
+  ok('CJM sem componentes: sem lista, e nao a da blusa',
+     !semComp.paginas[0].some(l => /Mangas|Frente/.test(l)), semComp.paginas[0]);
+  const bmb = etiquetasDe(osBase({ fases: [{ tecidoId: 't1' }], grade: { descricao: '8G | BM.BÁSICA | 179cm', g: 1, total: 1 } }),
+    { tons: [1], moletom: true });
+  ok('BM.BASICA (pelo SKU) segue a lista da blusa', bmb.paginas[0].some(l => /Mangas 20/.test(l)), bmb.paginas[0]);
+  eq('BM.BASICA: reposicao segue a da blusa', bmb.dados.conteudoReposicao, 'Viés/Reposição/Ribana');
+}
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nTudo certo.');
 process.exit(falhas ? 1 : 0);
