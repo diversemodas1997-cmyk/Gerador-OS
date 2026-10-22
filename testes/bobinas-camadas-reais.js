@@ -402,6 +402,35 @@ ok('71. "Gola e Vies" NAO e vies puro: continua gastando o que a grade diz',
    bobinasEfetivasFase(os(), 8, 2, golaEVies) === 8,
    bobinasEfetivasFase(os(), 8, 2, golaEVies));
 
+// +1 BOBINA QUANDO O ENFESTO FICOU ABAIXO DO MAXIMO (22/10/2026, Junior).
+// Com as camadas registradas na folha abaixo do limite da fase, a estimativa
+// proporcional ganha uma bobina. Sem tom registrado, ou com enfesto cheio, nada muda.
+console.log('\n-- +1 bobina com enfesto abaixo do maximo, pelas camadas da folha --');
+{
+  const curto = linha(4.25, 1.17, 452.5, 40);           // 40 de 80 camadas
+  ok('72. 40 de 80 camadas registradas: 8 x 0,5 = 4, +1 = 5',
+     bobinasEfetivasFase(os({ 2: { 1: '20', 2: '20' } }), 8, 2, curto) === 5,
+     bobinasEfetivasFase(os({ 2: { 1: '20', 2: '20' } }), 8, 2, curto));
+  ok('72b. sem tom registrado (OS planejada) segue a proporcao pura: 4',
+     bobinasEfetivasFase(os(), 8, 2, curto) === 4, bobinasEfetivasFase(os(), 8, 2, curto));
+  ok('72c. tom registrado em OUTRA fase da OS tambem conta: 5',
+     bobinasEfetivasFase(os({ 1: { 1: '40' } }), 8, 2, curto) === 5,
+     bobinasEfetivasFase(os({ 1: { 1: '40' } }), 8, 2, curto));
+  ok('72d. enfesto cheio registrado nao ganha nada: 8',
+     bobinasEfetivasFase(os({ 2: { 1: '80' } }), 8, 2, linha(4.25, 1.17, 452.5, 80)) === 8);
+  ok('72e. no cru (Compra) soma 1 ao valor sem arredondar: 4 + 1',
+     perto(bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, curto, true), 5),
+     bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, curto, true));
+  ok('72f. numero escrito na propria OS continua valendo como esta',
+     bobinasEfetivasFase(os({ 2: { 1: '40' } }), 8, 2, Object.assign({}, curto, { bobinasOS: 3 })) === 3);
+  ok('72g. fase declarada nao enfestada continua zero',
+     bobinasEfetivasFase(os({ 2: { 1: '0' } }), 8, 2, curto) === 0);
+  ok('72h. moletom: 30 de 36 com 6 cadastradas -> 5, +1 = 6',
+     bobinasEfetivasFase(os({ 2: { 1: '30' } }), 6, 2, linha(2.5, 1.8, 300, 30, 'Preto Moletom', 36)) === 6);
+  const tit = _tituloBobinas(os({ 2: { 1: '40' } }), curto, 8, 2);
+  ok('72i. a dica explica o +1', /\+1 porque as camadas registradas/.test(tit) && /: 5\./.test(tit), tit);
+}
+
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
 console.log('todos os testes passaram');

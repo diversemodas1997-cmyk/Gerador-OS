@@ -59,6 +59,7 @@ function monta(mundo) {
     ${pegaFuncao('bobinaInteira')}
     ${pegaFuncao('ehFaseRibana')}
     ${pegaFuncao('bobinasEfetivasFase')}
+    ${pegaFuncao('_bobinaExtraEnfestoCurto')}
     ${pegaFuncao('osComMaterialReservado')}
     ${pegaFuncao('compraConsumoItemDaFalta')}
     ${pegaFuncao('compraConsumoItem')}

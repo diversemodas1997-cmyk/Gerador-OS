@@ -79,7 +79,7 @@ const FUNCOES = [
   '_ehFaseVies',
   'consumoEnfestoOS',
   // bobinas
-  'parseBobinas', 'bobinaInteira', 'ehFaseRibana', 'bobinasEfetivasFase',
+  'parseBobinas', 'bobinaInteira', 'ehFaseRibana', 'bobinasEfetivasFase', '_bobinaExtraEnfestoCurto',
   // estoque (o desconto do disponível)
   'comprasComoMovimentos', 'movimentacoesEstoque', 'calcularSaldosEstoque',
   // a compra
