@@ -178,6 +178,33 @@ const CAT = [{ item: 'CM.LISA-PRE', tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAM
     ok('24. apagar a entrada devolve as peças às OS', !/−4 à mão/.test(u.doc.els['acab-mov-painel'].innerHTML) && /de 10 · −6 à mão/.test(u.doc.els['acab-mov-painel'].innerHTML));
   }
 
+  console.log('\n-- o botão dá o início da contagem (22/10/2026) --');
+  {
+    const st = estado();
+    delete st.meta.acabConfig.inicio;
+    st.acabProdutos = [{ id: 'pp', sku: 'CM.LISA-PRE', linha: 'CM.LISA', cor: 'PRE', tamanhos: ['P', 'M', 'G'] }];
+    const u = carrega(st, CAT, true);
+    const c = (id, v) => { u.doc.getElementById(id).value = v; };
+    u.window.renderEstoqueConfeccao('acab-estoque');
+    ok('25. abrir a tela não marca o início sozinho', !st.meta.acabConfig.inicio);
+    ok('26. sem início, o Estoque atual mostra o botão', /acabIniciarContagem\(\)">▶ Iniciar contagem do estoque/.test(u.doc.els['acab-estoque-painel'].innerHTML));
+    u.window.renderEstoqueConfeccao('acab-mov');
+    c('acab-ent-produto', 'CM.LISA-PRE'); u.window.acabTrocarProduto('acab-ent');
+    c('acab-ent-tam', 'M'); c('acab-ent-qtd', '5');
+    await u.window.acabRegistrarEntrada();
+    ok('27. sem início, a entrada à mão é barrada', !st.acabMov.length && /Inicie a contagem/.test(u.toasts.pop()));
+    st.acabMov.push({ id: 'velho', tipo: 'entrada', origem: 'manual', produtoId: 'pp', tamanho: 'M', data: '2026-10-01', qtd: 7, criadoEm: '2026-10-01T10:00:00.000Z' });
+    await u.window.acabIniciarContagem();
+    ok('28. o botão grava o início e quem deu', !!st.meta.acabConfig.inicio && st.meta.acabConfig.inicioPor === 'admin', st.meta.acabConfig);
+    c('acab-ent-produto', 'CM.LISA-PRE'); u.window.acabTrocarProduto('acab-ent');
+    c('acab-ent-tam', 'M'); c('acab-ent-qtd', '5');
+    await u.window.acabRegistrarEntrada();
+    u.window.renderEstoqueConfeccao('acab-estoque');
+    const pe = u.doc.els['acab-estoque-painel'].innerHTML;
+    ok('29. o lançamento de antes do início não conta (só os 5 de agora)', /font-weight:700;">5</.test(pe) && st.acabMov.length === 2, pe.match(/font-weight:700;[^<]*</g));
+    ok('30. depois de iniciada, a tela mostra quando e oferece reiniciar', /Contagem iniciada em/.test(pe) && /Reiniciar contagem/.test(pe));
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntodos os testes passaram');
   process.exit(falhas ? 1 : 0);
 })();

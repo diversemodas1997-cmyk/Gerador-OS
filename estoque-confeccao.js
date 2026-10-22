@@ -81,6 +81,7 @@
       estoqueMin: Number.isFinite(Number(c.estoqueMin)) ? Number(c.estoqueMin) : 5,
       estoqueMax: Number.isFinite(Number(c.estoqueMax)) ? Number(c.estoqueMax) : 0,
       inicio: c.inicio || '',
+      inicioPor: c.inicioPor || '',
       osDispensadas: Array.isArray(c.osDispensadas) ? c.osDispensadas : []
     };
   }
@@ -92,14 +93,28 @@
 
   /* O INÍCIO DO ESTOQUE. "Começar do zero" quer dizer que as OS que já tinham
      entrado no estoque antes daqui não lançam entrada — essas peças o Render já
-     contou, e muitas já foram vendidas. O início é carimbado na primeira vez em
-     que alguém que edita a área abre estas telas, e o admin pode mudá-lo em
-     Produtos. Sem início, nenhuma OS lança: é o lado seguro. */
-  async function garantirInicio() {
-    if (cfg().inicio) return false;
-    if (!(typeof podeGravar === 'function' && podeGravar())) return false;
-    if (!(currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('estoque-confeccao')))) return false;
-    try { await gravarCfg({ inicio: new Date().toISOString() }); return true; } catch (e) { console.warn('acab início', e); return false; }
+     contou, e muitas já foram vendidas. Sem início, nenhuma OS lança: é o lado
+     seguro.
+     O BOTÃO DÁ O INÍCIO (22/10/2026, Junior: "insira botão para dar início na
+     contagem do estoque, pois o abate pelas OS devem ter início
+     sincronizado"). Antes o início era carimbado sozinho na primeira vez em
+     que alguém abria a tela — a hora era um acaso. Agora é o botão "Iniciar
+     contagem do estoque", no Estoque atual, e ele vale para os DOIS lados ao
+     mesmo tempo: as OS que entram em Estoque e os lançamentos daqui (entradas,
+     saídas, ajustes, ERP) só contam do início em diante. Assim a entrada à mão
+     e a OS que ela abate (planoAbateOS) começam juntas. O lançamento de antes
+     não é apagado: fica guardado e volta a contar se o início for recuado em
+     Produtos. Sem início, nada pode ser lançado (exigirInicio). */
+  function exigirInicio() {
+    if (cfg().inicio) return true;
+    toast('Inicie a contagem do estoque primeiro (botão no Estoque atual)', 'err');
+    return false;
+  }
+  const fmtDH = iso => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  // Os lançamentos que contam: os do início em diante (ver exigirInicio).
+  function movsValidos() {
+    const ini = cfg().inicio;
+    return ini ? movs().filter(m => !m.criadoEm || String(m.criadoEm) >= ini) : movs();
   }
 
   const produtoPorId = id => produtos().find(p => p.id === id);
@@ -158,7 +173,7 @@
     });
     // O que as entradas à mão já abateram (ver planoAbateOS) sai da OS.
     const abatido = new Map();
-    movs().forEach(m => (m.tipo === 'entrada' && Array.isArray(m.abate) ? m.abate : []).forEach(a => {
+    movsValidos().forEach(m => (m.tipo === 'entrada' && Array.isArray(m.abate) ? m.abate : []).forEach(a => {
       const k = a.osId + '|' + m.produtoId + '|' + m.tamanho;
       abatido.set(k, (abatido.get(k) || 0) + (Number(a.qtd) || 0));
     }));
@@ -201,7 +216,7 @@
 
   // Todos os movimentos: os lançados (STATE.acabMov) e os das OS.
   function todosMovs(dasOS) {
-    return movs().concat((dasOS || _entradasDasOS()).entradas);
+    return movsValidos().concat((dasOS || _entradasDasOS()).entradas);
   }
 
   /* -------------------------------------------------------- as contas */
@@ -423,7 +438,11 @@
         <div class="item${tMin ? ' alerta' : ''}"><div class="num">${fmtN(tMin)}</div><div class="lbl">No estoque mínimo (≤ ${fmtN(c.estoqueMin)})</div></div>
         <div class="item"><div class="num">${fmtR(tValor)}</div><div class="lbl">Valor (custo médio)</div></div>
       </div>
-      ${dasOS.semInicio ? `<div class="info-box" style="margin-bottom:12px;">O início do estoque ainda não foi marcado: as OS que entram na etapa Estoque só lançam entrada a partir dele. Ele é marcado na primeira vez em que alguém que edita esta área abre a tela, ou em Produtos (SKUs).</div>` : ''}
+      ${dasOS.semInicio
+        ? `<div class="info-box" style="margin-bottom:12px;">A contagem do estoque ainda não começou: nenhuma OS lança entrada e nada pode ser lançado à mão. Dê o início quando a prateleira estiver pronta para contar — as OS que entrarem em Estoque e os lançamentos daqui contam a partir dele, juntos.
+            <div style="margin-top:8px;"><button class="btn primary admin-only" onclick="acabIniciarContagem()">▶ Iniciar contagem do estoque</button></div></div>`
+        : `<div class="muted" style="font-size:12px;margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">Contagem ${c.inicioPor ? 'iniciada' : 'marcada sozinha'} em <b>${esc(fmtDH(c.inicio))}</b>${c.inicioPor ? ' por ' + esc(c.inicioPor) : ' (na primeira abertura da tela)'} — OS e lançamentos contam daí em diante.
+            <button class="btn admin-only" onclick="acabIniciarContagem()" title="Recomeça a contagem agora: as OS que já estão em Estoque e os lançamentos feitos até aqui deixam de contar (ficam guardados)">${c.inicioPor ? '↻ Reiniciar contagem' : '▶ Iniciar contagem do estoque'}</button></div>`}
       ${pendHtml}
       <div class="card">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -468,6 +487,29 @@
     a.download = 'estoque-confeccao_' + hoje() + '.csv';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  window.acabIniciarContagem = async function () {
+    if (!exigirEdicao('iniciar a contagem do estoque confecção')) return;
+    const c = cfg();
+    const agora = new Date().toISOString();
+    const antes = c.inicio ? todosMovs() : [];
+    const nMovs = antes.filter(m => m.origem !== 'os').length;
+    const nOS = new Set(antes.filter(m => m.origem === 'os').map(m => m.osId)).size;
+    const msg = c.inicio && c.inicioPor
+      ? `Reiniciar a contagem do estoque agora (${fmtDH(agora)})?
+
+O estoque volta a zero: ${nOS} OS já em Estoque e ${nMovs} lançamento(s) feitos até aqui deixam de contar. Nada é apagado — recuar o início em Produtos (SKUs) traz de volta.`
+      : `Iniciar a contagem do estoque agora (${fmtDH(agora)})?
+
+Daqui em diante contam as OS que entrarem em Estoque e os lançamentos feitos aqui (que abatem essas OS).${nOS || nMovs ? `
+
+${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (ficam guardados).` : ''}`;
+    if (!confirm(msg)) return;
+    desfazerNomearAcao('início da contagem do Estoque confecção');
+    await gravarCfg({ inicio: agora, inicioPor: quemSou() || 'admin' });
+    toast('Contagem do estoque iniciada', 'ok');
+    renderAtual();
   };
 
   window.acabDispensarOS = async function (osId) {
@@ -556,7 +598,7 @@
   }
 
   window.acabRegistrarEntrada = async function () {
-    if (!exigirEdicao('lançar no estoque confecção')) return;
+    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
     const sku = norm(val('acab-ent-produto'));
     let p = produtoDoCampo('acab-ent');
     const tamanho = asTam(val('acab-ent-tam'));
@@ -594,7 +636,7 @@
   };
 
   window.acabRegistrarSaida = async function () {
-    if (!exigirEdicao('lançar no estoque confecção')) return;
+    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
     const sku = norm(val('acab-sai-produto'));
     const p = produtoDoCampo('acab-sai');
     const tamanho = asTam(val('acab-sai-tam'));
@@ -674,7 +716,7 @@
   }
 
   window.acabRegistrarAjuste = async function () {
-    if (!exigirEdicao('lançar no estoque confecção')) return;
+    if (!exigirEdicao('lançar no estoque confecção') || !exigirInicio()) return;
     const p = produtoPorId(val('acab-aj-produto'));
     const tamanho = asTam(val('acab-aj-tam'));
     const contado = parseInt(val('acab-aj-contado'), 10);
@@ -718,7 +760,7 @@
             <div class="field"><label>Estoque mínimo</label><input type="number" id="acab-cfg-min" min="0" step="1" value="${c.estoqueMin}"></div>
             <div class="field"><label>Estoque máximo <span class="muted">(0 = sem aviso)</span></label><input type="number" id="acab-cfg-max" min="0" step="1" value="${c.estoqueMax}"></div>
             <div class="field full"><label>Início do estoque</label><input type="datetime-local" id="acab-cfg-inicio" value="${inicioInput}">
-              <div class="field-hint">OS que entraram na etapa Estoque antes disto não lançam entrada (o estoque começou do zero aqui).</div></div>
+              <div class="field-hint">OS que entraram na etapa Estoque e lançamentos feitos antes disto não contam (o estoque começou do zero aqui). Para começar agora, use o botão no Estoque atual.</div></div>
           </div>
           <button class="btn primary" onclick="acabSalvarCfg()">Salvar</button>
         </div>
@@ -1049,7 +1091,7 @@
   window.acabErpCadastrar = v => { if (_erp) _erp.cadastrar = !!v; renderErp(); };
   window.acabErpCancelar = () => { _erp = null; renderErp(); };
   window.acabErpConfirmar = async function () {
-    if (!_erp || !exigirEdicao('importar saídas do ERP')) return;
+    if (!_erp || !exigirEdicao('importar saídas do ERP') || !exigirInicio()) return;
     const data = _erp.data;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return toast('Informe a data das saídas', 'err');
     const pl = planoErp(_erp.rows, !!_erp.cadastrar);
@@ -1112,7 +1154,6 @@
     const fn = TELAS[page];
     if (!fn) return;
     try { fn(); } catch (e) { console.warn('Estoque confecção', page, e); }
-    garantirInicio().then(marcou => { if (marcou) { try { fn(); } catch (e) { } } });
   };
 
   /* OS AVISOS DO SINO (21/10/2026): a coluna Avisar da área "Estoque
