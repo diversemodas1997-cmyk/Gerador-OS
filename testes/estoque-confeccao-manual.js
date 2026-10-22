@@ -205,6 +205,28 @@ const CAT = [{ item: 'CM.LISA-PRE', tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAM
     ok('30. depois de iniciada, a tela mostra quando e oferece reiniciar', /Contagem iniciada em/.test(pe) && /Reiniciar contagem/.test(pe));
   }
 
+  console.log('\n-- os SKUs do programa entram sozinhos (22/10/2026) --');
+  {
+    const st = estado();
+    st.desenhos = [{ id: 'd1', desc: 'Camiseta lisa preta', skuLinha: 'CM.LISA-PRE' }, { id: 'd2', desc: 'Calça', skuLinha: 'CJM' }];
+    st.ordens = [{ id: 'o1', os: '0700', modeloNome: 'Bermuda moletom', etapas: [] }];
+    const daOS = { skus: o => (o.id === 'o1' ? ['BM.LISA-BEGE'] : []) };
+    globalThis.podeGravar = () => true;
+    const u = carrega(st, CAT, true, daOS);
+    u.window.renderEstoqueConfeccao('acab-mov');
+    await new Promise(r => setTimeout(r, 0));
+    const skus = st.acabProdutos.map(p => p.sku).sort().join(',');
+    ok('31. abrir a tela cadastra os SKUs dos desenhos e das OS (a linha sozinha não)', skus === 'BM.LISA-BEGE,CM.LISA-PRE', skus);
+    const pre = st.acabProdutos.find(p => p.sku === 'CM.LISA-PRE');
+    ok('32. com a descrição do catálogo, linha, cor e tamanhos', pre.descricao === 'CAMISETA BÁSICA PRETO' && pre.linha === 'CM.LISA' && pre.cor === 'PRE' && pre.tamanhos.includes('G3') && pre.origem === 'programa', pre);
+    ok('33. e o aviso "Nenhum SKU cadastrado" some', !/Nenhum SKU cadastrado/.test(u.doc.els['acab-mov-painel'].innerHTML));
+    const antes = u.gravou.length;
+    u.window.renderEstoqueConfeccao('acab-mov');
+    await new Promise(r => setTimeout(r, 0));
+    ok('34. sem SKU novo, não grava de novo', u.gravou.length === antes && st.acabProdutos.length === 2);
+    delete globalThis.podeGravar;
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntodos os testes passaram');
   process.exit(falhas ? 1 : 0);
 })();

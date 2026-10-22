@@ -383,7 +383,7 @@
   };
   window.acabTrocarProduto = trocarProduto;
 
-  const semSkus = () => `<div class="info-box">Nenhum SKU cadastrado ainda. Cadastre em <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a> — dá para trazer a lista inteira do catálogo de uma vez.</div>`;
+  const semSkus = () => `<div class="info-box">Nenhum SKU cadastrado ainda. Os SKUs dos desenhos técnicos e das OS entram sozinhos quando alguém que edita esta área abre a tela — ou <a href="#" onclick="acabSincronizarSkus();return false;">sincronize agora</a>. O catálogo inteiro vem por <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`;
 
   /* ================================================= TELA: ESTOQUE ATUAL */
   const filtro = { busca: '', linha: '', status: '' };
@@ -541,7 +541,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>' : '';
     const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
     box.innerHTML = `${listaSkus()}
-      ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU cadastrado ainda. A entrada cadastra o SKU digitado (com os tamanhos da linha); para trazer a lista inteira do catálogo de uma vez, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
+      ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU cadastrado ainda. Os SKUs dos desenhos técnicos e das OS entram sozinhos quando alguém que edita esta área abre a tela — ou <a href="#" onclick="acabSincronizarSkus();return false;">sincronize agora</a>. A entrada também cadastra o SKU digitado; para trazer o catálogo inteiro, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
       <div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Registrar entrada</h2>
@@ -749,6 +749,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
     const nCat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus.length : 0;
     const faltamCat = nCat ? catalogoSkus.filter(s => s && s.item && !produtoPorSku(s.item)).length : 0;
+    const nProg = [...skusDoPrograma().keys()].filter(k => !produtoPorSku(k)).length;
     const inicioLocal = c.inicio ? new Date(c.inicio) : null;
     const pad = n => String(n).padStart(2, '0');
     const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
@@ -767,6 +768,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Trazer os SKUs</h2>
           <div class="muted" style="font-size:12px;margin-bottom:8px;">O catálogo que o Estoque-Confeccao publicou tem <b>${fmtN(nCat)}</b> SKUs${nCat ? `, dos quais <b>${fmtN(faltamCat)}</b> ainda não estão aqui` : ' (não chegou nesta sessão)'}. Trazer cria só os que faltam, com os tamanhos P ao G3 (2 ao 16 na linha infantil) e sem preço — o código do ERP entra sozinho na primeira importação de saídas.</div>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Os SKUs do <b>programa</b> (o SKU completo dos desenhos técnicos e o de cada OS: linha + sigla da cor) entram sozinhos ao abrir estas telas${nProg ? ` — <b>${fmtN(nProg)}</b> ainda faltam` : ''}.</div>
+          <button class="btn" onclick="acabSincronizarSkus()" title="Cadastra os SKUs dos desenhos técnicos e das OS que ainda não estão aqui">↻ Sincronizar SKUs do programa</button>
           <button class="btn" onclick="acabImportarCatalogo()" ${faltamCat ? '' : 'disabled'}>Trazer ${fmtN(faltamCat)} SKUs do catálogo</button>
           <button class="btn primary" onclick="acabAbrirProduto()">+ Cadastrar SKU</button>
         </div>
@@ -1154,6 +1157,58 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const fn = TELAS[page];
     if (!fn) return;
     try { fn(); } catch (e) { console.warn('Estoque de produtos', page, e); }
+    sincronizarSkusPrograma(true).then(n => { if (n) { try { fn(); } catch (e) { } } });
+  };
+
+  /* OS SKUs DO PROGRAMA ENTRAM SOZINHOS (22/10/2026, Junior: "faça a
+     sincronização dos sku do programa para corrigir o aviso: Nenhum SKU
+     cadastrado ainda"). O estoque começou do zero e a lista de SKUs também: o
+     catálogo do Render só chegava apertando "Trazer", e enquanto ninguém
+     apertava a tela dizia que não havia SKU — com o programa cheio deles.
+     Os SKUs que o PROGRAMA já define:
+       · o SKU completo do desenho técnico (skuLinha com traço, "CM.LISA-PRE");
+       · o de cada OS (skusDaOS: linha do modelo/desenho + sigla da cor), que é
+         o mesmo que a OS usa para lançar a entrada quando chega ao Estoque.
+     Só a combinação que existe entra — a linha sozinha (CJM) não é cruzada
+     com as 50 cores. O que já está cadastrado não é tocado. A descrição vem do
+     catálogo quando ele tem o SKU; senão, do desenho ou do modelo da OS.
+     Roda ao abrir as telas, por quem pode editar a área, e grava só se achar
+     SKU novo; o botão em Produtos faz o mesmo à mão. */
+  function skusDoPrograma() {
+    const achados = new Map();
+    const poe = (sku, descricao) => {
+      const s = norm(sku);
+      if (!/^[A-Z0-9][A-Z0-9.]*-[A-Z0-9.]+$/.test(s) || achados.has(s)) return;
+      achados.set(s, descricao || '');
+    };
+    (STATE.desenhos || []).forEach(d => { if (String(d.skuLinha || '').includes('-')) poe(d.skuLinha, d.desc); });
+    (STATE.ordens || []).forEach(o => {
+      if (typeof _statusOS === 'function' && _statusOS(o) === 'cancelado') return;
+      (typeof skusDaOS === 'function' ? skusDaOS(o) : []).forEach(s => poe(s, o.modeloNome));
+    });
+    return achados;
+  }
+  async function sincronizarSkusPrograma(silencioso) {
+    if (silencioso) {
+      if (!(typeof podeGravar === 'function' && podeGravar())) return 0;
+      if (!(currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('estoque-confeccao')))) return 0;
+    } else if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return 0;
+    const novos = [...skusDoPrograma()].filter(([sku]) => !produtoPorSku(sku));
+    if (!novos.length) { if (!silencioso) toast('Os SKUs do programa já estão todos aqui', 'ok'); return 0; }
+    novos.forEach(([sku, desc]) => {
+      const c = doCatalogo(sku);
+      const pt = partesSku(sku);
+      produtos().push({ id: uid(), codigo: null, sku, linha: norm(c && c.tipo) || pt.linha, cor: norm(c && c.cor) || pt.cor,
+        descricao: (c && c.descricao) || desc || '', tamanhos: tamsDaLinha((c && c.tipo) || pt.linha), preco: 0,
+        criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'programa' });
+    });
+    desfazerNomearAcao(`${novos.length} SKUs do programa sincronizados`);
+    try { await saveState('acabProdutos'); } catch (e) { console.warn('acab sincronizar SKUs', e); return 0; }
+    toast(`${novos.length} SKU(s) do programa cadastrados no Estoque de produtos`, 'ok');
+    return novos.length;
+  }
+  window.acabSincronizarSkus = async function () {
+    if (await sincronizarSkusPrograma(false)) renderAtual();
   };
 
   /* OS AVISOS DO SINO (21/10/2026): a coluna Avisar da área "Estoque
