@@ -156,8 +156,48 @@
         data: dataIso, qtd: q, custo: 0, osId: o.id, os: o.os || '', sku: p.sku, criadoEm: data.toISOString()
       }));
     });
+    // O que as entradas à mão já abateram (ver planoAbateOS) sai da OS.
+    const abatido = new Map();
+    movs().forEach(m => (m.tipo === 'entrada' && Array.isArray(m.abate) ? m.abate : []).forEach(a => {
+      const k = a.osId + '|' + m.produtoId + '|' + m.tamanho;
+      abatido.set(k, (abatido.get(k) || 0) + (Number(a.qtd) || 0));
+    }));
+    entradas.forEach(e => {
+      const ab = Math.min(e.qtd, abatido.get(e.osId + '|' + e.produtoId + '|' + e.tamanho) || 0);
+      if (ab > 0) { e.qtdOS = e.qtd; e.abatido = ab; e.qtd -= ab; }
+    });
     return { entradas, pendencias, semInicio: false };
   }
+
+  /* A ENTRADA À MÃO ABATE AS OS EM ESTOQUE (22/10/2026, Junior: "as entradas
+     manuais em estoque confecção abaterem as quantidades produzidas por OS que
+     estão com status Estoque, preferencialmente pela OS com data mais recente";
+     a data é a de quando a OS entrou em Estoque). Sem isso, a peça que a OS já
+     lançou e alguém lança de novo à mão contava duas vezes, e o único remédio
+     era dispensar a OS inteira.
+     Ao gravar, a entrada procura as OS do mesmo SKU e tamanho com saldo, da que
+     entrou em Estoque por último para a mais antiga, e guarda em `abate`
+     quanto tirou de cada uma ([{osId, os, qtd}]). O plano fica GRAVADO, não é
+     refeito a cada tela: refeito, a OS que chegasse depois "roubaria" o
+     abatimento das antigas. O que passar do saldo das OS entra como peça nova;
+     apagar a entrada devolve as peças às OS. */
+  function planoAbateOS(produtoId, tamanho, qtd, dasOS) {
+    const livres = (dasOS || _entradasDasOS()).entradas
+      .filter(e => e.produtoId === produtoId && e.tamanho === tamanho && e.qtd > 0)
+      .sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm)));
+    const plano = [];
+    let falta = qtd;
+    for (const e of livres) {
+      if (falta <= 0) break;
+      const q = Math.min(falta, e.qtd);
+      plano.push({ osId: e.osId, os: e.os, qtd: q });
+      falta -= q;
+    }
+    return plano;
+  }
+  const textoAbate = plano => plano.map(a => `OS ${a.os} (${fmtN(a.qtd)})`).join(', ');
+  // A caixa "abater das OS em Estoque" vem marcada; só desmarcada não abate.
+  const abaterMarcado = () => { const el = document.getElementById('acab-ent-abate'); return !(el && el.checked === false); };
 
   // Todos os movimentos: os lançados (STATE.acabMov) e os das OS.
   function todosMovs(dasOS) {
@@ -298,6 +338,15 @@
     }
     const disp = t ? saldos(todosMovs()).de(p.id, t).total : null;
     el.innerHTML = esc(p.descricao || '') + (disp != null ? `${p.descricao ? ' · ' : ''}em estoque no ${esc(t)}: <b>${fmtN(disp)}</b>` : '');
+    // Na entrada, o que ela vai abater das OS (ver planoAbateOS).
+    const qtd = parseInt(val('acab-ent-qtd'), 10);
+    if (prefixo === 'acab-ent' && t && abaterMarcado()) {
+      const plano = planoAbateOS(p.id, t, qtd > 0 ? qtd : Infinity);
+      const soma = plano.reduce((s, a) => s + a.qtd, 0);
+      if (plano.length) el.innerHTML += qtd > 0
+        ? `<div>Vai abater das OS em Estoque: <b>${esc(textoAbate(plano))}</b>${qtd > soma ? ` · ${fmtN(qtd - soma)} entra(m) como peça nova` : ''}</div>`
+        : `<div>OS em Estoque com saldo neste tamanho: ${esc(textoAbate(plano))}</div>`;
+    }
   }
   window.acabInfoSku = infoSku;
 
@@ -459,9 +508,11 @@
             <div class="field full"><label>SKU *</label>${campoSku('acab-ent', skuE)}</div>
             <div class="field"><label>Tamanho *</label><select id="acab-ent-tam" onchange="acabInfoSku('acab-ent')"></select></div>
             <div class="field"><label>Data *</label><input type="date" id="acab-ent-data" value="${hoje()}"></div>
-            <div class="field"><label>Quantidade *</label><input type="number" id="acab-ent-qtd" min="1" step="1"></div>
+            <div class="field"><label>Quantidade *</label><input type="number" id="acab-ent-qtd" min="1" step="1" oninput="acabInfoSku('acab-ent')"></div>
             <div class="field"><label>Custo unitário (R$)</label><input type="text" inputmode="decimal" id="acab-ent-custo" placeholder="0,00"></div>
             <div class="field full"><label>Observação</label><input type="text" id="acab-ent-obs" placeholder="Ex.: NF 1234 / fornecedor"></div>
+            <div class="field full"><label style="font-weight:normal;cursor:pointer;" title="Tira estas peças das OS do mesmo SKU e tamanho que já entraram em Estoque, da mais recente para a mais antiga — para não contar duas vezes. Desmarque para peça que não veio de OS (compra, devolução).">
+              <input type="checkbox" id="acab-ent-abate" checked onchange="acabInfoSku('acab-ent')"> abater das OS em Estoque (da mais recente para a mais antiga)</label></div>
           </div>
           <button class="btn primary" onclick="acabRegistrarEntrada()">+ Registrar entrada</button>
         </div>
@@ -482,7 +533,7 @@
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
         <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimas entradas</h2>
           <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Custo</th><th>Origem</th><th class="col-actions admin-only"></th></tr></thead><tbody>
-          ${ent.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td style="${mono}">${m.origem === 'os' ? '—' : fmtR(m.custo)}</td><td>${origem(m)}${m.obs ? `<div class="muted" style="font-size:10px;">${esc(m.obs)}</div>` : ''}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma entrada.</td></tr>'}
+          ${ent.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}${m.abatido ? `<div class="muted" style="font-size:10px;" title="A OS lançou ${fmtN(m.qtdOS)}; ${fmtN(m.abatido)} já tinham entrado à mão">de ${fmtN(m.qtdOS)} · −${fmtN(m.abatido)} à mão</div>` : ''}</td><td style="${mono}">${m.origem === 'os' ? '—' : fmtR(m.custo)}</td><td>${origem(m)}${m.obs ? `<div class="muted" style="font-size:10px;">${esc(m.obs)}</div>` : ''}${Array.isArray(m.abate) && m.abate.length ? `<div class="muted" style="font-size:10px;">abateu ${esc(textoAbate(m.abate))}</div>` : ''}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma entrada.</td></tr>'}
           </tbody></table></div></div>
         <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimas saídas</h2>
           <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th>Destino</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Valor</th><th class="col-actions admin-only"></th></tr></thead><tbody>
@@ -530,11 +581,14 @@
       produtos().push(novo);
       p = novo;
     }
-    movs().push(novoMov({ tipo: 'entrada', produtoId: p.id, tamanho, data: val('acab-ent-data') || hoje(), qtd, custo, obs: val('acab-ent-obs').trim() }));
+    const plano = abaterMarcado() ? planoAbateOS(p.id, tamanho, qtd) : [];
+    const mov = novoMov({ tipo: 'entrada', produtoId: p.id, tamanho, data: val('acab-ent-data') || hoje(), qtd, custo, obs: val('acab-ent-obs').trim() });
+    if (plano.length) mov.abate = plano;
+    movs().push(mov);
     desfazerNomearAcao(`entrada de ${qtd} ${p.sku} ${tamanho}`);
     if (novo) await saveState('acabProdutos');
     await saveState('acabMov');
-    toast(`Entrada: ${qtd} × ${p.sku} ${tamanho}${novo ? ' (SKU cadastrado)' : ''}`, 'ok');
+    toast(`Entrada: ${qtd} × ${p.sku} ${tamanho}${novo ? ' (SKU cadastrado)' : ''}${plano.length ? ' · abateu ' + textoAbate(plano) : ''}`, 'ok');
     const q = document.getElementById('acab-ent-qtd'); if (q) q.value = '';
     renderMovimentos();
   };
@@ -567,7 +621,8 @@
     if (!m) return;
     const p = produtoPorId(m.produtoId);
     const nome = m.tipo === 'entrada' ? 'a entrada' : m.tipo === 'saida' ? 'a saída' : 'o ajuste';
-    if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?`)) return;
+    const devolve = Array.isArray(m.abate) && m.abate.length ? `\n\nAs peças que ela abateu voltam para: ${textoAbate(m.abate)}.` : '';
+    if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?${devolve}`)) return;
     STATE.acabMov = movs().filter(x => x.id !== id);
     desfazerNomearAcao(`${nome} de ${p ? p.sku : '?'} ${m.tamanho} apagada no Estoque confecção`);
     await saveState('acabMov');

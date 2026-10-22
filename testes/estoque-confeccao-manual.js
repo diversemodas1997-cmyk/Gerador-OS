@@ -41,7 +41,7 @@ function pagina() {
   return { getElementById: el, querySelector: () => null, els };
 }
 
-function carrega(STATE, catalogo, respostaConfirm) {
+function carrega(STATE, catalogo, respostaConfirm, daOS) {
   const window = {};
   const doc = pagina();
   const gravou = [], toasts = [], foi = [];
@@ -58,7 +58,7 @@ function carrega(STATE, catalogo, respostaConfirm) {
   new Function('window', 'STATE', 'formatDate', 'esc', 'uid', 'totaisPorTamanhoTomOS', 'skusDaOS', '_statusOS',
     'catalogoSkus', 'currentRole', mod)(
     window, STATE, iso => iso, s => String(s == null ? '' : s), () => 'id_' + (++n),
-    () => ({ colTotal: () => 0 }), () => [], () => '', catalogo || [], 'admin');
+    (daOS && daOS.totais) || (() => ({ colTotal: () => 0 })), (daOS && daOS.skus) || (() => []), () => '', catalogo || [], 'admin');
   doc.getElementById('acab-mov-painel');
   doc.getElementById('acab-estoque-painel');
   return { window, doc, gravou, toasts, foi };
@@ -139,6 +139,44 @@ const CAT = [{ item: 'CM.LISA-PRE', tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAM
      && t.doc.els['acab-sai-produto'].value === 'BM.MOL-CIN' && t.doc.els['acab-sai-tam'].value === 'G' && pagina.foco === 'acab-sai-qtd',
      [t.doc.els['acab-sai-produto'].value, t.doc.els['acab-sai-tam'].value, pagina.foco]);
   ok('17. e mostra quanto há no tamanho', /em estoque no G: <b>5<\/b>/.test(t.doc.els['acab-sai-info'].innerHTML), t.doc.els['acab-sai-info'].innerHTML);
+
+  console.log('\n-- a entrada à mão abate as OS em Estoque (22/10/2026) --');
+  {
+    const st = estado();
+    st.acabProdutos = [{ id: 'pp', sku: 'CM.LISA-PRE', linha: 'CM.LISA', cor: 'PRE', tamanhos: ['P', 'M', 'G'] }];
+    // Duas OS em Estoque no M: a 0601 entrou por último (22/10), a 0598 antes (21/10).
+    const osE = (id, num, quando, m) => ({ id, os: num, etapas: ['Corte', 'Estoque'], _m: m,
+      progresso: { etapasCheck: { Estoque: true }, etapasSeq: { Estoque: Date.parse(quando) } } });
+    st.ordens = [osE('o98', '0598', '2026-10-21T15:00:00Z', 10), osE('o01', '0601', '2026-10-22T10:00:00Z', 8)];
+    const daOS = { totais: o => ({ colTotal: k => (k === 'm' ? o._m : 0) }), skus: () => ['CM.LISA-PRE'] };
+    const u = carrega(st, CAT, true, daOS);
+    const c = (id, v) => { u.doc.getElementById(id).value = v; };
+    u.window.renderEstoqueConfeccao('acab-mov');
+    c('acab-ent-produto', 'CM.LISA-PRE'); u.window.acabTrocarProduto('acab-ent');
+    c('acab-ent-tam', 'M'); c('acab-ent-qtd', '12'); u.window.acabInfoSku('acab-ent');
+    ok('18. a tela avisa o que vai abater, da OS mais recente para a mais antiga',
+       /Vai abater das OS em Estoque: <b>OS 0601 \(8\), OS 0598 \(4\)<\/b>/.test(u.doc.els['acab-ent-info'].innerHTML), u.doc.els['acab-ent-info'].innerHTML);
+    await u.window.acabRegistrarEntrada();
+    const m = st.acabMov[0];
+    ok('19. a entrada grava o abatimento', JSON.stringify(m.abate) === JSON.stringify([{ osId: 'o01', os: '0601', qtd: 8 }, { osId: 'o98', os: '0598', qtd: 4 }]), m.abate);
+    u.window.renderEstoqueConfeccao('acab-estoque');
+    ok('20. o saldo não conta duas vezes: 18 das OS + 12 à mão − 12 abatidas = 18',
+       /font-weight:700;">18</.test(u.doc.els['acab-estoque-painel'].innerHTML), u.doc.els['acab-estoque-painel'].innerHTML.match(/font-weight:700;[^<]*</g));
+    u.window.renderEstoqueConfeccao('acab-mov');
+    const pm = u.doc.els['acab-mov-painel'].innerHTML;
+    ok('21. a lista mostra a OS abatida e a entrada que abateu', /de 10 · −4 à mão/.test(pm) && /abateu OS 0601 \(8\), OS 0598 \(4\)/.test(pm));
+    c('acab-ent-produto', 'CM.LISA-PRE'); u.window.acabTrocarProduto('acab-ent');
+    c('acab-ent-tam', 'M'); c('acab-ent-qtd', '10');
+    await u.window.acabRegistrarEntrada();
+    ok('22. o que passa do saldo das OS entra como peça nova (abate só as 6 que restavam)',
+       JSON.stringify(st.acabMov[1].abate) === JSON.stringify([{ osId: 'o98', os: '0598', qtd: 6 }]), st.acabMov[1].abate);
+    c('acab-ent-qtd', '3'); u.doc.getElementById('acab-ent-abate').checked = false;
+    await u.window.acabRegistrarEntrada();
+    ok('23. com a caixa desmarcada não abate', st.acabMov.length === 3 && !st.acabMov[2].abate, st.acabMov[2]);
+    st.acabMov.splice(0, 1);
+    u.window.renderEstoqueConfeccao('acab-mov');
+    ok('24. apagar a entrada devolve as peças às OS', !/−4 à mão/.test(u.doc.els['acab-mov-painel'].innerHTML) && /de 10 · −6 à mão/.test(u.doc.els['acab-mov-painel'].innerHTML));
+  }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntodos os testes passaram');
   process.exit(falhas ? 1 : 0);
