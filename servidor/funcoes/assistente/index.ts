@@ -283,7 +283,20 @@ Deno.serve(async (req: Request) => {
   const ctrl = new AbortController();
   const prazo = setTimeout(() => ctrl.abort(), 55_000);   // o nginx corta em 60s
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const pedido = JSON.stringify({
+      model: await modelo(),
+      max_tokens: 2000,
+      system: sistema(corpo.contexto),
+      tools: FERRAMENTAS,
+      messages: corpo.mensagens,
+    });
+    // Falha de CONEXAO (recusada, derrubada, rede fora) tenta de novo: em
+    // 23/10/2026 uma "Connection refused" isolada chegou ao usuario como erro,
+    // e o teste seguinte, do mesmo container, passou 13 vezes em 13. Ela
+    // acontece antes de o pedido chegar a Anthropic, entao repetir nao cobra
+    // nada em dobro. Resposta de erro da API (4xx/5xx) e prazo estourado NAO
+    // repetem -- seguem para o tratamento de sempre.
+    const enviar = () => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: ctrl.signal,
       headers: {
@@ -291,14 +304,20 @@ Deno.serve(async (req: Request) => {
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        model: await modelo(),
-        max_tokens: 2000,
-        system: sistema(corpo.contexto),
-        tools: FERRAMENTAS,
-        messages: corpo.mensagens,
-      }),
+      body: pedido,
     });
+    let r: Response;
+    for (let tentativa = 1; ; tentativa++) {
+      try {
+        r = await enviar();
+        break;
+      } catch (e) {
+        const deConexao = (e as any)?.name !== 'AbortError' &&
+          /connect|refused|reset|unreachable|dns|network|os error/i.test(String((e as any)?.message || e));
+        if (!deConexao || tentativa >= 3) throw e;
+        await new Promise((ok) => setTimeout(ok, tentativa * 1500));
+      }
+    }
     const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = d?.error?.message || `erro ${r.status}`;
