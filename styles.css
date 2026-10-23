@@ -5049,3 +5049,20 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 .cad-conf span.ok { color: #2e7d4f; }
 .cad-conf span.rec { color: #a86e0c; }
 .cad-conf span.obrig { color: var(--alert, #c0392b); font-weight: 600; }
+
+/* Novo cadastro, passo a passo (ver NC_TIPOS no app.js). */
+.nc-grupo { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 12px 0 6px; }
+.nc-tipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.nc-tipo { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 2px; background: transparent; color: inherit; font: inherit; }
+.nc-tipo:hover { border-color: var(--ink-3); }
+.nc-tipo span { font-size: 12px; color: var(--ink-3); }
+.nc-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.nc-trilha { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.nc-trilha button { min-width: 28px; height: 26px; padding: 0 6px; border: 1px solid var(--line); background: transparent; color: var(--ink-3); cursor: pointer; font-size: 12px; }
+.nc-trilha button.feito { color: inherit; border-color: var(--ink-3); }
+.nc-trilha button.atual { background: var(--ink, #222); color: var(--paper, #fff); border-color: var(--ink, #222); }
+.nc-ficha:has(#nc-campos:empty) { display: none; }
+.nc-ficha .form-grid { grid-template-columns: 1fr; }
+.nc-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.nc-nav:empty { display: none; }

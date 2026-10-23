@@ -2270,7 +2270,7 @@ const AREAS_SO_VISAO = [
    da área já é a tela. As folhas de impressão seguem a tela de onde saem. */
 const TELAS_DA_AREA = {
   'os': [['lista-os', 'Ordens de Serviço - OS (lista e folha)'], ['nova-os', 'Nova OS / editar OS (formulário)']],
-  'cadastros': [['cad-grades', 'Grades'], ['cad-marcas', 'Marcas'], ['cad-colecoes', 'Coleções'],
+  'cadastros': [['cad-novo', 'Novo cadastro (passo a passo)'], ['cad-grades', 'Grades'], ['cad-marcas', 'Marcas'], ['cad-colecoes', 'Coleções'],
     ['cad-modelos', 'Modelos'], ['cad-linhas', 'Linhas'], ['cad-bases', 'Bases'],
     ['cad-blocos', 'Blocos / Revisões'], ['cad-equipe', 'Equipe'], ['cad-funcoes', 'Funções'],
     ['cad-etapas', 'Etapas de produção'], ['cad-componentes', 'Componentes'], ['cad-tecidos', 'Tecidos'],
@@ -4811,6 +4811,7 @@ function goto(page) {
   if (page === 'cad-funcoes') renderFuncoes();
   if (page === 'cad-etapas') renderEtapasCad();
   if (page === 'cad-componentes') renderComponentesCad();
+  if (page === 'cad-novo') renderNovoCadastro();
   if (page === 'lista-os') {
     // Consome o grupo armado pelo atalho do Ranking (null nos demais caminhos).
     _listaOsGrupo = _listaOsGrupoPendente;
@@ -5072,6 +5073,13 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
   // styles.css, bloco de PAPÉIS) e sem o botão Salvar.
   // Só a ficha EM BRANCO é barrada: "novo" não tem o que ler.
   if (!editId && !exigirEdicao('criar cadastros')) return;
+  // A ficha do Novo cadastro usa os mesmos ids desta: abrir outra ficha a
+  // descarta, para não haver dois "m-nome" na página (ver ncEscolher).
+  if (origin !== 'novo-cadastro' && typeof _nc !== 'undefined' && _nc && !_nc.feito) {
+    const nc = document.getElementById('nc-campos');
+    if (nc) nc.innerHTML = '';
+    _nc = null;
+  }
   cadastroContext = { tipo, editId, origin };
   const title = document.getElementById('modal-cad-title');
   const box = document.getElementById('modal-cad-fields');
@@ -7845,6 +7853,8 @@ async function salvarCadastro() {
         if (tipo === 'desenho') sincCodigoDesenho('desenho');
       }
     }
+  } else if (cadastroContext.origin === 'novo-cadastro') {
+    _ncConcluido(item);
   } else if (cadastroContext.origin === 'lista-os') {
     // VEIO DA LISTA DE OS (o botão "grade" da linha): salvar tem de devolver a
     // pessoa à lista onde ela estava, e não jogá-la no cadastro de grades.
@@ -8211,6 +8221,181 @@ async function criarNovaCorDesenho() {
   toast(`Desenho ${codigo} criado${novas.length ? ` · ${novas.length} cor(es) nova(s) cadastrada(s)` : ''}. Troque a imagem e confira a ficha`, 'ok');
   goto('cad-desenhos');
   openCadastroModal('desenho', copia.id);
+}
+
+// ============ NOVO CADASTRO, PASSO A PASSO ============
+//
+// (23/10/2026, Junior: "crie um item na barra lateral com nome Novo cadastro
+// [...] onde o usuário é guiado passo a passo inserindo as informações de
+// novo cadastro, contemplando todos os tipos de cadastro do programa".)
+// Não é um formulário à parte: é a MESMA ficha de cada cadastro
+// (openCadastroModal), tirada do modal e posta nesta tela, mostrada um campo
+// — ou um bloco, como os componentes do desenho — por vez. Salvar é o mesmo
+// salvarCadastro, com as mesmas regras e a mesma conferência
+// (CAD_CONFERENCIA). Assim um campo novo numa ficha aparece aqui sozinho.
+const NC_TIPOS = [
+  { grupo: 'Produto', k: 'desenho', rotulo: 'Desenho técnico', desc: 'A peça: imagem, SKU, modelo, cores, componentes, aviamentos e etapas', page: 'cad-desenhos' },
+  { grupo: 'Produto', k: 'modelo', rotulo: 'Modelo', desc: 'O tipo de peça, o SKU da linha e os vínculos padrão', page: 'cad-modelos' },
+  { grupo: 'Produto', k: 'grade', fem: true, rotulo: 'Grade de tamanhos', desc: 'Tamanhos, fases do enfesto, comprimentos e larguras', page: 'cad-grades' },
+  { grupo: 'Produto', k: 'componente', rotulo: 'Componente', desc: 'Parte da peça: frente, costas, manga, punho', page: 'cad-componentes' },
+  { grupo: 'Produto', k: 'colecao', fem: true, rotulo: 'Coleção', desc: 'Nome e temporada', page: 'cad-colecoes' },
+  { grupo: 'Produto', k: 'marca', fem: true, rotulo: 'Marca / Griffe', desc: 'As marcas da empresa', page: 'cad-marcas' },
+  { grupo: 'Produto', k: 'linha', fem: true, rotulo: 'Linha', desc: 'Adulto, infantil…', page: 'cad-linhas' },
+  { grupo: 'Produto', k: 'base', fem: true, rotulo: 'Base', desc: 'O molde base', page: 'cad-bases' },
+  { grupo: 'Produto', k: 'bloco', rotulo: 'Bloco / Revisão', desc: 'A revisão do bloco de moldes', page: 'cad-blocos' },
+  { grupo: 'Matéria-prima', k: 'tecido', rotulo: 'Tecido', desc: 'Categoria, forma do pano, gramatura, largura e rolos', page: 'cad-tecidos' },
+  { grupo: 'Matéria-prima', k: 'cor', fem: true, rotulo: 'Cor', desc: 'A cor num tecido: nome, hex, sigla SKU e fornecedor', page: 'cad-cores' },
+  { grupo: 'Matéria-prima', k: 'fornecedor', rotulo: 'Fornecedor', desc: 'Razão social, CNPJ e contato', page: 'cad-fornecedores' },
+  { grupo: 'Matéria-prima', k: 'aviamento', tipo: 'material', cat: 'aviamento', rotulo: 'Aviamento', desc: 'O que vai na peça: etiqueta, cordão, ilhós', page: 'cad-materiais' },
+  { grupo: 'Matéria-prima', k: 'material', tipo: 'material', cat: 'material', rotulo: 'Material', desc: 'O que se gasta na produção', page: 'cad-materiais-prod' },
+  { grupo: 'Matéria-prima', k: 'peca', fem: true, tipo: 'material', cat: 'peca', rotulo: 'Peça de máquina', desc: 'Agulha, lançadeira…', page: 'cad-pecas' },
+  { grupo: 'Produção', k: 'equipe', rotulo: 'Membro da equipe', desc: 'Nome, unidade e função', page: 'cad-equipe' },
+  { grupo: 'Produção', k: 'funcao', fem: true, rotulo: 'Função', desc: 'O posto, as operações e o tempo de cada uma', page: 'cad-funcoes' },
+  { grupo: 'Produção', k: 'etapa', fem: true, rotulo: 'Etapa de produção', desc: 'Nome, ordem e as tarefas da etapa', page: 'cad-etapas' },
+  { grupo: 'Produção', k: 'operacao', fem: true, rotulo: 'Operação', desc: 'Lançada na agenda de Operações, não numa ficha — abre a tela dela', page: 'operacoes', soTela: true }
+];
+let _nc = null;   // { t: item de NC_TIPOS, passos: [{ titulo, els }], i, feito }
+const _ncTipo = k => NC_TIPOS.find(t => t.k === k);
+
+function renderNovoCadastro() {
+  const topo = document.getElementById('nc-topo'), nav = document.getElementById('nc-nav'), campos = document.getElementById('nc-campos');
+  if (!topo || !nav || !campos) return;
+  if (!_nc || _nc.feito) {
+    campos.innerHTML = '';
+    nav.innerHTML = '';
+    const feito = _nc && _nc.feito;
+    const grupos = [...new Set(NC_TIPOS.map(t => t.grupo))];
+    topo.innerHTML = (feito ? `<div class="info-box" style="margin-bottom:12px;border-left:3px solid #2e7d4f;">✓ ${esc(feito.rotulo)} cadastrad${feito.fem ? 'a' : 'o'}: <b>${esc(feito.nome)}</b>.
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn primary" onclick="ncEscolher('${feito.k}')">+ ${feito.fem ? 'Outra' : 'Outro'} ${esc(feito.rotulo.toLowerCase())}</button>
+          <button class="btn" onclick="goto('${feito.page}')">Ver a lista</button>
+        </div></div>` : '')
+      + `<div class="card"><h2 style="margin-top:0;font-size:15px;">1. O que você vai cadastrar?</h2>
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">Escolha o tipo. Em seguida o programa pede cada informação, uma de cada vez, e no fim mostra o que ficou faltando antes de salvar.</div>
+        ${grupos.map(g => `<div class="nc-grupo">${esc(g)}</div><div class="nc-tipos">${NC_TIPOS.filter(t => t.grupo === g).map(t =>
+          `<button type="button" class="nc-tipo" onclick="ncEscolher('${t.k}')"><b>${esc(t.rotulo)}</b><span>${esc(t.desc)}</span></button>`).join('')}</div>`).join('')}
+      </div>`;
+    return;
+  }
+  const { t, passos, i } = _nc;
+  const ultimo = i >= passos.length;   // a revisão
+  topo.innerHTML = `<div class="nc-cab">
+      <div><span class="muted" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;">Novo cadastro · ${esc(t.rotulo)}</span>
+        <h2 style="margin:2px 0 0;font-size:17px;">${ultimo ? 'Revisão' : `Passo ${i + 1} de ${passos.length} · ${esc(passos[i].titulo)}`}</h2></div>
+      <button class="btn" onclick="ncTrocarTipo()" title="Volta à escolha do tipo; o que foi preenchido aqui se perde">Trocar o tipo</button>
+    </div>
+    <div class="nc-trilha">${passos.map((p, j) => `<button type="button" class="${j === i ? 'atual' : j < i ? 'feito' : ''}" onclick="ncIr(${j})" title="${esc(p.titulo)}">${j + 1}</button>`).join('')}
+      <button type="button" class="${ultimo ? 'atual' : ''}" onclick="ncIr(${passos.length})" title="Revisão e salvar">✓</button></div>`;
+  passos.forEach((p, j) => p.els.forEach(el => { el.style.display = (ultimo || j === i) ? '' : 'none'; }));
+  nav.innerHTML = `<button class="btn" onclick="ncIr(${i - 1})" ${i === 0 ? 'disabled' : ''}>‹ Voltar</button>
+    ${ultimo ? `<button class="btn primary" onclick="ncSalvar()">Salvar ${esc(t.rotulo.toLowerCase())}</button>`
+      : `<button class="btn primary" onclick="ncProximo()">${i === passos.length - 1 ? 'Revisar ›' : 'Próximo ›'}</button>`}`;
+  atualizarConferenciaCad();
+  if (!ultimo) {
+    const f = passos[i].els[0] && passos[i].els[0].querySelector('input:not([type=hidden]):not([type=checkbox]),select,textarea');
+    if (f) setTimeout(() => { try { f.focus(); } catch (e) {} }, 30);
+  }
+}
+
+// Os passos saem da própria ficha: cada campo da grade de campos é um passo,
+// e cada bloco (vínculos, componentes, aviamentos, etapas…) é outro. Os avisos
+// e a conferência ficam sempre à vista.
+function _ncMontarPassos(raiz) {
+  const passos = [];
+  const tituloDe = el => {
+    const l = el.querySelector('label');
+    const t = ((l && l.textContent) || 'Informações').replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+    return t.length > 40 ? t.split(/[(—]/)[0].trim() : t;
+  };
+  // A lista de etapas é feita de labels com caixa de marcar: não é seção.
+  const ehSecao = el => el.tagName === 'DIV' && !el.classList.contains('form-grid') && !el.classList.contains('field-hint')
+    && !el.classList.contains('info-box') && el.firstElementChild && el.firstElementChild.tagName === 'LABEL'
+    && !el.firstElementChild.querySelector('input');
+  const blocoDe = el => {
+    const secoes = [...el.children].filter(ehSecao);
+    if (!secoes.length) { passos.push({ titulo: tituloDe(el), els: [el] }); return; }
+    const cab = [...el.children].filter(c => !secoes.includes(c));
+    if (cab.length) passos.push({ titulo: tituloDe(cab[0].tagName === 'LABEL' ? el : cab[0]), els: cab });
+    secoes.forEach(blocoDe);
+  };
+  [...raiz.children].forEach(c => {
+    if (c.id === 'm-cad-conf' || c.classList.contains('info-box')) return;
+    if (c.classList.contains('form-grid')) {
+      [...c.children].forEach(f => passos.push({ titulo: tituloDe(f), els: [f] }));
+    } else if (c.tagName === 'DIV') blocoDe(c);
+    else passos.push({ titulo: tituloDe(c), els: [c] });
+  });
+  return passos.filter(p => p.els.length);
+}
+
+function ncEscolher(k) {
+  const t = _ncTipo(k);
+  if (!t) return;
+  if (t.soTela) { goto(t.page); return; }
+  if (!exigirEdicao('criar cadastros')) return;
+  const campos = document.getElementById('nc-campos');
+  if (!campos) return;
+  if (t.cat) _matCategoriaNova = t.cat;
+  campos.innerHTML = '';
+  _nc = null;
+  openCadastroModal(t.tipo || t.k, null, 'novo-cadastro');
+  // A ficha montada no modal vem para esta tela (os nós, com os eventos), e o
+  // modal fecha. O que a ficha monta depois (fases, operações, tarefas) é
+  // achado pelo id e cai aqui também.
+  const box = document.getElementById('modal-cad-fields');
+  while (box.firstChild) campos.appendChild(box.firstChild);
+  box.oninput = box.onchange = null;
+  campos.oninput = campos.onchange = atualizarConferenciaCad;
+  closeModal('modal-cad');
+  _nc = { t, passos: [], i: 0 };
+  setTimeout(() => {
+    if (!_nc || _nc.t !== t) return;
+    _nc.passos = _ncMontarPassos(campos);
+    renderNovoCadastro();
+  }, 60);
+}
+function ncIr(j) {
+  if (!_nc) return;
+  _nc.i = Math.max(0, Math.min(j, _nc.passos.length));
+  renderNovoCadastro();
+  const sec = document.querySelector('section.page[data-page="cad-novo"]');
+  if (sec) sec.scrollIntoView({ block: 'start' });
+}
+// O campo marcado com * no passo atual não pode ficar em branco.
+function ncProximo() {
+  if (!_nc) return;
+  const p = _nc.passos[_nc.i];
+  for (const el of (p ? p.els : [])) {
+    const campos = el.classList.contains('field') ? [el] : [...el.querySelectorAll('.field')];
+    for (const f of campos) {
+      const l = f.querySelector('label');
+      if (!l || !l.textContent.includes('*')) continue;
+      const vals = [...f.querySelectorAll('input:not([type=checkbox]):not([type=file]),select,textarea')].map(x => String(x.value || '').trim());
+      if (vals.length && !vals.some(Boolean)) {
+        toast('Preencha ' + l.textContent.replace(/\*/g, '').trim(), 'err');
+        const x = f.querySelector('input:not([type=hidden]),select,textarea');
+        if (x) x.focus();
+        return;
+      }
+    }
+  }
+  ncIr(_nc.i + 1);
+}
+function ncTrocarTipo() {
+  if (_nc && _nc.passos.length && !confirm('Voltar à escolha do tipo? O que foi preenchido aqui se perde.')) return;
+  _nc = null;
+  renderNovoCadastro();
+}
+async function ncSalvar() {
+  if (!_nc || !cadastroContext || cadastroContext.origin !== 'novo-cadastro') return;
+  await salvarCadastro();
+}
+// Chamado pelo salvarCadastro quando a ficha veio daqui.
+function _ncConcluido(item) {
+  if (!_nc) return;
+  const t = _nc.t;
+  _nc = { feito: { k: t.k, rotulo: t.rotulo, fem: !!t.fem, page: t.page, nome: item.nome || [item.codigo, item.desc].filter(Boolean).join(' · ') } };
+  goto('cad-novo');
 }
 
 // ============ BUSCA NAS TELAS DE CADASTRO ============
