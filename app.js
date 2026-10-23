@@ -15464,34 +15464,59 @@ function renderExpedicaoPlano() {
       </div>
     </div>`;
 
-  // OSs alocadas PELA METADE: parte do lote já foi para alguma expedição, mas
-  // sobraram pacotes esperando. É o rastro do lote parcial — sem esta lista, os
-  // pacotes que ficaram para trás sumiriam da vista.
-  const remanescentes = (STATE.ordens || [])
-    .map(o => ({ o, rem: _expRemanescenteOS(o) }))
-    .filter(x => x.rem.parcial)
-    .sort((a, b) => String(b.o.os || '').localeCompare(String(a.o.os || ''), undefined, { numeric: true }));
-  const remanescentesHtml = remanescentes.length ? `
+  // AS OE CRIADAS (23/10/2026, Junior: "insira uma lista de OE criadas no
+  // lugar do quadro OSs com pacotes a alocar"). Toda expedição que já ganhou
+  // número, da mais nova para a mais antiga, fora do período navegado acima.
+  // A OS alocada em parte continua com o selo "faltam" na própria carga.
+  //
+  // O número mora nas cargas (ver _oeNumeroDe); a ocorrência é que sabe da
+  // remarcação e do cancelamento, por isso a lista parte dela, no intervalo
+  // que as cargas numeradas cobrem.
+  const cargasOE = (STATE.expedicaoCargas || []).filter(c => c && Number(c.oe) > 0 && c.data);
+  let oesCriadas = [];
+  if (cargasOE.length) {
+    const datas = cargasOE.map(c => c.data).sort();
+    oesCriadas = ocorrenciasExpedicao(_expAddDias(datas[0], -7), _expAddDias(datas[datas.length - 1], 60))
+      .map(oc => ({ oc, n: _oeNumeroDe(oc.janela.id, oc.dataOrig) }))
+      .filter(x => x.n > 0)
+      .map(x => {
+        const ida = resumoPernaExpedicao(x.oc, 'ida'), volta = resumoPernaExpedicao(x.oc, 'volta');
+        // Quem criou: a carga mais antiga da expedição (o primeiro "alocar").
+        const primeira = cargasOE
+          .filter(c => c.janelaId === x.oc.janela.id && c.data === x.oc.dataOrig && c.criadaEm)
+          .sort((a, b) => String(a.criadaEm).localeCompare(String(b.criadaEm)))[0];
+        return { ...x, ida, volta, primeira };
+      })
+      .sort((a, b) => b.n - a.n);
+  }
+  const oesCriadasHtml = oesCriadas.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">OSs com pacotes a alocar <span class="exp-badge baixo">${remanescentes.length}</span></h2>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Estas OSs foram alocadas <b>em parte</b>: já entraram em alguma expedição, mas sobraram pacotes (tamanho × tonalidade) esperando embarcar. Os produtos desses pacotes continuam no campo em que a OS está — só o que foi alocado passou para <b>Em trânsito</b>. Use <b>alocar restante</b> para pôr o que falta numa expedição — já vem com os pacotes que sobraram marcados.</div>
+      <h2 style="margin:0 0 8px;font-size:14px;">OE criadas <span class="exp-badge info">${oesCriadas.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Todas as expedições que já têm número, da mais nova para a mais antiga — inclusive fora do período mostrado acima. Use <b>abrir</b> para ir ao dia da OE.</div>
+      <div style="max-height:420px;overflow:auto;">
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>OS</th><th>Modelo</th><th style="text-align:right;">Alocado</th><th>Faltam</th></tr></thead>
+        <thead><tr><th class="col-actions">Ações</th><th>OE</th><th>Data</th><th>Janela</th><th style="text-align:right;">OS ida / volta</th><th style="text-align:right;">Produtos</th><th style="text-align:right;">Volumes</th><th>Criada</th></tr></thead>
         <tbody>
-          ${remanescentes.map(({ o, rem }) => `
-            <tr>
-      <td class="col-actions row-actions">
-                <button onclick="verOS('${esc(o.id)}')">ver OS</button>
-                <button class="edit" onclick="abrirModalExpCarga('','','ida','${esc(o.id)}')">alocar restante</button>
+          ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => `
+            <tr${oc.cancelada ? ' style="opacity:.55;"' : ''}>
+              <td class="col-actions row-actions">
+                <button onclick="irParaOeDia('${esc(oc.data)}')">abrir</button>
               </td>
-              <td><strong>${esc(o.os) || '—'}</strong></td>
-              <td>${esc(nomePecaOS(o)) || '—'}</td>
-              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${fmt(rem.alocado)}/${fmt(rem.total)}</td>
-              <td style="font-size:12px;"><span class="exp-badge baixo">${fmt(rem.restante)}</span> ${esc(_expFaltamTexto(rem))}</td>
-
+              <td><span class="exp-oe-num">OE ${_oeFmt(n)}</span></td>
+              <td style="white-space:nowrap;">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}${
+                oc.remarcada ? ` <span class="exp-badge baixo" title="Remarcada de ${esc(formatDate(oc.dataOrig))}">remarcada</span>` : ''}${
+                oc.cancelada ? ' <span class="exp-badge alto">cancelada</span>' : ''}</td>
+              <td>${esc(oc.janela.nome) || 'Janela sem nome'}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(ida.itens.length)} / ${fmt(volta.itens.length)}</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(ida.pecas + volta.pecas)} un.</td>
+              <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(ida.volumes + volta.volumes)}</td>
+              <td style="font-size:12px;white-space:nowrap;">${primeira
+                ? `${esc(new Date(primeira.criadaEm).toLocaleDateString('pt-BR'))}${primeira.criadaPor ? ' · ' + esc(primeira.criadaPor) : ''}`
+                : '<span class="muted" title="Expedição numerada antes de as cargas guardarem quando e quem">—</span>'}</td>
             </tr>`).join('')}
         </tbody>
       </table>
+      </div>
     </div>` : '';
 
   // OSs com peças que ninguém colocou em carga nenhuma. É a lista que evita
@@ -15578,7 +15603,7 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + remanescentesHtml + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */
