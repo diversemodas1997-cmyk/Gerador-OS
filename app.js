@@ -2213,9 +2213,9 @@ const ACESSO_PADRAO = {
    Mora em STATE.meta.acessosVisao, ao lado de STATE.meta.acessos, e é a mesma
    tranca de TELA do resto (ver a nota em `_ehAdminNoServidor`).
 
-   As telas de cada área. Tela que não está aqui (Início, Configurações, as
-   folhas avulsas) é de todos. Ranking e Relatório de produção não têm o que
-   editar, mas têm o que esconder: entram como áreas só de visão. */
+   As telas de cada área. Tela que não está aqui (as folhas avulsas) é de
+   todos. Ranking e Relatório de produção não têm o que editar, mas têm o que
+   esconder: entram como áreas só de visão. */
 const VISAO_PAGINAS = {
   // O INÍCIO (21/10/2026, Junior: "insira também o início como item a ser
   // configurado como concedido para perfis"). Sem o Ver, a conta abre o
@@ -2234,11 +2234,17 @@ const VISAO_PAGINAS = {
   'compra': ['compra'],
   'ranking': ['ranking'],
   'relatorio-producao': ['relatorio-producao'],
-  'colorimetro': ['colorimetro']
+  'colorimetro': ['colorimetro'],
+  // CONFIGURAÇÕES (23/10/2026, Junior: o perfil Estoque não deve ver
+  // Configurações). O padrão segue sendo ver: só some de quem o admin
+  // desmarcar. O que ali grava (pastas, backup, contas) já tem trava própria
+  // nas áreas Dados e Contas; isto esconde a TELA.
+  'config': ['config']
 };
 const AREAS_SO_VISAO = [
   { k: 'inicio', rotulo: 'Início', desc: 'O painel de abertura: os cartões das fases, as contagens e os atalhos (só consulta)' },
   { k: 'ranking', rotulo: 'Ranking de produção', desc: 'O que a fábrica mais produz (só consulta)' },
+  { k: 'config', rotulo: 'Configurações', desc: 'A tela de Configurações: servidor, pastas, grades, backups e contas' },
 ];
 
 /* ========================================================= */
@@ -2421,8 +2427,10 @@ const VISAO_SEM_TELA = ['os-status', 'fila-os', 'dados', 'mensagens-todos'];
    todas as linhas, mas onde não há o que controlar ela fica cinza, com a dica.
    O Contas de acesso é sempre só do admin — por isso o Ver e o Editar dela
    também travam. */
-const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)' };
-const AVISAR_TRAVADO = { ranking: 'O Ranking não gera aviso', 'relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso' };
+const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)',
+  config: 'O que se edita em Configurações segue as áreas Dados e Contas' };
+const AVISAR_TRAVADO = { ranking: 'O Ranking não gera aviso', 'relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
+  config: 'Configurações não gera aviso' };
 
 /* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
    menos nas áreas de VISAO_CONCEDIDA, em que sem marcação não vê. */
@@ -2643,7 +2651,8 @@ function _diarioDaGravacao(key, antes, depois) {
 }
 
 // A primeira tela do menu que a conta vê — para onde vai quem não vê o Início.
-// Configurações é de todos, então sempre há para onde ir.
+// Sem nenhuma tela visível, Configurações é o último recurso (abre mesmo
+// escondida): melhor que uma tela em branco.
 function _primeiraPaginaVisivel() {
   const links = Array.from(document.querySelectorAll('.sidebar .nav-btn[data-page]'));
   const a = links.find(x => x.dataset.page !== 'home' && podeVerPagina(x.dataset.page));
