@@ -31,7 +31,8 @@
      · a publicação para a Contabilidade → vai junto do contabSnapshot que o
        Gerador-OS já grava (produtosAcabados, no mesmo formato do Render).
 
-   ONDE MORA: STATE.acabProdutos (os SKUs) e STATE.acabMov (entradas, saídas e
+   ONDE MORA: os SKUs são os do programa (desenhos, modelos e OS, lidos na
+   hora) mais STATE.acabProdutos (o que só o estoque tem), e STATE.acabMov (entradas, saídas e
    ajustes lançados aqui ou pelo ERP), mais STATE.meta.acabConfig (mínimo,
    máximo, início). As entradas das OS NÃO são gravadas: são calculadas da OS a
    cada desenho, e por isso não há como divergirem dela.
@@ -59,7 +60,49 @@
 
   /* ---------------------------------------------------------------- base */
   const lista = k => (Array.isArray(STATE[k]) ? STATE[k] : (STATE[k] = []));
-  const produtos = () => lista('acabProdutos');
+  /* OS SKUs SÃO LIDOS DO PROGRAMA, NÃO COPIADOS (23/10/2026, Junior: "não deve
+     ser um programa à parte do Gerador OS, mas receber a origem das
+     informações do mesmo lugar que todos os campos do programa recebem, para
+     não precisar ser sincronizado"). Antes, os SKUs dos desenhos e das OS eram
+     COPIADOS para STATE.acabProdutos ao abrir a tela (sincronizarSkusPrograma)
+     e, entre uma cópia e outra, o estoque não via o SKU novo.
+     Agora a lista é montada na hora: o que o programa define (skusDoPrograma:
+     desenho técnico, modelo e OS) mais o que só existe aqui (`cadastro()`:
+     SKU do catálogo, do ERP, digitado na entrada, e o código do ERP, o preço e
+     os tamanhos que alguém acertou à mão). O SKU do programa tem id fixo
+     ('sku:' + SKU); ele só é gravado no cadastro quando ganha algo próprio
+     daqui — um lançamento, um código, um preço (ver fixarProduto). */
+  const cadastro = () => lista('acabProdutos');
+  // A lista é refeita uma vez por rodada de código (não a cada busca de SKU).
+  let _produtosCache = null;
+  const esquecerProdutos = () => { _produtosCache = null; };
+  function produtos() {
+    if (_produtosCache) return _produtosCache;
+    const cad = cadastro();
+    const tem = new Set(cad.map(p => norm(p.sku)));
+    const virtuais = [];
+    skusDoPrograma().forEach((desc, sku) => {
+      if (tem.has(sku)) return;
+      const c = doCatalogo(sku);
+      const pt = partesSku(sku);
+      virtuais.push({ id: 'sku:' + sku, codigo: null, sku, linha: norm(c && c.tipo) || pt.linha, cor: norm(c && c.cor) || pt.cor,
+        descricao: (c && c.descricao) || desc || '', tamanhos: tamsDaLinha((c && c.tipo) || pt.linha), preco: 0,
+        origem: 'programa', doPrograma: true });
+    });
+    _produtosCache = cad.concat(virtuais);
+    Promise.resolve().then(esquecerProdutos);
+    return _produtosCache;
+  }
+  // O SKU do programa passa a ter registro próprio aqui (mesmo id), para
+  // guardar o que só o estoque sabe e não sumir se o desenho trocar de SKU.
+  function fixarProduto(p) {
+    if (!p || !p.doPrograma || cadastro().some(x => x.id === p.id)) return false;
+    const fixo = Object.assign({}, p, { criadoEm: new Date().toISOString(), criadoPor: quemSou() });
+    delete fixo.doPrograma;
+    cadastro().push(fixo);
+    esquecerProdutos();
+    return fixo;
+  }
   const movs = () => lista('acabMov');
   const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
   const rankTam = t => { const i = TAMS.indexOf(t); return i < 0 ? 99 : i; };
@@ -383,7 +426,7 @@
   };
   window.acabTrocarProduto = trocarProduto;
 
-  const semSkus = () => `<div class="info-box">Nenhum SKU cadastrado ainda. Os SKUs dos desenhos técnicos e das OS entram sozinhos quando alguém que edita esta área abre a tela — ou <a href="#" onclick="acabSincronizarSkus();return false;">sincronize agora</a>. O catálogo inteiro vem por <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`;
+  const semSkus = () => `<div class="info-box">Nenhum SKU ainda. Os SKUs vêm direto do programa: o <b>SKU</b> do desenho técnico ou do modelo, e o da OS (linha do modelo + <b>Sigla SKU</b> da cor) — preencha lá e ele aparece aqui na hora. O catálogo inteiro vem por <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`;
 
   /* ================================================= TELA: ESTOQUE ATUAL */
   const filtro = { busca: '', linha: '', status: '' };
@@ -541,7 +584,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>' : '';
     const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
     box.innerHTML = `${listaSkus()}
-      ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU cadastrado ainda. Os SKUs dos desenhos técnicos e das OS entram sozinhos quando alguém que edita esta área abre a tela — ou <a href="#" onclick="acabSincronizarSkus();return false;">sincronize agora</a>. A entrada também cadastra o SKU digitado; para trazer o catálogo inteiro, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
+      ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU ainda. Os SKUs vêm direto do programa: o <b>SKU</b> do desenho técnico ou do modelo, e o da OS (linha do modelo + <b>Sigla SKU</b> da cor) — preencha lá e ele aparece aqui na hora. A entrada também cadastra o SKU digitado; para trazer o catálogo inteiro, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
       <div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Registrar entrada</h2>
@@ -620,9 +663,10 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         descricao: (c && c.descricao) || '', tamanhos: tamsDaLinha((c && c.tipo) || pt.linha), preco: 0,
         criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: c ? 'catalogo' : 'entrada' };
       if (!novo.tamanhos.includes(tamanho)) return toast(`O tamanho ${tamanho} não é da linha ${novo.linha}`, 'err');
-      produtos().push(novo);
+      cadastro().push(novo);
+      esquecerProdutos();
       p = novo;
-    }
+    } else if (fixarProduto(p)) novo = p;
     const plano = abaterMarcado() ? planoAbateOS(p.id, tamanho, qtd) : [];
     const mov = novoMov({ tipo: 'entrada', produtoId: p.id, tamanho, data: val('acab-ent-data') || hoje(), qtd, custo, obs: val('acab-ent-obs').trim() });
     if (plano.length) mov.abate = plano;
@@ -649,8 +693,10 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     if (!(valor >= 0)) return toast('Valor inválido', 'err');
     const disp = saldos(todosMovs()).de(p.id, tamanho).total;
     if (qtd > disp) return toast(`Estoque insuficiente: há ${fmtN(disp)} de ${p.sku} ${tamanho}`, 'err');
+    const fixou = fixarProduto(p);
     movs().push(novoMov({ tipo: 'saida', produtoId: p.id, tamanho, data: val('acab-sai-data') || hoje(), qtd, valor, destino }));
     desfazerNomearAcao(`saída de ${qtd} ${p.sku} ${tamanho}`);
+    if (fixou) await saveState('acabProdutos');
     await saveState('acabMov');
     toast(`Saída: ${qtd} × ${p.sku} ${tamanho}`, 'ok');
     const q = document.getElementById('acab-sai-qtd'); if (q) q.value = '';
@@ -726,8 +772,10 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const anterior = saldos(todosMovs()).de(p.id, tamanho).total;
     const diferenca = contado - anterior;
     if (diferenca === 0) return toast('A contagem é igual ao estoque atual — nada a ajustar', 'err');
+    const fixou = fixarProduto(p);
     movs().push(novoMov({ tipo: 'ajuste', produtoId: p.id, tamanho, data: val('acab-aj-data') || hoje(), contado, anterior, diferenca, motivo: val('acab-aj-motivo').trim() }));
     desfazerNomearAcao(`contagem de ${p.sku} ${tamanho}`);
+    if (fixou) await saveState('acabProdutos');
     await saveState('acabMov');
     toast(`${p.sku} ${tamanho}: ${diferenca > 0 ? '+' : ''}${fmtN(diferenca)} (agora ${fmtN(contado)})`, 'ok');
     const campo = document.getElementById('acab-aj-contado');
@@ -749,7 +797,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
     const nCat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus.length : 0;
     const faltamCat = nCat ? catalogoSkus.filter(s => s && s.item && !produtoPorSku(s.item)).length : 0;
-    const nProg = [...skusDoPrograma().keys()].filter(k => !produtoPorSku(k)).length;
+    const doProg = skusDoPrograma();
+    const nProg = doProg.size;
     const inicioLocal = c.inicio ? new Date(c.inicio) : null;
     const pad = n => String(n).padStart(2, '0');
     const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
@@ -768,8 +817,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Trazer os SKUs</h2>
           <div class="muted" style="font-size:12px;margin-bottom:8px;">O catálogo que o Estoque-Confeccao publicou tem <b>${fmtN(nCat)}</b> SKUs${nCat ? `, dos quais <b>${fmtN(faltamCat)}</b> ainda não estão aqui` : ' (não chegou nesta sessão)'}. Trazer cria só os que faltam, com os tamanhos P ao G3 (2 ao 16 na linha infantil) e sem preço — o código do ERP entra sozinho na primeira importação de saídas.</div>
-          <div class="muted" style="font-size:12px;margin-bottom:8px;">Os SKUs do <b>programa</b> (o SKU completo dos desenhos técnicos e o de cada OS: linha + sigla da cor) entram sozinhos ao abrir estas telas${nProg ? ` — <b>${fmtN(nProg)}</b> ainda faltam` : ''}.</div>
-          <button class="btn" onclick="acabSincronizarSkus()" title="Cadastra os SKUs dos desenhos técnicos e das OS que ainda não estão aqui">↻ Sincronizar SKUs do programa</button>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Os SKUs do <b>programa</b> (o SKU completo dos desenhos técnicos e dos modelos, e o de cada OS: linha + sigla da cor) são lidos direto de lá, sem sincronizar: <b>${fmtN(nProg)}</b> SKUs vêm do programa. Mudou o SKU no desenho, no modelo ou na cor, mudou aqui.</div>
           <button class="btn" onclick="acabImportarCatalogo()" ${faltamCat ? '' : 'disabled'}>Trazer ${fmtN(faltamCat)} SKUs do catálogo</button>
           <button class="btn primary" onclick="acabAbrirProduto()">+ Cadastrar SKU</button>
         </div>
@@ -777,8 +825,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       <div class="card">
         <input type="search" placeholder="Buscar SKU, código, linha, cor ou descrição…" value="${esc(_buscaProd)}" oninput="acabBuscaProd(this.value)" style="margin-bottom:10px;width:100%;">
         <div style="overflow:auto;max-height:65vh;"><table class="table"><thead><tr><th class="col-actions admin-only">Ações</th><th>Código</th><th>SKU</th><th>Descrição</th><th>Linha</th><th>Cor</th><th>Tamanhos</th><th style="text-align:right;">Preço base</th></tr></thead><tbody>
-        ${ps.map(p => `<tr><td class="col-actions row-actions admin-only"><button onclick="acabAbrirProduto('${esc(p.id)}')">editar</button><button onclick="acabExcluirProduto('${esc(p.id)}')">apagar</button></td>
-          <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b></td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
+        ${ps.map(p => `<tr><td class="col-actions row-actions admin-only"><button onclick="acabAbrirProduto('${esc(p.id)}')">editar</button>${p.doPrograma ? '' : `<button onclick="acabExcluirProduto('${esc(p.id)}')">apagar</button>`}</td>
+          <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b>${doProg.has(norm(p.sku)) ? ' <span class="badge" style="background:#e3ecf7;" title="Lido do desenho técnico, do modelo ou da OS — não é cópia: muda quando mudar lá">do programa</span>' : ''}</td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
           <td style="font-size:11px;">${esc(ordenarTams(p.tamanhos || []).join(' '))}</td><td style="${mono}">${fmtR(p.preco)}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">${b ? 'Nada na busca.' : 'Nenhum SKU cadastrado.'}</td></tr>`}
         </tbody></table></div>
         <div class="muted" style="font-size:11px;margin-top:6px;">${fmtN(produtos().length)} SKUs · ${fmtN(ms.length)} lançamentos</div>
@@ -817,10 +865,11 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     if (!confirm(`Cadastrar ${novos.length} SKUs do catálogo?`)) return;
     novos.forEach(s => {
       const pt = partesSku(s.item);
-      produtos().push({ id: uid(), codigo: null, sku: norm(s.item), linha: norm(s.tipo) || pt.linha, cor: norm(s.cor) || pt.cor,
+      cadastro().push({ id: uid(), codigo: null, sku: norm(s.item), linha: norm(s.tipo) || pt.linha, cor: norm(s.cor) || pt.cor,
         descricao: s.descricao || '', tamanhos: tamsDaLinha(s.tipo || pt.linha), preco: 0,
         criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'catalogo' });
     });
+    esquecerProdutos();
     desfazerNomearAcao(`${novos.length} SKUs trazidos do catálogo`);
     await saveState('acabProdutos');
     toast(`${novos.length} SKUs cadastrados`, 'ok');
@@ -877,9 +926,11 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     if (!tamanhos.length) return toast('Marque ao menos um tamanho', 'err');
     const campos = { codigo, sku, linha: norm(val('acab-p-linha')), cor: norm(val('acab-p-cor')), descricao: val('acab-p-desc').trim(), tamanhos, preco,
       atualizadoEm: new Date().toISOString(), atualizadoPor: quemSou() };
-    const p = _editProdId ? produtoPorId(_editProdId) : null;
+    let p = _editProdId ? produtoPorId(_editProdId) : null;
+    if (p) p = fixarProduto(p) || p;
     if (p) Object.assign(p, campos);
-    else produtos().push(Object.assign({ id: uid(), criadoEm: campos.atualizadoEm, criadoPor: campos.atualizadoPor }, campos));
+    else cadastro().push(Object.assign({ id: uid(), criadoEm: campos.atualizadoEm, criadoPor: campos.atualizadoPor }, campos));
+    esquecerProdutos();
     desfazerNomearAcao(`${p ? 'edição' : 'cadastro'} do SKU ${sku}`);
     await saveState('acabProdutos');
     closeModal('modal-acab-produto');
@@ -894,8 +945,10 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     if (!p) return;
     const nMov = todosMovs().filter(m => m.produtoId === id).length;
     if (nMov) return toast(`${p.sku} tem ${nMov} lançamento(s): apague-os antes (ou deixe o SKU sem uso)`, 'err');
+    if (p.doPrograma) return toast(`${p.sku} vem do programa (desenho técnico, modelo ou OS): para tirá-lo daqui, mude o SKU lá`, 'err');
     if (!confirm(`Apagar o SKU ${p.sku}?`)) return;
-    STATE.acabProdutos = produtos().filter(x => x.id !== id);
+    STATE.acabProdutos = cadastro().filter(x => x.id !== id);
+    esquecerProdutos();
     desfazerNomearAcao(`SKU ${p.sku} apagado`);
     await saveState('acabProdutos');
     toast('SKU apagado', 'ok');
@@ -1100,13 +1153,19 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const pl = planoErp(_erp.rows, !!_erp.cadastrar);
     if (!pl.saidas.length) return toast('Nada a lançar', 'err');
     if (!confirm(`Lançar ${pl.saidas.length} saídas (${pl.saidas.reduce((s, x) => s + x.qtd, 0)} peças) com a data ${fmtD(data)}?`)) return;
-    pl.novos.forEach(p => produtos().push(p));
-    pl.codigosNovos.forEach(({ p, codigo }) => { if (!produtoPorCodigo(codigo)) p.codigo = codigo; });
-    pl.tamanhosNovos.forEach(({ p, t }) => { p.tamanhos = ordenarTams((p.tamanhos || []).concat([t])); });
+    const nCadastro = cadastro().length + pl.novos.length;
+    pl.novos.forEach(p => cadastro().push(p));
+    // O SKU do programa que ganha código, tamanho ou saída do ERP fica gravado aqui.
+    const fixos = new Map();
+    const fixo = p => { if (!fixos.has(p.id)) fixos.set(p.id, fixarProduto(p) || p); return fixos.get(p.id); };
+    pl.codigosNovos.forEach(({ p, codigo }) => { if (!produtoPorCodigo(codigo)) fixo(p).codigo = codigo; });
+    pl.tamanhosNovos.forEach(({ p, t }) => { const q = fixo(p); q.tamanhos = ordenarTams((q.tamanhos || []).concat([t])); });
+    pl.saidas.forEach(s => fixo(s.p));
+    esquecerProdutos();
     pl.saidas.forEach(s => movs().push(novoMov({ tipo: 'saida', origem: 'erp', produtoId: s.p.id, tamanho: s.tamanho, data, qtd: s.qtd, valor: 0,
       destino: 'cliente', erpEmissao: _erp.dataEmissao || null, erpArquivo: _erp.arquivo })));
     desfazerNomearAcao(`importação de ${pl.saidas.length} saídas do ERP`);
-    if (pl.novos.length || pl.codigosNovos.length || pl.tamanhosNovos.length) await saveState('acabProdutos');
+    if (pl.novos.length || pl.codigosNovos.length || pl.tamanhosNovos.length || cadastro().length !== nCadastro) await saveState('acabProdutos');
     await saveState('acabMov');
     toast(`${pl.saidas.length} saídas do ERP lançadas`, 'ok');
     _erp = null;
@@ -1157,23 +1216,17 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const fn = TELAS[page];
     if (!fn) return;
     try { fn(); } catch (e) { console.warn('Estoque de produtos', page, e); }
-    sincronizarSkusPrograma(true).then(n => { if (n) { try { fn(); } catch (e) { } } });
   };
 
-  /* OS SKUs DO PROGRAMA ENTRAM SOZINHOS (22/10/2026, Junior: "faça a
-     sincronização dos sku do programa para corrigir o aviso: Nenhum SKU
-     cadastrado ainda"). O estoque começou do zero e a lista de SKUs também: o
-     catálogo do Render só chegava apertando "Trazer", e enquanto ninguém
-     apertava a tela dizia que não havia SKU — com o programa cheio deles.
-     Os SKUs que o PROGRAMA já define:
-       · o SKU completo do desenho técnico (skuLinha com traço, "CM.LISA-PRE");
+  /* OS SKUs QUE O PROGRAMA DEFINE (22/10/2026; desde 23/10/2026 lidos na
+     hora, ver produtos() no topo — não há mais cópia nem botão de sincronizar):
+       · o SKU completo do desenho técnico e do modelo (skuLinha com traço,
+         "CM.LISA-PRE");
        · o de cada OS (skusDaOS: linha do modelo/desenho + sigla da cor), que é
          o mesmo que a OS usa para lançar a entrada quando chega ao Estoque.
      Só a combinação que existe entra — a linha sozinha (CJM) não é cruzada
-     com as 50 cores. O que já está cadastrado não é tocado. A descrição vem do
-     catálogo quando ele tem o SKU; senão, do desenho ou do modelo da OS.
-     Roda ao abrir as telas, por quem pode editar a área, e grava só se achar
-     SKU novo; o botão em Produtos faz o mesmo à mão. */
+     com as 50 cores. A descrição vem do catálogo quando ele tem o SKU; senão,
+     do desenho, do modelo ou da OS. */
   function skusDoPrograma() {
     const achados = new Map();
     const poe = (sku, descricao) => {
@@ -1182,34 +1235,13 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       achados.set(s, descricao || '');
     };
     (STATE.desenhos || []).forEach(d => { if (String(d.skuLinha || '').includes('-')) poe(d.skuLinha, d.desc); });
+    (STATE.modelos || []).forEach(m => { if (String(m.skuLinha || '').includes('-')) poe(m.skuLinha, m.nome); });
     (STATE.ordens || []).forEach(o => {
       if (typeof _statusOS === 'function' && _statusOS(o) === 'cancelado') return;
       (typeof skusDaOS === 'function' ? skusDaOS(o) : []).forEach(s => poe(s, o.modeloNome));
     });
     return achados;
   }
-  async function sincronizarSkusPrograma(silencioso) {
-    if (silencioso) {
-      if (!(typeof podeGravar === 'function' && podeGravar())) return 0;
-      if (!(currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('estoque-confeccao')))) return 0;
-    } else if (!exigirEdicao('cadastrar SKU no estoque de produtos')) return 0;
-    const novos = [...skusDoPrograma()].filter(([sku]) => !produtoPorSku(sku));
-    if (!novos.length) { if (!silencioso) toast('Os SKUs do programa já estão todos aqui', 'ok'); return 0; }
-    novos.forEach(([sku, desc]) => {
-      const c = doCatalogo(sku);
-      const pt = partesSku(sku);
-      produtos().push({ id: uid(), codigo: null, sku, linha: norm(c && c.tipo) || pt.linha, cor: norm(c && c.cor) || pt.cor,
-        descricao: (c && c.descricao) || desc || '', tamanhos: tamsDaLinha((c && c.tipo) || pt.linha), preco: 0,
-        criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'programa' });
-    });
-    desfazerNomearAcao(`${novos.length} SKUs do programa sincronizados`);
-    try { await saveState('acabProdutos'); } catch (e) { console.warn('acab sincronizar SKUs', e); return 0; }
-    toast(`${novos.length} SKU(s) do programa cadastrados no Estoque de produtos`, 'ok');
-    return novos.length;
-  }
-  window.acabSincronizarSkus = async function () {
-    if (await sincronizarSkusPrograma(false)) renderAtual();
-  };
 
   /* OS AVISOS DO SINO (21/10/2026): a coluna Avisar da área "Estoque
      confecção" em Configurações. Três notícias, montadas aqui e desenhadas pelo
