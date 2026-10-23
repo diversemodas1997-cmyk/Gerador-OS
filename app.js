@@ -5096,6 +5096,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
   } else if (pre) {
     item = pre;
   }
+  cadastroContext.imgDaCorDe = item.imgDaCorDe || '';
 
   if (tipo === 'tecido') {
     box.innerHTML = `
@@ -5348,7 +5349,9 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
     // QUEM É ESTE DESENHO: a cópia diz de onde veio; o que tem OS diz que elas
     // não acompanham a edição (ver desenhoDaOS).
     const nOS = editId ? (STATE.ordens || []).filter(o => o.desenhoId === editId).length : 0;
-    const avisoDesenho = (item.copiaDe
+    const avisoDesenho = (item.imgDaCorDe
+        ? `<div class="info-box" style="margin-bottom:10px;background:#fbeccb;">A <b>imagem</b> ainda é a do desenho em <b>${esc(item.imgDaCorDe)}</b> (este foi criado por <b>nova cor</b>). Escolha a imagem na cor deste desenho.</div>`
+        : '') + (item.copiaDe
         ? `<div class="info-box" style="margin-bottom:10px;">Esta é a <b>CÓPIA</b> do desenho <b>${esc(item.copiaDe.codigo)}</b>. Editar aqui não mexe no original nem nas OS dele.</div>`
         : '')
       + (nOS
@@ -5686,6 +5689,14 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
     }, 0);
   }
 
+  // A conferência do que falta (ver CAD_CONFERENCIA), no topo da ficha, para
+  // quem edita. Atualiza a cada campo mexido; o setTimeout espera as linhas que
+  // as fichas montam depois do innerHTML (fases, operações, tarefas).
+  if ((currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('cadastros'))) && CAD_CONFERENCIA[tipo]) {
+    box.insertAdjacentHTML('afterbegin', '<div id="m-cad-conf" class="cad-conf"></div>');
+    box.oninput = box.onchange = atualizarConferenciaCad;
+    setTimeout(atualizarConferenciaCad, 30);
+  } else box.oninput = box.onchange = null;
   openModal('modal-cad');
   // O botão Salvar é o mesmo para todos os cadastros, e a conferência de nome de
   // grade o desliga. Religa aqui, ao abrir qualquer ficha: sem isto, uma tentativa
@@ -7354,6 +7365,7 @@ function pluralize(tipo) {
 async function salvarCadastro() {
   if (!exigirEdicao('criar ou editar cadastros')) return;
   const { tipo, editId } = cadastroContext;
+  if (!conferirCadastroAntesDeSalvar(tipo)) return;
   const list = pluralize(tipo);
   const v = id => document.getElementById(id)?.value || '';
   let item = editId ? STATE[list].find(x => x.id === editId) : { id: uid() };
@@ -7561,6 +7573,7 @@ async function salvarCadastro() {
     item.skuLinha = (v('m-desenho-sku') || '').trim().toUpperCase();
     const imgInput = v('m-img-data');
     if (imgInput.startsWith('data:image/')) {
+      delete item.imgDaCorDe;
       try {
         item.img = await uploadDesenhoImagem(imgInput);
       } catch (e) {
@@ -7905,7 +7918,8 @@ function acoesCell(tipo, id) {
   return `<td class="col-actions row-actions">
     <button class="edit leitura-only" onclick="openCadastroModal('${tipo}','${id}')">ver</button>
     <button class="edit admin-only" onclick="openCadastroModal('${tipo}','${id}')">editar</button>
-    <button class="edit admin-only" onclick="duplicarCadastro('${tipo}','${id}')">duplicar</button>
+    <button class="edit admin-only" onclick="duplicarCadastro('${tipo}','${id}')">duplicar</button>${tipo === 'desenho' ? `
+    <button class="edit admin-only" onclick="abrirNovaCorDesenho('${id}')" title="Copia este desenho com outra cor — inclusive uma cor que ainda não existe">nova cor</button>` : ''}
     <button class="del admin-only" onclick="excluirCadastro('${tipo}','${id}')">excluir</button>
   </td>`;
 }
@@ -7967,6 +7981,236 @@ async function duplicarCadastro(tipo, id) {
   const activeBtn = document.querySelector('.nav-btn.active');
   const pagina = activeBtn?.dataset.page || ('cad-' + list);
   goto(pagina);
+}
+
+// ============ CONFERÊNCIA DO CADASTRO ============
+//
+// (23/10/2026, Junior: "o programa deve sistematizar a criação de todos os
+// tipos de cadastros, para que o usuário não esqueça nenhuma informação".)
+// Cada ficha diz o que precisa ter. OBRIGATÓRIO barra o Salvar; RECOMENDADO
+// é o que outras telas usam (a gramatura para o kg do enfesto, a sigla para o
+// SKU, a cor e os componentes para a OS): falta-lo pede confirmação, porque
+// há cadastro que ainda não tem a informação e não pode parar por isso.
+// A lista aparece no topo da ficha e se atualiza enquanto se preenche.
+const _cv = id => () => !!String(document.getElementById(id)?.value || '').trim();
+const _cvNum = id => () => (parseFloat(String(document.getElementById(id)?.value || '').replace(',', '.')) || 0) > 0;
+const _cvAlgum = sel => () => !!document.querySelector(sel);
+const CAD_CONFERENCIA = {
+  tecido: [['Nome', _cv('m-nome'), 1], ['Categoria', _cv('m-categoria')], ['Forma do pano (tubular ou aberto)', _cv('m-tubular')],
+    ['Gramatura', _cvNum('m-peso')], ['Largura', _cvNum('m-largura')], ['Fornecedor', _cv('m-fornecedor')], ['Composição', _cv('m-desc')]],
+  cor: [['Nome (com o tecido)', _cv('m-nome'), 1], ['Sigla SKU', _cv('m-siglasku')], ['Tecido vinculado', _cv('m-cor-tecido')], ['Código (Linx)', _cv('m-codigo')]],
+  fornecedor: [['Razão social', _cv('m-nome'), 1], ['CNPJ', _cv('m-cnpj')], ['Cidade / UF', _cv('m-cidade')], ['Telefone', _cv('m-telefone')]],
+  material: [['Categoria', _cv('m-categoria'), 1], ['Código', _cv('m-codigo'), 1], ['Descrição', _cv('m-desc'), 1], ['Tipo', _cv('m-tipo')]],
+  modelo: [['Descrição', _cv('m-nome'), 1], ['Tipo', _cv('m-categoria'), 1], ['SKU', _cv('m-skulinha')], ['Linha', _cv('m-linha')],
+    ['Base', _cv('m-vinc-base')], ['Marca / Griffe', _cv('m-vinc-marca')]],
+  colecao: [['Nome', _cv('m-nome'), 1], ['Temporada', _cv('m-temp')]],
+  grade: [['Nome', _cv('m-nome'), 1]],
+  desenho: [['Código', _cv('m-codigo'), 1], ['Imagem', _cv('m-img-data'), 1],
+    ['Imagem da cor deste desenho', () => !cadastroContext.imgDaCorDe || String(document.getElementById('m-img-data')?.value || '').startsWith('data:image/')],
+    ['Descrição', _cv('m-desc')], ['SKU', _cv('m-desenho-sku')], ['Modelo', _cv('m-vinc-modelo')], ['Cor principal', _cv('m-vinc-cor')],
+    ['Tecido principal', _cv('m-vinc-tecido')], ['Componentes', _cvAlgum('.m-componente-chk:checked')], ['Etapas', _cvAlgum('.m-etapa-chk:checked')],
+    ['Base', _cv('m-vinc-base')], ['Coleção', _cv('m-vinc-colecao')], ['Marca / Griffe', _cv('m-vinc-marca')], ['Linha', _cv('m-vinc-linha')]],
+  marca: [['Nome', _cv('m-nome'), 1]], linha: [['Nome', _cv('m-nome'), 1]], base: [['Nome', _cv('m-nome'), 1]], bloco: [['Nome', _cv('m-nome'), 1]],
+  tarefa: [['Nome', _cv('m-nome'), 1]],
+  equipe: [['Nome', _cv('m-nome'), 1], ['Função principal', _cv('m-funcao')]],
+  funcao: [['Nome', _cv('m-nome'), 1], ['Operações', () => [...document.querySelectorAll('#m-func-ops .func-op-nome')].some(i => i.value.trim())]],
+  componente: [['Nome', _cv('m-nome'), 1], ['Tipo (modelo)', _cv('m-comp-tipopeca')], ['Variação', _cv('m-comp-variacao')]],
+  etapa: [['Nome', _cv('m-nome'), 1], ['Ordem', _cv('m-ordem')]]
+};
+function _cadFaltam(tipo) {
+  return (CAD_CONFERENCIA[tipo] || []).map(([rotulo, ok, obrig]) => ({ rotulo, obrig: !!obrig, ok: !!ok() }));
+}
+function atualizarConferenciaCad() {
+  const el = document.getElementById('m-cad-conf');
+  if (!el || !cadastroContext) return;
+  const itens = _cadFaltam(cadastroContext.tipo);
+  if (!itens.length) { el.innerHTML = ''; return; }
+  const falta = itens.filter(x => !x.ok);
+  el.className = 'cad-conf' + (falta.some(x => x.obrig) ? ' obrig' : falta.length ? ' rec' : ' ok');
+  el.innerHTML = `<b>${falta.length ? `Falta preencher (${falta.length} de ${itens.length})` : 'Ficha completa'}</b> `
+    + itens.map(x => `<span class="${x.ok ? 'ok' : x.obrig ? 'obrig' : 'rec'}" title="${x.obrig ? 'Obrigatório' : 'Recomendado: outras telas usam'}">${x.ok ? '✓' : '○'} ${esc(x.rotulo)}${x.obrig ? ' *' : ''}</span>`).join('');
+}
+// true = pode salvar. Obrigatório faltando barra; recomendado pergunta.
+function conferirCadastroAntesDeSalvar(tipo) {
+  const falta = _cadFaltam(tipo).filter(x => !x.ok);
+  const obrig = falta.filter(x => x.obrig);
+  if (obrig.length) { toast('Preencha: ' + obrig.map(x => x.rotulo).join(', '), 'err'); atualizarConferenciaCad(); return false; }
+  if (falta.length && !confirm(`Ficha incompleta. Falta preencher:\n\n· ${falta.map(x => x.rotulo).join('\n· ')}\n\nSalvar assim mesmo?`)) return false;
+  return true;
+}
+
+// ============ NOVA COR DE UM DESENHO ============
+//
+// (23/10/2026, Junior: "copiar um desenho técnico existente e alterar sua cor,
+// para produzir outro desenho técnico igual, mas com cor atribuída pelo
+// usuário e que pode ser cor diferente das existentes".)
+// A cor aqui é cadastrada POR TECIDO ("Preto Moletom", "Preto Ribana
+// Moletom"), e um desenho usa várias: a do corpo, a do punho, a da 2ª cor do
+// bicolor. Por isso a troca é pela cor BASE ("Preto"): cada cor base do
+// desenho ganha uma nova, e cada cor-tecido vira a mesma cor nova no mesmo
+// tecido. A que ainda não existe é cadastrada, com o hex e a sigla dados aqui.
+// O resto do desenho (modelo, componentes, aviamentos, etapas, status) vem
+// igual. A imagem vem a do original, e a ficha da cópia avisa para trocá-la.
+let _novaCorCtx = null;
+const _corSufixo = nome => String(nome || '').trim().slice(corNomeCurto(nome).length).trim();
+function _desenhoCoresUsadas(d) {
+  const ids = [d.corPrincipalId, d.corSecundariaId, d.corTerciariaId, ...(d.componentes || []).map(c => c.corId)].filter(Boolean);
+  const grupos = new Map();
+  [...new Set(ids)].forEach(id => {
+    const c = (STATE.cores || []).find(x => x.id === id);
+    if (!c) return;
+    const k = corBaseNome(c.nome);
+    if (!grupos.has(k)) grupos.set(k, { k, rotulo: corNomeCurto(c.nome), cores: [] });
+    grupos.get(k).cores.push(c);
+  });
+  return [...grupos.values()];
+}
+// A cor base já cadastrada com este nome (qualquer tecido): hex e sigla dela.
+function _corBaseExistente(nome) {
+  const k = _normNome(nome);
+  if (!k) return null;
+  const c = (STATE.cores || []).find(x => corBaseNome(x.nome) === k);
+  return c ? { rotulo: corNomeCurto(c.nome), hex: c.hex || '', sigla: c.siglaSku || '' } : null;
+}
+function abrirNovaCorDesenho(id) {
+  if (!exigirEdicao('duplicar cadastros')) return;
+  const d = (STATE.desenhos || []).find(x => x.id === id);
+  if (!d) return toast('Desenho não encontrado', 'err');
+  const grupos = _desenhoCoresUsadas(d);
+  if (!grupos.length) return toast('Este desenho não tem cor cadastrada: use duplicar', 'err');
+  _novaCorCtx = { id, grupos, descMexida: false };
+  let m = document.getElementById('modal-desenho-cor');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'modal-backdrop';
+    m.id = 'modal-desenho-cor';
+    document.body.appendChild(m);
+  }
+  const bases = [...new Set((STATE.cores || []).map(c => corNomeCurto(c.nome)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  m.innerHTML = `<div class="modal">
+    <h2>Nova cor · desenho ${esc(d.codigo)}</h2>
+    <div class="info-box" style="margin-bottom:10px;font-size:12px;">Cria um desenho novo, igual ao <b>${esc(d.codigo)} ${esc(d.desc || '')}</b>, trocando a cor. Para cada cor do desenho, escreva a nova — uma das cadastradas ou uma <b>cor nova</b>, que é cadastrada aqui, uma por tecido. Em branco, a cor fica a mesma.</div>
+    <datalist id="ncd-bases">${bases.map(b => `<option value="${esc(b)}">`).join('')}</datalist>
+    ${grupos.map((g, i) => `<div class="card" style="padding:10px;margin-bottom:8px;">
+      <div style="font-size:12px;margin-bottom:6px;"><b>${esc(g.rotulo)}</b> <span class="muted">(${esc(g.cores.map(c => c.nome).join(', '))})</span></div>
+      <div class="form-grid cols-3">
+        <div class="field"><label>Nova cor</label><input type="text" id="ncd-nome-${i}" list="ncd-bases" placeholder="mantém ${esc(g.rotulo)}" oninput="_ncdAtualizar(${i})"></div>
+        <div class="field"><label>Cor (hex)</label><input type="color" id="ncd-hex-${i}" value="${esc(g.cores[0].hex || '#c9a961')}" oninput="this.dataset.mexido=1"></div>
+        <div class="field"><label>Sigla SKU</label><input type="text" id="ncd-sigla-${i}" placeholder="Ex.: VERM" style="text-transform:uppercase;" oninput="this.dataset.mexido=1"></div>
+      </div>
+      <div class="field-hint" id="ncd-info-${i}"></div></div>`).join('')}
+    <div class="form-grid cols-2">
+      <div class="field"><label>Código do desenho novo *</label><input type="text" id="ncd-codigo" value="${esc(_proximoCodigoDesenho())}"></div>
+      <div class="field"><label>Descrição</label><input type="text" id="ncd-desc" value="${esc(d.desc || '')}" oninput="_novaCorCtx.descMexida=true"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-desenho-cor')">Cancelar</button>
+      <button class="btn primary" onclick="criarNovaCorDesenho()">Criar desenho</button>
+    </div></div>`;
+  openModal('modal-desenho-cor');
+}
+// Troca, na descrição, o nome da cor antiga pelo da nova ("Blusa Preta" fica
+// como está: só o nome inteiro da cor é trocado).
+function _ncdTrocarNome(txt, de, para) {
+  if (!de || !para) return txt;
+  const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(txt || '').replace(new RegExp('(^|[^\\p{L}])' + esc_(de) + '(?=$|[^\\p{L}])', 'giu'), (m0, a) => a + para);
+}
+function _ncdAtualizar(i) {
+  const ctx = _novaCorCtx;
+  if (!ctx) return;
+  const g = ctx.grupos[i];
+  const nome = (document.getElementById('ncd-nome-' + i)?.value || '').trim();
+  const info = document.getElementById('ncd-info-' + i);
+  const ex = _corBaseExistente(nome);
+  const hex = document.getElementById('ncd-hex-' + i), sig = document.getElementById('ncd-sigla-' + i);
+  if (ex) {
+    if (hex && !hex.dataset.mexido && ex.hex) hex.value = ex.hex;
+    if (sig && !sig.dataset.mexido) sig.value = ex.sigla;
+  }
+  if (info) {
+    if (!nome || _normNome(nome) === g.k) info.innerHTML = 'Fica ' + esc(g.rotulo) + '.';
+    else info.innerHTML = g.cores.map(c => {
+      const alvo = (nome + ' ' + _corSufixo(c.nome)).trim();
+      const ja = (STATE.cores || []).some(x => _normNome(x.nome) === _normNome(alvo));
+      return `${esc(c.nome)} → <b>${esc(alvo)}</b>${ja ? '' : ' <span class="exp-badge info">cor nova</span>'}`;
+    }).join(' · ');
+  }
+  if (!ctx.descMexida) {
+    const d = (STATE.desenhos || []).find(x => x.id === ctx.id);
+    let desc = (d && d.desc) || '';
+    ctx.grupos.forEach((gg, j) => {
+      const n = (document.getElementById('ncd-nome-' + j)?.value || '').trim();
+      if (n && _normNome(n) !== gg.k) desc = _ncdTrocarNome(desc, gg.rotulo, n);
+    });
+    const el = document.getElementById('ncd-desc');
+    if (el) el.value = desc;
+  }
+}
+async function criarNovaCorDesenho() {
+  if (!exigirEdicao('duplicar cadastros')) return;
+  const ctx = _novaCorCtx;
+  const d = ctx && (STATE.desenhos || []).find(x => x.id === ctx.id);
+  if (!d) return toast('Desenho não encontrado', 'err');
+  const codigo = (document.getElementById('ncd-codigo')?.value || '').trim();
+  if (!codigo) return toast('Informe o código do desenho novo', 'err');
+  const mesmo = (STATE.desenhos || []).find(x => _mesmoCodigoDesenho(x.codigo, codigo));
+  if (mesmo) return toast(`O código ${codigo} já é do desenho "${mesmo.desc || mesmo.codigo}"`, 'err');
+  // O que muda: cor base antiga → { nome, hex, sigla }.
+  const trocas = [];
+  for (let i = 0; i < ctx.grupos.length; i++) {
+    const nome = (document.getElementById('ncd-nome-' + i)?.value || '').trim();
+    if (!nome || _normNome(nome) === ctx.grupos[i].k) continue;
+    const sigla = (document.getElementById('ncd-sigla-' + i)?.value || '').trim().toUpperCase();
+    const hex = document.getElementById('ncd-hex-' + i)?.value || '';
+    const novaEmAlgum = ctx.grupos[i].cores.some(c => !(STATE.cores || []).some(x => _normNome(x.nome) === _normNome(nome + ' ' + _corSufixo(c.nome))));
+    if (novaEmAlgum && !sigla) return toast(`Informe a Sigla SKU de ${nome}: ela compõe o SKU do produto`, 'err');
+    trocas.push({ g: ctx.grupos[i], nome, sigla, hex });
+  }
+  if (!trocas.length) return toast('Escreva a nova cor de pelo menos uma das cores do desenho', 'err');
+  // Cada cor-tecido antiga vira a mesma cor nova no mesmo tecido.
+  const mapa = new Map();
+  const novas = [];
+  trocas.forEach(t => t.g.cores.forEach(c => {
+    const alvo = (t.nome + ' ' + _corSufixo(c.nome)).trim();
+    let n = (STATE.cores || []).find(x => _normNome(x.nome) === _normNome(alvo));
+    if (!n) {
+      n = { id: uid(), nome: alvo, hex: t.hex, codigo: '', siglaSku: t.sigla, fornecedorId: '', tecidoId: c.tecidoId || '',
+        codigoFornecedor: '', nomeFornecedor: '', criadaDe: c.id };
+      STATE.cores.push(n);
+      novas.push(n);
+    }
+    mapa.set(c.id, n.id);
+  }));
+  const troca = id => (id && mapa.has(id)) ? mapa.get(id) : id;
+  const copia = JSON.parse(JSON.stringify(d));
+  copia.id = uid();
+  copia.codigo = codigo;
+  copia.desc = (document.getElementById('ncd-desc')?.value || '').trim();
+  copia.copiaDe = { id: d.id, codigo: String(d.codigo || '').trim() };
+  copia.corPrincipalId = troca(d.corPrincipalId);
+  copia.corSecundariaId = troca(d.corSecundariaId);
+  copia.corTerciariaId = troca(d.corTerciariaId);
+  copia.componentes = (d.componentes || []).map(c => Object.assign({}, c, { corId: troca(c.corId) }));
+  // O SKU completo troca a sigla pela da cor principal nova; a linha sozinha
+  // (CM.LISA) fica, e a OS compõe com a sigla da cor como sempre.
+  const sku = String(d.skuLinha || '');
+  if (sku.includes('-') && copia.corPrincipalId !== d.corPrincipalId) {
+    const cp = (STATE.cores || []).find(x => x.id === copia.corPrincipalId);
+    const sig = String((cp && cp.siglaSku) || '').trim().toUpperCase();
+    copia.skuLinha = sku.split('-')[0] + (sig ? '-' + sig : '');
+  }
+  const corAntiga = (STATE.cores || []).find(x => x.id === d.corPrincipalId);
+  copia.imgDaCorDe = corAntiga ? corNomeCurto(corAntiga.nome) : (ctx.grupos[0] && ctx.grupos[0].rotulo) || '';
+  STATE.desenhos.push(copia);
+  desfazerNomearAcao(`desenho ${codigo}: nova cor do ${d.codigo}`);
+  if (novas.length) await saveState('cores');
+  await saveState('desenhos');
+  closeModal('modal-desenho-cor');
+  _novaCorCtx = null;
+  toast(`Desenho ${codigo} criado${novas.length ? ` · ${novas.length} cor(es) nova(s) cadastrada(s)` : ''}. Troque a imagem e confira a ficha`, 'ok');
+  goto('cad-desenhos');
+  openCadastroModal('desenho', copia.id);
 }
 
 // ============ BUSCA NAS TELAS DE CADASTRO ============

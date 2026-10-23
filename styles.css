@@ -5037,3 +5037,15 @@ body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.o
 .desenho-preview { position: relative; }
 .desenho-foto-aviso { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1; margin: 0; font-size: 12px; line-height: 1.4; color: var(--ink); }
 .desenho-foto-aviso .btn { margin-top: 6px; display: block; }
+
+/* A conferência da ficha de cadastro (ver CAD_CONFERENCIA no app.js): o que
+   falta, no topo do modal. Obrigatório em vermelho, recomendado em âmbar. */
+.cad-conf { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 12px;
+  padding: 8px 10px; margin-bottom: 12px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 2px; }
+.cad-conf:empty { display: none; }
+.cad-conf.ok { border-left-color: #2e7d4f; }
+.cad-conf.rec { border-left-color: #c98a1b; }
+.cad-conf.obrig { border-left-color: var(--alert, #c0392b); }
+.cad-conf span.ok { color: #2e7d4f; }
+.cad-conf span.rec { color: #a86e0c; }
+.cad-conf span.obrig { color: var(--alert, #c0392b); font-weight: 600; }
