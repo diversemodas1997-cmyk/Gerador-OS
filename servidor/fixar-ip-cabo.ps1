@@ -1,9 +1,17 @@
-# Fixa o IP do CABO desta maquina em 192.168.1.50.
+# Fixa o IP do CABO desta maquina em 193.168.0.200.
 #
-# 14/10/2026: o roteador 193.168.0.1 (rede Diverse001) foi trocado. O novo
-# atende o cabo em 192.168.1.x (gateway 192.168.1.1, o mesmo aparelho do
-# Wi-Fi) e distribui de .100 para cima -- por isso .50, fora da faixa.
-# O historico abaixo fala do .200 da rede antiga.
+# 23/10/2026: de volta ao .200. Entre 14/10 e 23/10 este script fixava
+# 192.168.1.50, porque o roteador 193.168.0.1 (Diverse001) tinha saido do
+# switch. Ele voltou em 15/10, e o cabo nao alcanca mais o 192.168.1.1: as
+# maquinas do cabo estao em 193.168.0.x e so chegam ao servidor pelo .200.
+#
+# O 192.168.1.50 FICA JUNTO, como segundo endereco da mesma placa: ha maquinas
+# que abrem o app por ele, e no dia 23/10 tira-lo derrubou quem o usava. Vai
+# sem gateway (a saida e pelo .200) e com SkipAsSource, para o Windows nunca
+# escolhe-lo como origem -- com o .50 como origem, a conversa com as maquinas
+# do 193.168.0.x saia por um endereco que elas nao alcancam. O `set address`
+# abaixo apaga todo endereco da placa, entao o .50 e regravado logo depois.
+# Se o .50 falhar, o .200 fica de pe mesmo assim: e so um aviso, nao desfaz.
 #
 # Por que: o .200 nunca foi fixo de verdade. A placa estava em DHCP e o .200
 # era uma concessao que se renovava enquanto a maquina ficava ligada. O cabo
@@ -68,10 +76,11 @@ function AcharPlacaDoCabo {
 }
 
 $PLACA    = if ($Placa) { $Placa } else { AcharPlacaDoCabo }
-$IP       = '192.168.1.50'
+$IP       = '193.168.0.200'
 $MASCARA  = '255.255.255.0'
-$GATEWAY  = '192.168.1.1'
-$DNS      = @('192.168.1.1','8.8.8.8')   # o roteador novo + um de reserva
+$GATEWAY  = '193.168.0.1'
+$DNS      = @('193.168.0.1','8.8.8.8')   # o roteador do cabo + um de reserva
+$IP_EXTRA = '192.168.1.50'               # segundo endereco do cabo -- ver o cabecalho
 
 function Passo($t) { Write-Host "`n>> $t" -ForegroundColor Cyan }
 function Ok($t)    { Write-Host "   OK - $t" -ForegroundColor Green }
@@ -127,6 +136,18 @@ if ($meus -contains $IP) {
   Ok "$IP nao respondeu - livre."
 }
 
+# O .50 e conferido AGORA, antes do `set address`: depois dele o endereco ja
+# nao e desta maquina, e um ping que responda nao diria de quem e.
+$extraLivre = $true
+if ($meus -contains $IP_EXTRA) {
+  Ok "$IP_EXTRA ja e desta maquina - livre por definicao."
+} elseif (Test-Connection -ComputerName $IP_EXTRA -Count 2 -Quiet -ErrorAction SilentlyContinue) {
+  Aviso "$IP_EXTRA ja esta em uso por outro aparelho - o cabo fica so com $IP."
+  $extraLivre = $false
+} else {
+  Ok "$IP_EXTRA nao respondeu - livre."
+}
+
 # ---- 3. fixar ---------------------------------------------------------------
 Passo "Fixando $IP / $MASCARA, gateway $GATEWAY, DNS $($DNS -join ', ')"
 
@@ -158,6 +179,27 @@ foreach ($i in 1..10) {
   if ($e -and $e.AddressState -eq 'Preferred') { Ok "endereco valido (Preferred)."; $pronto = $true; break }
 }
 if (-not $pronto) { Aviso "o endereco nao chegou a 'Preferred' - as conferencias abaixo dirao se serve." }
+
+# ---- 3b. o segundo endereco ---------------------------------------------------
+# Sem gateway e com skipassource -- ver o cabecalho.
+$avisosExtra = @()
+if ($extraLivre) {
+  Passo "Somando $IP_EXTRA a placa (sem gateway, nunca como origem)"
+  $saida = (& netsh @('interface','ipv4','add','address',"name=$PLACA",$IP_EXTRA,$MASCARA,'skipassource=true') | Out-String).Trim()
+  $estadoExtra = ''
+  foreach ($i in 1..10) {
+    Start-Sleep -Seconds 1
+    $estadoExtra = (Get-NetIPAddress -InterfaceAlias $PLACA -IPAddress $IP_EXTRA -ErrorAction SilentlyContinue).AddressState
+    if ($estadoExtra -eq 'Preferred' -or $estadoExtra -eq 'Duplicate') { break }
+  }
+  if ($estadoExtra -eq 'Preferred') {
+    Ok "$IP_EXTRA somado ao cabo."
+  } else {
+    $avisosExtra += "$IP_EXTRA nao entrou no cabo (estado: '$estadoExtra'; netsh: '$saida')"
+  }
+} else {
+  $avisosExtra += "$IP_EXTRA ficou de fora - outro aparelho responde nele"
+}
 
 # ---- 4. conferir que o servidor continua de pe ----------------------------
 # Fixar IP errado tira o servidor do ar. Nao adianta dizer "pronto" sem provar
@@ -193,11 +235,28 @@ foreach ($u in @("https://localhost", "https://$IP")) {
   } catch { $falhas += "$u nao respondeu: $($_.Exception.Message)" }
 }
 
+# O .50 e conferido a parte: se ele falhar, o aviso sai, mas o .200 fica.
+if (-not $avisosExtra) {
+  $x = Get-NetIPAddress -InterfaceAlias $PLACA -IPAddress $IP_EXTRA -ErrorAction SilentlyContinue
+  if ($x -and -not $x.SkipAsSource) { $avisosExtra += "$IP_EXTRA entrou SEM o SkipAsSource - pode virar origem" }
+  try {
+    $r = Invoke-WebRequest -Uri "https://$IP_EXTRA" -TimeoutSec 15 -UseBasicParsing
+    Ok "https://$IP_EXTRA responde com certificado ACEITO (HTTP $($r.StatusCode))."
+  } catch { $avisosExtra += "https://$IP_EXTRA nao respondeu: $($_.Exception.Message)" }
+}
+
 # ---- 5. veredito ------------------------------------------------------------
 Write-Host ""
 if ($falhas.Count -eq 0) {
   Write-Host "PRONTO. O servidor volta a ser sempre $IP." -ForegroundColor Green
   Write-Host "Os atalhos da fabrica voltam a funcionar sem tocar em nenhuma maquina." -ForegroundColor Green
+  if ($avisosExtra) {
+    Write-Host ""
+    $avisosExtra | ForEach-Object { Aviso $_ }
+    Aviso "quem abre o app pelo $IP_EXTRA fica sem ele ate isto ser resolvido."
+  } else {
+    Write-Host "O $IP_EXTRA segue no cabo, junto." -ForegroundColor Green
+  }
   Write-Host ""
   Write-Host "FALTA UM PASSO, no roteador: reservar $IP para o MAC B4-2E-99-F4-B6-8B," -ForegroundColor Yellow
   Write-Host "para ele nunca entregar este endereco a outro aparelho." -ForegroundColor Yellow

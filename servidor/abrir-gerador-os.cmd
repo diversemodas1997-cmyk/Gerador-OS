@@ -32,9 +32,10 @@ REM
 REM  PARA MUDAR OS CAMINHOS: edite a linha ALVOS abaixo, so ela.
 REM ======================================================================
 
-REM  193.168.0.200: o cabo tambem atende na faixa do roteador antigo
-REM  (Diverse001), que voltou ao switch em 15/10/2026.
-set "ALVOS=DESKTOP-SOV61AF 192.168.1.50 193.168.0.200 192.168.1.158"
+REM  193.168.0.200: o cabo, na faixa do roteador Diverse001, que voltou ao
+REM  switch em 15/10/2026. O 192.168.1.50 saiu em 23/10/2026: o cabo nao
+REM  alcanca o 192.168.1.1, e esperar por ele so atrasava a abertura.
+set "ALVOS=DESKTOP-SOV61AF 193.168.0.200 192.168.1.158"
 
 echo.
 echo   Gerador-OS - procurando o servidor...

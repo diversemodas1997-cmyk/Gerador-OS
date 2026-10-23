@@ -3,7 +3,7 @@ REM ===================================================================
 REM  Gerador-OS - instalar o certificado da fabrica nesta maquina.
 REM
 REM  POR QUE ISTO EXISTE
-REM  O servidor da fabrica atende em https://192.168.1.50 com um
+REM  O servidor da fabrica atende em https://193.168.0.200 com um
 REM  certificado assinado por uma autoridade PROPRIA ("Gerador-OS - CA
 REM  da fabrica"), que nenhum computador conhece de nascenca. Sem
 REM  instalar essa autoridade, o navegador abre a tela vermelha de
@@ -40,7 +40,7 @@ REM  Windows resolve o nome da maquina sozinho (LLMNR/NetBIOS) na rede em
 REM  que esta maquina estiver, entao ele acerta o endereco certo sem que
 REM  ninguem escolha. Os IPs ficam abaixo como rede de seguranca.
 set "PORNOME=https://DESKTOP-SOV61AF"
-set "SERVIDOR=https://192.168.1.50"
+set "SERVIDOR=https://193.168.0.200"
 set "ALTERNATIVO=https://192.168.1.158"
 
 echo.

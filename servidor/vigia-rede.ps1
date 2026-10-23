@@ -20,10 +20,12 @@
 
     a) toda rede conectada esta como PARTICULAR (senao as regras nao valem);
     b) as portas 80 e 443 tem regra de entrada;
-    c) o cabo, quando tem link, esta no 192.168.1.50 fixo (era 193.168.0.200
-       ate a troca do roteador em 14/10/2026);
+    c) o cabo, quando tem link, esta no 193.168.0.200 fixo (foi 192.168.1.50
+       de 14/10 a 23/10/2026; o cabo voltou a ser a rede do Diverse001);
     d) o Wi-Fi esta ASSOCIADO ao SSID que ele ja conhece;
-    e) o 192.168.1.50 nunca some: com o cabo sem link, ele vai para o Wi-Fi.
+    e) DESLIGADO desde 23/10/2026: emprestava o IP do cabo ao Wi-Fi quando o
+       cabo caia. So fazia sentido com cabo e Wi-Fi na mesma rede 192.168.1.x;
+       o 193.168.0.200 no Wi-Fi nao chega a ninguem. Ver $EMPRESTAR_AO_WIFI.
 
   O (a) e o (b) nao tem risco: nao mexem em endereco nem derrubam conexao. O
   (c) mexe, e por isso e delegado ao `fixar-ip-cabo.ps1`, que confere se o
@@ -87,7 +89,10 @@ $Raiz    = Split-Path -Parent $PSScriptRoot
 $LogDir  = Join-Path $PSScriptRoot 'tls'
 $Log     = Join-Path $LogDir 'vigia-rede.log'
 $PLACA_CABO = 'Ethernet 3'
-$IP_CABO    = '192.168.1.50'
+$IP_CABO    = '193.168.0.200'
+# O (e) so vale com cabo e Wi-Fi na MESMA rede. Hoje sao duas (193.168.0.x no
+# cabo, 192.168.1.x no Wi-Fi): religar so se voltarem a ser uma.
+$EMPRESTAR_AO_WIFI = $false
 $PLACA_WIFI = 'Wi-Fi'
 $GATEWAY    = '192.168.1.1'
 
@@ -252,7 +257,7 @@ if ($caboComLink -and $noWifi) {
       Anotar "FALHA ao tirar $IP_CABO do Wi-Fi: $($_.Exception.Message)"
     }
   }
-} elseif (-not $caboComLink -and $wifiDePe -and -not $noWifi) {
+} elseif ($EMPRESTAR_AO_WIFI -and -not $caboComLink -and $wifiDePe -and -not $noWifi) {
   if ($Somente) {
     Anotar "cabo sem link: o $IP_CABO esta fora do ar (o Wi-Fi atende so no proprio endereco)"
   } else {
