@@ -3213,6 +3213,18 @@ body:not(.is-admin) #modal-cad-fields button {
   font-weight: 600;
 }
 .exp-ocor-nome { font-size: 12px; color: var(--ink-3); }
+/* A OE contraída: uma linha só, que abre o quadro ao clicar (ver expOeAbertas). */
+.exp-ocor-fechada {
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 6px; cursor: pointer;
+}
+.exp-ocor-fechada:hover { border-color: var(--ink-3); }
+.exp-ocor-fechada .exp-ocor-data { font-size: 13px; }
+.exp-oe-linha-perna { font-size: 12px; white-space: nowrap; }
+.exp-oe-toggle {
+  border: 1px solid var(--line); background: transparent; cursor: pointer;
+  width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 12px; flex: none;
+}
 
 .exp-pernas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media screen and (max-width: 900px) { .exp-pernas { grid-template-columns: 1fr; } }

@@ -15134,7 +15134,7 @@ function _oeBuscaExec(q) {
       itens.map(i => (i.osNumero || '') + ' ' + (i.modelo || '')).join(' ')).toLowerCase();
     if (hay.includes(termo)) {
       matches.push({
-        anchor: oc.data, dataBr, dow: _EXP_DIAS_CURTO[_expData(oc.data).getDay()],
+        anchor: oc.data, janelaId: oc.janela.id, dataOrig: oc.dataOrig, dataBr, dow: _EXP_DIAS_CURTO[_expData(oc.data).getDay()],
         janela: oc.janela.nome || 'Janela sem nome', n: itens.length
       });
     }
@@ -15146,14 +15146,16 @@ function _oeBuscaExec(q) {
   }
   matches.sort((a, b) => String(b.anchor).localeCompare(String(a.anchor)));
   box.innerHTML = matches.slice(0, 25).map(m =>
-    `<div class="oe-busca-item" onmousedown="irParaOeDia('${esc(m.anchor)}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line-2);font-size:13px;">`
+    `<div class="oe-busca-item" onmousedown="irParaOeDia('${esc(m.anchor)}','${esc(m.janelaId)}','${esc(m.dataOrig)}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line-2);font-size:13px;">`
     + `<strong>${esc(m.dow)} ${esc(m.dataBr)}</strong> · ${esc(m.janela)} <span style="color:var(--ink-3);">· ${m.n} OS</span></div>`
   ).join('');
   box.style.display = 'block';
 }
 // Leva o plano para o dia da OE escolhida (modo diário + âncora na data). Usa
 // onmousedown no item pra disparar ANTES do onblur do input fechar o dropdown.
-function irParaOeDia(data) {
+// Com a janela, a OE procurada já chega aberta (ver expOeAbertas).
+function irParaOeDia(data, janelaId, dataOrig) {
+  if (janelaId) { expOeAbertas.add(_expChaveOe(janelaId, dataOrig || data)); _expGuardarAbertas(); }
   expPlanoModo = 'dia';
   expPlanoAncora = data;
   try {
@@ -15193,6 +15195,36 @@ try {
   expAbaAtiva = sessionStorage.getItem('gos:exp:aba') || expAbaAtiva;
   expPlanoOrdem = sessionStorage.getItem('gos:exp:ordem') === 'desc' ? 'desc' : 'asc';
 } catch (e) { /* sessionStorage indisponível, segue no padrão */ }
+
+/* O QUADRO DA OE NASCE CONTRAÍDO (23/10/2026, Junior: "as OS na área de
+   planejamento de expedição devem aparecer em quadro contraído, com botão para
+   expandir [...] as informações resumidas em uma única linha"). Cada OE vira
+   uma linha — número, dia, janela e, por perna, OS, volumes, produtos e a
+   situação da carga — e o ▸ abre o quadro inteiro, com as OS e os botões.
+   Os abertos ficam guardados por janela|data em sessionStorage, como o modo e
+   a ordem: abrir uma OE e trocar de tela não a fecha de novo. */
+const expOeAbertas = new Set();
+try { JSON.parse(sessionStorage.getItem('gos:exp:abertas') || '[]').forEach(k => expOeAbertas.add(k)); } catch (e) {}
+const _expChaveOe = (janelaId, dataOrig) => janelaId + '|' + dataOrig;
+function _expGuardarAbertas() {
+  try { sessionStorage.setItem('gos:exp:abertas', JSON.stringify([...expOeAbertas])); } catch (e) {}
+}
+function expAlternarOe(janelaId, dataOrig) {
+  const k = _expChaveOe(janelaId, dataOrig);
+  if (expOeAbertas.has(k)) expOeAbertas.delete(k); else expOeAbertas.add(k);
+  _expGuardarAbertas();
+  renderExpedicaoPlano();
+}
+// Abre ou fecha de uma vez as OE do período à vista.
+function expAlternarTodasOe(abrir) {
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  ocorrenciasExpedicao(ini, fim).forEach(oc => {
+    const k = _expChaveOe(oc.janela.id, oc.dataOrig);
+    if (abrir) expOeAbertas.add(k); else expOeAbertas.delete(k);
+  });
+  _expGuardarAbertas();
+  renderExpedicaoPlano();
+}
 
 function trocarAbaExpedicao(aba) {
   expAbaAtiva = (aba === 'plano') ? 'plano' : 'estoque';
@@ -15300,6 +15332,10 @@ function renderExpedicaoPlano() {
         <div class="exp-periodo">${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</div>
         <button class="btn" onclick="expNav(1)" title="Próximo período">›</button>
         <button class="btn" onclick="expHoje()">Hoje</button>
+      </div>
+      <div class="exp-seg" title="Cada OE aparece numa linha; o ▸ dela abre o quadro com as OS">
+        <button onclick="expAlternarTodasOe(true)" title="Abre todas as OE do período">▾ Expandir todas</button>
+        <button onclick="expAlternarTodasOe(false)" title="Volta todas as OE do período a uma linha">▸ Contrair todas</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn accent" onclick="goto('print-expedicao')">🖨 Folha do plano</button>
@@ -15427,10 +15463,29 @@ function renderExpedicaoPlano() {
       </div>`;
   };
 
-  const cards = ocs.map(oc => `
+  // A linha da OE contraída (ver expOeAbertas): por perna, OS, volumes,
+  // produtos e a situação da carga; o resto fica para o quadro aberto.
+  const pernaResumo = (oc, perna) => {
+    const r = resumoPernaExpedicao(oc, perna);
+    const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
+    return `<span class="exp-oe-linha-perna"><b>${perna === 'ida' ? 'Ida' : 'Volta'}</b>${hora ? ' ' + esc(hora) : ''}: ${r.itens.length
+      ? `${fmt(r.itens.length)} OS · ${fmt(r.volumes)} vol · ${fmt(r.pecas)} un. <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>`
+      : '<span class="muted">nenhuma OS</span>'}</span>`;
+  };
+  const cardFechado = oc => `
+    <div class="card exp-ocor exp-ocor-fechada ${oc.cancelada ? 'cancelada' : ''}" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Clique para expandir esta OE e ver as OS">
+      <button class="exp-oe-toggle" title="Expandir">▸</button>
+      <span class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `<span class="exp-oe-num">OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))}</span> · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}</span>
+      <span class="exp-ocor-nome">${esc(oc.janela.nome) || 'Janela sem nome'}${oc.remarcada ? ' · <span class="exp-badge baixo">remarcada</span>' : ''}${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}</span>
+      ${oc.cancelada ? '' : pernaResumo(oc, 'ida') + pernaResumo(oc, 'volta')}
+    </div>`;
+
+  const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : `
     <div class="card exp-ocor ${oc.cancelada ? 'cancelada' : ''}">
       <div class="exp-ocor-head">
-        <div>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <button class="exp-oe-toggle" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Contrair esta OE numa linha">▾</button>
+          <div>
           <div class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">
             ${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `<span class="exp-oe-num">OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))}</span> · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}
           </div>
@@ -15441,6 +15496,7 @@ function renderExpedicaoPlano() {
             ${oc.horaAlterada ? ` · <span class="exp-badge info" title="O horário deste dia foi ajustado à mão. A janela ${esc(oc.janela.nome) || ''} segue com o horário dela nos outros dias.">horário deste dia</span>` : ''}
             ${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}
             ${oc.motivo ? ' · ' + esc(oc.motivo) : ''}
+          </div>
           </div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -15500,7 +15556,7 @@ function renderExpedicaoPlano() {
           ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => `
             <tr${oc.cancelada ? ' style="opacity:.55;"' : ''}>
               <td class="col-actions row-actions">
-                <button onclick="irParaOeDia('${esc(oc.data)}')">abrir</button>
+                <button onclick="irParaOeDia('${esc(oc.data)}','${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">abrir</button>
               </td>
               <td><span class="exp-oe-num">OE ${_oeFmt(n)}</span></td>
               <td style="white-space:nowrap;">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}${
