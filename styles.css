@@ -1613,6 +1613,8 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   z-index: 100;
 }
 .modal-backdrop.open { display: flex; }
+/* A ficha aberta pelo "Novo +" de uma lista que está em outro modal. */
+.modal-backdrop.por-cima { z-index: 101; }
 .modal {
   background: var(--paper);
   border-radius: 4px;

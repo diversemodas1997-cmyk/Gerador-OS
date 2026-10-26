@@ -5063,7 +5063,178 @@ function toast(msg, type = '') {
 let cadastroContext = null;
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  if (id === 'modal-cad' && _novoMaisPilha.length && cadastroContext && cadastroContext.origin === 'novo-mais') { _novoMaisVoltar(null); return; }
+  document.getElementById(id).classList.remove('open');
+}
+
+/* ---- "NOVO +" NAS LISTAS ---------------------------------------------------
+   (26/10/2026, Junior: "retire a opção outro do dropdown e insira opção Novo +
+   [...] essa opção novo deve redirecionar usuário para janela correspondente ao
+   cadastro de novo item [...] todos os dropdown".)
+   Toda lista que escolhe um item de cadastro ganha, no fim, "Novo +". Escolher
+   abre a ficha em branco daquele cadastro; salvar volta para a lista com o item
+   novo já escolhido, e fechar volta sem mexer em nada.
+   Não se mexe em cada tela: as regras abaixo dizem que lista é de que cadastro,
+   e um observador põe a opção sempre que a lista é (re)desenhada. Filtros e
+   listas de valor fixo (status, escala, unidade) ficam de fora — ali não há
+   cadastro para abrir.
+   A ficha nova pode abrir de dentro de outra ficha (o fornecedor de dentro do
+   tecido): a de baixo sai da página inteira, com o que já foi digitado, e volta
+   no mesmo lugar (_novoMaisPilha). O mesmo vale para a ficha do Novo cadastro. */
+const NOVO_MAIS_REGRAS = [
+  ['#m-fornecedor, #m-cor-fornecedor', 'fornecedor'],
+  ['#m-cor-tecido, #m-vinc-tecido, #me-tecido, #mc-tecido, select.m-comp-tec, select.fase-tec, select.tec-sel, select[id^="rn-f-tec-"], select[id^="pw-f-tec-"]', 'tecido'],
+  ['#m-vinc-cor, #m-vinc-cor2, #m-vinc-cor3, #m-comp-cor1, #m-comp-cor2, #m-comp-cor3, #ma-corcad, select.m-comp-cor, select.var-c1, select.var-c2, select.var-c3, select.comp-cor, select.tec-cor, select.rolo-cor', 'cor'],
+  ['#me-cor, #mc-cor', 'cor', 'nome'],
+  ['#m-vinc-modelo, #m-comp-tipopeca', 'modelo'],
+  ['#f-modelo', 'modelo', 'nome'],
+  ['#m-vinc-base', 'base'], ['#f-base', 'base', 'nome'],
+  ['#m-vinc-marca', 'marca'], ['#f-griffe', 'marca', 'nome'],
+  ['#m-vinc-colecao', 'colecao'], ['#f-colecao', 'colecao', 'nome'],
+  ['#m-vinc-linha', 'linha'], ['#f-linha', 'linha', 'nome'],
+  ['#m-vinc-bloco', 'bloco'], ['#f-bloco', 'bloco', 'nome'],
+  ['#m-vinc-designer, #m-vinc-ftec, #m-vinc-coord, #op-responsavel, select[id^="rc-p-"]', 'equipe'],
+  ['#f-designer, #f-ftec, #f-coordenado', 'equipe', 'nome'],
+  ['#m-funcao, #op-funcao', 'funcao'],
+  ['#m-grade-conjugada, #cp-grade', 'grade'], ['#f-grade-preset', 'grade', 'nome'],
+  ['#m-grade-conjugada-desenho, #cp-desenho, #dem-desenho', 'desenho'], ['#f-desenho', 'desenho', 'codigo'],
+  ['select.av-mat', 'material', '', 'aviamento'],
+  ['#acab-aj-produto', 'sku']
+].map(([sel, tipo, val, cat]) => ({ sel, tipo, val: val || '', cat: cat || '' }));
+const _novoMaisPilha = [];
+const _novoMaisAntes = new WeakMap();   // o valor da lista antes de escolher "Novo +"
+
+const _novoMaisRegra = sel => NOVO_MAIS_REGRAS.find(r => sel.matches(r.sel));
+// Só quem cria cadastros vê a opção: para os demais ela só daria um aviso de recusa.
+const _novoMaisPode = () => currentRole === 'admin' || (typeof temAcesso === 'function' && temAcesso('cadastros'));
+
+function _novoMaisGarantir(sel) {
+  if (!sel || sel.tagName !== 'SELECT' || sel.multiple || !_novoMaisPode() || !_novoMaisRegra(sel)) return;
+  if (sel.querySelector('option[value="__novo__"]')) return;
+  const o = document.createElement('option');
+  o.value = '__novo__';
+  o.textContent = 'Novo +';
+  sel.appendChild(o);
+}
+
+// O valor que a lista grava: o id na maioria, o nome nas da folha de OS, o
+// código no desenho. A regra diz quando sabe; senão, vale o campo que as
+// opções que já estão lá usam.
+function _novoMaisValor(sel, r, item) {
+  if (r.val) return String(item[r.val] || '');
+  const arr = STATE[pluralize(r.tipo)] || [];
+  const vals = Array.from(sel.options).map(o => o.value).filter(v => v && v !== '__novo__');
+  let melhor = 'id', n = -1;
+  ['id', 'codigo', 'nome'].forEach(f => {
+    const set = new Set(arr.map(x => String(x[f] || '')));
+    const c = vals.filter(v => set.has(v)).length;
+    if (c > n) { n = c; melhor = f; }
+  });
+  return String(item[melhor] || item.id);
+}
+
+function _novoMaisAbrir(sel) {
+  const r = _novoMaisRegra(sel);
+  if (!r) return;
+  if (r.tipo === 'sku') { if (typeof acabAbrirProduto === 'function') acabAbrirProduto(); return; }
+  if (!exigirEdicao('criar cadastros')) return;
+  const modal = document.getElementById('modal-cad');
+  const box = document.getElementById('modal-cad-fields');
+  const nc = document.getElementById('nc-campos');
+  const btn = document.getElementById('btn-cad-salvar');
+  const p = { sel, ctx: cadastroContext, frag: null, kind: 'fora' };
+  if (box.contains(sel) && modal.classList.contains('open')) {
+    p.kind = 'modal';
+    p.titulo = document.getElementById('modal-cad-title').textContent;
+    p.oi = box.oninput; p.oc = box.onchange;
+    p.btn = btn ? { disabled: btn.disabled, display: btn.style.display, title: btn.title } : null;
+  } else if (nc && nc.contains(sel)) {
+    p.kind = 'nc';
+  } else if (modal.classList.contains('open')) {
+    return;   // a ficha está aberta e a lista não é dela: não há para onde voltar
+  }
+  if (p.kind !== 'fora') {
+    const de = p.kind === 'modal' ? box : nc;
+    p.frag = document.createDocumentFragment();
+    while (de.firstChild) p.frag.appendChild(de.firstChild);
+  }
+  _novoMaisPilha.push(p);
+  // Por cima de qualquer outro modal (o da movimentação de estoque, o da operação).
+  modal.classList.add('por-cima');
+  if (r.cat) _matCategoriaNova = r.cat;
+  openCadastroModal(r.tipo, null, 'novo-mais');
+  if (cadastroContext && cadastroContext.origin === 'novo-mais') return;
+  _novoMaisVoltar(null);   // a ficha não abriu (recusa): devolve o que saiu
+}
+
+// Volta para onde a pessoa estava. `item`: o que acabou de ser salvo, para já
+// ficar escolhido na lista; null quando ela fechou a ficha sem salvar.
+function _novoMaisVoltar(item) {
+  const p = _novoMaisPilha.pop();
+  if (!p) return;
+  const modal = document.getElementById('modal-cad');
+  const box = document.getElementById('modal-cad-fields');
+  box.innerHTML = '';
+  cadastroContext = p.ctx;
+  if (p.kind === 'modal') {
+    box.appendChild(p.frag);
+    box.oninput = p.oi; box.onchange = p.oc;
+    document.getElementById('modal-cad-title').textContent = p.titulo;
+    const btn = document.getElementById('btn-cad-salvar');
+    if (btn && p.btn) { btn.disabled = p.btn.disabled; btn.style.display = p.btn.display; btn.title = p.btn.title; }
+  } else {
+    box.oninput = box.onchange = null;
+    modal.classList.remove('open');
+    if (p.kind === 'nc') document.getElementById('nc-campos').appendChild(p.frag);
+  }
+  if (!_novoMaisPilha.length) modal.classList.remove('por-cima');
+  const sel = p.sel;
+  if (!item || !sel || !sel.isConnected) return;
+  const r = _novoMaisRegra(sel);
+  if (!r) return;
+  if (p.kind === 'fora' && /^f-/.test(sel.id || '') && typeof refreshOSFormDropdowns === 'function') refreshOSFormDropdowns();
+  const v = _novoMaisValor(sel, r, item);
+  if (!Array.from(sel.options).some(o => o.value === v)) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = r.tipo === 'material'
+      ? [item.codigo, item.desc].filter(Boolean).join(' · ')
+      : (item.nome || item.codigo || v);
+    sel.insertBefore(o, sel.querySelector('option[value="__novo__"]'));
+  }
+  sel.value = v;
+  _novoMaisAntes.set(sel, v);
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// "Novo +" escolhido: a lista volta ao que era e a ficha abre. Em captura, para
+// que o onchange da própria lista nunca veja o valor "__novo__".
+document.addEventListener('focusin', e => {
+  if (e.target && e.target.tagName === 'SELECT') _novoMaisAntes.set(e.target, e.target.value);
+}, true);
+document.addEventListener('change', e => {
+  const sel = e.target;
+  if (!sel || sel.tagName !== 'SELECT') return;
+  if (sel.value !== '__novo__') { _novoMaisAntes.set(sel, sel.value); return; }
+  e.stopImmediatePropagation();
+  e.stopPropagation();
+  const antes = _novoMaisAntes.get(sel) || '';
+  sel.value = Array.from(sel.options).some(o => o.value === antes) ? antes : '';
+  _novoMaisAbrir(sel);
+}, true);
+// As listas são redesenhadas o tempo todo (innerHTML): a opção volta sozinha.
+new MutationObserver(recs => {
+  for (const r of recs) {
+    if (r.target.tagName === 'SELECT') _novoMaisGarantir(r.target);
+    r.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
+      if (n.tagName === 'SELECT') _novoMaisGarantir(n);
+      else if (n.firstElementChild) n.querySelectorAll('select').forEach(_novoMaisGarantir);
+    });
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+
 
 // `pre`: a ficha NOVA já preenchida (a grade sugerida pelo Relatório de demanda).
 function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
@@ -5075,7 +5246,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
   if (!editId && !exigirEdicao('criar cadastros')) return;
   // A ficha do Novo cadastro usa os mesmos ids desta: abrir outra ficha a
   // descarta, para não haver dois "m-nome" na página (ver ncEscolher).
-  if (origin !== 'novo-cadastro' && typeof _nc !== 'undefined' && _nc && !_nc.feito) {
+  if (origin !== 'novo-cadastro' && origin !== 'novo-mais' && typeof _nc !== 'undefined' && _nc && !_nc.feito) {
     const nc = document.getElementById('nc-campos');
     if (nc) nc.innerHTML = '';
     _nc = null;
@@ -5111,14 +5282,15 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Moletom Bulk"><div class="field-hint">É o <b>nome de casa</b>: as cores ("Preto <b>Ribana Moletom</b>"), as fases das grades e o razão do estoque penduram nele. Renomear aqui não reescreve sozinho quem já aponta para o nome antigo — o nome do fornecedor vai no campo <b>Código / artigo</b>.</div></div>
         <div class="field"><label>Tipo de estrutura</label>
-          <select id="m-estrutura">
+          <select id="m-estrutura" data-prev="${esc(item.estrutura||'')}" onchange="onSelectNovoValor(this, 'Nome do novo tipo de estrutura')">
             <option value="">— não informado —</option>
             <option value="meia-malha" ${item.estrutura==='meia-malha'?'selected':''}>Meia malha</option>
             <option value="ribana-1x1" ${item.estrutura==='ribana-1x1'?'selected':''}>Ribana 1x1</option>
             <option value="ribana-2x1" ${item.estrutura==='ribana-2x1'?'selected':''}>Ribana 2x1</option>
             <option value="moletom" ${item.estrutura==='moletom'?'selected':''}>Moletom</option>
             <option value="piquet" ${item.estrutura==='piquet'?'selected':''}>Piquet</option>
-            <option value="outro" ${item.estrutura==='outro'?'selected':''}>Outro</option>
+            ${_estruturasLivres(item.estrutura).map(e => `<option value="${esc(e)}" ${item.estrutura===e?'selected':''}>${esc(e)}</option>`).join('')}
+            <option value="__nova__">Novo +</option>
           </select>
           <div class="field-hint">A <b>construção da malha</b>, como vem na ficha do fornecedor. Não é a <b>Categoria</b> logo abaixo: quem manda no limite de camadas do enfesto é ela, não este campo.</div>
         </div>
@@ -5130,7 +5302,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Malha algodão (limite 80 camadas)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom (limite 36 camadas)</option>
             <option value="ribana" ${item.categoria==='ribana'?'selected':''}>Ribana (1 camada = 2 peças)</option>
-            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro (sem limite)</option>
+            <option value="outro" ${item.categoria==='outro'?'selected':''}>Sem limite de camadas</option>
           </select>
         </div>
         <div class="field"><label>Forma do pano</label>
@@ -5210,7 +5382,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Camiseta (malha algodão)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom</option>
-            <option value="outro" ${item.categoria==='outro'?'selected':''}>Outro</option>
+            ${item.categoria==='outro' ? '<option value="outro" selected>Outro</option>' : ''}
           </select>
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
@@ -7789,7 +7961,7 @@ async function salvarCadastro() {
   if (!editId) STATE[list].push(item);
   await saveState(list);
 
-  closeModal('modal-cad');
+  if (cadastroContext.origin !== 'novo-mais') closeModal('modal-cad');
   toast('Salvo com sucesso', 'ok');
 
   // FUNÇÃO SALVA: o "todo dia às" e o tempo das operações de hora marcada valem
@@ -7855,6 +8027,8 @@ async function salvarCadastro() {
     }
   } else if (cadastroContext.origin === 'novo-cadastro') {
     _ncConcluido(item);
+  } else if (cadastroContext.origin === 'novo-mais') {
+    _novoMaisVoltar(item);
   } else if (cadastroContext.origin === 'lista-os') {
     // VEIO DA LISTA DE OS (o botão "grade" da linha): salvar tem de devolver a
     // pessoa à lista onde ela estava, e não jogá-la no cadastro de grades.
@@ -23403,7 +23577,7 @@ async function moveGradeSubfolder(tp, vr, dir) {
 // do SKU: escrever PM.LISA no SKU não muda de pasta.
 //
 // A lista sai de três fontes, na ordem: as fixas (com o nome que a casa deu a
-// elas, se renomearam), as que já existem em alguma grade, e "+ Nova pasta…",
+// elas, se renomearam), as que já existem em alguma grade, e "Novo +",
 // que pergunta o nome na hora.
 function opcoesPastaGrade(kind, atual) {
   const pasta = kind === 'pasta';
@@ -23422,11 +23596,36 @@ function opcoesPastaGrade(kind, atual) {
     .filter(x => x && !fixos.has(x)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   // O valor atual aparece mesmo que ainda não exista em nenhuma grade salva.
   if (atual && !fixos.has(atual) && !usados.includes(atual)) usados.push(atual);
-  const rot = pasta ? ['Pastas adicionais', '+ Nova pasta…'] : ['Subpastas adicionais', '+ Nova subpasta…'];
-  return fixas.map(t => `<option value="${esc(t.v)}" ${atual === t.v ? 'selected' : ''}>${esc(t.lbl)}</option>`).join('')
+  const rot = pasta ? ['Pastas adicionais', 'Novo +'] : ['Subpastas adicionais', 'Novo +'];
+  return fixas.filter(t => t.v !== 'outro' || atual === 'outro').map(t => `<option value="${esc(t.v)}" ${atual === t.v ? 'selected' : ''}>${esc(t.lbl)}</option>`).join('')
     + (usados.length ? `<optgroup label="${rot[0]}">${usados.map(v =>
         `<option value="${esc(v)}" ${atual === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</optgroup>` : '')
     + `<option value="__nova__">${rot[1]}</option>`;
+}
+
+// Tipo de estrutura do tecido: as fixas da ficha e as que a casa escreveu
+// pelo "Novo +" (não há cadastro de estruturas: o nome é o valor).
+const _ESTRUTURAS_FIXAS = new Set(['meia-malha', 'ribana-1x1', 'ribana-2x1', 'moletom', 'piquet']);
+function _estruturasLivres(atual) {
+  const l = new Set((STATE.tecidos || []).map(t => t.estrutura || '').filter(e => e && !_ESTRUTURAS_FIXAS.has(e)));
+  if (atual && !_ESTRUTURAS_FIXAS.has(atual)) l.add(atual);
+  return [...l].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+// Lista de valor livre com "Novo +" (__nova__): pergunta o nome e o põe na lista.
+function onSelectNovoValor(sel, pergunta) {
+  if (sel.value !== '__nova__') { sel.dataset.prev = sel.value; return; }
+  const nome = (prompt(pergunta + ':') || '').trim();
+  if (!nome) { sel.value = sel.dataset.prev || ''; return; }
+  const existente = Array.from(sel.options).find(o => o.value !== '__nova__'
+    && (o.value.toLowerCase() === nome.toLowerCase() || o.textContent.trim().toLowerCase() === nome.toLowerCase()));
+  if (existente) sel.value = existente.value;
+  else {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = nome;
+    sel.insertBefore(opt, sel.querySelector('option[value="__nova__"]'));
+    sel.value = nome;
+  }
+  sel.dataset.prev = sel.value;
 }
 
 function onSelectGradeFolder(sel, kind) {
@@ -31647,7 +31846,7 @@ async function encerrarDemandaCoberta(chave) {
 
 function renderRelatorioDemanda() {
   const selDes = document.getElementById('dem-desenho');
-  if (selDes && selDes.options.length <= 1) _demFiltrarDesenhos();
+  if (selDes && Array.from(selDes.options).filter(o => o.value !== '__novo__').length <= 1) _demFiltrarDesenhos();
   const box = document.getElementById('rel-demanda-lista');
   if (!box) return;
   const lista = _demLista();
