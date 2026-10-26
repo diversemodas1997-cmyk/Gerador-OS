@@ -795,10 +795,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const b = norm(_buscaProd);
     const ps = produtos().slice().sort((a, b2) => String(a.sku).localeCompare(String(b2.sku), 'pt-BR'))
       .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
-    const nCat = (typeof catalogoSkus !== 'undefined' && Array.isArray(catalogoSkus)) ? catalogoSkus.length : 0;
-    const faltamCat = nCat ? catalogoSkus.filter(s => s && s.item && !produtoPorSku(s.item)).length : 0;
     const doProg = skusDoPrograma();
-    const nProg = doProg.size;
     const inicioLocal = c.inicio ? new Date(c.inicio) : null;
     const pad = n => String(n).padStart(2, '0');
     const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
@@ -815,10 +812,6 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
           <button class="btn primary" onclick="acabSalvarCfg()">Salvar</button>
         </div>
         <div class="card admin-only">
-          <h2 style="margin-top:0;font-size:15px;">Trazer os SKUs</h2>
-          <div class="muted" style="font-size:12px;margin-bottom:8px;">O catálogo que o Estoque-Confeccao publicou tem <b>${fmtN(nCat)}</b> SKUs${nCat ? `, dos quais <b>${fmtN(faltamCat)}</b> ainda não estão aqui` : ' (não chegou nesta sessão)'}. Trazer cria só os que faltam, com os tamanhos P ao G3 (2 ao 16 na linha infantil) e sem preço — o código do ERP entra sozinho na primeira importação de saídas.</div>
-          <div class="muted" style="font-size:12px;margin-bottom:8px;">Os SKUs do <b>programa</b> (o SKU completo dos desenhos técnicos e dos modelos, e o de cada OS: linha + sigla da cor) são lidos direto de lá, sem sincronizar: <b>${fmtN(nProg)}</b> SKUs vêm do programa. Mudou o SKU no desenho, no modelo ou na cor, mudou aqui.</div>
-          <button class="btn" onclick="acabImportarCatalogo()" ${faltamCat ? '' : 'disabled'}>Trazer ${fmtN(faltamCat)} SKUs do catálogo</button>
           <button class="btn primary" onclick="acabAbrirProduto()">+ Cadastrar SKU</button>
         </div>
       </div>
