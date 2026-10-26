@@ -15818,6 +15818,17 @@ function expAlternarOe(janelaId, dataOrig) {
   _expGuardarAbertas();
   renderExpedicaoPlano();
 }
+// FOLHA DE UMA OE SÓ (26/10/2026, Junior: "insira em cada quadro expandido da
+// OE o botão Folha do plano" e "retire o botão do cabeçalho da página"). A
+// folha que se abre pelo quadro traz só aquela OE; o auto-save diário da pasta
+// continua gravando o dia inteiro (ver salvarPdfOeNaPasta).
+let expFolhaOe = null;   // chave _expChaveOe da OE da folha, ou null = período
+function expFolhaDaOe(janelaId, dataOrig) {
+  expFolhaOe = _expChaveOe(janelaId, dataOrig);
+  goto('print-expedicao');
+}
+const _expNaFolha = oc => !expFolhaOe || _expChaveOe(oc.janela.id, oc.dataOrig) === expFolhaOe;
+
 // Abre ou fecha de uma vez as OE do período à vista.
 function expAlternarTodasOe(abrir) {
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
@@ -15941,7 +15952,6 @@ function renderExpedicaoPlano() {
         <button onclick="expAlternarTodasOe(false)" title="Volta todas as OE do período a uma linha">▸ Contrair todas</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn accent" onclick="goto('print-expedicao')">🖨 Folha do plano</button>
         <div style="display:flex;gap:6px;">
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
@@ -16102,7 +16112,8 @@ function renderExpedicaoPlano() {
           </div>
           </div>
         </div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn accent" onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha do plano só desta OE, para imprimir ou salvar">🖨 Folha do plano</button>
           <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">Horário / cancelar / remarcar</button>
           <button class="btn" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')">Editar janela</button>
         </div>
@@ -22685,7 +22696,7 @@ function renderPrintPlanoExpedicao() {
   // o semanal — que é o modo padrão — continuava imprimindo dia vazio.
   // A tela de planejamento segue mostrando vazios e cancelados: lá eles servem.
   const ocs = ocorrenciasExpedicao(ini, fim).filter(oc =>
-    !oc.cancelada &&
+    !oc.cancelada && _expNaFolha(oc) &&
     resumoPernaExpedicao(oc, 'ida').itens.length +
     resumoPernaExpedicao(oc, 'volta').itens.length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
@@ -23076,7 +23087,9 @@ function renderPrintPlanoExpedicao() {
           <div class="exp-print-head">
             <div>
               <div class="tit">ORDEM DE EXPEDIÇÃO OE</div>
-              <div class="sub">Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))} · expedição interna, ida e volta</div>
+              <div class="sub">${expFolhaOe && ocs.length
+                ? `${_oeNumeroDe(ocs[0].janela.id, ocs[0].dataOrig) ? `OE ${_oeFmt(_oeNumeroDe(ocs[0].janela.id, ocs[0].dataOrig))} · ` : ''}${esc(formatDate(ocs[0].data))}`
+                : `Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))}`} · expedição interna, ida e volta</div>
             </div>
             <div class="meta">
               <div><b>${esc(cfg.unidadeA)}</b> ⇄ <b>${esc(cfg.unidadeB)}</b></div>
@@ -33196,6 +33209,11 @@ async function atualizarOeFolderStatus() {
 function oeFilenameForPlano() {
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
   const iniBr = dataBrArquivo(ini), fimBr = dataBrArquivo(fim);
+  const oc = expFolhaOe && ocorrenciasExpedicao(ini, fim).find(o => _expChaveOe(o.janela.id, o.dataOrig) === expFolhaOe);
+  if (oc) {
+    const n = _oeNumeroDe(oc.janela.id, oc.dataOrig);
+    return sanitizeForFilename(`OE-${n ? _oeFmt(n) + '-' : ''}${dataBrArquivo(oc.data)}`) + '.pdf';
+  }
   const base = (ini === fim) ? `OE-${iniBr}` : `OE-${iniBr}_a_${fimBr}`;
   return sanitizeForFilename(base) + '.pdf';
 }
@@ -33352,7 +33370,7 @@ function _avisarOeUmaVez(chave, msg) {
 function oeTemConteudo() {
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
   return ocorrenciasExpedicao(ini, fim).some(oc =>
-    !oc.cancelada &&
+    !oc.cancelada && _expNaFolha(oc) &&
     resumoPernaExpedicao(oc, 'ida').itens.length +
     resumoPernaExpedicao(oc, 'volta').itens.length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
@@ -33360,6 +33378,14 @@ function oeTemConteudo() {
 }
 
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
+  // O auto-save grava o DIA inteiro, como sempre: a folha de uma OE só (ver
+  // expFolhaDaOe) é do clique manual.
+  if (silent && expFolhaOe) {
+    const so = expFolhaOe;
+    expFolhaOe = null;
+    try { return await salvarPdfOeNaPasta({ silent }); }
+    finally { expFolhaOe = so; _oeRerenderFolhaSeAberta(); }
+  }
   // Trava de reentrada com validade: uma captura travada não pode calar o
   // auto-save para sempre.
   if (_oeSalvando && (Date.now() - _oeSalvandoDesde) < 60000) {
