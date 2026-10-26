@@ -31,6 +31,27 @@ param(
 $Raiz = Split-Path -Parent $PSScriptRoot
 $Log  = Join-Path $Raiz 'servidor\tls\backup-diario.log'   # tls/ e ignorado pelo git
 
+# UM CLIQUE NA JANELA PARAVA O BACKUP (26/10/2026). A tarefa abria uma janela
+# visivel, e o console desta maquina esta com o QuickEdit ligado: clicar dentro
+# dela poe o console em "Selecionar", e dai em diante todo Write-Host fica
+# parado esperando um Esc. Foi o que aconteceu as 16:24: o pacote saiu, o
+# Anotar gravou a linha no log e travou no Write-Host logo depois - 30 min sem
+# processo filho nenhum, ate a tarefa ser parada. Aqui o script desliga o
+# QuickEdit da propria janela; o -Agendar tambem passou a esconde-la.
+try {
+  Add-Type -Namespace GOS -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int h);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);
+'@
+  $hEntrada = [GOS.Console]::GetStdHandle(-10)   # STD_INPUT_HANDLE
+  $modo = [uint32]0
+  if ([GOS.Console]::GetConsoleMode($hEntrada, [ref]$modo)) {
+    # tira ENABLE_QUICK_EDIT_MODE (0x40); ENABLE_EXTENDED_FLAGS (0x80) e o que faz valer
+    [void][GOS.Console]::SetConsoleMode($hEntrada, [uint32](($modo -band 0xFFFFFFBF) -bor 0x80))
+  }
+} catch { }
+
 function Anotar($texto) {
   $linha = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $texto
   try { Add-Content -Path $Log -Value $linha -Encoding utf8 } catch { }
@@ -90,7 +111,8 @@ if ($GravarSenha) {
 if ($Agendar) {
   $nome = 'Backup Gerador-OS'
   $args = @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    # Janela escondida: ninguem clica nela por engano (ver QuickEdit, no topo).
+    '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
     '-File', ('"' + (Join-Path $PSScriptRoot 'backup-diario.ps1') + '"'),
     # A SENHA NAO ENTRA AQUI. Ate 10/09/2026 ela vinha como '-Senha "<senha>"' e
     # ficava legivel para qualquer um que exportasse a tarefa. Agora o script a
