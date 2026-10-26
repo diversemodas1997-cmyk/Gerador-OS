@@ -1372,7 +1372,12 @@
      que ainda esperam reavaliação ou foram marcadas "Não usar" vão no fim da
      fase, curtas, porque ficar de fora também é informação para o corte.
        Tecidos compatíveis em cor
-       Corpo · Malha Algodão Vermelho (1,2,3,4,5,6) - Gola · Ribana (1) */
+       Corpo · Malha Algodão Vermelho - Tom 1 (1,2,3,4,5,6) - Gola · Ribana - Tom 1 (1)
+     COM O TOM ESCRITO (26/10/2026, Junior: "Corpo Parte 1 · Malha Algodão Preto -
+     Tom 1 (1,2,3,5,6,7,8,9,10 - ribana 2,3) Tom 2 (4 - ribana 2,3), ribana 1 não
+     usar"): cada grupo diz de que tom é; a ribana de um tom só vai com TODOS os
+     tons do corpo (ela casa com a fase inteira); e o número vem antes do
+     "não usar" / "a reavaliar". */
   // A ribana conjugada nesta fase (já medida), ou nenhuma.
   const ribanasDe = (f, medidas) => medidas.filter(r => r.corDe === f.i);
   function textoFaseCurto(f, medidas = fasesComMedicao()) {
@@ -1380,19 +1385,22 @@
     const rib = ribanasDe(f, medidas).map(r => ({ r, av: S.avOS.fases[r.i], tons: tonsDoRelatorio(S.avOS.fases[r.i]) }));
     const tons = tonsDoRelatorio(av);
     const nGrupos = Math.max(tons.length, ...rib.map(x => x.tons.length));
-    // Tom a tom: (corpo - ribana); a ribana com mais tons que o corpo sai só ela.
+    // Tom a tom: Tom k (corpo - ribana); a ribana com mais tons que o corpo sai
+    // só ela, e a de um tom só entra em todos.
+    const tomDaRibana = (x, j) => x.tons.length === 1 ? x.tons[0] : x.tons[j];
     const grupos = Array.from({ length: nGrupos }, (_, j) => {
       const partes = [tons[j] ? tons[j].membros.join(',') : '',
-        ...rib.map(x => x.tons[j] ? `ribana ${x.tons[j].membros.join(',')}` : '')].filter(Boolean);
-      return `(${partes.join(' - ')})`;
+        ...rib.map(x => tomDaRibana(x, j) ? `ribana ${tomDaRibana(x, j).membros.join(',')}` : '')].filter(Boolean);
+      const k = tons[j] ? tons[j].k : (rib.map(x => x.tons[j]).find(Boolean) || {}).k || j + 1;
+      return `Tom ${k} (${partes.join(' - ')})`;
     }).join(' ');
     const sobra = (a, rotulo) => {
       const pend = avPendentes(a), fora = numerosDasAmostras(a).filter(n => tomDe(n, a) === 0);
-      return (pend.length ? `, ${rotulo}a reavaliar ${pend.join(',')}` : '') + (fora.length ? `, ${rotulo}não usar ${fora.join(',')}` : '');
+      return (pend.length ? `, ${rotulo}${pend.join(',')} a reavaliar` : '') + (fora.length ? `, ${rotulo}${fora.join(',')} não usar` : '');
     };
     const nome = [f.nome, f.tecido].filter(Boolean).join(' · ');
     const reav = S.avOS.reav[f.i] || rib.some(x => S.avOS.reav[x.r.i]);
-    return `${nome}${reav ? ' [reavaliada]' : ''} ${grupos || '(nenhuma)'}`
+    return `${nome}${reav ? ' [reavaliada]' : ''} - ${grupos || '(nenhuma)'}`
       + sobra(av, '') + rib.map(x => sobra(x.av, 'ribana ')).join('');
   }
   // Um recado só, com todas as fases medidas, na ordem do enfesto; a ribana
