@@ -68,6 +68,10 @@ const api = new Function('document', 'STATE', `
   const toasts = []; const toast = (t, k) => toasts.push(k + ':' + t);
   const exigirEstoqueTecidos = () => true;
   const confirm = () => true;
+  ${linha(/const _aviOrigemDe = [^\n]*/)}
+  ${linha(/const _aviDestinoDe = [^\n]*/)}
+  const _expDataEfetivaCarga = c => c.data;
+  ${['_ferExpMovs', '_ferDataChegada', '_ferChegou', '_estItemChegadas', '_estItemEstoque', '_ferEmTransito', '_ferChegadasHist'].map(f => pegaFuncao(f)).join('\n')}
   ${pegaFuncao('_estItensHistorico')}
   ${pegaFuncao('_estItensRegistrar')}
   ${pegaFuncao('_salvarMovEstoqueItem', true)}

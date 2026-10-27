@@ -2151,6 +2151,7 @@ const ACOES_POR_AREA = {
   // Expedição
   'alocar OS na expedição': 'expedicao', 'configurar a expedição': 'expedicao',
   'alocar aviamento na expedição': 'expedicao', 'tirar aviamento da expedição': 'expedicao',
+  'alocar ferramenta na expedição': 'expedicao', 'tirar ferramenta da expedição': 'expedicao',
   'cadastrar janelas de expedição': 'expedicao', 'cancelar ou remarcar expedições': 'expedicao',
   'editar a folha de OE': 'expedicao', 'marcar a carga como feita': 'expedicao',
   'recalcular volumes': 'expedicao', 'remover OS da expedição': 'expedicao',
@@ -11444,6 +11445,174 @@ async function excluirAviamentoExp(id) {
 window.abrirModalExpAviamento = abrirModalExpAviamento;
 window.excluirAviamentoExp = excluirAviamentoExp;
 
+/* ---------- A FERRAMENTA NA ORDEM DE EXPEDIÇÃO ---------- */
+/* (27/10/2026, Junior: "insira no planejamento de OE botão + Ferramenta, ao
+   lado do botão + Aviamento"). A mesma viagem do aviamento, no cadastro das
+   ferramentas, que é um retrato (em uso / em estoque) por unidade:
+
+     · ao ser ALOCADA, a ferramenta sai do EM ESTOQUE da origem na hora — é
+       uma saída gravada no histórico (`motivo: 'expedicao'`), com a OE dela;
+     · até a data da carga (a efetiva, se a ocorrência foi remarcada) está
+       EM TRÂNSITO, em nenhuma das duas;
+     · na DATA DA CARGA ela ENTRA no em estoque da linha de mesmo tipo e
+       descrição da outra unidade. A chegada NÃO é gravada: é lida das OE,
+       como a baixa do papel pelas OS. Remarcar a OE remarca a chegada.
+
+   A linha de destino é criada zerada ao alocar, se a outra unidade ainda não
+   tem aquela ferramenta. Tirar da OE desfaz a saída — e, se ela já chegou,
+   tira também da unidade de destino (desde que lá ainda haja o que tirar). */
+function _ferExpMovs(semId) {
+  return (Array.isArray(STATE.ferramentasMov) ? STATE.ferramentasMov : [])
+    .filter(m => m.motivo === 'expedicao' && m.id !== semId);
+}
+function _ferDaPerna(janelaId, dataOrig, perna) {
+  return _ferExpMovs().filter(m => m.janelaId === janelaId && m.oeData === dataOrig && m.perna === perna);
+}
+function _ferDataChegada(m) {
+  return String(_expDataEfetivaCarga({ janelaId: m.janelaId, data: m.oeData }) || m.oeData || '');
+}
+function _ferChegou(m) {
+  return _ferDataChegada(m) <= _aviHoje();
+}
+// O que já chegou pelas OE na linha `x` e ainda não está no em estoque gravado.
+function _estItemChegadas(tipo, x, semId) {
+  if (tipo !== 'ferramentas' || !x) return 0;
+  return _ferExpMovs(semId).filter(m => m.destItemId === x.id && _ferChegou(m))
+    .reduce((s, m) => s + (Number(m.qtd) || 0), 0);
+}
+// O em estoque de verdade: o gravado mais o que chegou pelas OE.
+function _estItemEstoque(tipo, x, semId) {
+  return _estArred(x, (Number(x && x.emEstoque) || 0) + _estItemChegadas(tipo, x, semId));
+}
+// O que saiu da linha `x` e ainda está no caminhão.
+function _ferEmTransito(tipo, x) {
+  if (tipo !== 'ferramentas' || !x) return 0;
+  return _ferExpMovs().filter(m => m.itemId === x.id && !_ferChegou(m))
+    .reduce((s, m) => s + (Number(m.qtd) || 0), 0);
+}
+// As chegadas, como lançamentos lidos, para o histórico da unidade de destino.
+function _ferChegadasHist(tipo) {
+  if (tipo !== 'ferramentas') return [];
+  return _ferExpMovs().filter(_ferChegou).map(m => ({
+    id: 'oe:' + m.id, auto: true, chegadaOE: true, perna: m.perna, itemId: m.destItemId, nome: m.nome, desc: m.desc || '',
+    unidade: _aviDestinoDe(m), tipo: 'entrada', motivo: 'expedicao-chegada', qtd: m.qtd, dUso: 0, dEstoque: Number(m.qtd) || 0,
+    data: _ferDataChegada(m), obs: 'Chegou pela OE de ' + formatDate(m.oeData) + (m.obs ? ' · ' + m.obs : ''), por: m.por || ''
+  }));
+}
+
+function abrirModalExpFerramenta(janelaId, dataOrig, perna, editId) {
+  if (!exigirEdicao('alocar ferramenta na expedição')) return;
+  const ed = editId ? _ferExpMovs().find(m => m.id === editId) : null;
+  if (editId && !ed) return toast('Esta ferramenta não está mais na expedição', 'err');
+  const exp = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida', editId: ed ? ed.id : '' };
+  _estItensCtx = { tipo: 'ferramentas', exp };
+  const origem = _aviOrigemDe(exp);
+  const nomeOrigem = ((AVIAMENTO_UNIDADES.find(u => u.k === origem)) || {}).rotulo || '';
+  // O saldo da origem; ao corrigir, o que esta alocação levou volta à conta.
+  const tem = x => _estItemEstoque('ferramentas', x) + (ed && ed.itemId === x.id ? (Number(ed.qtd) || 0) : 0);
+  const linhas = (STATE.ferramentasCad || []).filter(x => _aviUnidadeDe(x) === origem && (tem(x) > 0 || (ed && ed.itemId === x.id)))
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  document.getElementById('modal-estoque-item-title').textContent =
+    (ed ? 'Corrigir ferramenta · ' : 'Alocar ferramenta · ') + (exp.perna === 'ida' ? 'Ida' : 'Volta') + ' de ' + formatDate(dataOrig);
+  document.getElementById('modal-estoque-item-fields').innerHTML = linhas.length ? `
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">${ed
+      ? `Corrigindo o que já está nesta carga. O saldo mostrado já inclui o que esta alocação tinha levado da <b>${esc(nomeOrigem)}</b>.`
+      : `Sai do estoque da <b>${esc(nomeOrigem)}</b> agora e entra na outra unidade na data desta carga. Até lá fica <b>em trânsito</b>.`}</div>
+    <div class="form-grid cols-2">
+      <div class="field full"><label>Ferramenta *</label><select id="mef-item">
+        <option value="">— selecione —</option>
+        ${linhas.map(x => `<option value="${esc(x.id)}"${ed && ed.itemId === x.id ? ' selected' : ''}>${esc(x.nome)}${x.desc ? ' · ' + esc(x.desc) : ''} — ${Math.round(tem(x)).toLocaleString('pt-BR')} em estoque</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Quantidade *</label><input type="number" min="1" step="1" id="mef-qtd" placeholder="Ex.: 2" value="${ed ? esc(Math.round(Number(ed.qtd) || 0)) : ''}"></div>
+      <div class="field"><label>Volumes</label><input type="number" min="0" step="1" id="mef-vol" placeholder="0" value="${ed && Number(ed.volumes) > 0 ? esc(ed.volumes) : ''}"></div>
+      <div class="field full"><label>Observação (sai na folha de OE)</label><input type="text" id="mef-obs" placeholder="Ex.: tesoura da mesa 2" value="${ed ? esc(ed.obs || '') : ''}"></div>
+    </div>` : `<div class="info-box">A <b>${esc(nomeOrigem)}</b> não tem ferramenta em estoque hoje. Cadastre ou lance a entrada no <b>Estoque de ferramentas</b> primeiro.</div>`;
+  openModal('modal-estoque-item');
+}
+
+async function salvarFerramentaExp(ctx) {
+  if (!exigirEdicao('alocar ferramenta na expedição')) return;
+  const exp = ctx.exp;
+  const cfg = ESTOQUE_ITENS.ferramentas;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const lista = Array.isArray(STATE.ferramentasCad) ? STATE.ferramentasCad : (STATE.ferramentasCad = []);
+  const x = lista.find(i => i.id === v('mef-item'));
+  if (!x) return toast('Escolha a ferramenta', 'err');
+  const qtd = Math.max(0, Math.round(parseFloat(String(v('mef-qtd')).replace(',', '.')) || 0));
+  if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
+  const ed = exp.editId ? _ferExpMovs().find(m => m.id === exp.editId) : null;
+  if (exp.editId && !ed) { _estItensCtx = null; closeModal('modal-estoque-item'); return toast('Esta ferramenta não está mais na expedição', 'err'); }
+  const quem = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+  const agora = new Date().toISOString();
+  // Relido na hora de gravar: outra pessoa pode ter mexido enquanto o modal estava aberto.
+  const devolve = ed && ed.itemId === x.id ? (Number(ed.qtd) || 0) : 0;
+  const tem = _estItemEstoque('ferramentas', x) + devolve;
+  if (qtd > tem) return toast(`Só há ${Math.round(tem).toLocaleString('pt-BR')} de ${x.nome} em estoque nesta unidade`, 'err');
+  // Corrigir uma que já chegou mexe na unidade de destino: lá tem de haver o que tirar.
+  if (ed && _ferChegou(ed)) {
+    const dAnt = lista.find(i => i.id === ed.destItemId);
+    if (dAnt && _estItemEstoque('ferramentas', dAnt, ed.id) < 0) {
+      return toast('Esta ferramenta já chegou e foi usada na outra unidade — corrija pelo Estoque de ferramentas', 'err');
+    }
+  }
+  // A linha de mesmo tipo e descrição na outra unidade; nasce zerada se não houver.
+  const destino = _aviDestinoDe(exp);
+  let d = lista.find(i => _aviUnidadeDe(i) === destino && _normNome(i.nome) === _normNome(x.nome) && _normNome(i.desc || '') === _normNome(x.desc || ''));
+  if (!d) {
+    d = { id: uid(), nome: x.nome, desc: x.desc || '', unidade: destino, emUso: 0, emEstoque: 0, obs: '',
+          em: agora, por: quem, atualizadoEm: agora, atualizadoPor: quem };
+    lista.push(d);
+  }
+  const campos = { itemId: x.id, nome: x.nome, desc: x.desc || '', unidade: _aviUnidadeDe(x), destItemId: d.id,
+    qtd, dUso: 0, dEstoque: -qtd, volumes: Math.max(0, parseInt(v('mef-vol'), 10) || 0), obs: v('mef-obs').trim() };
+  if (ed) {
+    const ant = lista.find(i => i.id === ed.itemId);
+    if (ant) ant.emEstoque = _estArred(ant, (Number(ant.emEstoque) || 0) + (Number(ed.qtd) || 0));
+    x.emEstoque = _estArred(x, (Number(x.emEstoque) || 0) - qtd);
+    Object.assign(ed, campos, { corrigidoPor: quem, corrigidoEm: agora });
+  } else {
+    x.emEstoque = _estArred(x, (Number(x.emEstoque) || 0) - qtd);
+    _estItensRegistrar(cfg, x, { tipo: 'saida', motivo: 'expedicao', ...campos,
+      janelaId: exp.janelaId, oeData: exp.dataOrig, perna: exp.perna });
+  }
+  x.atualizadoPor = quem; x.atualizadoEm = agora;
+  _estItensCtx = null;
+  await saveState('ferramentasCad');
+  await saveState('ferramentasMov');
+  closeModal('modal-estoque-item');
+  toast(ed ? 'Ferramenta corrigida' : 'Ferramenta alocada na expedição', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+
+async function excluirFerramentaExp(id) {
+  if (!exigirEdicao('tirar ferramenta da expedição')) return;
+  const m = _ferExpMovs().find(x => x.id === id);
+  if (!m) return;
+  const lista = STATE.ferramentasCad || [];
+  if (_ferChegou(m)) {
+    const d = lista.find(i => i.id === m.destItemId);
+    if (d && _estItemEstoque('ferramentas', d, m.id) < 0) {
+      return toast(`Esta ferramenta já chegou e não há ${Math.round(Number(m.qtd) || 0)} em estoque na outra unidade para voltar — corrija pelo Estoque de ferramentas`, 'err');
+    }
+  }
+  if (!confirm(`Tirar ${m.nome}${m.desc ? ' ' + m.desc : ''} (${Math.round(Number(m.qtd) || 0)}) desta expedição?\n\nA ferramenta volta para o estoque da unidade de origem.`)) return;
+  const x = lista.find(i => i.id === m.itemId);
+  if (x) {
+    x.emEstoque = _estArred(x, (Number(x.emEstoque) || 0) + (Number(m.qtd) || 0));
+    x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+    x.atualizadoEm = new Date().toISOString();
+  }
+  STATE.ferramentasMov = STATE.ferramentasMov.filter(i => i.id !== id);
+  if (x) await saveState('ferramentasCad');
+  await saveState('ferramentasMov');
+  toast('Ferramenta tirada da expedição', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+window.abrirModalExpFerramenta = abrirModalExpFerramenta;
+window.excluirFerramentaExp = excluirFerramentaExp;
+
 /* ========================================================= */
 /*          ESTOQUE DE PEÇAS E ESTOQUE DE FERRAMENTAS         */
 /* ========================================================= */
@@ -11684,12 +11853,15 @@ function renderEstoqueItens(tipo) {
   // O que as OS já baixaram e o que reservaram de cada material (_matDasOS).
   const osMat = tipo === 'materiais' ? _matDasOS() : { baixas: [], reservas: [] };
   const somaOS = (lista, id) => lista.filter(b => b.itemId === id).reduce((a, b) => a + b.qtd, 0);
-  const estoqueDe = x => n(n(x.emEstoque) - somaOS(osMat.baixas, x.id));
+  // Ferramenta: mais o que chegou pelas OE (ver _estItemEstoque).
+  const estoqueDe = x => n(_estItemEstoque(tipo, x) - somaOS(osMat.baixas, x.id));
   const tUso = linhas.reduce((s, x) => s + n(x.emUso), 0);
   const tEst = linhas.reduce((s, x) => s + estoqueDe(x), 0);
   // A previsão: o que as OS não iniciadas reservam passa do que há em estoque.
   const faltaDe = x => x.baixaOS ? Math.max(0, n(somaOS(osMat.reservas, x.id) - Math.max(0, estoqueDe(x)))) : 0;
   const notaOS = x => {
+    const tr = _ferEmTransito(tipo, x);
+    if (tr > 0) return `<div class="muted" style="font-size:10px;font-weight:400;" title="Alocada numa Ordem de Expedição: já saiu daqui e entra na outra unidade na data da carga">${fmt(tr)} em trânsito na OE</div>`;
     if (!x.baixaOS) return '';
     const b = somaOS(osMat.baixas, x.id);
     return `<div class="muted" style="font-size:10px;font-weight:400;" title="Baixa pelo comprimento do enfesto de cada OS">${
@@ -11771,7 +11943,7 @@ function renderEstoqueItens(tipo) {
   const hoje = _aviHoje();
   if (!per.ate) per.ate = hoje;
   if (!per.de) per.de = hoje.slice(0, 8) + '01';
-  const hist = _estItensHistorico((STATE[cfg.mov] || []).concat(osMat.baixas), unidade, per.de, per.ate, busca);
+  const hist = _estItensHistorico((STATE[cfg.mov] || []).concat(osMat.baixas, _ferChegadasHist(tipo)), unidade, per.de, per.ate, busca);
   const tEnt = hist.filter(m => m.tipo === 'entrada').reduce((s, m) => s + n(m.qtd), 0);
   const tSai = hist.filter(m => m.tipo === 'saida').reduce((s, m) => s + n(m.qtd), 0);
   const sinal = v => (n(v) > 0 ? '+' : '') + fmt(v);
@@ -11783,6 +11955,12 @@ function renderEstoqueItens(tipo) {
     const cor = m.tipo === 'entrada' ? '#d6f0db' : m.tipo === 'saida' ? '#f6dcda' : '#e8e4f3';
     const nome = m.tipo === 'entrada' ? 'Entrada' : m.tipo === 'saida' ? 'Saída' : 'Ajuste';
     const mot = _estItensMotivo(m.motivo);
+    if (m.motivo === 'expedicao' || m.chegadaOE) {
+      const rotUn = k => ((AVIAMENTO_UNIDADES.find(u => u.k === k)) || {}).rotulo || '';
+      return `<span class="badge" style="background:${cor};">${m.chegadaOE ? 'Chegou pela OE' : 'Na OE'}</span><div class="muted" style="font-size:10px;">${m.chegadaOE
+        ? 'de ' + esc(rotUn(_aviOrigemDe(m)))
+        : 'para ' + esc(rotUn(_aviDestinoDe(m))) + ' · carga de ' + esc(formatDate(m.oeData))}</div>`;
+    }
     return `<span class="badge" style="background:${cor};">${m.auto ? 'Baixa da OS' : nome}</span><div class="muted" style="font-size:10px;">${esc(mot ? mot.rotulo : (m.motivo === 'os' ? 'enfesto (comprimento)' : m.motivo === 'cadastro' ? 'Cadastro inicial' : 'Correção do cadastro'))}</div>`;
   };
   const histHtml = `<div class="card">
@@ -11801,7 +11979,9 @@ function renderEstoqueItens(tipo) {
       <th style="text-align:right;" title="Quanto este lançamento mexeu no que está em estoque">Em estoque</th>
       <th>Observação</th><th>Por</th></tr></thead><tbody>
       ${hist.length ? hist.map(m => `<tr>
-        <td class="col-actions row-actions estoque-tecidos-only">${m.auto
+        <td class="col-actions row-actions estoque-tecidos-only">${m.motivo === 'expedicao' || m.chegadaOE
+          ? '<span class="muted" style="font-size:11px;" title="Ferramenta numa Ordem de Expedição: corrija ou tire pelo ✎ e pelo × da OE">da OE</span>'
+          : m.auto
           ? '<span class="muted" style="font-size:11px;" title="Baixa lida da OS: corrigir o enfesto da OS corrige a baixa">da OS</span>'
           : `<button title="Apagar este lançamento e desfazer o que ele mexeu nas quantidades" onclick="excluirMovEstoqueItem('${tipo}','${esc(m.id)}')">apagar</button>`}</td>
         <td style="white-space:nowrap;">${esc(formatDate(m.data))}</td>
@@ -11987,7 +12167,7 @@ function abrirEstoqueItem(tipo, id) {
         <div class="field-hint">Para o papel e o filme da mesa de corte, em metros. Todas as fases menos o viés; a gola só com o checkbox do enfesto marcado na folha. Reserva enquanto a OS não começou e baixa quando ela anda, como o tecido.</div></div>` : ''}
       <div class="field full"><label>Descrição / especificação</label><input type="text" id="mei-desc" placeholder="${cfg.comSetor ? 'Marca, medida, onde é usado…' : 'Marca, medida, máquina em que serve…'}" value="${x ? esc(x.desc || '') : ''}"></div>
       <div class="field"><label>Em uso</label><input type="number" min="0" step="any" id="mei-uso" placeholder="0" value="${val(x && x.emUso)}"></div>
-      <div class="field"><label>Em estoque</label><input type="number" min="0" step="any" id="mei-estoque" placeholder="0" value="${val(x && x.emEstoque)}"></div>
+      <div class="field"><label>Em estoque</label><input type="number" min="0" step="any" id="mei-estoque" placeholder="0" value="${val(x && _estItemEstoque(tipo, x))}"></div>
       ${x ? `<div class="field full"><div class="field-hint">Para o que chegou, foi posto em uso ou deu baixa, prefira <b>+ entrada</b> e <b>− saída</b> na linha. Mudar as quantidades aqui fica no histórico como <b>ajuste</b> (contagem).</div></div>` : ''}
       <div class="field full"><label>Observação</label><input type="text" id="mei-obs" placeholder="Ex.: prateleira 3 / pedir mais em outubro" value="${x ? esc(x.obs || '') : ''}"></div>
     </div>`;
@@ -12007,7 +12187,7 @@ function abrirMovEstoqueItem(tipo, id, sentido) {
   document.getElementById('modal-estoque-item-title').textContent =
     (s === 'entrada' ? 'Entrada · ' : 'Saída · ') + x.nome + (x.desc ? ' ' + x.desc : '');
   document.getElementById('modal-estoque-item-fields').innerHTML = `
-    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Hoje: <b>${n(x.emUso)}</b> em uso e <b>${n(x.emEstoque)}</b> em estoque (${esc(((AVIAMENTO_UNIDADES.find(u => u.k === _aviUnidadeDe(x))) || {}).rotulo || '')}).</div>
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Hoje: <b>${n(x.emUso)}</b> em uso e <b>${n(_estItemEstoque(tipo, x))}</b> em estoque (${esc(((AVIAMENTO_UNIDADES.find(u => u.k === _aviUnidadeDe(x))) || {}).rotulo || '')}).</div>
     <div class="form-grid cols-2">
       <div class="field full"><label>${s === 'entrada' ? 'De onde veio' : 'Para onde foi'} *</label><select id="mei-motivo">${ESTOQUE_ITENS_MOTIVOS[s].map((m, i) =>
         `<option value="${m.k}"${i === 0 ? ' selected' : ''}>${esc(m.rotulo)}</option>`).join('')}</select></div>
@@ -12034,12 +12214,14 @@ async function _salvarMovEstoqueItem(ctx, cfg) {
   const emMetros = un === 'bob' ? bruto * Number(x.mPorBobina) : un === 'kg' && Number(x.kgPorM) > 0 ? bruto / Number(x.kgPorM) : bruto;
   const qtd = Math.max(0, _estArred(x, emMetros));
   if (!(qtd > 0)) return toast('Informe a quantidade', 'err');
-  const uso = _estArred(x, x.emUso), est = _estArred(x, x.emEstoque);
+  // O limite é o em estoque de verdade (com o que chegou pelas OE); a conta
+  // mexe no gravado.
+  const uso = _estArred(x, x.emUso), est = _estItemEstoque(ctx.tipo, x);
   if (mot.estoque < 0 && qtd > est) return toast(`Só há ${_estFmtQtd(x, est)} em estoque`, 'err');
   if (mot.uso < 0 && qtd > uso) return toast(`Só há ${_estFmtQtd(x, uso)} em uso`, 'err');
   const dUso = mot.uso * qtd, dEstoque = mot.estoque * qtd;
   x.emUso = _estArred(x, uso + dUso);
-  x.emEstoque = _estArred(x, est + dEstoque);
+  x.emEstoque = _estArred(x, (Number(x.emEstoque) || 0) + dEstoque);
   x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
   x.atualizadoEm = new Date().toISOString();
   _estItensRegistrar(cfg, x, { tipo: ctx.mov, motivo: mot.k, qtd, dUso, dEstoque,
@@ -12054,6 +12236,7 @@ async function _salvarMovEstoqueItem(ctx, cfg) {
 
 async function salvarEstoqueItem() {
   const ctx = _estItensCtx;
+  if (ctx && ctx.exp) return salvarFerramentaExp(ctx);
   const cfg = ctx && ESTOQUE_ITENS[ctx.tipo];
   if (!cfg || !exigirEstoqueTecidos('cadastrar no estoque de ' + cfg.uns)) return;
   if (ctx.mov) return _salvarMovEstoqueItem(ctx, cfg);
@@ -12091,6 +12274,8 @@ async function salvarEstoqueItem() {
   if (ctx.id) {
     x = lista.find(i => i.id === ctx.id);
     if (!x) { closeModal('modal-estoque-item'); return toast('Este cadastro não existe mais', 'err'); }
+    // O campo mostrou o em estoque com o que chegou pelas OE; gravado fica sem.
+    dados.emEstoque = _estArred(dados, dados.emEstoque - _estItemChegadas(ctx.tipo, x));
     const dUso = _estArred(dados, dados.emUso - (Number(x.emUso) || 0));
     const dEstoque = _estArred(dados, dados.emEstoque - (Number(x.emEstoque) || 0));
     Object.assign(x, dados);
@@ -12117,11 +12302,12 @@ async function excluirMovEstoqueItem(tipo, id) {
   if (!cfg || !exigirEstoqueTecidos('apagar do estoque de ' + cfg.uns)) return;
   const m = (STATE[cfg.mov] || []).find(i => i.id === id);
   if (!m) return;
+  if (m.motivo === 'expedicao') return toast('Esta ferramenta está numa Ordem de Expedição: tire-a de lá, no ×.', 'err');
   const x = (STATE[cfg.chave] || []).find(i => i.id === m.itemId);
   const dUso = _estArred(x, m.dUso), dEst = _estArred(x, m.dEstoque);
   if (x) {
     const uso = _estArred(x, (Number(x.emUso) || 0) - dUso), est = _estArred(x, (Number(x.emEstoque) || 0) - dEst);
-    if (uso < 0 || est < 0) return toast('Desfazer este lançamento deixaria a quantidade negativa — as quantidades já mudaram depois dele', 'err');
+    if (uso < 0 || est + _estItemChegadas(tipo, x) < 0) return toast('Desfazer este lançamento deixaria a quantidade negativa — as quantidades já mudaram depois dele', 'err');
     if (!confirm(`Apagar este lançamento de "${m.nome}"?\n\nAs quantidades voltam: em uso ${x.emUso} → ${uso}, em estoque ${x.emEstoque} → ${est}.`)) return;
     x.emUso = uso; x.emEstoque = est;
     x.atualizadoPor = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
@@ -12139,6 +12325,8 @@ async function excluirEstoqueItem(tipo, id) {
   if (!cfg || !exigirEstoqueTecidos('apagar do estoque de ' + cfg.uns)) return;
   const x = (STATE[cfg.chave] || []).find(i => i.id === id);
   if (!x) return;
+  const naOE = tipo === 'ferramentas' ? _ferExpMovs().filter(m => (m.itemId === x.id || m.destItemId === x.id) && !_ferChegou(m)).length : 0;
+  if (naOE) return toast(`"${x.nome}" está em trânsito em ${naOE} Ordem${naOE === 1 ? '' : 's'} de Expedição — tire-a de lá antes de apagar o cadastro`, 'err');
   // O histórico fica: ele diz o que aconteceu, mesmo sem o cadastro.
   if (!confirm(`Apagar "${x.nome}" do ${cfg.titulo.toLowerCase()}?\n\nO histórico de entradas e saídas dele continua guardado.`)) return;
   STATE[cfg.chave] = STATE[cfg.chave].filter(i => i.id !== id);
@@ -16048,6 +16236,20 @@ function renderExpedicaoPlano() {
         <span><button class="admin-only" title="Corrigir este aviamento: item, quantidade, peso, volumes e observação" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(a.id)}')">✎</button><button class="admin-only" title="Tirar este aviamento da carga (ele volta para a unidade de origem)" onclick="excluirAviamentoExp('${esc(a.id)}')">×</button></span>
       </div>${a.obs ? `
       <div class="exp-os-obs">${esc(a.obs)}</div>` : ''}`).join('')}` : '';
+    // As ferramentas da perna, abaixo dos aviamentos (27/10/2026).
+    const fers = _ferDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const ferVol = fers.reduce((s, f) => s + (Number(f.volumes) || 0), 0);
+    const ferHtml = fers.length ? `
+      <div class="exp-avi-tit" style="margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);">Ferramentas</div>
+      ${fers.map(f => `
+      <div class="exp-os-row">
+        <span class="num" style="font-size:11px;">${esc(f.nome)}</span>
+        <span class="mod">${esc(f.desc || '') || '—'}</span>
+        <span class="qtd">${fmt(f.qtd)} un.</span>
+        <span class="vol">${Number(f.volumes) > 0 ? fmt(f.volumes) + ' vol' : ''}</span>
+        <span><button class="admin-only" title="Corrigir esta ferramenta: qual, quantidade, volumes e observação" onclick="abrirModalExpFerramenta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(f.id)}')">✎</button><button class="admin-only" title="Tirar esta ferramenta da carga (ela volta para o estoque da unidade de origem)" onclick="excluirFerramentaExp('${esc(f.id)}')">×</button></span>
+      </div>${f.obs ? `
+      <div class="exp-os-obs">${esc(f.obs)}</div>` : ''}`).join('')}` : '';
     return `
       <div class="exp-perna">
         <div class="exp-perna-head">
@@ -16057,10 +16259,10 @@ function renderExpedicaoPlano() {
           </div>
           <div class="exp-perna-hora">${esc(hora) || '—'}</div>
         </div>
-        <div class="exp-os-list">${linhas}${aviHtml}</div>
+        <div class="exp-os-list">${linhas}${aviHtml}${ferHtml}</div>
         <div class="exp-perna-total">
           <span>
-            <span class="vol">${fmt(r.volumes)}</span> vol${aviVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(aviVol)} de aviamentos</span>` : ''}
+            <span class="vol">${fmt(r.volumes)}</span> vol${aviVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(aviVol)} de aviamentos</span>` : ''}${ferVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(ferVol)} de ferramentas</span>` : ''}
             <span style="color:var(--ink-3);"> · ${fmt(r.pecas)} un. · ${esc(_expLimitesTexto(r.volMin, r.volMax))}</span>
             ${r.semVolumes ? `<br><span style="color:var(--accent-dark);font-size:11px;">${r.semVolumes} OS sem volumes definidos — o total está incompleto</span>` : ''}
           </span>
@@ -16071,6 +16273,7 @@ function renderExpedicaoPlano() {
         ${oc.cancelada ? '' : `<div style="margin-top:8px;display:flex;gap:6px;">
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar fio, linha, etiqueta, botão ou viés nesta carga: sai do estoque de aviamentos desta unidade e entra no da outra na data da carga" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Aviamento</button>
+          <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar tesoura, régua ou outra ferramenta nesta carga: sai do estoque de ferramentas desta unidade e entra no da outra na data da carga" onclick="abrirModalExpFerramenta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Ferramenta</button>
           ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou os produtos." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
       </div>`;
@@ -22700,7 +22903,9 @@ function renderPrintPlanoExpedicao() {
     resumoPernaExpedicao(oc, 'ida').itens.length +
     resumoPernaExpedicao(oc, 'volta').itens.length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
-    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
@@ -22975,7 +23180,8 @@ function renderPrintPlanoExpedicao() {
 
   // Perna sem OS e sem aviamento: não leva nada, e não ocupa espaço (ver blocos).
   const pernaVazia = (oc, perna) => !resumoPernaExpedicao(oc, perna).itens.length
-    && !_aviDaPerna(oc.janela.id, oc.dataOrig, perna).length;
+    && !_aviDaPerna(oc.janela.id, oc.dataOrig, perna).length
+    && !_ferDaPerna(oc.janela.id, oc.dataOrig, perna).length;
   const pernaPrint = (oc, perna, fina, larga) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
@@ -23002,10 +23208,11 @@ function renderPrintPlanoExpedicao() {
         </div>
       </div>`;
     const avis = _aviDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const fers = _ferDaPerna(oc.janela.id, oc.dataOrig, perna);
     const quadros = r.itens.map(osPrint);
     const linhas = r.itens.length
       ? quadros.join('')
-      : (avis.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
+      : (avis.length || fers.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
     /* OS AVIAMENTOS DA CARGA (24/09/2026): o que embarca de fio, linha,
        etiqueta, botão e viés, com o peso — é o que a doca confere. */
     const aviVol = avis.reduce((s, a) => s + (Number(a.volumes) || 0), 0);
@@ -23027,6 +23234,24 @@ function renderPrintPlanoExpedicao() {
           </tr>`).join('')}</tbody>
         </table>
       </div>` : '';
+    // AS FERRAMENTAS DA CARGA (27/10/2026): tesoura, régua… com a quantidade.
+    const ferVol = fers.reduce((s, f) => s + (Number(f.volumes) || 0), 0);
+    const ferPrint = fers.length ? `
+      <div class="exp-print-os">
+        <div class="cab"><b>FERRAMENTAS</b></div>
+        <table style="width:100%;border-collapse:collapse;font-size:inherit;">
+          <thead><tr>
+            <th style="padding:0 2px;text-align:left;border-bottom:.5pt solid #999;">Ferramenta</th>
+            <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Quantidade</th>
+            <th style="padding:0 2px;text-align:right;border-bottom:.5pt solid #999;">Vol</th>
+          </tr></thead>
+          <tbody>${fers.map(f => `<tr>
+            <td style="padding:0 2px;">${esc(f.nome)}${f.desc ? ' · ' + esc(f.desc) : ''}${f.obs ? ` <span style="font-style:italic;color:#555;">· ${esc(f.obs)}</span>` : ''}</td>
+            <td style="padding:0 2px;text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(f.qtd)} un</td>
+            <td style="padding:0 2px;text-align:right;">${Number(f.volumes) > 0 ? fmt(f.volumes) : '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>` : '';
     // Cada perna ocupa metade da folha, cheia ou vazia — a largura fixa é o que
     // mantém a ida sempre na mesma metade, folha após folha.
     return `
@@ -23038,9 +23263,9 @@ function renderPrintPlanoExpedicao() {
           </div>
           <span class="h">${esc(hora) || '—'}${btnHora}</span>
         </div>
-        ${larga ? _expDuasColunas(quadros.concat(aviPrint ? [aviPrint] : [])) : `<div class="exp-print-lista">${linhas}${aviPrint}</div>`}
+        ${larga ? _expDuasColunas(quadros.concat(aviPrint ? [aviPrint] : [], ferPrint ? [ferPrint] : [])) : `<div class="exp-print-lista">${linhas}${aviPrint}${ferPrint}</div>`}
         <div class="tot">
-          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.${aviVol > 0 ? ` · + ${fmt(aviVol)} vol de aviamentos` : ''}</span>
+          <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.${aviVol > 0 ? ` · + ${fmt(aviVol)} vol de aviamentos` : ''}${ferVol > 0 ? ` · + ${fmt(ferVol)} vol de ferramentas` : ''}</span>
           <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
         </div>
       </div>`;
@@ -33374,7 +33599,9 @@ function oeTemConteudo() {
     resumoPernaExpedicao(oc, 'ida').itens.length +
     resumoPernaExpedicao(oc, 'volta').itens.length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
-    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
+    _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
 }
 
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
