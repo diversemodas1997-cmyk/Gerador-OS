@@ -1219,7 +1219,25 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
          o mesmo que a OS usa para lançar a entrada quando chega ao Estoque.
      Só a combinação que existe entra — a linha sozinha (CJM) não é cruzada
      com as 50 cores. A descrição vem do catálogo quando ele tem o SKU; senão,
-     do desenho, do modelo ou da OS. */
+     do desenho, do modelo ou da OS.
+     O DESENHO SEM SKU COMPLETO (28/10/2026, Jones: "atualização automática do
+     Estoque de produtos, para sincronizar novos SKU quando forem cadastrados"):
+     o desenho novo nasce com o SKU vazio ou só com a linha ("CJM"), e o
+     estoque só o via quando saía a primeira OS dele. Quem completava era
+     revalidarSkusDesenhos, que depende do catálogo skus_catalogo — tabela que
+     o servidor da fábrica não tem. Agora o desenho compõe o SKU como a OS
+     compõe: a linha (a do desenho, senão a do modelo) mais a Sigla SKU da cor
+     principal. Cadastrou o desenho (ou deu a sigla à cor), o SKU aparece. */
+  function skuDoDesenho(d) {
+    const proprio = norm(d && d.skuLinha);
+    if (proprio.includes('-')) return proprio;
+    const m = (STATE.modelos || []).find(x => x.id === (d && d.modeloId));
+    const linha = proprio || norm(m && m.skuLinha);
+    if (!linha || linha.includes('-')) return '';
+    const c = (STATE.cores || []).find(x => x.id === (d && d.corPrincipalId));
+    const sigla = norm(c && c.siglaSku);
+    return sigla ? linha + '-' + sigla : '';
+  }
   function skusDoPrograma() {
     const achados = new Map();
     const poe = (sku, descricao) => {
@@ -1227,7 +1245,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       if (!/^[A-Z0-9][A-Z0-9.]*-[A-Z0-9.]+$/.test(s) || achados.has(s)) return;
       achados.set(s, descricao || '');
     };
-    (STATE.desenhos || []).forEach(d => { if (String(d.skuLinha || '').includes('-')) poe(d.skuLinha, d.desc); });
+    (STATE.desenhos || []).forEach(d => { const s = skuDoDesenho(d); if (s) poe(s, d.desc); });
     (STATE.modelos || []).forEach(m => { if (String(m.skuLinha || '').includes('-')) poe(m.skuLinha, m.nome); });
     (STATE.ordens || []).forEach(o => {
       if (typeof _statusOS === 'function' && _statusOS(o) === 'cancelado') return;
@@ -1272,5 +1290,5 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   window.acabAvisos = acabAvisos;
 
   // Para os testes (node): as contas, sem a tela.
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos };
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma };
 })();

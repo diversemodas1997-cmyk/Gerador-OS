@@ -3878,6 +3878,8 @@ const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos',
 // aviamentosMov entra porque o aviamento alocado numa perna sai na folha de OE.
 const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 'aviamentosMov'];
 
+const _CHAVES_SKU_ESTOQUE = ['desenhos', 'modelos', 'cores', 'ordens'];
+const _TELAS_SKU_ESTOQUE = ['acab-estoque', 'acab-produtos', 'acab-cmp'];
 async function saveState(key) {
   try {
     // O cadastro de funções mudou: o índice de horas marcadas tem que ser refeito
@@ -3915,6 +3917,14 @@ async function saveState(key) {
     // nada e nunca bloqueia o save.
     if (_CHAVES_OE.includes(key) && typeof agendarAutoSaveOE === 'function') {
       agendarAutoSaveOE();
+    }
+    // O Estoque de produtos lê os SKUs do programa na hora: gravou um cadastro
+    // que define SKU (desenho, modelo, cor, OS) com a tela dele aberta — por
+    // um "Novo +" ou um cadastro aberto por cima —, ela se redesenha com o SKU
+    // novo. Só as telas de consulta: as de lançamento têm campos digitados.
+    if (_CHAVES_SKU_ESTOQUE.includes(key) && typeof renderEstoqueConfeccao === 'function') {
+      const pg = document.querySelector('section.page:not(.hidden)')?.dataset?.page || '';
+      if (_TELAS_SKU_ESTOQUE.includes(pg)) renderEstoqueConfeccao(pg);
     }
   } catch (e) {
     console.error('Erro ao salvar', key, e);
