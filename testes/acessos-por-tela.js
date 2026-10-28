@@ -24,7 +24,9 @@ function recorte(de, oQue) {
   return src.slice(i, j + 2);
 }
 const constante = (nome) => {
-  const m = src.match(new RegExp('^const ' + nome + ' = [^;]+;', 'm'));
+  // Até o ";" que FECHA a linha: um ";" no meio de um comentário da constante
+  // (o de 'config' em VISAO_PAGINAS) cortava a leitura ao meio.
+  const m = src.match(new RegExp('^const ' + nome + ' = [\\s\\S]*?;[ \\t]*$', 'm'));
   if (!m) { console.error('nao achei a constante ' + nome); process.exit(1); }
   return m[0];
 };

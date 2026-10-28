@@ -61,7 +61,7 @@ let STATE = {
   ordens: [
     osDe('o1', '0656', '2026-10-21T13:00:00Z'),
     osDe('o2', '0600', '2026-10-20T09:00:00Z'),                                   // antes do início
-    osDe('o3', '0659', '2026-10-21T14:00:00Z', { skus: ['CM.LISA-BRA'] }),       // SKU não cadastrado
+    osDe('o3', '0659', '2026-10-21T14:00:00Z', { skus: ['CM.LISA-BRA'] }),       // SKU só do programa
     osDe('o4', '0661', '2026-10-21T15:00:00Z', { skus: ['BM.TRI-AZUL', 'BM.TRI-BEGE'] }),  // duas cores
     osDe('o5', '0662', '2026-10-21T15:00:00Z', { statusOS: 'cancelado' }),
     osDe('o6', '0663', '2026-10-21T15:00:00Z', { progresso: { etapasCheck: {}, etapasSeq: {} } }),  // não marcou
@@ -70,12 +70,16 @@ let STATE = {
 };
 let w = carrega(STATE);
 let r = w._acabInterno._entradasDasOS();
-ok('1. a OS 0656 lança uma entrada por tamanho', r.entradas.length === 2 && r.entradas.every(e => e.os === '0656'), r.entradas);
+ok('1. a OS 0656 lança uma entrada por tamanho', r.entradas.filter(e => e.os === '0656').map(e => e.tamanho).join() === 'M,G', r.entradas);
 ok('2. com a quantidade do Total por tamanho e o SKU da OS', r.entradas.find(e => e.tamanho === 'M').qtd === 94 && r.entradas[0].produtoId === 'p1', r.entradas);
 ok('3. na data do carimbo da etapa', r.entradas[0].data === '2026-10-21', r.entradas[0].data);
 ok('4. OS marcada antes do início não lança (o estoque começou do zero)', !r.entradas.some(e => e.os === '0600') && !r.pendencias.some(p => p.os === '0600'));
-ok('5. SKU não cadastrado vai para "esperando SKU", com o atalho de cadastrar',
-   r.pendencias.some(p => p.os === '0659' && p.cadastrar === 'CM.LISA-BRA' && p.tams.join() === 'M,G'), r.pendencias);
+// Desde 23/10/2026 (5f52fdd) o SKU da OS é lido do programa ('sku:' + SKU): a
+// OS entra no estoque sem esperar o SKU ser cadastrado aqui.
+ok('5. SKU que só o programa conhece entra sozinho, sem "esperando SKU"',
+   r.entradas.filter(e => e.os === '0659').every(e => e.produtoId === 'sku:CM.LISA-BRA')
+   && r.entradas.filter(e => e.os === '0659').map(e => e.tamanho).join() === 'M,G'
+   && !r.pendencias.some(p => p.os === '0659'), { entradas: r.entradas, pendencias: r.pendencias });
 ok('6. OS de duas cores vai para "esperando SKU"', r.pendencias.some(p => p.os === '0661' && /mais de uma cor/.test(p.motivo)));
 ok('7. OS sem SKU vai para "esperando SKU"', r.pendencias.some(p => p.os === '0664' && /não tem SKU/.test(p.motivo)));
 ok('8. cancelada e não marcada ficam de fora', !r.entradas.concat(r.pendencias).some(x => x.os === '0662' || x.os === '0663'));
@@ -140,7 +144,8 @@ console.log('\n-- os avisos do sino --');
 {
   const st = { meta: { acabConfig: { inicio: INICIO } }, acabProdutos: [P1], ordens: [
       osDe('o1', '0656', '2026-10-21T13:00:00Z'),
-      osDe('o3', '0659', '2026-10-21T14:00:00Z', { skus: ['CM.LISA-BRA'] })],
+      // A que espera SKU é a OS sem SKU nenhum (a de SKU só do programa já entra).
+      osDe('o7', '0664', '2026-10-21T14:00:00Z', { skus: [] })],
     acabMov: [
       { id: 'e1', tipo: 'saida', origem: 'erp', produtoId: 'p1', tamanho: 'M', data: '2026-10-21', qtd: 3, erpArquivo: 'vendas.pdf', criadoEm: '2026-10-21T15:00:10Z', criadoPor: 'escritorio@diverse.local' },
       { id: 'e2', tipo: 'saida', origem: 'erp', produtoId: 'p1', tamanho: 'G', data: '2026-10-21', qtd: 2, erpArquivo: 'vendas.pdf', criadoEm: '2026-10-21T15:00:40Z', criadoPor: 'escritorio@diverse.local' },

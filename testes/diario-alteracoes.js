@@ -22,9 +22,10 @@ function recorte(de, oQue) {
   return src.slice(i, src.indexOf('\n}', i) + 2);
 }
 const constante = (nome) => {
-  // Lista termina em "\n];", objeto em "\n};", e a de uma linha no primeiro ";".
-  const m = src.match(new RegExp('^const ' + nome + ' = [^\\n]*;$', 'm'))
-    || src.match(new RegExp('^const ' + nome + ' = \\[[\\s\\S]*?\\];|^const ' + nome + ' = \\{[\\s\\S]*?\\n\\};', 'm'));
+  // Até o ";" que FECHA uma linha. Antes o objeto ia até o próximo "\n};", e o
+  // EDITAR_TRAVADO (que fecha em "};" no fim da 2ª linha) engolia as constantes
+  // seguintes — o AVISAR_TRAVADO saía declarado duas vezes.
+  const m = src.match(new RegExp('^const ' + nome + ' = [\\s\\S]*?;[ \\t]*$', 'm'));
   if (!m) { console.error('nao achei a constante ' + nome); process.exit(1); }
   return m[0];
 };
@@ -51,7 +52,7 @@ const monta = (ctx) => new Function('ctx', `
   const DIARIO_DIAS = 30, DIARIO_MAX = 400;
   let _diarioAcao = null, _diarioTimer = null;
   const _acessoTelasAbertas = new Set();
-  ${['AREAS_ACESSO', 'ACESSO_PADRAO', 'VISAO_PAGINAS', 'VISAO_CONCEDIDA', 'VISAO_SEM_TELA', 'EDITAR_TRAVADO', 'AVISAR_TRAVADO',
+  ${['AREAS_ACESSO', 'ACESSO_PADRAO', 'VISAO_PAGINAS', 'VISAO_CONCEDIDA', 'VISAO_SEM_TELA', 'EDITAR_TRAVADO', 'VER_TRAVADO', 'AVISAR_TRAVADO',
      'AREAS_SO_VISAO', 'AREAS_SO_AVISO', 'AVISOS_DA_AREA', 'AVISO_PADRAO_DESLIGADO', 'TELAS_DA_AREA', '_TELA_DA_FOLHA'].map(constante).join('\n')}
   ${['function _obsQuemSou', 'function _obsNomeLogin', 'function _chaveLogin', 'function _acessoChaveConta', 'function _acessosTabela',
      'function _visaoTabela', 'function _avisosContaTabela', 'function contaRecebeAviso', 'function _areaDaPagina', 'function contaTemAcesso',

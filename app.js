@@ -1874,6 +1874,14 @@ function aplicarPermissoesUI() {
     const secOs = document.querySelector('section.page[data-page="lista-os"]');
     if (secOs && !secOs.classList.contains('hidden') && document.getElementById('tbl-os')) renderListaOS();
   } catch (e) { console.warn('status na lista de OS', e); }
+  // A barra da folha aberta também (28/10/2026, Jones: "concedi capacidade de
+  // usuário nathaly conjugar OS, mas não apareceu para usuário"): a concessão
+  // chega ao vivo, e o ⇄ Conjugar e o seletor de status só eram acertados ao
+  // abrir a folha — quem já estava com a OS na tela não via o botão.
+  try {
+    const secPr = document.querySelector('section.page[data-page="print"]');
+    if (secPr && !secPr.classList.contains('hidden') && typeof renderStatusFolhaOS === 'function') renderStatusFolhaOS();
+  } catch (e) { console.warn('barra da folha de OS', e); }
   mostrarModoServidor();
 }
 
@@ -5208,6 +5216,29 @@ function _novoMaisVoltar(item) {
   const r = _novoMaisRegra(sel);
   if (!r) return;
   if (p.kind === 'fora' && /^f-/.test(sel.id || '') && typeof refreshOSFormDropdowns === 'function') refreshOSFormDropdowns();
+  /* O ITEM NOVO ENTRA EM TODAS AS LISTAS DO MESMO CADASTRO da ficha de baixo
+     (28/10/2026, Jones: "o tecido cadastrado não aparece de imediato como opção
+     no cadastro do novo modelo"). A ficha de baixo volta como estava, com as
+     listas montadas ANTES do item existir: o tecido criado pelo "Novo +" do
+     Tecido principal do desenho só entrava naquela lista — a dos componentes
+     não o tinha, e o "Aplicado aos componentes" caía no vazio. Vale também para
+     as fichas ainda guardadas na pilha, que voltarão depois desta. */
+  const _ondeMais = [];
+  if (p.kind === 'modal') _ondeMais.push(box);
+  else if (p.kind === 'nc') _ondeMais.push(document.getElementById('nc-campos'));
+  _novoMaisPilha.forEach(q => { if (q.frag) _ondeMais.push(q.frag); });
+  _ondeMais.filter(Boolean).forEach(raiz => raiz.querySelectorAll('select').forEach(s => {
+    const rs = s !== sel && _novoMaisRegra(s);
+    if (rs && rs.tipo === r.tipo) _novoMaisOpcao(s, rs, item);
+  }));
+  const v = _novoMaisOpcao(sel, r, item);
+  sel.value = v;
+  _novoMaisAntes.set(sel, v);
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// Põe o item na lista, se ainda não estiver, antes do "Novo +". Devolve o valor.
+function _novoMaisOpcao(sel, r, item) {
   const v = _novoMaisValor(sel, r, item);
   if (!Array.from(sel.options).some(o => o.value === v)) {
     const o = document.createElement('option');
@@ -5217,9 +5248,7 @@ function _novoMaisVoltar(item) {
       : (item.nome || item.codigo || v);
     sel.insertBefore(o, sel.querySelector('option[value="__novo__"]'));
   }
-  sel.value = v;
-  _novoMaisAntes.set(sel, v);
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return v;
 }
 
 // "Novo +" escolhido: a lista volta ao que era e a ficha abre. Em captura, para
@@ -37765,7 +37794,7 @@ function abrirMenuAcoesOS(id, botao) {
       title="Abre as etiquetas em PDF com a página de 100 × 50 mm — é a medida exata que a impressora de etiquetas espera.">etiquetas</button>
     ${window.Colorimetro ? `<button class="edit" onclick="fecharMenuAcoesOS(); Colorimetro.avaliarOS('${esc(id)}')"
       title="Abre o Colorímetro com esta OS: as amostras medidas ficam ligadas a ela, e o relatório de tonalidades vai para as observações da OS.">avaliar amostras</button>` : ''}
-    ${podeMudarStatusOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); abrirModalConjugarOS('${esc(id)}')"
+    ${podeConjugarOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); abrirModalConjugarOS('${esc(id)}')"
       title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Nao mexe em tecido nem no cadastro da grade.">conjugar</button>` : ''}
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); duplicarOS('${esc(id)}')">duplicar</button>
