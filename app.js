@@ -2064,6 +2064,14 @@ const AREAS_ACESSO = [
   /* O RELATÓRIO DE DEMANDA (16/10/2026, Junior: "insira o Relatório de demanda
      como opção de atribuição aos usuários em configurações"). Área própria:
      quem pede reposição não precisa planejar a produção. Aprovar é do admin. */
+  /* APROVAR O PLANEJAMENTO, CONCEDIDO (28/10/2026, Jones: "conceder capacidade
+     de criação de OS para outro usuário além do admin, de forma que não
+     aconteça conflito de dois usuários criarem ordens de serviço diferentes com
+     número igual"). Toda OS nova nasce no planejamento, sem número — quem tem
+     esta área aprova e gera a OS. O número sai do servidor, com trava (ver
+     _reservarNumerosOS), então duas aprovações ao mesmo tempo nunca repetem. */
+  { k: 'aprovar-plan', rotulo: 'Aprovar planejamento',
+    desc: 'Aprovar o planejamento (e o da demanda): gera a OS com o próximo número livre, escolhido pelo servidor' },
   { k: 'demanda', rotulo: 'Relatório de demanda',
     desc: 'Criar, editar e excluir demandas de reposição (aprovar é só do admin)' },
   { k: 'os-status', rotulo: 'Status da OS',
@@ -2449,8 +2457,9 @@ const VISAO_SEM_TELA = ['os-status', 'fila-os', 'dados', 'mensagens-todos'];
    também travam. */
 const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)',
   config: 'O que se edita em Configurações segue as áreas Dados e Contas' };
-const VER_TRAVADO = { 'os-conjugar': 'Conjugar não tem tela: o botão ⇄ Conjugar aparece para quem edita' };
-const AVISAR_TRAVADO = { 'os-conjugar': 'Conjugar OS não gera aviso', ranking: 'O Ranking não gera aviso','relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
+const VER_TRAVADO = { 'os-conjugar': 'Conjugar não tem tela: o botão ⇄ Conjugar aparece para quem edita',
+  'aprovar-plan': 'Aprovar não tem tela: o botão ✔ Aprovar aparece no Planejamento de produção para quem edita' };
+const AVISAR_TRAVADO = { 'os-conjugar': 'Conjugar OS não gera aviso', 'aprovar-plan': 'Os avisos do planejamento estão na linha Planejamento de produção',ranking: 'O Ranking não gera aviso','relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
   config: 'Configurações não gera aviso' };
 
 /* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
@@ -4774,7 +4783,7 @@ function goto(page) {
   // pela área (ver VER E EDITAR POR TELA).
   if (page === 'nova-os' && currentRole && currentRole !== 'admin'
       && !(podeGravar() && contaEditaTela('nova-os', _obsQuemSou()))
-      && !(_osPlanAbrir && temAcesso('planejamento'))) {
+      && !((_osPlanAbrir || !_formAbreOSExistente()) && temAcesso('planejamento'))) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
@@ -4891,9 +4900,13 @@ function goto(page) {
     salvarPdfOeNaPasta({ silent: true }).catch(e => console.warn('auto-save OE', e));
   }
   if (page === 'nova-os') {
-    // Modo planejamento só quando quem abriu pediu (novoPlanejamento,
-    // editarPlanejamento); qualquer outro caminho até aqui é a Nova OS.
-    _osPlanModo = _osPlanAbrir;
+    // TODA OS NOVA NASCE NO PLANEJAMENTO (28/10/2026, Jones: "considere o
+    // processo de criação de OS, primeiro planejamento de OS, depois, aprovação
+    // de OS para receber número, como processo padrão de criação para todos os
+    // usuários"). O formulário só é de OS quando abre uma OS que já existe
+    // (editar); "Nova OS", de qualquer lugar e para qualquer conta, admin
+    // inclusive, abre o planejamento. O número nasce na aprovação.
+    _osPlanModo = _osPlanAbrir || !_formAbreOSExistente();
     _osPlanAbrir = false;
     initOSForm();
   }
@@ -31133,7 +31146,19 @@ async function _comTravaDeSalvar(fn) {
   finally { _salvandoOS = false; }
 }
 
+// O formulário vai abrir (ou está com) uma OS que JÁ existe na lista — editar.
+// Qualquer outra coisa é OS nova, e OS nova é planejamento (ver goto('nova-os')).
+function _formAbreOSExistente() {
+  return !!(osEditId && (STATE.ordens || []).some(o => o.id === osEditId));
+}
+
 async function salvarOS() {
+  // OS nova não se grava por aqui: nasce no planejamento e ganha número na
+  // aprovação. Esta é a trava de quem chegasse ao "Salvar OS" por outro caminho.
+  if (!_formAbreOSExistente()) {
+    toast('OS nova nasce pelo Planejamento de produção: salve o planejamento e aprove para gerar o número', 'err');
+    return;
+  }
   const data = _prepararOSParaSalvar();
   if (!data) return;
   await _comTravaDeSalvar(() => _salvarOSConfirmada(data));
@@ -31344,26 +31369,73 @@ function _planResumo(p) {
     (produtosOS(p) * n).toLocaleString('pt-BR') + ' produtos'].filter(Boolean).join(' · ');
 }
 
+/* QUEM APROVA (28/10/2026): o admin e quem recebeu a área Aprovar planejamento.
+   Antes era só o admin, e por isso só ele criava OS — o número saía do
+   navegador, e duas pessoas aprovando juntas repetiriam o número. Com o número
+   vindo do servidor (_reservarNumerosOS), a aprovação pode ser concedida. */
+function podeAprovarPlanejamento() {
+  return temAcesso('aprovar-plan');
+}
+
+/* O NÚMERO DA OS VEM DO SERVIDOR (28/10/2026, Jones: "o programa pode analisar
+   a existência de todas as OS com número para eleger o próximo número sem criar
+   OS com números iguais").
+   1. Relê o servidor: a lista desta tela pode estar atrasada — a OS que outro
+      computador aprovou há um minuto tem de contar.
+   2. Calcula o próximo número sobre TODAS as OS com número (proximoNumeroOS, a
+      regra de sempre, que ignora o número solto digitado por engano).
+   3. Pede ao banco um bloco de `qtd` números (reservar_numeros_os, em
+      sql/supabase-reservar-numeros-os.sql). O banco trava a linha do último
+      número entregue: duas aprovações ao mesmo tempo esperam uma pela outra e
+      saem com blocos diferentes, mesmo antes de as OS chegarem ao servidor.
+   Servidor sem a função: fica o número do passo 2 (relido do servidor), com
+   aviso no console — melhor que antes, mas sem a trava. Devolve o 1º número. */
+async function _reservarNumerosOS(qtd) {
+  if (supa && currentUser) {
+    await cloudLoad();
+    if (_cloudLoadErro) throw new Error('não foi possível reler as OS do servidor');
+    await loadState();
+  }
+  const minimo = parseInt(proximoNumeroOS(), 10) || 1;
+  if (!supa || !currentUser) return minimo;
+  const { data, error } = await supa.rpc('reservar_numeros_os', { qtd, minimo });
+  if (error) {
+    if (_ehFuncaoAusente(error)) {
+      console.warn('reservar_numeros_os não existe neste servidor — o número saiu da releitura das OS, sem a trava do banco. '
+        + 'Rode sql/supabase-reservar-numeros-os.sql.');
+      return minimo;
+    }
+    throw new Error(error.message || String(error));
+  }
+  const inicio = parseInt(data, 10);
+  if (!(inicio > 0)) throw new Error('o servidor não devolveu número');
+  return inicio;
+}
+
 async function aprovarPlanejamento(id) {
-  // Só o admin, e de propósito sem a porta das áreas concedidas: quem recebeu
-  // "OS" planeja, mas transformar o plano em ordem de produção é do admin.
   if (_recusarSomenteLeitura('aprovar planejamento')) return;
-  if (currentRole !== 'admin') return toast('Só o admin aprova o planejamento', 'err');
-  const p = _planLista().find(x => x.id === id);
+  if (!podeAprovarPlanejamento()) return toast('Seu acesso não inclui aprovar o planejamento — peça ao admin', 'err');
+  let p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
   if (_planAguardando(p)) return toast('Este planejamento da demanda ainda aguarda aprovação', 'err');
   const vezes = _planVezes(p);
-  const numero = proximoNumeroOSParaGrade(p.gradeId || '');
-  if (!confirm(`Aprovar o planejamento e gerar ${vezes > 1 ? `${vezes} OS iguais, a partir da ${numero}` : `a OS ${numero}`}?\n\n${_planResumo(p)}\n\n`
+  // Grade que conjuga: cada OS ocupa DOIS números seguidos — o de cima é ela, o
+  // de baixo é a conjugada (ver numeroParaConjugada).
+  const passo = gradeConjugaAlguma(p.gradeId || '') ? 2 : 1;
+  const previsto = proximoNumeroOSParaGrade(p.gradeId || '');
+  if (!confirm(`Aprovar o planejamento e gerar ${vezes > 1 ? `${vezes} OS iguais` : 'a OS'}?\n\n${_planResumo(p)}\n\n`
+    + `O número é escolhido pelo servidor na hora de gravar, conferindo todas as OS que já existem (previsto: ${previsto}).\n`
     + `${vezes > 1 ? 'As OS entram' : 'A OS entra'} na lista de Ordens de Serviço como Não iniciado e reserva${vezes > 1 ? 'm' : ''} o material.`)) return;
   const agora = new Date();
   const hoje = agora.toISOString().slice(0, 10);
-  // Uma OS por grade igual: cada uma pega o próximo número livre depois da
-  // anterior, confere o tecido que sobrou e dá a sua baixa.
+  let inicio = 0;
+  // Uma OS por grade igual: cada uma pega o seu número do bloco reservado,
+  // confere o tecido que sobrou e dá a sua baixa.
+  const numeroDa = (n) => formatarNumeroOS(inicio + (n - 1) * passo + (passo - 1));
   const montar = (n) => {
     const os = JSON.parse(JSON.stringify(p));
     os.id = uid();
-    os.os = proximoNumeroOSParaGrade(p.gradeId || '');
+    os.os = inicio ? numeroDa(n) : '';
     delete os.repeticoes;
     if (!os.data || os.data < hoje) os.data = hoje;
     os.criadoEm = agora.toISOString();
@@ -31376,13 +31448,25 @@ async function aprovarPlanejamento(id) {
     _congelarDesenhoNaOS(os, null);
     return os;
   };
-  const primeira = montar(1);
-  const faltando = faltaDeTecidoParaOS(primeira);
+  // A falta de tecido é conferida ANTES de reservar: desistir aqui não gasta número.
+  const faltando = faltaDeTecidoParaOS(montar(1));
   if (faltando.length && !confirm(_textoFaltaDeTecido(faltando))) return;
   await _comTravaDeSalvar(async () => {
+    try { inicio = await _reservarNumerosOS(vezes * passo); }
+    catch (e) { toast(`Não foi possível escolher o número da OS: ${e.message || e} — nada foi gerado`, 'err'); return; }
+    // A releitura pode ter trazido a aprovação deste mesmo planejamento feita
+    // em outro computador: aí ele já virou OS e não se aprova duas vezes.
+    p = _planLista().find(x => x.id === id);
+    if (!p) { toast('Este planejamento já foi aprovado ou excluído em outro computador — nada foi gerado', 'err'); renderPlanejamentoProducao(); return; }
+    // Última prova, contra as OS relidas: nenhum número do bloco pode já ser de
+    // outra OS (a OS editada à mão para um número lá de cima, por exemplo).
+    // Achou um, não gera NADA — metade do planejamento aprovado seria pior.
+    const bloco = Array.from({ length: vezes * passo }, (_, k) => formatarNumeroOS(inicio + k));
+    const tomado = bloco.find(x => !numeroOSLivre(x));
+    if (tomado) { toast(`O número ${tomado} já é de outra OS — nada foi gerado. Tente aprovar de novo.`, 'err'); return; }
     const feitas = [];
     for (let n = 1; n <= vezes; n++) {
-      const data = _aplicarTonsPadrao(n === 1 ? primeira : montar(n));
+      const data = _aplicarTonsPadrao(montar(n));
       STATE.ordens.push(data);
       if (n === 1) STATE.osPlanejadas = _planLista().filter(x => x.id !== p.id);
       await saveState('ordens');
@@ -31416,7 +31500,7 @@ function _planAguardando(p) {
 
 async function aprovarPlanDemanda(id) {
   if (_recusarSomenteLeitura('aprovar planejamento')) return;
-  if (currentRole !== 'admin') return toast('Só o admin aprova o planejamento', 'err');
+  if (!podeAprovarPlanejamento()) return toast('Seu acesso não inclui aprovar o planejamento — peça ao admin', 'err');
   const p = _planLista().find(x => x.id === id);
   if (!p || !_planAguardando(p)) return toast('Planejamento não encontrado', 'err');
   if (!confirm(`Aprovar o planejamento vindo da demanda?\n\n${_planResumo(p)}\n\n`
@@ -31449,7 +31533,7 @@ function renderPlanejamentoProducao() {
     vazio: 'Nenhum planejamento da demanda aguardando aprovação.',
     um: 'planejamento aguardando aprovação', varios: 'planejamentos aguardando aprovação', quem: 'Planejado por',
     acoes: (id, p) => `
-        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanDemanda('${id}')" title="Passa o planejamento para a lista do Planejamento de produção">✔ Aprovar</button>
+        <button type="button" class="btn small primary admin-estrito aprova-plan" onclick="aprovarPlanDemanda('${id}')" title="Passa o planejamento para a lista do Planejamento de produção">✔ Aprovar</button>
         <span class="admin-only">
           <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
           <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
@@ -31459,7 +31543,7 @@ function renderPlanejamentoProducao() {
     vazio: 'Nenhuma OS planejada. Use <b>+ Novo planejamento</b>.',
     um: 'OS planejada', varios: 'OS planejadas', quem: 'Planejado por',
     acoes: (id, p) => `
-        <button type="button" class="btn small primary admin-estrito" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre">✔ Aprovar</button>
+        <button type="button" class="btn small primary admin-estrito aprova-plan" onclick="aprovarPlanejamento('${id}')" title="Gera a OS com o próximo número livre, escolhido pelo servidor">✔ Aprovar</button>
         <span class="admin-only">
           <button type="button" class="btn small ghost" onclick="editarPlanejamento('${id}')">Editar</button>
           <button type="button" class="btn small ghost" onclick="excluirPlanejamento('${id}')" title="Excluir o planejamento">✕</button>
@@ -40490,44 +40574,25 @@ async function excluirOS(id) {
   renderListaOS();
 }
 
-async function duplicarOS(id) {
-  if (!exigirEdicao('duplicar OS')) return;
+/* DUPLICAR VIRA PLANEJAMENTO (28/10/2026): a cópia é uma OS NOVA, e OS nova
+   nasce no planejamento (ver goto('nova-os')). O formulário do planejamento
+   abre preenchido com a OS escolhida; salvar põe a cópia na lista do
+   Planejamento de produção, sem número, e a aprovação dá o número.
+   Só passa pelo formulário o que ele coleta (coletaOS): status, checklist,
+   observações, etiquetas e conjugação da OS original ficam nela. */
+function duplicarOS(id) {
+  if (!exigirPlanejamento()) return;
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return toast('OS não encontrada', 'err');
-  // Deep clone — id, numero da OS e data sao regerados; resto e copia exata
   const copia = JSON.parse(JSON.stringify(o));
   copia.id = uid();
-  copia.os = proximoNumeroOS();
+  copia.os = '';
   copia.data = new Date().toISOString().slice(0, 10);
-  // A duplicata NASCE agora: herdar o carimbo da original faria a OS nova
-  // aparecer no mural com a data da velha — ou não aparecer.
-  copia.criadoEm = new Date().toISOString();
-  copia.criadoPor = _obsQuemSou();
-  // Status é do lote, não do desenho: a cópia começa do zero, sem o "Estoque"
-  // da OS que foi copiada.
-  delete copia.statusOS; delete copia.statusOSPor; delete copia.statusOSEm;
-  delete copia.finalizadaEm;
-  // Nem o carimbo das etiquetas: as etiquetas da cópia ainda não foram
-  // impressas — quem as imprimiu imprimiu as da OS original.
-  delete copia.etiquetaEm; delete copia.etiquetaPor;
-  /* AS OBSERVAÇÕES NÃO VÊM JUNTO. Cada recado é assinado e datado por quem o
-     escreveu, sobre o que ele viu naquele lote. Copiado para uma OS que nasce
-     hoje, ele vira um registro falso: a folha da OS nova mostrava o recado de
-     outra pessoa, carimbado num dia em que esta OS ainda não existia.
-
-     Foi o que aconteceu com a OS 0507 (01/09/2026): copiada da 0496, ela nasceu
-     com o recado de 28/08 da 0496 e o carimbo daquele dia. É o mesmo motivo
-     pelo qual `criadoEm` logo acima é regerado, e não herdado. O texto antigo
-     (`obs`) sai pela mesma razão: ele se anuncia como "anterior a 20/08/2026",
-     o que é impossível numa OS criada agora. */
-  delete copia.obsNotas; delete copia.obs;
-  // O desenho também é o de agora: a cópia é um lote novo, não a OS de antes.
-  _congelarDesenhoNaOS(copia, null);
-  STATE.ordens.push(copia);
-  await saveState('ordens');
-  await atualizarCounterOS(copia.os);
-  toast(`OS ${copia.os} duplicada a partir de ${o.os}`, 'ok');
-  renderListaOS();
+  delete copia.repeticoes;
+  _demAgrupando = null;
+  _osPlanAbrir = true;
+  _abrirOSNoForm(copia, `Novo planejamento · cópia da OS ${o.os || ''}`);
+  toast(`Cópia da OS ${o.os || ''} aberta no planejamento — salve e aprove para gerar o número`, '');
 }
 
 /* ========================================================= */

@@ -230,7 +230,6 @@ const soAdmin = [
   ['a observacao antiga (sem dono)', "exigirEdicao('editar a observação antiga da OS')"],
   ['criar ou editar OS', "exigirEdicao('criar ou editar OS')"],
   ['editar OS', "exigirEdicao('editar OS')"],
-  ['duplicar OS', "exigirEdicao('duplicar OS')"],
   ['criar ou editar cadastros', "exigirEdicao('criar ou editar cadastros')"],
   ['excluir cadastros', "exigirEdicao('excluir cadastros')"],
   ['a folha de OE', "exigirEdicao('editar a folha de OE')"],
@@ -239,6 +238,18 @@ const soAdmin = [
 soAdmin.forEach(([oQue, trecho], i) => {
   ok((41 + i) + '. ' + oQue + ' continua so do admin', app.includes(trecho), trecho);
 });
+
+/* DUPLICAR NAO DA NUMERO (28/10/2026). A cópia é OS nova, e OS nova nasce no
+   planejamento: duplicar abre o formulario do planejamento preenchido e nunca
+   grava em ordens. Por isso deixou de ser "so do admin" — o que era do admin
+   ali era dar o numero, e o numero agora so sai da aprovacao. */
+{
+  const i = app.indexOf('function duplicarOS(');
+  const corpo = app.slice(i, app.indexOf('\n}', i));
+  ok('48. duplicar abre o planejamento, sem numero e sem gravar em ordens',
+     /exigirPlanejamento\(\)/.test(corpo) && /_osPlanAbrir = true/.test(corpo) && /copia\.os = ''/.test(corpo)
+     && !/STATE\.ordens\.push|saveState\('ordens'\)|proximoNumeroOS/.test(corpo), corpo.slice(0, 300));
+}
 
 console.log('');
 if (falhas) { console.log(falhas + ' FALHA(S)'); process.exit(1); }
