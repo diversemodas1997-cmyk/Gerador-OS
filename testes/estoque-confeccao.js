@@ -171,8 +171,13 @@ ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'ap
    .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => mod.includes(`exigirEdicao('${a}')`)));
 ok('30. o snapshot da Contabilidade leva o produto acabado', /produtosAcabados = acabSnapshotContab\(\)/.test(app) && /'acabProdutos', 'acabMov'\];/.test(app));
-const nav = html.slice(html.indexOf('data-group="estoques"'), html.indexOf('data-group="cadastros"'));
-ok('31. a pasta fica DENTRO de Estoques, na barra lateral', /data-group="estoque-confeccao"/.test(nav)
+// Desde 28/10/2026 (Jones) a pasta é própria, de primeiro nível, logo acima
+// de Estoques — que passou a se chamar "Estoque de materiais".
+const _iniProd = html.indexOf('<div class="nav-group" data-group="estoque-confeccao">');
+const nav = html.slice(_iniProd, html.indexOf('<div class="nav-group" data-group="estoques">'));
+ok('31. a pasta é própria, fora de Estoques, na barra lateral', _iniProd > 0 && nav.length > 0
+   && /<span class="nav-toggle">▼<\/span> Estoque de produtos<\/button>/.test(nav)
+   && /data-group="estoques">\s*<button[^>]*><span class="nav-toggle">▼<\/span> Estoque de materiais<\/button>/.test(html)
    && !nav.includes('data-page="acab-inventario"')
    && ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'].every(p => nav.includes(`data-page="${p}"`)));
 ok('32. cada tela tem a sua seção e o painel', ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp']

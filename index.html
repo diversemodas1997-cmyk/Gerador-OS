@@ -151,6 +151,21 @@
       </div>
     </div>
 
+    <!-- ESTOQUE CONFECCAO (21/10/2026, Junior): o produto acabado, que era o
+         programa Estoque-Confeccao (Render), numa pasta dentro de Estoques.
+         As telas sao desenhadas por estoque-confeccao.js.
+         Desde 28/10/2026 (Jones) e uma pasta propria da barra, fora de
+         Estoques (que passou a se chamar Estoque de materiais). -->
+    <div class="nav-group" data-group="estoque-confeccao">
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque de produtos</button>
+      <div class="nav-items">
+        <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
+        <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
+        <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
+        <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
+        <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
+      </div>
+    </div>
     <!-- A BARRA LATERAL EM TRES GRUPOS (15/09/2026, Junior). O menu tinha uma
          seção "Principal" que era, na verdade, duas coisas empilhadas: as telas
          do dia a dia de quem emite OS e compra pano, e os CAMPOS do fluxo, que
@@ -174,22 +189,8 @@
          folha da doca. As duas se mexem todo dia, e é por isso que ficam no
          topo do grupo. -->
     <div class="nav-group" data-group="estoques">
-      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoques</button>
+      <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque de materiais</button>
       <div class="nav-items">
-        <!-- ESTOQUE CONFECCAO (21/10/2026, Junior): o produto acabado, que era o
-             programa Estoque-Confeccao (Render), numa pasta dentro de Estoques.
-             As telas sao desenhadas por estoque-confeccao.js.
-             Primeiro item de Estoques desde 28/10/2026 (Jones). -->
-        <div class="nav-group nav-sub" data-group="estoque-confeccao">
-          <button type="button" class="nav-label" onclick="toggleNavGroup(this)"><span class="nav-toggle">▼</span> Estoque de produtos</button>
-          <div class="nav-items">
-            <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
-            <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
-            <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
-            <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
-            <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
-          </div>
-        </div>
         <a class="nav-btn" href="#estoque" data-page="estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de tecidos</a>
         <a class="nav-btn" href="#estoque-materiais" data-page="estoque-materiais" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de materiais</a>
         <a class="nav-btn" href="#estoque-aviamentos" data-page="estoque-aviamentos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque de aviamentos</a>
