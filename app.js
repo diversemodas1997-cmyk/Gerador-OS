@@ -5431,20 +5431,13 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
   else if (tipo === 'cor') {
     box.innerHTML = `
       <div class="form-grid cols-2">
-        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Preto Malha Algodão"><div class="field-hint">Inclua o <b>tecido</b> no nome (ex.: <i>Preto Malha Algodão</i>, <i>Preto Moletom</i>). A mesma cor pesa diferente em cada tecido, e é o nome que amarra a gramatura certa.</div></div>
+        <div class="field"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Preto"><div class="field-hint">Só a cor, <b>sem o tecido</b> (ex.: <i>Preto</i>, <i>Branco</i>, <i>Verde</i>): a mesma cor serve para todos os tecidos. O tecido vem da linha da OS e do estoque.</div></div>
         <div class="field"><label>Cor (hex)</label><input type="color" id="m-hex" value="${item.hex||'#c9a961'}"></div>
         <div class="field"><label>Código (ex.: Linx)</label><input type="text" id="m-codigo" value="${esc(item.codigo||'')}" placeholder="Ex.: AV.CO.129"></div>
         <div class="field"><label>Sigla SKU</label><input type="text" id="m-siglasku" value="${esc(item.siglaSku||'')}" placeholder="Ex.: PRE, VERM, OFF"><div class="field-hint">Compõe o SKU do produto acabado (ex.: CM.LISA-<b>PRE</b>)</div></div>
         <div class="field"><label>Fornecedor</label><select id="m-cor-fornecedor">${fornecedorOptions(item.fornecedorId)}</select></div>
         <div class="field"><label>Código no fornecedor</label><input type="text" id="m-cor-codforn" value="${esc(item.codigoFornecedor||'')}" placeholder="Ex.: 020104"></div>
-        <div class="field"><label>Nome no fornecedor</label><input type="text" id="m-cor-nomeforn" value="${esc(item.nomeFornecedor||'')}" placeholder="Ex.: PRETO ENXOFRE"><div class="field-hint">O nome que vem na etiqueta e na nota. Fica <b>ao lado</b> do nome de casa, não no lugar dele: é o nome de casa que amarra a cor ao tecido nas contas.</div></div>
-        <div class="field"><label>Tecido vinculado</label>
-          <select id="m-cor-tecido">
-            <option value="">— nenhum —</option>
-            ${(STATE.tecidos||[]).map(t => `<option value="${esc(t.id)}" ${item.tecidoId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('')}
-          </select>
-          <div class="field-hint">Opcional, para referência. Quem amarra a cor ao tecido nas contas continua sendo o <b>sufixo do nome</b> (ex.: <i>Preto <b>Ribana Moletom</b></i>).</div>
-        </div>
+        <div class="field"><label>Nome no fornecedor</label><input type="text" id="m-cor-nomeforn" value="${esc(item.nomeFornecedor||'')}" placeholder="Ex.: PRETO ENXOFRE"><div class="field-hint">O nome que vem na etiqueta e na nota. Fica <b>ao lado</b> do nome de casa, não no lugar dele: é o nome de casa que vale nas contas.</div></div>
 
       </div>`;
   }
@@ -7693,7 +7686,8 @@ async function salvarCadastro() {
     item.codigo = v('m-codigo');
     item.siglaSku = (v('m-siglasku') || '').trim().toUpperCase();
     item.fornecedorId = v('m-cor-fornecedor');
-    item.tecidoId = v('m-cor-tecido');
+    // A cor é genérica, de todos os tecidos (28/10/2026): não guarda tecido.
+    delete item.tecidoId;
     // O código do FORNECEDOR mora aqui, separado de `codigo` (o do Linx). São
     // duas numerações de donos diferentes; guardar as duas no mesmo campo faria
     // uma apagar a outra na primeira vez que a ficha fosse salva.
@@ -8284,7 +8278,7 @@ const _cvAlgum = sel => () => !!document.querySelector(sel);
 const CAD_CONFERENCIA = {
   tecido: [['Nome', _cv('m-nome'), 1], ['Categoria', _cv('m-categoria')], ['Forma do pano (tubular ou aberto)', _cv('m-tubular')],
     ['Gramatura', _cvNum('m-peso')], ['Largura', _cvNum('m-largura')], ['Fornecedor', _cv('m-fornecedor')], ['Composição', _cv('m-desc')]],
-  cor: [['Nome (com o tecido)', _cv('m-nome'), 1], ['Sigla SKU', _cv('m-siglasku')], ['Tecido vinculado', _cv('m-cor-tecido')], ['Código (Linx)', _cv('m-codigo')]],
+  cor: [['Nome', _cv('m-nome'), 1], ['Sigla SKU', _cv('m-siglasku')], ['Código (Linx)', _cv('m-codigo')]],
   fornecedor: [['Razão social', _cv('m-nome'), 1], ['CNPJ', _cv('m-cnpj')], ['Cidade / UF', _cv('m-cidade')], ['Telefone', _cv('m-telefone')]],
   material: [['Categoria', _cv('m-categoria'), 1], ['Código', _cv('m-codigo'), 1], ['Descrição', _cv('m-desc'), 1], ['Tipo', _cv('m-tipo')]],
   modelo: [['Descrição', _cv('m-nome'), 1], ['Tipo', _cv('m-categoria'), 1], ['SKU', _cv('m-skulinha')], ['Linha', _cv('m-linha')],
@@ -8375,7 +8369,7 @@ function abrirNovaCorDesenho(id) {
   const bases = [...new Set((STATE.cores || []).map(c => corNomeCurto(c.nome)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   m.innerHTML = `<div class="modal">
     <h2>Nova cor · desenho ${esc(d.codigo)}</h2>
-    <div class="info-box" style="margin-bottom:10px;font-size:12px;">Cria um desenho novo, igual ao <b>${esc(d.codigo)} ${esc(d.desc || '')}</b>, trocando a cor. Para cada cor do desenho, escreva a nova — uma das cadastradas ou uma <b>cor nova</b>, que é cadastrada aqui, uma por tecido. Em branco, a cor fica a mesma.</div>
+    <div class="info-box" style="margin-bottom:10px;font-size:12px;">Cria um desenho novo, igual ao <b>${esc(d.codigo)} ${esc(d.desc || '')}</b>, trocando a cor. Para cada cor do desenho, escreva a nova — uma das cadastradas ou uma <b>cor nova</b>, que é cadastrada aqui (a cor vale para todos os tecidos). Em branco, a cor fica a mesma.</div>
     <datalist id="ncd-bases">${bases.map(b => `<option value="${esc(b)}">`).join('')}</datalist>
     ${grupos.map((g, i) => `<div class="card" style="padding:10px;margin-bottom:8px;">
       <div style="font-size:12px;margin-bottom:6px;"><b>${esc(g.rotulo)}</b> <span class="muted">(${esc(g.cores.map(c => c.nome).join(', '))})</span></div>
@@ -8988,6 +8982,8 @@ function renderTecidos() {
 function renderCores() {
   const tb = document.getElementById('tbl-cores');
   if (!STATE.cores.length) { tb.innerHTML = `<tr><td colspan="5" class="empty">Nenhuma cor cadastrada.</td></tr>`; return; }
+  // A coluna do tecido saiu em 28/10/2026: a cor é genérica, de todos os
+  // tecidos. No lugar dela, a Sigla SKU — o que a cor ainda define.
   // A coluna da gramatura saiu: a gramatura por COR foi removida em 27/08/2026
   // (uma malha calculando em duas escalas). O lugar dela mostra agora o que o
   // cadastro passou a guardar — de quem vem a cor e a que pano ela pertence.
@@ -8997,7 +8993,7 @@ function renderCores() {
       c.codigoFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">forn. ${esc(c.codigoFornecedor)}</div>` : ''}</td>
     <td>${esc(fornecedorNome(c.fornecedorId)) || '—'}${
       c.nomeFornecedor ? `<div style="font-size:10px;color:var(--ink-3);">${esc(c.nomeFornecedor)}</div>` : ''}</td>
-    <td>${esc(((STATE.tecidos || []).find(t => t.id === c.tecidoId) || {}).nome || '') || '—'}</td></tr>`).join('');
+    <td>${c.siglaSku ? `<span class="badge">${esc(c.siglaSku)}</span>` : '—'}</td></tr>`).join('');
 }
 /* MATERIAIS SEPARADOS DE AVIAMENTOS (28/09/2026, Junior: "Mostre em cadastros
    materiais separado de aviamentos"). Era um cadastro só, "Materiais /
@@ -27931,6 +27927,8 @@ function corOptionsDaLinha(tecidoId, corIdSel) {
   if (!tecNome) return '<option value="">—</option>' + cores.map(c => opt(c, selId)).join('');
   const tn = _normNome(tecNome);
   const daLinha = cores.filter(c => _normNome(c.nome) === corBaseNome(c.nome) + ' ' + tn);
+  // Cores genéricas (28/10/2026): nenhuma é "deste tecido" — a lista é uma só.
+  if (!daLinha.length) return '<option value="">—</option>' + cores.map(c => opt(c, selId)).join('');
   const outras = cores.filter(c => !daLinha.includes(c));
   return '<option value="">—</option>'
     + (daLinha.length ? `<optgroup label="${esc(tecNome)}">${daLinha.map(c => opt(c, selId)).join('')}</optgroup>` : '')
@@ -30797,8 +30795,14 @@ function _sufixoTecidoNorm(n) {
   let sufixo = '';
   (STATE.tecidos || []).forEach(t => {
     const tn = _normNome(t.nome);
-    if (!tn || tn.length <= sufixo.length) return;
-    if (n.endsWith(' ' + tn)) sufixo = tn;
+    // O Texturizado usa o nome curto na cor ("Preto Rugão", tecido
+    // "Texturizado | Rugão"): o que vem depois da barra também é o tecido —
+    // é o que deixa a cor antiga virar a genérica "Preto" (28/10/2026).
+    const curto = tn.includes('|') ? tn.split('|').pop().trim() : '';
+    [tn, curto].forEach(x => {
+      if (!x || x.length <= sufixo.length) return;
+      if (n.endsWith(' ' + x)) sufixo = x;
+    });
   });
   return sufixo;
 }
@@ -30855,6 +30859,17 @@ function corCanonicaPorTecido(corNome, tecidoNome) {
   const cn = _normNome(corNome);
   const tn = _normNome(tecidoNome);
   if (!cn) return corNome || '';
+  /* AS CORES SÃO GENÉRICAS (28/10/2026, Jones: "corrija o cadastro de cores,
+     para que haja apenas cores genéricas: preto, branco, verde, etc. Mantenha
+     as siglas do SKU nas cores, mas retire o tecido, pois as cores servirão
+     para todos os tecidos"). O cadastro tem "Preto", e o tecido vem da linha
+     (o estoque continua separado por tecido||cor). O nome composto antigo —
+     de um lançamento de antes, ou de quem ainda manda "Preto Malha Algodão" —
+     vira a cor genérica do cadastro. Sem a genérica cadastrada, segue a regra
+     antiga das cores por tecido, abaixo. */
+  const baseG = corBaseNome(corNome);
+  const generica = baseG ? (STATE.cores || []).find(c => _normNome(c.nome) === baseG) : null;
+  if (generica) return generica.nome;
   if (!tn) return corNome || '';
   /* A COR COMPOSTA DE OUTRO TECIDO TAMBÉM É CORRIGIDA (28/08/2026, Junior:
      "moletom: bege malha algodão. Essa informação é incongruente").
