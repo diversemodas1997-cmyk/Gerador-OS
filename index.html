@@ -205,7 +205,6 @@
           <div class="nav-items">
             <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
             <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
-            <a class="nav-btn" href="#acab-inventario" data-page="acab-inventario" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Inventário</a>
             <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
             <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
             <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
@@ -488,12 +487,8 @@
       <div id="acab-estoque-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-mov">
-      <div class="page-header"><div><h1>Estoque de produtos · Entradas e saídas</h1><div class="desc">Entrada de compra ou de peça que chegou fora de uma OS, e saída para cliente, cancelamento, devolução ou defeito.</div></div></div>
+      <div class="page-header"><div><h1>Estoque de produtos · Entradas e saídas</h1><div class="desc">Entrada de compra ou de peça que chegou fora de uma OS, saída para cliente, cancelamento, devolução ou defeito e, na parte de baixo, o inventário (a contagem física da prateleira).</div></div></div>
       <div id="acab-mov-painel"></div>
-    </section>
-    <section class="page hidden" data-page="acab-inventario">
-      <div class="page-header"><div><h1>Estoque de produtos · Inventário</h1><div class="desc">A contagem física da prateleira: o número contado passa a ser o saldo, e a diferença fica registrada.</div></div></div>
-      <div id="acab-inventario-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-produtos">
       <div class="page-header"><div><h1>Estoque de produtos · Produtos (SKUs)</h1><div class="desc">O cadastro dos SKUs (linha + cor, como a OS calcula), os tamanhos de cada um, o código do ERP e o início do estoque. O estoque mínimo e o máximo ficam em cada linha do Estoque atual.</div></div></div>
@@ -2055,9 +2050,9 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-28h"></script>
+<script src="app.js?v=2026-10-28i"></script>
 <script src="assistente.js?v=2026-10-21a"></script>
 <script src="colorimetro.js?v=2026-10-26a"></script>
-<script src="estoque-confeccao.js?v=2026-10-28e"></script>
+<script src="estoque-confeccao.js?v=2026-10-28f"></script>
 </body>
 </html>

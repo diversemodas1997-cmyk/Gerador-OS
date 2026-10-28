@@ -2255,7 +2255,7 @@ const VISAO_PAGINAS = {
   'cadastros': ['cad-*'],
   'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
-  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp'],
+  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
   'operacoes': ['operacoes', 'print-operacoes'],
   'costura': ['relatorio-costura'],
@@ -2312,8 +2312,8 @@ const TELAS_DA_AREA = {
     ['transito-ida', 'Estoque em trânsito · IDA'], ['transito-volta', 'Estoque em trânsito · VOLTA'],
     ['costurando', 'Costurando · Descalvado'], ['costurando-sc', 'Costurando · São Carlos'],
     ['fios', 'Retirada de fios']],
-  'estoque-confeccao': [['acab-estoque', 'Estoque atual'], ['acab-mov', 'Entradas e saídas'],
-    ['acab-inventario', 'Inventário'], ['acab-produtos', 'Produtos (SKUs)'], ['acab-erp', 'Saídas do ERP'],
+  'estoque-confeccao': [['acab-estoque', 'Estoque atual'], ['acab-mov', 'Entradas e saídas · Inventário'],
+    ['acab-produtos', 'Produtos (SKUs)'], ['acab-erp', 'Saídas do ERP'],
     ['acab-cmp', 'Relatório CMP']]
 };
 const _TELA_DA_FOLHA = {
@@ -4774,6 +4774,9 @@ window.addEventListener('resize', ajustarFolhaAoCelular);
 window.addEventListener('orientationchange', ajustarFolhaAoCelular);
 
 function goto(page) {
+  // O Inventário do Estoque de produtos virou a parte de baixo de Entradas e
+  // saídas (28/10/2026): o endereço antigo leva para lá.
+  if (page === 'acab-inventario') page = 'acab-mov';
   const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
   // As telas de CADASTRO são de LEITURA para todo mundo — aqui não há rota
   // fechada. Quem está no chão precisa consultar a ficha do tecido, a grade, a

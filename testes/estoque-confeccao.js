@@ -164,17 +164,21 @@ console.log('\n-- os avisos do sino --');
 
 console.log('\n-- a ligação com o programa --');
 ok('27. as chaves entram nas duas listas do app.js', (app.match(/'costuraProd','acabProdutos','acabMov'/g) || []).length === 2);
-ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
-   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp'\]/.test(app));
+// Desde 28/10/2026 o Inventário é a parte de baixo de Entradas e saídas: cinco telas.
+ok('28. a área Estoque confecção existe, com as cinco telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
+   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'\]/.test(app));
 ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => mod.includes(`exigirEdicao('${a}')`)));
 ok('30. o snapshot da Contabilidade leva o produto acabado', /produtosAcabados = acabSnapshotContab\(\)/.test(app) && /'acabProdutos', 'acabMov'\];/.test(app));
 const nav = html.slice(html.indexOf('data-group="estoques"'), html.indexOf('data-group="cadastros"'));
 ok('31. a pasta fica DENTRO de Estoques, na barra lateral', /data-group="estoque-confeccao"/.test(nav)
-   && ['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp'].every(p => nav.includes(`data-page="${p}"`)));
-ok('32. cada tela tem a sua seção e o painel', ['acab-estoque', 'acab-mov', 'acab-inventario', 'acab-produtos', 'acab-erp', 'acab-cmp']
+   && !nav.includes('data-page="acab-inventario"')
+   && ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'].every(p => nav.includes(`data-page="${p}"`)));
+ok('32. cada tela tem a sua seção e o painel', ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp']
    .every(p => html.includes(`<section class="page hidden" data-page="${p}">`) && html.includes(`id="${p}-painel"`)));
+ok('32a. o inventário fica no pé de Entradas e saídas, e o endereço antigo leva para lá',
+   /<div id="acab-inventario-painel"><\/div>`;\s*renderInventario\(\);/.test(mod) && /if \(page === 'acab-inventario'\) page = 'acab-mov';/.test(app));
 ok('33. o script e o modal estão no index.html', /<script src="estoque-confeccao\.js\?v=/.test(html) && /id="modal-acab-produto"/.test(html));
 ok('34. os botões de editar aparecem para quem tem a área', /body\.pode-estoque-confeccao \[data-page\^="acab-"\] \.admin-only/.test(css));
 const onclicks = [...new Set((mod.match(/on(?:click|change|input)="(acab\w+)\(/g) || []).map(x => x.match(/"(acab\w+)/)[1]))];

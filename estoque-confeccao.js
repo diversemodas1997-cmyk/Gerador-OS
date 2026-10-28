@@ -16,7 +16,8 @@
      · Estoque atual       — a tabela SKU × tamanho, os totais, e o mínimo e o
                              máximo de cada linha;
      · Entradas e saídas   — os lançamentos à mão e a lista dos últimos;
-     · Inventário          — a contagem física que acerta o saldo;
+     · Inventário          — a contagem física que acerta o saldo (desde
+                             28/10/2026, a parte de baixo de Entradas e saídas);
      · Produtos (SKUs)     — o cadastro e o início do estoque;
      · Saídas do ERP       — o relatório de vendas (PDF ou CSV) vira saída;
      · Relatório CMP       — o custo médio ponderado, movimento a movimento.
@@ -680,7 +681,14 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
           <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th>Destino</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Valor</th><th class="col-actions admin-only"></th></tr></thead><tbody>
           ${sai.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td>${esc((DESTINOS.find(d => d.k === m.destino) || { rotulo: m.destino || '' }).rotulo.replace('Estoque → ', ''))} ${origem(m)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td style="${mono}">${fmtR(m.valor)}</td><td class="col-actions row-actions admin-only">${apagar(m)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma saída.</td></tr>'}
           </tbody></table></div></div>
-      </div>`;
+      </div>
+      <!-- O INVENTÁRIO MORA AQUI, NA PARTE DE BAIXO (28/10/2026, Jones: "Migre o
+           conteúdo do campo Inventário para dentro de Entradas e saídas, na
+           parte de baixo"). Era uma tela própria do menu; o ajuste é um
+           lançamento como a entrada e a saída. Desenhado por renderInventario. -->
+      <h2 style="font-size:16px;margin:22px 0 10px;">Inventário</h2>
+      <div id="acab-inventario-painel"></div>`;
+    renderInventario();
     [['acab-ent', tamE], ['acab-sai', tamS]].forEach(([prefixo, t]) => {
       const sel = document.getElementById(prefixo + '-tam');
       if (sel) sel.innerHTML = opcoesTams(tamsDoCampo(prefixo), asTam(t));
