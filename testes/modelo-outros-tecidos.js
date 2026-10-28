@@ -5,7 +5,7 @@
    modelo casa com a Categoria do tecido; o Tactel é 'outro' ("Sem limite de
    camadas"), e a lista do modelo só tinha Camiseta e Moletom. O que este teste
    protege:
-     · com tecido na categoria 'outro', o modelo oferece "Outros tecidos — <nomes>";
+     · com tecido na categoria 'outro', o modelo oferece o nome dele ("Tactel");
      · sem tecido nela, a opção não aparece (não há o que pedir);
      · o modelo que já é 'outro' continua com a opção, escolhida;
      · e a OS de um modelo 'outro' mostra o Tactel na lista de tecidos.
@@ -44,13 +44,13 @@ const TECIDOS = [
 
 let a = monta({ STATE: { tecidos: TECIDOS, modelos: [] } });
 let op = a._opcaoModeloOutrosTecidos('');
-ok('1. com o Tactel cadastrado, o modelo oferece o tipo', /value="outro"/.test(op) && /Outros tecidos — Tactel/.test(op), op);
+ok('1. com o Tactel cadastrado, o modelo oferece o tipo', /<option value="outro" >Tactel<\/option>/.test(op), op);
 ok('2. e ela nao vem escolhida num modelo novo', !/selected/.test(op), op);
 ok('3. no modelo que ja e "outro", vem escolhida', /selected/.test(a._opcaoModeloOutrosTecidos('outro')));
 
 a = monta({ STATE: { tecidos: TECIDOS.filter(t => t.categoria !== 'outro'), modelos: [] } });
 ok('4. sem tecido nessa categoria, a opcao nao aparece', a._opcaoModeloOutrosTecidos('') === '');
-ok('5. mas o modelo que ja e "outro" nao perde o tipo', /value="outro" selected/.test(a._opcaoModeloOutrosTecidos('outro')));
+ok('5. mas o modelo que ja e "outro" nao perde o tipo', /value="outro" selected>Outros tecidos</.test(a._opcaoModeloOutrosTecidos('outro')));
 
 a = monta({ STATE: { tecidos: TECIDOS, modelos: [{ id: 'm1', categoria: 'outro' }, { id: 'm2', categoria: 'malha' }] }, modeloId: 'm1' });
 const lista = a.tecOptions('');

@@ -5298,14 +5298,15 @@ new MutationObserver(recs => {
    (tipoPecaModeloOS). O Tactel é da categoria "Sem limite de camadas"
    ('outro'), e o "Outro" tinha saído da lista com o "Novo +" (26/10/2026) —
    não sobrava tipo de modelo que pedisse o Tactel.
-   A opção volta com o nome dos tecidos que ela traz ("Outros tecidos —
-   Tactel"), que é o que quem cadastra procura. Aparece quando há tecido nessa
+   A opção volta com o nome dos tecidos que ela traz ("Tactel" — 28/10/2026,
+   Jones: só o nome do tecido), que é o que quem cadastra procura. Sem tecido
+   cadastrado nela, fica "Outros tecidos". Aparece quando há tecido nessa
    categoria, ou quando o modelo já é dela. */
 function _opcaoModeloOutrosTecidos(atual) {
   const nomes = (STATE.tecidos || []).filter(t => t.categoria === 'outro').map(t => t.nome).filter(Boolean)
     .sort((a, b) => a.localeCompare(b, 'pt-BR'));
   if (!nomes.length && atual !== 'outro') return '';
-  const rotulo = 'Outros tecidos' + (nomes.length ? ' — ' + nomes.join(', ') : '');
+  const rotulo = nomes.length ? nomes.join(', ') : 'Outros tecidos';
   return `<option value="outro" ${atual === 'outro' ? 'selected' : ''}>${esc(rotulo)}</option>`;
 }
 
