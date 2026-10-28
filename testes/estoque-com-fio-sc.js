@@ -129,7 +129,9 @@ ok('18. os dois estao na barra lateral, dentro de Estoques',
    && /nav-btn[^>]*data-page="estoque-fio-sc"[^>]*>Estoque com fio \| São Carlos</.test(html));
 // O grupo Estoques vai ate o grupo seguinte (Operacoes saiu da barra em 24/09/2026).
 const _iniEst = html.indexOf('data-group="estoques"');
-const grupoEstoques = html.slice(_iniEst, html.indexOf('data-group=', _iniEst + 1));
+// Até o próximo grupo de PRIMEIRO nível: a subpasta Estoque de produtos
+// (nav-sub) é o primeiro item de dentro de Estoques desde 28/10/2026.
+const grupoEstoques = html.slice(_iniEst, html.indexOf('<div class="nav-group" data-group=', _iniEst + 1));
 ok('19. e e o grupo ESTOQUES mesmo, nao Operacoes',
    grupoEstoques.includes('data-page="estoque-fio-sc"'));
 ok('20. o Inicio tem o cartao dos dois', /k: 'estoqueFioSC'/.test(src) && /k: 'estoqueFio'/.test(src));
