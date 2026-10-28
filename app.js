@@ -5707,14 +5707,9 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
                     <td><select class="m-comp-tec" data-comp="${esc(c.id)}">${tecOpts(atual.tecidoId)}</select></td>
                     <td><select class="m-comp-cor" data-comp="${esc(c.id)}">${corOpts(atual.corId)}</select></td>
                     <td>${(()=>{
-                      // VAZIO E ZERO (28/10/2026, Jones: "insira a opção 0 ou
-                      // vazio"): antes a lista ia de 1 a 20 e voltava sempre a 1.
-                      // Vazio = não informado (a OS usa o padrão: 1, ou 2 para
-                      // manga/punho no risco); 0 = marcado, mas não conta peça.
-                      const q = atual.qtdPorPeca;
-                      const sel = (q === '' || q == null || !Number.isFinite(Number(q))) ? '' : String(Math.round(Number(q)));
-                      const opts = `<option value="" ${sel===''?'selected':''}>—</option>` + [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-                        .map(n => `<option value="${n}" ${sel===String(n)?'selected':''}>${n}</option>`).join('');
+                      const sel = Math.round(Number(atual.qtdPorPeca)) || 1;
+                      const opts = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+                        .map(n => `<option value="${n}" ${sel===n?'selected':''}>${n}</option>`).join('');
                       return `<select class="m-comp-qtd" data-comp="${esc(c.id)}">${opts}</select>`;
                     })()}</td>
                   </tr>`;
@@ -7892,8 +7887,7 @@ async function salvarCadastro() {
         nome: cad?.nome || '',
         tecidoId: tecEl?.value || '',
         corId: corEl?.value || '',
-        // Vazio fica null (não informado); 0 fica 0 — antes os dois viravam 1.
-        qtdPorPeca: (qtdEl && qtdEl.value !== '' && Number.isFinite(parseFloat(qtdEl.value))) ? parseFloat(qtdEl.value) : null
+        qtdPorPeca: parseFloat(qtdEl?.value) || 1
       };
     });
     // Preserva componentes do desenho que NÃO existem no cadastro global (ex.: as
@@ -29488,8 +29482,7 @@ function atualizarCalculosEnfesto() {
           const detalhesF = [];
           forroComps.forEach(c => {
             const v = parseFloat(c.qtdPorPeca);
-            // 0 informado no desenho = não conta (28/10/2026); vazio = 1.
-            const qty = v > 0 ? v : (v === 0 ? 0 : 1);
+            const qty = v > 0 ? v : 1;
             qtyForro += qty;
             detalhesF.push(`${c.nome || '?'} ×${qty}`);
           });
@@ -29744,7 +29737,6 @@ function calcularCamadasParaProducao() {
   const qtdDoComp = c => {
     const v = parseFloat(c.qtdPorPeca);
     if (v > 0) return v;
-    if (v === 0) return 0;   // 0 informado no desenho = não conta (28/10/2026)
     const n = (c.nome || '').toLowerCase();
     return (n.includes('manga') || n.includes('punho')) ? 2 : 1;
   };
