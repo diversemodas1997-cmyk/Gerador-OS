@@ -5311,13 +5311,28 @@ new MutationObserver(recs => {
    A opção volta com o nome dos tecidos que ela traz ("Tactel" — 28/10/2026,
    Jones: só o nome do tecido), que é o que quem cadastra procura. Sem tecido
    cadastrado nela, fica "Outros tecidos". Aparece quando há tecido nessa
-   categoria, ou quando o modelo já é dela. */
-function _opcaoModeloOutrosTecidos(atual) {
-  const nomes = (STATE.tecidos || []).filter(t => t.categoria === 'outro').map(t => t.nome).filter(Boolean)
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  if (!nomes.length && atual !== 'outro') return '';
-  const rotulo = nomes.length ? nomes.join(', ') : 'Outros tecidos';
-  return `<option value="outro" ${atual === 'outro' ? 'selected' : ''}>${esc(rotulo)}</option>`;
+   categoria, ou quando o modelo já é dela.
+   UMA OPÇÃO POR TECIDO (28/10/2026, Jones: "Cotton, Tactel devem ser opções
+   separadas no cadastro de novo modelo"). Com dois tecidos na categoria, a
+   opção única virava "Cotton, Tactel". Agora cada tecido é uma opção
+   ('outro:<id do tecido>'): o modelo continua com categoria 'outro' (a pasta
+   das grades não muda) e guarda o tecido em tecidoOutroId, que é o único
+   tecido dessa categoria que a OS do modelo oferece. O modelo 'outro' antigo,
+   sem tecido escolhido, fica com "Outros tecidos" (todos eles) até alguém
+   escolher. */
+function _opcaoModeloOutrosTecidos(item) {
+  const atual = (item && item.categoria) || '';
+  const escolhido = atual === 'outro' ? ((item && item.tecidoOutroId) || '') : '';
+  const tecs = (STATE.tecidos || []).filter(t => t.categoria === 'outro' && t.nome)
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const geral = atual === 'outro' && !tecs.some(t => t.id === escolhido)
+    ? '<option value="outro" selected>Outros tecidos</option>' : '';
+  return geral + tecs.map(t => `<option value="outro:${esc(t.id)}" ${escolhido === t.id ? 'selected' : ''}>${esc(t.nome)}</option>`).join('');
+}
+// O valor do Tipo do modelo: 'outro:<id>' vira categoria 'outro' + o tecido.
+function _tipoModeloDoValor(valor) {
+  const v = String(valor || '');
+  return v.startsWith('outro:') ? { categoria: 'outro', tecidoOutroId: v.slice(6) } : { categoria: v, tecidoOutroId: '' };
 }
 
 // `pre`: a ficha NOVA já preenchida (a grade sugerida pelo Relatório de demanda).
@@ -5466,7 +5481,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Camiseta (malha algodão)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom</option>
-            ${_opcaoModeloOutrosTecidos(item.categoria)}
+            ${_opcaoModeloOutrosTecidos(item)}
           </select>
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
@@ -7705,7 +7720,10 @@ async function salvarCadastro() {
     item.nome = v('m-nome');
     item.linha = v('m-linha');
     item.skuLinha = (v('m-skulinha') || '').trim().toUpperCase();
-    item.categoria = v('m-categoria');
+    const tipoModelo = _tipoModeloDoValor(v('m-categoria'));
+    item.categoria = tipoModelo.categoria;
+    if (tipoModelo.tecidoOutroId) item.tecidoOutroId = tipoModelo.tecidoOutroId;
+    else delete item.tecidoOutroId;
     item.baseId = v('m-vinc-base');
     item.marcaId = v('m-vinc-marca');
     item.designerId = v('m-vinc-designer');
@@ -23626,7 +23644,12 @@ function renderModelos() {
   if (!STATE.modelos.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhum modelo cadastrado.</td></tr>`; return; }
   const catLabel = { malha: 'Camiseta', moletom: 'Moletom', outro: 'Outro' };
   tb.innerHTML = STATE.modelos.map(m => `
-    <tr>${acoesCell('modelo', m.id)}<td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${catLabel[m.categoria]||'—'}</span></td><td>${esc(m.linha)||'—'}</td></tr>`).join('');
+    <tr>${acoesCell('modelo', m.id)}<td><strong>${esc(m.nome)}</strong></td><td><span class="badge">${esc(_rotuloTipoModelo(m, catLabel))}</span></td><td>${esc(m.linha)||'—'}</td></tr>`).join('');
+}
+// O modelo de um tecido da categoria 'outro' mostra o tecido ("Tactel"), como no cadastro.
+function _rotuloTipoModelo(m, catLabel) {
+  const t = m.categoria === 'outro' && m.tecidoOutroId ? (STATE.tecidos || []).find(x => x.id === m.tecidoOutroId) : null;
+  return (t && t.nome) || catLabel[m.categoria] || '—';
 }
 function renderColecoes() {
   const tb = document.getElementById('tbl-colecoes');
@@ -27959,10 +27982,14 @@ function modeloCategoriaAtual() {
 
 function tecOptions(selId) {
   const cat = modeloCategoriaAtual();
+  // O modelo de um tecido da categoria 'outro' (ver _opcaoModeloOutrosTecidos)
+  // oferece só ele: o short de Tactel não pede Cotton.
+  const m = cat === 'outro' ? STATE.modelos.find(x => x.id === document.getElementById('f-modelo')?.value) : null;
+  const soEste = (m && m.tecidoOutroId && STATE.tecidos.some(t => t.id === m.tecidoOutroId)) ? m.tecidoOutroId : '';
   const tecs = STATE.tecidos.filter(t => {
     if (!cat) return true;
     if (!t.categoria) return true;
-    if (t.categoria === cat) return true;
+    if (t.categoria === cat) return !soEste || t.id === soEste;
     if (t.id === selId) return true;
     return false;
   });
