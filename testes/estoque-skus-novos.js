@@ -65,6 +65,21 @@ STATE.cores[1].siglaSku = 'ROSA';
 ok('6. desenho cadastrado depois aparece na proxima leitura', skus().includes('BERM-PRE'), skus());
 ok('7. dar a sigla a cor faz o SKU aparecer', skus().includes('SM.LISA-ROSA'), skus());
 
+// O SKU do modelo, direto da fonte (28/10/2026): o modelo novo, so com a
+// linha e sem desenho nem OS com cor, aparece como esta.
+await Promise.resolve();
+STATE.modelos.push({ id: 'm3', nome: 'Short feminino', skuLinha: 'SF.BERM.SEM' });
+let m3 = a.produtos().find(p => p.sku === 'SF.BERM.SEM');
+ok('7a. modelo novo so com a linha aparece no estoque', !!m3 && m3.doPrograma && m3.descricao === 'Short feminino', skus());
+ok('7b. a linha que ja tem variante com cor nao aparece sozinha', !skus().includes('CJM') && !skus().includes('SM.LISA'), skus());
+await Promise.resolve();
+STATE.desenhos.push({ id: 'd6', desc: 'Short feminino | Preto', skuLinha: '', modeloId: 'm3', corPrincipalId: 'c1' });
+ok('7c. quando o desenho com cor chega, a linha sozinha sai', skus().includes('SF.BERM.SEM-PRE') && !skus().includes('SF.BERM.SEM'), skus());
+await Promise.resolve();
+STATE.acabProdutos.push({ id: 'p1', sku: 'PM.TRI-PRE' });
+STATE.modelos.push({ id: 'm4', nome: 'Polo tricolor', skuLinha: 'PM.TRI' });
+ok('7d. variante com cor so no cadastro do estoque tambem esconde a linha', !skus().includes('PM.TRI') && skus().includes('PM.TRI-PRE'), skus());
+
 ok('8. saveState redesenha a tela do estoque ao gravar cadastro de SKU',
   /_CHAVES_SKU_ESTOQUE\.includes\(key\)[\s\S]{0,200}renderEstoqueConfeccao\(pg\)/.test(app)
   && /const _CHAVES_SKU_ESTOQUE = \['desenhos', 'modelos', 'cores', 'ordens'\]/.test(app));

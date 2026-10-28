@@ -220,7 +220,9 @@ const CAT = [{ item: 'CM.LISA-PRE', tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAM
     await new Promise(r => setTimeout(r, 0));
     const lista = u.window._acabInterno.produtos();
     const skus = lista.map(p => p.sku).sort().join(',');
-    ok('31. a lista traz os SKUs dos desenhos e das OS (a linha sozinha não)', skus === 'BM.LISA-BEGE,CM.LISA-PRE', skus);
+    // Desde 28/10/2026 a linha sem nenhuma variante com cor (CJM) entra como
+    // está — ver testes/estoque-skus-novos.js.
+    ok('31. a lista traz os SKUs dos desenhos e das OS (e a linha sem variante de cor)', skus === 'BM.LISA-BEGE,CJM,CM.LISA-PRE', skus);
     const pre = lista.find(p => p.sku === 'CM.LISA-PRE');
     ok('32. com a descrição do catálogo, linha, cor e tamanhos', !!pre && pre.id === 'sku:CM.LISA-PRE' && pre.descricao === 'CAMISETA BÁSICA PRETO'
        && pre.linha === 'CM.LISA' && pre.cor === 'PRE' && pre.tamanhos.includes('G3') && pre.origem === 'programa', pre);

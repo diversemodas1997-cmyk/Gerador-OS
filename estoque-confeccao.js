@@ -1227,7 +1227,18 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
      revalidarSkusDesenhos, que depende do catálogo skus_catalogo — tabela que
      o servidor da fábrica não tem. Agora o desenho compõe o SKU como a OS
      compõe: a linha (a do desenho, senão a do modelo) mais a Sigla SKU da cor
-     principal. Cadastrou o desenho (ou deu a sigla à cor), o SKU aparece. */
+     principal. Cadastrou o desenho (ou deu a sigla à cor), o SKU aparece.
+     O SKU DO MODELO, DIRETO DA FONTE (28/10/2026, Jones: "a atualização
+     automática dos SKU novos em Estoque de produtos não funciona. O estoque
+     de produtos deve ler os cadastros de SKU direto da fonte"). Os modelos
+     novos (Short tactel SM.LISA, Short feminino SF.BERM.SEM, Bermuda BERM,
+     Polo Tricolor PM.TRI) têm só a linha, sem desenho nem OS com cor — e a
+     regra acima ("a linha sozinha não entra") os deixava fora. Agora o SKU
+     cadastrado no modelo (ou no desenho que não compõe cor) entra como está,
+     enquanto nenhuma variante com cor dessa linha existir. Quando o desenho
+     ou a OS trouxer o "SM.LISA-PRE", a linha sozinha sai da lista (a menos
+     que já tenha lançamento, código ou preço próprios — aí está no cadastro).
+     Continua sem cruzar a linha com as cores. */
   function skuDoDesenho(d) {
     const proprio = norm(d && d.skuLinha);
     if (proprio.includes('-')) return proprio;
@@ -1251,6 +1262,16 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       if (typeof _statusOS === 'function' && _statusOS(o) === 'cancelado') return;
       (typeof skusDaOS === 'function' ? skusDaOS(o) : []).forEach(s => poe(s, o.modeloNome));
     });
+    // A linha sem cor (o modelo novo): entra até haver variante com cor dela.
+    const linhas = new Map();
+    const poeLinha = (sku, descricao) => {
+      const s = norm(sku);
+      if (/^[A-Z0-9][A-Z0-9.]*$/.test(s) && !linhas.has(s)) linhas.set(s, descricao || '');
+    };
+    (STATE.modelos || []).forEach(m => poeLinha(m.skuLinha, m.nome));
+    (STATE.desenhos || []).forEach(d => { if (!skuDoDesenho(d)) poeLinha(d.skuLinha, d.desc); });
+    const comCor = new Set([...achados.keys()].concat(cadastro().map(p => norm(p.sku))).map(s => s.split('-')[0]));
+    linhas.forEach((desc, linha) => { if (!comCor.has(linha) && !achados.has(linha)) achados.set(linha, desc); });
     return achados;
   }
 
