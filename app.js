@@ -2060,6 +2060,13 @@ const AREAS_ACESSO = [
     desc: 'Criar, editar e excluir demandas de reposição (aprovar é só do admin)' },
   { k: 'os-status', rotulo: 'Status da OS',
     desc: 'Carimbar por cima do status que vem do checklist (Enfestando, Cortando, Parado…)' },
+  /* CONJUGAR OS COM ÁREA PRÓPRIA (28/10/2026, Jones: "veja uma forma de conceder
+     acesso a usuário para conjugar uma ou mais OS"). Antes o "⇄ Conjugar" vinha
+     pendurado em "Status da OS": para amarrar duas OS era preciso também poder
+     carimbar o status de qualquer uma. O padrão desta área é o Status da OS da
+     conta (ver ACESSO_PADRAO) — quem conjugava continua conjugando. */
+  { k: 'os-conjugar', rotulo: 'Conjugar OS',
+    desc: 'Amarrar uma ou mais OS a outra (⇄ Conjugar): as escolhidas seguem o status dela, sem mexer em tecido nem em grade' },
   { k: 'cadastros', rotulo: 'Cadastros',
     desc: 'Tecidos, cores, modelos, grades, desenhos, etapas, equipe, riscos' },
   { k: 'estoque-tecidos', rotulo: 'Estoque de tecidos',
@@ -2188,6 +2195,10 @@ const ACOES_POR_AREA = {
    elas continuam valendo sozinhas, e aparecem marcadas na lista de contas. */
 const ACESSO_PADRAO = {
   'os-status': (login) => LOGINS_STATUS_OS.includes(login),
+  // Conjugar segue o Status da OS da conta enquanto o admin não marcar à parte.
+  // (Sem ponto e vírgula aqui dentro: os testes leem esta constante até o primeiro.)
+  'os-conjugar': (login) => (typeof (_acessosTabela()[login] || {})['os-status'] === 'boolean'
+    ? _acessosTabela()[login]['os-status'] : LOGINS_STATUS_OS.includes(login)),
   'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login),
   // Imprimir o relatório e mandar @todos eram de todos: continuam, até o admin tirar.
   'relatorio-producao': () => true,
@@ -2430,7 +2441,8 @@ const VISAO_SEM_TELA = ['os-status', 'fila-os', 'dados', 'mensagens-todos'];
    também travam. */
 const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)',
   config: 'O que se edita em Configurações segue as áreas Dados e Contas' };
-const AVISAR_TRAVADO = { ranking: 'O Ranking não gera aviso', 'relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
+const VER_TRAVADO = { 'os-conjugar': 'Conjugar não tem tela: o botão ⇄ Conjugar aparece para quem edita' };
+const AVISAR_TRAVADO = { 'os-conjugar': 'Conjugar OS não gera aviso', ranking: 'O Ranking não gera aviso','relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
   config: 'Configurações não gera aviso' };
 
 /* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
@@ -2792,6 +2804,7 @@ function _acessosMenuHtml(u) {
     const id = `ac-${esc(u.id)}-${a.k}`;
     const ve = contaVeArea(a.k, email, 'usuario');
     const celVer = a.soAdmin ? travada('Contas e permissões é sempre só do admin', false)
+      : VER_TRAVADO[a.k] ? travada(VER_TRAVADO[a.k], false)
       : `<input type="checkbox" title="${edita ? 'Quem edita também vê' : VISAO_PAGINAS[a.k] ? 'Ver as telas desta área' : 'Ver o que esta área mostra nas outras telas'}" ${ve ? 'checked' : ''} ${edita ? 'disabled' : ''}
                onchange="definirVisao('${esc(email)}','${a.k}',this.checked)">`;
     const celEditar = a.soAdmin ? travada('Criar contas e conceder acesso é sempre só do admin', false)
@@ -35274,6 +35287,18 @@ function exigirStatusOS(acao) {
   return false;
 }
 
+// Conjugar OS à mão: área própria desde 28/10/2026 (ver AREAS_ACESSO).
+function podeConjugarOS() {
+  return temAcesso('os-conjugar');
+}
+
+function exigirConjugarOS(acao) {
+  if (_recusarSomenteLeitura(acao)) return false;
+  if (podeConjugarOS()) return true;
+  toast(`Sem acesso para ${acao} — o admin concede em Configurações → Contas de acesso (Conjugar OS)`, 'err');
+  return false;
+}
+
 /* O STATUS QUE VALE: o carimbo à mão enquanto ele não foi desmentido pela
    folha; senão, o que o checklist diz.
 
@@ -35719,7 +35744,7 @@ function renderStatusFolhaOS() {
      Fica ANTES dos returns de propósito: a barra tem de acertar o botão mesmo
      quando não há caixa de status para desenhar. */
   const bt = document.getElementById('print-conjugar-os');
-  if (bt) bt.classList.toggle('hidden', !(o && podeMudarStatusOS()));
+  if (bt) bt.classList.toggle('hidden', !(o && podeConjugarOS()));
   if (!box) return;
   if (!o) { box.innerHTML = ''; return; }
   const html = _statusCelulaOS(o, 'folha');
@@ -37149,9 +37174,9 @@ function renderListaOS() {
 let _conjugarOsId = null;
 
 function abrirModalConjugarOS(id) {
-  // Mesma permissão de carimbar o status, e pelo mesmo motivo: quem sabe que
-  // duas OS são o mesmo trabalho é quem está no enfesto e no corte.
-  if (!exigirStatusOS('conjugar OS')) return;
+  // Área própria (Conjugar OS), que nasce valendo o Status da OS da conta:
+  // quem sabe que duas OS são o mesmo trabalho é quem está no enfesto e no corte.
+  if (!exigirConjugarOS('conjugar OS')) return;
   const o = (STATE.ordens || []).find(x => x.id === id);
   if (!o) return toast('OS não encontrada', 'err');
   // Sobe para a ativa do grupo: quem manda é uma só, e conjugar a partir de uma
@@ -37225,12 +37250,12 @@ function renderModalConjugarOS() {
     ${candidatas.length > TETO
       ? `<div class="field-hint" style="margin-top:6px;">Mostrando ${TETO} de ${candidatas.length} — use a busca para achar a OS.</div>`
       : ''}
-    <label style="display:flex;gap:8px;align-items:baseline;margin-top:10px;">
+    ${podeMudarStatusOS() ? `<label style="display:flex;gap:8px;align-items:baseline;margin-top:10px;">
       <input type="checkbox" id="conjugarAlinhar">
       <span class="field-hint">Alinhar <b>agora</b> o status das marcadas com o da OS ${esc(ativa.os || '')}
       (${esc((STATUS_OS.find(x => x.k === _statusOS(ativa)) || STATUS_OS[0]).rotulo)}).
       Em branco, ninguém é carimbado hoje: elas passam a seguir a partir da <b>próxima</b> mudança.</span>
-    </label>`;
+    </label>` : ''}`;
   // O innerHTML acabou de recriar o campo de busca: devolve o cursor para ele,
   // senão digitar a segunda letra do número da OS exigiria clicar de novo.
   const b = document.getElementById('conjugarBusca');
@@ -37238,12 +37263,13 @@ function renderModalConjugarOS() {
 }
 
 async function salvarConjugarOS() {
-  if (!exigirStatusOS('conjugar OS')) return;
+  if (!exigirConjugarOS('conjugar OS')) return;
   const ativa = (STATE.ordens || []).find(x => x.id === _conjugarOsId);
   if (!ativa) return closeModal('modal-conjugar');
   const marcadas = new Set(Array.from(document.querySelectorAll('#modal-conjugar-fields .conjugar-check'))
     .filter(c => c.checked).map(c => c.value));
-  const alinhar = !!document.getElementById('conjugarAlinhar')?.checked;
+  // Alinhar agora é carimbar status: só para quem tem também o Status da OS.
+  const alinhar = !!document.getElementById('conjugarAlinhar')?.checked && podeMudarStatusOS();
   const eram = new Set(_conjugadasManuaisDaOS(ativa).map(o => o.id));
   let mudou = 0;
   (STATE.ordens || []).forEach(o => {

@@ -90,6 +90,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _chaveLogin', 'a chave do login')}
   ${recorte('function podeMudarStatusOS', 'quem muda o status')}
   ${recorte('function exigirStatusOS', 'a recusa do status')}
+  ${recorte('function podeConjugarOS', 'quem conjuga OS')}
+  ${recorte('function exigirConjugarOS', 'a recusa do conjugar')}
   // No celular ninguem grava, nem o admin: aqui o aparelho e um controle
   // do teste, como o papel e o servidor no ar.
   const ehCelular = () => !!ctx.celular;
@@ -183,7 +185,7 @@ const monta = (ctx) => new Function('ctx', `
   const uid = () => 'm' + (++ctx.seq);
   const _estoqueRedesenharSeAberto = () => {};
   const renderEstoque = () => {};
-  return { _statusOpcoesOS, podeMudarStatusOS, _statusOS, _statusDoChecklistOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
+  return { _statusOpcoesOS, podeMudarStatusOS, podeConjugarOS, _statusOS, _statusDoChecklistOS, _statusCelulaOS, mudarStatusOS, STATUS_OS,
            darBaixaMaterialOS, estornarBaixaMaterialOS, aplicarBaixaEstoqueOS,
            _dataFinalizacaoOS, _statusHistAnotar, _dataHoraFinalizacaoOS, _tituloFinalizacaoOS, _dataCelulaListaOS,
            conjugadasSemPanoDaOS, _conjugadasQueSeguemStatus,
@@ -223,6 +225,31 @@ console.log('-- o nome do login, digitado de qualquer jeito na criacao da conta 
 });
 ok('11. um login parecido NAO entra de carona',
    ctxDe('usuario', 'enfesto@diverse.local').api.podeMudarStatusOS() === false);
+
+console.log('');
+console.log('-- quem pode conjugar OS: area propria, que nasce valendo o Status da OS (28/10/2026) --');
+{
+  const conj = (papel, login, acessos) => {
+    const t = ctxDe(papel, login);
+    if (acessos) t.ctx.STATE.meta.acessos = acessos;
+    return t.api.podeConjugarOS();
+  };
+  ok('11a. admin conjuga', conj('admin', 'admin@diverse.local') === true);
+  ok('11b. Enfesto.corte conjuga sem ninguem marcar nada (padrao = Status da OS)',
+     conj('usuario', 'enfesto.corte@diverse.local') === true);
+  ok('11c. usuario comum NAO conjuga', conj('usuario', 'costura@diverse.local') === false);
+  ok('11d. o admin concede Conjugar OS a quem nao carimba status',
+     conj('usuario', 'costura@diverse.local', { costura: { 'os-conjugar': true } }) === true);
+  ok('11e. e quem conjuga nao ganha o status de carona',
+     (() => { const t = ctxDe('usuario', 'costura@diverse.local');
+              t.ctx.STATE.meta.acessos = { costura: { 'os-conjugar': true } };
+              return t.api.podeMudarStatusOS(); })() === false);
+  ok('11f. o admin tira o Conjugar de quem carimba status',
+     conj('usuario', 'enfesto.corte@diverse.local', { enfestocorte: { 'os-conjugar': false } }) === false);
+  ok('11g. quem recebeu Status da OS conjuga junto, enquanto Conjugar nao for marcado',
+     conj('usuario', 'costura@diverse.local', { costura: { 'os-status': true } }) === true);
+  ok('11h. modo nuvem: ninguem conjuga', ctxDe('admin', 'admin@diverse.local', false).api.podeConjugarOS() === false);
+}
 
 console.log('');
 console.log('-- o que fica gravado --');
@@ -1347,8 +1374,8 @@ console.log('-- o que fica gravado --');
      /onclick="conjugarOsAtual\(\)"/.test(html)
      && /function conjugarOsAtual\(\)[\s\S]{0,200}abrirModalConjugarOS\(printOsAtual\.id\)/.test(src),
      'acao desligada do botao');
-  ok('37. quem nao carimba status nao ve o botao (e a OS que sumiu o esconde)',
-     /bt\.classList\.toggle\('hidden', !\(o && podeMudarStatusOS\(\)\)\)/.test(folha.slice(0, 1600)),
+  ok('37. quem nao tem Conjugar OS nao ve o botao (e a OS que sumiu o esconde)',
+     /bt\.classList\.toggle\('hidden', !\(o && podeConjugarOS\(\)\)\)/.test(folha.slice(0, 1600)),
      folha.slice(0, 1200));
   ok('38. e o botao e acertado ANTES dos returns, senao a barra ficaria mentindo',
      folha.indexOf("print-conjugar-os") < folha.indexOf("if (!box) return;"),

@@ -188,8 +188,9 @@ ok('28. marcar uma area grava e redesenha',
    // Redesenha só o menu da conta, que fica aberto (16/10/2026).
    && /_redesenharAcessosConta\(emailOuNome\)/.test(recorte('async function definirAcesso', 'a concessao')),
    'a concessao nao grava');
+// 2 desde 28/10/2026: Status da OS e Conjugar OS, que nasce valendo o status.
 ok('29. e o contador do botao conta so o que da para conceder',
-   ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local') === 1,
+   ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local') === 2,
    String(ctxDe('admin', 'admin@diverse.local').api._acessosQuantas('enfesto.corte@diverse.local')));
 
 /* --------------------------------------------------------------------------
