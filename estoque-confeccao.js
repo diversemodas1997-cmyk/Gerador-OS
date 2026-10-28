@@ -492,6 +492,7 @@
     let tPecas = 0, tValor = 0, tMin = 0;
     const skusVistos = new Set();
     const rows = [];
+    const imgs = imagensDosSkus();
     linhas.forEach(({ p, tamanho }) => {
       if (filtro.linha && norm(p.linha) !== norm(filtro.linha)) return;
       if (busca && !norm([p.sku, p.descricao, p.codigo, tamanho].join(' ')).includes(busca)) return;
@@ -504,6 +505,7 @@
       tPecas += e.total; tValor += Math.max(0, e.total) * c.medio;
       if (st.k === 'min') tMin++;
       rows.push(`<tr>
+        ${celMiniatura(imgs, p)}
         <td style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;">${esc(rotuloProduto(p))}</td>
         <td>${esc(p.descricao || '')}</td>
         <td><b>${esc(tamanho)}</b></td>
@@ -555,11 +557,11 @@
           <button class="btn primary admin-only" onclick="acabLancar('ent','','')" title="Lançar entrada ou saída à mão">+ Entrada / − Saída</button>
         </div>
         ${!produtos().length ? semSkus() : `<div style="overflow:auto;max-height:70vh;"><table class="table"><thead><tr>
-          <th>SKU</th><th>Descrição</th><th>Tam.</th><th style="text-align:right;" title="A última contagem de inventário">Contagem</th><th>Data</th>
+          <th title="O desenho técnico do produto">Desenho</th><th>SKU</th><th>Descrição</th><th>Tam.</th><th style="text-align:right;" title="A última contagem de inventário">Contagem</th><th>Data</th>
           <th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Estoque</th>
           <th style="text-align:right;" title="Estoque mínimo deste SKU, cor e tamanho">Mín.</th><th style="text-align:right;" title="Estoque máximo deste SKU, cor e tamanho">Máx.</th>
           <th style="text-align:right;" title="Custo médio ponderado">Custo médio</th><th>Status</th><th class="col-actions admin-only">Lançar à mão</th></tr></thead>
-          <tbody>${rows.join('') || '<tr><td colspan="13" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
+          <tbody>${rows.join('') || '<tr><td colspan="14" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
       </div>`;
   }
   window.acabFiltro = (k, v) => {
@@ -859,6 +861,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const b = norm(_buscaProd);
     const ps = produtos().slice().sort((a, b2) => String(a.sku).localeCompare(String(b2.sku), 'pt-BR'))
       .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
+    const imgs = imagensDosSkus();
     const inicioLocal = c.inicio ? new Date(c.inicio) : null;
     const pad = n => String(n).padStart(2, '0');
     const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
@@ -877,10 +880,11 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       </div>
       <div class="card">
         <input type="search" placeholder="Buscar SKU, código, linha, cor ou descrição…" value="${esc(_buscaProd)}" oninput="acabBuscaProd(this.value)" style="margin-bottom:10px;width:100%;">
-        <div style="overflow:auto;max-height:65vh;"><table class="table"><thead><tr><th class="col-actions admin-only">Ações</th><th>Código</th><th>SKU</th><th>Descrição</th><th>Linha</th><th>Cor</th><th>Tamanhos</th><th style="text-align:right;">Preço base</th></tr></thead><tbody>
+        <div style="overflow:auto;max-height:65vh;"><table class="table"><thead><tr><th class="col-actions admin-only">Ações</th><th title="O desenho técnico do produto">Desenho</th><th>Código</th><th>SKU</th><th>Descrição</th><th>Linha</th><th>Cor</th><th>Tamanhos</th><th style="text-align:right;">Preço base</th></tr></thead><tbody>
         ${ps.map(p => `<tr><td class="col-actions row-actions admin-only"><button onclick="acabAbrirProduto('${esc(p.id)}')">editar</button>${p.doPrograma ? '' : `<button onclick="acabExcluirProduto('${esc(p.id)}')">apagar</button>`}</td>
+          ${celMiniatura(imgs, p)}
           <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b></td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
-          <td style="font-size:11px;">${esc(ordenarTams(p.tamanhos || []).join(' '))}</td><td style="${mono}">${fmtR(p.preco)}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">${b ? 'Nada na busca.' : 'Nenhum SKU cadastrado.'}</td></tr>`}
+          <td style="font-size:11px;">${esc(ordenarTams(p.tamanhos || []).join(' '))}</td><td style="${mono}">${fmtR(p.preco)}</td></tr>`).join('') || `<tr><td colspan="9" class="empty">${b ? 'Nada na busca.' : 'Nenhum SKU cadastrado.'}</td></tr>`}
         </tbody></table></div>
         <div class="muted" style="font-size:11px;margin-top:6px;">${fmtN(produtos().length)} SKUs · ${fmtN(ms.length)} lançamentos</div>
       </div>`;
@@ -1307,6 +1311,31 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const sigla = norm(c && c.siglaSku);
     return sigla ? linha + '-' + sigla : '';
   }
+  /* A MINIATURA DO DESENHO TÉCNICO (28/10/2026, Jones: "Insira no estoque de
+     produtos coluna com miniatura do desenho técnico dos produtos"). A imagem
+     é a do desenho cujo SKU é o do produto (skuDoDesenho); sem desenho com
+     esse SKU, a do desenho da OS que compõe o SKU; para a linha sozinha (o
+     modelo novo), a de um desenho dessa linha. Uma conta por tela, não por
+     linha da tabela. */
+  function imagensDosSkus() {
+    const mapa = new Map();
+    const poe = (sku, d) => { const s = norm(sku); if (s && d && d.img && !mapa.has(s)) mapa.set(s, { img: d.img, desc: d.desc || '' }); };
+    (STATE.desenhos || []).forEach(d => poe(skuDoDesenho(d), d));
+    (STATE.ordens || []).forEach(o => {
+      const d = (STATE.desenhos || []).find(x => x.id === o.desenhoId) || o.desenhoFoto;
+      if (d && d.img) (typeof skusDaOS === 'function' ? skusDaOS(o) : []).forEach(s => poe(s, d));
+    });
+    (STATE.desenhos || []).forEach(d => { const s = skuDoDesenho(d); if (s) poe(s.split('-')[0], d); });
+    return mapa;
+  }
+  const _urlImg = v => (typeof urlDesenho === 'function' ? urlDesenho(v) : String(v || ''));
+  function celMiniatura(imgs, p) {
+    const s = norm(p && p.sku);
+    const m = imgs.get(s) || imgs.get(s.split('-')[0]);
+    return `<td style="width:56px;padding:3px 6px;"><div style="width:48px;height:36px;background:#f5f2ea;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden;">${m
+      ? `<img src="${esc(_urlImg(m.img))}" loading="lazy" alt="" title="${esc(m.desc)}" style="max-width:100%;max-height:100%;object-fit:contain;">`
+      : '<span class="muted" style="font-size:10px;">—</span>'}</div></td>`;
+  }
   function skusDoPrograma() {
     const achados = new Map();
     const poe = (sku, descricao) => {
@@ -1369,5 +1398,5 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   window.acabAvisos = acabAvisos;
 
   // Para os testes (node): as contas, sem a tela.
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe };
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura };
 })();
