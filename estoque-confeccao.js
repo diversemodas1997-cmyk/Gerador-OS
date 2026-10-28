@@ -859,7 +859,6 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const b = norm(_buscaProd);
     const ps = produtos().slice().sort((a, b2) => String(a.sku).localeCompare(String(b2.sku), 'pt-BR'))
       .filter(p => !b || norm([p.sku, p.descricao, p.codigo, p.linha, p.cor].join(' ')).includes(b));
-    const doProg = skusDoPrograma();
     const inicioLocal = c.inicio ? new Date(c.inicio) : null;
     const pad = n => String(n).padStart(2, '0');
     const inicioInput = inicioLocal ? `${inicioLocal.getFullYear()}-${pad(inicioLocal.getMonth() + 1)}-${pad(inicioLocal.getDate())}T${pad(inicioLocal.getHours())}:${pad(inicioLocal.getMinutes())}` : '';
@@ -880,7 +879,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         <input type="search" placeholder="Buscar SKU, código, linha, cor ou descrição…" value="${esc(_buscaProd)}" oninput="acabBuscaProd(this.value)" style="margin-bottom:10px;width:100%;">
         <div style="overflow:auto;max-height:65vh;"><table class="table"><thead><tr><th class="col-actions admin-only">Ações</th><th>Código</th><th>SKU</th><th>Descrição</th><th>Linha</th><th>Cor</th><th>Tamanhos</th><th style="text-align:right;">Preço base</th></tr></thead><tbody>
         ${ps.map(p => `<tr><td class="col-actions row-actions admin-only"><button onclick="acabAbrirProduto('${esc(p.id)}')">editar</button>${p.doPrograma ? '' : `<button onclick="acabExcluirProduto('${esc(p.id)}')">apagar</button>`}</td>
-          <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b>${doProg.has(norm(p.sku)) ? ' <span class="badge" style="background:#e3ecf7;" title="Lido do desenho técnico, do modelo ou da OS — não é cópia: muda quando mudar lá">do programa</span>' : ''}</td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
+          <td style="font-family:'IBM Plex Mono',monospace;">${p.codigo ? esc(String(p.codigo).padStart(3, '0')) : '<span class="muted">—</span>'}</td><td><b>${esc(p.sku)}</b></td><td>${esc(p.descricao || '')}</td><td>${esc(p.linha || '')}</td><td>${esc(p.cor || '')}</td>
           <td style="font-size:11px;">${esc(ordenarTams(p.tamanhos || []).join(' '))}</td><td style="${mono}">${fmtR(p.preco)}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">${b ? 'Nada na busca.' : 'Nenhum SKU cadastrado.'}</td></tr>`}
         </tbody></table></div>
         <div class="muted" style="font-size:11px;margin-top:6px;">${fmtN(produtos().length)} SKUs · ${fmtN(ms.length)} lançamentos</div>
