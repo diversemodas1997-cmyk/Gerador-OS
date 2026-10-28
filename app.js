@@ -5291,6 +5291,23 @@ new MutationObserver(recs => {
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
 
+/* O TIPO DO MODELO PARA OS OUTROS TECIDOS (28/10/2026, Jones: "analise por que
+   o tipo Tactel não aparece como opção para criar um novo modelo").
+   O Tipo do modelo casa com a Categoria do tecido: é ela que a OS usa para
+   mostrar os tecidos do modelo (tecOptions) e a pasta das grades
+   (tipoPecaModeloOS). O Tactel é da categoria "Sem limite de camadas"
+   ('outro'), e o "Outro" tinha saído da lista com o "Novo +" (26/10/2026) —
+   não sobrava tipo de modelo que pedisse o Tactel.
+   A opção volta com o nome dos tecidos que ela traz ("Outros tecidos —
+   Tactel"), que é o que quem cadastra procura. Aparece quando há tecido nessa
+   categoria, ou quando o modelo já é dela. */
+function _opcaoModeloOutrosTecidos(atual) {
+  const nomes = (STATE.tecidos || []).filter(t => t.categoria === 'outro').map(t => t.nome).filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  if (!nomes.length && atual !== 'outro') return '';
+  const rotulo = 'Outros tecidos' + (nomes.length ? ' — ' + nomes.join(', ') : '');
+  return `<option value="outro" ${atual === 'outro' ? 'selected' : ''}>${esc(rotulo)}</option>`;
+}
 
 // `pre`: a ficha NOVA já preenchida (a grade sugerida pelo Relatório de demanda).
 function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
@@ -5438,7 +5455,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
             <option value="">— selecione —</option>
             <option value="malha" ${item.categoria==='malha'?'selected':''}>Camiseta (malha algodão)</option>
             <option value="moletom" ${item.categoria==='moletom'?'selected':''}>Moletom</option>
-            ${item.categoria==='outro' ? '<option value="outro" selected>Outro</option>' : ''}
+            ${_opcaoModeloOutrosTecidos(item.categoria)}
           </select>
           <div class="field-hint">Define quais tecidos aparecem ao selecionar este modelo na OS</div>
         </div>
