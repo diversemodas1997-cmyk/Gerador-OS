@@ -865,9 +865,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
           </div>
           <button class="btn primary" onclick="acabSalvarCfg()">Salvar</button>
         </div>
-        <div class="card admin-only">
-          <button class="btn primary" onclick="acabAbrirProduto()">+ Cadastrar SKU</button>
-        </div>
+        <!-- O botão "+ Cadastrar SKU" saiu em 28/10/2026 (Jones): os SKUs vêm
+             do cadastro do programa (modelo, desenho, OS). -->
       </div>
       <div class="card">
         <input type="search" placeholder="Buscar SKU, código, linha, cor ou descrição…" value="${esc(_buscaProd)}" oninput="acabBuscaProd(this.value)" style="margin-bottom:10px;width:100%;">
