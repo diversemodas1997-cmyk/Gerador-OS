@@ -13,10 +13,11 @@
    Render); a lista de SKUs pode ser trazida do catálogo que o Render publicou.
 
    O QUE VEIO (uma tela para cada, na pasta "Estoque confecção", hoje "Estoque de produtos"):
-     · Estoque atual       — a tabela SKU × tamanho, os totais e o mínimo;
+     · Estoque atual       — a tabela SKU × tamanho, os totais, e o mínimo e o
+                             máximo de cada linha;
      · Entradas e saídas   — os lançamentos à mão e a lista dos últimos;
      · Inventário          — a contagem física que acerta o saldo;
-     · Produtos (SKUs)     — o cadastro, os limites e o início do estoque;
+     · Produtos (SKUs)     — o cadastro e o início do estoque;
      · Saídas do ERP       — o relatório de vendas (PDF ou CSV) vira saída;
      · Relatório CMP       — o custo médio ponderado, movimento a movimento.
 
@@ -121,8 +122,6 @@
     STATE.meta = STATE.meta || {};
     const c = STATE.meta.acabConfig && typeof STATE.meta.acabConfig === 'object' ? STATE.meta.acabConfig : {};
     return {
-      estoqueMin: Number.isFinite(Number(c.estoqueMin)) ? Number(c.estoqueMin) : 5,
-      estoqueMax: Number.isFinite(Number(c.estoqueMax)) ? Number(c.estoqueMax) : 0,
       inicio: c.inicio || '',
       inicioPor: c.inicioPor || '',
       osDispensadas: Array.isArray(c.osDispensadas) ? c.osDispensadas : []
@@ -327,11 +326,62 @@
     return out;
   }
 
-  const statusDe = total => {
-    const c = cfg();
-    if (total <= c.estoqueMin) return { k: 'min', rotulo: 'Estoque mínimo', cor: '#f6dcda' };
-    if (c.estoqueMax > 0 && total > c.estoqueMax) return { k: 'max', rotulo: 'Excedente', cor: '#fbeccb' };
+  /* O MÍNIMO E O MÁXIMO DE CADA LINHA (28/10/2026, Jones: "Os estoques mínimos
+     e máximos devem ser configurados para cada linha do Estoque atual, de
+     acordo com o sku, cor e tamanho"). Antes era um par só, para o estoque
+     inteiro (meta.acabConfig.estoqueMin/estoqueMax, 150/1000) — o mesmo
+     mínimo para a camiseta preta G, que gira muito, e para a G3 tricolor.
+     Agora cada SKU (que já traz a cor) e tamanho tem o seu, editado nas
+     colunas Mín. e Máx. do Estoque atual e guardado no cadastro do SKU:
+     p.limites = { G: { min: 150, max: 1000 }, ... }. O SKU lido do programa
+     ganha registro próprio ao receber o limite (fixarProduto), como ao
+     receber código ou preço. Linha sem limite fica "Sem limite": não entra
+     no mínimo nem no excedente. O par geral antigo deixou de valer. */
+  const _numLim = v => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  function limiteDe(p, tamanho) {
+    const l = (p && p.limites && p.limites[tamanho]) || {};
+    return { min: _numLim(l.min), max: _numLim(l.max) };
+  }
+  const statusDe = (total, lim) => {
+    const l = lim || {};
+    if (l.min == null && l.max == null) return { k: 'sem', rotulo: 'Sem limite', cor: '#eceff1' };
+    if (l.min != null && total <= l.min) return { k: 'min', rotulo: 'Estoque mínimo', cor: '#f6dcda' };
+    if (l.max != null && l.max > 0 && total > l.max) return { k: 'max', rotulo: 'Excedente', cor: '#fbeccb' };
     return { k: 'ok', rotulo: 'Estoque ok', cor: '#d6f0db' };
+  };
+  const podeLimites = () => (typeof temAcesso === 'function' ? temAcesso('estoque-confeccao') : true);
+  const badgeStatus = st => `<span class="badge" style="background:${st.cor};">${esc(st.rotulo)}</span>`;
+  // A célula editável do limite: número em branco = sem limite.
+  const celLimite = (p, tamanho, campo, v) => `<td style="text-align:right;"><input type="number" min="0" step="1" inputmode="numeric" class="acab-lim"
+    style="width:72px;text-align:right;" value="${v == null ? '' : v}" placeholder="—" ${podeLimites() ? '' : 'disabled'}
+    title="${campo === 'min' ? 'Estoque mínimo deste SKU e tamanho: com esta quantidade ou menos, fica em Estoque mínimo' : 'Estoque máximo deste SKU e tamanho: acima disto, fica em Excedente'} (em branco = sem limite)"
+    onchange="acabSalvarLimite('${esc(p.id)}','${esc(tamanho)}','${campo}',this)"></td>`;
+
+  window.acabSalvarLimite = async function (produtoId, tamanho, campo, el) {
+    if (!exigirEdicao('configurar o estoque de produtos')) return;
+    let p = produtoPorId(produtoId);
+    if (!p) return toast('SKU não encontrado', 'err');
+    const bruto = String((el && el.value) || '').trim();
+    const v = bruto === '' ? null : Math.round(Number(bruto));
+    if (v != null && !(v >= 0)) return toast('Limite inválido', 'err');
+    const atual = limiteDe(p, tamanho);
+    const novo = Object.assign({}, atual, { [campo]: v });
+    if (novo.min != null && novo.max != null && novo.max > 0 && novo.max < novo.min) {
+      if (el) el.value = atual[campo] == null ? '' : atual[campo];
+      return toast(`O máximo (${fmtN(novo.max)}) não pode ser menor que o mínimo (${fmtN(novo.min)})`, 'err');
+    }
+    p = fixarProduto(p) || p;
+    p.limites = Object.assign({}, p.limites || {});
+    if (novo.min == null && novo.max == null) delete p.limites[tamanho];
+    else p.limites[tamanho] = { min: novo.min, max: novo.max };
+    p.atualizadoEm = new Date().toISOString(); p.atualizadoPor = quemSou();
+    esquecerProdutos();
+    desfazerNomearAcao(`estoque ${campo === 'min' ? 'mínimo' : 'máximo'} de ${p.sku} ${tamanho}`);
+    await saveState('acabProdutos');
+    // Só o status da linha muda: refazer a tabela tiraria o foco do próximo campo.
+    const tr = el && el.closest ? el.closest('tr') : null;
+    const cel = tr && tr.querySelector('.acab-st');
+    if (cel) cel.innerHTML = badgeStatus(statusDe(saldos(todosMovs()).de(p.id, tamanho).total, limiteDe(p, tamanho)));
   };
 
   /* Para a Contabilidade: por SKU, a quantidade em estoque — o mesmo formato
@@ -445,7 +495,8 @@
       if (filtro.linha && norm(p.linha) !== norm(filtro.linha)) return;
       if (busca && !norm([p.sku, p.descricao, p.codigo, tamanho].join(' ')).includes(busca)) return;
       const e = S.de(p.id, tamanho);
-      const st = statusDe(e.total);
+      const lim = limiteDe(p, tamanho);
+      const st = statusDe(e.total, lim);
       if (filtro.status && st.k !== filtro.status) return;
       const c = cmp(ms, p.id, tamanho);
       skusVistos.add(p.id);
@@ -460,8 +511,9 @@
         <td style="${mono}" title="${e.entOS ? fmtN(e.entOS) + ' das OS' : ''}">${fmtN(e.ent)}${e.entOS ? `<div class="muted" style="font-size:10px;">${fmtN(e.entOS)} das OS</div>` : ''}</td>
         <td style="${mono}">${fmtN(e.sai)}</td>
         <td style="${mono}font-weight:700;${e.total < 0 ? 'color:#c0392b;background:#fdecea;' : ''}">${fmtN(e.total)}</td>
+        ${celLimite(p, tamanho, 'min', lim.min)}${celLimite(p, tamanho, 'max', lim.max)}
         <td style="${mono}">${fmtR(c.medio)}</td>
-        <td><span class="badge" style="background:${st.cor};">${esc(st.rotulo)}</span></td>
+        <td class="acab-st">${badgeStatus(st)}</td>
         <td class="col-actions row-actions admin-only" style="white-space:nowrap;"><button onclick="acabLancar('ent','${esc(p.id)}','${esc(tamanho)}')" title="Entrada à mão deste SKU e tamanho">+ entrada</button><button onclick="acabLancar('sai','${esc(p.id)}','${esc(tamanho)}')" title="Saída à mão deste SKU e tamanho">− saída</button></td></tr>`);
     });
     const linhasCad = [...new Set(produtos().map(p => p.linha).filter(Boolean))].sort();
@@ -478,7 +530,7 @@
       <div class="exp-resumo" style="margin-bottom:12px;">
         <div class="item"><div class="num">${fmtN(skusVistos.size)}</div><div class="lbl">SKUs</div></div>
         <div class="item"><div class="num">${fmtN(tPecas)}</div><div class="lbl">Peças em estoque</div></div>
-        <div class="item${tMin ? ' alerta' : ''}"><div class="num">${fmtN(tMin)}</div><div class="lbl">No estoque mínimo (≤ ${fmtN(c.estoqueMin)})</div></div>
+        <div class="item${tMin ? ' alerta' : ''}"><div class="num">${fmtN(tMin)}</div><div class="lbl">No estoque mínimo</div></div>
         <div class="item"><div class="num">${fmtR(tValor)}</div><div class="lbl">Valor (custo médio)</div></div>
       </div>
       ${dasOS.semInicio
@@ -496,6 +548,7 @@
             <option value="min"${filtro.status === 'min' ? ' selected' : ''}>Só estoque mínimo</option>
             <option value="max"${filtro.status === 'max' ? ' selected' : ''}>Só excedente</option>
             <option value="ok"${filtro.status === 'ok' ? ' selected' : ''}>Só estoque ok</option>
+            <option value="sem"${filtro.status === 'sem' ? ' selected' : ''}>Só sem limite</option>
           </select>
           <button class="btn" onclick="acabExportarCsv()" title="A posição do estoque numa planilha (abre no Excel)">Exportar CSV ↓</button>
           <button class="btn primary admin-only" onclick="acabLancar('ent','','')" title="Lançar entrada ou saída à mão">+ Entrada / − Saída</button>
@@ -503,8 +556,9 @@
         ${!produtos().length ? semSkus() : `<div style="overflow:auto;max-height:70vh;"><table class="table"><thead><tr>
           <th>SKU</th><th>Descrição</th><th>Tam.</th><th style="text-align:right;" title="A última contagem de inventário">Contagem</th><th>Data</th>
           <th style="text-align:right;">Entradas</th><th style="text-align:right;">Saídas</th><th style="text-align:right;">Estoque</th>
+          <th style="text-align:right;" title="Estoque mínimo deste SKU, cor e tamanho">Mín.</th><th style="text-align:right;" title="Estoque máximo deste SKU, cor e tamanho">Máx.</th>
           <th style="text-align:right;" title="Custo médio ponderado">Custo médio</th><th>Status</th><th class="col-actions admin-only">Lançar à mão</th></tr></thead>
-          <tbody>${rows.join('') || '<tr><td colspan="11" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
+          <tbody>${rows.join('') || '<tr><td colspan="13" class="empty">Nada com estes filtros.</td></tr>'}</tbody></table></div>`}
       </div>`;
   }
   window.acabFiltro = (k, v) => {
@@ -517,12 +571,14 @@
     const ms = todosMovs();
     const S = saldos(ms);
     const cel = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const linhas = [['Código', 'SKU', 'Descrição', 'Linha', 'Tamanho', 'Entradas', 'Entradas das OS', 'Saídas', 'Ajustes', 'Estoque', 'Custo médio', 'Valor', 'Status'].map(cel).join(';')];
+    const linhas = [['Código', 'SKU', 'Descrição', 'Linha', 'Tamanho', 'Entradas', 'Entradas das OS', 'Saídas', 'Ajustes', 'Estoque', 'Mínimo', 'Máximo', 'Custo médio', 'Valor', 'Status'].map(cel).join(';')];
     linhasSkuTam(ms).forEach(({ p, tamanho }) => {
       const e = S.de(p.id, tamanho);
       const c = cmp(ms, p.id, tamanho);
       const br = v => (Number(v) || 0).toFixed(2).replace('.', ',');
-      linhas.push([p.codigo || '', p.sku, p.descricao || '', p.linha || '', tamanho, e.ent, e.entOS, e.sai, e.aj, e.total, br(c.medio), br(Math.max(0, e.total) * c.medio), statusDe(e.total).rotulo].map(cel).join(';'));
+      const lim = limiteDe(p, tamanho);
+      linhas.push([p.codigo || '', p.sku, p.descricao || '', p.linha || '', tamanho, e.ent, e.entOS, e.sai, e.aj, e.total,
+        lim.min == null ? '' : lim.min, lim.max == null ? '' : lim.max, br(c.medio), br(Math.max(0, e.total) * c.medio), statusDe(e.total, lim).rotulo].map(cel).join(';'));
     });
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -802,10 +858,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     box.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
         <div class="card admin-only">
-          <h2 style="margin-top:0;font-size:15px;">Limites e início</h2>
+          <h2 style="margin-top:0;font-size:15px;">Início do estoque</h2>
           <div class="form-grid cols-2">
-            <div class="field"><label>Estoque mínimo</label><input type="number" id="acab-cfg-min" min="0" step="1" value="${c.estoqueMin}"></div>
-            <div class="field"><label>Estoque máximo <span class="muted">(0 = sem aviso)</span></label><input type="number" id="acab-cfg-max" min="0" step="1" value="${c.estoqueMax}"></div>
             <div class="field full"><label>Início do estoque</label><input type="datetime-local" id="acab-cfg-inicio" value="${inicioInput}">
               <div class="field-hint">OS que entraram na etapa Estoque e lançamentos feitos antes disto não contam (o estoque começou do zero aqui). Para começar agora, use o botão no Estoque atual.</div></div>
           </div>
@@ -834,13 +888,11 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
 
   window.acabSalvarCfg = async function () {
     if (!exigirEdicao('configurar o estoque de produtos')) return;
-    const min = parseInt(val('acab-cfg-min'), 10), max = parseInt(val('acab-cfg-max'), 10);
-    if (!(min >= 0) || !(max >= 0)) return toast('Limites inválidos', 'err');
     const ini = val('acab-cfg-inicio');
     const inicio = ini ? new Date(ini).toISOString() : '';
     if (!inicio) return toast('Informe o início do estoque', 'err');
-    desfazerNomearAcao('limites do Estoque de produtos');
-    await gravarCfg({ estoqueMin: min, estoqueMax: max, inicio });
+    desfazerNomearAcao('início do Estoque de produtos');
+    await gravarCfg({ inicio });
     toast('Estoque de produtos: configuração salva', 'ok');
     renderProdutos();
   };
@@ -1311,5 +1363,5 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   window.acabAvisos = acabAvisos;
 
   // Para os testes (node): as contas, sem a tela.
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma };
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe };
 })();
