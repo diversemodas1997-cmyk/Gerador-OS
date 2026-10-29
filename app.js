@@ -3226,7 +3226,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3800,6 +3800,9 @@ const STATE = {
   // { id, janelaId, data, tipo:'cancelada'|'remarcada', novaData, horaIda,
   //   horaVolta, motivo }
   expedicaoExcecoes: [],
+  // Observação solta numa perna da OE, sem OS (29/10/2026): o recado da carga
+  // que não é de nenhuma OS. { id, janelaId, oeData, perna, texto, por, em }
+  expedicaoObs: [],
   // ---------- Planejamento diário de operações ----------
   // A jornada planejada de cada POSTO (função cadastrada) em cada dia. Uma
   // operação aqui é o processo completo do posto — início + duração total, com
@@ -3876,7 +3879,7 @@ const _CHAVES_CONTAB_SNAPSHOT = ['ordens', 'estoqueMov', 'corteMov', 'desenhos',
 // remarcar, recalcular volumes, marcar Ensaque na OS…): todo caminho passa por
 // aqui, inclusive os que vierem depois.
 // aviamentosMov entra porque o aviamento alocado numa perna sai na folha de OE.
-const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 'aviamentosMov'];
+const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 'expedicaoObs', 'aviamentosMov'];
 
 const _CHAVES_SKU_ESTOQUE = ['desenhos', 'modelos', 'cores', 'ordens'];
 const _TELAS_SKU_ESTOQUE = ['acab-estoque', 'acab-produtos', 'acab-cmp'];
@@ -3999,6 +4002,7 @@ const DESFAZER_NOMES = {
   expedicaoCargas: ['carga da expedição', 'cargas da expedição'],
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
   expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
+  expedicaoObs: ['observação da OE', 'observações da OE'],
   estoqueMov: ['lançamento de estoque', 'lançamentos de estoque'],
   corteMov: ['lançamento do corte', 'lançamentos do corte'],
   costurandoMov: ['lançamento da costura', 'lançamentos da costura'],
@@ -4171,7 +4175,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -11713,6 +11717,61 @@ async function excluirFerramentaExp(id) {
 window.abrirModalExpFerramenta = abrirModalExpFerramenta;
 window.excluirFerramentaExp = excluirFerramentaExp;
 
+/* ---------- A OBSERVAÇÃO SOLTA NA ORDEM DE EXPEDIÇÃO ---------- */
+/* (29/10/2026, Junior: "insira um campo de observação no planejamento de OE
+   sem que esteja vinculada a uma OS"). O recado da OS mora na carga dela; este
+   é o da PERNA — "levar as caixas vazias", "motorista passa no banco" —, que
+   não é de OS nenhuma. Vive em STATE.expedicaoObs, preso à OE pela janela e
+   pela data ORIGINAL da ocorrência (como os aviamentos), então remarcar a OE
+   leva a observação junto. Sai na folha de OE, no pé da perna. */
+let _expObsCtx = null;
+function _obsDaPerna(janelaId, dataOrig, perna) {
+  return (Array.isArray(STATE.expedicaoObs) ? STATE.expedicaoObs : [])
+    .filter(o => o.janelaId === janelaId && o.oeData === dataOrig && o.perna === perna);
+}
+function abrirModalExpObs(janelaId, dataOrig, perna, editId) {
+  if (!exigirEdicao('escrever observação na expedição')) return;
+  const ed = editId ? (STATE.expedicaoObs || []).find(o => o.id === editId) : null;
+  if (editId && !ed) return toast('Esta observação não está mais na expedição', 'err');
+  _expObsCtx = { janelaId, dataOrig, perna: perna === 'volta' ? 'volta' : 'ida', editId: ed ? ed.id : '' };
+  document.getElementById('modal-exp-obs-title').textContent =
+    (ed ? 'Corrigir observação · ' : 'Observação · ') + (_expObsCtx.perna === 'ida' ? 'Ida' : 'Volta') + ' de ' + formatDate(dataOrig);
+  const ta = document.getElementById('meo-texto');
+  ta.value = ed ? (ed.texto || '') : '';
+  openModal('modal-exp-obs');
+  setTimeout(() => ta.focus(), 50);
+}
+async function salvarExpObs() {
+  const ctx = _expObsCtx;
+  if (!ctx || !exigirEdicao('escrever observação na expedição')) return;
+  const texto = String((document.getElementById('meo-texto') || {}).value || '').trim();
+  if (!texto) return toast('Escreva a observação', 'err');
+  if (!Array.isArray(STATE.expedicaoObs)) STATE.expedicaoObs = [];
+  const por = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+  const ed = ctx.editId ? STATE.expedicaoObs.find(o => o.id === ctx.editId) : null;
+  if (ed) Object.assign(ed, { texto, por, em: new Date().toISOString() });
+  else STATE.expedicaoObs.push({ id: uid(), janelaId: ctx.janelaId, oeData: ctx.dataOrig, perna: ctx.perna,
+    texto, por, em: new Date().toISOString() });
+  _expObsCtx = null;
+  await saveState('expedicaoObs');
+  closeModal('modal-exp-obs');
+  toast(ed ? 'Observação corrigida' : 'Observação incluída na OE', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+async function excluirExpObs(id) {
+  if (!exigirEdicao('tirar observação da expedição')) return;
+  if (!(STATE.expedicaoObs || []).some(o => o.id === id)) return;
+  STATE.expedicaoObs = STATE.expedicaoObs.filter(o => o.id !== id);
+  await saveState('expedicaoObs');
+  toast('Observação tirada da OE', 'ok');
+  if (typeof renderExpedicaoPlano === 'function') renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+window.abrirModalExpObs = abrirModalExpObs;
+window.salvarExpObs = salvarExpObs;
+window.excluirExpObs = excluirExpObs;
+
 /* ========================================================= */
 /*          ESTOQUE DE PEÇAS E ESTOQUE DE FERRAMENTAS         */
 /* ========================================================= */
@@ -16350,6 +16409,15 @@ function renderExpedicaoPlano() {
         <span><button class="admin-only" title="Corrigir esta ferramenta: qual, quantidade, volumes e observação" onclick="abrirModalExpFerramenta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(f.id)}')">✎</button><button class="admin-only" title="Tirar esta ferramenta da carga (ela volta para o estoque da unidade de origem)" onclick="excluirFerramentaExp('${esc(f.id)}')">×</button></span>
       </div>${f.obs ? `
       <div class="exp-os-obs">${esc(f.obs)}</div>` : ''}`).join('')}` : '';
+    // As observações soltas da perna, sem OS (29/10/2026), por último.
+    const obsSoltas = _obsDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const obsSoltasHtml = obsSoltas.length ? `
+      <div class="exp-avi-tit" style="margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);">Observações</div>
+      ${obsSoltas.map(o => `
+      <div style="display:flex;align-items:flex-start;gap:6px;">
+        <div class="exp-os-obs" style="flex:1;white-space:pre-wrap;" title="${esc('Observação desta carga, sem OS' + (o.por ? ' · por ' + o.por : ''))}">${esc(o.texto)}</div>
+        <span class="exp-obs-acoes"><button class="admin-only" title="Corrigir esta observação" onclick="abrirModalExpObs('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}','${esc(o.id)}')">✎</button><button class="admin-only" title="Tirar esta observação da OE" onclick="excluirExpObs('${esc(o.id)}')">×</button></span>
+      </div>`).join('')}` : '';
     return `
       <div class="exp-perna">
         <div class="exp-perna-head">
@@ -16359,7 +16427,7 @@ function renderExpedicaoPlano() {
           </div>
           <div class="exp-perna-hora">${esc(hora) || '—'}</div>
         </div>
-        <div class="exp-os-list">${linhas}${aviHtml}${ferHtml}</div>
+        <div class="exp-os-list">${linhas}${aviHtml}${ferHtml}${obsSoltasHtml}</div>
         <div class="exp-perna-total">
           <span>
             <span class="vol">${fmt(r.volumes)}</span> vol${aviVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(aviVol)} de aviamentos</span>` : ''}${ferVol > 0 ? ` <span style="color:var(--ink-3);">+ ${fmt(ferVol)} de ferramentas</span>` : ''}
@@ -16374,6 +16442,7 @@ function renderExpedicaoPlano() {
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" onclick="abrirModalExpCarga('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Alocar OS</button>
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar fio, linha, etiqueta, botão ou viés nesta carga: sai do estoque de aviamentos desta unidade e entra no da outra na data da carga" onclick="abrirModalExpAviamento('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Aviamento</button>
           <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Mandar tesoura, régua ou outra ferramenta nesta carga: sai do estoque de ferramentas desta unidade e entra no da outra na data da carga" onclick="abrirModalExpFerramenta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Ferramenta</button>
+          <button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Escrever um recado para esta carga que não é de nenhuma OS. Sai na folha de OE." onclick="abrirModalExpObs('${esc(oc.janela.id)}','${esc(oc.dataOrig)}','${perna}')">+ Observação</button>
           ${perna === 'volta' ? `<button class="btn" style="flex:1;padding:5px;font-size:12px;" title="Traz para esta volta as OSs de uma expedição já montada — normalmente a ida que levou os produtos." onclick="abrirModalExpVolta('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')">⟲ Trazer de uma OE</button>` : ''}
         </div>`}
       </div>`;
@@ -23005,7 +23074,9 @@ function renderPrintPlanoExpedicao() {
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
     _ferDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
-    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
+    _obsDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _obsDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
@@ -23281,7 +23352,8 @@ function renderPrintPlanoExpedicao() {
   // Perna sem OS e sem aviamento: não leva nada, e não ocupa espaço (ver blocos).
   const pernaVazia = (oc, perna) => !resumoPernaExpedicao(oc, perna).itens.length
     && !_aviDaPerna(oc.janela.id, oc.dataOrig, perna).length
-    && !_ferDaPerna(oc.janela.id, oc.dataOrig, perna).length;
+    && !_ferDaPerna(oc.janela.id, oc.dataOrig, perna).length
+    && !_obsDaPerna(oc.janela.id, oc.dataOrig, perna).length;
   const pernaPrint = (oc, perna, fina, larga) => {
     const r = resumoPernaExpedicao(oc, perna);
     const hora = perna === 'ida' ? oc.horaIda : oc.horaVolta;
@@ -23309,10 +23381,11 @@ function renderPrintPlanoExpedicao() {
       </div>`;
     const avis = _aviDaPerna(oc.janela.id, oc.dataOrig, perna);
     const fers = _ferDaPerna(oc.janela.id, oc.dataOrig, perna);
+    const obsSoltas = _obsDaPerna(oc.janela.id, oc.dataOrig, perna);
     const quadros = r.itens.map(osPrint);
     const linhas = r.itens.length
       ? quadros.join('')
-      : (avis.length || fers.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
+      : (avis.length || fers.length || obsSoltas.length ? '' : '<div class="vazia">Sem OS alocada.</div>');
     /* OS AVIAMENTOS DA CARGA (24/09/2026): o que embarca de fio, linha,
        etiqueta, botão e viés, com o peso — é o que a doca confere. */
     const aviVol = avis.reduce((s, a) => s + (Number(a.volumes) || 0), 0);
@@ -23352,6 +23425,12 @@ function renderPrintPlanoExpedicao() {
           </tr>`).join('')}</tbody>
         </table>
       </div>` : '';
+    // AS OBSERVAÇÕES DA CARGA, sem OS (29/10/2026): o recado que vai para a doca.
+    const obsPrint = obsSoltas.length ? `
+      <div class="exp-print-os">
+        <div class="cab"><b>OBSERVAÇÕES</b></div>
+        ${obsSoltas.map(o => `<div style="white-space:pre-wrap;">• ${esc(o.texto)}</div>`).join('')}
+      </div>` : '';
     // Cada perna ocupa metade da folha, cheia ou vazia — a largura fixa é o que
     // mantém a ida sempre na mesma metade, folha após folha.
     return `
@@ -23363,7 +23442,7 @@ function renderPrintPlanoExpedicao() {
           </div>
           <span class="h">${esc(hora) || '—'}${btnHora}</span>
         </div>
-        ${larga ? _expDuasColunas(quadros.concat(aviPrint ? [aviPrint] : [], ferPrint ? [ferPrint] : [])) : `<div class="exp-print-lista">${linhas}${aviPrint}${ferPrint}</div>`}
+        ${larga ? _expDuasColunas(quadros.concat(aviPrint ? [aviPrint] : [], ferPrint ? [ferPrint] : [], obsPrint ? [obsPrint] : [])) : `<div class="exp-print-lista">${linhas}${aviPrint}${ferPrint}${obsPrint}</div>`}
         <div class="tot">
           <span>${fmt(r.volumes)} vol · ${fmt(r.pecas)} un.${aviVol > 0 ? ` · + ${fmt(aviVol)} vol de aviamentos` : ''}${ferVol > 0 ? ` · + ${fmt(ferVol)} vol de ferramentas` : ''}</span>
           <span>${esc(_expLimitesTexto(r.volMin, r.volMax))}${r.situacao === 'baixo' ? ' · ABAIXO' : (r.situacao === 'alto' ? ' · ACIMA' : '')}</span>
@@ -33800,7 +33879,9 @@ function oeTemConteudo() {
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
     _ferDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
-    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
+    _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
+    _obsDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
+    _obsDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
 }
 
 async function salvarPdfOeNaPasta({ silent = false } = {}) {
@@ -45977,7 +46058,7 @@ async function restaurarExpedicaoDeArquivo(e) {
   let data;
   try { data = JSON.parse(await file.text()); }
   catch { toast('Arquivo inválido (não é um JSON de snapshot).', 'err'); return; }
-  const KEYS = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes'];
+  const KEYS = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 'expedicaoObs'];
   const plano = {};
   let totalAdd = 0;
   const resumo = [];

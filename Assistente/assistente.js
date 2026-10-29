@@ -41,7 +41,7 @@
     aviamentosMov: 'estoque-tecidos', pecasCad: 'estoque-tecidos', pecasMov: 'estoque-tecidos',
     corteMov: 'estoque-fases', fiosMov: 'estoque-fases', costurandoMov: 'estoque-fases',
     expedicaoMov: 'estoque-fases',
-    expedicaoCargas: 'expedicao', expedicaoJanelas: 'expedicao', expedicaoExcecoes: 'expedicao',
+    expedicaoCargas: 'expedicao', expedicaoJanelas: 'expedicao', expedicaoExcecoes: 'expedicao', expedicaoObs: 'expedicao',
     operacoes: 'operacoes', costuraProd: 'costura', compraOCs: 'compra', compraPlano: 'compra'
   };
   const BASES_NUNCA = new Set(['_device']);

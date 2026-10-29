@@ -1830,6 +1830,19 @@
   </div>
 </div>
 
+<!-- ============= MODAL OBSERVAÇÃO SOLTA NA OE (sem OS) ============= -->
+<div class="modal-backdrop" id="modal-exp-obs">
+  <div class="modal">
+    <h2 id="modal-exp-obs-title">Observação</h2>
+    <div class="info-box" style="margin-bottom:8px;font-size:12px;">Recado desta carga que não é de nenhuma OS. Sai na folha de OE, no pé da perna.</div>
+    <div class="field full"><label>Observação *</label><textarea id="meo-texto" rows="4" placeholder="Ex.: levar as caixas vazias de volta"></textarea></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-exp-obs')">Cancelar</button>
+      <button class="btn primary" onclick="salvarExpObs()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL MOVIMENTAÇÃO DE ESTOQUE DE CORTE ============= -->
 <div class="modal-backdrop" id="modal-corte">
   <div class="modal">
@@ -2052,8 +2065,8 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-29a"></script>
-<script src="assistente.js?v=2026-10-21a"></script>
+<script src="app.js?v=2026-10-29b"></script>
+<script src="assistente.js?v=2026-10-29a"></script>
 <script src="colorimetro.js?v=2026-10-26a"></script>
 <script src="estoque-confeccao.js?v=2026-10-28h"></script>
 </body>
