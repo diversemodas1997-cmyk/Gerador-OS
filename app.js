@@ -34152,7 +34152,7 @@ function _coresDaPecaOS(o, re) {
 }
 
 // Uma etiqueta por pagina (100mm x 50mm). Os PACOTES seguem a regra do volume
-// de expedição: 1 por vaga de tamanho da grade + 1 de reposição — e é isso que
+// de expedição, menos a vaga repetida: 1 por tamanho da grade (2G = uma só) + 1 de reposição — e é isso que
 // o LOTE conta. As etiquetas de tamanho sao iguais (só o LOTE muda); as DUAS
 // ÚLTIMAS são o MESMO pacote de reposição (ETIQUETAS_REPOSICAO_POR_OS: uma
 // colada por fora, outra dentro) e mostram o conteúdo
@@ -34223,7 +34223,11 @@ function dadosEtiquetaParaOS(o) {
   // iam para a expedição sem etiqueta nenhuma.
   // Ex.: P-G1-G2 em 1 tom = 5 etiquetas (3 + 2 de reposição); em 2 tons = 8.
   // Mínimo 1 pra não bloquear OS sem grade.
-  const tamanhosBase = _tamanhosDaGradeExpandido(o);
+  // UMA etiqueta por TAMANHO, mesmo na grade 2x da camiseta (Junior, 29/10/2026:
+  // "deve sair apenas uma etiqueta por tamanho"): 2G-G2 imprimia G, G, G2 — duas
+  // etiquetas iguais para o G. As vagas repetidas colapsam aqui; a etiqueta do
+  // tamanho leva a célula inteira dele. O volume da expedição não muda.
+  const tamanhosBase = [...new Set(_tamanhosDaGradeExpandido(o))];
   const tonsAtivos = tonsEfetivos((o.progresso || {}).totalTamanhoTons || {});
   const nTons = Math.max(1, tonsAtivos.length);
   // BM.TRI e BM.LISA: três etiquetas por tamanho × tom, uma por GRUPO de peças
@@ -34270,9 +34274,8 @@ function dadosEtiquetaParaOS(o) {
   };
   // QTDE do PACOTE (pedido do Junior, OS 0563): a etiqueta dizia só o total da
   // OS — 390 em todas —, e o pacote "G tom 1" não dizia quanto ele mesmo leva.
-  // Na camiseta o tamanho com 2 vagas na grade rende 2 pacotes (2G → G, G), e a
-  // célula se reparte entre eles; a sobra da divisão vai para os primeiros.
-  // Ex. 0563: 2G-G2, 65 camadas, Tom 1 = 50 → G tom 1 = 200 = 100 + 100.
+  // Desde 29/10/2026 cada tamanho tem uma etiqueta só, então a célula vai
+  // inteira para ela. Ex. 0563: 2G-G2, 65 camadas, Tom 1 = 50 → G tom 1 = 200.
   const qtdeTamPacotes = tamanhosPacotes.map((t, i) => {
     const cel = celDe(i);
     if (cel == null) return null;
