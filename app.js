@@ -38395,6 +38395,8 @@ function abrirMensagens() {
   if (!painel || !btn) return;
   fecharAvisos();                        // um painel de cada vez, no mesmo canto
   _posicionarPainel(painel, btn);
+  // Arrastado antes, volta para onde a pessoa o deixou (ver _msgArrastar).
+  _msgPosicaoSalva(painel);
   painel.classList.remove('hidden');
   renderMensagens();
   const campo = document.getElementById('msg-texto');
@@ -38412,6 +38414,88 @@ function fecharMensagens() {
 function toggleMensagens() {
   if (mensagensAberto()) fecharMensagens(); else abrirMensagens();
 }
+
+/* A JANELA DE MENSAGENS SE ARRASTA (29/10/2026, Junior: "transforme a janela
+   de mensagens em popup que possa ser movido pelo usuário clicando e
+   arrastando pela plataforma"). Pega-se pela barra do título; o resto do
+   painel (lista, campo, botões) continua clicável como antes.
+
+   A posição fica guardada NESTE navegador (localStorage, chave
+   `msg-painel-pos`): é conforto de quem usa, não dado da fábrica — não sobe
+   para o servidor nem engorda o blob. Sem nada guardado, ou se o armazenamento
+   falhar, o painel abre encostado no ícone, como sempre abriu.
+
+   As contas são na régua do espaço ampliado (_uiZoom), a mesma de
+   _posicionarPainel: o `style` do painel é escrito nela. E ele nunca sai da
+   tela — sobra sempre a barra do título à vista para ser pego de volta.
+
+   No celular (até 900px) não arrasta: lá o CSS o põe de margem a margem com
+   !important, e a coordenada arrastada não valeria nada. */
+const _MSG_POS_CHAVE = 'msg-painel-pos';
+function _msgArrastavel() {
+  return !(window.matchMedia && window.matchMedia('screen and (max-width: 900px)').matches);
+}
+// Põe o painel dentro da tela: inteiro na largura, e o topo sempre visível.
+function _msgPrenderNaTela(painel, left, top) {
+  const z = _uiZoom();
+  const telaL = window.innerWidth / z, telaA = window.innerHeight / z;
+  const larg = painel.offsetWidth / z || 380;
+  const l = Math.round(Math.max(0, Math.min(left, telaL - larg)));
+  const t = Math.round(Math.max(0, Math.min(top, telaA - 48)));
+  painel.style.left = l + 'px';
+  painel.style.top = t + 'px';
+  painel.style.maxHeight = Math.max(160, Math.round(telaA - t - 12)) + 'px';
+  return { left: l, top: t };
+}
+function _msgPosicaoSalva(painel) {
+  if (!_msgArrastavel()) return;
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem(_MSG_POS_CHAVE) || 'null'); } catch (e) { pos = null; }
+  if (!pos || !Number.isFinite(pos.left) || !Number.isFinite(pos.top)) return;
+  _msgPrenderNaTela(painel, pos.left, pos.top);
+}
+function _msgArrastar(ev) {
+  const painel = document.getElementById('msgPainel');
+  if (!painel || !_msgArrastavel()) return;
+  if (ev.button != null && ev.button !== 0) return;
+  // O ✕ e qualquer outro botão da barra continuam sendo botões.
+  if (ev.target.closest('button, a, input')) return;
+  ev.preventDefault();
+  const z = _uiZoom();
+  const ini = { x: ev.clientX / z, y: ev.clientY / z,
+                left: parseFloat(painel.style.left) || 0, top: parseFloat(painel.style.top) || 0 };
+  let ultima = { left: ini.left, top: ini.top };
+  painel.classList.add('arrastando');
+  const mover = e => {
+    ultima = _msgPrenderNaTela(painel, ini.left + e.clientX / z - ini.x, ini.top + e.clientY / z - ini.y);
+  };
+  const soltar = () => {
+    document.removeEventListener('pointermove', mover);
+    document.removeEventListener('pointerup', soltar);
+    document.removeEventListener('pointercancel', soltar);
+    painel.classList.remove('arrastando');
+    try { localStorage.setItem(_MSG_POS_CHAVE, JSON.stringify(ultima)); } catch (e) { }
+  };
+  document.addEventListener('pointermove', mover);
+  document.addEventListener('pointerup', soltar);
+  document.addEventListener('pointercancel', soltar);
+}
+// Dois cliques na barra devolvem o painel ao lado do ícone e esquecem a posição.
+function _msgVoltarAoIcone(ev) {
+  if (ev.target.closest('button, a, input')) return;
+  try { localStorage.removeItem(_MSG_POS_CHAVE); } catch (e) { }
+  const painel = document.getElementById('msgPainel');
+  const btn = document.getElementById('msgBotao');
+  if (painel && btn) _posicionarPainel(painel, btn);
+}
+// A janela do navegador encolheu: o painel arrastado não pode ficar fora dela.
+window.addEventListener('resize', () => {
+  const painel = document.getElementById('msgPainel');
+  if (!painel || painel.classList.contains('hidden') || !_msgArrastavel()) return;
+  _msgPrenderNaTela(painel, parseFloat(painel.style.left) || 0, parseFloat(painel.style.top) || 0);
+});
+window._msgArrastar = _msgArrastar;
+window._msgVoltarAoIcone = _msgVoltarAoIcone;
 
 // Dia e hora de um recado, curtos: "hoje 14:32", "ontem 08:10", "24/08 16:05".
 function _msgQuando(iso) {

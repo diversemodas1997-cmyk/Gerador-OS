@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-10-28a">
+<link rel="stylesheet" href="styles.css?v=2026-10-29a">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -286,7 +286,8 @@
        próprio ícone. A conversa se lê de cima para baixo; o campo de escrever
        fica no pé, onde a mão já está. -->
   <div class="avisos-painel msg-painel hidden" id="msgPainel" role="dialog" aria-label="Mensagens">
-    <div class="avisos-topo">
+    <div class="avisos-topo msg-alca" onpointerdown="_msgArrastar(event)" ondblclick="_msgVoltarAoIcone(event)"
+         title="Arraste para mover a janela · dois cliques a devolvem ao lado do ícone">
       <b>Mensagens</b>
       <span class="avisos-resumo">todo mundo lê o que é escrito aqui</span>
       <button type="button" class="avisos-fechar" onclick="fecharMensagens()" title="Fechar" aria-label="Fechar">✕</button>
@@ -2065,7 +2066,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-29b"></script>
+<script src="app.js?v=2026-10-29c"></script>
 <script src="assistente.js?v=2026-10-29a"></script>
 <script src="colorimetro.js?v=2026-10-26a"></script>
 <script src="estoque-confeccao.js?v=2026-10-28h"></script>
