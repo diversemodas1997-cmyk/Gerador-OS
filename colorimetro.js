@@ -45,13 +45,20 @@
   // inclusive (Junior: "copiar as configurações de tolerância como o programa
   // está configurado").
   const CFG_PADRAO = {
-    iluminante1: 'D65/10', iluminante2: 'A/2', modo: 'auto', formula: 'dE*ab', media: 1,
+    iluminante1: 'D65/10', iluminante2: 'A/2', modo: '1', formula: 'dE*ab', media: 3,
     cmc_l: 2, cmc_c: 1,
     tol: { dL: 0.4, da: 0.1, db: 0.5, 'dE*ab': 0.6, dC: 0.6, dH: 0.6, "dL'": 0.6, "dC'": 0.6, "dH'": 0.6,
       dE00: 0.6, dEcmc: 0.6, dE94: 0.6 },
     nome_padrao: 'Padrão', nome_amostra: 'Amostra', k94: [1, 1, 1], k00: [1, 1, 1],
-    botao: 'amostra', ultimo_aparelho: null
+    botao: 'amostra', ultimo_aparelho: null, versao_cfg: 2
   };
+  /* PADRÃO DA FÁBRICA EM TODOS OS COMPUTADORES (30/10/2026, Jones: "essa configuração
+     seja parte do programa para que qualquer computador utilize"). Média de 3
+     leituras (uma leitura fora, como a Amostra 7 das 11:59, não decide sozinha) e
+     modo SCE (no "Automático" o DS-01 mede em SCI). Computador que já tinha
+     configurações salvas de antes (versao_cfg < 2) recebe esses dois valores uma
+     vez; depois disso, o que alguém mudar em Configurações vale naquele computador. */
+  const VERSAO_CFG = 2;
 
   const esperar = ms => new Promise(r => setTimeout(r, ms));
   const escH = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,6 +76,12 @@
         const tol = Object.assign({}, cfg.tol, salvo.tol || {});
         Object.assign(cfg, salvo);
         cfg.tol = tol;
+        if (!(salvo.versao_cfg >= VERSAO_CFG)) {
+          cfg.media = CFG_PADRAO.media;
+          cfg.modo = CFG_PADRAO.modo;
+          cfg.versao_cfg = VERSAO_CFG;
+          try { localStorage.setItem(CHAVE_CFG, JSON.stringify(cfg)); } catch (e) { /* sem storage */ }
+        }
       }
     } catch (e) { /* sem storage: vale o padrão */ }
     return cfg;
