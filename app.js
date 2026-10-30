@@ -910,6 +910,27 @@ function _paresParaGravar(cache, sujas, deviceId) {
 // Vira true quando o servidor mostra que não tem a função. A partir daí a
 // sessão inteira usa o caminho antigo, sem tentar de novo a cada gravação.
 let _semGravacaoParcial = false;
+// Servidor sem a gravar_chaves_se (a conferência de versão): grava pela
+// gravar_chaves, sem conferir, como antes. Ver GRAVAR SÓ SE NINGUÉM GRAVOU NO MEIO.
+let _semGravacaoConferida = false;
+const GRAVACAO_TENTATIVAS = 4;
+
+/* GRAVAR SÓ SE NINGUÉM GRAVOU NO MEIO (30/10/2026: o número 700 pulado).
+   O cloudFlush relê o servidor, junta as edições deste computador e grava. Em
+   30/10, às 08:56:34, o Admin e a Nathaly fizeram isso no mesmo segundo: cada
+   um juntou em cima da versão que leu, e a lista de OS de quem gravou por
+   último (`data || pares` troca a chave inteira) apagou a OS do outro.
+   Agora a gravação vai com o `updated_at` da versão lida (`esperado`), e o
+   banco só grava se ainda for ela (gravar_chaves_se, em
+   sql/supabase-gravar-chaves.sql). Se outro gravou no meio, nada sobe: relê,
+   junta de novo — refazendo a junção a partir das edições ORIGINAIS deste
+   computador, não da junção anterior — e tenta outra vez, até
+   GRAVACAO_TENTATIVAS vezes. Esgotou: cai no aviso de "não salvo" e na nova
+   tentativa de 8 s que já existiam. */
+function _versaoConfere(r) {
+  // true = gravou; false = outro gravou no meio (não gravou nada).
+  return !(r && !r.error && r.data === false);
+}
 
 // O erro que significa "essa função não existe aqui" — e não "deu errado".
 function _ehFuncaoAusente(erro) {
@@ -1019,6 +1040,18 @@ async function cloudFlush() {
     // restaurar já marcam TODAS as chaves como dirty (via saveState), então
     // sobrescrevem tudo normalmente.
     const adotadas = [], mescladas = [];
+    // O valor de cada chave suja ANTES de qualquer junção, e o que a junção de
+    // cada tentativa pôs no cache (ver GRAVAR SÓ SE NINGUÉM GRAVOU NO MEIO).
+    const proprio = {}, juntado = {};
+    _dirtyKeys.forEach(k => { proprio[k] = cloudCache[k]; });
+    let enviado, enviadas;
+    for (let tentativa = 1; ; tentativa++) {
+    if (tentativa > 1) {
+      // Refaz a partir das edições daqui. A chave que o usuário mexeu durante a
+      // tentativa (o cache já não é o da junção) fica como está.
+      Object.keys(juntado).forEach(k => { if (cloudCache[k] === juntado[k]) cloudCache[k] = proprio[k]; });
+      _ultimoUpdatedAtServidor = null;   // força a releitura completa
+    }
     try {
       // Antes de baixar o blob (1,8 MB), pergunta só o CARIMBO. Se o servidor
       // continua no mesmo `updated_at` que já conhecemos, ninguém gravou desde a
@@ -1059,6 +1092,7 @@ async function cloudFlush() {
           if (mesclado == null) mesclado = _mergeObjetoPorCampo(_baseline[k], cloudCache[k], servidor[k]);
           if (mesclado != null && mesclado !== cloudCache[k]) {
             cloudCache[k] = mesclado;
+            juntado[k] = mesclado;
             mescladas.push(k);
           }
         });
@@ -1069,12 +1103,33 @@ async function cloudFlush() {
     // 1,5 MB), e o usuário continua clicando nesse meio-tempo: cada clique marca
     // a chave como suja e reescreve o cloudCache. O que subiu foi esta foto, não
     // o cache de agora — e é ela que precisa virar base e baixar as bandeiras.
-    const enviado = Object.assign({}, cloudCache);
-    const enviadas = new Set(_dirtyKeys);
+    enviado = Object.assign({}, cloudCache);
+    enviadas = new Set(_dirtyKeys);
+    _dirtyKeys.forEach(k => { if (!(k in proprio)) proprio[k] = cloudCache[k]; });
     _ultimoUpdatedAtEnviado = new Date().toISOString();
-    // O CAMINHO NORMAL: só as chaves sujas, costuradas pelo banco.
+    // O CAMINHO NORMAL: só as chaves sujas, costuradas pelo banco — e só se
+    // ninguém gravou desde a versão que acabamos de ler.
     let error = null;
-    if (!_semGravacaoParcial) {
+    if (!_semGravacaoParcial && !_semGravacaoConferida) {
+      const pares = _paresParaGravar(enviado, enviadas, DEVICE_ID);
+      const r = await supa.rpc('gravar_chaves_se', {
+        pares, quem: currentUser.id, carimbo: _ultimoUpdatedAtEnviado, esperado: _ultimoUpdatedAtServidor
+      });
+      if (r.error && _ehFuncaoAusente(r.error)) {
+        _semGravacaoConferida = true;
+        console.warn('gravar_chaves_se não existe neste servidor — gravando sem conferir a versão. '
+          + 'Rode sql/supabase-gravar-chaves.sql: sem ela, duas gravações ao mesmo tempo podem apagar uma à outra.');
+      } else if (!_versaoConfere(r)) {
+        if (tentativa < GRAVACAO_TENTATIVAS) {
+          console.warn(`cloudFlush: outro computador gravou no meio — relendo e juntando de novo (tentativa ${tentativa + 1})`);
+          continue;
+        }
+        throw new Error('outro computador gravou ao mesmo tempo ' + GRAVACAO_TENTATIVAS + ' vezes seguidas');
+      } else {
+        error = r.error;
+      }
+    }
+    if (!_semGravacaoParcial && _semGravacaoConferida) {
       const pares = _paresParaGravar(enviado, enviadas, DEVICE_ID);
       const r = await supa.rpc('gravar_chaves', {
         pares, quem: currentUser.id, carimbo: _ultimoUpdatedAtEnviado
@@ -1098,6 +1153,8 @@ async function cloudFlush() {
       error = r.error;
     }
     if (error) throw error;
+    break;
+    }
     // Subiu: o servidor está agora exatamente no que acabamos de gravar. Guardar
     // o carimbo é o que permite ao PRÓXIMO flush pular a releitura do blob.
     // (Se algum gatilho no banco reescrever `updated_at` com o now() dele, este
@@ -31557,8 +31614,17 @@ function podeAprovarPlanejamento() {
       número entregue: duas aprovações ao mesmo tempo esperam uma pela outra e
       saem com blocos diferentes, mesmo antes de as OS chegarem ao servidor.
    Servidor sem a função: fica o número do passo 2 (relido do servidor), com
-   aviso no console — melhor que antes, mas sem a trava. Devolve o 1º número. */
-async function _reservarNumerosOS(qtd) {
+   aviso no console — melhor que antes, mas sem a trava. Devolve o 1º número.
+
+   A TRAVA DO PLANEJAMENTO (30/10/2026: o número 700 pulado). Em 30/10 o Admin
+   e a Nathaly aprovaram o MESMO planejamento no mesmo segundo: a trava do
+   número deu um a cada um (700 e 701), os dois geraram a OS e a gravação de
+   quem chegou por último apagou a do outro. Agora a reserva leva o id do
+   planejamento (`planoId`) e o banco o anota na mesma transação: quem chega em
+   segundo recebe "plano_ja_aprovado" e não ganha número. Esse erro sai daqui
+   com `jaAprovado` (ver sql/supabase-reservar-numeros-os.sql). Servidor sem a
+   versão nova da função: reserva sem a trava do planejamento, como antes. */
+async function _reservarNumerosOS(qtd, planoId) {
   if (supa && currentUser) {
     await cloudLoad();
     if (_cloudLoadErro) throw new Error('não foi possível reler as OS do servidor');
@@ -31566,7 +31632,15 @@ async function _reservarNumerosOS(qtd) {
   }
   const minimo = parseInt(proximoNumeroOS(), 10) || 1;
   if (!supa || !currentUser) return minimo;
-  const { data, error } = await supa.rpc('reservar_numeros_os', { qtd, minimo });
+  let r = await supa.rpc('reservar_numeros_os', planoId ? { qtd, minimo, plano: planoId } : { qtd, minimo });
+  if (r.error && planoId && _ehFuncaoAusente(r.error)) {
+    console.warn('reservar_numeros_os ainda não tem a trava do planejamento neste servidor — dois computadores '
+      + 'podem aprovar o mesmo planejamento juntos. Rode sql/supabase-reservar-numeros-os.sql.');
+    r = await supa.rpc('reservar_numeros_os', { qtd, minimo });
+  }
+  const { data, error } = r;
+  const ja = error && _planJaEmAprovacao(error);
+  if (ja) throw Object.assign(new Error(ja), { jaAprovado: true });
   if (error) {
     if (_ehFuncaoAusente(error)) {
       console.warn('reservar_numeros_os não existe neste servidor — o número saiu da releitura das OS, sem a trava do banco. '
@@ -31578,6 +31652,27 @@ async function _reservarNumerosOS(qtd) {
   const inicio = parseInt(data, 10);
   if (!(inicio > 0)) throw new Error('o servidor não devolveu número');
   return inicio;
+}
+
+// O erro "plano_ja_aprovado|<quem>|<quando>" do banco vira a frase da tela; outro
+// erro qualquer devolve ''.
+function _planJaEmAprovacao(erro) {
+  const m = String((erro && erro.message) || '').match(/plano_ja_aprovado\|([^|]*)\|([^\s"]*)/);
+  if (!m) return '';
+  const quem = (m[1] || '').split('@')[0] || 'outro usuário';
+  const d = new Date(m[2]);
+  const hora = isNaN(d) ? '' : ` às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  return `Este planejamento já está sendo aprovado por ${quem}${hora} — nada foi gerado neste computador`;
+}
+
+// A aprovação desistiu depois de reservar: solta o planejamento e devolve o
+// bloco de números, se ninguém reservou depois (liberar_aprovacao_os). Com
+// `devolver` false só solta: o bloco que esbarrou numa OS existente, devolvido,
+// voltaria igual na próxima tentativa. Melhor esforço: falhar aqui não pode
+// esconder o motivo da desistência.
+async function _liberarAprovacaoOS(planoId, devolver) {
+  if (!supa || !currentUser || !planoId) return;
+  try { await supa.rpc('liberar_aprovacao_os', { plano: planoId, devolver: devolver !== false }); } catch (e) { /* melhor esforço */ }
 }
 
 async function aprovarPlanejamento(id) {
@@ -31620,18 +31715,28 @@ async function aprovarPlanejamento(id) {
   const faltando = faltaDeTecidoParaOS(montar(1));
   if (faltando.length && !confirm(_textoFaltaDeTecido(faltando))) return;
   await _comTravaDeSalvar(async () => {
-    try { inicio = await _reservarNumerosOS(vezes * passo); }
-    catch (e) { toast(`Não foi possível escolher o número da OS: ${e.message || e} — nada foi gerado`, 'err'); return; }
+    try { inicio = await _reservarNumerosOS(vezes * passo, id); }
+    catch (e) {
+      if (e && e.jaAprovado) { toast(e.message, 'err'); renderPlanejamentoProducao(); return; }
+      toast(`Não foi possível escolher o número da OS: ${e.message || e} — nada foi gerado`, 'err'); return;
+    }
     // A releitura pode ter trazido a aprovação deste mesmo planejamento feita
     // em outro computador: aí ele já virou OS e não se aprova duas vezes.
+    // Desistindo depois de reservar, o número volta (_liberarAprovacaoOS).
     p = _planLista().find(x => x.id === id);
-    if (!p) { toast('Este planejamento já foi aprovado ou excluído em outro computador — nada foi gerado', 'err'); renderPlanejamentoProducao(); return; }
+    if (!p) {
+      await _liberarAprovacaoOS(id);
+      toast('Este planejamento já foi aprovado ou excluído em outro computador — nada foi gerado', 'err'); renderPlanejamentoProducao(); return;
+    }
     // Última prova, contra as OS relidas: nenhum número do bloco pode já ser de
     // outra OS (a OS editada à mão para um número lá de cima, por exemplo).
     // Achou um, não gera NADA — metade do planejamento aprovado seria pior.
     const bloco = Array.from({ length: vezes * passo }, (_, k) => formatarNumeroOS(inicio + k));
     const tomado = bloco.find(x => !numeroOSLivre(x));
-    if (tomado) { toast(`O número ${tomado} já é de outra OS — nada foi gerado. Tente aprovar de novo.`, 'err'); return; }
+    if (tomado) {
+      await _liberarAprovacaoOS(id, false);
+      toast(`O número ${tomado} já é de outra OS — nada foi gerado. Tente aprovar de novo.`, 'err'); return;
+    }
     const feitas = [];
     for (let n = 1; n <= vezes; n++) {
       const data = _aplicarTonsPadrao(montar(n));

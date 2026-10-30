@@ -35,13 +35,30 @@ const constante = (nome) => {
 /* O BANCO DE MENTIRA: a mesma conta da função SQL — o maior entre `minimo` e
    "último entregue + 1", e o último anda o tamanho do bloco. Cada chamada é
    atômica aqui, como a trava do banco a faz lá. */
-const novoBanco = (semFuncao) => ({
-  ultimo: 0, chamadas: [],
+/* A TRAVA DO PLANEJAMENTO (30/10/2026): com `plano`, o banco anota quem está
+   aprovando; o segundo recebe "plano_ja_aprovado|quem|quando" e não ganha
+   número. liberar_aprovacao_os solta a anotação e devolve o bloco se ele
+   ainda for o último entregue. `semTrava` = servidor com a função antiga (sem
+   o parâmetro plano). */
+const novoBanco = (semFuncao, semTrava) => ({
+  ultimo: 0, chamadas: [], anotados: new Map(), liberados: [],
   async rpc(nome, args) {
     if (semFuncao) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
+    if (nome === 'liberar_aprovacao_os') {
+      this.liberados.push(Object.assign({}, args));
+      const a = this.anotados.get(args.plano);
+      this.anotados.delete(args.plano);
+      if (a && args.devolver !== false && this.ultimo === a.inicio + a.qtd - 1) this.ultimo = a.inicio - 1;
+      return { data: null, error: null };
+    }
+    if (args.plano && semTrava) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } };
     this.chamadas.push(Object.assign({ nome }, args));
+    if (args.plano && this.anotados.has(args.plano)) {
+      return { data: null, error: { code: 'P0001', message: 'plano_ja_aprovado|' + this.anotados.get(args.plano).quem + '|2026-10-30T11:56:31Z' } };
+    }
     const inicio = Math.max(this.ultimo + 1, args.minimo || 1, 1);
     this.ultimo = inicio + args.qtd - 1;
+    if (args.plano) this.anotados.set(args.plano, { inicio, qtd: args.qtd, quem: 'nathaly@diverse.local' });
     return { data: inicio, error: null };
   }
 });
@@ -99,6 +116,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _planAguardando', 'o planejamento em espera')}
   ${recorte('function podeAprovarPlanejamento', 'quem aprova')}
   ${recorte('async function _reservarNumerosOS', 'a reserva no servidor')}
+  ${recorte('function _planJaEmAprovacao', 'a frase do planejamento ja em aprovacao')}
+  ${recorte('async function _liberarAprovacaoOS', 'a liberacao da aprovacao')}
   ${recorte('async function aprovarPlanejamento', 'a aprovacao')}
   return { aprovarPlanejamento, STATE };
 `)(ctx);
@@ -211,6 +230,55 @@ const ok = (nome, cond, extra) => {
     await t.api.aprovarPlanejamento('p1');
     ok('18. sem a area Aprovar planejamento: nao aprova', t.ctx.STATE.ordens.length === 1 && !t.ctx.banco.chamadas.length
        && t.ctx.toasts.some(x => /não inclui aprovar/.test(x)), t.ctx.toasts);
+  }
+
+  console.log('\n-- a trava do planejamento (30/10/2026: o numero 700 pulado) --');
+  {
+    // O caso real: Admin e Nathaly aprovam o MESMO planejamento no mesmo segundo.
+    const banco = novoBanco();
+    const ordens = [{ id: 'x', os: '0699' }];
+    const plano = () => [{ id: 'p-marrom', gradeId: 'g' }];
+    const a = novo(estado(JSON.parse(JSON.stringify(ordens)), plano()), { banco, nome: 'nathaly' });
+    const b = novo(estado(JSON.parse(JSON.stringify(ordens)), plano()), { banco, nome: 'admin', login: 'admin@diverse.local' });
+    await Promise.all([a.api.aprovarPlanejamento('p-marrom'), b.api.aprovarPlanejamento('p-marrom')]);
+    const geradas = [a, b].map(t => t.ctx.STATE.ordens.filter(o => o.planejamento).map(o => o.os)).flat();
+    ok('23. o mesmo planejamento aprovado em dois computadores gera UMA OS', geradas.length === 1, geradas);
+    ok('24. e ela e a 0700 — nenhum numero pulado', geradas[0] === '0700' && banco.ultimo === 700, [geradas, banco.ultimo]);
+    const perdeu = [a, b].find(t => !t.ctx.STATE.ordens.some(o => o.planejamento));
+    ok('25. quem chegou em segundo ouve quem esta aprovando',
+       !!perdeu && perdeu.ctx.toasts.some(x => /já está sendo aprovado por nathaly/.test(x)), perdeu && perdeu.ctx.toasts);
+    ok('26. e o planejamento continua na lista dele (sai na proxima leitura)', !!perdeu && perdeu.ctx.STATE.osPlanejadas.length === 1);
+    ok('27. a reserva leva o id do planejamento', banco.chamadas.every(c => c.plano === 'p-marrom'), banco.chamadas);
+  }
+  {
+    // Desistiu depois de reservar (aprovado em outro computador): o numero volta.
+    const banco = novoBanco();
+    const t = novo(estado([{ id: 'x', os: '0700' }], [{ id: 'p1', gradeId: 'g' }]), { banco,
+      servidor: (st) => { st.osPlanejadas = []; } });
+    await t.api.aprovarPlanejamento('p1');
+    ok('28. desistiu depois de reservar: solta o planejamento e devolve o numero',
+       banco.liberados.length === 1 && banco.liberados[0].devolver === true && banco.ultimo === 700 && !banco.anotados.size,
+       [banco.liberados, banco.ultimo]);
+  }
+  {
+    // Numero do bloco ja tomado: solta, mas NAO devolve (voltaria o mesmo bloco).
+    // A 0950 é o número solto lá em cima (a fila a ignora); o banco já entregou
+    // até a 0949, então o bloco que sai é justamente o dela.
+    const banco = novoBanco();
+    banco.ultimo = 949;
+    const t = novo(estado([{ id: 'x', os: '0700' }, { id: 'y', os: '0701' }, { id: 'z', os: '0950' }], [{ id: 'p1', gradeId: 'g' }]), { banco });
+    await t.api.aprovarPlanejamento('p1');
+    ok('29. numero tomado: solta o planejamento sem devolver o bloco',
+       banco.liberados.length === 1 && banco.liberados[0].devolver === false && banco.ultimo === 950 && !banco.anotados.size
+       && t.ctx.STATE.ordens.length === 3,
+       [banco.liberados, banco.ultimo, t.ctx.toasts]);
+  }
+  {
+    // Servidor ainda com a funcao antiga: aprova como antes.
+    const t = novo(estado([{ id: 'x', os: '0700' }], [{ id: 'p1', gradeId: 'g' }]), { banco: novoBanco(false, true) });
+    await t.api.aprovarPlanejamento('p1');
+    ok('30. servidor sem a trava do planejamento: aprova como antes', t.ctx.STATE.ordens.some(o => o.os === '0701')
+       && !t.ctx.toasts.some(x => x.startsWith('err')), t.ctx.toasts);
   }
 
   console.log('\n-- toda OS nova nasce no planejamento (conferido no app.js) --');

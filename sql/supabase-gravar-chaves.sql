@@ -78,3 +78,72 @@ grant execute on function public.gravar_chaves(jsonb, uuid, timestamptz) to auth
 
 -- Verificação:
 -- select proname, prosecdef from pg_proc where proname = 'gravar_chaves';
+
+
+-- =====================================================================
+-- FUNÇÃO gravar_chaves_se — grava só se ninguém gravou desde a leitura
+-- =====================================================================
+-- (30/10/2026) O QUE ACONTECEU: o Admin e a Nathaly aprovaram ao mesmo tempo e
+-- os dois computadores gravaram a lista de OS no mesmo segundo. Cada um tinha
+-- relido o servidor e juntado as suas mudanças (merge por registro, no app),
+-- mas entre a leitura e a gravação o outro gravou — e `data || pares` troca a
+-- chave inteira: a lista de quem chegou por último apagou a OS do outro.
+--
+-- A CORREÇÃO é a concorrência otimista que faltava: o app manda junto o
+-- `updated_at` da versão que ele leu (`esperado`). Com a linha travada, o banco
+-- confere:
+--   · igual       → ninguém gravou no meio: grava e devolve true;
+--   · diferente   → alguém gravou: NÃO grava e devolve false. O app relê,
+--                   junta de novo (agora com a mudança do outro) e tenta outra
+--                   vez.
+-- Assim a junção sempre parte da versão que está de fato no banco, e nenhuma
+-- gravação simultânea apaga a outra.
+--
+-- Linha sem carimbo (updated_at nulo) e linha que ainda não existe gravam
+-- direto: não há versão com que comparar.
+--
+-- Como rodar: igual à gravar_chaves (acima). Enquanto ela não existir, o app
+-- avisa no console e grava pela gravar_chaves, sem a conferência — como antes.
+-- =====================================================================
+create or replace function public.gravar_chaves_se(
+  pares    jsonb,
+  quem     uuid,
+  carimbo  timestamptz,
+  esperado timestamptz
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  atual timestamptz;
+begin
+  if pares is null or jsonb_typeof(pares) <> 'object' then
+    raise exception 'gravar_chaves_se: pares tem de ser um objeto jsonb';
+  end if;
+  select updated_at into atual from public.shared_data where id = 'main' for update;
+  if not found then
+    insert into public.shared_data (id, data, updated_at, updated_by)
+    values ('main', pares, coalesce(carimbo, now()), quem);
+    return true;
+  end if;
+  if atual is not null and (esperado is null or atual <> esperado) then
+    return false;
+  end if;
+  update public.shared_data
+     set data       = coalesce(data, '{}'::jsonb) || pares,
+         updated_at = coalesce(carimbo, now()),
+         updated_by = quem
+   where id = 'main';
+  return true;
+end;
+$$;
+
+revoke all on function public.gravar_chaves_se(jsonb, uuid, timestamptz, timestamptz) from public;
+grant execute on function public.gravar_chaves_se(jsonb, uuid, timestamptz, timestamptz) to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- Verificação:
+-- select proname from pg_proc where proname in ('gravar_chaves', 'gravar_chaves_se');
