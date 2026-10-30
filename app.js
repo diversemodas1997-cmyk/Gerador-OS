@@ -1052,6 +1052,7 @@ async function cloudFlush() {
       Object.keys(juntado).forEach(k => { if (cloudCache[k] === juntado[k]) cloudCache[k] = proprio[k]; });
       _ultimoUpdatedAtServidor = null;   // força a releitura completa
     }
+    const adotadasAntes = adotadas.length, mescladasAntes = mescladas.length;
     try {
       // Antes de baixar o blob (1,8 MB), pergunta só o CARIMBO. Se o servidor
       // continua no mesmo `updated_at` que já conhecemos, ninguém gravou desde a
@@ -1098,6 +1099,29 @@ async function cloudFlush() {
         });
       }
     } catch (e) { console.warn('merge re-leitura', e); /* segue com o cache local */ }
+    /* O STATE ACOMPANHA O CACHE ANTES DE GRAVAR, E NÃO DEPOIS (30/10/2026: a
+       renumeração 0701→0700 desfeita sozinha).
+       A junção acima trouxe para o cache o que outro computador gravou, mas o
+       STATE — de onde a tela e todo saveState leem — só era refeito DEPOIS da
+       gravação, que leva segundos. Quem clicasse nesse meio-tempo numa chave
+       recém-trazida (marcar uma etapa mexe em `ordens`) fazia o saveState
+       serializar o STATE VELHO para o cache; a base, essa, virava a versão nova
+       no fim da gravação. No flush seguinte, velho × base nova parecia edição
+       daqui — e a mudança do outro era desfeita no servidor. Foi o que reverteu
+       a renumeração de 30/10 em minutos, com os dois computadores gravando sem
+       parar. Refazendo o STATE aqui, o clique durante a gravação já parte do
+       dado novo. */
+    if (adotadas.length > adotadasAntes || mescladas.length > mescladasAntes) {
+      try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); }
+      // `loadState` refaz os objetos do STATE. A folha de OS aberta guarda uma
+      // referência ao objeto ANTIGO — que a partir daqui não está mais na lista.
+      // Sem reapontar, a folha passa a calcular o balanceador e o consumo em cima
+      // de uma OS órfã, que ninguém mais atualiza.
+      if (printOsAtual) {
+        const fresh = (STATE.ordens || []).find(x => x.id === printOsAtual.id);
+        if (fresh) printOsAtual = fresh;
+      }
+    }
     cloudCache._device = DEVICE_ID; // carimba ESTE dispositivo antes de gravar
     // FOTOGRAFIA DO QUE VAI SUBIR. A gravação leva SEGUNDOS (o blob passa de
     // 1,5 MB), e o usuário continua clicando nesse meio-tempo: cada clique marca
@@ -1214,20 +1238,8 @@ async function cloudFlush() {
     setSyncStatus('ok');
     if (!_blobEstaVazio(cloudCache)) _appJaTeveDados = true;
     if (_contarItens(cloudCache, 'expedicaoCargas') > 0) _appJaTeveExpedicao = true;
-    // Adotamos mudanças do servidor em chaves que não editamos, ou mesclamos
-    // registros de outro dispositivo numa que editamos: reflete no STATE pra não
-    // re-sobrescrever depois. O realtime/polling do outro cuida do re-render.
-    if (adotadas.length || mescladas.length) {
-      try { await loadState(); } catch (e) { console.warn('loadState pós-merge', e); }
-      // `loadState` refaz os objetos do STATE. A folha de OS aberta guarda uma
-      // referência ao objeto ANTIGO — que a partir daqui não está mais na lista.
-      // Sem reapontar, a folha passa a calcular o balanceador e o consumo em cima
-      // de uma OS órfã, que ninguém mais atualiza.
-      if (printOsAtual) {
-        const fresh = (STATE.ordens || []).find(x => x.id === printOsAtual.id);
-        if (fresh) printOsAtual = fresh;
-      }
-    }
+    // (O STATE já foi refeito com o que veio do servidor ANTES da gravação —
+    // ver O STATE ACOMPANHA O CACHE ANTES DE GRAVAR.)
     // Snapshot de contingência (local + pasta) do estado recém-salvo.
     salvarSnapshotContingencia();
     // Snapshot DIÁRIO no servidor. Ele rodava só ao ABRIR o app: uma aba deixada

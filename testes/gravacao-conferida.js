@@ -100,7 +100,10 @@ const computador = (banco, device) => new Function('ctx', `
   const _blobEstaVazio = () => false;
   const _contarItens = () => 1;
   const _lerVersoesServidor = async () => null;
-  const loadState = async () => {};
+  // O STATE do computador: a tela e todo saveState leem dele.
+  const STATE = { ordens: [] };
+  const loadState = async () => { await Promise.resolve(); STATE.ordens = JSON.parse(cloudCache.ordens || '[]'); };
+  const saveState = (k) => { cloudCache[k] = JSON.stringify(STATE[k]); _dirtyKeys.add(k); };
   const salvarSnapshotContingencia = () => {};
   const snapshotDiario = async () => {};
   const toast = () => {};
@@ -121,7 +124,10 @@ const computador = (banco, device) => new Function('ctx', `
     sincronizar(linha) {
       cloudCache = Object.assign({}, linha.data); _baseline = Object.assign({}, linha.data);
       _ultimoUpdatedAtServidor = linha.updated_at;
+      STATE.ordens = JSON.parse(cloudCache.ordens || '[]');
     },
+    // Um clique na tela: muda o STATE e grava a chave, como o app faz.
+    clicar(chave, mudar) { mudar(STATE); saveState(chave); },
     editar(chave, valor) { cloudCache[chave] = valor; _dirtyKeys.add(chave); },
     cache: () => cloudCache, sujas: () => _dirtyKeys
   };
@@ -200,6 +206,29 @@ const numeros = (b) => JSON.parse(b.linha.data.ordens).map(o => o.os).sort().joi
     await furado.cloudFlush();
     ok('8. desiste depois das tentativas, sem gravar por cima', banco.recusadas === 4 && !numeros(banco).includes('0700'), [banco.recusadas, numeros(banco)]);
     ok('9. e a chave continua suja, para a proxima tentativa', furado.sujas().has('ordens'));
+  }
+
+  console.log('\n-- o clique durante a gravacao nao desfaz a mudanca do outro (30/10: renumeracao desfeita) --');
+  {
+    // O servidor renumera a OS (0701 -> 0700) por fora. Este computador grava
+    // outra coisa (meta); no meio da gravacao, alguem marca uma etapa na OS.
+    // Depois, a gravacao da etapa nao pode levar o 0701 de volta.
+    const banco = novoBanco({ data: { ordens: lista({ id: 'a', os: '0701', st: 'corte' }), meta: '{}' } });
+    const t = computador(banco, 'admin');
+    t.sincronizar(banco.linha);
+    banco.linha.data = Object.assign({}, banco.linha.data, { ordens: lista({ id: 'a', os: '0700', st: 'corte' }) });
+    banco.linha.updated_at = '2026-10-30T12:53:00.000Z';
+    t.editar('meta', '{"fila":[1]}');
+    let clicou = false;
+    banco.antesDeGravar = () => {
+      if (clicou) return; clicou = true;
+      t.clicar('ordens', st => { st.ordens[0].st = 'costura'; });
+    };
+    await t.cloudFlush();   // grava o meta; o clique acontece no meio
+    await t.cloudFlush();   // grava a etapa
+    const o = JSON.parse(banco.linha.data.ordens)[0];
+    ok('10. a etapa marcada subiu', o.st === 'costura', o);
+    ok('11. e o numero novo (0700) NAO voltou para o antigo', o.os === '0700', o);
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntodos os testes passaram');
