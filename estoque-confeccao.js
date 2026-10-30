@@ -1397,6 +1397,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   }
   window.acabAvisos = acabAvisos;
 
-  // Para os testes (node): as contas, sem a tela.
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura };
+  // Para os testes (node): as contas, sem a tela. todosMovs e skuDoDesenho
+  // também servem ao planejamento-automatico.js (o saldo de cada SKU e
+  // tamanho, e o desenho de cada SKU).
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura, todosMovs, skuDoDesenho };
 })();

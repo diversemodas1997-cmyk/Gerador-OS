@@ -1494,6 +1494,9 @@ function iniciarPolling() {
     // O caminhão que chegou na hora: a caixa da viagem é marcada (ver
     // _expMarcarViagensVencidas).
     if (typeof _expRodarViagensVencidas === 'function') _expRodarViagensVencidas();
+    // Estoque no mínimo → demanda → planejamento (ver planejamento-automatico.js).
+    // Ele mesmo só age de 5 em 5 minutos e só para quem pode planejar.
+    if (typeof autoPlanRodar === 'function') autoPlanRodar();
   }, 15000);
 }
 
@@ -31690,6 +31693,8 @@ function _planBotoesDemanda(id, p) {
 }
 
 function renderPlanejamentoProducao() {
+  const faixaAuto = document.getElementById('plan-auto-faixa');
+  if (faixaAuto) faixaAuto.innerHTML = typeof autoPlanFaixaHtml === 'function' ? autoPlanFaixaHtml() : '';
   renderAgrupamentoDemanda();
   const espera = _planLista().filter(_planAguardando);
   const cardEspera = document.getElementById('plan-demanda-espera-card');
@@ -31781,7 +31786,9 @@ function _renderListaPlanOS(box, lista, cfg) {
       <td>${p.tipoProducao === 'puxada' ? '<span class="badge">Puxada</span>' : 'Empurrada'}</td>
       <td style="text-align:right;" title="${(p.grade && p.grade.total) || 0} peças por camada na grade">${(produtosOS(p) * vezes).toLocaleString('pt-BR')} un.${vezes > 1 ? `<br><span style="font-size:10px;color:var(--ink-2);">${vezes} × ${produtosOS(p).toLocaleString('pt-BR')}</span>` : ''}${_produtosPorTamanhoListaOS(p)}</td>
       <td style="text-align:center;">${_riscoCellOS(p)}</td>
-      <td style="font-size:11px;color:var(--ink-2);">${esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
+      <td style="font-size:11px;color:var(--ink-2);">${p.auto
+        ? `<span class="badge" title="Gerado pelo planejamento automático (estoque no mínimo → demanda → 1 enfesto cheio)${p.auto.modeloOS ? `. Coleção, marca e etapas copiadas da OS ${esc(p.auto.modeloOS)}` : ''}">🤖 Automático</span>`
+        : esc(p.criadoPor || '')}<br>${esc(quando(p.editadoEm || p.criadoEm))}</td>
     </tr>`;
   }).join('');
   box.innerHTML = `
@@ -32398,11 +32405,16 @@ function renderRelatorioDemanda() {
       <tbody>${lista.map(p => {
         const d = _demDesenho(p.desenhoId);
         const id = esc(p.id);
+        // A demanda automática é refeita pelo estoque a cada passada: editar ou
+        // excluir à mão seria desfeito em minutos (ver planejamento-automatico.js).
+        const au = p.auto;
         return `<tr>
-          <td class="col-actions" style="white-space:nowrap;"><span class="admin-only">
+          <td class="col-actions" style="white-space:nowrap;">${au
+            ? `<span class="badge" title="Saldo ${au.saldo} · mínimo ${au.min} · máximo ${au.max} · em produção ${au.emProducao} · planejado ${au.planejado}. Recalculada pelo estoque; some quando a produção cobre.">🤖 Automática</span>`
+            : `<span class="admin-only">
             <button type="button" class="btn small ghost" onclick="editarDemanda('${id}')">Editar</button>
             <button type="button" class="btn small ghost" onclick="excluirDemanda('${id}')" title="Excluir a demanda">✕</button>
-          </span></td>
+          </span>`}</td>
           <td>${_osThumbHtml({ desenhoId: p.desenhoId })}</td>
           <td>${esc((d && d.skuLinha) || '—')}</td>
           <td>${esc(d ? _rotuloDesenhoOS(d) : '(desenho excluído)')}</td>
@@ -32456,6 +32468,11 @@ function renderAgrupamentoDemanda() {
         } else {
           celComb = gr.combos.map((cb, i) => opcao(gr, cb, i)).join('');
         }
+        // Por que o planejamento automático ainda não planejou este agrupamento
+        // (ver planejamento-automatico.js). Só aparece quando ele tem demanda
+        // automática e a última passada deixou um motivo.
+        const motivoAuto = typeof autoPlanMotivo === 'function' ? autoPlanMotivo(gr.chave) : '';
+        if (motivoAuto) celComb += `<div style="margin-top:6px;font-size:11px;color:var(--ink-2);">🤖 ${esc(motivoAuto)}</div>`;
         return `<tr>
           <td>${_osThumbHtml({ desenhoId: gr.desenhoId })}<div style="font-size:11px;margin-top:2px;">${esc(d ? _rotuloDesenhoOS(d) : '')}</div></td>
           <td>${_demTamTexto(gr.pedido)}<br><span style="font-size:11px;color:var(--ink-2);">${gr.ids.length} ${gr.ids.length === 1 ? 'demanda' : 'demandas'}</span></td>
