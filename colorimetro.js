@@ -674,6 +674,13 @@
   }
 
   // O botão do próprio DS-01 foi apertado: a medição já foi feita, só baixar.
+  /* O BOTÃO DO APARELHO RESPEITA O MODO ESCOLHIDO (30/10/2026, Jones: "faça essas
+     modificações no programa"). O DS-01 mede pelo botão sempre no modo dele
+     (SCI); o programa só baixava essa leitura, e o "Modo de medição" das
+     Configurações valia só no F5/F6. Com SCE escolhido, 6 de 7 medições saíram
+     em SCI sem ninguém ver. Agora, se o modo do botão não é o escolhido, o
+     programa mede de novo na hora, no modo certo — o aparelho ainda está
+     encostado na peça. */
   function aoBotao(modo) {
     if (S.ocupado || !S.dev) return;
     let tipo = cfg.botao;
@@ -681,6 +688,13 @@
     // Na avaliação de uma OS o botão mede a amostra atual (a 1ª da rodada vira a referência).
     if (S.os && S.av) { if (S.av.n == null) return; tipo = 'amostra'; }
     S.ocupado = true;
+    const alvo = modoAtual();
+    if (cfg.modo !== 'auto' && modo !== alvo) {
+      log(`botão do aparelho mediu em ${MODOS[modo] || modo}; medindo de novo em ${MODOS[alvo] || alvo}`);
+      status(`Botão do aparelho mediu em ${MODOS[modo] || modo} — medindo de novo em ${MODOS[alvo] || alvo}… não tire o aparelho da peça`);
+      S.dev.medir(alvo).then(m => chegou(m, tipo), erroDoAparelho);
+      return;
+    }
     status('Medição feita no aparelho — baixando…');
     S.dev.baixarMedicao(modo).then(m => chegou(m, tipo), erroDoAparelho);
   }
@@ -706,7 +720,7 @@
     if (!naOS) S.cont[tipo]++;
     const prefixo = tipo === 'padrao' ? cfg.nome_padrao : cfg.nome_amostra;
     const l = novaLeitura({ nome: `${prefixo} ${S.cont[tipo]}`, tipo, espectro: esp, wave_start: medidas[0].wave_start,
-      lab_aparelho: labAp, horario: new Date() });
+      lab_aparelho: labAp, horario: new Date(), modo: medidas[0].modo });
     // Com a tela ligada a uma OS, quem dá nome, referência e tom é a avaliação.
     const msg = naOS ? avMedicao(l, tipo) : '';
     if (!naOS && tipo === 'amostra' && S.padrao) l.refId = S.padrao.id;
@@ -722,7 +736,7 @@
     const ref = refDe(l);
     return { id: l.id, dia: diaIso(l.horario), horario: l.horario.toISOString(), nome: l.nome, tipo: l.tipo,
       espectro: l.espectro, wave_start: l.wave_start, lab_aparelho: l.lab_aparelho,
-      refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1,
+      refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1, modo: l.modo,
       osId: l.osId || null, osNumero: l.osNumero || '', amostraN: l.amostraN || null, rodada: l.rodada || null };
   }
   function guardar(l) {
@@ -856,7 +870,7 @@
   /* ---------------- histórico ---------------- */
   function leituraDoRegistro(r) {
     const l = novaLeitura({ id: r.id, nome: r.nome, tipo: r.tipo, espectro: r.espectro || [], wave_start: r.wave_start || 400,
-      lab_aparelho: r.lab_aparelho, horario: new Date(r.horario) });
+      lab_aparelho: r.lab_aparelho, horario: new Date(r.horario), modo: r.modo });
     l.refId = r.refId; l.refNome = r.refNome; l.osId = r.osId || null; l.osNumero = r.osNumero || '';
     return l;
   }
@@ -891,7 +905,7 @@
     const r = S.histLidas.find(x => x.id === id);
     if (!r) return;
     const l = novaLeitura({ nome: r.nome, tipo: 'padrao', espectro: r.espectro, wave_start: r.wave_start,
-      lab_aparelho: r.lab_aparelho, horario: r.horario });
+      lab_aparelho: r.lab_aparelho, horario: r.horario, modo: r.modo });
     S.leituras.unshift(l);
     S.padrao = l; S.atual = l;
     S.janela = null;
@@ -1797,6 +1811,8 @@
     const ref = S.padrao;
     const amo = S.atual && S.atual !== ref ? S.atual : null;
     const r = ref && amo ? comparar(ref, amo) : null;
+    const nomeModo = l => (l && l.modo != null ? (MODOS[l.modo] || String(l.modo)) : null);
+    const modosDif = r && nomeModo(ref) && nomeModo(amo) && ref.modo !== amo.modo;
     const con = !!S.dev, livre = !S.ocupado && !S.conectando;
     const fo = cfg.formula;
     const barra = r
@@ -1843,7 +1859,8 @@
           <div class="cm-blocos">${blocoCor(ref, naOS ? 'Referência' : 'Padrão', 'padrao')}${blocoCor(amo, 'Amostra', 'amostra')}</div>
           ${barra}
           <div class="cm-tab-caixa">${tabelaPagina(ref, amo, r)}</div>
-          <div class="cm-fraco cm-centro cm-peq">${escH(MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>`;
+          ${modosDif ? `<div class="cm-aviso">Atenção: o padrão foi medido em ${escH(nomeModo(ref))} e a amostra em ${escH(nomeModo(amo))}. Meça os dois no mesmo modo — a comparação não vale.</div>` : ''}
+          <div class="cm-fraco cm-centro cm-peq">${escH(nomeModo(amo) || nomeModo(ref) || MODOS[modoAtual()] || 'SCI')}/${escH(cfg.iluminante1)}°</div>`;
     const sec = p.closest('section');
     if (sec) sec.classList.add('cm-modo-os'); // a apresentação da página some: o quadro precisa caber sem rolar
     p.innerHTML = `
@@ -2010,7 +2027,8 @@
     aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avReavaliar, avConcluirFase, avReavaliarFase,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
-    simularBotao: () => { if (S.t && S.t.apertarBotao) S.t.apertarBotao(modoAtual()); },
+    // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
+    simularBotao: () => { if (S.t && S.t.apertarBotao) S.t.apertarBotao(0); },
     // para os testes: as contas, sem tela
     _contas: { carregarTabelas, espectroParaLab, deAb, de2000, de94, deCmc, labHex, comparar, arred, num, pacote, checksumOk }
   };
