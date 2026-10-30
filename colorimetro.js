@@ -507,9 +507,16 @@
     const dEab = deAb(l1, l2);
     const dH = Math.sign(l1[1] * l2[2] - l2[1] * l1[2] || 1) * Math.sqrt(Math.max(0, dEab ** 2 - dL ** 2 - dC ** 2));
     const des = { 'dE*ab': dEab, dE00: de2000(l1, l2, ...cfg.k00), dEcmc: deCmc(l1, l2, cfg.cmc_l, cfg.cmc_c), dE94: de94(l1, l2, ...cfg.k94) };
-    // Como o app: aprova/reprova só pelo dE escolhido, com o valor exato.
-    const aprovado = des[cfg.formula] <= tol[cfg.formula];
-    // As dicas por coluna saem dos valores já arredondados na tela; não entram na aprovação.
+    /* APROVAÇÃO TAMBÉM PELAS TOLERÂNCIAS dL*, da*, db* (30/10/2026, Jones: "Sim" à
+       pergunta se a aprovação devia considerar dL*, da* e db*). Antes aprovava só
+       pelo dE escolhido, como o app do aparelho: a Amostra 1 com dL* +0,5 (limite
+       ±0,4) saía "Aprovado". Agora só aprova se o dE estiver dentro E as três
+       colunas estiverem "Aprovado". O dE usa o valor exato; as colunas usam os
+       valores arredondados da tela, para o resultado bater com o que se vê.
+       Referência (30/10/2026, 11:48): par de malha preta que NÃO é compatível a
+       olho nu deu dE*ab 0,2–0,4, mas a* sempre mais verde (-0,1 a -0,3): quem
+       reprova esse par é o da* ±0,1. Por isso as tolerâncias ficam como estão. */
+    const deOk = des[cfg.formula] <= tol[cfg.formula];
     const d1 = [0, 1, 2].map(i => arred(l2[i]) - arred(l1[i]));
     const rot = [['Claro', 'Escuro'], ['Vermelho', 'Verde'], ['Amarelo', 'Azul']];
     const txt = [['mais clara', 'mais escura'], ['mais vermelha', 'mais verde'], ['mais amarela', 'mais azul']];
@@ -519,7 +526,8 @@
       if (dentro(v, tol[k])) dicas.push(['Aprovado', true]);
       else { dicas.push([v > 0 ? rot[i][0] : rot[i][1], false]); desc.push(v > 0 ? txt[i][0] : txt[i][1]); }
     });
-    return { d: [dL, da, db, dC, dH], d1, dicas, des, aprovado, desc };
+    const aprovado = deOk && dicas.every(x => x[1]);
+    return { d: [dL, da, db, dC, dH], d1, dicas, des, aprovado, deOk, desc };
   }
 
   const modoAtual = () => cfg.modo !== 'auto' ? parseInt(cfg.modo, 10) : (S.dev && S.dev.info ? modoPadrao(S.dev.info) : 0);
