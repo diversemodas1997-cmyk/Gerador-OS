@@ -3603,7 +3603,7 @@ async function definirNovaSenha() {
     goto(_paginaInicial());
     toast('Senha atualizada. Bem-vindo(a)!', 'ok');
   } catch (e) {
-    erroEl.textContent = e.message || 'Erro inesperado';
+    erroEl.textContent = traduzirErroAuth(e.message || 'Erro inesperado');
   } finally {
     btn.disabled = false;
   }
@@ -3620,6 +3620,19 @@ function traduzirErroAuth(msg) {
   if (/exceed_egress_quota|exceeded.*quota|restricted due to the following violations|payment required/i.test(msg)) {
     return 'A cópia da nuvem está bloqueada pelo provedor (cota de tráfego do mês). '
       + 'Não é a sua senha. Abra o programa pelo endereço do servidor da fábrica para entrar.';
+  }
+  /* NINGUÉM ATENDEU DO OUTRO LADO. Aconteceu em 30/10/2026: o projeto da nuvem
+     deixou de existir (o endereço nem resolve mais no DNS), e quem abria o
+     programa por um atalho antigo — que não acha o servidor da fábrica e cai na
+     nuvem — via "Failed to fetch" embaixo da senha. É o mesmo engano do 402
+     acima: parece senha errada, e a senha nem chegou a ser enviada. A mensagem
+     muda conforme o lado que falhou, porque o que fazer é diferente. */
+  if (/failed to fetch|networkerror|load failed|network request failed|não respondeu em/i.test(msg)) {
+    return _modoServidor === MODO_LOCAL
+      ? 'O servidor da fábrica não respondeu. Não é a sua senha. '
+        + 'Confira se o computador do servidor está ligado e na rede, e tente de novo.'
+      : 'Não foi possível conectar: o servidor da fábrica não foi encontrado e a cópia da nuvem está fora do ar. '
+        + 'Não é a sua senha. Abra o programa pelo atalho "Gerador-OS" (endereço do servidor da fábrica) e tente de novo.';
   }
   if (/invalid login credentials/i.test(msg)) return 'Nome ou senha incorretos';
   if (/user already registered/i.test(msg)) return 'Este nome já está cadastrado — use Entrar';
@@ -3686,7 +3699,7 @@ async function submeterAuth() {
     goto(_paginaInicial());   // respeita a aba aberta direto numa área
     toast('Conectado — cadastros sincronizados na nuvem', 'ok');
   } catch (e) {
-    erroEl.textContent = e.message || 'Erro inesperado';
+    erroEl.textContent = traduzirErroAuth(e.message || 'Erro inesperado');
   } finally {
     btn.disabled = false;
   }
