@@ -336,6 +336,11 @@
     Object.keys(c.estat).sort().slice(0, -DIAS_ESTAT).forEach(k => delete c.estat[k]);
   }
 
+  /* O dia da última venda lançada pelo relatório do ERP (a tela Saídas do ERP
+     saiu em 30/10/2026). As do Mercado Livre e da Shopee entravam por lá: o
+     corte de uma loja dessas nesse dia ou antes baixaria a venda de novo. */
+  const ultimoErp = () => (STATE.acabMov || []).filter(m => m.origem === 'erp' && m.data).map(m => String(m.data)).sort().pop() || '';
+
   const lojasLigadas = c => Object.keys(c.lojas).filter(id => c.lojas[id].ligada && c.lojas[id].corte);
 
   /* Uma rodada inteira: rede primeiro (todas as páginas), conta depois, numa
@@ -547,7 +552,7 @@
       <div class="card">
         <h2 style="margin-top:0;font-size:15px;">Lojas</h2>
         <div class="muted" style="font-size:12px;margin-bottom:8px;">Só a loja <b>ligada</b> dá baixa, e só dos pedidos com data na <b>data de corte</b> ou depois. Todas começam desligadas.</div>
-        <div class="info-box" style="margin-bottom:8px;font-size:12px;background:#fbeccb;"><b>Atenção:</b> as vendas do Mercado Livre e da Shopee também entram pela tela <b>Saídas do ERP</b> (relatório do SoftUp). Ao ligar uma loja do Mercado Livre, da Shopee ou do TikTok aqui, <b>pare de importar o relatório do ERP dessa loja</b> a partir da data de corte — senão a venda sai duas vezes. A Shopify não passa pelo SoftUp.</div>
+        ${ultimoErp() ? `<div class="info-box" style="margin-bottom:8px;font-size:12px;background:#fbeccb;"><b>Atenção:</b> as vendas do Mercado Livre e da Shopee entravam pelo relatório do ERP (tela Saídas do ERP, retirada) até <b>${fmtD(ultimoErp())}</b>, e essas saídas continuam lançadas. Não ponha a data de corte de uma loja do Mercado Livre, da Shopee ou do TikTok nesse dia ou antes — senão a mesma venda sai duas vezes.</div>` : ''}
         ${_integracoesErro ? `<div class="info-box" style="background:#f6dcda;margin-bottom:8px;">Não deu para ler as lojas: ${esc(_integracoesErro)}</div>` : ''}
         <div style="overflow:auto;"><table class="table"><thead><tr><th>Loja</th><th>Plataforma</th><th>Empresa</th><th>No DRE</th><th>Ligada</th><th>Data de corte</th></tr></thead><tbody>
         ${lojas.map(l => `<tr><td><b>${esc(l.nome)}</b></td><td>${esc(ROTULO_PLAT[l.plataforma] || l.plataforma)}</td><td>${esc(l.empresa)}</td>
@@ -662,7 +667,6 @@
     const g = Object.assign({}, c.lojas[id] || {});
     const plat = a.plataforma || g.plataforma || '';
     const nome = a.nome || g.nome || id;
-    if (ligar && PLAT_COM_ERP.includes(plat) && !confirm(`Ligar ${nome} (${ROTULO_PLAT[plat] || plat})?\n\nA partir da data de corte (hoje), as vendas desta loja saem do estoque por aqui.\n\nPARE DE IMPORTAR O RELATÓRIO DO ERP (Saídas do ERP) PARA ESTA LOJA a partir de hoje — senão a mesma venda sai duas vezes.`)) { render(); return; }
     g.ligada = !!ligar;
     g.nome = nome; g.plataforma = plat; g.empresa = a.empresa || g.empresa || '';
     if (ligar) { g.corte = hojeSP(); recuarCursor(c, g.corte); }
@@ -679,7 +683,8 @@
     const c = dre();
     const g = c.lojas[id];
     if (!g) return;
-    if (dia < g.corte && PLAT_COM_ERP.includes(g.plataforma) && !confirm(`Recuar o corte de ${g.nome} para ${fmtD(dia)}?\n\nAs vendas desde essa data vão sair do estoque por aqui. Se o relatório do ERP desses dias já foi importado, elas saem duas vezes.`)) { render(); return; }
+    const erp = ultimoErp();
+    if (erp && dia <= erp && PLAT_COM_ERP.includes(g.plataforma) && !confirm(`Pôr o corte de ${g.nome} em ${fmtD(dia)}?\n\nO relatório do ERP lançou vendas até ${fmtD(erp)}. As vendas desta loja desses dias vão sair de novo por aqui — duas vezes.`)) { render(); return; }
     g.corte = dia;
     g.alteradoEm = new Date().toISOString(); g.alteradoPor = quemSou();
     recuarCursor(c, dia);
@@ -761,14 +766,6 @@
     delete c.pendentes[chave];
   };
 
-  // As lojas do ERP (Mercado Livre, Shopee, TikTok) ligadas aqui — para a
-  // tela Saídas do ERP avisar.
-  window.vendasDreLojasDoErp = function () {
-    const c = (STATE.meta && STATE.meta.vendasDre) || {};
-    const lojas = c.lojas || {};
-    return Object.keys(lojas).filter(id => lojas[id].ligada && PLAT_COM_ERP.includes(lojas[id].plataforma))
-      .map(id => ({ nome: lojas[id].nome || id, plataforma: lojas[id].plataforma, corte: lojas[id].corte }));
-  };
 
   // Para os testes (node).
   window._vendasDreInterno = { converter, linhaDe, tamDaDescricao, acharRegra, processar, relevante, diaSP, lerPara, rodar, dre, ABA,

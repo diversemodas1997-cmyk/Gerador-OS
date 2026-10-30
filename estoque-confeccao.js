@@ -19,7 +19,9 @@
      · Inventário          — a contagem física que acerta o saldo (desde
                              28/10/2026, a parte de baixo de Entradas e saídas);
      · Produtos (SKUs)     — o cadastro e o início do estoque;
-     · Saídas do ERP       — o relatório de vendas (PDF ou CSV) vira saída;
+     · Saídas do ERP       — o relatório de vendas (PDF ou CSV) vira saída
+                             (retirada em 30/10/2026: as vendas saem por
+                             Vendas das plataformas, o Painel DRE);
      · Relatório CMP       — o custo médio ponderado, movimento a movimento.
 
    O QUE NÃO VEIO, porque o Gerador-OS já tem:
@@ -663,7 +665,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         </div>
         <div class="card admin-only">
           <h2 style="margin-top:0;font-size:15px;">Registrar saída</h2>
-          <div class="muted" style="font-size:12px;margin-bottom:8px;">Não sai mais do que há no estoque do tamanho. As vendas do ERP entram em lote pela tela Saídas do ERP.</div>
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Não sai mais do que há no estoque do tamanho. As vendas das plataformas saem sozinhas pela tela Vendas das plataformas.</div>
           <div class="form-grid cols-2">
             <div class="field full"><label>SKU *</label>${campoSku('acab-sai', skuS)}</div>
             <div class="field"><label>Tamanho *</label><select id="acab-sai-tam" onchange="acabInfoSku('acab-sai')"></select></div>
@@ -1017,229 +1019,12 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     renderProdutos();
   };
 
-  /* ================================================ TELA: SAÍDAS DO ERP */
-  /* O relatório de vendas do ERP vira saídas, como no original: código do
-     produto, variação (tamanho) e quantidade. Lê PDF (pdf.js, que o programa
-     já carrega para os riscos) e CSV; a planilha do Excel entra salva como CSV.
-     O que muda do original: produto que não existe NÃO nasce com 300 peças de
-     contagem (era o semeio do Render) — só é cadastrado se a caixa pedir, e o
-     estoque dele começa pela contagem de inventário. E a venda não é barrada
-     por falta de saldo: ela já aconteceu; a linha fica negativa, em vermelho,
-     até a contagem acertar. */
-  let _erp = null;   // { rows, dataEmissao, arquivo }
-
-  function extrairTipoCor(desc) {
-    const s = String(desc || '').trim();
-    const m = s.match(/\s+(PP|P|M|G|GG|G1|G2|G3|\d{1,2})-([A-Z][A-Z0-9.]*?)-([A-Z][A-Z0-9]*)\s*$/);
-    if (m) return { tipo: m[2].toUpperCase(), cor: m[3].toUpperCase(), descricao: s.slice(0, m.index).trim() };
-    return { tipo: '', cor: '', descricao: s };
-  }
-  function dataBR(v) {
-    const s = String(v || '').trim();
-    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return m[1] + '-' + m[2] + '-' + m[3];
-    m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-    if (!m) return '';
-    let y = m[3]; if (y.length === 2) y = (parseInt(y, 10) >= 70 ? '19' : '20') + y;
-    return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
-  }
-
-  async function lerPdfErp(file) {
-    if (typeof pdfjsLib === 'undefined') throw new Error('o leitor de PDF não carregou');
-    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-    const linhas = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const tc = await (await pdf.getPage(i)).getTextContent();
-      const itens = tc.items.map(it => ({ x: it.transform[4], y: -it.transform[5], s: it.str }))
-        .filter(o => o.s && o.s.trim()).sort((a, b) => (a.y - b.y) || (a.x - b.x));
-      const grupos = [];
-      let atual = null;
-      itens.forEach(it => {
-        if (!atual || Math.abs(it.y - atual.y) > 3) { atual = { y: it.y, partes: [] }; grupos.push(atual); }
-        atual.partes.push(it);
-      });
-      grupos.forEach(g => { const l = g.partes.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim(); if (l) linhas.push(l); });
-    }
-    let dataEmissao = '';
-    for (let i = 0; i < linhas.length && !dataEmissao; i++) {
-      const m = linhas[i].match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-      if (m && /EMISS/i.test((linhas[i - 1] || '') + ' ' + linhas[i])) dataEmissao = dataBR(m[1]);
-    }
-    if (!dataEmissao) for (const l of linhas) { const m = l.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/); if (m && (dataEmissao = dataBR(m[1]))) break; }
-    // cód + descrição + qtd + tamanho + custo [+ total] — às vezes quebrado em duas linhas.
-    const re = /^\s*(\d{1,4})\s+(.+?)\s+([\d.]+,\d+)\s+(PP|P|M|G|GG|G1|G2|G3|\d{1,2})\s+([\d.]+,\d+)(?:\s+([\d.]+,\d+))?\s*$/;
-    const rows = [];
-    for (let i = 0; i < linhas.length; i++) {
-      let m = linhas[i].match(re);
-      if (!m && i + 1 < linhas.length) { m = (linhas[i] + ' ' + linhas[i + 1]).match(re); if (m) i++; }
-      if (!m) continue;
-      const tc = extrairTipoCor(m[2]);
-      rows.push({ codigo: parseInt(m[1], 10), tamanho: m[4], quantidade: parseInt(m[3].split(',')[0].replace(/\./g, ''), 10),
-        tipo: tc.tipo, cor: tc.cor, descricao: tc.descricao || m[2], preco: num(m[5]) || 0 });
-    }
-    return { rows, dataEmissao };
-  }
-
-  function lerCsvErp(texto) {
-    const linhas = String(texto).replace(/\r/g, '').split('\n').filter(l => l.trim());
-    if (!linhas.length) return { rows: [], dataEmissao: '' };
-    const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ';' : ',';
-    const corta = l => { const out = []; let cur = '', q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out; };
-    const cab = corta(linhas[0]).map(s => norm(s).toLowerCase());
-    const idx = (...ns) => { for (const n of ns) { const i = cab.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
-    const iCod = idx('cod.produto', 'cod produto', 'codigo', 'cod'), iSku = idx('sku'), iDesc = idx('descri', 'item', 'produto');
-    const iQtd = idx('quant', 'qtd', 'qtde'), iVar = idx('varia', 'tamanho', 'tam'), iCusto = idx('custo', 'valor unit');
-    if ((iCod < 0 && iSku < 0) || iQtd < 0 || iVar < 0) throw new Error('cabeçalho não reconhecido: precisa de código (ou SKU), quantidade e variação/tamanho');
-    const rows = [];
-    linhas.slice(1).forEach(l => {
-      const c = corta(l);
-      const codigo = iCod >= 0 ? parseInt(String(c[iCod] || '').replace(/\D/g, ''), 10) : NaN;
-      const desc = iDesc >= 0 ? String(c[iDesc] || '').trim() : '';
-      const tc = extrairTipoCor(desc);
-      const skuCol = iSku >= 0 ? norm(c[iSku]) : '';
-      const pt = skuCol ? partesSku(skuCol) : null;
-      if (!(codigo > 0) && !skuCol) return;
-      rows.push({ codigo: codigo > 0 ? codigo : null, tamanho: String(c[iVar] || '').trim().toUpperCase(),
-        quantidade: parseInt(String(c[iQtd] || '').split(',')[0].replace(/\D/g, ''), 10) || 0,
-        tipo: pt ? pt.linha : tc.tipo, cor: pt ? pt.cor : tc.cor, descricao: tc.descricao || desc,
-        preco: iCusto >= 0 ? (num(c[iCusto]) || 0) : 0 });
-    });
-    return { rows, dataEmissao: '' };
-  }
-
-  // A prévia: casa cada linha com um SKU (código do ERP, senão linha-cor) e
-  // soma as linhas repetidas do mesmo SKU e tamanho.
-  function planoErp(rows, cadastrarFaltantes) {
-    const r = { saidas: [], novos: [], codigosNovos: [], tamanhosNovos: [], problemas: [], agregadas: 0, zeradas: 0 };
-    const mapa = new Map();
-    const novosPorSku = new Map();
-    rows.forEach((row, i) => {
-      const linha = i + 1;
-      const tamanho = asTam(row.tamanho);
-      const q = parseInt(row.quantidade, 10);
-      if (!tamanho) { r.problemas.push(`Linha ${linha}: tamanho inválido (${row.tamanho})`); return; }
-      if (!(q >= 0)) { r.problemas.push(`Linha ${linha}: quantidade inválida`); return; }
-      if (q === 0) { r.zeradas++; return; }
-      const skuTxt = row.tipo && row.cor ? norm(row.tipo + '-' + row.cor) : '';
-      let p = produtoPorCodigo(row.codigo) || (skuTxt ? produtoPorSku(skuTxt) : null);
-      if (!p && skuTxt && novosPorSku.has(skuTxt)) p = novosPorSku.get(skuTxt);
-      if (!p) {
-        if (!skuTxt) { r.problemas.push(`Linha ${linha}: código ${row.codigo || '?'} sem SKU cadastrado e a descrição não diz a linha e a cor ("${row.descricao}")`); return; }
-        if (!cadastrarFaltantes) { r.problemas.push(`Linha ${linha}: SKU ${skuTxt} (código ${row.codigo || '?'}) não está cadastrado`); return; }
-        p = { id: uid(), codigo: row.codigo || null, sku: skuTxt, linha: norm(row.tipo), cor: norm(row.cor), descricao: row.descricao || '',
-          tamanhos: tamsDaLinha(row.tipo), preco: Number(row.preco) || 0, criadoEm: new Date().toISOString(), criadoPor: quemSou(), origem: 'erp' };
-        novosPorSku.set(skuTxt, p);
-        r.novos.push(p);
-      }
-      if (row.codigo && !p.codigo && !r.novos.includes(p) && !r.codigosNovos.some(x => x.p === p)) r.codigosNovos.push({ p, codigo: row.codigo });
-      if (!(p.tamanhos || []).includes(tamanho) && !r.tamanhosNovos.some(x => x.p === p && x.t === tamanho)) r.tamanhosNovos.push({ p, t: tamanho });
-      const k = p.id + '|' + tamanho;
-      if (mapa.has(k)) { mapa.get(k).qtd += q; r.agregadas++; }
-      else mapa.set(k, { p, tamanho, qtd: q });
-    });
-    r.saidas = [...mapa.values()];
-    return r;
-  }
-
-  function renderErp() {
-    const box = document.getElementById('acab-erp-painel');
-    if (!box) return;
-    const hist = movs().filter(m => m.origem === 'erp').sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).slice(0, 150);
-    let previa = '';
-    if (_erp) {
-      const cad = !!(document.getElementById('acab-erp-cadastrar') || {}).checked || !!_erp.cadastrar;
-      const pl = planoErp(_erp.rows, cad);
-      const data = _erp.data || _erp.dataEmissao || hoje();
-      const jaTem = movs().some(m => m.origem === 'erp' && m.data === data);
-      const S = saldos(todosMovs());
-      const negativos = pl.saidas.filter(s => S.de(s.p.id, s.tamanho).total - s.qtd < 0).length;
-      previa = `<div class="card">
-        <h2 style="margin-top:0;font-size:15px;">Prévia · ${esc(_erp.arquivo)}</h2>
-        <div class="form-grid cols-2">
-          <div class="field"><label>Data das saídas *</label><input type="date" id="acab-erp-data" value="${esc(data)}" onchange="acabErpData(this.value)"></div>
-          <div class="field"><label>Emissão do relatório</label><input type="text" value="${_erp.dataEmissao ? fmtD(_erp.dataEmissao) : '—'}" disabled></div>
-          <div class="field full"><label style="font-weight:400;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="acab-erp-cadastrar" ${cad ? 'checked' : ''} onchange="acabErpCadastrar(this.checked)"> Cadastrar os SKUs que ainda não existem (pela linha e cor da descrição)</label></div>
-        </div>
-        <div class="exp-resumo" style="margin:8px 0;">
-          <div class="item"><div class="num">${fmtN(pl.saidas.length)}</div><div class="lbl">Saídas a lançar</div></div>
-          <div class="item"><div class="num">${fmtN(pl.saidas.reduce((s, x) => s + x.qtd, 0))}</div><div class="lbl">Peças</div></div>
-          <div class="item"><div class="num">${fmtN(pl.novos.length)}</div><div class="lbl">SKUs novos</div></div>
-          <div class="item${pl.problemas.length ? ' alerta' : ''}"><div class="num">${fmtN(pl.problemas.length)}</div><div class="lbl">Linhas com problema</div></div>
-          <div class="item${negativos ? ' alerta' : ''}"><div class="num">${fmtN(negativos)}</div><div class="lbl">Ficam negativos</div></div>
-        </div>
-        ${jaTem ? `<div class="info-box" style="margin-bottom:8px;background:#fbeccb;">Já existem saídas do ERP com a data ${fmtD(data)}. Confira se este relatório não é o mesmo de antes.</div>` : ''}
-        ${pl.agregadas ? `<div class="muted" style="font-size:12px;">${fmtN(pl.agregadas)} linha(s) do mesmo SKU e tamanho foram somadas.</div>` : ''}
-        ${pl.problemas.length ? `<details style="margin:8px 0;"><summary>Ver as ${fmtN(pl.problemas.length)} linhas com problema</summary><div style="max-height:220px;overflow:auto;font-size:12px;">${pl.problemas.slice(0, 300).map(x => `<div style="padding:3px 0;border-bottom:1px solid var(--line-2);">${esc(x)}</div>`).join('')}</div></details>` : ''}
-        <div style="overflow:auto;max-height:320px;margin:8px 0;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Estoque depois</th></tr></thead><tbody>
-          ${pl.saidas.map(s => { const dep = S.de(s.p.id, s.tamanho).total - s.qtd; return `<tr><td>${esc(rotuloProduto(s.p))}${pl.novos.includes(s.p) ? ' <span class="badge" style="background:#d6f0db;">novo</span>' : ''}</td><td>${esc(s.tamanho)}</td><td style="${mono}">${fmtN(s.qtd)}</td><td style="${mono}${dep < 0 ? 'color:#c0392b;font-weight:700;' : ''}">${fmtN(dep)}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">Nada a lançar.</td></tr>'}
-        </tbody></table></div>
-        <button class="btn primary" onclick="acabErpConfirmar()" ${pl.saidas.length ? '' : 'disabled'}>Lançar ${fmtN(pl.saidas.length)} saídas</button>
-        <button class="btn" onclick="acabErpCancelar()">Cancelar</button>
-      </div>`;
-    }
-    box.innerHTML = `
-      <div class="card admin-only">
-        <h2 style="margin-top:0;font-size:15px;">Importar o relatório de vendas</h2>
-        <div class="muted" style="font-size:12px;margin-bottom:8px;">O relatório do ERP em <b>PDF</b> ou <b>CSV</b> (do Excel: Salvar como → CSV). O programa lê o <b>código do produto</b>, a <b>variação</b> (tamanho) e a <b>quantidade</b>, e mostra a prévia antes de lançar. Cada linha vira uma saída "Estoque → Cliente" com valor R$ 0,00 — o custo sai pelo custo médio.</div>
-        <input type="file" id="acab-erp-arquivo" accept=".pdf,.csv,.txt" onchange="acabErpArquivo(this.files[0])">
-      </div>
-      ${previa}
-      ${(() => {
-        // A loja do Mercado Livre, da Shopee ou do TikTok ligada em Vendas das
-        // plataformas já dá baixa sozinha: importar o relatório dela de novo
-        // baixaria a mesma venda duas vezes.
-        const ls = typeof window.vendasDreLojasDoErp === 'function' ? window.vendasDreLojasDoErp() : [];
-        return ls.length ? `<div class="info-box" style="margin-bottom:12px;background:#fbeccb;"><b>Atenção:</b> estas lojas já dão baixa sozinhas em <a href="#acab-dre" onclick="goto('acab-dre');return false;">Vendas das plataformas</a> — não importe as vendas delas aqui a partir da data de corte: ${ls.map(l => `<b>${esc(l.nome)}</b> (desde ${fmtD(l.corte)})`).join(', ')}.</div>` : '';
-      })()}
-      <div class="card"><h2 style="margin-top:0;font-size:15px;">Saídas que vieram do ERP</h2>
-        <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th>Relatório</th><th class="col-actions admin-only"></th></tr></thead><tbody>
-        ${hist.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td class="muted" style="font-size:11px;">${m.erpEmissao ? 'emitido ' + fmtD(m.erpEmissao) : ''} ${esc(m.erpArquivo || '')}</td><td class="col-actions row-actions admin-only"><button onclick="acabApagarMov('${esc(m.id)}')">apagar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhuma saída importada.</td></tr>'}
-        </tbody></table></div></div>`;
-  }
-
-  window.acabErpArquivo = async function (file) {
-    if (!file) return;
-    if (!exigirEdicao('importar saídas do ERP')) return;
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    try {
-      const r = ext === 'pdf' ? await lerPdfErp(file) : lerCsvErp(await file.text());
-      if (!r.rows.length) return toast('Nenhuma linha de produto encontrada no arquivo', 'err');
-      _erp = { rows: r.rows, dataEmissao: r.dataEmissao || '', data: r.dataEmissao || hoje(), arquivo: file.name, cadastrar: false };
-      toast(`${r.rows.length} linhas lidas — confira a prévia`, 'ok');
-      renderErp();
-    } catch (e) {
-      console.warn('acab erp', e);
-      toast('Não deu para ler o arquivo: ' + (e.message || e), 'err');
-    }
-  };
-  window.acabErpData = v => { if (_erp) _erp.data = v; renderErp(); };
-  window.acabErpCadastrar = v => { if (_erp) _erp.cadastrar = !!v; renderErp(); };
-  window.acabErpCancelar = () => { _erp = null; renderErp(); };
-  window.acabErpConfirmar = async function () {
-    if (!_erp || !exigirEdicao('importar saídas do ERP') || !exigirInicio()) return;
-    const data = _erp.data;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return toast('Informe a data das saídas', 'err');
-    const pl = planoErp(_erp.rows, !!_erp.cadastrar);
-    if (!pl.saidas.length) return toast('Nada a lançar', 'err');
-    if (!confirm(`Lançar ${pl.saidas.length} saídas (${pl.saidas.reduce((s, x) => s + x.qtd, 0)} peças) com a data ${fmtD(data)}?`)) return;
-    const nCadastro = cadastro().length + pl.novos.length;
-    pl.novos.forEach(p => cadastro().push(p));
-    // O SKU do programa que ganha código, tamanho ou saída do ERP fica gravado aqui.
-    const fixos = new Map();
-    const fixo = p => { if (!fixos.has(p.id)) fixos.set(p.id, fixarProduto(p) || p); return fixos.get(p.id); };
-    pl.codigosNovos.forEach(({ p, codigo }) => { if (!produtoPorCodigo(codigo)) fixo(p).codigo = codigo; });
-    pl.tamanhosNovos.forEach(({ p, t }) => { const q = fixo(p); q.tamanhos = ordenarTams((q.tamanhos || []).concat([t])); });
-    pl.saidas.forEach(s => fixo(s.p));
-    esquecerProdutos();
-    pl.saidas.forEach(s => movs().push(novoMov({ tipo: 'saida', origem: 'erp', produtoId: s.p.id, tamanho: s.tamanho, data, qtd: s.qtd, valor: 0,
-      destino: 'cliente', erpEmissao: _erp.dataEmissao || null, erpArquivo: _erp.arquivo })));
-    desfazerNomearAcao(`importação de ${pl.saidas.length} saídas do ERP`);
-    if (pl.novos.length || pl.codigosNovos.length || pl.tamanhosNovos.length || cadastro().length !== nCadastro) await saveState('acabProdutos');
-    await saveState('acabMov');
-    toast(`${pl.saidas.length} saídas do ERP lançadas`, 'ok');
-    _erp = null;
-    renderErp();
-  };
+  /* SAÍDAS DO ERP RETIRADA (30/10/2026, Jones: "retire o item saídas do
+     ERP"). Era a tela que transformava o relatório de vendas do SoftUp (PDF ou
+     CSV) em saídas. As vendas das plataformas passaram a sair sozinhas pelo
+     Painel DRE (Vendas das plataformas, vendas-dre.js), e importar o relatório
+     junto baixaria a mesma venda duas vezes. As saídas que o ERP já lançou
+     continuam valendo (origem 'erp', selo ERP em Entradas e saídas). */
 
   /* ================================================ TELA: RELATÓRIO CMP */
   const _cmpSel = { produto: '', tam: '' };
@@ -1275,7 +1060,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
 
   /* ------------------------------------------------------- a navegação */
   const TELAS = { 'acab-estoque': renderEstoqueAtual, 'acab-mov': renderMovimentos, 'acab-inventario': renderInventario,
-    'acab-produtos': renderProdutos, 'acab-erp': renderErp, 'acab-cmp': renderCmp,
+    'acab-produtos': renderProdutos, 'acab-cmp': renderCmp,
     // Vendas das plataformas: a tela mora no vendas-dre.js.
     'acab-dre': () => { if (typeof window.vendasDreRender === 'function') window.vendasDreRender(); } };
   function renderAtual() {
@@ -1416,7 +1201,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   // Para os testes (node): as contas, sem a tela. todosMovs e skuDoDesenho
   // também servem ao planejamento-automatico.js (o saldo de cada SKU e
   // tamanho, e o desenho de cada SKU).
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura, todosMovs, skuDoDesenho,
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura, todosMovs, skuDoDesenho,
     // e estes, ao vendas-dre.js (a baixa das vendas das plataformas).
     produtoPorSku, fixarProduto, esquecerProdutos, TAMS };
 })();

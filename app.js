@@ -2330,7 +2330,7 @@ const VISAO_PAGINAS = {
   'cadastros': ['cad-*'],
   'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
-  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-dre', 'acab-cmp'],
+  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
   'operacoes': ['operacoes', 'print-operacoes'],
   'costura': ['relatorio-costura'],
@@ -2388,7 +2388,7 @@ const TELAS_DA_AREA = {
     ['costurando', 'Costurando · Descalvado'], ['costurando-sc', 'Costurando · São Carlos'],
     ['fios', 'Retirada de fios']],
   'estoque-confeccao': [['acab-estoque', 'Estoque atual'], ['acab-mov', 'Entradas e saídas · Inventário'],
-    ['acab-produtos', 'Produtos (SKUs)'], ['acab-erp', 'Saídas do ERP'],
+    ['acab-produtos', 'Produtos (SKUs)'],
     ['acab-dre', 'Vendas das plataformas'], ['acab-cmp', 'Relatório CMP']]
 };
 const _TELA_DA_FOLHA = {
@@ -2605,7 +2605,7 @@ const AVISOS_TIPOS_AREA = {
 const AREAS_SO_AVISO = [];
 // A tela de cada aviso próprio — é por ela que o Avisar de uma tela vale.
 const AVISOS_TELA_DO_TIPO = { os: 'lista-os', obs: 'lista-os', etiqueta: 'lista-os',
-  'acab-os': 'acab-estoque', 'acab-pend': 'acab-estoque', 'acab-erp': 'acab-erp' };
+  'acab-os': 'acab-estoque', 'acab-pend': 'acab-estoque', 'acab-erp': 'acab-mov' };
 // O que o sino traz de cada área, para a dica da caixinha.
 const AVISOS_DA_AREA = {
   'os': 'OS gerada, observação nas OS e etiquetas impressas',
@@ -4869,6 +4869,8 @@ function goto(page) {
   // O Inventário do Estoque de produtos virou a parte de baixo de Entradas e
   // saídas (28/10/2026): o endereço antigo leva para lá.
   if (page === 'acab-inventario') page = 'acab-mov';
+  // Saídas do ERP saiu em 30/10/2026: o endereço antigo leva às Vendas das plataformas.
+  if (page === 'acab-erp') page = 'acab-dre';
   const paginaAnterior = document.querySelector('section.page:not(.hidden)')?.dataset?.page;
   // As telas de CADASTRO são de LEITURA para todo mundo — aqui não há rota
   // fechada. Quem está no chão precisa consultar a ficha do tecido, a grade, a
@@ -39439,7 +39441,7 @@ function renderAvisos() {
         titulo = 'Saídas do ERP';
         cabec = `<b>importadas</b>${porQuem}`;
         corpo = `<div class="aviso-txt">${esc(e.texto)}</div>`;
-        abrir = `fecharAvisos(); goto('acab-erp')`;
+        abrir = `fecharAvisos(); goto('acab-mov')`;
       } else if (e.tipo === 'oe') {
         icone = '🚚';
         titulo = `OE ${esc(formatDate(e.dataOe))}`;

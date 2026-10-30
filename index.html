@@ -162,7 +162,6 @@
         <a class="nav-btn" href="#acab-estoque" data-page="acab-estoque" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Estoque atual</a>
         <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
         <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
-        <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
         <a class="nav-btn" href="#acab-dre" data-page="acab-dre" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Vendas das plataformas</a>
         <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
       </div>
@@ -497,10 +496,6 @@
     <section class="page hidden" data-page="acab-produtos">
       <div class="page-header"><div><h1>Estoque de produtos · Produtos (SKUs)</h1><div class="desc">O cadastro dos SKUs (linha + cor, como a OS calcula), os tamanhos de cada um, o código do ERP e o início do estoque. O estoque mínimo e o máximo ficam em cada linha do Estoque atual.</div></div></div>
       <div id="acab-produtos-painel"></div>
-    </section>
-    <section class="page hidden" data-page="acab-erp">
-      <div class="page-header"><div><h1>Estoque de produtos · Saídas do ERP</h1><div class="desc">O relatório de vendas do ERP (PDF ou CSV) vira saídas de estoque, com prévia antes de lançar.</div></div></div>
-      <div id="acab-erp-painel"></div>
     </section>
     <!-- VENDAS DAS PLATAFORMAS (30/10/2026): a baixa sozinha das vendas da
          Shopify, Mercado Livre, Shopee e TikTok, lidas do Painel DRE.
@@ -2077,11 +2072,11 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-30e"></script>
+<script src="app.js?v=2026-10-30f"></script>
 <script src="assistente.js?v=2026-10-29a"></script>
 <script src="colorimetro.js?v=2026-10-30c"></script>
-<script src="estoque-confeccao.js?v=2026-10-30b"></script>
-<script src="vendas-dre.js?v=2026-10-30a"></script>
+<script src="estoque-confeccao.js?v=2026-10-30c"></script>
+<script src="vendas-dre.js?v=2026-10-30b"></script>
 <script src="planejamento-automatico.js?v=2026-10-30a"></script>
 </body>
 </html>

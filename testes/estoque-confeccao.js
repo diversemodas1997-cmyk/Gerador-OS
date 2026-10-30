@@ -106,33 +106,9 @@ ok('13. custo médio ponderado (10×10 + 10×20) / 20 = 15', Math.abs(c.medio - 
 ok('14. a saída sai pelo custo médio: CMV 5 × 15 = 75', Math.abs(c.cmv - 75) < 1e-9, c.cmv);
 ok('15. sem entrada com custo, vale o preço do cadastro', I.cmp(STATE.acabMov, 'p1', 'G').medio === 19.9);
 
-console.log('\n-- as vendas do ERP --');
-const rows = [
-  { codigo: 12, tamanho: 'M', quantidade: 3, tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAMISETA' },
-  { codigo: 12, tamanho: 'M', quantidade: 2, tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAMISETA' },
-  { codigo: 99, tamanho: 'G', quantidade: 1, tipo: 'CM.LISA', cor: 'PRE', descricao: 'CAMISETA' },
-  { codigo: 40, tamanho: 'GG', quantidade: 4, tipo: 'BM.TRI', cor: 'AZUL', descricao: 'BLUSA' },
-  { codigo: 41, tamanho: 'XG', quantidade: 1, tipo: 'BM.TRI', cor: 'AZUL', descricao: 'BLUSA' },
-  { codigo: 50, tamanho: 'P', quantidade: 0, tipo: 'X', cor: 'Y', descricao: 'Z' },
-  { codigo: 77, tamanho: 'P', quantidade: 1, tipo: '', cor: '', descricao: 'SEM SUFIXO' }
-];
-let pl = I.planoErp(rows, false);
-ok('16. o mesmo SKU e tamanho somam numa saída só', pl.saidas.find(s => s.p.id === 'p1' && s.tamanho === 'M').qtd === 5 && pl.agregadas === 1, pl.saidas);
-ok('17. código desconhecido casa pela linha-cor da descrição', pl.saidas.some(s => s.p.id === 'p1' && s.tamanho === 'G'));
-ok('18. SKU que não existe não é inventado sem pedir', !pl.novos.length && pl.problemas.some(p => /BM.TRI-AZUL/.test(p)), pl.problemas);
-ok('19. tamanho inválido e linha sem linha-cor viram problema', pl.problemas.some(p => /XG/.test(p)) && pl.problemas.some(p => /SEM SUFIXO/.test(p)), pl.problemas);
-ok('20. quantidade zero só conta', pl.zeradas === 1);
-pl = I.planoErp(rows, true);
-ok('21. com a caixa marcada, o SKU novo nasce com o código do ERP e sem contagem inventada',
-   pl.novos.length === 1 && pl.novos[0].sku === 'BM.TRI-AZUL' && pl.novos[0].codigo === 40 && pl.saidas.some(s => s.p === pl.novos[0] && s.qtd === 4), pl.novos);
-ok('22. tamanho do relatório que o SKU não tinha entra no cadastro', pl.tamanhosNovos.some(x => x.p.id === 'p1' && x.t === 'G') === false
-   && I.planoErp([{ codigo: 12, tamanho: 'GG', quantidade: 1, tipo: 'CM.LISA', cor: 'PRE' }], false).tamanhosNovos.some(x => x.t === 'GG'));
-const csv = I.lerCsvErp('Cód.Produto;Descrição;Quantidade;Variação\n12;CAMISETA BASICA PRETO M-CM.LISA-PRE;3,000;M\n;;;\n');
-ok('23. CSV do ERP: código, variação e quantidade', csv.rows.length === 1 && csv.rows[0].codigo === 12 && csv.rows[0].quantidade === 3 && csv.rows[0].tipo === 'CM.LISA', csv.rows);
-let erro = '';
-try { I.lerCsvErp('a;b;c\n1;2;3'); } catch (e) { erro = e.message; }
-ok('24. CSV sem as colunas certas explica o que falta', /cabeçalho/.test(erro), erro);
-ok('25. a descrição do ERP solta a linha e a cor', JSON.stringify(I.extrairTipoCor('BERMUDA TACTEL G-SM.LISA-MARINHO')) === '{"tipo":"SM.LISA","cor":"MARINHO","descricao":"BERMUDA TACTEL"}');
+// 16 a 25 eram a importação do relatório do ERP (planoErp, lerCsvErp,
+// extrairTipoCor): a tela Saídas do ERP saiu em 30/10/2026 — as vendas saem por
+// Vendas das plataformas (testes/vendas-dre.js).
 
 console.log('\n-- a Contabilidade --');
 STATE.ordens = [osDe('o1', '0656', '2026-10-21T13:00:00Z')];
@@ -166,10 +142,11 @@ console.log('\n-- a ligação com o programa --');
 ok('27. as chaves entram nas duas listas do app.js', (app.match(/'costuraProd','acabProdutos','acabMov'/g) || []).length === 2);
 // Desde 28/10/2026 o Inventário é a parte de baixo de Entradas e saídas; desde
 // 30/10/2026 há Vendas das plataformas (vendas-dre.js): seis telas.
-ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
-   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-dre', 'acab-cmp'\]/.test(app));
-ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
-   .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
+ok('28. a área Estoque confecção existe, com as cinco telas (sem Saídas do ERP, com Vendas das plataformas)', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
+   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp'\]/.test(app)
+   && /if \(page === 'acab-erp'\) page = 'acab-dre';/.test(app));
+ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'configurar o estoque de produtos']
+   .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'configurar o estoque de produtos']
    .every(a => mod.includes(`exigirEdicao('${a}')`)));
 ok('30. o snapshot da Contabilidade leva o produto acabado', /produtosAcabados = acabSnapshotContab\(\)/.test(app) && /'acabProdutos', 'acabMov'\];/.test(app));
 // Desde 28/10/2026 (Jones) a pasta é própria, de primeiro nível, logo acima
@@ -180,8 +157,9 @@ ok('31. a pasta é própria, fora de Estoques, na barra lateral', _iniProd > 0 &
    && /<span class="nav-toggle">▼<\/span> Estoque de produtos<\/button>/.test(nav)
    && /data-group="estoques">\s*<button[^>]*><span class="nav-toggle">▼<\/span> Estoque de materiais<\/button>/.test(html)
    && !nav.includes('data-page="acab-inventario"')
-   && ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'].every(p => nav.includes(`data-page="${p}"`)));
-ok('32. cada tela tem a sua seção e o painel', ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp']
+   && !nav.includes('data-page="acab-erp"')
+   && ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp'].every(p => nav.includes(`data-page="${p}"`)));
+ok('32. cada tela tem a sua seção e o painel', ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp']
    .every(p => html.includes(`<section class="page hidden" data-page="${p}">`) && html.includes(`id="${p}-painel"`)));
 ok('32a. o inventário fica no pé de Entradas e saídas, e o endereço antigo leva para lá',
    /<div id="acab-inventario-painel"><\/div>`;\s*renderInventario\(\);/.test(mod) && /if \(page === 'acab-inventario'\) page = 'acab-mov';/.test(app));
