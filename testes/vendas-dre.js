@@ -243,6 +243,81 @@ const somaSaidas = (STATE, chave) => saidasDe(STATE, chave).reduce((s, m) => s +
     ok('logo depois ainda espera a confirmação', chamadas.length === 0, chamadas);
   }
 
+  console.log('-- a leitura da descrição (item sem SKU) --');
+  {
+    const { STATE, I, c } = carrega();
+    // As cores da camiseta básica e da polo como no estoque de verdade
+    // (CM.LISA tem MARINHO e não AZUL; a polo tem AZUL e não MARINHO).
+    let n = 100;
+    ['BRA', 'MARINHO', 'MARROM', 'VERM', 'GRAF', 'ROXO', 'ROSA', 'VERDE', 'BEGE'].forEach(cor => STATE.acabProdutos.push(
+      { id: 'cm-' + cor, sku: 'CM.LISA-' + cor, linha: 'CM.LISA', cor, tamanhos: ['P', 'M', 'G', 'GG', 'G1', 'G2', 'G3', '6', '16'] }));
+    STATE.acabProdutos.push({ id: 'pm-bra', sku: 'PM.LISA-BRA', linha: 'PM.LISA', cor: 'BRA', tamanhos: ['M'] });
+    STATE.acabProdutos.push({ id: 'sm-pre', sku: 'SM.LISA-PRE', linha: 'SM.LISA', cor: 'PRE', tamanhos: ['G2', 'GG'] });
+    STATE.acabProdutos.forEach(p => p.tamanhos.forEach(t => STATE.acabMov.push({ id: 'x' + (++n), tipo: 'entrada', origem: 'manual',
+      produtoId: p.id, tamanho: t, data: '2026-10-02', qtd: 50, custo: 0, criadoEm: '2026-10-02T10:00:00.000Z' })));
+    const ld = d => { const r = I.converter({ sku: '', descricao: d, quantidade: 1 }, c.mapa); return r.erro ? 'ERRO: ' + r.erro : r.partes.map(x => x.produto.sku + ' · ' + x.tamanho).join(' + ') + (r.viaDescricao ? '' : ' (sem viaDescricao!)'); };
+    const tabela = [
+      ['CAMISETA NAÇÃO SANTA Preto / G / Masculino', 'CM.LISA-PRE · G'],
+      ['CAMISETA NAÇÃO SANTA Azul / G3 / Masculino', 'CM.LISA-MARINHO · G3'],
+      ['CAMISETA JESUS CRUZ Marrom / G / MASCULINO', 'CM.LISA-MARROM · G'],
+      ['Camiseta Católica Nossa Senhora Feminina M / Azul-marinho', 'CM.LISA-MARINHO · M'],
+      ['Camiseta Católica Nossa Senhora Feminina G / Vermelho', 'CM.LISA-VERM · G'],
+      ['Camiseta Masculina Os Caipira Country Sertanejo MW Modas G3 / Grafite', 'CM.LISA-GRAF · G3'],
+      ['Camiseta Aniversário Masculina De Repente G / Roxo / 55 ANOS', 'CM.LISA-ROXO · G'],
+      ['Kit 2 Camisetas Yeshua A Frente de Tudo Preto + Branco / P / P', 'CM.LISA-PRE · P + CM.LISA-BRA · P'],
+      ['Kit 2 Camisetas Yeshua A Frente de Tudo Azul-marinho + Vermelho / G1 / P', 'CM.LISA-MARINHO · G1 + CM.LISA-VERM · P'],
+      // Casos reais que o prompt não trazia:
+      ['Kit 3 Camisetas Femininas Docinho/Florzinha/Lindinha - Certified Powerhouse P / Verde - Rosa - Azul Marinho', 'CM.LISA-VERDE · P + CM.LISA-ROSA · P + CM.LISA-MARINHO · P'],
+      ['Kit 2 Camisetas Femininas Tua Graça + Seu Amor Bege (Tua Graça) + Preto (Seu Amor) / P / P', 'CM.LISA-BEGE · P + CM.LISA-PRE · P'],
+      ['Camiseta Aniversário Masculina De Repente GG / White / 56 ANOS', 'CM.LISA-BRA · GG'],
+      ['CAMISETA INSTINTO VERMELHO PRETO / GG', 'CM.LISA-PRE · GG'],
+      ['Camiseta Infantil Jesus Vive – Modelos | Gospel para Meninos e Meninas Branco / Feminino / 16 ANOS', 'CM.LISA-BRA · 16'],
+      ['Camisa Polo Masculina Country USA-Brasil M / Branco', 'PM.LISA-BRA · M'],
+      ['Camisa Polo Masculina Brasil 2026 GG / Azul-marinho', 'PM.LISA-AZUL · GG'],
+      // A variante vale mais que o título: o título é estampa ("…Verde"), a cor é "Preto".
+      ['Camiseta Bandeira Verde / G / Preto', 'CM.LISA-PRE · G']
+    ];
+    tabela.forEach(([d, esperado]) => { const r = ld(d); ok(`"${d}" → ${esperado}`, r === esperado, r); });
+    const pend = [
+      ['Kit Conjunto Camiseta + Bermuda Preto / G', /mais de um tipo|conjunto/],
+      ['Regata Masculina Dry Fit Preto / G', /tipo da peça|regata/],
+      ['Camiseta Lisa Rosa Choque / G', /cor não identificada|não existe/],
+      ['Camiseta Lisa Preto', /tamanho não identificado/],
+      ['Kit 2 Camisetas Paris Preto / G / G', /cores do kit/],
+      ['Kit 2 Camisetas Paris Preto + Branco / G / M / P', /2 peças e 3 tamanhos/],
+      ['Camiseta Aniversário De Repente G / Roxo / 6 ANOS', /CM.LISA-ROXO · G$/]   // sem "INFANTIL", 6 ANOS é idade, não tamanho
+    ];
+    pend.forEach(([d, re]) => { const r = ld(d); ok(`pendência/limite: "${d}"`, re.test(r), r); });
+    ok('"descrição: …" no motivo da pendência', /^ERRO: item sem SKU · descrição: cor não identificada/.test(ld('Camiseta Lisa Rosa Choque / G')), ld('Camiseta Lisa Rosa Choque / G'));
+
+    // SKU válido continua indo pelo SKU (sem o selo da descrição).
+    const viaSku = I.converter({ sku: 'G-BM.TRI-BEGE', descricao: 'Camiseta Preto / M', quantidade: 1 }, c.mapa);
+    ok('SKU válido vence a descrição', viaSku.partes && viaSku.partes[0].produto.sku === 'BM.TRI-BEGE' && !viaSku.viaDescricao, viaSku);
+    // SKU não reconhecido cai na descrição.
+    const caiu = I.converter({ sku: 'G-XX.ESTAMPA-PRE', descricao: 'Camiseta Estampa Preto / G', quantidade: 1 }, c.mapa);
+    ok('SKU não reconhecido: a descrição resolve', caiu.partes && caiu.partes[0].produto.sku === 'CM.LISA-PRE' && caiu.viaDescricao, caiu);
+    // SM.* e CJM no SKU; KIT.* e CRM.* ficam para a regra.
+    const sm = I.converter({ sku: 'G2-SM.FRR-PRE', descricao: '', quantidade: 1 }, c.mapa);
+    ok('SM.FRR → SM.LISA', sm.partes && sm.partes[0].produto.sku === 'SM.LISA-PRE' && sm.partes[0].tamanho === 'G2', sm);
+    ok('CJM reconhecido', I.linhaDe('CJM') === 'CJM' && I.linhaDe('CJM.X') === 'CJM');
+    const k = I.converter({ sku: 'P-KIT.OLHAR-PRE', descricao: 'Kit 2 Camisetas Preto + Branco / P / P', quantidade: 1 }, c.mapa);
+    ok('KIT.* continua pendente mesmo com descrição legível', /De → Para/.test(k.erro || ''), k);
+    // A regra "De → Para" vence a leitura.
+    c.mapa.push({ id: 'rx', tipo: 'descricao', de: 'NACAO SANTA', para: [{ sku: 'CM.LISA-GRAF', qtd: 1 }] });
+    const rg = I.converter({ sku: '', descricao: 'CAMISETA NAÇÃO SANTA Preto / G / Masculino', quantidade: 1 }, c.mapa);
+    ok('a regra vence a descrição', rg.partes && rg.partes[0].produto.sku === 'CM.LISA-GRAF' && !rg.viaDescricao, rg);
+    c.mapa = [];
+
+    // A baixa: o kit lança as duas peças, com viaDescricao, e o reprocessamento
+    // das pendências tira de lá o item que a leitura resolve.
+    const p = pedido('G1', [{ sku: '', descricao: 'Kit 2 Camisetas Yeshua A Frente de Tudo Preto + Branco / P / P', quantidade: 2 }]);
+    c.pendentes.G1 = Object.assign({}, p, { problemas: [{ tipo: 'sku', sku: '', descricao: p.itens[0].descricao, qtd: 2, motivo: 'item sem SKU (crie a regra pela descrição)' }] });
+    I.processar(Object.values(c.pendentes), c);
+    const ms = saidasDe(STATE, 'G1').map(m => m.produtoId + ' ' + m.tamanho + ' ' + m.qtd + (m.viaDescricao ? ' desc' : '')).sort().join(', ');
+    ok('kit × 2: 2 CM.LISA-BRA P e 2 CM.LISA-PRE P, pela descrição', ms === 'cm-BRA P 2 desc, p1 P 2 desc', ms);
+    ok('saiu das pendências', !c.pendentes.G1, c.pendentes.G1);
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
   process.exit(falhas ? 1 : 0);
 })();

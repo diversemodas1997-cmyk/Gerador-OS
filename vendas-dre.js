@@ -73,8 +73,14 @@
   const TAMS_LETRA = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2', 'G3'];
   // A linha pela sigla do tipo (o meio do SKU da plataforma). A ordem importa:
   // o específico (CM.TRI) antes do genérico (CM.).
+  // SM. e CJM desde 30/10/2026 (prompt-gerador-os-leitura-descricao.md): os
+  // shorts de tactel (SM.FRR, SM.PANTERA, SM.PERS.SIMP, SM.FAIXA…) e a calça de
+  // moletom. KIT.* (camiseta + bermuda) e CRM.* (regata) ficam de fora de
+  // propósito: são decididos por regra "De → Para".
   const LINHAS = [['CM.TRI', 'CM.TRI'], ['CM.REC', 'CM.REC'], ['CM.', 'CM.LISA'],
-    ['PM.TRI', 'PM.TRI'], ['PM.', 'PM.LISA'], ['BM.TRI', 'BM.TRI'], ['BM.', 'BM.LISA']];
+    ['PM.TRI', 'PM.TRI'], ['PM.', 'PM.LISA'], ['BM.TRI', 'BM.TRI'], ['BM.', 'BM.LISA'],
+    ['SM.', 'SM.LISA'], ['CJM', 'CJM']];
+  const SEM_LEITURA = /^(KIT|CRM)(\.|$)/;   // tipos que nem a descrição decide
 
   const ABA = 'aba-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   const _abertoEm = Date.now();
@@ -208,16 +214,142 @@
       if (!partes.length) return { erro: 'a regra "' + regra.de + '" não tem destino', regra };
       return { partes, regra };
     }
-    if (!skuP) return { erro: 'item sem SKU (crie a regra pela descrição)' };
-    if (!tam) return { erro: 'o SKU não começa por um tamanho' };
+    const pelaDescricao = erroSku => {
+      const ld = lerDescricao(item && item.descricao);
+      if (ld.partes) return { partes: ld.partes, viaDescricao: true };
+      return { erro: (erroSku ? erroSku + ' · ' : 'item sem SKU · ') + 'descrição: ' + ld.erro };
+    };
+    if (!skuP) return pelaDescricao('');
     const j = resto.lastIndexOf('-');
-    if (j <= 0) return { erro: 'SKU fora do padrão TAMANHO-TIPO-COR' };
-    const meio = resto.slice(0, j), cor = resto.slice(j + 1);
+    const meio = j > 0 ? resto.slice(0, j) : resto;
+    // KIT.* e CRM.* não passam pela descrição: ficam para a regra "De → Para".
+    if (SEM_LEITURA.test(meio)) return { erro: 'o tipo ' + meio + ' é decidido por regra "De → Para"' };
+    if (!tam) return pelaDescricao('o SKU não começa por um tamanho');
+    if (j <= 0) return pelaDescricao('SKU fora do padrão TAMANHO-TIPO-COR');
+    const cor = resto.slice(j + 1);
     const linha = linhaDe(meio);
-    if (!linha) return { erro: 'o tipo ' + meio + ' não é de nenhuma linha conhecida' };
+    if (!linha) return pelaDescricao('o tipo ' + meio + ' não é de nenhuma linha conhecida');
     const p = A().produtoPorSku(linha + '-' + cor);
-    if (!p) return { erro: linha + '-' + cor + ' não está cadastrado' };
+    if (!p) return pelaDescricao(linha + '-' + cor + ' não está cadastrado');
     return { partes: [{ produto: p, tamanho: tam, qtd: 1 }] };
+  }
+
+  /* A LEITURA DA DESCRIÇÃO (30/10/2026, prompt-gerador-os-leitura-descricao.md).
+     Os itens da Shopify chegam do DRE sem SKU enquanto a equipe cadastra; até
+     lá, a descrição diz a peça: "CAMISETA NAÇÃO SANTA Preto / G / Masculino",
+     "Camiseta Católica Nossa Senhora Feminina M / Azul-marinho", "Kit 2
+     Camisetas Yeshua A Frente de Tudo Azul-marinho + Vermelho / G1 / P".
+     É a RESERVA do converter: a regra "De → Para" e o SKU vêm antes, e o
+     movimento lançado por aqui leva viaDescricao (selo "pela descrição").
+     Quando a Shopify passar a mandar SKU, o SKU ganha sozinho.
+     Decidido pelo Jones: camiseta feminina e as da Moscow (aniversário,
+     personalizadas, Os Caipira…) saem da camiseta básica, CM.LISA.
+
+     COMO LÊ: a descrição em pedaços pelos "/" e "," (a variante da Shopify vem
+     por "/", a dos marketplaces por vírgula no fim). Linha pelas palavras do
+     texto todo; tamanho = o pedaço que É um tamanho (ou, quando nenhum é, a
+     última palavra de um pedaço: "Feminina M / Azul-marinho"); cor = o nome
+     de cor no FIM de um pedaço, olhando a variante antes do título (o título
+     tem estampa: "INSTINTO VERMELHO PRETO" é preto). Kit: as cores vêm num
+     pedaço, separadas por "+" ou " - ", na ordem dos tamanhos.
+     Na dúvida, não chuta: devolve { erro } dizendo o que faltou. */
+  // Nome de cor → sigla do estoque. Os compostos antes dos simples.
+  const CORES = [['AZUL MARINHO', 'MARINHO'], ['CINZA CHUMBO', 'GRAF'], ['OFF WHITE', 'CRU'],
+    ['MARINHO', 'MARINHO'], ['PRETO', 'PRE'], ['PRETA', 'PRE'], ['BLACK', 'PRE'],
+    ['BRANCO', 'BRA'], ['BRANCA', 'BRA'], ['WHITE', 'BRA'], ['BEGE', 'BEGE'], ['MARROM', 'MARROM'],
+    ['VERMELHO', 'VERM'], ['VERMELHA', 'VERM'], ['VERDE', 'VERDE'], ['GRAFITE', 'GRAF'],
+    ['ROXO', 'ROXO'], ['ROXA', 'ROXO'], ['VIOLETA', 'ROXO'], ['ROSA', 'ROSA'],
+    ['AMARELO', 'AMARELO'], ['AMARELA', 'AMARELO'], ['CRU', 'CRU'], ['CAQUI', 'CAQUI'],
+    ['MOSTARDA', 'MOSTARDA'], ['CINZA', 'CINZA'], ['MESCLA', 'MESCLA'], ['AZUL', 'AZUL']];
+  // Texto → palavras limpas (sem acento, hífen vira espaço).
+  const limpo = s => norm(s).replace(/[^A-Z0-9]+/g, ' ').trim();
+  // A cor no FIM do pedaço: { nome, sigla } ou null.
+  function corNoFim(pedaco) {
+    const t = ' ' + limpo(pedaco);
+    for (const [nome, sigla] of CORES) if (t.endsWith(' ' + nome)) return { nome, sigla };
+    return null;
+  }
+  function linhaDaDescricao(desc) {
+    const ps = limpo(desc).split(' ');
+    const tem = re => ps.some(w => re.test(w));
+    if (tem(/^(CONJUNTOS?|REGATAS?)$/)) return { erro: 'conjunto ou regata — use uma regra "De → Para"' };
+    const familias = [];
+    const polo = tem(/^POLOS?$/);
+    if (polo) familias.push('polo');
+    else if (tem(/^(CAMISETAS?|CAMISAS?|TSHIRTS?)$/) || (ps.includes('T') && ps.includes('SHIRT'))) familias.push('camiseta');
+    if (tem(/^(MOLETONS?|BLUSAS?)$/)) familias.push('moletom');
+    if (tem(/^CALCAS?$/)) familias.push('calca');
+    if (tem(/^(BERMUDAS?|SHORTS?)$/)) familias.push('short');
+    if (!familias.length) return { erro: 'tipo da peça não identificado' };
+    if (familias.length > 1) return { erro: 'mais de um tipo de peça (' + familias.join(' + ') + ') — use uma regra "De → Para"' };
+    const tri = tem(/^TRICOLOR$/);
+    const f = familias[0];
+    if (f === 'polo') return { linha: tri ? 'PM.TRI' : 'PM.LISA' };
+    if (f === 'moletom') return { linha: tri ? 'BM.TRI' : 'BM.LISA' };
+    if (f === 'calca') return { linha: 'CJM' };
+    if (f === 'short') return tem(/^TACTEL$/) ? { linha: 'SM.LISA' } : { erro: 'bermuda/short que não diz "tactel" — use uma regra "De → Para"' };
+    if (tri) return { linha: 'CM.TRI' };
+    if (tem(/^RECORTADAS?$/)) return { linha: 'CM.REC' };
+    return { linha: 'CM.LISA' };
+  }
+  // A sigla na linha: "AZUL" sozinho é linha-AZUL se existir, senão linha-MARINHO.
+  // E o inverso: "Azul-marinho" na linha que só tem o AZUL (a polo: PM.LISA-AZUL
+  // existe, PM.LISA-MARINHO não) é esse azul — a linha só tem um.
+  function skuDaCor(linha, cor) {
+    const tenta = cor.sigla === 'AZUL' ? ['AZUL', 'MARINHO'] : cor.sigla === 'MARINHO' ? ['MARINHO', 'AZUL'] : [cor.sigla];
+    for (const s of tenta) { const p = A().produtoPorSku(linha + '-' + s); if (p) return p; }
+    return null;
+  }
+  function lerDescricao(descricao) {
+    const desc = String(descricao || '');
+    if (!desc.trim()) return { erro: 'vazia' };
+    const L = linhaDaDescricao(desc);
+    if (L.erro) return { erro: L.erro };
+    const infantil = /\b(INFANTIL|TAM|TAMANHO)\b/.test(limpo(desc));
+    // Infantil: o número sozinho ("16") ou a idade da variante ("16 ANOS").
+    const ehTam = w => TAMS_LETRA.includes(w) || (infantil && /^\d{1,2}$/.test(w) && A().TAMS.includes(w));
+    const tamDe = w => (ehTam(w) ? w : (infantil && /^\d{1,2} ANOS$/.test(w) && ehTam(w.split(' ')[0]) ? w.split(' ')[0] : ''));
+    // O que está entre parênteses é nome de estampa, não variante:
+    // "Bege (Tua Graça) + Preto (Seu Amor)".
+    const pedacos = desc.replace(/\([^)]*\)/g, ' ').split(/[\/,]/).map(s => s.trim()).filter(Boolean);
+    // Tamanhos: os pedaços que SÃO um tamanho, na ordem; sem nenhum, a última
+    // palavra de um pedaço ("Nossa Senhora Feminina M").
+    let tams = pedacos.map(s => tamDe(limpo(s))).filter(Boolean);
+    if (!tams.length) tams = pedacos.map(s => limpo(s).split(' ').pop()).filter(ehTam);
+    if (!tams.length) return { erro: 'tamanho não identificado' };
+    const kit = limpo(desc).match(/^KIT (\d+)\b/) || limpo(desc).match(/\bKIT (\d+)\b/);
+    const n = kit ? parseInt(kit[1], 10) : 1;
+    let cores = null;
+    if (n > 1) {
+      // O pedaço das cores do kit: dividido por "+" ou " - ", as ÚLTIMAS n
+      // partes terminando numa cor. Parte a mais na frente só se não terminar
+      // em cor: é o título que também tem "+" ("Tua Graça + Seu Amor Bege +
+      // Preto"); se terminar, não dá para saber quais são as n.
+      for (const s of pedacos) {
+        const partes = s.split(/\s*\+\s*|\s+[-–]\s+/).filter(x => x.trim());
+        if (partes.length < n) continue;
+        const cs = partes.slice(-n).map(corNoFim);
+        if (cs.every(Boolean) && !partes.slice(0, -n).some(corNoFim)) { cores = cs; break; }
+      }
+      if (!cores) return { erro: 'as ' + n + ' cores do kit não foram identificadas' };
+      if (tams.length === 1) tams = Array(n).fill(tams[0]);
+      if (tams.length !== n) return { erro: 'o kit tem ' + n + ' peças e ' + tams.length + ' tamanhos' };
+    } else {
+      // A variante (pedaços depois do primeiro) antes do título.
+      const ordem = pedacos.slice(1).concat(pedacos.slice(0, 1));
+      const c = ordem.map(corNoFim).find(Boolean);
+      if (!c) return { erro: 'cor não identificada' };
+      if (new Set(tams).size > 1) return { erro: 'mais de um tamanho (' + tams.join(', ') + ')' };
+      cores = [c];
+      tams = [tams[0]];
+    }
+    const partes = [];
+    for (let i = 0; i < cores.length; i++) {
+      const p = skuDaCor(L.linha, cores[i]);
+      if (!p) return { erro: 'a cor ' + cores[i].nome + ' não existe na linha ' + L.linha + ' (' + L.linha + '-' + cores[i].sigla + ')' };
+      partes.push({ produto: p, tamanho: tams[i], qtd: 1 });
+    }
+    return { partes };
   }
 
   /* --------------------------------------------------------- a baixa */
@@ -263,6 +395,7 @@
           const k = x.produto.id + '|' + x.tamanho;
           const d = desejado.get(k) || { produto: x.produto, tamanho: x.tamanho, qtd: 0 };
           d.qtd += x.qtd * q;
+          if (cv.viaDescricao) d.viaDescricao = true;
           desejado.set(k, d);
         });
       });
@@ -282,11 +415,12 @@
             const fixo = acab.fixarProduto(prod);
             if (fixo) { prod = fixo; r.fixados = true; }
             const m0 = ms[0];
-            if (m0) { m0.qtd = (Number(m0.qtd) || 0) + q; m0.atualizadoEm = agora; }
+            if (m0) { m0.qtd = (Number(m0.qtd) || 0) + q; m0.atualizadoEm = agora; if (desejado.get(k).viaDescricao) m0.viaDescricao = true; }
             else {
               const mov = { id: uid(), tipo: 'saida', origem: 'dre', produtoId: prod.id, tamanho: tam, data: diaSP(p.data) || hojeSP(),
                 qtd: q, valor: 0, destino: 'cliente', pedidoChave: p.chave, pedidoNumero: p.numero == null ? '' : String(p.numero),
                 loja: p.loja || '', plataforma: p.plataforma || '', criadoEm: agora, criadoPor: quemSou() };
+              if (desejado.get(k).viaDescricao) mov.viaDescricao = true;
               STATE.acabMov.push(mov);
               if (!doPedido.has(p.chave)) doPedido.set(p.chave, []);
               doPedido.get(p.chave).push(mov);
@@ -492,23 +626,26 @@
     const dres = (STATE.acabMov || []).filter(m => m.origem === 'dre');
     const somar = desde => {
       const mapa = new Map();
+      const viaDesc = new Map();   // peças lançadas pela leitura da descrição
       let pecas = 0;
       const pedidos = new Set();
       dres.filter(m => String(m.data) >= desde).forEach(m => {
         const k = m.produtoId + '|' + m.tamanho;
         mapa.set(k, (mapa.get(k) || 0) + (Number(m.qtd) || 0));
+        if (m.viaDescricao) viaDesc.set(k, (viaDesc.get(k) || 0) + (Number(m.qtd) || 0));
         pecas += Number(m.qtd) || 0;
         pedidos.add(m.pedidoChave);
       });
-      return { mapa, pecas, pedidos: pedidos.size };
+      return { mapa, viaDesc, pecas, pedidos: pedidos.size };
     };
     const rH = somar(hoje), rS = somar(semana);
     const est = (desde) => Object.keys(c.estat).filter(d => d >= desde).reduce((s, d) => ({ lidos: s.lidos + (c.estat[d].lidos || 0), estornos: s.estornos + (c.estat[d].estornos || 0) }), { lidos: 0, estornos: 0 });
     const eH = est(hoje), eS = est(semana);
     const rot = pid => { const p = A().produtos().find(x => x.id === pid); return p ? p.sku : '(SKU apagado)'; };
-    const tabelaSkus = mapa => [...mapa.entries()].sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k, q]) => {
+    const seloDesc = (n, q) => (n ? ` <span class="badge" style="background:#fbeccb;" title="${n === q ? 'Lançado' : fmtN(n) + ' de ' + fmtN(q) + ' lançadas'} pela leitura da descrição (item sem SKU na plataforma)">pela descrição</span>` : '');
+    const tabelaSkus = (mapa, via) => [...mapa.entries()].sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k, q]) => {
       const i = k.lastIndexOf('|');
-      return `<tr><td>${esc(rot(k.slice(0, i)))}</td><td>${esc(k.slice(i + 1))}</td><td style="${mono}">${fmtN(q)}</td></tr>`;
+      return `<tr><td>${esc(rot(k.slice(0, i)))}${seloDesc((via && via.get(k)) || 0, q)}</td><td>${esc(k.slice(i + 1))}</td><td style="${mono}">${fmtN(q)}</td></tr>`;
     }).join('') || '<tr><td colspan="3" class="empty">Nenhuma peça baixada.</td></tr>';
 
     // Pendências.
@@ -571,7 +708,7 @@
             <div class="item"><div class="num">${fmtN(rH.pecas)}</div><div class="lbl">Peças baixadas</div></div>
             <div class="item"><div class="num">${fmtN(eH.estornos)}</div><div class="lbl">Estornos</div></div>
           </div>
-          <div style="overflow:auto;max-height:300px;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Peças</th></tr></thead><tbody>${tabelaSkus(rH.mapa)}</tbody></table></div>
+          <div style="overflow:auto;max-height:300px;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Peças</th></tr></thead><tbody>${tabelaSkus(rH.mapa, rH.viaDesc)}</tbody></table></div>
         </div>
         <div class="card"><h2 style="margin-top:0;font-size:15px;">Últimos 7 dias</h2>
           <div class="exp-resumo" style="margin-bottom:8px;">
@@ -580,7 +717,7 @@
             <div class="item"><div class="num">${fmtN(rS.pecas)}</div><div class="lbl">Peças baixadas</div></div>
             <div class="item"><div class="num">${fmtN(eS.estornos)}</div><div class="lbl">Estornos</div></div>
           </div>
-          <div style="overflow:auto;max-height:300px;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Peças</th></tr></thead><tbody>${tabelaSkus(rS.mapa)}</tbody></table></div>
+          <div style="overflow:auto;max-height:300px;"><table class="table"><thead><tr><th>SKU</th><th>Tam.</th><th style="text-align:right;">Peças</th></tr></thead><tbody>${tabelaSkus(rS.mapa, rS.viaDesc)}</tbody></table></div>
         </div>
       </div>
 
