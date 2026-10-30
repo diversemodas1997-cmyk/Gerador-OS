@@ -1566,6 +1566,9 @@ function iniciarPolling() {
     // Estoque no mínimo → demanda → planejamento (ver planejamento-automatico.js).
     // Ele mesmo só age de 5 em 5 minutos e só para quem pode planejar.
     if (typeof autoPlanRodar === 'function') autoPlanRodar();
+    // As vendas das plataformas pelo Painel DRE (ver vendas-dre.js): também
+    // de 5 em 5 minutos, num computador por vez.
+    if (typeof vendasDreRodar === 'function') vendasDreRodar();
   }, 15000);
 }
 
@@ -2327,7 +2330,7 @@ const VISAO_PAGINAS = {
   'cadastros': ['cad-*'],
   'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
-  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'],
+  'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-dre', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
   'operacoes': ['operacoes', 'print-operacoes'],
   'costura': ['relatorio-costura'],
@@ -2386,7 +2389,7 @@ const TELAS_DA_AREA = {
     ['fios', 'Retirada de fios']],
   'estoque-confeccao': [['acab-estoque', 'Estoque atual'], ['acab-mov', 'Entradas e saídas · Inventário'],
     ['acab-produtos', 'Produtos (SKUs)'], ['acab-erp', 'Saídas do ERP'],
-    ['acab-cmp', 'Relatório CMP']]
+    ['acab-dre', 'Vendas das plataformas'], ['acab-cmp', 'Relatório CMP']]
 };
 const _TELA_DA_FOLHA = {
   'print': 'lista-os', 'print-expedicao': 'expedicao', 'print-operacoes': 'operacoes',

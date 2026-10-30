@@ -163,6 +163,7 @@
         <a class="nav-btn" href="#acab-mov" data-page="acab-mov" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Entradas e saídas</a>
         <a class="nav-btn" href="#acab-produtos" data-page="acab-produtos" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Produtos (SKUs)</a>
         <a class="nav-btn" href="#acab-erp" data-page="acab-erp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Saídas do ERP</a>
+        <a class="nav-btn" href="#acab-dre" data-page="acab-dre" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Vendas das plataformas</a>
         <a class="nav-btn" href="#acab-cmp" data-page="acab-cmp" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Relatório CMP</a>
       </div>
     </div>
@@ -500,6 +501,13 @@
     <section class="page hidden" data-page="acab-erp">
       <div class="page-header"><div><h1>Estoque de produtos · Saídas do ERP</h1><div class="desc">O relatório de vendas do ERP (PDF ou CSV) vira saídas de estoque, com prévia antes de lançar.</div></div></div>
       <div id="acab-erp-painel"></div>
+    </section>
+    <!-- VENDAS DAS PLATAFORMAS (30/10/2026): a baixa sozinha das vendas da
+         Shopify, Mercado Livre, Shopee e TikTok, lidas do Painel DRE.
+         Desenhada por vendas-dre.js. -->
+    <section class="page hidden" data-page="acab-dre">
+      <div class="page-header"><div><h1>Estoque de produtos · Vendas das plataformas</h1><div class="desc">As vendas da Shopify, do Mercado Livre, da Shopee e do TikTok Shop, lidas do Painel DRE, saem sozinhas do estoque — loja por loja, a partir da data de corte.</div></div></div>
+      <div id="acab-dre-painel"></div>
     </section>
     <section class="page hidden" data-page="acab-cmp">
       <div class="page-header"><div><h1>Estoque de produtos · Relatório CMP</h1><div class="desc">O custo médio ponderado de um SKU, movimento a movimento, e o custo das saídas (CMV).</div></div></div>
@@ -2069,10 +2077,11 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-10-30d"></script>
+<script src="app.js?v=2026-10-30e"></script>
 <script src="assistente.js?v=2026-10-29a"></script>
 <script src="colorimetro.js?v=2026-10-30c"></script>
-<script src="estoque-confeccao.js?v=2026-10-30a"></script>
+<script src="estoque-confeccao.js?v=2026-10-30b"></script>
+<script src="vendas-dre.js?v=2026-10-30a"></script>
 <script src="planejamento-automatico.js?v=2026-10-30a"></script>
 </body>
 </html>

@@ -640,7 +640,8 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       placeholder="Digite ou escolha o SKU (ex.: CM.LISA-PRE)" oninput="acabTrocarProduto('${prefixo}')" style="text-transform:uppercase;">
       <div class="field-hint" id="${prefixo}-info"></div>`;
     const origem = m => m.origem === 'os' ? `<span class="badge" style="background:#e3ecf7;" title="Etapa Estoque marcada na OS — desmarque na OS para estornar">OS ${esc(m.os)}</span>`
-      : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>' : '';
+      : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>'
+      : m.origem === 'dre' ? `<span class="badge" style="background:#e0f2ec;" title="Vendas das plataformas (Painel DRE): ${esc((m.loja || '') + ' · pedido ' + (m.pedidoNumero || ''))}">DRE</span>` : '';
     const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
     box.innerHTML = `${listaSkus()}
       ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU ainda. Os SKUs vêm direto do programa: o <b>SKU</b> do desenho técnico ou do modelo, e o da OS (linha do modelo + <b>Sigla SKU</b> da cor) — preencha lá e ele aparece aqui na hora. A entrada também cadastra o SKU digitado; para trazer o catálogo inteiro, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
@@ -776,10 +777,16 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
     const p = produtoPorId(m.produtoId);
     const nome = m.tipo === 'entrada' ? 'a entrada' : m.tipo === 'saida' ? 'a saída' : 'o ajuste';
     const devolve = Array.isArray(m.abate) && m.abate.length ? `\n\nAs peças que ela abateu voltam para: ${textoAbate(m.abate)}.` : '';
-    if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?${devolve}`)) return;
+    // A saída do Painel DRE apagada à mão DISPENSA o pedido inteiro: sem isso
+    // a próxima sincronização a lançaria de novo (ver vendas-dre.js).
+    const doDre = m.origem === 'dre' && m.pedidoChave && typeof window.vendasDreDispensar === 'function';
+    const dispensa = doDre ? `\n\nÉ uma venda do Painel DRE (${m.loja || ''}, pedido ${m.pedidoNumero || ''}): o pedido inteiro deixa de ser lançado pela sincronização.` : '';
+    if (!confirm(`Apagar ${nome} de ${p ? p.sku : '?'} ${m.tamanho} (${fmtD(m.data)})?${devolve}${dispensa}`)) return;
     STATE.acabMov = movs().filter(x => x.id !== id);
+    if (doDre) window.vendasDreDispensar(m.pedidoChave);
     desfazerNomearAcao(`${nome} de ${p ? p.sku : '?'} ${m.tamanho} apagada no Estoque de produtos`);
     await saveState('acabMov');
+    if (doDre) await saveState('meta');
     toast('Lançamento apagado', 'ok');
     renderAtual();
   };
@@ -1177,6 +1184,13 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
         <input type="file" id="acab-erp-arquivo" accept=".pdf,.csv,.txt" onchange="acabErpArquivo(this.files[0])">
       </div>
       ${previa}
+      ${(() => {
+        // A loja do Mercado Livre, da Shopee ou do TikTok ligada em Vendas das
+        // plataformas já dá baixa sozinha: importar o relatório dela de novo
+        // baixaria a mesma venda duas vezes.
+        const ls = typeof window.vendasDreLojasDoErp === 'function' ? window.vendasDreLojasDoErp() : [];
+        return ls.length ? `<div class="info-box" style="margin-bottom:12px;background:#fbeccb;"><b>Atenção:</b> estas lojas já dão baixa sozinhas em <a href="#acab-dre" onclick="goto('acab-dre');return false;">Vendas das plataformas</a> — não importe as vendas delas aqui a partir da data de corte: ${ls.map(l => `<b>${esc(l.nome)}</b> (desde ${fmtD(l.corte)})`).join(', ')}.</div>` : '';
+      })()}
       <div class="card"><h2 style="margin-top:0;font-size:15px;">Saídas que vieram do ERP</h2>
         <div style="overflow:auto;max-height:440px;"><table class="table"><thead><tr><th>Data</th><th>SKU</th><th>Tam.</th><th style="text-align:right;">Qtd</th><th>Relatório</th><th class="col-actions admin-only"></th></tr></thead><tbody>
         ${hist.map(m => `<tr><td>${fmtD(m.data)}</td><td>${esc(rotuloProduto(produtoPorId(m.produtoId)))}</td><td>${esc(m.tamanho)}</td><td style="${mono}">${fmtN(m.qtd)}</td><td class="muted" style="font-size:11px;">${m.erpEmissao ? 'emitido ' + fmtD(m.erpEmissao) : ''} ${esc(m.erpArquivo || '')}</td><td class="col-actions row-actions admin-only"><button onclick="acabApagarMov('${esc(m.id)}')">apagar</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhuma saída importada.</td></tr>'}
@@ -1261,7 +1275,9 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
 
   /* ------------------------------------------------------- a navegação */
   const TELAS = { 'acab-estoque': renderEstoqueAtual, 'acab-mov': renderMovimentos, 'acab-inventario': renderInventario,
-    'acab-produtos': renderProdutos, 'acab-erp': renderErp, 'acab-cmp': renderCmp };
+    'acab-produtos': renderProdutos, 'acab-erp': renderErp, 'acab-cmp': renderCmp,
+    // Vendas das plataformas: a tela mora no vendas-dre.js.
+    'acab-dre': () => { if (typeof window.vendasDreRender === 'function') window.vendasDreRender(); } };
   function renderAtual() {
     const s = document.querySelector('section.page:not(.hidden)');
     const page = s && s.dataset && s.dataset.page;
@@ -1400,5 +1416,7 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
   // Para os testes (node): as contas, sem a tela. todosMovs e skuDoDesenho
   // também servem ao planejamento-automatico.js (o saldo de cada SKU e
   // tamanho, e o desenho de cada SKU).
-  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura, todosMovs, skuDoDesenho };
+  window._acabInterno = { acabAvisos, _entradasDasOS, saldos, cmp, planoErp, lerCsvErp, extrairTipoCor, acabSnapshotContab, cfg, produtos, skusDoPrograma, limiteDe, statusDe, imagensDosSkus, celMiniatura, todosMovs, skuDoDesenho,
+    // e estes, ao vendas-dre.js (a baixa das vendas das plataformas).
+    produtoPorSku, fixarProduto, esquecerProdutos, TAMS };
 })();

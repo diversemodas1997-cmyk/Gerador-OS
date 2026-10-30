@@ -164,9 +164,10 @@ console.log('\n-- os avisos do sino --');
 
 console.log('\n-- a ligação com o programa --');
 ok('27. as chaves entram nas duas listas do app.js', (app.match(/'costuraProd','acabProdutos','acabMov'/g) || []).length === 2);
-// Desde 28/10/2026 o Inventário é a parte de baixo de Entradas e saídas: cinco telas.
-ok('28. a área Estoque confecção existe, com as cinco telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
-   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-cmp'\]/.test(app));
+// Desde 28/10/2026 o Inventário é a parte de baixo de Entradas e saídas; desde
+// 30/10/2026 há Vendas das plataformas (vendas-dre.js): seis telas.
+ok('28. a área Estoque confecção existe, com as seis telas', /k: 'estoque-confeccao', rotulo: 'Estoque de produtos'/.test(app)
+   && /'estoque-confeccao': \['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-erp', 'acab-dre', 'acab-cmp'\]/.test(app));
 ok('29. as ações das telas têm área', ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => app.includes(`'${a}': 'estoque-confeccao'`)) && ['lançar no estoque de produtos', 'apagar lançamento do estoque de produtos', 'cadastrar SKU no estoque de produtos', 'importar saídas do ERP', 'configurar o estoque de produtos']
    .every(a => mod.includes(`exigirEdicao('${a}')`)));
