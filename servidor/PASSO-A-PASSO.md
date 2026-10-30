@@ -383,6 +383,7 @@ Os dois últimos são o motivo de tudo isto.
   no servidor da fábrica. O campo aceita texto livre normalmente — só não
   sugere mais.
 - **Espelho para a nuvem** — a receita está no fim do `README.md`.
+- **Acesso de fora da fábrica (São Carlos, editando)** — `ACESSO-REMOTO.md`.
 
 ---
 

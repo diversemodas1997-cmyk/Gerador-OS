@@ -376,6 +376,11 @@ Com a fábrica atendendo, a nuvem deixa de ser o dia a dia — mas continua vale
 por dois motivos: **consultar de fora** e ser uma **segunda cópia** dos dados,
 fora do prédio. Para isso ela precisa receber o que acontece aqui.
 
+> **Parado desde 13/10/2026** — o projeto antigo da nuvem deixou de existir e a
+> tarefa `Espelho Gerador-OS` está desativada. A nuvem só serve para CONSULTAR:
+> quem precisa editar de fora (unidade São Carlos) entra direto no servidor da
+> fábrica — ver `ACESSO-REMOTO.md`.
+
 O espelho é **sempre de mão única**: a fábrica manda, a nuvem recebe. Nada volta.
 Isso é possível porque o app abre a nuvem em modo consulta — ninguém edita por
 lá, então não existem dois lados para conciliar, que é onde mora o risco de
