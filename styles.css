@@ -2219,7 +2219,7 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
   resize: none;
   overflow: hidden;
   font-family: inherit;
-  font-size: 8pt;
+  font-size: 10pt;            /* era 8pt; aumentado em 30/10/2026 a pedido, para ler melhor no papel */
   line-height: 1.35;
   color: #000;
   padding: 0;
@@ -2266,7 +2266,7 @@ body.pdf-capture .sheet-exp { padding-top: 16mm; padding-left: var(--print-esq);
 }
 .obs-carimbo .obs-quem { margin-left: 4px; }
 .obs-texto {
-  font-size: 8pt;
+  font-size: 10pt;            /* igual ao .obs-input: o recado escrito e o salvo saem do mesmo tamanho */
   line-height: 1.35;
   color: #000;
   white-space: pre-wrap;      /* respeita as quebras de linha de quem escreveu */
