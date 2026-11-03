@@ -27235,6 +27235,20 @@ function _dashTrocarAbaVolume(k) {
 }
 window._dashTrocarAbaVolume = _dashTrocarAbaVolume;
 
+// O atravessamento alvo do tubo: um número da fábrica, gravado para todos.
+async function _dashTuboAlvo(valor) {
+  if (!exigirEdicao('definir o atravessamento alvo da produção')) { _dashFluxoAssinatura = ''; renderFluxoDash(); return; }
+  const n = parseFloat(String(valor || '').replace(',', '.'));
+  STATE.meta = STATE.meta || {};
+  STATE.meta.tuboProducao = Object.assign({}, STATE.meta.tuboProducao || {}, { leadAlvo: n > 0 ? n : null,
+    alteradoEm: new Date().toISOString(), alteradoPor: _obsQuemSou() });
+  await saveState('meta');
+  toast(n > 0 ? `Atravessamento alvo: ${String(n).replace('.', ',')} dias úteis` : 'Atravessamento alvo automático', 'ok');
+  _dashFluxoAssinatura = '';
+  renderFluxoDash();
+}
+window._dashTuboAlvo = _dashTuboAlvo;
+
 function _dashVolumeHtml(escala) {
   const aba = _dashVolumeAba();
   const botoes = [['quadro', 'Quadro'], ['tubo', 'Tubo da produção']].map(([k, rot]) =>
@@ -27348,13 +27362,39 @@ function _dashTuboHtml(escala) {
     const m = media(k);
     return Math.sqrt(hist.reduce((s, h) => s + (h[k] - m) ** 2, 0) / (hist.length - 1));
   };
-  // O padrão do período em curso: o fluxo na proporção dos dias que já passaram.
-  const frac = v.diasTodos > 0 ? Math.min(1, v.dias / v.diasTodos) : 1;
-  const base = hist.length ? {
-    entrada: media('entrada') * frac, saida: media('saida') * frac,
-    total: media('jaEstava') + media('entrada') * frac,
-    corrente: media('residual'), residual: media('residual')
-  } : null;
+  /* O TRACEJADO É O IDEAL PELA SAÍDA (03/11/2026, Jones: "o tracejado deve
+     mostrar qual é o ideal de todos os volumes em relação à saída, uma vez que
+     a produção deve ter o objetivo de produzir apenas o correspondente ao
+     volume de saída, para não estocar em excesso"). Era a média dos períodos
+     anteriores — o "normal" —, e numa fábrica que vive acumulando o normal é o
+     excesso; comparar com ele escondia o problema. Agora é a produção PUXADA:
+       ritmo de saída   o que a fábrica entrega por dia útil (média dos períodos
+                        anteriores): é o que ela consegue terminar;
+       saída ideal      ritmo × dias úteis do período (os que já passaram);
+       entrada ideal    = saída ideal: só entra o que sai;
+       WIP ideal        ritmo × atravessamento alvo (Lei de Little) — vale para
+                        Corrente e Residual;
+       total ideal      WIP ideal + entrada ideal.
+     O ATRAVESSAMENTO ALVO, em dias úteis, é o que o admin gravar em
+     STATE.meta.tuboProducao.leadAlvo; sem ele, o das melhores semanas da
+     própria fábrica (o quartil mais rápido do histórico): uma meta que ela já
+     mostrou que alcança. */
+  /* O ritmo e o alvo saem SEMPRE das últimas 12 semanas, em qualquer filtro: o
+     ideal é um número da fábrica, e não pode mudar porque se olhou por dia ou
+     por mês (por mês, os primeiros meses, com poucas OS datadas, davam um
+     atravessamento de 1 dia; por dia, a razão de cada dia é ruído). */
+  const semanas = escala === 'semana' ? hist
+    : _dashPeriodos(agora, 'semana', DASH_TUBO_HIST.semana + 1).periodos.slice(0, -1)
+      .map(w => _dashTuboVolumes(ivs, w, agora)).filter(h => h.entrada || h.saida || h.residual);
+  const ritmo = semanas.length ? semanas.reduce((s, h) => s + h.vazao, 0) / semanas.length : 0;
+  const leads = semanas.filter(h => h.vazao > 0).map(h => h.residual / h.vazao).sort((a, b) => a - b);
+  const leadAuto = leads.length ? Math.max(1, leads[Math.floor((leads.length - 1) * 0.25)]) : null;
+  const cfgTubo = (STATE.meta && STATE.meta.tuboProducao) || {};
+  const leadAlvo = cfgTubo.leadAlvo > 0 ? cfgTubo.leadAlvo : leadAuto;
+  const base = ritmo > 0 && leadAlvo ? (() => {
+    const wip = ritmo * leadAlvo, saida = ritmo * v.dias;
+    return { saida, entrada: saida, corrente: wip, residual: wip, total: wip + saida };
+  })() : null;
 
   const W = 1000, x0 = 24, sw = (W - 2 * x0) / 5, cy = 100, rMax = 84, rMin = 5;
   const maxV = Math.max(1, ...DASH_TUBO_TRECHOS.map(t => v[t.k]), ...(base ? DASH_TUBO_TRECHOS.map(t => base[t.k]) : []));
@@ -27362,11 +27402,11 @@ function _dashTuboHtml(escala) {
   const rs = DASH_TUBO_TRECHOS.map(t => raio(v[t.k]));
   const fmt = n => _dashFmt(Math.round(n));
   const dec = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  // O WIP fica vermelho quando passa 15% do padrão: é o trecho que o Lean vigia.
+  // O WIP fica vermelho quando passa 15% do ideal: é o trecho que o Lean vigia.
   const corWip = base && v.corrente > base.corrente * 1.15 ? '#d92b2b' : DASH_TUBO_TRECHOS[2].cor;
   const cores = DASH_TUBO_TRECHOS.map(t => t.k === 'corrente' ? corWip : t.cor);
   const paradas = cores.map((c, i) => `<stop offset="${(i / 5 * 100).toFixed(2)}%" stop-color="${c}"/><stop offset="${((i + 1) / 5 * 100).toFixed(2)}%" stop-color="${c}"/>`).join('');
-  const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(v[t.k])} produtos — ${t.dica}${base ? `. Padrão aprendido: ${fmt(base[t.k])}` : ''}`)}</title></rect>`).join('');
+  const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(v[t.k])} produtos — ${t.dica}${base ? `. Ideal pela saída: ${fmt(base[t.k])}` : ''}`)}</title></rect>`).join('');
   const contorno = _dashTuboContorno(rs, x0, sw, cy);
   const svg = `<svg class="dash-tubo-svg" viewBox="0 0 ${W} ${cy * 2}" role="img" aria-label="Tubo da produção com os cinco volumes">
       <defs>
@@ -27389,7 +27429,8 @@ function _dashTuboHtml(escala) {
     if (base) {
       const b = base[t.k];
       const dif = b > 0 ? (v[t.k] - b) / b * 100 : null;
-      comp = `<em>padrão ${fmt(b)}${dif != null && Math.abs(dif) >= 1 ? ` · <span class="${dif > 0 ? 'mais' : 'menos'}">${dif > 0 ? '+' : ''}${dif.toFixed(0)}%</span>` : ''}</em>`;
+      const ruim = dif != null && (t.k === 'saida' ? dif < 0 : dif > 0);
+      comp = `<em>ideal ${fmt(b)}${dif != null && Math.abs(dif) >= 1 ? ` · <span class="${ruim ? 'mais' : 'menos'}">${dif > 0 ? '+' : ''}${dif.toFixed(0)}%</span>` : ''}</em>`;
     }
     return `<div title="${esc(t.dica)}"><span class="dash-tubo-pingo" style="background:${cores[i]}"></span>${esc(t.rot)}<b>${fmt(v[t.k])}</b>${comp}</div>`;
   }).join('');
@@ -27446,13 +27487,39 @@ function _dashTuboHtml(escala) {
         <div class="dash-tubo-chips" title="Cada quadrado é um período, do mais antigo ao em curso (o último, com borda)">${chips}</div></div>`
     : '<div class="dash-tubo-casa">Ainda não há períodos anteriores com OS datadas para aprender o padrão desta fábrica.</div>';
 
+  // Os números ideais por extenso: quanto liberar, o WIP alvo e o excesso.
+  const admin = typeof currentRole !== 'undefined' && currentRole === 'admin';
+  const campoAlvo = `<label class="dash-tubo-alvo">Atravessamento alvo
+      <input type="number" min="0.5" step="0.5" value="${cfgTubo.leadAlvo > 0 ? cfgTubo.leadAlvo : ''}" placeholder="${leadAuto ? dec(leadAuto) : ''}"
+        ${admin ? '' : 'disabled title="Só o admin define o atravessamento alvo"'} onchange="_dashTuboAlvo(this.value)"> dias úteis
+      <em>${cfgTubo.leadAlvo > 0 ? `definido${cfgTubo.alteradoPor ? ' por ' + esc(cfgTubo.alteradoPor) : ''} — apague para voltar ao automático`
+        : leadAuto ? `automático: o das melhores semanas desta fábrica (${dec(leadAuto)})` : 'sem histórico para o automático: digite o alvo'}</em></label>`;
+  let ideal;
+  if (base) {
+    const excesso = v.corrente - base.corrente;
+    ideal = `<div class="dash-tubo-ideal"><b>Produção ideal pela saída</b> <span>— produção puxada: produzir só o que sai, sem estocar em processo</span>
+        <div class="dash-tubo-ideal-grade">
+          <div><span>Ritmo de saída</span><b>${fmt(ritmo)}</b><em>produtos por dia útil chegam ao Estoque (média de ${semanas.length} ${semanas.length === 1 ? 'semana' : 'semanas'})</em></div>
+          <div><span>Liberar no máximo</span><b>${fmt(ritmo)}</b><em>produtos por dia útil — a entrada ideal é igual à saída</em></div>
+          <div><span>WIP ideal</span><b>${fmt(base.corrente)}</b><em>${fmt(ritmo)} por dia × ${dec(leadAlvo)} dias úteis de atravessamento</em></div>
+          <div class="${excesso > 0 ? 'excesso' : 'folga'}"><span>${excesso > 0 ? 'Excesso em processo' : 'Abaixo do ideal'}</span><b>${fmt(Math.abs(excesso))}</b>
+            <em>${excesso > 0 ? `sem liberar OS e no ritmo de saída, escoa em ${dec(excesso / ritmo)} dias úteis` : `cabe liberar ${fmt(-excesso)} produtos além do ritmo`}</em></div>
+        </div>
+        ${campoAlvo}</div>`;
+  } else {
+    ideal = `<div class="dash-tubo-ideal"><b>Produção ideal pela saída</b>
+        <div>${ritmo > 0 ? 'Falta o atravessamento alvo para calcular o WIP ideal.' : 'Nenhuma OS chegou ao Estoque nos períodos anteriores: sem ritmo de saída, não há como calcular o ideal.'}</div>
+        ${ritmo > 0 ? campoAlvo : ''}</div>`;
+  }
+
   return `<div class="dash-status dash-tubo">
       <div class="dash-status-cab">
         <b>Tubo da produção</b>
-        <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · o contorno tracejado é o <b>padrão aprendido</b>${base && frac < 1 ? ', proporcional aos dias úteis que já passaram' : ''} · passe o mouse num trecho para ver a conta</span>
+        <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · o contorno tracejado é o <b>ideal pela saída</b> — o tubo de uma produção que só produz o que sai${base && v.dias < v.diasTodos ? ', até o dia útil de hoje' : ''} · passe o mouse num trecho para ver a conta</span>
       </div>
       ${svg}
       <div class="dash-tubo-rot">${rotulos}</div>
+      ${ideal}
       <div class="dash-tubo-diag" style="--cor:${p.cor}">
         <div class="dash-tubo-padrao-agora"><b>${esc(p.rot)}</b><span>${esc(p.texto)}</span></div>
         ${itens.length ? `<ul>${itens.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}
