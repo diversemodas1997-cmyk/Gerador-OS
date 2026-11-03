@@ -25583,9 +25583,11 @@ const _DASH_MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', '
 const _DASH_DIAS_SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
 // Os períodos da escala: [{de, ate, rot (eixo), nome (dica)}], do mais antigo
-// ao atual. `uteis` diz se o fim de semana fica de fora.
-function _dashPeriodos(agora, escala) {
+// ao atual. `uteis` diz se o fim de semana fica de fora. `n` troca a
+// quantidade da escala (o tubo da produção pede mais períodos para aprender).
+function _dashPeriodos(agora, escala, n) {
   const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const qtd = n || cfg.n;
   const p2 = n => String(n).padStart(2, '0');
   const dm = d => p2(d.getDate()) + '/' + p2(d.getMonth() + 1);
   const hoje = new Date(agora);
@@ -25593,7 +25595,7 @@ function _dashPeriodos(agora, escala) {
   const out = [];
   if (cfg.k === 'dia') {
     const d = new Date(hoje);
-    while (out.length < cfg.n) {
+    while (out.length < qtd) {
       if (d.getDay() !== 0 && d.getDay() !== 6) {
         const ate = new Date(d); ate.setDate(d.getDate() + 1);
         out.unshift({ de: d.getTime(), ate: ate.getTime(), rot: dm(d),
@@ -25606,7 +25608,7 @@ function _dashPeriodos(agora, escala) {
   if (cfg.k === 'semana') {
     const seg = new Date(hoje);
     seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7));   // volta até a segunda
-    for (let i = cfg.n - 1; i >= 0; i--) {
+    for (let i = qtd - 1; i >= 0; i--) {
       const de = new Date(seg); de.setDate(seg.getDate() - i * 7);
       const sex = new Date(de); sex.setDate(de.getDate() + 4);
       const ate = new Date(de); ate.setDate(de.getDate() + 5);   // sábado 00:00
@@ -25616,7 +25618,7 @@ function _dashPeriodos(agora, escala) {
     return { periodos: out, uteis: true, cfg };
   }
   if (cfg.k === 'mes') {
-    for (let i = cfg.n - 1; i >= 0; i--) {
+    for (let i = qtd - 1; i >= 0; i--) {
       const de = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
       const ate = new Date(de.getFullYear(), de.getMonth() + 1, 1);
       out.push({ de: de.getTime(), ate: ate.getTime(),
@@ -25625,7 +25627,7 @@ function _dashPeriodos(agora, escala) {
     }
     return { periodos: out, uteis: false, cfg };
   }
-  for (let i = cfg.n - 1; i >= 0; i--) {
+  for (let i = qtd - 1; i >= 0; i--) {
     const de = new Date(hoje.getFullYear() - i, 0, 1);
     const ate = new Date(hoje.getFullYear() - i + 1, 0, 1);
     out.push({ de: de.getTime(), ate: ate.getTime(), rot: String(de.getFullYear()), nome: String(de.getFullYear()) });
@@ -27173,6 +27175,292 @@ function _dashPorStatusHtml(escala) {
 }
 const STATUS_TERMINAL_DASH = 'estoque';
 
+/* O TUBO DA PRODUÇÃO (03/11/2026, Jones: "insira uma aba no quadro Volume das
+   OS por status. A primeira aba mostra o quadro como já está. A segunda mostra
+   uma imagem que representa os 5 volumes contabilizados na forma de um tubo
+   longo [...] deve aprender padrões de produção local e mostrar padrões de
+   produção conhecidos pela gestão da qualidade, como Lean production").
+
+   OS CINCO VOLUMES são os das listas do Início (_dashHistorico), só que da
+   fábrica inteira — a produção é tudo o que não é Estoque nem Cancelado, o
+   mesmo "em produção" do quadro:
+     entrada   produtos das OS que entraram em produção (criadas) no período
+     total     o que já estava em produção no início do período + a entrada
+     corrente  o que está em produção agora (o mesmo total do quadro) — o WIP
+     residual  o que ficou em produção no fim do período (só OS com data)
+     saída     produtos das OS que chegaram ao Estoque no período
+   Cada trecho do tubo tem a espessura do seu volume, na mesma régua.
+
+   O QUE ELE APRENDE é o tubo de costume desta fábrica: os mesmos cinco
+   volumes nos períodos anteriores (20 dias úteis, 12 semanas, 12 meses ou os
+   anos), cuja média vira o contorno tracejado. No período em curso, a entrada
+   e a saída do padrão são proporcionais aos dias úteis que já passaram — senão
+   toda segunda-feira pareceria uma fábrica parada. Cada período anterior é
+   classificado pelas mesmas regras (acúmulo, equilíbrio, esvaziamento), e a
+   contagem diz qual é o padrão da casa. Nada vai para fora: é conta, no
+   navegador, com as horas das etapas que as OS já têm. */
+const DASH_VOL_ABA_CHAVE = 'dashVolumeAba';
+const DASH_TUBO_HIST = { dia: 20, semana: 12, mes: 12, ano: 3 };
+const DASH_TUBO_TRECHOS = [
+  { k: 'entrada', rot: 'Entrada', cor: '#2a78d6',
+    dica: 'produtos das OS que entraram em produção (foram criadas) no período' },
+  { k: 'total', rot: 'Total', cor: '#5b6b7d',
+    dica: 'o que já estava em produção no início do período + o que entrou' },
+  { k: 'corrente', rot: 'Corrente (WIP)', cor: '#e2661a',
+    dica: 'o trabalho em progresso: tudo o que está em produção agora, o mesmo total do quadro' },
+  { k: 'residual', rot: 'Residual', cor: '#d0a000',
+    dica: 'o que ficou em produção no fim do período (só OS com data nas etapas)' },
+  { k: 'saida', rot: 'Saída', cor: '#17a06a',
+    dica: 'produtos das OS que chegaram ao Estoque no período' }
+];
+const DASH_TUBO_PADROES = {
+  acumulo: { rot: 'Acúmulo de WIP — produção empurrada', cor: '#d92b2b',
+    texto: 'Entra mais do que sai e o estoque em processo cresce. No Lean (Sistema Toyota de Produção) estoque em processo é um dos 7 desperdícios, e é o sinal da produção empurrada: as OS são liberadas antes de a linha ter capacidade para elas. Pela Lei de Little, mais WIP com a mesma vazão só alonga o tempo de atravessamento. O remédio clássico é limitar o WIP (CONWIP / kanban) e liberar OS no ritmo da saída.' },
+  equilibrio: { rot: 'Fluxo equilibrado — perto do fluxo puxado', cor: '#17a06a',
+    texto: 'Entrada e saída andam juntas e o WIP fica estável: é o fluxo contínuo que o Lean persegue — produzir no ritmo em que se termina (takt), sem formar fila. Mantenha o nível de WIP de agora como limite.' },
+  esvaziando: { rot: 'Linha esvaziando — risco de ociosidade', cor: '#d0a000',
+    texto: 'Sai mais do que entra e o WIP cai. Bom para baixar estoque em processo, mas, se continuar, faltará trabalho nos postos. Na Teoria das Restrições o gargalo nunca pode parar por falta de material (tambor-pulmão-corda): nivele a liberação de OS (heijunka) para manter um pulmão antes dele.' },
+  parada: { rot: 'Sem movimento', cor: '#98a2ae',
+    texto: 'Nenhuma OS entrou nem saiu da produção no período.' }
+};
+
+function _dashVolumeAba() {
+  try { return localStorage.getItem(DASH_VOL_ABA_CHAVE) === 'tubo' ? 'tubo' : 'quadro'; }
+  catch (e) { return 'quadro'; }
+}
+function _dashTrocarAbaVolume(k) {
+  try { localStorage.setItem(DASH_VOL_ABA_CHAVE, k); } catch (e) { /* vale só nesta tela */ }
+  _dashFluxoAssinatura = '';
+  renderFluxoDash();
+}
+window._dashTrocarAbaVolume = _dashTrocarAbaVolume;
+
+function _dashVolumeHtml(escala) {
+  const aba = _dashVolumeAba();
+  const botoes = [['quadro', 'Quadro'], ['tubo', 'Tubo da produção']].map(([k, rot]) =>
+    `<button type="button" role="tab" class="dash-vol-aba${k === aba ? ' ativa' : ''}" aria-selected="${k === aba}"
+      onclick="_dashTrocarAbaVolume('${k}')">${rot}</button>`).join('');
+  return `<div class="dash-vol-abas" role="tablist" aria-label="Volume das OS por status">${botoes}</div>
+    ${aba === 'tubo' ? _dashTuboHtml(escala) : _dashPorStatusHtml(escala)}`;
+}
+
+// Os intervalos em que cada OS esteve EM PRODUÇÃO: da criação (ou da primeira
+// marca) até chegar ao Estoque ou ser cancelada. A OS sem hora nenhuma entra
+// como "sem data", como nas listas do Início: conta no total, não no residual.
+function _dashTuboIntervalos() {
+  const fora = new Set(STATUS_OS.filter(st => st.k === STATUS_TERMINAL_DASH || st.foraDaProducao).map(st => st.k));
+  const ivs = [];
+  (STATE.ordens || []).forEach(o => {
+    const produtos = produtosOS(o);
+    if (!(produtos > 0)) return;
+    const criada = Date.parse(o.criadoEm || '');
+    const clones = _dashClonesNoTempoOS(o);
+    if (!clones) {
+      if (!fora.has(_statusOS(o))) ivs.push(Number.isFinite(criada)
+        ? { produtos, de: criada, ate: null } : { produtos, de: null, ate: null, semData: true });
+      return;
+    }
+    let de = Number.isFinite(criada) && criada <= clones[0].t ? criada : null;
+    let dentro = de != null;
+    clones.forEach(({ t, clone }) => {
+      const naProducao = !fora.has(_statusOS(clone));
+      if (naProducao && !dentro) { de = t; dentro = true; }
+      else if (!naProducao && dentro) { ivs.push({ produtos, de, ate: t }); dentro = false; }
+    });
+    if (dentro) ivs.push({ produtos, de, ate: null });
+  });
+  return ivs;
+}
+
+function _dashDiasUteis(de, ate) {
+  let n = 0;
+  for (let t = de; t < ate; t += DASH_DIA_MS) {
+    const d = new Date(t).getDay();
+    if (d !== 0 && d !== 6) n++;
+  }
+  return n;
+}
+
+function _dashTuboVolumes(ivs, w, agora) {
+  const fimRes = Math.min(w.ate, agora) - 1;
+  const noPeriodo = t => t != null && t >= w.de && t < w.ate && t <= agora;
+  const v = { entrada: 0, saida: 0, residual: 0, jaEstava: 0 };
+  ivs.forEach(x => {
+    if (noPeriodo(x.de)) v.entrada += x.produtos;
+    if (noPeriodo(x.ate)) v.saida += x.produtos;
+    if (x.de != null && x.de <= fimRes && (x.ate == null || x.ate > fimRes)) v.residual += x.produtos;
+    if ((x.semData || (x.de != null && x.de <= w.de)) && (x.ate == null || x.ate > w.de)) v.jaEstava += x.produtos;
+  });
+  v.total = v.jaEstava + v.entrada;
+  v.corrente = v.residual;   // num período fechado, o WIP dele é o que ficou no fim
+  const hoje = new Date(agora); hoje.setHours(0, 0, 0, 0);
+  v.dias = _dashDiasUteis(w.de, Math.min(w.ate, hoje.getTime() + DASH_DIA_MS));
+  v.diasTodos = _dashDiasUteis(w.de, w.ate);
+  v.vazao = v.dias > 0 ? v.saida / v.dias : 0;           // produtos por dia útil
+  v.padrao = _dashTuboPadrao(v);
+  return v;
+}
+
+// A regra que classifica um período. As folgas (15% no fluxo, 5% no WIP) são
+// para que uma OS a mais ou a menos não troque o diagnóstico.
+function _dashTuboPadrao(v) {
+  if (!v.entrada && !v.saida) return 'parada';
+  if (v.entrada > v.saida * 1.15 && v.residual > v.jaEstava * 1.05) return 'acumulo';
+  if (v.saida > v.entrada * 1.15 && v.residual < v.jaEstava * 0.95) return 'esvaziando';
+  return 'equilibrio';
+}
+
+// O contorno do tubo: um trecho reto por volume, com curvas suaves entre eles.
+function _dashTuboContorno(rs, x0, sw, cy) {
+  const n = rs.length;
+  const a = i => x0 + sw * i + sw * 0.22, b = i => x0 + sw * i + sw * 0.78;
+  const f = x => x.toFixed(1);
+  let cima = `M ${f(x0)} ${f(cy - rs[0])} L ${f(b(0))} ${f(cy - rs[0])}`;
+  let baixo = '';
+  for (let i = 1; i < n; i++) {
+    const m = (b(i - 1) + a(i)) / 2;
+    cima += ` C ${f(m)} ${f(cy - rs[i - 1])}, ${f(m)} ${f(cy - rs[i])}, ${f(a(i))} ${f(cy - rs[i])} L ${f(b(i))} ${f(cy - rs[i])}`;
+  }
+  cima += ` L ${f(x0 + sw * n)} ${f(cy - rs[n - 1])} L ${f(x0 + sw * n)} ${f(cy + rs[n - 1])}`;
+  for (let i = n - 1; i > 0; i--) {
+    const m = (b(i - 1) + a(i)) / 2;
+    baixo += ` L ${f(a(i))} ${f(cy + rs[i])} C ${f(m)} ${f(cy + rs[i])}, ${f(m)} ${f(cy + rs[i - 1])}, ${f(b(i - 1))} ${f(cy + rs[i - 1])}`;
+  }
+  return `${cima}${baixo} L ${f(x0)} ${f(cy + rs[0])} Z`;
+}
+
+function _dashTuboHtml(escala) {
+  const agora = Date.now();
+  const nHist = DASH_TUBO_HIST[escala] || 12;
+  const { periodos } = _dashPeriodos(agora, escala, nHist + 1);
+  const atual = periodos[periodos.length - 1];
+  const ivs = _dashTuboIntervalos();
+  const v = _dashTuboVolumes(ivs, atual, agora);
+  // O WIP de agora é o do quadro (inclui as OS sem data), e não só o residual.
+  const linhas = _dashPorStatus();
+  v.corrente = linhas.filter(x => x.st.k !== STATUS_TERMINAL_DASH && !x.st.foraDaProducao)
+    .reduce((s, x) => s + x.produtos, 0);
+  const hist = periodos.slice(0, -1).map(w => Object.assign(_dashTuboVolumes(ivs, w, agora), { w }))
+    .filter(h => h.entrada || h.saida || h.residual);   // antes de haver dados, não ensina nada
+  const media = k => hist.length ? hist.reduce((s, h) => s + h[k], 0) / hist.length : 0;
+  const desvio = k => {
+    if (hist.length < 2) return 0;
+    const m = media(k);
+    return Math.sqrt(hist.reduce((s, h) => s + (h[k] - m) ** 2, 0) / (hist.length - 1));
+  };
+  // O padrão do período em curso: o fluxo na proporção dos dias que já passaram.
+  const frac = v.diasTodos > 0 ? Math.min(1, v.dias / v.diasTodos) : 1;
+  const base = hist.length ? {
+    entrada: media('entrada') * frac, saida: media('saida') * frac,
+    total: media('jaEstava') + media('entrada') * frac,
+    corrente: media('residual'), residual: media('residual')
+  } : null;
+
+  const W = 1000, x0 = 24, sw = (W - 2 * x0) / 5, cy = 100, rMax = 84, rMin = 5;
+  const maxV = Math.max(1, ...DASH_TUBO_TRECHOS.map(t => v[t.k]), ...(base ? DASH_TUBO_TRECHOS.map(t => base[t.k]) : []));
+  const raio = n => n > 0 ? rMin + (rMax - rMin) * n / maxV : 2;
+  const rs = DASH_TUBO_TRECHOS.map(t => raio(v[t.k]));
+  const fmt = n => _dashFmt(Math.round(n));
+  const dec = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  // O WIP fica vermelho quando passa 15% do padrão: é o trecho que o Lean vigia.
+  const corWip = base && v.corrente > base.corrente * 1.15 ? '#d92b2b' : DASH_TUBO_TRECHOS[2].cor;
+  const cores = DASH_TUBO_TRECHOS.map(t => t.k === 'corrente' ? corWip : t.cor);
+  const paradas = cores.map((c, i) => `<stop offset="${(i / 5 * 100).toFixed(2)}%" stop-color="${c}"/><stop offset="${((i + 1) / 5 * 100).toFixed(2)}%" stop-color="${c}"/>`).join('');
+  const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(v[t.k])} produtos — ${t.dica}${base ? `. Padrão aprendido: ${fmt(base[t.k])}` : ''}`)}</title></rect>`).join('');
+  const contorno = _dashTuboContorno(rs, x0, sw, cy);
+  const svg = `<svg class="dash-tubo-svg" viewBox="0 0 ${W} ${cy * 2}" role="img" aria-label="Tubo da produção com os cinco volumes">
+      <defs>
+        <linearGradient id="dashTuboCor" gradientUnits="userSpaceOnUse" x1="${x0}" y1="0" x2="${(x0 + sw * 5).toFixed(1)}" y2="0">${paradas}</linearGradient>
+        <linearGradient id="dashTuboLuz" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".35" stop-color="#fff" stop-opacity=".08"/>
+          <stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/>
+        </linearGradient>
+      </defs>
+      <path d="${contorno}" fill="url(#dashTuboCor)"/>
+      <path d="${contorno}" fill="url(#dashTuboLuz)"/>
+      <ellipse cx="${x0}" cy="${cy}" rx="${Math.max(2, rs[0] * 0.22).toFixed(1)}" ry="${rs[0].toFixed(1)}" fill="${cores[0]}" stroke="rgba(0,0,0,.35)"/>
+      <ellipse cx="${(x0 + sw * 5).toFixed(1)}" cy="${cy}" rx="${Math.max(2, rs[4] * 0.22).toFixed(1)}" ry="${rs[4].toFixed(1)}" fill="${cores[4]}" stroke="rgba(0,0,0,.25)"/>
+      ${base ? `<path class="dash-tubo-padrao" d="${_dashTuboContorno(DASH_TUBO_TRECHOS.map(t => raio(base[t.k])), x0, sw, cy)}"/>` : ''}
+      ${dicas}
+    </svg>`;
+
+  const rotulos = DASH_TUBO_TRECHOS.map((t, i) => {
+    let comp = '';
+    if (base) {
+      const b = base[t.k];
+      const dif = b > 0 ? (v[t.k] - b) / b * 100 : null;
+      comp = `<em>padrão ${fmt(b)}${dif != null && Math.abs(dif) >= 1 ? ` · <span class="${dif > 0 ? 'mais' : 'menos'}">${dif > 0 ? '+' : ''}${dif.toFixed(0)}%</span>` : ''}</em>`;
+    }
+    return `<div title="${esc(t.dica)}"><span class="dash-tubo-pingo" style="background:${cores[i]}"></span>${esc(t.rot)}<b>${fmt(v[t.k])}</b>${comp}</div>`;
+  }).join('');
+
+  // O diagnóstico de agora: o padrão do período e as leituras que o explicam.
+  const p = DASH_TUBO_PADROES[v.padrao];
+  const itens = [];
+  // O atravessamento de costume é o WIP médio sobre a vazão média, e não a média
+  // das razões: uma semana de saída quase zero daria centenas de dias e puxaria
+  // a média sozinha.
+  const leadMedio = media('vazao') > 0 ? media('residual') / media('vazao') : null;
+  const leadAgora = v.vazao > 0 ? v.corrente / v.vazao : null;
+  if (leadAgora != null) {
+    itens.push(`<b>Lei de Little</b> (tempo de atravessamento = WIP ÷ vazão): com ${fmt(v.corrente)} produtos em processo e saída de ${fmt(v.vazao)} por dia útil, um produto que entra hoje leva ${leadAgora > 250 ? '<b>mais de 250 dias úteis</b> para chegar ao estoque — no ritmo de saída deste período a fila praticamente não anda' : `cerca de <b>${dec(leadAgora)} dias úteis</b> para chegar ao estoque`}${leadMedio != null ? ` (o normal aqui é ${dec(leadMedio)})` : ''}.`);
+  } else if (v.corrente > 0) {
+    itens.push('<b>Lei de Little</b>: nada chegou ao estoque no período ainda, então o tempo de atravessamento não tem como ser medido — com vazão zero, todo o WIP é fila.');
+  }
+  if (hist.length >= 5 && v.dias > 0) {
+    const m = media('vazao'), s = desvio('vazao');
+    const faixa = `${fmt(Math.max(0, m - 2 * s))} a ${fmt(m + 2 * s)}`;
+    if (s > 0 && Math.abs(v.vazao - m) > 2 * s) {
+      itens.push(`<b>Controle estatístico (CEP)</b>: a saída por dia útil (${fmt(v.vazao)}) está fora da faixa normal desta fábrica (${faixa}, média ± 2 desvios). Na leitura de Shewhart é uma <b>causa especial</b>: vale descobrir o que mudou.`);
+    } else if (s > 0) {
+      itens.push(`<b>Controle estatístico (CEP)</b>: a saída por dia útil (${fmt(v.vazao)}) está dentro da faixa normal desta fábrica (${faixa}): variação comum, sem causa especial.`);
+    }
+  }
+  const processo = linhas.filter(x => !['nao-iniciado', 'parado', STATUS_TERMINAL_DASH].includes(x.st.k) && !x.st.foraDaProducao);
+  const totProc = processo.reduce((s, x) => s + x.produtos, 0);
+  const maior = processo.slice().sort((a, b) => b.produtos - a.produtos)[0];
+  if (maior && totProc > 0 && maior.produtos / totProc >= 0.3) {
+    itens.push(`<b>Teoria das Restrições</b>: ${(maior.produtos / totProc * 100).toFixed(0)}% do que está em processo espera em <b>${esc(maior.st.rotulo)}</b> (${fmt(maior.produtos)} produtos). A maior fila costuma estar diante do gargalo, e a capacidade da fábrica é a dele: proteja-o e faça o resto andar no ritmo dele.`);
+  }
+  const ni = linhas.find(x => x.st.k === 'nao-iniciado');
+  if (ni && v.corrente > 0 && ni.produtos / v.corrente >= 0.25) {
+    itens.push(`<b>Liberação antecipada</b>: ${(ni.produtos / v.corrente * 100).toFixed(0)}% do WIP (${fmt(ni.produtos)} produtos) ainda nem começou — está em Não iniciado. No Lean, OS liberada antes da hora só vira fila; liberar no ritmo da saída encurta o atravessamento sem mudar a capacidade.`);
+  }
+  const parado = linhas.find(x => x.st.k === 'parado');
+  if (parado && parado.produtos > 0) {
+    itens.push(`<b>Jidoka</b>: ${fmt(parado.produtos)} produtos em ${fmt(parado.os)} OS estão Parados. No Sistema Toyota a linha para para que o problema seja resolvido na causa — e não para virar estoque esquecido.`);
+  }
+
+  // O padrão da casa: cada período anterior pelas mesmas regras.
+  const conta = {};
+  hist.forEach(h => { conta[h.padrao] = (conta[h.padrao] || 0) + 1; });
+  const comum = Object.keys(conta).sort((a, b) => conta[b] - conta[a])[0];
+  const curto = k => DASH_TUBO_PADROES[k].rot.split(' — ')[0].toLowerCase();
+  const cfg = DASH_ESCALAS.find(e => e.k === escala) || DASH_ESCALAS[1];
+  const chips = hist.map(h => `<span class="dash-tubo-chip" style="background:${DASH_TUBO_PADROES[h.padrao].cor}" title="${esc(`${h.w.nome}: ${DASH_TUBO_PADROES[h.padrao].rot} — entrada ${fmt(h.entrada)}, saída ${fmt(h.saida)}, WIP no fim ${fmt(h.residual)}`)}"></span>`).join('')
+    + `<span class="dash-tubo-chip atual" style="background:${p.cor}" title="${esc(`${atual.nome} (em curso): ${p.rot}`)}"></span>`;
+  const aprendido = hist.length
+    ? `<div class="dash-tubo-casa"><b>Padrão desta fábrica</b> (${hist.length} ${hist.length === 1 ? 'período anterior' : 'períodos anteriores'}, por ${esc(cfg.rot.toLowerCase())}):
+        ${Object.keys(conta).map(k => `${conta[k]} de ${esc(curto(k))}`).join(', ')} — o mais comum é <b>${esc(curto(comum))}</b>.
+        Em média saem ${fmt(media('vazao'))} produtos por dia útil, com ${fmt(media('residual'))} em processo${leadMedio != null ? ` e ${dec(leadMedio)} dias úteis de atravessamento` : ''}.
+        <div class="dash-tubo-chips" title="Cada quadrado é um período, do mais antigo ao em curso (o último, com borda)">${chips}</div></div>`
+    : '<div class="dash-tubo-casa">Ainda não há períodos anteriores com OS datadas para aprender o padrão desta fábrica.</div>';
+
+  return `<div class="dash-status dash-tubo">
+      <div class="dash-status-cab">
+        <b>Tubo da produção</b>
+        <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · o contorno tracejado é o <b>padrão aprendido</b>${base && frac < 1 ? ', proporcional aos dias úteis que já passaram' : ''} · passe o mouse num trecho para ver a conta</span>
+      </div>
+      ${svg}
+      <div class="dash-tubo-rot">${rotulos}</div>
+      <div class="dash-tubo-diag" style="--cor:${p.cor}">
+        <div class="dash-tubo-padrao-agora"><b>${esc(p.rot)}</b><span>${esc(p.texto)}</span></div>
+        ${itens.length ? `<ul>${itens.map(x => `<li>${x}</li>`).join('')}</ul>` : ''}
+        ${aprendido}
+      </div>
+    </div>`;
+}
+
 function renderFluxoDash() {
   const cont = document.getElementById('dash-fluxo');
   if (!cont) return;
@@ -27232,7 +27520,7 @@ function renderFluxoDash() {
       <h2>Por onde o produto passa</h2>
       <span class="dash-desc">Da matéria-prima ao estoque, em produtos (unidades completas) e em número de OS. Os números são os mesmos das telas de cada campo e se atualizam sozinhos conforme as etapas são marcadas no checklist e as OS são alocadas nas expedições.</span>
     </div>
-    ${_dashPorStatusHtml(escala)}
+    ${_dashVolumeHtml(escala)}
     <div class="dash-escala" role="group" aria-label="Período de análise dos gráficos">
       <span>Analisar por</span>
       ${DASH_ESCALAS.map(e => `<button type="button" class="dash-escala-btn${e.k === escala ? ' ativa' : ''}"

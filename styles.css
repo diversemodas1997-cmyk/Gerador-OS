@@ -1140,6 +1140,40 @@ main.content { padding: 32px 40px; overflow-x: auto; }
   .dash-num { font-size: 20px; }
 }
 
+/* AS ABAS DO VOLUME DAS OS (03/11/2026): Quadro e Tubo da produção. */
+.dash-vol-abas { display: flex; gap: 4px; margin: 10px 0 -1px; position: relative; z-index: 1; }
+.dash-vol-aba {
+  font: inherit; font-size: 12px; padding: 5px 14px; cursor: pointer;
+  background: var(--bg); color: var(--ink-3);
+  border: 1px solid var(--line); border-radius: 3px 3px 0 0;
+}
+.dash-vol-aba:hover { color: var(--ink); }
+.dash-vol-aba.ativa { background: var(--paper); color: var(--ink); font-weight: 600; border-bottom-color: var(--paper); }
+.dash-vol-abas + .dash-status { margin-top: 0; border-top-left-radius: 0; }
+
+/* O TUBO DA PRODUÇÃO: os cinco volumes num tubo, com o padrão aprendido
+   tracejado por cima e o diagnóstico Lean embaixo. */
+.dash-tubo-svg { display: block; width: 100%; height: auto; max-height: 240px; margin: 4px 0 2px; }
+.dash-tubo-padrao { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 7 5; opacity: .55; }
+.dash-tubo-rot { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; font-size: 12px; color: var(--ink-2); text-align: center; }
+.dash-tubo-rot > div { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.dash-tubo-rot b { font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.dash-tubo-rot em { font-style: normal; font-size: 10.5px; color: var(--ink-3); }
+.dash-tubo-rot .mais { color: #d92b2b; }
+.dash-tubo-rot .menos { color: #17a06a; }
+.dash-tubo-pingo { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-bottom: 2px; }
+.dash-tubo-diag { margin-top: 10px; border-left: 4px solid var(--cor, var(--line)); padding: 6px 10px; background: var(--bg); border-radius: 0 3px 3px 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
+.dash-tubo-padrao-agora b { display: block; color: var(--cor, var(--ink)); font-size: 13.5px; margin-bottom: 2px; }
+.dash-tubo-diag ul { margin: 8px 0 0; padding-left: 18px; }
+.dash-tubo-diag li { margin: 3px 0; }
+.dash-tubo-casa { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.dash-tubo-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+.dash-tubo-chip { width: 14px; height: 14px; border-radius: 2px; opacity: .85; }
+.dash-tubo-chip.atual { opacity: 1; outline: 2px solid var(--ink); outline-offset: 1px; }
+@media (max-width: 640px) {
+  .dash-tubo-rot { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* VOLUME DAS OS POR STATUS, no alto do painel. Uma serie so (produtos), entao
    uma cor so; o status se le pelo icone e pelo nome, nao pela cor da barra. */
 .dash-status {
