@@ -5514,6 +5514,7 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
         <div class="field"><label>Rendimento (m/kg)</label><input type="number" min="0" step="0.01" id="m-rendimento" value="${esc(item.rendimento||'')}" oninput="_atualizarDicaRendimento()" placeholder="vazio = calcular"><div class="field-hint" id="m-rendimento-dica">${_rendimentoDica(item)}</div></div>
         <div class="field"><label>Excedente de enfesto</label><div class="field-hint" style="padding-top:6px;">Saiu daqui: agora é cadastrado em <b>cada fase de cada grade</b>, junto do comprimento. A sobra não é do pano — ela depende do comprimento que a fase estende, e um corpo de 8 m e um viés de 1 m do mesmo tecido não levam a mesma.</div></div>
         <div class="field"><label>Peso médio da bobina (kg)</label><input type="number" min="0" step="0.5" id="m-peso-bobina" value="${esc(item.pesoBobina||'')}" placeholder="Ex.: 22"><div class="field-hint">Quanto pesa, em média, uma bobina <b>deste</b> tecido. Só é usado onde a grade não sabe prever bobinas — hoje a <b>ribana</b>, que vem em rolo de outro tamanho e não segue a conta do tecido principal. Em branco, a folha mostra <b>—</b> na ribana em vez de chutar.</div></div>
+        <div class="field"><label>Pedido ideal de compra (kg)</label><input type="number" min="0" step="1" id="m-pedido-ideal" value="${esc(item.pedidoIdealKg||'')}" placeholder="Ex.: 300"><div class="field-hint">A quantidade que vale a pena pedir de uma vez (o mínimo do fornecedor, o rolo fechado, o frete). A falta deste tecido nas OS se acumula até chegar aqui e então vira <b>Ordem de compra</b> sozinha. Em branco, vale o ideal padrão do Planejamento de produção.</div></div>
         <div class="field full"><label>Composição</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Ex.: 48% CO 48% PES 4% ELAS"></div>
         <div class="field full"><label>Observações</label><textarea id="m-obs" rows="3" placeholder="Padrão de mercado, tolerâncias, onde se usa…">${esc(item.obs||'')}</textarea></div>
         <div class="field full">
@@ -7762,6 +7763,7 @@ async function salvarCadastro() {
     // "não informado" tem que continuar aparecendo como "—" na folha: é
     // exatamente o que o programa deve esperar antes de prever bobina de ribana.
     item.pesoBobina = Math.max(0, parseFloat(String(v('m-peso-bobina')).replace(',', '.')) || 0);
+    item.pedidoIdealKg = Math.max(0, parseFloat(String(v('m-pedido-ideal')).replace(',', '.')) || 0);
     item.estrutura = v('m-estrutura');
     item.fornecedorId = v('m-fornecedor');
     item.codigoFornecedor = v('m-codforn');
@@ -32341,6 +32343,7 @@ function renderPlanejamentoProducao() {
   const faixaAuto = document.getElementById('plan-auto-faixa');
   if (faixaAuto) faixaAuto.innerHTML = typeof autoPlanFaixaHtml === 'function' ? autoPlanFaixaHtml() : '';
   renderAgrupamentoDemanda();
+  renderDemandaMP();
   const espera = _planLista().filter(_planAguardando);
   const cardEspera = document.getElementById('plan-demanda-espera-card');
   if (cardEspera) cardEspera.classList.toggle('hidden', !espera.length);
@@ -47542,7 +47545,12 @@ const _cpChaveFalta = ts => (ts || [])
    Devolve true quando mexeu — quem chama é que decide gravar. */
 function compraAplicarFaltas() {
   if (!Array.isArray(STATE.compraPlano)) STATE.compraPlano = [];
-  const faltas = compraFaltasAbertas();
+  // O que a OC automática já pediu sai da lista: pedir de novo seria comprar
+  // duas vezes o mesmo pano (ver A DEMANDA DE MATÉRIA-PRIMA).
+  const coberto = _mpCobertoAuto();
+  const faltas = compraFaltasAbertas().map(f => Object.assign({}, f, {
+    tecidos: f.tecidos.filter(t => (coberto.get(f.osId + '##' + _mpChave(t.tecidoNome, t.corNome)) || 0) < t.falta - 0.0005)
+  })).filter(f => f.tecidos.length);
   const porOS = new Map(faltas.map(f => [f.osId, f]));
   let mudou = false;
 
@@ -47595,6 +47603,300 @@ function compraAplicarFaltas() {
   });
   return mudou;
 }
+
+/* A DEMANDA DE MATÉRIA-PRIMA E A OC AUTOMÁTICA (03/11/2026, Jones: "o
+   programa deve preencher automaticamente as ordens de compra de matéria-prima,
+   com base no aviso de falta calculado por meio das OS criadas. Esse aviso de
+   falta deve aparecer no planejamento de OS. O programa deve gerar relatório de
+   demanda de matéria-prima e aguardar até que o volume atinja o ideal para
+   pedido de compra").
+
+   A FALTA é a de sempre (compraFaltasAbertas → faltaDeTecidoParaOS): o pano que
+   cada OS criada reservou e a prateleira não tem. Ela é somada por tecido e
+   cor, e o relatório mostra, por tecido, quanto falta, quanto já foi pedido e
+   quanto ainda está A PEDIR.
+
+   O IDEAL é por tecido (Cadastros › Tecidos, "Pedido ideal de compra", ou na
+   própria tabela do relatório) — o mínimo do fornecedor, o rolo fechado, o
+   frete que compensa. Tecido sem ideal usa o IDEAL PADRÃO (meta); sem nenhum
+   dos dois, o programa não adivinha: mostra "defina o ideal" e não pede nada.
+   Enquanto o "a pedir" do tecido está abaixo do ideal, ele ESPERA, e o
+   relatório diz quanto falta para chegar lá. Chegou, nasce a OC sozinha, uma
+   por fornecedor, com cada cor do tecido e o quilo que falta.
+
+   O QUE CONTA COMO JÁ PEDIDO, para nunca pedir duas vezes:
+     - a OC automática guarda em `cobre` qual OS e quantos quilos ela pediu.
+       Enquanto não for cancelada, aquela falta daquela OS está pedida — mesmo
+       depois de "Recebida": quem apaga a falta é a ENTRADA do tecido no
+       estoque, e entre o recebimento e o lançamento ela não pode ser pedida de
+       novo;
+     - a OC feita à mão, Aberta ou Enviada, abate o quilo do mesmo tecido e
+       cor (ela não diz para qual OS é).
+   O que a OC automática pediu também sai da Lista de compra (compraAplicarFaltas),
+   para o "Gerar OC" de lá não repetir o pedido.
+
+   QUEM GERA é a tela de quem pode gravar (como a lista de compra): o celular e
+   a consulta veem o relatório, mas não emitem OC. */
+const MP_OC_VIVA = ['aberta', 'enviada'];
+function _mpChave(t, c) { return _normNome(t) + '||' + _normNome(c); }
+function _mpTecidoPorNome(nome) {
+  return (STATE.tecidos || []).find(t => _normNome(t.nome) === _normNome(nome)) || null;
+}
+function _mpIdealDe(tec) {
+  const kg = Number(tec && tec.pedidoIdealKg) || 0;
+  if (kg > 0) return { kg, padrao: false };
+  const pad = Number(STATE.meta && STATE.meta.compraIdealPadraoKg) || 0;
+  return pad > 0 ? { kg: pad, padrao: true } : null;
+}
+// O que as OC automáticas já pediram, por OS e tecido+cor.
+function _mpCobertoAuto() {
+  const m = new Map();
+  _ocLista().forEach(oc => {
+    if (oc.origem !== 'auto' || oc.status === 'cancelada') return;
+    (oc.cobre || []).forEach(c => {
+      const k = c.osId + '##' + _mpChave(c.tecidoNome, c.corNome);
+      m.set(k, (m.get(k) || 0) + (Number(c.kg) || 0));
+    });
+  });
+  return m;
+}
+// O que as OC feitas à mão, ainda abertas ou a caminho, pediram por tecido+cor.
+function _mpEmOCManual() {
+  const m = new Map();
+  _ocLista().forEach(oc => {
+    if (oc.origem === 'auto' || !MP_OC_VIVA.includes(oc.status || 'aberta')) return;
+    (oc.itens || []).forEach(i => {
+      if (i.tipo === 'material') return;
+      const k = _mpChave(i.tecidoNome, i.corNome);
+      m.set(k, (m.get(k) || 0) + (Number(i.kg) || 0));
+    });
+  });
+  return m;
+}
+
+// O relatório: um grupo por tecido, com as cores e as OS de cada uma.
+function compraDemandaMP() {
+  const arred = n => Math.round(n * 1000) / 1000;
+  const coberto = _mpCobertoAuto(), manual = _mpEmOCManual();
+  const linhas = new Map();
+  let faltas = [];
+  try { faltas = compraFaltasAbertas(); } catch (e) { faltas = []; }
+  faltas.forEach(f => f.tecidos.forEach(t => {
+    const k = _mpChave(t.tecidoNome, t.corNome);
+    if (!linhas.has(k)) linhas.set(k, { tecidoNome: t.tecidoNome, corNome: t.corNome, falta: 0, emOC: 0, pendente: 0, os: [] });
+    const l = linhas.get(k);
+    const cob = Math.min(t.falta, coberto.get(f.osId + '##' + k) || 0);
+    l.falta += t.falta;
+    l.emOC += cob;
+    l.os.push({ osId: f.osId, osNumero: f.osNumero, falta: t.falta, aberto: arred(t.falta - cob) });
+  }));
+  const porTec = new Map();
+  linhas.forEach((l, k) => {
+    // A OC à mão abate das OS na ordem, até onde ela alcança.
+    let resto = Math.min(manual.get(k) || 0, l.falta - l.emOC);
+    l.emOC += resto;
+    l.os.forEach(o => { const d = Math.min(resto, o.aberto); o.aberto = arred(o.aberto - d); resto -= d; });
+    l.falta = arred(l.falta);
+    l.emOC = arred(l.emOC);
+    l.pendente = arred(Math.max(0, l.falta - l.emOC));
+    const kt = _normNome(l.tecidoNome);
+    if (!porTec.has(kt)) {
+      const tec = _mpTecidoPorNome(l.tecidoNome);
+      porTec.set(kt, { tecidoNome: l.tecidoNome, tec, ideal: _mpIdealDe(tec), cores: [], falta: 0, emOC: 0, pendente: 0 });
+    }
+    const g = porTec.get(kt);
+    g.cores.push(l);
+    g.falta += l.falta; g.emOC += l.emOC; g.pendente += l.pendente;
+  });
+  return [...porTec.values()].map(g => {
+    g.falta = arred(g.falta); g.emOC = arred(g.emOC); g.pendente = arred(g.pendente);
+    g.cores.sort((a, b) => b.pendente - a.pendente || b.falta - a.falta);
+    g.situacao = !(g.pendente > 0.0005) ? 'pedido' : !g.ideal ? 'sem-ideal' : g.pendente >= g.ideal.kg ? 'pronto' : 'aguardando';
+    g.pct = g.ideal ? Math.min(100, g.pendente / g.ideal.kg * 100) : null;
+    return g;
+  }).sort((a, b) => b.pendente - a.pendente || b.falta - a.falta);
+}
+
+// Emite as OC dos tecidos que chegaram ao ideal: uma por fornecedor.
+let _mpGerando = false;
+async function compraGerarOCsAutomaticas() {
+  if (_mpGerando || !podeGravar() || !_contaPodeRegistrar()) return 0;
+  const prontos = compraDemandaMP().filter(g => g.situacao === 'pronto');
+  if (!prontos.length) return 0;
+  _mpGerando = true;
+  try {
+    const kg = n => (Number(n) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    const porForn = new Map();
+    prontos.forEach(g => {
+      const f = (g.tec && g.tec.fornecedorId) || '';
+      if (!porForn.has(f)) porForn.set(f, []);
+      porForn.get(f).push(g);
+    });
+    const novas = [];
+    porForn.forEach((gs, fornecedorId) => {
+      const itens = [], cobre = [];
+      gs.forEach(g => g.cores.filter(l => l.pendente > 0.0005).forEach(l => {
+        const peso = Number(g.tec && g.tec.pesoBobina) || 0;
+        itens.push({ tecidoNome: l.tecidoNome, corNome: l.corNome, bobinas: peso > 0 ? Math.ceil(l.pendente / peso) : 0,
+          kg: l.pendente, kgBruto: l.falta, disponivel: 0, semPrevisao: '' });
+        l.os.filter(o => o.aberto > 0.0005).forEach(o => cobre.push({ osId: o.osId, osNumero: o.osNumero,
+          tecidoNome: l.tecidoNome, corNome: l.corNome, kg: o.aberto }));
+      }));
+      if (!itens.length) return;
+      const numero = _ocNumeroNovo();
+      STATE.meta = STATE.meta || {};
+      STATE.meta.ocCounter = parseInt(numero.replace(/\D/g, ''), 10) || 0;
+      const oss = [...new Set(cobre.map(c => c.osNumero))].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+      const oc = {
+        id: uid(), numero, data: new Date().toISOString().slice(0, 10), fornecedorId,
+        obs: `Gerada automaticamente pelo Gerador-OS: a falta de matéria-prima das OS ${oss.join(', ')} atingiu o pedido ideal (${gs.map(g => `${g.tecidoNome}: ${kg(g.pendente)} kg a pedir, ideal ${kg(g.ideal.kg)} kg`).join('; ')}).`,
+        status: 'aberta', origem: 'auto', cobre, itens,
+        criadoPor: 'automático', criadoEm: new Date().toISOString()
+      };
+      _ocLista().unshift(oc);
+      novas.push(oc);
+    });
+    if (!novas.length) return 0;
+    await saveState('compraOCs');
+    await saveState('meta');
+    if (compraAplicarFaltas()) await saveState('compraPlano');
+    novas.forEach(oc => agendarAutoSaveOC(oc.id));
+    toast(`${novas.map(o => o.numero).join(', ')} ${novas.length === 1 ? 'gerada' : 'geradas'} sozinha${novas.length === 1 ? '' : 's'}: a falta de matéria-prima atingiu o pedido ideal`, 'ok');
+    return novas.length;
+  } finally {
+    _mpGerando = false;
+  }
+}
+// Chamada pelas telas que mostram a falta; o tempo junta várias numa só.
+let _mpAutoTimer = null;
+function _mpAgendarAuto() {
+  clearTimeout(_mpAutoTimer);
+  _mpAutoTimer = setTimeout(() => {
+    compraGerarOCsAutomaticas().then(n => {
+      if (!n) return;
+      if (typeof renderPlanejamentoProducao === 'function') renderPlanejamentoProducao();
+      if (typeof renderCompra === 'function') renderCompra();
+    }).catch(e => console.warn('compra/oc automática', e));
+  }, 1500);
+}
+
+async function compraIdealSalvar(tecidoNome, valor) {
+  if (!exigirEdicao('definir o pedido ideal de compra')) { renderPlanejamentoProducao(); return; }
+  const tec = _mpTecidoPorNome(tecidoNome);
+  if (!tec) { toast('Este tecido não está no cadastro de tecidos', 'err'); return; }
+  tec.pedidoIdealKg = Math.max(0, parseFloat(String(valor).replace(',', '.')) || 0);
+  await saveState('tecidos');
+  renderPlanejamentoProducao();
+}
+window.compraIdealSalvar = compraIdealSalvar;
+async function compraIdealPadraoSalvar(valor) {
+  if (!exigirEdicao('definir o pedido ideal de compra')) { renderPlanejamentoProducao(); return; }
+  STATE.meta = STATE.meta || {};
+  STATE.meta.compraIdealPadraoKg = Math.max(0, parseFloat(String(valor).replace(',', '.')) || 0);
+  await saveState('meta');
+  renderPlanejamentoProducao();
+}
+window.compraIdealPadraoSalvar = compraIdealPadraoSalvar;
+
+// A tabela do relatório: na tela (com o ideal editável) e no papel.
+function _mpTabelaHtml(grupos, naTela) {
+  const kg = n => (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const ocsDe = l => {
+    const ns = new Set();
+    _ocLista().forEach(oc => {
+      if (oc.status === 'cancelada') return;
+      const temAuto = oc.origem === 'auto' && (oc.cobre || []).some(c => _mpChave(c.tecidoNome, c.corNome) === _mpChave(l.tecidoNome, l.corNome) && l.os.some(o => o.osId === c.osId));
+      const temMao = oc.origem !== 'auto' && MP_OC_VIVA.includes(oc.status || 'aberta') && (oc.itens || []).some(i => i.tipo !== 'material' && _mpChave(i.tecidoNome, i.corNome) === _mpChave(l.tecidoNome, l.corNome));
+      if (temAuto || temMao) ns.add(oc.numero);
+    });
+    return [...ns];
+  };
+  const situacao = g => {
+    if (g.situacao === 'pedido') return '<span style="color:#17a06a;font-weight:600;">✓ Já pedido</span>';
+    if (g.situacao === 'sem-ideal') return '<span style="color:#b26a00;font-weight:600;">Defina o pedido ideal</span>';
+    if (g.situacao === 'pronto') return '<span style="color:#2a78d6;font-weight:600;">Atingiu o ideal — gerando OC</span>';
+    return `<span style="color:var(--ink-2,#555);">Aguardando: ${g.pct.toFixed(0)}% do ideal<br><small>faltam ${kg(g.ideal.kg - g.pendente)} kg para pedir</small></span>
+      <div style="height:5px;background:#e3e6ea;border-radius:3px;margin-top:3px;"><div style="height:5px;width:${g.pct.toFixed(1)}%;background:#d0a000;border-radius:3px;"></div></div>`;
+  };
+  const ideal = g => {
+    const v = g.ideal ? kg(g.ideal.kg) + ' kg' + (g.ideal.padrao ? ' <small>(padrão)</small>' : '') : '—';
+    if (!naTela || !g.tec || currentRole !== 'admin') return v;
+    return `<span><input type="number" min="0" step="1" style="width:76px;" value="${esc((g.tec && g.tec.pedidoIdealKg) || '')}"
+        placeholder="${g.ideal && g.ideal.padrao ? esc(String(g.ideal.kg)) : 'kg'}" onchange="compraIdealSalvar(${esc(JSON.stringify(g.tecidoNome))}, this.value)"
+        title="Pedido ideal deste tecido, em kg (em branco, vale o padrão)"> kg</span>`;
+  };
+  const corpo = grupos.map(g => g.cores.map((l, i) => `<tr>
+      ${i ? '' : `<td rowspan="${g.cores.length}" style="vertical-align:top;"><b>${esc(g.tecidoNome)}</b>${g.tec ? '' : '<br><small style="color:#b26a00;">fora do cadastro</small>'}</td>`}
+      <td>${esc(corSemTecido(l.corNome, l.tecidoNome) || l.corNome || '—')}</td>
+      <td class="num">${kg(l.falta)}</td>
+      <td>${l.os.map(o => esc(o.osNumero || '—')).join(', ')}</td>
+      <td class="num">${l.emOC > 0.0005 ? kg(l.emOC) + `<br><small>${esc(ocsDe(l).join(', '))}</small>` : '—'}</td>
+      <td class="num"><b>${kg(l.pendente)}</b></td>
+      ${i ? '' : `<td rowspan="${g.cores.length}" class="num" style="vertical-align:top;">${ideal(g)}</td>
+        <td rowspan="${g.cores.length}" style="vertical-align:top;min-width:150px;">${situacao(g)}</td>`}
+    </tr>`).join('')).join('');
+  const tot = k => grupos.reduce((s, g) => s + g[k], 0);
+  return `<table class="table mp-demanda">
+      <thead><tr><th>Tecido</th><th>Cor</th><th class="num">Falta (kg)</th><th>OS</th><th class="num">Já pedido (kg)</th><th class="num">A pedir (kg)</th><th class="num">Pedido ideal</th><th>Situação</th></tr></thead>
+      <tbody>${corpo}</tbody>
+      <tfoot><tr><td colspan="2"><b>Total</b></td><td class="num"><b>${kg(tot('falta'))}</b></td><td></td><td class="num">${kg(tot('emOC'))}</td><td class="num"><b>${kg(tot('pendente'))}</b></td><td colspan="2"></td></tr></tfoot>
+    </table>`;
+}
+
+// O aviso de falta no Planejamento de produção.
+function renderDemandaMP() {
+  const box = document.getElementById('plan-mp');
+  if (!box) return;
+  const grupos = compraDemandaMP();
+  const pad = Number(STATE.meta && STATE.meta.compraIdealPadraoKg) || 0;
+  const titulo = document.getElementById('plan-mp-titulo');
+  const nOS = new Set(grupos.flatMap(g => g.cores.flatMap(l => l.os.map(o => o.osId)))).size;
+  if (titulo) titulo.innerHTML = grupos.length
+    ? `⚠ Falta de matéria-prima · ${nOS} OS sem pano · Relatório de demanda de matéria-prima`
+    : 'Falta de matéria-prima · Relatório de demanda de matéria-prima';
+  const barra = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;font-size:12px;color:var(--ink-2);margin:-4px 0 8px;">
+      <span>O pano que as OS criadas reservaram e o estoque não tem, somado por tecido. Cada tecido espera a falta chegar ao <b>pedido ideal</b>; chegou, a <b>Ordem de compra</b> é gerada sozinha (em Ordens de Compra) e a falta passa a <b>Já pedido</b>. Ela some quando a entrada do tecido é lançada no estoque.</span>
+      <span style="display:flex;gap:8px;align-items:center;">
+        ${currentRole === 'admin' ? `<label title="Vale para o tecido sem pedido ideal próprio">Ideal padrão <input type="number" min="0" step="1" style="width:76px;" value="${pad || ''}" placeholder="kg" onchange="compraIdealPadraoSalvar(this.value)"> kg</label>` : `<span>Ideal padrão: ${pad ? pad.toLocaleString('pt-BR') + ' kg' : 'não definido'}</span>`}
+        ${grupos.length ? '<button type="button" class="btn small" onclick="imprimirDemandaMP()">🖨 Imprimir relatório</button>' : ''}
+      </span>
+    </div>`;
+  box.innerHTML = barra + (grupos.length
+    ? _mpTabelaHtml(grupos, true)
+    : '<div class="empty" style="padding:18px;text-align:center;color:var(--ink-3);">Nenhuma OS criada está sem matéria-prima.</div>');
+  if (grupos.some(g => g.situacao === 'pronto')) _mpAgendarAuto();
+}
+
+function imprimirDemandaMP() {
+  const grupos = compraDemandaMP();
+  const agora = new Date();
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Demanda de matéria-prima ${agora.toLocaleDateString('pt-BR')}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  body { margin: 0; padding: 18px; background: #fff; font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #000; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: #555; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #000; padding: 3px 5px; text-align: left; }
+  th { background: #eee; font-size: 10px; text-transform: uppercase; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .toolbar { margin-bottom: 14px; }
+  .toolbar button { font: inherit; padding: 6px 12px; margin-right: 6px; cursor: pointer; }
+  @media print { .toolbar { display: none !important; } body { padding: 0; } }
+</style></head>
+<body>
+  <div class="toolbar"><button onclick="window.print()">🖨 Imprimir / Salvar PDF</button><button onclick="window.close()">Fechar</button></div>
+  <h1>Relatório de demanda de matéria-prima</h1>
+  <div class="sub">${esc(agora.toLocaleString('pt-BR'))} · a falta de pano das OS criadas, o que já foi pedido em Ordem de compra e o que falta pedir · emitido pelo Gerador-OS</div>
+  ${grupos.length ? _mpTabelaHtml(grupos, false) : '<p>Nenhuma OS criada está sem matéria-prima.</p>'}
+</body></html>`;
+  const w = window.open('', '_blank', 'width=1100,height=800');
+  if (!w) return toast('Popup bloqueado pelo navegador. Permita popups deste site.', 'err');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+window.imprimirDemandaMP = imprimirDemandaMP;
 
 async function compraAdicionar() {
   if (!exigirEdicaoCompra('montar a lista de compra')) return;
@@ -48291,6 +48593,7 @@ function renderCompra() {
   if (_mexeu && podeGravar() && _contaPodeRegistrar()) {
     Promise.resolve(saveState('compraPlano')).catch(e => console.warn('compra/faltas', e));
   }
+  _mpAgendarAuto();
   const itens = STATE.compraPlano || [];
 
   /* A LINHA QUE VEIO DA FALTA se lê diferente da que alguém somou: ela não tem

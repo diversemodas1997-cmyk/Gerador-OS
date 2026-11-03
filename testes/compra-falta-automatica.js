@@ -67,6 +67,10 @@ function monta(mundo) {
     ${pegaFuncao('compraFaltasAbertas')}
     ${pegaConst('_cpChaveFalta')}
     ${pegaFuncao('compraAplicarFaltas')}
+    // A OC automatica tira da lista o que ja pediu (ver A DEMANDA DE MATERIA-PRIMA).
+    ${pegaFuncao('_ocLista')}
+    ${pegaFuncao('_mpChave')}
+    ${pegaFuncao('_mpCobertoAuto')}
     return { compraFaltasAbertas, compraAplicarFaltas, compraNecessidadeBruta,
              compraConsumoItem, plano: () => STATE.compraPlano };
   `)(mundo);
