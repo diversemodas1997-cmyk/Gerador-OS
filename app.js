@@ -27282,11 +27282,14 @@ function _dashStatusEm(o, t) {
 function _dashTuboTrechos(ref, emCurso) {
   const grupo = {};
   Object.keys(DASH_TUBO_GRUPOS).forEach(g => DASH_TUBO_GRUPOS[g].forEach(k => { grupo[k] = g; }));
-  const out = { entrada: 0, corrente: 0, residual: 0, residualOS: 0, prateleira: 0 };
+  const out = { entrada: 0, corrente: 0, residual: 0, residualOS: 0, prateleira: 0, porStatus: {} };
   (STATE.ordens || []).forEach(o => {
     const st = emCurso ? _statusOS(o) : _dashStatusEm(o, ref);
     const g = grupo[st];
-    if (g) out[g] += produtosOS(o);
+    if (!g) return;
+    const n = produtosOS(o);
+    out[g] += n;
+    out.porStatus[st] = (out.porStatus[st] || 0) + n;
   });
   out.residualOS = out.residual;
   // O saldo de peças prontas até o fim do dia de referência.
@@ -27411,6 +27414,50 @@ function _dashTuboContorno(rs, x0, sw, cy) {
   return `${cima}${baixo} L ${f(x0)} ${f(cy + rs[0])} Z`;
 }
 
+/* OS STATUS DENTRO DO TUBO (03/11/2026, Jones: "crie um filtro que mostre
+   todos os status no tubo da produção. Esse filtro deve ser apenas um botão de
+   liga e desliga. Não modifique o tubo como está, apenas mostre todos os status
+   em cada um dos volumes divididos por cor. Os volumes de cada status devem
+   influenciar o formato do tubo em relação ao tamanho da saída e dos demais
+   volumes").
+   Desligado, o tubo é o de sempre. Ligado, cada trecho guarda a sua largura e
+   se divide em fatias iguais, uma por status do grupo (DASH_TUBO_GRUPOS, na
+   ordem do fluxo; no Residual, mais o saldo do Estoque de produtos), cada uma
+   na cor do status e com a grossura do volume DELE, na mesma régua da saída e
+   dos grupos — o status que pesa estufa o tubo, o vazio o estreita. O
+   tracejado continua o ideal de cada trecho inteiro. */
+const DASH_TUBO_STATUS_CHAVE = 'dashTuboStatus';
+const DASH_TUBO_PRATELEIRA = { k: 'prateleira', cor: '#0b6b45', rotulo: 'Estoque de produtos (saldo)', curto: 'Estoque de produtos' };
+function _dashTuboComStatus() {
+  try { return localStorage.getItem(DASH_TUBO_STATUS_CHAVE) === '1'; }
+  catch (e) { return false; }
+}
+function _dashTuboAlternarStatus() {
+  try { localStorage.setItem(DASH_TUBO_STATUS_CHAVE, _dashTuboComStatus() ? '0' : '1'); } catch (e) { /* vale só nesta tela */ }
+  _dashFluxoAssinatura = '';
+  renderFluxoDash();
+}
+window._dashTuboAlternarStatus = _dashTuboAlternarStatus;
+// O mesmo desenho de _dashTuboContorno, com fatias de larguras diferentes: [{ x, w, r }].
+function _dashTuboContornoFatias(fs, cy) {
+  const n = fs.length;
+  const a = i => fs[i].x + fs[i].w * 0.22, b = i => fs[i].x + fs[i].w * 0.78;
+  const f = x => x.toFixed(1);
+  const fim = fs[n - 1].x + fs[n - 1].w;
+  let cima = `M ${f(fs[0].x)} ${f(cy - fs[0].r)} L ${f(b(0))} ${f(cy - fs[0].r)}`;
+  let baixo = '';
+  for (let i = 1; i < n; i++) {
+    const m = (b(i - 1) + a(i)) / 2;
+    cima += ` C ${f(m)} ${f(cy - fs[i - 1].r)}, ${f(m)} ${f(cy - fs[i].r)}, ${f(a(i))} ${f(cy - fs[i].r)} L ${f(b(i))} ${f(cy - fs[i].r)}`;
+  }
+  cima += ` L ${f(fim)} ${f(cy - fs[n - 1].r)} L ${f(fim)} ${f(cy + fs[n - 1].r)}`;
+  for (let i = n - 1; i > 0; i--) {
+    const m = (b(i - 1) + a(i)) / 2;
+    baixo += ` L ${f(a(i))} ${f(cy + fs[i].r)} C ${f(m)} ${f(cy + fs[i].r)}, ${f(m)} ${f(cy + fs[i - 1].r)}, ${f(b(i - 1))} ${f(cy + fs[i - 1].r)}`;
+  }
+  return `${cima}${baixo} L ${f(fs[0].x)} ${f(cy + fs[0].r)} Z`;
+}
+
 function _dashTuboHtml(escala, ref = Date.now()) {
   const agora = ref;
   const nHist = DASH_TUBO_HIST[escala] || 12;
@@ -27495,9 +27542,34 @@ function _dashTuboHtml(escala, ref = Date.now()) {
   const dec = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   // O WIP fica vermelho quando passa 15% da saída: é o trecho que o Lean vigia.
   const cores = DASH_TUBO_TRECHOS.map(t => t.k === 'corrente' && base && seg.corrente > base.corrente * 1.15 ? '#d92b2b' : t.cor);
-  const paradas = cores.map((c, i) => `<stop offset="${(i / nT * 100).toFixed(2)}%" stop-color="${c}"/><stop offset="${((i + 1) / nT * 100).toFixed(2)}%" stop-color="${c}"/>`).join('');
+  let paradas = cores.map((c, i) => `<stop offset="${(i / nT * 100).toFixed(2)}%" stop-color="${c}"/><stop offset="${((i + 1) / nT * 100).toFixed(2)}%" stop-color="${c}"/>`).join('');
   const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(seg[t.k])} produtos — ${t.dica}${base ? `. Ideal: até ${fmt(base[t.k])}, as vendas de referência` : ''}`)}</title></rect>`).join('');
-  const contorno = _dashTuboContorno(rs, x0, sw, cy);
+  let contorno = _dashTuboContorno(rs, x0, sw, cy);
+  let pontas = [{ r: rs[0], cor: cores[0] }, { r: rs[nT - 1], cor: cores[nT - 1] }];
+  let fatiasHtml = '', legendaStatus = '';
+  const comStatus = _dashTuboComStatus();
+  if (comStatus) {
+    const fatias = [];
+    DASH_TUBO_TRECHOS.forEach((t, i) => {
+      const itens = t.k === 'saida'
+        ? [{ k: 'saida', cor: t.cor, rotulo: 'Vendas do período', n: seg.saida }]
+        : DASH_TUBO_GRUPOS[t.k].map(k => {
+          const st = STATUS_OS.find(x => x.k === k) || { k, cor: t.cor, rotulo: k };
+          return { k, cor: st.cor, rotulo: st.rotulo, curto: st.curto, n: T.porStatus[k] || 0 };
+        }).concat(t.k === 'residual' ? [Object.assign({ n: T.prateleira }, DASH_TUBO_PRATELEIRA)] : []);
+      const w = sw / itens.length;
+      itens.forEach((it, j) => fatias.push(Object.assign({ x: x0 + sw * i + w * j, w, r: raio(it.n), t }, it)));
+    });
+    const fim = x0 + sw * nT;
+    const pct = x => ((x - x0) / (fim - x0) * 100).toFixed(2);
+    paradas = fatias.map(fa => `<stop offset="${pct(fa.x)}%" stop-color="${fa.cor}"/><stop offset="${pct(fa.x + fa.w)}%" stop-color="${fa.cor}"/>`).join('');
+    contorno = _dashTuboContornoFatias(fatias, cy);
+    pontas = [{ r: fatias[0].r, cor: fatias[0].cor }, { r: fatias[fatias.length - 1].r, cor: fatias[fatias.length - 1].cor }];
+    fatiasHtml = DASH_TUBO_TRECHOS.slice(1).map((t, i) => `<line class="dash-tubo-divisa" x1="${(x0 + sw * (i + 1)).toFixed(1)}" x2="${(x0 + sw * (i + 1)).toFixed(1)}" y1="${cy - rMax - 4}" y2="${cy + rMax + 4}"/>`).join('')
+      + fatias.map(fa => `<rect x="${fa.x.toFixed(1)}" y="${cy - rMax - 6}" width="${fa.w.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${fa.rotulo}: ${fmt(fa.n)} produtos (${fa.t.rot})`)}</title></rect>`).join('');
+    legendaStatus = `<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
+      `<span title="${esc(fa.rotulo)}"><i class="dash-tubo-pingo" style="background:${fa.cor}"></i>${esc(fa.curto || fa.rotulo)}<b>${fmt(fa.n)}</b></span>`).join('')}</div>`).join('')}</div>`;
+  }
   const svg = `<svg class="dash-tubo-svg" viewBox="0 0 ${W} ${cy * 2}" role="img" aria-label="Tubo da produção: entrada, corrente, residual e saída">
       <defs>
         <linearGradient id="dashTuboCor" gradientUnits="userSpaceOnUse" x1="${x0}" y1="0" x2="${(x0 + sw * nT).toFixed(1)}" y2="0">${paradas}</linearGradient>
@@ -27508,10 +27580,10 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       </defs>
       <path d="${contorno}" fill="url(#dashTuboCor)"/>
       <path d="${contorno}" fill="url(#dashTuboLuz)"/>
-      <ellipse cx="${x0}" cy="${cy}" rx="${Math.max(2, rs[0] * 0.22).toFixed(1)}" ry="${rs[0].toFixed(1)}" fill="${cores[0]}" stroke="rgba(0,0,0,.35)"/>
-      <ellipse cx="${(x0 + sw * nT).toFixed(1)}" cy="${cy}" rx="${Math.max(2, rs[nT - 1] * 0.22).toFixed(1)}" ry="${rs[nT - 1].toFixed(1)}" fill="${cores[nT - 1]}" stroke="rgba(0,0,0,.25)"/>
+      <ellipse cx="${x0}" cy="${cy}" rx="${Math.max(2, pontas[0].r * 0.22).toFixed(1)}" ry="${pontas[0].r.toFixed(1)}" fill="${pontas[0].cor}" stroke="rgba(0,0,0,.35)"/>
+      <ellipse cx="${(x0 + sw * nT).toFixed(1)}" cy="${cy}" rx="${Math.max(2, pontas[1].r * 0.22).toFixed(1)}" ry="${pontas[1].r.toFixed(1)}" fill="${pontas[1].cor}" stroke="rgba(0,0,0,.25)"/>
       ${base ? `<path class="dash-tubo-padrao" d="${_dashTuboContorno(DASH_TUBO_TRECHOS.map(t => raio(base[t.k])), x0, sw, cy)}"/>` : ''}
-      ${dicas}
+      ${comStatus ? fatiasHtml : dicas}
     </svg>`;
 
   const rotulos = DASH_TUBO_TRECHOS.map((t, i) => {
@@ -27598,11 +27670,14 @@ function _dashTuboHtml(escala, ref = Date.now()) {
   return `<div class="dash-status dash-tubo">
       <div class="dash-status-cab">
         <b>Tubo da produção</b>
+        <button type="button" class="dash-tubo-liga${comStatus ? ' ligado' : ''}" role="switch" aria-checked="${comStatus}" onclick="_dashTuboAlternarStatus()"
+          title="Liga e desliga a divisão de cada trecho pelos seus status"><i></i>Status</button>
         <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · Entrada, Corrente e Residual são o que está em cada grupo de status ${_dashDesloc ? 'no fim do período' : 'agora'}; a Saída, as vendas do período · o contorno tracejado é o <b>tubo ideal</b>: reto, da grossura das vendas — o trecho que estufa para fora dele é excesso · passe o mouse num trecho para ver os status de cada um</span>
       </div>
       <div class="dash-tubo-total"><span>Total dentro do tubo</span> <b>${fmt(total)}</b> <em>= Entrada ${fmt(seg.entrada)} + Corrente ${fmt(seg.corrente)} + Residual ${fmt(seg.residual)}${base ? ` · ideal até ${fmt(saidaRef * 3)}` : ''}</em></div>
       ${svg}
       <div class="dash-tubo-rot">${rotulos}</div>
+      ${legendaStatus}
       ${ideal}
       <div class="dash-tubo-diag" style="--cor:${p.cor}">
         <div class="dash-tubo-padrao-agora"><b>${esc(p.rot)}</b><span>${esc(p.texto)}</span></div>
