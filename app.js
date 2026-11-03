@@ -27235,8 +27235,8 @@ const DASH_TUBO_TRECHOS = [
     dica: 'OS em Enfestando, Cortando, Separando, Costurando (Descalvado e São Carlos), Retirando fio e Parado' },
   { k: 'residual', rot: 'Residual (estoques)', cor: '#d0a000',
     dica: 'OS em Ensacado, Estoque com fio e Trânsito (Descalvado e São Carlos) + o saldo de peças prontas do Estoque de produtos' },
-  { k: 'saida', rot: 'Saída', cor: '#17a06a',
-    dica: 'produtos das OS que chegaram ao Estoque no período' }
+  { k: 'saida', rot: 'Saída (vendas)', cor: '#17a06a',
+    dica: 'as vendas do período: peças que saíram do Estoque de produtos para o cliente (plataformas e lançamentos à mão)' }
 ];
 const DASH_TUBO_PADROES = {
   acumulo: { rot: 'Acúmulo de WIP — produção empurrada', cor: '#d92b2b',
@@ -27438,23 +27438,50 @@ function _dashTuboHtml(escala, ref = Date.now()) {
      está em processo e o que fica parado não passam do que sai. Então o ideal
      de todos os trechos é o MESMO número — a saída de referência — e o
      tracejado é um cilindro reto; o trecho que estufa para fora dele é excesso.
-       ritmo de saída       o que chega ao Estoque por dia útil, média das
-                            últimas 12 semanas (o que a fábrica consegue
-                            terminar). Sempre das semanas, em qualquer filtro:
-                            o ideal não muda porque se olhou por dia ou por mês;
-       saída de referência  ritmo × dias úteis do período até hoje.
      (Antes, no mesmo dia, o WIP ideal era ritmo × atravessamento alvo — Lei de
      Little —, com o alvo gravado em meta.tuboProducao. A regra da fábrica é
      mais estrita: nada em processo acima da saída.) */
-  const semanas = escala === 'semana' ? hist
-    : _dashPeriodos(agora, 'semana', DASH_TUBO_HIST.semana + 1).periodos.slice(0, -1)
-      .map(w => _dashTuboVolumes(ivs, w, agora)).filter(h => h.entrada || h.saida || h.residual);
-  const ritmo = semanas.length ? semanas.reduce((s, h) => s + h.vazao, 0) / semanas.length : 0;
-  const saidaRef = ritmo * Math.max(1, v.dias);
-  const base = ritmo > 0 ? Object.fromEntries(DASH_TUBO_TRECHOS.map(t => [t.k, saidaRef])) : null;
+  /* A SAÍDA SÃO AS VENDAS (03/11/2026, Jones: "a saída deve ser as vendas do
+     período"). A produção é puxada pelo que vende: a Saída do tubo e a régua do
+     tracejado passam a ser as peças que saíram do Estoque de produtos para o
+     CLIENTE (as vendas das plataformas que o Painel DRE baixa e as saídas à mão
+     para cliente; cancelamento, devolução e defeitos não são venda).
+       ritmo de vendas      peças vendidas por dia corrido, nos últimos 28 dias
+                            que têm venda registrada (a leitura do DRE começou
+                            em 30/10/2026: até lá, a média é dos dias que há).
+                            Dia corrido, e não útil: as lojas vendem no sábado
+                            e no domingo;
+       saída de referência  ritmo × dias corridos do período até hoje. */
+  const diaIso = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const vendas = new Map();
+  const movsAcab = window._acabInterno && typeof window._acabInterno.todosMovs === 'function'
+    ? window._acabInterno.todosMovs() : (STATE.acabMov || []);
+  movsAcab.forEach(m => {
+    if (m.tipo !== 'saida' || (m.destino && m.destino !== 'cliente') || !m.data) return;
+    const k = String(m.data).slice(0, 10);
+    vendas.set(k, (vendas.get(k) || 0) + (Number(m.qtd) || 0));
+  });
+  const diaRef = diaIso(agora);
+  const somaVendas = (de, ate) => [...vendas.entries()].reduce((s, [k, q]) => k >= de && k <= ate ? s + q : s, 0);
+  const contaDias = (de, ate) => Math.max(0, Math.round((Date.parse(ate + 'T12:00') - Date.parse(de + 'T12:00')) / DASH_DIA_MS) + 1);
+  // A média é de dias INTEIROS: hoje, ainda pela metade, puxaria o ritmo para
+  // baixo — fica de fora quando já há dia anterior com venda.
+  const primeiraVenda = [...vendas.keys()].filter(k => k <= diaRef).sort()[0] || null;
+  const ontem = diaIso(agora - DASH_DIA_MS);
+  const fimJanela = _dashDesloc || !primeiraVenda || primeiraVenda > ontem ? diaRef : ontem;
+  const iniJanela = primeiraVenda ? [primeiraVenda, diaIso(Date.parse(fimJanela + 'T12:00') - 27 * DASH_DIA_MS)].sort()[1] : null;
+  const diasJanela = iniJanela ? contaDias(iniJanela, fimJanela) : 0;
+  const ritmo = diasJanela ? somaVendas(iniJanela, fimJanela) / diasJanela : 0;
+  // Os dias do período que contam são os que têm registro de venda possível:
+  // antes da primeira venda lançada não havia leitura, e não "vendeu zero".
+  const fimPer = [diaIso(atual.ate - 1), diaRef].sort()[0];
+  const iniPer = primeiraVenda ? [diaIso(atual.de), primeiraVenda].sort()[1] : diaIso(atual.de);
+  const diasPer = iniPer <= fimPer ? contaDias(iniPer, fimPer) : 0;
+  const saidaRef = ritmo * Math.max(1, diasPer);
+  const base = ritmo > 0 && diasPer > 0 ? Object.fromEntries(DASH_TUBO_TRECHOS.map(t => [t.k, saidaRef])) : null;
   // Os trechos: os grupos de status no instante de referência, e a saída do período.
   const T = _dashTuboTrechos(agora, !_dashDesloc);
-  const seg = { entrada: T.entrada, corrente: T.corrente, residual: T.residual, saida: v.saida };
+  const seg = { entrada: T.entrada, corrente: T.corrente, residual: T.residual, saida: somaVendas(diaIso(atual.de), fimPer) };
   // O TOTAL não é um trecho: é tudo o que está dentro do tubo (Jones: "é a soma
   // de tudo o que está dentro do tubo") — a saída já saiu.
   const total = seg.entrada + seg.corrente + seg.residual;
@@ -27469,7 +27496,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
   // O WIP fica vermelho quando passa 15% da saída: é o trecho que o Lean vigia.
   const cores = DASH_TUBO_TRECHOS.map(t => t.k === 'corrente' && base && seg.corrente > base.corrente * 1.15 ? '#d92b2b' : t.cor);
   const paradas = cores.map((c, i) => `<stop offset="${(i / nT * 100).toFixed(2)}%" stop-color="${c}"/><stop offset="${((i + 1) / nT * 100).toFixed(2)}%" stop-color="${c}"/>`).join('');
-  const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(seg[t.k])} produtos — ${t.dica}${base ? `. Ideal: até ${fmt(base[t.k])}, a saída de referência` : ''}`)}</title></rect>`).join('');
+  const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(seg[t.k])} produtos — ${t.dica}${base ? `. Ideal: até ${fmt(base[t.k])}, as vendas de referência` : ''}`)}</title></rect>`).join('');
   const contorno = _dashTuboContorno(rs, x0, sw, cy);
   const svg = `<svg class="dash-tubo-svg" viewBox="0 0 ${W} ${cy * 2}" role="img" aria-label="Tubo da produção: entrada, corrente, residual e saída">
       <defs>
@@ -27557,21 +27584,21 @@ function _dashTuboHtml(escala, ref = Date.now()) {
     const caixa = (rot, k) => {
       const e = seg[k] - saidaRef;
       return `<div class="${e > 0 ? 'excesso' : 'folga'}"><span>${rot}</span><b>${e > 0 ? '+' + fmt(e) : '✓ ' + fmt(seg[k])}</b>
-          <em>${e > 0 ? `acima da saída${k === 'entrada' ? '' : ` — no ritmo de saída, ${dec(e / ritmo)} dias úteis sem liberar OS para escoar`}` : `dentro da saída — folga de ${fmt(-e)}`}</em></div>`;
+          <em>${e > 0 ? `acima das vendas${k === 'entrada' ? '' : ` — no ritmo de vendas, ${dec(e / ritmo)} dias sem liberar OS para escoar`}` : `dentro das vendas — folga de ${fmt(-e)}`}</em></div>`;
     };
-    ideal = `<div class="dash-tubo-ideal"><b>Produção ideal pela saída</b> <span>— nada entra, fica em processo ou parado acima do que sai</span>
+    ideal = `<div class="dash-tubo-ideal"><b>Produção ideal pelas vendas</b> <span>— nada entra, fica em processo ou parado acima do que vende</span>
         <div class="dash-tubo-ideal-grade">
-          <div><span>Saída de referência</span><b>${fmt(saidaRef)}</b><em>${fmt(ritmo)} produtos por dia útil (média de ${semanas.length} ${semanas.length === 1 ? 'semana' : 'semanas'}) × ${Math.max(1, v.dias)} ${Math.max(1, v.dias) === 1 ? 'dia útil' : 'dias úteis'} — o limite de cada trecho</em></div>
+          <div><span>Vendas de referência</span><b>${fmt(saidaRef)}</b><em>${fmt(ritmo)} peças vendidas por dia (média de ${diasJanela} ${diasJanela === 1 ? 'dia' : 'dias'}${diasJanela < 28 ? ', desde a primeira venda registrada' : ''}) × ${Math.max(1, diasPer)} ${Math.max(1, diasPer) === 1 ? 'dia' : 'dias'} do período — o limite de cada trecho</em></div>
           ${caixa('Entrada', 'entrada')}${caixa('Corrente (WIP)', 'corrente')}${caixa('Residual (estoques)', 'residual')}
         </div></div>`;
   } else {
-    ideal = '<div class="dash-tubo-ideal"><b>Produção ideal pela saída</b><div>Nenhuma OS chegou ao Estoque nas últimas semanas: sem ritmo de saída, não há como desenhar o tubo ideal.</div></div>';
+    ideal = '<div class="dash-tubo-ideal"><b>Produção ideal pelas vendas</b><div>Não há vendas registradas no Estoque de produtos até este período: sem o ritmo de vendas, não há como desenhar o tubo ideal.</div></div>';
   }
 
   return `<div class="dash-status dash-tubo">
       <div class="dash-status-cab">
         <b>Tubo da produção</b>
-        <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · Entrada, Corrente e Residual são o que está em cada grupo de status ${_dashDesloc ? 'no fim do período' : 'agora'}; a Saída, as OS que chegaram ao Estoque no período · o contorno tracejado é o <b>tubo ideal</b>: reto, da grossura da saída — o trecho que estufa para fora dele é excesso · passe o mouse num trecho para ver os status de cada um</span>
+        <span><b>${esc(atual.nome)}</b> (o filtro Analisar por) · a espessura de cada trecho é o volume dele, na mesma régua · Entrada, Corrente e Residual são o que está em cada grupo de status ${_dashDesloc ? 'no fim do período' : 'agora'}; a Saída, as vendas do período · o contorno tracejado é o <b>tubo ideal</b>: reto, da grossura das vendas — o trecho que estufa para fora dele é excesso · passe o mouse num trecho para ver os status de cada um</span>
       </div>
       <div class="dash-tubo-total"><span>Total dentro do tubo</span> <b>${fmt(total)}</b> <em>= Entrada ${fmt(seg.entrada)} + Corrente ${fmt(seg.corrente)} + Residual ${fmt(seg.residual)}${base ? ` · ideal até ${fmt(saidaRef * 3)}` : ''}</em></div>
       ${svg}
