@@ -1363,6 +1363,32 @@
       } });
   }
 
+  /* LIMPAR A AVALIAÇÃO (03/11/2026, Jones: "insira função de limpar a avaliação
+     de cores do colorímetro, para que o usuário possa recomeçar a avaliação
+     completa, sem nenhuma amostra avaliada como referência"). O "Reavaliar a
+     fase" refaz uma fase concluída; este apaga a avaliação da OS inteira —
+     todas as fases, tons, referências, concluídas e reavaliações — e volta à
+     Amostra 1 da primeira fase que precisa de avaliação, sem referência. A
+     lista da tela também é limpa, para nenhuma leitura antiga servir de padrão.
+     As medições continuam no histórico deste computador (IndexedDB), e o que
+     já foi gravado nas observações da OS pelo relatório não é tocado. */
+  function avLimpar() {
+    const c = S.avOS;
+    if (!c || !S.os) return;
+    perguntar({ titulo: `Limpar a avaliação da OS ${S.os.numero}`,
+      texto: 'Todas as fases voltam ao começo: tons, referências, amostras medidas, fases concluídas e reavaliações são apagados, e a avaliação recomeça na Amostra 1, sem nenhuma referência. A lista da tela também é limpa. As medições continuam no histórico deste computador, e o que já foi gravado nas observações da OS não muda.',
+      sim: 'Limpar a avaliação', executar: () => {
+        S.avOS = avNovoOS(c.osId);
+        const j = S.fases.findIndex(f => !f.semAval);
+        avUsarFase(j >= 0 ? j : 0);
+        S.leituras = []; S.cont = { padrao: 0, amostra: 0 };
+        S.padrao = null; S.atual = null;
+        if (S.janela === 'rel') S.janela = null;
+        avGuardar();
+        status(`Avaliação limpa. ${avDica()}`);
+      } });
+  }
+
   /* ---------------- o relatório ---------------- */
   // Os tons em uso, na ordem dos números das rodadas.
   function tonsDoRelatorio(av = S.av) {
@@ -1537,6 +1563,8 @@
         <div><span class="cm-fraco">Avaliando as amostras da</span> <b>${escH(S.os.rotulo)}</b></div>
         <div class="cm-botoes">
           <button type="button" class="btn small ${S.janela === 'rel' ? 'primary' : ''}" onclick="Colorimetro.alternar('rel')">Relatório de tonalidades</button>
+          <button type="button" class="btn small ghost" onclick="Colorimetro.avLimpar()"
+            title="Apaga a avaliação desta OS (todas as fases) e recomeça na Amostra 1, sem nenhuma referência">Limpar avaliação</button>
           <button type="button" class="btn small ghost" onclick="Colorimetro.encerrarOS()">Medir sem OS</button></div></div>
       ${htmlFases()}
       ${concluida ? `<div class="cm-aviso" style="background:var(--ok-bg);color:var(--ok)">${escH(fase.rotulo)} concluída. Para repetir esta fase, escolha-a em "Reavaliar a fase".</div>` : `
@@ -2045,7 +2073,7 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avReavaliar, avConcluirFase, avReavaliarFase,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avReavaliar, avConcluirFase, avReavaliarFase, avLimpar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
