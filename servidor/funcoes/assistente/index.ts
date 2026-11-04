@@ -177,14 +177,14 @@ const FERRAMENTAS = [
   },
   {
     name: 'criar_os_conjugada',
-    description: 'Cria uma OS COM NÚMERO conjugada a uma OS que já existe (a "ativa") e manda a folha dela para a impressão logo em seguida. Sem grade: usa a conjugada do cadastro da grade da ativa (mesmo enfesto, número de baixo, não reserva pano); se a grade não tiver conjugada ou ela já existir, a ferramenta pergunta. Com grade (e desenho, se não for o mesmo da ativa): cria a OS pelo formulário da Nova OS e amarra o status dela ao da ativa (como o "⋯ → conjugar"); essa reserva o pano dela. Se devolver `conflitos`, NADA foi criado: explique, pergunte e só com o sim explícito da pessoa chame de novo com `aceitar`. Nunca aceite um conflito por conta própria.',
+    description: 'Cria uma OS COM NÚMERO conjugada a uma OS que já existe (a "ativa") e manda a folha dela para a impressão logo em seguida. Sem grade: usa a conjugada do cadastro da grade da ativa (mesmo enfesto, número de baixo, não reserva pano); se a grade não tiver conjugada ou ela já existir, a ferramenta pergunta. Com grade (e desenho, se não for o mesmo da ativa): cria uma CÓPIA da ativa trocando só a cor (o desenho), com a mesma grade e SEM CAMADAS (quem corta define), pelo planejamento aprovado na hora (o número sai do servidor), e amarra o status dela ao da ativa (como o "⋯ → conjugar"). NÃO pergunte camadas. Se devolver `conflitos`, NADA foi criado: explique, pergunte e só com o sim explícito da pessoa chame de novo com `aceitar`. Nunca aceite um conflito por conta própria.',
     input_schema: {
       type: 'object',
       properties: {
         os_ativa: { type: 'string', description: 'Número da OS que a nova vai seguir.' },
         grade: { type: 'string', description: 'Grade da nova OS (nome ou palavras dele). Em branco = a conjugada do cadastro da grade da ativa; sem ela, a mesma grade da ativa.' },
         desenho: { type: 'string', description: 'Palavras do desenho que a pessoa disse (código, cor, descrição). Em branco = o da ativa; se casar com vários e o da ativa estiver entre eles, vale o da ativa.' },
-        camadas: { type: 'integer', description: 'Camadas do enfesto (só com grade). Sem ele, fica o que o formulário calcula.' },
+        camadas: { type: 'integer', description: 'Só se a pessoa disser. Sem ele a conjugada nasce sem camadas.' },
         data: { type: 'string', description: 'Data da OS (só com grade). Padrão: hoje.' },
         obs: { type: 'string', description: 'Observação da OS (só com grade).' },
         imprimir: { type: 'boolean', description: 'Padrão true: abre a folha da nova OS e o diálogo de impressão.' },

@@ -22,7 +22,8 @@
    E A OS CONJUGADA (19/10/2026, Junior: "autonomia para criar OS com número
    que seja conjugada seguindo outra OS... e imprimir essa OS logo em
    seguida"): `criar_os_conjugada`, pela regra da grade ou pelo formulário +
-   salvarOS e a amarra do "⋯ → conjugar". É a única OS com número que nasce
+   cópia da ativa com outra cor, sem camadas, pelo planejamento
+   + aprovação, e a amarra do "⋯ → conjugar". É a única OS com número que nasce
    daqui, sempre presa a uma OS que já existe, e a folha vai para a impressão
    sem esperar clique.
 
@@ -435,7 +436,9 @@
     { codigo: 'medida_sem_risco', casa: /não veio de um risco/i },
     { codigo: 'camadas_acima_do_limite', casa: /camadas, mas o limite/i },
     { codigo: 'falta_de_tecido', casa: /Não há tecido disponível/i },
-    { codigo: 'grade_repetida', casa: /parece ser a MESMA que já está cadastrada/i }
+    { codigo: 'grade_repetida', casa: /parece ser a MESMA que já está cadastrada/i },
+    // A pergunta do "✔ Aprovar" — só a conjugada a aceita (ver criarConjugada).
+    { codigo: 'aprovar_planejamento', casa: /^Aprovar o planejamento e gerar/ }
   ];
 
   function acharDesenho(texto, preferido) {
@@ -463,7 +466,7 @@
   /* O formulário da Nova OS já aberto (OS ou planejamento): desenho, linha,
      grade, camadas, data e obs nos próprios campos, com os mesmos onchange.
      Devolve `parar` quando falta algo — é o que volta para o Claude. */
-  async function preencherFormulario(p, des, exigirGrade) {
+  async function preencherFormulario(p, des, exigirGrade, semCamadas) {
     const el = id => document.getElementById(id);
     if (des) {
       const sd = el('f-desenho');
@@ -505,6 +508,13 @@
     }
 
     if (p.camadas != null) { el('f-enf-camadas').value = Math.max(1, parseInt(p.camadas, 10) || 1); calcularAlvoDeCamadas(); }
+    else if (semCamadas) {
+      // A grade acabou de pôr o máximo do tecido (_aplicarCamadasMaximasDefault):
+      // a conjugada nasce sem camadas, e quem corta define.
+      el('f-enf-camadas').value = '';
+      try { _osCamadasAuto = ''; } catch (e) { /* app.js sem a variável */ }
+      atualizarCalculosEnfesto();
+    }
     if (p.grades_iguais != null) { el('f-plan-vezes').value = Math.max(1, parseInt(p.grades_iguais, 10) || 1); atualizarCalculosEnfesto(); }
     if (p.data) { const d = dataIso(p.data); if (!d) return { parar: { erro: `Não entendi a data "${p.data}".` } }; el('f-data').value = d; }
     if (p.tipo_producao) el('f-tipo-producao').value = p.tipo_producao === 'puxada' ? 'puxada' : 'empurrada';
@@ -673,13 +683,23 @@
         des = (STATE.desenhos || []).find(d => d.id === ativa.desenhoId) || null;
         if (!des) return { pergunta: 'O desenho da OS ativa não está no cadastro — pergunte à pessoa qual desenho usar.' };
       }
-      // A Nova OS, como o botão da tela.
-      osEditId = null;
-      _osPlanAbrir = false;
-      goto('nova-os');
+      /* CÓPIA DA OS ATIVA, SÓ COM OUTRA COR (04/11/2026, Junior: "Esse tipo de
+         OS deve ser a cópia de uma OS com número, apenas mudando a cor e sem
+         camadas determinadas"). Desde 28/10 toda Nova OS abre em planejamento
+         e o salvarOS recusa OS nova (9bee543): o formulário de OS que este
+         caminho esperava não abre mais, e a conjugada parou ("Não consegui
+         abrir o formulário da Nova OS"). Agora vai pelo caminho do programa:
+         planejamento com o desenho da cor pedida e a grade e o tipo de produção
+         da ativa, camadas vazias, e a aprovação na sequência — é ela que
+         reserva o número no servidor. Por isso quem pede precisa poder aprovar. */
+      if (typeof podeAprovarPlanejamento === 'function' && !podeAprovarPlanejamento()) {
+        return { sem_acesso: true, mensagem: 'A OS conjugada ganha número pela aprovação do planejamento, e esta conta não aprova. Peça a quem aprova (admin ou área "Aprovar planejamento").' };
+      }
+      if (!p.tipo_producao && ativa.tipoProducao) p = Object.assign({}, p, { tipo_producao: ativa.tipoProducao });
+      novoPlanejamento();
       await esperar(300);
-      if (_osPlanModo || osEditId) return { erro: 'Não consegui abrir o formulário da Nova OS.' };
-      const f = await preencherFormulario(p, des, true);
+      if (!_osPlanModo || osEditId) return { erro: 'Não consegui abrir o formulário de planejamento.' };
+      const f = await preencherFormulario(p, des, true, true);
       if (f.parar) return f.parar;
       const grupo = [ativa.id, ..._conjugadasManuaisDaOS(ativa).map(o => o.id), ativa.conjugadaId].filter(Boolean);
       conflitos.push(...conflitosDoFormulario(f, grupo));
@@ -692,24 +712,42 @@
         if (falta.length) conflitos.push({ codigo: 'falta_de_tecido',
           texto: `Falta tecido: ${falta.map(x => `${x.tecidoNome} ${x.corNome || ''} (faltam ${Number(x.falta || 0).toFixed(1).replace('.', ',')} kg)`).join('; ')}.` });
       } catch (e) { /* a prova do salvarOS pergunta de novo */ }
-      const preenchido = { desenho: _rotuloDesenhoOS(des), grade: f.g ? f.g.nome : undefined, camadas: f.cam || undefined,
-        numero: document.getElementById('f-os').value, data: f.dataForm || undefined };
+      const preenchido = { desenho: _rotuloDesenhoOS(des), grade: f.g ? f.g.nome : undefined, camadas: f.cam || 'sem camadas',
+        numero: 'sai na aprovação', data: f.dataForm || undefined };
       const r = pendentesOuBotao(conflitos, preenchido);
       if (r) return r;
 
+      const ativaId = ativa.id;
       const antes = new Set((STATE.ordens || []).map(o => o.id));
-      const perguntas = await salvarRespondendo(salvarOS, aceitos);
-      const novas = (STATE.ordens || []).filter(o => !antes.has(o.id));
-      nova = novas.find(o => !o.conjugadaPaiId) || null;
-      if (!nova) {
+      const antesPlan = new Set(_planLista().map(x => x.id));
+      const perguntas = await salvarRespondendo(salvarPlanejamento, aceitos);
+      const plan = _planLista().find(x => !antesPlan.has(x.id)) || null;
+      if (!plan) {
         return { criada: false, preenchido_na_tela: preenchido, perguntas_do_programa: perguntas.length ? perguntas : undefined,
           erro: perguntas.length ? 'O programa fez uma pergunta ao salvar: leve-a para a pessoa.' : 'O programa não salvou — veja a mensagem que apareceu na tela.' };
       }
-      // A grade da nova OS pode ter conjugada própria: o salvarOS já a gerou.
-      novas.filter(o => o !== nova).forEach(o => { marcar(o); outras.push(o.os); });
+      // A aprovação relê o servidor (_reservarNumerosOS): as OS do STATE são
+      // outras depois dela, e a ativa é achada de novo pelo id.
+      const perguntasAprov = await salvarRespondendo(() => aprovarPlanejamento(plan.id), new Set([...aceitos, 'aprovar_planejamento']));
+      const ativaAgora = (STATE.ordens || []).find(o => o.id === ativaId);
+      if (ativaAgora) ativa = ativaAgora;
+      const novas = (STATE.ordens || []).filter(o => !antes.has(o.id));
+      nova = novas.find(o => o.planejamento && o.planejamento.id === plan.id && !o.conjugadaPaiId) || null;
+      if (!nova) {
+        // Não ficou OS: o planejamento sai também, para a próxima tentativa
+        // não deixar dois iguais na lista.
+        if (_planLista().some(x => x.id === plan.id)) {
+          STATE.osPlanejadas = _planLista().filter(x => x.id !== plan.id);
+          try { await saveState('osPlanejadas'); atualizarContagensNav(); } catch (e) { /* fica na lista; excluir à mão */ }
+        }
+        return { criada: false, preenchido_na_tela: preenchido, perguntas_do_programa: perguntasAprov.length ? perguntasAprov : undefined,
+          erro: perguntasAprov.length ? 'O programa fez uma pergunta ao aprovar: leve-a para a pessoa.' : 'A aprovação não gerou a OS — veja a mensagem que apareceu na tela.' };
+      }
+      // A grade da nova OS pode ter conjugada própria: a aprovação já a gerou.
+      novas.filter(o => o !== nova && o.planejamento && o.planejamento.id === plan.id).forEach(o => { marcar(o); outras.push(o.os); });
       nova.conjugadaStatusPaiId = ativa.id;
       marcar(nova);
-      caminho = 'à mão: reserva o pano dela, e o status segue a OS ativa';
+      caminho = 'cópia da OS ativa com outra cor: sem camadas (quem corta define), número pela aprovação, e o status segue a OS ativa';
       try { await saveState('ordens'); }
       catch (e) { return { criada: true, os: resumoOS(nova), erro: 'A OS foi salva, mas a amarra com a ativa não gravou. Conjugue pelo "⋯ → conjugar" da lista.' }; }
     }
