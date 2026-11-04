@@ -188,8 +188,12 @@ if ($status.Count) {
     if (-not (Test-Path -LiteralPath $f)) { continue }   # apagado: nada a medir
     $a = Get-Item -LiteralPath $f
     # O indice e o proprio indexador que acabou de escrever: so os arquivos da
-    # pasta de riscos podem estar no meio de uma copia.
-    if ($i.Caminho -ne 'dados/riscos-pdf.json' -and ($agora - $a.LastWriteTime).TotalMinutes -lt $QuietoMin) {
+    # pasta de riscos podem estar no meio de uma copia. Vale a MAIS RECENTE entre
+    # modificacao e criacao: copiar pelo Explorer guarda a data de modificacao do
+    # original (04/11/2026: PDF de 12:01 colado depois das 12:03), e quem diz a
+    # hora da copia e a criacao.
+    $mexido = @($a.LastWriteTime, $a.CreationTime) | Sort-Object | Select-Object -Last 1
+    if ($i.Caminho -ne 'dados/riscos-pdf.json' -and ($agora - $mexido).TotalMinutes -lt $QuietoMin) {
       Write-Host ("copia em andamento (" + $i.Caminho + ") - fica para a proxima passagem"); exit 0
     }
     if ($a.Length -gt $MaxMB * 1MB) {
