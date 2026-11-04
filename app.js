@@ -34909,8 +34909,13 @@ function _coresDaPecaOS(o, re) {
   const comps = (o.componentes || [])
     .filter(c => re.test(_normNome(c.nome)))
     .sort((a, b) => parte(a.nome) - parte(b.nome));
-  const cores = [...new Set(comps.map(c => corNomeCurto(c.corNome || '').toUpperCase()).filter(Boolean))];
-  return cores.join('/');
+  const cores = [...new Set(comps.map(c => corNomeCurto(c.corNome || '')).filter(Boolean))];
+  /* NA ORDEM DO DESENHO (04/11/2026, Junior: OS 0662 "está mostrando invertido
+     Azul/preto/branco" — as cores são Azul/Branco/Preto). Pela parte, quem não
+     tem número (Capuz, Forro, Bolso) entrava primeiro e empurrava o Branco para
+     o fim. A ordem canônica é a do desenho, a mesma do banner da folha de OS
+     (coresDaPecaOS); a parte só desempata o que o desenho não ordena. */
+  return ordenarCoresNomesPorDesc(cores, desenhoDaOS(o)).map(c => c.toUpperCase()).join('/');
 }
 
 // Uma etiqueta por pagina (100mm x 50mm). Os PACOTES seguem a regra do volume
