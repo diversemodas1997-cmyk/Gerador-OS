@@ -31851,7 +31851,10 @@ function _mesclarComOSExistente(data) {
   // OS NOVA nasce com as tonalidades padrão já abertas (ver TONS_PADRAO_NOVA_OS):
   // é aqui que se sabe que é nova, e não numa reedição. Quem enfesta em menos
   // recolhe as linhas no − da própria folha.
-  if (!ant) return _aplicarTonsPadrao(_congelarDesenhoNaOS(data, null));
+  if (!ant) {
+    data[FOLHA_CONJ_AGREGADA] = true;   // OS nova: a folha agrega as conjugadas
+    return _aplicarTonsPadrao(_congelarDesenhoNaOS(data, null));
+  }
   const juntos = { ...ant, ...data };
   // A FOTO DO DESENHO fica a de antes, a não ser que a troca tenha sido feita à
   // mão: outro desenho escolhido, ou o botão "Usar a versão atual do desenho".
@@ -32248,6 +32251,7 @@ async function aprovarPlanejamento(id) {
     if (!os.data || os.data < hoje) os.data = hoje;
     os.criadoEm = agora.toISOString();
     os.criadoPor = _obsQuemSou();
+    os[FOLHA_CONJ_AGREGADA] = true;   // nasce agora: a folha agrega as conjugadas
     os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
       aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou(),
       ...(vezes > 1 ? { vez: `${n} de ${vezes}` } : {}) };
@@ -36791,6 +36795,21 @@ function _ativaStatusDaOS(os) {
    fica fora. Grupos grandes existem (até 11 OS em 03/11/2026): cada DESENHO
    aparece uma vez só, com o número de todas as OS que o usam, e acima de quatro
    desenhos a área se divide em duas linhas, para nenhum ficar ilegível. */
+/* SÓ AS OS NOVAS AGREGAM (04/11/2026, Junior: "apenas as OS criadas futuramente
+   sejam mostradas o mesmo desenho técnico na mesma folha, pois as OS já
+   existentes precisam continuar separadas"). A marca é posta quando a OS NASCE
+   (_mesclarComOSExistente sem anterior, e a aprovação do planejamento); a
+   conjugada da grade a herda da matriz, porque é copiada dela. Não dá para usar
+   `criadoEm`: OS antigas sem esse campo o recebem na primeira reedição e
+   passariam a agregar. Na folha, a matriz sem a marca fica com a folha
+   separada de antes, e do grupo só entram as OS marcadas. */
+const FOLHA_CONJ_AGREGADA = 'folhaConjAgregada';
+function _grupoConjugadoDaFolha(o) {
+  const g = _grupoConjugadoDaOS(o);
+  if (!g.matriz[FOLHA_CONJ_AGREGADA]) return { matriz: g.matriz, membros: [g.matriz] };
+  return { matriz: g.matriz, membros: g.membros.filter(m => m[FOLHA_CONJ_AGREGADA]) };
+}
+
 function _grupoConjugadoDaOS(o) {
   const ordens = STATE.ordens || [];
   const porId = new Map(ordens.map(x => [x.id, x]));
@@ -41604,6 +41623,7 @@ function duplicarOS(id) {
   copia.os = '';
   copia.data = new Date().toISOString().slice(0, 10);
   delete copia.repeticoes;
+  delete copia[FOLHA_CONJ_AGREGADA];   // quem marca é a aprovação, ao nascer
   _demAgrupando = null;
   _osPlanAbrir = true;
   _abrirOSNoForm(copia, `Novo planejamento · cópia da OS ${o.os || ''}`);
@@ -42838,9 +42858,10 @@ function renderPrintSheet(o) {
     ? `<img src="${urlDesenho(desenho.img)}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
   // As OS conjugadas: a matriz agrega o grupo (ver _grupoConjugadoDaOS).
-  const grupoConj = _grupoConjugadoDaOS(o);
+  const grupoConj = _grupoConjugadoDaFolha(o);
   const ehMatrizConj = grupoConj.membros.length > 1 && grupoConj.matriz.id === o.id;
-  const ehMembroConj = grupoConj.membros.length > 1 && !ehMatrizConj;
+  const ehMembroConj = grupoConj.membros.length > 1 && !ehMatrizConj
+    && grupoConj.membros.some(m => m.id === o.id);
   let rotuloDesenho = `Desenho Técnico: ${esc(o.codigo || '—')}`;
   let quadroConjHtml = '';
   if (ehMatrizConj) {
