@@ -10711,7 +10711,7 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
    etiqueta; corrigir a grade da OS corrige a quantidade. */
 const AVI_BAIXA_DESDE = '2026-09-25';
 // Antes da costura: o aviamento da OS está reservado.
-const AVI_STATUS_RESERVA = ['nao-iniciado', 'materia-prima', 'enfestando', 'cortando', 'separando',
+const AVI_STATUS_RESERVA = ['nao-iniciado', 'materia-prima', 'mp-preparada', 'enfestando', 'cortando', 'separando',
   'ensacado', 'ensacado-sc', 'transito-ida', 'parado'];
 
 // O quadro do estoque a que um material da OS pertence ("003 · Etiqueta de
@@ -25089,6 +25089,8 @@ function _dashCartoesDaOS(o, opts) {
        OS foi criada (ver _dashIntervalos). */
     if (atual < 0 && _statusOS(o) === 'nao-iniciado') poe('naoIniciado', total);
     if (atual < 0 && _statusOS(o) === 'materia-prima') poe('materiaPrima', total);
+    // Matéria-prima preparada (04/11/2026): o passo seguinte, com a mesma guarda.
+    if (atual < 0 && _statusOS(o) === 'mp-preparada') poe('mpPreparada', total);
     if (atual < 0 && _statusOS(o) === 'enfestando') poe('enfestando', total);
     if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
     // Separando (24/09/2026): o passo seguinte, também sem campo, com a mesma guarda.
@@ -25213,7 +25215,7 @@ function _dashFluxoDados() {
      lista responde "quais", que é a pergunta seguinte de quem olha o número. */
   const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
-    naoIniciado: zero(), materiaPrima: zero(), enfestando: zero(),
+    naoIniciado: zero(), materiaPrima: zero(), mpPreparada: zero(), enfestando: zero(),
     cortando: zero(), separando: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
@@ -25826,6 +25828,10 @@ function _dashFluxoPassos(d) {
     { nome: 'Preparando matéria-prima', cards: [
       { k: 'materiaPrima', nome: 'Matéria-prima', v: d.materiaPrima, statusFiltro: 'materia-prima',
         dica: 'OS com o status Preparando matéria-prima: o pano está sendo preparado para o enfesto. Não tem campo próprio no menu — é trabalho em curso.' },
+    ] },
+    { nome: 'Matéria-prima preparada', cards: [
+      { k: 'mpPreparada', nome: 'M.-prima preparada', v: d.mpPreparada, statusFiltro: 'mp-preparada',
+        dica: 'OS com o status Matéria-prima preparada: o pano está pronto e a OS espera a mesa de enfesto.' },
     ] },
     { nome: 'Enfestando', cards: [
       { k: 'enfestando', nome: 'No enfesto', v: d.enfestando, statusFiltro: 'enfestando',
@@ -27269,7 +27275,7 @@ const DASH_TUBO_PADROES = {
    continua sendo as OS que chegaram ao Estoque no período. Cancelado e as OS
    já em Estoque não entram em grupo nenhum. */
 const DASH_TUBO_GRUPOS = {
-  entrada: ['nao-iniciado', 'materia-prima'],
+  entrada: ['nao-iniciado', 'materia-prima', 'mp-preparada'],
   corrente: ['enfestando', 'cortando', 'separando', 'costurando', 'costurando-sc', 'fios', 'parado'],
   residual: ['ensacado', 'ensacado-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta']
 };
@@ -27554,7 +27560,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
   let fatiasHtml = '', legendaStatus = '', nomesStatus = '';
   const comStatus = _dashTuboComStatus();
   // A faixa abaixo do tubo com o nome de cada status (ver O NOME EMBAIXO DA COR).
-  const hNomes = comStatus ? 112 : 0;
+  let hNomes = 0;   // calculada com os nomes (O NOME EMBAIXO DA COR)
   if (comStatus) {
     const fatias = [];
     DASH_TUBO_TRECHOS.forEach((t, i) => {
@@ -27575,13 +27581,51 @@ function _dashTuboHtml(escala, ref = Date.now()) {
     fatiasHtml = DASH_TUBO_TRECHOS.slice(1).map((t, i) => `<line class="dash-tubo-divisa" x1="${(x0 + sw * (i + 1)).toFixed(1)}" x2="${(x0 + sw * (i + 1)).toFixed(1)}" y1="${cy - rMax - 4}" y2="${cy + rMax + 4}"/>`).join('')
       + fatias.map(fa => `<rect x="${fa.x.toFixed(1)}" y="${cy - rMax - 6}" width="${fa.w.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${fa.rotulo}: ${fmt(fa.n)} produtos (${fa.t.rot})`)}</title></rect>`).join('');
     /* O NOME EMBAIXO DA COR (04/11/2026, Junior: "insira abaixo de cada cor que
-       representa os status no tubo de produção o nome de cada status"). Cada
-       fatia leva o nome do status logo abaixo dela, inclinado: as sete da
-       Corrente dividem um trecho só e, deitadas, se atropelariam. */
-    nomesStatus = fatias.map(fa => {
-      const x = (fa.x + fa.w / 2).toFixed(1), y = cy * 2 + 10;
-      return `<g class="dash-tubo-nome"><line x1="${x}" x2="${x}" y1="${cy + rMax + 2}" y2="${y - 4}" stroke="${fa.cor}"/>`
-        + `<text x="${x}" y="${y + 6}" transform="rotate(-38 ${x} ${y + 6})" text-anchor="end">${esc(fa.curto || fa.rotulo)}</text></g>`;
+       representa os status no tubo de produção o nome de cada status"; e
+       "diminua o tamanho da fonte ... para caberem na orientação horizontal
+       sequenciados"). Cada fatia leva o nome do status logo abaixo dela, deitado
+       e na ordem do tubo. O " | " vira quebra de linha e as palavras se quebram
+       para caber na largura; no trecho com mais de 3 fatias (Corrente, Residual)
+       os nomes alternam entre duas fileiras, e cada um ganha a largura de duas
+       fatias. A fonte é uma só, a maior que deixa toda palavra caber (até 12). */
+    const CH = 0.58;  // largura média de um caractere, em fração da fonte
+    const nomes = fatias.map(fa => {
+      const nItens = fatias.filter(x => x.t === fa.t).length;
+      const alterna = nItens > 3;
+      const larg = (alterna ? fa.w * 2 : fa.w) - 4;
+      const partes = String(fa.curto || fa.rotulo).split('|').map(s => s.trim()).filter(Boolean);
+      return { fa, alterna, larg, partes, palavras: partes.join(' ').split(/s+/) };
+    });
+    const fonte = Math.min(12, ...nomes.map(n => n.larg / (CH * Math.max(...n.palavras.map(p => p.length)))));
+    const linhaH = fonte * 1.15;
+    const linhasDe = n => {
+      const cabe = Math.max(1, Math.floor(n.larg / (CH * fonte)));
+      const out = [];
+      n.partes.forEach(parte => {
+        let atual = '';
+        parte.split(/s+/).forEach(p => {
+          if (!atual) atual = p;
+          else if ((atual + ' ' + p).length <= cabe) atual += ' ' + p;
+          else { out.push(atual); atual = p; }
+        });
+        if (atual) out.push(atual);
+      });
+      return out;
+    };
+    const linhas = nomes.map(linhasDe);
+    const altFileira = Math.max(...linhas.map(l => l.length)) * linhaH + 6;
+    const topo = cy * 2 + 8;
+    hNomes = 8 + altFileira * (nomes.some(n => n.alterna) ? 2 : 1) + 4;
+    let ordemNoTrecho = 0, trechoAnt = null;
+    nomesStatus = nomes.map((n, i) => {
+      if (n.fa.t !== trechoAnt) { trechoAnt = n.fa.t; ordemNoTrecho = 0; }
+      const fileira = n.alterna ? ordemNoTrecho % 2 : 0;
+      ordemNoTrecho++;
+      const x = (n.fa.x + n.fa.w / 2).toFixed(1);
+      const y = topo + fileira * altFileira;
+      const tsp = linhas[i].map((l, k) => `<tspan x="${x}" dy="${k ? linhaH.toFixed(1) : fonte.toFixed(1)}">${esc(l)}</tspan>`).join('');
+      return `<g class="dash-tubo-nome"><line x1="${x}" x2="${x}" y1="${cy + rMax + 2}" y2="${(y - 1).toFixed(1)}" stroke="${n.fa.cor}"/>`
+        + `<text x="${x}" y="${y.toFixed(1)}" text-anchor="middle" font-size="${fonte.toFixed(1)}">${tsp}</text></g>`;
     }).join('');
     legendaStatus = `<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
       `<span title="${esc(fa.rotulo)}"><i class="dash-tubo-pingo" style="background:${fa.cor}"></i>${esc(fa.curto || fa.rotulo)}<b>${fmt(fa.n)}</b></span>`).join('')}</div>`).join('')}</div>`;
@@ -35848,6 +35892,19 @@ const STATUS_OS = [
   { k: 'nao-iniciado',    cor: '#98a2ae', bg: '#f2f4f7', bd: '#cfd6de', rotulo: 'Não iniciado' },
   { k: 'materia-prima',   cor: '#8a5a2b', bg: '#f3ece2', bd: '#d7c3a5', rotulo: 'Preparando matéria-prima', curto: 'Prep. matéria-prima', ordem: 1, preIda: true,
     re: /prepar\w*\s+(d[ae]\s+)?mat[ée]ria|mat[ée]ria[\s-]?prima/i },
+  /* MATÉRIA-PRIMA PREPARADA (04/11/2026, Junior: "insira um novo status com
+     nome Matéria-prima preparada. Ela vem depois de preparando matéria-prima").
+     O pano já está pronto e a OS espera a mesa de enfesto. Como o Separando, é
+     só carimbo à mão — sem `re`: uma etapa chamada "Matéria-prima preparada"
+     já acenderia o Preparando pela `re` de cima. `ordem` 1.5 o põe entre o
+     preparo (1) e o enfesto (2). É fila antes do corte: Entrada no tubo, reserva
+     como o preparo, e a conjugada criada pula, como pula o preparo. As
+     sequências próprias dos desenhos o ganham logo depois do Preparando
+     (_statusSeqDoDesenho). Nasce com "pode pular": do Preparando a OS vai
+     para ela ou direto para o Enfestando, e nenhuma OS em curso fica presa num
+     passo novo. Quem quiser o passo obrigatório desmarca o "pode pular" na
+     sequência do desenho. A cor é o oliva, que ainda não tinha dono. */
+  { k: 'mp-preparada',    cor: '#7d8a1c', bg: '#f2f4dc', bd: '#cfd49a', rotulo: 'Matéria-prima preparada', curto: 'M.-prima preparada', ordem: 1.5, preIda: true },
   /* O ENFESTO NAO E ETAPA DO CHECKLIST: ele mora na TABELA DE ENFESTOS da
      folha, uma linha por fase da grade, com a caixa de cada uma. Daí `enfesto`
      em vez de `re` — ver _marcasDoStatus. A `re` fica junto para o caso de
@@ -36290,7 +36347,7 @@ function exigirConjugarOS(acao) {
    OS para a FRENTE no caminho (ou para fora dele). A caixa de uma etapa que a
    OS já passou é só o checklist sendo posto em dia. O caminho é o que o Junior
    descreveu, na ordem da folha: */
-const FLUXO_STATUS_OS = ['materia-prima', 'enfestando', 'cortando', 'separando', 'ensacado',
+const FLUXO_STATUS_OS = ['materia-prima', 'mp-preparada', 'enfestando', 'cortando', 'separando', 'ensacado',
   'costurando', 'transito-ida', 'ensacado-sc', 'costurando-sc', 'estoque-fio-sc',
   'transito-volta', 'estoque-fio', 'fios', 'estoque'];
 // O carimbo à mão ainda vale? Mais novo que a última caixa, ou mais velho só
@@ -36393,7 +36450,7 @@ function _statusDesdeCelulaOS(o) {
    acertada. Vale só para o carimbo À MÃO: as caixas do checklist continuam
    movendo a OS sozinhas. */
 const STATUS_SEQ_PADRAO = [
-  { k: 'materia-prima' }, { k: 'enfestando' }, { k: 'cortando' },
+  { k: 'materia-prima' }, { k: 'mp-preparada', pula: true }, { k: 'enfestando' }, { k: 'cortando' },
   { k: 'separando' }, { k: 'ensacado' }, { k: 'costurando' },
   { k: 'transito-ida' }, { k: 'ensacado-sc' }, { k: 'costurando-sc' },
   { k: 'estoque-fio-sc' }, { k: 'transito-volta' },
@@ -36422,6 +36479,10 @@ function _desenhoDaOS(o) {
 function _statusSeqDoDesenho(d) {
   const seq = (d && Array.isArray(d.statusSeq) ? d.statusSeq : [])
     .filter(x => x && STATUS_OS.some(s => s.k === x.k) && !STATUS_FORA_SEQ.includes(x.k));
+  // Matéria-prima preparada (04/11/2026) nasceu depois das sequências gravadas:
+  // quem tem o Preparando e não tem ela a recebe logo depois dele.
+  const iMP = seq.findIndex(x => x.k === 'materia-prima');
+  if (iMP >= 0 && !seq.some(x => x.k === 'mp-preparada')) seq.splice(iMP + 1, 0, { k: 'mp-preparada', pula: true });
   return seq.length ? seq : null;
 }
 
@@ -36554,7 +36615,7 @@ function _statusIdsOrdenados(ids, seq) {
 function _statusGrafoSeq(seq, o) {
   const conjugadaCriada = !!(o && (o.conjugadaPaiId || o.conjugadaStatusPaiId));
   // Os nós são os ids (a volta do enfesto/corte conta: ver _statusSeqExpandida).
-  const lista = [{ k: 'nao-iniciado', id: 'nao-iniciado' }].concat(_statusSeqExpandida(seq).map(x => x.k === 'materia-prima'
+  const lista = [{ k: 'nao-iniciado', id: 'nao-iniciado' }].concat(_statusSeqExpandida(seq).map(x => (x.k === 'materia-prima' || x.k === 'mp-preparada')
     ? Object.assign({}, x, { pula: conjugadaCriada || !!x.pula }) : x));
   const prox = {};
   lista.forEach(x => { prox[x.id] = prox[x.id] || []; });
@@ -37536,7 +37597,7 @@ function _filaLista() {
    coluna Material faltante continuam lendo o status real. */
 function _naListaNaoIniciadas(o) {
   const st = _statusOS(o);
-  return st === 'nao-iniciado' || st === 'materia-prima';
+  return st === 'nao-iniciado' || st === 'materia-prima' || st === 'mp-preparada';
 }
 function _osNaoIniciadas() {
   return (STATE.ordens || []).filter(_naListaNaoIniciadas);

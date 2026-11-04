@@ -446,7 +446,7 @@ console.log('-- o que fica gravado --');
   // derrubar o teste.
   ok('12s. a fila do seletor esta na ordem pedida',
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
-     ['Não iniciado', 'Preparando matéria-prima', 'Enfestando', 'Cortando', 'Separando',
+     ['Não iniciado', 'Preparando matéria-prima', 'Matéria-prima preparada', 'Enfestando', 'Cortando', 'Separando',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
       'Estoque em trânsito | Desc x São Carlos', 'Estoque em trânsito | São Carlos X Desc.',
       'Costurando | Descalvado', 'Costurando | São Carlos',
@@ -1395,14 +1395,22 @@ console.log('-- o que fica gravado --');
        op() === 'nao-iniciado,materia-prima,parado,cancelado', op());
     q.conjugadaPaiId = 'mae';
     ok('39a. OS criada conjugada (segue outra) pula o preparo: materia-prima ou enfestando',
-       op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+       op() === 'nao-iniciado,materia-prima,mp-preparada,enfestando,parado,cancelado', op());
     q.conjugadaStatusPaiId = 'mae'; delete q.conjugadaPaiId;
     ok('39b. a que segue outra pela amarra da mao tambem pula (09/10, Junior)',
-       op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+       op() === 'nao-iniciado,materia-prima,mp-preparada,enfestando,parado,cancelado', op());
     delete q.conjugadaStatusPaiId;
+    // MATÉRIA-PRIMA PREPARADA (04/11/2026): depois do preparo, com pode pular.
+    q.statusOS = 'materia-prima';
+    ok('39e. preparando: segue para materia-prima preparada ou direto para enfestando',
+       /materia-prima,mp-preparada,enfestando,parado,cancelado/.test(op()), op());
+    q.statusOS = 'mp-preparada';
+    ok('39f. materia-prima preparada: segue para enfestando, sem pular o enfesto',
+       /mp-preparada,enfestando,parado,cancelado/.test(op()) && !/cortando/.test(op()), op());
+    delete q.statusOS;
     sq.ctx.STATE.desenhos[0].statusSeq = [{ k: 'materia-prima', pula: true }].concat(STATUS_SEQ_PADRAO_TESTE.slice(1));
     ok('39c. com "pode pular" marcado no desenho, a OS comum pula o preparo (09/10, Junior)',
-       op() === 'nao-iniciado,materia-prima,enfestando,parado,cancelado', op());
+       op() === 'nao-iniciado,materia-prima,mp-preparada,enfestando,parado,cancelado', op());
     sq.ctx.STATE.desenhos[0].statusSeq = STATUS_SEQ_PADRAO_TESTE; delete q.conjugadaStatusPaiId;
     await api.mudarStatusOS('q1', 'enfestando');
     ok('39d. e o salto e recusado na OS comum', api._statusOS(q) === 'nao-iniciado', api._statusOS(q));
