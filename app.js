@@ -31851,10 +31851,7 @@ function _mesclarComOSExistente(data) {
   // OS NOVA nasce com as tonalidades padrão já abertas (ver TONS_PADRAO_NOVA_OS):
   // é aqui que se sabe que é nova, e não numa reedição. Quem enfesta em menos
   // recolhe as linhas no − da própria folha.
-  if (!ant) {
-    data[FOLHA_CONJ_AGREGADA] = true;   // OS nova: a folha agrega as conjugadas
-    return _aplicarTonsPadrao(_congelarDesenhoNaOS(data, null));
-  }
+  if (!ant) return _aplicarTonsPadrao(_congelarDesenhoNaOS(data, null));
   const juntos = { ...ant, ...data };
   // A FOTO DO DESENHO fica a de antes, a não ser que a troca tenha sido feita à
   // mão: outro desenho escolhido, ou o botão "Usar a versão atual do desenho".
@@ -32251,7 +32248,6 @@ async function aprovarPlanejamento(id) {
     if (!os.data || os.data < hoje) os.data = hoje;
     os.criadoEm = agora.toISOString();
     os.criadoPor = _obsQuemSou();
-    os[FOLHA_CONJ_AGREGADA] = true;   // nasce agora: a folha agrega as conjugadas
     os.planejamento = { id: p.id, criadoEm: p.criadoEm || '', criadoPor: p.criadoPor || '',
       aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou(),
       ...(vezes > 1 ? { vez: `${n} de ${vezes}` } : {}) };
@@ -36773,114 +36769,6 @@ function _carimboCanceladoNaFolha(o) {
 function _ativaStatusDaOS(os) {
   if (!os || !os.conjugadaStatusPaiId) return null;
   return (STATE.ordens || []).find(x => x.id === os.conjugadaStatusPaiId) || null;
-}
-
-/* A FOLHA AGREGADA DAS OS CONJUGADAS (03/11/2026, Jones: "insira no programa a
-   capacidade de agregar as informações de duas OS em uma única OS, quando forem
-   conjugadas. Dessa forma, o desenho técnico deve mostrar a OS matriz na porção
-   da esquerda e os outros desenhos na porção da direita, dividindo o espaço do
-   desenho técnico de forma igual para todos os desenhos das OS conjugadas").
-
-   AGREGAR É NA FOLHA, NÃO NOS DADOS. Cada OS continua sendo um registro: o SKU
-   que dá entrada no Estoque de produtos, o pano que a matriz da grade reserva,
-   a numeração, as cargas da expedição, o colorímetro e os relatórios são todos
-   por OS, e fundir duas num registro só quebraria cada um deles sem volta. O
-   que muda é o papel: a folha da MATRIZ passa a mostrar o grupo inteiro — os
-   desenhos lado a lado e um quadro com a OS, o desenho, a cor, a grade e os
-   produtos de cada uma — e a folha de cada conjugada diz de qual matriz ela é.
-
-   O GRUPO vale para as duas amarras: a da grade (conjugadaPaiId, mesmo enfesto)
-   e a manual (conjugadaStatusPaiId, mesmo status). A matriz é a OS do topo,
-   achada subindo pelas amarras; os membros, descendo a partir dela. Cancelada
-   fica fora. Grupos grandes existem (até 11 OS em 03/11/2026): cada DESENHO
-   aparece uma vez só, com o número de todas as OS que o usam, e acima de quatro
-   desenhos a área se divide em duas linhas, para nenhum ficar ilegível. */
-/* SÓ AS OS NOVAS AGREGAM (04/11/2026, Junior: "apenas as OS criadas futuramente
-   sejam mostradas o mesmo desenho técnico na mesma folha, pois as OS já
-   existentes precisam continuar separadas"). A marca é posta quando a OS NASCE
-   (_mesclarComOSExistente sem anterior, e a aprovação do planejamento); a
-   conjugada da grade a herda da matriz, porque é copiada dela. Não dá para usar
-   `criadoEm`: OS antigas sem esse campo o recebem na primeira reedição e
-   passariam a agregar. Na folha, a matriz sem a marca fica com a folha
-   separada de antes, e do grupo só entram as OS marcadas. */
-const FOLHA_CONJ_AGREGADA = 'folhaConjAgregada';
-function _grupoConjugadoDaFolha(o) {
-  const g = _grupoConjugadoDaOS(o);
-  if (!g.matriz[FOLHA_CONJ_AGREGADA]) return { matriz: g.matriz, membros: [g.matriz] };
-  return { matriz: g.matriz, membros: g.membros.filter(m => m[FOLHA_CONJ_AGREGADA]) };
-}
-
-function _grupoConjugadoDaOS(o) {
-  const ordens = STATE.ordens || [];
-  const porId = new Map(ordens.map(x => [x.id, x]));
-  let matriz = porId.get(o.id) || o;
-  const subiu = new Set([matriz.id]);
-  for (;;) {
-    const pid = matriz.conjugadaPaiId || matriz.conjugadaStatusPaiId;
-    const pai = pid && porId.get(pid);
-    if (!pai || subiu.has(pai.id)) break;   // amarra quebrada ou em ciclo: para aqui
-    subiu.add(pai.id);
-    matriz = pai;
-  }
-  const membros = [matriz];
-  const dentro = new Set([matriz.id]);
-  for (let i = 0; i < membros.length; i++) {
-    const m = membros[i];
-    ordens.forEach(x => {
-      if (dentro.has(x.id) || (x.conjugadaPaiId !== m.id && x.conjugadaStatusPaiId !== m.id)) return;
-      dentro.add(x.id);
-      if (_statusOS(x) !== 'cancelado') membros.push(x);
-    });
-  }
-  const resto = membros.slice(1)
-    .sort((a, b) => String(a.os || '').localeCompare(String(b.os || ''), undefined, { numeric: true }));
-  return { matriz, membros: [matriz].concat(resto) };
-}
-
-// Os desenhos do grupo, um por desenho, com as OS de cada um (a matriz primeiro).
-function _desenhosConjugadosHtml(membros) {
-  const porDesenho = new Map();
-  membros.forEach(m => {
-    const d = desenhoDaOS(m);
-    const k = d && d.id ? d.id : 'sem:' + m.id;
-    if (!porDesenho.has(k)) porDesenho.set(k, { d, oss: [] });
-    porDesenho.get(k).oss.push(m);
-  });
-  const blocos = [...porDesenho.values()];
-  const n = blocos.length;
-  const cols = n <= 4 ? n : Math.ceil(n / 2);
-  const altura = n > 4 ? '58mm' : '118mm';
-  // Estilos INLINE, como o resto da folha: sobrevivem a um styles.css em cache.
-  return `<div class="desenho-conj" style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:3px;width:100%;align-self:stretch;padding-top:16px;box-sizing:border-box;">`
-    + blocos.map((b, i) => `<div class="desenho-conj-item" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;border:1px dashed #999;padding:2px;">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:6.5pt;font-weight:700;text-align:center;line-height:1.15;">${i === 0 ? 'MATRIZ · ' : ''}OS ${b.oss.map(x => esc(x.os || '—')).join(', ')}<br>${esc((b.d && b.d.codigo) || b.oss[0].codigo || '—')}</div>
-        ${b.d && b.d.img
-          ? `<img src="${urlDesenho(b.d.img)}" alt="Desenho técnico" style="max-width:100%;max-height:${altura};object-fit:contain;">`
-          : '<div class="no-img" style="padding:8px;font-size:7pt;">sem desenho</div>'}
-      </div>`).join('')
-    + '</div>';
-}
-
-// O quadro das OS do grupo, embaixo do desenho da matriz.
-function _quadroConjugadasHtml(grupo) {
-  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
-  const th = 'style="border:1px solid #000;padding:1px 4px;background:#eee;font-family:\'IBM Plex Mono\',monospace;font-size:6.5pt;text-transform:uppercase;letter-spacing:.04em;"';
-  const td = 'style="border:1px solid #000;padding:1px 4px;"';
-  const tdN = 'style="border:1px solid #000;padding:1px 4px;text-align:right;font-family:\'IBM Plex Mono\',monospace;"';
-  const linhas = grupo.membros.map(m => {
-    const d = desenhoDaOS(m);
-    return `<tr><td ${td}><b>${m.id === grupo.matriz.id ? '★ ' : ''}${esc(m.os || '—')}</b></td>
-      <td ${td}>${esc((d && d.codigo) || m.codigo || '—')}</td>
-      <td ${td}>${esc(coresDaPecaOS(m).join(' / ').toUpperCase() || '—')}</td>
-      <td ${td}>${esc((m.grade && m.grade.descricao) || '—')}</td>
-      <td ${tdN}>${fmt(produtosOS(m))}</td></tr>`;
-  }).join('');
-  const total = grupo.membros.reduce((s, m) => s + (produtosOS(m) || 0), 0);
-  return `<div class="conj-quadro" style="font-size:7pt;border-top:1px solid #000;">
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr><th ${th}>OS</th><th ${th}>Desenho</th><th ${th}>Cor</th><th ${th}>Grade</th><th ${th}>Produtos</th></tr></thead>
-        <tbody>${linhas}<tr><td ${td} colspan="4"><b>Total das ${grupo.membros.length} OS conjugadas</b> (★ = matriz)</td><td ${tdN}><b>${fmt(total)}</b></td></tr></tbody>
-      </table></div>`;
 }
 
 // As OS que foram conjugadas A ESTA, à mão.
@@ -41623,7 +41511,6 @@ function duplicarOS(id) {
   copia.os = '';
   copia.data = new Date().toISOString().slice(0, 10);
   delete copia.repeticoes;
-  delete copia[FOLHA_CONJ_AGREGADA];   // quem marca é a aprovação, ao nascer
   _demAgrupando = null;
   _osPlanAbrir = true;
   _abrirOSNoForm(copia, `Novo planejamento · cópia da OS ${o.os || ''}`);
@@ -42854,23 +42741,9 @@ function renderPrintSheet(o) {
     }
   }
   const desenho = desenhoDaOS(o);
-  let imgHtml = desenho?.img
+  const imgHtml = desenho?.img
     ? `<img src="${urlDesenho(desenho.img)}" alt="Desenho técnico">`
     : `<div class="no-img">Nenhum desenho técnico selecionado</div>`;
-  // As OS conjugadas: a matriz agrega o grupo (ver _grupoConjugadoDaOS).
-  const grupoConj = _grupoConjugadoDaFolha(o);
-  const ehMatrizConj = grupoConj.membros.length > 1 && grupoConj.matriz.id === o.id;
-  const ehMembroConj = grupoConj.membros.length > 1 && !ehMatrizConj
-    && grupoConj.membros.some(m => m.id === o.id);
-  let rotuloDesenho = `Desenho Técnico: ${esc(o.codigo || '—')}`;
-  let quadroConjHtml = '';
-  if (ehMatrizConj) {
-    imgHtml = _desenhosConjugadosHtml(grupoConj.membros);
-    rotuloDesenho = `Desenhos técnicos · ${grupoConj.membros.length} OS conjugadas`;
-    quadroConjHtml = _quadroConjugadasHtml(grupoConj);
-  } else if (ehMembroConj) {
-    rotuloDesenho += ` · conjugada — folha agregada na OS ${esc(grupoConj.matriz.os || '—')}`;
-  }
 
   // Texto informativo da COR do desenho técnico — barra em CAIXA ALTA logo acima
   // do desenho. Junta TODAS as cores usadas nas variantes (Cor 1, Cor 2 e Cor 3),
@@ -43093,10 +42966,9 @@ function renderPrintSheet(o) {
       <div class="sheet-left">
         ${corBannerHtml}
         <div class="desenho-area">
-          <div class="desenho-label">${rotuloDesenho}</div>
+          <div class="desenho-label">Desenho Técnico: ${esc(o.codigo || '—')}</div>
           ${imgHtml}
         </div>
-        ${quadroConjHtml}
         <!-- OBSERVAÇÕES — fica aqui, embaixo do desenho, porque e esta coluna
              que sobra espaco: o desenho tem a altura travada pela largura
              (~137mm) e nao cresce mais que isso. Antes ficava na coluna
