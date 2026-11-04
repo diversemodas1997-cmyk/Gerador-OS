@@ -659,7 +659,7 @@
         pg.grade = gAtiva.nome;
         notas.push(`Sem grade no pedido: usei a mesma da OS ${ativa.os} (${gAtiva.nome}).`);
       } else if (gAtiva) {
-        const termos = norm(pg.grade).trim().split(/s+/).filter(Boolean);
+        const termos = norm(pg.grade).trim().split(/\s+/).filter(Boolean);
         const casam = (STATE.grades || []).filter(g => termos.every(x => norm(g.nome).includes(x)));
         if (casam.length > 1 && casam.includes(gAtiva) && norm(gAtiva.nome).trim() !== norm(pg.grade).trim()) {
           pg.grade = gAtiva.nome;
@@ -673,7 +673,7 @@
         // Palavras da LINHA (cm.lisa) vêm junto com a cor; elas são da grade.
         if (!r.desenho && desAtiva) {
           const daGrade = norm(gAtiva ? gAtiva.nome : '');
-          const resto = norm(p.desenho).split(/s+/).filter(x => x && !daGrade.includes(x)).join(' ');
+          const resto = norm(p.desenho).split(/\s+/).filter(x => x && !daGrade.includes(x)).join(' ');
           if (resto && resto !== norm(p.desenho).trim()) r = acharDesenho(resto, desAtiva);
         }
         if (!r.desenho) return r;

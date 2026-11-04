@@ -27594,7 +27594,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       const alterna = nItens > 3;
       const larg = (alterna ? fa.w * 2 : fa.w) - 4;
       const partes = String(fa.curto || fa.rotulo).split('|').map(s => s.trim()).filter(Boolean);
-      return { fa, alterna, larg, partes, palavras: partes.join(' ').split(/s+/) };
+      return { fa, alterna, larg, partes, palavras: partes.join(' ').split(/\s+/) };
     });
     const fonte = Math.min(12, ...nomes.map(n => n.larg / (CH * Math.max(...n.palavras.map(p => p.length)))));
     const linhaH = fonte * 1.15;
@@ -27603,7 +27603,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       const out = [];
       n.partes.forEach(parte => {
         let atual = '';
-        parte.split(/s+/).forEach(p => {
+        parte.split(/\s+/).forEach(p => {
           if (!atual) atual = p;
           else if ((atual + ' ' + p).length <= cabe) atual += ' ' + p;
           else { out.push(atual); atual = p; }
