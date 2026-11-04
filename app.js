@@ -4983,7 +4983,7 @@ function goto(page) {
   if (page === 'estoque-fio') renderFasePorId('estoqueFio');
   if (page === 'estoque-fio-sc') renderFasePorId('estoqueFioSC');
   if (page === 'fios') renderFasePorId('fios');
-  if (page === 'expedicao') { renderFasePorId('expedicao'); trocarAbaExpedicao(expAbaAtiva); }
+  if (page === 'expedicao') trocarAbaExpedicao('plano');
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
   if (page === 'relatorio-producao') renderRelatorioProducao();
@@ -16279,8 +16279,11 @@ function expAlternarTodasOe(abrir) {
   renderExpedicaoPlano();
 }
 
+// Desde 04/11/2026 a área tem só o Planejamento: a aba "Expedição · fim do
+// fluxo" saiu (redundante com a área das OS em trânsito). A função fica porque
+// avisos e atalhos ainda a chamam com 'plano'.
 function trocarAbaExpedicao(aba) {
-  expAbaAtiva = (aba === 'plano') ? 'plano' : 'estoque';
+  expAbaAtiva = 'plano';
   try { sessionStorage.setItem('gos:exp:aba', expAbaAtiva); } catch (e) {}
   document.querySelectorAll('.exp-tab').forEach(b => b.classList.toggle('active', b.dataset.exptab === expAbaAtiva));
   const est = document.getElementById('expedicao-aba-estoque');

@@ -804,18 +804,12 @@
       <div class="page-header">
         <div>
           <h1>Ordens de Expedição</h1>
-          <div class="desc">As OSs atualmente em expedição e o planejamento das cargas que saem nas janelas cadastradas.</div>
+          <div class="desc">O planejamento das cargas que saem nas janelas cadastradas.</div>
         </div>
       </div>
-      <div class="exp-tabs no-print">
-        <button type="button" class="exp-tab active" data-exptab="estoque" onclick="trocarAbaExpedicao('estoque')">Expedição · fim do fluxo</button>
-        <button type="button" class="exp-tab" data-exptab="plano" onclick="trocarAbaExpedicao('plano')">Planejamento de expedição</button>
-      </div>
-      <div id="expedicao-aba-estoque">
-        <div class="info-box">OSs cuja última etapa marcada é <b>Expedição</b>. Ao marcar outra etapa (Estoque…) a OS sai daqui e vai para o campo dela.</div>
-        <div id="expedicao-painel"></div>
-      </div>
-      <div id="expedicao-aba-plano" class="hidden">
+      <!-- A aba "Expedição · fim do fluxo" saiu em 04/11/2026 (Junior: redundante
+           com a área que já mostra as OS em trânsito). Fica só o planejamento. -->
+      <div id="expedicao-aba-plano">
         <div id="expedicao-plano"></div>
       </div>
     </section>
@@ -2078,7 +2072,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-03i"></script>
+<script src="app.js?v=2026-11-04a"></script>
 <script src="assistente.js?v=2026-10-29a"></script>
 <script src="colorimetro.js?v=2026-11-03a"></script>
 <script src="estoque-confeccao.js?v=2026-10-30d"></script>
