@@ -25830,7 +25830,7 @@ function _dashFluxoPassos(d) {
         dica: 'OS com o status Preparando matéria-prima: o pano está sendo preparado para o enfesto. Não tem campo próprio no menu — é trabalho em curso.' },
     ] },
     { nome: 'Matéria-prima preparada', cards: [
-      { k: 'mpPreparada', nome: 'M.-prima preparada', v: d.mpPreparada, statusFiltro: 'mp-preparada',
+      { k: 'mpPreparada', nome: 'Matéria-prima prep.', v: d.mpPreparada, statusFiltro: 'mp-preparada',
         dica: 'OS com o status Matéria-prima preparada: o pano está pronto e a OS espera a mesa de enfesto.' },
     ] },
     { nome: 'Enfestando', cards: [
@@ -27616,18 +27616,36 @@ function _dashTuboHtml(escala, ref = Date.now()) {
     const altFileira = Math.max(...linhas.map(l => l.length)) * linhaH + 6;
     const topo = cy * 2 + 8;
     hNomes = 8 + altFileira * (nomes.some(n => n.alterna) ? 2 : 1) + 4;
-    let ordemNoTrecho = 0, trechoAnt = null;
+    // A alternância CONTINUA de um trecho alternado para o seguinte: recomeçar
+    // em cada trecho punha "Parado" (o último da Corrente) e "Ensacado | DESC"
+    // (o primeiro do Residual) lado a lado na mesma fileira, um por cima do
+    // outro (04/11/2026). Só recomeça depois de um trecho que não alterna, e
+    // recomeça na 2ª fileira: o vizinho que não alterna está na 1ª, e o nome
+    // largo dele ("Matéria-prima preparada") encostaria no do "Enfestando".
+    let ordemAlt = 1;
     nomesStatus = nomes.map((n, i) => {
-      if (n.fa.t !== trechoAnt) { trechoAnt = n.fa.t; ordemNoTrecho = 0; }
-      const fileira = n.alterna ? ordemNoTrecho % 2 : 0;
-      ordemNoTrecho++;
+      if (!n.alterna) ordemAlt = 1;
+      const fileira = n.alterna ? ordemAlt % 2 : 0;
+      if (n.alterna) ordemAlt++;
       const x = (n.fa.x + n.fa.w / 2).toFixed(1);
       const y = topo + fileira * altFileira;
       const tsp = linhas[i].map((l, k) => `<tspan x="${x}" dy="${k ? linhaH.toFixed(1) : fonte.toFixed(1)}">${esc(l)}</tspan>`).join('');
       return `<g class="dash-tubo-nome"><line x1="${x}" x2="${x}" y1="${cy + rMax + 2}" y2="${(y - 1).toFixed(1)}" stroke="${n.fa.cor}"/>`
         + `<text x="${x}" y="${y.toFixed(1)}" text-anchor="middle" font-size="${fonte.toFixed(1)}">${tsp}</text></g>`;
     }).join('');
-    legendaStatus = `<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
+    /* A BARRA DOS VOLUMES (04/11/2026, Junior: "insira acima dos nomes dos
+       volumes do tubo de produção uma barra fina que mostre o limite entre todos
+       os status que participam de cada volume"). No pé do desenho, logo acima
+       de Entrada / Corrente / Residual / Saída: um segmento por status, na cor
+       dele e na largura da fatia, com uma fresta entre um status e outro e um
+       risco mais alto onde um volume termina e o outro começa. */
+    const yBarra = cy * 2 + hNomes + 4, hBarra = 5, fresta = 1.5;
+    nomesStatus += `<g class="dash-tubo-barra">`
+      + fatias.map(fa => `<rect x="${(fa.x + fresta / 2).toFixed(1)}" y="${yBarra}" width="${Math.max(0.5, fa.w - fresta).toFixed(1)}" height="${hBarra}" rx="1.5" fill="${fa.cor}"><title>${esc(`${fa.rotulo} (${fa.t.rot})`)}</title></rect>`).join('')
+      + DASH_TUBO_TRECHOS.map((t, i) => i ? `<line x1="${(x0 + sw * i).toFixed(1)}" x2="${(x0 + sw * i).toFixed(1)}" y1="${yBarra - 5}" y2="${yBarra + hBarra + 5}"/>` : '').join('')
+      + `</g>`;
+    hNomes += hBarra + 14;
+    legendaStatus =`<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
       `<span title="${esc(fa.rotulo)}"><i class="dash-tubo-pingo" style="background:${fa.cor}"></i>${esc(fa.curto || fa.rotulo)}<b>${fmt(fa.n)}</b></span>`).join('')}</div>`).join('')}</div>`;
   }
   const svg = `<svg class="dash-tubo-svg${comStatus ? ' com-nomes' : ''}" viewBox="0 0 ${W} ${cy * 2 + hNomes}" role="img" aria-label="Tubo da produção: entrada, corrente, residual e saída">
@@ -35904,7 +35922,7 @@ const STATUS_OS = [
      para ela ou direto para o Enfestando, e nenhuma OS em curso fica presa num
      passo novo. Quem quiser o passo obrigatório desmarca o "pode pular" na
      sequência do desenho. A cor é o oliva, que ainda não tinha dono. */
-  { k: 'mp-preparada',    cor: '#7d8a1c', bg: '#f2f4dc', bd: '#cfd49a', rotulo: 'Matéria-prima preparada', curto: 'M.-prima preparada', ordem: 1.5, preIda: true },
+  { k: 'mp-preparada',    cor: '#7d8a1c', bg: '#f2f4dc', bd: '#cfd49a', rotulo: 'Matéria-prima preparada', curto: 'Matéria-prima prep.', ordem: 1.5, preIda: true },
   /* O ENFESTO NAO E ETAPA DO CHECKLIST: ele mora na TABELA DE ENFESTOS da
      folha, uma linha por fase da grade, com a caixa de cada uma. Daí `enfesto`
      em vez de `re` — ver _marcasDoStatus. A `re` fica junto para o caso de
