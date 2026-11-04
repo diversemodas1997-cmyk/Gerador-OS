@@ -187,7 +187,9 @@ if ($status.Count) {
     $f = Join-Path $Repo $i.Caminho
     if (-not (Test-Path -LiteralPath $f)) { continue }   # apagado: nada a medir
     $a = Get-Item -LiteralPath $f
-    if (($agora - $a.LastWriteTime).TotalMinutes -lt $QuietoMin) {
+    # O indice e o proprio indexador que acabou de escrever: so os arquivos da
+    # pasta de riscos podem estar no meio de uma copia.
+    if ($i.Caminho -ne 'dados/riscos-pdf.json' -and ($agora - $a.LastWriteTime).TotalMinutes -lt $QuietoMin) {
       Write-Host ("copia em andamento (" + $i.Caminho + ") - fica para a proxima passagem"); exit 0
     }
     if ($a.Length -gt $MaxMB * 1MB) {
