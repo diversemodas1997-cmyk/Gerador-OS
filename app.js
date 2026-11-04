@@ -27551,8 +27551,10 @@ function _dashTuboHtml(escala, ref = Date.now()) {
   const dicas = DASH_TUBO_TRECHOS.map((t, i) => `<rect x="${(x0 + sw * i).toFixed(1)}" y="${cy - rMax - 6}" width="${sw.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${t.rot}: ${fmt(seg[t.k])} produtos — ${t.dica}${base ? `. Ideal: até ${fmt(base[t.k])}, as vendas de referência` : ''}`)}</title></rect>`).join('');
   let contorno = _dashTuboContorno(rs, x0, sw, cy);
   let pontas = [{ r: rs[0], cor: cores[0] }, { r: rs[nT - 1], cor: cores[nT - 1] }];
-  let fatiasHtml = '', legendaStatus = '';
+  let fatiasHtml = '', legendaStatus = '', nomesStatus = '';
   const comStatus = _dashTuboComStatus();
+  // A faixa abaixo do tubo com o nome de cada status (ver O NOME EMBAIXO DA COR).
+  const hNomes = comStatus ? 112 : 0;
   if (comStatus) {
     const fatias = [];
     DASH_TUBO_TRECHOS.forEach((t, i) => {
@@ -27572,10 +27574,19 @@ function _dashTuboHtml(escala, ref = Date.now()) {
     pontas = [{ r: fatias[0].r, cor: fatias[0].cor }, { r: fatias[fatias.length - 1].r, cor: fatias[fatias.length - 1].cor }];
     fatiasHtml = DASH_TUBO_TRECHOS.slice(1).map((t, i) => `<line class="dash-tubo-divisa" x1="${(x0 + sw * (i + 1)).toFixed(1)}" x2="${(x0 + sw * (i + 1)).toFixed(1)}" y1="${cy - rMax - 4}" y2="${cy + rMax + 4}"/>`).join('')
       + fatias.map(fa => `<rect x="${fa.x.toFixed(1)}" y="${cy - rMax - 6}" width="${fa.w.toFixed(1)}" height="${rMax * 2 + 12}" fill="transparent"><title>${esc(`${fa.rotulo}: ${fmt(fa.n)} produtos (${fa.t.rot})`)}</title></rect>`).join('');
+    /* O NOME EMBAIXO DA COR (04/11/2026, Junior: "insira abaixo de cada cor que
+       representa os status no tubo de produção o nome de cada status"). Cada
+       fatia leva o nome do status logo abaixo dela, inclinado: as sete da
+       Corrente dividem um trecho só e, deitadas, se atropelariam. */
+    nomesStatus = fatias.map(fa => {
+      const x = (fa.x + fa.w / 2).toFixed(1), y = cy * 2 + 10;
+      return `<g class="dash-tubo-nome"><line x1="${x}" x2="${x}" y1="${cy + rMax + 2}" y2="${y - 4}" stroke="${fa.cor}"/>`
+        + `<text x="${x}" y="${y + 6}" transform="rotate(-38 ${x} ${y + 6})" text-anchor="end">${esc(fa.curto || fa.rotulo)}</text></g>`;
+    }).join('');
     legendaStatus = `<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
       `<span title="${esc(fa.rotulo)}"><i class="dash-tubo-pingo" style="background:${fa.cor}"></i>${esc(fa.curto || fa.rotulo)}<b>${fmt(fa.n)}</b></span>`).join('')}</div>`).join('')}</div>`;
   }
-  const svg = `<svg class="dash-tubo-svg" viewBox="0 0 ${W} ${cy * 2}" role="img" aria-label="Tubo da produção: entrada, corrente, residual e saída">
+  const svg = `<svg class="dash-tubo-svg${comStatus ? ' com-nomes' : ''}" viewBox="0 0 ${W} ${cy * 2 + hNomes}" role="img" aria-label="Tubo da produção: entrada, corrente, residual e saída">
       <defs>
         <linearGradient id="dashTuboCor" gradientUnits="userSpaceOnUse" x1="${x0}" y1="0" x2="${(x0 + sw * nT).toFixed(1)}" y2="0">${paradas}</linearGradient>
         <linearGradient id="dashTuboLuz" x1="0" y1="0" x2="0" y2="1">
@@ -27588,7 +27599,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       <ellipse cx="${x0}" cy="${cy}" rx="${Math.max(2, pontas[0].r * 0.22).toFixed(1)}" ry="${pontas[0].r.toFixed(1)}" fill="${pontas[0].cor}" stroke="rgba(0,0,0,.35)"/>
       <ellipse cx="${(x0 + sw * nT).toFixed(1)}" cy="${cy}" rx="${Math.max(2, pontas[1].r * 0.22).toFixed(1)}" ry="${pontas[1].r.toFixed(1)}" fill="${pontas[1].cor}" stroke="rgba(0,0,0,.25)"/>
       ${base ? `<path class="dash-tubo-padrao" d="${_dashTuboContorno(DASH_TUBO_TRECHOS.map(t => raio(base[t.k])), x0, sw, cy)}"/>` : ''}
-      ${comStatus ? fatiasHtml : dicas}
+      ${comStatus ? fatiasHtml + nomesStatus : dicas}
     </svg>`;
 
   const rotulos = DASH_TUBO_TRECHOS.map((t, i) => {

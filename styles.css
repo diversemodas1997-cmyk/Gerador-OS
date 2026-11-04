@@ -1175,6 +1175,9 @@ main.content { padding: 32px 40px; overflow-x: auto; }
 .dash-tubo-liga.ligado i { background: #17a06a; }
 .dash-tubo-liga.ligado i::after { left: 14px; }
 .dash-tubo-divisa { stroke: rgba(0,0,0,.45); stroke-width: 1.5; stroke-dasharray: 2 3; }
+.dash-tubo-svg.com-nomes { max-height: 360px; overflow: visible; }
+.dash-tubo-nome line { stroke-width: 2; opacity: .7; }
+.dash-tubo-nome text { font-size: 15px; fill: var(--ink-2); font-family: inherit; }
 .dash-tubo-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 11px; color: var(--ink-2); }
 .dash-tubo-status > div { display: flex; flex-direction: column; gap: 2px; }
 .dash-tubo-status span { display: flex; align-items: center; gap: 5px; }
