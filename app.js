@@ -16266,7 +16266,22 @@ function expFolhaDaOe(janelaId, dataOrig) {
   expFolhaOe = _expChaveOe(janelaId, dataOrig);
   goto('print-expedicao');
 }
-const _expNaFolha = oc => !expFolhaOe || _expChaveOe(oc.janela.id, oc.dataOrig) === expFolhaOe;
+// O DIA INTEIRO NA MESMA FOLHA (05/11/2026, Junior: "as OE do mesmo dia, mas em
+// períodos diferentes, aparecem na mesma folha de impressão"). A folha aberta
+// pelo quadro de uma OE traz todas as OE da mesma DATA EFETIVA (manhã e tarde,
+// e a remarcada para aquele dia), cada uma no seu bloco com o próprio número.
+// `expFolhaOe` continua guardando a OE do clique: é dela que sai o dia.
+function _expFolhaDia() {
+  if (!expFolhaOe) return null;
+  const i = expFolhaOe.lastIndexOf('|');
+  const janelaId = expFolhaOe.slice(0, i), dataOrig = expFolhaOe.slice(i + 1);
+  const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === janelaId && e.data === dataOrig);
+  return (exc && exc.tipo === 'remarcada' && exc.novaData) ? exc.novaData : dataOrig;
+}
+const _expNaFolha = oc => !expFolhaOe || oc.data === _expFolhaDia();
+// Os números das OE na folha do dia, em ordem: "OE 0085 · OE 0086".
+const _expNumerosDaFolha = ocs => [...new Set(ocs.map(oc => _oeNumeroDe(oc.janela.id, oc.dataOrig)).filter(n => n > 0))]
+  .sort((a, b) => a - b);
 
 // Abre ou fecha de uma vez as OE do período à vista.
 function expAlternarTodasOe(abrir) {
@@ -23622,7 +23637,7 @@ function renderPrintPlanoExpedicao() {
             <div>
               <div class="tit">ORDEM DE EXPEDIÇÃO OE</div>
               <div class="sub">${expFolhaOe && ocs.length
-                ? `${_oeNumeroDe(ocs[0].janela.id, ocs[0].dataOrig) ? `OE ${_oeFmt(_oeNumeroDe(ocs[0].janela.id, ocs[0].dataOrig))} · ` : ''}${esc(formatDate(ocs[0].data))}`
+                ? `${_expNumerosDaFolha(ocs).map(n => `OE ${_oeFmt(n)} · `).join('')}${esc(formatDate(ocs[0].data))}`
                 : `Plano ${esc(_expNomeModo(expPlanoModo))} · ${esc(formatDate(ini))} a ${esc(formatDate(fim))}`} · expedição interna, ida e volta</div>
             </div>
             <div class="meta">
@@ -34501,10 +34516,13 @@ async function atualizarOeFolderStatus() {
 function oeFilenameForPlano() {
   const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
   const iniBr = dataBrArquivo(ini), fimBr = dataBrArquivo(fim);
-  const oc = expFolhaOe && ocorrenciasExpedicao(ini, fim).find(o => _expChaveOe(o.janela.id, o.dataOrig) === expFolhaOe);
-  if (oc) {
-    const n = _oeNumeroDe(oc.janela.id, oc.dataOrig);
-    return sanitizeForFilename(`OE-${n ? _oeFmt(n) + '-' : ''}${dataBrArquivo(oc.data)}`) + '.pdf';
+  // Folha do dia (aberta pelo quadro de uma OE): todos os números daquele dia
+  // no nome — OE-0085-0086-04-11-2026.pdf.
+  const dia = _expFolhaDia();
+  if (dia) {
+    const doDia = ocorrenciasExpedicao(ini, fim).filter(o => !o.cancelada && o.data === dia);
+    const nums = _expNumerosDaFolha(doDia).map(_oeFmt).join('-');
+    return sanitizeForFilename(`OE-${nums ? nums + '-' : ''}${dataBrArquivo(dia)}`) + '.pdf';
   }
   const base = (ini === fim) ? `OE-${iniBr}` : `OE-${iniBr}_a_${fimBr}`;
   return sanitizeForFilename(base) + '.pdf';
