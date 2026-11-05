@@ -121,6 +121,8 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('STATUS_DESVIO_SC')}
   ${constante('STATUS_SEMPRE_OS')}
   ${constante('STATUS_VOLTA_PERMITIDA')}
+  ${constante('STATUS_TERMINADO_DE')}
+  ${constante('STATUS_BLOCO_ENFESTO')}
   ${constante('STATUS_FORA_SEQ')}
   ${recorte('function _desenhoDaOS', 'o desenho da OS')}
   ${recorte('function _statusSeqDoDesenho', 'a sequencia do desenho')}
@@ -446,7 +448,7 @@ console.log('-- o que fica gravado --');
   // derrubar o teste.
   ok('12s. a fila do seletor esta na ordem pedida',
      ctxDe('admin', 'a@b', true, []).api.STATUS_OS.map(x => x.rotulo).join(' / ') ===
-     ['Não iniciado', 'Preparando matéria-prima', 'Matéria-prima preparada', 'Enfestando', 'Cortando', 'Separando',
+     ['Não iniciado', 'Preparando matéria-prima', 'Matéria-prima preparada', 'Enfestando', 'Enfestado', 'Cortando', 'Cortado', 'Separando', 'Separado',
       'Ensacado | Descalvado', 'Ensacado | São Carlos',
       'Estoque em trânsito | Desc x São Carlos', 'Estoque em trânsito | São Carlos X Desc.',
       'Costurando | Descalvado', 'Costurando | São Carlos',
@@ -1421,10 +1423,10 @@ console.log('-- o que fica gravado --');
     await api.mudarStatusOS('q1', 'enfestando');
     ok('41. a seguinte passa (conjugada criada, pulando o preparo)', api._statusOS(q) === 'enfestando', api._statusOS(q));
     ok('42a. enfestando: so segue para cortando, nao volta (so cortando volta)',
-       op() === 'enfestando,cortando,parado,cancelado', op());
+       op() === 'enfestando,enfestado,cortando,parado,cancelado', op());
     q.statusHist = [{ k: 'materia-prima', em: 1 }, { k: 'enfestando', em: 2 }];
     ok('42b. nem sabendo pelo diario de onde veio',
-       op() === 'enfestando,cortando,parado,cancelado', op());
+       op() === 'enfestando,enfestado,cortando,parado,cancelado', op());
     delete q.statusHist;
     q.statusOS = 'ensacado'; q.statusOSEm = new Date(Date.now() + 1000).toISOString();
     ok('43. ensacado | DESC segue so para a costura daqui (a ida e pela expedicao)',
@@ -1434,7 +1436,7 @@ console.log('-- o que fica gravado --');
        /transito-ida/.test(op()) && /estoque-fio(,|$)/.test(op()) && !/costurando-sc/.test(op()), op());
     q.statusOS = 'cortando';
     ok('44a. cortando: a unica volta permitida, para enfestando; segue para separando',
-       op() === 'enfestando,cortando,separando,parado,cancelado', op());
+       op() === 'enfestando,cortando,cortado,separando,parado,cancelado', op());
     q.statusOS = 'estoque-fio-sc';
     q.statusHist = [{ k: 'costurando-sc', em: 1 }, { k: 'estoque-fio-sc', em: 2 }];
     ok('44b. estoque com fio | SC: so segue para em transito VOLTA (nao volta a costura SC)',
@@ -1444,13 +1446,13 @@ console.log('-- o que fica gravado --');
     ok('45. estoque: fim, sem volta para retirando fio', op() === 'parado,cancelado,estoque', op());
     q.statusOS = 'parado';
     q.statusHist = [{ k: 'cortando', em: 1 }, { k: 'parado', em: 2 }];
-    ok('46. parado volta para onde estava (cortando) ou segue dali', op() === 'cortando,separando,parado,cancelado', op());
+    ok('46. parado volta para onde estava (cortando) ou segue dali', op() === 'cortando,cortado,separando,parado,cancelado', op());
     q.statusOS = 'costurando';
     sq.ctx.STATE.desenhos[0].statusSeq = [{ k: 'enfestando' }, { k: 'cortando', pula: true }, { k: 'ensacado' }, { k: 'estoque' }];
     delete q.statusHist;
     ok('47. status fora da sequencia do desenho: livre, para poder acertar', op().split(',').length === api.STATUS_OS.length, op());
     q.statusOS = 'enfestando';
-    ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'enfestando,cortando,ensacado,parado,cancelado', op());
+    ok('48. sequencia propria do desenho, com pulo: enfestando > cortando ou ensacado', op() === 'enfestando,enfestado,cortando,cortado,ensacado,parado,cancelado', op());
     sq.ctx.STATE.desenhos[0].statusSeq = [];
     ok('49. desenho sem sequencia: seletor livre', op().split(',').length === api.STATUS_OS.length, op());
   }
@@ -1470,7 +1472,7 @@ console.log('-- o que fica gravado --');
     const baixadas = () => Object.keys((q.progresso || {}).fasesBaixadas || {}).sort().join(',');
     await api.mudarStatusOS('q1', 'materia-prima');
     await api.mudarStatusOS('q1', 'enfestando');
-    ok('50. enfestando 1/3 segue para cortando 1/3', /enfestando,cortando,/.test(op()) && !/#/.test(op()), op());
+    ok('50. enfestando 1/3 segue para cortando 1/3', /enfestando,enfestado,cortando,/.test(op()) && !/#/.test(op()), op());
     await api.mudarStatusOS('q1', 'cortando');
     ok('51. cortando 1/3: baixa a fase 1 e segue para enfestando 2/3 (nao para separando)',
        baixadas() === '1' && /enfestando#2/.test(op()) && !/separando/.test(op()), baixadas() + ' | ' + op());
@@ -1481,13 +1483,22 @@ console.log('-- o que fica gravado --');
        q.statusOS === 'enfestando' && q.statusPasso === 2 && q.statusHist[q.statusHist.length - 1].p === 2,
        JSON.stringify(q.statusHist));
     ok('54. de enfestando 2/3: segue para cortando 2/3, sem voltar a cortando 1/3',
-       op() === 'enfestando#2,cortando#2,parado,cancelado', op());
+       op() === 'enfestando#2,enfestado#2,cortando#2,parado,cancelado', op());
     const cel = api._statusCelulaOS(q, 'folha');
     ok('55. o seletor mostra a volta no rotulo', /Enfestando 2\/3/.test(cel) && /value="cortando#2"/.test(cel)
        && /value="enfestando#2"[^>]*selected/.test(cel), cel);
     await api.mudarStatusOS('q1', 'cortando#2');
     ok('56. cortando 2/3 baixa a fase 2', baixadas() === '1,2' && q.statusPasso === 2, baixadas());
+    // ENFESTADO E CORTADO NO BLOCO QUE SE REPETE (05/11/2026): a volta 2 passa
+    // por Cortado 2/3 e dele segue para Enfestando 3/3; o pano não desce de novo.
+    await api.mudarStatusOS('q1', 'cortado#2');
+    ok('56a. cortado 2/3 gravado na volta 2, sem baixar outra fase',
+       q.statusOS === 'cortado' && q.statusPasso === 2 && baixadas() === '1,2', JSON.stringify(q.statusHist) + ' | ' + baixadas());
+    ok('56b. de cortado 2/3 segue para enfestando 3/3 (nao para separando)',
+       /enfestando#3/.test(op()) && !/separando/.test(op()), op());
     await api.mudarStatusOS('q1', 'enfestando#3');
+    await api.mudarStatusOS('q1', 'enfestado#3');
+    ok('56c. enfestado 3/3 segue para cortando 3/3', /cortando#3/.test(op()) && q.statusPasso === 3, op());
     await api.mudarStatusOS('q1', 'cortando#3');
     ok('57. cortando 3/3 baixa a fase 3 e so entao segue para separando',
        baixadas() === '1,2,3' && /separando/.test(op()) && !/enfestando#4/.test(op()), baixadas() + ' | ' + op());

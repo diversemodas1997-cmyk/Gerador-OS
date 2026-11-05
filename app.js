@@ -10711,7 +10711,8 @@ function calcularEstoqueAviamentos(mov, de, ate, hoje, unidade, dataEfetiva) {
    etiqueta; corrigir a grade da OS corrige a quantidade. */
 const AVI_BAIXA_DESDE = '2026-09-25';
 // Antes da costura: o aviamento da OS está reservado.
-const AVI_STATUS_RESERVA = ['nao-iniciado', 'materia-prima', 'mp-preparada', 'enfestando', 'cortando', 'separando',
+const AVI_STATUS_RESERVA = ['nao-iniciado', 'materia-prima', 'mp-preparada', 'enfestando', 'enfestado',
+  'cortando', 'cortado', 'separando', 'separado',
   'ensacado', 'ensacado-sc', 'transito-ida', 'parado'];
 
 // O quadro do estoque a que um material da OS pertence ("003 · Etiqueta de
@@ -25142,9 +25143,14 @@ function _dashCartoesDaOS(o, opts) {
     // Matéria-prima preparada (04/11/2026): o passo seguinte, com a mesma guarda.
     if (atual < 0 && _statusOS(o) === 'mp-preparada') poe('mpPreparada', total);
     if (atual < 0 && _statusOS(o) === 'enfestando') poe('enfestando', total);
+    // Enfestado, Cortado e Separado (05/11/2026): cada um logo depois do seu
+    // "-ando", com a mesma guarda.
+    if (atual < 0 && _statusOS(o) === 'enfestado') poe('enfestado', total);
     if (atual < 0 && _statusOS(o) === 'cortando') poe('cortando', total);
+    if (atual < 0 && _statusOS(o) === 'cortado') poe('cortado', total);
     // Separando (24/09/2026): o passo seguinte, também sem campo, com a mesma guarda.
     if (atual < 0 && _statusOS(o) === 'separando') poe('separando', total);
+    if (atual < 0 && _statusOS(o) === 'separado') poe('separado', total);
     // -1 sem a caixa de Estoque marcada é OS que ainda não entrou em campo
     // nenhum: não tem onde contar.
     if (atual < 0) return;
@@ -25265,8 +25271,8 @@ function _dashFluxoDados() {
      lista responde "quais", que é a pergunta seguinte de quem olha o número. */
   const zero = () => ({ pecas: 0, os: 0, lista: [] });
   const d = {
-    naoIniciado: zero(), materiaPrima: zero(), mpPreparada: zero(), enfestando: zero(),
-    cortando: zero(), separando: zero(),
+    naoIniciado: zero(), materiaPrima: zero(), mpPreparada: zero(), enfestando: zero(), enfestado: zero(),
+    cortando: zero(), cortado: zero(), separando: zero(), separado: zero(),
     corte: zero(), corteSC: zero(),
     costurando: zero(), costurandoSC: zero(),
     idaManha: zero(), idaTarde: zero(), voltaManha: zero(), voltaTarde: zero(),
@@ -25887,13 +25893,25 @@ function _dashFluxoPassos(d) {
       { k: 'enfestando', nome: 'No enfesto', v: d.enfestando, statusFiltro: 'enfestando',
         dica: 'OS com o status Enfestando: alguma fase da tabela de enfestos já foi marcada e o corte ainda não começou. Não tem campo próprio no menu — é trabalho em curso.' },
     ] },
+    { nome: 'Enfestado', cards: [
+      { k: 'enfestado', nome: 'Enfestado', v: d.enfestado, statusFiltro: 'enfestado',
+        dica: 'OS com o status Enfestado: o enfesto terminou e a OS espera o corte.' },
+    ] },
     { nome: 'Cortando', cards: [
       { k: 'cortando', nome: 'Na mesa de corte', v: d.cortando, statusFiltro: 'cortando',
         dica: 'OS com o status Cortando: o enfesto já foi, a peça está sendo cortada e ainda não foi ensacada. Não tem campo próprio no menu — cortar é trabalho em curso, não é pano guardado.' },
     ] },
+    { nome: 'Cortado', cards: [
+      { k: 'cortado', nome: 'Cortado', v: d.cortado, statusFiltro: 'cortado',
+        dica: 'OS com o status Cortado: o corte terminou e a OS espera a separação.' },
+    ] },
     { nome: 'Separando', cards: [
       { k: 'separando', nome: 'Na separação', v: d.separando, statusFiltro: 'separando',
         dica: 'OS com o status Separando: saiu da mesa de corte e as unidades estão sendo separadas antes de ensacar. Ao marcar o Ensaque, o volume migra para Ensacado.' },
+    ] },
+    { nome: 'Separado', cards: [
+      { k: 'separado', nome: 'Separado', v: d.separado, statusFiltro: 'separado',
+        dica: 'OS com o status Separado: as unidades já foram separadas e a OS espera o ensaque. Ao marcar o Ensaque, o volume migra para Ensacado.' },
     ] },
     { nome: 'Estoque de corte', cards: [
       { k: 'corte', nome: 'Unidade Descalvado', v: d.corte,   rota: 'corte',
@@ -27326,7 +27344,7 @@ const DASH_TUBO_PADROES = {
    já em Estoque não entram em grupo nenhum. */
 const DASH_TUBO_GRUPOS = {
   entrada: ['nao-iniciado', 'materia-prima', 'mp-preparada'],
-  corrente: ['enfestando', 'cortando', 'separando', 'costurando', 'costurando-sc', 'fios', 'parado'],
+  corrente: ['enfestando', 'enfestado', 'cortando', 'cortado', 'separando', 'separado', 'costurando', 'costurando-sc', 'fios', 'parado'],
   residual: ['ensacado', 'ensacado-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta']
 };
 // O status da OS num instante passado: o da última marca até ali; antes da
@@ -35995,8 +36013,22 @@ const STATUS_OS = [
      status, e vale a marcada por ultimo. */
   { k: 'enfestando',      cor: '#d0a000', bg: '#fdf6d8', bd: '#e3ce7a', rotulo: 'Enfestando',               ordem: 2, baixa: true, preIda: true,
     enfesto: true, re: /enfest/i },
+  /* ENFESTADO, CORTADO E SEPARADO (05/11/2026, Junior: "adicione status
+     Enfestado, logo após Enfestando. Adicione status Cortado, logo após
+     Cortando, adicione status Separado, logo após Separando").
+     Cada um é o passo TERMINADO do anterior: a OS saiu da mesa e espera a
+     seguinte. Como o Matéria-prima preparada, são só carimbo à mão — sem `re`
+     (a `re` de cima, /enfest/, /corte/, /separa/, já acenderia o "-ando"). A
+     `ordem` os põe logo depois do seu "-ando". Os três nascem com "pode pular"
+     nas sequências dos desenhos (_statusSeqDoDesenho): nenhuma OS em curso fica
+     presa num passo novo, e quem quiser o passo obrigatório desmarca. O
+     Enfestado e o Cortado entram no bloco que se repete por fase
+     (_statusSeqExpandida): Enfestando → Enfestado → Cortando → Cortado. A
+     baixa do pano continua no Cortando. Cor: o tom mais escuro do "-ando". */
+  { k: 'enfestado',       cor: '#9c7a00', bg: '#f7efcc', bd: '#d8c27a', rotulo: 'Enfestado',                ordem: 2.5, baixa: true, preIda: true },
   { k: 'cortando',        cor: '#e2661a', bg: '#fdeede', bd: '#e6bb8a', rotulo: 'Cortando',                 ordem: 3, baixa: true, preIda: true,
     re: /corte|cortando/i },
+  { k: 'cortado',         cor: '#a8460c', bg: '#f8e3d2', bd: '#dba57c', rotulo: 'Cortado',                  ordem: 3.25, baixa: true, preIda: true },
   /* SEPARANDO (24/09/2026, Junior: "insira a status Separando. Esse status
      recebe o volume que migra do status Cortando" e "o status Ensacado recebe o
      volume que migra do status Separando").
@@ -36018,6 +36050,8 @@ const STATUS_OS = [
      antiga sem `etapasSeq`. A cor é o salmão, que ainda não tinha dono. */
   { k: 'separando',       cor: '#f08a73', bg: '#fdece8', bd: '#f2b9ab', rotulo: 'Separando',                ordem: 3.5, baixa: true, preIda: true,
     re: /separa/i },
+  // Separado (05/11/2026): ver ENFESTADO, CORTADO E SEPARADO, acima.
+  { k: 'separado',        cor: '#c25a44', bg: '#f9e2dc', bd: '#e3a797', rotulo: 'Separado',                 ordem: 3.75, baixa: true, preIda: true },
   /* "RECEBIDO EM SÃO CARLOS" ACENDE ENSACADO (15/09/2026). Chegar não é uma
      etapa de trabalho, e por isso ele não tinha status — mas é ele que diz que
      o pano está na prateleira DE LÁ, esperando a máquina, que é exatamente o
@@ -36430,7 +36464,8 @@ function exigirConjugarOS(acao) {
    OS para a FRENTE no caminho (ou para fora dele). A caixa de uma etapa que a
    OS já passou é só o checklist sendo posto em dia. O caminho é o que o Junior
    descreveu, na ordem da folha: */
-const FLUXO_STATUS_OS = ['materia-prima', 'mp-preparada', 'enfestando', 'cortando', 'separando', 'ensacado',
+const FLUXO_STATUS_OS = ['materia-prima', 'mp-preparada', 'enfestando', 'enfestado', 'cortando', 'cortado',
+  'separando', 'separado', 'ensacado',
   'costurando', 'transito-ida', 'ensacado-sc', 'costurando-sc', 'estoque-fio-sc',
   'transito-volta', 'estoque-fio', 'fios', 'estoque'];
 // O carimbo à mão ainda vale? Mais novo que a última caixa, ou mais velho só
@@ -36533,8 +36568,9 @@ function _statusDesdeCelulaOS(o) {
    acertada. Vale só para o carimbo À MÃO: as caixas do checklist continuam
    movendo a OS sozinhas. */
 const STATUS_SEQ_PADRAO = [
-  { k: 'materia-prima' }, { k: 'mp-preparada', pula: true }, { k: 'enfestando' }, { k: 'cortando' },
-  { k: 'separando' }, { k: 'ensacado' }, { k: 'costurando' },
+  { k: 'materia-prima' }, { k: 'mp-preparada', pula: true },
+  { k: 'enfestando' }, { k: 'enfestado', pula: true }, { k: 'cortando' }, { k: 'cortado', pula: true },
+  { k: 'separando' }, { k: 'separado', pula: true }, { k: 'ensacado' }, { k: 'costurando' },
   { k: 'transito-ida' }, { k: 'ensacado-sc' }, { k: 'costurando-sc' },
   { k: 'estoque-fio-sc' }, { k: 'transito-volta' },
   { k: 'estoque-fio' }, { k: 'fios' }, { k: 'estoque' }
@@ -36548,6 +36584,10 @@ const STATUS_SEMPRE_OS = ['parado', 'cancelado'];
    pode voltar ao Enfestando da mesma volta. Parado e Cancelado continuam, e
    saindo deles a OS volta para onde estava. */
 const STATUS_VOLTA_PERMITIDA = { cortando: 'enfestando' };
+// Cada "-ando" e o seu "-ado" (05/11/2026; ver ENFESTADO, CORTADO E SEPARADO).
+const STATUS_TERMINADO_DE = [['enfestando', 'enfestado'], ['cortando', 'cortado'], ['separando', 'separado']];
+// O bloco que se repete por fase do enfesto, na ordem (ver _statusSeqExpandida).
+const STATUS_BLOCO_ENFESTO = ['enfestando', 'enfestado', 'cortando', 'cortado'];
 const STATUS_FORA_SEQ = ['nao-iniciado', 'parado', 'cancelado'];
 
 // O desenho técnico da OS: pelo vínculo, ou pelo código nas OS antigas.
@@ -36566,6 +36606,12 @@ function _statusSeqDoDesenho(d) {
   // quem tem o Preparando e não tem ela a recebe logo depois dele.
   const iMP = seq.findIndex(x => x.k === 'materia-prima');
   if (iMP >= 0 && !seq.some(x => x.k === 'mp-preparada')) seq.splice(iMP + 1, 0, { k: 'mp-preparada', pula: true });
+  // Enfestado, Cortado e Separado (05/11/2026), do mesmo jeito: quem tem o
+  // "-ando" e não tem o "-ado" o recebe logo depois dele, com "pode pular".
+  STATUS_TERMINADO_DE.forEach(([ando, ado]) => {
+    const i = seq.findIndex(x => x.k === ando);
+    if (i >= 0 && !seq.some(x => x.k === ado)) seq.splice(i + 1, 0, { k: ado, pula: true });
+  });
   return seq.length ? seq : null;
 }
 
@@ -36630,8 +36676,14 @@ function _statusSeqExpandida(seq) {
   for (let i = 0; i < s.length; i++) {
     const x = s[i];
     if (x.k !== 'enfestando' || n < 2) { out.push(Object.assign({}, x, { p: 1, id: x.k })); continue; }
+    // O bloco: o Enfestando e o que vem logo depois dele na ordem
+    // Enfestado → Cortando → Cortado (05/11/2026; antes era só o Cortando).
     const bloco = [x];
-    if (s[i + 1] && s[i + 1].k === 'cortando') { bloco.push(s[i + 1]); i++; }
+    let b = 1;
+    while (s[i + 1] && STATUS_BLOCO_ENFESTO.indexOf(s[i + 1].k) >= b) {
+      b = STATUS_BLOCO_ENFESTO.indexOf(s[i + 1].k) + 1;
+      bloco.push(s[i + 1]); i++;
+    }
     for (let p = 1; p <= n; p++) bloco.forEach(b => out.push(Object.assign({}, b, { p, id: _statusIdPasso(b.k, p) })));
   }
   return out;
@@ -36655,7 +36707,9 @@ function _statusPassoOS(o, seq) {
     const h = _statusHistDe(o);
     for (let i = h.length - 1; i >= 0; i--) {
       if (!ks.includes(h[i].k)) continue;
-      p = (Number(h[i].p) || 1) + (h[i].k === 'cortando' && st === 'enfestando' ? 1 : 0);
+      // Voltar para um passo ANTERIOR do bloco (Cortado/Cortando → Enfestando)
+      // já é a volta seguinte.
+      p = (Number(h[i].p) || 1) + (STATUS_BLOCO_ENFESTO.indexOf(h[i].k) > STATUS_BLOCO_ENFESTO.indexOf(st) ? 1 : 0);
       break;
     }
   }
@@ -42204,7 +42258,7 @@ function consumoAgregadoPorTecidoCor(o) {
 
    Saindo do ciclo enfesto/corte (ensacado, costura, estoque...), o corte
    acabou: toda fase é baixada. Voltando a Não iniciado, tudo volta a reserva. */
-const _STATUS_CICLO_ENFESTO = ['enfestando', 'cortando', 'separando', 'parado'];
+const _STATUS_CICLO_ENFESTO = ['enfestando', 'enfestado', 'cortando', 'cortado', 'separando', 'separado', 'parado'];
 
 function _faseBaixadaOS(o, ord, legadoConsumido) {
   const st = _statusOS(o);
