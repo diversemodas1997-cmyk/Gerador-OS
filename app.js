@@ -16344,14 +16344,30 @@ function _oeNumeroDe(janelaId, data) {
 // O número da expedição; sem número ainda, emite o próximo (e avança o contador).
 // Devolve { n, novo } — `novo` diz a quem chama que o contador mudou e tem de
 // ser gravado (saveState('meta')).
-function _oeNumeroGarantir(janelaId, data) {
+//
+// SEM BURACO NA SEQUÊNCIA (05/11/2026, OE 0086 pulada). O próximo número é o
+// maior que ALGUMA CARGA ainda carrega + 1 — o contador não manda mais. Antes
+// valia o maior entre os dois, e o contador nunca volta: a OE 0086 nasceu em
+// 04/11 com uma OS que depois saiu da carga; a expedição ficou sem carga, o 86
+// sumiu com ela, e a próxima já saiu 0087. Agora, número que ficou sem carga
+// no topo da sequência é dado de novo à próxima OE. (Número no MEIO não volta:
+// a OE seguinte já existe — ver o aviso em excluirCargaExp.)
+// `reaproveitar`: número que a carga movida levava e que ficaria órfão.
+function _oeNumeroGarantir(janelaId, data, reaproveitar) {
   const ja = _oeNumeroDe(janelaId, data);
   if (ja) return { n: ja, novo: false };
-  const maior = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0);
   STATE.meta = STATE.meta || {};
-  const n = Math.max(maior, Number(STATE.meta.oeCounter) || 0) + 1;
+  if (Number(reaproveitar) > 0) return { n: Number(reaproveitar), novo: false };
+  const maior = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0);
+  const n = maior + 1;
+  const novo = Number(STATE.meta.oeCounter) !== n;
   STATE.meta.oeCounter = n;
-  return { n, novo: true };
+  return { n, novo };
+}
+
+// Quantas cargas carregam o número `n` (fora a de id `excetoId`).
+function _oeCargasComNumero(n, excetoId) {
+  return (STATE.expedicaoCargas || []).filter(c => c && c.id !== excetoId && Number(c.oe) === Number(n)).length;
 }
 
 function renderExpedicaoPlano() {
@@ -17600,7 +17616,14 @@ async function salvarModalExpedicao() {
     const fases = (selFases.length && fasesMarcadas.length && fasesMarcadas.length < selFases.length)
       ? fasesMarcadas
       : null;
-    const oe = _oeNumeroGarantir(janelaId, data);
+    // Carga MOVIDA que era a única da OE dela: leva o número junto para a
+    // expedição nova (se esta ainda não tem), em vez de deixar o número
+    // órfão e abrir um buraco na sequência.
+    const antiga = ctx.editId ? STATE.expedicaoCargas.find(c => c.id === ctx.editId) : null;
+    const numAntigo = antiga && Number(antiga.oe) > 0
+      && !(antiga.janelaId === janelaId && antiga.data === data)
+      && _oeCargasComNumero(antiga.oe, antiga.id) === 0 ? Number(antiga.oe) : 0;
+    const oe = _oeNumeroGarantir(janelaId, data, numAntigo);
     const campos = { janelaId, data, perna, osId, volumes, fases, obs: v('ec-obs').trim(), oe: oe.n };
     // Gravada já com os itens Mangas/Capuz no checklist: eles valem por si, e
     // não seguem mais o Corpo (ver _expFasesDaCarga).
@@ -17639,6 +17662,9 @@ async function salvarModalExpedicao() {
       .filter(c => c.janelaId === ctx.janelaId && c.data === ctx.dataOrig && c.perna === 'volta')
       .map(c => c.osId));
     let n = 0;
+    // Só emite número se alguma OS vai mesmo entrar: todas repetidas = nada
+    // gravado, e o número não pode ser gasto à toa.
+    if (!marcadas.some(el => el.value && !jaLa.has(el.value))) return toast('Essas OSs já estão na volta', 'err');
     const oe = _oeNumeroGarantir(ctx.janelaId, ctx.dataOrig);
     marcadas.forEach(el => {
       const osId = el.value;
@@ -17787,7 +17813,16 @@ async function alternarCargaFeita(id) {
 
 async function excluirCargaExp(id) {
   if (!exigirAdmin('remover OS da expedição')) return;
-  if (!confirm('Tirar esta OS da carga?')) return;
+  // Última OS de uma OE que NÃO é a mais recente: o número dela some e a
+  // sequência fica com buraco (as OE seguintes já foram emitidas). Avisa antes.
+  const alvo = (STATE.expedicaoCargas || []).find(c => c.id === id);
+  const numAlvo = alvo ? Number(alvo.oe) || 0 : 0;
+  const maiorOE = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0);
+  const deixaBuraco = numAlvo > 0 && numAlvo < maiorOE && _oeCargasComNumero(numAlvo, id) === 0;
+  const pergunta = deixaBuraco
+    ? `Esta é a última OS da OE ${_oeFmt(numAlvo)}. Tirando, a OE ${_oeFmt(numAlvo)} fica vazia e o número dela some da sequência (a OE ${_oeFmt(maiorOE)} já existe).\n\nTirar mesmo assim?`
+    : 'Tirar esta OS da carga?';
+  if (!confirm(pergunta)) return;
   STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => c.id !== id);
   // Exclusão INTENCIONAL pode zerar as cargas: libera a trava anti-apagamento da
   // expedição só para este flush (senão remover a ÚLTIMA carga seria bloqueado).
