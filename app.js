@@ -27694,7 +27694,19 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       + fatias.map(fa => `<rect x="${(fa.x + fresta / 2).toFixed(1)}" y="${yBarra}" width="${Math.max(0.5, fa.w - fresta).toFixed(1)}" height="${hBarra}" rx="1.5" fill="${fa.cor}"><title>${esc(`${fa.rotulo} (${fa.t.rot})`)}</title></rect>`).join('')
       + DASH_TUBO_TRECHOS.map((t, i) => i ? `<line x1="${(x0 + sw * i).toFixed(1)}" x2="${(x0 + sw * i).toFixed(1)}" y1="${yBarra - 5}" y2="${yBarra + hBarra + 5}"/>` : '').join('')
       + `</g>`;
-    hNomes += hBarra + 14;
+    /* O NÚMERO EMBAIXO DA BARRA (05/11/2026, Junior: "retire as indicações dos
+       volumes abaixo dos status. Mantenha as barras lineares de representação de
+       cada status e insira os números de unidades completas logo abaixo de cada
+       barra de cada status"). Cada segmento da barra leva, centrado embaixo
+       dele, os produtos completos daquele status (produtosOS; na Saída, as
+       vendas; no Estoque de produtos, o saldo da prateleira). A faixa
+       Entrada/Corrente/Residual/Saída que vinha embaixo sai com o Status ligado. */
+    const fNum = Math.min(11, Math.max(7, fonte));
+    const yNum = yBarra + hBarra + 3 + fNum;
+    nomesStatus += `<g class="dash-tubo-num">`
+      + fatias.map(fa => `<text x="${(fa.x + fa.w / 2).toFixed(1)}" y="${yNum.toFixed(1)}" text-anchor="middle" font-size="${fNum.toFixed(1)}"${fa.n > 0 ? '' : ' class="zero"'}>${fmt(fa.n)}<title>${esc(`${fa.rotulo}: ${fmt(fa.n)} produtos`)}</title></text>`).join('')
+      + `</g>`;
+    hNomes += hBarra + 3 + fNum + 10;
     legendaStatus =`<div class="dash-tubo-status">${DASH_TUBO_TRECHOS.map(t => `<div>${fatias.filter(fa => fa.t === t).map(fa =>
       `<span title="${esc(fa.rotulo)}"><i class="dash-tubo-pingo" style="background:${fa.cor}"></i>${esc(fa.curto || fa.rotulo)}<b>${fmt(fa.n)}</b></span>`).join('')}</div>`).join('')}</div>`;
   }
@@ -27804,7 +27816,7 @@ function _dashTuboHtml(escala, ref = Date.now()) {
       </div>
       <div class="dash-tubo-total"><span>Total dentro do tubo</span> <b>${fmt(total)}</b> <em>= Entrada ${fmt(seg.entrada)} + Corrente ${fmt(seg.corrente)} + Residual ${fmt(seg.residual)}${base ? ` · ideal até ${fmt(saidaRef * 3)}` : ''}</em></div>
       ${svg}
-      <div class="dash-tubo-rot">${rotulos}</div>
+      ${comStatus ? '' : `<div class="dash-tubo-rot">${rotulos}</div>`}
       ${legendaStatus}
       ${ideal}
       <div class="dash-tubo-diag" style="--cor:${p.cor}">
