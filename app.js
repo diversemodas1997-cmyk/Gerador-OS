@@ -27637,7 +27637,11 @@ function _dashTuboHtml(escala, ref = Date.now()) {
         : DASH_TUBO_GRUPOS[t.k].map(k => {
           const st = STATUS_OS.find(x => x.k === k) || { k, cor: t.cor, rotulo: k };
           return { k, cor: st.cor, rotulo: st.rotulo, curto: st.curto, n: T.porStatus[k] || 0 };
-        }).concat(t.k === 'residual' ? [Object.assign({ n: T.prateleira }, DASH_TUBO_PRATELEIRA)] : []);
+        })
+        /* PARADO SÓ COM EVENTO (05/11/2026, Junior escolheu a opção A): a fatia
+           Parado não tem lugar fixo na Corrente. Sem nenhuma OS parada ela some
+           do tubo, com nome e número, e os outros status ganham a largura. */
+        .filter(it => it.k !== 'parado' || it.n > 0).concat(t.k === 'residual' ? [Object.assign({ n: T.prateleira }, DASH_TUBO_PRATELEIRA)] : []);
       const w = sw / itens.length;
       itens.forEach((it, j) => fatias.push(Object.assign({ x: x0 + sw * i + w * j, w, r: raio(it.n), t }, it)));
     });
