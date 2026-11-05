@@ -16,8 +16,13 @@
    ou rebaixar admin"). E ela não tem caminho próprio: a ferramenta `planejar`
    abre o MESMO formulário do Novo planejamento, preenche os campos como uma
    pessoa e chama o MESMO salvarPlanejamento — as contas de camadas, as
-   validações e a trava de gravação são as do programa. Nada daqui muda status,
-   aprova planejamento, apaga, ou mexe em conta e papel de usuário.
+   validações e a trava de gravação são as do programa. Nada daqui aprova
+   planejamento, apaga, ou mexe em conta e papel de usuário.
+
+   E O STATUS DA OS (05/11/2026, Junior: "o assistente deve ser capaz de
+   alterar o que for impossível do usuário fazer"): `mudar_status_os`, só para
+   quem já muda status na tela, sempre com confirmação, inclusive para trás —
+   o que o seletor não deixa. Ver mudarStatus.
 
    E A OS CONJUGADA (19/10/2026, Junior: "autonomia para criar OS com número
    que seja conjugada seguindo outra OS... e imprimir essa OS logo em
@@ -318,6 +323,10 @@
 
     async criar_grade(p) {
       return criarGrade(p);
+    },
+
+    async mudar_status_os(p) {
+      return mudarStatus(p);
     },
 
     tela_atual() {
@@ -1003,6 +1012,159 @@
       fases: (nova.fases || []).map(f => f.nome).filter(Boolean) };
   }
 
+  /* MUDAR O STATUS DA OS (05/11/2026, Junior: "crie a ferramenta para o
+     assistente mudar status" e "o assistente deve ser capaz de alterar o que
+     for impossível do usuário fazer").
+
+     Até aqui o assistente NUNCA mudava status (regra de 19/10). A virada é
+     esta: o seletor da tela só anda para a frente (ver STATUS_VOLTA_PERMITIDA
+     no app.js), e a correção de quem carimbou errado — a OS 0704 voltando de
+     Enfestando para Não iniciado — só saía por script no servidor. Agora sai
+     pelo chat, com três travas:
+
+     · QUEM PEDE tem de poder mudar status na tela (área "Status da OS": admin,
+       Enfesto.corte ou quem o admin liberar). O assistente não é atalho para
+       quem não tem esse acesso.
+     · A CONTA DO ASSISTENTE também precisa da área "Status da OS" — o mesmo
+       limite a mais das outras ferramentas que gravam.
+     · NADA GRAVA SEM CONFIRMAÇÃO: a primeira chamada só mostra "de → para",
+       as conjugadas que vão junto e o efeito no estoque, e põe um botão no
+       chat. Grava no clique, ou numa segunda chamada com confirmado=true
+       depois do sim por escrito.
+
+     O caminho é o do programa. O que o seletor oferece vai pelo próprio
+     mudarStatusOS (o mesmo do clique). O que ele não oferece (voltar etapas,
+     pular etapas) faz exatamente o que mudarStatusOS faz depois da trava de
+     "só a anterior ou a seguinte": carimba pela _carimbarStatusOS, leva as
+     conjugadas junto, grava e acerta o estoque pela _estoqueSeguirStatusOS.
+     Uma observação assinada por quem pediu fica na OS, com o de → para. */
+  function _statusAlvoDoPedido(texto) {
+    const t = norm(texto).trim().replace(/\s+\d+\s*\/\s*\d+$/, '');
+    if (!t) return null;
+    const lista = (typeof STATUS_OS !== 'undefined' ? STATUS_OS : []);
+    const limpa = s => norm(s).replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
+    return lista.find(x => x.k === t)
+      || lista.find(x => limpa(x.rotulo) === limpa(t) || (x.curto && limpa(x.curto) === limpa(t)))
+      || null;
+  }
+
+  async function mudarStatus(p) {
+    if (typeof contaTemAcesso !== 'function' || !contaTemAcesso('os-status', CONTA_ASSISTENTE, 'usuario')) {
+      return { sem_acesso: true, mensagem: `A conta do assistente ("${CONTA_ASSISTENTE}") não tem a área "Status da OS". O admin libera em Configurações → Contas de acesso.` };
+    }
+    if (typeof podeGravar === 'function' && !podeGravar()) {
+      return { erro: 'Esta tela não grava (celular ou fora do servidor da fábrica). Use um computador da fábrica.' };
+    }
+    if (!(ehAdmin() || (typeof podeMudarStatusOS === 'function' && podeMudarStatusOS()))) {
+      return { sem_acesso: true, mensagem: 'Esta conta não pode mudar status de OS (área "Status da OS"). Peça ao admin.' };
+    }
+    const o = (STATE.ordens || []).find(x => numOS(x.os) === numOS(p.os));
+    if (!o) return { erro: `Não achei a OS ${p.os}.` };
+    const def = _statusAlvoDoPedido(p.status);
+    if (!def) {
+      return { erro: `Não reconheci o status "${p.status}".`,
+        status_validos: (STATUS_OS || []).map(x => x.rotulo) };
+    }
+    const alvo = def.k;
+    const seq = _statusSeqDaOS(o);
+    const expandida = seq ? _statusSeqExpandida(seq) : [];
+    const nRep = seq ? _statusRepSeq(seq) : 1;
+    const repeteK = k => (seq ? _statusRepetidosSeq(seq).includes(k) : false);
+    const repete = repeteK(alvo);
+    const passo = repete ? Math.max(1, Math.min(nRep, Math.round(Number(p.volta) || 1))) : 1;
+    const alvoId = _statusIdPasso(alvo, passo);
+    // O desenho que tem sequência própria pode não ter o status pedido.
+    if (seq && !STATUS_FORA_SEQ.includes(alvo) && !expandida.some(x => x.id === alvoId)) {
+      return { erro: `O desenho da OS ${o.os} não passa por ${def.rotulo}.`,
+        caminho_desta_os: ['Não iniciado'].concat(expandida.map(x => rotuloStatus(x.k) + (nRep > 1 && repeteK(x.k) ? ` ${x.p}/${nRep}` : ''))) };
+    }
+    const rotId = id => {
+      const d = _statusDoId(id);
+      return rotuloStatus(d.k) + (nRep > 1 && repeteK(d.k) ? ` ${d.p}/${nRep}` : '');
+    };
+    const atualId = seq ? _statusNoOS(o, seq) : _statusOS(o);
+    const juntas = _conjugadasQueSeguemStatus(o, alvo);
+    if (atualId === alvoId && !juntas.length) {
+      return { mudado: false, ja_estava: true, mensagem: `A OS ${o.os} já está em ${rotId(alvoId)}.` };
+    }
+    const naTela = _statusOpcoesOS(o).includes(alvoId);
+    const caminho = ['nao-iniciado'].concat(expandida.map(x => x.id));
+    const iA = caminho.indexOf(atualId), iB = caminho.indexOf(alvoId);
+    const sentido = STATUS_SEMPRE_OS.includes(alvo) ? 'fora do fluxo'
+      : (iA >= 0 && iB >= 0 ? (iB < iA ? 'para trás' : 'para a frente') : 'acerto');
+
+    const avisos = [];
+    if (alvo === 'nao-iniciado') {
+      avisos.push('Estoque: o pano baixado por esta OS volta a ser reserva (como no seletor).');
+      let pelaFolha = '';
+      try { pelaFolha = typeof _statusDoChecklistOS === 'function' ? _statusDoChecklistOS(o) : ''; } catch (e) { /* sem checklist */ }
+      if (pelaFolha && pelaFolha !== 'nao-iniciado') {
+        avisos.push(`A folha desta OS tem etapa marcada (${rotuloStatus(pelaFolha)}): sem o carimbo, o status volta a seguir a folha e vai mostrar ${rotuloStatus(pelaFolha)}. Para ficar em Não iniciado, a etapa tem de ser desmarcada na folha.`);
+      }
+    } else if (alvo === 'cortando') {
+      avisos.push('Estoque: a fase enfestada é baixada (como no seletor).');
+    } else if (alvo === 'cancelado') {
+      avisos.push('Estoque: o pano ainda reservado volta para a prateleira; o já cortado continua baixado.');
+    } else {
+      avisos.push('Estoque: o programa refaz a reserva/baixa desta OS como no seletor.');
+    }
+    if (!naTela) avisos.push(`O seletor da tela não permite este passo (${sentido}); o assistente faz pelo mesmo carimbo do programa.`);
+
+    const resumo = {
+      os: o.os, de: rotId(atualId), para: rotId(alvoId), sentido,
+      pelo_seletor: naTela,
+      conjugadas_que_vao_junto: juntas.map(c => `${c.os} (${rotuloStatus(statusDe(c))})`),
+      avisos
+    };
+
+    if (!p.confirmado) {
+      oferecerAcao(`✔ Mudar OS ${o.os}: ${resumo.de} → ${resumo.para}`
+        + (juntas.length ? ` (+ ${juntas.map(c => c.os).join(', ')})` : ''), async () => {
+        const r = await mudarStatus(Object.assign({}, p, { confirmado: true }));
+        anotarNoChat(r.mudado
+          ? `✔ OS ${r.os}: ${r.de} → ${r.agora}.` + (r.conjugadas_que_foram_junto.length ? ` Foram junto: ${r.conjugadas_que_foram_junto.join(', ')}.` : '')
+            + (r.aviso ? `\n\n${r.aviso}` : '')
+          : `✖ Não mudei: ${r.erro || r.mensagem || 'o programa recusou'}`);
+      }, true);
+      return Object.assign({ mudado: false, botao_mostrado: 'Mudar', aguardando_confirmacao: true }, resumo, {
+        instrucao: 'Nada foi gravado ainda. Mostre de → para, as conjugadas e os avisos em poucas linhas e diga que a pessoa pode clicar no botão ou responder sim. Só com o sim dela por escrito, chame de novo com confirmado=true.' });
+    }
+
+    // Gravação. A observação entra ANTES, para viajar na mesma gravação do status.
+    const quem = login();
+    const agora = new Date().toISOString();
+    const notas = (typeof _obsNotas === 'function' ? _obsNotas(o) : (o.obsNotas || [])).slice();
+    const motivo = String(p.motivo || '').trim();
+    notas.push({ login: quem, em: agora,
+      texto: `Status mudado pelo assistente: ${resumo.de} → ${resumo.para}`
+        + (juntas.length ? ` (conjugadas junto: ${juntas.map(c => c.os).join(', ')})` : '')
+        + (motivo ? `. Motivo: ${motivo}` : '') });
+    o.obsNotas = notas;
+
+    if (naTela) {
+      await mudarStatusOS(o.id, alvoId);
+    } else {
+      // O mesmo que mudarStatusOS faz depois da trava do seletor.
+      _carimbarStatusOS(o, alvo, agora, quem, passo);
+      juntas.forEach(c => _carimbarStatusOS(c, alvo, agora, quem, passo));
+      try { renderListaOS(); renderStatusFolhaOS(); _redesenharCampoAtivo(); } catch (e) { /* tela sem lista */ }
+      try { await saveState('ordens'); }
+      catch (e) { return { mudado: false, erro: 'Não deu para salvar o status — tente de novo.' }; }
+      await _estoqueSeguirStatusOS(o, alvo);
+      for (const c of juntas) await _estoqueSeguirStatusOS(c, alvo);
+    }
+
+    const agoraId = seq ? _statusNoOS(o, seq) : _statusOS(o);
+    const r = { mudado: agoraId !== atualId || juntas.length > 0, os: o.os, de: resumo.de, agora: rotId(agoraId),
+      conjugadas_que_foram_junto: juntas.map(c => c.os), pelo_seletor: naTela };
+    if (agoraId !== alvoId) {
+      r.aviso = `Pedido: ${resumo.para}. A OS mostra ${r.agora}` + (alvo === 'nao-iniciado'
+        ? ' porque a folha tem etapa marcada: o status segue o checklist.' : '.');
+    }
+    if (!r.mudado && !r.aviso) r.erro = 'O programa não aplicou a mudança.';
+    return r;
+  }
+
   /* As ações não rodam sozinhas: viram um botão no chat e só acontecem no
      clique da pessoa. É a confirmação — e é também o que o navegador exige
      para abrir janela nova (OC, PDF das etiquetas) sem bloquear o pop-up. */
@@ -1116,7 +1278,7 @@
   const NOMES_FERR = {
     resumo_status: 'o resumo por status', buscar_os: 'as OS', detalhe_os: 'a OS',
     listar_bases: 'as bases', consultar_base: 'os dados', tela_atual: 'a tela',
-    preparar_folha: 'a folha', planejar: 'o planejamento', criar_os_conjugada: 'a OS conjugada', criar_grade: 'a grade'
+    preparar_folha: 'a folha', planejar: 'o planejamento', criar_os_conjugada: 'a OS conjugada', criar_grade: 'a grade', mudar_status_os: 'o status da OS'
   };
 
   /* ---------------- markdown simples (seguro) ---------------- */
