@@ -16396,10 +16396,10 @@ function _oeCargasComNumero(n, excetoId) {
    da OE").
 
    Segue o período navegado no plano (Diário/Semanal/Mensal/Anual). Uma linha
-   por OE, com as OS dela e os volumes de cada uma — ida e volta somadas, porque
-   a pergunta é "quanto desta OS andou nesta expedição". O volume é o mesmo que
-   a folha de OE imprime (resumoPernaExpedicao: o reescrito à mão vale sobre o
-   calculado). Fica de fora a expedição cancelada e a que não levou OS nenhuma;
+   por OE, com as OS dela, o SKU de cada uma e o volume dela em UNIDADES
+   COMPLETAS (produtos) — ida e volta somadas, porque a pergunta é "quanto desta
+   OS andou nesta expedição". O número é o mesmo que a folha de OE imprime
+   (resumoPernaExpedicao: o reescrito à mão vale sobre o calculado). Fica de fora a expedição cancelada e a que não levou OS nenhuma;
    aviamentos e ferramentas não entram — não são OS. */
 let expRelAberto = false;
 try { expRelAberto = sessionStorage.getItem('gos:exp:rel') === '1'; } catch (e) {}
@@ -16418,8 +16418,13 @@ function _expRelatorioVolumes(ocs) {
     ['ida', 'volta'].forEach(perna => {
       resumoPernaExpedicao(oc, perna).itens.forEach(i => {
         const chave = i.os ? i.os.id : 'x:' + i.osNumero;
-        const atual = porOS.get(chave) || { os: i.osNumero, volumes: 0 };
-        atual.volumes += Number(i.volumes) || 0;
+        // O SKU completo da OS (o da folha); sem sigla da cor, a linha do SKU.
+        const sku = i.os ? ((skusDaOS(i.os) || []).join(' / ') || _skuBaseDaOS(i.os)) : '';
+        const atual = porOS.get(chave) || { os: i.osNumero, sku, volumes: 0 };
+        // UNIDADES COMPLETAS (06/11/2026, correção): o "volume" do relatório é
+        // contado em PRODUTOS — a mesma medida do resto do programa —, não em
+        // pacotes. É o número de produtos que a folha de OE imprime para a OS.
+        atual.volumes += Number(i.pecas) || 0;
         porOS.set(chave, atual);
       });
     });
@@ -16445,9 +16450,10 @@ function _expRelatorioLinhas(rel) {
     <tr class="${idx === 0 ? 'rel-oe-ini' : ''}">
       ${idx === 0 ? `<td rowspan="${x.os.length + 1}" class="rel-oe"><b>${x.oe ? 'OE ' + _oeFmt(x.oe) : 'OE sem nº'}</b><br><span class="rel-data">${_EXP_DIAS_CURTO[_expData(x.data).getDay()]} · ${esc(formatDate(x.data))}</span>${x.janela ? `<br><span class="rel-data">${esc(x.janela)}</span>` : ''}</td>` : ''}
       <td class="rel-os">OS ${esc(o.os)}</td>
-      <td class="rel-num">${o.volumes > 0 ? fmt(o.volumes) : '<span title="Ninguém disse quantos volumes esta OS ocupa">—</span>'}</td>
+      <td class="rel-sku">${o.sku ? esc(o.sku) : '<span title="Esta OS não tem SKU: nem no modelo, nem no desenho técnico, nem escrito na OS">—</span>'}</td>
+      <td class="rel-num">${o.volumes > 0 ? fmt(o.volumes) : '<span title="Esta OS está na carga sem nenhum produto contado">—</span>'}</td>
     </tr>`).join('') + `
-    <tr class="rel-sub"><td>Total da OE · ${fmt(x.os.length)} OS</td><td class="rel-num">${fmt(x.volumes)}</td></tr>`).join('');
+    <tr class="rel-sub"><td colspan="2">Total da OE · ${fmt(x.os.length)} OS</td><td class="rel-num">${fmt(x.volumes)}</td></tr>`).join('');
 }
 
 function _expRelatorioHtml(ocs) {
@@ -16456,9 +16462,9 @@ function _expRelatorioHtml(ocs) {
   const corpo = rel.oes.length ? `
       <div style="max-height:520px;overflow:auto;">
       <table class="table exp-rel-tab">
-        <thead><tr><th>OE</th><th>OS</th><th style="text-align:right;">Volumes</th></tr></thead>
+        <thead><tr><th>OE</th><th>OS</th><th>SKU</th><th style="text-align:right;" title="Unidades completas (produtos)">Volume (un.)</th></tr></thead>
         <tbody>${_expRelatorioLinhas(rel)}</tbody>
-        <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td>${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)}</td></tr></tfoot>
+        <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
       </table>
       </div>`
     : `<div class="empty" style="padding:12px 0;">Nenhuma OE com OS alocada ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`;
@@ -16471,7 +16477,7 @@ function _expRelatorioHtml(ocs) {
           <button class="btn" onclick="expAlternarRelatorio()">Fechar</button>
         </div>
       </div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">O período é o do plano acima — troque entre <b>Diário, Semanal, Mensal e Anual</b> e navegue com ‹ ›. Cada OS mostra o total de volumes dela naquela expedição (ida + volta). Expedições canceladas e sem OS ficam de fora.</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">O período é o do plano acima — troque entre <b>Diário, Semanal, Mensal e Anual</b> e navegue com ‹ ›. Cada OS mostra o SKU e o volume dela naquela expedição em <b>unidades completas</b> (produtos, ida + volta) — não em pacotes. Expedições canceladas e sem OS ficam de fora.</div>
       ${corpo}
     </div>`;
 }
@@ -16495,16 +16501,17 @@ function imprimirRelatorioVolumesExp() {
   th { background: #eee; font-size: 9pt; text-transform: uppercase; }
   .rel-num { text-align: right; font-family: 'Courier New', monospace; }
   .rel-data { font-size: 8.5pt; color: #444; }
+  .rel-sku { font-family: 'Courier New', monospace; font-size: 9pt; }
   .rel-sub td { background: #f4f4f4; font-weight: bold; }
   tfoot td { font-weight: bold; border-top: 2px solid #000; }
   tbody { page-break-inside: auto; } tr { page-break-inside: avoid; }
 </style></head><body>
 <h1>${esc(titulo)}</h1>
-<div class="sub">${esc(formatDate(ini))} a ${esc(formatDate(fim))} · ${fmt(rel.oes.length)} OE · ${fmt(rel.totalOS)} OS · ${fmt(rel.totalVolumes)} volumes · impresso em ${esc(new Date().toLocaleString('pt-BR'))}</div>
+<div class="sub">${esc(formatDate(ini))} a ${esc(formatDate(fim))} · ${fmt(rel.oes.length)} OE · ${fmt(rel.totalOS)} OS · ${fmt(rel.totalVolumes)} unidades completas · impresso em ${esc(new Date().toLocaleString('pt-BR'))}</div>
 <table>
-  <thead><tr><th style="width:28%;">OE</th><th>OS</th><th style="width:18%;text-align:right;">Volumes</th></tr></thead>
+  <thead><tr><th style="width:24%;">OE</th><th style="width:14%;">OS</th><th>SKU</th><th style="width:16%;text-align:right;">Volume (un.)</th></tr></thead>
   <tbody>${_expRelatorioLinhas(rel)}</tbody>
-  <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td>${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)}</td></tr></tfoot>
+  <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
 </table>
 <script>window.onload = function () { window.print(); };<\/script>
 </body></html>`);
@@ -16556,7 +16563,7 @@ function renderExpedicaoPlano() {
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
           <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho, por tonalidade, + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
-          <button class="btn ${expRelAberto ? 'accent' : ''}" onclick="expAlternarRelatorio()" title="Resumo das OE do período: o número de cada OS e o total de volumes dela em cada expedição, com o número da OE. Dá para imprimir.">📊 Relatório de volumes</button>
+          <button class="btn ${expRelAberto ? 'accent' : ''}" onclick="expAlternarRelatorio()" title="Resumo das OE do período: o número e o SKU de cada OS e o volume dela em unidades completas em cada expedição, com o número da OE. Dá para imprimir.">📊 Relatório de volumes</button>
         </div>
       </div>
     </div>`;

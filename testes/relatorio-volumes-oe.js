@@ -23,13 +23,14 @@ function corta(de, ate) {
 let falhas = 0;
 const ok = (cond, msg) => { if (cond) console.log('ok   ' + msg); else { falhas++; console.log('FALHA ' + msg); } };
 
-// Itens por perna, como resumoPernaExpedicao devolveria.
+// Itens por perna, como resumoPernaExpedicao devolveria. `volumes` são os
+// PACOTES e não podem aparecer no relatório; `pecas` são as unidades completas.
 const PERNAS = {
-  'M|2026-11-04|ida': [{ os: { id: 'o10' }, osNumero: '0610', volumes: 5 }, { os: { id: 'o2' }, osNumero: '0602', volumes: 3 }],
-  'M|2026-11-04|volta': [{ os: { id: 'o10' }, osNumero: '0610', volumes: 2 }],
+  'M|2026-11-04|ida': [{ os: { id: 'o10', sku: ['CM.LISA-PRE'] }, osNumero: '0610', volumes: 5, pecas: 500 }, { os: { id: 'o2', sku: [], base: 'BM.TRI' }, osNumero: '0602', volumes: 3, pecas: 300 }],
+  'M|2026-11-04|volta': [{ os: { id: 'o10', sku: ['CM.LISA-PRE'] }, osNumero: '0610', volumes: 2, pecas: 200 }],
   'T|2026-11-04|ida': [],
   'T|2026-11-04|volta': [],
-  'X|2026-11-03|ida': [{ os: { id: 'o9' }, osNumero: '0609', volumes: 4 }]
+  'X|2026-11-03|ida': [{ os: { id: 'o9', sku: ['CM.LISA-AZU', 'CM.LISA-BRA'] }, osNumero: '0609', volumes: 4, pecas: 400 }]
 };
 const STATE = {
   expedicaoCargas: [
@@ -44,6 +45,8 @@ const f = new Function('STATE', 'PERNAS', `
   const formatDate = iso => iso.split('-').reverse().join('/');
   const esc = s => String(s == null ? '' : s);
   const resumoPernaExpedicao = (oc, perna) => ({ itens: PERNAS[oc.janela.id + '|' + oc.dataOrig + '|' + perna] || [] });
+  const skusDaOS = o => o.sku;
+  const _skuBaseDaOS = o => o.base || '';
   ${corta('function _expIso', '\n}')}
   ${corta('function _expData', '\n}')}
   ${corta('function _expAddDias', '\n}')}
@@ -77,11 +80,15 @@ ok(rel.oes.length === 2, 'só as OE com OS e não canceladas (' + rel.oes.length
 ok(rel.oes[0].oe === 84 && rel.oes[1].oe === 85, 'OE em ordem de data');
 const oe85 = rel.oes[1];
 ok(oe85.os.map(o => o.os).join(',') === '0602,0610', 'OS em ordem numérica dentro da OE');
-ok(oe85.os.find(o => o.os === '0610').volumes === 7, 'mesma OS na ida e na volta soma (5 + 2)');
-ok(oe85.volumes === 10, 'total da OE 85 = 10');
-ok(rel.totalVolumes === 14 && rel.totalOS === 3, 'total do período: 14 volumes, 3 OS');
+ok(oe85.os.find(o => o.os === '0610').volumes === 700, 'volume em unidades completas, não pacotes; ida + volta somam (500 + 200)');
+ok(oe85.volumes === 1000, 'total da OE 85 = 1000 un.');
+ok(rel.totalVolumes === 1400 && rel.totalOS === 3, 'total do período: 1400 un., 3 OS');
+ok(oe85.os.find(o => o.os === '0610').sku === 'CM.LISA-PRE', 'SKU completo da OS');
+ok(oe85.os.find(o => o.os === '0602').sku === 'BM.TRI', 'sem sigla de cor, cai na linha do SKU');
+ok(rel.oes[0].os[0].sku === 'CM.LISA-AZU / CM.LISA-BRA', 'OS com duas cores mostra os dois SKUs');
 const html = f._expRelatorioLinhas(rel);
-ok(html.includes('OE 0085') && html.includes('OS 0610') && html.includes('Total da OE'), 'tabela mostra nº da OE, OS e total');
+ok(html.includes('OE 0085') && html.includes('OS 0610') && html.includes('CM.LISA-PRE') && html.includes('Total da OE'), 'tabela mostra nº da OE, OS, SKU e total');
+ok(/OS 0610<\/td>\s*<td class="rel-sku">CM\.LISA-PRE/.test(html), 'SKU logo na frente da OS');
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

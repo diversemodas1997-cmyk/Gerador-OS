@@ -3254,6 +3254,7 @@ body:not(.is-admin) #modal-cad-fields button {
 .exp-rel-tab .rel-oe { white-space: nowrap; border-right: 1px solid var(--line); }
 .exp-rel-tab .rel-data { font-size: 11px; color: var(--ink-3); }
 .exp-rel-tab .rel-num { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+.exp-rel-tab .rel-sku { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .exp-rel-tab tr.rel-oe-ini td { border-top: 2px solid var(--line); }
 .exp-rel-tab tr.rel-sub td { font-weight: 700; background: var(--paper-2, rgba(0,0,0,.03)); }
 .exp-rel-tab tfoot td { font-weight: 700; border-top: 2px solid var(--ink-3); }
