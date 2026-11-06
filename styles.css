@@ -3249,6 +3249,15 @@ body:not(.is-admin) #modal-cad-fields button {
   text-align: center;
 }
 
+/* Relatório de volumes por OE (06/11/2026): OE à esquerda, as OS dela e os volumes. */
+.exp-rel-tab td { vertical-align: top; }
+.exp-rel-tab .rel-oe { white-space: nowrap; border-right: 1px solid var(--line); }
+.exp-rel-tab .rel-data { font-size: 11px; color: var(--ink-3); }
+.exp-rel-tab .rel-num { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+.exp-rel-tab tr.rel-oe-ini td { border-top: 2px solid var(--line); }
+.exp-rel-tab tr.rel-sub td { font-weight: 700; background: var(--paper-2, rgba(0,0,0,.03)); }
+.exp-rel-tab tfoot td { font-weight: 700; border-top: 2px solid var(--ink-3); }
+
 /* Faixa de totais do período: expedições, volumes de ida, de volta e alertas. */
 .exp-resumo {
   display: grid;

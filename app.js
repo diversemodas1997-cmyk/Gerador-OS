@@ -14772,6 +14772,8 @@ function _expRange(modo, ancora) {
     return { ini, fim: _expAddDias(ini, 6) };
   }
   const d = _expData(ancora);
+  // Anual (06/11/2026, relatório de volumes por OE): de 1º de janeiro a 31 de dezembro.
+  if (modo === 'ano') return { ini: d.getFullYear() + '-01-01', fim: d.getFullYear() + '-12-31' };
   return {
     ini: _expIso(new Date(d.getFullYear(), d.getMonth(), 1)),
     fim: _expIso(new Date(d.getFullYear(), d.getMonth() + 1, 0))
@@ -14782,6 +14784,7 @@ function _expNavegar(modo, ancora, dir) {
   if (modo === 'dia') return _expAddDias(ancora, dir);
   if (modo === 'semana') return _expAddDias(ancora, dir * 7);
   const d = _expData(ancora);
+  if (modo === 'ano') return _expIso(new Date(d.getFullYear() + dir, 0, 1));
   return _expIso(new Date(d.getFullYear(), d.getMonth() + dir, 1));
 }
 
@@ -14790,11 +14793,12 @@ function _expLabelPeriodo(modo, ancora) {
   if (modo === 'dia') return _EXP_DIAS[_expData(ini).getDay()] + ', ' + formatDate(ini);
   if (modo === 'semana') return formatDate(ini) + ' — ' + formatDate(fim);
   const d = _expData(ini);
+  if (modo === 'ano') return 'Ano de ' + d.getFullYear();
   return _EXP_MESES[d.getMonth()] + ' de ' + d.getFullYear();
 }
 
 function _expNomeModo(modo) {
-  return modo === 'dia' ? 'diário' : (modo === 'semana' ? 'semanal' : 'mensal');
+  return modo === 'dia' ? 'diário' : (modo === 'semana' ? 'semanal' : (modo === 'ano' ? 'anual' : 'mensal'));
 }
 
 // Ocorrências das janelas ativas dentro de [ini, fim].
@@ -15348,7 +15352,7 @@ function _expBarraObjetivo(r, perna) {
 const _EXP_SIT_LABEL = { ok: 'dentro', baixo: 'abaixo do mín.', alto: 'acima do máx.', vazio: 'sem carga' };
 
 // Como a folha impressa se refere ao período quando não há nenhuma OE produzida.
-const _EXP_VAZIO_PERIODO = { dia: 'neste dia', semana: 'nesta semana', mes: 'neste mês' };
+const _EXP_VAZIO_PERIODO = { dia: 'neste dia', semana: 'nesta semana', mes: 'neste mês', ano: 'neste ano' };
 
 // Texto dos limites da perna, pra não repetir a regra em 4 lugares.
 function _expLimitesTexto(volMin, volMax) {
@@ -16386,6 +16390,127 @@ function _oeCargasComNumero(n, excetoId) {
   return (STATE.expedicaoCargas || []).filter(c => c && c.id !== excetoId && Number(c.oe) === Number(n)).length;
 }
 
+/* RELATÓRIO DE VOLUMES POR OE (06/11/2026: "relatório filtrado por dia, semana,
+   mês e ano no planejamento de expedição, com o resumo dos volumes das OE: só o
+   número da OS e o total de volumes dela em cada expedição, mostrando o número
+   da OE").
+
+   Segue o período navegado no plano (Diário/Semanal/Mensal/Anual). Uma linha
+   por OE, com as OS dela e os volumes de cada uma — ida e volta somadas, porque
+   a pergunta é "quanto desta OS andou nesta expedição". O volume é o mesmo que
+   a folha de OE imprime (resumoPernaExpedicao: o reescrito à mão vale sobre o
+   calculado). Fica de fora a expedição cancelada e a que não levou OS nenhuma;
+   aviamentos e ferramentas não entram — não são OS. */
+let expRelAberto = false;
+try { expRelAberto = sessionStorage.getItem('gos:exp:rel') === '1'; } catch (e) {}
+
+function expAlternarRelatorio() {
+  expRelAberto = !expRelAberto;
+  try { sessionStorage.setItem('gos:exp:rel', expRelAberto ? '1' : '0'); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
+function _expRelatorioVolumes(ocs) {
+  const oes = [];
+  (ocs || []).forEach(oc => {
+    if (!oc || oc.cancelada) return;
+    const porOS = new Map();
+    ['ida', 'volta'].forEach(perna => {
+      resumoPernaExpedicao(oc, perna).itens.forEach(i => {
+        const chave = i.os ? i.os.id : 'x:' + i.osNumero;
+        const atual = porOS.get(chave) || { os: i.osNumero, volumes: 0 };
+        atual.volumes += Number(i.volumes) || 0;
+        porOS.set(chave, atual);
+      });
+    });
+    if (!porOS.size) return;
+    const os = [...porOS.values()].sort((a, b) => String(a.os).localeCompare(String(b.os), undefined, { numeric: true }));
+    oes.push({
+      oe: _oeNumeroDe(oc.janela.id, oc.dataOrig),
+      data: oc.data,
+      janela: oc.janela.nome || '',
+      os,
+      volumes: os.reduce((s, x) => s + x.volumes, 0)
+    });
+  });
+  // Ordem de calendário; no mesmo dia, pelo número da OE.
+  oes.sort((a, b) => String(a.data).localeCompare(String(b.data)) || (a.oe || 1e9) - (b.oe || 1e9));
+  return { oes, totalVolumes: oes.reduce((s, x) => s + x.volumes, 0), totalOS: oes.reduce((s, x) => s + x.os.length, 0) };
+}
+
+// As linhas da tabela, iguais na tela e na impressão.
+function _expRelatorioLinhas(rel) {
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  return rel.oes.map(x => x.os.map((o, idx) => `
+    <tr class="${idx === 0 ? 'rel-oe-ini' : ''}">
+      ${idx === 0 ? `<td rowspan="${x.os.length + 1}" class="rel-oe"><b>${x.oe ? 'OE ' + _oeFmt(x.oe) : 'OE sem nº'}</b><br><span class="rel-data">${_EXP_DIAS_CURTO[_expData(x.data).getDay()]} · ${esc(formatDate(x.data))}</span>${x.janela ? `<br><span class="rel-data">${esc(x.janela)}</span>` : ''}</td>` : ''}
+      <td class="rel-os">OS ${esc(o.os)}</td>
+      <td class="rel-num">${o.volumes > 0 ? fmt(o.volumes) : '<span title="Ninguém disse quantos volumes esta OS ocupa">—</span>'}</td>
+    </tr>`).join('') + `
+    <tr class="rel-sub"><td>Total da OE · ${fmt(x.os.length)} OS</td><td class="rel-num">${fmt(x.volumes)}</td></tr>`).join('');
+}
+
+function _expRelatorioHtml(ocs) {
+  const rel = _expRelatorioVolumes(ocs);
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const corpo = rel.oes.length ? `
+      <div style="max-height:520px;overflow:auto;">
+      <table class="table exp-rel-tab">
+        <thead><tr><th>OE</th><th>OS</th><th style="text-align:right;">Volumes</th></tr></thead>
+        <tbody>${_expRelatorioLinhas(rel)}</tbody>
+        <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td>${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)}</td></tr></tfoot>
+      </table>
+      </div>`
+    : `<div class="empty" style="padding:12px 0;">Nenhuma OE com OS alocada ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`;
+  return `
+    <div class="card exp-rel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <h2 style="margin:0;font-size:14px;">Relatório de volumes por OE · ${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn accent" onclick="imprimirRelatorioVolumesExp()" ${rel.oes.length ? '' : 'disabled'}>🖨 Imprimir relatório</button>
+          <button class="btn" onclick="expAlternarRelatorio()">Fechar</button>
+        </div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">O período é o do plano acima — troque entre <b>Diário, Semanal, Mensal e Anual</b> e navegue com ‹ ›. Cada OS mostra o total de volumes dela naquela expedição (ida + volta). Expedições canceladas e sem OS ficam de fora.</div>
+      ${corpo}
+    </div>`;
+}
+
+function imprimirRelatorioVolumesExp() {
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const rel = _expRelatorioVolumes(ocorrenciasExpedicao(ini, fim));
+  if (!rel.oes.length) return toast('Nenhuma OE com OS alocada neste período', 'err');
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  const titulo = 'Relatório de volumes por OE · ' + _expLabelPeriodo(expPlanoModo, expPlanoAncora);
+  const w = window.open('', '_blank');
+  if (!w) return toast('O navegador bloqueou a janela de impressão. Libere pop-ups para este site.', 'err');
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; margin: 0; }
+  h1 { font-size: 14pt; margin: 0 0 2px; }
+  .sub { font-size: 9pt; color: #444; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; }
+  th { background: #eee; font-size: 9pt; text-transform: uppercase; }
+  .rel-num { text-align: right; font-family: 'Courier New', monospace; }
+  .rel-data { font-size: 8.5pt; color: #444; }
+  .rel-sub td { background: #f4f4f4; font-weight: bold; }
+  tfoot td { font-weight: bold; border-top: 2px solid #000; }
+  tbody { page-break-inside: auto; } tr { page-break-inside: avoid; }
+</style></head><body>
+<h1>${esc(titulo)}</h1>
+<div class="sub">${esc(formatDate(ini))} a ${esc(formatDate(fim))} · ${fmt(rel.oes.length)} OE · ${fmt(rel.totalOS)} OS · ${fmt(rel.totalVolumes)} volumes · impresso em ${esc(new Date().toLocaleString('pt-BR'))}</div>
+<table>
+  <thead><tr><th style="width:28%;">OE</th><th>OS</th><th style="width:18%;text-align:right;">Volumes</th></tr></thead>
+  <tbody>${_expRelatorioLinhas(rel)}</tbody>
+  <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td>${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)}</td></tr></tfoot>
+</table>
+<script>window.onload = function () { window.print(); };<\/script>
+</body></html>`);
+  w.document.close();
+}
+
 function renderExpedicaoPlano() {
   const cont = document.getElementById('expedicao-plano');
   if (!cont) return;
@@ -16413,6 +16538,7 @@ function renderExpedicaoPlano() {
         <button class="${expPlanoModo === 'dia' ? 'active' : ''}" onclick="expSetModo('dia')">Diário</button>
         <button class="${expPlanoModo === 'semana' ? 'active' : ''}" onclick="expSetModo('semana')">Semanal</button>
         <button class="${expPlanoModo === 'mes' ? 'active' : ''}" onclick="expSetModo('mes')">Mensal</button>
+        <button class="${expPlanoModo === 'ano' ? 'active' : ''}" onclick="expSetModo('ano')">Anual</button>
       </div>
       ${segOrdem}
       <div style="display:flex;align-items:center;gap:6px;">
@@ -16430,6 +16556,7 @@ function renderExpedicaoPlano() {
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
           <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho, por tonalidade, + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
+          <button class="btn ${expRelAberto ? 'accent' : ''}" onclick="expAlternarRelatorio()" title="Resumo das OE do período: o número de cada OS e o total de volumes dela em cada expedição, com o número da OE. Dá para imprimir.">📊 Relatório de volumes</button>
         </div>
       </div>
     </div>`;
@@ -16772,7 +16899,7 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (expRelAberto ? _expRelatorioHtml(ocs) : '') + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */
