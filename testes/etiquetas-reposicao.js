@@ -66,6 +66,7 @@ const motor = [
   corta('function _osEhBmLisa'),
   corta('function _osEhBlusaMoletom'),
   corta('function _composicaoPacotePelosComponentes'),
+  corta('function _pecasEtiquetaPelosComponentes'),
   corta('function _pecasEtiquetaOS'),
   corta('function _coresDaPecaOS'),
   corta('function _tamanhosDaGradeExpandido'),
@@ -104,6 +105,8 @@ function etiquetasDe(o, { tons = [], moletom = false } = {}) {
     const multiplicadorPecaOS = () => (moletom ? 1 : 2);
     // Sem grade no cadastro: o tipo (BM.TRI…) é lido do nome copiado na OS.
     const _skuDaOS = () => '';
+    // A ordem das cores pelo desenho (04/11/2026) não é o que se mede aqui.
+    const ordenarCoresNomesPorDesc = (cores) => cores;
     ${motor}
     const dados = dadosEtiquetaParaOS(o);
     gerarPdfEtiquetas(dados);
@@ -286,7 +289,7 @@ eq('0563: pacotes (G, G, G2 × 2 tons + reposição)', r.dados.totalPacotes, 7);
 ok('0563: todas levam o total da OS', r.paginas.every(pg => pg.includes('QTDE OS: 390')), r.paginas);
 eq('0563: pacotes do Tom 1 (G, G, G2)', r.paginas.slice(0, 3).map(qPac).join(','), '100,100,100');
 eq('0563: pacotes do Tom 2 (G, G, G2)', r.paginas.slice(3, 6).map(qPac).join(','), '30,30,30');
-ok('0563: a reposição não tem QTDE PACOTE', !r.paginas[6].some(l => /^QTDE PACOTE/.test(l)), r.paginas[6]);
+ok('0563: a reposição não tem QTDE PACOTE', !r.paginas[r.paginas.length - 1].some(l => /^QTDE PACOTE/.test(l)), r.paginas[r.paginas.length - 1]);
 
 r = etiquetasDe(osBase({ grade: { g: 2, g2: 1, total: 3 }, enfesto: { camadas: 65 },
   progresso: { totalTamanhoTons: { 1: true, 2: true } } }), { tons: [1, 2] });
@@ -295,7 +298,10 @@ eq('2 tons sem divisão: o pacote sai com "—", não com chute', qPac(r.paginas
 /* ---------- 8. moletom que NAO e blusa (22/10/2026, OS 0676) ----------
    A calca moletom (CJM) imprimia manga, capuz, barra e punhos — a lista fixa
    da blusa. Agora lista os componentes da propria OS, e a reposicao e so
-   "Reposicao". A blusa segue com a lista fixa (casos 5 e 6). */
+   "Reposicao". A blusa segue com a lista fixa (casos 5 e 6).
+   Desde 06/11/2026 a lista nao vai mais toda no pe de uma etiqueta so (ela
+   encolhia a 0676 para 5,7 pt): sai no padrao da BM, uma etiqueta por grupo
+   de ate tres pecas, com a QTDE PACOTE do grupo. */
 {
   const cjm = osBase({ os: '0676', modeloNome: 'Calça Moletom', fases: [{ tecidoId: 't1' }],
     grade: { descricao: 'P ao G3 | CJM | 177cm', p: 1, m: 1, total: 2 }, enfesto: { camadas: 34 },
@@ -306,8 +312,11 @@ eq('2 tons sem divisão: o pacote sai com "—", não com chute', qPac(r.paginas
     ] });
   const r8 = etiquetasDe(cjm, { tons: [1], moletom: true });
   const pag = r8.paginas[0];
-  ok('CJM: lista os componentes da OS', pag.includes('Frente D 34 · Frente E 34 · Costa D 34')
-     && pag.includes('Costa E 34 · Bolsos Frente 136 · Bolso costa 34'), pag);
+  ok('CJM: 1ª etiqueta do P, grupo Frente D/Frente E/Costa D', pag.includes('QTDE PACOTE: Frente D 34 · Frente E 34 · Costa D 34')
+     && pag.includes('FRENTE D/FRENTE E/COSTA D'), pag);
+  ok('CJM: 2ª etiqueta do P, o outro grupo', r8.paginas[1].includes('QTDE PACOTE: Costa E 34 · Bolsos Frente 136 · Bolso costa 34'), r8.paginas[1]);
+  eq('CJM: etiquetas (2 tamanhos × 2 grupos + 2 de reposição)', r8.dados.numEtiquetas, 6);
+  ok('CJM: a etiqueta de grupo não traz a grade inteira nem a lista no pé', !pag.some(l => /^TAM:/.test(l)), pag);
   ok('CJM: nada de manga, capuz, barra ou punhos', !pag.some(l => /Mangas|Capuz|Barra|Punhos/.test(l)), pag);
   eq('CJM: a reposicao e so "Reposição"', r8.dados.conteudoReposicao, 'Reposição');
   const semComp = etiquetasDe(Object.assign({}, cjm, { componentes: [] }), { tons: [1], moletom: true });

@@ -16724,6 +16724,7 @@ function renderExpedicaoPlano() {
       <span class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `<span class="exp-oe-num">OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))}</span> · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}</span>
       <span class="exp-ocor-nome">${esc(oc.janela.nome) || 'Janela sem nome'}${oc.remarcada ? ' · <span class="exp-badge baixo">remarcada</span>' : ''}${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}</span>
       ${oc.cancelada ? '' : pernaResumo(oc, 'ida') + pernaResumo(oc, 'volta')}
+      ${oc.cancelada ? '' : `<button class="btn" style="padding:2px 8px;font-size:11px;margin-left:auto;" onclick="event.stopPropagation(); abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário">+ no turno</button>`}
     </div>`;
 
   const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : `
@@ -16748,6 +16749,7 @@ function renderExpedicaoPlano() {
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn accent" onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha do plano só desta OE, para imprimir ou salvar">🖨 Folha do plano</button>
           <button class="btn" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">Horário / cancelar / remarcar</button>
+          ${oc.cancelada ? '' : `<button class="btn" onclick="abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário — um segundo caminhão">+ Expedição no turno</button>`}
           <button class="btn" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')">Editar janela</button>
         </div>
       </div>
@@ -17652,6 +17654,66 @@ function abrirModalExpOcorrencia(janelaId, dataOrig) {
   openModal('modal-exp');
 }
 
+/* MAIS UMA EXPEDIÇÃO NO MESMO TURNO (06/11/2026, Junior: "insira botão para
+   adicionar mais um planejamento de expedição na mesma parte manhã ou tarde,
+   em horário diferente").
+
+   Um segundo caminhão na mesma manhã (ou tarde) é uma JANELA DE DATA FIXA
+   naquele dia, com hora própria — o mesmo cadastro que o "+ Janela" já fazia,
+   só que sem obrigar a lembrar de escolher "Data fixa", digitar a data e
+   adivinhar que horário não colide. O botão sai do quadro da OE e já traz o
+   dia e o turno dela; o que se escolhe é a hora. A hora da ida tem de cair no
+   turno escolhido (manhã até 11:59, tarde a partir de 12:00 — a mesma régua
+   do painel, _dashTurnoDaCarga) e não pode repetir a ida de outra expedição
+   do mesmo dia: duas OE no mesmo horário seriam o mesmo caminhão. */
+const _expTurnoDaHora = hora => {
+  const h = parseInt(String(hora || '').slice(0, 2), 10);
+  return (Number.isFinite(h) && h >= 12) ? 'tarde' : 'manha';
+};
+
+// As horas de ida já ocupadas nesta data (expedições não canceladas).
+function _expHorasIdaDoDia(data) {
+  return ocorrenciasExpedicao(data, data)
+    .filter(oc => !oc.cancelada && oc.data === data)
+    .map(oc => oc.horaIda || '')
+    .filter(Boolean);
+}
+
+function abrirModalExpExtra(janelaId, dataOrig) {
+  if (!exigirEdicao('cadastrar janelas de expedição')) return;
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const oc = ocorrenciasExpedicao(_expAddDias(ini, -1), _expAddDias(fim, 1))
+    .find(o => o.janela.id === janelaId && o.dataOrig === dataOrig);
+  if (!oc) return toast('Expedição não encontrada no período', 'err');
+  const data = oc.data;
+  const turno = _expTurnoDaHora(oc.horaIda);
+  const ocupadas = _expHorasIdaDoDia(data).sort();
+  // Sugestão: uma hora depois da ida desta OE, se ainda for o mesmo turno e
+  // estiver livre; senão, em branco para quem planeja escolher.
+  const mais1h = h => { const [H, M] = String(h || '').split(':').map(Number); return Number.isFinite(H) ? String(H + 1).padStart(2, '0') + ':' + String(M || 0).padStart(2, '0') : ''; };
+  const sugIda = mais1h(oc.horaIda);
+  const sugVolta = mais1h(oc.horaVolta);
+  const idaOk = sugIda && sugIda < '24' && _expTurnoDaHora(sugIda) === turno && !ocupadas.includes(sugIda);
+  _expModalCtx = { tipo: 'extra', data, nomeBase: oc.janela.nome || 'Expedição' };
+  document.getElementById('modal-exp-title').textContent = 'Mais uma expedição · ' + _EXP_DIAS[_expData(data).getDay()] + ', ' + formatDate(data);
+  document.getElementById('modal-exp-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field full">
+        <label>Turno *</label>
+        <select id="ex-turno">
+          <option value="manha" ${turno === 'manha' ? 'selected' : ''}>Manhã (ida até 11:59)</option>
+          <option value="tarde" ${turno === 'tarde' ? 'selected' : ''}>Tarde (ida a partir de 12:00)</option>
+        </select>
+      </div>
+      <div class="field"><label>Hora da ida *</label><input type="time" id="ex-hora-ida" value="${esc(idaOk ? sugIda : '')}"></div>
+      <div class="field"><label>Hora da volta *</label><input type="time" id="ex-hora-volta" value="${esc(idaOk ? sugVolta : '')}"></div>
+      <div class="field full"><label>Nome</label><input type="text" id="ex-nome" value="" placeholder="Em branco: ${esc(oc.janela.nome || 'Expedição')} · extra + hora"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="ex-obs" value="" placeholder="Ex.: segundo caminhão da manhã"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">Cria uma expedição a mais <b>só neste dia</b> (${esc(formatDate(data))}), no turno escolhido, com hora diferente das que já existem.${ocupadas.length ? ` Horários de ida já usados neste dia: <b>${esc(ocupadas.join(', '))}</b>.` : ''} Ela aparece no plano como as outras, recebe o número de OE quando a primeira OS for alocada e sai na mesma folha de OE do dia.</div>`;
+  openModal('modal-exp');
+}
+
 function _expToggleSituacaoOcorrencia() {
   const s = document.getElementById('eo-situacao')?.value || 'ativa';
   // A data nova só existe na remarcação. O HORÁRIO existe sempre que a expedição
@@ -17876,6 +17938,28 @@ async function salvarModalExpedicao() {
     // muitas outras razões (migrações, flags) que não mudam nada na folha.
     if (typeof agendarAutoSaveOE === 'function') agendarAutoSaveOE();
     toast('Configuração salva', 'ok');
+
+  } else if (ctx.tipo === 'extra') {
+    if (!exigirEdicao('cadastrar janelas de expedição')) return;
+    const turno = v('ex-turno') === 'tarde' ? 'tarde' : 'manha';
+    const horaIda = v('ex-hora-ida'), horaVolta = v('ex-hora-volta');
+    if (!horaIda || !horaVolta) return toast('Informe os horários de ida e de volta', 'err');
+    if (_expTurnoDaHora(horaIda) !== turno) {
+      return toast(turno === 'manha' ? 'Na manhã a ida tem de ser antes das 12:00' : 'Na tarde a ida tem de ser a partir das 12:00', 'err');
+    }
+    if (_expHorasIdaDoDia(ctx.data).includes(horaIda)) {
+      return toast('Já existe expedição com ida às ' + horaIda + ' neste dia — escolha outro horário', 'err');
+    }
+    if (!Array.isArray(STATE.expedicaoJanelas)) STATE.expedicaoJanelas = [];
+    STATE.expedicaoJanelas.push({
+      id: uid(),
+      nome: v('ex-nome').trim() || `${ctx.nomeBase} · extra ${horaIda}`,
+      tipo: 'data', diasSemana: [], data: ctx.data,
+      horaIda, horaVolta, volMin: '', volMax: '', ativo: true,
+      obs: v('ex-obs').trim()
+    });
+    await saveState('expedicaoJanelas');
+    toast(`Expedição extra criada: ${formatDate(ctx.data)}, ${turno === 'manha' ? 'manhã' : 'tarde'}, ida ${horaIda}`, 'ok');
 
   } else if (ctx.tipo === 'ocorrencia') {
     if (!exigirEdicao('cancelar ou remarcar expedições')) return;
@@ -35189,10 +35273,63 @@ function _osEhBmLisa(o) {
   const sku = _skuDaOS(o) || _skuDaGrade({ descricao: o && o.grade && o.grade.descricao });
   return /^bm\.lisa/.test(_normSku(sku));
 }
-// As etiquetas por grupo de peças da OS (BM.TRI ou BM.LISA), ou null.
+/* MOLETOM QUE NÃO É BLUSA NO PADRÃO DA BLUSA (06/11/2026, Junior: "analise o
+   formato das etiquetas geradas para OS 676 e corrija as diferenças comparando
+   com o padrão de etiquetas dos demais SKU").
+
+   A CJM (calça moletom) imprimia UMA etiqueta por tamanho × tom com a lista
+   inteira dos componentes no pé — na 0676 eram nove, com nomes longos
+   ("Frente Blusa Moletom Básica 3 · Mangas Blusa Moletom Básica 6 · …"). Como
+   a etiqueta acha o maior tamanho de letra em que TODAS as linhas cabem, essa
+   lista derrubava a etiqueta inteira para 5,7 pt (e a lista para 4 pt),
+   contra 11 pt das demais SKU. Agora ela segue o padrão da BM.LISA/BM.TRI:
+   uma etiqueta por GRUPO de até três peças, na ordem dos componentes da OS,
+   com "QTDE PACOTE: Frente D 3 · Frente E 3 · Costa D 3" e o nome do grupo na
+   faixa. Palavras que todas as peças do grupo repetem ("Blusa Moletom Básica")
+   saem dos nomes e a primeira delas vira o prefixo do grupo ("BLUSA:
+   FRENTE/MANGAS/COSTAS"). */
+function _pecasEtiquetaPelosComponentes(o) {
+  const comps = (o && o.componentes || [])
+    .filter(c => c && String(c.nome || '').trim() && (parseFloat(c.qtdPorPeca) || 0) > 0);
+  if (!comps.length) return null;
+  const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // PRIMEIRO POR ROUPA: a CJM traz as peças da calça ("Frente", "Costas") e as
+  // da blusa ("Frente Blusa Moletom Básica"…). O complemento depois da 1ª
+  // palavra, quando o nome tem 3 ou mais, diz de que roupa a peça é; as peças
+  // de uma roupa ficam juntas (na ordem em que aparecem) e só então vão de três
+  // em três. Sem isso, a 0589 juntava "Frente · Costas · Frente Blusa Moletom
+  // Básica" numa etiqueta só, e o nome comprido encolhia tudo de novo.
+  const roupa = c => { const ps = String(c.nome).trim().split(/\s+/); return ps.length >= 3 ? _normNome(ps.slice(1).join(' ')) : ''; };
+  const porRoupa = new Map();
+  comps.forEach(c => { const k = roupa(c); if (!porRoupa.has(k)) porRoupa.set(k, []); porRoupa.get(k).push(c); });
+  const blocos = [];
+  porRoupa.forEach(lista => { for (let i = 0; i < lista.length; i += 3) blocos.push(lista.slice(i, i + 3)); });
+  const grupos = [];
+  for (const g of blocos) {
+    const palavras = g.map(c => String(c.nome).trim().split(/\s+/));
+    // Palavras que TODAS as peças do grupo têm (só com mais de uma peça, e só se
+    // cada nome continua com alguma coisa depois de tirá-las).
+    let comuns = g.length > 1
+      ? palavras[0].filter(w => palavras.every(ps => ps.some(p => _normNome(p) === _normNome(w))))
+      : [];
+    const curto = ps => ps.filter(p => !comuns.some(w => _normNome(w) === _normNome(p))).join(' ');
+    if (comuns.length && palavras.some(ps => !curto(ps))) comuns = [];
+    const nomes = palavras.map(curto);
+    grupos.push({
+      nome: (comuns.length ? comuns[0] + ': ' : '') + nomes.join('/'),
+      partes: g.map(c => new RegExp('^' + escRe(_normNome(c.nome)) + '$')),
+      porBlusa: g.map((c, k) => [nomes[k], parseFloat(c.qtdPorPeca) || 1])
+    });
+  }
+  return grupos;
+}
+
+// As etiquetas por grupo de peças da OS (BM.TRI, BM.LISA ou moletom que não é
+// blusa, pelos componentes), ou null.
 function _pecasEtiquetaOS(o) {
   if (_osEhBmTri(o)) return _PECAS_ETIQUETA_BMTRI;
   if (_osEhBmLisa(o)) return _PECAS_ETIQUETA_BMLISA;
+  if (!_osEhBlusaMoletom(o)) return _pecasEtiquetaPelosComponentes(o);
   return null;
 }
 
@@ -35384,8 +35521,10 @@ function dadosEtiquetaParaOS(o) {
            totalPacotes, tonsTexto, composicaoPacotes,
            pecasPacotes: pecasPacotes && pecasPacotes.map(p => p.nome), corPacotes, qtdePacotes,
            qtdeTamPacotes,
-           conteudoReposicao: pecasBmTri ? ETIQUETA_CONTEUDO_REPOSICAO_BM
-             : (blusa ? ETIQUETA_CONTEUDO_REPOSICAO : ETIQUETA_CONTEUDO_REPOSICAO_NAO_BLUSA) };
+           // A reposição da peça que não é blusa continua "Reposição" (sem viés
+           // nem ribana), mesmo agora que ela também sai por grupo de peças.
+           conteudoReposicao: !blusa ? ETIQUETA_CONTEUDO_REPOSICAO_NAO_BLUSA
+             : (pecasBmTri ? ETIQUETA_CONTEUDO_REPOSICAO_BM : ETIQUETA_CONTEUDO_REPOSICAO) };
 }
 
 // Abre as etiquetas em PDF numa aba, prontas para imprimir. É o caminho EXATO:
