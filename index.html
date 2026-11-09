@@ -1051,7 +1051,10 @@
     <section class="page hidden" data-page="cad-funcoes">
       <div class="page-header">
         <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe, organizados em pastas por setor (Corte, Costura, Expedição…)</div></div>
-        <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
+        <div class="actions admin-only">
+          <button class="btn" onclick="criarPastaSetor()" title="Cria uma pasta com o nome de um setor; depois é só pôr as funções nela">📁 + Nova pasta de setor</button>
+          <button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button>
+        </div>
       </div>
       <div id="funcoes-pastas"></div>
     </section>
@@ -2080,7 +2083,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-09d"></script>
+<script src="app.js?v=2026-11-09e"></script>
 <script src="assistente.js?v=2026-11-05a"></script>
 <script src="colorimetro.js?v=2026-11-03a"></script>
 <script src="estoque-confeccao.js?v=2026-10-30d"></script>

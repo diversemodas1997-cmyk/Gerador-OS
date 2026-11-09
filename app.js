@@ -25594,15 +25594,32 @@ function _funcSetor(f) {
   const gravado = String((f && f.setor) || '').trim();
   return gravado ? { nome: gravado, sugerido: false } : { nome: _funcSetorSugerido(f), sugerido: true };
 }
-// Setores oferecidos no formulário: os da lista mais os já escritos em alguma função.
+/* PASTAS CRIADAS PELO USUÁRIO (09/11/2026, Junior: "No campo de cadastro de
+   funções, usuário deve ser capaz de criar uma pasta com nome de setor").
+   A pasta existe antes de ter função dentro — por isso não basta o `setor` das
+   funções: os nomes ficam em STATE.meta.funcaoSetores e a pasta aparece vazia,
+   com o "+ Nova função" dela já apontando o setor. */
+function _funcPastasCriadas() {
+  const l = STATE.meta && STATE.meta.funcaoSetores;
+  return Array.isArray(l) ? l.map(s => String(s || '').trim()).filter(Boolean) : [];
+}
+// Setores oferecidos no formulário: os da lista, as pastas criadas e os já
+// escritos em alguma função.
 function _funcSetoresOpcoes() {
-  const extras = (STATE.funcoes || []).map(f => String(f.setor || '').trim())
+  const extras = _funcPastasCriadas().concat((STATE.funcoes || []).map(f => String(f.setor || '').trim()))
     .filter(s => s && !FUNCAO_SETORES.some(p => _normNome(p) === _normNome(s)));
-  return FUNCAO_SETORES.concat([...new Set(extras)].sort((a, b) => a.localeCompare(b, 'pt-BR')));
+  const unicos = [];
+  extras.forEach(s => { if (!unicos.some(u => _normNome(u) === _normNome(s))) unicos.push(s); });
+  return FUNCAO_SETORES.concat(unicos.sort((a, b) => a.localeCompare(b, 'pt-BR')));
 }
 // Funções agrupadas por setor, na ordem das pastas.
 function _funcoesPorSetor() {
   const grupos = new Map();
+  _funcPastasCriadas().forEach(nome => {
+    const k = _normNome(nome);
+    const padrao = FUNCAO_SETORES.find(p => _normNome(p) === k);
+    if (!grupos.has(k)) grupos.set(k, { nome: padrao || nome, funcoes: [], criada: true });
+  });
   (STATE.funcoes || []).forEach(f => {
     const s = _funcSetor(f);
     const k = _normNome(s.nome);
@@ -25627,6 +25644,15 @@ function renderFuncoes() {
   cont.innerHTML = _funcoesPorSetor().map(g => {
     const linhas = g.funcoes.map(({ f, sugerido }) => _linhaFuncaoHtml(f, sugerido)).join('');
     const nSug = g.funcoes.filter(x => x.sugerido).length;
+    // Botões dentro do <summary>: sem o preventDefault, cada clique também
+    // abriria/fecharia a pasta.
+    const nomeJs = esc(JSON.stringify(g.nome || ''));
+    const botoes = g.nome ? `
+      <span class="admin-only" style="display:inline-flex;gap:4px;">
+        <button type="button" class="btn small" title="Nova função já neste setor" onclick="event.preventDefault();event.stopPropagation();openCadastroModal('funcao', null, null, { setor: ${nomeJs} })">+ função</button>
+        <button type="button" class="btn small" title="Renomear a pasta (as funções dela passam para o nome novo)" onclick="event.preventDefault();event.stopPropagation();renomearPastaSetor(${nomeJs})">renomear</button>
+        ${g.criada && !g.funcoes.length ? `<button type="button" class="btn small" title="Excluir a pasta vazia" onclick="event.preventDefault();event.stopPropagation();excluirPastaSetor(${nomeJs})">excluir</button>` : ''}
+      </span>` : '';
     return `
       <details class="card funcao-pasta" open style="margin-bottom:10px;padding:0;overflow:hidden;">
         <summary style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--line-2);border-bottom:1px solid var(--line);cursor:pointer;">
@@ -25634,13 +25660,70 @@ function renderFuncoes() {
           <strong style="flex:1;font-size:14px;">${g.nome ? esc(g.nome) : '<span class="muted">Sem setor</span>'}</strong>
           ${nSug ? `<span class="muted" style="font-size:11px;" title="Setor sugerido pelo nome ou pelas operações. Abra a função e salve para gravar.">${nSug} sugerida${nSug === 1 ? '' : 's'}</span>` : ''}
           <span style="color:var(--ink-3);font-size:11px;">${g.funcoes.length} ${g.funcoes.length === 1 ? 'função' : 'funções'}</span>
+          ${botoes}
         </summary>
-        <table class="table" style="margin:0;">
+        ${g.funcoes.length ? `<table class="table" style="margin:0;">
           <thead><tr><th class="col-actions">Gerenciar</th><th>Nome</th><th>Observação</th><th>Responsabilidades</th></tr></thead>
           <tbody>${linhas}</tbody>
-        </table>
+        </table>` : `<div style="padding:12px 16px;color:var(--ink-3);font-size:12px;">Pasta vazia. Use <b>+ função</b> para criar uma função neste setor, ou abra uma função existente e escolha este setor.</div>`}
       </details>`;
   }).join('');
+}
+
+// Cria uma pasta de setor (vazia). Nome repetido — de outra pasta criada, da
+// lista padrão ou de um setor já usado — não abre pasta nova.
+async function criarPastaSetor() {
+  if (!exigirAdmin('criar pasta de setor')) return;
+  const nome = (prompt('Nome do setor (nova pasta):') || '').trim().replace(/\s+/g, ' ');
+  if (!nome) return;
+  const existentes = _funcoesPorSetor().map(g => g.nome).filter(Boolean).concat(_funcPastasCriadas());
+  if (existentes.some(s => _normNome(s) === _normNome(nome))) return toast(`A pasta "${nome}" já existe`, 'err');
+  STATE.meta = STATE.meta || {};
+  STATE.meta.funcaoSetores = _funcPastasCriadas().concat([nome]);
+  await saveState('meta');
+  toast(`Pasta "${nome}" criada`, 'ok');
+  renderFuncoes();
+}
+
+// Renomeia a pasta: o nome novo vale para a pasta criada e para TODAS as
+// funções dentro dela — inclusive as de setor só sugerido, que assim ganham o
+// setor gravado (senão continuariam caindo na pasta de nome antigo).
+async function renomearPastaSetor(antigo) {
+  if (!exigirAdmin('renomear pasta de setor')) return;
+  const novo = (prompt('Novo nome da pasta:', antigo) || '').trim().replace(/\s+/g, ' ');
+  if (!novo || novo === antigo) return;
+  const kAnt = _normNome(antigo);
+  const outra = _funcoesPorSetor().find(g => g.nome && _normNome(g.nome) === _normNome(novo) && _normNome(g.nome) !== kAnt);
+  if (outra) return toast(`Já existe a pasta "${outra.nome}". Para juntar as duas, mude o setor das funções.`, 'err');
+  let n = 0;
+  (STATE.funcoes || []).forEach(f => {
+    if (_normNome(_funcSetor(f).nome) === kAnt) { f.setor = novo; n++; }
+  });
+  STATE.meta = STATE.meta || {};
+  const lista = _funcPastasCriadas();
+  STATE.meta.funcaoSetores = lista.some(s => _normNome(s) === kAnt)
+    ? lista.map(s => _normNome(s) === kAnt ? novo : s)
+    // Pasta padrão ou de setor escrito à mão sem função nenhuma depois disto:
+    // registrada como criada, para continuar existindo com o nome novo.
+    : (n ? lista : lista.concat([novo]));
+  if (n) await saveState('funcoes');
+  await saveState('meta');
+  toast(`Pasta renomeada para "${novo}"${n ? ` — ${n} função(ões) atualizada(s)` : ''}`, 'ok');
+  renderFuncoes();
+}
+
+// Exclui uma pasta criada, só quando vazia — nunca apaga função.
+async function excluirPastaSetor(nome) {
+  if (!exigirAdmin('excluir pasta de setor')) return;
+  const k = _normNome(nome);
+  if ((STATE.funcoes || []).some(f => _normNome(_funcSetor(f).nome) === k)) {
+    return toast('A pasta tem funções. Mude o setor delas antes de excluir.', 'err');
+  }
+  if (!confirm(`Excluir a pasta vazia "${nome}"?`)) return;
+  STATE.meta.funcaoSetores = _funcPastasCriadas().filter(s => _normNome(s) !== k);
+  await saveState('meta');
+  toast(`Pasta "${nome}" excluída`, 'ok');
+  renderFuncoes();
 }
 
 function _linhaFuncaoHtml(f, sugerido) {
