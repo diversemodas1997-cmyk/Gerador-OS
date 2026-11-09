@@ -21649,7 +21649,11 @@ async function confirmarAlocarOSNoDia() {
 
    OS JÁ PLANEJADA (com qualquer operação no plano, em qualquer dia) fica como
    está: não é repetida nem mexida. Para replanejar, "− Retirar OS" primeiro.
-   As conjugadas andam juntas porque a fila já as entrega em sequência. */
+   As conjugadas andam juntas porque a fila já as entrega em sequência.
+
+   SEM BOTÃO (09/11/2026, Junior: "retire o botão Planejar pela fila, pois
+   essa função deve ser automática do programa"). O botão e a janela dele
+   saíram; quem monta é só opAutoRodar, a cada 5 minutos. */
 function _opLoteDaOS(os) {
   const t = String((os && os.os) || '').trim();
   return t.replace(/^0+/, '') || t;
@@ -21669,60 +21673,6 @@ function _opFilaParaPlanejar() {
   return filaDeProducao()
     .filter(o => String(o.os || '').trim())
     .map((o, i) => ({ os: o, pos: i + 1, planejada: _opOsJaPlanejada(o, noPlano) }));
-}
-
-function abrirModalPlanejarFila(data) {
-  if (!exigirAdmin('planejar operações')) return;
-  const dia = data || opPlanoAncora || _expHoje();
-  const fila = _opFilaParaPlanejar();
-  const livres = fila.filter(x => !x.planejada);
-  const rotStatus = o => (STATUS_OS.find(x => x.k === _statusOS(o)) || {}).rotulo || '';
-  document.getElementById('modal-plan-fila-fields').innerHTML = !fila.length
-    ? `<div class="info-box">Nenhuma OS não iniciada na fila de produção.</div>`
-    : `
-    <div class="form-grid cols-2">
-      <div class="field"><label>Começar no dia *</label><input type="date" id="plan-fila-data" value="${esc(dia)}"></div>
-      <div class="field"><label>Quantas OS da fila planejar *</label>
-        <input type="number" id="plan-fila-qtd" min="1" max="${livres.length || 1}" value="${livres.length || 0}" ${livres.length ? '' : 'disabled'} oninput="_opPlanFilaMarcar()">
-        <div class="field-hint">${livres.length} de ${fila.length} ainda sem operação no plano. Conta só as que serão planejadas, a partir da 1ª.</div>
-      </div>
-    </div>
-    <div style="max-height:46vh;overflow:auto;margin-top:6px;">
-      <table class="table" style="font-size:12px;">
-        <thead><tr><th>Fila</th><th>OS</th><th>Modelo</th><th>Status</th><th>Fases</th><th>No plano</th></tr></thead>
-        <tbody>${fila.map(x => `<tr class="plan-fila-linha" data-livre="${x.planejada ? '0' : '1'}">
-          <td><b>${esc(_filaOrdinal(x.pos))}</b></td>
-          <td>${esc(x.os.os)}</td>
-          <td>${esc(x.os.modeloNome || '')}</td>
-          <td>${esc(rotStatus(x.os))}</td>
-          <td>${_opFasesDaOS(x.os).length}</td>
-          <td class="plan-fila-sit">${x.planejada ? '<span class="muted">já planejada — fica como está</span>' : ''}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>
-    <div class="info-box" style="margin-top:8px;font-size:12px;">
-      Cada OS recebe a sequência completa do <b>Alocar OS</b>: preparo de matéria-prima no dia útil anterior e as operações de cada fase do enfesto, cada uma na função que a executa, com o tempo do cadastro de <b>Funções</b>.
-      A ordem da fila vira a ordem em cada posto: a 2ª começa depois da 1ª, e a próxima OS começa no dia em que termina o último enfesto da anterior.
-      A ordem da fila se muda na <b>Lista de OS</b> (Fila de produção).
-    </div>`;
-  const btn = document.getElementById('plan-fila-ok');
-  if (btn) btn.disabled = !livres.length;
-  openModal('modal-plan-fila');
-  _opPlanFilaMarcar();
-}
-
-// Pinta, na tabela do modal, quais OS entram com a quantidade escolhida.
-function _opPlanFilaMarcar() {
-  const qtd = parseInt(document.getElementById('plan-fila-qtd')?.value, 10) || 0;
-  let n = 0;
-  document.querySelectorAll('#modal-plan-fila .plan-fila-linha').forEach(tr => {
-    if (tr.dataset.livre !== '1') return;
-    n++;
-    const entra = n <= qtd;
-    tr.style.background = entra ? 'var(--ok-bg, #eef6f0)' : '';
-    const sit = tr.querySelector('.plan-fila-sit');
-    if (sit) sit.innerHTML = entra ? '<b>vai ser planejada</b>' : '<span class="muted">fica para depois</span>';
-  });
 }
 
 // Monta no plano, na ordem, as OS de `alvo` (itens de _opFilaParaPlanejar),
@@ -21847,28 +21797,6 @@ function _opAutoFaixaHtml() {
       <button type="button" class="btn small ${lig ? '' : 'primary'}" onclick="opAutoLigar(${!lig})">${lig ? 'Desligar' : 'Ligar'}</button>
     </span>
   </div>`;
-}
-
-async function confirmarPlanejarFila() {
-  if (!exigirAdmin('planejar operações')) return;
-  const data = document.getElementById('plan-fila-data')?.value || '';
-  if (!data) return toast('Escolha o dia', 'err');
-  const qtd = parseInt(document.getElementById('plan-fila-qtd')?.value, 10) || 0;
-  const alvo = _opFilaParaPlanejar().filter(x => !x.planejada).slice(0, Math.max(0, qtd));
-  if (!alvo.length) return toast('Nenhuma OS da fila para planejar', 'err');
-  const res = _opPlanejarFilaNoPlano(data, alvo);
-  const { planejadas, totalCriadas, semTempo, semFuncao, comSobra } = res;
-  await saveState('operacoes');
-  closeModal('modal-plan-fila');
-  toast(`${planejadas.length} OS da fila planejada(s), ${totalCriadas} operação(ões) criada(s) de ${formatDate(data)} a ${formatDate(res.ultimoDia)}`
-    + (planejadas.length ? ` · ${planejadas.slice(0, 6).join(', ')}${planejadas.length > 6 ? '…' : ''}` : ''),
-    (semTempo.size || semFuncao.size || comSobra.length) ? 'err' : 'ok');
-  if (semTempo.size) toast(`Sem tempo cadastrado em Funções: ${[...semTempo].join(', ')}`, 'err');
-  if (semFuncao.size) toast(`Passos sem função cadastrada: ${[...semFuncao].join(', ')}`, 'err');
-  if (comSobra.length) toast(`Não couberam inteiras (operações sem horário, para encaixar à mão): OS ${comSobra.join(', ')}`, 'err');
-  opPlanoAncora = data;
-  try { sessionStorage.setItem('gos:op:ancora', opPlanoAncora); } catch (e) {}
-  renderOperacoes();
 }
 
 /* ---------------- retirar uma OS do planejamento (ação em massa) ---------------- */
@@ -22335,7 +22263,6 @@ function renderOperacoes() {
         <button class="btn accent" onclick="goto('print-operacoes')">🖨 Folha do plano</button>
       </div>
       <div class="admin-only" style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn primary" title="Monta as operações das OS não iniciadas na ordem da fila de produção (1ª, 2ª, 3ª…), a partir deste dia." onclick="abrirModalPlanejarFila(opPlanoAncora)">▶ Planejar pela fila</button>
         <button class="btn primary" title="O dia começa pela OS: o programa monta a sequência de operações dela." onclick="abrirModalAlocarOS(opPlanoAncora)">+ Alocar OS no dia</button>
         <button class="btn" title="Monta as operações do posto de expedição a partir das janelas de OE com carga neste dia: seleção de pacotes, desmontagem e montagem, terminando na hora de saída do caminhão." onclick="montarExpedicaoDoDia(opPlanoAncora)">+ Expedição do dia</button>
         ${(STATE.operacoes || []).some(o => _opLotesDaOperacao(o).length)
