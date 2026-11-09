@@ -5958,10 +5958,26 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira" oninput="_funcOpAtualizarTipoPorNome()"></div>
-        <div class="field"><label>Setor</label>
-          <input type="text" id="m-func-setor" list="dl-func-setores" value="${esc(String(item.setor || '').trim() || _funcSetorSugerido(item))}" placeholder="Ex.: Corte, Costura" autocomplete="off">
-          <datalist id="dl-func-setores">${_funcSetoresOpcoes().map(s => `<option value="${esc(s)}"></option>`).join('')}</datalist>
-          <div class="field-hint">A pasta em que a função aparece${String(item.setor || '').trim() || !_funcSetorSugerido(item) ? '' : ' — veio <b>sugerido</b> pelo nome; salve para gravar'}. Escolha da lista ou escreva um setor novo.</div>
+        <div class="field"><label>Setor (pasta)</label>
+          ${(() => {
+            /* LISTA, NÃO CAIXA DE TEXTO (09/11/2026). Era um texto com sugestões
+               (datalist), aberto já com o setor sugerido escrito: o navegador só
+               sugere o que combina com o que está escrito, então quem abria o
+               Operador de enfestadeira via só "Corte" e não achava a pasta
+               "Enfesto" recém-criada. Agora são todas as pastas, sempre, e
+               "Novo setor…" abre a caixa para escrever um nome. */
+            const atual = String(item.setor || '').trim() || _funcSetorSugerido(item);
+            const opcoes = _funcSetoresOpcoes();
+            const temAtual = !atual || opcoes.some(s => _normNome(s) === _normNome(atual));
+            const lista = temAtual ? opcoes : opcoes.concat([atual]);
+            return `<select id="m-func-setor-sel" onchange="document.getElementById('m-func-setor').style.display = this.value === '__novo__' ? '' : 'none'">
+              <option value="" ${!atual ? 'selected' : ''}>— sem setor —</option>
+              ${lista.map(s => `<option value="${esc(s)}" ${_normNome(s) === _normNome(atual) ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+              <option value="__novo__">+ Novo setor…</option>
+            </select>
+            <input type="text" id="m-func-setor" style="display:none;margin-top:4px;" placeholder="Nome do novo setor" autocomplete="off">`;
+          })()}
+          <div class="field-hint">A pasta em que a função aparece${String(item.setor || '').trim() || !_funcSetorSugerido(item) ? '' : ' — veio <b>sugerido</b> pelo nome; salve para gravar'}.</div>
         </div>
         <div class="field"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
         <div class="field full">
@@ -8070,7 +8086,8 @@ async function salvarCadastro() {
     // Setor: grava como foi escrito, mas com a grafia da lista quando casa com
     // um setor dela (ex.: "corte" vira "Corte"), para não abrir pasta repetida.
     {
-      const s = String(v('m-func-setor') || '').trim();
+      const sel = v('m-func-setor-sel');
+      const s = String(sel === '__novo__' ? v('m-func-setor') : sel || '').trim().replace(/\s+/g, ' ');
       const daLista = _funcSetoresOpcoes().find(p => _normNome(p) === _normNome(s));
       item.setor = daLista || s;
     }
@@ -25712,6 +25729,18 @@ async function renomearPastaSetor(antigo) {
   renderFuncoes();
 }
 
+// Move uma função para outra pasta (grava o setor dela).
+async function moverFuncaoSetor(id, setor) {
+  if (!exigirAdmin('mover função de setor')) { renderFuncoes(); return; }
+  const f = (STATE.funcoes || []).find(x => x.id === id);
+  const s = String(setor || '').trim();
+  if (!f || !s) { renderFuncoes(); return; }
+  f.setor = _funcSetoresOpcoes().find(p => _normNome(p) === _normNome(s)) || s;
+  await saveState('funcoes');
+  toast(`"${f.nome}" movida para a pasta ${f.setor}`, 'ok');
+  renderFuncoes();
+}
+
 // Exclui uma pasta criada, só quando vazia — nunca apaga função.
 async function excluirPastaSetor(nome) {
   if (!exigirAdmin('excluir pasta de setor')) return;
@@ -25744,7 +25773,17 @@ function _linhaFuncaoHtml(f, sugerido) {
           o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
       : '—';
     const selo = sugerido ? ` <span class="badge" style="opacity:.7;font-size:10px;" title="Setor sugerido, ainda não gravado. Abra a função e salve para confirmar.">sugerido</span>` : '';
-    return `<tr>${acoesCell('funcao', f.id)}<td><strong>${esc(f.nome)}</strong>${selo}</td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td></tr>`;
+    // MOVER DE PASTA SEM ABRIR A FICHA (09/11/2026): trocar de setor era abrir a
+    // função, achar o campo e salvar. Aqui é escolher a pasta e pronto.
+    const atual = _funcSetor(f).nome;
+    const mover = `<div class="admin-only" style="margin-top:4px;">
+      <select class="func-mover" style="font-size:11px;padding:1px 4px;max-width:190px;" title="Mover esta função para outra pasta de setor"
+        onchange="moverFuncaoSetor(${esc(JSON.stringify(f.id))}, this.value)">
+        <option value="" disabled selected>Mover para…</option>
+        ${_funcSetoresOpcoes().filter(s => _normNome(s) !== _normNome(atual))
+          .map(s => `<option value="${esc(s)}">📁 ${esc(s)}</option>`).join('')}
+      </select></div>`;
+    return `<tr>${acoesCell('funcao', f.id)}<td><strong>${esc(f.nome)}</strong>${selo}${mover}</td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td></tr>`;
   }
 }
 
