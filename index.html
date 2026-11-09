@@ -1931,6 +1931,19 @@
   </div>
 </div>
 
+<!-- Planejar pela fila: monta as operações das OS não iniciadas na ordem da
+     fila de produção (1ª, 2ª, 3ª…). -->
+<div class="modal-backdrop" id="modal-plan-fila">
+  <div class="modal" style="max-width:820px;">
+    <h2>Planejar pela fila de produção</h2>
+    <div id="modal-plan-fila-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-plan-fila')">Cancelar</button>
+      <button class="btn primary" id="plan-fila-ok" onclick="confirmarPlanejarFila()">Montar operações</button>
+    </div>
+  </div>
+</div>
+
 <!-- Alocar uma OS no dia: o programa monta a cascata de operações a partir das
      operações cadastradas em cada função. -->
 <div class="modal-backdrop" id="modal-aloc-os">
@@ -2067,7 +2080,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-09a"></script>
+<script src="app.js?v=2026-11-09b"></script>
 <script src="assistente.js?v=2026-11-05a"></script>
 <script src="colorimetro.js?v=2026-11-03a"></script>
 <script src="estoque-confeccao.js?v=2026-10-30d"></script>
