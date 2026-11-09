@@ -32887,6 +32887,7 @@ function _aplicarModoPlanForm() {
 function cancelarFormOS() {
   const voltar = _osPlanModo ? 'planejamento-producao' : 'home';
   _demAgrupando = null;
+  _osConjugarDe = null;
   goto(voltar);
 }
 
@@ -32903,6 +32904,7 @@ function exigirPlanejamento() {
 function novoPlanejamento() {
   if (!exigirPlanejamento()) return;
   _demAgrupando = null;
+  _osConjugarDe = null;
   osEditId = null;
   _osPlanAbrir = true;
   goto('nova-os');
@@ -32911,6 +32913,7 @@ function novoPlanejamento() {
 function editarPlanejamento(id) {
   if (!exigirPlanejamento()) return;
   _demAgrupando = null;
+  _osConjugarDe = null;
   const p = _planLista().find(x => x.id === id);
   if (!p) return toast('Planejamento não encontrado', 'err');
   _osPlanAbrir = true;
@@ -32942,7 +32945,9 @@ async function salvarPlanejamento() {
       // As tonalidades padrão de OS nova, já agora: os produtos da lista são
       // os mesmos que a OS terá ao ser aprovada.
       lista.push(_aplicarTonsPadrao(data));
+      if (_osConjugarDe && _osConjugarDe.copiaId === data.id) lista[lista.length - 1].conjugarComOsId = _osConjugarDe.origemId;
     }
+    _osConjugarDe = null;
     // Planejamento nascido de um agrupamento do Relatório de demanda: as
     // demandas que ele cobre saem de lá, e ele guarda de onde veio.
     const ag = i < 0 ? _demAgrupando : null;
@@ -33014,6 +33019,7 @@ function _planResumo(p) {
   const n = _planVezes(p);
   return [des ? _rotuloDesenhoOS(des) : (p.codigo || ''), p.grade && p.grade.descricao,
     n > 1 ? `${n} grades iguais (${n} OS)` : '',
+    _planOrigemConjugada(p) ? `conjugada à OS ${_planOrigemConjugada(p).os || ''}` : '',
     (produtosOS(p) * n).toLocaleString('pt-BR') + ' produtos'].filter(Boolean).join(' · ');
 }
 
@@ -33130,6 +33136,11 @@ async function aprovarPlanejamento(id) {
       aprovadoEm: agora.toISOString(), aprovadoPor: _obsQuemSou(),
       ...(vezes > 1 ? { vez: `${n} de ${vezes}` } : {}) };
     delete os.editadoEm; delete os.editadoPor;
+    // Criada por "criar OS conjugada": a marca do planejamento vira a amarra
+    // de status. Origem apagada nesse meio-tempo: nasce solta.
+    const origem = _planOrigemConjugada(p);
+    delete os.conjugarComOsId;
+    if (origem) os.conjugadaStatusPaiId = origem.id;
     // A OS nasce agora: a foto é do desenho de agora.
     _congelarDesenhoNaOS(os, null);
     return os;
@@ -33170,6 +33181,14 @@ async function aprovarPlanejamento(id) {
       await atualizarCounterOS(data.os);
       await aplicarBaixaEstoqueOS(data);
       await aplicarRegraConjugadaSeAplicavel(data);
+      // Conjugada à mão na criação: já nasce no status da OS que ela segue.
+      const ativa = data.conjugadaStatusPaiId && _ativaStatusDaOS(data);
+      if (ativa && _statusOS(ativa) !== _statusOS(data)) {
+        const alvo = _statusOS(ativa);
+        _carimbarStatusOS(data, alvo, new Date().toISOString(), _obsQuemSou(), ativa.statusPasso);
+        await saveState('ordens');
+        await _estoqueSeguirStatusOS(data, alvo);
+      }
       salvarPdfEtiquetasAuto(data, dadosEtiquetaParaOS(data));
       feitas.push(data.os);
     }
@@ -39714,6 +39733,8 @@ function abrirMenuAcoesOS(id, botao) {
       title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Nao mexe em tecido nem no cadastro da grade.">conjugar</button>` : ''}
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); duplicarOS('${esc(id)}')">duplicar</button>
+    ${podeConjugarOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); criarOSConjugada('${esc(id)}')"
+      title="Copia esta OS para um planejamento novo (troque a cor). Ao ser aprovada, a OS nova fica conjugada a esta e segue o status dela.">criar OS conjugada</button>` : ''}
     <div class="sep admin-only"></div>
     <button class="del admin-only" onclick="fecharMenuAcoesOS(); excluirOS('${esc(id)}')">excluir</button>`;
 
@@ -42506,9 +42527,47 @@ function duplicarOS(id) {
   copia.data = new Date().toISOString().slice(0, 10);
   delete copia.repeticoes;
   _demAgrupando = null;
+  _osConjugarDe = null;
   _osPlanAbrir = true;
   _abrirOSNoForm(copia, `Novo planejamento · cópia da OS ${o.os || ''}`);
   toast(`Cópia da OS ${o.os || ''} aberta no planejamento — salve e aprove para gerar o número`, '');
+}
+
+/* CRIAR OS CONJUGADA (09/11/2026, Junior: "insira opção na coluna ação de OS
+   criar OS conjugada. Essa ação copia a OS. Após usuário editar a cor da OS,
+   depois que salvar e se tornar planejamento, salvar e se tornar OS, o status
+   deve automaticamente seguir a OS de origem").
+   É o duplicar (vira planejamento, recebe número na aprovação) com uma marca a
+   mais: `_osConjugarDe` guarda a OS de origem enquanto o formulário está
+   aberto (com o id da cópia), e salvarPlanejamento a grava no planejamento (`conjugarComOsId`).
+   Na aprovação ela vira `conjugadaStatusPaiId` — a mesma amarra do botão
+   "conjugar" — e a OS nova já nasce no status da origem. O tecido de cada uma
+   continua reservado nela, como na conjugação à mão. */
+let _osConjugarDe = null;
+
+function criarOSConjugada(id) {
+  if (!exigirConjugarOS('criar OS conjugada')) return;
+  if (!exigirPlanejamento()) return;
+  const o = STATE.ordens.find(x => x.id === id);
+  if (!o) return toast('OS não encontrada', 'err');
+  const copia = JSON.parse(JSON.stringify(o));
+  copia.id = uid();
+  copia.os = '';
+  copia.data = new Date().toISOString().slice(0, 10);
+  delete copia.repeticoes;
+  _demAgrupando = null;
+  _osPlanAbrir = true;
+  _abrirOSNoForm(copia, `Novo planejamento · OS conjugada à ${o.os || ''}`);
+  // A marca vale só para ESTA cópia (o id dela segue no formulário, f-id):
+  // sair por outro caminho e planejar outra coisa não herda a conjugação.
+  _osConjugarDe = { copiaId: copia.id, origemId: o.id };
+  toast(`Cópia da OS ${o.os || ''} aberta — troque a cor e salve. Aprovada, ela segue o status da OS ${o.os || ''}`, '');
+}
+
+// A OS de origem de um planejamento criado por "criar OS conjugada".
+function _planOrigemConjugada(p) {
+  const id = p && p.conjugarComOsId;
+  return id ? (STATE.ordens || []).find(x => x.id === id) || null : null;
 }
 
 /* ========================================================= */
@@ -49750,6 +49809,7 @@ window.editarOS = editarOS;
 window.editarOsAtual = editarOsAtual;
 window.excluirOS = excluirOS;
 window.duplicarOS = duplicarOS;
+window.criarOSConjugada = criarOSConjugada;
 window.abrirMovEstoque = abrirMovEstoque;
 window.salvarMovEstoque = salvarMovEstoque;
 window._meAtualizarEstimativa = _meAtualizarEstimativa;
