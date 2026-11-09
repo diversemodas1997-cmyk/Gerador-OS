@@ -108,6 +108,8 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _topoDaFilaOS', 'o topo da fila')}
   ${recorte('function proximoNumeroOS()', 'o proximo numero')}
   ${recorte('function gradeConjugaAlguma', 'a grade que conjuga')}
+  ${recorte('function _planOrigemConjugada', 'a origem da OS conjugada')}
+  const _ativaStatusDaOS = () => null;
   ${recorte('function numeroOSLivre', 'o numero livre')}
   ${recorte('function proximoNumeroOSParaGrade', 'o numero da grade')}
   ${recorte('function numeroParaConjugada', 'o numero da conjugada')}
