@@ -5955,7 +5955,12 @@ function openCadastroModal(tipo, editId = null, origin = null, pre = null) {
     box.innerHTML = `
       <div class="form-grid cols-2">
         <div class="field full"><label>Nome *</label><input type="text" id="m-nome" value="${esc(item.nome||'')}" placeholder="Ex.: Costureira" oninput="_funcOpAtualizarTipoPorNome()"></div>
-        <div class="field full"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
+        <div class="field"><label>Setor</label>
+          <input type="text" id="m-func-setor" list="dl-func-setores" value="${esc(String(item.setor || '').trim() || _funcSetorSugerido(item))}" placeholder="Ex.: Corte, Costura" autocomplete="off">
+          <datalist id="dl-func-setores">${_funcSetoresOpcoes().map(s => `<option value="${esc(s)}"></option>`).join('')}</datalist>
+          <div class="field-hint">A pasta em que a função aparece${String(item.setor || '').trim() || !_funcSetorSugerido(item) ? '' : ' — veio <b>sugerido</b> pelo nome; salve para gravar'}. Escolha da lista ou escreva um setor novo.</div>
+        </div>
+        <div class="field"><label>Observação</label><input type="text" id="m-desc" value="${esc(item.desc||'')}" placeholder="Opcional"></div>
         <div class="field full">
           <label>Operações desta função, o tempo de cada uma e o horário fixo</label>
           <div id="m-func-ops"></div>
@@ -8059,6 +8064,13 @@ async function salvarCadastro() {
     }
     item.nome = nomeNovo;
     item.desc = v('m-desc');
+    // Setor: grava como foi escrito, mas com a grafia da lista quando casa com
+    // um setor dela (ex.: "corte" vira "Corte"), para não abrir pasta repetida.
+    {
+      const s = String(v('m-func-setor') || '').trim();
+      const daLista = _funcSetoresOpcoes().find(p => _normNome(p) === _normNome(s));
+      item.setor = daLista || s;
+    }
     // Operações da função, cada uma com o seu tempo. `acoes` continua sendo
     // gravado (só os nomes, uma por linha) porque é dele que saem as sugestões de
     // operação no planejamento e a coluna da tabela — assim nada que já lê `acoes`
@@ -25194,10 +25206,89 @@ function renderEtapasCad() {
   cont.innerHTML = html;
 }
 
+/* FUNÇÕES POR SETOR (09/11/2026, Junior: "Insira pasta que organize as funções
+   cadastradas por setor" — primeiro passo para o planejamento de operações
+   separado por setor).
+
+   Cada função ganha o campo `setor`. A tela de Funções vira uma pasta por
+   setor, na ordem em que a peça anda na fábrica; setor escrito à mão que não
+   está na lista entra depois, em ordem alfabética, e "Sem setor" fica no fim.
+
+   O SETOR SUGERIDO. Nenhuma das funções cadastradas tinha setor. Para a tela já
+   nascer organizada sem gravar nada por conta própria, a função sem setor cai
+   na pasta que o nome dela (ou, sem pista no nome, as operações dela) indica,
+   marcada "sugerido". O formulário abre com a sugestão preenchida: salvar a
+   função grava o setor de verdade. Sem pista nenhuma, fica em "Sem setor". */
+const FUNCAO_SETORES = ['Preparo de matéria-prima', 'Corte', 'Costura', 'Acabamento', 'Expedição', 'Escritório'];
+function _funcSetorSugerido(f) {
+  const nome = _normNome(f && f.nome);
+  const regra = txt => {
+    if (/materia.?prima|bobina|amostragem/.test(txt)) return 'Preparo de matéria-prima';
+    if (/costur/.test(txt)) return 'Costura';
+    if (/expedi|carga|pacotes/.test(txt)) return 'Expedição';
+    if (/acabament|retirada de fio|lavand|arremat/.test(txt)) return 'Acabamento';
+    if (/enfest|esteira|corte|cortad/.test(txt)) return 'Corte';
+    if (/emissor|designer|modelist|escritorio|ordem de servico/.test(txt)) return 'Escritório';
+    return '';
+  };
+  return regra(nome) || regra(_normNome(_opsDaFuncao(f || {}).map(o => o.nome).join(' | ')));
+}
+// O setor que vale para a função: o gravado; sem ele, o sugerido.
+function _funcSetor(f) {
+  const gravado = String((f && f.setor) || '').trim();
+  return gravado ? { nome: gravado, sugerido: false } : { nome: _funcSetorSugerido(f), sugerido: true };
+}
+// Setores oferecidos no formulário: os da lista mais os já escritos em alguma função.
+function _funcSetoresOpcoes() {
+  const extras = (STATE.funcoes || []).map(f => String(f.setor || '').trim())
+    .filter(s => s && !FUNCAO_SETORES.some(p => _normNome(p) === _normNome(s)));
+  return FUNCAO_SETORES.concat([...new Set(extras)].sort((a, b) => a.localeCompare(b, 'pt-BR')));
+}
+// Funções agrupadas por setor, na ordem das pastas.
+function _funcoesPorSetor() {
+  const grupos = new Map();
+  (STATE.funcoes || []).forEach(f => {
+    const s = _funcSetor(f);
+    const k = _normNome(s.nome);
+    if (!grupos.has(k)) grupos.set(k, { nome: s.nome, funcoes: [] });
+    grupos.get(k).funcoes.push({ f, sugerido: s.sugerido && !!s.nome });
+  });
+  const pos = g => {
+    if (!g.nome) return 1e6;
+    const i = FUNCAO_SETORES.findIndex(p => _normNome(p) === _normNome(g.nome));
+    return i >= 0 ? i : 1000;
+  };
+  return [...grupos.values()].sort((a, b) => pos(a) - pos(b) || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
 function renderFuncoes() {
-  const tb = document.getElementById('tbl-funcoes');
-  if (!STATE.funcoes.length) { tb.innerHTML = `<tr><td colspan="4" class="empty">Nenhuma função cadastrada.</td></tr>`; return; }
-  tb.innerHTML = STATE.funcoes.map(f => {
+  const cont = document.getElementById('funcoes-pastas');
+  if (!cont) return;
+  if (!STATE.funcoes.length) {
+    cont.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--ink-3);">Nenhuma função cadastrada. Use <strong>+ Nova função</strong> para começar.</div>`;
+    return;
+  }
+  cont.innerHTML = _funcoesPorSetor().map(g => {
+    const linhas = g.funcoes.map(({ f, sugerido }) => _linhaFuncaoHtml(f, sugerido)).join('');
+    const nSug = g.funcoes.filter(x => x.sugerido).length;
+    return `
+      <details class="card funcao-pasta" open style="margin-bottom:10px;padding:0;overflow:hidden;">
+        <summary style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--line-2);border-bottom:1px solid var(--line);cursor:pointer;">
+          <span style="font-size:18px;">📁</span>
+          <strong style="flex:1;font-size:14px;">${g.nome ? esc(g.nome) : '<span class="muted">Sem setor</span>'}</strong>
+          ${nSug ? `<span class="muted" style="font-size:11px;" title="Setor sugerido pelo nome ou pelas operações. Abra a função e salve para gravar.">${nSug} sugerida${nSug === 1 ? '' : 's'}</span>` : ''}
+          <span style="color:var(--ink-3);font-size:11px;">${g.funcoes.length} ${g.funcoes.length === 1 ? 'função' : 'funções'}</span>
+        </summary>
+        <table class="table" style="margin:0;">
+          <thead><tr><th class="col-actions">Gerenciar</th><th>Nome</th><th>Observação</th><th>Responsabilidades</th></tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </details>`;
+  }).join('');
+}
+
+function _linhaFuncaoHtml(f, sugerido) {
+  {
     // Cada operação com o seu tempo ao lado; sem tempo, só o nome.
     const ops = _opsDaFuncao(f);
     // Linha sem tipo é FALTA só no posto que enfesta; nas demais funções é a
@@ -25213,8 +25304,9 @@ function renderFuncoes() {
                 : ` <span style="opacity:.6;" title="Vale para todos os tipos">· todos os tipos</span>`}${
           o.duracaoMin ? ` · <b>${esc(_opDurTexto(o.duracaoMin))}</b>` : ''}</span>`).join('')
       : '—';
-    return `<tr>${acoesCell('funcao', f.id)}<td><strong>${esc(f.nome)}</strong></td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td></tr>`;
-  }).join('');
+    const selo = sugerido ? ` <span class="badge" style="opacity:.7;font-size:10px;" title="Setor sugerido, ainda não gravado. Abra a função e salve para confirmar.">sugerido</span>` : '';
+    return `<tr>${acoesCell('funcao', f.id)}<td><strong>${esc(f.nome)}</strong>${selo}</td><td>${esc(f.desc)||'—'}</td><td>${opsHtml}</td></tr>`;
+  }
 }
 
 

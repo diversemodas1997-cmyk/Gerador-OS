@@ -1050,15 +1050,10 @@
     <!-- FUNÇÕES -->
     <section class="page hidden" data-page="cad-funcoes">
       <div class="page-header">
-        <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe (Designer, Modelista, Costureiro, etc.)</div></div>
+        <div><h1>Funções</h1><div class="desc">Cargos / funções atribuíveis a membros da equipe, organizados em pastas por setor (Corte, Costura, Expedição…)</div></div>
         <div class="actions admin-only"><button class="btn primary" onclick="openCadastroModal('funcao')">+ Nova função</button></div>
       </div>
-      <div class="card">
-        <table class="table">
-          <thead><tr><th class="col-actions">Gerenciar</th><th>Nome</th><th>Observação</th><th>Responsabilidades</th></tr></thead>
-          <tbody id="tbl-funcoes"></tbody>
-        </table>
-      </div>
+      <div id="funcoes-pastas"></div>
     </section>
 
     <!-- EQUIPE -->
@@ -2072,7 +2067,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-06c"></script>
+<script src="app.js?v=2026-11-09a"></script>
 <script src="assistente.js?v=2026-11-05a"></script>
 <script src="colorimetro.js?v=2026-11-03a"></script>
 <script src="estoque-confeccao.js?v=2026-10-30d"></script>
