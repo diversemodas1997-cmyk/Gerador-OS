@@ -54,9 +54,11 @@ const api = (STATE) => new Function('STATE', `
   // embaralharia os numeros do que esta sendo medido.
   const _opMinutosTrabalhados = (ini, fim) => Math.max(0, fim - ini);
   ${corta('function _camadasDaFase')}
+  const ENFESTO_CAMADAS_MINIMO = ${(src.match(/const ENFESTO_CAMADAS_MINIMO = (\d+)/) || [])[1]};
+  ${corta('function _camadasPlausiveis')}
   ${corta('function _tempoEsperadoFase')}
   ${corta('function _mediaTempoFasesSimilares')}
-  return { _camadasDaFase, _tempoEsperadoFase, _mediaTempoFasesSimilares };
+  return { _camadasDaFase, _camadasPlausiveis, _tempoEsperadoFase, _mediaTempoFasesSimilares };
 `)(STATE);
 
 let falhas = 0;
@@ -140,15 +142,36 @@ console.log('-- de onde saem as camadas de uma fase --');
 
 console.log('-- a taxa e a media DAS TAXAS, nao a razao dos totais --');
 {
-  // Um enfesto gigante e lento (78 cam, 3 min/cam) e um curto e rapido (6 cam,
-  // 1 min/cam). Razao dos totais: 240/84 = 2,86 -- o gigante domina. Media das
+  // Um enfesto gigante e lento (78 cam, 3 min/cam) e um curto e rapido (12 cam,
+  // 1 min/cam). Razao dos totais: 246/90 = 2,73 -- o gigante domina. Media das
   // taxas: 2,0 -- cada medicao pesa igual, que e como a cascata sempre fez.
-  const l = [osMedida('h1', '0401', 78, '07:00', '10:54'), osMedida('h2', '0402', 6, '07:00', '07:06')];
+  // (Era 6 camadas ate 09/11/2026; abaixo de ENFESTO_CAMADAS_MINIMO a medicao
+  // agora fica fora da taxa, entao o curto passou para 12, o menor real.)
+  const l = [osMedida('h1', '0401', 78, '07:00', '10:54'), osMedida('h2', '0402', 12, '07:00', '07:12')];
   const alvo = osMedida('alvo', '0500', 12, '', '');
   const a = api({ ordens: l.concat([alvo]), grades: [{ id: 'gr1', nome: 'M-G | CM.LISA' }] });
   const med = a._mediaTempoFasesSimilares(alvo).corpo;
-  ok('13. duas medicoes de 3 e 1 min por camada dao taxa 2, e nao 2,86',
+  ok('13. duas medicoes de 3 e 1 min por camada dao taxa 2, e nao 2,73',
      Math.abs(med.minPorCamada - 2) < 1e-9, med.minPorCamada);
+}
+
+console.log('-- camadas impossiveis nao entram na taxa (09/11/2026) --');
+{
+  // O caso real: OS 0681 gravada com 1 camada e 129 min. Como taxa, seriam
+  // 129 min POR CAMADA, e a previsao de 80 camadas iria a dias.
+  const lixo = osMedida('x1', '0681', 1, '07:00', '09:09');
+  const alvo = osMedida('alvo', '0500', 12, '', '');
+  const a = api({ ordens: historico.concat([lixo, alvo]), grades: [{ id: 'gr1', nome: 'M-G | CM.LISA' }] });
+  const med = a._mediaTempoFasesSimilares(alvo).corpo;
+  ok('14. a medicao de 1 camada fica fora da taxa -- segue 2 min/cam das 3 boas',
+     med && Math.abs(med.minPorCamada - 2) < 1e-9 && med.nCam === 3,
+     med && (med.minPorCamada + ' min/cam em ' + med.nCam));
+  ok('15. mas o minuto dela continua na media chapada (a duracao e verdadeira)',
+     med && med.n === 4 && med.mediaMin === Math.round((156 + 72 + 24 + 129) / 4),
+     med && (med.n + ' / ' + med.mediaMin));
+  ok('16. 12 camadas (o menor enfesto real do acervo) continua contando',
+     a._camadasPlausiveis(12) && !a._camadasPlausiveis(3) && !a._camadasPlausiveis(0),
+     [12, 3, 0].map(a._camadasPlausiveis).join(','));
 }
 
 console.log(falhas === 0 ? '\nTODOS OS TESTES PASSARAM' : `\n${falhas} FALHA(S)`);

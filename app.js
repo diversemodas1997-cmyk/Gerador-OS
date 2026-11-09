@@ -19260,6 +19260,29 @@ function _tempoEsperadoFase(linha, camadas) {
   return linha.mediaMin != null ? linha.mediaMin : null;
 }
 
+/* CAMADAS IMPOSSÍVEIS NÃO ENTRAM NA TAXA (09/11/2026, Junior escolheu "faça
+   o programa ignorar medição com número de camadas impossível").
+
+   O tempo previsto do enfesto é MINUTOS POR CAMADA × camadas. Uma folha de OS
+   gravada com 1 camada e 70 min de enfesto vira "70 min por camada", e com 80
+   camadas a previsão da grade inteira sai em dias: a 2M-4G-2GG | CM.LISA
+   (OS 0681, 1 camada, 129 min) previa 3.535 min para a OS 0707, e a
+   M-G-GG-G1 (OS 0619, 1 camada, 70 min) previa 580 — nenhuma das duas cabia
+   num dia, e o "Planejar pela fila" não conseguia pôr o enfesto em lugar
+   nenhum.
+
+   O acervo em 09/11/2026: 150 medições com 12 camadas ou mais e 5 com 1 a 3
+   (OS 0539, 0612, 0619, 0642, 0681), com 50 a 129 min cada — tempo de enfesto
+   inteiro, não de uma camada. Nada entre 4 e 11. O piso de 10 passa pelo vão.
+
+   O minuto lançado continua valendo na média CHAPADA (a duração do enfesto
+   é verdadeira; errado é o número de camadas); só a taxa por camada deixa a
+   medição de fora. */
+const ENFESTO_CAMADAS_MINIMO = 10;
+function _camadasPlausiveis(cam) {
+  return (Number(cam) || 0) >= ENFESTO_CAMADAS_MINIMO;
+}
+
 // Cada horário de enfesto já lançado numa folha de OS, com o que explica o
 // tamanho dele: de que MODELO e de que GRADE é, que FASE é, quantas CAMADAS
 // tinha e quanto media o pano.
@@ -19275,7 +19298,8 @@ function _medicoesEnfesto() {
       if (ini == null || fim == null || fim <= ini) return;
       const bloco = blocos.find(b => String(b.ordem) === String(f.ordem)) || {};
       const camadas = parseInt(bloco.camadas, 10) || camGlobal;
-      if (!(camadas > 0)) return;
+      // Esta lista só existe para virar taxa por camada: camada impossível fica fora.
+      if (!_camadasPlausiveis(camadas)) return;
       out.push({
         modeloId: o.modeloId || '', gradeId: o.gradeId || '',
         // TEMPO DE TRABALHO, não tempo de relógio: o café e o almoço que caem
@@ -43013,7 +43037,7 @@ function _mediaTempoFasesSimilares(o) {
       // sem ela, um enfesto de 12 camadas é acusado de "abaixo da média" por
       // uma média formada por enfestos de 78.
       const cam = _camadasDaFase(x, f.ordem);
-      if (cam > 0) { acc[nome].taxas.push(min / cam); acc[nome].cams.push(cam); }
+      if (_camadasPlausiveis(cam)) { acc[nome].taxas.push(min / cam); acc[nome].cams.push(cam); }
     });
   });
   const out = {};
@@ -43163,7 +43187,7 @@ function temposFasesDaGrade(gradeId) {
       // dividir por zero, ou por um palpite, estragaria o número que existe para
       // ser mais honesto que a média.
       const cam = _camadasDaFase(o, f.ordem);
-      if (cam > 0) { e.taxas.push(min / cam); e.cams.push(cam); }
+      if (_camadasPlausiveis(cam)) { e.taxas.push(min / cam); e.cams.push(cam); }
       const num = (o.os || '').toString().trim();
       if (num) e.osNums.add(num);
     });
