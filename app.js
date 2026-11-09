@@ -1566,6 +1566,9 @@ function iniciarPolling() {
     // Estoque no mínimo → demanda → planejamento (ver planejamento-automatico.js).
     // Ele mesmo só age de 5 em 5 minutos e só para quem pode planejar.
     if (typeof autoPlanRodar === 'function') autoPlanRodar();
+    // Fila de produção → plano de operações (ver opAutoRodar): também de 5 em
+    // 5 minutos e só para quem pode planejar operações.
+    if (typeof opAutoRodar === 'function') opAutoRodar(false);
     // As vendas das plataformas pelo Painel DRE (ver vendas-dre.js): também
     // de 5 em 5 minutos, num computador por vez.
     if (typeof vendasDreRodar === 'function') vendasDreRodar();
@@ -20691,6 +20694,32 @@ function _opPartirNosVagos(vagos, dur) {
   return resta > 0 ? null : pedacos;
 }
 
+/* O QUE CABE HOJE, E QUANTO SOBRA PARA AMANHÃ (09/11/2026, Junior: "O
+   planejamento deve alocar as tarefas até cobrir o tempo disponível de um dia.
+   As tarefas devem ser quebradas e alocadas no dia seguinte, quando não couber
+   no mesmo dia").
+
+   A mesma repartição de _opPartirNosVagos, mas sem desistir quando o dia
+   acaba: devolve os pedaços que cabem até o fim da jornada e o que RESTA. Quem
+   chama põe o resto no começo do dia útil seguinte. Antes, a tarefa que não
+   cabia inteira no que sobrava do dia ia TODA para o dia seguinte, e o fim da
+   tarde ficava com o posto parado. */
+function _opPartirAteOFimDoDia(vagos, dur) {
+  const pedacos = [];
+  let resta = dur;
+  for (const v of vagos) {
+    if (resta <= 0) break;
+    const ini = _opArredondar(v.ini);
+    const disp = v.fim - ini;
+    if (disp <= 0) continue;
+    const usa = Math.min(resta, disp);
+    if (usa < _OP_PARTE_MIN && usa !== resta) continue;
+    pedacos.push({ ini, dur: usa });
+    resta -= usa;
+  }
+  return { pedacos, resta };
+}
+
 function _opPrimeiroVagoNoPosto(data, funcaoId, piso, dur, chavePessoa) {
   const ocupadas = (STATE.operacoes || [])
     .filter(o => o.data === data && _opInicioMin(o) != null && _opDuracao(o) > 0
@@ -20893,7 +20922,10 @@ function _opMontarCascataDoLote(data, os) {
       .reduce((mx, o) => Math.max(mx, _opFimMin(o)), _OP_JORNADA.ini);
     return Math.max(pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio, fimDoPosto);
   };
-  const criarNoPosto = (passo, fase, pisoRelogio, dia, cad, pid) => {
+  // `opc.quebra`: pode deixar parte da tarefa para o dia seguinte (devolve
+  // `resto`). `opc.dur`: a duração já decidida — é a continuação de uma tarefa
+  // quebrada, que entra com o que sobrou e não com o tempo inteiro.
+  const criarNoPosto = (passo, fase, pisoRelogio, dia, cad, pid, opc) => {
     // A chave inclui o POSTO: o mesmo passo pode nascer em dois postos que o
     // fazem juntos, e sem isto o segundo seria barrado como repetido do primeiro.
     const chave = dia + '|' + (fase ? String(fase.ordem) : 'r') + '|' + pid + '|' + cad.funcaoId;
@@ -20904,7 +20936,9 @@ function _opMontarCascataDoLote(data, os) {
     // histórico e não do cadastro. "Corpo Parte 3" (5,73 m) não leva o mesmo que
     // "Corpo Parte 2" (1,13 m), e o posto não tem como saber a diferença.
     let duracaoMin = cad.duracaoMin;
-    if (fase && _opEhEnfesto({ operacao: cad.nome })) {
+    if (opc && opc.dur > 0) {
+      duracaoMin = opc.dur;
+    } else if (fase && _opEhEnfesto({ operacao: cad.nome })) {
       duracaoMin = _opDuracaoEnfesto(os, fase, cad.funcaoId, cad.nome).min;
     } else if (fase && _opEhCorteDeEnfesto({ operacao: cad.nome })) {
       // O CORTE também é por fase. O cadastro do posto tem um número só (15 min)
@@ -20963,8 +20997,10 @@ function _opMontarCascataDoLote(data, os) {
       if (fase && fases.length > 1) { nova.faseOrdem = fase.ordem; nova.faseNome = fase.nome; }
       STATE.operacoes.push(nova);
       criadas.push(nova);
+      linhas.push(nova);
       return nova;
     };
+    const linhas = [];
     const ini = _opPrimeiroVagoNoPosto(dia, cad.funcaoId, piso, duracaoMin, chavePessoa);
     // NÃO COUBE INTEIRA num vão só. Antes o passo era simplesmente descartado —
     // e como o maior vão do dia de quem enfesta é 2h15 (o que sobra entre o
@@ -21007,14 +21043,28 @@ function _opMontarCascataDoLote(data, os) {
         });
         const ult = pedacos[pedacos.length - 1];
         partidas.push({ passo, fase, nome: cad.nome, pedacos, total: duracaoMin, dia });
-        return { fim: ult.ini + ult.dur };
+        return { fim: ult.ini + ult.dur, linhas, cad };
       }
     }
-    // Não coube nem repartido: aí é dia cheio de verdade, e meio enfesto no dia
-    // com o corte marcado em cima dele seria pior que nada.
-    if (estouraODia) return { naoCoube: true };
+    if (estouraODia) {
+      // QUEBRA ENTRE DIAS (09/11/2026): faz hoje o que cabe até o fim da
+      // jornada e devolve o RESTO para continuar no dia útil seguinte. Só
+      // quando quem chama aceita (opc.quebra) — a corrente da fase aceita; a
+      // matéria-prima e as rotinas de abertura, não. O corte de enfesto segue
+      // sem interrupção (podePartir), e o dia sem vão nenhum continua "não
+      // coube": a tarefa inteira vai para o dia seguinte, como antes.
+      if (podePartir && opc && opc.quebra) {
+        const { pedacos, resta } = _opPartirAteOFimDoDia(_opVagosNoPosto(dia, cad.funcaoId, piso, chavePessoa), duracaoMin);
+        if (pedacos.length && resta > 0) {
+          pedacos.forEach(p => { criarLinha(cad.nome, p.ini, p.dur).partida = true; });
+          const ult = pedacos[pedacos.length - 1];
+          return { fim: ult.ini + ult.dur, resto: resta, linhas, cad };
+        }
+      }
+      return { naoCoube: true };
+    }
     criarLinha(cad.nome, ini, duracaoMin);
-    return { fim: ini + duracaoMin };
+    return { fim: ini + duracaoMin, linhas, cad };
   };
   // Cria um passo da corrente EM TODOS OS POSTOS QUE O EXECUTAM. `fase` é null
   // nas rotinas de abertura.
@@ -21027,7 +21077,7 @@ function _opMontarCascataDoLote(data, os) {
   //
   // Devolve { fim } quando criou, { naoCoube: true } quando nenhum posto coube
   // no dia, e null quando não havia o que fazer.
-  const criar = (passo, fase, pisoRelogio, dia) => {
+  const criar = (passo, fase, pisoRelogio, dia, quebra) => {
     dia = dia || data;
     const pid = _opPassoId(passo);
     // O TIPO DE ENFESTO e a FASE escolhem, DENTRO de cada posto, a linha daquele
@@ -21067,11 +21117,16 @@ function _opMontarCascataDoLote(data, os) {
     // sozinho num trabalho que exige os dois.
     const pisoComum = cads.reduce((mx, cad) => Math.max(mx, pisoDoPosto(cad, pisoRelogio, dia)),
       pisoRelogio == null ? _OP_JORNADA.ini : pisoRelogio);
-    let fimMax = null, naoCoubeAlgum = false;
+    let fimMax = null, naoCoubeAlgum = false, quebrada = null;
+    // Quebrar entre dias só o passo de UM posto: dois postos trabalhando juntos
+    // (mover o enfesto) teriam de continuar juntos no dia seguinte, e são passos
+    // curtos — esses seguem indo inteiros para o dia seguinte.
+    const opc = (quebra && cads.length === 1) ? { quebra: true } : null;
     cads.forEach(cad => {
-      const r = criarNoPosto(passo, fase, pisoComum, dia, cad, pid);
+      const r = criarNoPosto(passo, fase, pisoComum, dia, cad, pid, opc);
       if (!r) return;
       if (r.naoCoube) { naoCoubeAlgum = true; return; }
+      if (r.resto > 0) quebrada = r;
       if (r.fim != null) fimMax = fimMax == null ? r.fim : Math.max(fimMax, r.fim);
     });
     // Nenhum coube: o passo inteiro transborda para o próximo dia útil. Se um
@@ -21079,6 +21134,7 @@ function _opMontarCascataDoLote(data, os) {
     // de arrastar para outro dia um trabalho que já começou neste.
     if (fimMax == null) return naoCoubeAlgum ? { naoCoube: true } : null;
     if (naoCoubeAlgum) naoCoube.push({ passo, fase, dia });
+    if (quebrada) return { fim: fimMax, resto: quebrada.resto, linhas: quebrada.linhas, cad: quebrada.cad };
     return { fim: fimMax };
   };
   // MATÉRIA PRIMA: NO DIA ÚTIL ANTERIOR, uma volta inteira POR OS.
@@ -21146,7 +21202,7 @@ function _opMontarCascataDoLote(data, os) {
     let travou = false;
     _opCorrente().fase.forEach(passo => {
       if (travou) { naoCoube.push({ passo, fase, dia }); return; }
-      let r = criar(passo, fase, relogio, dia);
+      let r = criar(passo, fase, relogio, dia, true);
       // NÃO COUBE NESTE DIA: a corrente CONTINUA NO PRÓXIMO DIA ÚTIL, em vez de
       // ser descartada. Antes, o passo e todos os seguintes daquela fase
       // simplesmente não existiam em lugar nenhum — a fase ficava com o começo
@@ -21161,7 +21217,31 @@ function _opMontarCascataDoLote(data, os) {
         indexarDia(dia);         // e do que já estiver lá, para não repetir
         relogio = null;          // no dia novo, a fase recomeça na abertura
         transbordos.push({ passo, fase, dia });
-        r = criar(passo, fase, relogio, dia);
+        r = criar(passo, fase, relogio, dia, true);
+      }
+      // A TAREFA QUEBRADA continua no começo do dia útil seguinte (e no outro,
+      // se nem um dia inteiro bastar). Todos os pedaços — os do fim de hoje e os
+      // de amanhã — ganham a numeração junta, "parte 1/3, 2/3, 3/3", e o passo
+      // seguinte da corrente espera o último pedaço.
+      if (r && r.resto > 0) {
+        const cad = r.cad, partes = r.linhas.slice();
+        let cont = r;
+        while (cont && cont.resto > 0 && saltos < MAX_DIAS) {
+          dia = _opProximoDiaUtil(dia);
+          saltos++;
+          diasTocados.add(dia);
+          garantirFixas(dia);
+          indexarDia(dia);
+          transbordos.push({ passo, fase, dia });
+          cont = criarNoPosto(passo, fase, pisoDoPosto(cad, null, dia), dia, cad, _opPassoId(passo),
+            { dur: cont.resto, quebra: true });
+          if (cont && cont.linhas) cont.linhas.forEach(l => { if (!partes.includes(l)) partes.push(l); });
+        }
+        partes.forEach((l, i) => { l.partida = true; l.parte = `${i + 1}/${partes.length}`; });
+        partidas.push({ passo, fase, nome: cad.nome, total: partes.reduce((s, l) => s + (l.duracaoMin || 0), 0),
+          pedacos: partes.map(l => ({ ini: _opInicioMin(l), dur: l.duracaoMin, dia: l.data })), dia: partes[0].data });
+        if (!cont || cont.naoCoube || cont.resto > 0) { naoCoube.push({ passo, fase, dia }); travou = true; return; }
+        r = cont;
       }
       if (r && r.naoCoube) { naoCoube.push({ passo, fase, dia }); travou = true; return; }
       if (r && r.fim != null) relogio = r.fim;
@@ -21628,15 +21708,13 @@ function _opPlanFilaMarcar() {
   });
 }
 
-async function confirmarPlanejarFila() {
-  if (!exigirAdmin('planejar operações')) return;
-  const data = document.getElementById('plan-fila-data')?.value || '';
-  if (!data) return toast('Escolha o dia', 'err');
-  const qtd = parseInt(document.getElementById('plan-fila-qtd')?.value, 10) || 0;
-  const alvo = _opFilaParaPlanejar().filter(x => !x.planejada).slice(0, Math.max(0, qtd));
-  if (!alvo.length) return toast('Nenhuma OS da fila para planejar', 'err');
+// Monta no plano, na ordem, as OS de `alvo` (itens de _opFilaParaPlanejar),
+// a partir de `data`. Não grava: quem chama decide quando salvar. A próxima OS
+// começa no dia do último enfesto da anterior (a enfestadeira é a cabeça da
+// corrente); sem enfesto com horário, no último dia que ela tocou.
+function _opPlanejarFilaNoPlano(data, alvo) {
   if (!Array.isArray(STATE.operacoes)) STATE.operacoes = [];
-  let dia = data;
+  let dia = data, ultimoDia = data;
   let totalCriadas = 0;
   const semTempo = new Set(), semFuncao = new Set(), comSobra = [], planejadas = [];
   alvo.forEach(x => {
@@ -21646,15 +21724,126 @@ async function confirmarPlanejarFila() {
     r.criadas.filter(o => !_opDuracao(o)).forEach(o => semTempo.add(o.operacao));
     r.semFuncao.forEach(s => semFuncao.add(s.passo.nome));
     if (r.naoCoube.length) comSobra.push(x.os.os);
-    // A próxima começa no dia do último enfesto desta (a enfestadeira é a
-    // cabeça da corrente); sem enfesto com horário, no último dia que ela tocou.
     const enfestos = r.criadas.filter(o => _opEhEnfesto(o) && !o.semHorario).map(o => o.data).sort();
     const prox = enfestos.length ? enfestos[enfestos.length - 1] : (r.dias.length ? r.dias[r.dias.length - 1] : dia);
     if (prox > dia) dia = prox;
+    r.dias.forEach(d => { if (d > ultimoDia) ultimoDia = d; });
   });
+  return { planejadas, totalCriadas, semTempo, semFuncao, comSobra, ultimoDia };
+}
+
+/* PLANEJAMENTO AUTOMÁTICO DAS OPERAÇÕES (09/11/2026, Junior: "O planejamento
+   de operações deve ser feito automaticamente pelo programa, pois as
+   informações para montar o planejamento já estão disponíveis").
+
+   Sem clique: a cada 5 minutos, pendurado no mesmo relógio de 15 s do polling
+   (como o planejamento automático de OS), o programa pega as OS da fila de
+   produção que ainda não têm operação no plano e as monta, na ordem 1ª, 2ª…
+   É exatamente o "Planejar pela fila" com todas as OS livres.
+
+   ONDE COMEÇA. Nunca hoje: o plano de hoje já está sendo trabalhado, e uma
+   operação nascendo às 07:20 de um dia que já vai pela tarde seria mentira.
+   Começa no dia útil seguinte — ou no dia do ÚLTIMO ENFESTO já planejado
+   daí em diante, se for mais tarde: a OS nova entra na fila da enfestadeira
+   depois do que já está nela, e a cascata (que só transborda cinco dias)
+   não precisa atravessar uma semana cheia para achar lugar.
+
+   QUEM RODA. O navegador de quem pode planejar operações (admin, ou quem
+   recebeu a área), num computador que pode gravar. Uma OS só é montada se
+   ainda não tiver operação nenhuma no plano, então duas passadas — ou dois
+   computadores — não a montam duas vezes depois de gravado.
+
+   O que já está no plano não é mexido: mudar a ordem da fila depois de a OS
+   estar planejada não a replaneja (para isso, "− Retirar OS" e a próxima
+   passada a monta de novo, no lugar novo da fila).
+
+   Liga e desliga na agenda de Operações (STATE.meta.opAuto.ligado; ligado
+   quando não há nada gravado). */
+const _OP_AUTO_INTERVALO_MS = 5 * 60 * 1000;
+const _OP_AUTO_PRIMEIRA_MS = 30 * 1000;
+const _opAuto = { ultima: 0, rodando: false, abertoEm: Date.now(), ultimaEm: null, ultimoResumo: '' };
+function _opAutoLigado() {
+  const c = (STATE.meta && STATE.meta.opAuto) || {};
+  return c.ligado !== false;
+}
+function _opAutoPodeRodar() {
+  if (!_opAutoLigado()) return false;
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  if (typeof podeGravar === 'function' && !podeGravar()) return false;
+  if (currentRole === 'admin') return true;
+  const area = typeof _areaDaAcao === 'function' ? _areaDaAcao('planejar operações') : '';
+  return !!(area && temAcesso(area));
+}
+// O dia em que a próxima OS automática começa.
+function _opAutoDiaInicial() {
+  let dia = _opProximoDiaUtil(_expHoje());
+  (STATE.operacoes || []).forEach(o => {
+    if (o.data > dia && !o.semHorario && _opInicioMin(o) != null && _opEhEnfesto(o)) dia = o.data;
+  });
+  return dia;
+}
+async function opAutoRodar(forcar) {
+  if (_opAuto.rodando || !_opAutoPodeRodar()) return;
+  const agora = Date.now();
+  if (!forcar && (agora - _opAuto.abertoEm < _OP_AUTO_PRIMEIRA_MS || agora - _opAuto.ultima < _OP_AUTO_INTERVALO_MS)) return;
+  _opAuto.rodando = true;
+  _opAuto.ultima = agora;
+  try {
+    const alvo = _opFilaParaPlanejar().filter(x => !x.planejada);
+    _opAuto.ultimaEm = new Date();
+    if (!alvo.length) { _opAuto.ultimoResumo = 'nenhuma OS nova na fila'; return; }
+    const ini = _opAutoDiaInicial();
+    const res = _opPlanejarFilaNoPlano(ini, alvo);
+    if (!res.totalCriadas) { _opAuto.ultimoResumo = 'nada a montar'; return; }
+    await saveState('operacoes');
+    _opAuto.ultimoResumo = `${res.planejadas.length} OS montada(s): ${res.planejadas.join(', ')}`;
+    toast(`🤖 Planejamento de operações: ${res.planejadas.length} OS da fila montada(s) de ${formatDate(ini)} a ${formatDate(res.ultimoDia)}`
+      + (res.comSobra.length ? ` · sem horário (encaixar à mão): OS ${res.comSobra.join(', ')}` : ''),
+      res.comSobra.length ? 'err' : 'ok');
+    const sec = document.querySelector('section.page[data-page="operacoes"]');
+    if (sec && !sec.classList.contains('hidden')) renderOperacoes();
+  } catch (e) {
+    console.warn('planejamento automático de operações', e);
+  } finally {
+    _opAuto.rodando = false;
+  }
+}
+async function opAutoLigar(ligado) {
+  if (!exigirAdmin('planejar operações')) return;
+  STATE.meta = STATE.meta || {};
+  STATE.meta.opAuto = Object.assign({}, STATE.meta.opAuto || {}, { ligado: !!ligado,
+    alteradoEm: new Date().toISOString(), alteradoPor: typeof _obsQuemSou === 'function' ? _obsQuemSou() : '' });
+  await saveState('meta');
+  toast(ligado ? 'Planejamento automático das operações ligado' : 'Planejamento automático das operações desligado', 'ok');
+  if (ligado) await opAutoRodar(true);
+  renderOperacoes();
+}
+function _opAutoFaixaHtml() {
+  const lig = _opAutoLigado();
+  const hora = _opAuto.ultimaEm ? String(_opAuto.ultimaEm.getHours()).padStart(2, '0') + ':' + String(_opAuto.ultimaEm.getMinutes()).padStart(2, '0') : '';
+  return `<div class="admin-only" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;margin:6px 0;">
+    <b>🤖 Planejamento automático: ${lig ? '<span style="color:#2e9d5b;">ligado</span>' : '<span style="color:var(--alert);">desligado</span>'}</b>
+    <span style="color:var(--ink-2);">As OS da fila de produção entram sozinhas no plano, na ordem 1ª, 2ª…, a partir do próximo dia útil; tarefa que não cabe no dia continua no dia seguinte.</span>
+    ${hora ? `<span style="color:var(--ink-2);">Conferido às ${hora}${_opAuto.ultimoResumo ? ' · ' + esc(_opAuto.ultimoResumo) : ''}</span>` : ''}
+    <span style="margin-left:auto;display:flex;gap:6px;">
+      ${lig ? `<button type="button" class="btn small" onclick="opAutoRodar(true).then(()=>{toast('Planejamento automático conferido','ok');renderOperacoes();})">Conferir agora</button>` : ''}
+      <button type="button" class="btn small ${lig ? '' : 'primary'}" onclick="opAutoLigar(${!lig})">${lig ? 'Desligar' : 'Ligar'}</button>
+    </span>
+  </div>`;
+}
+
+async function confirmarPlanejarFila() {
+  if (!exigirAdmin('planejar operações')) return;
+  const data = document.getElementById('plan-fila-data')?.value || '';
+  if (!data) return toast('Escolha o dia', 'err');
+  const qtd = parseInt(document.getElementById('plan-fila-qtd')?.value, 10) || 0;
+  const alvo = _opFilaParaPlanejar().filter(x => !x.planejada).slice(0, Math.max(0, qtd));
+  if (!alvo.length) return toast('Nenhuma OS da fila para planejar', 'err');
+  const res = _opPlanejarFilaNoPlano(data, alvo);
+  const { planejadas, totalCriadas, semTempo, semFuncao, comSobra } = res;
   await saveState('operacoes');
   closeModal('modal-plan-fila');
-  toast(`${planejadas.length} OS da fila planejada(s), ${totalCriadas} operação(ões) criada(s) de ${formatDate(data)} a ${formatDate(dia)}`
+  toast(`${planejadas.length} OS da fila planejada(s), ${totalCriadas} operação(ões) criada(s) de ${formatDate(data)} a ${formatDate(res.ultimoDia)}`
     + (planejadas.length ? ` · ${planejadas.slice(0, 6).join(', ')}${planejadas.length > 6 ? '…' : ''}` : ''),
     (semTempo.size || semFuncao.size || comSobra.length) ? 'err' : 'ok');
   if (semTempo.size) toast(`Sem tempo cadastrado em Funções: ${[...semTempo].join(', ')}`, 'err');
@@ -22137,7 +22326,8 @@ function renderOperacoes() {
         <button class="btn" onclick="abrirModalOperacao()">+ Operação avulsa</button>
         ${opPlanoModo === 'dia' ? `<button class="btn" onclick="copiarOperacoesDoDiaAnterior()" title="Repete no dia mostrado a jornada do último dia planejado antes dele. Copia como pendente e não duplica o que já existe.">⧉ Repetir dia anterior</button>` : ''}
       </div>
-    </div>`;
+    </div>
+    <div class="no-print">${_opAutoFaixaHtml()}</div>`;
 
   const conflitos = _opConflitos(ops);
   const foraDeOrdem = _opConflitosOrdem(ops);
