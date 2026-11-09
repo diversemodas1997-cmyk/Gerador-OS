@@ -21668,11 +21668,17 @@ function _opLotesNoPlano() {
   return s;
 }
 // A fila como o planejamento a enxerga: só OS com número, na ordem 1ª, 2ª…
+// Só entra OS com status 'nao-iniciado' (Junior, 09/11/2026: "use só OS com
+// status não iniciado"). Matéria-prima e MP preparada aparecem na lista
+// "Não iniciadas", mas não são planejadas. A posição (pos) continua sendo a da
+// fila inteira, a mesma que o usuário vê.
 function _opFilaParaPlanejar() {
   const noPlano = _opLotesNoPlano();
   return filaDeProducao()
     .filter(o => String(o.os || '').trim())
-    .map((o, i) => ({ os: o, pos: i + 1, planejada: _opOsJaPlanejada(o, noPlano) }));
+    .map((o, i) => ({ os: o, pos: i + 1 }))
+    .filter(x => _statusOS(x.os) === 'nao-iniciado')
+    .map(x => ({ ...x, planejada: _opOsJaPlanejada(x.os, noPlano) }));
 }
 
 // Monta no plano, na ordem, as OS de `alvo` (itens de _opFilaParaPlanejar),
