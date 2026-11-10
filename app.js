@@ -2161,6 +2161,15 @@ const AREAS_ACESSO = [
      conta (ver ACESSO_PADRAO) — quem conjugava continua conjugando. */
   { k: 'os-conjugar', rotulo: 'Conjugar OS',
     desc: 'Amarrar uma ou mais OS a outra (⇄ Conjugar): as escolhidas seguem o status dela, sem mexer em tecido nem em grade' },
+  /* CRIAR OS CONJUGADA COM ÁREA PRÓPRIA (10/11/2026, Junior: "insira nas
+     configurações de concessão de acesso por usuário a capacidade de usar a
+     ação criar OS conjugada"). Antes a ação pedia Conjugar OS E Planejamento
+     de produção. Agora basta esta área: ela abre a cópia no formulário de
+     planejamento e deixa salvar AQUELA cópia, sem abrir o resto do
+     planejamento. Aprovar segue com "Aprovar planejamento". O padrão é o que
+     valia antes (ver ACESSO_PADRAO) — quem já usava continua usando. */
+  { k: 'os-criar-conjugada', rotulo: 'Criar OS conjugada',
+    desc: 'A ação "criar OS conjugada" do menu da OS: copia a OS para um planejamento novo que, aprovado, segue o status da de origem' },
   { k: 'cadastros', rotulo: 'Cadastros',
     desc: 'Tecidos, cores, modelos, grades, desenhos, etapas, equipe, riscos' },
   { k: 'estoque-tecidos', rotulo: 'Estoque de tecidos',
@@ -2221,6 +2230,7 @@ const ACOES_POR_AREA = {
   'excluir OS': 'os', 'editar a observação antiga da OS': 'os',
   // Planejamento de produção (ver exigirPlanejamento: "Ordens de Serviço" também vale)
   'planejar a produção': 'planejamento',
+  'criar OS conjugada': 'os-criar-conjugada',
   // Relatório de demanda (ver exigirDemanda)
   'cadastrar demanda': 'demanda',
   // Cadastros
@@ -2293,6 +2303,10 @@ const ACESSO_PADRAO = {
   // (Sem ponto e vírgula aqui dentro: os testes leem esta constante até o primeiro.)
   'os-conjugar': (login) => (typeof (_acessosTabela()[login] || {})['os-status'] === 'boolean'
     ? _acessosTabela()[login]['os-status'] : LOGINS_STATUS_OS.includes(login)),
+  // Criar OS conjugada: enquanto o admin não marcar, vale o que a ação pedia
+  // antes de ter área própria — Conjugar OS e (Planejamento ou Ordens de Serviço).
+  'os-criar-conjugada': (login) => contaTemAcesso('os-conjugar', login, 'usuario')
+    && (contaTemAcesso('planejamento', login, 'usuario') || contaTemAcesso('os', login, 'usuario')),
   'estoque-tecidos': (login) => LOGINS_ESTOQUE_TECIDOS.includes(login),
   // Imprimir o relatório e mandar @todos eram de todos: continuam, até o admin tirar.
   'relatorio-producao': () => true,
@@ -2536,8 +2550,9 @@ const VISAO_SEM_TELA = ['os-status', 'fila-os', 'dados', 'mensagens-todos'];
 const EDITAR_TRAVADO = { ranking: 'Não há o que editar no Ranking (só consulta)', inicio: 'Não há o que editar no Início (só consulta)',
   config: 'O que se edita em Configurações segue as áreas Dados e Contas' };
 const VER_TRAVADO = { 'os-conjugar': 'Conjugar não tem tela: o botão ⇄ Conjugar aparece para quem edita',
+  'os-criar-conjugada': 'Criar OS conjugada não tem tela: a ação aparece no menu da OS para quem edita',
   'aprovar-plan': 'Aprovar não tem tela: o botão ✔ Aprovar aparece no Planejamento de produção para quem edita' };
-const AVISAR_TRAVADO = { 'os-conjugar': 'Conjugar OS não gera aviso', 'aprovar-plan': 'Os avisos do planejamento estão na linha Planejamento de produção',ranking: 'O Ranking não gera aviso','relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
+const AVISAR_TRAVADO = { 'os-conjugar': 'Conjugar OS não gera aviso', 'os-criar-conjugada': 'Os avisos do planejamento estão na linha Planejamento de produção','aprovar-plan': 'Os avisos do planejamento estão na linha Planejamento de produção',ranking: 'O Ranking não gera aviso','relatorio-producao': 'O Relatório de produção não gera aviso', inicio: 'O Início não gera aviso',
   config: 'Configurações não gera aviso' };
 
 /* Esta conta VÊ esta área? Admin vê tudo; quem edita, vê; sem marcação, vê —
@@ -4893,7 +4908,8 @@ function goto(page) {
   // pela área (ver VER E EDITAR POR TELA).
   if (page === 'nova-os' && currentRole && currentRole !== 'admin'
       && !(podeGravar() && contaEditaTela('nova-os', _obsQuemSou()))
-      && !((_osPlanAbrir || !_formAbreOSExistente()) && temAcesso('planejamento'))) {
+      && !((_osPlanAbrir || !_formAbreOSExistente()) && temAcesso('planejamento'))
+      && !(_osPlanAbrir && _formConjugadaAberta())) {
     toast('Seu acesso não inclui criar ou editar OS — peça ao admin', 'err');
     page = 'lista-os';
   }
@@ -32869,6 +32885,8 @@ function _planLista() {
 function _aplicarModoPlanForm() {
   const sec = document.querySelector('section.page[data-page="nova-os"]');
   if (sec) sec.classList.toggle('modo-plan', !!_osPlanModo);
+  // A cópia de "criar OS conjugada": quem só tem essa área vê os botões de salvar.
+  if (sec) sec.classList.toggle('conjugada-nova', !!(_osPlanModo && _osConjugarDe));
   const campoOS = document.getElementById('f-os');
   if (campoOS) {
     campoOS.disabled = !!_osPlanModo;
@@ -32922,7 +32940,10 @@ function editarPlanejamento(id) {
 
 async function salvarPlanejamento() {
   if (!_osPlanModo) return;
-  if (!exigirPlanejamento()) return;
+  // A cópia aberta por "criar OS conjugada" salva com a área própria dela.
+  const fId = document.getElementById('f-id');
+  const ehCopiaConjugada = _formConjugadaAberta() && fId && _osConjugarDe.copiaId === fId.value;
+  if (ehCopiaConjugada ? _recusarSomenteLeitura('criar OS conjugada') : !exigirPlanejamento()) return;
   const data = coletaOS();
   data.os = '';
   if (!data.desenhoId && !data.codigo && !data.gradeId) {
@@ -37239,6 +37260,24 @@ function exigirConjugarOS(acao) {
   return false;
 }
 
+// Criar OS conjugada: área própria desde 10/11/2026 (ver AREAS_ACESSO).
+function podeCriarOSConjugada() {
+  return temAcesso('os-criar-conjugada');
+}
+
+function exigirCriarOSConjugada() {
+  const acao = 'criar OS conjugada';
+  if (_recusarSomenteLeitura(acao)) return false;
+  if (podeCriarOSConjugada()) return true;
+  toast(`Sem acesso para ${acao} — o admin concede em Configurações → Contas de acesso (Criar OS conjugada)`, 'err');
+  return false;
+}
+
+// O formulário está com a cópia de "criar OS conjugada" de quem tem a área.
+function _formConjugadaAberta() {
+  return !!(typeof _osConjugarDe !== 'undefined' && _osConjugarDe && podeCriarOSConjugada());
+}
+
 /* O STATUS QUE VALE: o carimbo à mão enquanto ele não foi desmentido pela
    folha; senão, o que o checklist diz.
 
@@ -39733,7 +39772,7 @@ function abrirMenuAcoesOS(id, botao) {
       title="Amarrar esta OS a outras: as escolhidas passam a seguir o status desta. Nao mexe em tecido nem no cadastro da grade.">conjugar</button>` : ''}
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); editarOS('${esc(id)}')">editar</button>
     <button class="edit admin-only" onclick="fecharMenuAcoesOS(); duplicarOS('${esc(id)}')">duplicar</button>
-    ${podeConjugarOS() ? `<button class="edit" onclick="fecharMenuAcoesOS(); criarOSConjugada('${esc(id)}')"
+    ${podeCriarOSConjugada() ? `<button class="edit" onclick="fecharMenuAcoesOS(); criarOSConjugada('${esc(id)}')"
       title="Copia esta OS para um planejamento novo (troque a cor). Ao ser aprovada, a OS nova fica conjugada a esta e segue o status dela.">criar OS conjugada</button>` : ''}
     <div class="sep admin-only"></div>
     <button class="del admin-only" onclick="fecharMenuAcoesOS(); excluirOS('${esc(id)}')">excluir</button>`;
@@ -42546,8 +42585,8 @@ function duplicarOS(id) {
 let _osConjugarDe = null;
 
 function criarOSConjugada(id) {
-  if (!exigirConjugarOS('criar OS conjugada')) return;
-  if (!exigirPlanejamento()) return;
+  // Área própria (Criar OS conjugada): não pede mais Conjugar nem Planejamento.
+  if (!exigirCriarOSConjugada()) return;
   const o = STATE.ordens.find(x => x.id === id);
   if (!o) return toast('OS não encontrada', 'err');
   const copia = JSON.parse(JSON.stringify(o));
@@ -42557,10 +42596,12 @@ function criarOSConjugada(id) {
   delete copia.repeticoes;
   _demAgrupando = null;
   _osPlanAbrir = true;
-  _abrirOSNoForm(copia, `Novo planejamento · OS conjugada à ${o.os || ''}`);
   // A marca vale só para ESTA cópia (o id dela segue no formulário, f-id):
   // sair por outro caminho e planejar outra coisa não herda a conjugação.
+  // Vem antes de abrir o formulário: a rota de nova-os a consulta para deixar
+  // entrar quem só tem a área Criar OS conjugada.
   _osConjugarDe = { copiaId: copia.id, origemId: o.id };
+  _abrirOSNoForm(copia, `Novo planejamento · OS conjugada à ${o.os || ''}`);
   toast(`Cópia da OS ${o.os || ''} aberta — troque a cor e salve. Aprovada, ela segue o status da OS ${o.os || ''}`, '');
 }
 

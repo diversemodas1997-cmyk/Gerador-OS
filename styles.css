@@ -4989,6 +4989,9 @@ body.pode-demanda [data-page="relatorio-demanda"] .admin-only { display: revert 
    modo planejamento — os botões de OS de verdade (os-only) seguem fechados. */
 body.pode-planejamento [data-page="planejamento-producao"] .admin-only,
 body.pode-planejamento section[data-page="nova-os"].modo-plan .admin-only:not(.os-only) { display: revert !important; }
+/* CRIAR OS CONJUGADA (10/11/2026): quem só tem essa área salva a cópia aberta
+   pela ação — o formulário em modo planejamento, só enquanto é a cópia. */
+body.pode-os-criar-conjugada section[data-page="nova-os"].modo-plan.conjugada-nova .admin-only:not(.os-only) { display: revert !important; }
 
 /* ============ CONFIGURAÇÕES EM QUADROS (09/10/2026) ============
    Cinco quadros por assunto; cada item é uma linha (nome + situação à
