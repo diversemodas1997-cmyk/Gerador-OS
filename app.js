@@ -33008,6 +33008,12 @@ async function salvarPlanejamento() {
   }
   // Cópia de "criar OS conjugada": desenho e grade só do SKU da OS matriz.
   const mz = (_osConjugarDe && _osConjugarDe.copiaId === data.id) ? _skuMatrizConjugada() : null;
+  if (mz && !((data.enfesto && data.enfesto.camadas) > 0)) {
+    toast('OS conjugada: informe o Nº de camadas que foram feitas', 'err');
+    const cam = document.getElementById('f-enf-camadas');
+    if (cam) cam.focus();
+    return;
+  }
   if (mz) {
     const des = data.desenhoId ? (STATE.desenhos || []).find(x => x.id === data.desenhoId) : null;
     const gra = data.gradeId ? (STATE.grades || []).find(x => x.id === data.gradeId) : null;
@@ -42664,6 +42670,14 @@ function criarOSConjugada(id) {
   copia.os = '';
   copia.data = new Date().toISOString().slice(0, 10);
   delete copia.repeticoes;
+  // CAMADAS VAZIAS, SEM PEÇAS-ALVO (10/11/2026, Junior: "a configuração padrão
+  // de uma OS quando criada pela ação criar OS conjugada é receber camadas
+  // vazio, pois o usuário deve determinar quantas camadas foram feitas, sem
+  // camadas alvo"). As da matriz não valem para a cópia; salvar pede as camadas.
+  if (copia.enfesto) {
+    copia.enfesto = { ...copia.enfesto, camadas: 0, target: 0 };
+    delete copia.enfesto.totalPecas;
+  }
   _demAgrupando = null;
   _osPlanAbrir = true;
   // A marca vale só para ESTA cópia (o id dela segue no formulário, f-id):
