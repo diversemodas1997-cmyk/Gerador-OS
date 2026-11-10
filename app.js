@@ -28807,7 +28807,7 @@ function atualizarResponsabilidadesOS() {
 function atualizarDatalistCodigos() {
   const dl = document.getElementById('codigos-datalist');
   if (!dl) return;
-  dl.innerHTML = STATE.desenhos.map(d =>
+  dl.innerHTML = _desenhosPermitidosOS().map(d =>
     `<option value="${esc(d.codigo)}">${esc(d.desc||'')}</option>`
   ).join('');
 }
@@ -28834,7 +28834,8 @@ function sincCodigoDesenho(origem) {
       preencherDropdownGradesOS();
       return;
     }
-    const d = STATE.desenhos.find(x => x.codigo.toLowerCase() === typed.toLowerCase());
+    // Na cópia conjugada, código de outro SKU não escolhe desenho nenhum.
+    const d = _desenhosPermitidosOS().find(x => String(x.codigo || '').toLowerCase() === typed.toLowerCase());
     if (d && desenhoEl.value !== d.id) {
       desenhoEl.value = d.id;
       previewDesenhoSelecionado();
@@ -29179,13 +29180,52 @@ function _rotuloDesenhoNoGrupo(d, g) {
   return (g.modelo && v) ? `${d.codigo} · ${v}` : _rotuloDesenhoOS(d);
 }
 
+/* CRIAR OS CONJUGADA SÓ NO SKU DA MATRIZ (10/11/2026, Junior: "as informações
+   que podem ser editadas devem ser apenas aquelas referente ao mesmo sku da OS
+   matriz, ou seja, não deve aparecer nos filtros outras opções de desenhos
+   técnicos e camadas limites de outros sku que não seja o da OS matriz").
+   Enquanto a cópia aberta pela ação está no formulário (_osConjugarDe), a lista
+   de desenhos, o datalist do código e a lista de grades só oferecem o SKU da
+   OS matriz — troca-se a cor (outro desenho do mesmo SKU), não o produto. O SKU
+   é a LINHA (sem a cor), lido como no resto do programa: desenho > modelo >
+   grade. */
+function _skuLinhaDoDesenho(d) {
+  if (!d) return '';
+  const m = d.modeloId ? (STATE.modelos || []).find(x => x.id === d.modeloId) : null;
+  return _skuLinhaNorm((d.skuLinha || (m && m.skuLinha) || '').trim());
+}
+
+function _skuMatrizConjugada() {
+  if (typeof _osConjugarDe === 'undefined' || !_osConjugarDe) return null;
+  const o = (STATE.ordens || []).find(x => x.id === _osConjugarDe.origemId);
+  if (!o) return null;
+  const d = o.desenhoId ? (STATE.desenhos || []).find(x => x.id === o.desenhoId) : null;
+  const m = o.modeloId ? (STATE.modelos || []).find(x => x.id === o.modeloId) : null;
+  const bruto = ((d && d.skuLinha) || (m && m.skuLinha) || _skuDaOS(o) || '').trim();
+  const sku = _skuLinhaNorm(bruto);
+  return sku ? { sku, rotulo: bruto.split('-')[0].trim(), os: o.os || '', desenhoId: o.desenhoId || '', gradeId: _gradeIdDaOS(o) || '' } : null;
+}
+
+// O desenho serve à cópia conjugada? O da própria matriz sempre serve (mesmo
+// que o cadastro dele esteja sem SKU e o SKU tenha vindo da grade).
+function _desenhoServeMatriz(d, mz) {
+  return !!d && (d.id === mz.desenhoId || _skuLinhaDoDesenho(d) === mz.sku);
+}
+
+// Os desenhos que a cópia conjugada pode usar (todos, fora desse modo).
+function _desenhosPermitidosOS() {
+  const todos = STATE.desenhos || [];
+  const mz = _skuMatrizConjugada();
+  return mz ? todos.filter(d => _desenhoServeMatriz(d, mz)) : todos;
+}
+
 function filtrarDesenhosOS() {
   const sel = document.getElementById('f-desenho');
   const campo = document.getElementById('f-desenho-busca');
   const conta = document.getElementById('f-desenho-conta');
   if (!sel) return;
   const termos = ((campo && campo.value) || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const todos = STATE.desenhos || [];
+  const todos = _desenhosPermitidosOS();
   const escolhido = sel.value;
   const casam = termos.length
     ? todos.filter(d => { const alvo = _textoBuscaDesenho(d); return termos.every(t => alvo.includes(t)); })
@@ -29203,9 +29243,10 @@ function filtrarDesenhosOS() {
             + `${esc(_rotuloDesenhoNoGrupo(d, g))}</option>`).join('')
         + `</optgroup>`).join('');
   if (conta) {
-    conta.textContent = termos.length
+    const mz = _skuMatrizConjugada();
+    conta.textContent = (termos.length
       ? `${casam.length} de ${todos.length} desenhos`
-      : `${todos.length} desenhos`;
+      : `${todos.length} desenhos`) + (mz ? ` · só o SKU ${mz.rotulo} da OS ${mz.os}` : '');
     conta.classList.toggle('filtrando', !!termos.length);
   }
 }
@@ -30636,9 +30677,13 @@ function _ctxDropdownGradesOS(extraIds = []) {
   // Continua visivel se for a grade ja salva da OS em edicao (via extraIds).
   const alvos = new Set((STATE.grades || []).map(g => g.conjugadaGradeId).filter(Boolean));
   const tipoModelo = tipoPecaModeloOS();
-  const skuDesenho = _skuLinhaDesenhoOS();
-  const sku = _skuLinhaNorm(skuDesenho);
+  // Cópia de "criar OS conjugada": o SKU é o da OS matriz, e só ele.
+  const mz = _skuMatrizConjugada();
+  const skuDesenho = mz ? mz.rotulo : _skuLinhaDesenhoOS();
+  const sku = mz ? mz.sku : _skuLinhaNorm(skuDesenho);
   return {
+    conjugada: !!mz,
+    osMatriz: mz ? mz.os : '',
     skuDesenho,
     sku,
     // Só filtra por SKU se o SKU do desenho tem grade cadastrada. Sem esta
@@ -30650,7 +30695,8 @@ function _ctxDropdownGradesOS(extraIds = []) {
     // peça, então não tem como exigir nada da grade a partir dele.
     tipoModelo: tipoModelo === 'outro' ? '' : tipoModelo,
     variacao: variacaoDesenhoOS(),
-    keep: new Set(extraIds.filter(Boolean)),
+    // A grade da própria OS matriz fica sempre na lista da cópia conjugada.
+    keep: new Set(extraIds.concat(mz ? [mz.gradeId] : []).filter(Boolean)),
     ocultaConjugada: (g) => _gradeConjugadaOcultaNaOS(g, alvos)
   };
 }
@@ -30663,6 +30709,9 @@ function _ctxDropdownGradesOS(extraIds = []) {
 function _motivoGradeForaDoDropdownOS(g, ctx) {
   if (ctx.keep.has(g.id)) return '';
   if (ctx.ocultaConjugada(g)) return 'conjugada';
+  // Cópia conjugada: só grade que declara o SKU da OS matriz (sem as regras
+  // indiretas — grade sem SKU no nome também fica de fora).
+  if (ctx.conjugada) return _skuLinhaNorm(_skuDaGrade(g)) === ctx.sku ? '' : 'sku-matriz';
   // O SKU manda: é a identidade do produto, e as outras três regras são apenas
   // pistas indiretas dela. Casando o SKU, nada mais precisa concordar — assim uma
   // grade do produto certo não é mais cortada por estar em pasta "errada" ou por
@@ -30714,6 +30763,7 @@ function _linhaTipoGrade(g) {
 
 const _MOTIVO_GRADE_LABEL = {
   sku: 'SKU diferente do desenho',
+  'sku-matriz': 'SKU diferente do da OS matriz',
   categoria: 'categoria do tecido diferente da do desenho',
   tipo: 'pasta (tipo de peça) diferente da do modelo',
   variacao: 'subpasta (variação) diferente das cores do desenho',
@@ -30743,7 +30793,8 @@ function preencherDropdownGradesOS(idAlvo = '') {
   });
   // "Mostrar todas" não traz as conjugadas: essas não se escolhem à mão em
   // nenhuma hipótese — nascem junto da OS que as puxa.
-  const base = _osGradeMostrarTodas
+  // Na cópia conjugada o "mostrar todas" não vale: o SKU da matriz é a regra.
+  const base = (_osGradeMostrarTodas && !ctx.conjugada)
     ? dentro.concat(fora.filter(x => x.motivo !== 'conjugada').map(x => x.g))
     : dentro;
   // A linha vale também com "mostrar todas": é uma escolha explícita, não o
@@ -30767,6 +30818,11 @@ function preencherDropdownGradesOS(idAlvo = '') {
 function _atualizarInfoGradesOS({ dentro, fora, lista, termos, ctx }) {
   const box = document.getElementById('f-grade-info');
   if (!box) return;
+  if (ctx && ctx.conjugada) {
+    box.innerHTML = `<b>${lista.length}</b> grade${lista.length === 1 ? '' : 's'} na lista · `
+      + `OS conjugada: só o SKU <b>${esc(ctx.skuDesenho)}</b> da OS matriz ${esc(ctx.osMatriz)}`;
+    return;
+  }
   const escondidas = fora.filter(x => x.motivo !== 'conjugada');
   const porMotivo = {};
   escondidas.forEach(x => { porMotivo[x.motivo] = (porMotivo[x.motivo] || 0) + 1; });
@@ -32949,6 +33005,20 @@ async function salvarPlanejamento() {
   if (!data.desenhoId && !data.codigo && !data.gradeId) {
     toast('Escolha ao menos o desenho técnico ou a grade', 'err');
     return;
+  }
+  // Cópia de "criar OS conjugada": desenho e grade só do SKU da OS matriz.
+  const mz = (_osConjugarDe && _osConjugarDe.copiaId === data.id) ? _skuMatrizConjugada() : null;
+  if (mz) {
+    const des = data.desenhoId ? (STATE.desenhos || []).find(x => x.id === data.desenhoId) : null;
+    const gra = data.gradeId ? (STATE.grades || []).find(x => x.id === data.gradeId) : null;
+    if (des && !_desenhoServeMatriz(des, mz)) {
+      toast(`OS conjugada: o desenho tem de ser do SKU ${mz.rotulo}, o da OS ${mz.os}`, 'err');
+      return;
+    }
+    if (gra && gra.id !== mz.gradeId && _skuLinhaNorm(_skuDaGrade(gra)) !== mz.sku) {
+      toast(`OS conjugada: a grade tem de ser do SKU ${mz.rotulo}, o da OS ${mz.os}`, 'err');
+      return;
+    }
   }
   // As mesmas provas da OS (linha de tamanho, medida da grade, camadas), menos
   // a falta de tecido: o pano de um planejamento ainda pode ser comprado. Ela é

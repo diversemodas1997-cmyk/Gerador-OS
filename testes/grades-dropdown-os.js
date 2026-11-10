@@ -54,6 +54,8 @@ function motivos(estado, tela, extraIds) {
     // Dublê do leitor de tela: devolve a linha de SKU do desenho escolhido, já
     // sem a cor (é o que a função real faz depois de ler o <select>).
     const _skuLinhaDesenhoOS = () => String(TELA.skuDesenho || '').split('-')[0].trim();
+    // Dublê da OS matriz da cópia de "criar OS conjugada" (null = fora dela).
+    const _skuMatrizConjugada = () => TELA.matriz || null;
     ${motor}
     const ctx = _ctxDropdownGradesOS(EXTRA || []);
     const out = {};
@@ -216,6 +218,16 @@ eq('quem aponta continua aparecendo', m['mãe'], '');
 m = motivos(estado([grade('moletom', 't_mole', 'blusa_moletom', 'basica')]),
   { catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica' }, ['g_moletom']);
 eq('a grade já salva na OS aparece apesar do filtro', m['moletom'], '');
+
+/* ---------- 5. criar OS conjugada: só o SKU da OS matriz ---------- */
+
+const gSemSku = grade('P-M-G sem sku', 't_malha', 'camiseta', 'basica');
+m = motivos(estado([gradeCot, gradeLisa, gSemSku]),
+  { skuDesenho: 'COT.PR-PRE', catDesenho: 'malha', tipoModelo: 'camiseta', variacao: 'basica',
+    matriz: { sku: 'cm.lisa', rotulo: 'CM.LISA', os: '0700', gradeId: '' } });
+eq('OS conjugada: a grade do SKU da matriz aparece', m['P ao G3 | CM.LISA | 117cm'], '');
+eq('OS conjugada: grade de outro SKU sai, mesmo casando com o desenho da tela', m['P-M-G-GG-G1 | COT.PR | 152cm'], 'sku-matriz');
+eq('OS conjugada: grade sem SKU no nome também sai', m['P-M-G sem sku'], 'sku-matriz');
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);

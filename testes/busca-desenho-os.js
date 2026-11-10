@@ -40,6 +40,17 @@ const monta = (ctx) => new Function('ctx', `
   ${recorte('function _desenhosAgrupados', 'o agrupamento por semelhanca')}
   ${recorte('function _rotuloGrupoDesenho', 'o rotulo do grupo')}
   ${recorte('function _rotuloDesenhoNoGrupo', 'o rotulo dentro do grupo')}
+  // Criar OS conjugada (10/11/2026): a lista fica no SKU da OS matriz.
+  let _osConjugarDe = ctx.conjugarDe || null;
+  const _skuDaOS = () => '';
+  const _gradeIdDaOS = (o) => (o && o.gradeId) || '';
+  ${recorte('function _normNome', 'a normalizacao do nome')}
+  ${recorte('function _normSku', 'a normalizacao do SKU')}
+  ${recorte('function _skuLinhaNorm', 'a linha do SKU')}
+  ${recorte('function _skuLinhaDoDesenho', 'o SKU do desenho')}
+  ${recorte('function _skuMatrizConjugada', 'o SKU da OS matriz')}
+  ${recorte('function _desenhoServeMatriz', 'o desenho que serve a matriz')}
+  ${recorte('function _desenhosPermitidosOS', 'os desenhos permitidos')}
   ${recorte('function filtrarDesenhosOS', 'o filtro do desenho')}
   return { filtrarDesenhosOS, _textoBuscaDesenho };
 `)(ctx);
@@ -51,11 +62,13 @@ const DESENHOS = [
 ];
 const MODELOS = [{ id: 'm1', nome: 'Camiseta Básica' }, { id: 'm2', nome: 'Blusa Moletom Tricolor' },
                  { id: 'm3', nome: 'Camiseta Polo' }];
+const ORDENS = [{ id: 'o1', os: '0700', desenhoId: 'd1' }];
 const CORES = [{ id: 'c1', nome: 'Preto' }, { id: 'c2', nome: 'Mostarda' }, { id: 'c3', nome: 'Bege' }];
 
-const ctxDe = (busca = '', escolhido = '') => {
+const ctxDe = (busca = '', escolhido = '', conjugarDe = null) => {
   const ctx = {
-    STATE: { desenhos: DESENHOS, modelos: MODELOS, cores: CORES },
+    conjugarDe,
+    STATE: { desenhos: DESENHOS, modelos: MODELOS, cores: CORES, ordens: ORDENS },
     el: {
       'f-desenho': { value: escolhido, innerHTML: '' },
       'f-desenho-busca': { value: busca },
@@ -114,6 +127,27 @@ ok('12. o escolhido continua na lista, mesmo fora da busca',
 ok('13. e continua marcado (a escolha da OS nao se perde)',
    /value="d1" selected/.test(t.ctx.el['f-desenho'].innerHTML), t.ctx.el['f-desenho'].innerHTML);
 ok('14. junto com o que a busca achou', opcoes(t.ctx) === 2, String(opcoes(t.ctx)));
+
+console.log('');
+console.log('-- criar OS conjugada: so o SKU da OS matriz --');
+DESENHOS.push({ id: 'd4', codigo: '009', desc: 'Camiseta gola careca | Branco', modeloId: 'm1', corPrincipalId: 'c3', skuLinha: 'CM.LISA-BRA' });
+t = ctxDe('', 'd1', { copiaId: 'c1', origemId: 'o1' });
+t.api.filtrarDesenhosOS();
+ok('18. so os desenhos do SKU da matriz (CM.LISA), em qualquer cor',
+   opcoes(t.ctx) === 2 && /value="d1"/.test(t.ctx.el['f-desenho'].innerHTML) && /value="d4"/.test(t.ctx.el['f-desenho'].innerHTML),
+   t.ctx.el['f-desenho'].innerHTML);
+ok('19. os de outro SKU nao aparecem', !/value="d2"|value="d3"/.test(t.ctx.el['f-desenho'].innerHTML),
+   t.ctx.el['f-desenho'].innerHTML);
+ok('20. e a conta diz qual SKU', /SKU CM\.LISA da OS 0700/.test(t.ctx.el['f-desenho-conta'].textContent),
+   t.ctx.el['f-desenho-conta'].textContent);
+t = ctxDe('polo', 'd1', { copiaId: 'c1', origemId: 'o1' });
+t.api.filtrarDesenhosOS();
+ok('21. buscar outro SKU nao o traz de volta', !/value="d3"/.test(t.ctx.el['f-desenho'].innerHTML),
+   t.ctx.el['f-desenho'].innerHTML);
+t = ctxDe('', '');
+t.api.filtrarDesenhosOS();
+ok('22. fora da OS conjugada, a lista inteira', opcoes(t.ctx) === 4, String(opcoes(t.ctx)));
+DESENHOS.pop();
 
 console.log('');
 console.log('-- na tela --');
