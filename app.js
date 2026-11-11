@@ -16910,8 +16910,44 @@ function _expRelatorioLinhas(rel) {
     <tr class="rel-sub"><td colspan="2">Total da OE · ${fmt(x.os.length)} OS</td><td class="rel-num">${fmt(x.volumes)}</td></tr>`).join('');
 }
 
+/* O MESMO RELATÓRIO, POR SKU (11/11/2026, Junior: "acrescenta abaixo das
+   informações da folha as mesmas informações, mas com formato organizado por
+   sku"). As mesmas linhas da tabela por OE (OS × OE × volume), agrupadas pelo
+   SKU que a tabela de cima mostra para a OS: uma OS com duas cores fica no
+   grupo "A / B", como está escrito nela. A mesma OS em duas OE são duas linhas
+   (uma por expedição), e o total do SKU soma as duas. OS sem SKU fica num grupo
+   próprio, no fim. */
+function _expRelatorioPorSku(rel) {
+  const mapa = new Map();
+  rel.oes.forEach(x => x.os.forEach(o => {
+    const k = o.sku || '';
+    if (!mapa.has(k)) mapa.set(k, { sku: k, linhas: [], volumes: 0, os: new Set() });
+    const g = mapa.get(k);
+    g.linhas.push({ oe: x.oe, data: x.data, janela: x.janela, os: o.os, volumes: o.volumes });
+    g.volumes += Number(o.volumes) || 0;
+    g.os.add(String(o.os));
+  }));
+  return [...mapa.values()]
+    .map(g => Object.assign(g, { nOS: g.os.size }))
+    .sort((a, b) => (a.sku ? 0 : 1) - (b.sku ? 0 : 1) || a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true }));
+}
+
+// As linhas da tabela por SKU, iguais na tela e na impressão.
+function _expRelatorioLinhasSku(grupos) {
+  const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
+  return grupos.map(g => g.linhas.map((l, idx) => `
+    <tr class="${idx === 0 ? 'rel-oe-ini' : ''}">
+      ${idx === 0 ? `<td rowspan="${g.linhas.length + 1}" class="rel-sku rel-oe">${g.sku ? esc(g.sku) : '<span title="OS sem SKU: nem no modelo, nem no desenho técnico, nem escrito na OS">Sem SKU</span>'}</td>` : ''}
+      <td><b>${l.oe ? 'OE ' + _oeFmt(l.oe) : 'OE sem nº'}</b> <span class="rel-data">${_EXP_DIAS_CURTO[_expData(l.data).getDay()]} · ${esc(formatDate(l.data))}${l.janela ? ' · ' + esc(l.janela) : ''}</span></td>
+      <td class="rel-os">OS ${esc(l.os)}</td>
+      <td class="rel-num">${l.volumes > 0 ? fmt(l.volumes) : '—'}</td>
+    </tr>`).join('') + `
+    <tr class="rel-sub"><td colspan="2">Total do SKU · ${fmt(g.nOS)} OS</td><td class="rel-num">${fmt(g.volumes)}</td></tr>`).join('');
+}
+
 function _expRelatorioHtml(ocs) {
   const rel = _expRelatorioVolumes(ocs);
+  const porSku = _expRelatorioPorSku(rel);
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const corpo = rel.oes.length ? `
       <div style="max-height:520px;overflow:auto;">
@@ -16919,6 +16955,14 @@ function _expRelatorioHtml(ocs) {
         <thead><tr><th>OE</th><th>OS</th><th>SKU</th><th style="text-align:right;" title="Unidades completas (produtos)">Volume (un.)</th></tr></thead>
         <tbody>${_expRelatorioLinhas(rel)}</tbody>
         <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
+      </table>
+      </div>
+      <h3 style="margin:14px 0 6px;font-size:13px;">Por SKU</h3>
+      <div style="max-height:520px;overflow:auto;">
+      <table class="table exp-rel-tab">
+        <thead><tr><th>SKU</th><th>OE</th><th>OS</th><th style="text-align:right;" title="Unidades completas (produtos)">Volume (un.)</th></tr></thead>
+        <tbody>${_expRelatorioLinhasSku(porSku)}</tbody>
+        <tfoot><tr><td>Total do período · ${fmt(porSku.length)} SKU</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
       </table>
       </div>`
     : `<div class="empty" style="padding:12px 0;">Nenhuma OE com OS alocada ${esc(_EXP_VAZIO_PERIODO[expPlanoModo] || 'neste período')}.</div>`;
@@ -16942,6 +16986,7 @@ function imprimirRelatorioVolumesExp() {
   if (!rel.oes.length) return toast('Nenhuma OE com OS alocada neste período', 'err');
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
   const titulo = 'Relatório de volumes por OE · ' + _expLabelPeriodo(expPlanoModo, expPlanoAncora);
+  const porSku = _expRelatorioPorSku(rel);
   const w = window.open('', '_blank');
   if (!w) return toast('O navegador bloqueou a janela de impressão. Libere pop-ups para este site.', 'err');
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title>
@@ -16966,6 +17011,12 @@ function imprimirRelatorioVolumesExp() {
   <thead><tr><th style="width:24%;">OE</th><th style="width:14%;">OS</th><th>SKU</th><th style="width:16%;text-align:right;">Volume (un.)</th></tr></thead>
   <tbody>${_expRelatorioLinhas(rel)}</tbody>
   <tfoot><tr><td>Total do período · ${fmt(rel.oes.length)} OE</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
+</table>
+<h2 style="font-size:12pt;margin:14px 0 6px;">Por SKU</h2>
+<table>
+  <thead><tr><th style="width:24%;">SKU</th><th>OE</th><th style="width:14%;">OS</th><th style="width:16%;text-align:right;">Volume (un.)</th></tr></thead>
+  <tbody>${_expRelatorioLinhasSku(porSku)}</tbody>
+  <tfoot><tr><td>Total do período · ${fmt(porSku.length)} SKU</td><td colspan="2">${fmt(rel.totalOS)} OS</td><td class="rel-num">${fmt(rel.totalVolumes)} un.</td></tr></tfoot>
 </table>
 <script>window.onload = function () { window.print(); };<\/script>
 </body></html>`);

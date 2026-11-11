@@ -56,8 +56,10 @@ const f = new Function('STATE', 'PERNAS', `
   ${corta('const _oeFmt', ';\n')}
   ${corta('function _oeNumeroDe', '\n}')}
   ${corta('function _expRelatorioVolumes', '\n}')}
-  ${corta('function _expRelatorioLinhas', '\n}')}
-  return { _expRange, _expNavegar, _expLabelPeriodo, _expRelatorioVolumes, _expRelatorioLinhas };
+  ${corta('function _expRelatorioLinhas(', '\n}')}
+  ${corta('function _expRelatorioPorSku', '\n}')}
+  ${corta('function _expRelatorioLinhasSku', '\n}')}
+  return { _expRange, _expNavegar, _expLabelPeriodo, _expRelatorioVolumes, _expRelatorioLinhas, _expRelatorioPorSku, _expRelatorioLinhasSku };
 `)(STATE, PERNAS);
 
 // Período anual
@@ -89,6 +91,21 @@ ok(rel.oes[0].os[0].sku === 'CM.LISA-AZU / CM.LISA-BRA', 'OS com duas cores most
 const html = f._expRelatorioLinhas(rel);
 ok(html.includes('OE 0085') && html.includes('OS 0610') && html.includes('CM.LISA-PRE') && html.includes('Total da OE'), 'tabela mostra nº da OE, OS, SKU e total');
 ok(/OS 0610<\/td>\s*<td class="rel-sku">CM\.LISA-PRE/.test(html), 'SKU logo na frente da OS');
+
+// Por SKU (11/11/2026): as mesmas linhas, agrupadas pelo SKU.
+const porSku = f._expRelatorioPorSku(rel);
+ok(porSku.map(g => g.sku).join(' | ') === 'BM.TRI | CM.LISA-AZU / CM.LISA-BRA | CM.LISA-PRE', 'um grupo por SKU, em ordem alfabética');
+ok(porSku.reduce((s, g) => s + g.volumes, 0) === rel.totalVolumes, 'a soma dos SKUs bate com o total do período');
+const pre = porSku.find(g => g.sku === 'CM.LISA-PRE');
+ok(pre.volumes === 700 && pre.nOS === 1 && pre.linhas[0].oe === 85, 'CM.LISA-PRE: OS 0610 na OE 85, 700 un.');
+const htmlSku = f._expRelatorioLinhasSku(porSku);
+ok(htmlSku.includes('Total do SKU') && htmlSku.includes('OE 0085') && htmlSku.includes('OS 0610'), 'tabela por SKU mostra OE, OS e total do SKU');
+// A mesma OS em duas OE: duas linhas no SKU, uma OS só na contagem.
+const rel2 = { oes: [{ oe: 90, data: '2026-11-05', janela: 'M', os: [{ os: '0700', sku: 'CM.TRI-BEGE', volumes: 100 }] },
+  { oe: 91, data: '2026-11-06', janela: 'M', os: [{ os: '0700', sku: 'CM.TRI-BEGE', volumes: 50 }, { os: '0701', sku: '', volumes: 10 }] }] };
+const s2 = f._expRelatorioPorSku(rel2);
+ok(s2[0].sku === 'CM.TRI-BEGE' && s2[0].linhas.length === 2 && s2[0].nOS === 1 && s2[0].volumes === 150, 'mesma OS em duas OE: 2 linhas, 1 OS, volumes somados');
+ok(s2[1].sku === '' && f._expRelatorioLinhasSku(s2).includes('Sem SKU'), 'OS sem SKU fica no fim, como "Sem SKU"');
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\ntudo certo');
 process.exit(falhas ? 1 : 0);
