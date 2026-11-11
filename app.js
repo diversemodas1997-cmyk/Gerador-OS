@@ -16682,7 +16682,8 @@ function _oeBuscaExec(q) {
   }
   matches.sort((a, b) => String(b.anchor).localeCompare(String(a.anchor)));
   box.innerHTML = matches.slice(0, 25).map(m =>
-    `<div class="oe-busca-item" onmousedown="irParaOeDia('${esc(m.anchor)}','${esc(m.janelaId)}','${esc(m.dataOrig)}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line-2);font-size:13px;">`
+    // Sem os quadros na tela, escolher a OE na busca abre a folha dela.
+    `<div class="oe-busca-item" onmousedown="expFolhaDaOe('${esc(m.janelaId)}','${esc(m.dataOrig)}')" title="Abre a folha desta OE" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line-2);font-size:13px;">`
     + `<strong>${esc(m.dow)} ${esc(m.dataBr)}</strong> · ${esc(m.janela)} <span style="color:var(--ink-3);">· ${m.n} OS</span></div>`
   ).join('');
   box.style.display = 'block';
@@ -17402,7 +17403,10 @@ function renderExpedicaoPlano() {
           ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => `
             <tr${oc.cancelada ? ' style="opacity:.55;"' : ''}>
               <td class="col-actions row-actions">
-                <button onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha desta OE, para ver e imprimir">folha</button>
+                <button onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha do plano só desta OE, para imprimir ou salvar">🖨 folha</button>
+                <button class="edit" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">horário / cancelar / remarcar</button>
+                ${oc.cancelada ? '' : `<button onclick="abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário — um segundo caminhão">+ no turno</button>`}
+                <button class="edit" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')" title="Edita a janela desta expedição: nome, dias e horários de ida e volta">editar janela</button>
               </td>
               <td><span class="exp-oe-num">OE ${_oeFmt(n)}</span></td>
               <td style="white-space:nowrap;">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}${
@@ -17505,14 +17509,15 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  /* SÓ A TABELA "OE CRIADAS" (11/11/2026, Junior: "retire o seletor só OE criada.
-     Mostre apenas o quadro OE criadas"). A aba deixou de mostrar a barra do
-     período, a busca, os totais, os quadros de cada expedição, as OS pendentes
-     e as janelas: fica a lista de todas as OE com número, da mais nova para a
-     mais antiga, e a folha de cada uma. O resto continua sendo montado acima
-     (é o mesmo código que alimenta a folha e o relatório) e fica fora da tela.
-     Para voltar a mostrar algo, é acrescentar na linha abaixo. */
-  cont.innerHTML = oesCriadasHtml || `<div class="card"><div class="empty" style="padding:24px 0;text-align:center;">Nenhuma OE criada ainda. <button class="btn primary" style="margin-left:8px;" onclick="novaOE()">+ Nova OE</button></div></div>`;
+  /* O CABEÇALHO DE VOLTA + SÓ A TABELA "OE CRIADAS" (11/11/2026, Junior: "volte
+     o cabeçalho do planejamento de expedição como era, mas mantenha apenas o
+     quadro que mostra OE existentes"). Voltam a barra (período, ordem,
+     expandir/contrair, + Janela, ⚙, ↻), a busca de OE, o "como funciona" e os
+     totais do período. Abaixo, só a tabela das OE criadas: os quadros de cada
+     expedição, as OS sem carga e as janelas cadastradas continuam fora da tela
+     (são montados acima porque o mesmo código alimenta a folha e o relatório). */
+  const semOeHtml = `<div class="card"><div class="empty" style="padding:24px 0;text-align:center;">Nenhuma OE criada ainda. <button class="btn primary" style="margin-left:8px;" onclick="novaOE()">+ Nova OE</button></div></div>`;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (oesCriadasHtml || semOeHtml);
 }
 
 /* ---------------- modais ---------------- */
