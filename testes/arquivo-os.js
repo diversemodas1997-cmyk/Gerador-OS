@@ -69,9 +69,11 @@ const os = (n, st, extra = {}) => ({ id: 'id' + n, os: String(n).padStart(4, '0'
 (async () => {
   console.log('1. escolha');
   const lista = [];
-  for (let n = 1; n <= 150; n++) lista.push(os(n, 'finalizado'));
-  lista[4].statusOS = 'estoque';                       // 0005 antiga, ainda ativa
+  // 'estoque' é o fim do caminho hoje (11/11/2026); 'finalizado' é carimbo antigo.
+  for (let n = 1; n <= 150; n++) lista.push(os(n, 'estoque'));
+  lista[4].statusOS = 'parado';                        // 0005 antiga, ainda ativa
   lista[9].statusOS = 'cancelado';                     // 0010 cancelada: vai
+  lista[14].statusOS = 'finalizado';                   // 0015 carimbo antigo: vai
   lista[19].conjugadaStatusPaiId = 'id21';             // 0020 segue a 0021...
   lista[20].statusOS = 'ensacado';                     // ...que ainda anda: 0020 fica
   lista[29].conjugadaPaiId = 'id31';                   // 0030 e 0031 finalizadas: vão juntas
@@ -81,7 +83,10 @@ const os = (n, st, extra = {}) => ({ id: 'id' + n, os: String(n).padStart(4, '0'
   ok(esc.length === 47, `47 escolhidas (50 antigas - 0005 ativa - 0020/0021 família ativa): ${esc.length}`);
   ok(!esc.some(id => Number(id.slice(2)) > 50), 'nenhuma das 100 mais recentes (0051-0150)');
   ok(!esc.includes('id5') && !esc.includes('id20') && !esc.includes('id21'), 'ativa e família de ativa ficam');
-  ok(esc.includes('id10') && esc.includes('id30') && esc.includes('id31'), 'cancelada e família toda finalizada vão');
+  ok(esc.includes('id10') && esc.includes('id30') && esc.includes('id31'), 'cancelada e família toda em Estoque vão');
+  ok(esc.includes('id1') && esc.includes('id15'), 'OS em Estoque vai; carimbo antigo "finalizado" também');
+  ok(!ctx._osArqEscolher([os(1, 'ensacado'), os(2, 'transito-volta'), os(3, 'estoque-fio')], o => o.statusOS, 0, new Set()).length,
+    'ensacada, em trânsito e com fio ficam ativas');
   ok(!esc.includes('semnum'), 'OS sem número fica');
   ok(esc[0] === 'id1', 'da mais antiga para a mais nova');
 

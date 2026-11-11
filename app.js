@@ -4003,9 +4003,16 @@ const _TELAS_SKU_ESTOQUE = ['acab-estoque', 'acab-produtos', 'acab-cmp'];
    que ninguém mais edita.
 
    O QUE ARQUIVA. Só OS que (1) estão FORA das 100 de número mais alto e
-   (2) estão finalizadas ou canceladas — e cuja família conjugada inteira
-   também pode ir. OS antiga ainda em estoque, ensacada, parada etc. continua
-   ativa: ela ainda anda na fábrica. As 100 mais recentes nunca saem.
+   (2) terminaram — status Estoque (peças prontas no estoque) ou Cancelado — e
+   cuja família conjugada inteira também pode ir. OS antiga ensacada, em
+   trânsito, com fio, parada etc. continua ativa: ela ainda anda na fábrica.
+   As 100 mais recentes nunca saem.
+
+   ESTOQUE ENTROU EM 11/11/2026 (Junior: "inclua as OS em Estoque no
+   arquivamento"). "Finalizado" não é mais status do programa (não está em
+   STATUS_OS): o carimbo antigo é ignorado e a OS vale pelo checklist, que diz
+   Estoque. Só com Finalizado e Cancelado, a primeira rodada arquivou 15 OS em
+   vez de ~265. O status lido é o da lista de OS (_statusOS), não o campo.
 
    O QUE NÃO MUDA — E ESTE É O PONTO. O estoque deste programa é CALCULADO das
    OS (baixas de aviamento, de material, de tecido, saldos por fase), e os
@@ -4025,7 +4032,9 @@ const _TELAS_SKU_ESTOQUE = ['acab-estoque', 'acab-produtos', 'acab-cmp'];
    não existe, o arquivo não carregou), nada é arquivado.
    ========================================================= */
 const OS_ARQ_MANTER = 100;                         // as N de número mais alto nunca saem
-const OS_ARQ_STATUS = ['finalizado', 'cancelado']; // só o que já terminou
+// Só o que já terminou. 'finalizado' fica por segurança (carimbo da versão
+// antiga, caso volte a valer); hoje o fim do caminho é 'estoque'.
+const OS_ARQ_STATUS = ['estoque', 'cancelado', 'finalizado'];
 const OS_ARQ_TABELA = 'os_arquivadas';
 const OS_ARQ_LOTE = 40;                            // OS por gravação na tabela
 const OS_ARQ_MAX_POR_RODADA = 300;
@@ -4311,7 +4320,7 @@ async function arquivarOSAntigas({ manual = false } = {}) {
       .filter(Boolean).map(String));
     const ids = _osArqEscolher(STATE.ordens, _statusOS, OS_ARQ_MANTER, new Set(_osArq.porId.keys()))
       .filter(id => !abertas.has(id)).slice(0, OS_ARQ_MAX_POR_RODADA);
-    if (!ids.length) return avisar('nenhuma OS antiga finalizada para arquivar.', 'ok');
+    if (!ids.length) return avisar('nenhuma OS antiga em Estoque ou cancelada para arquivar.', 'ok');
     const porId = new Map((STATE.ordens || []).map(o => [String(o.id), o]));
     const linhas = ids.map(id => {
       const o = porId.get(id);
@@ -4384,7 +4393,7 @@ function _osArqContaHtml() {
   const n = _osArq.porId.size;
   if (!n) return '';
   return ` · <a href="#" class="lista-os-arquivo" onclick="alternarArquivadasListaOS(); return false;"
-      title="OS antigas finalizadas ou canceladas guardam-se à parte, para o programa salvar mais rápido. Buscar pelo número também as encontra.">`
+      title="OS antigas já em Estoque ou canceladas guardam-se à parte, para o programa salvar mais rápido. Buscar pelo número também as encontra.">`
     + (_osArqVerNaLista ? `esconder as ${n.toLocaleString('pt-BR')} arquivadas` : `ver ${n.toLocaleString('pt-BR')} arquivadas`)
     + `</a>`;
 }
