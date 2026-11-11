@@ -17641,6 +17641,14 @@ function abrirModalExpCarga(janelaId, dataOrig, perna, osIdPre = '', cargaId = '
   const daCarga = cargaEdit && cargaEdit.data ? String(cargaEdit.data) : '';
   let de = ini < hoje ? ini : hoje;
   if (daCarga && daCarga < de) de = daCarga;
+  // E A DA OE CLICADA (11/11/2026): o + Alocar OS do quadro aberto pela tabela
+  // "OE criadas" pode ser de uma OE antiga, fora do período; sem ela na lista o
+  // seletor cairia na primeira opção e a OS iria para outra expedição.
+  if (janelaId && dataOrig) {
+    const exc = (STATE.expedicaoExcecoes || []).find(e => e.janelaId === janelaId && e.data === dataOrig);
+    const efetiva = exc && exc.tipo === 'remarcada' && exc.novaData ? exc.novaData : dataOrig;
+    [dataOrig, efetiva].forEach(d => { if (d < de) de = d; });
+  }
   const ocs = ocorrenciasExpedicao(de, _expAddDias(fim, 90)).filter(o => !o.cancelada);
   const selecionada = janelaId ? `${janelaId}|${dataOrig}|${perna}` : '';
   const opts = ocs.map(oc => ['ida', 'volta'].map(p => {
@@ -18304,8 +18312,9 @@ function _expHorasIdaDoDia(data) {
 
 function abrirModalExpExtra(janelaId, dataOrig) {
   if (!exigirEdicao('cadastrar janelas de expedição')) return;
-  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
-  const oc = ocorrenciasExpedicao(_expAddDias(ini, -1), _expAddDias(fim, 1))
+  // Procura pela data da OE (a tabela "OE criadas" traz OE fora do período).
+  // A ocorrência pode ter sido remarcada: o intervalo cobre 60 dias em volta.
+  const oc = ocorrenciasExpedicao(_expAddDias(dataOrig, -60), _expAddDias(dataOrig, 60))
     .find(o => o.janela.id === janelaId && o.dataOrig === dataOrig);
   if (!oc) return toast('Expedição não encontrada no período', 'err');
   const data = oc.data;
@@ -24416,7 +24425,15 @@ function renderPrintPlanoExpedicao() {
   const sheet = document.getElementById('print-sheet-exp');
   if (!sheet) return;
   const cfg = expCfg();
-  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  /* A FOLHA DE UMA OE OLHA O DIA DELA (11/11/2026, Junior: "analise por que as
+     folhas de OE estão vazias"). Ela procurava a OE dentro do período navegado
+     no planejamento (o padrão é o dia de hoje). Enquanto a folha só abria pelo
+     quadro, a OE estava sempre no período; desde que a aba mostra a tabela "OE
+     criadas" — todas as OE, de qualquer data — a folha de uma OE de outro dia
+     saía vazia ("Nenhuma Ordem de Expedição produzida…"). Com uma OE escolhida,
+     o intervalo é o dia efetivo dela; sem, continua o período. */
+  const _diaFolha = _expFolhaDia();
+  const { ini, fim } = _diaFolha ? { ini: _diaFolha, fim: _diaFolha } : _expRange(expPlanoModo, expPlanoAncora);
   // A folha impressa só traz data com OE PRODUZIDA: precisa ter carga/OS alocada
   // em alguma das pernas. Dia agendado e vazio não vira papel. Cancelada também
   // sai, mesmo que tenha carga alocada antes do cancelamento — sem as pernas
