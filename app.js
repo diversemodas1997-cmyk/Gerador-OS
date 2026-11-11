@@ -4387,6 +4387,32 @@ function _osArqFiltrarLista(lista, comBusca) {
 function alternarArquivadasListaOS() {
   _osArqVerNaLista = !_osArqVerNaLista;
   renderListaOS();
+  // Mostrou: rola até a primeira arquivada — é onde a sequência continua.
+  if (_osArqVerNaLista) {
+    const tr = document.querySelector('#tbl-os tr.os-arquivada');
+    if (tr && tr.scrollIntoView) tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/* A ÚLTIMA LINHA DA LISTA (11/11/2026, Junior: "insira o texto clicável ver OS
+   arquivadas na última linha da lista de OS. Quando o usuário clicar no texto,
+   mostrar a sequência de onde elas deveriam estar"). O mesmo botão do link ao
+   lado da contagem, no fim da tabela — é onde quem procura uma OS antiga chega
+   rolando. Clicado, as arquivadas entram na lista no lugar delas pela ordem do
+   número (a lista já é ordenada assim), marcadas e num tom mais claro. Com
+   busca ou grupo do Ranking elas já aparecem, e a linha não precisa existir. */
+function _osArqLinhaFinalHtml(jaAparecem) {
+  const n = _osArq.porId.size;
+  if (!n || jaAparecem) return '';
+  const fmt = x => x.toLocaleString('pt-BR');
+  return `<tr class="lista-os-arq-linha"><td colspan="12">
+      <a href="#" class="lista-os-arquivo" onclick="alternarArquivadasListaOS(); return false;">${_osArqVerNaLista
+        ? 'esconder as OS arquivadas (' + fmt(n) + ')'
+        : 'ver OS arquivadas (' + fmt(n) + ')'}</a>
+      <span class="muted">${_osArqVerNaLista
+        ? '— estão na lista acima, cada uma no lugar do seu número, com o selo "arquivada"'
+        : '— entram na lista no lugar de cada uma, pela ordem do número'}</span>
+    </td></tr>`;
 }
 
 function _osArqContaHtml() {
@@ -39668,7 +39694,7 @@ function renderListaOS() {
     // as três, e uma peça de uma cor só não herda as três do enfesto.
     const cores = coresDaPecaOS(o);
     return `
-    <tr>
+    <tr${_osArqEhArquivada(o) ? ' class="os-arquivada"' : ''}>
       <td class="col-actions row-actions">
         ${_statusCelulaOS(o)}
         <button class="edit" onclick="verOS('${o.id}')">visualizar</button>
@@ -39704,7 +39730,7 @@ function renderListaOS() {
       <td>${_faltaCelulaOS(o, faltas)}</td>
 
     </tr>`;
-  }).join('');
+  }).join('') + _osArqLinhaFinalHtml(!!doGrupo || termos.length > 0);
 }
 
 /* ========================================================= */

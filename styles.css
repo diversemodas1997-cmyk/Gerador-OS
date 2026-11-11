@@ -5162,3 +5162,12 @@ body.pode-os-criar-conjugada section[data-page="nova-os"].modo-plan.conjugada-no
 .nc-ficha .form-grid { grid-template-columns: 1fr; }
 .nc-nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .nc-nav:empty { display: none; }
+
+/* ARQUIVO DE OS na lista (11/11/2026): a linha final com "ver OS arquivadas"
+   e a OS arquivada num tom mais claro, para a sequência se ler de uma vez. */
+.lista-os-arquivo { color: var(--ink-2); text-decoration: underline; cursor: pointer; }
+.lista-os-arquivo:hover { text-decoration: none; }
+#tbl-os tr.lista-os-arq-linha td { text-align: center; padding: 12px 8px; background: var(--paper-2, rgba(0,0,0,.03)); }
+#tbl-os tr.lista-os-arq-linha .lista-os-arquivo { font-weight: 700; }
+#tbl-os tr.os-arquivada td { opacity: .62; }
+#tbl-os tr.os-arquivada:hover td { opacity: 1; }

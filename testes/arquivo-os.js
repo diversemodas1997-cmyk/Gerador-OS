@@ -59,7 +59,8 @@ function montar(ordens, supa, extra = {}) {
   vm.createContext(ctx);
   vm.runInContext(trecho + '\nthis._osArq = _osArq; this._osArqSerializarOrdens = _osArqSerializarOrdens;'
     + 'this._osArqEscolher = _osArqEscolher; this._osArqJuntarNoState = _osArqJuntarNoState;'
-    + 'this.arquivarOSAntigas = arquivarOSAntigas; this._osArqFiltrarLista = _osArqFiltrarLista;', ctx);
+    + 'this.arquivarOSAntigas = arquivarOSAntigas; this._osArqFiltrarLista = _osArqFiltrarLista;'
+    + 'this._osArqLinhaFinalHtml = _osArqLinhaFinalHtml; this.verArq = v => { _osArqVerNaLista = v; };', ctx);
   ctx.gravacoes = gravacoes;
   return ctx;
 }
@@ -100,6 +101,13 @@ const os = (n, st, extra = {}) => ({ id: 'id' + n, os: String(n).padStart(4, '0'
   ok(ctx.STATE.ordens.length === 151, 'memória continua com as 151 (estoque e relatórios inalterados)');
   ok(ctx._osArqFiltrarLista(ctx.STATE.ordens, false).length === 104, 'lista mostra 104 ativas por padrão');
   ok(ctx._osArqFiltrarLista(ctx.STATE.ordens, true).length === 151, 'com busca, mostra todas');
+  // A última linha da lista (11/11/2026): o texto clicável.
+  ok(/ver OS arquivadas \(47\)/.test(ctx._osArqLinhaFinalHtml(false)), 'última linha: "ver OS arquivadas (47)"');
+  ok(ctx._osArqLinhaFinalHtml(true) === '', 'com busca ou grupo elas já aparecem: sem a linha');
+  ctx.verArq(true);
+  ok(/esconder as OS arquivadas \(47\)/.test(ctx._osArqLinhaFinalHtml(false)), 'clicado: vira "esconder"');
+  ok(ctx._osArqFiltrarLista(ctx.STATE.ordens, false).length === 151, 'clicado: a lista mostra as arquivadas também');
+  ctx.verArq(false);
   await ctx.arquivarOSAntigas();
   ok(ctx.gravacoes.length === 1, 'segunda rodada não tem o que arquivar');
 
