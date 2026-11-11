@@ -16751,6 +16751,43 @@ function expAlternarOe(janelaId, dataOrig) {
   _expGuardarAbertas();
   renderExpedicaoPlano();
 }
+/* NOVA OE (11/11/2026, Junior: "insira botão Nova OE. Essa OE nova deve estar
+   automaticamente com o próximo número e corresponder pelo dia atual").
+   A OE é uma expedição (janela + dia), e o número nasce na primeira OS alocada
+   nela (_oeNumeroGarantir: o maior que alguma carga carrega + 1). Então o botão:
+     1. pega a expedição de HOJE que ainda não tem OE (a de hora mais cedo);
+        sem nenhuma, cria uma expedição extra para hoje, no próximo horário
+        livre (múltiplo de 15 min a partir de agora), com volta 1 h depois;
+     2. abre a janela de alocar OS já nela, com o título "Nova OE 0095 · hoje".
+   O número só fica gravado quando a OS é salva — cancelar não gasta número, e
+   clicar de novo reaproveita a mesma expedição de hoje (ela continua sem OE). */
+async function novaOE() {
+  if (!exigirEdicao('criar uma OE')) return;
+  const hoje = _expHoje();
+  const semOe = ocorrenciasExpedicao(hoje, hoje)
+    .filter(o => !o.cancelada && o.data === hoje && !(_oeNumeroDe(o.janela.id, o.dataOrig) > 0))
+    .sort((a, b) => String(a.horaIda || '').localeCompare(String(b.horaIda || '')));
+  let alvo = semOe[0] ? { janelaId: semOe[0].janela.id, dataOrig: semOe[0].dataOrig } : null;
+  if (!alvo) {
+    const hhmm = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+    const agora = new Date();
+    let min = Math.min(23 * 60 + 45, Math.ceil((agora.getHours() * 60 + agora.getMinutes()) / 15) * 15);
+    const ocupadas = _expHorasIdaDoDia(hoje);
+    while (ocupadas.includes(hhmm(min)) && min < 23 * 60 + 59) min++;
+    const horaIda = hhmm(min), horaVolta = hhmm(Math.min(23 * 60 + 59, min + 60));
+    if (!Array.isArray(STATE.expedicaoJanelas)) STATE.expedicaoJanelas = [];
+    const j = { id: uid(), nome: 'Nova OE · ' + horaIda, tipo: 'data', diasSemana: [], data: hoje,
+      horaIda, horaVolta, volMin: '', volMax: '', ativo: true, obs: 'criada pelo botão Nova OE' };
+    STATE.expedicaoJanelas.push(j);
+    await saveState('expedicaoJanelas');
+    alvo = { janelaId: j.id, dataOrig: hoje };
+  }
+  const prox = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0) + 1;
+  abrirModalExpCarga(alvo.janelaId, alvo.dataOrig, 'ida');
+  const t = document.getElementById('modal-exp-title');
+  if (t) t.textContent = 'Nova OE ' + _oeFmt(prox) + ' · hoje, ' + formatDate(hoje) + ' — escolha a OS';
+}
+
 // FOLHA DE UMA OE SÓ (26/10/2026, Junior: "insira em cada quadro expandido da
 // OE o botão Folha do plano" e "retire o botão do cabeçalho da página"). A
 // folha que se abre pelo quadro traz só aquela OE; o auto-save diário da pasta
@@ -17353,7 +17390,10 @@ function renderExpedicaoPlano() {
   }
   const oesCriadasHtml = oesCriadas.length ? `
     <div class="card">
-      <h2 style="margin:0 0 8px;font-size:14px;">OE criadas <span class="exp-badge info">${oesCriadas.length}</span></h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">OE criadas <span class="exp-badge info">${oesCriadas.length}</span></h2>
+        <button class="btn primary" onclick="novaOE()" title="Cria a próxima OE, com o dia de hoje: escolha a OS e salve">+ Nova OE</button>
+      </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Todas as expedições que já têm número, da mais nova para a mais antiga — inclusive fora do período mostrado acima. Use <b>folha</b> para ver e imprimir a OE.</div>
       <div style="max-height:420px;overflow:auto;">
       <table class="table">
@@ -17472,7 +17512,7 @@ function renderExpedicaoPlano() {
      mais antiga, e a folha de cada uma. O resto continua sendo montado acima
      (é o mesmo código que alimenta a folha e o relatório) e fica fora da tela.
      Para voltar a mostrar algo, é acrescentar na linha abaixo. */
-  cont.innerHTML = oesCriadasHtml || `<div class="card"><div class="empty" style="padding:24px 0;text-align:center;">Nenhuma OE criada ainda.</div></div>`;
+  cont.innerHTML = oesCriadasHtml || `<div class="card"><div class="empty" style="padding:24px 0;text-align:center;">Nenhuma OE criada ainda. <button class="btn primary" style="margin-left:8px;" onclick="novaOE()">+ Nova OE</button></div></div>`;
 }
 
 /* ---------------- modais ---------------- */
