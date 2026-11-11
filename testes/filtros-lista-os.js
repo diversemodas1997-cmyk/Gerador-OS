@@ -177,6 +177,11 @@ const conta = new Function('ctx', `
   ${recorte('function _numeroOSCanonico', 'o numero canonico da OS')}
   ${recorte('function _numerosOSExistentes', 'os numeros que existem')}
   ${recorte('function _osNumerosFaltando', 'os numeros que faltam')}
+  // O link "ver N arquivadas" (ARQUIVO DE OS, 11/11/2026): sem OS arquivada
+  // ele não escreve nada, que é o caso destes testes.
+  const _osArq = { porId: new Map() };
+  let _osArqVerNaLista = false;
+  ${recorte('function _osArqContaHtml', 'o link das arquivadas')}
   ${recorte('function _contaListaOS', 'a conta da lista')}
   return _contaListaOS;
 `)(contaCtx);

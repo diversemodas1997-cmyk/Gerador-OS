@@ -148,6 +148,34 @@ function git(args) {
         clean[k] = v;
       }
     }
+    // 2b) As OS ARQUIVADAS (tabela os_arquivadas, desde 11/11/2026) voltam para
+    // dentro de `ordens`: o blob so tem as ativas, e o backup tem de continuar
+    // completo e importavel. Sem a tabela (servidor antigo) segue so com o blob.
+    if (Array.isArray(clean.ordens)) {
+      try {
+        const tem = new Set(clean.ordens.map(o => String(o && o.id)));
+        let n = 0;
+        for (let de = 0; ; de += 500) {
+          const arqRes = await fetch(`${SUPA_URL}/rest/v1/os_arquivadas?removida=eq.false&select=id,dados&order=seq&offset=${de}&limit=500`, {
+            headers: { apikey: ANON, Authorization: `Bearer ${auth.access_token}` },
+          });
+          if (!arqRes.ok) {
+            if (arqRes.status !== 404) log(`AVISO: leitura de os_arquivadas falhou (HTTP ${arqRes.status}) — backup sai so com as OS ativas`);
+            break;
+          }
+          const arq = await arqRes.json();
+          if (!Array.isArray(arq) || !arq.length) break;
+          arq.forEach(r => {
+            if (tem.has(String(r.id))) return;
+            try { clean.ordens.push(JSON.parse(r.dados)); tem.add(String(r.id)); n++; } catch (e) { }
+          });
+          if (arq.length < 500) break;
+        }
+        if (n) log(`OS arquivadas incluidas no backup: ${n}`);
+      } catch (e) {
+        log(`AVISO: OS arquivadas fora do backup (${e.message || e})`);
+      }
+    }
     const nOrd = Array.isArray(clean.ordens) ? clean.ordens.length : '?';
     const nDes = Array.isArray(clean.desenhos) ? clean.desenhos.length : '?';
 

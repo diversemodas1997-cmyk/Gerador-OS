@@ -55,6 +55,10 @@ const monta = (ctx) => new Function('ctx', `
   ${constante('DESFAZER_BYTES_MAX')}
   ${constante('DESFAZER_NOMES')}
   let _desfazerPilha = [], _desfazendo = false, _desfazerRotulo = '';
+  // ARQUIVO DE OS (11/11/2026): sem OS arquivada, gravar 'ordens' é o
+  // JSON.stringify de sempre, e a gravação nunca é a do arquivamento.
+  let _osArqGravando = false;
+  const _osArqSerializarOrdens = () => JSON.stringify(STATE.ordens);
   ${recorte('function _desfazerNome', 'o nome da chave')}
   ${recorte('function _desfazerFrase', 'a frase da acao')}
   ${recorte('function _desfazerTamanho', 'o tamanho da pilha')}

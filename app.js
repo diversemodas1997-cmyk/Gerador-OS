@@ -3786,6 +3786,7 @@ async function submeterAuth() {
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
     await migrarFotoDesenhoNasOS();  // OS sem a foto do desenho ganham a de agora (todo login, admin)
+    _osArqAgendarRotina();           // arquiva as OS antigas finalizadas (admin, 1 min depois e a cada 6 h)
     // Publica o snapshot de estoque p/ a Contabilidade ao entrar (só admin
     // escreve no blob). Garante que exista mesmo sem nenhuma edição na sessão.
     if (currentRole === 'admin') atualizarContabSnapshot();
@@ -3989,6 +3990,406 @@ const _CHAVES_OE = ['expedicaoCargas', 'expedicaoJanelas', 'expedicaoExcecoes', 
 
 const _CHAVES_SKU_ESTOQUE = ['desenhos', 'modelos', 'cores', 'ordens'];
 const _TELAS_SKU_ESTOQUE = ['acab-estoque', 'acab-produtos', 'acab-cmp'];
+/* =========================================================
+   ARQUIVO DE OS — as antigas saem do blob, as 100 recentes ficam à mão
+   =========================================================
+   11/11/2026, Junior: "insira a automação do programa em arquivar OS antigas,
+   deixando acesso imediato às 100 OS mais recentes".
+
+   POR QUE EXISTE. Toda a fábrica mora numa linha só (shared_data), e `ordens`
+   era quase metade dela: 466 OS, ~4 MB de JSON, subindo e descendo a cada
+   gravação de qualquer computador. Era o que deixava o salvamento lento e o
+   faz-de-novo do merge travando. A maior parte disso é OS FINALIZADA há meses,
+   que ninguém mais edita.
+
+   O QUE ARQUIVA. Só OS que (1) estão FORA das 100 de número mais alto e
+   (2) estão finalizadas ou canceladas — e cuja família conjugada inteira
+   também pode ir. OS antiga ainda em estoque, ensacada, parada etc. continua
+   ativa: ela ainda anda na fábrica. As 100 mais recentes nunca saem.
+
+   O QUE NÃO MUDA — E ESTE É O PONTO. O estoque deste programa é CALCULADO das
+   OS (baixas de aviamento, de material, de tecido, saldos por fase), e os
+   dashboards e a numeração também leem a lista inteira. Por isso a OS
+   arquivada sai só do BLOB gravado; NA MEMÓRIA ela continua em STATE.ordens,
+   e todo cálculo segue vendo exatamente o que via. O que muda:
+     · gravar `ordens` sobe só as ativas (_osArqSerializarOrdens, em saveState);
+     · a lista de OS mostra as ativas, e as arquivadas por um clique ou pela
+       busca (_osArqFiltrarLista);
+     · as arquivadas vêm da tabela os_arquivadas (sql/supabase-os-arquivadas.sql)
+       UMA vez, ficam guardadas neste navegador (IndexedDB), e depois só desce
+       o que mudou (coluna `seq`).
+
+   NADA SE PERDE. A OS só sai do blob DEPOIS de conferida na tabela. Se alguém
+   mexe numa OS arquivada (status, checklist, edição), ela VOLTA sozinha para
+   as ativas na gravação seguinte — o lado seguro de errar. Na dúvida (a tabela
+   não existe, o arquivo não carregou), nada é arquivado.
+   ========================================================= */
+const OS_ARQ_MANTER = 100;                         // as N de número mais alto nunca saem
+const OS_ARQ_STATUS = ['finalizado', 'cancelado']; // só o que já terminou
+const OS_ARQ_TABELA = 'os_arquivadas';
+const OS_ARQ_LOTE = 40;                            // OS por gravação na tabela
+const OS_ARQ_MAX_POR_RODADA = 300;
+const OS_ARQ_INTERVALO_MS = 6 * 3600 * 1000;       // a rotina volta a olhar a cada 6 h
+const OS_ARQ_SYNC_MIN_MS = 60 * 1000;              // releitura do arquivo: no máximo 1×/min
+const OS_ARQ_IDB = 'gerador-os-arquivo';
+
+// id -> { o: o objeto da OS (o MESMO que está em STATE.ordens), txt: o JSON
+// com que ela foi arquivada }. É o txt que diz se alguém mexeu nela depois.
+const _osArq = {
+  porId: new Map(), seq: 0, servidor: '',
+  carregado: false, syncOk: false, semTabela: false,
+  sincronizando: null, ultimaSync: 0, timer: null, rodando: false
+};
+// A gravação do PRÓPRIO arquivamento: não é ação de ninguém, então fica fora
+// do Desfazer e do diário (senão um Ctrl+Z "desarquivaria" 300 OS de uma vez).
+let _osArqGravando = false;
+// A lista de OS mostra as arquivadas? (botão ao lado da contagem)
+let _osArqVerNaLista = false;
+
+function _osArqNumero(o) {
+  const n = parseInt(String((o && o.os) || '').replace(/\D/g, ''), 10);
+  return n > 0 ? n : null;
+}
+
+/* QUAIS OS PODEM IR PARA O ARQUIVO. Pura (testes/arquivo-os.js): recebe a lista
+   inteira da memória, como ler o status, quantas manter e os ids já
+   arquivados; devolve os ids a arquivar, da mais antiga para a mais nova. */
+function _osArqEscolher(ordens, statusDe, manter, jaArquivados) {
+  const ja = jaArquivados || new Set();
+  const lista = (ordens || []).filter(o => o && o.id != null);
+  const porId = new Map(lista.map(o => [String(o.id), o]));
+  const comNum = lista.filter(o => _osArqNumero(o) != null)
+    .sort((a, b) => _osArqNumero(b) - _osArqNumero(a)
+      || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+  const recentes = new Set(comNum.slice(0, manter).map(o => String(o.id)));
+  const cand = new Set(comNum
+    .filter(o => !recentes.has(String(o.id)) && !ja.has(String(o.id))
+      && OS_ARQ_STATUS.includes(statusDe(o)))
+    .map(o => String(o.id)));
+  // A FAMÍLIA CONJUGADA VAI JUNTA OU NÃO VAI. Mãe, filha e a que segue o
+  // status de outra se consultam o tempo todo; uma ativa amarrada a uma
+  // arquivada é o tipo de meio-termo que ninguém testou.
+  const parentes = new Map();
+  const ligar = (a, b) => {
+    if (a == null || b == null || a === '' || b === '') return;
+    a = String(a); b = String(b);
+    if (a === b) return;
+    if (!parentes.has(a)) parentes.set(a, new Set());
+    if (!parentes.has(b)) parentes.set(b, new Set());
+    parentes.get(a).add(b); parentes.get(b).add(a);
+  };
+  lista.forEach(o => { ligar(o.id, o.conjugadaStatusPaiId); ligar(o.id, o.conjugadaPaiId); ligar(o.id, o.conjugadaId); });
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    [...cand].forEach(id => {
+      const ps = parentes.get(id);
+      if (!ps) return;
+      for (const p of ps) {
+        if (porId.has(p) && !cand.has(p) && !ja.has(p)) { cand.delete(id); mudou = true; return; }
+      }
+    });
+  }
+  return comNum.filter(o => cand.has(String(o.id))).reverse().map(o => String(o.id));
+}
+
+/* O QUE `ordens` GRAVA: só as ativas. Chamada por saveState no lugar do
+   JSON.stringify(STATE.ordens). De passagem, devolve às ativas a arquivada que
+   alguém mexeu, e esquece a que foi excluída de propósito. */
+function _osArqSerializarOrdens() {
+  const lista = STATE.ordens || [];
+  if (!_osArq.porId.size) return JSON.stringify(lista);
+  const ativas = [], voltaram = [], vistos = new Set();
+  lista.forEach(o => {
+    const id = (o && o.id != null) ? String(o.id) : null;
+    const a = id ? _osArq.porId.get(id) : null;
+    if (!a) { ativas.push(o); return; }
+    vistos.add(id);
+    if (JSON.stringify(o) === a.txt) { a.o = o; return; }    // intacta: segue arquivada
+    ativas.push(o); voltaram.push(id);                       // mexeram: volta
+  });
+  const sumiram = [..._osArq.porId.keys()].filter(id => !vistos.has(id));   // excluída
+  const tirar = voltaram.concat(sumiram);
+  if (tirar.length) {
+    tirar.forEach(id => _osArq.porId.delete(id));
+    if (voltaram.length) console.info(`Arquivo de OS: ${voltaram.length} OS mexida(s) voltaram para as ativas.`);
+    _osArqMarcarRemovidas(tirar);
+    _osArqSalvarLocal();
+  }
+  return JSON.stringify(ativas);
+}
+
+/* AS ARQUIVADAS DE VOLTA NA MEMÓRIA, ao fim de cada loadState (que só traz do
+   blob as ativas). Arquivada que também está no blob: se é a mesma OS, é só a
+   gravação de quem arquivou que ainda não chegou aqui — segue arquivada; se é
+   diferente, alguém mexeu nela depois, e a do blob manda. */
+function _osArqJuntarNoState() {
+  if (!_osArq.porId.size || !Array.isArray(STATE.ordens)) return;
+  const noBlob = new Map();
+  STATE.ordens.forEach(o => { if (o && o.id != null) noBlob.set(String(o.id), o); });
+  const mexidas = [];
+  _osArq.porId.forEach((a, id) => {
+    const b = noBlob.get(id);
+    if (!b) { STATE.ordens.push(a.o); return; }
+    if (JSON.stringify(b) === a.txt) a.o = b; else mexidas.push(id);
+  });
+  if (mexidas.length) {
+    mexidas.forEach(id => _osArq.porId.delete(id));
+    _osArqMarcarRemovidas(mexidas);
+    _osArqSalvarLocal();
+  }
+}
+
+function _osArqEhArquivada(o) {
+  return !!(o && o.id != null && _osArq.porId.has(String(o.id)));
+}
+
+function _osArqTabelaAusente(erro) {
+  if (!erro) return false;
+  const code = String(erro.code || '');
+  const msg = String(erro.message || '').toLowerCase();
+  return code === 'PGRST205' || code === '42P01' || code === 'PGRST204'
+    || (msg.includes(OS_ARQ_TABELA) && (msg.includes('does not exist') || msg.includes('could not find')));
+}
+
+// ---- cópia local (IndexedDB): o arquivo desce UMA vez por computador -------
+function _osArqAbrirIdb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OS_ARQ_IDB, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _osArqLerLocal() {
+  try {
+    if (typeof indexedDB === 'undefined') return;
+    const db = await _osArqAbrirIdb();
+    const v = await new Promise((resolve, reject) => {
+      const r = db.transaction('kv', 'readonly').objectStore('kv').get('estado');
+      r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
+    });
+    db.close();
+    // A cópia é de UM servidor: a da nuvem não vale na fábrica, e vice-versa.
+    if (!v || v.servidor !== (_servidorUrlAtivo || '')) return;
+    _osArq.seq = Number(v.seq) || 0;
+    (v.linhas || []).forEach(([id, txt]) => {
+      try { _osArq.porId.set(String(id), { o: JSON.parse(txt), txt }); } catch (e) { }
+    });
+  } catch (e) { console.warn('arquivo de OS (cópia local)', e); }
+}
+
+let _osArqSalvarTimer = null;
+function _osArqSalvarLocal() {
+  clearTimeout(_osArqSalvarTimer);
+  _osArqSalvarTimer = setTimeout(async () => {
+    try {
+      if (typeof indexedDB === 'undefined') return;
+      const linhas = [];
+      _osArq.porId.forEach((a, id) => linhas.push([id, a.txt]));
+      const db = await _osArqAbrirIdb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put({ servidor: _servidorUrlAtivo || '', seq: _osArq.seq, linhas }, 'estado');
+        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (e) { console.warn('arquivo de OS (gravar cópia local)', e); }
+  }, 1500);
+}
+
+/* DESCE DO SERVIDOR SÓ O QUE MUDOU desde a última leitura (seq crescente:
+   cada arquivamento e cada volta para as ativas ganha um seq novo). */
+async function _osArqSincronizar() {
+  if (_osArq.sincronizando) return _osArq.sincronizando;
+  _osArq.sincronizando = (async () => {
+    try {
+      if (!_osArq.carregado) {
+        _osArq.servidor = _servidorUrlAtivo || '';
+        await _osArqLerLocal();
+        _osArq.carregado = true;
+      }
+      if (!supa || _osArq.semTabela) return false;
+      let chegaram = 0;
+      for (let pagina = 0; pagina < 100; pagina++) {
+        const { data, error } = await supa.from(OS_ARQ_TABELA)
+          .select('id, dados, removida, seq').gt('seq', _osArq.seq)
+          .order('seq', { ascending: true }).limit(100);
+        if (error) {
+          if (_osArqTabelaAusente(error)) {
+            _osArq.semTabela = true;
+            console.warn('Arquivo de OS: a tabela os_arquivadas não existe neste servidor — '
+              + 'rode sql/supabase-os-arquivadas.sql. Enquanto isso nada é arquivado.');
+          } else console.warn('arquivo de OS (leitura)', error);
+          return false;
+        }
+        (data || []).forEach(r => {
+          const id = String(r.id);
+          if (r.removida) _osArq.porId.delete(id);
+          else if (typeof r.dados === 'string') {
+            try { _osArq.porId.set(id, { o: JSON.parse(r.dados), txt: r.dados }); } catch (e) { }
+          }
+          _osArq.seq = Math.max(_osArq.seq, Number(r.seq) || 0);
+          chegaram++;
+        });
+        if (!data || data.length < 100) break;
+      }
+      _osArq.syncOk = true;
+      _osArq.ultimaSync = Date.now();
+      if (chegaram) _osArqSalvarLocal();
+      return chegaram > 0;
+    } catch (e) {
+      console.warn('arquivo de OS (sincronizar)', e);
+      return false;
+    } finally {
+      _osArq.sincronizando = null;
+    }
+  })();
+  return _osArq.sincronizando;
+}
+
+/* CHAMADA POR loadState. A primeira vez espera a cópia local e a leitura do
+   servidor (com teto de 6 s — sem servidor, segue com a cópia); das outras,
+   junta o que já tem e, se faz tempo, relê em segundo plano e redesenha. */
+async function _osArqNoLoadState() {
+  try {
+    if (!_osArq.carregado) {
+      const espera = _osArqSincronizar();
+      await Promise.race([espera, new Promise(r => setTimeout(r, 6000))]);
+    } else if (supa && !_osArq.semTabela && Date.now() - _osArq.ultimaSync > OS_ARQ_SYNC_MIN_MS) {
+      _osArq.ultimaSync = Date.now();
+      _osArqSincronizar().then(mudou => { if (mudou) _osArqRedesenhar(); });
+    }
+    _osArqJuntarNoState();
+  } catch (e) { console.warn('arquivo de OS (carga)', e); }
+}
+
+function _osArqRedesenhar() {
+  try {
+    const antes = new Set((STATE.ordens || []).map(o => String(o && o.id)));
+    _osArqJuntarNoState();
+    const entrou = (STATE.ordens || []).some(o => !antes.has(String(o && o.id)));
+    if (!entrou) return;
+    const ativa = document.querySelector('section.page:not(.hidden)');
+    const pagina = (ativa && ativa.dataset && ativa.dataset.page) || 'home';
+    if (pagina !== 'nova-os' && pagina !== 'print' && typeof goto === 'function') goto(pagina);
+  } catch (e) { console.warn('arquivo de OS (redesenhar)', e); }
+}
+
+// Volta para as ativas (ou excluída): marca a linha como removida, para os
+// outros computadores tirarem da cópia deles. Best-effort: se falhar, a OS
+// está no blob de qualquer jeito, e o blob manda (_osArqJuntarNoState).
+function _osArqMarcarRemovidas(ids) {
+  if (!ids || !ids.length || !supa || _osArq.semTabela) return;
+  if (typeof podeGravar === 'function' && !podeGravar()) return;
+  (async () => {
+    for (let i = 0; i < ids.length; i += 100) {
+      const { error } = await supa.from(OS_ARQ_TABELA)
+        .update({ removida: true }).in('id', ids.slice(i, i + 100));
+      if (error) { console.warn('arquivo de OS (desarquivar)', error); return; }
+    }
+  })().catch(e => console.warn('arquivo de OS (desarquivar)', e));
+}
+
+/* A ROTINA. Roda no computador do admin: ao entrar e a cada 6 h. Escolhe,
+   grava na tabela, CONFERE que está lá, e só então tira do blob. */
+async function arquivarOSAntigas({ manual = false } = {}) {
+  const avisar = (txt, tipo) => { if (manual) toast(txt, tipo || ''); else console.info('Arquivo de OS: ' + txt); };
+  if (_osArq.rodando) return;
+  if (currentRole !== 'admin' || !podeGravar() || !supa) {
+    if (manual) avisar('Só o admin, no computador da fábrica, arquiva OS.', 'err');
+    return;
+  }
+  _osArq.rodando = true;
+  try {
+    await _osArqSincronizar();
+    if (_osArq.semTabela) return avisar('a tabela os_arquivadas ainda não existe no servidor — rode sql/supabase-os-arquivadas.sql.', 'err');
+    if (!_osArq.syncOk) return avisar('não consegui ler o arquivo agora; tento de novo mais tarde.', 'err');
+    _osArqJuntarNoState();
+    const abertas = new Set([printOsAtual && printOsAtual.id, typeof osEditId !== 'undefined' ? osEditId : null]
+      .filter(Boolean).map(String));
+    const ids = _osArqEscolher(STATE.ordens, _statusOS, OS_ARQ_MANTER, new Set(_osArq.porId.keys()))
+      .filter(id => !abertas.has(id)).slice(0, OS_ARQ_MAX_POR_RODADA);
+    if (!ids.length) return avisar('nenhuma OS antiga finalizada para arquivar.', 'ok');
+    const porId = new Map((STATE.ordens || []).map(o => [String(o.id), o]));
+    const linhas = ids.map(id => {
+      const o = porId.get(id);
+      return { id, os: String(o.os || ''), dados: JSON.stringify(o), removida: false,
+        arquivada_por: (currentUser && currentUser.id) || null };
+    });
+    for (let i = 0; i < linhas.length; i += OS_ARQ_LOTE) {
+      const { error } = await supa.from(OS_ARQ_TABELA).upsert(linhas.slice(i, i + OS_ARQ_LOTE), { onConflict: 'id' });
+      if (error) throw error;
+    }
+    // CONFERE ANTES DE TIRAR: lê de volta o que foi gravado, texto por texto.
+    const conferidas = new Map();
+    for (let i = 0; i < ids.length; i += 50) {
+      const { data, error } = await supa.from(OS_ARQ_TABELA)
+        .select('id, dados, removida').in('id', ids.slice(i, i + 50));
+      if (error) throw error;
+      (data || []).forEach(r => { if (!r.removida) conferidas.set(String(r.id), r.dados); });
+    }
+    const ok = linhas.filter(l => conferidas.get(l.id) === l.dados);
+    if (ok.length !== linhas.length) {
+      console.warn(`Arquivo de OS: ${linhas.length - ok.length} OS não conferiram na tabela e ficam ativas.`);
+    }
+    if (!ok.length) return avisar('o servidor não confirmou a gravação; nada foi arquivado.', 'err');
+    // Mexeram em alguma enquanto a tabela gravava? Essa fica ativa.
+    let n = 0;
+    ok.forEach(l => {
+      const o = porId.get(l.id);
+      if (!o || JSON.stringify(o) !== l.dados) return;
+      _osArq.porId.set(l.id, { o, txt: l.dados });
+      n++;
+    });
+    if (!n) return;
+    _osArqGravando = true;
+    try { await saveState('ordens'); } finally { _osArqGravando = false; }
+    _osArqSalvarLocal();
+    avisar(`${n} OS antiga${n > 1 ? 's' : ''} arquivada${n > 1 ? 's' : ''} — a lista mostra as ${OS_ARQ_MANTER} mais recentes e as que estão em andamento.`, 'ok');
+    if (typeof renderListaOS === 'function' && document.querySelector('section[data-page="lista-os"]:not(.hidden)')) renderListaOS();
+  } catch (e) {
+    console.warn('arquivo de OS (rotina)', e);
+    avisar('falha ao arquivar OS: ' + (e.message || e) + ' — nada saiu do programa.', 'err');
+  } finally {
+    _osArq.rodando = false;
+  }
+}
+
+// Ao entrar como admin: 1 min depois (a tela abre primeiro) e a cada 6 h.
+function _osArqAgendarRotina() {
+  if (currentRole !== 'admin' || !podeGravar()) return;
+  clearTimeout(_osArq.timer);
+  const rodar = () => {
+    arquivarOSAntigas().finally(() => { _osArq.timer = setTimeout(rodar, OS_ARQ_INTERVALO_MS); });
+  };
+  _osArq.timer = setTimeout(rodar, 60 * 1000);
+}
+
+/* A LISTA DE OS: por padrão, as ativas. As arquivadas entram pelo botão "ver
+   arquivadas", pela busca por texto (procurar a 0293 acha a 0293) e pelo grupo
+   vindo do Ranking. */
+function _osArqFiltrarLista(lista, comBusca) {
+  if (_osArqVerNaLista || comBusca || !_osArq.porId.size) return lista;
+  return lista.filter(o => !_osArqEhArquivada(o));
+}
+
+function alternarArquivadasListaOS() {
+  _osArqVerNaLista = !_osArqVerNaLista;
+  renderListaOS();
+}
+
+function _osArqContaHtml() {
+  const n = _osArq.porId.size;
+  if (!n) return '';
+  return ` · <a href="#" class="lista-os-arquivo" onclick="alternarArquivadasListaOS(); return false;"
+      title="OS antigas finalizadas ou canceladas guardam-se à parte, para o programa salvar mais rápido. Buscar pelo número também as encontra.">`
+    + (_osArqVerNaLista ? `esconder as ${n.toLocaleString('pt-BR')} arquivadas` : `ver ${n.toLocaleString('pt-BR')} arquivadas`)
+    + `</a>`;
+}
+/* ===================== fim do ARQUIVO DE OS ===================== */
+
 async function saveState(key) {
   try {
     // O cadastro de funções mudou: o índice de horas marcadas tem que ser refeito
@@ -4007,12 +4408,14 @@ async function saveState(key) {
     if (key === 'ordens' && typeof _statusHistVarrer === 'function') {
       try { _statusHistVarrer(STATE.ordens, Date.now()); } catch (e) { console.warn('diário de status', e); }
     }
-    const _depois = JSON.stringify(STATE[key]);
+    // `ordens` grava só as ativas: as arquivadas ficam na tabela os_arquivadas
+    // (ver ARQUIVO DE OS) e continuam na memória para o estoque e os relatórios.
+    const _depois = key === 'ordens' ? _osArqSerializarOrdens() : JSON.stringify(STATE[key]);
     await DB.set(key, _depois);
     try { _apagadosLocaisRegistrar(key, _antes, _depois); } catch (e) { console.warn('apagados locais', e); }
     // O diário não entra no Desfazer: o Ctrl+Z tem de voltar a ação da pessoa,
     // e não a linha que o programa anotou sobre ela.
-    if (!_desfazendo && key !== 'diario') {
+    if (!_desfazendo && !_osArqGravando && key !== 'diario') {
       try { _desfazerRegistrar(key, _antes, _depois); } catch (e) { console.warn('desfazer', e); }
       try { if (typeof _diarioDaGravacao === 'function') _diarioDaGravacao(key, _antes, _depois); } catch (e) { console.warn('diário', e); }
     }
@@ -4567,6 +4970,9 @@ async function loadState() {
   // O auto-preenchimento do SKU dos DESENHOS roda em revalidarSkusDesenhos(),
   // após o catálogo (skus_catalogo) carregar — para VALIDAR contra a relação de
   // SKUs (só usa SKU que existe; nunca inventa SKU fora do catálogo).
+  // As OS arquivadas voltam para a memória (o blob só traz as ativas). Antes do
+  // snapshot da Contabilidade e dos avisos, que leem a lista inteira.
+  await _osArqNoLoadState();
   // Republica o snapshot p/ a Contabilidade/Estoque-Confeccao SEMPRE que o admin
   // carrega o estado (login OU reload). Garante SKUs frescos mesmo sem nenhuma
   // edição na sessão — sem isso, um reload deixava o snapshot antigo no ar.
@@ -38527,7 +38933,8 @@ function _contaListaOS(mostradas, total) {
         ? ` · <a href="#" class="lista-os-falta" onclick="abrirNumerosFaltandoOS(); return false;"
              title="${esc(buracos.map(formatarNumeroOS).join(', '))} — clique para ver o relatório">`
           + `faltam ${buracos.length} número${buracos.length > 1 ? 's' : ''}</a>`
-        : '');
+        : '')
+    + _osArqContaHtml();
   el.title = filtrando
     ? `A lista tem ${n(total)} OS; os filtros estão mostrando ${n(mostradas)}.`
     : `Todas as ${n(total)} OS da lista.`;
@@ -39116,7 +39523,11 @@ function renderListaOS() {
   const doGrupo = (_listaOsGrupo && _listaOsGrupo.os && _listaOsGrupo.os.length)
     ? new Set(_listaOsGrupo.os.map(x => String(x).trim()))
     : null;
-  const noGrupo = doGrupo ? ordenadas.filter(o => doGrupo.has(String(o.os || '').trim())) : ordenadas;
+  // As ARQUIVADAS só aparecem pelo botão, pela busca ou pelo grupo do Ranking
+  // (ver _osArqFiltrarLista): sem isso a lista abre com as ativas.
+  const _buscaArq = ((document.getElementById('busca-os') || {}).value || '').trim();
+  const visiveis = _osArqFiltrarLista(ordenadas, !!doGrupo || !!_buscaArq);
+  const noGrupo = doGrupo ? visiveis.filter(o => doGrupo.has(String(o.os || '').trim())) : visiveis;
   // A BUSCA POR TEXTO varre número, código, modelo, coleção, cor, grade e SKU, e
   // casa TODOS os termos digitados, cada um em qualquer campo: "preto tricolor"
   // acha o que é preto E tricolor. É assim que se procura sem saber em qual
@@ -39205,7 +39616,7 @@ function renderListaOS() {
           onclick="abrirMenuAcoesOS('${o.id}', this)">⋯</button>
       </td>
       <td>${thumb}</td>
-      <td><strong>${esc(o.os)||'—'}</strong>${filaPos.has(o.id)
+      <td><strong>${esc(o.os)||'—'}</strong>${_osArqEhArquivada(o) ? ` <span class="badge" title="OS arquivada: guardada à parte para o programa salvar mais rápido. Se alguém mexer nela, ela volta sozinha para as ativas.">arquivada</span>` : ''}${filaPos.has(o.id)
         ? ` <span class="badge fila-pos" title="${esc(_filaOrdinal(filaPos.get(o.id))
             + ' da fila de producao. Para mexer na ordem, filtre a lista por status "Nao iniciado".')}">${_filaOrdinal(filaPos.get(o.id))}</span>`
           + (podeFila ? `<span class="fila-controles">
@@ -48076,6 +48487,7 @@ async function limparTudo() {
     await migrarExcedenteParaFases();  // excedente de enfesto: do tecido para a fase (1×, admin)
     await migrarRegraConjugadaParaGrade();  // conjugada bicolor→básica: do código para a grade (1×, admin)
     await migrarFotoDesenhoNasOS();  // OS sem a foto do desenho ganham a de agora (todo login, admin)
+    _osArqAgendarRotina();           // arquiva as OS antigas finalizadas (admin, 1 min depois e a cada 6 h)
     // Republica o snapshot p/ Contabilidade/Estoque-Confeccao ao ABRIR como admin
     // (reload). Hoje o papel já chega antes do loadState — então o republish do
     // fim do loadState também o enxerga —, mas a chamada fica: ela é o que garante
