@@ -17418,6 +17418,7 @@ function renderExpedicaoPlano() {
                 <button class="edit" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">horário / cancelar / remarcar</button>
                 ${oc.cancelada ? '' : `<button onclick="abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário — um segundo caminhão">+ no turno</button>`}
                 <button class="edit" onclick="abrirModalExpJanela('${esc(oc.janela.id)}')" title="Edita a janela desta expedição: nome, dias e horários de ida e volta">editar janela</button>
+                <button class="del admin-only" onclick="excluirOE('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Exclui esta OE: as OS voltam a ficar sem carga, aviamentos e ferramentas voltam para a origem e as observações saem. Pergunta antes.">excluir</button>
               </td>
               <td><span class="exp-oe-num">OE ${_oeFmt(n)}</span></td>
               <td style="white-space:nowrap;">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}${
@@ -18691,6 +18692,91 @@ async function excluirCargaExp(id) {
   renderExpedicaoPlano();
   _oeRerenderFolhaSeAberta();
 }
+
+/* EXCLUIR UMA OE INTEIRA (11/11/2026, Junior: "insira a ação de excluir uma OE").
+   A OE é a expedição (janela + dia) e o número mora nas cargas, então excluir a
+   OE é tirar dela, de uma vez, tudo o que a compõe — o mesmo que os × um a um:
+     · as OS (cargas de ida e volta): voltam a ficar sem carga, prontas para
+       alocar de novo, e o número da OE some;
+     · os aviamentos: voltam para a unidade de origem;
+     · as ferramentas: voltam ao em estoque da origem (se já chegaram e a outra
+       unidade não tem mais a quantidade, a exclusão para, como no ×);
+     · as observações soltas.
+   A expedição extra criada pelo "+ Nova OE" (data fixa, só daquele dia) sai
+   junto, para não ficar uma janela vazia. Janela semanal fica: ela é a agenda.
+   Só administrador. Pergunta antes, dizendo o que vai sair e se o número deixa
+   buraco na sequência. */
+async function excluirOE(janelaId, dataOrig) {
+  if (!exigirAdmin('excluir OE')) return;
+  const cargas = (STATE.expedicaoCargas || []).filter(c => c && c.janelaId === janelaId && c.data === dataOrig);
+  const avis = (STATE.aviamentosMov || []).filter(m => m.tipo === 'expedicao' && m.janelaId === janelaId && m.data === dataOrig);
+  const fers = _ferExpMovs().filter(m => m.janelaId === janelaId && m.oeData === dataOrig);
+  const obs = (Array.isArray(STATE.expedicaoObs) ? STATE.expedicaoObs : []).filter(o => o.janelaId === janelaId && o.oeData === dataOrig);
+  if (!cargas.length && !avis.length && !fers.length && !obs.length) return toast('Esta OE já está vazia', 'err');
+  const lista = STATE.ferramentasCad || [];
+  for (const m of fers) {
+    if (!_ferChegou(m)) continue;
+    const d = lista.find(i => i.id === m.destItemId);
+    if (d && _estItemEstoque('ferramentas', d, m.id) < 0) {
+      return toast(`A ferramenta ${m.nome} já chegou e não há ${Math.round(Number(m.qtd) || 0)} em estoque na outra unidade para voltar — corrija pelo Estoque de ferramentas antes de excluir a OE`, 'err');
+    }
+  }
+  const num = _oeNumeroDe(janelaId, dataOrig);
+  const maiorOE = (STATE.expedicaoCargas || []).reduce((mx, c) => Math.max(mx, Number(c && c.oe) || 0), 0);
+  const nOs = new Set(cargas.map(c => c.osId || c.id)).size;
+  const partes = [];
+  if (nOs) partes.push(`${nOs} OS (voltam a ficar sem carga)`);
+  if (avis.length) partes.push(`${avis.length} aviamento(s) (voltam para a origem)`);
+  if (fers.length) partes.push(`${fers.length} ferramenta(s) (voltam para o estoque da origem)`);
+  if (obs.length) partes.push(`${obs.length} observação(ões)`);
+  const nome = num ? 'a OE ' + _oeFmt(num) : 'esta expedição';
+  const buraco = num > 0 && num < maiorOE
+    ? `\n\nO número ${_oeFmt(num)} some da sequência (a OE ${_oeFmt(maiorOE)} já existe).` : '';
+  if (!confirm(`Excluir ${nome} de ${formatDate(dataOrig)}?\n\nSai dela: ${partes.join(', ')}.${buraco}\n\nNão dá para desfazer.`)) return;
+
+  const idsCargas = new Set(cargas.map(c => c.id));
+  STATE.expedicaoCargas = (STATE.expedicaoCargas || []).filter(c => !idsCargas.has(c.id));
+  if (avis.length) {
+    const ids = new Set(avis.map(m => m.id));
+    STATE.aviamentosMov = STATE.aviamentosMov.filter(m => !ids.has(m.id));
+  }
+  if (fers.length) {
+    const quem = (typeof _cpQuemSou === 'function' ? _cpQuemSou() : '');
+    fers.forEach(m => {
+      const x = lista.find(i => i.id === m.itemId);
+      if (!x) return;
+      x.emEstoque = _estArred(x, (Number(x.emEstoque) || 0) + (Number(m.qtd) || 0));
+      x.atualizadoPor = quem;
+      x.atualizadoEm = new Date().toISOString();
+    });
+    const ids = new Set(fers.map(m => m.id));
+    STATE.ferramentasMov = STATE.ferramentasMov.filter(m => !ids.has(m.id));
+  }
+  if (obs.length) {
+    const ids = new Set(obs.map(o => o.id));
+    STATE.expedicaoObs = STATE.expedicaoObs.filter(o => !ids.has(o.id));
+  }
+  const j = (STATE.expedicaoJanelas || []).find(x => x.id === janelaId);
+  const janelaDaNovaOE = j && j.tipo === 'data' && j.data === dataOrig && j.obs === 'criada pelo botão Nova OE';
+  if (janelaDaNovaOE) STATE.expedicaoJanelas = STATE.expedicaoJanelas.filter(x => x.id !== janelaId);
+  expOeAbertas.delete(_expChaveOe(janelaId, dataOrig)); _expGuardarAbertas();
+
+  // Exclusão INTENCIONAL pode zerar as cargas: libera a trava anti-apagamento
+  // só para este flush (como no × da última OS).
+  _permitirFlushVazio = true;
+  try {
+    await saveState('expedicaoCargas');
+    if (avis.length) await saveState('aviamentosMov');
+    if (fers.length) { await saveState('ferramentasCad'); await saveState('ferramentasMov'); }
+    if (obs.length) await saveState('expedicaoObs');
+    if (janelaDaNovaOE) await saveState('expedicaoJanelas');
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await cloudFlush(); }
+  } finally { _permitirFlushVazio = false; }
+  toast((num ? 'OE ' + _oeFmt(num) : 'Expedição') + ' excluída', 'ok');
+  renderExpedicaoPlano();
+  _oeRerenderFolhaSeAberta();
+}
+window.excluirOE = excluirOE;
 
 // Redefine os volumes das cargas FUTURAS pela regra da grade (tamanhos + 1).
 // Corrige valores gravados por regras antigas (ex.: OS que ficou com 600).
