@@ -17322,7 +17322,7 @@ function renderExpedicaoPlano() {
       ${oc.cancelada ? '' : `<button class="btn" style="padding:2px 8px;font-size:11px;margin-left:auto;" onclick="event.stopPropagation(); abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário">+ no turno</button>`}
     </div>`;
 
-  const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : `
+  const cardAberto = oc => `
     <div class="card exp-ocor ${oc.cancelada ? 'cancelada' : ''}">
       <div class="exp-ocor-head">
         <div style="display:flex;gap:8px;align-items:flex-start;">
@@ -17352,7 +17352,8 @@ function renderExpedicaoPlano() {
         ${pernaHtml(oc, 'ida')}
         ${pernaHtml(oc, 'volta')}
       </div>
-    </div>`).join('');
+    </div>`;
+  const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : cardAberto(oc)).join('');
 
   const semJanelas = !(STATE.expedicaoJanelas || []).length;
   const vazio = `
@@ -17389,20 +17390,30 @@ function renderExpedicaoPlano() {
       })
       .sort((a, b) => b.n - a.n);
   }
+  /* EDITAR A OE NA PRÓPRIA TABELA (11/11/2026, Junior: "não é possível editar os
+     volumes de uma OE existente. Antes era possível"). O botão "editar" abre,
+     logo abaixo da linha, o quadro completo da OE — o mesmo de antes: ✎ em cada
+     OS (nome, cor, produtos e VOLUMES da folha), ⇄ (dia, pacotes e fases), ×
+     (tirar a OS), + Alocar OS, + Aviamento, + Ferramenta, + Observação e
+     ⟲ Trazer de uma OE. Clicar de novo fecha. Lembrado em expOeAbertas. */
+  const algumaAberta = oesCriadas.some(x => expOeAbertas.has(_expChaveOe(x.oc.janela.id, x.oc.dataOrig)));
   const oesCriadasHtml = oesCriadas.length ? `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
         <h2 style="margin:0;font-size:14px;">OE criadas <span class="exp-badge info">${oesCriadas.length}</span></h2>
         <button class="btn primary" onclick="novaOE()" title="Cria a próxima OE, com o dia de hoje: escolha a OS e salve">+ Nova OE</button>
       </div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px;">Todas as expedições que já têm número, da mais nova para a mais antiga — inclusive fora do período mostrado acima. Use <b>folha</b> para ver e imprimir a OE.</div>
-      <div style="max-height:420px;overflow:auto;">
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Todas as expedições que já têm número, da mais nova para a mais antiga — inclusive fora do período mostrado acima. Use <b>✎ editar</b> para abrir o quadro da OE (volumes, OS, aviamentos, observações) e <b>🖨 folha</b> para ver e imprimir.</div>
+      <div style="${algumaAberta ? '' : 'max-height:420px;'}overflow:auto;">
       <table class="table">
         <thead><tr><th class="col-actions">Ações</th><th>OE</th><th>Data</th><th>Janela</th><th style="text-align:right;">OS ida / volta</th><th style="text-align:right;">Produtos</th><th style="text-align:right;">Volumes</th><th>Criada</th></tr></thead>
         <tbody>
-          ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => `
+          ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => {
+            const aberta = expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig));
+            return `
             <tr${oc.cancelada ? ' style="opacity:.55;"' : ''}>
               <td class="col-actions row-actions">
+                <button class="edit" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="${aberta ? 'Fecha o quadro desta OE' : 'Abre o quadro desta OE logo abaixo: editar volumes e a folha de cada OS, mudar dia e pacotes, tirar OS, alocar OS, aviamentos, ferramentas e observações'}">${aberta ? '▾ fechar' : '✎ editar'}</button>
                 <button onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha do plano só desta OE, para imprimir ou salvar">🖨 folha</button>
                 <button class="edit" onclick="abrirModalExpOcorrencia('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Muda o horário só deste dia, ou cancela/remarca esta expedição">horário / cancelar / remarcar</button>
                 ${oc.cancelada ? '' : `<button onclick="abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário — um segundo caminhão">+ no turno</button>`}
@@ -17419,7 +17430,9 @@ function renderExpedicaoPlano() {
               <td style="font-size:12px;white-space:nowrap;">${primeira
                 ? `${esc(new Date(primeira.criadaEm).toLocaleDateString('pt-BR'))}${primeira.criadaPor ? ' · ' + esc(primeira.criadaPor) : ''}`
                 : '<span class="muted" title="Expedição numerada antes de as cargas guardarem quando e quem">—</span>'}</td>
-            </tr>`).join('')}
+            </tr>${aberta ? `
+            <tr class="exp-oe-editar"><td colspan="8" style="padding:6px 0 12px;white-space:normal;">${cardAberto(oc)}</td></tr>` : ''}`;
+          }).join('')}
         </tbody>
       </table>
       </div>
