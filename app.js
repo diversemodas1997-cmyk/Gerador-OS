@@ -5443,7 +5443,7 @@ function goto(page) {
   if (page === 'estoque-fio') renderFasePorId('estoqueFio');
   if (page === 'estoque-fio-sc') renderFasePorId('estoqueFioSC');
   if (page === 'fios') renderFasePorId('fios');
-  if (page === 'expedicao') trocarAbaExpedicao('plano');
+  if (page === 'expedicao') trocarAbaExpedicao(expAbaAtiva);
   if (page === 'operacoes') renderOperacoes();
   if (page === 'ranking') renderRanking();
   if (page === 'relatorio-producao') renderRelatorioProducao();
@@ -16717,7 +16717,7 @@ function irParaOeDia(data, janelaId, dataOrig) {
    para o diário a cada visita à tela. */
 let expPlanoModo = 'dia';
 let expPlanoAncora = _expHoje();
-let expAbaAtiva = 'estoque';
+let expAbaAtiva = 'plano';
 // Em que ORDEM as expedições do período aparecem. 'asc' é a do calendário — a
 // primeira do período em cima —, e segue sendo o padrão: é ela que responde "o
 // que vem primeiro". 'desc' põe a MAIS RECENTE em cima, que é o que serve para
@@ -16728,7 +16728,7 @@ let expPlanoOrdem = 'asc';
 try {
   expPlanoModo = sessionStorage.getItem('gos:exp:modo') || expPlanoModo;
   expPlanoAncora = sessionStorage.getItem('gos:exp:ancora') || expPlanoAncora;
-  expAbaAtiva = sessionStorage.getItem('gos:exp:aba') || expAbaAtiva;
+  expAbaAtiva = sessionStorage.getItem('gos:exp:aba') === 'relatorio' ? 'relatorio' : 'plano';
   expPlanoOrdem = sessionStorage.getItem('gos:exp:ordem') === 'desc' ? 'desc' : 'asc';
 } catch (e) { /* sessionStorage indisponível, segue no padrão */ }
 
@@ -16788,18 +16788,20 @@ function expAlternarTodasOe(abrir) {
   renderExpedicaoPlano();
 }
 
-// Desde 04/11/2026 a área tem só o Planejamento: a aba "Expedição · fim do
-// fluxo" saiu (redundante com a área das OS em trânsito). A função fica porque
-// avisos e atalhos ainda a chamam com 'plano'.
+// As abas da área: o Planejamento e, desde 11/11/2026, o Relatório de volumes
+// por OE (Junior: "transforme o quadro de relatório de planejamento de
+// expedição em uma aba"). A aba "Expedição · fim do fluxo" saiu em 04/11/2026.
+// As duas abas olham o MESMO período (expPlanoModo/expPlanoAncora): trocar de
+// aba não perde o mês que se estava vendo.
 function trocarAbaExpedicao(aba) {
-  expAbaAtiva = 'plano';
+  expAbaAtiva = aba === 'relatorio' ? 'relatorio' : 'plano';
   try { sessionStorage.setItem('gos:exp:aba', expAbaAtiva); } catch (e) {}
   document.querySelectorAll('.exp-tab').forEach(b => b.classList.toggle('active', b.dataset.exptab === expAbaAtiva));
-  const est = document.getElementById('expedicao-aba-estoque');
+  const rel = document.getElementById('expedicao-aba-relatorio');
   const plano = document.getElementById('expedicao-aba-plano');
-  if (est) est.classList.toggle('hidden', expAbaAtiva !== 'estoque');
+  if (rel) rel.classList.toggle('hidden', expAbaAtiva !== 'relatorio');
   if (plano) plano.classList.toggle('hidden', expAbaAtiva !== 'plano');
-  if (expAbaAtiva === 'plano') renderExpedicaoPlano();
+  renderExpedicaoPlano();
 }
 
 function expSetModo(modo) {
@@ -16890,13 +16892,37 @@ function _oeCargasComNumero(n, excetoId) {
    OS andou nesta expedição". O número é o mesmo que a folha de OE imprime
    (resumoPernaExpedicao: o reescrito à mão vale sobre o calculado). Fica de fora a expedição cancelada e a que não levou OS nenhuma;
    aviamentos e ferramentas não entram — não são OS. */
-let expRelAberto = false;
-try { expRelAberto = sessionStorage.getItem('gos:exp:rel') === '1'; } catch (e) {}
-
+// Era o botão que abria o quadro dentro do planejamento; desde 11/11/2026 o
+// relatório é uma aba, e este nome fica como atalho para ela.
 function expAlternarRelatorio() {
-  expRelAberto = !expRelAberto;
-  try { sessionStorage.setItem('gos:exp:rel', expRelAberto ? '1' : '0'); } catch (e) {}
-  renderExpedicaoPlano();
+  trocarAbaExpedicao(expAbaAtiva === 'relatorio' ? 'plano' : 'relatorio');
+}
+
+// O período, igual nas duas abas: os modos e a navegação ‹ ›.
+function _expSegModoHtml() {
+  return `<div class="exp-seg">
+        <button class="${expPlanoModo === 'dia' ? 'active' : ''}" onclick="expSetModo('dia')">Diário</button>
+        <button class="${expPlanoModo === 'semana' ? 'active' : ''}" onclick="expSetModo('semana')">Semanal</button>
+        <button class="${expPlanoModo === 'mes' ? 'active' : ''}" onclick="expSetModo('mes')">Mensal</button>
+        <button class="${expPlanoModo === 'ano' ? 'active' : ''}" onclick="expSetModo('ano')">Anual</button>
+      </div>`;
+}
+function _expNavPeriodoHtml() {
+  return `<div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn" onclick="expNav(-1)" title="Período anterior">‹</button>
+        <div class="exp-periodo">${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</div>
+        <button class="btn" onclick="expNav(1)" title="Próximo período">›</button>
+        <button class="btn" onclick="expHoje()">Hoje</button>
+      </div>`;
+}
+
+// A ABA DO RELATÓRIO: o período no alto e o relatório (por OE e por SKU).
+function renderExpedicaoRelatorio() {
+  const cont = document.getElementById('expedicao-relatorio');
+  if (!cont) return;
+  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  cont.innerHTML = `<div class="exp-toolbar no-print">${_expSegModoHtml()}${_expNavPeriodoHtml()}</div>`
+    + _expRelatorioHtml(ocorrenciasExpedicao(ini, fim));
 }
 
 function _expRelatorioVolumes(ocs) {
@@ -17007,7 +17033,6 @@ function _expRelatorioHtml(ocs) {
         <h2 style="margin:0;font-size:14px;">Relatório de volumes por OE · ${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</h2>
         <div style="display:flex;gap:6px;">
           <button class="btn accent" onclick="imprimirRelatorioVolumesExp()" ${rel.oes.length ? '' : 'disabled'}>🖨 Imprimir relatório</button>
-          <button class="btn" onclick="expAlternarRelatorio()">Fechar</button>
         </div>
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">O período é o do plano acima — troque entre <b>Diário, Semanal, Mensal e Anual</b> e navegue com ‹ ›. Cada OS mostra o SKU e o volume dela naquela expedição em <b>unidades completas</b> (produtos, ida + volta) — não em pacotes. Expedições canceladas e sem OS ficam de fora.</div>
@@ -17059,6 +17084,9 @@ function imprimirRelatorioVolumesExp() {
 }
 
 function renderExpedicaoPlano() {
+  // Quem muda dados ou período chama esta função; com a aba do relatório
+  // aberta, é ela que se redesenha.
+  if (expAbaAtiva === 'relatorio') return renderExpedicaoRelatorio();
   const cont = document.getElementById('expedicao-plano');
   if (!cont) return;
   const cfg = expCfg();
@@ -17081,19 +17109,9 @@ function renderExpedicaoPlano() {
 
   const toolbar = `
     <div class="exp-toolbar no-print">
-      <div class="exp-seg">
-        <button class="${expPlanoModo === 'dia' ? 'active' : ''}" onclick="expSetModo('dia')">Diário</button>
-        <button class="${expPlanoModo === 'semana' ? 'active' : ''}" onclick="expSetModo('semana')">Semanal</button>
-        <button class="${expPlanoModo === 'mes' ? 'active' : ''}" onclick="expSetModo('mes')">Mensal</button>
-        <button class="${expPlanoModo === 'ano' ? 'active' : ''}" onclick="expSetModo('ano')">Anual</button>
-      </div>
+      ${_expSegModoHtml()}
       ${segOrdem}
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button class="btn" onclick="expNav(-1)" title="Período anterior">‹</button>
-        <div class="exp-periodo">${esc(_expLabelPeriodo(expPlanoModo, expPlanoAncora))}</div>
-        <button class="btn" onclick="expNav(1)" title="Próximo período">›</button>
-        <button class="btn" onclick="expHoje()">Hoje</button>
-      </div>
+      ${_expNavPeriodoHtml()}
       <div class="exp-seg" title="Cada OE aparece numa linha; o ▸ dela abre o quadro com as OS">
         <button onclick="expAlternarTodasOe(true)" title="Abre todas as OE do período">▾ Expandir todas</button>
         <button onclick="expAlternarTodasOe(false)" title="Volta todas as OE do período a uma linha">▸ Contrair todas</button>
@@ -17103,7 +17121,6 @@ function renderExpedicaoPlano() {
           <button class="btn primary" onclick="abrirModalExpJanela()">+ Janela</button>
           <button class="btn" onclick="abrirModalExpConfig()">⚙ Unidades e carga</button>
           <button class="btn" onclick="recalcularVolumesExpedicao()" title="Redefine os volumes das expedições futuras pela regra da grade (1 pacote por tamanho, por tonalidade, + 1 de reposição). Não mexe em expedições já realizadas.">↻ Recalcular volumes</button>
-          <button class="btn ${expRelAberto ? 'accent' : ''}" onclick="expAlternarRelatorio()" title="Resumo das OE do período: o número e o SKU de cada OS e o volume dela em unidades completas em cada expedição, com o número da OE. Dá para imprimir.">📊 Relatório de volumes</button>
         </div>
       </div>
     </div>`;
@@ -17448,7 +17465,7 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (expRelAberto ? _expRelatorioHtml(ocs) : '') + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */

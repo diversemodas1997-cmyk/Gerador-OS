@@ -808,9 +808,17 @@
         </div>
       </div>
       <!-- A aba "Expedição · fim do fluxo" saiu em 04/11/2026 (Junior: redundante
-           com a área que já mostra as OS em trânsito). Fica só o planejamento. -->
+           com a área que já mostra as OS em trânsito). O Relatório de volumes por
+           OE, que era um quadro dentro do planejamento, virou aba em 11/11/2026. -->
+      <div class="exp-tabs no-print">
+        <button type="button" class="exp-tab active" data-exptab="plano" onclick="trocarAbaExpedicao('plano')">Planejamento de expedição</button>
+        <button type="button" class="exp-tab" data-exptab="relatorio" onclick="trocarAbaExpedicao('relatorio')">Relatório de volumes por OE</button>
+      </div>
       <div id="expedicao-aba-plano">
         <div id="expedicao-plano"></div>
+      </div>
+      <div id="expedicao-aba-relatorio" class="hidden">
+        <div id="expedicao-relatorio"></div>
       </div>
     </section>
 
@@ -2070,7 +2078,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-11d"></script>
+<script src="app.js?v=2026-11-11e"></script>
 <script src="assistente.js?v=2026-11-05a"></script>
 <script src="colorimetro.js?v=2026-11-03a"></script>
 <script src="estoque-confeccao.js?v=2026-11-11a"></script>
