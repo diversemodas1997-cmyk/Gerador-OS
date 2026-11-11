@@ -17129,6 +17129,27 @@ function imprimirRelatorioVolumesExp() {
   w.document.close();
 }
 
+/* AS JANELAS DE EDIÇÃO NA FOLHA, UMA POR OE (11/11/2026, Junior: "mantenha
+   matinal e tarde na mesma folha, mas mostre as janelas de edição separadas
+   para cada OE"). A folha do dia junta as OE (05/11/2026), e o quadro de edição
+   de cada uma — OS com ✎ ⇄ ×, + Alocar OS, aviamentos, ferramentas,
+   observações, horário — aparece na tela da folha, acima dela, separado por
+   OE e com o número de cada uma. É o MESMO quadro do planejamento (montado lá:
+   renderExpedicaoPlano guarda a função). Fica fora do papel e do PDF. */
+let _expCardAbertoFn = null;
+function _expEdicaoDaFolhaHtml(ocs) {
+  if (!expFolhaOe || !ocs.length) return '';
+  if (!_expCardAbertoFn) {
+    const aba = expAbaAtiva;
+    expAbaAtiva = 'plano';
+    try { renderExpedicaoPlano(); } finally { expAbaAtiva = aba; }
+  }
+  if (!_expCardAbertoFn) return '';
+  const ord = ocs.slice().sort((a, b) => String(a.horaIda || '').localeCompare(String(b.horaIda || '')));
+  return `<div class="exp-folha-edicao-tit">Editar as OE desta folha <span class="muted">— uma janela para cada OE; a folha abaixo continua juntando o dia</span></div>`
+    + ord.map(oc => _expCardAbertoFn(oc)).join('');
+}
+
 function renderExpedicaoPlano() {
   // Quem muda dados ou período chama esta função; com a aba do relatório
   // aberta, é ela que se redesenha.
@@ -17361,6 +17382,7 @@ function renderExpedicaoPlano() {
         ${pernaHtml(oc, 'volta')}
       </div>
     </div>`;
+  _expCardAbertoFn = cardAberto;   // a folha usa o mesmo quadro (ver _expEdicaoDaFolhaHtml)
   const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : cardAberto(oc)).join('');
 
   const semJanelas = !(STATE.expedicaoJanelas || []).length;
@@ -24844,6 +24866,8 @@ function renderPrintPlanoExpedicao() {
     if (vIda === vVolta) return `<div class="exp-print-pernas">${pernaPrint(oc, 'ida')}${pernaPrint(oc, 'volta')}</div>`;
     return `<div class="exp-print-pernas uma-so">${pernaPrint(oc, 'ida', vIda, !vIda)}${pernaPrint(oc, 'volta', vVolta, !vVolta)}</div>`;
   };
+  const edicao = document.getElementById('exp-folha-edicao');
+  if (edicao) edicao.innerHTML = _expEdicaoDaFolhaHtml(ocs);
   // Sem tratamento de cancelada aqui: o filtro acima já as tirou da folha.
   const blocos = ocs.map(oc => `
     <div class="exp-print-bloco">

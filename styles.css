@@ -5171,3 +5171,11 @@ body.pode-os-criar-conjugada section[data-page="nova-os"].modo-plan.conjugada-no
 #tbl-os tr.lista-os-arq-linha .lista-os-arquivo { font-weight: 700; }
 #tbl-os tr.os-arquivada td { opacity: .62; }
 #tbl-os tr.os-arquivada:hover td { opacity: 1; }
+
+/* Janelas de edição de cada OE na tela da folha (11/11/2026) */
+#exp-folha-edicao { margin: 0 0 16px; }
+#exp-folha-edicao:empty { display: none; }
+#exp-folha-edicao .exp-folha-edicao-tit { font-weight: 700; font-size: 14px; margin: 0 0 8px; }
+#exp-folha-edicao .exp-folha-edicao-tit .muted { font-weight: 400; font-size: 12px; }
+#exp-folha-edicao .exp-oe-toggle { display: none; }
+#exp-folha-edicao .exp-ocor { margin-bottom: 12px; }
