@@ -359,7 +359,15 @@
 
   function relevante(p, c) {
     const l = c.lojas[String(p && p.integracao_id)];
-    return !!(l && l.ligada && l.corte && p.chave && diaSP(p.data) >= l.corte);
+    if (!(l && l.ligada && l.corte && p.chave)) return false;
+    const dia = diaSP(p.data);
+    if (!(dia >= l.corte)) return false;
+    // Pedido de antes da CONSOLIDAÇÃO (ver consolidar): a venda dele já está
+    // dentro de um total, sem o pedidoChave, e chegar de novo do DRE baixaria
+    // as peças outra vez. A exceção é o pendente — os movimentos dele ficaram
+    // de fora da consolidação justamente para ele poder se completar.
+    if (c.consolidadoAte && dia < c.consolidadoAte && !c.pendentes[p.chave]) return false;
+    return true;
   }
 
   /* Lança a diferença de cada pedido. Síncrona de propósito: lê e escreve o
@@ -462,6 +470,142 @@
     return r;
   }
 
+  /* ------------------------------------- a consolidação das vendas antigas */
+  /* 11/11/2026, Junior: "consolide as vendas antigas e mantenha 30 dias".
+
+     POR QUE. Cada peça vendida nas plataformas vira um movimento com pedido,
+     loja e plataforma (~370 bytes), e são ~340 por dia: em duas semanas o
+     acabMov passou de 3 MB, todo ele subindo e descendo a cada gravação.
+     Venda de mais de 30 dias ninguém consulta pedido a pedido — o que conta
+     dela é a quantidade que saiu.
+
+     O QUE FAZ, uma vez por dia, dentro da rodada (com a trava: só um
+     computador mexe): as saídas do DRE com data de mais de 30 dias viram
+     SAÍDAS CONSOLIDADAS (origem 'dre-consolidado'), uma por SKU e tamanho e
+     por TRECHO de dias seguidos sem entrada daquele produto no meio. Guardam
+     a soma, quantos pedidos, a quantidade por plataforma e o primeiro e o
+     último dia (data/ate).
+
+     POR QUE O SALDO E O CUSTO NÃO MUDAM. O saldo é soma: juntar saídas não
+     muda soma. O custo médio (cmp) só se refaz numa ENTRADA; saída sai pela
+     média do momento e não a mexe. Saídas seguidas sem entrada no meio podem
+     virar uma só, datada no PRIMEIRO dia do trecho (a entrada do mesmo dia
+     já vem antes das saídas na ordem do cmp). E, por garantia, a conta é
+     refeita antes e depois para cada produto mexido: se qualquer saldo, custo
+     médio ou CMV mudar, nada é gravado.
+
+     O QUE NÃO ENTRA: pedido em pendência (ainda vai se completar), movimento
+     de antes do início da contagem (não conta mesmo) e qualquer outra origem
+     (manual, ERP, OS). E depois dela, `consolidadoAte` faz o pedido antigo que
+     o DRE reenviar ser ignorado (ver relevante) — senão baixaria de novo.
+     O preço disso: o cancelamento de um pedido de mais de 30 dias não estorna
+     sozinho; a devolução assim entra à mão, como entrada. */
+  const DIAS_DETALHE = 30;
+  function diaMenos(dia, n) {
+    const d = new Date(dia + 'T12:00:00-03:00');
+    d.setUTCDate(d.getUTCDate() - n);
+    return diaSP(d.toISOString());
+  }
+
+  function consolidar(c, hoje) {
+    hoje = hoje || hojeSP();
+    if (c.consolidadoEm === hoje) return null;
+    const acab = A();
+    const corte = diaMenos(hoje, DIAS_DETALHE);
+    const ini = (acab.cfg() || {}).inicio || '';
+    const vale = m => !ini || !m.criadoEm || String(m.criadoEm) >= ini;
+    const entra = m => m.tipo === 'saida' && String(m.data || '') < corte && vale(m)
+      && ((m.origem === 'dre' && m.pedidoChave && !c.pendentes[m.pedidoChave]) || m.origem === 'dre-consolidado');
+    const lista = Array.isArray(STATE.acabMov) ? STATE.acabMov : [];
+    const alvo = lista.filter(entra);
+    const res = { antes: alvo.length, depois: 0, ate: corte, mudou: false };
+    c.consolidadoEm = hoje;
+    // Nada de detalhado para juntar: só anda a linha (o que já é total não
+    // precisa ser refeito).
+    if (!alvo.some(m => m.origem === 'dre')) {
+      if (!c.consolidadoAte || corte > c.consolidadoAte) c.consolidadoAte = corte;
+      return res;
+    }
+    // Os dias em que ENTROU peça de cada produto (qualquer tamanho: o cmp do
+    // relatório também roda com "todos os tamanhos"), inclusive as das OS.
+    const entradas = new Map();
+    acab.todosMovs().forEach(m => {
+      if (m.tipo !== 'entrada') return;
+      if (!entradas.has(m.produtoId)) entradas.set(m.produtoId, []);
+      entradas.get(m.produtoId).push(String(m.data || ''));
+    });
+    const entrouEntre = (pid, de, ate) => (entradas.get(pid) || []).some(d => d > de && d <= ate);
+    const porPT = new Map();
+    alvo.forEach(m => {
+      const k = m.produtoId + '|' + m.tamanho;
+      if (!porPT.has(k)) porPT.set(k, []);
+      porPT.get(k).push(m);
+    });
+    const grupos = [];
+    porPT.forEach(ms => {
+      ms.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      let g = null;
+      ms.forEach(m => {
+        const dia = String(m.data);
+        if (!g || entrouEntre(m.produtoId, g.data, dia)) {
+          g = { id: uid(), tipo: 'saida', origem: 'dre-consolidado', produtoId: m.produtoId, tamanho: m.tamanho,
+            data: dia, ate: dia, qtd: 0, valor: 0, destino: 'cliente', pedidos: 0, porPlataforma: {},
+            criadoEm: '', criadoPor: 'consolidação' };
+          grupos.push(g);
+        }
+        const q = Number(m.qtd) || 0;
+        g.qtd += q;
+        const fim = String(m.ate || m.data);
+        if (fim > g.ate) g.ate = fim;
+        if (String(m.criadoEm || '') > g.criadoEm) g.criadoEm = String(m.criadoEm || '');
+        if (m.origem === 'dre-consolidado') {
+          g.pedidos += Number(m.pedidos) || 0;
+          Object.keys(m.porPlataforma || {}).forEach(pl => { g.porPlataforma[pl] = (g.porPlataforma[pl] || 0) + (Number(m.porPlataforma[pl]) || 0); });
+        } else {
+          g.pedidos += 1;
+          const pl = m.plataforma || '?';
+          g.porPlataforma[pl] = (g.porPlataforma[pl] || 0) + q;
+        }
+      });
+    });
+    grupos.forEach(g => { if (!g.criadoEm) g.criadoEm = new Date().toISOString(); });
+    // A CONFERÊNCIA: saldo, custo médio e CMV de cada produto mexido, antes e
+    // depois, por tamanho e com todos os tamanhos.
+    const tocados = new Map();
+    alvo.forEach(m => { if (!tocados.has(m.produtoId)) tocados.set(m.produtoId, new Set()); tocados.get(m.produtoId).add(m.tamanho); });
+    const medir = () => {
+      const ms = acab.todosMovs();
+      const S = acab.saldos(ms);
+      const out = [];
+      tocados.forEach((tams, pid) => {
+        [...tams, null].forEach(t => {
+          const r = acab.cmp(ms, pid, t);
+          out.push(pid + '|' + t, r.saldo, r.medio, r.cmv);
+          if (t != null) out.push(S.de(pid, t).total);
+        });
+      });
+      return out;
+    };
+    const antes = STATE.acabMov;
+    const fora = new Set(alvo.map(m => m.id));
+    const ref = medir();
+    STATE.acabMov = antes.filter(m => !fora.has(m.id)).concat(grupos);
+    const novo = medir();
+    const igual = ref.length === novo.length && ref.every((v, i) => typeof v === 'string'
+      ? v === novo[i] : Math.abs(v - novo[i]) <= 1e-6 * Math.max(1, Math.abs(v)));
+    if (!igual) {
+      STATE.acabMov = antes;
+      const i = ref.findIndex((v, j) => v !== novo[j] && !(typeof v === 'number' && Math.abs(v - novo[j]) <= 1e-6 * Math.max(1, Math.abs(v))));
+      console.warn('Consolidação das vendas: a conta mudaria (' + (ref[i] === undefined ? 'tamanho' : JSON.stringify([ref[i], novo[i]])) + ') — nada foi gravado');
+      res.erro = 'a conferência não bateu — nada foi consolidado';
+      return res;
+    }
+    if (!c.consolidadoAte || corte > c.consolidadoAte) c.consolidadoAte = corte;
+    res.depois = grupos.length;
+    res.mudou = true;
+    return res;
+  }
+
   function anotarEstat(c, r, lidos, relevantes) {
     const dia = hojeSP();
     const e = c.estat[dia] || { lidos: 0, relevantes: 0, pecas: 0, estornos: 0 };
@@ -519,15 +663,22 @@
       const fila = new Map(Object.values(c.pendentes).map(p => [p.chave, p]));
       novos.forEach(p => fila.set(p.chave, p));
       const r = processar([...fila.values()], c);
+      // Uma vez por dia, ainda sem await e com a trava: as vendas de mais de
+      // 30 dias viram totais (ver consolidar).
+      let cons = null;
+      try { cons = consolidar(c); } catch (e) { console.warn('consolidação das vendas', e); }
+      if (cons && cons.mudou) console.info(`Vendas das plataformas: ${cons.antes} saídas de antes de ${cons.ate} consolidadas em ${cons.depois}.`);
       c.cursor = cursor;
       anotarEstat(c, r, lidos, novos.length);
       c.status = { ultimaEm: new Date().toISOString(), quem: quemSou(), erro: '', aviso: mais ? 'ainda há páginas: continua na próxima rodada' : '',
         lidos, relevantes: novos.length, pecas: r.pecas, estornos: r.estornos, pendentes: Object.keys(c.pendentes).length,
-        cortadas: r.cortadas || 0 };
+        cortadas: r.cortadas || 0,
+        consolidacao: cons ? { em: c.consolidadoEm, ate: cons.ate, antes: cons.antes, depois: cons.depois, erro: cons.erro || '' }
+          : ((c.status && c.status.consolidacao) || null) };
       c.trava = { quem: quemSou(), aba: ABA, ate: new Date(Date.now() + TRAVA_MS).toISOString() };
       const chaves = [];
       if (r.fixados) chaves.push('acabProdutos');
-      if (r.saidas || r.estornos) chaves.push('acabMov');
+      if (r.saidas || r.estornos || (cons && cons.mudou)) chaves.push('acabMov');
       chaves.push('meta');
       await gravar(chaves);
       if (r.pecas || r.estornos) toast(`Vendas das plataformas: ${fmtN(r.pecas)} peça(s) baixada(s)${r.estornos ? ', ' + fmtN(r.estornos) + ' estornada(s)' : ''}`, 'ok');
@@ -905,6 +1056,6 @@
 
 
   // Para os testes (node).
-  window._vendasDreInterno = { converter, linhaDe, tamDaDescricao, acharRegra, processar, relevante, diaSP, lerPara, rodar, dre, ABA,
+  window._vendasDreInterno = { converter, linhaDe, tamDaDescricao, acharRegra, processar, relevante, diaSP, lerPara, rodar, dre, ABA, consolidar, diaMenos,
     _set: o => { if ('ultima' in o) _ultima = o.ultima; if ('pegouEm' in o) _pegouEm = o.pegouEm; } };
 })();

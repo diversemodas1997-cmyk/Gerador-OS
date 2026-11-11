@@ -643,7 +643,9 @@ ${nOS} OS já em Estoque e ${nMovs} lançamento(s) de antes deixam de contar (fi
       <div class="field-hint" id="${prefixo}-info"></div>`;
     const origem = m => m.origem === 'os' ? `<span class="badge" style="background:#e3ecf7;" title="Etapa Estoque marcada na OS — desmarque na OS para estornar">OS ${esc(m.os)}</span>`
       : m.origem === 'erp' ? '<span class="badge" style="background:#efe7f6;">ERP</span>'
-      : m.origem === 'dre' ? `<span class="badge" style="background:#e0f2ec;" title="Vendas das plataformas (Painel DRE): ${esc((m.loja || '') + ' · pedido ' + (m.pedidoNumero || '') + (m.viaDescricao ? ' · lançado pela leitura da descrição (item sem SKU)' : ''))}">DRE${m.viaDescricao ? ' · pela descrição' : ''}</span>` : '';
+      : m.origem === 'dre' ? `<span class="badge" style="background:#e0f2ec;" title="Vendas das plataformas (Painel DRE): ${esc((m.loja || '') + ' · pedido ' + (m.pedidoNumero || '') + (m.viaDescricao ? ' · lançado pela leitura da descrição (item sem SKU)' : ''))}">DRE${m.viaDescricao ? ' · pela descrição' : ''}</span>`
+      // Vendas de mais de 30 dias somadas num total (vendas-dre.js, consolidar).
+      : m.origem === 'dre-consolidado' ? `<span class="badge" style="background:#e0f2ec;" title="${esc('Vendas das plataformas somadas: ' + (m.pedidos || 0) + ' pedido(s) de ' + fmtD(m.data) + ' a ' + fmtD(m.ate || m.data) + ' · ' + Object.keys(m.porPlataforma || {}).map(k => k + ' ' + m.porPlataforma[k]).join(', '))}">DRE · ${esc(String(m.pedidos || 0))} pedidos</span>` : '';
     const apagar = m => m.origem === 'os' ? '' : `<button onclick="acabApagarMov('${esc(m.id)}')">apagar</button>`;
     box.innerHTML = `${listaSkus()}
       ${produtos().length ? '' : `<div class="info-box" style="margin-bottom:12px;">Nenhum SKU ainda. Os SKUs vêm direto do programa: o <b>SKU</b> do desenho técnico ou do modelo, e o da OS (linha do modelo + <b>Sigla SKU</b> da cor) — preencha lá e ele aparece aqui na hora. A entrada também cadastra o SKU digitado; para trazer o catálogo inteiro, use <a href="#acab-produtos" onclick="goto('acab-produtos');return false;">Produtos (SKUs)</a>.</div>`}
