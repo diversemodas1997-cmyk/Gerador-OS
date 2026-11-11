@@ -16811,6 +16811,14 @@ function _expFolhaDia() {
   return (exc && exc.tipo === 'remarcada' && exc.novaData) ? exc.novaData : dataOrig;
 }
 const _expNaFolha = oc => !expFolhaOe || oc.data === _expFolhaDia();
+// O intervalo da folha: o dia da OE escolhida, ou o período do planejamento.
+// (11/11/2026) A folha, o "OE vazia?" do salvar e o nome do PDF usavam sempre o
+// período navegado; com a tabela "OE criadas" a OE pode estar fora dele, e o
+// salvar respondia "OE vazia — nada foi salvo" para uma OE cheia.
+function _expIntervaloFolha() {
+  const dia = _expFolhaDia();
+  return dia ? { ini: dia, fim: dia } : _expRange(expPlanoModo, expPlanoAncora);
+}
 // Os números das OE na folha do dia, em ordem: "OE 0085 · OE 0086".
 const _expNumerosDaFolha = ocs => [...new Set(ocs.map(oc => _oeNumeroDe(oc.janela.id, oc.dataOrig)).filter(n => n > 0))]
   .sort((a, b) => a - b);
@@ -24432,8 +24440,7 @@ function renderPrintPlanoExpedicao() {
      criadas" — todas as OE, de qualquer data — a folha de uma OE de outro dia
      saía vazia ("Nenhuma Ordem de Expedição produzida…"). Com uma OE escolhida,
      o intervalo é o dia efetivo dela; sem, continua o período. */
-  const _diaFolha = _expFolhaDia();
-  const { ini, fim } = _diaFolha ? { ini: _diaFolha, fim: _diaFolha } : _expRange(expPlanoModo, expPlanoAncora);
+  const { ini, fim } = _expIntervaloFolha();
   // A folha impressa só traz data com OE PRODUZIDA: precisa ter carga/OS alocada
   // em alguma das pernas. Dia agendado e vazio não vira papel. Cancelada também
   // sai, mesmo que tenha carga alocada antes do cancelamento — sem as pernas
@@ -36062,7 +36069,7 @@ async function atualizarOeFolderStatus() {
 // Nome do arquivo da OE = período coberto pelo plano (estável: regerar o
 // mesmo período reescreve o mesmo arquivo, igual às OS pelo número).
 function oeFilenameForPlano() {
-  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const { ini, fim } = _expIntervaloFolha();
   const iniBr = dataBrArquivo(ini), fimBr = dataBrArquivo(fim);
   // Folha do dia (aberta pelo quadro de uma OE): todos os números daquele dia
   // no nome — OE-0085-0086-04-11-2026.pdf.
@@ -36226,7 +36233,7 @@ function _avisarOeUmaVez(chave, msg) {
 // renderPrintPlanoExpedicao: sem isso a folha sai só com cabeçalho e o aviso
 // "Nenhuma OE produzida". Fonte única pra tela e gravação não divergirem.
 function oeTemConteudo() {
-  const { ini, fim } = _expRange(expPlanoModo, expPlanoAncora);
+  const { ini, fim } = _expIntervaloFolha();
   return ocorrenciasExpedicao(ini, fim).some(oc =>
     !oc.cancelada && _expNaFolha(oc) &&
     resumoPernaExpedicao(oc, 'ida').itens.length +
@@ -36282,7 +36289,7 @@ async function salvarPdfOeNaPasta({ silent = false } = {}) {
   // alocada no período, o PDF sairia só com cabeçalho e "Nenhuma OE produzida".
   if (!oeTemConteudo()) {
     if (silent) return false;
-    toast('OE vazia — nenhuma OS alocada neste período. Nada foi salvo.', 'err');
+    toast(expFolhaOe ? 'OE vazia — nenhuma OS alocada nela. Nada foi salvo.' : 'OE vazia — nenhuma OS alocada neste período. Nada foi salvo.', 'err');
     return false;
   }
   let handle = oeFolderHandle || (await loadOeFolderHandle());
