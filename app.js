@@ -16898,6 +16898,20 @@ function expAlternarRelatorio() {
   trocarAbaExpedicao(expAbaAtiva === 'relatorio' ? 'plano' : 'relatorio');
 }
 
+/* SÓ AS OE CRIADAS (11/11/2026, Junior: "mostre apenas OE criadas"). Os quadros
+   do período mostram só as expedições que já têm número de OE — as que já
+   receberam OS. A janela vazia (agendada, sem nenhuma OS) some da lista; o
+   botão "Todas as expedições" traz de volta, e é por ele que se põe a primeira
+   OS numa expedição nova. Lembrado por aba do navegador. */
+let expSoCriadas = true;
+try { expSoCriadas = sessionStorage.getItem('gos:exp:criadas') !== '0'; } catch (e) {}
+
+function expSetSoCriadas(so) {
+  expSoCriadas = !!so;
+  try { sessionStorage.setItem('gos:exp:criadas', expSoCriadas ? '1' : '0'); } catch (e) {}
+  renderExpedicaoPlano();
+}
+
 // O período, igual nas duas abas: os modos e a navegação ‹ ›.
 function _expSegModoHtml() {
   return `<div class="exp-seg">
@@ -17112,6 +17126,10 @@ function renderExpedicaoPlano() {
       ${_expSegModoHtml()}
       ${segOrdem}
       ${_expNavPeriodoHtml()}
+      <div class="exp-seg" title="Quais expedições do período aparecem: só as que já são OE (têm número porque já receberam OS), ou também as janelas ainda vazias">
+        <button class="${expSoCriadas ? 'active' : ''}" onclick="expSetSoCriadas(true)" title="Só as expedições que já têm número de OE">Só OE criadas</button>
+        <button class="${expSoCriadas ? '' : 'active'}" onclick="expSetSoCriadas(false)" title="Também as janelas ainda sem OS — é aqui que se põe a primeira OS numa expedição nova">Todas as expedições</button>
+      </div>
       <div class="exp-seg" title="Cada OE aparece numa linha; o ▸ dela abre o quadro com as OS">
         <button onclick="expAlternarTodasOe(true)" title="Abre todas as OE do período">▾ Expandir todas</button>
         <button onclick="expAlternarTodasOe(false)" title="Volta todas as OE do período a uma linha">▸ Contrair todas</button>
@@ -17284,7 +17302,10 @@ function renderExpedicaoPlano() {
       ${oc.cancelada ? '' : `<button class="btn" style="padding:2px 8px;font-size:11px;margin-left:auto;" onclick="event.stopPropagation(); abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário">+ no turno</button>`}
     </div>`;
 
-  const cards = ocs.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : `
+  // Os quadros obedecem a "Só OE criadas"; os totais do período (resumo) não.
+  const ocsQuadros = expSoCriadas ? ocs.filter(oc => _oeNumeroDe(oc.janela.id, oc.dataOrig) > 0) : ocs;
+  const semOe = ocs.length - ocsQuadros.length;
+  const cards = ocsQuadros.map(oc => !expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig)) ? cardFechado(oc) : `
     <div class="card exp-ocor ${oc.cancelada ? 'cancelada' : ''}">
       <div class="exp-ocor-head">
         <div style="display:flex;gap:8px;align-items:flex-start;">
@@ -17322,7 +17343,9 @@ function renderExpedicaoPlano() {
       <div class="empty" style="padding:24px 0;text-align:center;">
         ${semJanelas
           ? 'Nenhuma janela de expedição cadastrada. Clique em <b>+ Janela</b> para definir os dias e horários em que a expedição acontece.'
-          : 'Nenhuma expedição neste período. Navegue entre os períodos ou cadastre uma janela para estes dias.'}
+          : semOe
+            ? `Nenhuma OE criada neste período — ${semOe} expedição(ões) ainda sem OS. Para colocar OS nelas, clique em <b>Todas as expedições</b>.`
+            : 'Nenhuma expedição neste período. Navegue entre os períodos ou cadastre uma janela para estes dias.'}
       </div>
     </div>`;
 
@@ -17465,7 +17488,7 @@ function renderExpedicaoPlano() {
         style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);color:var(--ink);">
       <div id="oe-busca-results" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.14);"></div>
     </div>`;
-  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocs.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
+  cont.innerHTML = toolbar + buscaHtml + comoFunciona + resumo + (ocsQuadros.length ? cards : vazio) + oesCriadasHtml + pendentesHtml + janelasHtml;
 }
 
 /* ---------------- modais ---------------- */
