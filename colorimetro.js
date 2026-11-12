@@ -1162,19 +1162,91 @@
       if (f === 0) tonsNovos[n] = 0;
       else if (typeof f === 'number' && f > 0) { (tons[f] = tons[f] || []).push(n); tonsNovos[n] = f; }
     });
-    nums.filter(n => !(n in tonsNovos)).forEach(n => {
-      let melhor = null, menor = Infinity;
-      Object.keys(tons).map(Number).sort((a, b) => a - b).forEach(k => {
-        // Tom criado à mão como "só esta amostra" não recebe ninguém automático.
-        if (av.tomSo && av.tomSo[k]) return;
-        if (!tons[k].every(x => compativeis(cores[x], cores[n]))) return;
-        const pior = Math.max(...tons[k].map(x => deDaFormula(cores[x], cores[n])));
-        if (pior < menor - 1e-12) { menor = pior; melhor = k; }
-      });
-      if (melhor == null) { melhor = 1; while (tons[melhor]) melhor++; tons[melhor] = []; }
-      tons[melhor].push(n);
-      tonsNovos[n] = melhor;
-    });
+    /* TODAS COMO REFERÊNCIA DE TODAS (12/11/2026, Junior: "seria viável medir
+       todas as amostras como referência e com os dados de todas as amostras
+       como referência classificá-las entre as compatíveis?"; "as amostras devem
+       continuar sendo comparadas pelos valores de média"; "não deve haver
+       empate caso as amostras não sejam compatíveis de acordo com o nível de
+       tolerância já usado nas configurações"; "não deve haver aproximação,
+       apenas compatíveis ou incompatíveis").
+       A única coisa que conta é a tabela SIM/NÃO de quem casa com quem — média
+       × média, pela regra de aprovação das Configurações (comparar). Nenhum dE
+       entra na decisão, e nada é aproximado:
+         1. duas amostras incompatíveis NUNCA ficam no mesmo tom;
+         2. usa-se o MENOR número de tons possível (busca exata);
+         3. entre as divisões com esse número de tons, a regra é fixa: em ordem
+            de número, cada amostra fica no tom mais baixo que ainda permite
+            fechar a divisão — o resultado não depende da ordem em que foram
+            medidas.
+       É a coloração do grafo das incompatibilidades: tom = cor, e amostras
+       ligadas (incompatíveis) não podem ter a mesma cor. Os tons fixados à mão
+       entram já coloridos; o "só esta amostra" não recebe nenhuma automática. */
+    const livres = nums.filter(n => !(n in tonsNovos));
+    if (livres.length) {
+      const fixos = Object.keys(tons).map(Number).sort((p, q) => p - q)
+        .map(k => ({ k, membros: tons[k].slice(), fechado: !!(av.tomSo && av.tomSo[k]) }));
+      const F = fixos.length;
+      // Vértices: as livres (0..L-1). Cada tom fixado é a cor c < F.
+      const L = livres.length;
+      const conflito = livres.map(() => new Array(L).fill(false));
+      for (let i = 0; i < L; i++) for (let j = i + 1; j < L; j++) {
+        if (!compativeis(cores[livres[i]], cores[livres[j]])) conflito[i][j] = conflito[j][i] = true;
+      }
+      // Cor fixa proibida para a livre i: tom fechado, ou algum membro incompatível.
+      const proibidaFixa = livres.map(n => fixos.map(g => g.fechado || g.membros.some(x => !compativeis(cores[x], cores[n]))));
+      // k cores dão conta? (prefixo = cores já impostas a algumas livres)
+      function cabeEm(k, prefixo) {
+        const cor = new Array(L).fill(-1);
+        for (const i in prefixo) cor[i] = prefixo[i];
+        const usadas = () => { let m = F - 1; cor.forEach(c => { if (c > m) m = c; }); return m + 1; };
+        const pode = (i, c) => c < k && (c >= F || !proibidaFixa[i][c]) && !conflito[i].some((x, j) => x && cor[j] === c);
+        for (let i = 0; i < L; i++) if (cor[i] >= 0 && !pode(i, cor[i])) return false;
+        return (function bt() {
+          // DSATUR: a livre mais restrita primeiro.
+          let melhorI = -1, melhorSat = -1, melhorGrau = -1;
+          for (let i = 0; i < L; i++) {
+            if (cor[i] >= 0) continue;
+            const viz = new Set();
+            for (let j = 0; j < L; j++) if (conflito[i][j] && cor[j] >= 0) viz.add(cor[j]);
+            for (let c = 0; c < F; c++) if (proibidaFixa[i][c]) viz.add(c);
+            const grau = conflito[i].filter(Boolean).length;
+            if (viz.size > melhorSat || (viz.size === melhorSat && grau > melhorGrau)) { melhorI = i; melhorSat = viz.size; melhorGrau = grau; }
+          }
+          if (melhorI < 0) return true;
+          const u = usadas();
+          // Cores já em uso, e no máximo UMA cor nova (as novas são todas iguais entre si).
+          for (let c = 0; c < Math.min(k, u + 1); c++) {
+            if (!pode(melhorI, c)) continue;
+            cor[melhorI] = c;
+            if (bt()) return true;
+            cor[melhorI] = -1;
+          }
+          return false;
+        })();
+      }
+      let k = Math.max(F, 1);
+      while (!cabeEm(k, {})) k++;
+      // A regra fixa: em ordem de número, o tom mais baixo que ainda fecha com k tons.
+      const prefixo = {};
+      for (let i = 0; i < L; i++) {
+        for (let c = 0; c < k; c++) {
+          prefixo[i] = c;
+          if (cabeEm(k, prefixo)) break;
+          delete prefixo[i];
+        }
+      }
+      // Cor -> chave do tom: as fixas mantêm a sua; as novas recebem as livres.
+      const usadasK = new Set(fixos.map(g => g.k));
+      const chave = {};
+      fixos.forEach((g, c) => { chave[c] = g.k; });
+      for (let i = 0; i < L; i++) {
+        const c = prefixo[i];
+        if (chave[c] == null) { let x = 1; while (usadasK.has(x)) x++; usadasK.add(x); chave[c] = x; }
+        const kk = chave[c];
+        (tons[kk] = tons[kk] || []).push(livres[i]);
+        tonsNovos[livres[i]] = kk;
+      }
+    }
     // Amostra marcada no cadastro antigo e sem medição não some do mapa.
     Object.keys(av.tons || {}).forEach(n => { if (!(n in cores) && av.fixo[n] === 0) tonsNovos[n] = 0; });
     av.tons = tonsNovos;
