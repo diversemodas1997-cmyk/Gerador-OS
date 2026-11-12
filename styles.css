@@ -4140,6 +4140,11 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 .op-prep-rel .t { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
 .op-prep-rel .x { white-space: pre-wrap; font-size: 11pt; line-height: 1.4; }
 .op-prep-rel .m { font-size: 9pt; color: #444; margin-top: 4px; }
+/* O texto do relatório é campo na folha (como a observação da OS): cresce com
+   o texto (_obsAjustarAltura) e, na tela, tem um fundo claro para se ver que
+   dá para escrever. No papel sai como texto comum. */
+.op-prep-rel .op-prep-rel-campo { min-height: 18mm; font-size: 11pt; line-height: 1.4; }
+@media screen { body:not(.pdf-capture) .op-prep-rel .op-prep-rel-campo { background: #fffbea; outline: 1px dashed #d9cfa6; outline-offset: 2px; } }
 /* O ângulo e o comprimento da faixa na OE saem da medida real da área, de
    canto a canto (ver _carimboDiagonal em app.js). */
 /* align-items: flex-start — sem isto o flex estica a coluna mais curta até a

@@ -45,7 +45,7 @@ const env = {
   _carimboCanceladoHtml: () => '<div class="sheet-carimbo-area"><div class="sheet-carimbo-cancelado"><span>CANCELADO</span></div></div>', _carimbosDiagonaisOE: () => {}, goto: p => { pagina = p; }, _obsQuemSou: () => 'nathaly'
 };
 const nomes = Object.keys(env);
-const api = new Function(...nomes, bloco + '\nreturn { mudarStatusOP, renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
+const api = new Function(...nomes, bloco + '\nreturn { salvarTextoRelatorioOP, mudarStatusOP,renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
 
 (async () => {
   const preencher = (v) => { api.abrirModalOP(); Object.entries(v).forEach(([k, x]) => { doc.getElementById(k).value = x; }); };
@@ -115,6 +115,26 @@ const api = new Function(...nomes, bloco + '\nreturn { mudarStatusOP, renderOrde
     && !/CANCELADO/.test(els['print-sheet-prep'].innerHTML) && c.historicoStatus.length === 3, c);
   delete b.status; api.renderOrdensPreparo();
   ok('21. OP antiga sem status conta como em preparo', (els['op-prep-painel'].innerHTML.split('<tr').find(t => t.includes('OP 0002')) || '').includes('Em preparo'), '');
+  // RELATÓRIO EDITÁVEL NA FOLHA (12/11/2026, "o relatório de tonalidade na folha
+  // de OP deve ser aberto para usuário editar o texto, assim como o campo de
+  // observação das OS")
+  api.renderPrintPreparo();
+  let H = els['print-sheet-prep'].innerHTML;
+  ok('22. folha: o relatório é um campo que grava ao sair (salvarTextoRelatorioOP)', /<textarea[^>]*op-prep-rel-campo[^>]*onchange="salvarTextoRelatorioOP\('p3', this.value\)"[^>]*>Tecidos compatíveis em cor\nTecido Tom 1/.test(H), H.slice(-900));
+  const emAntes = c.relatorios[0].em;
+  ok('23. editar o texto corrige o último relatório, mantém a data e marca quem editou',
+    (await api.salvarTextoRelatorioOP(c.id, 'Tom 1 (ref 1: 1 - ribana 1,2)\nbobina 2 separada')) === true && c.relatorios.length === 1
+    && c.relatorios[0].texto === 'Tom 1 (ref 1: 1 - ribana 1,2)\nbobina 2 separada' && c.relatorios[0].em === emAntes && c.relatorios[0].editadoPor === 'nathaly'
+    && /texto editado em/.test(plano(els['print-sheet-prep'].innerHTML)) && /bobina 2 separada/.test(els['print-sheet-prep'].innerHTML), c.relatorios);
+  ok('24. mesmo texto: não grava de novo', (await api.salvarTextoRelatorioOP(c.id, c.relatorios[0].texto)) === false, '');
+  const sem = STATE.ordensPreparo.find(x => x.numero === 2); api.verOP(sem.id); api.renderPrintPreparo();
+  ok('25. OP sem avaliação: campo vazio na folha', /<textarea[^>]*op-prep-rel-campo[^>]*><\/textarea>/.test(els['print-sheet-prep'].innerHTML), els['print-sheet-prep'].innerHTML.slice(-700));
+  ok('26. escrever sem ter avaliado vira relatório "escrito à mão"; em branco não grava',
+    (await api.salvarTextoRelatorioOP(sem.id, '   ')) === false && (await api.salvarTextoRelatorioOP(sem.id, 'Tom único')) === true
+    && sem.relatorios.length === 1 && sem.relatorios[0].manual === true && /Escrito à mão em/.test(plano(els['print-sheet-prep'].innerHTML)), sem.relatorios);
+  respostaPrompt = 'x'; await api.mudarStatusOP(sem.id, 'cancelada');
+  H = els['print-sheet-prep'].innerHTML;
+  ok('27. OP cancelada: relatório só texto, e editar é recusado', !/<textarea/.test(H) && /Tom único/.test(H) && (await api.salvarTextoRelatorioOP(sem.id, 'outro')) === false && sem.relatorios[0].texto === 'Tom único', H.slice(-600));
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
   process.exit(falhas ? 1 : 0);
 })();

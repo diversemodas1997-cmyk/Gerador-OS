@@ -2252,7 +2252,7 @@ const ACOES_POR_AREA = {
   'lançar no estoque de peças': 'estoque-tecidos', 'lançar no estoque de ferramentas': 'estoque-tecidos',
   'cadastrar no estoque de materiais': 'estoque-tecidos', 'apagar do estoque de materiais': 'estoque-tecidos',
   'lançar no estoque de materiais': 'estoque-tecidos',
-  'criar ou editar ordem de preparo': 'estoque-tecidos', 'excluir ordem de preparo': 'estoque-tecidos', 'mudar status da ordem de preparo': 'estoque-tecidos',
+  'criar ou editar ordem de preparo': 'estoque-tecidos', 'excluir ordem de preparo': 'estoque-tecidos', 'mudar status da ordem de preparo': 'estoque-tecidos', 'editar o relatório de tonalidades da OP': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -11060,7 +11060,8 @@ function renderPrintPreparo() {
   const caixas = (rotulo, q) => q > 0 ? `
     <div class="op-prep-bob"><div class="t">${esc(rotulo)} · ${n(q)} bobina${q === 1 ? '' : 's'}</div>
       <div class="g">${Array.from({ length: q }, (_, i) => `<span>${i + 1}</span>`).join('')}</div></div>` : '';
-  const relEm = rel ? new Date(rel.em) : null;
+  const quandoTxt = iso => { const d = new Date(iso); return esc(formatDate(String(iso).slice(0, 10))) + (!isNaN(d) ? ' ' + hm(d) : ''); };
+  const editavel = !cancelada && (typeof podeMexerEstoqueTecidos !== 'function' || podeMexerEstoqueTecidos());
   sheet.innerHTML = `${cancelada ? _carimboCanceladoHtml() : ''}
     <div class="exp-print-head">
       <div>
@@ -11088,12 +11089,52 @@ function renderPrintPreparo() {
     ${caixas('Ribana', Number(p.bobinasRibana) || 0)}
     <div class="op-prep-rel">
       <div class="t">Relatório de tonalidades (Colorímetro)</div>
+      ${editavel
+        ? `<textarea class="obs-input op-prep-rel-campo" placeholder="Digite o relatório de tonalidades — ou use Avaliar amostras para o Colorímetro escrever"
+             oninput="_obsAjustarAltura(this)" onchange="salvarTextoRelatorioOP('${esc(p.id)}', this.value)">${esc(rel ? rel.texto : '')}</textarea>`
+        : (rel && rel.texto ? `<div class="x">${esc(rel.texto)}</div>` : '')}
       ${rel
-        ? `<div class="x">${esc(rel.texto)}</div>
-           <div class="m">Avaliado em ${esc(formatDate(String(rel.em).slice(0, 10)))} ${relEm && !isNaN(relEm) ? hm(relEm) : ''}${rel.por ? ' por ' + esc(rel.por) : ''}${p.relatorios.length > 1 ? ` · ${p.relatorios.length}ª avaliação` : ''}</div>`
-        : '<div class="m">Ainda não avaliado — use <b>Avaliar amostras</b> na lista de OP do Estoque de tecidos.</div>'}
+        ? `<div class="m">${rel.manual ? 'Escrito à mão' : 'Avaliado'} em ${quandoTxt(rel.em)}${rel.por ? ' por ' + esc(rel.por) : ''}${p.relatorios.length > 1 ? ` · ${p.relatorios.length}ª avaliação` : ''}${rel.editadoEm ? ` · texto editado em ${quandoTxt(rel.editadoEm)}${rel.editadoPor ? ' por ' + esc(rel.editadoPor) : ''}` : ''}</div>`
+        : `<div class="m${editavel ? ' no-print' : ''}">Ainda não avaliado — use <b>Avaliar amostras</b> na lista de OP do Estoque de tecidos${editavel ? ' ou escreva o relatório acima' : ''}.</div>`}
     </div>`;
   if (cancelada) _carimbosDiagonaisOE(sheet.parentNode || sheet);
+  // O campo cresce com o texto (como a observação da OS): mede depois de a
+  // folha aparecer — goto desenha antes de tirar o .hidden.
+  if (editavel && typeof _obsAjustarAltura === 'function') {
+    const medir = () => sheet.querySelectorAll('.op-prep-rel-campo').forEach(_obsAjustarAltura);
+    medir(); setTimeout(medir, 0);
+  }
+}
+
+/* O TEXTO DO RELATÓRIO É EDITÁVEL NA FOLHA (12/11/2026, Junior: "o relatório de
+   tonalidade na folha de OP deve ser aberto para usuário editar o texto, assim
+   como o campo de observação das OS"). Grava ao sair do campo, como a
+   observação da OS. Corrige o ÚLTIMO relatório — a data da avaliação fica, e
+   ganha "texto editado em … por …"; sem relatório ainda, o texto digitado vira
+   um relatório escrito à mão. Uma nova avaliação no Colorímetro entra por cima,
+   como sempre. Quem edita é quem lança no Estoque de tecidos; OP cancelada não
+   é editada. */
+async function salvarTextoRelatorioOP(id, texto) {
+  if (!exigirEstoqueTecidos('editar o relatório de tonalidades da OP')) return false;
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (!p) { toast('Esta OP não existe mais', 'err'); return false; }
+  if (_opPrepStatus(p) === 'cancelada') { toast(`A OP ${_opFmt(p.numero)} está cancelada`, 'err'); return false; }
+  const t = String(texto || '').replace(/\s+$/, '');
+  p.relatorios = Array.isArray(p.relatorios) ? p.relatorios : [];
+  const rel = _opPrepUltimoRel(p);
+  const agora = new Date().toISOString(), por = _opPrepQuem();
+  if (rel) {
+    if (rel.texto === t) return false;
+    Object.assign(rel, { texto: t, editadoEm: agora, editadoPor: por });
+  } else {
+    if (!t.trim()) return false;
+    p.relatorios.push({ texto: t, em: agora, por, manual: true });
+  }
+  await saveState('ordensPreparo');
+  toast(`Relatório da OP ${_opFmt(p.numero)} salvo`, 'ok');
+  renderOrdensPreparo();
+  if (_opPrepFolhaId === id) renderPrintPreparo();
+  return true;
 }
 
 function abrirMovEstoque(tipo) {
