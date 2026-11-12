@@ -24959,6 +24959,7 @@ function renderPrintPlanoExpedicao() {
            quando a folha ocupa várias páginas. A altura vem do @media print. -->
       <tfoot><tr><td></td></tr></tfoot>
     </table>`;
+  _carimbosDiagonaisOE(sheet);
 }
 
 // Os quadros de uma perna em duas colunas de altura parecida, na ordem: a
@@ -38599,6 +38600,39 @@ function _carimboCanceladoHtml() {
   return '<div class="sheet-carimbo-area" aria-hidden="true">'
     + '<div class="sheet-carimbo-cancelado"><span>CANCELADO</span></div></div>';
 }
+
+/* O CARIMBO DA OE DE PONTA A PONTA (12/11/2026, Junior: "a faixa deve cobrir
+   a maior extensão de ponta a ponta da folha"). Na OS o ângulo fixo de -54,7°
+   é a diagonal da A4; a folha de OE tem a altura do conteúdo (.sheet-exp sem
+   piso de 297mm) e o bloco de uma OE é mais largo que alto, então o ângulo e o
+   comprimento da faixa saem da medida real da área: canto inferior esquerdo ao
+   superior direito. A letra é a da OS (96px), menor só quando a área é baixa
+   demais para ela. Refeito quando a área muda de tamanho e antes de imprimir. */
+function _carimboDiagonal(area) {
+  const faixa = area && area.firstElementChild;
+  const w = area ? area.clientWidth : 0, h = area ? area.clientHeight : 0;
+  if (!faixa || !w || !h) return;
+  const ang = Math.atan2(h, w) * 180 / Math.PI;
+  faixa.style.width = Math.ceil(Math.hypot(w, h) * 1.15) + 'px';
+  faixa.style.transform = `translate(-50%, -50%) rotate(-${ang.toFixed(2)}deg)`;
+  // A palavra inteira tem de caber dentro da área: mede-se a 96px (a letra da
+  // OS) e reduz-se na proporção só quando a caixa girada passaria das bordas.
+  const span = faixa.firstElementChild;
+  if (!span) return;
+  span.style.fontSize = '96px';
+  const L = span.offsetWidth, T = 96 * 1.2, r = ang * Math.PI / 180;
+  const s = Math.min(1, .9 * h / (L * Math.sin(r) + T * Math.cos(r)), .9 * w / (L * Math.cos(r) + T * Math.sin(r)));
+  if (L && s < 1) span.style.fontSize = Math.max(18, Math.floor(96 * s)) + 'px';
+}
+const _carimboObs = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(es => es.forEach(e => _carimboDiagonal(e.target))) : null;
+function _carimbosDiagonaisOE(raiz) {
+  (raiz || document).querySelectorAll('.sheet-exp .sheet-carimbo-area').forEach(a => {
+    _carimboDiagonal(a);
+    if (_carimboObs) _carimboObs.observe(a);
+  });
+}
+if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('beforeprint', () => _carimbosDiagonaisOE());
 
 function _carimboCanceladoNaFolha(o) {
   const folha = document.getElementById('print-sheet');

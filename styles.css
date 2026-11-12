@@ -4122,10 +4122,8 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    (.sheet-carimbo-area / .sheet-carimbo-cancelado). Numa folha do dia com OE
    não canceladas, o carimbo fica preso ao bloco da cancelada. */
 .exp-print-bloco.cancelada { position: relative; min-height: 120px; }
-/* No bloco (mais largo que alto) a diagonal da A4 cortaria a palavra: mesma
-   faixa, mesmas cores e letra, só deitada e menor para caber inteira. */
-.exp-print-bloco.cancelada .sheet-carimbo-cancelado { width: 140%; transform: translate(-50%, -50%) rotate(-8deg); }
-.exp-print-bloco.cancelada .sheet-carimbo-cancelado span { font-size: 44px; }
+/* O ângulo e o comprimento da faixa na OE saem da medida real da área, de
+   canto a canto (ver _carimboDiagonal em app.js). */
 /* align-items: flex-start — sem isto o flex estica a coluna mais curta até a
    altura da outra, e uma volta com 1 OS ficava com um trecho enorme de coluna
    riscada e vazia ao lado de 4 quadros da ida. */
