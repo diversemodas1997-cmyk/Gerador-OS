@@ -1115,6 +1115,7 @@
     if (!c.fases[i]) c.fases[i] = avNovo(c.osId);
     S.av = c.fases[i];
     avNormalizar(S.av);
+    classificar(S.av);
     S.padrao = S.av.n != null && estaNumTom(S.av.n) ? refComoLeitura(tomDe(S.av.n)) : null;
     S.atual = null;
   }
@@ -1160,6 +1161,10 @@
   function classificar(av = S.av) {
     if (!av) return;
     av.fixo = av.fixo || {};
+    // Ribana com corpo medido: classificada CONTRA o corpo (ver classificarRibana).
+    const ctxCorpo = corpoDaRibana(av);
+    if (ctxCorpo) { classificarRibana(av, ctxCorpo); return; }
+    av.contraCorpo = false;
     const cores = {};
     numerosDasAmostras(av).forEach(n => { const c = corDaAmostra(n, av); if (c) cores[n] = c; });
     const nums = Object.keys(cores).map(Number).sort((a, b) => a - b);
@@ -1314,6 +1319,71 @@
     });
   }
 
+  /* A RIBANA CONTRA O CORPO (12/11/2026, Junior: "quando concluir a fase corpo,
+     na fase ribana as amostras devem ser comparadas com as amostras da fase
+     corpo e determinar qual amostra de ribana é compatível com as amostras da
+     fase corpo").
+     A ribana é costurada no corpo: o que importa não é a ribana casar com outra
+     ribana, é casar com o CORPO em que ela vai. Então, na fase de ribana que
+     tem fase de cor (faseDeCorDaRibana: CM.LISA → Corpo, CM.REC → Corpo 1…), cada
+     amostra de ribana — pela média — é comparada com CADA amostra medida do
+     corpo, pela mesma tolerância das Configurações, só sim/não. Ela serve ao
+     Tom k do corpo quando casa com TODAS as amostras desse tom (as peças dele
+     vão todas com a mesma ribana). Pode servir a mais de um tom; se não serve a
+     nenhum, é incompatível com o corpo ('x'). O tom gravado na ribana é o
+     PRIMEIRO tom do corpo que ela serve — assim "Tom 1 da ribana" é a ribana do
+     Tom 1 do corpo. Sem nenhuma amostra de corpo medida, a ribana volta a ser
+     classificada sozinha, como antes. */
+  function faseDaAv(av) {
+    if (!S.avOS || !S.fases) return null;
+    const i = Object.keys(S.avOS.fases).find(k => S.avOS.fases[k] === av);
+    return i == null ? null : S.fases[Number(i)] || null;
+  }
+  function corpoDaRibana(av) {
+    const f = faseDaAv(av);
+    if (!f || !(f.corDe >= 0)) return null;
+    const corpo = S.avOS.fases[f.corDe];
+    if (!corpo || !numerosDasAmostras(corpo).some(n => corDaAmostra(n, corpo))) return null;
+    return { f, fCorpo: S.fases[f.corDe], corpo };
+  }
+  // Ribana n contra o corpo: cada amostra do corpo e cada tom do corpo.
+  function ribanaContraCorpo(n, av, ctx = corpoDaRibana(av)) {
+    const cor = corDaAmostra(n, av);
+    if (!ctx || !cor) return null;
+    const corpo = ctx.corpo;
+    const porAmostra = numerosDasAmostras(corpo).filter(x => corDaAmostra(x, corpo)).map(x => {
+      const r = comparar({ lab1: corDaAmostra(x, corpo) }, { lab1: cor });
+      return { x, ok: r.aprovado, r, tom: tomDe(x, corpo) };
+    });
+    const tons = tonsDoRelatorio(corpo).map((t, i) => {
+      const deles = porAmostra.filter(e => t.membros.includes(e.x));
+      return { k: t.k, ordem: i + 1, membros: t.membros, ok: deles.length > 0 && deles.every(e => e.ok) };
+    });
+    return { porAmostra, tons, serve: tons.filter(t => t.ok).map(t => t.ordem) };
+  }
+  function classificarRibana(av, ctx) {
+    av.fixo = av.fixo || {};
+    const tons = {};
+    av.serve = {};
+    numerosDasAmostras(av).filter(n => corDaAmostra(n, av)).forEach(n => {
+      const f = av.fixo[n];
+      const rc = ribanaContraCorpo(n, av, ctx);
+      av.serve[n] = rc ? rc.serve : [];
+      if (f === 0) { tons[n] = 0; return; }
+      if (typeof f === 'number' && f > 0) { tons[n] = f; av.serve[n] = [f]; return; }
+      tons[n] = av.serve[n].length ? av.serve[n][0] : 'x';
+    });
+    av.tons = tons;
+    av.ref = {};
+    av.contraCorpo = true;
+  }
+  // As fases de ribana acompanham o corpo: o corpo mudou, a ribana se refaz.
+  function sincronizarRibanas() {
+    if (!S.avOS || !S.fases) return;
+    S.fases.forEach(f => { if (f.corDe >= 0 && S.avOS.fases[f.i]) classificar(S.avOS.fases[f.i]); });
+  }
+  const ehIncompativelCorpo = (n, av = S.av) => tomDe(n, av) === 'x';
+
   // A referência do tom como "leitura", para a comparação da tela (barra, blocos, lista).
   function refComoLeitura(k) {
     const r = S.av && S.av.ref[k];
@@ -1425,6 +1495,18 @@
     }
     S.padrao = ref;
     avGuardar();
+    if (av.contraCorpo) {
+      const rc = ribanaContraCorpo(n, av);
+      const ctx = corpoDaRibana(av);
+      const nomeCorpo = ctx ? ctx.fCorpo.nome : 'corpo';
+      const prox2 = proximoNumero(n);
+      const dep = prox2 != null ? ` Clique em Trocar para passar à Amostra ${prox2}.` : '';
+      if (k === 0) return `Amostra ${n} medida — está marcada "Não usar" no relatório.${dep}`;
+      const casa = rc ? rc.porAmostra.filter(e => e.ok).map(e => e.x) : [];
+      if (rc && rc.serve.length) return `✔ Amostra ${n} serve ao ${rc.serve.map(o => 'Tom ' + o).join(' e ao ')} do ${nomeCorpo}.${dep}`;
+      return `✘ Amostra ${n} incompatível com todos os tons do ${nomeCorpo}`
+        + (casa.length ? ` (casa só com ${casa.join(', ')} do ${nomeCorpo}, não com o tom inteiro)` : '') + `.${dep}`;
+    }
     const mesmos = numerosDasAmostras(av).filter(x => x !== n && tomDe(x) === k);
     const ordem = tonsDoRelatorio().findIndex(t => t.k === k) + 1;
     const prox = proximoNumero(n);
@@ -1642,10 +1724,18 @@
     const av = S.avOS.fases[f.i];
     const rib = ribanasDe(f, medidas).map(r => ({ r, av: S.avOS.fases[r.i], tons: tonsDoRelatorio(S.avOS.fases[r.i]) }));
     const tons = tonsDoRelatorio(av);
-    const nGrupos = Math.max(tons.length, ...rib.map(x => x.tons.length));
+    // Ribana comparada com o corpo (12/11/2026): ela entra em CADA tom do corpo
+    // a que serve, e não passa do número de tons do corpo.
+    const nGrupos = Math.max(tons.length, ...rib.map(x => x.av.contraCorpo ? 0 : x.tons.length));
     // Tom a tom: Tom k (corpo - ribana); a ribana com mais tons que o corpo sai
-    // só ela, e a de um tom só entra em todos.
-    const tomDaRibana = (x, j) => x.tons.length === 1 ? x.tons[0] : x.tons[j];
+    // só ela, e a de um tom só entra em todos (ribana sem corpo medido).
+    const tomDaRibana = (x, j) => {
+      if (x.av.contraCorpo) {
+        const m = numerosDasAmostras(x.av).filter(n => tomDe(n, x.av) !== 0 && (x.av.serve[n] || []).includes(j + 1));
+        return m.length ? { membros: m } : null;
+      }
+      return x.tons.length === 1 ? x.tons[0] : x.tons[j];
+    };
     const grupos = Array.from({ length: nGrupos }, (_, j) => {
       const partes = [tons[j] ? tons[j].membros.join(',') : '',
         ...rib.map(x => tomDaRibana(x, j) ? `ribana ${tomDaRibana(x, j).membros.join(',')}` : '')].filter(Boolean);
@@ -1654,7 +1744,8 @@
       return `Tom ${k} (${partes.join(' - ')})`;
     }).join(' ');
     const sobra = (a, rotulo) => {
-      const pend = avPendentes(a), fora = numerosDasAmostras(a).filter(n => tomDe(n, a) === 0);
+      // Incompatível com o corpo ('x') também não vai: sai junto do "não usar".
+      const pend = avPendentes(a), fora = numerosDasAmostras(a).filter(n => tomDe(n, a) === 0 || tomDe(n, a) === 'x');
       return (pend.length ? `, ${rotulo}${pend.join(',')} a reavaliar` : '') + (fora.length ? `, ${rotulo}${fora.join(',')} não usar` : '');
     };
     const nome = [f.nome, f.tecido].filter(Boolean).join(' · ');
@@ -1688,7 +1779,7 @@
     // pelos dados; "Automático" devolve a amostra à classificação.
     av.fixo = av.fixo || {};
     if (v === 'auto' || v === '') delete av.fixo[n];
-    else if (v === 'novo') { const k = tomNovoDe(av); av.fixo[n] = k; (av.tomSo = av.tomSo || {})[k] = true; }
+    else if (v === 'novo' && !av.contraCorpo) { const k = tomNovoDe(av); av.fixo[n] = k; (av.tomSo = av.tomSo || {})[k] = true; }
     else av.fixo[n] = parseInt(v, 10) || 0;
     classificar(av);
     avGuardar();
@@ -1696,6 +1787,7 @@
   }
   async function relSalvar() {
     if (!S.avOS || !S.os) return;
+    sincronizarRibanas();
     if (!fasesComMedicao().some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length)) { S.aviso = 'Nenhuma amostra está num tom ainda.'; desenhar(); return; }
     if (typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
     // O EDITAR DO COLORÍMETRO (21/10/2026): gravar o relatório de cor na OS é
@@ -1738,6 +1830,22 @@
             ${feitas.map(f => `<option value="${f.i}">${escH(f.rotulo)}</option>`).join('')}</select></label></div>` : ''}`;
   }
 
+  // Ribana: para cada tom do corpo, as ribanas que servem a ele.
+  function htmlRibanaPorTom(av, rib, fase) {
+    const tonsCorpo = tonsDoRelatorio(rib.corpo);
+    const nums = numerosDasAmostras(av).filter(n => corDaAmostra(n, av));
+    const linhas = tonsCorpo.map((t, i) => {
+      const servem = nums.filter(n => tomDe(n, av) !== 0 && (av.serve[n] || []).includes(i + 1));
+      return `<b>${escH(rib.fCorpo.nome)} Tom ${i + 1}</b> (${t.membros.join(', ')}): ${servem.length ? 'ribana ' + servem.join(', ') : '<span class="cm-fora">nenhuma ribana ainda</span>'}`;
+    });
+    const incomp = nums.filter(n => ehIncompativelCorpo(n, av)), nao = nums.filter(n => tomDe(n, av) === 0);
+    const aviso = S.avOS.concluidas[rib.f.corDe] ? '' : `<br><span class="cm-fora">${escH(rib.fCorpo.nome)} ainda não concluído: a comparação usa as amostras medidas até agora.</span>`;
+    return `<div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Contra os tons do ${escH(rib.fCorpo.nome)}</div>
+      <div class="cm-peq">${linhas.join('<br>') || 'o corpo ainda não tem tom'}
+      ${incomp.length ? `<br><span class="cm-fora">Incompatíveis com o ${escH(rib.fCorpo.nome)}: ${incomp.join(', ')}</span>` : ''}
+      ${nao.length ? `<br><span class="cm-fora">Não usar: ${nao.join(', ')}</span>` : ''}${aviso}</div></div>`;
+  }
+
   function htmlAvaliacao(aparelho = '', comparacao = '') {
     if (!S.os || !S.av) return '';
     const av = S.av;
@@ -1748,11 +1856,19 @@
     const ms = av.n != null ? (av.medidas[av.n] || []) : [];
     const tons = tonsDoRelatorio();
     const ordemDe = k => tons.findIndex(t => t.k === k) + 1;
+    // Ribana contra o corpo: os tons que contam são os do CORPO.
+    const rib = av.contraCorpo ? corpoDaRibana(av) : null;
+    const nomeCorpo = rib ? rib.fCorpo.nome : '';
+    const rcAtual = rib && av.n != null && ms.length ? ribanaContraCorpo(av.n, av, rib) : null;
     const situacao = av.n == null || !ms.length ? '<span class="cm-fraco">ainda não medida</span>'
-      : estaNumTom(av.n) ? `<span class="cm-ok">Tom ${ordemDe(tomDe(av.n))}</span>`
-      : tomDe(av.n) === 0 ? '<span class="cm-fora">não usar</span>' : '';
+      : tomDe(av.n) === 0 ? '<span class="cm-fora">não usar</span>'
+      : rib ? (rcAtual && rcAtual.serve.length ? `<span class="cm-ok">serve ao ${rcAtual.serve.map(o => 'Tom ' + o).join(', ')} do ${escH(nomeCorpo)}</span>`
+        : `<span class="cm-fora">incompatível com o ${escH(nomeCorpo)}</span>`)
+      : estaNumTom(av.n) ? `<span class="cm-ok">Tom ${ordemDe(tomDe(av.n))}</span>` : '';
     // A amostra atual contra cada tom formado: casa com todas dele? e o maior dE.
-    const encaixe = av.n != null && ms.length ? encaixeNosTons(av.n).map(e =>
+    const encaixe = rcAtual ? rcAtual.tons.map(t =>
+      `<span class="${t.ok ? 'cm-ok' : 'cm-fora'}">${escH(nomeCorpo)} Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</span>`).join(' · ')
+      : av.n != null && ms.length && !rib ? encaixeNosTons(av.n).map(e =>
       e.so ? `<span class="cm-ok">Tom ${ordemDe(e.k)} · só ela</span>`
         : `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)}${e.proprio ? ' (o dela)' : ''} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} máx ${num(e.pior)}</span>`).join(' · ') : '';
     const falta = faltamMedir();
@@ -1769,13 +1885,13 @@
       ${htmlFases()}
       ${concluida ? `<div class="cm-aviso" style="background:var(--ok-bg);color:var(--ok)">${escH(fase.rotulo)} concluída. Para repetir esta fase, escolha-a em "Reavaliar a fase".</div>` : `
       <div class="cm-av">
-        <div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tons pelas cores guardadas</div>
+        ${rib ? htmlRibanaPorTom(av, rib, fase) : `<div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tons pelas cores guardadas</div>
           <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhuma amostra medida ainda'}
-          ${numerosDasAmostras().filter(n => tomDe(n) === 0).length ? `<br><span class="cm-fora">Não usar: ${numerosDasAmostras().filter(n => tomDe(n) === 0).join(', ')}</span>` : ''}</div></div>
+          ${numerosDasAmostras().filter(n => tomDe(n) === 0).length ? `<br><span class="cm-fora">Não usar: ${numerosDasAmostras().filter(n => tomDe(n) === 0).join(', ')}</span>` : ''}</div></div>`}
         <div class="cm-av-bloco"><div class="cm-av-rot">Medidas nesta fase</div>
           <div class="cm-peq">${numerosDasAmostras().length}${totalDe() ? ' de ' + totalDe() : ''} ${numerosDasAmostras().length === 1 ? 'amostra' : 'amostras'}
           ${totalDe() ? `<br>${falta.length ? `Faltam medir: ${falta.join(', ')}` : '<span class="cm-ok">Todas medidas</span>'}` : ''}
-          <br><span class="cm-fraco">No mesmo tom, todas casam entre si. Sem repescagem.</span></div></div>
+          <br><span class="cm-fraco">${rib ? `Cada amostra é comparada com cada amostra do ${escH(nomeCorpo)}.` : 'No mesmo tom, todas casam entre si. Sem repescagem.'}</span></div></div>
       </div>
       <div class="cm-botoes">
         <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}
@@ -1832,9 +1948,59 @@
       <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th></th><th></th>${cab}</tr></thead><tbody>${linhas}</tbody></table></div></details>`;
   }
 
+  // O relatório da ribana comparada com o corpo: a quais tons do corpo cada uma serve.
+  function htmlRelFaseRibana(f, av, rib) {
+    const nc = escH(rib.fCorpo.nome);
+    const tonsCorpo = tonsDoRelatorio(rib.corpo);
+    const nums = numerosDasAmostras(av);
+    const linhas = nums.map(n => {
+      const fixo = av.fixo && (n in av.fixo) ? av.fixo[n] : undefined;
+      const auto = fixo === undefined;
+      const rc = ribanaContraCorpo(n, av, rib);
+      const serve = rc ? rc.serve : [];
+      const opc = [`<option value="auto" ${auto ? 'selected' : ''}>Automático${auto ? (serve.length ? ' · ' + serve.map(o => 'Tom ' + o).join(', ') : ' · incompatível') : ''}</option>`]
+        .concat(tonsCorpo.map((t, i) => `<option value="${i + 1}" ${fixo === i + 1 ? 'selected' : ''}>Tom ${i + 1} do ${nc} (fixo)</option>`))
+        .concat([`<option value="0" ${fixo === 0 ? 'selected' : ''}>Não usar</option>`]);
+      const cor = corDaAmostra(n, av);
+      const casaTxt = rc ? rc.tons.map(t => `<span class="${t.ok ? 'cm-ok' : 'cm-fora'}">Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</span>`).join(' ') : '';
+      return `<tr><td>${cor ? `<span class="cm-amostra-cor" style="background:${labHex(...cor)}"></span>` : ''}${escH(nomeAm(n))}</td>
+        <td class="cm-n">${(av.medidas[n] || []).length}</td><td>${casaTxt}</td>
+        <td><select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
+    }).join('');
+    const resumo = tonsCorpo.map((t, i) => {
+      const servem = nums.filter(n => tomDe(n, av) !== 0 && (av.serve[n] || []).includes(i + 1));
+      return `<div class="cm-tom ${servem.length ? '' : 'cm-tom-ruim'}"><b>${nc} Tom ${i + 1}</b> (${t.membros.join(', ')}) — ${servem.length ? 'ribana ' + servem.join(', ') : '<span class="cm-fora">nenhuma ribana compatível</span>'}</div>`;
+    }).join('');
+    const incomp = nums.filter(n => ehIncompativelCorpo(n, av));
+    // A tabela: cada ribana × cada amostra do corpo (agrupadas pelo tom do corpo).
+    const corpoNums = [];
+    tonsCorpo.forEach((t, i) => t.membros.forEach(x => { if (corDaAmostra(x, rib.corpo)) corpoNums.push([x, i + 1]); }));
+    const cab = corpoNums.map(([x, o], j) => `<th class="cm-tc-n ${j && corpoNums[j - 1][1] !== o ? 'cm-tc-novo-col' : ''}" title="${nc} ${x} · Tom ${o}">${x}</th>`).join('');
+    const cabTom = tonsCorpo.map((t, i) => `<th colspan="${corpoNums.filter(c => c[1] === i + 1).length}" class="cm-tc-tom" style="text-align:center">Tom ${i + 1}</th>`).join('');
+    const tab = nums.filter(n => corDaAmostra(n, av)).map(n => {
+      const c = corDaAmostra(n, av);
+      return `<tr><th class="cm-tc-n">${n}</th>${corpoNums.map(([x]) => {
+        const r = comparar({ lab1: corDaAmostra(x, rib.corpo) }, { lab1: c });
+        const dica = `Ribana ${n} × ${rib.fCorpo.nome} ${x}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula])} · dL* ${num(r.d1[0])} da* ${num(r.d1[1])} db* ${num(r.d1[2])}`;
+        return `<td class="${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    const marcas = marcasDaFase(f);
+    return `<div class="cm-rel-fase">
+      <div class="cm-sub">${escH(f.rotulo)} <span class="cm-fraco">(comparada com o ${nc}${marcas.length ? ', ' + escH(marcas.join(', ')) : ''})</span></div>
+      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th>Serve ao ${nc}</th><th>Tom</th></tr></thead>
+        <tbody>${linhas}</tbody></table></div>
+      ${resumo || '<div class="cm-fraco">O corpo ainda não tem tom.</div>'}
+      ${incomp.length ? `<div class="cm-fora" style="margin-top:6px">Incompatíveis com o ${nc}: ${incomp.map(nomeAm).join(', ')}</div>` : ''}
+      ${tab ? `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade · ribana × ${nc} <span class="cm-fraco">(média × média · ✔ compatível · ✘ incompatível)</span></summary>
+        <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th></th>${cabTom}</tr><tr><th>Ribana</th>${cab}</tr></thead><tbody>${tab}</tbody></table></div></details>` : ''}
+    </div>`;
+  }
+
   // O relatório de uma fase: amostras, tons e o seletor para corrigir.
   function htmlRelFase(f) {
     const av = S.avOS.fases[f.i], fo = cfg.formula;
+    if (av.contraCorpo && corpoDaRibana(av)) return htmlRelFaseRibana(f, av, corpoDaRibana(av));
     const nums = numerosDasAmostras(av);
     const tons = tonsDoRelatorio(av);
     const ordem = {};
@@ -2016,6 +2182,34 @@
      ✔ compatível / ✘ incompatível pela tolerância das Configurações. A faixa de
      cima resume: o tom em que ela ficou e com quantas é compatível. O dE vai só
      na dica do mouse. Fora da OS, o visor de padrão × amostra segue igual. */
+  // Visor da ribana: ela contra CADA amostra do corpo, agrupadas pelo tom do corpo.
+  function htmlVisorRibana(av, n, cor, nMed, rib) {
+    const rc = ribanaContraCorpo(n, av, rib);
+    const nc = escH(rib.fCorpo.nome);
+    const naoUsar = tomDe(n, av) === 0;
+    const faixa = naoUsar ? `<div class="cm-de cm-de-fora">Amostra ${n} · não usar</div>`
+      : rc.serve.length
+        ? `<div class="cm-de cm-de-ok">Amostra ${n} → ${rc.serve.map(o => 'Tom ' + o).join(', ')} do ${nc}</div>
+           <div class="cm-fraco cm-centro">Casa com todas as amostras ${rc.serve.length > 1 ? 'desses tons' : 'desse tom'} do ${nc}</div>`
+        : `<div class="cm-de cm-de-fora">Amostra ${n} → incompatível com o ${nc}</div>
+           <div class="cm-fraco cm-centro">${rc.porAmostra.some(e => e.ok) ? 'Casa só com ' + rc.porAmostra.filter(e => e.ok).map(e => e.x).join(', ') + ', não com um tom inteiro' : 'Não casa com nenhuma amostra do ' + nc}</div>`;
+    const grupos = rc.tons.map(t => {
+      const chips = rc.porAmostra.filter(e => t.membros.includes(e.x)).map(e => {
+        const dica = `${nomeAm(n)} × ${rib.fCorpo.nome} ${e.x}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula])}`
+          + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
+        return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
+          <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x, rib.corpo))}"></span>${e.x}<b>${e.ok ? '✔' : '✘'}</b></div>`;
+      }).join('');
+      return `<div class="cm-peq" style="margin:4px 0 2px"><b class="${t.ok ? 'cm-ok' : 'cm-fora'}">${nc} Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</b></div><div class="cm-refs">${chips}</div>`;
+    }).join('');
+    const claro = cor[0] > 72;
+    return `<div class="cm-blocos" style="grid-template-columns:1fr">
+        <div class="cm-bloco" style="background:${labHex(...cor)};color:${claro ? '#1d2230' : '#fff'};cursor:default"><span>${escH(nomeAm(n))} · média de ${nMed} ${nMed === 1 ? 'medição' : 'medições'}</span></div></div>
+      ${faixa}
+      <div class="cm-sub" style="margin:6px 0 2px">Contra cada amostra do ${nc}</div>${grupos || '<div class="cm-fraco">O corpo ainda não tem tom.</div>'}
+      <div class="cm-fraco cm-centro cm-peq" style="margin-top:6px">L* ${num(cor[0])} · a* ${num(cor[1])} · b* ${num(cor[2])} · ${escH(cfg.formula)} até ${numTol(tolAtual())} · ${escH(cfg.iluminante1)}°</div>`;
+  }
+
   function htmlVisorOS() {
     const av = S.av, n = av && av.n;
     const cor = n != null ? corDaAmostra(n) : null;
@@ -2024,6 +2218,8 @@
         ? `Meça a Amostra ${n}: ela será comparada com cada amostra já medida desta fase.` : escH(avDicaFase())}</div>`;
     }
     const nMed = (av.medidas[n] || []).length;
+    const rib = av.contraCorpo ? corpoDaRibana(av) : null;
+    if (rib) return htmlVisorRibana(av, n, cor, nMed, rib);
     const outras = numerosDasAmostras(av).filter(x => x !== n && corDaAmostra(x));
     const res = outras.map(x => {
       const r = comparar({ lab1: corDaAmostra(x) }, { lab1: cor });
@@ -2144,6 +2340,7 @@
     const p = painel();
     if (!p || !visivel()) return;
     restaurarOS();
+    sincronizarRibanas();
     const ref = S.padrao;
     const amo = S.atual && S.atual !== ref ? S.atual : null;
     const r = ref && amo ? comparar(ref, amo) : null;
@@ -2279,6 +2476,7 @@
     .cm-tc-tab .cm-tc-tom{text-align:left;white-space:nowrap;font-weight:600;border:0;padding-right:8px}
     .cm-tc-tab .cm-tc-eu{color:var(--ink-3)}
     .cm-tc-tab .cm-tc-mesmo{background:var(--ok-bg)}
+    .cm-tc-tab .cm-tc-novo-col{border-left:2px solid var(--ink-3)}
     .cm-tc-tab tr.cm-tc-novo-tom td,.cm-tc-tab tr.cm-tc-novo-tom th{border-top:2px solid var(--ink-3)}
     .cm-lista{width:100%;border-collapse:collapse;font-size:12px}
     .cm-lista th{position:sticky;top:0;background:var(--paper);text-align:left;font-weight:500;color:var(--ink-3);padding:4px 6px;border-bottom:1px solid var(--line)}
