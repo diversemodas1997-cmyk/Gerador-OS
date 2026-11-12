@@ -29,10 +29,11 @@ const ok = (nome, cond, extra) => {
 const plano = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 const els = {};
-const doc = { getElementById: id => (els[id] = els[id] || { id, value: '', innerHTML: '', textContent: '' }) };
+const classes = () => { const c = new Set(); return { toggle: (k, v) => (v ? c.add(k) : c.delete(k)), remove: k => c.delete(k), contains: k => c.has(k) }; };
+const doc = { getElementById: id => (els[id] = els[id] || { id, value: '', innerHTML: '', textContent: '', classList: classes(), parentNode: null }) };
 const STATE = { tecidos: [{ nome: 'Malha PV' }, { nome: 'Ribana PV' }], cores: [{ nome: 'Marinho' }], ordensPreparo: [] };
 const salvos = [], toasts = [], avaliados = [];
-let pagina = '';
+let pagina = '', respostaPrompt = '';
 const env = {
   document: doc, STATE, window: { Colorimetro: {} },
   Colorimetro: { avaliarOS: id => avaliados.push(id) },
@@ -40,10 +41,11 @@ const env = {
   formatDate: iso => { const [a, m, d] = String(iso).split('-'); return `${d}/${m}/${a}`; },
   uid: (() => { let i = 0; return () => 'p' + (++i); })(),
   exigirEstoqueTecidos: () => true, saveState: async k => salvos.push(k), toast: (m, t) => toasts.push([m, t]),
-  openModal: () => {}, closeModal: () => {}, confirm: () => true, goto: p => { pagina = p; }, _obsQuemSou: () => 'nathaly'
+  openModal: () => {}, closeModal: () => {}, confirm: () => true, prompt: () => respostaPrompt,
+  _carimboCanceladoHtml: () => '<div class="sheet-carimbo-area"><div class="sheet-carimbo-cancelado"><span>CANCELADO</span></div></div>', _carimbosDiagonaisOE: () => {}, goto: p => { pagina = p; }, _obsQuemSou: () => 'nathaly'
 };
 const nomes = Object.keys(env);
-const api = new Function(...nomes, bloco + '\nreturn { renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
+const api = new Function(...nomes, bloco + '\nreturn { mudarStatusOP, renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
 
 (async () => {
   const preencher = (v) => { api.abrirModalOP(); Object.entries(v).forEach(([k, x]) => { doc.getElementById(k).value = x; }); };
@@ -92,6 +94,27 @@ const api = new Function(...nomes, bloco + '\nreturn { renderOrdensPreparo, abri
   api.renderOrdensPreparo();
   ok('12. lista: a OP avaliada sai como "Avaliada"', /Avaliada/.test(els['op-prep-painel'].innerHTML), '');
   ok('13. relatório vazio ou de OP que não existe: não grava', (await api.salvarRelatorioCorOP(c.id, '  ')) === false && (await api.salvarRelatorioCorOP('nada', 'x')) === false, '');
+  // STATUS (12/11/2026, "insira status na OP: em preparo, pronta, cancelada")
+  ok('14. OP nova nasce "em preparo" e a lista tem a coluna Status', c.status === 'em-preparo' && /<th>Status<\/th>/.test(els['op-prep-painel'].innerHTML)
+    && /Em preparo/.test(els['op-prep-painel'].innerHTML) && /mudarStatusOP\('[^']+','pronta'\)/.test(els['op-prep-painel'].innerHTML), plano(els['op-prep-painel'].innerHTML));
+  await api.mudarStatusOP(c.id, 'pronta');
+  f = plano(els['print-sheet-prep'].innerHTML);
+  ok('15. marcar pronta: status, quem/quando, folha diz Pronta', c.status === 'pronta' && c.statusPor === 'nathaly' && c.historicoStatus.length === 1 && /Status Pronta/.test(f), f);
+  respostaPrompt = null; await api.mudarStatusOP(c.id, 'cancelada');
+  ok('16. cancelar e desistir no motivo: não cancela', c.status === 'pronta', c.status);
+  respostaPrompt = 'tecido devolvido'; await api.mudarStatusOP(c.id, 'cancelada');
+  const L = els['op-prep-painel'].innerHTML; f = plano(els['print-sheet-prep'].innerHTML);
+  ok('17. cancelada: motivo guardado, folha com carimbo CANCELADO e motivo', c.status === 'cancelada' && c.motivoCancelamento === 'tecido devolvido'
+    && els['print-sheet-prep'].classList.contains('folha-cancelada') && /sheet-carimbo-cancelado/.test(els['print-sheet-prep'].innerHTML) && /motivo do cancelamento: tecido devolvido/.test(f), f);
+  const linhaC = L.split('<tr').find(t => t.includes('OP 0003')) || '';
+  ok('18. lista: cancelada sem Avaliar amostras/editar, com reabrir', /Cancelada/.test(linhaC) && !/Avaliar amostras/.test(linhaC) && !/abrirModalOP/.test(linhaC) && /'em-preparo'\)[^>]*>reabrir/.test(linhaC), linhaC);
+  const n0 = avaliados.length; api.avaliarAmostrasOP(c.id); api.abrirModalOP(c.id);
+  ok('19. cancelada: Avaliar amostras e editar recusados', avaliados.length === n0 && toasts.slice(-2).every(t => /cancelada/.test(t[0])), toasts.slice(-2));
+  await api.mudarStatusOP(c.id, 'em-preparo');
+  ok('20. reabrir: volta para em preparo, sem carimbo e sem motivo', c.status === 'em-preparo' && c.motivoCancelamento === '' && !els['print-sheet-prep'].classList.contains('folha-cancelada')
+    && !/CANCELADO/.test(els['print-sheet-prep'].innerHTML) && c.historicoStatus.length === 3, c);
+  delete b.status; api.renderOrdensPreparo();
+  ok('21. OP antiga sem status conta como em preparo', (els['op-prep-painel'].innerHTML.split('<tr').find(t => t.includes('OP 0002')) || '').includes('Em preparo'), '');
   console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo certo');
   process.exit(falhas ? 1 : 0);
 })();

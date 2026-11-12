@@ -2957,6 +2957,10 @@ body.is-admin .nav-btn.admin-only { display: block !important; }
 .estoque-tecidos-only { display: none !important; }
 body.is-admin .estoque-tecidos-only,
 body.pode-estoque-tecidos .estoque-tecidos-only { display: revert !important; }
+/* Na coluna AÇÕES o revert virava inline-block e os botões da OP (pronta,
+   editar, cancelar...) saíam da coluna: lá eles empilham como os demais. */
+body.is-admin .table .col-actions.row-actions button.estoque-tecidos-only,
+body.pode-estoque-tecidos .table .col-actions.row-actions button.estoque-tecidos-only { display: block !important; }
 
 /* AS AREAS CONCEDIDAS (Configuracoes -> Contas de acesso -> Acesso).
 

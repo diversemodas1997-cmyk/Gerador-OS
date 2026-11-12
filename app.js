@@ -2252,7 +2252,7 @@ const ACOES_POR_AREA = {
   'lançar no estoque de peças': 'estoque-tecidos', 'lançar no estoque de ferramentas': 'estoque-tecidos',
   'cadastrar no estoque de materiais': 'estoque-tecidos', 'apagar do estoque de materiais': 'estoque-tecidos',
   'lançar no estoque de materiais': 'estoque-tecidos',
-  'criar ou editar ordem de preparo': 'estoque-tecidos', 'excluir ordem de preparo': 'estoque-tecidos',
+  'criar ou editar ordem de preparo': 'estoque-tecidos', 'excluir ordem de preparo': 'estoque-tecidos', 'mudar status da ordem de preparo': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -10861,6 +10861,44 @@ const _opPrepUltimoRel = p => (Array.isArray(p.relatorios) && p.relatorios.lengt
 let _opPrepEditando = null;
 let _opPrepFolhaId = null;
 
+/* STATUS DA OP (12/11/2026, Junior: "insira status na OP: em preparo, pronta,
+   cancelada"). p.status: 'em-preparo' (padrão — OP antiga sem campo também é
+   em preparo) | 'pronta' | 'cancelada'. Cada troca fica em p.historicoStatus
+   ({ status, em, por, motivo }); a cancelada guarda o motivo e a folha dela sai
+   com o mesmo carimbo CANCELADO da OS. OP cancelada não é avaliada nem editada:
+   só "reabrir" a devolve para em preparo. */
+const _OPP_STATUS = {
+  'em-preparo': { rot: 'Em preparo', cor: '#dbe8fb' },
+  'pronta': { rot: 'Pronta', cor: '#d6f0db' },
+  'cancelada': { rot: 'Cancelada', cor: '#f6d0d0' },
+};
+const _opPrepStatus = p => (p && _OPP_STATUS[p.status] && p.status) || 'em-preparo';
+
+async function mudarStatusOP(id, status) {
+  if (!_OPP_STATUS[status]) return;
+  if (!exigirEstoqueTecidos('mudar status da ordem de preparo')) return;
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (!p) return toast('Esta OP não existe mais', 'err');
+  if (_opPrepStatus(p) === status) return;
+  let motivo = '';
+  if (status === 'cancelada') {
+    const r = prompt(`Cancelar a OP ${_opFmt(p.numero)} (${[p.tecidoNome, p.corNome].filter(Boolean).join(' ')}).\nMotivo do cancelamento (opcional):`, '');
+    if (r === null) return;
+    motivo = String(r).trim();
+  }
+  const em = new Date().toISOString(), por = _opPrepQuem();
+  p.status = status;
+  p.statusEm = em;
+  p.statusPor = por;
+  p.motivoCancelamento = status === 'cancelada' ? motivo : '';
+  p.historicoStatus = Array.isArray(p.historicoStatus) ? p.historicoStatus : [];
+  p.historicoStatus.push({ status, em, por, motivo });
+  await saveState('ordensPreparo');
+  toast(`OP ${_opFmt(p.numero)}: ${_OPP_STATUS[status].rot.toLowerCase()}`, 'ok');
+  renderOrdensPreparo();
+  if (_opPrepFolhaId === id) renderPrintPreparo();
+}
+
 function _opPrepQuem() {
   try { return typeof _obsQuemSou === 'function' ? (_obsQuemSou() || '') : ''; } catch (e) { return ''; }
 }
@@ -10873,14 +10911,22 @@ function renderOrdensPreparo() {
   const temCor = !!window.Colorimetro;
   const linhas = lista.map(p => {
     const rel = _opPrepUltimoRel(p);
-    return `<tr>
+    const st = _opPrepStatus(p), cancelada = st === 'cancelada';
+    const pid = esc(p.id);
+    const quando = p.statusEm ? ` em ${formatDate(String(p.statusEm).slice(0, 10))}${p.statusPor ? ' por ' + p.statusPor : ''}` : '';
+    const dica = cancelada ? `Cancelada${quando}${p.motivoCancelamento ? ' · motivo: ' + p.motivoCancelamento : ''}` : `${_OPP_STATUS[st].rot}${quando}`;
+    return `<tr${cancelada ? ' class="op-prep-cancelada" style="opacity:.6;"' : ''}>
       <td class="col-actions row-actions" style="white-space:nowrap;">
-        ${temCor ? `<button onclick="avaliarAmostrasOP('${esc(p.id)}')" title="Abre o Colorímetro com esta OP: uma amostra por bobina (tecido e ribana). O relatório de tonalidades volta para a folha da OP.">Avaliar amostras</button>` : ''}
+        ${temCor && !cancelada ? `<button onclick="avaliarAmostrasOP('${esc(p.id)}')" title="Abre o Colorímetro com esta OP: uma amostra por bobina (tecido e ribana). O relatório de tonalidades volta para a folha da OP.">Avaliar amostras</button>` : ''}
         <button onclick="verOP('${esc(p.id)}')" title="Abre a folha da OP para conferir e imprimir">folha</button>
-        <button class="estoque-tecidos-only" onclick="abrirModalOP('${esc(p.id)}')">editar</button>
-        <button class="estoque-tecidos-only danger" onclick="excluirOP('${esc(p.id)}')">excluir</button>
+        ${st === 'em-preparo' ? `<button class="estoque-tecidos-only" onclick="mudarStatusOP('${pid}','pronta')" title="Marca a OP como pronta: o lote foi preparado">pronta</button>` : ''}
+        ${st !== 'em-preparo' ? `<button class="estoque-tecidos-only" onclick="mudarStatusOP('${pid}','em-preparo')" title="Volta a OP para em preparo">reabrir</button>` : ''}
+        ${!cancelada ? `<button class="estoque-tecidos-only" onclick="abrirModalOP('${pid}')">editar</button>` : ''}
+        ${!cancelada ? `<button class="estoque-tecidos-only danger" onclick="mudarStatusOP('${pid}','cancelada')" title="Cancela a OP: ela continua na lista, com a folha carimbada CANCELADO">cancelar</button>` : ''}
+        <button class="estoque-tecidos-only danger" onclick="excluirOP('${pid}')">excluir</button>
       </td>
       <td style="font-family:'IBM Plex Mono',monospace;font-weight:700;white-space:nowrap;">OP ${_opFmt(p.numero)}</td>
+      <td style="white-space:nowrap;"><span class="badge op-prep-status-${st}" style="background:${_OPP_STATUS[st].cor};" title="${esc(dica)}">${_OPP_STATUS[st].rot}</span></td>
       <td style="white-space:nowrap;">${p.data ? esc(formatDate(p.data)) : '—'}</td>
       <td>${esc(p.tecidoNome) || '—'}</td>
       <td>${esc(p.corNome) || '—'}</td>
@@ -10901,8 +10947,8 @@ function renderOrdensPreparo() {
       </div>
       <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OP é um lote de bobinas de tecido e de ribana, com número próprio como uma OS. Lance o lote, clique em <b>Avaliar amostras</b> para medir a cor de cada bobina no Colorímetro e salve o relatório: ele vai para a folha da OP.</div>
       <table class="table">
-        <thead><tr><th class="col-actions">Ações</th><th>OP</th><th>Data</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Bobinas tecido</th><th>Ribana</th><th style="text-align:right;">Bobinas ribana</th><th style="text-align:right;">Total bobinas</th><th>Cores</th></tr></thead>
-        <tbody>${linhas || '<tr><td colspan="10" class="empty">Nenhuma ordem de preparo ainda. Clique em <b>+ Nova OP</b>.</td></tr>'}</tbody>
+        <thead><tr><th class="col-actions">Ações</th><th>OP</th><th>Status</th><th>Data</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Bobinas tecido</th><th>Ribana</th><th style="text-align:right;">Bobinas ribana</th><th style="text-align:right;">Total bobinas</th><th>Cores</th></tr></thead>
+        <tbody>${linhas || '<tr><td colspan="11" class="empty">Nenhuma ordem de preparo ainda. Clique em <b>+ Nova OP</b>.</td></tr>'}</tbody>
       </table>
     </div>`;
 }
@@ -10911,6 +10957,7 @@ function abrirModalOP(id) {
   if (!exigirEstoqueTecidos(id ? 'criar ou editar ordem de preparo' : 'criar ou editar ordem de preparo')) return;
   const p = id ? (STATE.ordensPreparo || []).find(x => x.id === id) : null;
   if (id && !p) return toast('Esta OP não existe mais', 'err');
+  if (p && _opPrepStatus(p) === 'cancelada') return toast(`A OP ${_opFmt(p.numero)} está cancelada: reabra antes de editar`, 'err');
   _opPrepEditando = p ? p.id : null;
   const tecidos = (STATE.tecidos || []).map(t => t.nome).filter(Boolean);
   const ribanas = tecidos.filter(t => /ribana/i.test(t));
@@ -10951,7 +10998,7 @@ async function salvarOP() {
   if (p) Object.assign(p, dados);
   else {
     const numero = STATE.ordensPreparo.reduce((m, x) => Math.max(m, Number(x.numero) || 0), 0) + 1;
-    p = Object.assign({ id: uid(), numero, criadoEm: new Date().toISOString(), criadoPor: _opPrepQuem(), relatorios: [] }, dados);
+    p = Object.assign({ id: uid(), numero, status: 'em-preparo', criadoEm: new Date().toISOString(), criadoPor: _opPrepQuem(), relatorios: [] }, dados);
     STATE.ordensPreparo.push(p);
   }
   await saveState('ordensPreparo');
@@ -10973,6 +11020,8 @@ async function excluirOP(id) {
 
 function avaliarAmostrasOP(id) {
   if (!window.Colorimetro) return toast('O Colorímetro não está carregado', 'err');
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (p && _opPrepStatus(p) === 'cancelada') return toast(`A OP ${_opFmt(p.numero)} está cancelada`, 'err');
   Colorimetro.avaliarOS(id);
 }
 
@@ -10998,8 +11047,11 @@ function renderPrintPreparo() {
   const sheet = document.getElementById('print-sheet-prep');
   if (!sheet) return;
   const p = (STATE.ordensPreparo || []).find(x => x.id === _opPrepFolhaId);
-  if (!p) { sheet.innerHTML = '<div class="empty" style="padding:20px;">Escolha uma OP na lista do Estoque de tecidos.</div>'; return; }
+  if (!p) { sheet.classList.remove('folha-cancelada'); sheet.innerHTML = '<div class="empty" style="padding:20px;">Escolha uma OP na lista do Estoque de tecidos.</div>'; return; }
   const n = v => (Number(v) || 0).toLocaleString('pt-BR');
+  const st = _opPrepStatus(p), cancelada = st === 'cancelada';
+  const stQuando = p.statusEm ? ` · ${esc(formatDate(String(p.statusEm).slice(0, 10)))}${p.statusPor ? ' por ' + esc(p.statusPor) : ''}` : '';
+  sheet.classList.toggle('folha-cancelada', cancelada);
   const rel = _opPrepUltimoRel(p);
   const emissao = new Date();
   const hm = d => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -11009,7 +11061,7 @@ function renderPrintPreparo() {
     <div class="op-prep-bob"><div class="t">${esc(rotulo)} · ${n(q)} bobina${q === 1 ? '' : 's'}</div>
       <div class="g">${Array.from({ length: q }, (_, i) => `<span>${i + 1}</span>`).join('')}</div></div>` : '';
   const relEm = rel ? new Date(rel.em) : null;
-  sheet.innerHTML = `
+  sheet.innerHTML = `${cancelada ? _carimboCanceladoHtml() : ''}
     <div class="exp-print-head">
       <div>
         <div class="tit">ORDEM DE PREPARO DE MATÉRIA-PRIMA OP</div>
@@ -11026,6 +11078,7 @@ function renderPrintPreparo() {
       <div class="item"><div class="n">${n(p.bobinasRibana)}</div><div class="l">Bobinas de ribana</div></div>
     </div>
     <table class="op-prep-tab">
+      <tr><th>Status</th><td><b>${_OPP_STATUS[st].rot}</b>${stQuando}${cancelada && p.motivoCancelamento ? ` · motivo do cancelamento: ${esc(p.motivoCancelamento)}` : ''}</td></tr>
       <tr><th>Tipo de tecido</th><td>${esc(p.tecidoNome) || '—'}</td></tr>
       <tr><th>Cor</th><td>${esc(p.corNome) || '—'}</td></tr>
       <tr><th>Ribana</th><td>${Number(p.bobinasRibana) > 0 ? esc(p.ribanaNome || 'Ribana') + ' · ' + esc(p.corNome || '') : '—'}</td></tr>
@@ -11040,6 +11093,7 @@ function renderPrintPreparo() {
            <div class="m">Avaliado em ${esc(formatDate(String(rel.em).slice(0, 10)))} ${relEm && !isNaN(relEm) ? hm(relEm) : ''}${rel.por ? ' por ' + esc(rel.por) : ''}${p.relatorios.length > 1 ? ` · ${p.relatorios.length}ª avaliação` : ''}</div>`
         : '<div class="m">Ainda não avaliado — use <b>Avaliar amostras</b> na lista de OP do Estoque de tecidos.</div>'}
     </div>`;
+  if (cancelada) _carimbosDiagonaisOE(sheet.parentNode || sheet);
 }
 
 function abrirMovEstoque(tipo) {

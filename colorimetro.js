@@ -1502,7 +1502,7 @@
       .filter(o => o && o.id && o.os)
       .slice().sort((a, b) => String(b.os).localeCompare(String(a.os), 'pt-BR', { numeric: true }))
       .slice(0, 80);
-    const ops = listaOP().filter(p => p && p.id && !p.cancelada)
+    const ops = listaOP().filter(p => p && p.id && p.status !== 'cancelada')
       .slice().sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0)).slice(0, 80);
     if (!ordens.length && !ops.length) return '';
     return `<label class="cm-campo" style="max-width:520px;margin-bottom:10px"><span>Avaliar as amostras da OS ou da OP</span>
