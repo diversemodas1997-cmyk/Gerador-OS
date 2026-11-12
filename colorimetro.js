@@ -1219,12 +1219,39 @@
        · o que se marcou à mão no relatório (av.fixo: um tom, ou 0 = não usar)
          vale por cima e entra primeiro.
      A referência de cada tom passa a ser só a primeira amostra dele (a de menor
-     número), para a tela mostrar a comparação. */
+     número), para a tela mostrar a comparação.
+     SUBSTITUÍDO NO MESMO DIA pelo ROLO DE REFERÊNCIA (opção A, ver dentro de
+     classificar): a média e o "todas com todas" não são o que a conferência a
+     olho faz. A média segue só como a cor exibida da amostra. */
   const corDaAmostra = (n, av = S.av) => {
     const ms = (av.medidas[n] || []).filter(m => m && m.lab);
     return ms.length ? [0, 1, 2].map(i => ms.reduce((s, m) => s + m.lab[i], 0) / ms.length) : null;
   };
   const compativeis = (a, b) => comparar({ lab1: a }, { lab1: b }).aprovado;
+  // A leitura do rolo de referência: a 1ª medição dele, como a referência de antes.
+  const labRef = (refN, av = S.av) => { const m = (av.medidas[refN] || []).find(x => x && x.lab); return m ? m.lab : null; };
+  // Amostra n contra o rolo de referência refN: alguma medição dela aprovada?
+  function aprovadaContraRef(n, refN, av = S.av) {
+    const m = melhorContra(av.medidas[n], labRef(refN, av));
+    return !!(m && m.aprovado);
+  }
+  // A melhor de várias medições contra a leitura de uma referência (aprovada antes
+  // de reprovada; entre iguais, a de menor dE). Serve também à ribana × corpo.
+  function melhorContra(medidas, refLab) {
+    if (!refLab) return null;
+    let melhor = null;
+    (medidas || []).forEach(m => {
+      if (!m || !m.lab) return;
+      const r = comparar({ lab1: refLab }, { lab1: m.lab });
+      const d = r.des[cfg.formula];
+      if (!melhor || (r.aprovado && !melhor.aprovado) || (r.aprovado === melhor.aprovado && d < melhor.d)) melhor = { r, d, aprovado: r.aprovado };
+    });
+    return melhor;
+  }
+  // A melhor medição de n contra a referência: { r (comparar), aprovado } — para a tela.
+  function melhorContraRef(n, refN, av = S.av) {
+    return melhorContra(av.medidas[n], labRef(refN, av));
+  }
   function classificar(av = S.av) {
     if (!av) return;
     av.fixo = av.fixo || {};
@@ -1244,90 +1271,31 @@
       if (f === 0) tonsNovos[n] = 0;
       else if (typeof f === 'number' && f > 0) { (tons[f] = tons[f] || []).push(n); tonsNovos[n] = f; }
     });
-    /* TODAS COMO REFERÊNCIA DE TODAS (12/11/2026, Junior: "seria viável medir
-       todas as amostras como referência e com os dados de todas as amostras
-       como referência classificá-las entre as compatíveis?"; "as amostras devem
-       continuar sendo comparadas pelos valores de média"; "não deve haver
-       empate caso as amostras não sejam compatíveis de acordo com o nível de
-       tolerância já usado nas configurações"; "não deve haver aproximação,
-       apenas compatíveis ou incompatíveis").
-       A única coisa que conta é a tabela SIM/NÃO de quem casa com quem — média
-       × média, pela regra de aprovação das Configurações (comparar). Nenhum dE
-       entra na decisão, e nada é aproximado:
-         1. duas amostras incompatíveis NUNCA ficam no mesmo tom;
-         2. usa-se o MENOR número de tons possível (busca exata);
-         3. entre as divisões com esse número de tons, a regra é fixa: em ordem
-            de número, cada amostra fica no tom mais baixo que ainda permite
-            fechar a divisão — o resultado não depende da ordem em que foram
-            medidas.
-       É a coloração do grafo das incompatibilidades: tom = cor, e amostras
-       ligadas (incompatíveis) não podem ter a mesma cor. Os tons fixados à mão
-       entram já coloridos; o "só esta amostra" não recebe nenhuma automática. */
-    const livres = nums.filter(n => !(n in tonsNovos));
-    if (livres.length) {
-      const fixos = Object.keys(tons).map(Number).sort((p, q) => p - q)
-        .map(k => ({ k, membros: tons[k].slice(), fechado: !!(av.tomSo && av.tomSo[k]) }));
-      const F = fixos.length;
-      // Vértices: as livres (0..L-1). Cada tom fixado é a cor c < F.
-      const L = livres.length;
-      const conflito = livres.map(() => new Array(L).fill(false));
-      for (let i = 0; i < L; i++) for (let j = i + 1; j < L; j++) {
-        if (!compativeis(cores[livres[i]], cores[livres[j]])) conflito[i][j] = conflito[j][i] = true;
-      }
-      // Cor fixa proibida para a livre i: tom fechado, ou algum membro incompatível.
-      const proibidaFixa = livres.map(n => fixos.map(g => g.fechado || g.membros.some(x => !compativeis(cores[x], cores[n]))));
-      // k cores dão conta? (prefixo = cores já impostas a algumas livres)
-      function cabeEm(k, prefixo) {
-        const cor = new Array(L).fill(-1);
-        for (const i in prefixo) cor[i] = prefixo[i];
-        const usadas = () => { let m = F - 1; cor.forEach(c => { if (c > m) m = c; }); return m + 1; };
-        const pode = (i, c) => c < k && (c >= F || !proibidaFixa[i][c]) && !conflito[i].some((x, j) => x && cor[j] === c);
-        for (let i = 0; i < L; i++) if (cor[i] >= 0 && !pode(i, cor[i])) return false;
-        return (function bt() {
-          // DSATUR: a livre mais restrita primeiro.
-          let melhorI = -1, melhorSat = -1, melhorGrau = -1;
-          for (let i = 0; i < L; i++) {
-            if (cor[i] >= 0) continue;
-            const viz = new Set();
-            for (let j = 0; j < L; j++) if (conflito[i][j] && cor[j] >= 0) viz.add(cor[j]);
-            for (let c = 0; c < F; c++) if (proibidaFixa[i][c]) viz.add(c);
-            const grau = conflito[i].filter(Boolean).length;
-            if (viz.size > melhorSat || (viz.size === melhorSat && grau > melhorGrau)) { melhorI = i; melhorSat = viz.size; melhorGrau = grau; }
-          }
-          if (melhorI < 0) return true;
-          const u = usadas();
-          // Cores já em uso, e no máximo UMA cor nova (as novas são todas iguais entre si).
-          for (let c = 0; c < Math.min(k, u + 1); c++) {
-            if (!pode(melhorI, c)) continue;
-            cor[melhorI] = c;
-            if (bt()) return true;
-            cor[melhorI] = -1;
-          }
-          return false;
-        })();
-      }
-      let k = Math.max(F, 1);
-      while (!cabeEm(k, {})) k++;
-      // A regra fixa: em ordem de número, o tom mais baixo que ainda fecha com k tons.
-      const prefixo = {};
-      for (let i = 0; i < L; i++) {
-        for (let c = 0; c < k; c++) {
-          prefixo[i] = c;
-          if (cabeEm(k, prefixo)) break;
-          delete prefixo[i];
-        }
-      }
-      // Cor -> chave do tom: as fixas mantêm a sua; as novas recebem as livres.
-      const usadasK = new Set(fixos.map(g => g.k));
-      const chave = {};
-      fixos.forEach((g, c) => { chave[c] = g.k; });
-      for (let i = 0; i < L; i++) {
-        const c = prefixo[i];
-        if (chave[c] == null) { let x = 1; while (usadasK.has(x)) x++; usadasK.add(x); chave[c] = x; }
-        const kk = chave[c];
-        (tons[kk] = tons[kk] || []).push(livres[i]);
-        tonsNovos[livres[i]] = kk;
-      }
+    /* O ROLO DE REFERÊNCIA, COMO ERA ANTES (12/11/2026, Junior: "opção A,
+       comparado com rolo de referência, valor real"). A conferência a olho é
+       feita encostando cada rolo no rolo de referência do tom; a regra de antes
+       fazia a mesma coisa, e por isso o olho concordava. O "todas casam com
+       todas" (e a média de todas as medições) não é o que a conferência faz.
+       Então, como até 03/11, mas calculado das medições guardadas — sem rodada
+       nem repescagem à mão:
+         · Tom 1: a referência é a amostra de MENOR número (a 1ª medição dela);
+           entra no tom toda amostra com ALGUMA medição aprovada contra ela
+           ("uma aprovação basta");
+         · Tom 2: a referência é a menor que sobrou, e assim por diante, até
+           todas terem tom — o que antes era a repescagem;
+         · aprovada = a regra das Configurações (dE E dL*, da*, db*), pela
+           diferença REAL, sem arredondar.
+       Duas amostras do mesmo tom casam com a referência; entre si podem ficar
+       até o dobro da tolerância — é a regra que a conferência visual validava. */
+    let resta = nums.filter(n => !(n in tonsNovos));
+    const chavesUsadas = new Set(Object.keys(tons).map(Number));
+    while (resta.length) {
+      const ref = resta[0];
+      const membros = resta.filter(n => n === ref || aprovadaContraRef(n, ref, av));
+      let k = 1; while (chavesUsadas.has(k)) k++; chavesUsadas.add(k);
+      tons[k] = membros.slice();
+      membros.forEach(n => { tonsNovos[n] = k; });
+      resta = resta.filter(n => !membros.includes(n));
     }
     // Amostra marcada no cadastro antigo e sem medição não some do mapa.
     Object.keys(av.tons || {}).forEach(n => { if (!(n in cores) && av.fixo[n] === 0) tonsNovos[n] = 0; });
@@ -1357,7 +1325,7 @@
       const k = novaChave[kAntigo];
       const n = Math.min(...tons[kAntigo]);
       const m0 = (av.medidas[n] || [])[0] || {};
-      av.ref[k] = { medId: m0.id, amostra: n, nome: nomeAm(n), lab: cores[n], em: m0.em };
+      av.ref[k] = { medId: m0.id, amostra: n, nome: nomeAm(n), lab: m0.lab || cores[n], em: m0.em };
     });
   }
   // Uma avaliação gravada no modelo de rodadas vira o modelo novo sem perder medições:
@@ -1372,17 +1340,14 @@
   }
   // A amostra nova contra cada tom: compatível com todas dele? e o maior dE.
   function encaixeNosTons(n, av = S.av) {
-    const cor = corDaAmostra(n, av);
-    if (!cor) return [];
-    const ks = [...new Set(Object.values(av.tons).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => a - b);
-    // TODOS os tons, o da própria amostra inclusive: quando ela estava sozinha no
-    // tom dela, ele sumia da lista e a linha pulava ("Tom 1 · Tom 3").
-    return ks.map(k => {
-      const outros = numerosDasAmostras(av).filter(x => x !== n && av.tons[x] === k && corDaAmostra(x, av));
-      const proprio = av.tons[n] === k;
-      if (!outros.length) return { k, ok: true, pior: 0, proprio, so: true };
-      const des = outros.map(x => deDaFormula(corDaAmostra(x, av), cor));
-      return { k, ok: outros.every(x => compativeis(corDaAmostra(x, av), cor)), pior: Math.max(...des), proprio, so: false };
+    if (!corDaAmostra(n, av)) return [];
+    // TODOS os tons, o da própria amostra inclusive, cada um pelo ROLO DE
+    // REFERÊNCIA dele: a amostra n passa contra a referência?
+    return tonsDoRelatorio(av).map(t => {
+      const proprio = av.tons[n] === t.k;
+      if (t.refN === n) return { k: t.k, ok: true, pior: 0, proprio, ehRef: true, so: t.membros.length === 1, refN: n };
+      const m = melhorContraRef(n, t.refN, av);
+      return { k: t.k, ok: !!(m && m.aprovado), pior: m ? m.d : 0, proprio, ehRef: false, so: false, refN: t.refN };
     });
   }
 
@@ -1395,8 +1360,8 @@
      tem fase de cor (faseDeCorDaRibana: CM.LISA → Corpo, CM.REC → Corpo 1…), cada
      amostra de ribana — pela média — é comparada com CADA amostra medida do
      corpo, pela mesma tolerância das Configurações, só sim/não. Ela serve ao
-     Tom k do corpo quando casa com TODAS as amostras desse tom (as peças dele
-     vão todas com a mesma ribana). Pode servir a mais de um tom; se não serve a
+     Tom k do corpo quando é aprovada contra o ROLO DE REFERÊNCIA desse tom
+     (desde a opção A, 12/11/2026; antes: contra todas as amostras do tom). Pode servir a mais de um tom; se não serve a
      nenhum, é incompatível com o corpo ('x'). O tom gravado na ribana é o
      PRIMEIRO tom do corpo que ela serve — assim "Tom 1 da ribana" é a ribana do
      Tom 1 do corpo. Sem nenhuma amostra de corpo medida, a ribana volta a ser
@@ -1415,17 +1380,15 @@
   }
   // Ribana n contra o corpo: cada amostra do corpo e cada tom do corpo.
   function ribanaContraCorpo(n, av, ctx = corpoDaRibana(av)) {
-    const cor = corDaAmostra(n, av);
-    if (!ctx || !cor) return null;
+    if (!ctx || !corDaAmostra(n, av)) return null;
     const corpo = ctx.corpo;
-    const porAmostra = numerosDasAmostras(corpo).filter(x => corDaAmostra(x, corpo)).map(x => {
-      const r = comparar({ lab1: corDaAmostra(x, corpo) }, { lab1: cor });
-      return { x, ok: r.aprovado, r, tom: tomDe(x, corpo) };
-    });
+    // A ribana contra o ROLO DE REFERÊNCIA de cada tom do corpo (alguma medição
+    // dela aprovada contra a 1ª medição da referência), como as amostras do corpo.
     const tons = tonsDoRelatorio(corpo).map((t, i) => {
-      const deles = porAmostra.filter(e => t.membros.includes(e.x));
-      return { k: t.k, ordem: i + 1, membros: t.membros, ok: deles.length > 0 && deles.every(e => e.ok) };
+      const m = melhorContra(av.medidas[n], labRef(t.refN, corpo));
+      return { k: t.k, ordem: i + 1, membros: t.membros, refN: t.refN, ok: !!(m && m.aprovado), r: m ? m.r : null };
     });
+    const porAmostra = tons.filter(t => t.r).map(t => ({ x: t.refN, ok: t.ok, r: t.r, tom: t.ordem }));
     return { porAmostra, tons, serve: tons.filter(t => t.ok).map(t => t.ordem) };
   }
   function classificarRibana(av, ctx) {
@@ -1569,24 +1532,26 @@
       const prox2 = proximoNumero(n);
       const dep = prox2 != null ? ` Clique em Trocar para passar à Amostra ${prox2}.` : '';
       if (k === 0) return `Amostra ${n} medida — está marcada "Não usar" no relatório.${dep}`;
-      const casa = rc ? rc.porAmostra.filter(e => e.ok).map(e => e.x) : [];
-      if (rc && rc.serve.length) return `✔ Amostra ${n} serve ao ${rc.serve.map(o => 'Tom ' + o).join(' e ao ')} do ${nomeCorpo}.${dep}`;
-      return `✘ Amostra ${n} incompatível com todos os tons do ${nomeCorpo}`
-        + (casa.length ? ` (casa só com ${casa.join(', ')} do ${nomeCorpo}, não com o tom inteiro)` : '') + `.${dep}`;
+      if (rc && rc.serve.length) return `✔ Amostra ${n} aprovada contra a referência do ${rc.serve.map(o => 'Tom ' + o).join(' e do ')} do ${nomeCorpo} → serve ao ${rc.serve.map(o => 'Tom ' + o).join(' e ao ')}.${dep}`;
+      return `✘ Amostra ${n} reprovada contra a referência de todos os tons do ${nomeCorpo}: incompatível.${dep}`;
     }
-    const mesmos = numerosDasAmostras(av).filter(x => x !== n && tomDe(x) === k);
-    const ordem = tonsDoRelatorio().findIndex(t => t.k === k) + 1;
+    const tonsAgora = tonsDoRelatorio();
+    const tAqui = tonsAgora.find(t => t.k === k);
+    const ordem = tonsAgora.indexOf(tAqui) + 1;
     const prox = proximoNumero(n);
     const depois = prox != null ? ` Clique em Trocar para passar à Amostra ${prox}.` : '';
     if (k === 0) return `Amostra ${n} medida — está marcada "Não usar" no relatório.${depois}`;
     const mudou = typeof antes === 'number' && antes > 0 && antes !== k ? ' (mudou de tom com esta medição)' : '';
-    if (!mesmos.length) {
-      const nTons = tonsDoRelatorio().length;
-      return nTons > 1
-        ? `✘ Amostra ${n} não é compatível com nenhum tom já formado → Tom ${ordem} novo${mudou}.${depois}`
-        : `Amostra ${n} abre o Tom ${ordem}${mudou}.${depois}`;
+    // O rolo de referência: a amostra aprovada contra a referência entra no tom
+    // dela; a que não passa em nenhuma referência anterior vira a referência do
+    // tom seguinte (o que antes era a repescagem).
+    if (tAqui && tAqui.refN === n) {
+      const anteriores = tonsAgora.filter(t => t.refN < n).map(t => t.refN);
+      return anteriores.length
+        ? `✘ Amostra ${n} reprovada contra a referência ${anteriores.length > 1 ? 'dos tons anteriores (amostras ' + anteriores.join(', ') + ')' : 'do Tom 1 (Amostra ' + anteriores[0] + ')'} → é a referência do Tom ${ordem}${mudou}.${depois}`
+        : `Amostra ${n} é a referência do Tom ${ordem}${mudou}.${depois}`;
     }
-    return `✔ Amostra ${n} compatível com ${mesmos.join(', ')} → Tom ${ordem}${mudou}.${depois}`;
+    return `✔ Amostra ${n} aprovada contra a referência (Amostra ${tAqui ? tAqui.refN : '?'}) → Tom ${ordem}${mudou}.${depois}`;
   }
 
 
@@ -1738,26 +1703,21 @@
     return ks.map(k => {
       const membros = nums.filter(n => tomDe(n, av) === k);
       const ref = av.ref[k];
-      // Cada amostra pela cor guardada dela (média das medições), contra TODAS do
-      // mesmo tom: pior = o maior dE entre duas peças do tom; ruins = as que não
-      // casam com alguma outra (só acontece com tom marcado à mão no relatório).
+      const refN = ref && ref.amostra != null ? ref.amostra : Math.min(...membros);
+      // Cada amostra contra o ROLO DE REFERÊNCIA do tom, pela melhor medição dela:
+      // pior = o maior dE contra a referência; ruins = as que não passam contra
+      // ela (só acontece com tom marcado à mão no relatório).
       const melhor = n => { const c = corDaAmostra(n, av); return c ? { lab: c } : null; };
       const ruins = [];
       let pior = 0;
       membros.forEach(n => {
-        const a = corDaAmostra(n, av);
-        if (!a) return;
-        let piorN = 0, casa = true;
-        membros.forEach(x => {
-          const b = x !== n && corDaAmostra(x, av);
-          if (!b) return;
-          piorN = Math.max(piorN, deDaFormula(a, b));
-          if (!compativeis(a, b)) casa = false;
-        });
-        pior = Math.max(pior, piorN);
-        if (!casa) ruins.push([n, piorN]);
+        if (n === refN) return;
+        const m = melhorContraRef(n, refN, av);
+        if (!m) return;
+        pior = Math.max(pior, m.d);
+        if (!m.aprovado) ruins.push([n, m.d]);
       });
-      return { k, membros, ref, pior, ruins, melhor };
+      return { k, membros, ref, refN, pior, ruins, melhor };
     });
   }
   const nomeAm = n => `${cfg.nome_amostra} ${n}`;
@@ -1804,7 +1764,8 @@
       return x.tons.length === 1 ? x.tons[0] : x.tons[j];
     };
     const grupos = Array.from({ length: nGrupos }, (_, j) => {
-      const partes = [tons[j] ? tons[j].membros.join(',') : '',
+      // Com o rolo de referência (12/11/2026): "ref N:" antes das amostras do tom.
+      const partes = [tons[j] ? `ref ${tons[j].refN}: ${tons[j].membros.join(',')}` : '',
         ...rib.map(x => tomDaRibana(x, j) ? `ribana ${tomDaRibana(x, j).membros.join(',')}` : '')].filter(Boolean);
       // O número que se escreve é a posição do tom (Tom 1, 2, 3…), não a chave interna.
       const k = j + 1;
@@ -1903,7 +1864,7 @@
     const nums = numerosDasAmostras(av).filter(n => corDaAmostra(n, av));
     const linhas = tonsCorpo.map((t, i) => {
       const servem = nums.filter(n => tomDe(n, av) !== 0 && (av.serve[n] || []).includes(i + 1));
-      return `<b>${escH(rib.fCorpo.nome)} Tom ${i + 1}</b> (${t.membros.join(', ')}): ${servem.length ? 'ribana ' + servem.join(', ') : '<span class="cm-fora">nenhuma ribana ainda</span>'}`;
+      return `<b>${escH(rib.fCorpo.nome)} Tom ${i + 1}</b> (ref ${t.refN}: ${t.membros.join(', ')}): ${servem.length ? 'ribana ' + servem.join(', ') : '<span class="cm-fora">nenhuma ribana ainda</span>'}`;
     });
     const incomp = nums.filter(n => ehIncompativelCorpo(n, av)), nao = nums.filter(n => tomDe(n, av) === 0);
     const aviso = S.avOS.concluidas[rib.f.corDe] ? '' : `<br><span class="cm-fora">${escH(rib.fCorpo.nome)} ainda não concluído: a comparação usa as amostras medidas até agora.</span>`;
@@ -1936,8 +1897,8 @@
     const encaixe = rcAtual ? rcAtual.tons.map(t =>
       `<span class="${t.ok ? 'cm-ok' : 'cm-fora'}">${escH(nomeCorpo)} Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</span>`).join(' · ')
       : av.n != null && ms.length && !rib ? encaixeNosTons(av.n).map(e =>
-      e.so ? `<span class="cm-ok">Tom ${ordemDe(e.k)} · só ela</span>`
-        : `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)}${e.proprio ? ' (o dela)' : ''} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} máx ${num(e.pior)}</span>`).join(' · ') : '';
+      e.ehRef ? `<span class="cm-ok">Tom ${ordemDe(e.k)} · é a referência</span>`
+        : `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)} (ref ${e.refN})${e.proprio ? ' · o dela' : ''} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} ${num(e.pior, 2)}</span>`).join(' · ') : '';
     const falta = faltamMedir();
     const prox = av.n != null ? proximoNumero(av.n) : null;
     const pode = con && livre && !concluida;
@@ -1952,13 +1913,13 @@
       ${htmlFases()}
       ${concluida ? `<div class="cm-aviso" style="background:var(--ok-bg);color:var(--ok)">${escH(fase.rotulo)} concluída. Para repetir esta fase, escolha-a em "Reavaliar a fase".</div>` : `
       <div class="cm-av">
-        ${rib ? htmlRibanaPorTom(av, rib, fase) : `<div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tons pelas cores guardadas</div>
-          <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhuma amostra medida ainda'}
+        ${rib ? htmlRibanaPorTom(av, rib, fase) : `<div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tons pelo rolo de referência</div>
+          <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b> (ref ${t.refN}): ${t.membros.join(', ')}`).join('<br>') : 'nenhuma amostra medida ainda'}
           ${numerosDasAmostras().filter(n => tomDe(n) === 0).length ? `<br><span class="cm-fora">Não usar: ${numerosDasAmostras().filter(n => tomDe(n) === 0).join(', ')}</span>` : ''}</div></div>`}
         <div class="cm-av-bloco"><div class="cm-av-rot">Medidas nesta fase</div>
           <div class="cm-peq">${numerosDasAmostras().length}${totalDe() ? ' de ' + totalDe() : ''} ${numerosDasAmostras().length === 1 ? 'amostra' : 'amostras'}
           ${totalDe() ? `<br>${falta.length ? `Faltam medir: ${falta.join(', ')}` : '<span class="cm-ok">Todas medidas</span>'}` : ''}
-          <br><span class="cm-fraco">${rib ? `Cada amostra é comparada com cada amostra do ${escH(nomeCorpo)}.` : 'No mesmo tom, todas casam entre si. Sem repescagem.'}</span></div></div>
+          <br><span class="cm-fraco">${rib ? `Cada amostra é comparada com o rolo de referência de cada tom do ${escH(nomeCorpo)}.` : 'Cada amostra é comparada com o rolo de referência do tom (a menor amostra que ainda não tinha tom). Sem repescagem.'}</span></div></div>
       </div>
       <div class="cm-botoes">
         <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}
@@ -1981,38 +1942,31 @@
   }
 
   /* A TABELA DE COMPATIBILIDADE (12/11/2026, Junior: "mostre a tabela de
-     compatibilidade no relatório"). É a tabela de onde os tons saem: cada
-     amostra contra cada outra, pela média, só ✔ compatível ou ✘ incompatível
-     pela tolerância das Configurações. As amostras vêm agrupadas pelo tom, e
-     as casas de duas amostras do mesmo tom ficam sombreadas — dentro do
-     sombreado só pode haver ✔ (um ✘ ali é tom fixado à mão). O dE fica só na
-     dica ao passar o mouse, como informação. */
+     compatibilidade no relatório"). É a tabela de onde os tons saem — desde a
+     opção A (rolo de referência), cada amostra contra o ROLO DE REFERÊNCIA de
+     cada tom: ✔ alguma medição dela aprovada contra a referência, ✘ nenhuma,
+     pela tolerância das Configurações e pela diferença real. A coluna do tom
+     da própria amostra fica sombreada; "ref" marca a referência. O dE da
+     melhor medição fica só na dica ao passar o mouse. */
   function htmlTabelaCompat(av, tons) {
-    const comCor = numerosDasAmostras(av).filter(n => corDaAmostra(n, av));
-    if (comCor.length < 2) return '';
-    const ordem = [];
-    const tomPos = {};
-    tons.forEach((t, i) => t.membros.forEach(n => { if (comCor.includes(n)) { ordem.push(n); tomPos[n] = i + 1; } }));
-    comCor.filter(n => !ordem.includes(n)).forEach(n => ordem.push(n));
-    const rotTom = n => tomPos[n] ? 'Tom ' + tomPos[n] : (tomDe(n, av) === 0 ? 'Não usar' : '—');
-    const cab = ordem.map(n => `<th class="cm-tc-n" title="${escH(nomeAm(n))} · ${escH(rotTom(n))}">${n}</th>`).join('');
-    const linhas = ordem.map((a, i) => {
-      const ca = corDaAmostra(a, av);
-      const primeiraDoTom = i === 0 || tomPos[ordem[i - 1]] !== tomPos[a];
-      const celulas = ordem.map(b => {
-        if (a === b) return '<td class="cm-tc-eu">—</td>';
-        const cb = corDaAmostra(b, av);
-        const r = comparar({ lab1: ca }, { lab1: cb });
-        const mesmo = tomPos[a] && tomPos[a] === tomPos[b];
-        const dica = `${nomeAm(a)} × ${nomeAm(b)}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula], 2)}`
-          + ` · dL* ${num(r.d1[0], 2)} da* ${num(r.d1[1], 2)} db* ${num(r.d1[2], 2)}`;
-        return `<td class="${mesmo ? 'cm-tc-mesmo ' : ''}${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
+    const nums = numerosDasAmostras(av).filter(n => (av.medidas[n] || []).length);
+    if (!tons.length || nums.length < 2) return '';
+    const cab = tons.map((t, i) => `<th class="cm-tc-n" title="Tom ${i + 1} · referência ${escH(nomeAm(t.refN))}">Tom ${i + 1}<br><small>ref ${t.refN}</small></th>`).join('');
+    const linhas = nums.map(n => {
+      const meu = tons.findIndex(t => t.k === tomDe(n, av));
+      const cel = tons.map((t, i) => {
+        if (t.refN === n) return '<td class="cm-tc-mesmo cm-tc-eu">ref</td>';
+        const m = melhorContraRef(n, t.refN, av);
+        if (!m) return '<td></td>';
+        const dica = `${nomeAm(n)} × referência do Tom ${i + 1} (${nomeAm(t.refN)}), melhor medição: ${m.aprovado ? 'aprovada' : 'reprovada'} · ${cfg.formula} ${num(m.r.des[cfg.formula], 2)}`
+          + ` · dL* ${num(m.r.d1[0], 2)} da* ${num(m.r.d1[1], 2)} db* ${num(m.r.d1[2], 2)}`;
+        return `<td class="${i === meu ? 'cm-tc-mesmo ' : ''}${m.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${m.aprovado ? '✔' : '✘'}</td>`;
       }).join('');
-      return `<tr class="${primeiraDoTom && i ? 'cm-tc-novo-tom' : ''}"><th class="cm-tc-tom">${primeiraDoTom ? escH(rotTom(a)) : ''}</th>
-        <th class="cm-tc-n" title="${escH(nomeAm(a))}">${a}</th>${celulas}</tr>`;
+      const rot = tomDe(n, av) === 0 ? 'não usar' : meu >= 0 ? 'Tom ' + (meu + 1) : '—';
+      return `<tr><th class="cm-tc-n" title="${escH(nomeAm(n))} · ${escH(rot)}">${n}</th><th class="cm-tc-tom">${escH(rot)}</th>${cel}</tr>`;
     }).join('');
-    return `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade <span class="cm-fraco">(média × média · ✔ compatível · ✘ incompatível · sombreado = mesmo tom)</span></summary>
-      <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th></th><th></th>${cab}</tr></thead><tbody>${linhas}</tbody></table></div></details>`;
+    return `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade <span class="cm-fraco">(cada amostra × rolo de referência de cada tom · ✔ aprovada · ✘ reprovada · sombreado = o tom dela)</span></summary>
+      <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th>Amostra</th><th></th>${cab}</tr></thead><tbody>${linhas}</tbody></table></div></details>`;
   }
 
   // O relatório da ribana comparada com o corpo: a quais tons do corpo cada uma serve.
@@ -2039,17 +1993,15 @@
       return `<div class="cm-tom ${servem.length ? '' : 'cm-tom-ruim'}"><b>${nc} Tom ${i + 1}</b> (${t.membros.join(', ')}) — ${servem.length ? 'ribana ' + servem.join(', ') : '<span class="cm-fora">nenhuma ribana compatível</span>'}</div>`;
     }).join('');
     const incomp = nums.filter(n => ehIncompativelCorpo(n, av));
-    // A tabela: cada ribana × cada amostra do corpo (agrupadas pelo tom do corpo).
-    const corpoNums = [];
-    tonsCorpo.forEach((t, i) => t.membros.forEach(x => { if (corDaAmostra(x, rib.corpo)) corpoNums.push([x, i + 1]); }));
-    const cab = corpoNums.map(([x, o], j) => `<th class="cm-tc-n ${j && corpoNums[j - 1][1] !== o ? 'cm-tc-novo-col' : ''}" title="${nc} ${x} · Tom ${o}">${x}</th>`).join('');
-    const cabTom = tonsCorpo.map((t, i) => `<th colspan="${corpoNums.filter(c => c[1] === i + 1).length}" class="cm-tc-tom" style="text-align:center">Tom ${i + 1}</th>`).join('');
-    const tab = nums.filter(n => corDaAmostra(n, av)).map(n => {
-      const c = corDaAmostra(n, av);
-      return `<tr><th class="cm-tc-n">${n}</th>${corpoNums.map(([x]) => {
-        const r = comparar({ lab1: corDaAmostra(x, rib.corpo) }, { lab1: c });
-        const dica = `Ribana ${n} × ${rib.fCorpo.nome} ${x}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula], 2)} · dL* ${num(r.d1[0], 2)} da* ${num(r.d1[1], 2)} db* ${num(r.d1[2], 2)}`;
-        return `<td class="${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
+    // A tabela: cada ribana × o rolo de referência de cada tom do corpo.
+    const cabTom = '';
+    const cab = tonsCorpo.map((t, i) => `<th class="cm-tc-n" title="${nc} Tom ${i + 1} · referência ${t.refN}">Tom ${i + 1}<br><small>ref ${t.refN}</small></th>`).join('');
+    const tab = nums.filter(n => (av.medidas[n] || []).length).map(n => {
+      return `<tr><th class="cm-tc-n">${n}</th>${tonsCorpo.map((t, i) => {
+        const m = melhorContra(av.medidas[n], labRef(t.refN, rib.corpo));
+        if (!m) return '<td></td>';
+        const dica = `Ribana ${n} × referência do Tom ${i + 1} do ${rib.fCorpo.nome} (amostra ${t.refN}), melhor medição: ${m.aprovado ? 'aprovada' : 'reprovada'} · ${cfg.formula} ${num(m.r.des[cfg.formula], 2)} · dL* ${num(m.r.d1[0], 2)} da* ${num(m.r.d1[1], 2)} db* ${num(m.r.d1[2], 2)}`;
+        return `<td class="${m.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${m.aprovado ? '✔' : '✘'}</td>`;
       }).join('')}</tr>`;
     }).join('');
     const marcas = marcasDaFase(f);
@@ -2059,8 +2011,8 @@
         <tbody>${linhas}</tbody></table></div>
       ${resumo || '<div class="cm-fraco">O corpo ainda não tem tom.</div>'}
       ${incomp.length ? `<div class="cm-fora" style="margin-top:6px">Incompatíveis com o ${nc}: ${incomp.map(nomeAm).join(', ')}</div>` : ''}
-      ${tab ? `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade · ribana × ${nc} <span class="cm-fraco">(média × média · ✔ compatível · ✘ incompatível)</span></summary>
-        <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th></th>${cabTom}</tr><tr><th>Ribana</th>${cab}</tr></thead><tbody>${tab}</tbody></table></div></details>` : ''}
+      ${tab ? `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade · ribana × ${nc} <span class="cm-fraco">(cada ribana × rolo de referência de cada tom do ${nc} · ✔ aprovada · ✘ reprovada)</span></summary>
+        <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th>Ribana</th>${cab}</tr></thead><tbody>${tab}</tbody></table></div></details>` : ''}
     </div>`;
   }
 
@@ -2073,11 +2025,12 @@
     const ordem = {};
     tons.forEach((t, i) => { ordem[t.k] = i + 1; });
     const ks = tons.map(t => t.k);
-    const piorDe = {};
+    // Contra o rolo de referência do tom dela: o dE da melhor medição.
+    const piorDe = {}, ehRefDe = {};
     tons.forEach(t => t.membros.forEach(n => {
-      const c = corDaAmostra(n, av);
-      const outros = t.membros.filter(x => x !== n && corDaAmostra(x, av));
-      piorDe[n] = c && outros.length ? Math.max(...outros.map(x => deDaFormula(corDaAmostra(x, av), c))) : null;
+      if (n === t.refN) { ehRefDe[n] = true; return; }
+      const m = melhorContraRef(n, t.refN, av);
+      piorDe[n] = m ? m.d : null;
     }));
     const linhas = nums.map(n => {
       const t = tomDe(n, av);
@@ -2091,20 +2044,20 @@
       const cor = corDaAmostra(n, av);
       return `<tr><td>${cor ? `<span class="cm-amostra-cor" style="background:${labHex(...cor)}"></span>` : ''}${escH(nomeAm(n))}</td>
         <td class="cm-n">${todas.length}</td>
-        <td class="cm-n">${piorDe[n] != null ? num(piorDe[n]) : (estaNumTom(n, av) ? 'só ela' : '')}</td>
+        <td class="cm-n">${ehRefDe[n] ? 'referência' : piorDe[n] != null ? num(piorDe[n], 2) : ''}</td>
         <td><select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
     }).join('');
     const resumo = tons.map((t, i) => `<div class="cm-tom ${t.ruins.length ? 'cm-tom-ruim' : ''}">
-        <b>Tom ${i + 1}</b> — ${t.membros.map(nomeAm).join(', ')}
-        <span class="cm-fraco">${t.membros.length > 1 ? `· ${escH(fo)} máx entre elas ${num(t.pior)}` : '· só ela'}</span>
-        ${t.ruins.length ? `<div class="cm-fora">Marcadas à mão e fora da tolerância de outra do tom: ${t.ruins.map(([n, d]) => `${escH(nomeAm(n))} (${num(d)})`).join('; ')}</div>` : ''}
+        <b>Tom ${i + 1}</b> — referência ${escH(nomeAm(t.refN))} · ${t.membros.map(nomeAm).join(', ')}
+        <span class="cm-fraco">${t.membros.length > 1 ? `· ${escH(fo)} máx contra a referência ${num(t.pior, 2)}` : '· só ela'}</span>
+        ${t.ruins.length ? `<div class="cm-fora">Marcadas à mão e reprovadas contra a referência: ${t.ruins.map(([n, d]) => `${escH(nomeAm(n))} (${num(d, 2)})`).join('; ')}</div>` : ''}
       </div>`).join('');
     const pend = avPendentes(av);
     const marcas = marcasDaFase(f);
     if (f.corDe >= 0 && S.fases[f.corDe]) marcas.push(`no recado vai com ${S.fases[f.corDe].nome}, tom a tom`);
     return `<div class="cm-rel-fase">
       <div class="cm-sub">${escH(S.fases.length > 1 ? f.rotulo : (f.tecido || 'Amostras'))}${marcas.length ? ` <span class="cm-fraco">(${escH(marcas.join(', '))})</span>` : ''}</div>
-      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th title="Maior diferença para as outras amostras do mesmo tom">Maior ${escH(fo)} no tom</th><th>Tom</th></tr></thead>
+      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th title="Diferença da melhor medição contra o rolo de referência do tom">${escH(fo)} contra a referência</th><th>Tom</th></tr></thead>
         <tbody>${linhas}</tbody></table></div>
       ${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
       ${htmlTabelaCompat(av, tons)}
@@ -2125,8 +2078,8 @@
       ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
          <button type="button" class="btn small ghost" onclick="verOS('${escH(S.os.id)}')">Ver a folha da OS</button>` : '';
     return `<div class="card cm-rel">${topo}
-      <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Os tons saem das cores guardadas de cada amostra (média das medições): no mesmo tom, todas as amostras são compatíveis entre si
-        (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b> e dL*, da*, db* dentro, ${escH(cfg.iluminante1)}°). Sem repescagem: cada medição nova refaz a classificação. Fixe o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
+      <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Cada tom tem um rolo de referência — a menor amostra que ainda não tinha tom —, e entra nele toda amostra com alguma medição aprovada contra a referência
+        (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b> e dL*, da*, db* dentro, pela diferença real, ${escH(cfg.iluminante1)}°). Sem repescagem: cada medição nova refaz a classificação. Fixe o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
       ${fases.map(htmlRelFase).join('')}
       ${faltam.length && S.fases.length > 1 ? `<div class="cm-fora" style="margin-top:8px">Fases ainda não concluídas: ${faltam.map(f => escH(f.rotulo)).join('; ')}</div>` : ''}
       <div class="cm-sub">Vai para as observações da OS ${escH(S.os.numero)}</div>
@@ -2259,15 +2212,15 @@
     const faixa = naoUsar ? `<div class="cm-de cm-de-fora">Amostra ${n} · não usar</div>`
       : rc.serve.length
         ? `<div class="cm-de cm-de-ok">Amostra ${n} → ${rc.serve.map(o => 'Tom ' + o).join(', ')} do ${nc}</div>
-           <div class="cm-fraco cm-centro">Casa com todas as amostras ${rc.serve.length > 1 ? 'desses tons' : 'desse tom'} do ${nc}</div>`
+           <div class="cm-fraco cm-centro">Aprovada contra o rolo de referência ${rc.serve.length > 1 ? 'desses tons' : 'desse tom'} do ${nc}</div>`
         : `<div class="cm-de cm-de-fora">Amostra ${n} → incompatível com o ${nc}</div>
-           <div class="cm-fraco cm-centro">${rc.porAmostra.some(e => e.ok) ? 'Casa só com ' + rc.porAmostra.filter(e => e.ok).map(e => e.x).join(', ') + ', não com um tom inteiro' : 'Não casa com nenhuma amostra do ' + nc}</div>`;
+           <div class="cm-fraco cm-centro">Reprovada contra o rolo de referência de todos os tons do ${nc}</div>`;
     const grupos = rc.tons.map(t => {
       const chips = rc.porAmostra.filter(e => t.membros.includes(e.x)).map(e => {
-        const dica = `${nomeAm(n)} × ${rib.fCorpo.nome} ${e.x}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
-          + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
+        const dica = `${nomeAm(n)} × referência ${e.x} do ${rib.fCorpo.nome}, melhor medição: ${e.ok ? 'aprovada' : 'reprovada'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
+          + ` · dL* ${num(e.r.d1[0], 2)} da* ${num(e.r.d1[1], 2)} db* ${num(e.r.d1[2], 2)}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
         return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
-          <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x, rib.corpo))}"></span>${e.x}<b>${e.ok ? '✔' : '✘'}</b></div>`;
+          <span class="cm-ref-cor" style="background:${labHex(...(labRef(e.x, rib.corpo) || corDaAmostra(e.x, rib.corpo)))}"></span>ref ${e.x}<b>${e.ok ? '✔' : '✘'}</b></div>`;
       }).join('');
       return `<div class="cm-peq" style="margin:4px 0 2px"><b class="${t.ok ? 'cm-ok' : 'cm-fora'}">${nc} Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</b></div><div class="cm-refs">${chips}</div>`;
     }).join('');
@@ -2275,7 +2228,7 @@
     return `<div class="cm-blocos" style="grid-template-columns:1fr">
         <div class="cm-bloco" style="background:${labHex(...cor)};color:${claro ? '#1d2230' : '#fff'};cursor:default"><span>${escH(nomeAm(n))} · média de ${nMed} ${nMed === 1 ? 'medição' : 'medições'}</span></div></div>
       ${faixa}
-      <div class="cm-sub" style="margin:6px 0 2px">Contra cada amostra do ${nc}</div>${grupos || '<div class="cm-fraco">O corpo ainda não tem tom.</div>'}
+      <div class="cm-sub" style="margin:6px 0 2px">Contra o rolo de referência de cada tom do ${nc}</div>${grupos || '<div class="cm-fraco">O corpo ainda não tem tom.</div>'}
       <div class="cm-fraco cm-centro cm-peq" style="margin-top:6px">L* ${num(cor[0])} · a* ${num(cor[1])} · b* ${num(cor[2])} · ${escH(cfg.formula)} até ${numTol(tolAtual())} · ${escH(cfg.iluminante1)}°</div>`;
   }
 
@@ -2284,36 +2237,44 @@
     const cor = n != null ? corDaAmostra(n) : null;
     if (!cor) {
       return `<div class="cm-de">—</div><div class="cm-fraco cm-centro">${n != null
-        ? `Meça a Amostra ${n}: ela será comparada com cada amostra já medida desta fase.` : escH(avDicaFase())}</div>`;
+        ? `Meça a Amostra ${n}: ela será comparada com o rolo de referência de cada tom.` : escH(avDicaFase())}</div>`;
     }
     const nMed = (av.medidas[n] || []).length;
     const rib = av.contraCorpo ? corpoDaRibana(av) : null;
     if (rib) return htmlVisorRibana(av, n, cor, nMed, rib);
-    const outras = numerosDasAmostras(av).filter(x => x !== n && corDaAmostra(x));
-    const res = outras.map(x => {
-      const r = comparar({ lab1: corDaAmostra(x) }, { lab1: cor });
-      return { x, ok: r.aprovado, r, naoUsar: tomDe(x) === 0 };
-    });
-    const comp = res.filter(e => e.ok), inc = res.filter(e => !e.ok);
+    // O ROLO DE REFERÊNCIA (12/11/2026): a amostra atual contra a referência de
+    // cada tom — a mesma conta que decide o tom dela.
     const tons = tonsDoRelatorio();
-    const ordem = tons.findIndex(t => t.k === tomDe(n)) + 1;
-    const tomTxt = tomDe(n) === 0 ? 'Não usar' : ordem ? `Tom ${ordem}` : '—';
-    const faixa = !outras.length
-      ? `<div class="cm-de">Amostra ${n} · ${tomTxt}</div><div class="cm-fraco cm-centro">Primeira amostra medida: ela é referência para as próximas.</div>`
-      : `<div class="cm-de ${comp.length ? 'cm-de-ok' : 'cm-de-fora'}">Amostra ${n} → ${tomTxt}</div>
-         <div class="cm-fraco cm-centro">Compatível com ${comp.length} de ${outras.length}${comp.length ? ': ' + comp.map(e => e.x).join(', ') : ''}${inc.length ? ` · incompatível com ${inc.map(e => e.x).join(', ')}` : ''}</div>`;
+    const res = tons.map((t, i) => {
+      if (t.refN === n) return { t, ordem: i + 1, eu: true };
+      const m = melhorContraRef(n, t.refN);
+      return { t, ordem: i + 1, eu: false, ok: !!(m && m.aprovado), r: m ? m.r : null };
+    });
+    const tAqui = tons.find(t => t.k === tomDe(n));
+    const ordem = tAqui ? tons.indexOf(tAqui) + 1 : 0;
+    const anteriores = tons.filter(t => t.refN < n).map(t => t.refN);
+    let faixa;
+    if (tomDe(n) === 0) faixa = `<div class="cm-de cm-de-fora">Amostra ${n} · não usar</div>`;
+    else if (tAqui && tAqui.refN === n) faixa = anteriores.length
+      ? `<div class="cm-de cm-de-fora">Amostra ${n} → referência do Tom ${ordem}</div>
+         <div class="cm-fraco cm-centro">Reprovada contra a referência de ${anteriores.length > 1 ? 'todos os tons anteriores' : 'Tom 1'}: abre um tom novo, e as próximas são comparadas com ela</div>`
+      : `<div class="cm-de">Amostra ${n} · referência do Tom ${ordem}</div><div class="cm-fraco cm-centro">As próximas amostras são comparadas com este rolo.</div>`;
+    else faixa = `<div class="cm-de cm-de-ok">Amostra ${n} → Tom ${ordem}</div>
+         <div class="cm-fraco cm-centro">Aprovada contra o rolo de referência (Amostra ${tAqui ? tAqui.refN : '?'})</div>`;
     const chips = res.map(e => {
-      const dica = `${nomeAm(n)} × ${nomeAm(e.x)}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
-        + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
+      const corRef = labRef(e.t.refN);
+      if (e.eu) return `<div class="cm-ref" title="Esta amostra é a referência do Tom ${e.ordem}"><span class="cm-ref-cor" style="background:${labHex(...(corRef || cor))}"></span>Tom ${e.ordem} · é a referência</div>`;
+      const dica = e.r ? `${nomeAm(n)} × referência do Tom ${e.ordem} (${nomeAm(e.t.refN)}), melhor medição: ${e.ok ? 'aprovada' : 'reprovada'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
+        + ` · dL* ${num(e.r.d1[0], 2)} da* ${num(e.r.d1[1], 2)} db* ${num(e.r.d1[2], 2)}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '') : '';
       return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
-        <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x))}"></span>${e.x}${e.naoUsar ? '<small>não usar</small>' : ''}<b>${e.ok ? '✔' : '✘'}</b></div>`;
+        <span class="cm-ref-cor" style="background:${labHex(...(corRef || cor))}"></span>Tom ${e.ordem} · ref ${e.t.refN}<b>${e.ok ? '✔' : '✘'}</b></div>`;
     }).join('');
     const claro = cor[0] > 72;
     return `<div class="cm-blocos" style="grid-template-columns:1fr">
-        <div class="cm-bloco" style="background:${labHex(...cor)};color:${claro ? '#1d2230' : '#fff'};cursor:default"><span>${escH(nomeAm(n))} · média de ${nMed} ${nMed === 1 ? 'medição' : 'medições'}</span></div></div>
+        <div class="cm-bloco" style="background:${labHex(...cor)};color:${claro ? '#1d2230' : '#fff'};cursor:default"><span>${escH(nomeAm(n))} · ${nMed} ${nMed === 1 ? 'medição' : 'medições'}</span></div></div>
       ${faixa}
-      ${res.length ? `<div class="cm-sub" style="margin:6px 0 4px">Contra cada referência medida</div><div class="cm-refs">${chips}</div>` : ''}
-      <div class="cm-fraco cm-centro cm-peq" style="margin-top:6px">L* ${num(cor[0])} · a* ${num(cor[1])} · b* ${num(cor[2])} · ${escH(cfg.formula)} até ${numTol(tolAtual())} · ${escH(cfg.iluminante1)}°</div>`;
+      ${res.length ? `<div class="cm-sub" style="margin:6px 0 4px">Contra o rolo de referência de cada tom</div><div class="cm-refs">${chips}</div>` : ''}
+      <div class="cm-fraco cm-centro cm-peq" style="margin-top:6px">L* ${num(cor[0])} · a* ${num(cor[1])} · b* ${num(cor[2])} (média) · ${escH(cfg.formula)} até ${numTol(tolAtual())} · ${escH(cfg.iluminante1)}°</div>`;
   }
 
   function linhaLista(l) {
