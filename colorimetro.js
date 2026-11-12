@@ -1407,10 +1407,20 @@
     av.ref = {};
     av.contraCorpo = true;
   }
-  // As fases de ribana acompanham o corpo: o corpo mudou, a ribana se refaz.
+  /* TODAS AS FASES EM DIA (12/11/2026, caso OS 0715). Só a ribana era refeita
+     aqui; o corpo só se reclassificava com uma medição nova nele ou ao entrar
+     na fase. Com a tela na Gola, o corpo seguiu com os tons gravados pela regra
+     anterior — e mudar a regra, ou as tolerâncias nas Configurações, deixava os
+     tons velhos na tela, no recado e no exportar. Agora toda fase é refeita a
+     cada desenho (o corpo antes da ribana, que depende dele), e o resultado é
+     guardado quando muda. A conta é pequena: dezenas de amostras. */
   function sincronizarRibanas() {
     if (!S.avOS || !S.fases) return;
-    S.fases.forEach(f => { if (f.corDe >= 0 && S.avOS.fases[f.i]) classificar(S.avOS.fases[f.i]); });
+    const antes = JSON.stringify(Object.keys(S.avOS.fases).map(i => S.avOS.fases[i] && S.avOS.fases[i].tons));
+    S.fases.filter(f => !(f.corDe >= 0)).forEach(f => { if (S.avOS.fases[f.i]) { avNormalizar(S.avOS.fases[f.i]); classificar(S.avOS.fases[f.i]); } });
+    S.fases.filter(f => f.corDe >= 0).forEach(f => { if (S.avOS.fases[f.i]) { avNormalizar(S.avOS.fases[f.i]); classificar(S.avOS.fases[f.i]); } });
+    const depois = JSON.stringify(Object.keys(S.avOS.fases).map(i => S.avOS.fases[i] && S.avOS.fases[i].tons));
+    if (antes !== depois) avGuardar();
   }
   const ehIncompativelCorpo = (n, av = S.av) => tomDe(n, av) === 'x';
 
