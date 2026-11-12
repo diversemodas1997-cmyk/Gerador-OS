@@ -2267,6 +2267,12 @@ const ACOES_POR_AREA = {
   'editar a folha de OE': 'expedicao', 'marcar a carga como feita': 'expedicao',
   'recalcular volumes': 'expedicao', 'remover OS da expedição': 'expedicao',
   'excluir janelas de expedição': 'expedicao', 'restaurar expedição': 'expedicao',
+  // O "+ Nova OE" (11/11/2026) e as observações soltas da expedição nasceram
+  // fora desta lista e por isso caíam em "só admin" — a Nathaly, com Expedição
+  // marcada, recebia "Seu acesso não inclui criar uma OE" (12/11/2026).
+  // "excluir OE" segue de propósito só do admin (exigirAdmin em excluirOE).
+  'criar uma OE': 'expedicao',
+  'escrever observação na expedição': 'expedicao', 'tirar observação da expedição': 'expedicao',
   // Operações
   'planejar operações': 'operacoes', 'reordenar operações': 'operacoes',
   'excluir operações': 'operacoes', 'duplicar operações': 'operacoes',

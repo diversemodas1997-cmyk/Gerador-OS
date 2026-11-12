@@ -172,8 +172,13 @@ const usadas = new Set([...src.matchAll(/exigir(?:Edicao|Admin)\('([^']+)'\)/g)]
 const foraDaRelacao = [...usadas].filter(a => !(a in t.api.ACOES_POR_AREA)).sort();
 const SO_ADMIN_ESPERADO = [
   'baixar snapshots', 'conceder acesso', 'criar contas de acesso', 'editar contas de acesso',
-  'gerenciar usuários', 'ver as contas de acesso', 'ver os usuários e os papéis'
+  'gerenciar usuários', 'ver as contas de acesso', 'ver os usuários e os papéis',
+  // Excluir a OE inteira é só do admin por decisão (11/11/2026, ver excluirOE).
+  // Criar a OE NÃO é: 'criar uma OE' tem de estar na relação (caso Nathaly, 12/11).
+  'excluir OE'
 ];
+ok('26b. criar uma OE cai na area Expedicao',
+   t.api.ACOES_POR_AREA['criar uma OE'] === 'expedicao');
 ok('26. as acoes fora da relacao sao so as de conta/admin',
    foraDaRelacao.every(a => SO_ADMIN_ESPERADO.includes(a)),
    JSON.stringify(foraDaRelacao));
