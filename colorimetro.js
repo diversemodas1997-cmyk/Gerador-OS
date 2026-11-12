@@ -1810,8 +1810,11 @@
       return x.tons.length === 1 ? x.tons[0] : x.tons[j];
     };
     const grupos = Array.from({ length: nGrupos }, (_, j) => {
-      // Com o rolo de referência (12/11/2026): "ref N:" antes das amostras do tom.
-      const partes = [tons[j] ? `ref ${tons[j].refN}: ${tons[j].membros.join(',')}` : '',
+      // SEM O "ref N:" (12/11/2026, Junior: "retire do relatório auto produzido o
+      // texto ref1, ref2, ref3, pois é redundante, uma vez que no texto já tem
+      // escrito tom 1, tom 2, tom 3"). A referência de cada tom continua na tela
+      // do relatório do Colorímetro; o texto da folha leva só as amostras.
+      const partes = [tons[j] ? tons[j].membros.join(',') : '',
         ...rib.map(x => tomDaRibana(x, j) ? `ribana ${tomDaRibana(x, j).membros.join(',')}` : '')].filter(Boolean);
       // O número que se escreve é a posição do tom (Tom 1, 2, 3…), não a chave interna.
       const k = j + 1;
