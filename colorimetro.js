@@ -688,7 +688,7 @@
 
   async function medir(tipo) {
     if (!S.dev || S.ocupado) return;
-    if (S.os && S.av && S.av.n == null) { S.aviso = 'A rodada terminou: clique em Reavaliar ou escolha o número da amostra.'; desenhar(); return; }
+    if (S.os && S.av && S.av.n == null) { S.aviso = avDicaFase(); desenhar(); return; }
     S.ocupado = true;
     status('Medindo…');
     try { chegou(await S.dev.medir(modoAtual()), tipo); } catch (e) { erroDoAparelho(e); }
@@ -743,7 +743,7 @@
     const l = novaLeitura({ nome: `${prefixo} ${S.cont[tipo]}`, tipo, espectro: esp, wave_start: medidas[0].wave_start,
       lab_aparelho: labAp, horario: new Date(), modo: medidas[0].modo });
     // Com a tela ligada a uma OS, quem dá nome, referência e tom é a avaliação.
-    const msg = naOS ? avMedicao(l, tipo) : '';
+    const msg = naOS ? avMedicao(l) : '';
     if (!naOS && tipo === 'amostra' && S.padrao) l.refId = S.padrao.id;
     S.leituras.unshift(l);
     if (tipo === 'padrao' && !naOS) S.padrao = l;
@@ -803,7 +803,7 @@
         S.leituras = []; S.atual = null; S.cont = { padrao: 0, amostra: 0 };
         // Na avaliação de uma OS a referência do tom é da avaliação, não da
         // lista: continua valendo depois de limpar.
-        S.padrao = S.os && S.av ? refComoLeitura(S.av.rodada) : null;
+        S.padrao = S.os && S.av && S.av.n != null && estaNumTom(S.av.n) ? refComoLeitura(tomDe(S.av.n)) : null;
         desenhar();
       } });
   }
@@ -1019,7 +1019,7 @@
     const g = o.grade && o.grade.descricao ? ' · ' + o.grade.descricao : '';
     return `OS ${o.os || '—'}${o.modeloNome ? ' · ' + o.modeloNome : ''}${g}`;
   }
-  function avNovo(osId) { return { osId, n: 1, rodada: 1, tons: {}, ref: {}, medidas: {}, fila: null, fimRodada: false }; }
+  function avNovo(osId) { return { osId, n: 1, rodada: 1, tons: {}, ref: {}, medidas: {}, fila: null, fimRodada: false, fixo: {}, modelo: 'dados' }; }
   // Por OS: a fase atual, a avaliação de cada fase, as concluídas e quantas vezes cada uma foi reavaliada.
   function avNovoOS(osId) { return { osId, versao: 2, faseAtual: 0, fases: {}, concluidas: {}, reav: {} }; }
   function avCarregar(osId) {
@@ -1104,7 +1104,8 @@
     c.faseAtual = i;
     if (!c.fases[i]) c.fases[i] = avNovo(c.osId);
     S.av = c.fases[i];
-    S.padrao = refComoLeitura(S.av.rodada);
+    avNormalizar(S.av);
+    S.padrao = S.av.n != null && estaNumTom(S.av.n) ? refComoLeitura(tomDe(S.av.n)) : null;
     S.atual = null;
   }
 
@@ -1119,6 +1120,93 @@
   const numerosDasAmostras = (av = S.av) => Object.keys(av.medidas).map(Number).filter(n => n > 0).sort((a, b) => a - b);
   const tomDe = (n, av = S.av) => av.tons[n];
   const estaNumTom = (n, av = S.av) => typeof tomDe(n, av) === 'number' && tomDe(n, av) > 0;
+
+  /* CLASSIFICAÇÃO PELOS DADOS MEMORIZADOS, SEM REPESCAGEM (12/11/2026, Junior:
+     "a plataforma deve classificar quais amostras são compatíveis sem necessitar
+     de repescagem, mas sim apenas com os dados coletados no momento da medição
+     devem ser suficientes para indicar compatibilidade de cores com os dados
+     memorizados das amostras").
+     Antes a fase andava por RODADAS: o tom se formava contra uma referência, a
+     reprovada ia para "a reavaliar" e era preciso medir tudo de novo na rodada do
+     Tom 2 (repescagem). Agora cada amostra é medida uma vez (ou mais, se quiser)
+     e a cor dela fica guardada; a cada medição o programa refaz a classificação
+     da fase inteira com o que já tem:
+       · a cor da amostra = a média de todas as medições dela;
+       · duas amostras são compatíveis quando passam na mesma regra de aprovação
+         da tela (dE escolhido E dL*, da*, db* dentro das tolerâncias — comparar);
+       · as amostras entram em tons na ordem do número: cada uma vai para o tom
+         em que é compatível com TODAS as que já estão nele (o de menor dE, se
+         couber em mais de um); sem nenhum, abre o tom seguinte. Assim duas
+         peças do mesmo tom sempre casam entre si, não só com a referência;
+       · o que se marcou à mão no relatório (av.fixo: um tom, ou 0 = não usar)
+         vale por cima e entra primeiro.
+     A referência de cada tom passa a ser só a primeira amostra dele (a de menor
+     número), para a tela mostrar a comparação. */
+  const corDaAmostra = (n, av = S.av) => {
+    const ms = (av.medidas[n] || []).filter(m => m && m.lab);
+    return ms.length ? [0, 1, 2].map(i => ms.reduce((s, m) => s + m.lab[i], 0) / ms.length) : null;
+  };
+  const compativeis = (a, b) => comparar({ lab1: a }, { lab1: b }).aprovado;
+  function classificar(av = S.av) {
+    if (!av) return;
+    av.fixo = av.fixo || {};
+    const cores = {};
+    numerosDasAmostras(av).forEach(n => { const c = corDaAmostra(n, av); if (c) cores[n] = c; });
+    const nums = Object.keys(cores).map(Number).sort((a, b) => a - b);
+    const tons = {};                               // k -> [n]
+    const tonsNovos = {};
+    // "Só esta amostra" que ninguém mais fixa deixa de valer (a amostra voltou ao automático).
+    if (av.tomSo) Object.keys(av.tomSo).forEach(k => { if (!Object.values(av.fixo).includes(Number(k))) delete av.tomSo[k]; });
+    nums.forEach(n => {                            // à mão primeiro
+      const f = av.fixo[n];
+      if (f === 0) tonsNovos[n] = 0;
+      else if (typeof f === 'number' && f > 0) { (tons[f] = tons[f] || []).push(n); tonsNovos[n] = f; }
+    });
+    nums.filter(n => !(n in tonsNovos)).forEach(n => {
+      let melhor = null, menor = Infinity;
+      Object.keys(tons).map(Number).sort((a, b) => a - b).forEach(k => {
+        // Tom criado à mão como "só esta amostra" não recebe ninguém automático.
+        if (av.tomSo && av.tomSo[k]) return;
+        if (!tons[k].every(x => compativeis(cores[x], cores[n]))) return;
+        const pior = Math.max(...tons[k].map(x => deDaFormula(cores[x], cores[n])));
+        if (pior < menor - 1e-12) { menor = pior; melhor = k; }
+      });
+      if (melhor == null) { melhor = 1; while (tons[melhor]) melhor++; tons[melhor] = []; }
+      tons[melhor].push(n);
+      tonsNovos[n] = melhor;
+    });
+    // Amostra marcada no cadastro antigo e sem medição não some do mapa.
+    Object.keys(av.tons || {}).forEach(n => { if (!(n in cores) && av.fixo[n] === 0) tonsNovos[n] = 0; });
+    av.tons = tonsNovos;
+    av.ref = {};
+    Object.keys(tons).forEach(k => {
+      const n = Math.min(...tons[k]);
+      const m0 = (av.medidas[n] || [])[0] || {};
+      av.ref[k] = { medId: m0.id, amostra: n, nome: nomeAm(n), lab: cores[n], em: m0.em };
+    });
+  }
+  // Uma avaliação gravada no modelo de rodadas vira o modelo novo sem perder medições:
+  // o "Não usar" de antes fica fixo; o resto é reclassificado pelos dados.
+  function avNormalizar(av) {
+    if (!av || av.modelo === 'dados') return;
+    av.fixo = av.fixo || {};
+    Object.keys(av.tons || {}).forEach(n => { if (av.tons[n] === 0) av.fixo[n] = 0; });
+    av.rodada = 1; av.fila = null; av.fimRodada = false; av.modelo = 'dados';
+    if (av.n == null) { const f = faltamMedir(av); av.n = f.length ? f[0] : null; }
+    classificar(av);
+  }
+  // A amostra nova contra cada tom: compatível com todas dele? e o maior dE.
+  function encaixeNosTons(n, av = S.av) {
+    const cor = corDaAmostra(n, av);
+    if (!cor) return [];
+    const ks = [...new Set(Object.values(av.tons).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => a - b);
+    return ks.map(k => {
+      const outros = numerosDasAmostras(av).filter(x => x !== n && av.tons[x] === k && corDaAmostra(x, av));
+      if (!outros.length) return null;
+      const des = outros.map(x => deDaFormula(corDaAmostra(x, av), cor));
+      return { k, ok: outros.every(x => compativeis(corDaAmostra(x, av), cor)), pior: Math.max(...des) };
+    }).filter(Boolean);
+  }
 
   // A referência do tom como "leitura", para a comparação da tela (barra, blocos, lista).
   function refComoLeitura(k) {
@@ -1196,52 +1284,54 @@
   }
   function avDicaFase() {
     const av = S.av;
-    if (av.fimRodada) return `Fim da rodada do Tom ${av.rodada}. ${avPendentes().length ? 'Clique em Reavaliar para formar o tom seguinte.' : 'Nenhuma amostra a reavaliar.'}`;
-    if (!av.ref[av.rodada]) return `Tom ${av.rodada}: meça a Amostra ${av.n} (ela vira a referência do tom) ou vá ao número da amostra que vai ser a referência.`;
-    return `Tom ${av.rodada}: meça a Amostra ${av.n}; uma aprovação basta. Clique em Trocar para passar à seguinte.`;
+    if (av.n == null) {
+      const t = totalDe(av);
+      return t ? `As ${t} amostras desta fase foram medidas. Confira os tons e conclua a fase (ou escolha o número de uma amostra para medir de novo).`
+        : 'Escolha o número da amostra para medir.';
+    }
+    return `Meça a Amostra ${av.n}: a cor fica guardada e o programa a compara com todas as já medidas desta fase. Depois clique em Trocar.`;
   }
+  // Não há mais "a reavaliar" (sem repescagem); fica para avaliações gravadas antes.
   const avPendentes = (av = S.av) => numerosDasAmostras(av).filter(n => tomDe(n, av) === 'r');
 
   // Uma medição chegou com a tela ligada a uma OS (chamado por chegou()).
-  function avMedicao(l, tipo) {
-    const av = S.av, k = av.rodada;
-    l.osId = S.os.id; l.osNumero = S.os.numero; l.rodada = k;
+  // F5, F6 e o botão do aparelho fazem a mesma coisa aqui: medem a amostra atual.
+  function avMedicao(l) {
+    const av = S.av;
+    l.osId = S.os.id; l.osNumero = S.os.numero; l.rodada = 1; l.tipo = 'amostra';
     l.fase = S.avOS.faseAtual; l.faseNome = (S.fases[S.avOS.faseAtual] || {}).rotulo || '';
-    if (av.fimRodada || av.n == null) {
-      return 'A rodada terminou: clique em Reavaliar (ou escolha o número da amostra) antes de medir.';
-    }
-    if (tipo === 'padrao') return avReferencia(l);
+    if (av.n == null) return avDicaFase();
     const n = av.n;
     l.amostraN = n;
     l.nome = `${cfg.nome_amostra} ${n}`;
+    const em = l.horario.toISOString();
     const lista = av.medidas[n] = av.medidas[n] || [];
-    if (!av.ref[k]) {
-      // A primeira medição da rodada define o tom: é a referência, e a amostra já está nele.
-      av.ref[k] = { medId: l.id, amostra: n, nome: l.nome, lab: l.lab1, lab2: l.lab2, em: l.horario.toISOString() };
-      av.tons[n] = k;
-      lista.push({ id: l.id, lab: l.lab1, rodada: k, de: 0, aprovado: true, ref: true, em: l.horario.toISOString() });
-      S.padrao = l;
-      avGuardar();
-      return `Amostra ${n} é a referência do Tom ${k}. Clique em Trocar para passar à Amostra ${proximoNumero(n) || n + 1}.`;
+    const antes = tomDe(n);
+    lista.push({ id: l.id, lab: l.lab1, rodada: 1, de: 0, aprovado: true, em });
+    classificar(av);
+    const k = tomDe(n);
+    const ref = estaNumTom(n) ? refComoLeitura(k) : null;
+    if (ref && ref.id !== l.id) {
+      const r = comparar(ref, l);
+      lista[lista.length - 1].de = r.des[cfg.formula];
+      lista[lista.length - 1].aprovado = r.aprovado;
+      l.refId = ref.id;
     }
-    const ref = refComoLeitura(k);
-    const r = comparar(ref, l);
-    l.refId = ref.id;
-    const de = r.des[cfg.formula];
-    lista.push({ id: l.id, lab: l.lab1, rodada: k, de, aprovado: r.aprovado, em: l.horario.toISOString() });
-    let msg;
-    if (r.aprovado && !estaNumTom(n)) {
-      av.tons[n] = k;
-      msg = `✔ Amostra ${n} aprovada (${cfg.formula} ${num(de)}) → entrou no Tom ${k}.`;
-    } else if (r.aprovado) {
-      msg = `✔ Amostra ${n} aprovada de novo (${cfg.formula} ${num(de)}); continua no Tom ${tomDe(n)}.`;
-    } else if (estaNumTom(n)) {
-      msg = `Amostra ${n} reprovada nesta leitura (${cfg.formula} ${num(de)}), mas já tem aprovação: continua no Tom ${tomDe(n)}.`;
-    } else {
-      msg = `✘ Amostra ${n} reprovada (${cfg.formula} ${num(de)}). Meça de novo ou clique em Trocar (ela vai para a reavaliação).`;
-    }
+    S.padrao = ref;
     avGuardar();
-    return msg;
+    const mesmos = numerosDasAmostras(av).filter(x => x !== n && tomDe(x) === k);
+    const ordem = tonsDoRelatorio().findIndex(t => t.k === k) + 1;
+    const prox = proximoNumero(n);
+    const depois = prox != null ? ` Clique em Trocar para passar à Amostra ${prox}.` : '';
+    if (k === 0) return `Amostra ${n} medida — está marcada "Não usar" no relatório.${depois}`;
+    const mudou = typeof antes === 'number' && antes > 0 && antes !== k ? ' (mudou de tom com esta medição)' : '';
+    if (!mesmos.length) {
+      const nTons = tonsDoRelatorio().length;
+      return nTons > 1
+        ? `✘ Amostra ${n} não é compatível com nenhum tom já formado → Tom ${ordem} novo${mudou}.${depois}`
+        : `Amostra ${n} abre o Tom ${ordem}${mudou}.${depois}`;
+    }
+    return `✔ Amostra ${n} compatível com ${mesmos.join(', ')} → Tom ${ordem}${mudou}.${depois}`;
   }
 
   /* A REFERÊNCIA É UMA AMOSTRA (20/10/2026, Junior: "as amostras são usadas
@@ -1329,9 +1419,8 @@
     const av = S.av;
     if (!av || av.n == null) return;
     const n = av.n;
-    const medidasDaRodada = (av.medidas[n] || []).filter(m => m.rodada === av.rodada);
-    let msg = '';
-    if (!estaNumTom(n) && medidasDaRodada.length) { av.tons[n] = 'r'; msg = `Amostra ${n} foi para a reavaliação. `; }
+    // Sem repescagem: trocar só passa à amostra seguinte; o tom já foi decidido na medição.
+    let msg = (av.medidas[n] || []).length ? '' : `Amostra ${n} ficou sem medição. `;
     const prox = proximoNumero(n);
     if (prox == null) {
       av.n = null; av.fimRodada = true;
@@ -1351,8 +1440,10 @@
     if (t && n > t) { S.aviso = `Esta fase tem ${t} ${t === 1 ? 'amostra' : 'amostras'} no total — aumente o total para ir à Amostra ${n}.`; desenhar(); return; }
     S.av.n = n; S.av.fimRodada = false;
     S.atual = null;
+    S.padrao = estaNumTom(n) ? refComoLeitura(tomDe(n)) : null;
     avGuardar();
-    status(`Agora é a Amostra ${n}${estaNumTom(n) ? ` (já está no Tom ${tomDe(n)})` : tomDe(n) === 'r' ? ' (está a reavaliar)' : ''}.`);
+    const ordem = tonsDoRelatorio().findIndex(t => t.k === tomDe(n)) + 1;
+    status(`Agora é a Amostra ${n}${ordem ? ` (já medida: Tom ${ordem}; medir de novo soma à média dela)` : tomDe(n) === 0 ? ' (marcada "Não usar")' : ''}.`);
   }
   function avReavaliar() {
     const av = S.av;
@@ -1399,7 +1490,7 @@
         c.reav[i] = (c.reav[i] || 0) + 1;
         avUsarFase(i);
         avGuardar();
-        status(`Reavaliação da ${S.fases[i].rotulo}: meça a Amostra 1 (ela vira a referência do Tom 1).`);
+        status(`Reavaliação da ${S.fases[i].rotulo}: meça a Amostra 1; os tons se formam pelas cores medidas.`);
       } });
   }
 
@@ -1433,23 +1524,30 @@
   // Os tons em uso, na ordem dos números das rodadas.
   function tonsDoRelatorio(av = S.av) {
     const nums = numerosDasAmostras(av);
-    const ks = [...new Set(nums.map(n => tomDe(n, av)).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => a - b);
+    // Os tons na ordem da menor amostra de cada um: o Tom 1 é sempre o da amostra mais baixa.
+    const menorDe = k => Math.min(...nums.filter(n => tomDe(n, av) === k));
+    const ks = [...new Set(nums.map(n => tomDe(n, av)).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => menorDe(a) - menorDe(b));
     return ks.map(k => {
       const membros = nums.filter(n => tomDe(n, av) === k);
       const ref = av.ref[k];
-      // Cada amostra pela sua melhor medição contra a referência deste tom.
-      const melhor = n => {
-        const ms = (av.medidas[n] || []).filter(m => m.rodada === k);
-        return ms.length ? ms.reduce((a, b) => (a.de <= b.de ? a : b)) : (av.medidas[n] || []).slice(-1)[0];
-      };
+      // Cada amostra pela cor guardada dela (média das medições), contra TODAS do
+      // mesmo tom: pior = o maior dE entre duas peças do tom; ruins = as que não
+      // casam com alguma outra (só acontece com tom marcado à mão no relatório).
+      const melhor = n => { const c = corDaAmostra(n, av); return c ? { lab: c } : null; };
       const ruins = [];
       let pior = 0;
       membros.forEach(n => {
-        const m = melhor(n);
-        if (!m || !ref) return;
-        const d = deDaFormula(ref.lab, m.lab);
-        pior = Math.max(pior, d);
-        if (d > tolAtual() + 1e-9) ruins.push([n, d]);
+        const a = corDaAmostra(n, av);
+        if (!a) return;
+        let piorN = 0, casa = true;
+        membros.forEach(x => {
+          const b = x !== n && corDaAmostra(x, av);
+          if (!b) return;
+          piorN = Math.max(piorN, deDaFormula(a, b));
+          if (!compativeis(a, b)) casa = false;
+        });
+        pior = Math.max(pior, piorN);
+        if (!casa) ruins.push([n, piorN]);
       });
       return { k, membros, ref, pior, ruins, melhor };
     });
@@ -1492,7 +1590,8 @@
     const grupos = Array.from({ length: nGrupos }, (_, j) => {
       const partes = [tons[j] ? tons[j].membros.join(',') : '',
         ...rib.map(x => tomDaRibana(x, j) ? `ribana ${tomDaRibana(x, j).membros.join(',')}` : '')].filter(Boolean);
-      const k = tons[j] ? tons[j].k : (rib.map(x => x.tons[j]).find(Boolean) || {}).k || j + 1;
+      // O número que se escreve é a posição do tom (Tom 1, 2, 3…), não a chave interna.
+      const k = j + 1;
       return `Tom ${k} (${partes.join(' - ')})`;
     }).join(' ');
     const sobra = (a, rotulo) => {
@@ -1526,16 +1625,13 @@
   function relMudar(i, n, v) {
     const av = S.avOS && S.avOS.fases[i];
     if (!av) return;
-    if (v === 'novo') {
-      const k = tomNovoDe(av);
-      const m = (av.medidas[n] || []).slice(-1)[0];
-      if (m) av.ref[k] = { medId: m.id, amostra: n, nome: nomeAm(n), lab: m.lab, em: m.em };
-      av.tons[n] = k;
-      avGuardar();
-      desenhar();
-      return;
-    }
-    av.tons[n] = v === 'r' ? 'r' : (parseInt(v, 10) || 0);
+    // O que se escolhe aqui fica FIXO (av.fixo) e vale por cima da classificação
+    // pelos dados; "Automático" devolve a amostra à classificação.
+    av.fixo = av.fixo || {};
+    if (v === 'auto' || v === '') delete av.fixo[n];
+    else if (v === 'novo') { const k = tomNovoDe(av); av.fixo[n] = k; (av.tomSo = av.tomSo || {})[k] = true; }
+    else av.fixo[n] = parseInt(v, 10) || 0;
+    classificar(av);
     avGuardar();
     desenhar();
   }
@@ -1585,17 +1681,21 @@
 
   function htmlAvaliacao(aparelho = '', comparacao = '') {
     if (!S.os || !S.av) return '';
-    const av = S.av, k = av.rodada, ref = av.ref[k];
+    const av = S.av;
     const con = !!S.dev, livre = !S.ocupado && !S.conectando;
     const concluida = !!S.avOS.concluidas[S.avOS.faseAtual];
     const fase = S.fases[S.avOS.faseAtual];
     const ultimaFase = !S.fases.some((f, j) => j > S.avOS.faseAtual && !faseFeita(S.avOS, j));
-    const ms = av.n != null ? (av.medidas[av.n] || []).filter(m => m.rodada === k) : [];
-    const ult = ms[ms.length - 1];
-    const situacao = av.n == null ? '' : estaNumTom(av.n) ? `<span class="cm-ok">no Tom ${tomDe(av.n)}</span>`
-      : tomDe(av.n) === 'r' ? '<span class="cm-fora">a reavaliar</span>' : '<span class="cm-fraco">sem aprovação ainda</span>';
-    const pend = avPendentes();
+    const ms = av.n != null ? (av.medidas[av.n] || []) : [];
     const tons = tonsDoRelatorio();
+    const ordemDe = k => tons.findIndex(t => t.k === k) + 1;
+    const situacao = av.n == null || !ms.length ? '<span class="cm-fraco">ainda não medida</span>'
+      : estaNumTom(av.n) ? `<span class="cm-ok">Tom ${ordemDe(tomDe(av.n))}</span>`
+      : tomDe(av.n) === 0 ? '<span class="cm-fora">não usar</span>' : '';
+    // A amostra atual contra cada tom formado: casa com todas dele? e o maior dE.
+    const encaixe = av.n != null && ms.length ? encaixeNosTons(av.n).map(e =>
+      `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} máx ${num(e.pior)}</span>`).join(' · ') : '';
+    const falta = faltamMedir();
     const prox = av.n != null ? proximoNumero(av.n) : null;
     const pode = con && livre && !concluida;
     return `<div class="card cm-os"><div class="cm-os-grade"><div class="cm-os-esq">
@@ -1604,38 +1704,35 @@
         <div class="cm-botoes">
           <button type="button" class="btn small ${S.janela === 'rel' ? 'primary' : ''}" onclick="Colorimetro.alternar('rel')">Relatório de tonalidades</button>
           <button type="button" class="btn small ghost" onclick="Colorimetro.avLimpar()"
-            title="Apaga a avaliação desta OS (todas as fases) e recomeça na Amostra 1, sem nenhuma referência">Limpar avaliação</button>
+            title="Apaga a avaliação desta OS (todas as fases) e recomeça na Amostra 1">Limpar avaliação</button>
           <button type="button" class="btn small ghost" onclick="Colorimetro.encerrarOS()">Medir sem OS</button></div></div>
       ${htmlFases()}
       ${concluida ? `<div class="cm-aviso" style="background:var(--ok-bg);color:var(--ok)">${escH(fase.rotulo)} concluída. Para repetir esta fase, escolha-a em "Reavaliar a fase".</div>` : `
       <div class="cm-av">
-        <div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tom em formação</div><div class="cm-av-num">Tom ${k}</div>
-          <div class="cm-peq">${ref ? `Referência: <b>${escH(ref.amostra ? nomeAm(ref.amostra) : ref.nome)}</b> · L* ${num(ref.lab[0])} a* ${num(ref.lab[1])} b* ${num(ref.lab[2])}`
-            : 'Referência: a primeira medição da rodada'}</div></div>
-        <div class="cm-av-bloco"><div class="cm-av-rot">Até agora nesta fase</div>
-          <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhum tom ainda'}
-          ${pend.length ? `<br><span class="cm-fora">A reavaliar: ${pend.join(', ')}</span>` : ''}
-          ${totalDe() ? `<br>${faltamMedir().length ? `Faltam medir: ${faltamMedir().join(', ')}` : `<span class="cm-ok">Todas as ${totalDe()} medidas</span>`}` : ''}</div></div>
+        <div class="cm-av-bloco"><div class="cm-av-rot">${S.fases.length > 1 ? escH(fase.rotulo) + ' · ' : ''}Tons pelas cores guardadas</div>
+          <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhuma amostra medida ainda'}
+          ${numerosDasAmostras().filter(n => tomDe(n) === 0).length ? `<br><span class="cm-fora">Não usar: ${numerosDasAmostras().filter(n => tomDe(n) === 0).join(', ')}</span>` : ''}</div></div>
+        <div class="cm-av-bloco"><div class="cm-av-rot">Medidas nesta fase</div>
+          <div class="cm-peq">${numerosDasAmostras().length}${totalDe() ? ' de ' + totalDe() : ''} ${numerosDasAmostras().length === 1 ? 'amostra' : 'amostras'}
+          ${totalDe() ? `<br>${falta.length ? `Faltam medir: ${falta.join(', ')}` : '<span class="cm-ok">Todas medidas</span>'}` : ''}
+          <br><span class="cm-fraco">No mesmo tom, todas casam entre si. Sem repescagem.</span></div></div>
       </div>
       <div class="cm-botoes">
         <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}>Medir amostra ${av.n != null ? av.n : ''} (F5)</button>
         <button type="button" class="btn primary" onclick="Colorimetro.avTrocar()" ${av.n != null ? '' : 'disabled'}
-          title="Passa para a amostra seguinte. Sem aprovação nesta rodada, esta vai para a reavaliação.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim da rodada'}</button>
+          title="Passa para a amostra seguinte. O tom desta já foi decidido pela cor medida.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim das amostras'}</button>
         <label class="cm-campo" style="max-width:120px"><span>Ir para a amostra nº</span>
           <input type="number" min="1" ${totalDe() ? `max="${totalDe()}"` : ''} value="${av.n != null ? av.n : ''}" onchange="Colorimetro.avIrPara(this.value)"></label>
-        <label class="cm-campo" style="max-width:130px" title="Quantas amostras esta fase tem no total. A rodada termina sozinha na última; vazio = sem limite."><span>Total de amostras</span>
+        <label class="cm-campo" style="max-width:130px" title="Quantas amostras esta fase tem no total. A troca termina sozinha na última; vazio = sem limite."><span>Total de amostras</span>
           <input type="number" min="1" placeholder="sem limite" value="${totalDe() || ''}" onchange="Colorimetro.avDefinirTotal(this.value)"></label>
-        <button type="button" class="btn small" onclick="Colorimetro.medir('padrao')" ${pode && av.n != null ? '' : 'disabled'}
-          title="A amostra atual vira a referência: as compatíveis com ela entram no tom dela. Se o tom em formação já tem a referência em outra amostra, abre o tom seguinte (repescagem das que não entraram em tom nenhum).">Amostra ${av.n != null ? av.n : ''} como referência do Tom ${ref && ref.amostra != null && ref.amostra !== av.n ? tomNovoDe(av) : k} (F6)</button>
-        ${pend.length ? `<button type="button" class="btn ${av.fimRodada ? 'primary' : ''}" onclick="Colorimetro.avReavaliar()">Reavaliar ${pend.length} → Tom ${Math.max(k, ...Object.keys(av.ref).map(Number)) + 1}</button>` : ''}
-        <button type="button" class="btn ${av.fimRodada && !pend.length ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
+        <button type="button" class="btn ${av.n == null ? 'primary' : ''}" onclick="Colorimetro.avConcluirFase()" ${numerosDasAmostras().length ? '' : 'disabled'}
           title="Fecha esta fase e passa para a seguinte do enfesto">${ultimaFase ? 'Concluir a fase' : 'Concluir a fase → próxima'}</button>
       </div>`}
       ${aparelho}</div>
       <div class="cm-os-dir">
         ${concluida ? '' : `<div class="cm-av-bloco cm-av-atual cm-av-topo"><div class="cm-av-rot">Amostra atual</div>
           <div class="cm-av-num cm-av-num-grande">${av.n != null ? 'Nº ' + av.n : '—'}${av.n != null && totalDe() ? ` <span class="cm-fraco" style="font-size:.5em">de ${totalDe()}</span>` : ''}</div>
-          <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} nesta rodada${ult && !ult.ref ? ` · última ${escH(cfg.formula)} ${num(ult.de)} ${ult.aprovado ? '✔' : '✘'}` : ''} · ${situacao}` : escH(avDicaFase())}</div></div>`}
+          <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} · ${situacao}${encaixe ? '<br>' + encaixe : ''}` : escH(avDicaFase())}</div></div>`}
         ${comparacao}</div></div></div>`;
   }
 
@@ -1646,33 +1743,39 @@
     const tons = tonsDoRelatorio(av);
     const ordem = {};
     tons.forEach((t, i) => { ordem[t.k] = i + 1; });
-    const ks = Object.keys(av.ref).map(Number).sort((a, b) => a - b);
+    const ks = tons.map(t => t.k);
+    const piorDe = {};
+    tons.forEach(t => t.membros.forEach(n => {
+      const c = corDaAmostra(n, av);
+      const outros = t.membros.filter(x => x !== n && corDaAmostra(x, av));
+      piorDe[n] = c && outros.length ? Math.max(...outros.map(x => deDaFormula(corDaAmostra(x, av), c))) : null;
+    }));
     const linhas = nums.map(n => {
       const t = tomDe(n, av);
+      const fixo = av.fixo && (n in av.fixo) ? av.fixo[n] : undefined;
       const todas = av.medidas[n] || [];
-      const apr = todas.filter(m => m.aprovado).length;
-      const opc = ks.map(k => `<option value="${k}" ${t === k ? 'selected' : ''}>Tom ${ordem[k] || '?'}${ordem[k] ? '' : ' (vazio)'}</option>`)
+      const auto = fixo === undefined;
+      const opc = [`<option value="auto" ${auto ? 'selected' : ''}>Automático${auto && ordem[t] ? ' · Tom ' + ordem[t] : ''}</option>`]
+        .concat(ks.map(k => `<option value="${k}" ${!auto && fixo === k ? 'selected' : ''}>Tom ${ordem[k]} (fixo)</option>`))
         .concat([`<option value="novo">Tom ${tons.length + 1} (novo, só esta amostra)</option>`,
-          `<option value="r" ${t === 'r' ? 'selected' : ''}>A reavaliar</option>`, `<option value="0" ${t === 0 ? 'selected' : ''}>Não usar</option>`,
-          t == null ? '<option value="" selected>—</option>' : '']);
-      const ultima = todas[todas.length - 1];
-      const semRef = todas.filter(m => !m.ref);
-      return `<tr><td>${ultima ? `<span class="cm-amostra-cor" style="background:${labHex(...ultima.lab)}"></span>` : ''}${escH(nomeAm(n))}</td>
-        <td class="cm-n">${todas.length}</td><td class="cm-n">${apr}</td>
-        <td class="cm-n">${semRef.length ? num(Math.min(...semRef.map(m => m.de))) : (todas.some(m => m.ref) ? 'ref.' : '')}</td>
+          `<option value="0" ${fixo === 0 ? 'selected' : ''}>Não usar</option>`]);
+      const cor = corDaAmostra(n, av);
+      return `<tr><td>${cor ? `<span class="cm-amostra-cor" style="background:${labHex(...cor)}"></span>` : ''}${escH(nomeAm(n))}</td>
+        <td class="cm-n">${todas.length}</td>
+        <td class="cm-n">${piorDe[n] != null ? num(piorDe[n]) : (estaNumTom(n, av) ? 'só ela' : '')}</td>
         <td><select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
     }).join('');
     const resumo = tons.map((t, i) => `<div class="cm-tom ${t.ruins.length ? 'cm-tom-ruim' : ''}">
         <b>Tom ${i + 1}</b> — ${t.membros.map(nomeAm).join(', ')}
-        <span class="cm-fraco">· referência ${escH(t.ref ? (t.ref.amostra ? nomeAm(t.ref.amostra) : t.ref.nome) : '—')}${t.membros.length > 1 ? ` · ${escH(fo)} máx ${num(t.pior)}` : ''}</span>
-        ${t.ruins.length ? `<div class="cm-fora">Fora da tolerância da referência: ${t.ruins.map(([n, d]) => `${escH(nomeAm(n))} (${num(d)})`).join('; ')}</div>` : ''}
+        <span class="cm-fraco">${t.membros.length > 1 ? `· ${escH(fo)} máx entre elas ${num(t.pior)}` : '· só ela'}</span>
+        ${t.ruins.length ? `<div class="cm-fora">Marcadas à mão e fora da tolerância de outra do tom: ${t.ruins.map(([n, d]) => `${escH(nomeAm(n))} (${num(d)})`).join('; ')}</div>` : ''}
       </div>`).join('');
     const pend = avPendentes(av);
     const marcas = marcasDaFase(f);
     if (f.corDe >= 0 && S.fases[f.corDe]) marcas.push(`no recado vai com ${S.fases[f.corDe].nome}, tom a tom`);
     return `<div class="cm-rel-fase">
       <div class="cm-sub">${escH(S.fases.length > 1 ? f.rotulo : (f.tecido || 'Amostras'))}${marcas.length ? ` <span class="cm-fraco">(${escH(marcas.join(', '))})</span>` : ''}</div>
-      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th>Aprovações</th><th>Melhor ${escH(fo)}</th><th>Tom</th></tr></thead>
+      <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th title="Maior diferença para as outras amostras do mesmo tom">Maior ${escH(fo)} no tom</th><th>Tom</th></tr></thead>
         <tbody>${linhas}</tbody></table></div>
       ${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
       ${pend.length ? `<div class="cm-fora" style="margin-top:6px">A reavaliar: ${pend.map(nomeAm).join(', ')}</div>` : ''}
@@ -1692,8 +1795,8 @@
       ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
          <button type="button" class="btn small ghost" onclick="verOS('${escH(S.os.id)}')">Ver a folha da OS</button>` : '';
     return `<div class="card cm-rel">${topo}
-      <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Cada amostra entrou no tom da rodada em que teve a primeira aprovação contra a referência
-        (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b>, ${escH(cfg.iluminante1)}°). Corrija o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
+      <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Os tons saem das cores guardadas de cada amostra (média das medições): no mesmo tom, todas as amostras são compatíveis entre si
+        (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b> e dL*, da*, db* dentro, ${escH(cfg.iluminante1)}°). Sem repescagem: cada medição nova refaz a classificação. Fixe o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
       ${fases.map(htmlRelFase).join('')}
       ${faltam.length && S.fases.length > 1 ? `<div class="cm-fora" style="margin-top:8px">Fases ainda não concluídas: ${faltam.map(f => escH(f.rotulo)).join('; ')}</div>` : ''}
       <div class="cm-sub">Vai para as observações da OS ${escH(S.os.numero)}</div>
