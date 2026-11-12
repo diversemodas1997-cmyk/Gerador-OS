@@ -846,6 +846,37 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
+  /* EXPORTAR A AVALIAÇÃO DA OS (12/11/2026). O "Exportar CSV" da sessão só leva
+     a lista da tela, e o do Histórico só um dia daquele navegador; a avaliação
+     da OS guarda TODAS as medições de todas as fases, de qualquer dia. Para
+     conferir a compatibilidade fora do programa (caso OS 0715), este CSV traz
+     cada medição: fase, amostra, horário, L*a*b*, a média da amostra e o tom em
+     que ela está agora. Só leitura — não muda nada da avaliação. */
+  function exportarAvaliacao() {
+    if (!S.avOS || !S.os || !S.fases) { S.aviso = 'Escolha a OS antes de exportar a avaliação.'; desenhar(); return; }
+    sincronizarRibanas();
+    const v = x => (x == null ? '' : String(Math.round(x * 1000) / 1000).replace('.', ','));
+    const linhas = [['OS', 'Fase', 'Tecido', 'Amostra', 'Medição', 'Data/hora', 'L*', 'a*', 'b*', 'Média L*', 'Média a*', 'Média b*', 'Tom agora', 'Fixado à mão']];
+    S.fases.forEach(f => {
+      const av = S.avOS.fases[f.i];
+      if (!av) return;
+      numerosDasAmostras(av).forEach(n => {
+        const media = corDaAmostra(n, av) || [];
+        const t = tomDe(n, av);
+        const tomTxt = t === 0 ? 'não usar' : t === 'x' ? 'incompatível com o corpo' : t == null ? '' : 'Tom ' + t;
+        const fixo = av.fixo && (n in av.fixo) ? (av.fixo[n] === 0 ? 'não usar' : 'Tom ' + av.fixo[n]) : '';
+        (av.medidas[n] || []).forEach((m, j) => {
+          const em = m.em ? new Date(m.em) : null;
+          linhas.push([S.os.numero, f.nome, f.tecido || '', n, j + 1, em ? `${dataTxt(em)} ${horaTxt(em)}` : '',
+            v(m.lab && m.lab[0]), v(m.lab && m.lab[1]), v(m.lab && m.lab[2]), v(media[0]), v(media[1]), v(media[2]), tomTxt, fixo]);
+        });
+      });
+    });
+    if (linhas.length === 1) { S.aviso = 'Esta avaliação ainda não tem medições.'; desenhar(); return; }
+    baixarCsv(`avaliacao_OS${S.os.numero}_${diaIso(new Date())}.csv`, linhas);
+    status(`Avaliação da OS ${S.os.numero} exportada: ${linhas.length - 1} medições.`);
+  }
+
   function exportar() {
     if (!S.leituras.length) { S.aviso = 'Nenhuma medição na lista.'; desenhar(); return; }
     const agora = new Date();
@@ -2066,6 +2097,8 @@
       <div class="cm-previa">${escH(algumTom ? textoRelatorio() : '—')}</div>
       <div class="cm-botoes">
         <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${algumTom ? '' : 'disabled'}>Salvar nas observações da OS</button>
+        <button type="button" class="btn small ghost" onclick="Colorimetro.exportarAvaliacao()"
+          title="Baixa um CSV com TODAS as medições guardadas nesta avaliação, de todas as fases e dias: fase, amostra, horário, L*a*b* e o tom atual">Exportar dados da avaliação</button>
         ${salvo}
       </div></div>`;
   }
@@ -2574,7 +2607,7 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avDefinirTotal, avConcluirFase, avReavaliarFase, avLimpar,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, exportarAvaliacao, avTrocar, avIrPara, avDefinirTotal, avConcluirFase, avReavaliarFase, avLimpar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
