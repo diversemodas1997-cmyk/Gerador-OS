@@ -1259,10 +1259,31 @@
     }
     // Amostra marcada no cadastro antigo e sem medição não some do mapa.
     Object.keys(av.tons || {}).forEach(n => { if (!(n in cores) && av.fixo[n] === 0) tonsNovos[n] = 0; });
+    /* SEM SALTO NA NUMERAÇÃO (12/11/2026, Junior: "não deve haver incoerência
+       numérica ordinal. Na medição o tom 2 foi pulado"). A chave interna do tom
+       podia ficar com buraco (tom fixado à mão, "tom novo", tom que esvaziou), e
+       cada tela tinha de lembrar de converter chave em posição. Agora as chaves
+       SÃO as posições: renumeradas 1, 2, 3… pela menor amostra de cada tom, e os
+       tons fixados à mão e os "só esta amostra" acompanham a renumeração. */
+    const vivos = Object.keys(tons).map(Number).filter(k => tons[k].length)
+      .sort((p, q) => Math.min(...tons[p]) - Math.min(...tons[q]));
+    const novaChave = {};
+    vivos.forEach((k, i) => { novaChave[k] = i + 1; });
+    Object.keys(tonsNovos).forEach(n => { if (tonsNovos[n] > 0) tonsNovos[n] = novaChave[tonsNovos[n]]; });
+    Object.keys(av.fixo).forEach(n => {
+      const f = av.fixo[n];
+      if (typeof f === 'number' && f > 0) { if (novaChave[f]) av.fixo[n] = novaChave[f]; else delete av.fixo[n]; }
+    });
+    if (av.tomSo) {
+      const so = {};
+      Object.keys(av.tomSo).forEach(k => { if (novaChave[k]) so[novaChave[k]] = true; });
+      av.tomSo = so;
+    }
     av.tons = tonsNovos;
     av.ref = {};
-    Object.keys(tons).forEach(k => {
-      const n = Math.min(...tons[k]);
+    vivos.forEach(kAntigo => {
+      const k = novaChave[kAntigo];
+      const n = Math.min(...tons[kAntigo]);
       const m0 = (av.medidas[n] || [])[0] || {};
       av.ref[k] = { medId: m0.id, amostra: n, nome: nomeAm(n), lab: cores[n], em: m0.em };
     });
@@ -1282,12 +1303,15 @@
     const cor = corDaAmostra(n, av);
     if (!cor) return [];
     const ks = [...new Set(Object.values(av.tons).filter(t => typeof t === 'number' && t > 0))].sort((a, b) => a - b);
+    // TODOS os tons, o da própria amostra inclusive: quando ela estava sozinha no
+    // tom dela, ele sumia da lista e a linha pulava ("Tom 1 · Tom 3").
     return ks.map(k => {
       const outros = numerosDasAmostras(av).filter(x => x !== n && av.tons[x] === k && corDaAmostra(x, av));
-      if (!outros.length) return null;
+      const proprio = av.tons[n] === k;
+      if (!outros.length) return { k, ok: true, pior: 0, proprio, so: true };
       const des = outros.map(x => deDaFormula(corDaAmostra(x, av), cor));
-      return { k, ok: outros.every(x => compativeis(corDaAmostra(x, av), cor)), pior: Math.max(...des) };
-    }).filter(Boolean);
+      return { k, ok: outros.every(x => compativeis(corDaAmostra(x, av), cor)), pior: Math.max(...des), proprio, so: false };
+    });
   }
 
   // A referência do tom como "leitura", para a comparação da tela (barra, blocos, lista).
@@ -1416,41 +1440,6 @@
     return `✔ Amostra ${n} compatível com ${mesmos.join(', ')} → Tom ${ordem}${mudou}.${depois}`;
   }
 
-  /* A REFERÊNCIA É UMA AMOSTRA (20/10/2026, Junior: "as amostras são usadas
-     como referência. Logo, se a amostra n1 é utilizada como referência as
-     demais amostras devem ser definidas como tom 1. Se selecionar amostra n5
-     como referência, as amostras compatíveis devem ser definidas como tom 2,
-     pois houve repescagem das amostras que não foram compatíveis com Tom 1").
-     "Medir referência" media um padrão sem número ("Referência do Tom 2"),
-     solto das amostras. Agora mede a AMOSTRA ATUAL e ela vira a referência:
-       · o tom em formação ainda sem referência de amostra → é a dele (Amostra 1
-         na 1ª rodada = Tom 1; na repescagem, a escolhida = Tom 2…);
-       · o tom já tem a referência em OUTRA amostra → é repescagem: abre o tom
-         seguinte com ela, e a fila são as que não entraram em tom nenhum;
-       · a mesma amostra de novo → só troca a leitura da referência. */
-  function avReferencia(l) {
-    const av = S.av, n = av.n;
-    const atual = av.ref[av.rodada];
-    const repescagem = !!(atual && atual.amostra != null && atual.amostra !== n);
-    if (repescagem) {
-      const fora = numerosDasAmostras(av).filter(x => x !== n && !estaNumTom(x) && tomDe(x) !== 0);
-      av.rodada = tomNovoDe(av);
-      av.fila = [n, ...fora].sort((a, b) => a - b);
-      av.fimRodada = false;
-    }
-    const k = av.rodada;
-    l.tipo = 'amostra'; l.amostraN = n; l.rodada = k;
-    l.nome = `${cfg.nome_amostra} ${n}`;
-    const em = l.horario.toISOString();
-    av.ref[k] = { medId: l.id, amostra: n, nome: l.nome, lab: l.lab1, lab2: l.lab2, em };
-    av.tons[n] = k;
-    (av.medidas[n] = av.medidas[n] || []).push({ id: l.id, lab: l.lab1, rodada: k, de: 0, aprovado: true, ref: true, em });
-    S.padrao = l;
-    avGuardar();
-    const prox = proximoNumero(n);
-    return `Amostra ${n} é a referência do Tom ${k}${repescagem ? ` (repescagem: ${av.fila.filter(x => x !== n).join(', ') || 'nenhuma outra'})` : ''}.`
-      + (prox != null ? ` Clique em Trocar para passar à Amostra ${prox}.` : '');
-  }
 
   // O número seguinte: na 1ª rodada, o próximo inteiro (amostras novas); nas
   // seguintes, a próxima da fila de reavaliação ainda não medida nesta rodada —
@@ -1526,18 +1515,6 @@
     avGuardar();
     const ordem = tonsDoRelatorio().findIndex(t => t.k === tomDe(n)) + 1;
     status(`Agora é a Amostra ${n}${ordem ? ` (já medida: Tom ${ordem}; medir de novo soma à média dela)` : tomDe(n) === 0 ? ' (marcada "Não usar")' : ''}.`);
-  }
-  function avReavaliar() {
-    const av = S.av;
-    const fila = avPendentes();
-    if (!av || !fila.length) return;
-    av.rodada = Math.max(av.rodada, ...Object.keys(av.ref).map(Number)) + 1;
-    av.fila = fila;
-    av.n = fila[0];
-    av.fimRodada = false;
-    S.padrao = null; S.atual = null;
-    avGuardar();
-    status(`Rodada do Tom ${av.rodada}: ${fila.length} amostras a reavaliar (${fila.join(', ')}). Meça a Amostra ${av.n} — ela vira a referência do Tom ${av.rodada} — ou vá ao número que vai ser a referência.`);
   }
   // Concluir a fase atual e passar para a seguinte (as fases andam em ordem).
   function avConcluirFase() {
@@ -1776,7 +1753,8 @@
       : tomDe(av.n) === 0 ? '<span class="cm-fora">não usar</span>' : '';
     // A amostra atual contra cada tom formado: casa com todas dele? e o maior dE.
     const encaixe = av.n != null && ms.length ? encaixeNosTons(av.n).map(e =>
-      `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} máx ${num(e.pior)}</span>`).join(' · ') : '';
+      e.so ? `<span class="cm-ok">Tom ${ordemDe(e.k)} · só ela</span>`
+        : `<span class="${e.ok ? 'cm-ok' : 'cm-fora'}">Tom ${ordemDe(e.k)}${e.proprio ? ' (o dela)' : ''} ${e.ok ? '✔' : '✘'} ${escH(cfg.formula)} máx ${num(e.pior)}</span>`).join(' · ') : '';
     const falta = faltamMedir();
     const prox = av.n != null ? proximoNumero(av.n) : null;
     const pode = con && livre && !concluida;
@@ -2398,7 +2376,7 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avDefinirTotal, avReavaliar, avConcluirFase, avReavaliarFase, avLimpar,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avDefinirTotal, avConcluirFase, avReavaliarFase, avLimpar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
