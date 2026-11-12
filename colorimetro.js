@@ -2029,6 +2029,50 @@
       <span>${escH(l ? l.nome : rotulo)}</span></div>`;
   }
 
+  /* O VISOR DA AVALIAÇÃO DE OS (12/11/2026, Junior: "faça o visor mostrar se é
+     compatível ou não com cada referência medida no momento da medição").
+     A faixa única "Aprovado/Reprovado" comparava a ÚLTIMA leitura com a primeira
+     leitura de UMA amostra (sobra do modelo de rodadas) e podia até comparar a
+     amostra com ela mesma. Agora o visor mostra a amostra atual — pela média,
+     como a classificação — contra CADA amostra já medida da fase, uma a uma:
+     ✔ compatível / ✘ incompatível pela tolerância das Configurações. A faixa de
+     cima resume: o tom em que ela ficou e com quantas é compatível. O dE vai só
+     na dica do mouse. Fora da OS, o visor de padrão × amostra segue igual. */
+  function htmlVisorOS() {
+    const av = S.av, n = av && av.n;
+    const cor = n != null ? corDaAmostra(n) : null;
+    if (!cor) {
+      return `<div class="cm-de">—</div><div class="cm-fraco cm-centro">${n != null
+        ? `Meça a Amostra ${n}: ela será comparada com cada amostra já medida desta fase.` : escH(avDicaFase())}</div>`;
+    }
+    const nMed = (av.medidas[n] || []).length;
+    const outras = numerosDasAmostras(av).filter(x => x !== n && corDaAmostra(x));
+    const res = outras.map(x => {
+      const r = comparar({ lab1: corDaAmostra(x) }, { lab1: cor });
+      return { x, ok: r.aprovado, r, naoUsar: tomDe(x) === 0 };
+    });
+    const comp = res.filter(e => e.ok), inc = res.filter(e => !e.ok);
+    const tons = tonsDoRelatorio();
+    const ordem = tons.findIndex(t => t.k === tomDe(n)) + 1;
+    const tomTxt = tomDe(n) === 0 ? 'Não usar' : ordem ? `Tom ${ordem}` : '—';
+    const faixa = !outras.length
+      ? `<div class="cm-de">Amostra ${n} · ${tomTxt}</div><div class="cm-fraco cm-centro">Primeira amostra medida: ela é referência para as próximas.</div>`
+      : `<div class="cm-de ${comp.length ? 'cm-de-ok' : 'cm-de-fora'}">Amostra ${n} → ${tomTxt}</div>
+         <div class="cm-fraco cm-centro">Compatível com ${comp.length} de ${outras.length}${comp.length ? ': ' + comp.map(e => e.x).join(', ') : ''}${inc.length ? ` · incompatível com ${inc.map(e => e.x).join(', ')}` : ''}</div>`;
+    const chips = res.map(e => {
+      const dica = `${nomeAm(n)} × ${nomeAm(e.x)}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula])}`
+        + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
+      return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
+        <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x))}"></span>${e.x}${e.naoUsar ? '<small>não usar</small>' : ''}<b>${e.ok ? '✔' : '✘'}</b></div>`;
+    }).join('');
+    const claro = cor[0] > 72;
+    return `<div class="cm-blocos" style="grid-template-columns:1fr">
+        <div class="cm-bloco" style="background:${labHex(...cor)};color:${claro ? '#1d2230' : '#fff'};cursor:default"><span>${escH(nomeAm(n))} · média de ${nMed} ${nMed === 1 ? 'medição' : 'medições'}</span></div></div>
+      ${faixa}
+      ${res.length ? `<div class="cm-sub" style="margin:6px 0 4px">Contra cada referência medida</div><div class="cm-refs">${chips}</div>` : ''}
+      <div class="cm-fraco cm-centro cm-peq" style="margin-top:6px">L* ${num(cor[0])} · a* ${num(cor[1])} · b* ${num(cor[2])} · ${escH(cfg.formula)} até ${numTol(tolAtual())} · ${escH(cfg.iluminante1)}°</div>`;
+  }
+
   function linhaLista(l) {
     const [C, h] = lch(...l.lab1);
     let dE = '', dE00 = '', res = '', cls = '';
@@ -2169,7 +2213,7 @@
        tabela L*a*b* vão numa coluna à direita do quadro da OS, ao lado dos
        botões; o texto de apresentação da página some. Aparelho, calibração e a
        lista da sessão continuam abaixo — são consulta, não o passo a passo. */
-    const comparacao = `
+    const comparacao = naOS ? htmlVisorOS() : `
           <div class="cm-blocos">${blocoCor(ref, naOS ? 'Referência' : 'Padrão', 'padrao')}${blocoCor(amo, 'Amostra', 'amostra')}</div>
           ${barra}
           <div class="cm-tab-caixa">${tabelaPagina(ref, amo, r)}</div>
@@ -2238,6 +2282,12 @@
     .cm-de{margin:8px 0 4px;padding:10px;text-align:center;font-size:20px;font-weight:700;border-radius:2px;background:var(--line-2)}
     .cm-de-ok{background:#40b12b;color:#fff}.cm-de-fora{background:#b6101f;color:#fff}
     .cm-blocos{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .cm-refs{display:flex;flex-wrap:wrap;gap:4px;max-height:30vh;overflow:auto}
+    .cm-ref{display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--line);border-radius:3px;font-size:13px;font-weight:600}
+    .cm-ref small{font-weight:400;font-size:10px;color:var(--ink-3)}
+    .cm-ref-ok{background:var(--ok-bg);color:var(--ok)}
+    .cm-ref-fora{background:var(--alert-bg);color:var(--alert)}
+    .cm-ref-cor{width:12px;height:12px;border-radius:2px;border:1px solid var(--line);display:inline-block}
     .cm-bloco{height:150px;border-radius:4px;display:flex;align-items:flex-end;justify-content:center;padding:10px;font-size:15px;cursor:pointer;border:1px solid var(--line)}
     .cm-bloco-vazio{background:repeating-linear-gradient(45deg,var(--line-2),var(--line-2) 8px,transparent 8px,transparent 16px);color:var(--ink-3)}
     .cm-aparelho{display:grid;grid-template-columns:1fr 1fr;gap:10px}
