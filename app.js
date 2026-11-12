@@ -24485,8 +24485,11 @@ function renderPrintPlanoExpedicao() {
   // Vale nos TRÊS modos (diário, semanal, mensal); antes era só no mensal, então
   // o semanal — que é o modo padrão — continuava imprimindo dia vazio.
   // A tela de planejamento segue mostrando vazios e cancelados: lá eles servem.
-  const ocs = ocorrenciasExpedicao(ini, fim).filter(oc =>
-    !oc.cancelada && _expNaFolha(oc) &&
+  /* A OE CANCELADA VOLTA PARA A FOLHA com a faixa CANCELADO (12/11/2026,
+     Junior: "insira a faixa CANCELADO também na folha de OE"): entra a que tem
+     número de OE ou carga; não soma nos totais do resumo. */
+  const ocs = ocorrenciasExpedicao(ini, fim).filter(oc => _expNaFolha(oc) && (
+    (oc.cancelada && _oeNumeroDe(oc.janela.id, oc.dataOrig) > 0) ||
     resumoPernaExpedicao(oc, 'ida').itens.length +
     resumoPernaExpedicao(oc, 'volta').itens.length +
     _aviDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
@@ -24494,12 +24497,13 @@ function renderPrintPlanoExpedicao() {
     _ferDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
     _ferDaPerna(oc.janela.id, oc.dataOrig, 'volta').length +
     _obsDaPerna(oc.janela.id, oc.dataOrig, 'ida').length +
-    _obsDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0);
+    _obsDaPerna(oc.janela.id, oc.dataOrig, 'volta').length > 0));
   const fmt = n => (Number(n) || 0).toLocaleString('pt-BR');
 
   let volIda = 0, volVolta = 0, pecasTot = 0, ativas = 0;
   const osTot = new Set();
   ocs.forEach(oc => {
+    if (oc.cancelada) return;
     ativas++;
     ['ida', 'volta'].forEach(p => {
       const r = resumoPernaExpedicao(oc, p);
@@ -24882,9 +24886,10 @@ function renderPrintPlanoExpedicao() {
   };
   const edicao = document.getElementById('exp-folha-edicao');
   if (edicao) edicao.innerHTML = _expEdicaoDaFolhaHtml(ocs);
-  // Sem tratamento de cancelada aqui: o filtro acima já as tirou da folha.
+  // A cancelada leva a faixa CANCELADO (com o motivo) e as pernas apagadas.
   const blocos = ocs.map(oc => `
-    <div class="exp-print-bloco">
+    <div class="exp-print-bloco${oc.cancelada ? ' cancelada' : ''}">
+      ${oc.cancelada ? `<div class="exp-print-cancelado">CANCELADO${oc.motivo ? `<span class="m">Motivo: ${esc(oc.motivo)}</span>` : ''}</div>` : ''}
       <div class="cab">
         <span class="d">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))} · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
         <span class="j">
@@ -24893,7 +24898,7 @@ function renderPrintPlanoExpedicao() {
           ${oc.horaAlterada ? ' · horário ajustado neste dia' : ''}
         </span>
       </div>
-      ${pernasHtml(oc)}
+      ${oc.cancelada && pernaVazia(oc, 'ida') && pernaVazia(oc, 'volta') ? '' : pernasHtml(oc)}
     </div>`).join('');
 
   const emissao = new Date();

@@ -4118,6 +4118,17 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
 }
 .exp-print-bloco > .cab .d { font-family: 'IBM Plex Mono', monospace; font-size: 12pt; font-weight: 700; }
 .exp-print-bloco > .cab .j { font-size: 9.5pt; }
+/* OE cancelada na folha (12/11/2026): faixa vermelha CANCELADO no alto do
+   bloco, o resto apagado — fica no papel para quem confere, sem contar nos totais. */
+.exp-print-cancelado {
+  background: #c0392b; color: #fff; text-align: center; font-weight: 800;
+  font-size: 13pt; letter-spacing: .35em; padding: 3px 6px;
+  border-bottom: 1px solid #000;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.exp-print-cancelado .m { display: block; font-size: 8.5pt; font-weight: 600; letter-spacing: normal; }
+.exp-print-bloco.cancelada > .cab .d { text-decoration: line-through; }
+.exp-print-bloco.cancelada > .exp-print-pernas { opacity: .45; }
 /* align-items: flex-start — sem isto o flex estica a coluna mais curta até a
    altura da outra, e uma volta com 1 OS ficava com um trecho enorme de coluna
    riscada e vazia ao lado de 4 quadros da ida. */
