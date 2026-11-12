@@ -524,13 +524,18 @@
        pergunta se a aprovação devia considerar dL*, da* e db*). Antes aprovava só
        pelo dE escolhido, como o app do aparelho: a Amostra 1 com dL* +0,5 (limite
        ±0,4) saía "Aprovado". Agora só aprova se o dE estiver dentro E as três
-       colunas estiverem "Aprovado". O dE usa o valor exato; as colunas usam os
-       valores arredondados da tela, para o resultado bater com o que se vê.
+       colunas estiverem "Aprovado". O dE usa o valor exato.
+       SEM ARREDONDAR (12/11/2026, Junior: "não deve haver aproximação"; caso OS
+       0715): as colunas usavam os valores arredondados a 1 casa, e o
+       arredondamento sozinho deslocava até 0,1 — o tamanho inteiro da
+       tolerância do da*. Na 0715 isso pôs no mesmo tom amostras com dL* real de
+       0,47 e da* de 0,16 (limites 0,4 e 0,1), que a olho eram diferentes. Agora
+       a decisão usa a diferença REAL, e a diferença aparece com 2 casas.
        Referência (30/10/2026, 11:48): par de malha preta que NÃO é compatível a
        olho nu deu dE*ab 0,2–0,4, mas a* sempre mais verde (-0,1 a -0,3): quem
        reprova esse par é o da* ±0,1. Por isso as tolerâncias ficam como estão. */
     const deOk = des[cfg.formula] <= tol[cfg.formula];
-    const d1 = [0, 1, 2].map(i => arred(l2[i]) - arred(l1[i]));
+    const d1 = [0, 1, 2].map(i => l2[i] - l1[i]);
     const rot = [['Claro', 'Escuro'], ['Vermelho', 'Verde'], ['Amarelo', 'Azul']];
     const txt = [['mais clara', 'mais escura'], ['mais vermelha', 'mais verde'], ['mais amarela', 'mais azul']];
     const dicas = [], desc = [];
@@ -768,7 +773,10 @@
     return { id: l.id, dia: diaIso(l.horario), horario: l.horario.toISOString(), nome: l.nome, tipo: l.tipo,
       espectro: l.espectro, wave_start: l.wave_start, lab_aparelho: l.lab_aparelho,
       refId: l.refId, refNome: ref ? ref.nome : '', iluminante: cfg.iluminante1, modo: l.modo,
-      osId: l.osId || null, osNumero: l.osNumero || '', amostraN: l.amostraN || null, rodada: l.rodada || null };
+      osId: l.osId || null, osNumero: l.osNumero || '', amostraN: l.amostraN || null, rodada: l.rodada || null,
+      // A fase da OS (12/11/2026): sem ela, a medição só podia ser posta de volta
+      // na avaliação certa adivinhando pela ordem.
+      fase: l.fase != null ? l.fase : null, faseNome: l.faseNome || '' };
   }
   function guardar(l) {
     BD.gravar(registroDe(l)).catch(e => {
@@ -852,11 +860,13 @@
      conferir a compatibilidade fora do programa (caso OS 0715), este CSV traz
      cada medição: fase, amostra, horário, L*a*b*, a média da amostra e o tom em
      que ela está agora. Só leitura — não muda nada da avaliação. */
-  function exportarAvaliacao() {
+  async function exportarAvaliacao() {
     if (!S.avOS || !S.os || !S.fases) { S.aviso = 'Escolha a OS antes de exportar a avaliação.'; desenhar(); return; }
     sincronizarRibanas();
     const v = x => (x == null ? '' : String(Math.round(x * 1000) / 1000).replace('.', ','));
-    const linhas = [['OS', 'Fase', 'Tecido', 'Amostra', 'Medição', 'Data/hora', 'L*', 'a*', 'b*', 'Média L*', 'Média a*', 'Média b*', 'Tom agora', 'Fixado à mão']];
+    const linhas = [];
+    const ids = new Set();
+    // a) o que está na avaliação guardada neste navegador
     S.fases.forEach(f => {
       const av = S.avOS.fases[f.i];
       if (!av) return;
@@ -866,15 +876,33 @@
         const tomTxt = t === 0 ? 'não usar' : t === 'x' ? 'incompatível com o corpo' : t == null ? '' : 'Tom ' + t;
         const fixo = av.fixo && (n in av.fixo) ? (av.fixo[n] === 0 ? 'não usar' : 'Tom ' + av.fixo[n]) : '';
         (av.medidas[n] || []).forEach((m, j) => {
+          if (m.id) ids.add(m.id);
           const em = m.em ? new Date(m.em) : null;
-          linhas.push([S.os.numero, f.nome, f.tecido || '', n, j + 1, em ? `${dataTxt(em)} ${horaTxt(em)}` : '',
-            v(m.lab && m.lab[0]), v(m.lab && m.lab[1]), v(m.lab && m.lab[2]), v(media[0]), v(media[1]), v(media[2]), tomTxt, fixo]);
+          linhas.push({ t: em ? em.getTime() : 0, c: [S.os.numero, f.nome, f.tecido || '', n, j + 1, em ? `${dataTxt(em)} ${horaTxt(em)}` : '',
+            v(m.lab && m.lab[0]), v(m.lab && m.lab[1]), v(m.lab && m.lab[2]), v(media[0]), v(media[1]), v(media[2]), tomTxt, fixo, 'avaliação'] });
         });
       });
     });
-    if (linhas.length === 1) { S.aviso = 'Esta avaliação ainda não tem medições.'; desenhar(); return; }
-    baixarCsv(`avaliacao_OS${S.os.numero}_${diaIso(new Date())}.csv`, linhas);
-    status(`Avaliação da OS ${S.os.numero} exportada: ${linhas.length - 1} medições.`);
+    // b) o histórico deste navegador: toda medição desta OS, de qualquer dia,
+    //    que não esteja na avaliação (ex.: avaliação perdida no F5). A fase só é
+    //    conhecida nas medições gravadas a partir de 12/11/2026.
+    let doHist = 0;
+    try {
+      const regs = (await BD.todos()).filter(r => r && r.osId === S.os.id && !ids.has(r.id));
+      regs.forEach(r => {
+        const l = leituraDoRegistro(r);
+        const f = r.fase != null ? S.fases[r.fase] : null;
+        linhas.push({ t: l.horario.getTime(), c: [S.os.numero, f ? f.nome : (r.faseNome || 'não informada (histórico)'), f ? (f.tecido || '') : '',
+          r.amostraN || '', '', `${dataTxt(l.horario)} ${horaTxt(l.horario)}`,
+          v(l.lab1 && l.lab1[0]), v(l.lab1 && l.lab1[1]), v(l.lab1 && l.lab1[2]), '', '', '', '', '', 'histórico'] });
+        doHist++;
+      });
+    } catch (e) { log('exportar avaliação: histórico ilegível: ' + (e && e.message)); }
+    if (!linhas.length) { S.aviso = 'Não há medições desta OS neste navegador (nem na avaliação, nem no Histórico).'; desenhar(); return; }
+    linhas.sort((p, q) => p.t - q.t);
+    baixarCsv(`avaliacao_OS${S.os.numero}_${diaIso(new Date())}.csv`,
+      [['OS', 'Fase', 'Tecido', 'Amostra', 'Medição', 'Data/hora', 'L*', 'a*', 'b*', 'Média L*', 'Média a*', 'Média b*', 'Tom agora', 'Fixado à mão', 'Origem'], ...linhas.map(x => x.c)]);
+    status(`OS ${S.os.numero} exportada: ${linhas.length - doHist} medições da avaliação + ${doHist} só do Histórico deste navegador.`);
   }
 
   function exportar() {
@@ -1073,7 +1101,15 @@
   }
   function avGuardar() {
     if (!S.avOS) return;
-    try { localStorage.setItem(CHAVE_AV(S.avOS.osId), JSON.stringify(S.avOS)); } catch (e) { /* sem storage */ }
+    try { localStorage.setItem(CHAVE_AV(S.avOS.osId), JSON.stringify(S.avOS)); S.avNaoGuardou = false; }
+    catch (e) {
+      // ANTES ERA CALADO (12/11/2026, caso OS 0715): sem espaço no navegador, a
+      // avaliação seguia só na memória e sumia no F5 — o corpo da 0715 voltou com
+      // 3 medições. As medições seguem no histórico (IndexedDB); o aviso diz isso.
+      S.avNaoGuardou = true;
+      S.aviso = 'Este navegador não conseguiu guardar a avaliação da OS (' + ((e && e.name) || 'erro') + '). '
+        + 'As medições continuam no Histórico; use "Exportar dados da avaliação" antes de recarregar a página.';
+    }
   }
   // As fases de enfesto da OS, com o tecido e a cor de cada uma.
   function fasesDaOS(osId) {
@@ -1968,8 +2004,8 @@
         const cb = corDaAmostra(b, av);
         const r = comparar({ lab1: ca }, { lab1: cb });
         const mesmo = tomPos[a] && tomPos[a] === tomPos[b];
-        const dica = `${nomeAm(a)} × ${nomeAm(b)}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula])}`
-          + ` · dL* ${num(r.d1[0])} da* ${num(r.d1[1])} db* ${num(r.d1[2])}`;
+        const dica = `${nomeAm(a)} × ${nomeAm(b)}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula], 2)}`
+          + ` · dL* ${num(r.d1[0], 2)} da* ${num(r.d1[1], 2)} db* ${num(r.d1[2], 2)}`;
         return `<td class="${mesmo ? 'cm-tc-mesmo ' : ''}${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
       }).join('');
       return `<tr class="${primeiraDoTom && i ? 'cm-tc-novo-tom' : ''}"><th class="cm-tc-tom">${primeiraDoTom ? escH(rotTom(a)) : ''}</th>
@@ -2012,7 +2048,7 @@
       const c = corDaAmostra(n, av);
       return `<tr><th class="cm-tc-n">${n}</th>${corpoNums.map(([x]) => {
         const r = comparar({ lab1: corDaAmostra(x, rib.corpo) }, { lab1: c });
-        const dica = `Ribana ${n} × ${rib.fCorpo.nome} ${x}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula])} · dL* ${num(r.d1[0])} da* ${num(r.d1[1])} db* ${num(r.d1[2])}`;
+        const dica = `Ribana ${n} × ${rib.fCorpo.nome} ${x}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula], 2)} · dL* ${num(r.d1[0], 2)} da* ${num(r.d1[1], 2)} db* ${num(r.d1[2], 2)}`;
         return `<td class="${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
       }).join('')}</tr>`;
     }).join('');
@@ -2166,7 +2202,7 @@
       titulo = `L*a*b* · ${il1}°`; cab = ['L*', 'a*', 'b*'];
       const d = r ? r.d1 : vazio3;
       linhas = [[P, (ref ? ref.lab1 : vazio3).map(v => f(v))], ['Amostra', (amo ? amo.lab1 : vazio3).map(v => f(v))],
-        ['Diferença', d.map(v => f(v, true))]];
+        ['Diferença', d.map(v => v == null ? '-' : ((v > 0 ? '+' : '') + num(v, 2)))]];
       if (r) linhas.push(['', r.dicas.map(x => x[0]), r.dicas.map(x => x[1] ? 'cm-ok' : 'cm-fora')]);
     } else if (S.pagina === 1) {
       titulo = `L*C*h° · ${il1}°`; cab = ['L*', 'C*', 'h°'];
@@ -2228,7 +2264,7 @@
            <div class="cm-fraco cm-centro">${rc.porAmostra.some(e => e.ok) ? 'Casa só com ' + rc.porAmostra.filter(e => e.ok).map(e => e.x).join(', ') + ', não com um tom inteiro' : 'Não casa com nenhuma amostra do ' + nc}</div>`;
     const grupos = rc.tons.map(t => {
       const chips = rc.porAmostra.filter(e => t.membros.includes(e.x)).map(e => {
-        const dica = `${nomeAm(n)} × ${rib.fCorpo.nome} ${e.x}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula])}`
+        const dica = `${nomeAm(n)} × ${rib.fCorpo.nome} ${e.x}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
           + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
         return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
           <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x, rib.corpo))}"></span>${e.x}<b>${e.ok ? '✔' : '✘'}</b></div>`;
@@ -2267,7 +2303,7 @@
       : `<div class="cm-de ${comp.length ? 'cm-de-ok' : 'cm-de-fora'}">Amostra ${n} → ${tomTxt}</div>
          <div class="cm-fraco cm-centro">Compatível com ${comp.length} de ${outras.length}${comp.length ? ': ' + comp.map(e => e.x).join(', ') : ''}${inc.length ? ` · incompatível com ${inc.map(e => e.x).join(', ')}` : ''}</div>`;
     const chips = res.map(e => {
-      const dica = `${nomeAm(n)} × ${nomeAm(e.x)}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula])}`
+      const dica = `${nomeAm(n)} × ${nomeAm(e.x)}: ${e.ok ? 'compatível' : 'incompatível'} · ${cfg.formula} ${num(e.r.des[cfg.formula], 2)}`
         + ` · dL* ${num(e.r.d1[0])} da* ${num(e.r.d1[1])} db* ${num(e.r.d1[2])}` + (e.r.desc.length ? ` (${e.r.desc.join(', ')})` : '');
       return `<div class="cm-ref ${e.ok ? 'cm-ref-ok' : 'cm-ref-fora'}" title="${escH(dica)}">
         <span class="cm-ref-cor" style="background:${labHex(...corDaAmostra(e.x))}"></span>${e.x}${e.naoUsar ? '<small>não usar</small>' : ''}<b>${e.ok ? '✔' : '✘'}</b></div>`;
