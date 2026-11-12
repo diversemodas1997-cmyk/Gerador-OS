@@ -900,9 +900,9 @@
     } catch (e) { log('exportar avaliação: histórico ilegível: ' + (e && e.message)); }
     if (!linhas.length) { S.aviso = 'Não há medições desta OS neste navegador (nem na avaliação, nem no Histórico).'; desenhar(); return; }
     linhas.sort((p, q) => p.t - q.t);
-    baixarCsv(`avaliacao_OS${S.os.numero}_${diaIso(new Date())}.csv`,
+    baixarCsv(`avaliacao_${S.os.doc || "OS"}${S.os.numero}_${diaIso(new Date())}.csv`,
       [['OS', 'Fase', 'Tecido', 'Amostra', 'Medição', 'Data/hora', 'L*', 'a*', 'b*', 'Média L*', 'Média a*', 'Média b*', 'Tom agora', 'Fixado à mão', 'Origem'], ...linhas.map(x => x.c)]);
-    status(`OS ${S.os.numero} exportada: ${linhas.length - doHist} medições da avaliação + ${doHist} só do Histórico deste navegador.`);
+    status(`${S.os.nome || "OS " + S.os.numero} exportada: ${linhas.length - doHist} medições da avaliação + ${doHist} só do Histórico deste navegador.`);
   }
 
   function exportar() {
@@ -1088,6 +1088,29 @@
     const g = o.grade && o.grade.descricao ? ' · ' + o.grade.descricao : '';
     return `OS ${o.os || '—'}${o.modeloNome ? ' · ' + o.modeloNome : ''}${g}`;
   }
+  /* A ORDEM DE PREPARO DE MATÉRIA-PRIMA — OP (12/11/2026, Junior: "Avaliar
+     amostras, da mesma forma como em uma OS"). Um lote de bobinas de tecido e
+     de ribana do Estoque de tecidos (STATE.ordensPreparo). A tela é a mesma da
+     OS: S.os guarda qual documento é (doc 'OS' ou 'OP') e o nome dele. As
+     fases: Tecido (uma amostra por bobina) e Ribana, comparada com o Tecido. */
+  const listaOS = () => (typeof STATE !== 'undefined' && STATE && STATE.ordens) || [];
+  const listaOP = () => (typeof STATE !== 'undefined' && STATE && STATE.ordensPreparo) || [];
+  function acharDoc(id) {
+    const o = listaOS().find(x => x.id === id);
+    if (o) return { tipo: 'OS', o };
+    const p = listaOP().find(x => x.id === id);
+    return p ? { tipo: 'OP', o: p } : null;
+  }
+  const opNum = p => String(p.numero || 0).padStart(4, '0');
+  const rotuloOP = p => `OP ${opNum(p)}${[p.tecidoNome, p.corNome].filter(Boolean).length ? ' · ' + [p.tecidoNome, p.corNome].filter(Boolean).join(' ') : ''}`;
+  function fasesDaOP(p) {
+    const cor = p.corNome || '', bt = Number(p.bobinasTecido) || 0, br = Number(p.bobinasRibana) || 0;
+    const f = [];
+    if (bt > 0 || !br) f.push({ nome: 'Tecido', tecido: [p.tecidoNome, cor].filter(Boolean).join(' '), total: bt });
+    if (br > 0) f.push({ nome: 'Ribana', tecido: [p.ribanaNome || 'Ribana', cor].filter(Boolean).join(' '), total: br, ribana: true });
+    return f.map((x, i) => ({ i, nome: x.nome, tecido: x.tecido, total: x.total, semAval: false,
+      corDe: x.ribana && i > 0 ? 0 : -1, rotulo: `Fase ${i + 1} · ${x.nome}${x.tecido ? ' · ' + x.tecido : ''}` }));
+  }
   function avNovo(osId) { return { osId, n: 1, rodada: 1, tons: {}, ref: {}, medidas: {}, fila: null, fimRodada: false, fixo: {}, modelo: 'dados' }; }
   // Por OS: a fase atual, a avaliação de cada fase, as concluídas e quantas vezes cada uma foi reavaliada.
   function avNovoOS(osId) { return { osId, versao: 2, faseAtual: 0, fases: {}, concluidas: {}, reav: {} }; }
@@ -1113,6 +1136,8 @@
   }
   // As fases de enfesto da OS, com o tecido e a cor de cada uma.
   function fasesDaOS(osId) {
+    const d = acharDoc(osId);
+    if (d && d.tipo === 'OP') return fasesDaOP(d.o);
     const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === osId);
     const lista = o && Array.isArray(o.fases) && o.fases.length ? o.fases : [{ nome: 'Fase única' }];
     return lista.map((f, i) => {
@@ -1439,9 +1464,18 @@
      navegador até o "Medir sem OS". */
   const CHAVE_OS = 'gos:colorimetro:os';
   function abrirOS(o) {
-    S.os = { id: o.id, numero: o.os || '', rotulo: rotuloOS(o) };
+    const ehOP = !!listaOP().find(x => x.id === o.id);
+    const numero = ehOP ? opNum(o) : (o.os || '');
+    S.os = { id: o.id, numero, doc: ehOP ? 'OP' : 'OS', nome: (ehOP ? 'OP ' : 'OS ') + numero, rotulo: ehOP ? rotuloOP(o) : rotuloOS(o) };
     S.avOS = avCarregar(o.id);
     S.fases = fasesDaOS(o.id);
+    // Na OP o total de amostras de cada fase já vem do lote: uma por bobina.
+    // Só preenche o que ainda não foi escolhido (quem mudou o total, manda).
+    if (ehOP) S.fases.forEach(f => {
+      if (!(f.total > 0)) return;
+      const av = S.avOS.fases[f.i] = S.avOS.fases[f.i] || avNovo(o.id);
+      if (!(Number(av.total) > 0)) av.total = f.total;
+    });
     let i = Math.min(S.avOS.faseAtual || 0, S.fases.length - 1);
     // Parou numa fase que não precisa de avaliação: vai para a primeira que falta.
     if (S.fases[i] && S.fases[i].semAval) {
@@ -1453,15 +1487,14 @@
   }
   function restaurarOS() {
     if (S.os || S.osRestaurada) return;
-    const ordens = typeof STATE !== 'undefined' && STATE && STATE.ordens || [];
-    if (!ordens.length) return; // os dados ainda não chegaram: tenta no próximo desenho
+    if (!listaOS().length && !listaOP().length) return; // os dados ainda não chegaram: tenta no próximo desenho
     S.osRestaurada = true;
     let id = null;
     try { id = localStorage.getItem(CHAVE_OS); } catch (e) { /* sem storage */ }
-    const o = id && ordens.find(x => x.id === id);
-    if (!o) return;
-    abrirOS(o);
-    S.status = S.dev ? avDica() : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`;
+    const d = id && acharDoc(id);
+    if (!d) return;
+    abrirOS(d.o);
+    S.status = S.dev ? avDica() : `${S.os.nome} escolhida — conecte o aparelho para medir`;
   }
   // Sem OS: a OS também se escolhe aqui, não só pelo "⋯ → avaliar amostras" da lista.
   function htmlEscolherOS() {
@@ -1469,20 +1502,23 @@
       .filter(o => o && o.id && o.os)
       .slice().sort((a, b) => String(b.os).localeCompare(String(a.os), 'pt-BR', { numeric: true }))
       .slice(0, 80);
-    if (!ordens.length) return '';
-    return `<label class="cm-campo" style="max-width:520px;margin-bottom:10px"><span>Avaliar as amostras da OS</span>
+    const ops = listaOP().filter(p => p && p.id && !p.cancelada)
+      .slice().sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0)).slice(0, 80);
+    if (!ordens.length && !ops.length) return '';
+    return `<label class="cm-campo" style="max-width:520px;margin-bottom:10px"><span>Avaliar as amostras da OS ou da OP</span>
       <select onchange="if(this.value)Colorimetro.avaliarOS(this.value)">
-        <option value="">— escolha a OS —</option>
-        ${ordens.map(o => `<option value="${escH(o.id)}">${escH(rotuloOS(o))}</option>`).join('')}</select></label>`;
+        <option value="">— escolha a OS ou a OP —</option>
+        ${ops.length ? `<optgroup label="Ordens de preparo de matéria-prima (OP)">${ops.map(p => `<option value="${escH(p.id)}">${escH(rotuloOP(p))}</option>`).join('')}</optgroup>` : ''}
+        ${ordens.length ? `<optgroup label="Ordens de serviço (OS)">${ordens.map(o => `<option value="${escH(o.id)}">${escH(rotuloOS(o))}</option>`).join('')}</optgroup>` : ''}</select></label>`;
   }
   function avaliarOS(id) {
-    const o = (typeof STATE !== 'undefined' && STATE && STATE.ordens || []).find(x => x.id === id);
-    if (!o) return;
-    abrirOS(o);
+    const d = acharDoc(id);
+    if (!d) return;
+    abrirOS(d.o);
     S.janela = null;
     S.aviso = '';
     if (typeof goto === 'function') goto('colorimetro');
-    status(S.dev ? avDica() : `OS ${S.os.numero} escolhida — conecte o aparelho para medir`);
+    status(S.dev ? avDica() : `${S.os.nome} escolhida — conecte o aparelho para medir`);
   }
   function encerrarOS() {
     try { localStorage.removeItem(CHAVE_OS); } catch (e) { /* sem storage */ }
@@ -1689,7 +1725,7 @@
   function avLimpar() {
     const c = S.avOS;
     if (!c || !S.os) return;
-    perguntar({ titulo: `Limpar a avaliação da OS ${S.os.numero}`,
+    perguntar({ titulo: `Limpar a avaliação da ${S.os.nome || "OS " + S.os.numero}`,
       texto: 'Todas as fases voltam ao começo: tons, referências, amostras medidas, fases concluídas e reavaliações são apagados, e a avaliação recomeça na Amostra 1, sem nenhuma referência. A lista da tela também é limpa. As medições continuam no histórico deste computador, e o que já foi gravado nas observações da OS não muda.',
       sim: 'Limpar a avaliação', executar: () => {
         S.avOS = avNovoOS(c.osId);
@@ -1827,12 +1863,24 @@
     if (!S.avOS || !S.os) return;
     sincronizarRibanas();
     if (!fasesComMedicao().some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length)) { S.aviso = 'Nenhuma amostra está num tom ainda.'; desenhar(); return; }
-    if (typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
+    if (S.os.doc !== 'OP' && typeof salvarObsNota !== 'function') { S.aviso = 'Não achei a gravação das observações da OS.'; desenhar(); return; }
     // O EDITAR DO COLORÍMETRO (21/10/2026): gravar o relatório de cor na OS é
     // de quem o admin marcar em Configurações → contas de acesso.
     if (typeof currentRole !== 'undefined' && currentRole !== 'admin' && typeof contaTemAcesso === 'function'
         && !contaTemAcesso('colorimetro', typeof _obsQuemSou === 'function' ? _obsQuemSou() : '')) {
       S.aviso = 'Seu acesso não inclui gravar o relatório do Colorímetro na OS — peça ao admin.'; desenhar(); return;
+    }
+    // A OP guarda o relatório na folha dela (ver salvarRelatorioCorOP em app.js).
+    if (S.os.doc === 'OP') {
+      if (typeof salvarRelatorioCorOP !== 'function') { S.aviso = 'Não achei a gravação do relatório da OP.'; desenhar(); return; }
+      let ok = false;
+      try { ok = await salvarRelatorioCorOP(S.os.id, textoRelatorio()); } catch (e) { S.aviso = 'Não deu para salvar: ' + e.message; desenhar(); return; }
+      if (!ok) { S.aviso = `O programa não gravou o relatório na ${S.os.nome}.`; desenhar(); return; }
+      if (typeof window._diarioAnotar === 'function') window._diarioAnotar('colorimetro', `relatório de cor da ${S.os.nome}`, 'colorimetro');
+      S.relSalvo = { osId: S.os.id, em: new Date() };
+      S.aviso = '';
+      status(`Relatório salvo na folha da ${S.os.nome}`);
+      return;
     }
     const o = (STATE.ordens || []).find(x => x.id === S.os.id);
     if (!o) { S.aviso = `A OS ${S.os.numero} não existe mais.`; desenhar(); return; }
@@ -2081,21 +2129,22 @@
     if (!S.avOS) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Escolha a OS pelo "⋯ → avaliar amostras" da lista de OS.</div></div>`;
     const fo = cfg.formula, tol = tolAtual();
     const fases = fasesComMedicao();
-    if (!fases.length) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a OS ${escH(S.os.numero)}.</div></div>`;
+    if (!fases.length) return `<div class="card cm-rel">${topo}<div class="cm-fraco">Ainda não há amostras medidas para a ${escH(S.os.nome)}.</div></div>`;
+    const ehOP = S.os.doc === 'OP';
     const faltam = S.fases.filter(f => !faseFeita(S.avOS, f.i));
     const algumTom = fases.some(f => tonsDoRelatorio(S.avOS.fases[f.i]).length);
     const salvo = S.relSalvo && S.relSalvo.osId === S.os.id
-      ? `<span class="cm-ok">✔ salvo nas observações às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
-         <button type="button" class="btn small ghost" onclick="verOS('${escH(S.os.id)}')">Ver a folha da OS</button>` : '';
+      ? `<span class="cm-ok">✔ salvo ${ehOP ? 'na folha da OP' : 'nas observações'} às ${horaTxt(S.relSalvo.em).slice(0, 5)}</span>
+         <button type="button" class="btn small ghost" onclick="${ehOP ? 'verOP' : 'verOS'}('${escH(S.os.id)}')">Ver a folha da ${ehOP ? 'OP' : 'OS'}</button>` : '';
     return `<div class="card cm-rel">${topo}
       <div class="cm-fraco" style="margin-bottom:8px">Por fase de enfesto e tecido. Cada tom tem um rolo de referência — a menor amostra que ainda não tinha tom —, e entra nele toda amostra com alguma medição aprovada contra a referência
         (<b>${escH(fo)}</b> até <b>${numTol(tol)}</b> e dL*, da*, db* dentro, pela diferença real, ${escH(cfg.iluminante1)}°). Sem repescagem: cada medição nova refaz a classificação. Fixe o tom de qualquer amostra aqui; o texto abaixo acompanha.</div>
       ${fases.map(htmlRelFase).join('')}
       ${faltam.length && S.fases.length > 1 ? `<div class="cm-fora" style="margin-top:8px">Fases ainda não concluídas: ${faltam.map(f => escH(f.rotulo)).join('; ')}</div>` : ''}
-      <div class="cm-sub">Vai para as observações da OS ${escH(S.os.numero)}</div>
+      <div class="cm-sub">${ehOP ? `Vai para a folha da ${escH(S.os.nome)}` : `Vai para as observações da OS ${escH(S.os.numero)}`}</div>
       <div class="cm-previa">${escH(algumTom ? textoRelatorio() : '—')}</div>
       <div class="cm-botoes">
-        <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${algumTom ? '' : 'disabled'}>Salvar nas observações da OS</button>
+        <button type="button" class="btn primary" onclick="Colorimetro.relSalvar()" ${algumTom ? '' : 'disabled'}>${ehOP ? 'Salvar na folha da OP' : 'Salvar nas observações da OS'}</button>
         <button type="button" class="btn small ghost" onclick="Colorimetro.exportarAvaliacao()"
           title="Baixa um CSV com TODAS as medições guardadas nesta avaliação, de todas as fases e dias: fase, amostra, horário, L*a*b* e o tom atual">Exportar dados da avaliação</button>
         ${salvo}

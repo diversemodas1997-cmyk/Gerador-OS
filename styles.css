@@ -4122,6 +4122,20 @@ input.is-auto { background: var(--line-2); color: var(--ink-2); }
    (.sheet-carimbo-area / .sheet-carimbo-cancelado). Numa folha do dia com OE
    não canceladas, o carimbo fica preso ao bloco da cancelada. */
 .exp-print-bloco.cancelada { position: relative; min-height: 120px; }
+/* FOLHA DA ORDEM DE PREPARO — OP (12/11/2026): o cabeçalho e o resumo são os
+   da folha de OE; abaixo, o lote, as bobinas numeradas e o relatório de cor. */
+.op-prep-tab { width: 100%; border-collapse: collapse; margin: 6px 0 8px; font-size: 11pt; }
+.op-prep-tab th, .op-prep-tab td { border: 1px solid #000; padding: 4px 8px; text-align: left; }
+.op-prep-tab th { width: 30%; background: #eee; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.op-prep-bob { border: 1px solid #000; margin-bottom: 6px; break-inside: avoid; page-break-inside: avoid; }
+.op-prep-bob .t { background: #eee; border-bottom: 1px solid #000; padding: 3px 6px; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.op-prep-bob .g { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; }
+.op-prep-bob .g span { width: 34px; height: 26px; border: 1px solid #000; display: flex; align-items: center; justify-content: center;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 700; }
+.op-prep-rel { border: 1.5px solid #000; padding: 6px 8px; break-inside: avoid; page-break-inside: avoid; }
+.op-prep-rel .t { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+.op-prep-rel .x { white-space: pre-wrap; font-size: 11pt; line-height: 1.4; }
+.op-prep-rel .m { font-size: 9pt; color: #444; margin-top: 4px; }
 /* O ângulo e o comprimento da faixa na OE saem da medida real da área, de
    canto a canto (ver _carimboDiagonal em app.js). */
 /* align-items: flex-start — sem isto o flex estica a coluna mais curta até a

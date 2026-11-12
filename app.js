@@ -2252,6 +2252,7 @@ const ACOES_POR_AREA = {
   'lançar no estoque de peças': 'estoque-tecidos', 'lançar no estoque de ferramentas': 'estoque-tecidos',
   'cadastrar no estoque de materiais': 'estoque-tecidos', 'apagar do estoque de materiais': 'estoque-tecidos',
   'lançar no estoque de materiais': 'estoque-tecidos',
+  'criar ou editar ordem de preparo': 'estoque-tecidos', 'excluir ordem de preparo': 'estoque-tecidos',
   'dar baixa de material': 'estoque-tecidos', 'estornar baixa de material': 'estoque-tecidos',
   // Estoques das fases
   'movimentar estoque': 'estoque-fases', 'excluir lançamento': 'estoque-fases',
@@ -2351,7 +2352,7 @@ const VISAO_PAGINAS = {
   'planejamento': ['planejamento-producao'],
   'demanda': ['relatorio-demanda'],
   'cadastros': ['cad-*'],
-  'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos'],
+  'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos', 'print-preparo'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
   'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
@@ -2416,7 +2417,7 @@ const TELAS_DA_AREA = {
 };
 const _TELA_DA_FOLHA = {
   'print': 'lista-os', 'print-expedicao': 'expedicao', 'print-operacoes': 'operacoes',
-  'print-aviamentos': 'estoque-aviamentos', 'print-pecas': 'estoque-pecas'
+  'print-aviamentos': 'estoque-aviamentos', 'print-pecas': 'estoque-pecas', 'print-preparo': 'estoque'
 };
 // A tela que responde por esta página: a folha de impressão responde pela tela de onde sai.
 function _telaBase(page) {
@@ -2725,6 +2726,7 @@ const DIARIO_AREA_DA_CHAVE = {
   etapas: 'cadastros', componentes: 'cadastros', aviamentoTipos: 'cadastros',
   estoqueMov: 'estoque-tecidos', aviamentosMov: 'estoque-tecidos', pecasCad: 'estoque-tecidos', ferramentasCad: 'estoque-tecidos',
   pecasMov: 'estoque-tecidos', ferramentasMov: 'estoque-tecidos', materiaisEstCad: 'estoque-tecidos', materiaisEstMov: 'estoque-tecidos',
+  ordensPreparo: 'estoque-tecidos',
   corteMov: 'estoque-fases', costurandoMov: 'estoque-fases', corteScMov: 'estoque-fases', costurandoScMov: 'estoque-fases',
   fiosMov: 'estoque-fases', expedicaoMov: 'estoque-fases',
   // A Expedição e o Planejamento ficam de fora: já têm aviso próprio (OE
@@ -3325,7 +3327,7 @@ const DB = {
 /* ========================================================= */
 /*                     AUTENTICAÇÃO                          */
 /* ========================================================= */
-const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','osCounter','meta'];
+const CAD_KEYS = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','ordensPreparo','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','osCounter','meta'];
 
 /* ---- Conta por NOME, não por e-mail ----
    O login é feito pelo NOME da pessoa. Por baixo, o Supabase ainda precisa de um
@@ -3916,6 +3918,9 @@ const STATE = {
   // Observação solta numa perna da OE, sem OS (29/10/2026): o recado da carga
   // que não é de nenhuma OS. { id, janelaId, oeData, perna, texto, por, em }
   expedicaoObs: [],
+  // Ordens de preparo de matéria-prima — OP (12/11/2026): lotes de bobinas de
+  // tecido e ribana do Estoque de tecidos, avaliados no Colorímetro. Ver renderOrdensPreparo.
+  ordensPreparo: [],
   // ---------- Planejamento diário de operações ----------
   // A jornada planejada de cada POSTO (função cadastrada) em cada dia. Uma
   // operação aqui é o processo completo do posto — início + duração total, com
@@ -4553,6 +4558,7 @@ const DESFAZER_NOMES = {
   expedicaoJanelas: ['janela de expedição', 'janelas de expedição'],
   expedicaoExcecoes: ['exceção da expedição', 'exceções da expedição'],
   expedicaoObs: ['observação da OE', 'observações da OE'],
+  ordensPreparo: ['ordem de preparo', 'ordens de preparo'],
   estoqueMov: ['lançamento de estoque', 'lançamentos de estoque'],
   corteMov: ['lançamento do corte', 'lançamentos do corte'],
   costurandoMov: ['lançamento da costura', 'lançamentos da costura'],
@@ -4725,7 +4731,7 @@ function ehFuncaoOperadorEsteira(nome) {
 }
 
 async function loadState() {
-  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','meta'];
+  const keys = ['tecidos','cores','fornecedores','materiais','modelos','colecoes','grades','desenhos','marcas','linhas','bases','blocos','equipe','funcoes','tarefas','etapas','componentes','ordens','estoqueMov','corteMov','costurandoMov','corteScMov','costurandoScMov','fiosMov','expedicaoMov','expedicaoJanelas','expedicaoCargas','expedicaoExcecoes','expedicaoObs','ordensPreparo','operacoes','compraPlano','compraOCs','aviamentosMov','aviamentoTipos','pecasCad','ferramentasCad','pecasMov','ferramentasMov','materiaisEstCad','materiaisEstMov','osPlanejadas','osDemandas','costuraProd','acabProdutos','acabMov','diario','meta'];
   for (const k of keys) {
     try {
       const r = await DB.get(k);
@@ -5465,6 +5471,7 @@ function goto(page) {
   if (page === 'print-operacoes') renderPrintPlanoOperacoes();
   if (page === 'print-aviamentos') renderPrintAviamentos();
   if (page === 'print-pecas') renderPrintPecas();
+  if (page === 'print-preparo') renderPrintPreparo();
   if (page === 'print-expedicao') {
     renderPrintPlanoExpedicao();
     // Auto-save da OE (folha do plano) na pasta conectada — mesma ideia do
@@ -10807,6 +10814,7 @@ function renderEstoque() {
     ${estoqueHtml}
     ${movHtml}
   `;
+  renderOrdensPreparo();
 }
 
 // O filtro das Movimentações do estoque de tecidos (chaves normalizadas).
@@ -10823,6 +10831,217 @@ function _filtrarMovEstoque(campo, valor) {
 }
 
 let movEstoqueTipo = 'entrada';
+/* ========================================================= */
+/*     ORDEM DE PREPARO DE MATÉRIA-PRIMA — OP (12/11/2026)   */
+/* ========================================================= */
+/* (Junior: "adicione em estoque de tecidos quadro para gerenciar as tarefas da
+   fase Preparação de matéria-prima. Deve funcionar parecido com a folha de OS,
+   mas com lote de tecidos. [...] Cada lote avaliado deve conter número, assim
+   como uma OS. A folha de Ordem de preparo OP deve conter quantidade de bobinas
+   totais, tipo de tecido e cor. Os lotes devem ser formados por bobinas de
+   tecido e ribana. [...] botão na coluna de ação com nome Avaliar amostras [...]
+   As cores avaliadas devem gerar relatório na OP, da mesma forma como em uma OS.")
+
+   STATE.ordensPreparo: { id, numero, data, tecidoNome, corNome, bobinasTecido,
+     ribanaNome, bobinasRibana, obs, criadoEm, criadoPor,
+     relatorios: [{ texto, em, por }] }  — o último relatório é o que vale.
+
+   O número é o maior que já existe + 1, como a OS: nunca se repete enquanto a
+   OP de número maior existir. Quem cria, edita e exclui é quem lança no Estoque
+   de tecidos (área estoque-tecidos). O "Avaliar amostras" abre o Colorímetro
+   com a OP (Colorimetro.avaliarOS aceita a OP): Fase 1 Tecido, uma amostra por
+   bobina, e Fase 2 Ribana, comparada com o tecido. O relatório volta para a
+   folha da OP por salvarRelatorioCorOP.
+
+   "OP" na tela; por dentro é "preparo"/"Prep": print-sheet-op e print-operacoes
+   já são a folha do planejamento de operações. */
+const _opFmt = n => String(Number(n) || 0).padStart(4, '0');
+const _opPrepBob = p => (Number(p.bobinasTecido) || 0) + (Number(p.bobinasRibana) || 0);
+const _opPrepUltimoRel = p => (Array.isArray(p.relatorios) && p.relatorios.length) ? p.relatorios[p.relatorios.length - 1] : null;
+let _opPrepEditando = null;
+let _opPrepFolhaId = null;
+
+function _opPrepQuem() {
+  try { return typeof _obsQuemSou === 'function' ? (_obsQuemSou() || '') : ''; } catch (e) { return ''; }
+}
+
+function renderOrdensPreparo() {
+  const cont = document.getElementById('op-prep-painel');
+  if (!cont) return;
+  const lista = (STATE.ordensPreparo || []).slice().sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));
+  const n = v => (Number(v) || 0).toLocaleString('pt-BR');
+  const temCor = !!window.Colorimetro;
+  const linhas = lista.map(p => {
+    const rel = _opPrepUltimoRel(p);
+    return `<tr>
+      <td class="col-actions row-actions" style="white-space:nowrap;">
+        ${temCor ? `<button onclick="avaliarAmostrasOP('${esc(p.id)}')" title="Abre o Colorímetro com esta OP: uma amostra por bobina (tecido e ribana). O relatório de tonalidades volta para a folha da OP.">Avaliar amostras</button>` : ''}
+        <button onclick="verOP('${esc(p.id)}')" title="Abre a folha da OP para conferir e imprimir">folha</button>
+        <button class="estoque-tecidos-only" onclick="abrirModalOP('${esc(p.id)}')">editar</button>
+        <button class="estoque-tecidos-only danger" onclick="excluirOP('${esc(p.id)}')">excluir</button>
+      </td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-weight:700;white-space:nowrap;">OP ${_opFmt(p.numero)}</td>
+      <td style="white-space:nowrap;">${p.data ? esc(formatDate(p.data)) : '—'}</td>
+      <td>${esc(p.tecidoNome) || '—'}</td>
+      <td>${esc(p.corNome) || '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${n(p.bobinasTecido)}</td>
+      <td>${Number(p.bobinasRibana) > 0 ? esc(p.ribanaNome || 'Ribana') : '—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${n(p.bobinasRibana)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;">${n(_opPrepBob(p))}</td>
+      <td>${rel
+        ? `<span class="badge" style="background:#d6f0db;" title="${esc(rel.texto)}">Avaliada ${esc(formatDate(String(rel.em).slice(0, 10)))}</span>`
+        : '<span class="badge" style="background:#fde9c8;">A avaliar</span>'}</td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <h2 style="margin:0;font-size:14px;">Preparação de matéria-prima · Ordens de preparo (OP)</h2>
+        <button class="btn primary estoque-tecidos-only" onclick="abrirModalOP()">+ Nova OP</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Cada OP é um lote de bobinas de tecido e de ribana, com número próprio como uma OS. Lance o lote, clique em <b>Avaliar amostras</b> para medir a cor de cada bobina no Colorímetro e salve o relatório: ele vai para a folha da OP.</div>
+      <table class="table">
+        <thead><tr><th class="col-actions">Ações</th><th>OP</th><th>Data</th><th>Tecido</th><th>Cor</th><th style="text-align:right;">Bobinas tecido</th><th>Ribana</th><th style="text-align:right;">Bobinas ribana</th><th style="text-align:right;">Total bobinas</th><th>Cores</th></tr></thead>
+        <tbody>${linhas || '<tr><td colspan="10" class="empty">Nenhuma ordem de preparo ainda. Clique em <b>+ Nova OP</b>.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function abrirModalOP(id) {
+  if (!exigirEstoqueTecidos(id ? 'criar ou editar ordem de preparo' : 'criar ou editar ordem de preparo')) return;
+  const p = id ? (STATE.ordensPreparo || []).find(x => x.id === id) : null;
+  if (id && !p) return toast('Esta OP não existe mais', 'err');
+  _opPrepEditando = p ? p.id : null;
+  const tecidos = (STATE.tecidos || []).map(t => t.nome).filter(Boolean);
+  const ribanas = tecidos.filter(t => /ribana/i.test(t));
+  const opts = (lista, atual, vazio) => `<option value="">${vazio}</option>`
+    + lista.map(v => `<option value="${esc(v)}"${v === atual ? ' selected' : ''}>${esc(v)}</option>`).join('')
+    + (atual && !lista.includes(atual) ? `<option value="${esc(atual)}" selected>${esc(atual)}</option>` : '');
+  const cores = (STATE.cores || []).map(c => c.nome).filter(Boolean);
+  const hoje = new Date().toISOString().slice(0, 10);
+  document.getElementById('modal-op-prep-title').textContent = p ? `Editar OP ${_opFmt(p.numero)}` : 'Nova ordem de preparo (OP)';
+  document.getElementById('modal-op-prep-fields').innerHTML = `
+    <div class="form-grid cols-2">
+      <div class="field"><label>Tecido *</label><select id="opp-tecido">${opts(tecidos.filter(t => !/ribana/i.test(t)), p && p.tecidoNome, '— selecione —')}</select></div>
+      <div class="field"><label>Cor *</label><select id="opp-cor">${opts(cores, p && p.corNome, '— selecione —')}</select></div>
+      <div class="field"><label>Bobinas de tecido *</label><input type="number" min="0" step="1" id="opp-bt" value="${p ? esc(String(p.bobinasTecido || 0)) : ''}" placeholder="0"></div>
+      <div class="field"><label>Data</label><input type="date" id="opp-data" value="${esc((p && p.data) || hoje)}"></div>
+      <div class="field"><label>Ribana</label><select id="opp-ribana">${opts(ribanas.length ? ribanas : tecidos, p && p.ribanaNome, '— sem ribana —')}</select></div>
+      <div class="field"><label>Bobinas de ribana</label><input type="number" min="0" step="1" id="opp-br" value="${p ? esc(String(p.bobinasRibana || 0)) : ''}" placeholder="0"></div>
+      <div class="field full"><label>Observação</label><input type="text" id="opp-obs" value="${esc((p && p.obs) || '')}" placeholder="Ex.: NF 1234 / fornecedor"></div>
+    </div>
+    <div class="info-box" style="margin-top:8px;font-size:12px;">A ribana é da mesma cor do tecido. No Colorímetro cada bobina é uma amostra: as bobinas de tecido formam a Fase 1 e as de ribana, a Fase 2, comparada com o tecido.</div>`;
+  openModal('modal-op-prep');
+}
+
+async function salvarOP() {
+  if (!exigirEstoqueTecidos('criar ou editar ordem de preparo')) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const tecidoNome = v('opp-tecido').trim(), corNome = v('opp-cor').trim();
+  const bt = Math.max(0, parseInt(v('opp-bt'), 10) || 0), br = Math.max(0, parseInt(v('opp-br'), 10) || 0);
+  const ribanaNome = v('opp-ribana').trim();
+  if (!tecidoNome) return toast('Escolha o tecido', 'err');
+  if (!corNome) return toast('Escolha a cor', 'err');
+  if (!bt && !br) return toast('O lote precisa de pelo menos uma bobina', 'err');
+  if (br && !ribanaNome) return toast('Escolha a ribana das bobinas de ribana', 'err');
+  STATE.ordensPreparo = STATE.ordensPreparo || [];
+  const dados = { tecidoNome, corNome, bobinasTecido: bt, ribanaNome: br ? ribanaNome : '', bobinasRibana: br,
+    data: v('opp-data') || new Date().toISOString().slice(0, 10), obs: v('opp-obs').trim() };
+  let p = _opPrepEditando && STATE.ordensPreparo.find(x => x.id === _opPrepEditando);
+  if (p) Object.assign(p, dados);
+  else {
+    const numero = STATE.ordensPreparo.reduce((m, x) => Math.max(m, Number(x.numero) || 0), 0) + 1;
+    p = Object.assign({ id: uid(), numero, criadoEm: new Date().toISOString(), criadoPor: _opPrepQuem(), relatorios: [] }, dados);
+    STATE.ordensPreparo.push(p);
+  }
+  await saveState('ordensPreparo');
+  closeModal('modal-op-prep');
+  toast(`OP ${_opFmt(p.numero)} salva`, 'ok');
+  renderOrdensPreparo();
+}
+
+async function excluirOP(id) {
+  if (!exigirEstoqueTecidos('excluir ordem de preparo')) return;
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Excluir a OP ${_opFmt(p.numero)} (${[p.tecidoNome, p.corNome].filter(Boolean).join(' ')})? O relatório de cor dela vai junto.`)) return;
+  STATE.ordensPreparo = STATE.ordensPreparo.filter(x => x.id !== id);
+  await saveState('ordensPreparo');
+  toast(`OP ${_opFmt(p.numero)} excluída`, 'ok');
+  renderOrdensPreparo();
+}
+
+function avaliarAmostrasOP(id) {
+  if (!window.Colorimetro) return toast('O Colorímetro não está carregado', 'err');
+  Colorimetro.avaliarOS(id);
+}
+
+// Chamado pelo Colorímetro (relSalvar) com o texto do relatório de tonalidades.
+async function salvarRelatorioCorOP(id, texto) {
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (!p || !String(texto || '').trim()) return false;
+  p.relatorios = Array.isArray(p.relatorios) ? p.relatorios : [];
+  p.relatorios.push({ texto: String(texto), em: new Date().toISOString(), por: _opPrepQuem() });
+  await saveState('ordensPreparo');
+  renderOrdensPreparo();
+  if (_opPrepFolhaId === id) renderPrintPreparo();
+  return true;
+}
+
+function verOP(id) {
+  if (!(STATE.ordensPreparo || []).some(x => x.id === id)) return toast('Esta OP não existe mais', 'err');
+  _opPrepFolhaId = id;
+  goto('print-preparo');
+}
+
+function renderPrintPreparo() {
+  const sheet = document.getElementById('print-sheet-prep');
+  if (!sheet) return;
+  const p = (STATE.ordensPreparo || []).find(x => x.id === _opPrepFolhaId);
+  if (!p) { sheet.innerHTML = '<div class="empty" style="padding:20px;">Escolha uma OP na lista do Estoque de tecidos.</div>'; return; }
+  const n = v => (Number(v) || 0).toLocaleString('pt-BR');
+  const rel = _opPrepUltimoRel(p);
+  const emissao = new Date();
+  const hm = d => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  // As bobinas numeradas: o número é o da amostra no Colorímetro — é o que se
+  // escreve na etiqueta da bobina para achar o tom dela no relatório.
+  const caixas = (rotulo, q) => q > 0 ? `
+    <div class="op-prep-bob"><div class="t">${esc(rotulo)} · ${n(q)} bobina${q === 1 ? '' : 's'}</div>
+      <div class="g">${Array.from({ length: q }, (_, i) => `<span>${i + 1}</span>`).join('')}</div></div>` : '';
+  const relEm = rel ? new Date(rel.em) : null;
+  sheet.innerHTML = `
+    <div class="exp-print-head">
+      <div>
+        <div class="tit">ORDEM DE PREPARO DE MATÉRIA-PRIMA OP</div>
+        <div class="sub">OP ${_opFmt(p.numero)} · ${p.data ? esc(formatDate(p.data)) : '—'} · preparação de matéria-prima</div>
+      </div>
+      <div class="meta">
+        <div><b style="font-size:16pt;font-family:'IBM Plex Mono',monospace;">OP ${_opFmt(p.numero)}</b></div>
+        <div>Emitido em ${esc(formatDate(emissao.toISOString().slice(0, 10)))} ${hm(emissao)}</div>
+      </div>
+    </div>
+    <div class="exp-print-resumo">
+      <div class="item"><div class="n">${n(_opPrepBob(p))}</div><div class="l">Bobinas totais</div></div>
+      <div class="item"><div class="n">${n(p.bobinasTecido)}</div><div class="l">Bobinas de tecido</div></div>
+      <div class="item"><div class="n">${n(p.bobinasRibana)}</div><div class="l">Bobinas de ribana</div></div>
+    </div>
+    <table class="op-prep-tab">
+      <tr><th>Tipo de tecido</th><td>${esc(p.tecidoNome) || '—'}</td></tr>
+      <tr><th>Cor</th><td>${esc(p.corNome) || '—'}</td></tr>
+      <tr><th>Ribana</th><td>${Number(p.bobinasRibana) > 0 ? esc(p.ribanaNome || 'Ribana') + ' · ' + esc(p.corNome || '') : '—'}</td></tr>
+      ${p.obs ? `<tr><th>Observação</th><td>${esc(p.obs)}</td></tr>` : ''}
+    </table>
+    ${caixas('Tecido', Number(p.bobinasTecido) || 0)}
+    ${caixas('Ribana', Number(p.bobinasRibana) || 0)}
+    <div class="op-prep-rel">
+      <div class="t">Relatório de tonalidades (Colorímetro)</div>
+      ${rel
+        ? `<div class="x">${esc(rel.texto)}</div>
+           <div class="m">Avaliado em ${esc(formatDate(String(rel.em).slice(0, 10)))} ${relEm && !isNaN(relEm) ? hm(relEm) : ''}${rel.por ? ' por ' + esc(rel.por) : ''}${p.relatorios.length > 1 ? ` · ${p.relatorios.length}ª avaliação` : ''}</div>`
+        : '<div class="m">Ainda não avaliado — use <b>Avaliar amostras</b> na lista de OP do Estoque de tecidos.</div>'}
+    </div>`;
+}
+
 function abrirMovEstoque(tipo) {
   if (!exigirEstoqueTecidos('lançar no estoque de tecidos')) return;
   movEstoqueTipo = tipo === 'saida' ? 'saida' : 'entrada';

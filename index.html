@@ -35,7 +35,7 @@
      branco, ainda que o servidor de dados esteja funcionando perfeitamente.
      Arquivos em vendor/, com a versao no nome — ver vendor/README.md. -->
 <link rel="stylesheet" href="vendor/fonts/ibm-plex.css?v=2026-08-10">
-<link rel="stylesheet" href="styles.css?v=2026-11-12d">
+<link rel="stylesheet" href="styles.css?v=2026-11-12e">
 <!-- MODO ESCURO: aplicado aqui, antes de a tela pintar, para não piscar branco
      ao abrir. A escolha é deste navegador (Configurações → Aparência). -->
 <script>try { if (localStorage.getItem('tema') === 'escuro') document.documentElement.setAttribute('data-tema', 'escuro'); } catch (e) {}</script>
@@ -444,6 +444,8 @@
           <button class="btn" onclick="abrirMovEstoque('saida')">− Saída / ajuste</button>
         </div>
       </div>
+      <!-- As ordens de preparo de matéria-prima (OP, 12/11/2026): ver renderOrdensPreparo. -->
+      <div id="op-prep-painel"></div>
       <div id="estoque-painel"></div>
     </section>
 
@@ -1496,6 +1498,23 @@
       </div>
     </section>
 
+    <!-- ============ FOLHA DA ORDEM DE PREPARO DE MATÉRIA-PRIMA — OP (12/11/2026) ============ -->
+    <section class="page hidden" data-page="print-preparo">
+      <div class="page-header no-print">
+        <div><h1>Folha da ordem de preparo (OP)</h1><div class="desc">O lote de bobinas e o relatório de tonalidades do Colorímetro. Revise e clique em Imprimir.</div></div>
+        <div class="actions">
+          <button class="btn" onclick="goto('estoque')">Voltar</button>
+          <button class="btn" onclick="if(_opPrepFolhaId) avaliarAmostrasOP(_opPrepFolhaId)">Avaliar amostras</button>
+          <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+        </div>
+      </div>
+      <div class="print-area">
+        <div class="sheet sheet-exp" id="print-sheet-prep">
+          <!-- conteúdo gerado por JS -->
+        </div>
+      </div>
+    </section>
+
     <!-- ============ FOLHA DOS AVIAMENTOS (IMPRESSÃO, 08/10/2026) ============ -->
     <!-- A moldura da folha de OE (.sheet-exp): o que há de aviamento na unidade
          aberta, para conferir a prateleira com a folha na mão. -->
@@ -1844,6 +1863,18 @@
   </div>
 </div>
 
+<!-- ============= MODAL ORDEM DE PREPARO DE MATÉRIA-PRIMA (OP) ============= -->
+<div class="modal-backdrop" id="modal-op-prep">
+  <div class="modal">
+    <h2 id="modal-op-prep-title">Nova ordem de preparo (OP)</h2>
+    <div id="modal-op-prep-fields"></div>
+    <div class="actions">
+      <button class="btn" onclick="closeModal('modal-op-prep')">Cancelar</button>
+      <button class="btn primary" onclick="salvarOP()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============= MODAL OBSERVAÇÃO SOLTA NA OE (sem OS) ============= -->
 <div class="modal-backdrop" id="modal-exp-obs">
   <div class="modal">
@@ -2079,9 +2110,9 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-12e"></script>
-<script src="assistente.js?v=2026-11-05a"></script>
-<script src="colorimetro.js?v=2026-11-12l"></script>
+<script src="app.js?v=2026-11-12f"></script>
+<script src="assistente.js?v=2026-11-12a"></script>
+<script src="colorimetro.js?v=2026-11-12m"></script>
 <script src="estoque-confeccao.js?v=2026-11-11a"></script>
 <script src="vendas-dre.js?v=2026-11-11a"></script>
 <script src="planejamento-automatico.js?v=2026-10-30a"></script>

@@ -59,7 +59,7 @@
     funcoes: 'cadastros', tarefas: 'cadastros', gradeFolderLabels: 'cadastros',
     aviamentoTipos: 'cadastros',
     estoqueMov: 'estoque-tecidos', materiaisEstCad: 'estoque-tecidos', materiaisEstMov: 'estoque-tecidos',
-    aviamentosMov: 'estoque-tecidos', pecasCad: 'estoque-tecidos', pecasMov: 'estoque-tecidos',
+    aviamentosMov: 'estoque-tecidos', pecasCad: 'estoque-tecidos', pecasMov: 'estoque-tecidos', ordensPreparo: 'estoque-tecidos',
     corteMov: 'estoque-fases', fiosMov: 'estoque-fases', costurandoMov: 'estoque-fases',
     expedicaoMov: 'estoque-fases',
     expedicaoCargas: 'expedicao', expedicaoJanelas: 'expedicao', expedicaoExcecoes: 'expedicao', expedicaoObs: 'expedicao',
