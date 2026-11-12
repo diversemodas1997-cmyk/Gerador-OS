@@ -3286,7 +3286,32 @@ body:not(.is-admin) #modal-cad-fields button {
 
 /* Um card por ocorrência (uma data/janela). Dentro dele, as duas pernas. */
 .exp-ocor { margin-bottom: 14px; }
-.exp-ocor.cancelada { opacity: .55; }
+/* OE cancelada: o conteúdo fica apagado e a faixa "CANCELADO" atravessa o
+   cartão por cima, em cor cheia (a opacidade sai do cartão e vai para os
+   filhos, senão apagaria a faixa junto). */
+.exp-ocor.cancelada { position: relative; }
+.exp-ocor.cancelada > :not(.exp-faixa-cancelado) { opacity: .45; }
+/* Cartão aberto: uma faixa reta no topo, na largura do cartão. */
+.exp-faixa-cancelado {
+  background: var(--alert); color: #fff;
+  text-align: center; font-weight: 800; font-size: 15px; letter-spacing: .35em;
+  padding: 4px 0; margin-bottom: 10px; border-radius: 2px; pointer-events: none;
+}
+/* Cartão fechado (uma linha só): a faixa ocupa a ponta direita, de cima a
+   baixo, sem cobrir o número da OE, o dia e a janela. */
+.exp-ocor-fechada.cancelada { padding-right: 190px; }
+.exp-ocor-fechada.cancelada .exp-faixa-cancelado {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 180px; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 0 3px 3px 0;
+}
+/* Na tabela: a linha vira uma faixa vermelha clara, com o rótulo forte. */
+tr.exp-linha-cancelada > td { background: var(--alert-bg); color: var(--ink-3); }
+.exp-faixa-cancelado-linha {
+  display: inline-block; background: var(--alert); color: #fff;
+  font-weight: 800; font-size: 11px; letter-spacing: .2em;
+  padding: 1px 6px; border-radius: 2px; margin-left: 4px;
+}
 .exp-ocor-head {
   display: flex;
   justify-content: space-between;

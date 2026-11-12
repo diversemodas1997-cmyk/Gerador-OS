@@ -17348,17 +17348,25 @@ function renderExpedicaoPlano() {
       ? `${fmt(r.itens.length)} OS · ${fmt(r.volumes)} vol · ${fmt(r.pecas)} un. <span class="exp-badge ${r.situacao}">${esc(_EXP_SIT_LABEL[r.situacao])}</span>`
       : '<span class="muted">nenhuma OS</span>'}</span>`;
   };
+  /* A FAIXA "CANCELADO" (12/11/2026, Junior: "insira nas OE canceladas a faixa
+     com texto CANCELADO"). O selo pequeno "cancelada" ao lado do nome passava
+     batido no meio das outras OE. A faixa atravessa o cartão em vermelho, com o
+     motivo do cancelamento ao passar o mouse; o resto do cartão segue apagado.
+     Não pega cliques (o cartão fechado continua abrindo). */
+  const _expFaixaCancelado = oc => `<div class="exp-faixa-cancelado"${oc.motivo ? ` title="Motivo: ${esc(oc.motivo)}"` : ''}>CANCELADO</div>`;
   const cardFechado = oc => `
     <div class="card exp-ocor exp-ocor-fechada ${oc.cancelada ? 'cancelada' : ''}" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Clique para expandir esta OE e ver as OS">
+      ${oc.cancelada ? _expFaixaCancelado(oc) : ''}
       <button class="exp-oe-toggle" title="Expandir">▸</button>
       <span class="exp-ocor-data" style="${oc.cancelada ? 'text-decoration:line-through;' : ''}">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `<span class="exp-oe-num">OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))}</span> · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}</span>
-      <span class="exp-ocor-nome">${esc(oc.janela.nome) || 'Janela sem nome'}${oc.remarcada ? ' · <span class="exp-badge baixo">remarcada</span>' : ''}${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}</span>
+      <span class="exp-ocor-nome">${esc(oc.janela.nome) || 'Janela sem nome'}${oc.remarcada ? ' · <span class="exp-badge baixo">remarcada</span>' : ''}</span>
       ${oc.cancelada ? '' : pernaResumo(oc, 'ida') + pernaResumo(oc, 'volta')}
       ${oc.cancelada ? '' : `<button class="btn" style="padding:2px 8px;font-size:11px;margin-left:auto;" onclick="event.stopPropagation(); abrirModalExpExtra('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Cria mais uma expedição neste mesmo dia e no mesmo turno (manhã ou tarde), em outro horário">+ no turno</button>`}
     </div>`;
 
   const cardAberto = oc => `
     <div class="card exp-ocor ${oc.cancelada ? 'cancelada' : ''}">
+      ${oc.cancelada ? _expFaixaCancelado(oc) : ''}
       <div class="exp-ocor-head">
         <div style="display:flex;gap:8px;align-items:flex-start;">
           <button class="exp-oe-toggle" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Contrair esta OE numa linha">▾</button>
@@ -17371,7 +17379,7 @@ function renderExpedicaoPlano() {
             ${oc.janela.tipo === 'data' ? ' · <span class="exp-badge info">data fixa</span>' : ''}
             ${oc.remarcada ? ` · <span class="exp-badge baixo">remarcada de ${esc(formatDate(oc.dataOrig))}</span>` : ''}
             ${oc.horaAlterada ? ` · <span class="exp-badge info" title="O horário deste dia foi ajustado à mão. A janela ${esc(oc.janela.nome) || ''} segue com o horário dela nos outros dias.">horário deste dia</span>` : ''}
-            ${oc.cancelada ? ' · <span class="exp-badge alto">cancelada</span>' : ''}
+            
             ${oc.motivo ? ' · ' + esc(oc.motivo) : ''}
           </div>
           </div>
@@ -17447,7 +17455,7 @@ function renderExpedicaoPlano() {
           ${oesCriadas.map(({ oc, n, ida, volta, primeira }) => {
             const aberta = expOeAbertas.has(_expChaveOe(oc.janela.id, oc.dataOrig));
             return `
-            <tr${oc.cancelada ? ' style="opacity:.55;"' : ''}>
+            <tr${oc.cancelada ? ' class="exp-linha-cancelada"' : ''}>
               <td class="col-actions row-actions">
                 <button class="edit" onclick="expAlternarOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="${aberta ? 'Fecha o quadro desta OE' : 'Abre o quadro desta OE logo abaixo: editar volumes e a folha de cada OS, mudar dia e pacotes, tirar OS, alocar OS, aviamentos, ferramentas e observações'}">${aberta ? '▾ fechar' : '✎ editar'}</button>
                 <button onclick="expFolhaDaOe('${esc(oc.janela.id)}','${esc(oc.dataOrig)}')" title="Abre a folha do plano só desta OE, para imprimir ou salvar">🖨 folha</button>
@@ -17459,7 +17467,7 @@ function renderExpedicaoPlano() {
               <td><span class="exp-oe-num">OE ${_oeFmt(n)}</span></td>
               <td style="white-space:nowrap;">${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} · ${esc(formatDate(oc.data))}${
                 oc.remarcada ? ` <span class="exp-badge baixo" title="Remarcada de ${esc(formatDate(oc.dataOrig))}">remarcada</span>` : ''}${
-                oc.cancelada ? ' <span class="exp-badge alto">cancelada</span>' : ''}</td>
+                oc.cancelada ? ` <span class="exp-faixa-cancelado-linha"${oc.motivo ? ` title="Motivo: ${esc(oc.motivo)}"` : ''}>CANCELADO</span>` : ''}</td>
               <td>${esc(oc.janela.nome) || 'Janela sem nome'}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(ida.itens.length)} / ${fmt(volta.itens.length)}</td>
               <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${fmt(ida.pecas + volta.pecas)} un.</td>
