@@ -11062,7 +11062,17 @@ function renderPrintPreparo() {
       <div class="g">${Array.from({ length: q }, (_, i) => `<span>${i + 1}</span>`).join('')}</div></div>` : '';
   const quandoTxt = iso => { const d = new Date(iso); return esc(formatDate(String(iso).slice(0, 10))) + (!isNaN(d) ? ' ' + hm(d) : ''); };
   const editavel = !cancelada && (typeof podeMexerEstoqueTecidos !== 'function' || podeMexerEstoqueTecidos());
+  /* A FOLHA DENTRO DA TABELA DA OE (12/11/2026, Junior: "analise por que falta
+     espaço do cabeçalho da folha OP para impressão"). Na impressão a .sheet-exp
+     tem @page sem margem e padding de topo/base zerado: a margem de cima (16mm)
+     e a de baixo (10mm) vêm do <thead>/<tfoot> da .exp-print-folha, que se
+     repetem em cada página. A folha da OP nasceu com o cabeçalho solto, fora
+     dessa tabela, e por isso saía com o título encostado na borda do papel
+     (0mm, na faixa que a impressora não imprime). Agora usa a mesma tabela: o
+     cabeçalho ganha a margem e se repete se a OP passar de uma página. */
   sheet.innerHTML = `${cancelada ? _carimboCanceladoHtml() : ''}
+    <table class="exp-print-folha">
+      <thead><tr><td>
     <div class="exp-print-head">
       <div>
         <div class="tit">ORDEM DE PREPARO DE MATÉRIA-PRIMA OP</div>
@@ -11073,6 +11083,8 @@ function renderPrintPreparo() {
         <div>Emitido em ${esc(formatDate(emissao.toISOString().slice(0, 10)))} ${hm(emissao)}</div>
       </div>
     </div>
+      </td></tr></thead>
+      <tbody><tr><td>
     <div class="exp-print-resumo">
       <div class="item"><div class="n">${n(_opPrepBob(p))}</div><div class="l">Bobinas totais</div></div>
       <div class="item"><div class="n">${n(p.bobinasTecido)}</div><div class="l">Bobinas de tecido</div></div>
@@ -11096,7 +11108,10 @@ function renderPrintPreparo() {
       ${rel
         ? `<div class="m">${rel.manual ? 'Escrito à mão' : 'Avaliado'} em ${quandoTxt(rel.em)}${rel.por ? ' por ' + esc(rel.por) : ''}${p.relatorios.length > 1 ? ` · ${p.relatorios.length}ª avaliação` : ''}${rel.editadoEm ? ` · texto editado em ${quandoTxt(rel.editadoEm)}${rel.editadoPor ? ' por ' + esc(rel.editadoPor) : ''}` : ''}</div>`
         : `<div class="m${editavel ? ' no-print' : ''}">Ainda não avaliado — use <b>Avaliar amostras</b> na lista de OP do Estoque de tecidos${editavel ? ' ou escreva o relatório acima' : ''}.</div>`}
-    </div>`;
+    </div>
+      </td></tr></tbody>
+      <tfoot><tr><td></td></tr></tfoot>
+    </table>`;
   if (cancelada) _carimbosDiagonaisOE(sheet.parentNode || sheet);
   // O campo cresce com o texto (como a observação da OS): mede depois de a
   // folha aparecer — goto desenha antes de tirar o .hidden.
