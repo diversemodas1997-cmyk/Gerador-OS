@@ -1808,6 +1808,41 @@
         ${comparacao}</div></div></div>`;
   }
 
+  /* A TABELA DE COMPATIBILIDADE (12/11/2026, Junior: "mostre a tabela de
+     compatibilidade no relatório"). É a tabela de onde os tons saem: cada
+     amostra contra cada outra, pela média, só ✔ compatível ou ✘ incompatível
+     pela tolerância das Configurações. As amostras vêm agrupadas pelo tom, e
+     as casas de duas amostras do mesmo tom ficam sombreadas — dentro do
+     sombreado só pode haver ✔ (um ✘ ali é tom fixado à mão). O dE fica só na
+     dica ao passar o mouse, como informação. */
+  function htmlTabelaCompat(av, tons) {
+    const comCor = numerosDasAmostras(av).filter(n => corDaAmostra(n, av));
+    if (comCor.length < 2) return '';
+    const ordem = [];
+    const tomPos = {};
+    tons.forEach((t, i) => t.membros.forEach(n => { if (comCor.includes(n)) { ordem.push(n); tomPos[n] = i + 1; } }));
+    comCor.filter(n => !ordem.includes(n)).forEach(n => ordem.push(n));
+    const rotTom = n => tomPos[n] ? 'Tom ' + tomPos[n] : (tomDe(n, av) === 0 ? 'Não usar' : '—');
+    const cab = ordem.map(n => `<th class="cm-tc-n" title="${escH(nomeAm(n))} · ${escH(rotTom(n))}">${n}</th>`).join('');
+    const linhas = ordem.map((a, i) => {
+      const ca = corDaAmostra(a, av);
+      const primeiraDoTom = i === 0 || tomPos[ordem[i - 1]] !== tomPos[a];
+      const celulas = ordem.map(b => {
+        if (a === b) return '<td class="cm-tc-eu">—</td>';
+        const cb = corDaAmostra(b, av);
+        const r = comparar({ lab1: ca }, { lab1: cb });
+        const mesmo = tomPos[a] && tomPos[a] === tomPos[b];
+        const dica = `${nomeAm(a)} × ${nomeAm(b)}: ${r.aprovado ? 'compatíveis' : 'incompatíveis'} · ${cfg.formula} ${num(r.des[cfg.formula])}`
+          + ` · dL* ${num(r.d1[0])} da* ${num(r.d1[1])} db* ${num(r.d1[2])}`;
+        return `<td class="${mesmo ? 'cm-tc-mesmo ' : ''}${r.aprovado ? 'cm-ok' : 'cm-fora'}" title="${escH(dica)}">${r.aprovado ? '✔' : '✘'}</td>`;
+      }).join('');
+      return `<tr class="${primeiraDoTom && i ? 'cm-tc-novo-tom' : ''}"><th class="cm-tc-tom">${primeiraDoTom ? escH(rotTom(a)) : ''}</th>
+        <th class="cm-tc-n" title="${escH(nomeAm(a))}">${a}</th>${celulas}</tr>`;
+    }).join('');
+    return `<details class="cm-tc" open><summary class="cm-sub" style="cursor:pointer">Tabela de compatibilidade <span class="cm-fraco">(média × média · ✔ compatível · ✘ incompatível · sombreado = mesmo tom)</span></summary>
+      <div class="cm-rolar"><table class="cm-tc-tab"><thead><tr><th></th><th></th>${cab}</tr></thead><tbody>${linhas}</tbody></table></div></details>`;
+  }
+
   // O relatório de uma fase: amostras, tons e o seletor para corrigir.
   function htmlRelFase(f) {
     const av = S.avOS.fases[f.i], fo = cfg.formula;
@@ -1850,6 +1885,7 @@
       <div class="cm-rolar"><table class="cm-lista"><thead><tr><th>Amostra</th><th>Medições</th><th title="Maior diferença para as outras amostras do mesmo tom">Maior ${escH(fo)} no tom</th><th>Tom</th></tr></thead>
         <tbody>${linhas}</tbody></table></div>
       ${resumo || '<div class="cm-fraco">Nenhuma amostra num tom.</div>'}
+      ${htmlTabelaCompat(av, tons)}
       ${pend.length ? `<div class="cm-fora" style="margin-top:6px">A reavaliar: ${pend.map(nomeAm).join(', ')}</div>` : ''}
     </div>`;
   }
@@ -2195,6 +2231,14 @@
     .cm-peq{font-size:12px;line-height:1.6}
     .cm-peq label{margin-left:10px}
     .cm-rolar{max-height:46vh;overflow:auto}
+    .cm-tc{margin-top:10px}
+    .cm-tc-tab{border-collapse:collapse;font-size:12px}
+    .cm-tc-tab td,.cm-tc-tab th{border:1px solid var(--line);padding:2px 5px;text-align:center;min-width:22px}
+    .cm-tc-tab thead th{position:sticky;top:0;background:var(--paper);z-index:1}
+    .cm-tc-tab .cm-tc-tom{text-align:left;white-space:nowrap;font-weight:600;border:0;padding-right:8px}
+    .cm-tc-tab .cm-tc-eu{color:var(--ink-3)}
+    .cm-tc-tab .cm-tc-mesmo{background:var(--ok-bg)}
+    .cm-tc-tab tr.cm-tc-novo-tom td,.cm-tc-tab tr.cm-tc-novo-tom th{border-top:2px solid var(--ink-3)}
     .cm-lista{width:100%;border-collapse:collapse;font-size:12px}
     .cm-lista th{position:sticky;top:0;background:var(--paper);text-align:left;font-weight:500;color:var(--ink-3);padding:4px 6px;border-bottom:1px solid var(--line)}
     .cm-lista td{padding:4px 6px;border-bottom:1px solid var(--line-2);white-space:nowrap}
