@@ -24886,16 +24886,22 @@ function renderPrintPlanoExpedicao() {
   };
   const edicao = document.getElementById('exp-folha-edicao');
   if (edicao) edicao.innerHTML = _expEdicaoDaFolhaHtml(ocs);
-  // A cancelada leva a faixa CANCELADO (com o motivo) e as pernas apagadas.
+  /* A FAIXA IGUAL À DA OS (12/11/2026, Junior: "deve ser exatamente igual a
+     faixa cancelado da OS"): o mesmo carimbo diagonal (_carimboCanceladoHtml).
+     Folha só de OE cancelada: carimbo na folha inteira, como na OS. Folha do
+     dia com canceladas e não canceladas: o carimbo vai no bloco da cancelada. */
+  const soCanceladas = ocs.length > 0 && ocs.every(oc => oc.cancelada);
+  sheet.classList.toggle('folha-cancelada', soCanceladas);
   const blocos = ocs.map(oc => `
     <div class="exp-print-bloco${oc.cancelada ? ' cancelada' : ''}">
-      ${oc.cancelada ? `<div class="exp-print-cancelado">CANCELADO${oc.motivo ? `<span class="m">Motivo: ${esc(oc.motivo)}</span>` : ''}</div>` : ''}
+      ${oc.cancelada && !soCanceladas ? _carimboCanceladoHtml() : ''}
       <div class="cab">
         <span class="d">${_oeNumeroDe(oc.janela.id, oc.dataOrig) ? `OE ${_oeFmt(_oeNumeroDe(oc.janela.id, oc.dataOrig))} · ` : ''}${_EXP_DIAS_CURTO[_expData(oc.data).getDay()]} ${esc(formatDate(oc.data))}</span>
         <span class="j">
           ${esc(oc.janela.nome) || 'Janela sem nome'}
           ${oc.remarcada ? ` · remarcada de ${esc(formatDate(oc.dataOrig))}` : ''}
           ${oc.horaAlterada ? ' · horário ajustado neste dia' : ''}
+          ${oc.cancelada && oc.motivo ? ` · motivo do cancelamento: ${esc(oc.motivo)}` : ''}
         </span>
       </div>
       ${oc.cancelada && pernaVazia(oc, 'ida') && pernaVazia(oc, 'volta') ? '' : pernasHtml(oc)}
@@ -24909,7 +24915,7 @@ function renderPrintPlanoExpedicao() {
   // trecho no alto de CADA folha impressa — tentar com position:fixed já foi
   // feito e o título acabou no rodapé. Visualmente nada muda: a tabela não tem
   // bordas nem espaçamento próprio.
-  sheet.innerHTML = `
+  sheet.innerHTML = `${soCanceladas ? _carimboCanceladoHtml() : ''}
     <table class="exp-print-folha">
       <thead>
         <tr><td>
