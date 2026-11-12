@@ -706,8 +706,18 @@
     if (S.ocupado || !S.dev) return;
     let tipo = cfg.botao;
     if (tipo === 'amostra' && !S.padrao && !S.acumulando.length) tipo = 'padrao';
-    // Na avaliação de uma OS o botão mede a amostra atual (a 1ª da rodada vira a referência).
-    if (S.os && S.av) { if (S.av.n == null) return; tipo = 'amostra'; }
+    /* O BOTÃO DO APARELHO NA AVALIAÇÃO DE OS (12/11/2026, Junior: "como as
+       comparações são automáticas com base nas medições de referência, o botão
+       deve ter função de medir amostra como referência para todas as amostras").
+       Aqui não há padrão nem escolha: o botão mede SEMPRE a amostra atual, e a
+       média dela passa a valer como referência para todas as outras da fase (a
+       tabela de compatibilidade é refeita na hora). O "mede como Amostra/Padrão"
+       das Configurações só vale fora da OS. Sem amostra atual (total já medido),
+       o aperto não some em silêncio: a tela diz o que fazer. */
+    if (S.os && S.av) {
+      if (S.av.n == null) { S.aviso = 'Botão do aparelho: ' + avDicaFase(); desenhar(); return; }
+      tipo = 'amostra';
+    }
     S.ocupado = true;
     const alvo = modoAtual();
     if (cfg.modo !== 'auto' && modo !== alvo) {
@@ -1790,7 +1800,8 @@
           <br><span class="cm-fraco">No mesmo tom, todas casam entre si. Sem repescagem.</span></div></div>
       </div>
       <div class="cm-botoes">
-        <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}>Medir amostra ${av.n != null ? av.n : ''} (F5)</button>
+        <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}
+          title="Mede a amostra atual; a média dela vira referência para todas as amostras da fase. O botão do aparelho e o F6 fazem o mesmo.">Medir amostra ${av.n != null ? av.n : ''} como referência (F5)</button>
         <button type="button" class="btn primary" onclick="Colorimetro.avTrocar()" ${av.n != null ? '' : 'disabled'}
           title="Passa para a amostra seguinte. O tom desta já foi decidido pela cor medida.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim das amostras'}</button>
         <label class="cm-campo" style="max-width:120px"><span>Ir para a amostra nº</span>
@@ -2176,9 +2187,11 @@
           <div class="card cm-aparelho">
             <div><div class="card-title">Aparelho</div><div class="cm-peq">${info}</div></div>
             <div><div class="card-title">Calibração</div><div class="cm-peq">${cal}</div></div>
-            <div class="cm-peq" style="grid-column:1/-1">Botão do aparelho mede como:
+            <div class="cm-peq" style="grid-column:1/-1">${naOS
+              ? `Botão do aparelho: <b>mede a amostra ${S.av.n != null ? S.av.n : 'atual'} como referência para todas as amostras da fase</b>`
+              : `Botão do aparelho mede como:
               <label><input type="radio" name="cm-botao" value="amostra" ${cfg.botao === 'amostra' ? 'checked' : ''} onchange="Colorimetro.botaoComo(this.value)"> Amostra</label>
-              <label><input type="radio" name="cm-botao" value="padrao" ${cfg.botao === 'padrao' ? 'checked' : ''} onchange="Colorimetro.botaoComo(this.value)"> Padrão</label>
+              <label><input type="radio" name="cm-botao" value="padrao" ${cfg.botao === 'padrao' ? 'checked' : ''} onchange="Colorimetro.botaoComo(this.value)"> Padrão</label>`}
               ${cfg.media > 1 ? `<span class="cm-fraco"> · média de ${cfg.media} leituras</span>` : ''}
             </div>
           </div>
