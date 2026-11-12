@@ -1284,9 +1284,40 @@
   // seguintes, a próxima da fila de reavaliação ainda não medida nesta rodada —
   // dando a volta, porque a referência escolhida pode estar no meio da fila
   // (Amostra 5 com 3 e 4 antes dela).
+  /* O TOTAL DE AMOSTRAS (12/11/2026, Junior: "no campo do colorímetro insira
+     campo onde usuário determina quantas amostras serão avaliadas no total").
+     Sem total, a 1ª rodada segue infinita (n + 1), como sempre foi. Com total,
+     ela anda só de 1 até ele — pulando as já medidas — e termina sozinha na
+     última, e a tela diz "Nº 3 de 10" e quais ainda faltam. O total é da FASE
+     (cada tecido tem os seus rolos); o último digitado vira o padrão da OS para
+     as fases que ainda não têm o seu. */
+  // av.total = 0 é "sem limite" escolhido na fase; sem o campo, vale o padrão da OS.
+  const totalDe = (av = S.av) => Number(av && av.total != null ? av.total : (S.avOS && S.avOS.total)) || 0;
+  const faltamMedir = (av = S.av) => {
+    const t = totalDe(av);
+    return t ? Array.from({ length: t }, (_, i) => i + 1).filter(x => !(av.medidas[x] || []).length) : [];
+  };
+  function avDefinirTotal(v) {
+    const t = parseInt(v, 10);
+    if (!S.av || !S.avOS) return;
+    if (!(t > 0)) { S.av.total = 0; avGuardar(); status('Total de amostras apagado: a rodada segue sem fim, amostra a amostra.'); return; }
+    S.av.total = t; S.avOS.total = t;
+    // Total menor que a amostra atual da 1ª rodada: a rodada acaba aqui.
+    if (S.av.rodada === 1 && !S.av.fila && S.av.n != null && S.av.n > t) { S.av.n = null; S.av.fimRodada = true; }
+    else if (S.av.rodada === 1 && !S.av.fila && S.av.n == null && S.av.fimRodada && faltamMedir().length) { S.av.n = faltamMedir()[0]; S.av.fimRodada = false; }
+    avGuardar();
+    const f = faltamMedir();
+    status(`Total desta fase: ${t} ${t === 1 ? 'amostra' : 'amostras'}.` + (f.length ? ` Faltam medir: ${f.join(', ')}.` : ' Todas já foram medidas.'));
+  }
+
   function proximoNumero(n) {
     const av = S.av;
-    if (av.rodada === 1 && !av.fila) return n + 1;
+    if (av.rodada === 1 && !av.fila) {
+      const t = totalDe(av);
+      if (!t) return n + 1;
+      const falta = faltamMedir(av).filter(x => x !== n);
+      return falta.find(x => x > n) || falta[0] || null;
+    }
     const fila = av.fila || [];
     const medida = x => (av.medidas[x] || []).some(m => m.rodada === av.rodada);
     const i = fila.indexOf(n);
@@ -1316,6 +1347,8 @@
   function avIrPara(v) {
     const n = parseInt(v, 10);
     if (!S.av || !(n > 0)) return;
+    const t = totalDe();
+    if (t && n > t) { S.aviso = `Esta fase tem ${t} ${t === 1 ? 'amostra' : 'amostras'} no total — aumente o total para ir à Amostra ${n}.`; desenhar(); return; }
     S.av.n = n; S.av.fimRodada = false;
     S.atual = null;
     avGuardar();
@@ -1339,6 +1372,13 @@
     if (!c) return;
     const i = c.faseAtual;
     if (!numerosDasAmostras().length) { S.aviso = 'Meça ao menos uma amostra desta fase antes de concluí-la.'; desenhar(); return; }
+    const falta = faltamMedir();
+    if (falta.length && !S._concluirMesmoAssim) {
+      perguntar({ titulo: `Concluir a ${S.fases[i].rotulo} com amostras sem medir?`,
+        texto: `O total desta fase é ${totalDe()} e ${falta.length === 1 ? 'a amostra' : 'as amostras'} ${falta.join(', ')} ainda não ${falta.length === 1 ? 'foi medida' : 'foram medidas'}.`,
+        sim: 'Concluir mesmo assim', executar: () => { S._concluirMesmoAssim = true; try { avConcluirFase(); } finally { S._concluirMesmoAssim = false; } } });
+      return;
+    }
     c.concluidas[i] = true;
     const prox = S.fases.findIndex((f, j) => j > i && !faseFeita(c, j));
     if (prox >= 0) avUsarFase(prox);
@@ -1574,14 +1614,17 @@
             : 'Referência: a primeira medição da rodada'}</div></div>
         <div class="cm-av-bloco"><div class="cm-av-rot">Até agora nesta fase</div>
           <div class="cm-peq">${tons.length ? tons.map((t, i) => `<b>Tom ${i + 1}</b>: ${t.membros.join(', ')}`).join('<br>') : 'nenhum tom ainda'}
-          ${pend.length ? `<br><span class="cm-fora">A reavaliar: ${pend.join(', ')}</span>` : ''}</div></div>
+          ${pend.length ? `<br><span class="cm-fora">A reavaliar: ${pend.join(', ')}</span>` : ''}
+          ${totalDe() ? `<br>${faltamMedir().length ? `Faltam medir: ${faltamMedir().join(', ')}` : `<span class="cm-ok">Todas as ${totalDe()} medidas</span>`}` : ''}</div></div>
       </div>
       <div class="cm-botoes">
         <button type="button" class="btn accent" onclick="Colorimetro.medir('amostra')" ${pode && av.n != null ? '' : 'disabled'}>Medir amostra ${av.n != null ? av.n : ''} (F5)</button>
         <button type="button" class="btn primary" onclick="Colorimetro.avTrocar()" ${av.n != null ? '' : 'disabled'}
           title="Passa para a amostra seguinte. Sem aprovação nesta rodada, esta vai para a reavaliação.">Trocar → ${prox != null ? 'amostra ' + prox : 'fim da rodada'}</button>
         <label class="cm-campo" style="max-width:120px"><span>Ir para a amostra nº</span>
-          <input type="number" min="1" value="${av.n != null ? av.n : ''}" onchange="Colorimetro.avIrPara(this.value)"></label>
+          <input type="number" min="1" ${totalDe() ? `max="${totalDe()}"` : ''} value="${av.n != null ? av.n : ''}" onchange="Colorimetro.avIrPara(this.value)"></label>
+        <label class="cm-campo" style="max-width:130px" title="Quantas amostras esta fase tem no total. A rodada termina sozinha na última; vazio = sem limite."><span>Total de amostras</span>
+          <input type="number" min="1" placeholder="sem limite" value="${totalDe() || ''}" onchange="Colorimetro.avDefinirTotal(this.value)"></label>
         <button type="button" class="btn small" onclick="Colorimetro.medir('padrao')" ${pode && av.n != null ? '' : 'disabled'}
           title="A amostra atual vira a referência: as compatíveis com ela entram no tom dela. Se o tom em formação já tem a referência em outra amostra, abre o tom seguinte (repescagem das que não entraram em tom nenhum).">Amostra ${av.n != null ? av.n : ''} como referência do Tom ${ref && ref.amostra != null && ref.amostra !== av.n ? tomNovoDe(av) : k} (F6)</button>
         ${pend.length ? `<button type="button" class="btn ${av.fimRodada ? 'primary' : ''}" onclick="Colorimetro.avReavaliar()">Reavaliar ${pend.length} → Tom ${Math.max(k, ...Object.keys(av.ref).map(Number)) + 1}</button>` : ''}
@@ -1591,7 +1634,7 @@
       ${aparelho}</div>
       <div class="cm-os-dir">
         ${concluida ? '' : `<div class="cm-av-bloco cm-av-atual cm-av-topo"><div class="cm-av-rot">Amostra atual</div>
-          <div class="cm-av-num cm-av-num-grande">${av.n != null ? 'Nº ' + av.n : '—'}</div>
+          <div class="cm-av-num cm-av-num-grande">${av.n != null ? 'Nº ' + av.n : '—'}${av.n != null && totalDe() ? ` <span class="cm-fraco" style="font-size:.5em">de ${totalDe()}</span>` : ''}</div>
           <div class="cm-peq">${av.n != null ? `${ms.length} ${ms.length === 1 ? 'medição' : 'medições'} nesta rodada${ult && !ult.ref ? ` · última ${escH(cfg.formula)} ${num(ult.de)} ${ult.aprovado ? '✔' : '✘'}` : ''} · ${situacao}` : escH(avDicaFase())}</div></div>`}
         ${comparacao}</div></div></div>`;
   }
@@ -2073,7 +2116,7 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avReavaliar, avConcluirFase, avReavaliarFase, avLimpar,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, avTrocar, avIrPara, avDefinirTotal, avReavaliar, avConcluirFase, avReavaliarFase, avLimpar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
