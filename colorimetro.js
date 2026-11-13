@@ -874,7 +874,8 @@
         const media = corDaAmostra(n, av) || [];
         const t = tomDe(n, av);
         const tomTxt = t === 0 ? 'não usar' : t === 'x' ? 'incompatível com o corpo' : t == null ? '' : 'Tom ' + t;
-        const fixo = av.fixo && (n in av.fixo) ? (av.fixo[n] === 0 ? 'não usar' : 'Tom ' + av.fixo[n]) : '';
+        const fx = av.fixo && (n in av.fixo) ? av.fixo[n] : undefined;
+        const fixo = fx === undefined ? '' : fx === 0 ? 'não usar' : Array.isArray(fx) ? (fx.length ? fx.map(k => 'Tom ' + k).join(' e ') : 'incompatível com o corpo') : 'Tom ' + fx;
         (av.medidas[n] || []).forEach((m, j) => {
           if (m.id) ids.add(m.id);
           const em = m.em ? new Date(m.em) : null;
@@ -1426,6 +1427,17 @@
       av.serve[n] = rc ? rc.serve : [];
       if (f === 0) { tons[n] = 0; return; }
       if (typeof f === 'number' && f > 0) { tons[n] = f; av.serve[n] = [f]; return; }
+      /* MAIS DE UM TOM À MÃO (13/11/2026, Jones: "usuário deve poder determinar
+         visualmente que uma amostra é compatível com mais de uma tonalidade").
+         No relatório da ribana cada tom do corpo tem uma caixinha; o que se marca
+         fica em av.fixo[n] como lista de tons ([1, 2]) e vale por cima da conta.
+         Lista vazia = marcada à mão como incompatível com o corpo. O tom gravado
+         segue sendo o primeiro da lista, como no automático. */
+      if (Array.isArray(f)) {
+        const nTons = tonsDoRelatorio(ctx.corpo).length;
+        const ks = [...new Set(f.map(Number))].filter(k => k > 0 && k <= nTons).sort((a, b) => a - b);
+        av.serve[n] = ks; tons[n] = ks.length ? ks[0] : 'x'; return;
+      }
       tons[n] = av.serve[n].length ? av.serve[n][0] : 'x';
     });
     av.tons = tons;
@@ -1857,7 +1869,23 @@
     av.fixo = av.fixo || {};
     if (v === 'auto' || v === '') delete av.fixo[n];
     else if (v === 'novo' && !av.contraCorpo) { const k = tomNovoDe(av); av.fixo[n] = k; (av.tomSo = av.tomSo || {})[k] = true; }
+    else if (v === 'mao') av.fixo[n] = ((av.serve && av.serve[n]) || []).slice();
     else av.fixo[n] = parseInt(v, 10) || 0;
+    classificar(av);
+    avGuardar();
+    desenhar();
+  }
+  // Ribana: marca/desmarca à mão o Tom k do corpo para a amostra n (vários tons
+  // ao mesmo tempo). Parte do que ela serve agora, automático ou não.
+  function relMarcarTom(i, n, k, marcado) {
+    const av = S.avOS && S.avOS.fases[i];
+    if (!av) return;
+    av.fixo = av.fixo || {};
+    const f = av.fixo[n];
+    const atual = Array.isArray(f) ? f.slice() : f === 0 ? [] : ((av.serve && av.serve[n]) || []).slice();
+    k = Number(k);
+    const lista = marcado ? [...new Set([...atual, k])] : atual.filter(x => x !== k);
+    av.fixo[n] = lista.sort((a, b) => a - b);
     classificar(av);
     avGuardar();
     desenhar();
@@ -1949,10 +1977,13 @@
     const rib = av.contraCorpo ? corpoDaRibana(av) : null;
     const nomeCorpo = rib ? rib.fCorpo.nome : '';
     const rcAtual = rib && av.n != null && ms.length ? ribanaContraCorpo(av.n, av, rib) : null;
+    // O que vale é o av.serve (já com o que se marcou à mão no relatório).
+    const maoAtual = !!(rib && av.n != null && av.fixo && (av.n in av.fixo) && av.fixo[av.n] !== 0);
+    const serveAtual = rcAtual ? (maoAtual ? (av.serve[av.n] || []) : rcAtual.serve) : [];
     const situacao = av.n == null || !ms.length ? '<span class="cm-fraco">ainda não medida</span>'
       : tomDe(av.n) === 0 ? '<span class="cm-fora">não usar</span>'
-      : rib ? (rcAtual && rcAtual.serve.length ? `<span class="cm-ok">serve ao ${rcAtual.serve.map(o => 'Tom ' + o).join(', ')} do ${escH(nomeCorpo)}</span>`
-        : `<span class="cm-fora">incompatível com o ${escH(nomeCorpo)}</span>`)
+      : rib ? (serveAtual.length ? `<span class="cm-ok">serve ao ${serveAtual.map(o => 'Tom ' + o).join(', ')} do ${escH(nomeCorpo)}${maoAtual ? ' (marcado à mão)' : ''}</span>`
+        : `<span class="cm-fora">incompatível com o ${escH(nomeCorpo)}${maoAtual ? ' (marcado à mão)' : ''}</span>`)
       : estaNumTom(av.n) ? `<span class="cm-ok">Tom ${ordemDe(tomDe(av.n))}</span>` : '';
     // A amostra atual contra cada tom formado: casa com todas dele? e o maior dE.
     const encaixe = rcAtual ? rcAtual.tons.map(t =>
@@ -2038,16 +2069,25 @@
     const linhas = nums.map(n => {
       const fixo = av.fixo && (n in av.fixo) ? av.fixo[n] : undefined;
       const auto = fixo === undefined;
+      const naoUsar = fixo === 0;
       const rc = ribanaContraCorpo(n, av, rib);
       const serve = rc ? rc.serve : [];
-      const opc = [`<option value="auto" ${auto ? 'selected' : ''}>Automático${auto ? (serve.length ? ' · ' + serve.map(o => 'Tom ' + o).join(', ') : ' · incompatível') : ''}</option>`]
-        .concat(tonsCorpo.map((t, i) => `<option value="${i + 1}" ${fixo === i + 1 ? 'selected' : ''}>Tom ${i + 1} do ${nc} (fixo)</option>`))
-        .concat([`<option value="0" ${fixo === 0 ? 'selected' : ''}>Não usar</option>`]);
+      // Automático · À mão (as caixinhas ao lado) · Não usar.
+      const opc = [`<option value="auto" ${auto ? 'selected' : ''}>Automático${auto ? (serve.length ? ' · ' + serve.map(o => 'Tom ' + o).join(', ') : ' · incompatível') : ''}</option>`,
+        `<option value="mao" ${!auto && !naoUsar ? 'selected' : ''}>À mão (marque os tons)</option>`,
+        `<option value="0" ${naoUsar ? 'selected' : ''}>Não usar</option>`];
+      // Uma caixinha por tom do corpo: marcada = a ribana vai com esse tom. Marcar
+      // ou desmarcar passa a amostra para "À mão"; dá para marcar vários.
+      const vale = naoUsar ? [] : (av.serve[n] || []);
+      const caixas = tonsCorpo.map((t, i) => `<label class="cm-tom-chk" title="A ${escH(nomeAm(n))} vai com o Tom ${i + 1} do ${nc}">`
+        + `<input type="checkbox" ${vale.includes(i + 1) ? 'checked' : ''} ${naoUsar ? 'disabled' : ''}`
+        + ` onchange="Colorimetro.relMarcarTom(${f.i}, ${n}, ${i + 1}, this.checked)">Tom ${i + 1}</label>`).join('');
       const cor = corDaAmostra(n, av);
       const casaTxt = rc ? rc.tons.map(t => `<span class="${t.ok ? 'cm-ok' : 'cm-fora'}">Tom ${t.ordem} ${t.ok ? '✔' : '✘'}</span>`).join(' ') : '';
       return `<tr><td>${cor ? `<span class="cm-amostra-cor" style="background:${labHex(...cor)}"></span>` : ''}${escH(nomeAm(n))}</td>
         <td class="cm-n">${(av.medidas[n] || []).length}</td><td>${casaTxt}</td>
-        <td><select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
+        <td><div class="cm-tom-chks">${caixas}</div>
+          <select onchange="Colorimetro.relMudar(${f.i}, ${n}, this.value)">${opc.join('')}</select></td></tr>`;
     }).join('');
     const resumo = tonsCorpo.map((t, i) => {
       const servem = nums.filter(n => tomDe(n, av) !== 0 && (av.serve[n] || []).includes(i + 1));
@@ -2271,7 +2311,14 @@
     const rc = ribanaContraCorpo(n, av, rib);
     const nc = escH(rib.fCorpo.nome);
     const naoUsar = tomDe(n, av) === 0;
+    const mao = !!(av.fixo && (n in av.fixo) && av.fixo[n] !== 0);
+    const serveMao = av.serve[n] || [];
     const faixa = naoUsar ? `<div class="cm-de cm-de-fora">Amostra ${n} · não usar</div>`
+      : mao ? (serveMao.length
+        ? `<div class="cm-de cm-de-ok">Amostra ${n} → ${serveMao.map(o => 'Tom ' + o).join(', ')} do ${nc}</div>
+           <div class="cm-fraco cm-centro">Marcado à mão no relatório${rc.serve.length ? ` (pela medição: ${rc.serve.map(o => 'Tom ' + o).join(', ')})` : ' (pela medição: incompatível)'}</div>`
+        : `<div class="cm-de cm-de-fora">Amostra ${n} → incompatível com o ${nc}</div>
+           <div class="cm-fraco cm-centro">Marcado à mão no relatório</div>`)
       : rc.serve.length
         ? `<div class="cm-de cm-de-ok">Amostra ${n} → ${rc.serve.map(o => 'Tom ' + o).join(', ')} do ${nc}</div>
            <div class="cm-fraco cm-centro">Aprovada contra o rolo de referência ${rc.serve.length > 1 ? 'desses tons' : 'desse tom'} do ${nc}</div>`
@@ -2616,6 +2663,9 @@
     .cm-amostra-cor{display:inline-block;width:14px;height:14px;border:1px solid var(--line);vertical-align:-2px;margin-right:6px}
     .cm-tom{padding:6px 8px;border-left:3px solid var(--ok);margin:4px 0;background:var(--line-2);font-size:13px}
     .cm-tom-ruim{border-left-color:var(--alert)}
+    .cm-tom-chks{display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:4px}
+    .cm-tom-chk{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:400;margin:0;cursor:pointer;white-space:nowrap}
+    .cm-tom-chk input{width:auto;margin:0}
     .cm-matriz{border-collapse:collapse;font-size:11px}
     .cm-matriz th,.cm-matriz td{padding:3px 6px;border:1px solid var(--line-2);text-align:right;white-space:nowrap}
     .cm-matriz thead th{font-weight:500;color:var(--ink-3)}
@@ -2666,7 +2716,7 @@
     abrirHistorico: () => alternar('hist', true), carregarDia: d => carregarDia(d).catch(e => { S.aviso = e.message; desenhar(); }),
     histUsarPadrao, histExportar, fecharHist: fecharJanela, fecharCfg: fecharJanela, fecharJanela, alternar,
     abrirCfg: () => alternar('cfg', true),
-    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relSalvar, exportarAvaliacao, avTrocar, avIrPara, avDefinirTotal, avConcluirFase, avReavaliarFase, avLimpar,
+    aplicarCfg, resetarCfg, responder, avaliarOS, encerrarOS, relMudar, relMarcarTom, relSalvar, exportarAvaliacao, avTrocar, avIrPara, avDefinirTotal, avConcluirFase, avReavaliarFase, avLimpar,
     pagina: i => { S.pagina = i; desenhar(); },
     botaoComo: v => { cfg.botao = v === 'padrao' ? 'padrao' : 'amostra'; salvarCfg(); },
     // Como o DS-01 de verdade: o botão mede no modo do aparelho (SCI), não no escolhido.
