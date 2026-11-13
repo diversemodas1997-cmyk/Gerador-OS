@@ -10904,12 +10904,44 @@ function _opPrepQuem() {
   try { return typeof _obsQuemSou === 'function' ? (_obsQuemSou() || '') : ''; } catch (e) { return ''; }
 }
 
+/* AS AÇÕES DA OP NUM MENU "⋯" (13/11/2026, Jones: "minimize as ações da coluna
+   ações"). A coluna empilhava até seis botões por linha. Fica à vista só a
+   "folha"; Avaliar amostras, pronta/reabrir, editar, cancelar e excluir moram
+   no mesmo menu flutuante da lista de OS (#menuAcoesOS, posicionado por
+   _posicionarMenuAcoes e fechado pelo clique fora / Esc de lá). As classes
+   estoque-tecidos-only seguem valendo dentro dele, pelo CSS do body. */
+function _acoesOPHtml(p) {
+  const st = _opPrepStatus(p), cancelada = st === 'cancelada';
+  const pid = esc(p.id);
+  const f = 'fecharMenuAcoesOS(); ';
+  return `
+    ${window.Colorimetro && !cancelada ? `<button class="edit" onclick="${f}avaliarAmostrasOP('${pid}')" title="Abre o Colorímetro com esta OP: uma amostra por bobina (tecido e ribana). O relatório de tonalidades volta para a folha da OP.">Avaliar amostras</button>` : ''}
+    ${st === 'em-preparo' ? `<button class="edit estoque-tecidos-only" onclick="${f}mudarStatusOP('${pid}','pronta')" title="Marca a OP como pronta: o lote foi preparado">pronta</button>` : ''}
+    ${st !== 'em-preparo' ? `<button class="edit estoque-tecidos-only" onclick="${f}mudarStatusOP('${pid}','em-preparo')" title="Volta a OP para em preparo">reabrir</button>` : ''}
+    ${!cancelada ? `<button class="edit estoque-tecidos-only" onclick="${f}abrirModalOP('${pid}')">editar</button>` : ''}
+    <div class="sep estoque-tecidos-only"></div>
+    ${!cancelada ? `<button class="del estoque-tecidos-only" onclick="${f}mudarStatusOP('${pid}','cancelada')" title="Cancela a OP: ela continua na lista, com a folha carimbada CANCELADO">cancelar</button>` : ''}
+    <button class="del estoque-tecidos-only" onclick="${f}excluirOP('${pid}')">excluir</button>`;
+}
+let _menuOpId = null;
+function abrirMenuAcoesOP(id, botao) {
+  const m = document.getElementById('menuAcoesOS');
+  const p = (STATE.ordensPreparo || []).find(x => x.id === id);
+  if (!m || !botao || !p) return;
+  // Clicar de novo no mesmo "⋯" fecha, como na lista de OS.
+  if (!m.classList.contains('hidden') && _menuOpId === id) { fecharMenuAcoesOS(); _menuOpId = null; return; }
+  if (typeof fecharMenuAcoesOS === 'function') fecharMenuAcoesOS();
+  _menuOpId = id;
+  m.innerHTML = _acoesOPHtml(p);
+  m.classList.remove('hidden');
+  _posicionarMenuAcoes(m, botao);
+}
+
 function renderOrdensPreparo() {
   const cont = document.getElementById('op-prep-painel');
   if (!cont) return;
   const lista = (STATE.ordensPreparo || []).slice().sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));
   const n = v => (Number(v) || 0).toLocaleString('pt-BR');
-  const temCor = !!window.Colorimetro;
   const linhas = lista.map(p => {
     const rel = _opPrepUltimoRel(p);
     const st = _opPrepStatus(p), cancelada = st === 'cancelada';
@@ -10918,13 +10950,9 @@ function renderOrdensPreparo() {
     const dica = cancelada ? `Cancelada${quando}${p.motivoCancelamento ? ' · motivo: ' + p.motivoCancelamento : ''}` : `${_OPP_STATUS[st].rot}${quando}`;
     return `<tr${cancelada ? ' class="op-prep-cancelada" style="opacity:.6;"' : ''}>
       <td class="col-actions row-actions" style="white-space:nowrap;">
-        ${temCor && !cancelada ? `<button onclick="avaliarAmostrasOP('${esc(p.id)}')" title="Abre o Colorímetro com esta OP: uma amostra por bobina (tecido e ribana). O relatório de tonalidades volta para a folha da OP.">Avaliar amostras</button>` : ''}
-        <button onclick="verOP('${esc(p.id)}')" title="Abre a folha da OP para conferir e imprimir">folha</button>
-        ${st === 'em-preparo' ? `<button class="estoque-tecidos-only" onclick="mudarStatusOP('${pid}','pronta')" title="Marca a OP como pronta: o lote foi preparado">pronta</button>` : ''}
-        ${st !== 'em-preparo' ? `<button class="estoque-tecidos-only" onclick="mudarStatusOP('${pid}','em-preparo')" title="Volta a OP para em preparo">reabrir</button>` : ''}
-        ${!cancelada ? `<button class="estoque-tecidos-only" onclick="abrirModalOP('${pid}')">editar</button>` : ''}
-        ${!cancelada ? `<button class="estoque-tecidos-only danger" onclick="mudarStatusOP('${pid}','cancelada')" title="Cancela a OP: ela continua na lista, com a folha carimbada CANCELADO">cancelar</button>` : ''}
-        <button class="estoque-tecidos-only danger" onclick="excluirOP('${pid}')">excluir</button>
+        <button class="edit" onclick="verOP('${pid}')" title="Abre a folha da OP para conferir e imprimir">folha</button>
+        <button class="edit btn-mais" title="Mais ações desta OP" aria-haspopup="menu"
+          onclick="abrirMenuAcoesOP('${pid}', this)">⋯</button>
       </td>
       <td style="font-family:'IBM Plex Mono',monospace;font-weight:700;white-space:nowrap;">OP ${_opFmt(p.numero)}</td>
       <td style="white-space:nowrap;"><span class="badge op-prep-status-${st}" style="background:${_OPP_STATUS[st].cor};" title="${esc(dica)}">${_OPP_STATUS[st].rot}</span></td>

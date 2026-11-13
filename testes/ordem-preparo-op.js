@@ -45,7 +45,7 @@ const env = {
   _carimboCanceladoHtml: () => '<div class="sheet-carimbo-area"><div class="sheet-carimbo-cancelado"><span>CANCELADO</span></div></div>', _carimbosDiagonaisOE: () => {}, goto: p => { pagina = p; }, _obsQuemSou: () => 'nathaly'
 };
 const nomes = Object.keys(env);
-const api = new Function(...nomes, bloco + '\nreturn { salvarTextoRelatorioOP, mudarStatusOP,renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
+const api = new Function(...nomes, bloco + '\nreturn { _acoesOPHtml, salvarTextoRelatorioOP, mudarStatusOP,renderOrdensPreparo, abrirModalOP, salvarOP, excluirOP, avaliarAmostrasOP, salvarRelatorioCorOP, verOP, renderPrintPreparo };')(...nomes.map(k => env[k]));
 
 (async () => {
   const preencher = (v) => { api.abrirModalOP(); Object.entries(v).forEach(([k, x]) => { doc.getElementById(k).value = x; }); };
@@ -71,7 +71,11 @@ const api = new Function(...nomes, bloco + '\nreturn { salvarTextoRelatorioOP, m
   // lista
   api.renderOrdensPreparo();
   const lista = els['op-prep-painel'].innerHTML;
-  ok('5. lista: coluna Ações com "Avaliar amostras" e as OP numeradas', /<th class="col-actions">Ações<\/th>/.test(lista) && (lista.match(/>Avaliar amostras<\/button>/g) || []).length === 2 && /OP 0002/.test(lista) && /OP 0003/.test(lista), plano(lista).slice(0, 400));
+  // AÇÕES NUM "⋯" (13/11/2026): na linha, só "folha" e o ⋯; o resto no menu.
+  ok('5. lista: coluna Ações com "folha" e o ⋯ em cada OP, e as OP numeradas', /<th class="col-actions">Ações<\/th>/.test(lista) && (lista.match(/>folha<\/button>/g) || []).length === 2
+    && (lista.match(/abrirMenuAcoesOP\(/g) || []).length === 2 && !/>Avaliar amostras<\/button>|excluirOP/.test(lista) && /OP 0002/.test(lista) && /OP 0003/.test(lista), plano(lista).slice(0, 400));
+  ok('5b. o menu ⋯ tem "Avaliar amostras", editar, cancelar e excluir', STATE.ordensPreparo.every(p => /Avaliar amostras<\/button>/.test(api._acoesOPHtml(p)) && /abrirModalOP/.test(api._acoesOPHtml(p))
+    && /'cancelada'\)/.test(api._acoesOPHtml(p)) && /excluirOP/.test(api._acoesOPHtml(p))), STATE.ordensPreparo.map(p => plano(api._acoesOPHtml(p))));
   ok('6. lista: total de bobinas (3 + 0 = 3) e "A avaliar"', /Total bobinas/.test(lista) && /A avaliar/.test(lista), plano(lista));
   // avaliar → Colorímetro
   api.avaliarAmostrasOP(b.id);
@@ -96,7 +100,7 @@ const api = new Function(...nomes, bloco + '\nreturn { salvarTextoRelatorioOP, m
   ok('13. relatório vazio ou de OP que não existe: não grava', (await api.salvarRelatorioCorOP(c.id, '  ')) === false && (await api.salvarRelatorioCorOP('nada', 'x')) === false, '');
   // STATUS (12/11/2026, "insira status na OP: em preparo, pronta, cancelada")
   ok('14. OP nova nasce "em preparo" e a lista tem a coluna Status', c.status === 'em-preparo' && /<th>Status<\/th>/.test(els['op-prep-painel'].innerHTML)
-    && /Em preparo/.test(els['op-prep-painel'].innerHTML) && /mudarStatusOP\('[^']+','pronta'\)/.test(els['op-prep-painel'].innerHTML), plano(els['op-prep-painel'].innerHTML));
+    && /Em preparo/.test(els['op-prep-painel'].innerHTML) && /mudarStatusOP\('[^']+','pronta'\)/.test(api._acoesOPHtml(c)), plano(els['op-prep-painel'].innerHTML));
   await api.mudarStatusOP(c.id, 'pronta');
   f = plano(els['print-sheet-prep'].innerHTML);
   ok('15. marcar pronta: status, quem/quando, folha diz Pronta', c.status === 'pronta' && c.statusPor === 'nathaly' && c.historicoStatus.length === 1 && /Status Pronta/.test(f), f);
@@ -106,7 +110,7 @@ const api = new Function(...nomes, bloco + '\nreturn { salvarTextoRelatorioOP, m
   const L = els['op-prep-painel'].innerHTML; f = plano(els['print-sheet-prep'].innerHTML);
   ok('17. cancelada: motivo guardado, folha com carimbo CANCELADO e motivo', c.status === 'cancelada' && c.motivoCancelamento === 'tecido devolvido'
     && els['print-sheet-prep'].classList.contains('folha-cancelada') && /sheet-carimbo-cancelado/.test(els['print-sheet-prep'].innerHTML) && /motivo do cancelamento: tecido devolvido/.test(f), f);
-  const linhaC = L.split('<tr').find(t => t.includes('OP 0003')) || '';
+  const linhaC = (L.split('<tr').find(t => t.includes('OP 0003')) || '') + api._acoesOPHtml(c);
   ok('18. lista: cancelada sem Avaliar amostras/editar, com reabrir', /Cancelada/.test(linhaC) && !/Avaliar amostras/.test(linhaC) && !/abrirModalOP/.test(linhaC) && /'em-preparo'\)[^>]*>reabrir/.test(linhaC), linhaC);
   const n0 = avaliados.length; api.avaliarAmostrasOP(c.id); api.abrirModalOP(c.id);
   ok('19. cancelada: Avaliar amostras e editar recusados', avaliados.length === n0 && toasts.slice(-2).every(t => /cancelada/.test(t[0])), toasts.slice(-2));
