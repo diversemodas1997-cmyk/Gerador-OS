@@ -141,6 +141,9 @@
         <a class="nav-btn" href="#lista-os" data-page="lista-os" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="ordens"></span>Ordens de Serviço - OS</a>
         <a class="nav-btn" href="#expedicao" data-page="expedicao" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba"><span class="nav-num" data-conta="oes"></span>Ordens de Expedição</a>
         <a class="nav-btn" href="#compra" data-page="compra" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Compra</a>
+        <!-- ORDENS DE PREPARAÇÃO (13/11/2026, Jones): as OP de matéria-prima, que
+             moravam no alto do Estoque de tecidos, têm tela própria aqui. -->
+        <a class="nav-btn" href="#ordens-preparo" data-page="ordens-preparo" title="Ctrl+clique (ou botão direito → abrir em nova aba) abre esta área em outra aba">Ordens de Preparação</a>
       </div>
     </div>
 
@@ -444,9 +447,19 @@
           <button class="btn" onclick="abrirMovEstoque('saida')">− Saída / ajuste</button>
         </div>
       </div>
-      <!-- As ordens de preparo de matéria-prima (OP, 12/11/2026): ver renderOrdensPreparo. -->
-      <div id="op-prep-painel"></div>
+      <!-- As OP (ordens de preparo) saíram daqui em 13/11/2026: tela própria, Ordens → Ordens de Preparação. -->
       <div id="estoque-painel"></div>
+    </section>
+
+    <!-- ORDENS DE PREPARAÇÃO (13/11/2026): as ordens de preparo de matéria-prima (OP). Ver renderOrdensPreparo. -->
+    <section class="page hidden" data-page="ordens-preparo">
+      <div class="page-header">
+        <div>
+          <h1>Ordens de Preparação</h1>
+          <div class="desc">Ordens de preparo de matéria-prima (OP): o lote de bobinas de tecido e de ribana, a avaliação de cor no Colorímetro e a folha da OP.</div>
+        </div>
+      </div>
+      <div id="op-prep-painel"></div>
     </section>
 
     <!-- ESTOQUE DE AVIAMENTOS (24/09/2026): fio, linha, etiqueta, botão e viés,
@@ -1503,7 +1516,7 @@
       <div class="page-header no-print">
         <div><h1>Folha da ordem de preparo (OP)</h1><div class="desc">O lote de bobinas e o relatório de tonalidades do Colorímetro. Revise e clique em Imprimir.</div></div>
         <div class="actions">
-          <button class="btn" onclick="goto('estoque')">Voltar</button>
+          <button class="btn" onclick="goto('ordens-preparo')">Voltar</button>
           <button class="btn" onclick="if(_opPrepFolhaId) avaliarAmostrasOP(_opPrepFolhaId)">Avaliar amostras</button>
           <button class="btn accent" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
         </div>
@@ -2110,7 +2123,7 @@
   </div>
 </div>
 
-<script src="app.js?v=2026-11-12i"></script>
+<script src="app.js?v=2026-11-13a"></script>
 <script src="assistente.js?v=2026-11-12a"></script>
 <script src="colorimetro.js?v=2026-11-13a"></script>
 <script src="estoque-confeccao.js?v=2026-11-11a"></script>

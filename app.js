@@ -2352,7 +2352,7 @@ const VISAO_PAGINAS = {
   'planejamento': ['planejamento-producao'],
   'demanda': ['relatorio-demanda'],
   'cadastros': ['cad-*'],
-  'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'print-pecas', 'print-aviamentos', 'print-preparo'],
+  'estoque-tecidos': ['estoque', 'estoque-materiais', 'estoque-aviamentos', 'estoque-pecas', 'estoque-ferramentas', 'ordens-preparo', 'print-pecas', 'print-aviamentos', 'print-preparo'],
   'estoque-fases': ['corte', 'corte-sc', 'estoque-fio', 'estoque-fio-sc', 'transito-ida', 'transito-volta', 'costurando', 'costurando-sc', 'fios'],
   'estoque-confeccao': ['acab-estoque', 'acab-mov', 'acab-produtos', 'acab-dre', 'acab-cmp'],
   'expedicao': ['expedicao', 'print-expedicao'],
@@ -2405,7 +2405,7 @@ const TELAS_DA_AREA = {
     ['cad-materiais', 'Aviamentos'], ['cad-pecas', 'Peças'], ['cad-desenhos', 'Desenhos técnicos']],
   'estoque-tecidos': [['estoque', 'Estoque de tecidos'], ['estoque-materiais', 'Estoque de materiais'],
     ['estoque-aviamentos', 'Estoque de aviamentos'], ['estoque-pecas', 'Estoque de peças'],
-    ['estoque-ferramentas', 'Estoque de ferramentas']],
+    ['estoque-ferramentas', 'Estoque de ferramentas'], ['ordens-preparo', 'Ordens de Preparação (OP)']],
   'estoque-fases': [['corte', 'Estoque corte · Descalvado'], ['corte-sc', 'Estoque corte · São Carlos'],
     ['estoque-fio', 'Estoque com fio · Descalvado'], ['estoque-fio-sc', 'Estoque com fio · São Carlos'],
     ['transito-ida', 'Estoque em trânsito · IDA'], ['transito-volta', 'Estoque em trânsito · VOLTA'],
@@ -2417,7 +2417,7 @@ const TELAS_DA_AREA = {
 };
 const _TELA_DA_FOLHA = {
   'print': 'lista-os', 'print-expedicao': 'expedicao', 'print-operacoes': 'operacoes',
-  'print-aviamentos': 'estoque-aviamentos', 'print-pecas': 'estoque-pecas', 'print-preparo': 'estoque'
+  'print-aviamentos': 'estoque-aviamentos', 'print-pecas': 'estoque-pecas', 'print-preparo': 'ordens-preparo'
 };
 // A tela que responde por esta página: a folha de impressão responde pela tela de onde sai.
 function _telaBase(page) {
@@ -5444,6 +5444,7 @@ function goto(page) {
   if (page === 'estoque-materiais') renderEstoqueItens('materiais');
   if (page === 'estoque-ferramentas') renderEstoqueItens('ferramentas');
   if (page === 'compra') renderCompra();
+  if (page === 'ordens-preparo') renderOrdensPreparo();
   // Sempre por ID da fase: a ordem de FASES_ESTOQUE muda quando entra campo novo
   // (as unidades entraram no meio), e índice fixo aqui abriria o painel errado.
   if (page === 'corte') renderFasePorId('corte');
